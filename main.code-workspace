@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"editor.insertSpaces": false,
+		"editor.scrollBeyondLastLine": false,
+		"editor.wordWrap": "on"
+	}
+}
