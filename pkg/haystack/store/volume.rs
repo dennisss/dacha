@@ -12,7 +12,6 @@ use std::cmp::min;
 use fs::{File, OpenOptions};
 use crc32c::crc32c_append;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
-use rand::prelude::*;
 use std::path::Path;
 
 

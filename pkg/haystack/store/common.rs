@@ -1,4 +1,3 @@
-use std::io;
 
 pub type ClusterId = [u8; 16];
 
@@ -6,11 +5,7 @@ pub const COOKIE_SIZE: usize = 8;
 pub type Cookie = [u8; COOKIE_SIZE];
 
 
-
-
-/// XXX: Basically everything below here is currently unused
-
-
+/*
 pub enum HaystackResource {
 	Volume,
 	Needle
@@ -43,4 +38,4 @@ impl From<io::Error> for HaystackError {
 }
 
 pub type HaystackResult<T> = std::result::Result<T, HaystackError>;
-
+*/
