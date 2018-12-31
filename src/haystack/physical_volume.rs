@@ -1,16 +1,19 @@
 extern crate rand;
 extern crate arrayref;
+extern crate futures;
+extern crate bytes;
 
 use std::io;
 use std::io::{Write, Read, Seek};
 use std::collections::HashMap;
 use std::cmp::min;
-use fs::File;
+use fs::{File, OpenOptions};
 use crc32c::crc32c_append;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use rand::prelude::*;
 use std::path::Path;
 use arrayref::*;
+use bytes::Bytes;
 
 const SUPERBLOCK_SIZE: usize = 32;
 const SUPERBLOCK_MAGIC: &str = "HAYS"; // And we will use HAYI for the index file
@@ -47,9 +50,9 @@ pub struct HaystackNeedleIndexEntry  {
 
 
 pub struct HaystackNeedleHeader {
-	cookie: [u8; COOKIE_SIZE],
-	keys: HaystackNeedleKeys,
-	meta: HaystackNeedleMeta
+	pub cookie: [u8; COOKIE_SIZE],
+	pub keys: HaystackNeedleKeys,
+	pub meta: HaystackNeedleMeta
 }
 
 impl HaystackNeedleHeader {
@@ -85,16 +88,50 @@ impl HaystackNeedleHeader {
 	}
 }
 
+/*
+struct PartialVec {
+	buf: Vec<u8>,
+	start: usize,
+	end: usize,
+	done: bool
+}
+
+impl<'a> futures::stream::Stream for PartialVec<'a> {
+	type Item = &'a [u8];
+	type Error = io::Error;
+
+	fn poll(&'a mut self) -> futures::Poll<Option< &'a [u8] >, Self::Error> {
+		if self.done {
+			return Ok(futures::Async::Ready(None))
+		}
+
+		self.done = true;
+		Ok(futures::Async::Ready(Some(
+			&self.buf[self.start..self.end]
+		)))
+	}
+}
+*/
+
 
 pub struct HaystackNeedle {
 	pub header: HaystackNeedleHeader,
-	buf: Vec<u8>
+	buf: Vec<u8> // TODO: Will eventually need to become private again
 }
 
 impl HaystackNeedle {
 
+	pub fn bytes(self) -> Bytes {
+		Bytes::from(self.buf).slice(NEEDLE_HEADER_SIZE, self.header.meta.size as usize)
+	}
+
 	pub fn data(&self) -> &[u8] {
 		&self.buf[NEEDLE_HEADER_SIZE..(NEEDLE_HEADER_SIZE + (self.header.meta.size as usize))]
+	}
+
+	pub fn stored_crc32c(&self) -> &[u8] {
+		let sum_start = NEEDLE_HEADER_SIZE + self.data().len() + NEEDLE_HEADER_MAGIC.len();
+		(&self.buf[sum_start..])
 	}
 
 	/**
@@ -105,8 +142,7 @@ impl HaystackNeedle {
 	pub fn check(&self) -> io::Result<()> {
 			// TODO: Ideally this would all be effectively optional 
 
-		let sum_start = NEEDLE_HEADER_SIZE + self.data().len() + NEEDLE_HEADER_MAGIC.len();
-		let sum_expected = (&self.buf[sum_start..]).read_u32::<LittleEndian>()?;
+		let sum_expected = self.stored_crc32c().read_u32::<LittleEndian>().unwrap();
 
 		let sum = crc32c_append(0, self.data());
 
@@ -140,8 +176,8 @@ pub struct HaystackClusterConfig {
  * Represents a single file on disk that consists of many photos as part of some logical volume
  */
 pub struct HaystackPhysicalVolume {
-	volume_id: u64,
-	cluster_id: [u8; 16],
+	pub volume_id: u64,
+	pub cluster_id: [u8; 16],
 	file: File,
 
 	// TODO: Make it a set of binary heaps so that we can efficiently look up all types for a single photo?
@@ -153,8 +189,11 @@ impl HaystackPhysicalVolume {
 	// I need to know the: store directory, volume id, and the cluster_id to make this store
 
 	pub fn create(config: &HaystackClusterConfig, volume_id: u64) -> io::Result<HaystackPhysicalVolume> {
+		let mut opts = OpenOptions::new();
+		opts.write(true).create_new(true).read(true);
+
 		let path = Path::new(&config.volumes_dir).join(String::from("haystack_") + &volume_id.to_string());
-		let f = File::create(path)?;
+		let f = opts.open(path)?;
 
 		let mut vol = HaystackPhysicalVolume {
 			volume_id,
@@ -172,7 +211,10 @@ impl HaystackPhysicalVolume {
 	 * Opens a volume given it's file name
 	 */
 	pub fn open(path: &str) -> io::Result<HaystackPhysicalVolume> {
-		let mut f = File::open(path)?;
+		let mut opts = OpenOptions::new();
+		opts.read(true).write(true);
+
+		let mut f = opts.open(path)?;
 
 		let mut vol = HaystackPhysicalVolume::read_superblock(&mut f)?;
 		vol.scan_needles()?;
@@ -255,6 +297,7 @@ impl HaystackPhysicalVolume {
 		Ok(())
 	}
 
+	// TODO: If we want to go super fast, we could implement the data as a stream and start sending it back to a user right away
 	/**
 	 * Tries to read a single needle from the volume
 	 * Will only return if it exists, has not been deleted
