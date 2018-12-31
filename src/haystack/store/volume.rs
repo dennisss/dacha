@@ -3,6 +3,8 @@ extern crate arrayref;
 extern crate futures;
 extern crate bytes;
 
+use super::needle::*;
+use super::common::*;
 use std::io;
 use std::io::{Write, Read, Seek};
 use std::collections::HashMap;
@@ -12,164 +14,15 @@ use crc32c::crc32c_append;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use rand::prelude::*;
 use std::path::Path;
-use arrayref::*;
-use bytes::Bytes;
+
 
 const SUPERBLOCK_SIZE: usize = 32;
 const SUPERBLOCK_MAGIC: &str = "HAYS"; // And we will use HAYI for the index file
 const FORMAT_VERSION: u32 = 1;
-const COOKIE_SIZE: usize = 8;
-const NEEDLE_ALIGNMENT: usize = 8;
-
-const NEEDLE_HEADER_SIZE: usize = COOKIE_SIZE + 4 + 8 + 4 + 1 + 8; 
-const NEEDLE_HEADER_MAGIC: &str = "NEED";
-const NEEDLE_FOOTER_SIZE: usize = 4 + 4;
-const NEEDLE_FOOTER_MAGIC: &str = "LES!";
-
-const FLAG_DELETED: u8 = 1;
 
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
-pub struct HaystackNeedleKeys {
-	pub key: u64,
-	pub alt_key: u32
-}
 
-// but yes, we basically do need to 
-
-#[derive(Clone)]
-pub struct HaystackNeedleMeta {
-	pub flags: u8,
-	pub size: u64
-}
-
-pub struct HaystackNeedleIndexEntry  {
-	pub meta: HaystackNeedleMeta,
-	pub offset: u64
-}
-
-
-pub struct HaystackNeedleHeader {
-	pub cookie: [u8; COOKIE_SIZE],
-	pub keys: HaystackNeedleKeys,
-	pub meta: HaystackNeedleMeta
-}
-
-impl HaystackNeedleHeader {
-	fn parse(header: &[u8; NEEDLE_HEADER_SIZE]) -> io::Result<HaystackNeedleHeader> {
-
-		if &header[0..4] != NEEDLE_HEADER_MAGIC.as_bytes() {
-			return Err(io::Error::new(io::ErrorKind::Other, "Needle header magic is incorrect"));
-		}
-
-		let mut pos = 4;
-		let cookie = &header[pos..(pos + COOKIE_SIZE)]; pos += COOKIE_SIZE;
-		let key = (&header[pos..]).read_u64::<LittleEndian>()?; pos += 8;
-		let alt_key = (&header[pos..]).read_u32::<LittleEndian>()?; pos += 4;
-		let flags = header[pos]; pos += 1;
-		let size =  (&header[pos..]).read_u64::<LittleEndian>()?; pos += 8;
-
-		// Ideally to be implemented in terms of 
-
-		let mut n = HaystackNeedleHeader {
-			cookie: [0u8; COOKIE_SIZE],
-			keys: HaystackNeedleKeys {
-				key, alt_key
-			},
-			meta: HaystackNeedleMeta {
-				flags,
-				size
-			}
-		};
-
-		n.cookie.copy_from_slice(cookie);
-
-		Ok(n)
-	}
-}
-
-/*
-struct PartialVec {
-	buf: Vec<u8>,
-	start: usize,
-	end: usize,
-	done: bool
-}
-
-impl<'a> futures::stream::Stream for PartialVec<'a> {
-	type Item = &'a [u8];
-	type Error = io::Error;
-
-	fn poll(&'a mut self) -> futures::Poll<Option< &'a [u8] >, Self::Error> {
-		if self.done {
-			return Ok(futures::Async::Ready(None))
-		}
-
-		self.done = true;
-		Ok(futures::Async::Ready(Some(
-			&self.buf[self.start..self.end]
-		)))
-	}
-}
-*/
-
-
-pub struct HaystackNeedle {
-	pub header: HaystackNeedleHeader,
-	buf: Vec<u8> // TODO: Will eventually need to become private again
-}
-
-impl HaystackNeedle {
-
-	pub fn bytes(self) -> Bytes {
-		Bytes::from(self.buf).slice(NEEDLE_HEADER_SIZE, self.header.meta.size as usize)
-	}
-
-	pub fn data(&self) -> &[u8] {
-		&self.buf[NEEDLE_HEADER_SIZE..(NEEDLE_HEADER_SIZE + (self.header.meta.size as usize))]
-	}
-
-	pub fn stored_crc32c(&self) -> &[u8] {
-		let sum_start = NEEDLE_HEADER_SIZE + self.data().len() + NEEDLE_HEADER_MAGIC.len();
-		(&self.buf[sum_start..])
-	}
-
-	/**
-	 * Verifies the integrity of the needle's data based on the checksum
-	 *
-	 * If this gives an error, then this physical volume as at least partially corrupted
-	 */
-	pub fn check(&self) -> io::Result<()> {
-			// TODO: Ideally this would all be effectively optional 
-
-		let sum_expected = self.stored_crc32c().read_u32::<LittleEndian>().unwrap();
-
-		let sum = crc32c_append(0, self.data());
-
-		if sum != sum_expected {
-			return Err(io::Error::new(io::ErrorKind::Other, "Needle data does not match checksum"));
-		}
-
-		Ok(())
-	}
-
-}
-
-// TODO: There is not really any point to indexing everything in memory if we will only ever use the offset (to read the )
-
-// 
-pub struct HaystackClusterConfig {
-
-	/**
-	 * Some universally uuid that identifies all physical and logical volumes within the current store/cluster
-	 */
-	pub cluster_id: [u8; 16],
-	
-	/**
-	 * Location of all physical volume volumes
-	 */
-	pub volumes_dir: String
-}
+// Opening a physical volume will likewise required
 
 
 /**
@@ -177,7 +30,7 @@ pub struct HaystackClusterConfig {
  */
 pub struct HaystackPhysicalVolume {
 	pub volume_id: u64,
-	pub cluster_id: [u8; 16],
+	pub cluster_id: ClusterId,
 	file: File,
 
 	// TODO: Make it a set of binary heaps so that we can efficiently look up all types for a single photo?
@@ -188,29 +41,33 @@ impl HaystackPhysicalVolume {
 
 	// I need to know the: store directory, volume id, and the cluster_id to make this store
 
-	pub fn create(config: &HaystackClusterConfig, volume_id: u64) -> io::Result<HaystackPhysicalVolume> {
+	// Basically I need a cluster_id, and a path for where to put it
+	pub fn create(path: &Path, cluster_id: &ClusterId, volume_id: u64) -> io::Result<HaystackPhysicalVolume> {
 		let mut opts = OpenOptions::new();
 		opts.write(true).create_new(true).read(true);
 
-		let path = Path::new(&config.volumes_dir).join(String::from("haystack_") + &volume_id.to_string());
 		let f = opts.open(path)?;
 
 		let mut vol = HaystackPhysicalVolume {
 			volume_id,
-			cluster_id: config.cluster_id,
+			cluster_id: cluster_id.clone(),
 			file: f,
 			index: HashMap::new()
 		};
 
 		vol.write_superblock()?;
 
+		// Then we will initialize an empty index file
+		// In the case of 
+
 		Ok(vol)
 	}
 	
-	/**
-	 * Opens a volume given it's file name
-	 */
-	pub fn open(path: &str) -> io::Result<HaystackPhysicalVolume> {
+	// Likely also to be based on the same params
+	/// Opens a volume given it's file name
+	///
+	///  XXX: Ideally we would have some better way of doing this right?
+	pub fn open(path: &Path) -> io::Result<HaystackPhysicalVolume> {
 		let mut opts = OpenOptions::new();
 		opts.read(true).write(true);
 
@@ -251,6 +108,22 @@ impl HaystackPhysicalVolume {
 
 		Ok(vol)
 	}
+
+	/// Gets the number of raw needles stored 
+	pub fn len_needles(&self) -> usize {
+		self.index.len()
+	}
+
+	// TODO: We want to track stats on:
+	// - total bytes size of the volume file
+	// - total bytes size of the volume's index file
+	// - combined size of all needle data segements in this volume 
+
+	/// Gets the number of bytes on disk occupied by this volume (excluding the separate index)
+	//pub fn len_bytes(&mut self) -> usize {
+	//	self.file.seek(io::SeekFrom::End(0))? as usize
+	//}
+
 
 	/**
 	 * Scans all of the needles in the file and builds the initial index from them
@@ -293,6 +166,7 @@ impl HaystackPhysicalVolume {
 		self.file.write_u32::<LittleEndian>(FORMAT_VERSION)?;
 		self.file.write_u64::<LittleEndian>(self.volume_id)?;
 		self.file.write_all(&self.cluster_id)?;
+		self.file.flush()?;
 
 		Ok(())
 	}
@@ -306,76 +180,61 @@ impl HaystackPhysicalVolume {
 	 */
 	pub fn read_needle(&mut self, keys: &HaystackNeedleKeys) -> io::Result<Option<HaystackNeedle>> {
 
-		let mut entry = match self.index.get_mut(keys) {
+		// This is basically the matter of reading from the current position in the thing
+
+		// TODO: We go need to distinguish this case as being totally different
+		let entry = match self.index.get_mut(keys) {
 			Some(e) => e,
 			None => return Ok(None)
 		};
 
 		// Do not return deleted files
-		if entry.meta.flags & FLAG_DELETED != 0 {
+		if entry.meta.deleted() {
 			return Ok(None);
 		}
-
-		let total_size = NEEDLE_HEADER_SIZE + (entry.meta.size as usize) + NEEDLE_FOOTER_SIZE;
-
-		let mut buf = Vec::new();
-		buf.resize(total_size, 0u8); // TODO: Use an unsafe resize without filling
 
 		self.file.seek(io::SeekFrom::Start(entry.offset))?;
-		self.file.read_exact(&mut buf)?;
 
-		let header = HaystackNeedleHeader::parse(array_ref!(&buf, 0, NEEDLE_HEADER_SIZE))?;
-		
+		let needle = HaystackNeedle::read_oneshot(&mut self.file, &entry.meta)?;
+
 		// Update index with most up-to-date flags
-		entry.meta.flags = header.meta.flags;
+		entry.meta.flags = needle.header.meta.flags;
 
 		// Separate index files do not persist deletes, so we will be double check the main flags 
-		if header.meta.flags & FLAG_DELETED != 0 {
+		if needle.header.meta.deleted() {
 			return Ok(None);
 		}
-
-		// Validate that the index is still consistent with the main file
-		if header.meta.size != entry.meta.size {
-			return Err(io::Error::new(io::ErrorKind::Other, "Inconsistently"));
-		}
-
-		let magic_start = NEEDLE_HEADER_SIZE + (header.meta.size as usize);
-		if &buf[magic_start..(magic_start + NEEDLE_FOOTER_MAGIC.len())] != NEEDLE_FOOTER_MAGIC.as_bytes() {
-			return Err(io::Error::new(io::ErrorKind::Other, "Needle footer bad magic"));
-		}
-
-
-		Ok(Some(HaystackNeedle {
-			header,
-			buf
-		}))
+		
+		Ok(Some(needle))
 	}
 
 	// TODO: We will likely also want to have a create operation that gurantees that a needle does not exist
-	/**
-	 * Adds a new needle to the very end of the file (overriding any previous needle for the same keys)
-	 *
-	 * TODO: Probably most useful to return a reference to the full needle entry 
-	 */
-	pub fn append_needle(&mut self, keys: &HaystackNeedleKeys, meta: &HaystackNeedleMeta, data: &mut Read) -> io::Result<()> {
-		let mut rng = rand::thread_rng();
+	/// Adds a new needle to the very end of the file (overriding any previous needle for the same keys)
+	/// 
+	/// TODO: Probably most useful to return a reference to the full needle entry
+	pub fn append_needle(&mut self, keys: &HaystackNeedleKeys, cookie: &Cookie, meta: &HaystackNeedleMeta, data: &mut Read) -> io::Result<()> {
+
+		// Typically needles will not be overwritten, but if they are, we consider needles with the same exact keys/cookie to be identical, so we will ignore attempts to update them
+		// TODO: The main exception to this will be error correction (in which case we to be able to do this)
+		if let Some(existing) = self.index.get(&keys) {
+			
+			// TODO: This now incentivizes making sure that parsing of needle headers is efficient and doesn't do as many copies
+			self.file.seek(io::SeekFrom::Start(existing.offset))?;
+			let existing_header = HaystackNeedleHeader::read(&mut self.file)?;
+
+			if cookie == &existing_header.cookie {
+				println!("Ignoring request to upload exact same needle twice");
+				return Ok(());
+			}
+		}
+		
+
 		let mut buf = [0u8; 8*1024 /* io::DEFAULT_BUF_SIZE */];
 
 		// Write at the end of the file (and get that offset)
 		let off = self.file.seek(io::SeekFrom::End(0))?;
 
-		let mut cookie = Vec::new();
-		cookie.resize(COOKIE_SIZE, 0u8);
-		rng.fill_bytes(&mut cookie);
-
-
-		let mut header = Vec::new();
-		header.write_all(NEEDLE_HEADER_MAGIC.as_bytes())?;
-		header.write_all(&cookie)?;
-		header.write_u64::<LittleEndian>(keys.key)?;
-		header.write_u32::<LittleEndian>(keys.alt_key)?;
-		header.write_u8(meta.flags)?;
-		header.write_u64::<LittleEndian>(meta.size)?;
+		let header = HaystackNeedleHeader::serialize(&cookie, keys, meta)?;
 		self.file.write_all(&header)?;
 
 
@@ -402,6 +261,10 @@ impl HaystackPhysicalVolume {
 		if nread != (meta.size as usize) {
 			// Big error: we did read enough bytes
 			// TODO: Another consideration is that for a stream that is a single file, it needs to be at the end of the file now
+
+			self.file.set_len(off)?;
+
+			return Err(io::Error::new(io::ErrorKind::Other, "Not enough bytes could be read"));
 		}
 
 
@@ -432,7 +295,7 @@ impl HaystackPhysicalVolume {
 			None => return Err(io::Error::new(io::ErrorKind::Other, "Needle does not exist")),
 		};
 
-		if entry.meta.flags & FLAG_DELETED != 0 {
+		if entry.meta.deleted() {
 			return Err(io::Error::new(io::ErrorKind::Other, "Needle already deleted"));
 		}
 
