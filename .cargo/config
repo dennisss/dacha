@@ -1,0 +1,4 @@
+
+[build]
+# Needed to make hashing remotely efficient
+rustflags = "-C target-cpu=native"
