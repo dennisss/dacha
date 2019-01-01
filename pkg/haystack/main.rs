@@ -1,12 +1,7 @@
 #![feature(proc_macro_hygiene, decl_macro, type_alias_enum_variants)]
-
 #[macro_use] extern crate rocket;
-#[macro_use] extern crate serde_derive;
-
-#[macro_use] extern crate diesel;
 
 extern crate dotenv;
-extern crate crc32c;
 extern crate rand;
 extern crate byteorder;
 extern crate arrayref;
@@ -17,23 +12,19 @@ extern crate base64;
 extern crate fs2;
 extern crate serde;
 extern crate serde_json;
+extern crate mime_sniffer;
+extern crate ipnetwork;
+extern crate chrono;
 
-use diesel::prelude::*;
-use diesel::pg::PgConnection;
-use dotenv::dotenv;
-use std::env;
-
-
-mod store;
-mod directory;
+extern crate haystack;
 
 use std::io;
-use std::fs;
-use store::machine::*;
-use rand::prelude::*;
 use rocket::http::{Status};
 use rocket::config::{Config, Environment};
-use store::routes_helpers::*;
+use haystack::store::routes_helpers::*;
+use haystack::directory::Directory;
+use haystack::store::machine::StoreMachine;
+use haystack::errors::*;
 
 use std::sync::{Arc,Mutex};
 
@@ -42,15 +33,6 @@ use std::sync::{Arc,Mutex};
 const IMAGES_DIR: &str = "./data/picsum";
 
 const VOLUMES_DIR: &str = "./data/hay";
-
-fn generate_id() -> [u8; 16] {
-	let mut id = [0u8; 16];
-	let mut rng = rand::thread_rng();
-	rng.fill_bytes(&mut id);
-	id
-}
-
-
 
 
 
@@ -76,36 +58,13 @@ fn not_found() -> HaystackResponse {
 
 // TODO: Ideally also make an error handler for catching and logging (outputting the error as json)
 
-pub fn establish_connection() -> PgConnection {
-	dotenv().ok();
-
-	let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-	PgConnection::establish(&database_url).expect(&format!("Error connecting to {}", database_url))
-}
 
 
-fn main() -> io::Result<()> {
+fn main() -> Result<()> {
 
-	let conn = establish_connection();
+	let mut dir = Directory::open()?;
 
-	/*
-
-	/pkg/haystack/[directory]
-
-	// Will likely end up as datalayer/pkg/haystack/
-
-	// /projects/haystack
-
-	// XXX: 
-
-		For eventually creating the cookies
-		
-		let mut rng = rand::thread_rng();
-		let mut cookie = [0u8; COOKIE_SIZE];
-		rng.fill_bytes(&mut cookie);
-	*/
-
-	let machine = HaystackStoreMachine::load(VOLUMES_DIR)?;
+	let machine = StoreMachine::load(&mut dir, VOLUMES_DIR)?;
 	let mac_handle = Arc::new(Mutex::new(machine));
 
 	let config = Config::build(Environment::Staging)
@@ -114,7 +73,7 @@ fn main() -> io::Result<()> {
     .finalize().unwrap();
 
 	rocket::custom(config)
-	.mount("/store", store::routes::get())
+	.mount("/store", haystack::store::routes::get())
 	.register(catchers![not_found])
 	.manage(mac_handle)
 	.launch();
@@ -138,7 +97,7 @@ fn main() -> io::Result<()> {
 		fs::remove_file(vol_path)?;
 	}
 
-	let mut vol = HaystackPhysicalVolume::create(&store, 1)?;
+	let mut vol = PhysicalVolume::create(&store, 1)?;
 
 	let mut id = 1;
 	// Generally we do need to send it back before seeing the checksum, so that may be problematic right

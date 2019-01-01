@@ -1,0 +1,3 @@
+
+# Just here so that 'diesel setup' in this directory works as expected
+# Otherwise builds are deferred to the Cargo.toml in the parent directory

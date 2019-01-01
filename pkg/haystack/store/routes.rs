@@ -1,4 +1,5 @@
-use std::io;
+use super::super::common::*;
+use super::super::errors::*;
 use super::machine::*;
 use super::volume::*;
 use super::needle::*;
@@ -9,21 +10,21 @@ use std::sync::{Arc,Mutex};
 
 
 
-pub type MachineHandle<'r> = rocket::State<'r, Arc<Mutex<HaystackStoreMachine>>>;
+pub type MachineHandle<'r> = rocket::State<'r, Arc<Mutex<StoreMachine>>>;
 
 
 #[derive(Serialize)]
-struct HaystackStoreReadVolumeBody {
-	id: u64,
-	needles: u64
+struct StoreReadVolumeBody {
+	id: VolumeId,
+	needles: usize
 }
 
-// TODO: 'std::convert::From<&HaystackPhysicalVolume> for'
-impl HaystackStoreReadVolumeBody {
-	fn from(vol: &HaystackPhysicalVolume) -> HaystackStoreReadVolumeBody {
-		HaystackStoreReadVolumeBody {
+// TODO: 'std::convert::From<&PhysicalVolume> for'
+impl StoreReadVolumeBody {
+	fn from(vol: &PhysicalVolume) -> StoreReadVolumeBody {
+		StoreReadVolumeBody {
 			id: vol.volume_id,
-			needles: vol.len_needles() as u64
+			needles: vol.len_needles()
 		}
 	}
 }
@@ -31,13 +32,13 @@ impl HaystackStoreReadVolumeBody {
 #[get("/volumes")]
 fn index_volumes(
 	mac_handle: MachineHandle
-) -> io::Result<HaystackResponse> {
+) -> Result<HaystackResponse> {
 	let mac = mac_handle.lock().unwrap();
 
-	let mut arr: Vec<HaystackStoreReadVolumeBody> = vec![];
+	let mut arr: Vec<StoreReadVolumeBody> = vec![];
 
 	for (_, v) in mac.volumes.iter() {
-		arr.push(HaystackStoreReadVolumeBody::from(v));
+		arr.push(StoreReadVolumeBody::from(v));
 	}
 
 	Ok(HaystackResponse::from(&arr))
@@ -46,13 +47,13 @@ fn index_volumes(
 #[get("/volume/<volume_id>")]
 fn read_volume(
 	mac_handle: MachineHandle,
-	volume_id: u64
-) -> io::Result<HaystackResponse> {
+	volume_id: VolumeId
+) -> Result<HaystackResponse> {
 	let mac = mac_handle.lock().unwrap();
 
 	match mac.volumes.get(&volume_id) {
 		Some(v) =>  Ok(HaystackResponse::from(
-			&HaystackStoreReadVolumeBody::from(v)
+			&StoreReadVolumeBody::from(v)
 		)),
 		None => Ok(
 			HaystackResponse::Error(Status::NotFound, "Volume not found")
@@ -63,8 +64,8 @@ fn read_volume(
 #[post("/volume/<volume_id>")]
 fn create_volume(
 	mac_handle: MachineHandle,
-	volume_id: u64
-) -> io::Result<HaystackResponse> {
+	volume_id: VolumeId
+) -> Result<HaystackResponse> {
 
 	let mut mac = mac_handle.lock().unwrap();
 
@@ -81,10 +82,10 @@ fn create_volume(
 #[get("/volume/<volume_id>/needle/<key>/<alt_key>?<cookie>")]
 fn read_photo(
 	mac_handle: MachineHandle,
-	volume_id: u64, key: u64, alt_key: u32,
-	cookie: Option<MaybeHaystackCookie>
+	volume_id: VolumeId, key: NeedleKey, alt_key: NeedleAltKey,
+	cookie: Option<MaybeCookie>
 
-) -> io::Result<HaystackResponse> {
+) -> Result<HaystackResponse> {
 
 	let mut mac = mac_handle.lock().unwrap();
 
@@ -96,7 +97,7 @@ fn read_photo(
 	};
 
 	// TODO: I do want to be able to support exporting legit errors
-	let r = vol.read_needle(&HaystackNeedleKeys { key, alt_key })?;
+	let r = vol.read_needle(&NeedleKeys { key, alt_key })?;
 
 	let n = match r {
 		Some(n) => n,
@@ -106,6 +107,9 @@ fn read_photo(
 			)
 		}
 	};
+
+	// Integrity check
+	n.check()?;
 
 	if let Some(c) = cookie {
 		let arr = match c.data() {
@@ -128,11 +132,11 @@ fn read_photo(
 #[post("/volume/<volume_id>/needle/<key>/<alt_key>?<cookie>", data = "<data>")] // TODO: ?<cookie>
 fn write_photo(
 	mac_handle: MachineHandle,
-	volume_id: u64, key: u64, alt_key: u32,
+	volume_id: VolumeId, key: NeedleKey, alt_key: NeedleAltKey,
 	data: rocket::Data,
 	content_length: ContentLength,
-	cookie: MaybeHaystackCookie
-) -> io::Result<HaystackResponse> {
+	cookie: MaybeCookie
+) -> Result<HaystackResponse> {
 
 	let mut mac = mac_handle.lock().unwrap();
 
@@ -151,9 +155,9 @@ fn write_photo(
 	// TODO: If a needle already exists with the exact same key and cookie, then we can ignore it
 
 	vol.append_needle(
-		&HaystackNeedleKeys { key, alt_key },
+		&NeedleKeys { key, alt_key },
 		cookie_data,
-		&HaystackNeedleMeta { flags: 0, size: content_length.0 },
+		&NeedleMeta { flags: 0, size: content_length.0 },
 		&mut strm
 	)?;
 

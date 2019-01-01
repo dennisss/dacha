@@ -1,0 +1,36 @@
+[package]
+name = "haystack"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+
+
+[lib]
+name = "haystack"
+path = "lib.rs"
+
+[[bin]]
+name = "haystore"
+path = "main.rs"
+
+
+[dependencies]
+byteorder = "1.2.7"
+rand = "0.6.1"
+crc32c = "0.4.0"
+arrayref = "0.3.5"
+hyper = "0.12.19"
+futures = "0.1.25"
+bytes = "0.4.11"
+rocket = "0.4.0"
+base64 = "0.10.0"
+fs2 = "0.4.3"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
+diesel = { version = "= 1.3.3", features = ["postgres", "chrono", "uuid"] }
+dotenv = "0.9.0"
+mime-sniffer = "^0.1"
+ipnetwork = "0.13.1"
+chrono = "0.4.6"
+bitwise = "0.1.1"
+error-chain = "0.12.0"

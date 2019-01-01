@@ -5,80 +5,86 @@ use std::io::{Write, Read, Seek};
 use std::fs::{File, OpenOptions};
 use std::io::{Cursor, SeekFrom};
 use std::collections::{HashMap};
-use super::common::*;
-use super::volume::{HaystackPhysicalVolume};
+use super::super::common::*;
+use super::super::errors::*;
+use super::volume::{PhysicalVolume};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use fs2::FileExt;
 use std::path::{Path, PathBuf};
+use std::mem::size_of;
+use super::super::directory::Directory;
+use bitwise::Word;
 
-const HAYSTACK_VOLUMES_MAGIC: &str = "HAYV";
+const VOLUMES_MAGIC: &str = "HAYV";
+const VOLUMES_MAGIC_SIZE: usize = 4;
 
-// magic + version + machine_id + cluster_id
-const HAYSTACK_VOLUMES_HEADER_SIZE: usize = 4 + 4 + 8 + 16;
-
-const FORMAT_VERSION: u32 = 1;
-
-// TODO: Ask the directory to allocate a machine id if we a brand new node
-type MachineId = [u8; 8];
+const VOLUMES_HEADER_SIZE: usize =
+	VOLUMES_MAGIC_SIZE +
+	size_of::<FormatVersion>() +
+	size_of::<ClusterId>() +
+	size_of::<MachineId>();
 
 /// File that stores the list of all 
-struct HaystackVolumesIndex {
+struct VolumesIndex {
 	pub cluster_id: ClusterId,
 	pub machine_id: MachineId,
 	file: File
+
+	// TODO: We also want to store the amount of space allocated to each physical volume and also run a crc over all of the data in this file
+	// considerng tha this is the only real meaningful file, we should ensure that it always checks out
 }
 
-impl HaystackVolumesIndex {
+impl VolumesIndex {
 
-	fn open(path: &Path) -> io::Result<HaystackVolumesIndex> {
+	fn open(path: &Path) -> Result<VolumesIndex> {
 		let mut opts = OpenOptions::new();
 		opts.read(true).write(true);
 
 		let mut f = opts.open(path)?;
 
-		let mut header = [0u8; HAYSTACK_VOLUMES_HEADER_SIZE];
+		let mut header = [0u8; VOLUMES_HEADER_SIZE];
 		f.read_exact(&mut header)?;
 
-		if &header[0..HAYSTACK_VOLUMES_MAGIC.len()] != HAYSTACK_VOLUMES_MAGIC.as_bytes() {
-			return Err(io::Error::new(io::ErrorKind::Other, "Volumes magic is incorrect"));
+		if &header[0..VOLUMES_MAGIC_SIZE] != VOLUMES_MAGIC.as_bytes() {
+			return Err("Volumes magic is incorrect".into());
 		}
 
-		let mut c = Cursor::new(&header[HAYSTACK_VOLUMES_MAGIC.len()..]);
+		let mut c = Cursor::new(&header[VOLUMES_MAGIC_SIZE..]);
 
 		let version = c.read_u32::<LittleEndian>()?;
+		let cluster_id = c.read_u64::<LittleEndian>()?;
+		let machine_id = c.read_u32::<LittleEndian>()?;
 
-		if version != FORMAT_VERSION {
-			return Err(io::Error::new(io::ErrorKind::Other, "Volumes version is incorrect"));
+		if version != CURRENT_FORMAT_VERSION {
+			return Err("Volumes version is incorrect".into());
 		}
 
-		let mut idx = HaystackVolumesIndex {
-			cluster_id: [0u8; 16],
-			machine_id: [0u8; 8],
+
+		let mut idx = VolumesIndex {
+			cluster_id,
+			machine_id,
 			file: f
 		};
-
-		c.read_exact(&mut idx.machine_id)?;
-		c.read_exact(&mut idx.cluster_id)?;
 
 		Ok(idx)
 	}
 
 	// Need to do a whole lot right here
-	fn create(path: &Path, cluster_id: &ClusterId, machine_id: &MachineId) -> io::Result<HaystackVolumesIndex> {
+	fn create(path: &Path, cluster_id: ClusterId, machine_id: MachineId) -> Result<VolumesIndex> {
 		let mut opts = OpenOptions::new();
 		opts.write(true).create_new(true).read(true);
 
 		let mut f = opts.open(path)?;
 
-		f.write_all(HAYSTACK_VOLUMES_MAGIC.as_bytes())?;
-		f.write_u32::<LittleEndian>(FORMAT_VERSION)?;
-		f.write_all(machine_id)?;
-		f.write_all(cluster_id)?;
+		f.write_all(VOLUMES_MAGIC.as_bytes())?;
+		f.write_u32::<LittleEndian>(CURRENT_FORMAT_VERSION)?;
+		f.write_u64::<LittleEndian>(cluster_id)?;
+		f.write_u32::<LittleEndian>(machine_id)?;
 
 		// TODO: Should probably also flush the directory as well?
 		f.flush()?;
 
-		Ok(HaystackVolumesIndex {
+		Ok(VolumesIndex {
 			cluster_id: cluster_id.clone(),
 			machine_id: machine_id.clone(),
 			file: f
@@ -87,16 +93,16 @@ impl HaystackVolumesIndex {
 
 	/// Get all volume ids referenced in this index
 	/// It's someone else's problem to ensure that there are no duplicates
-	fn read_all(&mut self) -> io::Result<Vec<u64>> {
+	fn read_all(&mut self) -> Result<Vec<VolumeId>> {
 		
-		self.file.seek(SeekFrom::Start(HAYSTACK_VOLUMES_HEADER_SIZE as u64));
+		self.file.seek(SeekFrom::Start(VOLUMES_HEADER_SIZE as u64))?;
 	
 		let mut buf = Vec::new();
 		self.file.read_to_end(&mut buf)?;
 
 		// Should round exactly to u64 offsets
 		if buf.len() % 8 != 0 {
-			return Err(io::Error::new(io::ErrorKind::Other, "Volumes index is corrupt"));
+			return Err("Volumes index is corrupt".into());
 		}
 
 		let mut out = Vec::new();
@@ -105,15 +111,15 @@ impl HaystackVolumesIndex {
 		let size = buf.len() / 8;
 		let mut cur = Cursor::new(buf);
 		for _ in 0..size {
-			out.push(cur.read_u64::<LittleEndian>()?);
+			out.push(cur.read_u32::<LittleEndian>()?);
 		}
 
 		Ok(out)
 	}
 
-	fn add_volume_id(&mut self, id: u64) -> io::Result<()> {
-		self.file.seek(SeekFrom::End(0));
-		self.file.write_u64::<LittleEndian>(id)?;
+	fn add_volume_id(&mut self, id: VolumeId) -> io::Result<()> {
+		self.file.seek(SeekFrom::End(0))?;
+		self.file.write_u32::<LittleEndian>(id)?;
 		self.file.flush()?;
 		Ok(())
 	}
@@ -122,53 +128,47 @@ impl HaystackVolumesIndex {
 
 
 /// Encapsulates the broad configuration and current state of a single store machine
-pub struct HaystackStoreMachine {
-
-	/// Unique identifies all files in 
-	//cluster_id: ClusterId,
-
-	/// Location of all physical volume volumes
-	volumes_dir: String,
+pub struct StoreMachine {
 
 	/// All volumes 
-	pub volumes: HashMap<u64, HaystackPhysicalVolume>,
+	pub volumes: HashMap<VolumeId, PhysicalVolume>,
 
-	index: HaystackVolumesIndex
+	/// Location of all files on this machine
+	volumes_dir: String,
+
+	index: VolumesIndex
 
 }
 
-impl HaystackStoreMachine {
+impl StoreMachine {
 
 	/// Opens or creates a new store machine configuration based out of the given directory
 	/// TODO: Long term this will also take a Directory client so that we can bootstrap everything from that 
-	pub fn load(dir: &str) -> io::Result<HaystackStoreMachine> {
+	pub fn load(dir: &mut Directory, folder: &str) -> Result<StoreMachine> {
 
 		let mut opts = OpenOptions::new();
 		opts.write(true).create(true).read(true);
 
-		let lockfile = opts.open(Path::new(dir).join(String::from("lock")))?;
+		let lockfile = opts.open(Path::new(folder).join(String::from("lock")))?;
 
 		match lockfile.try_lock_exclusive() {
 			Ok(_) => true,
-			Err(err) => return Err(err)
+			Err(err) => return Err(err.into())
 		};
 
-		let volumes_path = Path::new(dir).join(String::from("volumes"));
+		let volumes_path = Path::new(folder).join(String::from("volumes"));
 		
-		// Otherwise better to carry over an owned version
 		let idx = if volumes_path.exists() {
-			HaystackVolumesIndex::open(&volumes_path)?
+			VolumesIndex::open(&volumes_path)?
 		} else {
-			
-			// TODO: Ask the directory for a set of ids
-			let cluster_id = [0u8; 16];
-			let machine_id = [0u8; 8];
-
-			HaystackVolumesIndex::create(&volumes_path, &cluster_id, &machine_id)?
+			let machine = dir.create_store_machine()?;
+			VolumesIndex::create(&volumes_path, dir.cluster_id, machine.id.to_unsigned())?
 		};
 
-		let mut machine = HaystackStoreMachine {
-			volumes_dir: String::from(dir),
+		// Not we want to valid t
+
+		let mut machine = StoreMachine {
+			volumes_dir: String::from(folder),
 			index: idx,
 			volumes: HashMap::new()
 		};
@@ -181,31 +181,31 @@ impl HaystackStoreMachine {
 		Ok(machine)
 	}
 
-	fn get_volume_path(&self, volume_id: u64) -> PathBuf {
+	fn get_volume_path(&self, volume_id: VolumeId) -> PathBuf {
 		Path::new(&self.volumes_dir).join(String::from("haystack_") + &volume_id.to_string())
 	}
 
-	fn open_volume(&mut self, volume_id: u64, expect_empty: bool) -> io::Result<()> {
+	fn open_volume(&mut self, volume_id: VolumeId, expect_empty: bool) -> Result<()> {
 
 		if self.volumes.contains_key(&volume_id) {
-			return Err(io::Error::new(io::ErrorKind::Other, "Trying to open volume multiple times"));
+			return Err("Trying to open volume multiple times".into());
 		}
 
 		let path = self.get_volume_path(volume_id);
 
 		let vol = if path.exists() {
-			HaystackPhysicalVolume::open(&path)?
+			PhysicalVolume::open(&path)?
 		} else {
-			HaystackPhysicalVolume::create(&path, &self.index.cluster_id, volume_id)?
+			PhysicalVolume::create(&path, self.index.cluster_id, self.index.machine_id, volume_id)?
 		};
 
 		// Verify that if we opened an existing file, that it wasn't from some other conflicting store
-		if vol.volume_id != volume_id || &vol.cluster_id != &self.index.cluster_id {
-			return Err(io::Error::new(io::ErrorKind::Other, "Opened volume does not belong to this store"));
+		if vol.volume_id != volume_id || vol.cluster_id != self.index.cluster_id {
+			return Err("Opened volume does not belong to this store".into());
 		}
 
 		if expect_empty && vol.len_needles() > 0 {
-			return Err(io::Error::new(io::ErrorKind::Other, "Opened volume that we expected to be empty"));
+			return Err("Opened volume that we expected to be empty".into());
 		}
 
 		self.volumes.insert(volume_id, vol);
@@ -213,7 +213,7 @@ impl HaystackStoreMachine {
 		Ok(())
 	}
 
-	pub fn create_volume(&mut self, volume_id: u64) -> io::Result<()> {
+	pub fn create_volume(&mut self, volume_id: VolumeId) -> Result<()> {
 
 		self.open_volume(volume_id, true)?;
 		

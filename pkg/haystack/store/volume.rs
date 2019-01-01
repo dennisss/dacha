@@ -1,55 +1,63 @@
-extern crate rand;
-extern crate arrayref;
-extern crate futures;
-extern crate bytes;
 
+use super::super::common::*;
+use super::super::errors::*;
 use super::needle::*;
-use super::common::*;
 use std::io;
-use std::io::{Write, Read, Seek};
+use std::io::{Write, Read, Seek, Cursor};
 use std::collections::HashMap;
 use std::cmp::min;
-use fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions};
 use crc32c::crc32c_append;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use std::path::Path;
+use std::mem::size_of;
 
 
-const SUPERBLOCK_SIZE: usize = 32;
 const SUPERBLOCK_MAGIC: &str = "HAYS"; // And we will use HAYI for the index file
-const FORMAT_VERSION: u32 = 1;
+const SUPERBLOCK_MAGIC_SIZE: usize = 4;
+
+const SUPERBLOCK_SIZE: usize =
+	SUPERBLOCK_MAGIC_SIZE +
+	size_of::<FormatVersion>() +
+	size_of::<ClusterId>() +
+	size_of::<MachineId>() +
+	size_of::<VolumeId>();
 
 
+// TODO: We'd also like to be able to set an entire physical volume as write_enabled
+// - Mainly useful so that we can report it back to clients and so that next time we need to broadcast that we are out of space, we only need to mark volumes which we haven't yet marked as disabled
 
-// Opening a physical volume will likewise required
-
-
-/**
- * Represents a single file on disk that consists of many photos as part of some logical volume
- */
-pub struct HaystackPhysicalVolume {
-	pub volume_id: u64,
+/// Represents a single file on disk that consists of many photos as part of some logical volume
+pub struct PhysicalVolume {
 	pub cluster_id: ClusterId,
+	pub machine_id: MachineId,
+	pub volume_id: VolumeId,
 	file: File,
 
 	// TODO: Make it a set of binary heaps so that we can efficiently look up all types for a single photo?
-	index: HashMap<HaystackNeedleKeys, HaystackNeedleIndexEntry>
+	index: HashMap<NeedleKeys, NeedleIndexEntry>
 }
 
-impl HaystackPhysicalVolume {
+impl PhysicalVolume {
 
 	// I need to know the: store directory, volume id, and the cluster_id to make this store
 
-	// Basically I need a cluster_id, and a path for where to put it
-	pub fn create(path: &Path, cluster_id: &ClusterId, volume_id: u64) -> io::Result<HaystackPhysicalVolume> {
+	/// Creates a new empty volume and corresponding index file
+	/// 
+	/// Will error out if the volume already exists
+	pub fn create(
+		path: &Path, cluster_id: ClusterId, machine_id: MachineId, volume_id: VolumeId
+	) -> Result<PhysicalVolume> {
+		
 		let mut opts = OpenOptions::new();
 		opts.write(true).create_new(true).read(true);
 
 		let f = opts.open(path)?;
 
-		let mut vol = HaystackPhysicalVolume {
+		let mut vol = PhysicalVolume {
+			machine_id,
 			volume_id,
-			cluster_id: cluster_id.clone(),
+			cluster_id,
 			file: f,
 			index: HashMap::new()
 		};
@@ -66,13 +74,13 @@ impl HaystackPhysicalVolume {
 	/// Opens a volume given it's file name
 	///
 	///  XXX: Ideally we would have some better way of doing this right?
-	pub fn open(path: &Path) -> io::Result<HaystackPhysicalVolume> {
+	pub fn open(path: &Path) -> Result<PhysicalVolume> {
 		let mut opts = OpenOptions::new();
 		opts.read(true).write(true);
 
 		let mut f = opts.open(path)?;
 
-		let mut vol = HaystackPhysicalVolume::read_superblock(&mut f)?;
+		let mut vol = PhysicalVolume::read_superblock(&mut f)?;
 		vol.scan_needles()?;
 
 		Ok(vol)
@@ -80,30 +88,31 @@ impl HaystackPhysicalVolume {
 
 	// TODO: Would probably be nicer to have a separate superblock type to also 
 	// TODO: Rather I should implement a more generic superblock reader for all types includin the index files
-	fn read_superblock(file: &mut File) -> io::Result<HaystackPhysicalVolume>  {
+	fn read_superblock(file: &mut File) -> Result<PhysicalVolume>  {
 		let mut header = [0u8; SUPERBLOCK_SIZE];
 		file.read_exact(&mut header)?;
 
 		if &header[0..4] != SUPERBLOCK_MAGIC.as_bytes() {
-			return Err(io::Error::new(io::ErrorKind::Other, "Superblock magic is incorrect"));
-		} 
-
-		let ver = (&header[4..]).read_u32::<LittleEndian>()?;
-		let volume_id = (&header[8..]).read_u64::<LittleEndian>()?;
-		let cluster_id = &header[16..32];
-
-		if ver != FORMAT_VERSION {
-			return Err(io::Error::new(io::ErrorKind::Other, "Superblock unknown format version"));
+			return Err("Superblock magic is incorrect".into());
 		}
 
-		let mut vol = HaystackPhysicalVolume {
+		let mut c = Cursor::new(&header[4..]);
+		let ver = c.read_u32::<LittleEndian>()?;
+		let cluster_id = c.read_u64::<LittleEndian>()?;
+		let machine_id = c.read_u32::<LittleEndian>()?;
+		let volume_id = c.read_u32::<LittleEndian>()?;
+
+		if ver != CURRENT_FORMAT_VERSION {
+			return Err("Superblock unknown format version".into());
+		}
+
+		let vol = PhysicalVolume {
+			cluster_id,
+			machine_id,
 			volume_id,
-			cluster_id: [0u8; 16],
 			file: file.try_clone()?,
 			index: HashMap::new()
 		};
-
-		vol.cluster_id.copy_from_slice(cluster_id);
 
 		Ok(vol)
 	}
@@ -124,11 +133,12 @@ impl HaystackPhysicalVolume {
 	//}
 
 
-	/**
-	 * Scans all of the needles in the file and builds the initial index from them
-	 * (this should generally only be used if no separate index file is available)
-	 */
-	fn scan_needles(&mut self) -> io::Result<()> {
+	/// Scans all of the needles in the file and builds the initial index from them
+	/// 
+	/// (this should generally only be used if no separate index file is available)
+	/// 
+	/// TODO: We should also use this for checking the integrity of an existing file
+	fn scan_needles(&mut self) -> Result<()> {
 
 		let mut off = SUPERBLOCK_SIZE as u64;
 		self.file.seek(io::SeekFrom::Start(SUPERBLOCK_SIZE as u64))?;
@@ -138,19 +148,26 @@ impl HaystackPhysicalVolume {
 		let mut buf = [0u8; NEEDLE_HEADER_SIZE];
 
 		while off < size {
+
+			if off % (BLOCK_SIZE as u64) != 0 {
+				return Err("Needles misaligned relative to block offsets".into());
+			}
+			
+			let block_offset = (off / (BLOCK_SIZE as u64)) as BlockOffset;
+
 			println!("Reading needle at {}", off);
 
 			self.file.read_exact(&mut buf)?;
 
-			let n = HaystackNeedleHeader::parse(&buf)?;
-			self.index.insert(n.keys.clone(), HaystackNeedleIndexEntry {
+			let n = NeedleHeader::parse(&buf)?;
+			self.index.insert(n.keys.clone(), NeedleIndexEntry {
 				meta: n.meta.clone(),
-				offset: off
+				block_offset
 			});
 
 			// Skip the body, footer, and padding
 			off += (NEEDLE_HEADER_SIZE as u64) + n.meta.size + (NEEDLE_FOOTER_SIZE as u64);
-			off += self.needle_pad_remaining(off);
+			off += self.block_size_remainder(off);
 			self.file.seek(io::SeekFrom::Start(off))?;
 		}
 
@@ -159,12 +176,14 @@ impl HaystackPhysicalVolume {
 		Ok(())
 	}
 
-	fn write_superblock(&mut self) -> io::Result<()> {
+	fn write_superblock(&mut self) -> Result<()> {
 		
 		self.file.write_all(SUPERBLOCK_MAGIC.as_bytes())?;
-		self.file.write_u32::<LittleEndian>(FORMAT_VERSION)?;
-		self.file.write_u64::<LittleEndian>(self.volume_id)?;
-		self.file.write_all(&self.cluster_id)?;
+		self.file.write_u32::<LittleEndian>(CURRENT_FORMAT_VERSION)?;
+		self.file.write_u64::<LittleEndian>(self.cluster_id)?;
+		self.file.write_u32::<LittleEndian>(self.machine_id)?;
+		self.file.write_u32::<LittleEndian>(self.volume_id)?;
+		self.pad_to_block_size()?;
 		self.file.flush()?;
 
 		Ok(())
@@ -177,7 +196,7 @@ impl HaystackPhysicalVolume {
 	 *
 	 * NOTE: The needle still needs to be separately checked for integrity
 	 */
-	pub fn read_needle(&mut self, keys: &HaystackNeedleKeys) -> io::Result<Option<HaystackNeedle>> {
+	pub fn read_needle(&mut self, keys: &NeedleKeys) -> Result<Option<Needle>> {
 
 		// This is basically the matter of reading from the current position in the thing
 
@@ -192,9 +211,9 @@ impl HaystackPhysicalVolume {
 			return Ok(None);
 		}
 
-		self.file.seek(io::SeekFrom::Start(entry.offset))?;
+		self.file.seek(io::SeekFrom::Start(entry.offset()))?;
 
-		let needle = HaystackNeedle::read_oneshot(&mut self.file, &entry.meta)?;
+		let needle = Needle::read_oneshot(&mut self.file, &entry.meta)?;
 
 		// Update index with most up-to-date flags
 		entry.meta.flags = needle.header.meta.flags;
@@ -211,15 +230,15 @@ impl HaystackPhysicalVolume {
 	/// Adds a new needle to the very end of the file (overriding any previous needle for the same keys)
 	/// 
 	/// TODO: Probably most useful to return a reference to the full needle entry
-	pub fn append_needle(&mut self, keys: &HaystackNeedleKeys, cookie: &Cookie, meta: &HaystackNeedleMeta, data: &mut Read) -> io::Result<()> {
+	pub fn append_needle(&mut self, keys: &NeedleKeys, cookie: &Cookie, meta: &NeedleMeta, data: &mut Read) -> Result<()> {
 
 		// Typically needles will not be overwritten, but if they are, we consider needles with the same exact keys/cookie to be identical, so we will ignore attempts to update them
 		// TODO: The main exception to this will be error correction (in which case we to be able to do this)
 		if let Some(existing) = self.index.get(&keys) {
 			
 			// TODO: This now incentivizes making sure that parsing of needle headers is efficient and doesn't do as many copies
-			self.file.seek(io::SeekFrom::Start(existing.offset))?;
-			let existing_header = HaystackNeedleHeader::read(&mut self.file)?;
+			self.file.seek(io::SeekFrom::Start(existing.offset()))?;
+			let existing_header = NeedleHeader::read(&mut self.file)?;
 
 			if cookie == &existing_header.cookie {
 				println!("Ignoring request to upload exact same needle twice");
@@ -230,10 +249,17 @@ impl HaystackPhysicalVolume {
 
 		let mut buf = [0u8; 8*1024 /* io::DEFAULT_BUF_SIZE */];
 
-		// Write at the end of the file (and get that offset)
+		// Seek to the end of the file (and get that offset)
 		let off = self.file.seek(io::SeekFrom::End(0))?;
 
-		let header = HaystackNeedleHeader::serialize(&cookie, keys, meta)?;
+		if off % (BLOCK_SIZE as u64) != 0 {
+			return Err("File not block aligned".into());
+		}
+
+		let block_offset = (off / (BLOCK_SIZE as u64)) as BlockOffset;
+
+
+		let header = NeedleHeader::serialize(&cookie, keys, meta)?;
 		self.file.write_all(&header)?;
 
 
@@ -263,40 +289,36 @@ impl HaystackPhysicalVolume {
 
 			self.file.set_len(off)?;
 
-			return Err(io::Error::new(io::ErrorKind::Other, "Not enough bytes could be read"));
+			return Err("Not enough bytes could be read".into());
 		}
 
 
-		self.file.write_all(&NEEDLE_FOOTER_MAGIC.as_bytes())?;
+		// TODO: These two writes can definitely be combined
+		NeedleFooter::write(&mut self.file, sum)?;
+		self.pad_to_block_size()?;
 
-		self.file.write_u32::<LittleEndian>(sum)?;
-
-		let pos = self.file.seek(io::SeekFrom::Current(0))?;
-		let pad = self.needle_pad_remaining(pos);
-		if pad != 0 {
-			let mut padding = Vec::new();
-			padding.resize(pad as usize, 0);
-			self.file.write_all(&padding)?;
-		}
-
-		self.index.insert(keys.clone(), HaystackNeedleIndexEntry {
+		self.index.insert(keys.clone(), NeedleIndexEntry {
 			meta: meta.clone(),
-			offset: off
+			block_offset
 		});
 
 		Ok(())
 	}
 
-	pub fn delete_needle(&mut self, keys: &HaystackNeedleKeys) -> io::Result<()> {
+	
+
+	pub fn delete_needle(&mut self, keys: &NeedleKeys) -> Result<()> {
 
 		let entry = match self.index.get(keys) {
 			Some(e) => e,
-			None => return Err(io::Error::new(io::ErrorKind::Other, "Needle does not exist")),
+			None => return Err("Needle does not exist".into()),
 		};
 
 		if entry.meta.deleted() {
-			return Err(io::Error::new(io::ErrorKind::Other, "Needle already deleted"));
+			return Err("Needle already deleted".into());
 		}
+
+		//entry.offset.
 
 		// read the header in the file
 
@@ -308,16 +330,26 @@ impl HaystackPhysicalVolume {
 	}
 
 
-	/**
-	 * Given that the current position in the file is at the end of a middle, this will determine how much 
-	 */
-	fn needle_pad_remaining(&mut self, end_offset: u64) -> u64 {
-		let rem = (end_offset as usize) % NEEDLE_ALIGNMENT;
+	fn pad_to_block_size(&mut self) -> Result<()> {
+		let pos = self.file.seek(io::SeekFrom::Current(0))?;
+		let pad = self.block_size_remainder(pos);
+		if pad != 0 {
+			let mut padding = Vec::new();
+			padding.resize(pad as usize, 0);
+			self.file.write_all(&padding)?;
+		}
+
+		Ok(())
+	}
+
+	/// Given that the current position in the file is at the end of a middle, this will determine how much 
+	fn block_size_remainder(&mut self, end_offset: u64) -> u64 {
+		let rem = (end_offset as usize) % BLOCK_SIZE;
 		if rem == 0 {
 			return 0;
 		}
 
-		(NEEDLE_ALIGNMENT - rem) as u64
+		(BLOCK_SIZE - rem) as u64
 	}
 
 }
