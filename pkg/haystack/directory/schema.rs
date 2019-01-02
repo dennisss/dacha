@@ -33,7 +33,7 @@ table! {
     photos (id) {
         id -> Int8,
         volume_id -> Int4,
-        cookie -> Bytea,
+        cookie -> Bit,
     }
 }
 

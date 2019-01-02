@@ -25,3 +25,19 @@ pub type NeedleKey = u64;
 pub type NeedleAltKey = u32;
 
 pub type Cookie = [u8; 16];
+
+
+/// Number of replicas of each physical volume to create for a single logical volume
+pub const NUM_REPLICAS: usize = 3;
+
+/// Maximum size of each 
+pub const ALLOCATION_SIZE: usize = 10*1024; // 10Mb for testing
+
+/// How many multiples of the allocation size less than the total store space to leave empty
+/// This space will ensure that we don't risk overprovisioning space and that we have working area to perform online compactions on the same machine
+pub const ALLOCATION_RESERVED: usize = 2;
+
+
+/// Amount of space on the store machine's hdd to use for storing data
+/// Currently fixed but eventually dynamic based on hard drive checks and configurations
+pub const STORE_MACHINE_SPACE: usize = 100*1024; // 100Mb

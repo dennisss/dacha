@@ -60,7 +60,7 @@ impl VolumesIndex {
 		}
 
 
-		let mut idx = VolumesIndex {
+		let idx = VolumesIndex {
 			cluster_id,
 			machine_id,
 			file: f

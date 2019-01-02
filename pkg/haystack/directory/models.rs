@@ -15,7 +15,7 @@ pub struct Param {
 }
 
 
-#[derive(Queryable, Identifiable)]
+#[derive(Queryable, Identifiable, AsChangeset)]
 #[table_name = "store_machines"]
 pub struct StoreMachine {
 	pub id: i32,
@@ -49,7 +49,7 @@ pub struct NewStoreMachine<'a> {
 	pub addr_port: i16,
 }
 
-#[derive(Queryable, Identifiable)]
+#[derive(Queryable, Identifiable, AsChangeset)]
 #[table_name = "cache_machines"]
 pub struct CacheMachine {
 	pub id: i32,
@@ -72,7 +72,7 @@ pub struct NewCacheMachine<'a> {
 
 
 
-#[derive(Queryable, Identifiable)]
+#[derive(Queryable, Identifiable, AsChangeset)]
 #[table_name = "logical_volumes"]
 pub struct LogicalVolume {
 	pub id: i32,
@@ -100,15 +100,9 @@ pub struct PhysicalVolume {
 }
 
 
-pub struct Photo {
-	pub id: i64,
-	pub volume_id: i32,
-	pub cookie: Vec<u8>
-}
-
-#[derive(Queryable, Identifiable)]
+#[derive(Queryable, Identifiable, AsChangeset)]
 #[table_name = "photos"]
-struct PhotoData {
+pub struct Photo {
 	pub id: i64,
 	pub volume_id: i32,
 	pub cookie: Vec<u8>
