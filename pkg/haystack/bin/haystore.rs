@@ -1,24 +1,19 @@
 #![feature(proc_macro_hygiene, decl_macro, type_alias_enum_variants)]
-#[macro_use] extern crate rocket;
 
 extern crate haystack;
 extern crate clap;
+extern crate hyper;
 
-use rocket::http::{Status};
-use rocket::config::{Config, Environment};
-use rocket::fairing::AdHoc;
-use haystack::store::routes_helpers::*;
 use haystack::directory::Directory;
 use haystack::store::machine::StoreMachine;
 use haystack::errors::*;
 use std::sync::{Arc,Mutex};
+use hyper::{Body, Method, Request, Response, Server, StatusCode};
+use hyper::service::service_fn;
 use clap::{Arg, App};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use hyper::rt::Future;
 
-
-#[catch(404)]
-fn not_found() -> HaystackResponse {
-	HaystackResponse::Error(Status::BadRequest, "Invalid route")
-}
 
 fn main() -> Result<()> {
 
@@ -46,19 +41,28 @@ fn main() -> Result<()> {
 	let machine = StoreMachine::load(dir, port, store)?;
 	let mac_handle = Arc::new(Mutex::new(machine));
 
-	let config = Config::build(Environment::Staging)
-    .address("127.0.0.1")
-    .port(port)
-    .finalize().unwrap();
+	// TODO: See https://docs.rs/hyper/0.12.19/hyper/server/struct.Server.html#example for graceful shutdowns
 
-	rocket::custom(config)
-	.mount("/", haystack::store::routes::get())
-	.register(catchers![not_found])
-	.manage(mac_handle.clone())
-	.attach(AdHoc::on_launch("Store Ready", move |_| {
-		StoreMachine::start(mac_handle);
-	}))
-	.launch();
+	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
+
+	let mac_server = mac_handle.clone();
+
+	let server = Server::bind(&addr)
+        .serve(move || {
+			let mac_client = mac_server.clone();
+			service_fn(move |req: Request<Body>| {
+				haystack::store::routes::handle_request(
+					mac_client.clone(), req
+				)
+			})
+		})
+        .map_err(|e| eprintln!("server error: {}", e));
+
+    println!("Listening on http://{}", addr);
+
+	StoreMachine::start(mac_handle);
+
+    hyper::rt::run(server);
 
 	Ok(())
 }

@@ -45,5 +45,22 @@ CREATE TABLE physical_volumes (
 CREATE TABLE photos (
 	id BIGSERIAL PRIMARY KEY,
 	volume_id INT NOT NULL REFERENCES logical_volumes (id),
-	cookie BYTEA NOT NULL CHECK (LENGTH(cookie) = 16 )
+	cookie BYTEA NOT NULL CHECK (LENGTH(cookie) = 16)
 );
+
+	CREATE OR REPLACE FUNCTION check_cookie_immutable()
+	RETURNS TRIGGER AS
+	$func$
+	BEGIN
+		
+		IF NEW.cookie != OLD.cookie THEN
+			RAISE EXCEPTION 'photo cookie is not allowed to change';
+		END IF;
+
+		RETURN NEW;
+	END
+	$func$ LANGUAGE plpgsql;
+
+	CREATE TRIGGER cookie_immutable
+	BEFORE UPDATE ON photos
+	FOR EACH ROW EXECUTE PROCEDURE check_cookie_immutable();

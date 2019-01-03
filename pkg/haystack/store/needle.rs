@@ -1,6 +1,6 @@
 use super::super::common::*;
 use super::super::errors::*;
-use std::io;
+use super::super::paths::CookieBuf;
 use std::io::Cursor;
 use std::io::{Write, Read};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
@@ -84,7 +84,7 @@ pub const NEEDLE_FLAGS_OFFSET: usize =
 	ALT_KEY_SIZE;
 
 pub struct NeedleHeader {
-	pub cookie: Cookie,
+	pub cookie: CookieBuf,
 	pub keys: NeedleKeys,
 	pub meta: NeedleMeta
 }
@@ -112,8 +112,8 @@ impl NeedleHeader {
 
 		// Ideally to be implemented in terms of 
 
-		let mut n = NeedleHeader {
-			cookie: [0u8; COOKIE_SIZE],
+		let n = NeedleHeader {
+			cookie: CookieBuf::from(cookie),
 			keys: NeedleKeys {
 				key, alt_key
 			},
@@ -122,9 +122,7 @@ impl NeedleHeader {
 				size
 			}
 		};
-
-		n.cookie.copy_from_slice(cookie);
-
+		
 		Ok(n)
 	}
 
@@ -226,6 +224,7 @@ impl Needle {
 		// TOOD: Insulate all errors so that we can distinguish corruption errors from other errors
 			// TODO: Ideally this would all be effectively optional 
 
+		// TODO: Would it be more standard if we decided on using BigEndian
 		let sum_expected = self.crc32c().read_u32::<LittleEndian>().unwrap();
 
 		let sum = crc32c_append(0, self.data());

@@ -1,6 +1,7 @@
 
 use super::super::common::*;
 use super::super::errors::*;
+use super::super::paths::CookieBuf;
 use super::needle::*;
 use std::io;
 use std::io::{Write, Read, Seek, Cursor};
@@ -11,7 +12,7 @@ use crc32c::crc32c_append;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use std::path::Path;
 use std::mem::size_of;
-
+use super::stream::Stream;
 
 const SUPERBLOCK_MAGIC: &str = "HAYS"; // And we will use HAYI for the index file
 const SUPERBLOCK_MAGIC_SIZE: usize = 4;
@@ -178,6 +179,8 @@ impl PhysicalVolume {
 			self.file.seek(io::SeekFrom::Start(off))?;
 		}
 
+		// TODO: Must have scanned the entire file
+
 		// TODO: Eventually if the file is incomplete, we should support partially rebuilding the needle starting at the end of all good looking data
 
 		Ok(())
@@ -240,7 +243,10 @@ impl PhysicalVolume {
 	/// Adds a new needle to the very end of the file (overriding any previous needle for the same keys)
 	/// 
 	/// TODO: Probably most useful to return a reference to the full needle entry
-	pub fn append_needle(&mut self, keys: &NeedleKeys, cookie: &Cookie, meta: &NeedleMeta, data: &mut Read) -> Result<()> {
+	pub fn append_needle(
+		// In almost all cases, we can defer the chunking decision 
+		&mut self, keys: NeedleKeys, cookie: CookieBuf, meta: NeedleMeta, data: &mut Stream
+	) -> Result<()> {
 
 		// Typically needles will not be overwritten, but if they are, we consider needles with the same exact keys/cookie to be identical, so we will ignore attempts to update them
 		// TODO: The main exception to this will be error correction (in which case we to be able to do this)
@@ -262,6 +268,7 @@ impl PhysicalVolume {
 		let mut buf = [0u8; 8*1024 /* io::DEFAULT_BUF_SIZE */];
 
 		// Seek to the end of the file (and get that offset)
+		// TODO: Instead we should be tracking the end as the offset after the last known good needle (as we don't want to compound corruptions)
 		let off = self.file.seek(io::SeekFrom::End(0))?;
 
 		if off % (BLOCK_SIZE as u64) != 0 {
@@ -271,7 +278,7 @@ impl PhysicalVolume {
 		let block_offset = (off / (BLOCK_SIZE as u64)) as BlockOffset;
 
 
-		let header: Vec<u8> = NeedleHeader::serialize(&cookie, keys, meta)?;
+		let header: Vec<u8> = NeedleHeader::serialize(cookie.data(), &keys, &meta)?;
 		self.file.write_all(&header)?;
 
 
@@ -281,18 +288,24 @@ impl PhysicalVolume {
 		//io::copy(&mut data, &mut self.file)?;
 		let mut nread: usize = 0;
 		while nread < (meta.size as usize) {
-			let left = min(buf.len(), (meta.size as usize) - nread);
-			let n = data.read(&mut buf[0..left])?;
-			if n == 0 {
-				// End of file/stream
+
+			let left = (meta.size as usize) - nread;
+
+			// TODO: If we get a source error, we should probably still truncate our store file to avoid further corruption
+			let chunk = match data.next(left)? {
+				Some(c) => c,
+				None => break
+			};
+
+			nread += chunk.len();
+
+			// Don't even bother writing it if it would take us over
+			if nread > (meta.size as usize) {
 				break;
 			}
 
-			let chunk = &buf[..n];
 			sum = crc32c_append(sum, chunk);
 			self.file.write_all(chunk)?;
-
-			nread += n;
 		}
 
 		if nread != (meta.size as usize) {
@@ -316,8 +329,6 @@ impl PhysicalVolume {
 
 		Ok(())
 	}
-
-	
 
 	pub fn delete_needle(&mut self, keys: &NeedleKeys) -> Result<()> {
 

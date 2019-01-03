@@ -134,7 +134,7 @@ impl VolumesIndex {
 pub struct StoreMachine {
 
 	/// All volumes 
-	pub volumes: HashMap<VolumeId, PhysicalVolume>,
+	pub volumes: HashMap<VolumeId, Arc<Mutex<PhysicalVolume>>>,
 
 	dir: Directory,
 
@@ -233,7 +233,7 @@ impl StoreMachine {
 			return Err("Opened volume that we expected to be empty".into());
 		}
 
-		self.volumes.insert(volume_id, vol);
+		self.volumes.insert(volume_id, Arc::new(Mutex::from(vol)));
 
 		Ok(())
 	}

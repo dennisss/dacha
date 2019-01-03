@@ -57,7 +57,7 @@ impl Client {
 
 			for c in chunks.iter() {
 				let url = format!(
-					"http://{}:{}/volume/{}/needle/{}/{}?cookie={}",
+					"http://{}:{}/{}/{}/{}/{}",
 					m.addr_ip, m.addr_port, p.volume_id, p.id, c.alt_key, encode_cookie(&p.cookie)
 				);
 
