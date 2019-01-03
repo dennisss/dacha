@@ -204,7 +204,7 @@ impl Needle {
 
 
 	pub fn bytes(self) -> Bytes {
-		Bytes::from(self.buf).slice(NEEDLE_HEADER_SIZE, self.header.meta.size as usize)
+		Bytes::from(self.buf).slice(NEEDLE_HEADER_SIZE, NEEDLE_HEADER_SIZE + self.header.meta.size as usize)
 	}
 
 	pub fn data(&self) -> &[u8] {

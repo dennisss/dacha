@@ -14,6 +14,9 @@ use std::path::{Path, PathBuf};
 use std::mem::size_of;
 use super::super::directory::Directory;
 use bitwise::Word;
+use std::thread;
+use std::time;
+use std::sync::{Arc,Mutex};
 
 const VOLUMES_MAGIC: &str = "HAYV";
 const VOLUMES_MAGIC_SIZE: usize = 4;
@@ -96,19 +99,19 @@ impl VolumesIndex {
 	fn read_all(&mut self) -> Result<Vec<VolumeId>> {
 		
 		self.file.seek(SeekFrom::Start(VOLUMES_HEADER_SIZE as u64))?;
-	
+
 		let mut buf = Vec::new();
 		self.file.read_to_end(&mut buf)?;
 
-		// Should round exactly to u64 offsets
-		if buf.len() % 8 != 0 {
+		// Should round exactly to id
+		if buf.len() % size_of::<VolumeId>() != 0 {
 			return Err("Volumes index is corrupt".into());
 		}
 
 		let mut out = Vec::new();
 
 
-		let size = buf.len() / 8;
+		let size = buf.len() / size_of::<VolumeId>();
 		let mut cur = Cursor::new(buf);
 		for _ in 0..size {
 			out.push(cur.read_u32::<LittleEndian>()?);
@@ -133,8 +136,12 @@ pub struct StoreMachine {
 	/// All volumes 
 	pub volumes: HashMap<VolumeId, PhysicalVolume>,
 
+	dir: Directory,
+
+	port: u16,
+
 	/// Location of all files on this machine
-	volumes_dir: String,
+	folder: String,
 
 	index: VolumesIndex
 
@@ -144,19 +151,33 @@ impl StoreMachine {
 
 	/// Opens or creates a new store machine configuration based out of the given directory
 	/// TODO: Long term this will also take a Directory client so that we can bootstrap everything from that 
-	pub fn load(dir: &mut Directory, folder: &str) -> Result<StoreMachine> {
+	pub fn load(dir: Directory, port: u16, folder: &str) -> Result<StoreMachine> {
+
+		let path = Path::new(folder);
+		if !path.exists() {
+			return Err("Store data folder does not exist".into());	
+		}
+
+		let volumes_path = path.join(String::from("volumes"));
+
+		// Before we create a lock file, verify that the directory is empty if this is a new store
+		if !volumes_path.exists() {
+		if path.read_dir()?.collect::<Vec<_>>().len() > 0 {
+				return Err("Store folder is not empty".into());
+			}
+		}
+
 
 		let mut opts = OpenOptions::new();
 		opts.write(true).create(true).read(true);
 
-		let lockfile = opts.open(Path::new(folder).join(String::from("lock")))?;
+		let lockfile = opts.open(path.join(String::from("lock")))?;
 
 		match lockfile.try_lock_exclusive() {
 			Ok(_) => true,
 			Err(err) => return Err(err.into())
 		};
 
-		let volumes_path = Path::new(folder).join(String::from("volumes"));
 		
 		let idx = if volumes_path.exists() {
 			VolumesIndex::open(&volumes_path)?
@@ -165,11 +186,15 @@ impl StoreMachine {
 			VolumesIndex::create(&volumes_path, dir.cluster_id, machine.id.to_unsigned())?
 		};
 
-		// Not we want to valid t
+		if dir.cluster_id != idx.cluster_id {
+			return Err("Connected to a different cluster".into());
+		}
 
 		let mut machine = StoreMachine {
-			volumes_dir: String::from(folder),
+			folder: String::from(folder),
 			index: idx,
+			dir,
+			port,
 			volumes: HashMap::new()
 		};
 
@@ -182,7 +207,7 @@ impl StoreMachine {
 	}
 
 	fn get_volume_path(&self, volume_id: VolumeId) -> PathBuf {
-		Path::new(&self.volumes_dir).join(String::from("haystack_") + &volume_id.to_string())
+		Path::new(&self.folder).join(String::from("haystack_") + &volume_id.to_string())
 	}
 
 	fn open_volume(&mut self, volume_id: VolumeId, expect_empty: bool) -> Result<()> {
@@ -204,7 +229,7 @@ impl StoreMachine {
 			return Err("Opened volume does not belong to this store".into());
 		}
 
-		if expect_empty && vol.len_needles() > 0 {
+		if expect_empty && vol.num_needles() > 0 {
 			return Err("Opened volume that we expected to be empty".into());
 		}
 
@@ -220,6 +245,82 @@ impl StoreMachine {
 		// We run this after the open_volume succeeds to gurantee that we don't try adding duplicate ids to the index
 		// Currently we don't particularly care about inconsistencies with empty files with no corresponding index id
 		self.index.add_volume_id(volume_id)?;
+
+		Ok(())
+	}
+
+
+	pub fn start(mac_handle: Arc<Mutex<StoreMachine>>) {
+		
+		thread::spawn(move || {
+			// TODO: On Ctrl-C, must mark as not-ready to stop this loop, issue one last heartbeat marking us as not ready and wait for all active http requests to finish
+			loop {
+				{
+					let mut mac = mac_handle.lock().unwrap();
+					if let Err(e) = mac.do_heartbeat() {
+						println!("{:?}", e);
+					}
+				}
+
+				let dur = time::Duration::from_millis(STORE_MACHINE_HEARTBEAT_INTERVAL);
+				thread::sleep(dur);
+			}
+		});
+	}
+
+	pub fn allocated_space(&self) -> usize {
+		let mut sum = 0;
+
+		for (_, v) in self.volumes.iter() {
+			sum += ALLOCATION_SIZE;
+		}
+
+		sum
+	}
+
+	pub fn total_space(&self) -> usize {
+		STORE_MACHINE_SPACE - (ALLOCATION_SIZE * ALLOCATION_RESERVED)
+	}
+
+	// TODO: We will have multiple degrees of writeability for the volumes and the machine itself
+	pub fn can_write(&self) -> bool {
+		true
+	}
+
+	pub fn do_heartbeat(&mut self) -> Result<()> {
+
+		self.check_allocated()?;
+
+		self.dir.db.update_store_machine_heartbeat(
+			self.index.machine_id,
+			true,
+			"127.0.0.1", self.port,
+			self.allocated_space() as u64,
+			self.total_space() as u64,
+			true
+		)?;
+
+		Ok(())
+	}
+
+
+	pub fn check_allocated(&mut self) -> Result<()> {
+		// For now we will simply make sure that we have at least one volume
+
+		if self.volumes.len() < 1 {
+			let vol = self.dir.create_logical_volume()?;
+
+			let vol_id = vol.id.to_unsigned();
+
+			self.create_volume(vol_id)?;
+
+			self.dir.db.create_physical_volume(
+				vol_id,
+				self.index.machine_id
+			)?;
+
+			self.dir.db.update_logical_volume_writeable(vol_id, true)?;
+		}
 
 		Ok(())
 	}

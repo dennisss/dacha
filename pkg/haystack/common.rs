@@ -30,7 +30,7 @@ pub type Cookie = [u8; 16];
 /// Number of replicas of each physical volume to create for a single logical volume
 pub const NUM_REPLICAS: usize = 3;
 
-/// Maximum size of each 
+/// Maximum size of each volume on a store machine
 pub const ALLOCATION_SIZE: usize = 10*1024; // 10Mb for testing
 
 /// How many multiples of the allocation size less than the total store space to leave empty
@@ -41,3 +41,9 @@ pub const ALLOCATION_RESERVED: usize = 2;
 /// Amount of space on the store machine's hdd to use for storing data
 /// Currently fixed but eventually dynamic based on hard drive checks and configurations
 pub const STORE_MACHINE_SPACE: usize = 100*1024; // 100Mb
+
+
+pub const STORE_MACHINE_HEARTBEAT_INTERVAL: u64 = 10000; // Heartbeat send every 10 seconds
+
+pub const STORE_MACHINE_HEARTBEAT_TIMEOUT: u64 = 30000; // Must get a heartbeat with-in this amount of time to be considering alive and well
+

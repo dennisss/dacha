@@ -16,7 +16,10 @@ pub enum HaystackResponse {
 	Ok(&'static str),
 	Error(Status, &'static str),
 	Json(String),
-	Needle(Needle)
+	Needle {
+		data: Needle,
+		writeable: bool // Whether or not the store as a whole is writeable
+	}
 }
 
 impl HaystackResponse {
@@ -47,7 +50,7 @@ impl<'r> Responder<'r> for HaystackResponse {
 					.sized_body(Cursor::new(s))
 					.status(Status::Ok).ok()
 			},
-			HaystackResponse::Needle(d) => {
+			HaystackResponse::Needle { data: d, writeable: w } => {
 
 				// TODO: Also export the checksum
 
@@ -75,11 +78,10 @@ impl<'r> Responder<'r> for HaystackResponse {
 				// TODO: Construct an etag based on the machine_id/volume_id/offset, offset and volume_id
 				// ^ Although using the crc32 would be naturally better for caching between hits to backup stores
 
-				// TODO: Also a header whether the machine is read-only (basically should be managed by the )
-
 				res
 					.raw_header("X-Haystack-Cookie", cookie)
 					.raw_header("X-Haystack-Hash", String::from("crc32c=") + &sum)
+					.raw_header("X-Haystack-Writeable", if w { "1" } else { "0" })
 					.sized_body(io::Cursor::new(d.bytes()))
 					.ok()
 			}
@@ -140,7 +142,6 @@ impl MaybeCookie {
 	}
 }
 
-
 impl<'r> rocket::request::FromParam<'r> for MaybeCookie {
 	type Error = &'r str;
 	fn from_param(param: &'r rocket::http::RawStr) -> Result<Self, Self::Error> {
@@ -155,3 +156,26 @@ impl<'v> rocket::request::FromFormValue<'v> for MaybeCookie {
 	}
 }
 
+
+/// For parsing a parameter that is a '-' separated list of machine ids
+pub enum MachineIdList {
+	Data(Vec<MachineId>),
+	Invalid
+}
+
+impl<'v> rocket::request::FromFormValue<'v> for MachineIdList {
+	type Error = &'v str;
+	fn from_form_value(form_value: &'v rocket::http::RawStr) -> Result<Self, Self::Error> {
+
+		let mut list = vec![];
+
+		for part in form_value.to_string().split('-').into_iter() {
+			match part.parse::<MachineId>() {
+				Ok(v) => list.push(v),
+				Err(_) => return Ok(MachineIdList::Invalid)
+			};
+		}
+
+		Ok(MachineIdList::Data(list))
+	}
+}

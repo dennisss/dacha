@@ -35,7 +35,13 @@ pub struct PhysicalVolume {
 	file: File,
 
 	// TODO: Make it a set of binary heaps so that we can efficiently look up all types for a single photo?
-	index: HashMap<NeedleKeys, NeedleIndexEntry>
+	index: HashMap<NeedleKeys, NeedleIndexEntry>,
+
+	/// Number of bytes that we estimate can be gained through compaction
+	compaction_pending: u64,
+
+	/// The lowest needle offset in the file that will require compaction (or 0 if we've never compacted before)
+	compaction_watermark: u64,
 }
 
 impl PhysicalVolume {
@@ -59,7 +65,9 @@ impl PhysicalVolume {
 			volume_id,
 			cluster_id,
 			file: f,
-			index: HashMap::new()
+			index: HashMap::new(),
+			compaction_pending: 0,
+			compaction_watermark: 0
 		};
 
 		vol.write_superblock()?;
@@ -111,26 +119,23 @@ impl PhysicalVolume {
 			machine_id,
 			volume_id,
 			file: file.try_clone()?,
-			index: HashMap::new()
+			index: HashMap::new(),
+			compaction_pending: 0,
+			compaction_watermark: 0
 		};
 
 		Ok(vol)
 	}
 
 	/// Gets the number of raw needles stored 
-	pub fn len_needles(&self) -> usize {
+	pub fn num_needles(&self) -> usize {
 		self.index.len()
 	}
 
-	// TODO: We want to track stats on:
-	// - total bytes size of the volume file
-	// - total bytes size of the volume's index file
-	// - combined size of all needle data segements in this volume 
-
-	/// Gets the number of bytes on disk occupied by this volume (excluding the separate index)
-	//pub fn len_bytes(&mut self) -> usize {
-	//	self.file.seek(io::SeekFrom::End(0))? as usize
-	//}
+	// Lists the size of all space currently being used by this volume and any associated index
+	pub fn used_space(&self) -> usize {
+		self.file.metadata().unwrap().len() as usize
+	}
 
 
 	/// Scans all of the needles in the file and builds the initial index from them
@@ -141,7 +146,9 @@ impl PhysicalVolume {
 	fn scan_needles(&mut self) -> Result<()> {
 
 		let mut off = SUPERBLOCK_SIZE as u64;
-		self.file.seek(io::SeekFrom::Start(SUPERBLOCK_SIZE as u64))?;
+		off += self.block_size_remainder(off);
+
+		self.file.seek(io::SeekFrom::Start(off))?;
 
 		let size = self.file.metadata()?.len();
 
@@ -178,6 +185,7 @@ impl PhysicalVolume {
 
 	fn write_superblock(&mut self) -> Result<()> {
 		
+		self.file.seek(io::SeekFrom::Start(0))?;
 		self.file.write_all(SUPERBLOCK_MAGIC.as_bytes())?;
 		self.file.write_u32::<LittleEndian>(CURRENT_FORMAT_VERSION)?;
 		self.file.write_u64::<LittleEndian>(self.cluster_id)?;
@@ -185,6 +193,8 @@ impl PhysicalVolume {
 		self.file.write_u32::<LittleEndian>(self.volume_id)?;
 		self.pad_to_block_size()?;
 		self.file.flush()?;
+
+		// TODO: Write the checksum of all of this stuff (minus the padding right)
 
 		Ok(())
 	}
@@ -236,14 +246,16 @@ impl PhysicalVolume {
 		// TODO: The main exception to this will be error correction (in which case we to be able to do this)
 		if let Some(existing) = self.index.get(&keys) {
 			
-			// TODO: This now incentivizes making sure that parsing of needle headers is efficient and doesn't do as many copies
-			self.file.seek(io::SeekFrom::Start(existing.offset()))?;
-			let existing_header = NeedleHeader::read(&mut self.file)?;
+			// TODO: We can no longer do deduplication of uploads
 
-			if cookie == &existing_header.cookie {
-				println!("Ignoring request to upload exact same needle twice");
-				return Ok(());
-			}
+			// TODO: This now incentivizes making sure that parsing of needle headers is efficient and doesn't do as many copies
+			//self.file.seek(io::SeekFrom::Start(existing.offset()))?;
+			//let existing_header = NeedleHeader::read(&mut self.file)?;
+
+			//if cookie == &existing_header.cookie {
+			//	println!("Ignoring request to upload exact same needle twice");
+			//	return Ok(());
+			//}
 		}
 		
 
@@ -259,7 +271,7 @@ impl PhysicalVolume {
 		let block_offset = (off / (BLOCK_SIZE as u64)) as BlockOffset;
 
 
-		let header = NeedleHeader::serialize(&cookie, keys, meta)?;
+		let header: Vec<u8> = NeedleHeader::serialize(&cookie, keys, meta)?;
 		self.file.write_all(&header)?;
 
 

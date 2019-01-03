@@ -5,6 +5,8 @@ table! {
         addr_port -> Int2,
         last_heartbeat -> Timestamptz,
         ready -> Bool,
+        alive -> Bool,
+        healthy -> Bool,
         hostname -> Text,
     }
 }
@@ -12,13 +14,8 @@ table! {
 table! {
     logical_volumes (id) {
         id -> Int4,
-        num_needles -> Int8,
-        used_space -> Int8,
-        allocated_space -> Int8,
         write_enabled -> Bool,
         hash_key -> Int8,
-        created_at -> Timestamptz,
-        updated_at -> Timestamptz,
     }
 }
 
@@ -33,7 +30,7 @@ table! {
     photos (id) {
         id -> Int8,
         volume_id -> Int4,
-        cookie -> Bit,
+        cookie -> Bytea,
     }
 }
 
@@ -50,13 +47,18 @@ table! {
         addr_ip -> Text,
         addr_port -> Int2,
         last_heartbeat -> Timestamptz,
+        ready -> Bool,
+        alive -> Bool,
+        healthy -> Bool,
         allocated_space -> Int8,
         total_space -> Int8,
-        reclaimed_space -> Int8,
         write_enabled -> Bool,
-        dirty -> Bool,
     }
 }
+
+joinable!(photos -> logical_volumes (volume_id));
+joinable!(physical_volumes -> logical_volumes (logical_id));
+joinable!(physical_volumes -> store_machines (machine_id));
 
 allow_tables_to_appear_in_same_query!(
     cache_machines,

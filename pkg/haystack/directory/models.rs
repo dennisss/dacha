@@ -1,6 +1,7 @@
 use diesel::*;
 use super::schema::*;
-use chrono::{DateTime, Utc};
+use super::super::common::STORE_MACHINE_HEARTBEAT_TIMEOUT;
+use chrono::{DateTime, Utc, Duration};
 
 pub enum ParamKey {
 	ClusterId = 1
@@ -23,24 +24,48 @@ pub struct StoreMachine {
 	pub addr_port: i16,
 	pub last_heartbeat: DateTime<Utc>,
 
-	/// Sum of the space allocated allocated towards every single volume assigned to it
-	/// (managed by the directory)
+	pub ready: bool,
+	pub alive: bool,
+	pub healthy: bool,
+
+	/// Sum of the space allocated towards every volume on this machine
+	/// Updated periodically by the store
 	pub allocated_space: i64,
 
 	/// Total space on the machine's disks
 	/// Decided by the machine itself and is usually a small amount lower than the full physical capacity to account fo metadata 
-	/// (managed by the store: set during heartbeats)
 	pub total_space: i64,
 
-	/// For all locked volumes, this is the amount of space which has gone unused
-	/// (managed by the store: set during heartbeats)
-	pub reclaimed_space: i64,
 
 	/// Set to true if the machine is accepting new writes
-	pub write_enabled: bool,
-
-	pub dirty: bool
+	pub write_enabled: bool
 }
+
+impl StoreMachine {
+
+	pub fn can_read(&self) -> bool {
+
+		if !self.ready {
+			return false;
+		}
+
+		let now = Utc::now();
+		if (
+			now.ge(&self.last_heartbeat) &&
+			(now - (self.last_heartbeat)).ge(&Duration::milliseconds(STORE_MACHINE_HEARTBEAT_TIMEOUT as i64))
+		) {
+			return false;
+		}
+
+		true
+	}
+
+	pub fn can_write(&self) -> bool {
+		self.write_enabled && self.can_read()
+	}
+}
+
+
 
 #[derive(Insertable)]
 #[table_name = "store_machines"]
@@ -49,7 +74,7 @@ pub struct NewStoreMachine<'a> {
 	pub addr_port: i16,
 }
 
-#[derive(Queryable, Identifiable, AsChangeset)]
+#[derive(Queryable, Identifiable)]
 #[table_name = "cache_machines"]
 pub struct CacheMachine {
 	pub id: i32,
@@ -57,6 +82,8 @@ pub struct CacheMachine {
 	pub addr_port: i16,
 	pub last_heartbeat: DateTime<Utc>,
 	pub ready: bool,
+	pub alive: bool,
+	pub healthy: bool,
 	pub hostname: String
 }
 
@@ -68,21 +95,18 @@ pub struct NewCacheMachine<'a> {
 	pub hostname: &'a str
 }
 
+// Logical volumes are locked once a physical volume is near its limit
+// Otherwise, we don't really
 
-
+// 
 
 
 #[derive(Queryable, Identifiable, AsChangeset)]
 #[table_name = "logical_volumes"]
 pub struct LogicalVolume {
 	pub id: i32,
-	pub num_needles: i64,
-	pub used_space: i64,
-	pub allocated_space: i64,
 	pub write_enabled: bool,
-	pub hash_key: i64,
-	pub created_at: DateTime<Utc>,
-	pub updated_at: DateTime<Utc>
+	pub hash_key: i64
 }
 
 #[derive(Insertable)]

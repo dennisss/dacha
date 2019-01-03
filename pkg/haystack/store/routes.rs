@@ -8,15 +8,14 @@ use super::routes_helpers::*;
 
 use std::sync::{Arc,Mutex};
 
-
-
 pub type MachineHandle<'r> = rocket::State<'r, Arc<Mutex<StoreMachine>>>;
 
 
 #[derive(Serialize)]
 struct StoreReadVolumeBody {
 	id: VolumeId,
-	needles: usize
+	num_needles: usize,
+	used_space: usize
 }
 
 // TODO: 'std::convert::From<&PhysicalVolume> for'
@@ -24,7 +23,8 @@ impl StoreReadVolumeBody {
 	fn from(vol: &PhysicalVolume) -> StoreReadVolumeBody {
 		StoreReadVolumeBody {
 			id: vol.volume_id,
-			needles: vol.len_needles()
+			num_needles: vol.num_needles(),
+			used_space: vol.used_space()
 		}
 	}
 }
@@ -89,6 +89,8 @@ fn read_photo(
 
 	let mut mac = mac_handle.lock().unwrap();
 
+	let writeable = mac.can_write();
+
 	let vol = match mac.volumes.get_mut(&volume_id) {
 		Some(v) => v,
 		None => return Ok(
@@ -126,10 +128,13 @@ fn read_photo(
 		// If we are configured to require cookies, then this would be a mistake
 	}
 
-	Ok(HaystackResponse::Needle(n))
+	Ok(HaystackResponse::Needle {
+		data: n,
+		writeable
+	})
 }
 
-#[post("/volume/<volume_id>/needle/<key>/<alt_key>?<cookie>", data = "<data>")] // TODO: ?<cookie>
+#[post("/volume/<volume_id>/needle/<key>/<alt_key>?<cookie>", data = "<data>")]
 fn write_photo(
 	mac_handle: MachineHandle,
 	volume_id: VolumeId, key: NeedleKey, alt_key: NeedleAltKey,
@@ -152,8 +157,6 @@ fn write_photo(
 
 	let mut strm = data.open();
 
-	// TODO: If a needle already exists with the exact same key and cookie, then we can ignore it
-
 	vol.append_needle(
 		&NeedleKeys { key, alt_key },
 		cookie_data,
@@ -162,6 +165,26 @@ fn write_photo(
 	)?;
 
 	Ok(HaystackResponse::Error(Status::Ok, "Needle added!"))
+}
+
+// Deletes a single photo needle
+#[delete("/volume/<volume_id>/needle/<key>/<alt_key>")]
+fn delete_photo(
+	mac_handle: MachineHandle,
+	volume_id: VolumeId, key: NeedleKey, alt_key: NeedleAltKey
+) -> Result<HaystackResponse> {
+
+	Ok(HaystackResponse::Ok("Woo!"))
+}
+
+// Deletes all photo needles associated with a single photo
+#[delete("/volume/<volume_id>/needle/<key>")]
+fn delete_photo_all(
+	mac_handle: MachineHandle,
+	volume_id: VolumeId, key: NeedleKey
+) -> Result<HaystackResponse> {
+
+	Ok(HaystackResponse::Ok("Woo!"))
 }
 
 pub fn get() -> Vec<rocket::Route> {

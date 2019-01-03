@@ -19,10 +19,12 @@ extern crate mime_sniffer;
 extern crate ipnetwork;
 extern crate chrono;
 extern crate bitwise;
+extern crate reqwest;
 
 pub mod common;
 pub mod store;
 pub mod directory;
+pub mod cache;
 pub mod client;
 
 
@@ -31,6 +33,7 @@ pub mod errors {
 		foreign_links {
 			Io(::std::io::Error);
 			Db(diesel::result::Error);
+			Req(reqwest::Error);
 		}
 	}
 }
