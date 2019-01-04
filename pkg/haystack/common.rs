@@ -53,9 +53,9 @@ pub const STORE_MACHINE_HEARTBEAT_INTERVAL: u64 = 10000; // Heartbeat send every
 
 pub const STORE_MACHINE_HEARTBEAT_TIMEOUT: u64 = 30000; // Must get a heartbeat with-in this amount of time to be considering alive and well
 
-pub const CACHE_MEMORY_SIZE: usize = 20*1024; // 20Mb of in-memory caching
+pub const CACHE_MEMORY_SIZE: usize = 100*1024; // 100Mb of in-memory caching
 
 pub const CACHE_MAX_AGE: u64 = 60*60*1000; // 1 hour before the cache must be invalidated
 
-pub const CACHE_MAX_ENTRY_SIZE: usize = 2*1024;
+pub const CACHE_MAX_ENTRY_SIZE: usize = 10*1024;
 

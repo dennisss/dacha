@@ -10,6 +10,14 @@ pub fn bad_request() -> Response<Body> {
 	Response::builder().status(StatusCode::BAD_REQUEST).body(Body::empty()).unwrap()
 }
 
+pub fn invalid_method() -> Response<Body> {
+	text_response(StatusCode::METHOD_NOT_ALLOWED, "Method not allowed")
+}
+
+pub fn bad_request_because(text: &'static str) -> Response<Body> {
+	text_response(StatusCode::BAD_REQUEST, text)
+}
+
 pub fn json_response<T>(code: StatusCode, obj: &T) -> Response<Body> where T: serde::Serialize {
 	let body = serde_json::to_string(obj).unwrap();
 	Response::builder()

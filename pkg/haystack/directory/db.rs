@@ -167,6 +167,26 @@ impl DB {
 
 	// TODO: Eventually may need to be able to delete physical_volume mappings if we decide that a machine is completely dead and not recoverable
 
+	pub fn create_cache_machine(&self, addr_ip: &str, addr_port: u16, hostname: &str) -> Result<CacheMachine> {
+		let new_machine = NewCacheMachine {
+			addr_ip,
+			addr_port: addr_port.to_signed(),
+			hostname
+		};
+
+		let m = diesel::insert_into(schema::cache_machines::table)
+			.values(&new_machine)
+			.get_result::<CacheMachine>(&self.conn)?;
+
+		Ok(m)
+	}
+
+	pub fn index_cache_machines(&self) -> Result<Vec<CacheMachine>> {
+		use super::schema::cache_machines::dsl::*;
+		Ok(cache_machines.get_results::<CacheMachine>(&self.conn)?)
+	}
+
+
 	pub fn create_store_machine(&self, addr_ip: &str, addr_port: u16) -> Result<StoreMachine> {
 		
 		let new_machine = NewStoreMachine {

@@ -1,13 +1,20 @@
 use super::super::common::*;
-use super::super::store::needle::*;
+use super::super::paths::CookieBuf;
 use std::collections::HashMap;
 use std::collections::BTreeMap;
 use std::time::*;
 use hyper::http::HeaderMap;
+use bytes::Bytes;
+use std::sync::Arc;
 
+
+/// NOTE: Everything in this entry is essentially immutable
 pub struct MemoryEntry {
 
-	pub cookie: Cookie,
+	/// When this entry was inserted
+	pub inserted_at: SystemTime,
+
+	pub cookie: CookieBuf,
 
 	/// The logical volume from which we got this entry from originally
 	/// Because photos can change logical volumes upon overflow of their old ones, this may change over time
@@ -19,18 +26,22 @@ pub struct MemoryEntry {
 	pub headers: HeaderMap,
 
 	/// THis will be the raw data of the needle file it is associated with 
-	pub data: Vec<u8>,
+	pub data: Bytes,
 }
 
+pub enum Cached {
+	Valid(Arc<MemoryEntry>),
+	Stale(Arc<MemoryEntry>),
+	None
+}
 
 // TODO: Should we retain a cache of deleted entries (just the flags)
 
+#[derive(Clone)]
 struct MemoryEntryInternal {
 
-	pub data: MemoryEntry,
-
-	/// When this entry was inserted
-	pub inserted_at: SystemTime,
+	// XXX: Hello world, should this be separately referenced
+	pub value: Arc<MemoryEntry>,
 
 	/// The last time this data was 
 	pub last_access: SystemTime,
@@ -54,12 +65,18 @@ pub struct MemoryStore {
 	/// Amount of memory in bytes used up by all cache entries (excluding the metadata needed to store them)
 	pub used_space: usize,
 
-	/// TODO: The real question will be how to deal with 
+	// Issue being that i can't mutate these nicely
 	index: HashMap<NeedleKeys, MemoryEntryInternal>,
 
 	// TODO: In case it switches volumes, 
 	order: BTreeMap<SystemTime, NeedleKeys>
 }
+
+
+/*
+	What to use as the ETag
+	- Combine the length, crc32c
+*/
 
 impl MemoryStore {
 
@@ -75,33 +92,43 @@ impl MemoryStore {
 		}
 	}
 
-	pub fn lookup(&self, keys: NeedleKeys) -> Option<MemoryEntry> {
+	pub fn lookup(&mut self, keys: &NeedleKeys) -> Cached {
 
 		let now = SystemTime::now();
 
-		let mut e = match self.index.get_mut(&keys) {
-			Some(e) => e,
-			None => return None,
+		let mut e = match self.index.get(keys) {
+			Some(e) => e.clone(),
+			None => return Cached::None,
 		};
 
-		// Check not stale
-		if self.is_stale(e, &now) {
-			self.delete(&keys, &e);
-			return None;
+		// If stale, then we should delete it from the table
+		if self.is_stale(&e, &now) {
+			// In this case we may return a cache result get for the hell of it
+
+			self.delete(keys, &e);
+
+			Cached::Stale(e.value)
 		}
+		else {
+			// Grab a reference to the data to return
+			let out = e.value.clone();
 
-		e.last_access = now;
+			// Update last accessed time and put it back
+			e.last_access = now;
+			self.index.insert(keys.clone(), e);
 
-		Some(e.data)
+			Cached::Valid(out)
+		}
 	}
 
-	pub fn insert(&self, keys: NeedleKeys, entry: MemoryEntry) {
+	pub fn insert(&mut self, keys: NeedleKeys, entry: Arc<MemoryEntry>) {
 
 		// Delete any old one
 		self.remove(&keys);
 		
 		// Don't try inserting entries that are too large
 		if entry.data.len() > self.max_entry_size {
+			println!("Not caching entry: too large ({} > {})", entry.data.len(), self.max_entry_size);
 			return;
 		}
 
@@ -110,12 +137,11 @@ impl MemoryStore {
 
 		// Make sure we have enough space for it
 		self.collect();
-
-		let now = SystemTime::now();
 		
-		self.index.insert(keys, MemoryEntryInternal {
-			data: entry,
-			inserted_at: now,
+		let now = entry.inserted_at.clone();
+
+		self.index.insert(keys.clone(), MemoryEntryInternal {
+			value: entry,
 			last_access: now,
 			last_order: now
 		});
@@ -124,9 +150,9 @@ impl MemoryStore {
 	}
 
 	/// Explicit removal of an entry (usually if we the cache is the one that performed the deletion)
-	pub fn remove(&self, keys: &NeedleKeys) {
-		if let Some(e) = self.index.get(keys) {
-			self.delete(&keys, e);
+	pub fn remove(&mut self, keys: &NeedleKeys) {
+		if let Some(e) = self.index.get(keys).cloned() {
+			self.delete(keys, &e);
 		}
 	}
 
@@ -134,34 +160,36 @@ impl MemoryStore {
 		self.index.len()
 	}
 
-	fn collect(&self) {
+	fn collect(&mut self) {
 		
-		let now = SystemTime::now();
-
-		let mut try = true;
 		let mut nremoved = 0;
 
-		while try {
-			try = false;
+		loop {
+			// Get the first item with lowest time
+			let (time, keys) = match self.order.iter().next() {
+				Some((t, k)) => (t.clone(), k.clone()),
+				None => break
+			};
 
-			for (time, keys) in self.order.iter_mut() {
-				let mut e = self.index.get_mut(keys).unwrap();
+			// Look up the corresponding entry
+			let mut e = self.index.get(&keys).unwrap().clone();
 
-				// Was accessed since we last indexed it
-				if e.last_access != *time {
-					*time = e.last_access;
-					e.last_order = e.last_access;
-					try = true; // < I don't know which position rust will go to after we move it, so to be safe, we will retry from the beginning of the loop (especially because we do want to re-run it on ourselves)
-					break;
-				}
+			// If we accessed it since the last time it was ordered, we will re-order it
+			if e.last_access != time {
+				self.order.remove(&time);
+				self.order.insert(e.last_access, keys.clone());
 
-				if self.is_stale(e, &now) || self.need_space() {
-					self.delete(&keys, &e);
-					nremoved += 1;
-				}
-				else {
-					break;
-				}	
+				e.last_order = e.last_access;
+				self.index.insert(keys, e);
+			}
+			// Perform garbage collection if needed
+			// NOTE: We will keep stale entries under the assumption that are likely immutable and that on the next wrap of it, it will become 
+			else if /* self.is_stale(&e, &now) || */ self.need_space() {
+				self.delete(&keys, &e);
+				nremoved += 1;
+			}
+			else {
+				break;
 			}
 		}
 
@@ -171,17 +199,18 @@ impl MemoryStore {
 	}
 
 	fn is_stale(&self, e: &MemoryEntryInternal, now: &SystemTime) -> bool {
-		now.duration_since(e.inserted_at).unwrap_or(Duration::from_millis(0)).ge(&self.max_age)
+		now.duration_since(e.value.inserted_at).unwrap_or(Duration::from_millis(0)).ge(&self.max_age)
 	}
 
 	fn need_space(&self) -> bool {
 		self.used_space > self.total_space
 	}
 
-	fn delete(&self, keys: &NeedleKeys, entry: &MemoryEntryInternal) {
+	// Simple answer is to just clone it as that is reasonable cheap
+	fn delete(&mut self, keys: &NeedleKeys, entry: &MemoryEntryInternal) {
 		self.index.remove(keys);
 		self.order.remove(&entry.last_order);
-		self.used_space = self.used_space - entry.data.data.len();
+		self.used_space = self.used_space - entry.value.data.len();
 	}
 
 

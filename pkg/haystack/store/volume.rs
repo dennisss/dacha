@@ -25,6 +25,12 @@ const SUPERBLOCK_SIZE: usize =
 	size_of::<VolumeId>();
 
 
+/// Simple wrapper around a read needle including the offset into the file (useful for etags)
+pub struct NeedleWithOffset {
+	pub block_offset: u32,
+	pub needle: Needle
+}
+
 // TODO: We'd also like to be able to set an entire physical volume as write_enabled
 // - Mainly useful so that we can report it back to clients and so that next time we need to broadcast that we are out of space, we only need to mark volumes which we haven't yet marked as disabled
 
@@ -209,7 +215,7 @@ impl PhysicalVolume {
 	 *
 	 * NOTE: The needle still needs to be separately checked for integrity
 	 */
-	pub fn read_needle(&mut self, keys: &NeedleKeys) -> Result<Option<Needle>> {
+	pub fn read_needle(&mut self, keys: &NeedleKeys) -> Result<Option<NeedleWithOffset>> {
 
 		// This is basically the matter of reading from the current position in the thing
 
@@ -236,7 +242,10 @@ impl PhysicalVolume {
 			return Ok(None);
 		}
 		
-		Ok(Some(needle))
+		Ok(Some(NeedleWithOffset {
+			needle,
+			block_offset: entry.block_offset
+		}))
 	}
 
 	// TODO: We will likely also want to have a create operation that gurantees that a needle does not exist

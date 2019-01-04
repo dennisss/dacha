@@ -206,6 +206,10 @@ impl StoreMachine {
 		Ok(machine)
 	}
 
+	pub fn id(&self) -> MachineId {
+		self.index.machine_id
+	}
+
 	fn get_volume_path(&self, volume_id: VolumeId) -> PathBuf {
 		Path::new(&self.folder).join(String::from("haystack_") + &volume_id.to_string())
 	}
@@ -250,8 +254,8 @@ impl StoreMachine {
 	}
 
 
-	pub fn start(mac_handle: Arc<Mutex<StoreMachine>>) {
-		
+	pub fn start(mac_handle: &Arc<Mutex<StoreMachine>>) {
+		let mac_handle = mac_handle.clone();
 		thread::spawn(move || {
 			// TODO: On Ctrl-C, must mark as not-ready to stop this loop, issue one last heartbeat marking us as not ready and wait for all active http requests to finish
 			loop {

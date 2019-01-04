@@ -157,7 +157,7 @@ impl NeedleFooter {
 /// Backed by a single buffer that is the entire size of the header, data and footer
 pub struct Needle {
 	pub header: NeedleHeader,
-	buf: Vec<u8>
+	buf: Bytes
 }
 
 impl Needle {
@@ -187,15 +187,15 @@ impl Needle {
 
 		Ok(Needle {
 			header,
-			buf
+			buf: buf.into()
 		})
 	}
 
 
 
 
-	pub fn bytes(self) -> Bytes {
-		Bytes::from(self.buf).slice(NEEDLE_HEADER_SIZE, NEEDLE_HEADER_SIZE + self.header.meta.size as usize)
+	pub fn data_bytes(self) -> Bytes {
+		self.buf.slice(NEEDLE_HEADER_SIZE, NEEDLE_HEADER_SIZE + self.header.meta.size as usize)
 	}
 
 	pub fn data(&self) -> &[u8] {

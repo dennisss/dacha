@@ -7,6 +7,7 @@ extern crate hyper;
 use haystack::directory::Directory;
 use haystack::cache::machine::CacheMachine;
 use haystack::errors::*;
+use haystack::http::start_http_server;
 use std::sync::{Arc,Mutex};
 use clap::{Arg, App};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};

@@ -57,7 +57,7 @@ impl MachineIds {
 		match self {
 			// TODO: Must have at least one element for this to be valid
 			MachineIds::Data(arr) =>
-				String::from("/") + &arr.iter().map(|id| id.to_string()).collect::<Vec<String>>().join("/"),
+				arr.iter().map(|id| id.to_string()).collect::<Vec<String>>().join("-"),
 			MachineIds::Unspecified =>
 				"-".into()
 		}
@@ -68,6 +68,10 @@ impl std::str::FromStr for MachineIds {
 	type Err = &'static str;
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		if s == "-" {
+			return Ok(MachineIds::Unspecified);
+		}
+
 		let mut list = vec![];
 
 		for part in s.split('-').into_iter() {

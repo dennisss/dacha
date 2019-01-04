@@ -23,12 +23,12 @@ pub fn handle_request(
 	
 	let segs = match split_path_segments(&parts.uri.path()) {
 		Some(v) => v,
-		None => return Ok(bad_request())
+		None => return Ok(bad_request_because("Invalid path given"))
 	};
 
 	// We should not be getting any query parameters
 	if parts.uri.query() != None {
-		return Ok(bad_request());
+		return Ok(bad_request_because("Not expecting query parameters"));
 	}
 
 	let params = match StorePath::from(&segs) {
@@ -41,7 +41,7 @@ pub fn handle_request(
 		StorePath::Index => {
 			match parts.method {
 				Method::GET => index_volumes(mac_handle),
-				_ => Ok(bad_request())
+				_ => Ok(invalid_method())
 			}
 		},
 
@@ -49,7 +49,7 @@ pub fn handle_request(
 			match parts.method {
 				Method::GET => read_volume(mac_handle, volume_id),
 				Method::POST => create_volume(mac_handle, volume_id),
-				_ => Ok(bad_request())
+				_ => Ok(invalid_method())
 			}
 		},
 
@@ -59,14 +59,14 @@ pub fn handle_request(
 
 		StorePath::Partial { volume_id, key, alt_key } => {
 			match parts.method {
-				Method::GET => read_photo(mac_handle, volume_id, key, alt_key, None),
-				_ => return Ok(bad_request())
+				Method::GET => read_photo(&parts, mac_handle, volume_id, key, alt_key, None),
+				_ => return Ok(invalid_method())
 			}
 		},
 
 		StorePath::Needle { volume_id, key, alt_key, cookie } => {
 			match parts.method {
-				Method::GET => read_photo(mac_handle, volume_id, key, alt_key, Some(cookie)),
+				Method::GET => read_photo(&parts, mac_handle, volume_id, key, alt_key, Some(cookie)),
 				Method::POST => {
 					
 					let content_length = match body.content_length() {
@@ -78,7 +78,7 @@ pub fn handle_request(
 
 					await!(write_photo(mac_handle, volume_id, key, alt_key, cookie, content_length, body))
 				},
-				_ => return Ok(bad_request())
+				_ => return Ok(invalid_method())
 			}
 		},
 
@@ -157,6 +157,7 @@ fn create_volume(
 
 
 fn read_photo(
+	parts: &Parts,
 	mac_handle: MachineHandle,
 	volume_id: VolumeId, key: NeedleKey, alt_key: NeedleAltKey,
 	given_cookie: Option<CookieBuf>
@@ -179,8 +180,8 @@ fn read_photo(
 	// TODO: I do want to be able to support exporting legit errors
 	let r = vol.read_needle(&NeedleKeys { key, alt_key })?;
 
-	let n = match r {
-		Some(n) => n,
+	let (n, offset) = match r {
+		Some(n) => (n.needle, n.block_offset),
 		None => {
 			return Ok(
 				text_response(StatusCode::NOT_FOUND, "Needle not found")
@@ -189,7 +190,9 @@ fn read_photo(
 	};
 
 	// Integrity check
-	n.check()?;
+	if let Err(_) = n.check() {
+		return Ok(text_response(StatusCode::INTERNAL_SERVER_ERROR, "Integrity check failed"));
+	}
 
 	if let Some(c) = given_cookie {
 		if c.data() != n.header.cookie.data() {
@@ -198,7 +201,7 @@ fn read_photo(
 	}
 	else {
 		// Cookie was not given
-		// If we are configured to require cookies, then this would be a mistake
+		// If we are configured to require cookies, then we should error out in this case
 	}
 
 	

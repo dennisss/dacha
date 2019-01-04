@@ -14,7 +14,7 @@ extern crate rand;
 extern crate byteorder;
 extern crate arrayref;
 extern crate bytes;
-extern crate base64;
+extern crate base64; // TODO: Redundant with rustc_serialize
 extern crate fs2;
 extern crate serde;
 extern crate serde_json;
@@ -24,6 +24,7 @@ extern crate chrono;
 extern crate bitwise;
 extern crate hyper;
 extern crate reqwest;
+extern crate rustc_serialize;
 
 pub mod http;
 pub mod common;

@@ -35,6 +35,8 @@ fn main() -> Result<()> {
 	let dir = Directory::open()?;
 
 	let machine = StoreMachine::load(dir, port, store)?;
+	println!("Starting Haystore Id #{}", machine.id());
+
 	let mac_handle = Arc::new(Mutex::new(machine));
 
 
