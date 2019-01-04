@@ -7,24 +7,14 @@ For now, the scope of this project is towards reimplementation of largely succes
 
 
 Listing
-----
+-------
 
-- Facebook Haystack
-	- Partially started
+**Facebook Haystack**
 
+Distributed photo (or binary blob) object store implemented on top of 
 
-TODOs
------
-
-- Google BigTable
-- Amazon Dynamo
-- Google GFS (v1)
-- Google Colossus (GFS v2)
-- Google Piper
-- Google Megastore
-- Google Spanner
-- Google Maglev
-- Google F1
-
-
-
+This implementation
+- Written in Rust
+- HTTP API to all components
+- Machine synchronization via a Postgres/SQL database
+- Documentation on usage coming soon

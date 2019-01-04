@@ -214,7 +214,22 @@ fn read_photo(
 
 	let mut res = Response::builder();
 	
-	res.status(StatusCode::OK);
+	// The etag is mainly designed to make hits to the same machine very efficient and hits to other machines at least able to notice after a disk read
+	let etag = format!("\"{}:{}:{}:{}\"", mac.id(), volume_id, offset, sum.trim_end_matches('='));
+	
+
+	res
+	.header("ETag", etag.clone())
+	.header("X-Haystack-Cookie", cookie)
+	.header("X-Haystack-Hash", String::from("crc32c=") + &sum)
+	.header("X-Haystack-Writeable", if writeable { "1" } else { "0" });
+
+	// TODO: Multiple layers of checking now possible
+	if let Some(v) = parts.headers.get("If-None-Match") {
+		if &v.to_str().unwrap_or("") == &etag {
+			return Ok(res.status(StatusCode::NOT_MODIFIED).body(Body::empty()).unwrap());
+		}
+	}
 
 	// Sniffing the Content-Type from the first few bytes of the file
 	// For images, this should pretty much always work
@@ -230,15 +245,11 @@ fn read_photo(
 		}
 	}
 
-	// TODO: Construct an etag based on the machine_id/volume_id/offset, offset and volume_id
-	// ^ Although using the crc32 would be naturally better for caching between hits to backup stores
 
 	Ok(
 		res
-		.header("X-Haystack-Cookie", cookie)
-		.header("X-Haystack-Hash", String::from("crc32c=") + &sum)
-		.header("X-Haystack-Writeable", if writeable { "1" } else { "0" })
-		.body(Body::from(n.bytes()))
+		.status(StatusCode::OK)
+		.body(Body::from(n.data_bytes()))
 		.unwrap()
 	)
 }
