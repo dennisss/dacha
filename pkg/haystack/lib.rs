@@ -1,5 +1,4 @@
-#![feature(proc_macro_hygiene, decl_macro, type_alias_enum_variants, conservative_impl_trait)]
-#![feature(proc_macro, generators)]
+#![feature(proc_macro_hygiene, decl_macro, type_alias_enum_variants, generators)]
 
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate diesel;
@@ -26,6 +25,7 @@ extern crate bitwise;
 extern crate hyper;
 extern crate reqwest;
 
+pub mod http;
 pub mod common;
 pub mod paths;
 pub mod store;

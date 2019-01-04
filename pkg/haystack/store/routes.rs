@@ -1,6 +1,7 @@
 use super::super::common::*;
 use super::super::errors::*;
 use super::super::paths::*;
+use super::super::http::*;
 use super::machine::*;
 use super::volume::*;
 use super::needle::*;
@@ -10,38 +11,14 @@ use hyper::body::Payload;
 use mime_sniffer::MimeTypeSniffer;
 use std::sync::{Arc,Mutex};
 use futures::prelude::*;
-use futures::future;
 use futures::prelude::await;
 
 pub type MachineHandle = Arc<Mutex<StoreMachine>>;
 
 
-/// All requests will be of the form /<volume_id>/<key>/<alt_key>/<cookie>
-/// NOTE: The error type doesn't really matter as we never resolve to a error, just as long as it is sendable across threads, hyper won't complain
-pub fn handle_request(
-	mac_handle: Arc<Mutex<StoreMachine>>, req: Request<Body>
-) -> impl Future<Item=Response<Body>, Error=std::io::Error> {
-
-	let (parts, body) = req.into_parts();
-
-	// Mainly for being able to print out errors
-	let method = parts.method.clone();
-	let uri = parts.uri.clone();
-
-	handle_request_inner(mac_handle, parts, body).then(move |res| {
-		match res {
-			Ok(resp) => Ok(resp),
-			Err(e) => {
-				println!("{} {}: {:?}", method, uri, e);
-				Ok(Response::builder().status(500).body(Body::empty()).unwrap())
-			}
-		}
-	})
-}
-
 #[async]
-fn handle_request_inner(
-	mac_handle: Arc<Mutex<StoreMachine>>, parts: Parts, body: Body
+pub fn handle_request(
+	parts: Parts, body: Body, mac_handle: MachineHandle
 ) -> Result<Response<Body>> {
 	
 	let segs = match split_path_segments(&parts.uri.path()) {
@@ -54,7 +31,11 @@ fn handle_request_inner(
 		return Ok(bad_request());
 	}
 
-	let params = StorePath::from(&segs);
+	let params = match StorePath::from(&segs) {
+		Ok(v) => v,
+		Err(s) => return Ok(text_response(StatusCode::BAD_REQUEST, s))
+	};
+
 	match params {
 
 		StorePath::Index => {
@@ -88,18 +69,6 @@ fn handle_request_inner(
 				Method::GET => read_photo(mac_handle, volume_id, key, alt_key, Some(cookie)),
 				Method::POST => {
 					
-					/*
-					let content_length_raw = match parts.headers.get("Content-Length") {
-						Some(v) => v,
-						None => return Ok(text_response(StatusCode::LENGTH_REQUIRED, "Missing Content-Length"))
-					};
-
-					let content_length = match content_length_raw.to_str().unwrap_or("-").parse::<u64>() {
-						Ok(v) => v,
-						Err(_) => return Ok(bad_request())
-					};
-					*/
-
 					let content_length = match body.content_length() {
 						Some(0) | None => {
 							return Ok(text_response(StatusCode::LENGTH_REQUIRED, "Missing Content-Length"));
@@ -334,25 +303,3 @@ fn delete_photo_all(
 }
 
 
-
-
-fn bad_request() -> Response<Body> {
-	Response::builder().status(StatusCode::BAD_REQUEST).body(Body::empty()).unwrap()
-}
-
-fn json_response<T>(code: StatusCode, obj: &T) -> Response<Body> where T: serde::Serialize {
-	let body = serde_json::to_string(obj).unwrap();
-	Response::builder()
-		.status(code)
-		.header("Content-Type", "application/json; charset=utf-8")
-		.body(Body::from(body))
-		.unwrap()
-}
-
-fn text_response(code: StatusCode, text: &'static str) -> Response<Body> {
-	Response::builder()
-		.status(code)
-		.header("Content-Type", "text/plain; charset=utf-8")
-		.body(Body::from(text))
-		.unwrap()
-}

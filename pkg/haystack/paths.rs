@@ -6,7 +6,7 @@ use bytes::Bytes;
 
 const COOKIE_SIZE: usize = size_of::<Cookie>();
 
-
+#[derive(Clone)]
 pub struct CookieBuf {
 	inner: Bytes
 }
@@ -50,6 +50,18 @@ pub enum MachineIds {
 
 	/// The meaning of this will depend on the method used on the cache but will generally mean that the cache is free to choose which machines the request should be forwarded to
 	Unspecified
+}
+
+impl MachineIds {
+	pub fn to_string(&self) -> String {
+		match self {
+			// TODO: Must have at least one element for this to be valid
+			MachineIds::Data(arr) =>
+				String::from("/") + &arr.iter().map(|id| id.to_string()).collect::<Vec<String>>().join("/"),
+			MachineIds::Unspecified =>
+				"-".into()
+		}
+	}
 }
 
 impl std::str::FromStr for MachineIds {
@@ -97,6 +109,7 @@ pub fn split_path_segments(path: &str) -> Option<Vec<String>> {
 	Some(segs)
 }
 
+/// NOTE: For all paths, aside from the index route of the base path, trailing slashes we consider to be invalid
 pub enum StorePath {
 	/// '/' 
 	Index,
@@ -125,61 +138,114 @@ pub enum StorePath {
 		key: NeedleKey,
 		alt_key: NeedleAltKey,
 		cookie: CookieBuf
-	},
-
-	Invalid
+	}
 }
 
 impl StorePath {
-	pub fn from(segs: &[String]) -> StorePath {
+	pub fn from(segs: &[String]) -> Result<StorePath, &'static str> {
 		if segs.len() == 0 {
-			return StorePath::Index;
+			return Ok(StorePath::Index);
 		}
 
 		let volume_id = match segs[0].parse::<VolumeId>() {
 			Ok(v) => v,
-			Err(_) => return StorePath::Invalid
+			Err(_) => return Err("Invalid volume id")
 		};
 
 		if segs.len() == 1 {
-			return StorePath::Volume {
+			return Ok(StorePath::Volume {
 				volume_id
-			};
+			});
 		}
 
 		let key = match segs[1].parse::<NeedleKey>() {
 			Ok(v) => v,
-			Err(_) => return StorePath::Invalid
+			Err(_) => return Err("Invalid needle key")
 		};
 		
 		if segs.len() == 2 {
-			return StorePath::Photo {
+			return Ok(StorePath::Photo {
 				volume_id, key
-			};
+			});
 		}
 
 		let alt_key = match segs[2].parse::<NeedleAltKey>() {
 			Ok(v) => v,
-			Err(_) => return StorePath::Invalid
+			Err(_) => return Err("Invalid needle alt key")
 		};
 
 		if segs.len() == 3 {
-			return StorePath::Partial {
+			return Ok(StorePath::Partial {
 				volume_id, key, alt_key
-			};
+			});
 		}
 
 		let cookie = match segs[3].parse::<CookieBuf>() {
 			Ok(v) => v,
-			Err(_) => return StorePath::Invalid
+			Err(_) => return Err("Invalid cookie")
 		};
 
 		if segs.len() == 4 {
-			return StorePath::Needle {
+			return Ok(StorePath::Needle {
 				volume_id, key, alt_key, cookie
-			};
+			});
 		}
 
-		StorePath::Invalid
+		Err("Unknown route pattern")
+	}
+
+	pub fn to_string(&self) -> String {
+		match self {
+			StorePath::Index => "/".into(),
+			StorePath::Volume { volume_id } =>
+				format!("/{}", volume_id),
+			StorePath::Photo { volume_id, key } =>
+				format!("/{}/{}", volume_id, key),
+			StorePath::Partial { volume_id, key, alt_key } => 
+				format!("/{}/{}/{}", volume_id, key, alt_key),
+			StorePath::Needle { volume_id, key, alt_key, cookie } => 
+				format!("/{}/{}/{}/{}", volume_id, key, alt_key, cookie.to_string()) 
+		}
 	}
 }
+
+
+pub enum CachePath {
+	// '/'
+	Index,
+
+	// '/<machine_ids>/<some_valid_store_path>'
+	Proxy {
+		machine_ids: MachineIds,
+		store: StorePath
+	}
+}
+
+impl CachePath {
+	pub fn from(segs: &[String]) -> std::result::Result<CachePath, &'static str> {
+		if segs.len() == 0 {
+			return Ok(CachePath::Index);
+		}
+
+		let machine_ids = match segs[0].parse::<MachineIds>() {
+			Ok(v) => v,
+			Err(_) => return Err("Invalid machine ids")
+		};
+
+		let store = StorePath::from(&segs[1..])?;
+
+		Ok(CachePath::Proxy {
+			machine_ids,
+			store
+		})
+	}
+
+	pub fn to_string(&self) -> String {
+		match self {
+			CachePath::Index => "/".into(),
+			CachePath::Proxy { machine_ids, store } => 
+				format!("/{}/{}", machine_ids.to_string(), store.to_string())
+		}
+	}
+}
+

@@ -2,17 +2,13 @@
 
 extern crate haystack;
 extern crate clap;
-extern crate hyper;
 
 use haystack::directory::Directory;
 use haystack::store::machine::StoreMachine;
 use haystack::errors::*;
+use haystack::http::*;
 use std::sync::{Arc,Mutex};
-use hyper::{Body, Method, Request, Response, Server, StatusCode};
-use hyper::service::service_fn;
 use clap::{Arg, App};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use hyper::rt::Future;
 
 
 fn main() -> Result<()> {
@@ -41,28 +37,17 @@ fn main() -> Result<()> {
 	let machine = StoreMachine::load(dir, port, store)?;
 	let mac_handle = Arc::new(Mutex::new(machine));
 
-	// TODO: See https://docs.rs/hyper/0.12.19/hyper/server/struct.Server.html#example for graceful shutdowns
 
-	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
+	let on_start = || {
+		StoreMachine::start(&mac_handle);
+	};
 
-	let mac_server = mac_handle.clone();
-
-	let server = Server::bind(&addr)
-        .serve(move || {
-			let mac_client = mac_server.clone();
-			service_fn(move |req: Request<Body>| {
-				haystack::store::routes::handle_request(
-					mac_client.clone(), req
-				)
-			})
-		})
-        .map_err(|e| eprintln!("server error: {}", e));
-
-    println!("Listening on http://{}", addr);
-
-	StoreMachine::start(mac_handle);
-
-    hyper::rt::run(server);
+	start_http_server(
+		port,
+		&mac_handle,
+		&haystack::store::routes::handle_request,
+		&on_start
+	);
 
 	Ok(())
 }

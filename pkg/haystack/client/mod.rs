@@ -8,6 +8,7 @@
 use super::errors::*;
 use super::common::*;
 use super::directory::*;
+use super::paths::*;
 use bitwise::Word;
 use base64;
 use reqwest;
@@ -57,8 +58,15 @@ impl Client {
 
 			for c in chunks.iter() {
 				let url = format!(
-					"http://{}:{}/{}/{}/{}/{}",
-					m.addr_ip, m.addr_port, p.volume_id, p.id, c.alt_key, encode_cookie(&p.cookie)
+					"http://{}:{}{}",
+					m.addr_ip, m.addr_port,
+					StorePath::Needle {
+						volume_id: p.volume_id.to_unsigned(),
+						key: p.id.to_unsigned(),
+						alt_key: c.alt_key,
+						cookie: CookieBuf::from(&p.cookie)
+					}.to_string()
+					
 				);
 
 				// TODO: This will usually be an expensive clone and not good for us
@@ -82,10 +90,5 @@ impl Client {
 
 	}
 
-}
-
-fn encode_cookie(c: &[u8]) -> String {
-	let encoded = base64::encode_config(c, base64::URL_SAFE);
-	encoded.trim_end_matches('=').to_string()
 }
 

@@ -25,13 +25,6 @@ pub const NEEDLE_FOOTER_SIZE: usize =
 const FLAG_DELETED: u8 = 1;
 
 
-
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
-pub struct NeedleKeys {
-	pub key: u64,
-	pub alt_key: u32
-}
-
 #[derive(Clone)]
 pub struct NeedleMeta {
 	pub flags: u8, // TODO: With padding, this will increase the memory footprint a lot

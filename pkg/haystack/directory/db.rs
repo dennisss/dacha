@@ -194,6 +194,21 @@ impl DB {
 			.first::<StoreMachine>(&self.conn).optional()?)
 	}
 
+	pub fn read_store_machines(&self, id_values: &[MachineId]) -> Result<Vec<StoreMachine>> {
+		use super::schema::store_machines::dsl::*;
+
+		if id_values.len() == 0 {
+			return Ok(vec![]);
+		}
+
+		let mut q = store_machines.filter(id.eq(id_values[0].to_signed()));
+		for id_value in &id_values[1..] {
+			q.or_filter(id.eq(id_value.to_signed()));
+		}
+
+		Ok(q.get_results::<StoreMachine>(&self.conn)?)
+	}
+
 	pub fn read_store_machines_for_volume(&self, vol: VolumeId) -> Result<Vec<StoreMachine>> {
 		use super::schema::store_machines::dsl::*;
 		use super::schema::physical_volumes::dsl::*;

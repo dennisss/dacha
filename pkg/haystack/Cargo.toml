@@ -13,6 +13,10 @@ name = "haystore"
 path = "bin/haystore.rs"
 
 [[bin]]
+name = "haycache"
+path = "bin/haycache.rs"
+
+[[bin]]
 name = "hayclient"
 path = "bin/hayclient.rs"
 
