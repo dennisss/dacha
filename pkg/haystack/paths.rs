@@ -114,6 +114,7 @@ pub fn split_path_segments(path: &str) -> Option<Vec<String>> {
 }
 
 /// NOTE: For all paths, aside from the index route of the base path, trailing slashes we consider to be invalid
+#[derive(Clone)]
 pub enum StorePath {
 	/// '/' 
 	Index,
@@ -250,6 +251,82 @@ impl CachePath {
 			CachePath::Proxy { machine_ids, store } => 
 				format!("/{}/{}", machine_ids.to_string(), store.to_string())
 		}
+	}
+}
+
+
+pub struct ETag {
+	pub store_id: MachineId,
+	pub volume_id: VolumeId,
+	pub block_offset: BlockOffset,
+	pub checksum: Bytes
+}
+
+impl ETag {
+
+	pub fn from(s: &str) -> std::result::Result<ETag, &'static str> {
+		if s.len() < 2 {
+			return Err("Too small");
+		}
+
+		if &s[0..1] != "\"" || &s[(s.len() - 1)..] != "\"" {
+			return Err("No quotes");
+		}
+
+		let parts = s[1..(s.len() - 1)].split(':').collect::<Vec<_>>();
+
+		if parts.len() != 4 {
+			return Err("Not enough parts");
+		}
+
+		let store_id = parts[0].parse::<MachineId>().map_err(|_| "Invalid store id")?;
+		let volume_id = parts[1].parse::<VolumeId>().map_err(|_| "Invalid volume id")?;
+		let block_offset = parts[2].parse::<BlockOffset>().map_err(|_| "Invalid block offset")?;
+		let checksum = parse_urlbase64(parts[3]).map_err(|_| "Invalid checksum")?;
+
+		Ok(ETag {
+			store_id,
+			volume_id,
+			block_offset,
+			checksum: checksum.into()
+		})
+	}
+
+	pub fn from_header(v: &hyper::header::HeaderValue) -> std::result::Result<ETag, &'static str> {
+		match v.to_str() {
+			Ok(s) => {
+				match ETag::from(s) {
+					Ok(e) => Ok(e),
+					Err(e) => Err(e)
+				}
+			},
+			Err(_) => Err("Invalid header value string")
+		}
+	}
+
+	pub fn partial_matches(&self, store_id: MachineId, volume_id: VolumeId, block_offset: BlockOffset) -> bool {
+		self.store_id == store_id && self.volume_id == volume_id && self.block_offset == block_offset
+	}
+
+	pub fn matches(&self, other: &ETag) -> bool {
+		// Small safety check against potential CRC32 collisions
+		// If the other etag came from this machine, then we know for sure if it was modified based on the monotonic offsets
+		// (this case should be dominant the majority of the time between the cache and the backend store)		
+		if self.store_id == other.store_id && self.volume_id == other.volume_id {
+			return self.block_offset == other.block_offset;
+		}
+
+		&self.checksum == &other.checksum
+	}
+
+	pub fn to_string(&self) -> String {
+		format!(
+			"\"{}:{}:{}:{}\"",
+			self.store_id,
+			self.volume_id,
+			self.block_offset,
+			serialize_urlbase64(&self.checksum).trim_end_matches('=')
+		)
 	}
 }
 

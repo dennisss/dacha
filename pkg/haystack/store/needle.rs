@@ -12,7 +12,10 @@ use std::mem::size_of;
 
 
 
+/// NOTE: We optimize for a small checksum by only really using it for data integrity on disk and not really security
+/// Reasonable security gurantees are produced by assuming that the uploading agent will likely pre-process the file before uploading and updates to the same exact photo aren't really a normal occurence, so most photos are immutable anyway after their first upload aside from automated trusted re-uploads
 const CHECKSUM_SIZE: usize = 4;
+
 const FOOTER_MAGIC: &str = "LES!";
 const FOOTER_MAGIC_SIZE: usize = 4;
 
@@ -207,11 +210,9 @@ impl Needle {
 		(&self.buf[sum_start..])
 	}
 
-	/**
-	 * Verifies the integrity of the needle's data based on the checksum
-	 *
-	 * If this gives an error, then this physical volume as at least partially corrupted
-	 */
+	/// Verifies the integrity of the needle's data based on the checksum
+	///
+	/// If this gives an error, then this physical volume as at least partially corrupted
 	pub fn check(&self) -> Result<()> {
 
 		// TOOD: Insulate all errors so that we can distinguish corruption errors from other errors

@@ -63,6 +63,10 @@ impl StoreMachine {
 	pub fn can_write(&self) -> bool {
 		self.write_enabled && self.can_read()
 	}
+
+	pub fn addr(&self) -> String {
+		self.addr_ip.clone() + ":" + &self.addr_port.to_string()
+	}
 }
 
 

@@ -6,7 +6,6 @@ use super::needle::*;
 use std::io;
 use std::io::{Write, Read, Seek, Cursor};
 use std::collections::HashMap;
-use std::cmp::min;
 use std::fs::{File, OpenOptions};
 use crc32c::crc32c_append;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
@@ -206,6 +205,11 @@ impl PhysicalVolume {
 		// TODO: Write the checksum of all of this stuff (minus the padding right)
 
 		Ok(())
+	}
+
+	/// See what the offset of a needle is as fast as possible (mainly a cache optimization for etags received upstream from the cache)
+	pub fn peek_needle_block_offset(&self, keys: &NeedleKeys) -> Option<BlockOffset> {
+		self.index.get(keys).map(|e| e.block_offset)
 	}
 
 	// TODO: If we want to go super fast, we could implement the data as a stream and start sending it back to a user right away

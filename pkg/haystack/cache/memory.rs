@@ -16,6 +16,9 @@ pub struct MemoryEntry {
 
 	pub cookie: CookieBuf,
 
+	/// The id of the machine which we got this entry from (used to consistently rehit the same machine when we want to double check a stale entry)
+	pub store_id: MachineId,
+
 	/// The logical volume from which we got this entry from originally
 	/// Because photos can change logical volumes upon overflow of their old ones, this may change over time
 	/// TODO: Because we don't include this in the cache key, sequential attempts to lookup different volumes will cache miss a lot, so ideally we hope that all browsers quickly pick up the new volume id
@@ -25,7 +28,7 @@ pub struct MemoryEntry {
 	/// We will opaquely cache most custom and cache-related headers that we get back from the store (mainly to replicate the original response we got from the store)
 	pub headers: HeaderMap,
 
-	/// THis will be the raw data of the needle file it is associated with 
+	/// This will be the raw data of the needle file it is associated with 
 	pub data: Bytes,
 }
 
@@ -40,7 +43,6 @@ pub enum Cached {
 #[derive(Clone)]
 struct MemoryEntryInternal {
 
-	// XXX: Hello world, should this be separately referenced
 	pub value: Arc<MemoryEntry>,
 
 	/// The last time this data was 

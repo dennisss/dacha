@@ -155,7 +155,6 @@ fn create_volume(
 
 
 
-
 fn read_photo(
 	parts: &Parts,
 	mac_handle: MachineHandle,
@@ -164,18 +163,50 @@ fn read_photo(
 
 ) -> Result<Response<Body>> {
 
-	let mac = mac_handle.lock().unwrap();
+	// Briefly lock the machine just to get some necessary info and a volume handle
+	let (mac_id, writeable, vol_handle) = {
+		let mac = mac_handle.lock().unwrap();
 
-	let writeable = mac.can_write();
+		let v = match mac.volumes.get(&volume_id) {
+			Some(v) => v.clone(),
+			None => return Ok(
+				text_response(StatusCode::NOT_FOUND, "Volume not found")
+			),
+		};
 
-	let vol_handle = match mac.volumes.get(&volume_id) {
-		Some(v) => v,
-		None => return Ok(
-			text_response(StatusCode::NOT_FOUND, "Volume not found")
-		),
+		(mac.id(), mac.can_write(), v)
 	};
 
 	let mut vol = vol_handle.lock().unwrap();
+
+
+	let given_etag = match parts.headers.get("If-None-Match") {
+		Some(v) => {
+			match ETag::from_header(v) {
+				Ok(e) => Some(e),
+				Err(_) => return Ok(bad_request())
+			}
+		},
+		None => None
+	};
+
+	// Under the condition that we are using a priveleged route (requesting without a cookie), we will allow checking based solely on the etag value (this will be used exclusively if the cache already has a potential value and just needs us to validate it)
+	if given_cookie.is_none() {
+		if let Some(ref e) = given_etag {
+			let off = vol.peek_needle_block_offset(&NeedleKeys { key, alt_key });
+			if let Some(offset) = off {
+				if e.partial_matches(mac_id, volume_id, offset) {
+					// TODO: This response must always be as close possible to the actual response we would give lower both in this function (- the body)
+					return Ok(Response::builder()
+						.status(StatusCode::NOT_MODIFIED)
+						.header("ETag", e.to_string()) // Reflecting back the cache given ETag
+						.header("X-Haystack-Writeable", if writeable { "1" } else { "0" })
+						.body(Body::empty()).unwrap());
+				}
+			}
+		}
+	}
+
 
 	// TODO: I do want to be able to support exporting legit errors
 	let r = vol.read_needle(&NeedleKeys { key, alt_key })?;
@@ -201,12 +232,12 @@ fn read_photo(
 	}
 	else {
 		// Cookie was not given
-		// If we are configured to require cookies, then we should error out in this case
+		// NOTE: In some privileged cases, the cache will request the resource without the cookie
 	}
 
 	
 
-	// Now producing the respone
+	// Now producing the response
 
 	let cookie = n.header.cookie.to_string();
 
@@ -215,18 +246,18 @@ fn read_photo(
 	let mut res = Response::builder();
 	
 	// The etag is mainly designed to make hits to the same machine very efficient and hits to other machines at least able to notice after a disk read
-	let etag = format!("\"{}:{}:{}:{}\"", mac.id(), volume_id, offset, sum.trim_end_matches('='));
-	
+	let etag = ETag {
+		store_id: mac_id, volume_id, block_offset: offset, checksum: bytes::Bytes::from(n.crc32c())
+	};	
 
 	res
-	.header("ETag", etag.clone())
+	.header("ETag", etag.to_string())
 	.header("X-Haystack-Cookie", cookie)
 	.header("X-Haystack-Hash", String::from("crc32c=") + &sum)
 	.header("X-Haystack-Writeable", if writeable { "1" } else { "0" });
 
-	// TODO: Multiple layers of checking now possible
-	if let Some(v) = parts.headers.get("If-None-Match") {
-		if &v.to_str().unwrap_or("") == &etag {
+	if let Some(e) = given_etag {
+		if etag.matches(&e) {
 			return Ok(res.status(StatusCode::NOT_MODIFIED).body(Body::empty()).unwrap());
 		}
 	}
