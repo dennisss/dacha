@@ -1,6 +1,6 @@
 use diesel::*;
 use super::schema::*;
-use super::super::common::STORE_MACHINE_HEARTBEAT_TIMEOUT;
+use super::super::common::{STORE_MACHINE_HEARTBEAT_TIMEOUT, ALLOCATION_SIZE};
 use chrono::{DateTime, Utc, Duration};
 
 pub enum ParamKey {
@@ -43,6 +43,7 @@ pub struct StoreMachine {
 
 impl StoreMachine {
 
+	/// Check whether or not we are allowed to read from this machine
 	pub fn can_read(&self) -> bool {
 
 		if !self.ready {
@@ -60,8 +61,14 @@ impl StoreMachine {
 		true
 	}
 
+	/// Check whether or not we are allocated to write new needles to any writeable volume on this machine
 	pub fn can_write(&self) -> bool {
 		self.write_enabled && self.can_read()
+	}
+
+	/// Check whether we are allowed to create a new volume on this machine
+	pub fn can_allocate(&self) -> bool {
+		self.can_write() && (self.allocated_space + (ALLOCATION_SIZE as i64) < self.total_space)
 	}
 
 	pub fn addr(&self) -> String {
@@ -78,6 +85,7 @@ pub struct NewStoreMachine<'a> {
 	pub addr_port: i16,
 }
 
+/// NOTE: These will be ephemeral and will only exist while they need to 
 #[derive(Queryable, Identifiable)]
 #[table_name = "cache_machines"]
 pub struct CacheMachine {

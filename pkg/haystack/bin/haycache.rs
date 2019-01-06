@@ -5,7 +5,7 @@ extern crate clap;
 extern crate hyper;
 
 use haystack::directory::Directory;
-use haystack::cache::machine::CacheMachine;
+use haystack::cache::machine::*;
 use haystack::errors::*;
 use haystack::http::start_http_server;
 use std::sync::{Arc,Mutex};
@@ -30,7 +30,11 @@ fn main() -> Result<()> {
 	let dir = Directory::open()?;
 
 	let machine = CacheMachine::load(dir, port)?;
-	let mac_handle = Arc::new(Mutex::new(machine));
+	let mac_ctx = MachineContext {
+		inst: Mutex::new(machine)
+	};
+
+	let mac_handle = Arc::new(mac_ctx);
 
 
 	let on_start = || {

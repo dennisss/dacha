@@ -3,7 +3,15 @@ use super::super::errors::*;
 use super::super::directory::*;
 use super::memory::*;
 use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
+
+pub struct MachineContext {
+	//pub id: MachineId,
+	pub inst: Mutex<CacheMachine>
+}
+
+pub type MachineHandle = Arc<MachineContext>;
 
 pub struct CacheMachine {
 

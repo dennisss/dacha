@@ -5,7 +5,7 @@ use super::super::http::*;
 use super::machine::*;
 use super::volume::*;
 use super::needle::*;
-use hyper::{Body, Request, Response, Method, StatusCode};
+use hyper::{Body, Response, Method, StatusCode};
 use hyper::http::request::Parts;
 use hyper::body::Payload;
 use mime_sniffer::MimeTypeSniffer;
@@ -13,14 +13,17 @@ use std::sync::{Arc,Mutex};
 use futures::prelude::*;
 use futures::prelude::await;
 
-pub type MachineHandle = Arc<Mutex<StoreMachine>>;
-
 
 #[async]
 pub fn handle_request(
 	parts: Parts, body: Body, mac_handle: MachineHandle
 ) -> Result<Response<Body>> {
-	
+
+	// Because ip addresses and ports can change across restarts, we will always verify the request based on a standard hostname pattern derived by this machine's exact id	
+	if !Host::Store(mac_handle.id).check_against(&parts) {
+		return Ok(bad_request_because("Incorrect/invalid host"));
+	}
+
 	let segs = match split_path_segments(&parts.uri.path()) {
 		Some(v) => v,
 		None => return Ok(bad_request_because("Invalid path given"))
@@ -107,7 +110,7 @@ impl StoreReadVolumeBody {
 fn index_volumes(
 	mac_handle: MachineHandle
 ) -> Result<Response<Body>> {
-	let mac = mac_handle.lock().unwrap();
+	let mac = mac_handle.inst.lock().unwrap();
 
 	let mut arr: Vec<StoreReadVolumeBody> = vec![];
 
@@ -124,7 +127,7 @@ fn read_volume(
 ) -> Result<Response<Body>> {
 	
 	// NOTE: WE only really need this for long enough to acquire 
-	let mac = mac_handle.lock().unwrap();
+	let mac = mac_handle.inst.lock().unwrap();
 
 	match mac.volumes.get(&volume_id) {
 		Some(v) =>  Ok(
@@ -141,7 +144,7 @@ fn create_volume(
 	volume_id: VolumeId
 ) -> Result<Response<Body>> {
 
-	let mut mac = mac_handle.lock().unwrap();
+	let mut mac = mac_handle.inst.lock().unwrap();
 
 	if mac.volumes.contains_key(&volume_id) {
 		return Ok(text_response(StatusCode::OK, "Volume already exists"));
@@ -165,7 +168,7 @@ fn read_photo(
 
 	// Briefly lock the machine just to get some necessary info and a volume handle
 	let (mac_id, writeable, vol_handle) = {
-		let mac = mac_handle.lock().unwrap();
+		let mac = mac_handle.inst.lock().unwrap();
 
 		let v = match mac.volumes.get(&volume_id) {
 			Some(v) => v.clone(),
@@ -309,7 +312,7 @@ fn write_photo(
 		return Ok(text_response(StatusCode::BAD_REQUEST, "Request payload bad length"));
 	}
 
-	let mut mac = mac_handle.lock().unwrap();
+	let mut mac = mac_handle.inst.lock().unwrap();
 
 	let vol_handle = match mac.volumes.get(&volume_id) {
 		Some(v) => v,

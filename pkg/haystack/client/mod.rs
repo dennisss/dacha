@@ -58,8 +58,8 @@ impl Client {
 
 			for c in chunks.iter() {
 				let url = format!(
-					"http://{}:{}{}",
-					m.addr_ip, m.addr_port,
+					"http://{}{}",
+					m.addr(),
 					StorePath::Needle {
 						volume_id: p.volume_id.to_unsigned(),
 						key: p.id.to_unsigned(),

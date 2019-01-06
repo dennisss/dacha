@@ -4,7 +4,7 @@ extern crate haystack;
 extern crate clap;
 
 use haystack::directory::Directory;
-use haystack::store::machine::StoreMachine;
+use haystack::store::machine::*;
 use haystack::errors::*;
 use haystack::http::*;
 use std::sync::{Arc,Mutex};
@@ -37,7 +37,12 @@ fn main() -> Result<()> {
 	let machine = StoreMachine::load(dir, port, store)?;
 	println!("Starting Haystore Id #{}", machine.id());
 
-	let mac_handle = Arc::new(Mutex::new(machine));
+	let mac_ctx = MachineContext {
+		id: machine.id(),
+		inst: Mutex::new(machine)
+	};
+
+	let mac_handle = Arc::new(mac_ctx);
 
 
 	let on_start = || {

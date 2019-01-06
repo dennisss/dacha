@@ -18,6 +18,14 @@ use std::thread;
 use std::time;
 use std::sync::{Arc,Mutex};
 
+
+pub struct MachineContext {
+	pub id: MachineId,
+	pub inst: Mutex<StoreMachine>
+}
+
+pub type MachineHandle = Arc<MachineContext>;
+
 const VOLUMES_MAGIC: &str = "HAYV";
 const VOLUMES_MAGIC_SIZE: usize = 4;
 
@@ -254,13 +262,13 @@ impl StoreMachine {
 	}
 
 
-	pub fn start(mac_handle: &Arc<Mutex<StoreMachine>>) {
+	pub fn start(mac_handle: &MachineHandle) {
 		let mac_handle = mac_handle.clone();
 		thread::spawn(move || {
 			// TODO: On Ctrl-C, must mark as not-ready to stop this loop, issue one last heartbeat marking us as not ready and wait for all active http requests to finish
 			loop {
 				{
-					let mut mac = mac_handle.lock().unwrap();
+					let mut mac = mac_handle.inst.lock().unwrap();
 					if let Err(e) = mac.do_heartbeat() {
 						println!("{:?}", e);
 					}
@@ -290,6 +298,11 @@ impl StoreMachine {
 	pub fn can_write(&self) -> bool {
 		true
 	}
+
+	pub fn can_allocate(&self) -> bool {
+		self.allocated_space() + ALLOCATION_SIZE < self.total_space()
+	}
+
 
 	pub fn do_heartbeat(&mut self) -> Result<()> {
 

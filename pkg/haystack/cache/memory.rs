@@ -104,10 +104,11 @@ impl MemoryStore {
 		};
 
 		// If stale, then we should delete it from the table
-		if self.is_stale(&e, &now) {
-			// In this case we may return a cache result get for the hell of it
-
-			self.delete(keys, &e);
+		// But if is only almost stale, we will keep around a reference to it. This way many requests can simultaneously re-up stale references without a full update (small mitigation of the thundering herd issue of cache stale refreshes)
+		if self.almost_stale(&e, &now) {
+			if self.is_stale(&e, &now) {
+				self.delete(keys, &e);
+			}
 
 			Cached::Stale(e.value)
 		}
@@ -202,6 +203,12 @@ impl MemoryStore {
 
 	fn is_stale(&self, e: &MemoryEntryInternal, now: &SystemTime) -> bool {
 		now.duration_since(e.value.inserted_at).unwrap_or(Duration::from_millis(0)).ge(&self.max_age)
+	}
+
+	fn almost_stale(&self, e: &MemoryEntryInternal, now: &SystemTime) -> bool {
+		// TODO: We assume that the age is at least 5 seconds
+		let early_age = Duration::from_secs(self.max_age.as_secs() - 5);
+		now.duration_since(e.value.inserted_at).unwrap_or(Duration::from_millis(0)).ge(&early_age)
 	}
 
 	fn need_space(&self) -> bool {

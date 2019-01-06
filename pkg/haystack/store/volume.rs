@@ -48,6 +48,13 @@ pub struct PhysicalVolume {
 
 	/// The lowest needle offset in the file that will require compaction (or 0 if we've never compacted before)
 	compaction_watermark: u64,
+
+	/// End offset of the last needle that all of the other compaction information represents
+	//compaction_checkpoint: u64,
+
+	/// The length of the file (or the offset to the very end of the last needle + padding)
+	/// Because of the potential for partial writes, we won't trust the size reported on disk after the volume is fully loaded
+	extent: u64
 }
 
 impl PhysicalVolume {
@@ -73,10 +80,12 @@ impl PhysicalVolume {
 			file: f,
 			index: HashMap::new(),
 			compaction_pending: 0,
-			compaction_watermark: 0
+			compaction_watermark: 0,
+			extent: 0
 		};
 
 		vol.write_superblock()?;
+		vol.extent = vol.offset_after_super_block();
 
 		// Then we will initialize an empty index file
 		// In the case of 
@@ -120,15 +129,19 @@ impl PhysicalVolume {
 			return Err("Superblock unknown format version".into());
 		}
 
-		let vol = PhysicalVolume {
+		let mut vol = PhysicalVolume {
 			cluster_id,
 			machine_id,
 			volume_id,
 			file: file.try_clone()?,
 			index: HashMap::new(),
 			compaction_pending: 0,
-			compaction_watermark: 0
+			compaction_watermark: 0,
+			extent: 0
 		};
+
+		// Initially starts right after the superblock because we haven't checked any of the needles after it yet
+		vol.extent = vol.offset_after_super_block();
 
 		Ok(vol)
 	}
@@ -151,16 +164,19 @@ impl PhysicalVolume {
 	/// TODO: We should also use this for checking the integrity of an existing file
 	fn scan_needles(&mut self) -> Result<()> {
 
-		let mut off = SUPERBLOCK_SIZE as u64;
-		off += self.block_size_remainder(off);
+		// Start scanning at last known good end of file
+		let mut off = self.extent;
 
 		self.file.seek(io::SeekFrom::Start(off))?;
 
 		let size = self.file.metadata()?.len();
 
 		let mut buf = [0u8; NEEDLE_HEADER_SIZE];
+		let mut last_off = 0;
 
 		while off < size {
+
+			last_off = off;
 
 			if off % (BLOCK_SIZE as u64) != 0 {
 				return Err("Needles misaligned relative to block offsets".into());
@@ -184,9 +200,16 @@ impl PhysicalVolume {
 			self.file.seek(io::SeekFrom::Start(off))?;
 		}
 
-		// TODO: Must have scanned the entire file
+		if size == off {
+			// Perform file
+			self.extent = off;
+		}
+		else {
+			eprintln!("Detected incomplete data at end of file");
 
-		// TODO: Eventually if the file is incomplete, we should support partially rebuilding the needle starting at the end of all good looking data
+			// Truncating to the end of the last file (we will just overwrite the existing data when we start appending more data)
+			self.extent = last_off;
+		}
 
 		Ok(())
 	}
@@ -199,10 +222,14 @@ impl PhysicalVolume {
 		self.file.write_u64::<LittleEndian>(self.cluster_id)?;
 		self.file.write_u32::<LittleEndian>(self.machine_id)?;
 		self.file.write_u32::<LittleEndian>(self.volume_id)?;
-		self.pad_to_block_size()?;
+		// TODO: Write the checksum of all of this stuff (minus the padding)
+
+		let end = self.pad_to_block_size()?;
 		self.file.flush()?;
 
-		// TODO: Write the checksum of all of this stuff (minus the padding right)
+		if self.extent == 0 {
+			self.extent = end;
+		}
 
 		Ok(())
 	}
@@ -282,7 +309,8 @@ impl PhysicalVolume {
 
 		// Seek to the end of the file (and get that offset)
 		// TODO: Instead we should be tracking the end as the offset after the last known good needle (as we don't want to compound corruptions)
-		let off = self.file.seek(io::SeekFrom::End(0))?;
+		let off = self.extent;
+		self.file.seek(io::SeekFrom::Start(off))?;
 
 		if off % (BLOCK_SIZE as u64) != 0 {
 			return Err("File not block aligned".into());
@@ -333,7 +361,9 @@ impl PhysicalVolume {
 
 		// TODO: These two writes can definitely be combined
 		NeedleFooter::write(&mut self.file, sum)?;
-		self.pad_to_block_size()?;
+		
+		// Pad the file to the blocksize and mark our new file length
+		self.extent = self.pad_to_block_size()?;
 
 		self.index.insert(keys.clone(), NeedleIndexEntry {
 			meta: meta.clone(),
@@ -366,7 +396,7 @@ impl PhysicalVolume {
 	}
 
 
-	fn pad_to_block_size(&mut self) -> Result<()> {
+	fn pad_to_block_size(&mut self) -> Result<u64> {
 		let pos = self.file.seek(io::SeekFrom::Current(0))?;
 		let pad = self.block_size_remainder(pos);
 		if pad != 0 {
@@ -375,11 +405,17 @@ impl PhysicalVolume {
 			self.file.write_all(&padding)?;
 		}
 
-		Ok(())
+		Ok(pos + pad)
+	}
+
+	fn offset_after_super_block(&self) -> u64 {
+		let mut off = SUPERBLOCK_SIZE as u64;
+		off += self.block_size_remainder(off);
+		off
 	}
 
 	/// Given that the current position in the file is at the end of a middle, this will determine how much 
-	fn block_size_remainder(&mut self, end_offset: u64) -> u64 {
+	fn block_size_remainder(&self, end_offset: u64) -> u64 {
 		let rem = (end_offset as usize) % BLOCK_SIZE;
 		if rem == 0 {
 			return 0;

@@ -330,3 +330,61 @@ impl ETag {
 	}
 }
 
+#[derive(PartialEq)]
+pub enum Host {
+	Store(MachineId),
+	Cache(MachineId)
+}
+
+impl Host {
+
+	pub fn to_string(&self) -> String {
+		match self {
+			Host::Store(m) => format!("{}.store.hay", m),
+			Host::Cache(m) => format!("{}.cache.hay", m)
+		}
+	}
+
+	pub fn check_against(&self, parts: &hyper::http::request::Parts) -> bool {
+		let v = match parts.headers.get("Host") {
+			Some(v) => v,
+			None => return false
+		};
+
+		match Host::from_header(v) {
+			Ok(h) => {
+				h == *self
+			},
+			Err(_) => false
+		}
+	}
+
+	pub fn from_header(v: &hyper::header::HeaderValue) -> std::result::Result<Host, &'static str> {
+		let s = match v.to_str() {
+			Ok(s) => s,
+			Err(_) => return Err("Invalid header value string")
+		};
+
+		let segs = s.split('.').collect::<Vec<_>>();
+		if segs.len() < 3 {
+			return Err("Not enought segments in host");
+		}
+
+		if segs[2] != "hay" {
+			return Err("Missing hay domain");
+		}
+
+		let id = match segs[0].parse::<MachineId>() {
+			Ok(v) => v,
+			Err(_) => return Err("Invalid machine id")
+		};
+
+		match segs[1] {
+			"store" => Ok(Host::Store(id)),
+			"cache" => Ok(Host::Cache(id)),
+			_ => Err("Unknown domain type")
+		}
+	}
+}
+
+

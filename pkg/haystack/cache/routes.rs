@@ -15,9 +15,11 @@ use std::sync::{Arc,Mutex};
 use futures::prelude::*;
 use futures::prelude::await;
 use std::time::{SystemTime, Duration};
-
-
-type MachineHandle = Arc<Mutex<CacheMachine>>;
+use rand::thread_rng;
+use rand::seq::SliceRandom;
+use reqwest::header::HeaderMap;
+use futures::future;
+use bytes::Bytes;
 
 
 #[async]
@@ -63,7 +65,7 @@ pub struct CacheIndexResponse {
 
 // TODO: This should probably not be exposeable to random external clients
 fn index_cache(mac_handle: MachineHandle) -> Result<Response<Body>> {
-	let mac = mac_handle.lock().unwrap();
+	let mac = mac_handle.inst.lock().unwrap();
 
 	// TODO: Would also key good to hashed key-range of this cache
 	Ok(json_response(StatusCode::OK, &CacheIndexResponse {
@@ -82,10 +84,6 @@ fn index_cache(mac_handle: MachineHandle) -> Result<Response<Body>> {
 	- Whether or not it is internal
 */
 
-use rand::thread_rng;
-use rand::seq::SliceRandom;
-use reqwest::header::HeaderMap;
-use futures::future;
 
 /// To mitigate backend DOS, this will limit the number of machines that can be specified as backends when making a request to the cache (does not apply in the unspecified mode)
 const MAX_MACHINE_LIST_SIZE: usize = 6;
@@ -143,7 +141,7 @@ fn handle_proxy_request(
 
 					{ // Mutex scope
 					
-					let mut mac = mac_handle.lock().unwrap();
+					let mut mac = mac_handle.inst.lock().unwrap();
 
 					let res = mac.memory.lookup(&keys);
 
@@ -194,7 +192,6 @@ fn handle_proxy_request(
 	}
 }
 
-use bytes::Bytes;
 
 #[async]
 fn respond_from_backend(
@@ -205,7 +202,7 @@ fn respond_from_backend(
 	// TODO: Make this more dynamic
 	let from_cdn = false;
 
-
+	// TODO: Next optimization would be to maintain the connections to the backends long term
 	let client = reqwest::async::Client::new();
 
 	// TODO: Need to support streaming back a response as we get it from the store while we are putting it into the cache
@@ -217,6 +214,7 @@ fn respond_from_backend(
 		let probably_should_cache = !from_cdn && store_mac.can_write();
 
 		let mut req = client.get(&route);
+		req = req.header("Host", Host::Store(store_mac.id as MachineId).to_string());
 
 		// In an optimization to not re-hit the stores on stale caches, we will attempt to reuse the etag
 		// The backend store will recognize this by not reading from disk and not checking the cookie is the offsets in the etag are correct
@@ -316,7 +314,7 @@ fn respond_from_backend(
 				data: buf
 			});
 
-			let mut mac = mac_handle.lock().unwrap();
+			let mut mac = mac_handle.inst.lock().unwrap();
 
 
 			let is_writeable = if let Some(v) = entry.headers.get("X-Haystack-Writeable") {
