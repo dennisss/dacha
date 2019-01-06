@@ -1,9 +1,7 @@
-dataLayer
-=========
+The Repository
+==============
 
-A broad collection of implementations for database, object store, networking, and processing systems.
-
-For now, the scope of this project is towards reimplementation of largely successful systems from enterprise research.
+This is a monorepo for housing many exciting projects and research implementations that I'm building
 
 
 Listing
