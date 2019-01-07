@@ -70,7 +70,10 @@ impl Client {
 				);
 
 				// TODO: This will usually be an expensive clone and not good for us
-				let resp = client.post(&url).body(reqwest::Body::new(std::io::Cursor::new(c.data.clone()))).send()?;
+				let resp = client
+					.post(&url)
+					.header("Host", Host::Store(m.id as MachineId).to_string())
+					.body(reqwest::Body::new(std::io::Cursor::new(c.data.clone()))).send()?;
 				if !resp.status().is_success() {
 					// TODO: Also log out the actual body message?
 					return Err(format!("Received status {:?} while uploading", resp.status()).into());

@@ -1,5 +1,3 @@
-extern crate fs2;
-
 use std::io;
 use std::io::{Write, Read, Seek};
 use std::fs::{File, OpenOptions};
@@ -21,6 +19,7 @@ use std::sync::{Arc,Mutex};
 use std::sync::atomic::AtomicUsize;
 use rand::seq::SliceRandom;
 use rand::Rng;
+use super::machine_index::*;
 
 
 pub struct MachineContext {
@@ -50,117 +49,6 @@ impl MachineContext {
 
 
 pub type MachineHandle = Arc<MachineContext>;
-
-const VOLUMES_MAGIC: &str = "HAYV";
-const VOLUMES_MAGIC_SIZE: usize = 4;
-
-const VOLUMES_HEADER_SIZE: usize =
-	VOLUMES_MAGIC_SIZE +
-	size_of::<FormatVersion>() +
-	size_of::<ClusterId>() +
-	size_of::<MachineId>();
-
-/// File that stores the list of all 
-struct VolumesIndex {
-	pub cluster_id: ClusterId,
-	pub machine_id: MachineId,
-	file: File
-
-	// TODO: We also want to store the amount of space allocated to each physical volume and also run a crc over all of the data in this file
-	// considerng tha this is the only real meaningful file, we should ensure that it always checks out
-}
-
-impl VolumesIndex {
-
-	fn open(path: &Path) -> Result<VolumesIndex> {
-		let mut opts = OpenOptions::new();
-		opts.read(true).write(true);
-
-		let mut f = opts.open(path)?;
-
-		let mut header = [0u8; VOLUMES_HEADER_SIZE];
-		f.read_exact(&mut header)?;
-
-		if &header[0..VOLUMES_MAGIC_SIZE] != VOLUMES_MAGIC.as_bytes() {
-			return Err("Volumes magic is incorrect".into());
-		}
-
-		let mut c = Cursor::new(&header[VOLUMES_MAGIC_SIZE..]);
-
-		let version = c.read_u32::<LittleEndian>()?;
-		let cluster_id = c.read_u64::<LittleEndian>()?;
-		let machine_id = c.read_u32::<LittleEndian>()?;
-
-		if version != CURRENT_FORMAT_VERSION {
-			return Err("Volumes version is incorrect".into());
-		}
-
-
-		let idx = VolumesIndex {
-			cluster_id,
-			machine_id,
-			file: f
-		};
-
-		Ok(idx)
-	}
-
-	// Need to do a whole lot right here
-	fn create(path: &Path, cluster_id: ClusterId, machine_id: MachineId) -> Result<VolumesIndex> {
-		let mut opts = OpenOptions::new();
-		opts.write(true).create_new(true).read(true);
-
-		let mut f = opts.open(path)?;
-
-		f.write_all(VOLUMES_MAGIC.as_bytes())?;
-		f.write_u32::<LittleEndian>(CURRENT_FORMAT_VERSION)?;
-		f.write_u64::<LittleEndian>(cluster_id)?;
-		f.write_u32::<LittleEndian>(machine_id)?;
-
-		// TODO: Should probably also flush the directory as well?
-		f.flush()?;
-
-		Ok(VolumesIndex {
-			cluster_id: cluster_id.clone(),
-			machine_id: machine_id.clone(),
-			file: f
-		})
-	}
-
-	/// Get all volume ids referenced in this index
-	/// It's someone else's problem to ensure that there are no duplicates
-	fn read_all(&mut self) -> Result<Vec<VolumeId>> {
-		
-		self.file.seek(SeekFrom::Start(VOLUMES_HEADER_SIZE as u64))?;
-
-		let mut buf = Vec::new();
-		self.file.read_to_end(&mut buf)?;
-
-		// Should round exactly to id
-		if buf.len() % size_of::<VolumeId>() != 0 {
-			return Err("Volumes index is corrupt".into());
-		}
-
-		let mut out = Vec::new();
-
-
-		let size = buf.len() / size_of::<VolumeId>();
-		let mut cur = Cursor::new(buf);
-		for _ in 0..size {
-			out.push(cur.read_u32::<LittleEndian>()?);
-		}
-
-		Ok(out)
-	}
-
-	fn add_volume_id(&mut self, id: VolumeId) -> io::Result<()> {
-		self.file.seek(SeekFrom::End(0))?;
-		self.file.write_u32::<LittleEndian>(id)?;
-		self.file.flush()?;
-		Ok(())
-	}
-
-}
 
 
 /// Encapsulates the broad configuration and current state of a single store machine
@@ -215,7 +103,7 @@ impl StoreMachine {
 		let idx = if volumes_path.exists() {
 			VolumesIndex::open(&volumes_path)?
 		} else {
-			let machine = dir.create_store_machine()?;
+			let machine = dir.db.create_store_machine("127.0.0.1", port)?;
 			VolumesIndex::create(&volumes_path, dir.cluster_id, machine.id.to_unsigned())?
 		};
 
@@ -262,7 +150,7 @@ impl StoreMachine {
 		};
 
 		// Verify that if we opened an existing file, that it wasn't from some other conflicting store
-		if vol.volume_id != volume_id || vol.cluster_id != self.index.cluster_id {
+		if vol.superblock.volume_id != volume_id || vol.superblock.cluster_id != self.index.cluster_id {
 			return Err("Opened volume does not belong to this store".into());
 		}
 
@@ -433,7 +321,7 @@ impl StoreMachine {
 			let writeable = self.can_write_volume_soft(&vol);
 
 			if !writeable && v.write_enabled {
-				self.dir.db.update_logical_volume_writeable(vol.volume_id, false)?;
+				self.dir.db.update_logical_volume_writeable(vol.superblock.volume_id, false)?;
 			}
 		}
 
@@ -464,7 +352,7 @@ impl StoreMachine {
 		}).collect::<Vec<_>>();
 
 		if macs.len() < NUM_REPLICAS - 1 {
-			println!("Not enough replicas available to allocate new volume");
+			return Err("Not enough replicas available to allocate new volume".into());
 		}
 
 		let vol = self.dir.create_logical_volume()?;
@@ -478,7 +366,9 @@ impl StoreMachine {
 
 		// TODO: Should retry once for each machine
 		// Also, if a machine fails, then we can proceed up to the next available machine (next in our random sequence)
-		let chosen_macs = &macs[0..(NUM_REPLICAS - 1)];
+		// NOTE: We assume that NUM_REPLICAS is always at least 1
+		let n_other = if NUM_REPLICAS > 1 { NUM_REPLICAS - 1 } else { 0 };
+		let chosen_macs = &macs[0..n_other];
 		for m in chosen_macs {
 			let url = format!("http://{}/{}", m.addr(), vol_id);
 			let res = client

@@ -3,6 +3,8 @@ use super::super::common::*;
 use super::super::errors::*;
 use super::super::paths::CookieBuf;
 use super::needle::*;
+use super::volume_index::*;
+use super::superblock::*;
 use std::io;
 use std::io::{Write, Read, Seek, Cursor};
 use std::collections::HashMap;
@@ -10,18 +12,11 @@ use std::fs::{File, OpenOptions};
 use crc32c::crc32c_append;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use std::path::Path;
-use std::mem::size_of;
 use super::stream::Stream;
+use super::block_size_remainder;
 
-const SUPERBLOCK_MAGIC: &str = "HAYS"; // And we will use HAYI for the index file
-const SUPERBLOCK_MAGIC_SIZE: usize = 4;
+const SUPERBLOCK_MAGIC: &str = "HAYS";
 
-const SUPERBLOCK_SIZE: usize =
-	SUPERBLOCK_MAGIC_SIZE +
-	size_of::<FormatVersion>() +
-	size_of::<ClusterId>() +
-	size_of::<MachineId>() +
-	size_of::<VolumeId>();
 
 
 /// Simple wrapper around a read needle including the offset into the file (useful for etags)
@@ -35,22 +30,18 @@ pub struct NeedleWithOffset {
 
 /// Represents a single file on disk that consists of many photos as part of some logical volume
 pub struct PhysicalVolume {
-	pub cluster_id: ClusterId,
-	pub machine_id: MachineId,
-	pub volume_id: VolumeId,
+	pub superblock: PhysicalVolumeSuperblock,
 	file: File,
 
 	// TODO: Make it a set of binary heaps so that we can efficiently look up all types for a single photo?
 	index: HashMap<NeedleKeys, NeedleIndexEntry>,
+	index_file: PhysicalVolumeIndex,
 
 	/// Number of bytes that we estimate can be gained through compaction
 	compaction_pending: u64,
 
-	/// The lowest needle offset in the file that will require compaction (or 0 if we've never compacted before)
-	compaction_watermark: u64,
-
-	/// End offset of the last needle that all of the other compaction information represents
-	//compaction_checkpoint: u64,
+	/// Some physical 
+	//compaction_active: Option<Arc<PhysicalVolume>>,
 
 	/// The length of the file (or the offset to the very end of the last needle + padding)
 	/// Because of the potential for partial writes, we won't trust the size reported on disk after the volume is fully loaded
@@ -71,24 +62,31 @@ impl PhysicalVolume {
 		let mut opts = OpenOptions::new();
 		opts.write(true).create_new(true).read(true);
 
-		let f = opts.open(path)?;
+		let mut file = opts.open(path)?;
+		let superblock = PhysicalVolumeSuperblock {
+			magic: SUPERBLOCK_MAGIC.as_bytes().into(),
+			cluster_id,
+			machine_id,
+			volume_id
+		};
+
+		let idx_path = path.to_str().unwrap().to_owned() + ".idx";
+		let idx = PhysicalVolumeIndex::create(&Path::new(&idx_path), cluster_id, machine_id, volume_id)?;
 
 		let mut vol = PhysicalVolume {
-			machine_id,
-			volume_id,
-			cluster_id,
-			file: f,
+			superblock,
+			file,
 			index: HashMap::new(),
+			index_file: idx,
 			compaction_pending: 0,
-			compaction_watermark: 0,
 			extent: 0
 		};
 
-		vol.write_superblock()?;
-		vol.extent = vol.offset_after_super_block();
+		vol.superblock.write(&mut vol.file)?;
 
-		// Then we will initialize an empty index file
-		// In the case of 
+		let end = vol.pad_to_block_size()?;
+		vol.file.flush()?;
+		vol.extent = end;
 
 		Ok(vol)
 	}
@@ -101,47 +99,48 @@ impl PhysicalVolume {
 		let mut opts = OpenOptions::new();
 		opts.read(true).write(true);
 
-		let mut f = opts.open(path)?;
+		let mut file = opts.open(path)?;
 
-		let mut vol = PhysicalVolume::read_superblock(&mut f)?;
-		vol.scan_needles()?;
-
-		Ok(vol)
-	}
-
-	// TODO: Would probably be nicer to have a separate superblock type to also 
-	// TODO: Rather I should implement a more generic superblock reader for all types includin the index files
-	fn read_superblock(file: &mut File) -> Result<PhysicalVolume>  {
 		let mut header = [0u8; SUPERBLOCK_SIZE];
 		file.read_exact(&mut header)?;
+		let superblock = PhysicalVolumeSuperblock::read(&mut Cursor::new(header))?;
 
-		if &header[0..4] != SUPERBLOCK_MAGIC.as_bytes() {
+		if &superblock.magic[..] != SUPERBLOCK_MAGIC.as_bytes() {
 			return Err("Superblock magic is incorrect".into());
 		}
 
-		let mut c = Cursor::new(&header[4..]);
-		let ver = c.read_u32::<LittleEndian>()?;
-		let cluster_id = c.read_u64::<LittleEndian>()?;
-		let machine_id = c.read_u32::<LittleEndian>()?;
-		let volume_id = c.read_u32::<LittleEndian>()?;
+		let idx_path_string = path.to_str().unwrap().to_owned() + ".idx";
+		let idx_path = Path::new(&idx_path_string);
+		let idx = if idx_path.exists() {
+			// TODO: In most cases of failures to read existing indexes, we can just toss it out and regenerate a new one
 
-		if ver != CURRENT_FORMAT_VERSION {
-			return Err("Superblock unknown format version".into());
+			let i = PhysicalVolumeIndex::open(&idx_path)?;
+
+			if i.superblock.cluster_id != superblock.cluster_id || i.superblock.machine_id != superblock.machine_id || i.superblock.volume_id != superblock.volume_id {
+				return Err("Opened an index file for a mismatching volume".into())
+			}
+
+			i
 		}
+		else {
+			// Read just the superblock
+			PhysicalVolumeIndex::create(&idx_path, superblock.cluster_id, superblock.machine_id, superblock.volume_id)?
+		};
+
 
 		let mut vol = PhysicalVolume {
-			cluster_id,
-			machine_id,
-			volume_id,
-			file: file.try_clone()?,
+			superblock,
+			file,
 			index: HashMap::new(),
+			index_file: idx,
 			compaction_pending: 0,
-			compaction_watermark: 0,
 			extent: 0
 		};
 
 		// Initially starts right after the superblock because we haven't checked any of the needles after it yet
 		vol.extent = vol.offset_after_super_block();
+
+		vol.scan_needles()?;
 
 		Ok(vol)
 	}
@@ -157,6 +156,26 @@ impl PhysicalVolume {
 		self.file.metadata().unwrap().len() as usize
 	}
 
+	/// Internal utility for adding to the index
+	/// This should be atomic as long as it doesn't panic
+	fn add_to_index(&mut self, keys: NeedleKeys, entry: NeedleIndexEntry, from_index_file: bool) -> Result<()> {
+		if !from_index_file {
+			self.index_file.append(&keys, &entry)?;
+		}
+
+		if let Some(old_val) = self.index.get(&keys) {
+			if old_val.block_offset == entry.block_offset {
+				// This isn't really problematic, but does indicate that we are doing something wrong
+				return Err("Adding the exact same index entry twice")?;
+			}
+
+			self.compaction_pending += old_val.meta.size
+		}
+
+		self.index.insert(keys, entry);
+
+		Ok(())
+	}
 
 	/// Scans all of the needles in the file and builds the initial index from them
 	/// 
@@ -168,14 +187,31 @@ impl PhysicalVolume {
 		// Start scanning at last known good end of file
 		let mut off = self.extent;
 
+		// Start by taking all entries from the condensed index file and seeking to the end of those
+		let index_pairs = self.index_file.read_all()?;
+
+		if index_pairs.len() > 0 {
+			{
+				let p = &index_pairs[index_pairs.len() - 1];
+				off = p.value.end_offset();
+			}
+
+			for pair in index_pairs {
+				// TODO: This will end up readding it the 
+				self.add_to_index(pair.keys, pair.value, true)?;
+			}
+		}
+
+
 		self.file.seek(io::SeekFrom::Start(off))?;
 
 		let size = self.file.metadata()?.len();
 
 		let mut buf = [0u8; NEEDLE_HEADER_SIZE];
-		let mut last_off = 0;
+		let mut last_off = off;
 
-		while off < size {
+		// Reading all remaining orphans in the file
+		while off + (NEEDLE_HEADER_SIZE as u64) <= size {
 
 			last_off = off;
 
@@ -190,14 +226,16 @@ impl PhysicalVolume {
 			self.file.read_exact(&mut buf)?;
 
 			let n = NeedleHeader::parse(&buf)?;
-			self.index.insert(n.keys.clone(), NeedleIndexEntry {
+
+			let entry = NeedleIndexEntry {
 				meta: n.meta.clone(),
 				block_offset
-			});
+			};
 
-			// Skip the body, footer, and padding
-			off += (NEEDLE_HEADER_SIZE as u64) + n.meta.size + (NEEDLE_FOOTER_SIZE as u64);
-			off += self.block_size_remainder(off);
+			off = entry.end_offset();
+
+			self.add_to_index(n.keys.clone(), entry, false)?;
+
 			self.file.seek(io::SeekFrom::Start(off))?;
 		}
 
@@ -206,31 +244,16 @@ impl PhysicalVolume {
 			self.extent = off;
 		}
 		else {
+			println!("{} {}", size, off);
+
 			eprintln!("Detected incomplete data at end of file");
 
 			// Truncating to the end of the last file (we will just overwrite the existing data when we start appending more data)
 			self.extent = last_off;
 		}
 
-		Ok(())
-	}
-
-	fn write_superblock(&mut self) -> Result<()> {
-		
-		self.file.seek(io::SeekFrom::Start(0))?;
-		self.file.write_all(SUPERBLOCK_MAGIC.as_bytes())?;
-		self.file.write_u32::<LittleEndian>(CURRENT_FORMAT_VERSION)?;
-		self.file.write_u64::<LittleEndian>(self.cluster_id)?;
-		self.file.write_u32::<LittleEndian>(self.machine_id)?;
-		self.file.write_u32::<LittleEndian>(self.volume_id)?;
-		// TODO: Write the checksum of all of this stuff (minus the padding)
-
-		let end = self.pad_to_block_size()?;
-		self.file.flush()?;
-
-		if self.extent == 0 {
-			self.extent = end;
-		}
+		// Flush in case we added orphansto the index
+		self.index_file.flush()?;
 
 		Ok(())
 	}
@@ -306,8 +329,6 @@ impl PhysicalVolume {
 		}
 		
 
-		let mut buf = [0u8; 8*1024 /* io::DEFAULT_BUF_SIZE */];
-
 		// Seek to the end of the file (and get that offset)
 		// TODO: Instead we should be tracking the end as the offset after the last known good needle (as we don't want to compound corruptions)
 		let off = self.extent;
@@ -366,10 +387,10 @@ impl PhysicalVolume {
 		// Pad the file to the blocksize and mark our new file length
 		self.extent = self.pad_to_block_size()?;
 
-		self.index.insert(keys.clone(), NeedleIndexEntry {
+		self.add_to_index(keys.clone(), NeedleIndexEntry {
 			meta: meta.clone(),
 			block_offset
-		});
+		}, false)?;
 
 		Ok(())
 	}
@@ -396,10 +417,9 @@ impl PhysicalVolume {
 		Ok(())
 	}
 
-
 	fn pad_to_block_size(&mut self) -> Result<u64> {
 		let pos = self.file.seek(io::SeekFrom::Current(0))?;
-		let pad = self.block_size_remainder(pos);
+		let pad = block_size_remainder(pos);
 		if pad != 0 {
 			let mut padding = Vec::new();
 			padding.resize(pad as usize, 0);
@@ -411,18 +431,8 @@ impl PhysicalVolume {
 
 	fn offset_after_super_block(&self) -> u64 {
 		let mut off = SUPERBLOCK_SIZE as u64;
-		off += self.block_size_remainder(off);
+		off += block_size_remainder(off);
 		off
-	}
-
-	/// Given that the current position in the file is at the end of a middle, this will determine how much 
-	fn block_size_remainder(&self, end_offset: u64) -> u64 {
-		let rem = (end_offset as usize) % BLOCK_SIZE;
-		if rem == 0 {
-			return 0;
-		}
-
-		(BLOCK_SIZE - rem) as u64
 	}
 
 }

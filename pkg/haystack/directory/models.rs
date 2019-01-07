@@ -37,7 +37,8 @@ pub struct StoreMachine {
 	pub total_space: i64,
 
 
-	/// Set to true if the machine is accepting new writes
+	/// Set to true if the machine is accepting new writes (for existing volumes)
+	/// NOTE: This says nothing about new-allocations right now
 	pub write_enabled: bool
 }
 
@@ -45,6 +46,7 @@ impl StoreMachine {
 
 	/// Check whether or not we are allowed to read from this machine
 	pub fn can_read(&self) -> bool {
+		// TODO: Eventually also account for the external health checks by pitch-fork
 
 		if !self.ready {
 			return false;
@@ -68,7 +70,7 @@ impl StoreMachine {
 
 	/// Check whether we are allowed to create a new volume on this machine
 	pub fn can_allocate(&self) -> bool {
-		self.can_write() && (self.allocated_space + (ALLOCATION_SIZE as i64) < self.total_space)
+		self.can_read() && (self.allocated_space + (ALLOCATION_SIZE as i64) < self.total_space)
 	}
 
 	pub fn addr(&self) -> String {

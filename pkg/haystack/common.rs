@@ -24,6 +24,8 @@ pub type NeedleKey = u64;
 
 pub type NeedleAltKey = u32;
 
+pub type NeedleSize = u64;
+
 pub type Cookie = [u8; 16];
 
 

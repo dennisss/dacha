@@ -99,7 +99,7 @@ struct StoreReadVolumeBody {
 impl StoreReadVolumeBody {
 	fn from(vol: &PhysicalVolume) -> StoreReadVolumeBody {
 		StoreReadVolumeBody {
-			id: vol.volume_id,
+			id: vol.superblock.volume_id,
 			num_needles: vol.num_needles(),
 			used_space: vol.used_space()
 		}
@@ -326,6 +326,8 @@ fn write_photo(
 	let mut strm = super::stream::ChunkedStream::from(chunks);
 
 	let mut vol = vol_handle.lock().unwrap();
+
+	// TODO: Currently we make no attempt to check if it will overflow the volume after the write
 	if !mac.can_write_volume(&vol) {
 		return Ok(text_response(StatusCode::BAD_REQUEST, "Volume is out of space and not writeable"));
 	}

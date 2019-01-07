@@ -50,13 +50,6 @@ impl Directory {
 		})		
 	}
 
-	/// Creates a new machine for 
-	/// 
-	/// NOTE: We assume that this is being called on the store machine itself
-	pub fn create_store_machine(&self) -> Result<StoreMachine> {
-		self.db.create_store_machine("127.0.0.1", 4000)
-	}
-
 	pub fn read_store_machine(&self, id: MachineId) -> Result<Option<StoreMachine>> {
 		self.db.read_store_machine(id)
 	}

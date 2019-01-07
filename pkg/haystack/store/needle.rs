@@ -1,6 +1,7 @@
 use super::super::common::*;
 use super::super::errors::*;
 use super::super::paths::CookieBuf;
+use super::block_size_remainder;
 use std::io::Cursor;
 use std::io::{Write, Read};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
@@ -31,12 +32,17 @@ const FLAG_DELETED: u8 = 1;
 #[derive(Clone)]
 pub struct NeedleMeta {
 	pub flags: u8, // TODO: With padding, this will increase the memory footprint a lot
-	pub size: u64
+	pub size: NeedleSize
 }
 
 impl NeedleMeta {
 	pub fn deleted(&self) -> bool {
 		self.flags & FLAG_DELETED != 0
+	}
+
+	/// Gets the total size of the header, data, and footer for this needle
+	pub fn total_size(&self) -> u64 {
+		(NEEDLE_HEADER_SIZE as u64) + self.size + (NEEDLE_FOOTER_SIZE as u64)
 	}
 }
 
@@ -48,8 +54,15 @@ pub struct NeedleIndexEntry  {
 }
 
 impl NeedleIndexEntry {
+	/// Gets the exact absolute offset in the store file of the start of the header for this needle
 	pub fn offset(&self) -> u64 {
 		(self.block_offset as u64) * (BLOCK_SIZE as u64)
+	}
+
+	pub fn end_offset(&self) -> u64 {
+		let mut off = self.offset() + self.meta.total_size();
+		off = off + block_size_remainder(off);
+		off
 	}
 }
 
