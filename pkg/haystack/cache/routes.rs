@@ -151,6 +151,8 @@ fn handle_proxy_request(
 						}
 					}
 
+					// TODO: Would be great to be able to do this without a lock on mac
+					// This will currently bottle-neck our read-performance as we must hold the lock for this entire time
 					store_macs = get_backend_stores(&mac, volume_id)?;
 
 					old_entry = if let Cached::Stale(e) = res {

@@ -7,7 +7,7 @@ use haystack::directory::Directory;
 use haystack::store::machine::*;
 use haystack::errors::*;
 use haystack::http::*;
-use std::sync::{Arc,Mutex};
+use std::sync::Arc;
 use clap::{Arg, App};
 
 
@@ -37,10 +37,7 @@ fn main() -> Result<()> {
 	let machine = StoreMachine::load(dir, port, store)?;
 	println!("Starting Haystore Id #{}", machine.id());
 
-	let mac_ctx = MachineContext {
-		id: machine.id(),
-		inst: Mutex::new(machine)
-	};
+	let mac_ctx = MachineContext::from(machine);
 
 	let mac_handle = Arc::new(mac_ctx);
 

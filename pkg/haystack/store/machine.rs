@@ -7,6 +7,7 @@ use std::io::{Cursor, SeekFrom};
 use std::collections::{HashMap};
 use super::super::common::*;
 use super::super::errors::*;
+use super::super::paths::Host;
 use super::volume::{PhysicalVolume};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use fs2::FileExt;
@@ -17,12 +18,36 @@ use bitwise::Word;
 use std::thread;
 use std::time;
 use std::sync::{Arc,Mutex};
+use std::sync::atomic::AtomicUsize;
+use rand::seq::SliceRandom;
+use rand::Rng;
 
 
 pub struct MachineContext {
 	pub id: MachineId,
-	pub inst: Mutex<StoreMachine>
+	pub inst: Mutex<StoreMachine>,
+
+	/// Number of volumes in this machine that are writeable
+	/// Will be updated in the routes whenever a write operation occurs
+	pub nwriteable: AtomicUsize
 }
+
+impl MachineContext {
+	pub fn from(store: StoreMachine) -> MachineContext {
+		let nwrite = 0;
+
+
+		MachineContext {
+			id: store.id(),
+			inst: Mutex::new(store),
+			nwriteable: AtomicUsize::new(0)
+		}
+	}
+}
+
+
+// Whenever unlocking a volume, we will update the counter
+
 
 pub type MachineHandle = Arc<MachineContext>;
 
@@ -261,23 +286,69 @@ impl StoreMachine {
 		Ok(())
 	}
 
-
 	pub fn start(mac_handle: &MachineHandle) {
 		let mac_handle = mac_handle.clone();
 		thread::spawn(move || {
+			let mut pending_alloc = false;
+
 			// TODO: On Ctrl-C, must mark as not-ready to stop this loop, issue one last heartbeat marking us as not ready and wait for all active http requests to finish
+			// TODO: For allocation events, we do want this loop to be able to be woken up by a write action that causes the used space amount to tip over the max size
 			loop {
 				{
 					let mut mac = mac_handle.inst.lock().unwrap();
+
+					// TODO: Current issue is that blocking the entire machine for a long time will be very expensive during concurrent operations
 					if let Err(e) = mac.do_heartbeat() {
 						println!("{:?}", e);
 					}
+
+					if let Err(e) = mac.check_writeability() {
+						println!("{:?}", e);
+					}
+
+					if pending_alloc {
+						// If we still need to allocate (meaning that no other machine tried allocating since we last checked), then we will proceed with allocating
+						if mac.should_allocate() {
+							if let Err(e) = mac.perform_allocation() {
+								println!("{:?}", e);
+							}
+
+							// Should should generally mean that at least 2 more cycles to perform additional allocations
+							pending_alloc = false;
+						}
+					}
+					else {
+						pending_alloc = mac.should_allocate();
+					}
 				}
 
-				let dur = time::Duration::from_millis(STORE_MACHINE_HEARTBEAT_INTERVAL);
+				let mut time = STORE_MACHINE_HEARTBEAT_INTERVAL;
+
+				// Because many machines can be pending allocation all at once, we will randomly sleep some fraction of the heartbeat before trying to create a volume in order to avoid many machines trying to 
+				if pending_alloc {
+					// NOTE: .gen() should return a positive float from 0-1
+					time = ((time as f64) * rand::thread_rng().gen::<f64>()) as u64;
+				}
+
+				let dur = time::Duration::from_millis(time);
 				thread::sleep(dur);
 			}
 		});
+	}
+
+	/// Gets the total amount of occupied space on disk
+	/// NOTE: This is an expensive heavily locking operation and generally not be used for normal operations
+	pub fn used_space(&self) -> usize {
+
+		// TODO: Likewise need to be marking volumes that are out of space as fully write-only in the database
+
+		let mut sum = 0;
+
+		for (_, v) in self.volumes.iter() {
+			sum += v.lock().unwrap().used_space();
+		}
+
+		sum
 	}
 
 	pub fn allocated_space(&self) -> usize {
@@ -294,19 +365,41 @@ impl StoreMachine {
 		STORE_MACHINE_SPACE - (ALLOCATION_SIZE * ALLOCATION_RESERVED)
 	}
 
-	// TODO: We will have multiple degrees of writeability for the volumes and the machine itself
+	pub fn can_write_volume_soft(&self, vol: &PhysicalVolume) -> bool {
+		(((vol.used_space() as f64) * 0.95) as usize) < ALLOCATION_SIZE
+	}
+
+	pub fn can_write_volume(&self, vol: &PhysicalVolume) -> bool {
+		vol.used_space() < ALLOCATION_SIZE
+	}
+
+	/// Whether or not any volue on this machine can be written within a reasonable margin of error
+	pub fn can_write_soft(&self) -> bool {
+		for (_, v) in self.volumes.iter() {
+			if self.can_write_volume_soft(&v.lock().unwrap()) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/// Whether or not any any volume volume in the entire store is writeable
 	pub fn can_write(&self) -> bool {
-		true
+		for (_, v) in self.volumes.iter() {
+			if self.can_write_volume(&v.lock().unwrap()) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	pub fn can_allocate(&self) -> bool {
 		self.allocated_space() + ALLOCATION_SIZE < self.total_space()
 	}
 
-
 	pub fn do_heartbeat(&mut self) -> Result<()> {
-
-		self.check_allocated()?;
 
 		self.dir.db.update_store_machine_heartbeat(
 			self.index.machine_id,
@@ -314,30 +407,109 @@ impl StoreMachine {
 			"127.0.0.1", self.port,
 			self.allocated_space() as u64,
 			self.total_space() as u64,
-			true
+			self.can_write_soft()
 		)?;
 
 		Ok(())
 	}
 
+	/// Check that if for all volumes that exist on this machine, if any of them are close to being empty, then we need to mark them as being read-only remotely
+	/// TODO: We could probably split this entirely once we mark every single volume as read-only until other constraints change
+	pub fn check_writeability(&self) -> Result<()> {
 
-	pub fn check_allocated(&mut self) -> Result<()> {
-		// For now we will simply make sure that we have at least one volume
+		let vols = self.dir.db.read_logical_volumes_for_store_machine(self.id())?;
 
-		if self.volumes.len() < 1 {
-			let vol = self.dir.create_logical_volume()?;
+		for v in vols {
+			let vol_handle = match self.volumes.get(&(v.id as VolumeId)) {
+				Some(v) => v,
+				None => {
+					eprintln!("Inconsistent volume not on this machine: {}", v.id);
+					continue;
+				}
+			};
 
-			let vol_id = vol.id.to_unsigned();
+			let vol = vol_handle.lock().unwrap();
 
-			self.create_volume(vol_id)?;
+			let writeable = self.can_write_volume_soft(&vol);
 
+			if !writeable && v.write_enabled {
+				self.dir.db.update_logical_volume_writeable(vol.volume_id, false)?;
+			}
+		}
+
+		Ok(())
+	}
+
+	/// Check whether or not we should allocate another volume on this machine
+	/// While the machine is not fully allocated, we will ensure that the machine never goes above 70% space utilization
+	/// NOTE: Currently this will require a lock on all volumes unfortunately
+	pub fn should_allocate(&self) -> bool {
+		// Ignore if we don't have space to allocate more volumes on this machine
+		if !self.can_allocate() {
+			return false;
+		}
+
+		let need_more = self.volumes.len() < 1 ||
+			(self.used_space() as f64) > ((self.allocated_space() as f64) * 0.70);
+
+		need_more
+	}
+
+	/// Assuming that we want to, this will create a new volume on this machine and pick other replicas to go along with it
+	pub fn perform_allocation(&mut self) -> Result<()> {
+		let mut rng = rand::thread_rng();
+
+		let mut macs = self.dir.db.index_store_machines()?.into_iter().filter(|m| {
+			m.can_allocate() && (m.id as MachineId) != self.id()
+		}).collect::<Vec<_>>();
+
+		if macs.len() < NUM_REPLICAS - 1 {
+			println!("Not enough replicas available to allocate new volume");
+		}
+
+		let vol = self.dir.create_logical_volume()?;
+		let vol_id = vol.id.to_unsigned();
+
+		// Random choice of which machines to choose as replicas
+		// TODO: Possibly more useful to spear across less-allocated machines first (with randomness still though)
+		macs.shuffle(&mut rng);
+
+		let client = reqwest::Client::new();
+
+		// TODO: Should retry once for each machine
+		// Also, if a machine fails, then we can proceed up to the next available machine (next in our random sequence)
+		let chosen_macs = &macs[0..(NUM_REPLICAS - 1)];
+		for m in chosen_macs {
+			let url = format!("http://{}/{}", m.addr(), vol_id);
+			let res = client
+				.post(&url)
+				.header("Host", Host::Store(m.id as MachineId).to_string())
+				.send()?;
+			
+			if !res.status().is_success() {
+				return Err(format!("Failed to create volume on replica store #{}", vol_id).into());
+			}
+		}
+
+		// Finally create the volume on ourselves
+		self.create_volume(vol_id)?;
+
+		// Create send mapping
+		self.dir.db.create_physical_volume(
+			vol_id,
+			self.index.machine_id
+		)?;
+
+		// Creating mapping for all other machines
+		for m in chosen_macs {
 			self.dir.db.create_physical_volume(
 				vol_id,
-				self.index.machine_id
+				m.id as MachineId
 			)?;
-
-			self.dir.db.update_logical_volume_writeable(vol_id, true)?;
 		}
+
+		// Mark as writeable
+		self.dir.db.update_logical_volume_writeable(vol_id, true)?;
 
 		Ok(())
 	}

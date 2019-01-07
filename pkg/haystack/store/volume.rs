@@ -151,7 +151,8 @@ impl PhysicalVolume {
 		self.index.len()
 	}
 
-	// Lists the size of all space currently being used by this volume and any associated index
+	/// Lists the size of all space currently being used by this volume and any associated index
+	/// This will essentially be the total storage cost of this volume not containing lower-level filesystem metadata
 	pub fn used_space(&self) -> usize {
 		self.file.metadata().unwrap().len() as usize
 	}

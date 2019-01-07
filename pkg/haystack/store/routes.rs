@@ -9,7 +9,6 @@ use hyper::{Body, Response, Method, StatusCode};
 use hyper::http::request::Parts;
 use hyper::body::Payload;
 use mime_sniffer::MimeTypeSniffer;
-use std::sync::{Arc,Mutex};
 use futures::prelude::*;
 use futures::prelude::await;
 
@@ -150,6 +149,10 @@ fn create_volume(
 		return Ok(text_response(StatusCode::OK, "Volume already exists"));
 	}
 
+	if !mac.can_allocate() {
+		return Ok(text_response(StatusCode::BAD_REQUEST, "Can not currently allocate volumes"));
+	}
+
 	mac.create_volume(volume_id)?;
 
 	Ok(text_response(StatusCode::CREATED, "Volume created!"))
@@ -177,7 +180,8 @@ fn read_photo(
 			),
 		};
 
-		(mac.id(), mac.can_write(), v)
+		// TODO: Current issue is that can_write is very expensive as it must lock all volumes
+		(mac.id(), mac.can_write_soft(), v)
 	};
 
 	let mut vol = vol_handle.lock().unwrap();
@@ -321,8 +325,13 @@ fn write_photo(
 
 	let mut strm = super::stream::ChunkedStream::from(chunks);
 
+	let mut vol = vol_handle.lock().unwrap();
+	if !mac.can_write_volume(&vol) {
+		return Ok(text_response(StatusCode::BAD_REQUEST, "Volume is out of space and not writeable"));
+	}
+
 	// We would now like this to broadcast out the future that it produces
-	vol_handle.lock().unwrap().append_needle(
+	vol.append_needle(
 		NeedleKeys { key, alt_key },
 		cookie,
 		NeedleMeta { flags: 0, size: content_length },

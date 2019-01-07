@@ -37,7 +37,7 @@ fn main() -> Result<()> {
 		let chunks = vec![
 			PhotoChunk {
 				alt_key,
-				data
+				data: data.into()
 			}
 		];
 

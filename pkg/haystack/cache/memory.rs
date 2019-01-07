@@ -55,6 +55,8 @@ struct MemoryEntryInternal {
 /// A simple LRU in-memory cache with 
 pub struct MemoryStore {
 
+	// XXX: Separate out the state stuff and wrap internally in the RWLock
+
 	/// Maximum amount of space we are allowed to take up in-memory
 	pub total_space: usize,
 

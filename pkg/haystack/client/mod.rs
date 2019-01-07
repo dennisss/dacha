@@ -12,7 +12,7 @@ use super::paths::*;
 use bitwise::Word;
 use base64;
 use reqwest;
-
+use bytes::Bytes;
 
 pub struct Client {
 	dir: Directory 
@@ -20,7 +20,7 @@ pub struct Client {
 
 pub struct PhotoChunk {
 	pub alt_key: NeedleAltKey,
-	pub data: Vec<u8>
+	pub data: Bytes
 }
 
 impl Client {
@@ -70,7 +70,7 @@ impl Client {
 				);
 
 				// TODO: This will usually be an expensive clone and not good for us
-				let resp = client.post(&url).body(c.data.clone()).send()?;
+				let resp = client.post(&url).body(reqwest::Body::new(std::io::Cursor::new(c.data.clone()))).send()?;
 				if !resp.status().is_success() {
 					// TODO: Also log out the actual body message?
 					return Err(format!("Received status {:?} while uploading", resp.status()).into());
