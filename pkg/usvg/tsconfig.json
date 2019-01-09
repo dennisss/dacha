@@ -1,0 +1,28 @@
+{
+	"compilerOptions": {
+		"module": "commonjs",
+		"moduleResolution": "node",
+		"target": "esnext",
+		"lib": [
+			"es6", "esnext", "dom"
+		],
+		"types": [
+			"mocha"
+		],
+		"strict": true,
+		"removeComments": false,
+		"sourceMap": false,
+		"preserveConstEnums": true,
+		"esModuleInterop": true,
+		"outDir": "./dist/",
+		"importHelpers": true,
+		"declaration": true
+	},
+	"include": [
+		"src/**/*",
+		"test/**/*"
+	],
+	"exclude": [
+		"node_modules"
+	]
+}

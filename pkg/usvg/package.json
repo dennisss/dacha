@@ -1,0 +1,45 @@
+{
+	"name": "usvg",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Aggressive svg microfier trading performance for output size",
+	"main": "dist/index.js",
+	"scripts": {
+		"test": "./node_modules/.bin/ts-node ./node_modules/.bin/_mocha",
+		"build": "./node_modules/.bin/tsc --project ."
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+git@github.com:dennisss/repo.git"
+	},
+	"author": {
+		"name": "Dennis Shtatnov",
+		"url": "https://github.com/dennisss"
+	},
+	"devDependencies": {
+		"@types/css-tree": "^1.0.0",
+		"@types/jsdom": "^12.2.1",
+		"@types/mkdirp": "^0.5.2",
+		"@types/node": "^10.12.5",
+		"@types/sharp": "^0.21.0",
+		"@types/svgo": "^1.0.1",
+		"js-beautify": "^1.8.9",
+		"mocha": "^5.2.0",
+		"ts-node": "^7.0.1",
+		"typescript": "^3.1.6"
+	},
+	"files": [
+		"dist/**/*",
+		"README.md",
+		"LICENSE",
+		"index.js"
+	],
+	"dependencies": {
+		"@types/mocha": "^5.2.5",
+		"css-tree": "^1.0.0-alpha.29",
+		"jsdom": "^13.1.0",
+		"sharp": "^0.21.1",
+		"svgo": "^1.1.1",
+		"tslib": "^1.9.3"
+	}
+}
