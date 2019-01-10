@@ -167,11 +167,11 @@ impl DB {
 
 	// TODO: Eventually may need to be able to delete physical_volume mappings if we decide that a machine is completely dead and not recoverable
 
-	pub fn create_cache_machine(&self, addr_ip: &str, addr_port: u16, hostname: &str) -> Result<CacheMachine> {
+	pub fn create_cache_machine(&self, addr_ip: &str, addr_port: u16) -> Result<CacheMachine> {
 		let new_machine = NewCacheMachine {
 			addr_ip,
 			addr_port: addr_port.to_signed(),
-			hostname
+			hostname: ""
 		};
 
 		let m = diesel::insert_into(schema::cache_machines::table)
@@ -184,6 +184,35 @@ impl DB {
 	pub fn index_cache_machines(&self) -> Result<Vec<CacheMachine>> {
 		use super::schema::cache_machines::dsl::*;
 		Ok(cache_machines.get_results::<CacheMachine>(&self.conn)?)
+	}
+
+	pub fn read_cache_machine(&self, id_value: MachineId) -> Result<Option<CacheMachine>> {
+		use super::schema::cache_machines::dsl::*;
+
+		Ok(cache_machines
+			.filter(id.eq(id_value as i32))
+			.first::<CacheMachine>(&self.conn).optional()?)
+	}
+
+	pub fn update_cache_machine_heartbeat(&self,
+		id_value: MachineId,
+		ready_value: bool,
+		addr_ip_value: &str, addr_port_value: u16
+	) -> Result<()> {
+		use super::schema::cache_machines::dsl::*;
+
+		expect_changed(
+			diesel::update(
+				cache_machines.filter(id.eq(id_value.to_signed()))
+			)
+			.set((
+				ready.eq(ready_value),
+				addr_ip.eq(addr_ip_value),
+				addr_port.eq(addr_port_value.to_signed()),
+				last_heartbeat.eq( Utc::now() )
+			))
+			.execute(&self.conn)?
+		)
 	}
 
 

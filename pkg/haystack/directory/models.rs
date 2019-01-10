@@ -98,8 +98,30 @@ pub struct CacheMachine {
 	pub ready: bool,
 	pub alive: bool,
 	pub healthy: bool,
-	pub hostname: String
+	pub hostname: String // TODO: Do we still want to use this?
 }
+
+impl CacheMachine {
+
+	// Basically the same as the StoreMachine one
+	pub fn can_read(&self) -> bool {
+		if !self.ready {
+			return false;
+		}
+
+		let now = Utc::now();
+		if (
+			now.ge(&self.last_heartbeat) &&
+			(now - (self.last_heartbeat)).ge(&Duration::milliseconds(STORE_MACHINE_HEARTBEAT_TIMEOUT as i64))
+		) {
+			return false;
+		}
+
+		true
+	} 
+	
+}
+
 
 #[derive(Insertable)]
 #[table_name = "cache_machines"]

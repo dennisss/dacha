@@ -3,7 +3,19 @@
 
 A node.js based svg optimizer built on top of svgo with more aggressive minification features
 
+Usage
+-----
+
+	import uSVG from './src/';
+	let inst = new uSVG();
+	let out = await inst.optimize('<svg>....</svg>');
+	// Do something with 'out'
+
+
 List of features
+----------------
+
+
 - Whatever SVGO does
 - Visual verification
 	- A test render of the svg is done and a similarity check is done at a configurable accuracy level to verify that the svg was not compressed too aggressively

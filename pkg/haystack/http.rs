@@ -3,7 +3,7 @@ use hyper::http::request::Parts;
 use futures::Future;
 use hyper::service::service_fn;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Once};
 use super::errors::Error;
 
 pub fn bad_request() -> Response<Body> {
@@ -62,17 +62,22 @@ pub fn handle_request_guard<F, P, I>(
 }
 
 // TODO: See https://docs.rs/hyper/0.12.19/hyper/server/struct.Server.html#example for graceful shutdowns
-pub fn start_http_server<F, FS, P: 'static, I: 'static>(
-	port: u16, arg: &Arc<I>, f: &'static F, fstart: &FS
+pub fn start_http_server<F, FS, FE, P: 'static, I: 'static>(
+	port: u16, arg: &Arc<I>, f: &'static F, fstart: &FS, fend: &'static FE
 )
 	where P: Send + Future<Item=Response<Body>, Error=Error>,
 		  I: Send + Sync,
 		  F: Sync + (Fn(Parts, Body, Arc<I>) -> P),
-		  FS: Fn()
+		  FS: Fn(&Arc<I>),
+		  FE: Sync + Fn(&Arc<I>)
 {
 	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
 
+	let (tx, rx) = futures::sync::oneshot::channel::<()>();
+
 	let arg = arg.clone();
+	let arg2 = arg.clone();
+	let arg3 = arg.clone();
 	let server = Server::bind(&addr)
         .serve(move || {
 			let arg = arg.clone();
@@ -80,12 +85,34 @@ pub fn start_http_server<F, FS, P: 'static, I: 'static>(
 				handle_request_guard(req, arg.clone(), f)				
 			})
 		})
+		.with_graceful_shutdown(rx)
 		.map_err(|e| eprintln!("HTTP Server Error: {}", e));
 
     println!("Listening on http://{}", addr);
 	
-	fstart();
+
+	let tx_wrap = Arc::new(Mutex::new(Some(tx)));
+	ctrlc::set_handler(move || {
+
+		// Take the tx exactly once (all future ctrl-c's will get a None and return)
+		let tx = match tx_wrap.lock().unwrap().take() {
+			Some(tx) => tx,
+			None => return
+		};
+
+		// Everything below here should only ever be called exactly once
+
+		fend(&arg2);
+
+		// Shutdown the server
+		tx.send(());
+
+    }).expect("Error setting Ctrl-C handler");
+
+	fstart(&arg3);
 
 	hyper::rt::run(server);
+
+	println!("Shutdown!")
 }
 

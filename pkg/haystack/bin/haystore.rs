@@ -9,7 +9,20 @@ use haystack::errors::*;
 use haystack::http::*;
 use std::sync::Arc;
 use clap::{Arg, App};
+use std::{thread, time};
 
+
+fn on_start(mac_handle: &MachineHandle) {
+	StoreMachine::start(mac_handle);
+}
+
+fn on_stop(mac_handle: &MachineHandle) {
+	mac_handle.thread.stop();
+
+	// Wait for a small amount of time after we've been marked as not-ready in case stray requests are still pending
+	let dur = time::Duration::from_millis(1000);
+	thread::sleep(dur);
+}
 
 fn main() -> Result<()> {
 
@@ -42,15 +55,12 @@ fn main() -> Result<()> {
 	let mac_handle = Arc::new(mac_ctx);
 
 
-	let on_start = || {
-		StoreMachine::start(&mac_handle);
-	};
-
 	start_http_server(
 		port,
 		&mac_handle,
 		&haystack::store::routes::handle_request,
-		&on_start
+		&on_start,
+		&on_stop
 	);
 
 	Ok(())

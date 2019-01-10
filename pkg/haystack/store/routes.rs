@@ -155,6 +155,8 @@ fn create_volume(
 
 	mac.create_volume(volume_id)?;
 
+	mac_handle.thread.notify();
+
 	Ok(text_response(StatusCode::CREATED, "Volume created!"))
 }
 
@@ -316,11 +318,14 @@ fn write_photo(
 		return Ok(text_response(StatusCode::BAD_REQUEST, "Request payload bad length"));
 	}
 
-	let mut mac = mac_handle.inst.lock().unwrap();
-
-	let vol_handle = match mac.volumes.get(&volume_id) {
-		Some(v) => v,
-		None => return Ok(text_response(StatusCode::NOT_FOUND, "Volume not found")),
+	// Quickly lock the machine and get a volume reference
+	let vol_handle = {
+		let mut mac = mac_handle.inst.lock().unwrap();
+		
+		match mac.volumes.get(&volume_id) {
+			Some(v) => v.clone(),
+			None => return Ok(text_response(StatusCode::NOT_FOUND, "Volume not found")),
+		}
 	};
 
 	let mut strm = super::stream::ChunkedStream::from(chunks);
@@ -328,17 +333,26 @@ fn write_photo(
 	let mut vol = vol_handle.lock().unwrap();
 
 	// TODO: Currently we make no attempt to check if it will overflow the volume after the write
-	if !mac.can_write_volume(&vol) {
+	if !vol.can_write() {
 		return Ok(text_response(StatusCode::BAD_REQUEST, "Volume is out of space and not writeable"));
 	}
 
-	// We would now like this to broadcast out the future that it produces
+	let initial_writeability = vol.can_write_soft();
+
 	vol.append_needle(
 		NeedleKeys { key, alt_key },
 		cookie,
 		NeedleMeta { flags: 0, size: content_length },
 		&mut strm
 	)?;
+
+	let final_writeability = vol.can_write_soft();
+
+	// This write has caused the volume to become near-empty
+	if final_writeability != initial_writeability {
+		mac_handle.thread.notify();
+	}
+
 
 	Ok(text_response(StatusCode::OK, "Needle added!"))
 }

@@ -13,22 +13,23 @@ use std::path::{Path, PathBuf};
 use std::mem::size_of;
 use super::super::directory::Directory;
 use bitwise::Word;
-use std::thread;
-use std::time;
 use std::sync::{Arc,Mutex};
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use super::machine_index::*;
+use super::super::background_thread::*;
 
 
 pub struct MachineContext {
 	pub id: MachineId,
 	pub inst: Mutex<StoreMachine>,
+	pub thread: BackgroundThread,
 
-	/// Number of volumes in this machine that are writeable
+	/// Number of volumes in this machine that are writeable (soft-writeable)
 	/// Will be updated in the routes whenever a write operation occurs
-	pub nwriteable: AtomicUsize
+	/// TODO: We do not use this thing yet
+	pub nwriteable: AtomicUsize,
 }
 
 impl MachineContext {
@@ -39,6 +40,7 @@ impl MachineContext {
 		MachineContext {
 			id: store.id(),
 			inst: Mutex::new(store),
+			thread: BackgroundThread::new(),
 			nwriteable: AtomicUsize::new(0)
 		}
 	}
@@ -174,19 +176,21 @@ impl StoreMachine {
 		Ok(())
 	}
 
-	pub fn start(mac_handle: &MachineHandle) {
-		let mac_handle = mac_handle.clone();
-		thread::spawn(move || {
+	pub fn start(mac_handle_in: &MachineHandle) {
+		// TODO: Another duty of this thread will be to start and run compactions (as it has to do the updating of compactions anyway)
+	
+		let mac_handle = mac_handle_in.clone();
+		mac_handle_in.thread.start(move || {
 			let mut pending_alloc = false;
 
 			// TODO: On Ctrl-C, must mark as not-ready to stop this loop, issue one last heartbeat marking us as not ready and wait for all active http requests to finish
 			// TODO: For allocation events, we do want this loop to be able to be woken up by a write action that causes the used space amount to tip over the max size
-			loop {
+			while mac_handle.thread.is_running() {
 				{
 					let mut mac = mac_handle.inst.lock().unwrap();
 
 					// TODO: Current issue is that blocking the entire machine for a long time will be very expensive during concurrent operations
-					if let Err(e) = mac.do_heartbeat() {
+					if let Err(e) = mac.do_heartbeat(true) {
 						println!("{:?}", e);
 					}
 
@@ -218,9 +222,15 @@ impl StoreMachine {
 					time = ((time as f64) * rand::thread_rng().gen::<f64>()) as u64;
 				}
 
-				let dur = time::Duration::from_millis(time);
-				thread::sleep(dur);
+
+				mac_handle.thread.wait(time);
+
+				//thread::sleep(dur);
 			}
+
+			// Perform final heartbeart to take this node off of the ready list
+			mac_handle.inst.lock().unwrap().do_heartbeat(false).expect("Failed to mark as not-ready");
+
 		});
 	}
 
@@ -253,18 +263,18 @@ impl StoreMachine {
 		STORE_MACHINE_SPACE - (ALLOCATION_SIZE * ALLOCATION_RESERVED)
 	}
 
-	pub fn can_write_volume_soft(&self, vol: &PhysicalVolume) -> bool {
-		(((vol.used_space() as f64) * 0.95) as usize) < ALLOCATION_SIZE
+	/*
+	pub fn num_write_soft(&self) -> bool {
+		// TODO: We will only ask for a lock on everything during the heartbeats
+	
 	}
-
-	pub fn can_write_volume(&self, vol: &PhysicalVolume) -> bool {
-		vol.used_space() < ALLOCATION_SIZE
-	}
+	*/
 
 	/// Whether or not any volue on this machine can be written within a reasonable margin of error
+	/// NOTE: Machines with no volumes on them are NOT writeable currently (so we can't immediately accept uploads to a new volume until all machines have heartbeated again)
 	pub fn can_write_soft(&self) -> bool {
 		for (_, v) in self.volumes.iter() {
-			if self.can_write_volume_soft(&v.lock().unwrap()) {
+			if v.lock().unwrap().can_write_soft() {
 				return true;
 			}
 		}
@@ -275,7 +285,7 @@ impl StoreMachine {
 	/// Whether or not any any volume volume in the entire store is writeable
 	pub fn can_write(&self) -> bool {
 		for (_, v) in self.volumes.iter() {
-			if self.can_write_volume(&v.lock().unwrap()) {
+			if v.lock().unwrap().can_write() {
 				return true;
 			}
 		}
@@ -287,11 +297,11 @@ impl StoreMachine {
 		self.allocated_space() + ALLOCATION_SIZE < self.total_space()
 	}
 
-	pub fn do_heartbeat(&mut self) -> Result<()> {
+	pub fn do_heartbeat(&self, ready: bool) -> Result<()> {
 
 		self.dir.db.update_store_machine_heartbeat(
 			self.index.machine_id,
-			true,
+			ready,
 			"127.0.0.1", self.port,
 			self.allocated_space() as u64,
 			self.total_space() as u64,
@@ -318,7 +328,7 @@ impl StoreMachine {
 
 			let vol = vol_handle.lock().unwrap();
 
-			let writeable = self.can_write_volume_soft(&vol);
+			let writeable = vol.can_write_soft();
 
 			if !writeable && v.write_enabled {
 				self.dir.db.update_logical_volume_writeable(vol.superblock.volume_id, false)?;
@@ -370,6 +380,7 @@ impl StoreMachine {
 		let n_other = if NUM_REPLICAS > 1 { NUM_REPLICAS - 1 } else { 0 };
 		let chosen_macs = &macs[0..n_other];
 		for m in chosen_macs {
+			// TODO: Must standardize all of these api stuff
 			let url = format!("http://{}/{}", m.addr(), vol_id);
 			let res = client
 				.post(&url)

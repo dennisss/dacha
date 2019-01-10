@@ -24,9 +24,11 @@ extern crate chrono;
 extern crate bitwise;
 extern crate hyper;
 extern crate reqwest;
+extern crate ctrlc;
 
 pub mod http;
 pub mod common;
+mod background_thread;
 pub mod paths;
 pub mod store;
 pub mod directory;

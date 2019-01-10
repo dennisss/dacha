@@ -145,6 +145,16 @@ impl PhysicalVolume {
 		Ok(vol)
 	}
 
+
+	pub fn can_write_soft(&self) -> bool {
+		(((self.used_space() as f64) * 0.95) as usize) < ALLOCATION_SIZE
+	}
+
+	pub fn can_write(&self) -> bool {
+		self.used_space() < ALLOCATION_SIZE
+	}
+
+
 	/// Gets the number of raw needles stored 
 	pub fn num_needles(&self) -> usize {
 		self.index.len()
