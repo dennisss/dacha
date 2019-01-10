@@ -20,7 +20,7 @@ pub struct Client {
 
 pub struct PhotoChunk {
 	pub alt_key: NeedleAltKey,
-	pub data: Bytes
+	pub data: Vec<u8>
 }
 
 impl Client {
@@ -70,10 +70,15 @@ impl Client {
 				);
 
 				// TODO: This will usually be an expensive clone and not good for us
+				// TODO: Currently gets a Closed error
 				let resp = client
 					.post(&url)
 					.header("Host", Host::Store(m.id as MachineId).to_string())
-					.body(reqwest::Body::new(std::io::Cursor::new(c.data.clone()))).send()?;
+					//.header("Content-Length", c.data.len().to_string())
+					//.body(reqwest::Body::new(c.data.clone())
+					.body(c.data.clone())
+					.send()?;
+				
 				if !resp.status().is_success() {
 					// TODO: Also log out the actual body message?
 					return Err(format!("Received status {:?} while uploading", resp.status()).into());

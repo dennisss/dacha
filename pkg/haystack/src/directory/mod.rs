@@ -22,6 +22,30 @@ pub struct Directory {
 
 }
 
+
+/*
+	Directory operations:
+	- CreateMachine
+	- UpdateMachine
+		- Usually a heartbeat to mark the machine as still being alive and recording capacity metrics
+		- Also write-enables the machine if it is not already enabled 
+	- LockMachine
+		- Mark all of a machine's volumes as read-only
+		- Take the machine off the list of active volumes
+		- Triggered on proper shutdowns and noticing that 
+
+	- DeletePhoto(key, [alt_key])
+		-> Drops the 
+
+	- CreatePhoto(key, quantity, sizes)
+		-> Returns a cookie, logical_id and a list of stores
+		-> Also returns whether or not this change needs to be commited
+
+	- CommitPhoto(key, cookie)
+		-> Issue being that if it isn't uplaoded in time, then the old image will be totally dead
+
+*/
+
 impl Directory {
 
 	/// Connects to the backing database and initializes the cluster if needed
@@ -101,6 +125,10 @@ impl Directory {
 	/// TODO: For efficiency, if uploading successfully reaches some machines, we should prefer to reuse those machines for the next attemp 
 	pub fn relocate_photo(blacklist: &Vec<MachineId>) {
 
+
+		// XXX: For updating an existing image, we do need to first retrieve a volume and cookie assignment and then upload, and then commit it 
+
+		// Uncommited ones are considered abandoned
 	}
 
 	/*

@@ -20,7 +20,7 @@ fn on_stop(mac_handle: &MachineHandle) {
 	mac_handle.thread.stop();
 
 	// Wait for a small amount of time after we've been marked as not-ready in case stray requests are still pending
-	let dur = time::Duration::from_millis(1000);
+	let dur = time::Duration::from_millis(500);
 	thread::sleep(dur);
 }
 

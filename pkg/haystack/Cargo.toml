@@ -6,7 +6,7 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 
 [lib]
 name = "haystack"
-path = "lib.rs"
+path = "src/lib.rs"
 
 [[bin]]
 name = "haystore"

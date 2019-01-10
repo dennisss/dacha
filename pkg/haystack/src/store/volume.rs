@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use crc32c::crc32c_append;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use super::stream::Stream;
 use super::block_size_remainder;
 
@@ -31,6 +31,7 @@ pub struct NeedleWithOffset {
 /// Represents a single file on disk that consists of many photos as part of some logical volume
 pub struct PhysicalVolume {
 	pub superblock: PhysicalVolumeSuperblock,
+	path: PathBuf,
 	file: File,
 
 	// TODO: Make it a set of binary heaps so that we can efficiently look up all types for a single photo?
@@ -75,6 +76,7 @@ impl PhysicalVolume {
 
 		let mut vol = PhysicalVolume {
 			superblock,
+			path: path.to_owned(),
 			file,
 			index: HashMap::new(),
 			index_file: idx,
@@ -130,6 +132,7 @@ impl PhysicalVolume {
 
 		let mut vol = PhysicalVolume {
 			superblock,
+			path: path.to_owned(),
 			file,
 			index: HashMap::new(),
 			index_file: idx,
