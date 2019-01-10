@@ -3,6 +3,7 @@ use arrayref::*;
 use base64;
 use std::mem::size_of;
 use bytes::Bytes;
+use rand::RngCore;
 
 const COOKIE_SIZE: usize = size_of::<Cookie>();
 
@@ -19,6 +20,13 @@ impl CookieBuf {
 		CookieBuf {
 			inner: Bytes::from(data)
 		}
+	}
+
+	pub fn random() -> CookieBuf {
+		let mut arr = [0u8; size_of::<Cookie>()];
+		let mut rng = rand::thread_rng();
+		rng.fill_bytes(&mut arr);
+		CookieBuf::from(&arr) // TODO: Unnecessary copy
 	}
 
 	pub fn data(&self) -> &Cookie {
@@ -44,6 +52,22 @@ impl std::str::FromStr for CookieBuf {
 	}
 }
 
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn cookie_buf() {
+		let test_str = "AZCM6IJeXvYDtS715kNGEQ";
+		let c = test_str.parse::<CookieBuf>();
+		assert!(c.is_ok());
+		assert_eq!(test_str, c.unwrap().to_string());
+
+		let bad = "asdsd".parse::<CookieBuf>();
+		assert!(bad.is_err());
+	}
+
+}
 
 pub enum MachineIds {
 	Data(Vec<MachineId>),

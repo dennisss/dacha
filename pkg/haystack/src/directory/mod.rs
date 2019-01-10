@@ -3,6 +3,7 @@ pub mod models;
 pub mod schema;
 mod db;
 
+use super::paths::*;
 use super::common::*;
 use super::errors::*;
 use self::models::*;
@@ -114,7 +115,7 @@ impl Directory {
 
 		let p = self.db.create_photo(&NewPhoto {
 			volume_id: vol.id,
-			cookie: &generate_cookie()
+			cookie: CookieBuf::random().data()
 		})?;
 
 		Ok(p)
@@ -156,12 +157,4 @@ fn generate_cluster_id() -> ClusterId {
 	let mut rng = rand::thread_rng();
 	rng.next_u64()
 }
-
-fn generate_cookie() -> Cookie {
-	let mut id = [0u8; size_of::<Cookie>()];
-	let mut rng = rand::thread_rng();
-	rng.fill_bytes(&mut id);
-	id
-}
-
 
