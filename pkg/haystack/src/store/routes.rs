@@ -155,6 +155,7 @@ fn create_volume(
 
 	mac.create_volume(volume_id)?;
 
+	println!("- Volume {} created on Store {}", volume_id, mac_handle.id);
 	mac_handle.thread.notify();
 
 	Ok(text_response(StatusCode::CREATED, "Volume created!"))
@@ -350,6 +351,7 @@ fn write_photo(
 
 	// This write has caused the volume to become near-empty
 	if final_writeability != initial_writeability {
+		println!("- Volume {} on Machine {}: writeability: {}", volume_id, mac_handle.id, final_writeability);
 		mac_handle.thread.notify();
 	}
 

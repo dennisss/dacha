@@ -205,6 +205,9 @@ impl StoreMachine {
 								println!("{:?}", e);
 							}
 
+							// Notify ourselves as we probably just created a new volume 
+							mac_handle.thread.notify();
+
 							// Should should generally mean that at least 2 more cycles to perform additional allocations
 							pending_alloc = false;
 						}

@@ -15,7 +15,7 @@ pub struct BackgroundThread {
 	/// 3. Amount of total space has changed (usually we will just restart the store?)
 	/// 4. Volume has been created/deleted (for the case of a change in allocation amount in this machine)
 	event_var: Condvar,
-	event_mutex: Mutex<()>,
+	event_mutex: Mutex<bool>,
 
 }
 
@@ -27,7 +27,7 @@ impl BackgroundThread {
 			running: AtomicBool::new(false),
 			handle: Mutex::new(None),
 			event_var: Condvar::new(),
-			event_mutex: Mutex::new(()),
+			event_mutex: Mutex::new(false),
 		} 
 	}
 
@@ -51,17 +51,30 @@ impl BackgroundThread {
 	}
 
 	pub fn notify(&self) {
+		let mut guard = self.event_mutex.lock().unwrap();
+		*guard = true;
+
 		self.event_var.notify_one();
 	}
 
 	/// Should be called within the thread function to wait for the next event to occur or a timeout to elapse
 	pub fn wait(&self, time: u64) {
 		let dur = time::Duration::from_millis(time);
-		let (_, r) = self.event_var
-			.wait_timeout(self.event_mutex.lock().unwrap(), dur).unwrap();
-		
-		if !r.timed_out() {
-			println!("Sync thread got event!");
+
+		let mut guard = self.event_mutex.lock().unwrap();
+		if *guard {
+			*guard = false;
+			println!("Processing existing event");
+		}
+		else {
+			let (mut next_guard, r) = self.event_var
+				.wait_timeout(guard, dur).unwrap();
+			
+			*next_guard = false;
+
+			if !r.timed_out() {
+				println!("Sync thread got event!");
+			}
 		}
 	}
 }

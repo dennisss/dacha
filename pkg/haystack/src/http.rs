@@ -105,7 +105,9 @@ pub fn start_http_server<F, FS, FE, P: 'static, I: 'static>(
 		fend(&arg2);
 
 		// Shutdown the server
-		tx.send(());
+		if let Err(e) = tx.send(()) {
+			eprintln!("Error while shutting down: {:?}", e);
+		}
 
     }).expect("Error setting Ctrl-C handler");
 

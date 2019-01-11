@@ -40,5 +40,11 @@ pub fn run(dir: Directory, port: u16, folder: &str) -> Result<()> {
 	);
 
 
+	// This will flush all pending physical volume index records to disk
+	let mac = mac_handle.inst.lock().unwrap();
+	for (_, v) in mac.volumes.iter() {
+		v.lock().unwrap().flush()?;
+	}
+
 	Ok(())
 }

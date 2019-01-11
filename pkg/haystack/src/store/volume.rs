@@ -430,6 +430,10 @@ impl PhysicalVolume {
 		Ok(())
 	}
 
+	pub fn flush(&mut self) -> Result<()> {
+		self.index_file.flush()
+	}
+
 	fn pad_to_block_size(&mut self) -> Result<u64> {
 		let pos = self.file.seek(io::SeekFrom::Current(0))?;
 		let pad = block_size_remainder(pos);
