@@ -25,6 +25,7 @@ extern crate bitwise;
 extern crate hyper;
 extern crate reqwest;
 extern crate ctrlc;
+extern crate siphasher;
 
 pub mod http;
 pub mod common;

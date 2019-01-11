@@ -1,18 +1,13 @@
 The Repository
 ==============
 
-This is a monorepo for housing many exciting projects and research implementations that I'm building
+This is a monorepo for housing many exciting projects and research implementations that I'm building. Individual subprojects are located in the `pkg/[name]` folders.
 
 
 Listing
 -------
 
-**Facebook Haystack**
+- `haystack`: (Re-)Implementation of the Facebook Haystack distributed photo (or blob) store written in Rust
 
-Distributed photo (or binary blob) object store implemented on top of 
+- `μsvg`: Aggressive SVG minifier written in Node.js
 
-This implementation
-- Written in Rust
-- HTTP API to all components
-- Machine synchronization via a Postgres/SQL database
-- Documentation on usage coming soon

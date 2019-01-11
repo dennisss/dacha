@@ -17,7 +17,7 @@
 		"declaration": true
 	},
 	"include": [
-		"src/**/*"
+		"pkg/**/*"
 	],
 	"exclude": [
 		"node_modules"

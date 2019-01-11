@@ -1,4 +1,7 @@
-
+/*
+	This is a simple script for fetching sample images to use while testing the system
+	- This should be run till completion before running any tests
+*/
 
 import axios, { AxiosResponse } from 'axios';
 import fs from 'fs';

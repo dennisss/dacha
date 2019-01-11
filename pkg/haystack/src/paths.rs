@@ -52,23 +52,6 @@ impl std::str::FromStr for CookieBuf {
 	}
 }
 
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn cookie_buf() {
-		let test_str = "AZCM6IJeXvYDtS715kNGEQ";
-		let c = test_str.parse::<CookieBuf>();
-		assert!(c.is_ok());
-		assert_eq!(test_str, c.unwrap().to_string());
-
-		let bad = "asdsd".parse::<CookieBuf>();
-		assert!(bad.is_err());
-	}
-
-}
-
 pub enum MachineIds {
 	Data(Vec<MachineId>),
 
@@ -273,7 +256,7 @@ impl CachePath {
 		match self {
 			CachePath::Index => "/".into(),
 			CachePath::Proxy { machine_ids, store } => 
-				format!("/{}/{}", machine_ids.to_string(), store.to_string())
+				format!("/{}{}", machine_ids.to_string(), store.to_string())
 		}
 	}
 }
@@ -389,6 +372,8 @@ impl Host {
 			Err(_) => return Err("Invalid header value string")
 		};
 
+		let s = s.to_lowercase();
+
 		let segs = s.split('.').collect::<Vec<_>>();
 		if segs.len() < 3 {
 			return Err("Not enought segments in host");
@@ -409,6 +394,42 @@ impl Host {
 			_ => Err("Unknown domain type")
 		}
 	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn cookie_buf() {
+		let test_str = "AZCM6IJeXvYDtS715kNGEQ";
+		let c = test_str.parse::<CookieBuf>();
+		assert!(c.is_ok());
+		assert_eq!(test_str, c.unwrap().to_string());
+
+		let bad = "asdsd".parse::<CookieBuf>();
+		assert!(bad.is_err());
+	}
+
+	#[test]
+	fn host_to_string() {
+		assert_eq!(&Host::Store(12).to_string(), "12.store.hay");
+	}
+
+	#[test]
+	fn host_from_header() {
+		let v = hyper::header::HeaderValue::from_str("5454.SToRE.hay.localhost").unwrap();
+		match Host::from_header(&v) {
+			Ok(s) => {
+				match s {
+					Host::Store(5454) => {},
+					_ => panic!("Wrong parsing result")
+				};
+			},
+			_ => panic!("Should have been parseable")
+		};
+	}
+
 }
 
 

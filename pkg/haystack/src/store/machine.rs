@@ -66,7 +66,7 @@ pub struct StoreMachine {
 	/// Location of all files on this machine
 	folder: String,
 
-	index: VolumesIndex
+	index: StoreMachineIndex
 
 }
 
@@ -103,10 +103,10 @@ impl StoreMachine {
 
 		
 		let idx = if volumes_path.exists() {
-			VolumesIndex::open(&volumes_path)?
+			StoreMachineIndex::open(&volumes_path)?
 		} else {
 			let machine = dir.db.create_store_machine("127.0.0.1", port)?;
-			VolumesIndex::create(&volumes_path, dir.cluster_id, machine.id.to_unsigned())?
+			StoreMachineIndex::create(&volumes_path, dir.cluster_id, machine.id.to_unsigned())?
 		};
 
 		if dir.cluster_id != idx.cluster_id {
@@ -219,7 +219,7 @@ impl StoreMachine {
 				// Because many machines can be pending allocation all at once, we will randomly sleep some fraction of the heartbeat before trying to create a volume in order to avoid many machines trying to 
 				if pending_alloc {
 					// NOTE: .gen() should return a positive float from 0-1
-					time = ((time as f64) * rand::thread_rng().gen::<f64>()) as u64;
+					time = ((time as f64) * rand::thread_rng().gen::<f64>() * 0.25) as u64;
 				}
 
 

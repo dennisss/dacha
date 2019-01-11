@@ -224,6 +224,77 @@ impl MemoryStore {
 		self.used_space = self.used_space - entry.value.data.len();
 	}
 
+}
+
+
+#[cfg(test)]
+mod tests {
+
+	use super::*;
+
+	fn setup_empty() -> MemoryStore {
+		MemoryStore::new(1000, 100, Duration::from_secs(20))
+	}
+
+	/*
+	fn randbytes(size: usize) -> Bytes {
+
+	}
+	*/
+
+	fn insert_random(store: &mut MemoryStore, keys: &NeedleKeys) {
+
+	}
+
+	#[test]
+	fn memory_store_insert_one_and_remove() {
+		
+		let mut store = setup_empty();
+
+		let keys = NeedleKeys { key: 4, alt_key: 5 };
+		let data = Bytes::from(&b"Hello world"[..]);
+		let entry = Arc::new(MemoryEntry {
+			inserted_at: SystemTime::now(),
+			cookie: CookieBuf::random(),
+			store_id: 1,
+			logical_id: 1,
+			headers: HeaderMap::new(),
+			data: data.clone()
+		});
+
+		assert_eq!(store.used_space, 0);
+		assert_eq!(store.len(), 0);
+
+		let out1 = store.lookup(&keys);
+		if let Cached::None = out1 { }
+		else {
+			panic!("Key should not be in the store yet")
+		}
+
+
+		store.insert(keys.clone(), entry);
+
+		assert_eq!(store.used_space, data.len());
+		assert_eq!(store.len(), 1);
+
+		let out2 = store.lookup(&keys);
+		if let Cached::Valid(n) = out2 {
+			assert_eq!(&n.data, &data);
+		}
+		else {
+			panic!("Could not find inserted key in store")
+		}
+
+		// Should still be in the store after a lookup
+		assert_eq!(store.used_space, data.len());
+		assert_eq!(store.len(), 1);
+
+		store.remove(&keys);
+
+		assert_eq!(store.used_space, 0);
+		assert_eq!(store.len(), 0);
+	}
 
 
 }
+

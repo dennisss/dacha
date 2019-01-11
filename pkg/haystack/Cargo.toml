@@ -9,16 +9,8 @@ name = "haystack"
 path = "src/lib.rs"
 
 [[bin]]
-name = "haystore"
-path = "bin/haystore.rs"
-
-[[bin]]
-name = "haycache"
-path = "bin/haycache.rs"
-
-[[bin]]
-name = "hayclient"
-path = "bin/hayclient.rs"
+name = "hay"
+path = "bin/hay.rs"
 
 [dependencies]
 byteorder = "1.2.7"
@@ -44,3 +36,5 @@ error-chain = "0.12.0"
 reqwest = "0.9.5"
 clap = "2.32.0"
 ctrlc = "3.1.1"
+siphasher = "0.3"
+

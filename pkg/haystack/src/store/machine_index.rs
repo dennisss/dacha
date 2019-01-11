@@ -20,7 +20,7 @@ const VOLUMES_HEADER_SIZE: usize =
 	size_of::<MachineId>();
 
 /// File that stores the list of all volumes on the current store machine
-pub struct VolumesIndex {
+pub struct StoreMachineIndex {
 	pub cluster_id: ClusterId,
 	pub machine_id: MachineId,
 	file: File
@@ -29,9 +29,9 @@ pub struct VolumesIndex {
 	// considerng tha this is the only real meaningful file, we should ensure that it always checks out
 }
 
-impl VolumesIndex {
+impl StoreMachineIndex {
 
-	pub fn open(path: &Path) -> Result<VolumesIndex> {
+	pub fn open(path: &Path) -> Result<StoreMachineIndex> {
 		let mut opts = OpenOptions::new();
 		opts.read(true).write(true);
 
@@ -55,7 +55,7 @@ impl VolumesIndex {
 		}
 
 
-		let idx = VolumesIndex {
+		let idx = StoreMachineIndex {
 			cluster_id,
 			machine_id,
 			file: f
@@ -65,7 +65,7 @@ impl VolumesIndex {
 	}
 
 	// Need to do a whole lot right here
-	pub fn create(path: &Path, cluster_id: ClusterId, machine_id: MachineId) -> Result<VolumesIndex> {
+	pub fn create(path: &Path, cluster_id: ClusterId, machine_id: MachineId) -> Result<StoreMachineIndex> {
 		let mut opts = OpenOptions::new();
 		opts.write(true).create_new(true).read(true);
 
@@ -79,7 +79,7 @@ impl VolumesIndex {
 		// TODO: Should probably also flush the directory as well?
 		f.flush()?;
 
-		Ok(VolumesIndex {
+		Ok(StoreMachineIndex {
 			cluster_id: cluster_id.clone(),
 			machine_id: machine_id.clone(),
 			file: f
@@ -120,3 +120,8 @@ impl VolumesIndex {
 	}
 
 }
+
+
+
+
+
