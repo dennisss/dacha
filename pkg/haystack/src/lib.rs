@@ -23,9 +23,31 @@ extern crate ipnetwork;
 extern crate chrono;
 extern crate bitwise;
 extern crate hyper;
-extern crate reqwest;
 extern crate ctrlc;
 extern crate siphasher;
+extern crate tokio;
+
+
+pub mod errors {
+	error_chain! {
+		foreign_links {
+			Io(::std::io::Error);
+			Db(diesel::result::Error);
+			HTTP(hyper::Error);
+		}
+	}
+}
+
+
+macro_rules! enclose {
+    ( ($( $x:ident ),*) $y:expr ) => {
+        {
+            $(let $x = $x.clone();)*
+            $y
+        }
+    };
+}
+
 
 pub mod http;
 pub mod common;
@@ -36,14 +58,3 @@ pub mod directory;
 pub mod cache;
 pub mod client;
 
-
-pub mod errors {
-	error_chain! {
-		foreign_links {
-			Io(::std::io::Error);
-			Db(diesel::result::Error);
-			Client(reqwest::Error);
-			Server(hyper::Error);
-		}
-	}
-}

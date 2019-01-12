@@ -2,6 +2,7 @@
 
 extern crate haystack;
 extern crate clap;
+extern crate futures;
 
 use haystack::directory::Directory;
 use haystack::errors::*;
@@ -11,6 +12,9 @@ use clap::{Arg, App, SubCommand};
 use haystack::client::*;
 use std::fs::File;
 use std::io::{Read};
+use futures::Future;
+use futures::prelude::*;
+
 
 
 fn main() -> Result<()> {
@@ -102,9 +106,16 @@ fn main() -> Result<()> {
 
 					let c = haystack::client::Client::create()?;
 
-					let pid = c.upload_photo(chunks)?;
+					let f = c.upload_photo(chunks)
+					.map_err(|err| {
+						println!("{:?}", err);
+						()
+					}).map(|pid| {
+						println!("Uploaded with photo id: {}", pid);
+						()
+					});
 
-					println!("Uploaded with photo id: {}", pid);	
+					tokio::run(f);	
 
 				},
 				("read-url", Some(m)) => {

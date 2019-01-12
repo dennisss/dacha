@@ -8,17 +8,15 @@ use super::machine::*;
 use super::memory::*;
 use futures::prelude::*;
 use super::super::paths::*;
-use hyper::{Body, Response, Method, StatusCode};
+use hyper::{Request, Body, Response, Method, StatusCode};
 use hyper::http::request::Parts;
 use hyper::body::Payload;
 use std::sync::{Arc,Mutex};
-use futures::prelude::*;
 use futures::prelude::await;
 use std::time::{SystemTime, Duration};
 use rand::thread_rng;
 use rand::seq::SliceRandom;
-use reqwest::header::HeaderMap;
-use futures::future;
+use hyper::header::HeaderMap;
 use bytes::Bytes;
 
 
@@ -205,7 +203,7 @@ fn respond_from_backend(
 	let from_cdn = false;
 
 	// TODO: Next optimization would be to maintain the connections to the backends long term
-	let client = reqwest::async::Client::new();
+	let client = hyper::Client::new();
 
 	// TODO: Need to support streaming back a response as we get it from the store while we are putting it into the cache
 
@@ -215,15 +213,17 @@ fn respond_from_backend(
 
 		let probably_should_cache = !from_cdn && store_mac.can_write();
 
-		let mut req = client.get(&route);
-		req = req.header("Host", Host::Store(store_mac.id as MachineId).to_string());
+		let mut req = Request::builder();
+		
+		req.uri(&route);
+		req.header("Host", Host::Store(store_mac.id as MachineId).to_string());
 
 		// In an optimization to not re-hit the stores on stale caches, we will attempt to reuse the etag
 		// The backend store will recognize this by not reading from disk and not checking the cookie is the offsets in the etag are correct
 		// NOTE: We do NOT try to passthrough any etag given by the client as our etags currently contain sensitive offset information and we don't want a client to be able to partially bypass the cookie check to sniff photo offsets in the store
 		if let Some(ref e) = old_entry {
 			if let Some(v) = e.headers.get("ETag") {
-				req = req.header("If-None-Match", v);
+				req.header("If-None-Match", v);
 			}
 
 			// NOTE: In this case handle_proxy_request should have also stripped the store_path of the cookie
@@ -232,11 +232,11 @@ fn respond_from_backend(
 			// If this case we wil allow passing through the client etag (as we should still be forwarding the full store_path in this case)
 			// NOTE: This is mainly so that we can operate in full-proxy mode for read-only stores
 			if let Some(v) = parts.headers.get("If-None-Match") {
-				req = req.header("If-None-Match", v);
+				req.header("If-None-Match", v);
 			}
 		}
 
-		let res = match await!(req.send()) {
+		let res = match await!(client.request(req.body(Body::empty()).unwrap())) {
 			Ok(r) => r,
 			Err(e) => {
 				eprintln!("Backend failed with {:?}", e);
@@ -266,7 +266,7 @@ fn respond_from_backend(
 			// Regular case, get out the body
 			if res.status() == StatusCode::OK {
 				let content_length = res.headers().get("Content-Length").unwrap_or(
-					&reqwest::header::HeaderValue::from(0)
+					&hyper::header::HeaderValue::from(0)
 				).to_str().unwrap_or("0").parse::<usize>().unwrap_or(0);
 				// TODO: body.content_length() seems to be private?
 
@@ -336,10 +336,10 @@ fn respond_from_backend(
 			return respond_with_memory_entry(parts, cookie, entry, should_cache);
 		}
 		else {
+			// Otherwise passthrough the successful error response
 			// TODO: Headers as well
 			return Ok(Response::builder().status(res.status())
-				// TODO: Passthrough store body
-				.body(Body::empty()) // Body::from(res)) //.into_body().into())
+				.body(res.into_body())
 				.unwrap());
 		}
 	}

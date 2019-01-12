@@ -19,11 +19,15 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use super::machine_index::*;
 use super::super::background_thread::*;
+use futures::future;
+use futures::future::*;
+use futures::prelude::*;
 
 
 pub struct MachineContext {
-	pub id: MachineId,
+	pub id: MachineId, // < Same as the id of the 'inst', just externalized to avoid needing to lock the machine
 	pub inst: Mutex<StoreMachine>,
+	pub dir: Mutex<Directory>,
 	pub thread: BackgroundThread,
 
 	/// Number of volumes in this machine that are writeable (soft-writeable)
@@ -33,13 +37,14 @@ pub struct MachineContext {
 }
 
 impl MachineContext {
-	pub fn from(store: StoreMachine) -> MachineContext {
+	pub fn from(store: StoreMachine, dir: Directory) -> MachineContext {
 		let nwrite = 0;
 
 
 		MachineContext {
 			id: store.id(),
 			inst: Mutex::new(store),
+			dir: Mutex::new(dir),
 			thread: BackgroundThread::new(),
 			nwriteable: AtomicUsize::new(0)
 		}
@@ -59,8 +64,6 @@ pub struct StoreMachine {
 	/// All volumes 
 	pub volumes: HashMap<VolumeId, Arc<Mutex<PhysicalVolume>>>,
 
-	dir: Directory,
-
 	port: u16,
 
 	/// Location of all files on this machine
@@ -74,7 +77,7 @@ impl StoreMachine {
 
 	/// Opens or creates a new store machine configuration based out of the given directory
 	/// TODO: Long term this will also take a Directory client so that we can bootstrap everything from that 
-	pub fn load(dir: Directory, port: u16, folder: &str) -> Result<StoreMachine> {
+	pub fn load(dir: &Directory, port: u16, folder: &str) -> Result<StoreMachine> {
 
 		let path = Path::new(folder);
 		if !path.exists() {
@@ -116,7 +119,6 @@ impl StoreMachine {
 		let mut machine = StoreMachine {
 			folder: String::from(folder),
 			index: idx,
-			dir,
 			port,
 			volumes: HashMap::new()
 		};
@@ -186,36 +188,49 @@ impl StoreMachine {
 			// TODO: On Ctrl-C, must mark as not-ready to stop this loop, issue one last heartbeat marking us as not ready and wait for all active http requests to finish
 			// TODO: For allocation events, we do want this loop to be able to be woken up by a write action that causes the used space amount to tip over the max size
 			while mac_handle.thread.is_running() {
-				{
+
+				let (cur_should_alloc,) = {
+
 					let mut mac = mac_handle.inst.lock().unwrap();
 
+					// TODO: We should just acquire ownership of the directory, as this is the only thread that will actually ever use it
+					let dir = mac_handle.dir.lock().unwrap();
+
 					// TODO: Current issue is that blocking the entire machine for a long time will be very expensive during concurrent operations
-					if let Err(e) = mac.do_heartbeat(true) {
+					// Hence why read-only machine access would be useful as it rarely ever needs to change
+					if let Err(e) = mac.do_heartbeat(&dir, true) {
 						println!("{:?}", e);
 					}
 
-					if let Err(e) = mac.check_writeability() {
+					if let Err(e) = mac.check_writeability(&dir) {
 						println!("{:?}", e);
 					}
 
-					if pending_alloc {
-						// If we still need to allocate (meaning that no other machine tried allocating since we last checked), then we will proceed with allocating
-						if mac.should_allocate() {
-							if let Err(e) = mac.perform_allocation() {
+					(mac.should_allocate(),)
+				};
+
+				if pending_alloc {
+					// If we still need to allocate (meaning that no other machine tried allocating since we last checked), then we will proceed with allocating
+					if cur_should_alloc {
+
+						let f = StoreMachine::perform_allocation(mac_handle.clone());
+						tokio::run(
+							f.map_err(|e| {
 								println!("{:?}", e);
-							}
+							})
+						);
 
-							// Notify ourselves as we probably just created a new volume 
-							mac_handle.thread.notify();
+						// Notify ourselves as we probably just created a new volume 
+						mac_handle.thread.notify();
 
-							// Should should generally mean that at least 2 more cycles to perform additional allocations
-							pending_alloc = false;
-						}
-					}
-					else {
-						pending_alloc = mac.should_allocate();
+						// Should should generally mean that at least 2 more cycles to perform additional allocations
+						pending_alloc = false;
 					}
 				}
+				else {
+					pending_alloc = cur_should_alloc;
+				}
+
 
 				let mut time = STORE_MACHINE_HEARTBEAT_INTERVAL;
 
@@ -225,15 +240,16 @@ impl StoreMachine {
 					time = ((time as f64) * rand::thread_rng().gen::<f64>() * 0.25) as u64;
 				}
 
-
 				mac_handle.thread.wait(time);
-
-				//thread::sleep(dur);
 			}
 
-			// Perform final heartbeart to take this node off of the ready list
-			mac_handle.inst.lock().unwrap().do_heartbeat(false).expect("Failed to mark as not-ready");
+			// TODO: First mark all volumes on this machine as not writeable
 
+			let mac = mac_handle.inst.lock().unwrap();
+			let dir = mac_handle.dir.lock().unwrap();
+			if let Err(e) = mac.shutdown(&dir) {
+				eprintln!("Failed during node shutdown: {:?}", e);
+			}
 		});
 	}
 
@@ -300,13 +316,13 @@ impl StoreMachine {
 		self.allocated_space() + ALLOCATION_SIZE < self.total_space()
 	}
 
-	pub fn do_heartbeat(&self, ready: bool) -> Result<()> {
+	pub fn do_heartbeat(&self, dir: &Directory, ready: bool) -> Result<()> {
 
-		self.dir.db.update_store_machine_heartbeat(
+		dir.db.update_store_machine_heartbeat(
 			self.index.machine_id,
 			ready,
 			"127.0.0.1", self.port,
-			self.allocated_space() as u64,
+			self.allocated_space() as u64, // TODO: If this ever requires locking, then we should consolidate it with the locking in can_write_soft
 			self.total_space() as u64,
 			self.can_write_soft()
 		)?;
@@ -316,9 +332,9 @@ impl StoreMachine {
 
 	/// Check that if for all volumes that exist on this machine, if any of them are close to being empty, then we need to mark them as being read-only remotely
 	/// TODO: We could probably split this entirely once we mark every single volume as read-only until other constraints change
-	pub fn check_writeability(&self) -> Result<()> {
+	pub fn check_writeability(&self, dir: &Directory) -> Result<()> {
 
-		let vols = self.dir.db.read_logical_volumes_for_store_machine(self.id())?;
+		let vols = dir.db.read_logical_volumes_for_store_machine(self.id())?;
 
 		for v in vols {
 			let vol_handle = match self.volumes.get(&(v.id as VolumeId)) {
@@ -334,9 +350,24 @@ impl StoreMachine {
 			let writeable = vol.can_write_soft();
 
 			if !writeable && v.write_enabled {
-				self.dir.db.update_logical_volume_writeable(vol.superblock.volume_id, false)?;
+				dir.db.update_logical_volume_writeable(vol.superblock.volume_id, false)?;
 			}
 		}
+
+		Ok(())
+	}
+
+	pub fn shutdown(&self, dir: &Directory) -> Result<()> {
+
+		// Mark all volumes associated with this machine as read-only
+		// (On restart it will be pitch-fork's responsibility to bring them back up)
+		let vols = dir.db.read_logical_volumes_for_store_machine(self.id())?;
+		for v in vols {
+			dir.db.update_logical_volume_writeable(v.id as VolumeId, false)?;
+		}
+
+		// Perform final heartbeart to take this node off of the ready list
+		self.do_heartbeat(dir, false)?;
 
 		Ok(())
 	}
@@ -357,65 +388,89 @@ impl StoreMachine {
 	}
 
 	/// Assuming that we want to, this will create a new volume on this machine and pick other replicas to go along with it
-	pub fn perform_allocation(&mut self) -> Result<()> {
-		let mut rng = rand::thread_rng();
+	pub fn perform_allocation(mac_handle: MachineHandle) -> Box<Future<Item=(), Error=Error> + Send> {
 
-		let mut macs = self.dir.db.index_store_machines()?.into_iter().filter(|m| {
-			m.can_allocate() && (m.id as MachineId) != self.id()
-		}).collect::<Vec<_>>();
+		let (mut macs, vol) = {
+			let mac = mac_handle.inst.lock().unwrap();
+			let dir = mac_handle.dir.lock().unwrap();
 
-		if macs.len() < NUM_REPLICAS - 1 {
-			return Err("Not enough replicas available to allocate new volume".into());
-		}
+			let all_macs = match dir.db.index_store_machines() {
+				Ok(v) => v,
+				Err(e) => return Box::new(err(e))
+			};
 
-		let vol = self.dir.create_logical_volume()?;
+			let mut macs = all_macs.into_iter().filter(|m| {
+				m.can_allocate() && (m.id as MachineId) != mac_handle.id
+			}).collect::<Vec<_>>();
+
+			if macs.len() < NUM_REPLICAS - 1 {
+				return Box::new(err("Not enough replicas available to allocate new volume".into()));
+			}
+
+			let vol = match dir.create_logical_volume() { Ok(v) => v, Err(e) => return Box::new(err(e)) };
+			
+			(macs, vol)
+		};
+
 		let vol_id = vol.id.to_unsigned();
+
+		let mut rng = rand::thread_rng();
 
 		// Random choice of which machines to choose as replicas
 		// TODO: Possibly more useful to spear across less-allocated machines first (with randomness still though)
 		macs.shuffle(&mut rng);
 
-		let client = reqwest::Client::new();
-
 		// TODO: Should retry once for each machine
 		// Also, if a machine fails, then we can proceed up to the next available machine (next in our random sequence)
+		// Basically using the vector as a stream and take until we get some number of successes (but all in parallel)
 		// NOTE: We assume that NUM_REPLICAS is always at least 1
 		let n_other = if NUM_REPLICAS > 1 { NUM_REPLICAS - 1 } else { 0 };
-		let chosen_macs = &macs[0..n_other];
-		for m in chosen_macs {
-			// TODO: Must standardize all of these api stuff
+
+		// Fanning out and making requests to all machines we need
+		let arr = macs[0..n_other].iter().map(move |m| {
+			let client = hyper::Client::new();
+
 			let url = format!("http://{}/{}", m.addr(), vol_id);
-			let res = client
-				.post(&url)
+			let req = hyper::Request::builder()
+				.uri(&url)
+				.method("POST")
 				.header("Host", Host::Store(m.id as MachineId).to_string())
-				.send()?;
-			
-			if !res.status().is_success() {
-				return Err(format!("Failed to create volume on replica store #{}", vol_id).into());
-			}
-		}
+				.body(hyper::Body::empty())
+				.unwrap();
 
-		// Finally create the volume on ourselves
-		self.create_volume(vol_id)?;
+			client.request(req)
+			.map_err(|e| e.into())
+			.and_then(move |resp| {
+				if !resp.status().is_success() {
+					return future::err(format!("Failed to create volume on replica store #{}", vol_id).into());
+				}
 
-		// Create send mapping
-		self.dir.db.create_physical_volume(
-			vol_id,
-			self.index.machine_id
-		)?;
+				return future::ok(())
+			})
+		}).collect::<Vec<_>>();
 
-		// Creating mapping for all other machines
-		for m in chosen_macs {
-			self.dir.db.create_physical_volume(
-				vol_id,
+		Box::new(join_all(arr)
+		.and_then(move |_| {
+			let mut mac = mac_handle.inst.lock().unwrap();
+			let dir = mac_handle.dir.lock().unwrap();
+
+			// Finally create the volume on ourselves
+			if let Err(e) = mac.create_volume(vol_id) { return future::err(e); }
+
+			// Get all machine ids (including ourselves) involved in the volume
+			let mut all_ids = vec![mac.index.machine_id];
+			all_ids.extend(macs[0..n_other].iter().map(|m| {
 				m.id as MachineId
-			)?;
-		}
+			}));
 
-		// Mark as writeable
-		self.dir.db.update_logical_volume_writeable(vol_id, true)?;
+			// Create all physical mappings
+			if let Err(e) = dir.db.create_physical_volumes(vol_id, &all_ids) { return future::err(e); }
 
-		Ok(())
+			// Mark as writeable
+			if let Err(e) = dir.db.update_logical_volume_writeable(vol_id, true) { return future::err(e); }
+
+			future::ok(())
+		}))
 	}
 
 

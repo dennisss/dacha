@@ -23,10 +23,10 @@ pub fn run(dir: Directory, port: u16, folder: &str) -> Result<()> {
 
 	println!("Store folder: {}", folder);
 
-	let machine = StoreMachine::load(dir, port, folder)?;
+	let machine = StoreMachine::load(&dir, port, folder)?;
 	println!("Starting Haystore Id #{}", machine.id());
 
-	let mac_ctx = MachineContext::from(machine);
+	let mac_ctx = MachineContext::from(machine, dir);
 
 	let mac_handle = Arc::new(mac_ctx);
 

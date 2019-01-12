@@ -165,6 +165,20 @@ impl DB {
 		)
 	}
 
+	pub fn create_physical_volumes(&self, logical_id: VolumeId, machine_ids: &[MachineId]) -> Result<()> {
+		expect_changed(
+			diesel::insert_into(schema::physical_volumes::table)
+				.values(&machine_ids.iter().map(|m| {
+					PhysicalVolume {
+						logical_id: logical_id.to_signed(),
+						machine_id: m.to_signed()
+					}
+				}).collect::<Vec<_>>())
+				.execute(&self.conn)
+				.map(|n| { if n == machine_ids.len() { 1 } else { 0 } })?
+		)
+	}
+
 	// TODO: Eventually may need to be able to delete physical_volume mappings if we decide that a machine is completely dead and not recoverable
 
 	pub fn create_cache_machine(&self, addr_ip: &str, addr_port: u16) -> Result<CacheMachine> {
