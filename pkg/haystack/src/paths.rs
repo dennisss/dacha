@@ -4,29 +4,94 @@ use base64;
 use std::mem::size_of;
 use bytes::Bytes;
 use rand::RngCore;
+use std::io::{Write, Read};
+use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 
 const COOKIE_SIZE: usize = size_of::<Cookie>();
+
+
+#[derive(Clone)]
+pub struct NeedleChunkPath {
+	pub volume_id: VolumeId,
+	pub key: NeedleKey,
+	pub alt_key: NeedleAltKey,
+	pub cookie: CookieBuf,
+}
+
+pub const NEEDLE_CHUNK_HEADER_SIZE: usize =
+	size_of::<VolumeId>() +
+	size_of::<NeedleKey>() +
+	size_of::<NeedleAltKey>() +
+	COOKIE_SIZE +
+	size_of::<NeedleSize>();
+
+/// Represents a single needle packetized for sending for upload into a machine
+#[derive(Clone)]
+pub struct NeedleChunk {
+	pub path: NeedleChunkPath,
+	pub data: Bytes
+}
+
+impl NeedleChunk {
+	pub fn write_header(&self, writer: &mut Write) -> std::io::Result<()> {
+		writer.write_u32::<LittleEndian>(self.path.volume_id)?;
+		writer.write_u64::<LittleEndian>(self.path.key)?;
+		writer.write_u32::<LittleEndian>(self.path.alt_key)?;
+		writer.write_all(self.path.cookie.data())?;
+		writer.write_u64::<LittleEndian>(self.data.len() as NeedleSize)?;
+		Ok(())
+	}
+
+	pub fn read_header(reader: &mut Read) -> std::io::Result<(NeedleChunkPath, NeedleSize)> {
+		let volume_id = reader.read_u32::<LittleEndian>()?;
+		let key = reader.read_u64::<LittleEndian>()?;
+		let alt_key = reader.read_u32::<LittleEndian>()?;
+
+		let mut cookie = vec![];
+		cookie.resize(COOKIE_SIZE, 0);
+		reader.read_exact(&mut cookie)?;
+
+		let size = reader.read_u64::<LittleEndian>()?;
+
+		Ok((NeedleChunkPath {
+			volume_id, key, alt_key, cookie: CookieBuf::from(Bytes::from(cookie))
+		}, size))
+	}
+}
+
+
+
 
 #[derive(Clone)]
 pub struct CookieBuf {
 	inner: Bytes
 }
 
-impl CookieBuf {
-
+impl From<&[u8]> for CookieBuf {
 	/// Creates a cookie from a byte array
 	/// NOTE: No attempt is made to validate the length right here
-	pub fn from(data: &[u8]) -> CookieBuf {
+	fn from(data: &[u8]) -> CookieBuf {
 		CookieBuf {
 			inner: Bytes::from(data)
 		}
 	}
+}
+
+impl From<Vec<u8>> for CookieBuf {
+	fn from(data: Vec<u8>) -> CookieBuf { CookieBuf { inner: data } }
+}
+
+impl From<Bytes> for CookieBuf {
+	fn from(data: Bytes) -> CookieBuf { CookieBuf { inner: data } }
+}
+
+impl CookieBuf {
 
 	pub fn random() -> CookieBuf {
-		let mut arr = [0u8; size_of::<Cookie>()];
+		let mut arr = Bytes::with_capacity(COOKIE_SIZE);
 		let mut rng = rand::thread_rng();
 		rng.fill_bytes(&mut arr);
-		CookieBuf::from(&arr) // TODO: Unnecessary copy
+		CookieBuf::from(arr)
 	}
 
 	pub fn data(&self) -> &Cookie {

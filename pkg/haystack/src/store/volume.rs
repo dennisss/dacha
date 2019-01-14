@@ -172,10 +172,6 @@ impl PhysicalVolume {
 	/// Internal utility for adding to the index
 	/// This should be atomic as long as it doesn't panic
 	fn add_to_index(&mut self, keys: NeedleKeys, entry: NeedleIndexEntry, from_index_file: bool) -> Result<()> {
-		if !from_index_file {
-			self.index_file.append(&keys, &entry)?;
-		}
-
 		if let Some(old_val) = self.index.get(&keys) {
 			if old_val.block_offset == entry.block_offset {
 				// This isn't really problematic, but does indicate that we are doing something wrong
@@ -183,6 +179,10 @@ impl PhysicalVolume {
 			}
 
 			self.compaction_pending += old_val.meta.size
+		}
+		
+		if !from_index_file {
+			self.index_file.append(&keys, &entry);
 		}
 
 		self.index.insert(keys, entry);
@@ -201,7 +201,8 @@ impl PhysicalVolume {
 		let mut off = self.extent;
 
 		// Start by taking all entries from the condensed index file and seeking to the end of those
-		let index_pairs = self.index_file.read_all()?;
+		let max_extent = self.file.metadata().unwrap().len();
+		let index_pairs = self.index_file.read_all(max_extent)?;
 
 		if index_pairs.len() > 0 {
 			{
@@ -265,7 +266,7 @@ impl PhysicalVolume {
 			self.extent = last_off;
 		}
 
-		// Flush in case we added orphansto the index
+		// Flush in case we added orphans to the index
 		self.index_file.flush()?;
 
 		Ok(())
@@ -393,12 +394,19 @@ impl PhysicalVolume {
 			return Err("Not enough bytes could be read".into());
 		}
 
+		let mut end_off = off + (header.len() + nread + NEEDLE_FOOTER_SIZE) as u64;
+		let rem = block_size_remainder(end_off);
+		end_off = end_off + rem;
 
-		// TODO: These two writes can definitely be combined
-		NeedleFooter::write(&mut self.file, sum)?;
+		// Create the footer (+ pad to the next block)
+		let mut footer_buf = Vec::new();
+		footer_buf.resize(NEEDLE_FOOTER_SIZE + rem as usize, 0);
+		NeedleFooter::write(&mut Cursor::new(&mut footer_buf), sum)?;
 		
-		// Pad the file to the blocksize and mark our new file length
-		self.extent = self.pad_to_block_size()?;
+		self.file.write_all(&footer_buf)?;
+
+		// Mark the new end of the file
+		self.extent = end_off;
 
 		self.add_to_index(keys.clone(), NeedleIndexEntry {
 			meta: meta.clone(),
@@ -430,7 +438,17 @@ impl PhysicalVolume {
 		Ok(())
 	}
 
+	/// Flushes the volume such that any recent append_needle operations persist to disk
 	pub fn flush(&mut self) -> Result<()> {
+		// TODO: If we were really crazy about performance, we could count how many needles not yet flushed and perform a flush only if everything isn't already flushed
+		self.file.flush()?;
+		Ok(())
+	}
+
+	pub fn close(self) -> Result<()> {
+		// NOTE: In general, this should always have been already handled by someone else
+		self.flush()?;
+
 		self.index_file.flush()
 	}
 

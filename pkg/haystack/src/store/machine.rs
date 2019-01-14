@@ -7,13 +7,11 @@ use super::super::common::*;
 use super::super::errors::*;
 use super::super::paths::Host;
 use super::volume::{PhysicalVolume};
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use fs2::FileExt;
 use std::path::{Path, PathBuf};
-use std::mem::size_of;
 use super::super::directory::Directory;
 use bitwise::Word;
-use std::sync::{Arc,Mutex};
+use std::sync::{Arc,Mutex,RwLock};
 use std::sync::atomic::{AtomicUsize};
 use rand::seq::SliceRandom;
 use rand::Rng;
@@ -26,7 +24,7 @@ use futures::prelude::*;
 
 pub struct MachineContext {
 	pub id: MachineId, // < Same as the id of the 'inst', just externalized to avoid needing to lock the machine
-	pub inst: Mutex<StoreMachine>,
+	pub inst: RwLock<StoreMachine>,
 	pub dir: Mutex<Directory>,
 	pub thread: BackgroundThread,
 
@@ -43,7 +41,7 @@ impl MachineContext {
 
 		MachineContext {
 			id: store.id(),
-			inst: Mutex::new(store),
+			inst: RwLock::new(store),
 			dir: Mutex::new(dir),
 			thread: BackgroundThread::new(),
 			nwriteable: AtomicUsize::new(0)
@@ -191,7 +189,7 @@ impl StoreMachine {
 
 				let (cur_should_alloc,) = {
 
-					let mut mac = mac_handle.inst.lock().unwrap();
+					let mac = mac_handle.inst.read().unwrap();
 
 					// TODO: We should just acquire ownership of the directory, as this is the only thread that will actually ever use it
 					let dir = mac_handle.dir.lock().unwrap();
@@ -245,7 +243,7 @@ impl StoreMachine {
 
 			// TODO: First mark all volumes on this machine as not writeable
 
-			let mac = mac_handle.inst.lock().unwrap();
+			let mac = mac_handle.inst.read().unwrap();
 			let dir = mac_handle.dir.lock().unwrap();
 			if let Err(e) = mac.shutdown(&dir) {
 				eprintln!("Failed during node shutdown: {:?}", e);
@@ -391,7 +389,6 @@ impl StoreMachine {
 	pub fn perform_allocation(mac_handle: MachineHandle) -> Box<Future<Item=(), Error=Error> + Send> {
 
 		let (mut macs, vol) = {
-			let mac = mac_handle.inst.lock().unwrap();
 			let dir = mac_handle.dir.lock().unwrap();
 
 			let all_macs = match dir.db.index_store_machines() {
@@ -442,20 +439,20 @@ impl StoreMachine {
 			.map_err(|e| e.into())
 			.and_then(move |resp| {
 				if !resp.status().is_success() {
-					return future::err(format!("Failed to create volume on replica store #{}", vol_id).into());
+					return err(format!("Failed to create volume on replica store #{}", vol_id).into());
 				}
 
-				return future::ok(())
+				return ok(())
 			})
 		}).collect::<Vec<_>>();
 
 		Box::new(join_all(arr)
 		.and_then(move |_| {
-			let mut mac = mac_handle.inst.lock().unwrap();
+			let mut mac = mac_handle.inst.write().unwrap();
 			let dir = mac_handle.dir.lock().unwrap();
 
 			// Finally create the volume on ourselves
-			if let Err(e) = mac.create_volume(vol_id) { return future::err(e); }
+			if let Err(e) = mac.create_volume(vol_id) { return err(e); }
 
 			// Get all machine ids (including ourselves) involved in the volume
 			let mut all_ids = vec![mac.index.machine_id];
@@ -464,12 +461,12 @@ impl StoreMachine {
 			}));
 
 			// Create all physical mappings
-			if let Err(e) = dir.db.create_physical_volumes(vol_id, &all_ids) { return future::err(e); }
+			if let Err(e) = dir.db.create_physical_volumes(vol_id, &all_ids) { return err(e); }
 
 			// Mark as writeable
-			if let Err(e) = dir.db.update_logical_volume_writeable(vol_id, true) { return future::err(e); }
+			if let Err(e) = dir.db.update_logical_volume_writeable(vol_id, true) { return err(e); }
 
-			future::ok(())
+			ok(())
 		}))
 	}
 

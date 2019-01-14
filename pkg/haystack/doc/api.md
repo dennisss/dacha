@@ -39,6 +39,14 @@ Store API
 - GET `http://[host]/`
 	- Prints out the list of all volumes on this machine with utilization information
 
+- POST `http://[host]/:logical_id`
+	- Creates a new physical volume (or succeeds with a no-op if it already exists)
+
+- PATCH `http://[host]/:logical_id`
+	- Batch upload many needles to a single volume
+	- Will flush the volume to disk only after all have been saved
+	- Body of the request should consist of multiple files prefixed by a header with binary data:
+		- `[key][alt_key][cookie][size]`
 - GET `http://[host]/:logical_id/:photo_key/:alt_key`
 	- Reads the contents of a single photo from the store WITHOUT cookie authentication
 	- NOTE: This 

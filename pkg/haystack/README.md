@@ -65,6 +65,7 @@ Currently the easiest way to interact with the store is via the CLI client:
 
 TODOs
 -----
+- Haystress
 - Better support for multi-machine networks and a CDN routing configuration
 - Sharding of caches/stores/pitch-forks per region
 	- Facebooks implementation uses region information to ensure that at least one replica is chosen in a remote location
@@ -74,6 +75,10 @@ TODOs
 - Cache all machine-configurations from the directory in memory on each machine
 - More production ready access control to 
 - HTTPS
+
+- Testing against Randomio
+	- https://web.archive.org/web/20090506102156/http://members.optusnet.com.au/clausen/ideas/randomio/index.html
+	- 
 
 
 Production Notes

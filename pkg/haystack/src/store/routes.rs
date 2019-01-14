@@ -109,7 +109,7 @@ impl StoreReadVolumeBody {
 fn index_volumes(
 	mac_handle: MachineHandle
 ) -> Result<Response<Body>> {
-	let mac = mac_handle.inst.lock().unwrap();
+	let mac = mac_handle.inst.read().unwrap();
 
 	let mut arr: Vec<StoreReadVolumeBody> = vec![];
 
@@ -126,7 +126,7 @@ fn read_volume(
 ) -> Result<Response<Body>> {
 	
 	// NOTE: WE only really need this for long enough to acquire 
-	let mac = mac_handle.inst.lock().unwrap();
+	let mac = mac_handle.inst.read().unwrap();
 
 	match mac.volumes.get(&volume_id) {
 		Some(v) =>  Ok(
@@ -143,7 +143,7 @@ fn create_volume(
 	volume_id: VolumeId
 ) -> Result<Response<Body>> {
 
-	let mut mac = mac_handle.inst.lock().unwrap();
+	let mut mac = mac_handle.inst.write().unwrap();
 
 	if mac.volumes.contains_key(&volume_id) {
 		return Ok(text_response(StatusCode::OK, "Volume already exists"));
@@ -174,7 +174,7 @@ fn read_photo(
 
 	// Briefly lock the machine just to get some necessary info and a volume handle
 	let (mac_id, writeable, vol_handle) = {
-		let mac = mac_handle.inst.lock().unwrap();
+		let mac = mac_handle.inst.read().unwrap();
 
 		let v = match mac.volumes.get(&volume_id) {
 			Some(v) => v.clone(),
@@ -321,7 +321,7 @@ fn write_photo(
 
 	// Quickly lock the machine and get a volume reference
 	let vol_handle = {
-		let mut mac = mac_handle.inst.lock().unwrap();
+		let mac = mac_handle.inst.read().unwrap();
 		
 		match mac.volumes.get(&volume_id) {
 			Some(v) => v.clone(),

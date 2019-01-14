@@ -135,7 +135,7 @@ impl PhysicalVolumeIndex {
 		Ok(idx)
 	}
 
-	pub fn read_all(&mut self) -> Result<Vec<NeedleIndexPair>> {
+	pub fn read_all(&mut self, volume_max_extent: u64) -> Result<Vec<NeedleIndexPair>> {
 
 		let mut out: Vec<NeedleIndexPair> = vec![];
 
@@ -148,8 +148,6 @@ impl PhysicalVolumeIndex {
 			eprintln!("Detected partially flushed index file");
 		}
 
-		self.extent = (len - rem) + (SUPERBLOCK_SIZE as u64);
-
 
 		let n = len / (PAIR_SIZE as u64);
 
@@ -160,6 +158,8 @@ impl PhysicalVolumeIndex {
 
 		let mut c = Cursor::new(buf);
 
+		let mut off = SUPERBLOCK_SIZE;
+
 		for _ in 0..n {
 			let pair = NeedleIndexPair::read(&mut c)?;
 
@@ -167,9 +167,7 @@ impl PhysicalVolumeIndex {
 			if let Some(last_pair) = out.last() {
 				// NOTE: Must technically also pad it up to fit everything
 
-				let mut off = last_pair.value.offset() + last_pair.value.meta.total_size();
-				off = off + block_size_remainder(off);
-
+				let off = last_pair.value.end_offset();
 				if off != pair.value.offset() {
 					return Err("Corrupt non-contiguous index file entries".into());
 				}
@@ -180,8 +178,21 @@ impl PhysicalVolumeIndex {
 				}
 			}
 
+			// Verify that no entry in the index file would go beyond the size of the main volume file
+			// This will generally happen if the index file is flushed before the main volume file
+			// This doesn't really matter but is just a biproduct of us not qeueing index entries in batch upload scenarios as it doesn't really matter all that much
+			let end_off = pair.value.end_offset();
+			if end_off > volume_max_extent {
+				eprintln!("Index file contains entries beyond the end of the main volume");
+				self.file.set_len(off as u64)?;
+				break;
+			}
+
+			off = off + PAIR_SIZE;
 			out.push(pair);
 		}
+
+		self.extent = off as u64;
 
 		Ok(out)
 	}
