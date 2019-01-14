@@ -46,6 +46,9 @@ pub const ALLOCATION_SIZE: usize = 100*1024*1024; // 100Mb for testing
 pub const ALLOCATION_RESERVED: usize = 2;
 
 
+/// Block size for allocations done with the filesystem. We will ensure that the amount of blocks in the filesystem allocated towards one store file is aligned aligned up to multiples of this byte size. This is used to ensure that store files use mostly contiguous blocks on the disk when possible (Facebook's paper uses 1GB)
+pub const PREALLOCATE_SIZE: u64 = 1*1024*1024; // 1MB for testing
+
 /// Amount of space on the store machine's hdd to use for storing data
 /// Currently fixed but eventually dynamic based on hard drive checks and configurations
 pub const STORE_MACHINE_SPACE: usize = 1024*1024*1024; // 1GB

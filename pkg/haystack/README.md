@@ -92,6 +92,30 @@ Production Notes
 
 TODO: Would be nice to just have a set of Kubernetes configs for this (or a helm package encapsulating all of it)
 
+Filesystem
+----------
+
+Facebook's filesystem choice is XFS:
+- RAID 6 array of 12 x 1TB SATA drives
+	- Probably higher density by this point
+- 256KB stripe size
+- 1GB extents preallocated per file
+
+Replicating this:
+- The filesystem is likely created with the following commands:
+	- First create a linux raid
+		- `sudo mdadm --create --verbose /dev/md0 --chunk=256K --level=6 --raid-devices=12 /dev/sd[b-m]`
+			- Where `/dev/sdb` through `/dev/sdm` are the raw devices for this array
+			- See https://raid.wiki.kernel.org/index.php/RAID_setup for more info on specifying devices and configuring this step
+			- Linux by default will make the chunk size 512KB so leaving out the `--chunk` argument is likely reasonable and would be more efficient
+	- Then format as XFS
+		- `sudo mkfs.xfs /dev/md0`
+		- Generally the sunit and swidth parameters for xfs should be automatically picked up to match those in the underlying RAID
+		- NOTE: XFS conveniently only performs metadata CRC checking. Because we intenally perform CRC checking of the data itself, it can be a potential optimization to disable this if using some other type of file system over a single raid device
+		- See https://wiki.archlinux.org/index.php/XFS for more information
+
+- To replicate the preallocation optimization, we use the `fallocate` linux system call if available
+
 
 Design Invariants
 -----------------

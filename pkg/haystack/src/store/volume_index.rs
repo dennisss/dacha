@@ -87,6 +87,9 @@ impl PhysicalVolumeIndex {
 
 		let mut file = opts.open(path)?;
 
+		// Sync directory (assuming that the directory itself has already been around for a while)
+		File::open(path.parent().unwrap()).unwrap().sync_all()?;
+
 		let superblock = PhysicalVolumeSuperblock {
 			magic: SUPERBLOCK_MAGIC.as_bytes().into(),
 			machine_id,
@@ -95,7 +98,7 @@ impl PhysicalVolumeIndex {
 		};
 
 		superblock.write(&mut file)?;
-		file.flush()?;
+		file.sync_data()?;
 
 		let idx = PhysicalVolumeIndex {
 			superblock,
@@ -212,7 +215,7 @@ impl PhysicalVolumeIndex {
 		self.extent = self.extent + (PAIR_SIZE as u64);
 		self.pending = self.pending + 1;
 
-		if self.pending > 10 {
+		if self.pending > 32 {
 			self.flush()?;
 		}
 
@@ -225,7 +228,7 @@ impl PhysicalVolumeIndex {
 			return Ok(());
 		}
 
-		self.file.flush()?;
+		self.file.sync_data()?;
 		self.pending = 0;
 		Ok(())
 	}

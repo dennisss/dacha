@@ -14,6 +14,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use std::path::{Path, PathBuf};
 use super::stream::Stream;
 use super::block_size_remainder;
+use fs2::FileExt;
 
 const SUPERBLOCK_MAGIC: &str = "HAYS";
 
@@ -46,7 +47,10 @@ pub struct PhysicalVolume {
 
 	/// The length of the file (or the offset to the very end of the last needle + padding)
 	/// Because of the potential for partial writes, we won't trust the size reported on disk after the volume is fully loaded
-	extent: u64
+	extent: u64,
+
+	/// Amount of space allocated in the FS for this file
+	allocated: u64
 }
 
 impl PhysicalVolume {
@@ -64,6 +68,10 @@ impl PhysicalVolume {
 		opts.write(true).create_new(true).read(true);
 
 		let mut file = opts.open(path)?;
+
+		// Sync directory
+		File::open(path.parent().unwrap()).unwrap().sync_all()?;
+
 		let superblock = PhysicalVolumeSuperblock {
 			magic: SUPERBLOCK_MAGIC.as_bytes().into(),
 			cluster_id,
@@ -81,13 +89,14 @@ impl PhysicalVolume {
 			index: HashMap::new(),
 			index_file: idx,
 			compaction_pending: 0,
-			extent: 0
+			extent: 0,
+			allocated: file.allocated_size()?
 		};
 
 		vol.superblock.write(&mut vol.file)?;
 
 		let end = vol.pad_to_block_size()?;
-		vol.file.flush()?;
+		vol.file.sync_data()?;
 		vol.extent = end;
 
 		Ok(vol)
@@ -137,7 +146,8 @@ impl PhysicalVolume {
 			index: HashMap::new(),
 			index_file: idx,
 			compaction_pending: 0,
-			extent: 0
+			extent: 0,
+			allocated: file.allocated_size()?
 		};
 
 		// Initially starts right after the superblock because we haven't checked any of the needles after it yet
@@ -166,7 +176,9 @@ impl PhysicalVolume {
 	/// Lists the size of all space currently being used by this volume and any associated index
 	/// This will essentially be the total storage cost of this volume not containing lower-level filesystem metadata
 	pub fn used_space(&self) -> usize {
-		self.file.metadata().unwrap().len() as usize
+		// TODO: Add space used by the index file?
+		// TODO: Also aggresively ensure that we our internal extent stays pretty close to this value
+		(self.file.metadata().unwrap().len() as usize)
 	}
 
 	/// Internal utility for adding to the index
@@ -356,6 +368,30 @@ impl PhysicalVolume {
 
 
 		let header: Vec<u8> = NeedleHeader::serialize(cookie.data(), &keys, &meta)?;
+
+
+		let mut next_extent = off + (header.len() + (meta.size as usize) + NEEDLE_FOOTER_SIZE) as u64;
+		let rem = block_size_remainder(next_extent);
+		next_extent = next_extent + rem;
+
+		// TODO: Should we reject needles that go over the allocation size right here? (currently it is only enforced in the routes layer before the needle is written)
+
+		// Take control of the filesystem allocation process so long as we are not hitting our overall filesystem limit
+		if next_extent > self.allocated && next_extent < (ALLOCATION_SIZE as u64) {
+			let mut next_allocated = next_extent;
+
+			// Round up to the next preallocation block size
+			let rem = next_allocated % PREALLOCATE_SIZE;
+			next_allocated = next_allocated + (
+				if rem == 0 { 0 }
+				else { PREALLOCATE_SIZE - rem }
+			);
+
+			self.file.allocate(next_allocated)?;
+			self.allocated = next_allocated;
+		}
+
+
 		self.file.write_all(&header)?;
 
 
@@ -394,10 +430,6 @@ impl PhysicalVolume {
 			return Err("Not enough bytes could be read".into());
 		}
 
-		let mut end_off = off + (header.len() + nread + NEEDLE_FOOTER_SIZE) as u64;
-		let rem = block_size_remainder(end_off);
-		end_off = end_off + rem;
-
 		// Create the footer (+ pad to the next block)
 		let mut footer_buf = Vec::new();
 		footer_buf.resize(NEEDLE_FOOTER_SIZE + rem as usize, 0);
@@ -406,7 +438,7 @@ impl PhysicalVolume {
 		self.file.write_all(&footer_buf)?;
 
 		// Mark the new end of the file
-		self.extent = end_off;
+		self.extent = next_extent;
 
 		self.add_to_index(keys.clone(), NeedleIndexEntry {
 			meta: meta.clone(),
@@ -441,7 +473,7 @@ impl PhysicalVolume {
 	/// Flushes the volume such that any recent append_needle operations persist to disk
 	pub fn flush(&mut self) -> Result<()> {
 		// TODO: If we were really crazy about performance, we could count how many needles not yet flushed and perform a flush only if everything isn't already flushed
-		self.file.flush()?;
+		self.file.sync_data()?;
 		Ok(())
 	}
 

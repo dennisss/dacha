@@ -71,13 +71,16 @@ impl StoreMachineIndex {
 
 		let mut f = opts.open(path)?;
 
+		// Sync directory
+		File::open(path.parent().unwrap()).unwrap().sync_all()?;
+
+
 		f.write_all(VOLUMES_MAGIC.as_bytes())?;
 		f.write_u32::<LittleEndian>(CURRENT_FORMAT_VERSION)?;
 		f.write_u64::<LittleEndian>(cluster_id)?;
 		f.write_u32::<LittleEndian>(machine_id)?;
 
-		// TODO: Should probably also flush the directory as well?
-		f.flush()?;
+		f.sync_data()?;
 
 		Ok(StoreMachineIndex {
 			cluster_id: cluster_id.clone(),
@@ -115,7 +118,7 @@ impl StoreMachineIndex {
 	pub fn add_volume_id(&mut self, id: VolumeId) -> io::Result<()> {
 		self.file.seek(SeekFrom::End(0))?;
 		self.file.write_u32::<LittleEndian>(id)?;
-		self.file.flush()?;
+		self.file.sync_data()?;
 		Ok(())
 	}
 

@@ -43,6 +43,7 @@ pub fn handle_request(
 		StorePath::Index => {
 			match parts.method {
 				Method::GET => index_volumes(mac_handle),
+				Method::PATCH => await!(write_batch(mac_handle, body)),
 				_ => Ok(invalid_method())
 			}
 		},
