@@ -1,5 +1,5 @@
 use super::super::common::*;
-use super::super::paths::CookieBuf;
+use super::super::store::api::CookieBuf;
 use std::collections::HashMap;
 use std::collections::BTreeMap;
 use std::time::*;

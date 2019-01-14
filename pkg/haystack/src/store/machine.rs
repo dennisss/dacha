@@ -427,7 +427,7 @@ impl StoreMachine {
 		let arr = macs[0..n_other].iter().map(move |m| {
 			let client = hyper::Client::new();
 
-			let url = format!("http://{}/{}", m.addr(), vol_id);
+			let url = format!("{}/{}", m.addr(), vol_id);
 			let req = hyper::Request::builder()
 				.uri(&url)
 				.method("POST")

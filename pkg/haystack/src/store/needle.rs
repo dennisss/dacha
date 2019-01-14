@@ -1,6 +1,6 @@
 use super::super::common::*;
 use super::super::errors::*;
-use super::super::paths::CookieBuf;
+use super::api::CookieBuf;
 use super::block_size_remainder;
 use std::io::Cursor;
 use std::io::{Write, Read};

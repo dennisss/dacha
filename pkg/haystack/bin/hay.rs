@@ -86,6 +86,10 @@ fn main() -> Result<()> {
 		// TODO: Will also eventually also have the pitch-fork
 
 		("client", Some(m)) => {
+
+			// TODO: This redundantly connects to the directory
+			let c = haystack::client::Client::create()?;
+
 			match m.subcommand() {
 				("upload", Some(m)) => {
 					println!("Starting upload");
@@ -104,8 +108,6 @@ fn main() -> Result<()> {
 						}
 					];
 
-					let c = haystack::client::Client::create()?;
-
 					let f = c.upload_photo(chunks)
 					.map_err(|err| {
 						println!("{:?}", err);
@@ -122,7 +124,7 @@ fn main() -> Result<()> {
 					let key = m.value_of("KEY").unwrap().parse::<NeedleKey>().unwrap();
 					let alt_key = m.value_of("ALT_KEY").unwrap().parse::<NeedleAltKey>().unwrap();
 
-					let url = dir.read_photo_cache_url(&NeedleKeys {
+					let url = c.read_photo_cache_url(&NeedleKeys {
 						key, alt_key
 					})?;
 

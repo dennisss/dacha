@@ -1,12 +1,13 @@
-pub mod stream;
-pub mod superblock;
+pub mod api;
+mod stream;
+mod superblock;
 mod machine_index;
-pub mod machine;
-pub mod needle;
+mod machine;
+mod needle;
 mod volume_index;
-pub mod volume;
-pub mod route_write;
-pub mod routes;
+mod volume;
+mod route_write;
+mod routes;
 pub mod main;
 
 

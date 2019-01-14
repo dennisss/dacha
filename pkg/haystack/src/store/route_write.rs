@@ -10,14 +10,13 @@ use super::super::http::*;
 use super::machine::*;
 use super::volume::*;
 use super::needle::*;
-use hyper::{Body, Response, Method, StatusCode};
-use hyper::http::request::Parts;
-use hyper::body::Payload;
+use hyper::{Body, Response, StatusCode};
 use futures::prelude::*;
 use futures::prelude::await;
 use futures::future::*;
 use futures::Stream;
 use std::sync::{Arc, Mutex};
+use super::api::*;
 
 
 #[async]
@@ -96,19 +95,6 @@ fn perform_append(mac_handle: &MachineHandle, vol: &mut PhysicalVolume, path: Ne
 	Ok(())
 }
 
-
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct StoreError {
-	pub code: u16,
-	pub message: String
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct StoreWriteBatchResponse {
-	pub num_written: usize, // Number of needle chunks of those received that were successfully 
-	pub error: Option<StoreError> // If present than this error occured while writing further chunks beyond those counted in num_written
-}
 
 // Internal state of the batch writer 
 struct WriteBatchState {

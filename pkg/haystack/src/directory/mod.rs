@@ -9,7 +9,6 @@ use super::errors::*;
 use self::models::*;
 use rand;
 use rand::prelude::*;
-use std::mem::size_of;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use bitwise::Word;
 use self::db::DB;
@@ -85,21 +84,11 @@ impl Directory {
 		})
 	}
 
-	/// 
 
-	/// For a photo, this will retrieve a url where it can be read from 
-	/// For now we will directly hit the cache for all operations
-	//pub fn read_photo() -> Result<Photo> {
-	//	
-	//}
-
-	// NOTE: We currently do not support any ability to 
-
-	/// Creates a new photo with an initial volume assignment but not uploaded yet
-	/// NOTE: We currently assume all of the photos are small enough to fit into a volume
+	/// Encapsulates picking/load-balancing the next logical volume for writing to
+	/// NOTE: We currently assume that all photos are small enough to fit into a volume such that it will get marked as read-only before any serious overflows start occuring
 	/// If there is a failure during uploading, then it should retry with a new volume
-	pub fn create_photo(&self) -> Result<Photo> {
-
+	pub fn choose_logical_volume_for_write(&self) -> Result<LogicalVolume> {
 		let volumes = self.db.index_logical_volumes()?;
 
 		let avail_vols: Vec<&LogicalVolume> = volumes.iter().filter(|v| {
@@ -113,39 +102,23 @@ impl Directory {
 		let vol_idx = (rand::thread_rng().next_u32() as usize) % avail_vols.len();
 		let vol = avail_vols[vol_idx];
 
-		let p = self.db.create_photo(&NewPhoto {
-			volume_id: vol.id,
-			cookie: CookieBuf::random().data()
-		})?;
-
-		Ok(p)
+		Ok((*vol).clone())
 	}
 
-	/// Gets a url to read a photo from the cache layer
-	pub fn read_photo_cache_url(&self, keys: &NeedleKeys) -> Result<String> {
-		let photo = match self.db.read_photo(keys.key)? {
-			Some(p) => p,
-			None => return Err("No such photo".into())
-		};
-
-		let vol = match self.db.read_logical_volume(photo.volume_id.to_unsigned())? {
-			Some(v) => v,
-			None => return Err("Missing the volume".into())
-		};
-
+	/// For a photo, given its volume, picks a cache to use to 
+	/// TODO: Eventually this needs to be able to pick between multiples caches per bucket in order to support redundancy in ranges
+	pub fn choose_cache(&self, photo: &Photo, vol: &LogicalVolume) -> Result<CacheMachine> {
+		if photo.volume_id != vol.id {
+			return Err("Wrong volume given".into())
+		}
+		
 		let mut caches = self.db.index_cache_machines()?.into_iter().filter(|m| {
 			m.can_read()
 		}).collect::<Vec<_>>();
 
-		let mut stores = self.db.read_store_machines_for_volume(photo.volume_id.to_unsigned())?
-		.into_iter().filter(|m| {
-			m.can_read()
-		}).collect::<Vec<_>>();
-
-		if caches.len() == 0 || stores.len() == 0 {
+		if caches.len() == 0 {
 			return Err("Not enough available caches/store".into());
 		}
-
 
 		// To pick the cache server, we use a simple Distributed Hash Table approach with a random key per volume
 		let mut hasher = siphasher::sip::SipHasher::new_with_keys(vol.hash_key.to_unsigned(), 0);
@@ -164,26 +137,27 @@ impl Directory {
 
 		let cache = &caches[cache_idx];
 
-		
-		// For the store, we pick any random one 
+		Ok((*cache).clone())
+	}
+
+	/// Picks a load balanced store machine from which to read the given photo (to be used only when the cache misses)
+	pub fn choose_store(&self, photo: &Photo) -> Result<StoreMachine> {
+
+		let stores = self.db.read_store_machines_for_volume(photo.volume_id.to_unsigned())?
+		.into_iter().filter(|m| {
+			m.can_read()
+		}).collect::<Vec<_>>();
+
+		if stores.len() == 0 {
+			return Err("Not enough available caches/store".into());
+		}
+
+		// Random load balancing
 		let mut rng = thread_rng();
 		let store = stores.choose(&mut rng).unwrap();
 
-		let path = CachePath::Proxy {
-			machine_ids: MachineIds::Data(vec![store.id.to_unsigned()]),
-			store: StorePath::Needle {
-				volume_id: vol.id.to_unsigned(),
-				key: keys.key,
-				alt_key: keys.alt_key,
-				cookie: CookieBuf::from(&photo.cookie[..])
-			}
-		};
-
-		let host = Host::Cache(cache.id.to_unsigned());
-
-		Ok(format!("http://{}:{}{}", host.to_string(), cache.addr_port, path.to_string()))
+		Ok((*store).clone())
 	}
-
 
 	/// Assign the photo to a new logical volume ideally with a blacklist of machines that we no longer want to use
 	/// 
@@ -195,15 +169,6 @@ impl Directory {
 
 		// Uncommited ones are considered abandoned
 	}
-
-	/*
-		Creating a volume
-		- We will insert the volume into the database (as not write-enabled)
-		- We will then ping store servers and create the volume
-		- We will then insert the machines as volume assignments
-		- Finally we will mark the volume as insertable
-	*/
-
 
 	// Uploading:
 	// - Get the Photo object

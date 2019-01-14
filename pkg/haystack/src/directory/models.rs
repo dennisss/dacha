@@ -16,7 +16,7 @@ pub struct Param {
 }
 
 
-#[derive(Queryable, Identifiable, AsChangeset)]
+#[derive(Queryable, Identifiable, AsChangeset, Clone)]
 #[table_name = "store_machines"]
 pub struct StoreMachine {
 	pub id: i32,
@@ -74,7 +74,7 @@ impl StoreMachine {
 	}
 
 	pub fn addr(&self) -> String {
-		self.addr_ip.clone() + ":" + &self.addr_port.to_string()
+		String::from("http://") + &self.addr_ip + ":" + &self.addr_port.to_string()
 	}
 }
 
@@ -88,7 +88,7 @@ pub struct NewStoreMachine<'a> {
 }
 
 /// NOTE: These will be ephemeral and will only exist while they need to 
-#[derive(Queryable, Identifiable)]
+#[derive(Queryable, Identifiable, Clone)]
 #[table_name = "cache_machines"]
 pub struct CacheMachine {
 	pub id: i32,
@@ -137,7 +137,7 @@ pub struct NewCacheMachine<'a> {
 // 
 
 
-#[derive(Queryable, Identifiable, AsChangeset)]
+#[derive(Queryable, Identifiable, AsChangeset, Clone)]
 #[table_name = "logical_volumes"]
 pub struct LogicalVolume {
 	pub id: i32,

@@ -2,6 +2,7 @@ use super::super::common::*;
 use super::super::errors::*;
 use super::super::paths::*;
 use super::super::http::*;
+use super::api::*;
 use super::machine::*;
 use super::volume::*;
 use super::needle::*;

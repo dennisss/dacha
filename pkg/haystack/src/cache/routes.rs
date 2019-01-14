@@ -1,5 +1,5 @@
-
-
+use super::api::*;
+use super::super::store::api::*;
 use super::super::common::*;
 use super::super::http::*;
 use super::super::errors::*;
@@ -208,7 +208,7 @@ fn respond_from_backend(
 	// TODO: Need to support streaming back a response as we get it from the store while we are putting it into the cache
 
 	for store_mac in store_macs {
-		let route = format!("http://{}{}", store_mac.addr(), store_path);
+		let route = format!("{}{}", store_mac.addr(), store_path);
 		println!("sending to: {}", route);
 
 		let probably_should_cache = !from_cdn && store_mac.can_write();

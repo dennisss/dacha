@@ -1,7 +1,7 @@
 
 use super::super::common::*;
 use super::super::errors::*;
-use super::super::paths::CookieBuf;
+use super::api::CookieBuf;
 use super::needle::*;
 use super::volume_index::*;
 use super::superblock::*;

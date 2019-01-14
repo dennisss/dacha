@@ -9,14 +9,15 @@ use super::errors::*;
 use super::common::*;
 use super::directory::*;
 use super::paths::*;
-use super::store::route_write::StoreWriteBatchResponse;
+use super::store::api::*;
+use super::cache::api::*;
 use bitwise::Word;
 use bytes::Bytes;
 use futures::future;
 use futures::prelude::*;
 use futures::stream;
 use futures::future::*;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::io::Cursor;
 use futures::{Async, Poll};
 use futures::prelude::*;
@@ -25,7 +26,7 @@ use futures::Stream;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 pub struct Client {
-	dir: Directory 
+	dir: Arc<Mutex<Directory>>
 }
 
 #[derive(Clone)]
@@ -38,70 +39,127 @@ impl Client {
 
 	pub fn create() -> Result<Client> {
 		Ok(Client {
-			dir: Directory::open()?
+			dir: Arc::new(Mutex::new(Directory::open()?))
 		})
 	}
 
-	/// Creates a new photo containing all of the given chunks
-	/// TODO: On writeability errors, relocate the photo to a new volume that doesn't have the given machines
-	pub fn upload_photo(&self, chunks: Vec<PhotoChunk>) -> Box<Future<Item=NeedleKey, Error=Error> + Send> {
-		assert!(chunks.len() > 0);
 
-		let p = match self.dir.create_photo() { Ok(v) => Arc::new(v), Err(e) => return Box::new(err(e)) };
-		let p2 = p.clone();
+	/// Gets a url to read a photo from the cache layer
+	pub fn read_photo_cache_url(&self, keys: &NeedleKeys) -> Result<String> {
+		let dir = self.dir.lock().unwrap();
 
-		let machines = match self.dir.db.read_store_machines_for_volume(p.volume_id.to_unsigned()) {
-			Ok(v) => v,
-			Err(e) => return Box::new(err(e))
+		let photo = match dir.db.read_photo(keys.key)? {
+			Some(p) => p,
+			None => return Err("No such photo".into())
 		};
 
-		if machines.len() == 0 {
-			return Box::new(err("Missing any machines to upload to".into()))
-		}
+		let vol = match dir.db.read_logical_volume(photo.volume_id.to_unsigned())? {
+			Some(v) => v,
+			None => return Err("Missing the volume".into())
+		};
 
-		for m in machines.iter() {
-			if !m.can_write() {
-				return Box::new(err("Some machines are not writeable".into()))
+		let cache = dir.choose_cache(&photo, &vol)?;
+		let store = dir.choose_store(&photo)?;
+
+		let path = CachePath::Proxy {
+			machine_ids: MachineIds::Data(vec![store.id.to_unsigned()]),
+			store: StorePath::Needle {
+				volume_id: vol.id.to_unsigned(),
+				key: keys.key,
+				alt_key: keys.alt_key,
+				cookie: CookieBuf::from(&photo.cookie[..])
 			}
-		}
+		};
 
-		// TODO: Will eventually need to make these all parallel task with retrying once and a bail-out on all failures
+		let host = Host::Cache(cache.id.to_unsigned());
 
-		let cookie = CookieBuf::from(&p.cookie[..]);
+		Ok(format!("http://{}:{}{}", host.to_string(), cache.addr_port, path.to_string()))
+	}
 
-		let needles = chunks.iter().map(|c| {
-			NeedleChunk {
-				path: NeedleChunkPath {
-					volume_id: p.volume_id.to_unsigned(),
-					key: p.id.to_unsigned(),
-					alt_key: c.alt_key,
-					cookie: cookie.clone()
-				},
-				data: c.data.clone()
+
+
+	/// Creates a new photo containing all of the given chunks
+	/// TODO: On writeability errors, relocate the photo to a new volume that doesn't have the given machines
+	pub fn upload_photo(&self, chunks: Vec<PhotoChunk>) -> impl Future<Item=NeedleKey, Error=Error> {
+		assert!(chunks.len() > 0);
+
+		let dir_handle = self.dir.clone();
+
+		fn prepare(dir: &Directory, chunks: Vec<PhotoChunk>) -> Result<(Vec<NeedleChunk>, Vec<models::StoreMachine>)> {
+			
+			let cookie = CookieBuf::random();
+
+			let vol = dir.choose_logical_volume_for_write()?;
+
+			let p = dir.db.create_photo(&models::NewPhoto {
+				volume_id: vol.id,
+				cookie: cookie.data()
+			})?;
+
+			let machines = dir.db.read_store_machines_for_volume(p.volume_id.to_unsigned())?;
+
+			if machines.len() == 0 {
+				return Err("Missing any machines to upload to".into());
 			}
-		}).collect::<Vec<_>>();
 
-		let num = needles.len();
-
-		let arr = machines.into_iter().map(move |m| {
-			let needles = (&needles[..]).to_vec();
-			let m = Arc::new(m);
-
-			//Client::upload_needle_sequential(&m, needles)
-			Client::upload_needle_batch(&m, &needles)
-			.and_then(move |n| {
-				if num != n {
-					return err("Not all chunks uploaded".into());
+			for m in machines.iter() {
+				if !m.can_write() {
+					return Err("Some machines are not writeable".into());
 				}
+			}
 
-				ok(())
+			let needles = chunks.into_iter().map(|c| {
+				NeedleChunk {
+					path: NeedleChunkPath {
+						volume_id: p.volume_id.to_unsigned(),
+						key: p.id.to_unsigned(),
+						alt_key: c.alt_key,
+						cookie: cookie.clone()
+					},
+					data: c.data.clone()
+				}
+			}).collect::<Vec<_>>();
+
+			Ok((needles, machines))
+		};
+
+		lazy(move || {
+			let dir = dir_handle.lock().unwrap();
+
+			match prepare(&dir, chunks) {
+				Ok(v) => ok(v),
+				Err(e) => err(e)
+			}
+		})
+		.and_then(|(needles, machines)| {
+
+			// TODO: On failure of a request, retry the request once
+			// TODO: On failure of the retried request, bail out and choose a new volume to contain our photo (basically rerunning most of this upload_photo function)
+
+			let num = needles.len();
+
+			let photo_id = needles[0].path.key;
+
+			let arr = machines.into_iter().map(move |m| {
+				let needles = (&needles[..]).to_vec();
+				let m = Arc::new(m);
+
+				//Client::upload_needle_sequential(&m, needles)
+				Client::upload_needle_batch(&m, &needles)
+				.and_then(move |n| {
+					if num != n {
+						return err("Not all chunks uploaded".into());
+					}
+
+					ok(())
+				})
+
+			}).collect::<Vec<_>>();
+
+			join_all(arr).map(move |_| {
+				photo_id
 			})
-
-		}).collect::<Vec<_>>();
-
-		Box::new(join_all(arr).map(move |_| {
-			p2.id.to_unsigned()
-		}))
+		})
 	}
 
 	/// Uploads many chunks using traditional sequential requests (flushed after every single request)
@@ -117,7 +175,7 @@ impl Client {
 		// Better tofold and then combine
 		stream::iter_ok(chunks).fold(0, move |num, c| {
 			let url = format!(
-				"http://{}{}",
+				"{}{}",
 				addr,
 				StorePath::Needle {
 					volume_id: c.path.volume_id,
@@ -166,7 +224,7 @@ impl Client {
 		let s = stream::iter_ok::<_, std::io::Error>(body_chunks);
 
 		let url = format!(
-			"http://{}{}",
+			"{}{}",
 			mac.addr(),
 			StorePath::Index.to_string()
 		);
