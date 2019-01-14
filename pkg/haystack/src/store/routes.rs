@@ -11,6 +11,8 @@ use hyper::body::Payload;
 use mime_sniffer::MimeTypeSniffer;
 use futures::prelude::*;
 use futures::prelude::await;
+use futures::future::*;
+use futures::Stream;
 
 
 #[async]
@@ -43,7 +45,7 @@ pub fn handle_request(
 		StorePath::Index => {
 			match parts.method {
 				Method::GET => index_volumes(mac_handle),
-				Method::PATCH => await!(write_batch(mac_handle, body)),
+				Method::PATCH => await!(super::route_write::write_batch(mac_handle, body)),
 				_ => Ok(invalid_method())
 			}
 		},
@@ -79,7 +81,7 @@ pub fn handle_request(
 						Some(n) => n,
 					};
 
-					await!(write_photo(mac_handle, volume_id, key, alt_key, cookie, content_length, body))
+					await!(super::route_write::write_single(mac_handle, volume_id, key, alt_key, cookie, content_length, body))
 				},
 				_ => return Ok(invalid_method())
 			}
@@ -296,70 +298,6 @@ fn read_photo(
 	)
 }
 
-#[async]
-fn write_photo(
-	mac_handle: MachineHandle,
-	volume_id: VolumeId, key: NeedleKey, alt_key: NeedleAltKey, cookie: CookieBuf,
-	content_length: u64,
-	body: Body
-) -> Result<Response<Body>> {
-
-	let mut chunks = vec![];
-	let mut nread = 0;
-
-	#[async]
-	for c in body {
-		nread = nread + c.len();
-		chunks.push(c.into_bytes());
-		if nread >= (content_length as usize) {
-			break;
-		}
-	}
-
-	if nread != (content_length as usize) {
-		return Ok(text_response(StatusCode::BAD_REQUEST, "Request payload bad length"));
-	}
-
-	// Quickly lock the machine and get a volume reference
-	let vol_handle = {
-		let mac = mac_handle.inst.read().unwrap();
-		
-		match mac.volumes.get(&volume_id) {
-			Some(v) => v.clone(),
-			None => return Ok(text_response(StatusCode::NOT_FOUND, "Volume not found")),
-		}
-	};
-
-	let mut strm = super::stream::ChunkedStream::from(chunks);
-
-	let mut vol = vol_handle.lock().unwrap();
-
-	// TODO: Currently we make no attempt to check if it will overflow the volume after the write
-	if !vol.can_write() {
-		return Ok(text_response(StatusCode::BAD_REQUEST, "Volume is out of space and not writeable"));
-	}
-
-	let initial_writeability = vol.can_write_soft();
-
-	vol.append_needle(
-		NeedleKeys { key, alt_key },
-		cookie,
-		NeedleMeta { flags: 0, size: content_length },
-		&mut strm
-	)?;
-
-	let final_writeability = vol.can_write_soft();
-
-	// This write has caused the volume to become near-empty
-	if final_writeability != initial_writeability {
-		println!("- Volume {} on Machine {}: writeability: {}", volume_id, mac_handle.id, final_writeability);
-		mac_handle.thread.notify();
-	}
-
-
-	Ok(text_response(StatusCode::OK, "Needle added!"))
-}
-
 // Deletes a single photo needle
 fn delete_photo(
 	mac_handle: MachineHandle,
@@ -377,5 +315,6 @@ fn delete_photo_all(
 
 	Ok(text_response(StatusCode::OK, "Woo!"))
 }
+
 
 

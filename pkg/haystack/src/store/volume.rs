@@ -82,6 +82,8 @@ impl PhysicalVolume {
 		let idx_path = path.to_str().unwrap().to_owned() + ".idx";
 		let idx = PhysicalVolumeIndex::create(&Path::new(&idx_path), cluster_id, machine_id, volume_id)?;
 
+		let allocated = file.allocated_size()?;
+
 		let mut vol = PhysicalVolume {
 			superblock,
 			path: path.to_owned(),
@@ -90,7 +92,7 @@ impl PhysicalVolume {
 			index_file: idx,
 			compaction_pending: 0,
 			extent: 0,
-			allocated: file.allocated_size()?
+			allocated
 		};
 
 		vol.superblock.write(&mut vol.file)?;
@@ -138,6 +140,7 @@ impl PhysicalVolume {
 			PhysicalVolumeIndex::create(&idx_path, superblock.cluster_id, superblock.machine_id, superblock.volume_id)?
 		};
 
+		let allocated = file.allocated_size()?;
 
 		let mut vol = PhysicalVolume {
 			superblock,
@@ -147,7 +150,7 @@ impl PhysicalVolume {
 			index_file: idx,
 			compaction_pending: 0,
 			extent: 0,
-			allocated: file.allocated_size()?
+			allocated
 		};
 
 		// Initially starts right after the superblock because we haven't checked any of the needles after it yet
@@ -477,7 +480,7 @@ impl PhysicalVolume {
 		Ok(())
 	}
 
-	pub fn close(self) -> Result<()> {
+	pub fn close(mut self) -> Result<()> {
 		// NOTE: In general, this should always have been already handled by someone else
 		self.flush()?;
 

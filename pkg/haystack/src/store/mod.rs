@@ -5,6 +5,7 @@ pub mod machine;
 pub mod needle;
 mod volume_index;
 pub mod volume;
+pub mod route_write;
 pub mod routes;
 pub mod main;
 

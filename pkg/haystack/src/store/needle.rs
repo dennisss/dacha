@@ -47,7 +47,7 @@ impl NeedleMeta {
 }
 
 // Basically all of this can be 
-pub struct NeedleIndexEntry  {
+pub struct NeedleIndexEntry {
 	pub meta: NeedleMeta,
 
 	pub block_offset: u32

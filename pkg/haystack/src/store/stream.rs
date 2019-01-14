@@ -36,13 +36,14 @@ impl<'a> Stream for SingleStream<'a> {
 }
 
 /// A stream consisting of multiple existing byte buffers
-pub struct ChunkedStream {
+pub struct ChunkedStream<'a> {
 	idx: usize,
-	chunks: Vec<bytes::Bytes>
+	chunks: &'a [bytes::Bytes]
 }
 
-impl ChunkedStream {
-	pub fn from(chunks: Vec<bytes::Bytes>) -> ChunkedStream {
+// Much easier to define a bound for it right?
+impl<'a> ChunkedStream<'a> {
+	pub fn from(chunks: &'a [bytes::Bytes]) -> ChunkedStream<'a> {
 		ChunkedStream {
 			idx: 0,
 			chunks
@@ -50,8 +51,8 @@ impl ChunkedStream {
 	}
 }
 
-impl Stream for ChunkedStream {
-	fn next(&mut self, max: usize) -> Result<Option<&[u8]>> {
+impl<'a> Stream for ChunkedStream<'a> {
+	fn next(&mut self, _max: usize) -> Result<Option<&[u8]>> {
 		if self.idx < self.chunks.len() {
 			let idx = self.idx;
 			self.idx = idx + 1;

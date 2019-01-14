@@ -78,7 +78,7 @@ impl From<&[u8]> for CookieBuf {
 }
 
 impl From<Vec<u8>> for CookieBuf {
-	fn from(data: Vec<u8>) -> CookieBuf { CookieBuf { inner: data } }
+	fn from(data: Vec<u8>) -> CookieBuf { CookieBuf { inner: Bytes::from(data) } }
 }
 
 impl From<Bytes> for CookieBuf {
@@ -88,7 +88,7 @@ impl From<Bytes> for CookieBuf {
 impl CookieBuf {
 
 	pub fn random() -> CookieBuf {
-		let mut arr = Bytes::with_capacity(COOKIE_SIZE);
+		let mut arr = Vec::new(); arr.resize(COOKIE_SIZE, 0);
 		let mut rng = rand::thread_rng();
 		rng.fill_bytes(&mut arr);
 		CookieBuf::from(arr)

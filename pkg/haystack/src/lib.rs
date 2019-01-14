@@ -35,6 +35,15 @@ pub mod errors {
 			Db(diesel::result::Error);
 			HTTP(hyper::Error);
 		}
+
+		errors {
+			// A type of error returned while performing a request
+			// It is generally appropriate to respond with this text as a 400 error
+			// We will eventually standardize the codes such that higher layers can easily distinguish errors
+			API(code: u16, message: &'static str) {
+				display("API Error: {} '{}'", code, message)
+			}
+		}
 	}
 }
 
