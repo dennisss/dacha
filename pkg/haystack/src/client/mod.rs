@@ -37,10 +37,10 @@ pub struct PhotoChunk {
 
 impl Client {
 
-	pub fn create() -> Result<Client> {
-		Ok(Client {
-			dir: Arc::new(Mutex::new(Directory::open()?))
-		})
+	pub fn create(dir: Directory) -> Client {
+		Client {
+			dir: Arc::new(Mutex::new(dir))
+		}
 	}
 
 

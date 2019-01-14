@@ -87,8 +87,7 @@ fn main() -> Result<()> {
 
 		("client", Some(m)) => {
 
-			// TODO: This redundantly connects to the directory
-			let c = haystack::client::Client::create()?;
+			let c = haystack::client::Client::create(dir);
 
 			match m.subcommand() {
 				("upload", Some(m)) => {

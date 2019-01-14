@@ -6,6 +6,7 @@ use std::collections::{HashMap};
 use super::super::common::*;
 use super::super::errors::*;
 use super::super::paths::Host;
+use super::api::*;
 use super::volume::{PhysicalVolume};
 use fs2::FileExt;
 use std::path::{Path, PathBuf};
@@ -427,7 +428,7 @@ impl StoreMachine {
 		let arr = macs[0..n_other].iter().map(move |m| {
 			let client = hyper::Client::new();
 
-			let url = format!("{}/{}", m.addr(), vol_id);
+			let url = format!("{}{}", m.addr(), StorePath::Volume { volume_id: vol_id }.to_string() );
 			let req = hyper::Request::builder()
 				.uri(&url)
 				.method("POST")
