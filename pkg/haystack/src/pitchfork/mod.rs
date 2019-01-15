@@ -1,6 +1,8 @@
 
 
 /*
+	TODO: Must actively react to when stores get marked as ready and us that as an indicator to try to mark that store as active
+
 	TODO: Probably also health check the cache macines as well
 
 	This has many responsibilities:

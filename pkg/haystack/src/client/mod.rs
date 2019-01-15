@@ -13,17 +13,14 @@ use super::store::api::*;
 use super::cache::api::*;
 use bitwise::Word;
 use bytes::Bytes;
-use futures::future;
 use futures::prelude::*;
 use futures::stream;
 use futures::future::*;
 use std::sync::{Arc, Mutex};
 use std::io::Cursor;
-use futures::{Async, Poll};
 use futures::prelude::*;
 use futures::prelude::await;
 use futures::Stream;
-use byteorder::{LittleEndian, ReadBytesExt};
 
 pub struct Client {
 	dir: Arc<Mutex<Directory>>
@@ -43,6 +40,11 @@ impl Client {
 		}
 	}
 
+	pub fn cluster_id(&self) -> String {
+		let dir = self.dir.lock().unwrap();
+		String::from("Hello world") 
+		//serialize_urlbase64(&dir.cluster_id)
+	}
 
 	/// Gets a url to read a photo from the cache layer
 	pub fn read_photo_cache_url(&self, keys: &NeedleKeys) -> Result<String> {

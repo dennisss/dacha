@@ -1,0 +1,24 @@
+[workspace]
+
+members = [
+	"."
+]
+
+[package]
+name = "haystack_node"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+license = "MIT"
+build = "build.rs"
+exclude = ["artifacts.json", "index.node"]
+
+[lib]
+name = "haystack_node"
+crate-type = ["dylib"]
+
+[build-dependencies]
+neon-build = "0.2.0"
+
+[dependencies]
+neon = "0.2.0"
+haystack = { path = "../../.." }

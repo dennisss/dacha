@@ -67,7 +67,7 @@ impl PhysicalVolume {
 		let mut opts = OpenOptions::new();
 		opts.write(true).create_new(true).read(true);
 
-		let mut file = opts.open(path)?;
+		let file = opts.open(path)?;
 
 		// Sync directory
 		File::open(path.parent().unwrap()).unwrap().sync_all()?;

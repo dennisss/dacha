@@ -10,6 +10,7 @@ Setup
 -----
 
 0. Build using `cargo build`. All further instructions will reference the executable at `./target/debug/hay`
+	- Run `./node_modules/.bin/neon build -p pkg/haystack/bindings/node/` to build the node.js bindings for of the client
 
 1. Setup a PostgreSQL database
 	- This database will be used as the `directory` for the system and will store machine configuration information and mappings for where to find each photo

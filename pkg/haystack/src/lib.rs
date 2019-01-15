@@ -58,10 +58,10 @@ macro_rules! enclose {
 }
 
 
-pub mod http;
+mod http;
 pub mod common;
 mod background_thread;
-pub mod paths;
+mod paths;
 pub mod store;
 pub mod directory;
 pub mod cache;
