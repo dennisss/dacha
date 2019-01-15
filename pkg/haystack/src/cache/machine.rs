@@ -4,23 +4,24 @@ use super::super::directory::*;
 use super::super::background_thread::*;
 use super::memory::*;
 use std::time::Duration;
-use std::time;
-use std::sync::{Arc, Mutex, Condvar};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
+use std::sync::{Arc, Mutex};
 
 
 pub struct MachineContext {
 	pub id: MachineId,
 	pub inst: Mutex<CacheMachine>,
+	pub config: ConfigRef,
 	pub thread: BackgroundThread
 }
 
 impl MachineContext {
 	pub fn from(machine: CacheMachine) -> MachineContext {
+		let config = machine.dir.config.clone();
+
 		MachineContext {
 			id: 0,
 			inst: Mutex::new(machine),
+			config,
 			thread: BackgroundThread::new()
 		}
 	}
@@ -48,11 +49,16 @@ impl CacheMachine {
 
 		let mac = dir.db.create_cache_machine("127.0.0.1", port)?;
 
+		let memory = MemoryStore::new(
+			dir.config.cache.memory_size, dir.config.cache.max_entry_size,
+			Duration::from_millis(dir.config.cache.max_age)
+		);
+
 		Ok(CacheMachine {
 			id: mac.id as MachineId,
 			dir,
 			port,
-			memory: MemoryStore::new(CACHE_MEMORY_SIZE, CACHE_MAX_ENTRY_SIZE, Duration::from_millis(CACHE_MAX_AGE))
+			memory
 		})
 	}
 
@@ -72,7 +78,7 @@ impl CacheMachine {
 					}
 				}
 
-				mac_handle.thread.wait(STORE_MACHINE_HEARTBEAT_INTERVAL);
+				mac_handle.thread.wait(mac_handle.config.store.heartbeat_interval);
 			}
 
 			// Perform final heartbeart to take this node off of the ready list

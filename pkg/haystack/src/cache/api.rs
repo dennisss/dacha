@@ -1,12 +1,5 @@
 use super::super::common::*;
 use super::super::store::api::*;
-use arrayref::*;
-use base64;
-use std::mem::size_of;
-use bytes::Bytes;
-use rand::RngCore;
-use std::io::{Write, Read};
-use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 
 
 pub enum MachineIds {

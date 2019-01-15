@@ -7,7 +7,6 @@ use std::fs::{File, OpenOptions};
 use std::mem::size_of;
 use byteorder::{LittleEndian, WriteBytesExt, ReadBytesExt};
 use std::io::{Read, Write, Seek, Cursor, SeekFrom};
-use super::block_size_remainder;
 
 const SUPERBLOCK_MAGIC: &str = "HAYI";
 
@@ -78,7 +77,7 @@ impl PhysicalVolumeIndex {
 
 	/// Create a brand new empty index
 	pub fn create(
-		path: &Path, cluster_id: ClusterId, machine_id: MachineId, volume_id: VolumeId
+		path: &Path, parent_block: &PhysicalVolumeSuperblock
 	) -> Result<PhysicalVolumeIndex> {
 		
 		// NOTE: The index is redundant to the main file, so it's easiest to just truncate any existing volumes in the case of newly created volumes
@@ -92,9 +91,11 @@ impl PhysicalVolumeIndex {
 
 		let superblock = PhysicalVolumeSuperblock {
 			magic: SUPERBLOCK_MAGIC.as_bytes().into(),
-			machine_id,
-			volume_id,
-			cluster_id
+			machine_id: parent_block.machine_id,
+			volume_id: parent_block.volume_id,
+			cluster_id: parent_block.cluster_id,
+			block_size: parent_block.block_size,
+			allocated_space: parent_block.allocated_space
 		};
 
 		superblock.write(&mut file)?;
@@ -119,16 +120,13 @@ impl PhysicalVolumeIndex {
 
 		let mut file = opts.open(path)?;
 
-		let mut header = [0u8; SUPERBLOCK_SIZE];
-		file.read_exact(&mut header)?;
-
-		let superblock = PhysicalVolumeSuperblock::read(&mut Cursor::new(&header))?;
+		let superblock = PhysicalVolumeSuperblock::read(&mut file)?;
 
 		if &superblock.magic[..] != SUPERBLOCK_MAGIC.as_bytes() {
 			return Err("Superblock magic is incorrect".into());
 		}
 
-		let mut idx = PhysicalVolumeIndex {
+		let idx = PhysicalVolumeIndex {
 			superblock,
 			file,
 			extent: (SUPERBLOCK_SIZE as u64),
@@ -170,8 +168,8 @@ impl PhysicalVolumeIndex {
 			if let Some(last_pair) = out.last() {
 				// NOTE: Must technically also pad it up to fit everything
 
-				let off = last_pair.value.end_offset();
-				if off != pair.value.offset() {
+				let off = last_pair.value.end_offset(self.superblock.block_size);
+				if off != pair.value.offset(self.superblock.block_size) {
 					return Err("Corrupt non-contiguous index file entries".into());
 				}
 			}
@@ -184,7 +182,7 @@ impl PhysicalVolumeIndex {
 			// Verify that no entry in the index file would go beyond the size of the main volume file
 			// This will generally happen if the index file is flushed before the main volume file
 			// This doesn't really matter but is just a biproduct of us not qeueing index entries in batch upload scenarios as it doesn't really matter all that much
-			let end_off = pair.value.end_offset();
+			let end_off = pair.value.end_offset(self.superblock.block_size);
 			if end_off > volume_max_extent {
 				eprintln!("Index file contains entries beyond the end of the main volume");
 				self.file.set_len(off as u64)?;
@@ -198,6 +196,12 @@ impl PhysicalVolumeIndex {
 		self.extent = off as u64;
 
 		Ok(out)
+	}
+
+	/// Gets the size of the file for all entries appended up to now
+	/// NOTE: Only valid after read_all has been called
+	pub fn used_space(&self) -> u64 {
+		self.extent
 	}
 
 	pub fn append(&mut self, keys: &NeedleKeys, value: &NeedleIndexEntry) -> Result<()> {

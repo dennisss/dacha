@@ -39,10 +39,11 @@ pub fn run(dir: Directory, port: u16, folder: &str) -> Result<()> {
 		&on_stop
 	);
 
-
-	// This will flush all pending physical volume index records to disk
-	let mac = mac_handle.inst.read().unwrap();
+	// This will retake ownership of the machine and all volumes and will flush all pending physical volume index records to disk
+	let mac_ctx = Arc::try_unwrap(mac_handle).map_err(|_| ()).expect("Machine handle not released completely");
+	let mac: StoreMachine = mac_ctx.inst.into_inner().unwrap();
 	for (_, v) in mac.volumes.into_iter() {
+		let v = Arc::try_unwrap(v).map_err(|_| ()).expect("Volume not released");
 		v.into_inner().unwrap().close()?;
 	}
 

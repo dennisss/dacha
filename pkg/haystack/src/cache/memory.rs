@@ -133,7 +133,7 @@ impl MemoryStore {
 		
 		// Don't try inserting entries that are too large
 		if entry.data.len() > self.max_entry_size {
-			println!("Not caching entry: too large ({} > {})", entry.data.len(), self.max_entry_size);
+			eprintln!("Not caching entry: too large ({} > {})", entry.data.len(), self.max_entry_size);
 			return;
 		}
 
@@ -200,7 +200,7 @@ impl MemoryStore {
 
 		// TODO: Validate that we definately have enough space now
 
-		println!("Removed {} cache keys", nremoved);
+		eprintln!("Removed {} cache keys", nremoved);
 	}
 
 	fn is_stale(&self, e: &MemoryEntryInternal, now: &SystemTime) -> bool {

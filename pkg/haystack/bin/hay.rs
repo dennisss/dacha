@@ -13,7 +13,6 @@ use haystack::client::*;
 use std::fs::File;
 use std::io::{Read};
 use futures::Future;
-use futures::prelude::*;
 
 
 
@@ -70,7 +69,8 @@ fn main() -> Result<()> {
 		.get_matches();
 
 
-	let dir = Directory::open()?;
+	let config = Config::default();
+	let dir = Directory::open(config)?;
 
 	match matches.subcommand() {
 		("store", Some(m)) => {

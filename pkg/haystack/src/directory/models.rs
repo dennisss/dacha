@@ -1,6 +1,6 @@
 use diesel::*;
 use super::schema::*;
-use super::super::common::{STORE_MACHINE_HEARTBEAT_TIMEOUT, ALLOCATION_SIZE};
+use super::super::common::Config;
 use chrono::{DateTime, Utc, Duration};
 
 pub enum ParamKey {
@@ -45,7 +45,7 @@ pub struct StoreMachine {
 impl StoreMachine {
 
 	/// Check whether or not we are allowed to read from this machine
-	pub fn can_read(&self) -> bool {
+	pub fn can_read(&self, config: &Config) -> bool {
 		// TODO: Eventually also account for the external health checks by pitch-fork
 
 		if !self.ready {
@@ -53,9 +53,10 @@ impl StoreMachine {
 		}
 
 		let now = Utc::now();
+		let timeout = config.store.heartbeat_timeout;
 		if (
 			now.ge(&self.last_heartbeat) &&
-			(now - (self.last_heartbeat)).ge(&Duration::milliseconds(STORE_MACHINE_HEARTBEAT_TIMEOUT as i64))
+			(now - (self.last_heartbeat)).ge(&Duration::milliseconds(timeout as i64))
 		) {
 			return false;
 		}
@@ -64,13 +65,14 @@ impl StoreMachine {
 	}
 
 	/// Check whether or not we are allocated to write new needles to any writeable volume on this machine
-	pub fn can_write(&self) -> bool {
-		self.write_enabled && self.can_read()
+	pub fn can_write(&self, config: &Config) -> bool {
+		self.write_enabled && self.can_read(config)
 	}
 
 	/// Check whether we are allowed to create a new volume on this machine
-	pub fn can_allocate(&self) -> bool {
-		self.can_read() && (self.allocated_space + (ALLOCATION_SIZE as i64) < self.total_space)
+	pub fn can_allocate(&self, config: &Config) -> bool {
+		let allocation_size = config.store.allocation_size;
+		self.can_read(config) && (self.allocated_space + (allocation_size as i64) < self.total_space)
 	}
 
 	pub fn addr(&self) -> String {
@@ -104,15 +106,16 @@ pub struct CacheMachine {
 impl CacheMachine {
 
 	// Basically the same as the StoreMachine one
-	pub fn can_read(&self) -> bool {
+	pub fn can_read(&self, config: &Config) -> bool {
 		if !self.ready {
 			return false;
 		}
 
 		let now = Utc::now();
+		let timeout = config.store.heartbeat_timeout;
 		if (
 			now.ge(&self.last_heartbeat) &&
-			(now - (self.last_heartbeat)).ge(&Duration::milliseconds(STORE_MACHINE_HEARTBEAT_TIMEOUT as i64))
+			(now - (self.last_heartbeat)).ge(&Duration::milliseconds(timeout as i64))
 		) {
 			return false;
 		}

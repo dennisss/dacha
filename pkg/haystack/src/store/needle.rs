@@ -41,8 +41,16 @@ impl NeedleMeta {
 	}
 
 	/// Gets the total size of the header, data, and footer for this needle
+	/// Basically the size of all meaninful data in this needle
 	pub fn total_size(&self) -> u64 {
 		(NEEDLE_HEADER_SIZE as u64) + self.size + (NEEDLE_FOOTER_SIZE as u64)
+	}
+
+	pub fn occupied_size(&self, block_size: u64) -> u64 {
+		let size = self.total_size();
+
+		// NOTE: This assumes that needles always start at a block offset, so only need to be aligned based on the size and not the offset in the file
+		size + block_size_remainder(block_size, size)
 	}
 }
 
@@ -50,18 +58,19 @@ impl NeedleMeta {
 pub struct NeedleIndexEntry {
 	pub meta: NeedleMeta,
 
-	pub block_offset: u32
+	// Stored in units of blocks as a u32 similarly to the original paper to keep the memory size small
+	pub block_offset: BlockOffset
 }
 
 impl NeedleIndexEntry {
 	/// Gets the exact absolute offset in the store file of the start of the header for this needle
-	pub fn offset(&self) -> u64 {
-		(self.block_offset as u64) * (BLOCK_SIZE as u64)
+	pub fn offset(&self, block_size: u64) -> u64 {
+		(self.block_offset as u64) * block_size
 	}
 
-	pub fn end_offset(&self) -> u64 {
-		let mut off = self.offset() + self.meta.total_size();
-		off = off + block_size_remainder(off);
+	pub fn end_offset(&self, block_size: u64) -> u64 {
+		let mut off = self.offset(block_size) + self.meta.total_size();
+		off = off + block_size_remainder(block_size, off);
 		off
 	}
 }
@@ -180,10 +189,9 @@ impl Needle {
 
 	/// Reads a single needle at the current position in one read given known metadata for it
 	pub fn read_oneshot(reader: &mut Read, meta: &NeedleMeta) -> Result<Needle> {
-		let total_size = NEEDLE_HEADER_SIZE + (meta.size as usize) + NEEDLE_FOOTER_SIZE;
 
 		let mut buf = Vec::new();
-		buf.resize(total_size, 0u8); // TODO: Use an unsafe resize without filling
+		buf.resize(meta.total_size() as usize, 0u8); // TODO: Use an unsafe resize without filling
 
 		reader.read_exact(&mut buf)?;
 

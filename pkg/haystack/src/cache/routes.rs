@@ -115,7 +115,7 @@ fn handle_proxy_request(
 		};
 
 		let mut arr = macs.into_iter().filter(|m| {
-			m.can_read()
+			m.can_read(&mac.dir.config)
 		}).collect::<Vec<_>>();
 
 		// Randomly choose any of the backends
@@ -211,7 +211,7 @@ fn respond_from_backend(
 		let route = format!("{}{}", store_mac.addr(), store_path);
 		println!("sending to: {}", route);
 
-		let probably_should_cache = !from_cdn && store_mac.can_write();
+		let probably_should_cache = !from_cdn && store_mac.can_write(&mac_handle.config);
 
 		let mut req = Request::builder();
 		

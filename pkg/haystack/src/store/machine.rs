@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use super::super::directory::Directory;
 use bitwise::Word;
 use std::sync::{Arc,Mutex,RwLock};
-use std::sync::atomic::{AtomicUsize};
+use std::sync::atomic::{AtomicBool, Ordering};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use super::machine_index::*;
@@ -26,27 +26,30 @@ use futures::prelude::*;
 pub struct MachineContext {
 	pub id: MachineId, // < Same as the id of the 'inst', just externalized to avoid needing to lock the machine
 	pub inst: RwLock<StoreMachine>,
+	pub config: ConfigRef,
 	pub dir: Mutex<Directory>,
 	pub thread: BackgroundThread,
 
-	/// Number of volumes in this machine that are writeable (soft-writeable)
-	/// Will be updated in the routes whenever a write operation occurs
-	/// TODO: We do not use this thing yet
-	pub nwriteable: AtomicUsize,
+	/// Caches whether or not the store should qualify as 'writeable'. This is updated in the background thread that does heartbeats
+	pub writeable: AtomicBool
 }
 
 impl MachineContext {
 	pub fn from(store: StoreMachine, dir: Directory) -> MachineContext {
-		let nwrite = 0;
-
+		let writeable = store.stats().can_write_soft();
 
 		MachineContext {
 			id: store.id(),
 			inst: RwLock::new(store),
+			config: dir.config.clone(),
 			dir: Mutex::new(dir),
 			thread: BackgroundThread::new(),
-			nwriteable: AtomicUsize::new(0)
+			writeable: AtomicBool::new(writeable)
 		}
+	}
+
+	pub fn is_writeable(&self) -> bool {
+		self.writeable.load(Ordering::SeqCst)
 	}
 }
 
@@ -63,6 +66,8 @@ pub struct StoreMachine {
 	/// All volumes 
 	pub volumes: HashMap<VolumeId, Arc<Mutex<PhysicalVolume>>>,
 
+	config: ConfigRef,
+
 	port: u16,
 
 	/// Location of all files on this machine
@@ -77,6 +82,12 @@ impl StoreMachine {
 	/// Opens or creates a new store machine configuration based out of the given directory
 	/// TODO: Long term this will also take a Directory client so that we can bootstrap everything from that 
 	pub fn load(dir: &Directory, port: u16, folder: &str) -> Result<StoreMachine> {
+
+		// Sanity checking sizes of all sizings
+		// TODO: Move this somewhere else?
+		assert!(dir.config.store.preallocate_size <= dir.config.store.allocation_size);
+		assert!(dir.config.store.allocation_size <= dir.config.store.space);
+
 
 		let path = Path::new(folder);
 		if !path.exists() {
@@ -117,6 +128,7 @@ impl StoreMachine {
 
 		let mut machine = StoreMachine {
 			folder: String::from(folder),
+			config: dir.config.clone(),
 			index: idx,
 			port,
 			volumes: HashMap::new()
@@ -147,9 +159,9 @@ impl StoreMachine {
 		let path = self.get_volume_path(volume_id);
 
 		let vol = if path.exists() {
-			PhysicalVolume::open(&path)?
+			PhysicalVolume::open(self.config.clone(), &path)?
 		} else {
-			PhysicalVolume::create(&path, self.index.cluster_id, self.index.machine_id, volume_id)?
+			PhysicalVolume::create(self.config.clone(), &path, self.index.cluster_id, self.index.machine_id, volume_id)?
 		};
 
 		// Verify that if we opened an existing file, that it wasn't from some other conflicting store
@@ -177,6 +189,35 @@ impl StoreMachine {
 		Ok(())
 	}
 
+	pub fn stats(&self) -> StoreMachineStats {
+
+		let mut used = 0;
+		let mut alloc = 0;
+
+		let mut vol_stats = HashMap::new();
+		vol_stats.reserve(self.volumes.len());
+
+		for (id, v) in self.volumes.iter() {
+			let v = v.lock().unwrap();
+
+			vol_stats.insert(*id, StoreMachineVolumeStats {
+				used_space: v.used_space(),
+				allocated_space: v.superblock.allocated_space,
+				can_write: v.can_write(),
+				can_write_soft: v.can_write_soft()
+			});
+		}
+
+		let total_space = self.config.store.space -
+			(self.config.store.allocation_size * (self.config.store.allocation_reserved as u64));
+
+		StoreMachineStats {
+			config: self.config.clone(),
+			volumes: vol_stats,
+			total_space
+		}
+	}
+
 	pub fn start(mac_handle_in: &MachineHandle) {
 		// TODO: Another duty of this thread will be to start and run compactions (as it has to do the updating of compactions anyway)
 	
@@ -188,26 +229,32 @@ impl StoreMachine {
 			// TODO: For allocation events, we do want this loop to be able to be woken up by a write action that causes the used space amount to tip over the max size
 			while mac_handle.thread.is_running() {
 
+	
 				let (cur_should_alloc,) = {
 
-					let mac = mac_handle.inst.read().unwrap();
+					let (stats, port) = {
+						let mac = mac_handle.inst.read().unwrap();
+						(mac.stats(), mac.port)
+					};
 
-					// TODO: We should just acquire ownership of the directory, as this is the only thread that will actually ever use it
+
+					// TODO: We should just acquire ownership of the directory, as this is the only thread that will actually ever use it (aside from the main thread which probably would like to reclaim ownership of the directory for shutdown)
 					let dir = mac_handle.dir.lock().unwrap();
 
 					// TODO: Current issue is that blocking the entire machine for a long time will be very expensive during concurrent operations
 					// Hence why read-only machine access would be useful as it rarely ever needs to change
-					if let Err(e) = mac.do_heartbeat(&dir, true) {
+					if let Err(e) = StoreMachine::do_heartbeat(&mac_handle, port, &stats, &dir, true) {
 						println!("{:?}", e);
 					}
 
-					if let Err(e) = mac.check_writeability(&dir) {
+					if let Err(e) = StoreMachine::check_writeability(&mac_handle, &stats, &dir) {
 						println!("{:?}", e);
 					}
 
-					(mac.should_allocate(),)
+					(stats.should_allocate(),)
 				};
 
+				// NOTE: This is mainly done separately as 
 				if pending_alloc {
 					// If we still need to allocate (meaning that no other machine tried allocating since we last checked), then we will proceed with allocating
 					if cur_should_alloc {
@@ -231,7 +278,7 @@ impl StoreMachine {
 				}
 
 
-				let mut time = STORE_MACHINE_HEARTBEAT_INTERVAL;
+				let mut time = mac_handle.config.store.heartbeat_interval;
 
 				// Because many machines can be pending allocation all at once, we will randomly sleep some fraction of the heartbeat before trying to create a volume in order to avoid many machines trying to 
 				if pending_alloc {
@@ -244,86 +291,45 @@ impl StoreMachine {
 
 			// TODO: First mark all volumes on this machine as not writeable
 
-			let mac = mac_handle.inst.read().unwrap();
-			let dir = mac_handle.dir.lock().unwrap();
-			if let Err(e) = mac.shutdown(&dir) {
+			if let Err(e) = StoreMachine::shutdown(mac_handle) {
 				eprintln!("Failed during node shutdown: {:?}", e);
 			}
 		});
 	}
 
-	/// Gets the total amount of occupied space on disk
-	/// NOTE: This is an expensive heavily locking operation and generally not be used for normal operations
-	pub fn used_space(&self) -> usize {
+	// For shutting down inside of the thread (should consume the thread's mac_handle)
+	fn shutdown(mac_handle: MachineHandle) -> Result<()> {
 
-		// TODO: Likewise need to be marking volumes that are out of space as fully write-only in the database
+		let mac = mac_handle.inst.read().unwrap();
+		let dir = mac_handle.dir.lock().unwrap();
 
-		let mut sum = 0;
-
-		for (_, v) in self.volumes.iter() {
-			sum += v.lock().unwrap().used_space();
+		// Mark all volumes associated with this machine as read-only
+		// (On restart it will be pitch-fork's responsibility to bring them back up)
+		let vols = dir.db.read_logical_volumes_for_store_machine(mac_handle.id)?;
+		for v in vols {
+			dir.db.update_logical_volume_writeable(v.id as VolumeId, false)?;
 		}
 
-		sum
+		// Perform final heartbeart to take this node off of the ready list
+		// The main thing being that we don't really want this blocking with a hold of the machine
+		StoreMachine::do_heartbeat(&mac_handle, mac.port, &mac.stats(), &dir, false)?;
+
+		Ok(())
 	}
 
-	pub fn allocated_space(&self) -> usize {
-		let mut sum = 0;
 
-		for (_, v) in self.volumes.iter() {
-			sum += ALLOCATION_SIZE;
-		}
+	fn do_heartbeat(mac_handle: &MachineHandle, port: u16, stats: &StoreMachineStats, dir: &Directory, ready: bool) -> Result<()> {
 
-		sum
-	}
-
-	pub fn total_space(&self) -> usize {
-		STORE_MACHINE_SPACE - (ALLOCATION_SIZE * ALLOCATION_RESERVED)
-	}
-
-	/*
-	pub fn num_write_soft(&self) -> bool {
-		// TODO: We will only ask for a lock on everything during the heartbeats
-	
-	}
-	*/
-
-	/// Whether or not any volue on this machine can be written within a reasonable margin of error
-	/// NOTE: Machines with no volumes on them are NOT writeable currently (so we can't immediately accept uploads to a new volume until all machines have heartbeated again)
-	pub fn can_write_soft(&self) -> bool {
-		for (_, v) in self.volumes.iter() {
-			if v.lock().unwrap().can_write_soft() {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/// Whether or not any any volume volume in the entire store is writeable
-	pub fn can_write(&self) -> bool {
-		for (_, v) in self.volumes.iter() {
-			if v.lock().unwrap().can_write() {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	pub fn can_allocate(&self) -> bool {
-		self.allocated_space() + ALLOCATION_SIZE < self.total_space()
-	}
-
-	pub fn do_heartbeat(&self, dir: &Directory, ready: bool) -> Result<()> {
+		let writeable = stats.can_write_soft();
+		mac_handle.writeable.store(writeable, Ordering::SeqCst);
 
 		dir.db.update_store_machine_heartbeat(
-			self.index.machine_id,
+			mac_handle.id,
 			ready,
-			"127.0.0.1", self.port,
-			self.allocated_space() as u64, // TODO: If this ever requires locking, then we should consolidate it with the locking in can_write_soft
-			self.total_space() as u64,
-			self.can_write_soft()
+			"127.0.0.1", port,
+			stats.allocated_space(),
+			stats.total_space,
+			writeable
 		)?;
 
 		Ok(())
@@ -331,12 +337,12 @@ impl StoreMachine {
 
 	/// Check that if for all volumes that exist on this machine, if any of them are close to being empty, then we need to mark them as being read-only remotely
 	/// TODO: We could probably split this entirely once we mark every single volume as read-only until other constraints change
-	pub fn check_writeability(&self, dir: &Directory) -> Result<()> {
+	fn check_writeability(mac_handle: &MachineHandle, stats: &StoreMachineStats, dir: &Directory) -> Result<()> {
 
-		let vols = dir.db.read_logical_volumes_for_store_machine(self.id())?;
+		let vols = dir.db.read_logical_volumes_for_store_machine(mac_handle.id)?;
 
 		for v in vols {
-			let vol_handle = match self.volumes.get(&(v.id as VolumeId)) {
+			let s = match stats.volumes.get(&(v.id as VolumeId)) {
 				Some(v) => v,
 				None => {
 					eprintln!("Inconsistent volume not on this machine: {}", v.id);
@@ -344,50 +350,20 @@ impl StoreMachine {
 				}
 			};
 
-			let vol = vol_handle.lock().unwrap();
-
-			let writeable = vol.can_write_soft();
+			let writeable = s.can_write_soft;
 
 			if !writeable && v.write_enabled {
-				dir.db.update_logical_volume_writeable(vol.superblock.volume_id, false)?;
+				dir.db.update_logical_volume_writeable(v.id as VolumeId, false)?;
 			}
 		}
 
 		Ok(())
 	}
 
-	pub fn shutdown(&self, dir: &Directory) -> Result<()> {
-
-		// Mark all volumes associated with this machine as read-only
-		// (On restart it will be pitch-fork's responsibility to bring them back up)
-		let vols = dir.db.read_logical_volumes_for_store_machine(self.id())?;
-		for v in vols {
-			dir.db.update_logical_volume_writeable(v.id as VolumeId, false)?;
-		}
-
-		// Perform final heartbeart to take this node off of the ready list
-		self.do_heartbeat(dir, false)?;
-
-		Ok(())
-	}
-
-	/// Check whether or not we should allocate another volume on this machine
-	/// While the machine is not fully allocated, we will ensure that the machine never goes above 70% space utilization
-	/// NOTE: Currently this will require a lock on all volumes unfortunately
-	pub fn should_allocate(&self) -> bool {
-		// Ignore if we don't have space to allocate more volumes on this machine
-		if !self.can_allocate() {
-			return false;
-		}
-
-		let need_more = self.volumes.len() < 1 ||
-			(self.used_space() as f64) > ((self.allocated_space() as f64) * 0.70);
-
-		need_more
-	}
-
 	/// Assuming that we want to, this will create a new volume on this machine and pick other replicas to go along with it
-	pub fn perform_allocation(mac_handle: MachineHandle) -> Box<Future<Item=(), Error=Error> + Send> {
+	fn perform_allocation(mac_handle: MachineHandle) -> Box<Future<Item=(), Error=Error> + Send> {
+
+		let num_replicas = mac_handle.config.store.num_replicas;
 
 		let (mut macs, vol) = {
 			let dir = mac_handle.dir.lock().unwrap();
@@ -398,10 +374,10 @@ impl StoreMachine {
 			};
 
 			let mut macs = all_macs.into_iter().filter(|m| {
-				m.can_allocate() && (m.id as MachineId) != mac_handle.id
+				m.can_allocate(&dir.config) && (m.id as MachineId) != mac_handle.id
 			}).collect::<Vec<_>>();
 
-			if macs.len() < NUM_REPLICAS - 1 {
+			if macs.len() < num_replicas - 1 {
 				return Box::new(err("Not enough replicas available to allocate new volume".into()));
 			}
 
@@ -422,7 +398,7 @@ impl StoreMachine {
 		// Also, if a machine fails, then we can proceed up to the next available machine (next in our random sequence)
 		// Basically using the vector as a stream and take until we get some number of successes (but all in parallel)
 		// NOTE: We assume that NUM_REPLICAS is always at least 1
-		let n_other = if NUM_REPLICAS > 1 { NUM_REPLICAS - 1 } else { 0 };
+		let n_other = if num_replicas > 1 { num_replicas - 1 } else { 0 };
 
 		// Fanning out and making requests to all machines we need
 		let arr = macs[0..n_other].iter().map(move |m| {
@@ -471,8 +447,91 @@ impl StoreMachine {
 		}))
 	}
 
-
-
 }
 
 
+pub struct StoreMachineVolumeStats {
+	/// Total amount of space occupied on disk
+	pub used_space: u64,
+	
+	/// Total amount of space on disk commited towards this volume but not necessarily fully used
+	pub allocated_space: u64,
+
+	pub can_write: bool,
+	pub can_write_soft: bool
+}
+
+/// Represents a single snapshot of the store's space usage/allocations at one point in time
+pub struct StoreMachineStats {
+	
+	// Mainly copied from the store machine for convenience
+	pub config: ConfigRef,
+
+	/// The total amount of space that we are allowed to allocate towards primary data files
+	pub total_space: u64,
+
+	pub volumes: HashMap<VolumeId, StoreMachineVolumeStats>
+}
+
+impl StoreMachineStats {
+	pub fn used_space(&self) -> u64 {
+		let mut sum = 0;
+		for (_, v) in self.volumes.iter() {
+			sum += v.used_space
+		}
+
+		sum
+	}
+
+	pub fn allocated_space(&self) -> u64 {
+		let mut sum = 0;
+		for (_, v) in self.volumes.iter() {
+			sum += v.allocated_space
+		}
+
+		sum
+	}
+
+	pub fn can_allocate(&self) -> bool {
+		self.allocated_space() + self.config.store.allocation_size < self.total_space
+	}
+
+	/// Check whether or not we should allocate another volume on this machine
+	/// While the machine is not fully allocated, we will ensure that the machine never goes above 70% space utilization
+	/// NOTE: Currently this will require a lock on all volumes unfortunately
+	pub fn should_allocate(&self) -> bool {
+		// Ignore if we don't have space to allocate more volumes on this machine
+		if !self.can_allocate() {
+			return false;
+		}
+
+		let need_more = self.volumes.len() < 1 ||
+			(self.used_space() as f64) > ((self.allocated_space() as f64) * 0.70);
+
+		need_more
+	}
+
+	/// Whether or not any value on this machine can be written within a reasonable margin of error
+	/// NOTE: Machines with no volumes on them are NOT writeable currently (so we can't immediately accept uploads to a new volume until all machines have heartbeated again)
+	pub fn can_write_soft(&self) -> bool {
+		for (_, v) in self.volumes.iter() {
+			if v.can_write_soft {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/// Whether or not any any volume volume in the entire store is writeable
+	pub fn can_write(&self) -> bool {
+		for (_, v) in self.volumes.iter() {
+			if v.can_write {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+}

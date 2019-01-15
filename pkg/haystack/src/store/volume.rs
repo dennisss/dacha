@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use super::stream::Stream;
 use super::block_size_remainder;
 use fs2::FileExt;
+use super::allocate_soft::*;
 
 const SUPERBLOCK_MAGIC: &str = "HAYS";
 
@@ -32,6 +33,7 @@ pub struct NeedleWithOffset {
 /// Represents a single file on disk that consists of many photos as part of some logical volume
 pub struct PhysicalVolume {
 	pub superblock: PhysicalVolumeSuperblock,
+	config: ConfigRef,
 	path: PathBuf,
 	file: File,
 
@@ -49,8 +51,8 @@ pub struct PhysicalVolume {
 	/// Because of the potential for partial writes, we won't trust the size reported on disk after the volume is fully loaded
 	extent: u64,
 
-	/// Amount of space allocated in the FS for this file
-	allocated: u64
+	/// Amount of space allocated in the FS for this file (should be >= the current size of the file)
+	preallocated: u64
 }
 
 impl PhysicalVolume {
@@ -61,7 +63,7 @@ impl PhysicalVolume {
 	/// 
 	/// Will error out if the volume already exists
 	pub fn create(
-		path: &Path, cluster_id: ClusterId, machine_id: MachineId, volume_id: VolumeId
+		config: ConfigRef, path: &Path, cluster_id: ClusterId, machine_id: MachineId, volume_id: VolumeId
 	) -> Result<PhysicalVolume> {
 		
 		let mut opts = OpenOptions::new();
@@ -76,23 +78,26 @@ impl PhysicalVolume {
 			magic: SUPERBLOCK_MAGIC.as_bytes().into(),
 			cluster_id,
 			machine_id,
-			volume_id
+			volume_id,
+			block_size: config.store.block_size,
+			allocated_space: config.store.allocation_size
 		};
 
 		let idx_path = path.to_str().unwrap().to_owned() + ".idx";
-		let idx = PhysicalVolumeIndex::create(&Path::new(&idx_path), cluster_id, machine_id, volume_id)?;
+		let idx = PhysicalVolumeIndex::create(&Path::new(&idx_path), &superblock)?;
 
-		let allocated = file.allocated_size()?;
+		let preallocated = file.allocated_size()?;
 
 		let mut vol = PhysicalVolume {
 			superblock,
+			config,
 			path: path.to_owned(),
 			file,
 			index: HashMap::new(),
 			index_file: idx,
 			compaction_pending: 0,
 			extent: 0,
-			allocated
+			preallocated
 		};
 
 		vol.superblock.write(&mut vol.file)?;
@@ -108,15 +113,13 @@ impl PhysicalVolume {
 	/// Opens a volume given it's file name
 	///
 	///  XXX: Ideally we would have some better way of doing this right?
-	pub fn open(path: &Path) -> Result<PhysicalVolume> {
+	pub fn open(config: ConfigRef, path: &Path) -> Result<PhysicalVolume> {
 		let mut opts = OpenOptions::new();
 		opts.read(true).write(true);
 
 		let mut file = opts.open(path)?;
 
-		let mut header = [0u8; SUPERBLOCK_SIZE];
-		file.read_exact(&mut header)?;
-		let superblock = PhysicalVolumeSuperblock::read(&mut Cursor::new(header))?;
+		let superblock = PhysicalVolumeSuperblock::read(&mut file)?;
 
 		if &superblock.magic[..] != SUPERBLOCK_MAGIC.as_bytes() {
 			return Err("Superblock magic is incorrect".into());
@@ -137,20 +140,21 @@ impl PhysicalVolume {
 		}
 		else {
 			// Read just the superblock
-			PhysicalVolumeIndex::create(&idx_path, superblock.cluster_id, superblock.machine_id, superblock.volume_id)?
+			PhysicalVolumeIndex::create(&idx_path, &superblock)?
 		};
 
-		let allocated = file.allocated_size()?;
+		let preallocated = file.allocated_size()?;
 
 		let mut vol = PhysicalVolume {
 			superblock,
+			config,
 			path: path.to_owned(),
 			file,
 			index: HashMap::new(),
 			index_file: idx,
 			compaction_pending: 0,
 			extent: 0,
-			allocated
+			preallocated
 		};
 
 		// Initially starts right after the superblock because we haven't checked any of the needles after it yet
@@ -163,11 +167,11 @@ impl PhysicalVolume {
 
 
 	pub fn can_write_soft(&self) -> bool {
-		(((self.used_space() as f64) * 0.95) as usize) < ALLOCATION_SIZE
+		(((self.used_space() as f64) * 0.95) as u64) < self.superblock.allocated_space
 	}
 
 	pub fn can_write(&self) -> bool {
-		self.used_space() < ALLOCATION_SIZE
+		self.used_space() < self.superblock.allocated_space
 	}
 
 
@@ -178,26 +182,26 @@ impl PhysicalVolume {
 
 	/// Lists the size of all space currently being used by this volume and any associated index
 	/// This will essentially be the total storage cost of this volume not containing lower-level filesystem metadata
-	pub fn used_space(&self) -> usize {
-		// TODO: Add space used by the index file?
-		// TODO: Also aggresively ensure that we our internal extent stays pretty close to this value
-		(self.file.metadata().unwrap().len() as usize)
+	pub fn used_space(&self) -> u64 {
+		// TODO: May be slightly off as we don't immediately truncate the file after failed writes or extra data at the end of it (as we'd rather try to avoid truncatating pre-emptively in-case a human wants to )
+		self.extent + self.index_file.used_space()
 	}
 
 	/// Internal utility for adding to the index
-	/// This should be atomic as long as it doesn't panic
+	/// This should be atomic w.r.t in-memory datastructures as long as it doesn't panic
 	fn add_to_index(&mut self, keys: NeedleKeys, entry: NeedleIndexEntry, from_index_file: bool) -> Result<()> {
+		
+		if !from_index_file {
+			self.index_file.append(&keys, &entry)?;
+		}
+
 		if let Some(old_val) = self.index.get(&keys) {
 			if old_val.block_offset == entry.block_offset {
 				// This isn't really problematic, but does indicate that we are doing something wrong
 				return Err("Adding the exact same index entry twice")?;
 			}
 
-			self.compaction_pending += old_val.meta.size
-		}
-		
-		if !from_index_file {
-			self.index_file.append(&keys, &entry);
+			self.compaction_pending += old_val.meta.occupied_size(self.superblock.block_size)
 		}
 
 		self.index.insert(keys, entry);
@@ -222,7 +226,7 @@ impl PhysicalVolume {
 		if index_pairs.len() > 0 {
 			{
 				let p = &index_pairs[index_pairs.len() - 1];
-				off = p.value.end_offset();
+				off = p.value.end_offset(self.superblock.block_size);
 			}
 
 			for pair in index_pairs {
@@ -244,11 +248,11 @@ impl PhysicalVolume {
 
 			last_off = off;
 
-			if off % (BLOCK_SIZE as u64) != 0 {
+			if off % self.superblock.block_size != 0 {
 				return Err("Needles misaligned relative to block offsets".into());
 			}
 			
-			let block_offset = (off / (BLOCK_SIZE as u64)) as BlockOffset;
+			let block_offset = (off / self.superblock.block_size) as BlockOffset;
 
 			println!("Reading needle at {}", off);
 
@@ -261,7 +265,7 @@ impl PhysicalVolume {
 				block_offset
 			};
 
-			off = entry.end_offset();
+			off = entry.end_offset(self.superblock.block_size);
 
 			self.add_to_index(n.keys.clone(), entry, false)?;
 
@@ -314,7 +318,7 @@ impl PhysicalVolume {
 			return Ok(None);
 		}
 
-		self.file.seek(io::SeekFrom::Start(entry.offset()))?;
+		self.file.seek(io::SeekFrom::Start(entry.offset(self.superblock.block_size)))?;
 
 		let needle = Needle::read_oneshot(&mut self.file, &entry.meta)?;
 
@@ -363,35 +367,49 @@ impl PhysicalVolume {
 		let off = self.extent;
 		self.file.seek(io::SeekFrom::Start(off))?;
 
-		if off % (BLOCK_SIZE as u64) != 0 {
+		if off % self.superblock.block_size != 0 {
 			return Err("File not block aligned".into());
 		}
 
-		let block_offset = (off / (BLOCK_SIZE as u64)) as BlockOffset;
+		let block_offset = (off / self.superblock.block_size) as BlockOffset;
 
 
 		let header: Vec<u8> = NeedleHeader::serialize(cookie.data(), &keys, &meta)?;
 
 
 		let mut next_extent = off + (header.len() + (meta.size as usize) + NEEDLE_FOOTER_SIZE) as u64;
-		let rem = block_size_remainder(next_extent);
+		let rem = block_size_remainder(self.superblock.block_size, next_extent);
 		next_extent = next_extent + rem;
 
 		// TODO: Should we reject needles that go over the allocation size right here? (currently it is only enforced in the routes layer before the needle is written)
 
 		// Take control of the filesystem allocation process so long as we are not hitting our overall filesystem limit
-		if next_extent > self.allocated && next_extent < (ALLOCATION_SIZE as u64) {
-			let mut next_allocated = next_extent;
+		// TODO: Another optimization would be preallocate a large amount of space all at once when we are doing compactions as they have a pretty well known size
+		if next_extent > self.preallocated {
 
 			// Round up to the next preallocation block size
-			let rem = next_allocated % PREALLOCATE_SIZE;
-			next_allocated = next_allocated + (
-				if rem == 0 { 0 }
-				else { PREALLOCATE_SIZE - rem }
-			);
+			let mut next_preallocated = next_extent
+				+ block_size_remainder(self.config.store.preallocate_size, next_extent);
 
-			self.file.allocate(next_allocated)?;
-			self.allocated = next_allocated;
+			// Current estimate of total size needed to store the index when full
+			let index_space = self.predicted_index_size();
+
+			// Using this measurement, the remainder of the space should be left for the data file
+			let space_for_volume = self.superblock.allocated_space - index_space;
+
+			// Should never allocate more than the total allocated space for the volume
+			if space_for_volume < next_preallocated {
+				next_preallocated = space_for_volume
+			}
+
+			// Must at least allocate enough space to store the current needle
+			if next_extent > next_preallocated {
+				// TODO: Near the end of the volume, this condition may get hit a lot and result in many small inefficient allocation
+				next_preallocated = next_extent;
+			}
+
+			allocate_soft(&self.file, next_preallocated)?;
+			self.preallocated = next_preallocated;
 		}
 
 
@@ -451,6 +469,31 @@ impl PhysicalVolume {
 		Ok(())
 	}
 
+	pub fn predicted_index_size(&self) -> u64 {
+		let mut index_extent = self.index_file.used_space();
+		
+		// When the index file is big enough that actual entries overweight the size of the header metadata, we will try forward predicting the size of the index file
+		if self.num_needles() > 128 {
+
+			// Based on the current index-space to data-space ratio, calculate how large we expect the index file to be near max capacity
+			
+			let index_percent = (index_extent as f64) / ((index_extent + self.extent) as f64);
+			if index_percent > 0.05 {
+				eprintln!("Extremely dense index file");
+			}
+			else {
+				let index_predicted_size = (index_percent * (self.superblock.allocated_space as f64)) as u64;
+
+				// Sanity check the measurement (we should never predict less space than is currently being used)
+				if index_predicted_size > index_extent {
+					index_extent = index_predicted_size;
+				}
+			}
+		}
+
+		index_extent
+	}
+
 	pub fn delete_needle(&mut self, keys: &NeedleKeys) -> Result<()> {
 
 		let entry = match self.index.get(keys) {
@@ -489,7 +532,7 @@ impl PhysicalVolume {
 
 	fn pad_to_block_size(&mut self) -> Result<u64> {
 		let pos = self.file.seek(io::SeekFrom::Current(0))?;
-		let pad = block_size_remainder(pos);
+		let pad = block_size_remainder(self.superblock.block_size, pos);
 		if pad != 0 {
 			let mut padding = Vec::new();
 			padding.resize(pad as usize, 0);
@@ -501,7 +544,7 @@ impl PhysicalVolume {
 
 	fn offset_after_super_block(&self) -> u64 {
 		let mut off = SUPERBLOCK_SIZE as u64;
-		off += block_size_remainder(off);
+		off += block_size_remainder(self.superblock.block_size, off);
 		off
 	}
 
@@ -514,6 +557,7 @@ mod tests {
 	use super::*;
 	use super::super::stream::SingleStream;
 	use std::fs;
+	use std::sync::Arc;
 
 	#[test]
 	fn physical_volume_append() -> Result<()> {
@@ -524,9 +568,11 @@ mod tests {
 			fs::remove_file(&p)?;
 		}
 
+		let config = Arc::new(Config::default());
+
 		// Create new with single needle
 		{
-			let mut vol = PhysicalVolume::create(&p, 123, 456, 7)?;
+			let mut vol = PhysicalVolume::create(config.clone(), &p, 123, 456, 7)?;
 
 			let keys = NeedleKeys { key: 22, alt_key: 3 };
 
@@ -557,7 +603,7 @@ mod tests {
 
 		// Reopen
 		{
-			let mut vol = PhysicalVolume::open(&p)?;
+			let mut vol = PhysicalVolume::open(config.clone(), &p)?;
 			assert_eq!(vol.superblock.cluster_id, 123);
 			assert_eq!(vol.superblock.machine_id, 456);
 			assert_eq!(vol.superblock.volume_id, 7);

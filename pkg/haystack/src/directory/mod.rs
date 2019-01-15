@@ -3,7 +3,6 @@ pub mod models;
 pub mod schema;
 mod db;
 
-use super::paths::*;
 use super::common::*;
 use super::errors::*;
 use self::models::*;
@@ -15,11 +14,14 @@ use self::db::DB;
 use std::hash::Hasher;
 use rand::thread_rng;
 use rand::seq::SliceRandom;
+use std::sync::Arc;
 
 
 pub struct Directory {
 
 	pub cluster_id: ClusterId,
+
+	pub config: ConfigRef,
 
 	// TODO: Eventually we'd like to make sure that this can become private
 	pub db: DB
@@ -53,7 +55,7 @@ pub struct Directory {
 impl Directory {
 
 	/// Connects to the backing database and initializes the cluster if needed
-	pub fn open() -> Result<Directory> {
+	pub fn open(config: Config) -> Result<Directory> {
 
 		let db = DB::connect();
 
@@ -74,6 +76,7 @@ impl Directory {
 
 		Ok(Directory {
 			db,
+			config: Arc::new(config),
 			cluster_id
 		})		
 	}
@@ -113,7 +116,7 @@ impl Directory {
 		}
 		
 		let mut caches = self.db.index_cache_machines()?.into_iter().filter(|m| {
-			m.can_read()
+			m.can_read(&self.config)
 		}).collect::<Vec<_>>();
 
 		if caches.len() == 0 {
@@ -145,7 +148,7 @@ impl Directory {
 
 		let stores = self.db.read_store_machines_for_volume(photo.volume_id.to_unsigned())?
 		.into_iter().filter(|m| {
-			m.can_read()
+			m.can_read(&self.config)
 		}).collect::<Vec<_>>();
 
 		if stores.len() == 0 {

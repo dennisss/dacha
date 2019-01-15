@@ -105,7 +105,7 @@ impl Client {
 			}
 
 			for m in machines.iter() {
-				if !m.can_write() {
+				if !m.can_write(&dir.config) {
 					return Err("Some machines are not writeable".into());
 				}
 			}

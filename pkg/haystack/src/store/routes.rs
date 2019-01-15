@@ -5,7 +5,6 @@ use super::super::http::*;
 use super::api::*;
 use super::machine::*;
 use super::volume::*;
-use super::needle::*;
 use hyper::{Body, Response, Method, StatusCode};
 use hyper::http::request::Parts;
 use hyper::body::Payload;
@@ -96,7 +95,7 @@ pub fn handle_request(
 struct StoreReadVolumeBody {
 	id: VolumeId,
 	num_needles: usize,
-	used_space: usize
+	used_space: u64
 }
 
 // TODO: 'std::convert::From<&PhysicalVolume> for'
@@ -153,7 +152,8 @@ fn create_volume(
 		return Ok(text_response(StatusCode::OK, "Volume already exists"));
 	}
 
-	if !mac.can_allocate() {
+	let stats = mac.stats();
+	if !stats.can_allocate() {
 		return Ok(text_response(StatusCode::BAD_REQUEST, "Can not currently allocate volumes"));
 	}
 
@@ -176,8 +176,8 @@ fn read_photo(
 
 ) -> Result<Response<Body>> {
 
-	// Briefly lock the machine just to get some necessary info and a volume handle
-	let (mac_id, writeable, vol_handle) = {
+	// Briefly lock the machine just to get the volume handle
+	let vol_handle = {
 		let mac = mac_handle.inst.read().unwrap();
 
 		let v = match mac.volumes.get(&volume_id) {
@@ -187,9 +187,11 @@ fn read_photo(
 			),
 		};
 
-		// TODO: Current issue is that can_write is very expensive as it must lock all volumes
-		(mac.id(), mac.can_write_soft(), v)
+		v
 	};
+
+	let mac_id = mac_handle.id;
+	let writeable = mac_handle.is_writeable();
 
 	let mut vol = vol_handle.lock().unwrap();
 
