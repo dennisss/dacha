@@ -11,24 +11,27 @@ extern crate rmp_serde as rmps;
 extern crate hyper;
 extern crate tokio;
 
+extern crate raft;
 
+use raft::errors::*;
+use raft::server::Server;
 
-static TEXT: &str = "Hello, World!";
+use std::sync::{Arc, Mutex};
+
 
 fn main() {
-	let addr = ([127, 0, 0, 1], 3000).into();
 
+	let s = Arc::new(Mutex::new(
+		Server::new()
+	));
 
+	// TODO: Support passing in a port (and maybe also an addr)
+	Server::start(s.clone());
 
-	let new_svc = || {
-		service_fn_ok(|_req|{
-			Response::new(Body::from(TEXT))
-		})
-	};
-
-	let server = Server::bind(&addr)
-		.serve(new_svc)
-		.map_err(|e| eprintln!("server error: {}", e));
-
-	hyper::rt::run(server);
+	// This is where we would perform anything needed to manage regular client requests (and utilize the server handle to perform operations)
+	// Noteably we want to respond to clients with nice responses telling them specifically if we are not the actual leader and can't actually fulfill their requests
+	loop {
+		std::thread::sleep_ms(1000);
+	}
 }
+

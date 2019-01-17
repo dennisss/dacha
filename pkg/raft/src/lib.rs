@@ -23,7 +23,10 @@ pub mod errors {
 
 
 mod protos;
-mod state_machine;
+mod rpc;
+pub mod state_machine;
 
-mod server;
+mod state;
+pub mod server;
+//mod server;
 

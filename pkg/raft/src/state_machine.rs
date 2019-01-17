@@ -1,6 +1,9 @@
 use bytes::Bytes;
 use super::errors::*;
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+use rmps::{Serializer, Deserializer};
+
 
 pub trait StateMachine {
 
@@ -22,7 +25,6 @@ pub trait StateMachine {
 	fn last_applied(&self) -> Option<u64>;
 
 }
-
 
 
 // A basic store 
@@ -47,25 +49,31 @@ pub struct MemoryKVStateMachine {
 }
 
 impl MemoryKVStateMachine {
-	fn new() -> MemoryKVStateMachine {
+	pub fn new() -> MemoryKVStateMachine {
 		MemoryKVStateMachine {
 			last_id: None,
 			data: HashMap::new()
 		}
 	}
+
+	/*
+	pub fn new_op(op: &KeyValueOperation) -> Bytes {
+		// Basically I want to 
+	}
+	*/
 }
 
 impl StateMachine for MemoryKVStateMachine {
 
 	fn apply(&mut self, id: u64, data: Bytes) -> Result<()> {
 		let mut de = Deserializer::new(&data[..]);
-		let ret = Deserialize::deserialize::<KeyValueOperation>(&mut de)?;
+		let ret: KeyValueOperation = Deserialize::deserialize(&mut de).unwrap();
 
 		match ret {
-			Set { key, value } => {
+			KeyValueOperation::Set { key, value } => {
 				self.data.insert(key, value);
 			},
-			Delete { key } => {
+			KeyValueOperation::Delete { key } => {
 				self.data.remove(&key);
 			}
 		};
@@ -73,7 +81,7 @@ impl StateMachine for MemoryKVStateMachine {
 		Ok(())
 	}
 
-	fn last_applied(&self) -> u64 {
+	fn last_applied(&self) -> Option<u64> {
 		self.last_id
 	}
 

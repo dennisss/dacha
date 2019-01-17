@@ -1,222 +1,123 @@
 
+use super::errors::*;
+use super::protos::*;
+use super::rpc;
+use super::state::*;
+use futures::future::*;
+use futures::{Future, Stream};
 
-
-use hyper::{Body, Response, Server};
-use hyper::rt::Future;
-use hyper::service::service_fn_ok;
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, Duration};
 use std::sync::{Arc, Mutex};
 
-use serde::{Deserialize, Serialize};
-use rmps::{Deserializer, Serializer};
-
-use super::protos::*;
-
-
-/*
-	If we assume that cluster membership is a core responsibility of RAFT and not of the overlayed state machine, then we should store the list of server ids to disk as a nice config file
-
-	- Config changes must be atomic on disk
-
-
-	Files
-	- `/log` <- append-only log (with the exception of compactions which we may either implement as new files )
-		- we will generally always hold at most two log files and at most two snapshot files
-	- `/config`
-		- If the block size is small enough, and we assert that, then the config 
-	- 
-
-*/
-
 use std::fs::{File, OpenOptions};
-
-
-/// Encapsulates a server's metadata which is persisted to disk
-struct MetadataStore {
-	data: Metadata,
-	file: File
-}
-
-impl MetadataStore {
-	fn open(dir: &Path) {
-		let fname = dir.join("meta");
-
-	}
-
-	fn create() {
-
-	}
-
-}
-
-struct LogStore {
-
-}
-
-
-/// Encapsulates a configuration which is persisted to disk
-struct ConfigurationStore {
-
-}
-
-
-
-
-/*
-/// Persistent state on all servers:
-/// (Updated on stable storage before responding to RPCs)
-struct ServerPersistentState {	
-	/// log entries; each entry contains command for state machine, and term when entry was received by leader (first index is 1)
-	pub log: Vec<LogEntry>
-}
-
-impl Default for ServerPersistentState {
-	fn default() -> Self {
-		ServerPersistentState {
-			current_term: 0,
-			voted_for: None,
-			log: Vec::new()
-		}
-	}
-}
-*/
-
 use super::state_machine::StateMachine;
+use std::thread;
 
-struct Server {
-	meta: MetadataStore,
-	config: ConfigurationStore,
-	log: LogStore,
+
+/// At some random time in this range of milliseconds, a follower will become a candidate if no 
+const ELECTION_TIMEOUT: (u64, u64) = (400, 800); 
+
+/// If the leader doesn't send anything else within this amount of time, then it will send an empty heartbeat to all followers (this default value would mean around 5 heartbeats each second)
+const HEARTBEAT_TIMEOUT: u64 = 200;
+
+
+pub struct Server<S> where S: StateMachine + Send + 'static {
+	meta: Metadata,
+	config: Configuration,
+	log: Vec<LogEntry>,
 
 	/// Index of the last log entry known to be commited
 	/// NOTE: It is not generally necessary to store this, and can be re-initialized always to at least the index of the last applied entry in config or log
 	commit_index: Option<u64>,
 
-	state_machine: Arc<Mutex<StateMachine>>
-}
-
-
-
-/// Volatile state on all servers:
-struct ServerSharedState {
-	/// index of highest log entry known to be committed (initialized to 0, increases monotonically)
-	pub commit_index: Option<u64>, // < XXX: Will be stored as well (this is always at least the same as the lastApplied index)
-	// ^ Strictly always at least as large as last_applied (therefore doesn't really need to be super consistent)
-
-	/// index of highest log entry applied to state machine (initialized to 0, increases monotonically)
-	/// Generally no real point in holding on to this as we can assume that we have a server
-	pub last_applied: Option<u64>
-}
-
-impl Default for ServerSharedState {
-	fn default() -> Self {
-		ServerSharedState {
-			commit_index: None, // < Really doesn't need to be saved to disk
-			last_applied: None // < Will be saved to disk, but only by the state machine
-		}
-	}
-}
-
-struct ServerLeaderStateEntry {
-	/// for each server, index of the next log entry to send to that server (initialized to leader last log index + 1)
-	pub next_index: u64,
-
-	/// for each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
-	pub match_index: u64
-}
-
-struct ServerFollowerState {
-	election_timeout: Duration,
-
-	/// Id of the last leader we have been pinged by. Used to cache the location of the current leader for the sake of proxying requests and client hinting 
-	last_leader_id: Option<ServerId>
-}
-
-struct ServerCandidateState {
-	/// similar to the follower one this is when we should start the next election all over again
-	election_timeout: Duration,
-
-	/// All the votes we have received so far from other servers
-	votes_received: HashSet<ServerId>
-}
-
-/// Volatile state on leaders:
-/// (Reinitialized after election)
-struct ServerLeaderState {
-	pub servers: HashMap<u64, ServerLeaderStateEntry>
-}
-
-/// Ideally a separate 
-enum ServerRole {
-	Follower(ServerFollowerState),
-	Candidate(ServerCandidateState),
-	Leader(ServerLeaderState)
-}
-
-struct ServerDesc {
-	pub id: u64,
-	pub addr: String
-}
-
-type ServerStateHandle = Arc<Mutex<ServerState>>;
-
-struct ServerState {
-
-	/// All members of the cluster
-	pub cluster: Vec<ServerDesc>,
-
-	pub id: ServerId,
-
 	/// For followers, this is the last time we have received a heartbeat from the leader
 	/// For candidates, this is the time at which they started their election
 	/// For leaders, this is the last time we sent any rpc to our followers
-	pub last_time: SystemTime,
+	last_time: SystemTime,
 
-	pub persistent: ServerPersistentState,
+	// Basically this is the persistent state stuff
+	state: ServerState,
 
-	pub shared: ServerSharedState,
+	// Then we also have in-memory volatile state
 
-	pub role: ServerRole
-
+	state_machine: Arc<Mutex<S>> // NOTE: We will eventually just template the type of it
 }
 
-impl Default for ServerState {
-	fn default() -> Self {
-		ServerState {
-			cluster: Vec::new(),
-			id: 0, // < 0 implies not in any cluster even 
+/*
+	In order to make a server, we must at least have a server id 
+	- First and for-most, if there already exists a file on disk with metadata, then we should use that
+	- Otherwise, we must just block until we have a machine id by some other method
+		- If an existing cluster exists, then we will ask it to make a new cluster id
+		- Otherwise, the main() script must wait for someone to bootstrap us and give ourselves id 1
+
+*/
+
+impl<S: StateMachine + Send + 'static> Server<S> {
+
+	// Generally we will need to have a configuration available and such
+	// If this machine does not have a machine id, then one must be created before starting the server (either by a bootstrap process or by obtaining a new id from an existing cluster)
+	pub fn new() -> Server<super::state_machine::MemoryKVStateMachine> {
+		// For now this is for a single server with well known id (but no servers in the cluster)
+		Server {
+			meta: Metadata {
+				server_id: 1,
+				current_term: 0,
+				voted_for: None
+			},
+			config: Configuration {
+				last_applied: 0, // TODO: Convert to an Option
+				members: HashSet::new(),
+				learners: HashSet::new()
+			},
+			log: Vec::new(),
+
+			commit_index: None,
+
 			last_time: SystemTime::now(),
-			persistent: ServerPersistentState::default(),
-			shared: ServerSharedState::default(),
-			role: ServerRole::Follower(ServerFollowerState {
-				election_timeout: ServerState::new_election_timeout()
-			})
+
+			state: ServerState::Follower(ServerFollowerState {
+				election_timeout: Self::new_election_timeout(),
+				last_leader_id: None
+			}),
+
+			state_machine: Arc::new(Mutex::new(super::state_machine::MemoryKVStateMachine::new()))
 		}
 	}
-}
 
-use futures::future::*;
-use futures::Stream;
+	// Should ideally start a new thread that 
+	pub fn start(inst: Arc<Mutex<Server<S>>>) {
 
+		let inst2 = inst.clone();
 
-fn make_request<'a, Req, Res>(path: &'static str, req: Req)
-	-> impl Future<Item=Res, Error=hyper::Error>
-	where Req: Serialize,
-		  Res: Deserialize<'a>	
-{
-	let client = hyper::Client::new();
+		thread::spawn(move || {
+			let inst = inst.clone();
 
-}
+			rpc::run_server(4000, inst);
+		});
 
-impl ServerState {
+		// General loop for managing the server and maintaining leadership, etc.
+		thread::spawn(move || {
+			loop {
+				let mut server = inst2.lock().unwrap();
+				server.cycle();
+				
+				// If sleep is required, we should run a conditional variable that wakes us up an recycles as needed
+			}
+		});
 
-	pub fn cycle(&mut self) -> Option<Duration> {
+		// TODO: Finally if possible we should attempt to broadcast our ip address to other servers so they can rediscover us
+
+	}
+
+	fn cycle(&mut self) -> Option<Duration> {
 		let time = SystemTime::now();
 		let elapsed = time.duration_since(self.last_time).unwrap_or(Duration::from_millis(0));
 
-		match self.role {
-			ServerRole::Follower(s) => {
+		// TODO: If there are no members in the cluster, then this trivially has nothing to do until we get added to someone's cluster or someone will bootstrap us
+
+		match self.state {
+			ServerState::Follower(s) => {
 				if elapsed >= s.election_timeout {
 					self.start_election();					
 				}
@@ -227,99 +128,83 @@ impl ServerState {
 					return Some(s.election_timeout - elapsed);
 				}
 			},
-			ServerRole::Candidate(s) => {
+			ServerState::Candidate(s) => {
 				// TODO: This will basically end up being the same exact precedure as for folloders
 				// Possibly some logic for retring requests
 			},
-			ServerRole::Leader(s) => {
+			ServerState::Leader(s) => {
 				// If we have gone too long without a hearbeart, send one
+				// Also, if we have followers that are lagging behind, it would be a good time to update them if no requests are active for them
 			}
 		};
 
 		None
 	}
 
-	pub fn start_election(&mut self) {
-		self.persistent.current_term += 1;
-		self.persistent.voted_for = Some(self.id);
-		self.role = ServerRole::Candidate(ServerCandidateState {
-			election_timeout: ServerState::new_election_timeout(),
+
+	/*
+		- Another consideration would be to maintain exactly once semantics when we are sneding a command to a server
+
+		- Log cabin generally uses the following naming conventions
+			- The client runs a 'command' on the leader's server
+			- The consensus module can 'replicate()' a log entry to other consensus modules
+			
+
+		- Generally yes, the consensus module is separate
+
+
+		In LogCabin, applying entries is essentially secondary to consensus module
+			- The state machine simply asynchronously applies entries eventually once the consensus module has accepted them
+
+			- So yes, general idea is to decouple the consensus module from the log and from the state machine
+
+
+	*/
+
+	/// Assuming that this is running on the leader, this will 
+	pub fn create_entries(entries: &[LogEntry]) {
+		// Fail if we are not the leader
+
+		// Generally 
+
+
+	}
+
+
+	fn start_election(&mut self) {
+		// Basically must be run and presisted
+		self.meta.current_term += 1;
+		self.meta.voted_for = Some(self.meta.server_id);
+
+		// Really not much point to generalizing it mainly because it still requires that we have much more stuff
+		self.state = ServerState::Candidate(ServerCandidateState {
+			election_timeout: Self::new_election_timeout(),
 			votes_received: HashSet::new()
 		});
 
 		// Send up a bunch of RPCSs
 
 		let req = RequestVoteRequest {
-			term: self.persistent.current_term,
-			candidate_id: self.id,
+			term: self.meta.current_term,
+			candidate_id: self.meta.server_id,
 
 			// TODO: Grab from the log entries (indexes starting at 1)
 			last_log_index: 0,
 			last_log_term: 0
 		};
 
-		let data = {
-			let mut buf = Vec::new();
-			req.serialize(&mut Serializer::new(&mut buf)).unwrap();
-			bytes::Bytes::from(buf)
-		};
-
-
-		let sent = self.cluster.iter().filter(|s| {
-			s.id != self.id
+		let sent = self.config.members.iter().filter(|s| {
+			s.id != self.meta.server_id
 		})
 		.map(|s| {
-			let data = data.clone();
 
-			let client = hyper::Client::new();
+			// NOTE: We should be able to handle individual but literally as soon as we hit a majority we can respond to the request
+			// In other cases, we should still maintain a casual timeout
 
-			let r = hyper::Request::builder()
-				.uri(format!("{}/request_vote", s.addr))
-				.body(Body::from(data))
-				.unwrap();
-
-			client
-			.request(r)
+			rpc::call_request_vote(s, &req)
 			.and_then(|resp| {
 
-				if !resp.status().is_success() {
-					return futures::future::err(format!("RPC call failed with code: {}", resp.status().as_u16()))
-
-					// An error occured, but we probably still want to grab the whole body 
-				}
-
-				let body = resp.into_body();
-
-				resp.into_body()
-				.fold(Vec::new(), |mut buf, c| {
-					buf.extend_from_slice(&c);
-					ok(buf)
-				})
-				.and_then(|buf| {
-					let mut de = Deserializer::new(&buf[..]);
-					let ret = Deserialize::deserialize(&mut de).unwrap();
-
-					// 
-
-					futures::future::ok(ret)
-				})
-
-
-
-				/*
-					assert_eq!((42, "the Answer".to_owned()), Deserialize::deserialize(&mut de).unwrap());
-				*/
-				
-
-				// Parse the respone 
-
-
 				// TODO: Only count votes if we haven't yet transitioned yet since the time we started the vote
-
-				
-
-
-				// 
 
 				futures::future::ok(())
 			})
@@ -332,6 +217,9 @@ impl ServerState {
 
 
 		let f = futures::future::join_all(sent)
+		.map(|_| {
+			()
+		})
 		.map_err(|e| {
 			eprintln!("Error while requesting votes: {:?}", e);
 			()
@@ -341,69 +229,23 @@ impl ServerState {
 
 		tokio::spawn(f);
 
-
-
 		// Would be good for this to have it's on 
-
 	}
+
 
 	fn new_election_timeout() -> Duration {
 		Duration::from_millis(200)
 	}
 
-	pub fn leader_send_heartbeat(&mut self) {
 
-	}
 
-	pub fn on_request_vote(&mut self, req: &RequestVoteRequest) -> RequestVoteResponse {
-
-		// TODO: If we grant a vote to one server and then we see another server also ask us for a vote (and we reject it but that other server has a higher term, should we still update our current_term with that one we just rejected)
-
-		let granted = {
-			if req.term < self.persistent.current_term {
-				false
-			}
-			else {
-				// TODO: Verify candidate log at least as up to date as our log 
-
-				match self.persistent.voted_for {
-					Some(id) => {
-						id == req.candidate_id
-					},
-					None => true
-				}
-			}
-		};
-
-		if granted {
-			self.persistent.voted_for = Some(req.candidate_id);
-		}
-
-		// XXX: Persist to storage before responding
-
-		RequestVoteResponse {
-			term: self.persistent.current_term,
-			vote_granted: granted
-		}
-	}
-
-	pub fn on_append_entries(&mut self, req: &AppendEntriesRequest) -> AppendEntriesResponse {
-
-		let success = self.on_append_entries_run(req);
-
-		if success {
-			// In this case we can also update our last time, trigger the condvar and if we are not already a follower, we can become a follower
-		}
-
-	}
-
-	pub fn on_append_entries_run(&mut self, req: &AppendEntriesRequest) -> bool {
-		if req.term < self.persistent.current_term {
+	fn append_entries_impl(&mut self, req: AppendEntriesRequest) -> bool {
+		if req.term < self.meta.current_term {
 			return false;
 		}
 
-		if (req.prev_log_index as usize) > self.persistent.log.len() ||
-			self.persistent.log[req.prev_log_index].term != req.prev_log_term {
+		if (req.prev_log_index as usize) > self.log.len() ||
+			self.log[req.prev_log_index as usize].term != req.prev_log_term {
 			
 			return false;
 		}
@@ -411,6 +253,7 @@ impl ServerState {
 		// Assert that the entries we were sent are in sorted order with no repeats
 		// NOTE: It is also generally infeasible for 
 		for i in 0..(req.entries.len() - 1) {
+			// XXX: This only makes sense if we start sending an index with each entry a well
 			if req.entries[i + 1] <= req.entries[i] {
 				eprintln!("Received unsorted or duplicate log entries");
 				return false;
@@ -434,88 +277,57 @@ impl ServerState {
 		true
 	}
 
-
 }
 
 
+impl<S: StateMachine + Send + 'static> rpc::Server for Server<S> {
+	fn request_vote(&mut self, req: RequestVoteRequest) -> Result<RequestVoteResponse> {
 
-// General loop for managing the server and maintaining leadership, etc.
-fn run_server(state_handle: Arc<Mutex<ServerState>>) {
+		// TODO: If we grant a vote to one server and then we see another server also ask us for a vote (and we reject it but that other server has a higher term, should we still update our current_term with that one we just rejected)
 
-	loop {
-		let mut state = state_handle.lock().unwrap();
-		state.cycle();
-		
+		let granted = {
+			if req.term < self.meta.current_term {
+				false
+			}
+			else {
+				// TODO: Verify candidate log at least as up to date as our log 
 
-		// If sleep is required, we should run a conditional variable that wakes us up an recycles as needed
+				match self.meta.voted_for {
+					Some(id) => {
+						id == req.candidate_id
+					},
+					None => true
+				}
+			}
+		};
 
+		if granted {
+			self.meta.voted_for = Some(req.candidate_id);
+		}
+
+		// XXX: Persist to storage before responding
+
+		// NOTE: Much simpler for term to start at 0 right?
+		Ok(RequestVoteResponse {
+			term: self.meta.current_term,
+			vote_granted: granted
+		})
 	}
 
+	
+	fn append_entries(&mut self, req: AppendEntriesRequest) -> Result<AppendEntriesResponse> {
+		let success = self.append_entries_impl(req);
+
+		if success {
+			// In this case we can also update our last time, trigger the condvar and if we are not already a follower, we can become a follower
+		}
+		
+		// XXX: Old and not correct
+		Ok(AppendEntriesResponse {
+			term: 0,
+			success: false
+		})
+	}
 
 }
 
-
-/// At some random time in this range of milliseconds, a follower will become a candidate if no 
-const ELECTION_TIMEOUT: (u64, u64) = (150, 300); 
-
-
-/*
-	Additional state:
-	- For followers,
-		- Time at which the last heartbeat was received
-	- For leaders
-		- Time at which the lat heartbeat was sent
-	- For candidates
-		- Time at which the election started
-	
-
-	General assumptions
-	- For now we assume that the number and locations of all servers is well known
-	- Long term, we will start with a single server having it's own id 
-
-*/
-/*
-	All RPCs we need
-	- /append_entries
-	- /request_vote
-	- /install_snapshot
-
-*/
-
-/*
-	Membership change
-	- Abstraction on append_entries
-
-	Leadership
-
-
-*/
-
-// TODO: Move to the protocol set (will be represented as only Add and Remove operations)
-// That way the config is trivially replicatable
-struct ConfigChange {
-	members: Vec<ServerId>
-}
-
-/*
-	- If not already commited, commit C(old + new) to all old + new servers
-	- Then it shall commit C(new) to new servers
-	
-	- After this point, if any server gets a message from an id that is not in it's set, it can just reject it
-		- Possibly iss
-
-
-	Other scenarios
-	- Server startup
-		- Server always starts completely idle and in a mode that would reject external requests
-		- If we have configuration on disk already, then we can use that
-		- If we start with a join cli flag, then we can:
-			- Ask the cluster to create a new unique machine id (we could trivially use an empty log entry and commit that to create a new id) <- Must make sure this does not conflict with the master's id if we make many servers before writing other data
-	
-		- If we are sent a one-time init packet via http post, then we will start a new cluster on ourselves
-
-	- Initializing a cluster for one node
-		- by default a server will have zero servers in it's config and will refuse to cycle at all
-		- if it is 
-
-*/

@@ -90,11 +90,16 @@ pub type ServerId = u64;
 /// Persistent information describing the state of the current server
 /// This will be stored in the './meta' file in the server's data directory
 pub struct Metadata {
+	// XXX: Also a randomized uuid for the cluster
+
+	// Basically whenever we connect to another node with a fresh connection, we must be able to negogiate with each the correct pair of cluster id and server ids on both ends otherwise we are connecting to the wrong server/cluster and that would be problematic (especially when it comes to aoiding duplicate votes because of duplicate connections)
+
 	/// The id of the current server
+	/// TODO: We will probably want to wrap some other wokr of storage for this
 	pub server_id: u64,
 
-	/// Latest term seen by this server
-	pub current_term: Option<u64>,
+	/// Latest term seen by this server (starts at 0)
+	pub current_term: u64,
 
 	/// For the current term above, this is the id of the server that we voted for
 	pub voted_for: Option<ServerId>
@@ -139,7 +144,13 @@ pub struct Configuration {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum LogEntryPayload {
+	/// Does nothing but occupies a single log index
+	/// Currently this is used for getting a unique marker from the log index used to commit this entry
+	/// In particular, we use these log indexes to allocate new server ids
+	Noop,
+
 	ChangeConfig,
+
 	Data(Vec<u8>)
 }
 
@@ -148,8 +159,8 @@ pub enum LogEntryPayload {
 /// TODO: Over the wire, the term number can be skipped if it is the same as the current term of the whole message of is the same as a previous entry
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LogEntry {
-	term: u64,
-	payload: LogEntryPayload
+	pub term: u64,
+	pub payload: LogEntryPayload
 }
 
 
