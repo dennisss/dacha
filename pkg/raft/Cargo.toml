@@ -1,0 +1,20 @@
+[package]
+name = "raft"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+
+
+[dependencies]
+serde = "1.0"
+serde_derive = "1.0"
+rmp-serde = "0.13.7"
+hyper = "0.12.19"
+futures = "0.1.25"
+futures-await = "0.1.1"
+rand = "0.6.1"
+bytes = "0.4.11"
+fs2 = "0.4.3"
+error-chain = "0.12.0"
+ctrlc = "3.1.1"
+tokio = "0.1.14"
+libc = "0.2"
