@@ -3,6 +3,7 @@
 extern crate haystack;
 extern crate clap;
 extern crate futures;
+extern crate toml;
 
 use haystack::directory::Directory;
 use haystack::errors::*;
@@ -20,6 +21,12 @@ fn main() -> Result<()> {
 
 	let matches = App::new("Haystack")
 		.about("Photo/object storage system")
+		.arg(Arg::with_name("config")
+			.short("c")
+			.long("config")
+			.value_name("CONFIG_FILE")
+			.help("Path to a yaml config file describing the setup of each component")
+			.takes_value(true))
 		.subcommand(
 			SubCommand::with_name("store")
 			.about("Start a store layer machine")
@@ -36,6 +43,7 @@ fn main() -> Result<()> {
 				.help("Sets the data directory for store volumes")
 				.takes_value(true))
 		)
+		// TODO: Would also be useful to print out a default config file so that it can then be edited nicely
 		.subcommand(
 			SubCommand::with_name("cache")
 			.about("Starts an intermediate caching layer machine")
@@ -69,7 +77,15 @@ fn main() -> Result<()> {
 		.get_matches();
 
 
-	let config = Config::default();
+	let config = if let Some(config_file) = matches.value_of("config") {
+		let mut file = File::open(config_file).expect("Failed to open the specified config file");
+		let mut contents = String::new();
+		file.read_to_string(&mut contents)?;
+		toml::from_str::<Config>(&contents).expect("Invalid config file")
+	} else {
+		Config::default()
+	};
+
 	let dir = Directory::open(config)?;
 
 	match matches.subcommand() {

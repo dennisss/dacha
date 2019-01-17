@@ -10,7 +10,6 @@ use std::io::{Write, Read, Seek, Cursor};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use crc32c::crc32c_append;
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use std::path::{Path, PathBuf};
 use super::stream::Stream;
 use super::block_size_remainder;

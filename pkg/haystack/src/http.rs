@@ -3,7 +3,7 @@ use hyper::http::request::Parts;
 use futures::Future;
 use hyper::service::service_fn;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex, Once};
+use std::sync::{Arc, Mutex};
 use super::errors::Error;
 
 pub fn bad_request() -> Response<Body> {
