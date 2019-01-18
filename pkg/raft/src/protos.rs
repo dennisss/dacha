@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
+use std::borrow::Borrow;
 
 /*
 	NOTE: When two servers first connect to each other, they should exchange cluster ids to validate that both of them are operating in the same namespace of server ids
@@ -98,13 +99,22 @@ pub struct Metadata {
 	/// TODO: We will probably want to wrap some other wokr of storage for this
 	pub server_id: u64,
 
+
 	/// Latest term seen by this server (starts at 0)
 	pub current_term: u64,
 
 	/// For the current term above, this is the id of the server that we voted for
-	pub voted_for: Option<ServerId>
+	pub voted_for: Option<ServerId>,
+
+	pub commit_index: Option<u64>
 }
 
+
+enum ServerRole {
+	Member,
+	PendingMember,
+	Learner
+}
 
 /// Describes a single server in the cluster using a unique identifier and any information needed to contact it (which may change over time)
 #[derive(Serialize, Deserialize, Debug)]
@@ -126,6 +136,12 @@ impl PartialEq for ServerDescriptor {
 }
 impl Eq for ServerDescriptor {}
 
+// Mainly so that we can look up servers directly by id in the hash sets 
+impl Borrow<ServerId> for ServerDescriptor {
+	fn borrow(&self) -> &ServerId {
+		&self.id
+	}
+}
 
 
 
@@ -137,21 +153,46 @@ pub struct Configuration {
 
 	/// All servers in the cluster which must be considered for votes
 	pub members: HashSet<ServerDescriptor>,
-	
+
+	pub pending_members: HashSet<ServerDescriptor>,
+
 	/// All servers which do not participate in votes (at least not yet), but should still be sent new entries
 	pub learners: HashSet<ServerDescriptor>
 }
 
+/// Represents a change to the cluster configuration in some configuration (in particular, this is for the case of membership changes one server at a time)
+/// If a change references a server already having some role in the cluster, then it is implied that the requested action to 
+/// In order for a config change to be appended to the leader's log for replication, all previous config changes in the log must also commited (although this is realistically only necessary if the change is to or from that of a full voting member)
 #[derive(Serialize, Deserialize, Debug)]
-pub enum LogEntryPayload {
+pub enum ConfigChange {
+
+	AddMember(ServerDescriptor),
+	
+	/// Adds a server as a learner which should be upgraded to a member once it is sufficiently up-to-date
+	AddPendingMember(ServerDescriptor),
+
+	/// Adds a server as a learner: meaning that entries will be replicated to this server but it will not be considered for the purposes of elections and counting votes
+	AddLearner(ServerDescriptor),
+
+	/// Removes a server completely from either the learners or members pools
+	RemoveServer(ServerId)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum LogEntryData {
 	/// Does nothing but occupies a single log index
 	/// Currently this is used for getting a unique marker from the log index used to commit this entry
 	/// In particular, we use these log indexes to allocate new server ids
 	Noop,
 
-	ChangeConfig,
+	/// Used internally for managing changes to the configuration of the cluster
+	Config(ConfigChange),
 
-	Data(Vec<u8>)
+	/// Represents some opaque data to be executed on the state machine
+	Command(Vec<u8>)
+
+	// TODO: Other potentially useful operations
+	// Commit, VoteFor, ObserveTerm <- These would be just for potentially optimizing out writes to the config/meta files and only ever writing consistently to the log file
 }
 
 /// The format of a single log entry that will be appended to every server's append-only log
@@ -159,8 +200,9 @@ pub enum LogEntryPayload {
 /// TODO: Over the wire, the term number can be skipped if it is the same as the current term of the whole message of is the same as a previous entry
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LogEntry {
+	pub index: u64,
 	pub term: u64,
-	pub payload: LogEntryPayload
+	pub data: LogEntryData
 }
 
 
@@ -191,7 +233,7 @@ pub struct RequestVoteRequest {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestVoteResponse {
-	pub term: u64,
+	pub term: u64, // < If granted then this is redundant as it will only ever grant a vote for the same up-to-date term
 	pub vote_granted: bool
 }
 

@@ -21,12 +21,11 @@ pub mod errors {
 	}
 }
 
-
+mod sync;
 mod protos;
 mod rpc;
 pub mod state_machine;
 
 mod state;
-pub mod server;
-//mod server;
+pub mod consensus;
 

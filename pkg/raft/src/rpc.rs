@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use rmps::{Deserializer, Serializer};
 use std::sync::{Arc, Mutex};
 
-
 /*
 	Helpers for the RPC calls going between servers in the raft group
 
@@ -15,20 +14,140 @@ use std::sync::{Arc, Mutex};
 */
 
 
-pub trait Server {
+/*
+
+// But yes, if we just assume that all routes are trivial, then there isn't really much of a point to any of this stuff
+
+// The realistic best model is to create a server builder
+
+pub struct ServiceDefinition<S> {
+	
+	pub methods: HashMap<&'static str, Fn(&mut S, Vec<u8>) -> Result<Vec<u8>>
+
+
+	// Every service definition is a map from taking bytes as input and returning some bytes as output (but naturally it is also bound with a specific )
+
+}
+
+// Naturally this only really helps us for the request end
+// The response end will be completely different
+
+fn new_consensus_service() -> ServiceDefinition> {
+
+	let mut s = ServiceDefinition {
+		methods: HashMap::new()
+	};
+
+	s.methods.insert("/ConsensusService/RequestVote", |s, data| {
+		// Naturally we would probably bubble 
+
+		run_handler(inst_handle, data, S::request_vote)
+	})
+
+	/*
+
+	 => {
+		run_handler(inst_handle, data, S::request_vote)
+	},
+	"/ConsensusService/AppendEntries" => {
+		run_handler(inst_handle, data, S::append_entries)
+	},
+
+	s.insert("")
+
+	*/
+
+	s
+
+
+}
+
+// But yes, we can register 
+
+impl Server {
+
+
+
+}
+
+
+// Basically yes, 
+
+*/
+
+
+/// Internal RPC Server between servers participating in the consensus protocol
+pub trait ServerService {
 	fn request_vote(&mut self, req: RequestVoteRequest) -> Result<RequestVoteResponse>;
 	fn append_entries(&mut self, req: AppendEntriesRequest) -> Result<AppendEntriesResponse>;
+	
+	// Also InstallSnapshot, AddServer, RemoveServer
 }
 
 fn bad_request() -> hyper::Response<hyper::Body> {
 	hyper::Response::builder()
 		.status(hyper::StatusCode::BAD_REQUEST)
 		.body(hyper::Body::empty())
-		.unwrap()
+		.expect("Failed to build bad request")
 }
 
-pub fn run_server<S: 'static>(port: u16, inst_handle: Arc<Mutex<S>>)
-	where S: Server + Send
+/*
+	Basically given a path, we can register any meaningful service
+
+	- Ideally we would implement some form of state machine thing to match between many 
+
+*/
+
+fn rpc_response<Res>(res: Result<Res>) -> hyper::Response<hyper::Body>
+	where Res: Serialize
+{
+	match res {
+		Ok(r) => {
+			let data = {
+				let mut buf = Vec::new();
+				r.serialize(&mut Serializer::new(&mut buf)).expect("Failed to serialize RPC request");
+				bytes::Bytes::from(buf)
+			};
+
+			hyper::Response::builder()
+				.status(200)
+				.body(hyper::Body::from(data))
+				.unwrap()
+		},
+		Err(e) => {
+			eprintln!("{:?}", e);
+			
+			hyper::Response::builder()
+				.status(500)
+				.body(Body::empty())
+				.unwrap()
+		}
+	}
+}
+
+fn run_handler<'a, S, F, Req, Res>(inst_handle: Arc<Mutex<S>>, data: Vec<u8>, f: F)
+	-> FutureResult<hyper::Response<hyper::Body>, hyper::Response<hyper::Body>>
+	where S: ServerService,
+		  F: Fn(&mut S, Req) -> Result<Res>,
+		  Req: Deserialize<'a>,
+		  Res: Serialize
+{
+
+	println!("Run rpc handler");
+
+	let mut de = Deserializer::new(&data[..]);
+	let req: Req = Deserialize::deserialize(&mut de).expect("Failed to parse request");
+	
+	let mut inst = inst_handle.lock().expect("Failed to lock instance");
+
+	let res = f(&mut inst, req);
+
+	ok(rpc_response(res))
+}
+
+
+pub fn run_server<S: 'static>(port: u16, inst_handle: Arc<Mutex<S>>) -> impl Future<Item=(), Error=()>
+	where S: ServerService + Send
  {
 	let addr = ([127, 0, 0, 1], port).into();
 
@@ -38,6 +157,8 @@ pub fn run_server<S: 'static>(port: u16, inst_handle: Arc<Mutex<S>>)
 
 			hyper::service::service_fn(move |req: hyper::Request<hyper::Body>| {
 				
+				println!("GOT REQUEST {:?} {:?}", req.method(), req.uri());
+
 				let inst_handle = inst_handle.clone();
 
 				let f = lazy(move || {
@@ -66,28 +187,20 @@ pub fn run_server<S: 'static>(port: u16, inst_handle: Arc<Mutex<S>>)
 				})
 				.and_then(move |(parts, data)| {
 
+					// We would 
+
+					// XXX: If we can generalize this further, then this is the only thing that would need to be templated in order to run the server (i.e. for different types of rpcs)
 					match parts.uri.path() {
-						"/request_vote" => {
-							// Parse the request and execute stuff
-
-							let mut de = Deserializer::new(&data[..]);
-							let ret: RequestVoteRequest = Deserialize::deserialize(&mut de).unwrap();
-							
-							let mut inst = inst_handle.lock().unwrap();
-
-							inst.request_vote(ret);
-
-							ok(bad_request())
+						"/ConsensusService/RequestVote" => {
+							run_handler(inst_handle, data, S::request_vote)
 						},
-						"/append_entries" => {
-							ok(bad_request())
+						"/ConsensusService/AppendEntries" => {
+							run_handler(inst_handle, data, S::append_entries)
 						},
 						_ => {
 							err(bad_request())
 						}
 					}
-
-					//ok(hyper::Response::new(hyper::Body::empty()))
 				});
 
 
@@ -101,7 +214,7 @@ pub fn run_server<S: 'static>(port: u16, inst_handle: Arc<Mutex<S>>)
 		})
 		.map_err(|e| eprintln!("server error: {}", e));
 
-	hyper::rt::run(server);
+	server
 }
 
 
@@ -114,7 +227,7 @@ fn make_request<'a, Req, Res>(server: &ServerDescriptor, path: &'static str, req
 
 	let data = {
 		let mut buf = Vec::new();
-		req.serialize(&mut Serializer::new(&mut buf)).unwrap();
+		req.serialize(&mut Serializer::new(&mut buf)).expect("Failed to serialize RPC request");
 		bytes::Bytes::from(buf)
 	};
 
@@ -130,8 +243,9 @@ fn make_request_single<'a, Res>(server: &ServerDescriptor, path: &'static str, d
 
 	let r = hyper::Request::builder()
 		.uri(format!("{}{}", server.addr, path))
+		.method("POST")
 		.body(Body::from(data))
-		.unwrap();
+		.expect("Failed to build RPC request");
 
 	client
 	.request(r)
@@ -154,7 +268,10 @@ fn make_request_single<'a, Res>(server: &ServerDescriptor, path: &'static str, d
 		})
 		.and_then(|buf| {
 			let mut de = Deserializer::new(&buf[..]);
-			let ret = Deserialize::deserialize(&mut de).unwrap();
+			let ret = match Deserialize::deserialize(&mut de) {
+				Ok(v) => v,
+				Err(e) => return err("Failed to parse RPC response".into())
+			};
 
 			// XXX: We really want to be able to encapsulate this in a zero copy 
 			futures::future::ok(ret)
@@ -167,12 +284,12 @@ fn make_request_single<'a, Res>(server: &ServerDescriptor, path: &'static str, d
 pub fn call_request_vote(server: &ServerDescriptor, req: &RequestVoteRequest)
 	-> impl Future<Item=RequestVoteResponse, Error=Error> {
 
-	make_request(server, "/request_vote", req)
+	make_request(server, "/ConsensusService/RequestVote", req)
 }
 
 pub fn call_append_entries(server: &ServerDescriptor, req: &AppendEntriesRequest)
 	-> impl Future<Item=AppendEntriesResponse, Error=Error> {
 
-	make_request(server, "/append_entries", req)
+	make_request(server, "/ConsensusService/AppendEntries", req)
 }
 
