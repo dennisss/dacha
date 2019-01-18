@@ -106,7 +106,7 @@ pub struct Metadata {
 	/// For the current term above, this is the id of the server that we voted for
 	pub voted_for: Option<ServerId>,
 
-	pub commit_index: Option<u64>
+	pub commit_index: u64
 }
 
 
@@ -117,7 +117,7 @@ enum ServerRole {
 }
 
 /// Describes a single server in the cluster using a unique identifier and any information needed to contact it (which may change over time)
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ServerDescriptor {
 	pub id: ServerId,
 	pub addr: String
@@ -163,7 +163,7 @@ pub struct Configuration {
 /// Represents a change to the cluster configuration in some configuration (in particular, this is for the case of membership changes one server at a time)
 /// If a change references a server already having some role in the cluster, then it is implied that the requested action to 
 /// In order for a config change to be appended to the leader's log for replication, all previous config changes in the log must also commited (although this is realistically only necessary if the change is to or from that of a full voting member)
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ConfigChange {
 
 	AddMember(ServerDescriptor),
@@ -178,7 +178,7 @@ pub enum ConfigChange {
 	RemoveServer(ServerId)
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum LogEntryData {
 	/// Does nothing but occupies a single log index
 	/// Currently this is used for getting a unique marker from the log index used to commit this entry
@@ -198,7 +198,7 @@ pub enum LogEntryData {
 /// The format of a single log entry that will be appended to every server's append-only log
 /// Each entry represents an increment by one of the current log index
 /// TODO: Over the wire, the term number can be skipped if it is the same as the current term of the whole message of is the same as a previous entry
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogEntry {
 	pub index: u64,
 	pub term: u64,
@@ -220,7 +220,11 @@ pub struct AppendEntriesRequest {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppendEntriesResponse {
 	pub term: u64,
-	pub success: bool
+	pub success: bool,
+
+	// this is an addon to what is mentioned in the original research paper so that the leader knows what it needs to replicate to this server
+	pub last_log_index: u64,
+
 }
 
 #[derive(Serialize, Deserialize, Debug)]

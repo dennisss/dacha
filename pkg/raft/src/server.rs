@@ -118,13 +118,7 @@ impl Default for ServerState {
 	- Long term, we will start with a single server having it's own id 
 
 */
-/*
-	All RPCs we need
-	- /append_entries
-	- /request_vote
-	- /install_snapshot
 
-*/
 
 /*
 	Membership change

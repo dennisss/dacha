@@ -26,6 +26,7 @@ mod protos;
 mod rpc;
 pub mod state_machine;
 
+mod log;
 mod state;
 pub mod consensus;
 

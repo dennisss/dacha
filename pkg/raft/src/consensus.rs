@@ -3,6 +3,7 @@ use super::errors::*;
 use super::protos::*;
 use super::rpc;
 use super::state::*;
+use super::log::*;
 use futures::future::*;
 use futures::{Future, Stream};
 
@@ -11,11 +12,10 @@ use std::time::{SystemTime, Duration, Instant};
 use std::sync::{Arc, Mutex};
 use super::sync::*;
 
-
 use std::fs::{File, OpenOptions};
 use super::state_machine::StateMachine;
-use std::thread;
 use rand::RngCore;
+
 
 
 /// At some random time in this range of milliseconds, a follower will become a candidate if no 
@@ -24,6 +24,13 @@ const ELECTION_TIMEOUT: (u64, u64) = (400, 800);
 /// If the leader doesn't send anything else within this amount of time, then it will send an empty heartbeat to all followers (this default value would mean around 5 heartbeats each second)
 const HEARTBEAT_TIMEOUT: u64 = 200;
 
+/// After this amount of time, we will assume that 
+/// 
+/// NOTE: This value doesn't matter very much, but the important part is that every single request must have some timeout associated with it to prevent the number of pending incomplete requests from growing indefinately in the case of other servers leaving connections open for an infinite amount of time
+const REQUEST_TIMEOUT: u64 = 500;
+
+
+// TODO: Because the RequestVotes will happen on a fixed interval, we must ensure that 
 
 pub enum Proposal<'a> {
 	Pending { term: u64, index: u64 },
@@ -37,7 +44,7 @@ pub type ConsensusModuleHandle = Arc<Mutex<ConsensusModule>>;
 pub struct ConsensusModule {
 	meta: Metadata,
 	config: Configuration,
-	log: Vec<LogEntry>,
+	log: Arc<Mutex<LogStore + Send + 'static>>,
 
 	/// Triggered whenever we commit more entries
 	/// Should be received by the state machine to apply more entries from the log
@@ -66,7 +73,6 @@ pub struct ConsensusModule {
 	- Otherwise, we must just block until we have a machine id by some other method
 		- If an existing cluster exists, then we will ask it to make a new cluster id
 		- Otherwise, the main() script must wait for someone to bootstrap us and give ourselves id 1
-
 */
 
 /*
@@ -90,7 +96,7 @@ impl ConsensusModule {
 	// TODO: Possibly the better option would be to pass in the channel for the state listening (and make the events distinctly typed so that they can't be mixed and matched in the arguments )
 	pub fn new(id: ServerId) -> (ConsensusModule, EventReceiver) {
 
-		let log = Vec::new();
+		let log = Arc::new(Mutex::new(MemoryLogStore::new()));
 
 		let state = ServerState::Follower(ServerFollowerState {
 			election_timeout: Self::new_election_timeout(),
@@ -125,13 +131,11 @@ impl ConsensusModule {
 				voted_for: None,
 
 				// NOTE: Could be volatile but preserved when posible to make recoveries more robust
-				commit_index: None
+				commit_index: 0
 			},
 			config,
 
 			log,
-
-			
 
 			last_time: SystemTime::now(),
 
@@ -150,13 +154,16 @@ impl ConsensusModule {
 		
 		let cycler = loop_fn((inst, event), |(inst, event)| {
 
+			// TODO: Switch to an Instant and use this one time for this entire loop for everything
+			let now = SystemTime::now();
+
 			let mut wait_time = Duration::from_millis(0);
 			{
 
 				let mut server = inst.lock().expect("Failed to lock instance");
 
 				// TODO: Ideally the cycler should a time as input
-				let dur = server.cycle(inst.clone());
+				let dur = server.cycle(inst.clone(), &now);
 
 				// TODO: Should be switched to a tokio::timer which doesn't block anything
 				if let Some(d) = dur {
@@ -252,11 +259,7 @@ impl ConsensusModule {
 
 	}
 
-
-
-
-	fn cycle(&mut self, inst_handle: ConsensusModuleHandle) -> Option<Duration> {
-		let now = SystemTime::now();
+	fn cycle(&mut self, inst_handle: ConsensusModuleHandle, now: &SystemTime) -> Option<Duration> {
 		let elapsed = now.duration_since(self.last_time).unwrap_or(Duration::from_millis(0));
 
 		// TODO: If there are no members in the cluster, then this trivially has nothing to do until we get added to someone's cluster or someone will bootstrap us
@@ -289,10 +292,11 @@ impl ConsensusModule {
 			ServerState::Leader(ref s) => {
 
 				if elapsed >= Duration::from_millis(HEARTBEAT_TIMEOUT) {
-					self.last_time = now;
+					self.last_time = now.clone();
 
 					println!("Leader performing heartbeat");
 
+					// TOOD: THis will now need to become much better
 					let req = AppendEntriesRequest {
 						term: self.meta.current_term,
 						leader_id: self.meta.server_id,
@@ -308,6 +312,12 @@ impl ConsensusModule {
 					})
 					.map(|s| {
 						rpc::call_append_entries(s, &req)
+						.map(|resp| {
+
+							// TODO: append_entries_callback
+
+							()	
+						})
 					}).collect::<Vec<_>>();
 
 					let f = join_all(arr)
@@ -382,6 +392,8 @@ impl ConsensusModule {
 
 		// Basically must be run and presisted
 		// TODO: If we are retrying because no one responded at any of our messages, then we probably don't need to increment the term again
+
+		// NOTE: Only need to increment if we are not a candidate already or we observed some other server with our current term
 		self.meta.current_term += 1;
 		self.meta.voted_for = Some(self.meta.server_id);
 
@@ -455,29 +467,46 @@ impl ConsensusModule {
 		// Would be good for this to have it's on 
 	}
 
+	/// Makes this server a follower in the current term
+	fn become_follower(&mut self) {
+		self.state = ServerState::Follower(ServerFollowerState {
+			election_timeout: Self::new_election_timeout(),
+			last_leader_id: None
+		});
+
+		self.last_time = SystemTime::now();
+
+		self.state_event.notify();
+	}
+
+	/// Run every single time a term index is seen in a remote request or response
+	/// If another server has a higher term than us, then we must become a follower
+	fn observe_term(&mut self, term: u64) {
+		if term > self.meta.current_term {
+			self.meta.current_term = term;
+			self.meta.voted_for = None;
+			self.become_follower();
+		}
+	}
+
+	/// Handles the response to a RequestVote that this module issued the given server id
+	/// This depends on the 
 	fn request_vote_callback(&mut self, from_id: ServerId, resp: RequestVoteResponse) {
+
+		self.observe_term(resp.term);
+
 
 		// All of this only matters if we are the candidate in the current term
 		if self.meta.current_term != resp.term {
-
-			if resp.term > self.meta.current_term {
-				self.meta.current_term = resp.term;
-				self.meta.voted_for = None;
-				self.state = ServerState::Follower(ServerFollowerState {
-					election_timeout: Self::new_election_timeout(),
-					last_leader_id: None
-				});
-
-				self.state_event.notify();
-			}
-
 			return;
 		}
 
 		// TODO: Ensure we ignore self votes
 
+		// TODO: It doesn't really help us if we are cloning the object (better to make the state an immutable arc?)
 		if let ServerState::Candidate(ref mut s) = self.state.clone() {
 			if resp.vote_granted {
+				// TODO: This doesn't really work as we are cloning the state 
 				s.votes_received.insert(from_id);
 			}
 			
@@ -496,6 +525,16 @@ impl ConsensusModule {
 		}
 	}
 
+	fn append_entries_callback(&mut self, from_id: ServerId, resp: AppendEntriesResponse) {
+
+		self.observe_term(resp.term);
+
+		// Generally if we are still the leader in the given term, then we should be updating our definition for the client
+
+		// Step one is to check if we 
+
+	}
+
 
 	fn new_election_timeout() -> Duration {
 		let mut rng = rand::thread_rng();
@@ -508,48 +547,6 @@ impl ConsensusModule {
 
 	// Now must get a little bit more serious about it assuming that we have a valid set of commands that we should be sending over
 
-
-	fn append_entries_impl(&mut self, req: AppendEntriesRequest) -> bool {
-		if req.term < self.meta.current_term {
-			return false;
-		}
-
-		// NOTE: currently this will do plently of erroring out
-		if (req.prev_log_index as usize) > self.log.len() ||
-			self.log[req.prev_log_index as usize].term != req.prev_log_term {
-			
-			return false;
-		}
-
-		/*
-		// Assert that the entries we were sent are in sorted order with no repeats
-		// NOTE: It is also generally infeasible for 
-		for i in 0..(req.entries.len() - 1) {
-			// XXX: This only makes sense if we start sending an index with each entry a well
-			if req.entries[i + 1] <= req.entries[i] {
-				eprintln!("Received unsorted or duplicate log entries");
-				return false;
-			}
-		}
-		*/
-
-		// Delete conflicting entries and all other it
-		for e in req.entries.iter() {
-
-		}
-
-
-		// delete existing entries in conflict with new ones
-		// basically this may require an undo operation on the (but we dont commit anything until we actually run it, so this should never be an issue)
-
-
-
-
-		// append new log entries not already in the log
-
-		true
-	}
-
 }
 
 
@@ -560,21 +557,7 @@ impl rpc::ServerService for ConsensusModule {
 
 		println!("Received request_vote from {}", req.candidate_id);
 
-		// TODO: If we grant a vote to one server and then we see another server also ask us for a vote (and we reject it but that other server has a higher term, should we still update our current_term with that one we just rejected)
-
-		if req.term > self.meta.current_term {
-			self.meta.current_term = req.term;
-			self.meta.voted_for = None;
-
-			self.state = ServerState::Follower(ServerFollowerState {
-				last_leader_id: None,
-				election_timeout: Self::new_election_timeout()
-			});
-
-			self.last_time = SystemTime::now();
-
-			self.state_event.notify();
-		};
+		self.observe_term(req.term);
 
 		let granted = {
 			if req.term < self.meta.current_term {
@@ -608,41 +591,157 @@ impl rpc::ServerService for ConsensusModule {
 		})
 	}
 	
+	// TODO: If we really wanted to, we could have the leader also execute this in order to get consistent local behavior
 	fn append_entries(&mut self, req: AppendEntriesRequest) -> Result<AppendEntriesResponse> {
 
-		if req.term > self.meta.current_term {
-			self.meta.current_term = req.term;
-			self.meta.voted_for = None;
+		self.observe_term(req.term);
 
-			self.state = ServerState::Follower(ServerFollowerState {
-				last_leader_id: None,
-				election_timeout: Self::new_election_timeout()
-			});
-
-			self.last_time = SystemTime::now();
-
-			self.state_event.notify();
+		// If a candidate observes another leader for the current term, then it should become a follower
+		// This is generally triggered by the initial heartbeat that a leader does upon being elected to assert its authority and prevent further elections
+		if req.term == self.meta.current_term {
+			// TODO: This this should definitely not require a clone
+			if let ServerState::Candidate(s) = self.state.clone() {
+				self.become_follower();
+			}
 		}
 
-		// NOTE: Only really if we are currently a follower
-		self.last_time = SystemTime::now();
+		let current_term = self.meta.current_term;
 
-	
-		// If we are a follower, 
+		let response = |success: bool| {
+			Ok(AppendEntriesResponse {
+				term: current_term,
+				success,
+				last_log_index: 0 // TODO: This is tricky as in some error cases, this shouldprobably be a different value than the most recent one in our logs
+			})
+		};
 
-		// The most important aspect here is to be able to 
 
-		let success = true; // self.append_entries_impl(req);
+		if req.term < self.meta.current_term {
+			return response(false);
+		}
 
-		if success {
-			// In this case we can also update our last time, trigger the condvar and if we are not already a follower, we can become a follower
+		// Trivial considering observe_term gurantees the > case
+		assert_eq!(req.term, self.meta.current_term);
+
+		match self.state {
+			// This is generally the only state we expect to see
+			ServerState::Follower(_) => {
+				// Update the time now that we have seen a request from the leader in the current term
+				self.last_time = SystemTime::now();
+				// TODO: Update the leader hint (maybe also update with the ip address we are getting this from)
+			},
+			// We will only see this when the leader is applying a change to itself
+			ServerState::Leader(_) => {
+				if req.leader_id != self.meta.server_id {
+					return Err("This should never happen. We are receiving append entries from another leader in the same term".into());
+				}
+			},
+			// We should never see this
+			ServerState::Candidate(_) => {
+				return Err("How can we still be a candidate right now?".into());
+			}
+		};
+
+
+		// Sanity checking the request
+		if req.entries.len() >= 1 {
+			// Sanity check 1: First entry must be immediately after the previous one
+			let first = &req.entries[0];
+			if first.term < req.prev_log_term || first.index != req.prev_log_index + 1 {
+				return Err("Received previous entry does not follow".into());
+			}
+
+			// Sanity check 2: All entries must be in sorted order and immediately after one another (because the truncation below depends on them being sorted, this must hold)
+			for i in 0..(req.entries.len() - 1) {
+				let cur = &req.entries[i];
+				let next = &req.entries[i + 1];
+
+				if cur.term > next.term || next.index != cur.index + 1 {
+					return Err("Received entries are unsorted, duplicates, or inconsistent".into());
+				}
+			}
 		}
 		
-		// XXX: Old and not correct
-		Ok(AppendEntriesResponse {
-			term: self.meta.current_term,
-			success: false
-		})
+
+
+		let mut log = self.log.lock().unwrap();
+
+		match log.get_term_at(req.prev_log_index) {
+			Some(term) => {
+				if term != req.prev_log_term {
+					// TODO: If this happens, I need to be able to immediately decrement the leaders index in order to have it resend this record immediately
+					return response(false)
+				}
+			},
+			None => return response(false)
+		};
+
+		// Index into the entries array of the first new entry not already in our log
+		// (this will also be the current index in the below loop)
+		let mut first_new = 0;
+
+		for e in req.entries.iter() {
+			let existing_term = log.get_term_at(e.index);
+			if let Some(t) = existing_term {
+				if t == e.term {
+					// Entry is already in the log
+					first_new += 1;
+				}
+				else {
+					// TODO: If we ever observe attempt to truncate entries that are already locally applied or commited, then we should panic
+
+					// Log is inconsistent
+					log.truncate_suffix(e.index); // Should truncate every entry including and after e.index
+					break;
+				}
+			}
+			else {
+				// Nothing exists at this index, so it is trivially a new index
+				break;
+			}
+		}
+
+		// Assertion: the first new entry we are adding should immediately follow the last index in the our local log as of now
+		// TODO: Realistically we should be moving this check close to the append implementation
+		// Generally this should never happen considering all of the other checks that we have above
+		if first_new < req.entries.len() {
+			let last = log.last_entry_index().unwrap_or(LogEntryIndex { index: 0, term: 0 });
+			let next = &req.entries[first_new];
+
+			if next.index != last.index + 1 || next.term < last.term {
+				return Err("Next new entry is not immediately after our last local one".into());
+			}
+		}
+
+
+		// TODO: This could be zero which would be annoying
+		let mut last_new = req.prev_log_index;
+
+		// Finally it is time to append some entries
+		if req.entries.len() - first_new > 0 {
+			// In most cases, we can just take ownership of the whole entries array, otherwise we need to make a new slice of only part of it
+			let new_entries = if first_new == 0 {
+				req.entries
+			} else {
+				let mut arr = vec![];
+				arr.extend_from_slice(&req.entries[first_new..]);
+				arr
+			};
+
+			last_new = new_entries.last().unwrap().index;
+
+			log.append(new_entries);
+		}
+
+
+		// NOTE: It is very important that we use the index of the last entry in the request (and not the index of the last entry in our log as we have not necessarily validated up to that far in case the term or leader changed)
+		if req.leader_commit > self.meta.commit_index {
+			self.meta.commit_index = std::cmp::min(req.leader_commit, last_new);
+			// TODO: If changed, trigger event listeners to be notified
+		}
+
+
+		response(true)
 	}
 
 }
