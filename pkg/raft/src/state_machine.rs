@@ -24,6 +24,8 @@ pub trait StateMachine {
 	/// Empty or non-persistent state machines should return None initially
 	fn last_applied(&self) -> Option<u64>;
 
+	// TODO: May also require operations to be able to install new snapshots
+
 }
 
 

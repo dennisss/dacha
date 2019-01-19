@@ -81,6 +81,9 @@ pub trait ServerService {
 	fn request_vote(&mut self, req: RequestVoteRequest) -> Result<RequestVoteResponse>;
 	fn append_entries(&mut self, req: AppendEntriesRequest) -> Result<AppendEntriesResponse>;
 	
+	// This is the odd ball out internal client 
+	fn propose(&mut self, req: ProposeRequest) -> Result<ProposeResponse>;
+
 	// Also InstallSnapshot, AddServer, RemoveServer
 }
 
@@ -132,8 +135,6 @@ fn run_handler<'a, S, F, Req, Res>(inst_handle: Arc<Mutex<S>>, data: Vec<u8>, f:
 		  Req: Deserialize<'a>,
 		  Res: Serialize
 {
-
-	println!("Run rpc handler");
 
 	let mut de = Deserializer::new(&data[..]);
 	let req: Req = Deserialize::deserialize(&mut de).expect("Failed to parse request");
@@ -196,6 +197,9 @@ pub fn run_server<S: 'static>(port: u16, inst_handle: Arc<Mutex<S>>) -> impl Fut
 						},
 						"/ConsensusService/AppendEntries" => {
 							run_handler(inst_handle, data, S::append_entries)
+						},
+						"/ConsensusService/Propose" => {
+							run_handler(inst_handle, data, S::propose)
 						},
 						_ => {
 							err(bad_request())
@@ -291,5 +295,11 @@ pub fn call_append_entries(server: &ServerDescriptor, req: &AppendEntriesRequest
 	-> impl Future<Item=AppendEntriesResponse, Error=Error> {
 
 	make_request(server, "/ConsensusService/AppendEntries", req)
+}
+
+pub fn call_propose(server: &ServerDescriptor, req: &ProposeRequest)
+	-> impl Future<Item=ProposeResponse, Error=Error> {
+
+	make_request(server, "/ConsensusService/Propose", req)
 }
 

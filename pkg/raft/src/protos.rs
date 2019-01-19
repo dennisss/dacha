@@ -97,16 +97,28 @@ pub struct Metadata {
 
 	/// The id of the current server
 	/// TODO: We will probably want to wrap some other wokr of storage for this
-	pub server_id: u64,
+	/// XXX: Get this out of here 
+	//pub server_id: u64,
 
 
 	/// Latest term seen by this server (starts at 0)
 	pub current_term: u64,
 
-	/// For the current term above, this is the id of the server that we voted for
+	/// The id of the server that we have voted for in the current term
 	pub voted_for: Option<ServerId>,
 
+	/// Index of the last log entry safely replicated on a majority of servers and at same point commited in the same term
 	pub commit_index: u64
+}
+
+impl Default for Metadata {
+	fn default() -> Self {
+		Metadata {
+			current_term: 0,
+			voted_for: None,
+			commit_index: 0
+		}
+	}
 }
 
 
@@ -146,7 +158,7 @@ impl Borrow<ServerId> for ServerDescriptor {
 
 
 // TODO: Assert that no server is ever both in the members and learners list at the same time (possibly convert to one single list and make the two categories purely getter methods for iterators)
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Configuration {
 	/// Index of the last log entry applied to this configuration
 	pub last_applied: u64,
@@ -154,28 +166,82 @@ pub struct Configuration {
 	/// All servers in the cluster which must be considered for votes
 	pub members: HashSet<ServerDescriptor>,
 
-	pub pending_members: HashSet<ServerDescriptor>,
-
 	/// All servers which do not participate in votes (at least not yet), but should still be sent new entries
 	pub learners: HashSet<ServerDescriptor>
 }
 
+impl Default for Configuration {
+	fn default() -> Self {
+		Configuration {
+			last_applied: 0,
+			members: HashSet::new(),
+			learners: HashSet::new()
+		}
+	}
+}
+
+
+impl Configuration {
+
+	pub fn apply(&mut self, index: u64, change: ConfigChange) {
+
+		match change {
+			ConfigChange::AddLearner(s) => {
+				if self.members.contains(&s.id) {
+					panic!("Can not change member to learner");
+				}
+
+				self.learners.insert(s);
+			},
+			ConfigChange::AddMember(s) => {
+				self.learners.remove(&s.id);
+				self.members.insert(s);
+			},
+			ConfigChange::RemoveServer(s) => {
+				self.learners.remove(&s.id);
+				self.members.remove(&s.id);
+			}
+		};
+
+		self.last_applied = index;
+	}
+
+	pub fn iter(&self) -> impl Iterator<Item=&ServerDescriptor> {
+		self.members.iter().chain(self.learners.iter())
+	}
+
+
+}
+
+
+pub struct Snapshot {
+	// The cluster_id should probably also be part of this?
+
+	pub config: Configuration,
+	pub state_machine: Vec<u8>, // <- This is assumed to be internally parseable by some means
+}
+
+
+/*
+	TODO: Other optimization
+	- For very old well commited logs, a learner can get them from a follower rather than from the leader to avoid overloading the leader
+	- Likewise this can be used for spreading out replication if the cluster is sufficiently healthy
+
+*/
+
 /// Represents a change to the cluster configuration in some configuration (in particular, this is for the case of membership changes one server at a time)
-/// If a change references a server already having some role in the cluster, then it is implied that the requested action to 
+/// If a change references a server already having some role in the cluster, then it is invalid
 /// In order for a config change to be appended to the leader's log for replication, all previous config changes in the log must also commited (although this is realistically only necessary if the change is to or from that of a full voting member)
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ConfigChange {
 
 	AddMember(ServerDescriptor),
-	
-	/// Adds a server as a learner which should be upgraded to a member once it is sufficiently up-to-date
-	AddPendingMember(ServerDescriptor),
 
 	/// Adds a server as a learner: meaning that entries will be replicated to this server but it will not be considered for the purposes of elections and counting votes
 	AddLearner(ServerDescriptor),
 
 	/// Removes a server completely from either the learners or members pools
-	RemoveServer(ServerId)
+	RemoveServer(ServerDescriptor)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -210,7 +276,7 @@ pub struct LogEntry {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppendEntriesRequest {
 	pub term: u64,
-	pub leader_id: ServerId,
+	pub leader_id: ServerId, // < NOTE: For the bootstrapping process, this will be 0
 	pub prev_log_index: u64,
 	pub prev_log_term: u64,
 	pub entries: Vec<LogEntry>, // < We will assume that these all have sequential indexes and don't need to be explicitly mentioned
@@ -223,9 +289,31 @@ pub struct AppendEntriesResponse {
 	pub success: bool,
 
 	// this is an addon to what is mentioned in the original research paper so that the leader knows what it needs to replicate to this server
-	pub last_log_index: u64,
+	pub last_log_index: Option<u64>,
 
 }
+
+// XXX: See https://github.com/etcd-io/etcd/blob/fa92397e182286125c72bf52d95f9f496f733bdf/raft/raft.go#L113 for more useful config parameters
+
+/*
+	Bootstrap first node:
+	- server_id:
+		- 1
+	- log:
+		- 1 log entry (containing ConfigChange)
+			- term 1, index 1
+	- config
+		- 1 member in config (containing self)
+		- Naturally any config that is not fully up-to-date can be made up-to-date 
+	- meta
+		- current_term: 1
+		- voted_for: None
+		- commit_index: 1
+	- state_machine
+		- empty
+
+	Adding new server to cluster
+*/
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestVoteRequest {
@@ -249,6 +337,21 @@ pub struct InstallSnapshotRequest {
 
 pub struct AddServerRequest {
 	
+}
+
+
+// NOTE: This is the external interface for use by 
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ProposeRequest {
+	pub data: LogEntryData
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+// XXX: Ideally should only be given as a response once the entries have been comitted
+pub struct ProposeResponse {
+	pub term: u64,
+	pub index: u64
 }
 
 

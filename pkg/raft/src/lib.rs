@@ -22,11 +22,11 @@ pub mod errors {
 }
 
 mod sync;
-mod protos;
-mod rpc;
+pub mod protos; // TODO: Eventually make this private again
+pub mod rpc;
 pub mod state_machine;
 
-mod log;
+pub mod log; // XXX: Likewise should be private
 mod state;
 pub mod consensus;
 

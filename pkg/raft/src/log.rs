@@ -1,24 +1,31 @@
 use super::errors::*;
 use super::protos::*;
 
+/*
 pub struct LogEntryIndex {
 	pub index: u64,
 	pub term: u64
 }
+*/
 
 pub trait LogStore {
 
 	/// Given the index of a log entry, this should get the term stored for it
-	fn get_term_at(&self, index: u64) -> Option<u64>;
+	fn term(&self, index: u64) -> Option<u64>;
 
-	fn last_entry_index(&self) -> Option<LogEntryIndex>; // XXX: Default would be 
+	fn first_index(&self) -> Option<u64>;
+
+	fn last_index(&self) -> Option<u64>; // XXX: Default would be 
+
+	/// Gets a specific entry in the log by index
+	fn entry(&self, index: u64) -> Option<&LogEntry>; 
 
 	/// Adds entries to the very end of the log and atomically flushes them
 	/// TODO: Realistically this flush can occur whenever on the leader as long as it is before we respond to the client?
-	fn append(&mut self, entries: Vec<LogEntry>);
+	fn append(&mut self, entries: &[LogEntry]) -> Result<()>;
 
 	/// Should immediately remove all log entries starting at the given index until the end of the log
-	fn truncate_suffix(&mut self, start_index: u64);
+	fn truncate_suffix(&mut self, start_index: u64) -> Result<()>;
 
 }
 
@@ -40,14 +47,26 @@ impl MemoryLogStore {
 		}
 
 		let first_index = self.log[0].index;
+
+		// TODO: This could go negative if we are not careful
 		Some((index - first_index) as usize)
 	}
 }
 
 impl LogStore for MemoryLogStore {
 
-	fn get_term_at(&self, index: u64) -> Option<u64> {
+	fn term(&self, index: u64) -> Option<u64> {
 		
+		if index == 0 {
+			return Some(0);
+		}
+
+		if self.log.len() == 0 {
+			return None;
+		}
+
+		// TODO: This does not properly implement the previous index case right now
+
 		let pos = match self.pos_for(index) {
 			Some(v) => v,
 			None => return None
@@ -62,28 +81,48 @@ impl LogStore for MemoryLogStore {
 		}
 	}
 
-	fn last_entry_index(&self) -> Option<LogEntryIndex> {
-		match self.log.last() {
-			Some(v) => Some(LogEntryIndex {
-				index: v.index,
-				term: v.term
-			}),
+	fn first_index(&self) -> Option<u64> {
+		match self.log.first() {
+			Some(v) => Some(v.index),
 			None => None
 		}
 	}
 
-	fn append(&mut self, entries: Vec<LogEntry>) {
-		// TODO: Reserve space first?
-		self.log.extend(entries.into_iter());
+	fn last_index(&self) -> Option<u64> {
+		match self.log.last() {
+			Some(v) => Some(v.index),
+			None => None
+		}
 	}
 
-	fn truncate_suffix(&mut self, start_index: u64) {
+	fn entry(&self, index: u64) -> Option<&LogEntry> {
+		let pos = match self.pos_for(index) {
+			Some(v) => v,
+			None => return None
+		};
+		
+		match self.log.get(pos) {
+			Some(v) => {
+				assert_eq!(v.index, index);
+				Some(&v)
+			},
+			None => None
+		}
+	}
+
+	fn append(&mut self, entries: &[LogEntry]) -> Result<()> {
+		self.log.extend_from_slice(entries);
+		Ok(())
+	}
+
+	fn truncate_suffix(&mut self, start_index: u64) -> Result<()> {
 		let pos = match self.pos_for(start_index) {
 			Some(v) => v,
 			None => panic!("Truncating starting at unknown position")
 		};
 
 		self.log.truncate(pos);
+		Ok(())
 	}
 
 }
