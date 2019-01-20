@@ -10,6 +10,8 @@ extern crate rmp_serde as rmps;
 extern crate hyper;
 extern crate tokio;
 extern crate bytes;
+extern crate byteorder;
+extern crate crc32c;
 
 
 pub mod errors {
@@ -21,7 +23,9 @@ pub mod errors {
 	}
 }
 
-mod sync;
+pub mod sync;
+pub mod atomic;
+
 pub mod protos; // TODO: Eventually make this private again
 pub mod rpc;
 pub mod state_machine;

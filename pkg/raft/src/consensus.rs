@@ -13,7 +13,6 @@ use std::sync::{Arc, Mutex};
 use super::sync::*;
 use tokio::prelude::FutureExt;
 
-use std::fs::{File, OpenOptions};
 use super::state_machine::StateMachine;
 use rand::RngCore;
 use std::borrow::Borrow;
@@ -218,7 +217,8 @@ impl ConsensusModule {
 
 		// General loop for managing the server and maintaining leadership, etc.
 		
-		let cycler = loop_fn((inst, event), |(inst, event)| {
+		// NOTE: Because in bootstrap mode a server can spawn requests immediately without the first futures cycle, it may spawn stuff before tokio is ready, so we must make this lazy
+		let cycler = lazy(|| loop_fn((inst, event), |(inst, event)| {
 
 			// TODO: Switch to an Instant and use this one time for this entire loop for everything
 			let now = Instant::now();
@@ -251,7 +251,7 @@ impl ConsensusModule {
 		.map_err(|_| {
 			// XXX: I think there is a stray timeout error that could occur here
 			()
-		});
+		}));
 
 		// TODO: Finally if possible we should attempt to broadcast our ip address to other servers so they can rediscover us
 
@@ -381,7 +381,8 @@ impl ConsensusModule {
 			ServerState::Follower(s) => {
 				let elapsed = now.duration_since(s.last_heartbeat);
 
-				if elapsed >= s.election_timeout {
+				// NOTE: If we are the only server in the cluster, then we can trivially win the election without waiting
+				if elapsed >= s.election_timeout || self.config.members.len() == 1 {
 					// Needs to 
 					self.start_election(inst_handle.clone(), now);					
 				}
