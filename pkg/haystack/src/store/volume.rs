@@ -504,6 +504,9 @@ impl PhysicalVolume {
 			return Err("Needle already deleted".into());
 		}
 
+
+		// TODO: Whenever we see a deleted needle, we can add it to our pending compaction count
+
 		//entry.offset.
 
 		// read the header in the file

@@ -156,57 +156,68 @@ impl Borrow<ServerId> for ServerDescriptor {
 }
 
 
+// The only thing we are missing is the ability 
+
+/// Represents a configuration at a single index
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ConfigurationSnapshot {
+	/// Index of the last log entry applied to this configuration
+	pub last_applied: u64,
+
+	/// Value of the snapshot at the given index (TODO: This is the only type that actually needs to be serializiable, so it could be more verbose for all I care)
+	pub data: Configuration
+}
+
 
 // TODO: Assert that no server is ever both in the members and learners list at the same time (possibly convert to one single list and make the two categories purely getter methods for iterators)
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Configuration {
-	/// Index of the last log entry applied to this configuration
-	pub last_applied: u64,
-
 	/// All servers in the cluster which must be considered for votes
-	pub members: HashSet<ServerDescriptor>,
+	pub members: HashSet<ServerId>,
 
 	/// All servers which do not participate in votes (at least not yet), but should still be sent new entries
-	pub learners: HashSet<ServerDescriptor>
+	pub learners: HashSet<ServerId>
 }
 
 impl Default for Configuration {
 	fn default() -> Self {
 		Configuration {
-			last_applied: 0,
 			members: HashSet::new(),
 			learners: HashSet::new()
 		}
 	}
 }
 
+// It's really a question of whether a state machine really requires a last_aplpied or not (I don't think it does anymore)
+	// That is purely an artifact of 
 
 impl Configuration {
 
-	pub fn apply(&mut self, index: u64, change: ConfigChange) {
+	pub fn apply(&mut self, change: &ConfigChange) {
 
 		match change {
 			ConfigChange::AddLearner(s) => {
-				if self.members.contains(&s.id) {
+				if self.members.contains(s) {
+					// TODO: Is this pretty much just a special version of removing a server
 					panic!("Can not change member to learner");
 				}
 
-				self.learners.insert(s);
+				self.learners.insert(*s);
 			},
 			ConfigChange::AddMember(s) => {
-				self.learners.remove(&s.id);
-				self.members.insert(s);
+				self.learners.remove(s);
+				self.members.insert(*s);
 			},
 			ConfigChange::RemoveServer(s) => {
-				self.learners.remove(&s.id);
-				self.members.remove(&s.id);
+				self.learners.remove(s);
+				self.members.remove(s);
 			}
 		};
 
-		self.last_applied = index;
+		//self.last_applied = index;
 	}
 
-	pub fn iter(&self) -> impl Iterator<Item=&ServerDescriptor> {
+	pub fn iter(&self) -> impl Iterator<Item=&ServerId> {
 		self.members.iter().chain(self.learners.iter())
 	}
 
@@ -235,13 +246,15 @@ pub struct Snapshot {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ConfigChange {
 
-	AddMember(ServerDescriptor),
+	// TODO: Should this encapsulate id addresses as well (probably not as that is a higher level step of sharing ip tables between clients and servers)
+
+	AddMember(ServerId),
 
 	/// Adds a server as a learner: meaning that entries will be replicated to this server but it will not be considered for the purposes of elections and counting votes
-	AddLearner(ServerDescriptor),
+	AddLearner(ServerId),
 
 	/// Removes a server completely from either the learners or members pools
-	RemoveServer(ServerDescriptor)
+	RemoveServer(ServerId)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -318,7 +331,7 @@ pub struct AppendEntriesResponse {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestVoteRequest {
 	pub term: u64,
-	pub candidate_id: u64,
+	pub candidate_id: u64, // < TODO: This doesn't 'need' to be sent if we pre-establish this server's identity and on the connection layer and we are not proxying a request for someone else
 	pub last_log_index: u64,
 	pub last_log_term: u64
 }
@@ -339,6 +352,7 @@ pub struct AddServerRequest {
 	
 }
 
+// XXX: Naturally 
 
 // NOTE: This is the external interface for use by 
 
@@ -354,6 +368,23 @@ pub struct ProposeResponse {
 	pub index: u64
 }
 
+// Upon being received a server should immediatley timeout and start its own election
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TimeoutNow {
 
+}
+
+
+// TODO: A message should be backed by a buffer such that it can be trivially forwarded and owned some binary representation of itself
+pub enum MessageBody {
+	PreVote(RequestVoteRequest),
+	RequestVote(RequestVoteRequest),
+	AppendEntries(AppendEntriesRequest, u64) // The u64 is the last_index of the original request (naturally not needed if we support retaining the original request while receiving the response)
+}
+
+pub struct Message {
+	pub to: Vec<ServerId>, // Most times cheaper to 
+	pub body: MessageBody
+}
 
 

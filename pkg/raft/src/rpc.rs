@@ -5,7 +5,7 @@ use futures::{Future, Stream};
 use hyper::{Body};
 use serde::{Deserialize, Serialize};
 use rmps::{Deserializer, Serializer};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 
 /*
 	Helpers for the RPC calls going between servers in the raft group
@@ -78,11 +78,16 @@ impl Server {
 
 /// Internal RPC Server between servers participating in the consensus protocol
 pub trait ServerService {
-	fn request_vote(&mut self, req: RequestVoteRequest) -> Result<RequestVoteResponse>;
-	fn append_entries(&mut self, req: AppendEntriesRequest) -> Result<AppendEntriesResponse>;
+	fn pre_vote(&self, req: RequestVoteRequest) -> Result<RequestVoteResponse>;
+
+	fn request_vote(&self, req: RequestVoteRequest) -> Result<RequestVoteResponse>;
 	
-	// This is the odd ball out internal client 
-	fn propose(&mut self, req: ProposeRequest) -> Result<ProposeResponse>;
+	fn append_entries(&self, req: AppendEntriesRequest) -> Result<AppendEntriesResponse>;
+	
+	fn timeout_now(&self, req: TimeoutNow) -> Result<()>;
+
+	// This is the odd ball out internal client method
+	fn propose(&self, req: ProposeRequest) -> Result<ProposeResponse>;
 
 	// Also InstallSnapshot, AddServer, RemoveServer
 }
@@ -128,10 +133,10 @@ fn rpc_response<Res>(res: Result<Res>) -> hyper::Response<hyper::Body>
 	}
 }
 
-fn run_handler<'a, S, F, Req, Res>(inst_handle: Arc<Mutex<S>>, data: Vec<u8>, f: F)
+fn run_handler<'a, S, F, Req, Res>(inst: Arc<S>, data: Vec<u8>, f: F)
 	-> FutureResult<hyper::Response<hyper::Body>, hyper::Response<hyper::Body>>
 	where S: ServerService,
-		  F: Fn(&mut S, Req) -> Result<Res>,
+		  F: Fn(&S, Req) -> Result<Res>,
 		  Req: Deserialize<'a>,
 		  Res: Serialize
 {
@@ -139,28 +144,28 @@ fn run_handler<'a, S, F, Req, Res>(inst_handle: Arc<Mutex<S>>, data: Vec<u8>, f:
 	let mut de = Deserializer::new(&data[..]);
 	let req: Req = Deserialize::deserialize(&mut de).expect("Failed to parse request");
 	
-	let mut inst = inst_handle.lock().expect("Failed to lock instance");
+	//let mut inst = inst_handle.lock().expect("Failed to lock instance");
 
-	let res = f(&mut inst, req);
+	let res = f(&inst, req);
 
 	ok(rpc_response(res))
 }
 
 
-pub fn run_server<S: 'static>(port: u16, inst_handle: Arc<Mutex<S>>) -> impl Future<Item=(), Error=()>
-	where S: ServerService + Send
+pub fn run_server<S: 'static>(port: u16, inst: Arc<S>) -> impl Future<Item=(), Error=()>
+	where S: ServerService + Send + Sync
  {
 	let addr = ([127, 0, 0, 1], port).into();
 
 	let server = hyper::Server::bind(&addr)
 		.serve(move || {
-			let inst_handle = inst_handle.clone();
+			let inst = inst.clone();
 
 			hyper::service::service_fn(move |req: hyper::Request<hyper::Body>| {
 				
 				println!("GOT REQUEST {:?} {:?}", req.method(), req.uri());
 
-				let inst_handle = inst_handle.clone();
+				let inst = inst.clone();
 
 				let f = lazy(move || {
 					if req.method() != hyper::Method::POST {
@@ -192,14 +197,20 @@ pub fn run_server<S: 'static>(port: u16, inst_handle: Arc<Mutex<S>>) -> impl Fut
 
 					// XXX: If we can generalize this further, then this is the only thing that would need to be templated in order to run the server (i.e. for different types of rpcs)
 					match parts.uri.path() {
+						"/ConsensusService/PreVote" => {
+							run_handler(inst, data, S::pre_vote)
+						},
 						"/ConsensusService/RequestVote" => {
-							run_handler(inst_handle, data, S::request_vote)
+							run_handler(inst, data, S::request_vote)
 						},
 						"/ConsensusService/AppendEntries" => {
-							run_handler(inst_handle, data, S::append_entries)
+							run_handler(inst, data, S::append_entries)
 						},
 						"/ConsensusService/Propose" => {
-							run_handler(inst_handle, data, S::propose)
+							run_handler(inst, data, S::propose)
+						},
+						"/ConsensusService/TimeoutNow" => {
+							run_handler(inst, data, S::timeout_now)
 						},
 						_ => {
 							err(bad_request())
@@ -223,7 +234,7 @@ pub fn run_server<S: 'static>(port: u16, inst_handle: Arc<Mutex<S>>) -> impl Fut
 
 
 // TODO: Must support a mode that batches sends to many servers all in one (while still allowing each individual promise to be externally controlled)
-fn make_request<'a, Req, Res>(server: &ServerDescriptor, path: &'static str, req: &Req)
+fn make_request<'a, Req, Res>(addr: &String, path: &'static str, req: &Req)
 	-> impl Future<Item=Res, Error=Error>
 	where Req: Serialize,
 		  Res: Deserialize<'a>	
@@ -235,18 +246,18 @@ fn make_request<'a, Req, Res>(server: &ServerDescriptor, path: &'static str, req
 		bytes::Bytes::from(buf)
 	};
 
-	make_request_single(server, path, data)
+	make_request_single(addr, path, data)
 }
 
 // TODO: Ideally the response type in the future needs be encapsulated so that we can manage a zero-copy deserialization
-fn make_request_single<'a, Res>(server: &ServerDescriptor, path: &'static str, data: bytes::Bytes)
+fn make_request_single<'a, Res>(addr: &String, path: &'static str, data: bytes::Bytes)
 	-> impl Future<Item=Res, Error=Error>
 	where Res: Deserialize<'a>	
 {
 	let client = hyper::Client::new();
 
 	let r = hyper::Request::builder()
-		.uri(format!("{}{}", server.addr, path))
+		.uri(format!("{}{}", addr, path))
 		.method("POST")
 		.body(Body::from(data))
 		.expect("Failed to build RPC request");
@@ -283,23 +294,31 @@ fn make_request_single<'a, Res>(server: &ServerDescriptor, path: &'static str, d
 	})
 }
 
-// TODO: We will eventually wrap these in an client struct that maintains a nice persistent connection
+// TODO: We will eventually wrap these in an client struct that maintains a nice persistent connection (will also need to negotiate proper the right cluster_id and server_id on both ends for the connection to be opened)
 
-pub fn call_request_vote(server: &ServerDescriptor, req: &RequestVoteRequest)
+
+
+pub fn call_pre_vote(addr: &String, req: &RequestVoteRequest)
 	-> impl Future<Item=RequestVoteResponse, Error=Error> {
 
-	make_request(server, "/ConsensusService/RequestVote", req)
+	make_request(addr, "/ConsensusService/PreVote", req)
 }
 
-pub fn call_append_entries(server: &ServerDescriptor, req: &AppendEntriesRequest)
+pub fn call_request_vote(addr: &String, req: &RequestVoteRequest)
+	-> impl Future<Item=RequestVoteResponse, Error=Error> {
+
+	make_request(addr, "/ConsensusService/RequestVote", req)
+}
+
+pub fn call_append_entries(addr: &String, req: &AppendEntriesRequest)
 	-> impl Future<Item=AppendEntriesResponse, Error=Error> {
 
-	make_request(server, "/ConsensusService/AppendEntries", req)
+	make_request(addr, "/ConsensusService/AppendEntries", req)
 }
 
-pub fn call_propose(server: &ServerDescriptor, req: &ProposeRequest)
+pub fn call_propose(addr: &String, req: &ProposeRequest)
 	-> impl Future<Item=ProposeResponse, Error=Error> {
 
-	make_request(server, "/ConsensusService/Propose", req)
+	make_request(addr, "/ConsensusService/Propose", req)
 }
 

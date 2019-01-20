@@ -27,10 +27,15 @@ pub mod sync;
 pub mod atomic;
 
 pub mod protos; // TODO: Eventually make this private again
-pub mod rpc;
-pub mod state_machine;
+
 
 pub mod log; // XXX: Likewise should be private
 mod state;
+pub mod snapshot;
 pub mod consensus;
 
+// Higher level complete implementation dealing with actual networking issues
+pub mod rpc;
+// XXX: Should only really be required by the server itself
+pub mod state_machine;
+pub mod server;

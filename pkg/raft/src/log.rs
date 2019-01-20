@@ -1,6 +1,8 @@
 use super::errors::*;
 use super::protos::*;
 
+use std::sync::Arc;
+
 /*
 pub struct LogEntryIndex {
 	pub index: u64,
@@ -8,45 +10,62 @@ pub struct LogEntryIndex {
 }
 */
 
+// TODO: Log entries must stay in memory until they 
+
+
 pub trait LogStore {
 
 	/// Given the index of a log entry, this should get the term stored for it
+	/// None will be returned if the 
 	fn term(&self, index: u64) -> Option<u64>;
 
+	/// Gets the index of the first entry in the log
+	/// XXX: Should always be present (at least as 0)
 	fn first_index(&self) -> Option<u64>;
 
-	fn last_index(&self) -> Option<u64>; // XXX: Default would be 
+	fn last_index(&self) -> Option<u64>;
+
+	/// Retrieves the last index persisted to durable storage
+	fn match_index(&self) -> Option<u64>;
 
 	/// Gets a specific entry in the log by index
-	fn entry(&self, index: u64) -> Option<&LogEntry>; 
+	fn entry(&self, index: u64) -> Option<Arc<LogEntry>>; 
 
 	/// Adds entries to the very end of the log and atomically flushes them
 	/// TODO: Realistically this flush can occur whenever on the leader as long as it is before we respond to the client?
-	fn append(&mut self, entries: &[LogEntry]) -> Result<()>;
+	
+	/// Should add the given entries to the log
+	/// 
+	/// This does not need to flush anything to the disk
+	/// But the new entries should be immediately reflected in the state of the other operations 
+	fn append(&self, entry: LogEntry);
 
 	/// Should immediately remove all log entries starting at the given index until the end of the log
-	fn truncate_suffix(&mut self, start_index: u64) -> Result<()>;
+	fn truncate_suffix(&self, start_index: u64);
 
 }
 
 
+use std::sync::Mutex;
+
 pub struct MemoryLogStore {
-	log: Vec<LogEntry>
+	log: Mutex<Vec<Arc<LogEntry>>>
 }
 
 impl MemoryLogStore {
 	pub fn new() -> Self {
 		MemoryLogStore {
-			log: vec![]
+			log: Mutex::new(vec![])
 		}
 	}
 
-	fn pos_for(&self, index: u64) -> Option<usize> {
-		if self.log.len() == 0 {
+	// EIther it is a valid index, it is the index for the previous entry, or None
+	fn pos_for(index: u64, log: &Vec<Arc<LogEntry>>) -> Option<usize> {
+		if log.len() == 0 {
 			return None;
 		}
 
-		let first_index = self.log[0].index;
+		let first_index = log[0].index;
 
 		// TODO: This could go negative if we are not careful
 		Some((index - first_index) as usize)
@@ -57,22 +76,24 @@ impl LogStore for MemoryLogStore {
 
 	fn term(&self, index: u64) -> Option<u64> {
 		
+		let log = self.log.lock().unwrap();
+
 		if index == 0 {
 			return Some(0);
 		}
 
-		if self.log.len() == 0 {
+		if log.len() == 0 {
 			return None;
 		}
 
 		// TODO: This does not properly implement the previous index case right now
 
-		let pos = match self.pos_for(index) {
+		let pos = match Self::pos_for(index, &log) {
 			Some(v) => v,
 			None => return None
 		};
 		
-		match self.log.get(pos) {
+		match log.get(pos) {
 			Some(v) => {
 				assert_eq!(v.index, index);
 				Some(v.term)
@@ -82,53 +103,66 @@ impl LogStore for MemoryLogStore {
 	}
 
 	fn first_index(&self) -> Option<u64> {
-		match self.log.first() {
+		let log = self.log.lock().unwrap();
+
+		match log.first() {
 			Some(v) => Some(v.index),
 			None => None
 		}
 	}
 
 	fn last_index(&self) -> Option<u64> {
-		match self.log.last() {
+		let log = self.log.lock().unwrap();
+
+		match log.last() {
 			Some(v) => Some(v.index),
 			None => None
 		}
 	}
 
-	fn entry(&self, index: u64) -> Option<&LogEntry> {
-		let pos = match self.pos_for(index) {
+	fn entry(&self, index: u64) -> Option<Arc<LogEntry>> {
+		let log = self.log.lock().unwrap();
+
+		// XXX: Basically why it is better to pass around arcs 
+		// Simplest 
+
+		let pos = match Self::pos_for(index, &log) {
 			Some(v) => v,
 			None => return None
 		};
 		
-		match self.log.get(pos) {
+		match log.get(pos) {
 			Some(v) => {
 				assert_eq!(v.index, index);
-				Some(&v)
+				Some(v.clone())
 			},
 			None => None
 		}
 	}
 
-	fn append(&mut self, entries: &[LogEntry]) -> Result<()> {
-		self.log.extend_from_slice(entries);
-		Ok(())
+	// the memory store will just assume that everything in the log is immediately durable
+	fn match_index(&self) -> Option<u64> {
+		self.last_index()
 	}
 
-	fn truncate_suffix(&mut self, start_index: u64) -> Result<()> {
-		let pos = match self.pos_for(start_index) {
+	fn append(&self, entry: LogEntry) {
+		let mut log = self.log.lock().unwrap();
+
+		log.push(Arc::new(entry));
+	}
+
+	fn truncate_suffix(&self, start_index: u64) {
+		let log = self.log.lock().unwrap();
+
+		let pos = match Self::pos_for(start_index, &log) {
 			Some(v) => v,
 			None => panic!("Truncating starting at unknown position")
 		};
 
-		self.log.truncate(pos);
-		Ok(())
+		self.log.lock().unwrap().truncate(pos);
 	}
 
 }
-
-
-
 
 /*
 	General operations:

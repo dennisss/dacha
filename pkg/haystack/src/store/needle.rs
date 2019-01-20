@@ -95,6 +95,7 @@ pub const NEEDLE_HEADER_SIZE: usize =
 	SIZE_SIZE;
 
 /// Offset from the start of the needle to the flags byte
+/// Used to quickly update just the flags of a needle (in the case of deletion)
 pub const NEEDLE_FLAGS_OFFSET: usize =
 	HEADER_MAGIC_SIZE +
 	COOKIE_SIZE +

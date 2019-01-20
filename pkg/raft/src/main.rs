@@ -19,6 +19,7 @@ use raft::protos::*;
 use raft::state_machine::*;
 use raft::log::*;
 use raft::consensus::ConsensusModule;
+use raft::server::Server;
 use clap::{Arg, App, SubCommand};
 use std::sync::{Arc, Mutex};
 use futures::future::*;
@@ -47,10 +48,28 @@ config.members.insert(ServerDescriptor {
 });
 */
 
+/*
+	Files
+	- Config
+	- Meta
+	- Log
+	- ... state machine ...
+
+	- Messages to send
+
+*/
+
 fn main() {
 
 	let matches = App::new("Raft")
 		.about("Sample consensus reaching node")
+		.arg(Arg::with_name("dir")
+			.long("dir")
+			.short("d")
+			.value_name("DIRECTORY_PATH")
+			.help("An existing directory to store data file for this unique instance")
+			.required(true)
+			.takes_value(true))
 		.arg(Arg::with_name("bootstrap")
 			.long("bootstrap")
 			.help("Indicates that this should be created as the first node in the cluster"))
@@ -72,7 +91,13 @@ fn main() {
 	// For now, we will assume that bootstrapping is well known up front
 
 	// Every single server starts with totally empty versions of everything
+	
 	let config = Configuration::default();
+	let config_snapshot = ConfigurationSnapshot {
+		data: config,
+		last_applied: 0 // TODO: Will get applied by the ConsensusModule automatically
+	};
+
 	let mut meta = Metadata::default();
 	let mut log = MemoryLogStore::new();
 
@@ -85,14 +110,16 @@ fn main() {
 		id = 1;
 		is_empty = false;
 
-		log.append(&vec![LogEntry {
+		log.append(LogEntry {
 			term: 1,
 			index: 1,
-			data: LogEntryData::Config(ConfigChange::AddMember(ServerDescriptor {
+			data: LogEntryData::Config(ConfigChange::AddMember(1)) /* ServerDescriptor {
 				id: 1,
 				addr: "http://127.0.0.1:4001".to_string()
-			}))
-		}]);
+			})) */
+		});
+
+		// TODO: Also make it durable (otherwise we would be violating the fact that a majority of servers have a match_index >= the the commit_index)
 
 		meta.current_term = 1;
 		meta.voted_for = None;
@@ -114,18 +141,44 @@ fn main() {
 
 	}
 
+	/*
+		Summary of event variables:
+		- OnCommited
+			- Ideally this would be a channel tht can pass the Arc references to the listeners so that maybe we don't need to relock in order to take things out of the log
+			- ^ This will be consumed by clients waiting on proposals to be written and by the state machine thread waiting for the state machine to get fully applied 
+		- OnApplied
+			- Waiting for when a change is applied to the state machine
+		- OnWritten
+			- Waiting for when a set of log entries have been persisted to the log file
+		- OnStateChange
+			- Mainly to wake up the cycling thread so that it can 
+			- ^ This will always only have a single consumer so this may always be held as light weight as possibl
+	*/
 
 
-	let (inst, event, event_commit) = ConsensusModule::new(id, meta, config, Arc::new(Mutex::new(log)));
+	let inst = ConsensusModule::new(id, meta, config_snapshot, Arc::new(log));
 
-	let inst_handle = Arc::new(Mutex::new(inst));
+	let (server, event_state) = Server::new(inst);
+
+	let server_handle = Arc::new(server);
 
 	// In the case of bootstrapping, we must simply force a single entry to be considered commited which contains a config for the first node
 
 	println!("Starting with id {}", id);
 
 	// TODO: Support passing in a port (and maybe also an addr)
-	let server = ConsensusModule::start(inst_handle.clone(), event);
+	let task = Server::start(server_handle.clone(), event_state);
+	
+	let mut state_machine = MemoryKVStateMachine::new();
+
+	let apply_commits = || {
+		
+		// Apply to the changes
+		// If someone is 
+		
+
+	};
+
 
 
 	// TODO: If one node joins another cluster with one node, does the old leader of that cluster need to step down?
@@ -151,8 +204,8 @@ fn main() {
 			addr: "http://127.0.0.1:4002".into()
 		};
 
-		raft::rpc::call_propose(&leader, &raft::protos::ProposeRequest {
-			data: LogEntryData::Config(ConfigChange::AddMember(this))
+		raft::rpc::call_propose(&leader.addr, &raft::protos::ProposeRequest {
+			data: LogEntryData::Config(ConfigChange::AddMember(this.id))
 		}).then(|res| -> FutureResult<(), ()> {
 
 			println!("call_propose response: {:?}", res);
@@ -166,7 +219,7 @@ fn main() {
 	});
 
 	tokio::run(
-		server.join(join_cluster)
+		task.join(join_cluster)
 		.map(|_| ())	
 	);
 
