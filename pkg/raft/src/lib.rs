@@ -38,4 +38,5 @@ pub mod consensus;
 pub mod rpc;
 // XXX: Should only really be required by the server itself
 pub mod state_machine;
+pub mod server_protos;
 pub mod server;

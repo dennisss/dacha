@@ -333,12 +333,18 @@ impl ConsensusModule {
 	}
 
 	/// Gets the latest configuration snapshot currently available
-	pub fn config_snapshot(&self) -> (u64, &Configuration) {
+	pub fn config_snapshot(&self) -> ConfigurationSnapshotRef {
 		if let Some(ref pending) = self.config_pending {
-			(pending.last_change - 1, &pending.previous)
+			ConfigurationSnapshotRef {
+				last_applied: pending.last_change - 1,
+				data: &pending.previous
+			}
 		}
 		else {
-			(self.log.last_index().unwrap_or(0), &self.config)
+			ConfigurationSnapshotRef {
+				last_applied: self.log.last_index().unwrap_or(0),
+				data: &self.config
+			}
 		}
 	}
 
@@ -765,7 +771,6 @@ impl ConsensusModule {
 
 	}
 
-	// Mutates (meta, state) in place
 	fn start_election(&mut self, tick: &mut Tick) {
 
 		// Unless we are an active candidate who has already voted for themselves in the current term and we we haven't received conflicting responses, we must increment the term counter for this election
@@ -788,7 +793,7 @@ impl ConsensusModule {
 
 		println!("Starting election for term: {}", self.meta.current_term);
 
-		// Really not much point to generalizing it mainly because it still requires that we have much more stuff
+		// TODO: In the case of reusing the same term as the last election we can also reuse any previous votes that we received and not bother asking for those votes again? Unless it has been so long that we expect to get a new term index by reasking
 		self.state = ServerState::Candidate(ServerCandidateState {
 			election_start: tick.time.clone(),
 			election_timeout: Self::new_election_timeout(),
@@ -796,16 +801,14 @@ impl ConsensusModule {
 			some_rejected: false
 		});
 
-		tick.send(self.perform_election());
+		self.perform_election(tick);
 
 		// This will make the next tick at the election timeout or will immediately make us the leader in the case of a single node cluster
 		self.cycle(tick);
 	}
 
-
-	// Outputs a list of messages
-	fn perform_election(&self) -> Message {
-
+	fn perform_election(&self, tick: &mut Tick) {
+		
 		let (last_log_index, last_log_term) = {
 			let idx = self.log.last_index().unwrap_or(0);
 			let term = self.log.term(idx).unwrap();
@@ -827,7 +830,12 @@ impl ConsensusModule {
 				*s != self.id
 			}).collect::<Vec<_>>();
 
-		Message { to: ids, body: MessageBody::RequestVote(req) }
+		// This will happen for a single node cluster
+		if ids.len() == 0 {
+			return;
+		}
+
+		tick.send(Message { to: ids, body: MessageBody::RequestVote(req) });		
 	}
 
 	/// Creates a neww follower state
@@ -843,7 +851,6 @@ impl ConsensusModule {
 	fn become_follower(&mut self, tick: &mut Tick) {
 		self.state = Self::new_follower(tick.time.clone());
 		self.cycle(tick);
-		// self.state_event.notify();
 	}
 
 	/// Run every single time a term index is seen in a remote request or response
@@ -928,7 +935,6 @@ impl ConsensusModule {
 		if should_cycle {
 			// NOTE: Only really needed if we just achieved a majority
 			self.cycle(tick);
-			// self.state_event.notify();
 		}
 	}
 
@@ -975,7 +981,6 @@ impl ConsensusModule {
 		if should_cycle {
 			// In case something above was mutated, we will notify the cycler to trigger any additional requests to be dispatched
 			self.cycle(tick);
-			//self.state_event.notify();
 		}
 	}
 
@@ -985,6 +990,8 @@ impl ConsensusModule {
 			let mut progress = s.servers.get_mut(&from_id).unwrap();
 			progress.request_pending = false;
 		}
+
+		// TODO: Should we immediately cycle here?
 	}
 
 
@@ -1002,8 +1009,6 @@ impl ConsensusModule {
 
 
 // Below here are the rpc handlers
-
-	// Noteably all of these are also allowed to naturally produce more messages in response
 
 	/// Checks if a RequestVote request would be granted by the current server
 	/// This will not actually grant the vote for the term and will only mutate our state if the request has a higher observed term than us
@@ -1059,7 +1064,7 @@ impl ConsensusModule {
 	}
 
 	/// Called when another server is requesting that we vote for it 
-	pub fn request_vote(&mut self, req: RequestVoteRequest, tick: &mut Tick) -> RequestVoteResponse {
+	pub fn request_vote(&mut self, req: RequestVoteRequest, tick: &mut Tick) -> MustPersistMetadata<RequestVoteResponse> {
 
 		let candidate_id = req.candidate_id;
 		println!("Received request_vote from {}", candidate_id);
@@ -1072,9 +1077,7 @@ impl ConsensusModule {
 			println!("Casted vote for: {}", candidate_id);
 		}
 
-		// XXX: Persist to storage before responding
-
-		res	
+		MustPersistMetadata::new(res)	
 	}
 	
 	// TODO: Another very important thing to have is a more generic gossip protocol for updateing server configurations so that restarts don't take the whole server down due to misconfigured addresses
@@ -1083,6 +1086,7 @@ impl ConsensusModule {
 	
 	// Basically wrap it in a runtime wrapper that requires that the response represents some signage of a promise to read the given entity
 
+	// NOTE: This doesn't really error out, but rather responds with constraint failures if the request violates a core raft property (in which case closing the connection is sufficient but otherwise our internal state should still be consistent)
 	// XXX: May have have a mutation to the hard state but I guess that is trivial right?
 	pub fn append_entries(&mut self, req: AppendEntriesRequest, tick: &mut Tick) -> Result<MustMatchIndex<AppendEntriesResponse>> {
 
@@ -1258,6 +1262,7 @@ impl ConsensusModule {
 
 				let e = self.log.entry(i).unwrap();
 				if let LogEntryData::Config(ref change) = e.data {
+					// TODO: This is a waste of time if we are about to commit all of it
 					self.config_pending = Some(ConfigurationPending {
 						last_change: e.index,
 						previous: self.config.clone()
@@ -1275,7 +1280,6 @@ impl ConsensusModule {
 		}
 
 		// NOTE: We don't need to send the last_log_index in the case of success
-		// XXX: This is the only operation that really matters?
 		Ok(MustMatchIndex::new(response(true, None), last_new, self.log.clone()))
 	}
 

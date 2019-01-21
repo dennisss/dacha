@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+	"pkg/core",
 	"pkg/haystack",
 	"pkg/raft"
 ]

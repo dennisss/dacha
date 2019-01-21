@@ -89,17 +89,8 @@ use std::borrow::Borrow;
 pub type ServerId = u64;
 
 /// Persistent information describing the state of the current server
-/// This will be stored in the './meta' file in the server's data directory
+#[derive(Serialize, Deserialize)]
 pub struct Metadata {
-	// XXX: Also a randomized uuid for the cluster
-
-	// Basically whenever we connect to another node with a fresh connection, we must be able to negogiate with each the correct pair of cluster id and server ids on both ends otherwise we are connecting to the wrong server/cluster and that would be problematic (especially when it comes to aoiding duplicate votes because of duplicate connections)
-
-	/// The id of the current server
-	/// TODO: We will probably want to wrap some other wokr of storage for this
-	/// XXX: Get this out of here 
-	//pub server_id: u64,
-
 
 	/// Latest term seen by this server (starts at 0)
 	pub current_term: u64,
@@ -156,8 +147,6 @@ impl Borrow<ServerId> for ServerDescriptor {
 }
 
 
-// The only thing we are missing is the ability 
-
 /// Represents a configuration at a single index
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConfigurationSnapshot {
@@ -166,6 +155,21 @@ pub struct ConfigurationSnapshot {
 
 	/// Value of the snapshot at the given index (TODO: This is the only type that actually needs to be serializiable, so it could be more verbose for all I care)
 	pub data: Configuration
+}
+
+#[derive(Serialize)]
+pub struct ConfigurationSnapshotRef<'a> {
+	pub last_applied: u64,
+	pub data: &'a Configuration
+}
+
+impl Default for ConfigurationSnapshot {
+	fn default() -> Self {
+		ConfigurationSnapshot {
+			last_applied: 0,
+			data: Configuration::default()
+		}
+	}
 }
 
 
@@ -306,28 +310,6 @@ pub struct AppendEntriesResponse {
 
 }
 
-// XXX: See https://github.com/etcd-io/etcd/blob/fa92397e182286125c72bf52d95f9f496f733bdf/raft/raft.go#L113 for more useful config parameters
-
-/*
-	Bootstrap first node:
-	- server_id:
-		- 1
-	- log:
-		- 1 log entry (containing ConfigChange)
-			- term 1, index 1
-	- config
-		- 1 member in config (containing self)
-		- Naturally any config that is not fully up-to-date can be made up-to-date 
-	- meta
-		- current_term: 1
-		- voted_for: None
-		- commit_index: 1
-	- state_machine
-		- empty
-
-	Adding new server to cluster
-*/
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestVoteRequest {
 	pub term: u64,
@@ -352,7 +334,6 @@ pub struct AddServerRequest {
 	
 }
 
-// XXX: Naturally 
 
 // NOTE: This is the external interface for use by 
 

@@ -9,13 +9,10 @@ use futures::future::*;
 use futures::{Future, Stream};
 
 use hyper::{Body, Response};
-use hyper::service::service_fn_ok;
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, Duration};
 use std::sync::{Arc, Mutex};
 
-use serde::{Deserialize, Serialize};
-use rmps::{Deserializer, Serializer};
 use tokio::prelude::FutureExt;
 
 use std::fs::{File, OpenOptions};

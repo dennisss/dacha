@@ -1,0 +1,7 @@
+[package]
+name = "core"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+
+[dependencies]
+fs2 = "0.4.3"

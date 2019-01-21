@@ -5,6 +5,7 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 
 
 [dependencies]
+core = { path = "../core" }
 serde = "1.0"
 serde_derive = "1.0"
 rmp-serde = "0.13.7"

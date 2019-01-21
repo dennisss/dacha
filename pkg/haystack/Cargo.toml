@@ -13,6 +13,7 @@ name = "hay"
 path = "bin/hay.rs"
 
 [dependencies]
+core = { path = "../core" }
 byteorder = "1.2.7"
 rand = "0.6.1"
 crc32c = "0.4.0"

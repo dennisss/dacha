@@ -15,7 +15,7 @@ const PADDING: u64 = 8;
 const DISK_SECTOR_SIZE: u64 = 512;
 
 
-/// Simple interface for marshalling a struct to/from a file atomically 
+/// Wraps a binary blob that can be atomically read/written from the disk 
 /// Additionally this will add some checksumming to the file to verify the integrity of the data and accept/reject partial reads
 /// 
 /// NOTE: If any operation fails, then this struct should be considered poisoned and unuseable
@@ -23,7 +23,7 @@ const DISK_SECTOR_SIZE: u64 = 512;
 /// NOTE: This struct does not deal with maintaining an internal buffer of the current value, so that is someone elses problem as this is meant to be super light weight
 /// 
 /// NOTE: This assumes that this object is being given exclusive access to the given path 
-pub struct AtomicFile {
+pub struct BlobFile {
 
 	// TODO: Would also be good to know the size of it 
 
@@ -37,8 +37,8 @@ pub struct AtomicFile {
 	path_tmp: PathBuf
 }
 
-pub struct AtomicFileBuilder {
-	inner: AtomicFile
+pub struct BlobFileBuilder {
+	inner: BlobFile
 }
 
 
@@ -49,10 +49,10 @@ pub struct AtomicFileBuilder {
 
 // TODO: open must distinguish between failing to read existing data and failing because it doesn't exist 
 
-impl AtomicFile {
+impl BlobFile {
 
 	// TODO: If I wanted to be super Rusty, I could represent whether or not it exists (i.e. whether create() or open() should be called) by returning an enum here instead of relying on the user checking the value of exists() at runtime
-	pub fn builder(path: &Path) -> Result<AtomicFileBuilder> {
+	pub fn builder(path: &Path) -> Result<BlobFileBuilder> {
 		let path = path.to_owned();
 		let path_tmp = path.join(".tmp");
 		
@@ -66,14 +66,11 @@ impl AtomicFile {
 				return Err("Directory does not exist".into());
 			}
 
-			let mut opts = OpenOptions::new();
-			opts.read(true).write(true);
-
-			opts.open(&path_dir)?
+			File::open(&path_dir)?
 		};
-	
-		Ok(AtomicFileBuilder {
-			inner: AtomicFile {
+			
+		Ok(BlobFileBuilder {
+			inner: BlobFile {
 				dir, path, path_tmp
 			}
 		})
@@ -142,7 +139,7 @@ impl AtomicFile {
 
 }
 
-impl AtomicFileBuilder {
+impl BlobFileBuilder {
 
 	pub fn exists(&self) -> bool {
 		self.inner.path.exists() || self.inner.path_tmp.exists()
@@ -150,7 +147,7 @@ impl AtomicFileBuilder {
 
 	/// Opens the file assuming that it exists
 	/// Errors out if we could be not read the data because it is corrupt or non-existent
-	pub fn open(self) -> Result<(AtomicFile, Bytes)> {
+	pub fn open(self) -> Result<(BlobFile, Bytes)> {
 		if !self.exists() {
 			return Err("File does not exist".into());
 		}
@@ -228,7 +225,7 @@ impl AtomicFileBuilder {
 
 	/// Creates a new file with the given initial value
 	/// Errors out if any data already exists or if the write fails
-	pub fn create(self, initial_value: &[u8]) -> Result<AtomicFile> {
+	pub fn create(self, initial_value: &[u8]) -> Result<BlobFile> {
 		
 		if self.exists() {
 			return Err("Existing data already exists".into());
@@ -241,7 +238,7 @@ impl AtomicFileBuilder {
 
 		let mut file = opts.open(&inst.path)?;
 
-		AtomicFile::write_simple(&mut file, initial_value)?;
+		BlobFile::write_simple(&mut file, initial_value)?;
 		file.sync_all()?;
 		inst.dir.sync_all()?;
 

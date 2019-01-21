@@ -7,7 +7,7 @@
 
 extern crate futures_await as futures;
 
-
+extern crate core;
 extern crate dotenv;
 extern crate crc32c;
 extern crate rand;

@@ -8,7 +8,7 @@ use super::super::errors::*;
 use super::super::paths::Host;
 use super::api::*;
 use super::volume::{PhysicalVolume};
-use fs2::FileExt;
+use core::DirLock;
 use std::path::{Path, PathBuf};
 use super::super::directory::Directory;
 use bitwise::Word;
@@ -66,6 +66,8 @@ pub struct StoreMachine {
 	/// All volumes 
 	pub volumes: HashMap<VolumeId, Arc<Mutex<PhysicalVolume>>>,
 
+	_lock: DirLock,
+	
 	config: ConfigRef,
 
 	port: u16,

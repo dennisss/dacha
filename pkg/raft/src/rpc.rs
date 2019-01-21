@@ -4,14 +4,30 @@ use futures::future::*;
 use futures::{Future, Stream};
 use hyper::{Body};
 use serde::{Deserialize, Serialize};
-use rmps::{Deserializer, Serializer};
 use std::sync::{Arc};
+use bytes::Bytes;
 
 /*
 	Helpers for the RPC calls going between servers in the raft group
 
 	Not for handling external interfaces
 */
+
+
+
+// Standard serializer/deserializer we will use for most things
+
+pub fn unmarshal<'de, T>(data: Bytes) -> Result<T> where T: Deserialize<'de> {
+	let mut de = rmps::Deserializer::new(&data[..]);
+	Deserialize::deserialize(&mut de).map_err(|e| "Failed to parse data".into())
+}
+
+pub fn marshal<T>(obj: T) -> Result<Bytes> where T: Serialize {
+	let mut buf = Vec::new();
+	obj.serialize(&mut rmps::Serializer::new(&mut buf))
+		.map_err(|_| Error::from("Failed to serialize data"))?;
+	Ok(bytes::Bytes::from(buf))
+}
 
 
 /*
@@ -111,11 +127,7 @@ fn rpc_response<Res>(res: Result<Res>) -> hyper::Response<hyper::Body>
 {
 	match res {
 		Ok(r) => {
-			let data = {
-				let mut buf = Vec::new();
-				r.serialize(&mut Serializer::new(&mut buf)).expect("Failed to serialize RPC request");
-				bytes::Bytes::from(buf)
-			};
+			let data = marshal(r).expect("Failed to serialize RPC response");
 
 			hyper::Response::builder()
 				.status(200)
@@ -141,11 +153,13 @@ fn run_handler<'a, S, F, Req, Res>(inst: Arc<S>, data: Vec<u8>, f: F)
 		  Res: Serialize
 {
 
-	let mut de = Deserializer::new(&data[..]);
-	let req: Req = Deserialize::deserialize(&mut de).expect("Failed to parse request");
-	
-	//let mut inst = inst_handle.lock().expect("Failed to lock instance");
-
+	let req: Req = match unmarshal(data.into()) {
+		Ok(v) => v,
+		Err(_) => {
+			eprintln!("Failed to parse RPC request");
+			return err(bad_request());
+		}
+	};
 	let res = f(&inst, req);
 
 	ok(rpc_response(res))
@@ -239,13 +253,7 @@ fn make_request<'a, Req, Res>(addr: &String, path: &'static str, req: &Req)
 	where Req: Serialize,
 		  Res: Deserialize<'a>	
 {
-
-	let data = {
-		let mut buf = Vec::new();
-		req.serialize(&mut Serializer::new(&mut buf)).expect("Failed to serialize RPC request");
-		bytes::Bytes::from(buf)
-	};
-
+	let data = marshal(req).expect("Failed to serialize RPC request");
 	make_request_single(addr, path, data)
 }
 
@@ -282,10 +290,9 @@ fn make_request_single<'a, Res>(addr: &String, path: &'static str, data: bytes::
 			ok(buf)
 		})
 		.and_then(|buf| {
-			let mut de = Deserializer::new(&buf[..]);
-			let ret = match Deserialize::deserialize(&mut de) {
+			let ret = match unmarshal(buf.into()) {
 				Ok(v) => v,
-				Err(e) => return err("Failed to parse RPC response".into())
+				Err(_) => return err("Failed to parse RPC response".into())
 			};
 
 			// XXX: We really want to be able to encapsulate this in a zero copy 
