@@ -3,8 +3,7 @@ use super::errors::*;
 use super::protos::*;
 use super::state::*;
 use super::log::*;
-use futures::future::*;
-use futures::{Future, Stream};
+use super::constraint::*;
 
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, Duration, Instant};
@@ -12,7 +11,6 @@ use std::sync::{Arc, Mutex};
 
 use super::state_machine::StateMachine;
 use rand::RngCore;
-use std::borrow::Borrow;
 
 
 // NOTE: Blocking on a proposal to get some conclusion will be the role of blocking on a one-shot based in some external code
@@ -156,44 +154,6 @@ impl Tick {
 }
 
 
-// More broadly, this is a possibly requirement to 
-pub struct MustMatchIndex<T> {
-	inner: T,
-	index: Option<(u64, Arc<LogStore>)>
-}
-
-impl<T> MustMatchIndex<T> {
-	fn new(inner: T, index: u64, log: Arc<LogStore>) -> Self {
-		MustMatchIndex {
-			inner, index: Some((index, log))
-		}
-	}
-
-	pub fn index(&self) -> Option<u64> {
-		self.index.clone().map(|(idx, _)| idx)
-	}
-
-	pub fn unwrap(self) -> T {
-		if let Some((index, log)) = self.index {
-			if log.match_index().unwrap_or(0) < index {
-				panic!("Log not yet flushed sufficiently");
-			}
-		}
-		
-		self.inner
-	}
-}
-
-impl<T> From<T> for MustMatchIndex<T> {
-	/// Conversion without any constraint set
-    fn from(val: T) -> MustMatchIndex<T> {
-        MustMatchIndex {
-			inner: val,
-			index: None
-		}
-    }
-}
-
 
 pub struct MustPersistMetadata<T> {
 	inner: T
@@ -227,11 +187,7 @@ pub struct ConsensusModule {
 
 	/// A reader for the current state of the log
 	/// NOTE: This also allows for enqueuing entries to eventually go into the log, but should never block
-	log: Arc<LogStore + Send + Sync + 'static>,
-
-	/// Triggered whenever we commit more entries
-	/// Should be received by the state machine to apply more entries from the log
-	//commit_event: EventSender,
+	log: Arc<LogStorage + Send + Sync + 'static>,
 
 	/// Index of the last log entry known to be commited
 	/// NOTE: It is not generally necessary to store this, and can be re-initialized always to at least the index of the last applied entry in config or log
@@ -249,7 +205,7 @@ impl ConsensusModule {
 		id: ServerId, mut meta: Metadata,
 
 		// NOTE: We assume that we are exclusively the only ones allowed to append to the log naturally
-		config_snapshot: ConfigurationSnapshot, log: Arc<LogStore + Send + Sync + 'static> // < In other words this is a log reader
+		config_snapshot: ConfigurationSnapshot, log: Arc<LogStorage + Send + Sync + 'static> // < In other words this is a log reader
 
 	) -> ConsensusModule {
 		
@@ -446,9 +402,7 @@ impl ConsensusModule {
 			}
 
 			// Cycle the state to replicate this entry to other servers
-			self.cycle(out);
-			// self.state_event.notify();
-			
+			self.cycle(out);			
 
 			ProposeResult::Started(Proposal { term, index })
 		}
@@ -555,7 +509,6 @@ impl ConsensusModule {
 
 					// On the next cycle we will be a leader
 					self.cycle(tick);
-					//self.state_event.notify();
 
 					// XXX: Hopefully a time will be returned by cycle that we ran above
 					return;
@@ -1088,7 +1041,7 @@ impl ConsensusModule {
 
 	// NOTE: This doesn't really error out, but rather responds with constraint failures if the request violates a core raft property (in which case closing the connection is sufficient but otherwise our internal state should still be consistent)
 	// XXX: May have have a mutation to the hard state but I guess that is trivial right?
-	pub fn append_entries(&mut self, req: AppendEntriesRequest, tick: &mut Tick) -> Result<MustMatchIndex<AppendEntriesResponse>> {
+	pub fn append_entries(&mut self, req: AppendEntriesRequest, tick: &mut Tick) -> Result<MatchConstraint<AppendEntriesResponse>> {
 
 		// NOTE: It is totally normal for this to receive a request from a server that does not exist in our configuration as we may be in the middle of a configuration change adn this could be the request that adds that server to the configuration
 
@@ -1279,8 +1232,10 @@ impl ConsensusModule {
 			self.update_commited(next_commit_index, tick);
 		}
 
+		let pos = LogPosition { term: req.term, index: last_new };
+
 		// NOTE: We don't need to send the last_log_index in the case of success
-		Ok(MustMatchIndex::new(response(true, None), last_new, self.log.clone()))
+		Ok(MatchConstraint::new(response(true, None), pos, self.log.clone()))
 	}
 
 	pub fn timeout_now(&mut self, req: TimeoutNow, tick: &mut Tick) -> Result<()> {

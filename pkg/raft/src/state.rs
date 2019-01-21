@@ -11,6 +11,7 @@ pub struct ServerProgress {
 	pub next_index: u64,
 
 	/// Index of the highest entry known to be replicated to this server
+	/// TODO: These can be long term persisted even after we fall out of being leader as long as we only persist the largest match_index for a client that is >= the commited_index at the time of persisting the value
 	pub match_index: u64,
 
 	/// Time at which we sent out the last request to this server

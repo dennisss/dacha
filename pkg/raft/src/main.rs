@@ -54,17 +54,6 @@ config.members.insert(ServerDescriptor {
 });
 */
 
-/*
-	Files
-	- Config
-	- Meta
-	- Log
-	- ... state machine ...
-
-	- Messages to send
-
-*/
-
 // XXX: See https://github.com/etcd-io/etcd/blob/fa92397e182286125c72bf52d95f9f496f733bdf/raft/raft.go#L113 for more useful config parameters
 
 /*
@@ -180,14 +169,14 @@ fn main() -> Result<()> {
 	) : (
 		ServerMetadata, BlobFile,
 		ServerConfigurationSnapshot, BlobFile,
-		MemoryLogStore
+		MemoryLogStorage
 	) = if meta_builder.exists() || config_builder.exists() {
 
 		let (meta_file, meta_data) = meta_builder.open()?;
 		let (config_file, config_data) = config_builder.open()?;
 
 		// TODO: Load from disk
-		let mut log = MemoryLogStore::new();
+		let mut log = MemoryLogStorage::new();
 
 		let meta = unmarshal(meta_data)?;
 		let config_snapshot = unmarshal(config_data)?;
@@ -201,7 +190,7 @@ fn main() -> Result<()> {
 		// Every single server starts with totally empty versions of everything
 		let mut meta = Metadata::default();
 		let config_snapshot = ServerConfigurationSnapshot::default();
-		let mut log = MemoryLogStore::new();
+		let mut log = MemoryLogStorage::new();
 
 
 		let mut id: ServerId;
@@ -224,16 +213,13 @@ fn main() -> Result<()> {
 
 			// TODO: Also make it durable (otherwise we would be violating the fact that a majority of servers have a match_index >= the the commit_index)
 
-			// TODO: This should not be necessary (but we should bump ourselves to at least term 1 so that we elect in term 2)
-			// ^ Although the module will check for that so this isn't necessary anyway
-			meta.current_term = 1;
-			meta.voted_for = None;
-			meta.commit_index = 1;
-
-			// ^ all of this must happen before creating the consensus module in order to not confuse it
-
 		}
 		else {
+
+			// Ask the cluster for a config
+			// Then ask the server for its set of routes 
+
+			// In summary one new-member request which 
 
 			id = 2;
 			is_empty = true;
@@ -268,11 +254,13 @@ fn main() -> Result<()> {
 
 	println!("Starting with id {}", meta.id);
 
+	let log = Arc::new(log);
+
 	// TODO: It would be better to have this be created by the server so that we can properly passthrough everything
-	let inst = ConsensusModule::new(meta.id, meta.meta, config_snapshot.config, Arc::new(log));
+	let inst = ConsensusModule::new(meta.id, meta.meta, config_snapshot.config, log.clone());
 
 	// TODO: This also needs to be given the saved routes from the configuration
-	let server = Server::new(inst, meta_file, config_file);
+	let server = Server::new(inst, log.clone(), meta_file, config_file);
 
 	let server_handle = Arc::new(server);
 

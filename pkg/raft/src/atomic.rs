@@ -1,9 +1,6 @@
 use super::errors::*;
-use std::io;
-use std::io::{Write, Read, Seek};
+use std::io::{SeekFrom, Write, Read, Seek};
 use std::fs::{File, OpenOptions};
-use std::io::{SeekFrom};
-use serde::{Serialize, Deserialize};
 use std::path::{Path, PathBuf};
 use bytes::Bytes;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};

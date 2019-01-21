@@ -15,7 +15,7 @@ pub struct BackgroundThread {
 	/// 3. Amount of total space has changed (usually we will just restart the store?)
 	/// 4. Volume has been created/deleted (for the case of a change in allocation amount in this machine)
 	event_var: Condvar,
-	event_mutex: Mutex<bool>,
+	event_mutex: Mutex<bool>, // TODO: We might as well use this variable as the running value 
 
 }
 

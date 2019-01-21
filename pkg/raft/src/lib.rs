@@ -32,6 +32,7 @@ pub mod protos; // TODO: Eventually make this private again
 pub mod log; // XXX: Likewise should be private
 mod state;
 pub mod snapshot;
+pub mod constraint;
 pub mod consensus;
 
 // Higher level complete implementation dealing with actual networking issues

@@ -90,33 +90,12 @@ impl StoreMachine {
 		assert!(dir.config.store.preallocate_size <= dir.config.store.allocation_size);
 		assert!(dir.config.store.allocation_size <= dir.config.store.space);
 
-
 		let path = Path::new(folder);
-		if !path.exists() {
-			return Err("Store data folder does not exist".into());	
-		}
+
+		let lock = DirLock::open(path)?;
 
 		let volumes_path = path.join(String::from("volumes"));
 
-		// Before we create a lock file, verify that the directory is empty if this is a new store
-		if !volumes_path.exists() {
-		if path.read_dir()?.collect::<Vec<_>>().len() > 0 {
-				return Err("Store folder is not empty".into());
-			}
-		}
-
-
-		let mut opts = OpenOptions::new();
-		opts.write(true).create(true).read(true);
-
-		let lockfile = opts.open(path.join(String::from("lock")))?;
-
-		match lockfile.try_lock_exclusive() {
-			Ok(_) => true,
-			Err(err) => return Err(err.into())
-		};
-
-		
 		let idx = if volumes_path.exists() {
 			StoreMachineIndex::open(&volumes_path)?
 		} else {
@@ -129,6 +108,7 @@ impl StoreMachine {
 		}
 
 		let mut machine = StoreMachine {
+			_lock: lock,
 			folder: String::from(folder),
 			config: dir.config.clone(),
 			index: idx,

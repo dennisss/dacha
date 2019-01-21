@@ -2,10 +2,13 @@ use super::errors::*;
 use super::protos::*;
 use futures::future::*;
 use futures::{Future, Stream};
+use futures::prelude::*;
+use futures::prelude::await;
 use hyper::{Body};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc};
 use bytes::Bytes;
+use std::borrow::Borrow;
 
 /*
 	Helpers for the RPC calls going between servers in the raft group
@@ -91,19 +94,20 @@ impl Server {
 
 */
 
+pub type ServiceFuture<T> = Box<Future<Item=T, Error=Error> + Send + 'static>;
 
 /// Internal RPC Server between servers participating in the consensus protocol
 pub trait ServerService {
-	fn pre_vote(&self, req: RequestVoteRequest) -> Result<RequestVoteResponse>;
+	fn pre_vote(&self, req: RequestVoteRequest) -> ServiceFuture<RequestVoteResponse>;
 
-	fn request_vote(&self, req: RequestVoteRequest) -> Result<RequestVoteResponse>;
+	fn request_vote(&self, req: RequestVoteRequest) -> ServiceFuture<RequestVoteResponse>;
 	
-	fn append_entries(&self, req: AppendEntriesRequest) -> Result<AppendEntriesResponse>;
+	fn append_entries(&self, req: AppendEntriesRequest) -> ServiceFuture<AppendEntriesResponse>;
 	
-	fn timeout_now(&self, req: TimeoutNow) -> Result<()>;
+	fn timeout_now(&self, req: TimeoutNow) -> ServiceFuture<()>;
 
 	// This is the odd ball out internal client method
-	fn propose(&self, req: ProposeRequest) -> Result<ProposeResponse>;
+	fn propose(&self, req: ProposeRequest) -> ServiceFuture<ProposeResponse>;
 
 	// Also InstallSnapshot, AddServer, RemoveServer
 }
@@ -145,29 +149,39 @@ fn rpc_response<Res>(res: Result<Res>) -> hyper::Response<hyper::Body>
 	}
 }
 
-fn run_handler<'a, S, F, Req, Res>(inst: Arc<S>, data: Vec<u8>, f: F)
-	-> FutureResult<hyper::Response<hyper::Body>, hyper::Response<hyper::Body>>
+fn run_handler<'a, S, F, Req, Res: 'static>(inst: &'a S, data: Vec<u8>, f: F)
+	-> Box<Future<Item=hyper::Response<hyper::Body>, Error=hyper::Response<hyper::Body>> + Send>
 	where S: ServerService,
-		  F: Fn(&S, Req) -> Result<Res>,
+		  F: Fn(&S, Req) -> ServiceFuture<Res>,
 		  Req: Deserialize<'a>,
 		  Res: Serialize
 {
 
-	let req: Req = match unmarshal(data.into()) {
-		Ok(v) => v,
-		Err(_) => {
-			eprintln!("Failed to parse RPC request");
-			return err(bad_request());
-		}
+	let start = move || -> FutureResult<_, hyper::Response<hyper::Body>> {
+		let req: Req = match unmarshal(data.into()) {
+			Ok(v) => v,
+			Err(_) => {
+				eprintln!("Failed to parse RPC request");
+				return err(bad_request());
+			}
+		};
+		let res = f(inst, req);
+		ok(res)
 	};
-	let res = f(&inst, req);
 
-	ok(rpc_response(res))
+	Box::new(start().and_then(|res| {
+		res.then(|r| {
+			ok(rpc_response(r))
+		})
+	}))
 }
 
 
-pub fn run_server<S: 'static>(port: u16, inst: Arc<S>) -> impl Future<Item=(), Error=()>
-	where S: ServerService + Send + Sync
+// TODO: We could make it not arc if we can maintain some type of handler that definitely outlives the future being returned
+
+pub fn run_server<R: 'static, S: 'static>(port: u16, inst: R) -> impl Future<Item=(), Error=()>
+	where R: Borrow<S> + Clone + Send + Sync,
+		  S: ServerService + Send + Sync
  {
 	let addr = ([127, 0, 0, 1], port).into();
 
@@ -207,27 +221,27 @@ pub fn run_server<S: 'static>(port: u16, inst: Arc<S>) -> impl Future<Item=(), E
 				})
 				.and_then(move |(parts, data)| {
 
-					// We would 
-
+					let r = inst.borrow();
+			
 					// XXX: If we can generalize this further, then this is the only thing that would need to be templated in order to run the server (i.e. for different types of rpcs)
 					match parts.uri.path() {
 						"/ConsensusService/PreVote" => {
-							run_handler(inst, data, S::pre_vote)
+							run_handler(r, data, S::pre_vote)
 						},
 						"/ConsensusService/RequestVote" => {
-							run_handler(inst, data, S::request_vote)
+							run_handler(r, data, S::request_vote)
 						},
 						"/ConsensusService/AppendEntries" => {
-							run_handler(inst, data, S::append_entries)
+							run_handler(r, data, S::append_entries)
 						},
 						"/ConsensusService/Propose" => {
-							run_handler(inst, data, S::propose)
+							run_handler(r, data, S::propose)
 						},
 						"/ConsensusService/TimeoutNow" => {
-							run_handler(inst, data, S::timeout_now)
+							run_handler(r, data, S::timeout_now)
 						},
 						_ => {
-							err(bad_request())
+							Box::new(err(bad_request()))
 						}
 					}
 				});

@@ -3,17 +3,17 @@ use super::protos::*;
 
 use std::sync::Arc;
 
-/*
-pub struct LogEntryIndex {
+#[derive(Debug)]
+pub struct LogPosition {
 	pub index: u64,
 	pub term: u64
 }
-*/
+
 
 // TODO: Log entries must stay in memory until they 
 
 
-pub trait LogStore {
+pub trait LogStorage {
 
 	/// Given the index of a log entry, this should get the term stored for it
 	/// None will be returned if the 
@@ -43,18 +43,28 @@ pub trait LogStore {
 	/// Should immediately remove all log entries starting at the given index until the end of the log
 	fn truncate_suffix(&self, start_index: u64);
 
+
+	// TODO: Everything belo this point should never be used by the core consensus code
+
+	/// Should syncronously flush all log entries to persistent storage
+	/// After this is finished, the match_index for it should be equal to the last_index (at least the one as of when this was first called)
+	fn flush(&self) -> Result<()>;
+
+
+	// TODO: Also all of the snapshot related stuff here
+
 }
 
 
 use std::sync::Mutex;
 
-pub struct MemoryLogStore {
+pub struct MemoryLogStorage {
 	log: Mutex<Vec<Arc<LogEntry>>>
 }
 
-impl MemoryLogStore {
+impl MemoryLogStorage {
 	pub fn new() -> Self {
-		MemoryLogStore {
+		MemoryLogStorage {
 			log: Mutex::new(vec![])
 		}
 	}
@@ -72,7 +82,7 @@ impl MemoryLogStore {
 	}
 }
 
-impl LogStore for MemoryLogStore {
+impl LogStorage for MemoryLogStorage {
 
 	fn term(&self, index: u64) -> Option<u64> {
 		
@@ -162,7 +172,13 @@ impl LogStore for MemoryLogStore {
 		self.log.lock().unwrap().truncate(pos);
 	}
 
+
+	fn flush(&self) -> Result<()> {
+		Ok(())
+	}
+
 }
+
 
 /*
 	General operations:
@@ -179,13 +195,3 @@ impl LogStore for MemoryLogStore {
 
 */
 
-/*
-	Threads
-	1. Heartbeat/Election/Catchup-Replication
-	2. Consensus server (read from server, append to log)
-	3. State machine applier (read from log, write to machine)
-	4. Client interface
-
-	Make everything single-thread-able with multithreading as an option if needed
-
-*/

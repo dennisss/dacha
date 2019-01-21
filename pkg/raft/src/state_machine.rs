@@ -1,8 +1,7 @@
 use bytes::Bytes;
 use super::errors::*;
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
-use rmps::{Serializer, Deserializer};
+use serde::{Deserialize, Serialize};
 
 
 pub trait StateMachine {
@@ -68,7 +67,8 @@ impl MemoryKVStateMachine {
 impl StateMachine for MemoryKVStateMachine {
 
 	fn apply(&mut self, id: u64, data: Bytes) -> Result<()> {
-		let mut de = Deserializer::new(&data[..]);
+		// TODO: Switch to using the common marshalling code
+		let mut de = rmps::Deserializer::new(&data[..]);
 		let ret: KeyValueOperation = Deserialize::deserialize(&mut de).unwrap();
 
 		match ret {
