@@ -94,7 +94,7 @@ impl<'a, V, T> DerefMut for ConditionGuard<'a, V, T> {
 
 
 impl<'a, V, T> ConditionGuard<'a, V, T> {
-	pub fn wait(self, data: T) -> impl Future<Item=(), Error=()> {  // LockResult<MutexGuard<'a, T>> {
+	pub fn wait(self, data: T) -> impl Future<Item=(), Error=()> + Send {  // LockResult<MutexGuard<'a, T>> {
 		let (tx, rx) = oneshot::channel();
 		let mut guard = self.guard;
 

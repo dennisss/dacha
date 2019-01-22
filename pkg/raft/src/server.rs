@@ -75,7 +75,7 @@ struct ServerShared {
 
 	/// Holds the index of the log index most recently persisted to disk
 	/// TODO: Should have the lock in
-	match_index: Condition<u64, u64>, // < TODO: Also possible to have a lock-free version using an atomic variable 
+	match_index: Condition<u64, LogPosition>, // < TODO: Also possible to have a lock-free version using an atomic variable 
 
 	/// Holds the value of the current commit_index for the server
 	/// A listener will be notified if we got a commit_index at least as up to date as their given position
@@ -447,21 +447,36 @@ impl ServerShared {
 		tokio::spawn(f);
 	}
 
-}
 
-macro_rules! to_future {
-    ($x:block) => ({
-        Box::new(match (move || $x)() {
-			Ok(v) => ok(v),
-			Err(e) => err(e)
-        })
-	})
-}
+	// TODO: Can we more generically implement as waiting on a Constraint driven by a Condition which can block for a specific value
+	// TODO: Cleanup and try to deduplicate with Proposal polling
+	pub fn wait_for_match<T: 'static>(shared: Arc<ServerShared>, c: MatchConstraint<T>)
+		-> impl Future<Item=T, Error=Error> + Send where T: Send
+	{
+		loop_fn((shared, c), |(shared, c)| -> Box<Future<Item=_, Error=_> + Send> {
+			match c.poll() {
+				ConstraintPoll::Satisfied(v) => return Box::new(ok(Loop::Break(v))),
+				ConstraintPoll::Unsatisfiable => return Box::new(err("Halted progress on getting match".into())),
+				ConstraintPoll::Pending((c, pos)) => {
+					let fut = {
+						let mi = shared.match_index.lock();
+						mi.wait(pos)
+					};
+					
+					Box::new(fut.then(move |_| {
+						ok(Loop::Continue((shared, c)))
+					}))
+				}
+			}
+		})
+	}
 
+
+}
 
 impl rpc::ServerService for Server {
 
-	fn pre_vote(&self, req: RequestVoteRequest) -> rpc::ServiceFuture<RequestVoteResponse> { to_future!({
+	fn pre_vote(&self, req: RequestVoteRequest) -> rpc::ServiceFuture<RequestVoteResponse> { to_future_box!({
 		let mut state = self.shared.state.lock().unwrap();
 		
 		// NOTE: Tick must be created after the state is locked to gurantee monotonic time always
@@ -475,7 +490,7 @@ impl rpc::ServerService for Server {
 		Ok(res)
 	}) }
 
-	fn request_vote(&self, req: RequestVoteRequest) -> rpc::ServiceFuture<RequestVoteResponse> { to_future!({
+	fn request_vote(&self, req: RequestVoteRequest) -> rpc::ServiceFuture<RequestVoteResponse> { to_future_box!({
 		let mut state = self.shared.state.lock().unwrap();
 
 		let mut tick = Tick::empty();
@@ -488,29 +503,27 @@ impl rpc::ServerService for Server {
 	
 	fn append_entries(
 		&self, req: AppendEntriesRequest
-	) -> rpc::ServiceFuture<AppendEntriesResponse> { to_future!({
-
-		let mut state = self.shared.state.lock().unwrap();
-
-		let mut tick = Tick::empty();
-		let res = state.inst.append_entries(req, &mut tick)?;
-
-		ServerShared::finish_tick(&self.shared, state, tick)?;
-
-		// TODO: Given a server instance, we can convert any constraint into a future
-		// Basically a persistent 
-		let res = match res.poll() {
-			ConstraintPoll::Satisfied(v) => v,
-
-			// TODO: Must wait on the match_index event if allowed
-			_ => return Err("Not implemented".into())
-		};
+	) -> rpc::ServiceFuture<AppendEntriesResponse> {
 		
+		// TODO: In the case that entries are immediately written, this is overly expensive
 
-		Ok(res)
-	})}
+		Box::new(to_future!({
+
+			let mut state = self.shared.state.lock().unwrap();
+
+			let mut tick = Tick::empty();
+			let res = state.inst.append_entries(req, &mut tick)?;
+
+			ServerShared::finish_tick(&self.shared, state, tick)?;
+
+			Ok((self.shared.clone(), res))
+
+		}).and_then(|(shared, res)| {
+			ServerShared::wait_for_match(shared, res)			
+		}))
+	}
 	
-	fn timeout_now(&self, req: TimeoutNow) -> rpc::ServiceFuture<()> { to_future!({
+	fn timeout_now(&self, req: TimeoutNow) -> rpc::ServiceFuture<()> { to_future_box!({
 
 		let mut state = self.shared.state.lock().unwrap();
 
@@ -524,7 +537,7 @@ impl rpc::ServerService for Server {
 	}) }
 
 	// TODO: This may become a ClientService method only? (although it is still sufficiently internal that we don't want just any old client to be using this)
-	fn propose(&self, req: ProposeRequest) -> rpc::ServiceFuture<ProposeResponse> { to_future!({
+	fn propose(&self, req: ProposeRequest) -> rpc::ServiceFuture<ProposeResponse> { to_future_box!({
 		let mut state = self.shared.state.lock().unwrap();
 
 		let mut tick = Tick::empty();

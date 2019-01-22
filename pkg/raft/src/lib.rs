@@ -23,6 +23,21 @@ pub mod errors {
 	}
 }
 
+macro_rules! to_future {
+    ($x:block) => ({
+        match (move || $x)() {
+			Ok(v) => ok(v),
+			Err(e) => err(e)
+        }
+	})
+}
+
+macro_rules! to_future_box {
+	($x:block) => ({
+		Box::new(to_future!($x))
+	});
+}
+
 pub mod sync;
 pub mod atomic;
 

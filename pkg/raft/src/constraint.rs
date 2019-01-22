@@ -11,47 +11,49 @@ pub enum ConstraintPoll<C, T> {
 	Pending(C),
 
 	/// Means that the constraint will never be satisfied therefore the internal data can never be accessed
-	Unsatifiable
+	Unsatisfiable
 }
 
 /// This is a wrapper around some value which optionally enforces that that the inner value cannot be accessed until the log has persisted at least up to the given index
 pub struct MatchConstraint<T> {
 	inner: T,
-	index: Option<(LogPosition, Arc<LogStorage>)>
+	index: Option<(LogPosition, Arc<LogStorage + Send + Sync + 'static>)>
 }
 
 impl<T> MatchConstraint<T> {
-	pub fn new(inner: T, pos: LogPosition, log: Arc<LogStorage>) -> Self {
+	pub fn new(inner: T, pos: LogPosition, log: Arc<LogStorage + Send + Sync + 'static>) -> Self {
 		MatchConstraint {
 			inner, index: Some((pos, log))
 		}
 	}
 
-	pub fn poll(self) -> ConstraintPoll<Self, T> {
+	pub fn poll(self) -> ConstraintPoll<(Self, LogPosition), T> {
 		match self.index {
 			Some((pos, log)) => {
 				match log.term(pos.index) {
 					Some(v) => {
 						if v != pos.term {
 							// Index has been overridden in a newer term
-							ConstraintPoll::Unsatifiable
+							ConstraintPoll::Unsatisfiable
 						}
 						else {
 							if log.match_index().unwrap_or(0) >= pos.index {
 								ConstraintPoll::Satisfied(self.inner)
 							}
 							else {
-								// Not ready yet, reconstruct 'self'
-								ConstraintPoll::Pending(
+								// Not ready yet, reconstruct 'self' and expose the position to the poller 
+								let pos_out = pos.clone();
+								ConstraintPoll::Pending((
 									MatchConstraint {
 										inner: self.inner, index: Some((pos, log))
-									}
-								)
+									},
+									pos_out
+								))
 							}
 						}
 					},
 					// This index has been truncated from the log
-					None => ConstraintPoll::Unsatifiable
+					None => ConstraintPoll::Unsatisfiable
 				}
 			},
 			None => ConstraintPoll::Satisfied(self.inner)

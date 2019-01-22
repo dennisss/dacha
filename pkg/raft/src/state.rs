@@ -5,9 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug)]
 pub struct ServerProgress {
-	/// for each server, index of the next log entry to send to that server (initialized to leader last log index + 1)
-	/// 
-	/// Index of the next log entry we should send to this server
+	/// Index of the next log entry we should send to this server (starts at last leader index + 1)
 	pub next_index: u64,
 
 	/// Index of the highest entry known to be replicated to this server

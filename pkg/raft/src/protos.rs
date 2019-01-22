@@ -27,23 +27,6 @@ use std::borrow::Borrow;
 			- Detect and remove older operations which are fully overriden in effect by a later operation/command
 			- This generally requires support from the StateMachine implementation in being able to efficiently produce a deduplication key for every operation in order to allow for linear scanning for duplicates
 
-
-	Types of log entries
-	- Data : Stores a command/operation to run on the state machine (the data being opaque to the consensus module)
-	- In general these two things can be condensed into one operation
-		- AddServer
-		- RemoveServer
-	- The fewer bytes to represent a single log entry, the better
-	- ChangeConfig <- For the more general form of some list of 
-		- General operations include Add/Remove a member or learner
-		- Naturally adding to members removes from learners and vise versa
-
-		- Usage for log replication
-
-	- We start with 0 members and no ability to do anything pretty much 
-		- Calling bootstrap on a server will start it with an id and allow it unilaterally append a single log entry to the log and make itself master of the cluster
-			- NOTE: A RemoveServer RPC that asks t 
-
 	- XXX: We will probably not deal with these are these are tricky to reason about in general
 		- VoteFor <- Could be appended only locally as a way of updating the metadata without editing the metadata file (naturally we will ignore seeing these over the wire as these will )
 			- Basically we are maintaining two state machines (one is the regular one and one is the internal one holding a few fixed values)
@@ -52,37 +35,7 @@ use std::borrow::Borrow;
 	- The first entry in every single log file is a marker of what the first log entry's index is in that file
 		- Naturally some types of entries such as VoteFor will not increment the 
 
-	
-	Files on disk
-	- Up to two log files
-	- Whatever the store needs on order to hold snapshots
-	- Configuration
-		- There 
-
 	- Naturally next step would be to ensure that the main Raft module tries to stay at near zero allocations for state transitions 
-
-	- Single server init
-		- Appends a single 
-
-
-	In LogCabin, a snapshot also includes the configuration data
-		- Metadata still basically a separate file
-
-	So basically
-	- /log and /log.old
-	- /meta
-		- Super tiny file containing just the current_term and voted_for (that's pretty much it)
-		- Also probably good to crc this just to gurantee that it is legit
-	- /config and /config.old <- Snapshot at some point in time of the configuration that we have described
-		- This is an atomically updated file that is replaced by making a new file and renaming/unlinking
-		- Contains the whole list of servers in the cluster
-		- Contains the index in the log 
-		- Noteably when we implement snapshotting of the main state machine, we must not forget about this state machine as well
-
-	- Discovering the ip of a new server?
-		- A bit of a pain, but we will probably store the id and addr always 
-		- Can be a difficult process for sure
-
 */
 
 /// Type used to uniquely identify each server. These are assigned automatically and increment monotonically starting with the first server having an id of 1 and will never repeat with new servers
@@ -192,9 +145,6 @@ impl Default for Configuration {
 	}
 }
 
-// It's really a question of whether a state machine really requires a last_aplpied or not (I don't think it does anymore)
-	// That is purely an artifact of 
-
 impl Configuration {
 
 	pub fn apply(&mut self, change: &ConfigChange) {
@@ -217,14 +167,11 @@ impl Configuration {
 				self.members.remove(s);
 			}
 		};
-
-		//self.last_applied = index;
 	}
 
 	pub fn iter(&self) -> impl Iterator<Item=&ServerId> {
 		self.members.iter().chain(self.learners.iter())
 	}
-
 
 }
 
@@ -249,8 +196,6 @@ pub struct Snapshot {
 /// In order for a config change to be appended to the leader's log for replication, all previous config changes in the log must also commited (although this is realistically only necessary if the change is to or from that of a full voting member)
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ConfigChange {
-
-	// TODO: Should this encapsulate id addresses as well (probably not as that is a higher level step of sharing ip tables between clients and servers)
 
 	AddMember(ServerId),
 

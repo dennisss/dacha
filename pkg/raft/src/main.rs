@@ -96,7 +96,6 @@ config.members.insert(ServerDescriptor {
 			- Ask the cluster to create a new unique machine id (we could trivially use an empty log entry and commit that to create a new id) <- Must make sure this does not conflict with the master's id if we make many servers before writing other data
 	
 		- If we are sent a one-time init packet via http post, then we will start a new cluster on ourselves
-
 */
 
 /*

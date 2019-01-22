@@ -6,7 +6,6 @@ use futures::prelude::*;
 use futures::prelude::await;
 use hyper::{Body};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc};
 use bytes::Bytes;
 use std::borrow::Borrow;
 
@@ -94,10 +93,11 @@ impl Server {
 
 */
 
-pub type ServiceFuture<T> = Box<Future<Item=T, Error=Error> + Send + 'static>;
+pub type ServiceFuture<T> = Box<Future<Item=T, Error=Error> + Send>;
 
 /// Internal RPC Server between servers participating in the consensus protocol
 pub trait ServerService {
+
 	fn pre_vote(&self, req: RequestVoteRequest) -> ServiceFuture<RequestVoteResponse>;
 
 	fn request_vote(&self, req: RequestVoteRequest) -> ServiceFuture<RequestVoteResponse>;
@@ -150,7 +150,7 @@ fn rpc_response<Res>(res: Result<Res>) -> hyper::Response<hyper::Body>
 }
 
 fn run_handler<'a, S, F, Req, Res: 'static>(inst: &'a S, data: Vec<u8>, f: F)
-	-> Box<Future<Item=hyper::Response<hyper::Body>, Error=hyper::Response<hyper::Body>> + Send>
+	-> impl Future<Item=hyper::Response<hyper::Body>, Error=hyper::Response<hyper::Body>> + Send
 	where S: ServerService,
 		  F: Fn(&S, Req) -> ServiceFuture<Res>,
 		  Req: Deserialize<'a>,
@@ -169,11 +169,11 @@ fn run_handler<'a, S, F, Req, Res: 'static>(inst: &'a S, data: Vec<u8>, f: F)
 		ok(res)
 	};
 
-	Box::new(start().and_then(|res| {
+	start().and_then(|res| {
 		res.then(|r| {
 			ok(rpc_response(r))
 		})
-	}))
+	})
 }
 
 
@@ -182,7 +182,8 @@ fn run_handler<'a, S, F, Req, Res: 'static>(inst: &'a S, data: Vec<u8>, f: F)
 pub fn run_server<R: 'static, S: 'static>(port: u16, inst: R) -> impl Future<Item=(), Error=()>
 	where R: Borrow<S> + Clone + Send + Sync,
 		  S: ServerService + Send + Sync
- {
+{
+
 	let addr = ([127, 0, 0, 1], port).into();
 
 	let server = hyper::Server::bind(&addr)
@@ -220,32 +221,8 @@ pub fn run_server<R: 'static, S: 'static>(port: u16, inst: R) -> impl Future<Ite
 					})
 				})
 				.and_then(move |(parts, data)| {
-
-					let r = inst.borrow();
-			
-					// XXX: If we can generalize this further, then this is the only thing that would need to be templated in order to run the server (i.e. for different types of rpcs)
-					match parts.uri.path() {
-						"/ConsensusService/PreVote" => {
-							run_handler(r, data, S::pre_vote)
-						},
-						"/ConsensusService/RequestVote" => {
-							run_handler(r, data, S::request_vote)
-						},
-						"/ConsensusService/AppendEntries" => {
-							run_handler(r, data, S::append_entries)
-						},
-						"/ConsensusService/Propose" => {
-							run_handler(r, data, S::propose)
-						},
-						"/ConsensusService/TimeoutNow" => {
-							run_handler(r, data, S::timeout_now)
-						},
-						_ => {
-							Box::new(err(bad_request()))
-						}
-					}
+					router(parts, data, inst)
 				});
-
 
 				f.then(|res| -> FutureResult<hyper::Response<Body>, std::io::Error> {
 					match res {
@@ -258,6 +235,37 @@ pub fn run_server<R: 'static, S: 'static>(port: u16, inst: R) -> impl Future<Ite
 		.map_err(|e| eprintln!("server error: {}", e));
 
 	server
+}
+
+#[async]
+fn router<R: 'static, S: 'static>(parts: hyper::http::request::Parts, data: Vec<u8>, inst: R)
+	-> std::result::Result<hyper::Response<Body>, hyper::Response<Body>>
+	where R: Borrow<S> + Clone + Send + Sync,
+		  S: ServerService + Send + Sync
+{
+
+	// XXX: If we can generalize this further, then this is the only thing that would need to be templated in order to run the server (i.e. for different types of rpcs)
+	match parts.uri.path() {
+		"/ConsensusService/PreVote" => {
+			await!(run_handler(inst.borrow(), data, S::pre_vote))
+		},
+		"/ConsensusService/RequestVote" => {
+			await!(run_handler(inst.borrow(), data, S::request_vote))
+		},
+		"/ConsensusService/AppendEntries" => {
+			await!(run_handler(inst.borrow(), data, S::append_entries))
+		},
+		"/ConsensusService/Propose" => {
+			await!(run_handler(inst.borrow(), data, S::propose))
+		},
+		"/ConsensusService/TimeoutNow" => {
+			await!(run_handler(inst.borrow(), data, S::timeout_now))
+		},
+		_ => {
+			Err(bad_request())
+		}
+	}
+
 }
 
 
