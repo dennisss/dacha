@@ -42,7 +42,7 @@ Features
 	- [ ] Through expensive log appending
 	- [ ] Using read-index based quorum checking
 	- [ ] Efficient lease based reads from the leader (clock dependent)
-- [x] Complete log and raft state implementation
+- [x] Complete log and raft state disk storage implementation
 - [ ] Additional cluster managment functionality
 	- [x] Single-node bootstrapping
 	- [ ] Automatic unique server id assignment
