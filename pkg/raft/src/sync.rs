@@ -120,25 +120,14 @@ impl<'a, V, T> ConditionGuard<'a, V, T> {
 			let notify = f(&guard.waiters[i - 1].1);
 			if notify {
 				let (tx, _) = guard.waiters.swap_remove(i - 1);
-				tx.send(());
+				if let Err(_) = tx.send(()) {
+					// In this case, the waiter was deallocated and doesn't matter anymore
+					// TODO: I don't think the oneshot channel emits any real errors though and should always succeed if not deallocated?
+				}
 			}
 
 			i -= 1;
 		}
-
-		/*
-		let mut i = 0;
-		while i < guard.waiters.len() {
-			let notify = f(&guard.waiters[i].1);
-			if notify {
-				let (tx, v) = guard.waiters.swap_remove(i);
-				tx.send(());
-			}
-			else {
-				i += 1;
-			}
-		}
-		*/
 	}
 
 	pub fn notify_all(&mut self) {

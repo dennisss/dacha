@@ -12,9 +12,9 @@ use std::fs::{File, OpenOptions};
 use crc32c::crc32c_append;
 use std::path::{Path, PathBuf};
 use super::stream::Stream;
-use super::block_size_remainder;
+use core::block_size_remainder;
 use fs2::FileExt;
-use super::allocate_soft::*;
+use core::allocate_soft::*;
 
 const SUPERBLOCK_MAGIC: &str = "HAYS";
 

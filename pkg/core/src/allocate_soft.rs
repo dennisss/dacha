@@ -8,8 +8,6 @@
 	- NOTE: This is also optimized for the append-only case, such that if the given size is less than the current size of the file, then we won't bother trying to make is smaller
 */
 
-extern crate libc;
-
 use std::fs::File;
 use std::io::{Error, Result};
 use std::os::unix::io::{AsRawFd};

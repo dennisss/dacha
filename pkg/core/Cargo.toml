@@ -5,3 +5,4 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 
 [dependencies]
 fs2 = "0.4.3"
+libc = "0.2"

@@ -247,23 +247,28 @@ impl Server {
 
 	/// Flushes log entries to persistent storage as they come in
 	fn run_matcher(
-		server_handle: &Arc<Server>,
+		server: &Arc<Server>,
 		log_event: EventReceiver
 	) -> impl Future<Item=(), Error=()> + Send + 'static {
 
-		let shared_handle = server_handle.shared.clone();
+		// TODO: Must explicitly run in a separate thread until we can make disk flushing a non-blocking operation
 
-		loop_fn((shared_handle, log_event), |(shared_handle, log_event)| {
+		let shared = server.shared.clone();
+		let log = shared.state.lock().unwrap().log.clone();
 
-			let cur_mi = {
-				let state = shared_handle.state.lock().unwrap();
-				state.log.flush();
+		loop_fn((shared, log, log_event), |(shared, log, log_event)| {
 
-				state.log.match_index().unwrap_or(0)
-			};
+			// NOTE: The log object is responsible for doing its own internal locking as needed			
+			log.flush();
+
+			// TODO: Ideally if the log requires a lock, this should use the same lock used for flushing (or the match_index should be returned from the flush method <- Preferably also with the term that was flushed)
+
+			let cur_mi = log.match_index().unwrap_or(0);
 
 			{
-				let mut mi = shared_handle.match_index.lock();
+				// NOTE: The match_index is not necessarily monotonic in the case of log truncations
+
+				let mut mi = shared.match_index.lock();
 
 				if *mi != cur_mi {
 					*mi = cur_mi;
@@ -274,7 +279,7 @@ impl Server {
 			
 			// TODO: These is generally no good reason to wake up for any timeout 
 			log_event.wait(Duration::from_secs(10)).map(move |log_event| {
-				Loop::Continue((shared_handle, log_event))
+				Loop::Continue((shared, log, log_event))
 			})
 		})
 
@@ -336,6 +341,8 @@ impl ServerShared {
 	fn update_commit_index(shared: &ServerShared, state: &ServerState) {
 
 		let latest_ci = state.inst.meta().commit_index;
+		let latest_ct = state.log.term(latest_ci).unwrap(); // < Should always be resend
+
 		let mut ci = shared.commit_index.lock();
 
 		// NOTE '<' should be sufficent here as the commit index should never go backwards
@@ -472,6 +479,42 @@ impl ServerShared {
 	}
 
 
+	/// TODO: We must also be careful about when the commit inde x
+	/// Waits for some conclusion on a log entry pending committment
+	/// This can either be from it getting comitted or from it becomming never comitted
+	/// A resolution occurs once a higher log index is comitted or a higher term is comitted
+	pub fn wait_for_commit(shared: Arc<ServerShared>, pos: LogPosition)
+		-> impl Future<Item=(), Error=Error> + Send
+	{
+
+		loop_fn((shared, pos), |(shared, pos)| -> Box<Future<Item=_, Error=_> + Send> {
+
+			// TODO: The ideal case is to the make the condition variables value sufficiently reliable that we don't need to ever lock the server state in order to check this condition
+			// But yes, both commit_index and commit_term can be atomic variables
+			// No need to lock then 
+			let state = shared.state.lock().unwrap();
+
+			let ci = state.inst.meta().commit_index;
+			let ct = state.log.term(ci).unwrap();
+
+			if ct > pos.term || ci >= pos.index {
+				Box::new(ok(Loop::Break(())))
+			}
+			else {
+				// TODO: commit_index can be implemented using two atomic integers denoting the term and ...
+				Box::new(shared.commit_index.lock().wait(0).then(move |_| {
+					ok(Loop::Continue((shared, pos)))
+				}))
+			}
+		})
+
+
+
+		// TODO: Will we ever get a request to truncate the log without an actual committment? (either way it isn't binding to the future of this proposal until it actually comitted something that is in conflict with us)
+
+	}
+
+
 }
 
 impl rpc::ServerService for Server {
@@ -553,13 +596,6 @@ impl rpc::ServerService for Server {
 		})
 		*/
 
-		// XXX: This will be very similar to the match constraint in terms of checking indexes
-
-		//self.shared.commit_index.
-
-		// Here we would ideally want to be able to block until it is comitted (only possible from a current member)
-		// ^ Although this is really not our job
-		// ^ THis should 
 
 		if let ProposeResult::Started(prop) = res {
 			Ok(ProposeResponse {

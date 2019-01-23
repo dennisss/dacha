@@ -86,20 +86,9 @@ struct ConfigurationPending {
 	- We can batch the response to both of them
 		- If they both 
 
-	
 	Conditions for ordering of persistance:
 	- In order for messages to be sent out, the current hard state or some newer hard state must be persisted
 	- In order for messages to be sent out, a minimum of some number of entries must be flushed to be disk
-
-	- The storage class should support getting a match_index
-		- Essentially the index of the last entry that is well persisted to disk 
-
-	- The config can be persisted on a yolo basis
-		- It is essentially just a snapshot and need not be persisted if we don't want it to be
-		- The only requirement for saving the configuration is that we don't snapshot the log to contain entries farther forward than the last snapshot
-
-
-
 */
 
 /// Represents all external side effects requested by the ConsensusModule during a single operation
@@ -188,10 +177,6 @@ pub struct ConsensusModule {
 	/// A reader for the current state of the log
 	/// NOTE: This also allows for enqueuing entries to eventually go into the log, but should never block
 	log: Arc<LogStorage + Send + Sync + 'static>,
-
-	/// Index of the last log entry known to be commited
-	/// NOTE: It is not generally necessary to store this, and can be re-initialized always to at least the index of the last applied entry in config or log
-	//commit_index: Option<u64>,
 
 	// Basically this is the persistent state stuff
 	state: ServerState,

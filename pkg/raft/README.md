@@ -1,84 +1,76 @@
 Raft Consensus
 ==============
 
-Just an implementation of the consensus module including dynamic 
+Replicated state-machine consensus algorithm implementation. 
 
-General usage:
-- As input we need an unused port to start an RPC server and a local data directory that is locked to only this process
-- A separate thread will be started to maintain cluster state
+Naturally this implementation stands on the shoulders of giants like `etcd/raft` and `LogCabin`. This implementation is unique in being hopefully more Rusty and more explicit about the scoping of state variables and where needed, requirements on persistence properties are explicitly enforced with rust constructs.
 
-Additionally the module requires some generic implementation of a state machine.
+Usage
+-----
+*(aka Bring Your Own State Machine)*
 
-The state machine must be able to perform the following operations:
-- `ApplyOperation(u64, Bytes) -> ()`
-	- Given an opaque packet and a unique monotonic id for it, should apply the effect of the packet to the state machine
-	- If state machine is persisted, then it may be given the same exact operations multiple times, but always in the same order. If an operation with the same id has alreader been seen, it can be silently ignored
-		- This will occur during restarts as the consensus module tries to fast forward the state machine to the current log entry
-- `LastApplied() -> u64`
-	- Should echo back the id of the last operation ever given to this state machine
+The included sample `main.rs` demonstrates a sample key-value store implemented using raft for replication and consistency.
 
-Someone managing the state machine and the consensus module is also allowed to call the following
-- `BeginSnapshot() -> u64`
-	- Indicates to the concensus module that a snapshot of the state machine is about to start
-	- The return value is the id of a log entry such that the state machine snapshoter should not snapshot at least up to that log entry
-	- Internally this will start a second log for appending all further operations
-- `EndSnapshot(u64)`
-	- After the state machine has snapshotted it's self, this should be called with the original value returned from BeginSnapshot
-	- The first argument is the id of the `marker log entry`
-	- This function will delete from the beginning of the raft log such that at most up to the marker log entry (inclusive) will be deleted from the log
-	- Internally this will delete the old log files as a whole which are no longer being appended to thanks to the usage of the BeginSnapshot operation
+For using in a custom application, you need to provide an object that implements the `StateMachine` trait. It must be able to do the following tasks:
+- `apply()`: should take as input an opaque byte array and execute it on the state machine
+- `snapshot()`: should retrieve a snapshot if previously created of this machine
+	- A snapshot holds two main items:
+		1. The index of the last operation applied to it
+		2. A readable array of bytes which can be used to restore the state of the machine exactly on an external server
+	- This function should not block or fail and should defer all blocking to the Read stream that it returns
+- `restore()`: Given the bytes produced elsewhere of a state machine's snapshot, this should be able to recreate the state machine
+- `perform_snapshot()`: Given the index of the last entry applied to this state machine, this should begin the process of creating a snapshot of the state machine up to that point
+	- This will return a future that resolves once the state machine's snapshot has been created and well persisted to nonvolatile storage.
+	- Once the future is resolved, the snapshot has be immediately observable through the `snapshot()` function
+
+Additionally you probably want to implement your own application specific client interface. In order to get commands run on your state machine, you simply need to use the `propose_command()` function exposed on the Raft server.
 
 
-- Snapshot
-	- Should atomically store all operations up to now on disk
-	- Because this may take a long 
+Features
+--------
+
+- [x] Leader election
+- [x] Log replication
+- [ ] Log compaction
+- [x] Membership changes
+- [ ] Leader transfer extension
+- [x] Writing to the leader's disk in parallel
+- [ ] Rerouting proposals to the leader server
+- [ ] Prevote protocol for reduced disruption
+- [ ] Exactly once client semantics
+- [ ] Linearizable read functionality
+	- [ ] Through expensive log appending
+	- [ ] Using read-index based quorum checking
+	- [ ] Efficient lease based reads from the leader (clock dependent)
+- [x] Complete log and raft state implementation
+- [ ] Additional cluster managment functionality
+	- [x] Single-node bootstrapping
+	- [ ] Automatic unique server id assignment
+	- [ ] Gossip protocol for server routing discovery
+	- [ ] Support for non-voting learners
+- [ ] RPC protocol implementation for hyper-efficient replication
 
 
------------------------------
+Architecture
+------------
 
-Atomic writes
-	- If the size of the file does not change and a block smaller than 512 bytes is written, 
+Similarly to the `etcd` implementation, we model the core algorithm as a state-machine without inexplicit side effects. This is implemented in the `./src/consensus.rs` file. All the code in that file is meant to be error safe.
 
-	- If the write is smaller than 512 bytes then it can be atomic (so long as the size of the file doesn't also change)
-		- Write the checksum of the data immediately after it
 
-	- Always write as [data-length], [.. data ..], [data-checksum]
-		- Use this for the state file
-	- If the file is much larger
-		- Generally assumes that no other process is working on the same files
-		- Create a new file (named [original_name].tmp)
-		- Write to that file the entire new contents
-		- Delete original file
-		- Rename new to original filename
-		- Fsync the directory
-		- Only really needed for the file containing the list of members 
+Persistence/RPC Requirements
+----------------------------
 
-	- Noteably don't forgeet to be flushing the directory (so should hold a directory handle open )
+*NOTE: The included code has a complete implementation of persisted storage for Raft and simply requires the addition of an optionally persistable state machine. If you choose to implement your own raft storage, below are the constraints that you will encounter*
 
-	Snapshotting can be seen as an independent operation and not something that an immediate concern of the raft framework
+In terms of persisted storage in the absence of snapshotting, only the following constraints must be satisfied in order to gurantee that the core raft properties are not violated
 
-	- If the state machine is persisted, then the last-applied msut also be persisted
-		- Granularity can occur between 
+1. Before a ProposeVote request is sent out, at least the latest metadata as of the time of message creation must be saved to persistent storage
+	- This gurantees that the leader can not vote for a different member after voting for itself
 
-	- If the log stores the list of cluster ids, 
+2. Before a ProposeVote response is sent out, at least the latest metadata as of the time of message creation must be saved to persistent storage
+	- To gurantee no double votes in the same term from a follower
 
-	- Log entries
-		- AppendEntries will only sometimes 
+3. Before an AppendEntries response is sent with a `success: true`, at least all entries directly referenced by the corresponding request must be flushed to the persistent log (or overriden by some future append entries request)
+	- NOTE: 'future' is used loosely here and the ordering of the messages should not effect the output
+	- NOTE: The same condition does not apply to the request for AppendEntries because we separately asyncronously check for the flushed index on the leader
 
-	- NOTE: If current_term ever changes, then voted_for should be reset
-
-	- Otherwise we could reproduce 
-
-	- If the term updates because of a 
-
-		- The term should almost never change as the 
-
-	- Atomic file operation
-		- Start index, end index, new file length
-
-	- Generally can be stored in a single file
-	
-	- PersistentState
-
-	- The config is a list of server ids
-		- If we don't have a gossip protocol, then 

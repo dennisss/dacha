@@ -1,7 +1,7 @@
 use super::super::common::*;
 use super::super::errors::*;
 use super::api::CookieBuf;
-use super::block_size_remainder;
+use core::block_size_remainder;
 use std::io::Cursor;
 use std::io::{Write, Read};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
