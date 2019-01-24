@@ -19,8 +19,7 @@ use raft::errors::*;
 use raft::protos::*;
 use raft::state_machine::*;
 use raft::log::*;
-use raft::consensus::ConsensusModule;
-use raft::server::Server;
+use raft::server::{Server, ServerInitialState};
 use raft::atomic::*;
 use raft::rpc::{marshal, unmarshal};
 use raft::server_protos::*;
@@ -139,7 +138,8 @@ fn main() -> Result<()> {
 	// If a previous instance was started in this directory, restart it
 	// NOTE: In this case we will ignore the bootstrap flag
 	// TODO: Need good handling of missing files that doesn't involve just deleting everything
-	// TODO: Must also 
+	// ^ A known issue is that a bootstrapped node will currently not be able to recover if it hasn't fully flushed its own log through the server process
+
 	let (
 		meta, meta_file,
 		config_snapshot, config_file,
@@ -183,14 +183,7 @@ fn main() -> Result<()> {
 				term: 1,
 				index: 1,
 				data: LogEntryData::Config(ConfigChange::AddMember(1))
-				/* ServerDescriptor {
-					id: 1,
-					addr: "http://127.0.0.1:4001".to_string()
-				})) */
 			});
-
-			// TODO: Also make it durable (otherwise we would be violating the fact that a majority of servers have a match_index >= the the commit_index)
-
 		}
 		else {
 
@@ -232,32 +225,23 @@ fn main() -> Result<()> {
 
 	println!("Starting with id {}", meta.id);
 
-	let log = Arc::new(log);
+	let state_machine = MemoryKVStateMachine::new();
 
-	// TODO: It would be better to have this be created by the server so that we can properly passthrough everything
-	let inst = ConsensusModule::new(meta.id, meta.meta, config_snapshot.config, log.clone());
-
-	// TODO: This also needs to be given the saved routes from the configuration
-	let server = Server::new(inst, log.clone(), meta_file, config_file);
-
-	let server_handle = Arc::new(server);
-
-	// In the case of bootstrapping, we must simply force a single entry to be considered commited which contains a config for the first node
+	let state_machine_handle = Arc::new(state_machine);
 
 
-	// TODO: Support passing in a port (and maybe also an addr)
-	let task = Server::start(server_handle.clone());
-	
-	let mut state_machine = MemoryKVStateMachine::new();
-
-	let apply_commits = || {
-		
-		// Apply to the changes
-		// If someone is 
-		
-
+	let initial_state = ServerInitialState {
+		meta, meta_file,
+		config_snapshot, config_file,
+		log: Box::new(log),
+		state_machine: state_machine_handle.clone(),
+		last_applied: 0
 	};
 
+	let server = Arc::new(Server::new(initial_state));
+
+	// TODO: Support passing in a port (and maybe also an addr)
+	let task = Server::start(server.clone());
 
 
 	// TODO: If one node joins another cluster with one node, does the old leader of that cluster need to step down?

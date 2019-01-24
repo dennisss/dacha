@@ -14,30 +14,20 @@ use futures::future::*;
 use futures::prelude::*;
 use futures::{Future, Stream};
 
-use std::collections::{HashMap, HashSet};
-use std::time::{SystemTime, Duration};
+use std::collections::{HashMap};
+use std::time::{Duration};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::prelude::FutureExt;
 use super::state_machine::StateMachine;
 
-/// After this amount of time, we will assume that 
+/// After this amount of time, we will assume that an rpc request has failed
 /// 
 /// NOTE: This value doesn't matter very much, but the important part is that every single request must have some timeout associated with it to prevent the number of pending incomplete requests from growing indefinately in the case of other servers leaving connections open for an infinite amount of time (so that we never run out of file descriptors)
 const REQUEST_TIMEOUT: u64 = 500;
 
 // Basically whenever we connect to another node with a fresh connection, we must be able to negogiate with each the correct pair of cluster id and server ids on both ends otherwise we are connecting to the wrong server/cluster and that would be problematic (especially when it comes to aoiding duplicate votes because of duplicate connections)
 
-
-/*
-	Things that we have not generalized yet:
-	- Storage beyond that of just config files that are BlobFiles
-		- Not really a big deal right now
-
-	- WriteEntries to log is an important operation
-	- Ideally 
-
-*/
 
 /*
 	Maintaining route information
@@ -61,9 +51,52 @@ const REQUEST_TIMEOUT: u64 = 500;
 
 */
 
+/*
+	Further improvements:
+	- compared to etcd/raft
+		- Making into a pure state machine
+			- All outputs of the state machine are currently exposed and consumed in our finish_tick function in addition to a separate response message which is given as a direct return value to functions invoked on the ConsensusModule for RPC calls
+		- Separating out the StateMachine
+			- the etcd Node class currently does not have the responsibility of writing to the state machine
 
-// Basically anything that implements clone and can be moved around can be used
+	- TODO: In the case that our log or snapshot gets corrupted, we want some integrated way to automatically repair from another node without having to do a full clean erase and reapply 
+		- NOTE: Because this may destroy our quorum, we may want to allow configuring for a minimum of quorum + 1 or something like that for new changes
+			- Or enforce a durability level for old and aged entries
+*/
 
+// TODO: Would also be nice to have some warning of when a disk operation is required to read back an entry as this is generally a failure on our part
+
+
+/// Represents everything needed to start up a Server object
+pub struct ServerInitialState {
+	/// Value of the metadata initially
+	pub meta: ServerMetadata,
+	
+	/// A way to persist the metadata
+	pub meta_file: BlobFile,
+
+	/// Snapshot of the configuration to use
+	pub config_snapshot: ServerConfigurationSnapshot,
+
+	/// A way to persist the configuration snapshot
+	pub config_file: BlobFile,
+
+	/// The initial or restored log
+	/// NOTE: The server takes ownership of the log
+	pub log: Box<LogStorage + Send + Sync + 'static>,
+	
+	/// Instantiated instance of the state machine
+	/// (either an initial empty one or one restored from a local snapshot)
+	pub state_machine: Arc<StateMachine + Send + Sync + 'static>,
+	
+	/// Index of the last log entry applied to the state machine given
+	/// Should be 0 unless this is a state machine that was recovered from a snapshot
+	pub last_applied: u64,
+}
+
+
+/// Represents a single node of the cluster
+/// Internally this manages the log, rpcs, and applying changes to the 
 pub struct Server {
 	shared: Arc<ServerShared>,
 }
@@ -73,42 +106,51 @@ struct ServerShared {
 
 	state: Mutex<ServerState>,
 
+	// TODO: Need not have a lock for this right? as it is not mutable
+	// Definately we want to lock the LogStorage separately from the rest of this code
+	log: Arc<LogStorage + Send + Sync + 'static>,
+
+	state_machine: Arc<StateMachine + Send + Sync + 'static>,
+
 	/// Holds the index of the log index most recently persisted to disk
-	/// TODO: Should have the lock in
-	match_index: Condition<u64, LogPosition>, // < TODO: Also possible to have a lock-free version using an atomic variable 
+	/// This is eventually consistent with the index in the log itself
+	/// NOTE: This is safe to always have a term for as it should always be in the log
+	match_index: Condvar<LogPosition, LogPosition>,
 
 	/// Holds the value of the current commit_index for the server
+	/// This is eventually consistent with the index in the internal consensus module
+	/// NOTE: This is the highest commit index currently available in the log and not the highest index ever seen
 	/// A listener will be notified if we got a commit_index at least as up to date as their given position
 	/// NOTE: The state machine will listen for (0,0) always so that it is always sent new entries to apply
-	commit_index: Condition<u64, Proposal>,
+	/// XXX: This is not guranteed to have a well known term unless we start recording the commit_term in the metadata for the initial value
+	commit_index: Condvar<LogPosition, LogPosition>,
 
+	/// Last log index applied to the state machine
+	/// This should only ever be modified by the separate applier
+	last_applied: Condvar<u64, u64>,
 }
 
 /// All the mutable state for the server that you hold a lock in order to look at
 struct ServerState {
 	inst: ConsensusModule,
 
+	// TODO: Move those out
 	meta_file: BlobFile, config_file: BlobFile,
 
-	log: Arc<LogStorage + Send + Sync + 'static>,
-
 	// XXX: Contain client connections
-
 	// XXX: No point in these being locked
-
 	// XXX: Another event will be used to send to the thread that flushes the log
-
 	// It will emit back through the match_index log
 	
-	// commit_index will be peeked by the 
-
 	/// Trigered whenever the state or configuration is changed
+	/// TODO: currently this will not fire on configuration changes
 	/// Should be received by the cycler to update timeouts for heartbeats/elections
-	state_event: EventSender, state_receiver: Option<EventReceiver>,
+	/// TODO: The events don't need a lock (but if we are locking, then we might as well use it right)
+	state_changed: ChangeSender, state_receiver: Option<ChangeReceiver>,
 
-	/// Triggered whenever a new entry has been queued to be added to the log
-	/// Should be received by the thread waiting that is performing flushes
-	log_event: EventSender, log_receiver: Option<EventReceiver>,
+	/// Triggered whenever a new entry has been queued onto the log
+	/// Used to trigger the log to get flushed to persistent storage
+	log_changed: ChangeSender, log_receiver: Option<ChangeReceiver>,
 
 	// For each observed server id, this is the last known address at which it can be found
 	// This is used 
@@ -117,16 +159,49 @@ struct ServerState {
 	// because servers are only ever added one and a time and configurations should get synced quickly this should always be reasonable
 	// The only complication would be new servers which won't have the entire config yet
 	// We could either never delete servers with ids smaller than our lates log index and/or make sure that servers are always started with a complete configuration snaphot (which includes a snaphot of the config ips + routing information)
+	// TODO: Should we make these under a different lock so that we can process messages while running the state forward (especially as sending a response requires no locking)
 	routes: HashMap<ServerId, String>
 }
 
 impl Server {
 
-	pub fn new(inst: ConsensusModule, log: Arc<LogStorage + Send + Sync + 'static>, meta_file: BlobFile, config_file: BlobFile) -> Self {
-		// TODO: Don't forget to handle directory locking somewhere
+	pub fn new(
+		initial: ServerInitialState,
+	) -> Self {
 
-		let (tx_state, rx_state) = event();
-		let (tx_log, rx_log) = event();
+		let ServerInitialState {
+			mut meta, meta_file,
+			config_snapshot, config_file,
+			log,
+			state_machine,
+			last_applied
+		} = initial;
+
+		let log: Arc<LogStorage + Send + Sync + 'static> = Arc::from(log);
+
+		// We make no assumption that the commit_index is consistently persisted, and if it isn't we can initialize to the the last_applied of the state machine as we will never apply an uncomitted change to the state machine
+		// NOTE: THe ConsensusModule similarly performs this check on the config snapshot
+		if last_applied > meta.meta.commit_index {
+			meta.meta.commit_index = last_applied;
+		}
+
+		// Gurantee no log discontinuities (only overlaps are allowed)
+		// This is similar to the check on the config snapshot that we do in the consensus module
+		if last_applied + 1 < log.first_index().unwrap_or(0) {
+			panic!("State machine snapshot is from before the start of the log");
+		}
+
+		// TODO: If all persisted snapshots contain more entries than the log, then we can trivially schedule a log prefix compaction 
+
+		if meta.meta.commit_index > log.last_index().unwrap_or(0) {
+			// This may occur on a leader that has not matched itself yet
+		}
+
+
+		let inst = ConsensusModule::new(meta.id, meta.meta, config_snapshot.config, log.clone());
+
+		let (tx_state, rx_state) = change();
+		let (tx_log, rx_log) = change();
 
 		let mut routes = HashMap::new();
 
@@ -135,20 +210,26 @@ impl Server {
 
 		let state = ServerState {
 			inst,
-			log,
 			meta_file, config_file,
-			state_event: tx_state, state_receiver: Some(rx_state),
-			log_event: tx_log, log_receiver: Some(rx_log),
+			state_changed: tx_state, state_receiver: Some(rx_state),
+			log_changed: tx_log, log_receiver: Some(rx_log),
 			routes
 		};
 
 		let shared = ServerShared {
 			state: Mutex::new(state),
+			log,
+			state_machine,
 
-			// TODO: Have better initial values
-			match_index: Condition::new(0),
-			commit_index: Condition::new(0)
+			// NOTE: these will be initialized below
+			match_index: Condvar::new(LogPosition { index: 0, term: 0 }),
+			commit_index: Condvar::new(LogPosition { index: 0, term: 0 }),
+
+			last_applied: Condvar::new(last_applied)
 		};
+
+		shared.update_match_index();
+		ServerShared::update_commit_index(&shared, &shared.state.lock().unwrap());
 
 		Server {
 			shared: Arc::new(shared)
@@ -158,10 +239,10 @@ impl Server {
 	// THis will need to be the thing running a tick method which must just block for events
 
 	// NOTE: If we also give it a state machine, we can do that for people too
-	pub fn start(server_handle: Arc<Server>) -> impl Future<Item=(), Error=()> + Send + 'static {
+	pub fn start(server: Arc<Server>) -> impl Future<Item=(), Error=()> + Send + 'static {
 
-		let (id, state_event, log_event) = {
-			let mut state = server_handle.shared.state.lock().expect("Failed to lock instance");
+		let (id, state_changed, log_changed) = {
+			let mut state = server.shared.state.lock().expect("Failed to lock instance");
 
 			(
 				state.inst.id(),
@@ -172,18 +253,20 @@ impl Server {
 			)
 		};
 
-		let service = rpc::run_server::<Arc<Server>, Server>(4000 + (id as u16), server_handle.clone());
+		let service = rpc::run_server::<Arc<Server>, Server>(4000 + (id as u16), server.clone());
 
-		let cycler = Self::run_cycler(&server_handle, state_event);
-		let matcher = Self::run_matcher(&server_handle, log_event);
+		let cycler = Self::run_cycler(&server, state_changed);
+		let matcher = Self::run_matcher(&server, log_changed);
+		let applier = Self::run_applier(&server);
 
 		// TODO: Finally if possible we should attempt to broadcast our ip address to other servers so they can rediscover us
 
 		service
 		// NOTE: Because in bootstrap mode a server can spawn requests immediately without the first futures cycle, it may spawn stuff before tokio is ready, so we must make this lazy
-		.join3(
+		.join4(
 			lazy(|| cycler),
-			lazy(|| matcher)
+			lazy(|| matcher),
+			lazy(|| applier)
 		)
 		.map(|_| ()).map_err(|_| ())
 	}
@@ -191,28 +274,24 @@ impl Server {
 	/// Runs the idle loop for managing the server and maintaining leadership, etc. in the case that no other events occur to drive the server
 	fn run_cycler(
 		server_handle: &Arc<Server>,
-		state_event: EventReceiver
+		state_changed: ChangeReceiver
 	) -> impl Future<Item=(), Error=()> + Send + 'static {
 
 		let shared_handle = server_handle.shared.clone();
 		
-		loop_fn((shared_handle, state_event), |(shared_handle, state_event)| {
+		loop_fn((shared_handle, state_changed), |(shared_handle, state_changed)| {
 
-			// TODO: Switch to an Instant and use this one time for this entire loop for everything
-			//let now = Instant::now();
-
+			let tick_time: Instant;
 			let mut wait_time = Duration::from_millis(0);
-			{
 
+			{
 				let mut state = shared_handle.state.lock().expect("Failed to lock server instance");
 
 				let mut tick = Tick::empty();
 				state.inst.cycle(&mut tick);
 
-				// XXX: Now perform the effect of the output thing
+				tick_time = tick.time.clone();
 
-
-				// TODO: Should be switched to a tokio::timer which doesn't block anything
 				// NOTE: We take it so that the finish_tick doesn't re-trigger this loop and prevent sleeping all together
 				if let Some(d) = tick.next_tick.take() {
 					wait_time = d;
@@ -223,20 +302,15 @@ impl Server {
 				}
 
 				// Now tick must have a reference to the 
-
+				// TODO: Ideally have this run without the need for the state to be held
 				ServerShared::finish_tick(&shared_handle, state, tick);
-
 			}
-
-			//if false {
-			//	return ok(Loop::Break(()));
-			//}
 
 			println!("Sleep {:?}", wait_time);
 
 			// TODO: If not necessary, we should be able to support zero-wait cycles (although now those should never happen as the consensus module should internally now always converge in one run)
-			state_event.wait(wait_time).map(move |state_event| {
-				Loop::Continue((shared_handle, state_event))
+			state_changed.wait(tick_time + wait_time).map(move |state_changed| {
+				Loop::Continue((shared_handle, state_changed))
 			})
 		})
 		.map_err(|_| {
@@ -246,52 +320,98 @@ impl Server {
 	}
 
 	/// Flushes log entries to persistent storage as they come in
+	/// This is responsible for pushing changes to the match_index variable
 	fn run_matcher(
 		server: &Arc<Server>,
-		log_event: EventReceiver
+		log_changed: ChangeReceiver
 	) -> impl Future<Item=(), Error=()> + Send + 'static {
 
 		// TODO: Must explicitly run in a separate thread until we can make disk flushing a non-blocking operation
 
 		let shared = server.shared.clone();
-		let log = shared.state.lock().unwrap().log.clone();
 
-		loop_fn((shared, log, log_event), |(shared, log, log_event)| {
+		loop_fn((shared, log_changed), |(shared, log_changed)| {
 
-			// NOTE: The log object is responsible for doing its own internal locking as needed			
-			log.flush();
+			// NOTE: The log object is responsible for doing its own internal locking as needed
+			// TODO: Should we make this non-blocking right now	
+			shared.log.flush();
 
-			// TODO: Ideally if the log requires a lock, this should use the same lock used for flushing (or the match_index should be returned from the flush method <- Preferably also with the term that was flushed)
+			// TODO: Ideally if the log requires a lock, this should use the same lock used for updating this as well (or the match_index should be returned from the flush method <- Preferably also with the term that was flushed)
+			shared.update_match_index();
 
-			let cur_mi = log.match_index().unwrap_or(0);
-
-			{
-				// NOTE: The match_index is not necessarily monotonic in the case of log truncations
-
-				let mut mi = shared.match_index.lock();
-
-				if *mi != cur_mi {
-					*mi = cur_mi;
-
-					mi.notify_all();
-				}
-			}
+			// TODO: There is generally no good reason to wake up for any timeout so we will just wait for a really long time
+			let next_time = Instant::now() + Duration::from_secs(10);
 			
-			// TODO: These is generally no good reason to wake up for any timeout 
-			log_event.wait(Duration::from_secs(10)).map(move |log_event| {
-				Loop::Continue((shared, log, log_event))
+			log_changed.wait(next_time).map(move |log_changed| {
+				Loop::Continue((shared, log_changed))
 			})
 		})
-
 	}
 
 	/// When entries are comitted, this will apply them to the state machine
+	/// This is the exclusive modifier of the last_applied shared variable and is also responsible for triggerring snapshots on the state machine when we want one to happen
+	/// NOTE: If this thing fails, we can still participate in raft but we can not perform snapshots or handle read/write queries 
 	fn run_applier(
-		server_handle: &Arc<Server>
-	) {
+		server: &Arc<Server>
+	) -> impl Future<Item=(), Error=()> + Send + 'static {
 
-		// TODO
+		loop_fn(server.shared.clone(), |shared| {
 
+			let commit_index = shared.commit_index.lock().index;
+			let mut last_applied = *shared.last_applied.lock();
+			
+			let state_machine = &shared.state_machine;
+
+			// Apply all committed entries to state machine
+			while last_applied < commit_index {
+				let entry = shared.log.entry(last_applied + 1);
+				if let Some(e) = entry {
+					
+					if let LogEntryData::Command(ref data) = e.data {
+						// TODO: This may error out (in which case we have a really big problem as we can't progress )
+						// TODO:
+						state_machine.apply(data);
+					}
+
+					last_applied += 1;
+				}
+				else {
+					// Our log may be behind the commit_index in the consensus module, but the commit_index conditional variable should always be at most at the newest value in our log
+					eprintln!("Need to apply an entry not in our log yet");
+					break;
+				}
+			}
+
+			// Update last_applied
+			{
+				let mut guard = shared.last_applied.lock();
+				if last_applied > *guard {
+					*guard = last_applied;
+					guard.notify_all();
+				}
+			}
+
+			// Wait for the next time commit_index changes 
+			{
+				let guard = shared.commit_index.lock();
+
+				// If the commit index changed since last we checked, we can immediately cycle again
+				if guard.index != commit_index {
+					// We can immediately cycle again
+					return Either::A(ok(Loop::Continue(shared.clone())));
+				}
+
+				let shared2 = shared.clone();
+
+				// Otherwise we will wait for it to change
+				Either::B(
+					guard.wait(LogPosition { term: 0, index: 0 })
+					.then(move |_| {
+						ok(Loop::Continue(shared2))
+					})
+				)
+			}
+		})
 	}
 
 
@@ -306,9 +426,22 @@ impl ServerShared {
 	pub fn finish_tick<'a>(shared: &Arc<Self>, state: MutexGuard<'a, ServerState>, tick: Tick) -> Result<()> {
 
 		// If new entries were appended, we must notify the flusher
-		// XXX: Single sender for just the 
+		if tick.new_entries {
 
+			// When our log has fewer entries than are committed, the commit index may go up
+			// TODO: Will end up being a redundant operation with the below one
+			Self::update_commit_index(shared, &state);
+
+			// XXX: Simple scenario is to just use the fact that we have the lock
+			state.log_changed.notify();
+		}
+
+		// XXX: Single sender for just the 
+		// XXX: If we batch together two redundant RequestVote requests, the tick produced by the second one will not require a metadata change
+		// ^ The issue with this is that we can't just respond with the second message unless the previous metadata that required a flush from the first request is flushed
+		// ^ This is why it would be useful to have monotonic demands on this
 		if tick.meta {
+			// TODO: Potentially batchable if we choose to make this something that can do an async write to the disk
 			state.meta_file.store(&rpc::marshal(ServerMetadataRef {
 				id: state.inst.id(),
 				cluster_id: 0,
@@ -330,26 +463,72 @@ impl ServerShared {
 		Self::dispatch_messages(&shared, &state, tick.messages);
 
 		// TODO: Verify this encapsulates all cases of meaningful state changes
+		// TODO: Verify that in most cases this is never actually triggerred as it isn't all that gast
 		if tick.next_tick.is_some() {
-			state.state_event.notify();
+			// TODO: The real question is whether or not to use the fake that we have a lock to make this more efficient than using an atomic 
+			state.state_changed.notify();
 		}
 
 		Ok(())
 	}
 
+	fn update_match_index(&self) {
+		// Getting latest match_index
+		let cur_mi = self.log.match_index().unwrap_or(0);
+		let cur_mt = self.log.term(cur_mi).unwrap();
+		let cur = LogPosition {
+			index: cur_mi,
+			term: cur_mt
+		};
+
+		// Updating it
+		let mut mi = self.match_index.lock();
+		// NOTE: The match_index is not necessarily monotonic in the case of log truncations
+		if *mi != cur {
+			*mi = cur;
+
+			mi.notify_all();
+
+			
+			// For leaders, an update to the match_index may advance the commit_index, so we will trigger a cycle of the state
+			// NOTE: Typically this will not help as we will usually get AppendEntries requests back before the local flush is complete but this will help with the single-node case
+			self.state.lock().unwrap().state_changed.notify();
+		}
+	}
+
+
 	/// Notifies anyone waiting on something to get committed
+	/// TODO: Realistically as long as we enforce that it atomically goes up, we don't need to have a lock on the state in order to perform this update
 	fn update_commit_index(shared: &ServerShared, state: &ServerState) {
 
-		let latest_ci = state.inst.meta().commit_index;
-		let latest_ct = state.log.term(latest_ci).unwrap(); // < Should always be resend
+		let latest_commit_index = state.inst.meta().commit_index;
+
+		let latest = match shared.log.term(latest_commit_index) {
+			// If the commited index is in the log, use it
+			Some(term) => {
+				LogPosition {
+					index: latest_commit_index,
+					term
+				}
+			},
+			// Otherwise, more data has been comitted than is in our log, so we will only mark up to the last entry in our lag
+			None => {
+				let last_log_index = shared.log.last_index().unwrap_or(0);
+				let last_log_term = shared.log.term(last_log_index).unwrap();
+
+				LogPosition {
+					index: last_log_index,
+					term: last_log_term
+				}
+			}
+		};
+
 
 		let mut ci = shared.commit_index.lock();
 
 		// NOTE '<' should be sufficent here as the commit index should never go backwards
-		if *ci != latest_ci {
-			*ci = latest_ci;
-
-			// TODO: Run a filtered notify based on the committed term and index
+		if *ci != latest {
+			*ci = latest;
 			ci.notify_all();
 		}
 	}
@@ -460,17 +639,17 @@ impl ServerShared {
 	pub fn wait_for_match<T: 'static>(shared: Arc<ServerShared>, c: MatchConstraint<T>)
 		-> impl Future<Item=T, Error=Error> + Send where T: Send
 	{
-		loop_fn((shared, c), |(shared, c)| -> Box<Future<Item=_, Error=_> + Send> {
+		loop_fn((shared, c), |(shared, c)| {
 			match c.poll() {
-				ConstraintPoll::Satisfied(v) => return Box::new(ok(Loop::Break(v))),
-				ConstraintPoll::Unsatisfiable => return Box::new(err("Halted progress on getting match".into())),
+				ConstraintPoll::Satisfied(v) => return Either::A(ok(Loop::Break(v))),
+				ConstraintPoll::Unsatisfiable => return Either::A(err("Halted progress on getting match".into())),
 				ConstraintPoll::Pending((c, pos)) => {
 					let fut = {
 						let mi = shared.match_index.lock();
 						mi.wait(pos)
 					};
 					
-					Box::new(fut.then(move |_| {
+					Either::B(fut.then(move |_| {
 						ok(Loop::Continue((shared, c)))
 					}))
 				}
@@ -479,7 +658,7 @@ impl ServerShared {
 	}
 
 
-	/// TODO: We must also be careful about when the commit inde x
+	/// TODO: We must also be careful about when the commit index
 	/// Waits for some conclusion on a log entry pending committment
 	/// This can either be from it getting comitted or from it becomming never comitted
 	/// A resolution occurs once a higher log index is comitted or a higher term is comitted
@@ -487,28 +666,35 @@ impl ServerShared {
 		-> impl Future<Item=(), Error=Error> + Send
 	{
 
-		loop_fn((shared, pos), |(shared, pos)| -> Box<Future<Item=_, Error=_> + Send> {
+		loop_fn((shared, pos), |(shared, pos)| {
 
 			// TODO: The ideal case is to the make the condition variables value sufficiently reliable that we don't need to ever lock the server state in order to check this condition
 			// But yes, both commit_index and commit_term can be atomic variables
 			// No need to lock then 
-			let state = shared.state.lock().unwrap();
 
-			let ci = state.inst.meta().commit_index;
-			let ct = state.log.term(ci).unwrap();
+			let (ci, ct) = {
+				let state = shared.state.lock().unwrap();
+				let ci = state.inst.meta().commit_index;
+				let ct = shared.log.term(ci).unwrap();
+				(ci, ct)
+			};
+
+			
 
 			if ct > pos.term || ci >= pos.index {
-				Box::new(ok(Loop::Break(())))
+				Either::A(ok(Loop::Break(())))
 			}
 			else {
+				let shared2 = shared.clone();
+				let lk = shared2.commit_index.lock();
+
 				// TODO: commit_index can be implemented using two atomic integers denoting the term and ...
-				Box::new(shared.commit_index.lock().wait(0).then(move |_| {
+				Either::B(lk.wait(LogPosition { term: 0, index: 0 }).then(move |_| {
 					ok(Loop::Continue((shared, pos)))
 				}))
 			}
 		})
-
-
+		
 
 		// TODO: Will we ever get a request to truncate the log without an actual committment? (either way it isn't binding to the future of this proposal until it actually comitted something that is in conflict with us)
 

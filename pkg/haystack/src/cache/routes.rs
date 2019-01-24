@@ -48,7 +48,6 @@ pub fn handle_request(
 			await!(handle_proxy_request(parts, body, mac_handle, machine_ids, store))
 		},
 
-
 		_ => Ok(bad_request_because("Unsupported path pattern"))
 	}
 

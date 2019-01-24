@@ -34,9 +34,9 @@
 // TODO: Also useful would be to use fallocate on block sizes (or given a known maximum log size, we could utilize that size) 
 // At the least, we can perform heuristics to preallocate for the current append at the least 
 
-
-use std::io::{Read, Write, Cursor, Seek};
-use std::fs::{OpenOptions, File, SeekFrom};
+use super::errors::*;
+use std::io::{Read, Write, Cursor, Seek, SeekFrom};
+use std::fs::{OpenOptions, File};
 use std::path::Path;
 use crc32c::crc32c_append;
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
@@ -57,7 +57,7 @@ enum RecordType {
 
 struct Record<'a> {
 	checksum: u32,
-	type: u8,
+	typ: u8,
 	data: &'a [u8]
 }
 
@@ -148,14 +148,14 @@ impl<'a> RecordIO<'a> {
 				} as u8;
 
 			// Checksum of [ type, data ]
-			let sum = crc32c_append(crc32c_append(0, slice::from_ref(&type)), data);
+			let sum = crc32c_append(crc32c_append(0, slice::from_ref(&typ)), data);
 
 			(&header[0..4]).write_u32::<LittleEndian>(sum)?;
 			(&header[4..6]).write_u16::<LittleEndian>(take)?;
-			header[6] = type;
+			header[6] = typ;
 
 			self.file.write_all(&header)?;
-			self.file.write_all(data[pos..(pos + take)])?;
+			self.file.write_all(&data[pos..(pos + take)])?;
 			pos += take;
 		}
 

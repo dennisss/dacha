@@ -88,9 +88,6 @@ impl Server {
 
 }
 
-
-// Basically yes, 
-
 */
 
 pub type ServiceFuture<T> = Box<Future<Item=T, Error=Error> + Send>;
@@ -237,38 +234,6 @@ pub fn run_server<R: 'static, S: 'static>(port: u16, inst: R) -> impl Future<Ite
 	server
 }
 
-#[async]
-fn router<R: 'static, S: 'static>(parts: hyper::http::request::Parts, data: Vec<u8>, inst: R)
-	-> std::result::Result<hyper::Response<Body>, hyper::Response<Body>>
-	where R: Borrow<S> + Clone + Send + Sync,
-		  S: ServerService + Send + Sync
-{
-
-	// XXX: If we can generalize this further, then this is the only thing that would need to be templated in order to run the server (i.e. for different types of rpcs)
-	match parts.uri.path() {
-		"/ConsensusService/PreVote" => {
-			await!(run_handler(inst.borrow(), data, S::pre_vote))
-		},
-		"/ConsensusService/RequestVote" => {
-			await!(run_handler(inst.borrow(), data, S::request_vote))
-		},
-		"/ConsensusService/AppendEntries" => {
-			await!(run_handler(inst.borrow(), data, S::append_entries))
-		},
-		"/ConsensusService/Propose" => {
-			await!(run_handler(inst.borrow(), data, S::propose))
-		},
-		"/ConsensusService/TimeoutNow" => {
-			await!(run_handler(inst.borrow(), data, S::timeout_now))
-		},
-		_ => {
-			Err(bad_request())
-		}
-	}
-
-}
-
-
 // TODO: Must support a mode that batches sends to many servers all in one (while still allowing each individual promise to be externally controlled)
 fn make_request<'a, Req, Res>(addr: &String, path: &'static str, req: &Req)
 	-> impl Future<Item=Res, Error=Error>
@@ -326,6 +291,38 @@ fn make_request_single<'a, Res>(addr: &String, path: &'static str, data: bytes::
 // TODO: We will eventually wrap these in an client struct that maintains a nice persistent connection (will also need to negotiate proper the right cluster_id and server_id on both ends for the connection to be opened)
 
 
+
+
+#[async]
+fn router<R: 'static, S: 'static>(parts: hyper::http::request::Parts, data: Vec<u8>, inst: R)
+	-> std::result::Result<hyper::Response<Body>, hyper::Response<Body>>
+	where R: Borrow<S> + Clone + Send + Sync,
+		  S: ServerService + Send + Sync
+{
+
+	// XXX: If we can generalize this further, then this is the only thing that would need to be templated in order to run the server (i.e. for different types of rpcs)
+	match parts.uri.path() {
+		"/ConsensusService/PreVote" => {
+			await!(run_handler(inst.borrow(), data, S::pre_vote))
+		},
+		"/ConsensusService/RequestVote" => {
+			await!(run_handler(inst.borrow(), data, S::request_vote))
+		},
+		"/ConsensusService/AppendEntries" => {
+			await!(run_handler(inst.borrow(), data, S::append_entries))
+		},
+		"/ConsensusService/Propose" => {
+			await!(run_handler(inst.borrow(), data, S::propose))
+		},
+		"/ConsensusService/TimeoutNow" => {
+			await!(run_handler(inst.borrow(), data, S::timeout_now))
+		},
+		_ => {
+			Err(bad_request())
+		}
+	}
+
+}
 
 pub fn call_pre_vote(addr: &String, req: &RequestVoteRequest)
 	-> impl Future<Item=RequestVoteResponse, Error=Error> {

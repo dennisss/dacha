@@ -4,14 +4,16 @@ use super::protos::*;
 use super::state::*;
 use super::log::*;
 use super::constraint::*;
+use super::config_state::*;
 
 use std::collections::{HashMap, HashSet};
-use std::time::{SystemTime, Duration, Instant};
+use std::time::{Duration, Instant};
 use std::sync::{Arc, Mutex};
 
-use super::state_machine::StateMachine;
 use rand::RngCore;
 
+
+// XXX: Assert that we never safe a configuration to disk or initialize with a config that has uncommited entries in it
 
 // NOTE: Blocking on a proposal to get some conclusion will be the role of blocking on a one-shot based in some external code
 // But most read requests will adictionally want to block on the state machine being fully commited up to some minimum index (I say minimum for the case of point-in-time transactions that don't care about newer stuff)
@@ -23,9 +25,8 @@ const ELECTION_TIMEOUT: (u64, u64) = (400, 800);
 const HEARTBEAT_TIMEOUT: u64 = 200;
 
 
-// TODO: Because the RequestVotes will happen on a fixed interval, we must ensure that 
 
-// NOTE: This is basically the same type as a LogEntryIndex (we might as well wrap a LogEntryIndex and make the contents of a proposal opaque to other programs using the consensus api)
+// NOTE: This is basically the same type as a LogPosition (we might as well wrap a LogPosition and make the contents of a proposal opaque to other programs using the consensus api)
 #[derive(Debug)]
 pub struct Proposal {
 	pub term: u64,
@@ -69,28 +70,6 @@ pub enum ProposalStatus {
 pub type ConsensusModuleHandle = Arc<Mutex<ConsensusModule>>;
 
 
-#[derive(Clone)]
-struct ConfigurationPending {
-	/// Index of the last entry in our log that changes the config
-	pub last_change: u64,
-
-	/// Configuration as it was before the last change
-	/// In other words the last_applied of this configuration would be 'last_change - 1'
-	pub previous: Configuration
-}
-
-
-/*
-	Metadata must almost always be flushed
-	- Suppose we receive two different RequestVote responses at the same time
-	- We can batch the response to both of them
-		- If they both 
-
-	Conditions for ordering of persistance:
-	- In order for messages to be sent out, the current hard state or some newer hard state must be persisted
-	- In order for messages to be sent out, a minimum of some number of entries must be flushed to be disk
-*/
-
 /// Represents all external side effects requested by the ConsensusModule during a single operation
 pub struct Tick {
 	/// Exact time at which this tick is happening
@@ -103,10 +82,16 @@ pub struct Tick {
 	// This is not required but rather just sub
 	pub config: bool,
 
+	// Whether new entries were appending to the log
+	pub new_entries: bool,
+
 	// If present, meand that the given messages need to be sent out
 	// This will be separate from resposnes as those are slightly different 
 	// The from_id is naturally available on any response
 	pub messages: Vec<Message>,
+
+
+	// TODO: Possibly expose a list of entries (but we will basically always internally track the most up to date position of the log)
 
 	/// If no other events occur, then this is the next tick should occur
 	pub next_tick: Option<Duration>
@@ -114,12 +99,14 @@ pub struct Tick {
 
 
 impl Tick {
+	// TODO: Gurantee that this always is created while the consensus module is locked and that the tick is immediately used (otherwise we won't get monotonic time out of it)
 	pub fn empty() -> Self {
 		Tick {
 			time: Instant::now(),
 
 			meta: false,
 			config: false,
+			new_entries: false,
 			messages: vec![],
 
 			// We will basically update our ticker to use this as an 
@@ -144,6 +131,7 @@ impl Tick {
 
 
 
+// TODO: Finish and move to the constraint file
 pub struct MustPersistMetadata<T> {
 	inner: T
 }
@@ -168,11 +156,7 @@ pub struct ConsensusModule {
 	meta: Metadata,
 
 	/// The currently active configuration of the cluster
-	config: Configuration,
-
-	/// If the current configuration is not yet commited, then this will mark the last change available
-	/// This will allow for rolling back the configuration in case there is a log conflict
-	config_pending: Option<ConfigurationPending>,
+	config: ConfigurationStateMachine,
 
 	/// A reader for the current state of the log
 	/// NOTE: This also allows for enqueuing entries to eventually go into the log, but should never block
@@ -189,77 +173,54 @@ impl ConsensusModule {
 	pub fn new(
 		id: ServerId, mut meta: Metadata,
 
+		// The configuration will be internalized and managed by the ConsensusModule
+		config_snapshot: ConfigurationSnapshot,
+		
 		// NOTE: We assume that we are exclusively the only ones allowed to append to the log naturally
-		config_snapshot: ConfigurationSnapshot, log: Arc<LogStorage + Send + Sync + 'static> // < In other words this is a log reader
+		log: Arc<LogStorage + Send + Sync + 'static> // < In other words this is a log reader
 
 	) -> ConsensusModule {
 		
-		// Unless we see cast a vote, it isn't absolutely necessary to persist the metadata
-		// So if we chose to do that optimization, then if the log contains never data than the metadata, then we can assume that we did not cast any meaningful vote in that election
+		// TODO: This may mutate everything so possibly better to allow it to just accept a tick as input in order to be able to perform mutations
+
+		// Unless we cast a vote, it isn't absolutely necessary to persist the metadata
+		// So if we chose to do that optimization, then if the log contains newer terms than in the metadata, then we can assume that we did not cast any meaningful vote in that election
 		let last_log_term = log.term(log.last_index().unwrap_or(0)).unwrap();
 		if last_log_term > meta.current_term {
 			meta.current_term = last_log_term;
 			meta.voted_for = None;
 		}
 
-		// TODO: If we have a reference to the state machine, then we can use it to determine another boundary of the min commit index
-		// ^ This could be characterized by the SnapshotStore that we use
-
-		// TODO: meta.current_term should be at least as large as the last entry in our log
-
-		// We should have never saved an uncommitted config to storage. Uncommitted configurations should only exist in memory
+		// Snapshots are only of committed data, so seeing a newer snapshot implies the config index is higher than we think it is
 		if config_snapshot.last_applied > meta.commit_index {
-			// TODO: This may be the case if we chose to not persist the commit_index immediately
-			panic!("Config snapshot is ahead of the commit index")
+			// This means that we did not bother to persist the commit_index
+			meta.commit_index = config_snapshot.last_applied;
 		}
 
-		// The external process responsible for snapshotting should never compact the log until a config snapshot has been persisted
+		// The external process responsible for snapshotting should never compact the log until a config snapshot has been persisted (as this would result in a discontinuity between the log and the snapshots)
+		// TODO: Verify this for the state machine as well
 		if config_snapshot.last_applied + 1 < log.first_index().unwrap_or(0) {
 			panic!("Config snapshot is from before the start of the log");
 		}
 
-		// Consume the snapshot into a configuration at the head of the log
-		let (config, config_pending) = {
+		let mut config = ConfigurationStateMachine::from(config_snapshot);
 
-			let last_applied = config_snapshot.last_applied;
-			let mut config = config_snapshot.data;
-			let mut config_pending = None;
+		// If the log contains more entries than the config, advance the config forward such that the configuration represents at least the latest entry in the log
+		let last_log_index = log.last_index().unwrap_or(0);
 
-			let last_log_index = log.last_index().unwrap_or(0);
-
-			// If the log contains more entries than the config, advance the config forward such that the configuration represents the latest entry in the log
-			// TODO: Implement an iterator over the log for this
-			for i in (last_applied + 1)..(last_log_index + 1) {
-
-				let e = log.entry(i).unwrap();
-
-				if let LogEntryData::Config(ref change) = e.data {
-					if e.index < meta.commit_index {
-						config_pending = Some(ConfigurationPending {
-							last_change: e.index,
-							previous: config.clone()
-						});
-					}
-
-					config.apply(&change);
-				}
-				else {
-					// Other types of log entries do not apply to the configuration
-				}
-			}
-
-			(config, config_pending)
-		};
+		// TODO: Implement an iterator over the log for this
+		for i in (config.last_applied + 1)..(last_log_index + 1) {
+			let e = log.entry(i).unwrap();
+			config.apply(&e, meta.commit_index);
+		}
 
 		// TODO: Take the initial time as input
 		let state = Self::new_follower(Instant::now());
 
-		// XXX: Assert that we never safe a configuration to disk or initialize with a config that has uncommited entries in it
-
 		ConsensusModule {
 			id,
 			meta,
-			config, config_pending,
+			config,
 			log,
 			state
 		}
@@ -273,43 +234,11 @@ impl ConsensusModule {
 		&self.meta
 	}
 
-	/// Gets the latest configuration snapshot currently available
+	/// Gets the latest configuration snapshot currently available in memory
+	/// NOTE: This says nothing about what snapshot actually exists on disk at the current time
 	pub fn config_snapshot(&self) -> ConfigurationSnapshotRef {
-		if let Some(ref pending) = self.config_pending {
-			ConfigurationSnapshotRef {
-				last_applied: pending.last_change - 1,
-				data: &pending.previous
-			}
-		}
-		else {
-			ConfigurationSnapshotRef {
-				last_applied: self.log.last_index().unwrap_or(0),
-				data: &self.config
-			}
-		}
+		self.config.snapshot()
 	}
-
-	/*
-		An interesting optimization
-		- After writing, only the hard state 'needs' to be updated on disk
-
-		If the leader maintains a match_index for itself, then there is realistically no need to flush any log entries to the leader's disk
-			- But we still depend on changes being available at lease in memory so that they can be sent out and 
-
-			- But, this does not apply generically
-				- When append_entries() is called on a follower, 
-
-			- In etcd raft 'messages can be sent out while entries in the same batch are being persisted'
-				- This implies that first all 
-	*/
-
-	/*
-		In general, it will output whether or not a sync is actually mandatory
-
-		etcd/raft uses an array of unstable entries to keep in memory things that should eventually have their ownership transfered to the 
-
-
-	*/
 
 	/// Propose a new state machine command given some data packet
 	// NOTE: Will immediately produce an output right?
@@ -358,7 +287,8 @@ impl ConsensusModule {
 			// If the new proposal is for a config change, block it until the last change is committed
 			// TODO: Realistically we actually just need to check against the current commit index for doing this (as that may be higher)
 			if let LogEntryData::Config(_) = data {
-				if let Some(ref pending) = self.config_pending {
+				// TODO: Refactor out this usage of the pending redister
+				if let Some(ref pending) = self.config.pending {
 					return ProposeResult::RetryAfter(Proposal {
 						index: pending.last_change,
 						term: self.log.term(pending.last_change).unwrap()
@@ -366,6 +296,7 @@ impl ConsensusModule {
 				}
 			}
 
+			out.new_entries = true;
 			self.log.append(LogEntry {
 				term,
 				index,
@@ -375,15 +306,10 @@ impl ConsensusModule {
 			// As soon as a configuration change lands in the log, we will use it immediately
 			// TODO: This could also be moved up into the if statement above because we can assume that .append() will definately succeed, but we keep it here to keep the code cleaner
 			{
-			let e = self.log.entry(index).unwrap();
-			if let LogEntryData::Config(ref change) = e.data {
-				self.config_pending = Some(ConfigurationPending {
-					last_change: index,
-					previous: self.config.clone()
-				});
+				let e = self.log.entry(index).unwrap();
 
-				self.config.apply(change);
-			}
+				// XXX: Here the commit index won't really help optimize anything out
+				self.config.apply(&e, self.meta.commit_index);
 			}
 
 			// Cycle the state to replicate this entry to other servers
@@ -414,7 +340,7 @@ impl ConsensusModule {
 		// If we didn't have this line, then the follower code would go wild trying to propose an election
 		// Additionally there is no work to be done if we are not in the voting members
 		// TODO: We should assert that a non-voting member never starts an election and other servers should never note for a non-voting member
-		if self.config.members.len() == 0 || self.config.members.get(&self.id).is_none() {
+		if self.config.value.members.len() == 0 || self.config.value.members.get(&self.id).is_none() {
 			tick.next_tick = Some(Duration::from_secs(1));
 			return;
 		}
@@ -455,7 +381,7 @@ impl ConsensusModule {
 		match summary {
 			ServerStateSummary::Follower { elapsed, election_timeout } => {
 				// NOTE: If we are the only server in the cluster, then we can trivially win the election without waiting
-				if elapsed >= election_timeout || self.config.members.len() == 1 {
+				if elapsed >= election_timeout || self.config.value.members.len() == 1 {
 					self.start_election(tick);					
 				}
 				else {
@@ -476,7 +402,7 @@ impl ConsensusModule {
 
 					let last_log_index = self.log.last_index().unwrap_or(0);
 
-					let servers = self.config.iter()
+					let servers = self.config.value.iter()
 						.filter(|s| **s != self.id)
 						.map(|s| {
 							(*s, ServerProgress::new(last_log_index))
@@ -517,7 +443,7 @@ impl ConsensusModule {
 
 			ServerStateSummary::Leader { next_commit_index } => {
 				/*
-					The final major thing for leaders is ensuring that their list of server progresses are well up to date
+					TODO: The final major thing for leaders is ensuring that their list of server progresses are well up to date
 
 					// TODO: currently we do nothing to remove progress entries for servers that are no longer in the cluster
 
@@ -543,7 +469,7 @@ impl ConsensusModule {
 				// TODO: Response with a timeout based on the minimum among the remaining unnotified servers
 
 				// If we are the only server in the cluster, then we don't really need heartbeats at all, so we will just change this to some really large value
-				if self.config.members.len() + self.config.learners.len() == 1 {
+				if self.config.value.members.len() + self.config.value.learners.len() == 1 {
 					next_heartbeat = Duration::from_secs(2);
 				}
 
@@ -589,7 +515,7 @@ impl ConsensusModule {
 
 				for (id, e) in s.servers.iter() {
 					// Skip non-voting members or ourselves
-					if !self.config.members.contains(id) || *id == self.id {
+					if !self.config.value.members.contains(id) || *id == self.id {
 						continue;
 					}
 
@@ -628,7 +554,7 @@ impl ConsensusModule {
 			_ => panic!("Not the leader")
 		};
 
-		let config = &self.config;
+		let config = &self.config.value;
 
 		let leader_id = self.id;
 		let term = self.meta.current_term;
@@ -762,7 +688,7 @@ impl ConsensusModule {
 		};
 		
 		// Send to all voting members aside from ourselves
-		let ids = self.config.members.iter()
+		let ids = self.config.value.members.iter()
 			.map(|s| *s)
 			.filter(|s| {
 				*s != self.id
@@ -805,36 +731,29 @@ impl ConsensusModule {
 
 	/// Run this whenever the commited index should be changed
 	fn update_commited(&mut self, index: u64, tick: &mut Tick) {
+
+		
 		// TOOD: Make sure this is verifying by all the code that uses this method
 		assert!(index > self.meta.commit_index);
 
 		self.meta.commit_index = index;
 		tick.write_meta();
 
-		// Check if any pending configuration has been resolved		
-		self.config_pending = match self.config_pending.take() {
-			Some(pending) => {
-				// If we committed the entry for the last config change, then we persist the config
-				if pending.last_change <= self.meta.commit_index {
-					tick.write_config();
-					None
-				}
-				// Otherwise it is still pending
-				else { Some(pending) }
-			},
-			v => v
-		};
+		// Check if any pending configuration has been resolved	
+		if self.config.commit(self.meta.commit_index) {
+			tick.write_config();
+		}
 	}
 
 	/// Number of votes for voting members required to get anything done
 	/// NOTE: This is always at least one, so a cluster of zero members should require at least 1 vote
 	fn majority_size(&self) -> usize {
 		// A safe-guard for empty clusters. Because our implementation rightn ow always counts one vote from ourselves, we will just make sure that a majority in a zero node cluster is near impossible instead of just requiring 1 vote
-		if self.config.members.len() == 0 {
+		if self.config.value.members.len() == 0 {
 			return std::usize::MAX;
 		}
 
-		(self.config.members.len() / 2) + 1
+		(self.config.value.members.len() / 2) + 1
 	}
 
 	// NOTE: For clients, we can basically always close the other side of the connection?
@@ -943,11 +862,6 @@ impl ConsensusModule {
 	}
 
 
-	// Now must get a little bit more serious about it assuming that we have a valid set of commands that we should be sending over
-
-
-// Below here are the rpc handlers
-
 	/// Checks if a RequestVote request would be granted by the current server
 	/// This will not actually grant the vote for the term and will only mutate our state if the request has a higher observed term than us
 	pub fn pre_vote(&mut self, req: RequestVoteRequest, tick: &mut Tick) -> RequestVoteResponse {
@@ -977,6 +891,8 @@ impl ConsensusModule {
 
 				// If the terms are equal, the index of the entry must be at least as far along as ours
 				(req.last_log_term == last_log_term && req.last_log_index >= last_log_index)
+
+				// If the request has a log term smaller than us, then it is trivially up to date
 			};
 
 			if !up_to_date {
@@ -1055,8 +971,6 @@ impl ConsensusModule {
 
 
 		if req.term < self.meta.current_term {
-			// TODO: This response on success comes with the promise that the response is not sent until the given 
-
 			// Simplest way to be parallel writing is to add another thread that does the synchronous log writing
 			// For now this only really applies 
 			// Currently we assume that the entire log 
@@ -1147,12 +1061,7 @@ impl ConsensusModule {
 					}
 
 					// If the current configuration is uncommitted, we need to restore the old one if the last change to it is being removed from the log
-					if let Some(ref pending) = self.config_pending.clone() {
-						if pending.last_change <= e.index {
-							self.config = pending.previous.clone();
-							self.config_pending = None;
-						}
-					}
+					self.config.revert(e.index);
 
 					// Should truncate every entry including and after e.index
 					self.log.truncate_suffix(e.index);
@@ -1196,25 +1105,23 @@ impl ConsensusModule {
 			for e in new_entries {
 				let i = e.index;
 
-				self.log.append(e.clone());
+				tick.new_entries = true;
+				self.log.append(e.clone()); // TODO: Refactor out the clone
 
 				let e = self.log.entry(i).unwrap();
-				if let LogEntryData::Config(ref change) = e.data {
-					// TODO: This is a waste of time if we are about to commit all of it
-					self.config_pending = Some(ConfigurationPending {
-						last_change: e.index,
-						previous: self.config.clone()
-					});
-
-					self.config.apply(change);
-				}
+				// TODO: Ideally compute the latest commit_index before we apply these changes so that we don't need to maintain a rollback history if we don't need to
+				self.config.apply(&e, self.meta.commit_index);
 			}
 		}
 
 		// NOTE: It is very important that we use the index of the last entry in the request (and not the index of the last entry in our log as we have not necessarily validated up to that far in case the term or leader changed)
 		if req.leader_commit > self.meta.commit_index {
 			let next_commit_index = std::cmp::min(req.leader_commit, last_new);
-			self.update_commited(next_commit_index, tick);
+
+			// It is possibly for the commit_index to try to go down if we have more entries snapshotted than appear in our local log
+			if next_commit_index > self.meta.commit_index {
+				self.update_commited(next_commit_index, tick);
+			}
 		}
 
 		let pos = LogPosition { term: req.term, index: last_new };

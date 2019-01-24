@@ -47,9 +47,12 @@ pub mod protos; // TODO: Eventually make this private again
 
 pub mod log; // XXX: Likewise should be private
 mod state;
-pub mod snapshot;
+//pub mod snapshot; // XXX: May eventually reoccur as a file that holds the algorithm for managing whether or not we should trigger snapshots
+mod config_state;
 pub mod constraint;
 pub mod consensus;
+
+//pub mod record_io;
 
 // Higher level complete implementation dealing with actual networking issues
 pub mod rpc;

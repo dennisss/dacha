@@ -1,7 +1,10 @@
 use bytes::Bytes;
 use super::errors::*;
 use std::collections::HashMap;
+use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
+use std::io::Read;
+use futures::sync::oneshot;
 
 
 pub trait StateMachine {
@@ -13,18 +16,30 @@ pub trait StateMachine {
 
 
 	/// Should apply the given operation to the state machine immediately integrating it
-	/// 
-	/// If the operation is invalid or otherwise can't be applied, then an error should be returned. We will assume that it atomically failed and may be retried in the future, but for the mean time this will stop further requests going to the state machine
-	/// If the operation was already applied in the past, then it should be silently accepted
-	fn apply(&mut self, id: u64, op: Bytes) -> Result<()>;
+	fn apply(&self, op: &[u8]) -> Result<()>;
 
-	/// Gets the index of the last operation applied to the state machine
-	/// 
-	/// Empty or non-persistent state machines should return None initially
-	fn last_applied(&self) -> Option<u64>;
+	/// Should retrieve the last created snapshot if any is available
+	/// This should be a cheap operation that can quickly queried to check on the last snapshot
+	fn snapshot<'a>(&'a self) -> Option<StateMachineSnapshot<'a>>;
 
-	// TODO: May also require operations to be able to install new snapshots
+	fn restore(&self, data: Bytes) -> Result<()>;
 
+	// Triggers a new snapshot to begin being created and persisted to disk
+	// The index of the last entry applied to the state machine is given as an argument to be stored alongside the snapshot
+	// Returns a receiver which resolves once the snapshot has been created or has failed to be created
+	//fn perform_snapshot(&self, last_applied: u64) -> Result<oneshot::Receiver<()>>;
+}
+
+pub struct StateMachineSnapshot<'a> {
+
+	/// Index of the last log entry in this snapshot (same value originally given to the perform_snapshot that created this snapshot )
+	pub last_applied: u64,
+
+	/// Number of bytes needed to store this snapshot
+	pub size: u64,
+
+	/// A reader for retrieving the contents of the snapshot
+	pub data: &'a Read
 }
 
 
@@ -45,15 +60,13 @@ pub enum KeyValueOperation {
 
 
 pub struct MemoryKVStateMachine {
-	last_id: Option<u64>,
-	data: HashMap<Vec<u8>, Vec<u8>>
+	data: Mutex<HashMap<Vec<u8>, Vec<u8>>>
 }
 
 impl MemoryKVStateMachine {
 	pub fn new() -> MemoryKVStateMachine {
 		MemoryKVStateMachine {
-			last_id: None,
-			data: HashMap::new()
+			data: Mutex::new(HashMap::new())
 		}
 	}
 
@@ -66,25 +79,32 @@ impl MemoryKVStateMachine {
 
 impl StateMachine for MemoryKVStateMachine {
 
-	fn apply(&mut self, id: u64, data: Bytes) -> Result<()> {
+	fn apply(&self, data: &[u8]) -> Result<()> {
 		// TODO: Switch to using the common marshalling code
-		let mut de = rmps::Deserializer::new(&data[..]);
+		let mut de = rmps::Deserializer::new(data);
 		let ret: KeyValueOperation = Deserialize::deserialize(&mut de).unwrap();
+
+		let mut map = self.data.lock().unwrap();
 
 		match ret {
 			KeyValueOperation::Set { key, value } => {
-				self.data.insert(key, value);
+				map.insert(key, value);
 			},
 			KeyValueOperation::Delete { key } => {
-				self.data.remove(&key);
+				map.remove(&key);
 			}
 		};
 
 		Ok(())
 	}
 
-	fn last_applied(&self) -> Option<u64> {
-		self.last_id
+	fn snapshot<'a>(&'a self) -> Option<StateMachineSnapshot<'a>> {
+		None
+	}
+
+	fn restore(&self, data: Bytes) -> Result<()> {
+		// A snapshot should not have been generatable
+		Ok(())
 	}
 
 }

@@ -3,7 +3,7 @@ use super::protos::*;
 
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LogPosition {
 	pub index: u64,
 	pub term: u64

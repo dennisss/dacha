@@ -343,7 +343,7 @@ impl StoreMachine {
 	}
 
 	/// Assuming that we want to, this will create a new volume on this machine and pick other replicas to go along with it
-	fn perform_allocation(mac_handle: MachineHandle) -> Box<Future<Item=(), Error=Error> + Send> {
+	fn perform_allocation(mac_handle: MachineHandle) -> impl Future<Item=(), Error=Error> + Send {
 
 		let num_replicas = mac_handle.config.store.num_replicas;
 
@@ -352,7 +352,7 @@ impl StoreMachine {
 
 			let all_macs = match dir.db.index_store_machines() {
 				Ok(v) => v,
-				Err(e) => return Box::new(err(e))
+				Err(e) => return Either::A(err(e))
 			};
 
 			let mut macs = all_macs.into_iter().filter(|m| {
@@ -360,10 +360,10 @@ impl StoreMachine {
 			}).collect::<Vec<_>>();
 
 			if macs.len() < num_replicas - 1 {
-				return Box::new(err("Not enough replicas available to allocate new volume".into()));
+				return Either::A(err("Not enough replicas available to allocate new volume".into()));
 			}
 
-			let vol = match dir.create_logical_volume() { Ok(v) => v, Err(e) => return Box::new(err(e)) };
+			let vol = match dir.create_logical_volume() { Ok(v) => v, Err(e) => return Either::A(err(e)) };
 			
 			(macs, vol)
 		};
@@ -405,7 +405,7 @@ impl StoreMachine {
 			})
 		}).collect::<Vec<_>>();
 
-		Box::new(join_all(arr)
+		Either::B(join_all(arr)
 		.and_then(move |_| {
 			let mut mac = mac_handle.inst.write().unwrap();
 			let dir = mac_handle.dir.lock().unwrap();
