@@ -11,7 +11,7 @@ use super::volume::{PhysicalVolume};
 use core::DirLock;
 use std::path::{Path, PathBuf};
 use super::super::directory::Directory;
-use bitwise::Word;
+use core::FlipSign;
 use std::sync::{Arc,Mutex,RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 use rand::seq::SliceRandom;
@@ -100,7 +100,7 @@ impl StoreMachine {
 			StoreMachineIndex::open(&volumes_path)?
 		} else {
 			let machine = dir.db.create_store_machine("127.0.0.1", port)?;
-			StoreMachineIndex::create(&volumes_path, dir.cluster_id, machine.id.to_unsigned())?
+			StoreMachineIndex::create(&volumes_path, dir.cluster_id, machine.id.flip())?
 		};
 
 		if dir.cluster_id != idx.cluster_id {
@@ -368,7 +368,7 @@ impl StoreMachine {
 			(macs, vol)
 		};
 
-		let vol_id = vol.id.to_unsigned();
+		let vol_id = vol.id.flip();
 
 		let mut rng = rand::thread_rng();
 

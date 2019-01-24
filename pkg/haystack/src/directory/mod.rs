@@ -9,7 +9,7 @@ use self::models::*;
 use rand;
 use rand::prelude::*;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
-use bitwise::Word;
+use core::FlipSign;
 use self::db::DB;
 use std::hash::Hasher;
 use rand::thread_rng;
@@ -83,7 +83,7 @@ impl Directory {
 
 	pub fn create_logical_volume(&self) -> Result<LogicalVolume> {
 		self.db.create_logical_volume(&NewLogicalVolume {
-			hash_key: rand::thread_rng().next_u64().to_signed()
+			hash_key: rand::thread_rng().next_u64().flip()
 		})
 	}
 
@@ -124,8 +124,8 @@ impl Directory {
 		}
 
 		// To pick the cache server, we use a simple Distributed Hash Table approach with a random key per volume
-		let mut hasher = siphasher::sip::SipHasher::new_with_keys(vol.hash_key.to_unsigned(), 0);
-		hasher.write_u64(photo.id.to_unsigned());
+		let mut hasher = siphasher::sip::SipHasher::new_with_keys(vol.hash_key.flip(), 0);
+		hasher.write_u64(photo.id.flip());
 		let hash = hasher.finish();
 		let bucket_size = std::u64::MAX / (caches.len() as u64);
 		let mut cache_idx = (hash / bucket_size) as usize; // XXX: Assumes usize is >= u64
@@ -146,7 +146,7 @@ impl Directory {
 	/// Picks a load balanced store machine from which to read the given photo (to be used only when the cache misses)
 	pub fn choose_store(&self, photo: &Photo) -> Result<StoreMachine> {
 
-		let stores = self.db.read_store_machines_for_volume(photo.volume_id.to_unsigned())?
+		let stores = self.db.read_store_machines_for_volume(photo.volume_id.flip())?
 		.into_iter().filter(|m| {
 			m.can_read(&self.config)
 		}).collect::<Vec<_>>();

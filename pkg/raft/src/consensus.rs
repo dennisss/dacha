@@ -99,8 +99,8 @@ pub struct Tick {
 	/// If present, means that the metadata needs to change
 	pub meta: bool,
 	
-	// If present, means that the given configuration needs to be persisted
-	// This is very an IDGAF type of thing and really doesn't matter at all becuase yolo
+	// If present, means that the given configuration can be persisted
+	// This is not required but rather just sub
 	pub config: bool,
 
 	// If present, meand that the given messages need to be sent out

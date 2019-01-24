@@ -11,7 +11,7 @@ use super::directory::*;
 use super::paths::*;
 use super::store::api::*;
 use super::cache::api::*;
-use bitwise::Word;
+use core::FlipSign;
 use bytes::Bytes;
 use futures::prelude::*;
 use futures::stream;
@@ -55,7 +55,7 @@ impl Client {
 			None => return Err("No such photo".into())
 		};
 
-		let vol = match dir.db.read_logical_volume(photo.volume_id.to_unsigned())? {
+		let vol = match dir.db.read_logical_volume(photo.volume_id.flip())? {
 			Some(v) => v,
 			None => return Err("Missing the volume".into())
 		};
@@ -64,16 +64,16 @@ impl Client {
 		let store = dir.choose_store(&photo)?;
 
 		let path = CachePath::Proxy {
-			machine_ids: MachineIds::Data(vec![store.id.to_unsigned()]),
+			machine_ids: MachineIds::Data(vec![store.id.flip()]),
 			store: StorePath::Needle {
-				volume_id: vol.id.to_unsigned(),
+				volume_id: vol.id.flip(),
 				key: keys.key,
 				alt_key: keys.alt_key,
 				cookie: CookieBuf::from(&photo.cookie[..])
 			}
 		};
 
-		let host = Host::Cache(cache.id.to_unsigned());
+		let host = Host::Cache(cache.id.flip());
 
 		Ok(format!("http://{}:{}{}", host.to_string(), cache.addr_port, path.to_string()))
 	}
@@ -98,7 +98,7 @@ impl Client {
 				cookie: cookie.data()
 			})?;
 
-			let machines = dir.db.read_store_machines_for_volume(p.volume_id.to_unsigned())?;
+			let machines = dir.db.read_store_machines_for_volume(p.volume_id.flip())?;
 
 			if machines.len() == 0 {
 				return Err("Missing any machines to upload to".into());
@@ -113,8 +113,8 @@ impl Client {
 			let needles = chunks.into_iter().map(|c| {
 				NeedleChunk {
 					path: NeedleChunkPath {
-						volume_id: p.volume_id.to_unsigned(),
-						key: p.id.to_unsigned(),
+						volume_id: p.volume_id.flip(),
+						key: p.id.flip(),
 						alt_key: c.alt_key,
 						cookie: cookie.clone()
 					},

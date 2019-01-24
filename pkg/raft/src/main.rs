@@ -56,27 +56,6 @@ config.members.insert(ServerDescriptor {
 
 // XXX: See https://github.com/etcd-io/etcd/blob/fa92397e182286125c72bf52d95f9f496f733bdf/raft/raft.go#L113 for more useful config parameters
 
-/*
-	Bootstrap first node:
-	- server_id:
-		- 1
-	- log:
-		- 1 log entry (containing ConfigChange)
-			- term 1, index 1
-	- config
-		- 1 member in config (containing self)
-		- Naturally any config that is not fully up-to-date can be made up-to-date 
-	- meta
-		- current_term: 1
-		- voted_for: None
-		- commit_index: 1
-	- state_machine
-		- empty
-
-	Adding new server to cluster
-*/
-
-
 
 /*
 	In order to make a server, we must at least have a server id 

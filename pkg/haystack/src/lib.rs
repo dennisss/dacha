@@ -21,7 +21,6 @@ extern crate serde_json;
 extern crate mime_sniffer;
 extern crate ipnetwork;
 extern crate chrono;
-extern crate bitwise;
 extern crate hyper;
 extern crate ctrlc;
 extern crate siphasher;

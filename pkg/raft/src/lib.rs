@@ -3,6 +3,7 @@
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate error_chain;
 
+extern crate core;
 extern crate futures_await as futures;
 extern crate rand;
 extern crate serde;

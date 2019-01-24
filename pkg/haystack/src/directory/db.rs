@@ -4,7 +4,7 @@ use super::super::errors::*;
 use super::super::common::*;
 use super::models::*;
 use super::schema;
-use bitwise::Word;
+use core::FlipSign;
 use std::env;
 use dotenv::dotenv;
 use chrono::{Utc};
@@ -78,7 +78,7 @@ impl DB {
 
 	pub fn read_logical_volume(&self, id_value: VolumeId) -> Result<Option<LogicalVolume>> {
 		use super::schema::logical_volumes::dsl::*;
-		Ok(logical_volumes.filter(id.eq(id_value.to_signed())).first::<LogicalVolume>(&self.conn).optional()?)
+		Ok(logical_volumes.filter(id.eq(id_value.flip())).first::<LogicalVolume>(&self.conn).optional()?)
 	}
 
 	/// Find all logical volumes associated with a single machine
@@ -90,7 +90,7 @@ impl DB {
 		Ok(
 			logical_volumes
 			.inner_join(physical_volumes)
-			.filter(schema::physical_volumes::machine_id.eq(id_value.to_signed()))
+			.filter(schema::physical_volumes::machine_id.eq(id_value.flip()))
 			.get_results::<(LogicalVolume,PhysicalVolume)>(&self.conn)?
 			.into_iter().map(|(v, _)| { v }).collect()
 		)
@@ -103,7 +103,7 @@ impl DB {
 		expect_changed(
 			diesel::update(
 				logical_volumes
-				.filter(id.eq(id_value.to_signed()))
+				.filter(id.eq(id_value.flip()))
 			)
 			.set(write_enabled.eq(is))
 			.execute(&self.conn)?
@@ -118,7 +118,7 @@ impl DB {
 
 	pub fn read_photo(&self, id_value: NeedleKey) -> Result<Option<Photo>> {
 		use super::schema::photos::dsl::*;
-		Ok(photos.filter(id.eq(id_value.to_signed())).first::<Photo>(&self.conn).optional()?)
+		Ok(photos.filter(id.eq(id_value.flip())).first::<Photo>(&self.conn).optional()?)
 	}
 
 	/// Performs a test-and-set on the volume_id of a photo
@@ -158,8 +158,8 @@ impl DB {
 		expect_changed(
 			diesel::insert_into(schema::physical_volumes::table)
 				.values(&PhysicalVolume {
-					logical_id: logical_id.to_signed(),
-					machine_id: machine_id.to_signed()
+					logical_id: logical_id.flip(),
+					machine_id: machine_id.flip()
 				})
 				.execute(&self.conn)?
 		)
@@ -170,8 +170,8 @@ impl DB {
 			diesel::insert_into(schema::physical_volumes::table)
 				.values(&machine_ids.iter().map(|m| {
 					PhysicalVolume {
-						logical_id: logical_id.to_signed(),
-						machine_id: m.to_signed()
+						logical_id: logical_id.flip(),
+						machine_id: m.flip()
 					}
 				}).collect::<Vec<_>>())
 				.execute(&self.conn)
@@ -184,7 +184,7 @@ impl DB {
 	pub fn create_cache_machine(&self, addr_ip: &str, addr_port: u16) -> Result<CacheMachine> {
 		let new_machine = NewCacheMachine {
 			addr_ip,
-			addr_port: addr_port.to_signed(),
+			addr_port: addr_port.flip(),
 			hostname: ""
 		};
 
@@ -217,12 +217,12 @@ impl DB {
 
 		expect_changed(
 			diesel::update(
-				cache_machines.filter(id.eq(id_value.to_signed()))
+				cache_machines.filter(id.eq(id_value.flip()))
 			)
 			.set((
 				ready.eq(ready_value),
 				addr_ip.eq(addr_ip_value),
-				addr_port.eq(addr_port_value.to_signed()),
+				addr_port.eq(addr_port_value.flip()),
 				last_heartbeat.eq( Utc::now() )
 			))
 			.execute(&self.conn)?
@@ -234,7 +234,7 @@ impl DB {
 		
 		let new_machine = NewStoreMachine {
 			addr_ip,
-			addr_port: addr_port.to_signed()
+			addr_port: addr_port.flip()
 		};
 
 		let m = diesel::insert_into(schema::store_machines::table)
@@ -264,9 +264,9 @@ impl DB {
 			return Ok(vec![]);
 		}
 
-		let mut q = store_machines.filter(id.eq(id_values[0].to_signed()));
+		let mut q = store_machines.filter(id.eq(id_values[0].flip()));
 		for id_value in &id_values[1..] {
-			q.or_filter(id.eq(id_value.to_signed()));
+			q.or_filter(id.eq(id_value.flip()));
 		}
 
 		Ok(q.get_results::<StoreMachine>(&self.conn)?)
@@ -279,7 +279,7 @@ impl DB {
 		Ok(
 			store_machines
 			.inner_join(physical_volumes)
-			.filter(schema::physical_volumes::logical_id.eq(vol.to_signed()))
+			.filter(schema::physical_volumes::logical_id.eq(vol.flip()))
 			.get_results::<(StoreMachine,PhysicalVolume)>(&self.conn)?
 			.into_iter().map(|(s, _)| { s }).collect()
 		)
@@ -295,15 +295,15 @@ impl DB {
 
 		expect_changed(
 			diesel::update(
-				store_machines.filter(id.eq(id_value.to_signed()))
+				store_machines.filter(id.eq(id_value.flip()))
 			)
 			.set((
 				ready.eq(ready_value),
 				addr_ip.eq(addr_ip_value),
-				addr_port.eq(addr_port_value.to_signed()),
+				addr_port.eq(addr_port_value.flip()),
 				last_heartbeat.eq( Utc::now() ),
-				allocated_space.eq(allocated_space_value.to_signed()),
-				total_space.eq(total_space_value.to_signed()),
+				allocated_space.eq(allocated_space_value.flip()),
+				total_space.eq(total_space_value.flip()),
 				write_enabled.eq(write_enabled_value)
 			))
 			.execute(&self.conn)?
@@ -316,7 +316,7 @@ impl DB {
 
 		expect_changed(
 			diesel::update(
-				store_machines.filter(id.eq(id_value.to_signed()))
+				store_machines.filter(id.eq(id_value.flip()))
 			)
 			.set((
 				alive.eq(alive_value),
