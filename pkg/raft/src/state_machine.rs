@@ -70,6 +70,14 @@ impl MemoryKVStateMachine {
 		}
 	}
 
+	/// Very simple, non-linearizable read operation
+	pub fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
+		let data = self.data.lock().unwrap();
+		
+		// TODO: Probably inefficient (probably better to return an Arc)
+		data.get(key).map(|v| v.clone())
+	}
+
 	/*
 	pub fn new_op(op: &KeyValueOperation) -> Bytes {
 		// Basically I want to 

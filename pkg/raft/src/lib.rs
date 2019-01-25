@@ -20,6 +20,8 @@ pub mod errors {
 		foreign_links {
 			Io(::std::io::Error);
 			HTTP(hyper::Error);
+			Utf8(std::str::Utf8Error);
+			ParseInt(std::num::ParseIntError);
 		}
 	}
 }
@@ -60,3 +62,5 @@ pub mod rpc;
 pub mod state_machine;
 pub mod server_protos;
 pub mod server;
+
+pub mod simple_log;

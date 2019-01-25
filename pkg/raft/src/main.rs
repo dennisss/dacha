@@ -11,9 +11,11 @@ extern crate rmp_serde as rmps;
 extern crate hyper;
 extern crate tokio;
 extern crate clap;
-
+extern crate bytes;
 extern crate raft;
 extern crate core;
+
+mod redis;
 
 use raft::errors::*;
 use raft::protos::*;
@@ -23,12 +25,15 @@ use raft::server::{Server, ServerInitialState};
 use raft::atomic::*;
 use raft::rpc::{marshal, unmarshal};
 use raft::server_protos::*;
+use raft::simple_log::*;
 use std::path::Path;
 use clap::{Arg, App, SubCommand};
 use std::sync::{Arc, Mutex};
 use futures::future::*;
 use core::DirLock;
 
+
+use redis::resp::*;
 
 /*
 	Some form of client interface is needed so that we can forward arbitrary entries to any server
@@ -95,6 +100,69 @@ config.members.insert(ServerDescriptor {
 */
 
 
+use raft::rpc::ServerService;
+
+use redis::server::RedisService;
+
+struct RedisIface {
+	server: Arc<Server>,
+	state_machine: Arc<MemoryKVStateMachine>
+}
+
+impl RedisService for RedisIface {
+	fn command(&self, cmd: RESPCommand) -> RESPObject {
+		let state_machine = &self.state_machine;
+		let server = &self.server;
+
+		if cmd.len() < 1 {
+			return RESPObject::Error("No command specified".as_bytes().into());
+		}
+
+		let name = String::from_utf8(cmd[0].clone().into()).unwrap().to_uppercase();
+
+		if name == "GET" {
+			let key = cmd[1].as_ref();
+			let val = state_machine.get(key);
+
+			return match val {
+				Some(v) => RESPObject::BulkString(v), // NOTE: THis implies that we have no efficient way to serialize from references anyway
+				None => RESPObject::Nil
+			};
+		}
+		else if name == "SET" {
+
+			// Simple case is that it returns a boxed future or just any type of future if we template it properly
+
+			let op = KeyValueOperation::Set {
+				key: cmd[1].clone().into(),
+				value: cmd[2].clone().into()
+			};
+
+			// XXX: If they are owned, it is better to 
+			let op_data = marshal(op).unwrap();
+
+			tokio::spawn(server.propose(raft::protos::ProposeRequest {
+				data: LogEntryData::Command(op_data)
+			})
+			.map(|_| {
+				println!("Done SET!")
+			})
+			.map_err(|e| {
+				eprintln!("{:?}", e)
+			}));
+
+			return RESPObject::SimpleString(b"OK"[..].into())
+		}
+		else if name == "COMMAND" {
+			return RESPObject::SimpleString(b"OK"[..].into())
+		}
+
+		// NOTE: this should be before uppercasing it
+		RESPObject::Error(format!("ERR unknown command '{}'", name).as_bytes().into())
+	}
+}
+
+
 fn main() -> Result<()> {
 
 	let matches = App::new("Raft")
@@ -132,6 +200,7 @@ fn main() -> Result<()> {
 
 	let meta_builder = BlobFile::builder(&dir.join("meta".to_string()))?;
 	let config_builder = BlobFile::builder(&dir.join("config".to_string()))?;
+	let log_path = &dir.join("log".to_string());
 
 	let mut is_empty: bool;
 
@@ -147,14 +216,14 @@ fn main() -> Result<()> {
 	) : (
 		ServerMetadata, BlobFile,
 		ServerConfigurationSnapshot, BlobFile,
-		MemoryLogStorage
+		SimpleLog
 	) = if meta_builder.exists() || config_builder.exists() {
 
 		let (meta_file, meta_data) = meta_builder.open()?;
 		let (config_file, config_data) = config_builder.open()?;
 
 		// TODO: Load from disk
-		let mut log = MemoryLogStorage::new();
+		let mut log = SimpleLog::open(log_path)?;
 
 		let meta = unmarshal(meta_data)?;
 		let config_snapshot = unmarshal(config_data)?;
@@ -168,7 +237,7 @@ fn main() -> Result<()> {
 		// Every single server starts with totally empty versions of everything
 		let mut meta = Metadata::default();
 		let config_snapshot = ServerConfigurationSnapshot::default();
-		let mut log = MemoryLogStorage::new();
+		let mut log = SimpleLog::create(log_path)?;
 
 
 		let mut id: ServerId;
@@ -225,16 +294,13 @@ fn main() -> Result<()> {
 
 	println!("Starting with id {}", meta.id);
 
-	let state_machine = MemoryKVStateMachine::new();
-
-	let state_machine_handle = Arc::new(state_machine);
-
+	let state_machine = Arc::new(MemoryKVStateMachine::new());
 
 	let initial_state = ServerInitialState {
 		meta, meta_file,
 		config_snapshot, config_file,
 		log: Box::new(log),
-		state_machine: state_machine_handle.clone(),
+		state_machine: state_machine.clone(),
 		last_applied: 0
 	};
 
@@ -281,8 +347,16 @@ fn main() -> Result<()> {
 		ok(())
 	});
 
+
+	let client_server = RedisIface { server: server.clone(), state_machine: state_machine.clone() };
+
+	let client_task = redis::server::run_server(Arc::new(client_server));
+
+
 	tokio::run(
-		task.join(join_cluster)
+		task
+		.join(join_cluster)
+		.join(client_task)
 		.map(|_| ())	
 	);
 

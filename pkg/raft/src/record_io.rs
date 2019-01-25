@@ -67,8 +67,8 @@ pub struct RecordIO<'a> {
 	file: File,
 	
 	off: Option<u64>,
-	recs: Vec<Record<'a>>
-	buf: [0u8; BLOCK_SIZE],
+	recs: Vec<Record<'a>>,
+	buf: Vec<u8> // [u8; BLOCK_SIZE],
 
 
 }
@@ -76,6 +76,7 @@ pub struct RecordIO<'a> {
 
 impl<'a> RecordIO<'a> {
 
+	/*
 	pub fn open(path: &Path) -> Result<Self> {
 		let file = OpenOptions::new().read(true).write(true).open(path)?;
 
@@ -92,6 +93,7 @@ impl<'a> RecordIO<'a> {
 
 
 	}
+	*/
 
 	// Generally should return the final position of the block
 	// TODO: If we want to use this for error recovery, then it must be resilient to not reading enough of the file (basically bounds check the length given always (because even corruption in earlier blocks can have the same issue))
@@ -108,7 +110,7 @@ impl<'a> RecordIO<'a> {
 
 		let mut i = 0;
 
-		while i + RECORD_HEADER_SIZE <= n {
+		while i + RECORD_HEADER_SIZE <= (n as u64) {
 
 
 
@@ -116,29 +118,31 @@ impl<'a> RecordIO<'a> {
 
 
 		self.off = Some(off);
+
+		Ok(())
 	}
 
 	pub fn append(&mut self, data: &[u8]) -> Result<()> {
 
-		let extent = self.file.seek(pos: SeekFrom::End(0))?;
+		let extent = self.file.seek(SeekFrom::End(0))?;
 
 		// Must start in the next block if we can't fit at least a single zero-length block in this block
-		let rem = block_size_remainder(BLOCK_SIZE, pos);
+		let rem = block_size_remainder(BLOCK_SIZE, extent);
 		if rem < RECORD_HEADER_SIZE {
 			extent += rem;
 			self.file.set_len(extent)?;
 			self.file.seek(SeekFrom::End(0))?;
 		}
 
-		let mut header = [0u8; RECORD_HEADER_SIZE];
+		let mut header = [0u8; RECORD_HEADER_SIZE as usize];
 
-		let mut pos = data.len();
-		while pos < data.len() {
+		let mut pos = data.len() as u64;
+		while pos < (data.len() as u64) {
 
 			let rem = block_size_remainder(BLOCK_SIZE, extent) - RECORD_HEADER_SIZE;
-			let take = std::cmp::min(rem, data.len() - pos);
+			let take = std::cmp::min(rem, (data.len() - pos) as u64);
 
-			let type =
+			let typ =
 				if pos == 0 {
 					if take == data.len() { RecordType::FULL }
 					else { RecordType::FIRST }

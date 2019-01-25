@@ -24,11 +24,11 @@ pub fn unmarshal<'de, T>(data: Bytes) -> Result<T> where T: Deserialize<'de> {
 	Deserialize::deserialize(&mut de).map_err(|e| "Failed to parse data".into())
 }
 
-pub fn marshal<T>(obj: T) -> Result<Bytes> where T: Serialize {
+pub fn marshal<T>(obj: T) -> Result<Vec<u8>> where T: Serialize {
 	let mut buf = Vec::new();
 	obj.serialize(&mut rmps::Serializer::new(&mut buf))
 		.map_err(|_| Error::from("Failed to serialize data"))?;
-	Ok(bytes::Bytes::from(buf))
+	Ok(buf)
 }
 
 
@@ -241,7 +241,7 @@ fn make_request<'a, Req, Res>(addr: &String, path: &'static str, req: &Req)
 		  Res: Deserialize<'a>	
 {
 	let data = marshal(req).expect("Failed to serialize RPC request");
-	make_request_single(addr, path, data)
+	make_request_single(addr, path, data.into())
 }
 
 // TODO: Ideally the response type in the future needs be encapsulated so that we can manage a zero-copy deserialization
