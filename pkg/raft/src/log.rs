@@ -12,6 +12,7 @@ pub struct LogPosition {
 
 // TODO: Log entries must stay in memory until they 
 
+// XXX: Also useful to have a fast estimate of the total size of the log up to now to decide on snapshotting policies
 
 pub trait LogStorage {
 

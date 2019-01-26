@@ -1,9 +1,10 @@
 
 use std::str;
 use std::borrow::Borrow;
+use bytes::Bytes;
 
 // TODO: Enforce some reasonable limit (for really large sizes approaching this limit, we probably want to implement a stream interface rather than storing the whole thing in memory)
-const BULK_STRING_SIZE_LIMIT: usize = 512*1024*1024;
+const BULK_STRING_SIZE_LIMIT: i64 = 512*1024*1024;
 
 // Constants for all of the type bytes in the protocol
 const RESP_SIMPLE_STRING: u8 = '+' as u8;
@@ -16,9 +17,9 @@ const RESP_ARRAY: u8 = '*' as u8;
 #[derive(PartialEq, Clone)]
 pub enum RESPObject {
 	Array(Vec<RESPObject>),
-	SimpleString(Vec<u8>),
-	Error(Vec<u8>),
-	BulkString(Vec<u8>),
+	SimpleString(Bytes),
+	Error(Bytes),
+	BulkString(Bytes),
 	Integer(i64),
 	Nil
 }
@@ -108,10 +109,11 @@ impl RESPObject {
 }
 
 #[derive(Clone)]
-pub struct RESPString(Vec<u8>);
+pub struct RESPString(Bytes);
 
-impl From<Vec<u8>> for RESPString { fn from(arr: Vec<u8>) -> Self { RESPString(arr) } }
-impl Into<Vec<u8>> for RESPString { fn into(self) -> Vec<u8> { self.0 } }
+impl From<Vec<u8>> for RESPString { fn from(arr: Vec<u8>) -> Self { RESPString(arr.into()) } }
+impl From<Bytes> for RESPString { fn from(arr: Bytes) -> Self { RESPString(arr) } }
+impl Into<Bytes> for RESPString { fn into(self) -> Bytes { self.0 } }
 impl Borrow<[u8]> for RESPString { fn borrow(&self) -> &[u8] { &self.0 } }
 impl AsRef<[u8]> for RESPString { fn as_ref(&self) -> &[u8] { &self.0 } }
 impl std::ops::Deref for RESPString { type Target = [u8]; fn deref(&self) -> &[u8] { &self.0 } }
@@ -330,9 +332,13 @@ impl RESPParser {
 								Produce(RESPObject::Nil)
 							}
 							else if val == 0 {
-								NextState(RESPState::DataEnd1(RESPObject::BulkString(vec![])))
+								NextState(RESPState::DataEnd1(RESPObject::BulkString(Bytes::new())))
 							}
 							else {
+								if val > BULK_STRING_SIZE_LIMIT {
+									return Err("Bulk string is too large");
+								}
+
 								NextState(RESPState::Data { len: val as usize, data: vec![] })
 							}
 						}
@@ -344,8 +350,8 @@ impl RESPParser {
 
 					if c == ('\r' as u8) {
 						NextState(RESPState::StringEnd(match kind {
-							StringKind::Error => RESPObject::Error(data),
-							StringKind::SimpleString => RESPObject::SimpleString(data)
+							StringKind::Error => RESPObject::Error(data.into()),
+							StringKind::SimpleString => RESPObject::SimpleString(data.into())
 						}))
 					}
 					else if c == ('\n' as u8) {
@@ -376,7 +382,7 @@ impl RESPParser {
 					i += take;
 
 					if data.len() == len {
-						NextState(RESPState::DataEnd1(RESPObject::BulkString(data)))
+						NextState(RESPState::DataEnd1(RESPObject::BulkString(data.into())))
 					}
 					else {
 						NextState(RESPState::Data { len, data })
@@ -498,7 +504,7 @@ mod tests {
 			(b":0\r\n", RESPObject::Integer(0)),
 			(b":-12323\r\n", RESPObject::Integer(-12323)),
 			(b"$6\r\nfoobar\r\n", RESPObject::BulkString(b"foobar"[..].into())),
-			(b"$0\r\n\r\n", RESPObject::BulkString(vec![])),
+			(b"$0\r\n\r\n", RESPObject::BulkString(Bytes::new())),
 			(b"$-1\r\n", RESPObject::Nil),
 			(b"*0\r\n", RESPObject::Array(vec![])),
 			(b"*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", RESPObject::Array(vec![

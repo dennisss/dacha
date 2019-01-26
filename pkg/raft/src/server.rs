@@ -657,7 +657,6 @@ impl ServerShared {
 		})
 	}
 
-
 	/// TODO: We must also be careful about when the commit index
 	/// Waits for some conclusion on a log entry pending committment
 	/// This can either be from it getting comitted or from it becomming never comitted
@@ -679,8 +678,6 @@ impl ServerShared {
 				(ci, ct)
 			};
 
-			
-
 			if ct > pos.term || ci >= pos.index {
 				Either::A(ok(Loop::Break(())))
 			}
@@ -694,9 +691,26 @@ impl ServerShared {
 				}))
 			}
 		})
-		
 
 		// TODO: Will we ever get a request to truncate the log without an actual committment? (either way it isn't binding to the future of this proposal until it actually comitted something that is in conflict with us)
+	}
+
+	/// Given a known to be comitted index, this waits until it is available in the state machine
+	/// NOTE: You should always first wait for an item to be comitted before waiting for it to get applied (otherwise if the leader gets demoted, then the wrong position may get applied)
+	pub fn wait_for_applied(shared: Arc<ServerShared>, pos: LogPosition) -> impl Future<Item=(), Error=Error> + Send {
+
+		loop_fn((shared, pos), |(shared, pos)| {
+
+			let guard = shared.last_applied.lock();
+			if *guard >= pos.index {
+				return Either::A(ok( Loop::Break(()) ));
+			}
+
+			let shared2 = shared.clone();
+			Either::B(guard.wait(pos.index).then(move |_| {
+				ok(Loop::Continue((shared2, pos)))
+			}))
+		})
 
 	}
 
@@ -766,33 +780,53 @@ impl rpc::ServerService for Server {
 	}) }
 
 	// TODO: This may become a ClientService method only? (although it is still sufficiently internal that we don't want just any old client to be using this)
-	fn propose(&self, req: ProposeRequest) -> rpc::ServiceFuture<ProposeResponse> { to_future_box!({
-		let mut state = self.shared.state.lock().unwrap();
+	fn propose(&self, req: ProposeRequest) -> rpc::ServiceFuture<ProposeResponse> {
 
-		let mut tick = Tick::empty();
-		let res = state.inst.propose_entry(req.data, &mut tick);
+		Box::new(to_future!({
+			let mut state = self.shared.state.lock().unwrap();
 
-		ServerShared::finish_tick(&self.shared, state, tick)?;
+			let mut tick = Tick::empty();
+			let res = state.inst.propose_entry(req.data, &mut tick);
 
-		/*
-		// TODO: This may be somewhat inefficient to relock if this is a single node cluster and is able to commit immediately 
-		let ci = self.shared.commit_index.lock();
-		ci.wait(prop).and_then(|_| {
-			// Reacquire the lock and see if we were able to make progress or if we are just done for
-		})
-		*/
+			ServerShared::finish_tick(&self.shared, state, tick)?;
 
+			if let ProposeResult::Started(prop) = res {
+				Ok((req.wait, self.shared.clone(), prop))
+			}
+			else {
+				println!("propose result: {:?}", res);
+				Err("Not implemented".into())
+			}
+		}).and_then(|(should_wait, shared, prop)| {
+			
+			if !should_wait {
+				return Either::A(ok(ProposeResponse {
+					term: prop.term,
+					index: prop.index
+				}));
+			}
 
-		if let ProposeResult::Started(prop) = res {
-			Ok(ProposeResponse {
-				term: prop.term,
-				index: prop.index
-			})
-		}
-		else {
-			println!("propose result: {:?}", res);
-			Err("Not implemented".into())
-		}
-	}) }
+			// TODO: Must ensure that wait_for_commit responses immediately if it is already comitted
+			Either::B(ServerShared::wait_for_commit(shared.clone(), prop.clone())
+			.and_then(move |_| {
+
+				let state = shared.state.lock().unwrap();
+				let res = state.inst.proposal_status(&prop);
+
+				match res {
+					ProposalStatus::Commited => ok(ProposeResponse {
+						term: prop.term,
+						index: prop.index
+					}),
+					ProposalStatus::Failed => err("Proposal failed".into()),
+					_ => {
+						println!("GOT BACK {:?}", res);
+
+						err("Proposal indeterminant".into())
+					}
+				}
+			}))
+		}))
+	}
 
 }

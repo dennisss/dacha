@@ -52,6 +52,8 @@ pub struct Metadata {
 	pub voted_for: Option<ServerId>,
 
 	/// Index of the last log entry safely replicated on a majority of servers and at same point commited in the same term
+	/// NOTE: There is no invariant between the local machines commit_index and it's match_index. The commit_index can sometimes be higher than the match_index in the case that a majority of other servers have a match_index >= commit_index
+	/// NOTE: It is not generally necessary to store this, and can be re-initialized always to at least the index of the last applied entry in the config or log snapshots
 	pub commit_index: u64
 }
 
@@ -282,9 +284,14 @@ pub struct AddServerRequest {
 
 // NOTE: This is the external interface for use by 
 
+/// Asks the server to propose a single entry to the state machine 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ProposeRequest {
-	pub data: LogEntryData
+	pub data: LogEntryData,
+
+	/// If set, then this operation will block until the proposal has been fulfilled or rejected
+	/// Otherwise the default behavior is to return a proposal that may eventually get comitted or rejected
+	pub wait: bool
 }
 
 #[derive(Serialize, Deserialize, Debug)]

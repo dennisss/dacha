@@ -16,6 +16,7 @@ use std::borrow::Borrow;
 */
 
 
+// TODO: Another big deal for the client and the server will be the Nagle packet flushing optimization
 
 // Standard serializer/deserializer we will use for most things
 
@@ -148,8 +149,7 @@ fn rpc_response<Res>(res: Result<Res>) -> hyper::Response<hyper::Body>
 
 fn run_handler<'a, S, F, Req, Res: 'static>(inst: &'a S, data: Vec<u8>, f: F)
 	-> impl Future<Item=hyper::Response<hyper::Body>, Error=hyper::Response<hyper::Body>> + Send
-	where S: ServerService,
-		  F: Fn(&S, Req) -> ServiceFuture<Res>,
+	where F: Fn(&S, Req) -> ServiceFuture<Res>,
 		  Req: Deserialize<'a>,
 		  Res: Serialize
 {

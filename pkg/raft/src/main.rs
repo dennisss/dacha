@@ -27,8 +27,8 @@ use raft::rpc::{marshal, unmarshal};
 use raft::server_protos::*;
 use raft::simple_log::*;
 use std::path::Path;
-use clap::{Arg, App, SubCommand};
-use std::sync::{Arc, Mutex};
+use clap::{Arg, App};
+use std::sync::{Arc};
 use futures::future::*;
 use core::DirLock;
 
@@ -102,63 +102,81 @@ config.members.insert(ServerDescriptor {
 
 use raft::rpc::ServerService;
 
-use redis::server::RedisService;
-
-struct RedisIface {
+struct RaftRedisServer {
 	server: Arc<Server>,
 	state_machine: Arc<MemoryKVStateMachine>
 }
 
-impl RedisService for RedisIface {
-	fn command(&self, cmd: RESPCommand) -> RESPObject {
+
+use redis::server::CommandResponse;
+use redis::resp::RESPString;
+
+impl redis::server::Service for RaftRedisServer {
+
+	fn get(&self, key: RESPString) -> CommandResponse {
+		let state_machine = &self.state_machine;
+
+		let val = state_machine.get(key.as_ref());
+
+		Box::new(ok(match val {
+			Some(v) => RESPObject::BulkString(v.into()), // NOTE: THis implies that we have no efficient way to serialize from references anyway
+			None => RESPObject::Nil
+		}))
+	}
+
+	fn set(&self, key: RESPString, value: RESPString) -> CommandResponse {
 		let state_machine = &self.state_machine;
 		let server = &self.server;
 
-		if cmd.len() < 1 {
-			return RESPObject::Error("No command specified".as_bytes().into());
-		}
+		let op = KeyValueOperation::Set {
+			key: key.as_ref().to_vec(),
+			value: value.as_ref().to_vec()
+		};
 
-		let name = String::from_utf8(cmd[0].clone().into()).unwrap().to_uppercase();
+		// XXX: If they are owned, it is better to 
+		let op_data = marshal(op).unwrap();
 
-		if name == "GET" {
-			let key = cmd[1].as_ref();
-			let val = state_machine.get(key);
+		Box::new(server.propose(raft::protos::ProposeRequest {
+			data: LogEntryData::Command(op_data),
+			wait: true
+		})
+		.map(|_| {
+			RESPObject::SimpleString(b"OK"[..].into())
+		}))
+	}
 
-			return match val {
-				Some(v) => RESPObject::BulkString(v), // NOTE: THis implies that we have no efficient way to serialize from references anyway
-				None => RESPObject::Nil
-			};
-		}
-		else if name == "SET" {
+	fn del(&self, key: RESPString) -> CommandResponse {
+		// TODO: This requires knowledge of how many keys were actually deleted (for the case of non-existent keys)
 
-			// Simple case is that it returns a boxed future or just any type of future if we template it properly
+		let state_machine = &self.state_machine;
+		let server = &self.server;
 
-			let op = KeyValueOperation::Set {
-				key: cmd[1].clone().into(),
-				value: cmd[2].clone().into()
-			};
+		let op = KeyValueOperation::Delete {
+			key: key.as_ref().to_vec()
+		};
 
-			// XXX: If they are owned, it is better to 
-			let op_data = marshal(op).unwrap();
+		// XXX: If they are owned, it is better to 
+		let op_data = marshal(op).unwrap();
 
-			tokio::spawn(server.propose(raft::protos::ProposeRequest {
-				data: LogEntryData::Command(op_data)
-			})
-			.map(|_| {
-				println!("Done SET!")
-			})
-			.map_err(|e| {
-				eprintln!("{:?}", e)
-			}));
+		Box::new(server.propose(raft::protos::ProposeRequest {
+			data: LogEntryData::Command(op_data),
+			wait: true
+		})
+		.map(|_| {
+			RESPObject::Integer(1)
+		}))
+	}
 
-			return RESPObject::SimpleString(b"OK"[..].into())
-		}
-		else if name == "COMMAND" {
-			return RESPObject::SimpleString(b"OK"[..].into())
-		}
+	fn publish(&self, channel: RESPString, object: RESPObject) -> Box<Future<Item=usize, Error=Error> + Send> {
+		Box::new(ok(0))
+	}
 
-		// NOTE: this should be before uppercasing it
-		RESPObject::Error(format!("ERR unknown command '{}'", name).as_bytes().into())
+	fn subscribe(&self, channel: RESPString) -> Box<Future<Item=(), Error=Error> + Send> {
+		Box::new(ok(()))
+	}
+
+	fn unsubscribe(&self, channel: RESPString) -> Box<Future<Item=(), Error=Error> + Send> {
+		Box::new(ok(()))
 	}
 }
 
@@ -334,7 +352,8 @@ fn main() -> Result<()> {
 		};
 
 		raft::rpc::call_propose(&leader.addr, &raft::protos::ProposeRequest {
-			data: LogEntryData::Config(ConfigChange::AddMember(this.id))
+			data: LogEntryData::Config(ConfigChange::AddMember(this.id)),
+			wait: false
 		}).then(|res| -> FutureResult<(), ()> {
 
 			println!("call_propose response: {:?}", res);
@@ -348,9 +367,12 @@ fn main() -> Result<()> {
 	});
 
 
-	let client_server = RedisIface { server: server.clone(), state_machine: state_machine.clone() };
 
-	let client_task = redis::server::run_server(Arc::new(client_server));
+	let client_server = Arc::new(redis::server::Server::new(RaftRedisServer {
+		server: server.clone(), state_machine: state_machine.clone()
+	}));
+
+	let client_task = redis::server::Server::start(client_server.clone());
 
 
 	tokio::run(

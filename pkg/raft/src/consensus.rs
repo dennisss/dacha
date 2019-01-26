@@ -22,16 +22,12 @@ use rand::RngCore;
 const ELECTION_TIMEOUT: (u64, u64) = (400, 800); 
 
 /// If the leader doesn't send anything else within this amount of time, then it will send an empty heartbeat to all followers (this default value would mean around 5 heartbeats each second)
-const HEARTBEAT_TIMEOUT: u64 = 200;
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(200);
 
 
 
 // NOTE: This is basically the same type as a LogPosition (we might as well wrap a LogPosition and make the contents of a proposal opaque to other programs using the consensus api)
-#[derive(Debug)]
-pub struct Proposal {
-	pub term: u64,
-	pub index: u64
-}
+pub type Proposal = LogPosition;
 
 
 #[derive(Debug)]
@@ -46,10 +42,15 @@ pub enum ProposeResult {
 	NotLeader { leader_hint: Option<ServerId> }
 }
 
+#[derive(Debug)]
 pub enum ProposalStatus {
 
 	/// The proposal has been safely replicated and should get applied to the state machine soon
 	Commited,
+
+	/// The proposal has been abandoned and will never be commited
+	/// Typically this means that another leader took over before the entry was fully replicated
+	Failed,
 
 	/// The proposal is still pending replication
 	Pending,
@@ -58,10 +59,6 @@ pub enum ProposalStatus {
 	/// This should only happen if a proposal was made on the leader but the status was checked on a follower
 	Missing,
 	
-	/// The proposal has been abandoned and will never be commited
-	/// Typically this means that another leader took over before the entry was fully replicated
-	Failed,
-
 	/// Implies that the status is permanently unavailable meaning that the proposal is from before the start of the raft log (only in the snapshot or no where at all)
 	Unavailable
 }
@@ -261,17 +258,46 @@ impl ConsensusModule {
 	}
 	*/
 
-
-	/*
 	/// Checks the progress of a previously iniated proposal
 	/// This can be safely queried on any server in the cluster but naturally the status on the current leader will be the first to converge
 	pub fn proposal_status(&self, prop: &Proposal) -> ProposalStatus {
-		if self.meta.commit_index >= prop.index {
-			let log = self.log.lock().unwrap();
-			log.get_term_at
+		let last_log_index = self.log.last_index().unwrap_or(0);
+		let last_log_term = self.log.term(last_log_index).unwrap();
+
+		// In this case this proposal has not yet made it into our log
+		if prop.term > last_log_term || prop.index > last_log_index {
+			return ProposalStatus::Missing;
+		}
+
+		let cur_term = match self.log.term(prop.index) {
+			Some(v) => v,
+			
+			// In this case the proposal is before the start of our log
+			None => return ProposalStatus::Unavailable
+		};
+
+		if cur_term > prop.term {
+			// This means that it was truncated in favor of a new pending entry in a newer term (log entries at a single index will only ever monotonically increase in )
+			return ProposalStatus::Failed;
+		}
+		else if cur_term < prop.term {
+			if self.meta.commit_index >= prop.index {
+				return ProposalStatus::Failed;
+			}
+			else {
+				return ProposalStatus::Missing;
+			}
+		}
+		// Otherwise we have the right term in our log
+		else {
+			if self.meta.commit_index >= prop.index {
+				return ProposalStatus::Commited;
+			}
+			else {
+				return ProposalStatus::Failed;
+			}
 		}
 	}
-	*/
 
 	// NOTE: This is only public in order to support being used by the Server class for exposing this directly as a raw rpc to other servers
 	pub fn propose_entry(&mut self, data: LogEntryData, out: &mut Tick) -> ProposeResult {
@@ -329,6 +355,7 @@ impl ConsensusModule {
 
 	// TODO: Cycle should probably be left as private but triggered by some specific 
 
+	// TODO: We need some monitoring of wether or not a tick was completely meaninless (no changes occured because of it implying that it could have been executed later)
 	// Input (meta, config, state) -> (meta, state)   * config does not get changed
 	// May produce messages and new log entries
 	// TODO: In general, we can basically always cycle until we have produced a new next_tick time (if we have not produced a duration, this implies that there may immediately be more work to be done which means that we are not done yet)
@@ -462,11 +489,7 @@ impl ConsensusModule {
 
 				// TODO: Optimize the case of a single node in which case there is no events or timeouts to wait for and the server can block indefinitely until that configuration changes
 
-				self.replicate_entries(tick);
-
-				let mut next_heartbeat = Duration::from_millis(HEARTBEAT_TIMEOUT);
-
-				// TODO: Response with a timeout based on the minimum among the remaining unnotified servers
+				let mut next_heartbeat = self.replicate_entries(tick);
 
 				// If we are the only server in the cluster, then we don't really need heartbeats at all, so we will just change this to some really large value
 				if self.config.value.members.len() + self.config.value.learners.len() == 1 {
@@ -545,7 +568,8 @@ impl ConsensusModule {
 
 	/// On the leader, this will produce requests to replicate or maintain the state of the log on all other servers in this cluster
 	/// This also handles sending out heartbeats as a base case of that process 
-	fn replicate_entries<'a>(&'a mut self, tick: &mut Tick) {
+	/// This will return the amount of time remaining until the next heartbeat
+	fn replicate_entries<'a>(&'a mut self, tick: &mut Tick) -> Duration {
 
 		let state: &'a mut ServerLeaderState = match self.state {
 			ServerState::Leader(ref mut s) => s,
@@ -584,6 +608,14 @@ impl ConsensusModule {
 			}
 		};
 
+		// Map used to duduplicate messages that will end up being exactly the same to different followers
+		let mut message_map: HashMap<u64, Message> = HashMap::new();
+
+
+		// Amount of time that has elapsed since the oldest timeout for any of the followers we are managing
+		let mut since_last_heartbeat = Duration::from_millis(0);
+
+
 		for server_id in config.iter() {
 
 			// Don't send to ourselves (the leader)
@@ -611,7 +643,15 @@ impl ConsensusModule {
 			if progress.match_index >= last_log_index {
 				if let Some(ref time) = progress.last_sent {
 					// TODO: This version of duration_since may panic
-					if tick.time.duration_since(*time) < Duration::from_millis(HEARTBEAT_TIMEOUT) {
+					// XXX: Here we can update our next hearbeat time
+
+					let elapsed = tick.time.duration_since(*time);
+
+					if elapsed < HEARTBEAT_TIMEOUT {
+						if elapsed > since_last_heartbeat {
+							since_last_heartbeat = elapsed;
+						}
+
 						continue;
 					}
 				}
@@ -623,19 +663,36 @@ impl ConsensusModule {
 			progress.request_pending = true;
 			progress.last_sent = Some(tick.time.clone());
 
-			
-			let req = new_request(progress.next_index - 1);
 
-			// This can be sent immediately and does not require that anything is made locally durable
-			tick.send(Message {
-				to: vec![*server_id],
-				body: MessageBody::AppendEntries(req, last_log_index)
-			});
+			let msg_key = progress.next_index - 1;
+			
+			// If we are already 
+			if message_map.contains_key(&msg_key) {
+				let msg = message_map.get_mut(&msg_key).unwrap();
+				msg.to.push(*server_id);
+			}
+			else {
+				let req = new_request(msg_key);
+
+				message_map.insert(msg_key, Message {
+					to: vec![*server_id],
+					body: MessageBody::AppendEntries(req, last_log_index)
+				});
+			}
 		}
 
+		// This can be sent immediately and does not require that anything is made locally durable
+		for (_, msg) in message_map.into_iter() {
+			tick.send(msg);
+		}
+
+		(HEARTBEAT_TIMEOUT - since_last_heartbeat)
 	}
 
 	fn start_election(&mut self, tick: &mut Tick) {
+
+		// TODO: If ths server has a higher commit_index than the last entry in its log, then it should never be able to win an election therefore it should not start an election
+		// TODO: This also introduces the invariant that for a leader, commit_index <= last_log_index
 
 		// Unless we are an active candidate who has already voted for themselves in the current term and we we haven't received conflicting responses, we must increment the term counter for this election
 		let must_increment = {
@@ -1093,6 +1150,7 @@ impl ConsensusModule {
 
 		// TODO: This could be zero which would be annoying
 		let mut last_new = req.prev_log_index;
+		let mut last_new_term = req.prev_log_term;
 
 		// Finally it is time to append some entries
 		if req.entries.len() - first_new > 0 {
@@ -1100,6 +1158,7 @@ impl ConsensusModule {
 			let new_entries = &req.entries[first_new..];
 
 			last_new = new_entries.last().unwrap().index;
+			last_new_term = new_entries.last().unwrap().term;
 
 			// Immediately incorporate any configuration changes
 			for e in new_entries {
@@ -1124,7 +1183,7 @@ impl ConsensusModule {
 			}
 		}
 
-		let pos = LogPosition { term: req.term, index: last_new };
+		let pos = LogPosition { term: last_new_term, index: last_new };
 
 		// NOTE: We don't need to send the last_log_index in the case of success
 		Ok(MatchConstraint::new(response(true, None), pos, self.log.clone()))
