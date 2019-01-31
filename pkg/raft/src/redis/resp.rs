@@ -185,15 +185,23 @@ enum RESPState {
 	Length { kind: LengthKind, accum: i64, sign: i8 },
 	LengthEnd { kind: LengthKind, accum: i64, sign: i8 }, // pending a '\n'
 	
-	// Used for line terminated stirngs (SimpleString and Error)
+	/// Used for line terminated strings (SimpleString and Error)
 	String { kind: StringKind, data: Vec<u8> },
-	StringEnd(RESPObject), // pending '\n'
 	
 	/// In this case we are reading a known amount of data for a BulkString
 	Data { len: usize, data: Vec<u8> },
-	DataEnd1(RESPObject), // pending '\r'
-	DataEnd2(RESPObject) // pending '\n'
+
+	Inline { arr: Vec<RESPObject>, cur: Option<Vec<u8>> },
+
+	End1(RESPObject), // pending '\r\n'
+	End2(RESPObject), // pending '\n'
 }
+
+enum InputMode {
+	Full,
+	Inline
+}
+
 
 // will be used to track arrays that we are currently building
 struct RESPStackEntry {
@@ -259,10 +267,45 @@ impl RESPParser {
 						RESP_ARRAY => {
 							RESPState::LengthSign(LengthKind::Array)
 						},
+						// Otherwise we are in inline-command mode (space separated bulk strings ending in a reference)
+						// (although the redis documentation states that this could be for anything other than '*' for command mode)
+						// TODO: Once we see an inline-mode client, we should bind t never parse regular RESP and vice-versa
+						// Thus if we were to re-use parser instances, we also want to support resetting any internal state used 
 						_ => {
-							return Err("Invalid type byte")
+							RESPState::Inline { arr: vec![], cur: Some(vec![c]) }
+							//println!("{}:: {:?}", i, buf);
+							//return Err("Invalid type byte")
 						}
 					})
+				},
+				RESPState::Inline { mut arr, mut cur } => {
+					i += 1;
+
+					if c == (' ' as u8) {
+						if let Some(data) = cur.take() {
+							arr.push(RESPObject::BulkString(data.into()));
+						}
+
+						NextState(RESPState::Inline { arr, cur })
+					}
+					else if c == ('\r' as u8) {
+						if let Some(data) = cur.take() {
+							arr.push(RESPObject::BulkString(data.into()));
+						}
+
+						NextState(RESPState::End2(RESPObject::Array(arr)))
+					}
+					else {
+						let mut data = match cur {
+							Some(v) => v,
+							None => vec![]
+						};
+
+						data.push(c);
+						cur = Some(data);
+
+						NextState(RESPState::Inline { arr, cur })
+					}
 				},
 				RESPState::LengthSign(kind) => {
 					NextState(if c == ('-' as u8) {
@@ -332,7 +375,7 @@ impl RESPParser {
 								Produce(RESPObject::Nil)
 							}
 							else if val == 0 {
-								NextState(RESPState::DataEnd1(RESPObject::BulkString(Bytes::new())))
+								NextState(RESPState::End1(RESPObject::BulkString(Bytes::new())))
 							}
 							else {
 								if val > BULK_STRING_SIZE_LIMIT {
@@ -349,7 +392,7 @@ impl RESPParser {
 					i += 1;
 
 					if c == ('\r' as u8) {
-						NextState(RESPState::StringEnd(match kind {
+						NextState(RESPState::End2(match kind {
 							StringKind::Error => RESPObject::Error(data.into()),
 							StringKind::SimpleString => RESPObject::SimpleString(data.into())
 						}))
@@ -363,16 +406,6 @@ impl RESPParser {
 						NextState(RESPState::String { kind, data })
 					}
 				},
-				RESPState::StringEnd(obj) => {
-					i += 1;
-
-					if c == ('\n' as u8) {
-						Produce(obj)
-					}
-					else {
-						return Err("String missing new line character")
-					}
-				},
 
 				RESPState::Data { len, mut data } => {
 					// Here we will try to take bytes for it if possible
@@ -382,26 +415,26 @@ impl RESPParser {
 					i += take;
 
 					if data.len() == len {
-						NextState(RESPState::DataEnd1(RESPObject::BulkString(data.into())))
+						NextState(RESPState::End1(RESPObject::BulkString(data.into())))
 					}
 					else {
 						NextState(RESPState::Data { len, data })
 					}
 				},
-				RESPState::DataEnd1(obj) => {
+				RESPState::End1(obj) => {
 					i += 1;
 
 					if c != ('\r' as u8) {
-						return Err("No CR after bulk string data")
+						return Err("No CR after object")
 					}
 
-					NextState(RESPState::DataEnd2(obj))
+					NextState(RESPState::End2(obj))
 				},
-				RESPState::DataEnd2(obj) => {
+				RESPState::End2(obj) => {
 					i += 1;
 
 					if c != ('\n' as u8) {
-						return Err("No NL after bulk string data")
+						return Err("No NL after Object")
 					}
 
 					Produce(obj)

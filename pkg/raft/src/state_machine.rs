@@ -60,7 +60,7 @@ pub enum KeyValueOperation {
 
 
 pub struct MemoryKVStateMachine {
-	data: Mutex<HashMap<Vec<u8>, Vec<u8>>>
+	data: Mutex<HashMap<Vec<u8>, Bytes>>
 }
 
 impl MemoryKVStateMachine {
@@ -71,7 +71,7 @@ impl MemoryKVStateMachine {
 	}
 
 	/// Very simple, non-linearizable read operation
-	pub fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
+	pub fn get(&self, key: &[u8]) -> Option<Bytes> {
 		let data = self.data.lock().unwrap();
 		
 		// TODO: Probably inefficient (probably better to return an Arc)
@@ -96,7 +96,7 @@ impl StateMachine for MemoryKVStateMachine {
 
 		match ret {
 			KeyValueOperation::Set { key, value } => {
-				map.insert(key, value);
+				map.insert(key, value.into());
 			},
 			KeyValueOperation::Delete { key } => {
 				map.remove(&key);

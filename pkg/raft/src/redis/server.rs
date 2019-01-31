@@ -219,11 +219,6 @@ impl<T: 'static> Server<T>
 				Err(e) => return Either::A(err(e.into()))
 			};
 
-			// This may return one of four scenarios
-			// 1. A future for a response
-			// 2. A stream for many responses
-			// 3. An immediate resposne
-			// 4. A severe error that should close the connection (aka using a request/response command in push mode)
 			let res = match Self::run_command(&inst, &client, cmd) {
 				Ok(v) => v, Err(v) => v
 			};
