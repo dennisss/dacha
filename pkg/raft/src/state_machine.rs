@@ -7,7 +7,7 @@ use std::io::Read;
 use futures::sync::oneshot;
 
 
-pub trait StateMachine {
+pub trait StateMachine<R> {
 
 	// TODO: Should probably have a check operation that validates an operation is good before a leader decide to commit them (either way we will still be consistent )	
 
@@ -16,7 +16,8 @@ pub trait StateMachine {
 
 
 	/// Should apply the given operation to the state machine immediately integrating it
-	fn apply(&self, op: &[u8]) -> Result<()>;
+	/// If successful, then some result type can be output that is persisted to disk but is made available to the task that proposed this change to receive feedback on how the operation performed
+	fn apply(&self, op: &[u8]) -> Result<R>;
 
 	/// Should retrieve the last created snapshot if any is available
 	/// This should be a cheap operation that can quickly queried to check on the last snapshot
@@ -85,12 +86,13 @@ impl MemoryKVStateMachine {
 	*/
 }
 
-impl StateMachine for MemoryKVStateMachine {
+impl StateMachine<()> for MemoryKVStateMachine {
 
 	fn apply(&self, data: &[u8]) -> Result<()> {
 		// TODO: Switch to using the common marshalling code
 		let mut de = rmps::Deserializer::new(data);
-		let ret: KeyValueOperation = Deserialize::deserialize(&mut de).unwrap();
+		let ret: KeyValueOperation = Deserialize::deserialize(&mut de)
+			.map_err(|_| Error::from("Failed to deserialize command"))?;
 
 		let mut map = self.data.lock().unwrap();
 

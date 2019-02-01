@@ -19,7 +19,7 @@ const DISK_SECTOR_SIZE: u64 = 512;
 /// 
 /// NOTE: This struct does not deal with maintaining an internal buffer of the current value, so that is someone elses problem as this is meant to be super light weight
 /// 
-/// NOTE: This assumes that this object is being given exclusive access to the given path 
+/// NOTE: This assumes that this object is being given exclusive access to the given path (meaning that the directory is locked)
 pub struct BlobFile {
 
 	// TODO: Would also be good to know the size of it 
@@ -51,7 +51,7 @@ impl BlobFile {
 	// TODO: If I wanted to be super Rusty, I could represent whether or not it exists (i.e. whether create() or open() should be called) by returning an enum here instead of relying on the user checking the value of exists() at runtime
 	pub fn builder(path: &Path) -> Result<BlobFileBuilder> {
 		let path = path.to_owned();
-		let path_tmp = path.join(".tmp");
+		let path_tmp = PathBuf::from(&(path.to_str().unwrap().to_owned() + ".tmp"));
 		
 		let dir = {
 			let path_dir = match path.parent() {

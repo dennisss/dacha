@@ -68,7 +68,7 @@ const REQUEST_TIMEOUT: u64 = 500;
 
 
 /// Represents everything needed to start up a Server object
-pub struct ServerInitialState {
+pub struct ServerInitialState<R> {
 	/// Value of the metadata initially
 	pub meta: ServerMetadata,
 	
@@ -87,7 +87,7 @@ pub struct ServerInitialState {
 	
 	/// Instantiated instance of the state machine
 	/// (either an initial empty one or one restored from a local snapshot)
-	pub state_machine: Arc<StateMachine + Send + Sync + 'static>,
+	pub state_machine: Arc<StateMachine<R> + Send + Sync + 'static>,
 	
 	/// Index of the last log entry applied to the state machine given
 	/// Should be 0 unless this is a state machine that was recovered from a snapshot
@@ -97,20 +97,21 @@ pub struct ServerInitialState {
 
 /// Represents a single node of the cluster
 /// Internally this manages the log, rpcs, and applying changes to the 
-pub struct Server {
-	shared: Arc<ServerShared>,
+pub struct Server<R> {
+	shared: Arc<ServerShared<R>>,
 }
 
 /// Server variables that can be shared by many different threads
-struct ServerShared {
+struct ServerShared<R> {
 
-	state: Mutex<ServerState>,
+
+	state: Mutex<ServerState<R>>,
 
 	// TODO: Need not have a lock for this right? as it is not mutable
 	// Definately we want to lock the LogStorage separately from the rest of this code
 	log: Arc<LogStorage + Send + Sync + 'static>,
 
-	state_machine: Arc<StateMachine + Send + Sync + 'static>,
+	state_machine: Arc<StateMachine<R> + Send + Sync + 'static>,
 
 	/// Holds the index of the log index most recently persisted to disk
 	/// This is eventually consistent with the index in the log itself
@@ -131,7 +132,7 @@ struct ServerShared {
 }
 
 /// All the mutable state for the server that you hold a lock in order to look at
-struct ServerState {
+struct ServerState<R> {
 	inst: ConsensusModule,
 
 	// TODO: Move those out
@@ -160,13 +161,16 @@ struct ServerState {
 	// The only complication would be new servers which won't have the entire config yet
 	// We could either never delete servers with ids smaller than our lates log index and/or make sure that servers are always started with a complete configuration snaphot (which includes a snaphot of the config ips + routing information)
 	// TODO: Should we make these under a different lock so that we can process messages while running the state forward (especially as sending a response requires no locking)
-	routes: HashMap<ServerId, String>
+	routes: HashMap<ServerId, String>,
+
+	/// Whenever an operation is proposed, this will store
+	callbacks: std::collections::LinkedList<(LogPosition, futures::sync::oneshot::Sender<R>)>
 }
 
-impl Server {
+impl<R: Send + 'static> Server<R> {
 
 	pub fn new(
-		initial: ServerInitialState,
+		initial: ServerInitialState<R>,
 	) -> Self {
 
 		let ServerInitialState {
@@ -213,7 +217,8 @@ impl Server {
 			meta_file, config_file,
 			state_changed: tx_state, state_receiver: Some(rx_state),
 			log_changed: tx_log, log_receiver: Some(rx_log),
-			routes
+			routes,
+			callbacks: std::collections::LinkedList::new() 
 		};
 
 		let shared = ServerShared {
@@ -239,7 +244,7 @@ impl Server {
 	// THis will need to be the thing running a tick method which must just block for events
 
 	// NOTE: If we also give it a state machine, we can do that for people too
-	pub fn start(server: Arc<Server>) -> impl Future<Item=(), Error=()> + Send + 'static {
+	pub fn start(server: Arc<Self>) -> impl Future<Item=(), Error=()> + Send + 'static {
 
 		let (id, state_changed, log_changed) = {
 			let mut state = server.shared.state.lock().expect("Failed to lock instance");
@@ -253,7 +258,7 @@ impl Server {
 			)
 		};
 
-		let service = rpc::run_server::<Arc<Server>, Server>(4000 + (id as u16), server.clone());
+		let service = rpc::run_server::<Arc<Self>, Self>(4000 + (id as u16), server.clone());
 
 		let cycler = Self::run_cycler(&server, state_changed);
 		let matcher = Self::run_matcher(&server, log_changed);
@@ -273,7 +278,7 @@ impl Server {
 
 	/// Runs the idle loop for managing the server and maintaining leadership, etc. in the case that no other events occur to drive the server
 	fn run_cycler(
-		server_handle: &Arc<Server>,
+		server_handle: &Arc<Self>,
 		state_changed: ChangeReceiver
 	) -> impl Future<Item=(), Error=()> + Send + 'static {
 
@@ -322,7 +327,7 @@ impl Server {
 	/// Flushes log entries to persistent storage as they come in
 	/// This is responsible for pushing changes to the match_index variable
 	fn run_matcher(
-		server: &Arc<Server>,
+		server: &Arc<Self>,
 		log_changed: ChangeReceiver
 	) -> impl Future<Item=(), Error=()> + Send + 'static {
 
@@ -334,7 +339,12 @@ impl Server {
 
 			// NOTE: The log object is responsible for doing its own internal locking as needed
 			// TODO: Should we make this non-blocking right now	
-			shared.log.flush();
+			if let Err(e) = shared.log.flush() {
+				eprintln!("Matcher failed to flush log: {:?}", e);
+				return Either::A(ok(Loop::Break(())));
+
+				// TODO: If something like this fails then we need to make sure that we can reject all requestions instead of stalling them for a match
+			}
 
 			// TODO: Ideally if the log requires a lock, this should use the same lock used for updating this as well (or the match_index should be returned from the flush method <- Preferably also with the term that was flushed)
 			shared.update_match_index();
@@ -342,9 +352,9 @@ impl Server {
 			// TODO: There is generally no good reason to wake up for any timeout so we will just wait for a really long time
 			let next_time = Instant::now() + Duration::from_secs(10);
 			
-			log_changed.wait(next_time).map(move |log_changed| {
+			Either::B(log_changed.wait(next_time).map(move |log_changed| {
 				Loop::Continue((shared, log_changed))
-			})
+			}))
 		})
 	}
 
@@ -418,12 +428,12 @@ impl Server {
 }
 
 
-impl ServerShared {
+impl<R: Send + 'static> ServerShared<R> {
 
 
 	// TODO: If this fails, we may need to stop the server
 	// NOTE: This function assumes that the given state guard is for the exact same state as represented within this shared state
-	pub fn finish_tick<'a>(shared: &Arc<Self>, state: MutexGuard<'a, ServerState>, tick: Tick) -> Result<()> {
+	pub fn finish_tick<'a>(shared: &Arc<Self>, state: MutexGuard<'a, ServerState<R>>, tick: Tick) -> Result<()> {
 
 		// If new entries were appended, we must notify the flusher
 		if tick.new_entries {
@@ -499,7 +509,7 @@ impl ServerShared {
 
 	/// Notifies anyone waiting on something to get committed
 	/// TODO: Realistically as long as we enforce that it atomically goes up, we don't need to have a lock on the state in order to perform this update
-	fn update_commit_index(shared: &ServerShared, state: &ServerState) {
+	fn update_commit_index(shared: &Self, state: &ServerState<R>) {
 
 		let latest_commit_index = state.inst.meta().commit_index;
 
@@ -533,7 +543,7 @@ impl ServerShared {
 		}
 	}
 
-	fn dispatch_messages(shared: &Arc<Self>, state: &ServerState, messages: Vec<Message>) {
+	fn dispatch_messages(shared: &Arc<Self>, state: &ServerState<R>, messages: Vec<Message>) {
 	
 		println!("Send {}", messages.len());
 
@@ -636,7 +646,7 @@ impl ServerShared {
 
 	// TODO: Can we more generically implement as waiting on a Constraint driven by a Condition which can block for a specific value
 	// TODO: Cleanup and try to deduplicate with Proposal polling
-	pub fn wait_for_match<T: 'static>(shared: Arc<ServerShared>, c: MatchConstraint<T>)
+	pub fn wait_for_match<T: 'static>(shared: Arc<Self>, c: MatchConstraint<T>)
 		-> impl Future<Item=T, Error=Error> + Send where T: Send
 	{
 		loop_fn((shared, c), |(shared, c)| {
@@ -661,7 +671,7 @@ impl ServerShared {
 	/// Waits for some conclusion on a log entry pending committment
 	/// This can either be from it getting comitted or from it becomming never comitted
 	/// A resolution occurs once a higher log index is comitted or a higher term is comitted
-	pub fn wait_for_commit(shared: Arc<ServerShared>, pos: LogPosition)
+	pub fn wait_for_commit(shared: Arc<Self>, pos: LogPosition)
 		-> impl Future<Item=(), Error=Error> + Send
 	{
 
@@ -697,7 +707,7 @@ impl ServerShared {
 
 	/// Given a known to be comitted index, this waits until it is available in the state machine
 	/// NOTE: You should always first wait for an item to be comitted before waiting for it to get applied (otherwise if the leader gets demoted, then the wrong position may get applied)
-	pub fn wait_for_applied(shared: Arc<ServerShared>, pos: LogPosition) -> impl Future<Item=(), Error=Error> + Send {
+	pub fn wait_for_applied(shared: Arc<Self>, pos: LogPosition) -> impl Future<Item=(), Error=Error> + Send {
 
 		loop_fn((shared, pos), |(shared, pos)| {
 
@@ -717,7 +727,7 @@ impl ServerShared {
 
 }
 
-impl rpc::ServerService for Server {
+impl<R: Send + 'static> rpc::ServerService for Server<R> {
 
 	fn pre_vote(&self, req: RequestVoteRequest) -> rpc::ServiceFuture<RequestVoteResponse> { to_future_box!({
 		let mut state = self.shared.state.lock().unwrap();

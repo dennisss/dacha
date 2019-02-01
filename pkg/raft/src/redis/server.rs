@@ -50,7 +50,6 @@ pub trait Service {
 
 enum PushObject {
 	Message(RESPString, RESPObject),
-
 	Subscribe(RESPString, usize),
 	Unsubscribe(RESPString, usize),
 	Pong(RESPString)
@@ -58,11 +57,7 @@ enum PushObject {
 
 enum Packet {
 	Push(PushObject),
-	Response(RESPObject),
-
-	// When the receiver side has been closed
-	// Currently we proceed by also closing the sender side as well
-	Close
+	Response(RESPObject)
 }
 
 type ChannelName = Vec<u8>;
@@ -80,7 +75,7 @@ struct ServerClient {
 
 	/// A handle for pushing packets to this client
 	/// NOTE: Only push messages should be sendable through this interface
-	sender: mpsc::Sender<Packet>,
+	sender: mpsc::Sender<(RESPString, RESPObject)>,
 	
 	/// All channels which this client is subscribed to
 	/// TODO: Probably cheaper to assign each channel a unique id to avoid having to store many copies to its name (or represent it as a shared Bytes array)
@@ -167,9 +162,9 @@ impl<T: 'static> Server<T>
 				None => return None // Inconsistent map
 			};
 
-			Some(client.sender.clone().send(Packet::Push(
-				PushObject::Message(channel.clone().into(), obj.clone())
-			)))
+			Some(client.sender.clone().send(
+				(channel.clone().into(), obj.clone())
+			))
 		}).collect::<Vec<_>>();
 
 		let num = futs.len();
@@ -181,13 +176,14 @@ impl<T: 'static> Server<T>
 
 	fn handle_connection(inst: Arc<Self>, sock: TcpStream) -> impl Future<Item=(), Error=()> + Send {
 
+		sock.set_nodelay(true).expect("Failed to set nodelay");
+		//sock.set_recv_buffer_size(128).expect("Failed to set rcv buffer");
+
 		let framed_sock = Framed::new(sock, RESPCodec::new());
 		let (sink, stream) = framed_sock.split();
 
-		let (tx, rx) = mpsc::channel::<Packet>(16);
-		let sender = Self::handle_connection_sender(rx, sink);
+		let (tx, rx) = mpsc::channel::<(RESPString, RESPObject)>(16);
 
-		// XXX: More important that we possess our own client id
 		let client = {
 			let mut server_state = inst.state.lock().unwrap();
 
@@ -197,10 +193,12 @@ impl<T: 'static> Server<T>
 			let client = Arc::new(Mutex::new(ServerClient {
 				id,
 				channels: HashSet::new(),
-				sender: tx.clone()
+				sender: tx
 			}));
 
 			server_state.clients.insert(id, client.clone());
+
+			println!("Start conn {}", id);
 
 			client
 		};
@@ -208,53 +206,62 @@ impl<T: 'static> Server<T>
 		let inst2 = inst.clone();
 		let client2 = client.clone();
 
-		// The reciever will also take commands sequentially from the client and sequentially send back responses for each received command in order
-		let receiver = stream
-		.map_err(|e| Error::from(e))
-		.fold((inst, client, tx), move |(inst, client, tx), obj| {
-			println!("GOT COMMAND {:?}", obj);
 
-			let cmd = match obj.into_command() {
-				Ok(c) => c,
-				Err(e) => return Either::A(err(e.into()))
+		enum Event {
+			Request(RESPObject),
+			Message(RESPString, RESPObject)
+		}
+
+		let f = stream
+			.map(|req| Event::Request(req))
+			.map_err(|e| Error::from(e))
+		.select(
+			rx
+			.map(|(channel, pkt)| Event::Message(channel, pkt))
+			.map_err(|e| Error::from("mpsc error"))	
+		)
+		.fold((inst, client, sink, false), |(inst, client, sink, is_push), item| {
+
+			// Get the next packet(s) to send
+			let out = match item {
+				Event::Request(req) => {
+					
+					let cmd = match req.into_command() {
+						Ok(c) => c,
+						Err(e) => return Either::A(err(e.into()))
+					};
+
+					let res = match Self::run_command(&inst, &client, is_push, cmd) {
+						Ok(v) => v, Err(v) => v
+					};
+
+					let out: Box<Stream<Item=Packet, Error=Error> + Send> = match res {
+						CommandResult::Imm(v) => Box::new(ok(v).map(|r| Packet::Response(r)).into_stream()),
+						CommandResult::Resp(v) => Box::new(v.map(|r| Packet::Response(r)).into_stream()),
+						CommandResult::Push(s) => Box::new(s.map(|r| Packet::Push(r))),
+						CommandResult::Fail(e) => return Either::A(err(e))
+					};
+
+					out
+				},
+				Event::Message(channel, message) => {
+					Box::new(ok(Packet::Push(PushObject::Message(channel, message))).into_stream())
+				}
 			};
 
-			let res = match Self::run_command(&inst, &client, cmd) {
-				Ok(v) => v, Err(v) => v
-			};
 
-			let out: Box<Stream<Item=Packet, Error=Error> + Send> = match res {
-				CommandResult::Imm(v) => Box::new(ok(v).map(|r| Packet::Response(r)).into_stream()),
-				CommandResult::Resp(v) => Box::new(v.map(|r| Packet::Response(r)).into_stream()),
-				CommandResult::Push(s) => Box::new(s.map(|r| Packet::Push(r))),
-				CommandResult::Fail(e) => return Either::A(err(e))
-			};
-
-			Either::B(				
-				out
-				.fold(tx, |tx, res| {
-					tx
-					.send(res)
-					// TODO: Either it was disconnected or is full? (in the case of it being full we should blobk until it isn't full), or clone the sender so that we always have a slot reserved for the responses
-					.map_err(|_| Error::from("Failed to send response"))
-				})
-				.and_then(move |tx| {		
-					ok((inst, client, tx))
-				})		
-			)
-		})
-		.and_then(|(inst, client, tx)| {
-			tx.send(Packet::Close)
-			.map_err(|e| Error::from("Failed to close other end"))
+			// Send them
+			// TODO: Currently this means that a blocking request will prevent more messages to be taken out of the mpsc (the solution to this would be to select on a list of promises which would change after each cycle if the response produces a new promise)
+			Either::B(Self::handle_connection_sender(out, sink, is_push).and_then(|(sink, is_push)| {
+				ok((inst, client, sink, is_push))
+			}))
 		});
 
-		// XXX: 
-		sender
-		.join(receiver)
+		f
 		.map_err(|e| {
 			eprintln!("IO error {:?}", e)
 		})
-		.map(|_| ())
+		.map(|v| ())
 		.then(move |_| {
 			
 			println!("Client disconnected");
@@ -270,23 +277,19 @@ impl<T: 'static> Server<T>
 	/// Responsible for all sending of responses/pushes back to the client
 	/// Waits for packets on a shared mpsc to come from the response server and from external clients and serially sends them back through the tcp connection
 	fn handle_connection_sender(
-		receiver: mpsc::Receiver<Packet>, sink: SplitSink<Framed<TcpStream, RESPCodec>>
-	) -> impl Future<Item=(), Error=Error> + Send
+		out: Box<Stream<Item=Packet, Error=Error> + Send>, sink: SplitSink<Framed<TcpStream, RESPCodec>>, is_push: bool
+	) -> impl Future<Item=(SplitSink<Framed<TcpStream, RESPCodec>>, bool), Error=Error> + Send
 	{
 
-		// TODO: If there are multiple items in the queue, ideally send them all at once
-		// ^ Probably implement our own poller that takes all ready items as they are available
-		receiver
-		.map_err(|_| Error::from("Unknown channel error"))
-		.fold((false, sink), |(mut is_push, sink), msg| {
+		out.fold((sink, is_push), |(sink, mut is_push), pkt| {
 
-			let obj = match msg {
+			let obj = match pkt {
 				Packet::Push(push) => {
 
 					match push {
 						PushObject::Message(channel, msg) => {
 							if !is_push {
-								return Either::A(ok((is_push, sink)));
+								return Either::A(ok((sink, is_push)));
 							}
 
 							RESPObject::Array(vec![
@@ -333,17 +336,14 @@ impl<T: 'static> Server<T>
 					}
 
 					obj
-				},
-				Packet::Close => {
-					return Either::A(err("Closing connection".into()))
 				}
 			};
 
 			Either::B(sink.send(obj).map_err(|e| Error::from(e)).and_then(move |sink| {
-				ok((is_push, sink))
+				ok((sink, is_push))
 			}))
+
 		})
-		.map(|_| ())
 	}
 
 	fn cleanup_client(
@@ -373,12 +373,10 @@ impl<T: 'static> Server<T>
 
 	/// TODO: Must also implement errors for running commands that don't work in the current mode (currently the responses will cause failures anyway though)
 	fn run_command(
-		inst: &Arc<Self>, client: &Arc<Mutex<ServerClient>>, mut cmd: RESPCommand
+		inst: &Arc<Self>, client: &Arc<Mutex<ServerClient>>, is_push: bool, cmd: RESPCommand
 	) -> std::result::Result<CommandResult, CommandResult> {
 
 		use self::CommandResult::*;
-
-		let is_push = false;
 
 		if cmd.len() == 0 {
 			return Ok(Imm(RESPObject::Error(b"No command specified"[..].into())));

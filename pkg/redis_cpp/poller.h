@@ -99,6 +99,7 @@ public:
 		// TODO: We can clear by closing the fd
 	}
 
+	/*
 	// See bsd timer example here: https://wiki.netbsd.org/tutorials/kqueue_tutorial/#index5h2
 	// TODO: For timers it will be very useful to attach to specific functions
 	// TODO: Ideally should 
@@ -122,6 +123,7 @@ public:
 
 		return id;
 	}
+	*/
 
 	/**
 	 * Stops a timeout given the id returned by setTimeout
@@ -186,9 +188,11 @@ public:
 					handler->handle(PollerStateWriteEOF, data);
 				}
 			}
+			/*
 			else if(te->filter == EVFILT_TIMER) {
 				handler->handle(PollerStateTimeout, te.ident);
 			}
+			*/
 		}
 
 		return 0;

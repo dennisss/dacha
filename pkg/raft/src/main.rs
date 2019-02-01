@@ -103,7 +103,7 @@ config.members.insert(ServerDescriptor {
 use raft::rpc::ServerService;
 
 struct RaftRedisServer {
-	server: Arc<Server>,
+	server: Arc<Server<()>>,
 	state_machine: Arc<MemoryKVStateMachine>
 }
 
@@ -119,7 +119,7 @@ impl redis::server::Service for RaftRedisServer {
 		let val = state_machine.get(key.as_ref());
 
 		Box::new(ok(match val {
-			Some(v) => RESPObject::BulkString(v.into()), // NOTE: THis implies that we have no efficient way to serialize from references anyway
+			Some(v) => RESPObject::BulkString(v), // NOTE: THis implies that we have no efficient way to serialize from references anyway
 			None => RESPObject::Nil
 		}))
 	}

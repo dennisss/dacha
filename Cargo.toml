@@ -5,3 +5,7 @@ members = [
 	"pkg/haystack",
 	"pkg/raft"
 ]
+
+[profile.release]
+lto = true
+panic = 'abort'

@@ -5,7 +5,11 @@
 
 
 enum RESPType {
+	// These are virtual types just used to enumerate objects produced by the parser
 	RESPTypeNil = '\x00',
+	RESPTypeInline = '\x01',
+
+	// These map directly to the type characters used in the protocol
 	RESPTypeSimpleString = '+',
 	RESPTypeError = '-',
 	RESPTypeInteger = ':',
@@ -105,6 +109,19 @@ public:
 	// Must only be called once per parse 
 	// NOTE: Only call this once the status is Done
 	std::shared_ptr<RESPObject> grab() {
+
+		// Patch fix for upgrading a single inline ping into a full array
+		// TODO: This will also split the string by whitespace into separate bulk strings
+		if(latest->type == RESPTypeInline) {
+			latest->type = RESPTypeBulkString;
+
+			auto newObj = new RESPArray();
+			newObj->type = RESPTypeArray;
+			newObj->items.push_back(latest); // The thing being that we must 
+			latest = newObj;
+		}
+
+
 		auto ptr = std::shared_ptr<RESPObject>(latest);
 		state = RESPStateType;
 		latest = NULL;
@@ -146,7 +163,12 @@ public:
 							state = RESPStateLengthSign;
 							break;
 						default:
-							GOTO_ERROR
+							ent.obj = new RESPBuffer();
+							state = RESPStateString;
+							c = RESPTypeInline;
+							i -= 1;
+							break;
+							//GOTO_ERROR
 					};
 
 					ent.obj->type = (RESPType) c;

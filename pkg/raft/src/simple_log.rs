@@ -66,18 +66,26 @@ impl LogStorage for SimpleLog {
 	}
 
 	fn flush(&self) -> Result<()> {
+		// TODO: Must also make sure to not do unnecessary updates if nothing has changed
+		// TODO: This should ideally also not hold a snapshot lock for too long as that may 
+
 		let mut s = self.snapshot.lock().unwrap();
 
 		let idx = self.mem.last_index().unwrap_or(0);
 		let mut log: Vec<LogEntry> = vec![];
 
+		let mut last_idx = s.0;
+
 		for i in 1..(idx + 1) {
-			let e = self.mem.entry(i).unwrap();
-			s.0 = e.index;
+			let e = self.mem.entry(i).expect("Failed to get entry from log");
+			last_idx = e.index;
 			log.push((*e).clone());
 		}
 
-		s.1.store(&marshal(log)?)
+		s.1.store(&marshal(log)?)?;
+		s.0 = last_idx;
+
+		Ok(())
 	}
 }
 

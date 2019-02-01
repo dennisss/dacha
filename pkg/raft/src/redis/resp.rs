@@ -197,6 +197,7 @@ enum RESPState {
 	End2(RESPObject), // pending '\n'
 }
 
+#[derive(PartialEq)]
 enum InputMode {
 	Full,
 	Inline
@@ -213,8 +214,10 @@ struct RESPStackEntry {
 }
 
 /// Stateful parser for the RESP protocol described here: https://redis.io/topics/protocol
+/// Supports both the regular format and the inline command format, but will reject intermixing of the two formats
 pub struct RESPParser {
-	state: Option<(RESPState, Vec<RESPStackEntry>)>
+	state: Option<(RESPState, Vec<RESPStackEntry>)>,
+	mode: Option<InputMode>
 }
 
 
@@ -230,7 +233,7 @@ use self::Step::*;
 impl RESPParser {
 
 	pub fn new() -> Self {
-		RESPParser { state: None }
+		RESPParser { state: None, mode: None }
 	}
 
 	/// Given some number of bytes, This will incrementally parse objects from it returning how many bytes were consumed and whether or not an object was produced
@@ -251,7 +254,10 @@ impl RESPParser {
 			let out: Step = match state {
 				RESPState::Type => {
 					i += 1;
-					NextState(match c {
+
+					let mut new_mode = InputMode::Full;
+
+					let ret = NextState(match c {
 						RESP_SIMPLE_STRING => {
 							RESPState::String { kind: StringKind::SimpleString, data: vec![] }
 						},
@@ -269,14 +275,26 @@ impl RESPParser {
 						},
 						// Otherwise we are in inline-command mode (space separated bulk strings ending in a reference)
 						// (although the redis documentation states that this could be for anything other than '*' for command mode)
-						// TODO: Once we see an inline-mode client, we should bind t never parse regular RESP and vice-versa
-						// Thus if we were to re-use parser instances, we also want to support resetting any internal state used 
 						_ => {
+							new_mode = InputMode::Inline;
 							RESPState::Inline { arr: vec![], cur: Some(vec![c]) }
 							//println!("{}:: {:?}", i, buf);
 							//return Err("Invalid type byte")
 						}
-					})
+					});
+
+
+					// For a single parser, we latch onto a single RESP mode and enforce that all objects in the future are parsed using this mode. A client should only ever choose to use one mode or another and we don't want to allow an inline command to appear inside of a full-style array
+					if let Some(ref m) = self.mode {
+						if *m != new_mode {
+							return Err("Started new object in different mode than last time");
+						}
+					}
+					else {
+						self.mode = Some(new_mode);
+					}
+
+					ret
 				},
 				RESPState::Inline { mut arr, mut cur } => {
 					i += 1;
@@ -382,7 +400,11 @@ impl RESPParser {
 									return Err("Bulk string is too large");
 								}
 
-								NextState(RESPState::Data { len: val as usize, data: vec![] })
+								let len = val as usize;
+								let mut data = vec![];
+								data.reserve_exact(len);
+
+								NextState(RESPState::Data { len, data })
 							}
 						}
 					}
@@ -409,6 +431,8 @@ impl RESPParser {
 
 				RESPState::Data { len, mut data } => {
 					// Here we will try to take bytes for it if possible
+
+					// TODO: In the case of us getting a Bytes object, we may be able to zero-copy the entire data segment out of the input without and explicit extend
 
 					let take = std::cmp::min(len - data.len(), buf.len() - i);
 					data.extend_from_slice(&buf[i..(i + take)]);
@@ -446,6 +470,7 @@ impl RESPParser {
 				NextState(s) => {
 					state = s;
 				},
+				// If we produced a complete object, then we must check if we are inside of an array
 				Produce(mut obj) => {
 					loop {
 						// If we are in an array, we will add the produced object to that array
@@ -481,12 +506,16 @@ impl RESPParser {
 
 
 pub struct RESPCodec {
-	parser: RESPParser
+	parser: RESPParser,
+	buf: Vec<u8>
 }
 
 impl RESPCodec {
 	pub fn new() -> Self {
-		RESPCodec { parser: RESPParser::new() }
+		let mut buf = vec![];
+		buf.reserve(128);
+
+		RESPCodec { parser: RESPParser::new(), buf }
 	}
 }
 
@@ -511,9 +540,9 @@ impl tokio::codec::Encoder for RESPCodec {
 
 	fn encode(&mut self, obj: Self::Item, buf: &mut bytes::BytesMut) -> Result<(), Self::Error> {
 		// TODO: Optimize to serialize directly to the bytes array
-		let mut data = vec![];
-		obj.serialize_to(&mut data);
-		buf.extend_from_slice(&data);
+		self.buf.clear();
+		obj.serialize_to(&mut self.buf);
+		buf.extend_from_slice(&self.buf);
 		Ok(())
 	}
 }
@@ -527,7 +556,7 @@ mod tests {
 
 
 	#[test]
-	fn parsing_simple() {
+	fn parsing_serialize_simple() {
 
 		// Most of these test cases are from the protocol description page
 		let cases: Vec<(&'static [u8], RESPObject)> = vec![
@@ -591,6 +620,45 @@ mod tests {
 			obj.serialize_to(&mut ser);
 			assert_eq!(&ser, s);
 		}
+
+		// Other cases to fuzz
+			// One concatenation of valid packets is valid (under one parser)
+			// For that concatenation, 
+
+	}
+
+	#[test]
+	fn parsing_inline() {
+		let cases: Vec<(&'static [u8], RESPObject)> = vec![
+			(b"PING\r\n", RESPObject::Array(vec![
+				RESPObject::BulkString(b"PING"[..].into()),
+			]))
+		];
+
+		for (s, obj) in cases.iter() {
+			let mut parser = RESPParser::new();
+			assert_eq!(
+				parser.parse(s),
+				Ok((s.len(), Some(obj.clone())))
+			);
+		}
+	}
+
+	#[test]
+	fn nil_serialize() {
+		// This is a separate test than the simple one as it assumes that we use a specific serialization case consistently for 
+
+
+	}
+
+	#[test]
+	fn failure_cases() {
+
+		// Fail on one bad packet
+
+		// Fail on good packet followed by bad packet
+
+		// 
 
 	}
 

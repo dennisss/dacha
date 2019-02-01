@@ -483,7 +483,7 @@ impl ConsensusModule {
 				*/
 
 				if let Some(ci) = next_commit_index {
-					println!("Commiting up to: {}", ci);
+					//println!("Commiting up to: {}", ci);
 					self.update_commited(ci, tick);
 				}
 
