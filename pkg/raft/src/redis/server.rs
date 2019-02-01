@@ -85,6 +85,7 @@ struct ServerClient {
 //pub type CommandHandler<T> = (Fn(&T, RESPCommand) -> CommandResponse) + Sync;
 
 
+/// Internal return value for representing the raw output of trying to execute a command
 enum CommandResult {
 	Resp(CommandResponse),
 	
@@ -112,6 +113,19 @@ struct ServerState {
 	channels: HashMap<ChannelName, HashSet<ClientId>>,
 }
 
+
+/*
+	The main issue:
+	- A client that is subscribing may end up blocking while subscriptions are running (because we must query the service)
+		- The better idea:
+		- Must be able to split off the stream and respond 
+
+	- End up selecting between three futures:
+		- Future 1: Either<Receive Request, Respond To Request>
+		- Future 2: Either<mpsc poll, Never>
+			- Ideally only poll for the mpsc upon first transition to becoming a subscriber
+			- This will also allow us to gurantee that we don't read from the mpsc until we are actually latched into this mode
+*/
 
 impl<T: 'static> Server<T>
 	where T: Service + Send + Sync
@@ -162,6 +176,7 @@ impl<T: 'static> Server<T>
 				None => return None // Inconsistent map
 			};
 
+			// TODO: Possibly convert into an unbounded sender if we are going to clone it anyway
 			Some(client.sender.clone().send(
 				(channel.clone().into(), obj.clone())
 			))
@@ -203,24 +218,31 @@ impl<T: 'static> Server<T>
 			client
 		};
 
-		let inst2 = inst.clone();
-		let client2 = client.clone();
-
 
 		enum Event {
 			Request(RESPObject),
-			Message(RESPString, RESPObject)
+			Message(RESPString, RESPObject),
+			End
 		}
+	
 
 		let f = stream
 			.map(|req| Event::Request(req))
 			.map_err(|e| Error::from(e))
+			.chain(futures::stream::once(Ok(Event::End)))
 		.select(
 			rx
 			.map(|(channel, pkt)| Event::Message(channel, pkt))
-			.map_err(|e| Error::from("mpsc error"))	
+			.map_err(|_| panic!("Unexpected mpsc error"))	
 		)
-		.fold((inst, client, sink, false), |(inst, client, sink, is_push), item| {
+		.take_while(|item| {
+			Ok(match item {
+				Event::End => false,
+				_ => true
+			})
+		})
+		// Next step is to ensure that this never fails so that we can cleanup with one instance of the client
+		.fold((inst.clone(), client.clone(), sink, false), |(inst, client, sink, is_push), item| {
 
 			// Get the next packet(s) to send
 			let out = match item {
@@ -246,9 +268,11 @@ impl<T: 'static> Server<T>
 				},
 				Event::Message(channel, message) => {
 					Box::new(ok(Packet::Push(PushObject::Message(channel, message))).into_stream())
-				}
-			};
+				},
 
+				// This should have been absorbed by our above clause
+				Event::End => panic!("Should not have gotten this far")
+			};
 
 			// Send them
 			// TODO: Currently this means that a blocking request will prevent more messages to be taken out of the mpsc (the solution to this would be to select on a list of promises which would change after each cycle if the response produces a new promise)
@@ -259,14 +283,20 @@ impl<T: 'static> Server<T>
 
 		f
 		.map_err(|e| {
-			eprintln!("IO error {:?}", e)
+
+			// Ignoring typical errors
+			if let Error(ErrorKind::Io(ref eio), _) = e {
+				// This is triggered by a client that disconnects early while we are sending it data
+				if eio.kind() == std::io::ErrorKind::ConnectionReset {
+					return ();
+				}
+			}
+
+			eprintln!("Client Error: {:?}", e)
 		})
 		.map(|v| ())
 		.then(move |_| {
-			
-			println!("Client disconnected");
-
-			Self::cleanup_client(inst2, client2)
+			Self::cleanup_client(inst, client)
 			.map_err(|e| {
 				eprintln!("Error while disconnecting {:?}", e)
 			})
@@ -364,7 +394,7 @@ impl<T: 'static> Server<T>
 			let mut state = inst.state.lock().unwrap();
 			state.clients.remove(&id);
 
-			println!("Client fully disconnected!");
+			println!("Client disconnected!");
 
 			res
 		})

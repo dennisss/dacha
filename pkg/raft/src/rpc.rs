@@ -175,7 +175,7 @@ fn run_handler<'a, S, F, Req, Res: 'static>(inst: &'a S, data: Vec<u8>, f: F)
 
 
 // TODO: We could make it not arc if we can maintain some type of handler that definitely outlives the future being returned
-
+// TODO: If we can provide a generic router, then we can abstract away the fact that it is for a ServerService
 pub fn run_server<R: 'static, S: 'static>(port: u16, inst: R) -> impl Future<Item=(), Error=()>
 	where R: Borrow<S> + Clone + Send + Sync,
 		  S: ServerService + Send + Sync

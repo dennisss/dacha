@@ -30,17 +30,18 @@ const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(200);
 pub type Proposal = LogPosition;
 
 
-#[derive(Debug)]
-pub enum ProposeResult {
-	/// The entry has been accepted and may eventually be committed with the given proposal	
-	Started(Proposal),
+/// On success, the entry has been accepted and may eventually be committed with the given proposal	
+pub type ProposeResult = std::result::Result<Proposal, ProposeError>;
 
+#[derive(Debug)]
+pub enum ProposeError {
 	/// Implies that the entry can not currently be processed and should be retried once the given proposal has been resolved
 	RetryAfter(Proposal),
 	
 	/// The entry can't be proposed by this server because we are not the current leader
 	NotLeader { leader_hint: Option<ServerId> }
 }
+
 
 #[derive(Debug)]
 pub enum ProposalStatus {
@@ -315,10 +316,10 @@ impl ConsensusModule {
 			if let LogEntryData::Config(_) = data {
 				// TODO: Refactor out this usage of the pending redister
 				if let Some(ref pending) = self.config.pending {
-					return ProposeResult::RetryAfter(Proposal {
+					return Err(ProposeError::RetryAfter(Proposal {
 						index: pending.last_change,
 						term: self.log.term(pending.last_change).unwrap()
-					});
+					}));
 				}
 			}
 
@@ -341,13 +342,13 @@ impl ConsensusModule {
 			// Cycle the state to replicate this entry to other servers
 			self.cycle(out);			
 
-			ProposeResult::Started(Proposal { term, index })
+			Ok(Proposal { term, index })
 		}
 		else if let ServerState::Follower(ref s) = self.state {
-			ProposeResult::NotLeader { leader_hint: s.last_leader_id }
+			Err(ProposeError::NotLeader { leader_hint: s.last_leader_id })
 		}
 		else {
-			ProposeResult::NotLeader { leader_hint: None }
+			Err(ProposeError::NotLeader { leader_hint: None })
 		}
 	}
 
@@ -407,8 +408,18 @@ impl ConsensusModule {
 		// Perform state changes
 		match summary {
 			ServerStateSummary::Follower { elapsed, election_timeout } => {
+
+				if !self.can_be_leader() {
+					if self.config.value.members.len() == 1 {
+						// In this scenario it is impossible for the cluster to progress
+						panic!("Corrupt log in single-node mode will not allow us to become the leader");
+					}
+
+					// Can not become a leader, so just wait keep deferring the election until we can potentially elect ourselves
+					self.state = Self::new_follower(tick.time.clone());
+				}
 				// NOTE: If we are the only server in the cluster, then we can trivially win the election without waiting
-				if elapsed >= election_timeout || self.config.value.members.len() == 1 {
+				else if elapsed >= election_timeout || self.config.value.members.len() == 1 {
 					self.start_election(tick);					
 				}
 				else {
@@ -442,13 +453,12 @@ impl ConsensusModule {
 
 					// We are starting our leadership term with at least one uncomitted entry from a pervious term. To immediately commit it, we will propose a no-op
 					if self.meta.commit_index < last_log_index {
-						self.propose_noop(tick);
+						self.propose_noop(tick).expect("Failed to propose self noop as the leader");
 					}
 
-					// On the next cycle we will be a leader
+					// On the next cycle we issue initial heartbeats as the leader
 					self.cycle(tick);
 
-					// XXX: Hopefully a time will be returned by cycle that we ran above
 					return;
 				}
 				else {
@@ -506,6 +516,12 @@ impl ConsensusModule {
 		};
 
 		// TODO: Otherwise, no timeout till next tick?
+	}
+
+	/// Leaders are allowed to commit entries before they are locally matches
+	/// This means that a leader that has crashed and restarted may not have all of the entries that it has commited. In this case, it cannot become the leader again until it is resynced
+	fn can_be_leader(&self) -> bool {
+		self.log.last_index().unwrap_or(0) >= self.meta().commit_index
 	}
 
 
@@ -663,7 +679,9 @@ impl ConsensusModule {
 			progress.request_pending = true;
 			progress.last_sent = Some(tick.time.clone());
 
-
+			// TODO: See the pipelining section of the thesis
+			// - We can optimistically increment the next_index as soon as we send this request
+			// - Combining with some scenario for throttling the maximum number of requests that can go through to a single server at a given time, we can send many append_entries in a row to a server before waiting for previous ones to suceed
 			let msg_key = progress.next_index - 1;
 			
 			// If we are already 
@@ -690,6 +708,11 @@ impl ConsensusModule {
 	}
 
 	fn start_election(&mut self, tick: &mut Tick) {
+
+		// Will be triggerred by a timeoutnow request
+		if !self.can_be_leader() {
+			panic!("We can not be the leader of this cluster");
+		}
 
 		// TODO: If ths server has a higher commit_index than the last entry in its log, then it should never be able to win an election therefore it should not start an election
 		// TODO: This also introduces the invariant that for a leader, commit_index <= last_log_index
@@ -861,6 +884,8 @@ impl ConsensusModule {
 
 		self.observe_term(resp.term, tick);
 
+		let mut should_noop = false;
+
 		let should_cycle = if let ServerState::Leader(ref mut s) = self.state {
 			// TODO: Across multiple election cycles, this may no longer be available
 			let mut progress = s.servers.get_mut(&from_id).unwrap();
@@ -869,6 +894,18 @@ impl ConsensusModule {
 				if last_index > progress.match_index { // NOTE: THis condition should only be needed if we allow multiple concurrent requests to occur
 					progress.match_index = last_index;
 					progress.next_index = last_index + 1;
+				}
+
+				// On success, a server will send back the index of the very very end of its log
+				// If it has a longer log than us, then that means that it was probably a former leader or talking to a former leader and has uncommited entries (so we will perform a no-op if we haven't yet in our term in order to truncate the follower's log)
+				// NOTE: We could alternatively just send nothing upon successful appends and remove this block of code if we just unconditionally always send a no-op as soon as any node becomes a leader
+				if let Some(idx) = resp.last_log_index {
+					let last_log_index = self.log.last_index().unwrap_or(0);
+					let last_log_term = self.log.term(last_log_index).unwrap();
+
+					if idx > last_log_index && last_log_term != self.meta.current_term {
+						should_noop = true;
+					}
 				}
 			}
 			else {
@@ -892,7 +929,10 @@ impl ConsensusModule {
 			false
 		};
 
-		if should_cycle {
+		if should_noop {
+			self.propose_noop(tick).expect("Failed to propose noop as leader");
+		}
+		else if should_cycle {
 			// In case something above was mutated, we will notify the cycler to trigger any additional requests to be dispatched
 			self.cycle(tick);
 		}
@@ -949,7 +989,7 @@ impl ConsensusModule {
 				// If the terms are equal, the index of the entry must be at least as far along as ours
 				(req.last_log_term == last_log_term && req.last_log_index >= last_log_index)
 
-				// If the request has a log term smaller than us, then it is trivially up to date
+				// If the request has a log term smaller than us, then it is trivially not up to date
 			};
 
 			if !up_to_date {
@@ -1022,7 +1062,7 @@ impl ConsensusModule {
 			AppendEntriesResponse {
 				term: current_term,
 				success,
-				last_log_index // TODO: This is tricky as in some error cases, this shouldprobably be a different value than the most recent one in our logs
+				last_log_index
 			}
 		};
 
@@ -1121,6 +1161,8 @@ impl ConsensusModule {
 					self.config.revert(e.index);
 
 					// Should truncate every entry including and after e.index
+					// The question is: if a commit is removed from the log, will it ever reappear
+					// TODO: Will a truncation ever occur based only on the previous index
 					self.log.truncate_suffix(e.index);
 
 					break;
@@ -1185,8 +1227,15 @@ impl ConsensusModule {
 
 		let pos = LogPosition { term: last_new_term, index: last_new };
 
+		// XXX: On success, send back the last index in our log
+		// If the server sees that the last_log_index of a follower is higher than its log size, then it needs to apply a no-op (if one has never been created before in order to )
 		// NOTE: We don't need to send the last_log_index in the case of success
-		Ok(MatchConstraint::new(response(true, None), pos, self.log.clone()))
+		// TODO: Ideally optimize away cloning the log in this return value
+		let last_log_index = self.log.last_index().unwrap_or(0);
+		Ok(MatchConstraint::new(
+			response(true, if last_log_index != last_new { Some(last_log_index) } else { None }),
+			pos, self.log.clone()
+		))
 	}
 
 	pub fn timeout_now(&mut self, req: TimeoutNow, tick: &mut Tick) -> Result<()> {

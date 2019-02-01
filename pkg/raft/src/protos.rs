@@ -41,12 +41,17 @@ use std::borrow::Borrow;
 /// Type used to uniquely identify each server. These are assigned automatically and increment monotonically starting with the first server having an id of 1 and will never repeat with new servers
 pub type ServerId = u64;
 
+pub type Term = u64;
+
+pub type LogIndex = u64;
+
+
 /// Persistent information describing the state of the current server
 #[derive(Serialize, Deserialize)]
 pub struct Metadata {
 
 	/// Latest term seen by this server (starts at 0)
-	pub current_term: u64,
+	pub current_term: Term,
 
 	/// The id of the server that we have voted for in the current term
 	pub voted_for: Option<ServerId>,
@@ -54,7 +59,7 @@ pub struct Metadata {
 	/// Index of the last log entry safely replicated on a majority of servers and at same point commited in the same term
 	/// NOTE: There is no invariant between the local machines commit_index and it's match_index. The commit_index can sometimes be higher than the match_index in the case that a majority of other servers have a match_index >= commit_index
 	/// NOTE: It is not generally necessary to store this, and can be re-initialized always to at least the index of the last applied entry in the config or log snapshots
-	pub commit_index: u64
+	pub commit_index: LogIndex
 }
 
 impl Default for Metadata {
@@ -106,7 +111,7 @@ impl Borrow<ServerId> for ServerDescriptor {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConfigurationSnapshot {
 	/// Index of the last log entry applied to this configuration
-	pub last_applied: u64,
+	pub last_applied: LogIndex,
 
 	/// Value of the snapshot at the given index (TODO: This is the only type that actually needs to be serializiable, so it could be more verbose for all I care)
 	pub data: Configuration
@@ -114,7 +119,7 @@ pub struct ConfigurationSnapshot {
 
 #[derive(Serialize)]
 pub struct ConfigurationSnapshotRef<'a> {
-	pub last_applied: u64,
+	pub last_applied: LogIndex,
 	pub data: &'a Configuration
 }
 
@@ -230,8 +235,8 @@ pub enum LogEntryData {
 /// TODO: Over the wire, the term number can be skipped if it is the same as the current term of the whole message of is the same as a previous entry
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogEntry {
-	pub index: u64,
-	pub term: u64,
+	pub index: LogIndex,
+	pub term: Term,
 	pub data: LogEntryData
 }
 
@@ -239,35 +244,35 @@ pub struct LogEntry {
 /// NOTE: The entries will be assumed to be 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppendEntriesRequest {
-	pub term: u64,
+	pub term: Term,
 	pub leader_id: ServerId, // < NOTE: For the bootstrapping process, this will be 0
-	pub prev_log_index: u64,
-	pub prev_log_term: u64,
+	pub prev_log_index: LogIndex,
+	pub prev_log_term: Term,
 	pub entries: Vec<LogEntry>, // < We will assume that these all have sequential indexes and don't need to be explicitly mentioned
-	pub leader_commit: u64
+	pub leader_commit: LogIndex
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppendEntriesResponse {
-	pub term: u64,
+	pub term: Term,
 	pub success: bool,
 
 	// this is an addon to what is mentioned in the original research paper so that the leader knows what it needs to replicate to this server
-	pub last_log_index: Option<u64>,
+	pub last_log_index: Option<LogIndex>,
 
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestVoteRequest {
-	pub term: u64,
-	pub candidate_id: u64, // < TODO: This doesn't 'need' to be sent if we pre-establish this server's identity and on the connection layer and we are not proxying a request for someone else
-	pub last_log_index: u64,
-	pub last_log_term: u64
+	pub term: Term,
+	pub candidate_id: ServerId, // < TODO: This doesn't 'need' to be sent if we pre-establish this server's identity and on the connection layer and we are not proxying a request for someone else
+	pub last_log_index: LogIndex,
+	pub last_log_term: Term
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RequestVoteResponse {
-	pub term: u64, // < If granted then this is redundant as it will only ever grant a vote for the same up-to-date term
+	pub term: Term, // < If granted then this is redundant as it will only ever grant a vote for the same up-to-date term
 	pub vote_granted: bool
 }
 
@@ -297,8 +302,8 @@ pub struct ProposeRequest {
 #[derive(Serialize, Deserialize, Debug)]
 // XXX: Ideally should only be given as a response once the entries have been comitted
 pub struct ProposeResponse {
-	pub term: u64,
-	pub index: u64
+	pub term: Term,
+	pub index: LogIndex
 }
 
 // Upon being received a server should immediatley timeout and start its own election
@@ -312,7 +317,7 @@ pub struct TimeoutNow {
 pub enum MessageBody {
 	PreVote(RequestVoteRequest),
 	RequestVote(RequestVoteRequest),
-	AppendEntries(AppendEntriesRequest, u64) // The u64 is the last_index of the original request (naturally not needed if we support retaining the original request while receiving the response)
+	AppendEntries(AppendEntriesRequest, LogIndex) // The index is the last_index of the original request (naturally not needed if we support retaining the original request while receiving the response)
 }
 
 pub struct Message {

@@ -13,6 +13,7 @@ use std::time::Instant;
 use futures::future::*;
 use futures::prelude::*;
 use futures::{Future, Stream};
+use futures::sync::oneshot;
 
 use std::collections::{HashMap};
 use std::time::{Duration};
@@ -64,7 +65,22 @@ const REQUEST_TIMEOUT: u64 = 500;
 			- Or enforce a durability level for old and aged entries
 */
 
+/*
+	Other scenarios:
+	- Ticks may be cumulative
+	- AKA use a single tick objectict to accumulate multiple changes to the metadata and to messages that must be sent out
+	- With messages, we want some method of telling the ConsensusModule to defer generating messages until everything is said and done (to avoid the situation of creating multiple messages where the initial ones could be just not sent given future information processed by the module)
+
+	- This would require that 
+*/
+
 // TODO: Would also be nice to have some warning of when a disk operation is required to read back an entry as this is generally a failure on our part
+
+pub enum ExecuteError {
+	Propose(ProposeError),
+	NoResult,
+	// Also possibly that it just plain old failed to be committed
+}
 
 
 /// Represents everything needed to start up a Server object
@@ -149,6 +165,9 @@ struct ServerState<R> {
 	/// TODO: The events don't need a lock (but if we are locking, then we might as well use it right)
 	state_changed: ChangeSender, state_receiver: Option<ChangeReceiver>,
 
+	/// The next time at which a cycle is planned to occur at (used to deduplicate notifying the state_changed event)
+	scheduled_cycle: Option<Instant>,
+
 	/// Triggered whenever a new entry has been queued onto the log
 	/// Used to trigger the log to get flushed to persistent storage
 	log_changed: ChangeSender, log_receiver: Option<ChangeReceiver>,
@@ -163,8 +182,8 @@ struct ServerState<R> {
 	// TODO: Should we make these under a different lock so that we can process messages while running the state forward (especially as sending a response requires no locking)
 	routes: HashMap<ServerId, String>,
 
-	/// Whenever an operation is proposed, this will store
-	callbacks: std::collections::LinkedList<(LogPosition, futures::sync::oneshot::Sender<R>)>
+	/// Whenever an operation is proposed, this will store callbacks that will be given back the result once it is applied
+	callbacks: std::collections::LinkedList<(LogPosition, oneshot::Sender<Option<R>>)>
 }
 
 impl<R: Send + 'static> Server<R> {
@@ -216,12 +235,13 @@ impl<R: Send + 'static> Server<R> {
 			inst,
 			meta_file, config_file,
 			state_changed: tx_state, state_receiver: Some(rx_state),
+			scheduled_cycle: None,
 			log_changed: tx_log, log_receiver: Some(rx_log),
 			routes,
 			callbacks: std::collections::LinkedList::new() 
 		};
 
-		let shared = ServerShared {
+		let shared = Arc::new(ServerShared {
 			state: Mutex::new(state),
 			log,
 			state_machine,
@@ -231,17 +251,16 @@ impl<R: Send + 'static> Server<R> {
 			commit_index: Condvar::new(LogPosition { index: 0, term: 0 }),
 
 			last_applied: Condvar::new(last_applied)
-		};
+		});
 
-		shared.update_match_index();
+
+		ServerShared::update_match_index(&shared);
 		ServerShared::update_commit_index(&shared, &shared.state.lock().unwrap());
 
 		Server {
-			shared: Arc::new(shared)
+			shared
 		}
 	}
-
-	// THis will need to be the thing running a tick method which must just block for events
 
 	// NOTE: If we also give it a state machine, we can do that for people too
 	pub fn start(server: Arc<Self>) -> impl Future<Item=(), Error=()> + Send + 'static {
@@ -278,44 +297,40 @@ impl<R: Send + 'static> Server<R> {
 
 	/// Runs the idle loop for managing the server and maintaining leadership, etc. in the case that no other events occur to drive the server
 	fn run_cycler(
-		server_handle: &Arc<Self>,
+		server: &Arc<Self>,
 		state_changed: ChangeReceiver
 	) -> impl Future<Item=(), Error=()> + Send + 'static {
 
-		let shared_handle = server_handle.shared.clone();
+		let shared = server.shared.clone();
 		
-		loop_fn((shared_handle, state_changed), |(shared_handle, state_changed)| {
+		loop_fn((shared, state_changed), |(shared, state_changed)| {
 
-			let tick_time: Instant;
-			let mut wait_time = Duration::from_millis(0);
+			// TODO: For a single node, we should almost never need to cycle
+			println!("Run cycler");
 
-			{
-				let mut state = shared_handle.state.lock().expect("Failed to lock server instance");
+			let next_cycle = ServerShared::run_tick(&shared, |state, tick| {
 
-				let mut tick = Tick::empty();
-				state.inst.cycle(&mut tick);
-
-				tick_time = tick.time.clone();
+				state.inst.cycle(tick);
 
 				// NOTE: We take it so that the finish_tick doesn't re-trigger this loop and prevent sleeping all together
 				if let Some(d) = tick.next_tick.take() {
-					wait_time = d;
+					let t = tick.time + d;
+					state.scheduled_cycle = Some(t.clone());
+					t
 				}
 				else {
 					// TODO: Ideally refactor to represent always having a next time as part of every operation
 					eprintln!("Server cycled with no next tick time");
+					tick.time
 				}
+			});
 
-				// Now tick must have a reference to the 
-				// TODO: Ideally have this run without the need for the state to be held
-				ServerShared::finish_tick(&shared_handle, state, tick);
-			}
+			// TODO: Currently issue being that this gets run every single time something gets comitted (even though that usually doesn't really matter)
+			// Cycles like this should generally only be for heartbeats or replication events and nothing else
+			//println!("Sleep {:?}", wait_time);
 
-			println!("Sleep {:?}", wait_time);
-
-			// TODO: If not necessary, we should be able to support zero-wait cycles (although now those should never happen as the consensus module should internally now always converge in one run)
-			state_changed.wait(tick_time + wait_time).map(move |state_changed| {
-				Loop::Continue((shared_handle, state_changed))
+			state_changed.wait_until(next_cycle).map(move |state_changed| {
+				Loop::Continue((shared, state_changed))
 			})
 		})
 		.map_err(|_| {
@@ -335,6 +350,8 @@ impl<R: Send + 'static> Server<R> {
 
 		let shared = server.shared.clone();
 
+		// XXX: We can also block once the server is shutting down
+
 		loop_fn((shared, log_changed), |(shared, log_changed)| {
 
 			// NOTE: The log object is responsible for doing its own internal locking as needed
@@ -344,15 +361,14 @@ impl<R: Send + 'static> Server<R> {
 				return Either::A(ok(Loop::Break(())));
 
 				// TODO: If something like this fails then we need to make sure that we can reject all requestions instead of stalling them for a match
+
+				// TODO: The other issue is that if the failure is not completely atomic, then the index may have been updated in the log internals incorrectly without the flush following through properly
 			}
 
 			// TODO: Ideally if the log requires a lock, this should use the same lock used for updating this as well (or the match_index should be returned from the flush method <- Preferably also with the term that was flushed)
-			shared.update_match_index();
+			ServerShared::update_match_index(&shared);
 
-			// TODO: There is generally no good reason to wake up for any timeout so we will just wait for a really long time
-			let next_time = Instant::now() + Duration::from_secs(10);
-			
-			Either::B(log_changed.wait(next_time).map(move |log_changed| {
+			Either::B(log_changed.wait().map(move |log_changed| {
 				Loop::Continue((shared, log_changed))
 			}))
 		})
@@ -362,14 +378,25 @@ impl<R: Send + 'static> Server<R> {
 	/// This is the exclusive modifier of the last_applied shared variable and is also responsible for triggerring snapshots on the state machine when we want one to happen
 	/// NOTE: If this thing fails, we can still participate in raft but we can not perform snapshots or handle read/write queries 
 	fn run_applier(
-		server: &Arc<Server>
+		server: &Arc<Self>
 	) -> impl Future<Item=(), Error=()> + Send + 'static {
 
-		loop_fn(server.shared.clone(), |shared| {
+
+		loop_fn((server.shared.clone(), std::collections::LinkedList::new()), |(shared, mut callbacks)| {
 
 			let commit_index = shared.commit_index.lock().index;
 			let mut last_applied = *shared.last_applied.lock();
 			
+			// Take ownership of all pending callbacks (as long as a callback is appended to the list before the commit_index variable is incremented, this should always see them)
+			{
+				let mut state = shared.state.lock().unwrap();
+				callbacks.append(&mut state.callbacks);
+			}
+
+			// TODO: Suppose we have the item in our log but it gets truncated, then in this case, callbacks will all be blocked until a new operation of some type is proposed
+
+			{
+
 			let state_machine = &shared.state_machine;
 
 			// Apply all committed entries to state machine
@@ -377,20 +404,58 @@ impl<R: Send + 'static> Server<R> {
 				let entry = shared.log.entry(last_applied + 1);
 				if let Some(e) = entry {
 					
-					if let LogEntryData::Command(ref data) = e.data {
-						// TODO: This may error out (in which case we have a really big problem as we can't progress )
-						// TODO:
-						state_machine.apply(data);
+					let ret = if let LogEntryData::Command(ref data) = e.data {
+						match state_machine.apply(data) {
+							Ok(v) => Some(v),
+							Err(e) => {
+								// TODO: Ideally notify everyone that all progress has been halted
+								// If we are the leader, then we should probably demote ourselves to a healthier node
+								eprintln!("Applier failed to apply to state machine: {:?}", e);
+								return Either::A(ok(Loop::Break(())));
+							}
+						}
+					} else {
+						// Other types of log entries produce no output and generally any callbacks specified shouldn't expect any output
+						None
+					};
+
+					// Resolve/reject callbacks waiting for this change to get commited
+					// TODO: In general, we should assert that the linked list is monotonically increasing always based on proposal indexes
+					// TODO: the other thing is that callbacks can be rejected early in the case of something newer getting commited which would override it
+					while callbacks.len() > 0 {
+						let first = callbacks.front().unwrap().0.clone();
+
+						if e.term > first.term || e.index >= first.index {
+							let item = callbacks.pop_front().unwrap();
+
+							if e.term == first.term && e.index == first.term {
+								item.1.send(ret);
+								break; // NOTE: This is not really necessary as it should immediately get completed on the next run through the loop by the other break 
+							}
+							// Otherwise, older than the current entry
+							else {
+								item.1.send(None);
+							}
+						}
+						// Otherwise possibly more recent than the current commit
+						else {
+							break;
+						}
 					}
+
 
 					last_applied += 1;
 				}
 				else {
 					// Our log may be behind the commit_index in the consensus module, but the commit_index conditional variable should always be at most at the newest value in our log
+					// (so if we see this, then we have a bug somewhere in this file)
 					eprintln!("Need to apply an entry not in our log yet");
 					break;
 				}
 			}
+
+			}
+
 
 			// Update last_applied
 			{
@@ -401,27 +466,96 @@ impl<R: Send + 'static> Server<R> {
 				}
 			}
 
-			// Wait for the next time commit_index changes 
-			{
+			// Wait for the next time commit_index changes
+			let waiter = {
 				let guard = shared.commit_index.lock();
 
 				// If the commit index changed since last we checked, we can immediately cycle again
 				if guard.index != commit_index {
 					// We can immediately cycle again
-					return Either::A(ok(Loop::Continue(shared.clone())));
+					// TODO: We should be able to refactor out this clone
+					return Either::A(ok(Loop::Continue((shared.clone(), callbacks))));
 				}
 
-				let shared2 = shared.clone();
+				guard.wait(LogPosition { term: 0, index: 0 })
+			};
 
-				// Otherwise we will wait for it to change
-				Either::B(
-					guard.wait(LogPosition { term: 0, index: 0 })
-					.then(move |_| {
-						ok(Loop::Continue(shared2))
-					})
-				)
-			}
+			// Otherwise we will wait for it to change
+			Either::B(
+				waiter
+				.then(move |_| {
+					ok(Loop::Continue((shared, callbacks)))
+				})
+			)
 		})
+	}
+
+
+	// Executing a command remotely from a non-leader
+	// -> 'Pause' the throw-away of unused results on the applier
+	// -> Instead append them to an internal buffer
+	// -> Probably best to assign it a client identifier (The only difference is that this will be a client interface which will asyncronously determine that a change is our own)
+	// -> Propose a change
+	// -> Hope that we get the response back from propose before we advance the state machine beyond that point (with issue being that we don't know the index until after the propose responds)
+	// -> Then use the locally available result to resolve the callback as needed
+
+	/*
+		The ordering assertion:
+		- given that we receive back the result of AppendEntries before that of 
+
+		- Simple compare and set operation
+			- requires having a well structure schema
+			- Compare and set is most trivial to do if we have a concept of a key version
+			- any change to the key resets it's version
+			- Versions are monotonic timestamps associated with the key
+				- We will use the index of the entry being applied for this
+				- This will allow us to get proper behavior across deletions of a key as those would remove the key properly
+				- Future edits would require that the version is <= the read_index used to fetch the deleted key
+	*/
+
+
+	/*
+		Upon losing our position as leader, callbacks may still end up being applied
+		- But if multiple election timeouts pass without a callback making any progress (aka we are no longer the leader and don't can't communicate with the current leader), then callbacks should be timed out
+	*/
+
+	/// Will propose a new change and will return a future that resolves once it has either suceeded to be executed, or has failed
+	/// General failures include: 
+	/// - For what ever reason we missed the timeout <- NoResult error
+	/// - Not the leader     <- ProposeError
+	/// - Commit started but was overriden <- In this case we should (for this we may want ot wait for a commit before )
+	/// 
+	/// NOTE: In order for this to resolve in all cases, we assume that a leader will always issue a no-op at the start of its term if it notices that it has uncommited entries in its own log or if it notices that another server has uncommited entries in its log
+	/// NOTE: If we are the leader and we lose contact with our followers or if we are executing via a connection to a leader that we lose, then we should trigger all pending callbacks to fail because of timeout
+	pub fn execute(&self, cmd: Vec<u8>) -> impl Future<Item=R, Error=ExecuteError> + Send {
+
+		let res = ServerShared::run_tick(&self.shared, |state, tick| {
+			let r = state.inst.propose_entry(LogEntryData::Command(cmd), tick);
+
+			r.map(|prop| {
+				let (tx, rx) = oneshot::channel();
+				state.callbacks.push_back((prop, tx));
+				rx
+			})
+		});
+
+		let rx = match res {
+			Ok(v) => v,
+			Err(e) => return Either::A(err(ExecuteError::Propose(e)))
+		};
+
+		Either::B(rx
+		.map_err(|e| ExecuteError::NoResult) // TODO: Check what this one is
+		.and_then(|v| {
+			match v {
+				Some(v) => ok(v),
+
+				// TODO: In this case, we would like to distinguish between an operation that was rejected and one that is known to have properly failed
+				// ^ If we don't know if it will ever be applied, then we can retry only idempotent commands without needing to ask the client to retry it's full cycle
+				// ^ Otherwise, if it is known to be no where in the log, then we can definitely retry it
+				None => err(ExecuteError::NoResult) // < TODO: In this case check what is up in the commit
+			}
+		}))
 	}
 
 
@@ -430,17 +564,43 @@ impl<R: Send + 'static> Server<R> {
 
 impl<R: Send + 'static> ServerShared<R> {
 
+	pub fn run_tick<F, O>(shared: &Arc<Self>, f: F) -> O
+		where F: FnOnce(&mut ServerState<R>, &mut Tick) -> O
+	{
+		let mut state = shared.state.lock().unwrap();
 
-	// TODO: If this fails, we may need to stop the server
+		// NOTE: Tick must be created after the state is locked to gurantee monotonic time always
+		// XXX: We can reuse the same tick object many times if we really want to 
+		let mut tick = Tick::empty();
+
+		let out = f(&mut state, &mut tick);
+		
+		// In the case of a failure here, we want to attempt to backoff or demote ourselves from leadership
+		// NOTE: We can survive short term disk failures as long as we know that there is metadata that has not been sent
+		// Also splitting up 
+		if let Err(e) = Self::finish_tick(shared, &mut state, tick) {
+			// This should poison the state guard that we still hold and thus prevent any more progress from occuring
+			// TODO: Eventually we can decompose exactly what failed and defer work to future retries
+			panic!("Tick failed to finish: {:?}", e);
+		}
+
+		out
+	}
+
+
+	// TODO: If this fails, we may need to stop the server (silently ignoring failures may ignore the fact that metadata from previous rounds was not )
 	// NOTE: This function assumes that the given state guard is for the exact same state as represented within this shared state
-	pub fn finish_tick<'a>(shared: &Arc<Self>, state: MutexGuard<'a, ServerState<R>>, tick: Tick) -> Result<()> {
+	fn finish_tick(shared: &Arc<Self>, state: &mut ServerState<R>, tick: Tick) -> Result<()> {
+
+		let mut should_update_commit = false;
+
 
 		// If new entries were appended, we must notify the flusher
 		if tick.new_entries {
 
 			// When our log has fewer entries than are committed, the commit index may go up
 			// TODO: Will end up being a redundant operation with the below one
-			Self::update_commit_index(shared, &state);
+			should_update_commit = true;
 
 			// XXX: Simple scenario is to just use the fact that we have the lock
 			state.log_changed.notify();
@@ -458,6 +618,10 @@ impl<R: Send + 'static> ServerShared<R> {
 				meta: state.inst.meta()
 			})?)?;
 
+			should_update_commit = true;
+		}
+
+		if should_update_commit {
 			Self::update_commit_index(shared, &state);
 		}
 
@@ -469,30 +633,45 @@ impl<R: Send + 'static> ServerShared<R> {
 			})?)?;
 		}
 
+		// TODO: We currently assume that the ConsensusModule will always output a next_tick if it may have changed since last time. This is something that we probably need to verify in more dense
+		if let Some(next_tick) = tick.next_tick {
+
+			// Notify the cycler only if the next required tick is earlier than the last scheduled cycle 
+			let next_cycle = state.scheduled_cycle.and_then(|time| {
+				let next = tick.time + next_tick;
+				if time > next {
+					Some(next)
+				}
+				else {
+					None
+				}
+			});
+
+			if let Some(next) = next_cycle {
+				// XXX: this is our only mutable reference to the state right now
+				state.scheduled_cycle = Some(next);
+				state.state_changed.notify();
+			}
+		}
+
 
 		Self::dispatch_messages(&shared, &state, tick.messages);
 
-		// TODO: Verify this encapsulates all cases of meaningful state changes
-		// TODO: Verify that in most cases this is never actually triggerred as it isn't all that gast
-		if tick.next_tick.is_some() {
-			// TODO: The real question is whether or not to use the fake that we have a lock to make this more efficient than using an atomic 
-			state.state_changed.notify();
-		}
 
 		Ok(())
 	}
 
-	fn update_match_index(&self) {
+	fn update_match_index(shared: &Arc<Self>) {
 		// Getting latest match_index
-		let cur_mi = self.log.match_index().unwrap_or(0);
-		let cur_mt = self.log.term(cur_mi).unwrap();
+		let cur_mi = shared.log.match_index().unwrap_or(0);
+		let cur_mt = shared.log.term(cur_mi).unwrap();
 		let cur = LogPosition {
 			index: cur_mi,
 			term: cur_mt
 		};
 
 		// Updating it
-		let mut mi = self.match_index.lock();
+		let mut mi = shared.match_index.lock();
 		// NOTE: The match_index is not necessarily monotonic in the case of log truncations
 		if *mi != cur {
 			*mi = cur;
@@ -500,9 +679,11 @@ impl<R: Send + 'static> ServerShared<R> {
 			mi.notify_all();
 
 			
-			// For leaders, an update to the match_index may advance the commit_index, so we will trigger a cycle of the state
-			// NOTE: Typically this will not help as we will usually get AppendEntries requests back before the local flush is complete but this will help with the single-node case
-			self.state.lock().unwrap().state_changed.notify();
+			// TODO: It is annoying that this is in this function
+			// On the leader, a change in the match index may cause the number of matches needed to be able to able the commit index
+			// In the case of a single-node system, this let commits occur nearly immediately as no external requests need to be waited on in that case
+
+			Self::run_tick(shared, |state, tick| state.inst.cycle(tick));
 		}
 	}
 
@@ -545,13 +726,10 @@ impl<R: Send + 'static> ServerShared<R> {
 
 	fn dispatch_messages(shared: &Arc<Self>, state: &ServerState<R>, messages: Vec<Message>) {
 	
-		println!("Send {}", messages.len());
-
 		if messages.len() == 0 {
 			return;
 		}
 
-		// Noteably we will basically have two sets of 
 
 		let mut append_entries = vec![];
 		let mut request_votes = vec![];
@@ -566,14 +744,11 @@ impl<R: Send + 'static> ServerShared<R> {
 			.timeout(Duration::from_millis(REQUEST_TIMEOUT))
 			.then(move |res| -> FutureResult<(), ()> {
 				
-				let mut state = shared.state.lock().expect("Failed to lock instance");
-				let mut tick = Tick::empty();
-
-				if let Ok(resp) = res {
-					state.inst.request_vote_callback(to_id, resp, &mut tick);
-				}
-
-				Self::finish_tick(&shared, state, tick);
+				Self::run_tick(&shared, |state, tick| {
+					if let Ok(resp) = res {
+						state.inst.request_vote_callback(to_id, resp, tick);
+					}
+				});				
 
 				ok(())
 			})
@@ -590,19 +765,16 @@ impl<R: Send + 'static> ServerShared<R> {
 			.timeout(Duration::from_millis(REQUEST_TIMEOUT))
 			.then(move |res| -> FutureResult<(), ()> {
 
-				let mut state = shared.state.lock().unwrap();
-				let mut tick = Tick::empty();
-
-				if let Ok(resp) = res {
-					// NOTE: Here we assume that this request send everything up to and including last_log_index
-					// ^ Alternatively, we could have just looked at the request object that we have in order to determine this
-					state.inst.append_entries_callback(to_id, last_log_index, resp, &mut tick);
-				}
-				else {
-					state.inst.append_entries_noresponse(to_id, &mut tick);
-				}
-
-				Self::finish_tick(&shared, state, tick);
+				Self::run_tick(&shared, |state, tick| {
+					if let Ok(resp) = res {
+						// NOTE: Here we assume that this request send everything up to and including last_log_index
+						// ^ Alternatively, we could have just looked at the request object that we have in order to determine this
+						state.inst.append_entries_callback(to_id, last_log_index, resp, tick);
+					}
+					else {
+						state.inst.append_entries_noresponse(to_id, tick);
+					}
+				});
 			
 				ok(())
 			});
@@ -667,6 +839,8 @@ impl<R: Send + 'static> ServerShared<R> {
 		})
 	}
 
+	// Where will this still be useful: For environments where we just want to do a no-op or a change to the config but we don't really care about results
+
 	/// TODO: We must also be careful about when the commit index
 	/// Waits for some conclusion on a log entry pending committment
 	/// This can either be from it getting comitted or from it becomming never comitted
@@ -677,33 +851,27 @@ impl<R: Send + 'static> ServerShared<R> {
 
 		loop_fn((shared, pos), |(shared, pos)| {
 
-			// TODO: The ideal case is to the make the condition variables value sufficiently reliable that we don't need to ever lock the server state in order to check this condition
-			// But yes, both commit_index and commit_term can be atomic variables
-			// No need to lock then 
+			let waiter = {
+				let c = shared.commit_index.lock();
 
-			let (ci, ct) = {
-				let state = shared.state.lock().unwrap();
-				let ci = state.inst.meta().commit_index;
-				let ct = shared.log.term(ci).unwrap();
-				(ci, ct)
+				if c.term > pos.term || c.index >= pos.index {
+					return Either::A(ok(Loop::Break(())));
+				}
+
+				c.wait(LogPosition { term: 0, index: 0 })
 			};
 
-			if ct > pos.term || ci >= pos.index {
-				Either::A(ok(Loop::Break(())))
-			}
-			else {
-				let shared2 = shared.clone();
-				let lk = shared2.commit_index.lock();
-
-				// TODO: commit_index can be implemented using two atomic integers denoting the term and ...
-				Either::B(lk.wait(LogPosition { term: 0, index: 0 }).then(move |_| {
-					ok(Loop::Continue((shared, pos)))
-				}))
-			}
+			Either::B(waiter.then(move |_| {
+				ok(Loop::Continue((shared, pos)))
+			}))
 		})
 
 		// TODO: Will we ever get a request to truncate the log without an actual committment? (either way it isn't binding to the future of this proposal until it actually comitted something that is in conflict with us)
 	}
+
+	// TODO: wait_for_applied will basically end up mostly being absorbed into the callback system with the exception of 
+
+	// NOTE: This is still somewhat relevant for blocking on a read index to be available
 
 	/// Given a known to be comitted index, this waits until it is available in the state machine
 	/// NOTE: You should always first wait for an item to be comitted before waiting for it to get applied (otherwise if the leader gets demoted, then the wrong position may get applied)
@@ -711,14 +879,17 @@ impl<R: Send + 'static> ServerShared<R> {
 
 		loop_fn((shared, pos), |(shared, pos)| {
 
-			let guard = shared.last_applied.lock();
-			if *guard >= pos.index {
-				return Either::A(ok( Loop::Break(()) ));
-			}
+			let waiter = {
+				let app = shared.last_applied.lock();
+				if *app >= pos.index {
+					return Either::A(ok( Loop::Break(()) ));
+				}
 
-			let shared2 = shared.clone();
-			Either::B(guard.wait(pos.index).then(move |_| {
-				ok(Loop::Continue((shared2, pos)))
+				app.wait(pos.index)
+			};
+
+			Either::B(waiter.then(move |_| {
+				ok(Loop::Continue((shared, pos)))
 			}))
 		})
 
@@ -730,26 +901,19 @@ impl<R: Send + 'static> ServerShared<R> {
 impl<R: Send + 'static> rpc::ServerService for Server<R> {
 
 	fn pre_vote(&self, req: RequestVoteRequest) -> rpc::ServiceFuture<RequestVoteResponse> { to_future_box!({
-		let mut state = self.shared.state.lock().unwrap();
-		
-		// NOTE: Tick must be created after the state is locked to gurantee monotonic time always
-		let mut tick = Tick::empty();
-		let res = state.inst.pre_vote(req, &mut tick);
 
-		// Hopefully no messages were produced, we may only have anew hard state, but this is no immediate need to definitely flush it
-
-		ServerShared::finish_tick(&self.shared, state, tick)?;
+		let res = ServerShared::run_tick(&self.shared, |state, tick| {
+			state.inst.pre_vote(req, tick)
+		});
 
 		Ok(res)
 	}) }
 
 	fn request_vote(&self, req: RequestVoteRequest) -> rpc::ServiceFuture<RequestVoteResponse> { to_future_box!({
-		let mut state = self.shared.state.lock().unwrap();
 
-		let mut tick = Tick::empty();
-		let res = state.inst.request_vote(req, &mut tick);
-
-		ServerShared::finish_tick(&self.shared, state, tick)?;
+		let res = ServerShared::run_tick(&self.shared, |state, tick| {
+			state.inst.request_vote(req, tick)
+		});
 
 		Ok(res.persisted())
 	})}
@@ -762,14 +926,11 @@ impl<R: Send + 'static> rpc::ServerService for Server<R> {
 
 		Box::new(to_future!({
 
-			let mut state = self.shared.state.lock().unwrap();
+			let res = ServerShared::run_tick(&self.shared, |state, tick| {
+				state.inst.append_entries(req, tick)
+			});
 
-			let mut tick = Tick::empty();
-			let res = state.inst.append_entries(req, &mut tick)?;
-
-			ServerShared::finish_tick(&self.shared, state, tick)?;
-
-			Ok((self.shared.clone(), res))
+			Ok((self.shared.clone(), res?))
 
 		}).and_then(|(shared, res)| {
 			ServerShared::wait_for_match(shared, res)			
@@ -778,12 +939,9 @@ impl<R: Send + 'static> rpc::ServerService for Server<R> {
 	
 	fn timeout_now(&self, req: TimeoutNow) -> rpc::ServiceFuture<()> { to_future_box!({
 
-		let mut state = self.shared.state.lock().unwrap();
-
-		let mut tick = Tick::empty();
-		state.inst.timeout_now(req, &mut tick)?;
-
-		ServerShared::finish_tick(&self.shared, state, tick)?;
+		ServerShared::run_tick(&self.shared, |state, tick| {
+			state.inst.timeout_now(req, tick)
+		})?;
 
 		Ok(())
 
@@ -793,15 +951,16 @@ impl<R: Send + 'static> rpc::ServerService for Server<R> {
 	fn propose(&self, req: ProposeRequest) -> rpc::ServiceFuture<ProposeResponse> {
 
 		Box::new(to_future!({
-			let mut state = self.shared.state.lock().unwrap();
 
-			let mut tick = Tick::empty();
-			let res = state.inst.propose_entry(req.data, &mut tick);
+			let (data, wait) = (req.data, req.wait);
 
-			ServerShared::finish_tick(&self.shared, state, tick)?;
+			let res = ServerShared::run_tick(&self.shared, |state, tick| {
+				state.inst.propose_entry(data, tick)
+			});
 
-			if let ProposeResult::Started(prop) = res {
-				Ok((req.wait, self.shared.clone(), prop))
+			// Ideally cascade down to a result and an error type
+			if let Ok(prop) = res {
+				Ok((wait, self.shared.clone(), prop))
 			}
 			else {
 				println!("propose result: {:?}", res);

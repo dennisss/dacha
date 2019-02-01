@@ -149,40 +149,50 @@ pub fn change() -> (ChangeSender, ChangeReceiver) {
 	let (tx, rx) = mpsc::channel(0);
 	let tx2 = tx.clone();
 
-	let dirty = Arc::new(AtomicBool::new(false));
-
 	(
-		ChangeSender(dirty.clone(), tx),
-		ChangeReceiver(dirty, tx2, rx)
+		ChangeSender(tx),
+		ChangeReceiver(tx2, rx)
 	)
 }
 
-pub struct ChangeSender(Arc<AtomicBool>, mpsc::Sender<()>);
+pub struct ChangeSender(mpsc::Sender<()>);
 
 impl ChangeSender {
 	// TODO: In general we shouldn't use this as we are now mostly operating in a threaded environment
-	pub fn notify(&self) {		
-		// Allowing only the first notification to set the variable to true from false to notify the task
-		if !self.0.swap(true, Ordering::SeqCst) {
-			self.1.clone().try_send(());
+	pub fn notify(&mut self) {		
+		if let Err(e) = self.0.try_send(()) {
+			// This will fail in one of two cases:
+			// 1. Either the channel is full (which is fine as we only want a single notification to get scheduled at a time)
+			// 2. The other side of disconnected (will be handled by some other code)
 		}
 	}
 }
 
 
-pub struct ChangeReceiver(Arc<AtomicBool>, mpsc::Sender<()>, mpsc::Receiver<()>);
+pub struct ChangeReceiver(mpsc::Sender<()>, mpsc::Receiver<()>);
 
 impl ChangeReceiver {
 
-	// TODO: Probably need to eventaully handle errors occuring in this in some reasonable way
-	// TODO: Would also be good to have a more efficient version which does not require setting up a timer
-	pub fn wait(self, until: Instant) -> impl Future<Item=ChangeReceiver, Error=()> + Send {
+	pub fn wait(self) -> impl Future<Item=ChangeReceiver, Error=()> + Send {
+		let (sender, receiver) = (self.0, self.1);
 
-		let (dirty, sender, receiver) = (self.0, self.1, self.2);
+		let waiter = receiver.into_future().then(|res| -> FutureResult<_, ()> {
+			match res {
+				Ok((_, receiver)) => ok(receiver),
+				Err((_, receiver)) => ok(receiver)
+			}
+		});
 
-		let delay_sender = sender.clone();
+		waiter
+		.and_then(|receiver| {
+			ok(ChangeReceiver(sender, receiver))
+		})
+	}
 
-		// TODO: In the case that we don't need to block for anything, then this is unnecessarily complex
+	pub fn wait_until(self, until: Instant) -> impl Future<Item=ChangeReceiver, Error=()> + Send {
+
+		let delay_sender = self.0.clone();
+
 		let delay = tokio::timer::Delay::new(until)
 		.then(move |_| {
 			delay_sender.send(())
@@ -191,25 +201,13 @@ impl ChangeReceiver {
 			empty()
 		});
 
-		let waiter = receiver.into_future().then(|res| -> FutureResult<_, ()> {
-			match res {
-				Ok((_, receiver)) => {
-					ok(receiver)
-				},
-				Err((_, receiver)) => {
-					ok(receiver)
-				}
-			}
-		});
-
-		waiter
+		self.wait()
 		.select(delay)
+		// In general nothing should error out with this (only the timer may error out, but the delay_sender should never error out in a reasonable way as we have our own dedicated copy of it)
 		.map_err(|_| ())
-		.and_then(|(receiver, _): (mpsc::Receiver<()>, _)| -> FutureResult<ChangeReceiver, _> {
-			dirty.store(false, Ordering::SeqCst);
-			ok(ChangeReceiver(dirty, sender, receiver))
+		.map(|(c, _)| {
+			c
 		})
-		
 	}
 }
 

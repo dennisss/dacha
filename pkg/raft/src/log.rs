@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LogPosition {
-	pub index: u64,
-	pub term: u64
+	pub index: LogIndex,
+	pub term: Term
 }
 
 
@@ -18,19 +18,19 @@ pub trait LogStorage {
 
 	/// Given the index of a log entry, this should get the term stored for it
 	/// None will be returned if the 
-	fn term(&self, index: u64) -> Option<u64>;
+	fn term(&self, index: LogIndex) -> Option<Term>;
 
 	/// Gets the index of the first entry in the log
 	/// XXX: Should always be present (at least as 0)
-	fn first_index(&self) -> Option<u64>;
+	fn first_index(&self) -> Option<LogIndex>;
 
-	fn last_index(&self) -> Option<u64>;
+	fn last_index(&self) -> Option<LogIndex>;
 
 	/// Retrieves the last index persisted to durable storage
-	fn match_index(&self) -> Option<u64>;
+	fn match_index(&self) -> Option<LogIndex>;
 
 	/// Gets a specific entry in the log by index
-	fn entry(&self, index: u64) -> Option<Arc<LogEntry>>; 
+	fn entry(&self, index: LogIndex) -> Option<Arc<LogEntry>>; 
 
 	/// Adds entries to the very end of the log and atomically flushes them
 	/// TODO: Realistically this flush can occur whenever on the leader as long as it is before we respond to the client?
@@ -42,7 +42,7 @@ pub trait LogStorage {
 	fn append(&self, entry: LogEntry);
 
 	/// Should immediately remove all log entries starting at the given index until the end of the log
-	fn truncate_suffix(&self, start_index: u64);
+	fn truncate_suffix(&self, start_index: LogIndex);
 
 
 	// TODO: Everything belo this point should never be used by the core consensus code
@@ -50,7 +50,6 @@ pub trait LogStorage {
 	/// Should syncronously flush all log entries to persistent storage
 	/// After this is finished, the match_index for it should be equal to the last_index (at least the one as of when this was first called)
 	fn flush(&self) -> Result<()>;
-
 
 	// TODO: Also all of the snapshot related stuff here
 
