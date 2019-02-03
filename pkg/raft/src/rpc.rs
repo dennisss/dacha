@@ -27,7 +27,7 @@ pub fn unmarshal<'de, T>(data: Bytes) -> Result<T> where T: Deserialize<'de> {
 
 pub fn marshal<T>(obj: T) -> Result<Vec<u8>> where T: Serialize {
 	let mut buf = Vec::new();
-	obj.serialize(&mut rmps::Serializer::new(&mut buf))
+	obj.serialize(&mut rmps::Serializer::new_named(&mut buf))
 		.map_err(|_| Error::from("Failed to serialize data"))?;
 	Ok(buf)
 }

@@ -1,6 +1,5 @@
 use std::time::{Instant};
-use std::sync::{Mutex, MutexGuard, Arc};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, MutexGuard};
 use futures::future::*;
 use futures::{Future, Stream};
 use futures::sync::mpsc;

@@ -76,6 +76,7 @@ const REQUEST_TIMEOUT: u64 = 500;
 
 // TODO: Would also be nice to have some warning of when a disk operation is required to read back an entry as this is generally a failure on our part
 
+#[derive(Debug)]
 pub enum ExecuteError {
 	Propose(ProposeError),
 	NoResult,
@@ -405,7 +406,7 @@ impl<R: Send + 'static> Server<R> {
 				if let Some(e) = entry {
 					
 					let ret = if let LogEntryData::Command(ref data) = e.data {
-						match state_machine.apply(data) {
+						match state_machine.apply(e.index, data) {
 							Ok(v) => Some(v),
 							Err(e) => {
 								// TODO: Ideally notify everyone that all progress has been halted
@@ -428,7 +429,7 @@ impl<R: Send + 'static> Server<R> {
 						if e.term > first.term || e.index >= first.index {
 							let item = callbacks.pop_front().unwrap();
 
-							if e.term == first.term && e.index == first.term {
+							if e.term == first.term && e.index == first.index {
 								item.1.send(ret);
 								break; // NOTE: This is not really necessary as it should immediately get completed on the next run through the loop by the other break 
 							}

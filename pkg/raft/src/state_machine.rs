@@ -1,10 +1,7 @@
 use bytes::Bytes;
 use super::errors::*;
-use std::collections::HashMap;
-use std::sync::Mutex;
-use serde::{Deserialize, Serialize};
+use super::protos::*;
 use std::io::Read;
-use futures::sync::oneshot;
 
 
 pub trait StateMachine<R> {
@@ -17,7 +14,7 @@ pub trait StateMachine<R> {
 
 	/// Should apply the given operation to the state machine immediately integrating it
 	/// If successful, then some result type can be output that is persisted to disk but is made available to the task that proposed this change to receive feedback on how the operation performed
-	fn apply(&self, op: &[u8]) -> Result<R>;
+	fn apply(&self, index: LogIndex, op: &[u8]) -> Result<R>;
 
 	/// Should retrieve the last created snapshot if any is available
 	/// This should be a cheap operation that can quickly queried to check on the last snapshot
@@ -42,81 +39,4 @@ pub struct StateMachineSnapshot<'a> {
 	/// A reader for retrieving the contents of the snapshot
 	pub data: &'a Read
 }
-
-
-// A basic store 
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum KeyValueOperation {
-	Set {
-		key: Vec<u8>,
-		value: Vec<u8>
-	},
-	Delete {
-		key: Vec<u8>
-	}
-
-	// May also have ops like Get, but those don't mutate the state so probably don't need to be explicitly requested
-}
-
-
-pub struct MemoryKVStateMachine {
-	data: Mutex<HashMap<Vec<u8>, Bytes>>
-}
-
-impl MemoryKVStateMachine {
-	pub fn new() -> MemoryKVStateMachine {
-		MemoryKVStateMachine {
-			data: Mutex::new(HashMap::new())
-		}
-	}
-
-	/// Very simple, non-linearizable read operation
-	pub fn get(&self, key: &[u8]) -> Option<Bytes> {
-		let data = self.data.lock().unwrap();
-		
-		// TODO: Probably inefficient (probably better to return an Arc)
-		data.get(key).map(|v| v.clone())
-	}
-
-	/*
-	pub fn new_op(op: &KeyValueOperation) -> Bytes {
-		// Basically I want to 
-	}
-	*/
-}
-
-impl StateMachine<()> for MemoryKVStateMachine {
-
-	fn apply(&self, data: &[u8]) -> Result<()> {
-		// TODO: Switch to using the common marshalling code
-		let mut de = rmps::Deserializer::new(data);
-		let ret: KeyValueOperation = Deserialize::deserialize(&mut de)
-			.map_err(|_| Error::from("Failed to deserialize command"))?;
-
-		let mut map = self.data.lock().unwrap();
-
-		match ret {
-			KeyValueOperation::Set { key, value } => {
-				map.insert(key, value.into());
-			},
-			KeyValueOperation::Delete { key } => {
-				map.remove(&key);
-			}
-		};
-
-		Ok(())
-	}
-
-	fn snapshot<'a>(&'a self) -> Option<StateMachineSnapshot<'a>> {
-		None
-	}
-
-	fn restore(&self, data: Bytes) -> Result<()> {
-		// A snapshot should not have been generatable
-		Ok(())
-	}
-
-}
-
 

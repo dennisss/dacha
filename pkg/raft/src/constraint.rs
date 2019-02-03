@@ -17,19 +17,19 @@ pub enum ConstraintPoll<C, T> {
 /// This is a wrapper around some value which optionally enforces that that the inner value cannot be accessed until the log has persisted at least up to the given index
 pub struct MatchConstraint<T> {
 	inner: T,
-	index: Option<(LogPosition, Arc<LogStorage + Send + Sync + 'static>)>
+	index: Option<LogPosition>
 }
 
 impl<T> MatchConstraint<T> {
-	pub fn new(inner: T, pos: LogPosition, log: Arc<LogStorage + Send + Sync + 'static>) -> Self {
+	pub fn new(inner: T, pos: LogPosition) -> Self {
 		MatchConstraint {
-			inner, index: Some((pos, log))
+			inner, index: Some(pos)
 		}
 	}
 
-	pub fn poll(self) -> ConstraintPoll<(Self, LogPosition), T> {
+	pub fn poll(self, log: &LogStorage) -> ConstraintPoll<(Self, LogPosition), T> {
 		match self.index {
-			Some((pos, log)) => {
+			Some(pos) => {
 				match log.term(pos.index) {
 					Some(v) => {
 						if v != pos.term {
@@ -45,7 +45,7 @@ impl<T> MatchConstraint<T> {
 								let pos_out = pos.clone();
 								ConstraintPoll::Pending((
 									MatchConstraint {
-										inner: self.inner, index: Some((pos, log))
+										inner: self.inner, index: Some(pos)
 									},
 									pos_out
 								))

@@ -1234,7 +1234,7 @@ impl ConsensusModule {
 		let last_log_index = self.log.last_index().unwrap_or(0);
 		Ok(MatchConstraint::new(
 			response(true, if last_log_index != last_new { Some(last_log_index) } else { None }),
-			pos, self.log.clone()
+			pos
 		))
 	}
 
