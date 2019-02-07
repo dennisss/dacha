@@ -21,8 +21,8 @@ use rand::RngCore;
 /// At some random time in this range of milliseconds, a follower will become a candidate if no 
 const ELECTION_TIMEOUT: (u64, u64) = (400, 800); 
 
-/// If the leader doesn't send anything else within this amount of time, then it will send an empty heartbeat to all followers (this default value would mean around 5 heartbeats each second)
-const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(200);
+/// If the leader doesn't send anything else within this amount of time, then it will send an empty heartbeat to all followers (this default value would mean around 6 heartbeats each second)
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(150);
 
 
 
@@ -961,9 +961,7 @@ impl ConsensusModule {
 
 	/// Checks if a RequestVote request would be granted by the current server
 	/// This will not actually grant the vote for the term and will only mutate our state if the request has a higher observed term than us
-	pub fn pre_vote(&mut self, req: RequestVoteRequest, tick: &mut Tick) -> RequestVoteResponse {
-
-		self.observe_term(req.term, tick);
+	pub fn pre_vote(&mut self, req: RequestVoteRequest) -> RequestVoteResponse {
 
 		let should_grant = |this: &Self| {
 
@@ -996,6 +994,12 @@ impl ConsensusModule {
 				return false;
 			}
 
+			// Mainly for the case of the immutable pre-vote mode:
+			// We will trivially vote for any server at a higher term than us because that implies that we have no record of voting for anyone else during that time
+			if req.term > this.meta.current_term {
+				return true;
+			}
+
 			match this.meta.voted_for {
 				// If we have already voted in this term, we are not allowed to change our minds
 				Some(id) => {
@@ -1020,9 +1024,19 @@ impl ConsensusModule {
 		let candidate_id = req.candidate_id;
 		println!("Received request_vote from {}", candidate_id);
 
-		let res = self.pre_vote(req, tick);
+		self.observe_term(req.term, tick);
+
+		let res = self.pre_vote(req);
 
 		if res.vote_granted {
+			// We want to make sure that even if this is a recast of a vote in the same term, that our follower election_timeout is definitely reset so that the leader upon being elected can depend on an initial heartbeat time to use for serving read queries
+			match self.state {
+				ServerState::Follower(ref mut s) => {
+					s.last_heartbeat = tick.time.clone();
+				},
+				_ => panic!("Granted vote but did not transition back to being a follower")
+			};
+
 			self.meta.voted_for = Some(candidate_id);
 			tick.write_meta();
 			println!("Casted vote for: {}", candidate_id);

@@ -15,7 +15,9 @@ extern crate bytes;
 extern crate raft;
 extern crate core;
 
+
 mod redis;
+mod key_value;
 
 use raft::errors::*;
 use raft::protos::*;
@@ -32,8 +34,9 @@ use std::sync::{Arc};
 use futures::future::*;
 use core::DirLock;
 
-
 use redis::resp::*;
+use key_value::*;
+
 
 /*
 	Some form of client interface is needed so that we can forward arbitrary entries to any server
@@ -101,9 +104,10 @@ config.members.insert(ServerDescriptor {
 
 
 use raft::rpc::ServerService;
+use raft::rpc::*;
 
 struct RaftRedisServer {
-	server: Arc<Server<()>>,
+	server: Arc<Server<KeyValueReturn>>,
 	state_machine: Arc<MemoryKVStateMachine>
 }
 
