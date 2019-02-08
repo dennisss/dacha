@@ -57,10 +57,12 @@ pub mod consensus;
 //pub mod record_io;
 
 // Higher level complete implementation dealing with actual networking issues
+pub mod routing;
 pub mod rpc;
 // XXX: Should only really be required by the server itself
 pub mod state_machine;
 pub mod server_protos;
+pub mod discovery;
 pub mod server;
 
 pub mod simple_log;

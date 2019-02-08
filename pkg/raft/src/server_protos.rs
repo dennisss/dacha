@@ -21,24 +21,21 @@ pub struct ServerMetadataRef<'a> {
 /// This is the format of the file on disk for the snapshot of the configuration
 #[derive(Serialize, Deserialize)]
 pub struct ServerConfigurationSnapshot {
-
 	pub config: ConfigurationSnapshot,
-
-	pub routes: HashMap<ServerId, String>
-
+	//pub routes: HashMap<ServerId, String>
 }
 
 #[derive(Serialize)]
 pub struct ServerConfigurationSnapshotRef<'a> {
 	pub config: ConfigurationSnapshotRef<'a>,
-	pub routes: &'a HashMap<ServerId, String>
+	//pub routes: &'a HashMap<ServerId, String>
 }
 
 impl Default for ServerConfigurationSnapshot {
 	fn default() -> Self {
 		ServerConfigurationSnapshot {
-			config: ConfigurationSnapshot::default(),
-			routes: HashMap::new()
+			config: ConfigurationSnapshot::default()
+			//routes: HashMap::new()
 		}
 	}
 }

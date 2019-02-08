@@ -142,8 +142,8 @@ impl<T: 'static> Server<T>
 		}
 	}
 
-	pub fn start(inst: Arc<Self>) -> impl Future<Item=(), Error=()> {
-		let addr = "127.0.0.1:12345".parse().unwrap();
+	pub fn start(inst: Arc<Self>, port: u16) -> impl Future<Item=(), Error=()> {
+		let addr = format!("127.0.0.1:{}", port).parse().unwrap();
 		let listener = TcpListener::bind(&addr)
 			.expect("unable to bind TCP listener");
 

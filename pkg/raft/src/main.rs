@@ -134,12 +134,24 @@ impl redis::server::Service for RaftRedisServer {
 
 		let op = KeyValueOperation::Set {
 			key: key.as_ref().to_vec(),
-			value: value.as_ref().to_vec()
+			value: value.as_ref().to_vec(),
+			expires: None,
+			compare: None
 		};
 
 		// XXX: If they are owned, it is better to 
 		let op_data = marshal(op).unwrap();
 
+		Box::new(server.execute(op_data)
+		.map_err(|e| {
+			eprintln!("SET failed with {:?}", e);
+			Error::from("Failed")
+		})
+		.map(|res| {
+			RESPObject::SimpleString(b"OK"[..].into())
+		}))
+
+		/*
 		Box::new(server.propose(raft::protos::ProposeRequest {
 			data: LogEntryData::Command(op_data),
 			wait: true
@@ -147,6 +159,7 @@ impl redis::server::Service for RaftRedisServer {
 		.map(|_| {
 			RESPObject::SimpleString(b"OK"[..].into())
 		}))
+		*/
 	}
 
 	fn del(&self, key: RESPString) -> CommandResponse {
@@ -162,13 +175,23 @@ impl redis::server::Service for RaftRedisServer {
 		// XXX: If they are owned, it is better to 
 		let op_data = marshal(op).unwrap();
 
+		Box::new(server.execute(op_data)
+		.map_err(|e| {
+			eprintln!("DEL failed with {:?}", e);
+			Error::from("Failed")
+		})
+		.map(|res| {
+			RESPObject::Integer(if res.success { 1 } else { 0 })
+		}))
+		
+		/*
 		Box::new(server.propose(raft::protos::ProposeRequest {
 			data: LogEntryData::Command(op_data),
 			wait: true
 		})
 		.map(|_| {
 			RESPObject::Integer(1)
-		}))
+		}))*/
 	}
 
 	fn publish(&self, channel: RESPString, object: RESPObject) -> Box<Future<Item=usize, Error=Error> + Send> {

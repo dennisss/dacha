@@ -29,26 +29,8 @@ const REQUEST_TIMEOUT: u64 = 500;
 
 // Basically whenever we connect to another node with a fresh connection, we must be able to negogiate with each the correct pair of cluster id and server ids on both ends otherwise we are connecting to the wrong server/cluster and that would be problematic (especially when it comes to aoiding duplicate votes because of duplicate connections)
 
-
 /*
-	Maintaining route information
-	- Every server knows its own initial address
-	- When another server calls us, it should always tell it what its address is
-	
-	Updating known peers
-	- Starting at startup, a server will gossip about its id and addr to other servers 
-	- A server could maintain a list of all server ids we have ever seen
-	- If we have not recently told a server about our address, then we will go ahead and tell it
-
-	Discovering unknown peers
-	- In local networks, use udp broadcast to broadcast our identity
-		- Other servers will discover us by listening for this (and they they will recipricate the action using the updating known operation)
-	- In test environments, use a static list of hosts
-	- In managed environments enable querying of a 
-
-	- If at least one server (other than ourselves) is well known by one of the above methods
-		-> Ask it for a list of all servers that it knows about
-		-> This would function as a CockroachDB/MongoDB style discovery process given at least one server already in the server
+	NOTE: We do need to have a sense of a 
 
 */
 
@@ -80,6 +62,12 @@ const REQUEST_TIMEOUT: u64 = 500;
 pub enum ExecuteError {
 	Propose(ProposeError),
 	NoResult,
+
+	/*
+		Other errors
+
+	*/
+
 	// Also possibly that it just plain old failed to be committed
 }
 
@@ -121,8 +109,10 @@ pub struct Server<R> {
 /// Server variables that can be shared by many different threads
 struct ServerShared<R> {
 
-
 	state: Mutex<ServerState<R>>,
+
+	/// Used for network message sending and connection management
+	client: rpc::Client,
 
 	// TODO: Need not have a lock for this right? as it is not mutable
 	// Definately we want to lock the LogStorage separately from the rest of this code
@@ -154,11 +144,6 @@ struct ServerState<R> {
 
 	// TODO: Move those out
 	meta_file: BlobFile, config_file: BlobFile,
-
-	// XXX: Contain client connections
-	// XXX: No point in these being locked
-	// XXX: Another event will be used to send to the thread that flushes the log
-	// It will emit back through the match_index log
 	
 	/// Trigered whenever the state or configuration is changed
 	/// TODO: currently this will not fire on configuration changes
@@ -173,16 +158,6 @@ struct ServerState<R> {
 	/// Used to trigger the log to get flushed to persistent storage
 	log_changed: ChangeSender, log_receiver: Option<ChangeReceiver>,
 
-	// For each observed server id, this is the last known address at which it can be found
-	// This is used 
-	// XXX: Cleaning up old routes: Everything in the cluster can always be durable for a long time
-	// Otherwise, we will maintain up to 16 unused addresses to be pushed out on an LRU basis
-	// because servers are only ever added one and a time and configurations should get synced quickly this should always be reasonable
-	// The only complication would be new servers which won't have the entire config yet
-	// We could either never delete servers with ids smaller than our lates log index and/or make sure that servers are always started with a complete configuration snaphot (which includes a snaphot of the config ips + routing information)
-	// TODO: Should we make these under a different lock so that we can process messages while running the state forward (especially as sending a response requires no locking)
-	routes: HashMap<ServerId, String>,
-
 	/// Whenever an operation is proposed, this will store callbacks that will be given back the result once it is applied
 	callbacks: std::collections::LinkedList<(LogPosition, oneshot::Sender<Option<R>>)>
 }
@@ -190,6 +165,7 @@ struct ServerState<R> {
 impl<R: Send + 'static> Server<R> {
 
 	pub fn new(
+		client: rpc::Client,
 		initial: ServerInitialState<R>,
 	) -> Self {
 
@@ -227,10 +203,8 @@ impl<R: Send + 'static> Server<R> {
 		let (tx_state, rx_state) = change();
 		let (tx_log, rx_log) = change();
 
-		let mut routes = HashMap::new();
+		// TODO: Routing info now no longer a part of core server responsibilities
 
-		routes.insert(1, "http://127.0.0.1:4001".to_string());
-		routes.insert(2, "http://127.0.0.1:4002".to_string());
 
 		let state = ServerState {
 			inst,
@@ -238,12 +212,12 @@ impl<R: Send + 'static> Server<R> {
 			state_changed: tx_state, state_receiver: Some(rx_state),
 			scheduled_cycle: None,
 			log_changed: tx_log, log_receiver: Some(rx_log),
-			routes,
 			callbacks: std::collections::LinkedList::new() 
 		};
 
 		let shared = Arc::new(ServerShared {
 			state: Mutex::new(state),
+			client,
 			log,
 			state_machine,
 
@@ -278,7 +252,32 @@ impl<R: Send + 'static> Server<R> {
 			)
 		};
 
-		let service = rpc::run_server::<Arc<Self>, Self>(4000 + (id as u16), server.clone());
+		// Must 
+		{
+			let agent = server.shared.client.agent().lock().unwrap();
+			if let Some(desc) = agent.identity {
+				// Already running on some other server?
+			}
+		}
+
+		/*
+			Other concerns:
+			- Making sure that the routes data always stays well saved on disk
+			- Won't change frequently though
+
+			- We will be making our own identity here though
+		*/
+
+		// Likewise need store 
+
+		// Therefore we no longer need a tuple really
+
+		// XXX: Right before starting this, we can completely state the identity of our server 
+		// Although we would ideally do this easier (but later should also be fine?)
+
+		let service = rpc::run_server(
+			4000 + (id as u16), server.clone(), &rpc::ServerService_router::<Arc<Self>, Self>
+		);
 
 		let cycler = Self::run_cycler(&server, state_changed);
 		let matcher = Self::run_matcher(&server, log_changed);
@@ -420,6 +419,10 @@ impl<R: Send + 'static> Server<R> {
 						None
 					};
 
+					// TODO: the main complication is that we should probably execute all of the callbacks after we have updated the last_applied index so that they are guranteed to see a consistent view of the world if they try to observe its value
+
+					// So we should probably defer all results until after that 
+
 					// Resolve/reject callbacks waiting for this change to get commited
 					// TODO: In general, we should assert that the linked list is monotonically increasing always based on proposal indexes
 					// TODO: the other thing is that callbacks can be rejected early in the case of something newer getting commited which would override it
@@ -520,6 +523,25 @@ impl<R: Send + 'static> Server<R> {
 		- But if multiple election timeouts pass without a callback making any progress (aka we are no longer the leader and don't can't communicate with the current leader), then callbacks should be timed out
 	*/
 
+	/*
+		Maintaining client liveness
+		- Registered callback will be canceled after 4 election average election cycles have passed:
+			- As a leader, we received a quorum of followers
+			- Or we as a follow reached the leader
+			- This is to generally meant to cancel all active requests once we lose liveness of the majority of the servers
+
+		- Other callbacks
+			- wait_for_match
+				- Mainly just needed to know when a response can be sent out to an AppendEntries request
+			- wait_for_commit
+				- Must be cancelable by the same conditions as the callbacks
+
+
+		We want a lite-wait way to start up arbitrary commands that don't require a return value from the state machine
+			- Also useful for 
+	*/
+
+
 	/// Will propose a new change and will return a future that resolves once it has either suceeded to be executed, or has failed
 	/// General failures include: 
 	/// - For what ever reason we missed the timeout <- NoResult error
@@ -546,7 +568,12 @@ impl<R: Send + 'static> Server<R> {
 		};
 
 		Either::B(rx
-		.map_err(|e| ExecuteError::NoResult) // TODO: Check what this one is
+		.map_err(|e| {
+			// TODO: Check what this one is
+			eprintln!("RX FAILURE");
+
+			ExecuteError::NoResult
+		}) 
 		.and_then(|v| {
 			match v {
 				Some(v) => ok(v),
@@ -557,6 +584,13 @@ impl<R: Send + 'static> Server<R> {
 				None => err(ExecuteError::NoResult) // < TODO: In this case check what is up in the commit
 			}
 		}))
+	}
+
+	/// Blocks until the state machine can be read such that all changes that were commited before the time at which this was called have been flushed to disk
+	/// TODO: Other consistency modes: 
+	/// - For follower reads, it is usually sufficient to check for a 
+	pub fn linearizable_read(&self) -> impl Future<Item=(), Error=Error> + Send {
+		ok(())
 	}
 
 
@@ -630,7 +664,7 @@ impl<R: Send + 'static> ServerShared<R> {
 		if tick.config {
 			state.config_file.store(&rpc::marshal(ServerConfigurationSnapshotRef {
 				config: state.inst.config_snapshot(),
-				routes: &state.routes
+				//routes: &state.routes
 			})?)?;
 		}
 
@@ -655,6 +689,7 @@ impl<R: Send + 'static> ServerShared<R> {
 			}
 		}
 
+		// TODO: A leader can dispatch RequestVotes in parallel to flushing its metadata so long as the metadata is flushed before it elects itself as the leader (aka befoer it processes replies to RequestVote)
 
 		Self::dispatch_messages(&shared, &state, tick.messages);
 
@@ -737,11 +772,11 @@ impl<R: Send + 'static> ServerShared<R> {
 
 		// TODO: We should chain on some promise holding one side of a channel so that we can cancel this entire request later if we end up needing to 
 		let new_request_vote = |
-			to_id: ServerId, addr: &String, req: &RequestVoteRequest
+			to_id: ServerId, req: &RequestVoteRequest
 		| {
 			let shared = shared.clone();
 
-			rpc::call_request_vote(addr, req)
+			shared.client.call_request_vote(to_id, req)
 			.timeout(Duration::from_millis(REQUEST_TIMEOUT))
 			.then(move |res| -> FutureResult<(), ()> {
 				
@@ -757,12 +792,12 @@ impl<R: Send + 'static> ServerShared<R> {
 		};
 
 		let new_append_entries = |
-			to_id: ServerId, addr: &String, req: &AppendEntriesRequest, last_log_index: u64
+			to_id: ServerId, req: &AppendEntriesRequest, last_log_index: u64
 		| {
 
 			let shared = shared.clone();
 
-			let ret = rpc::call_append_entries(addr, req)
+			let ret = shared.client.call_append_entries(to_id, req)
 			.timeout(Duration::from_millis(REQUEST_TIMEOUT))
 			.then(move |res| -> FutureResult<(), ()> {
 
@@ -786,17 +821,12 @@ impl<R: Send + 'static> ServerShared<R> {
 
 		for msg in messages {
 			for to_id in msg.to {
-
-				// XXX: Assumes well known routes
-				// ^ if this results in a miss, then this is a good insective to ask some other server for a new list of server addrs immediately
-				let addr = state.routes.get(&to_id).unwrap();
-
 				match msg.body {
 					MessageBody::AppendEntries(ref req, ref last_log_index) => {
-						append_entries.push(new_append_entries(to_id, addr, req, *last_log_index));
+						append_entries.push(new_append_entries(to_id, req, *last_log_index));
 					},
 					MessageBody::RequestVote(ref req) => {
-						request_votes.push(new_request_vote(to_id, addr, req));
+						request_votes.push(new_request_vote(to_id, req));
 					},
 					_ => {}
 					// TODO: Handle all cases
@@ -823,20 +853,24 @@ impl<R: Send + 'static> ServerShared<R> {
 		-> impl Future<Item=T, Error=Error> + Send where T: Send
 	{
 		loop_fn((shared, c), |(shared, c)| {
-			match c.poll() {
-				ConstraintPoll::Satisfied(v) => return Either::A(ok(Loop::Break(v))),
-				ConstraintPoll::Unsatisfiable => return Either::A(err("Halted progress on getting match".into())),
-				ConstraintPoll::Pending((c, pos)) => {
-					let fut = {
-						let mi = shared.match_index.lock();
-						mi.wait(pos)
-					};
-					
-					Either::B(fut.then(move |_| {
-						ok(Loop::Continue((shared, c)))
-					}))
-				}
-			}
+
+			let (c, fut) = {
+				let mi = shared.match_index.lock();
+
+				// TODO: I don't think yields sufficient atomic gurantees
+
+				let (c, pos) = match c.poll(shared.log.as_ref()) {
+					ConstraintPoll::Satisfied(v) => return Either::A(ok(Loop::Break(v))),
+					ConstraintPoll::Unsatisfiable => return Either::A(err("Halted progress on getting match".into())),
+					ConstraintPoll::Pending(v) => v
+				};
+
+				(c, mi.wait(pos))
+			};
+			
+			Either::B(fut.then(move |_| {
+				ok(Loop::Continue((shared, c)))
+			}))
 		})
 	}
 
@@ -901,12 +935,13 @@ impl<R: Send + 'static> ServerShared<R> {
 
 impl<R: Send + 'static> rpc::ServerService for Server<R> {
 
+	fn client(&self) -> &rpc::Client {
+		&self.shared.client
+	}
+
 	fn pre_vote(&self, req: RequestVoteRequest) -> rpc::ServiceFuture<RequestVoteResponse> { to_future_box!({
-
-		let res = ServerShared::run_tick(&self.shared, |state, tick| {
-			state.inst.pre_vote(req, tick)
-		});
-
+		let state = self.shared.state.lock().unwrap();
+		let res = state.inst.pre_vote(req);
 		Ok(res)
 	}) }
 
