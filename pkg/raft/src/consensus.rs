@@ -345,7 +345,7 @@ impl ConsensusModule {
 			Ok(Proposal { term, index })
 		}
 		else if let ServerState::Follower(ref s) = self.state {
-			Err(ProposeError::NotLeader { leader_hint: s.last_leader_id })
+			Err(ProposeError::NotLeader { leader_hint: s.last_leader_id.or(self.meta.voted_for) })
 		}
 		else {
 			Err(ProposeError::NotLeader { leader_hint: None })
@@ -961,7 +961,7 @@ impl ConsensusModule {
 
 	/// Checks if a RequestVote request would be granted by the current server
 	/// This will not actually grant the vote for the term and will only mutate our state if the request has a higher observed term than us
-	pub fn pre_vote(&mut self, req: RequestVoteRequest) -> RequestVoteResponse {
+	pub fn pre_vote(&self, req: RequestVoteRequest) -> RequestVoteResponse {
 
 		let should_grant = |this: &Self| {
 
@@ -971,7 +971,8 @@ impl ConsensusModule {
 				return false;
 			}
 
-			// In this case, the terms must be equal
+
+			// In this case, the terms must be equal (or >= our current term, but for any non-read-only prevote query, we would update out local term to be at least that of the request)
 				
 			let (last_log_index, last_log_term) = {
 				let idx = self.log.last_index().unwrap_or(0);

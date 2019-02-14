@@ -25,14 +25,19 @@ use raft::state_machine::*;
 use raft::log::*;
 use raft::server::{Server, ServerInitialState};
 use raft::atomic::*;
-use raft::rpc::{marshal, unmarshal};
+use raft::rpc::{Client, marshal, unmarshal};
 use raft::server_protos::*;
 use raft::simple_log::*;
+use raft::discovery::DiscoveryService;
+use raft::routing::*;
 use std::path::Path;
 use clap::{Arg, App};
-use std::sync::{Arc};
+use std::sync::{Arc, Mutex};
 use futures::future::*;
 use core::DirLock;
+use rand::prelude::*;
+use futures::prelude::*;
+use futures::prelude::await;
 
 use redis::resp::*;
 use key_value::*;
@@ -207,9 +212,56 @@ impl redis::server::Service for RaftRedisServer {
 	}
 }
 
+/*
+	The general idea
 
-fn main() -> Result<()> {
+	- We will expose a single DiscoveryService
+		- We can't register ourselves 
+		- 
 
+	-> 
+
+	XXX: DiscoveryService will end up requesting ourselves in the case of starting up the services themselves starting up
+	-> Should be ideally topology agnostic
+	-> We only NEED to do a discovery if we are not 
+
+	-> We always want to have a discovery service
+		-> 
+
+
+	When do we HAVE to wait for initial discovery:
+	-> Only if we 
+
+	So the gist:
+		-> Can't create disk 
+
+	-> Every single server if given a seed list should try to reach that seed list on startup just to try and get itself in the cluster
+		-> Naturally in the case of a bootstrap
+
+	-> In most cases, if 
+
+	-> So yes, I think that we can still have a gossip protocol generalized to some form of identity value
+
+
+	General startup steps:
+	1. Load existing data
+	2. If new and not bootstrap, do a seed round
+	3. If new and not bootstrap, generate a new id via a proposal
+	4. If new, save our data to disk
+	5. Start up our server
+		- This should setup our local identity
+		- NOTE: Before this point, our agent should not have an identity, but may have a cluster id
+	6. If not part of the cluster, add ourselves 
+	6. Start gossiper
+		- We must git the gossip list another time to tell the cluster where we are
+		-> Sometimes will occur as part of the AddMember process (but not always if we aren't )
+		- Now that we have an identity, we must 
+		- The other notition is to thing of ourselves as always having an identity (in)
+
+*/
+
+#[async]
+fn main_task() -> Result<()> {
 	let matches = App::new("Raft")
 		.about("Sample consensus reaching node")
 		.arg(Arg::with_name("dir")
@@ -235,17 +287,29 @@ fn main() -> Result<()> {
 	// TODO: For now, we will assume that bootstrapping is well known up front although eventually to enforce that it only ever occurs exactly once, we may want to have an admin externally fire exactly one request to trigger it
 	// But even if we do pass in bootstrap as an argument, it is still guranteed to bootstrap only once on this machine as we will persistent the bootstrapped configuration before talking to other servers in the cluster
 
-	let dir = Path::new(matches.value_of("dir").unwrap());
+	let dir = Path::new(matches.value_of("dir").unwrap()).to_owned();
 	let bootstrap = matches.is_present("bootstrap");
+	let seed_list: Vec<String> = vec![
+		"http://127.0.0.1:4001".into(),
+		"http://127.0.0.1:4002".into()
+	];
+
 
 	let lock = DirLock::open(&dir)?;
 
+	// Ideally an agent would encapsulate saving itself to disk via some file somewhere
+	let agent = Arc::new(Mutex::new( NetworkAgent::new() ));
+
+	let client = Arc::new(Client::new(agent.clone()));
+	let discovery = Arc::new(DiscoveryService::new(client.clone(), seed_list));
+
+	
 
 	// Basically need to get a (meta, meta_file, config_snapshot, config_file, log_file)
 
 	let meta_builder = BlobFile::builder(&dir.join("meta".to_string()))?;
 	let config_builder = BlobFile::builder(&dir.join("config".to_string()))?;
-	let log_path = &dir.join("log".to_string());
+	let log_path = dir.join("log".to_string());
 
 	let mut is_empty: bool;
 
@@ -268,7 +332,7 @@ fn main() -> Result<()> {
 		let (config_file, config_data) = config_builder.open()?;
 
 		// TODO: Load from disk
-		let mut log = SimpleLog::open(log_path)?;
+		let mut log = SimpleLog::open(&log_path)?;
 
 		let meta = unmarshal(meta_data)?;
 		let config_snapshot = unmarshal(config_data)?;
@@ -280,12 +344,13 @@ fn main() -> Result<()> {
 	// Otherwise we are starting a new server instance
 	else {
 		// Every single server starts with totally empty versions of everything
-		let mut meta = Metadata::default();
+		let mut meta = raft::protos::Metadata::default();
 		let config_snapshot = ServerConfigurationSnapshot::default();
-		let mut log = SimpleLog::create(log_path)?;
+		let mut log = vec![];
 
 
 		let mut id: ServerId;
+		let mut cluster_id: ClusterId;
 
 		// For the first server in the cluster (assuming no configs are already on disk)
 		if bootstrap {
@@ -293,39 +358,54 @@ fn main() -> Result<()> {
 			id = 1;
 			is_empty = false;
 
-			log.append(LogEntry {
+			// Assign a cluster id to our agent (usually would be retrieved through network discovery if not in bootstrap mode)
+			cluster_id = rand::thread_rng().next_u64();
+
+			log.push(LogEntry {
 				term: 1,
 				index: 1,
 				data: LogEntryData::Config(ConfigChange::AddMember(1))
 			});
 		}
 		else {
+			// TODO: All of this could be in while loop until we are able to connect to the leader and propose a new message on it
 
-			// Ask the cluster for a config
-			// Then ask the server for its set of routes 
+			await!(discovery.seed())?;
 
-			// In summary one new-member request which 
+			// TODO: Instead pick a random one from our list
+			let first_id = agent.lock().unwrap().routes.values().next().unwrap().desc.id;
 
-			id = 2;
+			let ret = await!(client.call_propose(first_id, &ProposeRequest {
+				data: LogEntryData::Noop,
+				wait: true
+			}))?;
+
+			// TODO: If we get here, we may get a not_leader, in which case, if we don't have information on the leader's identity, then we need to ask everyone we know for a new list of server addrs
+
+			println!("Generated new index {}", ret.index);
+
+			id = ret.index;
 			is_empty = true;
 
-			// TODO: In this case we should probably be bootstrapping our routes from another server in the cluster already
-
-			// TODO: Get a 
-
-			// Must wait ot get some role in an existing cluster (basically we propose AddLearner on an existing cluster and hopefully, it will start just magically replicating stuff to us)
-
-			// XXX: Although we should only o this after the consensus module is up and running 
+			cluster_id = agent.lock().unwrap().cluster_id.clone()
+				.expect("No cluster_id obtained during initial cluster connection");
 
 		}
 
+		//  XXX: If we are able to get an id, then 
 		let server_meta = ServerMetadata {
-			id, cluster_id: 0,
+			id, cluster_id,
 			meta
 		};
 
+		// Ideally save the log for the first time right here
 		let meta_file = meta_builder.create(&marshal(&server_meta)?)?;
 		let config_file = config_builder.create(&marshal(&config_snapshot)?)?;
+		let log_file = SimpleLog::create(&log_path)?;
+
+		for e in log {
+			log_file.append(e);
+		}
 
 		// TODO: The config should get immediately comitted and we should immediately safe it with the right cluster id (otherwise this bootstrap will just result in us being left with a totally empty config right?)
 		// ^ Although it doesn't really matter all that much
@@ -333,7 +413,7 @@ fn main() -> Result<()> {
 		(
 			server_meta, meta_file,
 			config_snapshot, config_file,
-			log
+			log_file
 		)
 	};
 
@@ -349,13 +429,20 @@ fn main() -> Result<()> {
 		last_applied: 0
 	};
 
-	let server = Arc::new(Server::new(initial_state));
+	println!("COMMIT INDEX {}", initial_state.meta.meta.commit_index);
+
+	let server = Arc::new(Server::new(client.clone(), initial_state));
 
 	// TODO: Support passing in a port (and maybe also an addr)
 	let task = Server::start(server.clone());
 
 
 	// TODO: If one node joins another cluster with one node, does the old leader of that cluster need to step down?
+
+	// THe simpler way to think of this is (if not bootstrap mode and there are zero )
+	// But yeah, if we can get rid of the bootstrap caveat, then this i 
+
+	let our_id = client.agent().lock().unwrap().identity.clone().unwrap().id;
 
 	let join_cluster = lazy(move || {
 
@@ -365,21 +452,18 @@ fn main() -> Result<()> {
 
 		ok(())
 	})
-	.and_then(|_| {
+	.and_then(move |_| {
 
-		// The descriptor for the leader of an existing cluster to join
-		let leader = ServerDescriptor {
-			id: 1,
-			addr: "http://127.0.0.1:4001".into()
-		};
+		println!("Planning on joining: ");
 
-		let this = ServerDescriptor {
-			id: 2,
-			addr: "http://127.0.0.1:4002".into()
-		};
+		// TODO: Possibly build another layer of client that will do the extra discovery and leader_hint caching
 
-		raft::rpc::call_propose(&leader.addr, &raft::protos::ProposeRequest {
-			data: LogEntryData::Config(ConfigChange::AddMember(this.id)),
+
+		// For anything to work properly, this must occur after we have an id,
+
+		// XXX: at this point, we should know who the leader is with better precision than this  (based on a leader hint from above)
+		client.call_propose(1, &raft::protos::ProposeRequest {
+			data: LogEntryData::Config(ConfigChange::AddMember(our_id)),
 			wait: false
 		}).then(|res| -> FutureResult<(), ()> {
 
@@ -394,20 +478,36 @@ fn main() -> Result<()> {
 	});
 
 
-
 	let client_server = Arc::new(redis::server::Server::new(RaftRedisServer {
 		server: server.clone(), state_machine: state_machine.clone()
 	}));
 
-	let client_task = redis::server::Server::start(client_server.clone());
+	let client_task = redis::server::Server::start(client_server.clone(), (5000 + our_id) as u16);
 
 
-	tokio::run(
+
+	// Run everything
+	await!(
 		task
 		.join(join_cluster)
 		.join(client_task)
-		.map(|_| ())	
+		.join(DiscoveryService::run(discovery.clone()))
 	);
+
+
+	Ok(())
+}
+
+
+fn main() -> Result<()> {
+
+	tokio::run(lazy(|| {
+		main_task()
+		.map_err(|e| {
+			eprintln!("{:?}", e);
+			()
+		})
+	}));
 
 	// This is where we would perform anything needed to manage regular client requests (and utilize the server handle to perform operations)
 	// Noteably we want to respond to clients with nice responses telling them specifically if we are not the actual leader and can't actually fulfill their requests

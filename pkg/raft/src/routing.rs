@@ -2,23 +2,46 @@ use super::protos::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+use std::hash::{Hash, Hasher};
+use std::borrow::Borrow;
 
 
 pub type ClusterId = u64;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ServerDesc {
+/// Describes a single server in the cluster using a unique identifier and any information needed to contact it (which may change over time)
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ServerDescriptor {
 	pub id: ServerId,
 	pub addr: String
 }
 
-impl ServerDesc {
+impl Hash for ServerDescriptor {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl PartialEq for ServerDescriptor {
+    fn eq(&self, other: &ServerDescriptor) -> bool {
+        self.id == other.id
+    }
+}
+impl Eq for ServerDescriptor {}
+
+// Mainly so that we can look up servers directly by id in the hash sets 
+impl Borrow<ServerId> for ServerDescriptor {
+	fn borrow(&self) -> &ServerId {
+		&self.id
+	}
+}
+
+impl ServerDescriptor {
 
 	pub fn to_string(&self) -> String {
 		self.id.to_string() + " " + &self.addr
 	}
 
-	pub fn parse(val: &str) -> std::result::Result<ServerDesc, &'static str> {
+	pub fn parse(val: &str) -> std::result::Result<ServerDescriptor, &'static str> {
 		let parts = val.split(' ').collect::<Vec<_>>();
 
 		if parts.len() != 2 {
@@ -28,15 +51,15 @@ impl ServerDesc {
 		let id = parts[0].parse::<ServerId>().map_err(|_| "Invalid server id")?;
 		let addr = parts[1].to_owned();
 
-		Ok(ServerDesc {
+		Ok(ServerDescriptor {
 			id, addr
 		})
 	}
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Route {
-	pub desc: ServerDesc,
+	pub desc: ServerDescriptor,
 
 	/// Last time this route was retrieved or was observed in an incoming request
 	pub last_used: SystemTime
@@ -64,7 +87,7 @@ pub struct NetworkAgent {
 
 	/// Specified the route to the current server (if we are not acting purely in client mode)
 	/// NOTE: May be set only if there is also a cluster_id set
-	pub identity: Option<ServerDesc>,
+	pub identity: Option<ServerDescriptor>,
 
 	/// All information known about other servers in this network/cluster
 	/// For each server this stores the last known location at which it can be reached
@@ -77,9 +100,15 @@ pub struct NetworkAgent {
 
 impl NetworkAgent {
 
-	pub fn add_route(&mut self, desc: ServerDesc) {
+	pub fn new() -> Self {
+		NetworkAgent {
+			cluster_id: None, identity: None, routes: HashMap::new()
+		}
+	}
+
+	pub fn add_route(&mut self, desc: ServerDescriptor) {
 		// Never need to add ourselves
-		if let Some(our_desc) = self.identity {
+		if let Some(ref our_desc) = self.identity {
 			if our_desc.id == desc.id {
 				return;
 			}
@@ -99,9 +128,9 @@ impl NetworkAgent {
 
 		// TODO: Possibly some consideration for a minimum last_used time if the route would just get immediately garbage collected upon being added
 
-		for r in an.routes {
+		for r in an.routes.iter() {
 			// If we are a server, never add ourselves to our list
-			if let Some(desc) = self.identity {
+			if let Some(ref desc) = self.identity {
 				if desc.id == r.desc.id {
 					continue;
 				}
@@ -116,7 +145,7 @@ impl NetworkAgent {
 				};
 
 			if insert {
-				self.routes.insert(r.desc.id, r);
+				self.routes.insert(r.desc.id, r.clone());
 			}
 		}
 	}

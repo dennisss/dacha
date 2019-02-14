@@ -12,6 +12,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+use std::str::FromStr;
 
 /*
 	Helpers for making an RPC server for communication between machines
@@ -51,7 +52,7 @@ use std::time::SystemTime;
 
 
 
-// In our RPC, these will contain a serialized ServerDesc representing which server is sending the request and who is the designated receiver
+// In our RPC, these will contain a serialized ServerDescriptor representing which server is sending the request and who is the designated receiver
 // NOTE: All key names must be lowercase as they may get normalized in http2 transport anyway and case may not get preversed on the other side
 const FromKey: &str = "from";
 const ToKey: &str = "to";
@@ -267,8 +268,10 @@ pub fn run_server<I: 'static, R, F: 'static>(port: u16, inst: I, router: &'stati
 }
 
 // TODO: Ideally the response type in the future needs be encapsulated so that we can manage a zero-copy deserialization
+// The figure will resolve to an error only if there is a serious protocol/network error. Otherwise, regular error responses will be encoded in the inner result 
 fn make_request_single<'a, Res>(client: &HttpClient, addr: &String, path: &'static str, meta: &Metadata, data: Bytes)
-	-> impl Future<Item=(Metadata, Res), Error=Error>
+	-> impl Future<Item=(Metadata, Result<Res>), Error=Error>
+	
 	where Res: Deserialize<'a>	
 {
 	let mut b = hyper::Request::builder();
@@ -293,17 +296,23 @@ fn make_request_single<'a, Res>(client: &HttpClient, addr: &String, path: &'stat
 	.map_err(|e| e.into())
 	.and_then(|resp| {
 
-		if !resp.status().is_success() {
-			// NOTE: We assume that errors don't appear in the body
-			return err(format!("RPC call failed with code: {}", resp.status().as_u16()).into());
-		}
-
-		ok(resp)
-	})
-	.and_then(|resp| {
 		let (parts, body) = resp.into_parts();
-		
-		body
+
+		let meta = match parse_metadata(&parts.headers) {
+			Ok(v) => v,
+			Err(_) => return Either::A(err("Invalid metadata in RPC response".into()))
+		};
+
+		if !parts.status.is_success() {
+			return Either::A(ok(
+				(
+					meta,
+					Err(format!("RPC call failed with code: {}", parts.status.as_u16()).into())
+				)
+			));
+		}
+	
+		Either::B(body
 		.map_err(|e| e.into())
 		.fold(Vec::new(), |mut buf, c| -> FutureResult<Vec<_>, Error> {
 			buf.extend_from_slice(&c);
@@ -315,14 +324,8 @@ fn make_request_single<'a, Res>(client: &HttpClient, addr: &String, path: &'stat
 				Err(_) => return err("Failed to parse RPC response".into())
 			};
 
-			let meta = match parse_metadata(&parts.headers) {
-				Ok(v) => v,
-				Err(_) => return err("Invalid metadata in RPC response".into())
-			};
-
-			// XXX: We really want to be able to encapsulate this in a zero copy 
-			futures::future::ok((meta, ret))
-		})
+			futures::future::ok((meta, Ok(ret)))
+		}))
 	})
 }
 
@@ -343,9 +346,6 @@ pub fn DiscoverService_router<R: 'static, S: 'static>(
 	let mut agent = inst.borrow().client().agent().lock().unwrap();
 
 	let our_cluster_id = agent.cluster_id.unwrap();
-	let our_ident = agent.identity.as_ref().unwrap();
-
-	// But yeah, only some part of it is valid, we can reject it
 
 	// We first validate the cluster id because it must be valid for us to trust any of the other routing data
 	let cluster_validated = if let Some(h) = meta.get(ClusterIdKey) {
@@ -363,12 +363,13 @@ pub fn DiscoverService_router<R: 'static, S: 'static>(
 	};
 
 	// Record who sent us this message
+	// TODO: Should receiving a message from one's self be an error?
 	if let Some(h) = meta.get(FromKey) {
 		if !cluster_validated {
 			return Err(bad_request_because("Received From header without a cluster id check"));
 		}
 
-		let desc = ServerDesc::parse(h).map_err(|s| bad_request_because(s))?;
+		let desc = ServerDescriptor::parse(h).map_err(|s| bad_request_because(s))?;
 		agent.add_route(desc);
 	}
 
@@ -378,15 +379,15 @@ pub fn DiscoverService_router<R: 'static, S: 'static>(
 			return Err(bad_request_because("Received To header without a cluster id check"));
 		}
 
-		let addr = ServerDesc::parse(h).map_err(|s| bad_request_because(s))?;
+		let addr = ServerDescriptor::parse(h).map_err(|s| bad_request_because(s))?;
+		let our_ident = agent.identity.as_ref().unwrap();
 
-		let ident = agent.identity.as_ref().unwrap();
-		if addr.id != ident.id {
+		if addr.id != our_ident.id {
 			// Bail out. The client should adjust its routing info based on the identity we return back here
 			return Err(hyper::Response::builder()
 				.status(hyper::StatusCode::BAD_REQUEST)
 				.header("Content-Type", "text/plain; charset=utf-8")
-				.header(FromKey, ident.to_string())
+				.header(("x-".to_owned() + FromKey).as_str(), our_ident.to_string())
 				.body(Body::from("Not the intended recipient"))
 				.unwrap())
 		}
@@ -419,7 +420,7 @@ pub fn DiscoverService_router<R: 'static, S: 'static>(
 			agent.apply(&req);
 
 			rpc_response(Ok(Announcement {
-				routes: agent.routes().values().map(|v| *v.clone()).collect::<Vec<_>>()
+				routes: agent.routes().values().map(|v| v.clone()).collect::<Vec<_>>()
 			}))
 		},
 		// Does not match, so fallthrough to the regular routes
@@ -435,12 +436,20 @@ pub fn DiscoverService_router<R: 'static, S: 'static>(
 
 	if !cluster_validated {
 		res.headers_mut().insert(
-			ClusterIdKey,
+			hyper::header::HeaderName::from_str(&("x-".to_owned() + ClusterIdKey)).unwrap(),
 			hyper::header::HeaderValue::from_str(&agent.cluster_id.unwrap().to_string()).unwrap()
 		);
 	}
 
-	// TODO: Also add our from header in most cases if not verified
+	if !to_verified {
+		let our_ident = agent.identity.as_ref().unwrap();
+
+		// TODO: This is basically redundant with the line that we have further above
+		res.headers_mut().insert(
+			hyper::header::HeaderName::from_str(&("x-".to_owned() + FromKey)).unwrap(),
+			hyper::header::HeaderValue::from_str(our_ident.to_string().as_str()).unwrap()
+		);
+	}
 
 	Ok(Some(res))
 }
@@ -545,6 +554,8 @@ impl Client {
 					e.desc.addr.clone()
 				}
 				else {
+					print!("MISS {}", id);
+
 					// TODO: then this is a good incentive to ask some other server for a new list of server addrs immediately (if we are able to communicate with out discovery service)
 					return Either::A(err("No route for specified server id".into()))
 				}
@@ -556,28 +567,38 @@ impl Client {
 
 		let data = marshal(req).expect("Failed to serialize RPC request");
 
-		// Upon a successful response, we can 
-		// TODO: Given a From and cluster_id
-		// Basically if we do receibe a flat-out id rejection, then we can remove the old record from our routes table
-
-		// XXX: Likewise once the request succeeds, we may have stuff that we can do 
+		let agent_handle = self.agent.clone();
 
 		Either::B(make_request_single(&self.inner, &addr, path, &meta, data.into())
-		.and_then(|(meta, res)| {
+		.and_then(move |(meta, res)| {
 
-			/*
-			// Basically now 
-
+			let mut agent = agent_handle.lock().unwrap();
+			
 			if let Some(v) = meta.get(ClusterIdKey) {
+				let cid_given = v.parse::<u64>().unwrap();
 
+				if let Some(cid) = agent.cluster_id {
+					if cid != cid_given {
+						return err("Received response with mismatching cluster_id".into())
+					}
+				}
+				else {
+					agent.cluster_id = Some(cid_given);
+				}
 			}
-			*/
 
-			// Ideally we never want to be receiving old data if we have figured out that some old information is bad
+			if let Some(v) = meta.get(FromKey) {
+				let desc = match ServerDescriptor::parse(v) {
+					Ok(v) => v,
+					Err(_) => return err("Invalid from metadata received".into())
+				};
 
-			// NOTE: Need bidirection deserialization of metadata
+				// TODO: If we originally requested this server under a different id, it would be nice to erase that other record or tombstone it
 
-			res
+				agent.add_route(desc);
+			}
+
+			res.into()
 		}))
 	}
 
@@ -615,10 +636,28 @@ impl Client {
 	/// The request payload is a list of routes known to the requesting server. The response is the list of all routes on the receiving server after this request has been processed
 	/// 
 	/// The internal implementation essentially will cause the sets of routes on both servers to converge to the same set after the request has suceeded
-	pub fn call_announce(&self, to: To, req: &Announcement)
+	pub fn call_announce(&self, to: To)
 		-> impl Future<Item=Announcement, Error=Error> {
 		
-		self.make_request(to, "/DiscoveryService/Announce", req)
+
+		let agent_handle = self.agent.clone();
+
+		// TODO: Eventually it would probably be more efficient to pass in a single copy of the req for all of the servers that we want to announce to
+		let req = {
+			let agent = agent_handle.lock().unwrap();
+
+			Announcement {
+				routes: agent.routes.values().map(|v| v.clone()).collect::<Vec<_>>()
+			}
+		};
+
+		self.make_request(to, "/DiscoveryService/Announce", &req)
+		.and_then(move |ann| {
+
+			let mut agent = agent_handle.lock().unwrap();
+			agent.apply(&ann);
+			ok(ann)
+		})
 	}
 
 }

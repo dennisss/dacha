@@ -1,8 +1,13 @@
 use super::errors::*;
 use super::protos::*;
+use super::routing::*;
+use super::rpc::*;
 use futures::prelude::*;
 use futures::future::*;
+use std::sync::Arc;
 use std::collections::{HashMap};
+use tokio::prelude::FutureExt;
+use std::time::Duration;
 
 /*
 	Ideally we want to generalize an interface for a discovery service:
@@ -75,13 +80,6 @@ use std::collections::{HashMap};
 /*
 	Internal initial discovery:
 
-	- If we have a server id
-		- Broadcast our list of servers to everyone else 
-		- Also good to sync last seen times
-		- We will record the last_sent time for each route
-		- Cleanup with be coordinated with the 
-			- No point in cleaning up anything not in our cluster
-
 	- Given a list of unlabeled addresses
 		- NOTE: If we have any servers already in our routes list, we will need to tell them that we are alive and well too
 	- Send an announcement to every server 
@@ -98,44 +96,81 @@ use std::collections::{HashMap};
 /// Most basic mode of discover service based on an initial list of server addresses
 /// We assume that each server listed equally represents the entire cluster
 /// 
+/// We make no assumptions about the ids or memberships of any of the servers in the list and they can be dns names or load balanced end points if convenient
+/// 
 /// The general strategy that this uses is as follows:
-/// - On creation, this will query the entire seed list and will succeed if it has gotten back information from at least one of the listed servers
-/// 	- Also that, it will also attempt to send an announcement request to every single server that it now knows about. 
-/// 	- After all of those have succeeded or failed, the servive will
-/// 
-/// Later on, the server will periodically perform this same procedure of sharing its configuration (if it has changed)
-/// 
-/// TODO: Should probably also wrap a common client instance
-pub struct SeededDiscoveryService {
+/// - For new servers, we immediately ask the seed servers for an initial cluster configuration
+/// - Starting once we are started up, every server will perform a low frequency sync with the seed servers
+/// - Separately we'd like to use a higher frequency heartbeat style decentralized gossip protocol between all other nodes in the cluster (using this layer allows for sharing of configurations even in the presense of failed seed servers)
+pub struct DiscoveryService {
 
+	client: Arc<Client>,
 
+	seeds: Vec<String>
 }
 
-impl SeededDiscoveryService {
 
-	/*
-		Three things:
-		- Initial seed list
-			- Can be labeled or unlabled
-		- Persistent storage backing for it 
-			- With the list of routes
-			- 
-		- Common request client
-	*/
-	/*
-	pub fn start() -> impl Future<Item=SeededDiscoveryService, Error=Error> {
+// TODO: Consider holding onto the list of seed servers in the long term (less periodically refresh our list with them)
+	// In this way, we may not even need a gossip protocol if we assume that we have a set of 
+
+impl DiscoveryService {
+
+	pub fn new(client: Arc<Client>, seeds: Vec<String>) -> Self {
+		DiscoveryService {
+			client,
+			seeds
+		}
+	}
+
+	pub fn seed(&self) -> impl Future<Item=(), Error=Error> {
+
+		let reqs = self.seeds.iter().map(|addr| {
+			self.client.call_announce(To::Addr(addr))
+			.timeout(Duration::from_millis(1000)) // < Servers may frequently be offline
+			.then(|res| {
+				match res {
+					Ok(_) => ok(true),
+					Err(e) => {
+						eprintln!("Seed request failed with {:?}", e);
+						ok(false)
+					}
+				}
+			})
+		}).collect::<Vec<_>>();
+
+		join_all(reqs)
+		.and_then(|results| {
+
+			if results.contains(&true) {
+				// TODO: In this case, also start up the periodic heartbeater in a separate task
+				
+				ok(())
+			}
+			else {
+				err("All seed list servers failed".into())
+			}
+		})
+	}
+
+	pub fn run(inst: Arc<Self>) -> impl Future<Item=(), Error=()> {
+
+		loop_fn(inst, |inst| {
+
+			inst.seed()
+			// TODO: Right here also request everyone else in our routes list
+			// Also need backoff for addresses that are failing
+
+			.then(|_| {
+
+				tokio::timer::Delay::new(std::time::Instant::now() + std::time::Duration::from_millis(500))
+				.then(move |_| {
+					ok(Loop::Continue(inst))
+				})
+			})
+		})
 
 	}
-	*/
 
 
 }
 
-/*
-	This has a very simple job:
-	- Given an initial list of servers, attempt to contact one of them
-		- If all of them fail, then fail immediately
-
-	- Otherwise, return a list of all of them
-		- This is only needed 
-*/

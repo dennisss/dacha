@@ -79,34 +79,6 @@ enum ServerRole {
 	Learner
 }
 
-/// Describes a single server in the cluster using a unique identifier and any information needed to contact it (which may change over time)
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ServerDescriptor {
-	pub id: ServerId,
-	pub addr: String
-}
-
-impl Hash for ServerDescriptor {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
-
-impl PartialEq for ServerDescriptor {
-    fn eq(&self, other: &ServerDescriptor) -> bool {
-        self.id == other.id
-    }
-}
-impl Eq for ServerDescriptor {}
-
-// Mainly so that we can look up servers directly by id in the hash sets 
-impl Borrow<ServerId> for ServerDescriptor {
-	fn borrow(&self) -> &ServerId {
-		&self.id
-	}
-}
-
-
 /// Represents a configuration at a single index
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConfigurationSnapshot {

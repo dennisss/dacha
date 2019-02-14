@@ -1,6 +1,7 @@
 
 use super::errors::*;
 use super::protos::*;
+use super::routing::*;
 use super::constraint::*;
 use super::consensus::*;
 use super::rpc;
@@ -109,10 +110,13 @@ pub struct Server<R> {
 /// Server variables that can be shared by many different threads
 struct ServerShared<R> {
 
+	/// As stated in the initial metadata used to create the server
+	cluster_id: ClusterId,
+
 	state: Mutex<ServerState<R>>,
 
 	/// Used for network message sending and connection management
-	client: rpc::Client,
+	client: Arc<rpc::Client>,
 
 	// TODO: Need not have a lock for this right? as it is not mutable
 	// Definately we want to lock the LogStorage separately from the rest of this code
@@ -165,7 +169,7 @@ struct ServerState<R> {
 impl<R: Send + 'static> Server<R> {
 
 	pub fn new(
-		client: rpc::Client,
+		client: Arc<rpc::Client>,
 		initial: ServerInitialState<R>,
 	) -> Self {
 
@@ -216,6 +220,7 @@ impl<R: Send + 'static> Server<R> {
 		};
 
 		let shared = Arc::new(ServerShared {
+			cluster_id: meta.cluster_id,
 			state: Mutex::new(state),
 			client,
 			log,
@@ -251,13 +256,27 @@ impl<R: Send + 'static> Server<R> {
 				state.log_receiver.take().expect("Log receiver already taken")
 			)
 		};
+		
+		let port = 4000 + (id as u16);
 
-		// Must 
 		{
-			let agent = server.shared.client.agent().lock().unwrap();
-			if let Some(desc) = agent.identity {
-				// Already running on some other server?
+			let mut agent = server.shared.client.agent().lock().unwrap();
+			if let Some(ref desc) = agent.identity {
+				panic!("Starting server which already has a cluster identity");
 			}
+
+			// Usually this won't be set for restarting nodes that haven't contacted the cluster yet, but it may be set for initial nodes
+			if let Some(ref v) = agent.cluster_id {
+				if *v != server.shared.cluster_id {
+					panic!("Mismatching server cluster_id");
+				}
+			}
+
+			agent.cluster_id = Some(server.shared.cluster_id);
+			agent.identity = Some(ServerDescriptor {
+				addr: format!("http://127.0.0.1:{}", port),
+				id
+			});
 		}
 
 		/*
@@ -276,7 +295,7 @@ impl<R: Send + 'static> Server<R> {
 		// Although we would ideally do this easier (but later should also be fine?)
 
 		let service = rpc::run_server(
-			4000 + (id as u16), server.clone(), &rpc::ServerService_router::<Arc<Self>, Self>
+			port, server.clone(), &rpc::ServerService_router::<Arc<Self>, Self>
 		);
 
 		let cycler = Self::run_cycler(&server, state_changed);
@@ -649,7 +668,7 @@ impl<R: Send + 'static> ServerShared<R> {
 			// TODO: Potentially batchable if we choose to make this something that can do an async write to the disk
 			state.meta_file.store(&rpc::marshal(ServerMetadataRef {
 				id: state.inst.id(),
-				cluster_id: 0,
+				cluster_id: shared.cluster_id,
 				meta: state.inst.meta()
 			})?)?;
 
