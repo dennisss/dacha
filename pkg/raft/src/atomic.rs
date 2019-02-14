@@ -30,8 +30,12 @@ pub struct BlobFile {
 	/// The path to the main data file this uses
 	path: PathBuf,
 
-	/// Path to 
-	path_tmp: PathBuf
+	/// Path to temporary data file used to store the old data value until the new value is fully written
+	path_tmp: PathBuf,
+
+	/// Path to a temporary file used only during initial creation of the file
+	/// It will only exist if the file has never been successfully created before
+	path_new: PathBuf
 }
 
 pub struct BlobFileBuilder {
@@ -52,7 +56,8 @@ impl BlobFile {
 	pub fn builder(path: &Path) -> Result<BlobFileBuilder> {
 		let path = path.to_owned();
 		let path_tmp = PathBuf::from(&(path.to_str().unwrap().to_owned() + ".tmp"));
-		
+		let path_new = PathBuf::from(&(path.to_str().unwrap().to_owned() + ".new"));
+
 		let dir = {
 			let path_dir = match path.parent() {
 				Some(p) => p,
@@ -68,7 +73,7 @@ impl BlobFile {
 			
 		Ok(BlobFileBuilder {
 			inner: BlobFile {
-				dir, path, path_tmp
+				dir, path, path_tmp, path_new
 			}
 		})
 	}
@@ -142,6 +147,23 @@ impl BlobFileBuilder {
 		self.inner.path.exists() || self.inner.path_tmp.exists()
 	}
 
+	/// If any existing data exists, this will delete it
+	pub fn purge(&self) -> Result<()> {
+		if self.inner.path.exists() {
+			std::fs::remove_file(&self.inner.path)?;
+		}
+		
+		if self.inner.path_tmp.exists() {
+			std::fs::remove_file(&self.inner.path_tmp)?;
+		}
+
+		if self.inner.path_new.exists() {
+			std::fs::remove_file(&self.inner.path_new)?;
+		}
+
+		Ok(())
+	}
+
 	/// Opens the file assuming that it exists
 	/// Errors out if we could be not read the data because it is corrupt or non-existent
 	pub fn open(self) -> Result<(BlobFile, Bytes)> {
@@ -177,7 +199,7 @@ impl BlobFileBuilder {
 			}
 		}
 
-		Err("No valid data could be read".into())
+		Err("No valid data could be read (corrupt data)".into())
 	}
 
 	/// Tries to open the given path
@@ -230,13 +252,21 @@ impl BlobFileBuilder {
 		
 		let inst = self.inner;
 
+		// This may occur if we previously tried creating a data file but we were never able to suceed
+		if inst.path_new.exists() {
+			std::fs::remove_file(&inst.path_new)?;
+		}
+
 		let mut opts = OpenOptions::new();
 		opts.write(true).create_new(true);
 
-		let mut file = opts.open(&inst.path)?;
+		let mut file = opts.open(&inst.path_new)?;
 
 		BlobFile::write_simple(&mut file, initial_value)?;
 		file.sync_all()?;
+
+		std::fs::rename(&inst.path_new, &inst.path)?;
+
 		inst.dir.sync_all()?;
 
 		Ok(inst)

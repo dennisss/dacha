@@ -131,7 +131,7 @@ impl DiscoveryService {
 				match res {
 					Ok(_) => ok(true),
 					Err(e) => {
-						eprintln!("Seed request failed with {:?}", e);
+						//eprintln!("Seed request failed with {:?}", e);
 						ok(false)
 					}
 				}
@@ -158,11 +158,11 @@ impl DiscoveryService {
 
 			inst.seed()
 			// TODO: Right here also request everyone else in our routes list
-			// Also need backoff for addresses that are failing
+			// TODO: Also need backoff for addresses that are failing (especially for seed list addresses which may fail forever if the server was not started with the expectation of functionating always)
 
 			.then(|_| {
 
-				tokio::timer::Delay::new(std::time::Instant::now() + std::time::Duration::from_millis(500))
+				tokio::timer::Delay::new(std::time::Instant::now() + std::time::Duration::from_millis(2000))
 				.then(move |_| {
 					ok(Loop::Continue(inst))
 				})

@@ -31,7 +31,7 @@ impl SimpleLog {
 		let b = BlobFile::builder(path)?;
 		let (file, data) = b.open()?;
 
-		let log: Vec<LogEntry> = unmarshal(data)?;
+		let log: Vec<LogEntry> = unmarshal(&data)?;
 		let mem = MemoryLogStorage::new();
 
 		println!("RESTORE {:?}", log);
@@ -47,6 +47,12 @@ impl SimpleLog {
 			mem,
 			snapshot: Mutex::new((match_index, file))
 		})
+	}
+
+	pub fn purge(path: &Path) -> Result<()> {
+		let b = BlobFile::builder(path)?;
+		b.purge()?;
+		Ok(())
 	}
 
 }

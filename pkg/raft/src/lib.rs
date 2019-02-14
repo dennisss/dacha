@@ -66,3 +66,4 @@ pub mod discovery;
 pub mod server;
 
 pub mod simple_log;
+pub mod node;

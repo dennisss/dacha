@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use raft::errors::*;
 use raft::protos::*;
+use raft::rpc::{marshal, unmarshal};
 use raft::state_machine::*;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -83,22 +84,14 @@ impl MemoryKVStateMachine {
 		data.get(key).map(|v| v.clone())
 	}
 
-	/*
-	pub fn new_op(op: &KeyValueOperation) -> Bytes {
-		// Basically I want to 
-	}
-	*/
 }
 
 impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
 
 	// XXX: It would be useful to have a time and an index just for the sake of versioning of it 
 	fn apply(&self, index: LogIndex, data: &[u8]) -> Result<KeyValueReturn> {
-		// TODO: Switch to using the common marshalling code
-		let mut de = rmps::Deserializer::new(data);
-		let ret: KeyValueOperation = Deserialize::deserialize(&mut de)
-			.map_err(|_| Error::from("Failed to deserialize command"))?;
 
+		let ret: KeyValueOperation = unmarshal(data)?;
 		let mut map = self.data.lock().unwrap();
 
 		// Could be split into a check phase and a run phase

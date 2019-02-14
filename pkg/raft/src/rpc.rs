@@ -62,8 +62,8 @@ const ClusterIdKey: &str = "cluster-id";
 pub type Metadata = HashMap<String, String>;
 
 
-pub fn unmarshal<'de, T>(data: Bytes) -> Result<T> where T: Deserialize<'de> {
-	let mut de = rmps::Deserializer::new(&data[..]);
+pub fn unmarshal<'de, T>(data: &[u8]) -> Result<T> where T: Deserialize<'de> {
+	let mut de = rmps::Deserializer::new(data);
 	Deserialize::deserialize(&mut de).map_err(|e| "Failed to parse data".into())
 }
 
@@ -159,7 +159,7 @@ fn run_handler<'a, S, F, Req, Res: 'static>(inst: &'a S, data: Bytes, f: F)
 {
 
 	let start = move || -> FutureResult<_, hyper::Response<hyper::Body>> {
-		let req: Req = match unmarshal(data) {
+		let req: Req = match unmarshal(data.as_ref()) {
 			Ok(v) => v,
 			Err(_) => {
 				eprintln!("Failed to parse RPC request");
@@ -319,7 +319,7 @@ fn make_request_single<'a, Res>(client: &HttpClient, addr: &String, path: &'stat
 			ok(buf)
 		})
 		.and_then(|buf| {
-			let ret = match unmarshal(buf.into()) {
+			let ret = match unmarshal(&buf) {
 				Ok(v) => v,
 				Err(_) => return err("Failed to parse RPC response".into())
 			};
@@ -403,7 +403,7 @@ pub fn DiscoverService_router<R: 'static, S: 'static>(
 		"/DiscoveryService/Announce" => {
 
 			// TODO: Ideally don't hold the agent locked while deserializing
-			let req: Announcement = match unmarshal(data.clone()) {
+			let req: Announcement = match unmarshal(data.as_ref()) {
 				Ok(v) => v,
 				Err(_) => {
 					eprintln!("Failed to parse RPC request");
@@ -419,9 +419,7 @@ pub fn DiscoverService_router<R: 'static, S: 'static>(
 
 			agent.apply(&req);
 
-			rpc_response(Ok(Announcement {
-				routes: agent.routes().values().map(|v| v.clone()).collect::<Vec<_>>()
-			}))
+			rpc_response(Ok(agent.serialize()))
 		},
 		// Does not match, so fallthrough to the regular routes
 		_ => {
@@ -548,13 +546,12 @@ impl Client {
 		let addr = match to {
 			To::Addr(s) => s.clone(),
 			To::Id(id) => {
-				if let Some(e) = agent.routes.get_mut(&id) {
+				if let Some(e) = agent.lookup(id) {
 					meta.insert(ToKey.to_owned(), e.desc.to_string());
-					e.last_used = SystemTime::now();
 					e.desc.addr.clone()
 				}
 				else {
-					print!("MISS {}", id);
+					println!("MISS {}", id);
 
 					// TODO: then this is a good incentive to ask some other server for a new list of server addrs immediately (if we are able to communicate with out discovery service)
 					return Either::A(err("No route for specified server id".into()))
@@ -645,10 +642,7 @@ impl Client {
 		// TODO: Eventually it would probably be more efficient to pass in a single copy of the req for all of the servers that we want to announce to
 		let req = {
 			let agent = agent_handle.lock().unwrap();
-
-			Announcement {
-				routes: agent.routes.values().map(|v| v.clone()).collect::<Vec<_>>()
-			}
+			agent.serialize()
 		};
 
 		self.make_request(to, "/DiscoveryService/Announce", &req)

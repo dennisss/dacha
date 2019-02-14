@@ -94,8 +94,7 @@ pub struct NetworkAgent {
 	/// 
 	/// NOTE: Contains data only if a cluster_id is also set
 	/// TODO: Also support an empty record if we believe that the data is invalid (but when we don't won't to clean it up because of )
-	/// TODO: Eventually make this private and handle all changes through special methods
-	pub routes: HashMap<ServerId, Route>
+	routes: HashMap<ServerId, Route>
 }
 
 impl NetworkAgent {
@@ -120,8 +119,22 @@ impl NetworkAgent {
 		});
 	}
 
+	/// Use this whenever trying to find and connect to another server
+	pub fn lookup(&mut self, id: ServerId) -> Option<&Route> {
+		self.routes.get_mut(&id).map(|e| {
+			e.last_used = SystemTime::now();
+			e as &Route
+		})
+	}
+
 	pub fn routes(&self) -> &HashMap<ServerId, Route> {
 		&self.routes
+	}
+
+	pub fn serialize(&self) -> Announcement {
+		Announcement {
+			routes: self.routes.values().map(|v| v.clone()).collect::<Vec<_>>()
+		}
 	}
 
 	pub fn apply(&mut self, an: &Announcement) {

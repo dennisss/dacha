@@ -66,7 +66,6 @@ pub enum ExecuteError {
 
 	/*
 		Other errors
-
 	*/
 
 	// Also possibly that it just plain old failed to be committed
