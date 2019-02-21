@@ -1,0 +1,8 @@
+[package]
+name = "automata"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+
+[dependencies]
+core = { path = "../core" }
+nom = "4.2.0"

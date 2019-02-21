@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use super::stream::Stream;
 use core::block_size_remainder;
 use fs2::FileExt;
-use core::allocate_soft::*;
+use core::fs::allocate_soft::*;
 
 const SUPERBLOCK_MAGIC: &str = "HAYS";
 

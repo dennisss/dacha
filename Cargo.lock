@@ -43,6 +43,14 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "automata"
+version = "0.1.0"
+dependencies = [
+ "core 0.1.0",
+ "nom 4.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "backtrace"
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
