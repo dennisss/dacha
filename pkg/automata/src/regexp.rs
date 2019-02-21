@@ -24,6 +24,19 @@ enum GroupType {
 	Ignore
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
+enum Char {
+	Value(char),
+	Wildcard, // .
+	Word, Digit, Whitespace, // \w \d \s
+	NotWord, NotDigit, NotWhiteSpace // \W \D \S
+}
+
+#[derive(Debug)]
+enum CharSet {
+	Single(Char),
+	Range(Char, Char)
+}
 
 
 pub type RegExpP = Box<RegExp>;
@@ -33,8 +46,10 @@ pub enum RegExp {
 	Alt(Vec<RegExpP>),
 	Expr(Vec<RegExpP>),
 	Quantified(RegExpP, Quantifier),
+	Class(Vec<CharSet>, bool),
 	Capture(RegExpP),
-	Literal(char),
+	Literal(Char)
+
 	//Start, End
 }
 
@@ -53,11 +68,11 @@ impl RegExp {
 		}
 	}
 
-	pub fn to_automata(&self) -> FiniteStateAutomata<char> {
+	pub fn to_automata(&self) -> FiniteStateMachine<char> {
 
 		match self {
 			RegExp::Alt(list) => {
-				let mut a = FiniteStateAutomata::new();
+				let mut a = FiniteStateMachine::new();
 				for r in list.iter() {
 					a.join(r.to_automata());
 				}
@@ -65,7 +80,7 @@ impl RegExp {
 				a
 			}
 			RegExp::Expr(list) => {
-				let mut a = FiniteStateAutomata::zero();
+				let mut a = FiniteStateMachine::zero();
 				for r in list.iter() {
 					a.then(r.to_automata());
 				}
@@ -77,11 +92,11 @@ impl RegExp {
 
 				match q {
 					Quantifier::ZeroOrOne => {
-						a.join(FiniteStateAutomata::zero());
+						a.join(FiniteStateMachine::zero());
 					},
 					Quantifier::MoreThanZero => {
 						a.then_loop();
-						a.join(FiniteStateAutomata::zero());
+						a.join(FiniteStateMachine::zero());
 					},
 					Quantifier::MoreThanOne => {
 						a.then_loop();
@@ -90,12 +105,23 @@ impl RegExp {
 
 				a
 			},
+
+			RegExp::Class(_, _) => panic!("Classes not supported yet"),
+
 			RegExp::Capture(r) => r.to_automata(),
 			RegExp::Literal(c) => {
-				let mut a = FiniteStateAutomata::new();
+
+				// If we get a character class here, then that is fine as we will keep that as a root symbol that we will not probably not need to decimate any more
+
+				let cc = match c {
+					Char::Value(v) => v,
+					_ => panic!("Unsupported")
+				};
+
+				let mut a = FiniteStateMachine::new();
 				let start = a.add_state(); a.mark_start(start);
 				let end = a.add_state(); a.mark_accept(end);
-				a.add_transition(start, *c, end);
+				a.add_transition(start, *cc, end);
 				a
 			}
 		}
@@ -143,14 +169,15 @@ named!(quantifier<&str, Quantifier>, alt!(
 	do_parse!( char!('+') >> (Quantifier::MoreThanOne) )
 ));
 
-/*
-named!(character_class<&str, RegExpP>, alt!(
-	do_parse!(
-		
-	)
 
-))
-*/
+// TODO: In PCRE, '[]]' would parse as a character class matching the character ']' but for simplity we will require that that ']' be escaped in a character class
+named!(character_class<&str, RegExpP>,
+	delimited!(char!('['), do_parse!(
+		invert: opt!(char!('^')) >>
+		inner: many1!(cc_atom) >>
+		(Box::new(RegExp::Class(inner, invert.is_some())))
+	), char!(']'))
+);
 
 named!(capture<&str, RegExpP>, alt!(
 	do_parse!(
@@ -160,13 +187,55 @@ named!(capture<&str, RegExpP>, alt!(
 ));
 
 named!(atom<&str, RegExpP>, alt!(
+	map!(shared_atom, |c| Box::new(RegExp::Literal(c))) |
 	literal |
+	character_class |
 	capture
 ));
 
+named!(cc_atom<&str, CharSet>, alt!(
+	do_parse!(
+		start: cc_literal >>
+		char!('-') >>
+		end: cc_literal >>
+		(CharSet::Range(start, end))
+	) |
+	map!(alt!(
+		shared_atom |
+		cc_literal
+	), |c| CharSet::Single(c))
+));
+
+// TODO: It seems like it could be better to combine this with the shared_literal class
+named!(shared_atom<&str, Char>, alt!(
+	map!(tag!("\\w"), |_| Char::Word) |
+	map!(tag!("\\d"), |_| Char::Digit) |
+	map!(tag!("\\s"), |_| Char::Whitespace) |
+	map!(tag!("\\W"), |_| Char::NotWord) |
+	map!(tag!("\\D"), |_| Char::NotDigit) |
+	map!(tag!("\\S"), |_| Char::NotWhiteSpace)
+));
+
 named!(literal<&str, RegExpP>, do_parse!(
-	c: none_of!(&b"[\\^$.|?*+()"[..]) >>
-	(Box::new(RegExp::Literal(c)))
+	c: alt!(
+		shared_literal |
+		char!(']')
+	) >>
+	(Box::new(RegExp::Literal(Char::Value(c))))
+));
+
+// TODO: Check this
+named!(cc_literal<&str, Char>, do_parse!(
+	c: alt!(
+		//shared_literal |
+		none_of!(&b"]"[..])
+	) >>
+	(Char::Value(c))
+));
+
+named!(shared_literal<&str, char>, alt!(
+	none_of!(&b"[]\\^$.|?*+()"[..]) |
+	quoted
 ));
 
 named!(number<&str, usize>, 
@@ -181,6 +250,13 @@ named!(name<&str, String>, do_parse!(
 		c.is_alphabetic() || c == '_' || c.is_digit(10)
 	) >>
 	(String::from(head) + rest)
+));
+
+
+named!(quoted<&str, char>, do_parse!(
+	char!('\\') >>
+	s: take_while_m_n!(1, 1, |c: char| !c.is_alphanumeric()) >>
+	(s.chars().next().unwrap())
 ));
 
 /*

@@ -26,7 +26,7 @@ enum Symbol<S> {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct FiniteStateAutomata<S> {
+pub struct FiniteStateMachine<S> {
 	/// All states will have ids 0 to num_states
 	num_states: StateId,
 
@@ -41,10 +41,10 @@ pub struct FiniteStateAutomata<S> {
 	transitions: BTreeSet<(StateId, Symbol<S>, StateId)>
 }
 
-impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash> FiniteStateAutomata<S> {
+impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash> FiniteStateMachine<S> {
 
 	pub fn new() -> Self {
-		FiniteStateAutomata {
+		FiniteStateMachine {
 			num_states: 0,
 			starting_states: HashSet::new(),
 			accepting_states: HashSet::new(),
@@ -106,7 +106,7 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash> Finite
 
 	/// Adds all states and transitions from another automata to the current one
 	/// NOTE: This will apply an offset to all ids in the given automata so previously obtained ids will no longer be valid
-	pub fn join(&mut self, other: FiniteStateAutomata<S>) {
+	pub fn join(&mut self, other: FiniteStateMachine<S>) {
 		let offset = self.num_states;
 		
 		self.num_states += other.num_states;
@@ -127,7 +127,7 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash> Finite
 	}
 
 	/// Chains the given automata to the current one such that current accepting states become the start starts for the new automata
-	pub fn then(&mut self, other: FiniteStateAutomata<S>) {
+	pub fn then(&mut self, other: FiniteStateMachine<S>) {
 		let offset = self.num_states;
 		
 		self.num_states += other.num_states;
@@ -273,7 +273,7 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash> Finite
 			));
 		}
 
-		FiniteStateAutomata {
+		FiniteStateMachine {
 			num_states: num_new_states,
 			starting_states: new_starting_states,
 			accepting_states: new_accepting_states,
@@ -394,7 +394,7 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash> Finite
 		}
 
 
-		FiniteStateAutomata {
+		FiniteStateMachine {
 			num_states: new_states.len(),
 			starting_states: new_starting_states,
 			accepting_states: new_accepting_states,
@@ -405,7 +405,7 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash> Finite
 
 	/// Produces an NFA automata that accepts the reverse language as the one represented by the current one
 	pub fn reverse(self) -> Self {
-		FiniteStateAutomata {
+		FiniteStateMachine {
 			num_states: self.num_states,
 			starting_states: self.accepting_states,
 			accepting_states: self.starting_states,
