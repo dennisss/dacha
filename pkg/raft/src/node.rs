@@ -9,7 +9,7 @@ use super::server_protos::*;
 use super::errors::*;
 use super::log::*;
 use super::simple_log::*;
-use core::DirLock;
+use core::fs::DirLock;
 use std::sync::{Arc, Mutex};
 use futures::prelude::*;
 use futures::prelude::await;
@@ -42,7 +42,7 @@ pub struct Node<R> {
 
 	pub dir: DirLock,
 	pub server: Arc<Server<R>>,
-	pub discovery: Arc<DiscoveryService>, // < Will we ever have more than one copy?
+	pub discovery: Arc<DiscoveryService>,
 
 	routes_file: Mutex<BlobFile>
 }
@@ -131,8 +131,10 @@ impl<R: 'static + Send> Node<R> {
 				cluster_id = rand::thread_rng().next_u64();
 
 				log.push(LogEntry {
-					term: 1,
-					index: 1,
+					pos: LogPosition {
+						term: 1,
+						index: 1
+					},
 					data: LogEntryData::Config(ConfigChange::AddMember(1))
 				});
 			}

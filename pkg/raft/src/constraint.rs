@@ -1,5 +1,5 @@
 use super::log::*;
-use std::sync::Arc;
+use super::protos::LogPosition;
 
 
 /// Represents the current state of a constraint retrieved by polling the constraint
@@ -14,61 +14,64 @@ pub enum ConstraintPoll<C, T> {
 	Unsatisfiable
 }
 
-/// This is a wrapper around some value which optionally enforces that that the inner value cannot be accessed until the log has persisted at least up to the given index
-pub struct MatchConstraint<T> {
+/// This is a wrapper around some value which optionally enforces that that the inner value cannot be accessed until the log has persisted at least up to the given sequence
+/// TODO: We don't really need to store the LogPosition as long as we don't care about whether or not it succeeded vs whether it completed. As long as the sequence is high enough, then it should be OK to release the constraint
+pub struct FlushConstraint<T> {
 	inner: T,
-	index: Option<LogPosition>
+	point: Option<(LogSeq, LogPosition)>,
 }
 
-impl<T> MatchConstraint<T> {
-	pub fn new(inner: T, pos: LogPosition) -> Self {
-		MatchConstraint {
-			inner, index: Some(pos)
+impl<T> FlushConstraint<T> {
+	pub fn new(inner: T, seq: LogSeq, pos: LogPosition) -> Self {
+		FlushConstraint {
+			inner, point: Some((seq, pos))
 		}
 	}
 
-	pub fn poll(self, log: &LogStorage) -> ConstraintPoll<(Self, LogPosition), T> {
-		match self.index {
-			Some(pos) => {
-				match log.term(pos.index) {
-					Some(v) => {
-						if v != pos.term {
-							// Index has been overridden in a newer term
-							ConstraintPoll::Unsatisfiable
-						}
-						else {
-							if log.match_index().unwrap_or(0) >= pos.index {
-								ConstraintPoll::Satisfied(self.inner)
-							}
-							else {
-								// Not ready yet, reconstruct 'self' and expose the position to the poller 
-								let pos_out = pos.clone();
-								ConstraintPoll::Pending((
-									MatchConstraint {
-										inner: self.inner, index: Some(pos)
-									},
-									pos_out
-								))
-							}
-						}
-					},
-					// This index has been truncated from the log
-					None => ConstraintPoll::Unsatisfiable
+	pub fn poll(self, log: &Log) -> ConstraintPoll<(Self, LogSeq), T> {
+		let (seq, pos) = match self.point {
+			Some(pos) => pos,
+			None => return ConstraintPoll::Satisfied(self.inner)
+		};
+
+		match log.term(pos.index) {
+			Some(v) => {
+				if v != pos.term {
+					// Index has been overridden in a newer term
+					ConstraintPoll::Unsatisfiable
+				}
+				else {
+
+					// Otherwise, We will need to check for a proper match here
+					if seq.is_flushed(log) {
+						ConstraintPoll::Satisfied(self.inner)
+					}
+					else {
+						// Not ready yet, reconstruct 'self' and expose the position to the poller 
+						let seq_out = seq.clone();
+						ConstraintPoll::Pending((
+							FlushConstraint {
+								inner: self.inner, point: Some((seq, pos))
+							},
+							seq_out
+						))
+					}
 				}
 			},
-			None => ConstraintPoll::Satisfied(self.inner)
+			// This index has been truncated from the log
+			None => ConstraintPoll::Unsatisfiable
 		}
 	}
 
 }
 
-impl<T> From<T> for MatchConstraint<T> {
+impl<T> From<T> for FlushConstraint<T> {
 
 	/// Simpler helper for making a completely unconstrained constraint using .into()
     fn from(val: T) -> Self {
-        MatchConstraint {
+        FlushConstraint {
 			inner: val,
-			index: None
+			point: None
 		}
     }
 }

@@ -8,7 +8,7 @@ use super::super::errors::*;
 use super::super::paths::Host;
 use super::api::*;
 use super::volume::{PhysicalVolume};
-use core::DirLock;
+use core::fs::DirLock;
 use std::path::{Path, PathBuf};
 use super::super::directory::Directory;
 use core::FlipSign;

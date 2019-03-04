@@ -14,7 +14,7 @@ use std::os::unix::io::{AsRawFd};
 
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
-pub fn allocate_soft(file: &file, len: u64) -> Result<()> {
+pub fn allocate_soft(file: &File, len: u64) -> Result<()> {
 	let ret = unsafe {
 		libc::fallocate(file.as_raw_fd(), libc::FALLOC_FL_KEEP_SIZE, 0, len as libc::off_t)
 	};

@@ -3,18 +3,9 @@ use super::protos::*;
 
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct LogPosition {
-	pub index: LogIndex,
-	pub term: Term
-}
-
-
-// TODO: Log entries must stay in memory until they 
-
 // XXX: Also useful to have a fast estimate of the total size of the log up to now to decide on snapshotting policies
 
-pub trait LogStorage {
+pub trait Log {
 
 	/// Given the index of a log entry, this should get the term stored for it
 	/// None will be returned if the 
@@ -112,20 +103,21 @@ impl LogStorage for MemoryLogStorage {
 		}
 	}
 
-	fn first_index(&self) -> Option<u64> {
-		let log = self.log.lock().unwrap();
 
-		match log.first() {
-			Some(v) => Some(v.index),
+	fn first_index(&self) -> Option<u64> {
+		let state = self.state.lock().unwrap();
+
+		match state.log.first() {
+			Some(v) => Some(v.pos.index),
 			None => None
 		}
 	}
 
 	fn last_index(&self) -> Option<u64> {
-		let log = self.log.lock().unwrap();
+		let state = self.state.lock().unwrap();
 
-		match log.last() {
-			Some(v) => Some(v.index),
+		match state.log.last() {
+			Some(v) => Some(v.pos.index),
 			None => None
 		}
 	}

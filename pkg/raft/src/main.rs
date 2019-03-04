@@ -27,7 +27,7 @@ use std::path::Path;
 use clap::{Arg, App};
 use std::sync::{Arc, Mutex};
 use futures::future::*;
-use core::DirLock;
+use core::fs::DirLock;
 use rand::prelude::*;
 use futures::prelude::*;
 use futures::prelude::await;

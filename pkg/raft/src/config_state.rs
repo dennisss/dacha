@@ -40,15 +40,15 @@ impl ConfigurationStateMachine {
 	/// NOTE: Configuration changes always take immediate effect as soon as they are in the log
 	pub fn apply(&mut self, entry: &LogEntry, commit_index: u64) {
 		// Ignore changes when the log is behind our snapshot
-		if entry.index < self.last_applied {
+		if entry.pos.index < self.last_applied {
 			return;
 		}
 
 		if let LogEntryData::Config(ref change) = entry.data {
 			// Only store a revert record if the change is not comitted
-			if entry.index < commit_index {
+			if entry.pos.index < commit_index {
 				self.pending = Some(ConfigurationPending {
-					last_change: entry.index,
+					last_change: entry.pos.index,
 					previous: self.value.clone()
 				});
 			}
@@ -59,7 +59,7 @@ impl ConfigurationStateMachine {
 			// Other types of entries have no effect on the configuration
 		}
 
-		self.last_applied = entry.index;
+		self.last_applied = entry.pos.index;
 	}
 
 	/// Given the new end of the log, this will undo any config to the configuration that occured after that point

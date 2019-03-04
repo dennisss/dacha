@@ -46,6 +46,24 @@ pub type Term = u64;
 pub type LogIndex = u64;
 
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LogPosition {
+	pub index: LogIndex,
+	pub term: Term
+}
+
+impl LogPosition {
+	/// Gets the zero log position, will always be the starting position before the first real log entry
+	pub fn zero() -> Self {
+		LogPosition {
+			index: 0,
+			term: 0
+		}
+	}
+}
+
+
+
 /// Persistent information describing the state of the current server
 #[derive(Serialize, Deserialize)]
 pub struct Metadata {
@@ -207,8 +225,7 @@ pub enum LogEntryData {
 /// TODO: Over the wire, the term number can be skipped if it is the same as the current term of the whole message of is the same as a previous entry
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogEntry {
-	pub index: LogIndex,
-	pub term: Term,
+	pub pos: LogPosition,
 	pub data: LogEntryData
 }
 
@@ -250,6 +267,14 @@ pub struct RequestVoteResponse {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InstallSnapshotRequest {
+	pub term: Term,
+	pub leader_id: ServerId,
+	pub last_index: LogIndex,
+	pub last_term: Term,
+	pub last_config: Option<Configuration>,
+	pub offset: u64,
+	pub data: Vec<u8>,
+	pub done: bool
 
 }
 

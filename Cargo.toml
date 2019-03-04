@@ -3,7 +3,8 @@
 members = [
 	"pkg/core",
 	"pkg/haystack",
-	"pkg/raft"
+	"pkg/raft",
+	"pkg/automata"
 ]
 
 [profile.release]

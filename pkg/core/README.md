@@ -1,4 +1,4 @@
-Shared Utilities
-================
+Shared Utilities and Algorithms
+===============================
 
-Mainly just common code between some of the other projects in this repo
+This is basically the'standard' library for use within this repository and contains various generic algorithms and common code.

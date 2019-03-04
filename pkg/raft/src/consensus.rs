@@ -158,11 +158,17 @@ pub struct ConsensusModule {
 
 	/// A reader for the current state of the log
 	/// NOTE: This also allows for enqueuing entries to eventually go into the log, but should never block
-	log: Arc<LogStorage + Send + Sync + 'static>,
+	log: Arc<Log + Send + Sync + 'static>,
 
 	// Basically this is the persistent state stuff
 	state: ServerState,
-	
+
+	/// Highest log entry sequence at which we have seen a conflict
+	/// (aka this is the position of some log entry that we added to the log that requires a truncation to occur)
+	/// This is caused by log truncations (aka overwriting existing indexes). This index will be the index of the new The index of this implies the highest point at which there may exist more than one possible entry (of one of which being the latest one)
+	pending_conflict: Option<LogSeq>,
+
+	pending_commit_index: Option<LogIndex>
 }
 
 impl ConsensusModule {
@@ -175,7 +181,7 @@ impl ConsensusModule {
 		config_snapshot: ConfigurationSnapshot,
 		
 		// NOTE: We assume that we are exclusively the only ones allowed to append to the log naturally
-		log: Arc<LogStorage + Send + Sync + 'static> // < In other words this is a log reader
+		log: Arc<Log + Send + Sync + 'static> // < In other words this is a log reader
 
 	) -> ConsensusModule {
 		
@@ -208,7 +214,7 @@ impl ConsensusModule {
 
 		// TODO: Implement an iterator over the log for this
 		for i in (config.last_applied + 1)..(last_log_index + 1) {
-			let e = log.entry(i).unwrap();
+			let (e, _) = log.entry(i).unwrap();
 			config.apply(&e, meta.commit_index);
 		}
 
@@ -220,7 +226,9 @@ impl ConsensusModule {
 			meta,
 			config,
 			log,
-			state
+			state,
+			pending_conflict: None,
+			pending_commit_index: None
 		}
 	}
 
@@ -302,9 +310,11 @@ impl ConsensusModule {
 
 	// NOTE: This is only public in order to support being used by the Server class for exposing this directly as a raw rpc to other servers
 	pub fn propose_entry(&mut self, data: LogEntryData, out: &mut Tick) -> ProposeResult {
-		if let ServerState::Leader(_) = self.state {
+		let ret = if let ServerState::Leader(ref mut leader_state) = self.state {
 
-			let index = self.log.last_index().unwrap_or(0) + 1;
+			let last_log_index = self.log.last_index().unwrap_or(0);
+
+			let index = last_log_index + 1;
 			let term = self.meta.current_term;
 
 			// Considering we are a leader, this should always true, as we only ever start elections at 1
@@ -313,43 +323,56 @@ impl ConsensusModule {
 
 			// If the new proposal is for a config change, block it until the last change is committed
 			// TODO: Realistically we actually just need to check against the current commit index for doing this (as that may be higher)
-			if let LogEntryData::Config(_) = data {
-				// TODO: Refactor out this usage of the pending redister
+			if let LogEntryData::Config(ref c) = data {
+				// TODO: Refactor out this usage of an internal field in the config struct
 				if let Some(ref pending) = self.config.pending {
 					return Err(ProposeError::RetryAfter(Proposal {
 						index: pending.last_change,
 						term: self.log.term(pending.last_change).unwrap()
 					}));
 				}
+
+				// Updating the servers progress list on the leader
+				// NOTE: Even if this is wrong, it will still be updated in replicate_entrie
+				match c {
+					ConfigChange::RemoveServer(id) => {
+						leader_state.servers.remove(id);
+					},
+					ConfigChange::AddLearner(id) | ConfigChange::AddMember(id) => {
+						leader_state.servers.insert(*id, ServerProgress::new(last_log_index));
+					}
+				};
 			}
 
-			out.new_entries = true;
-			self.log.append(LogEntry {
-				term,
-				index,
+			let e = LogEntry {
+				pos: LogPosition {
+					term,
+					index
+				},
 				data
-			});
+			};
 
 			// As soon as a configuration change lands in the log, we will use it immediately
-			// TODO: This could also be moved up into the if statement above because we can assume that .append() will definately succeed, but we keep it here to keep the code cleaner
-			{
-				let e = self.log.entry(index).unwrap();
+			// XXX: Here the commit index won't really help optimize anything out
+			self.config.apply(&e, self.meta.commit_index);
 
-				// XXX: Here the commit index won't really help optimize anything out
-				self.config.apply(&e, self.meta.commit_index);
-			}
-
-			// Cycle the state to replicate this entry to other servers
-			self.cycle(out);			
+			out.new_entries = true;
+			self.log.append(e);
+		
 
 			Ok(Proposal { term, index })
 		}
 		else if let ServerState::Follower(ref s) = self.state {
-			Err(ProposeError::NotLeader { leader_hint: s.last_leader_id.or(self.meta.voted_for) })
+			return Err(ProposeError::NotLeader { leader_hint: s.last_leader_id.or(self.meta.voted_for) })
 		}
 		else {
-			Err(ProposeError::NotLeader { leader_hint: None })
-		}
+			return Err(ProposeError::NotLeader { leader_hint: None })
+		};
+
+		// Cycle the state to replicate this entry to other servers
+		self.cycle(out);
+
+		ret
 	}
 
 	// NOTE: Because most types are private, we probably only want to expose being able to 
@@ -479,18 +502,6 @@ impl ConsensusModule {
 			},
 
 			ServerStateSummary::Leader { next_commit_index } => {
-				/*
-					TODO: The final major thing for leaders is ensuring that their list of server progresses are well up to date
-
-					// TODO: currently we do nothing to remove progress entries for servers that are no longer in the cluster
-
-					- If we have a unified place to apply config changes, then this would be trivial
-
-					^ THis must also happen whenever basically anything changes, (so probably easier to insert and update things as needed)
-					- Immutable relative to config. Internal mutable on one part of it
-
-					- So if we have a configuration change, then we must insert or delete an entry from the list 
-				*/
 
 				if let Some(ci) = next_commit_index {
 					//println!("Commiting up to: {}", ci);
@@ -548,7 +559,8 @@ impl ConsensusModule {
 				let mut count = 0;
 
 				// As the leader, we are naturally part of the voting members so may be able to vote for this commit
-				if self.log.match_index().unwrap_or(0) >= ci {
+				let cs = self.log.entry(ci).unwrap().1;
+				if cs.is_flushed(self.log.as_ref()) {
 					count += 1;
 				}
 
@@ -611,7 +623,7 @@ impl ConsensusModule {
 			
 			let mut entries = vec![];
 			for i in (prev_log_index + 1)..(last_log_index + 1) {
-				entries.push( (*log.entry(i).unwrap()).clone() );
+				entries.push( (*log.entry(i).unwrap().0).clone() );
 			}
 
 			AppendEntriesRequest {
@@ -809,12 +821,32 @@ impl ConsensusModule {
 		}
 	}
 
-	/// Run this whenever the commited index should be changed
-	fn update_commited(&mut self, index: u64, tick: &mut Tick) {
+	/// Gets the highest available in-memory commit_index
+	/// This may be unavailable externally if flushes are still pending
+	fn mem_commit_index(&self) -> LogIndex {
+		match self.pending_commit_index {
+			Some(v) => v,
+			None => self.meta.commit_index
+		}
+	} 
 
+	/// Run this whenever the commited index should be changed
+	/// This should be the only function allowed to modify it
+	fn update_commited(&mut self, index: u64, tick: &mut Tick) {
 		
-		// TOOD: Make sure this is verifying by all the code that uses this method
-		assert!(index > self.meta.commit_index);
+		// TOOD: Make sure this is verified by all the code that uses this method
+		assert!(index > self.mem_commit_index());
+
+		// We must defer all updates to the commit_index until all overlapping log conflicts are resolved
+		if let Some(c) = self.pending_conflict.clone() {
+			if c.is_flushed(self.log.as_ref()) {
+				self.pending_conflict = None;
+			}
+			else {
+				self.pending_commit_index = Some(index);
+				return;
+			}
+		}
 
 		self.meta.commit_index = index;
 		tick.write_meta();
@@ -1046,15 +1078,12 @@ impl ConsensusModule {
 		MustPersistMetadata::new(res)	
 	}
 	
-	// TODO: Another very important thing to have is a more generic gossip protocol for updateing server configurations so that restarts don't take the whole server down due to misconfigured addresses
 
 	// TODO: If we really wanted to, we could have the leader also execute this in order to get consistent local behavior
 	
-	// Basically wrap it in a runtime wrapper that requires that the response represents some signage of a promise to read the given entity
-
 	// NOTE: This doesn't really error out, but rather responds with constraint failures if the request violates a core raft property (in which case closing the connection is sufficient but otherwise our internal state should still be consistent)
 	// XXX: May have have a mutation to the hard state but I guess that is trivial right?
-	pub fn append_entries(&mut self, req: AppendEntriesRequest, tick: &mut Tick) -> Result<MatchConstraint<AppendEntriesResponse>> {
+	pub fn append_entries(&mut self, req: AppendEntriesRequest, tick: &mut Tick) -> Result<FlushConstraint<AppendEntriesResponse>> {
 
 		// NOTE: It is totally normal for this to receive a request from a server that does not exist in our configuration as we may be in the middle of a configuration change adn this could be the request that adds that server to the configuration
 
@@ -1120,7 +1149,7 @@ impl ConsensusModule {
 		if req.entries.len() >= 1 {
 			// Sanity check 1: First entry must be immediately after the previous one
 			let first = &req.entries[0];
-			if first.term < req.prev_log_term || first.index != req.prev_log_index + 1 {
+			if first.pos.term < req.prev_log_term || first.pos.index != req.prev_log_index + 1 {
 				return Err("Received previous entry does not follow".into());
 			}
 
@@ -1129,7 +1158,7 @@ impl ConsensusModule {
 				let cur = &req.entries[i];
 				let next = &req.entries[i + 1];
 
-				if cur.term > next.term || next.index != cur.index + 1 {
+				if cur.pos.term > next.pos.term || next.pos.index != cur.pos.index + 1 {
 					return Err("Received entries are unsorted, duplicates, or inconsistent".into());
 				}
 			}
@@ -1157,28 +1186,33 @@ impl ConsensusModule {
 		// Index into the entries array of the first new entry not already in our log
 		// (this will also be the current index in the below loop)
 		let mut first_new = 0;
+		let mut truncated = false;
 
-		for e in req.entries.iter() {
-			let existing_term = self.log.term(e.index);
+		for (i, e) in req.entries.iter().enumerate() {
+			let existing_term = self.log.term(e.pos.index);
 			if let Some(t) = existing_term {
-				if t == e.term {
+				if t == e.pos.term {
 					// Entry is already in the log
 					first_new += 1;
 				}
 				else {
 					// Log is inconsistent: Must roll back all changes in the local log
 
-					if self.meta.commit_index >= e.index {
+					if self.mem_commit_index() >= e.pos.index {
 						return Err("Refusing to truncate changes already locally committed".into());
 					}
 
 					// If the current configuration is uncommitted, we need to restore the old one if the last change to it is being removed from the log
-					self.config.revert(e.index);
+					self.config.revert(e.pos.index);
 
-					// Should truncate every entry including and after e.index
-					// The question is: if a commit is removed from the log, will it ever reappear
-					// TODO: Will a truncation ever occur based only on the previous index
-					self.log.truncate_suffix(e.index);
+					// When this entry is appended below, it should mark the pending_conflict with its sequence
+					truncated = true;
+
+					// Should truncate every entry including and after e.pos.index
+					if let Some(seq) = self.log.truncate(e.pos.index) {
+						self.pending_conflict = Some(seq);
+						truncated = false;
+					}
 
 					break;
 				}
@@ -1199,7 +1233,9 @@ impl ConsensusModule {
 
 			let next = &req.entries[first_new];
 
-			if next.index != last_log_index + 1 || next.term < last_log_term {
+			if next.pos.index != last_log_index + 1 || next.pos.term < last_log_term {
+				// It is possible that this will occur near the case of snapshotting
+				// We will need to enable a log to basically reset its front without actually resetting itself entirely
 				return Err("Next new entry is not immediately after our last local one".into());
 			}
 		}
@@ -1208,25 +1244,30 @@ impl ConsensusModule {
 		// TODO: This could be zero which would be annoying
 		let mut last_new = req.prev_log_index;
 		let mut last_new_term = req.prev_log_term;
+		let mut last_new_seq = self.log.entry(last_new).map(|(_, s)| s).unwrap_or(LogSeq(0));
 
 		// Finally it is time to append some entries
 		if req.entries.len() - first_new > 0 {
 
 			let new_entries = &req.entries[first_new..];
 
-			last_new = new_entries.last().unwrap().index;
-			last_new_term = new_entries.last().unwrap().term;
+			last_new = new_entries.last().unwrap().pos.index;
+			last_new_term = new_entries.last().unwrap().pos.term;
 
 			// Immediately incorporate any configuration changes
 			for e in new_entries {
-				let i = e.index;
+				let i = e.pos.index;
 
 				tick.new_entries = true;
-				self.log.append(e.clone()); // TODO: Refactor out the clone
+				last_new_seq = self.log.append(e.clone());
 
-				let e = self.log.entry(i).unwrap();
+				if truncated {
+					self.pending_conflict = Some(last_new_seq.clone());
+					truncated = false;
+				}
+
 				// TODO: Ideally compute the latest commit_index before we apply these changes so that we don't need to maintain a rollback history if we don't need to
-				self.config.apply(&e, self.meta.commit_index);
+				self.config.apply(e, self.meta.commit_index);
 			}
 		}
 
@@ -1240,16 +1281,18 @@ impl ConsensusModule {
 			}
 		}
 
-		let pos = LogPosition { term: last_new_term, index: last_new };
-
 		// XXX: On success, send back the last index in our log
 		// If the server sees that the last_log_index of a follower is higher than its log size, then it needs to apply a no-op (if one has never been created before in order to )
 		// NOTE: We don't need to send the last_log_index in the case of success
 		// TODO: Ideally optimize away cloning the log in this return value
 		let last_log_index = self.log.last_index().unwrap_or(0);
-		Ok(MatchConstraint::new(
+
+		// It should be always captured by the first new entry
+		assert!(!truncated);
+
+		Ok(FlushConstraint::new(
 			response(true, if last_log_index != last_new { Some(last_log_index) } else { None }),
-			pos
+			last_new_seq, LogPosition { term: last_new_term, index: last_new }
 		))
 	}
 
