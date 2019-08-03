@@ -1,0 +1,22 @@
+[package]
+name = "protobuf"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+
+[dependencies]
+core = { path = "../core" }
+math = { path = "../math" }
+rmp-serde = "0.13.7"
+rand = "0.6.1"
+bytes = { version = "0.4.11", features = ["serde"] }
+fs2 = "0.4.3"
+error-chain = "0.12.1"
+ctrlc = "3.1.1"
+tokio = "0.1.19"
+libc = "0.2"
+clap = "2.32.0"
+byteorder = "1.2.7"
+crc32c = "0.4.0"
+nom = "^4.2"
+minifb = "0.11.2"
+num-traits = "0.2"

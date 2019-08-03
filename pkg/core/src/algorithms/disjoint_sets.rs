@@ -68,7 +68,6 @@ impl DisjointSets {
 
 	/// Like findSet, but uses the index of the smallest element in the set to identify it
 	pub fn find_set_min(&mut self, mut x: usize) -> usize {
-
 		x = self.find_set(x);
 
 		let e_x = &mut self.elements[x];
@@ -99,7 +98,6 @@ impl DisjointSets {
 			e[y].parent = x;
 			e[x].rank = e[x].rank + 1;
 		}
-
 
 		// Update the min in the root of the new set
 		if e[x].min < e[y].min {

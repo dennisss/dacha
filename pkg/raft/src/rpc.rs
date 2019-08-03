@@ -489,7 +489,6 @@ pub fn ServerService_router<R: 'static, S: 'static>(
 			Err(bad_request())
 		}
 	}
-
 }
 
 pub enum To<'a> {
