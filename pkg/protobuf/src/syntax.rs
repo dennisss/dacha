@@ -10,6 +10,7 @@
 
 
 use super::tokenizer::{Token, Tokenizer, capitalLetter, decimalDigit, letter};
+use super::spec::*;
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -63,12 +64,17 @@ impl<'a> ParseCursor<'a> {
 	}
 
 	fn is<T: PartialEq<Y>, Y, F: Parser<'a, T>>(&mut self, f: F, v: Y) -> std::result::Result<T, ParseError> {
-		let value = self.next(f)?;
-		if value != v {
-			return Err(ParseError::Failure);
-		}
+		match f(self.rest) {
+			Ok((v2, r)) => {
+				if v2 != v {
+					return Err(ParseError::Failure);
+				}
 
-		Ok(value)
+				self.rest = r;
+				Ok(v2)
+			},
+			Err(e) => Err(e)
+		}
 	}
 
 	// Runs a parser as many times as possible returning a vector of all results
@@ -264,16 +270,6 @@ fn emptyStatement(input: &[Token]) -> ParseResult<()> {
 }
 
 // Proto 2 and 3
-#[derive(Clone, Debug)]
-enum Constant {
-	Identifier(String),
-	Integer(isize),
-	Float(f64),
-	String(String),
-	Bool(bool)
-}
-
-// Proto 2 and 3
 // constant = fullIdent | ( [ "-" | "+" ] intLit ) | ( [ "-" | "+" ] floatLit ) |
 //                 strLit | boolLit 
 fn constant(input: &[Token]) -> ParseResult<Constant> {
@@ -318,12 +314,6 @@ fn constant(input: &[Token]) -> ParseResult<Constant> {
 	)
 }
 
-#[derive(Debug)]
-pub enum Syntax {
-	Proto2,
-	Proto3
-}
-
 // syntax = "syntax" "=" quote "proto2" quote ";"
 pub fn syntax(input: &[Token]) -> ParseResult<Syntax> {
 	let mut c = ParseCursor::new(input);
@@ -335,18 +325,6 @@ pub fn syntax(input: &[Token]) -> ParseResult<Syntax> {
 	c.unwrap_with(s)
 }
 
-#[derive(Debug)]
-enum ImportType {
-	Default,
-	Weak,
-	Public
-}
-
-#[derive(Debug)]
-struct Import {
-	typ: ImportType,
-	path: String
-}
 
 // Proto 2 and 3
 // import = "import" [ "weak" | "public" ] strLit ";" 
@@ -370,12 +348,6 @@ fn package(input: &[Token]) -> ParseResult<String> {
 	let name = c.next(fullIdent)?;
 	c.is(symbol, ';')?;
 	c.unwrap_with(name)
-}
-
-#[derive(Clone, Debug)]
-struct Opt {
-	name: String,
-	value: Constant
 }
 
 // Proto 2 and 3
@@ -412,13 +384,6 @@ fn optionName(input: &[Token]) -> ParseResult<String> {
 	c.unwrap_with(prefix + &rest.join(""))
 }
 
-#[derive(Debug)]
-enum Label {
-	Required,
-	Optional,
-	Repeated
-}
-
 // Proto 2
 // label = "required" | "optional" | "repeated"
 fn label(input: &[Token]) -> ParseResult<Label> {
@@ -427,26 +392,6 @@ fn label(input: &[Token]) -> ParseResult<Label> {
 		.or_else(|_| c.is(ident, "optional").map(|_| Label::Optional))
 		.or_else(|_| c.is(ident, "repeated").map(|_| Label::Repeated))?;
 	c.unwrap_with(label)
-}
-
-#[derive(Debug)]
-enum FieldType {
-	Double,
-	Float,
-	Int32,
-	Int64,
-	Uint32,
-	Uint64,
-	Sint32,
-	Sint64,
-	Fixed32,
-	Sfixed32,
-	Sfixed64,
-	Bool,
-	String,
-	Bytes,
-	// Either a message or enum type.
-	Named(String)
 }
 
 // Proto 2 and 3
@@ -492,20 +437,11 @@ fn fieldNumber(input: &[Token]) -> ParseResult<usize> {
 	intLit(input)
 }
 
-#[derive(Debug)]
-struct Field {
-	label: Label,
-	typ: FieldType,
-	name: String,
-	num: usize,
-	options: Vec<Opt>
-}
-
 // TODO: In proto 3, 'label' should be replaced with '[ "repeated" ]'
 // field = label type fieldName "=" fieldNumber [ "[" fieldOptions "]" ] ";"
 fn field(input: &[Token]) -> ParseResult<Field> {
 	let mut c = ParseCursor::new(input);
-	let labl = c.next(label)?;
+	let labl = c.next(label)?;	
 	let typ = c.next(fieldType)?;
 	let name = c.next(fieldName)?;
 	c.is(symbol, '=')?;
@@ -559,15 +495,6 @@ fn fieldOption(input: &[Token]) -> ParseResult<Opt> {
 }
 
 // Proto 2
-#[derive(Debug)]
-struct Group {
-	label: Label,
-	name: String,
-	num: usize,
-	body: Vec<MessageItem>
-}
-
-// Proto 2
 // group = label "group" groupName "=" fieldNumber messageBody
 fn group(input: &[Token]) -> ParseResult<Group> {
 	let mut c = ParseCursor::new(input);
@@ -578,12 +505,6 @@ fn group(input: &[Token]) -> ParseResult<Group> {
 	let num = c.next(fieldNumber)?;
 	let body = c.next(messageBody)?;
 	c.unwrap_with(Group { label: lbl, name, num, body })
-}
-
-#[derive(Debug)]
-struct OneOf {
-	name: String,
-	fields: Vec<OneOfField>
 }
 
 // Proto 2 and 3
@@ -603,14 +524,6 @@ fn oneof(input: &[Token]) -> ParseResult<OneOf> {
 	c.unwrap_with(OneOf { name, fields })
 }
 
-#[derive(Debug)]
-struct OneOfField {
-	typ: FieldType,
-	name: String,
-	num: usize,
-	options: Vec<Opt>
-}
-
 // Proto 2 and 3
 // oneofField = type fieldName "=" fieldNumber [ "[" fieldOptions "]" ] ";"
 fn oneofField(input: &[Token]) -> ParseResult<OneOfField> {
@@ -622,15 +535,6 @@ fn oneofField(input: &[Token]) -> ParseResult<OneOfField> {
 	let options = c.next(fieldOptionsWrap).unwrap_or(vec![]);
 	c.is(symbol, ';')?;
 	c.unwrap_with(OneOfField { typ, name, num, options })
-}
-
-#[derive(Debug)]
-struct MapField {
-	key_type: FieldType,
-	value_type: FieldType,
-	name: String,
-	num: usize,
-	options: Vec<Opt>
 }
 
 // Proto 2 and 3
@@ -665,7 +569,7 @@ fn keyType(input: &[Token]) -> ParseResult<FieldType> {
 		"sint32" => FieldType::Sint32,
 		"sint64" => FieldType::Sint64,
 		"fixed32" => FieldType::Fixed32,
-		"fixed64" => FieldType::Sfixed64,
+		"fixed64" => FieldType::Fixed64,
 		"sfixed32" => FieldType::Sfixed32,
 		"sfixed64" => FieldType::Sfixed64,
 		"bool" => FieldType::Bool,
@@ -686,8 +590,6 @@ fn extensions(input: &[Token]) -> ParseResult<Ranges> {
 	c.unwrap_with(out)
 }
 
-type Ranges = Vec<Range>;
-
 // Proto 2 and 3
 // ranges = range { "," range }
 fn ranges(input: &[Token]) -> ParseResult<Ranges> {
@@ -699,9 +601,6 @@ fn ranges(input: &[Token]) -> ParseResult<Ranges> {
 
 	c.unwrap_with(out)
 }
-
-// Upper and lower bounds are inclusive.
-type Range = (usize, usize);
 
 // Proto 2 and 3
 // range =  intLit [ "to" ( intLit | "max" ) ]
@@ -719,12 +618,6 @@ fn range(input: &[Token]) -> ParseResult<Range> {
 
 	let upper = c.next(upper_parser)?;
 	c.unwrap_with((lower, upper))
-}
-
-#[derive(Debug)]
-enum Reserved {
-	Ranges(Ranges),
-	Fields(Vec<String>)
 }
 
 // Proto 2 and 3
@@ -750,12 +643,6 @@ fn fieldNames(input: &[Token]) -> ParseResult<Vec<String>> {
 	c.unwrap_with(out)
 }
 
-#[derive(Debug)]
-struct Enum {
-	name: String,
-	body: Vec<EnumBodyItem>
-}
-
 // Proto 2 and 3
 // enum = "enum" enumName enumBody
 fn enum_(input: &[Token]) -> ParseResult<Enum> {
@@ -764,12 +651,6 @@ fn enum_(input: &[Token]) -> ParseResult<Enum> {
 	let name = c.next(enumName)?;
 	let body = c.next(enumBody)?;
 	c.unwrap_with(Enum { name, body })
-}
-
-#[derive(Debug)]
-enum EnumBodyItem {
-	Option(Opt),
-	Field(EnumField)
 }
 
 // Proto 2 and 3
@@ -786,13 +667,6 @@ fn enumBody(input: &[Token]) -> ParseResult<Vec<EnumBodyItem>> {
 	}).into_iter().filter_map(|x| x).collect::<Vec<_>>();
 	c.is(symbol, '}')?;
 	c.unwrap_with(inner)
-}
-
-#[derive(Debug)]
-struct EnumField {
-	name: String,
-	num: usize,
-	options: Vec<Opt>
 }
 
 // Proto 2 and 3
@@ -823,12 +697,6 @@ fn enumValueOption(input: &[Token]) -> ParseResult<Opt> {
 	fieldOption(input)
 }
 
-#[derive(Debug)]
-struct Message {
-	name: String,
-	body: Vec<MessageItem>
-}
-
 // Proto 2 and 3
 // message = "message" messageName messageBody
 fn message(input: &[Token]) -> ParseResult<Message> {
@@ -837,20 +705,6 @@ fn message(input: &[Token]) -> ParseResult<Message> {
 	let name = c.next(messageName)?;
 	let body = c.next(messageBody)?;
 	c.unwrap_with(Message { name, body })
-}
-
-#[derive(Debug)]
-enum MessageItem {
-	Field(Field),
-	Enum(Enum),
-	Message(Message),
-	Extend(Extend),
-	Extensions(Ranges),
-	Group(Group),
-	Option(Opt),
-	OneOf(OneOf),
-	MapField(MapField),
-	Reserved(Reserved)
 }
 
 // TODO: Proto3 has no 'extensions' or 'group'
@@ -876,18 +730,6 @@ fn messageBody(input: &[Token]) -> ParseResult<Vec<MessageItem>> {
 	c.unwrap_with(items)
 }
 
-#[derive(Debug)]
-enum ExtendItem {
-	Field(Field),
-	Group(Group)
-}
-
-#[derive(Debug)]
-struct Extend {
-	typ: String,
-	body: Vec<ExtendItem>
-}
-
 // Proto 2
 // extend = "extend" messageType "{" {field | group | emptyStatement} "}"
 fn extend(input: &[Token]) -> ParseResult<Extend> {
@@ -904,19 +746,6 @@ fn extend(input: &[Token]) -> ParseResult<Extend> {
 	}).into_iter().filter_map(|x| x).collect::<Vec<_>>();
 	c.is(symbol, '}')?;
 	c.unwrap_with(Extend { typ, body })
-}
-
-#[derive(Debug)]
-enum ServiceItem {
-	Option(Opt),
-	RPC(RPC),
-	Stream(Stream)
-}
-
-#[derive(Debug)]
-struct Service {
-	name: String,
-	body: Vec<ServiceItem>
 }
 
 // TODO: Proto 3 has no 'stream'
@@ -936,16 +765,6 @@ fn service(input: &[Token]) -> ParseResult<Service> {
 	}).into_iter().filter_map(|x| x).collect::<Vec<_>>();
 	c.is(symbol, '}')?;
 	c.unwrap_with(Service { name, body })
-}
-
-#[derive(Debug)]
-struct RPC {
-	name: String,
-	req_type: String,
-	req_stream: bool,
-	res_type: String,
-	res_stream: bool,
-	options: Vec<Opt>
 }
 
 // ( "{" { option | emptyStatement } "}" ) | ";"
@@ -998,14 +817,6 @@ fn rpc(input: &[Token]) -> ParseResult<RPC> {
 	c.unwrap_with(RPC { name, req_type, req_stream, res_type, res_stream, options })
 }
 
-#[derive(Debug)]
-struct Stream {
-	name: String,
-	input_type: String,
-	output_type: String,
-	options: Vec<Opt>
-}
-
 // Proto 2 only
 // stream = "stream" streamName "(" messageType "," messageType ")" (( "{"
 // { option | emptyStatement } "}") | ";" )
@@ -1022,18 +833,12 @@ fn stream(input: &[Token]) -> ParseResult<Stream> {
 	c.unwrap_with(Stream { name, input_type, output_type, options })
 }
 
-#[derive(Debug)]
-enum ProtoItem {
+pub enum ProtoItem {
 	Import(Import),
-	Package(String),
 	Option(Opt),
-	TopLevelDef(TopLevelDef)
-}
-
-#[derive(Debug)]
-pub struct Proto {
-	syntax: Syntax,
-	body: Vec<ProtoItem>
+	Package(String),
+	TopLevelDef(TopLevelDef),
+	None
 }
 
 // Proto 2 and 3
@@ -1044,22 +849,42 @@ pub fn proto(input: &[Token]) -> ParseResult<Proto> {
 	// TODO: If no syntax is available, default to proto 2
 	let body = c.many(|input| {
 		alt!(input,
-			map(import, |v| Some(ProtoItem::Import(v))),
-			map(package, |v| Some(ProtoItem::Package(v))),
-			map(option, |v| Some(ProtoItem::Option(v))),
-			map(topLevelDef, |v| Some(ProtoItem::TopLevelDef(v))),
-			map(emptyStatement, |v| None))
-	}).into_iter().filter_map(|x| x).collect::<Vec<_>>();
-	// TODO: Should now be at the end of the file
-	c.unwrap_with(Proto { syntax: s, body })
-}
+			map(import, |v| ProtoItem::Import(v)),
+			map(package, |v| ProtoItem::Package(v)),
+			map(option, |v| ProtoItem::Option(v)),
+			map(topLevelDef, |v| ProtoItem::TopLevelDef(v)),
+			map(emptyStatement, |v| ProtoItem::None))
+	});
 
-#[derive(Debug)]
-enum TopLevelDef {
-	Message(Message),
-	Enum(Enum),
-	Extend(Extend),
-	Service(Service)
+	let mut p = Proto {
+		syntax: s,
+		package: String::new(),
+		imports: vec![],
+		options: vec![],
+		definitions: vec![]
+	};
+
+	let mut has_package = false;
+	for item in body.into_iter() {
+		match item {
+			ProtoItem::Import(i) => { p.imports.push(i); },
+			ProtoItem::Option(o) => { p.options.push(o); },
+			ProtoItem::Package(s) => {
+				// A proto file should only up to one package declaraction.
+				if has_package {
+					return Err(ParseError::Failure);
+				}
+
+				has_package = true;
+				p.package = s;
+			},
+			ProtoItem::TopLevelDef(d) => { p.definitions.push(d); },
+			ProtoItem::None => {}
+		};
+	}
+
+	// TODO: Should now be at the end of the file
+	c.unwrap_with(p)
 }
 
 // TODO: Proto3 has no extend

@@ -42,14 +42,14 @@ impl Tokenizer<'_> {
 				self.data = rest;
 				return Some(tok);
 			},
-			_ => {
+			Err(e) => {
+				println!("{:?}", e);
 				// Should return eof if all done
 				return None;
 			}
 		};
 	}
 }
-
 
 // letter = "A" … "Z" | "a" … "z"
 pub fn letter(c: char) -> bool { c.is_alphabetic() }
@@ -73,9 +73,8 @@ named!(ident<&str, String>, do_parse!(
 	(String::from(head) + rest)
 ));
 
-
-// intLit     = decimalLit | octalLit | hexLit
-named!(intLit<&str, usize>, alt!(
+// intLit = decimalLit | octalLit | hexLit
+named!(intLit<&str, usize>, alt_complete!(
 	decimalLit | octalLit | hexLit
 ));
 
@@ -89,7 +88,7 @@ named!(decimalLit<&str, usize>, do_parse!(
 // octalLit   = "0" { octalDigit }
 named!(octalLit<&str, usize>, do_parse!(
 	char!('0') >>
-	digits: take_while1!(octalDigit) >>
+	digits: take_while!(octalDigit) >>
 	(usize::from_str_radix(digits, 8).unwrap_or(0))
 ));
 
@@ -103,7 +102,7 @@ named!(hexLit<&str, usize>, do_parse!(
 
 // TODO: Is this allowed to start with a '0' character?
 // floatLit = ( decimals "." [ decimals ] [ exponent ] | decimals exponent | "."decimals [ exponent ] ) | "inf" | "nan"
-named!(floatLit<&str, f64>, alt!(
+named!(floatLit<&str, f64>, alt_complete!(
 	do_parse!(
 		a: decimals >> char!('.') >> b: opt!(decimals) >> e: opt!(exponent) >>
 		((String::from(a) + "." + b.unwrap_or("0") + "e" + e.unwrap_or(String::new()).as_str()).as_str().parse::<f64>().unwrap())
@@ -113,10 +112,10 @@ named!(floatLit<&str, f64>, alt!(
 	map!(tag!("nan"), |_| std::f64::NAN)
 ));
 
-// decimals  = decimalDigit { decimalDigit }
+// decimals = decimalDigit { decimalDigit }
 named!(decimals<&str, &str>, take_while1!(decimalDigit));
 
-// exponent  = ( "e" | "E" ) [ "+" | "-" ] decimals 
+// exponent = ( "e" | "E" ) [ "+" | "-" ] decimals 
 named!(exponent<&str, String>, do_parse!(
 	one_of!("eE") >>
 	sign: one_of!("+-") >>
@@ -125,7 +124,7 @@ named!(exponent<&str, String>, do_parse!(
 ));
 
 // strLit = ( "'" { charValue } "'" ) | ( '"' { charValue } '"' )
-named!(strLit<&str, String>, alt!(
+named!(strLit<&str, String>, alt_complete!(
 	do_parse!(
 		q: quote >>
 		val: many0!(charValue) >>
@@ -142,7 +141,7 @@ named!(strLit<&str, String>, alt!(
 ));
 
 // charValue = hexEscape | octEscape | charEscape | /[^\0\n\\]/
-named!(charValue<&str, char>, alt!(
+named!(charValue<&str, char>, alt_complete!(
 	hexEscape | octEscape | charEscape |
 
 	// NOTE: Can't be '"' because of strLit
@@ -199,7 +198,7 @@ named!(blockComment<&str, Token>, do_parse!(
 	(Token::Comment)
 ));
 
-named!(comment<&str, Token>, alt!(
+named!(comment<&str, Token>, alt_complete!(
 	lineComment | blockComment
 ));
 
@@ -211,7 +210,7 @@ named!(symbol<&str, Token>, do_parse!(
 	(Token::Symbol(c.chars().next().unwrap()))
 ));
 
-named!(token<&str, Token>, alt!(
+named!(token<&str, Token>, alt_complete!(
 	whitespace | comment |
 	map!(ident, |s| Token::Identifier(s)) |
 	map!(intLit, |i| Token::Integer(i)) |
