@@ -1,12 +1,7 @@
-/*
-	Derived from original code in https://github.com/danburkert/fs2-rs/blob/master/src/unix.rs and https://github.com/danburkert/fs2-rs/blob/master/src/windows.rs
-
-	- This provides a version of fs2's allocate() that does not modify the size of the file's contents (but only the allocated space)
-
-	- NOTE: Currently this just contains the linux and mac implementations
-
-	- NOTE: This is also optimized for the append-only case, such that if the given size is less than the current size of the file, then we won't bother trying to make is smaller
-*/
+// Derived from original code in https://github.com/danburkert/fs2-rs/blob/master/src/unix.rs and https://github.com/danburkert/fs2-rs/blob/master/src/windows.rs
+// - This provides a version of fs2's allocate() that does not modify the size of the file's contents (but only the allocated space)
+// - NOTE: Currently this just contains the linux and mac implementations
+// - NOTE: This is also optimized for the append-only case, such that if the given size is less than the current size of the file, then we won't bother trying to make is smaller
 
 use std::fs::File;
 use std::io::{Error, Result};

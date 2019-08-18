@@ -1,8 +1,9 @@
 [package]
-name = "automata"
+name = "parsing"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
-nom = "4.2.0"
+bytes = { git = "https://github.com/tokio-rs/bytes" }

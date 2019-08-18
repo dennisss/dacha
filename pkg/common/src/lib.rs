@@ -1,3 +1,4 @@
+#[macro_use] extern crate error_chain;
 extern crate fs2;
 extern crate libc;
 
@@ -20,6 +21,25 @@ impl FlipSign<u64> for i64 { fn flip(self) -> u64 { self as u64 } }
 impl FlipSign<i64> for u64 { fn flip(self) -> i64 { self as i64 } }
 
 
+
+pub mod errors {
+	error_chain! {
+		foreign_links {
+			Io(::std::io::Error);
+			// Db(diesel::result::Error);
+			// HTTP(hyper::Error);
+		}
+
+		errors {
+			// A type of error returned while performing a request
+			// It is generally appropriate to respond with this text as a 400 error
+			// We will eventually standardize the codes such that higher layers can easily distinguish errors
+			// API(code: u16, message: &'static str) {
+			// 	display("API Error: {} '{}'", code, message)
+			// }
+		}
+	}
+}
 
 
 /// Given that the current position in the file is at the end of a middle, this will determine how much 
