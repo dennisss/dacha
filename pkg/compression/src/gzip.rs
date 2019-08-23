@@ -1,9 +1,10 @@
-use std::io::{Seek, Read};
+use std::io::{Seek, Read, Write};
 use common::errors::*;
-use byteorder::{ReadBytesExt, LittleEndian, ByteOrder};
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, ByteOrder};
 use std::convert::{TryFrom, TryInto};
 use parsing::iso::*;
 use crate::crc::*;
+use crate::deflate::*;
 
 // ZLib RFC http://www.zlib.org/rfc-gzip.html
 // This is based on v4.3
@@ -41,15 +42,46 @@ impl std::convert::TryFrom<u8> for CompressionMethod {
 	}
 }
 
+
 #[derive(Debug)]
 pub struct Flags {
 	// Whether the text is probably ASCII.
 	ftext: bool,
 	// CRC16 of header is present.
 	fhcrc: bool,
+	// Extra field is present.
 	fextra: bool,
+	// Filename is present
 	fname: bool,
+	// Comment is present.
 	fcomment: bool
+}
+
+impl Flags {
+	pub fn from_byte(i: u8) -> Flags {
+		Flags {
+			ftext: bitget(i, 0),
+			fhcrc: bitget(i, 1),
+			fextra: bitget(i, 2),
+			fname: bitget(i, 3),
+			fcomment: bitget(i, 4)
+		}
+	}
+
+	pub fn to_byte(&self) -> u8 {
+		let mut i = 0;
+		bitset(&mut i, self.ftext, 0);
+		bitset(&mut i, self.fhcrc, 1);
+		bitset(&mut i, self.fextra, 2);
+		bitset(&mut i, self.fname, 3);
+		bitset(&mut i, self.fcomment, 4);
+		i
+	}
+}
+
+// NOTE: Assumes that the bit has never been set before.
+fn bitset(i: &mut u8, val: bool, bit: u8) {
+	*i |= (if val { 1 } else { 0 }) << bit;
 }
 
 fn bitget(v: u8, bit: u8) -> bool {
@@ -63,14 +95,18 @@ fn bitget(v: u8, bit: u8) -> bool {
 #[derive(Debug)]
 pub struct Header {
 	pub compression_method: CompressionMethod,
-	pub flags: Flags,
+
+	// Whether the text is probably ASCII.
+	pub is_text: bool,
+
 	/// Seconds since unix epoch.
 	pub mtime: u32,
+	// TODO: Check what is supposed to be in here.
 	pub extra_flags: u8,
 	pub os: u8,
 	//
 	pub extra_field: Option<Vec<u8>>,
-	pub fname: Option<String>,
+	pub filename: Option<String>,
 	pub comment: Option<String>,
 	// Whether or not a checksum was present for the header (to validate all of the above fields).
 	// NOTE: If the checksum failed, then this struct would be have been emited
@@ -114,6 +150,12 @@ fn read_null_terminated(reader: &mut Read) -> Result<Vec<u8>> {
 	Ok(out)
 }
 
+const HEADER_SIZE: usize = 10;
+
+pub const GZIP_UNIX_OS: u8 = 0x03;
+
+const GZIP_MAGIC: &'static [u8] = &[0x1f, 0x8b];
+
 pub fn read_gzip<F: Read + Seek>(f: &mut F) -> Result<GZipFile> {
 
 	// TODO: Verify compression properties such as maximum code length.
@@ -127,25 +169,16 @@ pub fn read_gzip<F: Read + Seek>(f: &mut F) -> Result<GZipFile> {
 
 	let mut header_reader = CRC32Reader::new(f);
 
-	let mut header_buf = [0u8; 10];
+	let mut header_buf = [0u8; HEADER_SIZE];
 	header_reader.read_exact(&mut header_buf)?;
 
-	if &header_buf[0..2] != &[0x1f, 0x8b] {
+	if &header_buf[0..2] != GZIP_MAGIC {
 		return Err("Invalid header bytes".into());
 	}
 
 	let compression_method = CompressionMethod::try_from(header_buf[2])?;
 
-	let flags = {
-		let i = header_buf[3];
-		Flags {
-			ftext: bitget(i, 0),
-			fhcrc: bitget(i, 1),
-			fextra: bitget(i, 2),
-			fname: bitget(i, 3),
-			fcomment: bitget(i, 4)
-		}
-	};
+	let flags = Flags::from_byte(header_buf[3]);
 
 	let mtime = LittleEndian::read_u32(&header_buf[4..8]);
 
@@ -162,7 +195,7 @@ pub fn read_gzip<F: Read + Seek>(f: &mut F) -> Result<GZipFile> {
 		None
 	};
 
-	let fname = if flags.fname {
+	let filename = if flags.fname {
 		let data = read_null_terminated(&mut header_reader)?;
 		Some(ISO88591String::from_bytes(data.into())?.to_string())
 	} else {
@@ -205,12 +238,12 @@ pub fn read_gzip<F: Read + Seek>(f: &mut F) -> Result<GZipFile> {
 	Ok(GZipFile {
 		header: Header {
 			compression_method,
-			flags,
+			is_text: flags.ftext,
 			mtime,
 			extra_flags,
 			os,
 			extra_field,
-			fname,
+			filename,
 			comment,
 			header_validated
 		},
@@ -219,3 +252,72 @@ pub fn read_gzip<F: Read + Seek>(f: &mut F) -> Result<GZipFile> {
 		input_size
 	})
 }
+
+// TODO: Must operate on the uncompressed data.
+fn is_text(data: &[u8]) -> bool {
+	for b in data.iter().cloned() {
+		if b == 9 || b == 10 || b == 13 || (b >= 32 && b <= 126) {
+			// Good. Keep going.
+		} else {
+			return false;
+		}
+	}
+
+	true
+}
+
+pub fn write_gzip(header: Header, data: &[u8],
+				  writer: &mut Write) -> Result<()> {
+	
+	let flags = Flags {
+		ftext: false,
+		fhcrc: false,
+		fextra: header.extra_field.is_some(),
+		fname: header.filename.is_some(),
+		fcomment: header.comment.is_some()
+	};
+
+	let mut header_buf = [0u8; HEADER_SIZE];
+	header_buf[0..2].copy_from_slice(GZIP_MAGIC);
+	header_buf[2] = header.compression_method as u8;
+	header_buf[3] = flags.to_byte();
+	LittleEndian::write_u32(&mut header_buf[4..8], header.mtime);
+	header_buf[8] = header.extra_flags;
+	header_buf[9] = header.os;
+	writer.write_all(&header_buf);
+
+	if let Some(data) = header.extra_field {
+		writer.write_u32::<LittleEndian>(data.len() as u32)?;
+		writer.write_all(&data)?;
+	}
+
+	let null = [0u8; 1];
+	if let Some(s) = header.filename {
+		// TODO: Validate is ISO88591String.
+		writer.write_all(s.as_bytes())?;
+		writer.write_all(&null)?;
+	}
+
+	if let Some(s) = header.comment {
+		// TODO: Validate is ISO88591String.
+		writer.write_all(s.as_bytes())?;
+		writer.write_all(&null)?;
+	}
+
+	// TODO: Validate that the compresson method is set correctly.
+	let mut compressed_data = Vec::new();
+	write_deflate(&data, &mut compressed_data)?;
+
+	println!("{:?}", compressed_data);
+
+	writer.write_all(&compressed_data)?;
+
+	let mut hasher = CRC32CHasher::new();
+	hasher.write(&compressed_data);
+	let checksum = hasher.finish();
+
+	writer.write_u32::<LittleEndian>(checksum)?;
+	writer.write_u32::<LittleEndian>(data.len() as u32)?;
+	Ok(())
+}
+

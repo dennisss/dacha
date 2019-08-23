@@ -6,40 +6,6 @@ use crate::huffman::*;
 use byteorder::{LittleEndian, ReadBytesExt};
 use super::shared::*;
 
-// Will need a 
-
-// TODO: If the lens list ends in 0's then we don't really need to encode it
-/// Given the encoded code lengths for the dynamic length/literal and distance code trees, this will encode/compress them into the code length alphabet and write them to the output stream
-fn write_dynamic_lens(lens: &[usize]) -> Result<()> {
-
-	// We can only encode code lengths up to 15.
-	for len in lens {
-		if *len > 15 {
-			return Err("Length is too long".into());
-		}
-	}
-
-	for i in 0..lens.len() {
-		let v = lens[i];
-
-
-		// Look for a sequence of zeros.
-		if v == 0 {
-			let mut j = i + 1;
-			while j < lens.len() && lens[j] == 0 {
-				j += 1;
-			}
-
-			// TODO: Only forth it if we have more than >= 3 zeros
-
-		}
-
-		// Otherwise, just encode as a plain length
-
-	}
-
-	Ok(())
-}
 
 fn read_dynamic_lens(
 	strm: &mut BitStream, code_len_tree: &HuffmanTree, nsymbols: usize) -> Result<Vec<usize>> {
@@ -61,14 +27,14 @@ fn read_dynamic_lens(
 			},
 			17 => {
 				let n = 3 + (strm.read_bits(3)?.unwrap());
-				assert!(n <= 10);
+				// assert!(n <= 10);
 				for i in 0..n {
 					lens.push(0);
 				}
 			},
 			18 => {
 				let n = 11 + (strm.read_bits(7)?.unwrap());
-				assert!(n <= 138);
+				// assert!(n <= 138);
 				for i in 0..n {
 					lens.push(0);
 				}
@@ -91,6 +57,7 @@ fn read_block_codes(strm: &mut BitStream, litlen_tree: &HuffmanTree,
 		let code = litlen_tree.read_code(strm)?;
 
 		if code < END_OF_BLOCK {
+			println!("{}", code as u8 as char);
 			out.push(code as u8);
 		} else if code == END_OF_BLOCK {
 			break;
@@ -101,7 +68,10 @@ fn read_block_codes(strm: &mut BitStream, litlen_tree: &HuffmanTree,
 
 			// TODO: Validate in range
 
-			// TODO: Implement faster copy
+			// TODO: Implement faster copy (make sure we retain abality to overlap with output)
+
+			println!("CUR {} DIST {} LEN {} CODE {}/{}", out.len(), dist, len, code, dist_code);
+
 			let cur = out.len();
 			for i in 0..len {
 				out.push(out[cur - dist + i]);
@@ -116,6 +86,15 @@ fn read_block_codes(strm: &mut BitStream, litlen_tree: &HuffmanTree,
 	Ok(())
 }
 
+/*
+Some guidelines for compression:
+- Don't compress unless we have at least 258 bytes of look ahead
+
+Some guidelines for decompression
+- Decompress single segment at a time.
+- Can stop at any 
+*/
+
 pub fn read_inflate(reader: &mut dyn Read) -> Result<Vec<u8>> {
 	let mut out = vec![];
 
@@ -123,12 +102,12 @@ pub fn read_inflate(reader: &mut dyn Read) -> Result<Vec<u8>> {
 
 	// Consume all blocks
 	loop {
-		let bfinal = strm.read_bits(1)?.ok_or(Error::from(INFLATE_EARLY_END))?;
-		let btype = strm.read_bits(2)?.ok_or(Error::from(INFLATE_EARLY_END))?;
+		let bfinal = strm.read_bits_exact(1)?;
+		let btype = strm.read_bits_exact(2)? as u8;
 
 		match btype {
 			// No compression
-			0b00 => {
+			BTYPE_NO_COMPRESSION => {
 				strm.align_to_byte();
 				let len = strm.read_u16::<LittleEndian>()?;
 				let nlen = strm.read_u16::<LittleEndian>()?;
@@ -141,23 +120,23 @@ pub fn read_inflate(reader: &mut dyn Read) -> Result<Vec<u8>> {
 				strm.read_exact(&mut out[i..])?;
 			},
 			// Compressed with fixed Huffman codes
-			0b01 => {
+			BTYPE_FIXED_CODES => {
 				let litlen_tree = fixed_huffman_lenlit_tree()?;
 				let dist_tree = fixed_huffman_dist_tree()?;
 
 				read_block_codes(&mut strm, &litlen_tree, &dist_tree, &mut out)?;
 			},
 			// Compressed with dynamic Huffman codes
-			0b10 => {
+			BTYPE_DYNAMIC_CODES => {
 
 				// TODO: Validate the maximum values for these.
 
-				// Number of literal/length codes - 4.
-				let hlit = (strm.read_bits(5)?.ok_or(Error::from(INFLATE_EARLY_END))? as usize) + 257;
+				// Number of literal/length codes - 257.
+				let hlit = strm.read_bits_exact(5)? + 257;
 				// Number of distance codes - 1.
-				let hdist = (strm.read_bits(5)?.ok_or(Error::from(INFLATE_EARLY_END))? as usize) + 1;
+				let hdist = strm.read_bits_exact(5)? + 1;
 				// Number of code length codes - 4
-				let hclen = (strm.read_bits(4)?.ok_or(Error::from(INFLATE_EARLY_END))? as usize) + 4;
+				let hclen = strm.read_bits_exact(4)? + 4;
 
 				// TODO: These can only be u8's?
 				let mut code_len_code_lens = [0usize; 19];

@@ -3,6 +3,7 @@
 use std::cmp::Ordering;
 use common::errors::*;
 use common::algorithms::merge_by;
+use std::collections::HashMap;
 use super::bits::*;
 
 enum HuffmanNode {
@@ -41,6 +42,23 @@ struct Package {
 
 	// TODO: We should be ableto implement this more efficiently without storing these.
 	inner: Vec<Coin>
+}
+
+/// A symbol and the length of the code used to encode it.
+#[derive(Debug, PartialEq)]
+pub struct SymbolLength {
+	pub symbol: usize,
+	pub length: usize
+}
+
+pub type SparseSymbolLengths = Vec<SymbolLength>; 
+
+/// A symbol and the number of times it occurs in the data.
+/// A vector of these would make up a sparse histogram.
+#[derive(Debug, PartialEq)]
+pub struct SymbolCount {
+	pub symbol: usize,
+	pub count: usize
 }
 
 impl HuffmanTree {
@@ -125,10 +143,15 @@ impl HuffmanTree {
 		}
 	}
 
+	// Builds a huffman encoding for some data under the constraint that code lengths are <= a requested maximum length.
+	//
 	// It is still more useful to have the raw lens
 	// TODO: Rename as we aren't actually building a tree?
-	pub fn build_length_limited_tree(symbols: &[usize], max_code_length: usize) -> Result<Vec<(usize, usize)>> {
+	//
+	// Output is pairs of Symbol, Codelength
+	pub fn build_length_limited_tree(symbols: &[usize], max_code_length: usize) -> Result<Vec<SymbolLength>> {
 		// Get frequencies of symbols.
+		// TODO: Should support raw input of a histogram.
 		let mut freqs_map = std::collections::HashMap::new();
 		for s in symbols {
 			let mut f = freqs_map.get(s).cloned().unwrap_or(0);
@@ -136,15 +159,18 @@ impl HuffmanTree {
 			freqs_map.insert(*s, f);
 		}
 
-		// List of symbols of the form (symbol, count).
-		let mut freqs = freqs_map.into_iter().collect::<Vec<(usize, usize)>>();
-		freqs.sort_unstable_by(|(sa, ca), (sb, cb)| {
-			if ca == cb {
+		// Sorted histogram of symbol frequencies.
+		let mut freqs = freqs_map.into_iter().map(|(s, c)| {
+			SymbolCount { symbol: s, count: c }
+		}).collect::<Vec<_>>();
+
+		freqs.sort_unstable_by(|a, b| {
+			if a.count == b.count {
 				// If frequencies are equal, sort by symbol.
-				sa.partial_cmp(sb).unwrap()
+				a.symbol.partial_cmp(&b.symbol).unwrap()
 			} else {
 				// Otherwise sort by frequencies.
-				ca.partial_cmp(cb).unwrap()
+				a.count.partial_cmp(&b.count).unwrap()
 			}
 		});
 
@@ -159,16 +185,16 @@ impl HuffmanTree {
 			denom.reserve(freqs.len());
 
 			// Append initial coins of this denomination to the list in order of increasing value. 
-			for f in freqs.iter().cloned() {
+			for f in freqs.iter() {
 				let coin = Coin {
 					denomination: (1 << i) as usize, // (-(i as f32)).exp2(),
-					// value: f.1,
-					symbol: f.0
+					// value: f.count,
+					symbol: f.symbol
 				};
 
 				denom.push(Package {
 					// denomination: coin.denomination,
-					value: f.1,
+					value: f.count,
 					inner: vec![coin]
 				});
 			}
@@ -246,16 +272,26 @@ impl HuffmanTree {
 			return Err("Failed".into());
 		}
 
-		let mut lens = count_map.into_iter().collect::<Vec<(usize, usize)>>();
+		// The length of each symbol will be the number of times it occured in the lowest packages.
+		let mut lens = count_map.into_iter().map(|(symbol, count)| {
+			SymbolLength { symbol, length: count }
+		}).collect::<Vec<_>>();
 
 		// Ensure that we were able to produce a length for every original symbol.
 		if lens.len() != freqs.len() {
 			return Err("Failed 2".into());
 		}
 
+		// Sanity check that we did not generate any code lengths longer than the requested limit.
+		for l in lens.iter() {
+			if l.length > max_code_length {
+				return Err("Some lengths ended up too large".into());
+			}
+		}
+
 		// Sort symbol by symbol id.
-		lens.sort_unstable_by(|(sa, _), (sb, _)| {
-			sa.partial_cmp(sb).unwrap()
+		lens.sort_unstable_by(|a, b| {
+			a.symbol.partial_cmp(&b.symbol).unwrap()
 		});
 
 		Ok(lens)
@@ -264,10 +300,30 @@ impl HuffmanTree {
 
 /// Writes 
 pub struct HuffmanEncoder {
-	codes: std::collections::HashMap<usize, BitVector>
+	codes: HashMap<usize, BitVector>
 }
 
+impl HuffmanEncoder {
+	pub fn from_canonical_lens(lens: &[usize]) -> Result<HuffmanEncoder> {
+		let codelist = huffman_canonical_codes_from_lens(lens)?;
 
+		let mut codes = HashMap::new();
+		for (symbol, code) in codelist.into_iter() {
+			codes.insert(symbol, code);
+		}
+
+		Ok(HuffmanEncoder { codes })
+	}
+
+	pub fn write_symbol(&self, symbol: usize, writer: &mut dyn BitWrite) -> Result<()> {
+		let code = match self.codes.get(&symbol) {
+			Some(c) => c,
+			None => { return Err("Unkown symbol given to encoder".into()); }	
+		};
+
+		writer.write_bitvec(code)
+	}
+}
 
 // TODO: We must enforce maximum code lengths of 64bits everywhere
 
@@ -281,7 +337,7 @@ fn code2vec(code: usize, len: usize) -> BitVector {
 	v
 }
 
-
+// TODO: For deflate, it is more efficient to do this from the sparse form
 // See RFC1951 3.2.1
 pub fn huffman_canonical_codes_from_lens(lens: &[usize])
 	-> Result<Vec<(usize, BitVector)>> {
@@ -322,10 +378,31 @@ pub fn huffman_canonical_codes_from_lens(lens: &[usize])
 	Ok(out)
 }
 
+/// Given a list of sorted sparse lengths for each symbol, generates a dense list such that the first length is for symbol 0 and the last length is for the largest symbol present in the input list.
+/// 
+/// NOTE: This assumes that the symbols are sorted and distint
+pub fn dense_symbol_lengths(lens: &Vec<SymbolLength>) -> Vec<usize> {
+	let mut out = vec![];
+	if let Some(v) = lens.last() {
+		out.reserve(v.length);
+	} else {
+		return out;
+	}
+
+	for v in lens.iter() {
+		assert!(out.len() <= v.symbol);
+		out.resize(v.symbol, 0);
+		out.push(v.length);
+	}
+
+	out
+}
+
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use std::convert::TryInto;
 
 	#[test]
 	fn code2vec_works() {
@@ -371,5 +448,22 @@ mod tests {
 			(6, "1110".try_into().unwrap()),
 			(7, "1111".try_into().unwrap())
 		]);
+	}
+
+	#[test]
+	fn build_length_limited_tree_test() {
+		let data = vec![1, 2,2, 3,3,3, 4,4,4,4, 5,5,5,5, 6,6,6,6,6,6 ];
+		let out = HuffmanTree::build_length_limited_tree(&data, 3).unwrap();
+
+		let expected = vec![
+			SymbolLength { symbol: 1, length: 3 },
+			SymbolLength { symbol: 2, length: 3 },
+			SymbolLength { symbol: 3, length: 3 },
+			SymbolLength { symbol: 4, length: 3 },
+			SymbolLength { symbol: 5, length: 2 },
+			SymbolLength { symbol: 6, length: 2 }
+		];
+
+		assert_eq!(out, expected);
 	}
 }

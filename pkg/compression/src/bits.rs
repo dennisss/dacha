@@ -41,6 +41,19 @@ impl BitVector {
 		assert!(i < self.len);
 		(self.data[i / 8] >> (7 - (i % 8))) & 0b1
 	}
+
+	/// Generates a bitvector from a number. The corresponding vector will start with the MSB of the number.
+	pub fn from_usize(val: usize, width: u8) -> Self {
+		let mut out = BitVector::new();
+		for i in 0..width { // NOTE: THis is not reversed!
+			out.push(((val >> i) & 0b1) as u8)
+		}
+		
+		// Assert 'val' has no more than width data in it.
+		assert_eq!(val >> width, 0);
+
+		out
+	}
 }
 
 impl std::fmt::Debug for BitVector {
@@ -98,6 +111,14 @@ impl<'a> BitStream<'a> {
 	/// 
 	/// The return value will be None if and only if the first read bit is after the end of the file.
 	pub fn read_bits(&mut self, n: u8) -> Result<Option<usize>> {
+
+		// TODO: Can be implemented as a trivial read
+		// But reading more than 8 bits can be tricky. Basially must loop through bytes instead of through bits
+		// if n < 8 - self.bit_offset {
+		// 	let mask = (1 << n) - 1;
+
+		// }
+
 		// TODO: Instead implement as a read from up to two bytes.
 		let mut out = 0;
 		for i in 0..n {
@@ -153,6 +174,14 @@ pub trait BitWrite {
 	/// Writes the lowest 'len' bits of 'val' to this stream.
 	fn write_bits(&mut self, val: usize, len: u8) -> Result<()>;
 
+	fn write_bitvec(&mut self, val: &BitVector) -> Result<()> {
+		for i in 0..val.len() {
+			self.write_bits(val.get(i) as usize, 1)?;
+		}
+
+		Ok(())
+	}
+
 	/// Immediately finish writing any partial bytes to the underlying stream.
 	/// 
 	/// NOTE: This should always be called after using this stream to guarantee that everything has been written.
@@ -186,6 +215,9 @@ impl BitWrite for BitWriter<'_> {
 				self.finish()?;
 			}
 		}
+
+		// Ensure that 'val' doesn't contain more the 'len' bits
+		assert_eq!(val, 0);
 
 		Ok(())
 	}
@@ -221,6 +253,17 @@ mod tests {
 		}
 
 		assert_eq!(&format!("{:?}", v), "'01101011100'");
+	}
+
+	#[test]
+	fn bitwriter_test() {
+		let mut data = Vec::new();
+		let mut strm = BitWriter::new(&mut data);
+		strm.write_bits(0b1, 1).unwrap();
+		strm.write_bits(0b01, 2).unwrap();
+		strm.finish().unwrap();
+
+		assert_eq!(data[0], 0b011);
 	}
 
 }
