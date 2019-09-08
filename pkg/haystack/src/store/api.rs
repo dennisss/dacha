@@ -97,7 +97,7 @@ impl CookieBuf {
 	}
 
 	pub fn data(&self) -> &Cookie {
-		array_ref!(self.inner, 0, COOKIE_SIZE)
+		array_ref![self.inner, 0, COOKIE_SIZE]
 	}
 
 	pub fn to_string(&self) -> String {

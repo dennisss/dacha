@@ -1,5 +1,8 @@
+// TODO: Move crypto package.
+
 use std::convert::TryInto;
 use std::io::Read;
+use crypto::hasher::*;
 
 const CRC32_TABLE: [u32; 256] = [
 	0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
@@ -55,43 +58,22 @@ impl CRC32Hasher {
 	pub fn new() -> CRC32Hasher {
 		CRC32Hasher { val: !0 }
 	}
+}
 
-	pub fn write(&mut self, data: &[u8]) {
+impl Hasher for CRC32Hasher {
+	type Output = u32;
+
+	fn update(&mut self, data: &[u8]) {
 		for i in data {
 			let idx = ((self.val & 0xff) as u8) ^ *i;
-			self.val = (self.val >> 8) ^ CRC32_TABLE[idx as usize];
+			self.val = (self.val >> 8) ^ CRC32_TABLE[idx as usize];	
 		}
 	}
 
-	pub fn finish(&self) -> u32 {
+	fn finish(&self) -> u32 {
 		!self.val
 	}
 }
-
-/// Wrapper around a reader that calculates the checksum as you read.
-pub struct CRC32Reader<'a> {
-	reader: &'a mut dyn Read,
-	hasher: CRC32Hasher	
-}
-
-impl CRC32Reader<'_> {
-	pub fn new(reader: &mut dyn Read) -> CRC32Reader {
-		CRC32Reader { reader, hasher: CRC32Hasher::new() }
-	}
-
-	pub fn finish(&self) -> u32 {
-		self.hasher.finish()
-	}
-}
-
-impl Read for CRC32Reader<'_> {
-	fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-		let n = self.reader.read(buf)?;
-		self.hasher.write(&buf[0..n]);
-		Ok(n)
-	}
-}
-
 
 
 // SSE4.2 CRC-32C computation.
@@ -103,8 +85,12 @@ impl CRC32CHasher {
 	pub fn new() -> CRC32CHasher {
 		CRC32CHasher { val: !0 }
 	}
+}
 
-	pub fn write(&mut self, data: &[u8]) {
+impl Hasher for CRC32CHasher {
+	type Output = u32;
+
+	fn update(&mut self, data: &[u8]) {
 		// Calculate in 64bit chunks.
 		let inc = std::mem::size_of::<u64>();
 		let n  = data.len() / inc;
@@ -123,7 +109,7 @@ impl CRC32CHasher {
 		}
 	}
 
-	pub fn finish(&self) -> u32 {
+	fn finish(&self) -> u32 {
 		!self.val
 	}
 }

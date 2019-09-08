@@ -5,6 +5,7 @@ use std::convert::{TryFrom, TryInto};
 use parsing::iso::*;
 use crate::crc::*;
 use crate::deflate::*;
+use crypto::hasher::*;
 
 // ZLib RFC http://www.zlib.org/rfc-gzip.html
 // This is based on v4.3
@@ -18,7 +19,7 @@ use crate::deflate::*;
 
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum CompressionMethod {
 	// Stored = 0,
 	// Compressed = 1,
@@ -117,6 +118,9 @@ pub struct Header {
 pub struct GZipFile {
 	pub header: Header,
 
+	pub data: Vec<u8>
+
+	/*
 	/// File byte offsets 
 	pub compressed_range: (u64, u64),
 
@@ -125,12 +129,13 @@ pub struct GZipFile {
 
 	/// Uncompressed size (mod 2^32) of the original input to the compressor.
 	pub input_size:  u32
+	*/
 }
 
 
 
 // TODO: Set a save max limit on length.
-fn read_null_terminated(reader: &mut Read) -> Result<Vec<u8>> {
+fn read_null_terminated(reader: &mut dyn Read) -> Result<Vec<u8>> {
 	let mut out = vec![];
 	let mut buf = [0u8; 1];
 	
@@ -156,18 +161,67 @@ pub const GZIP_UNIX_OS: u8 = 0x03;
 
 const GZIP_MAGIC: &'static [u8] = &[0x1f, 0x8b];
 
-pub fn read_gzip<F: Read + Seek>(f: &mut F) -> Result<GZipFile> {
+// Most trivial to do this with a buffer because then we can perform buffering 
+
+// Reader will buffer all input until 
+
+enum GzipDecodeState {
+	/// Very start of the file including all conditional fields
+	Header,
+	
+	/// This will need to have an Inflater, and a rolling checksum
+	Body {  },
+
+	Footer
+}
+
+struct GzipDecoder {
+
+
+
+}
+
+impl GzipDecoder {
+
+	// /// Will return non-None once 
+	// pub fn header(&self) -> Option<&Header> {
+
+	// }
+
+
+}
+
+
+/*
+	Reader wrapper:
+	- Implements Read
+	- As it reads, it internally caches all read data
+	- Internal cache is discarded on called 
+*/
+
+/// A reader which can be at any time 'rolled' back such it 
+trait RecordedRead: Read {
+	/// Should be called to indicate that all internal cache 
+	fn consume(&mut self);
+
+	fn take(&mut self) -> Vec<u8>;
+}
+
+// struct SliceReader {
+
+// }
+
+// impl RecordedRead for std::io::Cursor<[u8]> {
+
+// }
+
+// TODO: Convert this to a state machine.
+// TODO: Can't seek a TcpStream
+pub fn read_gzip<F: Read>(f: &mut F) -> Result<GZipFile> {
 
 	// TODO: Verify compression properties such as maximum code length.
 
-	// let mut txtf = File::open("testdata/lorem_ipsum.txt")?;
-	// let mut data = Vec::new();
-	// txtf.read_to_end(&mut data)?;
-	// let mut c = CRC32Hasher::new();
-	// c.write(&data);
-	// println!("Uncompressed CRC32: {:x}", c.finish());
-
-	let mut header_reader = CRC32Reader::new(f);
+	let mut header_reader = HashReader::new(f, CRC32Hasher::new());
 
 	let mut header_buf = [0u8; HEADER_SIZE];
 	header_reader.read_exact(&mut header_buf)?;
@@ -197,14 +251,14 @@ pub fn read_gzip<F: Read + Seek>(f: &mut F) -> Result<GZipFile> {
 
 	let filename = if flags.fname {
 		let data = read_null_terminated(&mut header_reader)?;
-		Some(ISO88591String::from_bytes(data.into())?.to_string())
+		Some(Latin1String::from_bytes(data.into())?.to_string())
 	} else {
 		None
 	};
 
 	let comment = if flags.fcomment {
 		let data = read_null_terminated(&mut header_reader)?;
-		Some(ISO88591String::from_bytes(data.into())?.to_string())
+		Some(Latin1String::from_bytes(data.into())?.to_string())
 	} else {
 		None
 	};
@@ -223,17 +277,33 @@ pub fn read_gzip<F: Read + Seek>(f: &mut F) -> Result<GZipFile> {
 		false
 	};
 
-	let body_start = f.seek(std::io::SeekFrom::Current(0))?;
-	let file_length = f.seek(std::io::SeekFrom::End(0))?;
-	let body_end = file_length - 8; // 8 is the size of the two fields in the footer
+	let mut checksum_reader = HashReader::new(f, CRC32Hasher::new());
 
-	if body_end < body_start {
-		return Err("GZip stream too short: Missing footer".into());
+	let uncompressed_data =
+		if compression_method == CompressionMethod::Deflate {
+			checksum_reader.read_inflate()?
+		} else {
+			return Err("Unsupported compression method".into());
+		};
+
+	let actual_checksum = {
+		let mut hasher = CRC32Hasher::new();
+		hasher.update(&uncompressed_data);
+		hasher.finish()
+	};
+
+	let body_checksum = f.read_u32::<LittleEndian>()?;
+	let input_size = f.read_u32::<LittleEndian>()? as usize;
+
+	if input_size != uncompressed_data.len() {
+		return Err(format!("Footer length mismatch, expected: {}, actual: {}", uncompressed_data.len(), input_size).into());
 	}
 
-	f.seek(std::io::SeekFrom::Start(body_end))?;
-	let body_checksum = f.read_u32::<LittleEndian>()?;
-	let input_size = f.read_u32::<LittleEndian>()?;
+	if body_checksum != actual_checksum {
+		return Err("Footer wrong checksum".into());
+	}
+
+	// TODO: If reading from a file, validate that we are at the end after parsing it
 
 	Ok(GZipFile {
 		header: Header {
@@ -247,9 +317,7 @@ pub fn read_gzip<F: Read + Seek>(f: &mut F) -> Result<GZipFile> {
 			comment,
 			header_validated
 		},
-		compressed_range: (body_start, body_end),
-		compressed_checksum: body_checksum,
-		input_size
+		data: uncompressed_data
 	})
 }
 
@@ -267,8 +335,7 @@ fn is_text(data: &[u8]) -> bool {
 }
 
 pub fn write_gzip(header: Header, data: &[u8],
-				  writer: &mut Write) -> Result<()> {
-	
+				  writer: &mut dyn Write) -> Result<()> {
 	let flags = Flags {
 		ftext: false,
 		fhcrc: false,
@@ -284,7 +351,7 @@ pub fn write_gzip(header: Header, data: &[u8],
 	LittleEndian::write_u32(&mut header_buf[4..8], header.mtime);
 	header_buf[8] = header.extra_flags;
 	header_buf[9] = header.os;
-	writer.write_all(&header_buf);
+	writer.write_all(&header_buf)?;
 
 	if let Some(data) = header.extra_field {
 		writer.write_u32::<LittleEndian>(data.len() as u32)?;
@@ -293,27 +360,28 @@ pub fn write_gzip(header: Header, data: &[u8],
 
 	let null = [0u8; 1];
 	if let Some(s) = header.filename {
-		// TODO: Validate is ISO88591String.
+		// TODO: Validate is Latin1String.
 		writer.write_all(s.as_bytes())?;
 		writer.write_all(&null)?;
 	}
 
 	if let Some(s) = header.comment {
-		// TODO: Validate is ISO88591String.
+		// TODO: Validate is Latin1String.
 		writer.write_all(s.as_bytes())?;
 		writer.write_all(&null)?;
 	}
 
 	// TODO: Validate that the compresson method is set correctly.
-	let mut compressed_data = Vec::new();
-	write_deflate(&data, &mut compressed_data)?;
+	let mut deflater = Deflater::new();
+	deflater.update(&data, &mut [], true)?;
+	let compressed_data = deflater.take_output();
 
 	println!("{:?}", compressed_data);
 
 	writer.write_all(&compressed_data)?;
 
-	let mut hasher = CRC32CHasher::new();
-	hasher.write(&compressed_data);
+	let mut hasher = CRC32Hasher::new();
+	hasher.update(&data);
 	let checksum = hasher.finish();
 
 	writer.write_u32::<LittleEndian>(checksum)?;

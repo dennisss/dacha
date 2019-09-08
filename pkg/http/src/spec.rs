@@ -3,50 +3,14 @@ use super::ascii::*;
 use bytes::Bytes;
 use std::io::Write;
 use super::status_code::*;
+use parsing::iso::*;
+use parsing::complete;
+use crate::message_parser::*;
+use super::uri::*;
+use common::errors::*;
 
 // NOTE: Content in the HTTP headers is ISO-8859-1 so may contain characters outside the range of ASCII.
-type HttpStr = Vec<u8>;
-
-
-// ISO-8859-1 string reference
-// (https://en.wikipedia.org/wiki/ISO/IEC_8859-1)
-pub struct ISO88591String {
-	// All bytes must be in the ranges:
-	// - [0x20, 0x7E]
-	// - [0xA0, 0xFF] 
-	pub data: Bytes
-}
-
-impl ISO88591String {
-	pub fn from_bytes(data: Bytes) -> std::result::Result<ISO88591String, String> {
-		for i in &data {
-			let valid = (*i >= 0x20 && *i <= 0x7e) ||
-						(*i >= 0xa0);
-			if !valid {
-				return Err(format!("Undefined ISO-8859-1 code point: {:x}", i));
-			}
-		}
-
-		Ok(ISO88591String { data })
-	}
-
-	/// Converts to a standard utf-8 string.
-	pub fn to_string(&self) -> String {
-		let mut s = String::new();
-		for i in &self.data {
-			let c = std::char::from_u32(*i as u32).expect("Invalid character");
-			s.push(c);
-		}
-
-		s
-	}
-}
-
-impl std::fmt::Debug for ISO88591String {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		self.to_string().fmt(f)
-    }
-}
+// type HttpStr = Vec<u8>;
 
 
 // pub struct HttpResponseBuilder {
@@ -76,12 +40,221 @@ impl std::fmt::Debug for ISO88591String {
 // use std::sync::Arc;
 // trait Body : Arc {}
 
+// TODO: Need validation of duplicate headers.
+
+
+trait ToHeaderName {
+	fn to_header_name(self) -> Result<AsciiString>;
+}
+
+impl<T: AsRef<[u8]>> ToHeaderName for T {
+	fn to_header_name(self) -> Result<AsciiString> {
+		let f = || {
+			let s = AsciiString::from(self.as_ref())?;
+			parse_field_name(s.data.clone())?;
+			Ok(s)
+		};
+		
+		f().map_err(|e: Error| format!("Invalid header name: {:?}", e).into())
+	}
+}
+
+trait ToHeaderValue {
+	fn to_header_value(self, name: &AsciiString) -> Result<ISO88591String>;
+}
+
+impl<T: AsRef<str>> ToHeaderValue for T {
+	fn to_header_value(self, name: &AsciiString) -> Result<ISO88591String> {
+		let f = || {
+			let s = ISO88591String::from(self.as_ref())?;
+			parse_field_content(s.data.clone())?;
+			Ok(s)
+		};
+
+		f().map_err(|e: Error| format!("Invalid value for header {}: {:?}", name.to_string(), e).into())
+	}
+}
+
+
+
 const BODY_BUFFER_SIZE: usize = 4096;
 
 pub struct Request {
 	pub head: RequestHead,
-	pub body: Box<std::io::Read>
+	pub body: Box<dyn std::io::Read>
 }
+
+pub struct RequestBuilder {
+	method: Option<Method>,
+	uri: Option<Uri>,
+	headers: Vec<HttpHeader>,
+	body: Option<Box<dyn std::io::Read>>,
+
+	// First error that occured in the building process
+	error: Option<Error>
+}
+
+impl RequestBuilder {
+	pub fn new() -> RequestBuilder {
+		RequestBuilder {
+			method: None, uri: None, headers: vec![], error: None, body: None }
+	}
+
+	pub fn method(mut self, method: Method) -> Self {
+		self.method = Some(method);
+		self
+	}
+
+	pub fn uri<U: AsRef<[u8]>>(mut self, uri: U) -> Self {
+		// TODO: Implement a complete() parser combinator to deal with ensuring nothing is left
+		self.uri = match complete(parse_request_target)(Bytes::from(uri.as_ref())) {
+			Ok((u, _)) => Some(u.into_uri()),
+			Err(e) => {
+				self.error = Some(
+					format!("Invalid request uri: {:?}", e).into());
+				None
+			}
+		};
+
+		self
+	}
+
+	// TODO: Currently this is the only safe way to build a request
+	// we will need to dedup this with 
+	pub fn header<N: ToHeaderName, V: ToHeaderValue>(
+		mut self, name: N, value: V) -> Self {
+		
+		let name = match name.to_header_name() {
+			Ok(v) => v,
+			Err(e) => {
+				self.error = Some(e);
+				return self;
+			}
+		};
+
+		let value = match value.to_header_value(&name) {
+			Ok(v) => v,
+			Err(e) => {
+				self.error = Some(e);
+				return self;
+			}
+		};
+
+		self.headers.push(HttpHeader { name, value });
+		self
+	}
+
+	pub fn body(mut self, body: Box<dyn std::io::Read>) -> Self {
+		self.body = Some(body);
+		self
+	}
+
+	pub fn build(self) -> Result<Request> {
+		if let Some(e) = self.error {
+			return Err(e);
+		}
+
+		let method = self.method
+			.ok_or_else(|| Error::from("No method specified"))?;
+
+		// TODO: Only certain types of uris are allowed here
+		let uri = self.uri
+			.ok_or_else(|| Error::from("No uri specified"))?;
+
+		let headers = HttpHeaders::from(self.headers);
+
+		let body = self.body
+			.ok_or_else(|| Error::from("No body specified"))?;
+
+		Ok(Request {
+			head: RequestHead {
+				method, uri,
+				version: HTTP_V1_1,
+				headers
+			},
+			body
+		})
+	}
+
+}
+
+pub struct ResponseBuilder {
+	status_code: Option<StatusCode>,
+	reason: Option<String>,
+	headers: Vec<HttpHeader>,
+	body: Option<Box<dyn std::io::Read>>,
+
+	// First error that occured in the building process
+	error: Option<Error>
+}
+
+impl ResponseBuilder {
+	pub fn new() -> ResponseBuilder {
+		ResponseBuilder { status_code: None, reason: None,
+						  headers: vec![], body: None, error: None  }
+	}
+
+	pub fn status(mut self, code: StatusCode) -> Self {
+		self.status_code = Some(code);
+		self
+	}
+
+	pub fn header<N: ToHeaderName, V: ToHeaderValue>(
+		mut self, name: N, value: V) -> Self {
+		
+		let name = match name.to_header_name() {
+			Ok(v) => v,
+			Err(e) => {
+				self.error = Some(e);
+				return self;
+			}
+		};
+
+		let value = match value.to_header_value(&name) {
+			Ok(v) => v,
+			Err(e) => {
+				self.error = Some(e);
+				return self;
+			}
+		};
+
+		self.headers.push(HttpHeader { name, value });
+		self
+	}
+
+	pub fn body(mut self, body: Box<dyn std::io::Read>) -> Self {
+		self.body = Some(body);
+		self
+	}
+
+	pub fn build(self) -> Result<Response> {
+		if let Some(e) = self.error {
+			return Err(e);
+		}
+
+		let status_code = self.status_code
+			.ok_or_else(|| Error::from("No status specified"))?;
+
+		// TODO: Support custom reason and don't unwrap this.
+		let reason = String::from(status_code.default_reason().unwrap());
+
+		let headers = HttpHeaders::from(self.headers);
+
+		let body = self.body
+			.ok_or_else(|| Error::from("No body specified"))?;
+
+		Ok(Response {
+			head: ResponseHead {
+				status_code, reason,
+				version: HTTP_V1_1,
+				headers
+			},
+			body
+		})
+	}
+}
+
+
 
 #[derive(Debug)]
 pub struct RequestHead {
@@ -126,22 +299,29 @@ impl std::fmt::Debug for Request {
 
 
 pub struct Response {
+	pub head: ResponseHead,
+	pub body: Box<dyn std::io::Read>
+}
+
+#[derive(Debug)]
+pub struct ResponseHead {
 	pub version: HttpVersion,
 	pub status_code: StatusCode,
 	pub reason: String,
 	pub headers: HttpHeaders,
-	pub body: Box<std::io::Read>
 }
 
 impl Response {
-	pub fn serialize(&mut self, writer: &mut Write) -> std::io::Result<()> {
-		let status_line = format!("HTTP/{} {} {}\r\n", self.version.to_string(),
-			self.status_code.as_u16(), self.reason.to_string());
+	pub fn serialize(&mut self, writer: &mut dyn Write) -> std::io::Result<()> {
+		let status_line = format!("HTTP/{} {} {}\r\n",
+			self.head.version.to_string(),
+			self.head.status_code.as_u16(),
+			self.head.reason.to_string());
 		writer.write_all(status_line.as_bytes())?;
 
 		/////
 
-		self.headers.serialize(writer)?;
+		self.head.headers.serialize(writer)?;
 		writer.write_all(b"\r\n")?;
 		
 		// TODO: If we sent a Content-Length, make sure that we are consistent.
@@ -191,7 +371,7 @@ impl Method {
 
 impl std::convert::TryFrom<&[u8]> for Method {
 	type Error = &'static str;
-	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+	fn try_from(value: &[u8]) -> std::result::Result<Self, Self::Error> {
 		Ok(match value {
 			b"GET" => Method::GET,
 			b"HEAD" => Method::HEAD,
@@ -221,7 +401,7 @@ pub struct HttpHeader {
 }
 
 impl HttpHeader {
-	pub fn serialize(&self, writer: &mut Write) -> std::io::Result<()> {
+	pub fn serialize(&self, writer: &mut dyn Write) -> std::io::Result<()> {
 		writer.write_all(&self.name.data)?;
 		writer.write_all(b": ")?;
 		writer.write_all(&self.value.data)?;
@@ -243,6 +423,10 @@ pub struct HttpHeaders {
 }
 
 impl HttpHeaders {
+	pub fn new() -> HttpHeaders {
+		HttpHeaders { raw_headers: vec![] }
+	}
+
 	pub fn from(raw_headers: Vec<HttpHeader>) -> HttpHeaders {
 		HttpHeaders { raw_headers }
 	}
@@ -254,7 +438,7 @@ impl HttpHeaders {
 		})
 	}
 
-	pub fn serialize(&self, writer: &mut Write) -> std::io::Result<()> {
+	pub fn serialize(&self, writer: &mut dyn Write) -> std::io::Result<()> {
 		for h in &self.raw_headers {
 			h.serialize(writer)?;
 		}
@@ -347,90 +531,3 @@ pub struct StatusLine {
 }
 
 
-#[derive(Debug)]
-pub struct Uri {
-	pub scheme: Option<AsciiString>,
-	pub authority: Option<Authority>,
-	pub path: String,
-	pub query: Option<AsciiString>,
-	// NOTE: This will always be empty for absolute_uri
-	pub fragment: Option<AsciiString>
-}
-
-impl Uri {
-	// TODO: Encode any characters that we need to encode for this.
-	pub fn to_string(&self) -> String {
-		let mut out = String::new();
-		if let Some(scheme) = &self.scheme {
-			out += &format!("{}:", scheme.to_string());
-		}
-
-		// TODO: Authority
-
-		out += &self.path;
-
-		if let Some(query) = &self.query {
-			out += &format!("?{}", query.to_string());
-		}
-
-		if let Some(fragment) = &self.fragment {
-			out += &format!("#{}", fragment.to_string());
-		}
-
-		out
-	}
-}
-
-
-#[derive(Debug)]
-pub struct Authority {
-	pub user: Option<AsciiString>,
-	pub host: Host,
-	pub port: Option<usize>
-}
-
-#[derive(Debug)]
-pub enum Host {
-	Name(AsciiString), // NOTE: This is strictly ASCII.
-	IP(IPAddress)
-}
-
-#[derive(Debug)]
-pub enum IPAddress {
-	V4(Vec<u8>),
-	V6(Vec<u8>),
-	VFuture(Vec<u8>)
-}
-
-#[derive(Debug)]
-pub enum UriPath {
-	AbEmpty(Vec<AsciiString>),
-	Absolute(Vec<AsciiString>),
-	Rootless(Vec<AsciiString>),
-	Empty
-}
-
-impl UriPath {
-	pub fn to_string(&self) -> String {
-		let join = |strs: &Vec<AsciiString>| {
-			strs.iter().map(|s| s.to_string()).collect::<Vec<_>>().join("/")
-		};
-
-		match self {
-			UriPath::AbEmpty(v) => format!("/{}", join(v)),
-			UriPath::Absolute(v) => format!("/{}", join(v)),
-			UriPath::Rootless(v) => join(v),
-			UriPath::Empty => String::new(),
-		}
-	}
-}
-
-
-#[derive(Debug)]
-pub enum Path {
-	PathAbEmpty(Vec<AsciiString>),
-	PathAbsolute(Vec<AsciiString>),
-	PathNoScheme(Vec<AsciiString>),
-	PathRootless(Vec<AsciiString>),
-	PathEmpty
-}

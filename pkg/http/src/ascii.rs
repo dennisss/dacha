@@ -1,3 +1,4 @@
+use common::errors::*;
 use bytes::Bytes;
 
 /// An str backed by bytes that we know only contain bytes 0-127.
@@ -6,6 +7,20 @@ pub struct AsciiString {
 }
 
 impl AsciiString {
+	pub fn from<T: AsRef<[u8]>>(data: T) -> Result<AsciiString> {
+		let d = data.as_ref();
+		let mut out = vec![];
+		for v in data.as_ref().iter().cloned() {
+			if v > 127 {
+				return Err("Byte outside of ASCII range".into());
+			}
+
+			out.push(v);
+		}
+
+		Ok(AsciiString { data: Bytes::from(out) })
+	}
+
 	pub unsafe fn from_ascii_unchecked(data: Bytes) -> AsciiString {
 		AsciiString { data }
 	}

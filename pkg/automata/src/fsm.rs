@@ -293,9 +293,7 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash> Finite
 
 		for v in val {
 			match self.lookup(i, &v).next() {
-				Some(j) => {
-					i = *j;
-				}
+				Some(j) => { i = *j; }
 				None => return false
 			};
 		}

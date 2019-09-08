@@ -12,6 +12,20 @@ pub struct ISO88591String {
 }
 
 impl ISO88591String {
+	pub fn from(s: &str) -> Result<ISO88591String> {
+		let mut data = vec![];
+		for c in s.chars() {
+			let v = c as usize;
+			if v > 0xff {
+				return Err("Char outside of single byte range".into());
+			}
+
+			data.push(v as u8);
+		}
+
+		ISO88591String::from_bytes(Bytes::from(data))
+	}
+
 	pub fn from_bytes(data: Bytes) -> Result<ISO88591String> {
 		for i in &data {
 			let valid = (*i >= 0x20 && *i <= 0x7e) ||

@@ -42,11 +42,6 @@ macro_rules! alt {
 	};
 }
 
-// ($first)(input)
-// $(
-// 	.or_else(|_| ($next)(input))
-// )*
-
 // TODO: Try to convert to a function taking a lambda with an &mut ParserCursor parameter
 #[macro_export]
 macro_rules! seq {
@@ -75,10 +70,17 @@ macro_rules! function {
 
 #[macro_export]
 macro_rules! parser {
-	($c:ident<$t:ty> => $e:expr) => {
+	(pub $c:ident<$t:ty> => $e:expr) => {
 		pub fn $c(input: Bytes) -> ParseResult<$t> {
-			let p = { $e };
-			p(input).map_err(|e| format!("{}({})", function!(), e).into())
+			let p = $e;
+			p(input).map_err(|e: Error| Error::from(format!("{}({})", function!(), e)))
+		}
+	};
+	// Same thing as the first form, but not public.
+	($c:ident<$t:ty> => $e:expr) => {
+		fn $c(input: Bytes) -> ParseResult<$t> {
+			let p = $e;
+			p(input).map_err(|e: Error| Error::from(format!("{}({})", function!(), e)))
 		}
 	};
 }
@@ -110,7 +112,19 @@ pub fn like<F: Fn(u8) -> bool>(f: F) -> impl Parser<u8> {
 	}
 }
 
-parser!(any<u8> => like(|_| true)); 
+parser!(pub any<u8> => like(|_| true)); 
+
+pub fn complete<T, P: Parser<T>>(p: P) -> impl Parser<T> {
+	move |input: Bytes| {
+		p(input).and_then(|(v, rest)| {
+			if rest.len() != 0 {
+				Err(format!("Failed to parse last {} bytes", rest.len()).into())
+			} else {
+				Ok((v, rest))
+			}
+		})
+	}
+}
 
 pub fn take_while<F: Fn(u8) -> bool>(f: F) -> impl Parser<Bytes> {
 	move |input: Bytes| {

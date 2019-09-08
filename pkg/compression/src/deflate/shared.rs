@@ -75,7 +75,7 @@ pub fn fixed_huffman_dist_tree() -> Result<HuffmanTree> {
 
 
 // TODO: Will also need an encoding version
-pub fn read_len(code: usize, strm: &mut BitStream) -> Result<usize> {
+pub fn read_len(code: usize, strm: &mut BitReader) -> Result<usize> {
 	Ok(match code {
 		257...264 => (code - 257 + 3),
 		265...268 => {
@@ -156,7 +156,7 @@ pub fn append_len(len: usize, out: &mut Vec<Atom>) -> Result<()> {
 
 
 
-pub fn read_distance(code: usize, strm: &mut BitStream) -> Result<usize> {
+pub fn read_distance(code: usize, strm: &mut BitReader) -> Result<usize> {
 	if code <= 3 {
 		Ok(code + 1)
 	} else if code <= 29 {
@@ -228,7 +228,7 @@ mod tests {
 		let try_with = |code, extra| {
 			let data = vec![extra];
 			let mut c = std::io::Cursor::new(data);
-			let mut strm = BitStream::new(&mut c);
+			let mut strm = BitReader::new(&mut c);
 			read_len(code, &mut strm).unwrap()
 		};
 
@@ -242,7 +242,7 @@ mod tests {
 		let try_with = |code, extra, extra2| {
 			let data = vec![extra, extra2];
 			let mut c = std::io::Cursor::new(data);
-			let mut strm = BitStream::new(&mut c);
+			let mut strm = BitReader::new(&mut c);
 			read_distance(code, &mut strm).unwrap()
 		};
 

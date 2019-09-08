@@ -1,3 +1,4 @@
+#![feature(trait_alias)]
 #[macro_use] extern crate error_chain;
 extern crate fs2;
 extern crate libc;
@@ -21,8 +22,14 @@ impl FlipSign<u64> for i64 { fn flip(self) -> u64 { self as u64 } }
 impl FlipSign<i64> for u64 { fn flip(self) -> i64 { self as i64 } }
 
 
-
 pub mod errors {
+	#[derive(Debug)]
+	pub enum BitIoErrorKind {
+		/// Occurs when reading from a BitReader and the input stream runs out of bits before the read was complete.
+		NotEnoughBits
+	}
+
+
 	error_chain! {
 		foreign_links {
 			Io(::std::io::Error);
@@ -37,9 +44,15 @@ pub mod errors {
 			// API(code: u16, message: &'static str) {
 			// 	display("API Error: {} '{}'", code, message)
 			// }
+
+			BitIo(t: BitIoErrorKind) {
+				display("BitIo: {:?}", t)
+			}
 		}
 	}
 }
+
+pub trait FutureResult<T> = std::future::Future<Output=errors::Result<T>>;
 
 
 /// Given that the current position in the file is at the end of a middle, this will determine how much 

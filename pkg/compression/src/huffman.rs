@@ -6,6 +6,7 @@ use common::algorithms::merge_by;
 use std::collections::HashMap;
 use super::bits::*;
 
+// TODO: Remove debug from these
 enum HuffmanNode {
 	Inner(Option<Box<HuffmanNode>>, Option<Box<HuffmanNode>>),
 	Leaf(usize)
@@ -117,7 +118,7 @@ impl HuffmanTree {
 	}
 
 	// NOTE: If not valid code is in the tree, 
-	pub fn read_code(&self, strm: &mut BitStream) -> Result<usize> {
+	pub fn read_code(&self, strm: &mut BitReader) -> Result<usize> {
 		let (mut left, mut right) = match self.root {
 			Some(HuffmanNode::Inner(ref l, ref r)) => (l, r),
 			// NOTE: This will also occur if the root is a leaf node (which should never be constructable)
@@ -125,7 +126,7 @@ impl HuffmanTree {
 		};
 
 		loop {
-			let b = strm.read_bits(1)?.ok_or(Error::from("Unexpected end of input"))?;
+			let b = strm.read_bits_exact(1)?;
 			let next_node = 
 				if b == 0 {
 					left
@@ -425,7 +426,7 @@ mod tests {
 
 		let data = vec![0b01000000, 0b00000001];
 		let mut c = std::io::Cursor::new(data);
-		let mut strm = BitStream::new(&mut c);
+		let mut strm = BitReader::new(&mut c);
 
 		assert_eq!(3, tree.read_code(&mut strm).unwrap());
 		assert_eq!(5, tree.read_code(&mut strm).unwrap());

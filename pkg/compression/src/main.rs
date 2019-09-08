@@ -1,23 +1,17 @@
 
-#![feature(box_patterns)]
-
 extern crate byteorder;
+extern crate compression;
 
 use std::fs::File;
 use std::io::{Read, Seek};
 use common::errors::*;
 
-mod crc;
-mod bits;
-mod huffman;
-mod deflate;
-mod gzip;
-
-use crc::*;
-use bits::*;
-use huffman::*;
-use deflate::*;
-use gzip::*;
+use compression::crc::*;
+use compression::bits::*;
+use compression::huffman::*;
+use compression::deflate::*;
+use compression::gzip::*;
+use compression::zlib::*;
 
 
 // https://zlib.net/feldspar.html
@@ -50,7 +44,7 @@ fn main() -> Result<()> {
 	// assert_eq!(i, chars.len());
 
 ///
-
+/*
 	let header = Header {
 		compression_method: CompressionMethod::Deflate,
 		is_text: true,
@@ -72,22 +66,16 @@ fn main() -> Result<()> {
 	write_gzip(header, &indata, &mut outfile)?;
 
 	return Ok(());
-
+*/
 ///
 
 	let mut f = File::open("testdata/out/lorem_ipsum.txt.test.gz")?;
 
+
 	let gz = read_gzip(&mut f)?;
 	println!("{:?}", gz);
 
-	// TODO: Don't allow reading beyond end of range
-	f.seek(std::io::SeekFrom::Start(gz.compressed_range.0))?;
-	
-	// Next step is to validate the CRC and decompressed size?
-	// Also must implement as an incremental state machine using async/awaits!
-
-	read_inflate(&mut f)?;
-
+	// TODO: Assert that we now at the end of the file after reading.
 
 
 
