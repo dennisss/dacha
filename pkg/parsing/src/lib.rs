@@ -126,6 +126,19 @@ pub fn complete<T, P: Parser<T>>(p: P) -> impl Parser<T> {
 	}
 }
 
+/// Takes a specified number of bytes from the input
+pub fn take_exact(length: usize) -> impl Parser<Bytes> {
+	move |input: Bytes| {
+		if input.len() < length {
+			return Err("Not enough bytes in input".into());
+		}
+
+		let mut v = input.clone();
+		let rest = v.split_off(length);
+		Ok((v, rest))
+	}
+}
+
 pub fn take_while<F: Fn(u8) -> bool>(f: F) -> impl Parser<Bytes> {
 	move |input: Bytes| {
 		let mut i = 0;
