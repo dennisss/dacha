@@ -3,19 +3,10 @@ use std::ops::{Add, AddAssign, Sub, SubAssign, Mul,
 			   Div, DivAssign, Rem, RemAssign, BitXorAssign,
 			   BitAndAssign, BitOrAssign};
 use common::errors::*;
+use common::ceil_div;
 
 // 64bit max value:
 // 9223372036854775807
-
-// TODO: Move to common crate
-fn ceil_div(a: usize, b: usize) -> usize {
-	let mut out = a / b;
-	if a % b != 0 {
-		out += 1;
-	}
-
-	out
-}
 
 
 #[derive(Clone)]

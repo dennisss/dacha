@@ -1,11 +1,13 @@
 #![feature(trait_alias, core_intrinsics)]
 
+#[macro_use] extern crate arrayref;
 extern crate bytes;
 
 use bytes::Bytes;
 use common::errors::*;
 
 pub mod iso;
+pub mod binary;
 
 pub fn is_one_of(s: &str, input: u8) -> bool {
 	s.bytes().find(|x| *x == input).is_some()

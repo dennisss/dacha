@@ -5,7 +5,7 @@ extern crate libc;
 
 pub mod fs;
 pub mod algorithms;
-
+pub mod factory;
 
 pub trait FlipSign<T> {
 	/// Transmutes an signed/unsigned integer into it's opposite unsigned/signed integer while maintaining bitwise equivalence even though the integer value may change
@@ -54,6 +54,14 @@ pub mod errors {
 
 pub trait FutureResult<T> = std::future::Future<Output=errors::Result<T>>;
 
+pub fn ceil_div(a: usize, b: usize) -> usize {
+	let mut out = a / b;
+	if a % b != 0 {
+		out += 1;
+	}
+
+	out
+}
 
 /// Given that the current position in the file is at the end of a middle, this will determine how much 
 pub fn block_size_remainder(block_size: u64, end_offset: u64) -> u64 {
@@ -63,6 +71,15 @@ pub fn block_size_remainder(block_size: u64, end_offset: u64) -> u64 {
 	}
 
 	(block_size - rem)
+}
+
+#[macro_export]
+macro_rules! tup {
+	(($a:ident, $b:ident) = $e:expr) => {{
+		let tmp = $e;
+		$a = tmp.0;
+		$b = tmp.1;
+	}};
 }
 
 #[cfg(test)]

@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 bytes = { git = "https://github.com/tokio-rs/bytes" }
+arrayref = "0.3.5"

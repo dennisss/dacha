@@ -263,8 +263,7 @@ pub fn read_gzip<F: Read>(f: &mut F) -> Result<GZipFile> {
 		None
 	};
 
-	let header_sum = header_reader.finish();
-	drop(header_reader);
+	let header_sum = header_reader.into_hasher().finish_u32();
 
 	let header_validated = if flags.fhcrc {
 		let stored_checksum = f.read_u16::<LittleEndian>()?;
@@ -289,7 +288,7 @@ pub fn read_gzip<F: Read>(f: &mut F) -> Result<GZipFile> {
 	let actual_checksum = {
 		let mut hasher = CRC32Hasher::new();
 		hasher.update(&uncompressed_data);
-		hasher.finish()
+		hasher.finish_u32()
 	};
 
 	let body_checksum = f.read_u32::<LittleEndian>()?;
@@ -382,7 +381,7 @@ pub fn write_gzip(header: Header, data: &[u8],
 
 	let mut hasher = CRC32Hasher::new();
 	hasher.update(&data);
-	let checksum = hasher.finish();
+	let checksum = hasher.finish_u32();
 
 	writer.write_u32::<LittleEndian>(checksum)?;
 	writer.write_u32::<LittleEndian>(data.len() as u32)?;

@@ -106,7 +106,6 @@ impl Inflater {
 			input_prefix: BitVector::new(),
 			// TODO: Lazy allocate this memory as it is usually unneeded for small inputs.
 			output_window: CyclicBuffer::new(MAX_REFERENCE_DISTANCE),
-			// output_buffer: vec![]
 		}
 	}
 

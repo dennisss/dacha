@@ -1,6 +1,6 @@
 use common::errors::*;
 use core::arch::x86_64::*;
-// use core::arch::x86::__m128i;
+use crate::utils::xor;
 
 // TODO: See also https://botan.randombit.net/doxygen/aes__ni_8cpp_source.html
 
@@ -233,19 +233,6 @@ impl BlockCipher for AESBlockCipher {
 		from_m128i(state, out);
 	}
 
-}
-
-fn xor(a: &[u8], b: &[u8], out: &mut [u8]) {
-	// TODO: Any block > 16 in length can be sped up using this.
-	if a.len() == 16 {
-		let ai = to_m128i(a);
-		let bi = to_m128i(b);
-
-	}
-
-	for i in 0..a.len() {
-		out[i] = a[i] ^ b[i];
-	}
 }
 
 struct CBCModeCipher<C: BlockCipher> {

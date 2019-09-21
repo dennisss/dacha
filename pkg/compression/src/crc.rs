@@ -1,8 +1,8 @@
 // TODO: Move crypto package.
 
 use std::convert::TryInto;
-use std::io::Read;
 use crypto::hasher::*;
+
 
 const CRC32_TABLE: [u32; 256] = [
 	0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
@@ -50,33 +50,40 @@ const CRC32_TABLE: [u32; 256] = [
 	0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 ];
 
+/// NOTE: The hash is returned in big endian.
 pub struct CRC32Hasher {
 	val: u32
 }
 
 impl CRC32Hasher {
-	pub fn new() -> CRC32Hasher {
-		CRC32Hasher { val: !0 }
+	pub fn new() -> Self {
+		Self { val: !0 }
+	}
+
+	pub fn finish_u32(&self) -> u32 {
+		!self.val
 	}
 }
 
 impl Hasher for CRC32Hasher {
-	type Output = u32;
+	fn output_size(&self) -> usize { 4 }
 
 	fn update(&mut self, data: &[u8]) {
+		// TODO: Speed up with CLMUL?
 		for i in data {
 			let idx = ((self.val & 0xff) as u8) ^ *i;
 			self.val = (self.val >> 8) ^ CRC32_TABLE[idx as usize];	
 		}
 	}
 
-	fn finish(&self) -> u32 {
-		!self.val
+	fn finish(&self) -> Vec<u8> {
+		self.finish_u32().to_be_bytes().to_vec()
 	}
 }
 
 
-// SSE4.2 CRC-32C computation.
+/// SSE4.2 CRC-32C computation.
+/// NOTE: The hash is returned in big endian.
 pub struct CRC32CHasher {
 	val: u32
 }
@@ -85,10 +92,14 @@ impl CRC32CHasher {
 	pub fn new() -> CRC32CHasher {
 		CRC32CHasher { val: !0 }
 	}
+
+	pub fn finish_u32(&self) -> u32 {
+		!self.val
+	}
 }
 
 impl Hasher for CRC32CHasher {
-	type Output = u32;
+	fn output_size(&self) -> usize { 4 }
 
 	fn update(&mut self, data: &[u8]) {
 		// Calculate in 64bit chunks.
@@ -109,7 +120,8 @@ impl Hasher for CRC32CHasher {
 		}
 	}
 
-	fn finish(&self) -> u32 {
-		!self.val
+	// TODO: Ideally find a way to directly return the inner.
+	fn finish(&self) -> Vec<u8> {
+		self.finish_u32().to_be_bytes().to_vec()
 	}
 }

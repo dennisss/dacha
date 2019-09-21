@@ -2,17 +2,22 @@
 use bytes::Bytes;
 use common::errors::*;
 
-// ISO-8859-1 string reference
-// (https://en.wikipedia.org/wiki/ISO/IEC_8859-1)
-pub struct ISO88591String {
-	// All bytes must be in the ranges:
-	// - [0x20, 0x7E]
-	// - [0xA0, 0xFF] 
+/// String of Latin-1 (ISO-8859-1) encoded characters.
+/// Not to be confused with 'ISO 8859-1' (without the extra hypen).
+/// 
+/// This is single-byte encoding used as the default in webpages.
+/// Byte values 0-127 is identical to US-ASCII.
+/// Byte values 128-255 interpreted as raw u8's as unicode code points.
+pub struct Latin1String {
 	pub data: Bytes
 }
 
-impl ISO88591String {
-	pub fn from(s: &str) -> Result<ISO88591String> {
+impl Latin1String {
+	// TODO: Differentiate the naming of these as one converts to iso and one from iso sort of?
+
+	/// Convert an str of unicode characters to an ISO string.
+	/// This will fail if the codepoints don't fit in a single byte.
+	pub fn from(s: &str) -> Result<Latin1String> {
 		let mut data = vec![];
 		for c in s.chars() {
 			let v = c as usize;
@@ -23,20 +28,21 @@ impl ISO88591String {
 			data.push(v as u8);
 		}
 
-		ISO88591String::from_bytes(Bytes::from(data))
+		Latin1String::from_bytes(Bytes::from(data))
 	}
 
-	pub fn from_bytes(data: Bytes) -> Result<ISO88591String> {
-		for i in &data {
-			let valid = (*i >= 0x20 && *i <= 0x7e) ||
-						(*i >= 0xa0);
-			if !valid {
-				return Err(
-					format!("Undefined ISO-8859-1 code point: {:x}", i).into());
-			}
-		}
+	/// Create an object wrapping bytes encoded in ISO format. 
+	pub fn from_bytes(data: Bytes) -> Result<Latin1String> {
+		// for i in &data {
+		// 	let valid = (/* *i >= 0x20 && */ *i <= 0x7e) ||
+		// 				(*i >= 0xa0);
+		// 	if !valid {
+		// 		return Err(
+		// 			format!("Undefined ISO-8859-1 code point: {:x}", i).into());
+		// 	}
+		// }
 
-		Ok(ISO88591String { data })
+		Ok(Latin1String { data })
 	}
 
 	/// Converts to a standard utf-8 string.
@@ -51,7 +57,7 @@ impl ISO88591String {
 	}
 }
 
-impl std::fmt::Debug for ISO88591String {
+impl std::fmt::Debug for Latin1String {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		self.to_string().fmt(f)
     }

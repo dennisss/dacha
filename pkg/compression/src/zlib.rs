@@ -85,10 +85,15 @@ impl Adler32Hasher {
 			s2: ((hash >> 16) & 0xffff) as usize
 		}
 	}
+
+	pub fn finish_u32(&self) -> u32 {
+		((self.s2 << 16) | self.s1) as u32
+	}
 }
 
 impl Hasher for Adler32Hasher {
-	type Output = u32;
+	fn output_size(&self) -> usize { 4 }
+
 	fn update(&mut self, data: &[u8]) {
 		for v in data.iter().cloned() {
 			self.s1 = (self.s1 + (v as usize)) % ADLER32_PRIME_MOD;
@@ -96,8 +101,8 @@ impl Hasher for Adler32Hasher {
 		}
 	}
 
-	fn finish(&self) -> u32 {
-		((self.s2 << 16) | self.s1) as u32
+	fn finish(&self) -> Vec<u8> {
+		self.finish_u32().to_be_bytes().to_vec()
 	}
 }
 
@@ -136,7 +141,7 @@ pub fn read_zlib(mut reader: &mut dyn Read) -> Result<Vec<u8>> {
 	// Checksum of uncompressed data.
 	let mut hasher = Adler32Hasher::new();
 	hasher.update(&out);
-	let actual_checksum = hasher.finish();
+	let actual_checksum = hasher.finish_u32();
 
 	let checksum = reader.read_u32::<BigEndian>()?;
 	if checksum != actual_checksum {

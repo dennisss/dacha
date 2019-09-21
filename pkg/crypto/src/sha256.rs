@@ -1,8 +1,7 @@
 use crate::hasher::*;
+use crate::md::*;
 
 // TODO: Use https://en.wikipedia.org/wiki/Intel_SHA_extensions
-// Should generalize this pattern for the construction:
-// https://en.wikipedia.org/wiki/Merkle%E2%80%93Damg%C3%A5rd_construction
 
 const INITIAL_HASH: [u32; 8] = [
 	0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
@@ -20,34 +19,17 @@ const ROUND_CONSTANTS: [u32; 64] = [
 	0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 ];
 
-const CHUNK_SIZE: usize = 64;
-
-const BITS_PER_BYTE: usize = 8;
-
-const MESSAGE_LENGTH_BITS: usize = 64;
-
+type HashState = [u32; 8];
 
 #[derive(Clone)]
 pub struct SHA256Hasher {
-	hash: [u32; 8],
-	/// Total number of *bytes* seen so far.
-	length: usize,
-	/// If the 
-	pending_chunk: [u8; CHUNK_SIZE]
+	inner: MerkleDamgard<HashState>
 }
 
 
 impl SHA256Hasher {
-	pub fn new() -> Self {
-		SHA256Hasher {
-			hash: INITIAL_HASH,
-			length: 0,
-			pending_chunk: [0u8; CHUNK_SIZE]
-		}
-	}
-
 	/// Internal utility for updating a SHA1 hash given a full chunk.
-	fn update_chunk(hash: &mut [u32; 8], chunk: &[u8; CHUNK_SIZE]) {
+	fn update_chunk(chunk: &ChunkData, hash: &mut HashState) {
 		let mut w = [0u32; 64];
 		for i in 0..16 {
 			w[i] = u32::from_be_bytes(*array_ref![chunk, 4*i, 4]);
@@ -104,72 +86,29 @@ impl SHA256Hasher {
 	}
 }
 
+impl Default for SHA256Hasher {
+	fn default() -> Self {
+		Self { inner: MerkleDamgard::new(INITIAL_HASH, true) }
+	}
+}
+
 impl Hasher for SHA256Hasher {
-	type Output = [u8; 32];
+	fn output_size(&self) -> usize { 32 }
 
-	fn update(&mut self, mut data: &[u8]) {
-		// If the previous chunk isn't complete, try completing it.
-		let rem = self.length % CHUNK_SIZE;
-		if rem != 0 {
-			let n = std::cmp::min(CHUNK_SIZE - rem, data.len());
-			self.pending_chunk[rem..(rem + n)]
-				.copy_from_slice(&data[0..n]);
-			self.length += n;
-			data = &data[n..];
-
-			// Stop early if we did not fill the previous chunk.
-			if self.length % CHUNK_SIZE != 0 {
-				return;
-			}
-
-			Self::update_chunk(&mut self.hash, &self.pending_chunk);
-		}
-
-		// Process all full chunks in the new data.
-		for i in 0..(data.len() / CHUNK_SIZE) {
-			Self::update_chunk(&mut self.hash,
-							   array_ref![data, CHUNK_SIZE*i, CHUNK_SIZE]);
-		}
-
-		// Copy any remaining data into the pending chunk.
-		let r = data.len() % CHUNK_SIZE;
-		self.pending_chunk[0..r].copy_from_slice(
-			&data[(data.len() - r)..]);
-
-		// Update the length
-		self.length += data.len();
+	fn update(&mut self, data: &[u8]) {
+		self.inner.update(data, Self::update_chunk);
 	}
 
-	fn finish(&self) -> Self::Output {
-		// This will be the message length appended to the end of the message.
-		let message_length = (BITS_PER_BYTE*self.length) as u64;
-
-		// At least need enough space to append the '1' bit and the 64bit message length. Then we will pad this up to the next chunk boundary.
-		// NOTE: This is only valid as we are only operating on byte boundaries.
-		let mut padded_len = self.length + (1 + 8);
-		padded_len += common::block_size_remainder(
-			MESSAGE_LENGTH_BITS as u64, padded_len as u64) as usize; 
-		// Number of extra bytes that need to be added to the message to fit the 1 bit, message length and padding.
-		let num_extra = padded_len - self.length;
-
-		// Buffer allocated for the maximum number of extra bytes that we may need
-		// we will only use num_extra at runtime.
-		let mut buf = [0u8; CHUNK_SIZE + 9];
-
-		buf[0] = 0x80;
-		*array_mut_ref![buf, num_extra - 8, 8] = message_length.to_be_bytes();
-
-		let mut h = self.clone();
-		h.update(&buf[0..num_extra]);
-		assert_eq!(h.length % CHUNK_SIZE, 0);
+	fn finish(&self) -> Vec<u8> {
+		let state = self.inner.finish(Self::update_chunk);
 
 		// Generate final message by casting to big endian
 		let mut hh = [0u8; 32];
 		for i in 0..(32 / 4) {
-			*array_mut_ref![hh, 4*i, 4] = h.hash[i].to_be_bytes();
+			*array_mut_ref![hh, 4*i, 4] = state[i].to_be_bytes();
 		}
 
-		hh
+		hh.to_vec()
 	}
 } 
 
@@ -181,7 +120,7 @@ mod tests {
 	#[test]
 	fn sha256_test() {
 		let h = |s: &str| {
-			let mut hasher = SHA256Hasher::new();
+			let mut hasher = SHA256Hasher::default();
 			hasher.update(s.as_bytes());
 			hasher.finish()
 		};
