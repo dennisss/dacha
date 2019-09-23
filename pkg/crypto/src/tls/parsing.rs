@@ -23,7 +23,7 @@ pub fn varlen_vector(min_bytes: usize, max_bytes: usize) -> impl Parser<Bytes> {
 			} else if max_bytes <= U16_LIMIT {
 				c.next(be_u16)? as usize
 			} else if max_bytes <= U24_LIMIT {
-				panic!("u24 not implemented for the length");
+				c.next(be_u24)? as usize
 			} else if max_bytes <= U32_LIMIT {
 				c.next(be_u32)? as usize
 			} else {
@@ -36,4 +36,31 @@ pub fn varlen_vector(min_bytes: usize, max_bytes: usize) -> impl Parser<Bytes> {
 		let data = c.next(take_exact(len))?;
 		Ok(data)
 	})
+}
+
+pub fn serialize_varlen_vector<F: FnMut(&mut Vec<u8>)>(
+	min_bytes: usize, max_bytes: usize, out: &mut Vec<u8>, mut f: F) {
+	
+	let i = out.len();
+	let n = if max_bytes <= U8_LIMIT { 1 }
+		else if max_bytes <= U16_LIMIT { 2 }
+		else if max_bytes <= U24_LIMIT { 3 }
+		else if max_bytes <= U32_LIMIT { 4 }
+		else { panic!("Maximum length not supported"); };
+
+	out.resize(i + n, 0);
+	let ii = out.len();
+
+	f(out);
+
+	let size = out.len() - ii;
+	assert!(size >= min_bytes && size <= max_bytes);
+
+	match n {
+		1 => { out[i] = size as u8; },
+		2 => { *array_mut_ref![out, i, 2] = (size as u16).to_be_bytes(); },
+		3 => { *array_mut_ref![out, i, 3] = u24_to_be_bytes(size as u32); },
+		4 => { *array_mut_ref![out, i, 4] = (size as u32).to_be_bytes(); },
+		_ => panic!("Should not happen")
+	};
 }

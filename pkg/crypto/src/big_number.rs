@@ -65,6 +65,8 @@ impl BigUint {
 		}
 
 		let mut out = BigUint { value };
+		// TODO: Trim is not crypto secure as it reveals the size of the numbers
+		// as it stops early.
 		out.trim();
 		out
 	}
@@ -78,6 +80,11 @@ impl BigUint {
 		}
 
 		out
+	}
+
+	pub fn to_be_bytes(&self) -> Vec<u8> {
+		// TODO: It is important not to add too many zeros.
+		unimplemented!("Please implement me");
 	}
 
 	pub fn nbits(&self) -> usize {
@@ -94,6 +101,11 @@ impl BigUint {
 		base_bits*(self.value.len() - 1) + (base_bits - nz)
 	}
 
+	/// Returns the minimum number of bytes required to represent this number.
+	pub fn min_bytes(&self) -> usize {
+		ceil_div(self.nbits(), 8)
+	}
+
 	/// self << 1
 	pub fn shl(&mut self) {
 		let mut carry = 0;
@@ -106,6 +118,18 @@ impl BigUint {
 		if carry != 0 {
 			self.value.push(carry);
 		}
+	}
+
+	/// self >> 1
+	pub fn shr(&mut self) {
+		let mut carry = 0;
+		for v in self.value.iter_mut() {
+			let new_carry = *v & 0b1;
+			*v = (*v >> 1) & (carry << 31);
+			carry = new_carry;
+		}
+
+		self.trim();
 	}
 
 	fn index(&self, i: usize) -> u32 {
@@ -131,7 +155,7 @@ impl BigUint {
 		((self.index(i / 32) >> (i % 32)) & 0b01) as usize
 	}
 
-	fn set_bit(&mut self, i: usize, v: usize) {
+	pub fn set_bit(&mut self, i: usize, v: usize) {
 		assert!(v == 0 || v == 1);
 		let ii = i / 32;
 		let shift = i % 32;
@@ -257,9 +281,34 @@ impl BigUint {
 		s
 	}
 
-	// Given GCD g of x (num), y (modulus) = ax + by
-	// Then a is the 
+	/// Computes the integer *floor* of the square root,
+	/// NOTE: This does not check if the number is a perfect square.
+	/// 
+	/// Uses the Newton method as described here:
+	/// https://en.wikipedia.org/wiki/Integer_square_root#Using_only_integer_division
+	pub fn isqrt(&self) -> BigUint {
+		let mut x = self.clone();
 
+		loop {
+			let mut x_next = (self / &x) + &x;
+			x_next.shr();
+
+			// Check for convergence.
+			if x_next == x {
+				break;
+			}
+
+			// Check if the result increased by exactly one (means we have
+			// started a cycle because 'self + 1' is a perfect square).
+			x += BigUint::from(1);
+			if x_next == x {
+				break;
+			}
+		}
+
+		x
+	}
+	
 }
 
 impl std::fmt::Display for BigUint {
@@ -275,6 +324,8 @@ impl std::fmt::Debug for BigUint {
 }
 
 impl Ord for BigUint {
+	/// TODO: This is not a constant time equality function and is not suitable
+	/// for certain crypto circumstances.
 	fn cmp(&self, other: &Self) -> Ordering {
 		// NOTE: Assumes that there are no trailing zeros.
 		if self.value.len() < other.value.len() {
@@ -400,6 +451,11 @@ impl_op_ex!(* |lhs: &BigUint, rhs: &BigUint| -> BigUint {
 	let mut out = BigUint::zero();
 	lhs.mul_to(rhs, &mut out);
 	out
+});
+
+impl_op_ex!(/ |lhs: &BigUint, rhs: &BigUint| -> BigUint {
+	let (q, _) = lhs.quorem(rhs);
+	q
 });
 
 impl_op!(% |lhs: BigUint, rhs: &BigUint| -> BigUint {
@@ -587,6 +643,11 @@ impl<'a> Modulo<'a> {
 	/// Internally performs '(a * b^-1) mod n'
 	pub fn div(&self, a: &BigUint, b: &BigUint) -> BigUint {
 		self.mul(a, &self.inv(b))
+	}
+
+	/// Computes '-1*a mod n'
+	pub fn negate(&self, a: &BigUint) -> BigUint {
+		self.sub(self.n, a)
 	}
 
 }
