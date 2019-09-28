@@ -1,5 +1,7 @@
 use crate::hasher::*;
 use crate::md::*;
+use generic_array::GenericArray;
+use typenum::U64;
 
 // TODO: Use https://en.wikipedia.org/wiki/Intel_SHA_extensions
 
@@ -23,13 +25,17 @@ type HashState = [u32; 8];
 
 #[derive(Clone)]
 pub struct SHA256Hasher {
-	inner: MerkleDamgard<HashState>
+	inner: MerkleDamgard<HashState, U64>
 }
 
 
 impl SHA256Hasher {
-	/// Internal utility for updating a SHA1 hash given a full chunk.
-	fn update_chunk(chunk: &ChunkData, hash: &mut HashState) {
+	pub fn new_with_hash(initial_hash: &[u32; 8]) -> Self {
+		let padding = LengthPadding { big_endian: true, int128: false };
+		Self { inner: MerkleDamgard::new(*initial_hash, padding) }
+	}
+
+	fn update_chunk(chunk: &GenericArray<u8, U64>, hash: &mut HashState) {
 		let mut w = [0u32; 64];
 		for i in 0..16 {
 			w[i] = u32::from_be_bytes(*array_ref![chunk, 4*i, 4]);
@@ -88,7 +94,7 @@ impl SHA256Hasher {
 
 impl Default for SHA256Hasher {
 	fn default() -> Self {
-		Self { inner: MerkleDamgard::new(INITIAL_HASH, true) }
+		Self::new_with_hash(&INITIAL_HASH)
 	}
 }
 

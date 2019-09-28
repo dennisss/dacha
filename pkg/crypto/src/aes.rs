@@ -1,6 +1,7 @@
 use common::errors::*;
 use core::arch::x86_64::*;
 use crate::utils::xor;
+use crate::cipher::*;
 
 // TODO: See also https://botan.randombit.net/doxygen/aes__ni_8cpp_source.html
 
@@ -26,8 +27,6 @@ pub fn from_m128i(v: __m128i, out: &mut [u8]) {
 	assert_eq!(out.len(), 16);
 	unsafe { _mm_storeu_si128(std::mem::transmute(out.as_mut_ptr()), v); }
 }
-
-
 
 
 // https://en.wikipedia.org/wiki/Rijndael_key_schedule#Round_constants
@@ -99,12 +98,6 @@ pub struct AESBlockCipher {
 	round_keys_enc: Vec<RoundKey>,
 	/// Round keys used for decryption.
 	round_keys_dec: Vec<RoundKey>
-}
-
-pub trait BlockCipher {
-	fn block_size(&self) -> usize;
-	fn encrypt(&self, block: &[u8], out: &mut [u8]);
-	fn decrypt(&self, block: &[u8], out: &mut [u8]);
 }
 
 impl AESBlockCipher {
@@ -194,7 +187,7 @@ impl BlockCipher for AESBlockCipher {
 		AES_BLOCK_SIZE
 	}
 
-	fn encrypt(&self, block: &[u8], out: &mut [u8]) {
+	fn encrypt_block(&self, block: &[u8], out: &mut [u8]) {
 		assert_eq!(block.len(), self.block_size());
 		assert_eq!(block.len(), out.len());
 
@@ -213,7 +206,7 @@ impl BlockCipher for AESBlockCipher {
 		from_m128i(state, out);
 	}
 
-	fn decrypt(&self, block: &[u8], out: &mut [u8]) {
+	fn decrypt_block(&self, block: &[u8], out: &mut [u8]) {
 		assert_eq!(block.len(), self.block_size());
 		assert_eq!(block.len(), out.len());
 
@@ -275,7 +268,7 @@ impl<C: BlockCipher> CBCModeCipher<C> {
 			let output_block = next_block_mut!(output, block_size);
 
 			xor(iv, input_block, &mut buf);
-			self.cipher.encrypt(&buf, output_block);
+			self.cipher.encrypt_block(&buf, output_block);
 			iv = output_block;
 		}
 	}
@@ -295,7 +288,7 @@ impl<C: BlockCipher> CBCModeCipher<C> {
 			let input_block = next_block!(input, block_size);
 			let output_block = next_block_mut!(output, block_size);
 
-			self.cipher.decrypt(input_block, &mut buf);
+			self.cipher.decrypt_block(input_block, &mut buf);
 			xor(&buf, iv, output_block);
 			iv = input_block;
 		}
@@ -309,7 +302,6 @@ mod tests {
 
 	#[test]
 	fn aes128_test() {
-		let mut rc = RoundConstantIter::new();
 		let key = hex::decode("10a58869d74be5a374cf867cfb473859").unwrap();
 		let plain = hex::decode("00000000000000000000000000000000").unwrap();
 		let cipher = hex::decode("6d251e6944b051e04eaa6fb4dbf78465").unwrap();
@@ -319,10 +311,29 @@ mod tests {
 		let mut buf = Vec::new();
 		buf.resize(c.block_size(), 0);
 
-		c.encrypt(&plain, &mut buf);
+		c.encrypt_block(&plain, &mut buf);
 		assert_eq!(&buf, &cipher);
 
-		c.decrypt(&cipher, &mut buf);
+		c.decrypt_block(&cipher, &mut buf);
+		assert_eq!(&buf, &plain);
+	}
+
+	#[test]
+	fn aes128_2_test() {
+		// Taken from AES GCM Test Case 3
+		let key = hex::decode("feffe9928665731c6d6a8f9467308308").unwrap();
+		let plain = hex::decode("cafebabefacedbaddecaf88800000002").unwrap();
+		let cipher = hex::decode("9bb22ce7d9f372c1ee2b28722b25f206").unwrap();
+
+		let c = AESBlockCipher::create(&key).unwrap();
+
+		let mut buf = Vec::new();
+		buf.resize(c.block_size(), 0);
+
+		c.encrypt_block(&plain, &mut buf);
+		assert_eq!(&buf, &cipher);
+
+		c.decrypt_block(&cipher, &mut buf);
 		assert_eq!(&buf, &plain);
 	}
 
@@ -338,10 +349,10 @@ mod tests {
 		let mut buf = Vec::new();
 		buf.resize(c.block_size(), 0);
 
-		c.encrypt(&plain, &mut buf);
+		c.encrypt_block(&plain, &mut buf);
 		assert_eq!(&buf, &cipher);
 
-		c.decrypt(&cipher, &mut buf);
+		c.decrypt_block(&cipher, &mut buf);
 		assert_eq!(&buf, &plain);
 	}
 

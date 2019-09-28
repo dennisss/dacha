@@ -196,8 +196,7 @@ impl IncomingSizedBody {
 }
 
 impl Body for IncomingSizedBody {
-	fn read<'a>(&'a mut self, buf: &'a mut [u8])
-	-> BoxFutureResult<'a, usize> {
+	fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> BoxFutureResult<'a, usize> {
 		Box::pin(self.read_impl(buf))
 	}
 

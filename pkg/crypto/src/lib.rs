@@ -5,6 +5,8 @@
 #[macro_use] extern crate impl_ops;
 extern crate hex;
 extern crate async_trait;
+extern crate generic_array;
+extern crate typenum;
 
 // TODO: Implement mlock utility from preventing swapping.
 
@@ -132,10 +134,16 @@ pub mod dh;
 pub mod md;
 pub mod md5;
 pub mod sha1;
+pub mod sha224;
 pub mod sha256;
+pub mod sha384;
+pub mod sha512;
 pub mod hmac;
 pub mod hkdf;
+pub mod cipher;
+pub mod aead;
 pub mod aes;
 pub mod elliptic;
 pub mod chacha20;
+pub mod gcm;
 pub mod tls;

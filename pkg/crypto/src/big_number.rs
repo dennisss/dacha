@@ -84,7 +84,13 @@ impl BigUint {
 
 	pub fn to_be_bytes(&self) -> Vec<u8> {
 		// TODO: It is important not to add too many zeros.
-		unimplemented!("Please implement me");
+		let mut out = vec![];
+		for v in self.value.iter().rev() {
+			let s = v.to_be_bytes();
+			out.extend_from_slice(&s);
+		}
+
+		out
 	}
 
 	pub fn nbits(&self) -> usize {
@@ -221,6 +227,7 @@ impl BigUint {
 			}
 		}
 
+		// TODO: Won't be needed if shl and set_bit both do this already.
 		q.trim();
 		r.trim();
 

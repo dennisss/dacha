@@ -17,7 +17,6 @@ pub fn one_of(s: &'static str) -> impl Parser<u8> {
 	like(move |i| is_one_of(s, i))
 }
 
-
 pub type ParseError = Error;
 pub type ParseResult<T> = std::result::Result<(T, Bytes), ParseError>;
 pub trait Parser<T> = Fn(Bytes) -> ParseResult<T>;
@@ -63,7 +62,7 @@ macro_rules! function {
         fn f() {}
         fn type_name_of<T>(_: T) -> &'static str {
             extern crate core;
-            unsafe { core::intrinsics::type_name::<T>() }
+            core::intrinsics::type_name::<T>()
         }
         let name = type_name_of(f);
         &name[6..name.len() - 16]

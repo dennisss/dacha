@@ -6,6 +6,8 @@ use crate::big_number::*;
 // TODO: Provide some warning of when the counter will overflow and wrap.
 
 const BLOCK_SIZE: usize = 64;
+const CHACHA20_KEY_SIZE: usize = 32;
+const CHACHA20_NONCE_SIZE: usize = 12;
 
 type State = [u32; 16];
 
@@ -22,8 +24,8 @@ impl ChaCha20 {
 	// Key should be 256bits. 
 	// Nonce should be 12 bytes
 	fn new(key: &[u8], nonce: &[u8]) -> Self {
-		assert_eq!(key.len(), 32);
-		assert_eq!(nonce.len(), 12);
+		assert_eq!(key.len(), CHACHA20_KEY_SIZE);
+		assert_eq!(nonce.len(), CHACHA20_NONCE_SIZE);
 
 		let mut state = [0u32; 16];
 		state[0] = 0x61707865;
@@ -95,13 +97,15 @@ impl ChaCha20 {
 	}
 
 	fn get_block(&mut self) -> [u8; 64] {
+		let i: usize = 1 + (self.bytes_processed / 64);
+		// We should never reuse the same counter value.
+		assert!(i <= u32::max_value() as usize);
+		self.get_block_at_count(i as u32)
+	}
+
+	fn get_block_at_count(&mut self, counter: u32) -> [u8; 64] {
 		// Set the counter.
-		{
-			let i: usize = 1 + (self.bytes_processed / 64);
-			// We should never reuse the same counter value.
-			assert!(i <= u32::max_value() as usize);
-			self.state[12] = i as u32;
-		}
+		self.state[12] = counter;
 
 		let mut state = self.state.clone();
 
@@ -160,8 +164,7 @@ impl ChaCha20 {
 
 	/// Generates a 32byte one time key to be used with poly1305
 	fn poly1305_keygen(&mut self) -> Vec<u8> {
-		self.state[12] = 0;
-		let key_block = self.get_block(); // < TODO: This should NOT set the counter in this case
+		let key_block = self.get_block_at_count(0);
 		key_block[0..32].to_vec()
 	} 
 
@@ -217,6 +220,11 @@ impl Poly1305 {
 		out.resize(16, 0);
 		out
 	}
+}
+
+
+struct ChaCha20Poly1305 {
+
 }
 
 

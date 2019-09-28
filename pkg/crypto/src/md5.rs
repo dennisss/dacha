@@ -1,5 +1,7 @@
 use crate::hasher::*;
 use crate::md::*;
+use generic_array::GenericArray;
+use typenum::U64;
 
 /// Per-round shift amounts.
 const SHIFTS: [u8; 64] = [
@@ -39,11 +41,11 @@ const D0: u32 = 0x10325476;
 type HashState = [u32; 4];
 
 pub struct MD5Hasher {
-	inner: MerkleDamgard<HashState>
+	inner: MerkleDamgard<HashState, U64>
 }
 
 impl MD5Hasher {
-	fn update_chunk(data: &ChunkData, hash: &mut HashState) {
+	fn update_chunk(data: &GenericArray<u8, U64>, hash: &mut HashState) {
 		let mut M = [0u32; 16];
 		for i in 0..16 {
 			M[i] = u32::from_le_bytes(*array_ref![data, 4*i, 4]);
@@ -92,7 +94,8 @@ impl MD5Hasher {
 
 impl Default for MD5Hasher {
 	fn default() -> Self {
-		Self { inner: MerkleDamgard::new([A0, B0, C0, D0], false) }
+		let padding = LengthPadding { big_endian: false, int128: false };
+		Self { inner: MerkleDamgard::new([A0, B0, C0, D0], padding) }
 	}
 }
 

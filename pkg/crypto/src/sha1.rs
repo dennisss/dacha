@@ -1,5 +1,8 @@
 use crate::hasher::*;
 use crate::md::*;
+use generic_array::GenericArray;
+use typenum::U64;
+
 
 // TODO: Use https://en.wikipedia.org/wiki/Intel_SHA_extensions
 
@@ -7,23 +10,17 @@ const INITIAL_HASH: [u32; 5] = [
 	0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0
 ];
 
-const CHUNK_SIZE: usize = 64;
-
-const BITS_PER_BYTE: usize = 8;
-
-const MESSAGE_LENGTH_BITS: usize = 64;
-
 type HashState = [u32; 5];
 type HashOutput = [u8; 20];
 
 #[derive(Clone)]
 pub struct SHA1Hasher {
-	inner: MerkleDamgard<HashState>,
+	inner: MerkleDamgard<HashState, U64>,
 }
 
 impl SHA1Hasher {
 	/// Internal utility for updating a SHA1 hash given a full chunk.
-	fn update_chunk(chunk: &ChunkData, hash: &mut HashState) {
+	fn update_chunk(chunk: &GenericArray<u8, U64>, hash: &mut HashState) {
 		let mut w = [0u32; 80];
 		for i in 0..16 {
 			w[i] = u32::from_be_bytes(*array_ref![chunk, 4*i, 4]);
@@ -77,7 +74,8 @@ impl SHA1Hasher {
 
 impl Default for SHA1Hasher {
 	fn default() -> Self {
-		Self { inner: MerkleDamgard::new(INITIAL_HASH, true) }
+		let padding = LengthPadding { big_endian: true, int128: false };
+		Self { inner: MerkleDamgard::new(INITIAL_HASH, padding) }
 	}
 }
 

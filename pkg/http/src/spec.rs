@@ -1,13 +1,17 @@
 
 use super::ascii::*;
 use bytes::Bytes;
-use std::io::Write;
 use super::status_code::*;
 use parsing::iso::*;
 use parsing::complete;
 use crate::message_parser::*;
 use super::uri::*;
 use common::errors::*;
+use crate::body::Body;
+use async_std::io::Write;
+use std::marker::Unpin;
+
+use futures::io::AsyncWrite;
 
 // NOTE: Content in the HTTP headers is ISO-8859-1 so may contain characters outside the range of ASCII.
 // type HttpStr = Vec<u8>;
@@ -60,13 +64,13 @@ impl<T: AsRef<[u8]>> ToHeaderName for T {
 }
 
 trait ToHeaderValue {
-	fn to_header_value(self, name: &AsciiString) -> Result<ISO88591String>;
+	fn to_header_value(self, name: &AsciiString) -> Result<Latin1String>;
 }
 
 impl<T: AsRef<str>> ToHeaderValue for T {
-	fn to_header_value(self, name: &AsciiString) -> Result<ISO88591String> {
+	fn to_header_value(self, name: &AsciiString) -> Result<Latin1String> {
 		let f = || {
-			let s = ISO88591String::from(self.as_ref())?;
+			let s = Latin1String::from(self.as_ref())?;
 			parse_field_content(s.data.clone())?;
 			Ok(s)
 		};
@@ -81,14 +85,14 @@ const BODY_BUFFER_SIZE: usize = 4096;
 
 pub struct Request {
 	pub head: RequestHead,
-	pub body: Box<dyn std::io::Read>
+	pub body: Box<dyn Body>
 }
 
 pub struct RequestBuilder {
 	method: Option<Method>,
 	uri: Option<Uri>,
 	headers: Vec<HttpHeader>,
-	body: Option<Box<dyn std::io::Read>>,
+	body: Option<Box<dyn Body>>,
 
 	// First error that occured in the building process
 	error: Option<Error>
@@ -144,7 +148,7 @@ impl RequestBuilder {
 		self
 	}
 
-	pub fn body(mut self, body: Box<dyn std::io::Read>) -> Self {
+	pub fn body(mut self, body: Box<dyn Body>) -> Self {
 		self.body = Some(body);
 		self
 	}
@@ -182,7 +186,7 @@ pub struct ResponseBuilder {
 	status_code: Option<StatusCode>,
 	reason: Option<String>,
 	headers: Vec<HttpHeader>,
-	body: Option<Box<dyn std::io::Read>>,
+	body: Option<Box<dyn Body>>,
 
 	// First error that occured in the building process
 	error: Option<Error>
@@ -222,7 +226,7 @@ impl ResponseBuilder {
 		self
 	}
 
-	pub fn body(mut self, body: Box<dyn std::io::Read>) -> Self {
+	pub fn body(mut self, body: Box<dyn Body>) -> Self {
 		self.body = Some(body);
 		self
 	}
@@ -265,32 +269,19 @@ pub struct RequestHead {
 	pub headers: HttpHeaders
 }
 
-impl Request {
-	pub fn serialize(&mut self, writer: &mut Write) -> std::io::Result<()> {
+impl RequestHead {
+	pub fn serialize(&self, buf: &mut Vec<u8>) {
 		let request_line = format!("{} {} HTTP/{}\r\n",
-				std::str::from_utf8(self.head.method.as_str()).unwrap(), self.head.uri.to_string(), self.head.version.to_string());
-		writer.write_all(request_line.as_bytes());
+				std::str::from_utf8(self.method.as_str()).unwrap(),
+				self.uri.to_string(), self.version.to_string());
+		buf.extend_from_slice(request_line.as_bytes());
 
-		/////
-
-		self.head.headers.serialize(writer)?;
-		writer.write_all(b"\r\n")?;
-		
-		// TODO: If we sent a Content-Length, make sure that we are consistent.
-		let mut buf = [0u8; BODY_BUFFER_SIZE];
-		loop {
-			let n = self.body.read(&mut buf)?;
-			if n == 0 {
-				break;
-			}
-
-			writer.write_all(&buf[0..n])?;
-		}
-
-		Ok(())
+		self.headers.serialize(buf);
+		buf.extend_from_slice(b"\r\n");
 	}
 }
 
+// TODO: Instead just implement for head (or add some length info to describe the body)?
 impl std::fmt::Debug for Request {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.head.fmt(f)
@@ -300,7 +291,7 @@ impl std::fmt::Debug for Request {
 
 pub struct Response {
 	pub head: ResponseHead,
-	pub body: Box<dyn std::io::Read>
+	pub body: Box<dyn Body>
 }
 
 #[derive(Debug)]
@@ -311,36 +302,40 @@ pub struct ResponseHead {
 	pub headers: HttpHeaders,
 }
 
-impl Response {
-	pub fn serialize(&mut self, writer: &mut dyn Write) -> std::io::Result<()> {
+impl ResponseHead {
+	pub fn serialize(&self, out: &mut Vec<u8>) {
 		let status_line = format!("HTTP/{} {} {}\r\n",
-			self.head.version.to_string(),
-			self.head.status_code.as_u16(),
-			self.head.reason.to_string());
-		writer.write_all(status_line.as_bytes())?;
+			self.version.to_string(),
+			self.status_code.as_u16(),
+			self.reason.to_string());
+		out.extend_from_slice(status_line.as_bytes());
 
-		/////
-
-		self.head.headers.serialize(writer)?;
-		writer.write_all(b"\r\n")?;
-		
-		// TODO: If we sent a Content-Length, make sure that we are consistent.
-		let mut buf = [0u8; BODY_BUFFER_SIZE];
-		loop {
-			let n = self.body.read(&mut buf)?;
-			if n == 0 {
-				break;
-			}
-
-			writer.write_all(&buf[0..n])?;
-		}
-
-		Ok(())
+		self.headers.serialize(out);
+		out.write_all(b"\r\n");
 	}
 }
 
+use async_std::prelude::*;
 
-#[derive(Debug)]
+pub async fn write_body<W: AsyncWrite + Unpin>(
+	mut body: &mut dyn Body, writer: &mut W) -> Result<()> {
+	// TODO: If we sent a Content-Length, make sure that we are consistent.
+	let mut buf = [0u8; BODY_BUFFER_SIZE];
+	loop {
+		let n = body.read(&mut buf).await?;
+		if n == 0 {
+			break;
+		}
+
+		writer.write_all(&buf[0..n]).await?;
+	}
+
+	Ok(())
+}
+
+
+
+#[derive(Debug, PartialEq)]
 pub enum Method {
 	GET,
 	HEAD,
@@ -381,6 +376,7 @@ impl std::convert::TryFrom<&[u8]> for Method {
 			b"CONNECT" => Method::CONNECT,
 			b"OPTIONS" => Method::OPTIONS,
 			b"TRACE" => Method::TRACE,
+			b"PATCH" => Method::PATCH,
 			_ => { return Err("Invalid method"); }
 		})
 	}
@@ -397,16 +393,15 @@ pub enum StartLine {
 #[derive(Debug)]
 pub struct HttpHeader {
 	pub name: AsciiString,
-	pub value: ISO88591String
+	pub value: Latin1String
 }
 
 impl HttpHeader {
-	pub fn serialize(&self, writer: &mut dyn Write) -> std::io::Result<()> {
-		writer.write_all(&self.name.data)?;
-		writer.write_all(b": ")?;
-		writer.write_all(&self.value.data)?;
-		writer.write_all(b"\r\n");
-		Ok(())
+	pub fn serialize(&self, buf: &mut Vec<u8>) {
+		buf.extend_from_slice(&self.name.data);
+		buf.extend_from_slice(b": ");
+		buf.extend_from_slice(&self.value.data);
+		buf.extend_from_slice(b"\r\n");
 	}
 }
 
@@ -438,11 +433,20 @@ impl HttpHeaders {
 		})
 	}
 
-	pub fn serialize(&self, writer: &mut dyn Write) -> std::io::Result<()> {
-		for h in &self.raw_headers {
-			h.serialize(writer)?;
+	pub fn has(&self, name: &[u8]) -> bool {
+		for h in self.raw_headers.iter() {
+			if h.name.eq_ignore_case(name) {
+				return true;
+			}
 		}
-		Ok(())
+
+		false
+	}
+
+	pub fn serialize(&self, buf: &mut Vec<u8>) {
+		for h in &self.raw_headers {
+			h.serialize(buf);
+		}
 	}
 }
 
@@ -527,7 +531,7 @@ impl RequestTarget {
 pub struct StatusLine {
 	pub version: HttpVersion,
 	pub status_code: u16,
-	pub reason: ISO88591String
+	pub reason: Latin1String
 }
 
 

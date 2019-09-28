@@ -1,4 +1,9 @@
 use crate::big_number::*;
+use crate::random::*;
+use crate::dh::*;
+use common::errors::*;
+use common::ceil_div;
+use async_trait::async_trait;
 
 /// Parameters of an elliptic curve of the form:
 /// y^2 = x^3 + a*x + b
@@ -14,6 +19,8 @@ pub struct EllipticCurvePoint {
 }
 
 impl EllipticCurvePoint {
+	// TODO: This could be used by a timing attack to reveal byte by byte if 
+	// parts of the point are zero.
 	pub fn is_inf(&self) -> bool {
 		self.x.is_zero() && self.y.is_zero()
 	}
@@ -22,7 +29,8 @@ impl EllipticCurvePoint {
 	}
 }
 
-/// Parameters for a group of points on an elliptic curve definited over a finite field of integers.
+/// Parameters for a group of points on an elliptic curve definited over a
+/// finite field of integers.
 pub struct EllipticCurveGroup {
 	/// Base curve.
 	curve: EllipticCurve,
@@ -36,7 +44,107 @@ pub struct EllipticCurveGroup {
 	k: usize
 }
 
+// For P-256, this means that each of X and Y use
+// 32 octets, padded on the left by zeros if necessary.  For P-384, they
+// take 48 octets each.  For P-521, they take 66 octets each.
+
+#[async_trait]
+impl DiffieHellmanFn for EllipticCurveGroup {
+
+	async fn secret_value(&self) -> Result<Vec<u8>> {
+		assert!(self.k == 1);
+		let two = BigUint::from(2);
+		let n = secure_random_range(&two, &self.n).await?;
+
+		// Output with padding.
+		let mut out = vec![];
+		out.resize(self.p.min_bytes(), 0);
+
+		let data = n.to_be_bytes();
+		let out_len = out.len();
+		out[(out_len - data.len())..].copy_from_slice(&data);
+		Ok(out)
+	}
+
+	fn public_value(&self, secret: &[u8]) -> Result<Vec<u8>> {
+		unimplemented!("");
+	}
+
+	// TODO: Validate tht point is non-infinity
+	// TODO: For TLS, shared secret should be the X coordinate of this only!!
+	fn shared_secret(&self, secret: &[u8], public: &[u8]) -> Result<Vec<u8>> {
+		unimplemented!("");
+	}
+}
+
 impl EllipticCurveGroup {
+
+	fn decode_scalar(&self, data: &[u8]) -> Result<BigUint> {
+		if data.len() != self.p.min_bytes() {
+			return Err("Scalar wrong size".into());
+		}
+
+		Ok(BigUint::from_be_bytes(data))
+	}
+
+	fn decode_point(&self, data: &[u8]) -> Result<EllipticCurvePoint> {
+		if data.len() > 1 {
+			return Err("Point too small".into());
+		}
+
+		let nbytes = ceil_div(self.p.nbits(), 8);
+
+		let p = if data[0] == 4 {
+			// Uncompressed form
+			// TODO: For TLS 1.3, this is the only supported format
+			if data.len() != 1 + 2*nbytes {
+				return Err("Point data too small".into());
+			}
+			
+			// TODO: 
+			let x = BigUint::from_be_bytes(&data[1..nbytes]);
+			let y = BigUint::from_be_bytes(&data[nbytes..]);
+
+			EllipticCurvePoint { x, y }
+		} else if data[0] == 2 || data[0] == 3 {
+			// Compressed form.
+			// Contains only X, data[0] contains the LSB of Y.
+			if data.len() != 1 + nbytes {
+				return Err("Point data too small".into());
+			}
+
+			let x = BigUint::from_be_bytes(&data[1..nbytes]);
+
+			// Compute y^2 from the x.
+			let y2 = (&x).pow(&3.into()) + &(&self.curve.a*&x)
+				+ &self.curve.b;
+			
+			// NOTE: We do not check that y*y == y^2 as this will be checked
+			// by verify_point anyway.
+			let mut y = y2.isqrt();
+
+			// There are always two square roots, so make sure we got the right
+			// one.
+			let lsb = data[0] & 0b1;
+			if lsb != (y.bit(0) as u8) {
+				y = Modulo::new(&self.p).negate(&y);
+			}
+
+			EllipticCurvePoint { x, y }
+		} else {
+			return Err("Unknown point format".into());
+		};
+
+		if !self.verify_point(&p) {
+			return Err("Invalid point".into());
+		}
+
+		Ok(p)
+	}
+
+	// TODO: Output uncompressed, but with padding
+	// fn encode_point(&self )
+
 
 	fn from_hex(p_str: &str, a_str: &str, b_str: &str, g_x_str: &str,
 				g_y_str: &str, n_str: &str, h: usize) -> Self {
@@ -120,6 +228,16 @@ impl EllipticCurveGroup {
 		// 2. Both integers on the correct interval
 		// 3. On the curve
 
+		// Must not be at infinity
+		if p.is_inf() {
+			return false;
+		}
+
+		// Must be within the 'mod p' field.
+		if p.x >= self.p || p.y >= self.p {
+			return false;
+		}
+
 		let lhs = &p.y*&p.y;
 		let rhs = (&p.x).pow(&3.into()) + &(&self.curve.a*&p.x) + &self.curve.b;
 		(lhs % &self.n) == (rhs % &self.n)
@@ -183,12 +301,76 @@ impl EllipticCurveGroup {
 
 // TODO: Need a custom function for sqr (aka n^2)
 
-pub fn x25519(k: &BigUint, u: &BigUint) -> BigUint {
-	let p = BigUint::from(255).exp2() - &19.into();
-	let bits = 255;
-	let a24 = BigUint::from(121665);
-	curve_mul(k, u, &p, bits, &a24)
+// 32 bytes for X25519 and 56 bytes for X448
+
+
+pub struct MontgomeryCurveGroup {
+	p: BigUint,
+	bits: usize,
+	a24: BigUint
 }
+
+
+pub struct X25519 {}
+
+impl X25519 {
+	/// Creates a new 32byte private key
+	/// This will be the 'k'/scalar used to multiple the base point.
+	pub async fn private_key() -> Result<Vec<u8>> {
+		let mut data = vec![];
+		data.resize(32, 0);
+		secure_random_bytes(&mut data).await?;
+		Ok(data)
+	}
+
+	/// Generates the public key associated with the given private key.
+	pub fn public_key(private_key: &[u8]) -> Vec<u8> {
+		let u = BigUint::from(9); // Base point
+		let k = Self::decode_scalar(private_key);
+		let out = Self::mul(&k, &u);
+		Self::encode_u_cord(&out)
+	}
+
+	pub fn shared_secret(public_key: &[u8], private_key: &[u8]) -> Vec<u8> {
+		let u = Self::decode_u_cord(public_key);
+		let k = Self::decode_scalar(private_key);
+		let out = Self::mul(&k, &u);
+		Self::encode_u_cord(&u)
+	}
+
+	fn decode_scalar(data: &[u8]) -> BigUint {
+		assert_eq!(data.len(), 32);
+
+		let mut sdata = data.to_vec();
+		sdata[0] &= 248;
+		sdata[31] &= 127;
+		sdata[31] |= 64;
+
+		BigUint::from_le_bytes(&sdata)
+	}
+
+	// TODO: Must assert that it is 32 bytes and error out if it isn't.
+	fn decode_u_cord(data: &[u8]) -> BigUint {
+		assert_eq!(data.len(), 32);
+		BigUint::from_le_bytes(data)
+	}
+
+	fn encode_u_cord(u: &BigUint) -> Vec<u8> {
+		let mut data = u.to_le_bytes();
+		assert!(data.len() <= 32);
+		data.resize(32, 0);
+		data
+	}
+
+	fn mul(k: &BigUint, u: &BigUint) -> BigUint {
+		let p = BigUint::from(255).exp2() - &19.into();
+		let bits = 255;
+		let a24 = BigUint::from(121665);
+		curve_mul(k, u, &p, bits, &a24)
+	}
+}
+
+pub struct X448 {}
 
 pub fn x448(k: &BigUint, u: &BigUint) -> BigUint {
 	let p = BigUint::from(448).exp2()
@@ -322,7 +504,7 @@ mod tests {
 		let scalar = BigUint::from_str("31029842492115040904895560451863089656472772604678260265531221036453811406496").unwrap();
 		let u_in = BigUint::from_str("34426434033919594451155107781188821651316167215306631574996226621102155684838").unwrap();
 
-		let u_out = x25519(&scalar, &u_in);
+		let u_out = X25519::mul(&scalar, &u_in);
 		assert_eq!(hex::encode(u_out.to_le_bytes()), "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552");
 	}
 
