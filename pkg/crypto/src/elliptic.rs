@@ -4,6 +4,7 @@ use crate::dh::*;
 use common::errors::*;
 use common::ceil_div;
 use async_trait::async_trait;
+use std::marker::PhantomData;
 
 /// Parameters of an elliptic curve of the form:
 /// y^2 = x^3 + a*x + b
@@ -304,40 +305,93 @@ impl EllipticCurveGroup {
 // 32 bytes for X25519 and 56 bytes for X448
 
 
-pub struct MontgomeryCurveGroup {
+pub struct MontgomeryCurveGroup<C: MontgomeryCurveCodec> {
+	/// Prime
 	p: BigUint,
+	/// U coordinate of the base point.
+	u: BigUint,
 	bits: usize,
-	a24: BigUint
+	a24: BigUint,
+	codec: PhantomData<C>
+}
+
+impl<C: MontgomeryCurveCodec> MontgomeryCurveGroup<C> {
+	fn new(p: BigUint, u: BigUint, bits: usize, a24: BigUint) -> Self {
+		Self { p, u, bits, a24, codec: PhantomData }
+	}
+
+	fn mul(&self, k: &BigUint, u: &BigUint) -> BigUint {
+		curve_mul(k, u, &self.p, self.bits, &self.a24)
+	}
+}
+
+impl MontgomeryCurveGroup<X25519> {
+	pub fn x25519() -> Self {
+		let p = BigUint::from(255).exp2() - &19.into();
+		let u = BigUint::from(9);
+		let bits = 255;
+		let a24 = BigUint::from(121665);
+		Self::new(p, u, bits, a24)
+	}
+}
+
+impl MontgomeryCurveGroup<X448> {
+	pub fn x448() -> Self {
+		let p = BigUint::from(448).exp2()
+			- BigUint::from(224).exp2() - BigUint::from(1);
+		let u = BigUint::from(5);
+		let bits = 448;
+		let a24 = BigUint::from(39081);
+		Self::new(p, u, bits, a24)
+	}
 }
 
 
-pub struct X25519 {}
-
-impl X25519 {
+#[async_trait]
+impl<C: MontgomeryCurveCodec + Send + Sync>
+DiffieHellmanFn for MontgomeryCurveGroup<C> {
 	/// Creates a new 32byte private key
 	/// This will be the 'k'/scalar used to multiple the base point.
-	pub async fn private_key() -> Result<Vec<u8>> {
+	async fn secret_value(&self) -> Result<Vec<u8>> {
 		let mut data = vec![];
-		data.resize(32, 0);
+		// TODO: Get the key length from the codec?
+		data.resize(ceil_div(self.bits, 8), 0);
 		secure_random_bytes(&mut data).await?;
 		Ok(data)
 	}
 
+	// TODO: Implement the result routes
+
 	/// Generates the public key associated with the given private key.
-	pub fn public_key(private_key: &[u8]) -> Vec<u8> {
-		let u = BigUint::from(9); // Base point
-		let k = Self::decode_scalar(private_key);
-		let out = Self::mul(&k, &u);
-		Self::encode_u_cord(&out)
+	fn public_value(&self, secret: &[u8]) -> Result<Vec<u8>> {
+		let k = C::decode_scalar(secret);
+		// Multiply secret*base_point
+		let out = self.mul(&k, &self.u);
+		Ok(C::encode_u_cord(&out))
 	}
 
-	pub fn shared_secret(public_key: &[u8], private_key: &[u8]) -> Vec<u8> {
-		let u = Self::decode_u_cord(public_key);
-		let k = Self::decode_scalar(private_key);
-		let out = Self::mul(&k, &u);
-		Self::encode_u_cord(&u)
-	}
+	fn shared_secret(&self, public: &[u8], secret: &[u8]) -> Result<Vec<u8>> {
+		let u = C::decode_u_cord(public);
+		let k = C::decode_scalar(secret);
+		let out = self.mul(&k, &u);
+		Ok(C::encode_u_cord(&out))
 
+		// TODO: Validate shared secret is not all zero
+		// ^ See https://tools.ietf.org/html/rfc7748#section-6.1 for how to do it securely
+	}
+}
+
+pub trait MontgomeryCurveCodec {
+	// NOTE: There is generally no need for encoding the scalar.
+	fn decode_scalar(data: &[u8]) -> BigUint;
+
+	fn encode_u_cord(u: &BigUint) -> Vec<u8>;
+	fn decode_u_cord(data: &[u8]) -> BigUint;
+}
+
+pub struct X25519 {}
+
+impl MontgomeryCurveCodec for X25519 {
 	fn decode_scalar(data: &[u8]) -> BigUint {
 		assert_eq!(data.len(), 32);
 
@@ -352,7 +406,12 @@ impl X25519 {
 	// TODO: Must assert that it is 32 bytes and error out if it isn't.
 	fn decode_u_cord(data: &[u8]) -> BigUint {
 		assert_eq!(data.len(), 32);
-		BigUint::from_le_bytes(data)
+
+		let mut sdata = data.to_vec();
+		// Mask MSB in last byte (only applicable to X25519).
+		sdata[31] &= 0x7f;
+
+		BigUint::from_le_bytes(&sdata)
 	}
 
 	fn encode_u_cord(u: &BigUint) -> Vec<u8> {
@@ -361,24 +420,34 @@ impl X25519 {
 		data.resize(32, 0);
 		data
 	}
-
-	fn mul(k: &BigUint, u: &BigUint) -> BigUint {
-		let p = BigUint::from(255).exp2() - &19.into();
-		let bits = 255;
-		let a24 = BigUint::from(121665);
-		curve_mul(k, u, &p, bits, &a24)
-	}
 }
 
 pub struct X448 {}
 
-pub fn x448(k: &BigUint, u: &BigUint) -> BigUint {
-	let p = BigUint::from(448).exp2()
-		- BigUint::from(224).exp2() - BigUint::from(1);
-	let bits = 448;
-	let a24 = BigUint::from(39081);
-	curve_mul(k, u, &p, bits, &a24)
+impl MontgomeryCurveCodec for X448 {
+	fn decode_scalar(data: &[u8]) -> BigUint {
+		assert_eq!(data.len(), 56);
+
+		let mut sdata = data.to_vec();
+		sdata[0] &= 252;
+		sdata[55] |= 128;
+
+		BigUint::from_le_bytes(&sdata)
+	}
+
+	fn decode_u_cord(data: &[u8]) -> BigUint {
+		assert_eq!(data.len(), 56);
+		BigUint::from_le_bytes(data)
+	}
+
+	fn encode_u_cord(u: &BigUint) -> Vec<u8> {
+		let mut data = u.to_le_bytes();
+		assert!(data.len() <= 56);
+		data.resize(56, 0);
+		data
+	}
 }
+
 
 fn curve_mul(k: &BigUint, u: &BigUint, p: &BigUint,
 			 bits: usize, a24: &BigUint) -> BigUint {
@@ -448,42 +517,41 @@ mod tests {
 	use std::str::FromStr;
 
 	#[test]
+	fn small_elliptic_curve_test() {
+		let k = BigUint::from(2);
+		let x = BigUint::from(80);
+		let y = BigUint::from(10);
+
+		let ecc = EllipticCurveGroup {
+			curve: EllipticCurve { a: BigUint::from(2), b: BigUint::from(3) },
+			p: BigUint::from(97),
+			g: EllipticCurvePoint {
+				x: BigUint::from(3),
+				y: BigUint::from(6)
+			},
+			n: BigUint::from(100),
+			k: 1
+		};
+
+		let out = ecc.curve_mul(&k);
+		assert_eq!(out.x, x);
+		assert_eq!(out.y, y);
+	}
+
+	#[test]
 	fn secp256r1_test() {
-		{
-			let k = BigUint::from(2);
-			let x = BigUint::from(80);
-			let y = BigUint::from(10);
+		let k = BigUint::from_str(
+			"29852220098221261079183923314599206100666902414330245206392788703677545185283").unwrap();
+		let x = BigUint::from_be_bytes(&hex::decode(
+			"9EACE8F4B071E677C5350B02F2BB2B384AAE89D58AA72CA97A170572E0FB222F").unwrap());
+		let y = BigUint::from_be_bytes(&hex::decode(
+			"1BBDAEC2430B09B93F7CB08678636CE12EAAFD58390699B5FD2F6E1188FC2A78").unwrap());
 
-			let ecc = EllipticCurveGroup {
-				curve: EllipticCurve { a: BigUint::from(2), b: BigUint::from(3) },
-				p: BigUint::from(97),
-				g: EllipticCurvePoint {
-					x: BigUint::from(3),
-					y: BigUint::from(6)
-				},
-				n: BigUint::from(100),
-				k: 1
-			};
+		let ecc = EllipticCurveGroup::secp256r1();
+		let out = ecc.curve_mul(&k);
 
-			let out = ecc.curve_mul(&k);
-			assert_eq!(out.x, x);
-			assert_eq!(out.y, y);
-		}
-
-		{
-			let k = BigUint::from_str(
-				"29852220098221261079183923314599206100666902414330245206392788703677545185283").unwrap();
-			let x = BigUint::from_be_bytes(&hex::decode(
-				"9EACE8F4B071E677C5350B02F2BB2B384AAE89D58AA72CA97A170572E0FB222F").unwrap());
-			let y = BigUint::from_be_bytes(&hex::decode(
-				"1BBDAEC2430B09B93F7CB08678636CE12EAAFD58390699B5FD2F6E1188FC2A78").unwrap());
-
-			let ecc = EllipticCurveGroup::secp256r1();
-			let out = ecc.curve_mul(&k);
-
-			assert_eq!(out.x, x);
-			assert_eq!(out.y, y);
-		}
+		assert_eq!(out.x, x);
+		assert_eq!(out.y, y);
 	}
 
 	#[test]
@@ -493,19 +561,55 @@ mod tests {
 		assert_eq!(BigUint::from_le_bytes(
 			&hex::decode("0100000002").unwrap()).to_string(), "8589934593");
 
-		let mut sdata = hex::decode(
-			"a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4").unwrap();
-		sdata[0] &= 248;
-		sdata[31] &= 127;
-		sdata[31] |= 64;
-
-		assert_eq!(BigUint::from_le_bytes(&sdata).to_string(), "31029842492115040904895560451863089656472772604678260265531221036453811406496");
-
 		let scalar = BigUint::from_str("31029842492115040904895560451863089656472772604678260265531221036453811406496").unwrap();
 		let u_in = BigUint::from_str("34426434033919594451155107781188821651316167215306631574996226621102155684838").unwrap();
 
-		let u_out = X25519::mul(&scalar, &u_in);
+		let u_out = MontgomeryCurveGroup::x25519().mul(&scalar, &u_in);
 		assert_eq!(hex::encode(u_out.to_le_bytes()), "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552");
+
+		let scalar2 = X25519::decode_scalar(&hex::decode("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d").unwrap());
+		assert_eq!(scalar2.to_string(), "35156891815674817266734212754503633747128614016119564763269015315466259359304");
+
+		let u_in2 = X25519::decode_u_cord(&hex::decode("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493").unwrap());
+		assert_eq!(u_in2.to_string(), "8883857351183929894090759386610649319417338800022198945255395922347792736741");
+
+		let u_out2 = MontgomeryCurveGroup::x25519().mul(&scalar2, &u_in2);
+		assert_eq!(&X25519::encode_u_cord(&u_out2),
+				   &hex::decode("95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957").unwrap());
+	}
+
+	#[test]
+	fn ecdh_x25519_codec_test() {
+		assert_eq!(
+			X25519::decode_scalar(&hex::decode("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4").unwrap()).to_string(),
+			"31029842492115040904895560451863089656472772604678260265531221036453811406496");
+
+		assert_eq!(
+			X25519::decode_u_cord(&hex::decode("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c").unwrap()).to_string(),
+			"34426434033919594451155107781188821651316167215306631574996226621102155684838");
+	}
+
+
+	#[test]
+	fn ecdh_x25519_test() {
+		let alice_private = hex::decode(
+			"77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a").unwrap();
+		let alice_public = hex::decode(
+			"8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a").unwrap();
+		let bob_private = hex::decode(
+			"5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb").unwrap();
+		let bob_public = hex::decode(
+			"de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f").unwrap();
+		let shared_secret = hex::decode(
+			"4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742").unwrap();
+
+		let group = MontgomeryCurveGroup::x25519();
+		assert_eq!(&group.public_value(&alice_private).unwrap(), &alice_public);
+		assert_eq!(&group.public_value(&bob_private).unwrap(), &bob_public);
+		assert_eq!(&group.shared_secret(&alice_public, &bob_private).unwrap(),
+				   &shared_secret);
+		assert_eq!(&group.shared_secret(&bob_public, &alice_private).unwrap(),
+				   &shared_secret);
 	}
 
 }

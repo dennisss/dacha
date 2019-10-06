@@ -3,7 +3,7 @@ use common::factory::*;
 
 /// Encapsulates an algorithm for creating hashes (i.e. MD5, SHA1, CRC32, etc.).
 /// TODO: Rename to Digest(er) to not conflict with the std::hash::Hasher
-pub trait Hasher {
+pub trait Hasher: Send {
 
 	// fn block_size() -> usize;
 
