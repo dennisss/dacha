@@ -3,10 +3,24 @@
 #[macro_use] extern crate arrayref;
 extern crate bytes;
 
+use crate::bytes::Buf;
 use bytes::Bytes;
 use common::errors::*;
 
+pub fn incomplete_error() -> Error {
+	ErrorKind::Parser(ParserErrorKind::Incomplete).into()
+}
+
+pub fn is_incomplete(e: &Error) -> bool {
+	if let ErrorKind::Parser(ParserErrorKind::Incomplete) = e.kind() {
+		true
+	} else {
+		false
+	}
+}
+
 pub mod iso;
+pub mod ascii;
 pub mod binary;
 
 pub fn is_one_of(s: &str, input: u8) -> bool {
@@ -18,26 +32,29 @@ pub fn one_of(s: &'static str) -> impl Parser<u8> {
 }
 
 pub type ParseError = Error;
-pub type ParseResult<T> = std::result::Result<(T, Bytes), ParseError>;
-pub trait Parser<T> = Fn(Bytes) -> ParseResult<T>;
+pub type ParserInput = ::bytes::Bytes;
+pub type ParseResult<T, I = ParserInput> = ParseResult2<T, I>;
+pub type ParseResult2<T, R> = std::result::Result<(T, R), ParseError>;
+pub trait Parser<T, I = ParserInput> = Fn(I) -> ParseResult<T, I>;
 
 #[macro_export]
 macro_rules! alt {
 	( $first:expr, $( $next:expr ),* ) => {
-		|input: Bytes| {
+		|input| {
 			let mut errs = vec![];
-			match ($first)(input.clone()) {
+			match ($first)(::std::clone::Clone::clone(&input)) {
 				Ok(v) => { return Ok(v); },
 				Err(e) => { errs.push(e.to_string()); }
 			};
 
 			$(
-			match ($next)(input.clone()) {
+			match ($next)(::std::clone::Clone::clone(&input)) {
 				Ok(v) => { return Ok(v); },
 				Err(e) => { errs.push(e.to_string()); }
 			};
 			)*
 
+			// TODO: Must support Incomplete error in some reasonable way.
 			Err(format!("({})", errs.join(" | ")).into())
 		}
 	};
@@ -49,7 +66,9 @@ macro_rules! seq {
 	($c: ident => $e:expr) => {
 		move |input| {
 			let mut $c = ParseCursor::new(input);
-			let out: std::result::Result<_, ParseError> = { $e };
+			// Wrapped in a function so that the expression can have return statements.
+			let mut f = || { $e };
+			let out: std::result::Result<_, ParseError> = { f() };
 			$c.unwrap_with(out?)
 		}
 	};
@@ -65,44 +84,62 @@ macro_rules! function {
             core::intrinsics::type_name::<T>()
         }
         let name = type_name_of(f);
-        &name[6..name.len() - 16]
+        &name[6..name.len() - 3]
     }}
 }
 
 #[macro_export]
 macro_rules! parser {
 	(pub $c:ident<$t:ty> => $e:expr) => {
-		pub fn $c(input: Bytes) -> ParseResult<$t> {
+		parser!(pub $c<$t, ParserInput> => $e);
+	};
+	($c:ident<$t:ty> => $e:expr) => {
+		parser!($c<$t, ParserInput> => $e);
+	};
+
+	(pub $c:ident<$t:ty, $r:ty> => $e:expr) => {
+		pub fn $c(input: $r) -> ParseResult2<$t, $r> {
 			let p = $e;
-			p(input).map_err(|e: Error| Error::from(format!("{}({})", function!(), e)))
+			p(input)
+			
+			// TODO: Must support passing through Incomplete error
+			//.map_err(|e: Error| Error::from(format!("{}({})", function!(), e)))
 		}
 	};
 	// Same thing as the first form, but not public.
-	($c:ident<$t:ty> => $e:expr) => {
-		fn $c(input: Bytes) -> ParseResult<$t> {
+	($c:ident<$t:ty, $r:ty> => $e:expr) => {
+		fn $c(input: $r) -> ParseResult2<$t, $r> {
 			let p = $e;
-			p(input).map_err(|e: Error| Error::from(format!("{}({})", function!(), e)))
+			p(input)
+			// TODO: Must support passing through Incomplete error
+			// .map_err(|e: Error| Error::from(format!("{}({})", function!(), e)))
 		}
 	};
 }
 
-pub fn map<T, Y, P: Parser<T>, F: Fn(T) -> Y>(p: P, f: F) -> impl Parser<Y> {
-	move |input: Bytes| {
+pub fn map<I, T, Y, P: Parser<T, I>, F: Fn(T) -> Y>(p: P, f: F) -> impl Parser<Y, I> {
+	move |input: I| {
 		p(input).map(|(v, rest)| (f(v), rest))
 	}
 }
 
-pub fn and_then<T, Y, P: Parser<T>, F: Fn(T) -> std::result::Result<Y, ParseError>>(p: P, f: F) -> impl Parser<Y> {
-	move |input: Bytes| {
+pub fn and_then<I, T, Y, P: Parser<T, I>, F: Fn(T) -> std::result::Result<Y, ParseError>>(p: P, f: F) -> impl Parser<Y, I> {
+	move |input: I| {
 		p(input).and_then(|(v, rest)| Ok((f(v)?, rest)))
 	}
 }
 
+pub fn then<I, T, Y, P: Parser<T, I>, G: Parser<Y, I>>(p: P, g: G)
+-> impl Parser<Y, I> {
+	move |input: I| {
+		p(input).and_then(|(_, rest)| g(rest))
+	}
+}
 
 pub fn like<F: Fn(u8) -> bool>(f: F) -> impl Parser<u8> {
-	move |input: Bytes| {
+	move |input: ParserInput| {
 		if input.len() < 1 {
-			return Err("like: too little input".into());
+			return Err(incomplete_error());
 		}
 
 		if f(input[0]) {
@@ -116,12 +153,18 @@ pub fn like<F: Fn(u8) -> bool>(f: F) -> impl Parser<u8> {
 parser!(pub any<u8> => like(|_| true)); 
 
 pub fn complete<T, P: Parser<T>>(p: P) -> impl Parser<T> {
-	move |input: Bytes| {
+	move |input: ParserInput| {
 		p(input).and_then(|(v, rest)| {
 			if rest.len() != 0 {
 				Err(format!("Failed to parse last {} bytes", rest.len()).into())
 			} else {
 				Ok((v, rest))
+			}
+		}).map_err(|e| {
+			if is_incomplete(&e) {
+				"Expected to be complete".into()
+			} else {
+				e
 			}
 		})
 	}
@@ -131,7 +174,7 @@ pub fn complete<T, P: Parser<T>>(p: P) -> impl Parser<T> {
 pub fn take_exact(length: usize) -> impl Parser<Bytes> {
 	move |input: Bytes| {
 		if input.len() < length {
-			return Err("Not enough bytes in input".into());
+			return Err(incomplete_error());
 		}
 
 		let mut v = input.clone();
@@ -168,24 +211,62 @@ pub fn take_while1<F: Fn(u8) -> bool>(f: F) -> impl Parser<Bytes> {
 	}
 }
 
-pub fn tag(s: &'static str) -> impl Parser<Bytes> {
-	move |input: Bytes| {
-		if input.len() < s.len() {
-			return Err(format!("tag expected: {}", s).into());
+/// Continue parsing until the given parser is able to parse
+/// NOTE: The parser must parse a non-empty pattern for this to work.
+pub fn take_until<T, P: Parser<T>>(p: P) -> impl Parser<Bytes> {
+	move |mut input: Bytes| {
+		let mut rem = input.clone();
+		while rem.len() > 0 {
+			match p(rem.clone()) {
+				Ok(_) => {
+					input.advance(input.len() - rem.len());
+					
+					return Ok(( input.slice(0..(input.len() - rem.len())), rem));
+				},
+				Err(_) => rem.advance(1)
+			}
 		}
 
-		if &input[0..s.len()] == s.as_bytes() {
+		// TODO: Return Incomplete error.
+		Err("Hit end of input before seeing pattern".into())
+	}
+}
+
+// TODO: Implement a binary version for efficient binary ASCII string parsing.
+// (and refactor most ussages to use that)
+pub fn tag<T: AsRef<[u8]>>(s: T) -> impl Parser<Bytes> {
+	move |input: Bytes| {
+		let t = s.as_ref();
+		if input.len() < t.len() {
+			return Err(incomplete_error());
+			// return Err(format!("tag expected: {}", s).into());
+		}
+
+		if &input[0..t.len()] == t {
 			let mut v = input.clone();
-			let rest = v.split_off(s.len());
+			let rest = v.split_off(t.len());
 			Ok((v, rest))
 		} else {
-			Err(format!("Expected \"{}\"", s).into())
+			Err(format!("Expected \"{:?}\"", t).into())
 		}
 	}
 }
 
-pub fn opt<T, P: Parser<T>>(p: P) -> impl Parser<Option<T>> {
+pub fn anytag<T: AsRef<[u8]>>(arr: &'static [T]) -> impl Parser<Bytes> {
 	move |input: Bytes| {
+		for t in arr.iter() {
+			if let Ok(v) = tag(t)(input.clone()) {
+				return Ok(v);
+			}
+		}
+
+		// TODO: Incomplete errors?
+		Err("No matching tag".into())
+	}
+}
+
+pub fn opt<I: Clone, T, P: Parser<T, I>>(p: P) -> impl Parser<Option<T>, I> {
+	move |input: I| {
 		match p(input.clone()) {
 			Ok((v, rest)) => Ok((Some(v), rest)),
 			Err(_) => Ok((None, input))
@@ -218,7 +299,50 @@ pub fn many1<T, F: Parser<T>>(f: F) -> impl Parser<Vec<T>> {
 	}
 }
 
+/// Parses zero or more items delimited by another parser.
+pub fn delimited<T, Y, P: Parser<T>, D: Parser<Y>>(p: P, d: D)
+-> impl Parser<Vec<T>> {
+	move |mut input| {
+		let mut out = vec![];
 
+		// Match first value.
+		match p(std::clone::Clone::clone(&input)) {
+			Ok((v, rest)) => {
+				out.push(v);
+				input = rest;
+			},
+			Err(e) => { return Ok((out, input)); }
+		};
+
+		loop {
+			// Parse delimiter (but don't update 'input' yet).
+			let rest = match d(std::clone::Clone::clone(&input)) {
+				Ok((_, rest)) => rest,
+				Err(_) => { return Ok((out, input)); }
+			};
+
+			match p(rest) {
+				Ok((v, rest)) => {
+					out.push(v);
+					input = rest;
+				},
+				// On failure, return before the delimiter was parsed
+				Err(_) => { return Ok((out, input)); }
+			}
+		}
+	}
+}
+
+pub fn delimited1<T, Y, P: Parser<T>, D: Parser<Y>>(p: P, d: D)
+-> impl Parser<Vec<T>> {
+	and_then(delimited(p, d), |arr| {
+		if arr.len() < 1 {
+			Err("No items parseable".into())
+		} else {
+			Ok(arr)
+		}
+	})
+}
 
 
 /// Given a parser, output a parser which outputs the entire range of the input that is consumed by the parser if successful.
@@ -232,22 +356,22 @@ pub fn slice<T, P: Parser<T>>(p: P) -> impl Parser<Bytes> {
 
 
 #[derive(Clone)]
-pub struct ParseCursor {
-	rest: Bytes
+pub struct ParseCursor<I: Clone = ParserInput> {
+	rest: I
 }
 
-impl ParseCursor {
-	pub fn new(input: Bytes) -> ParseCursor {
-		ParseCursor { rest: input.clone() }
+impl<I: Clone> ParseCursor<I> {
+	pub fn new(input: I) -> Self {
+		Self { rest: input.clone() }
 	}
 	
-	pub fn unwrap_with<T>(self, value: T) -> ParseResult<T> {
+	pub fn unwrap_with<T>(self, value: T) -> ParseResult<T, I> {
 		Ok((value, self.rest))
 	}
 
 	// Runs a parser on the remaining input, advancing the cursor if successful.
 	// On parser error, the cursor will stay the same.
-	pub fn next<T, F: Parser<T>>(&mut self, f: F) -> std::result::Result<T, ParseError> {
+	pub fn next<T, F: Parser<T, I>>(&mut self, f: F) -> std::result::Result<T, ParseError> {
 		match f(self.rest.clone()) {
 			Ok((v, r)) => {
 				self.rest = r;
@@ -257,7 +381,7 @@ impl ParseCursor {
 		}
 	}
 
-	pub fn is<T: PartialEq<Y>, Y, F: Parser<T>>(&mut self, f: F, v: Y) -> std::result::Result<T, ParseError> {
+	pub fn is<T: PartialEq<Y>, Y, F: Parser<T, I>>(&mut self, f: F, v: Y) -> std::result::Result<T, ParseError> {
 		match f(self.rest.clone()) {
 			Ok((v2, r)) => {
 				if v2 != v {
@@ -272,7 +396,7 @@ impl ParseCursor {
 	}
 
 	// Runs a parser as many times as possible returning a vector of all results
-	pub fn many<T, F: Parser<T>>(&mut self, f: F) -> Vec<T> {
+	pub fn many<T, F: Parser<T, I>>(&mut self, f: F) -> Vec<T> {
 		let mut results = vec![];
 		while let Ok((v, r)) = f(self.rest.clone()) {
 			self.rest = r;
@@ -282,3 +406,4 @@ impl ParseCursor {
 		results
 	}
 }
+

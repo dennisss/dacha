@@ -1,6 +1,6 @@
 
 
-pub trait Factory<T: ?Sized> {
+pub trait Factory<T: ?Sized>: Send {
 	fn create(&self) -> Box<T>;
 
 	fn box_clone(&self) -> Box<dyn Factory<T>>;

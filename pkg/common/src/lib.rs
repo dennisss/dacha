@@ -6,6 +6,7 @@ extern crate libc;
 pub mod fs;
 pub mod algorithms;
 pub mod factory;
+pub mod bits;
 
 pub trait FlipSign<T> {
 	/// Transmutes an signed/unsigned integer into it's opposite unsigned/signed integer while maintaining bitwise equivalence even though the integer value may change
@@ -29,9 +30,15 @@ pub mod errors {
 		NotEnoughBits
 	}
 
+	#[derive(Debug)]
+	pub enum ParserErrorKind {
+		Incomplete
+	}
+
 	error_chain! {
 		foreign_links {
 			Io(::std::io::Error);
+			ParseInt(::std::num::ParseIntError);
 			// Db(diesel::result::Error);
 			// HTTP(hyper::Error);
 		}
@@ -46,6 +53,9 @@ pub mod errors {
 
 			BitIo(t: BitIoErrorKind) {
 				display("BitIo: {:?}", t)
+			}
+			Parser(t: ParserErrorKind) {
+				display("Parser: {:?}", t)
 			}
 		}
 	}

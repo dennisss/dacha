@@ -1,7 +1,8 @@
 // Utilities for dealing for sets of bits and bit stream I/O.
 
 use std::io::{Read, Write};
-use common::errors::*;
+use crate::errors::*;
+use crate::ceil_div;
 
 /// Represents a variable length number of ordered bits
 #[derive(PartialEq, Eq, Clone)]
@@ -58,6 +59,21 @@ impl BitVector {
 		assert_eq!(val >> width, 0);
 
 		out
+	}
+
+	pub fn from(data: &[u8], len: usize) -> Self {
+		let mut data = Vec::from(data);
+		data.resize(ceil_div(len, 0), 0);
+
+		Self { data, len }
+	}
+}
+
+// NOTE: This should be guranteed to always minimally cover all bits up to the
+// next complete octet.
+impl std::convert::AsRef<[u8]> for BitVector {
+	fn as_ref(&self) -> &[u8] {
+		&self.data
 	}
 }
 

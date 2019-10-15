@@ -6,6 +6,7 @@ use parsing::ascii::AsciiString;
 use common::errors::Error;
 use std::convert::AsRef;
 use std::string::ToString;
+use super::encoding::TagClass;
 
 parser!(number<usize> => Token::skip_to(Token::number));
 parser!(realnumber<f64> => Token::skip_to(Token::realnumber));
@@ -77,6 +78,9 @@ ModuleDefinition ::=
 pub struct ModuleDefinition {
 	pub ident: ModuleIdentifier,
 	pub default_mode: Option<TagDefault>,
+	/// Whether or not all extensible types by default allow extensibility after
+	/// the last field.
+	pub extension_default: bool,
 	pub body: Option<ModuleBody>
 }
 
@@ -86,7 +90,7 @@ impl ModuleDefinition {
 		c.next(reserved("DEFINITIONS"))?;
 
 		let default_mode = c.next(TagDefault::parse)?;
-
+		let extension_default = c.next(ExtensionDefault::parse)?.is_some();
 		c.next(sequence("::="))?;
 		c.next(reserved("BEGIN"))?;
 		let body = c.next(ModuleBody::parse)?;
@@ -95,7 +99,7 @@ impl ModuleDefinition {
 		// Skip all trailing comments/whitespace in the file.
 		c.next(Token::skip_to(|i| Ok(((), i))))?;
 
-		Ok(Self { ident, default_mode, body })
+		Ok(Self { ident, default_mode, extension_default, body })
 	}));
 }
 
@@ -104,58 +108,47 @@ impl ModuleDefinition {
 #[derive(Debug)]
 pub struct ModuleIdentifier {
 	pub name: AsciiString,
-	pub oid: Option<DefinitiveOID>
+
+	/// NOTE: If specified, then this can't reference any values defined in the
+	/// module.
+	pub oid: Option<ObjectIdentifierValue>
 }
 
 impl ModuleIdentifier {
 	parser!(parse<Self> => seq!(c => {
 		let name = c.next(modulereference)?;
-		let oid = c.next(opt(DefinitiveOID::parse))?;
+		let oid = c.next(opt(ObjectIdentifierValue::parse))?;
 		Ok(Self { name, oid })
 	}));
 }
 
 /* DefinitiveIdentification ::= | DefinitiveOID | DefinitiveOIDandIRI | empty */
 
-/* DefinitiveOID ::= "{" DefinitiveObjIdComponentList "}" */
-#[derive(Debug)]
-pub struct DefinitiveOID(Vec<DefinitiveObjIdComponent>);
+/* DefinitiveOIDandIRI ::= DefinitiveOID IRIValue */
 
-impl DefinitiveOID {
+
+#[derive(Debug)]
+pub struct ObjectIdentifierValue {
+	pub components: Vec<ObjectIdentifierComponent>
+}
+
+impl ObjectIdentifierValue {
 	parser!(parse<Self> => seq!(c => {
 		c.next(symbol('{'))?;
-		let list = c.next(many1(DefinitiveObjIdComponent::parse))?;
+		let components = c.next(many1(ObjectIdentifierComponent::parse))?;
 		c.next(symbol('}'))?;
-		Ok(Self(list))
+		Ok(Self { components })
 	}));
 }
 
-
-/* DefinitiveOIDandIRI ::= DefinitiveOID IRIValue */
-
-/*
-DefinitiveObjIdComponentList ::=
-	DefinitiveObjIdComponent
-	| DefinitiveObjIdComponent DefinitiveObjIdComponentList
-*/
-
-/*
-DefinitiveObjIdComponent ::=
-	NameForm
-	| DefinitiveNumberForm
-	| DefinitiveNameAndNumberForm
-*/
-/* DefinitiveNumberForm ::= number */
-/* DefinitiveNameAndNumberForm ::= identifier "(" DefinitiveNumberForm ")" */
-
-/// NOTE: At least one of name and number must be set
 #[derive(Debug)]
-pub struct DefinitiveObjIdComponent {
-	pub name: Option<AsciiString>,
-	pub number: Option<usize>
+pub enum ObjectIdentifierComponent {
+	Name(AsciiString),
+	Number(usize),
+	NameAndNumber(AsciiString, usize)
 }
 
-impl DefinitiveObjIdComponent {
+impl ObjectIdentifierComponent {
 	parser!(parse<Self> => alt!(
 		seq!(c => {
 			let name = c.next(identifier)?;
@@ -166,11 +159,16 @@ impl DefinitiveObjIdComponent {
 				Ok(n)
 			})))?;
 
-			Ok(Self { name: Some(name), number })
+			Ok(if let Some(n) = number {
+				Self::NameAndNumber(name, n)
+			} else {
+				Self::Name(name)
+			})
 		}),
-		map(number, |v| Self { name: None, number: Some(v) })
+		map(number, |v| Self::Number(v))
 	));
 }
+
 
 
 /*
@@ -435,11 +433,6 @@ impl Reference {
 }
 
 
-/*
-AssignmentList ::=
-	Assignment
-	| AssignmentList Assignment
-*/
 #[derive(Debug)]
 pub struct AssignmentList(Vec<Assignment>);
 
@@ -488,7 +481,7 @@ DefinedValue ::=
 	| ParameterizedValue
 */
 #[derive(Debug)]
-pub struct DefinedValue(AsciiString);
+pub struct DefinedValue(pub AsciiString);
 
 impl DefinedValue {
 	parser!(parse<Self> => alt!(
@@ -531,29 +524,6 @@ impl ExternalValueReference {
 		})
 	});
 }
-
-
-/*
-AbsoluteReference ::=
-	"@" ModuleIdentifier
-	"."
-	ItemSpec
-*/
-
-/*
-ItemSpec ::=
-	typereference
-	| ItemId "." ComponentId
-	ItemId ::= ItemSpec
-*/
-
-/*
-ComponentId ::=
-	identifier
-	| number
-	| "*"
-*/
-
 
 
 /* TypeAssignment ::= typereference "::=" Type */
@@ -605,6 +575,7 @@ ValueSetTypeAssignment ::=
 /* Type ::= BuiltinType | ReferencedType | ConstrainedType */
 #[derive(Debug)]
 pub struct Type {
+	pub prefixes: Vec<TypePrefix>,
 	pub desc: TypeDesc,
 	pub constraints: Vec<Constraint>
 }
@@ -617,46 +588,17 @@ pub enum TypeDesc {
 
 impl Type {
 	parser!(parse<Self> => seq!(c => {
+		let prefixes = c.next(many(TypePrefix::parse))?;
 		let desc = c.next(alt!(
 			map(BuiltinType::parse, |v| TypeDesc::Builtin(v)),
 			map(ReferencedType::parse, |v| TypeDesc::Referenced(v.0))	
 		))?;
 		let constraints = c.next(many(Constraint::parse))?;
-		Ok(Self { desc, constraints })
+		Ok(Self { prefixes, desc, constraints })
 	}));
 }
 
 
-/*
-BuiltinType ::=
-	BitStringType
-	| BooleanType
-	| CharacterStringType
-	| ChoiceType
-	| DateType
-	| DateTimeType
-	| DurationType
-	| EmbeddedPDVType
-	| EnumeratedType
-	| ExternalType
-	| InstanceOfType
-	| IntegerType
-	| IRIType
-	| NullType
-	| ObjectClassFieldType
-	| ObjectIdentifierType
-	| OctetStringType
-	| RealType
-	| RelativeIRIType
-	| RelativeOIDType
-	| SequenceType
-	| SequenceOfType
-	| SetType
-	| SetOfType
-	| PrefixedType
-	| TimeType
-	| TimeOfDayType
-*/
 #[derive(Debug)]
 pub enum BuiltinType {
 	Any(AnyType),
@@ -664,29 +606,28 @@ pub enum BuiltinType {
 	Boolean,
 	CharacterString(CharacterStringType),
 	Choice(ChoiceType),
-	DateType, // DateType ::= DATE
-	DateTimeType, // DateTimeType ::= DATE-TIME
-	DurationType, // DurationType ::= DURATION
+	Date,
+	DateTime,
+	Duration,
 	EmbeddedPDVType,
 	Enumerated(EnumeratedType),
 	ExternalType,
 	InstanceOfType,
 	Integer(IntegerType),
 	IRIType,
-	Null, // NullType ::= NULL
+	Null,
 	ObjectClassFieldType,
 	ObjectIdentifier,
 	OctetString,
-	RealType, /* RealType ::= REAL */
+	Real,
 	RelativeIRIType,
 	RelativeOIDType,
-	Sequence(SequenceType),
+	Sequence(ComponentBody),
 	SequenceOf(CollectionType),
-	Set(SetType),
+	Set(ComponentBody),
 	SetOf(CollectionType),
-	Prefixed(PrefixedType),
-	Time, // TimeType ::= TIME
-	TimeOfDay // TimeOfDayType ::= TIME-OF-DAY
+	Time,
+	TimeOfDay
 }
 
 impl BuiltinType {
@@ -696,10 +637,10 @@ impl BuiltinType {
 		map(BooleanType::parse, |v| Self::Boolean),
 		map(CharacterStringType::parse, |v| Self::CharacterString(v)),
 		map(ChoiceType::parse, |v| Self::Choice(v)),
-		map(reserved("DATE"), |_| BuiltinType::DateType),
-		map(reserved("DATE-TIME"), |_| BuiltinType::DateTimeType),
-		map(reserved("DURATION"), |_| BuiltinType::DurationType),
-
+		map(reserved("DATE"), |_| BuiltinType::Date),
+		map(reserved("DATE-TIME"), |_| BuiltinType::DateTime),
+		map(reserved("DURATION"), |_| BuiltinType::Duration),
+		map(EmbeddedPDVType::parse, |_| BuiltinType::EmbeddedPDVType),
 		map(EnumeratedType::parse, |v| BuiltinType::Enumerated(v)),
 
 		map(IntegerType::parse, |v| Self::Integer(v)),
@@ -708,13 +649,14 @@ impl BuiltinType {
 
 		map(ObjectIdentifierType::parse, |_| BuiltinType::ObjectIdentifier),
 		map(OctetStringType::parse, |_| BuiltinType::OctetString),
+		map(reserved("REAL"), |_| BuiltinType::Real),
 
-		map(SequenceType::parse, |v| Self::Sequence(v)),
+		map(reserved("RELATIVE-OID"), |_| BuiltinType::RelativeOIDType),
+		map(SequenceType::parse, |v| Self::Sequence(v.0)),
 		// TODO: Export the constraints
 		map(SequenceOfType::parse, |(_, v)| Self::SequenceOf(v.0)),
-		map(SetType::parse, |v| Self::Set(v)),
+		map(SetType::parse, |v| Self::Set(v.0)),
 		map(SetOfType::parse, |(_, v)| Self::SetOf(v.0)),
-		map(PrefixedType::parse, |v| Self::Prefixed(v)),
 
 		map(reserved("TIME"), |_| Self::Time),
 		map(reserved("TIME-OF-DAY"), |_| Self::TimeOfDay)
@@ -738,27 +680,21 @@ impl ReferencedType {
 }
 
 
-/* NamedType ::= identifier Type */
 #[derive(Debug)]
 pub struct NamedType {
 	pub name: AsciiString,
-	pub typ: Box<Type>
+	pub typ: Type
 }
 
 impl NamedType {
 	parser!(parse<Self> => seq!(c => {
 		let name = c.next(identifier)?;
-		let typ = Box::new(c.next(Type::parse)?);
+		let typ = c.next(Type::parse)?;
 		Ok(Self { name, typ })
 	}));
 }
 
-/*
-Value ::=
-	BuiltinValue
-	| ReferencedValue
-	| ObjectClassFieldValue
-*/
+
 #[derive(Debug)]
 pub enum Value {
 	Builtin(BuiltinValue),
@@ -786,18 +722,22 @@ pub enum BuiltinValue {
 	ExternalValue,
 	InstanceOfValue,
 	Integer(IntegerValue),
-	IRIValue,
-	Null, /* NullValue ::= NULL */
+	IRIValue, // TODO: Will be parsed from a CharacterString
+	Null,
+	/// TODO: Ensure that the compiler builds the value in the context of the
+	/// type assigned to it.
+	/// 
+	/// NOTE: If this is a relative oid, any Name form components in this must
+	/// be a reference (as we can't resolve a full path in the registry using
+	/// a relative value).
 	ObjectIdentifier(ObjectIdentifierValue),
 	OctetStringValue,
 	RealValue,
-	RelativeIRIValue,
-	RelativeOIDValue,
+	RelativeIRIValue, // TODO: Will be parsed from a CharacterString
 	SequenceValue,
 	SequenceOfValue,
 	SetValue,
 	SetOfValue,
-	PrefixedValue,
 	TimeValue /* TimeValue ::= tstring  */
 }
 
@@ -1011,14 +951,14 @@ Enumerations ::=
 */
 #[derive(Debug)]
 pub struct Enumerations {
-	pub root: Enumeration,
-	pub exception: Option<ExceptionSpec>,
-	pub additional: Option<Enumeration>
+	pub items: Vec<EnumerationItem>,
+	pub extensible: bool,
+	pub exception: Option<ExceptionSpec>
 }
 
 impl Enumerations {
 	parser!(parse<Self> => seq!(c => {
-		let root = c.next(RootEnumeration::parse)?;
+		let mut items = c.next(RootEnumeration::parse)?.0;
 		let vals = c.next(opt(seq!(c => {
 			c.next(symbol(','))?;
 			c.next(sequence("..."))?;
@@ -1026,21 +966,27 @@ impl Enumerations {
 
 			let additional = c.next(opt(seq!(c => {
 				c.next(symbol(','))?;
-				c.next(AdditionalEnumeration::parse)
-			})))?;
+				c.next(map(AdditionalEnumeration::parse, |v| v.0))
+			})))?.unwrap_or(vec![]);
 
 			Ok((exception, additional))
 		})))?;
 
-		let (exception, additional) = vals.unwrap_or((None, None));
-		Ok(Self { root, exception, additional })
+		let (extensible, exception) =
+			if let Some((exception, mut addition)) = vals {
+				items.append(&mut addition);
+				(true, exception)
+			} else {
+				(false, None)
+			};
+
+		Ok(Self { items, extensible, exception })
 	}));
 }
 
 
 /* RootEnumeration ::= Enumeration */
-#[derive(Debug)]
-pub struct RootEnumeration {}
+struct RootEnumeration {}
 
 impl RootEnumeration {
 	parser!(parse<Enumeration> => Enumeration::parse);
@@ -1048,8 +994,7 @@ impl RootEnumeration {
 
 
 /* AdditionalEnumeration ::= Enumeration */
-#[derive(Debug)]
-pub struct AdditionalEnumeration {}
+struct AdditionalEnumeration {}
 
 impl AdditionalEnumeration {
 	parser!(parse<Enumeration> => Enumeration::parse);
@@ -1143,11 +1088,7 @@ impl BitStringType {
 
 
 
-/*
-NamedBit ::=
-	identifier "(" number ")"
-	| identifier "(" DefinedValue ")"
-*/
+/* NamedBit ::= identifier "(" number ")" | identifier "(" DefinedValue ")" */
 /* NamedBitList ::= NamedBit | NamedBitList "," NamedBit */
 #[derive(Debug)]
 pub struct NamedBit {
@@ -1233,16 +1174,24 @@ impl SequenceType {
 }
 
 #[derive(Debug)]
-pub enum ComponentBody {
-	Empty,
-	ExtensionAndException(ExtensionAndException),
-	ComponentTypes(ComponentTypeLists)
+pub struct ComponentBody {
+	pub types: Vec<ComponentType>
+	
+	// TODO: Add extension index and 
+
+	// Empty,
+	// ExtensionAndException(ExtensionAndException),
+	// ComponentTypes(ComponentTypeLists)
 }
 
 impl ComponentBody {
 	parser!(parse<Self> => seq!(c => {
 		c.next(symbol('{'))?;
+		let types = c.next(opt(map(ComponentTypeList::parse, |v| v.0)))?
+			.unwrap_or(vec![]);
+		c.next(symbol('}'))?;
 
+		/*
 		let val = c.next(alt!(
 			seq!(c => {
 				let v = c.next(ExtensionAndException::parse)?;
@@ -1257,7 +1206,8 @@ impl ComponentBody {
 			}),
 			map(symbol('}'), |_| Self::Empty)
 		))?;
-		Ok(val)
+		*/
+		Ok(Self { types })
 	}));
 }
 
@@ -1292,29 +1242,8 @@ ComponentTypeLists ::=
 	  RootComponentTypeList
 	| ExtensionAndException ExtensionAdditions OptionalExtensionMarker
 */
-#[derive(Debug)]
-pub enum ComponentTypeLists {
-	A(RootComponentTypeList),
-	B(RootComponentTypeList, ExtensionAndException, ExtensionAdditions),
-	C(RootComponentTypeList, ExtensionAndException, ExtensionAdditions,
-		RootComponentTypeList),
-	D(ExtensionAndException, ExtensionAdditions, RootComponentTypeList),
-	E(ExtensionAndException, ExtensionAdditions)
-}
-
-impl ComponentTypeLists {
-	parser!(parse<Self> => map(RootComponentTypeList::parse, |v| Self::A(v)));
-}
-
 
 /* RootComponentTypeList ::= ComponentTypeList */
-#[derive(Debug)]
-pub struct RootComponentTypeList(pub Vec<ComponentType>);
-
-impl RootComponentTypeList {
-	parser!(parse<Self> => map(ComponentTypeList::parse, |v| Self(v.0)));
-}
-
 
 /* ExtensionEndMarker ::= "," "..." */
 #[derive(Debug)]
@@ -1404,11 +1333,7 @@ impl VersionNumber {
 }
 
 
-/*
-ComponentTypeList ::=
-	ComponentType
-	| ComponentTypeList "," ComponentType
-*/
+/* ComponentTypeList ::= ComponentType | ComponentTypeList "," ComponentType */
 #[derive(Debug)]
 pub struct ComponentTypeList(Vec<ComponentType>);
 
@@ -1428,11 +1353,24 @@ ComponentType ::=
 */
 #[derive(Debug)]
 pub enum ComponentType {
-	Required(NamedType),
-	Optional(NamedType),
-	WithDefault(NamedType, Value),
-	ComponentsOf(Type)
+	Field(ComponentField),
+	ComponentsOf(Type) // Sequence of at least one element
 }
+
+#[derive(Debug)]
+pub struct ComponentField {
+	pub name: AsciiString,
+	pub typ: Type,
+	pub mode: ComponentMode
+}
+
+#[derive(Debug)]
+pub enum ComponentMode {
+	Required,
+	Optional,
+	WithDefault(Value)
+}
+
 
 impl ComponentType {
 	parser!(parse<Self> => alt!(
@@ -1440,7 +1378,11 @@ impl ComponentType {
 			let typ = c.next(NamedType::parse)?;
 
 			if c.next(opt(reserved("OPTIONAL")))?.is_some() {
-				return Ok(ComponentType::Optional(typ))
+				return Ok(ComponentType::Field(ComponentField {
+					name: typ.name,
+					typ: typ.typ,
+					mode: ComponentMode::Optional
+				}));
 			}
 
 			let default = c.next(opt(seq!(c => {
@@ -1449,10 +1391,18 @@ impl ComponentType {
 			})))?;
 
 			if let Some(value) = default {
-				return Ok(Self::WithDefault(typ, value)); 
+				return Ok(Self::Field(ComponentField {
+					name: typ.name,
+					typ: typ.typ,
+					mode: ComponentMode::WithDefault(value)
+				})); 
 			}
 
-			Ok(Self::Required(typ))
+			Ok(Self::Field(ComponentField {
+				name: typ.name,
+				typ: typ.typ,
+				mode: ComponentMode::Required
+			}))
 		}),
 		seq!(c => {
 			c.next(reserved("COMPONENTS"))?;
@@ -1592,7 +1542,7 @@ impl SetOfType {
 #[derive(Debug)]
 pub enum CollectionType {
 	Type(Box<Type>),
-	Named(NamedType)
+	Named(Box<NamedType>)
 }
 
 impl CollectionType {
@@ -1601,14 +1551,14 @@ impl CollectionType {
 			Constraint::parse,
 			map(SizeConstraint::parse, |c| {
 				Constraint {
-					spec: ConstraintSpec::Subtype(ElementSetSpecs {
+					spec: ElementSetSpecs {
 						root: ElementSetSpec::Unions(vec![
 							Intersections(vec![IntersectionElements {
 								elements: Elements::Subtype(SubtypeElements::Size(Box::new(c.0))),
 								exclusions: None
 						}])]),
 						additional: None
-					}),
+					},
 					exception: None
 				}
 			})
@@ -1618,7 +1568,7 @@ impl CollectionType {
 
 		let coll = c.next(alt!(
 			map(Type::parse, |v| Self::Type(Box::new(v))),
-			map(NamedType::parse, |v| Self::Named(v))
+			map(NamedType::parse, |v| Self::Named(Box::new(v)))
 		))?;
 
 		Ok((constraint, coll))
@@ -1751,30 +1701,21 @@ impl ChoiceValue {
 /* SelectionType ::= identifier "<" Type */
 
 /* PrefixedType ::= TaggedType | EncodingPrefixedType */
+
+
 #[derive(Debug)]
-pub enum PrefixedType {
-	Tagged(TaggedType)
+pub enum TypePrefix {
+	Tag(TagPrefix),
+	Encoding(EncodingPrefix)
 }
 
-impl PrefixedType {
-	parser!(parse<Self> => map(TaggedType::parse, |v| Self::Tagged(v)));
+impl TypePrefix {
+	parser!(parse<Self> => alt!(
+		map(TagPrefix::parse, |v| Self::Tag(v)),
+		map(EncodingPrefix::parse, |v| Self::Encoding(v))
+	));
 }
 
-
-/* PrefixedValue ::= Value */
-#[derive(Debug)]
-struct PrefixedValue(Value);
-
-impl PrefixedValue {
-	parser!(parse<Self> => {
-		map(Value::parse, |v| PrefixedValue(v))
-	});
-}
-
-
-/* EncodingPrefixedType ::= EncodingPrefix Type */
-
-/* EncodingPrefix ::= "[" EncodingReference EncodingInstruction "]" */
 
 /*
 TaggedType ::=
@@ -1783,38 +1724,34 @@ TaggedType ::=
 	| Tag EXPLICIT Type
 */
 #[derive(Debug)]
-pub struct TaggedType {
+pub struct TagPrefix {
 	pub tag: Tag,
-	pub mode: Option<TaggedTypeMode>,
-	pub typ: Box<Type>
+	pub mode: Option<TagMode>
 }
 
-#[derive(Debug)]
-pub enum TaggedTypeMode {
-	Implicit,
-	Explicit
-}
-
-impl TaggedType {
+impl TagPrefix {
 	parser!(parse<Self> => seq!(c => {
 		let tag = c.next(Tag::parse)?;
 		let mode = c.next(opt(alt!(
-			map(reserved("IMPLICIT"), |_| TaggedTypeMode::Explicit),
-			map(reserved("EXPLICIT"), |_| TaggedTypeMode::Implicit)
+			map(reserved("IMPLICIT"), |_| TagMode::Explicit),
+			map(reserved("EXPLICIT"), |_| TagMode::Implicit)
 		)))?;
 
-		let typ = c.next(Type::parse)?;
-
-		Ok(Self { tag, mode, typ: Box::new(typ) })
+		Ok(Self { tag, mode })
 	}));
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum TagMode {
+	Implicit,
+	Explicit
+}
 
 /* Tag ::= "[" EncodingReference Class ClassNumber "]" */
 #[derive(Debug)]
 pub struct Tag {
 	pub encoding_ref: Option<EncodingReference>,
-	pub class: Option<Class>,
+	pub class: TagClass,
 	pub number: ClassNumber
 }
 
@@ -1822,13 +1759,30 @@ impl Tag {
 	parser!(parse<Self> => seq!(c => {
 		c.next(symbol('['))?;
 		let encoding_ref = c.next(EncodingReference::parse)?;
-		let class = c.next(Class::parse)?;
+		let class = c.next(parse_class)?;
 		let number = c.next(ClassNumber::parse)?;
 		c.next(symbol(']'))?;
 		Ok(Self { encoding_ref, class, number })
 	}));
 }
 
+/* EncodingPrefixedType ::= EncodingPrefix Type */
+/* EncodingPrefix ::= "[" EncodingReference EncodingInstruction "]" */
+#[derive(Debug)]
+pub struct EncodingPrefix {
+	pub reference: Option<EncodingReference>,
+	pub instruction: Bytes
+}
+
+impl EncodingPrefix {
+	parser!(parse<Self> => seq!(c => {
+		c.next(symbol('['))?;
+		let reference = c.next(EncodingReference::parse)?;
+		let instruction = c.next(take_while(|c| c != ']' as u8))?;
+		c.next(symbol(']'))?;
+		Ok(Self { reference, instruction })
+	}));
+}
 
 /* EncodingReference ::= encodingreference ":" | empty */
 #[derive(Debug)]
@@ -1859,25 +1813,11 @@ impl ClassNumber {
 
 
 /* Class ::= UNIVERSAL | APPLICATION | PRIVATE | empty */
-#[derive(Debug)]
-pub enum Class {
-	Universal,
-	Application,
-	Private
-}
-
-impl Class {
-	parser!(parse<Option<Self>> => opt(alt!(
-		map(reserved("UNIVERSAL"), |_| Self::Universal),
-		map(reserved("APPLICATION"), |_| Self::Application),
-		map(reserved("PRIVATE"), |_| Self::Private)
-	)));
-}
-
-
-/* EncodingPrefixedType ::= EncodingPrefix Type */
-
-/* EncodingPrefix ::= "[" EncodingReference EncodingInstruction "]" */
+parser!(parse_class<TagClass> => map(opt(alt!(
+	map(reserved("UNIVERSAL"), |_| TagClass::Universal),
+	map(reserved("APPLICATION"), |_| TagClass::Application),
+	map(reserved("PRIVATE"), |_| TagClass::Private)
+)), |v| v.unwrap_or(TagClass::ContextSpecific)));
 
 
 /* ObjectIdentifierType ::= OBJECT IDENTIFIER */
@@ -1892,119 +1832,6 @@ impl ObjectIdentifierType {
 	}));
 }
 
-
-// TODO: Need better parsing of the form prefixed by a DefinedValue
-/*
-ObjectIdentifierValue ::=
-	"{" ObjIdComponentsList "}"
-	| "{" DefinedValue ObjIdComponentsList "}"
-*/
-#[derive(Debug)]
-pub struct ObjectIdentifierValue(Vec<ObjIdComponents>);
-
-impl ObjectIdentifierValue {
-	parser!(parse<Self> => seq!(c => {
-		c.next(symbol('{'))?;
-		let arr = c.next(ObjIdComponentsList::parse)?;
-		c.next(symbol('}'))?;
-		Ok(Self(arr.0))
-	}));
-}
-
-
-/*
-ObjIdComponentsList ::=
-	ObjIdComponents
-	| ObjIdComponents ObjIdComponentsList
-*/
-#[derive(Debug)]
-pub struct ObjIdComponentsList(Vec<ObjIdComponents>);
-
-impl ObjIdComponentsList {
-	parser!(parse<Self> => map(many1(ObjIdComponents::parse), |v| Self(v)));
-}
-
-/*
-ObjIdComponents ::=
-	NameForm
-	| NumberForm
-	| NameAndNumberForm
-	| DefinedValue
-*/
-#[derive(Debug)]
-pub enum ObjIdComponents {
-	Regular(DefinitiveObjIdComponent),
-	Defined(DefinedValue)
-}
-
-impl ObjIdComponents {
-	parser!(parse<Self> => alt!(
-		map(DefinitiveObjIdComponent::parse, |v| Self::Regular(v)),
-		map(DefinedValue::parse, |v| Self::Defined(v))
-	));
-}
-
-
-/* NameForm ::= identifier */
-#[derive(Debug)]
-pub struct NameForm(AsciiString);
-
-impl NameForm {
-	parser!(parse<Self> => map(identifier, |v| Self(v)));
-}
-
-
-/* NumberForm ::= number | DefinedValue */
-#[derive(Debug)]
-pub enum NumberForm {
-	Immediate(usize),
-	Defined(DefinedValue)
-}
-
-impl NumberForm {
-	parser!(parse<Self> => alt!(
-		map(number, |v| Self::Immediate(v)),
-		map(DefinedValue::parse, |v| Self::Defined(v))
-	));
-}
-
-
-/* NameAndNumberForm ::= identifier "(" NumberForm ")" */
-#[derive(Debug)]
-pub struct NameAndNumberForm {
-	pub name: AsciiString,
-	pub number: NumberForm
-}
-
-impl NameAndNumberForm {
-	parser!(parse<Self> => seq!(c => {
-		let name = c.next(identifier)?;
-		c.next(symbol('('))?;
-		let number = c.next(NumberForm::parse)?;
-		c.next(symbol(')'))?;
-		Ok(Self { name, number })
-	}));
-}
-
-/* RelativeOIDType ::= RELATIVE-OID */
-
-/*
-RelativeOIDValue ::=
-	"{" RelativeOIDComponentsList "}"
-*/
-
-/*
-RelativeOIDComponentsList ::=
-	RelativeOIDComponents
-	| RelativeOIDComponents RelativeOIDComponentsList
-*/
-
-/*
-RelativeOIDComponents ::=
-	NumberForm
-	| NameAndNumberForm
-	| DefinedValue
-*/
 
 /* IRIType ::= OID-IRI */
 
@@ -2064,11 +1891,6 @@ impl EmbeddedPDVType {
 /* ExternalValue ::= SequenceValue */
 
 
-/*
-CharacterStringType ::=
-	RestrictedCharacterStringType
-	| UnrestrictedCharacterStringType
-*/
 #[derive(Debug)]
 pub enum CharacterStringType {
 	Restricted(RestrictedCharacterStringType), Unrestricted
@@ -2088,11 +1910,7 @@ CharacterStringValue ::=
 	| UnrestrictedCharacterStringValue
 */
 
-/*
-XMLCharacterStringValue ::=
-	XMLRestrictedCharacterStringValue
-	| XMLUnrestrictedCharacterStringValue
-*/
+
 #[derive(Debug)]
 pub enum RestrictedCharacterStringType {
 	BMPString,
@@ -2244,7 +2062,6 @@ impl TableRow {
 }
 
 
-
 /* UnrestrictedCharacterStringType ::= CHARACTER STRING */
 #[derive(Debug)]
 pub struct UnrestrictedCharacterStringType {}
@@ -2261,7 +2078,6 @@ impl UnrestrictedCharacterStringType {
 
 
 /* UnrestrictedCharacterStringValue ::= SequenceValue */
-
 /* UsefulType ::= typereference */
 #[derive(Debug)]
 pub struct UsefulType(AsciiString);
@@ -2275,14 +2091,14 @@ impl UsefulType {
 /* Constraint ::= "(" ConstraintSpec ExceptionSpec ")" */
 #[derive(Debug)]
 pub struct Constraint {
-	pub spec: ConstraintSpec,
+	pub spec: ElementSetSpecs,
 	pub exception: Option<ExceptionSpec>
 }
 
 impl Constraint {
 	parser!(parse<Self> => seq!(c => {
 		c.next(symbol('('))?;
-		let spec = c.next(ConstraintSpec::parse)?;
+		let spec = c.next(ConstraintSpec::parse)?.0;
 		let exception = c.next(ExceptionSpec::parse)?;
 		c.next(symbol(')'))?;
 		Ok(Self { spec, exception })
@@ -2292,13 +2108,11 @@ impl Constraint {
 
 /* ConstraintSpec ::= SubtypeConstraint | GeneralConstraint */
 #[derive(Debug)]
-pub enum ConstraintSpec {
-	Subtype(ElementSetSpecs)
-}
+pub struct ConstraintSpec(ElementSetSpecs);
 
 impl ConstraintSpec {
 	parser!(parse<Self> => map(SubtypeConstraint::parse,
-							   |v| Self::Subtype(v)));
+							   |v| Self(v)));
 }
 
 
@@ -2377,8 +2191,6 @@ impl ElementSetSpec {
 }
 
 
-/* Unions ::= Intersections | UElems UnionMark Intersections */
-/* UElems ::= Unions */
 #[derive(Debug)]
 pub struct Unions(Vec<Intersections>);
 
@@ -2389,11 +2201,6 @@ impl Unions {
 }
 
 
-/*
-Intersections ::= IntersectionElements
-	| IElems IntersectionMark IntersectionElements
-*/
-/* IElems ::= Intersections */
 #[derive(Debug)]
 pub struct Intersections(Vec<IntersectionElements>);
 
@@ -2639,12 +2446,7 @@ InnerTypeConstraints ::=
 
 /* SingleTypeConstraint::= Constraint */
 
-/*
-MultipleTypeConstraints ::=
-	FullSpecification
-	| PartialSpecification
-*/
-
+/* MultipleTypeConstraints ::= FullSpecification | PartialSpecification */
 
 /* FullSpecification ::= "{" TypeConstraints "}" */
 
@@ -2692,15 +2494,6 @@ impl PatternConstraint {
 }
 
 /* PropertySettings ::= SETTINGS simplestring */
-
-/* PropertyAndSettingPair ::= PropertyName "=" SettingName */
-#[derive(Debug)]
-pub struct PropertyAndSettingPair {
-	pub property: PropertyName,
-	pub setting: SettingName,
-}
-
-
 
 /* PropertyName ::= psname */
 pub type PropertyName = AsciiString;
@@ -2752,72 +2545,6 @@ impl ExceptionIdentification {
 }
 
 
-/*
-ObjectSetElements ::=
-	Object
-	| DefinedObjectSet
-	| ObjectSetFromObjects
-	| ParameterizedObjectSet
-*/
-
-
-
-/*
-ParameterizedReference ::= Reference | Reference "{" "}"
-
-ParameterizedType ::=
-	SimpleDefinedType
-	ActualParameterList
-
-SimpleDefinedType ::=
-	ExternalTypeReference |
-	typereference
-
-ParameterizedValue ::=
-	SimpleDefinedValue
-	ActualParameterList
-
-SimpleDefinedValue ::=
-	ExternalValueReference |
-	valuereference
-
-ParameterizedValueSetType ::=
-	SimpleDefinedType
-	ActualParameterList
-
-ParameterizedObjectClass ::=
-	DefinedObjectClass
-	ActualParameterList
-
-ParameterizedObjectSet ::=
-	DefinedObjectSet
-	ActualParameterList
-
-ParameterizedObject ::=
-	DefinedObject
-	ActualParameterList
-
-
-ActualParameterList ::=
-" { " ActualParameter "," + " } "
-ActualParameter ::=
-Type
-|
-Value
-|
-ValueSet
-|
-DefinedObjectClass
-|
-Object
-|
-ObjectSet
-
-*/
-
-// Vec<Vec<>>
-
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -2833,13 +2560,13 @@ mod tests {
 		// return;
 
 		// PKIX1Explicit88
-		let mut file = std::fs::File::open("/home/dennis/workspace/dacha/pkg/crypto/src/asn/PKIX1Implicit88.asn1").unwrap();
+		let mut file = std::fs::File::open("/home/dennis/workspace/dacha/pkg/crypto/src/asn/PKIX1Explicit88.asn1").unwrap();
 		let mut data = vec![];
 		file.read_to_end(&mut data).unwrap();
 
 		let (module, _) = complete(ModuleDefinition::parse)(Bytes::from(data))
 			.unwrap();
 
-		// println!("{:#?}", module);
+		println!("{:#?}", module);
 	}
 }
