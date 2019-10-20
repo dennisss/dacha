@@ -226,14 +226,14 @@ impl ExtensionDefault {
 #[derive(Debug)]
 pub struct ModuleBody {
 	pub exports: Option<Exports>,
-	pub imports: Option<Imports>,
+	pub imports: Vec<SymbolsFromModule>,
 	pub assignments: Vec<Assignment>
 }
 
 impl ModuleBody {
 	parser!(parse<Option<Self>> => opt(seq!(c => {
 		let exports = c.next(Exports::parse)?;
-		let imports = c.next(Imports::parse)?;
+		let imports = c.next(Imports::parse)?.map(|v| v.symbols).unwrap_or(vec![]);
 		let assignments = c.next(AssignmentList::parse)?.0;
 		Ok(Self { exports, imports, assignments })
 	})));
@@ -287,13 +287,14 @@ impl SymbolsExported {
 /* Imports ::= IMPORTS SymbolsImported ";" | empty */
 #[derive(Debug)]
 pub struct Imports {
-	pub symbols: Option<SymbolsImported>
+	pub symbols: Vec<SymbolsFromModule>
 }
 
 impl Imports {
 	parser!(parse<Option<Self>> => opt(seq!(c => {
 		c.next(reserved("IMPORTS"))?;
-		let symbols = c.next(SymbolsImported::parse)?;
+		let symbols = c.next(SymbolsImported::parse)?
+			.map(|v| v.0).unwrap_or(vec![]);
 		c.next(symbol(';'))?;
 		Ok(Self { symbols })
 	})));
@@ -301,8 +302,7 @@ impl Imports {
 
 
 /* SymbolsImported ::= SymbolsFromModuleList | empty */
-#[derive(Debug)]
-pub struct SymbolsImported(Vec<SymbolsFromModule>);
+struct SymbolsImported(Vec<SymbolsFromModule>);
 
 impl SymbolsImported {
 	parser!(parse<Option<Self>> => {
@@ -316,8 +316,7 @@ SymbolsFromModuleList ::=
 	SymbolsFromModule
 	| SymbolsFromModuleList SymbolsFromModule
 */
-#[derive(Debug)]
-pub struct SymbolsFromModuleList(Vec<SymbolsFromModule>);
+struct SymbolsFromModuleList(Vec<SymbolsFromModule>);
 
 impl SymbolsFromModuleList {
 	parser!(parse<Self> => {
@@ -525,6 +524,8 @@ impl ExternalValueReference {
 	});
 }
 
+// NOTE: Rc is mainly convenient for the compiler.
+use std::rc::Rc;
 
 /* TypeAssignment ::= typereference "::=" Type */
 #[derive(Debug)]
@@ -548,7 +549,7 @@ impl TypeAssignment {
 pub struct ValueAssignment {
 	pub name: AsciiString,
 	pub typ: Type,
-	pub value: Value
+	pub value: Rc<Value>
 }
 
 impl ValueAssignment {
@@ -556,7 +557,7 @@ impl ValueAssignment {
 		let name = c.next(valuereference)?;
 		let typ = c.next(Type::parse)?;
 		c.next(sequence("::="))?;
-		let value = c.next(Value::parse)?;
+		let value = Rc::new(c.next(Value::parse)?);
 		Ok(Self { name, typ, value })
 	}));
 }
@@ -582,7 +583,7 @@ pub struct Type {
 
 #[derive(Debug)]
 pub enum TypeDesc {
-	Builtin(BuiltinType),
+	Builtin(Rc<BuiltinType>),
 	Referenced(AsciiString)
 }
 
@@ -590,7 +591,7 @@ impl Type {
 	parser!(parse<Self> => seq!(c => {
 		let prefixes = c.next(many(TypePrefix::parse))?;
 		let desc = c.next(alt!(
-			map(BuiltinType::parse, |v| TypeDesc::Builtin(v)),
+			map(BuiltinType::parse, |v| TypeDesc::Builtin(Rc::new(v))),
 			map(ReferencedType::parse, |v| TypeDesc::Referenced(v.0))	
 		))?;
 		let constraints = c.next(many(Constraint::parse))?;
@@ -697,7 +698,7 @@ impl NamedType {
 
 #[derive(Debug)]
 pub enum Value {
-	Builtin(BuiltinValue),
+	Builtin(Rc<BuiltinValue>),
 	Referenced(ReferencedValue),
 	// ObjectClassField(ObjectClassFieldValue)
 }
@@ -705,7 +706,7 @@ pub enum Value {
 impl Value {
 	parser!(parse<Self> => alt!(
 		// TODO
-		map(BuiltinValue::parse, |v| Self::Builtin(v)),
+		map(BuiltinValue::parse, |v| Self::Builtin(Rc::new(v))),
 		map(ReferencedValue::parse, |v| Self::Referenced(v))
 		// map(ObjectClassFieldValue::parse, |v| Self::ObjectClassField(v))
 	));
@@ -780,7 +781,7 @@ impl AnyType {
 
 /* ReferencedValue ::= DefinedValue | ValueFromObject */
 #[derive(Debug)]
-pub struct ReferencedValue(DefinedValue);
+pub struct ReferencedValue(pub DefinedValue);
 
 impl ReferencedValue {
 	parser!(parse<Self> => map(DefinedValue::parse, |v| Self(v)));
@@ -930,7 +931,7 @@ impl TextInteger {
 
 /* EnumeratedType ::= ENUMERATED "{" Enumerations "}" */
 #[derive(Debug)]
-pub struct EnumeratedType(Enumerations);
+pub struct EnumeratedType(pub Enumerations);
 
 impl EnumeratedType {
 	parser!(parse<Self> => seq!(c => {
@@ -951,14 +952,14 @@ Enumerations ::=
 */
 #[derive(Debug)]
 pub struct Enumerations {
-	pub items: Vec<EnumerationItem>,
+	pub items: Vec<NamedNumber>,
 	pub extensible: bool,
 	pub exception: Option<ExceptionSpec>
 }
 
 impl Enumerations {
 	parser!(parse<Self> => seq!(c => {
-		let mut items = c.next(RootEnumeration::parse)?.0;
+		let mut items_raw = c.next(RootEnumeration::parse)?.0;
 		let vals = c.next(opt(seq!(c => {
 			c.next(symbol(','))?;
 			c.next(sequence("..."))?;
@@ -974,11 +975,23 @@ impl Enumerations {
 
 		let (extensible, exception) =
 			if let Some((exception, mut addition)) = vals {
-				items.append(&mut addition);
+				items_raw.append(&mut addition);
 				(true, exception)
 			} else {
 				(false, None)
 			};
+
+		let mut items = vec![];
+		for (i, item) in items_raw.into_iter().enumerate() {
+			// TODO: If an un-numbered item appears after a numbered one, we
+			// should start numbered based on that one (although this is
+			// complicated by referenced numbers).
+			items.push(NamedNumber {
+				name: item.name,
+				value: item.number
+					.unwrap_or(NamedNumberValue::Immediate(i as isize))
+			});
+		}
 
 		Ok(Self { items, extensible, exception })
 	}));
@@ -1002,8 +1015,7 @@ impl AdditionalEnumeration {
 
 
 /* Enumeration ::= EnumerationItem | EnumerationItem "," Enumeration */
-#[derive(Debug)]
-pub struct Enumeration(Vec<EnumerationItem>);
+struct Enumeration(Vec<EnumerationItem>);
 
 impl Enumeration {
 	parser!(parse<Self> => map(
@@ -1013,10 +1025,9 @@ impl Enumeration {
 
 
 /* EnumerationItem ::= identifier | NamedNumber */
-#[derive(Debug)]
-pub struct EnumerationItem {
-	pub name: AsciiString,
-	pub number: Option<NamedNumberValue>
+struct EnumerationItem {
+	name: AsciiString,
+	number: Option<NamedNumberValue>
 }
 
 impl EnumerationItem {

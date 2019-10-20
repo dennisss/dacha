@@ -11,11 +11,11 @@ pub struct Any {
 }
 
 pub struct SequenceOf<T> {
-	items: Vec<T>
+	pub items: Vec<T>
 }
 
 pub struct SetOf<T> {
-	items: Vec<T>
+	pub items: Vec<T>
 }
 
 
@@ -23,27 +23,51 @@ pub struct UTF8String {
 	pub data: Bytes
 }
 
-pub struct PrintableString(AsciiString);
+pub struct PrintableString(pub AsciiString);
 
-pub struct ObjectIdentifier {
-	components: Vec<usize>
+pub enum ObjectIdentifier {
+	Static(&'static [usize]),
+	Dynamic(Vec<usize>)
 }
 
 impl ObjectIdentifier {
-	pub fn new() -> Self {
-		Self { components: vec![] }
+	/// Creates an ObjectIdentifier backed by a static array. Meant for top
+	/// level declarations of compiled values.
+	pub const fn from(components: &'static [usize]) -> Self {
+		Self::Static(components)
 	}
 
-	pub fn extend<T: AsRef<[usize]>>(mut self, vals: T) -> Self {
-		self.components.extend_from_slice(vals.as_ref());
-		self
+	pub fn new() -> Self {
+		Self::Static(&[])
 	}
+
+	// pub fn extend<T: AsRef<[usize]>>(mut self, vals: T) -> Self {
+	// 	self.components.extend_from_slice(vals.as_ref());
+	// 	self
+	// }
 
 	// pub fn from_str(s: &str) -> Self {
 	// 	// Parse using the 
 	// }
 
 }
+
+impl std::convert::AsRef<[usize]> for ObjectIdentifier {
+	fn as_ref(&self) -> &[usize] {
+		match self {
+			Self::Dynamic(v) => &v,
+			Self::Static(v) => v
+		}
+	}
+}
+
+#[macro_export]
+macro_rules! oid {
+	($e:expr) => {
+		ObjectIdentifier::from(&[$e])
+	};
+}
+
 
 // TODO: Generally we always need to check values to ensure that the value is
 // at least the right type.
@@ -61,16 +85,38 @@ pub struct OctetString {
 	pub data: Bytes
 }
 
+impl std::convert::AsRef<[u8]> for OctetString {
+	fn as_ref(&self) -> &[u8] { &self.data }
+}
+
+pub struct NumericString {
+
+}
+
+pub struct VisibleString {
+	
+}
 
 // TeletexString
+pub struct TeletexString {
+
+}
+
+pub type T61String = TeletexString;
 
 // PrintableString
 
 // UniversalString
+pub struct UniversalString {
+
+}
 
 // UTF8String
 
 // BMPString
+pub struct BMPString {
+
+}
 
 pub struct IA5String {
 	pub data: AsciiString
@@ -80,7 +126,7 @@ pub struct IA5String {
 
 // GeneralizedTime
 pub struct GeneralizedTime {
-	
+
 }
 
 /*

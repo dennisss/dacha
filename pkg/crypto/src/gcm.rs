@@ -4,6 +4,7 @@ use crate::utils::*;
 use crate::cipher::*;
 use common::errors::*;
 use crate::constant_eq;
+use crate::aead::*;
 
 type Block = [u8; 16];
 const BLOCK_SIZE: usize = 16;
@@ -210,9 +211,8 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
 
 	pub fn decrypt(&mut self, mut auth_cipher: &[u8], additional_data: &[u8],
 				   mut plain: &mut Vec<u8>) -> Result<()> {
-		// Ensure cipher is in full block lengths. Also must have enough bytes
-		// for the tag.
-		if auth_cipher.len() % BLOCK_SIZE != 0 || auth_cipher.len() < BLOCK_SIZE {
+		// Must have enough bytes for the tag.
+		if auth_cipher.len() < BLOCK_SIZE {
 			return Err("Invalid ciphertext size".into());
 		}
 
@@ -235,16 +235,60 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
 			xor_inplace(c, plain_block);
 		});
 
+		// Must truncate output if last block is incomplete.
+		// TODO: Assumes output buffere was initially empty.
+		plain.truncate(cipher.len());
+
 		let mut expected_tag = hasher.finish(additional_data.len(), cipher.len());
 		xor_inplace(&self.enc_counter_0, &mut expected_tag);
 
+
 		if !constant_eq(tag, &expected_tag) {
+			println!("{:?}\n{:?}", tag, expected_tag);
 			return Err("Incorrect tag".into());
 		}
 
 		Ok(())
 	}
 }
+
+pub struct AES_GCM {
+	key_size: usize
+}
+
+impl AES_GCM {
+	pub fn aes128() -> Self {
+		Self { key_size: (128 / 8) }
+	}
+	pub fn aes256() -> Self {
+		Self { key_size: (256 / 8) }
+	}
+}
+
+impl AuthEncAD for AES_GCM {
+	fn key_size(&self) -> usize { self.key_size }
+
+	// NOTE: Technically any size of nonce is valid, but to get TLS to use the
+	// recommended size, we fix it. 
+	fn nonce_range(&self) -> (usize, usize) { (12, 12) }
+
+	fn encrypt(&self, key: &[u8], nonce: &[u8], plaintext: &[u8],
+			   additional_data: &[u8], out: &mut Vec<u8>) {
+		assert_eq!(key.len(), self.key_size);
+		let c = AESBlockCipher::create(key).unwrap();
+		let mut gcm = GaloisCounterMode::new(nonce, c);
+		gcm.encrypt(plaintext, additional_data, out);
+	}
+
+	fn decrypt(&self, key: &[u8], nonce: &[u8], ciphertext: &[u8],
+			   additional_data: &[u8], out: &mut Vec<u8>) -> Result<()> {
+		assert_eq!(key.len(), self.key_size);
+		let c = AESBlockCipher::create(key).unwrap();
+		let mut gcm = GaloisCounterMode::new(nonce, c);
+		gcm.decrypt(ciphertext, additional_data, out)
+	}
+}
+
 
 /// Computed the 
 pub struct GHasher {
@@ -308,6 +352,9 @@ impl GHasher {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	// TODO: Must test for partial encryption/decryption of plaintext that
+	// doesn't fill an exact number of blocks.
 
 	#[test]
 	fn gfmul128_test() {

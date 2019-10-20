@@ -2,6 +2,7 @@ use common::errors::*;
 use bytes::Bytes;
 
 /// An str backed by bytes that we know only contain bytes 0-127.
+#[derive(PartialEq, Clone)]
 pub struct AsciiString {
 	pub data: Bytes
 }
@@ -21,6 +22,21 @@ impl AsciiString {
 		Ok(AsciiString { data: Bytes::from(out) })
 	}
 
+	pub fn from_string(s: String) -> Result<AsciiString> {
+		Self::from_bytes(s.into_bytes().into())
+	}
+
+	pub fn from_bytes(data: Bytes) -> Result<AsciiString> {
+		for v in data.iter().cloned() {
+			if v > 127 {
+				return Err("Byte outside of ASCII range".into());
+			}
+		}
+
+		Ok(AsciiString { data })
+	}
+
+	// TODO: Rename from_bytes_unchecked
 	pub unsafe fn from_ascii_unchecked(data: Bytes) -> AsciiString {
 		AsciiString { data }
 	}

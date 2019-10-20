@@ -3,7 +3,7 @@ use crate::hmac::*;
 use common::ceil_div;
 
 /// https://tools.ietf.org/html/rfc5869
-struct HKDF {
+pub struct HKDF {
 	hasher_factory: HasherFactory,
 	hash_len: usize
 }
@@ -13,6 +13,10 @@ impl HKDF {
 		// NOTE: This should be output size of HMAC (not of the hash necessarily).
 		let hash_len = hasher_factory.create().output_size();
 		Self { hasher_factory, hash_len }
+	}
+
+	pub fn hash_size(&self) -> usize {
+		self.hash_len
 	}
 
 	pub fn extract(&self, salt: &[u8], ikm: &[u8]) -> Vec<u8> {

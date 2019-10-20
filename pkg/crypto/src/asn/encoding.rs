@@ -298,25 +298,18 @@ const TAG_NUMBER_RELATIVE_OID_IRI: usize = 36;
 
 pub struct DERReader {
 	remaining: Bytes,
-	implicit_tag: Option<Tag>,
-	next: Option<Element>
+	implicit_tag: Option<Tag>
 }
 
 impl DERReader {
 	pub fn new(input: Bytes) -> Self {
-		Self { remaining: input, implicit_tag: None, next: None }
+		Self { remaining: input, implicit_tag: None }
 	}
 
 	/// NOTE: The given number should be for the universal class.
 	fn read_element(&mut self, class: TagClass, number: usize,
-					constructed: bool) -> Result<Option<Bytes>> {
-		let el =
-			if let Some(e) = self.next.take() { e }
-			else {
-				let (e, rest) = Element::parse(self.remaining.clone())?;
-				self.remaining = rest;
-				e
-			};
+					constructed: bool) -> Result<Bytes> {
+		let (el, rest) = Element::parse(self.remaining.clone())?;
 
 		let tag = self.implicit_tag.take().unwrap_or(Tag { class, number });
 		
@@ -325,16 +318,39 @@ impl DERReader {
 				return Err("Mismatch in P/C type".into());
 			}
 
-			Ok(Some(el.data))
+			self.remaining = rest;
+			Ok(el.data)
 		} else {
-			self.next = Some(el);
-			Ok(None)
+			Err("Wrong tag".into())
+		}
+	}
+
+	/// NOTE: If this internally reads an explicitly tagged element, then
+	/// we assume that no element immediately after it has the same tag
+	pub fn read_option<T, F: FnMut(&mut DERReader) -> Result<T>>(
+		&mut self, mut f: F
+	) -> Result<Option<T>> {
+		let initial_len = self.remaining.len();
+		let res = f(self);
+		match res {
+			Ok(v) => Ok(Some(v)),
+			Err(e) => {
+				// NOTE: We assume that there is no other code in the inner
+				// parser that could error out before the read_element call.
+				if self.remaining.len() == initial_len {
+					Ok(None)
+				} else {
+					Err(e)
+				}
+			}
 		}
 	}
 
 	pub fn read_implicitly<T, F: FnMut(&mut DERReader) -> T>(
 		&mut self, tag: Tag, mut f: F) -> T {
-		self.implicit_tag = Some(tag);
+		if self.implicit_tag.is_none() {
+			self.implicit_tag = Some(tag);
+		}
 
 		let ret = f(self);
 
@@ -345,44 +361,61 @@ impl DERReader {
 		ret
 	}
 
-	pub fn read_explicitly<T, F: FnMut(&mut DERReader) -> Result<Option<T>>>(
-		&mut self, tag: Tag, mut f: F) -> Result<Option<T>> {
+	pub fn read_explicitly<T, F: FnMut(&mut DERReader) -> Result<T>>(
+		&mut self, tag: Tag, mut f: F) -> Result<T> {
 
-		let data = some_or_else!(self.read_element(
-			tag.class, tag.number, true)?);
+		let data = self.read_element(tag.class, tag.number, true)?;
 		
 		let mut reader = DERReader::new(data);
-		let v = match f(&mut reader)? {
-			Some(v) => v,
-			None => { return Err("Wrong type inside of explicit".into()); }
-		};
+		let v = f(&mut reader)?;
 
 		// TODO: Validate that we are always checking for this.
 		if reader.remaining.len() > 0 {
 			return Err("Explicitly typed object contains extra data".into());
 		}
 
-		Ok(Some(v))
+		Ok(v)
 	}
 
-	pub fn read_bool(&mut self) -> Result<Option<bool>> {
-		let data = some_or_else!(self.read_element(
-			TagClass::Universal, TAG_NUMBER_BOOLEAN, false)?);
+	// The calling function should try to read each inner type using read_option
+	// and pick the first that suceeds
+	pub fn read_choice<T, F: FnMut(&mut DERReader) -> Result<T>>(
+		&mut self, mut f: F) -> Result<T> {
+		if let Some(t) = self.implicit_tag.take() {
+			self.read_explicitly(t, f)
+		} else {
+			f(self)
+		}
+	}
+
+	// pub fn write_choice<F: FnMut(&mut DERWriter)>(&mut self, mut f: F) {
+	// 	// When an implicit tag is specified, it turns into an explicit tag.
+	// 	// TODO: This may only be inside of sets?
+	// 	if let Some(t) = self.implicit_tag.take() {
+	// 		self.write_explicitly(t, f);
+	// 	} else {
+	// 		f(self);
+	// 	}
+	// }
+
+	pub fn read_bool(&mut self) -> Result<bool> {
+		let data = self.read_element(
+			TagClass::Universal, TAG_NUMBER_BOOLEAN, false)?;
 
 		if data.len() != 1 {
 			Err("Data wrong size".into())
 		} else if data[0] == 0x00 {
-			Ok(Some(false))
+			Ok(false)
 		} else if data[0] == 0xff {
-			Ok(Some(true))
+			Ok(true)
 		} else {
 			Err("Invalid boolean value".into())
 		}
 	}
 
-	pub fn read_int(&mut self) -> Result<Option<isize>> {
-		let data = some_or_else!(self.read_element(
-			TagClass::Universal, TAG_NUMBER_INTEGER, false)?);
+	pub fn read_int(&mut self) -> Result<isize> {
+		let data = self.read_element(
+			TagClass::Universal, TAG_NUMBER_INTEGER, false)?;
 		const ISIZE_LEN: usize = std::mem::size_of::<isize>();
 		if data.len() < 1 || data.len() > ISIZE_LEN {
 			return Err("Invalid data length".into());
@@ -396,7 +429,7 @@ impl DERReader {
 
 		let val = isize::from_be_bytes(buf);
 
-		Ok(Some(val))
+		Ok(val)
 	}
 
 	// pub fn write_bitstring(&mut self, bits: &BitString) {
@@ -409,26 +442,32 @@ impl DERReader {
 	// 	self.out.extend_from_slice(octets);
 	// }
 
-	pub fn read_octetstring(&mut self) -> Result<Option<OctetString>> {
-		let data = some_or_else!(self.read_element(
-			TagClass::Universal, TAG_NUMBER_OCTET_STRING, false)?);
-		Ok(Some(OctetString { data }))
+	pub fn read_octetstring(&mut self) -> Result<OctetString> {
+		let data = self.read_element(
+			TagClass::Universal, TAG_NUMBER_OCTET_STRING, false)?;
+		Ok(OctetString { data })
 	}
 
-	pub fn read_null(&mut self) -> Result<Option<()>> {
-		let data = some_or_else!(self.read_element(
-			TagClass::Universal, TAG_NUMBER_NULL, false)?);
+	pub fn read_null(&mut self) -> Result<()> {
+		let data = self.read_element(
+			TagClass::Universal, TAG_NUMBER_NULL, false)?;
 		if data.len() != 0 {
 			return Err("Expected no data in NULL".into());
 		}
 
-		Ok(Some(()))
+		Ok(())
 	}
 
-	pub fn read_sequence<T, F: Fn(&mut DERReader) -> Result<Option<T>>>(
-		&mut self, extensible: bool, f: F) -> Result<Option<T>> {
-		let data = some_or_else!(self.read_element(
-			TagClass::Universal, TAG_NUMBER_SEQUENCE, true)?);
+	pub fn read_enumerated(&mut self) -> Result<isize> {
+		self.read_implicitly(
+			Tag { class: TagClass::Universal, number: TAG_NUMBER_ENUMERATED },
+			|r| r.read_int())
+	}
+
+	pub fn read_sequence<T, F: Fn(&mut DERReader) -> Result<T>>(
+		&mut self, extensible: bool, f: F) -> Result<T> {
+		let data = self.read_element(
+			TagClass::Universal, TAG_NUMBER_SEQUENCE, true)?;
 
 		let mut reader = Self::new(data);
 		let out = f(&mut reader)?;
@@ -441,9 +480,9 @@ impl DERReader {
 	}
 
 	pub fn read_sequence_of<T: DERReadable>(&mut self)
-	-> Result<Option<Vec<T>>> {
-		let data = some_or_else!(self.read_element(
-			TagClass::Universal, TAG_NUMBER_SEQUENCE, true)?);
+	-> Result<Vec<T>> {
+		let data = self.read_element(
+			TagClass::Universal, TAG_NUMBER_SEQUENCE, true)?;
 		
 		let mut items = vec![];
 		let mut reader = Self::new(data);
@@ -451,7 +490,7 @@ impl DERReader {
 			items.push(T::read_der(&mut reader)?);
 		}
 		
-		Ok(Some(items))
+		Ok(items)
 	}
 
 
@@ -495,7 +534,9 @@ impl<'a> DERWriter<'a> {
 
 	pub fn write_implicitly<F: FnMut(&mut DERWriter)>(
 		&mut self, tag: Tag, mut f: F) {
-		self.implicit_tag = Some(tag);
+		if self.implicit_tag.is_none() {
+			self.implicit_tag = Some(tag);
+		}
 
 		f(self);
 
@@ -578,9 +619,12 @@ impl<'a> DERWriter<'a> {
 		self.write_length(0);
 	}
 
-	// pub fn write_enum(&mut self, value: usize, out: &mut Vec<u8>) {
-	// 	self.write_int(value, out);
-	// }
+	// TODO: Should only allow a usize?
+	pub fn write_enumerated(&mut self, v: isize) {
+		self.write_implicitly(
+			Tag { class: TagClass::Universal, number: TAG_NUMBER_ENUMERATED },
+			move |w| w.write_int(v));
+	}
 
 	pub fn write_sequence<F: Fn(&mut DERWriter)>(&mut self, f: F) {
 		let mut data = vec![];
@@ -708,8 +752,202 @@ pub trait DERWriteable {
 	fn write_der(&self, writer: &mut DERWriter);
 }
 
+impl DERWriteable for bool {
+	fn write_der(&self, writer: &mut DERWriter) { writer.write_bool(*self); }
+}
+impl DERWriteable for isize {
+	fn write_der(&self, writer: &mut DERWriter) { writer.write_int(*self); }
+}
+impl DERWriteable for BitString {
+	fn write_der(&self, writer: &mut DERWriter) {
+		writer.write_bitstring(self);
+	}
+}
+impl DERWriteable for OctetString {
+	fn write_der(&self, writer: &mut DERWriter) {
+		writer.write_octetstring(self.as_ref());
+	}
+}
+impl<T: DERWriteable> DERWriteable for SequenceOf<T> {
+	fn write_der(&self, writer: &mut DERWriter) {
+		writer.write_sequence_of(&self.items);
+	}
+}
+impl DERWriteable for ObjectIdentifier {
+	fn write_der(&self, writer: &mut DERWriter) {
+		// TODO
+	}
+}
+impl DERWriteable for UTF8String {
+	fn write_der(&self, writer: &mut DERWriter) {
+		// TODO
+	}
+}
+impl DERWriteable for NumericString {
+	fn write_der(&self, writer: &mut DERWriter) {
+		// TODO
+	}
+}
+impl DERWriteable for PrintableString {
+	fn write_der(&self, writer: &mut DERWriter) {
+		// TODO
+	}
+}
+impl DERWriteable for TeletexString {
+	fn write_der(&self, writer: &mut DERWriter) {
+		// TODO (aka T61STRING)
+	}
+}
+// const TAG_NUMBER_VIDEOTEXSTRING: usize = 21;
+
+impl DERWriteable for IA5String {
+	fn write_der(&self, writer: &mut DERWriter) {
+		writer.write_ia5string(&self.data);
+	}
+}
+
+
+impl DERWriteable for UTCTime {
+	fn write_der(&self, writer: &mut DERWriter) {
+		// TODO
+	}
+}
+
+impl DERWriteable for GeneralizedTime {
+	fn write_der(&self, writer: &mut DERWriter) {
+		// TODO
+	}
+}
+
+// const TAG_NUMBER_GRAPHICSTRING: usize = 25;
+
+impl DERWriteable for VisibleString {
+	fn write_der(&self, writer: &mut DERWriter) {
+		// TODO
+	}
+}
+// const TAG_NUMBER_GENERALSTRING: usize = 27;
+
+impl DERWriteable for UniversalString {
+	fn write_der(&self, writer: &mut DERWriter) {
+		// TODO
+	}
+}
+// const TAG_NUMBER_CHARACTER_STRING: usize = 29;
+
+impl DERWriteable for BMPString {
+	fn write_der(&self, writer: &mut DERWriter) {
+		// TODO
+	}
+}
+// const TAG_NUMBER_DATE: usize = 31;
+// const TAG_NUMBER_TIME_OF_DAY: usize = 32;
+// const TAG_NUMBER_DATE_TIME: usize = 33;
+
+impl DERWriteable for Any {
+	fn write_der(&self, writer: &mut DERWriter) {
+		// TODO
+	}
+}
+
+
 pub trait DERReadable: Sized {
 	fn read_der(reader: &mut DERReader) -> Result<Self>;
 }
 
+impl DERReadable for bool {
+	fn read_der(reader: &mut DERReader) -> Result<Self> { reader.read_bool() }
+}
+impl DERReadable for isize {
+	fn read_der(reader: &mut DERReader) -> Result<Self> { reader.read_int() }
+}
+impl DERReadable for BitString {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		Ok(Self { data: common::bits::BitVector::new() })
+	}
+}
+impl DERReadable for OctetString {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		reader.read_octetstring()
+	}
+}
+impl DERReadable for ObjectIdentifier {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TODO
+		Ok(ObjectIdentifier::new())
+	}
+}
+impl DERReadable for UTF8String {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TODO
+		Ok(Self { data: Bytes::new() })
+	}
+}
 
+impl<T: DERReadable> DERReadable for SequenceOf<T> {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		let items = reader.read_sequence_of()?;
+		Ok(Self { items })
+	}
+}
+impl DERReadable for NumericString {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TODO
+		Ok(Self {})
+	}
+}
+impl DERReadable for PrintableString {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TODO
+		Ok(Self(AsciiString::from(Bytes::new()).unwrap()))
+	}
+}
+impl DERReadable for TeletexString {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TODO
+		Ok(Self {})
+	}
+}
+impl DERReadable for IA5String {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TODO
+		Ok(Self { data: AsciiString::from(Bytes::new()).unwrap() })
+	}
+}
+impl DERReadable for UTCTime {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TOdO
+		Self::from_str("")
+	}
+}
+impl DERReadable for GeneralizedTime {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TODO
+		Ok(Self {})
+	}
+}
+impl DERReadable for VisibleString {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TODO
+		Ok(Self {})
+	}
+}
+impl DERReadable for UniversalString {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TODO
+		Ok(Self {})
+	}
+}
+impl DERReadable for BMPString {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TODO
+		Ok(Self {})
+	}
+}
+
+impl DERReadable for Any {
+	fn read_der(reader: &mut DERReader) -> Result<Self> {
+		// TODO
+		Ok(Self { data: Bytes::new() })
+	}
+}
