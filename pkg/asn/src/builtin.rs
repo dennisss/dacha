@@ -63,8 +63,8 @@ impl std::convert::AsRef<[usize]> for ObjectIdentifier {
 
 #[macro_export]
 macro_rules! oid {
-	($e:expr) => {
-		ObjectIdentifier::from(&[$e])
+	($( $e:expr ),*) => {
+		ObjectIdentifier::from(&[$($e),*])
 	};
 }
 

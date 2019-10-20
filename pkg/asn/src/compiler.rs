@@ -779,6 +779,30 @@ impl FileCompiler {
 		Err(format!("Unknown value named: {}", name).into())
 	}
 
+	// NOTE: This will look up the inner-most builtin type and will hide any
+	// outer prefixes, constraints, etc. so should be used with caution.
+	fn lookup_type(&self, name: &str) -> Result<Rc<BuiltinType>> {
+		let body = self.module.body.as_ref().unwrap();
+		for a in &body.assignments {
+			if let Assignment::Type(t) = a {
+				if t.name.as_ref() == name {
+					match &t.typ.desc {
+						TypeDesc::Builtin(t) => {
+							return Ok(t.clone());
+						},
+						TypeDesc::Referenced(name) => {
+							return self.lookup_type(name.as_ref());
+						}
+					}
+				}
+			}
+		}
+
+		// TODO: Lookup in imported modules.
+
+		Err(format!("Unknown type named: {}", name).into())
+	}
+
 	fn compile_oid_value(&self, v: &ObjectIdentifierValue) -> Result<Vec<usize>> {
 		let mut items = vec![];
 		for c in &v.components {
@@ -827,7 +851,20 @@ impl FileCompiler {
 							// TODO: This depends on the type. If it has a named
 							// value list, then we should prioritize those
 							IntegerValue::Identifier(name) => {
+
+								// XXX: Here we should look up the type
+
 								if let TypeDesc::Builtin(t) = &typ.desc {
+									if let BuiltinType::Integer(t) = t.as_ref() {
+										if t.values.is_some() {
+											return Ok(format!("{}::{}", typename, name.to_string()));
+										}
+									}
+								} else if let TypeDesc::Referenced(refname) = &typ.desc {
+									// TODO: Dedup with above.
+
+									let t = self.lookup_type(refname.as_ref())?;
+
 									if let BuiltinType::Integer(t) = t.as_ref() {
 										if t.values.is_some() {
 											return Ok(format!("{}::{}", typename, name.to_string()));
@@ -1066,8 +1103,8 @@ impl FileCompiler {
 		// NOTE: None of these symbols will be allowed as typenames.
 		lines.add("use std::convert::{From, Into};");
 		lines.add("use common::errors::*;");
-		lines.add("use crate::asn::builtin::*;");
-		lines.add("use crate::asn::encoding::*;");
+		lines.add("use asn::builtin::*;");
+		lines.add("use asn::encoding::*;");
 
 		// TODO: Step one should be to handle all imports and builtin imports.
 		const skip_assignments: &'static [&'static str] = &[

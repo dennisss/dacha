@@ -1,8 +1,9 @@
-#![feature(core_intrinsics, async_await, proc_macro_hygiene, trait_alias, exclusive_range_pattern)]
+#![feature(core_intrinsics, async_await, const_fn, const_constructor, proc_macro_hygiene, trait_alias, exclusive_range_pattern)]
 #[macro_use] extern crate common;
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate macros;
 #[macro_use] extern crate impl_ops;
+#[macro_use] extern crate asn;
 extern crate hex;
 extern crate async_trait;
 extern crate generic_array;
@@ -146,4 +147,5 @@ pub mod aes;
 pub mod elliptic;
 pub mod chacha20;
 pub mod gcm;
+pub mod x509;
 pub mod tls;

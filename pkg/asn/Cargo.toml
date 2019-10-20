@@ -1,12 +1,11 @@
 [package]
-name = "crypto"
+name = "asn"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 macros = { path = "../macros" }
-asn = { path = "../asn" }
 arrayref = "0.3.5"
 common = { path = "../common" }
 parsing = { path = "../parsing" }

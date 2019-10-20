@@ -1,3 +1,5 @@
+#![feature(const_constructor)]
+
 pub mod builtin;
 pub mod encoding;
 pub mod tokenizer;
