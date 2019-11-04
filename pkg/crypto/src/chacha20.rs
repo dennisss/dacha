@@ -1,7 +1,7 @@
 // Stream cipher as defined in:
 // https://tools.ietf.org/html/rfc7539
 
-use crate::big_number::*;
+use math::big::*;
 
 // TODO: Provide some warning of when the counter will overflow and wrap.
 

@@ -1,4 +1,4 @@
-use crate::big_number::*;
+use math::big::*;
 use crate::random::*;
 use crate::dh::*;
 use common::errors::*;

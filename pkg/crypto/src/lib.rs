@@ -2,8 +2,8 @@
 #[macro_use] extern crate common;
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate macros;
-#[macro_use] extern crate impl_ops;
 #[macro_use] extern crate asn;
+#[macro_use] extern crate lazy_static;
 extern crate hex;
 extern crate async_trait;
 extern crate generic_array;
@@ -127,7 +127,6 @@ mod tests {
 }
 
 pub mod utils;
-pub mod big_number;
 pub mod random;
 pub mod prime;
 pub mod hasher;
@@ -147,5 +146,6 @@ pub mod aes;
 pub mod elliptic;
 pub mod chacha20;
 pub mod gcm;
+pub mod pem;
 pub mod x509;
 pub mod tls;

@@ -1,4 +1,4 @@
-use crate::big_number::BigUint;
+use math::big::BigUint;
 use crate::aes::*;
 use crate::utils::*;
 use crate::cipher::*;

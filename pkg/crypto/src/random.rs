@@ -1,7 +1,7 @@
 use common::errors::*;
 use async_std::fs::File;
 use async_std::io::Read;
-use crate::big_number::BigUint;
+use math::big::BigUint;
 
 /// Generates secure random bytes suitable for cryptographic key generation.
 /// This will wait for sufficient entropy to accumulate in the system.

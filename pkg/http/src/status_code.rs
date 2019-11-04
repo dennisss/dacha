@@ -2,7 +2,7 @@
 
 // https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct StatusCode(u16);
 
 impl StatusCode {

@@ -63,12 +63,14 @@ impl BitVector {
 
 	pub fn from(data: &[u8], len: usize) -> Self {
 		let mut data = Vec::from(data);
-		data.resize(ceil_div(len, 0), 0);
+		data.resize(ceil_div(len, 8), 0);
 
 		Self { data, len }
 	}
 }
 
+// TODO: THis will be wrong if we don't have a number of bits divisble by 8.
+// ^ AKA: '1' should be encoded as '1' instead of as '0x80'
 // NOTE: This should be guranteed to always minimally cover all bits up to the
 // next complete octet.
 impl std::convert::AsRef<[u8]> for BitVector {

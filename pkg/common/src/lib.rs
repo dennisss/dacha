@@ -1,12 +1,15 @@
-#![feature(trait_alias)]
+#![feature(trait_alias, const_fn, const_constructor)]
 #[macro_use] extern crate error_chain;
 extern crate fs2;
 extern crate libc;
+extern crate hex;
+extern crate base64;
 
 pub mod fs;
 pub mod algorithms;
 pub mod factory;
 pub mod bits;
+pub mod vec;
 
 pub trait FlipSign<T> {
 	/// Transmutes an signed/unsigned integer into it's opposite unsigned/signed integer while maintaining bitwise equivalence even though the integer value may change
@@ -39,6 +42,11 @@ pub mod errors {
 		foreign_links {
 			Io(::std::io::Error);
 			ParseInt(::std::num::ParseIntError);
+			CharTryFromError(::std::char::CharTryFromError);
+			FromUtf8Error(::std::str::Utf8Error);
+			FromUtf16Error(::std::string::FromUtf16Error);
+			FromHexError(::hex::FromHexError);
+			FromBase64Error(::base64::DecodeError);
 			// Db(diesel::result::Error);
 			// HTTP(hyper::Error);
 		}

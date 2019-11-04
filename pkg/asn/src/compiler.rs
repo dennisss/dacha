@@ -122,7 +122,7 @@ fn impl_der_writeable<T, F: FnOnce(&mut LineBuilder) -> T>(
 	lines.add(format!("impl DERWriteable for {} {{", name));
 
 	let ret = lines.indented(|l| {
-		l.add("fn write_der(&self, w: &mut DERWriter) {");
+		l.add("fn write_der(&self, w_: &mut DERWriter) {");
 		let ret = l.indented(|l| {
 			f(l)
 		});
@@ -138,7 +138,7 @@ fn impl_der_readable<T, F: FnOnce(&mut LineBuilder) -> T>(
 	lines.add(format!("impl DERReadable for {} {{", name));
 
 	let ret = lines.indented(|l| {
-		l.add("fn read_der(r: &mut DERReader) -> Result<Self> {");
+		l.add("fn read_der(r_: &mut DERReader) -> Result<Self> {");
 		let ret = l.indented(|l| {
 			f(l)
 		});
@@ -148,6 +148,23 @@ fn impl_der_readable<T, F: FnOnce(&mut LineBuilder) -> T>(
 	lines.add("}");
 	ret
 }
+
+fn impl_to_string<T, F: FnOnce(&mut LineBuilder) -> T>(
+	lines: &mut LineBuilder, name: &str, f: F) -> T {
+	lines.add(format!("impl ::std::string::ToString for {} {{", name));
+
+	let ret = lines.indented(|l| {
+		l.add("fn to_string(&self) -> String {");
+		let ret = l.indented(|l| {
+			f(l)
+		});
+		l.add("}");
+		ret
+	});
+	lines.add("}");
+	ret
+}
+
 
 
 // TODO: Things to validate an a file:
@@ -215,10 +232,11 @@ impl Compiler {
 
 	/// Compiles all added files saving them back to disk.
 	pub fn compile_all(&mut self) -> Result<()> {
-		for (name, entry) in self.inner.borrow().files.iter() {
+		for (_name, entry) in self.inner.borrow().files.iter() {
 			println!("Read {:?}", entry.source);
 			let mut outpath = entry.source.clone();
 			outpath.set_extension("rs");
+			let outpath = outpath.to_str().unwrap().replace("-", "_");
 			println!("Write {:?}", outpath);
 
 			let compiled = entry.compiler.compile()?;
@@ -291,6 +309,7 @@ impl FileCompiler {
 		let mut lines = LineBuilder::new();
 		let mut read_lines = LineBuilder::new();
 		let mut write_lines = LineBuilder::new();
+		lines.add(format!("#[derive(Debug, Clone, Copy, PartialEq)]"));
 		lines.add(format!("pub enum {} {{", name));
 		for v in variants {
 			let case_name = Self::case_name(v.name.as_ref());
@@ -307,9 +326,9 @@ impl FileCompiler {
 		lines.add("}");
 
 		lines.nl();
-		let funcname = if is_enumerated { "enumerated" } else { "int" }; 
+		let funcname = if is_enumerated { "enumerated" } else { "isize" }; 
 		impl_der_readable(&mut lines, name, move |l| {
-			l.add(format!("let v = r.read_{}()?;", funcname));
+			l.add(format!("let v = r_.read_{}()?;", funcname));
 			l.add("Ok(match v {");
 			l.append(read_lines);
 			l.add("\t_ => { return Err(\"Invalid case\".into()); }");
@@ -321,7 +340,7 @@ impl FileCompiler {
 			l.append(write_lines);
 			l.add("};");
 			l.nl();
-			l.add(format!("w.write_{}(v);", funcname));
+			l.add(format!("w_.write_{}(v);", funcname));
 		});
 
 		Ok(lines)
@@ -373,8 +392,8 @@ impl FileCompiler {
 					};
 
 					let (verb, varname) = match encmode {
-						EncodingMode::Read => ("r.read", "r"),
-						EncodingMode::Write => ("w.write", "w")
+						EncodingMode::Read => ("r_.read", "r_"),
+						EncodingMode::Write => ("w_.write", "w_")
 					};
 
 					let adj = match mode {
@@ -400,8 +419,8 @@ impl FileCompiler {
 
 	/// Compiles 
 	fn compile_struct(&self, name: &str, prefixes: &[TypePrefix],
-					  types: &[ComponentType], ctx: &Context) -> Result<LineBuilder> {
-
+					  types: &[ComponentType], ctx: &Context, is_set: bool)
+	-> Result<LineBuilder> {
 		let mut fields = vec![];
 		for t in types.iter() {
 			match t {
@@ -452,7 +471,7 @@ impl FileCompiler {
 			(out, outer)
 		};
 
-
+		lines.add(format!("#[derive(Debug, Clone)]"));
 		lines.add(format!("pub struct {} {{", &name));
 		lines.append(inner);
 		lines.add("}");
@@ -460,7 +479,11 @@ impl FileCompiler {
 		
 
 		impl_der_readable(&mut lines, name, |l| {
-			l.add("r.read_sequence(false, |r| {");
+			if is_set {
+				l.add("r_.read_set(false, |r_| {");
+			} else {
+				l.add("r_.read_sequence(false, |r_| {");
+			}
 			l.indented(|l| {
 				let mut ctor = String::from("Ok(Self { "); 
 				for f in fields.iter() {
@@ -468,11 +491,12 @@ impl FileCompiler {
 					let field_name = Self::field_name(f.name.as_ref());
 					let typename = field_typenames.get(&field_name).unwrap();
 
-					field_lines.add(format!("{}::read_der(r)",
+					field_lines.add(format!("{}::read_der(r_)",
 									typename.replace("<", "::<")));
 
 					// TODO: Must also implement good support for options?
 
+					// TODO: This is still a major problem.
 					// TODO: This is problematic for things like structs in structs which should sometimes be handling their own prefixes.
 					self.compile_type_prefixes(
 						EncodingMode::Read,
@@ -481,14 +505,28 @@ impl FileCompiler {
 					if let ComponentMode::Optional = f.mode {
 						field_lines.indent();
 						field_lines.wrap_with(
-							"r.read_option(|r| {".into(), "})?;".into());
+							"r_.read_option(|r_| {".into(), "})?;".into());
 					} else if let ComponentMode::WithDefault(v) = &f.mode {
 						field_lines.indent();
 						println!("{:?}", v);
+
+						let mut valuec = self.compile_value(v, &typename, &f.typ).unwrap().0;
+
+						let builtin_type = match &f.typ.desc {
+							TypeDesc::Builtin(v) => v.clone(),
+							TypeDesc::Referenced(v) => {
+								self.lookup_type(v.as_ref()).unwrap()
+							}
+						};
+
+						if self.is_referenced_value(v, builtin_type.as_ref()) && !valuec.contains("{") {
+							valuec = format!("(*{})", valuec);
+						}
+
 						field_lines.wrap_with(
-							"r.read_option(|r| {".into(),
-							format!("}})?.unwrap_or({}.into());",
-									self.compile_value(v, &typename, &f.typ).unwrap()));
+							"r_.read_option(|r_| {".into(),
+							format!("}})?.unwrap_or({}.clone().into());",
+									valuec));
 					} else {
 						field_lines.add_inline("?;");
 					}
@@ -520,7 +558,12 @@ impl FileCompiler {
 		impl_der_writeable(&mut lines, name, |l| {
 			// TODO: Just changing this line will allow writing a SET as
 			// well.
-			l.add("w.write_sequence(|w| {");
+			// XXX: Yes
+			if is_set {
+				l.add("w_.write_set(|w_| {");
+			} else {
+				l.add("w_.write_sequence(|w_| {");
+			}
 			
 			// TODO: If we are compiling a SET, we should pre-sort the 
 			// writes by tag so that it is cheaper to read/write.
@@ -536,10 +579,12 @@ impl FileCompiler {
 					// TODO: Should also implement any special prefixed for
 					// this field or constraints
 					
+					// TODO: Refactor DERWriter so that we never need to use
+					// .next()
 					if let ComponentMode::Optional = &f.mode {
-						field_lines.add("v.write_der(w);");
+						field_lines.add("v.write_der(w_);");
 					} else {
-						field_lines.add(format!("self.{}.write_der(w);",
+						field_lines.add(format!("self.{}.write_der(w_);",
 										field_name));
 					}
 
@@ -585,10 +630,18 @@ impl FileCompiler {
 		let (typename, mut outer) = self.compile_type(
 			"Value", typ, &inner_ctx)?;
 
+		l.add(format!("#[derive(Debug, Clone)]"));
 		l.add(format!("pub struct {} {{", name));
 		l.add(format!("\tvalue: {}", typename));
 		l.add("}");
 		l.nl();
+
+		if self.can_to_string(&typ.desc) {
+			impl_to_string(&mut l, name, |l| {
+				l.add("self.value.to_string()");
+			});
+			l.nl();
+		}
 
 		l.add(format!("impl Into<{}> for {} {{", typename, name));
 		l.add(format!("\tfn into(self) -> {} {{", typename));
@@ -604,17 +657,42 @@ impl FileCompiler {
 		l.add("}");
 		l.nl();
 
+		{
+			// TODO: Keep unwrapping incase it is multiple layers of nesting.
+			// We should also unwrap anything that is a nested struct itself.
+			let (reftype, use_ref) = if typename.starts_with("SequenceOf<") {
+					(&typename.as_str()[11..(typename.len() - 1)], true)
+				} else if typename.starts_with("SetOf<") {
+					(&typename.as_str()[6..(typename.len() - 1)], true)
+				} else {
+					(typename.as_str(), false)
+				};
+
+			let reftype = if use_ref { format!("[{}]", reftype) } else { reftype.to_string() };
+
+			l.add(format!("impl AsRef<{}> for {} {{", reftype, name));
+			l.add(format!("\tfn as_ref(&self) -> &{} {{",
+						  reftype));
+			l.add(format!("\t\t&self.value{}",
+						  if use_ref { ".as_ref()" } else { "" }));
+			l.add("\t}");
+			l.add("}");
+			l.nl();
+		}
+
+		// If the inner 
+
 		// TODO: Implement Deref and DerefMut and AsRef() and AsMut
 
 		impl_der_writeable(&mut l, name, |l| {
-			l.add("self.value.write_der(w);");
+			l.add("self.value.write_der(w_);");
 			self.compile_type_prefixes(EncodingMode::Write, &typ.prefixes, l).unwrap();
 		});
 		l.nl();
 
 		// TODO: Implement read
 		impl_der_readable(&mut l, name, |l| {
-			l.add(format!("{}::read_der(r).map(|value| Self {{ value }})",
+			l.add(format!("{}::read_der(r_).map(|value| Self {{ value }})",
 				  typename.replace("<", "::<")));
 			self.compile_type_prefixes(EncodingMode::Read, &typ.prefixes, l).unwrap();
 		});
@@ -629,10 +707,40 @@ impl FileCompiler {
 		Ok(l)
 	}
 
+	fn can_to_string_choice(&self, t: &ChoiceType) -> bool {
+		for t in &t.types.types {
+			if !self.can_to_string(&t.typ.desc) {
+				return false;
+			}
+		}
+
+		true
+	}
+
+	fn can_to_string(&self, desc: &TypeDesc) -> bool {
+		// TODO: For referenced types, recursively look up if it can be
+		// stringified (especially for CHOICE types).
+		if let TypeDesc::Builtin(t) = desc {
+			match t.as_ref() {
+				BuiltinType::CharacterString(CharacterStringType::Restricted(_)) => {
+					return true;
+				},
+				BuiltinType::Choice(t) => {
+					return self.can_to_string_choice(t);
+				}
+				_ => {}
+			}
+		}
+
+		return false;
+	}
+
 	/// NOTE: It is the caller's role to setup the constraints
 	/// TODO: Instead of accepting a Type, accept only a BuiltinType after being resolved.
-	fn compile_type(&self, name: &str, typ: &Type, ctx: &Context)
+	fn compile_type(&self, original_name: &str, typ: &Type, ctx: &Context)
 	-> Result<(String, LineBuilder)> {
+
+		let tname = Self::type_name(original_name);
 
 		let mut lines = LineBuilder::new();
 		let name = match &typ.desc {
@@ -641,10 +749,11 @@ impl FileCompiler {
 					BuiltinType::Boolean => "bool".to_string(),
 					BuiltinType::Integer(t) => {
 						if let Some(vals) = &t.values {
-							lines = self.compile_int_enum(name, vals, false)?;
-							ctx.resolve(name)
+							lines = self.compile_int_enum(
+								&tname, vals, false)?;
+							ctx.resolve(&tname)
 						} else {
-							"isize".to_string()
+							"BigInt".to_string()
 						}
 
 					},
@@ -656,20 +765,31 @@ impl FileCompiler {
 						}
 					},
 					BuiltinType::OctetString => "OctetString".into(),
-					BuiltinType::Sequence(t) | BuiltinType::Set(t) => {
+					BuiltinType::Sequence(t) => {
 						// TODO: Should compile_struct use the un-converted
 						// name to generate the module name.
-						let tname = Self::type_name(&name);
+						let tname = Self::type_name(&original_name);
 
 						lines.append(
 							self.compile_struct(&tname, &typ.prefixes,
-												&t.types, ctx)?
+												&t.types, ctx, false)?
 						);
 
 						ctx.resolve(&tname)
 					},
-					BuiltinType::SequenceOf(t) | BuiltinType::SetOf(t) => {
-						let modname = name.to_ascii_lowercase();
+					BuiltinType::Set(t) => {
+						// TODO: Dedup with Sequence case above.
+						let tname = Self::type_name(&tname);
+
+						lines.append(
+							self.compile_struct(&tname, &typ.prefixes,
+												&t.types, ctx, true)?
+						);
+
+						ctx.resolve(&tname)
+					},
+					BuiltinType::SequenceOf(t) => {
+						let modname = tname.to_ascii_lowercase();
 						let inner_ctx = ctx.inner(&modname);
 
 						let (s, mut l) = self.compile_collection_type(
@@ -683,6 +803,22 @@ impl FileCompiler {
 						// TODO: Should I be resolving this?
 						format!("SequenceOf<{}>", s)
 					},
+					BuiltinType::SetOf(t) => {
+						// TODO: Dedup with SequenceOf code above
+						let modname = tname.to_ascii_lowercase();
+						let inner_ctx = ctx.inner(&modname);
+
+						let (s, mut l) = self.compile_collection_type(
+							t, &inner_ctx)?;
+
+						if !l.empty() {
+							l.wrap_module(&modname);
+							lines.append(l);
+						}
+
+						// TODO: Should I be resolving this?
+						format!("SetOf<{}>", s)
+					},
 					BuiltinType::BitString(t) => {
 						// TODO: A BitString with named bits will need to be 
 						"BitString".into()
@@ -690,6 +826,9 @@ impl FileCompiler {
 					BuiltinType::Any(_) => {
 						// TODO: Handle any DEFINED BY constraints.
 						"Any".into()
+					},
+					BuiltinType::Null => {
+						"Null".into()
 					},
 					// BuiltinType::Enumerated(t) => {
 						// TODO:
@@ -700,17 +839,44 @@ impl FileCompiler {
 					}
 				})
 			},
-			TypeDesc::Referenced(s) => s.to_string()
+			TypeDesc::Referenced(s) => s.to_string().replace("-", "_")
 		};
 
 		Ok((name, lines))
 	}
 
+	fn is_referenced_value(&self, val: &Value, typ: &BuiltinType) -> bool {
+		if let BuiltinType::Integer(t) = typ {
+			if t.values.is_some() {
+				// In this case, no cloning is required as our enums should
+				// always implement Copy and not be wrapping in lazy_static.
+				return false;
+			}
+		}
+
+		match val {
+			Value::Referenced(_) => true,
+			Value::Builtin(v) => {
+				match v.as_ref() {
+					BuiltinValue::Integer(IntegerValue::Identifier(_)) => {
+						// TODO: This is only because we parse it wrong and even then it
+						// only applies if we aren't referencing a specific case.
+						true
+					},
+					_ => false
+				}
+			},
+			_ => false
+		}
+	}
+
 
 	fn compile_value_assign(&self, assign: &ValueAssignment) -> Result<LineBuilder> {
-		if assign.typ.constraints.len() != 0 {
-			return Err("Constraints not supported in value assignments".into());
-		}
+		// TODO: We should check thee statically, but no need to do anything
+		// dynamically.
+		// if assign.typ.constraints.len() != 0 {
+		// 	return Err("Constraints not supported in value assignments".into());
+		// }
 
 		let name = Self::value_name(assign.name.as_ref());
 		let modname = name.to_ascii_lowercase();
@@ -722,12 +888,30 @@ impl FileCompiler {
 
 		// TODO: Into is mainly only needed if it isn't a trivial type.
 
-		let value = self.compile_value(&assign.value, &typename, &assign.typ)?;
+		let (value, is_complex) = self.compile_value(&assign.value, &typename, &assign.typ)?;
 
 		let wrapped_value = if let TypeDesc::Referenced(r) = &assign.typ.desc {
-			// TODO: This is only applicable when we have simple types that have
-			// been wrapped.
-			format!("{} {{ value: {} }}", typename, value)
+
+			let builtin_type = self.lookup_type(r.as_ref())?;
+
+			// TODO: Instead need a consistent function for checking if a type
+			// will get wrapped.
+			match builtin_type.as_ref() {
+				BuiltinType::Sequence(_) | BuiltinType::Set(_) => {
+					value
+				},
+				_ => {
+					let mut valuec = value;
+
+					if self.is_referenced_value(&assign.value, builtin_type.as_ref()) {
+						valuec = format!("(*{}).clone()", valuec);
+					}
+
+					// TODO: This is only applicable when we have simple types that have
+					// been wrapped.
+					format!("{} {{ value: {} }}", typename, valuec)
+				}
+			}
 		} else {
 			value
 		};
@@ -738,8 +922,16 @@ impl FileCompiler {
 		// 	""
 		// };
 
-		lines.add(format!("pub const {}: {} = {};",
-			name, typename, wrapped_value));
+
+		let assign_line = format!("{}: {} = {};",
+			name, typename, wrapped_value);
+		if is_complex {
+			lines.add("lazy_static! {");
+			lines.add(format!("pub static ref {}", assign_line));
+			lines.add("}");
+		} else {
+			lines.add(format!("pub const {}", assign_line));
+		}
 
 		if !l.empty() {
 			lines.nl();
@@ -748,6 +940,36 @@ impl FileCompiler {
 		}
 
 		Ok(lines)
+	}
+
+	// Must lookup 
+
+	fn lookup_value_type(&self, name: &str) -> Result<Option<String>> {
+		let body = self.module.body.as_ref().unwrap();
+		for a in &body.assignments {
+			if let Assignment::Value(v) = a {
+				if v.name.as_ref() == name {
+					match &v.typ.desc {
+						TypeDesc::Referenced(v) => {
+							return Ok(Some(v.to_string()));
+						},
+						TypeDesc::Builtin(_) => {
+							return Ok(None);
+						}
+					}
+				}
+			}
+		}
+
+		for import in &body.imports {
+			let parent = self.parent.borrow();
+			let mc = &parent.files[&import.module.name.to_string()];
+			if let Ok(v) = mc.compiler.lookup_value_type(name) {
+				return Ok(v);
+			}
+		}
+
+		Err(format!("Unknown value named: {}", name).into())
 	}
 
 	fn lookup_value(&self, name: &str) -> Result<Rc<BuiltinValue>> {
@@ -798,7 +1020,16 @@ impl FileCompiler {
 			}
 		}
 
-		// TODO: Lookup in imported modules.
+		// TODO: Must validate in cyclic loops in 
+
+		for import in &body.imports {
+			let parent = self.parent.borrow();
+			let mc = &parent.files[&import.module.name.to_string()];
+			if let Ok(v) = mc.compiler.lookup_type(name) {
+				return Ok(v);
+			}
+		}
+
 
 		Err(format!("Unknown type named: {}", name).into())
 	}
@@ -829,10 +1060,51 @@ impl FileCompiler {
 		Ok(items)
 	}
 
+	// Returns a string of the form 'b"..."' which has type &'static [u8] when
+	// used in compiled code
+	fn binary_string(data: &[u8]) -> String {
+		let mut out = String::new();
+		out.reserve(2*data.len());
+		out.push_str("b\"");
+		for b in data {
+			if *b >= 32 && *b <= 126 {
+				out.push(*b as char)
+			} else {
+				out.push_str(&format!("\\x{:02x}", b))
+			}
+		}
+		out.push_str("\"");
+
+		out
+	}
+
 	// TODO: Must validate that the value agrees with the type
 	fn compile_value(&self, value: &Value, typename: &str, typ: &Type)
-	-> Result<String> {
-		Ok(match value {
+	-> Result<(String, bool)> {
+		let builtin_type = match &typ.desc {
+			TypeDesc::Builtin(v) => v.clone(),
+			TypeDesc::Referenced(v) => {
+				self.lookup_type(v.as_ref())?
+			}
+		};
+
+		let is_any =
+			if let BuiltinType::Any(_) = builtin_type.as_ref() {
+				true
+			} else {
+				false
+			};
+
+		// TODO: When we are a reference to a type which isn't the same as the
+		// type itself, then we will need to wrap the value.
+
+		// Lookup current type completely,
+		// Then lookup other type completely.
+		// - If there is a discrepency, we are probably a wrapped type.
+
+		let mut is_complex = false;
+
+		let mut out = match value {
 			Value::Builtin(v) => {
 				match v.as_ref() {
 					BuiltinValue::Boolean(v) => {
@@ -845,34 +1117,39 @@ impl FileCompiler {
 					BuiltinValue::Integer(v) => {
 						match v {
 							IntegerValue::SignedNumber(v) => {
-								v.to_string()
+								// TODO: Use BigInt to do the conversion.
+
+								format!("BigInt::from_le_static(&[{}])", v)
 							},
 							// TODO: We will never see this as we never 
 							// TODO: This depends on the type. If it has a named
 							// value list, then we should prioritize those
 							IntegerValue::Identifier(name) => {
-
-								// XXX: Here we should look up the type
-
-								if let TypeDesc::Builtin(t) = &typ.desc {
-									if let BuiltinType::Integer(t) = t.as_ref() {
-										if t.values.is_some() {
-											return Ok(format!("{}::{}", typename, name.to_string()));
-										}
-									}
-								} else if let TypeDesc::Referenced(refname) = &typ.desc {
-									// TODO: Dedup with above.
-
-									let t = self.lookup_type(refname.as_ref())?;
-
-									if let BuiltinType::Integer(t) = t.as_ref() {
-										if t.values.is_some() {
-											return Ok(format!("{}::{}", typename, name.to_string()));
-										}
+								if let BuiltinType::Integer(t)
+									= builtin_type.as_ref() {
+									if t.values.is_some() {
+										return Ok((format!("{}::{}", typename, name.to_string()), is_complex));
 									}
 								}
 
-								name.to_string()
+								let mut vname = Self::value_name(name.as_ref());
+
+								let value_type = self.lookup_value_type(
+									name.as_ref())?;
+
+								if let Some(tname) = value_type {
+									if &tname != typename && !is_any {
+										if self.is_referenced_value(
+											value, builtin_type.as_ref()) {
+											vname = format!("(*{}).clone()", vname)
+										}
+
+										return Ok((format!("{} {{ value: {} }}", typename, vname), is_complex));
+									} 
+								}
+
+								// TODO: Need to format as a value/constant name
+								vname
 							}
 						}
 					},
@@ -880,13 +1157,87 @@ impl FileCompiler {
 						let items = self.compile_oid_value(v)?;
 						format!("oid![{}]",
 								items.into_iter().map(|v| v.to_string())
-									.collect::<Vec<_>>().join(", "))
+									.collect::<Vec<_>>().join(","))
 					},
-					_ => { return Err(format!("Failed {:?}", v).into()); }
+					BuiltinValue::OctetString(v) => {
+						let val = match v {
+							OctetStringValue::Hex(v) => {
+								Self::binary_string(v.as_ref())
+							},
+							OctetStringValue::Bits(v) => {
+								Self::binary_string(v.as_ref())
+							}
+						};
+
+						format!("OctetString::from_static({})", val)
+					},
+					BuiltinValue::Null => {
+						"Null::new()".to_string()
+					},
+					BuiltinValue::Sequence(SequenceValue(v)) => {
+						let mut out = format!("{} {{\n", typename);
+
+						let body = match builtin_type.as_ref() {
+							BuiltinType::Set(v) | BuiltinType::Sequence(v) => {
+								v
+							},
+							_ => { return Err("Sequence value for non-sequence/set type.".into()); }
+						};
+
+						let mut fields = std::collections::HashMap::new(); 
+
+						// TODO: Must also handle optional types.
+						for comp in &body.types {
+							match comp {
+								ComponentType::Field(f) => {
+									fields.insert(f.name.to_string(), f);
+								},
+								_ => {}
+							}
+						}
+
+
+						for named in v {
+							let field = fields.get(&named.name.as_ref().to_string())
+								.ok_or(Error::from("No such field"))?;
+							
+							let field_tname = match &field.typ.desc {
+								TypeDesc::Referenced(name) => name.as_ref(),
+								_ => "TODO4"
+							};
+
+							let (mut val, is_c) = self.compile_value(
+								&named.value, field_tname, &field.typ)?;
+							is_complex |= is_c;
+
+							if let ComponentMode::Optional = &field.mode {
+								val = format!("Some({})", val);
+							}
+
+							is_complex = true;
+
+							// TODO: Clone is only needed if it is a referenced
+							// value and not an immediate.
+							out += &format!("\t{}: {}.clone(),\n",
+								Self::field_name(named.name.as_ref()),
+								val);
+						}
+						out += "}";
+						out
+					},
+					_ => {
+						println!("{:#?}", v);
+						return Err(format!("Failed {:?}", v).into()); }
 				}
 			},
 			_ => { return Err("failed 2".into()); }
-		})
+		};
+
+		if let BuiltinType::Any(_) = builtin_type.as_ref() {
+			out = format!("asn_any!({})", out);
+		}
+
+		Ok((out, is_complex))
 	}
 
 	// TODO: Also implement enumerated.
@@ -901,6 +1252,7 @@ impl FileCompiler {
 		let mut lines = LineBuilder::new();
 		let mut outer = LineBuilder::new();
 
+		lines.add(format!("#[derive(Debug, Clone)]"));
 		lines.add(format!("pub enum {} {{", name));
 
 		let mut typenames = vec![];
@@ -919,15 +1271,30 @@ impl FileCompiler {
 		lines.add("}");
 		lines.nl();
 
+		if self.can_to_string_choice(choice) {
+			impl_to_string(&mut lines, name, |l| {
+				l.add("match self {");
+				l.indented(|l| {
+					for t in &choice.types.types {
+						l.add(format!("{}::{}(v) => v.to_string(),",
+										name,
+										Self::case_name(t.name.as_ref())));
+					}
+				});
+				l.add("}");
+			});
+			lines.nl();
+		}
+
 		impl_der_readable(&mut lines, name, |l| {
-			l.add("r.read_choice(|r| {");
+			l.add("r_.read_choice(|r_| {");
 			l.indented(|l| {
 				for (t, tname) in choice.types.types.iter().zip(typenames.iter()) {
 					l.add("{");
 					l.indented(|l| {
-						l.add("let v = r.read_option(|r| {");
+						l.add("let v = r_.read_option(|r_| {");
 						l.indented(|l| {
-							l.add(format!("{}::read_der(r)",
+							l.add(format!("{}::read_der(r_)",
 										  tname.replace("<", "::<")));
 							self.compile_type_prefixes(EncodingMode::Read, &t.typ.prefixes, l).unwrap();
 						});
@@ -950,7 +1317,7 @@ impl FileCompiler {
 		lines.nl();
 
 		impl_der_writeable(&mut lines, name, |l| {
-			l.add("w.write_choice(|w| {");
+			l.add("w_.write_choice(|w_| {");
 			l.indented(|l| {
 				l.add("match self {");
 				l.indented(|l| {
@@ -965,7 +1332,7 @@ impl FileCompiler {
 
 						// TODO: Should also implement any special prefixed for
 						// this field or constraints
-						field_lines.add("v.write_der(w);");
+						field_lines.add("v.write_der(w_);");
 
 						self.compile_type_prefixes(
 							EncodingMode::Write,
@@ -1015,37 +1382,36 @@ impl FileCompiler {
 
 	fn compile_type_assign(&self, a: &TypeAssignment) -> Result<LineBuilder> {
 
-		let name = a.name.as_ref();
+		let name = a.name.as_ref().replace("-", "_");
 		// let modname = name.to_ascii_lowercase();
 		// let ctx = Context::new().inner(&modname);
-
 
 		if let TypeDesc::Builtin(t) = &a.typ.desc {
 			if let BuiltinType::Choice(c) = t.as_ref() {
 				return self.compile_choice(
-					name, &a.typ.prefixes, &c, &Context::new()
+					&name, &a.typ.prefixes, &c, &Context::new()
 				);
 			}
 			else if let BuiltinType::Sequence(t) = t.as_ref() {
 				return self.compile_struct(
-					a.name.as_ref(), &a.typ.prefixes, &t.types,
-					&Context::new()
+					&name, &a.typ.prefixes, &t.types,
+					&Context::new(), false
 				);
 			}
 			else if let BuiltinType::Set(t) = t.as_ref() {
 				// TODO: Separate flag for SET and SEQUENCE
 				return self.compile_struct(
-					a.name.as_ref(), &a.typ.prefixes, &t.types,
-					&Context::new()
+					&name, &a.typ.prefixes, &t.types,
+					&Context::new(), true
 				);
 			}
 			else if let BuiltinType::Integer(t) = t.as_ref() {
 				// TODO: This doesn't support prefixed and constraints.
 				if let Some(vals) = &t.values {
-					return self.compile_int_enum(name, vals, false);
+					return self.compile_int_enum(&name, vals, false);
 				}
 			} else if let BuiltinType::Enumerated(t) = t.as_ref() {
-				return self.compile_enumerated(name, t);
+				return self.compile_enumerated(&name, t);
 			}
 
 			// TODO: SET/SEQUENCE OF should be implemented as wrapped types.
@@ -1055,41 +1421,26 @@ impl FileCompiler {
 		// constraints/prefixes in the future). We avoid doing
 		// 'pub type Name = Type' and instead wrap the value in a struct.
 		// TODO: Pass in constraints and prefixes if any.
-		self.compile_wrapped_type(name, &a.typ)
+		self.compile_wrapped_type(&name, &a.typ)
 
-		// match &a.typ.desc {
-		// 	TypeDesc::Referenced(n) => {
-		// 		lines.add(format!("pub type {} = {};", name, n.to_string()));
-		// 	},
-		// 	TypeDesc::Builtin(t) => {
-		// 		match t {
-		// 			BuiltinType::Choice(c) => {
-						
-		// 			},
-		// 			BuiltinType::Sequence(t) => {						
-						
-		// 			},
-		// 			BuiltinType::CharacterString(t) => {
-		// 				// NOTE: compile_type here should not produce any extra
-		// 				// lines.
-		// 				lines.add(format!("pub type {} = {};", name,
-		// 					self.compile_type("", &a.typ, &Context::new())?.0));
-		// 			},
-		// 			_ => {
-		// 				lines.add("TODO");	
-		// 			}
-		// 		}
-		// 	}
-		// };
 
 	}
 
 	fn create(file: Bytes, parent: Rc<RefCell<CompilerInner>>) -> Result<Self> {
 		let (module, _) = complete(ModuleDefinition::parse)(file)?;
+		
+		// TODO: Is the default automatic?
+		let default_tagging =
+			match module.default_mode.clone().unwrap_or(TagDefault::Explicit) {
+				TagDefault::Explicit => TagMode::Explicit,
+				TagDefault::Implicit => TagMode::Implicit,
+				TagDefault::Automatic => {
+					return Err("Automatic tagging not supported".into());
+				}
+			};
+		
 		Ok(Self {
-			module, parent,
-			// TODO: Take from module
-			default_tagging: TagMode::Explicit
+			module, parent, default_tagging
 		})
 	}
 
@@ -1101,10 +1452,11 @@ impl FileCompiler {
 		lines.nl();
 		
 		// NOTE: None of these symbols will be allowed as typenames.
-		lines.add("use std::convert::{From, Into};");
-		lines.add("use common::errors::*;");
-		lines.add("use asn::builtin::*;");
-		lines.add("use asn::encoding::*;");
+		lines.add("use ::std::convert::{From, Into};");
+		lines.add("use ::common::errors::*;");
+		lines.add("use ::asn::builtin::*;");
+		lines.add("use ::asn::encoding::*;");
+		lines.add("use ::math::big::BigInt;");
 
 		// TODO: Step one should be to handle all imports and builtin imports.
 		const skip_assignments: &'static [&'static str] = &[
@@ -1117,7 +1469,7 @@ impl FileCompiler {
 
 		// TODO: Only import the specified symbols (exluding any in skip_assignments)
 		for s in &body.imports {
-			lines.add(format!("use super::{}::*;", s.module.name.as_ref()));
+			lines.add(format!("use super::{}::*;", s.module.name.as_ref().replace("-", "_")));
 		}
 
 		// TODO: Exports should define whether we use 'pub' in assignments.
@@ -1177,6 +1529,7 @@ mod tests {
 			compiler.add(path).unwrap();
 		}
 
+		println!("Compiling all...");
 		compiler.compile_all().unwrap();
 		
 	}

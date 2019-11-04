@@ -5,6 +5,7 @@ use bytes::Bytes;
 use parsing::ascii::AsciiString;
 use common::errors::Error;
 use std::convert::AsRef;
+use common::bits::BitVector;
 use std::string::ToString;
 use super::encoding::TagClass;
 
@@ -48,6 +49,8 @@ fn sequence(w: &'static str) -> impl Parser<()> {
 parser!(psname<AsciiString> => typereference);
 
 parser!(valuereference<AsciiString> => identifier);
+parser!(bstring<BitVector> => Token::skip_to(Token::bstring));
+parser!(hstring<Bytes> => Token::skip_to(Token::hstring));
 parser!(typereference<AsciiString> => Token::skip_to(Token::typereference));
 parser!(modulereference<AsciiString> => typereference);
 
@@ -732,10 +735,10 @@ pub enum BuiltinValue {
 	/// be a reference (as we can't resolve a full path in the registry using
 	/// a relative value).
 	ObjectIdentifier(ObjectIdentifierValue),
-	OctetStringValue,
+	OctetString(OctetStringValue),
 	RealValue,
 	RelativeIRIValue, // TODO: Will be parsed from a CharacterString
-	SequenceValue,
+	Sequence(SequenceValue),
 	SequenceOfValue,
 	SetValue,
 	SetOfValue,
@@ -752,7 +755,10 @@ impl BuiltinValue {
 			}),
 			map(IntegerValue::parse, |v| Self::Integer(v)),
 			map(reserved("NULL"), |_| Self::Null),
-			map(ObjectIdentifierValue::parse, |v| Self::ObjectIdentifier(v))
+			map(ObjectIdentifierValue::parse, |v| Self::ObjectIdentifier(v)),
+			map(OctetStringValue::parse, |v| Self::OctetString(v)),
+			// TODO: THis is difficult to differentiate w.r.t. ObjectIdentifier.
+			map(SequenceValue::parse, |v| Self::Sequence(v))
 		)
 	});
 }
@@ -1160,12 +1166,29 @@ impl OctetStringType {
 }
 
 
+// TODO: Can not be distinguished from a BitStringValue without further
+// analysis.
 /*
 OctetStringValue ::=
 	bstring
 	| hstring
 	| CONTAINING Value
 */
+#[derive(Debug)]
+pub enum OctetStringValue {
+	Bits(BitVector),
+	Hex(Bytes)
+}
+
+impl OctetStringValue {
+	parser!(parse<Self> => {
+		alt!(
+			map(bstring, |v| Self::Bits(v)),
+			map(hstring, |v| Self::Hex(v))
+		)
+	});
+}
+
 
 /*
 SequenceType ::=
@@ -1427,7 +1450,7 @@ impl ComponentType {
 
 /* SequenceValue ::= "{" ComponentValueList "}" | "{" "}" */
 #[derive(Debug)]
-pub struct SequenceValue(Vec<NamedValue>);
+pub struct SequenceValue(pub Vec<NamedValue>);
 
 impl SequenceValue {
 	parser!(parse<Self> => seq!(c => {
@@ -1534,7 +1557,7 @@ impl SetType {
 }
 
 
-
+// TODO: This is the same as the SequenceValue.
 /* SetValue ::= "{" ComponentValueList "}" | "{" "}" */
 
 

@@ -1,6 +1,7 @@
 use parsing::*;
 use bytes::{Bytes, Buf};
 use common::errors::*;
+use common::bits::BitVector;
 use parsing::ascii::AsciiString;
 
 // https://asn1.io/asn1playground/
@@ -97,10 +98,44 @@ impl Token {
 		})
 	});
 
-	parser!(pub bstring<Bytes> => {
-		// TODO: Incomplete
-		slice(many(one_of("01")))
-	});
+	parser!(pub bstring<BitVector> => seq!(c => {
+		c.next(one_of("'"))?;
+		let mut out = BitVector::new();
+
+		loop {
+			c.next(opt(many(Self::whitespace)))?;
+			let bit = c.next(opt(one_of("01")))?;
+			if let Some(b) = bit {
+				out.push(if b == ('0' as u8) { 0 } else { 1 });
+			} else {
+				break;
+			}
+		}
+
+		c.next(tag("'B"))?;
+		Ok(out)
+	}));
+
+	parser!(pub hstring<Bytes> => seq!(c => {
+		c.next(one_of("'"))?;
+		let mut out = String::new();
+
+		loop {
+			c.next(opt(many(Self::whitespace)))?;
+			let hexchar = c.next(opt(one_of("0123456789ABCDEF")))?;
+			if let Some(h) = hexchar {
+				out.push(h as char);
+			} else {
+				break;
+			}
+		}
+
+		c.next(tag("'H"))?;
+		// TODO: This doesn't support strings with an un-even number of hex
+		// characters
+		let buf = hex::decode(&out)?;
+		Ok(buf.into())
+	}));
 
 	// '[A-Z](\-?[a-Z0-9])*'
 	parser!(pub typereference<AsciiString> => {

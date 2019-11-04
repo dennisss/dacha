@@ -1,44 +1,125 @@
 // Implementations of builtin types for use in compiled code.
 
+use std::fmt::Debug;
 use common::errors::*;
 use common::bits::BitVector;
 use parsing::ascii::AsciiString;
 use bytes::Bytes;
+use std::convert::AsRef;
+use common::vec::VecPtr;
+use std::clone::Clone;
+use std::string::ToString;
+use chrono::{DateTime, Date, TimeZone, FixedOffset, Utc};
+// use super::encoding::Element;
 
-
-pub struct Any {
-	pub data: Bytes
+/// A wrapper around Bytes which can be statically initialized and this can't
+/// be mutated without cloning.
+#[derive(Clone)]
+pub enum BytesRef {
+	Static(&'static [u8]),
+	Dynamic(Bytes)
 }
 
+impl BytesRef {
+	pub const fn from_static(data: &'static [u8]) -> Self {
+		Self::Static(data)
+	}
+
+	pub fn clone_inner(&self) -> Bytes {
+		self.clone().into()
+	}
+}
+
+impl std::fmt::Debug for BytesRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", match self {
+			Self::Static(v) => Bytes::from_static(v),
+			// TODO: Optimize this (we mainly use bytes to use the smarter debug
+			// formatter)
+			Self::Dynamic(v) => v.clone()
+		})
+    }
+}
+
+impl std::convert::AsRef<[u8]> for BytesRef {
+	fn as_ref(&self) -> &[u8] {
+		match self {
+			Self::Static(v) => v,
+			Self::Dynamic(v) => &v,
+		}
+	}
+}
+
+impl std::convert::Into<Bytes> for BytesRef {
+	fn into(self) -> Bytes {
+		match self {
+			Self::Static(v) => Bytes::from_static(v),
+			Self::Dynamic(v) => v
+		}
+	}
+}
+
+impl std::convert::From<Bytes> for BytesRef {
+    fn from(data: Bytes) -> Self { Self::Dynamic(data) }
+}
+
+
+#[derive(Debug, Clone, Copy)]
+pub struct Null {}
+
+impl Null {
+	pub const fn new() -> Self { Self {} }
+}
+
+
+#[derive(Debug, Clone)]
 pub struct SequenceOf<T> {
 	pub items: Vec<T>
 }
 
+impl<T: Debug + Clone> AsRef<[T]> for SequenceOf<T> {
+	fn as_ref(&self) -> &[T] { &self.items }
+}
+
+#[derive(Debug, Clone)]
 pub struct SetOf<T> {
 	pub items: Vec<T>
 }
 
-
-pub struct UTF8String {
-	pub data: Bytes
+impl<T: Debug + Clone> AsRef<[T]> for SetOf<T> {
+	fn as_ref(&self) -> &[T] { &self.items }
 }
 
+
+#[derive(Debug, Clone)]
 pub struct PrintableString(pub AsciiString);
 
-pub enum ObjectIdentifier {
-	Static(&'static [usize]),
-	Dynamic(Vec<usize>)
+impl ToString for PrintableString {
+	fn to_string(&self) -> String { self.0.to_string() }
+}
+
+
+#[derive(PartialEq, Eq, Clone)]
+pub struct ObjectIdentifier {
+	components: VecPtr<usize>
 }
 
 impl ObjectIdentifier {
+	// TODO: Generate these using Into<VecPtr<usize>>
+
 	/// Creates an ObjectIdentifier backed by a static array. Meant for top
 	/// level declarations of compiled values.
+	/// TODO: Rename from_static
 	pub const fn from(components: &'static [usize]) -> Self {
-		Self::Static(components)
+		Self { components: VecPtr::from_static(components) }
+	}
+
+	pub fn from_vec(components: Vec<usize>) -> Self {
+		Self { components: VecPtr::from_vec(components) }
 	}
 
 	pub fn new() -> Self {
-		Self::Static(&[])
+		Self { components: VecPtr::new() }
 	}
 
 	// pub fn extend<T: AsRef<[usize]>>(mut self, vals: T) -> Self {
@@ -52,13 +133,28 @@ impl ObjectIdentifier {
 
 }
 
-impl std::convert::AsRef<[usize]> for ObjectIdentifier {
+// TODO: Move to VecPtr.
+impl std::hash::Hash for ObjectIdentifier {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.components.as_ref().hash(state);
+    }
+}
+
+impl AsRef<[usize]> for ObjectIdentifier {
 	fn as_ref(&self) -> &[usize] {
-		match self {
-			Self::Dynamic(v) => &v,
-			Self::Static(v) => v
-		}
+		self.components.as_ref()
 	}
+}
+
+impl std::fmt::Debug for ObjectIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let items = self.components.as_ref();
+		write!(f, "[{}]",
+			   items.iter()
+			   .map(|i| i.to_string())
+			   .collect::<Vec<_>>()
+			   .join("."))
+    }
 }
 
 #[macro_export]
@@ -75,99 +171,144 @@ macro_rules! oid {
 // 	fn check_vale(&self) -> 
 // }
 
-
+#[derive(Debug, Clone)]
 pub struct BitString {
 	/// TODO: Need a BitVector that can implement zero copy via a Bytes object.
 	pub data: BitVector
 }
 
-pub struct OctetString {
-	pub data: Bytes
+
+// TODO: 
+#[derive(Debug, Clone)]
+pub struct OctetString(pub BytesRef);
+
+impl OctetString {
+	pub const fn from_static(data: &'static [u8]) -> Self {
+		Self(BytesRef::from_static(data))
+	}
+
+	pub fn to_bytes(&self) -> Bytes {
+		self.0.clone_inner()
+	}
 }
 
 impl std::convert::AsRef<[u8]> for OctetString {
-	fn as_ref(&self) -> &[u8] { &self.data }
+	fn as_ref(&self) -> &[u8] { self.0.as_ref() }
 }
 
+#[derive(Debug, Clone)]
 pub struct NumericString {
 
 }
 
+impl ToString for NumericString {
+	// TODO
+	fn to_string(&self) -> String { String::new() }
+}
+
+#[derive(Debug, Clone)]
 pub struct VisibleString {
 	
 }
 
-// TeletexString
-pub struct TeletexString {
+impl ToString for VisibleString {
+	// TODO
+	fn to_string(&self) -> String { String::new() }
+}
 
+
+// TeletexString
+#[derive(Debug, Clone)]
+pub struct TeletexString {
+	pub data: String
+}
+
+impl ToString for TeletexString {
+	fn to_string(&self) -> String { self.data.clone() }
 }
 
 pub type T61String = TeletexString;
 
-// PrintableString
 
 // UniversalString
+#[derive(Debug, Clone)]
 pub struct UniversalString {
+	pub data: String
+}
 
+impl ToString for UniversalString {
+	fn to_string(&self) -> String { self.data.clone() }
 }
 
 // UTF8String
-
-// BMPString
-pub struct BMPString {
-
+#[derive(Clone)]
+pub struct UTF8String {
+	data: Bytes
 }
 
+impl UTF8String {
+	pub fn from(data: Bytes) -> Result<Self> {
+		std::str::from_utf8(&data)?;
+		Ok(Self { data })
+	}
+}
+
+impl std::convert::AsRef<str> for UTF8String {
+	fn as_ref(&self) -> &str {
+		unsafe { std::str::from_utf8_unchecked(&self.data) }
+	}
+}
+
+impl ToString for UTF8String {
+	fn to_string(&self) -> String { AsRef::<str>::as_ref(self).to_string() }
+}
+
+impl std::convert::AsRef<[u8]> for UTF8String {
+	fn as_ref(&self) -> &[u8] {
+		&self.data
+	}
+}
+
+impl std::fmt::Debug for UTF8String {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"{}\"", AsRef::<str>::as_ref(self))
+    }
+}
+
+// BMPString
+#[derive(Debug, Clone)]
+pub struct BMPString {
+	pub data: String
+}
+
+impl ToString for BMPString {
+	fn to_string(&self) -> String { self.data.to_string() }
+}
+
+#[derive(Debug, Clone)]
 pub struct IA5String {
 	pub data: AsciiString
 }
 
-// Any
-
-// GeneralizedTime
-pub struct GeneralizedTime {
-
+impl ToString for IA5String {
+	fn to_string(&self) -> String { self.data.to_string() }
 }
 
-/*
+// Any
 
-11.7.1
-The encoding shall terminate with a "Z", as described in the Rec. ITU-T X.680 | ISO/IEC 8824-1 clause
-on GeneralizedTime .
-11.7.2
-The seconds element shall always be present.
-11.7.3
-The fractional-seconds elements, if present, shall omit all trailing zeros; if the elements correspond to 0,
-they shall be wholly omitted, and the decimal point element also shall be omitted.
-EXAMPLE
-A seconds element of "26.000" shall be represented as "26"; a seconds element of "26.5200" shall be represented
-as "26.52".
-11.7.4 The decimal point element, if present, shall be the point option " . ".
-11.7.5 Midnight (GMT) shall be represented in the form:
-"YYYYMMDD000000Z"
-where "YYYYMMDD" represents the day following the midnight in question.
-EXAMPLE
-Examples of valid representations:
-"19920521000000Z"
-"19920622123421Z"
-"19920722132100.3Z"
-Examples of invalid representations:
-11.8
-"19920520240000Z" (midnight represented incorrectly)
-"19920622123421.0Z" (spurious trailing zeros)
-"19920722132100.30Z" (spurious trailing zeros)
-
-*/
 
 // Time
 
 
+// NOTE: A year of 50 is 1950 and 49 is 2049 (at least for X509)
+//
 // YYMMDDhhmmZ
 // YYMMDDhhmm+hh'mm'
 // YYMMDDhhmm-hh'mm'
 // YYMMDDhhmmssZ
 // YYMMDDhhmmss+hh'mm'
 // YYMMDDhhmmss-hh'mm'
+#[derive(Debug, Clone)]
 pub struct UTCTime {
 	/// Least significant two digits of the year.
 	pub year_short: u8,
@@ -193,6 +334,15 @@ pub struct UTCTime {
 }
 
 impl UTCTime {
+	pub fn to_datetime(&self) -> DateTime<FixedOffset> {
+		let year = if self.year_short < 50 { 2000 + (self.year_short as i32) }
+				   else { 1900 + (self.year_short as i32) };
+
+		FixedOffset::east((60*self.timezone.unwrap_or(0)) as i32)
+			.ymd(year, self.month.into(), self.day.into())
+			.and_hms(self.hour.into(), self.minute.into(),
+					 self.seconds.unwrap_or(0).into())
+	}
 
 	pub fn to_string(&self) -> String {
 		// TODO: Validate that the stored values are in range
@@ -215,6 +365,8 @@ impl UTCTime {
 	}
 
 	pub fn from_str(s: &str) -> Result<UTCTime> {
+		// println!("UTCTime: {}", s);
+
 		// TODO: Convert to a regex based parser.
 		if s.len() < 11 {
 			return Err("UTCTime string too short".into());
@@ -226,12 +378,16 @@ impl UTCTime {
 		let hour = u8::from_str_radix(&s[6..8], 10)?;
 		let minute = u8::from_str_radix(&s[8..10], 10)?;
 
+		// YYMMDD000000Z
+		// 190905202147Z
+		// YYMMDDhhmmZ
+
 		if month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 ||
 			minute > 59 {
 			return Err("Time component out of range".into());
 		}
 
-		let mut next_idx = 11;
+		let mut next_idx = 10;
 		let seconds =
 			if s.chars().nth(next_idx).unwrap().is_digit(10) {
 				if s.len() < next_idx + 2 {
@@ -293,3 +449,112 @@ impl UTCTime {
 		Ok(Self { year_short, month, day, hour, minute, seconds, timezone })
 	}
 }
+
+
+// GeneralizedTime
+// YYYYMMDDhhmmss(.[0-9]*[1-9])?Z
+#[derive(Debug, Clone)]
+pub struct GeneralizedTime {
+	// TODO: Compress this.
+	pub year: u16,
+	pub month: u8,
+	pub day: u8,
+	pub hour: u8,
+	pub minute: u8,
+	pub seconds: u8,
+	pub nanos: u32
+}
+
+use std::str::FromStr;
+
+impl GeneralizedTime {
+	pub fn to_datetime(&self) -> DateTime<Utc> {
+		Utc
+		.ymd(self.year as i32, self.month as u32, self.day as u32)
+		.and_hms_nano(self.hour as u32, self.minute as u32,
+					  self.seconds as u32, self.nanos as u32)
+	}
+	
+	pub fn from_str(s: &str) -> Result<GeneralizedTime> {
+		println!("GeneralizedTime: {}", s);
+
+		if s.len() < 15 {
+			return Err("Too short".into());
+		}
+
+		if s.chars().last().unwrap() != 'Z' {
+			return Err("Must end in 'Z'".into());
+		}
+
+		let year = u16::from_str_radix(&s[0..4], 10)?;
+		let month = u8::from_str_radix(&s[4..6], 10)?;
+		let day = u8::from_str_radix(&s[6..8], 10)?;
+		let hour = u8::from_str_radix(&s[8..10], 10)?;
+		let minute = u8::from_str_radix(&s[10..12], 10)?;
+		let seconds = u8::from_str_radix(&s[12..14], 10)?;
+
+		if month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 ||
+			minute > 59 || seconds > 59 {
+			return Err("Time component out of range".into());
+		}
+
+		let mut nanos = 0;
+		if s.chars().nth(14).unwrap() == '.' {
+			let n = s.len() - 16;
+			if n == 0 {
+				return Err(". without anything following".into());
+			}
+			if n > 9 {
+				return Err("Resolution beyond nanos not supported".into());
+			}
+			if s.chars().nth(14 + n).unwrap() == '0' {
+				return Err("Too many right padded zeros".into());
+			}
+
+			let mut num = String::from_str(&s[15..(15 + n)]).unwrap();
+			while num.len() < 9 {
+				num.push('0');
+			}
+
+			nanos = u32::from_str_radix(&num, 10)?;
+		} else if s.len() != 15 {
+			return Err("Unknown info after seconds".into());
+		}
+
+		// TODO: Validate the range of each of the numbers.
+
+		Ok(Self { year, month, day, hour, minute, seconds, nanos })
+	}
+}
+
+
+/*
+
+11.7.1
+The encoding shall terminate with a "Z", as described in the Rec. ITU-T X.680 | ISO/IEC 8824-1 clause
+on GeneralizedTime .
+11.7.2
+The seconds element shall always be present.
+11.7.3
+The fractional-seconds elements, if present, shall omit all trailing zeros; if the elements correspond to 0,
+they shall be wholly omitted, and the decimal point element also shall be omitted.
+EXAMPLE
+A seconds element of "26.000" shall be represented as "26"; a seconds element of "26.5200" shall be represented
+as "26.52".
+11.7.4 The decimal point element, if present, shall be the point option " . ".
+11.7.5 Midnight (GMT) shall be represented in the form:
+"YYYYMMDD000000Z"
+where "YYYYMMDD" represents the day following the midnight in question.
+EXAMPLE
+Examples of valid representations:
+"19920521000000Z"
+"19920622123421Z"
+"19920722132100.3Z"
+Examples of invalid representations:
+11.8
+"19920520240000Z" (midnight represented incorrectly)
+"19920622123421.0Z" (spurious trailing zeros)
+"19920722132100.30Z" (spurious trailing zeros)
+
+*/
+
