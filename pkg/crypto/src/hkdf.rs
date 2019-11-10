@@ -54,6 +54,14 @@ impl HKDF {
 	}
 }
 
+impl Clone for HKDF {
+	fn clone(&self) -> Self {
+		Self {
+			hasher_factory: self.hasher_factory.box_clone(),
+			hash_len: self.hash_len }
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;

@@ -21,6 +21,8 @@ pub trait Hasher: Send {
 	fn finish(&self) -> Vec<u8>;
 }
 
+pub type HasherFactory = Box<dyn Factory<dyn Hasher>>;
+
 pub struct DefaultHasherFactory<T: Default + ?Sized> {
 	t: std::marker::PhantomData<T>
 }
@@ -31,24 +33,21 @@ impl<T: Default + ?Sized> DefaultHasherFactory<T> {
 	}
 }
 
-impl<T: Hasher + Default + ?Sized + 'static> Factory<dyn Hasher> for DefaultHasherFactory<T> {
+impl<T: Hasher + Default + Sync + ?Sized + 'static> Factory<dyn Hasher> for DefaultHasherFactory<T> {
 	fn create(&self) -> Box<dyn Hasher> {
 		Box::new(T::default())
 	}
 
-	fn box_clone(&self) -> Box<dyn Factory<dyn Hasher>> {
+	fn box_clone(&self) -> HasherFactory {
 		Box::new(Self::new())
 	}
 }
-
-
-pub type HasherFactory = Box<dyn Factory<dyn Hasher>>;
 
 pub trait GetHasherFactory {
 	fn factory() -> HasherFactory;
 }
 
-impl<T: 'static + Default + Hasher> GetHasherFactory for T {
+impl<T: 'static + Default + Sync + Hasher> GetHasherFactory for T {
 	fn factory() -> HasherFactory {
 		Box::new(DefaultHasherFactory::<T>::new())
 	}

@@ -1,0 +1,153 @@
+-- PKCS #1 v2.2 ASN.1 Module
+-- Revised October 27, 2012
+
+-- This module has been checked for conformance with the
+-- ASN.1 standard by the OSS ASN.1 Tools
+
+PKCS-1 {
+	iso(1) member-body(2) us(840) rsadsi(113549) pkcs(1) pkcs-1(1)
+	modules(0) pkcs-1(1)
+}
+
+DEFINITIONS EXPLICIT TAGS ::=
+
+BEGIN
+
+-- EXPORTS ALL
+-- All types and values defined in this module are exported for use
+-- in other ASN.1 modules.
+
+IMPORTS
+
+id-sha224, id-sha256, id-sha384, id-sha512, id-sha512-224,
+id-sha512-256
+	FROM NIST-SHA2 {
+		joint-iso-itu-t(2) country(16) us(840) organization(1)
+		gov(101) csor(3) nistalgorithm(4) hashAlgs(2)
+	}
+
+AlgorithmIdentifier
+    FROM PKIX1Explicit88 { iso(1) identified-organization(3)
+        dod(6) internet(1) security(5) mechanisms(5) pkix(7)
+        id-mod(0) id-pkix1-explicit(18) };
+
+-- ============================
+--   Basic object identifiers
+-- ============================
+
+-- The DER encoding of this in hexadecimal is:
+-- (0x)06 08
+--        2A 86 48 86 F7 0D 01 01
+--
+pkcs-1    OBJECT IDENTIFIER ::= {
+	iso(1) member-body(2) us(840) rsadsi(113549) pkcs(1) 1
+}
+
+--
+-- When rsaEncryption is used in an AlgorithmIdentifier,
+-- the parameters MUST be present and MUST be NULL.
+--
+rsaEncryption    OBJECT IDENTIFIER ::= { pkcs-1 1 }
+
+--
+-- When id-RSAES-OAEP is used in an AlgorithmIdentifier, the
+-- parameters MUST be present and MUST be RSAES-OAEP-params.
+--
+id-RSAES-OAEP    OBJECT IDENTIFIER ::= { pkcs-1 7 }
+
+--
+-- When id-pSpecified is used in an AlgorithmIdentifier, the
+-- parameters MUST be an OCTET STRING.
+--
+id-pSpecified    OBJECT IDENTIFIER ::= { pkcs-1 9 }
+
+--
+-- When id-RSASSA-PSS is used in an AlgorithmIdentifier, the
+-- parameters MUST be present and MUST be RSASSA-PSS-params.
+--
+id-RSASSA-PSS    OBJECT IDENTIFIER ::= { pkcs-1 10 }
+
+--
+-- When the following OIDs are used in an AlgorithmIdentifier,
+-- the parameters MUST be present and MUST be NULL.
+--
+md2WithRSAEncryption         OBJECT IDENTIFIER ::= { pkcs-1 2 }
+md5WithRSAEncryption         OBJECT IDENTIFIER ::= { pkcs-1 4 }
+sha1WithRSAEncryption        OBJECT IDENTIFIER ::= { pkcs-1 5 }
+sha224WithRSAEncryption      OBJECT IDENTIFIER ::= { pkcs-1 14 }
+sha256WithRSAEncryption      OBJECT IDENTIFIER ::= { pkcs-1 11 }
+sha384WithRSAEncryption      OBJECT IDENTIFIER ::= { pkcs-1 12 }
+sha512WithRSAEncryption      OBJECT IDENTIFIER ::= { pkcs-1 13 }
+sha512-224WithRSAEncryption  OBJECT IDENTIFIER ::= { pkcs-1 15 }
+sha512-256WithRSAEncryption  OBJECT IDENTIFIER ::= { pkcs-1 16 }
+
+--
+-- This OID really belongs in a module with the secsig OIDs.
+--
+id-sha1    OBJECT IDENTIFIER ::= {
+	iso(1) identified-organization(3) oiw(14) secsig(3) algorithms(2)
+	26
+}
+
+--
+-- OIDs for MD2 and MD5, allowed only in EMSA-PKCS1-v1_5.
+--
+id-md2 OBJECT IDENTIFIER ::= {
+	iso(1) member-body(2) us(840) rsadsi(113549) digestAlgorithm(2) 2
+}
+
+id-md5 OBJECT IDENTIFIER ::= {
+	iso(1) member-body(2) us(840) rsadsi(113549) digestAlgorithm(2) 5
+}
+
+--
+-- When id-mgf1 is used in an AlgorithmIdentifier, the parameters
+-- MUST be present and MUST be a HashAlgorithm, for example, sha1.
+--
+id-mgf1    OBJECT IDENTIFIER ::= { pkcs-1 8 }
+
+-- ===================
+--   Main structures
+-- ===================
+
+RSAPublicKey ::= SEQUENCE {
+	modulus           INTEGER,  -- n
+	publicExponent    INTEGER   -- e
+}
+
+--
+-- Representation of RSA private key with information for the CRT
+-- algorithm.
+--
+RSAPrivateKey ::= SEQUENCE {
+	version           Version,
+	modulus           INTEGER,  -- n
+	publicExponent    INTEGER,  -- e
+	privateExponent   INTEGER,  -- d
+	prime1            INTEGER,  -- p
+	prime2            INTEGER,  -- q
+	exponent1         INTEGER,  -- d mod (p-1)
+	exponent2         INTEGER,  -- d mod (q-1)
+	coefficient       INTEGER,  -- (inverse of q) mod p
+	otherPrimeInfos   OtherPrimeInfos OPTIONAL
+}
+
+-- version MUST be multi if otherPrimeInfos present --
+Version ::= INTEGER { two-prime(0), multi(1) }
+
+OtherPrimeInfos ::= SEQUENCE SIZE(1..MAX) OF OtherPrimeInfo
+
+OtherPrimeInfo ::= SEQUENCE {
+	prime             INTEGER,  -- ri
+	exponent          INTEGER,  -- di
+	coefficient       INTEGER   -- ti
+}
+
+TrailerField ::= INTEGER { trailerFieldBC(1) }
+
+DigestInfo ::= SEQUENCE {
+   digestAlgorithm AlgorithmIdentifier,
+   digest OCTET STRING
+}
+
+END

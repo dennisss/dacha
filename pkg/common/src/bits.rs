@@ -43,9 +43,12 @@ impl BitVector {
 	}
 
 	/// Get a single bit from the vector where the index is in the same order as the bit was push'ed.
-	pub fn get(&self, i: usize) -> u8 {
-		assert!(i < self.len);
-		(self.data[i / 8] >> (7 - (i % 8))) & 0b1
+	pub fn get(&self, i: usize) -> Option<u8> {
+		if i >= self.len {
+			return None;
+		}
+
+		Some((self.data[i / 8] >> (7 - (i % 8))) & 0b1)
 	}
 
 	/// Generates a bitvector from a number. The corresponding vector will start with the MSB of the number.
@@ -83,7 +86,7 @@ impl std::fmt::Debug for BitVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let mut s = String::new();
 		for i in 0..self.len() {
-			s += &self.get(i).to_string();
+			s += &self.get(i).unwrap().to_string();
 		}
 
         write!(f, "'{}'", s)
@@ -189,7 +192,7 @@ impl<'a> BitReader<'a> {
 				}
 			}
 
-			out = out | ((self.buffer.get(self.offset) as usize) << i);
+			out = out | ((self.buffer.get(self.offset).unwrap() as usize) << i);
 			self.offset += 1;
 		}
 
@@ -225,7 +228,7 @@ impl<'a> BitReader<'a> {
 	pub fn into_unconsumed_bits(self) -> BitVector {
 		let mut buf = BitVector::new();
 		for i in self.consumed_offset..self.buffer.len() {
-			buf.push(self.buffer.get(i));
+			buf.push(self.buffer.get(i).unwrap());
 		}
 
 		buf
@@ -268,7 +271,7 @@ pub trait BitWrite {
 
 	fn write_bitvec(&mut self, val: &BitVector) -> Result<()> {
 		for i in 0..val.len() {
-			self.write_bits(val.get(i) as usize, 1)?;
+			self.write_bits(val.get(i).unwrap() as usize, 1)?;
 		}
 
 		Ok(())

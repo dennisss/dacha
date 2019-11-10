@@ -206,7 +206,7 @@ impl ClientHello {
 
 		let supported_algorithms = SignatureSchemeList {
 			algorithms: vec![
-				// Minimum requred set to implement.
+				// Minimum required set to implement.
 				SignatureScheme::ecdsa_secp256r1_sha256,
 				SignatureScheme::rsa_pkcs1_sha256,
 				SignatureScheme::rsa_pss_rsae_sha256 ]

@@ -27,7 +27,7 @@ fn reserved(w: &'static str) -> impl Parser<()> {
 	// TODO: Finish this
 	and_then(Token::skip_to(Token::reserved), move |s| {
 		if s.as_ref() != w {
-			return Err("Wrong reserved".into());
+			return Err(format!("Wrong reserved: '{}'", w).into());
 		}
 
 		Ok(())
@@ -187,7 +187,7 @@ TagDefault ::=
 	| AUTOMATIC TAGS
 	| empty
 */
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TagDefault {
 	Explicit,
 	Implicit,
@@ -2577,6 +2577,33 @@ impl ExceptionIdentification {
 		})
 	));
 }
+
+/*
+TODO: X681
+OPERATION ::= CLASS
+{
+	&ArgumentType
+	&ResultType
+	&Errors
+	&Linked
+	&resultReturned
+	&operationCode
+}
+WITH SYNTAX
+{
+	[ARGUMENT
+	[RESULT
+	[RETURN RESULT
+	[ERRORS
+	[LINKED
+	CODE
+}
+
+
+- typefieldreference and the associated ones are the lexical items that start
+					 with '&'
+
+*/
 
 
 #[cfg(test)]

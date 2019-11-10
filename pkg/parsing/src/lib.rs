@@ -219,7 +219,7 @@ pub fn take_until<T, P: Parser<T>>(p: P) -> impl Parser<Bytes> {
 		while rem.len() > 0 {
 			match p(rem.clone()) {
 				Ok(_) => {
-					input.advance(input.len() - rem.len());
+					// input.advance(input.len() - rem.len());
 					
 					return Ok(( input.slice(0..(input.len() - rem.len())), rem));
 				},
@@ -259,6 +259,9 @@ pub fn anytag<T: AsRef<[u8]>>(arr: &'static [T]) -> impl Parser<Bytes> {
 				return Ok(v);
 			}
 		}
+
+		// println!("{:?}", std::str::from_utf8(
+		// 	&input[0..std::cmp::min(40, input.len())].as_ref()).unwrap());
 
 		// TODO: Incomplete errors?
 		Err("No matching tag".into())
@@ -354,6 +357,13 @@ pub fn slice<T, P: Parser<T>>(p: P) -> impl Parser<Bytes> {
 	}
 }
 
+pub fn slice_with<T, P: Parser<T>>(p: P) -> impl Parser<(T, Bytes)> {
+	move |input: Bytes| {
+		let (v, rest) = p(input.clone())?;
+		let n = input.len() - rest.len();
+		Ok(((v, input.slice(0..n)), rest))
+	}
+}
 
 #[derive(Clone)]
 pub struct ParseCursor<I: Clone = ParserInput> {

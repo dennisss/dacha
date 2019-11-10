@@ -146,8 +146,6 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
 			BigUint::from_be_bytes(&enc)
 		};
 
-		println!("H {}", &hex::encode(h.to_be_bytes()));
-
 		let counter =
 			if iv.len() == 12 {
 				let mut data = [0u8; 16];
@@ -193,15 +191,23 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
 		map_blocks(plain, |p| {
 			Self::incr(&mut self.counter);
 
+			let output_start = output.len();
 			output.resize(output.len() + BLOCK_SIZE, 0);
-			let output_len = output.len();
-			let output_block = &mut output[(output_len - 16)..];
+			let output_block = &mut output[output_start..];
 			self.cipher.encrypt_block(&self.counter, output_block);
 
 			xor_inplace(p, output_block);
 
-			hasher.update(array_ref![output_block, 0, 16]);
+			// If we are doing the last block, set all cipher bytes after the
+			// end of the plaintext to zero.
+			for i in plain.len()..(output_start + BLOCK_SIZE) {
+				output_block[i - output_start] = 0;
+			}
+
+			hasher.update(array_ref![output_block, 0, BLOCK_SIZE]);
 		});
+
+		output.truncate(plain.len());
 
 		let mut tag = hasher.finish(additional_data.len(), output.len());
 		xor_inplace(&self.enc_counter_0, &mut tag);
@@ -220,7 +226,6 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
 
 		let mut hasher = GHasher::new(self.h.clone());
 		map_blocks(additional_data, |block| hasher.update(block));
-
 
 		map_blocks(cipher, |c| {
 			hasher.update(c);
@@ -271,6 +276,10 @@ impl AuthEncAD for AES_GCM {
 	// NOTE: Technically any size of nonce is valid, but to get TLS to use the
 	// recommended size, we fix it. 
 	fn nonce_range(&self) -> (usize, usize) { (12, 12) }
+
+	fn expanded_size(&self, plaintext_size: usize) -> usize {
+		plaintext_size + 16
+	}
 
 	fn encrypt(&self, key: &[u8], nonce: &[u8], plaintext: &[u8],
 			   additional_data: &[u8], out: &mut Vec<u8>) {
@@ -400,6 +409,27 @@ mod tests {
 		gcm.encrypt(&p, &[], &mut out);
 
 		assert_eq!(&out, &cipher);
+	}
+
+	#[test]
+	fn gcm_unaligned_test() {
+		// From NIST test vectors.
+		let key = hex::decode("1694029fc6c85dad8709fd4568ebf99c").unwrap();
+		let iv = hex::decode("d2c27040b28a9c31af6dad0a").unwrap();
+		let cipher = hex::decode("e17df7ed1b0c36c6bab1c21dc108644413f80753a66d27cc37d9903abf").unwrap();
+		let add_data = b"";
+		let plain = hex::decode("51756d23ab2b2c4d4609e3133a").unwrap();
+
+		let mut out = vec![];
+		let aes_gcm = AES_GCM::aes128();
+		aes_gcm.decrypt(&key, &iv, &cipher, add_data, &mut out).unwrap();
+
+		assert_eq!(out, plain);
+
+		out.clear();
+		aes_gcm.encrypt(&key, &iv, &plain, add_data, &mut out);
+		assert_eq!(out, cipher);
+
 	}
 
 }

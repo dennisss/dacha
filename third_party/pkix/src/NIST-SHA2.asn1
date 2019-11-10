@@ -1,0 +1,54 @@
+NIST-SHA2 { joint-iso-itu-t(2) country(16) us(840) organization(1)
+  gov(101) csor(3) nistalgorithm(4) hashAlgs(2) }
+DEFINITIONS EXPLICIT TAGS ::=
+BEGIN
+
+-- NOTE: This is not the original module and was mainly reproduced partially
+-- from RFC 8017
+
+id-md2      OBJECT IDENTIFIER ::= {
+	iso (1) member-body (2) us (840) rsadsi (113549)
+	digestAlgorithm (2) 2
+}
+
+id-md5      OBJECT IDENTIFIER ::= {
+	iso (1) member-body (2) us (840) rsadsi (113549)
+	digestAlgorithm (2) 5
+}
+
+id-sha1    OBJECT IDENTIFIER ::= {
+	iso(1) identified-organization(3) oiw(14) secsig(3)
+	algorithms(2) 26
+}
+
+id-sha224    OBJECT IDENTIFIER ::= {
+	joint-iso-itu-t (2) country (16) us (840) organization (1)
+	gov (101) csor (3) nistalgorithm (4) hashalgs (2) 4
+}
+
+id-sha256    OBJECT IDENTIFIER ::= {
+	joint-iso-itu-t (2) country (16) us (840) organization (1)
+	gov (101) csor (3) nistalgorithm (4) hashalgs (2) 1
+}
+
+id-sha384    OBJECT IDENTIFIER ::= {
+	joint-iso-itu-t (2) country (16) us (840) organization (1)
+	gov (101) csor (3) nistalgorithm (4) hashalgs (2) 2
+}
+
+id-sha512    OBJECT IDENTIFIER ::= {
+	joint-iso-itu-t (2) country (16) us (840) organization (1)
+	gov (101) csor (3) nistalgorithm (4) hashalgs (2) 3
+}
+
+id-sha512-224    OBJECT IDENTIFIER ::= {
+	joint-iso-itu-t (2) country (16) us (840) organization (1)
+	gov (101) csor (3) nistalgorithm (4) hashalgs (2) 5
+}
+
+id-sha512-256    OBJECT IDENTIFIER ::= {
+	joint-iso-itu-t (2) country (16) us (840) organization (1)
+	gov (101) csor (3) nistalgorithm (4) hashalgs (2) 6
+}
+
+END

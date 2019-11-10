@@ -1,0 +1,12 @@
+[package]
+name = "pkix"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+asn = { path = "../../pkg/asn" }
+common = { path = "../../pkg/common" }
+math = { path = "../../pkg/math" }
+bytes = { git = "https://github.com/tokio-rs/bytes" }
+lazy_static = "1.4.0"

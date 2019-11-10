@@ -1,0 +1,12 @@
+[package]
+name = "math"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+
+[dependencies]
+common = { path = "../common" }
+rand = "0.6.1"
+num-traits = "0.2"
+typenum = "1.10.0"
+arrayref = "0.3.5"
+impl_ops = "0.1.1"

@@ -2,7 +2,7 @@
 
 use common::errors::*;
 use crate::huffman::*;
-use crate::bits::*;
+use common::bits::*;
 
 pub const BTYPE_NO_COMPRESSION: u8 = 0b00;
 pub const BTYPE_FIXED_CODES: u8 = 0b01;

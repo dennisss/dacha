@@ -7,4 +7,8 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 parsing = { path = "../parsing" }
+compression = { path = "../compression" }
 bytes = { git = "https://github.com/tokio-rs/bytes" }
+libc = "0.2.62"
+async-std = "0.99.4"
+futures-preview = "0.3.0-alpha.17"

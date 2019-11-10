@@ -63,6 +63,12 @@ impl std::convert::From<Bytes> for BytesRef {
     fn from(data: Bytes) -> Self { Self::Dynamic(data) }
 }
 
+impl std::cmp::PartialEq for BytesRef {
+	fn eq(&self, other: &Self) -> bool {
+		self.as_ref() == other.as_ref()
+	}
+}
+
 
 #[derive(Debug, Clone, Copy)]
 pub struct Null {}
@@ -72,7 +78,7 @@ impl Null {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SequenceOf<T> {
 	pub items: Vec<T>
 }
@@ -81,6 +87,8 @@ impl<T: Debug + Clone> AsRef<[T]> for SequenceOf<T> {
 	fn as_ref(&self) -> &[T] { &self.items }
 }
 
+// TODO: Comparison of these must be pairwise (unless we gurantee that they are
+// sorted.
 #[derive(Debug, Clone)]
 pub struct SetOf<T> {
 	pub items: Vec<T>
@@ -177,9 +185,17 @@ pub struct BitString {
 	pub data: BitVector
 }
 
+impl std::ops::Deref for BitString {
+	type Target = BitVector;
+	fn deref(&self) -> &Self::Target {
+		&self.data
+	}
+}
+
+
 
 // TODO: 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OctetString(pub BytesRef);
 
 impl OctetString {
@@ -189,6 +205,21 @@ impl OctetString {
 
 	pub fn to_bytes(&self) -> Bytes {
 		self.0.clone_inner()
+	}
+
+	pub fn into_bytes(self) -> Bytes { self.0.into() }
+}
+
+impl<T: std::convert::Into<Bytes>> std::convert::From<T> for OctetString {
+	fn from(value: T) -> Self {
+		Self(value.into().into())
+	}
+}
+
+impl std::ops::Deref for OctetString {
+	type Target = [u8];
+	fn deref(&self) -> &Self::Target {
+		self.as_ref()
 	}
 }
 
@@ -442,6 +473,10 @@ impl UTCTime {
 				Some(sign*((hh as isize)*60 + (mm as isize)))
 			};
 
+		if timezone.is_some() || seconds.is_none() {
+			return Err("UTCTime Not valid DER".into());
+		}
+
 		if next_idx != s.len() {
 			return Err("Timestamp too long".into());
 		}
@@ -455,7 +490,6 @@ impl UTCTime {
 // YYYYMMDDhhmmss(.[0-9]*[1-9])?Z
 #[derive(Debug, Clone)]
 pub struct GeneralizedTime {
-	// TODO: Compress this.
 	pub year: u16,
 	pub month: u8,
 	pub day: u8,
@@ -473,6 +507,23 @@ impl GeneralizedTime {
 		.ymd(self.year as i32, self.month as u32, self.day as u32)
 		.and_hms_nano(self.hour as u32, self.minute as u32,
 					  self.seconds as u32, self.nanos as u32)
+	}
+
+	pub fn to_string(&self) -> String {
+		// TODO: Perform this entire function using a single string buffer of
+		// with the maximum allowable length reserved.
+
+		let nanos = format!("{:09}", self.nanos)
+			.trim_end_matches('0').to_string();
+		let decimal =
+			if nanos.len() == 0 {
+				"".into()
+			} else {
+				format!(".{}", nanos)
+			};
+		format!("{:04}{:02}{:02}{:02}{:02}{:02}{}",
+				self.year, self.month, self.day, self.hour,
+				self.minute, self.seconds, decimal)
 	}
 	
 	pub fn from_str(s: &str) -> Result<GeneralizedTime> {

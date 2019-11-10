@@ -45,7 +45,7 @@ impl TagClass {
 	}
 }
 
-// Parses a varint stored as a bit-endian chunks of the 7 lower bits of each
+// Parses a varint stored as a big-endian chunks of the 7 lower bits of each
 // octet ending in the last octet without the MSB set.
 //
 // This format is used by the tag number in long form and for the
@@ -82,6 +82,27 @@ parser!(parse_varint_msb_be<usize> => seq!(c => {
 
 	Ok(number)
 }));
+
+// TODO: Deduplicate the varint code with the other crates.
+fn serialize_varint_msb_be(mut num: usize, out: &mut Vec<u8>) {
+	let mut buf = [0u8; std::mem::size_of::<usize>()];
+	let mut i = buf.len() - 1;
+	loop {
+		let b = (num & 0x7f) as u8;
+		num = num >> 7;
+
+		buf[i] |= b;
+		if num == 0 {
+			break;
+		} else {
+			buf[i - 1] |= 0x80;
+		}
+
+		i -= 1;
+	}
+
+	out.extend_from_slice(&buf[i..]);
+}
 
 /// NOTE: Tags have a canonical ordering of Universal, Application, Context,
 /// Private, and then in each class it is in order of ascending number.
@@ -120,30 +141,12 @@ impl Identifier {
 
 	fn serialize(&self, out: &mut Vec<u8>) {
 		let first = ((self.tag.class as u8) << 6)
-			| (if self.constructed { 1 } else { 0 })
+			| ((if self.constructed { 1 } else { 0 }) << 5)
 			| (if self.tag.number <= 30 { self.tag.number as u8 } else { 31 });
 		out.push(first);
 
-		// TODO: Deduplicate the varint code with the other crates.
 		if self.tag.number >= 31 {
-			let mut num = self.tag.number;
-			let mut buf = [0u8; std::mem::size_of::<usize>()];
-			let mut i = buf.len() - 1;
-			loop {
-				let b = (num & 0x7f) as u8;
-				num >> 7;
-
-				buf[i] = b;
-				if num == 0 {
-					break;
-				} else {
-					buf[i] |= 0x80;
-				}
-
-				i -= 1;
-			}
-
-			out.extend_from_slice(&buf[i..]);
+			serialize_varint_msb_be(self.tag.number, out);
 		}
 	}
 }
@@ -216,13 +219,14 @@ impl Length {
 pub struct Element {
 	ident: Identifier,
 	len: Length,
-	data: Bytes
+	data: Bytes,
+	outer: Bytes
 	// value: ElementValue
 }
 
 impl Element {
 	parser!(parse<Self> => {
-		seq!(c => {
+		map(slice_with(seq!(c => {
 			let ident = c.next(Identifier::parse)?;
 			let len = c.next(Length::parse)?;
 
@@ -252,8 +256,9 @@ impl Element {
 			// 		ElementValue::Primitive(data)
 			// 	};
 
-			Ok(Self { ident, len, data })
-		})
+			Ok((ident, len, data))
+//			Ok(Self { ident, len, data })
+		})), |((ident, len, data), outer)| Self { ident, len, data, outer } )
 	});
 }
 
@@ -397,7 +402,7 @@ impl DERReader {
 
 		let el = el?;
 
-		self.slices.push(el.data.clone());
+		self.slices.push(el.outer.clone());
 		Ok(el)
 	}
 
@@ -405,7 +410,7 @@ impl DERReader {
 					constructed: bool) -> Result<Bytes> {
 		let tag = self.implicit_tag.take().unwrap_or(Tag { class, number });
 		
-		let el: Result<Bytes> = match &mut self.remaining {
+		let res: Result<(Bytes, Bytes)> = match &mut self.remaining {
 			DERReaderBuffer::Empty => {
 				Err("No remaining data in reader".into())
 			},
@@ -419,7 +424,7 @@ impl DERReader {
 
 					self.remaining = DERReaderBuffer::Unparsed(rest);
 					self.elements_read += 1;
-					Ok(el.data)
+					Ok((el.data, el.outer))
 				} else {
 					// println!("wRONG TAG: {:?} {} {:?} {}", el.ident.tag, el.ident.constructed, tag, constructed);
 					Err("Wrong tag".into())
@@ -433,9 +438,10 @@ impl DERReader {
 
 					// TODO: Get rid of this clone.
 					let out = el.data.clone();
+					let outer = el.outer.clone();
 					self.remaining = DERReaderBuffer::Empty;
 					self.elements_read += 1;
-					Ok(out)
+					Ok((out, outer))
 				} else {
 					Err("Wrong tag".into())
 				}
@@ -447,18 +453,19 @@ impl DERReader {
 					}
 
 					let out = el.data.clone();
+					let outer = el.outer.clone();
 					map.remove(&tag);
 					self.elements_read += 1;
-					Ok(out)
+					Ok((out, outer))
 
 				} else {
 					Err("Missing tag in elements".into())
 				}
 			}
 		};
-		let el = el?;
+		let (el, outer) = res?;
 
-		self.slices.push(el.clone());
+		self.slices.push(outer);
 		Ok(el)
 	}
 
@@ -482,6 +489,23 @@ impl DERReader {
 			}
 		}
 	}
+
+	// TODO: If using DERWriteable going to end up a cyclic reference?
+	pub fn read_with_default<T: DERWriteable, F: FnMut(&mut DERReader) -> Result<T>>(
+		&mut self, mut f: F, default_value: T) -> Result<T> {
+		let value = self.read_option(f)?;
+		match value {
+			Some(v) => {
+				if der_eq(&v, &default_value) {
+					return Err("DERReader saw default value encoded.".into());
+				}
+
+				Ok(v)
+			},
+			None => Ok(default_value)
+		}
+	}
+
 
 	pub fn read_implicitly<T, F: FnMut(&mut DERReader) -> T>(
 		&mut self, tag: Tag, mut f: F) -> T {
@@ -588,16 +612,6 @@ impl DERReader {
 									- (nunused as usize));
 		Ok(BitString { data })
 	}
-
-	// pub fn write_bitstring(&mut self, bits: &BitString) {
-	// 	let octets = bits.data.as_ref();
-	// 	let nunused = octets.len() - bits.data.len();
-
-	// 	self.write_tag(TagClass::Universal, TAG_NUMBER_BIT_STRING, false);
-	// 	self.write_length(octets.len() + 1);
-	// 	self.out.push(nunused as u8);
-	// 	self.out.extend_from_slice(octets);
-	// }
 
 	pub fn read_octetstring(&mut self) -> Result<OctetString> {
 		let data = self.read_element(
@@ -939,7 +953,7 @@ impl<'a> DERWriter<'a> {
 	/// MSB to LSB.
 	pub fn write_bitstring(&mut self, bits: &BitString) {
 		let octets = bits.data.as_ref();
-		let nunused = octets.len() - bits.data.len();
+		let nunused = 8*octets.len() - bits.data.len();
 
 		self.write_tag(TagClass::Universal, TAG_NUMBER_BIT_STRING, false);
 		self.write_length(octets.len() + 1);
@@ -956,6 +970,24 @@ impl<'a> DERWriter<'a> {
 	pub fn write_null(&mut self) {
 		self.write_tag(TagClass::Universal, TAG_NUMBER_NULL, false);
 		self.write_length(0);
+	}
+
+	pub fn write_oid(&mut self, oid: &ObjectIdentifier) {
+		let components = oid.as_ref();
+		assert!(components.len() >= 2);
+		assert!(components[0] <= 2);
+		assert!(components[1] < 40);
+
+		let mut data = vec![];
+		data.push((40*components[0] + components[1]) as u8);
+		for c in &components[2..] {
+			serialize_varint_msb_be(*c, &mut data);
+		}
+
+		self.write_tag(
+			TagClass::Universal, TAG_NUMBER_OBJECT_IDENTIFIER, false);
+		self.write_length(data.len());
+		self.out.extend_from_slice(&data);
 	}
 
 	// TODO: Should only allow a usize?
@@ -1093,6 +1125,39 @@ impl<'a> DERWriter<'a> {
 		self.out.extend_from_slice(s.as_bytes());
 	}
 
+	pub fn write_generalized_time(&mut self, time: &GeneralizedTime) {
+		self.write_tag(
+			TagClass::Universal, TAG_NUMBER_GENERALIZEDTIME, false);
+		let s = time.to_string();
+		self.write_length(s.as_bytes().len());
+		self.out.extend_from_slice(s.as_bytes());
+	}
+
+	pub fn write_universal_string(&mut self, s: &str) {
+		let mut data = vec![];
+		data.reserve(4*s.len()); // NOTE: This is approximate
+		for c in s.chars() {
+			data.extend_from_slice(&(c as u32).to_be_bytes());
+		}
+
+		self.write_tag(
+			TagClass::Universal, TAG_NUMBER_UNIVERSALSTRING, false);
+		self.write_length(data.len());
+		self.out.extend_from_slice(&data);
+	}
+
+	pub fn write_bmp_string(&mut self, s: &str) {
+		let mut data = vec![];
+		for v in s.encode_utf16() {
+			data.extend_from_slice(&v.to_be_bytes());
+		}
+
+		self.write_tag(
+			TagClass::Universal, TAG_NUMBER_BMPSTRING, false);
+		self.write_length(data.len());
+		self.out.extend_from_slice(&data);
+	}
+
 	// DER Rules:
 	// - For 'SET OF' the components are sorted based on the binary encoding value.
 	// - If a default value is present, we should never encode any value equal to it.	
@@ -1170,17 +1235,17 @@ impl<T: DERWriteable + Debug> DERWriteable for SetOf<T> {
 }
 impl DERWriteable for ObjectIdentifier {
 	fn write_der(&self, writer: &mut DERWriter) {
-		// TODO
+		writer.write_oid(self);
 	}
 }
 impl DERWriteable for UTF8String {
 	fn write_der(&self, writer: &mut DERWriter) {
-		// TODO
+		unimplemented!("TODO: UTF8String");
 	}
 }
 impl DERWriteable for NumericString {
 	fn write_der(&self, writer: &mut DERWriter) {
-		// TODO
+		unimplemented!("TODO: NumericString");
 	}
 }
 
@@ -1206,13 +1271,13 @@ impl DERWriteable for IA5String {
 
 impl DERWriteable for UTCTime {
 	fn write_der(&self, writer: &mut DERWriter) {
-		// TODO
+		writer.write_utctime(self);
 	}
 }
 
 impl DERWriteable for GeneralizedTime {
 	fn write_der(&self, writer: &mut DERWriter) {
-		// TODO
+		writer.write_generalized_time(self);
 	}
 }
 
@@ -1220,21 +1285,21 @@ impl DERWriteable for GeneralizedTime {
 
 impl DERWriteable for VisibleString {
 	fn write_der(&self, writer: &mut DERWriter) {
-		// TODO
+		unimplemented!("TODO: VisibleString");
 	}
 }
 // const TAG_NUMBER_GENERALSTRING: usize = 27;
 
 impl DERWriteable for UniversalString {
 	fn write_der(&self, writer: &mut DERWriter) {
-		// TODO
+		writer.write_universal_string(&self.data);
 	}
 }
 // const TAG_NUMBER_CHARACTER_STRING: usize = 29;
 
 impl DERWriteable for BMPString {
 	fn write_der(&self, writer: &mut DERWriter) {
-		// TODO
+		writer.write_bmp_string(&self.data);
 	}
 }
 // const TAG_NUMBER_DATE: usize = 31;
@@ -1244,6 +1309,13 @@ impl DERWriteable for BMPString {
 
 pub trait DERReadable: Sized {
 	fn read_der(reader: &mut DERReader) -> Result<Self>;
+
+	fn from_der(data: Bytes) -> Result<Self> {
+		let mut reader = DERReader::new(data);
+		let out = Self::read_der(&mut reader)?;
+		reader.finished()?;
+		Ok(out)
+	}
 }
 
 impl DERReadable for bool {
@@ -1367,6 +1439,12 @@ impl Any {
 	// }
 }
 
+//impl<T: DERWriteable> std::convert::From<T> for Any {
+//	fn from(value: T) -> Self {
+//		Self::from(value.to_der().into())
+//	}
+//}
+
 impl std::fmt::Debug for Any {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // TODO: At least print the element form.
@@ -1419,11 +1497,44 @@ impl<T: DERWriteable> PartialEq<T> for Any {
 #[macro_export]
 macro_rules! asn_any {
 	($e:expr) => {{
-		let mut buf = vec![];
-		{
-			let mut writer = DERWriter::new(&mut buf);
-			$e.write_der(&mut writer);
-		}
-		Any::from(::bytes::Bytes::from(buf)).unwrap()
+		Any::from(::bytes::Bytes::from($e.to_der())).unwrap()
 	}};
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn length_test() {
+//		let lens = vec![
+//			Length::Indefinite, Length::Short(0), Length::Short(12),
+//			Length::Short(127), Length::Long(52), Length::Long(123456)
+//		];
+
+		let lens = vec![0, 1, 2, 3, 12, 52, 127, 123456];
+
+		for l in lens {
+			let mut enc = vec![];
+			Length::serialize(Some(l), &mut enc);
+			let (dec, rest) = Length::parse(enc.into()).unwrap();
+			assert_eq!(rest.len(), 0);
+
+			let out = match dec {
+				Length::Long(l) => l,
+				Length::Short(l) => l as usize,
+				_ => panic!("Did not expect an indefinite length")
+			};
+			assert_eq!(out, l);
+		}
+	}
+
+	#[test]
+	fn oid_test() {
+		let id = ObjectIdentifier::from(&[1,2,840,113549,1,1,5]);
+		let mut out = id.to_der();
+		println!("{:?}", out);
+		let mut id2 = ObjectIdentifier::from_der(out.into()).unwrap();
+		assert_eq!(id, id2);
+	}
 }

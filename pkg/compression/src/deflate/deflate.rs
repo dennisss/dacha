@@ -6,7 +6,7 @@
 */
 
 use std::io::{Write};
-use crate::bits::*;
+use common::bits::*;
 use common::errors::*;
 use byteorder::{LittleEndian, WriteBytesExt};
 use std::collections::HashMap;

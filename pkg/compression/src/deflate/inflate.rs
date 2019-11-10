@@ -1,7 +1,7 @@
 
 use std::io::Read;
 use common::errors::*;
-use crate::bits::*;
+use common::bits::*;
 use crate::huffman::*;
 use byteorder::{LittleEndian, ReadBytesExt};
 use super::shared::*;

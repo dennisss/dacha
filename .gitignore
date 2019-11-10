@@ -14,3 +14,9 @@ node_modules
 .DS_Store
 dist/*
 /build
+
+__MACOSX
+
+*.so
+
+.ipynb_checkpoints

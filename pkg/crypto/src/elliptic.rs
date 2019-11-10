@@ -5,12 +5,57 @@ use common::errors::*;
 use common::ceil_div;
 use async_trait::async_trait;
 use std::marker::PhantomData;
+use common::LeftPad;
 
 /// Parameters of an elliptic curve of the form:
 /// y^2 = x^3 + a*x + b
 pub struct EllipticCurve {
 	pub a: BigUint,
 	pub b: BigUint
+}
+
+impl EllipticCurve {
+	/// See https://en.wikipedia.org/wiki/Elliptic_curve_point_multiplication#Point_addition
+	/// This includes support for doubling points.
+	fn add_points(&self, p: &EllipticCurvePoint,
+				  q: &EllipticCurvePoint, m: &Modulo) -> EllipticCurvePoint {
+		if p.is_inf() {
+			return q.clone();
+		}
+		if q.is_inf() {
+			return p.clone();
+		}
+
+		let s = if p == q {
+			m.div(&m.add_into(m.mul(&3.into(), &m.pow(&p.x, &2.into())),
+							  &self.a),
+				  &m.mul(&2.into(), &p.y))
+		} else {
+			m.div(&m.sub(&q.y, &p.y), &m.sub(&q.x, &p.x))
+		};
+
+		let x = m.sub_into(m.pow(&s, &2.into()),
+						   &m.add(&p.x, &q.x));
+		let y = m.sub_into(m.mul(&s, &m.sub(&p.x, &x)),
+						   &p.y);
+
+		EllipticCurvePoint { x, y }
+	}
+
+	/// Scalar*point multiplication using the 'double-and-add' method
+	/// TODO: Switch to using the montgomery ladder method.
+	pub fn scalar_mul(&self, d: &BigUint, P: &EllipticCurvePoint,
+					  m: &Modulo) -> EllipticCurvePoint {
+		let mut q = EllipticCurvePoint::zero();
+		for i in (0..d.nbits()).rev() {
+			q = self.add_points(&q, &q, m);
+			if d.bit(i) == 1 {
+				q = self.add_points(&q, P, m);
+			}
+		}
+
+		q
+	}
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -56,15 +101,7 @@ impl DiffieHellmanFn for EllipticCurveGroup {
 		assert!(self.k == 1);
 		let two = BigUint::from(2);
 		let n = secure_random_range(&two, &self.n).await?;
-
-		// Output with padding.
-		let mut out = vec![];
-		out.resize(self.p.min_bytes(), 0);
-
-		let data = n.to_be_bytes();
-		let out_len = out.len();
-		out[(out_len - data.len())..].copy_from_slice(&data);
-		Ok(out)
+		Ok(n.to_be_bytes().left_pad(self.p.min_bytes(), 0))
 	}
 
 	fn public_value(&self, secret: &[u8]) -> Result<Vec<u8>> {
@@ -78,7 +115,45 @@ impl DiffieHellmanFn for EllipticCurveGroup {
 	}
 }
 
+use asn::encoding::DERReadable;
+
 impl EllipticCurveGroup {
+
+	// ECDSA
+	pub fn verify_signature(&self, public_key: &[u8], signature: &[u8],
+							data: &[u8], hasher: &mut dyn crate::hasher::Hasher)
+		-> Result<bool> {
+
+		// TODO: We should allow passing in an Into<Bytes> to avoid cloning the
+		// data here.
+		let (r, s) = {
+			let parsed = pkix::PKIX1Algorithms2008::ECDSA_Sig_Value::from_der(
+				signature.into())?;
+			(parsed.r.to_uint()?, parsed.s.to_uint()?)
+		};
+
+		hasher.update(data);
+		let mut digest = hasher.finish();
+
+		let L_z = self.n.nbits();
+		assert_eq!(L_z % 8, 0);
+		assert!(L_z <= 8*digest.len());
+		digest.truncate(L_z / 8);
+
+		let z = BigUint::from_be_bytes(&digest);
+		let modulo = Modulo::new(&self.n);
+		let u_1 = modulo.div(&z, &s);
+		let u_2 = modulo.div(&r, &s);
+
+		// TODO: Validate that n x point = identity?
+		let point = self.decode_point(public_key)?;
+		let output_point = self.curve.add_points(
+			&self.curve.scalar_mul(&u_1, &self.g, &Modulo::new(&self.p)),
+			&self.curve.scalar_mul(&u_2, &point, &Modulo::new(&self.p)), &Modulo::new(&self.p));
+
+		// TODO: Use modular equivalence
+		Ok(modulo.rem(&r) == modulo.rem(&output_point.x))
+	}
 
 	fn decode_scalar(&self, data: &[u8]) -> Result<BigUint> {
 		if data.len() != self.p.min_bytes() {
@@ -88,23 +163,23 @@ impl EllipticCurveGroup {
 		Ok(BigUint::from_be_bytes(data))
 	}
 
+	// TODO: Not used anywhere right now.
 	fn decode_point(&self, data: &[u8]) -> Result<EllipticCurvePoint> {
-		if data.len() > 1 {
+		if data.len() <= 1 {
 			return Err("Point too small".into());
 		}
 
 		let nbytes = ceil_div(self.p.nbits(), 8);
-
-		let p = if data[0] == 4 {
+		let x1 = if data[0] == 4 {
 			// Uncompressed form
 			// TODO: For TLS 1.3, this is the only supported format
-			if data.len() != 1 + 2*nbytes {
+			if data.len() != 1 + 2 * nbytes {
 				return Err("Point data too small".into());
 			}
-			
-			// TODO: 
-			let x = BigUint::from_be_bytes(&data[1..nbytes]);
-			let y = BigUint::from_be_bytes(&data[nbytes..]);
+
+			// TODO:
+			let x = BigUint::from_be_bytes(&data[1..(nbytes + 1)]);
+			let y = BigUint::from_be_bytes(&data[(nbytes + 1)..]);
 
 			EllipticCurvePoint { x, y }
 		} else if data[0] == 2 || data[0] == 3 {
@@ -114,12 +189,13 @@ impl EllipticCurveGroup {
 				return Err("Point data too small".into());
 			}
 
+			// TODO: Off by one
 			let x = BigUint::from_be_bytes(&data[1..nbytes]);
 
 			// Compute y^2 from the x.
 			let y2 = (&x).pow(&3.into()) + &(&self.curve.a*&x)
 				+ &self.curve.b;
-			
+
 			// NOTE: We do not check that y*y == y^2 as this will be checked
 			// by verify_point anyway.
 			let mut y = y2.isqrt();
@@ -128,13 +204,16 @@ impl EllipticCurveGroup {
 			// one.
 			let lsb = data[0] & 0b1;
 			if lsb != (y.bit(0) as u8) {
+				// TODO: For ECDSA should this use the other modulus?
 				y = Modulo::new(&self.p).negate(&y);
 			}
 
 			EllipticCurvePoint { x, y }
 		} else {
-			return Err("Unknown point format".into());
+			return Err(format!("Unknown point format {}", data[0]).into());
 		};
+
+		let p = x1;
 
 		if !self.verify_point(&p) {
 			return Err("Invalid point".into());
@@ -200,29 +279,49 @@ impl EllipticCurveGroup {
 
 	pub fn secp384r1() -> Self {
 		Self::from_hex(
-			"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFFFF0000000000000000FFFFFFFF",
-			"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFFFF0000000000000000FFFFFFFC",
-			"B3312FA7E23EE7E4988E056BE3F82D19181D9C6EFE8141120314088F5013875AC656398D8A2ED19D2A85C8EDD3EC2AEF",
-			"AA87CA22BE8B05378EB1C71EF320AD746E1D3B628BA79B9859F741E082542A385502F25DBF55296C3A545E3872760AB7",
-			"3617DE4A96262C6F5D9E98BF9292DC29F8F41DBD289A147CE9DA3113B5F0B8C00A60B1CE1D7E819D7A431D7C90EA0E5F",
-			"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC7634D81F4372DDF581A0DB248B0A77AECEC196ACCC52973",
+			"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFF\
+			 FFFFFF0000000000000000FFFFFFFF",
+			"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFF\
+			 FFFFFF0000000000000000FFFFFFFC",
+			"B3312FA7E23EE7E4988E056BE3F82D19181D9C6EFE8141120314088F5013875AC6\
+			 56398D8A2ED19D2A85C8EDD3EC2AEF",
+			"AA87CA22BE8B05378EB1C71EF320AD746E1D3B628BA79B9859F741E082542A3855\
+			 02F25DBF55296C3A545E3872760AB7",
+			"3617DE4A96262C6F5D9E98BF9292DC29F8F41DBD289A147CE9DA3113B5F0B8C00A\
+			 60B1CE1D7E819D7A431D7C90EA0E5F",
+			"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC7634D81F4372DDF58\
+			 1A0DB248B0A77AECEC196ACCC52973",
 			1)
 	}
 
 	pub fn secp521r1() -> Self {
 		Self::from_hex(
-			"01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
-			"01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC",
-			"0051953EB9618E1C9A1F929A21A0B68540EEA2DA725B99B315F3B8B489918EF109E156193951EC7E937B1652C0BD3BB1BF073573DF883D2C34F1EF451FD46B503F00",
-			"00C6858E06B70404E9CD9E3ECB662395B4429C648139053FB521F828AF606B4D3DBAA14B5E77EFE75928FE1DC127A2FFA8DE3348B3C1856A429BF97E7E31C2E5BD66",
-			"011839296A789A3BC0045C8A5FB42C7D1BD998F54449579B446817AFBD17273E662C97EE72995EF42640C550B9013FAD0761353C7086A272C24088BE94769FD16650",
-			"01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA51868783BF2F966B7FCC0148F709A5D03BB5C9B8899C47AEBB6FB71E91386409",
+			"01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\
+			 FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\
+			 ",
+			"01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\
+			 FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC\
+			 ",
+			"0051953EB9618E1C9A1F929A21A0B68540EEA2DA725B99B315F3B8B489918EF109\
+			 E156193951EC7E937B1652C0BD3BB1BF073573DF883D2C34F1EF451FD46B503F00\
+			 ",
+			"00C6858E06B70404E9CD9E3ECB662395B4429C648139053FB521F828AF606B4D3D\
+			 BAA14B5E77EFE75928FE1DC127A2FFA8DE3348B3C1856A429BF97E7E31C2E5BD66\
+			 ",
+			"011839296A789A3BC0045C8A5FB42C7D1BD998F54449579B446817AFBD17273E66\
+			 2C97EE72995EF42640C550B9013FAD0761353C7086A272C24088BE94769FD16650\
+			 ",
+			"01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\
+			 FA51868783BF2F966B7FCC0148F709A5D03BB5C9B8899C47AEBB6FB71E91386409\
+			 ",
 			1)
 	}
 
 
 
 	/// Returns whether or not the given point is on the curve.
+	/// TODO: There is also a 'point on curve' verification algorith here:
+	/// https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm#Signature_verification_algorithm
 	pub fn verify_point(&self, p: &EllipticCurvePoint) -> bool {
 		// TODO: Must deal with three criteria:
 		// 1. Not at infinity
@@ -241,51 +340,15 @@ impl EllipticCurveGroup {
 
 		let lhs = &p.y*&p.y;
 		let rhs = (&p.x).pow(&3.into()) + &(&self.curve.a*&p.x) + &self.curve.b;
-		(lhs % &self.n) == (rhs % &self.n)
+		(lhs % &self.p) == (rhs % &self.p)
 	}
 
-	/// See https://en.wikipedia.org/wiki/Elliptic_curve_point_multiplication#Point_addition
-	/// This includes support for doubling points.
-	fn add_points(&self, p: &EllipticCurvePoint,
-				  q: &EllipticCurvePoint) -> EllipticCurvePoint {
-		if p.is_inf() {
-			return q.clone();
-		}
-		if q.is_inf() {
-			return p.clone();
-		}
-
-		let m = Modulo::new(&self.p);
-		let s = if p == q {
-			m.div(&m.add_into(m.mul(&3.into(), &m.pow(&p.x, &2.into())),
-						 &self.curve.a),
-			 	  &m.mul(&2.into(), &p.y))
-		} else {
-			m.div(&m.sub(&q.y, &p.y), &m.sub(&q.x, &p.x))
-		};
-
-		let x = m.sub_into(m.pow(&s, &2.into()),
-					       &m.add(&p.x, &q.x));
-		let y = m.sub_into(m.mul(&s, &m.sub(&p.x, &x)),
-					       &p.y);
-
-		EllipticCurvePoint { x, y }
-	}
-
-	/// Scalar*point multiplication using the 'double-and-add' method
-	/// TODO: Switch to using the montgomery ladder method.
 	pub fn curve_mul(&self, d: &BigUint) -> EllipticCurvePoint {
-		// let mut n = self.g.clone();
-		let mut q = EllipticCurvePoint::zero();
-		for i in (0..d.nbits()).rev() {
-			q = self.add_points(&q, &q);
-			if d.bit(i) == 1 {
-				q = self.add_points(&q, &self.g);
-			}
-		}
-
-		q
+		self.curve.scalar_mul(d, &self.g, &Modulo::new(&self.p))
 	}
+}
+
+struct EllipticCurveMultiplier {
 
 }
 
@@ -515,6 +578,7 @@ fn mask(modulo: &Modulo, v: &BigUint) -> BigUint {
 mod tests {
 	use super::*;
 	use std::str::FromStr;
+	use asn::encoding::DERWriteable;
 
 	#[test]
 	fn small_elliptic_curve_test() {
@@ -611,6 +675,33 @@ mod tests {
 		assert_eq!(&group.shared_secret(&bob_public, &alice_private).unwrap(),
 				   &shared_secret);
 	}
+
+	#[test]
+	fn ecdsa_test() {
+		// Test vectors grabbed from:
+		// https://github.com/bcgit/bc-java/blob/master/core/src/test/java/org/bouncycastle/crypto/test/ECTest.java#L384
+		// testECDSASecP224k1sha256
+
+		let curve = EllipticCurveGroup::secp224r1();
+
+		let msg = hex::decode("E5D5A7ADF73C5476FAEE93A2C76CE94DC0557DB04CDC189504779117920B896D").unwrap();
+		let r = BigUint::from_be_bytes(&hex::decode("8163E5941BED41DA441B33E653C632A55A110893133351E20CE7CB75").unwrap());
+		let s = BigUint::from_be_bytes(&hex::decode("D12C3FC289DDD5F6890DCE26B65792C8C50E68BF551D617D47DF15A8").unwrap());
+
+		let sig = crate::x509::asn::PKIX1Algorithms2008::ECDSA_Sig_Value {
+			r: r.into(),
+			s: s.into()
+		}.to_der();
+
+
+		let point = hex::decode("04C5C9B38D3603FCCD6994CBB9594E152B658721E483669BB42728520F484B537647EC816E58A8284D3B89DFEDB173AFDC214ECA95A836FA7C").unwrap();
+
+		let mut hasher = crate::sha256::SHA256Hasher::default();
+
+		assert!(curve.verify_signature(&point, &sig, &msg, &mut hasher).unwrap());
+
+	}
+
 
 }
 

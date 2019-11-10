@@ -5,9 +5,10 @@
 #[macro_use] extern crate asn;
 #[macro_use] extern crate lazy_static;
 extern crate hex;
-extern crate async_trait;
+#[macro_use] extern crate async_trait;
 extern crate generic_array;
 extern crate typenum;
+extern crate pkix;
 
 // TODO: Implement mlock utility from preventing swapping.
 

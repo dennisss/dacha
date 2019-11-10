@@ -417,10 +417,10 @@ impl FileCompiler {
 		Ok(())
 	}
 
-	/// Compiles 
+	/// Compiles
 	fn compile_struct(&self, name: &str, prefixes: &[TypePrefix],
 					  types: &[ComponentType], ctx: &Context, is_set: bool)
-	-> Result<LineBuilder> {
+					  -> Result<LineBuilder> {
 		let mut fields = vec![];
 		for t in types.iter() {
 			match t {
@@ -476,7 +476,7 @@ impl FileCompiler {
 		lines.append(inner);
 		lines.add("}");
 		lines.nl();
-		
+
 
 		impl_der_readable(&mut lines, name, |l| {
 			if is_set {
@@ -485,14 +485,14 @@ impl FileCompiler {
 				l.add("r_.read_sequence(false, |r_| {");
 			}
 			l.indented(|l| {
-				let mut ctor = String::from("Ok(Self { "); 
+				let mut ctor = String::from("Ok(Self { ");
 				for f in fields.iter() {
 					let mut field_lines = LineBuilder::new();
 					let field_name = Self::field_name(f.name.as_ref());
 					let typename = field_typenames.get(&field_name).unwrap();
 
 					field_lines.add(format!("{}::read_der(r_)",
-									typename.replace("<", "::<")));
+											typename.replace("<", "::<")));
 
 					// TODO: Must also implement good support for options?
 
@@ -501,7 +501,7 @@ impl FileCompiler {
 					self.compile_type_prefixes(
 						EncodingMode::Read,
 						&f.typ.prefixes, &mut field_lines).unwrap();
-					
+
 					if let ComponentMode::Optional = f.mode {
 						field_lines.indent();
 						field_lines.wrap_with(
@@ -510,8 +510,6 @@ impl FileCompiler {
 						field_lines.indent();
 						println!("{:?}", v);
 
-						let mut valuec = self.compile_value(v, &typename, &f.typ).unwrap().0;
-
 						let builtin_type = match &f.typ.desc {
 							TypeDesc::Builtin(v) => v.clone(),
 							TypeDesc::Referenced(v) => {
@@ -519,14 +517,26 @@ impl FileCompiler {
 							}
 						};
 
+						let mut valuec = self.compile_value(v, &typename, &f.typ).unwrap().0;
 						if self.is_referenced_value(v, builtin_type.as_ref()) && !valuec.contains("{") {
 							valuec = format!("(*{})", valuec);
 						}
 
+						// TODO: For all constants, we might as well pre-serialize them in the compiled version?
+
 						field_lines.wrap_with(
-							"r_.read_option(|r_| {".into(),
-							format!("}})?.unwrap_or({}.clone().into());",
+							"r_.read_with_default(|r_| {".into(),
+							format!("}}, {}.clone().into())?;",
 									valuec));
+
+						// format!("}})?.unwrap_or({}.clone().into());",
+						//									valuec)
+
+						// TODO: We can't use der_eq because things like 'bool' have different encodings possible (at least if we try to optimize it?
+//						field_lines.add(format!("if der_eq(&{}, &{}) {{", field_name, valuec));
+//						field_lines.add(format!("\treturn Err(\"DER got default value encoded for '{}'\".into());",
+//												field_name));
+//						field_lines.add("}");
 					} else {
 						field_lines.add_inline("?;");
 					}
@@ -564,13 +574,14 @@ impl FileCompiler {
 			} else {
 				l.add("w_.write_sequence(|w_| {");
 			}
-			
-			// TODO: If we are compiling a SET, we should pre-sort the 
+
+			// TODO: If we are compiling a SET, we should pre-sort the
 			// writes by tag so that it is cheaper to read/write.
 			l.indented(|l| {
 				for f in fields.iter() {
 					let mut field_lines = LineBuilder::new();
 					let field_name = Self::field_name(f.name.as_ref());
+					let typename = field_typenames.get(&field_name).unwrap();
 
 					// TODO: For items with default values, we must compare
 					// to the default value to see if we should even bother
@@ -578,20 +589,38 @@ impl FileCompiler {
 
 					// TODO: Should also implement any special prefixed for
 					// this field or constraints
-					
-					// TODO: Refactor DERWriter so that we never need to use
-					// .next()
+
+
 					if let ComponentMode::Optional = &f.mode {
 						field_lines.add("v.write_der(w_);");
+					} else if let ComponentMode::WithDefault(v) = &f.mode {
+						let builtin_type = match &f.typ.desc {
+							TypeDesc::Builtin(v) => v.clone(),
+							TypeDesc::Referenced(v) => {
+								self.lookup_type(v.as_ref()).unwrap()
+							}
+						};
+
+						let mut valuec = self.compile_value(v, &typename, &f.typ).unwrap().0;
+//						if self.is_referenced_value(v, builtin_type.as_ref()) && !valuec.contains("{") {
+//							valuec = format!("(*{})", valuec);
+//						}
+
+						field_lines.add(format!("if !der_eq(&self.{}, &{}) {{", field_name, valuec));
+						// TODO: This line is the same as the default case.
+						field_lines.add(format!("\tself.{}.write_der(w_);",
+												field_name));
+						field_lines.add("}");
+
 					} else {
 						field_lines.add(format!("self.{}.write_der(w_);",
-										field_name));
+												field_name));
 					}
 
 					self.compile_type_prefixes(
 						EncodingMode::Write,
 						&f.typ.prefixes, &mut field_lines).unwrap();
-					
+
 					if let ComponentMode::Optional = &f.mode {
 						field_lines.indent();
 						field_lines.wrap_with(
@@ -636,12 +665,45 @@ impl FileCompiler {
 		l.add("}");
 		l.nl();
 
+		// TODO: Must implement this for inline types as well
+		if let TypeDesc::Builtin(t) = &typ.desc {
+			if let BuiltinType::BitString(t) = t.as_ref() {
+				if t.named_bits.len() > 0 {
+					l.add(format!("impl {} {{", name));
+					for bit in &t.named_bits {
+						let v = match &bit.value {
+							NamedBitValue::Immediate(v) => v.to_string(),
+							NamedBitValue::Defined(v) =>
+								Self::value_name(v.as_ref())
+						};
+
+						l.add(format!("\tpub fn {}(&self) -> Option<bool> {{",
+									  bit.name.as_ref()));
+						l.add(format!("\t\tself.value.get({}).map(|v| {{", v));
+						l.add("\t\t\tif v == 1 { true } else { false }");
+						l.add("\t\t})");
+						l.add("}");
+					}
+					l.add("}");
+					l.nl();
+				}
+			}
+		}
+
 		if self.can_to_string(&typ.desc) {
 			impl_to_string(&mut l, name, |l| {
 				l.add("self.value.to_string()");
 			});
 			l.nl();
 		}
+
+		l.add(format!("impl ::std::ops::Deref for {} {{", name));
+		l.add(format!("\ttype Target = {};", typename));
+		l.add("\tfn deref(&self) -> &Self::Target {");
+		l.add("\t\t&self.value");
+		l.add("\t}");
+		l.add("}");
+		l.nl();
 
 		l.add(format!("impl Into<{}> for {} {{", typename, name));
 		l.add(format!("\tfn into(self) -> {} {{", typename));
@@ -656,6 +718,13 @@ impl FileCompiler {
 		l.add("\t}");
 		l.add("}");
 		l.nl();
+
+//		l.add(format!("impl ::std::cmp::PartialEq<{}> for {} {{", typename, name));
+//		l.add(format!("\tfn eq(&self, other: &{}) -> bool {{", typename));
+//		l.add("\t\t&self.value == other");
+//		l.add("\t}");
+//		l.add("}");
+//		l.nl();
 
 		{
 			// TODO: Keep unwrapping incase it is multiple layers of nesting.
@@ -680,7 +749,7 @@ impl FileCompiler {
 			l.nl();
 		}
 
-		// If the inner 
+		// If the inner
 
 		// TODO: Implement Deref and DerefMut and AsRef() and AsMut
 

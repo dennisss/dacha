@@ -1,5 +1,7 @@
 #![feature(trait_alias, const_fn, const_constructor)]
 #[macro_use] extern crate error_chain;
+#[macro_use] extern crate async_trait;
+extern crate async_std;
 extern crate fs2;
 extern crate libc;
 extern crate hex;
@@ -10,6 +12,7 @@ pub mod algorithms;
 pub mod factory;
 pub mod bits;
 pub mod vec;
+pub mod io;
 
 pub trait FlipSign<T> {
 	/// Transmutes an signed/unsigned integer into it's opposite unsigned/signed integer while maintaining bitwise equivalence even though the integer value may change
@@ -24,6 +27,30 @@ impl FlipSign<u32> for i32 { fn flip(self) -> u32 { self as u32 } }
 impl FlipSign<i32> for u32 { fn flip(self) -> i32 { self as i32 } }
 impl FlipSign<u64> for i64 { fn flip(self) -> u64 { self as u64 } }
 impl FlipSign<i64> for u64 { fn flip(self) -> i64 { self as i64 } }
+
+
+pub trait LeftPad<T> {
+	fn left_pad(self, size: usize, default_value: T) -> Vec<T>;
+}
+
+impl<T: Copy> LeftPad<T> for Vec<T> {
+	fn left_pad(mut self, size: usize, default_value: T) -> Self {
+		if self.len() == size {
+			return self;
+		}
+
+		let mut out = vec![];
+		out.reserve(std::cmp::max(size, self.len()));
+
+		for _ in self.len()..size {
+			out.push(default_value);
+		}
+
+		out.append(&mut self);
+		out
+	}
+}
+
 
 
 pub mod errors {

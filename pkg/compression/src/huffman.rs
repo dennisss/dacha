@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use common::errors::*;
 use common::algorithms::merge_by;
 use std::collections::HashMap;
-use super::bits::*;
+use common::bits::*;
 
 // TODO: Remove debug from these
 enum HuffmanNode {
@@ -85,7 +85,7 @@ impl HuffmanTree {
 			HuffmanNode::Inner(None, None));
 		
 		for i in 0..code.len() {
-			let b = code.get(i);
+			let b = code.get(i).unwrap();
 			let next_node = match current_node {
 				HuffmanNode::Leaf(_) => {
 					return Err("A shorter prefix was already inserted".into());

@@ -11,6 +11,18 @@ const INITIAL_HASH: [u64; 8] = [
 	0x1f83d9abfb41bd6b, 0x5be0cd19137e2179
 ];
 
+const INITIAL_HASH_224: [u64; 8] = [
+	0x8C3D37C819544DA2, 0x73E1996689DCD4D6, 0x1DFAB7AE32FF9C82,
+	0x679DD514582F9FCF, 0x0F6D2B697BD44DA8, 0x77E36F7304C48942,
+	0x3F9D85A86A1D36C8, 0x1112E6AD91D692A1
+];
+
+const INITIAL_HASH_256: [u64; 8] = [
+	0x22312194FC2BF72C, 0x9F555FA3C84C64C2, 0x2393B86B6F53B151,
+	0x963877195940EABD, 0x96283EE2A88EFFE3, 0xBE5E1E2553863992,
+	0x2B0199FC2C85B8AA, 0x0EB72DDC81C52CA2
+];
+
 const ROUND_CONSTANTS: [u64; 80] = [
 	0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f,
 	0xe9b5dba58189dbbc, 0x3956c25bf348b538, 0x59f111f1b605d019,
@@ -136,7 +148,45 @@ impl Hasher for SHA512Hasher {
 
 		hh.to_vec()
 	}
-} 
+}
+
+/// SHA-512/224
+pub struct SHA512_224Hasher { inner: SHA512Hasher }
+
+impl Default for SHA512_224Hasher {
+	fn default() -> Self {
+		Self { inner: SHA512Hasher::new_with_hash(&INITIAL_HASH_224) }
+	}
+}
+
+impl Hasher for SHA512_224Hasher {
+	fn output_size(&self) -> usize { 28 }
+	fn update(&mut self, data: &[u8]) { self.inner.update(data); }
+	fn finish(&self) -> Vec<u8> {
+		let mut out = self.inner.finish();
+		out.truncate(self.output_size());
+		out
+	}
+}
+
+/// SHA-512/256
+pub struct SHA512_256Hasher { inner: SHA512Hasher }
+
+impl Default for SHA512_256Hasher {
+	fn default() -> Self {
+		Self { inner: SHA512Hasher::new_with_hash(&INITIAL_HASH_256) }
+	}
+}
+
+impl Hasher for SHA512_256Hasher {
+	fn output_size(&self) -> usize { 32 }
+	fn update(&mut self, data: &[u8]) { self.inner.update(data); }
+	fn finish(&self) -> Vec<u8> {
+		let mut out = self.inner.finish();
+		out.truncate(self.output_size());
+		out
+	}
+}
 
 
 #[cfg(test)]
