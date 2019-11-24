@@ -6,22 +6,21 @@ use super::super::errors::*;
 use super::super::directory;
 use super::machine::*;
 use super::memory::*;
-use futures::prelude::*;
 use super::super::paths::*;
 use hyper::{Request, Body, Response, Method, StatusCode};
 use hyper::http::request::Parts;
 use hyper::body::Payload;
 use std::sync::{Arc,Mutex};
-use futures::prelude::await;
 use std::time::{SystemTime, Duration};
 use rand::thread_rng;
 use rand::seq::SliceRandom;
 use hyper::header::HeaderMap;
 use bytes::Bytes;
+use futures::compat::Future01CompatExt;
+use futures::compat::Stream01CompatExt;
+use futures::stream::StreamExt;
 
-
-#[async]
-pub fn handle_request(
+pub async fn handle_request(
 	parts: Parts, body: Body, mac_handle: MachineHandle
 ) -> Result<Response<Body>> {
 
@@ -45,7 +44,7 @@ pub fn handle_request(
 		CachePath::Index => index_cache(mac_handle),
 
 		CachePath::Proxy { machine_ids, store } => {
-			await!(handle_proxy_request(parts, body, mac_handle, machine_ids, store))
+			handle_proxy_request(parts, body, mac_handle, machine_ids, store).await
 		},
 
 		_ => Ok(bad_request_because("Unsupported path pattern"))
@@ -85,8 +84,7 @@ fn index_cache(mac_handle: MachineHandle) -> Result<Response<Body>> {
 /// To mitigate backend DOS, this will limit the number of machines that can be specified as backends when making a request to the cache (does not apply in the unspecified mode)
 const MAX_MACHINE_LIST_SIZE: usize = 6;
 
-#[async]
-fn handle_proxy_request(
+async fn handle_proxy_request(
 	parts: Parts, body: Body, mac_handle: MachineHandle, machine_ids: MachineIds, store: StorePath
 ) -> Result<Response<Body>> {
 
@@ -175,10 +173,10 @@ fn handle_proxy_request(
 					
 					} // End mutex scope
 
-					await!(respond_from_backend(
+					respond_from_backend(
 						parts, mac_handle, store_macs, store_str, old_entry,
 						volume_id, key, alt_key, cookie
-					))
+					).await
 				},
 				Method::POST => {
 					// TODO: Performing a proxied upload to one or more store machines
@@ -192,8 +190,7 @@ fn handle_proxy_request(
 }
 
 
-#[async]
-fn respond_from_backend(
+async fn respond_from_backend(
 	parts: Parts, mac_handle: MachineHandle, store_macs: Vec<directory::models::StoreMachine>, store_path: String, old_entry: Option<Arc<MemoryEntry>>,
 	volume_id: VolumeId, key: NeedleKey, alt_key: NeedleAltKey, cookie: CookieBuf
 ) -> Result<Response<Body>> {
@@ -235,7 +232,7 @@ fn respond_from_backend(
 			}
 		}
 
-		let res = match await!(client.request(req.body(Body::empty()).unwrap())) {
+		let res = match client.request(req.body(Body::empty()).unwrap()).compat().await {
 			Ok(r) => r,
 			Err(e) => {
 				eprintln!("Backend failed with {:?}", e);
@@ -269,14 +266,14 @@ fn respond_from_backend(
 				).to_str().unwrap_or("0").parse::<usize>().unwrap_or(0);
 				// TODO: body.content_length() seems to be private?
 
-				let body = res.into_body();
+				// TODO: This is bad
+				let body = res.into_body().compat().map(|x| x.unwrap()).concat().await;
 
 				buf = Bytes::with_capacity(content_length as usize);
 				
-				#[async]
-				for c in body {
-					buf.extend_from_slice(&c);
-				}
+				// while let Some(Ok(c)) = body.compat().next().await {
+				// 	buf.extend_from_slice(&c);
+				// }
 
 			}
 			// Otherwise we got a NotModified

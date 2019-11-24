@@ -10,16 +10,14 @@ use super::machine::*;
 use super::volume::*;
 use super::needle::*;
 use hyper::{Body, Response, StatusCode};
-use futures::prelude::*;
-use futures::prelude::await;
-use futures::future::*;
-use futures::Stream;
 use std::sync::{Arc, Mutex};
 use super::api::*;
+use futures::Stream;
+use futures::StreamExt;
+use futures::future::{ok, err};
+use futures::compat::Stream01CompatExt;
 
-
-#[async]
-pub fn write_single(
+pub async fn write_single(
 	mac_handle: MachineHandle,
 	volume_id: VolumeId, key: NeedleKey, alt_key: NeedleAltKey, cookie: CookieBuf,
 	content_length: u64,
@@ -29,8 +27,7 @@ pub fn write_single(
 	let mut chunks = vec![];
 	let mut nread = 0;
 
-	#[async]
-	for c in body {
+	while let Some(Ok(c)) = body.compat().next().await {
 		nread = nread + c.len();
 		chunks.push(c.into_bytes());
 		if nread >= (content_length as usize) {
@@ -113,7 +110,7 @@ struct WriteBatchState {
 pub fn write_batch(
 	mac_handle: MachineHandle,
 	body: Body
-) -> impl Future<Item=Response<Body>, Error=Error> {
+) -> impl std::future::Future<Output=std::result::Result<Response<Body>, Error>> {
 
 	let mut header_buf = vec![]; header_buf.reserve_exact(NEEDLE_CHUNK_HEADER_SIZE);
 

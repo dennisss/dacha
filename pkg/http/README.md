@@ -8,3 +8,23 @@ HTTP Client and Server
 
 
 TODO: FTP: ftp://prep.ai.mit.edu/pub/gnu/
+
+TODO: Deflate: https://tools.ietf.org/html/rfc1951
+
+TODO: Cookie jar
+
+- Usually I don't need fancy traits implementing futures
+	- So usually relatively simple
+	- If I did need it, then I could just implement 
+
+For body, we will implement a Box<Future> from read so that I don't need to implement this stuff
+
+- Other stuff:
+	- How to incrementally read
+	- 
+
+
+Hop-to-hop headers are generally disallowed in user provided requests/responses
+- These will be derived based on the given body internally.
+
+TODO: Once any gzip data has been read, we must ensure that we are then at the end of the stream if appropriate.

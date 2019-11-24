@@ -90,7 +90,8 @@ impl<'a> ParseCursor<'a> {
 
 	// Accepts any number of items parsed by f separated by a delimiter
 	// parsed by d.
-	fn delimited<T: Clone, Y, F: Clone + Parser<'a, T>, D: Clone + Parser<'a, Y>>(&mut self, f: F, d: D) -> Vec<T> {
+	fn delimited<T: Clone, Y, F: Clone + Parser<'a, T>,
+				 D: Clone + Parser<'a, Y>>(&mut self, f: F, d: D) -> Vec<T> {
 		let mut vals = vec![];
 		let first = match self.next(f.clone()) {
 			Ok(v) => v,
@@ -446,11 +447,11 @@ fn field(input: &[Token]) -> ParseResult<Field> {
 	let name = c.next(fieldName)?;
 	c.is(symbol, '=')?;
 	let num = c.next(fieldNumber)?;
-	let options = c.next(fieldOptionsWrap).unwrap_or(vec![]);
+	let unknown_options = c.next(fieldOptionsWrap).unwrap_or(vec![]);
 
 	c.is(symbol, ';')?;
 
-	c.unwrap_with(Field { label: labl, typ, name, num, options })
+	c.unwrap_with(Field { label: labl, typ, name, num, options: FieldOptions::default(), unknown_options })
 }
 
 // Proto 2 and 3
@@ -526,15 +527,16 @@ fn oneof(input: &[Token]) -> ParseResult<OneOf> {
 
 // Proto 2 and 3
 // oneofField = type fieldName "=" fieldNumber [ "[" fieldOptions "]" ] ";"
-fn oneofField(input: &[Token]) -> ParseResult<OneOfField> {
+fn oneofField(input: &[Token]) -> ParseResult<Field> {
 	let mut c = ParseCursor::new(input);
 	let typ = c.next(fieldType)?;
 	let name = c.next(fieldName)?;
 	c.is(symbol, '=')?;
 	let num = c.next(fieldNumber)?;
-	let options = c.next(fieldOptionsWrap).unwrap_or(vec![]);
+	let unknown_options = c.next(fieldOptionsWrap).unwrap_or(vec![]);
 	c.is(symbol, ';')?;
-	c.unwrap_with(OneOfField { typ, name, num, options })
+	c.unwrap_with(Field { label: Label::Optional, typ, name,
+		num, options: FieldOptions::default(), unknown_options })
 }
 
 // Proto 2 and 3

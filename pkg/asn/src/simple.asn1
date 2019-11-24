@@ -1,0 +1,15 @@
+World-Schema DEFINITIONS AUTOMATIC TAGS ::= 
+BEGIN
+  Rocket ::= SEQUENCE       
+  {                                                     
+     name      UTF8String (SIZE(1..16)),
+     message   UTF8String DEFAULT "Hello World",
+     fuel      ENUMERATED {solid, liquid, gas},
+     speed     CHOICE     
+     { 
+        mph    INTEGER,  
+        kmph   INTEGER  
+     }  OPTIONAL, 
+     payload   SEQUENCE OF UTF8String 
+  }                                                     
+END

@@ -1,6 +1,109 @@
 Raft Consensus
 ==============
 
+
+/*
+	Basically generating a perfect hash table
+
+	- Level one us a
+		- 65kb to build a 2 character trie that is fully complete
+
+	- In perfect hashing world:
+		- No real need for metadata
+
+	Efficient loading of the hsah table into memory
+		- Load a bit buffer
+		- Transmute all of the addresses into arrays of integers
+		- All lookups will involve two runs through this thing
+		-> Return value of this will either a Byte object slice that is owned or an immutable slice that we can use
+		-> Other considerations
+			-> Generalize to become an ordered set
+			-> If we are looking up hashes, support a mode that uses zero allocations
+			-> Something that will be important:
+			-> For a hash lookup engine
+				-> Supporting constant size entries
+				-> In this case also possible to encode some of the data as the hash value in this case
+				-> 
+		-> Partitioning to multiple machines
+			-> Fairly trivial 
+			-> Could be all stored in GFS and only partially loaded by each machine
+			-> For a read-only machine, no fanciness is really needed
+
+	-> So implement a hashtable using indirection
+		-> Long term implement 
+
+
+
+	Our hash tables:
+	- Outer layer
+		- O(n) different slots
+			- annoyingly this does pretty much require 64*n different offsets to map to each inner hash table assuming that every single value is of a different size
+				- Could use 32bit numbers for deltas but that doesn't help us really that much
+					- At least compress based on first storing all of the hash table mappings and then do the rest of the stuff
+
+	So storage cost is:
+	- Size of all keys + Size of all data + ~(8 * 2*N) for the hash table stuff
+		- Also note that to make that write-able
+		- Also trivially splittable into multiple files based on the buckets
+		- If we use consistent hashing, it would be even more trivial to resize 
+
+
+	Likewise use a record-io style block checksumming and segmentation of everything
+		- Offering a possible location to compression as well
+
+
+	- Computing a perfect hash table while in memory
+		- If we know the size of 
+
+*/
+
+Things to split out of this code:
+- record_io
+- Specific Redis/MongoDB state-machine/network implementations
+- Gossip/discovery protocol stuff for identifying all servers in a network
+
+CockroachDB also does fancy selection of a peering list:
+- https://github.com/cockroachdb/cockroach/blob/master/docs/design.md
+
+
+TODO: Long term use better gossip protocols such as SWIM:
+-> This could be seen as the method that accompanies the seed method
+- https://www.brianstorti.com/swim/
+
+XXX: Basically in order to return batching of responses to many append_entries requests all at once, we must be to able to unlock the consensus module before performing any writes to files like the metafile
+- Ideally the consensus module should retain a thin reference to the log storage hat caches all important numbers
+	- AKA: The last term/index in the log
+	- The queue of things that need to be added to the log
+		- Basically one of the only things that must be syncronized aside from the match_index
+			- Match Index is tricky because it is relative to a single term (so is an atomic tuple pretty much
+
+	- Use lockfree::queue::Queue as the basis for the in-memory append queue
+		- Issue being that truncations can also instantly remove many things from this queue all at once (so must be able to efficiently perform a truncation on the list
+	- General idea being to pop all items at the start of a flush
+		- Then in-memory scan for a truncation while popping
+		- Issue being that this violates the principle that entries are immediately available after being appended
+		- Life is 100% simpler when using a single mutex
+		- Possibly also a chain of vectors so that the flusher can append a new primary one on deferal
+
+See also https://github.com/cockroachdb/cockroach/blob/master/docs/design.md
+- Possibly some form of efficient linearizability via causality cookies
+
+- While CockroachDB would shutdown a node when clocks become too skewed, we'd like to have safe-behavior in this case by downgrading to heartbeat-based linearizability in these cases
+	- Follower reads will pretty much always do this anyway
+	- Basically exchanging some memory and latency for keeping the system up under clock failures
+	- The only question is how to catch the clock failures at the right time
+		- For one, we need to have the idea of clock reverse feedback
+			- Multiple clock sources
+				- NTP, RTC, CPU TSC
+				- Attemping to detect failure of one local clock via cross-checking with another one
+			- If a follower sees that the leader is dangerously close to the end of their lease, they should send them a time signal packet to tell them what their clock is
+				- This packet from a follower will be a 'revoke' of a lease
+					- Assuming that the network and clocks don't fail simulataneously, this can be used to force a leader to downgrade to hearbeats if it loses a quorum 
+				- Clients can also participate in the clock algorithm by verifying the times they see in responses associated with their reads(/and writes)
+
+TODO: Best case our server implementation should be completely lock-free outside aside from the internally managed consensus module
+- All locking should be deferred to the Storage implementations and should be well batchable in case a single lock is required for the entire storage, log, or state machine implementation, then it should log only once
+
 Replicated state-machine consensus algorithm implementation. 
 
 Naturally this implementation stands on the shoulders of giants like `etcd/raft` and `LogCabin`. This implementation is unique in being hopefully more Rusty and more explicit about the scoping of state variables and where needed, requirements on persistence properties are explicitly enforced with rust constructs.

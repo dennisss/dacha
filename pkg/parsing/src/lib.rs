@@ -417,3 +417,27 @@ impl<I: Clone> ParseCursor<I> {
 	}
 }
 
+impl ParseCursor<Bytes> {
+	pub fn nexts<T, F: Fn(&[u8])
+		-> std::result::Result<(T, &[u8]), ParseError>>(&mut self, f: F)
+		-> std::result::Result<T, ParseError> {
+		match f(&self.rest) {
+			Ok((v, r)) => {
+				let n = self.rest.len() - r.len();
+				self.rest.advance(n);
+				Ok(v)
+			},
+			Err(e) => Err(e)
+		}
+	}
+}
+
+
+#[macro_export]
+macro_rules! parse_next {
+    ($input:ident, $f:expr) => {{
+    	let (v, rest) = $f($input)?;
+    	$input = rest;
+    	v
+    }};
+}

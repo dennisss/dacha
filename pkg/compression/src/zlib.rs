@@ -10,6 +10,9 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use common::errors::*;
 use crypto::hasher::*;
 use crate::deflate::*;
+use crate::adler32::*;
+
+const WINDOW_LOG_OFFSET: u8 = 8;
 
 struct DeflateInfo {
 	/// LZ77 window size used by the compressor in bytes.
@@ -18,6 +21,27 @@ struct DeflateInfo {
 
 enum CompressionMethod {
 	Deflate(DeflateInfo)
+}
+
+impl CompressionMethod {
+	fn decode(cmf: u8) -> Result<CompressionMethod> {
+		let cm = cmf & 0b1111;
+		let cinfo = cmf >> 4;
+
+		Ok(match cm {
+			8 => {
+				let size = 1 << (cinfo + WINDOW_LOG_OFFSET) as usize;
+				if size > 32768 {
+					return Err("Window size too large for deflate".into());
+				}
+
+				CompressionMethod::Deflate(DeflateInfo {
+					window_size: size
+				})
+			},
+			_ => { return Err("Unknown compression method".into()); }
+		})
+	}
 }
 
 enum CompressionLevel {
@@ -41,71 +65,6 @@ impl TryFrom<u8> for CompressionLevel {
 		})
 	}
 }
-
-const WINDOW_LOG_OFFSET: u8 = 8;
-
-impl CompressionMethod {
-	fn decode(cmf: u8) -> Result<CompressionMethod> {
-		let cm = cmf & 0b1111;
-		let cinfo = cmf >> 4;
-
-		Ok(match cm {
-			8 => {
-				let size = 1 << (cinfo + WINDOW_LOG_OFFSET) as usize;
-				if size > 32768 {
-					return Err("Window size too large for deflate".into());
-				}
-
-				CompressionMethod::Deflate(DeflateInfo {
-					window_size: size
-				})
-			},
-			_ => { return Err("Unknown compression method".into()); }
-		})
-	}
-}
-
-
-const ADLER32_PRIME_MOD: usize = 65521;
-
-struct Adler32Hasher {
-	// NOTE: Must be >16bits each
-	s1: usize,
-	s2: usize
-}
-
-impl Adler32Hasher {
-	pub fn new() -> Adler32Hasher {
-		Adler32Hasher::from_hash(1)
-	}
-
-	pub fn from_hash(hash: u32) -> Adler32Hasher {
-		Adler32Hasher {
-			s1: (hash & 0xffff) as usize,
-			s2: ((hash >> 16) & 0xffff) as usize
-		}
-	}
-
-	pub fn finish_u32(&self) -> u32 {
-		((self.s2 << 16) | self.s1) as u32
-	}
-}
-
-impl Hasher for Adler32Hasher {
-	fn output_size(&self) -> usize { 4 }
-
-	fn update(&mut self, data: &[u8]) {
-		for v in data.iter().cloned() {
-			self.s1 = (self.s1 + (v as usize)) % ADLER32_PRIME_MOD;
-			self.s2 = (self.s2 + self.s1) % ADLER32_PRIME_MOD;
-		}
-	}
-
-	fn finish(&self) -> Vec<u8> {
-		self.finish_u32().to_be_bytes().to_vec()
-	}
-}
-
 
 struct Zlib {
 	compression_method: CompressionMethod,

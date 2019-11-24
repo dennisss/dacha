@@ -235,8 +235,11 @@ pub struct LogEntry {
 pub struct AppendEntriesRequest {
 	pub term: Term,
 	pub leader_id: ServerId, // < NOTE: For the bootstrapping process, this will be 0
+	
+	// This should be basically for all that are immediately before us
 	pub prev_log_index: LogIndex,
 	pub prev_log_term: Term,
+	
 	pub entries: Vec<LogEntry>, // < We will assume that these all have sequential indexes and don't need to be explicitly mentioned
 	pub leader_commit: LogIndex
 }
@@ -265,17 +268,42 @@ pub struct RequestVoteResponse {
 	pub vote_granted: bool
 }
 
+/*
+	How we will generalize snapshots:
+	-> 
+
+	The good news is that we hold the configuration and the state machine to be pretty orthogonal
+
+	Generalizing the snapshot process:
+	-> Step 1:
+		-> Snapshot transferred in memory and retained in memory
+		-> State machine should support 
+		-> The InstallSnapshot handler may emit a complete chunk once the state machine needs to be restored
+			-> 
+
+*/
+
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InstallSnapshotRequest {
 	pub term: Term,
 	pub leader_id: ServerId,
-	pub last_index: LogIndex,
-	pub last_term: Term,
+
+	/// The position of the last entry integrated into the given snapshot
+	/// (this can also be used to uniquely identify which snapshot is being sent)
+	pub last_pos: LogPosition,
+
+	//pub last_index: LogIndex, // < THis is basically why this is required right? (so the )
+	//pub last_term: Term,
 	pub last_config: Option<Configuration>,
 	pub offset: u64,
 	pub data: Vec<u8>,
 	pub done: bool
+}
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InstallSnapshotResponse {
+	pub term: Term
 }
 
 

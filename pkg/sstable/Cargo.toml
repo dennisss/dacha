@@ -1,0 +1,18 @@
+[package]
+name = "sstable"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+compression = { path = "../compression" }
+crypto = { path = "../crypto" }
+math = { path = "../math" }
+reflection = { path = "../reflection" }
+protobuf = { path = "../protobuf" }
+parsing = { path = "../parsing" }
+bytes = { git = "https://github.com/tokio-rs/bytes" }
+async-std = "1.0.1"
+arrayref = "0.3.5"
+fs2 = "0.4.3"

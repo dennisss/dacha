@@ -1,12 +1,29 @@
 [workspace]
 
 members = [
-	"pkg/core",
-	"pkg/haystack",
-	"pkg/raft",
-	"pkg/automata"
+	"pkg/macros",
+	"pkg/common",
+	"pkg/reflection",
+	"pkg/asn",
+	"pkg/crypto",
+	"pkg/parsing",
+	"pkg/compression",
+	"pkg/math",
+	"pkg/protobuf",
+	"pkg/automata",
+	"pkg/http",
+	"pkg/format",
+	"third_party/pkix",
+	"pkg/sstable",
+	"pkg/graphics",
+#	 "pkg/raft",
+	# "pkg/haystack",
+	# "pkg/emulator",
 ]
+
+[profile.dev]
+opt-level = 3
 
 [profile.release]
 lto = true
-panic = 'abort'
+# panic = 'abort'

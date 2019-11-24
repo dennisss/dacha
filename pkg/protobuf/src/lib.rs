@@ -3,6 +3,7 @@
 #[macro_use] extern crate nom;
 #[macro_use] extern crate error_chain;
 
+extern crate common;
 extern crate math;
 extern crate byteorder; // < Mainly needed for f32/f64 conversions
 extern crate num_traits;
@@ -10,7 +11,7 @@ extern crate bytes;
 
 pub use bytes::{BytesMut, Bytes};
 
-pub type Result<T> = std::result::Result<T, &'static str>;
+use common::errors::*;
 
 // NOTE: Construct an empty proto by calling MessageType::default()
 pub trait Message: Clone + std::fmt::Debug + std::default::Default {

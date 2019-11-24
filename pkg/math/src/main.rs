@@ -16,5 +16,5 @@ fn main() {
 		7., 8., 9.
 	]);
 
-	println!("{:?}", mat * mat2);
+	println!("{:?}", &mat * &mat2);
 }

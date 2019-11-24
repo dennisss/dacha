@@ -17,6 +17,7 @@ extern crate core;
 
 
 mod redis;
+mod mongodb;
 mod key_value;
 
 use raft::errors::*;

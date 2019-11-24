@@ -1,0 +1,136 @@
+# This is a RocksDB option file.
+#
+# For detailed file format spec, please refer to the example file
+# in examples/rocksdb_option_file_example.ini
+#
+
+[Version]
+  rocksdb_version=5.3.0
+  options_file_version=1.1
+
+[DBOptions]
+  avoid_flush_during_recovery=false
+  max_file_opening_threads=16
+  use_direct_writes=false
+  access_hint_on_compaction_start=NORMAL
+  create_if_missing=true
+  allow_fallocate=true
+  paranoid_checks=false
+  delayed_write_rate=16777216
+  create_missing_column_families=false
+  use_direct_reads=false
+  WAL_size_limit_MB=0
+  max_log_file_size=2097152
+  is_fd_close_on_exec=true
+  random_access_max_buffer_size=1048576
+  delete_obsolete_files_period_micros=21600000000
+  enable_thread_tracking=false
+  error_if_exists=false
+  new_table_reader_for_compaction_inputs=false
+  skip_log_error_on_recovery=false
+  avoid_flush_during_shutdown=false
+  skip_stats_update_on_db_open=false
+  compaction_readahead_size=0
+  max_background_flushes=1
+  allow_2pc=false
+  writable_file_max_buffer_size=1048576
+  allow_mmap_reads=false
+  allow_mmap_writes=false
+  use_adaptive_mutex=false
+  use_fsync=false
+  db_log_dir=
+  base_background_compactions=1
+  max_open_files=1000
+  table_cache_numshardbits=6
+  db_write_buffer_size=0
+  allow_concurrent_memtable_write=true
+  recycle_log_file_num=0
+  log_file_time_to_roll=0
+  manifest_preallocation_size=4194304
+  max_background_compactions=1
+  enable_write_thread_adaptive_yield=true
+  wal_dir=./testdata/rocksdb
+  WAL_ttl_seconds=0
+  max_subcompactions=1
+  dump_malloc_stats=false
+  bytes_per_sync=0
+  max_manifest_file_size=18446744073709551615
+  wal_bytes_per_sync=0
+  wal_recovery_mode=kPointInTimeRecovery
+  keep_log_file_num=1000
+  max_total_wal_size=0
+  stats_dump_period_sec=600
+  fail_if_options_file_error=false
+  write_thread_slow_yield_usec=3
+  write_thread_max_yield_usec=100
+  advise_random_on_open=true
+  info_log_level=HEADER_LEVEL
+  
+
+[CFOptions "default"]
+  compaction_pri=kByCompensatedSize
+  compaction_filter_factory=nullptr
+  memtable_factory=SkipListFactory
+  bottommost_compression=kDisableCompressionOption
+  compression=kSnappyCompression
+  max_sequential_skip_in_iterations=8
+  max_bytes_for_level_multiplier_additional=1:1:1:1:1:1:1
+  compression_per_level=
+  max_bytes_for_level_multiplier=10.000000
+  max_bytes_for_level_base=268435456
+  table_factory=BlockBasedTable
+  max_successive_merges=0
+  arena_block_size=524288
+  merge_operator=nullptr
+  target_file_size_multiplier=1
+  num_levels=7
+  min_write_buffer_number_to_merge=1
+  prefix_extractor=nullptr
+  bloom_locality=0
+  max_write_buffer_number=2
+  level0_stop_writes_trigger=36
+  level0_slowdown_writes_trigger=20
+  level0_file_num_compaction_trigger=4
+  write_buffer_size=4194304
+  memtable_huge_page_size=0
+  max_compaction_bytes=1677721600
+  hard_pending_compaction_bytes_limit=274877906944
+  target_file_size_base=67108864
+  soft_pending_compaction_bytes_limit=68719476736
+  comparator=leveldb.BytewiseComparator
+  memtable_insert_with_hint_prefix_extractor=nullptr
+  force_consistency_checks=false
+  max_write_buffer_number_to_maintain=0
+  paranoid_file_checks=false
+  optimize_filters_for_hits=false
+  level_compaction_dynamic_level_bytes=false
+  purge_redundant_kvs_while_flush=true
+  inplace_update_support=false
+  compaction_style=kCompactionStyleLevel
+  compaction_filter=nullptr
+  disable_auto_compactions=false
+  inplace_update_num_locks=10000
+  memtable_prefix_bloom_size_ratio=0.000000
+  report_bg_io_stats=false
+  
+[TableOptions/BlockBasedTable "default"]
+  read_amp_bytes_per_bit=8589934592
+  format_version=2
+  whole_key_filtering=true
+  filter_policy=rocksdb.BuiltinBloomFilter
+  verify_compression=false
+  block_size_deviation=10
+  block_size=4096
+  partition_filters=false
+  checksum=kCRC32c
+  hash_index_allow_collision=true
+  index_block_restart_interval=1
+  block_restart_interval=16
+  no_block_cache=false
+  pin_l0_filter_and_index_blocks_in_cache=false
+  cache_index_and_filter_blocks_with_high_priority=false
+  metadata_block_size=4096
+  cache_index_and_filter_blocks=false
+  index_type=kBinarySearch
+  flush_block_policy_factory=FlushBlockBySizePolicyFactory
+  

@@ -21,7 +21,8 @@ use super::super::background_thread::*;
 use futures::future;
 use futures::future::*;
 use futures::prelude::*;
-
+use futures::compat::Future01CompatExt;
+use std::future::Future;
 
 pub struct MachineContext {
 	pub id: MachineId, // < Same as the id of the 'inst', just externalized to avoid needing to lock the machine
@@ -343,7 +344,7 @@ impl StoreMachine {
 	}
 
 	/// Assuming that we want to, this will create a new volume on this machine and pick other replicas to go along with it
-	fn perform_allocation(mac_handle: MachineHandle) -> impl Future<Item=(), Error=Error> + Send {
+	fn perform_allocation(mac_handle: MachineHandle) -> impl Future<Output=Result> + Send {
 
 		let num_replicas = mac_handle.config.store.num_replicas;
 
@@ -395,6 +396,7 @@ impl StoreMachine {
 				.unwrap();
 
 			client.request(req)
+			.compat()
 			.map_err(|e| e.into())
 			.and_then(move |resp| {
 				if !resp.status().is_success() {

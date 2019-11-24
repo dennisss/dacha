@@ -8,6 +8,7 @@ use bytes::Bytes;
 pub const PEM_CERTIFICATE_LABEL: &'static str = "CERTIFICATE";
 pub const PEM_CERTIFICATE_REQUEST_LABEL: &'static str = "CERTIFICATE REQUEST";
 pub const PEM_PRIVATE_KEY_LABEL: &'static str = "PRIVATE KEY";
+pub const PEM_RSA_PRIVATE_KEY_LABEL: &'static str = "RSA PRIVATE KEY";
 pub const PEM_X509_CRL_LABEL: &'static str = "X509 CRL";
 
 #[derive(Debug)]
@@ -62,6 +63,7 @@ impl PEMEntry {
 		}
 
 		let out = base64::decode(&input)?;
+		println!("IN {} {}", input.len(), out.len());
 		Ok(out)
 	}
 }

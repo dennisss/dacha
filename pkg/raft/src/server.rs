@@ -88,7 +88,7 @@ pub struct ServerInitialState<R> {
 
 	/// The initial or restored log
 	/// NOTE: The server takes ownership of the log
-	pub log: Box<LogStorage + Send + Sync + 'static>,
+	pub log: Box<Log + Send + Sync + 'static>,
 	
 	/// Instantiated instance of the state machine
 	/// (either an initial empty one or one restored from a local snapshot)
@@ -118,15 +118,16 @@ struct ServerShared<R> {
 	client: Arc<rpc::Client>,
 
 	// TODO: Need not have a lock for this right? as it is not mutable
-	// Definately we want to lock the LogStorage separately from the rest of this code
-	log: Arc<LogStorage + Send + Sync + 'static>,
+	// Definately we want to lock the Log separately from the rest of this code
+	log: Arc<Log + Send + Sync + 'static>,
 
 	state_machine: Arc<StateMachine<R> + Send + Sync + 'static>,
 
+	// TODO: Shall be renamed to FlushedIndex
 	/// Holds the index of the log index most recently persisted to disk
 	/// This is eventually consistent with the index in the log itself
 	/// NOTE: This is safe to always have a term for as it should always be in the log
-	match_index: Condvar<LogPosition, LogPosition>,
+	flush_seq: Condvar<LogSeq, LogSeq>,
 
 	/// Holds the value of the current commit_index for the server
 	/// This is eventually consistent with the index in the internal consensus module
@@ -180,7 +181,7 @@ impl<R: Send + 'static> Server<R> {
 			last_applied
 		} = initial;
 
-		let log: Arc<LogStorage + Send + Sync + 'static> = Arc::from(log);
+		let log: Arc<Log + Send + Sync + 'static> = Arc::from(log);
 
 		// We make no assumption that the commit_index is consistently persisted, and if it isn't we can initialize to the the last_applied of the state machine as we will never apply an uncomitted change to the state machine
 		// NOTE: THe ConsensusModule similarly performs this check on the config snapshot
@@ -190,14 +191,14 @@ impl<R: Send + 'static> Server<R> {
 
 		// Gurantee no log discontinuities (only overlaps are allowed)
 		// This is similar to the check on the config snapshot that we do in the consensus module
-		if last_applied + 1 < log.first_index().unwrap_or(0) {
+		if last_applied + 1 < log.first_index() {
 			panic!("State machine snapshot is from before the start of the log");
 		}
 
 		// TODO: If all persisted snapshots contain more entries than the log, then we can trivially schedule a log prefix compaction 
 
-		if meta.meta.commit_index > log.last_index().unwrap_or(0) {
-			// This may occur on a leader that has not matched itself yet
+		if meta.meta.commit_index > log.last_index() {
+			// This may occur on a leader that has not flushed itself before committing an in-memory entry to followers
 		}
 
 
@@ -226,14 +227,14 @@ impl<R: Send + 'static> Server<R> {
 			state_machine,
 
 			// NOTE: these will be initialized below
-			match_index: Condvar::new(LogPosition { index: 0, term: 0 }),
+			flush_seq: Condvar::new(LogSeq(0)),
 			commit_index: Condvar::new(LogPosition { index: 0, term: 0 }),
 
 			last_applied: Condvar::new(last_applied)
 		});
 
 
-		ServerShared::update_match_index(&shared);
+		ServerShared::update_flush_seq(&shared);
 		ServerShared::update_commit_index(&shared, &shared.state.lock().unwrap());
 
 		Server {
@@ -358,7 +359,7 @@ impl<R: Send + 'static> Server<R> {
 	}
 
 	/// Flushes log entries to persistent storage as they come in
-	/// This is responsible for pushing changes to the match_index variable
+	/// This is responsible for pushing changes to the flush_seq variable
 	fn run_matcher(
 		server: &Arc<Self>,
 		log_changed: ChangeReceiver
@@ -383,8 +384,8 @@ impl<R: Send + 'static> Server<R> {
 				// TODO: The other issue is that if the failure is not completely atomic, then the index may have been updated in the log internals incorrectly without the flush following through properly
 			}
 
-			// TODO: Ideally if the log requires a lock, this should use the same lock used for updating this as well (or the match_index should be returned from the flush method <- Preferably also with the term that was flushed)
-			ServerShared::update_match_index(&shared);
+			// TODO: Ideally if the log requires a lock, this should use the same lock used for updating this as well (or the flush_seq should be returned from the flush method <- Preferably also with the term that was flushed)
+			ServerShared::update_flush_seq(&shared);
 
 			Either::B(log_changed.wait().map(move |log_changed| {
 				Loop::Continue((shared, log_changed))
@@ -399,6 +400,10 @@ impl<R: Send + 'static> Server<R> {
 		server: &Arc<Self>
 	) -> impl Future<Item=(), Error=()> + Send + 'static {
 
+		/*
+			Snaphotting:
+			- Check the state_machine for the 
+		*/
 
 		loop_fn((server.shared.clone(), std::collections::LinkedList::new()), |(shared, mut callbacks)| {
 
@@ -420,10 +425,10 @@ impl<R: Send + 'static> Server<R> {
 			// Apply all committed entries to state machine
 			while last_applied < commit_index {
 				let entry = shared.log.entry(last_applied + 1);
-				if let Some(e) = entry {
+				if let Some((e, _)) = entry {
 					
 					let ret = if let LogEntryData::Command(ref data) = e.data {
-						match state_machine.apply(e.index, data) {
+						match state_machine.apply(e.pos.index, data) {
 							Ok(v) => Some(v),
 							Err(e) => {
 								// TODO: Ideally notify everyone that all progress has been halted
@@ -447,10 +452,10 @@ impl<R: Send + 'static> Server<R> {
 					while callbacks.len() > 0 {
 						let first = callbacks.front().unwrap().0.clone();
 
-						if e.term > first.term || e.index >= first.index {
+						if e.pos.term > first.term || e.pos.index >= first.index {
 							let item = callbacks.pop_front().unwrap();
 
-							if e.term == first.term && e.index == first.index {
+							if e.pos.term == first.term && e.pos.index == first.index {
 								item.1.send(ret);
 								break; // NOTE: This is not really necessary as it should immediately get completed on the next run through the loop by the other break 
 							}
@@ -476,7 +481,21 @@ impl<R: Send + 'static> Server<R> {
 				}
 			}
 
+			/*
+			let last_snapshot = match state_machine.snapshot() { Some(s) => s.last_applied, _ => 0 };
+			if last_applied - last_snapshot > 5 {
+				// Notify the log of the snapshot
+				// Actually will start much earlier
+				// 
 			}
+
+
+			drop(state_machine);
+			*/
+
+			}
+
+			
 
 
 			// Update last_applied
@@ -715,18 +734,14 @@ impl<R: Send + 'static> ServerShared<R> {
 		Ok(())
 	}
 
-	fn update_match_index(shared: &Arc<Self>) {
-		// Getting latest match_index
-		let cur_mi = shared.log.match_index().unwrap_or(0);
-		let cur_mt = shared.log.term(cur_mi).unwrap();
-		let cur = LogPosition {
-			index: cur_mi,
-			term: cur_mt
-		};
+	fn update_flush_seq(shared: &Arc<Self>) {
+		// Getting latest flush_seq
+
+		let cur = shared.log.last_flushed().unwrap_or(LogSeq(0));
 
 		// Updating it
-		let mut mi = shared.match_index.lock();
-		// NOTE: The match_index is not necessarily monotonic in the case of log truncations
+		let mut mi = shared.flush_seq.lock();
+		// NOTE: The flush_seq is not necessarily monotonic in the case of log truncations
 		if *mi != cur {
 			*mi = cur;
 
@@ -758,7 +773,7 @@ impl<R: Send + 'static> ServerShared<R> {
 			},
 			// Otherwise, more data has been comitted than is in our log, so we will only mark up to the last entry in our lag
 			None => {
-				let last_log_index = shared.log.last_index().unwrap_or(0);
+				let last_log_index = shared.log.last_index();
 				let last_log_term = shared.log.term(last_log_index).unwrap();
 
 				LogPosition {
@@ -867,13 +882,13 @@ impl<R: Send + 'static> ServerShared<R> {
 
 	// TODO: Can we more generically implement as waiting on a Constraint driven by a Condition which can block for a specific value
 	// TODO: Cleanup and try to deduplicate with Proposal polling
-	pub fn wait_for_match<T: 'static>(shared: Arc<Self>, c: MatchConstraint<T>)
+	pub fn wait_for_match<T: 'static>(shared: Arc<Self>, c: FlushConstraint<T>)
 		-> impl Future<Item=T, Error=Error> + Send where T: Send
 	{
 		loop_fn((shared, c), |(shared, c)| {
 
 			let (c, fut) = {
-				let mi = shared.match_index.lock();
+				let mi = shared.flush_seq.lock();
 
 				// TODO: I don't think yields sufficient atomic gurantees
 
@@ -978,6 +993,11 @@ impl<R: Send + 'static> rpc::ServerService for Server<R> {
 		
 		// TODO: In the case that entries are immediately written, this is overly expensive
 
+		/*
+			XXX: An interesting observation is that a truncated record will never become matched
+
+		*/
+
 		Box::new(to_future!({
 
 			let res = ServerShared::run_tick(&self.shared, |state, tick| {
@@ -987,6 +1007,7 @@ impl<R: Send + 'static> rpc::ServerService for Server<R> {
 			Ok((self.shared.clone(), res?))
 
 		}).and_then(|(shared, res)| {
+			// Once the match constraint is satisfied, this will send back a response (or no response)
 			ServerShared::wait_for_match(shared, res)			
 		}))
 	}

@@ -4,7 +4,7 @@ use super::protos::*;
 #[derive(Clone)]
 pub struct ConfigurationPending {
 	/// Index of the last entry in our log that changes the config
-	pub last_change: u64,
+	pub last_change: LogIndex,
 
 	/// Configuration as it was before the last change
 	/// In other words the last_applied of this configuration would be 'last_change - 1'
@@ -19,7 +19,7 @@ pub struct ConfigurationStateMachine {
 	
 	/// Index of the last log entry applied to this configuration
 	/// This should always converge to be exactly the same as the last index in the log but may start out higher than it if the log has fewer entries than have been snapshotted
-	pub last_applied: u64,
+	pub last_applied: LogIndex,
 
 	/// If the current configuration is not yet commited, then this will mark the last change available
 	/// This will allow for rolling back the configuration in case there is a log conflict
@@ -31,7 +31,7 @@ impl ConfigurationStateMachine {
 	pub fn from(snapshot: ConfigurationSnapshot) -> Self {
 		ConfigurationStateMachine {
 			value: snapshot.data,
-			last_applied: snapshot.last_applied,
+			last_applied: snapshot.last_applied, // Noteably last_applied must 
 			pending: None
 		}
 	}
@@ -102,7 +102,7 @@ impl ConfigurationStateMachine {
 	pub fn snapshot(&self) -> ConfigurationSnapshotRef {
 		if let Some(ref pending) = self.pending {
 			ConfigurationSnapshotRef {
-				last_applied: pending.last_change - 1,
+				last_applied: pending.last_change - 1, // < Issue being that this applies needing to store multiple indexes in the case of (therefore we must explicitly store the last position in order for this to work properly (or store a reference to the log))
 				data: &pending.previous
 			}
 		}

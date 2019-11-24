@@ -1,11 +1,11 @@
-#![feature(proc_macro_hygiene, decl_macro, type_alias_enum_variants, generators)]
+#![feature(async_await, futures_api, proc_macro_hygiene, decl_macro, type_alias_enum_variants, generators)]
 
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate diesel;
 #[macro_use] extern crate error_chain;
 
-
-extern crate futures_await as futures;
+extern crate futures;
+// extern crate futures_await as futures;
 
 extern crate core;
 extern crate dotenv;

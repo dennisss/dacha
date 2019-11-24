@@ -53,13 +53,14 @@ impl<R: 'static + Send> Node<R> {
 	#[async]
 	pub fn start(config: NodeConfig<R>) -> Result<Arc<Node<R>>> {
 
+		// TODO: Verify that we never start up with snapshots that begin before the beginning of our log
+
 		// Ideally an agent would encapsulate saving itself to disk via some file somewhere
 		let agent = Arc::new(Mutex::new( NetworkAgent::new() ));
 
 		let client = Arc::new(Client::new(agent.clone()));
 		let discovery = Arc::new(DiscoveryService::new(client.clone(), config.seed_list));
 
-		
 		// Basically need to get a (meta, meta_file, config_snapshot, config_file, log_file)
 
 		let meta_builder = BlobFile::builder(&config.dir.path().join("meta".to_string()))?;
@@ -84,6 +85,8 @@ impl<R: 'static + Send> Node<R> {
 		) = if meta_builder.exists() {
 
 			let (meta_file, meta_data) = meta_builder.open()?;
+
+			// TODO: In most cases, we can survive without having a routes file on disk or even a config file in many cases
 			let (config_file, config_data) = config_builder.open()?;
 			let (routes_file, routes_data) = routes_builder.open()?;
 			let mut log = SimpleLog::open(&log_path)?;
@@ -144,6 +147,7 @@ impl<R: 'static + Send> Node<R> {
 				await!(discovery.seed())?;
 
 				// TODO: Instead pick a random one from our list
+				// TODO: This is currently our only usage of .routes() on the agent
 				let first_id = agent.lock().unwrap().routes().values().next().unwrap().desc.id;
 
 				let ret = await!(client.call_propose(first_id, &ProposeRequest {
@@ -202,7 +206,7 @@ impl<R: 'static + Send> Node<R> {
 			last_applied: config.last_applied
 		};
 
-		let is_empty = initial_state.log.last_index().unwrap_or(0) == 0;
+		let is_empty = initial_state.log.last_index() == 0;
 
 		println!("COMMIT INDEX {}", initial_state.meta.meta.commit_index);
 

@@ -1,0 +1,4 @@
+max_width = 100
+hard_tabs = true
+newline_style = "Unix"
+tab_spaces = 4

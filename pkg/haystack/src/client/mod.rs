@@ -18,8 +18,6 @@ use futures::stream;
 use futures::future::*;
 use std::sync::{Arc, Mutex};
 use std::io::Cursor;
-use futures::prelude::*;
-use futures::prelude::await;
 use futures::Stream;
 
 pub struct Client {
@@ -167,7 +165,7 @@ impl Client {
 	/// Uploads many chunks using traditional sequential requests (flushed after every single request)
 	/// TODO: Currently this will never respond with a partial count
 	fn upload_needle_sequential(mac: &models::StoreMachine, chunks: Vec<NeedleChunk>)
-		-> impl Future<Item=usize, Error=Error> {
+		-> impl Future<Output=std::result::Result<usize, Error>> {
 
 		let client = hyper::Client::new();
 
@@ -175,7 +173,7 @@ impl Client {
 		let mac_id = mac.id as MachineId;
 
 		// Better tofold and then combine
-		stream::iter_ok(chunks).fold(0, move |num, c| {
+		stream::iter(chunks).fold(0, move |num, c| {
 			let url = format!(
 				"{}{}",
 				addr,
@@ -223,7 +221,7 @@ impl Client {
 			body_chunks.push(hyper::Chunk::from(c.data.clone()));
 		}
 
-		let s = stream::iter_ok::<_, std::io::Error>(body_chunks);
+		let s = stream::iter(body_chunks);
 
 		let url = format!(
 			"{}{}",
@@ -251,7 +249,7 @@ impl Client {
 		.and_then(|resp| {
 			resp.into_body()
 			.map_err(|e| e.into())
-			.fold(Vec::new(), |mut buf, c| -> FutureResult<Vec<_>, Error> {
+			.fold(Vec::new(), |mut buf, c| /* -> FutureResult<Vec<_>, Error> */ {
 				buf.extend_from_slice(&c);
 				ok(buf)
 			})

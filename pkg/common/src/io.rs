@@ -1,4 +1,5 @@
 use crate::errors::*;
+use std::pin::Pin;
 
 const BUF_SIZE: usize = 4096;
 
@@ -71,7 +72,7 @@ pub trait Writeable: Send + Sync + Unpin + 'static {
 impl Readable for async_std::net::TcpStream {
 	async fn read(&self, buf: &mut [u8]) -> Result<usize> {
 		let mut r = self;
-		let n = async_std::io::Read::read(&mut r, buf).await?;
+		let n = async_std::io::prelude::ReadExt::read(&mut r, buf).await?;
 		Ok(n)
 	}
 }
@@ -80,13 +81,13 @@ impl Readable for async_std::net::TcpStream {
 impl Writeable for async_std::net::TcpStream {
 	async fn write(&self, buf: &[u8]) -> Result<usize> {
 		let mut r = self;
-		let n = async_std::io::Write::write(&mut r, buf).await?;
+		let n = async_std::io::prelude::WriteExt::write(&mut r, buf).await?;
 		Ok(n)
 	}
 
 	async fn flush(&self) -> Result<()> {
 		let mut r = self;
-		async_std::io::Write::flush(&mut r).await?;
+		async_std::io::prelude::WriteExt::flush(&mut r).await?;
 		Ok(())
 	}
 }

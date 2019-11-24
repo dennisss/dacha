@@ -7,7 +7,7 @@ use common::errors::Error;
 use std::convert::AsRef;
 use common::bits::BitVector;
 use std::string::ToString;
-use super::encoding::TagClass;
+use super::tag::TagClass;
 
 parser!(number<usize> => Token::skip_to(Token::number));
 parser!(realnumber<f64> => Token::skip_to(Token::realnumber));

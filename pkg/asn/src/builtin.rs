@@ -192,6 +192,12 @@ impl std::ops::Deref for BitString {
 	}
 }
 
+impl std::convert::Into<BitVector> for BitString {
+	fn into(self) -> BitVector {
+		self.data
+	}
+}
+
 
 
 // TODO: 

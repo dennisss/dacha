@@ -1,10 +1,13 @@
 use hyper::{Request, Response, Body, Server, StatusCode};
 use hyper::http::request::Parts;
-use futures::Future;
+use std::future::Future;
 use hyper::service::service_fn;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use super::errors::Error;
+use futures::TryFutureExt;
+
+// TODO: Need a better space for these shared helpers 
 
 pub fn bad_request() -> Response<Body> {
 	Response::builder().status(StatusCode::BAD_REQUEST).body(Body::empty()).unwrap()
@@ -39,8 +42,8 @@ pub fn text_response(code: StatusCode, text: &'static str) -> Response<Body> {
 /// NOTE: The error type doesn't really matter as we never resolve to a error, just as long as it is sendable across threads, hyper won't complain
 pub fn handle_request_guard<F, P, I>(
 	req: Request<Body>, arg: I, f: F,
-) -> impl Future<Item=Response<Body>, Error=std::io::Error>
-	where P: Future<Item=Response<Body>, Error=Error>,
+) -> impl Future<Output=std::result::Result<Response<Body>, std::io::Error>>
+	where P: Future<Output=std::result::Result<Response<Body>, Error>>,
 		  I: Clone,
 		  F: Fn(Parts, Body, I) -> P {
 
@@ -61,11 +64,25 @@ pub fn handle_request_guard<F, P, I>(
 	})
 }
 
+// 00
+// 01
+// 10
+// 11
+
+// 1/4
+
+//0.5
+
+// n=3
+//  second dup or  (second different)*(third same)
+// (1 / 1000) + (2 / 1000)*(999 / 1000) + (3 / 1000)(998 / 1000)
+// Sum_i=(1..(k-1))( (i/n) * ((n - i + 1) / n) )
+
 // TODO: See https://docs.rs/hyper/0.12.19/hyper/server/struct.Server.html#example for graceful shutdowns
 pub fn start_http_server<F, FS, FE, P: 'static, I: 'static>(
 	port: u16, arg: &Arc<I>, f: &'static F, fstart: &FS, fend: &'static FE
 )
-	where P: Send + Future<Item=Response<Body>, Error=Error>,
+	where P: Send + Future<Output=std::result::Result<Response<Body>, Error>>,
 		  I: Send + Sync,
 		  F: Sync + (Fn(Parts, Body, Arc<I>) -> P),
 		  FS: Fn(&Arc<I>),
@@ -73,7 +90,7 @@ pub fn start_http_server<F, FS, FE, P: 'static, I: 'static>(
 {
 	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
 
-	let (tx, rx) = futures::sync::oneshot::channel::<()>();
+	let (tx, rx) = futures::channel::oneshot::channel::<()>();
 
 	let arg = arg.clone();
 	let arg2 = arg.clone();
@@ -82,10 +99,11 @@ pub fn start_http_server<F, FS, FE, P: 'static, I: 'static>(
         .serve(move || {
 			let arg = arg.clone();
 			service_fn(move |req: Request<Body>| {
-				handle_request_guard(req, arg.clone(), f)				
+				handle_request_guard(req, arg.clone(), f).compat()			
 			})
 		})
 		.with_graceful_shutdown(rx)
+		.compat()
 		.map_err(|e| eprintln!("HTTP Server Error: {}", e));
 
     println!("Listening on http://{}", addr);

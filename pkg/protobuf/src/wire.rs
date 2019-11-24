@@ -1,11 +1,10 @@
+use common::errors::*;
 use super::{Message, Enum};
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BytesMut, Bytes};
 use std::intrinsics::unlikely;
 
-type Result<T> = std::result::Result<T, &'static str>;
-
-fn serialize_varint(mut v: usize, out: &mut Vec<u8>) {
+pub fn serialize_varint(mut v: usize, out: &mut Vec<u8>) {
 	loop {
 		let mut b = (v & 0x7f) as u8;
 		v = v >> 7;
@@ -19,7 +18,7 @@ fn serialize_varint(mut v: usize, out: &mut Vec<u8>) {
 	}
 }
 
-fn parse_varint(input: &[u8]) -> Result<(usize, &[u8])> {
+pub fn parse_varint(input: &[u8]) -> Result<(usize, &[u8])> {
 	let mut v = 0;
 	let mut i = 0;
 	
@@ -30,7 +29,7 @@ fn parse_varint(input: &[u8]) -> Result<(usize, &[u8])> {
 	loop {
 		let overflow = i >= max_bytes;
 		if unsafe { unlikely(overflow) } {
-			return Err("To few/many bytes in varint");
+			return Err("To few/many bytes in varint".into());
 		}
 
 		let mut b = input[i] as usize;
@@ -72,7 +71,7 @@ impl WireType {
 			3 => WireType::StartGroup,
 			4 => WireType::EndGroup,
 			5 => WireType::Word32,
-			_ => { return Err("Invalid wire type number"); }
+			_ => { return Err("Invalid wire type number".into()); }
 		})
 	}
 }
@@ -136,7 +135,7 @@ macro_rules! enum_accessor {
 	($name:ident, $branch:ident, $t:ty) => {
 		fn $name(&self) -> Result<$t> {
 			if let Self::$branch(v) = self { Ok(*v) }
-			else { Err("Unexpected value type.") }
+			else { Err("Unexpected value type.".into()) }
 		}
 	};
 }
@@ -170,7 +169,7 @@ impl WireValue<'_> {
 	fn serialize_double(v: f64, out: &mut Vec<u8>) {
 		let mut buf = [0u8; 8]; 
 		LittleEndian::write_f64(&mut buf, v);
-		Self::Word64(&buf).serialize(out);
+		WireValue::Word64(&buf).serialize(out);
 	}
 
 	pub fn parse_float(&self) -> Result<f32> {
@@ -179,7 +178,7 @@ impl WireValue<'_> {
 	fn serialize_float(v: f32, out: &mut Vec<u8>) {
 		let mut buf = [0u8; 4]; 
 		LittleEndian::write_f32(&mut buf, v);
-		Self::Word32(&buf).serialize(out);
+		WireValue::Word32(&buf).serialize(out);
 	}
 
 	pub fn parse_int32(&self) -> Result<i32> { Ok(self.varint()? as i32) }
@@ -227,7 +226,7 @@ impl WireValue<'_> {
 	pub fn parse_string(&self) -> Result<String> {
 		let mut val = vec![];
 		val.extend_from_slice(self.length_delim()?);
-		String::from_utf8(val).map_err(|_| "Invalid utf-8 bytes in string")
+		String::from_utf8(val).map_err(|_| "Invalid utf-8 bytes in string".into())
 	}
 
 	// parse_bytes
@@ -247,7 +246,7 @@ impl WireValue<'_> {
 	}
 	pub fn serialize_message<M: Message>(m: M, out: &mut Vec<u8>) {
 		let data = m.serialize();
-		Self::LengthDelim(&data).serialize(out);
+		WireValue::LengthDelim(&data).serialize(out);
 	}
 }
 
@@ -265,7 +264,7 @@ pub fn parse_wire(mut input: &[u8]) -> Result<Vec<WireField>> {
 				WireValue::Varint(v)
 			},
 			WireType::Word64 => {
-				if input.len() < 8 { return Err("Too few bytes for word64"); }
+				if input.len() < 8 { return Err("Too few bytes for word64".into()); }
 				let v = &input[0..8];
 				input = &input[8..];
 				WireValue::Word64(v)
@@ -273,7 +272,7 @@ pub fn parse_wire(mut input: &[u8]) -> Result<Vec<WireField>> {
 			WireType::LengthDelim => {
 				let (len, rest) = parse_varint(input)?;
 				input = rest;
-				if input.len() < len { return Err("Too few bytes for length delimited"); }
+				if input.len() < len { return Err("Too few bytes for length delimited".into()); }
 				let v = &input[0..len];
 				input = &input[len..];
 				WireValue::LengthDelim(v)
@@ -285,13 +284,13 @@ pub fn parse_wire(mut input: &[u8]) -> Result<Vec<WireField>> {
 			WireType::EndGroup => {
 				let v = match group.take() {
 					Some(items) => WireValue::Group(items),
-					None => { return Err("Saw EndGroup before seeing a StartGroup"); }
+					None => { return Err("Saw EndGroup before seeing a StartGroup".into()); }
 				};
 
 				v
 			},
 			WireType::Word32 => {
-				if input.len() < 4 { return Err("Too few bytes for word32"); }
+				if input.len() < 4 { return Err("Too few bytes for word32".into()); }
 				let v = &input[0..4];
 				input = &input[4..];
 				WireValue::Word32(v)
@@ -303,13 +302,13 @@ pub fn parse_wire(mut input: &[u8]) -> Result<Vec<WireField>> {
 
 	if input.len() == 0 {
 		if group.is_some() {
-			return Err("Unclosed group with no input remaining.");
+			return Err("Unclosed group with no input remaining.".into());
 		}
 
 		Ok(out)
 	} else {
 		// This should pretty much never happen due to the while loop above
-		Err("Could not parse all input")
+		Err("Could not parse all input".into())
 	}
 }
 

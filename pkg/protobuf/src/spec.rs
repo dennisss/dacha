@@ -95,7 +95,8 @@ pub struct Field {
 	pub typ: FieldType,
 	pub name: String,
 	pub num: usize,
-	pub options: Vec<Opt>
+	pub options: FieldOptions,
+	pub unknown_options: Vec<Opt>
 }
 
 // Proto 2
@@ -110,15 +111,7 @@ pub struct Group {
 #[derive(Debug, Clone)]
 pub struct OneOf {
 	pub name: String,
-	pub fields: Vec<OneOfField>
-}
-
-#[derive(Debug, Clone)]
-pub struct OneOfField {
-	pub typ: FieldType,
-	pub name: String,
-	pub num: usize,
-	pub options: Vec<Opt>
+	pub fields: Vec<Field>
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +121,15 @@ pub struct MapField {
 	pub name: String,
 	pub num: usize,
 	pub options: Vec<Opt>
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FieldOptions {
+	// TODO: Will be true by default in proto3 for any scalar type.
+	// Basically anything with a known length
+	pub packed: bool,
+	pub deprecated: bool,
+	pub default: Option<Constant> 
 }
 
 pub type Ranges = Vec<Range>;

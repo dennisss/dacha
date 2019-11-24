@@ -84,6 +84,13 @@ struct ServerClient {
 
 //pub type CommandHandler<T> = (Fn(&T, RESPCommand) -> CommandResponse) + Sync;
 
+/*
+	Implementing BRPOP
+	- Generally a separate Hashmap storing client ids for all keys which someone is currently blocking on
+		- Clients may also be connected to a remote server 
+	
+*/
+
 
 /// Internal return value for representing the raw output of trying to execute a command
 enum CommandResult {
@@ -105,6 +112,8 @@ pub struct Server<T: 'static> {
 
 struct ServerState {
 	last_id: ClientId,
+
+	// TODO: Possibly use Slabs for the clients list 
 
 	/// All clients connected to this server
 	clients: HashMap<ClientId, Arc<Mutex<ServerClient>>>,

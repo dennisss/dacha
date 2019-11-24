@@ -96,6 +96,10 @@ impl CRC32CHasher {
 	pub fn finish_u32(&self) -> u32 {
 		!self.val
 	}
+
+	pub fn masked(&self) -> u32 {
+		self.finish_u32().rotate_right(15).wrapping_add(0xa282ead8)
+	}
 }
 
 impl Hasher for CRC32CHasher {
@@ -115,7 +119,7 @@ impl Hasher for CRC32CHasher {
 		}
 
 		// Compute rest as individual bytes.
-		for i in &data[0..] {
+		for i in &data[(n*inc)..] {
 			unsafe { self.val = core::arch::x86_64::_mm_crc32_u8(self.val, *i); }
 		}
 	}
@@ -124,4 +128,44 @@ impl Hasher for CRC32CHasher {
 	fn finish(&self) -> Vec<u8> {
 		self.finish_u32().to_be_bytes().to_vec()
 	}
+}
+
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn crc32c_test() {
+		// See https://tools.ietf.org/html/rfc3720#appendix-B.4
+
+		let crc = |input: &[u8]| {
+			let mut hasher = CRC32CHasher::new();
+			hasher.update(input);
+			hasher.finish_u32()
+		};
+
+		let allzero = [0u8; 32];
+		assert_eq!(crc(&allzero), 0x8a9136aa);
+
+		let allone = [0xffu8; 32];
+		assert_eq!(crc(&allone), 0x62a8ab43);
+
+		let scsi_read: &'static [u8] = &[
+			0x01, 0xc0, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00,
+			0x14, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x04, 0x00,
+			0x00, 0x00, 0x00, 0x14,
+			0x00, 0x00, 0x00, 0x18,
+			0x28, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00,
+			0x02, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00
+		];
+		assert_eq!(crc(scsi_read), 0xd9963a56);
+	}
+
 }

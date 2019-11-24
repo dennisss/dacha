@@ -9,14 +9,9 @@ use hyper::{Body, Response, Method, StatusCode};
 use hyper::http::request::Parts;
 use hyper::body::Payload;
 use mime_sniffer::MimeTypeSniffer;
-use futures::prelude::*;
-use futures::prelude::await;
-use futures::future::*;
-use futures::Stream;
 
 
-#[async]
-pub fn handle_request(
+pub async fn handle_request(
 	parts: Parts, body: Body, mac_handle: MachineHandle
 ) -> Result<Response<Body>> {
 
@@ -45,7 +40,7 @@ pub fn handle_request(
 		StorePath::Index => {
 			match parts.method {
 				Method::GET => index_volumes(mac_handle),
-				Method::PATCH => await!(super::route_write::write_batch(mac_handle, body)),
+				Method::PATCH => super::route_write::write_batch(mac_handle, body).await,
 				_ => Ok(invalid_method())
 			}
 		},
@@ -81,7 +76,7 @@ pub fn handle_request(
 						Some(n) => n,
 					};
 
-					await!(super::route_write::write_single(mac_handle, volume_id, key, alt_key, cookie, content_length, body))
+					super::route_write::write_single(mac_handle, volume_id, key, alt_key, cookie, content_length, body).await
 				},
 				_ => return Ok(invalid_method())
 			}

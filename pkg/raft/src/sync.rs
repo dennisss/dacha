@@ -210,3 +210,35 @@ impl ChangeReceiver {
 	}
 }
 
+
+/// After a maximum amount of time or maximum number of requests is received, this will trigger a given function to execute whose result will be passed along to every entry requesting a slot in the batch
+pub struct Batch<F, R> {
+	func: F,
+	entries: Vec<oneshot::Sender<R>>,
+	max_size: usize,
+	expires: Instant
+}
+
+impl<F: Fn() -> K, K: Future<Item=R, Error=()>, R: Copy> Batch<F, R> {
+	pub fn new(max_size: usize, expires: Instant, func: F) -> Self {
+		Batch {
+			func,
+			entries: vec![],
+			expires,
+			max_size
+		}
+	}
+
+	pub fn push(&mut self) {
+		if self.entries.len() == 0 {
+			// Spin off a task that blocks for stuff
+			// Basically one of our two conditions
+			// Then likewise return the main one
+		}
+	}
+
+	// What is interesting is that we could init it multiple times if we really wanted to
+
+}
+
+

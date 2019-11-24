@@ -7,8 +7,9 @@ use std::task::Poll;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::convert::AsRef;
-use async_std::net::TcpStream;
-use async_std::prelude::*;
+//use async_std::net::TcpStream;
+//use async_std::prelude::*;
+use common::io::*;
 
 pub trait Matcher {
 	/// Considering all previous data passed to this function, try to find a match given a new chunk of data returning the index immediately after the first match.
@@ -63,7 +64,7 @@ impl Matcher for LineMatcher {
 
 // TODO: Rename StreamIO as this now supports passing through write as well
 pub struct StreamReader {
-	reader: Arc<TcpStream>,
+	reader: Arc<dyn Readable>,
 	head: Bytes
 }
 
@@ -102,7 +103,7 @@ const max_buffer_size: usize = 16*1024; // 16KB
 // impl<R> StreamReader<R> where R: AsRead, for<'a> &'a R::Inner: AsyncRead + Unpin  {
 impl StreamReader {
 
-	pub fn new(reader: Arc<TcpStream>) -> Self {
+	pub fn new(reader: Arc<dyn Readable>) -> Self {
 		StreamReader {
 			reader,
 			head: Bytes::new()

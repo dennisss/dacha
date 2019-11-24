@@ -3,11 +3,15 @@ use parsing::binary::*;
 use parsing::ascii::AsciiString;
 use bytes::Bytes;
 use common::errors::*;
+use super::tag::*;
 use super::builtin::*;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use common::bits::BitVector;
 use math::big::BigInt;
+
+// Mainly for the compiled code.
+pub use super::tag::{Tag, TagClass};
 
 // http://www.zytrax.com/tech/survival/ssl.html#x509
 // https://osqa-ask.wireshark.org/questions/62528/server-certificate-packet-format
@@ -26,24 +30,6 @@ const MAX_TAG_NUMBER_BITS: usize = std::mem::size_of::<usize>() * 8;
 
 const USIZE_OCTETS: usize = std::mem::size_of::<usize>();
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub enum TagClass {
-	Universal = 0,
-	Application = 1,
-	ContextSpecific = 2,
-	Private = 3
-}
-impl TagClass {
-	fn from(v: u8) -> Self {
-		match v {
-			0 => TagClass::Universal,
-			1 => TagClass::Application,
-			2 => TagClass::ContextSpecific,
-			3 => TagClass::Private,
-			_ => panic!("Value larger than 2 bits")
-		}
-	}
-}
 
 // Parses a varint stored as a big-endian chunks of the 7 lower bits of each
 // octet ending in the last octet without the MSB set.
@@ -104,19 +90,12 @@ fn serialize_varint_msb_be(mut num: usize, out: &mut Vec<u8>) {
 	out.extend_from_slice(&buf[i..]);
 }
 
-/// NOTE: Tags have a canonical ordering of Universal, Application, Context,
-/// Private, and then in each class it is in order of ascending number.
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Hash, Clone)]
-pub struct Tag {
-	pub class: TagClass,
-	pub number: usize
-}
 
 #[derive(Debug, Clone)]
-struct Identifier {
-	tag: Tag,
+pub struct Identifier {
+	pub tag: Tag,
 	// If not constructed, then it is a primitive.
-	constructed: bool
+	pub constructed: bool
 }
 
 impl Identifier {
@@ -152,7 +131,7 @@ impl Identifier {
 }
 
 #[derive(Debug, Clone)]
-enum Length {
+pub enum Length {
 	Short(u8),
 	Long(usize),
 	Indefinite
@@ -209,23 +188,16 @@ impl Length {
 	}
 }
 
-// #[derive(Debug)]
-// enum ElementValue {
-// 	Primitive(Bytes),
-// 	Constructed(Vec<Element>)
-// }
-
 #[derive(Debug, Clone)]
 pub struct Element {
-	ident: Identifier,
-	len: Length,
-	data: Bytes,
-	outer: Bytes
-	// value: ElementValue
+	pub ident: Identifier,
+	pub len: Length,
+	pub data: Bytes,
+	pub outer: Bytes
 }
 
 impl Element {
-	parser!(parse<Self> => {
+	parser!(pub parse<Self> => {
 		map(slice_with(seq!(c => {
 			let ident = c.next(Identifier::parse)?;
 			let len = c.next(Length::parse)?;
@@ -280,43 +252,8 @@ macro_rules! some_or_else {
 }
 
 
-const TAG_NUMBER_BOOLEAN: usize = 1;
-const TAG_NUMBER_INTEGER: usize = 2;
-const TAG_NUMBER_BIT_STRING: usize = 3;
-const TAG_NUMBER_OCTET_STRING: usize = 4;
-const TAG_NUMBER_NULL: usize = 5;
-const TAG_NUMBER_OBJECT_IDENTIFIER: usize = 6;
-const TAG_NUMBER_OBJECT_DESCRIPTOR: usize = 7;
-const TAG_NUMBER_EXTERNAL: usize = 8;
-const TAG_NUMBER_REAL: usize = 9;
-const TAG_NUMBER_ENUMERATED: usize = 10;
-const TAG_NUMBER_EMBEDDED_PDV: usize = 11;
-const TAG_NUMBER_UTF8STRING: usize = 12;
-const TAG_NUMBER_RELATIVE_OID: usize = 13;
-const TAG_NUMBER_TIME: usize = 14;
-const TAG_NUMBER_SEQUENCE: usize = 16;
-const TAG_NUMBER_SET: usize = 17;
-const TAG_NUMBER_NUMERIC_STRING: usize = 18;
-const TAG_NUMBER_PRINTABLE_STRING: usize = 19;
-const TAG_NUMBER_T61STRING: usize = 20;
-const TAG_NUMBER_VIDEOTEXSTRING: usize = 21;
-const TAG_NUMBER_IA5STRING: usize = 22;
-const TAG_NUMBER_UTCTIME: usize = 23;
-const TAG_NUMBER_GENERALIZEDTIME: usize = 24;
-const TAG_NUMBER_GRAPHICSTRING: usize = 25;
-const TAG_NUMBER_VISIBLESTRING: usize = 26;
-const TAG_NUMBER_GENERALSTRING: usize = 27;
-const TAG_NUMBER_UNIVERSALSTRING: usize = 28;
-const TAG_NUMBER_CHARACTER_STRING: usize = 29;
-const TAG_NUMBER_BMPSTRING: usize = 30;
-const TAG_NUMBER_DATE: usize = 31;
-const TAG_NUMBER_TIME_OF_DAY: usize = 32;
-const TAG_NUMBER_DATE_TIME: usize = 33;
-const TAG_NUMBER_DURATION: usize = 34;
-const TAG_NUMBER_OID_IRI: usize = 35;
-const TAG_NUMBER_RELATIVE_OID_IRI: usize = 36;
-
 use std::collections::HashMap;
+use chrono::DateTime;
 
 #[derive(Debug)]
 enum DERReaderBuffer {
@@ -328,19 +265,6 @@ enum DERReaderBuffer {
 
 // TODO: It is important to ensure that we read all of the input till the end
 // of each reader.
-
-/*
-	For Set
-*/
-/*
-	For normal cases:
-	- Read from Bytes
-	For Set
-	- Read from HashMap
-	For SetOf
-	- Read from single parsed Element
-
-*/
 
 fn is_printable_string_char(c: char) -> bool {
 	match c {
@@ -848,7 +772,7 @@ impl DERReader {
 pub struct DERWriter<'a> {
 	out: &'a mut Vec<u8>,
 	
-	// Contains the indices of the start of each element.
+	/// Contains the indices of the start of each element.
 	indices: Vec<usize>,
 
 	implicit_tag: Option<Tag>
@@ -861,12 +785,6 @@ impl<'a> DERWriter<'a> {
 	pub fn new(out: &'a mut Vec<u8>) -> Self {
 		Self { out, indices: vec![], implicit_tag: None }
 	}
-
-	// In collecting mode, we will aggregate the starting indices of each written
-	// tag so we can efficiently collect things.
-	// fn new_collecting() -> Self {
-	// 	Self { }
-	// }
 
 	fn into_indices(self) -> Vec<usize> {
 		self.indices
@@ -1000,7 +918,7 @@ impl<'a> DERWriter<'a> {
 	pub fn write_sequence<F: Fn(&mut DERWriter)>(&mut self, f: F) {
 		let mut data = vec![];
 		{
-			let mut writer = Self::new(&mut data);
+			let mut writer = DERWriter::new(&mut data);
 			f(&mut writer);
 		}
 
@@ -1010,13 +928,15 @@ impl<'a> DERWriter<'a> {
 	}
 
 	pub fn write_sequence_of<T: DERWriteable>(&mut self, items: &[T]) {
-		let mut data = vec![];
-		{
-			let mut writer = Self::new(&mut data);
+		let data = {
+			let mut data = vec![];
+			let mut writer = DERWriter::new(&mut data);
 			for i in items {
 				i.write_der(&mut writer);
 			}
-		}
+
+			data
+		};
 
 		// TODO: Dedup this and the set_of one with the base write_sequence impl.
 		self.write_tag(TagClass::Universal, TAG_NUMBER_SEQUENCE, true);
@@ -1043,7 +963,6 @@ impl<'a> DERWriter<'a> {
 		};
 
 		let mut elements = slices.into_iter().map(|data| {
-			println!("SLICE {}", data.len());
 			let (ident, _) = Identifier::parse(data.clone()).unwrap();
 			(ident.tag, data)
 		}).collect::<Vec<_>>();

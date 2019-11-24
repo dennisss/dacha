@@ -2,27 +2,18 @@
 name = "haystack"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
-
-
-[lib]
-name = "haystack"
-path = "src/lib.rs"
-
-[[bin]]
-name = "hay"
-path = "bin/hay.rs"
+edition = "2018"
 
 [dependencies]
-core = { path = "../core" }
-byteorder = "1.2.7"
+common = { path = "../common" }
+byteorder = "1.3.2"
 rand = "0.6.1"
 crc32c = "0.4.0"
 arrayref = "0.3.5"
-hyper = "0.12.19"
-futures = "0.1.25"
-futures-await = "0.1.1"
-bytes = "0.4.11"
-base64 = "0.10.0"
+hyper = "0.12.32"
+futures-preview = { version = "=0.3.0-alpha.17", features = ["async-await", "nightly", "compat"] }
+bytes = { git = "https://github.com/tokio-rs/bytes" }
+base64 = "0.10.1"
 fs2 = "0.4.3"
 serde = "1.0"
 serde_derive = "1.0"
@@ -36,5 +27,5 @@ error-chain = "0.12.0"
 clap = "2.32.0"
 ctrlc = "3.1.1"
 siphasher = "0.3"
-tokio = "0.1.14"
+tokio = "0.1.22"
 toml = "0.4"

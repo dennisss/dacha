@@ -4,7 +4,7 @@
 extern crate async_std;
 extern crate fs2;
 extern crate libc;
-extern crate hex;
+pub extern crate hex;
 extern crate base64;
 
 pub mod fs;
@@ -71,6 +71,7 @@ pub mod errors {
 			ParseInt(::std::num::ParseIntError);
 			CharTryFromError(::std::char::CharTryFromError);
 			FromUtf8Error(::std::str::Utf8Error);
+			FromUtf8ErrorString(::std::string::FromUtf8Error);
 			FromUtf16Error(::std::string::FromUtf16Error);
 			FromHexError(::hex::FromHexError);
 			FromBase64Error(::base64::DecodeError);
@@ -124,6 +125,78 @@ macro_rules! tup {
 		$a = tmp.0;
 		$b = tmp.1;
 	}};
+}
+
+#[macro_export]
+macro_rules! enum_def {
+    ($name:ident $t:ty => $( $case:ident = $val:expr ),*) => {
+    	#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+		pub enum $name {
+			$(
+				$case = $val
+			),*
+		}
+
+		impl $name {
+			pub fn from_value(v: $t) -> Result<Self> {
+				Ok(match v {
+					$(
+						$val => $name::$case,
+					)*
+					_ => {
+						return Err(format!("Unknown value for '$name': {}", v)
+									.into());
+					}
+				})
+			}
+
+			pub fn to_value(&self) -> $t {
+				match self {
+					$(
+						$name::$case => $val,
+					)*
+				}
+			}
+		}
+
+    };
+}
+
+/// Implements Deref and DerefMut for the simple case of which the derefernced
+/// value is a direct field of the struct.
+///
+/// Usage:
+/// struct Wrapper { apple: Apple }
+/// impl_deref!(Wrapper::apple as Apple);
+///
+/// wrapper.deref()   <- This is of type &Apple
+///
+#[macro_export]
+macro_rules! impl_deref {
+    ($name:ident :: $field:ident as $t:ty) => {
+		impl ::std::ops::Deref for $name {
+			type Target = $t;
+
+			fn deref(&self) -> &Self::Target {
+				&self.$field
+			}
+		}
+
+		impl ::std::ops::DerefMut for $name {
+			fn deref_mut(&mut self) -> &mut Self::Target {
+				&mut self.$field
+			}
+		}
+    };
+}
+
+#[macro_export]
+macro_rules! min_size {
+    ($s:ident, $size:expr) => {
+    	if $s.len() < $size {
+    		return Err("Input buffer too small".into());
+    	}
+    };
 }
 
 #[cfg(test)]

@@ -1,0 +1,21 @@
+[package]
+name = "graphics"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+math = { path = "../math" }
+rmp-serde = "0.13.7"
+async-std = "1.0.1"
+rand = "0.6.1"
+bytes = { git = "https://github.com/tokio-rs/bytes" }
+fs2 = "0.4.3"
+error-chain = "0.12.1"
+ctrlc = "3.1.1"
+libc = "0.2"
+minifb = "0.11.2"
+num-traits = "0.2"
+glfw = "0.29.0"
+gl = "0.13.0"

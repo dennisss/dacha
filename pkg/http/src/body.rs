@@ -2,7 +2,6 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::io::{Cursor};
 use std::sync::mpsc;
-use async_std::net::TcpStream;
 use bytes::Bytes;
 use std::convert::TryFrom;
 use std::borrow::{BorrowMut, Borrow};
@@ -23,8 +22,7 @@ pub trait Body: Send {
 	/// NOTE: This is only guaranteed to be valid before read() is called.
 	fn len(&self) -> Option<usize>;
 
-	fn read<'a>(&'a mut self, buf: &'a mut [u8])
-		-> BoxFutureResult<'a, usize>;
+	fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> BoxFutureResult<'a, usize>;
 }
 
 const BUF_SIZE: usize = 4096;
@@ -161,13 +159,13 @@ pub struct IncomingUnboundedBody {
 }
 
 impl Body for IncomingUnboundedBody {
+	fn len(&self) -> Option<usize> {
+		None
+	}
+
 	fn read<'a>(&'a mut self, buf: &'a mut [u8])
 	-> BoxFutureResult<'a, usize> {
 		Box::pin(self.stream.read(buf))
-	}
-
-	fn len(&self) -> Option<usize> {
-		None
 	}
 }
 

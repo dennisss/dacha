@@ -1,8 +1,9 @@
 use common::errors::Result;
 use common::vec::VecPtr;
+use super::BigUint;
 
 /// Signed arbitrary length integer.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct BigInt {
 	// In little endian 32bits at a time.
 	value: VecPtr<u32> 
@@ -127,13 +128,13 @@ impl BigInt {
 		Ok(v as isize)
 	}
 
-	pub fn to_uint(&self) -> Result<super::BigUint> {
+	pub fn to_uint(&self) -> Result<BigUint> {
 		if !self.is_positive() {
 			return Err("Not positive".into());
 		}
 
 		// TODO: Use little endian / native endian.
-		Ok(super::BigUint::from_be_bytes(&self.to_be_bytes()))
+		Ok(BigUint::from_be_bytes(&self.to_be_bytes()))
 	}
 
 	fn trim(&mut self) {
@@ -166,10 +167,21 @@ impl BigInt {
 
 }
 
+impl std::convert::From<BigUint> for BigInt {
+	fn from(other: BigUint) -> Self {
+		// TODO: We should be able to do this even more efficiently without a
+		// conversion as the internal representations are the same.
+		Self::from_be_bytes(&other.to_be_bytes())
+	}
+}
+
+
 impl std::fmt::Debug for BigInt {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		if let Ok(v) = self.to_isize() {
 			write!(f, "{}", v)
+		} else if self.is_positive() {
+			write!(f, "{:?}", self.to_uint().unwrap())
 		} else {
 			// TODO: Need a better mode for this.
 			write!(f, "BigInt({:?})", self.value.as_ref())

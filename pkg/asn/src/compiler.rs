@@ -2,7 +2,7 @@ use common::errors::*;
 use super::syntax::*;
 use parsing::*;
 use bytes::Bytes;
-use super::encoding::TagClass;
+use super::tag::TagClass;
 
 pub struct LineBuilder {
 	lines: Vec<String>

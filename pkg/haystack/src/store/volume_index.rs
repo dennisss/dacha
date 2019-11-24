@@ -87,6 +87,7 @@ impl PhysicalVolumeIndex {
 		let mut file = opts.open(path)?;
 
 		// Sync directory (assuming that the directory itself has already been around for a while)
+		// TODO: Sync after the write?
 		File::open(path.parent().unwrap()).unwrap().sync_all()?;
 
 		let superblock = PhysicalVolumeSuperblock {

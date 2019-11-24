@@ -381,6 +381,12 @@ struct AbsoluteReference {
 
 type Trigram = [u8; 3];
 
+/*
+	Core operations:
+	- Given max_reference_distance
+
+*/
+
 /// A buffer of past uncompressed input which is 
 pub struct MatchingWindow {
 	// TODO: We don't need to maintain a cyclic buffer if we have the entire input available to us during compression time.
@@ -388,7 +394,8 @@ pub struct MatchingWindow {
 
 	/// Map of three bytes in the back history to it's absolute position in the output buffer.
 	/// 
-	/// The linked list is maintained in order of descending 
+	/// The linked list is maintained in order of descending order of absolute
+	/// position in the vector (such that closer matches are traversed first).
 	trigrams: HashMap<Trigram, VecDeque<usize>>
 }
 
@@ -432,8 +439,12 @@ impl MatchingWindow {
 		}
 	}
 
-	/// Given the next segment of uncompressed data, pushes it to the end of the window and in the process removing any data farther back the window size. 
+	/// Given the next segment of uncompressed data, pushes it to the end of
+	/// the window and in the process removing any data farther back the window
+	/// size.
 	pub fn extend_from_slice(&mut self, data: &[u8]) {
+		// TODO: If extending by more than the max_reference_distance, just wipe
+		// the entire trigrams datastructure.
 		self.buffer.extend_from_slice(data);
 
 		// Index of the first new trigram 
@@ -467,6 +478,9 @@ impl MatchingWindow {
 		};
 
 		for off in offsets {
+			// TODO: If off is too far back, then stop immediately as all later
+			// ones will only be even further away.
+
 			let s = self.buffer.slice_from(*off).append(data);
 
 			// We trivially hae at least a match of 3 because we matched the trigram.
@@ -479,7 +493,8 @@ impl MatchingWindow {
 			}
 
 			if let Some(m) = &best_match {
-				// NOTE: Even if they are equal, we prefer to use a later lower distance match of the same length.
+				// NOTE: Even if they are equal, we prefer to use a later lower
+				// distance match of the same length.
 				if m.length > len {
 					continue;
 				}

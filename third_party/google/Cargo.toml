@@ -1,0 +1,10 @@
+[package]
+name = "google"
+version = "0.1.0"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+fs2 = "0.4.3"
+libc = "0.2"

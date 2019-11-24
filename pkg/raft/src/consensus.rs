@@ -13,7 +13,21 @@ use std::sync::{Arc, Mutex};
 use rand::RngCore;
 
 
+// TODO: Suppose the leader is waiting on an earlier truncation that is preventing the pending_conflict from resolving. Should we allow it to still send over a commit_index to followers that is ahead of the commit_index that it locally has
+
 // XXX: Assert that we never safe a configuration to disk or initialize with a config that has uncommited entries in it
+
+/*
+	Notes:
+	- CockroachDB uses RaftTickInterval as 100ms between heartbeats
+	- Election Timeout is 300ms (3 ticks)
+
+	- CockroachDB uses the reelection timeout of etcd
+		- Overall since the last received heartbeat, etcd will wait from [electiontimeout, 2 * electiontimeout - 1] in tick units before starting a reelection
+		- In other words, after the election timeout is done, It will wait from some random fraction of that cycle extra before starting a re-election
+		- NOTE: etcd rounds after these timeouts to cycles, presumably for efficient batching of messages
+*/
+
 
 // NOTE: Blocking on a proposal to get some conclusion will be the role of blocking on a one-shot based in some external code
 // But most read requests will adictionally want to block on the state machine being fully commited up to some minimum index (I say minimum for the case of point-in-time transactions that don't care about newer stuff)
@@ -23,7 +37,6 @@ const ELECTION_TIMEOUT: (u64, u64) = (400, 800);
 
 /// If the leader doesn't send anything else within this amount of time, then it will send an empty heartbeat to all followers (this default value would mean around 6 heartbeats each second)
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(150);
-
 
 
 // NOTE: This is basically the same type as a LogPosition (we might as well wrap a LogPosition and make the contents of a proposal opaque to other programs using the consensus api)
@@ -146,6 +159,19 @@ impl<T> MustPersistMetadata<T> {
 }
 
 
+pub struct ReadIndex {
+	value: LogPosition,
+	time: Instant
+}
+
+pub enum ReadIndexError {
+	/// Meaning that a valid read index can not be obtained right now and should be retried after the given log position has been commited
+	RetryAfter(LogPosition),
+
+	/// Can't get a read-index because we are not the leader
+	/// It is someone else's responsibility to ensure that 
+	NotLeader
+}
 
 pub struct ConsensusModule {
 	/// Id of the current server we are representing
@@ -189,7 +215,7 @@ impl ConsensusModule {
 
 		// Unless we cast a vote, it isn't absolutely necessary to persist the metadata
 		// So if we chose to do that optimization, then if the log contains newer terms than in the metadata, then we can assume that we did not cast any meaningful vote in that election
-		let last_log_term = log.term(log.last_index().unwrap_or(0)).unwrap();
+		let last_log_term = log.term(log.last_index()).unwrap();
 		if last_log_term > meta.current_term {
 			meta.current_term = last_log_term;
 			meta.voted_for = None;
@@ -202,15 +228,14 @@ impl ConsensusModule {
 		}
 
 		// The external process responsible for snapshotting should never compact the log until a config snapshot has been persisted (as this would result in a discontinuity between the log and the snapshots)
-		// TODO: Verify this for the state machine as well
-		if config_snapshot.last_applied + 1 < log.first_index().unwrap_or(0) {
+		if config_snapshot.last_applied + 1 < log.first_index() {
 			panic!("Config snapshot is from before the start of the log");
 		}
 
 		let mut config = ConfigurationStateMachine::from(config_snapshot);
 
 		// If the log contains more entries than the config, advance the config forward such that the configuration represents at least the latest entry in the log
-		let last_log_index = log.last_index().unwrap_or(0);
+		let last_log_index = log.last_index();
 
 		// TODO: Implement an iterator over the log for this
 		for i in (config.last_applied + 1)..(last_log_index + 1) {
@@ -246,6 +271,99 @@ impl ConsensusModule {
 		self.config.snapshot()
 	}
 
+	/// Obtains a read-index which is the lower bound on the current state at the point in time of calling
+	/// 
+	/// Once obtaining this read-index, a caller must either:
+	/// 1. wait for a round of heartbeats to start and finish after calling this method
+	/// 2. check that the leader still has remaining lease time within some clock skew bound
+	/// 
+	/// Then the reader must wait for this read-index to be applied to the state machine
+	/// 
+	/// TODO: Probably wrap the return value value in another layer so that it needs to be unwrapped properly
+	/// We will probably implement clock skew as a separate layer on top of this
+	pub fn read_index(&self, time: Instant) -> std::result::Result<ReadIndex, ReadIndexError> {
+
+		let is_leader = match self.state {
+			ServerState::Leader(_) => true,
+			_ => false
+		};
+
+		if !is_leader {
+			return Err(ReadIndexError::NotLeader);
+		}
+
+		let ci = self.meta.commit_index;
+		// If we are the leader, then the commited index should always be available in the lod
+		let ct = self.log.term(ci).expect("Leader Completeness gurantee violated");
+
+		// Simple helper for returning a valid index
+		let ret = |i, t| {
+			Ok(ReadIndex { value: LogPosition { index: i, term: t }, time })
+		};
+
+		// If the commited index is in the current term as the leader, then trivially we have the highest commit index in the cluster
+		if ct == self.meta.current_term {
+			return ret(ci, ct);
+		}
+
+		if let Some(t) = self.log.term(ci + 1) {
+			// This is the natural extension of the outer else case in which case all old entries that we have were already commited therefore are all valid
+			if t == self.meta.current_term {
+				return ret(ci, ct);
+			}
+			// Otherwise, we must wait until at least the first operation in our term gets commited (or at least the first immediately before the one in the current term)
+			// ^ If the leader functions properly, then we should never hit the end
+			else {
+				let idx = ci + 1;
+				loop {
+					match self.log.term(idx + 1) {
+						Some(t) => {
+							if t == self.meta.current_term {
+								return Err(ReadIndexError::RetryAfter(LogPosition {
+									index: idx, term: self.log.term(idx).unwrap()
+								}));
+							}
+						}
+						None => {
+							// If the code in this file is correct, then this should never happen as a leadr should always create a no-op if it thinks that it can't gurantee that all of its log entries are commited
+							panic!("Leader not prepared to commit everything in their log");
+						}
+					}
+				}				
+			}
+		}
+		// There is no log position after the commited index, therefore if be leader completeness we have all commited entries, then no one else must have a higher index
+		else {
+			return ret(ci, ct);
+		}
+	}
+
+	/// Forces a heartbeat to immediately occur 
+	/// (only valid on the current leader)
+	pub fn schedule_heartbeat(&self) {
+
+	}
+
+	/// TODO: 
+	pub fn unwrap_read_index_heartbeat() {
+
+	}
+
+	pub fn unwrap_read_index_lease() {
+
+	}
+
+	/*
+		For a lease based read index
+		- Get a local index
+		- Then either wait for a heartbeat round or 
+	*/
+	/*
+		XXX: What is interesting is that whenever a round of heartbeats is obtained, it may be able to 'unwrap' a read-index as long as it started after the read_index was issued
+		- So probably wrap read_indexes with a time
+	*/
+
+
 	/// Propose a new state machine command given some data packet
 	// NOTE: Will immediately produce an output right?
 	pub fn propose_command(&mut self, data: Vec<u8>, out: &mut Tick) -> ProposeResult {
@@ -270,7 +388,7 @@ impl ConsensusModule {
 	/// Checks the progress of a previously iniated proposal
 	/// This can be safely queried on any server in the cluster but naturally the status on the current leader will be the first to converge
 	pub fn proposal_status(&self, prop: &Proposal) -> ProposalStatus {
-		let last_log_index = self.log.last_index().unwrap_or(0);
+		let last_log_index = self.log.last_index();
 		let last_log_term = self.log.term(last_log_index).unwrap();
 
 		// In this case this proposal has not yet made it into our log
@@ -312,7 +430,7 @@ impl ConsensusModule {
 	pub fn propose_entry(&mut self, data: LogEntryData, out: &mut Tick) -> ProposeResult {
 		let ret = if let ServerState::Leader(ref mut leader_state) = self.state {
 
-			let last_log_index = self.log.last_index().unwrap_or(0);
+			let last_log_index = self.log.last_index();
 
 			let index = last_log_index + 1;
 			let term = self.meta.current_term;
@@ -320,6 +438,7 @@ impl ConsensusModule {
 			// Considering we are a leader, this should always true, as we only ever start elections at 1
 			assert!(term > 0);
 
+			// Snapshots will always contain a term and an index for simplicity
 
 			// If the new proposal is for a config change, block it until the last change is committed
 			// TODO: Realistically we actually just need to check against the current commit index for doing this (as that may be higher)
@@ -397,6 +516,10 @@ impl ConsensusModule {
 		}
 
 
+		// Basically on any type:
+			// If a pending_conflict exists, check it has been resolved
+			// If so, attempt to move any (but if )
+
 		enum ServerStateSummary {
 			Follower { elapsed: Duration, election_timeout: Duration },
 			Candidate { vote_count: usize, election_start: Instant, election_timeout: Duration },
@@ -461,7 +584,7 @@ impl ConsensusModule {
 					// TODO: For a single-node system, this should occur instantly without any timeouts
 					println!("Woohoo! we are now the leader");
 
-					let last_log_index = self.log.last_index().unwrap_or(0);
+					let last_log_index = self.log.last_index();
 
 					let servers = self.config.value.iter()
 						.filter(|s| **s != self.id)
@@ -532,7 +655,7 @@ impl ConsensusModule {
 	/// Leaders are allowed to commit entries before they are locally matches
 	/// This means that a leader that has crashed and restarted may not have all of the entries that it has commited. In this case, it cannot become the leader again until it is resynced
 	fn can_be_leader(&self) -> bool {
-		self.log.last_index().unwrap_or(0) >= self.meta().commit_index
+		self.log.last_index() >= self.meta().commit_index
 	}
 
 
@@ -541,7 +664,7 @@ impl ConsensusModule {
 
 		// Starting at the last entry in our log, go backwards until we can find an entry that we can mark as commited
 		// TODO: ci can also more specifically start at the max value across all match_indexes (including our own, but it should be noted that we are the leader don't actually need to make it durable in order to commit it)
-		let mut ci = self.log.last_index().unwrap_or(0);
+		let mut ci = self.log.last_index();
 
 		let majority = self.majority_size();
 		while ci > self.meta.commit_index {
@@ -613,12 +736,13 @@ impl ConsensusModule {
 		let leader_commit = self.meta.commit_index;
 		let log = &self.log;
 
-		let last_log_index = log.last_index().unwrap_or(0);
+		let last_log_index = log.last_index();
 		//let last_log_term = log.term(last_log_index).unwrap();
 
 
 		// Given some previous index, produces a request containing all entries after that index
 		// TODO: Long term this could reuse the same request objects as we will typically be sending the same request over and over again
+		// TODO: It is also possible that the next_index is too low to be able to replicate without installing a snapshot
 		let new_request = |prev_log_index: u64| -> AppendEntriesRequest {
 			
 			let mut entries = vec![];
@@ -704,6 +828,8 @@ impl ConsensusModule {
 			else {
 				let req = new_request(msg_key);
 
+				// XXX: Also record the start time so that we can hold leases
+
 				message_map.insert(msg_key, Message {
 					to: vec![*server_id],
 					body: MessageBody::AppendEntries(req, last_log_index)
@@ -766,7 +892,7 @@ impl ConsensusModule {
 	fn perform_election(&self, tick: &mut Tick) {
 		
 		let (last_log_index, last_log_term) = {
-			let idx = self.log.last_index().unwrap_or(0);
+			let idx = self.log.last_index();
 			let term = self.log.term(idx).unwrap();
 
 			(idx, term)
@@ -909,6 +1035,8 @@ impl ConsensusModule {
 
 	// XXX: Better way is to encapsulate a single change
 
+	// TODO: Will need to support optimistic updating of next_index to support batching
+
 	// last_index should be the index of the last entry that we sent via this request
 	pub fn append_entries_callback(
 		&mut self, from_id: ServerId, last_index: u64, resp: AppendEntriesResponse, tick: &mut Tick
@@ -932,7 +1060,7 @@ impl ConsensusModule {
 				// If it has a longer log than us, then that means that it was probably a former leader or talking to a former leader and has uncommited entries (so we will perform a no-op if we haven't yet in our term in order to truncate the follower's log)
 				// NOTE: We could alternatively just send nothing upon successful appends and remove this block of code if we just unconditionally always send a no-op as soon as any node becomes a leader
 				if let Some(idx) = resp.last_log_index {
-					let last_log_index = self.log.last_index().unwrap_or(0);
+					let last_log_index = self.log.last_index();
 					let last_log_term = self.log.term(last_log_index).unwrap();
 
 					if idx > last_log_index && last_log_term != self.meta.current_term {
@@ -1007,7 +1135,7 @@ impl ConsensusModule {
 			// In this case, the terms must be equal (or >= our current term, but for any non-read-only prevote query, we would update out local term to be at least that of the request)
 				
 			let (last_log_index, last_log_term) = {
-				let idx = self.log.last_index().unwrap_or(0);
+				let idx = self.log.last_index();
 				let term = self.log.term(idx).unwrap();
 				(idx, term)
 			};
@@ -1166,7 +1294,7 @@ impl ConsensusModule {
 		
 
 		// This should never happen as the snapshot should only contain comitted entries which should never be resent
-		if req.prev_log_index < self.log.first_index().unwrap_or(1) - 1 {
+		if req.prev_log_index + 1 < self.log.first_index() {
 			return Err("Requested previous log entry is before the start of the log".into());
 		}
 
@@ -1180,7 +1308,7 @@ impl ConsensusModule {
 				}
 			},
 			// In this case, we are receiving changes beyond the end of our log, so we will respond with the last index in our log so that we don't get any sequential requests beyond that point
-			None => return Ok(response(false, Some(self.log.last_index().unwrap_or(0))).into())
+			None => return Ok(response(false, Some(self.log.last_index())).into())
 		};
 
 		// Index into the entries array of the first new entry not already in our log
@@ -1228,7 +1356,7 @@ impl ConsensusModule {
 		// Generally this should never happen considering all of the other checks that we have above
 		if first_new < req.entries.len() {
 
-			let last_log_index = self.log.last_index().unwrap_or(0);
+			let last_log_index = self.log.last_index();
 			let last_log_term = self.log.term(last_log_index).unwrap();
 
 			let next = &req.entries[first_new];
@@ -1285,7 +1413,7 @@ impl ConsensusModule {
 		// If the server sees that the last_log_index of a follower is higher than its log size, then it needs to apply a no-op (if one has never been created before in order to )
 		// NOTE: We don't need to send the last_log_index in the case of success
 		// TODO: Ideally optimize away cloning the log in this return value
-		let last_log_index = self.log.last_index().unwrap_or(0);
+		let last_log_index = self.log.last_index();
 
 		// It should be always captured by the first new entry
 		assert!(!truncated);

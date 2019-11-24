@@ -5,11 +5,37 @@ use std::path::{Path, PathBuf};
 use bytes::Bytes;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use crc32c::crc32c_append;
+use std::os::unix::io::{AsRawFd};
+use std::io;
 
 /// Amount of padding that we add to the file for the length and checksume bytes
 const PADDING: u64 = 8;
 
 const DISK_SECTOR_SIZE: u64 = 512;
+
+/*
+	Cases to test:
+	- Upon a failed creation, we should not report the file as created
+		- Successive calls to create() should be able to delete any partially created state
+
+*/
+
+/*
+	The read index in the case of the memory store
+	-> Important notice 
+
+*/
+
+/*
+	NOTE: etcd/raft assumes that the entire snapshot fits in memory
+	-> Not particularly good
+	-> Fine as long as limit range sizes for 
+*/
+
+// Simple case is to just generate a callback
+
+// https://docs.rs/libc/0.2.48/libc/fn.unlinkat.html
+// TODO: Also linux's rename will atomically replace any overriden file so we could use this fact to remove one more syscall from the process
 
 
 /// Wraps a binary blob that can be atomically read/written from the disk 
@@ -118,7 +144,25 @@ impl BlobFile {
 		self.dir.sync_data()?;
 
 		// Remove old value
+		/*
+		// Basically must cache the actual file name
+		{
+			if cfg!(any(target_os = "linux")) {
+				let ret = unsafe {
+					libc::fallocate(file.as_raw_fd(), libc::FALLOC_FL_KEEP_SIZE, 0, len as libc::off_t)
+				};
+
+				if ret == 0 { Ok(()) } else { Err(Error::last_os_error()) }
+			}
+			else {
+
+			}
+		}
+		*/
+
+
 		std::fs::remove_file(&self.path_tmp)?;
+
 		// NOTE: A dir sync should not by needed here
 
 		Ok(())

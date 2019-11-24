@@ -7,10 +7,15 @@ use std::sync::{Arc, Mutex};
 use std::path::Path;
 
 
-/// A simple log implementation backed be a single file that is rewritten every time a flush is needed and otherwise stores all entries in memory 
+/// A simple log implementation backed be a single file that is rewritten completely every time a flush is needed and otherwise stores all entries in memory 
 pub struct SimpleLog {
-	mem: MemoryLogStorage,
-	snapshot: Mutex<(u64, BlobFile)>
+	mem: MemoryLog,
+
+	/// The position of the last entry stored in the snapshot
+	last_flushed: Mutex<LogSeq>,
+
+	/// The single file backing the log
+	snapshot: Mutex<BlobFile>
 }
 
 impl SimpleLog {
@@ -22,8 +27,9 @@ impl SimpleLog {
 		let file = b.create(&marshal(log)?)?;
 
 		Ok(SimpleLog {
-			mem: MemoryLogStorage::new(),
-			snapshot: Mutex::new((0, file))
+			mem: MemoryLog::new(),
+			last_flushed: Mutex::new(LogSeq(0)),
+			snapshot: Mutex::new(file)
 		})
 	}
 
@@ -32,20 +38,20 @@ impl SimpleLog {
 		let (file, data) = b.open()?;
 
 		let log: Vec<LogEntry> = unmarshal(&data)?;
-		let mem = MemoryLogStorage::new();
+		let mem = MemoryLog::new();
 
 		println!("RESTORE {:?}", log);
 
-		let mut match_index = 0;
+		let mut seq = LogSeq(0); // log.last().map(|e| e.pos.clone()).unwrap_or(LogPosition::zero());
 
 		for e in log {
-			match_index = e.index;
-			mem.append(e);
+			seq = mem.append(e);
 		}
 
 		Ok(SimpleLog {
 			mem,
-			snapshot: Mutex::new((match_index, file))
+			last_flushed: Mutex::new(seq),
+			snapshot: Mutex::new(file)
 		})
 	}
 
@@ -58,17 +64,22 @@ impl SimpleLog {
 }
 
 
-impl LogStorage for SimpleLog {
-	fn term(&self, index: u64) -> Option<u64> { self.mem.term(index) }
-	fn first_index(&self) -> Option<u64> { self.mem.first_index() }
-	fn last_index(&self) -> Option<u64> { self.mem.last_index() }
-	fn entry(&self, index: u64) -> Option<Arc<LogEntry>> { self.mem.entry(index) }
-	fn append(&self, entry: LogEntry) { self.mem.append(entry); }
-	fn truncate_suffix(&self, start_index: u64) { self.mem.truncate_suffix(start_index); }
-	
-	// TODO: May be wrong on truncations right?
-	fn match_index(&self) -> Option<u64> {
-		Some(self.snapshot.lock().unwrap().0)
+impl Log for SimpleLog {
+	// TODO: Because this almost always needs to be shared, we might as well force usage with a separate Log type that just implements initial creation, checkpointing, truncation, and flushing related functions
+	fn term(&self, index: LogIndex) -> Option<Term> { self.mem.term(index) }
+	fn first_index(&self) -> LogIndex { self.mem.first_index() }
+	fn last_index(&self) -> LogIndex { self.mem.last_index() }
+	fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSeq)> { self.mem.entry(index) }
+	fn append(&self, entry: LogEntry) -> LogSeq { self.mem.append(entry) }
+	fn truncate(&self, start_index: LogIndex) -> Option<LogSeq> { self.mem.truncate(start_index) }
+	fn checkpoint(&self) -> LogPosition { self.mem.checkpoint() }
+	fn discard(&self, pos: LogPosition) { self.mem.discard(pos) }
+
+	// TODO: Is there any point in ever 
+	fn last_flushed(&self) -> Option<LogSeq> {
+		Some(
+			self.last_flushed.lock().unwrap().clone()
+		)
 	}
 
 	fn flush(&self) -> Result<()> {
@@ -77,19 +88,20 @@ impl LogStorage for SimpleLog {
 
 		let mut s = self.snapshot.lock().unwrap();
 
-		let idx = self.mem.last_index().unwrap_or(0);
+		let idx = self.mem.last_index();
 		let mut log: Vec<LogEntry> = vec![];
 
-		let mut last_idx = s.0;
+		let mut last_seq = LogSeq(0);
 
 		for i in 1..(idx + 1) {
-			let e = self.mem.entry(i).expect("Failed to get entry from log");
-			last_idx = e.index;
+			let (e, seq) = self.mem.entry(i).expect("Failed to get entry from log");
+			last_seq = seq;
 			log.push((*e).clone());
 		}
 
-		s.1.store(&marshal(log)?)?;
-		s.0 = last_idx;
+		s.store(&marshal(log)?)?;
+
+		*self.last_flushed.lock().unwrap() = last_seq;
 
 		Ok(())
 	}

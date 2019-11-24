@@ -1,6 +1,7 @@
 use common::errors::*;
 use async_std::fs::File;
 use async_std::io::Read;
+use async_std::io::prelude::ReadExt;
 use math::big::BigUint;
 
 /// Generates secure random bytes suitable for cryptographic key generation.
