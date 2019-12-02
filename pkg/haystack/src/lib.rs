@@ -7,9 +7,8 @@
 extern crate futures;
 // extern crate futures_await as futures;
 
-extern crate core;
+extern crate common;
 extern crate dotenv;
-extern crate crc32c;
 extern crate rand;
 extern crate byteorder;
 extern crate arrayref;

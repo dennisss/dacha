@@ -77,8 +77,8 @@ impl PhysicalVolumeIndex {
 
 	/// Create a brand new empty index
 	pub fn create(
-		path: &Path, parent_block: &PhysicalVolumeSuperblock
-	) -> Result<PhysicalVolumeIndex> {
+		path: &Path, parent_block: &PhysicalVolumeSuperblock)
+		-> Result<PhysicalVolumeIndex> {
 		
 		// NOTE: The index is redundant to the main file, so it's easiest to just truncate any existing volumes in the case of newly created volumes
 		let mut opts = OpenOptions::new();

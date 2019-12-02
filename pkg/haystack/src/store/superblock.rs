@@ -1,9 +1,8 @@
-use super::super::common::*;
-use super::super::errors::*;
 use std::io::{Read, Write, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use std::mem::size_of;
-use crc32c::crc32c_append;
+use common::errors::*;
+use crate::common::*;
 
 const SUPERBLOCK_MAGIC_SIZE: usize = 4;
 const CHECKSUM_SIZE: usize = 4;
@@ -77,7 +76,6 @@ impl PhysicalVolumeSuperblock {
 	}
 
 	pub fn write(&self, writer: &mut Write) -> Result<()> {
-		
 		if (self.allocated_space / self.block_size) + 1 > (BlockOffset::max_value() as u64) {
 			return Err("Volume allocated size is too large to fit into the block offset type".into());
 		}
@@ -95,7 +93,11 @@ impl PhysicalVolumeSuperblock {
 			cursor.write_u64::<LittleEndian>(self.allocated_space)?;
 		}
 		{
-			let sum = crc32c_append(0, &buf);
+			let sum = {
+				let mut hasher = CRC32Hasher::new();
+				hasher.update(&buf);
+				hasher.finish_u32();
+			};
 
 			let cur = buf.len();
 			let mut cursor = Cursor::new(&mut buf);

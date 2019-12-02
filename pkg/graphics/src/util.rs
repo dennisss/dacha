@@ -34,3 +34,21 @@ pub fn gl_vertex_buffer_vec3(attr: GLuint, data: &[Vector3f]) -> GLuint {
 	}
 	buf
 }
+
+pub fn gl_indices_buffer(data: &[GLuint]) -> GLuint {
+	let mut buf = 0;
+	unsafe {
+		gl::GenBuffers(1, &mut buf);
+		gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buf.as_ptr());
+		gl::BufferData(gl::ELEMENT_ARRAY_BUFFER, std::mem::sizeof::<GLuint>() * data.size(), data.as_ptr(), gl::STATIC_DRAW);
+	}
+
+	buf
+}
+
+/// Special case of above for triangle faces
+pub fn gl_face_buffer(data: &[[GLuint; 3]]) -> GLuint {
+	// TODO: Will this have the correct size
+	// std::slice::from_raw_parts(data.as_ptr(), 3*data.len())
+	unsafe { gl_indices_buffer(attr, std::mem::transmute(data)) }
+}

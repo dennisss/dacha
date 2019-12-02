@@ -6,7 +6,6 @@ use std::fs::File;
 use std::io::{Read, Seek};
 use common::errors::*;
 use common::bits::*;
-use compression::crc::*;
 use compression::huffman::*;
 use compression::deflate::*;
 use compression::gzip::*;

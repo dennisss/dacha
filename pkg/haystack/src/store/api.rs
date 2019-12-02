@@ -1,5 +1,3 @@
-use super::super::common::*;
-use super::super::paths::*;
 use arrayref::*;
 use base64;
 use std::mem::size_of;
@@ -7,6 +5,9 @@ use bytes::Bytes;
 use rand::RngCore;
 use std::io::{Write, Read};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
+use common::errors::*;
+use crate::common::*;
+use crate::paths::*;
 
 
 const COOKIE_SIZE: usize = size_of::<Cookie>();
@@ -35,7 +36,7 @@ pub struct NeedleChunk {
 }
 
 impl NeedleChunk {
-	pub fn write_header(&self, writer: &mut Write) -> std::io::Result<()> {
+	pub fn write_header(&self, writer: &mut Write) -> Result<()> {
 		writer.write_u32::<LittleEndian>(self.path.volume_id)?;
 		writer.write_u64::<LittleEndian>(self.path.key)?;
 		writer.write_u32::<LittleEndian>(self.path.alt_key)?;
@@ -44,7 +45,7 @@ impl NeedleChunk {
 		Ok(())
 	}
 
-	pub fn read_header(reader: &mut Read) -> std::io::Result<(NeedleChunkPath, NeedleSize)> {
+	pub fn read_header(reader: &mut Read) -> Result<(NeedleChunkPath, NeedleSize)> {
 		let volume_id = reader.read_u32::<LittleEndian>()?;
 		let key = reader.read_u64::<LittleEndian>()?;
 		let alt_key = reader.read_u32::<LittleEndian>()?;
@@ -89,11 +90,10 @@ impl From<Bytes> for CookieBuf {
 
 impl CookieBuf {
 
-	pub fn random() -> CookieBuf {
+	pub async fn random() -> Result<CookieBuf> {
 		let mut arr = Vec::new(); arr.resize(COOKIE_SIZE, 0);
-		let mut rng = rand::thread_rng();
-		rng.fill_bytes(&mut arr);
-		CookieBuf::from(arr)
+		crypto::random::secure_random_bytes(&mut arr).await?;
+		Ok(CookieBuf::from(arr))
 	}
 
 	pub fn data(&self) -> &Cookie {
@@ -107,7 +107,7 @@ impl CookieBuf {
 
 impl std::str::FromStr for CookieBuf {
 	type Err = base64::DecodeError;
-	fn from_str(s: &str) -> Result<Self, Self::Err> {
+	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
 		let buf = parse_urlbase64(s)?;
 		if buf.len() != COOKIE_SIZE {
 			return Err(base64::DecodeError::InvalidLength);
@@ -128,26 +128,29 @@ pub struct ETag {
 }
 
 impl ETag {
-
-	pub fn from(s: &str) -> std::result::Result<ETag, &'static str> {
+	pub fn from(s: &str) -> Result<ETag> {
 		if s.len() < 2 {
-			return Err("Too small");
+			return Err("Too small".into());
 		}
 
 		if &s[0..1] != "\"" || &s[(s.len() - 1)..] != "\"" {
-			return Err("No quotes");
+			return Err("No quotes".into());
 		}
 
 		let parts = s[1..(s.len() - 1)].split(':').collect::<Vec<_>>();
 
 		if parts.len() != 4 {
-			return Err("Not enough parts");
+			return Err("Not enough parts".into());
 		}
 
-		let store_id = parts[0].parse::<MachineId>().map_err(|_| "Invalid store id")?;
-		let volume_id = parts[1].parse::<VolumeId>().map_err(|_| "Invalid volume id")?;
-		let block_offset = parts[2].parse::<BlockOffset>().map_err(|_| "Invalid block offset")?;
-		let checksum = parse_urlbase64(parts[3]).map_err(|_| "Invalid checksum")?;
+		let store_id = parts[0].parse::<MachineId>()
+			.map_err(|_| Error::from("Invalid store id"))?;
+		let volume_id = parts[1].parse::<VolumeId>()
+			.map_err(|_| Error::from("Invalid volume id"))?;
+		let block_offset = parts[2].parse::<BlockOffset>()
+			.map_err(|_| Error::from("Invalid block offset"))?;
+		let checksum = parse_urlbase64(parts[3])
+			.map_err(|_| Error::from("Invalid checksum"))?;
 
 		Ok(ETag {
 			store_id,
@@ -157,7 +160,7 @@ impl ETag {
 		})
 	}
 
-	pub fn from_header(v: &hyper::header::HeaderValue) -> std::result::Result<ETag, &'static str> {
+	pub fn from_header(v: &hyper::header::HeaderValue) -> Result<ETag> {
 		match v.to_str() {
 			Ok(s) => {
 				match ETag::from(s) {
@@ -165,11 +168,12 @@ impl ETag {
 					Err(e) => Err(e)
 				}
 			},
-			Err(_) => Err("Invalid header value string")
+			Err(_) => Err("Invalid header value string".into())
 		}
 	}
 
-	pub fn partial_matches(&self, store_id: MachineId, volume_id: VolumeId, block_offset: BlockOffset) -> bool {
+	pub fn partial_matches(&self, store_id: MachineId, volume_id: VolumeId,
+						   block_offset: BlockOffset) -> bool {
 		self.store_id == store_id && self.volume_id == volume_id && self.block_offset == block_offset
 	}
 
@@ -230,14 +234,14 @@ pub enum StorePath {
 }
 
 impl StorePath {
-	pub fn from(segs: &[String]) -> Result<StorePath, &'static str> {
+	pub fn from(segs: &[String]) -> Result<StorePath> {
 		if segs.len() == 0 {
 			return Ok(StorePath::Index);
 		}
 
 		let volume_id = match segs[0].parse::<VolumeId>() {
 			Ok(v) => v,
-			Err(_) => return Err("Invalid volume id")
+			Err(_) => return Err("Invalid volume id".into())
 		};
 
 		if segs.len() == 1 {
@@ -248,7 +252,7 @@ impl StorePath {
 
 		let key = match segs[1].parse::<NeedleKey>() {
 			Ok(v) => v,
-			Err(_) => return Err("Invalid needle key")
+			Err(_) => return Err("Invalid needle key".into())
 		};
 		
 		if segs.len() == 2 {
@@ -259,7 +263,7 @@ impl StorePath {
 
 		let alt_key = match segs[2].parse::<NeedleAltKey>() {
 			Ok(v) => v,
-			Err(_) => return Err("Invalid needle alt key")
+			Err(_) => return Err("Invalid needle alt key".into())
 		};
 
 		if segs.len() == 3 {
@@ -270,7 +274,7 @@ impl StorePath {
 
 		let cookie = match segs[3].parse::<CookieBuf>() {
 			Ok(v) => v,
-			Err(_) => return Err("Invalid cookie")
+			Err(_) => return Err("Invalid cookie".into())
 		};
 
 		if segs.len() == 4 {
@@ -279,7 +283,7 @@ impl StorePath {
 			});
 		}
 
-		Err("Unknown route pattern")
+		Err("Unknown route pattern".into())
 	}
 
 	pub fn to_string(&self) -> String {

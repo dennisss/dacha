@@ -1,4 +1,4 @@
-use crypto::hasher::*;
+use crate::hasher::*;
 
 const ADLER32_PRIME_MOD: usize = 65521;
 

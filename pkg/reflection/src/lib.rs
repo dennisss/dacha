@@ -20,6 +20,12 @@ enum ReflectValue<'a> {
 	U64(&'a mut u64)
 }
 
+/*
+	impl<T: Hello> Apples {}
+
+	In a Token tree, look up all impl blocks 
+*/
+
 
 //pub trait Reflect {
 //

@@ -3,7 +3,8 @@
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate error_chain;
 
-extern crate core;
+extern crate common;
+extern crate crypto;
 extern crate futures_await as futures;
 extern crate rand;
 extern crate serde;
@@ -12,9 +13,9 @@ extern crate hyper;
 extern crate tokio;
 extern crate bytes;
 extern crate byteorder;
-extern crate crc32c;
 
 
+// TODO: Will be removed in favor of common::errors 
 pub mod errors {
 	error_chain! {
 		foreign_links {

@@ -6,11 +6,11 @@
 */
 
 use std::io::{Write};
+use std::collections::HashMap;
+use std::collections::VecDeque;
 use common::bits::*;
 use common::errors::*;
 use byteorder::{LittleEndian, WriteBytesExt};
-use std::collections::HashMap;
-use std::collections::VecDeque;
 use super::shared::*;
 use crate::huffman::*;
 use super::cyclic_buffer::*;

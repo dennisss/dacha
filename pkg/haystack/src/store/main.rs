@@ -14,6 +14,8 @@ fn on_start(mac_handle: &MachineHandle) {
 fn on_stop(mac_handle: &MachineHandle) {
 	mac_handle.thread.stop();
 
+	// TODO: EVenetually generalize this as a lame-duck pattern.
+
 	// Wait for a small amount of time after we've been marked as not-ready in case stray requests are still pending
 	let dur = time::Duration::from_millis(500);
 	thread::sleep(dur);

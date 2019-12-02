@@ -1,7 +1,7 @@
 // TODO: Move crypto package.
 
 use std::convert::TryInto;
-use crypto::hasher::*;
+use crate::hasher::*;
 
 
 const CRC32_TABLE: [u32; 256] = [

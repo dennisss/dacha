@@ -1,21 +1,10 @@
-#include <tansa/graphics/mesh.h>
-#include "utils.h"
 
-#include <iterator>
-#include <iostream>
-#include <fstream>
-#include <string>
 
-#include <algorithm>
-
-using namespace std;
+/*
 
 // TODO: Probably best to distinguish a Mesh (indice based triangles) from a bunch of triangles (Polygon)
 
 // The Polygon class can use a TRIANGLE_FAN, so only needs to specify the outer vertices once
-
-namespace tansa {
-namespace graphics {
 
 // TODO: What about the color?
 /// // TODO: Change the return type to bool to indicate success; pass a reference to a vector to use as a parameter
@@ -109,9 +98,6 @@ Mesh *Mesh::read_smf(const char *filename, Shader *shader){
 	cout << "REad " << verts.size() << " " << faces.size() << endl;
 
 	return new Mesh(verts, faces, shader);
-
-
 }
 
-}
-}
+*/

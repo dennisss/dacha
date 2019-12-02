@@ -13,51 +13,6 @@ namespace tansa {
 namespace graphics {
 namespace glm {
 
-struct vec2 {
-	vec2(GLfloat x = 0, GLfloat y = 0){ this->x = x; this->y = y; };
-
-	union {
-		struct {
-			GLfloat x;
-			GLfloat y;
-		};
-		GLfloat value[2];
-	};
-
-};
-
-
-struct vec3 {
-	vec3(GLfloat x = 0, GLfloat y = 0, GLfloat z = 0){ this->x = x; this->y = y; this->z = z; }
-
-	vec3(const GLfloat *v) { this->x = v[0]; this->y = v[1]; this->z = v[2]; }
-
-	union {
-		struct {
-			GLfloat x;
-			GLfloat y;
-			GLfloat z;
-		};
-		GLfloat value[3];
-	};
-
-	void operator+=(const vec3 &other) {
-		this->x += other.x;
-		this->y += other.y;
-		this->z += other.z;
-	}
-
-};
-
-inline vec3 operator-(const vec3 &lhs, const vec3 &rhs){
-	return vec3(lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z);
-}
-
-
-inline vec3 operator*(GLfloat s, const vec3 &rhs){
-	return vec3(rhs.x*s, rhs.y*s, rhs.z*s);
-}
-
 
 struct vec4 {
 	vec4(GLfloat x = 0, GLfloat y = 0, GLfloat z = 0, GLfloat w = 0){ this->x = x; this->y = y; this->z = z; this->w = w; };

@@ -11,10 +11,10 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use crc32c::crc32c_append;
 use std::path::{Path, PathBuf};
-use super::stream::Stream;
 use core::block_size_remainder;
 use fs2::FileExt;
 use core::fs::allocate_soft::*;
+use super::stream::Stream;
 
 const SUPERBLOCK_MAGIC: &str = "HAYS";
 
@@ -296,12 +296,11 @@ impl PhysicalVolume {
 	}
 
 	// TODO: If we want to go super fast, we could implement the data as a stream and start sending it back to a user right away
-	/**
-	 * Tries to read a single needle from the volume
-	 * Will only return if it exists, has not been deleted
-	 *
-	 * NOTE: The needle still needs to be separately checked for integrity
-	 */
+	/// Tries to read a single needle from the volume
+	/// Will only return if it exists, has not been deleted
+	///
+	/// NOTE: The needle still needs to be separately checked for integrity
+	///
 	pub fn read_needle(&mut self, keys: &NeedleKeys) -> Result<Option<NeedleWithOffset>> {
 
 		// This is basically the matter of reading from the current position in the thing
@@ -415,7 +414,7 @@ impl PhysicalVolume {
 		self.file.write_all(&header)?;
 
 
-		let mut sum = 0;
+		let mut hasher = CRC32CHasher::new();
 
 		// Pretty much io::copy but with the output split into making the hash and writing to the output
 		//io::copy(&mut data, &mut self.file)?;
@@ -437,9 +436,11 @@ impl PhysicalVolume {
 				break;
 			}
 
-			sum = crc32c_append(sum, chunk);
+			hasher.update(chunk);
 			self.file.write_all(chunk)?;
 		}
+
+		let sum = hasher.finish_u32();
 
 		if nread != (meta.size as usize) {
 			// Big error: we did read enough bytes

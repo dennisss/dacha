@@ -3,9 +3,9 @@ use common::errors::*;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, ByteOrder};
 use std::convert::{TryFrom, TryInto};
 use parsing::iso::*;
-use crate::crc::*;
-use crate::deflate::*;
 use crypto::hasher::*;
+use crypto::checksum::crc::*;
+use crate::deflate::*;
 
 // ZLib RFC http://www.zlib.org/rfc-gzip.html
 // This is based on v4.3

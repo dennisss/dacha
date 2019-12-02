@@ -2,8 +2,8 @@
 use std::io::Read;
 use common::errors::*;
 use common::bits::*;
-use crate::huffman::*;
 use byteorder::{LittleEndian, ReadBytesExt};
+use crate::huffman::*;
 use super::shared::*;
 use super::cyclic_buffer::*;
 use super::Progress;

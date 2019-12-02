@@ -175,7 +175,6 @@ impl NeedleFooter {
 		writer.write_u32::<LittleEndian>(sum)?;
 		Ok(())
 	}
-
 }
 
 

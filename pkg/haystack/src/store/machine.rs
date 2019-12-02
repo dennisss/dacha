@@ -447,7 +447,6 @@ pub struct StoreMachineVolumeStats {
 
 /// Represents a single snapshot of the store's space usage/allocations at one point in time
 pub struct StoreMachineStats {
-	
 	// Mainly copied from the store machine for convenience
 	pub config: ConfigRef,
 

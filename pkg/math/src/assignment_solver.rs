@@ -1,4 +1,4 @@
-use super::matrix::*;
+use crate::matrix::*;
 use typenum::{U2};
 
 #[derive(Clone, Copy, PartialEq)]
@@ -108,7 +108,7 @@ impl AssignmentSolver {
 
 	#[inline]
 	fn is_zero(&self, i: usize, j: usize) -> bool {
-		f64::abs(self.W[(i, j)]) < self.epsilon
+		self.W[(i, j)].abs() < self.epsilon
 	}
 
 	#[inline]

@@ -9,8 +9,8 @@ use std::convert::{TryFrom, TryInto};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use common::errors::*;
 use crypto::hasher::*;
+use crypto::checksum::adler32::*;
 use crate::deflate::*;
-use crate::adler32::*;
 
 const WINDOW_LOG_OFFSET: u8 = 8;
 

@@ -25,6 +25,17 @@ fn main() {
 
 	gl::load_with(|s| window.get_proc_address(s) as *const _);
 
+	/*
+		Default opengl mode:
+		- -1 to 1 in all dimensions
+		- Step 1: normalize to 0 to width and 0 to height (top-left corner is (0,0))
+		- Step 2: Assume z is 0 for now (we will keep around z functionality to
+		  enable easy switching to 3d)
+		- 
+
+		TODO: Premultiply proj by modelview for each object?
+	*/
+
 
 	/*
 	while !window.should_close() {

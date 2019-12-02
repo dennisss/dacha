@@ -8,10 +8,8 @@ edition = "2018"
 common = { path = "../common" }
 byteorder = "1.3.2"
 rand = "0.6.1"
-crc32c = "0.4.0"
 arrayref = "0.3.5"
-hyper = "0.12.32"
-futures-preview = { version = "=0.3.0-alpha.17", features = ["async-await", "nightly", "compat"] }
+async-std = "1.0.1"
 bytes = { git = "https://github.com/tokio-rs/bytes" }
 base64 = "0.10.1"
 fs2 = "0.4.3"

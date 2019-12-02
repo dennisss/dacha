@@ -131,6 +131,7 @@ pub mod utils;
 pub mod random;
 pub mod prime;
 pub mod hasher;
+pub mod checksum;
 pub mod dh;
 pub mod md;
 pub mod md5;
