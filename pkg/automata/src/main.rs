@@ -1,8 +1,6 @@
-#[macro_use] extern crate nom;
-
-extern crate core;
-
-
+extern crate common;
+extern crate bytes;
+#[macro_use] extern crate parsing;
 
 mod fsm;
 mod regexp;
@@ -13,22 +11,55 @@ use regexp::*;
 
 fn main() {
 
+	// TODO: Ensure that when the regexp starts with '^', we can fail fast (when not
+	// in multiline mode).
 
 	// These three are basically a test case for equivalent languages that can produce different automata
 
-	let mut a = RegExp::parse("a(X|Y)c").unwrap().to_automata().compute_dfa();
+	let mut a = RegExp::new("a(X|Y)c").unwrap();
 	println!("A: {:?}", a);
 
-	let mut b = RegExp::parse("(aXc)|(aYc)").unwrap().to_automata().compute_dfa();
+	let mut b = RegExp::new("(aXc)|(aYc)").unwrap();
 	println!("B: {:?}", b);
 
-	let mut c = RegExp::parse("a(Xc|Yc)").unwrap().to_automata().compute_dfa();
+	let mut c = RegExp::new("a(Xc|Yc)").unwrap();
 	println!("C: {:?}", c);
+	assert!(c.test("aXc"));
+	assert!(c.test("aYc"));
+	assert!(!c.test("a"));
+	assert!(!c.test("c"));
+	assert!(!c.test("Y"));
+	assert!(!c.test("Yc"));
+	assert!(!c.test(""));
 
+	let mut d = RegExp::new("a").unwrap();
+	println!("{:?}", d);
+
+
+	assert!(d.test("a"));
+	assert!(!d.test("b"));
+
+	// NOTE: This has infinite matches and matches everything
+	let mut e = RegExp::new("[a-z0-9]*").unwrap();
+	println!("{:?}", e);
+	assert!(e.test("a9034343"));
+	assert!(e.test(""));
+//	assert!(!e.test("<"));
+
+	/*
+		Supporting partial matches:
+		- Create start node which supports unlimited transitions of all symbols
+		- Create end node which supports unlimited transitions of all symbols
+			- Good enough to stop early if we are on such a node.
+		- Occasionally we will emit '^' and '$' symbols
+	*/
+
+	return;
 
 
 	// UnknownSymbol behavior
 
+	/*
 	let mut rfsm = RegExp::parse("(0|1|2)*01012").unwrap().to_automata();
 	rfsm = rfsm.compute_dfa();
 	println!("{:?}", rfsm);
@@ -66,6 +97,7 @@ fn main() {
 
 	println!("{}", out == rfsm);
 
+
 	// Composition of state machines:
 	// Ideally if we enable state machines to have larger id ranges, then we can implement a method of 
 
@@ -80,6 +112,7 @@ fn main() {
 	crlf = crlf.compute_dfa();
 
 	println!("HELLO: {}", crlf.accepts("hello world abab".chars()));
+	*/
 }
 
 

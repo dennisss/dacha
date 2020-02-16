@@ -16,6 +16,7 @@ members = [
 	"third_party/pkix",
 	"pkg/sstable",
 	"pkg/graphics",
+	"pkg/stadia_controller"
 #	 "pkg/raft",
 	# "pkg/haystack",
 	# "pkg/emulator",
