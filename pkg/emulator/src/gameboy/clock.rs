@@ -49,4 +49,5 @@ impl Timestamp {
 	pub fn cycles_1mhz(&self) -> u64 {
 		self.cycles / 4
 	}
+	pub fn cycles_512hz(&self) -> u64 { self.cycles / 8192 }
 }

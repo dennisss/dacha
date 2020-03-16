@@ -4,6 +4,24 @@ use std::io::{Read, Write};
 use crate::errors::*;
 use crate::ceil_div;
 
+/// Sets a bit to either by 1 or 0 based on the given boolean.
+pub fn bitset(i: &mut u8, val: bool, bit: u8) {
+	let mask = 1 << bit;
+	*i = (*i & !mask);
+	if val {
+		*i |= mask;
+	}
+}
+
+/// Gets the value of a single bit in a byte (0 = false, 1 = true)
+pub fn bitget(v: u8, bit: u8) -> bool {
+	if v & (1 << bit) != 0 {
+		true
+	} else {
+		false
+	}
+}
+
 /// Represents a variable length number of ordered bits
 #[derive(PartialEq, Eq, Clone)]
 pub struct BitVector {

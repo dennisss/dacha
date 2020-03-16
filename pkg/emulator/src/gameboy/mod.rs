@@ -7,6 +7,7 @@ use failure::_core::cell::RefCell;
 use gameboy::joypad::Joypad;
 use gameboy::clock::CYCLES_PER_SECOND;
 use gameboy::memory::MemoryInterface;
+use minifb::Scale;
 
 pub mod joypad;
 pub mod memory;
@@ -97,7 +98,7 @@ pub fn run() -> Result<()> {
 	let video = Rc::new(RefCell::new(
 		video::VideoController::new(clock.clone(), interrupts.clone())));
 
-	let sound = Rc::new(RefCell::new(sound::SoundController::default()));
+	let sound = sound::SoundController::new()?;
 
 	let cartridge = memory::MBC3::new(rom)?;
 
@@ -106,7 +107,7 @@ pub fn run() -> Result<()> {
 	let timer = Rc::new(RefCell::new(timer::Timer::new(clock.clone(), interrupts.clone())));
 
 	let mut mem = memory::Memory::new(&boot_rom, cartridge, video.clone(),
-									  sound.clone(), joypad.clone(),
+									  sound.state.clone(), joypad.clone(),
 									  interrupts.clone(), timer.clone());
 
 	let mut cpu = cpu::CPU::default();
@@ -154,9 +155,12 @@ pub fn run() -> Result<()> {
 	*/
 
 
+	let mut window_options = minifb::WindowOptions::default();
+	window_options.scale = Scale::X4;
+
 	let mut window = minifb::Window::new(
 		"Gameboy", video::SCREEN_WIDTH, video::SCREEN_HEIGHT,
-		minifb::WindowOptions::default()).unwrap();
+		window_options).unwrap();
 
 	// 60 FPS
 	window.limit_update_rate(Some(std::time::Duration::from_micros(16666)));
@@ -229,6 +233,11 @@ pub fn run() -> Result<()> {
 				// Only call at 1MHz.
 				if cycles % 4 == 0 {
 					video.borrow_mut().step()?;
+				}
+
+				// TODO: Move this timing logic into the sound controller?
+				if cycles % 8192 == 0 {
+					sound.step(&clock.borrow())?;
 				}
 
 				// TODO: Sort by dependencies.

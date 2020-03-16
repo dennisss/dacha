@@ -1,8 +1,8 @@
-use crate::errors::*;
 use std::cell::RefCell;
-use gameboy::memory::{InterruptState, MemoryInterface, InterruptType};
-use gameboy::clock::{CYCLES_PER_SECOND, Clock};
 use std::rc::Rc;
+use crate::errors::*;
+use crate::gameboy::memory::{InterruptState, MemoryInterface, InterruptType};
+use crate::gameboy::clock::{CYCLES_PER_SECOND, Clock};
 
 // TODO: We currently assume that all frequencies divide the system clock
 // frequency (this also implies that we should be able to optimize the modulus

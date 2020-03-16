@@ -1,5 +1,6 @@
 use std::io::{Seek, Read, Write};
 use common::errors::*;
+use common::bits::{bitget, bitset};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, ByteOrder};
 use std::convert::{TryFrom, TryInto};
 use parsing::iso::*;
@@ -77,19 +78,6 @@ impl Flags {
 		bitset(&mut i, self.fname, 3);
 		bitset(&mut i, self.fcomment, 4);
 		i
-	}
-}
-
-// NOTE: Assumes that the bit has never been set before.
-fn bitset(i: &mut u8, val: bool, bit: u8) {
-	*i |= (if val { 1 } else { 0 }) << bit;
-}
-
-fn bitget(v: u8, bit: u8) -> bool {
-	if v & (1 << bit) != 0 {
-		true
-	} else {
-		false
 	}
 }
 

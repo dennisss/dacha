@@ -7,6 +7,7 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 [dependencies]
 common = { path = "../common" }
 serde = "1.0"
+cpal = { git = "https://github.com/RustAudio/cpal" }
 serde_derive = "1.0"
 failure = "0.1.6"
 rand = "0.6.1"

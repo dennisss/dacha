@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use common::bits::{bitget, bitset};
 use crate::gameboy::memory::MemoryInterface;
 use crate::errors::*;
 use crate::gameboy::clock::*;
@@ -71,18 +72,6 @@ One line is 114 cycles
 
 
 /// TODO: Debug with gzip.rs
-fn bitset(i: &mut u8, val: bool, bit: u8) {
-	*i |= (if val { 1 } else { 0 }) << bit;
-}
-
-fn bitget(v: u8, bit: u8) -> bool {
-	if v & (1 << bit) != 0 {
-		true
-	} else {
-		false
-	}
-}
-
 fn bitgetv(v: u8, bit: u8) -> u8 {
 	if v & (1 << bit) != 0 {
 		1
@@ -134,13 +123,16 @@ impl VideoController {
 	}
 
 	fn draw_line(&mut self, screen_y: u8) -> Result<()> {
+
+		let mut line_color_nums = [ColorNumber(0); SCREEN_WIDTH];
+
 		// Draw background.
 		{
 			let tile_map = self.vram.tile_map(
 				self.registers.control.background_tile_map_select());
 
 			let tile_data = self.vram.tile_data(
-				!self.registers.control.background_window_tile_data_select());
+				self.registers.control.background_window_tile_data_select());
 
 			for screen_x in 0..(SCREEN_WIDTH as u8) {
 				// Wrapping here assumes that the frame/background is 256 pixels
@@ -159,14 +151,13 @@ impl VideoController {
 										 frame_y - tile_ptr.y);
 				let color = self.registers.background_pallete.color(color_num);
 
+				line_color_nums[screen_x as usize] = color_num;
+
 				let pixel = &mut self.screen_buffer[
 					(screen_y as usize)*SCREEN_WIDTH + (screen_x as usize)];
 				*pixel = color.to_rgb();
 			}
 		}
-
-
-		// TODO: What about window transparency.
 
 		// TODO: THe window calcualtions are probably wrong
 
@@ -201,6 +192,8 @@ impl VideoController {
 										 frame_y - tile_ptr.y);
 				let color = self.registers.background_pallete.color(color_num);
 
+				line_color_nums[screen_x as usize] = color_num;
+
 				let pixel = &mut self.screen_buffer[
 					(screen_y as usize)*SCREEN_WIDTH + (screen_x as usize)];
 				*pixel = color.to_rgb();
@@ -208,27 +201,126 @@ impl VideoController {
 
 		}
 
+
+
 		// Draw sprites.
-		/*
 		if self.registers.control.object_display_enabled() {
 			// TODO: Does a sprite that is not visible count towards the 10
 			// sprites per line limit?
 
-			for screen_x in 0..(SCREEN_WIDTH as u8) {
+			// Always uses the tile data at 0x8000.
+			let tile_data = self.vram.tile_data(true);
 
-				let mut rest = &self.oam[..];
-				loop {
-					let obj = match ObjectAttributes::next(rest) {
-						Some((o, r)) => {
-							rest = r;
-							o
-						},
-						None => { break; }
+			let draw_sprite_tile = |
+				obj: &ObjectAttributes, tile: &Tile, position_y: u8, pallete: &MonochromePallete,
+				screen_buffer: &mut [u32]| {
+				// Make sure the subtraction after this doesn't go negative.
+				if screen_y + 16 < position_y {
+					return;
+				}
+
+				// Will be the y position from 0-7 relative to the current tile
+				// to draw at the current line.
+				let tile_y = screen_y + 16 - position_y;
+				if tile_y >= 8 {
+					return;
+				}
+
+				// Ensuring the below screen_x calculations don't overflow
+				if obj.position_x >= (SCREEN_WIDTH as u8) + 8 {
+					return;
+				}
+
+				for tile_x in 0..8 {
+					let screen_x = match (obj.position_x + tile_x).checked_sub(8) {
+						Some(x) => x,
+						None => { continue; }
 					};
+
+					if screen_x as usize >= SCREEN_WIDTH {
+						break;
+					}
+
+					let color_num = tile.get(
+						if obj.x_flip() { 7 - tile_x } else { tile_x },
+						if obj.y_flip() { 7 - tile_y } else { tile_y });
+					// Transparent
+					if color_num.0 == 0 {
+						continue;
+					}
+
+					if line_color_nums[screen_x as usize].0 == 0 {
+						// always in front of bg/window color 0
+					} else {
+						match obj.priority() {
+							ObjectPriority::AboveBackground => {},
+							ObjectPriority::BehindNonZero => {
+								continue;
+							}
+						}
+					}
+
+					let color = pallete.color(color_num);
+
+					let pixel = &mut screen_buffer[
+						(screen_y as usize)*SCREEN_WIDTH + (screen_x as usize)];
+					*pixel = color.to_rgb();
+				}
+			};
+
+			let mut rest = &self.oam[..];
+			loop {
+				let obj = match ObjectAttributes::next(rest) {
+					Some((o, r)) => {
+						rest = r;
+						o
+					},
+					None => { break; }
+				};
+
+				let pallete =
+					if obj.upper_pallete() {
+						&self.registers.object_pallete1 }
+					else { &self.registers.object_pallete0 };
+
+				if self.registers.control.object_big() {
+					let lower_tile = tile_data.get(obj.tile_number & 0xFE);
+					draw_sprite_tile(
+						&obj, &lower_tile, obj.position_y, pallete,
+						&mut self.screen_buffer);
+
+					println!("DRAW BIG");
+
+					let (upper_tile_pos, carry) = obj.position_y.overflowing_add(8);
+					if !carry {
+						let upper_tile = tile_data.get(obj.tile_number | 0x01);
+						draw_sprite_tile(
+							&obj, &upper_tile, upper_tile_pos, pallete,
+							&mut self.screen_buffer);
+
+					}
+
+				} else {
+					let tile = tile_data.get(obj.tile_number);
+					draw_sprite_tile(&obj, &tile, obj.position_y, pallete, &mut self.screen_buffer);
 				}
 			}
+
+
+//			for screen_x in 0..(SCREEN_WIDTH as u8) {
+//
+//				let mut rest = &self.oam[..];
+//				loop {
+//					let obj = match ObjectAttributes::next(rest) {
+//						Some((o, r)) => {
+//							rest = r;
+//							o
+//						},
+//						None => { break; }
+//					};
+//				}
+//			}
 		}
-		*/
 
 		Ok(())
 	}
@@ -478,8 +570,8 @@ impl ObjectAttributes {
 		} else {
 			let (buf, rest) = data.split_at(4);
 			let s = Self {
-				position_x: buf[0],
-				position_y: buf[1],
+				position_y: buf[0],
+				position_x: buf[1],
 				tile_number: buf[2],
 				flags: buf[3]
 			};
@@ -494,6 +586,12 @@ impl ObjectAttributes {
 			ObjectPriority::AboveBackground
 		}
 	}
+
+	fn y_flip(&self) -> bool { bitget(self.flags, 6) }
+	fn x_flip(&self) -> bool { bitget(self.flags, 5) }
+
+	/// If true, use object pallete 1 instead of 0.
+	fn upper_pallete(&self) -> bool { bitget(self.flags, 4) }
 }
 
 enum ObjectPriority {
@@ -561,13 +659,13 @@ impl VideoRAM {
 	fn tile_data(&self, upper: bool) -> TileData {
 		if upper {
 			TileData {
-				data: &self.data[(0x8800 - 0x8000)..(0x9800 - 0x8000)],
-				offset: -128i8 as u8
+				data: &self.data[(0x8000 - 0x8000)..(0x9000 - 0x8000)],
+				offset: 0
 			}
 		} else {
 			TileData {
-				data: &self.data[(0x8000 - 0x8000)..(0x9000 - 0x8000)],
-				offset: 0
+				data: &self.data[(0x8800 - 0x8000)..(0x9800 - 0x8000)],
+				offset: 128
 			}
 		}
 	}
@@ -623,7 +721,17 @@ struct TileData<'a> {
 
 impl<'a> TileData<'a> {
 	fn get(&self, number: u8) -> Tile {
-		let off = (number.wrapping_sub(self.offset) as usize) * BYTES_PER_TILE;
+//		if number != 0 {
+//			println!("GET {}", number);
+//		}
+//		let num =
+//			if self.offset == 0 {
+//				number
+//			} else {
+//				(((number as i8) as i16) + 128) as u8
+//			};
+
+		let off = (number.wrapping_add(self.offset) as usize) * BYTES_PER_TILE;
 		Tile {
 			data: &self.data[off..(off + BYTES_PER_TILE)]
 		}
@@ -634,6 +742,7 @@ struct Tile<'a> {
 	data: &'a [u8]
 }
 
+#[derive(Clone, Copy)]
 struct ColorNumber(u8);
 
 impl Tile<'_> {

@@ -1,6 +1,7 @@
 #[macro_use] extern crate common;
 #[macro_use] extern crate failure;
 extern crate minifb;
+extern crate cpal;
 
 #[macro_use] extern crate arrayref;
 

@@ -1,28 +1,12 @@
 use crate::errors::*;
 use std::rc::Rc;
-use failure::_core::cell::RefCell;
-use gameboy::video::VideoController;
-use gameboy::joypad::Joypad;
-use gameboy::timer::Timer;
-use gameboy::sound::SoundController;
-
-// TODO: Dedup these functions with everywhere.
-fn bitset(i: &mut u8, val: bool, bit: u8) {
-	let mask = 1 << bit;
-	*i = (*i & !mask);
-	if val {
-		*i |= mask;
-	}
-}
-
-fn bitget(v: u8, bit: u8) -> bool {
-	if v & (1 << bit) != 0 {
-		true
-	} else {
-		false
-	}
-}
-
+use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
+use common::bits::{bitget, bitset};
+use crate::gameboy::video::VideoController;
+use crate::gameboy::joypad::Joypad;
+use crate::gameboy::timer::Timer;
+use crate::gameboy::sound::SoundControllerState;
 
 // External memory controller assigned the following ranges:
 // - 0000-3FFF
@@ -62,6 +46,18 @@ pub trait MemoryInterface {
 		buf[1] = self.load8(addr + 1)?;
 
 		Ok(u16::from_le_bytes(*array_ref![buf, 0, 2]))
+	}
+}
+
+impl<T: MemoryInterface + std::marker::Sync> MemoryInterface for Arc<Mutex<T>> {
+	fn store8(&mut self, addr: u16, value: u8) -> Result<()> {
+		let mut guard = self.lock().unwrap();
+		guard.store8(addr, value)
+	}
+
+	fn load8(&mut self, addr: u16) -> Result<u8> {
+		let mut guard = self.lock().unwrap();
+		guard.load8(addr)
 	}
 }
 
@@ -259,7 +255,7 @@ pub struct Memory {
 
 	video_controller: Rc<RefCell<VideoController>>,
 
-	sound_controller: Rc<RefCell<SoundController>>,
+	sound: Arc<Mutex<SoundControllerState>>,
 
 	joypad: Rc<RefCell<Joypad>>,
 
@@ -279,7 +275,7 @@ impl Memory {
 		boot_rom: &[u8],
 		external_controller: MBC3,
 		video_controller: Rc<RefCell<VideoController>>,
-		sound_controller: Rc<RefCell<SoundController>>,
+		sound: Arc<Mutex<SoundControllerState>>,
 		joypad: Rc<RefCell<Joypad>>,
 		interrupts: Rc<RefCell<InterruptState>>,
 		timer: Rc<RefCell<Timer>>) -> Self {
@@ -292,7 +288,7 @@ impl Memory {
 			buffer: [0u8; 0x10000],
 			boot_rom: boot_rom_owned,
 			external_controller,
-			video_controller, sound_controller,
+			video_controller, sound,
 			joypad,
 			work_ram,
 			high_ram: [0u8; 127],
@@ -350,8 +346,8 @@ impl MemoryInterface for Memory {
 			return self.joypad.borrow_mut().store8(addr, value);
 		}
 
-		if SoundController::can_access(addr) {
-			return self.sound_controller.borrow_mut().store8(addr, value);
+		if SoundControllerState::addr_mapped(addr) {
+			return self.sound.store8(addr, value);
 		}
 
 		// Video
@@ -482,8 +478,8 @@ impl MemoryInterface for Memory {
 			_ => {}
 		}
 
-		if SoundController::can_access(addr) {
-			return self.sound_controller.borrow_mut().load8(addr);
+		if SoundControllerState::addr_mapped(addr) {
+			return self.sound.load8(addr);
 		}
 
 		if addr >= 0xC000 && addr <= 0xDFFF {
