@@ -49,7 +49,7 @@ impl<'a> Block<'a> {
 		let num_restarts = (packed & !(1 << 31)) as usize;
 
 		if num_restarts < 1 {
-			return Err("At least one restart is required".into());
+			return Err(err_msg("At least one restart is required"));
 		}
 
 		let hash_index =
@@ -127,7 +127,7 @@ impl<'a> Block<'a> {
 		let (mid_entry, _) = BlockEntry::parse(
 			&self.entries[mid_offset..])?;
 		if mid_entry.shared_bytes != 0 {
-			return Err("Restart not valid".into());
+			return Err(err_msg("Restart not valid"));
 		}
 
 		match key.cmp(mid_entry.key_delta) {
@@ -222,7 +222,7 @@ impl<'a> BlockKeyValueIterator<'a> {
 
 		if entry.shared_bytes as usize > self.last_key.len() {
 			return Some(
-				Err("Insufficient shared bytes from previous key.".into()));
+				Err(err_msg("Insufficient shared bytes from previous key.")));
 		}
 
 		self.last_key.truncate(entry.shared_bytes as usize);

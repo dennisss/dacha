@@ -4,7 +4,7 @@ use common::bits::{bitget, bitset};
 use crate::gameboy::memory::MemoryInterface;
 use crate::errors::*;
 use crate::gameboy::clock::*;
-use gameboy::memory::{InterruptState, InterruptType};
+use crate::gameboy::memory::{InterruptState, InterruptType};
 
 pub const SCREEN_HEIGHT: usize = 144;
 pub const SCREEN_WIDTH: usize = 160;

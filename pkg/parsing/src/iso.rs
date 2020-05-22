@@ -22,7 +22,7 @@ impl Latin1String {
 		for c in s.chars() {
 			let v = c as usize;
 			if v > 0xff {
-				return Err("Char outside of single byte range".into());
+				return Err(err_msg("Char outside of single byte range"));
 			}
 
 			data.push(v as u8);

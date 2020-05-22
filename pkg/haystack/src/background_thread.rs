@@ -50,18 +50,18 @@ impl BackgroundThread {
 		self.running.load(Ordering::SeqCst)
 	}
 
-	pub fn notify(&self) {
-		let mut guard = self.event_mutex.lock().unwrap();
+	pub async fn notify(&self) {
+		let mut guard = self.event_mutex.lock().await;
 		*guard = true;
 
 		self.event_var.notify_one();
 	}
 
 	/// Should be called within the thread function to wait for the next event to occur or a timeout to elapse
-	pub fn wait(&self, time: u64) {
+	pub async fn wait(&self, time: u64) {
 		let dur = time::Duration::from_millis(time);
 
-		let mut guard = self.event_mutex.lock().unwrap();
+		let mut guard = self.event_mutex.lock().await;
 		if *guard {
 			*guard = false;
 			println!("Processing existing event");

@@ -13,12 +13,12 @@ use super::store::api::*;
 use super::cache::api::*;
 use core::FlipSign;
 use bytes::Bytes;
-use futures::prelude::*;
-use futures::stream;
-use futures::future::*;
+use common::futures::prelude::*;
+use common::futures::stream;
+use common::futures::future::*;
 use std::sync::{Arc, Mutex};
 use std::io::Cursor;
-use futures::Stream;
+use common::futures::Stream;
 
 pub struct Client {
 	dir: Arc<Mutex<Directory>>
@@ -50,12 +50,12 @@ impl Client {
 
 		let photo = match dir.db.read_photo(keys.key)? {
 			Some(p) => p,
-			None => return Err("No such photo".into())
+			None => return Err(err_msg("No such photo"))
 		};
 
 		let vol = match dir.db.read_logical_volume(photo.volume_id.flip())? {
 			Some(v) => v,
-			None => return Err("Missing the volume".into())
+			None => return Err(err_msg("Missing the volume"))
 		};
 
 		let cache = dir.choose_cache(&photo, &vol)?;
@@ -99,12 +99,12 @@ impl Client {
 			let machines = dir.db.read_store_machines_for_volume(p.volume_id.flip())?;
 
 			if machines.len() == 0 {
-				return Err("Missing any machines to upload to".into());
+				return Err(err_msg("Missing any machines to upload to"));
 			}
 
 			for m in machines.iter() {
 				if !m.can_write(&dir.config) {
-					return Err("Some machines are not writeable".into());
+					return Err(err_msg("Some machines are not writeable"));
 				}
 			}
 
@@ -156,7 +156,7 @@ impl Client {
 
 			}).collect::<Vec<_>>();
 
-			join_all(arr).map(move |_| {
+			common::futures::future::join_all(arr).map(move |_| {
 				photo_id
 			})
 		})

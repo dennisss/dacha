@@ -4,6 +4,16 @@ use std::io::{Read, Write};
 use crate::errors::*;
 use crate::ceil_div;
 
+#[derive(Debug, Fail)]
+pub enum BitIoError {
+	/// Occurs when reading from a BitReader and the input stream runs out of
+	/// bits before the read was complete.
+	#[fail(display = "Not enough bits")]
+	NotEnoughBits
+}
+
+
+
 /// Sets a bit to either by 1 or 0 based on the given boolean.
 pub fn bitset(i: &mut u8, val: bool, bit: u8) {
 	let mask = 1 << bit;
@@ -123,7 +133,7 @@ impl std::convert::TryFrom<&'_ str> for BitVector {
 			} else if c == '1' {
 				out.push(1);
 			} else {
-				return Err(format!("Not 0|1: {}", c).into());
+				return Err(format_err!("Not 0|1: {}", c));
 			}
 		}
 
@@ -156,7 +166,7 @@ impl<'a> BitReader<'a> {
 
 	pub fn load(&mut self, bits: BitVector) -> Result<()> {
 		if self.offset != self.buffer.len() {
-			return Err("Already have pending bits loaded".into());
+			return Err(err_msg("Already have pending bits loaded"));
 		}
 		
 		self.buffer = bits;
@@ -168,17 +178,22 @@ impl<'a> BitReader<'a> {
 	// TODO: This is heavily biased towards how zlib does it
 	/// Reads a given number of bits from the stream and returns them as a byte.
 	/// Up to 8 bits can be read.
-	/// The final bit read will be in the most significant position of the return value.
+	/// The final bit read will be in the most significant position of the
+	///  return value.
 	/// 
-	/// NOTE: Unless consume() is called, then this will accumulate bits indefinately
+	/// NOTE: Unless consume() is called, then this will accumulate bits
+	/// indefinately
 	/// 
-	/// NOTE: If an BitIoErrorKind::NotEnoughBits error occurs, then this operation is retryable if the reader later has all of the remaining bits.
+	/// NOTE: If an BitIoError::NotEnoughBits error occurs, then this operation
+	/// is retryable if the reader later has all of the remaining bits.
 	/// 
-	/// The return value will be None if and only if the first read bit is after the end of the file.
+	/// The return value will be None if and only if the first read bit is after
+	/// the end of the file.
 	pub fn read_bits(&mut self, n: u8) -> Result<Option<usize>> {
 
 		// TODO: Can be implemented as a trivial read
-		// But reading more than 8 bits can be tricky. Basially must loop through bytes instead of through bits
+		// But reading more than 8 bits can be tricky. Basially must loop
+		// through bytes instead of through bits
 		// if n < 8 - self.bit_offset {
 		// 	let mask = (1 << n) - 1;
 
@@ -197,8 +212,7 @@ impl<'a> BitReader<'a> {
 						// Rollback and store all the bits we've read.
 						// TODO: In this case, reset the offset?
 
-						return Err(ErrorKind::BitIo(
-							BitIoErrorKind::NotEnoughBits).into());
+						return Err(BitIoError::NotEnoughBits.into());
 					}
 				} else {
 					// Push bits into buffer from LSB to MSB
@@ -219,8 +233,7 @@ impl<'a> BitReader<'a> {
 
 	pub fn read_bits_exact(&mut self, n: u8) -> Result<usize> {
 		// TODO: This error should also be identified.
-		self.read_bits(n)?.ok_or(ErrorKind::BitIo(
-							BitIoErrorKind::NotEnoughBits).into())
+		self.read_bits(n)?.ok_or(BitIoError::NotEnoughBits.into())
 			
 			//Error::from("Hit end of file during read"))
 	}
@@ -297,7 +310,8 @@ pub trait BitWrite {
 
 	/// Immediately finish writing any partial bytes to the underlying stream.
 	/// 
-	/// NOTE: This should always be called after using this stream to guarantee that everything has been written.
+	/// NOTE: This should always be called after using this stream to guarantee
+	/// that everything has been written.
 	fn finish(&mut self) -> Result<()>;
 }
 

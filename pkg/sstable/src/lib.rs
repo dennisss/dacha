@@ -1,7 +1,8 @@
 #[macro_use] extern crate parsing;
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate common;
-#[macro_use] extern crate reflection;
+#[macro_use] extern crate macros;
+extern crate reflection;
 extern crate math;
 extern crate async_std;
 extern crate protobuf;
@@ -11,11 +12,11 @@ extern crate crypto;
 use common::errors::*;
 use parsing::*;
 use protobuf::wire::{parse_varint};
-use async_std::io::{Read, Seek, Write, SeekFrom};
+use common::async_std::io::{Read, Seek, Write, SeekFrom};
 use std::cmp::min;
 use bytes::Bytes;
-use async_std::fs::File;
-use async_std::path::Path;
+use common::async_std::fs::File;
+use common::async_std::path::Path;
 use crypto::hasher::Hasher;
 use crate::db::EmbeddedDBOptions;
 

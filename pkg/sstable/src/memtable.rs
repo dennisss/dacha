@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use async_std::path::Path;
+use common::async_std::path::Path;
 use common::errors::*;
 use crate::record_log::RecordLog;
 use crate::write_batch::*;
@@ -97,7 +97,7 @@ impl MemTable {
 		while let Some(record) = log.read().await? {
 			let (batch, rest) = WriteBatch::parse(&record)?;
 			if rest.len() != 0 {
-				return Err("Extra data after write batch".into());
+				return Err(err_msg("Extra data after write batch"));
 			}
 
 			for w in &batch.writes {
@@ -134,7 +134,7 @@ impl MemTable {
 			let ik = InternalKey::parse(&key.key).unwrap();
 			if ik.typ != ValueType::Deletion {
 				// TODO: Internalize this cloning?
-				table_builder.add(key.key.to_vec(), value.to_vec());
+				table_builder.add(key.key.to_vec(), value.to_vec()).await?;
 			}
 		}
 

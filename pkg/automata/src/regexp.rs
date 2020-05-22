@@ -638,7 +638,7 @@ parser!(quoted<char> => {
 		c.next(tag("\\"))?;
 		let v = c.next(take_exact(1))?[0] as char;
 		if v.is_alphanumeric() {
-			return Err("Expected non alphanumeric character".into());
+			return Err(err_msg("Expected non alphanumeric character"));
 		}
 
 		Ok(v)

@@ -1,3 +1,5 @@
+// This file contains structs which define the syntax tree of a .proto file
+// describing a set of messages/services.
 
 
 // Proto 2 and 3
@@ -10,13 +12,13 @@ pub enum Constant {
 	Bool(bool)
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Syntax {
 	Proto2,
 	Proto3
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum ImportType {
 	Default,
 	Weak,
@@ -37,6 +39,7 @@ pub struct Opt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Label {
+	None,
 	Required,
 	Optional,
 	Repeated
@@ -59,12 +62,22 @@ pub enum FieldType {
 	Bool,
 	String,
 	Bytes,
-	// Either a message or enum type.
+	/// Either a message or enum type.
 	Named(String)
 }
 
 impl FieldType {
-	// Gets an str representing the proto identifier for this type
+	/*
+	/// Whether or not this type is a primitive (non-enum
+	/// TODO: Need to check if it would be an enum
+	pub fn is_primitive(&self) -> bool {
+		if let FieldType::Named(_) = self { false } else { true }
+	}
+	*/
+
+	/// Gets an str representing the proto identifier for this type.
+	/// This string is used in the name of all wire format functions so can
+	/// be used for code generation.
 	pub fn as_str(&self) -> &str {
 		use self::FieldType::*;
 		match self {
@@ -168,6 +181,18 @@ pub struct Message {
 	pub body: Vec<MessageItem>
 }
 
+impl Message {
+	pub fn fields(&self) -> impl Iterator<Item=&Field> {
+		self.body.iter().filter_map(|item| {
+			if let MessageItem::Field(f) = item {
+				Some(f)
+			} else {
+				None
+			}
+		})
+	}
+}
+
 #[derive(Debug, Clone)]
 pub enum MessageItem {
 	Field(Field),
@@ -207,6 +232,18 @@ pub struct Service {
 	pub body: Vec<ServiceItem>
 }
 
+impl Service {
+	pub fn rpcs(&self) -> impl Iterator<Item=&RPC> {
+		self.body.iter().filter_map(|item| {
+			if let ServiceItem::RPC(r) = item {
+				Some(r)
+			} else {
+				None
+			}
+		})
+	}
+}
+
 #[derive(Debug, Clone)]
 pub struct RPC {
 	pub name: String,
@@ -242,4 +279,8 @@ pub enum TopLevelDef {
 	Service(Service)
 }
 
+
+pub struct Positioned {
+
+}
 

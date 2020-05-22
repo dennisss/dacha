@@ -122,8 +122,8 @@ impl VersionEdit {
 						edit.next_file_number = Some(num);
 					},
 					_ => {
-						return Err(format!("Unsupported tag {:?}",
-										   record_id).into());
+						return Err(format_err!(
+							"Unsupported tag {:?}", record_id));
 					}
 				};
 			}

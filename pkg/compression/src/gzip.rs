@@ -38,7 +38,7 @@ impl std::convert::TryFrom<u8> for CompressionMethod {
 		Ok(match i {
 			0|1|2|3|4|5|6|7 => CompressionMethod::Reserved,
 			8 => CompressionMethod::Deflate,
-			_ => { return Err("Unknown compression method".into()); }
+			_ => { return Err(err_msg("Unknown compression method")); }
 
 		})
 	}
@@ -130,7 +130,7 @@ fn read_null_terminated(reader: &mut dyn Read) -> Result<Vec<u8>> {
 	loop {
 		let n = reader.read(&mut buf)?;
 		if n == 0 {
-			return Err("Hit end of file before seeing null terminator".into());
+			return Err(err_msg("Hit end of file before seeing null terminator"));
 		}
 
 		if buf[0] == 0 {
@@ -215,7 +215,7 @@ pub fn read_gzip<F: Read>(f: &mut F) -> Result<GZipFile> {
 	header_reader.read_exact(&mut header_buf)?;
 
 	if &header_buf[0..2] != GZIP_MAGIC {
-		return Err("Invalid header bytes".into());
+		return Err(err_msg("Invalid header bytes"));
 	}
 
 	let compression_method = CompressionMethod::try_from(header_buf[2])?;
@@ -270,7 +270,7 @@ pub fn read_gzip<F: Read>(f: &mut F) -> Result<GZipFile> {
 		if compression_method == CompressionMethod::Deflate {
 			checksum_reader.read_inflate()?
 		} else {
-			return Err("Unsupported compression method".into());
+			return Err(err_msg("Unsupported compression method"));
 		};
 
 	let actual_checksum = {
@@ -283,11 +283,13 @@ pub fn read_gzip<F: Read>(f: &mut F) -> Result<GZipFile> {
 	let input_size = f.read_u32::<LittleEndian>()? as usize;
 
 	if input_size != uncompressed_data.len() {
-		return Err(format!("Footer length mismatch, expected: {}, actual: {}", uncompressed_data.len(), input_size).into());
+		return Err(format_err!(
+			"Footer length mismatch, expected: {}, actual: {}",
+			uncompressed_data.len(), input_size));
 	}
 
 	if body_checksum != actual_checksum {
-		return Err("Footer wrong checksum".into());
+		return Err(err_msg("Footer wrong checksum"));
 	}
 
 	// TODO: If reading from a file, validate that we are at the end after parsing it

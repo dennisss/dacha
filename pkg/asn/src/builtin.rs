@@ -406,7 +406,7 @@ impl UTCTime {
 
 		// TODO: Convert to a regex based parser.
 		if s.len() < 11 {
-			return Err("UTCTime string too short".into());
+			return Err(err_msg("UTCTime string too short"));
 		}
 
 		let year_short = u8::from_str_radix(&s[0..2], 10)?;
@@ -421,21 +421,21 @@ impl UTCTime {
 
 		if month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 ||
 			minute > 59 {
-			return Err("Time component out of range".into());
+			return Err(err_msg("Time component out of range"));
 		}
 
 		let mut next_idx = 10;
 		let seconds =
 			if s.chars().nth(next_idx).unwrap().is_digit(10) {
 				if s.len() < next_idx + 2 {
-					return Err("Too short".into());
+					return Err(err_msg("Too short"));
 				}
 
 				let v = u8::from_str_radix(&s[next_idx..(next_idx + 2)], 10)?;
 				next_idx += 2;
 
 				if v > 59 {
-					return Err("Seconds out of range.".into());
+					return Err(err_msg("Seconds out of range."));
 				}
 
 				Some(v)
@@ -444,7 +444,7 @@ impl UTCTime {
 			};
 
 		if s.len() < next_idx + 1 {
-			return Err("Missing timezone".into());
+			return Err(err_msg("Missing timezone"));
 		}
 
 		let timezone_char = s.chars().nth(next_idx).unwrap();
@@ -455,13 +455,13 @@ impl UTCTime {
 			} else {
 				// +hh'mm'
 				if s.len() < next_idx + 7 {
-					return Err("Invalid timezone".into());
+					return Err(err_msg("Invalid timezone"));
 				}
 
 				let sign = match timezone_char {
 					'+' => 1,
 					'-' => -1,
-					_ => { return Err("Invalid timezone sign".into()); }
+					_ => { return Err(err_msg("Invalid timezone sign")); }
 				};
 
 				let hh = u8::from_str_radix(
@@ -473,18 +473,18 @@ impl UTCTime {
 				if hh > 23 || mm > 59 ||
 					s.chars().nth(next_idx + 3).unwrap() != '\'' ||
 					s.chars().nth(next_idx + 6).unwrap() != '\'' {
-					return Err("Out of range timezone".into())
+					return Err(err_msg("Out of range timezone"))
 				}
 
 				Some(sign*((hh as isize)*60 + (mm as isize)))
 			};
 
 		if timezone.is_some() || seconds.is_none() {
-			return Err("UTCTime Not valid DER".into());
+			return Err(err_msg("UTCTime Not valid DER"));
 		}
 
 		if next_idx != s.len() {
-			return Err("Timestamp too long".into());
+			return Err(err_msg("Timestamp too long"));
 		}
 
 		Ok(Self { year_short, month, day, hour, minute, seconds, timezone })
@@ -536,11 +536,11 @@ impl GeneralizedTime {
 		println!("GeneralizedTime: {}", s);
 
 		if s.len() < 15 {
-			return Err("Too short".into());
+			return Err(err_msg("Too short"));
 		}
 
 		if s.chars().last().unwrap() != 'Z' {
-			return Err("Must end in 'Z'".into());
+			return Err(err_msg("Must end in 'Z'"));
 		}
 
 		let year = u16::from_str_radix(&s[0..4], 10)?;
@@ -552,20 +552,20 @@ impl GeneralizedTime {
 
 		if month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 ||
 			minute > 59 || seconds > 59 {
-			return Err("Time component out of range".into());
+			return Err(err_msg("Time component out of range"));
 		}
 
 		let mut nanos = 0;
 		if s.chars().nth(14).unwrap() == '.' {
 			let n = s.len() - 16;
 			if n == 0 {
-				return Err(". without anything following".into());
+				return Err(err_msg(". without anything following"));
 			}
 			if n > 9 {
-				return Err("Resolution beyond nanos not supported".into());
+				return Err(err_msg("Resolution beyond nanos not supported"));
 			}
 			if s.chars().nth(14 + n).unwrap() == '0' {
-				return Err("Too many right padded zeros".into());
+				return Err(err_msg("Too many right padded zeros"));
 			}
 
 			let mut num = String::from_str(&s[15..(15 + n)]).unwrap();
@@ -575,7 +575,7 @@ impl GeneralizedTime {
 
 			nanos = u32::from_str_radix(&num, 10)?;
 		} else if s.len() != 15 {
-			return Err("Unknown info after seconds".into());
+			return Err(err_msg("Unknown info after seconds"));
 		}
 
 		// TODO: Validate the range of each of the numbers.

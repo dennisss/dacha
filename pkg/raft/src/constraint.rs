@@ -1,21 +1,28 @@
-use super::log::*;
-use super::protos::LogPosition;
+use crate::log::*;
+use crate::protos::LogPosition;
 
-
-/// Represents the current state of a constraint retrieved by polling the constraint
+/// Represents the current state of a constraint retrieved by polling the
+/// constraint.
 pub enum ConstraintPoll<C, T> {
-	/// The constraint has been satisfied. The wrapped value is encapsulated in this enum
+	/// The constraint has been satisfied. The wrapped value is encapsulated in
+	/// this enum
 	Satisfied(T),
 
-	/// The constraint is stll unsatisfied. The constraint is given back to be polled in the future
+	/// The constraint is stll unsatisfied. The constraint is given back to be
+	/// polled in the future
 	Pending(C),
 
-	/// Means that the constraint will never be satisfied therefore the internal data can never be accessed
+	/// Means that the constraint will never be satisfied therefore the internal
+	/// data can never be accessed.
 	Unsatisfiable
 }
 
-/// This is a wrapper around some value which optionally enforces that that the inner value cannot be accessed until the log has persisted at least up to the given sequence
-/// TODO: We don't really need to store the LogPosition as long as we don't care about whether or not it succeeded vs whether it completed. As long as the sequence is high enough, then it should be OK to release the constraint
+/// This is a wrapper around some value which optionally enforces that that the
+/// inner value cannot be accessed until the log has persisted at least up to
+/// the given sequence
+/// TODO: We don't really need to store the LogPosition as long as we don't care
+/// about whether or not it succeeded vs whether it completed. As long as the
+/// sequence is high enough, then it should be OK to release the constraint
 pub struct FlushConstraint<T> {
 	inner: T,
 	point: Option<(LogSeq, LogPosition)>,
@@ -28,26 +35,26 @@ impl<T> FlushConstraint<T> {
 		}
 	}
 
-	pub fn poll(self, log: &Log) -> ConstraintPoll<(Self, LogSeq), T> {
+	pub async fn poll(self, log: &dyn Log) -> ConstraintPoll<(Self, LogSeq), T> {
 		let (seq, pos) = match self.point {
 			Some(pos) => pos,
 			None => return ConstraintPoll::Satisfied(self.inner)
 		};
 
-		match log.term(pos.index) {
+		match log.term(pos.index).await {
 			Some(v) => {
 				if v != pos.term {
 					// Index has been overridden in a newer term
 					ConstraintPoll::Unsatisfiable
 				}
 				else {
-
 					// Otherwise, We will need to check for a proper match here
-					if seq.is_flushed(log) {
+					if seq.is_flushed(log).await {
 						ConstraintPoll::Satisfied(self.inner)
 					}
 					else {
-						// Not ready yet, reconstruct 'self' and expose the position to the poller 
+						// Not ready yet, reconstruct 'self' and expose the
+						// position to the poller
 						let seq_out = seq.clone();
 						ConstraintPoll::Pending((
 							FlushConstraint {
@@ -66,8 +73,8 @@ impl<T> FlushConstraint<T> {
 }
 
 impl<T> From<T> for FlushConstraint<T> {
-
-	/// Simpler helper for making a completely unconstrained constraint using .into()
+	/// Simpler helper for making a completely unconstrained constraint using
+	/// .into()
     fn from(val: T) -> Self {
         FlushConstraint {
 			inner: val,

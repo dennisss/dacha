@@ -1,12 +1,13 @@
-use super::errors::*;
 use std::io::{SeekFrom, Write, Read, Seek};
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
-use bytes::Bytes;
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
-use crc32c::crc32c_append;
 use std::os::unix::io::{AsRawFd};
 use std::io;
+use bytes::Bytes;
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+use common::errors::*;
+use crypto::checksum::crc::CRC32CHasher;
+use crypto::hasher::Hasher;
 
 /// Amount of padding that we add to the file for the length and checksume bytes
 const PADDING: u64 = 8;
@@ -35,19 +36,24 @@ const DISK_SECTOR_SIZE: u64 = 512;
 // Simple case is to just generate a callback
 
 // https://docs.rs/libc/0.2.48/libc/fn.unlinkat.html
-// TODO: Also linux's rename will atomically replace any overriden file so we could use this fact to remove one more syscall from the process
+// TODO: Also linux's rename will atomically replace any overriden file so we
+// could use this fact to remove one more syscall from the process
 
 
 /// Wraps a binary blob that can be atomically read/written from the disk 
-/// Additionally this will add some checksumming to the file to verify the integrity of the data and accept/reject partial reads
+/// Additionally this will add some checksumming to the file to verify the
+/// integrity of the data and accept/reject partial reads
 /// 
-/// NOTE: If any operation fails, then this struct should be considered poisoned and unuseable
+/// NOTE: If any operation fails, then this struct should be considered poisoned
+/// and unuseable
 /// 
-/// NOTE: This struct does not deal with maintaining an internal buffer of the current value, so that is someone elses problem as this is meant to be super light weight
+/// NOTE: This struct does not deal with maintaining an internal buffer of the
+/// current value, so that is someone elses problem as this is meant to be super
+/// light weight
 /// 
-/// NOTE: This assumes that this object is being given exclusive access to the given path (meaning that the directory is locked)
+/// NOTE: This assumes that this object is being given exclusive access to the
+/// given path (meaning that the directory is locked)
 pub struct BlobFile {
-
 	// TODO: Would also be good to know the size of it 
 
 	/// Cached open file handle to the directory containing the file
@@ -56,11 +62,13 @@ pub struct BlobFile {
 	/// The path to the main data file this uses
 	path: PathBuf,
 
-	/// Path to temporary data file used to store the old data value until the new value is fully written
+	/// Path to temporary data file used to store the old data value until the
+	/// new value is fully written
 	path_tmp: PathBuf,
 
 	/// Path to a temporary file used only during initial creation of the file
-	/// It will only exist if the file has never been successfully created before
+	/// It will only exist if the file has never been successfully created
+	/// before.
 	path_new: PathBuf
 }
 
@@ -69,16 +77,21 @@ pub struct BlobFileBuilder {
 }
 
 
-// TODO: For unlinks, unlinkat would probably be most efficient using a relative path
+// TODO: For unlinks, unlinkat would probably be most efficient using a relative
+// path
 // XXX: Additionally openat for 
 
 // Writing will always create a new file right?
 
-// TODO: open must distinguish between failing to read existing data and failing because it doesn't exist 
+// TODO: open must distinguish between failing to read existing data and failing
+// because it doesn't exist
 
 impl BlobFile {
 
-	// TODO: If I wanted to be super Rusty, I could represent whether or not it exists (i.e. whether create() or open() should be called) by returning an enum here instead of relying on the user checking the value of exists() at runtime
+	// TODO: If I wanted to be super Rusty, I could represent whether or not it
+	// exists (i.e. whether create() or open() should be called) by returning an
+	// enum here instead of relying on the user checking the value of exists()
+	// at runtime
 	pub fn builder(path: &Path) -> Result<BlobFileBuilder> {
 		let path = path.to_owned();
 		let path_tmp = PathBuf::from(&(path.to_str().unwrap().to_owned() + ".tmp"));
@@ -87,11 +100,11 @@ impl BlobFile {
 		let dir = {
 			let path_dir = match path.parent() {
 				Some(p) => p,
-				None => return Err("Path is not in a directory".into())
+				None => return Err(err_msg("Path is not in a directory"))
 			};
 
 			if !path_dir.exists() {
-				return Err("Directory does not exist".into());
+				return Err(err_msg("Directory does not exist"));
 			}
 
 			File::open(&path_dir)?
@@ -170,7 +183,11 @@ impl BlobFile {
 
 
 	fn write_simple(file: &mut File, data: &[u8]) -> Result<u64> {
-		let sum = crc32c_append(0, data);
+		let sum = {
+			let mut hasher = CRC32CHasher::new();
+			hasher.update(data);
+			hasher.finish_u32()
+		};
 
 		file.seek(SeekFrom::Start(0))?;
 		file.write_u32::<LittleEndian>(data.len() as u32)?;
@@ -209,10 +226,11 @@ impl BlobFileBuilder {
 	}
 
 	/// Opens the file assuming that it exists
-	/// Errors out if we could be not read the data because it is corrupt or non-existent
+	/// Errors out if we could be not read the data because it is corrupt or
+	/// non-existent
 	pub fn open(self) -> Result<(BlobFile, Bytes)> {
 		if !self.exists() {
-			return Err("File does not exist".into());
+			return Err(err_msg("File does not exist"));
 		}
 
 		let inst = self.inner;
@@ -243,7 +261,7 @@ impl BlobFileBuilder {
 			}
 		}
 
-		Err("No valid data could be read (corrupt data)".into())
+		Err(err_msg("No valid data could be read (corrupt data)"))
 	}
 
 	/// Tries to open the given path
@@ -269,7 +287,11 @@ impl BlobFileBuilder {
 
 		if buf.len() < checksum_end { return Ok(None); }
 
-		let sum = crc32c_append(0, &buf[data_start..data_end]);
+		let sum = {
+			let mut hasher = CRC32CHasher::new();
+			hasher.update(&buf[data_start..data_end]);
+			hasher.finish_u32()
+		};
 		let expected_sum = (&buf[data_end..checksum_end]).read_u32::<LittleEndian>()?;
 
 		if sum != expected_sum {
@@ -283,7 +305,7 @@ impl BlobFileBuilder {
 
 		let bytes = Bytes::from(buf);
 
-		Ok(Some(bytes.slice(data_start, data_end)))
+		Ok(Some(bytes.slice(data_start..data_end)))
 	}
 
 	/// Creates a new file with the given initial value
@@ -291,12 +313,13 @@ impl BlobFileBuilder {
 	pub fn create(self, initial_value: &[u8]) -> Result<BlobFile> {
 		
 		if self.exists() {
-			return Err("Existing data already exists".into());
+			return Err(err_msg("Existing data already exists"));
 		}
 		
 		let inst = self.inner;
 
-		// This may occur if we previously tried creating a data file but we were never able to suceed
+		// This may occur if we previously tried creating a data file but we
+		// were never able to suceed
 		if inst.path_new.exists() {
 			std::fs::remove_file(&inst.path_new)?;
 		}

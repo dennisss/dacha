@@ -1,7 +1,7 @@
 use common::errors::*;
 use parsing::*;
 use parsing::binary::*;
-use bytes::Bytes;
+use bytes::{Bytes, Buf};
 use super::parsing::*;
 use super::handshake::{HandshakeType, ProtocolVersion};
 
@@ -49,9 +49,9 @@ impl Extension {
 
 	pub fn parse(input: Bytes, msg_type: HandshakeType) -> ParseResult<Self> {
 		let parser = seq!(c => {
-			let extension_type = c.next(ExtensionType::parse)?;
+			let extension_type = c.next(as_bytes(ExtensionType::parse))?;
 			if !extension_type.allowed(msg_type) {
-				return Err("Extension not allowed in this message".into());
+				return Err(err_msg("Extension not allowed in this message"));
 			}
 
 			let data = c.next(varlen_vector(0, U16_LIMIT))?;
@@ -80,7 +80,7 @@ impl Extension {
 				cookie => map(Cookie::parse, |v| Extension::Cookie(v))(data),
 				post_handshake_auth => {
 					if data.len() != 0 {
-						Err("Expected empty data".into())
+						Err(err_msg("Expected empty data"))
 					} else {
 						Ok((Extension::PostHandshakeAuth, Bytes::new()))
 					}
@@ -127,7 +127,7 @@ impl Extension {
 		};
 
 		if !typ.allowed(msg_type) {
-			return Err("Extension not allowed in this message".into());
+			return Err(err_msg("Extension not allowed in this message"));
 		}
 
 		typ.serialize(out);
@@ -180,6 +180,7 @@ pub enum ExtensionType {
 	unknown(u16)
 }
 
+
 impl ExtensionType {
 	fn to_u16(&self) -> u16 {
 		use ExtensionType::*;
@@ -209,7 +210,8 @@ impl ExtensionType {
 			unknown(v) => *v
 		}
 	}
-	// TODO: This should be allowed to return None so that we can store unknown extensions opaquely?
+	// TODO: This should be allowed to return None so that we can store unknown
+	// extensions opaquely?
 	fn from_u16(v: u16) -> Self {
 		match v {
 			0 => Self::server_name,
@@ -292,7 +294,7 @@ impl ExtensionType {
 		}
 	}
 
-	parser!(parse<Self> => {
+	parser!(parse<&[u8], Self> => {
 		map(be_u16, |v| Self::from_u16(v))
 	});
 
@@ -354,7 +356,7 @@ pub struct ServerName {
 impl ServerName {
 	parser!(parse<Self> => {
 		seq!(c => {
-			let typ = NameType::from_u8(c.next(be_u8)?);
+			let typ = NameType::from_u8(c.next(as_bytes(be_u8))?);
 			// NOTE: For backwards compatibility all future types must be represented as a u16 number of bytes.
 			let data = c.next(varlen_vector(1, U16_LIMIT))?;
 			Ok(ServerName { typ, data })
@@ -491,7 +493,7 @@ impl NamedGroup {
 	}
 
 	parser!(parse<Self> => {
-		map(be_u16, |v| NamedGroup::from_u16(v))
+		map(as_bytes(be_u16), |v| NamedGroup::from_u16(v))
 	});
 
 	fn serialize(&self, out: &mut Vec<u8>) {
@@ -650,7 +652,7 @@ impl SignatureScheme {
 		}
 	}
 	parser!(pub parse<Self> => {
-		map(be_u16, |v| Self::from_u16(v))
+		map(as_bytes(be_u16), |v| Self::from_u16(v))
 	});
 
 	pub fn serialize(&self, buf: &mut Vec<u8>) {
@@ -685,7 +687,7 @@ impl SupportedVersionsClientHello {
 	parser!(parse<Self> => {
 		seq!(c => {
 			let data = c.next(varlen_vector(2, 254))?;
-			let versions = c.next(complete(many1(be_u16)))?;
+			let versions = c.next(complete(many1(as_bytes(be_u16))))?;
 			Ok(Self { versions })
 		})
 	});
@@ -706,7 +708,7 @@ pub struct SupportedVersionsServerHello {
 
 impl SupportedVersionsServerHello {
 	parser!(parse<Self> => {
-		map(be_u16, |v| Self { selected_version: v })
+		map(as_bytes(be_u16), |v| Self { selected_version: v })
 	});
 
 	fn serialize(&self, out: &mut Vec<u8>) {
@@ -724,7 +726,7 @@ fn parse_supported_versions(input: Bytes, msg_type: HandshakeType)
 		map(SupportedVersionsServerHello::parse,
 			|v| Extension::SupportedVersionsServerHello(v))(input)
 	} else {
-		Err("Unsupported msg_type".into())
+		Err(err_msg("Unsupported msg_type"))
 	}
 }
 
@@ -845,7 +847,7 @@ fn parse_key_share(input: Bytes, msg_type: HandshakeType)
 			map(KeyShareServerHello::parse,
 				|v| Extension::KeyShareServerHello(v))(input)
 		},
-		_ => Err("Unsupported msg_type".into())
+		_ => Err(err_msg("Unsupported msg_type"))
 	}
 }
 
@@ -871,14 +873,14 @@ impl UncompressedPointRepresentation {
 			NamedGroup::secp256r1 => 32,
 			NamedGroup::secp384r1 => 48,
 			NamedGroup::secp521r1 => 66,
-			_ => { return Err("Unsupported group".into()); }
+			_ => { return Err(err_msg("Unsupported group")); }
 		})
 	}
 
 	fn parse(input: Bytes, group: NamedGroup) -> ParseResult<Self> {
 		let size = Self::coordinate_size(group)?;
 		let parser = seq!(c => {
-			let legacy_form = c.next(be_u8)?;
+			let legacy_form = c.next(as_bytes(be_u8))?;
 			let x = c.next(take_exact(size))?;
 			let y = c.next(take_exact(size))?;
 			Ok(Self { legacy_form, x, y })
@@ -890,7 +892,7 @@ impl UncompressedPointRepresentation {
 	fn serialize(&self, group: NamedGroup, out: &mut Vec<u8>) -> Result<()> {
 		let size = Self::coordinate_size(group)?;
 		if size != self.x.len() || size != self.y.len() {
-			return Err("Coordinates incorrect size".into());
+			return Err(err_msg("Coordinates incorrect size"));
 		}
 
 		out.push(self.legacy_form);

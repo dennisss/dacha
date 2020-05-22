@@ -3,8 +3,8 @@ use super::handshake::*;
 use super::alert::*;
 use super::extensions::*;
 use parsing::is_incomplete;
-use async_std::net::TcpStream;
-use async_std::prelude::*;
+use common::async_std::net::TcpStream;
+use common::async_std::prelude::*;
 use common::errors::*;
 use crate::hasher::*;
 use crate::sha256::SHA256Hasher;
@@ -18,7 +18,7 @@ use crate::gcm::*;
 use std::collections::VecDeque;
 use super::transcript::*;
 use common::io::*;
-use async_std::sync::Mutex;
+use common::async_std::sync::Mutex;
 
 use bytes::{BytesMut, Bytes, Buf};
 
@@ -90,7 +90,7 @@ impl Stream {
 
 			// Only the ClientHello should be using a different record version.
 			if record.legacy_record_version != TLS_1_2_VERSION {
-				return Err("Unexpected version".into());
+				return Err(err_msg("Unexpected version"));
 			}
 
 			// TODO: Can't remove this until we have a better check for
@@ -106,7 +106,7 @@ impl Stream {
 				// must always be encrypted after getting keys.
 
 				if record.typ != ContentType::application_data {
-					return Err("Expected only encrypted data not".into());
+					return Err(err_msg("Expected only encrypted data not"));
 				}
 
 				let mut key_guard = cipher_spec.server_key.lock().await;
@@ -135,8 +135,8 @@ impl Stream {
 					}
 				}
 
-				let content_type_i = content_type_res.ok_or(
-					Error::from("All zero"))?;
+				let content_type_i = content_type_res
+					.ok_or(err_msg("All zero"))?;
 
 				let content_type = ContentType::from_u8(plaintext[content_type_i]);
 
@@ -145,7 +145,7 @@ impl Stream {
 				RecordInner { typ: content_type, data: plaintext.into() }
 			} else {
 				if record.typ == ContentType::application_data {
-					return Err("Received application_data without a cipher".into());
+					return Err(err_msg("Received application_data without a cipher"));
 				}
 
 				RecordInner { typ: record.typ, data: record.data  }
@@ -154,7 +154,7 @@ impl Stream {
 			// Empty records are only allowed for
 			// TODO: Does this apply to anything other than Handshake?
 			// if inner.typ != ContentType::application_data && inner.data.len() == 0 {
-			// 	return Err("Empty record not allowed".into());
+			// 	return Err(err_msg("Empty record not allowed"));
 			// }
 
 			return Ok(inner)
@@ -206,9 +206,8 @@ impl Stream {
 			}
 		} else {
 			if inner.typ == ContentType::application_data {
-				return Err(
-					"Should not be sending unencrypted application data"
-						.into());
+				return Err(err_msg(
+					"Should not be sending unencrypted application data"));
 			}
 
 			Record {
@@ -255,7 +254,7 @@ impl Stream {
 
 			if handshake_buf.len() != 0 &&
 				record.typ != ContentType::handshake {
-				return Err("Data interleaved in handshake".into());
+				return Err(err_msg("Data interleaved in handshake"));
 			}
 
 			let (val, rest) = match record.typ {
@@ -285,7 +284,7 @@ impl Stream {
 
 					let state =
 						if let Some(s) = handshake_state { s } else {
-							return Err("Not currently performing a handshake".into());
+							return Err(err_msg("Not currently performing a handshake"));
 						};
 
 					// Append to transcript ignoring any padding
@@ -305,11 +304,11 @@ impl Stream {
 					(Message::ApplicationData(record.data), Bytes::new())
 				},
 				_ => { return Err(
-					format!("Unknown record type {:?}", record.typ).into()); }
+					format_err!("Unknown record type {:?}", record.typ)); }
 			};
 
 			if rest.len() != 0 {
-				return Err("Unexpected data after message".into());
+				return Err(err_msg("Unexpected data after message"));
 			}
 
 			return Ok(val);
@@ -367,7 +366,7 @@ impl Readable for Stream {
 
 			Ok(nread)
 		} else {
-			Err("Unexpected data seen on stream".into())
+			Err(err_msg("Unexpected data seen on stream"))
 		}
 	}
 }
@@ -566,7 +565,7 @@ impl Client {
 
 		let server_hello =
 			if let Message::Handshake(Handshake::ServerHello(sh)) = msg { sh }
-			else { return Err("Unexpected message".into()); };
+			else { return Err(err_msg("Unexpected message")); };
 
 		// Check that the version is TLS 1.2
 		// Then look for a SupportedVersions extension to see if it is TLS 1.3
@@ -575,12 +574,12 @@ impl Client {
 				sv.selected_version == TLS_1_3_VERSION
 			}).unwrap_or(false);
 		if !is_tls13 {
-			return Err("Only support TLS 1.3".into());
+			return Err(err_msg("Only support TLS 1.3"));
 		}
 
 		// TODO: Must match ClientHello?
 		if server_hello.legacy_compression_method != 0 {
-			return Err("Unexpected compression method".into());
+			return Err(err_msg("Unexpected compression method"));
 		}
 
 		// TODO: Must check the random bytes received.
@@ -600,7 +599,7 @@ impl Client {
 			// CipherSuite::TLS_CHACHA20_POLY1305_SHA256 => {
 			// 	SHA256Hasher::factory()
 			// },
-			_ => { return Err("Bad cipher suite".into()); }
+			_ => { return Err(err_msg("Bad cipher suite")); }
 		};
 
 		let hkdf = HKDF::new(hasher_factory.box_clone());
@@ -611,7 +610,7 @@ impl Client {
 		key_schedule.early_secret(None);
 
 		let server_public = find_key_share_sh(&server_hello.extensions)
-			.ok_or(Error::from("ServerHello missing key_share"))?;
+			.ok_or(err_msg("ServerHello missing key_share"))?;
 
 		// Must match what was given in our ClientHello
 		assert_eq!(server_public.server_share.group, NamedGroup::x25519);
@@ -641,11 +640,11 @@ impl Client {
 
 		let cert = match stream.recv(Some(&mut handshake_state)).await? {
 			Message::Handshake(Handshake::Certificate((c))) => c,
-			_ => { return Err("Expected certificate message".into()); }
+			_ => { return Err(err_msg("Expected certificate message")); }
 		};
 
 		if cert.certificate_request_context.len() != 0 {
-			return Err("Unexpected request context width certificate".into());
+			return Err(err_msg("Unexpected request context width certificate"));
 		}
 
 		let mut cert_list = vec![];
@@ -655,7 +654,7 @@ impl Client {
 		}
 
 		if cert_list.len() < 1 {
-			return Err("Expected at least one certificate".into());
+			return Err(err_msg("Expected at least one certificate"));
 		}
 
 		let mut registry = crate::x509::CertificateRegistry::public_roots()?;
@@ -663,18 +662,18 @@ impl Client {
 		registry.append(&cert_list, false)?;
 
 		if !cert_list[0].valid_now() {
-			return Err("Certificate not valid now".into());
+			return Err(err_msg("Certificate not valid now"));
 		}
 
 		if let Some(usage) = cert_list[0].key_usage()? {
 			if !usage.digitalSignature().unwrap_or(false) {
-				return Err(
-					"Certificate can't be used for signature verification".into());
+				return Err(err_msg(
+					"Certificate can't be used for signature verification"));
 			}
 		}
 
 		if !cert_list[0].for_dns_name(hostname)? {
-			return Err("Certificate not valid for DNS name".into());
+			return Err(err_msg("Certificate not valid for DNS name"));
 		}
 
 
@@ -684,7 +683,7 @@ impl Client {
 
 		let cert_verify = match stream.recv(Some(&mut handshake_state)).await? {
 			Message::Handshake(Handshake::CertificateVerify(c)) => c,
-			_ => { return Err("Expected certificate verify".into()); }
+			_ => { return Err(err_msg("Expected certificate verify")); }
 		};
 
 		let mut plaintext = vec![];
@@ -707,14 +706,14 @@ impl Client {
 												  &cert_verify.signature,
 												  &plaintext, &mut hasher)?;
 				if !good {
-					return Err("Invalid certificate verify signature".into());
+					return Err(err_msg("Invalid certificate verify signature"));
 				}
 			},
 			// TODO:
 			// SignatureScheme::rsa_pkcs1_sha256,
 			// SignatureScheme::rsa_pss_rsae_sha256
 			_ => {
-				return Err("Unsupported cert verify algorithm".into());
+				return Err(err_msg("Unsupported cert verify algorithm"));
 			}
 		};
 
@@ -723,11 +722,11 @@ impl Client {
 
 		let finished = match stream.recv(Some(&mut handshake_state)).await? {
 			Message::Handshake(Handshake::Finished(v)) => v,
-			_ => { return Err("Expected Finished messages".into()); }
+			_ => { return Err(err_msg("Expected Finished messages")); }
 		};
 
 		if finished.verify_data != verify_data_server {
-			return Err("Incorrect server verify_data".into());
+			return Err(err_msg("Incorrect server verify_data"));
 		}
 
 		let verify_data_client =

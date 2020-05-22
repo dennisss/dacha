@@ -5,21 +5,25 @@ use num_traits::{Zero, One};
 
 /// TODO: Eventually we should be using a relative percentage + absolute margin
 /// based comparison.
-pub trait ErrorEpsilon {
+pub trait ErrorEpsilon: Real {
 	fn error_epsilon() -> Self;
+
+	fn approx_zero(&self) -> bool {
+		self.abs() < Self::error_epsilon()
+	}
 }
 
 impl ErrorEpsilon for f64 {
-	fn error_epsilon() -> Self { 1e-7 }
+	fn error_epsilon() -> Self { 1e-12 }
 }
 
 impl ErrorEpsilon for f32 {
-	fn error_epsilon() -> Self { 1e-7 }
+	fn error_epsilon() -> Self { 1e-12 }
 }
 
-impl ErrorEpsilon for usize {
-	fn error_epsilon() -> Self { 0 }
-}
+//impl ErrorEpsilon for usize {
+//	fn error_epsilon() -> Self { 0 }
+//}
 
 // TODO: Should also read: https://eigen.tuxfamily.org/dox/TopicCustomizing_CustomScalar.html
 

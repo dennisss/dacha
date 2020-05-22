@@ -38,7 +38,7 @@ impl<'a> WriteBatch<'a> {
 				},
 				_ => {
 					return Err(
-						format!("Unsupported value type: {:?}", typ).into());
+						format_err!("Unsupported value type: {:?}", typ));
 				}
 			}
 		}

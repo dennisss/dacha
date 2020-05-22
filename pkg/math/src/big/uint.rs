@@ -385,7 +385,7 @@ impl std::str::FromStr for BigUint {
 
 		let mut out = Self::zero();
 		for c in s.chars() {
-			let digit = c.to_digit(10).ok_or(Error::from("Invalid digit"))?;
+			let digit = c.to_digit(10).ok_or(err_msg("Invalid digit"))?;
 			out = (&out * &ten) + &(digit as usize).into();
 		}
 

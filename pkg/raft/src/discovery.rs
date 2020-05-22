@@ -1,13 +1,12 @@
-use super::errors::*;
-use super::protos::*;
-use super::routing::*;
-use super::rpc::*;
-use futures::prelude::*;
-use futures::future::*;
 use std::sync::Arc;
 use std::collections::{HashMap};
-use tokio::prelude::FutureExt;
 use std::time::Duration;
+use common::errors::*;
+use common::async_std::prelude::*;
+use common::async_std::future;
+use crate::protos::*;
+use crate::routing::*;
+use crate::rpc::*;
 
 /*
 	Ideally we want to generalize an interface for a discovery service:
@@ -103,7 +102,6 @@ use std::time::Duration;
 /// - Starting once we are started up, every server will perform a low frequency sync with the seed servers
 /// - Separately we'd like to use a higher frequency heartbeat style decentralized gossip protocol between all other nodes in the cluster (using this layer allows for sharing of configurations even in the presense of failed seed servers)
 pub struct DiscoveryService {
-
 	client: Arc<Client>,
 
 	seeds: Vec<String>
@@ -114,7 +112,6 @@ pub struct DiscoveryService {
 	// In this way, we may not even need a gossip protocol if we assume that we have a set of 
 
 impl DiscoveryService {
-
 	pub fn new(client: Arc<Client>, seeds: Vec<String>) -> Self {
 		DiscoveryService {
 			client,
@@ -122,53 +119,50 @@ impl DiscoveryService {
 		}
 	}
 
-	pub fn seed(&self) -> impl Future<Item=(), Error=Error> {
+	pub async fn seed(&self) -> Result<()> {
+		let client = &self.client;
+		let reqs = self.seeds.iter().map(async move |addr: &String| {
+			let res = future::timeout(
+				Duration::from_millis(1000), // < Servers may frequently be offline
+				client.call_announce(To::Addr(addr))
+			).await;
 
-		let reqs = self.seeds.iter().map(|addr| {
-			self.client.call_announce(To::Addr(addr))
-			.timeout(Duration::from_millis(1000)) // < Servers may frequently be offline
-			.then(|res| {
-				match res {
-					Ok(_) => ok(true),
-					Err(e) => {
-						//eprintln!("Seed request failed with {:?}", e);
-						ok(false)
-					}
+			match res {
+				Ok(_) => true,
+				Err(e) => {
+					//eprintln!("Seed request failed with {:?}", e);
+					false
 				}
-			})
+			}
 		}).collect::<Vec<_>>();
 
-		join_all(reqs)
-		.and_then(|results| {
+		let results: Vec<bool> = common::futures::future::join_all(reqs).await;
 
-			if results.contains(&true) {
-				// TODO: In this case, also start up the periodic heartbeater in a separate task
-				
-				ok(())
-			}
-			else {
-				err("All seed list servers failed".into())
-			}
-		})
+		if results.contains(&true) {
+			// TODO: In this case, also start up the periodic heartbeater in a separate task
+			Ok(())
+		}
+		else {
+			Err(err_msg("All seed list servers failed"))
+		}
 	}
 
-	pub fn run(inst: Arc<Self>) -> impl Future<Item=(), Error=()> {
+	/// Periodically calls seed()
+	pub async fn run(inst: Arc<Self>) {
+		loop {
+			let res = inst.seed().await;
+			if let Err(e) = res {
+				// TODO: Print
+			}
 
-		loop_fn(inst, |inst| {
-
-			inst.seed()
 			// TODO: Right here also request everyone else in our routes list
-			// TODO: Also need backoff for addresses that are failing (especially for seed list addresses which may fail forever if the server was not started with the expectation of functionating always)
+			// TODO: Also need backoff for addresses that are failing
+			// (especially for seed list addresses which may fail forever if the
+			// server was not started with the expectation of functionating
+			// always)
 
-			.then(|_| {
-
-				tokio::timer::Delay::new(std::time::Instant::now() + std::time::Duration::from_millis(2000))
-				.then(move |_| {
-					ok(Loop::Continue(inst))
-				})
-			})
-		})
-
+			common::wait_for(Duration::from_millis(2000)).await;
+		}
 	}
 
 

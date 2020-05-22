@@ -3,7 +3,6 @@ use crate::random::*;
 use crate::dh::*;
 use common::errors::*;
 use common::ceil_div;
-use async_trait::async_trait;
 use std::marker::PhantomData;
 use common::LeftPad;
 
@@ -157,7 +156,7 @@ impl EllipticCurveGroup {
 
 	fn decode_scalar(&self, data: &[u8]) -> Result<BigUint> {
 		if data.len() != self.p.min_bytes() {
-			return Err("Scalar wrong size".into());
+			return Err(err_msg("Scalar wrong size"));
 		}
 
 		Ok(BigUint::from_be_bytes(data))
@@ -166,7 +165,7 @@ impl EllipticCurveGroup {
 	// TODO: Not used anywhere right now.
 	fn decode_point(&self, data: &[u8]) -> Result<EllipticCurvePoint> {
 		if data.len() <= 1 {
-			return Err("Point too small".into());
+			return Err(err_msg("Point too small"));
 		}
 
 		let nbytes = ceil_div(self.p.nbits(), 8);
@@ -174,7 +173,7 @@ impl EllipticCurveGroup {
 			// Uncompressed form
 			// TODO: For TLS 1.3, this is the only supported format
 			if data.len() != 1 + 2 * nbytes {
-				return Err("Point data too small".into());
+				return Err(err_msg("Point data too small"));
 			}
 
 			// TODO:
@@ -186,7 +185,7 @@ impl EllipticCurveGroup {
 			// Compressed form.
 			// Contains only X, data[0] contains the LSB of Y.
 			if data.len() != 1 + nbytes {
-				return Err("Point data too small".into());
+				return Err(err_msg("Point data too small"));
 			}
 
 			// TODO: Off by one
@@ -210,13 +209,13 @@ impl EllipticCurveGroup {
 
 			EllipticCurvePoint { x, y }
 		} else {
-			return Err(format!("Unknown point format {}", data[0]).into());
+			return Err(format_err!("Unknown point format {}", data[0]));
 		};
 
 		let p = x1;
 
 		if !self.verify_point(&p) {
-			return Err("Invalid point".into());
+			return Err(err_msg("Invalid point"));
 		}
 
 		Ok(p)

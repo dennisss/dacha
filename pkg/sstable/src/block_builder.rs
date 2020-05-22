@@ -35,7 +35,7 @@ impl BlockBuilder {
 	pub fn add(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
 		// Keys must be inserted strictly in sorted order.
 		if key <= self.last_key {
-			return Err("Out of order or duplicate key inserted".into());
+			return Err(err_msg("Out of order or duplicate key inserted"));
 		}
 
 		let mut shared_bytes = 0;

@@ -1,12 +1,11 @@
+use std::convert::AsRef;
+use std::string::ToString;
 use common::errors::*;
-use super::tokenizer::Token;
 use parsing::*;
 use bytes::Bytes;
 use parsing::ascii::AsciiString;
-use common::errors::Error;
-use std::convert::AsRef;
 use common::bits::BitVector;
-use std::string::ToString;
+use super::tokenizer::Token;
 use super::tag::TagClass;
 
 parser!(number<usize> => Token::skip_to(Token::number));
@@ -16,7 +15,7 @@ parser!(identifier<AsciiString> => Token::skip_to(Token::identifier));
 fn symbol(c: char) -> impl Parser<()> {
 	and_then(Token::skip_to(Token::symbol), move |s| {
 		if s != c as u8 {
-			return Err("Wrong symbol".into());
+			return Err(err_msg("Wrong symbol"));
 		}
 
 		Ok(())
@@ -27,7 +26,7 @@ fn reserved(w: &'static str) -> impl Parser<()> {
 	// TODO: Finish this
 	and_then(Token::skip_to(Token::reserved), move |s| {
 		if s.as_ref() != w {
-			return Err(format!("Wrong reserved: '{}'", w).into());
+			return Err(format_err!("Wrong reserved: '{}'", w));
 		}
 
 		Ok(())
@@ -38,7 +37,7 @@ fn sequence(w: &'static str) -> impl Parser<()> {
 	// TODO: Finish this
 	and_then(Token::skip_to(Token::sequence), move |s| {
 		if s.as_ref() != w {
-			return Err("Wrong sequence".into());
+			return Err(err_msg("Wrong sequence"));
 		}
 
 		Ok(())
@@ -57,7 +56,7 @@ parser!(modulereference<AsciiString> => typereference);
 parser!(encodingreference<AsciiString> => and_then(typereference, |s| {
 	for c in s.as_ref().chars() {
 		if c.is_ascii_lowercase() {
-			return Err("Must be all upper case".into());
+			return Err(err_msg("Must be all upper case"));
 		}
 	}
 

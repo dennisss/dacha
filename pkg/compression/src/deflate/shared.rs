@@ -99,7 +99,7 @@ pub fn read_len(code: usize, strm: &mut BitReader) -> Result<usize> {
 			32*(code - 281) + b + 131
 		},
 		285 => 258,
-		_ => { return Err("Invalid length code".into()); }
+		_ => { return Err(err_msg("Invalid length code")); }
 	})
 }
 
@@ -127,7 +127,7 @@ pub fn log2(v: usize) -> usize {
 
 pub fn append_len(len: usize, out: &mut Vec<Atom>) -> Result<()> {
 	if len < MIN_REFERENCE_LENGTH || len > 258 {
-		return Err("Length out of allowed range".into());
+		return Err(err_msg("Length out of allowed range"));
 	}
 
 	match len {
@@ -167,13 +167,13 @@ pub fn read_distance(code: usize, strm: &mut BitReader) -> Result<usize> {
 
 		Ok(mul*(code % 2) + start + b)
 	} else {
-		Err("Invalid distance code".into())
+		Err(err_msg("Invalid distance code"))
 	}
 }
 
 pub fn append_distance(dist: usize, out: &mut Vec<Atom>) -> Result<()> {
 	if dist < 1 || dist > 32768 {
-		return Err("Distance out of allowed range".into());
+		return Err(err_msg("Distance out of allowed range"));
 	}
 
 	if dist <= 4 {

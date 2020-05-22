@@ -1,9 +1,9 @@
 use common::errors::*;
 use std::sync::atomic::AtomicU64;
 use std::collections::BTreeMap;
-use async_std::sync::{RwLock, Arc};
-use async_std::path::{Path, PathBuf};
-use async_std::fs::{File, OpenOptions};
+use common::async_std::sync::{RwLock, Arc};
+use common::async_std::path::{Path, PathBuf};
+use common::async_std::fs::{File, OpenOptions};
 use fs2::FileExt;
 use crate::write_batch::*;
 use crate::record_log::*;
@@ -50,9 +50,9 @@ impl EmbeddedDB {
 			opts.write(true).create(true).read(true);
 
 			let file = opts.open(dir.lock())
-				.map_err(|_| Error::from("Failed to open the lockfile"))?;
+				.map_err(|_| err_msg("Failed to open the lockfile"))?;
 			file.try_lock_exclusive()
-				.map_err(|_| Error::from("Failed to lock database"))?;
+				.map_err(|_| err_msg("Failed to lock database"))?;
 			file
 		};
 
@@ -96,7 +96,7 @@ impl EmbeddedDB {
 			let mut log = RecordLog::open(&dir.log(num), false).await?;
 			let mut table = MemTable::new(
 				options.table_options.comparator.clone());
-			table.apply_log(&mut log);
+			table.apply_log(&mut log).await?;
 			immutable_table = Some(table);
 		}
 

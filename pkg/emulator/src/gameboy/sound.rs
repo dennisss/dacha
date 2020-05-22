@@ -1,13 +1,3 @@
-
-/*
-Mapped to memory:
-Channel 1: FF10 - FF14
-Channel 2: FF16 - FF19
-Channel 3: FF1A - FF1E
-Channel 4: FF20 - FF23
-Registers: FF24 - FF26
-*/
-
 use std::sync::{Mutex, Arc};
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use common::bits::{bitget, bitset};
@@ -17,6 +7,7 @@ use crate::gameboy::clock::Clock;
 
 const NUM_CHANNELS: usize = 4;
 
+/// Global app volume.
 const APP_VOLUME: f32 = 0.2;
 
 pub struct SoundController {
@@ -55,7 +46,7 @@ impl SoundController {
 			move |data: &mut [f32]| {
 				let mut guard = state2.lock().unwrap();
 				guard.compute(data, sample_index, sample_rate);
-				sample_index += data.len() as u64;
+				sample_index += (data.len() / NUM_CHANNELS) as u64;
 			},
 			|err| eprintln!("an error occurred on stream: {}", err),
 			)?;
@@ -94,23 +85,47 @@ pub struct SoundControllerState {
 	/// FF25
 	output_select: u8,
 
-	// FF26
-	sound_on_off: SoundOnOffRegister
+	/// Whether or not the sound controller is enabled.
+	/// Toggled by setting 7th bit of 0xFF26
+	global_enabled: bool,
+
+//	sound_on_off: SoundOnOffRegister
 }
 
 impl SoundControllerState {
 	pub fn step_512hz(&mut self, clock: &Clock) {
 		// 256Hz for length control
 		if self.frame_seq % 2 == 0 {
-			if self.channel1.counting &&
-				self.sound_on_off.channel_enabled(Channel::Sound1) {
-				if self.channel1.length_remaining == 0 {
+			if self.channel1.enabled && self.channel1.counting {
+				if self.channel1.length_counter == 0 {
+					// NOTE: We disable the channel at the beginning of the
+					// cycle after the last cycle so that the background audio
+					// thread still plays the sound for the last cycle.
+					self.channel1.enabled = false;
+				} else {
+					self.channel1.length_counter -= 1;
+				}
+			}
+
+			if self.channel2.enabled && self.channel2.counting {
+				if self.channel2.length_counter == 0 {
 					// NOTE: We disable the channel at the beginning of the
 					// cycle after the last cycle so that the background audio
 					// thread still runs the last cycle.
-					self.sound_on_off.disable_channel(Channel::Sound1);
+					self.channel2.enabled = false;
 				} else {
-					self.channel1.length_remaining -= 1;
+					self.channel2.length_counter -= 1;
+				}
+			}
+
+			if self.channel3.enabled && self.channel3.counting {
+				if self.channel3.length_counter == 0 {
+					// NOTE: We disable the channel at the beginning of the
+					// cycle after the last cycle so that the background audio
+					// thread still runs the last cycle.
+					self.channel3.enabled = false;
+				} else {
+					self.channel3.length_counter -= 1;
 				}
 			}
 
@@ -119,6 +134,27 @@ impl SoundControllerState {
 
 		// 128Hz for sweep control
 		if (self.frame_seq % 2 == 0) && (self.frame_seq % 4 != 0) {
+			let shift = self.channel1.sweep.register & 0b111;
+			let decreasing = bitget(self.channel1.sweep.register, 3);
+			let period = (self.channel1.sweep.register >> 4) & 0b111;
+
+			if period != 0 {
+				self.channel1.sweep.counter += 1;
+				if self.channel1.sweep.counter > period {
+					self.channel1.sweep.counter = 0;
+
+					let amount = self.channel1.frequency.value >> (shift as u16);
+
+					if decreasing {
+						// NOTE: Will never underflow.
+						self.channel1.frequency.value -= amount;
+					} else {
+						// TODO: Check the overflow condition.
+						self.channel1.frequency.value += amount;
+						self.channel1.frequency.value &= 0b11111111111;
+					}
+				}
+			}
 
 		}
 
@@ -144,12 +180,8 @@ impl SoundControllerState {
 		}
 	}
 
-	// We will have a sample clock.
-	//
-
-	//
 	fn compute(&self, data: &mut [f32], sample_index: u64, sample_rate: u64) {
-		if !self.sound_on_off.global_on() {
+		if !self.global_enabled {
 			return;
 		}
 
@@ -174,7 +206,7 @@ impl SoundControllerState {
 
 		// TODO: Optimize most of this logic out if the volumes are 0.
 
-		if self.sound_on_off.channel_enabled(Channel::Sound1) {
+		if self.channel1.enabled {
 			let mut value = -1.0;
 
 			let duty = self.channel1.length_duty.duty_cycle();
@@ -191,12 +223,13 @@ impl SoundControllerState {
 			channels[0] = value;
 		}
 
-		if self.sound_on_off.channel_enabled(Channel::Sound2) {
+		if self.channel2.enabled {
 			let mut value = -1.0;
 
 			let duty = self.channel2.length_duty.duty_cycle();
 			let period = self.channel2.frequency.period();
 
+			// TODO: Need to align the wave with the timings in the docs.
 			let pos = (time % period) / period;
 			if pos < duty {
 				value = 1.0;
@@ -207,11 +240,33 @@ impl SoundControllerState {
 			channels[1] = value;
 		}
 
-		if self.sound_on_off.channel_enabled(Channel::Sound3) {
+		if self.channel3.enabled && self.channel3.playing {
+			// TODO: This is probably not accurate as we don't account for resets
+			// to the counter within the pattern buffer.
 
+			let period = self.channel3.frequency.period();
+			// [0, 1) fraction within current period.
+//			let pos =  (time % period) / period;
+//			let idx = (32.0*pos) as usize;
+			let idx = ((time / period) as usize) % 32;
+
+			let mut byte = self.channel3.pattern[idx / 2];
+			if idx % 2 == 0 {
+				byte >>= 4;
+			}
+
+			// Value in range [0, 1]
+			let mut value = (((byte & 0b1111) as f32) / (0xf as f32));
+
+			// Value in range [-1, 1]
+			value = 2.0*value - 1.0;
+
+			value *= self.channel3.output_level.volume();
+
+			channels[2] = value;
 		}
 
-		if self.sound_on_off.channel_enabled(Channel::Sound4) {
+		if self.channel4.enabled {
 
 		}
 
@@ -251,23 +306,22 @@ impl SoundControllerState {
 	}
 }
 
-// FF11 -> 80
-// ff26 -> 80
-
-
-// Starting sound 1:
-// 0xFF13  <- 0x83
-// 0xFF14  <- 0x87
-
 impl MemoryInterface for SoundControllerState {
 	fn store8(&mut self, addr: u16, value: u8) -> Result<()> {
-		if !self.sound_on_off.global_on() && addr != 0xFF26 {
+		if !self.global_enabled && addr != 0xFF26 {
 			return Err(err_msg("Writing sound registers while off"));
 		}
 
 		match addr {
+			// Channel 1: Sweep + Tone
 			0xFF10 => self.channel1.sweep.set(value),
-			0xFF11 => self.channel1.length_duty.set(value),
+			0xFF11 => {
+				self.channel1.length_duty.set(value);
+
+				// this will be '64 - value'
+				self.channel1.length_counter =
+					self.channel1.length_duty.length();
+			},
 			0xFF12 => self.channel1.volume.set(value),
 			0xFF13 => self.channel1.frequency.set_lower(value),
 			0xFF14 => {
@@ -275,13 +329,24 @@ impl MemoryInterface for SoundControllerState {
 				// Bits 3-5 do nothing
 				self.channel1.counting = bitget(value, 6);
 				if bitget(value, 7) {
+					self.channel1.enabled = true;
+					self.channel1.sweep.counter = 0;
 					self.channel1.volume.restart();
-					self.channel1.length_remaining =
-						self.channel1.length_duty.length();
+					if self.channel1.length_counter == 0 {
+						self.channel1.length_counter = 64;
+					}
 				}
 			},
 
-			0xFF16 => self.channel2.length_duty.set(value),
+			// Channel 2: Tone
+			0xFF16 => {
+				self.channel2.length_duty.set(value);
+
+				// this will be '64 - value'
+				self.channel2.length_counter =
+					self.channel2.length_duty.length();
+
+			},
 			0xFF17 => self.channel2.volume.set(value),
 			0xFF18 => self.channel2.frequency.set_lower(value),
 			0xFF19 => {
@@ -289,31 +354,53 @@ impl MemoryInterface for SoundControllerState {
 				// Bits 3-5 do nothing
 				self.channel2.counting = bitget(value, 6);
 				if bitget(value, 7) {
+					self.channel2.enabled = true;
 					self.channel2.volume.restart();
-					self.channel2.length_remaining =
-						self.channel2.length_duty.length();
+					if self.channel2.length_counter == 0 {
+						self.channel2.length_counter = 64;
+					}
 				}
 			},
 
+			// Channel 3: Wave
 			0xFF1A => { self.channel3.playing = bitget(value, 7); },
-			0xFF1B => { self.channel3.length = value; },
+			0xFF1B => { self.channel3.length_counter = 256 - (value as usize) },
 			0xFF1C => self.channel3.output_level.set(value),
 			0xFF1D => self.channel3.frequency.set_lower(value),
 			0xFF1E => {
 				self.channel3.frequency.set_upper(value);
-				self.channel3.length_remaining = self.channel3.length();
+
+				self.channel3.counting = bitget(value, 6);
+				if bitget(value, 7) {
+					self.channel3.enabled = true;
+
+					// Reset position in the wave it.
+					// TODO: Need to record as a reset point in time so that the
+					// audio thread can use it as a baseline.
+
+					if self.channel3.length_counter == 0 {
+						self.channel3.length_counter = 256;
+					}
+				}
 			},
 
-			0xFF20 => { self.channel4.length.set(value & 0b111111); },
+			0xFF20 => {
+				self.channel4.length_counter = 64 - (value & 0b111111) as usize;
+//				self.channel4.length.set(value & 0b111111);
+			},
 			0xFF21 => self.channel4.volume.set(value),
 			0xFF22 => { self.channel4.polynomial_counter = value; },
 			0xFF23 => {
 				self.channel4.counting = bitget(value, 6);
 				if bitget(value, 7) {
+					self.channel4.enabled = true;
+
 					// Reset channel
 					self.channel4.volume.restart();
-					self.channel4.length_remaining =
-						self.channel4.length.length();
+
+					if self.channel4.length_counter == 0 {
+						self.channel4.length_counter = 64;
+					}
 				}
 			},
 
@@ -329,9 +416,10 @@ impl MemoryInterface for SoundControllerState {
 				// Just the top bit is writeable
 				let on = bitget(value, 7);
 				if on {
+					self.global_enabled = true;
 					// TODO: What if sound was already on?
 					// Mark all four channels as on.
-					self.sound_on_off.value = 0b10001111;
+//					self.sound_on_off.value = 0b10001111;
 				} else {
 					// Clear all sound control registers on disabling sound.
 					*self = SoundControllerState::default();
@@ -347,7 +435,7 @@ impl MemoryInterface for SoundControllerState {
 	}
 
 	fn load8(&mut self, addr: u16) -> Result<u8> {
-		if !self.sound_on_off.global_on() && addr != 0xFF26 {
+		if !self.global_enabled && addr != 0xFF26 {
 			return Err(err_msg("Reading sound registers while off"));
 		}
 
@@ -401,7 +489,15 @@ impl MemoryInterface for SoundControllerState {
 
 			0xFF24 => { self.channel_control },
 			0xFF25 => { self.output_select },
-			0xFF26 => { self.sound_on_off.value },
+			0xFF26 => {
+				let mut v = 0xff; // NOTE: Will be different on SGB
+				bitset(&mut v, self.channel1.enabled, 0);
+				bitset(&mut v, self.channel2.enabled, 1);
+				bitset(&mut v, self.channel3.enabled, 2);
+				bitset(&mut v, self.channel4.enabled, 3);
+				bitset(&mut v, self.global_enabled, 7);
+				v
+			},
 			0xFF30..=0xFF3F => self.channel3.pattern[(addr - 0xFF30) as usize],
 			_ => { return Err(err_msg("Unimplemented sound addr")) }
 		})
@@ -410,6 +506,8 @@ impl MemoryInterface for SoundControllerState {
 
 #[derive(Default)]
 struct Channel1 {
+	enabled: bool,
+
 	sweep: SweepEnvelope,
 	length_duty: SoundLengthDutyCycleRegister,
 	volume: VolumeEnvelope,
@@ -421,7 +519,7 @@ struct Channel1 {
 	/// NOTE: Will be up to 64 for all channels but channel 3 which can be up to
 	/// 256.
 	/// TODO: Use a tuple to ensure that is always represented in 256hz periods.
-	length_remaining: usize,
+	length_counter: usize,
 
 	/// When counting is on, this will be the number of cycles remaining in the
 	/// sound.
@@ -430,17 +528,21 @@ struct Channel1 {
 
 #[derive(Default)]
 struct Channel2 {
+	enabled: bool,
+
 	length_duty: SoundLengthDutyCycleRegister,
 	volume: VolumeEnvelope,
 	frequency: Frequency,
 	/// If in counter mode, how many
 
-	length_remaining: usize,
+	length_counter: usize,
 	counting: bool
 }
 
 #[derive(Default)]
 struct Channel3 {
+	enabled: bool,
+
 	// Bit 7 of 0xFF1A
 	playing: bool,
 	length: u8,
@@ -449,7 +551,7 @@ struct Channel3 {
 	pattern: [u8; 16],
 
 	/// Number of
-	length_remaining: usize,
+	length_counter: usize,
 	counting: bool,
 }
 
@@ -461,6 +563,8 @@ impl Channel3 {
 
 #[derive(Default)]
 struct Channel4 {
+	enabled: bool,
+
 	/// NOTE: Only the length part of this is used.
 	length: SoundLengthDutyCycleRegister,
 
@@ -469,7 +573,7 @@ struct Channel4 {
 
 	control: u8,
 
-	length_remaining: usize,
+	length_counter: usize,
 	counting: bool
 }
 
@@ -477,6 +581,7 @@ struct Channel4 {
 #[derive(Default)]
 pub struct SweepEnvelope {
 	register: u8,
+	counter: u8
 }
 
 impl SweepEnvelope {
@@ -610,6 +715,12 @@ impl Frequency {
 		assert!(hz >= 0.0);
 		1.0 / hz
 	}
+
+	fn period_wave(&self) -> f64 {
+		let hz = 65536.0 / (2048.0 - (self.value as f64));
+		assert!(hz >= 0.0);
+		1.0 / hz
+	}
 }
 
 #[derive(Default)]
@@ -640,29 +751,4 @@ impl WaveOutputLevel {
 enum SoundOutputTerminal {
 	S01 = 0,
 	SO2 = 1
-}
-
-
-#[derive(Default)]
-pub struct SoundOnOffRegister {
-	value: u8
-}
-
-enum Channel {
-	Sound1 = 0,
-	Sound2 = 1,
-	Sound3 = 2,
-	Sound4 = 3
-}
-
-impl SoundOnOffRegister {
-	fn global_on(&self) -> bool { bitget(self.value, 7) }
-
-	fn channel_enabled(&self, channel: Channel) -> bool {
-		bitget(self.value, channel as u8)
-	}
-
-	fn disable_channel(&mut self, channel: Channel) {
-		bitset(&mut self.value, false, channel as u8)
-	}
 }

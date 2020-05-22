@@ -4,7 +4,7 @@ use crate::header::*;
 use bytes::Bytes;
 use parsing::*;
 use crate::common_parser::*;
-use crate::ascii::AsciiString;
+use parsing::ascii::AsciiString;
 
 // See https://tools.ietf.org/html/rfc7230#section-3.3.1
 
@@ -41,7 +41,7 @@ impl TransferCoding {
 /// `#element => [ 1#element ]`
 /// `<n>#<m>element => element <n-1>*<m-1>( OWS "," OWS element )`
 fn comma_delimited<T, P: Parser<T> + Copy>(p: P, min: usize, max: usize)
--> impl Parser<Vec<T>> {
+	-> impl Parser<Vec<T>> {
 	assert!(max >= min && max >= 1);
 
 	seq!(c => {
@@ -57,15 +57,17 @@ fn comma_delimited<T, P: Parser<T> + Copy>(p: P, min: usize, max: usize)
 
 			match item {
 				Some(Some(v)) => out.push(v),
-				// In this case, we failed to parse (meaning most likely the item is empty and will be skipped in the next loop).
-				// NOTE: That behavior assumes that this is wrapped by a complete()
+				// In this case, we failed to parse (meaning most likely the
+				// item is empty and will be skipped in the next loop).
+				// NOTE: That behavior assumes that this is wrapped by a
+				// complete()
 				Some(None) => { continue; }
 				None => { break; }
 			};
 		}
 
 		if out.len() < min {
-			return Err("Too few items parsed".into());
+			return Err(err_msg("Too few items parsed"));
 		}
 
 		Ok(out)
@@ -126,7 +128,7 @@ pub fn parse_transfer_encoding(headers: &HttpHeaders)
 		}
 
 		if out.len() > MAX_TRANSFER_CODINGS {
-			return Err("Too many Transfer-Codings".into())
+			return Err(err_msg("Too many Transfer-Codings"))
 		}
 	}
 
@@ -149,7 +151,7 @@ pub fn parse_content_length(headers: &HttpHeaders) -> Result<Option<usize>> {
 		if let Ok(v) = usize::from_str_radix(&h.value.to_string(), 10) {
 			Some(v)
 		} else {
-			return Err(format!("Invalid Content-Length: {:?}", h.value).into());
+			return Err(format_err!("Invalid Content-Length: {:?}", h.value));
 		}
 	} else {
 		// No header present.
@@ -158,7 +160,7 @@ pub fn parse_content_length(headers: &HttpHeaders) -> Result<Option<usize>> {
 
 	// Having more than one header is an error.
 	if !hs.next().is_none() {
-		return Err("More than one Content-Length header received.".into());
+		return Err(err_msg("More than one Content-Length header received."));
 	}
 
 	Ok(len)
@@ -183,7 +185,7 @@ pub fn parse_content_encoding(headers: &HttpHeaders) -> Result<Vec<String>> {
 		}
 
 		if out.len() > MAX_CONTENT_ENCODINGS {
-			return Err("Too many Transfer-Codings".into())
+			return Err(err_msg("Too many Transfer-Codings"))
 		}
 	}
 
@@ -221,12 +223,12 @@ parser!(parse_media_type<MediaType> => {
 		let typ = c.next(parse_token)?.to_string().to_ascii_lowercase();
 		c.next(one_of("/"))?;
 		let subtype = c.next(parse_token)?.to_string().to_ascii_lowercase();
-		let params = c.next(many(seq!(c => {
+		let params = c.many(seq!(c => {
 			c.next(parse_ows)?;
 			c.next(one_of(";"))?;
 			c.next(parse_ows)?;
 			c.next(parse_parameter)
-		})))?;
+		}));
 
 		Ok(MediaType {
 			typ, subtype, params
@@ -238,7 +240,7 @@ pub fn parse_content_type(headers: &HttpHeaders) -> Result<Option<MediaType>> {
 	let mut h_iter = headers.find(CONTENT_TYPE);
 	let h = if let Some(h) = h_iter.next() { h } else { return Ok(None); };
 	if !h_iter.next().is_none() {
-		return Err("More than one content-type".into());
+		return Err(err_msg("More than one content-type"));
 	}
 
 	let (typ, _) =

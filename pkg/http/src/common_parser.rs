@@ -2,7 +2,7 @@ use common::errors::*;
 use bytes::Bytes;
 use parsing::*;
 use parsing::iso::*;
-use crate::ascii::*;
+use parsing::ascii::*;
 
 // `BWS = OWS`
 parser!(pub parse_bws<Bytes> => parse_ows);
@@ -30,13 +30,13 @@ pub fn is_vchar(i: u8) -> bool {
 }
 
 
-parser!(pub parse_crlf<Bytes> => tag("\r\n"));
+parser!(pub parse_crlf<()> => tag(b"\r\n"));
 
 // NOTE: This is strictly ASCII.
 // `tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
 //  "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA`
 fn is_tchar(i: u8) -> bool {
-	(i as char).is_alphanumeric() || is_one_of("!#$%&'*+-.^_`|~", i)
+	(i as char).is_ascii_alphanumeric() || i.is_one_of(b"!#$%&'*+-.^_`|~")
 }
 
 // NOTE: This is strictly ASCII.

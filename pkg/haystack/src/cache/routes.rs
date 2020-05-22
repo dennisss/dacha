@@ -16,9 +16,9 @@ use rand::thread_rng;
 use rand::seq::SliceRandom;
 use hyper::header::HeaderMap;
 use bytes::Bytes;
-use futures::compat::Future01CompatExt;
-use futures::compat::Stream01CompatExt;
-use futures::stream::StreamExt;
+use common::futures::compat::Future01CompatExt;
+use common::futures::compat::Stream01CompatExt;
+use common::futures::stream::StreamExt;
 
 pub async fn handle_request(
 	parts: Parts, body: Body, mac_handle: MachineHandle

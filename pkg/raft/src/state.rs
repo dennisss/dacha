@@ -11,15 +11,21 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug)]
 pub struct ServerProgress {
-	/// Index of the next log entry we should send to this server (starts at last leader index + 1)
+	/// Index of the next log entry we should send to this server (starts at
+	/// last leader index + 1)
 	pub next_index: u64,
 
 	/// Index of the highest entry known to be replicated to this server
-	/// TODO: These can be long term persisted even after we fall out of being leader as long as we only persist the largest match_index for a client that is >= the commited_index at the time of persisting the value
+	/// TODO: These can be long term persisted even after we fall out of being
+	/// leader as long as we only persist the largest match_index for a client
+	/// that is >= the commited_index at the time of persisting the value
 	pub match_index: u64,
 
-	/// Last time a heartbeat was successfully sent and received (the times in this tuple represent the corresponding send/received times for a single request)
-	/// TODO: Per section 6.2 of the thesis, a leader should ideally step down once not receiving a heartbeat for an entire election cycle (we must make sure that stepping down cancels any pending waiters if appropriate)
+	/// Last time a heartbeat was successfully sent and received (the times in
+	/// this tuple represent the corresponding send/received times for a single request)
+	/// TODO: Per section 6.2 of the thesis, a leader should ideally step down
+	/// once not receiving a heartbeat for an entire election cycle (we must
+	/// make sure that stepping down cancels any pending waiters if appropriate)
 	pub last_heartbeat: Option<(Instant, Instant)>,
 
 	/// Time at which we sent out the last request to this server
@@ -51,10 +57,12 @@ impl ServerProgress {
 pub struct ServerFollowerState {
 	pub election_timeout: Duration,
 
-	/// Id of the last leader we have been pinged by. Used to cache the location of the current leader for the sake of proxying requests and client hinting 
+	/// Id of the last leader we have been pinged by. Used to cache the location
+	/// of the current leader for the sake of proxying requests and client hinting
 	pub last_leader_id: Option<ServerId>,
 
-	/// Last time we received a message from the leader (or when we first transitioned to become a follower)
+	/// Last time we received a message from the leader (or when we first
+	/// transitioned to become a follower)
 	pub last_heartbeat: Instant
 }
 
@@ -63,14 +71,18 @@ pub struct ServerCandidateState {
 	/// Time at which this candidate started its election
 	pub election_start: Instant,
 
-	/// Similar to the follower one this is when we should start the next election all over again
+	/// Similar to the follower one this is when we should start the next
+	/// election all over again
 	pub election_timeout: Duration,
 
 	/// All the votes we have received so far from other servers
-	/// TODO: This would also be a good time to pre-warm the leader states based on this 
+	/// TODO: This would also be a good time to pre-warm the leader states
+	/// based on this
 	pub votes_received: HashSet<ServerId>,
 
-	/// Defaults to false, if we receive a vote rejection in a valid response, we will mark this as true to indicate that this current term has contention from other nodes
+	/// Defaults to false, if we receive a vote rejection in a valid response,
+	/// we will mark this as true to indicate that this current term has
+	/// contention from other nodes
 	/// So if we don't win the election, we must bump the term
 	pub some_rejected: bool
 

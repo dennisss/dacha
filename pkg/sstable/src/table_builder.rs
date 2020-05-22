@@ -1,9 +1,9 @@
 use common::errors::*;
-use async_std::fs::{File, OpenOptions};
-use async_std::path::Path;
-use async_std::io::prelude::{WriteExt};
+use common::async_std::fs::{File, OpenOptions};
+use common::async_std::path::Path;
+use common::async_std::io::prelude::{WriteExt};
 use crate::table::{BlockHandle, CompressionType, ChecksumType};
-use compression::crc::CRC32CHasher;
+use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 use crate::block::{Block, BlockEntry};
 use std::sync::Arc;
@@ -150,7 +150,7 @@ impl SSTableBuilder {
 				&mut self.compressed_buffer
 			},
 			_ => {
-				return Err("Unsupported compression method".into());
+				return Err(err_msg("Unsupported compression method"));
 			}
 		};
 
@@ -167,7 +167,7 @@ impl SSTableBuilder {
 				hasher.update(compressed_data);
 				hasher.masked()
 			},
-			_ => { return Err("Unsupported checksum type".into()); }
+			_ => { return Err(err_msg("Unsupported checksum type")); }
 		};
 
 		compressed_data.extend_from_slice(&checksum.to_le_bytes());
@@ -219,13 +219,13 @@ impl SSTableBuilder {
 			// block's keys.
 			if self.options.comparator.compare(&pending.last_key, &key)
 				!= Ordering::Less {
-				return Err("Keys inserted out of order".into());
+				return Err(err_msg("Keys inserted out of order"));
 			}
 
 			let index_key = self.options.comparator.find_shortest_separator(
 				pending.last_key, &key);
 			self.index_block_builder.add(index_key,
-										 pending.handle.serialized());
+										 pending.handle.serialized())?;
 		}
 
 		self.data_block_builder.add(key.clone(), value)?;
@@ -249,7 +249,7 @@ impl SSTableBuilder {
 			let index_key = self.options.comparator.find_short_successor(
 				pending.last_key);
 			self.index_block_builder.add(index_key,
-										 pending.handle.serialized());
+										 pending.handle.serialized())?;
 		}
 
 		// TODO: Make the interval configurable

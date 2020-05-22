@@ -121,7 +121,7 @@ impl PhysicalVolume {
 		let superblock = PhysicalVolumeSuperblock::read(&mut file)?;
 
 		if &superblock.magic[..] != SUPERBLOCK_MAGIC.as_bytes() {
-			return Err("Superblock magic is incorrect".into());
+			return Err(err_msg("Superblock magic is incorrect"));
 		}
 
 		let idx_path_string = path.to_str().unwrap().to_owned() + ".idx";
@@ -132,7 +132,7 @@ impl PhysicalVolume {
 			let i = PhysicalVolumeIndex::open(&idx_path)?;
 
 			if i.superblock.cluster_id != superblock.cluster_id || i.superblock.machine_id != superblock.machine_id || i.superblock.volume_id != superblock.volume_id {
-				return Err("Opened an index file for a mismatching volume".into())
+				return Err(err_msg("Opened an index file for a mismatching volume"))
 			}
 
 			i
@@ -248,7 +248,7 @@ impl PhysicalVolume {
 			last_off = off;
 
 			if off % self.superblock.block_size != 0 {
-				return Err("Needles misaligned relative to block offsets".into());
+				return Err(err_msg("Needles misaligned relative to block offsets"));
 			}
 			
 			let block_offset = (off / self.superblock.block_size) as BlockOffset;
@@ -366,7 +366,7 @@ impl PhysicalVolume {
 		self.file.seek(io::SeekFrom::Start(off))?;
 
 		if off % self.superblock.block_size != 0 {
-			return Err("File not block aligned".into());
+			return Err(err_msg("File not block aligned"));
 		}
 
 		let block_offset = (off / self.superblock.block_size) as BlockOffset;
@@ -448,7 +448,7 @@ impl PhysicalVolume {
 
 			self.file.set_len(off)?;
 
-			return Err("Not enough bytes could be read".into());
+			return Err(err_msg("Not enough bytes could be read"));
 		}
 
 		// Create the footer (+ pad to the next block)
@@ -498,11 +498,11 @@ impl PhysicalVolume {
 
 		let entry = match self.index.get(keys) {
 			Some(e) => e,
-			None => return Err("Needle does not exist".into()),
+			None => return Err(err_msg("Needle does not exist")),
 		};
 
 		if entry.meta.deleted() {
-			return Err("Needle already deleted".into());
+			return Err(err_msg("Needle already deleted"));
 		}
 
 

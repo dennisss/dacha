@@ -1,20 +1,27 @@
 use std::time::{Instant};
-use std::sync::{Mutex, MutexGuard};
-use futures::future::*;
-use futures::{Future, Stream};
-use futures::sync::mpsc;
-use futures::prelude::Sink;
-use futures::sync::oneshot;
+use common::futures::future::*;
+use common::async_std::future;
+use common::futures::{Future, Stream};
+use common::futures::channel::mpsc;
+use common::futures::prelude::Sink;
+use common::futures::channel::oneshot;
+use common::futures::{StreamExt, SinkExt};
+use common::async_std::sync::{Mutex, MutexGuard};
+use common::async_std::task;
 use std::borrow::{Borrow, BorrowMut};
 use std::ops::{Deref, DerefMut};
 
 
-/// Pretty much a futures based implementation of a conditional variable that owns the condition value
-/// Unlike a conditional variable, this will not relock the mutex after the wait is done
+/// Pretty much a futures based implementation of a conditional variable that
+/// owns the condition value
+/// Unlike a conditional variable, this will not relock the mutex after the wait
+/// is done
 /// 
-/// NOTE: It should not be locked for a long period of time as that is still a blocking operation
+/// NOTE: It should not be locked for a long period of time as that is still a
+/// blocking operation
 /// We also allow listeners to store a small value when they call wait()
-/// A notifier can optionally read this value to filter exactly which waiters are woken up
+/// A notifier can optionally read this value to filter exactly which waiters
+/// are woken up
 pub struct Condvar<V, T = ()> {
 	inner: Mutex<CondvarInner<V, T>>
 }
@@ -29,10 +36,7 @@ impl<V, T> CondvarInner<V, T> {
 	fn collect(&mut self) {
 		let mut i = 0;
 		while i < self.waiters.len() {
-			let dropped = match self.waiters[i].0.poll_cancel() {
-				Ok(futures::Async::Ready(_)) => true,
-				_ => false
-			};
+			let dropped = self.waiters[i].0.is_canceled();
 			
 			if dropped {
 				self.waiters.swap_remove(i);
@@ -45,7 +49,9 @@ impl<V, T> CondvarInner<V, T> {
 }
 
 impl<V, T> Condvar<V, T> {
-	// TODO: It would be most reasonable to give the comparator function up front or implement it upfront as a trait upfront so that the notifier doesn't have to worry about passing in a tester
+	// TODO: It would be most reasonable to give the comparator function up
+	// front or implement it upfront as a trait upfront so that the notifier
+	// doesn't have to worry about passing in a tester
 	pub fn new(initial_value: V) -> Self {
 		Condvar {
 			// TODO: Implement a a lock free list + Atomic variable instead?
@@ -56,9 +62,9 @@ impl<V, T> Condvar<V, T> {
 		}
 	}
 
-	pub fn lock<'a>(&'a self) -> CondvarGuard<'a, V, T> {
+	pub async fn lock<'a>(&'a self) -> CondvarGuard<'a, V, T> {
 		CondvarGuard {
-			guard: self.inner.lock().unwrap()
+			guard: self.inner.lock().await
 		}
 	}
 }
@@ -93,11 +99,12 @@ impl<'a, V, T> DerefMut for CondvarGuard<'a, V, T> {
 }
 
 impl<'a, V, T> CondvarGuard<'a, V, T> {
-	pub fn wait(self, data: T) -> impl Future<Item=(), Error=()> + Send {  // LockResult<MutexGuard<'a, T>> {
+	pub async fn wait(self, data: T) {  // LockResult<MutexGuard<'a, T>> {
 		let (tx, rx) = oneshot::channel();
 		let mut guard = self.guard;
 
-		// TODO: Currently no mechanism for effeciently cleaning up waiters without having to look through all of them
+		// TODO: Currently no mechanism for effeciently cleaning up waiters
+		// without having to look through all of them
 		guard.collect();
 
 		guard.waiters.push((tx, data));
@@ -105,12 +112,10 @@ impl<'a, V, T> CondvarGuard<'a, V, T> {
 		// NOTE: This will be dropped anyway as soon as the future is returned
 		drop(guard);
 
-		rx.then(|_| {
-			ok(())
-		})
+		rx.await.ok(); // TODO: Check this.
 	}
 
-	// TODO: Should we immediatley consume and drop the guard
+	// TODO: Should we immediately consume and drop the guard
 	pub fn notify_filter<F>(&mut self, f: F) where F: Fn(&T) -> bool {
 		let guard = &mut self.guard;
 
@@ -120,8 +125,11 @@ impl<'a, V, T> CondvarGuard<'a, V, T> {
 			if notify {
 				let (tx, _) = guard.waiters.swap_remove(i - 1);
 				if let Err(_) = tx.send(()) {
-					// In this case, the waiter was deallocated and doesn't matter anymore
-					// TODO: I don't think the oneshot channel emits any real errors though and should always succeed if not deallocated?
+					// In this case, the waiter was deallocated and doesn't
+					// matter anymore
+					// TODO: I don't think the oneshot channel emits any real
+					// errors though and should always succeed if not
+					// deallocated?
 				}
 			}
 
@@ -132,7 +140,6 @@ impl<'a, V, T> CondvarGuard<'a, V, T> {
 	pub fn notify_all(&mut self) {
 		self.notify_filter(|_| true);
 	}
-
 }
 
 
@@ -161,8 +168,10 @@ impl ChangeSender {
 	pub fn notify(&mut self) {		
 		if let Err(e) = self.0.try_send(()) {
 			// This will fail in one of two cases:
-			// 1. Either the channel is full (which is fine as we only want a single notification to get scheduled at a time)
-			// 2. The other side of disconnected (will be handled by some other code)
+			// 1. Either the channel is full (which is fine as we only want a
+			// single notification to get scheduled at a time)
+			// 2. The other side of disconnected (will be handled by some other
+			// code)
 		}
 	}
 }
@@ -171,26 +180,45 @@ impl ChangeSender {
 pub struct ChangeReceiver(mpsc::Sender<()>, mpsc::Receiver<()>);
 
 impl ChangeReceiver {
-
-	pub fn wait(self) -> impl Future<Item=ChangeReceiver, Error=()> + Send {
+	/// Waits indefinately until the change occurs for the first time.
+	pub async fn wait(self) -> ChangeReceiver {
 		let (sender, receiver) = (self.0, self.1);
+		let (_, receiver) = receiver.into_future().await;
+		Self(sender, receiver)
 
-		let waiter = receiver.into_future().then(|res| -> FutureResult<_, ()> {
-			match res {
-				Ok((_, receiver)) => ok(receiver),
-				Err((_, receiver)) => ok(receiver)
-			}
-		});
-
-		waiter
-		.and_then(|receiver| {
-			ok(ChangeReceiver(sender, receiver))
-		})
+//		let waiter = receiver.into_future().then(|res| -> FutureResult<_, ()> {
+//			match res {
+//				Ok((_, receiver)) => ok(receiver),
+//				Err((_, receiver)) => ok(receiver)
+//			}
+//		});
+//
+//		waiter
+//		.and_then(|receiver| {
+//			ok(ChangeReceiver(sender, receiver))
+//		})
 	}
 
-	pub fn wait_until(self, until: Instant) -> impl Future<Item=ChangeReceiver, Error=()> + Send {
+	pub async fn wait_until(self, until: Instant) -> ChangeReceiver {
+		let now = Instant::now();
+		if now <= until {
+			return self;
+		}
 
-		let delay_sender = self.0.clone();
+		let mut delay_sender = self.0.clone();
+		// TODO: Ideally 'select' between this and the other one so that the
+		// timer can be cleaned up before
+		task::spawn(async move {
+			common::wait_for(now - until).await;
+			delay_sender.send(()).await
+			// Return a pending future so that this never resolves?
+		});
+
+		self.wait().await
+
+		// TODO:
+		/*
+		common::async_std::future::timeout()
 
 		let delay = tokio::timer::Delay::new(until)
 		.then(move |_| {
@@ -202,16 +230,21 @@ impl ChangeReceiver {
 
 		self.wait()
 		.select(delay)
-		// In general nothing should error out with this (only the timer may error out, but the delay_sender should never error out in a reasonable way as we have our own dedicated copy of it)
+		// In general nothing should error out with this (only the timer may
+		error out, but the delay_sender should never error out in a reasonable
+		way as we have our own dedicated copy of it)
 		.map_err(|_| ())
 		.map(|(c, _)| {
 			c
 		})
+		*/
 	}
 }
 
 
-/// After a maximum amount of time or maximum number of requests is received, this will trigger a given function to execute whose result will be passed along to every entry requesting a slot in the batch
+/// After a maximum amount of time or maximum number of requests is received,
+/// this will trigger a given function to execute whose result will be passed
+/// along to every entry requesting a slot in the batch
 pub struct Batch<F, R> {
 	func: F,
 	entries: Vec<oneshot::Sender<R>>,
@@ -219,7 +252,7 @@ pub struct Batch<F, R> {
 	expires: Instant
 }
 
-impl<F: Fn() -> K, K: Future<Item=R, Error=()>, R: Copy> Batch<F, R> {
+impl<F: Fn() -> K, K: Future<Output=R>, R: Copy> Batch<F, R> {
 	pub fn new(max_size: usize, expires: Instant, func: F) -> Self {
 		Batch {
 			func,

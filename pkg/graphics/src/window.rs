@@ -6,28 +6,23 @@ use crate::group::Group;
 use crate::transform::Camera;
 use crate::drawable::Drawable;
 
-///// Number of currently open windows. GLFW will be automatically initialized or
-///// terminated when this transitions to/from
-//const NUM_WINDOWS: AtomicUsize = AtomicUsize::new(0);
-
-
 
 /// Represents a drawing space either linked to a whole window or a viewport
-struct Window {
+pub struct Window {
 	pub scene: Group,
 	pub camera: Camera,
 //	pub size: Vector2i, // TODO: Use unsigned
 
 	background_color: Vector4f,
 
-	window: glfw::Window,
+	pub window: glfw::Window,
 	events: Receiver<(f64, glfw::WindowEvent)>,
 }
 
 impl Window {
 
-	fn from(window: glfw::Window,
-			events: Receiver<(f64, glfw::WindowEvent)>) -> Self {
+	pub fn from(window: glfw::Window,
+				events: Receiver<(f64, glfw::WindowEvent)>) -> Self {
 		Self {
 			scene: Group::default(),
 			camera: Camera::default(),
@@ -44,17 +39,19 @@ impl Window {
 		self.window.set_size(size[0] as i32, size[1] as i32);
 	}
 
-	pub fn run(&mut self) {
+	fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
 
 	}
 
-	fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {
-		match event {
-			glfw::WindowEvent::Key(glfw::Key::Escape, _,
-								   glfw::Action::Press, _) => {
-				window.set_should_close(true)
+	pub fn tick(&mut self) {
+		for (_, event) in glfw::flush_messages(&self.events) {
+			match event {
+				glfw::WindowEvent::Key(glfw::Key::Escape, _,
+									   glfw::Action::Press, _) => {
+					self.window.set_should_close(true)
+				}
+				_ => {}
 			}
-			_ => {}
 		}
 	}
 
@@ -137,61 +134,6 @@ void Window::run() {
 static void error_callback(int error, const char* description) {
     printf("%s\n", description);
 }
-
-
-Window *Window::Create(const char *name, vec2 size, bool visible) {
-
-	if(nWindows == 0) {
-		if(!glfwInit()) {
-			// Initialization failed
-			printf("GLFW Failed to initialize\n");
-		}
-
-		glfwSetErrorCallback(error_callback);
-
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-		glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-		glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
-
-		// TODO: Ensure RGBA with depth buffer
-	}
-
-
-	nWindows++;
-
-
-	glfwWindowHint(GLFW_VISIBLE, visible? GLFW_TRUE : GLFW_FALSE);
-
-	// TODO: http://www.glfw.org/docs/latest/context_guide.html is very useful with documenting how to do off screen windows and windows that share context with other windows
-	GLFWwindow* window = glfwCreateWindow(size.x, size.y, name, NULL, NULL);
-
-	glfwMakeContextCurrent(window);
-
-
-	int res;
-	glewExperimental = GL_TRUE;
-	if((res = glewInit()) != GLEW_OK){
-		fprintf(stderr, "GLEW Failed: %s\n", glewGetErrorString(res));
-		return NULL;
-	}
-
-
-	glfwSwapInterval(1);
-
-
-	glEnable(GL_DEPTH_TEST);
-	glDepthFunc(GL_LEQUAL);
-
-	Window *w = new Window(window);
-	w->size = size;
-
-	return w;
-}
-
-
 
 
 */

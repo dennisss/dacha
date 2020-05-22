@@ -1,8 +1,7 @@
-use super::super::errors::*;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use byteorder::{BigEndian, ReadBytesExt};
-
+use common::errors::*;
 
 const START_OF_IMAGE: &[u8] = &[0xff, 0xd8]; // SOI
 const END_OF_IMAGE: u8 = 0xd9; // EOI
@@ -11,6 +10,13 @@ const APP0: u8 = 0xe0;
 
 const START_OF_SCAN: u8 = 0xda; // SOS
 
+/*
+References:
+https://en.wikipedia.org/wiki/JPEG_File_Interchange_Format
+https://www.w3.org/Graphics/JPEG/itu-t81.pdf
+
+
+*/
 
 pub struct JPEG {
 
@@ -27,7 +33,7 @@ impl JPEG {
 		let mut buf: [u8; 2] = [0; 2];
 		file.read_exact(&mut buf)?;
 		if buf != START_OF_IMAGE {
-			return Err("Invalid start bytes".into());
+			return Err(err_msg("Invalid start bytes"));
 		}
 		assert_eq!(buf, START_OF_IMAGE);
 

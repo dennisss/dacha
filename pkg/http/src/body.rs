@@ -1,35 +1,32 @@
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::io::{Cursor};
 use std::sync::mpsc;
-use bytes::Bytes;
 use std::convert::TryFrom;
 use std::borrow::{BorrowMut, Borrow};
 use std::future::Future;
-use crate::reader::*;
-use common::errors::*;
-use common::FutureResult;
 use std::marker::{Unpin};
 use std::pin::Pin;
-use futures::io::AsyncRead;
+use bytes::Bytes;
+use common::futures::io::AsyncRead;
+use common::errors::*;
+use common::FutureResult;
+use crate::reader::*;
 
 pub type BoxFutureResult<'a, T> = Pin<Box<dyn FutureResult<T> + Send + 'a>>;
 
-pub trait Body: Send {
-	/// Returns the total length in bytes of the body payload. Will return None if the
-	/// length is unknown without reading the entire body.
+// TODO: Merge with Readable trait?
+#[async_trait]
+pub trait Body: Send + Sync {
+	/// Returns the total length in bytes of the body payload. Will return None
+	/// if the length is unknown without reading the entire body.
 	/// 
 	/// NOTE: This is only guaranteed to be valid before read() is called.
 	fn len(&self) -> Option<usize>;
 
-	fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> BoxFutureResult<'a, usize>;
-}
+	async fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
 
-const BUF_SIZE: usize = 4096;
-
-// TODO: Add a generic trait for allowing using a future impl for Read?
-impl Body {
-	pub async fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<()> {
+	async fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<()> {
 		let mut i = buf.len();
 		loop {
 			buf.resize(i + BUF_SIZE, 0);
@@ -50,6 +47,13 @@ impl Body {
 			}
 		}
 	}
+}
+
+const BUF_SIZE: usize = 4096;
+
+// TODO: Add a generic trait for allowing using a future impl for Read?
+impl dyn Body + Send + Sync {
+
 
 	pub async fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<()> {
 		while buf.len() > 0 {
@@ -65,14 +69,14 @@ impl Body {
 	In the response, If I have a 
 */
 
-impl Body for Cursor<Vec<u8>> {
+#[async_trait]
+impl<T: AsRef<[u8]> + Send + Sync> Body for Cursor<T> {
 	fn len(&self) -> Option<usize> {
-		Some(self.get_ref().len())
+		Some(self.get_ref().as_ref().len())
 	}
 
-	fn read(&mut self, buf: &mut [u8]) -> BoxFutureResult<usize> {
-		let r = std::io::Read::read(self, buf).map_err(|e| Error::from(e));
-		Box::pin(async { r })
+	async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+		std::io::Read::read(self, buf).map_err(|e| Error::from(e))
 	}
 }
 
@@ -100,7 +104,8 @@ pub fn EmptyBody() -> Box<dyn Body> {
 	Box::new(Cursor::new(Vec::new()))
 }
 
-pub fn BodyFromData(data: Vec<u8>) -> Box<dyn Body> {
+pub fn BodyFromData<T: 'static + AsRef<[u8]> + Send + Sync>(data: T)
+	-> Box<dyn Body> {
 	Box::new(Cursor::new(data))
 }
 
@@ -158,14 +163,14 @@ pub struct IncomingUnboundedBody {
 	pub stream: StreamReader
 }
 
+#[async_trait]
 impl Body for IncomingUnboundedBody {
 	fn len(&self) -> Option<usize> {
 		None
 	}
 
-	fn read<'a>(&'a mut self, buf: &'a mut [u8])
-	-> BoxFutureResult<'a, usize> {
-		Box::pin(self.stream.read(buf))
+	async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+		self.stream.read(buf).await
 	}
 }
 
@@ -175,8 +180,13 @@ pub struct IncomingSizedBody {
 	pub stream: StreamReader
 }
 
-impl IncomingSizedBody {
-	async fn read_impl(&mut self, buf: &mut [u8]) -> Result<usize> {
+#[async_trait]
+impl Body for IncomingSizedBody {
+	fn len(&self) -> Option<usize> {
+		None
+	}
+
+	async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
 		if self.length == 0 || buf.len() == 0 {
 			return Ok(0);
 		}
@@ -186,20 +196,10 @@ impl IncomingSizedBody {
 		self.length -= nread;
 
 		if n == 0 && self.length != 0 {
-			return Err("Unexpected end to stream".into());
+			return Err(err_msg("Unexpected end to stream"));
 		}
 
 		Ok(nread)
-	}
-}
-
-impl Body for IncomingSizedBody {
-	fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> BoxFutureResult<'a, usize> {
-		Box::pin(self.read_impl(buf))
-	}
-
-	fn len(&self) -> Option<usize> {
-		None
 	}
 }
 

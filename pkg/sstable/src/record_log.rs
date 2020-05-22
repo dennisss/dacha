@@ -36,11 +36,11 @@
 
 use common::block_size_remainder;
 use common::errors::*;
-use async_std::fs::{OpenOptions, File};
-use async_std::io::{Read, Write, Seek, SeekFrom};
-use async_std::io::prelude::{ReadExt, WriteExt, SeekExt};
-use async_std::path::Path;
-use compression::crc::CRC32CHasher;
+use common::async_std::fs::{OpenOptions, File};
+use common::async_std::io::{Read, Write, Seek, SeekFrom};
+use common::async_std::io::prelude::{ReadExt, WriteExt, SeekExt};
+use common::async_std::path::Path;
+use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 //use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 
@@ -71,7 +71,7 @@ impl<'a> Record<'a> {
 	/// Returns (parsed record, next offset in input)
 	fn parse(input: &'a [u8]) -> Result<(Self, usize)> {
 		if input.len() < (RECORD_HEADER_SIZE as usize) {
-			return Err("Input shorter than record header".into());
+			return Err(err_msg("Input shorter than record header"));
 		}
 
 		let checksum = u32::from_le_bytes(*array_ref![input, 0, 4]);
@@ -81,7 +81,7 @@ impl<'a> Record<'a> {
 		let data_end = data_start + (length as usize);
 
 		if input.len() < data_end {
-			return Err("Input smaller than data length".into());
+			return Err(err_msg("Input smaller than data length"));
 		}
 
 		let data = &input[data_start..data_end];
@@ -205,7 +205,7 @@ impl RecordLog {
 		self.block_offset += next_offset;
 
 		if record.checksum_expected != record.checksum {
-			return Err("Checksum mismatch in record".into());
+			return Err(err_msg("Checksum mismatch in record"));
 		}
 
 		Ok(Some(record))
@@ -224,14 +224,14 @@ impl RecordLog {
 		} else if first_record.typ == RecordType::FIRST {
 			out.extend_from_slice(first_record.data);
 		} else {
-			return Err("Unexpected initial record type".into());
+			return Err(err_msg("Unexpected initial record type"));
 		}
 
 
 		loop {
 			let next_record = match self.read_record().await? {
 				Some(record) => record,
-				None => { return Err("Incomplete user record".into()); }
+				None => { return Err(err_msg("Incomplete user record")); }
 			};
 
 			out.extend_from_slice(next_record.data);
@@ -240,8 +240,8 @@ impl RecordLog {
 				RecordType::MIDDLE => { continue; },
 				RecordType::LAST => { break; },
 				_ => {
-					return Err("Unexpected type in the middle of a user record"
-								.into())
+					return Err(err_msg(
+						"Unexpected type in the middle of a user record"));
 				}
 			};
 		}

@@ -1,25 +1,22 @@
 #![feature(proc_macro_hygiene, decl_macro, type_alias_enum_variants)]
 
-extern crate haystack;
 extern crate clap;
 extern crate futures;
+extern crate haystack;
 extern crate toml;
 
+use clap::{App, Arg, SubCommand};
+use haystack::common::*;
 use haystack::directory::Directory;
 use haystack::errors::*;
-use haystack::common::*;
-use clap::{Arg, App, SubCommand};
 
+use common::futures::Future;
 use haystack::client::*;
 use std::fs::File;
-use std::io::{Read};
-use futures::Future;
-
-
+use std::io::Read;
 
 fn main() -> Result<()> {
-
-	let matches = App::new("Haystack")
+    let matches = App::new("Haystack")
 		.about("Photo/object storage system")
 		.arg(Arg::with_name("config")
 			.short("c")
@@ -76,80 +73,90 @@ fn main() -> Result<()> {
 		)
 		.get_matches();
 
+    let config = if let Some(config_file) = matches.value_of("config") {
+        let mut file = File::open(config_file).expect("Failed to open the specified config file");
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+        toml::from_str::<Config>(&contents).expect("Invalid config file")
+    } else {
+        Config::default()
+    };
 
-	let config = if let Some(config_file) = matches.value_of("config") {
-		let mut file = File::open(config_file).expect("Failed to open the specified config file");
-		let mut contents = String::new();
-		file.read_to_string(&mut contents)?;
-		toml::from_str::<Config>(&contents).expect("Invalid config file")
-	} else {
-		Config::default()
-	};
+    let dir = Directory::open(config)?;
 
-	let dir = Directory::open(config)?;
+    match matches.subcommand() {
+        ("store", Some(m)) => {
+            let port = m
+                .value_of("port")
+                .unwrap_or("4000")
+                .parse::<u16>()
+                .expect("Invalid port given");
+            let folder = m.value_of("folder").unwrap_or("/hay");
+            haystack::store::main::run(dir, port, folder)?;
+        }
+        ("cache", Some(m)) => {
+            let port = m
+                .value_of("port")
+                .unwrap_or("4001")
+                .parse::<u16>()
+                .expect("Invalid port given");
+            haystack::cache::main::run(dir, port)?;
+        }
 
-	match matches.subcommand() {
-		("store", Some(m)) => {
-			let port = m.value_of("port").unwrap_or("4000").parse::<u16>().expect("Invalid port given");
-			let folder = m.value_of("folder").unwrap_or("/hay");
-			haystack::store::main::run(dir, port, folder)?;
-		},
-		("cache", Some(m)) => {
-			let port = m.value_of("port").unwrap_or("4001").parse::<u16>().expect("Invalid port given");
-			haystack::cache::main::run(dir, port)?;
-		},
+        // TODO: Will also eventually also have the pitch-fork
+        ("client", Some(m)) => {
+            let c = haystack::client::Client::create(dir);
 
-		// TODO: Will also eventually also have the pitch-fork
+            match m.subcommand() {
+                ("upload", Some(m)) => {
+                    println!("Starting upload");
 
-		("client", Some(m)) => {
+                    let alt_key = m
+                        .value_of("ALT_KEY")
+                        .unwrap()
+                        .parse::<NeedleAltKey>()
+                        .unwrap();
+                    let filename = m.value_of("INPUT_FILE").unwrap();
 
-			let c = haystack::client::Client::create(dir);
+                    let mut f = File::open(filename)?;
+                    let mut data = vec![];
+                    f.read_to_end(&mut data)?;
 
-			match m.subcommand() {
-				("upload", Some(m)) => {
-					println!("Starting upload");
+                    let chunks = vec![PhotoChunk {
+                        alt_key,
+                        data: data.into(),
+                    }];
 
-					let alt_key = m.value_of("ALT_KEY").unwrap().parse::<NeedleAltKey>().unwrap();
-					let filename = m.value_of("INPUT_FILE").unwrap();
+                    let f = c
+                        .upload_photo(chunks)
+                        .map_err(|err| {
+                            println!("{:?}", err);
+                            ()
+                        })
+                        .map(|pid| {
+                            println!("Uploaded with photo id: {}", pid);
+                            ()
+                        });
 
-					let mut f = File::open(filename)?;
-					let mut data = vec![];
-					f.read_to_end(&mut data)?;
+                    tokio::run(f);
+                }
+                ("read-url", Some(m)) => {
+                    let key = m.value_of("KEY").unwrap().parse::<NeedleKey>().unwrap();
+                    let alt_key = m
+                        .value_of("ALT_KEY")
+                        .unwrap()
+                        .parse::<NeedleAltKey>()
+                        .unwrap();
 
-					let chunks = vec![
-						PhotoChunk {
-							alt_key,
-							data: data.into()
-						}
-					];
+                    let url = c.read_photo_cache_url(&NeedleKeys { key, alt_key })?;
 
-					let f = c.upload_photo(chunks)
-					.map_err(|err| {
-						println!("{:?}", err);
-						()
-					}).map(|pid| {
-						println!("Uploaded with photo id: {}", pid);
-						()
-					});
+                    println!("{}", url);
+                }
+                _ => return Err(err_msg("Invalid subcommand")),
+            };
+        }
+        _ => return Err(err_msg("Invalid subcommand")),
+    };
 
-					tokio::run(f);	
-
-				},
-				("read-url", Some(m)) => {
-					let key = m.value_of("KEY").unwrap().parse::<NeedleKey>().unwrap();
-					let alt_key = m.value_of("ALT_KEY").unwrap().parse::<NeedleAltKey>().unwrap();
-
-					let url = c.read_photo_cache_url(&NeedleKeys {
-						key, alt_key
-					})?;
-
-					println!("{}", url);
-				},
-				_ => return Err("Invalid subcommand".into())
-			};
-		},
-		_ => return Err("Invalid subcommand".into())
-	};
-
-	Ok(())
+    Ok(())
 }

@@ -6,7 +6,9 @@ use crate::lighting::Material;
 use crate::util::*;
 use math::matrix::{Vector3f, Matrix4f};
 
+// An object than can be drawn. This class handles configuring transforms, viewports, and projection
 pub trait Drawable {
+	// Draw the object. 'proj' contains all transformations that should be applied to it
 	fn draw(&self, cam: &Camera, model_view: &Transform);
 }
 
@@ -33,26 +35,6 @@ impl Primitive {
 		self.transform = &self.transform * matrix;
 	}
 }
-
-
-/*
-/*
-    An object than can be drawn. This class handles configuring transforms, viewports, and projection
-*/
-class Drawable {
-public:
-	Drawable();
-	virtual ~Drawable();
-
-	// Draw the object. 'proj' contains all transformations that should be applied to it
-	virtual void draw(Camera *cam, Transform *modelview) = 0;
-
-protected:
-	glm::mat4 trans;
-};
-
-*/
-
 
 /// Every object has its own vertex array object
 /// TODO: Inherits Drawable
@@ -117,9 +99,12 @@ impl Drawable for Object {
 		self.shader.set_lights(&cam.lights);
 
 		let mv = model_view.matrix() * self.primitive.transform();
+
 		gl_uniform_mat4(self.shader.uni_modelview_attrib, &mv);
 
-		gl_uniform_vec3(self.shader.eyepos_attrib, &cam.position);
+		if let Some(attr) = self.shader.eyepos_attrib {
+			gl_uniform_vec3(attr, &cam.position);
+		}
 
 		if let Some(material) = &self.material {
 			self.shader.set_material(material);

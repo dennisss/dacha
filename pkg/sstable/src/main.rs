@@ -2,8 +2,8 @@ extern crate sstable;
 extern crate common;
 
 use common::errors::*;
-use async_std::prelude::*;
-use async_std::task;
+use common::async_std::prelude::*;
+use common::async_std::task;
 
 async fn run() -> Result<()> {
 	sstable::open_db("/home/dennis/workspace/dacha/testdata/leveldb").await?;

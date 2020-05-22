@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::shader::Shader;
 use crate::drawable::{Object, Drawable};
 use std::ops::{DerefMut, Deref};
-use crate::util::gl_vertex_buffer_vec3;
+use crate::util::{gl_vertex_buffer_vec3, GLBuffer};
 use crate::transform::{Camera, Transform};
 
 pub const PI: f32 = 3.14159265359;
@@ -13,8 +13,8 @@ pub const PI: f32 = 3.14159265359;
 pub struct Polygon {
 	object: Object,
 
-	pos_vbo: GLuint,
-	color_vbo: GLuint,
+	pos_vbo: GLBuffer,
+	color_vbo: GLBuffer,
 	nvertices: usize
 }
 
@@ -24,14 +24,14 @@ impl Polygon {
 	pub fn regular(nsides: usize, colors: &[Vector3f], shader: Arc<Shader>)
 		-> Self {
 		assert_eq!(nsides, colors.len());
-		let vertices = regular_polgygon(nsides);
+		let vertices = regular_polygon(nsides);
 		Self::from(&vertices, &colors, shader)
 	}
 
 	pub fn regular_mono(
 		nsides: usize, color: &Vector3f, shader: Arc<Shader>) -> Self {
 
-		let mut colors = vec![];
+		let mut colors: Vec<Vector3f> = vec![];
 		colors.resize(nsides, color.clone());
 
 		Self::regular(nsides, &colors, shader)
@@ -40,11 +40,14 @@ impl Polygon {
 	pub fn from(vertices: &[Vector3f], colors: &[Vector3f], shader: Arc<Shader>)
 		-> Self {
 		assert_eq!(vertices.len(), colors.len());
+
+
+		let object = Object::new(shader.clone()); // <- Will bind the VAO
 		let pos_vbo = gl_vertex_buffer_vec3(shader.pos_attrib, vertices);
 		let color_vbo = gl_vertex_buffer_vec3(shader.color_attrib, colors);
 
 		Self {
-			object: Object::new(shader),
+			object,
 			pos_vbo, color_vbo, nvertices: vertices.len()
 		}
 	}
@@ -68,7 +71,7 @@ impl Drawable for Polygon {
 }
 
 
-fn regular_polgygon(nsides: usize) -> Vec<Vector3f> {
+fn regular_polygon(nsides: usize) -> Vec<Vector3f> {
 	let mut pts = vec![];
 
 	let dtheta = 2.0*PI / (nsides as f32);

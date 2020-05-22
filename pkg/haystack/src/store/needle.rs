@@ -119,7 +119,7 @@ impl NeedleHeader {
 	pub fn parse(header: &[u8; NEEDLE_HEADER_SIZE]) -> Result<NeedleHeader> {
 
 		if &header[0..4] != HEADER_MAGIC.as_bytes() {
-			return Err("Needle header magic is incorrect".into());
+			return Err(err_msg("Needle header magic is incorrect"));
 		}
 
 		let mut pos = 4;
@@ -201,12 +201,12 @@ impl Needle {
 		if &buf[magic_start..(magic_start + FOOTER_MAGIC.len())] != FOOTER_MAGIC.as_bytes() {
 			// Generally this means that it is legitamitely corrupt
 			// Externalize as a corruption indicator
-			return Err("Needle footer bad magic".into());
+			return Err(err_msg("Needle footer bad magic"));
 		}
 
 		// Validate that the metadata we were given is actually correct
 		if header.meta.size != meta.size {
-			return Err("Inconsistently".into());
+			return Err(err_msg("Inconsistently"));
 		}
 
 		Ok(Needle {
@@ -246,7 +246,7 @@ impl Needle {
 
 		if sum != sum_expected {
 			// NOTE: I do want to support wrappning stuff
-			return Err("Needle data does not match checksum".into());
+			return Err(err_msg("Needle data does not match checksum"));
 		}
 
 		Ok(())

@@ -130,17 +130,17 @@ pub struct ETag {
 impl ETag {
 	pub fn from(s: &str) -> Result<ETag> {
 		if s.len() < 2 {
-			return Err("Too small".into());
+			return Err(err_msg("Too small"));
 		}
 
 		if &s[0..1] != "\"" || &s[(s.len() - 1)..] != "\"" {
-			return Err("No quotes".into());
+			return Err(err_msg("No quotes"));
 		}
 
 		let parts = s[1..(s.len() - 1)].split(':').collect::<Vec<_>>();
 
 		if parts.len() != 4 {
-			return Err("Not enough parts".into());
+			return Err(err_msg("Not enough parts"));
 		}
 
 		let store_id = parts[0].parse::<MachineId>()
@@ -168,7 +168,7 @@ impl ETag {
 					Err(e) => Err(e)
 				}
 			},
-			Err(_) => Err("Invalid header value string".into())
+			Err(_) => Err(err_msg("Invalid header value string"))
 		}
 	}
 
@@ -241,7 +241,7 @@ impl StorePath {
 
 		let volume_id = match segs[0].parse::<VolumeId>() {
 			Ok(v) => v,
-			Err(_) => return Err("Invalid volume id".into())
+			Err(_) => return Err(err_msg("Invalid volume id"))
 		};
 
 		if segs.len() == 1 {
@@ -252,7 +252,7 @@ impl StorePath {
 
 		let key = match segs[1].parse::<NeedleKey>() {
 			Ok(v) => v,
-			Err(_) => return Err("Invalid needle key".into())
+			Err(_) => return Err(err_msg("Invalid needle key"))
 		};
 		
 		if segs.len() == 2 {
@@ -263,7 +263,7 @@ impl StorePath {
 
 		let alt_key = match segs[2].parse::<NeedleAltKey>() {
 			Ok(v) => v,
-			Err(_) => return Err("Invalid needle alt key".into())
+			Err(_) => return Err(err_msg("Invalid needle alt key"))
 		};
 
 		if segs.len() == 3 {
@@ -274,7 +274,7 @@ impl StorePath {
 
 		let cookie = match segs[3].parse::<CookieBuf>() {
 			Ok(v) => v,
-			Err(_) => return Err("Invalid cookie".into())
+			Err(_) => return Err(err_msg("Invalid cookie"))
 		};
 
 		if segs.len() == 4 {
@@ -283,7 +283,7 @@ impl StorePath {
 			});
 		}
 
-		Err("Unknown route pattern".into())
+		Err(err_msg("Unknown route pattern"))
 	}
 
 	pub fn to_string(&self) -> String {

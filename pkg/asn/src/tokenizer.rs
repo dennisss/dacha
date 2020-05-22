@@ -24,13 +24,20 @@ const CHAR_SEQUENCES: &'static [&'static [u8]] = &[
 /// TODO: Should quotation marks ever appear outside of a string. Also probably
 /// Ommited compared to the spec "\"' ".
 /// TODO: Maybe also remove '.' as that could just be for realnumbers?
-const CHAR_LITERALS: &'static str = "{}<>,./()[]-:=;@|!^";
+const CHAR_LITERALS: &'static [u8] = b"{}<>,./()[]-:=;@|!^";
+
+//pub fn one_of<I: CharIter + ParserFeed>(s: &'static str) -> impl Parser<char, I>
+//	where I: ParserFeed<Item=char> {
+//	like(move |i| is_one_of(s, i))
+//}
+
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {}
 
 impl Token {
-	parser!(pub whitespace<()> => map(one_of(" \r\n\t"), |_| ()));
+	parser!(pub whitespace<()> => map(one_of(b" \r\n\t"), |_| ()));
 
 	parser!(pub comment<Bytes> => {
 		alt!(
@@ -38,7 +45,7 @@ impl Token {
 				c.next(tag("--"))?;
 				// TODO: Accept any type of new line
 				let end_marker = alt!(
-					map(tag("--"), |_| ()), map(one_of("\n"), |_| ())
+					map(tag("--"), |_| ()), map(one_of(b"\n"), |_| ())
 				);
 
 				let inner = c.next(take_until(end_marker))?;
@@ -70,9 +77,9 @@ impl Token {
 
 	// '(0|[1-9][0-9]+)'
 	parser!(pub number<usize> => {
-		and_then(take_while1(|v| (v as char).is_digit(10)), |v| {
+		and_then(take_while1(|v| (v as char).is_digit(10)), |v: Bytes| {
 			if v[0] == ('0' as u8) && v.len() != 1 {
-				return Err("Unexpected leading zero ".into());
+				return Err(err_msg("Unexpected leading zero "));
 			}
 
 			// We should have only parsed digits so the UTF-8 parsing should never
@@ -99,12 +106,12 @@ impl Token {
 	});
 
 	parser!(pub bstring<BitVector> => seq!(c => {
-		c.next(one_of("'"))?;
+		c.next(one_of(b"'"))?;
 		let mut out = BitVector::new();
 
 		loop {
 			c.next(opt(many(Self::whitespace)))?;
-			let bit = c.next(opt(one_of("01")))?;
+			let bit = c.next(opt(one_of(b"01")))?;
 			if let Some(b) = bit {
 				out.push(if b == ('0' as u8) { 0 } else { 1 });
 			} else {
@@ -117,12 +124,12 @@ impl Token {
 	}));
 
 	parser!(pub hstring<Bytes> => seq!(c => {
-		c.next(one_of("'"))?;
+		c.next(one_of(b"'"))?;
 		let mut out = String::new();
 
 		loop {
 			c.next(opt(many(Self::whitespace)))?;
-			let hexchar = c.next(opt(one_of("0123456789ABCDEF")))?;
+			let hexchar = c.next(opt(one_of(b"0123456789ABCDEF")))?;
 			if let Some(h) = hexchar {
 				out.push(h as char);
 			} else {
@@ -142,14 +149,14 @@ impl Token {
 		map(slice(seq!(c => {
 			let first = c.next(any)?;
 			if !(first as char).is_ascii_uppercase() || !is_alpha(first) {
-				return Err("First must be uppercase".into());
+				return Err(err_msg("First must be uppercase"));
 			}
 
 			c.next(many(seq!(c => {
-				c.next(opt(one_of("-")))?;
+				c.next(opt(one_of(b"-")))?;
 				let sym = c.next(any)? as char;
 				if !sym.is_ascii_alphanumeric() {
-					return Err("Expected alphanumeric".into());
+					return Err(err_msg("Expected alphanumeric"));
 				}
 				Ok(())
 			})))?;
@@ -163,14 +170,14 @@ impl Token {
 		map(slice(seq!(c => {
 			let first = c.next(any)?;
 			if (first as char).is_ascii_uppercase() || !is_alpha(first) {
-				return Err("First must be lowercase".into());
+				return Err(err_msg("First must be lowercase"));
 			}
 
 			c.next(many(seq!(c => {
-				c.next(opt(one_of("-")))?;
+				c.next(opt(one_of(b"-")))?;
 				let sym = c.next(any)? as char;
 				if !sym.is_ascii_alphanumeric() {
-					return Err("Expected alphanumeric".into());
+					return Err(err_msg("Expected alphanumeric"));
 				}
 				Ok(())
 			})))?;
@@ -185,11 +192,11 @@ impl Token {
 	pub fn parse_string(mut input: Bytes) -> ParseResult<Bytes> {
 		// TODO: Currently this doesn't support unicode parsing.
 		if input.len() < 2 {
-			return Err("Too short for string".into());
+			return Err(err_msg("Too short for string"));
 		}
 
 		if input[0] != '"' as u8 {
-			return Err("Bad delimiter".into());
+			return Err(err_msg("Bad delimiter"));
 		}
 
 		input.advance(1);
@@ -215,7 +222,7 @@ impl Token {
 			}
 		}
 
-		Err("Unterminated string".into())
+		Err(err_msg("Unterminated string"))
 	}
 
 	pub fn skip_to<T, P: Parser<T>>(p: P) -> impl Parser<T> {
@@ -283,19 +290,19 @@ fn split_syntax(tokens: Vec<Token>) -> Result<Vec<Rule>> {
 
 	while i < tokens.len() {
 		if i + 2 >= tokens.len() {
-			return Err("Too few tokens to form rule".into());
+			return Err(err_msg("Too few tokens to form rule"));
 		}
 		
 		let name =
 			if let Token::Reference(name) = &tokens[i] {
 				name.clone()
 			} else {
-				return Err("Expected rule name".into());
+				return Err(err_msg("Expected rule name"));
 			};
 		i += 1;
 
 		if tokens[i] != decl {
-			return Err("Expected ::=".into());
+			return Err(err_msg("Expected ::="));
 		}
 		i += 1;
 

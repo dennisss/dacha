@@ -13,7 +13,7 @@ const TAG_COPY4: u8 = 0b11;
 
 fn byte(input: &[u8]) -> Result<(u8, &[u8])> {
 	if input.len() < 1 {
-		return Err("Input too small".into());
+		return Err(err_msg("Input too small"));
 	}
 
 	Ok((input[0], &input[1..]))
@@ -21,7 +21,7 @@ fn byte(input: &[u8]) -> Result<(u8, &[u8])> {
 
 fn le_u16(input: &[u8]) -> Result<(u16, &[u8])> {
 	if input.len() < 2 {
-		return Err("Input too small".into());
+		return Err(err_msg("Input too small"));
 	}
 
 	let val = u16::from_le_bytes(*array_ref![input, 0, 2]);
@@ -30,7 +30,7 @@ fn le_u16(input: &[u8]) -> Result<(u16, &[u8])> {
 
 fn le_u32(input: &[u8]) -> Result<(u32, &[u8])> {
 	if input.len() < 4 {
-		return Err("Input too small".into());
+		return Err(err_msg("Input too small"));
 	}
 
 	let val = u32::from_le_bytes(*array_ref![input, 0, 4]);
@@ -41,7 +41,7 @@ fn le_u32(input: &[u8]) -> Result<(u32, &[u8])> {
 fn sized_usize(nbytes: usize) -> impl (Fn(&[u8]) -> Result<(usize, &[u8])>) {
 	move |input| {
 		if input.len() < nbytes {
-			return Err("Input too small".into());
+			return Err(err_msg("Input too small"));
 		}
 
 
@@ -62,7 +62,7 @@ pub fn snappy_decompress<'a>(mut input: &'a [u8], output: &mut Vec<u8>)
 	let copy = |mut len: usize, offset: usize, output: &mut Vec<u8>| {
 		if len == 0 || offset == 0 || offset > output.len() ||
 			output.len() + len > uncompressed_length {
-			return Err(Error::from("Invalid len/offset pair"))
+			return Err(err_msg("Invalid len/offset pair"))
 		}
 
 		let mut pos = output.len();
@@ -98,11 +98,11 @@ pub fn snappy_decompress<'a>(mut input: &'a [u8], output: &mut Vec<u8>)
 				} + 1;
 
 			if output.len() + size > uncompressed_length {
-				return Err("Literal exceeds expected uncompressed size".into());
+				return Err(err_msg("Literal exceeds expected uncompressed size"));
 			}
 
 			if input.len() < size {
-				return Err("Literal larger than remaining input".into());
+				return Err(err_msg("Literal larger than remaining input"));
 			}
 
 			let (data, rest) = input.split_at(size);

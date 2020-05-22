@@ -1,10 +1,9 @@
-
+use bytes::Bytes;
+use common::errors::*;
 use parsing::*;
 use parsing::iso::*;
+use parsing::ascii::*;
 use crate::uri::*;
-use crate::ascii::*;
-use common::errors::*;
-use bytes::Bytes;
 use crate::spec::*;
 use crate::uri_parser::*;
 use crate::common_parser::*;
@@ -69,16 +68,16 @@ parser!(parse_http_version<HttpVersion> => {
 	let digit = |input| {
 		let (i, rest) = any(input)?;
 		let v: [u8; 1] = [i];
-		let s = std::str::from_utf8(&v).map_err(|e| e.to_string())?;
-		let d = u8::from_str_radix(s, 10).map_err(|e| e.to_string())?;
+		let s = std::str::from_utf8(&v)?;
+		let d = u8::from_str_radix(s, 10)?;
 		Ok((d, rest))
 	};
 
 	seq!(c => {
 		c.next(parse_http_name)?;
-		c.next(one_of("/"))?;
+		c.next(one_of(b"/"))?;
 		let major = c.next(digit)?;
-		c.next(one_of("."))?;
+		c.next(one_of(b"."))?;
 		let minor = c.next(digit)?;
 		Ok(HttpVersion {
 			major, minor
@@ -113,13 +112,13 @@ parser!(parse_absolute_form<Uri> => parse_absolute_uri);
 // `absolute-path = 1*( "/" segment )`
 parser!(parse_absolute_path<Vec<AsciiString>> => {
 	many1(seq!(c => {
-		c.next(one_of("/"))?;
+		c.next(one_of(b"/"))?;
 		c.next(parse_segment)
 	}))
 });
 
 // `asterisk-form = "*"`
-parser!(parse_asterisk_form<u8> => one_of("*"));
+parser!(parse_asterisk_form<u8> => one_of(b"*"));
 
 // `authority-form = authority`
 parser!(parse_authority_form<Authority> => parse_authority);
@@ -197,7 +196,7 @@ parser!(parse_method<AsciiString> => parse_token);
 parser!(parse_obs_fold<Bytes> => {
 	slice(seq!(c => {
 		c.next(parse_ows)?;
-		c.next(tag("\r\n"))?;
+		c.next(tag(b"\r\n"))?;
 		c.next(take_while1(|i| is_sp(i) || is_htab(i)))?;
 		println!("FOLD");
 		Ok(())
@@ -209,7 +208,7 @@ parser!(parse_origin_form<(Vec<AsciiString>, Option<AsciiString>)> => {
 	seq!(c => {
 		let abspath = c.next(parse_absolute_path)?;
 		let q = c.next(opt(seq!(c => {
-			c.next(one_of("?"))?;
+			c.next(one_of(b"?"))?;
 			c.next(parse_query)
 		})))?;
 
@@ -225,7 +224,7 @@ parser!(parse_protocol<Protocol> => {
 	seq!(c => {
 		let name = c.next(parse_protocol_name)?;
 		let version = c.next(opt(seq!(c => {
-			c.next(tag("/"))?;
+			c.next(tag(b"/"))?;
 			c.next(parse_protocol_version)
 		})))?;
 
@@ -296,9 +295,9 @@ parser!(parse_start_line<StartLine> => {
 
 // `status-code = 3DIGIT`
 fn parse_status_code(input: Bytes) -> ParseResult<u16> {
-	if input.len() < 3 { return Err("status_code: input too short".into()) }
-	let s = std::str::from_utf8(&input[0..3]).map_err(|e| e.to_string())?;
-	let code = u16::from_str_radix(s, 10).map_err(|e| e.to_string())?;
+	if input.len() < 3 { return Err(err_msg("status_code: input too short")) }
+	let s = std::str::from_utf8(&input[0..3])?;
+	let code = u16::from_str_radix(s, 10)?;
 	Ok((code, input.slice(3..)))
 }
 

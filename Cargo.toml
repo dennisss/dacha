@@ -12,14 +12,17 @@ members = [
 	"pkg/protobuf",
 	"pkg/automata",
 	"pkg/http",
+	"pkg/rpc",
+	"pkg/image",
 	"pkg/format",
 	"third_party/pkix",
 	"pkg/sstable",
 	"pkg/graphics",
-	"pkg/stadia_controller"
-#	 "pkg/raft",
-	# "pkg/haystack",
-	# "pkg/emulator",
+	"pkg/stadia_controller",
+	"pkg/raft",
+	"pkg/haystack",
+	"pkg/emulator",
+	"pkg/symbolic"
 ]
 
 [profile.dev]
@@ -27,4 +30,5 @@ opt-level = 3
 
 [profile.release]
 lto = true
+opt-level = 3
 # panic = 'abort'

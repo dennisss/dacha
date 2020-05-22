@@ -12,10 +12,10 @@ use super::needle::*;
 use hyper::{Body, Response, StatusCode};
 use std::sync::{Arc, Mutex};
 use super::api::*;
-use futures::Stream;
-use futures::StreamExt;
-use futures::future::{ok, err};
-use futures::compat::Stream01CompatExt;
+use common::futures::Stream;
+use common::futures::StreamExt;
+use common::futures::future::{ok, err};
+use common::futures::compat::Stream01CompatExt;
 
 pub async fn write_single(
 	mac_handle: MachineHandle,
@@ -161,7 +161,7 @@ pub fn write_batch(
 		}
 		else if state.num_flushed != state.num_written {
 			// Panic not all flushable
-			return Err("Somehow we have unflushed needles but no previous volume".into());
+			return Err(err_msg("Somehow we have unflushed needles but no previous volume"));
 		}
 
 		Ok(())

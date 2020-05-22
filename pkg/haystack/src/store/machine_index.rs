@@ -41,7 +41,7 @@ impl StoreMachineIndex {
 		f.read_exact(&mut header)?;
 
 		if &header[0..VOLUMES_MAGIC_SIZE] != VOLUMES_MAGIC.as_bytes() {
-			return Err("Volumes magic is incorrect".into());
+			return Err(err_msg("Volumes magic is incorrect"));
 		}
 
 		let mut c = Cursor::new(&header[VOLUMES_MAGIC_SIZE..]);
@@ -51,7 +51,7 @@ impl StoreMachineIndex {
 		let machine_id = c.read_u32::<LittleEndian>()?;
 
 		if version != CURRENT_FORMAT_VERSION {
-			return Err("Volumes version is incorrect".into());
+			return Err(err_msg("Volumes version is incorrect"));
 		}
 
 
@@ -100,7 +100,7 @@ impl StoreMachineIndex {
 
 		// Should round exactly to id
 		if buf.len() % size_of::<VolumeId>() != 0 {
-			return Err("Volumes index is corrupt".into());
+			return Err(err_msg("Volumes index is corrupt"));
 		}
 
 		let mut out = Vec::new();

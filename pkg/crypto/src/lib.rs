@@ -5,14 +5,14 @@
 #[macro_use] extern crate asn;
 #[macro_use] extern crate lazy_static;
 extern crate hex;
-#[macro_use] extern crate async_trait;
 extern crate generic_array;
 extern crate typenum;
 extern crate pkix;
 
 // TODO: Implement mlock utility from preventing swapping.
 
-// TODO: Also implement < and > so that we can use this to implement datastructures storing secret keys.
+// TODO: Also implement < and > so that we can use this to implement
+// datastructures storing secret keys.
 /// Constant time comparison function between two byte arrays.
 /// This is guranteed to always take the exact same amount of time
 /// for two slices of the same byte length.

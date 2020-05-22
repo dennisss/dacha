@@ -1,17 +1,17 @@
 
-use super::ascii::*;
-use bytes::Bytes;
-use super::status_code::*;
-use parsing::iso::*;
-use parsing::complete;
-use crate::message_parser::*;
-use super::uri::*;
-use common::errors::*;
-use crate::body::Body;
-use async_std::io::Write;
 use std::marker::Unpin;
-
-use futures::io::AsyncWrite;
+use bytes::Bytes;
+use common::async_std::io::Write;
+use common::futures::io::AsyncWrite;
+use common::errors::*;
+use common::io::*;
+use parsing::iso::*;
+use parsing::ascii::*;
+use parsing::complete;
+use crate::status_code::*;
+use crate::uri::*;
+use crate::message_parser::*;
+use crate::body::Body;
 
 // NOTE: Content in the HTTP headers is ISO-8859-1 so may contain characters outside the range of ASCII.
 // type HttpStr = Vec<u8>;
@@ -47,7 +47,7 @@ use futures::io::AsyncWrite;
 // TODO: Need validation of duplicate headers.
 
 
-trait ToHeaderName {
+pub trait ToHeaderName {
 	fn to_header_name(self) -> Result<AsciiString>;
 }
 
@@ -59,11 +59,11 @@ impl<T: AsRef<[u8]>> ToHeaderName for T {
 			Ok(s)
 		};
 		
-		f().map_err(|e: Error| format!("Invalid header name: {:?}", e).into())
+		f().map_err(|e: Error| format_err!("Invalid header name: {:?}", e))
 	}
 }
 
-trait ToHeaderValue {
+pub trait ToHeaderValue {
 	fn to_header_value(self, name: &AsciiString) -> Result<Latin1String>;
 }
 
@@ -75,7 +75,7 @@ impl<T: AsRef<str>> ToHeaderValue for T {
 			Ok(s)
 		};
 
-		f().map_err(|e: Error| format!("Invalid value for header {}: {:?}", name.to_string(), e).into())
+		f().map_err(|e: Error| format_err!("Invalid value for header {}: {:?}", name.to_string(), e))
 	}
 }
 
@@ -115,7 +115,7 @@ impl RequestBuilder {
 			Ok((u, _)) => Some(u.into_uri()),
 			Err(e) => {
 				self.error = Some(
-					format!("Invalid request uri: {:?}", e).into());
+					format_err!("Invalid request uri: {:?}", e));
 				None
 			}
 		};
@@ -159,16 +159,16 @@ impl RequestBuilder {
 		}
 
 		let method = self.method
-			.ok_or_else(|| Error::from("No method specified"))?;
+			.ok_or_else(|| err_msg("No method specified"))?;
 
 		// TODO: Only certain types of uris are allowed here
 		let uri = self.uri
-			.ok_or_else(|| Error::from("No uri specified"))?;
+			.ok_or_else(|| err_msg("No uri specified"))?;
 
 		let headers = HttpHeaders::from(self.headers);
 
 		let body = self.body
-			.ok_or_else(|| Error::from("No body specified"))?;
+			.ok_or_else(|| err_msg("No body specified"))?;
 
 		Ok(Request {
 			head: RequestHead {
@@ -191,6 +191,7 @@ pub struct ResponseBuilder {
 	// First error that occured in the building process
 	error: Option<Error>
 }
+
 
 impl ResponseBuilder {
 	pub fn new() -> ResponseBuilder {
@@ -237,7 +238,7 @@ impl ResponseBuilder {
 		}
 
 		let status_code = self.status_code
-			.ok_or_else(|| Error::from("No status specified"))?;
+			.ok_or_else(|| err_msg("No status specified"))?;
 
 		// TODO: Support custom reason and don't unwrap this.
 		let reason = String::from(status_code.default_reason().unwrap());
@@ -245,12 +246,12 @@ impl ResponseBuilder {
 		let headers = HttpHeaders::from(self.headers);
 
 		let body = self.body
-			.ok_or_else(|| Error::from("No body specified"))?;
+			.ok_or_else(|| err_msg("No body specified"))?;
 
 		Ok(Response {
 			head: ResponseHead {
 				status_code, reason,
-				version: HTTP_V1_1,
+				version: HTTP_V1_1, // TODO: Always respond with version <= client version?
 				headers
 			},
 			body
@@ -311,14 +312,16 @@ impl ResponseHead {
 		out.extend_from_slice(status_line.as_bytes());
 
 		self.headers.serialize(out);
-		out.write_all(b"\r\n");
+		out.extend_from_slice(b"\r\n");
 	}
 }
 
-use async_std::prelude::*;
+use common::async_std::prelude::*;
 
-pub async fn write_body<W: AsyncWrite + Unpin>(
-	mut body: &mut dyn Body, writer: &mut W) -> Result<()> {
+// TODO: Move this out of the spec as it is the only async thing here.
+// Probably move under Body
+pub async fn write_body(mut body: &mut dyn Body, writer: &dyn Writeable)
+	-> Result<()> {
 	// TODO: If we sent a Content-Length, make sure that we are consistent.
 	let mut buf = [0u8; BODY_BUFFER_SIZE];
 	loop {
@@ -397,6 +400,15 @@ pub struct HttpHeader {
 }
 
 impl HttpHeader {
+	pub fn new(name: String, value: String) -> Self {
+		Self {
+			name: unsafe {
+				AsciiString::from_ascii_unchecked(bytes::Bytes::from(name))
+			},
+			value: Latin1String::from_bytes(Bytes::from(value)).unwrap()
+		}
+	}
+
 	pub fn serialize(&self, buf: &mut Vec<u8>) {
 		buf.extend_from_slice(&self.name.data);
 		buf.extend_from_slice(b": ");
@@ -489,16 +501,17 @@ pub struct Protocol {
 // https://tools.ietf.org/html/rfc7230#section-5.3
 #[derive(Debug)]
 pub enum RequestTarget {
-	// Standard relative path. This is the typical request
+	/// Standard relative path. This is the typical request
 	OriginForm(Vec<AsciiString>, Option<AsciiString>),
-	// Typically a proxy request
-	// NOTE: Must be accepted ALWAYS be servers.
+
+	/// Typically a proxy request
+	/// NOTE: Must be accepted ALWAYS be servers.
 	AbsoluteForm(Uri),
 	
-	// Only used for CONNECT.
+	/// Only used for CONNECT.
 	AuthorityForm(Authority),
 	
-	// Used for OPTIONS.
+	/// Used for OPTIONS.
 	AsteriskForm
 }
 

@@ -2,10 +2,10 @@ use bytes::Bytes;
 use parsing::*;
 use parsing::binary::*;
 use crate::tls::parsing::*;
-//use async_std::io::Read;
+//use common::async_std::io::Read;
 use common::errors::*;
 use common::io::Readable;
-//use futures::io::AsyncRead;
+//use common::futures::io::AsyncRead;
 
 // 'Implementations MUST NOT send zero-length fragments of Handshake,
 // Alert, or ChangeCipherSpec content types.  Zero-length fragments of
@@ -61,7 +61,7 @@ impl Record {
 		let length = u16::from_be_bytes(*array_ref![buf, 3, 2]);
 		
 		if length > (exp2(14) + 256) as u16 {
-			return Err("alert: record_overflow".into());
+			return Err(err_msg("alert: record_overflow"));
 		}
 
 		let mut data = vec![];

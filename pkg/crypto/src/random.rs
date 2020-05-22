@@ -1,7 +1,7 @@
 use common::errors::*;
-use async_std::fs::File;
-use async_std::io::Read;
-use async_std::io::prelude::ReadExt;
+use common::async_std::fs::File;
+use common::async_std::io::Read;
+use common::async_std::io::prelude::ReadExt;
 use math::big::BigUint;
 
 /// Generates secure random bytes suitable for cryptographic key generation.
@@ -24,7 +24,7 @@ pub async fn secure_random_bytes(buf: &mut [u8]) -> Result<()> {
 pub async fn secure_random_range(lower: &BigUint, upper: &BigUint)
 -> Result<BigUint> {
 	if upper.min_bytes() == 0 || upper <= lower {
-		return Err("Invalid upper/lower range".into());
+		return Err(err_msg("Invalid upper/lower range"));
 	}
 
 	let mut buf = vec![];

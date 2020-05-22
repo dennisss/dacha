@@ -119,8 +119,8 @@ impl CertificateRegistry {
 	/// NOTE: This does not support looking up the parent of a self-signed cert.
 	pub fn lookup_parent(&self, cert: &Certificate) -> Result<Option<Arc<Certificate>>> {
 		if cert.self_issued()? {
-			return Err(
-				"Trying to lookup parent of self-issued certificate".into());
+			return Err(err_msg(
+				"Trying to lookup parent of self-issued certificate"));
 		}
 
 		let issuer = NameKey::from(&cert.raw.tbsCertificate.issuer);
@@ -135,17 +135,17 @@ impl CertificateRegistry {
 		// and either be self-signed or have an authority key
 		let authority_key = match cert.authority_key_id()? {
 			Some(v) => v,
-			None => { return Err("No authority key".into()); }
+			None => { return Err(err_msg("No authority key")); }
 		};
 
 		let authority_key_id: &[u8] = match &authority_key.keyIdentifier {
 			Some(v) => &v,
-			None => { return Err("Authority key missing id".into()); }
+			None => { return Err(err_msg("Authority key missing id")); }
 		};
 
 		if authority_key.authorityCertIssuer.is_some() ||
 		   authority_key.authorityCertSerialNumber.is_some() {
-			return Err("authorityCertIssuer|authorityCertSerialNumber not supported".into());
+			return Err(err_msg("authorityCertIssuer|authorityCertSerialNumber not supported"));
 		}
 
 		for c in certs {
@@ -180,11 +180,11 @@ impl CertificateRegistry {
 
 		for c2 in list.iter() {
 			if c.serial_number() == c2.serial_number() {
-				return Err("Cert already exists with same serial number".into());
+				return Err(err_msg("Cert already exists with same serial number"));
 			}
 
 			if c.subject_key_id() == c2.subject_key_id() {
-				return Err("Cert already exists with same subject key id".into());
+				return Err(err_msg("Cert already exists with same subject key id"));
 			}
 		}
 
@@ -205,13 +205,13 @@ impl CertificateRegistry {
 				let c = c_ref.as_ref();
 				if c.self_issued()? {
 					if !trusted {
-						return Err("Self-signed untrusted signature".into());
+						return Err(err_msg("Self-signed untrusted signature"));
 					}
 
 					let good = SKIP_TRUSTED_VERIFICATION ||
 						c.verify_child_signature(&c, self)?;
 					if !good {
-						return Err("Self-signed invalid".into());
+						return Err(err_msg("Self-signed invalid"));
 					}
 				} else {
 					let parent_ref = match self.lookup_parent(c)? {
@@ -228,24 +228,22 @@ impl CertificateRegistry {
 					let good = parent.verify_child_signature(&c, self)?;
 
 					if !good {
-						return Err("Not a validate signature".into());
+						return Err(err_msg("Not a validate signature"));
 					}
 
 					if c.validity.not_before < parent.validity.not_before ||
 					   c.validity.not_after > parent.validity.not_after {
-						return Err("Child cert valid longer than parent".into());
+						return Err(err_msg("Child cert valid longer than parent"));
 					}
 				}
 
 				changed = true;
-				self.insert(c_ref);
+				self.insert(c_ref)?;
 			}
 
 			if !changed {
-				return Err(
-					"Appending certificates with unknown parent in chain."
-					.into()
-				);
+				return Err(err_msg(
+					"Appending certificates with unknown parent in chain."));
 			}
 		}
 
@@ -302,7 +300,7 @@ impl CertificateExtensions {
 			// It is illegal for certificates to contain duplicate
 			// extensions.
 			if map.contains_key(&id) {
-				return Err("Extension with duplicate id".into());
+				return Err(err_msg("Extension with duplicate id"));
 			}
 
 			map.insert(id, val);
@@ -350,12 +348,12 @@ impl Certificate {
 	fn new(raw: PKIX1Explicit88::Certificate, plaintext: Bytes)
 	-> Result<Self> {
 //		if raw.tbsCertificate.version != PKIX1Explicit88::Version::v3 {
-//			return Err("Unsupported version".into());
+//			return Err(err_msg("Unsupported version"));
 //		}
 
 		if !der_eq(&raw.signatureAlgorithm,
 				   &raw.tbsCertificate.signature) {
-			return Err("Mismatching signature algorithms".into());
+			return Err(err_msg("Mismatching signature algorithms"));
 		}
 
 		let validity = Validity {
@@ -366,7 +364,7 @@ impl Certificate {
 		};
 
 		if validity.not_after < validity.not_before {
-			return Err("Out of order validity range".into());
+			return Err(err_msg("Out of order validity range"));
 		}
 
 		let extensions = CertificateExtensions::from(
@@ -393,7 +391,7 @@ impl Certificate {
 
 		for entry in &pem.entries {
 			if entry.label.as_ref() != PEM_CERTIFICATE_LABEL {
-				return Err("PEM contains a non-certificate".into());
+				return Err(err_msg("PEM contains a non-certificate"));
 			}
 
 			let c = Self::read(entry.to_binary()?.into())?;
@@ -475,12 +473,12 @@ impl Certificate {
 		   !der_eq(&pk.algorithm.parameters,
 		   		   &Some(PKIX1_PSS_OAEP_Algorithms::NULLPARAMETERS)) {
 			return Err(
-				format!("Wrong public key info: {:?}", pk.algorithm).into());
+				format_err!("Wrong public key info: {:?}", pk.algorithm));
 		}
 
 		let data = &pk.subjectPublicKey.data;
 		if data.len() % 8 != 0 {
-			return Err("Not complete bytes".into());
+			return Err(err_msg("Not complete bytes"));
 		}
 
 		Any::from(Bytes::from(data.as_ref()))?.parse_as()
@@ -490,12 +488,12 @@ impl Certificate {
 		-> Result<(EllipticCurveGroup, Bytes)> {
 		let pk = &self.raw.tbsCertificate.subjectPublicKeyInfo;
 		if pk.algorithm.algorithm != PKIX1Algorithms2008::ID_ECPUBLICKEY {
-			return Err("Wrong public key type".into());
+			return Err(err_msg("Wrong public key type"));
 		}
 
 		let params = match &pk.algorithm.parameters {
 			Some(any) => any.parse_as::<PKIX1Algorithms88::EcpkParameters>()?,
-			None => { return Err("No EC params specified".into()); }
+			None => { return Err(err_msg("No EC params specified")); }
 		};
 
 		let group = match params {
@@ -511,16 +509,16 @@ impl Certificate {
 				} else if id == PKIX1Algorithms2008::SECP521R1 {
 					EllipticCurveGroup::secp521r1()
 				} else {
-					return Err("Unsupported named curve".into());
+					return Err(err_msg("Unsupported named curve"));
 				}
 			},
 			PKIX1Algorithms88::EcpkParameters::implicitlyCA(_) => {
 				let ca = reg.lookup_parent(self)?
-					.ok_or(Error::from("Unknown parent"))?;
+					.ok_or(err_msg("Unknown parent"))?;
 				let (group, _) = ca.ec_public_key(reg)?;
 				group
 			},
-			_ => { return Err("Unsupported curve format".into()); }
+			_ => { return Err(err_msg("Unsupported curve format")); }
 		};
 
 		let point = PKIX1Algorithms2008::ECPoint::from(
@@ -549,18 +547,18 @@ impl Certificate {
 							  reg: &CertificateRegistry) -> Result<bool> {
 		if let Some(key_usage) = self.key_usage()? {
 			if !key_usage.keyCertSign().unwrap_or(false) {
-				return Err("KeyUsage: Can't use certificate to sign another".into());
+				return Err(err_msg("KeyUsage: Can't use certificate to sign another"));
 			}
 		}
 		// TODO: Must also check path length (and that each child is a subset
 		// of the parent path length.
 		if let Some(constraints) = self.basic_constraints()? {
 			if !constraints.cA {
-				return Err("basicConstraints not allowing CA usage".into());
+				return Err(err_msg("basicConstraints not allowing CA usage"));
 			}
 		} else if self.raw.tbsCertificate.version == PKIX1Explicit88::Version::v3 {
 			// TODO: Sometimes in root certificates this doesn't apply?
-//			return Err("Missing basicConstraints on CA certificate".into());
+//			return Err(err_msg("Missing basicConstraints on CA certificate"));
 		}
 
 		let plaintext = &child.plaintext;
@@ -593,7 +591,7 @@ impl Certificate {
 
 		let check_ecdsa = |hasher: &mut dyn Hasher| {
 			if child.raw.signatureAlgorithm.parameters.is_some() {
-				return Err("Did not expect any params".into());
+				return Err(err_msg("Did not expect any params"));
 			}
 
 			let (group, point) = self.ec_public_key(reg)?;
@@ -604,7 +602,7 @@ impl Certificate {
 
 		let check_null_params = || -> Result<()> {
 			if !der_eq(&child.raw.signatureAlgorithm.parameters, &Null::new()) {
-				return Err("Expected null params for algorithm".into());
+				return Err(err_msg("Expected null params for algorithm"));
 			}
 			Ok(())
 		};
@@ -674,7 +672,7 @@ impl Certificate {
 			return check_ecdsa(&mut hasher);
 		}
 
-		Err(format!("Unsupported signature algorithm {:?}", alg).into())
+		Err(format_err!("Unsupported signature algorithm {:?}", alg))
 	}
 
 	pub fn valid_now(&self) -> bool {

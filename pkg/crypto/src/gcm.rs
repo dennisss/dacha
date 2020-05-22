@@ -219,7 +219,7 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
 				   mut plain: &mut Vec<u8>) -> Result<()> {
 		// Must have enough bytes for the tag.
 		if auth_cipher.len() < BLOCK_SIZE {
-			return Err("Invalid ciphertext size".into());
+			return Err(err_msg("Invalid ciphertext size"));
 		}
 
 		let (cipher, tag) = auth_cipher.split_at(auth_cipher.len() - BLOCK_SIZE);
@@ -250,7 +250,7 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
 
 		if !constant_eq(tag, &expected_tag) {
 			println!("{:?}\n{:?}", tag, expected_tag);
-			return Err("Incorrect tag".into());
+			return Err(err_msg("Incorrect tag"));
 		}
 
 		Ok(())

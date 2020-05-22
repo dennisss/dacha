@@ -2,24 +2,19 @@
 name = "raft"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
-
+edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
+crypto = { path = "../crypto" }
+http = { path = "../http" }
 serde = "1.0"
 serde_derive = "1.0"
 rmp-serde = "0.13.7"
-hyper = "0.12.19"
-futures = "0.1.25"
-futures-await = "0.1.1"
 rand = "0.6.1"
-bytes = { git = "https://github.com/tokio-rs/bytes", features = ["serde"] }
+bytes = { git = "https://github.com/tokio-rs/bytes" }
 fs2 = "0.4.3"
-error-chain = "0.12.1"
 ctrlc = "3.1.1"
-tokio = "0.1.19"
 libc = "0.2"
-clap = "2.32.0"
 byteorder = "1.3.2"
-crc32c = "0.4.0"
 bson = "0.13.0"

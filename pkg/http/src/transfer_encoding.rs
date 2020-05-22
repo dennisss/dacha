@@ -1,8 +1,8 @@
+use common::errors::*;
 use crate::header_parser::*;
 use crate::body::*;
 use crate::chunked::*;
 use crate::reader::*;
-use common::errors::*;
 
 
 pub fn get_transfer_encoding_body(
@@ -28,7 +28,7 @@ pub fn get_transfer_encoding_body(
 
 		} else {
 			// NOTE: Chunked is not handled here as it is only allow to occur once at the end (which is handled above).
-			return Err(format!("Unknown coding: {}", coding.name()).into());
+			return Err(format_err!("Unknown coding: {}", coding.name()));
 		}
 	}
 

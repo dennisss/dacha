@@ -111,7 +111,7 @@ impl AESBlockCipher {
 			} else if key.len() == 32 {
 				Self::aes256_round_keys(key)
 			} else {
-				return Err("Unsupported key length".into());
+				return Err(err_msg("Unsupported key length"));
 			};
 
 		let round_keys_dec = {

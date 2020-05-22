@@ -1,5 +1,5 @@
 
 [build]
 # Needed to make hashing remotely efficient
-rustflags="-A warnings"
+rustflags="-C target-cpu=native -A warnings -D unused_must_use"
 #rustflags = "-C target-cpu=native -A warnings" # -C prefer-dynamic

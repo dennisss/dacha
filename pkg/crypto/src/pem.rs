@@ -44,7 +44,7 @@ impl PEMEntry {
 		// TODO: It should be a fatal error if we got this far but didn't
 		// complete it.
 		let value = c.next(take_until(map(end_line, |lbl| {
-			if lbl != label { return Err(Error::from("Wrong ending")); }
+			if lbl != label { return Err(err_msg("Wrong ending")); }
 			Ok(())
 		})))?;
 		c.next(end_line)?;
@@ -74,10 +74,10 @@ impl PEMEntry {
 // TODO: Change this to a regular expression.
 // Parses '\n', '\r', or '\r\n'.
 parser!(strict_line_ending<()> => seq!(c => {
-	let cr = c.next(opt(one_of("\r")))?;
-	let nl = c.next(opt(one_of("\n")))?;
+	let cr = c.next(opt(one_of(b"\r")))?;
+	let nl = c.next(opt(one_of(b"\n")))?;
 	if cr.is_none() && nl.is_none() {
-		return Err("Invalid line ending".into())
+		return Err(err_msg("Invalid line ending"))
 	}
 
 	Ok(())
@@ -87,7 +87,7 @@ parser!(line_ending<()> => alt!(
 	strict_line_ending,
 	// Allow hitting the end of the file.
 	|input: Bytes| -> ParseResult<()> {
-		if input.len() > 0 { Err("Not at end".into()) } else { Ok(((), input)) }
+		if input.len() > 0 { Err(err_msg("Not at end")) } else { Ok(((), input)) }
 	}
 ));
 

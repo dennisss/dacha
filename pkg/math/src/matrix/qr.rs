@@ -10,12 +10,13 @@ use crate::matrix::householder::*;
 /// upper triangular matrix
 /// 
 /// NOTE: The decomposition is only valid when M >= N
-pub struct QR<T: ScalarElementType, M: Dimension, N: Dimension> where (M, M): NewStorage<T>, (M, N): NewStorage<T> {
+pub struct QR<T: ScalarElementType, M: Dimension, N: Dimension>
+	where (M, M): NewStorage<T>, (M, N): NewStorage<T> {
 	pub q: MatrixNew<T, M, M>,
 	pub r: MatrixNew<T, M, N>
 }
 
-impl<T: ScalarElementType + ToString + From<u32> + From<i32>, M: Dimension, N: Dimension>
+impl<T: ScalarElementType + ToString + From<f32> + From<u32> + From<i32>, M: Dimension, N: Dimension>
 QR<T, M, N>
 where (M, M): NewStorage<T>, (M, N): NewStorage<T>, (N, M): NewStorage<T>,
 	  (M, U1): NewStorage<T>, (U1, M): NewStorage<T> {
@@ -96,9 +97,7 @@ where (M, M): NewStorage<T>, (M, N): NewStorage<T>, (N, M): NewStorage<T>,
 				.copy_from(&h);
 
 			q = q * h_full.transpose();
-			r = h_full * r;
-
-			println!("{:?}", r);
+			r = &h_full * r;
 		}
 
 		Self { q, r }
@@ -114,8 +113,6 @@ fn proj<T: ScalarElementType, N: Dimension, D: StorageType<T>,
 }
 
 
-// mxm   mxm
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -129,13 +126,27 @@ mod tests {
 		]);
 
 		let qr = QR::gram_schmidt(&m);
-		println!("Q: {:?}\nR:{:?}", qr.q, qr.r);
 
-		println!("Q*R: {:?}", qr.q * qr.r);
+		let expected_q = Matrix3d::from_slice(&[
+			-0.857143, 0.394286, 0.331429,
+			-0.428571,  -0.902857, -0.034286,
+			0.285714, -0.171429, 0.942857
+		]).cwise_mul(-1.0);
+
+		let expected_r = Matrix3d::from_slice(&[
+			-14.0, -21.0,  14.0,
+			0.0, -175.0, 70.0,
+			0.0, 0.0, -35.0
+		]).cwise_mul(-1.0);
+
+		assert_abs_diff_eq!(qr.q, expected_q, epsilon = 1e-5);
+		assert_abs_diff_eq!(qr.r, expected_r, epsilon = 1e-5);
 	}
 
 	#[test]
 	fn qr_householder() {
+		// TODO: Dedup values with above test case
+
 		let m = Matrix3d::from_slice(&[
 			12.0, -51.0, 4.0,
 			6.0, 167.0, -68.0,
@@ -144,9 +155,67 @@ mod tests {
 
 		let qr = QR::householder(&m);
 
-		// TODO: Should start checking for approximate equivalence.
-		println!("Q: {:?}\nR:{:?}", qr.q, qr.r);
+		let expected_q = Matrix3d::from_slice(&[
+			-0.857143, 0.394286, 0.331429,
+			-0.428571,  -0.902857, -0.034286,
+			0.285714, -0.171429, 0.942857
+		]).cwise_mul(1.0);
 
-		println!("Q*R: {:?}", qr.q * qr.r);
+		let expected_r = Matrix3d::from_slice(&[
+			-14.0, -21.0,  14.0,
+			0.0, -175.0, 70.0,
+			0.0, 0.0, -35.0
+		]).cwise_mul(1.0);
+
+		assert_abs_diff_eq!(qr.q, expected_q, epsilon = 1e-5);
+		assert_abs_diff_eq!(qr.r, expected_r, epsilon = 1e-5);
 	}
+
+	#[test]
+	fn qr_householder2() {
+		let m = MatrixXd::from_slice_with_shape(4, 4, &[
+			2.0, 0.0, 0.0, 0.0,
+			0.0, 1.0, 0.0, 0.0,
+			1e-5, 0.0, 1.0, 0.0,
+			0.0, 0.0, 0.0, 1.0
+
+//			52.0, 30.0, 49.0, 28.0,
+//			30.0, 50.0, 8.0, 44.0,
+//			49.0, 8.0, 46.0, 16.0,
+//			28.0, 44.0, 16.0, 22.0
+		]);
+
+		let qr = QR::householder(&m);
+
+		println!("QQ: {:?}", qr.q);
+		println!("RR: {:?}", qr.r);
+
+
+	}
+
+	/*
+	m =
+
+	   52   30   49   28
+	   30   50    8   44
+	   49    8   46   16
+	   28   44   16   22
+
+	octave:2> [q, r] = qr(m)
+	q =
+
+	  -0.63110   0.12621   0.56665  -0.51448
+	  -0.36410  -0.62926  -0.58771  -0.35504
+	  -0.59469   0.55421  -0.44903   0.37089
+	  -0.33982  -0.53005   0.36315   0.68680
+
+	r =
+
+	  -82.39539  -56.84784  -66.62994  -50.68245
+		0.00000  -46.56525   18.16308  -26.94739
+		0.00000    0.00000    8.21908   -9.18850
+		0.00000    0.00000    0.00000   -8.98326
+
+	*/
+
 }

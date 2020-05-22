@@ -57,7 +57,7 @@ impl DB {
 		};
 
 		if nrows != 1 {
-			return Err("Failed to insert new param".into());
+			return Err(err_msg("Failed to insert new param"));
 		}
 
 		Ok(())
@@ -331,7 +331,7 @@ impl DB {
 
 fn expect_changed(n: usize) -> Result<()> {
 	if n != 1 {
-		Err("Nothing modified".into())
+		Err(err_msg("Nothing modified"))
 	}
 	else {
 		Ok(())

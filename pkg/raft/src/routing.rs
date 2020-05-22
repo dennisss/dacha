@@ -1,14 +1,16 @@
-use super::protos::*;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::SystemTime;
 use std::hash::{Hash, Hasher};
 use std::borrow::Borrow;
+use common::async_std::sync::Mutex;
+use super::protos::*;
 
 
 pub type ClusterId = u64;
 
-/// Describes a single server in the cluster using a unique identifier and any information needed to contact it (which may change over time)
+/// Describes a single server in the cluster using a unique identifier and any
+/// information needed to contact it (which may change over time)
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ServerDescriptor {
 	pub id: ServerId,
@@ -36,12 +38,12 @@ impl Borrow<ServerId> for ServerDescriptor {
 }
 
 impl ServerDescriptor {
-
 	pub fn to_string(&self) -> String {
 		self.id.to_string() + " " + &self.addr
 	}
 
-	pub fn parse(val: &str) -> std::result::Result<ServerDescriptor, &'static str> {
+	pub fn parse(val: &str)
+		-> std::result::Result<ServerDescriptor, &'static str> {
 		let parts = val.split(' ').collect::<Vec<_>>();
 
 		if parts.len() != 2 {
@@ -76,24 +78,31 @@ pub struct Announcement {
 }
 
 
-/// Represents a single actor in the cluster trying to send/receive messages to/from other agents in the cluster
-/// TODO: Eventually refactor to make of the invalid states of this unrepresentable
+/// Represents a single actor in the cluster trying to send/receive messages
+/// to/from other agents in the cluster
+/// TODO: Eventually refactor to make of the invalid states of this
+/// unrepresentable
 pub struct NetworkAgent {
 
 	/// Identifies the cluster that these routes and server ids are for
-	/// Naturally server ids / addresses are meaningless in a different cluster / ip network, so this ensures metadata isn't being shared between foreign clusters unintentionally
+	/// Naturally server ids / addresses are meaningless in a different cluster
+	/// / ip network, so this ensures metadata isn't being shared between
+	/// foreign clusters unintentionally
 	/// NOTE: Once set, this should never get unset
 	pub cluster_id: Option<ClusterId>,
 
-	/// Specified the route to the current server (if we are not acting purely in client mode)
+	/// Specified the route to the current server (if we are not acting purely
+	/// in client mode)
 	/// NOTE: May be set only if there is also a cluster_id set
 	pub identity: Option<ServerDescriptor>,
 
 	/// All information known about other servers in this network/cluster
-	/// For each server this stores the last known location at which it can be reached
+	/// For each server this stores the last known location at which it can be
+	/// reached
 	/// 
 	/// NOTE: Contains data only if a cluster_id is also set
-	/// TODO: Also support an empty record if we believe that the data is invalid (but when we don't won't to clean it up because of )
+	/// TODO: Also support an empty record if we believe that the data is
+	/// invalid (but when we don't won't to clean it up because of )
 	routes: HashMap<ServerId, Route>
 }
 
@@ -139,7 +148,9 @@ impl NetworkAgent {
 
 	pub fn apply(&mut self, an: &Announcement) {
 
-		// TODO: Possibly some consideration for a minimum last_used time if the route would just get immediately garbage collected upon being added
+		// TODO: Possibly some consideration for a minimum last_used time if
+		// the route would just get immediately garbage collected upon being
+		// added
 
 		for r in an.routes.iter() {
 			// If we are a server, never add ourselves to our list
@@ -149,7 +160,8 @@ impl NetworkAgent {
 				}
 			}
 
-			// Add this route if it doesn't already exist or is newer than our old entry
+			// Add this route if it doesn't already exist or is newer than our
+			// old entry
 			let insert =
 				if let Some(old) = self.routes.get(&r.desc.id) {
 					old.last_used < r.last_used

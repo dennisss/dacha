@@ -1,10 +1,10 @@
-use common::errors::*;
-use super::ascii::*;
-use super::uri_parser::*; // TODO: Cyclic reference
-use bytes::Bytes;
 use std::net::ToSocketAddrs;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use bytes::Bytes;
+use common::errors::*;
+use parsing::ascii::*;
+use crate::uri_parser::*; // TODO: Cyclic reference
 
 
 #[derive(Debug)]
@@ -47,7 +47,7 @@ impl std::str::FromStr for Uri {
 		let (v, rest) = parse_uri(Bytes::from(s))?;
 		if rest.len() != 0 {
 			let reststr = String::from_utf8(rest.to_vec()).unwrap();
-			return Err(format!("Extra bytes after uri: '{}'.", reststr).into());
+			return Err(format_err!("Extra bytes after uri: '{}'.", reststr));
 		}
 
 		Ok(v)
@@ -84,13 +84,13 @@ impl std::convert::TryFrom<IPAddress> for IpAddr {
 				IpAddr::V4(Ipv4Addr::new(v[0], v[1], v[2], v[3]))
 			},
 			IPAddress::V6(v) => {
-				return Err("IPV6 not supported".into());
+				return Err(err_msg("IPV6 not supported"));
 				// TODO: This is wrong. Must parse u16's
 				// IpAddr::V6(Ipv6Addr::new(v[0], v[1], v[2], v[3],
 				// 						 v[4], v[5], v[6], v[7]))
 			},
 			IPAddress::VFuture(_) => {
-				return Err("Future ip address not supported".into());
+				return Err(err_msg("Future ip address not supported"));
 			}
 		})
 	}

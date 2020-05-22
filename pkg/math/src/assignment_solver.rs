@@ -23,10 +23,11 @@ impl std::ops::Add for Entry {
 enum Step { S1, S2, S3, S4, S5, S6, Done }
 
 
-// Solves the optimal assignment problem.
-// Internally this uses the Munkres (aka Hungarian) Algorithm
-//
-// See http://csclab.murraystate.edu/~bob.pilgrim/445/munkres.html for a great reference.
+/// Solves the optimal assignment problem.
+/// Internally this uses the Munkres (aka Hungarian) Algorithm
+///
+/// See http://csclab.murraystate.edu/~bob.pilgrim/445/munkres.html for a great
+/// reference.
 pub struct AssignmentSolver {
 	epsilon: f64,
 	W: MatrixXd, // The square working matrix

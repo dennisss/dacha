@@ -296,7 +296,7 @@ impl Deflater {
 		for atom in code_len_atoms.into_iter() {
 			match atom {
 				CodeLengthAtom::Symbol(s) => {
-					code_len_encoder.write_symbol(s as usize, strm);
+					code_len_encoder.write_symbol(s as usize, strm)?;
 				},
 				CodeLengthAtom::ExtraBits(v) => {
 					strm.write_bitvec(&v)?;
@@ -355,7 +355,7 @@ impl Deflater {
 fn write_uncompressed_block<W: BitWrite + Write>(data: &[u8], strm: &mut W)
 	-> Result<()> {
 	if data.len() > MAX_UNCOMPRESSED_BLOCK_SIZE {
-		return Err("Data too long for uncompressed block".into());
+		return Err(err_msg("Data too long for uncompressed block"));
 	}
 
 	let l = data.len() as u16;
@@ -552,7 +552,7 @@ fn append_dynamic_lens(lens: &[usize]) -> Result<Vec<CodeLengthAtom>> {
 	// We can only encode code lengths up to 15.
 	for len in lens {
 		if *len > MAX_LITLEN_CODE_LEN {
-			return Err("Length is too long".into());
+			return Err(err_msg("Length is too long"));
 		}
 	}
 

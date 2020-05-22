@@ -30,7 +30,7 @@ macro_rules! tls_enum_u8 {
 			}
 
 			parser!(pub parse<Self> => {
-				map(be_u8, |v| Self::from_u8(v))
+				map(as_bytes(be_u8), |v| Self::from_u8(v))
 			});
 
 			pub fn serialize(&self, out: &mut Vec<u8>) {

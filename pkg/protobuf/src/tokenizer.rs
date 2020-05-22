@@ -10,6 +10,8 @@
 // proto3 files which only differ in their higher level parser implemented on top
 // of tokens. 
 
+use common::errors::*;
+use parsing::*;
 
 // TODO: Implement parser on ascii strings to make more efficient indexing?
 
@@ -21,34 +23,29 @@ pub enum Token {
 	Integer(usize),
 	Float(f64),
 	String(String),
-	Symbol(char),
-	Done // End of file
+	Symbol(char)
 }
 
-pub struct Tokenizer<'a> {
-	data: &'a str
-}
+impl Token {
+	parser!(pub parse<&str, Self> => alt!(
+		whitespace, comment,
+		map(ident, |s| Self::Identifier(s)),
+		map(intLit, |i| Self::Integer(i)),
+		map(floatLit, |f| Self::Float(f)),
+		map(strLit, |s| Self::String(s)),
+		symbol
+	));
 
-impl Tokenizer<'_> {
-	pub fn new(data: &str) -> Tokenizer {
-		Tokenizer { data }
-	}
-
-	pub fn next(&mut self) -> Option<Token> {
-		// TODO: May also fail
-
-		match token(self.data) {
-			Ok((rest, tok)) => {
-				self.data = rest;
-				return Some(tok);
-			},
-			Err(e) => {
-				println!("{:?}", e);
-				// Should return eof if all done
-				return None;
+	parser!(pub parse_filtered<&str, Self> => seq!(c => {
+		c.next(many(and_then(Self::parse, |tok| {
+			match tok {
+				Self::Whitespace | Self::Comment => Ok(()),
+				_ => Err(err_msg("Not whitespace/comment"))
 			}
-		};
-	}
+		})))?;
+
+		c.next(Self::parse)
+	}));
 }
 
 // letter = "A" … "Z" | "a" … "z"
@@ -62,109 +59,139 @@ pub fn octalDigit(c: char) -> bool { c.is_digit(8) }
 // hexDigit     = "0" … "9" | "A" … "F" | "a" … "f"
 pub fn hexDigit(c: char) -> bool { c.is_ascii_hexdigit() }
 
+// NOTE: Only public to be used in the textproto format.
 // ident = letter { letter | decimalDigit | "_" }
-named!(ident<&str, String>, do_parse!(
-	head: take_while_m_n!(1, 1, |c: char|
-		c.is_alphabetic() || c == '_'
-	) >>
-	rest: take_while!(|c: char| {
-		letter(c) || decimalDigit(c) || c == '_'
-	}) >>
-	(String::from(head) + rest)
-));
+parser!(pub ident<&str, String> => {
+	map(slice(seq!(c => {
+		c.next(like(|c: char| { c.is_alphabetic() || c == '_' }))?;
+		c.next(take_while(|c: char| {
+			letter(c) || decimalDigit(c) || c == '_'
+		}))?;
+		Ok(())
+	})), |s: &str| s.to_owned())
+});
 
+// NOTE: Only public to be used in the textproto format.
 // intLit = decimalLit | octalLit | hexLit
-named!(intLit<&str, usize>, alt_complete!(
-	decimalLit | octalLit | hexLit
+parser!(pub intLit<&str, usize> => alt!(
+	decimalLit, octalLit, hexLit
 ));
 
 // decimalLit = ( "1" … "9" ) { decimalDigit }
-named!(decimalLit<&str, usize>, do_parse!(
-	peek!(take_while_m_n!(1, 1, |c: char| c != '0')) >>
-	digits: take_while1!(decimalDigit) >>
-	(usize::from_str_radix(digits, 10).unwrap())
-));
+parser!(decimalLit<&str, usize> => seq!(c => {
+	c.next(peek(like(|c| c != '0')))?;
+	let digits = c.next(take_while1(|v| decimalDigit(v)))?;
+
+	Ok(usize::from_str_radix(digits, 10).unwrap())
+}));
 
 // octalLit   = "0" { octalDigit }
-named!(octalLit<&str, usize>, do_parse!(
-	char!('0') >>
-	digits: take_while!(octalDigit) >>
-	(usize::from_str_radix(digits, 8).unwrap_or(0))
-));
-
+parser!(octalLit<&str, usize> => seq!(c => {
+	c.next(tag("0"))?;
+	let digits = c.next(take_while(|v| octalDigit(v as char)))?;
+	Ok(usize::from_str_radix(digits, 8).unwrap_or(0))
+}));
 
 // hexLit     = "0" ( "x" | "X" ) hexDigit { hexDigit } 
-named!(hexLit<&str, usize>, do_parse!(
-	char!('0') >> one_of!("xX") >>
-	digits: take_while1!(hexDigit) >>
-	(usize::from_str_radix(digits, 16).unwrap())
-));
+parser!(hexLit<&str, usize> => seq!(c => {
+	c.next(tag("0"))?;
+	c.next(one_of("xX"))?;
+	let digits = c.next(take_while1(|v| hexDigit(v)))?;
+	Ok(usize::from_str_radix(digits, 16).unwrap())
+}));
 
 // TODO: Is this allowed to start with a '0' character?
 // floatLit = ( decimals "." [ decimals ] [ exponent ] | decimals exponent | "."decimals [ exponent ] ) | "inf" | "nan"
-named!(floatLit<&str, f64>, alt_complete!(
-	do_parse!(
-		a: decimals >> char!('.') >> b: opt!(decimals) >> e: opt!(exponent) >>
-		((String::from(a) + "." + b.unwrap_or("0") + "e" + e.unwrap_or(String::new()).as_str()).as_str().parse::<f64>().unwrap())
-	) |
+parser!(pub floatLit<&str, f64> => alt!(
+	seq!(c => {
+		let a = c.next(decimals)?;
+		c.next(tag("."))?;
+		let b = c.next(opt(decimals))?;
+		let e = c.next(opt(exponent))?;
 
-	map!(tag!("inf"), |_| std::f64::INFINITY) | // < Negative infinity?
-	map!(tag!("nan"), |_| std::f64::NAN)
+		Ok((String::from(a) + "." + &b.unwrap_or(String::from("0")) + "e"
+		+ e.unwrap_or(String::new()).as_str()).as_str().parse::<f64>().unwrap())
+	}),
+
+	map(tag("inf"), |_| std::f64::INFINITY), // < Negative infinity?
+	map(tag("nan"), |_| std::f64::NAN)
 ));
 
 // decimals = decimalDigit { decimalDigit }
-named!(decimals<&str, &str>, take_while1!(decimalDigit));
+parser!(decimals<&str, String> => map(
+	take_while1(|c| decimalDigit(c)),
+	|s: &str| s.to_owned()));
 
 // exponent = ( "e" | "E" ) [ "+" | "-" ] decimals 
-named!(exponent<&str, String>, do_parse!(
-	one_of!("eE") >>
-	sign: one_of!("+-") >>
-	num: decimals >>
-	({ let mut s = String::new(); s.push(sign); s + num })
-));
+parser!(exponent<&str, String> => seq!(c => {
+	c.next(one_of("eE"))?;
+	let sign = c.next(one_of("+-"))? as char;
+	let num = c.next(decimals)?;
+	let mut s = String::new();
+	s.push(sign);
+	Ok(s + &num)
+}));
 
 // strLit = ( "'" { charValue } "'" ) | ( '"' { charValue } '"' )
-named!(strLit<&str, String>, alt_complete!(
-	do_parse!(
-		q: quote >>
-		val: many0!(charValue) >>
-		char!(q) >>
-		({
-			let mut s = String::new();
-			for c in val {
-				s.push(c);
-			}
+parser!(pub strLit<&str, String> => seq!(c => {
+	let q = c.next(quote)?;
+	let val = c.next(many(charValue))?;
+	c.next(atom(q))?;
 
-			s
-		})
-	)
-));
+	let mut s = String::new();
+	for c in val {
+		s.push(c);
+	}
+
+	Ok(s)
+}));
 
 // charValue = hexEscape | octEscape | charEscape | /[^\0\n\\]/
-named!(charValue<&str, char>, alt_complete!(
-	hexEscape | octEscape | charEscape |
+parser!(charValue<&str, char> => alt!(
+	hexEscape, octEscape, charEscape,
 
 	// NOTE: Can't be '"' because of strLit
-	map!(take_while_m_n!(1, 1, |c: char| c != '"' && c != '\0' && c != '\n' && c != '\\'), |s| s.chars().next().unwrap())
+	like(|c| c != '"' && c != '\0' && c != '\n' && c != '\\')
 ));
 
 // hexEscape = '\' ( "x" | "X" ) hexDigit hexDigit
-named!(hexEscape<&str, char>, do_parse!(
-	char!('\\') >> one_of!("xX") >> digits: take_while_m_n!(2, 2, hexDigit) >>
-	(u8::from_str_radix(digits, 16).unwrap() as char)
-));
+parser!(hexEscape<&str, char> => seq!(c => {
+	c.next(tag("\\"))?;
+	c.next(one_of("xX"))?;
+	let digits = c.next(take_exact::<&str>(2))?;
+	for c in digits.chars() {
+		if !hexDigit(c) {
+			return Err(err_msg("Expected hex digit"));
+		}
+	}
+
+	Ok(u8::from_str_radix(digits, 16).unwrap() as char)
+}));
+//do_parse!(
+//	char!('\\') >> one_of!("xX") >> digits: take_while_m_n!(2, 2, hexDigit) >>
+//	(u8::from_str_radix(digits, 16).unwrap() as char)
+//));
 
 // TODO: It is possible for this to go out of bounds.
 // octEscape = '\' octalDigit octalDigit octalDigit
-named!(octEscape<&str, char>, do_parse!(
-	char!('\\') >> digits: take_while_m_n!(3, 3, octalDigit) >>
-	(u8::from_str_radix(digits, 8).unwrap() as char)
-));
+parser!(octEscape<&str, char> => seq!(c => {
+	c.next(tag("\\"))?;
+	let digits = c.next(take_exact::<&str>(3))?; // TODO: Use 'n_like'
+	for c in digits.chars() {
+		if !octalDigit(c) {
+			return Err(err_msg("Not an octal digit"));
+		}
+	}
+
+	Ok(u8::from_str_radix(digits, 8).unwrap() as char)
+}));
+
 
 // charEscape = '\' ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | '\' | "'" | '"' )
-named!(charEscape<&str, char>, do_parse!(
-	char!('\\') >> c: one_of!("abfnrtv\\'\"") >>
-	(match c {
+parser!(charEscape<&str, char> => seq!(c => {
+	c.next(tag("\\"))?;
+	let c = c.next(one_of("abfnrtv\\'\""))?;
+	Ok(match c {
 		'a' => '\x07',
 		'b' => '\x08',
 		'f' => '\x0c',
@@ -173,51 +200,47 @@ named!(charEscape<&str, char>, do_parse!(
 		't' => '\t',
 		c => c
 	})
-));
+}));
 
 // quote = "'" | '"'
-named!(quote<&str, char>, one_of!("\"'"));
+parser!(quote<&str, char> => map(one_of("\"'"), |v| v as char));
 
 
 /// Below here, none of these are in the online spec but are implemented by
 /// the standard protobuf tokenizer.
 
-named!(whitespace<&str, Token>, map!(
-	take_while1!(|c: char| c.is_whitespace()),
+parser!(whitespace<&str, Token> => map(
+	take_while1(|c: char| c.is_whitespace()),
 	|_| Token::Whitespace
 ));
 
-named!(lineComment<&str, Token>, do_parse!(
-	tag!("//") >>
-	take_while!(|c| c != '\n') >>
-	(Token::Comment)
+parser!(lineComment<&str, Token> => seq!(c => {
+	c.next(tag("//"))?;
+	c.next(take_while(|c| c != '\n'))?;
+	Ok(Token::Comment)
+}));
+
+parser!(blockComment<&str, Token> => seq!(c => {
+	c.next(tag("/*"))?;
+	c.next(take_until(tag("*/")))?;
+	c.next(tag("*/"))?;
+	Ok(Token::Comment)
+}));
+
+parser!(comment<&str, Token> => alt!(
+	lineComment, blockComment
 ));
 
-named!(blockComment<&str, Token>, do_parse!(
-	tag!("/*") >> take_until!("*/") >> tag!("*/") >>
-	(Token::Comment)
-));
+parser!(symbol<&str, Token> => seq!(c => {
+//	let c = c.next(like(|c: char| {
+//		// '/' is only used for comments. Also must be printable but not used for anything else
+//		c != '/' && !c.is_alphanumeric()
+//	}))?;
 
-named!(comment<&str, Token>, alt_complete!(
-	lineComment | blockComment
-));
+	let c = c.next(one_of(".;+-=[],{}<>()"))?;
 
-named!(symbol<&str, Token>, do_parse!(
-	c: take_while_m_n!(1, 1, |c: char| {
-		// '/' is only used for comments. Also must be printable but not used for anything else
-		c != '/' && !c.is_alphanumeric()
-	}) >>
-	(Token::Symbol(c.chars().next().unwrap()))
-));
-
-named!(token<&str, Token>, alt_complete!(
-	whitespace | comment |
-	map!(ident, |s| Token::Identifier(s)) |
-	map!(intLit, |i| Token::Integer(i)) |
-	map!(floatLit, |f| Token::Float(f)) |
-	map!(strLit, |s| Token::String(s)) |
-	symbol
-));
+	Ok(Token::Symbol(c))
+}));
 
 
 

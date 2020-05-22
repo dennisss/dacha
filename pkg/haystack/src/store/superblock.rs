@@ -47,7 +47,7 @@ impl PhysicalVolumeSuperblock {
 
 		// Because the rest of the fields all depend on using the correct version, we check that first
 		if ver != CURRENT_FORMAT_VERSION {
-			return Err("Superblock unknown format version".into());
+			return Err(err_msg("Superblock unknown format version"));
 		}
 
 		let cluster_id = cursor.read_u64::<LittleEndian>()?;
@@ -62,7 +62,7 @@ impl PhysicalVolumeSuperblock {
 		assert_eq!(cursor.position(), SUPERBLOCK_SIZE as u64);
 
 		if expected_sum != checksum {
-			return Err("Incorrect checksum in read superblock".into());
+			return Err(err_msg("Incorrect checksum in read superblock"));
 		}
 
 		Ok(PhysicalVolumeSuperblock {
@@ -77,7 +77,7 @@ impl PhysicalVolumeSuperblock {
 
 	pub fn write(&self, writer: &mut Write) -> Result<()> {
 		if (self.allocated_space / self.block_size) + 1 > (BlockOffset::max_value() as u64) {
-			return Err("Volume allocated size is too large to fit into the block offset type".into());
+			return Err(err_msg("Volume allocated size is too large to fit into the block offset type"));
 		}
 
 		let mut buf = Vec::new(); buf.reserve(SUPERBLOCK_SIZE);

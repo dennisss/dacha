@@ -4,16 +4,17 @@
 // The names of each property is defined here:
 // https://github.com/facebook/rocksdb/blob/50e470791dafb3db017f055f79323aef9a607e43/table/table_properties.cc
 
+use reflection::*;
 
-pub struct ReflectField<'a> {
-	pub tags: &'static [&'static str],
-	pub value: ReflectValue<'a>
-}
-
-pub enum ReflectValue<'a> {
-	String(&'a mut String),
-	U64(&'a mut u64)
-}
+//pub struct ReflectField<'a> {
+//	pub tags: &'static [&'static str],
+//	pub value: ReflectValue<'a>
+//}
+//
+//pub enum ReflectValue<'a> {
+//	String(&'a mut String),
+//	U64(&'a mut u64)
+//}
 
 /// TableProperties contains a bunch of read-only properties of its associated
 /// table.

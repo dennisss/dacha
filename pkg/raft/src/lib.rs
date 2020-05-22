@@ -1,46 +1,15 @@
-#![feature(proc_macro_hygiene, decl_macro, type_alias_enum_variants, generators)]
+#![feature(proc_macro_hygiene, decl_macro, type_alias_enum_variants, generators, async_closure)]
 
 #[macro_use] extern crate serde_derive;
-#[macro_use] extern crate error_chain;
 
-extern crate common;
+#[macro_use] extern crate common;
 extern crate crypto;
-extern crate futures_await as futures;
 extern crate rand;
 extern crate serde;
 extern crate rmp_serde as rmps;
-extern crate hyper;
-extern crate tokio;
 extern crate bytes;
 extern crate byteorder;
-
-
-// TODO: Will be removed in favor of common::errors 
-pub mod errors {
-	error_chain! {
-		foreign_links {
-			Io(::std::io::Error);
-			HTTP(hyper::Error);
-			Utf8(std::str::Utf8Error);
-			ParseInt(std::num::ParseIntError);
-		}
-	}
-}
-
-macro_rules! to_future {
-    ($x:block) => ({
-        match (move || $x)() {
-			Ok(v) => ok(v),
-			Err(e) => err(e)
-        }
-	})
-}
-
-macro_rules! to_future_box {
-	($x:block) => ({
-		Box::new(to_future!($x))
-	});
-}
+extern crate http;
 
 pub mod sync;
 pub mod atomic;
@@ -67,4 +36,5 @@ pub mod discovery;
 pub mod server;
 
 pub mod simple_log;
+pub mod memory_log;
 pub mod node;

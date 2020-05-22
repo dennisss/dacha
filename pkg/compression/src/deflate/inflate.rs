@@ -119,7 +119,7 @@ impl Inflater {
 		strm.load(self.input_prefix.clone())?; // TODO: Should delete the old value
 
 		if self.is_done() {
-			return Err("Already done".into());
+			return Err(err_msg("Already done"));
 		}
 
 		let mut out = OutputBuffer { buf: output, index: 0 };
@@ -127,12 +127,13 @@ impl Inflater {
 		while out.index < out.buf.len() {
 			match self.update_inner(&mut strm, &mut out) {
 				Ok(_) => {},
-				Err(Error(ErrorKind::BitIo(
-					BitIoErrorKind::NotEnoughBits), _)) => {
-					//
-					break;
-				},
-				Err(e) => { return Err(e); }
+				Err(e) => {
+					if let Some(BitIoError::NotEnoughBits) = e.downcast_ref() {
+						break;
+					}
+
+					return Err(e);
+				}
 			};
 			
 			strm.consume();
@@ -199,7 +200,7 @@ impl Inflater {
 					},
 					_ => {
 						return Err(
-							format!("Invalid BTYPE {}", header.btype).into());
+							format_err!("Invalid BTYPE {}", header.btype));
 					}
 				}
 			},
@@ -222,8 +223,7 @@ impl Inflater {
 				out.index += nread;
 
 				if nread == 0 {
-					return Err(ErrorKind::BitIo(
-						BitIoErrorKind::NotEnoughBits).into());
+					return Err(BitIoError::NotEnoughBits.into());
 				}
 
 				let new_remaining = *num_remaining - (nread as u16);
@@ -326,7 +326,7 @@ impl Inflater {
 		let len = strm.read_u16::<LittleEndian>()?;
 		let nlen = strm.read_u16::<LittleEndian>()?;
 		if len != !nlen {
-			return Err("Lengths do not match".into());
+			return Err(err_msg("Lengths do not match"));
 		}
 
 		Ok(len)
@@ -365,7 +365,7 @@ impl Inflater {
 					}
 				},
 				_ => {
-					return Err(format!("Invalid code len code {}", c).into())
+					return Err(format_err!("Invalid code len code {}", c))
 				}
 			}
 		}
@@ -397,7 +397,7 @@ impl Inflater {
 
 				// Even if we have maintained enough bytes to resolve the reference, disallow anything larger than the current window size.
 				if dist > MAX_REFERENCE_DISTANCE {
-					return Err("Distance larger than window size".into());
+					return Err(err_msg("Distance larger than window size"));
 				}
 
 				return Ok(ReadCodesResult::Reference(LenDist {
@@ -426,7 +426,7 @@ impl Inflater {
 			let r = dist - out.index;
 			if output_window.end_offset() -
 				output_window.start_offset() < r {
-				return Err("Not enough bytes in window".into());
+				return Err(err_msg("Not enough bytes in window"));
 			}
 
 			// Copy from output window.

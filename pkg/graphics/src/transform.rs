@@ -47,7 +47,7 @@ impl Default for Camera {
 	fn default() -> Self {
 		Self {
 			lights: vec![],
-			view: Matrix4f::zero(),
+			view: Matrix4f::identity(),
 			proj: Matrix4f::identity(),
 			transform: Matrix4f::identity(),
 			position: Vector3f::zero(),

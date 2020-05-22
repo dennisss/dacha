@@ -32,14 +32,14 @@ impl CompressionMethod {
 			8 => {
 				let size = 1 << (cinfo + WINDOW_LOG_OFFSET) as usize;
 				if size > 32768 {
-					return Err("Window size too large for deflate".into());
+					return Err(err_msg("Window size too large for deflate"));
 				}
 
 				CompressionMethod::Deflate(DeflateInfo {
 					window_size: size
 				})
 			},
-			_ => { return Err("Unknown compression method".into()); }
+			_ => { return Err(err_msg("Unknown compression method")); }
 		})
 	}
 }
@@ -61,7 +61,7 @@ impl TryFrom<u8> for CompressionLevel {
 			2 => CompressionLevel::Default,
 			3 => CompressionLevel::Slowest,
 			// NOTE: Will never happen as we will always use a 4 bit integer.
-			_ => { return Err("Invalid compression level".into()); }
+			_ => { return Err(err_msg("Invalid compression level")); }
 		})
 	}
 }
@@ -80,7 +80,7 @@ pub fn read_zlib(mut reader: &mut dyn Read) -> Result<Vec<u8>> {
 	let cmf = header[0];
 	let flg = header[1];
 	if ((cmf as usize)*256 + (flg as usize)) % 31 != 0 {
-		return Err("Invalid header bytes".into());
+		return Err(err_msg("Invalid header bytes"));
 	}
 
 	let compression_method = CompressionMethod::decode(cmf)?;
@@ -104,7 +104,7 @@ pub fn read_zlib(mut reader: &mut dyn Read) -> Result<Vec<u8>> {
 
 	let checksum = reader.read_u32::<BigEndian>()?;
 	if checksum != actual_checksum {
-		return Err("Invalid checksum".into());
+		return Err(err_msg("Invalid checksum"));
 	}
 
 	Ok(out)

@@ -15,9 +15,6 @@ pkix = { path = "../../third_party/pkix" }
 bytes = { git = "https://github.com/tokio-rs/bytes" }
 byteorder = "1.3.2"
 hex = "0.3.2"
-async-std = "1.0.1"
-futures-preview = "0.3.0-alpha.17"
-async-trait = "0.1.13"
 generic-array = "0.13.2"
 typenum = "1.11.2"
 lazy_static = "1.4.0"

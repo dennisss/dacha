@@ -88,7 +88,7 @@ impl HuffmanTree {
 			let b = code.get(i).unwrap();
 			let next_node = match current_node {
 				HuffmanNode::Leaf(_) => {
-					return Err("A shorter prefix was already inserted".into());
+					return Err(err_msg("A shorter prefix was already inserted"));
 				},
 				HuffmanNode::Inner(ref mut left, ref mut right) => {
 					if b == 0 {
@@ -102,7 +102,7 @@ impl HuffmanTree {
 			let val = Box::new(
 				if i == code.len() - 1 {
 					if let Some(_) = *next_node {
-						return Err("A code already exists with this code as a prefix".into());
+						return Err(err_msg("A code already exists with this code as a prefix"));
 					}
 
 					HuffmanNode::Leaf(symbol)
@@ -122,7 +122,7 @@ impl HuffmanTree {
 		let (mut left, mut right) = match self.root {
 			Some(HuffmanNode::Inner(ref l, ref r)) => (l, r),
 			// NOTE: This will also occur if the root is a leaf node (which should never be constructable)
-			_ => { return Err("Empty tree".into()); } 
+			_ => { return Err(err_msg("Empty tree")); }
 		};
 
 		loop {
@@ -139,7 +139,7 @@ impl HuffmanTree {
 				Some(box HuffmanNode::Inner(l, r)) => {
 					left = l; right = r;
 				},
-				None => { return Err("Invalid code prefix read".into()); }
+				None => { return Err(err_msg("Invalid code prefix read")); }
 			}
 		}
 	}
@@ -270,7 +270,7 @@ impl HuffmanTree {
 		}
 
 		if total != desired_total {
-			return Err("Failed".into());
+			return Err(err_msg("Failed"));
 		}
 
 		// The length of each symbol will be the number of times it occured in the lowest packages.
@@ -280,13 +280,13 @@ impl HuffmanTree {
 
 		// Ensure that we were able to produce a length for every original symbol.
 		if lens.len() != freqs.len() {
-			return Err("Failed 2".into());
+			return Err(err_msg("Failed 2"));
 		}
 
 		// Sanity check that we did not generate any code lengths longer than the requested limit.
 		for l in lens.iter() {
 			if l.length > max_code_length {
-				return Err("Some lengths ended up too large".into());
+				return Err(err_msg("Some lengths ended up too large"));
 			}
 		}
 
@@ -319,7 +319,7 @@ impl HuffmanEncoder {
 	pub fn write_symbol(&self, symbol: usize, writer: &mut dyn BitWrite) -> Result<()> {
 		let code = match self.codes.get(&symbol) {
 			Some(c) => c,
-			None => { return Err("Unkown symbol given to encoder".into()); }	
+			None => { return Err(err_msg("Unkown symbol given to encoder")); }
 		};
 
 		writer.write_bitvec(code)

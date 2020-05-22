@@ -188,7 +188,7 @@ fn read_photo(
 	let mac_id = mac_handle.id;
 	let writeable = mac_handle.is_writeable();
 
-	let mut vol = vol_handle.lock().unwrap();
+	let mut vol = vol_handle.lock().await;
 
 
 	let given_etag = match parts.headers.get("If-None-Match") {

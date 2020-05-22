@@ -1,17 +1,16 @@
-use super::super::errors::*;
-use super::{Image, Array};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use byteorder::{LittleEndian, ReadBytesExt};
-use nom::{le_u16, le_i16, le_i32, le_u32};
-
+use common::errors::*;
+use parsing::cstruct::*;
+use parsing::ParseResult;
+use math::array::Array;
+use crate::{Image, Colorspace};
 
 pub struct Bitmap {
 
 	pub image: Image<u8>
 }
-
-// 
 
 const MAGIC: &[&'static str] = &["BM", "BA", "CI", "CP", "IC", "PT"];
 
@@ -20,7 +19,7 @@ const BITMAPV5HEADER_SIZE: u32 = 124;
 
 // BITMAPCOREHEADER
 // OS21XBITMAPHEADER
-#[derive(Debug, Clone)]
+#[derive(Reflect, Debug, Clone, Default)]
 struct BitmapCoreHeader {
 	width_px: u16,
 	height_px: u16,
@@ -28,17 +27,17 @@ struct BitmapCoreHeader {
 	num_bit_per_pixel: u16
 }
 
-named!(bitmap_core_header<&[u8], BitmapCoreHeader>, do_parse!(
-	width_px: le_u16 >>
-	height_px: le_u16 >>
-	num_color_planes: le_u16 >>
-	num_bit_per_pixel: le_u16 >>
-	(BitmapCoreHeader { width_px, height_px, num_color_planes, num_bit_per_pixel })
-));
+impl BitmapCoreHeader {
+	fn parse(input: &[u8]) -> ParseResult<Self, &[u8]> {
+		let mut value = Self::default();
+		let rest = parse_cstruct_le(input, &mut value)?;
+		Ok((value, rest))
+	}
+}
 
 
 // BITMAPINFOHEADER
-#[derive(Debug, Clone)]
+#[derive(Reflect, Debug, Clone, Default)]
 struct BitmapInfoHeader {
 	width_px: i32,
 	height_px: i32,
@@ -52,19 +51,13 @@ struct BitmapInfoHeader {
 	num_important_colors: u32
 }
 
-named!(bitmap_info_header<&[u8], BitmapInfoHeader>, do_parse!(
-	width_px: le_i32 >>
-	height_px: le_i32 >>
-	num_color_planes: le_u16 >>
-	num_bit_per_pixel: le_u16 >>
-	compression_method: le_u32 >>
-	image_size: le_u32 >>
-	horiz_res: le_i32 >>
-	vert_res: le_i32 >>
-	num_colors: le_u32 >>
-	num_important_colors: le_u32 >>
-	(BitmapInfoHeader { width_px, height_px, num_color_planes, num_bit_per_pixel, compression_method, image_size, horiz_res, vert_res, num_colors, num_important_colors })
-));
+impl BitmapInfoHeader {
+	fn parse(input: &[u8]) -> ParseResult<Self, &[u8]> {
+		let mut value = Self::default();
+		let rest = parse_cstruct_le(input, &mut value)?;
+		Ok((value, rest))
+	}
+}
 
 
 impl Bitmap {
@@ -101,9 +94,9 @@ impl Bitmap {
 
 		
 		if dib_header_size == BITMAPCOREHEADER_SIZE {
-			let (rest, header) = match bitmap_core_header(&dib_header) {
+			let (header, rest) = match BitmapCoreHeader::parse(&dib_header) {
 				Ok(v) => v,
-				Err(_) => return Err("Failed to parse BMP".into())
+				Err(_) => return Err(err_msg("Failed to parse BMP"))
 			};
 
 			println!("{:?}", header);
@@ -114,9 +107,9 @@ impl Bitmap {
 		}
 		// BITMAPV4HEADER
 		else if dib_header_size == 108 {
-			let (rest, header) = match bitmap_info_header(&dib_header) {
+			let (header, rest) = match BitmapInfoHeader::parse(&dib_header) {
 				Ok(v) => v,
-				Err(_) => return Err("Failed to parse BMP".into())
+				Err(_) => return Err(err_msg("Failed to parse BMP"))
 			};
 
 			println!("{:?}", header);
@@ -137,7 +130,8 @@ impl Bitmap {
 
 			return Ok(Bitmap {
 				image: Image {
-					array: arr.flip(0)
+					array: arr.flip(0),
+					colorspace: Colorspace::RGB
 				}
 			});
 
@@ -146,7 +140,7 @@ impl Bitmap {
 			panic!("Unsupported header of size: {}", dib_header_size);
 		}
 
-		Err("Failed to load image".into())
+		Err(err_msg("Failed to load image"))
 		// Ok(Bitmap {})
 	}
 }

@@ -18,10 +18,10 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use super::machine_index::*;
 use super::super::background_thread::*;
-use futures::future;
-use futures::future::*;
-use futures::prelude::*;
-use futures::compat::Future01CompatExt;
+use common::futures::future;
+use common::futures::future::*;
+use common::futures::prelude::*;
+use common::futures::compat::Future01CompatExt;
 use std::future::Future;
 
 pub struct MachineContext {
@@ -105,7 +105,7 @@ impl StoreMachine {
 		};
 
 		if dir.cluster_id != idx.cluster_id {
-			return Err("Connected to a different cluster".into());
+			return Err(err_msg("Connected to a different cluster"));
 		}
 
 		let mut machine = StoreMachine {
@@ -136,7 +136,7 @@ impl StoreMachine {
 	fn open_volume(&mut self, volume_id: VolumeId, expect_empty: bool) -> Result<()> {
 
 		if self.volumes.contains_key(&volume_id) {
-			return Err("Trying to open volume multiple times".into());
+			return Err(err_msg("Trying to open volume multiple times"));
 		}
 
 		let path = self.get_volume_path(volume_id);
@@ -149,11 +149,11 @@ impl StoreMachine {
 
 		// Verify that if we opened an existing file, that it wasn't from some other conflicting store
 		if vol.superblock.volume_id != volume_id || vol.superblock.cluster_id != self.index.cluster_id {
-			return Err("Opened volume does not belong to this store".into());
+			return Err(err_msg("Opened volume does not belong to this store"));
 		}
 
 		if expect_empty && vol.num_needles() > 0 {
-			return Err("Opened volume that we expected to be empty".into());
+			return Err(err_msg("Opened volume that we expected to be empty"));
 		}
 
 		self.volumes.insert(volume_id, Arc::new(Mutex::from(vol)));

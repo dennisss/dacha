@@ -14,6 +14,8 @@ use syn::Result;
 use syn::{Item, ItemImpl};
 use syn::parse::{Parse, ParseStream};
 
+mod reflect;
+
 #[derive(Debug)]
 struct BlanketInput {
 	impls: Vec<ItemImpl>,
@@ -95,4 +97,16 @@ pub fn blanket(input: TokenStream) -> TokenStream {
 
 	proc_macro::TokenStream::from(out)
 	*/
+}
+
+
+
+#[proc_macro_derive(Reflect, attributes(tags))]
+pub fn derive_reflection(input: TokenStream) -> TokenStream {
+	reflect::derive_reflection(input)
+}
+
+#[proc_macro_derive(Defaultable, attributes(default))]
+pub fn derive_defaultable(input: TokenStream) -> TokenStream {
+	reflect::derive_defaultable(input)
 }

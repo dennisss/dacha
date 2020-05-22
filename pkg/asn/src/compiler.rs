@@ -1,96 +1,9 @@
 use common::errors::*;
-use super::syntax::*;
+use common::line_builder::*;
 use parsing::*;
 use bytes::Bytes;
-use super::tag::TagClass;
-
-pub struct LineBuilder {
-	lines: Vec<String>
-}
-
-impl LineBuilder {
-	pub fn new() -> Self {
-		Self { lines: vec![] }
-	}
-	
-	pub fn add<T: std::convert::Into<String>>(&mut self, line: T) {
-		self.lines.push(line.into());
-	}
-
-	pub fn add_inline<T: std::convert::Into<String> + std::convert::AsRef<str>>(&mut self, line: T) {
-		if let Some(last) = self.lines.last_mut() {
-			*last += line.as_ref();
-		} else {
-			self.lines.push(line.into());
-		}
-	}
-
-	pub fn append(&mut self, mut lines: LineBuilder) {
-		self.lines.append(&mut lines.lines);
-	}
-
-	/// Similar to append() except the first line is merged with the last line
-	/// of the current builder.
-	pub fn append_inline(&mut self, mut lines: LineBuilder) {
-		if let Some(last) = self.lines.last_mut() {
-			if lines.lines.len() > 0 {
-				*last += &lines.lines.remove(0);
-			}
-		}
-
-		self.append(lines);
-	}
-
-	pub fn indent(&mut self) {
-		for s in self.lines.iter_mut() {
-			*s = format!("\t{}", s);
-		}
-	}
-
-	pub fn indented<T, F: FnOnce(&mut LineBuilder) -> T>(&mut self, mut f: F)
-	-> T {
-		let mut inner = LineBuilder::new();
-		let ret = f(&mut inner);
-		inner.indent();
-		self.append(inner);
-		ret
-	}
-
-	pub fn wrap_with(&mut self, first: String, last: String) {
-		let mut lines = vec![];
-		lines.reserve(self.lines.len() + 2);
-		lines.push(first);
-		lines.append(&mut self.lines);
-		lines.push(last);
-		self.lines = lines;
-	}
-
-	pub fn empty(&self) -> bool {
-		self.lines.len() == 0
-	}
-
-	pub fn nl(&mut self) {
-		self.lines.push(String::new());
-	}
-
-	pub fn wrap_module(&mut self, name: &str) {
-		let mut lines = vec![];
-		lines.push(format!("pub mod {} {{", name));
-		lines.push("\tuse super::*;".into());
-		lines.push("".into());
-		for s in self.lines.iter() {
-			lines.push(format!("\t{}", s));
-		}
-		lines.push("}\n".into());
-		self.lines = lines;
-	}
-
-	pub fn to_string(&self) -> String {
-		let mut out = self.lines.join("\n");
-		out.push('\n');
-		out
-	}
-}
+use crate::tag::TagClass;
+use crate::syntax::*;
 
 pub struct Context {
 	names: Vec<String>
@@ -370,12 +283,12 @@ impl FileCompiler {
 		for p in prefixes {
 			match p {
 				TypePrefix::Encoding(_) => {
-					return Err("Encoding prefix not supported".into());
+					return Err(err_msg("Encoding prefix not supported"));
 				},
 				TypePrefix::Tag(t) => {
 					if t.tag.encoding_ref.is_some() {
-						return Err(
-							"Encoding reference in tag not supported".into());
+						return Err(err_msg(
+							"Encoding reference in tag not supported"));
 					}
 
 					let mode = t.mode.unwrap_or(self.default_tagging);
@@ -432,7 +345,7 @@ impl FileCompiler {
 					//
 					// This will require a lot of care as it must maintain the
 					// original tagging/encoding properties
-					return Err("COMPONENTS OF not supported".into());
+					return Err(err_msg("COMPONENTS OF not supported"));
 				}
 			};
 		}
@@ -904,7 +817,7 @@ impl FileCompiler {
 					// },
 					_ => {
 						"TODO2".to_string()
-						// return Err(format!("Unsupported built-in {:?}", t).into())
+						// return Err(format_err!("Unsupported built-in {:?}", t))
 					}
 				})
 			},
@@ -944,7 +857,7 @@ impl FileCompiler {
 		// TODO: We should check thee statically, but no need to do anything
 		// dynamically.
 		// if assign.typ.constraints.len() != 0 {
-		// 	return Err("Constraints not supported in value assignments".into());
+		// 	return Err(err_msg("Constraints not supported in value assignments"));
 		// }
 
 		let name = Self::value_name(assign.name.as_ref());
@@ -1038,7 +951,7 @@ impl FileCompiler {
 			}
 		}
 
-		Err(format!("Unknown value named: {}", name).into())
+		Err(format_err!("Unknown value named: {}", name))
 	}
 
 	fn lookup_value(&self, name: &str) -> Result<Rc<BuiltinValue>> {
@@ -1067,7 +980,7 @@ impl FileCompiler {
 			}
 		}
 
-		Err(format!("Unknown value named: {}", name).into())
+		Err(format_err!("Unknown value named: {}", name))
 	}
 
 	// NOTE: This will look up the inner-most builtin type and will hide any
@@ -1100,7 +1013,7 @@ impl FileCompiler {
 		}
 
 
-		Err(format!("Unknown type named: {}", name).into())
+		Err(format_err!("Unknown type named: {}", name))
 	}
 
 	fn compile_oid_value(&self, v: &ObjectIdentifierValue) -> Result<Vec<usize>> {
@@ -1113,7 +1026,7 @@ impl FileCompiler {
 					let builtin_val = self.lookup_value(n.as_ref())?;
 					let val = match builtin_val.as_ref() {
 						BuiltinValue::ObjectIdentifier(v) => v,
-						_ => { return Err("Type incompatible with oid".into()); }
+						_ => { return Err(err_msg("Type incompatible with oid")); }
 					};
 					// TODO: Prevent infinite recursions
 					let inner = self.compile_oid_value(val)?;
@@ -1250,7 +1163,7 @@ impl FileCompiler {
 							BuiltinType::Set(v) | BuiltinType::Sequence(v) => {
 								v
 							},
-							_ => { return Err("Sequence value for non-sequence/set type.".into()); }
+							_ => { return Err(err_msg("Sequence value for non-sequence/set type.")); }
 						};
 
 						let mut fields = std::collections::HashMap::new(); 
@@ -1268,7 +1181,7 @@ impl FileCompiler {
 
 						for named in v {
 							let field = fields.get(&named.name.as_ref().to_string())
-								.ok_or(Error::from("No such field"))?;
+								.ok_or(err_msg("No such field"))?;
 							
 							let field_tname = match &field.typ.desc {
 								TypeDesc::Referenced(name) => name.as_ref(),
@@ -1296,10 +1209,10 @@ impl FileCompiler {
 					},
 					_ => {
 						println!("{:#?}", v);
-						return Err(format!("Failed {:?}", v).into()); }
+						return Err(format_err!("Failed {:?}", v)); }
 				}
 			},
-			_ => { return Err("failed 2".into()); }
+			_ => { return Err(err_msg("failed 2")); }
 		};
 
 		if let BuiltinType::Any(_) = builtin_type.as_ref() {
@@ -1504,7 +1417,7 @@ impl FileCompiler {
 				TagDefault::Explicit => TagMode::Explicit,
 				TagDefault::Implicit => TagMode::Implicit,
 				TagDefault::Automatic => {
-					return Err("Automatic tagging not supported".into());
+					return Err(err_msg("Automatic tagging not supported"));
 				}
 			};
 		
@@ -1536,9 +1449,11 @@ impl FileCompiler {
 			_ => { return Ok(String::new()); }
 		};
 
-		// TODO: Only import the specified symbols (exluding any in skip_assignments)
+		// TODO: Only import the specified symbols (exluding any in
+		// skip_assignments)
 		for s in &body.imports {
-			lines.add(format!("use super::{}::*;", s.module.name.as_ref().replace("-", "_")));
+			lines.add(format!("use super::{}::*;",
+							  s.module.name.as_ref().replace("-", "_")));
 		}
 
 		// TODO: Exports should define whether we use 'pub' in assignments.

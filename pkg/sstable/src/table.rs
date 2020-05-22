@@ -1,13 +1,14 @@
 use common::errors::*;
 use protobuf::wire::{parse_varint, serialize_varint};
-use async_std::io::{Read, Write, SeekFrom, Seek};
-use async_std::io::prelude::{ReadExt, WriteExt, SeekExt};
-use async_std::fs::File;
+use common::async_std::io::{Read, Write, SeekFrom, Seek};
+use common::async_std::io::prelude::{ReadExt, WriteExt, SeekExt};
+use common::async_std::fs::File;
 use std::sync::Arc;
 use std::collections::HashMap;
 use compression::snappy::*;
 use crypto::hasher::Hasher;
-use compression::crc::CRC32CHasher;
+use crypto::checksum::crc::CRC32CHasher;
+use reflection::*;
 use crate::block::*;
 use crate::table_properties::*;
 
@@ -52,7 +53,7 @@ impl SSTable {
 		let metadata = file.metadata().await?;
 		let len = metadata.len();
 		if len < (FOOTER_SIZE as u64) {
-			return Err("File too small".into());
+			return Err(err_msg("File too small"));
 		}
 
 		let footer = {
@@ -117,7 +118,9 @@ impl SSTable {
 
 		let mut props = TableProperties::default();
 
-		props.fields_mut(|field| {
+		for field_idx in 0..props.fields_len() {
+			let field = props.fields_index_mut(field_idx);
+
 //			let p = pairs.get(&field.)
 			println!("FIELD");
 
@@ -127,11 +130,10 @@ impl SSTable {
 				},
 				ReflectValue::String(v) => {
 
-				}
+				},
+				_ => {}
 			};
-
-		});
-
+		}
 
 		Ok(props)
 	}
@@ -167,11 +169,11 @@ impl SSTable {
 				hasher.update(&buf[..(trailer_start + 1)]);
 				hasher.masked()
 			},
-			_ => { return Err("Unsupported checksum type".into()); }
+			_ => { return Err(err_msg("Unsupported checksum type")); }
 		};
 
 		if checksum != expected_checksum {
-			return Err("Incorrect checksum in raw block".into());
+			return Err(err_msg("Incorrect checksum in raw block"));
 		}
 
 		buf.truncate(trailer_start);
@@ -229,14 +231,13 @@ impl Footer {
 			let (index_handle, data) = BlockHandle::parse(data)?;
 
 			let footer_version_start = data.len() - 4;
-			check_padding(&data[0..footer_version_start]);
+			check_padding(&data[0..footer_version_start])?;
 			let footer_version = u32::from_le_bytes(
 				*array_ref![data, footer_version_start, 4]);
 
 			if footer_version == 0 {
-				return Err(
-					"Not allowed to have old footer version with new format"
-						.into());
+				return Err(err_msg(
+					"Not allowed to have old footer version with new format"));
 			}
 
 			Ok(Self {
@@ -260,7 +261,7 @@ impl Footer {
 				footer_version: 0
 			})
 		} else {
-			return Err("Incorrect magic".into());
+			return Err(err_msg("Incorrect magic"));
 		}
 	}
 
@@ -350,8 +351,8 @@ impl RawBlock {
 				out
 			},
 			_ => {
-				return Err(format!("Unsupported compression type {:?}",
-								   self.compression_type).into());
+				return Err(format_err!("Unsupported compression type {:?}",
+								   		self.compression_type));
 			}
 		})
 	}
@@ -360,7 +361,7 @@ impl RawBlock {
 fn check_padding(s: &[u8]) -> Result<()> {
 	for b in s {
 		if *b != 0 {
-			return Err("Non-zero padding".into());
+			return Err(err_msg("Non-zero padding"));
 		}
 	}
 

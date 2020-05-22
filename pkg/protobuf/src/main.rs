@@ -1,9 +1,11 @@
 
 extern crate protobuf;
 
-use protobuf::tokenizer::{Token, Tokenizer};
+use common::errors::*;
+use protobuf::tokenizer::{Token};
 use protobuf::syntax::{proto, syntax};
 use protobuf::compiler::Compiler;
+use protobuf::text::parse_text_proto;
 use protobuf::spec::*;
 use std::io::Write;
 
@@ -14,24 +16,22 @@ use std::io::Write;
 
 */
 
-fn main() -> std::io::Result<()> {
+const SAMPLE_TEXTPROTO: &'static str = "hello: WORLD apples: [1,2, 3]";
 
+fn main() -> Result<()> {
 
-	let src = std::fs::read_to_string("testdata/message.proto")?;
-	let mut outfile = std::fs::File::create("testdata/message.proto.rs")?;
+	/*
+	let v = parse_text_proto(SAMPLE_TEXTPROTO)?;
+	return Ok(());
+	*/
 
-	let mut tokenizer = Tokenizer::new(&src);
-	let mut tokens = vec![];
-	while let Some(tok) = tokenizer.next() {
-		println!("{:?}", tok);
-		match tok {
-			Token::Whitespace => {},
-			Token::Comment => {},
-			_ => tokens.push(tok)
-		};
-	}
+//	let src = std::fs::read_to_string("testdata/message.proto")?;
+//	let mut outfile = std::fs::File::create("testdata/message.proto.rs")?;
 
-	let (desc, rest) = match proto(&tokens) {
+	let src = std::fs::read_to_string("pkg/rpc/src/proto/adder.proto")?;
+	let mut outfile = std::fs::File::create("pkg/rpc/src/proto/adder.rs")?;
+
+	let (desc, rest) = match proto(&src) {
 		Ok(d) => d,
 		Err(e) => {
 			println!("{:?}", e);
@@ -39,7 +39,7 @@ fn main() -> std::io::Result<()> {
 		}
 	};
 
-	println!("{:?}", desc);
+	println!("{:#?}", desc);
 
 	if rest.len() != 0 {
 		println!("Not parsed till end! {:?}", rest);

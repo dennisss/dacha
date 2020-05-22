@@ -66,7 +66,7 @@ impl Handshake {
 					if payload.len() == 0 {
 						Ok((Handshake::EndOfEarlyData, Bytes::new()))
 					} else {
-						Err("Expected emptydata".into())
+						Err(err_msg("Expected emptydata"))
 					}
 				},
 				encrypted_extensions => complete(map(
@@ -237,7 +237,7 @@ impl ClientHello {
 	}
 
 	parser!(parse<Self> => { seq!(c => {
-		let legacy_version = c.next(be_u16)?;
+		let legacy_version = c.next(as_bytes(be_u16))?;
 		let random = c.next(take_exact(32))?;
 		let legacy_session_id = c.next(varlen_vector(0, 32))?;
 		let cipher_suites = {
@@ -277,7 +277,7 @@ impl ClientHello {
 		});
 		serialize_varlen_vector(8, U16_LIMIT, out, |out| {
 			for e in self.extensions.iter() {
-				e.serialize(HandshakeType::client_hello, out);
+				e.serialize(HandshakeType::client_hello, out).unwrap();
 			}
 		});
 	}
@@ -316,7 +316,7 @@ impl CipherSuite {
 		}
 	}
 	parser!(parse<Self> => {
-		map(be_u16, |v| Self::from_u16(v))
+		map(as_bytes(be_u16), |v| Self::from_u16(v))
 	});
 	fn serialize(&self, out: &mut Vec<u8>) {
 		out.extend_from_slice(&self.to_u16().to_be_bytes());
@@ -354,11 +354,11 @@ pub struct ServerHello {
 
 impl ServerHello {
 	parser!(parse<ServerHello> => { seq!(c => {
-		let legacy_version = c.next(be_u16)?;
+		let legacy_version = c.next(as_bytes(be_u16))?;
 		let random = c.next(take_exact(32))?;
 		let legacy_session_id_echo = c.next(varlen_vector(0, 32))?;
 		let cipher_suite = c.next(CipherSuite::parse)?;
-		let legacy_compression_method = c.next(be_u8)?;
+		let legacy_compression_method = c.next(as_bytes(be_u8))?;
 		let extensions = {
 			let data = c.next(varlen_vector(6, U16_LIMIT))?;
 			let (arr, _) = complete(many(
@@ -382,7 +382,7 @@ impl ServerHello {
 		out.push(self.legacy_compression_method);
 		serialize_varlen_vector(6, U16_LIMIT, out, |out| {
 			for e in self.extensions.iter() {
-				e.serialize(HandshakeType::server_hello, out);
+				e.serialize(HandshakeType::server_hello, out).unwrap();
 			}
 		});
 	}
@@ -445,7 +445,7 @@ impl EncryptedExtensions {
 	fn serialize(&self, out: &mut Vec<u8>) {
 		serialize_varlen_vector(0, U16_LIMIT, out, |out| {
 			for e in self.extensions.iter() {
-				e.serialize(HandshakeType::encrypted_extensions, out);
+				e.serialize(HandshakeType::encrypted_extensions, out).unwrap();
 			}
 		});
 	}
@@ -531,7 +531,7 @@ impl CertificateEntry {
 		});
 		serialize_varlen_vector(0, U16_LIMIT, out, |out| {
 			for e in self.extensions.iter() {
-				e.serialize(HandshakeType::certificate, out);
+				e.serialize(HandshakeType::certificate, out).unwrap();
 			}
 		});
 	}
@@ -578,7 +578,7 @@ impl CertificateRequest {
 		});
 		serialize_varlen_vector(2, U16_LIMIT, out, |out| {
 			for e in self.extensions.iter() {
-				e.serialize(HandshakeType::certificate_request, out);
+				e.serialize(HandshakeType::certificate_request, out).unwrap();
 			}
 		});
 	}

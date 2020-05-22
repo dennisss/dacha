@@ -78,7 +78,7 @@ pub fn t61_parse(data: &[u8]) -> Result<String> {
 	for b in data {
 		let c = T61_TO_UNICODE[*b as usize];
 		if c == UNDEF {
-			return Err("Character undefined in T61".into());
+			return Err(err_msg("Character undefined in T61"));
 		}
 
 		out.push(char::try_from(c as u32).unwrap());
@@ -93,12 +93,12 @@ pub fn t61_serialize(s: &str) -> Result<Vec<u8>> {
 
 	for c in s.chars() {
 		if (c as usize) > 0xffff {
-			return Err("Char outside u16 range".into());
+			return Err(err_msg("Char outside u16 range"));
 		}
 		if let Some(b) = UNICODE_TO_T61.get(&(c as u16)) {
 			out.push(*b);
 		} else {
-			return Err("Char outside T61 alphabet.".into());
+			return Err(err_msg("Char outside T61 alphabet."));
 		}
 	}
 

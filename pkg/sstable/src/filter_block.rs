@@ -34,7 +34,7 @@ impl<'a> FilterBlock<'a> {
 			*array_ref![input, footer_start, 4]) as usize;
 
 		if offsets_offset > footer_start {
-			return Err("Out of range offsets array".into());
+			return Err(err_msg("Out of range offsets array"));
 		}
 
 		let offsets = {
@@ -42,7 +42,7 @@ impl<'a> FilterBlock<'a> {
 			// convenience.
 			let buf = &input[offsets_offset..(input.len() - 1)];
 			if buf.len() % 4 != 0 {
-				return Err("Misaligned offsets array".into());
+				return Err(err_msg("Misaligned offsets array"));
 			}
 
 			u32_slice(buf)
@@ -52,16 +52,16 @@ impl<'a> FilterBlock<'a> {
 		// Otherwise there is data that we do not understand in the block.
 		if offsets.len() == 0 {
 			if offsets_offset != 0 {
-				return Err("Unknown data before offsets array".into());
+				return Err(err_msg("Unknown data before offsets array"));
 			}
 		} else if offsets[0] != 0 {
-			return Err("First filter does not start at zero".into());
+			return Err(err_msg("First filter does not start at zero"));
 		}
 
 		// Check that all offsets are in range.
 		for off in offsets {
 			if (*off as usize) > offsets_offset {
-				return Err("Out of range filter offset".into());
+				return Err(err_msg("Out of range filter offset"));
 			}
 		}
 

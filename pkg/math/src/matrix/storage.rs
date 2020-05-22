@@ -155,7 +155,7 @@ IndexMut<usize> for MatrixBlockStorage<'a, T, Tp, W, S> {
 pub trait NewStorage<T> {
 	// All new storage types will store elements contiguously so we can always
 	// take contiguous slices of their contents.
-	type Type: StorageTypeMut<T> + AsMut<[T]> + AsRef<[T]>;
+	type Type: StorageTypeMut<T> + AsMut<[T]> + AsRef<[T]> + Clone;
 }
 
 impl<T: ElementType> NewStorage<T> for (Dynamic, Dynamic) {
@@ -167,8 +167,8 @@ impl<T: ElementType, C: StaticDim> NewStorage<T> for (Dynamic, C) {
 impl<T: ElementType, R: StaticDim> NewStorage<T> for (R, Dynamic) {
 	type Type = Vec<T>;
 }
-impl<T: Default, R: StaticDim + Mul<C>, C: StaticDim> NewStorage<T> for (R, C)
-where <R as Mul<C>>::Output: ArrayLength<T> {
+impl<T: ElementType, R: StaticDim + Mul<C>, C: StaticDim> NewStorage<T> for (R, C)
+where <R as Mul<C>>::Output: ArrayLength<T> + Clone {
 	type Type = MatrixInlineStorage<T, Prod<R, C>>;
 }
 

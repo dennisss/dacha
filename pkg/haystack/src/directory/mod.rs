@@ -12,8 +12,6 @@ use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use core::FlipSign;
 use self::db::DB;
 use std::hash::Hasher;
-use rand::thread_rng;
-use rand::seq::SliceRandom;
 use std::sync::Arc;
 
 
@@ -99,7 +97,7 @@ impl Directory {
 		}).collect();
 
 		if avail_vols.len() == 0 {
-			return Err("No writeable volumes available".into());
+			return Err(err_msg("No writeable volumes available"));
 		}
 
 		let vol_idx = (rand::thread_rng().next_u32() as usize) % avail_vols.len();
@@ -112,7 +110,7 @@ impl Directory {
 	/// TODO: Eventually this needs to be able to pick between multiples caches per bucket in order to support redundancy in ranges
 	pub fn choose_cache(&self, photo: &Photo, vol: &LogicalVolume) -> Result<CacheMachine> {
 		if photo.volume_id != vol.id {
-			return Err("Wrong volume given".into())
+			return Err(err_msg("Wrong volume given"))
 		}
 		
 		let mut caches = self.db.index_cache_machines()?.into_iter().filter(|m| {
@@ -120,7 +118,7 @@ impl Directory {
 		}).collect::<Vec<_>>();
 
 		if caches.len() == 0 {
-			return Err("Not enough available caches/store".into());
+			return Err(err_msg("Not enough available caches/store"));
 		}
 
 		// To pick the cache server, we use a simple Distributed Hash Table approach with a random key per volume
@@ -152,7 +150,7 @@ impl Directory {
 		}).collect::<Vec<_>>();
 
 		if stores.len() == 0 {
-			return Err("Not enough available caches/store".into());
+			return Err(err_msg("Not enough available caches/store"));
 		}
 
 		// Random load balancing

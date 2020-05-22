@@ -1,12 +1,13 @@
 use gl::types::{GLuint, GLint};
-use math::matrix::Vector3f;
 use std::sync::Arc;
 use std::ptr::null;
-use async_std::path::Path;
+use common::async_std::path::Path;
+use common::errors::*;
+use math::matrix::Vector3f;
 use crate::drawable::{Object, Drawable};
 use crate::shader::Shader;
 use crate::transform::{Camera, Transform};
-use crate::util::gl_vertex_buffer_vec3;
+use crate::util::{gl_vertex_buffer_vec3, gl_face_buffer, GLBuffer};
 
 pub type Face = [GLuint; 3];
 
@@ -14,10 +15,10 @@ pub type Face = [GLuint; 3];
 pub struct Mesh {
 	object: Object,
 
-	pos_vbo: GLuint,
-	normal_vbo: GLuint,
-	color_vbo: GLuint,
-	index_vbo: GLuint,
+	pos_vbo: GLBuffer,
+	normal_vbo: Option<GLBuffer>,
+	color_vbo: Option<GLBuffer>,
+	index_vbo: GLBuffer,
 	nindices: usize
 }
 
@@ -26,10 +27,20 @@ impl_deref!(Mesh::object as Object);
 // TODO: Do we need to use glUseProgram before using the
 impl Mesh {
 	pub async fn read(path: &str, shader: Arc<Shader>) -> Result<Self> {
+		let path = Path::new(path);
+		let ext = path.extension().map(|s| s.to_str().unwrap())
+			.unwrap_or("").to_ascii_lowercase();
+
+		match ext {
+//			"stl" => {
+//
+//			},
+			_ => {
+				Err(format_err!("Unknown mesh format with extension: .{}", ext))
+			}
+		}
+
 		/*
-		const char *ext = get_filename_ext(filename);
-
-
 		if(strcmp(ext, "smf") == 0){
 			return read_smf(filename, shader);
 		}
@@ -40,14 +51,13 @@ impl Mesh {
 	//		return read_patch(filename, shader);
 	//	}
 
-
 		cerr << "Unknown mesh format: " << ext << endl;
 		return NULL;
 		*/
 	}
 
 	pub fn from(vertices: &[Vector3f], colors: &[Vector3f],
-				faces: &[Face], mut normals: &[Vector3f],
+				faces: &[Face], normals: &[Vector3f],
 				shader: Arc<Shader>) -> Self {
 		// Setup shader
 		// TODO: Do I need to reset the program in the draw?
@@ -61,10 +71,10 @@ impl Mesh {
 			// If no colors are provided, we will not bind any value to the
 			// attribute and will instead assume that the material is handling
 			// all of the coloring
-			if colors.len() == 0 { 0 }
+			if colors.len() == 0 { None }
 			else {
 				assert_eq!(colors.len(), vertices.len());
-				gl_vertex_buffer_vec3(shader.color_attrib, colors);
+				Some(gl_vertex_buffer_vec3(shader.color_attrib, colors))
 			};
 
 		// TODO: Verify that all faces have in-range indices
@@ -72,29 +82,32 @@ impl Mesh {
 		// When no normals are specified, we will generate normals by averaging
 		// all faces connected to each vertex.
 		let mut normal_buffer = vec![];
+		let mut normals = normals;
 		if normals.len() == 0 {
 			normal_buffer.resize(vertices.len(), Vector3f::zero());
 			for face in faces {
-				let p0 = &vertices[face[0]];
-				let p1 = &vertices[face[1]];
-				let p2 = &vertices[face[2]];
+				let p0 = &vertices[face[0] as usize];
+				let p1 = &vertices[face[1] as usize];
+				let p2 = &vertices[face[2] as usize];
 				let n = (p1 - p0).cross(&(p2 - p0));
 				
 				for idx in face {
-					normal_buffer[idx] += n;
+					normal_buffer[*idx as usize] += &n;
 				}
 			}
 
 			normals = &normal_buffer;
 		}
 
-		let normal_vbo = gl_vertex_buffer_vec3(shader.normal_attrib, normals);
+		let normal_vbo = shader.normal_attrib.map(|attr| {
+			gl_vertex_buffer_vec3(attr, normals)
+		});
 
 		let index_vbo = gl_face_buffer(faces);
 
 		Self {
-			object: Object::from(shader),
-			pos_vbo, normal_vbo, color_vbo, index_vbo, nindices: indices.len()
+			object: Object::new(shader),
+			pos_vbo, normal_vbo, color_vbo, index_vbo, nindices: 3*faces.len()
 		}
 	}
 }
@@ -103,8 +116,8 @@ impl Drawable for Mesh {
 	fn draw(&self, camera: &Camera, prev: &Transform) {
 		self.object.draw(camera, prev);
 		unsafe {
-			gl::DrawElements(gl::TRIANGLES, self.nindices, gl::UNSIGNED_INT,
-							 null());
+			gl::DrawElements(gl::TRIANGLES, self.nindices as i32,
+							 gl::UNSIGNED_INT, null());
 		}
 	}
 }

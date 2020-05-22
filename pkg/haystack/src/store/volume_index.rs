@@ -124,7 +124,7 @@ impl PhysicalVolumeIndex {
 		let superblock = PhysicalVolumeSuperblock::read(&mut file)?;
 
 		if &superblock.magic[..] != SUPERBLOCK_MAGIC.as_bytes() {
-			return Err("Superblock magic is incorrect".into());
+			return Err(err_msg("Superblock magic is incorrect"));
 		}
 
 		let idx = PhysicalVolumeIndex {
@@ -171,12 +171,12 @@ impl PhysicalVolumeIndex {
 
 				let off = last_pair.value.end_offset(self.superblock.block_size);
 				if off != pair.value.offset(self.superblock.block_size) {
-					return Err("Corrupt non-contiguous index file entries".into());
+					return Err(err_msg("Corrupt non-contiguous index file entries"));
 				}
 			}
 			else {
 				if pair.value.block_offset != 1 {
-					return Err("First entry in index file does not start right after the superblock".into());
+					return Err(err_msg("First entry in index file does not start right after the superblock"));
 				}
 			}
 

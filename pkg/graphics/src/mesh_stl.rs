@@ -1,6 +1,6 @@
 use common::errors::*;
-use async_std::fs::File;
-use async_std::io::prelude::*;
+use common::async_std::fs::File;
+use common::async_std::io::prelude::*;
 
 const TRIANGLE_SIZE: usize = 4*4*3 + 2;
 
@@ -35,7 +35,7 @@ impl STL {
 	}
 
 	async fn read_text(mut f: File, shader: Arc<Shader>) -> Result<Self> {
-		Err("STL Text format not supported".into())
+		Err(err_msg("STL Text format not supported"))
 	}
 
 	// TODO: Support reading directly into a mesh without the conversion to/from
@@ -54,7 +54,7 @@ impl STL {
 			f.read_exact(&mut buf);
 			let t = Triangle::parse(&buf)?;
 			if t.attribute_byte_count != 0 {
-				return Err("Unexpected facet attributes".into());
+				return Err(err_msg("Unexpected facet attributes"));
 			}
 			triangles.push(t);
 		}
@@ -63,7 +63,7 @@ impl STL {
 		// streams.
 		let current_pos = f.seek(SeekFrom::Current(0)).await?;
 		if current_pos != f.metadata().await?.size {
-			return Err("Did not read until end of file".into());
+			return Err(err_msg("Did not read until end of file"));
 		}
 
 		Ok(Self {
@@ -111,7 +111,7 @@ impl Triangle {
 		let attribute_byte_count = parse_le_u16();
 		
 		if input.len() != 0 {
-			return Err("Not parsed till completion".into());
+			return Err(err_msg("Not parsed till completion"));
 		}
 
 		Ok(Self {
@@ -124,7 +124,7 @@ impl Triangle {
 
 pub fn parse_le_u16(input: &[u8]) -> Result<(u16, &[u8])> {
 	if input.len() < 2 {
-		return Err("Input too short".into());
+		return Err(err_msg("Input too short"));
 	}
 
 	Ok((u16::from_le_bytes(*array_ref![input, 0, 2]), &input[2..]))
@@ -132,7 +132,7 @@ pub fn parse_le_u16(input: &[u8]) -> Result<(u16, &[u8])> {
 
 pub fn parse_le_f32(input: &[u8]) -> Result<f32> {
 	if input.len() < 4 {
-		return Err("Input too short".into());
+		return Err(err_msg("Input too short"));
 	}
 
 	Ok((f32::from_le_bytes(*array_ref![input, 0, 4]), &input[4..]))

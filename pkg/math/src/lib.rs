@@ -1,12 +1,19 @@
 #![feature(trait_alias, const_fn, const_constructor, specialization)]
-#[macro_use] extern crate arrayref;
-#[macro_use] extern crate impl_ops;
+#[macro_use]
+extern crate arrayref;
+#[macro_use]
+extern crate impl_ops;
+extern crate generic_array;
 extern crate num_traits;
 extern crate typenum;
-extern crate generic_array;
-#[macro_use] extern crate common;
+#[macro_use]
+extern crate common;
+#[macro_use]
+extern crate approx;
 
-pub mod big;
 pub mod array;
-pub mod matrix;
 pub mod assignment_solver;
+pub mod big;
+pub mod combin;
+pub mod geometry;
+pub mod matrix;

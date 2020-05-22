@@ -13,7 +13,7 @@ impl AsciiString {
 		let mut out = vec![];
 		for v in data.as_ref().iter().cloned() {
 			if v > 127 {
-				return Err("Byte outside of ASCII range".into());
+				return Err(err_msg("Byte outside of ASCII range"));
 			}
 
 			out.push(v);
@@ -29,7 +29,7 @@ impl AsciiString {
 	pub fn from_bytes(data: Bytes) -> Result<AsciiString> {
 		for v in data.iter().cloned() {
 			if v > 127 {
-				return Err("Byte outside of ASCII range".into());
+				return Err(err_msg("Byte outside of ASCII range"));
 			}
 		}
 

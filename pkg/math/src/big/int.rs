@@ -1,4 +1,4 @@
-use common::errors::Result;
+use common::errors::*;
 use common::vec::VecPtr;
 use super::BigUint;
 
@@ -119,7 +119,7 @@ impl BigInt {
 
 		let val = self.value.as_ref();
 		if val.len() > 2 {
-			return Err("Integer too large".into());
+			return Err(err_msg("Integer too large"));
 		}
 
 		// TODO: This assumes we are on a 64-bit system
@@ -130,7 +130,7 @@ impl BigInt {
 
 	pub fn to_uint(&self) -> Result<BigUint> {
 		if !self.is_positive() {
-			return Err("Not positive".into());
+			return Err(err_msg("Not positive"));
 		}
 
 		// TODO: Use little endian / native endian.

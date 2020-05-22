@@ -1,52 +1,58 @@
-use bytes::Bytes;
-use crate::ParseResult;
 use crate::bytes::Buf;
 use crate::incomplete_error;
+use crate::ParseResult;
+use bytes::Bytes;
 
-pub fn be_u8(mut input: Bytes) -> ParseResult<u8> {
-	if input.len() < 1 {
-		return Err(incomplete_error());
-	}
+macro_rules! primitive_parser {
+    ($name:ident, $t:ty, $from:ident) => {
+        pub fn $name<'a>(mut input: &'a [u8]) -> ParseResult<$t, &'a [u8]> {
+            const len: usize = std::mem::size_of::<$t>();
+            if input.len() < len {
+                return Err(incomplete_error());
+            }
 
-	let v = input[0];
-	input.advance(1);
-	Ok((v, input))
+            let v = <$t>::$from(*array_ref![input, 0, len]);
+            Ok((v, &input[len..]))
+        }
+    };
 }
 
-pub fn be_u16(mut input: Bytes) -> ParseResult<u16> {
-	if input.len() < 2 {
-		return Err(incomplete_error());
-	}
+primitive_parser!(be_u16, u16, from_be_bytes);
+primitive_parser!(be_i16, i16, from_be_bytes);
+primitive_parser!(be_u32, u32, from_be_bytes);
+primitive_parser!(be_i32, i32, from_be_bytes);
+primitive_parser!(be_u64, u64, from_be_bytes);
+primitive_parser!(be_i64, i64, from_be_bytes);
 
-	let v = u16::from_be_bytes(*array_ref![&input, 0, 2]);
-	input.advance(2);
-	Ok((v, input))
+primitive_parser!(le_u16, u16, from_le_bytes);
+primitive_parser!(le_i16, i16, from_le_bytes);
+primitive_parser!(le_u32, u32, from_le_bytes);
+primitive_parser!(le_i32, i32, from_le_bytes);
+primitive_parser!(le_u64, u64, from_le_bytes);
+primitive_parser!(le_i64, i64, from_le_bytes);
+
+pub fn be_u8(mut input: &[u8]) -> ParseResult<u8, &[u8]> {
+    if input.len() < 1 {
+        return Err(incomplete_error());
+    }
+
+    let v = input[0];
+    Ok((v, &input[1..]))
 }
 
-pub fn be_u24(mut input: Bytes) -> ParseResult<u32> {
-	if input.len() < 3 {
-		return Err(incomplete_error());
-	}
+pub fn be_u24(mut input: &[u8]) -> ParseResult<u32, &[u8]> {
+    if input.len() < 3 {
+        return Err(incomplete_error());
+    }
 
-	let mut buf = [0u8; 4];
-	buf[1..4].copy_from_slice(&input[0..3]);
+    let mut buf = [0u8; 4];
+    buf[1..4].copy_from_slice(&input[0..3]);
 
-	let v = u32::from_be_bytes(buf);
-	input.advance(3);
-	Ok((v, input))
+    let v = u32::from_be_bytes(buf);
+    Ok((v, &input[3..]))
 }
 
 pub fn u24_to_be_bytes(v: u32) -> [u8; 3] {
-	let buf = v.to_be_bytes();
-	*array_ref![buf, 1, 3]
-}
-
-pub fn be_u32(mut input: Bytes) -> ParseResult<u32> {
-	if input.len() < 4 {
-		return Err(incomplete_error());
-	}
-
-	let v = u32::from_be_bytes(*array_ref![&input, 0, 4]);
-	input.advance(4);
-	Ok((v, input))
+    let buf = v.to_be_bytes();
+    *array_ref![buf, 1, 3]
 }

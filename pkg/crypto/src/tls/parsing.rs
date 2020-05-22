@@ -1,5 +1,6 @@
 // TLS specific helpers for parsing binary packets.
 
+use common::errors::*;
 use parsing::*;
 use parsing::binary::*;
 use bytes::Bytes;
@@ -19,18 +20,18 @@ pub fn varlen_vector(min_bytes: usize, max_bytes: usize) -> impl Parser<Bytes> {
 	seq!(c => {
 		let len =
 			if max_bytes <= U8_LIMIT {
-				c.next(be_u8)? as usize
+				c.next(as_bytes(be_u8))? as usize
 			} else if max_bytes <= U16_LIMIT {
-				c.next(be_u16)? as usize
+				c.next(as_bytes(be_u16))? as usize
 			} else if max_bytes <= U24_LIMIT {
-				c.next(be_u24)? as usize
+				c.next(as_bytes(be_u24))? as usize
 			} else if max_bytes <= U32_LIMIT {
-				c.next(be_u32)? as usize
+				c.next(as_bytes(be_u32))? as usize
 			} else {
 				panic!("Maximum length not supported");
 			};
 		if len < min_bytes || len > max_bytes {
-			return Err("Length out of allowed range".into());
+			return Err(err_msg("Length out of allowed range"));
 		}
 
 		let data = c.next(take_exact(len))?;

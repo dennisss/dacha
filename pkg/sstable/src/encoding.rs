@@ -5,7 +5,7 @@ use protobuf::wire::parse_varint;
 pub fn parse_slice(mut input: &[u8]) -> Result<(&[u8], &[u8])> {
 	let len = parse_next!(input, parse_varint);
 	if input.len() < len {
-		return Err("Slice out of range".into());
+		return Err(err_msg("Slice out of range"));
 	}
 
 	Ok(input.split_at(len))
@@ -18,7 +18,7 @@ pub fn parse_string(mut input: &[u8]) -> Result<(String, &[u8])> {
 
 pub fn parse_fixed32(mut input: &[u8]) -> Result<(u32, &[u8])> {
 	if input.len() < 4 {
-		return Err("Input too short for fixed32".into());
+		return Err(err_msg("Input too short for fixed32"));
 	}
 
 	let val = u32::from_le_bytes(*array_ref![input, 0, 4]);
@@ -27,7 +27,7 @@ pub fn parse_fixed32(mut input: &[u8]) -> Result<(u32, &[u8])> {
 
 pub fn parse_fixed64(mut input: &[u8]) -> Result<(u64, &[u8])> {
 	if input.len() < 8 {
-		return Err("Input too short for fixed64".into());
+		return Err(err_msg("Input too short for fixed64"));
 	}
 
 	let val = u64::from_le_bytes(*array_ref![input, 0, 8]);
@@ -36,7 +36,7 @@ pub fn parse_fixed64(mut input: &[u8]) -> Result<(u64, &[u8])> {
 
 pub fn parse_u8(mut input: &[u8]) -> Result<(u8, &[u8])> {
 	if input.len() < 1 {
-		return Err("Input too short for u8".into());
+		return Err(err_msg("Input too short for u8"));
 	}
 
 	Ok((input[0], &input[1..]))

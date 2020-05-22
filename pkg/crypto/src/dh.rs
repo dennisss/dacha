@@ -1,5 +1,4 @@
 use common::errors::*;
-use async_trait::async_trait;
 
 /// NOTE: This is not a public/private crypto system in itself.
 #[async_trait]

@@ -38,7 +38,7 @@ const USIZE_OCTETS: usize = std::mem::size_of::<usize>();
 // ObjectIdentifier component encoding.
 //
 // NOTE: This only parses the minimal encoding.
-parser!(parse_varint_msb_be<usize> => seq!(c => {
+parser!(parse_varint_msb_be<&[u8], usize> => seq!(c => {
 	let mut number = 0;
 
 	let mut finished = false;
@@ -57,13 +57,13 @@ parser!(parse_varint_msb_be<usize> => seq!(c => {
 			// first octet must have a non-zero value otherwise leading zeros
 			// have been encoded.
 			if num_part == 0 {
-				return Err("Last octet contains zero".into());
+				return Err(err_msg("Last octet contains zero"));
 			}
 		}
 	}
 
 	if !finished {
-		return Err("Tag number overflow integer range".into());
+		return Err(err_msg("Tag number overflow integer range"));
 	}
 
 	Ok(number)
@@ -99,7 +99,7 @@ pub struct Identifier {
 }
 
 impl Identifier {
-	parser!(parse<Self> => { seq!(c => {
+	parser!(parse<&[u8], Self> => { seq!(c => {
 		let first = c.next(be_u8)?;
 		let class = TagClass::from((first >> 6) & 0b11);
 		let constructed = ((first >> 5) & 0b1) == 1;
@@ -111,7 +111,7 @@ impl Identifier {
 
 			// The 2+ octet form should only be used for numbers >= 31
 			if number <= 30 {
-				return Err("Should have used single octet".into());
+				return Err(err_msg("Should have used single octet"));
 			}
 		}
 
@@ -138,7 +138,7 @@ pub enum Length {
 }
 
 impl Length {
-	parser!(parse<Self> => { seq!(c => {
+	parser!(parse<&[u8], Self> => { seq!(c => {
 		let first = c.next(be_u8)?;
 		let upper = first & 0x80;
 		let lower = first & 0x7f;
@@ -149,12 +149,12 @@ impl Length {
 				return Ok(Self::Indefinite);
 			}
 			if lower == 127 {
-				return Err("Unsupported reserved length type".into());
+				return Err(err_msg("Unsupported reserved length type"));
 			}
 
 			let n = lower as usize;
 			if n > USIZE_OCTETS {
-				return Err("Too many length octets".into());
+				return Err(err_msg("Too many length octets"));
 			}
 
 			let mut buf = [0u8; USIZE_OCTETS];
@@ -199,8 +199,8 @@ pub struct Element {
 impl Element {
 	parser!(pub parse<Self> => {
 		map(slice_with(seq!(c => {
-			let ident = c.next(Identifier::parse)?;
-			let len = c.next(Length::parse)?;
+			let ident = c.next(as_bytes(Identifier::parse))?;
+			let len = c.next(as_bytes(Length::parse))?;
 
 			// TODO: Check that only certain tag numbers are allowed to be
 			// constructed.
@@ -216,7 +216,7 @@ impl Element {
 					c.next(take_exact(n))?
 				},
 				Length::Indefinite => {
-					return Err("Indefinite parsing not supported".into());
+					return Err(err_msg("Indefinite parsing not supported"));
 				}
 			};
 
@@ -300,12 +300,12 @@ impl DERReader {
 
 	fn read_any_element(&mut self) -> Result<Element> {
 		if self.implicit_tag.is_some() {
-			return Err("Any not supported with an implicit tag".into());
+			return Err(err_msg("Any not supported with an implicit tag"));
 		}
 
 		let el: Result<Element> = match &mut self.remaining {
 			DERReaderBuffer::Empty => {
-				Err("No remaining data in reader".into())
+				Err(err_msg("No remaining data in reader"))
 			},
 			DERReaderBuffer::Unparsed(buffer) => {
 				let (el, rest) = Element::parse(buffer.clone())?;
@@ -320,7 +320,7 @@ impl DERReader {
 				Ok(out)
 			},
 			DERReaderBuffer::Parsed(map) => {
-				Err("Can't read ANY in set.".into())
+				Err(err_msg("Can't read ANY in set."))
 			}
 		};
 
@@ -336,28 +336,29 @@ impl DERReader {
 		
 		let res: Result<(Bytes, Bytes)> = match &mut self.remaining {
 			DERReaderBuffer::Empty => {
-				Err("No remaining data in reader".into())
+				Err(err_msg("No remaining data in reader"))
 			},
 			DERReaderBuffer::Unparsed(buffer) => {
 				let (el, rest) = Element::parse(buffer.clone())?;
 
 				if tag == el.ident.tag {
 					if constructed != el.ident.constructed {
-						return Err("Mismatch in P/C type".into());
+						return Err(err_msg("Mismatch in P/C type"));
 					}
 
 					self.remaining = DERReaderBuffer::Unparsed(rest);
 					self.elements_read += 1;
 					Ok((el.data, el.outer))
 				} else {
-					// println!("wRONG TAG: {:?} {} {:?} {}", el.ident.tag, el.ident.constructed, tag, constructed);
-					Err("Wrong tag".into())
+					// println!("wRONG TAG: {:?} {} {:?} {}", el.ident.tag,
+					// 			 el.ident.constructed, tag, constructed);
+					Err(err_msg("Wrong tag"))
 				}
 			},
 			DERReaderBuffer::Single(el) => {
 				if tag == el.ident.tag {
 					if constructed != el.ident.constructed {
-						return Err("Mismatch in P/C type".into());
+						return Err(err_msg("Mismatch in P/C type"));
 					}
 
 					// TODO: Get rid of this clone.
@@ -367,13 +368,13 @@ impl DERReader {
 					self.elements_read += 1;
 					Ok((out, outer))
 				} else {
-					Err("Wrong tag".into())
+					Err(err_msg("Wrong tag"))
 				}
 			},
 			DERReaderBuffer::Parsed(map) => {
 				if let Some(el) = map.get(&tag) {
 					if constructed != el.ident.constructed {
-						return Err("Mismatch in P/C type".into());
+						return Err(err_msg("Mismatch in P/C type"));
 					}
 
 					let out = el.data.clone();
@@ -383,7 +384,7 @@ impl DERReader {
 					Ok((out, outer))
 
 				} else {
-					Err("Missing tag in elements".into())
+					Err(err_msg("Missing tag in elements"))
 				}
 			}
 		};
@@ -421,7 +422,7 @@ impl DERReader {
 		match value {
 			Some(v) => {
 				if der_eq(&v, &default_value) {
-					return Err("DERReader saw default value encoded.".into());
+					return Err(err_msg("DERReader saw default value encoded."));
 				}
 
 				Ok(v)
@@ -456,7 +457,7 @@ impl DERReader {
 
 		// TODO: Validate that we are always checking for this.
 		if !reader.is_finished() { // reader.remaining.len() > 0 {
-			return Err("Explicitly typed object contains extra data".into());
+			return Err(err_msg("Explicitly typed object contains extra data"));
 		}
 
 		Ok(v)
@@ -485,13 +486,13 @@ impl DERReader {
 			TagClass::Universal, TAG_NUMBER_BOOLEAN, false)?;
 
 		if data.len() != 1 {
-			Err("Data wrong size".into())
+			Err(err_msg("Data wrong size"))
 		} else if data[0] == 0x00 {
 			Ok(false)
 		} else if data[0] == 0xff {
 			Ok(true)
 		} else {
-			Err("Invalid boolean value".into())
+			Err(err_msg("Invalid boolean value"))
 		}
 	}
 
@@ -505,7 +506,7 @@ impl DERReader {
 		if common::ceil_div(std::cmp::max(n.nbits(), 8), 8) != data.len() {
 			println!("{:?}", data);
 			println!("{:?} {} {}", n, n.nbits(), data.len());
-			return Err("Integer not minimal length".into());
+			return Err(err_msg("Integer not minimal length"));
 		}
 
 		Ok(n)
@@ -520,17 +521,17 @@ impl DERReader {
 		let data = self.read_element(
 			TagClass::Universal, TAG_NUMBER_BIT_STRING, false)?;
 		if data.len() < 1 {
-			return Err("Bitstring too short".into());
+			return Err(err_msg("Bitstring too short"));
 		}
 		let nunused = data[0];
 		if data.len() == 1 {
 			if nunused != 0 {
-				return Err("Empty data but not 0 unused".into());
+				return Err(err_msg("Empty data but not 0 unused"));
 			}
 			return Ok(BitString { data: BitVector::new() })
 		}
 		if nunused >= 8 {
-			return Err("Nunused too long".into());
+			return Err(err_msg("Nunused too long"));
 		}
 		let data = BitVector::from(&data[1..], 8*(data.len() - 1)
 									- (nunused as usize));
@@ -547,7 +548,7 @@ impl DERReader {
 		let data = self.read_element(
 			TagClass::Universal, TAG_NUMBER_NULL, false)?;
 		if data.len() != 0 {
-			return Err("Expected no data in NULL".into());
+			return Err(err_msg("Expected no data in NULL"));
 		}
 
 		Ok(())
@@ -562,14 +563,14 @@ impl DERReader {
 			let val1 = (first / 40) as usize;
 			let val2 = (first % 40) as usize;
 			if val1 > 2 {
-				return Err("First component can only be 0,1, or 2".into());
+				return Err(err_msg("First component can only be 0,1, or 2"));
 			}
 
 			let mut arr = vec![ val1, val2 ];
 			let extra = c.next(many(parse_varint_msb_be))?;
 			arr.extend_from_slice(&extra);
 			Ok(arr)
-		}))(data)?;
+		}))(&data)?;
 
 		Ok(ObjectIdentifier::from_vec(items))
 	}
@@ -630,8 +631,8 @@ impl DERReader {
 		// Check that they are sorted by raw serialized data.
 		for i in 1..elements.len() {
 			if elements[i - 1].ident.tag >= elements[i].ident.tag {
-				return Err(
-					"Set elements not sorted or have duplicate tags".into());
+				return Err(err_msg(
+					"Set elements not sorted or have duplicate tags"));
 			}
 		}
 
@@ -661,7 +662,7 @@ impl DERReader {
 		// Check that they are sorted by raw serialized data.
 		for i in 1..elements.len() {
 			if elements[i - 1].1 > elements[i].1 {
-				return Err("SetOf elements not sorted".into());
+				return Err(err_msg("SetOf elements not sorted"));
 			}
 		}
 
@@ -685,7 +686,7 @@ impl DERReader {
 			TagClass::Universal, TAG_NUMBER_PRINTABLE_STRING, false)?;
 		for b in &data {
 			if !is_printable_string_char(*b as char) {
-				return Err("Invalid printable string character".into());
+				return Err(err_msg("Invalid printable string character"));
 			}
 		}
 
@@ -723,7 +724,7 @@ impl DERReader {
 	pub fn read_universal_string(&mut self) -> Result<String> {
 		let data = self.read_element(
 			TagClass::Universal, TAG_NUMBER_UNIVERSALSTRING, false)?;
-		let (chars, _) = complete(many(be_u32))(data)?;
+		let (chars, _) = complete(many(be_u32))(&data)?;
 		
 		let mut s = String::new();
 		s.reserve(chars.len());
@@ -738,7 +739,7 @@ impl DERReader {
 	pub fn read_bmp_string(&mut self) -> Result<BMPString> {
 		let data = self.read_element(
 			TagClass::Universal, TAG_NUMBER_BMPSTRING, false)?;
-		let (codes, _) = complete(many(be_u16))(data)?;
+		let (codes, _) = complete(many(be_u16))(&data)?;
 		Ok(BMPString {
 			data: String::from_utf16(&codes)?
 		})
@@ -756,7 +757,7 @@ impl DERReader {
 	/// Call at the end of parsing to ensure that all of the input was consumed.
 	pub fn finished(&self) -> Result<()> {
 		if !self.is_finished() {
-			return Err(format!("Not finished {:?}", self.remaining).into())
+			return Err(format_err!("Not finished {:?}", self.remaining));
 		}
 		Ok(())
 	}
@@ -963,7 +964,7 @@ impl<'a> DERWriter<'a> {
 		};
 
 		let mut elements = slices.into_iter().map(|data| {
-			let (ident, _) = Identifier::parse(data.clone()).unwrap();
+			let (ident, _) = Identifier::parse(&data).unwrap();
 			(ident.tag, data)
 		}).collect::<Vec<_>>();
 

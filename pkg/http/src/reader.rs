@@ -1,24 +1,27 @@
 use common::errors::*;
 use bytes::Bytes;
-use async_std::io::Read;
+use common::async_std::io::Read;
 use std::marker::Unpin;
-use futures::io::{AsyncRead, AsyncWrite};
+use common::futures::io::{AsyncRead, AsyncWrite};
 use std::task::Poll;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::convert::AsRef;
 //use async_std::net::TcpStream;
 //use async_std::prelude::*;
 use common::io::*;
 
 pub trait Matcher {
-	/// Considering all previous data passed to this function, try to find a match given a new chunk of data returning the index immediately after the first match.
+	/// Considering all previous data passed to this function, try to find a
+	/// match given a new chunk of data returning the index immediately after
+	/// the first match.
 	fn process(&mut self, data: &[u8]) -> Option<usize>;
 }
 
 
 // TODO: Move this somewhere else as this is very specific to http.
-/// Matches the end of the next empty line where a line is terminated by the exact sequence '\r\n'.
+/// Matches the end of the next empty line where a line is terminated by the
+/// exact sequence '\r\n'.
 pub struct LineMatcher {
 	seen_cr: bool,
 	cur_length: usize,
@@ -126,7 +129,7 @@ impl StreamReader {
 		loop {
 			let next_idx = if self.head.len() > 0 {
 				if self.head.len() > max_buffer_size {
-					return Err("No much data remaining from last run".into());
+					return Err(err_msg("No much data remaining from last run"));
 				}
 
 				assert_eq!(idx, 0);

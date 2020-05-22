@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use crate::spec::*;
 use crate::message::*;
 use crate::message_parser::*;
-use async_std::net::TcpStream;
+use common::async_std::net::TcpStream;
 use crate::status_code::*;
 use std::sync::{Arc, Mutex};
 use crate::body::*;
@@ -16,11 +16,12 @@ use crate::reader::*;
 use std::io::Read;
 use crate::chunked::*;
 use crate::header::*;
-use async_std::prelude::*;
+use common::async_std::prelude::*;
 use std::convert::AsMut;
 use crate::transfer_encoding::*;
 
-/// NOTE: As Transfer-Encoding must be handled in order to delimit messages in a connection, it will be processed internally.
+/// NOTE: As Transfer-Encoding must be handled in order to delimit messages in
+/// a connection, it will be processed internally.
 pub struct Client {
 	socket_addr: SocketAddr
 }
@@ -59,11 +60,12 @@ impl Client {
 	/// Creates a new client connecting to the given host/protocol.
 	/// NOTE: This will not start a connection.
 	pub fn create(uri: &str) -> Result<Client> {
-		// TODO: Implement some other form of parser function that doesn't accept anything but the scheme, authority
+		// TODO: Implement some other form of parser function that doesn't
+		// accept anything but the scheme, authority
 		let u = uri.parse::<Uri>()?;
 		// NOTE: u.path may be '/'
 		if u.path.len() > 1 || u.query.is_some() || u.fragment.is_some() {
-			return Err("Can't create a client with a uri path".into());
+			return Err(err_msg("Can't create a client with a uri path"));
 		}
 
 		let scheme = u.scheme.map(|s| s.to_string())
@@ -74,20 +76,21 @@ impl Client {
 			"https" => (443, true),
 			_ => {
 				// TODO: Create an err! macro
-				return Err(format!("Unsupported scheme {}", scheme).into());
+				return Err(format_err!("Unsupported scheme {}", scheme));
 			}
 		};
 
 		if is_secure {
-			return Err("TLS/SSL currently not supported".into());
+			return Err(err_msg("TLS/SSL currently not supported"));
 		}
 
 		let authority = u.authority
-			.ok_or(Error::from("No authority/hostname specified"))?;
+			.ok_or(err_msg("No authority/hostname specified"))?;
 
-		// TODO: Definately need a more specific type of Uri to ensure that we don't miss any fields.
+		// TODO: Definately need a more specific type of Uri to ensure that we
+		// don't miss any fields.
 		if authority.user.is_some() {
-			return Err("Users not supported".into());
+			return Err(err_msg("Users not supported"));
 		}
 
 		let port = authority.port.unwrap_or(default_port);
@@ -107,7 +110,7 @@ impl Client {
 				match ip {
 					Some(i) => i,
 					None => {
-						return Err("Failed to resolve host to an ip".into());
+						return Err(err_msg("Failed to resolve host to an ip"));
 					}
 				}
 			},
@@ -120,12 +123,13 @@ impl Client {
 		})
 	}
 
-	// TODO: If we recieve an unterminated body, then we should close the connection right afterwards.
+	// TODO: If we recieve an unterminated body, then we should close the
+	// connection right afterwards.
 
 	/// Based on the procedure in RFC7230 3.3.3. Message Body Length
 	/// Implemented from the client/requester point of view.
 	fn create_body(req: &Request, res_head: &ResponseHead, stream: StreamReader)
-	-> Result<Box<dyn Body>> {
+		-> Result<Box<dyn Body>> {
 		
 		// 1.
 		let code = res_head.status_code.as_u16();
@@ -146,11 +150,13 @@ impl Client {
 		
 		// These should never both be present.
 		if transfer_encoding.len() > 0 && content_length.is_some() {
-			return Err("Messages can not have both a Transfer-Encoding and Content-Length".into());
+			return Err(err_msg("Messages can not have both a Transfer-Encoding \
+								and Content-Length"));
 		}
 
 		// 3.
-		// NOTE: The length of the transfer_encoding is limited by parse_transfer_encoding already.
+		// NOTE: The length of the transfer_encoding is limited by
+		// parse_transfer_encoding already.
 		if transfer_encoding.len() > 0 {
 			return get_transfer_encoding_body(transfer_encoding, stream);
 		}
@@ -179,12 +185,11 @@ impl Client {
 	// Read response
 	// - TODO: Response may be available before the request is sent (in the case of bodies)
 	// If not using a content length, then we should close the connection
-	pub async fn request(&mut self, mut req: Request) -> Result<Response> {
-
-		if req.head.headers.has(CONTENT_LENGTH) ||
+	pub async fn request(&self, mut req: Request) -> Result<Response> {
+		if /* req.head.headers.has(CONTENT_LENGTH) || */
 		   req.head.headers.has(KEEP_ALIVE) ||
 		   req.head.headers.has(TRANSFER_ENCODING) {
-			return Err("Given reserved header".into());
+			return Err(err_msg("Given reserved header"));
 		}
 
 		// TODO: For an empty body, the client doesn't need to send any special headers.
@@ -203,19 +208,19 @@ impl Client {
 		let mut out = vec![];
 		req.head.serialize(&mut out);
 		write_stream.write_all(&out).await?;
-		write_body(req.body.as_mut(), &mut write_stream).await?;
+		write_body(req.body.as_mut(), write_stream).await?;
 
 		let head = match read_http_message(&mut read_stream).await? {
 			HttpStreamEvent::MessageHead(h) => h,
 			// TODO: Handle other bad cases such as too large headers.
 			_ => {
-				return Err("Connection closed without a complete response".into());
+				return Err(err_msg("Connection closed without a complete response"));
 			}
 		};
 
 		let body_start_idx = head.len();
 
-		println!("{:?}", String::from_utf8(head.to_vec()).unwrap());
+//		println!("{:?}", String::from_utf8(head.to_vec()).unwrap());
 
 		let msg = match parse_http_message_head(head) {
 			Ok((msg, rest)) => {
@@ -225,7 +230,7 @@ impl Client {
 			Err(e) => {
 				// TODO: Consolidate these lines.
 				println!("Failed to parse message\n{}", e);
-				return Err("Invalid message received".into());
+				return Err(err_msg("Invalid message received"));
 			}
 		};
 
@@ -235,13 +240,13 @@ impl Client {
 		// Verify that we got a Request style message
 		let status_line = match start_line {
 			StartLine::Request(r) => {
-				return Err("Received a request?".into());
+				return Err(err_msg("Received a request?"));
 			},
 			StartLine::Response(r) => r
 		};
 
 		let status_code = StatusCode::from_u16(status_line.status_code)
-			.ok_or(Error::from("Invalid status code"))?;
+			.ok_or(Error::from(err_msg("Invalid status code")))?;
 
 
 
