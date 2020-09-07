@@ -39,7 +39,7 @@ impl Canvas {
         self.transform = self
             .transform_stack
             .pop()
-            .ok_or(err_msg("No transforms saved on the stack"))?;
+            .ok_or_else(|| err_msg("No transforms saved on the stack"))?;
         Ok(())
     }
 

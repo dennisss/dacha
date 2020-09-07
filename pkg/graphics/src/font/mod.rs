@@ -501,7 +501,7 @@ pub struct CharacterSegmentMapping {
 impl CharacterSegmentMapping {
     fn lookup(&self, code: u16) -> Result<u16> {
         // TODO: We can unwrap this if we know the last segment ends at 0xFFFF
-        let segment_idx = common::algorithms::lower_bound(&self.end_codes, code)
+        let segment_idx = common::algorithms::lower_bound(&self.end_codes, &code)
             .ok_or(err_msg("Code larger than all segments"))?;
 
         if code < self.start_codes[segment_idx] {

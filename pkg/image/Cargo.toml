@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
+compression = { path = "../compression" }
 math = { path = "../math" }
 macros = { path = "../macros" }
 reflection = { path = "../reflection" }

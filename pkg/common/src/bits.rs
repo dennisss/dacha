@@ -1,103 +1,140 @@
 // Utilities for dealing for sets of bits and bit stream I/O.
 
-use std::io::{Read, Write};
-use crate::errors::*;
 use crate::ceil_div;
+use crate::errors::*;
+use std::io::{Read, Write};
 
 #[derive(Debug, Fail)]
 pub enum BitIoError {
-	/// Occurs when reading from a BitReader and the input stream runs out of
-	/// bits before the read was complete.
-	#[fail(display = "Not enough bits")]
-	NotEnoughBits
+    /// Occurs when reading from a BitReader and the input stream runs out of
+    /// bits before the read was complete.
+    #[fail(display = "Not enough bits")]
+    NotEnoughBits,
 }
-
-
 
 /// Sets a bit to either by 1 or 0 based on the given boolean.
 pub fn bitset(i: &mut u8, val: bool, bit: u8) {
-	let mask = 1 << bit;
-	*i = (*i & !mask);
-	if val {
-		*i |= mask;
-	}
+    let mask = 1 << bit;
+    *i = (*i & !mask);
+    if val {
+        *i |= mask;
+    }
 }
 
 /// Gets the value of a single bit in a byte (0 = false, 1 = true)
 pub fn bitget(v: u8, bit: u8) -> bool {
-	if v & (1 << bit) != 0 {
-		true
-	} else {
-		false
-	}
+    if v & (1 << bit) != 0 {
+        true
+    } else {
+        false
+    }
 }
 
 /// Represents a variable length number of ordered bits
 #[derive(PartialEq, Eq, Clone)]
 pub struct BitVector {
-	// Bits are stored from MSB to LSB in each individual byte.
-	data: Vec<u8>,
-	len: usize
+    len: usize,
+
+    // TODO: std::mem::size_of::<Vec<u8>>() is 24, so let's inline any usage of up to 192 bits
+    // which is good enough for most compression).
+
+    // Bits are stored from MSB to LSB in each individual byte.
+    data: Vec<u8>,
 }
 
 impl BitVector {
-	/// Returns an empty vector.
-	pub fn new() -> Self {
-		BitVector { data: vec![], len: 0 }		
-	}
+    /// Returns an empty vector.
+    pub fn new() -> Self {
+        BitVector {
+            data: vec![],
+            len: 0,
+        }
+    }
 
-	pub fn clear(&mut self) {
-		self.data.clear();
-		self.len = 0;
-	}
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.len = 0;
+    }
 
-	/// Appends a single bit to this vector.
-	/// 'bit' must be 0 or 1
-	pub fn push(&mut self, bit: u8) {
-		assert!(bit <= 1);
+    /// Appends a single bit to this vector.
+    /// 'bit' must be 0 or 1
+    pub fn push(&mut self, bit: u8) {
+        assert!(bit <= 1);
 
-		if self.len % 8 == 0 {
-			self.data.push(0);
-		}
+        if self.len % 8 == 0 {
+            self.data.push(0);
+        }
 
-		let last = self.data.last_mut().unwrap();
-		*last |= bit << 7 - (self.len % 8);
-		self.len += 1;
-	}
+        let last = self.data.last_mut().unwrap();
+        *last |= bit << 7 - (self.len % 8);
+        self.len += 1;
+    }
 
-	/// Get the total number of bits stored in this vector.
-	pub fn len(&self) -> usize {
-		self.len
-	}
+    pub fn push_full_msb(&mut self, byte: u8) {
+        assert!(self.len % 8 == 0);
+        self.data.push(byte);
+        self.len += 8;
+    }
 
-	/// Get a single bit from the vector where the index is in the same order as the bit was push'ed.
-	pub fn get(&self, i: usize) -> Option<u8> {
-		if i >= self.len {
-			return None;
-		}
+    /// Get the total number of bits stored in this vector.
+    pub fn len(&self) -> usize {
+        self.len
+    }
 
-		Some((self.data[i / 8] >> (7 - (i % 8))) & 0b1)
-	}
+    /// Get a single bit from the vector where the index is in the same order as
+    /// the bit was push'ed.
+    pub fn get(&self, i: usize) -> Option<u8> {
+        if i >= self.len {
+            return None;
+        }
 
-	/// Generates a bitvector from a number. The corresponding vector will start with the MSB of the number.
-	pub fn from_usize(val: usize, width: u8) -> Self {
-		let mut out = BitVector::new();
-		for i in 0..width { // NOTE: THis is not reversed!
-			out.push(((val >> i) & 0b1) as u8)
-		}
-		
-		// Assert 'val' has no more than width data in it.
-		assert_eq!(val >> width, 0);
+        Some((self.data[i / 8] >> (7 - (i % 8))) & 0b1)
+    }
 
-		out
-	}
+    /// Generates a bitvector from a number. The corresponding vector will start
+    /// with the MSB of the number.
+    ///
+    /// TODO: Double check that all the usages of this are correct.
+    ///
+    /// MSB 0 0 0 0 0 0 0 0 LSB
+    ///          [    <-   ]
+    pub fn from_usize(val: usize, width: u8) -> Self {
+        let mut out = BitVector::new();
+        for i in 0..width {
+            // NOTE: THis is not reversed!
+            out.push(((val >> i) & 0b1) as u8);
+        }
 
-	pub fn from(data: &[u8], len: usize) -> Self {
-		let mut data = Vec::from(data);
-		data.resize(ceil_div(len, 8), 0);
+        // Assert 'val' has no more than width data in it.
+        assert_eq!(val >> width, 0);
 
-		Self { data, len }
-	}
+        out
+    }
+
+    /// MSB 0 0 0 0 0 0 0 0 LSB
+    ///          [    ->   ]
+    pub fn from_lower_msb(val: usize, width: u8) -> Self {
+        let mut out = BitVector::new();
+        for i in 0..width {
+            out.push(((val >> (width - i - 1)) & 0b1) as u8);
+        }
+
+        assert_eq!(val >> width, 0);
+
+        out
+    }
+
+    pub fn from(data: &[u8], len: usize) -> Self {
+        let mut data = Vec::from(data);
+        data.resize(ceil_div(len, 8), 0);
+
+        Self { data, len }
+    }
+}
+
+pub enum BitOrder {
+    MSBFirst,
+    LSBFirst,
 }
 
 // TODO: THis will be wrong if we don't have a number of bits divisble by 8.
@@ -105,17 +142,17 @@ impl BitVector {
 // NOTE: This should be guranteed to always minimally cover all bits up to the
 // next complete octet.
 impl std::convert::AsRef<[u8]> for BitVector {
-	fn as_ref(&self) -> &[u8] {
-		&self.data
-	}
+    fn as_ref(&self) -> &[u8] {
+        &self.data
+    }
 }
 
 impl std::fmt::Debug for BitVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let mut s = String::new();
-		for i in 0..self.len() {
-			s += &self.get(i).unwrap().to_string();
-		}
+        let mut s = String::new();
+        for i in 0..self.len() {
+            s += &self.get(i).unwrap().to_string();
+        }
 
         write!(f, "'{}'", s)
     }
@@ -123,287 +160,354 @@ impl std::fmt::Debug for BitVector {
 
 /// Any string of '0' and '1' characters can be converted to a BitVector.
 impl std::convert::TryFrom<&'_ str> for BitVector {
-	type Error = Error;
+    type Error = Error;
 
     fn try_from(s: &str) -> Result<Self> {
-		let mut out = BitVector::new();
-		for c in s.chars() {
-			if c == '0' {
-				out.push(0);
-			} else if c == '1' {
-				out.push(1);
-			} else {
-				return Err(format_err!("Not 0|1: {}", c));
-			}
-		}
+        let mut out = BitVector::new();
+        for c in s.chars() {
+            if c == '0' {
+                out.push(0);
+            } else if c == '1' {
+                out.push(1);
+            } else {
+                return Err(format_err!("Not 0|1: {}", c));
+            }
+        }
 
-		Ok(out)
+        Ok(out)
     }
 }
 
-
-/// Wrapper around a readable stream which allows for reading individual bits from the stream at a time.
-/// 
-/// For reading many bytes, Read is also implemented, but it is invalid to use Read 
+/// Wrapper around a readable stream which allows for reading individual bits
+/// from the stream at a time.
+///
+/// For reading many bytes, Read is also implemented, but it is invalid to use
+/// Read until a multiple of 8 bits have been partially read.
 pub struct BitReader<'a> {
-	reader: &'a mut dyn Read,
-	// Offset from 0-N bits within the buffer
-	// Usually N will be 7 if no errors occur which would cause more than 8 bits to be buffered.
-	offset: usize,
+    /// Base reader from which we will pull full bytes.
+    reader: &'a mut dyn Read,
 
-	// How many bits were consumed (aka we can drop all bits before this point)
-	consumed_offset: usize,
-	//
-	buffer: BitVector,
+    /// Offset from 0-N bits within the buffer
+    /// Usually N will be 7 if no errors occur which would cause more than 8
+    /// bits to be buffered.
+    offset: usize,
+
+    /// How many bits were consumed (aka we can drop all bits before this point)
+    consumed_offset: usize,
+
+    //
+    buffer: BitVector,
+
+    // NOTE: This only effects reading
+    bit_order: BitOrder,
 }
 
-// NOTE: THis reads from 
+// NOTE: THis reads from
 impl<'a> BitReader<'a> {
-	pub fn new(reader: &'a mut dyn Read) -> Self {
-		BitReader { reader, offset: 0, buffer: BitVector::new(),
-					consumed_offset: 0 }
-	}
+    pub fn new(reader: &'a mut dyn Read) -> Self {
+        Self::new_with_order(reader, BitOrder::LSBFirst)
+    }
 
-	pub fn load(&mut self, bits: BitVector) -> Result<()> {
-		if self.offset != self.buffer.len() {
-			return Err(err_msg("Already have pending bits loaded"));
-		}
-		
-		self.buffer = bits;
+    pub fn new_with_order(reader: &'a mut dyn Read, bit_order: BitOrder) -> Self {
+        Self {
+            reader,
+            offset: 0,
+            buffer: BitVector::new(),
+            consumed_offset: 0,
+            bit_order: BitOrder::MSBFirst,
+        }
+    }
 
-		Ok(())
-	}
+    pub fn load(&mut self, bits: BitVector) -> Result<()> {
+        if self.offset != self.buffer.len() {
+            return Err(err_msg("Already have pending bits loaded"));
+        }
 
-	// TODO: Must support reading usize to read the lengths
-	// TODO: This is heavily biased towards how zlib does it
-	/// Reads a given number of bits from the stream and returns them as a byte.
-	/// Up to 8 bits can be read.
-	/// The final bit read will be in the most significant position of the
-	///  return value.
-	/// 
-	/// NOTE: Unless consume() is called, then this will accumulate bits
-	/// indefinately
-	/// 
-	/// NOTE: If an BitIoError::NotEnoughBits error occurs, then this operation
-	/// is retryable if the reader later has all of the remaining bits.
-	/// 
-	/// The return value will be None if and only if the first read bit is after
-	/// the end of the file.
-	pub fn read_bits(&mut self, n: u8) -> Result<Option<usize>> {
+        self.buffer = bits;
 
-		// TODO: Can be implemented as a trivial read
-		// But reading more than 8 bits can be tricky. Basially must loop
-		// through bytes instead of through bits
-		// if n < 8 - self.bit_offset {
-		// 	let mask = (1 << n) - 1;
+        Ok(())
+    }
 
-		// }
+    // TODO: Must support reading usize to read the lengths
+    // TODO: This is heavily biased towards how zlib does it
+    /// Reads a given number of bits from the stream and returns them as a byte.
+    /// Up to 8 bits can be read.
+    /// The final bit read will be in the most significant position of the
+    ///  return value.
+    ///
+    /// NOTE: Unless consume() is called, then this will accumulate bits
+    /// indefinately
+    ///
+    /// NOTE: If an BitIoError::NotEnoughBits error occurs, then this operation
+    /// is retryable if the reader later has all of the remaining bits.
+    ///
+    /// The return value will be None if and only if the first read bit is after
+    /// the end of the file.
+    pub fn read_bits(&mut self, n: u8) -> Result<Option<usize>> {
+        // TODO: Can be implemented as a trivial read
+        // But reading more than 8 bits can be tricky. Basially must loop
+        // through bytes instead of through bits
+        // if n < 8 - self.bit_offset {
+        // 	let mask = (1 << n) - 1;
 
-		// TODO: Instead implement as a read from up to two bytes.
-		let mut out = 0;
-		for i in 0..n {
-			if self.offset == self.buffer.len() {
-				let mut buf = [0u8; 1];
-				let nread = self.reader.read(&mut buf)?;
-				if nread == 0 {
-					if i == 0 {
-						return Ok(None);
-					} else {
-						// Rollback and store all the bits we've read.
-						// TODO: In this case, reset the offset?
+        // }
 
-						return Err(BitIoError::NotEnoughBits.into());
-					}
-				} else {
-					// Push bits into buffer from LSB to MSB
-					let mut b = buf[0];
-					for _ in 0..8 {
-						self.buffer.push(b & 0b01);
-						b = b >> 1;
-					}
-				}
-			}
+        // TODO: Instead implement as a read from up to two bytes.
+        let mut out = 0;
+        for i in 0..n {
+            if self.offset == self.buffer.len() {
+                let mut buf = [0u8; 1];
+                let nread = self.reader.read(&mut buf)?;
+                // TODO: Annotate this if-statement with 'unlikely branch prediciton'
+                if nread == 0 {
+                    if i == 0 {
+                        return Ok(None);
+                    } else {
+                        // Rollback and store all the bits we've read.
+                        // TODO: In this case, reset the offset?
 
-			out = out | ((self.buffer.get(self.offset).unwrap() as usize) << i);
-			self.offset += 1;
-		}
+                        return Err(BitIoError::NotEnoughBits.into());
+                    }
+                }
 
-		Ok(Some(out))
-	}
+                match self.bit_order {
+                    BitOrder::LSBFirst => {
+                        // Push bits into buffer from LSB to MSB
+                        let mut b = buf[0];
+                        for _ in 0..8 {
+                            self.buffer.push(b & 0b01);
+                            b = b >> 1;
+                        }
+                    }
+                    BitOrder::MSBFirst => {
+                        // TODO: WE should be able to simplify this to just pushing to the back of
+                        // the BitVector's internal buffer?
+                        let mut b = buf[0];
+                        self.buffer.push_full_msb(b);
+                        /*
+                        for i in 0..8 {
+                            self.buffer.push((b >> (7 - i)) & 0b1);
+                        }
+                        */
+                    }
+                }
+            }
 
-	pub fn read_bits_exact(&mut self, n: u8) -> Result<usize> {
-		// TODO: This error should also be identified.
-		self.read_bits(n)?.ok_or(BitIoError::NotEnoughBits.into())
-			
-			//Error::from("Hit end of file during read"))
-	}
+            out = out | ((self.buffer.get(self.offset).unwrap() as usize) << i);
+            self.offset += 1;
+        }
 
-	pub fn consume(&mut self) {
-		if self.offset == self.buffer.len() {
-			self.buffer.clear();
-			self.offset = 0;
-		} else {
-			self.consumed_offset = self.offset;
-		}
-	}
+        Ok(Some(out))
+    }
 
-	/// Moves the cursor of the stream to the next full byte
-	pub fn align_to_byte(&mut self) {
-		let r = self.offset % 8;
-		if r != 0 {
-			self.offset += 8 - r;
-		}
-	}
+    pub fn read_bits_exact(&mut self, n: u8) -> Result<usize> {
+        // TODO: This error should also be identified.
+        self.read_bits(n)?
+            .ok_or_else(|| BitIoError::NotEnoughBits.into())
+    }
 
-	// Outputs all remaining unread bits in the last read bytes.
-	pub fn into_unconsumed_bits(self) -> BitVector {
-		let mut buf = BitVector::new();
-		for i in self.consumed_offset..self.buffer.len() {
-			buf.push(self.buffer.get(i).unwrap());
-		}
+    // TODO: Integrate into read_bits so that this is faster
+    pub fn read_bits_be(&mut self, n: u8) -> Result<usize> {
+        let mut out = 0;
+        for i in 0..n {
+            let next_bit = self.read_bits_exact(1)?;
+            out = (out << 1) | next_bit;
+        }
 
-		buf
-	}
+        Ok(out)
+    }
+
+    pub fn consume(&mut self) {
+        if self.offset == self.buffer.len() {
+            self.buffer.clear();
+            self.offset = 0;
+        }
+
+        self.consumed_offset = self.offset;
+    }
+
+    /// Moves the cursor of the stream to the next full byte
+    pub fn align_to_byte(&mut self) {
+        let r = self.offset % 8;
+        if r != 0 {
+            self.offset += 8 - r;
+        }
+    }
+
+    // Outputs all remaining unread bits in the last read bytes.
+    pub fn into_unconsumed_bits(self) -> BitVector {
+        let mut buf = BitVector::new();
+        for i in self.consumed_offset..self.buffer.len() {
+            buf.push(self.buffer.get(i).unwrap());
+        }
+
+        buf
+    }
+}
+
+pub struct FastBitReader<'a> {
+    reader: &'a mut dyn Read,
+    buffer: u8,
+    /// Number of bits remaining in the buffer
+    buffer_left: u8,
+}
+
+impl<'a> FastBitReader<'a> {
+    pub fn read_bit(&mut self) -> Result<u8> {
+        if self.buffer_left == 0 {
+            let mut buf = [0u8; 1];
+            if self.reader.read(&mut buf)? != 1 {
+                return Err(BitIoError::NotEnoughBits.into());
+            }
+            self.buffer_left = 8;
+        }
+
+        let (next, overflowed) = self.buffer.overflowing_shl(1);
+        self.buffer = next;
+        self.buffer_left -= 1;
+        Ok(if overflowed { 1 } else { 0 })
+    }
 }
 
 /*
 impl<T> BitReader<'_, std::io::Cursor<T>> {
-	///
-	/// 
-	/// Returns:
-	/// (# of full bytes read,
-	///  # of bits read in the next byte after those)
-	fn position(&self) -> (usize, usize) {
-		let mut nbytes = self.reader.position();
-		if self.bit_offset > 0 {
-			nbytes -= 1;
-		}
+    ///
+    ///
+    /// Returns:
+    /// (# of full bytes read,
+    ///  # of bits read in the next byte after those)
+    fn position(&self) -> (usize, usize) {
+        let mut nbytes = self.reader.position();
+        if self.bit_offset > 0 {
+            nbytes -= 1;
+        }
 
-		(nbytes, self.bit_offset)
-	}
+        (nbytes, self.bit_offset)
+    }
 }
 */
 
 impl Read for BitReader<'_> {
-	fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-		// We do not buffer unconsumed bits when reading full bytes, so 
-		// NOTE: This would also check for 'self.buffer.len() != self.offset'
-		if self.buffer.len() != self.consumed_offset {
-			return Err(std::io::Error::new(std::io::ErrorKind::Other, "Reading would drop trailing bits"));
-		}
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // We do not buffer unconsumed bits when reading full bytes, so
+        // NOTE: This would also check for 'self.buffer.len() != self.offset'
+        if self.buffer.len() != self.consumed_offset {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Reading would drop trailing bits",
+            ));
+        }
 
-		self.reader.read(buf)
-	}
+        self.reader.read(buf)
+    }
 }
 
 pub trait BitWrite {
-	/// Writes the lowest 'len' bits of 'val' to this stream.
-	fn write_bits(&mut self, val: usize, len: u8) -> Result<()>;
+    /// Writes the lowest 'len' bits of 'val' to this stream.
+    fn write_bits(&mut self, val: usize, len: u8) -> Result<()>;
 
-	fn write_bitvec(&mut self, val: &BitVector) -> Result<()> {
-		for i in 0..val.len() {
-			self.write_bits(val.get(i).unwrap() as usize, 1)?;
-		}
+    fn write_bitvec(&mut self, val: &BitVector) -> Result<()> {
+        for i in 0..val.len() {
+            self.write_bits(val.get(i).unwrap() as usize, 1)?;
+        }
 
-		Ok(())
-	}
+        Ok(())
+    }
 
-	/// Immediately finish writing any partial bytes to the underlying stream.
-	/// 
-	/// NOTE: This should always be called after using this stream to guarantee
-	/// that everything has been written.
-	fn finish(&mut self) -> Result<()>;
+    /// Immediately finish writing any partial bytes to the underlying stream.
+    ///
+    /// NOTE: This should always be called after using this stream to guarantee
+    /// that everything has been written.
+    fn finish(&mut self) -> Result<()>;
 }
 
 pub struct BitWriter<'a> {
-	writer: &'a mut dyn Write,
-	bit_offset: u8,
-	current_byte: u8
+    writer: &'a mut dyn Write,
+    bit_offset: u8,
+    current_byte: u8,
 }
 
 impl<'a> BitWriter<'a> {
-	pub fn new(writer: &'a mut dyn Write) -> Self {
-		BitWriter {
-			writer,
-			bit_offset: 0,
-			current_byte: 0
-		}
-	}
+    pub fn new(writer: &'a mut dyn Write) -> Self {
+        BitWriter {
+            writer,
+            bit_offset: 0,
+            current_byte: 0,
+        }
+    }
 
-	/// Obtains a bitvector that represents all pending bits inside of the writer.
-	/// Calling write_bitvec() later on an empty BitWrite will return the BitWrite to the same state.
-	pub fn into_bits(self) -> BitVector {
-		let mut out = BitVector::new();
-		let mut v = self.current_byte;
-		for i in 0..self.bit_offset {
-			out.push((v & 0b1) as u8);
-			v = v >> 1;
-		}
+    /// Obtains a bitvector that represents all pending bits inside of the
+    /// writer. Calling write_bitvec() later on an empty BitWrite will
+    /// return the BitWrite to the same state.
+    pub fn into_bits(self) -> BitVector {
+        let mut out = BitVector::new();
+        let mut v = self.current_byte;
+        for i in 0..self.bit_offset {
+            out.push((v & 0b1) as u8);
+            v = v >> 1;
+        }
 
-		out
-	}
+        out
+    }
 }
 
 impl BitWrite for BitWriter<'_> {
-	fn write_bits(&mut self, mut val: usize, len: u8) -> Result<()> {
-		for i in 0..len {
-			self.current_byte |= ((val & 0b1) << self.bit_offset) as u8;
-			self.bit_offset += 1;
-			val = val >> 1;
+    fn write_bits(&mut self, mut val: usize, len: u8) -> Result<()> {
+        for i in 0..len {
+            self.current_byte |= ((val & 0b1) << self.bit_offset) as u8;
+            self.bit_offset += 1;
+            val = val >> 1;
 
-			if self.bit_offset == 8 {
-				self.finish()?;
-			}
-		}
+            if self.bit_offset == 8 {
+                self.finish()?;
+            }
+        }
 
-		// Ensure that 'val' doesn't contain more the 'len' bits
-		assert_eq!(val, 0);
+        // Ensure that 'val' doesn't contain more the 'len' bits
+        assert_eq!(val, 0);
 
-		Ok(())
-	}
+        Ok(())
+    }
 
-	fn finish(&mut self) -> Result<()> {
-		if self.bit_offset > 0 {
-			let buf = [self.current_byte];
-			self.writer.write_all(&buf)?;
-			self.bit_offset = 0;
-			self.current_byte = 0;
-		}
+    fn finish(&mut self) -> Result<()> {
+        if self.bit_offset > 0 {
+            let buf = [self.current_byte];
+            self.writer.write_all(&buf)?;
+            self.bit_offset = 0;
+            self.current_byte = 0;
+        }
 
-		Ok(())
-	}
+        Ok(())
+    }
 }
-
 
 #[cfg(test)]
 mod tests {
-	use super::*;
+    use super::*;
 
+    #[test]
+    fn bitvector_works() {
+        let mut v = BitVector::new();
+        let vals = vec![0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0];
+        for i in 0..vals.len() {
+            v.push(vals[i]);
+            assert_eq!(v.len(), i + 1);
+            for j in 0..(i + 1) {
+                assert_eq!(v.get(j), vals[j]);
+            }
+        }
 
-	#[test]
-	fn bitvector_works() {
-		let mut v = BitVector::new();
-		let vals = vec![0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0];
-		for i in 0..vals.len() {
-			v.push(vals[i]);
-			assert_eq!(v.len(), i + 1);
-			for j in 0..(i + 1) {
-				assert_eq!(v.get(j), vals[j]);
-			}
-		}
+        assert_eq!(&format!("{:?}", v), "'01101011100'");
+    }
 
-		assert_eq!(&format!("{:?}", v), "'01101011100'");
-	}
+    #[test]
+    fn bitwriter_test() {
+        let mut data = Vec::new();
+        let mut strm = BitWriter::new(&mut data);
+        strm.write_bits(0b1, 1).unwrap();
+        strm.write_bits(0b01, 2).unwrap();
+        strm.finish().unwrap();
 
-	#[test]
-	fn bitwriter_test() {
-		let mut data = Vec::new();
-		let mut strm = BitWriter::new(&mut data);
-		strm.write_bits(0b1, 1).unwrap();
-		strm.write_bits(0b01, 2).unwrap();
-		strm.finish().unwrap();
-
-		assert_eq!(data[0], 0b011);
-	}
-
+        assert_eq!(data[0], 0b011);
+    }
 }

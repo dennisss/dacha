@@ -5,6 +5,7 @@ extern crate byteorder;
 extern crate math;
 extern crate minifb;
 extern crate num_traits;
+#[macro_use]
 extern crate parsing;
 extern crate reflection;
 

@@ -12,19 +12,22 @@ extern crate async_trait;
 extern crate failure;
 pub extern crate async_std;
 extern crate base64;
-extern crate bytes;
+pub extern crate bytes;
 extern crate fs2;
 pub extern crate futures;
 pub extern crate hex;
 extern crate libc;
 #[macro_use]
 extern crate lazy_static;
+extern crate generic_array;
+extern crate typenum;
 
 pub mod algorithms;
 pub mod args;
 pub mod async_fn;
 pub mod bits;
 pub mod bundle;
+pub mod collections;
 pub mod factory;
 pub mod fs;
 pub mod io;

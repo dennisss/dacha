@@ -523,7 +523,7 @@ pub fn peek<I: Clone, T, P: Parser<T, I>>(p: P) -> impl Parser<(), I> {
 
 /// Takes a specified number of bytes from the input
 pub fn take_exact<I: ParserFeed>(length: usize) -> impl Parser<I, I> {
-    move |input: I| input.take_exact(length).ok_or(incomplete_error())
+    move |input: I| input.take_exact(length).ok_or_else(incomplete_error)
 }
 
 pub fn take_while<I: ParserFeed, T: Copy, F: Fn(T) -> bool>(f: F) -> impl Parser<I, I>

@@ -10,10 +10,12 @@ libc = "0.2"
 hex = "0.3.2"
 base64 = "0.11.0"
 async-trait = "0.1.30"
-failure = "0.1.6"
+failure = "0.1.8"
 futures = "0.3.4"
 bytes = { git = "https://github.com/tokio-rs/bytes" }
 lazy_static = "1.4.0"
+typenum = "1.10.0"
+generic-array = "0.13.2"
 
 [dependencies.async-std]
 version = "1.5.0"
