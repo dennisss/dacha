@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::errors::*;
+use common::errors::*;
 use crate::gameboy::memory::{InterruptState, MemoryInterface, InterruptType};
 use crate::gameboy::clock::{CYCLES_PER_SECOND, Clock};
 

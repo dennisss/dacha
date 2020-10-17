@@ -1,15 +1,21 @@
+mod constants;
+mod dct;
+mod encoder;
+mod segments;
+
 use crate::{Colorspace, Image};
-use byteorder::{BigEndian, ReadBytesExt};
 use common::bits::{BitOrder, BitReader, BitVector};
 use common::ceil_div;
 use common::errors::*;
 use common::futures::future::err;
 use compression::huffman::HuffmanTree;
+use constants::*;
+use dct::*;
 use math::array::Array;
 use math::matrix::Dimension;
 use parsing::binary::{be_u16, be_u8};
 use parsing::take_exact;
-use std::collections::HashMap;
+use segments::*;
 use std::f32::consts::PI;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
@@ -39,17 +45,6 @@ const DRI: u8 = 0xDD;
 
 const START_OF_SCAN: u8 = 0xda; // SOS
 
-// TODO: In sequential and lossless modes, this can be up to 255
-const MAX_NUM_COMPONENTS: usize = 4;
-
-#[derive(Debug, PartialEq)]
-enum DCTMode {
-    Baseline,
-    Extended,
-    Progressive,
-    Lossless,
-}
-
 /*
 References:
 https://en.wikipedia.org/wiki/JPEG_File_Interchange_Format
@@ -59,9 +54,6 @@ https://www.w3.org/Graphics/JPEG/jfif3.pdf
 See here for more test images:
 https://www.w3.org/MarkUp/Test/xhtml-print/20050519/tests/A_2_1-BF-01.htm
 */
-
-const BLOCK_DIM: usize = 8;
-const BLOCK_SIZE: usize = 64;
 
 const ZIG_ZAG_SEQUENCE: &[u8; BLOCK_SIZE] = &[
     0, 1, 5, 6, 14, 15, 27, 28, //
@@ -99,193 +91,6 @@ fn decode_zz(size: usize, amplitude: u16) -> i16 {
     let extended = (0xffff_u16).overflowing_shl(size as u32).0 | amplitude;
 
     (extended as i16) + 1
-}
-
-/*
-TODO: Read the 'Practical Fast 1-D DCT Algorithms with 11 Multiplications' paper
-
-import math
-
-def cos(x, u):
-    return math.cos(((2*x + 1)*u*math.pi) / 16)
-
-for x in range(0,8):
-    for u in range(0, 8):
-        print(cos(x,u))
-
-#####
-
-import math
-
-N = 8
-for k in range(0,N):
-  out = []
-  for n in range(0,N):
-    v = math.cos((math.pi / N)*(n + (1/2)) * k) / 2
-    if k == 0:
-      v /= math.sqrt(2)
-    out.append(v)
-  print(out)
-
-
-
-cos (pi / 8) * (n + 1/2) * k
-
-    (pi * k) / 8
-
-    n * pi * k / 8    + pi * k / 16
-    (2 * n * pi * k + pi * k) / 16
-
-    ((2 * n + 1) * (pi*k)) / 16
-
-*/
-
-const DCT_MAT_8X8: &[f32; BLOCK_SIZE] = &[
-    0.35355339059327373,
-    0.35355339059327373,
-    0.35355339059327373,
-    0.35355339059327373,
-    0.35355339059327373,
-    0.35355339059327373,
-    0.35355339059327373,
-    0.35355339059327373, //
-    0.4903926402016152,
-    0.4157348061512726,
-    0.27778511650980114,
-    0.09754516100806417,
-    -0.0975451610080641,
-    -0.277785116509801,
-    -0.4157348061512727,
-    -0.4903926402016152, //
-    0.46193976625564337,
-    0.19134171618254492,
-    -0.19134171618254486,
-    -0.46193976625564337,
-    -0.4619397662556434,
-    -0.19134171618254517,
-    0.191341716182545,
-    0.46193976625564326, //
-    0.4157348061512726,
-    -0.0975451610080641,
-    -0.4903926402016152,
-    -0.2777851165098011,
-    0.2777851165098009,
-    0.4903926402016153,
-    0.09754516100806396,
-    -0.4157348061512721, //
-    0.3535533905932738,
-    -0.35355339059327373,
-    -0.35355339059327384,
-    0.3535533905932737,
-    0.35355339059327384,
-    -0.35355339059327334,
-    -0.35355339059327356,
-    0.3535533905932733, //
-    0.27778511650980114,
-    -0.4903926402016152,
-    0.09754516100806415,
-    0.41573480615127273,
-    -0.41573480615127256,
-    -0.09754516100806489,
-    0.49039264020161516,
-    -0.27778511650980076, //
-    0.19134171618254492,
-    -0.4619397662556434,
-    0.46193976625564326,
-    -0.19134171618254495,
-    -0.19134171618254528,
-    0.4619397662556437,
-    -0.46193976625564354,
-    0.19134171618254314, //
-    0.09754516100806417,
-    -0.2777851165098011,
-    0.41573480615127273,
-    -0.4903926402016153,
-    0.4903926402016152,
-    -0.415734806151272,
-    0.2777851165098022,
-    -0.09754516100806254, //
-];
-
-fn mat_index(a: &[f32; BLOCK_SIZE], i: usize, j: usize) -> &f32 {
-    &a[i * 8 + j]
-}
-
-fn mat_index_mut(a: &mut [f32; BLOCK_SIZE], i: usize, j: usize) -> &mut f32 {
-    &mut a[i * 8 + j]
-}
-
-fn matmul(a: &[f32; BLOCK_SIZE], b: &[f32; BLOCK_SIZE], c: &mut [f32; BLOCK_SIZE]) {
-    for i in 0..8 {
-        for j in 0..8 {
-            let c_ij = mat_index_mut(c, i, j);
-            *c_ij = 0.0;
-            for k in 0..8 {
-                *c_ij += *mat_index(a, k, i) * *mat_index(b, k, j);
-            }
-        }
-    }
-}
-
-fn matmul_tb(a: &[f32; BLOCK_SIZE], b: &[f32; BLOCK_SIZE], c: &mut [f32; BLOCK_SIZE]) {
-    for i in 0..8 {
-        for j in 0..8 {
-            let c_ij = mat_index_mut(c, i, j);
-            *c_ij = 0.0;
-            for k in 0..8 {
-                *c_ij += *mat_index(a, i, k) * *mat_index(b, k, j);
-            }
-        }
-    }
-}
-
-fn inverse_dct_2d(input: &[i16; BLOCK_SIZE], output: &mut [i16; BLOCK_SIZE]) {
-    let mut temp1 = [0f32; BLOCK_SIZE];
-    for (i, v) in input.iter().enumerate() {
-        temp1[i] = *v as f32;
-    }
-
-    let mut temp2 = [0f32; BLOCK_SIZE];
-
-    // = M' * X * M
-    matmul(DCT_MAT_8X8, &temp1, &mut temp2);
-    matmul_tb(&temp2, DCT_MAT_8X8, &mut temp1);
-
-    for (i, v) in temp1.iter().enumerate() {
-        output[i] = v.round() as i16;
-    }
-
-    return;
-
-    let alpha = |v: u8| -> f32 {
-        if v == 0 {
-            1.0f32 / (2.0f32).sqrt() as f32
-        } else {
-            1.0f32
-        }
-    };
-
-    // TODO: Make into a LUT
-    let cos = |x: u8, u: u8| -> f32 { (((2.0 * (x as f32) + 1.0) * (u as f32) * PI) / 16.0).cos() };
-
-    for i in 0..(output.len() as u8) {
-        let x = i % 8;
-        let y = i / 8;
-
-        let mut sum = 0.0;
-        for v in 0..8_u8 {
-            for u in 0..8_u8 {
-                sum += alpha(u)
-                    * alpha(v)
-                    * (input[(v * 8 + u) as usize] as f32)
-                    * cos(x, u)
-                    * cos(y, v);
-            }
-        }
-
-        // TODO: The 1/4 could be a >> 2 in integer space done at the very end?
-        output[i as usize] = (((1.0 / 4.0) * sum) as f32).round() as i16;
-    }
 }
 
 // TODO: Verify that it matches the precision of the frame.
@@ -340,10 +145,6 @@ fn jpeg_ycbcr_to_rgb(inputs: &mut [u8]) {
     }
 }
 
-const MAX_DC_TABLES: usize = 4;
-const MAX_AC_TABLES: usize = 4;
-const MAX_QUANT_TABLES: usize = 4;
-
 pub struct JPEG {
     // TODO: May also be up to 12 bits of precision.
     pub image: Image<u8>,
@@ -363,6 +164,9 @@ struct FrameComponentData {
     y_i: usize,
 
     /// Total number of blocks required to represent this component.
+    ///
+    /// NOTE: While this may seem redundant with raw_coeffs.len(), it is
+    /// possible that raw_coeffs is empty if we are in sequential model.
     num_blocks: usize,
 
     /// Values of the DCT coefficients for all blocks in the image as of now.
@@ -466,11 +270,8 @@ impl JPEG {
 
         let mut frame_segment: Option<StartOfFrameSegment> = None;
 
-        // TODO: Combine this with frame_components_data.
-        let mut frame_components: HashMap<u8, FrameComponent> = HashMap::new();
-
         // TODO: Just base everything on indices.
-        let mut frame_component_data: HashMap<u8, FrameComponentData> = HashMap::new();
+        let mut frame_component_data: Vec<FrameComponentData> = vec![];
 
         let mut h_max = 0;
         let mut v_max = 0;
@@ -538,12 +339,12 @@ impl JPEG {
                         0,
                     );
 
+                    let mut frame_components_idx = std::collections::HashSet::new();
+
                     for (i, component) in seg.components.iter().enumerate() {
-                        if frame_components.contains_key(&component.id) {
+                        if !frame_components_idx.insert(component.id) {
                             return Err(err_msg("Duplicate component ids"));
                         }
-
-                        frame_components.insert(component.id, component.clone());
 
                         // Sampling factors must be in the range [1, 4]
                         if component.v_factor < 1
@@ -586,17 +387,14 @@ impl JPEG {
 
                         let num_blocks = (x_i / BLOCK_DIM) * (y_i / BLOCK_DIM);
 
-                        frame_component_data.insert(
-                            component.id,
-                            FrameComponentData {
-                                index: i,
-                                num_blocks,
-                                x_i,
-                                y_i,
-                                raw_coeffs: vec![[0i16; 64]; num_blocks],
-                                seen_coeffs: [false; BLOCK_SIZE],
-                            },
-                        );
+                        frame_component_data.push(FrameComponentData {
+                            index: i,
+                            num_blocks,
+                            x_i,
+                            y_i,
+                            raw_coeffs: vec![[0i16; 64]; num_blocks],
+                            seen_coeffs: [false; BLOCK_SIZE],
+                        });
                     }
 
                     frame_segment = Some(seg);
@@ -629,7 +427,11 @@ impl JPEG {
                     assert!(inner.is_empty());
                 }
                 START_OF_SCAN => {
-                    let seg = StartOfScanSegment::parse(inner)?;
+                    let frame_segment = frame_segment
+                        .as_ref()
+                        .ok_or_else(|| err_msg("Expected SOF before SOS"))?;
+
+                    let seg = StartOfScanSegment::parse(frame_segment, inner)?;
                     // println!("{:?}", seg);
 
                     // TODO: Make all of the error cases 'unlikely'
@@ -640,14 +442,10 @@ impl JPEG {
                         return Err(err_msg("Selection out of range"));
                     }
 
-                    if let Some(frame_seg) = &frame_segment {
-                        if frame_seg.mode == DCTMode::Baseline {
-                            if seg.selection_start != 0 || seg.selection_end != 63 {
-                                return Err(err_msg("Invalid selection indices for Baseline mode"));
-                            }
+                    if frame_segment.mode == DCTMode::Baseline {
+                        if seg.selection_start != 0 || seg.selection_end != 63 {
+                            return Err(err_msg("Invalid selection indices for Baseline mode"));
                         }
-                    } else {
-                        return Err(err_msg("Expected SOF before SOS"));
                     }
 
                     // TODO: Verify next is not empty?
@@ -673,24 +471,12 @@ impl JPEG {
                         return Err(err_msg("No components in SOS"));
                     }
 
-                    // TODO: Convert all selectors to indexes in the array.
-
-                    // TODO: Verify that no duplicate components are given. Verify that components
-                    // are in the same order as in the frame list.
-
                     let num_mcus = if seg.components.len() == 1 {
-                        frame_component_data
-                            .get(&seg.components[0].component_selector)
-                            .unwrap()
-                            .num_blocks
+                        frame_component_data[seg.components[0].component_index].num_blocks
                     } else {
-                        let comp = frame_components
-                            .get(&seg.components[0].component_selector)
-                            .unwrap();
+                        let comp = &frame_segment.components[seg.components[0].component_index];
 
-                        let fdata = frame_component_data
-                            .get(&seg.components[0].component_selector)
-                            .unwrap();
+                        let fdata = &frame_component_data[seg.components[0].component_index];
                         // TODO: Verify that this value is the same regardless of which component is
                         // used for the calcualation.
                         fdata.num_blocks / (comp.h_factor * comp.v_factor)
@@ -748,12 +534,11 @@ impl JPEG {
                             mcu_start_i,
                             mcu_end_i,
                             &seg,
-                            &frame_components,
                             &mut frame_component_data,
                             &quantization_tables,
                             &dc_huffman_trees,
                             &ac_huffman_trees,
-                            frame_segment.as_ref().unwrap(),
+                            frame_segment,
                             h_max,
                             v_max,
                             &mut pixels,
@@ -772,6 +557,10 @@ impl JPEG {
                 }
             };
         }
+
+        // TODO: We should be able to verify that we saw all components and all
+        // coefficients and bits of each coefficients across all scans (without
+        // duplicates)
 
         let frame_seg = frame_segment.unwrap();
 
@@ -797,8 +586,7 @@ impl JPEG {
         mcu_start_i: usize,
         mcu_end_i: usize,
         seg: &StartOfScanSegment,
-        frame_components: &HashMap<u8, FrameComponent>,
-        frame_component_data: &mut HashMap<u8, FrameComponentData>,
+        frame_component_data: &mut [FrameComponentData],
         quantization_tables: &[Option<DefineQuantizationTable>; MAX_QUANT_TABLES],
         dc_huffman_trees: &[Option<HuffmanTree>; MAX_DC_TABLES],
         ac_huffman_trees: &[Option<HuffmanTree>; MAX_AC_TABLES],
@@ -816,25 +604,22 @@ impl JPEG {
         // TODO: This can easily become a flat vector based on component index.
         // (we can bound the size of it to 4 entries due to the )
         // Implement as a FixedArray<i16, MaxNumChannels>
-        // let mut last_dc: HashMap<u8, i16> = HashMap::new();
 
-        let mut last_dc = HashMap::new(); // [0i16; MAX_NUM_COMPONENTS];
+        let mut last_dc = [0i16; MAX_NUM_COMPONENTS];
 
         // NOTE: Only applies to scans only encoding AC coefficients.
         let mut eobrun: usize = 0;
 
         for mcu_i in mcu_start_i..mcu_end_i {
             for component in &seg.components {
-                let frame_component = frame_components.get(&component.component_selector).unwrap();
+                let frame_component = &frame_segment.components[component.component_index];
                 let qtable = quantization_tables
                     [frame_component.quantization_table_selector as usize]
                     .as_ref()
                     .unwrap();
 
                 // TODO: Stop shadowing the name of the map variable.
-                let frame_component_data = frame_component_data
-                    .get_mut(&component.component_selector)
-                    .unwrap();
+                let frame_component_data = &mut frame_component_data[component.component_index];
 
                 let num_units = if seg.components.len() == 1 {
                     1
@@ -918,7 +703,7 @@ impl JPEG {
         component: &ScanComponent,
         dc_huffman_trees: &[Option<HuffmanTree>; MAX_DC_TABLES],
         ac_huffman_trees: &[Option<HuffmanTree>; MAX_AC_TABLES],
-        last_dc: &mut HashMap<u8, i16>,
+        last_dc: &mut [i16; MAX_NUM_COMPONENTS],
         eobrun: &mut usize,
     ) -> Result<()> {
         // TODO: Update seen_coeffs
@@ -944,11 +729,8 @@ impl JPEG {
                     0
                 };
 
-                if last_dc.contains_key(&component.component_selector) {
-                    v += *last_dc.get(&component.component_selector).unwrap();
-                }
-
-                last_dc.insert(component.component_selector, v);
+                v += last_dc[component.component_index];
+                last_dc[component.component_index] = v;
 
                 buffer[0] = v * (1 << (seg.approximation_cur_bit as i16));
             } else {
@@ -1146,321 +928,5 @@ impl JPEG {
                 }
             }
         }
-    }
-}
-
-#[derive(Debug)]
-struct App0Segment<'a> {
-    id: &'a [u8], // Always 5 bytes
-    version: &'a [u8],
-    density_units: u8,
-    x_density: u16,
-    y_density: u16,
-    x_thumbnail: u8,
-    y_thumbnail: u8,
-    thumbnail_data: &'a [u8],
-}
-
-impl<'a> App0Segment<'a> {
-    fn parse(mut data: &'a [u8]) -> Result<Self> {
-        let id = parse_next!(data, take_exact(5));
-        let version = parse_next!(data, take_exact(2));
-        let density_units = parse_next!(data, be_u8);
-        let x_density = parse_next!(data, be_u16);
-        let y_density = parse_next!(data, be_u16);
-        let x_thumbnail = parse_next!(data, be_u8);
-        let y_thumbnail = parse_next!(data, be_u8);
-
-        if data.len() % 3 != 0 {
-            return Err(err_msg("Number of thumbnail bytes not divisible by 3"));
-        }
-
-        Ok(Self {
-            id,
-            version,
-            density_units,
-            x_density,
-            y_density,
-            x_thumbnail,
-            y_thumbnail,
-            thumbnail_data: data,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-struct FrameComponent {
-    id: u8,
-    /// Horizontal sampling factor (u8)
-    h_factor: usize,
-    /// Vertical sampling factor (u8)
-    v_factor: usize,
-    quantization_table_selector: u8,
-}
-
-// TODO: Consider eventually refactoring all image size related data types back
-// to u16.
-#[derive(Debug)]
-struct StartOfFrameSegment {
-    mode: DCTMode,
-    precision: u8,
-    /// Number of scan lines in the frame (aka the height of the image) (u16)
-    y: usize, // Y
-    /// Number of samples per scan line (aka the width of the image) (u16)
-    x: usize, // X
-    components: Vec<FrameComponent>,
-}
-
-impl StartOfFrameSegment {
-    fn parse(marker: u8, mut data: &[u8]) -> Result<Self> {
-        let mode = match marker {
-            SOF0 => DCTMode::Baseline,
-            SOF1 => DCTMode::Extended,
-            SOF2 => DCTMode::Progressive,
-            SOF3 => DCTMode::Lossless,
-            _ => {
-                return Err(err_msg("Unsupported SOF marker"));
-            }
-        };
-
-        let precision = parse_next!(data, be_u8);
-        let y = parse_next!(data, be_u16) as usize;
-        let x = parse_next!(data, be_u16) as usize;
-
-        let num_components = parse_next!(data, be_u8);
-        let mut components = vec![];
-        for i in 0..num_components {
-            let id = parse_next!(data, be_u8);
-            let factors = parse_next!(data, be_u8);
-            let quantization_table_selector = parse_next!(data, be_u8);
-
-            components.push(FrameComponent {
-                id,
-                h_factor: (factors >> 4) as usize,
-                v_factor: (factors & 0b1111) as usize,
-                quantization_table_selector,
-            });
-        }
-
-        Ok(Self {
-            mode,
-            precision,
-            y,
-            x,
-            components,
-        })
-    }
-}
-
-#[derive(Debug)]
-struct StartOfScanSegment {
-    components: Vec<ScanComponent>,
-    selection_start: u8,
-    // NOTE: Will be 63 in sequential (non-progressive mode)
-    selection_end: u8,
-
-    approximation_last_bit: u8,
-    approximation_cur_bit: u8,
-}
-
-// So, I have huffman tables:
-// - number of codes of length 1-16.
-
-impl StartOfScanSegment {
-    fn parse(mut data: &[u8]) -> Result<Self> {
-        let num_components = parse_next!(data, be_u8);
-        let mut components = vec![];
-        for i in 0..num_components {
-            let component_selector = parse_next!(data, be_u8);
-
-            let t = parse_next!(data, be_u8);
-            let dc_table_selector = t >> 4;
-            let ac_table_selector = t & 0b1111;
-            components.push(ScanComponent {
-                component_selector,
-                dc_table_selector,
-                ac_table_selector,
-            });
-        }
-
-        let selection_start = parse_next!(data, be_u8);
-        let selection_end = parse_next!(data, be_u8);
-        let a = parse_next!(data, be_u8);
-
-        if !data.is_empty() {
-            return Err(err_msg("Unexpected data after SOS"));
-        }
-
-        Ok(Self {
-            components,
-            selection_start,
-            selection_end,
-            approximation_last_bit: (a >> 4),
-            approximation_cur_bit: (a & 0b1111),
-        })
-    }
-}
-
-#[derive(Debug)]
-struct ScanComponent {
-    component_selector: u8,
-    dc_table_selector: u8,
-    ac_table_selector: u8,
-}
-
-#[derive(Debug)]
-struct DefineQuantizationTable<'a> {
-    table_dest_id: usize, // 0-3
-    elements: DefineQuantizationTableElements<'a>,
-}
-
-#[derive(Debug)]
-enum DefineQuantizationTableElements<'a> {
-    U8(&'a [u8]),
-    U16(Vec<u16>),
-}
-
-impl<'a> DefineQuantizationTable<'a> {
-    fn parse(mut data: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let v = parse_next!(data, be_u8);
-
-        let precision = (v >> 4);
-        let table_dest_id = (v & 0b1111) as usize;
-
-        let elements = if precision == 0 {
-            DefineQuantizationTableElements::U8(parse_next!(data, take_exact(64)))
-        } else if precision == 1 {
-            let mut els = vec![];
-            for i in 0..64 {
-                els.push(parse_next!(data, be_u16));
-            }
-
-            DefineQuantizationTableElements::U16(els)
-        } else {
-            return Err(err_msg("Unknown precision"));
-        };
-
-        Ok((
-            Self {
-                table_dest_id,
-                elements,
-            },
-            data,
-        ))
-    }
-}
-
-#[derive(Debug, PartialEq)]
-enum TableClass {
-    DC,
-    AC,
-}
-
-#[derive(Debug)]
-struct DefineHuffmanTableSegment<'a> {
-    table_class: TableClass,
-    table_dest_id: usize, // values 0-3 (in baseline, can only by 0-1)
-
-    /// Number of codes which have length 'i' bits where 'i-1' is the index into
-    /// this array from 0-15. Thus all codes have <= 16 bits.
-    /// (BITS)
-    length_counts: &'a [u8],
-
-    /// Values encoded by the huffman tree in order of increasing code length.
-    /// (HUFFVAL)
-    values: &'a [u8],
-}
-
-impl<'a> DefineHuffmanTableSegment<'a> {
-    // TODO: Make sure that all segments allow multiple in one?
-    fn parse(mut data: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let t = parse_next!(data, be_u8);
-
-        let table_class = {
-            let tc = t >> 4;
-            if tc == 1 {
-                TableClass::AC
-            } else if tc == 0 {
-                TableClass::DC
-            } else {
-                return Err(err_msg("Invalid table class"));
-            }
-        };
-
-        let table_dest_id = (t & 0b1111) as usize;
-
-        let length_counts = parse_next!(data, take_exact(16));
-
-        let num_params = length_counts.iter().sum::<u8>() as usize;
-        let values = parse_next!(data, take_exact(num_params));
-
-        Ok((
-            Self {
-                table_class,
-                table_dest_id,
-                length_counts,
-                values,
-            },
-            data,
-        ))
-    }
-
-    // TODO: We need to aggresively limit the max number of nodes required to store
-    // the huffman table (ideally by storing long sequences of bits in a single
-    // node?)
-    fn to_tree(&self) -> HuffmanTree {
-        // Based on Annex C of T.81
-
-        // Expanded list of the size of each code (HUFFSIZES)
-        // TODO: Make this into an iterator/generator so that we don't have to store the
-        // full list.
-        let mut sizes: Vec<u8> = vec![];
-        sizes.reserve(self.values.len());
-        for i in 0..self.length_counts.len() {
-            for j in 0..self.length_counts[i] {
-                sizes.push((i as u8) + 1);
-            }
-        }
-
-        // List of all codes (HUFFCODE)
-        let mut codes: Vec<BitVector> = vec![];
-        {
-            let mut k = 0;
-            let mut code: u16 = 0;
-            let mut si = sizes[0];
-
-            loop {
-                loop {
-                    // The 'si' most least significant bits make up the code. With the MSB of these
-                    // representing the root of the tree.
-                    codes.push(BitVector::from_lower_msb(code as usize, si));
-
-                    code += 1;
-                    k += 1;
-
-                    if k == sizes.len() || sizes[k] != si {
-                        break;
-                    }
-                }
-
-                if k == sizes.len() {
-                    break;
-                }
-
-                let size_step = sizes[k] - si;
-                code = code << (size_step as u16);
-                si += size_step;
-            }
-        }
-
-        let mut tree = HuffmanTree::new();
-        for i in 0..self.values.len() {
-            // TODO: Optimize the tree to use u8 symbols.
-            //            println!("{} => {:?}", self.values[i], codes[i]);
-
-            tree.insert(self.values[i] as usize, codes[i].clone());
-        }
-
-        tree
     }
 }

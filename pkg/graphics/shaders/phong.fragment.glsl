@@ -1,5 +1,3 @@
-R"(
-
 #version 330
 
 #define MAXLIGHTS 2
@@ -62,5 +60,3 @@ void main() {
 
 	fragColor = vec4(color, 1.0);
 }
-
-)"

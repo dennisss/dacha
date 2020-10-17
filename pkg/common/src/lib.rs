@@ -183,6 +183,16 @@ pub fn camel_to_snake_case(name: &str) -> String {
     s
 }
 
+pub trait InRange {
+    fn in_range(self, min: Self, max: Self) -> bool;
+}
+
+impl<T: PartialOrd> InRange for T {
+    fn in_range(self, min: Self, max: Self) -> bool {
+        self >= min && self <= max
+    }
+}
+
 #[macro_export]
 macro_rules! tup {
     (($a:ident, $b:ident) = $e:expr) => {{

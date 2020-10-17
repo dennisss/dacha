@@ -493,7 +493,7 @@ mod tests {
             v.push(vals[i]);
             assert_eq!(v.len(), i + 1);
             for j in 0..(i + 1) {
-                assert_eq!(v.get(j), vals[j]);
+                assert_eq!(v.get(j), Some(vals[j]));
             }
         }
 

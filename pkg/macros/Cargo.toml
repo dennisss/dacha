@@ -7,5 +7,6 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 proc-macro = true
 
 [dependencies]
-syn = { version = "1.0.8", features = ["extra-traits", "full"] }
-quote = "1.0.2"
+syn = { version = "1.0.23", features = ["extra-traits", "full"] }
+quote = "1.0.6"
+proc-macro2 = "1.0.13"

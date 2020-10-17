@@ -1,6 +1,6 @@
 use common::bits::{bitget, bitset};
 use crate::gameboy::memory::MemoryInterface;
-use crate::errors::*;
+use common::errors::*;
 
 
 enum JoypadMode {

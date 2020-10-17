@@ -1,9 +1,9 @@
 use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
 use std::borrow::{Borrow, BorrowMut};
-use crate::errors::*;
+use common::errors::*;
 use crate::gameboy::memory::*;
-use failure::_core::cell::RefCell;
+use std::cell::RefCell;
 
 pub struct HalfRegister<T: Borrow<u16>> {
 	full: T,

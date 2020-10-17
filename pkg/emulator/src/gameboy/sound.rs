@@ -2,7 +2,7 @@ use std::sync::{Mutex, Arc};
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use common::bits::{bitget, bitset};
 use crate::gameboy::memory::MemoryInterface;
-use crate::errors::*;
+use common::errors::*;
 use crate::gameboy::clock::Clock;
 
 const NUM_CHANNELS: usize = 4;

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use common::bits::{bitget, bitset};
 use crate::gameboy::memory::MemoryInterface;
-use crate::errors::*;
+use common::errors::*;
 use crate::gameboy::clock::*;
 use crate::gameboy::memory::{InterruptState, InterruptType};
 

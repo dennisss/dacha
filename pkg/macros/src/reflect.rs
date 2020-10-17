@@ -1,4 +1,5 @@
 use proc_macro::TokenStream;
+use proc_macro2::TokenTree;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{
@@ -52,26 +53,88 @@ pub fn derive_reflection(input: TokenStream) -> TokenStream {
                 };
                 let var = format_ident!("{}", var);
 
-                //				for attr in &field.attrs {
-                //					let name = ast_string!(&attr.path);
-                //					let value = ast_string!(&attr.tokens);
-                //
-                //					println!("{} => {}", name, value);
-                //				}
+                let mut tags = vec![];
 
-                //				println!("{:#?}", field.attrs);
+                for attr in &field.attrs {
+                    let name = ast_string!(&attr.path);
+                    //                    let value = ast_string!(&attr.tokens);
+
+                    if name == "tags" {
+                        let mut outer_toks = attr.tokens.clone().into_iter().collect::<Vec<_>>();
+                        if outer_toks.len() != 1 {
+                            panic!("Expected a token group for tags");
+                        }
+
+                        let group = if let TokenTree::Group(g) = outer_toks.pop().unwrap() {
+                            g
+                        } else {
+                            panic!("Expected a token group for tags");
+                        };
+
+                        let toks = group.stream().into_iter().collect::<Vec<_>>();
+
+                        let mut i = 0;
+                        while i < toks.len() {
+                            let name = if let TokenTree::Ident(ident) = &toks[i] {
+                                ident.to_string()
+                            } else {
+                                panic!("Expected ident");
+                            };
+
+                            i += 1;
+
+                            {
+                                let punc = if let TokenTree::Punct(punc) = &toks[i] {
+                                    punc
+                                } else {
+                                    panic!("Expected punc");
+                                };
+
+                                if punc.as_char() != '=' {
+                                    panic!("Expected =");
+                                }
+
+                                i += 1;
+                            }
+
+                            let lit = if let TokenTree::Literal(l) = &toks[i] {
+                                l
+                            } else {
+                                panic!("Expected lit");
+                            };
+
+                            i += 1;
+
+                            let t = quote! {
+                                ::reflection::ReflectTag { key: #name, value: #lit }
+                            };
+                            // println!("{}", ast_string!(&t));
+                            tags.push(t);
+
+                            if i < toks.len() {
+                                let punc = if let TokenTree::Punct(punc) = &toks[i] {
+                                    punc
+                                } else {
+                                    panic!("Expected punc");
+                                };
+
+                                if punc.as_char() != ',' {
+                                    panic!("Expected ,");
+                                }
+
+                                i += 1;
+                            }
+                        }
+                    }
+                }
 
                 let val = quote! {
                     #i => ::reflection::ReflectField {
-                        tags: &[],
+                        tags: &[ #(#tags,)* ],
                         value: ::reflection::ReflectValue::#var(
                             &mut self.#field_name)
                     }
                 };
-
-                //				arms.push(quote! {
-                //					#field_name => Some(#val),
-                //				});
 
                 fields.push(val);
             }

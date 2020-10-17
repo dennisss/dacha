@@ -1,5 +1,3 @@
-R"(
-
 #version 330
 
 #define MAXLIGHTS 2
@@ -79,5 +77,3 @@ void main(){
 
 	gl_Position = proj * modelview * vec4(position, 1.0);
 }
-
-)"

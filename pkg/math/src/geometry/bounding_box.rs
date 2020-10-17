@@ -1,17 +1,17 @@
 use typenum::U1;
 use crate::matrix::base::VectorNew;
-use crate::matrix::storage::NewStorage;
+use crate::matrix::storage::{NewStorage, MatrixNewStorage};
 use crate::matrix::dimension::Dimension;
 
 /// Axis aligned bounding box.
 pub struct BoundingBox<D: Dimension>
-	where (D, U1): NewStorage<f32> {
+	where MatrixNewStorage: NewStorage<f32, D, U1> {
 	pub min: VectorNew<f32, D>,
 	pub max: VectorNew<f32, D>
 }
 
 impl<D: Dimension>
-BoundingBox<D> where (D, U1): NewStorage<f32>  {
+BoundingBox<D> where MatrixNewStorage: NewStorage<f32, D, U1>  {
 	pub fn compute(points: &[VectorNew<f32, D>]) -> Self {
 		if points.len() == 0 {
 			return Self {

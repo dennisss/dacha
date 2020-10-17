@@ -5,13 +5,11 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 
 [dependencies]
 common = { path = "../common" }
-math = { path = "../math" }
 rmp-serde = "0.13.7"
 rand = "0.6.1"
 bytes = { git = "https://github.com/tokio-rs/bytes" }
 fs2 = "0.4.3"
 ctrlc = "3.1.1"
 libc = "0.2"
-nom = "^4.2"
 minifb = "0.15.3"
 num-traits = "0.2"

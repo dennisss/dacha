@@ -687,7 +687,7 @@ mod tests {
 		let r = BigUint::from_be_bytes(&hex::decode("8163E5941BED41DA441B33E653C632A55A110893133351E20CE7CB75").unwrap());
 		let s = BigUint::from_be_bytes(&hex::decode("D12C3FC289DDD5F6890DCE26B65792C8C50E68BF551D617D47DF15A8").unwrap());
 
-		let sig = crate::x509::asn::PKIX1Algorithms2008::ECDSA_Sig_Value {
+		let sig = pkix::PKIX1Algorithms2008::ECDSA_Sig_Value {
 			r: r.into(),
 			s: s.into()
 		}.to_der();

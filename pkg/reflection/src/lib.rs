@@ -29,8 +29,13 @@ pub trait Reflect {
 //}
 
 pub struct ReflectField<'a> {
-    pub tags: &'static [&'static str],
+    pub tags: &'static [ReflectTag],
     pub value: ReflectValue<'a>,
+}
+
+pub struct ReflectTag {
+    pub key: &'static str,
+    pub value: &'static str,
 }
 
 pub enum ReflectValue<'a> {
