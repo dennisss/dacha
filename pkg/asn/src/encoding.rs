@@ -1,7 +1,7 @@
 use parsing::*;
 use parsing::binary::*;
 use parsing::ascii::AsciiString;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 use super::tag::*;
 use super::builtin::*;
@@ -9,6 +9,8 @@ use std::convert::TryFrom;
 use std::fmt::Debug;
 use common::bits::BitVector;
 use math::big::BigInt;
+use std::collections::HashMap;
+use chrono::DateTime;
 
 // Mainly for the compiled code.
 pub use super::tag::{Tag, TagClass};
@@ -42,7 +44,7 @@ parser!(parse_varint_msb_be<&[u8], usize> => seq!(c => {
 	let mut number = 0;
 
 	let mut finished = false;
-	for i in 0..(MAX_TAG_NUMBER_BITS / 7) {
+	for _ in 0..(MAX_TAG_NUMBER_BITS / 7) {
 		let octet = c.next(be_u8)?;
 		let num_part = octet & 0x7f; // Lower 7 bits
 		finished |= (octet >> 7) == 0; // Upper 1 bit
@@ -241,19 +243,6 @@ pub fn parse_ber(data: Bytes) -> Result<()> {
 
 	Ok(())
 }
-
-macro_rules! some_or_else {
-	($e:expr) => {
-		match $e {
-			Some(v) => v,
-			None => { return Ok(None); }
-		}
-	};
-}
-
-
-use std::collections::HashMap;
-use chrono::DateTime;
 
 #[derive(Debug)]
 enum DERReaderBuffer {
@@ -1120,8 +1109,6 @@ pub trait DERWriteable {
 	}
 }
 
-
-
 impl DERWriteable for bool {
 	fn write_der(&self, writer: &mut DERWriter) { writer.write_bool(*self); }
 }
@@ -1226,7 +1213,7 @@ impl DERWriteable for BMPString {
 // const TAG_NUMBER_TIME_OF_DAY: usize = 32;
 // const TAG_NUMBER_DATE_TIME: usize = 33;
 
-
+/// Represents a type which can be de-serialized from DER encoded data.
 pub trait DERReadable: Sized {
 	fn read_der(reader: &mut DERReader) -> Result<Self>;
 
@@ -1437,7 +1424,7 @@ mod tests {
 		for l in lens {
 			let mut enc = vec![];
 			Length::serialize(Some(l), &mut enc);
-			let (dec, rest) = Length::parse(enc.into()).unwrap();
+			let (dec, rest) = Length::parse(&enc).unwrap();
 			assert_eq!(rest.len(), 0);
 
 			let out = match dec {

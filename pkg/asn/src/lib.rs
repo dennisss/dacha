@@ -1,4 +1,4 @@
-#![feature(const_constructor, const_fn)]
+#![feature(const_fn)]
 
 #[macro_use] extern crate lazy_static;
 extern crate chrono;
@@ -11,3 +11,6 @@ pub mod debug;
 pub mod tokenizer;
 pub mod syntax;
 pub mod compiler;
+mod build;
+
+pub use build::build;

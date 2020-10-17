@@ -5,14 +5,12 @@ use common::errors::*;
 use image::format::bitmap::Bitmap;
 use image::format::jpeg::JPEG;
 
-// First transpose the second matrix into packed quantitied.
-
 fn main() -> Result<()> {
     let jpg = JPEG::open("/home/dennis/workspace/dacha/testdata/jpeg422jfif.jpg").unwrap();
 
     // println!("{}", std::mem::size_of::<Vec<u8>>());
 
-    jpg.image.show()?;
+    // jpg.image.show()?;
 
     return Ok(());
 

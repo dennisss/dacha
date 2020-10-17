@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 use common::futures::channel::oneshot;
 use std::collections::HashMap;

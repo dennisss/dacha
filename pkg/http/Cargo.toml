@@ -8,6 +8,4 @@ edition = "2018"
 common = { path = "../common" }
 parsing = { path = "../parsing" }
 compression = { path = "../compression" }
-bytes = { git = "https://github.com/tokio-rs/bytes" }
 libc = "0.2.62"
-futures = "0.3.4"

@@ -5,7 +5,7 @@ use super::tag::*;
 use super::encoding::*;
 use super::builtin::*;
 use math::big::BigInt;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use chrono::{DateTime, Utc};
 use common::bits::BitVector;
 use common::errors::*;

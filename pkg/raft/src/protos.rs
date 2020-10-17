@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use common::bytes::Bytes;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::borrow::Borrow;

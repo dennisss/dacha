@@ -2,7 +2,7 @@ use std::convert::AsRef;
 use std::string::ToString;
 use common::errors::*;
 use parsing::*;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use parsing::ascii::AsciiString;
 use common::bits::BitVector;
 use super::tokenizer::Token;
@@ -2620,13 +2620,13 @@ mod tests {
 		// return;
 
 		// PKIX1Explicit88
-		let mut file = std::fs::File::open("/home/dennis/workspace/dacha/pkg/crypto/src/asn/PKIX1Explicit88.asn1").unwrap();
+		let mut file = std::fs::File::open("/home/dennis/workspace/dacha/third_party/pkix/src/PKIX1Explicit88.asn1").unwrap();
 		let mut data = vec![];
 		file.read_to_end(&mut data).unwrap();
 
 		let (module, _) = complete(ModuleDefinition::parse)(Bytes::from(data))
 			.unwrap();
 
-		println!("{:#?}", module);
+		// println!("{:#?}", module);
 	}
 }

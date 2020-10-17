@@ -2,7 +2,7 @@ use crate::filter_block::*;
 use std::sync::Arc;
 
 pub struct FilterBlockBuilder {
-	policy: Arc<FilterPolicy>,
+	policy: Arc<dyn FilterPolicy>,
 	output: Vec<u8>,
 	offsets: Vec<u32>,
 	base: usize, log_base: u8,
@@ -10,7 +10,7 @@ pub struct FilterBlockBuilder {
 }
 
 impl FilterBlockBuilder {
-	pub fn new(policy: Arc<FilterPolicy>, log_base: u8) -> Self {
+	pub fn new(policy: Arc<dyn FilterPolicy>, log_base: u8) -> Self {
 		Self {
 			policy, output: vec![], offsets: vec![],
 			base: 1 << (log_base as usize), log_base,

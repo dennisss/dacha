@@ -5,7 +5,7 @@ extern crate protobuf;
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 use protobuf::service::{Service, Channel};
 use http::server::{HttpServer, HttpRequestHandler};

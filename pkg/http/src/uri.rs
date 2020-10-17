@@ -1,7 +1,7 @@
 use std::net::ToSocketAddrs;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 use parsing::ascii::*;
 use crate::uri_parser::*; // TODO: Cyclic reference

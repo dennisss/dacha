@@ -68,11 +68,11 @@ impl EmbeddedDB {
             None
         };
 
-        let mut current_path = path.join("CURRENT");
+        let current_path = path.join("CURRENT");
         let mut current = async_std::fs::read_to_string(current_path).await?;
         current = current.trim_end().to_string();
 
-        let mut manifest_path = path.join(&current);
+        let manifest_path = path.join(&current);
         let mut manifest_file = RecordLog::open(&manifest_path, false).await?;
 
         //	let mut manifest_data = vec![];

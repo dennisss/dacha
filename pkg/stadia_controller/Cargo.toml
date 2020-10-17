@@ -5,6 +5,5 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 
 [dependencies]
 common = { path = "../common" }
-failure = "0.1.6"
 libusb = "0.3"
 uinput = "0.1.3"

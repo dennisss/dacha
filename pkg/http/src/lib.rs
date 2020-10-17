@@ -1,8 +1,7 @@
-#![feature(core_intrinsics, async_await, trait_alias)]
+#![feature(core_intrinsics, trait_alias)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate parsing;
-extern crate bytes;
 extern crate libc;
 
 mod reader;

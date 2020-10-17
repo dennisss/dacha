@@ -1,5 +1,5 @@
 use crate::uri::*;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 use parsing::ascii::*;
 use parsing::*;

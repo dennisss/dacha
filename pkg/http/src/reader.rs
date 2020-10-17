@@ -1,5 +1,5 @@
 use common::errors::*;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::async_std::io::Read;
 use std::marker::Unpin;
 use common::futures::io::{AsyncRead, AsyncWrite};

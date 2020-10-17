@@ -1,7 +1,6 @@
 #![feature(core_intrinsics, async_await, trait_alias)]
 
 #[macro_use] extern crate common;
-extern crate bytes;
 extern crate libc;
 extern crate http;
 extern crate parsing;
@@ -17,7 +16,7 @@ use std::str::FromStr;
 use std::borrow::BorrowMut;
 use std::convert::AsMut;
 
-use bytes::Bytes;
+use common::bytes::Bytes;
 use http::client::*;
 
 use common::async_std::net::{TcpListener, TcpStream};

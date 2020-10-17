@@ -91,7 +91,7 @@ impl<'a> Block<'a> {
 
         let mut packed = self.restarts.len() as u32;
         if self.hash_index.is_some() {
-            packed |= (1 << 31);
+            packed |= 1 << 31;
         }
 
         output.extend_from_slice(&packed.to_le_bytes());

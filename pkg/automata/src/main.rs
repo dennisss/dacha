@@ -44,6 +44,13 @@ fn main() {
 	println!("{:?}", e);
 	assert!(e.test("a9034343"));
 	assert!(e.test(""));
+
+	let mut j = RegExp::new("[a-b]").unwrap();
+	assert!(e.test("a"));
+	assert!(e.test("b"));
+	assert!(!e.test("c"));
+	
+
 //	assert!(!e.test("<"));
 
 	/*

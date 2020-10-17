@@ -82,17 +82,6 @@ use std::ops::Bound;
 
 */
 
-struct RegExpSymbolIter<'a> {
-	char_iter: std::str::Chars<'a>,
-	alphabet: &'a RegExpAlphabet
-}
-
-impl<'a> std::iter::Iterator for RegExpSymbolIter<'a> {
-	type Item = RegExpSymbol;
-	fn next(&mut self) -> Option<Self::Item> {
-		self.char_iter.next().map(|c| self.alphabet.get(c))
-	}
-}
 
 
 #[derive(Debug)]
@@ -138,6 +127,18 @@ impl RegExp {
 
 }
 
+
+struct RegExpSymbolIter<'a> {
+	char_iter: std::str::Chars<'a>,
+	alphabet: &'a RegExpAlphabet
+}
+
+impl<'a> std::iter::Iterator for RegExpSymbolIter<'a> {
+	type Item = RegExpSymbol;
+	fn next(&mut self) -> Option<Self::Item> {
+		self.char_iter.next().map(|c| self.alphabet.get(c))
+	}
+}
 
 
 
@@ -364,7 +365,7 @@ enum RegExpNode {
 
 impl RegExpNode {
 	pub fn parse(s: &str) -> Result<RegExpNodePtr> {
-		let (res, _) = complete(alternation)(Bytes::from(s))?;
+		let (res, _) = complete(alternation)(s)?;
 		Ok(res)
 //		match parse_regexp(s) {
 //			Ok((rest, r)) => {
@@ -501,16 +502,16 @@ impl RegExpNode {
 */
 
 
-parser!(alternation<RegExpNodePtr> => {
+parser!(alternation<&str, RegExpNodePtr> => {
 	map(delimited(expr, tag("|")), |alts| Box::new(RegExpNode::Alt(alts)))
 });
 
-parser!(expr<RegExpNodePtr> => {
+parser!(expr<&str, RegExpNodePtr> => {
 	map(many(element), |els| Box::new(RegExpNode::Expr(els)))
 });
 
 // Element -> Atom Quantifier | Atom
-parser!(element<RegExpNodePtr> => {
+parser!(element<&str, RegExpNodePtr> => {
 	seq!(c => {
 		let a = c.next(atom)?;
 		if let Some(q) = c.next(opt(Quantifier::parse))? {
@@ -529,14 +530,14 @@ enum Quantifier {
 }
 
 impl Quantifier {
-	parser!(parse<Self> => alt!(
+	parser!(parse<&str, Self> => alt!(
 		map(tag("?"), |_| Quantifier::ZeroOrOne),
 		map(tag("*"), |_| Quantifier::ZeroOrMore),
 		map(tag("+"), |_| Quantifier::OneOrMore)
 	));
 }
 
-parser!(atom<RegExpNodePtr> => alt!(
+parser!(atom<&str, RegExpNodePtr> => alt!(
 	map(shared_atom, |c| Box::new(RegExpNode::Literal(c))),
 	literal,
 	character_class,
@@ -548,7 +549,7 @@ parser!(atom<RegExpNodePtr> => alt!(
 // If there are other overlapping symbols, 
 
 // TODO: In PCRE, '[]]' would parse as a character class matching the character ']' but for simplity we will require that that ']' be escaped in a character class
-parser!(character_class<RegExpNodePtr> => seq!(c => {
+parser!(character_class<&str, RegExpNodePtr> => seq!(c => {
 	c.next(tag("["))?;
 	let invert = c.next(opt(tag("^")))?;
 	let inner = c.next(many(character_class_atom))?; // NOTE: We allow this to be empty.
@@ -557,7 +558,7 @@ parser!(character_class<RegExpNodePtr> => seq!(c => {
 	return Ok(Box::new(RegExpNode::Class(inner, invert.is_some())));
 }));
 
-parser!(capture<RegExpNodePtr> => seq!(c => {
+parser!(capture<&str, RegExpNodePtr> => seq!(c => {
 	c.next(tag("("))?;
 	let inner = c.next(alternation)?;
 	c.next(tag(")"))?;
@@ -566,7 +567,7 @@ parser!(capture<RegExpNodePtr> => seq!(c => {
 }));
 
 
-parser!(character_class_atom<Char> => alt!(
+parser!(character_class_atom<&str, Char> => alt!(
 	seq!(c => {
 		let start = c.next(character_class_literal)?;
 		c.next(tag("-"))?;
@@ -588,7 +589,7 @@ parser!(character_class_atom<Char> => alt!(
 // https://github.com/google/re2/wiki/Syntax (search 'Escape Sequences')
 
 // TODO: It seems like it could be better to combine this with the shared_literal class
-parser!(shared_atom<Char> => alt!(
+parser!(shared_atom<&str, Char> => alt!(
 	map(tag("\\w"), |_| Char::Word),
 	map(tag("\\d"), |_| Char::Digit),
 	map(tag("\\s"), |_| Char::Whitespace),
@@ -600,20 +601,21 @@ parser!(shared_atom<Char> => alt!(
 // A single plain character that must be exactly matched.
 // This rule does not apply to anything inside a character class.
 // e.g. the regexp 'ab' contains 2 literals.
-parser!(literal<RegExpNodePtr> => {
-	map(alt!(shared_literal, map(tag("]"), |v| v[0] as char)),
+parser!(literal<&str, RegExpNodePtr> => {
+	map(alt!(shared_literal,
+			 map(tag("]"), |_| ']')),
 		|c| Box::new(RegExpNode::Literal(Char::Value(c))))
 });
 
 // TODO: Check this
-parser!(character_class_literal<char> => {
+parser!(character_class_literal<&str, char> => {
 	//shared_literal |
 	map(not_one_of("]"), |c| c as char)
 });
 
 // Single characters which need to be matched exactly
 // (excluding symbols which may have a different meaning depending on context)
-parser!(shared_literal<char> => alt!(
+parser!(shared_literal<&str, char> => alt!(
 	map(not_one_of("[]\\^$.|?*+()"), |v| v as char),
 	quoted
 ));
@@ -633,10 +635,10 @@ parser!(shared_literal<char> => alt!(
 //));
 
 // Matches '\' followed by the character being escaped.
-parser!(quoted<char> => {
+parser!(quoted<&str, char> => {
 	seq!(c => {
 		c.next(tag("\\"))?;
-		let v = c.next(take_exact(1))?[0] as char;
+		let v = c.next::<&str, _>(take_exact(1))?.chars().next().unwrap() as char;
 		if v.is_alphanumeric() {
 			return Err(err_msg("Expected non alphanumeric character"));
 		}

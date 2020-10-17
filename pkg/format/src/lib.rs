@@ -1,8 +1,6 @@
 #![feature(proc_macro_hygiene, decl_macro, type_alias_enum_variants, generators)]
 
-extern crate math;
-extern crate byteorder;
-extern crate num_traits;
+// extern crate byteorder;
+// extern crate num_traits;
 
 // pub mod protobuf;
-

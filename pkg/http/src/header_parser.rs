@@ -1,7 +1,7 @@
 use common::errors::*;
 use crate::spec::*;
 use crate::header::*;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use parsing::*;
 use crate::common_parser::*;
 use parsing::ascii::AsciiString;

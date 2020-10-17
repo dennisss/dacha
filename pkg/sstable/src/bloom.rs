@@ -10,7 +10,7 @@ fn hash(data: &[u8], seed: u32) -> u32 {
         let w = u32::from_le_bytes(*array_ref![data, i, 4]);
         h = h.wrapping_add(w);
         h = h.wrapping_mul(m);
-        h ^= (h >> 16);
+        h ^= h >> 16;
         i += 4;
     }
 

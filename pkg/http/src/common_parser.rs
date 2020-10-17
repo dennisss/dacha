@@ -1,5 +1,5 @@
 use common::errors::*;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use parsing::*;
 use parsing::iso::*;
 use parsing::ascii::*;

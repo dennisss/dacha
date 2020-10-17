@@ -20,15 +20,17 @@ members = [
 	"pkg/graphics",
 	"pkg/stadia_controller",
 	"pkg/raft",
-	"pkg/haystack",
+	# "pkg/haystack",
 	"pkg/emulator",
-	"pkg/symbolic"
+	# "pkg/symbolic"
 ]
 
 [profile.dev]
 opt-level = 3
+lto = true
 
 [profile.release]
 lto = true
-opt-level = 3
+opt-level = 3 
 # panic = 'abort'
+debug = true

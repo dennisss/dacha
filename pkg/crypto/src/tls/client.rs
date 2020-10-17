@@ -676,10 +676,10 @@ impl Client {
 
         // Receive Encrypted Extensions
 
-        let ee = stream.recv(Some(&mut handshake_state)).await?;
+        let _ee = stream.recv(Some(&mut handshake_state)).await?;
 
         let cert = match stream.recv(Some(&mut handshake_state)).await? {
-            Message::Handshake(Handshake::Certificate((c))) => c,
+            Message::Handshake(Handshake::Certificate(c)) => c,
             _ => {
                 return Err(err_msg("Expected certificate message"));
             }

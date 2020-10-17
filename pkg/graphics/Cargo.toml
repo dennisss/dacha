@@ -7,15 +7,16 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 math = { path = "../math" }
-rmp-serde = "0.13.7"
-async-std = "1.0.1"
+image = { path = "../image" }
+reflection = { path = "../reflection" }
+macros = { path = "../macros" }
+parsing = { path = "../parsing" }
 rand = "0.6.1"
-bytes = { git = "https://github.com/tokio-rs/bytes" }
 fs2 = "0.4.3"
-error-chain = "0.12.1"
 ctrlc = "3.1.1"
 libc = "0.2"
 minifb = "0.15.3"
 num-traits = "0.2"
+typenum = "1.10.0"
 glfw = "0.29.0"
 gl = "0.13.0"

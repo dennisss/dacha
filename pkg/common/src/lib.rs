@@ -42,9 +42,6 @@ pub async fn wait_for(dur: std::time::Duration) {
     async_std::future::timeout(dur, never).await.unwrap_or(());
 }
 
-//pub use async_std;
-//pub use futures;
-
 pub trait FlipSign<T> {
     /// Transmutes an signed/unsigned integer into it's opposite unsigned/signed
     /// integer while maintaining bitwise equivalence even though the integer

@@ -10,5 +10,4 @@ parsing = { path = "../parsing" }
 compression = { path = "../compression" }
 http = { path = "../http" }
 protobuf = { path = "../protobuf" }
-bytes = { git = "https://github.com/tokio-rs/bytes" }
 libc = "0.2.62"

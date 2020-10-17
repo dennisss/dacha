@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use common::errors::*;
 use common::bits::BitVector;
 use parsing::ascii::AsciiString;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use std::convert::AsRef;
 use common::vec::VecPtr;
 use std::clone::Clone;

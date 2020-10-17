@@ -3,7 +3,7 @@ use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::os::unix::io::{AsRawFd};
 use std::io;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use common::errors::*;
 use crypto::checksum::crc::CRC32CHasher;

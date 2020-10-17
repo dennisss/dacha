@@ -1,4 +1,4 @@
-#![feature(trait_alias, const_fn, const_constructor, specialization)]
+#![feature(trait_alias, const_fn, specialization)]
 #[macro_use]
 extern crate arrayref;
 #[macro_use]

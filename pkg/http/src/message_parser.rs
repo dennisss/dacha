@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 use parsing::*;
 use parsing::iso::*;

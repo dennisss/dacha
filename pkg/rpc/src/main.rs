@@ -10,8 +10,10 @@ use common::async_std::task;
 use common::errors::*;
 use proto::adder::*;
 use protobuf::service::Service;
-use protobuf::Bytes;
+use common::bytes::Bytes;
 use std::sync::Arc;
+use std::future::Future;
+use std::pin::Pin;
 
 struct AdderImpl {}
 
@@ -59,8 +61,7 @@ async fn run_client() -> Result<()> {
 //	task::block_on(run_client())
 //}
 
-use std::future::Future;
-use std::pin::Pin;
+
 
 //trait Handler<G> {
 //	fn handle<'a>(&self, x: &'a mut usize) -> Pin<Box<dyn Future<Output=()> +

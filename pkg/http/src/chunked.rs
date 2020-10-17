@@ -1,6 +1,6 @@
 
 use std::io::Read;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use std::sync::{Arc, Mutex};
 use common::async_std::net::TcpStream;
 use parsing::*;

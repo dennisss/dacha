@@ -707,7 +707,7 @@ pub struct SSTableIterator {
 // Simpler strategy is to copy it, but I'd like to avoid copying potentially
 
 impl SSTableIterator {
-    async fn next(&mut self) -> Option<Result<KeyValuePair>> {
+    async fn next<'a>(&'a mut self) -> Option<Result<KeyValuePair<'a>>> {
         loop {
             if self.current_block.is_some() {
                 if let Some(res) = self.current_block.as_mut().unwrap().1.next() {
@@ -732,7 +732,7 @@ impl SSTableIterator {
 
                     let iter = block.block.iter().rows();
 
-                    let iter = unsafe { std::mem::transmute(iter) };
+                    let iter = unsafe { std::mem::transmute::<BlockKeyValueIterator<'_>, BlockKeyValueIterator<'static>>(iter) };
 
                     self.current_block = Some((block, iter));
                 }

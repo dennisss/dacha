@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use bytes::Bytes;
+use common::bytes::Bytes;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;

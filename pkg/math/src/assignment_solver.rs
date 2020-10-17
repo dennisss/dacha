@@ -16,7 +16,7 @@ impl num_traits::Zero for Entry {
 }
 impl std::ops::Add for Entry {
 	type Output = Entry;
-	fn add(self, rhs: Self) -> Self { self }
+	fn add(self, _: Self) -> Self { panic!("This is only to satisft num_traits::Zero constraints.") }
 }
 
 #[derive(Clone, Copy)]

@@ -626,7 +626,7 @@ where
         // 	&input[0..std::cmp::min(40, input.len())].as_ref()).unwrap());
 
         // TODO: Incomplete errors?
-        Err(err_msg("No matching tag"))
+        Err(format_err!("No matching tag (remaining: {})", input.remaining_bytes()))
     }
 }
 

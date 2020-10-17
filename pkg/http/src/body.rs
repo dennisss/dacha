@@ -7,7 +7,7 @@ use std::borrow::{BorrowMut, Borrow};
 use std::future::Future;
 use std::marker::{Unpin};
 use std::pin::Pin;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::futures::io::AsyncRead;
 use common::errors::*;
 use common::FutureResult;

@@ -1,7 +1,11 @@
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::path::PathBuf;
+use std::io::{Read, Write};
 use common::errors::*;
 use common::line_builder::*;
 use parsing::*;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use crate::tag::TagClass;
 use crate::syntax::*;
 
@@ -24,7 +28,7 @@ impl Context {
 		if self.names.len() == 0 {
 			name.to_string()
 		} else {
-			let mut s = self.names.join("::");
+			let s = self.names.join("::");
 			format!("{}::{}", s, name)
 		}
 	}
@@ -90,12 +94,6 @@ enum EncodingMode {
 	Read, Write
 }
 
-
-use std::rc::Rc;
-use std::cell::RefCell;
-use std::path::PathBuf;
-use std::io::{Read, Write};
-
 /// Multi-file compiler. Currently all files must be added before any individual
 /// files get compiled.
 pub struct Compiler {
@@ -110,12 +108,14 @@ struct CompilerInner {
 
 struct CompilerFileEntry {
 	/// Path to the ASN file from which this entry originated.
-	source: PathBuf,
+	source_path: PathBuf,
+	/// Where th
+	output_path: PathBuf,
 	compiler: Rc<FileCompiler>
 }
 
 impl Compiler {
-	fn new() -> Self {
+	pub fn new() -> Self {
 		Self {
 			inner: Rc::new(RefCell::new(CompilerInner {
 				files: std::collections::HashMap::new()
@@ -123,10 +123,10 @@ impl Compiler {
 		}
 	}
 
-	pub fn add(&mut self, path: PathBuf) -> Result<()> {
+	pub fn add(&mut self, source_path: PathBuf, output_path: PathBuf) -> Result<()> {
 		// TODO: Integrate extension check into this?
 
-		let mut file = std::fs::File::open(&path)?;
+		let mut file = std::fs::File::open(&source_path)?;
 
 		let mut data = vec![];
 		file.read_to_end(&mut data)?;
@@ -136,7 +136,7 @@ impl Compiler {
 
 		let mut inner = self.inner.borrow_mut();
 		inner.files.insert(name, CompilerFileEntry {
-			source: path,
+			source_path, output_path,
 			compiler: Rc::new(c)
 		});
 
@@ -146,15 +146,9 @@ impl Compiler {
 	/// Compiles all added files saving them back to disk.
 	pub fn compile_all(&mut self) -> Result<()> {
 		for (_name, entry) in self.inner.borrow().files.iter() {
-			println!("Read {:?}", entry.source);
-			let mut outpath = entry.source.clone();
-			outpath.set_extension("rs");
-			let outpath = outpath.to_str().unwrap().replace("-", "_");
-			println!("Write {:?}", outpath);
-
 			let compiled = entry.compiler.compile()?;
-			
-			let mut outfile = std::fs::File::create(outpath)?;
+			std::fs::create_dir_all(entry.output_path.parent().unwrap())?;
+			let mut outfile = std::fs::File::create(&entry.output_path)?;
 			outfile.write_all(compiled.as_bytes())?;
 		}
 
@@ -244,7 +238,7 @@ impl FileCompiler {
 			l.add(format!("let v = r_.read_{}()?;", funcname));
 			l.add("Ok(match v {");
 			l.append(read_lines);
-			l.add("\t_ => { return Err(\"Invalid case\".into()); }");
+			l.add("\t_ => { return Err(err_msg(\"Invalid case\")); }");
 			l.add("})");
 		});
 
@@ -515,9 +509,9 @@ impl FileCompiler {
 						};
 
 						let mut valuec = self.compile_value(v, &typename, &f.typ).unwrap().0;
-//						if self.is_referenced_value(v, builtin_type.as_ref()) && !valuec.contains("{") {
-//							valuec = format!("(*{})", valuec);
-//						}
+						if self.is_referenced_value(v, builtin_type.as_ref()) && !valuec.contains("{") {
+							valuec = format!("(*{})", valuec);
+						}
 
 						field_lines.add(format!("if !der_eq(&self.{}, &{}) {{", field_name, valuec));
 						// TODO: This line is the same as the default case.
@@ -1292,7 +1286,7 @@ impl FileCompiler {
 				}
 
 				l.nl();
-				l.add("Err(\"No matching choice type\".into())")
+				l.add("Err(err_msg(\"No matching choice type\"))")
 			});
 			l.add("})");
 		});
@@ -1441,7 +1435,7 @@ impl FileCompiler {
 		lines.add("use ::math::big::BigInt;");
 
 		// TODO: Step one should be to handle all imports and builtin imports.
-		const skip_assignments: &'static [&'static str] = &[
+		const SKIP_ASSIGNMENTS: &'static [&'static str] = &[
 			"UniversalString", "BMPString", "UTF8String"];
 
 		let body = match &self.module.body {
@@ -1450,7 +1444,7 @@ impl FileCompiler {
 		};
 
 		// TODO: Only import the specified symbols (exluding any in
-		// skip_assignments)
+		// SKIP_ASSIGNMENTS)
 		for s in &body.imports {
 			lines.add(format!("use super::{}::*;",
 							  s.module.name.as_ref().replace("-", "_")));
@@ -1467,7 +1461,7 @@ impl FileCompiler {
 					lines.append(self.compile_value_assign(&value)?);
 				},
 				Assignment::Type(typ) => {
-					if skip_assignments.iter().find(|v| **v == typ.name.as_ref()).is_some() {
+					if SKIP_ASSIGNMENTS.iter().find(|v| **v == typ.name.as_ref()).is_some() {
 						println!("Skip type assignment for: {}",
 								 typ.name.as_ref());
 						continue;
@@ -1482,39 +1476,4 @@ impl FileCompiler {
 		Ok(lines.to_string())
 	}
 
-}
-
-
-
-
-
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	use std::io::{Read, Write};
-
-	#[test]
-	fn asn1_compile_test() {
-		
-		let input_dir = "/home/dennis/workspace/dacha/pkg/crypto/src/x509/asn";
-
-		let mut compiler = Compiler::new();
-
-		for dirent in std::fs::read_dir(input_dir).unwrap() {
-			let path = dirent.unwrap().path();
-			println!("{:?}", path);
-			// TODO: Use the extension method.
-			if path.extension().unwrap_or(std::ffi::OsStr::new("")).to_str().unwrap() != "asn1" {
-				continue;
-			}
-
-			compiler.add(path).unwrap();
-		}
-
-		println!("Compiling all...");
-		compiler.compile_all().unwrap();
-		
-	}
 }

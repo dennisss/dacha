@@ -1,5 +1,5 @@
 use parsing::*;
-use bytes::{Bytes, Buf};
+use common::bytes::{Bytes, Buf};
 use common::errors::*;
 use common::bits::BitVector;
 use parsing::ascii::AsciiString;

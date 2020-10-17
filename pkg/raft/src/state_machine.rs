@@ -1,5 +1,5 @@
 use crate::protos::*;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 
 // Also good to know is when the last config snapshot happened

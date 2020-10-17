@@ -15,7 +15,7 @@ pub enum BitIoError {
 /// Sets a bit to either by 1 or 0 based on the given boolean.
 pub fn bitset(i: &mut u8, val: bool, bit: u8) {
     let mask = 1 << bit;
-    *i = (*i & !mask);
+    *i = *i & !mask;
     if val {
         *i |= mask;
     }

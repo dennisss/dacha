@@ -1,6 +1,6 @@
 
 use std::marker::Unpin;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::async_std::io::Write;
 use common::futures::io::AsyncWrite;
 use common::errors::*;

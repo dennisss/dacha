@@ -1,46 +1,60 @@
+// extern crate core;
+// extern crate format;
+// extern crate minifb;
+extern crate common;
 
-extern crate core;
-extern crate math;
-extern crate format;
-extern crate minifb;
+use common::errors::*;
+use common::futures::core_reexport::ops::Mul;
 
-use format::errors::*;
-use format::image::jpeg::JPEG;
-use format::image::bitmap::Bitmap;
-use format::image::Image;
-use math::array::{KernelEdgeMode, Array};
+// use format::errors::*;
+// use format::image::bitmap::Bitmap;
+// use format::image::jpeg::JPEG;
+// use format::image::Image;
+// use math::array::{Array, KernelEdgeMode};
 
-use minifb::{Key, WindowOptions, Window};
+// use minifb::{Key, Window, WindowOptions};
 
+pub trait Matrix<N, R, C>: std::ops::Index<(usize, usize), Output = N> {
+    fn rows(&self) -> usize;
+    fn cols(&self) -> usize;
+}
+
+impl<N, R, C, T: Matrix<N, R, C>> std::ops::Mul for T {
+    type Output = ();
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        unimplemented!()
+    }
+}
 
 fn main() -> Result<()> {
-	// let jpeg = JPEG::open("/home/dennis/workspace/dacha/testdata/lena.jpg")?;
-	let bmp = Bitmap::open("/home/dennis/workspace/dacha/testdata/valve.bmp")?;
-	// display(&bmp.image.to_grayscale());
+    // let jpeg = JPEG::open("/home/dennis/workspace/dacha/testdata/lena.jpg")?;
+    // let bmp = Bitmap::open("/home/dennis/workspace/dacha/testdata/valve.bmp")?;
+    // display(&bmp.image.to_grayscale());
 
-	let edges = CannyEdgeDetector::detect(&bmp.image);
-	
-	display(&edges);
+    // let edges = CannyEdgeDetector::detect(&bmp.image);
 
-	Ok(())
+    // display(&edges);
 
-	/*
-	let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
+    Ok(())
 
-	let mut window = Window::new("Test - ESC to exit",
-								 WIDTH,
-								 HEIGHT,
-								 WindowOptions::default()).unwrap_or_else(|e| {
-		panic!("{}", e);
-	});
+    /*
+    let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
 
-	while window.is_open() && !window.is_key_down(Key::Escape) {
-		for i in buffer.iter_mut() {
-			*i = 0; // write something more funny here!
-		}
+    let mut window = Window::new("Test - ESC to exit",
+                                 WIDTH,
+                                 HEIGHT,
+                                 WindowOptions::default()).unwrap_or_else(|e| {
+        panic!("{}", e);
+    });
 
-		// We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
-		window.update_with_buffer(&buffer).unwrap();
-	}
-	*/
+    while window.is_open() && !window.is_key_down(Key::Escape) {
+        for i in buffer.iter_mut() {
+            *i = 0; // write something more funny here!
+        }
+
+        // We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
+        window.update_with_buffer(&buffer).unwrap();
+    }
+    */
 }
