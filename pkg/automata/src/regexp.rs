@@ -1,14 +1,19 @@
+use super::fsm::*;
 use common::errors::*;
 use parsing::*;
-// TODO: Refactor parser to operate on &str instead.
-use super::fsm::*;
-use bytes::Bytes;
+use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
 
 /*
     PCRE Style RegExp Parser
 
     Grammar rules derived from: https://github.com/bkiers/pcre-parser/blob/master/src/main/antlr4/nl/bigo/pcreparser/PCRE.g4
+*/
+
+/*
+    Annotate all state ids which correspond to a group
+    - Once we hit an acceptor for one of these, then we can close the group
+
 */
 
 /*
@@ -81,11 +86,21 @@ use std::ops::Bound;
     -> We will Want to reduce all non-direct value sets to ranges or other types of closures
 
 */
+/*
+    Implementing ^ and $.
+
+    - Without these, DFS should start and end with accepting
+    - Every state goes back to itself on the 'start' symbol.
+
+    - After one transition, we should know if it is possible to get from the current node to an acceptance state.
+    - We should also know after one transition if everything will be an acceptance.
+*/
 
 #[derive(Debug)]
 pub struct RegExp {
     alphabet: RegExpAlphabet,
-    state_machine: FiniteStateMachine<RegExpSymbol>,
+    state_machine: RegExpStateMachine,
+    metadata: RegExpMetadata,
 }
 
 impl RegExp {
@@ -95,15 +110,23 @@ impl RegExp {
         let mut alpha = RegExpAlphabet::new();
         tree.fill_alphabet(&mut alpha);
 
-        let mut state_machine = FiniteStateMachine::new();
-        let first_state = state_machine.add_state();
-        state_machine.mark_accept(first_state);
-        state_machine.mark_start(first_state);
-        for sym in alpha.all_symbols() {
-            state_machine.add_transition(first_state, sym, first_state);
-        }
+        // NOTE: These must always be in the alphabet. Otherwise the FSM will fail if it
+        // sees unknown symbols.
+        alpha.insert(RegExpSymbol::start_of_string());
+        alpha.insert(RegExpSymbol::end_of_string());
 
-        state_machine.then(tree.to_automata_inner(&alpha));
+        // Any number of wildcard symbols are accepted at the beginning of the string.
+        // (this implements the case of having no '^' in the regexp).
+        let mut state_machine = Self::wildcard_machine(&alpha);
+
+        state_machine.then(RegExpNode::zero_transitions(RegExpStateTag::StartMatch));
+
+        let mut metadata = RegExpMetadata::default();
+        state_machine.then(tree.to_automata_inner(&alpha, &mut metadata));
+
+        // Any number of wildcard symbols are accepted at the end of the string. (this
+        // implements the case of having no '$' in the regexp)
+        state_machine.then(Self::wildcard_machine(&alpha));
 
         // TODO: Instead compute the minimal DFA?
         state_machine = state_machine.compute_dfa();
@@ -111,30 +134,275 @@ impl RegExp {
         Ok(Self {
             alphabet: alpha,
             state_machine,
+            metadata,
         })
+    }
+
+    /// Creates a state machine that implements the '.*' expression.
+    fn wildcard_machine(alpha: &RegExpAlphabet) -> RegExpStateMachine {
+        let mut state_machine = RegExpStateMachine::new();
+        let first_state = state_machine.add_state();
+        state_machine.mark_accept(first_state);
+        state_machine.mark_start(first_state);
+
+        for sym in alpha.all_symbols() {
+            state_machine.add_transition(first_state, sym, first_state);
+        }
+
+        state_machine
     }
 
     // TODO: Ensure that matching is greedy, and always continues matching until
     // the current match is exhausted.
     pub fn test(&self, value: &str) -> bool {
-        let mut iter = RegExpSymbolIter {
+        let iter = RegExpSymbolIter {
             char_iter: value.chars(),
             alphabet: &self.alphabet,
+            start_emitted: false,
+            end_emitted: false,
         };
         self.state_machine.accepts(iter)
+    }
+
+    pub fn exec<'a, 'b>(&'a self, value: &'b str) -> Result<Option<RegExpMatch<'a, 'b>>> {
+        let state = RegExpMatch {
+            instance: self,
+            value,
+            index: 0,
+            remaining: value.chars(),
+            consumed_start: false,
+            consumed_end: false,
+            state: 0, // Will be initialized in the next statement.
+            group_starts: vec![],
+            group_values: vec![],
+        };
+
+        state.next()
+    }
+}
+
+type RegExpStateMachine = FiniteStateMachine<RegExpSymbol, RegExpStateTag>;
+
+#[derive(Default, Debug)]
+struct RegExpMetadata {
+    num_groups: usize,
+    named_groups: HashMap<String, usize>,
+}
+
+pub struct RegExpMatch<'a, 'b> {
+    /// The RegExp being used for matching.
+    instance: &'a RegExp,
+
+    /// The complete value that was initially given for matching.
+    value: &'b str,
+
+    /// Start index into 'value' of the current match.
+    index: usize,
+
+    remaining: std::str::Chars<'b>,
+    consumed_start: bool,
+    consumed_end: bool,
+
+    state: StateId,
+    group_starts: Vec<Option<usize>>,
+    group_values: Vec<Option<&'b str>>,
+}
+
+impl<'a, 'b> RegExpMatch<'a, 'b> {
+    /// Gets the complete string for the current match.
+    pub fn as_str(&self) -> &str {
+        self.value
+            .split_at(self.index)
+            .1
+            .split_at(self.last_index() - self.index)
+            .0
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    pub fn last_index(&self) -> usize {
+        self.value.len() - self.remaining.as_str().len()
+    }
+
+    pub fn groups(&self) -> &[Option<&str>] {
+        &self.group_values
+    }
+
+    pub fn named_group(&self, name: &str) -> Result<Option<&str>> {
+        let group_id = *self
+            .instance
+            .metadata
+            .named_groups
+            .get(name)
+            .ok_or(err_msg("No such group"))?;
+        Ok(self.group_values[group_id].clone())
+    }
+
+    pub fn next(mut self) -> Result<Option<Self>> {
+        // TODO: Return an error if its possible to have infinite matches?
+
+        // Reset state
+        {
+            self.group_starts.clear();
+            self.group_starts
+                .resize(self.instance.metadata.num_groups, None);
+            self.group_values.clear();
+            self.group_values
+                .resize(self.instance.metadata.num_groups, None);
+
+            // Point at starting state.
+            self.restart()?;
+        }
+
+        if !self.consumed_start {
+            self.consumed_start = true;
+            self.consume_symbol(RegExpSymbol::start_of_string())?;
+        }
+
+        loop {
+            if self.instance.state_machine.is_accepting_state(self.state) {
+                return Ok(Some(self));
+            }
+
+            let sym = match self.remaining.next() {
+                Some(c) => self.instance.alphabet.get(c),
+                None => {
+                    if self.consumed_end {
+                        return Ok(None);
+                    }
+
+                    self.consumed_end = true;
+                    RegExpSymbol::end_of_string()
+                }
+            };
+
+            self.consume_symbol(sym)?;
+        }
+    }
+
+    fn restart(&mut self) -> Result<()> {
+        self.update_state(
+            *self
+                .instance
+                .state_machine
+                .starts()
+                .next()
+                .ok_or(err_msg("No starting state"))?,
+        )
+    }
+
+    fn consume_symbol(&mut self, sym: RegExpSymbol) -> Result<()> {
+        let next_state = *self
+            .instance
+            .state_machine
+            .lookup(self.state, &sym)
+            .next()
+            // NOTE: This should only fail if the DFA was constructed poorly
+            .ok_or(err_msg("No transitions for symbol"))?;
+
+        self.update_state(next_state)?;
+
+        Ok(())
+    }
+
+    fn update_state(&mut self, state: StateId) -> Result<()> {
+        self.state = state;
+
+        // TODO: Use a bit set (maybe a BitVector)
+        let mut group_allowlist = HashSet::new();
+
+        let cur_idx = self.last_index();
+        for tag in self.instance.state_machine.tags(state) {
+            match tag {
+                RegExpStateTag::StartMatch => {
+                    self.index = cur_idx;
+                }
+                RegExpStateTag::StartGroup(group_id) => {
+                    self.group_starts[*group_id] = Some(cur_idx);
+                    group_allowlist.insert(*group_id);
+                }
+                RegExpStateTag::InGroup(group_id) => {
+                    group_allowlist.insert(*group_id);
+                }
+                RegExpStateTag::EndGroup(group_id) => {
+                    // TODO: We probably don't want to use 'take' in order to support the '(a+)'
+                    // pattern.
+                    let start_idx = match self.group_starts[*group_id] {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    let end_idx = cur_idx;
+                    let segment = self
+                        .value
+                        .split_at(start_idx)
+                        .1
+                        .split_at(end_idx - start_idx)
+                        .0;
+                    self.group_values[*group_id] = Some(segment);
+                    group_allowlist.insert(*group_id);
+                }
+            }
+        }
+
+        // TODO: Improve the performance of this procedure. There will likely always
+        // only be a few groups that are actually set at any
+        for group_id in 0..self.group_starts.len() {
+            if !group_allowlist.contains(&group_id) {
+                self.group_starts[group_id] = None;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a, 'b> std::fmt::Debug for RegExpMatch<'a, 'b> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RegExpMatch")
+            .field("index", &self.index())
+            .field("match", &self.as_str())
+            .field("groups", &self.groups())
+            .finish()
     }
 }
 
 struct RegExpSymbolIter<'a> {
     char_iter: std::str::Chars<'a>,
     alphabet: &'a RegExpAlphabet,
+    start_emitted: bool,
+    end_emitted: bool,
 }
 
 impl<'a> std::iter::Iterator for RegExpSymbolIter<'a> {
     type Item = RegExpSymbol;
     fn next(&mut self) -> Option<Self::Item> {
-        self.char_iter.next().map(|c| self.alphabet.get(c))
+        if !self.start_emitted {
+            self.start_emitted = true;
+            return Some(RegExpSymbol::start_of_string());
+        }
+
+        match self.char_iter.next().map(|c| self.alphabet.get(c)) {
+            Some(v) => Some(v),
+            None => {
+                if !self.end_emitted {
+                    self.end_emitted = true;
+                    Some(RegExpSymbol::end_of_string())
+                } else {
+                    None
+                }
+            }
+        }
     }
+}
+
+#[derive(Clone, PartialEq, Hash, Eq, Debug)]
+enum RegExpStateTag {
+    StartMatch,
+    StartGroup(usize),
+    EndGroup(usize),
+    InGroup(usize),
 }
 
 // TODO: Unused right now
@@ -177,35 +445,32 @@ impl Char {
 
         match self {
             Char::Value(c) => {
-                out.push(RegExpSymbol::Single(*c));
+                out.push(RegExpSymbol::single(*c));
             }
             Char::Range(s, e) => {
-                out.push(RegExpSymbol::InclusiveRange(*s, *e));
+                out.push(RegExpSymbol::inclusive_range(*s, *e));
             }
             // [0-9]
             Char::Digit | Char::NotDigit => {
-                out.push(RegExpSymbol::InclusiveRange('0', '9'));
+                out.push(RegExpSymbol::inclusive_range('0', '9'));
             }
             // [0-9A-Za-z_]
             Char::Word | Char::NotWord => {
-                out.push(RegExpSymbol::InclusiveRange('0', '9'));
-                out.push(RegExpSymbol::InclusiveRange('A', 'Z'));
-                out.push(RegExpSymbol::InclusiveRange('a', 'z'));
-                out.push(RegExpSymbol::Single('_'));
+                out.push(RegExpSymbol::inclusive_range('0', '9'));
+                out.push(RegExpSymbol::inclusive_range('A', 'Z'));
+                out.push(RegExpSymbol::inclusive_range('a', 'z'));
+                out.push(RegExpSymbol::single('_'));
             }
             // [\t\n\f\r ]
             Char::Whitespace | Char::NotWhiteSpace => {
-                out.push(RegExpSymbol::Single('\t'));
-                out.push(RegExpSymbol::Single('\n'));
-                out.push(RegExpSymbol::Single('\x0C'));
-                out.push(RegExpSymbol::Single('\r'));
-                out.push(RegExpSymbol::Single(' '));
+                out.push(RegExpSymbol::single('\t'));
+                out.push(RegExpSymbol::single('\n'));
+                out.push(RegExpSymbol::single('\x0C'));
+                out.push(RegExpSymbol::single('\r'));
+                out.push(RegExpSymbol::single(' '));
             }
             Char::Wildcard => {
-                out.push(RegExpSymbol {
-                    start: 0,
-                    end: std::char::MAX as u32,
-                });
+                out.push(RegExpSymbol::inclusive_range(0 as char, std::char::MAX));
             }
         }
 
@@ -248,6 +513,17 @@ fn invert_symbols(syms: Vec<RegExpSymbol>) -> Vec<RegExpSymbol> {
     out
 }
 
+/// Symbols (character point values) used to represent the start and end of
+/// string/line nodes in the FSM.
+///
+/// NOTE: These are chosen to be outside of the UTF-8 range.
+/// NOTE: The largest utf-8 character is 0x10FFFF
+/// TODO: Verify that we never get inputs out of that range.
+const START_SYMBOL: u32 = (std::char::MAX as u32) + 1;
+// TODO: Have an assertion that this is < std::u32::max (as we need to add one
+// to this to get an inclusive range.)
+const END_SYMBOL: u32 = (std::char::MAX as u32) + 2;
+
 /// Internal representation of a set of values associated with an edge between
 /// nodes in the regular expression's state machine.
 ///
@@ -259,16 +535,25 @@ struct RegExpSymbol {
 }
 
 impl RegExpSymbol {
-    fn Single(c: char) -> Self {
-        Self {
-            start: c as u32,
-            end: (c as u32) + 1,
-        }
+    fn single(c: char) -> Self {
+        Self::inclusive_range(c, c)
     }
-    fn InclusiveRange(s: char, e: char) -> Self {
+    fn inclusive_range(s: char, e: char) -> Self {
         Self {
             start: (s as u32),
             end: (e as u32) + 1,
+        }
+    }
+    fn start_of_string() -> Self {
+        Self {
+            start: START_SYMBOL,
+            end: START_SYMBOL + 1,
+        }
+    }
+    fn end_of_string() -> Self {
+        Self {
+            start: END_SYMBOL,
+            end: END_SYMBOL + 1,
         }
     }
 }
@@ -362,8 +647,11 @@ type RegExpNodePtr = Box<RegExpNode>;
 
 #[derive(Debug)]
 enum RegExpNode {
+    /// Alternation. e.g. 'a|b|c|d'
     Alt(Vec<RegExpNodePtr>),
+    /// Many adjacent nodes. e.g. 'abcd'
     Expr(Vec<RegExpNodePtr>),
+    /// e.g. 'a*' or 'a?'
     Quantified(RegExpNodePtr, Quantifier),
 
     // We will most likely replace these with capture groups
@@ -371,9 +659,18 @@ enum RegExpNode {
     // For each operation, we will
     Class(Vec<Char>, bool),
 
-    Capture(RegExpNodePtr),
-    Literal(Char), /* NOTE:
-                    *Start, End */
+    /// e.g. '(a)'
+    Capture {
+        inner: RegExpNodePtr,
+        capturing: bool,
+        name: String,
+    },
+
+    /// e.g. 'a'
+    Literal(Char),
+
+    Start,
+    End,
 }
 
 impl RegExpNode {
@@ -396,32 +693,36 @@ impl RegExpNode {
     // TODO: We will want to optimize this to have type &CharSet or something or
     // some other pointer so that it can optimize out the Option<S> inside of the
     // FSM code
-    pub fn to_automata(&self) -> FiniteStateMachine<RegExpSymbol> {
-        let mut alpha = RegExpAlphabet::new();
-        self.fill_alphabet(&mut alpha);
-        self.to_automata_inner(&alpha)
-    }
+    // pub fn to_automata(&self) -> RegExpStateMachine {
+    //     let mut alpha = RegExpAlphabet::new();
+    //     self.fill_alphabet(&mut alpha);
+    //     self.to_automata_inner(&alpha)
+    // }
 
-    fn to_automata_inner(&self, alpha: &RegExpAlphabet) -> FiniteStateMachine<RegExpSymbol> {
+    fn to_automata_inner(
+        &self,
+        alpha: &RegExpAlphabet,
+        metadata: &mut RegExpMetadata,
+    ) -> RegExpStateMachine {
         match self {
             Self::Alt(list) => {
-                let mut a = FiniteStateMachine::new();
+                let mut a = RegExpStateMachine::new();
                 for r in list.iter() {
-                    a.join(r.to_automata_inner(alpha));
+                    a.join(r.to_automata_inner(alpha, metadata));
                 }
 
                 a
             }
             Self::Expr(list) => {
-                let mut a = FiniteStateMachine::zero();
+                let mut a = RegExpStateMachine::zero();
                 for r in list.iter() {
-                    a.then(r.to_automata_inner(alpha));
+                    a.then(r.to_automata_inner(alpha, metadata));
                 }
 
                 a
             }
             Self::Quantified(r, q) => {
-                let mut a = r.to_automata_inner(alpha);
+                let mut a = r.to_automata_inner(alpha, metadata);
 
                 match q {
                     Quantifier::ZeroOrOne => {
@@ -434,12 +735,71 @@ impl RegExpNode {
                     Quantifier::OneOrMore => {
                         a.then_loop();
                     }
+                    Quantifier::ExactlyN(n) => {
+                        if *n == 0 {
+                            return FiniteStateMachine::zero();
+                        }
+
+                        let base = a.clone();
+                        for i in 0..(n - 1) {
+                            a.then(base.clone());
+                        }
+                    }
+                    Quantifier::Between(lower, upper) => {
+                        panic!("Not supported");
+                    }
+                    Quantifier::NOrMore(n) => {
+                        // Same as ZeroOrOne
+                        if *n == 0 {
+                            a.join(FiniteStateMachine::zero());
+                            return a;
+                        }
+
+                        let base = a.clone();
+                        for i in 0..(n - 1) {
+                            a.then(base.clone());
+                        }
+
+                        let mut or_more = base.clone();
+                        or_more.then_loop();
+                        or_more.join(FiniteStateMachine::zero());
+                        a.then(or_more);
+                    }
                 }
 
                 a
             }
 
-            Self::Capture(r) => r.to_automata_inner(alpha),
+            Self::Capture {
+                inner,
+                capturing,
+                name,
+            } => {
+                if !capturing {
+                    inner.to_automata_inner(alpha, metadata)
+                } else {
+                    let group_id: usize = metadata.num_groups;
+                    metadata.num_groups += 1;
+
+                    if !name.is_empty() {
+                        metadata.named_groups.insert(name.clone(), group_id);
+                    }
+
+                    let mut state_machine =
+                        Self::zero_transitions(RegExpStateTag::StartGroup(group_id));
+
+                    let mut inner_machine = inner.to_automata_inner(alpha, metadata);
+                    for i in 0..inner_machine.num_states() {
+                        inner_machine.add_tag(i, RegExpStateTag::InGroup(group_id));
+                    }
+
+                    state_machine.then(inner_machine);
+
+                    state_machine.then(Self::zero_transitions(RegExpStateTag::EndGroup(group_id)));
+
+                    state_machine
+                }
+            }
             // TODO: After an automata has been built, we need to go back and
             // split all automata (or merge any indivual characters into a
             // single character class if they all point to the same place)
@@ -455,7 +815,7 @@ impl RegExpNode {
                 syms = alpha.decimate_many(syms);
 
                 // TODO: Same as RegExprNode::Literal case below
-                let mut a = FiniteStateMachine::new();
+                let mut a = RegExpStateMachine::new();
                 let start = a.add_state();
                 a.mark_start(start);
                 let end = a.add_state();
@@ -468,7 +828,7 @@ impl RegExpNode {
             Self::Literal(c) => {
                 let syms = alpha.decimate_many(c.raw_symbols());
 
-                let mut a = FiniteStateMachine::new();
+                let mut a = RegExpStateMachine::new();
                 let start = a.add_state();
                 a.mark_start(start);
                 let end = a.add_state();
@@ -478,7 +838,28 @@ impl RegExpNode {
                 }
                 a
             }
+            Self::Start => Self::one_transition(RegExpSymbol::start_of_string()),
+            Self::End => Self::one_transition(RegExpSymbol::end_of_string()),
         }
+    }
+
+    fn zero_transitions(tag: RegExpStateTag) -> RegExpStateMachine {
+        let mut a = RegExpStateMachine::new();
+        let state = a.add_state();
+        a.mark_start(state);
+        a.mark_accept(state);
+        a.add_tag(state, tag);
+        a
+    }
+
+    fn one_transition(sym: RegExpSymbol) -> RegExpStateMachine {
+        let mut a = RegExpStateMachine::new();
+        let start = a.add_state();
+        a.mark_start(start);
+        let end = a.add_state();
+        a.mark_accept(end);
+        a.add_transition(start, sym, end);
+        a
     }
 
     fn fill_alphabet(&self, alpha: &mut RegExpAlphabet) {
@@ -488,8 +869,8 @@ impl RegExpNode {
                     r.fill_alphabet(alpha);
                 }
             }
-            Self::Capture(inner) => inner.fill_alphabet(alpha),
-            Self::Class(items, invert) => {
+            Self::Capture { inner, .. } => inner.fill_alphabet(alpha),
+            Self::Class(items, _invert) => {
                 for item in items {
                     item.fill_alphabet(alpha);
                 }
@@ -503,6 +884,7 @@ impl RegExpNode {
                     item.fill_alphabet(alpha);
                 }
             }
+            Self::Start | Self::End => {}
         }
     }
 }
@@ -512,7 +894,8 @@ impl RegExpNode {
         Regexp -> Alternation
         Alternation -> Expr | ( Expr '|' Alternation )
         Expr -> Element Expr | <empty>
-        Element -> (Group | CharacterClass | EscapedLiteral | Literal) Repetitions
+        Element -> '^' | '$' | Quantified
+        Quantified -> (Group | CharacterClass | EscapedLiteral | Literal) Repetitions
         Repetitions -> '*' | '?' | '+' | <empty>
 
         Group -> '(' Regexp ')'
@@ -527,8 +910,14 @@ parser!(expr<&str, RegExpNodePtr> => {
     map(many(element), |els| Box::new(RegExpNode::Expr(els)))
 });
 
-// Element -> Atom Quantifier | Atom
-parser!(element<&str, RegExpNodePtr> => {
+parser!(element<&str, RegExpNodePtr> => alt!(
+    map(tag("^"), |_| Box::new(RegExpNode::Start)),
+    map(tag("$"), |_| Box::new(RegExpNode::End)),
+    quantified
+));
+
+// Quantified -> Atom Quantifier | Atom
+parser!(quantified<&str, RegExpNodePtr> => {
     seq!(c => {
         let a = c.next(atom)?;
         if let Some(q) = c.next(opt(Quantifier::parse))? {
@@ -544,13 +933,40 @@ enum Quantifier {
     ZeroOrOne,
     ZeroOrMore,
     OneOrMore,
+    // TODO: To keep the memory usage down, these should limit the max count to say '256'
+    ExactlyN(usize),
+    NOrMore(usize),
+    Between(usize, usize),
 }
 
 impl Quantifier {
     parser!(parse<&str, Self> => alt!(
         map(tag("?"), |_| Quantifier::ZeroOrOne),
         map(tag("*"), |_| Quantifier::ZeroOrMore),
-        map(tag("+"), |_| Quantifier::OneOrMore)
+        map(tag("+"), |_| Quantifier::OneOrMore),
+        seq!(c => {
+            c.next(tag("{"))?;
+            let lower_num = c.next(number)?;
+
+            let upper_num: Option<Option<usize>> = c.next(opt(seq!(c => {
+                c.next(tag(","))?;
+                c.next(opt(number))
+            })))?;
+
+            c.next(tag("}"))?;
+
+            Ok(match upper_num {
+                Some(Some(upper_num)) => {
+                    if lower_num > upper_num {
+                        return Err(err_msg("Invalid quantifier lower > higher"));
+                    }
+
+                    Quantifier::Between(lower_num, upper_num)
+                },
+                Some(None) => Quantifier::NOrMore(lower_num),
+                None => Quantifier::ExactlyN(lower_num)
+            })
+        })
     ));
 }
 
@@ -578,10 +994,25 @@ parser!(character_class<&str, RegExpNodePtr> => seq!(c => {
 
 parser!(capture<&str, RegExpNodePtr> => seq!(c => {
     c.next(tag("("))?;
+    let (capturing, name) = c.next(opt(capture_flags))?.unwrap_or((true, String::new()));
     let inner = c.next(alternation)?;
     c.next(tag(")"))?;
 
-    Ok(Box::new(RegExpNode::Capture(inner)))
+    Ok(Box::new(RegExpNode::Capture { inner, capturing, name } ))
+}));
+
+parser!(capture_flags<&str, (bool, String)> => seq!(c => {
+    c.next(tag("?"))?;
+
+    c.next(alt!(
+        map(tag(":"), |_| (false, String::new())),
+        seq!(c => {
+            c.next(tag("<"))?;
+            let name: &str = c.next(take_while1(|c: char| c != '>'))?;
+            c.next(tag(">"))?;
+            Ok((true, name.to_owned()))
+        })
+    ))
 }));
 
 parser!(character_class_atom<&str, Char> => alt!(
@@ -638,19 +1069,12 @@ parser!(shared_literal<&str, char> => alt!(
     quoted
 ));
 
-//named!(number<&str, usize>,
-//	map_res!(take_while!(|c: char| c.is_digit(10)), |s: &str| s.parse::<usize>())
-//);
-
-//named!(name<&str, String>, do_parse!(
-//	head: take_while_m_n!(1, 1, |c: char|
-//		c.is_alphabetic() || c == '_'
-//	) >>
-//	rest: take_while_m_n!(1, 1, |c: char|
-//		c.is_alphabetic() || c == '_' || c.is_digit(10)
-//	) >>
-//	(String::from(head) + rest)
-//));
+// TODO: Verify that '01' is a valid number
+parser!(number<&str, usize> => and_then(
+    take_while1(|c: char| c.is_digit(10)),
+    // NOTE: We don't unwrap as it could be out of range.
+    |s: &str| { let n = s.parse::<usize>()?; Ok(n) }
+));
 
 // Matches '\' followed by the character being escaped.
 parser!(quoted<&str, char> => {
@@ -670,10 +1094,78 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn parsing_inline() {
-        let r = parse_regexp("123");
+    // #[test]
+    // fn parsing_inline() {
+    //     let r = parse_regexp("123");
 
-        println!("{:?}", r);
+    //     println!("{:?}", r);
+    // }
+
+    #[test]
+    fn regexp_test() {
+        // These three are basically a test case for equivalent languages that can
+        // produce different automata
+
+        let a = RegExp::new("a(X|Y)c").unwrap();
+        // println!("A: {:?}", a);
+
+        let b = RegExp::new("(aXc)|(aYc)").unwrap();
+        // println!("B: {:?}", b);
+
+        let c = RegExp::new("a(Xc|Yc)").unwrap();
+        // println!("C: {:?}", c);
+        assert!(c.test("aXc"));
+        assert!(c.test("aYc"));
+        assert!(!c.test("a"));
+        assert!(!c.test("c"));
+        assert!(!c.test("Y"));
+        assert!(!c.test("Yc"));
+        assert!(!c.test(""));
+
+        let d = RegExp::new("a").unwrap();
+        // println!("{:?}", d);
+
+        assert!(d.test("a"));
+        assert!(!d.test("b"));
+
+        // NOTE: This has infinite matches and matches everything
+        let e = RegExp::new("[a-z0-9]*").unwrap();
+        // println!("{:?}", e);
+        assert!(e.test("a9034343"));
+        assert!(e.test(""));
+
+        let j = RegExp::new("[a-b]").unwrap();
+        println!("{:?}", j);
+        assert!(j.test("a"));
+        assert!(j.test("b"));
+        assert!(!j.test("c"));
+        assert!(!j.test("d"));
+
+        assert!(j.test("zzzzzzzaxxxxx"));
+
+        let k = RegExp::new("^a$").unwrap();
+        assert!(k.test("a"));
+        assert!(!k.test("za"));
+
+        let l = RegExp::new("a").unwrap();
+        assert!(l.test("a"));
+        assert!(l.test("za"));
+
+        let match1 = a.exec("aXc").unwrap();
+        println!("{:?}", match1);
+
+        let match2 = b.exec("aYc blah blah blah aXc hello").unwrap().unwrap();
+        assert_eq!(match2.as_str(), "aYc");
+        assert_eq!(match2.index(), 0);
+        assert_eq!(match2.groups(), &[None, Some("aYc")]);
+        println!("{:?}", match2);
+
+        let match21 = match2.next().unwrap().unwrap();
+        assert_eq!(match21.as_str(), "aXc");
+        assert_eq!(match21.index(), 19);
+        assert_eq!(match21.groups(), &[Some("aXc"), None]);
+        println!("{:?}", match21);
+
+        assert!(match21.next().unwrap().is_none());
     }
 }

@@ -1,4 +1,3 @@
-extern crate bytes;
 extern crate common;
 #[macro_use]
 extern crate parsing;
@@ -16,14 +15,14 @@ fn main() {
     // These three are basically a test case for equivalent languages that can
     // produce different automata
 
-    let mut a = RegExp::new("a(X|Y)c").unwrap();
-    println!("A: {:?}", a);
+    let a = RegExp::new("a(X|Y)c").unwrap();
+    // println!("A: {:?}", a);
 
-    let mut b = RegExp::new("(aXc)|(aYc)").unwrap();
-    println!("B: {:?}", b);
+    let b = RegExp::new("(aXc)|(aYc)").unwrap();
+    // println!("B: {:?}", b);
 
-    let mut c = RegExp::new("a(Xc|Yc)").unwrap();
-    println!("C: {:?}", c);
+    let c = RegExp::new("a(Xc|Yc)").unwrap();
+    // println!("C: {:?}", c);
     assert!(c.test("aXc"));
     assert!(c.test("aYc"));
     assert!(!c.test("a"));
@@ -32,24 +31,48 @@ fn main() {
     assert!(!c.test("Yc"));
     assert!(!c.test(""));
 
-    let mut d = RegExp::new("a").unwrap();
-    println!("{:?}", d);
+    let d = RegExp::new("a").unwrap();
+    // println!("{:?}", d);
 
     assert!(d.test("a"));
     assert!(!d.test("b"));
 
     // NOTE: This has infinite matches and matches everything
-    let mut e = RegExp::new("[a-z0-9]*").unwrap();
-    println!("{:?}", e);
+    let e = RegExp::new("[a-z0-9]*").unwrap();
+    // println!("{:?}", e);
     assert!(e.test("a9034343"));
     assert!(e.test(""));
 
-    let mut j = RegExp::new("[a-b]").unwrap();
-    assert!(e.test("a"));
-    assert!(e.test("b"));
-    assert!(!e.test("c"));
+    let j = RegExp::new("[a-b]").unwrap();
+    println!("{:?}", j);
+    assert!(j.test("a"));
+    assert!(j.test("b"));
+    assert!(!j.test("c"));
+    assert!(!j.test("d"));
 
-    //	assert!(!e.test("<"));
+    assert!(j.test("zzzzzzzaxxxxx"));
+
+    let k = RegExp::new("^a$").unwrap();
+    assert!(k.test("a"));
+    assert!(!k.test("za"));
+
+    let l = RegExp::new("a").unwrap();
+    assert!(l.test("a"));
+    assert!(l.test("za"));
+
+    let match1 = a.exec("aXc").unwrap();
+    println!("{:?}", match1);
+
+    let match2 = b.exec("aYc blah blah blah aXc hello").unwrap().unwrap();
+    println!("{:?}", match2);
+
+    let match21 = match2.next().unwrap().unwrap();
+    println!("{:?}", match21);
+
+    // TODO: We don't want to count the infinite looping at beginning and end as a
+    // match
+
+    //
 
     /*
         Supporting partial matches:

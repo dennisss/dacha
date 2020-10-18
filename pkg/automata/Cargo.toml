@@ -6,4 +6,3 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 [dependencies]
 common = { path = "../common" }
 parsing = { path = "../parsing" }
-bytes = { git = "https://github.com/tokio-rs/bytes" }

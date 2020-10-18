@@ -1,5 +1,6 @@
 use common::algorithms::DisjointSets;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::hash::Hash;
 use std::ops::Bound::Included;
 
 /*
@@ -16,7 +17,7 @@ use std::ops::Bound::Included;
 
 /// Identifier for a single state. This will cap the maximum number of allowable
 /// states
-type StateId = usize;
+pub type StateId = usize;
 
 // TODO: We could implement ordering based on a Hash function as we really don't
 // care about complete ordering of symbols
@@ -27,7 +28,7 @@ enum Symbol<S> {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct FiniteStateMachine<S> {
+pub struct FiniteStateMachine<S, T: Eq + Hash = ()> {
     /// All states will have ids 0 to num_states
     num_states: StateId,
 
@@ -38,7 +39,7 @@ pub struct FiniteStateMachine<S> {
     ///
     /// The main purpose of this is to allow tracking an absolute position in
     /// the state machine.
-    state_tags: Vec<HashSet<StateId>>,
+    state_tags: Vec<HashSet<T>>,
 
     /// The id of the state in which we should be starting
     starting_states: HashSet<StateId>,
@@ -54,8 +55,10 @@ pub struct FiniteStateMachine<S> {
     transitions: BTreeSet<(StateId, Symbol<S>, StateId)>,
 }
 
-impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash + std::fmt::Debug>
-    FiniteStateMachine<S>
+impl<
+        S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash + std::fmt::Debug,
+        T: Eq + Hash,
+    > FiniteStateMachine<S, T>
 {
     pub fn new() -> Self {
         FiniteStateMachine {
@@ -84,12 +87,25 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash + std::
         id
     }
 
+    pub fn add_tag(&mut self, state_id: StateId, tag: T) {
+        self.state_tags[state_id].insert(tag);
+    }
+
+    /// TODO: Instead allow returning an iterator over all state ids.
+    pub fn num_states(&self) -> usize {
+        self.num_states
+    }
+
     pub fn starts(&self) -> impl Iterator<Item = &StateId> {
         self.starting_states.iter()
     }
 
     pub fn acceptors(&self) -> impl Iterator<Item = &StateId> {
         self.accepting_states.iter()
+    }
+
+    pub fn is_accepting_state(&self, state_id: StateId) -> bool {
+        self.accepting_states.contains(&state_id)
     }
 
     pub fn mark_start(&mut self, id: StateId) {
@@ -123,11 +139,11 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash + std::
     /// Adds all states and transitions from another automata to the current one
     /// NOTE: This will apply an offset to all ids in the given automata so
     /// previously obtained ids will no longer be valid
-    pub fn join(&mut self, other: FiniteStateMachine<S>) {
+    pub fn join(&mut self, mut other: Self) {
         let offset = self.num_states;
 
         self.num_states += other.num_states;
-        self.state_tags.extend_from_slice(&other.state_tags);
+        self.state_tags.append(&mut other.state_tags);
 
         for id in other.starting_states {
             self.starting_states.insert(id + offset);
@@ -144,11 +160,11 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash + std::
 
     /// Chains the given automata to the current one such that current accepting
     /// states become the start starts for the new automata
-    pub fn then(&mut self, other: FiniteStateMachine<S>) {
+    pub fn then(&mut self, mut other: Self) {
         let offset = self.num_states;
 
         self.num_states += other.num_states;
-        self.state_tags.extend_from_slice(&other.state_tags);
+        self.state_tags.append(&mut other.state_tags);
 
         // Epsilon transitions between all pairs of self_acceptors and other_starts
         for j in other.starting_states {
@@ -248,7 +264,7 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash + std::
         // How many new states there are
         let mut num_new_states = 0;
 
-        let mut new_state_tags: Vec<HashSet<StateId>> = vec![];
+        let mut new_state_tags: Vec<HashSet<T>> = vec![];
 
         // For each old state, this will be the index of the new state for it
         let mut state_mapping = vec![];
@@ -307,11 +323,14 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash + std::
     /// Checks if the given slice is accepted by this automata
     /// Unknown symbols not mentioned in the automata will trigger a rejection
     ///
+    /// TODO: Return an error with a special code if an unknown symbol is found.
+    ///
     /// NOTE: We assume that the automata has already been converted into a DFA
     pub fn accepts<I>(&self, val: I) -> bool
     where
         I: Iterator<Item = S>,
     {
+        // NOTE: The DFA should have exactly one starting state.
         let mut i = match self.starting_states.iter().next() {
             Some(i) => *i,
             None => return false,
@@ -327,6 +346,10 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash + std::
         }
 
         self.accepting_states.contains(&i)
+    }
+
+    pub fn tags(&self, state_id: StateId) -> &HashSet<T> {
+        &self.state_tags[state_id]
     }
 
     /// Produces a DFA from the current NFA using the Powerset Construction
@@ -439,8 +462,8 @@ impl<S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash + std::
         for new_state in new_states.iter() {
             let mut tags = HashSet::new();
             for s in new_state {
-                for t in &self.state_tags[*s] {
-                    tags.insert(*t);
+                for t in self.state_tags[*s].drain() {
+                    tags.insert(t);
                 }
             }
             new_state_tags.push(tags);
