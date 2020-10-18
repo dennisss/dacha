@@ -1,31 +1,29 @@
-
-
 /// NOTE: Tags have a canonical ordering of Universal, Application, Context,
 /// Private, and then in each class it is in order of ascending number.
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Hash, Clone)]
 pub struct Tag {
-	pub class: TagClass,
-	pub number: usize
+    pub class: TagClass,
+    pub number: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum TagClass {
-	Universal = 0,
-	Application = 1,
-	ContextSpecific = 2,
-	Private = 3
+    Universal = 0,
+    Application = 1,
+    ContextSpecific = 2,
+    Private = 3,
 }
 
 impl TagClass {
-	pub fn from(v: u8) -> Self {
-		match v {
-			0 => TagClass::Universal,
-			1 => TagClass::Application,
-			2 => TagClass::ContextSpecific,
-			3 => TagClass::Private,
-			_ => panic!("Value larger than 2 bits")
-		}
-	}
+    pub fn from(v: u8) -> Self {
+        match v {
+            0 => TagClass::Universal,
+            1 => TagClass::Application,
+            2 => TagClass::ContextSpecific,
+            3 => TagClass::Private,
+            _ => panic!("Value larger than 2 bits"),
+        }
+    }
 }
 
 // Tag numbers in the Universal class.

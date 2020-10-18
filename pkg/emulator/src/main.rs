@@ -1,18 +1,14 @@
 extern crate emulator;
 use emulator::errors::*;
 
-
-
-
-
 macro_rules! sss {
-    ($name:ident) => { stringify!($name,dfdf) };
+    ($name:ident) => {
+        stringify!($name, dfdf)
+    };
 }
 
-
-
 fn main() -> emulator::errors::Result<()> {
-//	println!("{}", sss!(hello));
+    //	println!("{}", sss!(hello));
 
-	emulator::gameboy::run()
+    emulator::gameboy::run()
 }

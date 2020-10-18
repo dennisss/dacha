@@ -66,15 +66,15 @@ impl_async_fn! {
 
 /*
 pub async fn call<F>(f: F) -> i32
-	where
-		F: for<'a> AsyncFn1<&'a i32, Output = i32>,
+    where
+        F: for<'a> AsyncFn1<&'a i32, Output = i32>,
 {
-	f.call_once(&42).await
+    f.call_once(&42).await
 }
 
 // #[runtime::test]
 async fn test_call() {
-	async fn double(x: &i32) -> i32 { *x * 2 }
-	assert_eq!(call(double).await, 84);
+    async fn double(x: &i32) -> i32 { *x * 2 }
+    assert_eq!(call(double).await, 84);
 }
 */

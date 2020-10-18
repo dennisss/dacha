@@ -1,4 +1,3 @@
-
 #[macro_export]
 macro_rules! tls_enum_u8 {
 	($name:ident => { $( $case:ident ( $val:expr ) ),* , (255) }) => {

@@ -11,9 +11,8 @@ extern crate common;
 #[macro_use]
 extern crate parsing;
 extern crate byteorder; // < Mainly needed for f32/f64 conversions
-extern crate bytes;
 
-pub use bytes::{Bytes, BytesMut};
+pub use common::bytes::{Bytes, BytesMut};
 
 use common::errors::*;
 
@@ -51,6 +50,7 @@ pub trait Enum: Copy {
     fn to_usize(&self) -> usize;
 }
 
+mod build;
 pub mod compiler;
 pub mod reflection;
 pub mod service;
@@ -59,3 +59,4 @@ pub mod syntax;
 pub mod text;
 pub mod tokenizer;
 pub mod wire;
+pub use build::build;

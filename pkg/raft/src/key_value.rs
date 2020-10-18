@@ -1,5 +1,5 @@
-use common::bytes::Bytes;
 use common::async_std::sync::Mutex;
+use common::bytes::Bytes;
 use common::errors::*;
 use common::errors::*;
 use raft::atomic::*;

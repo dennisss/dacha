@@ -1,4 +1,3 @@
-
 pub const CONNECTION: &'static [u8] = b"Connection";
 
 pub const KEEP_ALIVE: &'static [u8] = b"Keep-Alive";

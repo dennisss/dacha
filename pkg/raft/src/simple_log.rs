@@ -1,127 +1,131 @@
-use std::sync::Arc;
-use std::path::Path;
-use common::errors::*;
-use common::async_std::sync::Mutex;
-use crate::rpc::*;
 use crate::atomic::*;
 use crate::log::*;
-use crate::protos::*;
 use crate::memory_log::*;
-
+use crate::protos::*;
+use crate::rpc::*;
+use common::async_std::sync::Mutex;
+use common::errors::*;
+use std::path::Path;
+use std::sync::Arc;
 
 /// A simple log implementation backed be a single file that is rewritten
 /// completely every time a flush is needed and otherwise stores all entries in
 /// memory
 pub struct SimpleLog {
-	mem: MemoryLog,
+    mem: MemoryLog,
 
-	/// The position of the last entry stored in the snapshot
-	last_flushed: Mutex<LogSeq>,
+    /// The position of the last entry stored in the snapshot
+    last_flushed: Mutex<LogSeq>,
 
-	/// The single file backing the log
-	snapshot: Mutex<BlobFile>
+    /// The single file backing the log
+    snapshot: Mutex<BlobFile>,
 }
 
 impl SimpleLog {
+    pub async fn create(path: &Path) -> Result<SimpleLog> {
+        let b = BlobFile::builder(path)?;
 
-	pub async fn create(path: &Path) -> Result<SimpleLog> {
-		let b = BlobFile::builder(path)?;
+        let log: Vec<LogEntry> = vec![];
+        let file = b.create(&marshal(log)?)?;
 
-		let log: Vec<LogEntry> = vec![];
-		let file = b.create(&marshal(log)?)?;
+        Ok(SimpleLog {
+            mem: MemoryLog::new(),
+            last_flushed: Mutex::new(LogSeq(0)),
+            snapshot: Mutex::new(file),
+        })
+    }
 
-		Ok(SimpleLog {
-			mem: MemoryLog::new(),
-			last_flushed: Mutex::new(LogSeq(0)),
-			snapshot: Mutex::new(file)
-		})
-	}
+    pub async fn open(path: &Path) -> Result<SimpleLog> {
+        let b = BlobFile::builder(path)?;
+        let (file, data) = b.open()?;
 
-	pub async fn open(path: &Path) -> Result<SimpleLog> {
-		let b = BlobFile::builder(path)?;
-		let (file, data) = b.open()?;
+        let log: Vec<LogEntry> = unmarshal(&data)?;
+        let mem = MemoryLog::new();
 
-		let log: Vec<LogEntry> = unmarshal(&data)?;
-		let mem = MemoryLog::new();
+        println!("RESTORE {:?}", log);
 
-		println!("RESTORE {:?}", log);
+        let mut seq = LogSeq(0); // log.last().map(|e| e.pos.clone()).unwrap_or(LogPosition::zero());
 
-		let mut seq = LogSeq(0); // log.last().map(|e| e.pos.clone()).unwrap_or(LogPosition::zero());
+        for e in log {
+            seq = mem.append(e).await;
+        }
 
-		for e in log {
-			seq = mem.append(e).await;
-		}
+        Ok(SimpleLog {
+            mem,
+            last_flushed: Mutex::new(seq),
+            snapshot: Mutex::new(file),
+        })
+    }
 
-		Ok(SimpleLog {
-			mem,
-			last_flushed: Mutex::new(seq),
-			snapshot: Mutex::new(file)
-		})
-	}
-
-	pub fn purge(path: &Path) -> Result<()> {
-		let b = BlobFile::builder(path)?;
-		b.purge()?;
-		Ok(())
-	}
-
+    pub fn purge(path: &Path) -> Result<()> {
+        let b = BlobFile::builder(path)?;
+        b.purge()?;
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl Log for SimpleLog {
-	// TODO: Because this almost always needs to be shared, we might as well
-	// force usage with a separate Log type that just implements initial
-	// creation, checkpointing, truncation, and flushing related functions
-	async fn term(&self, index: LogIndex) -> Option<Term> {
-		self.mem.term(index).await }
-	async fn first_index(&self) -> LogIndex {
-		self.mem.first_index().await }
-	async fn last_index(&self) -> LogIndex {
-		self.mem.last_index().await }
-	async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSeq)> {
-		self.mem.entry(index).await }
-	async fn append(&self, entry: LogEntry) -> LogSeq {
-		self.mem.append(entry).await }
-	async fn truncate(&self, start_index: LogIndex) -> Option<LogSeq> {
-		self.mem.truncate(start_index).await }
-	async fn checkpoint(&self) -> LogPosition {
-		self.mem.checkpoint().await }
-	async fn discard(&self, pos: LogPosition) {
-		self.mem.discard(pos).await }
+    // TODO: Because this almost always needs to be shared, we might as well
+    // force usage with a separate Log type that just implements initial
+    // creation, checkpointing, truncation, and flushing related functions
+    async fn term(&self, index: LogIndex) -> Option<Term> {
+        self.mem.term(index).await
+    }
+    async fn first_index(&self) -> LogIndex {
+        self.mem.first_index().await
+    }
+    async fn last_index(&self) -> LogIndex {
+        self.mem.last_index().await
+    }
+    async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSeq)> {
+        self.mem.entry(index).await
+    }
+    async fn append(&self, entry: LogEntry) -> LogSeq {
+        self.mem.append(entry).await
+    }
+    async fn truncate(&self, start_index: LogIndex) -> Option<LogSeq> {
+        self.mem.truncate(start_index).await
+    }
+    async fn checkpoint(&self) -> LogPosition {
+        self.mem.checkpoint().await
+    }
+    async fn discard(&self, pos: LogPosition) {
+        self.mem.discard(pos).await
+    }
 
-	// TODO: Is there any point in ever 
-	async fn last_flushed(&self) -> Option<LogSeq> {
-		Some(
-			self.last_flushed.lock().await.clone()
-		)
-	}
+    // TODO: Is there any point in ever
+    async fn last_flushed(&self) -> Option<LogSeq> {
+        Some(self.last_flushed.lock().await.clone())
+    }
 
-	async fn flush(&self) -> Result<()> {
-		// TODO: Must also make sure to not do unnecessary updates if nothing
-		// has changed
-		// TODO: This should ideally also not hold a snapshot lock for too long
-		// as that may
+    async fn flush(&self) -> Result<()> {
+        // TODO: Must also make sure to not do unnecessary updates if nothing
+        // has changed
+        // TODO: This should ideally also not hold a snapshot lock for too long
+        // as that may
 
-		let mut s = self.snapshot.lock().await;
+        let mut s = self.snapshot.lock().await;
 
-		let idx = self.mem.last_index().await;
-		let mut log: Vec<LogEntry> = vec![];
+        let idx = self.mem.last_index().await;
+        let mut log: Vec<LogEntry> = vec![];
 
-		let mut last_seq = LogSeq(0);
+        let mut last_seq = LogSeq(0);
 
-		for i in 1..(idx + 1) {
-			let (e, seq) = self.mem.entry(i).await
-				.expect("Failed to get entry from log");
-			last_seq = seq;
-			log.push((*e).clone());
-		}
+        for i in 1..(idx + 1) {
+            let (e, seq) = self
+                .mem
+                .entry(i)
+                .await
+                .expect("Failed to get entry from log");
+            last_seq = seq;
+            log.push((*e).clone());
+        }
 
-		s.store(&marshal(log)?)?;
+        s.store(&marshal(log)?)?;
 
-		*self.last_flushed.lock().await = last_seq;
+        *self.last_flushed.lock().await = last_seq;
 
-		Ok(())
-	}
+        Ok(())
+    }
 }
-
-

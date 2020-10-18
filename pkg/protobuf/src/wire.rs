@@ -1,6 +1,6 @@
 use super::{Enum, Message};
 use byteorder::{ByteOrder, LittleEndian};
-use bytes::{Bytes, BytesMut};
+use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
 use std::intrinsics::unlikely;
 

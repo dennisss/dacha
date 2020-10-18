@@ -1,3 +1,2 @@
-
-pub mod crc;
 pub mod adler32;
+pub mod crc;

@@ -732,7 +732,12 @@ impl SSTableIterator {
 
                     let iter = block.block.iter().rows();
 
-                    let iter = unsafe { std::mem::transmute::<BlockKeyValueIterator<'_>, BlockKeyValueIterator<'static>>(iter) };
+                    let iter = unsafe {
+                        std::mem::transmute::<
+                            BlockKeyValueIterator<'_>,
+                            BlockKeyValueIterator<'static>,
+                        >(iter)
+                    };
 
                     self.current_block = Some((block, iter));
                 }

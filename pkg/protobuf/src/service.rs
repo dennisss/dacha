@@ -1,5 +1,5 @@
+use common::bytes::Bytes;
 use common::errors::*;
-use bytes::Bytes;
 
 // TODO: See standard GRPC codes here:
 // https://github.com/grpc/grpc/blob/master/doc/statuscodes.md
@@ -7,16 +7,15 @@ use bytes::Bytes;
 /// A request is simply a possibly un
 #[async_trait]
 pub trait Request: Send + Sync {
-	/// None is returned when the end of the stream is hit. (or the second time
-	/// during a non-streaming client request).
-	async fn next(&mut self) -> Result<Option<Bytes>>;
+    /// None is returned when the end of the stream is hit. (or the second time
+    /// during a non-streaming client request).
+    async fn next(&mut self) -> Result<Option<Bytes>>;
 }
 
 #[async_trait]
 pub trait Response: Send + Sync {
-	async fn send(&mut self, message: Bytes) -> Result<()>;
+    async fn send(&mut self, message: Bytes) -> Result<()>;
 }
-
 
 // Request is a Box<Stream>
 
@@ -24,20 +23,24 @@ pub trait Response: Send + Sync {
 /// referenced in a protobuf file on the 'NameService' trait.
 #[async_trait]
 pub trait Service: Send + Sync {
-	fn service_name(&self) -> &'static str;
+    fn service_name(&self) -> &'static str;
 
-	fn method_names(&self) -> &'static [&'static str];
+    fn method_names(&self) -> &'static [&'static str];
 
-	// TODO: Should return a GRPC compatible status.
+    // TODO: Should return a GRPC compatible status.
 
-	async fn call(&self, method_name: &str, request: Bytes) -> Result<Bytes>;
+    async fn call(&self, method_name: &str, request: Bytes) -> Result<Bytes>;
 
-//	async fn call(&self, method_name: &'static str,
-//				  request: &dyn Request, response: &dyn Response) -> Result<()>;
+    //	async fn call(&self, method_name: &'static str,
+    //				  request: &dyn Request, response: &dyn Response) -> Result<()>;
 }
 
 #[async_trait]
 pub trait Channel {
-	async fn call(&self, service_name: &'static str, method_name: &'static str,
-				  request_bytes: Bytes) -> Result<Bytes>;
+    async fn call(
+        &self,
+        service_name: &'static str,
+        method_name: &'static str,
+        request_bytes: Bytes,
+    ) -> Result<Bytes>;
 }

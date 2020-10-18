@@ -2,7 +2,7 @@ use crate::matrix::dimension::*;
 use crate::matrix::element::ElementType;
 use generic_array::{ArrayLength, GenericArray};
 use std::marker::PhantomData;
-use std::ops::{Index, IndexMut, Mul, Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Index, IndexMut, Mul};
 use typenum::Prod; // TODO: Refactor out this circular reference.
 
 /// A container of elements. Must be indexable in natural contiguous order. Row
@@ -15,14 +15,17 @@ use typenum::Prod; // TODO: Refactor out this circular reference.
 ///   the stack with zero allocations.
 /// - MatrixBlockStorage: Doesn't directly own any elements, but instead stores
 ///   a reference to a block of elements in another storage type.
-pub trait StorageType<T, R, C>: Index<usize, Output = T> + Index<(usize, usize), Output = T> {
+pub trait StorageType<T, R, C>:
+    Index<usize, Output = T> + Index<(usize, usize), Output = T>
+{
     fn alloc(rows: R, cols: C) -> Self;
     fn rows(&self) -> R;
     fn cols(&self) -> C;
     fn as_ptr(&self) -> *const T; // NOTE: This is only a good thing to do for non-blocky situations.
 }
 
-pub trait StorageTypeMut<T, R, C> = StorageType<T, R, C> + IndexMut<(usize, usize)> + IndexMut<usize>;
+pub trait StorageTypeMut<T, R, C> =
+    StorageType<T, R, C> + IndexMut<(usize, usize)> + IndexMut<usize>;
 
 /// Storage for a matrix on the heap.
 #[derive(Clone)]
@@ -55,23 +58,23 @@ impl<T: ElementType, R: Dimension, C: Dimension> StorageType<T, R, C>
 }
 
 impl<T, R: Dimension, C: Dimension> AsRef<[T]> for MatrixDynamicStorage<T, R, C> {
-  fn as_ref(&self) -> &[T] {
-      self.data.as_ref()
-  }
+    fn as_ref(&self) -> &[T] {
+        self.data.as_ref()
+    }
 }
 
 impl<T, R: Dimension, C: Dimension> AsMut<[T]> for MatrixDynamicStorage<T, R, C> {
-  fn as_mut(&mut self) -> &mut [T] {
-      self.data.as_mut()
-  }
+    fn as_mut(&mut self) -> &mut [T] {
+        self.data.as_mut()
+    }
 }
 
 impl<T, R: Dimension, C: Dimension> Index<usize> for MatrixDynamicStorage<T, R, C> {
-  type Output = T;
+    type Output = T;
 
-  fn index(&self, index: usize) -> &Self::Output {
-      &self.data[index]
-  }
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.data[index]
+    }
 }
 
 impl<T, R: Dimension, C: Dimension> Index<(usize, usize)> for MatrixDynamicStorage<T, R, C> {
@@ -83,9 +86,9 @@ impl<T, R: Dimension, C: Dimension> Index<(usize, usize)> for MatrixDynamicStora
 }
 
 impl<T, R: Dimension, C: Dimension> IndexMut<usize> for MatrixDynamicStorage<T, R, C> {
-  fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-      &mut self.data[index]
-  }
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.data[index]
+    }
 }
 
 impl<T, R: Dimension, C: Dimension> IndexMut<(usize, usize)> for MatrixDynamicStorage<T, R, C> {
@@ -104,13 +107,17 @@ pub struct MatrixInlineStorage<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>>
     c: PhantomData<C>,
 }
 
-impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> AsRef<[T]> for MatrixInlineStorage<T, R, C, S> {
+impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> AsRef<[T]>
+    for MatrixInlineStorage<T, R, C, S>
+{
     fn as_ref(&self) -> &[T] {
         self.data.as_ref()
     }
 }
 
-impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> AsMut<[T]> for MatrixInlineStorage<T, R, C, S> {
+impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> AsMut<[T]>
+    for MatrixInlineStorage<T, R, C, S>
+{
     fn as_mut(&mut self) -> &mut [T] {
         self.data.as_mut()
     }
@@ -121,18 +128,19 @@ impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> std::ops::Index<usize>
 {
     type Output = T;
     fn index(&self, idx: usize) -> &T {
-        // TODO: Whenever we do this, we need to verify that the column index isn't out of range (can result in skipping rows)
+        // TODO: Whenever we do this, we need to verify that the column index isn't out
+        // of range (can result in skipping rows)
         &self.data.as_ref()[idx]
     }
 }
-
 
 impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> std::ops::Index<(usize, usize)>
     for MatrixInlineStorage<T, R, C, S>
 {
     type Output = T;
     fn index(&self, idx: (usize, usize)) -> &T {
-        // TODO: Whenever we do this, we need to verify that the column index isn't out of range (can result in skipping rows)
+        // TODO: Whenever we do this, we need to verify that the column index isn't out
+        // of range (can result in skipping rows)
         &self.data.as_ref()[C::to_usize() * idx.0 + idx.1]
     }
 }
@@ -154,12 +162,13 @@ impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> std::ops::IndexMut<(usize
 }
 
 impl<T: Default, R: StaticDim, C: StaticDim, S: ArrayLength<T>> StorageType<T, R, C>
-for MatrixInlineStorage<T, R, C, S> {
+    for MatrixInlineStorage<T, R, C, S>
+{
     fn alloc(rows: R, cols: C) -> Self {
         Self {
             data: GenericArray::default(),
             r: PhantomData,
-            c: PhantomData
+            c: PhantomData,
         }
     }
 
@@ -204,8 +213,8 @@ impl<'a, T, Tp: AsRef<[T]> + 'a, R: Dimension, C: Dimension, S: Dimension>
     }
 }
 
-impl<'a, T, Tp: AsRef<[T]> + 'a, R: Dimension, C: Dimension, S: Dimension>
-StorageType<T, R, C> for MatrixBlockStorage<'a, T, Tp, R, C, S>
+impl<'a, T, Tp: AsRef<[T]> + 'a, R: Dimension, C: Dimension, S: Dimension> StorageType<T, R, C>
+    for MatrixBlockStorage<'a, T, Tp, R, C, S>
 {
     fn alloc(rows: R, cols: C) -> Self {
         panic!("Can not allocate matrix blocks");
@@ -233,8 +242,8 @@ impl<'a, T, Tp: AsRef<[T]> + 'a, R: Dimension, C: Dimension, S: Dimension> Index
     }
 }
 
-impl<'a, T, Tp: AsRef<[T]> + AsMut<[T]> + 'a, R: Dimension, C: Dimension, S: Dimension> IndexMut<usize>
-    for MatrixBlockStorage<'a, T, Tp, R, C, S>
+impl<'a, T, Tp: AsRef<[T]> + AsMut<[T]> + 'a, R: Dimension, C: Dimension, S: Dimension>
+    IndexMut<usize> for MatrixBlockStorage<'a, T, Tp, R, C, S>
 {
     fn index_mut(&mut self, idx: usize) -> &mut T {
         let i = self.inner_index(idx);
@@ -247,46 +256,54 @@ impl<'a, T, Tp: AsRef<[T]> + 'a, R: Dimension, C: Dimension, S: Dimension> Index
 {
     type Output = T;
     fn index(&self, idx: (usize, usize)) -> &T {
-      &self.data.as_ref()[idx.0 * self.stride.value() + idx.1]
+        &self.data.as_ref()[idx.0 * self.stride.value() + idx.1]
     }
 }
 
 impl<'a, T, Tp: AsRef<[T]> + AsMut<[T]> + 'a, R: Dimension, C: Dimension, S: Dimension>
-IndexMut<(usize, usize)> for MatrixBlockStorage<'a, T, Tp, R, C, S>
+    IndexMut<(usize, usize)> for MatrixBlockStorage<'a, T, Tp, R, C, S>
 {
     fn index_mut(&mut self, idx: (usize, usize)) -> &mut T {
         &mut self.data.as_mut()[idx.0 * self.stride.value() + idx.1]
     }
 }
 
-pub struct MatrixTransposeStorage<'a, T, R: Dimension, C: Dimension, S: StorageType<T, C, R>, Sp: Deref<Target=S> + 'a> {
+pub struct MatrixTransposeStorage<
+    'a,
+    T,
+    R: Dimension,
+    C: Dimension,
+    S: StorageType<T, C, R>,
+    Sp: Deref<Target = S> + 'a,
+> {
     pub inner: Sp,
     pub t: PhantomData<T>,
     pub r: PhantomData<R>,
     pub c: PhantomData<C>,
-    pub s: PhantomData<&'a S>
+    pub s: PhantomData<&'a S>,
 }
 
-impl<'a, T, R: Dimension, C: Dimension, S: StorageType<T, C, R>, Sp: Deref<Target=S> + 'a>
-StorageType<T, R, C> for MatrixTransposeStorage<'a, T, R, C, S, Sp> {
+impl<'a, T, R: Dimension, C: Dimension, S: StorageType<T, C, R>, Sp: Deref<Target = S> + 'a>
+    StorageType<T, R, C> for MatrixTransposeStorage<'a, T, R, C, S, Sp>
+{
     fn alloc(rows: R, cols: C) -> Self {
         panic!("Can not allocate matrix transpose");
     }
 
     fn rows(&self) -> R {
-      self.inner.cols()
+        self.inner.cols()
     }
 
     fn cols(&self) -> C {
-      self.inner.rows()
+        self.inner.rows()
     }
 
     fn as_ptr(&self) -> *const T {
-      panic!("Can not use a transpose storage as a pointer");
+        panic!("Can not use a transpose storage as a pointer");
     }
 }
-impl<'a, T, R: Dimension, C: Dimension, S: StorageType<T, C, R>, Sp: Deref<Target=S> + 'a>
-Index<usize> for MatrixTransposeStorage<'a, T, R, C, S, Sp>
+impl<'a, T, R: Dimension, C: Dimension, S: StorageType<T, C, R>, Sp: Deref<Target = S> + 'a>
+    Index<usize> for MatrixTransposeStorage<'a, T, R, C, S, Sp>
 {
     type Output = T;
     fn index(&self, idx: usize) -> &T {
@@ -296,35 +313,44 @@ Index<usize> for MatrixTransposeStorage<'a, T, R, C, S, Sp>
     }
 }
 
-impl<'a, T, R: Dimension, C: Dimension, S: StorageTypeMut<T, C, R>, Sp: Deref<Target=S> + DerefMut + 'a> IndexMut<usize>
-    for MatrixTransposeStorage<'a, T, R, C, S, Sp>
+impl<
+        'a,
+        T,
+        R: Dimension,
+        C: Dimension,
+        S: StorageTypeMut<T, C, R>,
+        Sp: Deref<Target = S> + DerefMut + 'a,
+    > IndexMut<usize> for MatrixTransposeStorage<'a, T, R, C, S, Sp>
 {
     fn index_mut(&mut self, idx: usize) -> &mut T {
-      let i = idx / self.cols().value();
-      let j = idx % self.rows().value();
-      &mut self[(i, j)]
+        let i = idx / self.cols().value();
+        let j = idx % self.rows().value();
+        &mut self[(i, j)]
     }
 }
 
-impl<'a, T, R: Dimension, C: Dimension, S: StorageType<T, C, R>, Sp: Deref<Target=S> + 'a> Index<(usize, usize)>
-    for MatrixTransposeStorage<'a, T, R, C, S, Sp>
+impl<'a, T, R: Dimension, C: Dimension, S: StorageType<T, C, R>, Sp: Deref<Target = S> + 'a>
+    Index<(usize, usize)> for MatrixTransposeStorage<'a, T, R, C, S, Sp>
 {
     type Output = T;
     fn index(&self, idx: (usize, usize)) -> &T {
-      &self.inner[(idx.1, idx.0)]
+        &self.inner[(idx.1, idx.0)]
     }
 }
 
-impl<'a, T, R: Dimension, C: Dimension, S: StorageTypeMut<T, C, R>, Sp: Deref<Target=S> + DerefMut + 'a>
-IndexMut<(usize, usize)> for MatrixTransposeStorage<'a, T, R, C, S, Sp>
+impl<
+        'a,
+        T,
+        R: Dimension,
+        C: Dimension,
+        S: StorageTypeMut<T, C, R>,
+        Sp: Deref<Target = S> + DerefMut + 'a,
+    > IndexMut<(usize, usize)> for MatrixTransposeStorage<'a, T, R, C, S, Sp>
 {
     fn index_mut(&mut self, idx: (usize, usize)) -> &mut T {
         &mut self.inner[(idx.1, idx.0)]
     }
 }
-
-
-
 
 pub struct MatrixNewStorage;
 

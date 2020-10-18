@@ -583,13 +583,13 @@ impl Compiler<'_> {
         };
 
         lines.add(format!("pub struct {}Stub {{", service.name));
-        lines.add("\tchannel: Arc<Channel>");
+        lines.add("\tchannel: Arc<dyn Channel>");
         lines.add("}");
         lines.nl();
 
         lines.add(format!("impl {}Stub {{", service.name));
         lines.indented(|lines| {
-            lines.add("pub fn new(channel: Arc<Channel>) -> Self {");
+            lines.add("pub fn new(channel: Arc<dyn Channel>) -> Self {");
             lines.add("\tSelf { channel }");
             lines.add("}");
             lines.nl();

@@ -1,22 +1,24 @@
 #![feature(core_intrinsics, trait_alias)]
 
-#[macro_use] extern crate common;
-#[macro_use] extern crate parsing;
+#[macro_use]
+extern crate common;
+#[macro_use]
+extern crate parsing;
 extern crate libc;
 
-mod reader;
-mod common_parser;
-pub mod uri;
-pub mod uri_parser;
-mod dns;
-pub mod status_code;
 pub mod body;
-pub mod spec;
+pub mod chunked;
+pub mod client;
+mod common_parser;
+mod dns;
+pub mod header;
+pub mod header_parser;
 pub mod message;
 mod message_parser;
-pub mod header_parser;
-pub mod header;
-pub mod chunked;
-pub mod transfer_encoding;
-pub mod client;
+mod reader;
 pub mod server;
+pub mod spec;
+pub mod status_code;
+pub mod transfer_encoding;
+pub mod uri;
+pub mod uri_parser;

@@ -18,7 +18,8 @@ use math::matrix::Vector2f;
 use num_traits::{AsPrimitive, Num, NumCast, Zero};
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
-#[macro_use] extern crate arrayref;
+#[macro_use]
+extern crate arrayref;
 
 pub mod format;
 pub mod resize;

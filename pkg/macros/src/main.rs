@@ -1,4 +1,5 @@
-#[macro_use] extern crate macros;
+#[macro_use]
+extern crate macros;
 
 // struct Apples<T> {
 // 	data: T
@@ -7,7 +8,7 @@
 // 	impl<T: std::ops::Add<usize>> Apples<T> {}
 
 // 	impl Apples {
-		
+
 // 	}
 
 // 	impl Apples {
@@ -18,5 +19,5 @@
 // }
 
 fn main() {
-	println!("Hello");
+    println!("Hello");
 }

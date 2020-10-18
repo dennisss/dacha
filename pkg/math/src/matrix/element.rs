@@ -1,24 +1,27 @@
-use std::ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign};
 use num_traits::real::Real;
-use num_traits::{Zero, One};
-
+use num_traits::{One, Zero};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 /// TODO: Eventually we should be using a relative percentage + absolute margin
 /// based comparison.
 pub trait ErrorEpsilon: Real {
-	fn error_epsilon() -> Self;
+    fn error_epsilon() -> Self;
 
-	fn approx_zero(&self) -> bool {
-		self.abs() < Self::error_epsilon()
-	}
+    fn approx_zero(&self) -> bool {
+        self.abs() < Self::error_epsilon()
+    }
 }
 
 impl ErrorEpsilon for f64 {
-	fn error_epsilon() -> Self { 1e-12 }
+    fn error_epsilon() -> Self {
+        1e-12
+    }
 }
 
 impl ErrorEpsilon for f32 {
-	fn error_epsilon() -> Self { 1e-12 }
+    fn error_epsilon() -> Self {
+        1e-12
+    }
 }
 
 //impl ErrorEpsilon for usize {
@@ -33,13 +36,21 @@ pub trait ElementType = Copy + Default + Zero;
 
 /// Traits expected by any scalar element of a matrix.
 /// (i.e. real or complex number).
-/// 
+///
 /// To simplify trait implementations, most trait implementations for numeric
-/// calculations require these traits. 
-pub trait ScalarElementType =
-	ElementType + Real + One + Add + AddAssign + Sub + SubAssign + Mul +
-	MulAssign + Div + DivAssign + ErrorEpsilon;
-
+/// calculations require these traits.
+pub trait ScalarElementType = ElementType
+    + Real
+    + One
+    + Add
+    + AddAssign
+    + Sub
+    + SubAssign
+    + Mul
+    + MulAssign
+    + Div
+    + DivAssign
+    + ErrorEpsilon;
 
 // TODO: This will require floating point comparisons be possible with every
 // type of scalar?
@@ -47,7 +58,4 @@ pub trait ScalarElementType =
 
 // pub fn approx_eq<T: ScalarElementType>(a: T, b: T) -> bool {
 
-
 // }
-
-

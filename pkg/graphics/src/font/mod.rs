@@ -1,6 +1,6 @@
-use common::bytes::Bytes;
 use common::async_std::fs::File;
 use common::async_std::io::ReadExt;
+use common::bytes::Bytes;
 use common::errors::*;
 use parsing::cstruct::parse_cstruct_be;
 use parsing::*;

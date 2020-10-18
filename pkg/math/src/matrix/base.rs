@@ -37,7 +37,8 @@ pub type MatrixBlockMut<'a, T, R, C, S> =
 // pub type MatrixTranspose<'a, T, R, C, S> =
 //     MatrixBase<T, R, C, MatrixBlockStorage<'a, T, &'a [T], C, R, S>>;
 
-pub type MatrixStatic<T, R: Mul<C>, C> = MatrixBase<T, R, C, MatrixInlineStorage<T, R, C, Prod<R, C>>>;
+pub type MatrixStatic<T, R: Mul<C>, C> =
+    MatrixBase<T, R, C, MatrixInlineStorage<T, R, C, Prod<R, C>>>;
 pub type VectorStatic<T, R> = MatrixBase<T, R, U1, MatrixInlineStorage<T, R, U1, Prod<R, U1>>>;
 
 pub type VectorBase<T, R, D> = MatrixBase<T, R, U1, D>;
@@ -190,7 +191,7 @@ impl<T: ElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C> + AsRef
             // XXX: Here we may want to either
             data: MatrixBlockStorage {
                 data: &self.data.as_ref()[start..end],
-                rows: RB::from_usize(row_height),  // NOTE: from_usize has an assertion in it,
+                rows: RB::from_usize(row_height), // NOTE: from_usize has an assertion in it,
                 cols: CB::from_usize(col_width),
                 stride: self.data.cols(),
                 lifetime: PhantomData,
@@ -289,8 +290,9 @@ impl<T: ElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C> + AsRef
 {
     /// Constructs a new matrix which references the same data as the current
     /// matrix, but operates as if it were transposed.
-    pub fn as_transpose<'a>(&'a self) ->
-        MatrixBase<T, C, R, MatrixTransposeStorage<'a, T, C, R, D, &'a D>> {
+    pub fn as_transpose<'a>(
+        &'a self,
+    ) -> MatrixBase<T, C, R, MatrixTransposeStorage<'a, T, C, R, D, &'a D>> {
         // TODO: A transpose of a transpose should become a no-op.
         MatrixBase {
             // XXX: Here we may want to either
@@ -467,8 +469,8 @@ impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>> std::ops::Index<usi
     }
 }
 
-impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>>
-    std::ops::IndexMut<usize> for MatrixBase<T, R, C, D>
+impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>> std::ops::IndexMut<usize>
+    for MatrixBase<T, R, C, D>
 {
     #[inline]
     fn index_mut(&mut self, i: usize) -> &mut Self::Output {
@@ -476,8 +478,8 @@ impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>>
     }
 }
 
-impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
-    std::ops::Index<(usize, usize)> for MatrixBase<T, R, C, D>
+impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>> std::ops::Index<(usize, usize)>
+    for MatrixBase<T, R, C, D>
 {
     type Output = T;
 
@@ -488,8 +490,8 @@ impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
     }
 }
 
-impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>>
-    std::ops::IndexMut<(usize, usize)> for MatrixBase<T, R, C, D>
+impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>> std::ops::IndexMut<(usize, usize)>
+    for MatrixBase<T, R, C, D>
 {
     #[inline]
     fn index_mut(&mut self, ij: (usize, usize)) -> &mut T {
@@ -499,18 +501,21 @@ impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>>
     }
 }
 
-impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C> + AsRef<[T]>> AsRef<[T]> for MatrixBase<T, R, C, D> {
-  fn as_ref(&self) -> &[T] {
-      self.data.as_ref()
-  }
+impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C> + AsRef<[T]>> AsRef<[T]>
+    for MatrixBase<T, R, C, D>
+{
+    fn as_ref(&self) -> &[T] {
+        self.data.as_ref()
+    }
 }
 
-impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C> + AsMut<[T]>> AsMut<[T]> for MatrixBase<T, R, C, D> {
-  fn as_mut(&mut self) -> &mut [T] {
-      self.data.as_mut()
-  }
+impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C> + AsMut<[T]>> AsMut<[T]>
+    for MatrixBase<T, R, C, D>
+{
+    fn as_mut(&mut self) -> &mut [T] {
+        self.data.as_mut()
+    }
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 // Component-wise Addition/Subtraction/Multiplication/Division
@@ -794,17 +799,22 @@ impl<
 // Matrix Multiplication
 ////////////////////////////////////////////////////////////////////////////////
 
-impl<
-        T: ScalarElementType,
-        R: Dimension,
-        S: Dimension,
-        D: StorageType<T, R, S>,
-    > MatrixBase<T, R, S, D>
+impl<T: ScalarElementType, R: Dimension, S: Dimension, D: StorageType<T, R, S>>
+    MatrixBase<T, R, S, D>
 {
     #[inline]
-    pub fn mul_to<S2: Dimension, C: Dimension, D2: StorageType<T, S2, C>, D3: StorageTypeMut<T, R, C>>(
-      &self, rhs: &MatrixBase<T, S2, C, D2>, out: &mut MatrixBase<T, R, C, D3>)
-      where (S, S2): MaybeEqualDims {
+    pub fn mul_to<
+        S2: Dimension,
+        C: Dimension,
+        D2: StorageType<T, S2, C>,
+        D3: StorageTypeMut<T, R, C>,
+    >(
+        &self,
+        rhs: &MatrixBase<T, S2, C, D2>,
+        out: &mut MatrixBase<T, R, C, D3>,
+    ) where
+        (S, S2): MaybeEqualDims,
+    {
         assert_eq!(self.cols(), rhs.rows());
         for i in 0..self.rows() {
             for j in 0..rhs.cols() {

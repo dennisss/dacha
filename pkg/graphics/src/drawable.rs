@@ -1,113 +1,119 @@
-use gl::types::{GLuint, GLint};
-use std::sync::Arc;
-use crate::transform::{Camera, Transform, AsMatrix};
-use crate::shader::Shader;
 use crate::lighting::Material;
+use crate::shader::Shader;
+use crate::transform::{AsMatrix, Camera, Transform};
 use crate::util::*;
-use math::matrix::{Vector3f, Matrix4f};
+use gl::types::{GLint, GLuint};
+use math::matrix::{Matrix4f, Vector3f};
+use std::sync::Arc;
 
-// An object than can be drawn. This class handles configuring transforms, viewports, and projection
+// An object than can be drawn. This class handles configuring transforms,
+// viewports, and projection
 pub trait Drawable {
-	// Draw the object. 'proj' contains all transformations that should be applied to it
-	fn draw(&self, cam: &Camera, model_view: &Transform);
+    // Draw the object. 'proj' contains all transformations that should be applied
+    // to it
+    fn draw(&self, cam: &Camera, model_view: &Transform);
 }
 
 pub struct Primitive {
-	transform: Matrix4f
+    transform: Matrix4f,
 }
 
 impl Default for Primitive {
-	fn default() -> Self {
-		Self { transform: Matrix4f::identity() }
-	}
+    fn default() -> Self {
+        Self {
+            transform: Matrix4f::identity(),
+        }
+    }
 }
 
 impl Primitive {
-	pub fn transform(&self) -> &Matrix4f {
-		&self.transform
-	}
+    pub fn transform(&self) -> &Matrix4f {
+        &self.transform
+    }
 
-	pub fn set_transform(&mut self, matrix: Matrix4f) {
-		self.transform = matrix;
-	}
+    pub fn set_transform(&mut self, matrix: Matrix4f) {
+        self.transform = matrix;
+    }
 
-	pub fn apply(&mut self, matrix: &Matrix4f) {
-		self.transform = &self.transform * matrix;
-	}
+    pub fn apply(&mut self, matrix: &Matrix4f) {
+        self.transform = &self.transform * matrix;
+    }
 }
 
 /// Every object has its own vertex array object
 /// TODO: Inherits Drawable
 pub struct Object {
-	primitive: Primitive,
+    primitive: Primitive,
 
-	// protected:
-	shader: Arc<Shader>,
-	material: Option<Arc<Material>>,
+    // protected:
+    shader: Arc<Shader>,
+    material: Option<Arc<Material>>,
 
-	// private:
-	vao: GLuint,
+    // private:
+    vao: GLuint,
 }
 
 impl_deref!(Object::primitive as Primitive);
 
 impl Object {
-	pub fn new(shader: Arc<Shader>) -> Self {
-		let mut vao = 0;
-		unsafe {
-			gl::GenVertexArrays(1, &mut vao);
-			gl::BindVertexArray(vao);
-		}
+    pub fn new(shader: Arc<Shader>) -> Self {
+        let mut vao = 0;
+        unsafe {
+            gl::GenVertexArrays(1, &mut vao);
+            gl::BindVertexArray(vao);
+        }
 
-		shader.init();
+        shader.init();
 
-		Self {
-			primitive: Primitive::default(),
-			shader, material: None, vao
-		}
-	}
+        Self {
+            primitive: Primitive::default(),
+            shader,
+            material: None,
+            vao,
+        }
+    }
 
-	// Works for shaders when the current shader shares the exact same
-	// attributes (and ordering of them) as the new shader
-	pub fn set_shader(&mut self, shader: Arc<Shader>) {
-		self.shader = shader;
-	}
+    // Works for shaders when the current shader shares the exact same
+    // attributes (and ordering of them) as the new shader
+    pub fn set_shader(&mut self, shader: Arc<Shader>) {
+        self.shader = shader;
+    }
 
-	pub fn set_material(&mut self, material: Arc<Material>) {
-		self.material = Some(material);
-	}
+    pub fn set_material(&mut self, material: Arc<Material>) {
+        self.material = Some(material);
+    }
 }
 
 impl Drop for Object {
-	fn drop(&mut self) {
-		unsafe {
-			gl::DeleteVertexArrays(1, &self.vao);
-		}
-	}
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteVertexArrays(1, &self.vao);
+        }
+    }
 }
 
 impl Drawable for Object {
-	fn draw(&self, cam: &Camera, model_view: &Transform) {
-		unsafe {
-			gl::BindVertexArray(self.vao);
-			gl::UseProgram(self.shader.program);
-		}
+    fn draw(&self, cam: &Camera, model_view: &Transform) {
+        unsafe {
+            gl::BindVertexArray(self.vao);
+            gl::UseProgram(self.shader.program);
+        }
 
-		let p = cam.matrix();
-		gl_uniform_mat4(self.shader.uni_proj_attrib, &p);
+        let p = cam.matrix();
+        gl_uniform_mat4(self.shader.uni_proj_attrib, &p);
 
-		self.shader.set_lights(&cam.lights);
+        self.shader.set_lights(&cam.lights);
 
-		let mv = model_view.matrix() * self.primitive.transform();
+        let mv = model_view.matrix() * self.primitive.transform();
 
-		gl_uniform_mat4(self.shader.uni_modelview_attrib, &mv);
+        gl_uniform_mat4(self.shader.uni_modelview_attrib, &mv);
 
-		if let Some(attr) = self.shader.eyepos_attrib {
-			gl_uniform_vec3(attr, &cam.position);
-		}
+        if let Some(attr) = self.shader.eyepos_attrib {
+            gl_uniform_vec3(attr, &cam.position);
+        }
 
-		if let Some(material) = &self.material {
-			self.shader.set_material(material);
-		}
-	}
+        if let Some(material) = &self.material {
+            self.shader.set_material(material);
+        }
+    }
 }

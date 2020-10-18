@@ -1,12 +1,14 @@
 #![feature(box_patterns)]
 
-extern crate protobuf;
 extern crate crypto;
-#[macro_use] extern crate arrayref;
-#[macro_use] extern crate parsing;
+extern crate protobuf;
+#[macro_use]
+extern crate arrayref;
+#[macro_use]
+extern crate parsing;
 
-pub mod huffman;
 pub mod deflate;
 pub mod gzip;
-pub mod zlib;
+pub mod huffman;
 pub mod snappy;
+pub mod zlib;

@@ -238,7 +238,6 @@ version = "0.5.0"
 source = "git+https://github.com/tokio-rs/bytes#b5d4f87e7e6b7d9636aa42d3d3bd63503579b0b6"
 dependencies = [
  "byteorder",
- "serde",
 ]
 
 [[package]]
@@ -1350,7 +1349,6 @@ dependencies = [
  "async-trait",
  "base64",
  "byteorder",
- "bytes 0.5.0",
  "common",
  "parsing",
 ]

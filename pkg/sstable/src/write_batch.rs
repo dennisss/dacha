@@ -1,7 +1,7 @@
-use common::errors::*;
-use protobuf::wire::parse_varint;
 use crate::encoding::*;
 use crate::internal_key::*;
+use common::errors::*;
+use protobuf::wire::parse_varint;
 
 // Types defined in https://github.com/facebook/rocksdb/blob/master/db/dbformat.h
 
@@ -11,46 +11,44 @@ use crate::internal_key::*;
 // Write batch format defined here:
 // https://github.com/facebook/rocksdb/blob/2309fd63bf2c7fb1b45713b2bf4e879bdbdb4822/db/write_batch.cc
 
-
 #[derive(Debug)]
 pub struct WriteBatch<'a> {
-	pub sequence: u64,
-	pub writes: Vec<Write<'a>>
+    pub sequence: u64,
+    pub writes: Vec<Write<'a>>,
 }
 
 impl<'a> WriteBatch<'a> {
-	pub fn parse(mut input: &'a [u8]) -> Result<(Self, &'a [u8])> {
-		let sequence = parse_next!(input, parse_fixed64);
-		let count = parse_next!(input, parse_fixed32);
-		let mut writes = vec![];
+    pub fn parse(mut input: &'a [u8]) -> Result<(Self, &'a [u8])> {
+        let sequence = parse_next!(input, parse_fixed64);
+        let count = parse_next!(input, parse_fixed32);
+        let mut writes = vec![];
 
-		for _ in 0..count {
-			let typ = ValueType::from_value(parse_next!(input, parse_u8))?;
-			match typ {
-				ValueType::Value => {
-					let key = parse_next!(input, parse_slice);
-					let value = parse_next!(input, parse_slice);
-					writes.push(Write::Value { key, value });
-				},
-				ValueType::Deletion => {
-					let key = parse_next!(input, parse_slice);
-					writes.push(Write::Deletion { key });
-				},
-				_ => {
-					return Err(
-						format_err!("Unsupported value type: {:?}", typ));
-				}
-			}
-		}
+        for _ in 0..count {
+            let typ = ValueType::from_value(parse_next!(input, parse_u8))?;
+            match typ {
+                ValueType::Value => {
+                    let key = parse_next!(input, parse_slice);
+                    let value = parse_next!(input, parse_slice);
+                    writes.push(Write::Value { key, value });
+                }
+                ValueType::Deletion => {
+                    let key = parse_next!(input, parse_slice);
+                    writes.push(Write::Deletion { key });
+                }
+                _ => {
+                    return Err(format_err!("Unsupported value type: {:?}", typ));
+                }
+            }
+        }
 
-		Ok((Self { sequence, writes }, input))
-	}
+        Ok((Self { sequence, writes }, input))
+    }
 }
 
 #[derive(Debug)]
 pub enum Write<'a> {
-	Value { key: &'a [u8], value: &'a [u8] },
-	Deletion { key: &'a [u8] },
+    Value { key: &'a [u8], value: &'a [u8] },
+    Deletion { key: &'a [u8] },
 }
 
 // WriteBatch::rep_ :=

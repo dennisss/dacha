@@ -1,7 +1,7 @@
 use crate::format::jpeg::constants::*;
 use core::f32::consts::PI;
-use std::ops::{Index, IndexMut};
 use math::matrix::*;
+use std::ops::{Index, IndexMut};
 
 /*
 TODO: Read the 'Practical Fast 1-D DCT Algorithms with 11 Multiplications' paper
@@ -62,7 +62,7 @@ fn matmul(a: &Matrix8f, b: &Matrix8f, c: &mut Matrix8f) {
             let c_ij = &mut c[(i, j)];
             *c_ij = 0.0;
             for k in 0..8 {
-                *c_ij += a[(i, k)] * b[(k,j)];
+                *c_ij += a[(i, k)] * b[(k, j)];
             }
         }
     }
@@ -97,9 +97,19 @@ fn to_m256(v: &[f32; 8]) -> __m256 {
 
 // TODO: This can't do transpose!
 fn matmul_sse(a_mat: &Matrix8f, b_mat: &Matrix8f, c_mat: &mut Matrix8f) {
-    let a = unsafe { std::mem::transmute::<_, &[[f32; BLOCK_DIM]; BLOCK_DIM]>(array_ref![a_mat.as_ref(), 0, 64]) };
-    let b = unsafe { std::mem::transmute::<_, &[[f32; BLOCK_DIM]; BLOCK_DIM]>(array_ref![b_mat.as_ref(), 0, 64]) };
-    let c = unsafe { std::mem::transmute::<_, &mut [[f32; BLOCK_DIM]; BLOCK_DIM]>(array_mut_ref![c_mat.as_mut(), 0, 64]) };
+    let a = unsafe {
+        std::mem::transmute::<_, &[[f32; BLOCK_DIM]; BLOCK_DIM]>(array_ref![a_mat.as_ref(), 0, 64])
+    };
+    let b = unsafe {
+        std::mem::transmute::<_, &[[f32; BLOCK_DIM]; BLOCK_DIM]>(array_ref![b_mat.as_ref(), 0, 64])
+    };
+    let c = unsafe {
+        std::mem::transmute::<_, &mut [[f32; BLOCK_DIM]; BLOCK_DIM]>(array_mut_ref![
+            c_mat.as_mut(),
+            0,
+            64
+        ])
+    };
 
     for i in 0..8 {
         let mut c_i = unsafe { _mm256_setzero_ps() };
@@ -116,7 +126,6 @@ fn matmul_sse(a_mat: &Matrix8f, b_mat: &Matrix8f, c_mat: &mut Matrix8f) {
         unsafe { _mm256_storeu_ps(c[i].as_mut_ptr(), c_i) };
     }
 }
-
 
 /*
 pub fn forward_dct_2d(input: &[i16; BLOCK_SIZE], output: &mut [i16; BLOCK_SIZE]) {
@@ -136,7 +145,8 @@ pub fn forward_dct_2d(input: &[i16; BLOCK_SIZE], output: &mut [i16; BLOCK_SIZE])
  */
 
 // Baseline is 0.33 seconds
-// Currently this runs in 0.40 seconds, so is really SLOW even for matmul standards.
+// Currently this runs in 0.40 seconds, so is really SLOW even for matmul
+// standards.
 pub fn inverse_dct_2d(input: &[i16; BLOCK_SIZE], output: &mut [i16; BLOCK_SIZE]) {
     let mut temp1 = Matrix8f::zero();
     for (i, v) in input.iter().enumerate() {
@@ -149,11 +159,9 @@ pub fn inverse_dct_2d(input: &[i16; BLOCK_SIZE], output: &mut [i16; BLOCK_SIZE])
     matmul_sse(&temp2, dct_mat, &mut temp1);
     // temp2.mul_to(dct_mat, &mut temp1);
 
-
     // Wrong because it doesn't support transpose.
     // matmul_sse(&dct_mat.transpose(), &temp1, &mut temp2);
     // matmul_sse(&temp2, &dct_mat, &mut temp1);
-
 
     // temp1 = dct_mat.transpose() * temp1 * dct_mat;
 

@@ -1,9 +1,7 @@
-
-
 pub trait Factory<T: ?Sized>: Send + Sync {
-	fn create(&self) -> Box<T>;
+    fn create(&self) -> Box<T>;
 
-	fn box_clone(&self) -> Box<dyn Factory<T>>;
+    fn box_clone(&self) -> Box<dyn Factory<T>>;
 }
 
 // /// Allow any &factory to be based as a factory.
