@@ -4,12 +4,12 @@ use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
 use std::intrinsics::unlikely;
 
-pub fn serialize_varint(mut v: usize, out: &mut Vec<u8>) {
+pub fn serialize_varint(mut v: u64, out: &mut Vec<u8>) {
     loop {
         let mut b = (v & 0x7f) as u8;
         v = v >> 7;
         if v != 0 {
-            b &= 0x80;
+            b |= 0x80;
             out.push(b);
         } else {
             out.push(b);
@@ -18,13 +18,13 @@ pub fn serialize_varint(mut v: usize, out: &mut Vec<u8>) {
     }
 }
 
-pub fn parse_varint(input: &[u8]) -> Result<(usize, &[u8])> {
+pub fn parse_varint(input: &[u8]) -> Result<(u64, &[u8])> {
     let mut v = 0;
     let mut i = 0;
 
     // Maximum number of bytes to take.
     // Limited by size of input and size of 64bit integer.
-    let max_bytes = std::cmp::min(input.len(), 64 / 7);
+    let max_bytes = std::cmp::min(input.len(), 10 /* ceil_div(64, 7) */);
 
     loop {
         let overflow = i >= max_bytes;
@@ -32,10 +32,11 @@ pub fn parse_varint(input: &[u8]) -> Result<(usize, &[u8])> {
             return Err(err_msg("To few/many bytes in varint"));
         }
 
-        let mut b = input[i] as usize;
+        let mut b = input[i] as u64;
         let more = b & 0x80 != 0;
         b = b & 0x7f;
 
+        // TODO: Should we care if the 10th byte has truncated bits?
         v |= b << (7 * i);
 
         // Consume byte.
@@ -49,12 +50,30 @@ pub fn parse_varint(input: &[u8]) -> Result<(usize, &[u8])> {
     Ok((v, &input[i..]))
 }
 
-fn encode_zigzag32(n: usize) -> usize {
-    (n << 1) ^ (n >> 31)
+fn encode_zigzag32(n: i32) -> u64 {
+    ((n << 1) ^ (n >> 31)) as i64 as u64
 }
-fn encode_zigzag64(n: usize) -> usize {
-    (n << 1) ^ (n >> 63)
+
+fn decode_zigzag32(v: u64) -> Result<i32> {
+    let n = v as i32;
+    if (n as i64) != (v as i64) {
+        return Err(err_msg("Lost precision when casting to i32"));
+    }
+    // TODO: Verify that we didn't lose precision (by casting back)
+
+    Ok((n >> 1) ^ (-(n & 1)))
 }
+
+fn encode_zigzag64(n: i64) -> u64 {
+    ((n << 1) ^ (n >> 63)) as u64
+}
+
+fn decode_zigzag64(v: u64) -> i64 {
+    let n = v as i64;
+    (n >> 1) ^ (-(n & 1))
+}
+
+// k = (n << 1) ^ (n >> 31)
 
 #[derive(PartialEq, Clone, Copy)]
 enum WireType {
@@ -84,14 +103,14 @@ impl WireType {
 
 struct Tag {
     // TODO: Figure out exactly what type this is allowed to be.
-    field_number: usize,
+    field_number: u64,
     wire_type: WireType,
 }
 
 impl Tag {
     fn parse(input: &[u8]) -> Result<(Tag, &[u8])> {
         let (v, rest) = parse_varint(input)?;
-        let wire_type = WireType::from_usize(v & 0b111)?;
+        let wire_type = WireType::from_usize((v as usize) & 0b111)?;
         let field_number = v >> 3;
         Ok((
             Tag {
@@ -104,7 +123,7 @@ impl Tag {
 
     // TODO: Ensure field_number is within the usize range
     fn serialize(&self, out: &mut Vec<u8>) {
-        let v = (self.field_number << 3) | (self.wire_type as usize);
+        let v = (self.field_number << 3) | (self.wire_type as u64);
         serialize_varint(v, out);
     }
 }
@@ -125,7 +144,7 @@ impl Tag {
 /// wire types are used.
 #[derive(Debug)]
 pub struct WireField<'a> {
-    pub field_number: usize,
+    pub field_number: u64,
 
     // TODO: Make private
     pub value: WireValue<'a>,
@@ -158,6 +177,7 @@ impl WireField<'_> {
                 }
                 WireType::LengthDelim => {
                     let (len, rest) = parse_varint(input)?;
+                    let len = len as usize;
                     input = rest;
                     if input.len() < len {
                         return Err(err_msg("Too few bytes for length delimited"));
@@ -240,7 +260,7 @@ impl WireField<'_> {
         Ok(LittleEndian::read_f64(self.value.word64()?))
     }
 
-    pub fn serialize_double(field_number: usize, v: f64, out: &mut Vec<u8>) {
+    pub fn serialize_double(field_number: u64, v: f64, out: &mut Vec<u8>) {
         let buf = v.to_le_bytes();
         WireField {
             field_number,
@@ -253,7 +273,7 @@ impl WireField<'_> {
         Ok(LittleEndian::read_f32(self.value.word32()?))
     }
 
-    pub fn serialize_float(field_number: usize, v: f32, out: &mut Vec<u8>) {
+    pub fn serialize_float(field_number: u64, v: f32, out: &mut Vec<u8>) {
         let buf = v.to_le_bytes();
         WireField {
             field_number,
@@ -266,10 +286,10 @@ impl WireField<'_> {
         Ok(self.value.varint()? as i32)
     }
 
-    pub fn serialize_int32(field_number: usize, v: i32, out: &mut Vec<u8>) {
+    pub fn serialize_int32(field_number: u64, v: i32, out: &mut Vec<u8>) {
         WireField {
             field_number,
-            value: WireValue::Varint(v as usize),
+            value: WireValue::Varint(v as i64 as u64),
         }
         .serialize(out);
     }
@@ -278,10 +298,11 @@ impl WireField<'_> {
         Ok(self.value.varint()? as i64)
     }
 
-    pub fn serialize_int64(field_number: usize, v: i64, out: &mut Vec<u8>) {
+    pub fn serialize_int64(field_number: u64, v: i64, out: &mut Vec<u8>) {
         WireField {
             field_number,
-            value: WireValue::Varint(v as usize),
+            // TODO: Probably need to extend first then serialize.
+            value: WireValue::Varint(v as u64),
         }
         .serialize(out);
     }
@@ -290,10 +311,10 @@ impl WireField<'_> {
         Ok(self.value.varint()? as u32)
     }
 
-    pub fn serialize_uint32(field_number: usize, v: u32, out: &mut Vec<u8>) {
+    pub fn serialize_uint32(field_number: u64, v: u32, out: &mut Vec<u8>) {
         WireField {
             field_number,
-            value: WireValue::Varint(v as usize),
+            value: WireValue::Varint(v as u64),
         }
         .serialize(out);
     }
@@ -302,22 +323,43 @@ impl WireField<'_> {
         Ok(self.value.varint()? as u64)
     }
 
-    pub fn serialize_uint64(field_number: usize, v: u64, out: &mut Vec<u8>) {
+    pub fn serialize_uint64(field_number: u64, v: u64, out: &mut Vec<u8>) {
         WireField {
             field_number,
-            value: WireValue::Varint(v as usize),
+            value: WireValue::Varint(v),
         }
         .serialize(out);
     }
 
-    // parse_sint32
-    // parse_sint64
+    pub fn parse_sint32(&self) -> Result<i32> {
+        decode_zigzag32(self.value.varint()?)
+    }
+
+    pub fn serialize_sint32(field_number: u64, v: i32, out: &mut Vec<u8>) {
+        WireField {
+            field_number,
+            value: WireValue::Varint(encode_zigzag32(v)),
+        }
+        .serialize(out);
+    }
+
+    pub fn parse_sint64(&self) -> Result<i64> {
+        Ok(decode_zigzag64(self.value.varint()?))
+    }
+
+    pub fn serialize_sint64(field_number: u64, v: i64, out: &mut Vec<u8>) {
+        WireField {
+            field_number,
+            value: WireValue::Varint(encode_zigzag64(v)),
+        }
+        .serialize(out);
+    }
 
     pub fn parse_fixed32(&self) -> Result<u32> {
         Ok(LittleEndian::read_u32(self.value.word32()?))
     }
 
-    pub fn serialize_fixed32(field_number: usize, v: u32, out: &mut Vec<u8>) {
+    pub fn serialize_fixed32(field_number: u64, v: u32, out: &mut Vec<u8>) {
         let data = v.to_le_bytes();
         WireField {
             field_number,
@@ -330,7 +372,7 @@ impl WireField<'_> {
         Ok(LittleEndian::read_u64(self.value.word64()?))
     }
 
-    pub fn serialize_fixed64(field_number: usize, v: u64, out: &mut Vec<u8>) {
+    pub fn serialize_fixed64(field_number: u64, v: u64, out: &mut Vec<u8>) {
         let data = v.to_le_bytes();
         WireField {
             field_number,
@@ -350,7 +392,7 @@ impl WireField<'_> {
         Ok(self.value.varint()? != 0)
     }
 
-    pub fn serialize_bool(field_number: usize, v: bool, out: &mut Vec<u8>) {
+    pub fn serialize_bool(field_number: u64, v: bool, out: &mut Vec<u8>) {
         Self::serialize_uint32(field_number, if v { 1 } else { 0 }, out);
     }
 
@@ -360,7 +402,7 @@ impl WireField<'_> {
         String::from_utf8(val).map_err(|_| err_msg("Invalid utf-8 bytes in string"))
     }
 
-    pub fn serialize_string(field_number: usize, v: &str, out: &mut Vec<u8>) {
+    pub fn serialize_string(field_number: u64, v: &str, out: &mut Vec<u8>) {
         WireField {
             field_number,
             value: WireValue::LengthDelim(v.as_ref()),
@@ -374,7 +416,7 @@ impl WireField<'_> {
         Ok(BytesMut::from(val))
     }
 
-    pub fn serialize_bytes(field_number: usize, v: &[u8], out: &mut Vec<u8>) {
+    pub fn serialize_bytes(field_number: u64, v: &[u8], out: &mut Vec<u8>) {
         WireField {
             field_number,
             value: WireValue::LengthDelim(v),
@@ -383,10 +425,11 @@ impl WireField<'_> {
     }
 
     pub fn parse_enum<E: Enum>(&self) -> Result<E> {
-        E::from_usize(self.value.varint()?)
+        // TODO: Use u64
+        E::from_usize(self.value.varint()? as usize)
     }
 
-    pub fn serialize_enum<E: Enum>(field_number: usize, v: E, out: &mut Vec<u8>) {
+    pub fn serialize_enum<E: Enum>(field_number: u64, v: E, out: &mut Vec<u8>) {
         // TODO: Support up to 64bits?
         Self::serialize_uint32(field_number, v.to_usize() as u32, out);
     }
@@ -396,11 +439,7 @@ impl WireField<'_> {
         M::parse(Bytes::from(data))
     }
 
-    pub fn serialize_message<M: Message>(
-        field_number: usize,
-        m: M,
-        out: &mut Vec<u8>,
-    ) -> Result<()> {
+    pub fn serialize_message<M: Message>(field_number: u64, m: M, out: &mut Vec<u8>) -> Result<()> {
         let data = m.serialize()?;
         WireField {
             field_number,
@@ -414,28 +453,15 @@ impl WireField<'_> {
 #[derive(Debug)]
 pub enum WireValue<'a> {
     // TODO: Use u64 instead of usize
-    Varint(usize),         // sint32, sint64, bool, enum
+    Varint(u64),           // sint32, sint64, bool, enum
     Word64(&'a [u8]),      // fixed64, sfixed64
     LengthDelim(&'a [u8]), // bytes, embedded messages, packed repeated fields
     Group(Vec<WireValue<'a>>),
     Word32(&'a [u8]),
 }
 
-// TODO: Move to common library.
-macro_rules! enum_accessor {
-    ($name:ident, $branch:ident, $t:ty) => {
-        fn $name(&self) -> Result<$t> {
-            if let Self::$branch(v) = self {
-                Ok(*v)
-            } else {
-                Err(err_msg("Unexpected value type."))
-            }
-        }
-    };
-}
-
 impl WireValue<'_> {
-    enum_accessor!(varint, Varint, usize);
+    enum_accessor!(varint, Varint, u64);
     enum_accessor!(word64, Word64, &[u8]);
     enum_accessor!(length_delim, LengthDelim, &[u8]);
     enum_accessor!(word32, Word32, &[u8]);
@@ -445,7 +471,7 @@ impl WireValue<'_> {
             WireValue::Varint(n) => serialize_varint(*n, out),
             WireValue::Word64(v) => out.extend_from_slice(&v),
             WireValue::LengthDelim(v) => {
-                serialize_varint(v.len(), out);
+                serialize_varint(v.len() as u64, out);
                 out.extend_from_slice(v);
             }
             WireValue::Group(items) => {
@@ -455,5 +481,39 @@ impl WireValue<'_> {
             }
             WireValue::Word32(v) => out.extend_from_slice(v),
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_varint() {
+        // TODO: Need to also test partial parsing if there is more data after the
+        // varint.
+
+        const VALUES: &[u64] = &[100000, std::u64::MAX];
+
+        for value in VALUES {
+            let mut out = vec![];
+            serialize_varint(*value, &mut out);
+            let (val, rest) = parse_varint(&out).unwrap();
+            assert_eq!(val, *value);
+            assert_eq!(rest.len(), 0);
+        }
+
+        let mut overflow_data = [0xffu8; 10];
+        overflow_data[9] = 0x7f;
+
+        let res = parse_varint(&overflow_data);
+        println!("{:x?}", res);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_zigzag() {
+        // TODO:
+        // const VALUES: &[]
     }
 }

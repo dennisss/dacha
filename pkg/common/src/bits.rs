@@ -204,6 +204,7 @@ pub struct BitReader<'a> {
 
 // NOTE: THis reads from
 impl<'a> BitReader<'a> {
+    // TODO: Make MSBFirst the default as that is the most obvious.
     pub fn new(reader: &'a mut dyn Read) -> Self {
         Self::new_with_order(reader, BitOrder::LSBFirst)
     }
@@ -214,7 +215,7 @@ impl<'a> BitReader<'a> {
             offset: 0,
             buffer: BitVector::new(),
             consumed_offset: 0,
-            bit_order: BitOrder::MSBFirst,
+            bit_order,
         }
     }
 

@@ -1,13 +1,27 @@
-#![feature(core_intrinsics, async_await, trait_alias)]
+#![feature(core_intrinsics, trait_alias)]
 
 #[macro_use]
 extern crate common;
 extern crate http;
-extern crate libc;
 extern crate parsing;
 
+use common::async_std::net::{TcpListener, TcpStream};
+use common::async_std::prelude::*;
+use common::async_std::task;
+use common::bytes::Bytes;
 use common::errors::*;
-
+use common::errors::*;
+use common::io::ReadWriteable;
+use compression::gzip::*;
+use http::body::*;
+use http::chunked::*;
+use http::client::*;
+use http::header::*;
+use http::message::*;
+use http::spec::*;
+use http::status_code::*;
+use http::transfer_encoding::*;
+use parsing::iso::*;
 use std::borrow::BorrowMut;
 use std::convert::AsMut;
 use std::convert::TryFrom;
@@ -16,27 +30,6 @@ use std::io::{Cursor, Read, Write};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::thread;
-
-use common::bytes::Bytes;
-use http::client::*;
-
-use common::async_std::net::{TcpListener, TcpStream};
-use common::async_std::prelude::*;
-use common::async_std::task;
-use parsing::iso::*;
-
-use common::errors::*;
-//use http::reader::*;
-//use http::uri::*;
-//use http::uri_parser::*;
-//use http::dns::*;
-use http::body::*;
-use http::chunked::*;
-use http::header::*;
-use http::message::*;
-use http::spec::*;
-use http::status_code::*;
-use http::transfer_encoding::*;
 
 // TODO: Pipelining?
 
@@ -65,9 +58,6 @@ async fn handle_request(mut req: Request) -> Response {
 }
 
 // Implementing stuff for Body.
-
-use common::io::ReadWriteable;
-use compression::gzip::*;
 
 async fn run_client() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set

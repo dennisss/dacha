@@ -10,7 +10,6 @@ parsing = { path = "../parsing" }
 compression = { path = "../compression" }
 http = { path = "../http" }
 protobuf = { path = "../protobuf" }
-libc = "0.2.62"
 
 [build-dependencies]
 protobuf = { path = "../../pkg/protobuf" }

@@ -108,7 +108,7 @@ impl BigInt {
             return 0;
         }
 
-        let mut last = self.value.last().cloned().unwrap_or(0);
+        let last = self.value.last().cloned().unwrap_or(0);
         if self.is_positive() {
             n -= last.leading_zeros() as usize
         } else {
@@ -181,7 +181,11 @@ impl std::convert::From<BigUint> for BigInt {
     fn from(other: BigUint) -> Self {
         // TODO: We should be able to do this even more efficiently without a
         // conversion as the internal representations are the same.
-        Self::from_be_bytes(&other.to_be_bytes())
+
+        let mut data = other.to_le_bytes();
+        data.push(0);
+
+        Self::from_le_bytes(&data)
     }
 }
 

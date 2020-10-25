@@ -1,6 +1,5 @@
 use super::builtin::*;
 use super::tag::*;
-use chrono::DateTime;
 use common::bits::BitVector;
 use common::bytes::Bytes;
 use common::errors::*;
@@ -1080,7 +1079,7 @@ impl<'a> DERWriter<'a> {
     // - If a default value is present, we should never encode any value equal to
     //   it.
 
-    // 
+    //
     // - For SET: "The canonical order for tags is based on the outermost tag of
     //   each type and is defined as follows:"
 }
@@ -1159,12 +1158,12 @@ impl DERWriteable for ObjectIdentifier {
     }
 }
 impl DERWriteable for UTF8String {
-    fn write_der(&self, writer: &mut DERWriter) {
+    fn write_der(&self, _writer: &mut DERWriter) {
         unimplemented!("TODO: UTF8String");
     }
 }
 impl DERWriteable for NumericString {
-    fn write_der(&self, writer: &mut DERWriter) {
+    fn write_der(&self, _writer: &mut DERWriter) {
         unimplemented!("TODO: NumericString");
     }
 }
@@ -1202,7 +1201,7 @@ impl DERWriteable for GeneralizedTime {
 // const TAG_NUMBER_GRAPHICSTRING: usize = 25;
 
 impl DERWriteable for VisibleString {
-    fn write_der(&self, writer: &mut DERWriter) {
+    fn write_der(&self, _writer: &mut DERWriter) {
         unimplemented!("TODO: VisibleString");
     }
 }

@@ -153,7 +153,8 @@ impl Compiler<'_> {
         c.outer += "use common::errors::*;\n";
         c.outer += "use protobuf::*;\n";
         c.outer += "use protobuf::wire::*;\n";
-        c.outer += "use protobuf::service::*;\n\n";
+        c.outer += "use protobuf::service::*;\n";
+        c.outer += "use protobuf::reflection::*;\n\n";
 
         // TODO: Eventually, this will become the package name
         let path = vec![];
@@ -198,6 +199,22 @@ impl Compiler<'_> {
     }
 
     fn compile_enum(&self, e: &Enum, path: Path) -> String {
+        if self.proto.syntax == Syntax::Proto3 {
+            let mut has_default = false;
+            for i in &e.body {
+                if let EnumBodyItem::Field(f) = i {
+                    if f.num == 0 {
+                        has_default = true;
+                        break;
+                    }
+                }
+            }
+
+            if !has_default {
+                // TODO: Return an error.
+            }
+        }
+
         let mut lines = LineBuilder::new();
 
         // Because we can't put an enum inside of a struct in Rust, we instead
@@ -205,6 +222,7 @@ impl Compiler<'_> {
         // TODO: Need to consistently escape _'s in the original name.
         let fullname = format!("{}_{}", path.join("_"), e.name);
 
+        lines.add("#[derive(Clone, Copy, PartialEq, Eq)]");
         lines.add(format!("pub enum {} {{", fullname));
         for i in &e.body {
             match i {
@@ -220,6 +238,7 @@ impl Compiler<'_> {
 
         lines.add(format!("impl Enum for {} {{", fullname));
         lines.indented(|lines| {
+            // TODO: Just make from_usize an Option<>
             lines.add("fn from_usize(v: usize) -> std::result::Result<Self, ()> {");
 
             lines.indented(|lines| {
@@ -242,9 +261,48 @@ impl Compiler<'_> {
             lines.nl();
 
             lines.add("fn to_usize(&self) -> usize { self as usize }");
+            lines.nl();
+
+            lines.add("fn name(&self) -> &'static str {");
+            lines.add("\tmatch self {");
+            for i in &e.body {
+                match i {
+                    EnumBodyItem::Option(_) => {}
+                    EnumBodyItem::Field(f) => {
+                        lines.add(format!("\t\tSelf::{} => \"{}\",", f.name, f.name));
+                    }
+                }
+            }
+            lines.add("\t}");
+            lines.add("}");
+            lines.nl();
+
+            lines.add("fn parse(&mut self, v: usize) -> Result<()> {");
+            lines.add("\t*self = Self::from_usize(v)?; Ok(())");
+            lines.add("}");
+            lines.nl();
+
+            lines.add("fn parse_str(&mut self, s: &str) -> Result<()> {");
+            lines.add("\t*self = Self::from_str(s)?; Ok(())");
+            lines.add("}");
+            lines.nl();
+
+            // fn parse_name(&mut self, name: &str) -> Result<()>;
+            lines.add("fn from_str(s: &str) -> Result<Self> {");
+            lines.add("\tOk(match s {");
+            for i in &e.body {
+                match i {
+                    EnumBodyItem::Option(_) => {}
+                    EnumBodyItem::Field(f) => {
+                        lines.add(format!("\t\t\"{}\" => Self::{},", f.name, f.name));
+                    }
+                }
+            }
+            lines.add("_ => { return Err(()); }");
+            lines.add("})");
+            lines.add("}");
         });
         lines.add("}");
-        lines.nl();
 
         lines.to_string()
     }
@@ -343,7 +401,11 @@ impl Compiler<'_> {
     }
 
     fn compile_message(&mut self, msg: &Message, path: Path) -> String {
-        // TODO: Create a ConstDefault version of the message
+        // TODO: Create a ConstDefault version of the message (should be used if someone
+        // wants to access an uninitialized message?)
+
+        // TODO: Complain if we include a proto2 enum directly as a field of a proto3
+        // message.
 
         let mut inner_path = Vec::from(path);
         inner_path.push(&msg.name);
@@ -566,6 +628,57 @@ impl Compiler<'_> {
         // extend_from_slice and assignment
 
         lines.add("}");
+        lines.nl();
+
+        lines.add(format!(
+            "impl protobuf::MessageReflection for {} {{",
+            msg.name
+        ));
+
+        lines.indented(|lines| {
+            lines.add("fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {");
+            lines.indented(|lines| {
+                lines.add("Some(match num {");
+                for field in msg.fields() {
+                    let name = self.field_name(field);
+                    lines.add(format!("\t{} => self.{}.reflect(),", field.num, name));
+                }
+                lines.add("\t_ => { return None; }");
+                lines.add("})");
+            });
+            lines.add("}");
+            lines.nl();
+
+            // TODO: Dedup with the last case.
+            lines.add(
+                "fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {",
+            );
+            lines.indented(|lines| {
+                lines.add("Some(match num {");
+                for field in msg.fields() {
+                    let name = self.field_name(field);
+                    lines.add(format!("\t{} => self.{}.reflect_mut(),", field.num, name));
+                }
+                lines.add("\t_ => { return None; }");
+                lines.add("})");
+            });
+            lines.add("}");
+            lines.nl();
+
+            lines.add("fn field_number_by_name(&self, name: &str) -> Option<FieldNumber> {");
+            lines.indented(|lines| {
+                lines.add("Some(match name {");
+                for field in msg.fields() {
+                    let name = self.field_name(field);
+                    lines.add(format!("\t{} => {},", name, field.num));
+                }
+                lines.add("})");
+            });
+            lines.add("}");
+        });
+
+        lines.add("}");
+
         lines.to_string()
     }
 

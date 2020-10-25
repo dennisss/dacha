@@ -1,9 +1,11 @@
 // Implementation of the protobuf plaintext format.
 // aka what the C++ DebugString outputs and can re-parse as a proto.
 
-use crate::tokenizer::{floatLit, intLit, strLit};
+use crate::reflection::{MessageReflection, ReflectionMut};
+use crate::tokenizer::{float_lit, int_lit, strLit};
 use common::errors::*;
 use parsing::*;
+use std::convert::TryInto;
 
 /*
 
@@ -100,8 +102,8 @@ impl TextToken {
         let sign = if c.next(opt(one_of("+-")))?.unwrap_or('+') == '+' { 1 } else { -1 };
 
         c.next(alt!(
-            map(floatLit, |v| Self::Float((sign as f64) * v)),
-            map(intLit, |v| Self::Integer(sign * (v as isize)))
+            map(float_lit, |v| Self::Float((sign as f64) * v)),
+            map(int_lit, |v| Self::Integer(sign * (v as isize)))
         ))
     }));
 }
@@ -149,6 +151,25 @@ impl TextMessage {
         // TODO: Each field may be optionally followed by a ','
         map(many(TextField::parse), |fields| Self { fields })
     });
+
+    fn apply(&self, message: &mut dyn MessageReflection) -> Result<()> {
+        for field in &self.fields {
+            match &field.name {
+                TextFieldName::Regular(name) => {
+                    let field_num = message
+                        .field_number_by_name(&name)
+                        .ok_or_else(|| format_err!("Unknown field: {}", name))?;
+                    let reflect = message.field_by_number_mut(field_num).unwrap();
+                    field.value.apply(reflect)?;
+                }
+                TextFieldName::Extension(_) => {
+                    return Err(err_msg("Extensions not supported"));
+                }
+            };
+        }
+
+        Ok(())
+    }
 }
 
 // TextField = TextFieldName :?
@@ -162,6 +183,7 @@ impl TextField {
     parser!(parse<&str, Self> => seq!(c => {
         let name = c.next(TextFieldName::parse)?;
         println!("{:?}", name);
+        // TODO: Also allowed to be a <
         let is_message = c.next(opt(peek(is(symbol, '{'))))?.is_some();
         if !is_message {
             c.next(is(symbol, ':'))?;
@@ -215,7 +237,15 @@ impl TextValue {
         map(float, |v| Self::Float(v)),
         map(string, |v| Self::String(v)),
         // TODO: Add special cases for bools
-        map(ident, |v| Self::Identifier(v)),
+        map(ident, |v| {
+            if v == "true" {
+                Self::Bool(true)
+            } else if v == "false" {
+                Self::Bool(false)
+            } else {
+                Self::Identifier(v)
+            }
+        }),
         seq!(c => {
             c.next(is(symbol, '{'))?;
             let val = c.next(TextMessage::parse)?;
@@ -229,6 +259,97 @@ impl TextValue {
             Ok(Self::Array(values))
         })
     ));
+
+    fn apply(&self, field: ReflectionMut) -> Result<()> {
+        match field {
+            // TODO: Whether we do down in precision, we should be cautious
+            ReflectionMut::F32(v) => {
+                *v = match self {
+                    Self::Float(v) => *v as f32,
+                    Self::Integer(v) => *v as f32,
+                    _ => Err(err_msg("Can't cast to f32"))?,
+                };
+            }
+            ReflectionMut::F64(v) => {
+                *v = match self {
+                    Self::Float(v) => *v,
+                    Self::Integer(v) => *v as f64,
+                    _ => {
+                        return Err(err_msg("Can't cast to f64"));
+                    }
+                };
+            }
+            ReflectionMut::I32(v) => {
+                *v = match self {
+                    Self::Integer(v) => (*v).try_into()?,
+                    _ => {
+                        return Err(err_msg("Can't cast to i32"));
+                    }
+                };
+            }
+            ReflectionMut::I64(v) => {
+                *v = match self {
+                    Self::Integer(v) => (*v).try_into()?,
+                    _ => {
+                        return Err(err_msg("Can't cast to i64"));
+                    }
+                };
+            }
+            // TODO: If the text had a sign, then it should definately error out
+            ReflectionMut::U32(v) => {
+                *v = match self {
+                    Self::Integer(v) => (*v).try_into()?,
+                    _ => {
+                        return Err(err_msg("Can't cast to u32"));
+                    }
+                };
+            }
+            ReflectionMut::U64(v) => {
+                *v = match self {
+                    Self::Integer(v) => (*v).try_into()?,
+                    _ => {
+                        return Err(err_msg("Can't cast to u64"));
+                    }
+                };
+            }
+            ReflectionMut::Bool(v) => {
+                *v = match self {
+                    Self::Bool(v) => *v,
+                    _ => {
+                        return Err(err_msg("Can't cast to bool"));
+                    }
+                };
+            }
+            ReflectionMut::Repeated(v) => {
+                if let Self::Array(items) = self {
+                    for item in items {
+                        item.apply(v.add())?;
+                    }
+                } else {
+                    self.apply(v.add())?;
+                }
+            }
+            ReflectionMut::Message(v) => {
+                if let Self::Message(m) = self {
+                    m.apply(v)?;
+                } else {
+                    return Err(err_msg("Can't cast to message."));
+                }
+            }
+            ReflectionMut::Enum(e) => match self {
+                Self::Integer(v) => {
+                    // TODO: Must verify that it is positive.
+                    e.parse(*v as usize)?;
+                }
+                _ => {}
+            },
+            _ => {
+                return Err(err_msg("Unsupported reflect type"));
+            }
+        };
+
+        Ok(())
+    }
 }
 
 fn parse_text_syntax(text: &str) -> Result<TextMessage> {
@@ -245,9 +366,14 @@ fn parse_text_syntax(text: &str) -> Result<TextMessage> {
     Ok(v)
 }
 
-pub fn parse_text_proto(text: &str) -> Result<()> {
+pub fn parse_text_proto(text: &str, message: &mut dyn MessageReflection) -> Result<()> {
     let v = parse_text_syntax(text)?;
     println!("{:#?}", v);
+
+    v.apply(message)?;
+
+    // TODO: Unless in a partial mode, we must now validate existence of required
+    // fields.
 
     Ok(())
 }

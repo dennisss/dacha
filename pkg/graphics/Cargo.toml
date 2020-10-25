@@ -11,7 +11,6 @@ image = { path = "../image" }
 reflection = { path = "../reflection" }
 macros = { path = "../macros" }
 parsing = { path = "../parsing" }
-rand = "0.6.1"
 fs2 = "0.4.3"
 ctrlc = "3.1.1"
 libc = "0.2"

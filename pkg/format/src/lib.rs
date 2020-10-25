@@ -1,4 +1,4 @@
-#![feature(proc_macro_hygiene, decl_macro, type_alias_enum_variants, generators)]
+#![feature(proc_macro_hygiene, decl_macro, generators)]
 
 // extern crate byteorder;
 // extern crate num_traits;

@@ -1,6 +1,7 @@
 use super::uri::*;
 use common::errors::*;
-use libc::getaddrinfo;
+use common::libc;
+use common::libc::getaddrinfo;
 use std::ffi::CString;
 use std::ptr::{null, null_mut};
 

@@ -10,7 +10,6 @@ serde = "1.0"
 cpal = { git = "https://github.com/RustAudio/cpal" }
 serde_derive = "1.0"
 failure = "0.1.6"
-rand = "0.6.1"
 ctrlc = "3.1.1"
 libc = "0.2"
 byteorder = "1.3.2"

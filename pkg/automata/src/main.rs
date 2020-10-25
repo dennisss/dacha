@@ -12,63 +12,6 @@ fn main() {
     // TODO: Ensure that when the regexp starts with '^', we can fail fast (when not
     // in multiline mode).
 
-    // These three are basically a test case for equivalent languages that can
-    // produce different automata
-
-    let a = RegExp::new("a(X|Y)c").unwrap();
-    // println!("A: {:?}", a);
-
-    let b = RegExp::new("(aXc)|(aYc)").unwrap();
-    // println!("B: {:?}", b);
-
-    let c = RegExp::new("a(Xc|Yc)").unwrap();
-    // println!("C: {:?}", c);
-    assert!(c.test("aXc"));
-    assert!(c.test("aYc"));
-    assert!(!c.test("a"));
-    assert!(!c.test("c"));
-    assert!(!c.test("Y"));
-    assert!(!c.test("Yc"));
-    assert!(!c.test(""));
-
-    let d = RegExp::new("a").unwrap();
-    // println!("{:?}", d);
-
-    assert!(d.test("a"));
-    assert!(!d.test("b"));
-
-    // NOTE: This has infinite matches and matches everything
-    let e = RegExp::new("[a-z0-9]*").unwrap();
-    // println!("{:?}", e);
-    assert!(e.test("a9034343"));
-    assert!(e.test(""));
-
-    let j = RegExp::new("[a-b]").unwrap();
-    println!("{:?}", j);
-    assert!(j.test("a"));
-    assert!(j.test("b"));
-    assert!(!j.test("c"));
-    assert!(!j.test("d"));
-
-    assert!(j.test("zzzzzzzaxxxxx"));
-
-    let k = RegExp::new("^a$").unwrap();
-    assert!(k.test("a"));
-    assert!(!k.test("za"));
-
-    let l = RegExp::new("a").unwrap();
-    assert!(l.test("a"));
-    assert!(l.test("za"));
-
-    let match1 = a.exec("aXc").unwrap();
-    println!("{:?}", match1);
-
-    let match2 = b.exec("aYc blah blah blah aXc hello").unwrap().unwrap();
-    println!("{:?}", match2);
-
-    let match21 = match2.next().unwrap().unwrap();
-    println!("{:?}", match21);
-
     // TODO: We don't want to count the infinite looping at beginning and end as a
     // match
 

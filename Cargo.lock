@@ -490,7 +490,6 @@ dependencies = [
  "failure",
  "libc",
  "minifb",
- "rand 0.6.5",
  "serde",
  "serde_derive",
 ]
@@ -534,7 +533,6 @@ dependencies = [
  "libc",
  "minifb",
  "num-traits",
- "rand 0.6.5",
  "rmp-serde",
 ]
 
@@ -757,7 +755,6 @@ dependencies = [
  "minifb",
  "num-traits",
  "parsing",
- "rand 0.6.5",
  "reflection",
  "typenum",
 ]
@@ -799,7 +796,6 @@ version = "0.1.0"
 dependencies = [
  "common",
  "compression",
- "libc",
  "parsing",
 ]
 
@@ -820,7 +816,6 @@ dependencies = [
  "minifb",
  "num-traits",
  "parsing",
- "rand 0.6.5",
  "reflection",
  "typenum",
 ]
@@ -1018,7 +1013,6 @@ dependencies = [
  "generic-array",
  "impl_ops",
  "num-traits",
- "rand 0.6.5",
  "typenum",
 ]
 
@@ -1619,7 +1613,6 @@ dependencies = [
  "common",
  "compression",
  "http",
- "libc",
  "parsing",
  "protobuf",
 ]

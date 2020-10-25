@@ -30,8 +30,8 @@ impl Token {
     parser!(pub parse<&str, Self> => alt!(
         whitespace, comment,
         map(ident, |s| Self::Identifier(s)),
-        map(intLit, |i| Self::Integer(i)),
-        map(floatLit, |f| Self::Float(f)),
+        map(int_lit, |i| Self::Integer(i)),
+        map(float_lit, |f| Self::Float(f)),
         map(strLit, |s| Self::String(s)),
         symbol
     ));
@@ -57,7 +57,7 @@ pub fn capitalLetter(c: char) -> bool {
     c.is_uppercase() && letter(c)
 }
 // decimalDigit = "0" … "9"
-pub fn decimalDigit(c: char) -> bool {
+pub fn decimal_digit(c: char) -> bool {
     c.is_digit(10)
 }
 // octalDigit   = "0" … "7"
@@ -75,7 +75,7 @@ parser!(pub ident<&str, String> => {
     map(slice(seq!(c => {
         c.next(like(|c: char| { c.is_alphabetic() || c == '_' }))?;
         c.next(take_while(|c: char| {
-            letter(c) || decimalDigit(c) || c == '_'
+            letter(c) || decimal_digit(c) || c == '_'
         }))?;
         Ok(())
     })), |s: &str| s.to_owned())
@@ -83,14 +83,14 @@ parser!(pub ident<&str, String> => {
 
 // NOTE: Only public to be used in the textproto format.
 // intLit = decimalLit | octalLit | hexLit
-parser!(pub intLit<&str, usize> => alt!(
+parser!(pub int_lit<&str, usize> => alt!(
     decimalLit, octalLit, hexLit
 ));
 
 // decimalLit = ( "1" … "9" ) { decimalDigit }
 parser!(decimalLit<&str, usize> => seq!(c => {
     c.next(peek(like(|c| c != '0')))?;
-    let digits = c.next(take_while1(|v| decimalDigit(v)))?;
+    let digits = c.next(take_while1(|v| decimal_digit(v)))?;
 
     Ok(usize::from_str_radix(digits, 10).unwrap())
 }));
@@ -113,7 +113,7 @@ parser!(hexLit<&str, usize> => seq!(c => {
 // TODO: Is this allowed to start with a '0' character?
 // floatLit = ( decimals "." [ decimals ] [ exponent ] | decimals exponent |
 // "."decimals [ exponent ] ) | "inf" | "nan"
-parser!(pub floatLit<&str, f64> => alt!(
+parser!(pub float_lit<&str, f64> => alt!(
     seq!(c => {
         let a = c.next(decimals)?;
         c.next(tag("."))?;
@@ -130,7 +130,7 @@ parser!(pub floatLit<&str, f64> => alt!(
 
 // decimals = decimalDigit { decimalDigit }
 parser!(decimals<&str, String> => map(
-	take_while1(|c| decimalDigit(c)),
+	take_while1(|c| decimal_digit(c)),
 	|s: &str| s.to_owned()));
 
 // exponent = ( "e" | "E" ) [ "+" | "-" ] decimals
@@ -159,7 +159,7 @@ parser!(pub strLit<&str, String> => seq!(c => {
 
 // charValue = hexEscape | octEscape | charEscape | /[^\0\n\\]/
 parser!(charValue<&str, char> => alt!(
-    hexEscape, octEscape, charEscape,
+    hexEscape, oct_escape, char_escape,
 
     // NOTE: Can't be '"' because of strLit
     like(|c| c != '"' && c != '\0' && c != '\n' && c != '\\')
@@ -185,7 +185,7 @@ parser!(hexEscape<&str, char> => seq!(c => {
 
 // TODO: It is possible for this to go out of bounds.
 // octEscape = '\' octalDigit octalDigit octalDigit
-parser!(octEscape<&str, char> => seq!(c => {
+parser!(oct_escape<&str, char> => seq!(c => {
     c.next(tag("\\"))?;
     let digits = c.next(take_exact::<&str>(3))?; // TODO: Use 'n_like'
     for c in digits.chars() {
@@ -199,7 +199,7 @@ parser!(octEscape<&str, char> => seq!(c => {
 
 // charEscape = '\' ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | '\' | "'" | '"'
 // )
-parser!(charEscape<&str, char> => seq!(c => {
+parser!(char_escape<&str, char> => seq!(c => {
     c.next(tag("\\"))?;
     let c = c.next(one_of("abfnrtv\\'\""))?;
     Ok(match c {
@@ -216,21 +216,21 @@ parser!(charEscape<&str, char> => seq!(c => {
 // quote = "'" | '"'
 parser!(quote<&str, char> => map(one_of("\"'"), |v| v as char));
 
-/// Below here, none of these are in the online spec but are implemented by
-/// the standard protobuf tokenizer.
+// Below here, none of these are in the online spec but are implemented by
+// the standard protobuf tokenizer.
 
 parser!(whitespace<&str, Token> => map(
     take_while1(|c: char| c.is_whitespace()),
     |_| Token::Whitespace
 ));
 
-parser!(lineComment<&str, Token> => seq!(c => {
+parser!(line_comment<&str, Token> => seq!(c => {
     c.next(tag("//"))?;
     c.next(take_while(|c| c != '\n'))?;
     Ok(Token::Comment)
 }));
 
-parser!(blockComment<&str, Token> => seq!(c => {
+parser!(block_comment<&str, Token> => seq!(c => {
     c.next(tag("/*"))?;
     c.next(take_until(tag("*/")))?;
     c.next(tag("*/"))?;
@@ -238,7 +238,7 @@ parser!(blockComment<&str, Token> => seq!(c => {
 }));
 
 parser!(comment<&str, Token> => alt!(
-    lineComment, blockComment
+    line_comment, block_comment
 ));
 
 parser!(symbol<&str, Token> => seq!(c => {

@@ -1,5 +1,6 @@
 
 [build]
+rustflags="-C target-cpu=native -A dead_code"
 # Needed to make hashing remotely efficient
-rustflags="-C target-cpu=native -A warnings -D unused_must_use"
+#rustflags="-C target-cpu=native -A warnings -D unused_must_use -Z polonius"
 #rustflags = "-C target-cpu=native -A warnings" # -C prefer-dynamic

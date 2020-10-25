@@ -10,7 +10,8 @@ pub struct Progress {
     pub done: bool,
 }
 
-mod cyclic_buffer;
+pub mod cyclic_buffer;
 mod deflate;
 mod inflate;
+pub mod matching_window;
 mod shared;

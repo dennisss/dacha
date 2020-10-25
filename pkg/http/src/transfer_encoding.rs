@@ -8,7 +8,7 @@ pub fn get_transfer_encoding_body(
     mut transfer_encoding: Vec<TransferCoding>,
     stream: StreamReader,
 ) -> Result<Box<dyn Body>> {
-    let mut body: Box<dyn Body> = if transfer_encoding.last().unwrap().name() == "chunked" {
+    let body: Box<dyn Body> = if transfer_encoding.last().unwrap().name() == "chunked" {
         transfer_encoding.pop();
         Box::new(IncomingChunkedBody::new(stream))
     } else {

@@ -1,10 +1,10 @@
-#[macro_use]
-extern crate failure;
 extern crate libusb;
 extern crate uinput;
 
-use failure::err_msg;
-use failure::Error;
+#[macro_use]
+extern crate common;
+
+use common::errors::*;
 use std::time::Duration;
 use uinput::event::absolute::{Absolute, Position};
 use uinput::event::controller::Misc;
@@ -153,8 +153,9 @@ impl StadiaControllerState {
             return Err(err_msg("Unsupported controller USB protocol version"));
         }
 
-        if buf.len() != 10 {
-            return Err(err_msg("Invalid USB data length"));
+        // TODO: Why do packagts have 11 bytes now? (used to only have 10)
+        if buf.len() < 10 {
+            return Err(format_err!("Invalid USB data length: {}", buf.len()));
         }
 
         let dpad = buf[1]; // 0x08 when nothing is pressed
@@ -237,7 +238,7 @@ fn read_controller() -> Result<()> {
     }
 
     device_handle.set_active_configuration(USB_CONFIG)?;
-    device_handle.claim_interface(USB_IFACE);
+    device_handle.claim_interface(USB_IFACE)?;
     device_handle.set_alternate_setting(USB_IFACE, 0)?;
 
     println!("Opened!");
@@ -246,6 +247,8 @@ fn read_controller() -> Result<()> {
 
     let abs_max = std::u16::MAX as i32;
     let abs_min = abs_max * -1;
+
+    // TODO: Need a constant GUID
 
     let mut controller = uinput::default()?
         .name(&product_name)?
@@ -282,9 +285,9 @@ fn read_controller() -> Result<()> {
         .max(abs_max)
         .create()?;
 
-    let mut buf = [0u8; 10];
+    let mut buf = [0u8; 512];
     loop {
-        let mut nread = match device_handle.read_interrupt(0x83, &mut buf, Duration::new(1, 0)) {
+        let nread = match device_handle.read_interrupt(0x83, &mut buf, Duration::new(1, 0)) {
             Err(libusb::Error::Timeout) => {
                 // println!("Timed out");
                 continue;
@@ -292,11 +295,9 @@ fn read_controller() -> Result<()> {
             result @ _ => result?,
         };
 
-        if nread != 10 {
-            assert!(false, "Expected exactly 10 bytes");
-        }
+        // TODO: Remove this as it is in parse_usb_packet?
 
-        let state = StadiaControllerState::parse_usb_packet(&buf)?;
+        let state = StadiaControllerState::parse_usb_packet(&buf[0..nread])?;
 
         send_button_change!(controller, state, last_state, a, GamePad::A);
         send_button_change!(controller, state, last_state, b, GamePad::B);

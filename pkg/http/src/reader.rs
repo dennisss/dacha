@@ -2,14 +2,12 @@ use common::async_std::io::Read;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::futures::io::{AsyncRead, AsyncWrite};
+use common::io::*;
 use std::convert::AsRef;
 use std::marker::Unpin;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Poll;
-//use async_std::net::TcpStream;
-//use async_std::prelude::*;
-use common::io::*;
 
 pub trait Matcher {
     /// Considering all previous data passed to this function, try to find a
@@ -90,8 +88,8 @@ pub enum StreamReadUntil {
     EndOfStream,
 }
 
-const buffer_size: usize = 1024;
-const max_buffer_size: usize = 16 * 1024; // 16KB
+const BUFFER_SIZE: usize = 1024;
+const MAX_BUFFER_SIZE: usize = 16 * 1024; // 16KB
 
 /// A trait for any type that can be referenced as an AsyncRead.
 // trait AsRead {
@@ -121,7 +119,7 @@ impl StreamReader {
     // memory used by a single connection may get very large.
     pub async fn read_matching<M: Matcher>(&mut self, mut matcher: M) -> Result<StreamReadUntil> {
         let mut buf = vec![];
-        buf.resize(buffer_size, 0u8);
+        buf.resize(BUFFER_SIZE, 0u8);
 
         // Index up to which we have read.
         let mut idx = 0;
@@ -132,7 +130,7 @@ impl StreamReader {
         // Read until we see the pattern or overflow our buffer limit.
         loop {
             let next_idx = if self.head.len() > 0 {
-                if self.head.len() > max_buffer_size {
+                if self.head.len() > MAX_BUFFER_SIZE {
                     return Err(err_msg("No much data remaining from last run"));
                 }
 
@@ -143,7 +141,7 @@ impl StreamReader {
                 self.head = Bytes::new();
                 n
             } else {
-                let mut r = self.reader.as_ref();
+                let r = self.reader.as_ref();
                 let nread = r.read(&mut buf[idx..]).await?;
                 if nread == 0 {
                     if idx != 0 {
@@ -166,8 +164,8 @@ impl StreamReader {
                 break;
             }
 
-            if buf.len() - idx < buffer_size {
-                let num_to_add = std::cmp::min(buffer_size, max_buffer_size - buf.len());
+            if buf.len() - idx < BUFFER_SIZE {
+                let num_to_add = std::cmp::min(BUFFER_SIZE, MAX_BUFFER_SIZE - buf.len());
 
                 if num_to_add == 0 {
                     return Ok(StreamReadUntil::TooLarge);

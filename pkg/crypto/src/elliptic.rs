@@ -273,6 +273,20 @@ impl EllipticCurveGroup {
         )
     }
 
+    pub fn secp224k1() -> Self {
+        // TODO: Use macros to compress this in the binary.
+        // (or store these in a separate file)
+        Self::from_hex(
+            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFE56D",
+            "00000000000000000000000000000000000000000000000000000000",
+            "00000000000000000000000000000000000000000000000000000005",
+            "A1455B334DF099DF30FC28A169A467E9E47075A90F7E650EB6B7A45C",
+            "7E089FED7FBA344282CAFBD6F7E319F7C0B0BD59E2CA4BDB556D61A5",
+            "010000000000000000000000000001DCE8D2EC6184CAF0A971769FB1F7",
+            1,
+        )
+    }
+
     pub fn secp224r1() -> Self {
         Self::from_hex(
             "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF000000000000000000000001",
@@ -751,7 +765,7 @@ mod tests {
         // https://github.com/bcgit/bc-java/blob/master/core/src/test/java/org/bouncycastle/crypto/test/ECTest.java#L384
         // testECDSASecP224k1sha256
 
-        let curve = EllipticCurveGroup::secp224r1();
+        let curve = EllipticCurveGroup::secp224k1();
 
         let msg = hex::decode("E5D5A7ADF73C5476FAEE93A2C76CE94DC0557DB04CDC189504779117920B896D")
             .unwrap();

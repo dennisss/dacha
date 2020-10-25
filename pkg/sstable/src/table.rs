@@ -319,8 +319,8 @@ impl BlockHandle {
     }
 
     pub fn serialize(&self, output: &mut Vec<u8>) {
-        serialize_varint(self.offset as usize, output);
-        serialize_varint(self.size as usize, output);
+        serialize_varint(self.offset, output);
+        serialize_varint(self.size, output);
     }
 
     pub fn serialized(&self) -> Vec<u8> {

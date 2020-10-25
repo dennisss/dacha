@@ -1,11 +1,4 @@
-#![feature(
-    trait_alias,
-    const_fn,
-    const_constructor,
-    associated_type_defaults,
-    str_strip,
-    specialization
-)]
+#![feature(trait_alias, const_fn, associated_type_defaults, specialization)]
 #[macro_use]
 extern crate async_trait;
 #[macro_use]
@@ -16,7 +9,7 @@ pub extern crate bytes;
 extern crate fs2;
 pub extern crate futures;
 pub extern crate hex;
-extern crate libc;
+pub extern crate libc;
 #[macro_use]
 extern crate lazy_static;
 extern crate generic_array;
@@ -27,7 +20,6 @@ pub mod args;
 pub mod async_fn;
 pub mod bits;
 pub mod bundle;
-pub mod collections;
 pub mod factory;
 pub mod fs;
 pub mod io;
@@ -266,6 +258,19 @@ macro_rules! min_size {
     ($s:ident, $size:expr) => {
         if $s.len() < $size {
             return Err(err_msg("Input buffer too small"));
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! enum_accessor {
+    ($name:ident, $branch:ident, $t:ty) => {
+        fn $name(&self) -> Result<$t> {
+            if let Self::$branch(v) = self {
+                Ok(*v)
+            } else {
+                Err(err_msg("Unexpected value type."))
+            }
         }
     };
 }

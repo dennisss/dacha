@@ -4,7 +4,6 @@
 extern crate common;
 #[macro_use]
 extern crate parsing;
-extern crate libc;
 
 pub mod body;
 pub mod chunked;

@@ -88,7 +88,7 @@ fn main() -> Result<()> {
 
     return Ok(());
 
-    let v = parse_text_proto(SAMPLE_TEXTPROTO)?;
+    // let v = parse_text_proto(SAMPLE_TEXTPROTO)?;
     return Ok(());
 
     //	let src = std::fs::read_to_string("testdata/message.proto")?;

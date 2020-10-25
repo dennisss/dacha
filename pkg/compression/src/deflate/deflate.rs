@@ -3,15 +3,14 @@
     -
 */
 
-use super::cyclic_buffer::*;
 use super::shared::*;
 use super::Progress;
+use crate::deflate::cyclic_buffer::CyclicBuffer;
+use crate::deflate::matching_window::{MatchingWindow, MatchingWindowOptions};
 use crate::huffman::*;
 use byteorder::{LittleEndian, WriteBytesExt};
 use common::bits::*;
 use common::errors::*;
-use std::collections::HashMap;
-use std::collections::VecDeque;
 use std::io::Write;
 
 /// Maximum size of the data contained in an uncompressed block.
@@ -50,7 +49,7 @@ const MAX_CODE_LEN_CODE_LEN: usize = 0b111;
 pub struct Deflater {
     /// A sliding window of all previous input data that has already been
     /// compressed.
-    window: MatchingWindow,
+    window: MatchingWindow<CyclicBuffer>,
 
     /// Uncompressed input buffer. Will accumulate until we have enough to run
     /// compression
@@ -79,7 +78,13 @@ impl Deflater {
     // TODO: Provide window size as input option
     pub fn new() -> Self {
         Deflater {
-            window: MatchingWindow::new(),
+            window: MatchingWindow::new(
+                CyclicBuffer::new(MAX_REFERENCE_DISTANCE),
+                MatchingWindowOptions {
+                    max_chain_length: MAX_CHAIN_LENGTH,
+                    max_match_length: MAX_MATCH_LENGTH,
+                },
+            ),
             input_buffer: vec![],
             output_buffer: None,
             output_buffer_offset: 0,
@@ -199,7 +204,7 @@ impl Deflater {
     /// Compresses a chunk of input data writing it to the given output stream.
     /// This will internally create a new full block for the chunk.
     fn compress_chunk(
-        window: &mut MatchingWindow,
+        window: &mut MatchingWindow<CyclicBuffer>,
         chunk: &[u8],
         strm: &mut dyn BitWrite,
         is_final: bool,
@@ -390,156 +395,11 @@ enum ReferenceEncoded {
     LengthDistance(usize, usize),
 }
 
-struct AbsoluteReference {
-    offset: usize,
-    length: usize,
-}
-
-type Trigram = [u8; 3];
-
-/*
-    Core operations:
-    - Given max_reference_distance
-
-*/
-
-/// A buffer of past uncompressed input which is
-pub struct MatchingWindow {
-    // TODO: We don't need to maintain a cyclic buffer if we have the entire input available to us
-    // during compression time.
-    buffer: CyclicBuffer,
-
-    /// Map of three bytes in the back history to it's absolute position in the
-    /// output buffer.
-    ///
-    /// The linked list is maintained in order of descending order of absolute
-    /// position in the vector (such that closer matches are traversed first).
-    trigrams: HashMap<Trigram, VecDeque<usize>>,
-}
-
-impl MatchingWindow {
-    pub fn new() -> Self {
-        MatchingWindow {
-            buffer: CyclicBuffer::new(MAX_REFERENCE_DISTANCE),
-            trigrams: HashMap::new(),
-        }
-    }
-
-    // TODO: keep track of the total number of trigrams in the window.
-    // If this number gets too large, then perform a full sweep of the table to GC
-    // unused trigrams.
-
-    /// NOTE: One should call this after the internal buffer has been updated.
-    /// NOTE: We assume that the given offset is larger than any previously
-    /// inserted offset.
-    fn insert_trigram(&mut self, gram: Trigram, offset: usize) {
-        if let Some(list) = self.trigrams.get_mut(&gram) {
-            // Enforce max chain length and discard offsets before the start of the current
-            // buffer.
-            list.truncate(MAX_CHAIN_LENGTH);
-            while let Some(last_offset) = list.back() {
-                if *last_offset < self.buffer.start_offset() {
-                    list.pop_back();
-                } else {
-                    break;
-                }
-            }
-
-            // NOTE: No attempt is made to validate that this offset hasn't already been
-            // inserted.
-            list.push_front(offset);
-
-            if list.len() == 0 {
-                self.trigrams.remove(&gram);
-            }
-        } else {
-            let mut list = VecDeque::new();
-            list.push_back(offset);
-            self.trigrams.insert(gram, list);
-        }
-    }
-
-    /// Given the next segment of uncompressed data, pushes it to the end of
-    /// the window and in the process removing any data farther back the window
-    /// size.
-    pub fn extend_from_slice(&mut self, data: &[u8]) {
-        // TODO: If extending by more than the max_reference_distance, just wipe
-        // the entire trigrams datastructure.
-        self.buffer.extend_from_slice(data);
-
-        // Index of the first new trigram
-        let mut first = self
-            .buffer
-            .end_offset()
-            .checked_sub(data.len() + 2)
-            .unwrap_or(0);
-        if first < self.buffer.start_offset() {
-            first = self.buffer.start_offset();
-        }
-
-        // Index of the last new trigram.
-        let last = self.buffer.end_offset().checked_sub(2).unwrap_or(0);
-
-        for i in first..last {
-            let gram = [self.buffer[i], self.buffer[i + 1], self.buffer[i + 2]];
-            self.insert_trigram(gram, i);
-        }
-    }
-
-    pub fn find_match(&self, data: &[u8]) -> Option<Reference> {
-        if data.len() < 3 {
-            return None;
-        }
-
-        let mut best_match: Option<AbsoluteReference> = None;
-
-        let gram = [data[0], data[1], data[2]];
-        let offsets = match self.trigrams.get(&gram) {
-            Some(l) => l,
-            None => {
-                return None;
-            }
-        };
-
-        for off in offsets {
-            // TODO: If off is too far back, then stop immediately as all later
-            // ones will only be even further away.
-
-            let s = self.buffer.slice_from(*off).append(data);
-
-            // We trivially hae at least a match of 3 because we matched the trigram.
-            let mut len = 3;
-            for i in 3..s.len() {
-                if i >= MAX_MATCH_LENGTH || i >= data.len() || s[i] != data[i] {
-                    len = i;
-                    break;
-                }
-            }
-
-            if let Some(m) = &best_match {
-                // NOTE: Even if they are equal, we prefer to use a later lower
-                // distance match of the same length.
-                if m.length > len {
-                    continue;
-                }
-            }
-
-            best_match = Some(AbsoluteReference {
-                offset: *off,
-                length: len,
-            });
-        }
-
-        // Converting from absolute offset to relative distance.
-        best_match.map(|r| Reference {
-            distance: self.buffer.end_offset() - r.offset,
-            length: r.length,
-        })
-    }
-}
-
 // TODO: Return an iterator.
-fn reference_encode(window: &mut MatchingWindow, data: &[u8]) -> Vec<ReferenceEncoded> {
+fn reference_encode(
+    window: &mut MatchingWindow<CyclicBuffer>,
+    data: &[u8],
+) -> Vec<ReferenceEncoded> {
     let mut out = vec![];
 
     let mut i = 0;
@@ -554,7 +414,7 @@ fn reference_encode(window: &mut MatchingWindow, data: &[u8]) -> Vec<ReferenceEn
 
         // TODO: Usually we should not be copying bytes until the very end of the
         // current chunk
-        window.extend_from_slice(&data[i..(i + n)]);
+        window.advance(&data[i..(i + n)]);
 
         i += n;
     }

@@ -97,13 +97,13 @@ impl BigUint {
             return 0;
         }
 
-        const base_bits: usize = 0u32.leading_zeros() as usize;
+        const BASE_BITS: usize = 0u32.leading_zeros() as usize;
         let nz = self.value.last().unwrap().leading_zeros() as usize;
-        if nz == base_bits {
+        if nz == BASE_BITS {
             panic!("Untrimmed big number");
         }
 
-        base_bits * (self.value.len() - 1) + (base_bits - nz)
+        BASE_BITS * (self.value.len() - 1) + (BASE_BITS - nz)
     }
 
     /// Returns the minimum number of bytes required to represent this number.

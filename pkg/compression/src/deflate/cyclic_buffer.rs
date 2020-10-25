@@ -17,8 +17,17 @@ impl CyclicBuffer {
             end_offset: 0,
         }
     }
+}
 
-    pub fn extend_from_slice(&mut self, mut data: &[u8]) {
+pub trait WindowBuffer: std::ops::Index<usize, Output = u8> {
+    fn extend_from_slice(&mut self, data: &[u8]);
+    fn start_offset(&self) -> usize;
+    fn end_offset(&self) -> usize;
+    fn slice_from(&self, start_off: usize) -> ConcatSlice;
+}
+
+impl WindowBuffer for CyclicBuffer {
+    fn extend_from_slice(&mut self, mut data: &[u8]) {
         // Skip complete cycles of the buffer if the data is longer than the buffer.
         let nskip = (data.len() / self.data.len()) * self.data.len();
         self.end_offset += nskip;
@@ -35,8 +44,8 @@ impl CyclicBuffer {
         }
     }
 
-    /// The lowest absolute offset available in this
-    pub fn start_offset(&self) -> usize {
+    /// The lowest absolute offset available in this buffer.
+    fn start_offset(&self) -> usize {
         if self.end_offset > self.data.len() {
             self.end_offset - self.data.len()
         } else {
@@ -44,11 +53,11 @@ impl CyclicBuffer {
         }
     }
 
-    pub fn end_offset(&self) -> usize {
+    fn end_offset(&self) -> usize {
         self.end_offset
     }
 
-    pub fn slice_from(&self, start_off: usize) -> ConcatSlice {
+    fn slice_from(&self, start_off: usize) -> ConcatSlice {
         assert!(start_off >= self.start_offset() && start_off < self.end_offset);
 
         let off = start_off % self.data.len();
@@ -76,7 +85,46 @@ impl std::ops::Index<usize> for CyclicBuffer {
     }
 }
 
+pub struct SliceBuffer<'a> {
+    data: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> SliceBuffer<'a> {
+    pub fn new(data: &'a [u8]) -> Self {
+        Self { data, pos: 0 }
+    }
+}
+
+impl<'a> WindowBuffer for SliceBuffer<'a> {
+    fn extend_from_slice(&mut self, mut data: &[u8]) {
+        unsafe {
+            assert_eq!(self.data.as_ptr().add(self.pos), data.as_ptr());
+        };
+        self.pos += data.len();
+    }
+
+    fn start_offset(&self) -> usize {
+        0
+    }
+    fn end_offset(&self) -> usize {
+        self.pos
+    }
+    fn slice_from(&self, start_off: usize) -> ConcatSlice {
+        ConcatSlice::with(&self.data[start_off..])
+    }
+}
+
+impl<'a> std::ops::Index<usize> for SliceBuffer<'a> {
+    type Output = u8;
+    fn index(&self, idx: usize) -> &Self::Output {
+        &self.data[idx]
+    }
+}
+
 /// A slice like object consisting of multiple slices concatenated sequentially.
+///
+/// TODO: Optimize this for the case of having up to 3-4 concatenated slices
 pub struct ConcatSlice<'a> {
     inner: Vec<&'a [u8]>,
 }

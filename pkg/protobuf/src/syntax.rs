@@ -9,7 +9,7 @@
 // {}  repetition (any number of times)
 
 use super::spec::*;
-use super::tokenizer::{capitalLetter, decimalDigit, letter, Token};
+use super::tokenizer::{capitalLetter, decimal_digit, letter, Token};
 use common::errors::*;
 use parsing::*;
 
@@ -96,7 +96,7 @@ parser!(groupName<&str, String> => seq!(c => {
         let valid = if i == 0 {
             capitalLetter(c)
         } else {
-            letter(c) || decimalDigit(c) || c == '_'
+            letter(c) || decimal_digit(c) || c == '_'
         };
 
         if !valid {
@@ -642,7 +642,7 @@ parser!(pub proto<&str, Proto> => seq!(c => {
         map(import, |v| ProtoItem::Import(v)),
         map(package, |v| ProtoItem::Package(v)),
         map(option, |v| ProtoItem::Option(v)),
-        map(topLevelDef, |v| ProtoItem::TopLevelDef(v)),
+        map(top_level_def, |v| ProtoItem::TopLevelDef(v)),
         map(emptyStatement, |v| ProtoItem::None)
     ));
 
@@ -680,7 +680,7 @@ parser!(pub proto<&str, Proto> => seq!(c => {
 
 // TODO: Proto3 has no extend
 // topLevelDef = message | enum | extend | service
-parser!(topLevelDef<&str, TopLevelDef> => alt!(
+parser!(top_level_def<&str, TopLevelDef> => alt!(
     map(message, |m| TopLevelDef::Message(m)),
     map(enum_, |e| TopLevelDef::Enum(e)),
     map(extend, |e| TopLevelDef::Extend(e)),

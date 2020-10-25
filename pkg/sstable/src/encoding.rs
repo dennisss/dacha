@@ -3,7 +3,7 @@ use common::errors::*;
 use protobuf::wire::{parse_varint, serialize_varint};
 
 pub fn parse_slice(mut input: &[u8]) -> Result<(&[u8], &[u8])> {
-    let len = parse_next!(input, parse_varint);
+    let len = parse_next!(input, parse_varint) as usize;
     if input.len() < len {
         return Err(err_msg("Slice out of range"));
     }
@@ -12,7 +12,7 @@ pub fn parse_slice(mut input: &[u8]) -> Result<(&[u8], &[u8])> {
 }
 
 pub fn serialize_slice(data: &[u8], out: &mut Vec<u8>) {
-    serialize_varint(data.len(), out);
+    serialize_varint(data.len() as u64, out);
     out.extend_from_slice(data);
 }
 

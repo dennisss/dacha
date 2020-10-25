@@ -8,12 +8,21 @@
 
 #[macro_use]
 extern crate common;
-#[macro_use]
-extern crate parsing;
-extern crate byteorder; // < Mainly needed for f32/f64 conversions
+extern crate byteorder;
+extern crate parsing; // < Mainly needed for f32/f64 conversions
+
+mod build;
+pub mod compiler;
+pub mod reflection;
+pub mod service;
+pub mod spec;
+pub mod syntax;
+pub mod text;
+pub mod tokenizer;
+pub mod wire;
+pub use build::build;
 
 pub use common::bytes::{Bytes, BytesMut};
-
 use common::errors::*;
 
 // NOTE: Construct an empty proto by calling MessageType::default()
@@ -42,21 +51,23 @@ pub trait Message: Clone + std::fmt::Debug + std::default::Default {
 }
 
 /// Common trait implemented by all code generated protobuf enum types.
-pub trait Enum: Copy {
+pub trait Enum {
     /// Should convert a number to a valid branch of the enum, or else should
     /// error out it the value is not in the enum.
-    fn from_usize(v: usize) -> Result<Self>;
+    fn from_usize(v: usize) -> Result<Self>
+    where
+        Self: Sized;
+
+    fn from_str(s: &str) -> Result<Self>
+    where
+        Self: Sized;
 
     fn to_usize(&self) -> usize;
-}
 
-mod build;
-pub mod compiler;
-pub mod reflection;
-pub mod service;
-pub mod spec;
-pub mod syntax;
-pub mod text;
-pub mod tokenizer;
-pub mod wire;
-pub use build::build;
+    fn name(&self) -> &'static str;
+
+    // TODO: This is inconsistent with the other Message trait.
+    fn parse(&mut self, v: usize) -> Result<()>;
+
+    fn parse_str(&mut self, name: &str) -> Result<()>;
+}

@@ -6,7 +6,6 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 [dependencies]
 common = { path = "../common" }
 rmp-serde = "0.13.7"
-rand = "0.6.1"
 bytes = { git = "https://github.com/tokio-rs/bytes" }
 fs2 = "0.4.3"
 ctrlc = "3.1.1"
