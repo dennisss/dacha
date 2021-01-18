@@ -417,19 +417,6 @@ fn split_syntax(tokens: Vec<Token>) -> Result<Vec<Rule>> {
 }
 */
 
-// See https://stackoverflow.com/questions/27582739/how-do-i-create-a-hashmap-literal
-// macro_rules! map(
-//     { $($key:expr => $value:expr),+ } => {
-//         {
-//             let mut m = ::std::collections::HashMap::new();
-//             $(
-//                 m.insert($key.to_owned(), $value.to_owned());
-//             )+
-//             m
-//         }
-//      };
-// );
-
 /*
 fn generate_code(rules: Vec<Rule>) -> Result<()> {
     let typemap: std::collections::HashMap<String, String> = map!(

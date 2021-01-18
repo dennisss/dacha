@@ -28,6 +28,7 @@ pub mod line_builder;
 pub mod vec;
 
 pub use async_trait::*;
+pub use lazy_static::*;
 
 pub async fn wait_for(dur: std::time::Duration) {
     let never = async_std::future::pending::<()>();
@@ -274,6 +275,20 @@ macro_rules! enum_accessor {
         }
     };
 }
+
+// See https://stackoverflow.com/questions/27582739/how-do-i-create-a-hashmap-literal
+#[macro_export]
+macro_rules! map(
+    { $($key:expr => $value:expr),+ } => {
+        {
+            let mut m = ::std::collections::HashMap::new();
+            $(
+                m.insert($key.to_owned(), $value.to_owned());
+            )+
+            m
+        }
+     };
+);
 
 #[cfg(test)]
 mod tests {

@@ -1,0 +1,12 @@
+[build]
+rustflags=""
+target = "atmega32u4.json"
+
+[unstable]
+build-std = ["core"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

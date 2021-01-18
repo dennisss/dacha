@@ -1,0 +1,38 @@
+syntax = "proto2";
+
+package da.cha;
+
+message InnerMessage {
+	optional string name = 1;
+}
+
+message Hello {
+	enum Type {
+		UNKNOWN = 0;
+		APPLE = 1;
+		ORANGE = 2;
+	}
+
+	optional Type type = 1;
+	repeated InnerMessage count = 2;
+	optional bool enabled = 3;
+}
+
+message OtherMessage {
+	optional Hello.Type mytype = 15;
+}
+
+message FooRequest {
+
+}
+
+// TODO: Make sure that we can correctly handle this message not existing and
+// the compiler returning an error.
+message FooResponse {
+
+
+}
+
+service Foo {
+	rpc Bar(FooRequest) returns (FooResponse);
+}
