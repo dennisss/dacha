@@ -1,0 +1,175 @@
+SYMBOL TABLE:
+00800100 l    d  .data	00000000 .data
+00000000 l    d  .text	00000000 .text
+00800474 l    d  .bss	00000000 .bss
+00000000 l    d  .note.gnu.avr.deviceinfo	00000000 .note.gnu.avr.deviceinfo
+00000000 l    d  .debug_info	00000000 .debug_info
+00000000 l    d  .debug_abbrev	00000000 .debug_abbrev
+00000000 l    d  .debug_line	00000000 .debug_line
+00000000 l    d  .debug_str	00000000 .debug_str
+00000000 l    df *ABS*	00000000 fan_controller.72os2sic-cgu.0
+00000dce l     F .text	00000006 _ZN14fan_controller10TestThread3ptr12handler_wrap17h36a124fe6bfcc5aeE
+008001c0 l     O .data	0000000b _ZN14fan_controller10TestThread3ptr6THREAD17h138909b62b4abfbfE
+00800474 l     O .bss	00000016 _ZN14fan_controller3avr10interrupts21INTERRUPT_WAKER_LISTS17h0123951542571f89E
+00000268 l     F .text	000001b6 _ZN14fan_controller3avr11arena_stack23ArenaStack$LT$T$C$A$GT$6remove17hcbad89c361b4dfaaE
+00800494 l     O .bss	0000000c _ZN14fan_controller3avr5waker14PENDING_WAKERS17h46c1d0c322b8ade3E
+008004a3 l     O .bss	00000001 _ZN14fan_controller3avr5waker21FREE_LIST_INITIALIZED17hf4f6a2ea7cd734e8E.0.0
+008004a0 l     O .bss	00000002 _ZN14fan_controller3avr5waker9FREE_LIST17h11e8063a81b604e9E
+00000432 l     F .text	0000002e _ZN14fan_controller3avr6serial14uart_send_sync17h758edb936b2866a8E
+00000460 l     F .text	000000ee _ZN14fan_controller3avr6serial21uart_send_number_sync17h94d021a3670c081fE
+00000952 l     F .text	000000e2 _ZN14fan_controller3avr6thread11poll_thread17hab7625519ad0dd7cE
+0080048a l     O .bss	0000000a _ZN14fan_controller3avr6thread15RUNNING_THREADS17h6901e1a38ee8be1fE
+008004a4 l     O .bss	00000001 _ZN14fan_controller3avr6thread17CURRENT_THREAD_ID17h3ef0302045c2f8f0E.0.0
+008004a5 l     O .bss	00000001 _ZN14fan_controller3avr6thread17CURRENT_THREAD_ID17h3ef0302045c2f8f0E.0.1
+0000054e l     F .text	00000184 _ZN14fan_controller3avr6thread17Thread$LT$Fut$GT$11poll_future17hbc87c9e5ae58db3cE
+008004a2 l     O .bss	00000001 _ZN14fan_controller3avr6thread19THREADS_INITIALIZED17h55f0f9bfe6ceb011E.0.0
+000000e6 l     F .text	00000182 _ZN4core3ptr13drop_in_place17h041d92c377511ba6E
+008002f5 l     O .data	0000000b __unnamed_1
+008001b4 l     O .data	0000000c __unnamed_10
+008002d2 l     O .data	00000023 __unnamed_11
+008001a8 l     O .data	0000000c __unnamed_12
+0080027e l     O .data	00000005 __unnamed_13
+00800284 l     O .data	00000005 __unnamed_14
+00800270 l     O .data	0000000e __unnamed_15
+00800160 l     O .data	0000000c __unnamed_16
+00800124 l     O .data	0000000c __unnamed_17
+008001e3 l     O .data	0000002b __unnamed_18
+00800130 l     O .data	0000000c __unnamed_19
+00800283 l     O .data	00000001 __unnamed_2
+00800289 l     O .data	0000002d __unnamed_20
+0080016c l     O .data	0000000c __unnamed_21
+00800178 l     O .data	0000000c __unnamed_22
+008002b6 l     O .data	0000000c __unnamed_23
+00800154 l     O .data	0000000c __unnamed_24
+00800184 l     O .data	0000000c __unnamed_25
+0080033e l     O .data	00000007 __unnamed_26
+0080013c l     O .data	0000000c __unnamed_27
+00800148 l     O .data	0000000c __unnamed_28
+00800238 l     O .data	00000016 __unnamed_29
+0080019c l     O .data	0000000c __unnamed_3
+0080024e l     O .data	00000011 __unnamed_30
+0080025f l     O .data	00000011 __unnamed_31
+008002c2 l     O .data	00000010 __unnamed_32
+00800300 l     O .data	0000000b __unnamed_33
+00800190 l     O .data	0000000c __unnamed_4
+0080020e l     O .data	0000002a __unnamed_5
+00800100 l     O .data	0000000c __unnamed_6
+00800118 l     O .data	0000000c __unnamed_7
+0080010c l     O .data	0000000c __unnamed_8
+00800333 l     O .data	0000000b __unnamed_9
+00000a34 l     F .text	000001cc add
+00800310 l     O .data	00000023 str.0
+00000000 l    df *ABS*	00000000 core.5itidxkz-cgu.0
+00000dd6 l     F .text	00000012 _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17h34310ebe55f349c1E
+00001300 l     F .text	00000084 _ZN4core3fmt9Formatter12pad_integral12write_prefix17ha24679ecf58379b4E
+00000dd4 l     F .text	00000002 _ZN4core3ptr13drop_in_place17h014e4c35552ddff9E
+00800345 l     O .data	00000000 __unnamed_11
+008001d3 l     O .data	00000008 __unnamed_135
+008001cb l     O .data	00000008 __unnamed_136
+00800377 l     O .data	000000c8 __unnamed_177
+008001db l     O .data	00000008 __unnamed_200
+00800345 l     O .data	00000020 __unnamed_662
+00800365 l     O .data	00000012 __unnamed_663
+0080043f l     O .data	00000012 __unnamed_668
+00800451 l     O .data	00000022 __unnamed_669
+00000000 l    df *ABS*	00000000 _clear_bss.o
+000000d8 l       .text	00000000 .do_clear_bss_start
+000000d6 l       .text	00000000 .do_clear_bss_loop
+00000000 l    df *ABS*	00000000 _udivmodhi4.o
+000015fe l       .text	00000000 __udivmodhi4_ep
+000015f0 l       .text	00000000 __udivmodhi4_loop
+00000000 l    df *ABS*	00000000 _exit.o
+00001612 l       .text	00000000 __stop_program
+00000000 l    df *ABS*	00000000 
+00000000 l       *UND*	00000000 memcmp
+00000000 l       *UND*	00000000 memset
+0000041e g     F .text	00000014 __vector_38
+0000041e g     F .text	00000014 __vector_22
+0000041e g     F .text	00000014 __vector_28
+0000041e g     F .text	00000014 __vector_1
+000013f2 g     F .text	000001f6 _ZN4core3fmt3num3imp54_$LT$impl$u20$core..fmt..Display$u20$for$u20$usize$GT$3fmt17h90ecb3126b140965E
+0000041e g     F .text	00000014 __vector_32
+0000ffa0 g       *ABS*	00000000 __DATA_REGION_LENGTH__
+00000000 g       *ABS*	00000000 __TEXT_REGION_ORIGIN__
+0000041e g     F .text	00000014 __vector_34
+000015e8 g       .text	00000028 .hidden __udivmodhi4
+00000de8 g     F .text	00000050 _ZN4core9panicking5panic17h90d1e59e6a95cfdfE
+000000ac g       .text	00000000 __trampolines_start
+00001614 g       .text	00000000 _etext
+0000041e g     F .text	00000014 __vector_24
+0000041e g     F .text	00000014 __vector_12
+00000c60 g     F .text	0000002e memcpy
+00001988 g       *ABS*	00000000 __data_load_end
+0000041e g     F .text	00000014 __vector_6
+0000041e g     F .text	00000014 __vector_31
+0000041e g     F .text	00000014 __vector_35
+000000ac g       .text	00000000 __trampolines_end
+0000041e g     F .text	00000014 __vector_39
+0000041e g     F .text	00000014 __vector_3
+0000041e g     F .text	00000014 __vector_23
+00001614 g       *ABS*	00000000 __data_load_start
+000000ac g       .text	00000000 __dtors_end
+00000c8e g     F .text	00000008 test_thread
+008004a6 g       .bss	00000000 __bss_end
+0000041e g     F .text	00000014 __vector_30
+00000400 g       *ABS*	00000000 __LOCK_REGION_LENGTH__
+00000c00 g     F .text	00000060 abort
+0000041e g     F .text	00000014 __vector_25
+0000041e g     F .text	00000014 __vector_11
+000000ac  w      .text	00000000 __init
+0000041e g     F .text	00000014 __vector_13
+0000041e g     F .text	00000014 __vector_17
+0000041e g     F .text	00000014 __vector_19
+0000041e g     F .text	00000014 __vector_7
+000000ce g       .text	00000010 .hidden __do_clear_bss
+000013f2 g     F .text	000001f6 _ZN4core3fmt3num3imp52_$LT$impl$u20$core..fmt..Display$u20$for$u20$u16$GT$3fmt17h4c248645d57789bbE
+0000041e g     F .text	00000014 __vector_41
+00810000 g       .note.gnu.avr.deviceinfo	00000000 __eeprom_end
+00001384 g     F .text	0000006e _ZN4core5slice5index26slice_start_index_len_fail17hd54c7e61da923b3eE
+00000dc6 g     F .text	00000008 .hidden rust_begin_unwind
+00000000 g       .text	00000000 __vectors
+0000041e g     F .text	00000014 __vector_27
+00800474 g       .data	00000000 __data_end
+00000ea6 g     F .text	00000038 _ZN4core9panicking9panic_fmt17hab90e16d205453d2E
+00000000  w      .text	00000000 __vector_default
+00000ede g     F .text	00000422 _ZN4core3fmt9Formatter12pad_integral17h9833de2cf0a37e68E
+0000041e g     F .text	00000014 __vector_5
+0000041e g     F .text	00000014 __vector_33
+00000400 g       *ABS*	00000000 __SIGNATURE_REGION_LENGTH__
+000000ac g       .text	00000000 __ctors_start
+0000041e g     F .text	00000014 __vector_37
+000000b8 g       .text	00000016 .hidden __do_copy_data
+00800474 g       .bss	00000000 __bss_start
+00000c96 g     F .text	00000130 main
+0000041e g     F .text	00000014 __vector_4
+00800060 g       *ABS*	00000000 __DATA_REGION_ORIGIN__
+00000000  w      *ABS*	00000000 __heap_end
+0000041e g     F .text	00000014 __vector_9
+000006d2 g     F .text	00000280 block_on_threads
+0000041e g     F .text	00000014 __vector_2
+00000400 g       *ABS*	00000000 __USER_SIGNATURE_REGION_LENGTH__
+0000041e g     F .text	00000014 __vector_21
+0000041e g     F .text	00000014 __vector_15
+0000041e g     F .text	00000014 __vector_36
+0000041e g     F .text	00000014 __vector_29
+000000ac g       .text	00000000 __dtors_start
+000000ac g       .text	00000000 __ctors_end
+00000aff  w      *ABS*	00000000 __stack
+00000e38 g     F .text	0000006e _ZN4core9panicking18panic_bounds_check17h6e2c758683e9105eE
+0000041e g     F .text	00000014 __vector_40
+00800474 g       .data	00000000 _edata
+008004a6 g       .note.gnu.avr.deviceinfo	00000000 _end
+0000041e g     F .text	00000014 __vector_8
+0000041e g     F .text	00000014 __vector_26
+00001610  w      .text	00000000 .hidden exit
+00010000 g       *ABS*	00000000 __EEPROM_REGION_LENGTH__
+00001610 g       .text	00000000 .hidden _exit
+0000041e g     F .text	00000014 __vector_14
+0000041e g     F .text	00000014 __vector_10
+0000041e g     F .text	00000014 __vector_16
+00800100 g       .data	00000000 __data_start
+0000041e g     F .text	00000014 __vector_18
+00000003 g       *ABS*	00000000 __FUSE_REGION_LENGTH__
+00020000 g       *ABS*	00000000 __TEXT_REGION_LENGTH__
+0000041e g     F .text	00000014 __vector_20
+0000041e g     F .text	00000014 __vector_42

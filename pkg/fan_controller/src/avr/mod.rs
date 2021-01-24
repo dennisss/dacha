@@ -2,19 +2,23 @@
 // Could also grab from https://github.com/avr-rust/avr-mcu/blob/master/packs/atmega/ATmega32U4.atdf
 
 pub mod adc;
+pub mod arena_stack;
+// pub mod fixed_array;
 pub mod interrupts;
 pub mod pins;
 pub mod progmem;
 pub mod registers;
+pub mod serial;
+mod subroutines;
 pub mod thread;
 pub mod usb;
+mod waker;
 
 pub use crate::avr::adc::*;
 pub use crate::avr::interrupts::*;
 use crate::avr::registers::*;
 pub use crate::avr::usb::*;
 use core::future::Future;
-use core::ptr::{read_volatile, write_volatile};
 
 // NOTE: PLL must be disabled before going into low power mode
 
@@ -45,15 +49,23 @@ IN is dev -> host:
 
 */
 
+#[cfg(target_arch = "avr")]
 pub unsafe fn disable_interrupts() {
     llvm_asm!("cli");
 }
 
+#[cfg(target_arch = "x86_64")]
+pub unsafe fn disable_interrupts() {}
+
 /// NOTE: This is unsafe as user code should use the thread abstraction which
 /// operates under the assumption that there are no context switches.
+#[cfg(target_arch = "avr")]
 pub unsafe fn enable_interrupts() {
     llvm_asm!("sei");
 }
+
+#[cfg(target_arch = "x86_64")]
+pub unsafe fn enable_interrupts() {}
 
 fn usb_control_thread() {
     loop {
@@ -91,47 +103,48 @@ pub fn init() {
     // TODO: Configure the PLL and check PLL lock?
     unsafe {
         // Enable clock prescaler changes.
-        write_volatile(CLKPR, 1 << 7);
+        avr_write_volatile(CLKPR, 1 << 7);
         // Ensure that no pre-scaling is performed (clk_i/o and clk_adc are equal to the
         // main system clock).
-        write_volatile(CLKPR, 0);
+        avr_write_volatile(CLKPR, 0);
 
         // Starting with 16Mhz external clock.
 
         // Output system 'clock / 2' from PLL pre-scaler
-        write_volatile(PLLCSR, 1 << 4);
+        avr_write_volatile(PLLCSR, 1 << 4);
 
         // Connect PLL to pre-scaler
         // Divide input to generate 96Mhz PLL
         // Divide by 2 for USB 48MhZ clock
         // Divide by 1.5 for 64Mhz high speed timer clock.
-        write_volatile(PLLFRQ, 0b01101010);
+        avr_write_volatile(PLLFRQ, 0b01101010);
 
         // Enable PLL
-        write_volatile(PLLCSR, read_volatile(PLLCSR) | 1 << 1);
+        avr_write_volatile(PLLCSR, avr_read_volatile(PLLCSR) | 1 << 1);
 
         // Wait for PLL lock
-        while read_volatile(PLLCSR) & 0b1 == 0 {}
+        while avr_read_volatile(PLLCSR) & 0b1 == 0 {}
 
         // Timer 0: All pins are in normal operation without PWM
         // Run in CTC mode so that the counter resets when hitting OCR0A.
         // TODO: Will an interrupt still be triggered at the TOP value in CTC mode?
-        write_volatile(TCCR0A, 0b10);
+        avr_write_volatile(TCCR0A, 0);
 
         // Timer 0: Divide system clock / 64
-        write_volatile(TCCR0B, 0b011);
+        avr_write_volatile(TCCR0B, 0b011);
 
         // TODO: Clear the initial value of the timer?
 
         // Timer 0: Output Compare A: Interrupt every 1ms.
-        write_volatile(OCR0A, 250);
+        avr_write_volatile(OCR0A, 250);
         // TODO: OCR0B
 
         // Timer 0: Output Compare A: Generate an interrupt
-        write_volatile(TIMSK0, 1 << 1);
+        avr_write_volatile(TIMSK0, 1 << 1);
     }
 }
 
+/*
 pub fn usb_init() {
     // TODO: Somewhere use UESTA1X::CTRLDIR
 
@@ -144,9 +157,9 @@ pub fn usb_init() {
         // NOTE: DPRAM is 832 bytes
 
         // Enable USB pad regulator
-        write_volatile(UHWCON, 0b1);
+        avr_write_volatile(UHWCON, 0b1);
         // Enable USB controller
-        write_volatile(USBCON, 1 << 7); // TODO: OTGPADE?
+        avr_write_volatile(USBCON, 1 << 7); // TODO: OTGPADE?
 
         USB_EP0.configure(
             USBEndpointType::Control,
@@ -172,11 +185,11 @@ pub fn usb_init() {
         // USB full speed
         // Do not reset on USB connection.
         // Not DETACHed
-        write_volatile(UDCON, 0);
+        avr_write_volatile(UDCON, 0);
 
         // Enable 'End of Reset' interrupt.
         // NOTE: When this happens, we need to make sure to clear the flag.
-        write_volatile(UDIEN, 1 << 3);
+        avr_write_volatile(UDIEN, 1 << 3);
     }
 
     // TODO: Redo endpoint configs on End of Reset interrupts.
@@ -184,6 +197,7 @@ pub fn usb_init() {
     // TODO: If RXOUTI is triggered, we need to verify that a CRC error didn't
     // also occur (rather drop the data)
 }
+*/
 
 // If
 
@@ -202,7 +216,7 @@ Control Read
 
 pub async fn delay_ms(mut time_ms: u16) {
     while time_ms > 0 {
-        InterruptEvent::OutputCompareOA.await;
+        InterruptEvent::OutputCompareOA.to_future().await;
         time_ms -= 1;
     }
 }

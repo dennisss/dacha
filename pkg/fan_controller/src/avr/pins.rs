@@ -32,8 +32,8 @@ macro_rules! define_port {
             #[inline(always)]
             pub fn configure(cfg: &PortConfig) {
                 unsafe {
-                    ::core::ptr::write_volatile(Self::ddr_register(), cfg.ddr);
-                    ::core::ptr::write_volatile(Self::port_register(), cfg.port);
+                    $crate::avr::registers::avr_write_volatile(Self::ddr_register(), cfg.ddr);
+                    $crate::avr::registers::avr_write_volatile(Self::port_register(), cfg.port);
                 }
             }
         }
@@ -50,8 +50,8 @@ macro_rules! define_pin {
             pub fn write(high: bool) {
                 let bit = (if high { PORT_HIGH } else { PORT_LOW }) << $num;
                 unsafe {
-                    let value = ::core::ptr::read_volatile($port::port_register());
-                    ::core::ptr::write_volatile(
+                    let value = $crate::avr::registers::avr_read_volatile($port::port_register());
+                    $crate::avr::registers::avr_write_volatile(
                         $port::port_register(),
                         (value & (!(1 << $num))) | bit,
                     );
@@ -60,7 +60,8 @@ macro_rules! define_pin {
 
             #[inline(always)]
             pub fn read() -> bool {
-                let value = unsafe { ::core::ptr::read_volatile($port::pin_register()) };
+                let value =
+                    unsafe { $crate::avr::registers::avr_read_volatile($port::pin_register()) };
                 value & (1 << $num) != 0
             }
 
@@ -81,7 +82,7 @@ define_port!(
 );
 
 define_port!(
-    PD, 0x29, 0x2A, 0x2D,
+    PD, 0x29, 0x2A, 0x2B,
     PD0 : 0, PD1 : 1, PD2 : 2, PD3 : 3, PD4 : 4,
     PD5 : 5, PD6 : 6, PD7 : 7
 );

@@ -31,34 +31,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::thread;
 
-// TODO: Pipelining?
-
-// If we send back using a chunked encoding,
-async fn handle_request(mut req: Request) -> Response {
-    println!("GOT: {:?}", req);
-
-    let mut data = vec![];
-    data.extend_from_slice(b"hello");
-    // req.body.read_to_end(&mut data).await;
-
-    // println!("READ: {:?}", data);
-
-    let res_headers = vec![
-        HttpHeader::new("Content-Length".to_string(), format!("{}", data.len())),
-        HttpHeader::new("Content-Type".to_string(), "text/plain".to_string()),
-    ];
-
-    ResponseBuilder::new()
-        .status(OK)
-        .header(CONTENT_TYPE, "text/plain")
-        .header(CONTENT_LENGTH, format!("{}", data.len()))
-        .body(BodyFromData(data))
-        .build()
-        .unwrap()
-}
-
-// Implementing stuff for Body.
-
 async fn run_client() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set
 
@@ -110,11 +82,6 @@ async fn run_client() -> Result<()> {
     return Ok(());
 }
 
-async fn run_server() -> Result<()> {
-    let server = http::server::HttpServer::new(8000, http::server::HttpFn(handle_request));
-    server.run().await
-}
-
 fn main() -> Result<()> {
-    task::block_on(run_server())
+    task::block_on(run_client())
 }

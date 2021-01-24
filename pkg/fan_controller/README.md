@@ -4,9 +4,54 @@ Build using:
 - `vim target/atmega32u4/release/deps/fan_controller-e011d0d02054b1c0.s`
 - `# cargo build -Z build-std=core --target avr-atmega328p.json --release`
 
+- `avrdude -v -patmega32u4 -P/dev/ttyACM0 -b57600 -cavr109 -D -Uflash:w:target/atmega32u4/release/fan_controller.elf:e`
+
+- `avrdude -v -patmega32u4 -P/dev/ttyACM0 -b57600 -cavr109`
+
+Testing:
+
+- `RUST_BACKTRACE=1 cargo test -- --test-threads=1 --nocapture`
+
+
+Brand new 32u4 comes with DFU bootloader:
+- http://ww1.microchip.com/downloads/en/DeviceDoc/doc7618.pdf
+
+Prot Micro uses the Caterina Bootloader:
+- AVR109/AVR910 protocol: http://ww1.microchip.com/downloads/en/AppNotes/doc1644.pdf
+
+stty -F /dev/ttyACM0 speed 1200
+stty -F /dev/ttyACM0 speed 57600
+/home/dennis/.arduino15/packages/arduino/tools/avrdude/6.3.0-arduino14/bin/avrdude -C/home/dennis/.arduino15/packages/arduino/tools/avrdude/6.3.0-arduino14/etc/avrdude.conf -v -patmega32u4 -cavr109 -P/dev/ttyACM0 -b57600 -D -Uflash:w:/tmp/arduino_build_764244/Blink.ino.hex:i
+
+
+
+`/home/dennis/.arduino15/packages/arduino/tools/avrdude/6.3.0-arduino14/bin/avrdude -C/home/dennis/.arduino15/packages/arduino/tools/avrdude/6.3.0-arduino14/etc/avrdude.conf -v -patmega32u4 -cavr109 -P/dev/ttyACM0 -b57600 -D -Uflash:w:/tmp/arduino_build_764244/Blink.ino.hex:i `
+
+Arduino IDE measures memory usage like:
+
+```
+Sketch uses 4142 bytes (14%) of program storage space. Maximum is 28672 bytes.
+Global variables use 149 bytes (5%) of dynamic memory, leaving 2411 bytes for local variables. Maximum is 2560 bytes.
+```
 
 How to get 25kHz PWM:
 - https://arduino.stackexchange.com/a/25623
+
+
+## Features
+
+Ports
+- 3 controllable PWM fan/pump channels.
+- 5 fan/pump inputs.
+- 2 10K temperature sensor inputs
+- 1 water flow sensor input
+- 1 motherboard feedback port
+- 1 motherboard front panel control port
+- 1 USB
+
+Use-cases
+
+
 
 ## Software Design
 
@@ -64,6 +109,12 @@ Counter Threads:
 
 - Better support for having more PWMs or configurability of which inputs are used
 - Expose either the Slave Select to allow SPI transfers or expose the UART pins
+- Make the auxiliary power pins larger (maybe big enough to support a screw terminal)
+- Flip the 4-pan fan headers upside down
+- add diagonal drill holes
+
+- Consider using WiFi via an ESP8266 port
+- If I can mount a 
 
 ## Pinout
 

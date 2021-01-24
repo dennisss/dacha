@@ -282,7 +282,7 @@ parser!(fieldType<&str, FieldType> => seq!(c => {
 
 // Proto 2 and 3
 // fieldNumber = intLit;
-parser!(fieldNumber<&str, usize> => intLit);
+parser!(fieldNumber<&str, FieldNumber> => map(intLit, |v| v as FieldNumber));
 
 // TODO: In proto 3, 'label' should be replaced with '[ "repeated" ]'
 // field = label type fieldName "=" fieldNumber [ "[" fieldOptions "]" ] ";"
@@ -437,7 +437,7 @@ parser!(range<&str, Range> => seq!(c => {
     });
 
     let upper = c.next(upper_parser)?;
-    Ok((lower, upper))
+    Ok((lower as u32, upper  as u32))
 }));
 
 // Proto 2 and 3
@@ -478,12 +478,13 @@ parser!(enumBody<&str, Vec<EnumBodyItem>> => seq!(c => {
 }));
 
 // Proto 2 and 3
-// enumField = ident "=" intLit [ "[" enumValueOption { ","  enumValueOption }
-// "]" ]";"
+// enumField = ident "=" [ "-" ] intLit [ "[" enumValueOption { ","
+//             enumValueOption } "]" ]";"
 parser!(enumField<&str, EnumField> => seq!(c => {
     let name = c.next(ident)?;
     c.next(is(symbol, '='))?;
-    let num = c.next(intLit)?;
+    let is_negative = c.next(opt(is(symbol, '-')))?.is_some();
+    let num = (c.next(intLit)? as i32) * if is_negative { -1 } else { 1 };
     let options = c.next(seq!(c => {
         c.next(is(symbol, '['))?;
         let opts = c.next(delimited1(enumValueOption, comma))?;

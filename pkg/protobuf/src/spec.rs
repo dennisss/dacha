@@ -1,6 +1,14 @@
 // This file contains structs which define the syntax tree of a .proto file
 // describing a set of messages/services.
 
+/// In range [1, 2^29 - 1] except [19000, 19999] is reserved.
+pub type FieldNumber = u32;
+
+pub type ExtensionNumberType = FieldNumber;
+
+/// NOTE: Can be negative.
+pub type EnumValue = i32;
+
 // Proto 2 and 3
 #[derive(Clone, Debug)]
 pub enum Constant {
@@ -105,7 +113,7 @@ pub struct Field {
     pub label: Label,
     pub typ: FieldType,
     pub name: String,
-    pub num: usize,
+    pub num: FieldNumber,
     pub options: FieldOptions,
     pub unknown_options: Vec<Opt>,
 }
@@ -115,7 +123,7 @@ pub struct Field {
 pub struct Group {
     pub label: Label,
     pub name: String,
-    pub num: usize,
+    pub num: FieldNumber,
     pub body: Vec<MessageItem>,
 }
 
@@ -130,7 +138,7 @@ pub struct MapField {
     pub key_type: FieldType,
     pub value_type: FieldType,
     pub name: String,
-    pub num: usize,
+    pub num: FieldNumber,
     pub options: Vec<Opt>,
 }
 
@@ -146,7 +154,7 @@ pub struct FieldOptions {
 pub type Ranges = Vec<Range>;
 
 // Upper and lower bounds are inclusive.
-pub type Range = (usize, usize);
+pub type Range = (FieldNumber, FieldNumber);
 
 #[derive(Debug, Clone)]
 pub enum Reserved {
@@ -169,7 +177,7 @@ pub enum EnumBodyItem {
 #[derive(Debug, Clone)]
 pub struct EnumField {
     pub name: String,
-    pub num: usize,
+    pub num: EnumValue,
     pub options: Vec<Opt>,
 }
 

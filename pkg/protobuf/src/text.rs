@@ -42,6 +42,8 @@ TODO: According th this example, commas can be used after fields:
     format: TENSOR_NCHW
   }
 
+TODO: Text strings must appear on one line.
+
 */
 //
 const SYMBOLS: &'static str = "{}[]:,.";
@@ -54,6 +56,7 @@ enum TextToken {
     /// Quotation mark delimited sequence of possibly encoded bytes.
     String(String),
     Identifier(String),
+    // TODO: Support up to u64::MAX
     Integer(isize),
     Float(f64),
 }
@@ -338,8 +341,8 @@ impl TextValue {
             }
             ReflectionMut::Enum(e) => match self {
                 Self::Integer(v) => {
-                    // TODO: Must verify that it is positive.
-                    e.parse(*v as usize)?;
+                    // TODO: Must verify that that we aren't losing precision.
+                    e.assign(*v as i32)?;
                 }
                 _ => {}
             },
@@ -376,4 +379,10 @@ pub fn parse_text_proto(text: &str, message: &mut dyn MessageReflection) -> Resu
     // fields.
 
     Ok(())
+}
+
+pub fn serialize_text_proto(message: &dyn MessageReflection) -> String {
+    // Basically visiting a bunch of stuff.
+
+    String::new()
 }

@@ -1,6 +1,5 @@
 use crate::avr::interrupts::*;
 use crate::avr::registers::*;
-use core::ptr::{read_volatile, write_volatile};
 
 pub struct ADC {}
 
@@ -15,9 +14,9 @@ impl ADC {
         // ADC Enable | ADC Start Conversion | ADC Interrupt Enable | 128 clock divison.
         let adcsra = 1 << 7 | 1 << 6 | 1 << 3 | 0b111;
         unsafe {
-            write_volatile(ADMUX, admux);
-            write_volatile(ADCSRB, adcsrb);
-            write_volatile(ADCSRA, adcsra);
+            avr_write_volatile(ADMUX, admux);
+            avr_write_volatile(ADCSRB, adcsrb);
+            avr_write_volatile(ADCSRA, adcsra);
         }
 
         // After this, we must wait for the interrupt to trigger in order to
@@ -25,15 +24,15 @@ impl ADC {
     }
     fn read_result() -> u16 {
         let (low, high) = unsafe {
-            let low = read_volatile(ADCL);
-            let high = read_volatile(ADCH);
+            let low = avr_read_volatile(ADCL);
+            let high = avr_read_volatile(ADCH);
             (low, high)
         };
         (low as u16) | (((high & 0b11) as u16) << 8)
     }
     pub async fn read(input: ADCInput) -> u16 {
         Self::start(input);
-        InterruptEvent::ADCComplete.await;
+        InterruptEvent::ADCComplete.to_future().await;
         Self::read_result()
     }
 }

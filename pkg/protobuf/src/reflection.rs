@@ -1,8 +1,7 @@
+use crate::spec::FieldNumber;
 use crate::Enum;
 use std::default::Default;
 use std::ops::{Deref, DerefMut};
-
-pub type FieldNumber = usize;
 
 pub enum Reflection<'a> {
     F32(&'a f32),
@@ -16,7 +15,7 @@ pub enum Reflection<'a> {
     Bytes,
     Repeated(&'a dyn RepeatedFieldReflection),
     Message(&'a dyn MessageReflection),
-    Enum(&'a dyn crate::Enum),
+    Enum(&'a dyn Enum),
 }
 
 pub enum ReflectionMut<'a> {
@@ -31,8 +30,13 @@ pub enum ReflectionMut<'a> {
     Bytes,
     Repeated(&'a mut dyn RepeatedFieldReflection),
     Message(&'a mut dyn MessageReflection),
-    Enum(&'a mut dyn crate::Enum),
+    Enum(&'a mut dyn Enum),
 }
+
+// pub struct FieldReflection {
+//     pub name: &'static str,
+//     pub number: FieldNumber
+// }
 
 /// NOTE: Should be implemented by all Messages.
 pub trait MessageReflection {
@@ -87,16 +91,6 @@ impl<T: MessageReflection> Reflect for T {
         ReflectionMut::Message(self)
     }
 }
-
-// TODO: Implement me in the compiler
-// impl<T: EnumReflection> Reflect for T {
-//     fn reflect(&self) -> Reflection {
-//         Reflection::Enum(self)
-//     }
-//     fn reflect_mut(&mut self) -> ReflectionMut {
-//         ReflectionMut::Enum(self)
-//     }
-// }
 
 impl<T: Reflect + Default> Reflect for Vec<T> {
     fn reflect(&self) -> Reflection {

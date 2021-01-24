@@ -2,6 +2,7 @@ use super::fsm::*;
 use common::errors::*;
 use parsing::*;
 use std::collections::{HashMap, HashSet};
+use std::convert::TryFrom;
 use std::ops::Bound;
 
 /*
@@ -119,7 +120,7 @@ impl RegExp {
         // (this implements the case of having no '^' in the regexp).
         let mut state_machine = Self::wildcard_machine(&alpha);
 
-        state_machine.then(RegExpNode::zero_transitions(RegExpStateTag::StartMatch));
+        state_machine.then(RegExpNode::zero_transitions(RegExpEvent::StartMatch));
 
         let mut metadata = RegExpMetadata::default();
         state_machine.then(tree.to_automata_inner(&alpha, &mut metadata));
@@ -128,8 +129,9 @@ impl RegExp {
         // implements the case of having no '$' in the regexp)
         state_machine.then(Self::wildcard_machine(&alpha));
 
-        // TODO: Instead compute the minimal DFA?
-        state_machine = state_machine.compute_dfa();
+        // TODO: Merge adjacent symbols (but this will require us to use another
+        // approach for submatches as we will lose edge transducer behavior).
+        state_machine = state_machine.compute_dfa(); // .minimal();
 
         Ok(Self {
             alphabet: alpha,
@@ -164,12 +166,12 @@ impl RegExp {
         self.state_machine.accepts(iter)
     }
 
-    pub fn exec<'a, 'b>(&'a self, value: &'b str) -> Result<Option<RegExpMatch<'a, 'b>>> {
+    pub fn exec<'a, 'b>(&'a self, value: &'b [u8]) -> Result<Option<RegExpMatch<'a, 'b>>> {
         let state = RegExpMatch {
             instance: self,
             value,
             index: 0,
-            remaining: value.chars(),
+            remaining: value,
             consumed_start: false,
             consumed_end: false,
             state: 0, // Will be initialized in the next statement.
@@ -181,7 +183,7 @@ impl RegExp {
     }
 }
 
-type RegExpStateMachine = FiniteStateMachine<RegExpSymbol, RegExpStateTag>;
+type RegExpStateMachine = FiniteStateMachine<RegExpSymbol, RegExpEvent, HashSet<RegExpEvent>>;
 
 #[derive(Default, Debug)]
 struct RegExpMetadata {
@@ -194,28 +196,31 @@ pub struct RegExpMatch<'a, 'b> {
     instance: &'a RegExp,
 
     /// The complete value that was initially given for matching.
-    value: &'b str,
+    value: &'b [u8],
 
     /// Start index into 'value' of the current match.
     index: usize,
 
-    remaining: std::str::Chars<'b>,
+    remaining: &'b [u8],
     consumed_start: bool,
     consumed_end: bool,
 
     state: StateId,
     group_starts: Vec<Option<usize>>,
-    group_values: Vec<Option<&'b str>>,
+    group_values: Vec<Option<&'b [u8]>>,
 }
 
 impl<'a, 'b> RegExpMatch<'a, 'b> {
     /// Gets the complete string for the current match.
     pub fn as_str(&self) -> &str {
-        self.value
-            .split_at(self.index)
-            .1
-            .split_at(self.last_index() - self.index)
-            .0
+        std::str::from_utf8(
+            self.value
+                .split_at(self.index)
+                .1
+                .split_at(self.last_index() - self.index)
+                .0,
+        )
+        .unwrap()
     }
 
     pub fn index(&self) -> usize {
@@ -223,11 +228,19 @@ impl<'a, 'b> RegExpMatch<'a, 'b> {
     }
 
     pub fn last_index(&self) -> usize {
-        self.value.len() - self.remaining.as_str().len()
+        self.value.len() - self.remaining.len()
     }
 
-    pub fn groups(&self) -> &[Option<&str>] {
-        &self.group_values
+    pub fn groups(&self) -> impl Iterator<Item = Option<&str>> + std::fmt::Debug {
+        self.group_values
+            .iter()
+            .map(|v| v.map(|v| std::str::from_utf8(v).unwrap()))
+    }
+
+    pub fn group(&self, index: usize) -> Option<&str> {
+        self.group_values[index]
+            .clone()
+            .map(|v| std::str::from_utf8(v).unwrap())
     }
 
     pub fn named_group(&self, name: &str) -> Result<Option<&str>> {
@@ -237,7 +250,9 @@ impl<'a, 'b> RegExpMatch<'a, 'b> {
             .named_groups
             .get(name)
             .ok_or(err_msg("No such group"))?;
-        Ok(self.group_values[group_id].clone())
+        Ok(self.group_values[group_id]
+            .clone()
+            .map(|v| std::str::from_utf8(v).unwrap()))
     }
 
     pub fn next(mut self) -> Result<Option<Self>> {
@@ -267,7 +282,7 @@ impl<'a, 'b> RegExpMatch<'a, 'b> {
             }
 
             let sym = match self.remaining.next() {
-                Some(c) => self.instance.alphabet.get(c),
+                Some(c) => self.instance.alphabet.get(c as char),
                 None => {
                     if self.consumed_end {
                         return Ok(None);
@@ -290,43 +305,51 @@ impl<'a, 'b> RegExpMatch<'a, 'b> {
                 .starts()
                 .next()
                 .ok_or(err_msg("No starting state"))?,
+            &HashSet::new(),
         )
     }
 
     fn consume_symbol(&mut self, sym: RegExpSymbol) -> Result<()> {
-        let next_state = *self
+        let (next_state, events) = self
             .instance
             .state_machine
-            .lookup(self.state, &sym)
+            .lookup_transducer(self.state, &sym)
             .next()
             // NOTE: This should only fail if the DFA was constructed poorly
             .ok_or(err_msg("No transitions for symbol"))?;
 
-        self.update_state(next_state)?;
+        self.update_state(*next_state, events)?;
 
         Ok(())
     }
 
-    fn update_state(&mut self, state: StateId) -> Result<()> {
+    fn update_state(&mut self, state: StateId, events: &HashSet<RegExpEvent>) -> Result<()> {
         self.state = state;
 
-        // TODO: Use a bit set (maybe a BitVector)
-        let mut group_allowlist = HashSet::new();
-
         let cur_idx = self.last_index();
-        for tag in self.instance.state_machine.tags(state) {
-            match tag {
-                RegExpStateTag::StartMatch => {
+
+        for event in self.instance.state_machine.tags(state) {
+            match event {
+                RegExpEvent::StartMatch => {
                     self.index = cur_idx;
                 }
-                RegExpStateTag::StartGroup(group_id) => {
+                RegExpEvent::StartGroup(group_id) => {
                     self.group_starts[*group_id] = Some(cur_idx);
-                    group_allowlist.insert(*group_id);
+                    // group_allowlist.insert(*group_id);
                 }
-                RegExpStateTag::InGroup(group_id) => {
-                    group_allowlist.insert(*group_id);
-                }
-                RegExpStateTag::EndGroup(group_id) => {
+                _ => {}
+            }
+        }
+
+        // Every alternation needs a group in each edge .
+        // An alternation may have internal group ids [g_0, g_1, g_2]
+        // - Find the first active one and all others must be dead
+
+        // TODO: Use a bit set (maybe a BitVector)
+        // let mut group_allowlist = HashSet::new();
+        for event in events {
+            match event {
+                RegExpEvent::EndGroup(group_id) => {
                     // TODO: We probably don't want to use 'take' in order to support the '(a+)'
                     // pattern.
                     let start_idx = match self.group_starts[*group_id] {
@@ -341,18 +364,20 @@ impl<'a, 'b> RegExpMatch<'a, 'b> {
                         .split_at(end_idx - start_idx)
                         .0;
                     self.group_values[*group_id] = Some(segment);
-                    group_allowlist.insert(*group_id);
+                    // group_allowlist.insert(*group_id);
                 }
+                _ => {}
             }
         }
 
         // TODO: Improve the performance of this procedure. There will likely always
         // only be a few groups that are actually set at any
-        for group_id in 0..self.group_starts.len() {
-            if !group_allowlist.contains(&group_id) {
-                self.group_starts[group_id] = None;
-            }
-        }
+        // TODO: This is wrong because we may see groups later on
+        // for group_id in 0..self.group_starts.len() {
+        //     if !group_allowlist.contains(&group_id) {
+        //         self.group_starts[group_id] = None;
+        //     }
+        // }
 
         Ok(())
     }
@@ -398,11 +423,11 @@ impl<'a> std::iter::Iterator for RegExpSymbolIter<'a> {
 }
 
 #[derive(Clone, PartialEq, Hash, Eq, Debug)]
-enum RegExpStateTag {
+enum RegExpEvent {
     StartMatch,
     StartGroup(usize),
     EndGroup(usize),
-    InGroup(usize),
+    // NaN, // InGroup(usize),
 }
 
 // TODO: Unused right now
@@ -528,7 +553,7 @@ const END_SYMBOL: u32 = (std::char::MAX as u32) + 2;
 /// nodes in the regular expression's state machine.
 ///
 /// All symbols used in the internal state machine will be non-overlapping.
-#[derive(Debug, PartialEq, PartialOrd, Clone, Hash, Eq, Ord)]
+#[derive(PartialEq, PartialOrd, Clone, Hash, Eq, Ord)]
 struct RegExpSymbol {
     start: u32,
     end: u32,
@@ -555,6 +580,32 @@ impl RegExpSymbol {
             start: END_SYMBOL,
             end: END_SYMBOL + 1,
         }
+    }
+
+    fn debug_offset(v: u32) -> String {
+        if v == 0 {
+            "0".into()
+        } else if v == START_SYMBOL {
+            "^".into()
+        } else if v == END_SYMBOL {
+            "$".into()
+        } else if v > END_SYMBOL {
+            "inf".into()
+        } else if v == std::char::MAX as u32 {
+            "CMAX".into()
+        } else {
+            format!("\"{}\"", char::try_from(v).unwrap())
+        }
+    }
+}
+
+impl std::fmt::Debug for RegExpSymbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!(
+            "[{}, {})",
+            Self::debug_offset(self.start),
+            Self::debug_offset(self.end)
+        ))
     }
 }
 
@@ -786,16 +837,27 @@ impl RegExpNode {
                     }
 
                     let mut state_machine =
-                        Self::zero_transitions(RegExpStateTag::StartGroup(group_id));
+                        Self::zero_transitions(RegExpEvent::StartGroup(group_id));
 
-                    let mut inner_machine = inner.to_automata_inner(alpha, metadata);
-                    for i in 0..inner_machine.num_states() {
-                        inner_machine.add_tag(i, RegExpStateTag::InGroup(group_id));
-                    }
+                    let inner_machine = inner.to_automata_inner(alpha, metadata);
 
                     state_machine.then(inner_machine);
 
-                    state_machine.then(Self::zero_transitions(RegExpStateTag::EndGroup(group_id)));
+                    state_machine.then({
+                        let mut m = RegExpStateMachine::new();
+                        let start = m.add_state();
+                        let end = m.add_state();
+                        m.mark_start(start);
+                        m.mark_accept(end);
+
+                        let mut events = HashSet::new();
+                        events.insert(RegExpEvent::EndGroup(group_id));
+
+                        m.add_epsilon_transducer(start, end, events);
+                        m
+                    });
+
+                    // state_machine.then(Self::zero_transitions(RegExpEvent::EndGroup(group_id)));
 
                     state_machine
                 }
@@ -838,17 +900,19 @@ impl RegExpNode {
                 }
                 a
             }
+            // TODO: Use transducer for these too.
             Self::Start => Self::one_transition(RegExpSymbol::start_of_string()),
             Self::End => Self::one_transition(RegExpSymbol::end_of_string()),
         }
     }
 
-    fn zero_transitions(tag: RegExpStateTag) -> RegExpStateMachine {
+    fn zero_transitions(tag: RegExpEvent) -> RegExpStateMachine {
         let mut a = RegExpStateMachine::new();
         let state = a.add_state();
+        a.add_tag(state, tag);
         a.mark_start(state);
         a.mark_accept(state);
-        a.add_tag(state, tag);
+
         a
     }
 
@@ -1168,4 +1232,28 @@ mod tests {
 
         assert!(match21.next().unwrap().is_none());
     }
+
+    #[test]
+    fn regexp_group_test() {
+        let r = RegExp::new("^(?:(a)|(b))").unwrap();
+        let m = r.exec("a hello").unwrap().unwrap();
+        println!("{:?}", m);
+        // TODO: Check that there are only 2 groups
+        assert!(m.group(0).is_some());
+        assert!(!m.group(1).is_some());
+    }
+
+    #[test]
+    fn regexp_group2_test() {
+        return;
+
+        let r = RegExp::new("((a)(b))|((a)(c))").unwrap();
+        let m = r.exec("ac").unwrap().unwrap();
+        println!("{:#?}", r);
+        println!("{:?}", m);
+        assert!(false);
+    }
+
+    // TODO: It should be noted that we don't support empty capture groups!
+    // (e.g. 'a()b')
 }

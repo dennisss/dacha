@@ -1,12 +1,7 @@
-extern crate common;
-#[macro_use]
-extern crate parsing;
+extern crate automata;
 
-mod fsm;
-mod regexp;
-
-use fsm::*;
-use regexp::*;
+use automata::fsm::*;
+use automata::regexp::*;
 
 fn main() {
     // TODO: Ensure that when the regexp starts with '^', we can fail fast (when not

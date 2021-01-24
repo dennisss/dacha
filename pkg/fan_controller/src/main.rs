@@ -1,21 +1,21 @@
 #![feature(llvm_asm, abi_avr_interrupt)]
-#![no_std]
-#![no_main]
+#![cfg_attr(target_arch = "avr", no_main)]
 #![feature(type_alias_impl_trait)]
 #![feature(const_fn)]
-#![feature(asm)]
-#![feature(const_fn_transmute)]
 #![feature(global_asm)]
+#![feature(const_fn_fn_ptr_basics)]
+#![cfg_attr(target_arch = "avr", no_std)]
 
 #[macro_use]
 pub mod avr;
+pub mod protocol;
 pub mod usb;
 
 use avr::pins::*;
 use avr::registers::*;
 use avr::thread;
 use avr::*;
-use core::ptr::{read_volatile, write_volatile};
+use protocol::*;
 use usb::*;
 
 /*
@@ -63,9 +63,16 @@ from an interrupt. This must be handled by software
     PD3 (INT3) is UART TX
 */
 
+/*
+
 fn setup() {
+    // Make sure interrupt handlers are read from the main program and not from the
+    // bootloader.
     // Keep pull-ups enabled.
-    unsafe { core::ptr::write_volatile(MCUCR, 0) };
+    unsafe {
+        avr_write_volatile(MCUCR, 1); // IVCE
+        avr_write_volatile(MCUCR, 0);
+    }
 
     // PB0 - WATER_FLOW : INPUT PCINT0
     // PB1 - ISP_SCK
@@ -133,17 +140,17 @@ fn setup() {
 
     // Disable digital I/O for ADC0 and ADC1.
     unsafe {
-        write_volatile(DIDR0, 0b11);
-        write_volatile(DIDR1, 0);
-        write_volatile(DIDR2, 0);
+        avr_write_volatile(DIDR0, 0b11);
+        avr_write_volatile(DIDR1, 0);
+        avr_write_volatile(DIDR2, 0);
     }
 
     unsafe {
         // Configure all External Interrupts to be falling edge triggered
-        write_volatile(EICRA, 0b10101010);
-        write_volatile(EICRB, 0b00100000);
-        // Enable all interrupts
-        write_volatile(EIMSK, 0b01001111);
+        avr_write_volatile(EICRA, 0b10101010);
+        avr_write_volatile(EICRB, 0b00100000);
+        // Enable interrupts for INT0-3,6
+        avr_write_volatile(EIMSK, 0b01001111);
     }
 }
 
@@ -158,7 +165,7 @@ async fn pulse_interrupt_thread(channel: usize, event: InterruptEvent) {
     let pulse_counts = unsafe { &mut PULSE_COUNTS };
 
     loop {
-        event.await;
+        event.to_future().await;
         pulse_counts[channel] = pulse_counts[channel].wrapping_add(1);
     }
 }
@@ -229,12 +236,14 @@ struct FanControllerState {
     computer_on: bool,
 }
 
+/*
 static mut STATE: FanControllerState = FanControllerState {
     control: [0; PWM_NUM_CHANNELS],
     temps: [0; TEMP_NUM_CHANNELS],
     speeds: [0; PULSE_NUM_CHANNELS],
     computer_on: false,
 };
+*/
 
 /*
 Settings
@@ -275,8 +284,10 @@ async fn main_thread() -> () {
         delay_ms(2000).await;
         // Get final time
 
+        /*
         let state = unsafe { &mut STATE };
         state.computer_on = PD5::read();
+        */
 
         // TODO: Calibrate temperatures?
         // Read temperatures
@@ -288,6 +299,7 @@ async fn main_thread() -> () {
         // message queue event).
     }
 }
+
 
 // TODO: Verify that these are stored in flash only to save space.
 // See also http://www.nongnu.org/avr-libc/user-manual/group__avr__pgmspace.html#ga88d7dd4863f87530e1a34ece430a587c
@@ -387,6 +399,8 @@ impl USBDescriptorSet for FanControllerUSBDesc {
     }
 }
 
+*/
+
 /*
 struct ConfigDescIter {
     state: Option<(ConfigDescIndex, &'static [u8])>
@@ -434,6 +448,7 @@ impl core::iter::Iterator for ConfigDescIter {
 // Such a thread can also restart other threads assuming they aren't doing
 // anything important?
 
+/*
 define_thread!(
     /// Resets all USB state upon host reset requests.
     USBResetThread,
@@ -441,7 +456,9 @@ define_thread!(
 );
 async fn usb_reset_thread() -> () {
     loop {
-        InterruptEvent::USBEndOfReset.await;
+        wait_usb_end_of_reset().await;
+
+        // InterruptEvent::USBEndOfReset.await;
 
         // Stop all threads
         // TODO: This should be unsafe as a thread shouldn't be allowed to stop itself.
@@ -457,7 +474,9 @@ async fn usb_reset_thread() -> () {
         USBTxThread::start();
     }
 }
+*/
 
+/*
 // TODO: MAke this unsafe.
 fn struct_bytes<'a, T>(v: &'a T) -> &'a [u8] {
     unsafe {
@@ -503,14 +522,14 @@ async fn usb_control_thread() -> () {
             // No data to write
             let addr = (pkt.wValue & 0x7f) as u8;
             // Store address. Not enabled yet
-            unsafe { write_volatile(UDADDR, addr) };
+            unsafe { avr_write_volatile(UDADDR, addr) };
             // NOTE: No data should be received for this request
 
             // Send Zero Length Packet to finish status phase.
             EP.wait_transmitter_ready().await;
             EP.clear_transmitter_ready();
             // Enable address
-            unsafe { write_volatile(UDADDR, read_volatile(UDADDR) | 1 << 7) };
+            unsafe { avr_write_volatile(UDADDR, avr_read_volatile(UDADDR) | 1 << 7) };
         } else if pkt.bmRequestType == StandardRequestType::SET_CONFIGURATION as u8 {
             if pkt.wValue != 0 && pkt.wValue != 1 {
                 // Stall
@@ -584,94 +603,6 @@ async fn usb_control_thread() -> () {
     // TODO: Possibly set STALLRQ on errors?
 }
 
-enum FanControllerPacketType {
-    /*
-    Main protocol race condition to deal with:
-    - Host 1 sends request packet to device
-    - Host 2 connects
-    - Device sends response to host 2 (but host 2 doesn't know about this request)
-    - This is a problem if host 2 sends a request right before the response and gets a false response.
-    ^ The simple way to fix this is to have the host perform a device reset (which should restart all threads)
-
-
-    Commands (received from a companion program)
-    - Can be over SPI or USB (both should have identical functionality and protocol)
-    - GET_OPTIONS
-    - SET_OPTIONS
-        - Blocks until commited to EEPROM (maybe do this asyncronously to avoid wearing out EEPROM)
-    - PRESS_POWER (for N milliseconds)
-    - PRESS_RESET (for N milliseconds)
-    - NOTE: At most one command is allowed to be executing at a time
-
-    Events (sent to compantion program periodically)
-    - STATE: Copy of in-memory state (basically struct dump)
-    - LOG
-
-        */
-    /// This packet is part of the response to a host request.
-    /// At most one request is allowed to be running at a time, so matching this
-    /// to the request should be trivial.
-    ///
-    /// NOTE: Every request sent by the host will have at least one packet
-    /// returned as a response. This response could be one or more Response
-    /// packets or an ErrorResponse packet.
-    ///
-    /// Direction: Device -> Host
-    Response = 0,
-
-    /// Might be sent any time before the last Response packet in response to a
-    /// request in order to indicate that an error occured during the request.
-    ///
-    /// The payload is an optional error message of the same type as a LogOutput
-    /// message.
-    ///
-    /// Direction: Device -> Host
-    ErrorResponse = 1,
-
-    /// Contains a FanControllerState struct as the payload representing the
-    /// latest sampled state. Periodically sent from the device after each
-    /// sampling cycle.
-    ///
-    /// NOTE: Because the device firmwire does not buffer these, this packet
-    /// will always be self contained in exactly one packet.
-    ///
-    /// Direction: Device -> Host
-    StateSnapshot = 2,
-
-    /// Plain text (UTF-8) log data produced by the device.
-    ///
-    /// Direction: Device -> Host
-    LogOutput = 3,
-
-    /// Request to get the current settings used by the device.
-    ///
-    /// No Request Payload. Device should response with one or more Response
-    /// packets containing a FanControllerSettings struct.
-    ///
-    /// Direction: Host -> Device
-    GetSettings = 4,
-
-    /// Request to set the current settings used by the device.
-    ///
-    /// Request payload should contain the new FanControllerSettings struct. The
-    /// entire request payload must be sent within 2 seconds. The response
-    /// payload is empty.
-    ///
-    /// Direction: Host -> Device
-    SetSettings = 5,
-
-    /// Request to hold down the connected computer's power button for N
-    /// milliseconds.
-    ///
-    /// Request payload is a 2-byte u16 representing N in little endian.
-    /// Response payload will be empty.
-    ///
-    /// Direction: Host -> Device
-    PressPower = 6,
-
-    /// Same as PressPower but for the computer's reset button.
-    PressReset = 7,
-}
 
 // Must be able to recorver from
 
@@ -725,7 +656,7 @@ async fn usb_rx_thread() -> () {
             let time_ms = u16::from_le_bytes(payload);
 
             PD6::write(true);
-            delay_ms(time_ms);
+            delay_ms(time_ms).await;
             PD6::write(false);
         }
 
@@ -784,12 +715,35 @@ async fn usb_tx_thread() -> () {
     // P2: Responses to RX'ed commands
 }
 
+*/
+
+#[cfg(target_arch = "avr")]
 #[no_mangle]
-pub extern "C" fn abort() {
+pub extern "C" fn abort() -> ! {
     // TODO: Shut off the PLL
     // TODO: Disable all clocks, interrupts, and go to sleep.
+
+    unsafe {
+        disable_interrupts();
+    }
+
+    loop {
+        PB0::write(false);
+        for _i in 0..100000 {
+            unsafe {
+                llvm_asm!("nop");
+            }
+        }
+        PB0::write(true);
+        for _i in 0..100000 {
+            unsafe {
+                llvm_asm!("nop");
+            }
+        }
+    }
 }
 
+#[cfg(target_arch = "avr")]
 #[no_mangle]
 pub extern "C" fn memcpy(dest: *mut u8, src: *const u8, num: usize) -> *mut u8 {
     let mut dest_i = dest;
@@ -805,16 +759,116 @@ pub extern "C" fn memcpy(dest: *mut u8, src: *const u8, num: usize) -> *mut u8 {
     dest
 }
 
+/*
+#[cfg(target_arch = "avr")]
+#[no_mangle]
+pub extern "C" fn memset(dest: *mut u8, c: i32, n: usize) -> *mut u8 {
+    let mut dest_i = dest;
+    for i in 0..n {
+        unsafe { *dest_i = c as u8 };
+    }
+
+    dest
+}
+*/
+
 // Becuase of this, we should try to yield time to other threads if this occurs:
 // TODO: Enable interrupts after each byte read/wrirten
 // When the EEPROM is read, the CPU is halted for four clock cycles before the
 // next instruction is executed. When the EEPROM is written, the CPU is halted
 // for two clock cycles before the next instruction is executed.
 
+define_thread!(TestThread, test_thread);
+#[no_mangle]
+#[inline(never)]
+async fn test_thread() {
+    loop {
+        // avr::serial::uart_send_sync(b"TEST THREAD 1\n");
+
+        PB0::write(false);
+        // delay_ms(2000).await;
+        // InterruptEvent::Int0.to_future().await;
+        testing_inner(20).await;
+
+        // avr::serial::uart_send_sync(b"TEST THREAD 2\n");
+
+        PB0::write(true);
+        // delay_ms(2000).await;
+        // InterruptEvent::Int0.to_future().await;
+        testing_inner(20).await;
+    }
+}
+
+// #[no_mangle]
+// #[inline(never)]
+pub async fn testing_inner(mut time_ms: u16) {
+    while time_ms > 0 {
+        avr::serial::uart_send_sync(b"GOT HERE 1\n");
+        InterruptEvent::Int0.to_future().await;
+        avr::serial::uart_send_sync(b"GOT HERE 2\n");
+
+        time_ms -= 1;
+    }
+}
+
+// TODO: Need to verify that interrupt flags aren't cleared until after the
+// interupt has finished executing (otherwise we need to depend on not reading
+// that flag),
+
+#[cfg(target_arch = "avr")]
 #[no_mangle]
 pub extern "C" fn main() {
-    // disable_interrupts();
+    unsafe { disable_interrupts() };
+
     avr::init();
+
+    // // TODO: Document whether or not pins start high or low.
+    const PORTB_CFG: PortConfig = PortConfig::new().output_high(0);
+    PB::configure(&PORTB_CFG);
+
+    const PORTD_CFG: PortConfig = PortConfig::new().input_pullup(0).output_high(3);
+    PD::configure(&PORTD_CFG);
+
+    unsafe {
+        avr_write_volatile(MCUCR, 1); // IVCE
+        avr_write_volatile(MCUCR, 0);
+    }
+
+    unsafe {
+        // Configure all External Interrupts to be falling edge triggered
+        avr_write_volatile(EICRA, 0b10101010);
+        avr_write_volatile(EICRB, 0b00100000);
+        // Enable interrupts for INT0-3,6
+        avr_write_volatile(EIMSK, 1);
+
+        // Clear initial interrupt bits.
+        avr_write_volatile(EIFR, 0);
+    }
+
+    avr::serial::uart_init();
+
+    // TODO: Probably need to wait some amount of time before we can send the first
+    // bit.
+    avr::serial::uart_send_sync(b"START!\n");
+
+    unsafe { disable_interrupts() };
+    unsafe { disable_interrupts() };
+    unsafe { disable_interrupts() };
+
+    TestThread::start();
+
+    unsafe { disable_interrupts() };
+    unsafe { disable_interrupts() };
+    unsafe { disable_interrupts() };
+    unsafe { disable_interrupts() };
+
+    avr::thread::block_on_threads();
+
+    loop {
+        unsafe { llvm_asm!("nop") };
+    }
+
+    /*
     setup();
     // TODO: Configure SREG
 
@@ -837,9 +891,16 @@ pub extern "C" fn main() {
     // Also some USB threads.
 
     avr::thread::block_on_threads();
+    */
 }
 
+#[cfg(target_arch = "avr")]
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    // if let Some(s) = info.payload().downcast_ref::<&str>() {
+    //     avr::serial::uart_send_sync(s.as_bytes());
+    // }
+    // avr::serial::uart_send_sync(b" ; done panic!");
+
+    abort();
 }

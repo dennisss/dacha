@@ -1,5 +1,5 @@
 [build]
-rustflags=""
+rustflags="-C embed-bitcode"
 target = "atmega32u4.json"
 
 [unstable]
@@ -10,3 +10,4 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+opt-level = 3

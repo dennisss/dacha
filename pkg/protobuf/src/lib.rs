@@ -24,9 +24,12 @@ pub use build::build;
 
 pub use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
+use reflection::MessageReflection;
+pub use spec::EnumValue;
+pub use spec::FieldNumber;
 
 // NOTE: Construct an empty proto by calling MessageType::default()
-pub trait Message: Clone + std::fmt::Debug + std::default::Default {
+pub trait Message: Clone + std::fmt::Debug + std::default::Default + MessageReflection {
     // NOTE: This will append values to
     fn parse(data: Bytes) -> Result<Self>;
 
@@ -54,20 +57,19 @@ pub trait Message: Clone + std::fmt::Debug + std::default::Default {
 pub trait Enum {
     /// Should convert a number to a valid branch of the enum, or else should
     /// error out it the value is not in the enum.
-    fn from_usize(v: usize) -> Result<Self>
+    fn parse(v: EnumValue) -> Result<Self>
     where
         Self: Sized;
 
-    fn from_str(s: &str) -> Result<Self>
+    fn parse_name(name: &str) -> Result<Self>
     where
         Self: Sized;
-
-    fn to_usize(&self) -> usize;
 
     fn name(&self) -> &'static str;
+    fn value(&self) -> EnumValue;
 
+    fn assign(&mut self, v: EnumValue) -> Result<()>;
     // TODO: This is inconsistent with the other Message trait.
-    fn parse(&mut self, v: usize) -> Result<()>;
 
-    fn parse_str(&mut self, name: &str) -> Result<()>;
+    fn assign_name(&mut self, name: &str) -> Result<()>;
 }

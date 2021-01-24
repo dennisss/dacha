@@ -40,12 +40,6 @@ pub const CODE_LEN_CODE_LEN_ORDERING: [u8; CODE_LEN_ALPHA_SIZE] = [
 
 // ];
 
-#[derive(Debug)]
-pub struct Reference {
-    pub distance: usize,
-    pub length: usize,
-}
-
 // Fixed tree for literal/length alphabet to be used if no dynamic tree is
 // specified.
 pub fn fixed_huffman_lenlit_tree() -> Result<HuffmanTree> {

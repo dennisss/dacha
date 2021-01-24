@@ -5,79 +5,35 @@ use core::iter::Iterator;
 use core::pin::Pin;
 use core::task::Poll;
 
-const MAX_NUM_THREADS: usize = 32;
+const MAX_NUM_THREADS: usize = 2;
 
-// Runs in a never ending loop while incrementing the value of an integer given
-// as an argument.
-//
-// The counter will be incremented every 16 cycles (or at 1MHz for a 16MHz
-// clock). This is meant to run in the main() function will actually operations
-// happening in interrupt handlers. This means that a host can retrieve the
-// value of the counter at two different points in time to determine the
-// utilization.
-//
-// Based on instruction set timing in:
-// https://ww1.microchip.com/downloads/en/DeviceDoc/AVR-Instruction-Set-Manual-DS40002198A.pdf
-// using the ATmega32u4 (AVRe+)
-//
-// Args:
-//   addr: *mut u32 : Stored in r24 (low) and r25 (high). This is the address of
-//                    integer that should be incremented on each loop cycle.
-//
-// Internally uses:
-// - r18-r21 to store the current value of the counter.
-// - Z (r30, r31) to store working address.
-// - r22: stores a 0 value.
-//
-// Never returns.
-global_asm!(
-    r#"
-    .global __idle_loop
-__idle_loop:
-    ; NOTE: We only use call cloberred registers so don't need to push anything
-    ; to the stack
+// TODO: Implement support for sleeping
+// (e.g. when the computer is off or not receiving any USB traffic).
 
-    ; Initialize count to zero
-    ; NOTE: We assume that the value at the counter has already been
-    ; initialized to 0
-    clr r18
-    clr r19
-    clr r20
-    clr r21
+/// Type used to represent the id of a thread.
+///
+/// This is also the index of the thread into the internal RUNNING_THREADS
+/// array.
+///
+/// NOTE: This implies that we can have up to 256 threads.
+pub type ThreadId = u8;
 
-    ; r22 will always be zero
-    clr r22
+/// Reference to the thread's
+#[derive(Clone, Copy)]
+struct ThreadReference {
+    /// Type erased Future<Output=()> which contains the state of the thread.
+    future: *mut (),
 
-__idle_loop_start:
-    ; Add 1 to the 32bit counter
-    inc r18 ; (1 cycle)
-    adc r19, r22 ; += 0 + C (1 cycle)
-    adc r20, r22 ; += 0 + C (1 cycle)
-    adc r21, r22 ; += 0 + C (1 cycle)
-
-    ; Load Z with the address of the counter (first argument to the function)
-    mov r30, r24 ; (1 cycle)
-    mov r31, r25 ; (1 cycle)
-
-    ; Store into memory
-    st Z+, r18 ; (2 cycles)
-    st Z+, r19 ; (2 cycles)
-    st Z+, r20 ; (2 cycles)
-    st Z+, r21 ; (2 cycles)
-
-    ; Loop
-    rjmp __idle_loop_start ; (2 cycles)
-"#
-);
-
-extern "C" {
-    fn __idle_loop(addr: *mut u32);
+    /// Function which can be passed the above 'future' to poll/wake the thread.
+    poll_fn: fn(*mut ()) -> Poll<()>,
 }
 
-type ThreadFuturePtr = *mut dyn Future<Output = ()>;
+// TODO: Currently this is incorrect. We need a way of having per-channel change
+// events.
+// static mut CHANNEL_CHANGED: bool = false;
 
 struct ThreadVec {
-    values: [Option<ThreadFuturePtr>; MAX_NUM_THREADS],
+    values: [Option<ThreadReference>; MAX_NUM_THREADS],
     length: usize,
 }
 
@@ -89,63 +45,95 @@ impl ThreadVec {
         }
     }
 
-    fn len(&self) -> usize {
-        self.length
+    fn get(&self, index: ThreadId) -> &ThreadReference {
+        self.values[index as usize].as_ref().unwrap()
     }
 
-    /// Pushes the given pointer to the end of the vec.
-    fn push(&mut self, ptr: ThreadFuturePtr) {
-        self.values[self.length] = Some(ptr);
-        self.length += 1;
-    }
-
-    fn swap_remove(&mut self, index: usize) {
-        assert!(index < self.length);
-        if index != self.length - 1 {
-            self.values[index] = self.values[self.length - 1].take();
+    #[inline(always)]
+    fn push(&mut self, value: ThreadReference) -> ThreadId {
+        for i in 0..self.values.len() {
+            if self.values[i].is_none() {
+                self.values[i] = Some(value);
+                self.length += 1;
+                return i as ThreadId;
+            }
         }
+
+        panic!();
+    }
+
+    fn remove(&mut self, index: ThreadId) {
+        // assert!(self.values[index as usize].take().is_some());
+        self.values[index as usize] = None;
         self.length -= 1;
     }
 
-    fn index(&self, idx: usize) -> ThreadFuturePtr {
-        assert!(idx < self.len());
-        self.values[idx].unwrap()
+    fn is_empty(&self) -> bool {
+        self.length == 0
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (ThreadId, &ThreadReference)> {
+        self.values
+            .iter()
+            .enumerate()
+            .filter_map(|(index, value)| value.as_ref().clone().map(|r| (index as ThreadId, r)))
     }
 }
 
 static mut RUNNING_THREADS: ThreadVec = ThreadVec::new();
 
-static mut THREAD_ID: usize = MAX_NUM_THREADS;
+static mut CURRENT_THREAD_ID: Option<ThreadId> = None;
+
+static mut THREADS_INITIALIZED: bool = false;
 
 pub struct Thread<Fut: 'static + Sized + Future<Output = ()>> {
-    f: &'static dyn Fn() -> Fut,
     fut: Option<Fut>,
-    index: usize,
+    id: ThreadId,
 }
 
 impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
-    pub const fn new(f: &'static dyn Fn() -> Fut) -> Self {
+    pub const fn new(/* f: fn() -> Fut */) -> Self {
         Self {
-            f: f,
+            // f: f,
             fut: None,
-            index: 0,
+            id: 0,
         }
     }
 
-    pub fn start(&'static mut self) {
+    #[inline(always)]
+    pub fn start(&'static mut self, f: fn() -> Fut) {
+        // Return if already started.
         if self.fut.is_some() {
             return;
         }
 
-        self.index = unsafe { RUNNING_THREADS.len() };
-        let old_thread_id = unsafe { THREAD_ID };
-        unsafe { THREAD_ID = self.index };
-        self.fut = Some((self.f)());
-        unsafe { THREAD_ID = self.index };
+        self.fut = Some(f());
+
+        self.id = unsafe {
+            RUNNING_THREADS.push(ThreadReference {
+                poll_fn: Self::poll_future,
+                future: core::mem::transmute(self.fut.as_mut().unwrap()),
+            })
+        };
 
         unsafe {
-            RUNNING_THREADS.push(self.fut.as_mut().unwrap() as *mut dyn Future<Output = ()>);
+            if THREADS_INITIALIZED {
+                poll_thread(self.id);
+            }
         }
+    }
+
+    fn poll_future(ptr: *mut ()) -> Poll<()> {
+        let fut: &mut Fut = unsafe { core::mem::transmute(ptr) };
+
+        // static waker: Waker = unsafe { Waker::from_raw(RAW_WAKER) };
+        // static mut cx: Context = Context::from_waker(&waker);
+
+        // TODO: Does this waker have to live for the netier life?
+        let waker = unsafe { Waker::from_raw(RAW_WAKER) };
+        let mut cx = Context::from_waker(&waker);
+        let p = unsafe { Pin::new_unchecked(fut) };
+        p.poll(unsafe { &mut cx })
     }
 
     pub fn stop(&'static mut self) {
@@ -154,11 +142,18 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
         }
 
         // A thread stopping itself is undefined behavior and should panic.
-        assert_ne!(unsafe { THREAD_ID }, self.index);
+        assert_ne!(unsafe { CURRENT_THREAD_ID }, Some(self.id));
 
+        // Drop all variables. This should also drop any WakerFutures used by the thread
+        // (thus ensuring that this thread id is safe to re-use later).
         self.fut = None;
-        unsafe { RUNNING_THREADS.swap_remove(self.index) };
+
+        unsafe { RUNNING_THREADS.remove(self.id) };
     }
+}
+
+pub fn current_thread_id() -> ThreadId {
+    unsafe { CURRENT_THREAD_ID.unwrap() }
 }
 
 #[macro_export]
@@ -168,91 +163,130 @@ macro_rules! define_thread {
         struct $name {}
 
         impl $name {
-            unsafe fn ptr() -> &'static mut $crate::avr::thread::Thread<impl ::core::future::Future<Output = ()>> {
+            #[inline(always)]
+            fn ptr() /* -> &'static mut $crate::avr::thread::Thread<impl ::core::future::Future<Output=()>> */ {
                 type RetType = impl ::core::future::Future<Output = ()>;
+                #[inline(never)]
+                fn handler_wrap() -> RetType {
+                    ($handler)()
+                }
+
                 static mut THREAD: $crate::avr::thread::Thread<RetType> = {
-                    fn handler_wrap() -> RetType {
-                        ($handler)()
-                    }
-                    $crate::avr::thread::Thread::new(&handler_wrap)
+                    $crate::avr::thread::Thread::new()
                 };
-                &mut THREAD
+
+                unsafe { THREAD.start(handler_wrap) };
+
+                // unsafe { &mut THREAD }
             }
 
+            #[inline(always)]
             pub fn start() {
-                unsafe { Self::ptr().start() };
+                Self::ptr();
             }
 
             // TODO: If a thread is stopped while one thread is running, we may want to intentionally run an extra cycle to ensure that we re-process them.
 
             // pub fn stop() {
-
+            //     let thread = Self::ptr();
+            //     thread.stop();
             // }
         }
     };
 }
 
-static mut IDLE_COUNTER: u32 = 0;
+pub static mut IDLE_COUNTER: u32 = 0;
 
-pub fn block_on_threads() {
-    unsafe {
-        disable_interrupts();
-        poll_all_threads();
-        enable_interrupts();
+#[no_mangle]
+#[inline(never)]
+pub fn block_on_threads() -> ! {
+    if unsafe { RUNNING_THREADS.is_empty() } {
+        panic!();
     }
 
-    unsafe { __idle_loop(&mut IDLE_COUNTER) };
+    crate::avr::waker::init();
+
+    unsafe {
+        THREADS_INITIALIZED = true;
+
+        // crate::avr::serial::uart_send_sync(b"AA\n");
+
+        // Poll all threads for the first time so that wakers can be initialized.
+        // TODO: Verify that this works even if the threads start more threads.
+        for (id, _thread) in RUNNING_THREADS.iter() {
+            crate::avr::serial::uart_send_sync(b"POLL ");
+            crate::avr::serial::uart_send_number_sync(id);
+            crate::avr::serial::uart_send_sync(b"\n");
+
+            unsafe { poll_thread(id) };
+        }
+
+        // enable_interrupts();
+        crate::avr::serial::uart_send_sync(b"DONE\n");
+
+        loop {
+            llvm_asm!("nop");
+        }
+
+        // crate::avr::subroutines::avr_idle_loop(&mut IDLE_COUNTER);
+    }
 
     // NOTE: This should never be reached as the idle_loop should never return.
     panic!();
-
-    // Now sleep (but only if we don't care about performance as sleeping
-    // increases wakeup time).
 }
 
-/// Attempts to poll every thread once.
-///
-/// This function is unsafe as it must only be run when interrupts are disabled.
-pub unsafe fn poll_all_threads() {
-    loop {
-        poll_all_threads_inner();
+use core::task::{Context, RawWaker, RawWakerVTable, Waker};
 
-        let new_events: bool = unsafe { CHANNEL_CHANGED };
+unsafe fn raw_waker_clone(data: *const ()) -> RawWaker {
+    RAW_WAKER
+}
 
-        if !new_events {
-            break;
-        }
+unsafe fn raw_waker_wake(data: *const ()) {
+    // panic!();
+}
+
+unsafe fn raw_waker_wake_by_ref(data: *const ()) {
+    // panic!();
+}
+
+unsafe fn raw_waker_drop(data: *const ()) {}
+
+const RAW_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
+    raw_waker_clone,
+    raw_waker_wake,
+    raw_waker_wake_by_ref,
+    raw_waker_drop,
+);
+
+const RAW_WAKER: RawWaker = RawWaker::new(0 as *const (), &RAW_WAKER_VTABLE);
+
+/// This function is unsafe as it must only be run when interrupts are
+/// disabled.
+pub unsafe fn poll_thread(thread_id: ThreadId) {
+    // TODO: Assert interrupts are disabled.
+
+    let thread_ref = RUNNING_THREADS.get(thread_id);
+
+    // Should not be polling within a thread
+    assert!(CURRENT_THREAD_ID.is_none());
+    CURRENT_THREAD_ID = Some(thread_id);
+
+    let result = (thread_ref.poll_fn)(thread_ref.future);
+
+    CURRENT_THREAD_ID = None;
+
+    if result.is_ready() {
+        // TODO: Also set the future to None in the thread instance?
+        // TODO: Must also ensure that all events are cleaned up
+        RUNNING_THREADS.remove(thread_id);
+    }
+
+    if RUNNING_THREADS.is_empty() {
+        panic!();
     }
 }
 
-unsafe fn poll_all_threads_inner() {
-    let cx = core::mem::transmute::<usize, &mut core::task::Context>(0);
-
-    let mut thread_idx = 0;
-    while thread_idx < RUNNING_THREADS.len() {
-        let thread_ptr: &mut dyn Future<Output = ()> = {
-            core::mem::transmute::<*mut dyn Future<Output = ()>, _>(
-                RUNNING_THREADS.index(thread_idx),
-            )
-        };
-
-        let p = core::pin::Pin::new_unchecked(thread_ptr);
-        match core::future::Future::poll(p, cx) {
-            core::task::Poll::Ready(()) => {
-                RUNNING_THREADS.swap_remove(thread_idx);
-                // Re-process the current thread_idx without changes as it *may* have been
-                // swapped with the last one
-                continue;
-            }
-            core::task::Poll::Pending => {
-                thread_idx += 1;
-            }
-        }
-    }
-}
-
-static mut CHANNEL_CHANGED: bool = false;
-
+/*
 /// Used to send data from one thread to another.
 ///
 /// NOTE: This will only queue one value at a time, so senders must block for
@@ -327,6 +361,8 @@ impl<T, A: Future<Output = T> + Unpin, B: Future<Output = T> + Unpin> Future for
         return Poll::Pending;
     }
 }
+
+*/
 
 /*
 static mut LOCK_CHANGE: bool = false;

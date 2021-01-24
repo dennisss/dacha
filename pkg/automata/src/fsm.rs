@@ -1,6 +1,8 @@
 use common::algorithms::DisjointSets;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::default::Default;
 use std::hash::Hash;
+use std::iter::Extend;
 use std::ops::Bound::Included;
 
 /*
@@ -27,8 +29,29 @@ enum Symbol<S> {
     Epsilon,
 }
 
+// use std::iter::FromIterator;
+
+pub trait OutputSymbol {
+    fn merge(&mut self, other: &Self);
+    // fn intersect(&mut self, other: &Self);
+}
+
+impl OutputSymbol for () {
+    fn merge(&mut self, other: &Self) {}
+    // fn intersect(&mut self, other: &Self) {}
+}
+
+impl<T: Eq + Hash + Clone> OutputSymbol for HashSet<T> {
+    fn merge(&mut self, other: &Self) {
+        self.extend(other.iter().cloned())
+    }
+    // fn intersect(&mut self, other: &Self) {
+    //     *self = HashSet::from_iter(self.intersection(other).cloned());
+    // }
+}
+
 #[derive(Clone, PartialEq, Debug)]
-pub struct FiniteStateMachine<S, T: Eq + Hash = ()> {
+pub struct FiniteStateMachine<S, T: Eq + Hash = (), O: Default + OutputSymbol = ()> {
     /// All states will have ids 0 to num_states
     num_states: StateId,
 
@@ -52,13 +75,14 @@ pub struct FiniteStateMachine<S, T: Eq + Hash = ()> {
     /// NFA or zero for sparse representations
     /// TODO: Could probably be faster using vectors sized by the number of
     /// known states
-    transitions: BTreeSet<(StateId, Symbol<S>, StateId)>,
+    transitions: BTreeMap<(StateId, Symbol<S>, StateId), O>,
 }
 
 impl<
         S: 'static + Clone + std::cmp::Eq + std::cmp::Ord + std::hash::Hash + std::fmt::Debug,
-        T: Eq + Hash,
-    > FiniteStateMachine<S, T>
+        T: Eq + Hash + std::fmt::Debug,
+        O: 'static + Default + OutputSymbol + std::fmt::Debug,
+    > FiniteStateMachine<S, T, O>
 {
     pub fn new() -> Self {
         FiniteStateMachine {
@@ -66,7 +90,7 @@ impl<
             state_tags: vec![],
             starting_states: HashSet::new(),
             accepting_states: HashSet::new(),
-            transitions: BTreeSet::new(),
+            transitions: BTreeMap::new(),
         }
     }
 
@@ -117,8 +141,24 @@ impl<
     }
 
     pub fn add_transition(&mut self, from_id: StateId, sym: S, to_id: StateId) {
+        self.add_transition_transducer(from_id, sym, to_id, O::default());
+    }
+
+    pub fn add_transition_transducer(
+        &mut self,
+        from_id: StateId,
+        sym: S,
+        to_id: StateId,
+        output: O,
+    ) {
+        // TODO: If the edge already exists we should merge the outputs?
         self.transitions
-            .insert((from_id, Symbol::Value(sym), to_id));
+            .insert((from_id, Symbol::Value(sym), to_id), output);
+    }
+
+    pub fn add_epsilon_transducer(&mut self, from_id: StateId, to_id: StateId, output: O) {
+        self.transitions
+            .insert((from_id, Symbol::Epsilon, to_id), output);
     }
 
     /// For a single state, gets a list of all states that it will transition to
@@ -127,13 +167,30 @@ impl<
         self.lookup_sym(from_id, Symbol::Value(sym.clone()))
     }
 
-    fn lookup_sym(&self, from_id: StateId, sym: Symbol<S>) -> impl Iterator<Item = &StateId> {
+    pub fn lookup_transducer(
+        &self,
+        from_id: StateId,
+        sym: &S,
+    ) -> impl Iterator<Item = (&StateId, &O)> {
+        self.lookup_sym_transducer(from_id, Symbol::Value(sym.clone()))
+    }
+
+    fn lookup_sym_transducer(
+        &self,
+        from_id: StateId,
+        sym: Symbol<S>,
+    ) -> impl Iterator<Item = (&StateId, &O)> {
         self.transitions
             .range((
                 Included((from_id, sym.clone(), 0)),
                 Included((from_id, sym.clone(), StateId::max_value())),
             ))
-            .map(|(_, _, to_id)| to_id)
+            .map(|((_, _, to_id), outputs)| (to_id, outputs))
+    }
+
+    fn lookup_sym(&self, from_id: StateId, sym: Symbol<S>) -> impl Iterator<Item = &StateId> {
+        self.lookup_sym_transducer(from_id, sym)
+            .map(|(to_id, _)| to_id)
     }
 
     /// Adds all states and transitions from another automata to the current one
@@ -153,8 +210,8 @@ impl<
             self.accepting_states.insert(id + offset);
         }
 
-        for (i, s, j) in other.transitions {
-            self.transitions.insert((i + offset, s, j + offset));
+        for ((i, s, j), v) in other.transitions {
+            self.transitions.insert((i + offset, s, j + offset), v);
         }
     }
 
@@ -169,7 +226,8 @@ impl<
         // Epsilon transitions between all pairs of self_acceptors and other_starts
         for j in other.starting_states {
             for i in self.accepting_states.iter() {
-                self.transitions.insert((*i, Symbol::Epsilon, j + offset));
+                self.transitions
+                    .insert((*i, Symbol::Epsilon, j + offset), O::default());
             }
         }
 
@@ -181,8 +239,8 @@ impl<
             self.accepting_states.insert(id + offset);
         }
 
-        for (i, s, j) in other.transitions {
-            self.transitions.insert((i + offset, s, j + offset));
+        for ((i, s, j), o) in other.transitions {
+            self.transitions.insert((i + offset, s, j + offset), o);
         }
     }
 
@@ -191,7 +249,8 @@ impl<
     pub fn then_loop(&mut self) {
         for i in self.accepting_states.iter() {
             for j in self.starting_states.iter() {
-                self.transitions.insert((*i, Symbol::Epsilon, *j));
+                self.transitions
+                    .insert((*i, Symbol::Epsilon, *j), O::default());
             }
         }
     }
@@ -209,7 +268,8 @@ impl<
         let s = self.add_state();
 
         for si in self.starting_states.clone().iter() {
-            self.transitions.insert((s, Symbol::Epsilon, *si));
+            self.transitions
+                .insert((s, Symbol::Epsilon, *si), O::default());
         }
 
         self.starting_states.clear();
@@ -219,7 +279,7 @@ impl<
     }
 
     pub fn has_epsilon(&self) -> bool {
-        for (_, s, _) in self.transitions.iter() {
+        for (_, s, _) in self.transitions.keys() {
             if let Symbol::Epsilon = s {
                 return true;
             }
@@ -233,7 +293,7 @@ impl<
     /// be equivalent to the alphabet of the state machine
     pub fn used_symbols(&self) -> Vec<&S> {
         let mut set = HashSet::new();
-        for (_, s, _) in self.transitions.iter() {
+        for (_, s, _) in self.transitions.keys() {
             if let Symbol::Value(ref v) = s {
                 set.insert(v);
             }
@@ -261,8 +321,10 @@ impl<
             }
         }
 
+        let epsilon_outputs = self.find_epsilon_outputs();
+
         // How many new states there are
-        let mut num_new_states = 0;
+        let mut new_num_states = 0;
 
         let mut new_state_tags: Vec<HashSet<T>> = vec![];
 
@@ -281,8 +343,8 @@ impl<
                     new_state_tags[last_id as usize].insert(tag);
                 }
             } else if c == i {
-                let id = num_new_states;
-                num_new_states += 1;
+                let id = new_num_states;
+                new_num_states += 1;
                 new_state_tags.push(tags);
                 state_mapping.push(id);
             } else {
@@ -302,22 +364,61 @@ impl<
             .map(|s| state_mapping[*s])
             .collect();
 
-        let mut new_transitions = BTreeSet::new();
-        for (i, s, j) in self.transitions.into_iter() {
+        let mut new_transitions = BTreeMap::<_, O>::new();
+        for ((i, s, j), mut o) in self.transitions.into_iter() {
             if let Symbol::Epsilon = s {
                 continue;
             }
 
-            new_transitions.insert((state_mapping[i], s, state_mapping[j]));
+            let eo = epsilon_outputs.get(&j).unwrap();
+            o.merge(eo);
+
+            // TODO: Is it possible for the key to already exist?
+            let key = (state_mapping[i], s, state_mapping[j]);
+            if let Some(outputs) = new_transitions.get_mut(&key) {
+                outputs.merge(&o);
+            } else {
+                new_transitions.insert(key, o);
+            }
         }
 
         FiniteStateMachine {
-            num_states: num_new_states,
+            num_states: new_num_states,
             state_tags: new_state_tags,
             starting_states: new_starting_states,
             accepting_states: new_accepting_states,
             transitions: new_transitions,
         }
+    }
+
+    fn find_epsilon_outputs(&self) -> HashMap<StateId, O> {
+        let mut epsilon_outputs = HashMap::<StateId, O>::new();
+
+        for i in 0..self.num_states {
+            self.find_epsilon_outputs_for_state(i, &mut epsilon_outputs);
+        }
+
+        epsilon_outputs
+    }
+
+    fn find_epsilon_outputs_for_state<'a>(
+        &self,
+        s: StateId,
+        epsilon_outputs: &'a mut HashMap<StateId, O>,
+    ) -> &'a O {
+        if !epsilon_outputs.contains_key(&s) {
+            let mut outputs = O::default();
+
+            // Mainly to stop loops.
+            epsilon_outputs.insert(s, O::default());
+            for (next_s, o) in self.lookup_sym_transducer(s, Symbol::Epsilon) {
+                outputs.merge(o);
+                outputs.merge(self.find_epsilon_outputs_for_state(*next_s, epsilon_outputs));
+            }
+            epsilon_outputs.insert(s, outputs);
+        }
+
+        epsilon_outputs.get(&s).unwrap()
     }
 
     /// Checks if the given slice is accepted by this automata
@@ -387,7 +488,7 @@ impl<
         // (each one is a sorted list of state ids in the original automata)
         let mut new_states = Vec::<Vec<StateId>>::new();
         let mut new_states_idx = HashMap::<Vec<StateId>, usize>::new();
-        let mut new_transitions = BTreeSet::new();
+        let mut new_transitions = BTreeMap::<_, O>::new();
 
         // Assuming no epsilon transitions, the first state will stay the same (this
         // also assumes that there is exactly one starting state now)
@@ -409,19 +510,23 @@ impl<
             for sym in alpha.iter() {
                 // Produce the next set based on all reachable states using this symbol
                 let mut next_accepts = false;
+                let mut next_outputs = O::default();
                 let next_set = {
                     let mut set = BTreeSet::new();
 
                     let cur_set = &new_states[cur_id];
 
                     for state in cur_set.iter() {
-                        let edges = self.lookup(*state, sym);
-                        for e in edges {
+                        // TODO: We should be able to take ownership of the old outputs here by
+                        // deleting them from the map.
+                        let edges = self.lookup_transducer(*state, sym);
+                        for (e, outputs) in edges {
                             if self.accepting_states.contains(e) {
                                 next_accepts = true;
                             }
 
                             set.insert(*e);
+                            next_outputs.merge(outputs);
                         }
                     }
 
@@ -453,7 +558,13 @@ impl<
                     id
                 };
 
-                new_transitions.insert((cur_id, Symbol::Value((*sym).clone()), next_id));
+                // TODO: Can this ever overwrite an existing value?
+                let key = (cur_id, Symbol::Value((*sym).clone()), next_id);
+                if let Some(o) = new_transitions.get_mut(&key) {
+                    o.merge(&next_outputs);
+                } else {
+                    new_transitions.insert(key, next_outputs);
+                }
             }
         }
 
@@ -468,6 +579,8 @@ impl<
             }
             new_state_tags.push(tags);
         }
+
+        println!("TAGS {:?}", new_state_tags);
 
         FiniteStateMachine {
             num_states: new_states.len(),
@@ -489,7 +602,7 @@ impl<
             transitions: self
                 .transitions
                 .into_iter()
-                .map(|(i, s, j)| (j, s, i))
+                .map(|((i, s, j), o)| ((j, s, i), o))
                 .collect(),
         }
     }

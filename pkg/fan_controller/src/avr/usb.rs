@@ -1,7 +1,6 @@
 use crate::avr::interrupts::*;
 use crate::avr::registers::*;
 use crate::usb::SetupPacket;
-use core::ptr::{read_volatile, write_volatile};
 
 // From the INTERNET:
 // "Thank you for the reply. The USB interface is now receiving the setup
@@ -40,13 +39,24 @@ const RXOUTI_SET: u8 = 1 << 2;
 const STALLEDI_SET: u8 = 1 << 1;
 const TXINI_SET: u8 = 1 << 0;
 
+pub async fn wait_usb_end_of_reset() {
+    loop {
+        let udint = unsafe { avr_read_volatile(UDINT) };
+        if udint & (1 << 3) != 0 {
+            break;
+        }
+
+        InterruptEvent::USBGeneral.to_future().await;
+    }
+}
+
 // TODO: One issue with USB interrupts is that only one interrupt per endpoint
 // should be allowed at a time as separate futures will clear the interrupt bits
 // of other pending futures.
 impl USBEndpoint {
     /// NOTE: Must be called before ANY operation on the endpoint.
     fn select(&self) {
-        unsafe { write_volatile(UENUM, self.num) };
+        unsafe { avr_write_volatile(UENUM, self.num) };
     }
 
     // TODO: Support reset with UERST?
@@ -63,37 +73,51 @@ impl USBEndpoint {
 
         unsafe {
             // Enable endpoint
-            write_volatile(UECONX, 1);
+            avr_write_volatile(UECONX, 1);
 
             // Configure CONTROL OUT endpoint.
-            write_volatile(UECFG0X, typ as u8 | dir as u8);
+            avr_write_volatile(UECFG0X, typ as u8 | dir as u8);
 
             // Configure 64 byte endpoint (one bank)
-            write_volatile(UECFG1X, size as u8 | banks as u8);
+            avr_write_volatile(UECFG1X, size as u8 | banks as u8);
             // ALLOCate the endpoint memory.
-            write_volatile(UECFG1X, read_volatile(UECFG1X) | 1 << 1);
+            avr_write_volatile(UECFG1X, avr_read_volatile(UECFG1X) | 1 << 1);
 
             // Check CFGOK
-            if read_volatile(UESTA0X) & (1 << 7) == 0 {
+            if avr_read_volatile(UESTA0X) & (1 << 7) == 0 {
                 // USB setup
                 return false;
             }
 
             // Default to no interrupts.
-            write_volatile(UEIENX, 0);
+            avr_write_volatile(UEIENX, 0);
         }
 
         return true;
     }
 
+    pub async fn wait_for_event(&self) {
+        let bit: u8 = 1 << self.num;
+        loop {
+            let ueint = unsafe { avr_read_volatile(UEINT) };
+            if ueint & bit != 0 {
+                break;
+            }
+
+            // TODO: Consider keeping the waker in all queues until the future is dropped so
+            // that we can optimize running the same future in a loop.
+            InterruptEvent::USBEndpoint.to_future().await;
+        }
+    }
+
     fn check_flag(&self, bit: u8) -> bool {
         self.select();
-        (unsafe { read_volatile(UEINTX) }) & bit != 0
+        (unsafe { avr_read_volatile(UEINTX) }) & bit != 0
     }
 
     fn clear_flag(&self, bit: u8) {
         self.select();
-        unsafe { write_volatile(UEINTX, read_volatile(UEINTX) & (!bit)) };
+        unsafe { avr_write_volatile(UEINTX, avr_read_volatile(UEINTX) & (!bit)) };
     }
 
     async fn wait_flag(&self, bit: u8) {
@@ -107,18 +131,18 @@ impl USBEndpoint {
             }
 
             // Enable interrupt for this flag (and disable others)
-            unsafe { write_volatile(UEIENX, bit) };
+            unsafe { avr_write_volatile(UEIENX, bit) };
 
             // Wait for next interesting event.
-            InterruptEvent::USBEP(self.num).await;
+            self.wait_for_event().await;
         }
     }
 
     pub fn bytec(&self) -> u16 {
         self.select();
 
-        let low = unsafe { read_volatile(UEBCLX) } as u16;
-        let high = unsafe { read_volatile(UEBCHX) } as u16;
+        let low = unsafe { avr_read_volatile(UEBCLX) } as u16;
+        let high = unsafe { avr_read_volatile(UEBCHX) } as u16;
         (high << 8) | low
     }
 
@@ -126,14 +150,14 @@ impl USBEndpoint {
     pub fn read_bytes(&self, buf: &mut [u8]) {
         self.select();
         for i in 0..buf.len() {
-            buf[i] = unsafe { read_volatile(UEDATX) };
+            buf[i] = unsafe { avr_read_volatile(UEDATX) };
         }
     }
 
     pub fn write_bytes(&self, buf: &[u8]) {
         self.select();
         for i in 0..buf.len() {
-            unsafe { write_volatile(UEDATX, buf[i]) };
+            unsafe { avr_write_volatile(UEDATX, buf[i]) };
         }
     }
 
