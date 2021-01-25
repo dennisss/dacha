@@ -1,5 +1,4 @@
 use crate::avr::*;
-use core::cell::UnsafeCell;
 use core::future::Future;
 use core::iter::Iterator;
 use core::pin::Pin;
@@ -133,7 +132,7 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
         let waker = unsafe { Waker::from_raw(RAW_WAKER) };
         let mut cx = Context::from_waker(&waker);
         let p = unsafe { Pin::new_unchecked(fut) };
-        p.poll(unsafe { &mut cx })
+        p.poll(&mut cx)
     }
 
     pub fn stop(&'static mut self) {
@@ -164,7 +163,7 @@ macro_rules! define_thread {
 
         impl $name {
             #[inline(always)]
-            fn ptr() /* -> &'static mut $crate::avr::thread::Thread<impl ::core::future::Future<Output=()>> */ {
+            fn ptr() -> &'static mut $crate::avr::thread::Thread<impl ::core::future::Future<Output=()>> {
                 type RetType = impl ::core::future::Future<Output = ()>;
                 #[inline(never)]
                 fn handler_wrap() -> RetType {
@@ -177,7 +176,7 @@ macro_rules! define_thread {
 
                 unsafe { THREAD.start(handler_wrap) };
 
-                // unsafe { &mut THREAD }
+                unsafe { &mut THREAD }
             }
 
             #[inline(always)]
@@ -187,10 +186,10 @@ macro_rules! define_thread {
 
             // TODO: If a thread is stopped while one thread is running, we may want to intentionally run an extra cycle to ensure that we re-process them.
 
-            // pub fn stop() {
-            //     let thread = Self::ptr();
-            //     thread.stop();
-            // }
+            pub fn stop() {
+                let thread = Self::ptr();
+                thread.stop();
+            }
         }
     };
 }
@@ -209,26 +208,23 @@ pub fn block_on_threads() -> ! {
     unsafe {
         THREADS_INITIALIZED = true;
 
-        // crate::avr::serial::uart_send_sync(b"AA\n");
-
         // Poll all threads for the first time so that wakers can be initialized.
         // TODO: Verify that this works even if the threads start more threads.
         for (id, _thread) in RUNNING_THREADS.iter() {
-            crate::avr::serial::uart_send_sync(b"POLL ");
-            crate::avr::serial::uart_send_number_sync(id);
-            crate::avr::serial::uart_send_sync(b"\n");
-
             unsafe { poll_thread(id) };
         }
 
-        // enable_interrupts();
-        crate::avr::serial::uart_send_sync(b"DONE\n");
+        // Usually to be called by the hardware interrupt handlers, but we aren't in
+        // that context yet.
+        // crate::avr::interrupts::wake_all_internal();
+
+        enable_interrupts();
 
         loop {
-            llvm_asm!("nop");
+            unsafe { llvm_asm!("nop") };
         }
 
-        // crate::avr::subroutines::avr_idle_loop(&mut IDLE_COUNTER);
+        crate::avr::subroutines::avr_idle_loop(&mut IDLE_COUNTER);
     }
 
     // NOTE: This should never be reached as the idle_loop should never return.
@@ -241,13 +237,9 @@ unsafe fn raw_waker_clone(data: *const ()) -> RawWaker {
     RAW_WAKER
 }
 
-unsafe fn raw_waker_wake(data: *const ()) {
-    // panic!();
-}
+unsafe fn raw_waker_wake(data: *const ()) {}
 
-unsafe fn raw_waker_wake_by_ref(data: *const ()) {
-    // panic!();
-}
+unsafe fn raw_waker_wake_by_ref(data: *const ()) {}
 
 unsafe fn raw_waker_drop(data: *const ()) {}
 
@@ -286,62 +278,6 @@ pub unsafe fn poll_thread(thread_id: ThreadId) {
     }
 }
 
-/*
-/// Used to send data from one thread to another.
-///
-/// NOTE: This will only queue one value at a time, so senders must block for
-/// the receiver to finish processing the data.
-///
-/// Challenges: Should we be able to
-pub struct Channel<T> {
-    value: UnsafeCell<Option<T>>,
-}
-
-impl<T> Channel<T> {
-    pub const fn new() -> Self {
-        Self {
-            value: UnsafeCell::new(None),
-        }
-    }
-
-    pub async fn send(&'static self, value: T) {
-        let v = unsafe { core::mem::transmute::<*mut Option<T>, &mut Option<T>>(self.value.get()) };
-        while v.is_some() {
-            ChannelChangeFuture {}.await;
-        }
-
-        *v = Some(value);
-        unsafe { CHANNEL_CHANGED = true };
-    }
-
-    pub async fn recv(&'static self) -> T {
-        let v = unsafe { core::mem::transmute::<*mut Option<T>, &mut Option<T>>(self.value.get()) };
-        loop {
-            if let Some(v) = v.take() {
-                unsafe { CHANNEL_CHANGED = true };
-                return v;
-            }
-
-            ChannelChangeFuture {}.await;
-        }
-    }
-}
-
-unsafe impl<T> Sync for Channel<T> {}
-
-struct ChannelChangeFuture {}
-impl Future for ChannelChangeFuture {
-    type Output = ();
-
-    fn poll(self: core::pin::Pin<&mut Self>, _cx: &mut core::task::Context<'_>) -> Poll<()> {
-        if unsafe { CHANNEL_CHANGED } {
-            Poll::Ready(())
-        } else {
-            Poll::Pending
-        }
-    }
-}
-
 struct Select2<T, A: Future<Output = T>, B: Future<Output = T>> {
     a: A,
     b: B,
@@ -361,27 +297,3 @@ impl<T, A: Future<Output = T> + Unpin, B: Future<Output = T> + Unpin> Future for
         return Poll::Pending;
     }
 }
-
-*/
-
-/*
-static mut LOCK_CHANGE: bool = false;
-
-pub struct Mutex<T> {
-    locked: bool,
-    data: T,
-}
-
-impl<T> Mutex<T> {
-    pub const fn new(data: T) -> Self {
-        Self {
-            locked: false,
-            data,
-        }
-    }
-
-    pub async fn lock(&'static self) -> Mut {}
-}
-
-pub struct MutexLockFuture {}
-*/

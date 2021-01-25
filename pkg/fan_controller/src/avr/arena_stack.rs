@@ -18,6 +18,7 @@ pub trait Arena<T> {
     }
 }
 
+// TODO: Remove Clone/Copy.
 #[derive(Clone, Copy, Debug)]
 pub struct ArenaStackItem<T> {
     /// Index of the previous entry in this linked list.
@@ -42,8 +43,6 @@ impl<T> ArenaStackItem<T> {
     }
 }
 
-// TODO: Remove the clone/copy
-#[derive(Clone, Copy)]
 pub struct ArenaStack<T, A: Arena<ArenaStackItem<T>>> {
     arena: A,
 

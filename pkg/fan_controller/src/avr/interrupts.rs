@@ -11,11 +11,16 @@
 use crate::avr::registers::*;
 use crate::avr::waker::*;
 
-static mut INTERRUPT_WAKER_LISTS: [WakerList; NUM_INTERRUPT_EVENTS] =
-    [WakerList::new(); NUM_INTERRUPT_EVENTS];
+static mut INTERRUPT_WAKER_LISTS: Option<[WakerList; NUM_INTERRUPT_EVENTS]> = None;
+
+static mut INTERNAL_INTERRUPT_PENDING: bool = false;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum InterruptEvent {
+    // This is an internal event triggered by code.
+    // Internal = 0,
+
+    // These all correspond to one hardware interrupt.
     ADCComplete = 0,
     EepromReady = 1,
     Int0 = 2,
@@ -33,16 +38,37 @@ const NUM_INTERRUPT_EVENTS: usize = 11;
 impl InterruptEvent {
     #[inline(always)]
     fn waker_list(&self) -> &'static mut WakerList {
-        // crate::avr::serial::uart_send_sync(b"INT ");
-        // crate::avr::serial::uart_send_number_sync(*self as u8);
-        // crate::avr::serial::uart_send_sync(b"\n");
-        unsafe { &mut INTERRUPT_WAKER_LISTS[*self as usize] }
+        // TODO: Move to a separate initialization function.
+        unsafe {
+            if INTERRUPT_WAKER_LISTS.is_none() {
+                let mut lists: [WakerList; NUM_INTERRUPT_EVENTS] = core::mem::uninitialized();
+                for i in 0..NUM_INTERRUPT_EVENTS {
+                    lists[i] = WakerList::new();
+                }
+                INTERRUPT_WAKER_LISTS = Some(lists)
+            }
+        }
+
+        unsafe { &mut INTERRUPT_WAKER_LISTS.as_mut().unwrap()[*self as usize] }
     }
 
     pub fn to_future(self) -> WakerFuture {
         self.waker_list().add()
     }
 }
+
+/*
+pub unsafe fn wake_all_internal() {
+    while INTERNAL_INTERRUPT_PENDING {
+        INTERNAL_INTERRUPT_PENDING = false;
+        InterruptEvent::Internal.waker_list().wake_all();
+    }
+}
+
+pub fn fire_internal_interrupt() {
+    unsafe { INTERNAL_INTERRUPT_PENDING = true };
+}
+*/
 
 // The challenge with USB interrupts is that we need to
 // disable them ASAP, otherwise they will just keep
@@ -54,7 +80,8 @@ impl InterruptEvent {
 #[no_mangle]
 #[inline(never)]
 unsafe fn event_handler(e: InterruptEvent) {
-    // e.waker_list().wake_all();
+    e.waker_list().wake_all();
+    // wake_all_internal();
 }
 
 // Timer 0 used for delays:
@@ -63,7 +90,7 @@ unsafe fn event_handler(e: InterruptEvent) {
 #[cfg(target_arch = "avr")]
 #[no_mangle]
 unsafe extern "avr-interrupt" fn __vector_1() {
-    InterruptEvent::Int0.waker_list().wake_all();
+    // InterruptEvent::Int0.waker_list().wake_all();
     event_handler(InterruptEvent::Int0);
 }
 

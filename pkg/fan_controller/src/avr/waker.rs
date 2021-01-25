@@ -9,7 +9,7 @@ use core::task::Poll;
 use crate::avr::serial::*;
 
 // NOTE: Can be at most 'ArenaIndex::MAX_VALUE + 1'
-const MAX_PENDING_WAKERS: usize = 4;
+const MAX_PENDING_WAKERS: usize = 32;
 
 static mut PENDING_WAKERS: [ArenaStackItem<Waker>; MAX_PENDING_WAKERS] =
     [ArenaStackItem::empty(Waker { thread: 0 }); MAX_PENDING_WAKERS];
@@ -44,8 +44,6 @@ struct Waker {
     thread: ThreadId,
 }
 
-// TODO: Remove the clone/copy
-#[derive(Clone, Copy)]
 pub struct WakerList {
     inner: ArenaStack<Waker, WakerArena>,
 }
@@ -60,15 +58,9 @@ impl WakerList {
     #[no_mangle]
     #[inline(never)]
     pub fn add(self: &'static mut WakerList) -> WakerFuture {
-        // uart_send_sync(b"TRY ALLOC \n");
-
         let thread = current_thread_id();
         let index = WakerArena::alloc();
         self.inner.push(index, Waker { thread });
-
-        uart_send_sync(b"ALLOC WAKER ");
-        uart_send_number_sync(index);
-        uart_send_sync(b"\n");
 
         WakerFuture {
             list: self,
@@ -81,18 +73,12 @@ impl WakerList {
     #[no_mangle]
     #[inline(never)]
     pub fn wake_all(self: &mut WakerList) {
-        uart_send_sync(b"WAKE ALL\n\n");
-
         let mut cur_waker = self.inner.peek();
 
         while let Some((waker, index)) = cur_waker.take() {
             unsafe {
                 assert!(CURRENT_BEING_AWAKEN.is_none());
                 CURRENT_BEING_AWAKEN = Some(index);
-
-                uart_send_sync(b"WAKING WAKER ");
-                uart_send_number_sync(index);
-                uart_send_sync(b"\n");
 
                 crate::avr::thread::poll_thread(waker.thread);
 
@@ -106,25 +92,10 @@ impl WakerList {
             // Also
             cur_waker = self.inner.remove(index);
             WakerArena::free(index);
-
-            // uart_send_sync(b"FREE WAKER ");
-            // uart_send_number_sync(index);
-            // uart_send_sync(b"\n");
         }
     }
 }
 
-// impl Copy for WakerList {}
-
-// impl Clone for WakerList {
-//     fn clone(&self) -> Self {
-//         assert!(self.inner.is_empty());
-//         Self::new()
-//     }
-// }
-
-// TODO: Remove the clone/copy
-#[derive(Clone, Copy)]
 struct WakerArena {}
 
 impl WakerArena {
@@ -163,12 +134,10 @@ pub struct WakerFuture {
 impl Future for WakerFuture {
     type Output = ();
 
-    #[inline(always)]
+    #[inline(never)]
     fn poll(mut self: Pin<&mut Self>, _cx: &mut core::task::Context<'_>) -> Poll<()> {
         assert!(self.id.is_some());
         if unsafe { CURRENT_BEING_AWAKEN } == self.id {
-            uart_send_sync(b"WAKER READY\n");
-
             // NOTE: The underlying waker will be freed in wake_all after the thread is done
             // running.
             self.id = None;
@@ -187,10 +156,6 @@ impl Drop for WakerFuture {
             // NOTE: We will never remove an id that is actively being looked at by
             // wake_all().
             if unsafe { CURRENT_BEING_AWAKEN } != self.id {
-                uart_send_sync(b"DROP WAKER ");
-                uart_send_number_sync(id);
-                uart_send_sync(b"\n");
-
                 self.list.inner.remove(id);
                 WakerArena::free(id);
             }

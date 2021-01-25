@@ -66,14 +66,6 @@ from an interrupt. This must be handled by software
 /*
 
 fn setup() {
-    // Make sure interrupt handlers are read from the main program and not from the
-    // bootloader.
-    // Keep pull-ups enabled.
-    unsafe {
-        avr_write_volatile(MCUCR, 1); // IVCE
-        avr_write_volatile(MCUCR, 0);
-    }
-
     // PB0 - WATER_FLOW : INPUT PCINT0
     // PB1 - ISP_SCK
     // PB2 - ISP_MOSI
@@ -236,14 +228,12 @@ struct FanControllerState {
     computer_on: bool,
 }
 
-/*
 static mut STATE: FanControllerState = FanControllerState {
     control: [0; PWM_NUM_CHANNELS],
     temps: [0; TEMP_NUM_CHANNELS],
     speeds: [0; PULSE_NUM_CHANNELS],
     computer_on: false,
 };
-*/
 
 /*
 Settings
@@ -299,7 +289,6 @@ async fn main_thread() -> () {
         // message queue event).
     }
 }
-
 
 // TODO: Verify that these are stored in flash only to save space.
 // See also http://www.nongnu.org/avr-libc/user-manual/group__avr__pgmspace.html#ga88d7dd4863f87530e1a34ece430a587c
@@ -399,8 +388,6 @@ impl USBDescriptorSet for FanControllerUSBDesc {
     }
 }
 
-*/
-
 /*
 struct ConfigDescIter {
     state: Option<(ConfigDescIndex, &'static [u8])>
@@ -448,7 +435,6 @@ impl core::iter::Iterator for ConfigDescIter {
 // Such a thread can also restart other threads assuming they aren't doing
 // anything important?
 
-/*
 define_thread!(
     /// Resets all USB state upon host reset requests.
     USBResetThread,
@@ -474,9 +460,7 @@ async fn usb_reset_thread() -> () {
         USBTxThread::start();
     }
 }
-*/
 
-/*
 // TODO: MAke this unsafe.
 fn struct_bytes<'a, T>(v: &'a T) -> &'a [u8] {
     unsafe {
@@ -603,7 +587,6 @@ async fn usb_control_thread() -> () {
     // TODO: Possibly set STALLRQ on errors?
 }
 
-
 // Must be able to recorver from
 
 /// Header sent with every USB packet.
@@ -617,7 +600,7 @@ struct FanControllerPacketHeader {
 }
 
 ///
-static RESPONSE_CHANNEL: thread::Channel<[u8; 64]> = thread::Channel::new();
+static RESPONSE_CHANNEL: Channel<[u8; 64]> = Channel::new();
 
 // This thread is waiting for commands to be received.
 define_thread!(
@@ -743,35 +726,6 @@ pub extern "C" fn abort() -> ! {
     }
 }
 
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-pub extern "C" fn memcpy(dest: *mut u8, src: *const u8, num: usize) -> *mut u8 {
-    let mut dest_i = dest;
-    let mut src_i = src;
-    for i in 0..num {
-        unsafe {
-            *dest_i = *src_i;
-            src_i = core::mem::transmute(core::mem::transmute::<_, usize>(src_i) + 1);
-            dest_i = core::mem::transmute(core::mem::transmute::<_, usize>(dest_i) + 1);
-        }
-    }
-
-    dest
-}
-
-/*
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-pub extern "C" fn memset(dest: *mut u8, c: i32, n: usize) -> *mut u8 {
-    let mut dest_i = dest;
-    for i in 0..n {
-        unsafe { *dest_i = c as u8 };
-    }
-
-    dest
-}
-*/
-
 // Becuase of this, we should try to yield time to other threads if this occurs:
 // TODO: Enable interrupts after each byte read/wrirten
 // When the EEPROM is read, the CPU is halted for four clock cycles before the
@@ -786,28 +740,16 @@ async fn test_thread() {
         // avr::serial::uart_send_sync(b"TEST THREAD 1\n");
 
         PB0::write(false);
-        // delay_ms(2000).await;
+        delay_ms(1000).await;
         // InterruptEvent::Int0.to_future().await;
-        testing_inner(20).await;
+        // testing_inner(20).await;
 
         // avr::serial::uart_send_sync(b"TEST THREAD 2\n");
 
         PB0::write(true);
-        // delay_ms(2000).await;
+        delay_ms(1000).await;
         // InterruptEvent::Int0.to_future().await;
-        testing_inner(20).await;
-    }
-}
-
-// #[no_mangle]
-// #[inline(never)]
-pub async fn testing_inner(mut time_ms: u16) {
-    while time_ms > 0 {
-        avr::serial::uart_send_sync(b"GOT HERE 1\n");
-        InterruptEvent::Int0.to_future().await;
-        avr::serial::uart_send_sync(b"GOT HERE 2\n");
-
-        time_ms -= 1;
+        // testing_inner(20).await;
     }
 }
 
@@ -818,9 +760,8 @@ pub async fn testing_inner(mut time_ms: u16) {
 #[cfg(target_arch = "avr")]
 #[no_mangle]
 pub extern "C" fn main() {
-    unsafe { disable_interrupts() };
-
     avr::init();
+    // avr::usb_init();
 
     // // TODO: Document whether or not pins start high or low.
     const PORTB_CFG: PortConfig = PortConfig::new().output_high(0);
@@ -828,11 +769,6 @@ pub extern "C" fn main() {
 
     const PORTD_CFG: PortConfig = PortConfig::new().input_pullup(0).output_high(3);
     PD::configure(&PORTD_CFG);
-
-    unsafe {
-        avr_write_volatile(MCUCR, 1); // IVCE
-        avr_write_volatile(MCUCR, 0);
-    }
 
     unsafe {
         // Configure all External Interrupts to be falling edge triggered
@@ -851,34 +787,18 @@ pub extern "C" fn main() {
     // bit.
     avr::serial::uart_send_sync(b"START!\n");
 
-    unsafe { disable_interrupts() };
-    unsafe { disable_interrupts() };
-    unsafe { disable_interrupts() };
+    // USBResetThread::start();
+    // USBControlThread::start();
+    // USBTxThread::start();
+    // USBRxThread::start();
 
     TestThread::start();
 
-    unsafe { disable_interrupts() };
-    unsafe { disable_interrupts() };
-    unsafe { disable_interrupts() };
-    unsafe { disable_interrupts() };
-
     avr::thread::block_on_threads();
-
-    loop {
-        unsafe { llvm_asm!("nop") };
-    }
 
     /*
     setup();
     // TODO: Configure SREG
-
-    avr::usb_init();
-
-    // TODO: Also need to initialize all of the USB registers.
-    USBResetThread::start();
-    USBControlThread::start();
-    USBTxThread::start();
-    USBRxThread::start();
 
     MainThread::start();
     Pulse0Thread::start();
@@ -897,10 +817,5 @@ pub extern "C" fn main() {
 #[cfg(target_arch = "avr")]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    // if let Some(s) = info.payload().downcast_ref::<&str>() {
-    //     avr::serial::uart_send_sync(s.as_bytes());
-    // }
-    // avr::serial::uart_send_sync(b" ; done panic!");
-
     abort();
 }

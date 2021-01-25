@@ -1,4 +1,3 @@
-/*
 // Runs in a never ending loop while incrementing the value of an integer given
 // as an argument.
 //
@@ -90,4 +89,3 @@ extern "C" {
 pub extern "C" fn avr_idle_loop(addr: *mut u32) -> ! {
     loop {}
 }
-*/

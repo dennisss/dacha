@@ -4,7 +4,9 @@
 pub mod adc;
 pub mod arena_stack;
 // pub mod fixed_array;
+// pub mod channel;
 pub mod interrupts;
+mod libc;
 pub mod pins;
 pub mod progmem;
 pub mod registers;
@@ -15,6 +17,7 @@ pub mod usb;
 mod waker;
 
 pub use crate::avr::adc::*;
+// pub use crate::avr::channel::*;
 pub use crate::avr::interrupts::*;
 use crate::avr::registers::*;
 pub use crate::avr::usb::*;
@@ -100,8 +103,13 @@ pub fn init() {
 
     // TODO: Should I freeze the USB clock first? I guess not needed if USB
     // controller is not on yet.
-    // TODO: Configure the PLL and check PLL lock?
     unsafe {
+        // Make sure interrupt handlers are read from the main program and not from the
+        // bootloader.
+        // Also keep pull-ups enabled.
+        avr_write_volatile(MCUCR, 1); // IVCE
+        avr_write_volatile(MCUCR, 0);
+
         // Enable clock prescaler changes.
         avr_write_volatile(CLKPR, 1 << 7);
         // Ensure that no pre-scaling is performed (clk_i/o and clk_adc are equal to the
@@ -143,7 +151,6 @@ pub fn init() {
         avr_write_volatile(TIMSK0, 1 << 1);
     }
 }
-
 /*
 pub fn usb_init() {
     // TODO: Somewhere use UESTA1X::CTRLDIR
@@ -197,9 +204,9 @@ pub fn usb_init() {
     // TODO: If RXOUTI is triggered, we need to verify that a CRC error didn't
     // also occur (rather drop the data)
 }
-*/
 
-// If
+
+*/
 
 /*
 Control Write (receiving data):
@@ -214,6 +221,8 @@ Control Read
 
 */
 
+#[no_mangle]
+#[inline(never)]
 pub async fn delay_ms(mut time_ms: u16) {
     while time_ms > 0 {
         InterruptEvent::OutputCompareOA.to_future().await;
