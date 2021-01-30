@@ -4,22 +4,24 @@
 pub mod adc;
 pub mod arena_stack;
 // pub mod fixed_array;
-// pub mod channel;
+pub mod channel;
 pub mod interrupts;
 mod libc;
+pub mod mutex;
 pub mod pins;
 pub mod progmem;
 pub mod registers;
-pub mod serial;
 mod subroutines;
 pub mod thread;
+pub mod usart;
 pub mod usb;
 mod waker;
 
 pub use crate::avr::adc::*;
-// pub use crate::avr::channel::*;
+pub use crate::avr::channel::*;
 pub use crate::avr::interrupts::*;
 use crate::avr::registers::*;
+pub use crate::avr::usart::*;
 pub use crate::avr::usb::*;
 use core::future::Future;
 
@@ -151,75 +153,6 @@ pub fn init() {
         avr_write_volatile(TIMSK0, 1 << 1);
     }
 }
-/*
-pub fn usb_init() {
-    // TODO: Somewhere use UESTA1X::CTRLDIR
-
-    // TODO: May want to set 'EPRST6:0 - Endpoint FIFO Reset Bits' upon resets
-
-    // Other interesting bits: RSTDT, STALLRQ
-
-    // Up to 256 in double bank mode
-    unsafe {
-        // NOTE: DPRAM is 832 bytes
-
-        // Enable USB pad regulator
-        avr_write_volatile(UHWCON, 0b1);
-        // Enable USB controller
-        avr_write_volatile(USBCON, 1 << 7); // TODO: OTGPADE?
-
-        USB_EP0.configure(
-            USBEndpointType::Control,
-            USBEndpointDirection::OutOrControl,
-            USBEndpointSize::B64,
-            USBEndpointBanks::One,
-        );
-
-        USB_EP1.configure(
-            USBEndpointType::Interrupt,
-            USBEndpointDirection::In,
-            USBEndpointSize::B128,
-            USBEndpointBanks::Double,
-        );
-
-        USB_EP2.configure(
-            USBEndpointType::Interrupt,
-            USBEndpointDirection::OutOrControl,
-            USBEndpointSize::B128,
-            USBEndpointBanks::Double,
-        );
-
-        // USB full speed
-        // Do not reset on USB connection.
-        // Not DETACHed
-        avr_write_volatile(UDCON, 0);
-
-        // Enable 'End of Reset' interrupt.
-        // NOTE: When this happens, we need to make sure to clear the flag.
-        avr_write_volatile(UDIEN, 1 << 3);
-    }
-
-    // TODO: Redo endpoint configs on End of Reset interrupts.
-
-    // TODO: If RXOUTI is triggered, we need to verify that a CRC error didn't
-    // also occur (rather drop the data)
-}
-
-
-*/
-
-/*
-Control Write (receiving data):
-- Get RXOUTI interrupt whenever we have data to receive ()
-- Wait for NAKINI
-
-
-Control Read
-- First Unset TXINI after getting setup packet
-- Wait for TCINI to go high in order to write data
-
-
-*/
 
 #[no_mangle]
 #[inline(never)]

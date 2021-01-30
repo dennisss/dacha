@@ -1,3 +1,11 @@
+macro_rules! debug {
+    ($a:expr) => {{
+        let tx = $crate::avr::usart::USART1Transmission::start().await;
+        ($a).debug_write(&mut tx);
+        drop(tx);
+    }};
+}
+
 #[inline(never)]
 pub fn uart_send_number_sync(num: u8) {
     num_to_slice(num, |data| uart_send_sync(data));

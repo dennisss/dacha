@@ -6,8 +6,6 @@ use core::pin::Pin;
 use core::task::Context;
 use core::task::Poll;
 
-use crate::avr::serial::*;
-
 // NOTE: Can be at most 'ArenaIndex::MAX_VALUE + 1'
 const MAX_PENDING_WAKERS: usize = 32;
 

@@ -18,37 +18,28 @@ static mut INTERNAL_INTERRUPT_PENDING: bool = false;
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum InterruptEvent {
     // This is an internal event triggered by code.
-    // Internal = 0,
+    Internal = 0,
 
     // These all correspond to one hardware interrupt.
-    ADCComplete = 0,
-    EepromReady = 1,
-    Int0 = 2,
-    Int1 = 3,
-    Int2 = 4,
-    Int3 = 5,
-    Int6 = 6,
-    USBGeneral = 7,
-    USBEndpoint = 8,
-    OutputCompareOA = 9,
-    PCInt0 = 10,
+    ADCComplete = 1,
+    EepromReady = 2,
+    Int0 = 3,
+    Int1 = 4,
+    Int2 = 5,
+    Int3 = 6,
+    Int6 = 7,
+    USBGeneral = 8,
+    USBEndpoint = 9,
+    OutputCompareOA = 10,
+    PCInt0 = 11,
+    USART1DataRegisterEmpty = 12,
+    USART1RxComplete = 13,
 }
-const NUM_INTERRUPT_EVENTS: usize = 11;
+const NUM_INTERRUPT_EVENTS: usize = 14;
 
 impl InterruptEvent {
     #[inline(always)]
     fn waker_list(&self) -> &'static mut WakerList {
-        // TODO: Move to a separate initialization function.
-        unsafe {
-            if INTERRUPT_WAKER_LISTS.is_none() {
-                let mut lists: [WakerList; NUM_INTERRUPT_EVENTS] = core::mem::uninitialized();
-                for i in 0..NUM_INTERRUPT_EVENTS {
-                    lists[i] = WakerList::new();
-                }
-                INTERRUPT_WAKER_LISTS = Some(lists)
-            }
-        }
-
         unsafe { &mut INTERRUPT_WAKER_LISTS.as_mut().unwrap()[*self as usize] }
     }
 
@@ -57,7 +48,39 @@ impl InterruptEvent {
     }
 }
 
-/*
+/// Context which keeps an interrupt enabled as long as the object is in scope.
+/// The interrupt is disabled when this is dropped.
+pub struct InterruptEnabledContext {
+    register: *mut u8,
+    bit: u8,
+}
+
+impl InterruptEnabledContext {
+    pub fn new(register: *mut u8, bit: u8) -> Self {
+        unsafe { avr_write_volatile(register, avr_read_volatile(register) | bit) };
+        Self { register, bit }
+    }
+}
+
+impl Drop for InterruptEnabledContext {
+    fn drop(&mut self) {
+        unsafe {
+            avr_write_volatile(
+                self.register,
+                avr_read_volatile(self.register) & (!self.bit),
+            )
+        };
+    }
+}
+
+pub unsafe fn init() {
+    let mut lists: [WakerList; NUM_INTERRUPT_EVENTS] = core::mem::uninitialized();
+    for i in 0..NUM_INTERRUPT_EVENTS {
+        lists[i] = WakerList::new();
+    }
+    INTERRUPT_WAKER_LISTS = Some(lists)
+}
+
 pub unsafe fn wake_all_internal() {
     while INTERNAL_INTERRUPT_PENDING {
         INTERNAL_INTERRUPT_PENDING = false;
@@ -68,7 +91,6 @@ pub unsafe fn wake_all_internal() {
 pub fn fire_internal_interrupt() {
     unsafe { INTERNAL_INTERRUPT_PENDING = true };
 }
-*/
 
 // The challenge with USB interrupts is that we need to
 // disable them ASAP, otherwise they will just keep
@@ -81,7 +103,18 @@ pub fn fire_internal_interrupt() {
 #[inline(never)]
 unsafe fn event_handler(e: InterruptEvent) {
     e.waker_list().wake_all();
-    // wake_all_internal();
+    wake_all_internal();
+}
+
+// Fast skipping of an interrupt if we don't care about it.
+macro_rules! ignore_interrupt {
+    ($name:ident) => {
+        #[cfg(target_arch = "avr")]
+        #[no_mangle]
+        unsafe extern "C" fn $name() {
+            unsafe { llvm_asm!("reti") };
+        }
+    };
 }
 
 // Timer 0 used for delays:
@@ -90,7 +123,6 @@ unsafe fn event_handler(e: InterruptEvent) {
 #[cfg(target_arch = "avr")]
 #[no_mangle]
 unsafe extern "avr-interrupt" fn __vector_1() {
-    // InterruptEvent::Int0.waker_list().wake_all();
     event_handler(InterruptEvent::Int0);
 }
 
@@ -112,13 +144,8 @@ unsafe extern "avr-interrupt" fn __vector_4() {
     event_handler(InterruptEvent::Int3);
 }
 
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_5() {}
-
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_6() {}
+ignore_interrupt!(__vector_5);
+ignore_interrupt!(__vector_6);
 
 #[cfg(target_arch = "avr")]
 #[no_mangle]
@@ -155,42 +182,15 @@ unsafe extern "avr-interrupt" fn __vector_11() {
     event_handler(InterruptEvent::USBEndpoint);
 }
 
-// TODO: Make a cheaper single instruction interrupt that just calls RETI
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_12() {}
-
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_13() {}
-
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_14() {}
-
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_15() {}
-
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_16() {}
-
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_17() {}
-
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_18() {}
-
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_19() {}
-
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_20() {}
+ignore_interrupt!(__vector_12);
+ignore_interrupt!(__vector_13);
+ignore_interrupt!(__vector_14);
+ignore_interrupt!(__vector_15);
+ignore_interrupt!(__vector_16);
+ignore_interrupt!(__vector_17);
+ignore_interrupt!(__vector_18);
+ignore_interrupt!(__vector_19);
+ignore_interrupt!(__vector_20);
 
 // Timer/Counter0 Compare Match A
 #[cfg(target_arch = "avr")]
@@ -214,11 +214,15 @@ unsafe extern "avr-interrupt" fn __vector_24() {}
 
 #[cfg(target_arch = "avr")]
 #[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_25() {}
+unsafe extern "avr-interrupt" fn __vector_25() {
+    event_handler(InterruptEvent::USART1RxComplete);
+}
 
 #[cfg(target_arch = "avr")]
 #[no_mangle]
-unsafe extern "avr-interrupt" fn __vector_26() {}
+unsafe extern "avr-interrupt" fn __vector_26() {
+    event_handler(InterruptEvent::USART1DataRegisterEmpty);
+}
 
 #[cfg(target_arch = "avr")]
 #[no_mangle]

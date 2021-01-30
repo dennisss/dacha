@@ -4,7 +4,7 @@ use core::iter::Iterator;
 use core::pin::Pin;
 use core::task::Poll;
 
-const MAX_NUM_THREADS: usize = 2;
+const MAX_NUM_THREADS: usize = 16;
 
 // TODO: Implement support for sleeping
 // (e.g. when the computer is off or not receiving any USB traffic).
@@ -204,6 +204,7 @@ pub fn block_on_threads() -> ! {
     }
 
     crate::avr::waker::init();
+    unsafe { crate::avr::interrupts::init() };
 
     unsafe {
         THREADS_INITIALIZED = true;
@@ -216,13 +217,9 @@ pub fn block_on_threads() -> ! {
 
         // Usually to be called by the hardware interrupt handlers, but we aren't in
         // that context yet.
-        // crate::avr::interrupts::wake_all_internal();
+        crate::avr::interrupts::wake_all_internal();
 
         enable_interrupts();
-
-        loop {
-            unsafe { llvm_asm!("nop") };
-        }
 
         crate::avr::subroutines::avr_idle_loop(&mut IDLE_COUNTER);
     }

@@ -39,10 +39,77 @@ const RXOUTI_SET: u8 = 1 << 2;
 const STALLEDI_SET: u8 = 1 << 1;
 const TXINI_SET: u8 = 1 << 0;
 
+pub fn init() {
+    // TODO: Somewhere use UESTA1X::CTRLDIR
+
+    // TODO: May want to set 'EPRST6:0 - Endpoint FIFO Reset Bits' upon resets
+
+    // Other interesting bits: RSTDT, STALLRQ
+
+    // Up to 256 in double bank mode
+    unsafe {
+        // NOTE: DPRAM is 832 bytes
+
+        // Enable USB pad regulator
+        avr_write_volatile(UHWCON, 0b1);
+        // Enable USB controller
+        avr_write_volatile(USBCON, 1 << 7); // TODO: OTGPADE?
+
+        USB_EP0.configure(
+            USBEndpointType::Control,
+            USBEndpointDirection::OutOrControl,
+            USBEndpointSize::B64,
+            USBEndpointBanks::One,
+        );
+
+        USB_EP1.configure(
+            USBEndpointType::Interrupt,
+            USBEndpointDirection::In,
+            USBEndpointSize::B128,
+            USBEndpointBanks::Double,
+        );
+
+        USB_EP2.configure(
+            USBEndpointType::Interrupt,
+            USBEndpointDirection::OutOrControl,
+            USBEndpointSize::B128,
+            USBEndpointBanks::Double,
+        );
+
+        // USB full speed
+        // Do not reset on USB connection.
+        // Not DETACHed
+        avr_write_volatile(UDCON, 0);
+    }
+
+    // TODO: Redo endpoint configs on End of Reset interrupts.
+
+    // TODO: If RXOUTI is triggered, we need to verify that a CRC error didn't
+    // also occur (rather drop the data)
+}
+
+/*
+Control Write (receiving data):
+- Get RXOUTI interrupt whenever we have data to receive ()
+- Wait for NAKINI
+
+
+Control Read
+- First Unset TXINI after getting setup packet
+- Wait for TCINI to go high in order to write data
+
+
+*/
+
 pub async fn wait_usb_end_of_reset() {
+    // Enable 'End of Reset' interrupt.
+    let ctx = InterruptEnabledContext::new(UDIEN, 1 << 3);
+
     loop {
         let udint = unsafe { avr_read_volatile(UDINT) };
         if udint & (1 << 3) != 0 {
+            // Clear the bit so we don't keep getting the interrupt
+            unsafe { avr_write_volatile(UDINT, udint & !(1 << 3)) };
             break;
         }
 
@@ -96,6 +163,12 @@ impl USBEndpoint {
         return true;
     }
 
+    pub fn request_stale(&self) {
+        self.select();
+        // Keep endpoint enabled and also enable STALLRQ
+        unsafe { avr_write_volatile(UECONX, 1 | (1 << 5)) };
+    }
+
     pub async fn wait_for_event(&self) {
         let bit: u8 = 1 << self.num;
         loop {
@@ -135,6 +208,8 @@ impl USBEndpoint {
 
             // Wait for next interesting event.
             self.wait_for_event().await;
+
+            // TODO: Disable the interrupt not.
         }
     }
 

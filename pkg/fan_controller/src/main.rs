@@ -63,8 +63,6 @@ from an interrupt. This must be handled by software
     PD3 (INT3) is UART TX
 */
 
-/*
-
 fn setup() {
     // PB0 - WATER_FLOW : INPUT PCINT0
     // PB1 - ISP_SCK
@@ -441,23 +439,29 @@ define_thread!(
     usb_reset_thread
 );
 async fn usb_reset_thread() -> () {
+    // TODO: Need to properly order detaching the USB device:
+    // - First enable the END_OF_RESET interrupt handler
+    // - Then attach the USB device
+    // Then synchronously start waiting for the interrupt.
+    // - this is especially complicated if the controller state is reset
+
     loop {
         wait_usb_end_of_reset().await;
 
-        // InterruptEvent::USBEndOfReset.await;
-
         // Stop all threads
         // TODO: This should be unsafe as a thread shouldn't be allowed to stop itself.
-        // USBControlThread::stop();
+        USBControlThread::stop();
         // USBRxThread::stop();
         // USBTxThread::stop();
 
         // Reconfigure all endpoints.
+        // TODO: Verify that this properly resets all of the usb controller state.
+        avr::usb::init();
 
         // Start all threads
         USBControlThread::start();
-        USBRxThread::start();
-        USBTxThread::start();
+        // USBRxThread::start();
+        // USBTxThread::start();
     }
 }
 
@@ -489,7 +493,16 @@ async fn usb_control_thread() -> () {
     let mut pkt = SetupPacket::default();
 
     loop {
+        PD5::write(false);
+        delay_ms(500).await;
+        PD5::write(true);
+        delay_ms(500).await;
+    }
+
+    loop {
         EP.wait_setup().await;
+
+        USART1::send(b"GOT SETUP");
 
         let pkt_buf = unsafe { struct_bytes_mut(&mut pkt) };
         let bytec: u16 = EP.bytec();
@@ -698,8 +711,6 @@ async fn usb_tx_thread() -> () {
     // P2: Responses to RX'ed commands
 }
 
-*/
-
 #[cfg(target_arch = "avr")]
 #[no_mangle]
 pub extern "C" fn abort() -> ! {
@@ -761,13 +772,16 @@ async fn test_thread() {
 #[no_mangle]
 pub extern "C" fn main() {
     avr::init();
-    // avr::usb_init();
+    avr::usb::init();
 
     // // TODO: Document whether or not pins start high or low.
     const PORTB_CFG: PortConfig = PortConfig::new().output_high(0);
     PB::configure(&PORTB_CFG);
 
-    const PORTD_CFG: PortConfig = PortConfig::new().input_pullup(0).output_high(3);
+    const PORTD_CFG: PortConfig = PortConfig::new()
+        .input_pullup(0)
+        .output_high(3)
+        .output_high(5);
     PD::configure(&PORTD_CFG);
 
     unsafe {
@@ -781,18 +795,25 @@ pub extern "C" fn main() {
         avr_write_volatile(EIFR, 0);
     }
 
-    avr::serial::uart_init();
+    USART1::init();
 
     // TODO: Probably need to wait some amount of time before we can send the first
     // bit.
-    avr::serial::uart_send_sync(b"START!\n");
+    USART1::send_blocking(b"START!\n");
+
+    TestThread::start();
 
     // USBResetThread::start();
-    // USBControlThread::start();
+    USBControlThread::start();
     // USBTxThread::start();
     // USBRxThread::start();
 
-    TestThread::start();
+    // Pulse0Thread::start();
+    // Pulse1Thread::start();
+    // Pulse2Thread::start();
+    // Pulse3Thread::start();
+    // Pulse4Thread::start();
+    // Pulse5Thread::start();
 
     avr::thread::block_on_threads();
 
@@ -801,12 +822,6 @@ pub extern "C" fn main() {
     // TODO: Configure SREG
 
     MainThread::start();
-    Pulse0Thread::start();
-    Pulse1Thread::start();
-    Pulse2Thread::start();
-    Pulse3Thread::start();
-    Pulse4Thread::start();
-    Pulse5Thread::start();
 
     // Also some USB threads.
 
