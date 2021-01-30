@@ -6,12 +6,12 @@ macro_rules! debug {
     }};
 }
 
-#[inline(never)]
-pub fn uart_send_number_sync(num: u8) {
-    num_to_slice(num, |data| uart_send_sync(data));
-}
+// #[inline(never)]
+// pub fn uart_send_number_sync(num: u8) {
+//     num_to_slice(num, |data| uart_send_sync(data));
+// }
 
-fn num_to_slice<F: FnOnce(&[u8])>(mut num: u8, f: F) {
+pub fn num_to_slice<F: FnOnce(&[u8])>(mut num: u8, f: F) {
     // A u32 has a maximum length of 10 base-10 digits
     let mut buf: [u8; 3] = [0; 3];
     let mut num_digits = 0;

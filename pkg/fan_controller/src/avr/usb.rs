@@ -39,55 +39,6 @@ const RXOUTI_SET: u8 = 1 << 2;
 const STALLEDI_SET: u8 = 1 << 1;
 const TXINI_SET: u8 = 1 << 0;
 
-pub fn init() {
-    // TODO: Somewhere use UESTA1X::CTRLDIR
-
-    // TODO: May want to set 'EPRST6:0 - Endpoint FIFO Reset Bits' upon resets
-
-    // Other interesting bits: RSTDT, STALLRQ
-
-    // Up to 256 in double bank mode
-    unsafe {
-        // NOTE: DPRAM is 832 bytes
-
-        // Enable USB pad regulator
-        avr_write_volatile(UHWCON, 0b1);
-        // Enable USB controller
-        avr_write_volatile(USBCON, 1 << 7); // TODO: OTGPADE?
-
-        USB_EP0.configure(
-            USBEndpointType::Control,
-            USBEndpointDirection::OutOrControl,
-            USBEndpointSize::B64,
-            USBEndpointBanks::One,
-        );
-
-        USB_EP1.configure(
-            USBEndpointType::Interrupt,
-            USBEndpointDirection::In,
-            USBEndpointSize::B128,
-            USBEndpointBanks::Double,
-        );
-
-        USB_EP2.configure(
-            USBEndpointType::Interrupt,
-            USBEndpointDirection::OutOrControl,
-            USBEndpointSize::B128,
-            USBEndpointBanks::Double,
-        );
-
-        // USB full speed
-        // Do not reset on USB connection.
-        // Not DETACHed
-        avr_write_volatile(UDCON, 0);
-    }
-
-    // TODO: Redo endpoint configs on End of Reset interrupts.
-
-    // TODO: If RXOUTI is triggered, we need to verify that a CRC error didn't
-    // also occur (rather drop the data)
-}
-
 /*
 Control Write (receiving data):
 - Get RXOUTI interrupt whenever we have data to receive ()
@@ -101,19 +52,96 @@ Control Read
 
 */
 
+pub fn init_endpoints() {
+    assert!(USB_EP0.configure(
+        USBEndpointType::Control,
+        USBEndpointDirection::OutOrControl,
+        USBEndpointSize::B64,
+        USBEndpointBanks::One,
+    ));
+
+    assert!(USB_EP1.configure(
+        USBEndpointType::Interrupt,
+        USBEndpointDirection::In,
+        USBEndpointSize::B128,
+        USBEndpointBanks::Double,
+    ));
+
+    // assert!(USB_EP2.configure(
+    //     USBEndpointType::Interrupt,
+    //     USBEndpointDirection::OutOrControl,
+    //     USBEndpointSize::B128,
+    //     USBEndpointBanks::Double,
+    // ));
+}
+
+fn usb_control_thread() {
+    loop {
+        // Issues:
+        // - If endpoints are reset while waiting for the RXSTPI intterupt or
+        //   another, we won't have the interrupt enabled anymore so will never
+        //   get ti
+
+        // TODO: On any async delay, we need to remember to re-configure the
+        // current endpoint
+
+        // Wait for RXSTPI
+
+        // Read SETUP packet
+
+        // Clear RXSTPI and TXINI
+
+        // Looping over data to send:
+        // Wait for TXINI
+        // Send response data
+
+        // Wait for RXOUTI
+        // Clear to finish?
+    }
+}
+
+const EORSTE: u8 = 3;
+const EORSTI: u8 = 3;
+
 pub async fn wait_usb_end_of_reset() {
     // Enable 'End of Reset' interrupt.
-    let ctx = InterruptEnabledContext::new(UDIEN, 1 << 3);
+    let ctx = InterruptEnabledContext::new(UDIEN, 1 << EORSTE);
 
     loop {
         let udint = unsafe { avr_read_volatile(UDINT) };
-        if udint & (1 << 3) != 0 {
+        if udint & (1 << EORSTI) != 0 {
             // Clear the bit so we don't keep getting the interrupt
-            unsafe { avr_write_volatile(UDINT, udint & !(1 << 3)) };
+            unsafe { avr_write_volatile(UDINT, udint & !(1 << EORSTI)) };
             break;
         }
 
         InterruptEvent::USBGeneral.to_future().await;
+    }
+
+    drop(ctx);
+}
+
+const EPEN: u8 = 0;
+const CFGOK: u8 = 7;
+const ALLOC: u8 = 1;
+
+pub struct EndpointInterruptEnabledContext<'a> {
+    ep: &'a USBEndpoint,
+    inner: InterruptEnabledContext,
+}
+
+impl<'a> EndpointInterruptEnabledContext<'a> {
+    pub fn new(ep: &'a USBEndpoint, register: *mut u8, mask: u8) -> Self {
+        ep.select();
+        let inner = InterruptEnabledContext::new(register, mask);
+        Self { ep, inner }
+    }
+}
+
+impl<'a> Drop for EndpointInterruptEnabledContext<'a> {
+    fn drop(&mut self) {
+        self.ep.select();
+        // self.inner.drop();
     }
 }
 
@@ -122,6 +150,7 @@ pub async fn wait_usb_end_of_reset() {
 // of other pending futures.
 impl USBEndpoint {
     /// NOTE: Must be called before ANY operation on the endpoint.
+    #[inline(always)]
     fn select(&self) {
         unsafe { avr_write_volatile(UENUM, self.num) };
     }
@@ -140,24 +169,25 @@ impl USBEndpoint {
 
         unsafe {
             // Enable endpoint
-            avr_write_volatile(UECONX, 1);
+            avr_write_volatile(UECONX, 1 << EPEN);
 
             // Configure CONTROL OUT endpoint.
             avr_write_volatile(UECFG0X, typ as u8 | dir as u8);
 
-            // Configure 64 byte endpoint (one bank)
-            avr_write_volatile(UECFG1X, size as u8 | banks as u8);
-            // ALLOCate the endpoint memory.
-            avr_write_volatile(UECFG1X, avr_read_volatile(UECFG1X) | 1 << 1);
+            // Configure size, banks, and ALLOCate the memory.
+            avr_write_volatile(UECFG1X, size as u8 | banks as u8 | 1 << ALLOC);
 
             // Check CFGOK
-            if avr_read_volatile(UESTA0X) & (1 << 7) == 0 {
+            if (avr_read_volatile(UESTA0X) & (1 << CFGOK)) == 0 {
                 // USB setup
+                crate::USART1::send_blocking(b"USB Endpoint setup failed!\n");
                 return false;
             }
 
             // Default to no interrupts.
             avr_write_volatile(UEIENX, 0);
+            // Reset initial state of all interrupt flags.
+            avr_write_volatile(UEINTX, 0);
         }
 
         return true;
@@ -169,11 +199,22 @@ impl USBEndpoint {
         unsafe { avr_write_volatile(UECONX, 1 | (1 << 5)) };
     }
 
-    pub async fn wait_for_event(&self) {
-        let bit: u8 = 1 << self.num;
+    // UEINTX contains whether or not the interrupt has triggered.
+    // UEIENX configures if interrupts are enabled
+
+    // NOTE: This must be called after enabling an interrupt.
+    async fn wait_for_event(&self) {
+        let mask: u8 = 1 << self.num;
         loop {
             let ueint = unsafe { avr_read_volatile(UEINT) };
-            if ueint & bit != 0 {
+
+            // crate::USART1::send_blocking(b"UEINT ");
+            // crate::avr::debug::num_to_slice(ueint, |s| {
+            //     crate::USART1::send_blocking(s);
+            // });
+            // crate::USART1::send_blocking(b"\n");
+
+            if ueint & mask != 0 {
                 break;
             }
 
@@ -183,34 +224,45 @@ impl USBEndpoint {
         }
     }
 
-    fn check_flag(&self, bit: u8) -> bool {
+    fn check_flag(&self, mask: u8) -> bool {
         self.select();
-        (unsafe { avr_read_volatile(UEINTX) }) & bit != 0
+        (unsafe { avr_read_volatile(UEINTX) }) & mask != 0
     }
 
-    fn clear_flag(&self, bit: u8) {
+    fn clear_flag(&self, mask: u8) {
         self.select();
-        unsafe { avr_write_volatile(UEINTX, avr_read_volatile(UEINTX) & (!bit)) };
+        unsafe { avr_write_volatile(UEINTX, avr_read_volatile(UEINTX) & (!mask)) };
     }
 
-    async fn wait_flag(&self, bit: u8) {
+    #[inline(never)]
+    async fn wait_flag(&self, mask: u8) {
+        // self.select();
+        // TODO: When dropping, this must select the right endpoint.
+        let ctx = EndpointInterruptEnabledContext::new(self, UEIENX, mask);
+
         loop {
             // NOTE: The await from the last iteration may have switched the endpoint
             // so we must ensure that the correct one is selected.
-            self.select();
+            // self.select();
 
-            if self.check_flag(bit) {
+            if self.check_flag(mask) {
                 break;
             }
 
             // Enable interrupt for this flag (and disable others)
-            unsafe { avr_write_volatile(UEIENX, bit) };
+            // unsafe { avr_write_volatile(UEIENX, mask) };
 
             // Wait for next interesting event.
+            // TODO: Disable the interrupt if this is dropped (but we must select the
+            // thread)?
             self.wait_for_event().await;
 
-            // TODO: Disable the interrupt not.
+            // Disable all interrupts on this endpoint.
+            // self.select();
+            // unsafe { avr_write_volatile(UEIENX, 0) };
         }
+
+        // drop(ctx);
     }
 
     pub fn bytec(&self) -> u16 {

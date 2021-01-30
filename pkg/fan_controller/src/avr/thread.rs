@@ -102,22 +102,40 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
     #[inline(always)]
     pub fn start(&'static mut self, f: fn() -> Fut) {
         // Return if already started.
-        if self.fut.is_some() {
-            return;
-        }
+        // if self.fut.is_some() {
+        //     return;
+        // }
+
+        // tODO: Validate not restarting inside of our own thread.
+
+        let restarting = self.fut.is_some();
 
         self.fut = Some(f());
 
-        self.id = unsafe {
-            RUNNING_THREADS.push(ThreadReference {
-                poll_fn: Self::poll_future,
-                future: core::mem::transmute(self.fut.as_mut().unwrap()),
-            })
-        };
+        // TODO: This assumes that the thread didn't previosuly terminate.
+        if !restarting {
+            self.id = unsafe {
+                RUNNING_THREADS.push(ThreadReference {
+                    poll_fn: Self::poll_future,
+                    future: core::mem::transmute(self.fut.as_mut().unwrap()),
+                })
+            };
+        }
+
+        // Schedule an interrupt to run later for this thread.
 
         unsafe {
+            // If the executor is already running, schedule the initial run of this thread
+            // for the next cycle. NOTE: We don't have directly calling
+            // poll_thread here as would require having possibly large nested stacks.
             if THREADS_INITIALIZED {
-                poll_thread(self.id);
+                // crate::USART1::send_blocking(b"WAKE NEW THREAD\n");
+                // crate::avr::debug::num_to_slice(self.id, |s| {
+                //     crate::USART1::send_blocking(s);
+                // });
+                // crate::USART1::send_blocking(b"\n");
+
+                crate::avr::interrupts::wake_up_thread_by_id(self.id);
             }
         }
     }
@@ -267,6 +285,7 @@ pub unsafe fn poll_thread(thread_id: ThreadId) {
     if result.is_ready() {
         // TODO: Also set the future to None in the thread instance?
         // TODO: Must also ensure that all events are cleaned up
+        crate::USART1::send_blocking(b"THREAD READY\n");
         RUNNING_THREADS.remove(thread_id);
     }
 

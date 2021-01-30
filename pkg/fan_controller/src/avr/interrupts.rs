@@ -48,17 +48,32 @@ impl InterruptEvent {
     }
 }
 
+///
+/// TODO: Fine a cleaner solution to this problem.
+pub fn wake_up_thread_by_id(id: crate::avr::thread::ThreadId) {
+    let f = InterruptEvent::Internal.waker_list().add_for_thread(id);
+
+    // NOTE: THis should only be safe as wake_up_thread_by_id is only used when
+    // starting a new thread so there is no way for the thread to be stopped prior
+    // to it running at least once?
+    // TODO: Actually the thread could get stopped manually right after it is
+    // started?
+    unsafe { f.leak_waker() };
+
+    fire_internal_interrupt();
+}
+
 /// Context which keeps an interrupt enabled as long as the object is in scope.
 /// The interrupt is disabled when this is dropped.
 pub struct InterruptEnabledContext {
     register: *mut u8,
-    bit: u8,
+    mask: u8,
 }
 
 impl InterruptEnabledContext {
-    pub fn new(register: *mut u8, bit: u8) -> Self {
-        unsafe { avr_write_volatile(register, avr_read_volatile(register) | bit) };
-        Self { register, bit }
+    pub fn new(register: *mut u8, mask: u8) -> Self {
+        unsafe { avr_write_volatile(register, avr_read_volatile(register) | mask) };
+        Self { register, mask }
     }
 }
 
@@ -67,7 +82,7 @@ impl Drop for InterruptEnabledContext {
         unsafe {
             avr_write_volatile(
                 self.register,
-                avr_read_volatile(self.register) & (!self.bit),
+                avr_read_volatile(self.register) & (!self.mask),
             )
         };
     }
@@ -167,11 +182,10 @@ unsafe extern "avr-interrupt" fn __vector_9() {
 #[cfg(target_arch = "avr")]
 #[no_mangle]
 unsafe extern "avr-interrupt" fn __vector_10() {
+    // NOTE: Users of this event are responsible for clearing the appropriate bit in
+    // UDINT.
+    crate::USART1::send_blocking(b"USBG\n");
     event_handler(InterruptEvent::USBGeneral);
-
-    // // Clear interrupts
-    // // TODO: Check if this is done automatically.
-    // avr_write_volatile(UDINT, 0);
 }
 
 // USB Endpoint/Pipe Interrupt Communication Request
@@ -179,6 +193,7 @@ unsafe extern "avr-interrupt" fn __vector_10() {
 #[no_mangle]
 unsafe extern "avr-interrupt" fn __vector_11() {
     // NOTE: UEINT is automatically cleared after executing the interrupt.
+    crate::USART1::send_blocking(b"USBE\n");
     event_handler(InterruptEvent::USBEndpoint);
 }
 

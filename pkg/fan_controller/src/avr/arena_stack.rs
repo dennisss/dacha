@@ -20,11 +20,13 @@ pub trait Arena<T> {
 
 // TODO: Remove Clone/Copy.
 #[derive(Clone, Copy, Debug)]
+#[repr(packed)]
 pub struct ArenaStackItem<T> {
     /// Index of the previous entry in this linked list.
     /// If equal to the index of the current item, then there is no previous
     /// entry.
     prev: ArenaIndex,
+
     /// Index of the next entry in this linked list.
     /// If equal to the index of the current item, then there is no next entry.
     next: ArenaIndex,
@@ -130,6 +132,8 @@ impl<T, A: Arena<ArenaStackItem<T>>> ArenaStack<T, A> {
         }
     }
 
+    /// Reads the value and index of the item at the head of the stack
+    /// Doesn't mutate the stack in any way.
     pub fn peek(&self) -> Option<(T, ArenaIndex)> {
         if let Some(head_index) = self.head {
             let head = self.arena.get(head_index);

@@ -445,18 +445,34 @@ async fn usb_reset_thread() -> () {
     // Then synchronously start waiting for the interrupt.
     // - this is especially complicated if the controller state is reset
 
+    unsafe { avr_write_volatile(UDCON, 1) };
+    delay_ms(2000).await;
+
+    // Attach the USB.
+    unsafe { avr_write_volatile(UDCON, 0) };
+
+    USART1::send_blocking(b"WAITING\n");
+
+    // loop {
+    //     delay_ms(2000).await;
+    // }
+
     loop {
         wait_usb_end_of_reset().await;
 
+        USART1::send_blocking(b"GOT RESET\n");
+
         // Stop all threads
         // TODO: This should be unsafe as a thread shouldn't be allowed to stop itself.
-        USBControlThread::stop();
+        // USBControlThread::stop();
         // USBRxThread::stop();
         // USBTxThread::stop();
 
         // Reconfigure all endpoints.
         // TODO: Verify that this properly resets all of the usb controller state.
-        avr::usb::init();
+        // avr::usb::init();
+
+        avr::usb::init_endpoints();
 
         // Start all threads
         USBControlThread::start();
@@ -488,21 +504,25 @@ define_thread!(
     USBControlThread,
     usb_control_thread
 );
+#[no_mangle]
+#[inline(never)]
 async fn usb_control_thread() -> () {
+    USART1::send_blocking(b"START CONTROL\n");
+
+    // TODO: Do I need to do anything special to ensure that
+
+    // loop {
+    //     PD5::write(false);
+    //     delay_ms(500).await;
+    //     PD5::write(true);
+    //     delay_ms(500).await;
+    // }
+
     const EP: &'static USBEndpoint = &USB_EP0;
     let mut pkt = SetupPacket::default();
 
     loop {
-        PD5::write(false);
-        delay_ms(500).await;
-        PD5::write(true);
-        delay_ms(500).await;
-    }
-
-    loop {
         EP.wait_setup().await;
-
-        USART1::send(b"GOT SETUP");
 
         let pkt_buf = unsafe { struct_bytes_mut(&mut pkt) };
         let bytec: u16 = EP.bytec();
@@ -513,7 +533,16 @@ async fn usb_control_thread() -> () {
         // NOTE: If pkt.wLength == 0, then there is no data stage and thus no need to
         // send data.
         EP.read_bytes(pkt_buf);
+        drop(pkt_buf);
         EP.clear_setup();
+
+        USART1::send_blocking(b"GOT SETUP ");
+        avr::debug::num_to_slice(pkt.bRequest, |s| {
+            USART1::send_blocking(s);
+        });
+        USART1::send_blocking(b"\n");
+
+        continue;
 
         if pkt.bRequest == StandardRequestType::SET_ADDRESS as u8 {
             // No data to write
@@ -529,7 +558,8 @@ async fn usb_control_thread() -> () {
             unsafe { avr_write_volatile(UDADDR, avr_read_volatile(UDADDR) | 1 << 7) };
         } else if pkt.bmRequestType == StandardRequestType::SET_CONFIGURATION as u8 {
             if pkt.wValue != 0 && pkt.wValue != 1 {
-                // Stall
+                EP.request_stale();
+                continue;
             }
 
             // No data stage
@@ -565,7 +595,8 @@ async fn usb_control_thread() -> () {
                     EP.control_respond(&pkt, struct_bytes(&EP2_DESC).iter().cloned())
                         .await;
                 } else {
-                    // Stall!
+                    EP.request_stale();
+                    continue;
                 }
             }
 
@@ -573,7 +604,8 @@ async fn usb_control_thread() -> () {
 
             // Write some data is effectively
 
-            EP.wait_transmitter_ready().await;
+            // TODO: Should I uncomment this?
+            // EP.wait_transmitter_ready().await;
 
             // Perform a send of up to kLength bytes
             // - If < kLength bytes and a multiple of the packet size (fifo
@@ -585,12 +617,9 @@ async fn usb_control_thread() -> () {
             interfaces in a single request
                         */
         } else {
-            // STALL
+            EP.request_stale();
+            continue;
         }
-
-        // Step 1: Wait for setup
-
-        //
     }
 
     /* If a command is not supported or contains
@@ -772,7 +801,8 @@ async fn test_thread() {
 #[no_mangle]
 pub extern "C" fn main() {
     avr::init();
-    avr::usb::init();
+    USART1::init();
+    avr::usb::init_endpoints();
 
     // // TODO: Document whether or not pins start high or low.
     const PORTB_CFG: PortConfig = PortConfig::new().output_high(0);
@@ -795,16 +825,14 @@ pub extern "C" fn main() {
         avr_write_volatile(EIFR, 0);
     }
 
-    USART1::init();
-
     // TODO: Probably need to wait some amount of time before we can send the first
     // bit.
     USART1::send_blocking(b"START!\n");
 
     TestThread::start();
 
-    // USBResetThread::start();
-    USBControlThread::start();
+    USBResetThread::start();
+    // USBControlThread::start();
     // USBTxThread::start();
     // USBRxThread::start();
 

@@ -66,7 +66,7 @@ pub const UEIENX: *mut u8 = 0xF0 as *mut u8;
 pub const UEDATX: *mut u8 = 0xF1 as *mut u8;
 pub const UEBCLX: *mut u8 = 0xF2 as *mut u8;
 pub const UEBCHX: *mut u8 = 0xF3 as *mut u8;
-pub const UEINT: *mut u8 = 0xF3 as *mut u8;
+pub const UEINT: *mut u8 = 0xF4 as *mut u8;
 
 #[cfg(target_arch = "avr")]
 #[inline(always)]

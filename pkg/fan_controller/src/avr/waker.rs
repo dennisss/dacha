@@ -9,11 +9,15 @@ use core::task::Poll;
 // NOTE: Can be at most 'ArenaIndex::MAX_VALUE + 1'
 const MAX_PENDING_WAKERS: usize = 32;
 
+/// Arena memory which stores
 static mut PENDING_WAKERS: [ArenaStackItem<Waker>; MAX_PENDING_WAKERS] =
     [ArenaStackItem::empty(Waker { thread: 0 }); MAX_PENDING_WAKERS];
 
 /// List of all unused entries in the arena.
 static mut FREE_LIST: ArenaStack<Waker, WakerArena> = ArenaStack::new(WakerArena::new());
+
+/// Whether or not FREE_LIST has been initialized. Set by the first call to
+/// init().
 static mut FREE_LIST_INITIALIZED: bool = false;
 
 static mut CURRENT_BEING_AWAKEN: Option<ArenaIndex> = None;
@@ -25,11 +29,13 @@ static mut CURRENT_BEING_AWAKEN: Option<ArenaIndex> = None;
 /// NOTE: This MUST be called before using any Waker related functions. This
 /// should only be called within avr::thread::block_on_threads().
 pub fn init() {
-    // Don't initialize if already initialized (mainly for use in tests).
+    // Don't initialize if already initialized (mainly for use in unit tests).
+    // TODO: On AVR, assert that it isn't already set.
     if (unsafe { FREE_LIST_INITIALIZED }) {
         return;
     }
 
+    // Initially every single element in the PENDING_WAKERS list is free.
     for i in 0..MAX_PENDING_WAKERS {
         unsafe { FREE_LIST.push(i as ArenaIndex, Waker { thread: 0 }) };
     }
@@ -57,6 +63,13 @@ impl WakerList {
     #[inline(never)]
     pub fn add(self: &'static mut WakerList) -> WakerFuture {
         let thread = current_thread_id();
+        self.add_for_thread(thread)
+    }
+
+    // TODO: The dropping of the future will kill the waker?
+    #[no_mangle]
+    #[inline(never)]
+    pub fn add_for_thread(self: &'static mut WakerList, thread: ThreadId) -> WakerFuture {
         let index = WakerArena::alloc();
         self.inner.push(index, Waker { thread });
 
@@ -127,6 +140,12 @@ impl Arena<ArenaStackItem<Waker>> for WakerArena {
 pub struct WakerFuture {
     list: &'static mut WakerList,
     pub id: Option<ArenaIndex>,
+}
+
+impl WakerFuture {
+    pub unsafe fn leak_waker(mut self) {
+        self.id.take();
+    }
 }
 
 impl Future for WakerFuture {

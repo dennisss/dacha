@@ -5,6 +5,7 @@ pub mod adc;
 pub mod arena_stack;
 // pub mod fixed_array;
 pub mod channel;
+pub mod debug;
 pub mod interrupts;
 mod libc;
 pub mod mutex;
@@ -72,48 +73,87 @@ pub unsafe fn enable_interrupts() {
 #[cfg(target_arch = "x86_64")]
 pub unsafe fn enable_interrupts() {}
 
-fn usb_control_thread() {
-    loop {
-        // Issues:
-        // - If endpoints are reset while waiting for the RXSTPI intterupt or
-        //   another, we won't have the interrupt enabled anymore so will never
-        //   get ti
+const FRZCLK: u8 = 5;
+const IVCE: u8 = 0;
+const UVREGE: u8 = 0;
+const CLKPCE: u8 = 7;
+const PINDIV: u8 = 4;
+const PLLE: u8 = 1;
+const PLOCK: u8 = 0;
 
-        // TODO: On any async delay, we need to remember to re-configure the
-        // current endpoint
+const DETACH: u8 = 0;
+const OTGPADE: u8 = 4;
+const USBE: u8 = 7;
 
-        // Wait for RXSTPI
-
-        // Read SETUP packet
-
-        // Clear RXSTPI and TXINI
-
-        // Looping over data to send:
-        // Wait for TXINI
-        // Send response data
-
-        // Wait for RXOUTI
-        // Clear to finish?
-    }
-}
-
+/// This function should be called as the first thing run on boot.
 pub fn init() {
     // TODO: Consider what we need to do on events from resumes from sleep or resets
     // in order to ensure that the initial state is consistent.
 
     // NOTE: We assume that we start with the external clock used
 
+    /*
+        Other things to disable:
+        - Reset all pin states
+        - Reset all timers.
+
+        - Clear all intterrupt
+    */
+
     // TODO: Should I freeze the USB clock first? I guess not needed if USB
     // controller is not on yet.
     unsafe {
+        ///////////////////////////
+        // Step 1: Disable basically all interrupts and peripherals so that we in a well
+        // defined state. This is mainly needed as the bootloader may have used these.
+
+        disable_interrupts();
+
         // Make sure interrupt handlers are read from the main program and not from the
         // bootloader.
         // Also keep pull-ups enabled.
-        avr_write_volatile(MCUCR, 1); // IVCE
+        avr_write_volatile(MCUCR, 1 << IVCE);
         avr_write_volatile(MCUCR, 0);
 
+        // Reset UHWCON to default value
+        // - Disable USB pad regulator
+        avr_write_volatile(UHWCON, 0);
+
+        // Reset USBCON to default value
+        // - Disable USB controller
+        // - Freeze USB clock
+        avr_write_volatile(USBCON, 1 << FRZCLK);
+
+        // Reset UDCON
+        // - USB detached.
+        avr_write_volatile(UDCON, 1 << DETACH);
+
+        // Disable and clear USB general interrupts.
+        avr_write_volatile(UDIEN, 0);
+        avr_write_volatile(UDINT, 0);
+
+        // Disable and clear external interrupts
+        avr_write_volatile(EIMSK, 0);
+        avr_write_volatile(EIFR, 0);
+
+        // Disable and clear pin change interrupts.
+        // avr_write_volatile(PCMSK0, 0);
+        // avr_write_volatile(PCICR, 0);
+        // avr_write_volatile(PCIFR, 0);
+
+        // TODO: Disable a lot more interrupts.
+
+        // TODO: Clear USB memory? or will the sliding make everything work.
+
+        // Disable PLL
+        avr_write_volatile(PLLCSR, 0);
+        avr_write_volatile(PLLFRQ, 0);
+
+        ////////
+        // Step 2: Actually setting things up.
+
         // Enable clock prescaler changes.
-        avr_write_volatile(CLKPR, 1 << 7);
+        avr_write_volatile(CLKPR, 1 << CLKPCE);
         // Ensure that no pre-scaling is performed (clk_i/o and clk_adc are equal to the
         // main system clock).
         avr_write_volatile(CLKPR, 0);
@@ -121,7 +161,7 @@ pub fn init() {
         // Starting with 16Mhz external clock.
 
         // Output system 'clock / 2' from PLL pre-scaler
-        avr_write_volatile(PLLCSR, 1 << 4);
+        avr_write_volatile(PLLCSR, 1 << PINDIV);
 
         // Connect PLL to pre-scaler
         // Divide input to generate 96Mhz PLL
@@ -130,10 +170,10 @@ pub fn init() {
         avr_write_volatile(PLLFRQ, 0b01101010);
 
         // Enable PLL
-        avr_write_volatile(PLLCSR, avr_read_volatile(PLLCSR) | 1 << 1);
+        avr_write_volatile(PLLCSR, avr_read_volatile(PLLCSR) | (1 << PLLE));
 
         // Wait for PLL lock
-        while avr_read_volatile(PLLCSR) & 0b1 == 0 {}
+        while (avr_read_volatile(PLLCSR) & (1 << PLOCK)) == 0 {}
 
         // Timer 0: All pins are in normal operation without PWM
         // Run in CTC mode so that the counter resets when hitting OCR0A.
@@ -152,6 +192,39 @@ pub fn init() {
         // Timer 0: Output Compare A: Generate an interrupt
         avr_write_volatile(TIMSK0, 1 << 1);
     }
+
+    usb_init();
+}
+
+// TOOD: Need to support USB suspend.
+fn usb_init() {
+    // TODO: Somewhere use UESTA1X::CTRLDIR
+
+    // TODO: May want to set 'EPRST6:0 - Endpoint FIFO Reset Bits' upon resets
+
+    // Other interesting bits: RSTDT, STALLRQ
+
+    // Up to 256 in double bank mode
+    unsafe {
+        // NOTE: DPRAM is 832 bytes
+
+        // TODO: Don't need to alter the power/clock state during a USB reset.
+
+        // Enable USB pad regulator
+        avr_write_volatile(UHWCON, 1 << UVREGE);
+
+        // Enable USB controller and unfreeze clock
+        // NOTE: Must be done as separate commands
+        avr_write_volatile(USBCON, 1 << USBE | 1 << FRZCLK | 1 << OTGPADE); // TODO: OTGPADE?
+        avr_write_volatile(USBCON, 1 << USBE | 1 << OTGPADE);
+
+        // TODO: Reset each endpoint: EPRSTx
+    }
+
+    // TODO: Redo endpoint configs on End of Reset interrupts.
+
+    // TODO: If RXOUTI is triggered, we need to verify that a CRC error didn't
+    // also occur (rather drop the data)
 }
 
 #[no_mangle]
