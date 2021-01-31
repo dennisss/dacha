@@ -294,11 +294,11 @@ async fn main_thread() -> () {
 const DEVICE_DESC: DeviceDescriptor = DeviceDescriptor {
     bLength: core::mem::size_of::<DeviceDescriptor>() as u8,
     bDescriptorType: DescriptorType::DEVICE as u8,
-    bcdUSB: 0x200, // 2.0
+    bcdUSB: 0x0100, // 2.0
     bDeviceClass: 0,
     bDeviceSubClass: 0,
     bDeviceProtocol: 0,
-    bMaxPacketSize0: 64,
+    bMaxPacketSize0: 8,
     idVendor: 0x8888,
     idProduct: 0x0001,
     bcdDevice: 0x0100, // 1.0,
@@ -445,36 +445,30 @@ async fn usb_reset_thread() -> () {
     // Then synchronously start waiting for the interrupt.
     // - this is especially complicated if the controller state is reset
 
-    unsafe { avr_write_volatile(UDCON, 1) };
-    delay_ms(2000).await;
+    unsafe { avr_write_volatile(UDCON, 1 | 1 << 2) };
+    delay_ms(1000).await;
 
     // Attach the USB.
-    unsafe { avr_write_volatile(UDCON, 0) };
-
-    USART1::send_blocking(b"WAITING\n");
-
-    // loop {
-    //     delay_ms(2000).await;
-    // }
+    unsafe { avr_write_volatile(UDCON, 0 | 1 << 2) };
 
     loop {
         wait_usb_end_of_reset().await;
 
-        USART1::send_blocking(b"GOT RESET\n");
-
         // Stop all threads
-        // TODO: This should be unsafe as a thread shouldn't be allowed to stop itself.
-        // USBControlThread::stop();
+        // TODO: This should be unsafe as a thread shouldn't be allowed to stop
+        // itself. USBControlThread::stop();
         // USBRxThread::stop();
         // USBTxThread::stop();
 
         // Reconfigure all endpoints.
-        // TODO: Verify that this properly resets all of the usb controller state.
-        // avr::usb::init();
+        // TODO: Verify that this properly resets all of the usb controller
+        // state.
+
+        USART1::send_blocking(b"GOT RESET\n");
 
         avr::usb::init_endpoints();
 
-        // Start all threads
+        // (Re-)start all threads
         USBControlThread::start();
         // USBRxThread::start();
         // USBTxThread::start();
@@ -485,7 +479,7 @@ async fn usb_reset_thread() -> () {
 fn struct_bytes<'a, T>(v: &'a T) -> &'a [u8] {
     unsafe {
         core::slice::from_raw_parts(
-            core::mem::transmute::<_, *const u8>(v),
+            core::mem::transmute::<&T, *const u8>(v),
             core::mem::size_of::<T>(),
         )
     }
@@ -498,16 +492,16 @@ unsafe fn struct_bytes_mut<'a, T>(v: &'a mut T) -> &'a mut [u8] {
     )
 }
 
+const ADDEN: u8 = 7;
+
 define_thread!(
     /// Handles control packets on USB Endpoint 0.
     /// e.g. returning descriptors.
     USBControlThread,
     usb_control_thread
 );
-#[no_mangle]
-#[inline(never)]
 async fn usb_control_thread() -> () {
-    USART1::send_blocking(b"START CONTROL\n");
+    // USART1::send_blocking(b"START CONTROL\n");
 
     // TODO: Do I need to do anything special to ensure that
 
@@ -524,41 +518,59 @@ async fn usb_control_thread() -> () {
     loop {
         EP.wait_setup().await;
 
-        let pkt_buf = unsafe { struct_bytes_mut(&mut pkt) };
-        let bytec: u16 = EP.bytec();
+        {
+            let pkt_buf = unsafe { struct_bytes_mut(&mut pkt) };
+            let bytec: u16 = EP.bytec();
 
-        // On error, just perform a STALL
-        assert_eq!(bytec, pkt_buf.len() as u16);
+            // On error, just perform a STALL
+            assert_eq!(bytec, pkt_buf.len() as u16);
+            assert_eq!(bytec, 8);
 
-        // NOTE: If pkt.wLength == 0, then there is no data stage and thus no need to
-        // send data.
-        EP.read_bytes(pkt_buf);
-        drop(pkt_buf);
-        EP.clear_setup();
+            // NOTE: If pkt.wLength == 0, then there is no data stage and thus no need to
+            // send data.
+            EP.read_bytes(pkt_buf);
+            drop(pkt_buf);
 
-        USART1::send_blocking(b"GOT SETUP ");
-        avr::debug::num_to_slice(pkt.bRequest, |s| {
-            USART1::send_blocking(s);
-        });
-        USART1::send_blocking(b"\n");
-
-        continue;
+            EP.clear_setup();
+        }
 
         if pkt.bRequest == StandardRequestType::SET_ADDRESS as u8 {
+            assert_eq!(pkt.bmRequestType, 0b00000000);
+            assert_eq!(pkt.wIndex, 0);
+            assert_eq!(pkt.wLength, 0);
+
+            assert_eq!(unsafe { avr_read_volatile(UDADDR) }, 0);
+
             // No data to write
             let addr = (pkt.wValue & 0x7f) as u8;
             // Store address. Not enabled yet
             unsafe { avr_write_volatile(UDADDR, addr) };
+
+            /*
+                After receiving the SETUP packet, the device will receive an IN packet (will be the status phase).
+            */
+
             // NOTE: No data should be received for this request
 
-            // Send Zero Length Packet to finish status phase.
+            // Finish status phase.
+            // TODO: Check this?
+
             EP.wait_transmitter_ready().await;
             EP.clear_transmitter_ready();
+
             // Enable address
-            unsafe { avr_write_volatile(UDADDR, avr_read_volatile(UDADDR) | 1 << 7) };
-        } else if pkt.bmRequestType == StandardRequestType::SET_CONFIGURATION as u8 {
+            // TODO: Change back to a 'set bit' instruciton.
+            unsafe { avr_write_volatile(UDADDR, addr | 1 << ADDEN) };
+
+            // USART1::send_blocking(b"SETADDR ");
+            // avr::debug::num_to_slice(addr, |s| {
+            //     USART1::send_blocking(s);
+            // });
+            // USART1::send_blocking(b"\n");
+        } else if pkt.bRequest == StandardRequestType::SET_CONFIGURATION as u8 {
             if pkt.wValue != 0 && pkt.wValue != 1 {
                 EP.request_stale();
+                USART1::send_blocking(b"SET CFG\n");
                 continue;
             }
 
@@ -567,7 +579,7 @@ async fn usb_control_thread() -> () {
             // Status stage
             EP.wait_received_data().await;
             EP.clear_received_data();
-        } else if pkt.bmRequestType == StandardRequestType::GET_CONFIGURATION as u8 {
+        } else if pkt.bRequest == StandardRequestType::GET_CONFIGURATION as u8 {
             EP.wait_transmitter_ready().await;
             EP.write_bytes(&[1]);
             EP.clear_transmitter_ready();
@@ -576,14 +588,19 @@ async fn usb_control_thread() -> () {
             EP.wait_received_data().await;
             EP.clear_received_data();
             // Send value of 1
-        } else if pkt.bmRequestType == StandardRequestType::GET_DESCRIPTOR as u8 {
+        } else if pkt.bRequest == StandardRequestType::GET_DESCRIPTOR as u8 {
+            assert_eq!(pkt.bmRequestType, 0b10000000);
+
             let desc_type = (pkt.wValue >> 8) as u8;
             let desc_index = (pkt.wValue & 0xff) as u8; // NOTE: Starts at 0
 
             if desc_type == DescriptorType::DEVICE as u8 {
-                // TODO: Assert index is 0
-                EP.control_respond(&pkt, struct_bytes(&DEVICE_DESC).iter().cloned())
-                    .await;
+                let data = struct_bytes(&DEVICE_DESC);
+                assert_eq!(desc_index, 0);
+                // TODO: Assert language code.
+
+                // assert_eq!(pkt.wLength, data.len() as u16);
+                EP.control_respond(&pkt, data.iter().cloned()).await;
             } else if desc_type == DescriptorType::CONFIGURATION as u8 {
                 // TODO: Assert index is 0
                 // EP.control_respond(&pkt, ConfigDescIter::new()).await;
@@ -596,9 +613,15 @@ async fn usb_control_thread() -> () {
                         .await;
                 } else {
                     EP.request_stale();
-                    continue;
+                    // continue;
                 }
             }
+
+            // USART1::send_blocking(b"DESC ");
+            // avr::debug::num_to_slice(desc_type, |s| {
+            //     USART1::send_blocking(s);
+            // });
+            // USART1::send_blocking(b"\n");
 
             // if pkt.
 
@@ -618,8 +641,14 @@ async fn usb_control_thread() -> () {
                         */
         } else {
             EP.request_stale();
-            continue;
+            // continue;
         }
+
+        USART1::send_blocking(b"GOT SETUP\n");
+        // avr::debug::num_to_slice(pkt.bRequest, |s| {
+        //     USART1::send_blocking(s);
+        // });
+        // USART1::send(b"\n").await;
     }
 
     /* If a command is not supported or contains
@@ -745,6 +774,7 @@ async fn usb_tx_thread() -> () {
 pub extern "C" fn abort() -> ! {
     // TODO: Shut off the PLL
     // TODO: Disable all clocks, interrupts, and go to sleep.
+    // (otherwise we will still be sending signals to fans, etc.)
 
     unsafe {
         disable_interrupts();
@@ -777,14 +807,10 @@ define_thread!(TestThread, test_thread);
 #[inline(never)]
 async fn test_thread() {
     loop {
-        // avr::serial::uart_send_sync(b"TEST THREAD 1\n");
-
         PB0::write(false);
         delay_ms(1000).await;
         // InterruptEvent::Int0.to_future().await;
         // testing_inner(20).await;
-
-        // avr::serial::uart_send_sync(b"TEST THREAD 2\n");
 
         PB0::write(true);
         delay_ms(1000).await;
@@ -832,7 +858,11 @@ pub extern "C" fn main() {
     TestThread::start();
 
     USBResetThread::start();
-    // USBControlThread::start();
+
+    // NOTE: Linux/Windows will read the DEVICE descriptor before trigerring the
+    // reset/SET_ADDRESS
+    USBControlThread::start();
+
     // USBTxThread::start();
     // USBRxThread::start();
 

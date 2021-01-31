@@ -181,9 +181,9 @@ macro_rules! define_thread {
 
         impl $name {
             #[inline(always)]
-            fn ptr() -> &'static mut $crate::avr::thread::Thread<impl ::core::future::Future<Output=()>> {
+            fn ptr() /* -> &'static mut $crate::avr::thread::Thread<impl ::core::future::Future<Output=()>> */ {
                 type RetType = impl ::core::future::Future<Output = ()>;
-                #[inline(never)]
+                #[inline(always)]
                 fn handler_wrap() -> RetType {
                     ($handler)()
                 }
@@ -194,7 +194,7 @@ macro_rules! define_thread {
 
                 unsafe { THREAD.start(handler_wrap) };
 
-                unsafe { &mut THREAD }
+                // unsafe { &mut THREAD }
             }
 
             #[inline(always)]
@@ -204,10 +204,10 @@ macro_rules! define_thread {
 
             // TODO: If a thread is stopped while one thread is running, we may want to intentionally run an extra cycle to ensure that we re-process them.
 
-            pub fn stop() {
-                let thread = Self::ptr();
-                thread.stop();
-            }
+            // pub fn stop() {
+            //     let thread = Self::ptr();
+            //     thread.stop();
+            // }
         }
     };
 }

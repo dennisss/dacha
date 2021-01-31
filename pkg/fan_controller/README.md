@@ -1,3 +1,14 @@
+AVR Bugs
+- https://github.com/rust-lang/compiler-builtins/issues/400
+- https://gitter.im/avr-rust/Lobby?at=5ef3f129613d3b3394080eae
+- https://reviews.llvm.org/D87631
+    - Fixes the issue with the VTable.
+
+- https://reviews.llvm.org/D82536
+    - Fixes something else?
+
+`rustup override set nightly-2021-01-07`
+
 
 Build using:
 - `RUSTFLAGS="--emit asm" cargo build --release`
@@ -115,6 +126,8 @@ Counter Threads:
 
 - Consider using WiFi via an ESP8266 port
 - If I can mount a 
+
+- Put the power LED on an interrupt pin that can wake up the MCU from sleep.
 
 ## Pinout
 

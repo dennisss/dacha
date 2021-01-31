@@ -9,7 +9,7 @@ pub struct USART1 {}
 impl USART1 {
     // Initializes to asynchronous 8N1 at 9600 bits/second.
     pub fn init() {
-        let baud = 9600;
+        let baud = 57600;
         let f_osc = 16000000;
         // Based on Table 18-1 (first row)
         let ubbr: u32 = (f_osc / (16 * baud)) - 1;

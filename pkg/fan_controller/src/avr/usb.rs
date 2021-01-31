@@ -30,14 +30,15 @@ Interrupts enabled by:
 // all endpoint memories are > 832
 pub struct USBEndpoint {
     num: u8,
+    num_mask: u8,
 }
 
 // NOTE: We assume that these are the same bits in the UEINTX and UEIENX
 // registers.
-const RXSTPI_SET: u8 = 1 << 3;
-const RXOUTI_SET: u8 = 1 << 2;
-const STALLEDI_SET: u8 = 1 << 1;
-const TXINI_SET: u8 = 1 << 0;
+const RXSTPI_MASK: u8 = 1 << 3;
+const RXOUTI_MASK: u8 = 1 << 2;
+const STALLEDI_MASK: u8 = 1 << 1;
+const TXINI_MASK: u8 = 1 << 0;
 
 /*
 Control Write (receiving data):
@@ -60,12 +61,12 @@ pub fn init_endpoints() {
         USBEndpointBanks::One,
     ));
 
-    assert!(USB_EP1.configure(
-        USBEndpointType::Interrupt,
-        USBEndpointDirection::In,
-        USBEndpointSize::B128,
-        USBEndpointBanks::Double,
-    ));
+    // assert!(USB_EP1.configure(
+    //     USBEndpointType::Interrupt,
+    //     USBEndpointDirection::In,
+    //     USBEndpointSize::B128,
+    //     USBEndpointBanks::Double,
+    // ));
 
     // assert!(USB_EP2.configure(
     //     USBEndpointType::Interrupt,
@@ -125,20 +126,22 @@ const EPEN: u8 = 0;
 const CFGOK: u8 = 7;
 const ALLOC: u8 = 1;
 
-pub struct EndpointInterruptEnabledContext<'a> {
-    ep: &'a USBEndpoint,
+pub struct EndpointInterruptEnabledContext {
+    ep: &'static USBEndpoint,
     inner: InterruptEnabledContext,
 }
 
-impl<'a> EndpointInterruptEnabledContext<'a> {
-    pub fn new(ep: &'a USBEndpoint, register: *mut u8, mask: u8) -> Self {
+impl EndpointInterruptEnabledContext {
+    #[inline(always)]
+    pub fn new(ep: &'static USBEndpoint, register: *mut u8, mask: u8) -> Self {
         ep.select();
         let inner = InterruptEnabledContext::new(register, mask);
         Self { ep, inner }
     }
 }
 
-impl<'a> Drop for EndpointInterruptEnabledContext<'a> {
+// TODO: Verify the order of events here.
+impl Drop for EndpointInterruptEnabledContext {
     fn drop(&mut self) {
         self.ep.select();
         // self.inner.drop();
@@ -149,9 +152,16 @@ impl<'a> Drop for EndpointInterruptEnabledContext<'a> {
 // should be allowed at a time as separate futures will clear the interrupt bits
 // of other pending futures.
 impl USBEndpoint {
+    const fn new(num: u8) -> Self {
+        Self {
+            num,
+            num_mask: 1 << num,
+        }
+    }
+
     /// NOTE: Must be called before ANY operation on the endpoint.
     #[inline(always)]
-    fn select(&self) {
+    fn select(&'static self) {
         unsafe { avr_write_volatile(UENUM, self.num) };
     }
 
@@ -159,7 +169,7 @@ impl USBEndpoint {
 
     // TODO: Must use return value
     pub fn configure(
-        &self,
+        &'static self,
         typ: USBEndpointType,
         dir: USBEndpointDirection,
         size: USBEndpointSize,
@@ -187,13 +197,14 @@ impl USBEndpoint {
             // Default to no interrupts.
             avr_write_volatile(UEIENX, 0);
             // Reset initial state of all interrupt flags.
-            avr_write_volatile(UEINTX, 0);
+            // avr_write_volatile(UEINTX, 0);
         }
 
         return true;
     }
 
-    pub fn request_stale(&self) {
+    pub fn request_stale(&'static self) {
+        // panic!();
         self.select();
         // Keep endpoint enabled and also enable STALLRQ
         unsafe { avr_write_volatile(UECONX, 1 | (1 << 5)) };
@@ -203,18 +214,11 @@ impl USBEndpoint {
     // UEIENX configures if interrupts are enabled
 
     // NOTE: This must be called after enabling an interrupt.
-    async fn wait_for_event(&self) {
-        let mask: u8 = 1 << self.num;
+    #[inline(always)]
+    async fn wait_for_event(&'static self) {
         loop {
             let ueint = unsafe { avr_read_volatile(UEINT) };
-
-            // crate::USART1::send_blocking(b"UEINT ");
-            // crate::avr::debug::num_to_slice(ueint, |s| {
-            //     crate::USART1::send_blocking(s);
-            // });
-            // crate::USART1::send_blocking(b"\n");
-
-            if ueint & mask != 0 {
+            if ueint & self.num_mask != 0 {
                 break;
             }
 
@@ -224,48 +228,32 @@ impl USBEndpoint {
         }
     }
 
-    fn check_flag(&self, mask: u8) -> bool {
+    fn check_flag(&'static self, mask: u8) -> bool {
         self.select();
         (unsafe { avr_read_volatile(UEINTX) }) & mask != 0
     }
 
-    fn clear_flag(&self, mask: u8) {
+    fn clear_flag(&'static self, mask: u8) {
         self.select();
         unsafe { avr_write_volatile(UEINTX, avr_read_volatile(UEINTX) & (!mask)) };
     }
 
-    #[inline(never)]
-    async fn wait_flag(&self, mask: u8) {
-        // self.select();
-        // TODO: When dropping, this must select the right endpoint.
+    async fn wait_flag(&'static self, mask: u8) {
         let ctx = EndpointInterruptEnabledContext::new(self, UEIENX, mask);
 
         loop {
-            // NOTE: The await from the last iteration may have switched the endpoint
-            // so we must ensure that the correct one is selected.
-            // self.select();
-
             if self.check_flag(mask) {
                 break;
             }
 
-            // Enable interrupt for this flag (and disable others)
-            // unsafe { avr_write_volatile(UEIENX, mask) };
-
             // Wait for next interesting event.
-            // TODO: Disable the interrupt if this is dropped (but we must select the
-            // thread)?
             self.wait_for_event().await;
-
-            // Disable all interrupts on this endpoint.
-            // self.select();
-            // unsafe { avr_write_volatile(UEIENX, 0) };
         }
 
-        // drop(ctx);
+        drop(ctx);
     }
 
-    pub fn bytec(&self) -> u16 {
+    pub fn bytec(&'static self) -> u16 {
         self.select();
 
         let low = unsafe { avr_read_volatile(UEBCLX) } as u16;
@@ -274,14 +262,14 @@ impl USBEndpoint {
     }
 
     /// NOTE: This does not protect from overflowing the FIFO.
-    pub fn read_bytes(&self, buf: &mut [u8]) {
+    pub fn read_bytes(&'static self, buf: &mut [u8]) {
         self.select();
         for i in 0..buf.len() {
             buf[i] = unsafe { avr_read_volatile(UEDATX) };
         }
     }
 
-    pub fn write_bytes(&self, buf: &[u8]) {
+    pub fn write_bytes(&'static self, buf: &[u8]) {
         self.select();
         for i in 0..buf.len() {
             unsafe { avr_write_volatile(UEDATX, buf[i]) };
@@ -291,49 +279,51 @@ impl USBEndpoint {
     /// Call after you are done reading or writing to the current FIFO bank.
     /// This will allow the controller to send/receive from/to it and switch to
     /// a different bank if available.
-    pub fn release_bank(&self) {
+    pub fn release_bank(&'static self) {
         // Clear FIFOCON
         self.clear_flag(1 << 7);
     }
 
     // TODO: Handle FNCERR
 
-    pub fn received_setup(&self) -> bool {
-        self.check_flag(RXSTPI_SET)
-    }
-    pub fn clear_setup(&self) {
-        self.clear_flag(RXSTPI_SET);
-    }
-    pub async fn wait_setup(&self) {
-        self.wait_flag(RXSTPI_SET).await;
+    pub fn received_setup(&'static self) -> bool {
+        self.check_flag(RXSTPI_MASK)
     }
 
-    pub fn received_data(&self) -> bool {
-        self.check_flag(RXOUTI_SET)
-    }
-    pub fn clear_received_data(&self) {
-        self.clear_flag(RXOUTI_SET);
-    }
-    pub async fn wait_received_data(&self) {
-        self.wait_flag(RXOUTI_SET).await;
+    pub fn clear_setup(&'static self) {
+        self.clear_flag(RXSTPI_MASK);
     }
 
-    pub fn transmitter_ready(&self) -> bool {
-        self.check_flag(TXINI_SET)
+    pub async fn wait_setup(&'static self) {
+        self.wait_flag(RXSTPI_MASK).await
     }
-    // TODO: Consider automatically clearing the flags once an interrupt is
-    // received?
-    pub fn clear_transmitter_ready(&self) {
-        self.clear_flag(TXINI_SET)
+
+    pub fn received_data(&'static self) -> bool {
+        self.check_flag(RXOUTI_MASK)
     }
-    pub async fn wait_transmitter_ready(&self) {
-        self.wait_flag(TXINI_SET).await
+    pub fn clear_received_data(&'static self) {
+        self.clear_flag(RXOUTI_MASK);
+    }
+    pub async fn wait_received_data(&'static self) {
+        self.wait_flag(RXOUTI_MASK).await;
+    }
+
+    pub fn transmitter_ready(&'static self) -> bool {
+        self.check_flag(TXINI_MASK)
+    }
+
+    pub fn clear_transmitter_ready(&'static self) {
+        self.clear_flag(TXINI_MASK)
+    }
+
+    pub async fn wait_transmitter_ready(&'static self) {
+        self.wait_flag(TXINI_MASK).await
     }
 
     /// Responses to a control read request from the host with some data.
     /// NOTE: Only valid if called on the first endpoint.
     pub async fn control_respond<T: core::iter::Iterator<Item = u8>>(
-        &self,
+        &'static self,
         pkt: &SetupPacket,
         mut data: T,
     ) {
@@ -345,11 +335,15 @@ impl USBEndpoint {
         loop {
             self.wait_transmitter_ready().await;
 
+            self.select();
+
             let mut done = false;
-            let mut packet_bytes = USB_EP0.bytec();
+            // TODO: Check this. usually bytec is 0
+            let mut packet_bytes = 8; // self.bytec();
+
             while packet_bytes > 0 && host_remaining > 0 {
                 if let Some(byte) = data.next() {
-                    // TODO: Write one byte.
+                    unsafe { avr_write_volatile(UEDATX, byte) };
                 } else {
                     // In this case, we will end up sending the current packet as either incomplete
                     // or as a ZLP.
@@ -406,10 +400,10 @@ pub enum USBEndpointSize {
     B512 = 0b110 << 4,
 }
 
-pub const USB_EP0: USBEndpoint = USBEndpoint { num: 0 };
-pub const USB_EP1: USBEndpoint = USBEndpoint { num: 1 };
-pub const USB_EP2: USBEndpoint = USBEndpoint { num: 2 };
-pub const USB_EP3: USBEndpoint = USBEndpoint { num: 3 };
-pub const USB_EP4: USBEndpoint = USBEndpoint { num: 4 };
-pub const USB_EP5: USBEndpoint = USBEndpoint { num: 5 };
-pub const USB_EP6: USBEndpoint = USBEndpoint { num: 6 };
+pub const USB_EP0: USBEndpoint = USBEndpoint::new(0);
+pub const USB_EP1: USBEndpoint = USBEndpoint::new(1);
+pub const USB_EP2: USBEndpoint = USBEndpoint::new(2);
+pub const USB_EP3: USBEndpoint = USBEndpoint::new(3);
+pub const USB_EP4: USBEndpoint = USBEndpoint::new(4);
+pub const USB_EP5: USBEndpoint = USBEndpoint::new(5);
+pub const USB_EP6: USBEndpoint = USBEndpoint::new(6);

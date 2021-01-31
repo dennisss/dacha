@@ -55,6 +55,15 @@ pub const UDFNUMH: *mut u8 = 0xE5 as *mut u8;
 pub const UDMFN: *mut u8 = 0xE6 as *mut u8;
 
 pub const UEINTX: *mut u8 = 0xE8 as *mut u8;
+// #define TXINI 0
+// #define STALLEDI 1
+// #define RXOUTI 2
+// #define RXSTPI 3
+// #define NAKOUTI 4
+// #define RWAL 5
+// #define NAKINI 6
+// #define FIFOCON
+
 pub const UENUM: *mut u8 = 0xE9 as *mut u8;
 pub const UERST: *mut u8 = 0xEA as *mut u8;
 pub const UECONX: *mut u8 = 0xEB as *mut u8;
@@ -62,7 +71,16 @@ pub const UECFG0X: *mut u8 = 0xEC as *mut u8;
 pub const UECFG1X: *mut u8 = 0xED as *mut u8;
 pub const UESTA0X: *mut u8 = 0xEE as *mut u8;
 pub const UESTA1X: *mut u8 = 0xEF as *mut u8;
+
 pub const UEIENX: *mut u8 = 0xF0 as *mut u8;
+// #define TXINE 0
+// #define STALLEDE 1
+// #define RXOUTE 2
+// #define RXSTPE 3
+// #define NAKOUTE 4
+// #define NAKINE 6
+// #define FLERRE 7
+
 pub const UEDATX: *mut u8 = 0xF1 as *mut u8;
 pub const UEBCLX: *mut u8 = 0xF2 as *mut u8;
 pub const UEBCHX: *mut u8 = 0xF3 as *mut u8;
