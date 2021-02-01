@@ -184,7 +184,6 @@ unsafe extern "avr-interrupt" fn __vector_9() {
 unsafe extern "avr-interrupt" fn __vector_10() {
     // NOTE: Users of this event are responsible for clearing the appropriate bit in
     // UDINT.
-    crate::USART1::send_blocking(b"USBG\n");
     event_handler(InterruptEvent::USBGeneral);
 }
 
@@ -193,7 +192,6 @@ unsafe extern "avr-interrupt" fn __vector_10() {
 #[no_mangle]
 unsafe extern "avr-interrupt" fn __vector_11() {
     // NOTE: UEINT is automatically cleared after executing the interrupt.
-    crate::USART1::send_blocking(b"USBE\n");
     event_handler(InterruptEvent::USBEndpoint);
 }
 

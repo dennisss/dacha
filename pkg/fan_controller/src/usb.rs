@@ -112,3 +112,15 @@ pub struct EndpointDescriptor {
     pub wMaxPacketSize: u16,
     pub bInterval: u8,
 }
+
+pub enum USBLangId {
+    EnglishUS = 0x0409,
+}
+
+// Table 9-16 of USB2.0 Spec
+// NOTE: Special care must be taken to serialize or de-serialize this descriptor
+pub struct StringDescriptor<'a> {
+    bLength: u8,
+    bDescriptorType: u8,
+    bString: &'a [u8],
+}

@@ -294,11 +294,11 @@ async fn main_thread() -> () {
 const DEVICE_DESC: DeviceDescriptor = DeviceDescriptor {
     bLength: core::mem::size_of::<DeviceDescriptor>() as u8,
     bDescriptorType: DescriptorType::DEVICE as u8,
-    bcdUSB: 0x0100, // 2.0
+    bcdUSB: 0x0200, // 2.0
     bDeviceClass: 0,
     bDeviceSubClass: 0,
     bDeviceProtocol: 0,
-    bMaxPacketSize0: 8,
+    bMaxPacketSize0: 64,
     idVendor: 0x8888,
     idProduct: 0x0001,
     bcdDevice: 0x0100, // 1.0,
@@ -354,30 +354,48 @@ const EP2_DESC: EndpointDescriptor = EndpointDescriptor {
 };
 
 pub trait USBDescriptorSet {
-    fn device() -> &'static DeviceDescriptor;
-    fn config(index: usize) -> Option<&'static ConfigurationDescriptor>;
-    fn interface(index: usize) -> Option<&'static InterfaceDescriptor>;
-    fn endpoint(index: usize) -> Option<&'static EndpointDescriptor>;
+    fn device(&self) -> &'static DeviceDescriptor;
+    fn config(&self, index: usize) -> Option<&'static ConfigurationDescriptor>;
+    fn interface(
+        &self,
+        config_index: usize,
+        iface_index: usize,
+    ) -> Option<&'static InterfaceDescriptor>;
+    fn endpoint(
+        &self,
+        config_index: usize,
+        iface_index: usize,
+        index: usize,
+    ) -> Option<&'static EndpointDescriptor>;
 }
 
 struct FanControllerUSBDesc {}
 impl USBDescriptorSet for FanControllerUSBDesc {
-    fn device() -> &'static DeviceDescriptor {
+    fn device(&self) -> &'static DeviceDescriptor {
         &DEVICE_DESC
     }
-    fn config(index: usize) -> Option<&'static ConfigurationDescriptor> {
+    fn config(&self, index: usize) -> Option<&'static ConfigurationDescriptor> {
         match index {
             0 => Some(&CONFIG_DESC),
             _ => None,
         }
     }
-    fn interface(index: usize) -> Option<&'static InterfaceDescriptor> {
-        match index {
+    fn interface(
+        &self,
+        config_index: usize,
+        iface_index: usize,
+    ) -> Option<&'static InterfaceDescriptor> {
+        match iface_index {
             0 => Some(&IFACE_DESC),
             _ => None,
         }
     }
-    fn endpoint(index: usize) -> Option<&'static EndpointDescriptor> {
+    fn endpoint(
+        &self,
+        config_index: usize,
+        iface_index: usize,
+        index: usize,
+    ) -> Option<&'static EndpointDescriptor> {
         match index {
             0 => Some(&EP1_DESC),
             1 => Some(&EP2_DESC),
@@ -386,28 +404,35 @@ impl USBDescriptorSet for FanControllerUSBDesc {
     }
 }
 
-/*
-struct ConfigDescIter {
-    state: Option<(ConfigDescIndex, &'static [u8])>
+// TODO: Instead have an iterator that returns labelled slices so that we can
+// support marking if something is in program memory.
+
+struct USBConfigDescIter<'a> {
+    set: &'a dyn USBDescriptorSet,
+    config_index: usize,
+    current_index: USBConfigDescIndex,
+    remaining: &'static [u8],
 }
 
-enum ConfigDescIndex {
-    Start,
+enum USBConfigDescIndex {
     Config,
     Interface(usize),
-    Endpoint(usize)
+    Endpoint(usize, usize),
 }
 
-impl ConfigDescIter {
-    fn new() -> Self {
+impl<'a> USBConfigDescIter<'a> {
+    fn new(set: &'a dyn USBDescriptorSet, config_index: usize) -> Self {
         Self {
-            current_index: ConfigDescIndex::None,
-            remaining: unsafe { struct_bytes(v: &'a T) } CONFIG_DESC_CHAIN[0],
+            set,
+            config_index,
+            current_index: USBConfigDescIndex::Config,
+            // NOTE: Must have at least one item.
+            remaining: unsafe { struct_bytes(set.config(config_index).unwrap()) },
         }
     }
 }
 
-impl core::iter::Iterator for ConfigDescIter {
+impl<'a> core::iter::Iterator for USBConfigDescIter<'a> {
     type Item = u8;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -417,17 +442,48 @@ impl core::iter::Iterator for ConfigDescIter {
             }
 
             // Increment index
+            match self.current_index {
+                USBConfigDescIndex::Config => {
+                    if let Some(new_remaining) = self.set.interface(self.config_index, 0) {
+                        self.current_index = USBConfigDescIndex::Interface(0);
+                        self.remaining = unsafe { struct_bytes(new_remaining) };
+                    } else {
+                        return None;
+                    }
+                }
+                USBConfigDescIndex::Interface(n) => {
+                    if let Some(new_remaining) = self.set.endpoint(self.config_index, n, 0) {
+                        self.current_index = USBConfigDescIndex::Endpoint(n, 0);
+                        self.remaining = unsafe { struct_bytes(new_remaining) };
+                    } else if let Some(new_remaining) = self.set.interface(self.config_index, n + 1)
+                    {
+                        self.current_index = USBConfigDescIndex::Interface(n + 1);
+                        self.remaining = unsafe { struct_bytes(new_remaining) };
+                    } else {
+                        return None;
+                    }
+                }
+                USBConfigDescIndex::Endpoint(iface_num, ep_num) => {
+                    // TODO: Deduplicate with the above case!
 
-            if self.current_index >= CONFIG_DESC_CHAIN.len() - 1 {
-                return None;
+                    if let Some(new_remaining) =
+                        self.set.endpoint(self.config_index, iface_num, ep_num + 1)
+                    {
+                        self.current_index = USBConfigDescIndex::Endpoint(iface_num, ep_num + 1);
+                        self.remaining = unsafe { struct_bytes(new_remaining) };
+                    } else if let Some(new_remaining) =
+                        self.set.interface(self.config_index, iface_num + 1)
+                    {
+                        self.current_index = USBConfigDescIndex::Interface(iface_num + 1);
+                        self.remaining = unsafe { struct_bytes(new_remaining) };
+                    } else {
+                        return None;
+                    }
+                }
             }
-
-            self.current_index += 1;
-            self.remaining = CONFIG_DESC_CHAIN[self.current_index];
         }
     }
 }
-*/
 
 // Need at least one thread to handle USB resets?
 // Such a thread can also restart other threads assuming they aren't doing
@@ -445,11 +501,15 @@ async fn usb_reset_thread() -> () {
     // Then synchronously start waiting for the interrupt.
     // - this is especially complicated if the controller state is reset
 
-    unsafe { avr_write_volatile(UDCON, 1 | 1 << 2) };
+    unsafe {
+        avr_write_volatile(UDCON, 1 /* | 1 << 2 */)
+    };
     delay_ms(1000).await;
 
     // Attach the USB.
-    unsafe { avr_write_volatile(UDCON, 0 | 1 << 2) };
+    unsafe {
+        avr_write_volatile(UDCON, 0 /* | 1 << 2 */)
+    };
 
     loop {
         wait_usb_end_of_reset().await;
@@ -463,8 +523,6 @@ async fn usb_reset_thread() -> () {
         // Reconfigure all endpoints.
         // TODO: Verify that this properly resets all of the usb controller
         // state.
-
-        USART1::send_blocking(b"GOT RESET\n");
 
         avr::usb::init_endpoints();
 
@@ -494,6 +552,22 @@ unsafe fn struct_bytes_mut<'a, T>(v: &'a mut T) -> &'a mut [u8] {
 
 const ADDEN: u8 = 7;
 
+fn read_setup(pkt: &mut SetupPacket) {
+    let pkt_buf = unsafe { struct_bytes_mut(pkt) };
+    let bytec: u16 = USB_EP0.bytec();
+
+    // On error, just perform a STALL
+    assert_eq!(bytec, pkt_buf.len() as u16);
+    assert_eq!(bytec, 8);
+
+    // NOTE: If pkt.wLength == 0, then there is no data stage and thus no need to
+    // send data.
+    USB_EP0.read_bytes(pkt_buf);
+    drop(pkt_buf);
+
+    USB_EP0.clear_setup();
+}
+
 define_thread!(
     /// Handles control packets on USB Endpoint 0.
     /// e.g. returning descriptors.
@@ -518,21 +592,7 @@ async fn usb_control_thread() -> () {
     loop {
         EP.wait_setup().await;
 
-        {
-            let pkt_buf = unsafe { struct_bytes_mut(&mut pkt) };
-            let bytec: u16 = EP.bytec();
-
-            // On error, just perform a STALL
-            assert_eq!(bytec, pkt_buf.len() as u16);
-            assert_eq!(bytec, 8);
-
-            // NOTE: If pkt.wLength == 0, then there is no data stage and thus no need to
-            // send data.
-            EP.read_bytes(pkt_buf);
-            drop(pkt_buf);
-
-            EP.clear_setup();
-        }
+        read_setup(&mut pkt);
 
         if pkt.bRequest == StandardRequestType::SET_ADDRESS as u8 {
             assert_eq!(pkt.bmRequestType, 0b00000000);
@@ -541,53 +601,47 @@ async fn usb_control_thread() -> () {
 
             assert_eq!(unsafe { avr_read_volatile(UDADDR) }, 0);
 
-            // No data to write
             let addr = (pkt.wValue & 0x7f) as u8;
             // Store address. Not enabled yet
             unsafe { avr_write_volatile(UDADDR, addr) };
 
-            /*
-                After receiving the SETUP packet, the device will receive an IN packet (will be the status phase).
-            */
-
             // NOTE: No data should be received for this request
 
-            // Finish status phase.
-            // TODO: Check this?
-
+            // IN: status
             EP.wait_transmitter_ready().await;
             EP.clear_transmitter_ready();
 
-            // Enable address
-            // TODO: Change back to a 'set bit' instruciton.
-            unsafe { avr_write_volatile(UDADDR, addr | 1 << ADDEN) };
+            // Wait for the status stage to be completed (buffer flushed) before enabling
+            // the address.
+            EP.wait_transmitter_ready().await;
 
-            // USART1::send_blocking(b"SETADDR ");
-            // avr::debug::num_to_slice(addr, |s| {
-            //     USART1::send_blocking(s);
-            // });
-            // USART1::send_blocking(b"\n");
+            // Enable address
+            unsafe { avr_write_volatile(UDADDR, avr_read_volatile(UDADDR) | 1 << ADDEN) };
         } else if pkt.bRequest == StandardRequestType::SET_CONFIGURATION as u8 {
-            if pkt.wValue != 0 && pkt.wValue != 1 {
+            assert_eq!(pkt.bmRequestType, 0b00000000);
+
+            // TODO: upper byte of wValue is reserved.
+            // TODO: Value of 0 puts device in address state.
+
+            if pkt.wValue != 1 {
                 EP.request_stale();
-                USART1::send_blocking(b"SET CFG\n");
+                USART1::send_blocking(b"SET CFG FAIL\n");
                 continue;
             }
 
             // No data stage
 
             // Status stage
-            EP.wait_received_data().await;
-            EP.clear_received_data();
-        } else if pkt.bRequest == StandardRequestType::GET_CONFIGURATION as u8 {
+            // TODO: This is standard from any 'Host -> Device' request
             EP.wait_transmitter_ready().await;
-            EP.write_bytes(&[1]);
             EP.clear_transmitter_ready();
+        } else if pkt.bRequest == StandardRequestType::GET_CONFIGURATION as u8 {
+            assert_eq!(pkt.bmRequestType, 0b10000000);
+            assert_eq!(pkt.wValue, 0);
+            assert_eq!(pkt.wIndex, 0);
+            assert_eq!(pkt.wLength, 1);
 
-            // Status stage
-            EP.wait_received_data().await;
-            EP.clear_received_data();
-            // Send value of 1
+            EP.control_respond(&pkt, (&[1]).iter().cloned());
         } else if pkt.bRequest == StandardRequestType::GET_DESCRIPTOR as u8 {
             assert_eq!(pkt.bmRequestType, 0b10000000);
 
@@ -602,53 +656,30 @@ async fn usb_control_thread() -> () {
                 // assert_eq!(pkt.wLength, data.len() as u16);
                 EP.control_respond(&pkt, data.iter().cloned()).await;
             } else if desc_type == DescriptorType::CONFIGURATION as u8 {
-                // TODO: Assert index is 0
-                // EP.control_respond(&pkt, ConfigDescIter::new()).await;
+                let inst = FanControllerUSBDesc {};
+
+                // TODO: Validate that the configuration exists.
+                // If it doesn't return an error.
+                let iter = USBConfigDescIter::new(&inst, desc_index as usize);
+                EP.control_respond(&pkt, iter).await;
             } else if desc_type == DescriptorType::ENDPOINT as u8 {
-                if desc_index == 0 {
-                    EP.control_respond(&pkt, struct_bytes(&EP1_DESC).iter().cloned())
-                        .await;
-                } else if desc_index == 1 {
-                    EP.control_respond(&pkt, struct_bytes(&EP2_DESC).iter().cloned())
-                        .await;
-                } else {
-                    EP.request_stale();
-                    // continue;
-                }
+                let inst = FanControllerUSBDesc {};
+                // TODO: Support different intervales.
+                let iter = inst.endpoint(0, 0, desc_index as usize).unwrap();
+                EP.control_respond(&pkt, unsafe { struct_bytes(iter) }.iter().cloned())
+                    .await;
+            } else if desc_type == DescriptorType::DEVICE_QUALIFIER as u8 {
+                // According to the USB 2.0 spec, a full-speed only device should respond to
+                // a DEVICE_QUALITY request with an error.
+                //
+                // TODO: Probably simpler to just us the USB V1 in the device descriptor?
+                EP.request_stale();
+            } else {
+                EP.request_stale();
             }
-
-            // USART1::send_blocking(b"DESC ");
-            // avr::debug::num_to_slice(desc_type, |s| {
-            //     USART1::send_blocking(s);
-            // });
-            // USART1::send_blocking(b"\n");
-
-            // if pkt.
-
-            // Write some data is effectively
-
-            // TODO: Should I uncomment this?
-            // EP.wait_transmitter_ready().await;
-
-            // Perform a send of up to kLength bytes
-            // - If < kLength bytes and a multiple of the packet size (fifo
-            //   full), then send a final ZLP
-
-            /*
-            A request for a configuration descriptor
-            returns the configuration descriptor, all interface descriptors, and endpoint descriptors for all of the
-            interfaces in a single request
-                        */
         } else {
             EP.request_stale();
-            // continue;
         }
-
-        USART1::send_blocking(b"GOT SETUP\n");
-        // avr::debug::num_to_slice(pkt.bRequest, |s| {
-        //     USART1::send_blocking(s);
-        // });
-        // USART1::send(b"\n").await;
     }
 
     /* If a command is not supported or contains
@@ -855,12 +886,14 @@ pub extern "C" fn main() {
     // bit.
     USART1::send_blocking(b"START!\n");
 
+    // usb_control_sync();
+
     TestThread::start();
 
     USBResetThread::start();
 
-    // NOTE: Linux/Windows will read the DEVICE descriptor before trigerring the
-    // reset/SET_ADDRESS
+    // NOTE: Linux/Windows will read the DEVICE descriptor before triggering the
+    // first reset, so this thread must be started even before the first reset.
     USBControlThread::start();
 
     // USBTxThread::start();

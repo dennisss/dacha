@@ -64,14 +64,14 @@ pub fn init_endpoints() {
     // assert!(USB_EP1.configure(
     //     USBEndpointType::Interrupt,
     //     USBEndpointDirection::In,
-    //     USBEndpointSize::B128,
+    //     USBEndpointSize::B64,
     //     USBEndpointBanks::Double,
     // ));
 
     // assert!(USB_EP2.configure(
     //     USBEndpointType::Interrupt,
     //     USBEndpointDirection::OutOrControl,
-    //     USBEndpointSize::B128,
+    //     USBEndpointSize::B64,
     //     USBEndpointBanks::Double,
     // ));
 }
@@ -104,15 +104,26 @@ fn usb_control_thread() {
 const EORSTE: u8 = 3;
 const EORSTI: u8 = 3;
 
+pub struct USB {}
+
+impl USB {
+    pub fn end_of_reset_seen() -> bool {
+        let udint = unsafe { avr_read_volatile(UDINT) };
+        udint & (1 << EORSTI) != 0
+    }
+    pub fn clear_end_of_reset() {
+        unsafe { avr_write_volatile(UDINT, avr_read_volatile(UDINT) & !(1 << EORSTI)) };
+    }
+}
+
 pub async fn wait_usb_end_of_reset() {
     // Enable 'End of Reset' interrupt.
     let ctx = InterruptEnabledContext::new(UDIEN, 1 << EORSTE);
 
     loop {
-        let udint = unsafe { avr_read_volatile(UDINT) };
-        if udint & (1 << EORSTI) != 0 {
+        if USB::end_of_reset_seen() {
             // Clear the bit so we don't keep getting the interrupt
-            unsafe { avr_write_volatile(UDINT, udint & !(1 << EORSTI)) };
+            USB::clear_end_of_reset();
             break;
         }
 
@@ -327,19 +338,27 @@ impl USBEndpoint {
         pkt: &SetupPacket,
         mut data: T,
     ) {
+        // TODO: Assert that the top bit of kPacketType is set.
+
         // Remaining number of bytes the host will accept.
         let mut host_remaining = pkt.wLength;
 
         // TODO: Check host_remaining > 0
 
         loop {
+            // Once this happens, we don't expect the host to send any more packets.
+            if host_remaining == 0 {
+                break;
+            }
+
             self.wait_transmitter_ready().await;
 
             self.select();
 
             let mut done = false;
-            // TODO: Check this. usually bytec is 0
-            let mut packet_bytes = 8; // self.bytec();
+            // TODO: Check this. usually bytec is 0 for the control endpoints.
+            // TODO: Make this dynamic depending on the endpoint config.
+            let mut packet_bytes = 64; // self.bytec();
 
             while packet_bytes > 0 && host_remaining > 0 {
                 if let Some(byte) = data.next() {
@@ -366,6 +385,70 @@ impl USBEndpoint {
         // Status stage
         self.wait_received_data().await;
         self.clear_received_data();
+    }
+
+    pub fn control_respond_sync<T: core::iter::Iterator<Item = u8>>(
+        &'static self,
+        pkt: &SetupPacket,
+        mut data: T,
+    ) -> bool {
+        // Remaining number of bytes the host will accept.
+        let mut host_remaining = pkt.wLength;
+
+        // TODO: Check host_remaining > 0
+
+        loop {
+            // Wait for transmitter ready.
+            loop {
+                if USB::end_of_reset_seen() {
+                    return false;
+                }
+                if self.transmitter_ready() {
+                    break;
+                }
+            }
+
+            self.select();
+
+            let mut done = false;
+            // TODO: Check this. usually bytec is 0
+            let mut packet_bytes = 64; // self.bytec();
+
+            while packet_bytes > 0 && host_remaining > 0 {
+                if let Some(byte) = data.next() {
+                    unsafe { avr_write_volatile(UEDATX, byte) };
+                } else {
+                    // In this case, we will end up sending the current packet as either incomplete
+                    // or as a ZLP.
+                    done = true;
+                    break;
+                }
+
+                packet_bytes -= 1;
+                host_remaining -= 1;
+            }
+
+            // Send the packet.
+            self.clear_transmitter_ready();
+
+            if done || host_remaining == 0 {
+                break;
+            }
+        }
+
+        // Status stage
+        loop {
+            if USB::end_of_reset_seen() {
+                return false;
+            }
+            if self.received_data() {
+                break;
+            }
+        }
+
+        self.clear_received_data();
+
+        true
     }
 }
 
