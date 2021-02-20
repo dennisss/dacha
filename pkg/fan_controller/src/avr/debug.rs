@@ -33,6 +33,29 @@ pub fn num_to_slice<F: FnOnce(&[u8])>(mut num: u8, f: F) {
     f(&buf[(buf.len() - num_digits)..]);
 }
 
+pub fn num_to_slice16<F: FnOnce(&[u8])>(mut num: u16, f: F) {
+    // A u32 has a maximum length of 10 base-10 digits
+    let mut buf = [0u8; 5];
+    let mut num_digits = 0;
+    while num > 0 {
+        // TODO: perform this as one operation?
+        let r = (num % 10) as u8;
+        num /= 10;
+
+        num_digits += 1;
+
+        buf[buf.len() - num_digits] = ('0' as u8) + r;
+    }
+
+    if num_digits == 0 {
+        num_digits = 1;
+        buf[buf.len() - 1] = '0' as u8;
+    }
+
+    f(&buf[(buf.len() - num_digits)..]);
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

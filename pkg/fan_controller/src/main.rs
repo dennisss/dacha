@@ -5,6 +5,9 @@
 #![feature(global_asm)]
 #![feature(const_fn_fn_ptr_basics)]
 #![cfg_attr(target_arch = "avr", no_std)]
+// #![cfg_attr(target_arch = "avr", no_core)]
+
+// extern crate core;
 
 #[macro_use]
 pub mod avr;
@@ -17,6 +20,7 @@ use avr::thread;
 use avr::*;
 use protocol::*;
 use usb::*;
+use avr::progmem::*;
 
 /*
 PC Power Usage:
@@ -291,7 +295,7 @@ async fn main_thread() -> () {
 // TODO: Verify that these are stored in flash only to save space.
 // See also http://www.nongnu.org/avr-libc/user-manual/group__avr__pgmspace.html#ga88d7dd4863f87530e1a34ece430a587c
 // Needs to use the 'lpm' instruction.
-const DEVICE_DESC: DeviceDescriptor = DeviceDescriptor {
+progmem!(DEVICE_DESC: DeviceDescriptor = DeviceDescriptor {
     bLength: core::mem::size_of::<DeviceDescriptor>() as u8,
     bDescriptorType: DescriptorType::DEVICE as u8,
     bcdUSB: 0x0200, // 2.0
@@ -306,9 +310,9 @@ const DEVICE_DESC: DeviceDescriptor = DeviceDescriptor {
     iProduct: 0,
     iSerialNumber: 0,
     bNumConfigurations: 1,
-};
+});
 
-const CONFIG_DESC: ConfigurationDescriptor = ConfigurationDescriptor {
+progmem!(CONFIG_DESC: ConfigurationDescriptor = ConfigurationDescriptor {
     bLength: core::mem::size_of::<ConfigurationDescriptor>() as u8,
     bDescriptorType: DescriptorType::CONFIGURATION as u8,
     // TODO: Make this field more maintainable.
@@ -321,9 +325,9 @@ const CONFIG_DESC: ConfigurationDescriptor = ConfigurationDescriptor {
     // TODO: Double check this
     bmAttributes: 0xa0, // Bus Powered : Remote wakeup
     bMaxPower: 50,
-};
+});
 
-const IFACE_DESC: InterfaceDescriptor = InterfaceDescriptor {
+progmem!(IFACE_DESC: InterfaceDescriptor = InterfaceDescriptor {
     bLength: core::mem::size_of::<InterfaceDescriptor>() as u8,
     bDescriptorType: DescriptorType::INTERFACE as u8,
     bInterfaceNumber: 0,
@@ -333,48 +337,48 @@ const IFACE_DESC: InterfaceDescriptor = InterfaceDescriptor {
     bInterfaceSubClass: 0,
     bInterfaceProtocol: 0,
     iInterface: 0,
-};
+});
 
-const EP1_DESC: EndpointDescriptor = EndpointDescriptor {
+progmem!(EP1_DESC: EndpointDescriptor = EndpointDescriptor {
     bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
     bDescriptorType: DescriptorType::ENDPOINT as u8,
     bEndpointAddress: 0x81, // EP IN 1
     bmAttributes: 0b11,     // Interrupt
     wMaxPacketSize: 64,
     bInterval: 64, // TODO: Check me.
-};
+});
 
-const EP2_DESC: EndpointDescriptor = EndpointDescriptor {
+progmem!(EP2_DESC: EndpointDescriptor = EndpointDescriptor {
     bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
     bDescriptorType: DescriptorType::ENDPOINT as u8,
     bEndpointAddress: 0x02, // EP OUT 2
     bmAttributes: 0b11,     // Interrupt
     wMaxPacketSize: 64,
     bInterval: 64, // TODO: Check me.
-};
+});
 
 pub trait USBDescriptorSet {
-    fn device(&self) -> &'static DeviceDescriptor;
-    fn config(&self, index: usize) -> Option<&'static ConfigurationDescriptor>;
+    fn device(&self) -> &'static ProgMem<DeviceDescriptor>;
+    fn config(&self, index: usize) -> Option<&'static ProgMem<ConfigurationDescriptor>>;
     fn interface(
         &self,
         config_index: usize,
         iface_index: usize,
-    ) -> Option<&'static InterfaceDescriptor>;
+    ) -> Option<&'static ProgMem<InterfaceDescriptor>>;
     fn endpoint(
         &self,
         config_index: usize,
         iface_index: usize,
         index: usize,
-    ) -> Option<&'static EndpointDescriptor>;
+    ) -> Option<&'static ProgMem<EndpointDescriptor>>;
 }
 
 struct FanControllerUSBDesc {}
 impl USBDescriptorSet for FanControllerUSBDesc {
-    fn device(&self) -> &'static DeviceDescriptor {
+    fn device(&self) -> &'static ProgMem<DeviceDescriptor> {
         &DEVICE_DESC
     }
-    fn config(&self, index: usize) -> Option<&'static ConfigurationDescriptor> {
+    fn config(&self, index: usize) -> Option<&'static ProgMem<ConfigurationDescriptor>> {
         match index {
             0 => Some(&CONFIG_DESC),
             _ => None,
@@ -384,7 +388,7 @@ impl USBDescriptorSet for FanControllerUSBDesc {
         &self,
         config_index: usize,
         iface_index: usize,
-    ) -> Option<&'static InterfaceDescriptor> {
+    ) -> Option<&'static ProgMem<InterfaceDescriptor>> {
         match iface_index {
             0 => Some(&IFACE_DESC),
             _ => None,
@@ -395,7 +399,7 @@ impl USBDescriptorSet for FanControllerUSBDesc {
         config_index: usize,
         iface_index: usize,
         index: usize,
-    ) -> Option<&'static EndpointDescriptor> {
+    ) -> Option<&'static ProgMem<EndpointDescriptor>> {
         match index {
             0 => Some(&EP1_DESC),
             1 => Some(&EP2_DESC),
@@ -411,7 +415,9 @@ struct USBConfigDescIter<'a> {
     set: &'a dyn USBDescriptorSet,
     config_index: usize,
     current_index: USBConfigDescIndex,
-    remaining: &'static [u8],
+
+    // TODO: Should use a progmem iter
+    remaining: ProgMemIterBytes,
 }
 
 enum USBConfigDescIndex {
@@ -427,7 +433,7 @@ impl<'a> USBConfigDescIter<'a> {
             config_index,
             current_index: USBConfigDescIndex::Config,
             // NOTE: Must have at least one item.
-            remaining: unsafe { struct_bytes(set.config(config_index).unwrap()) },
+            remaining: set.config(config_index).unwrap().iter_bytes(),
         }
     }
 }
@@ -436,9 +442,8 @@ impl<'a> core::iter::Iterator for USBConfigDescIter<'a> {
     type Item = u8;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some((v, new_remaining)) = self.remaining.split_first() {
-                self.remaining = new_remaining;
-                return Some(*v);
+            if let Some(v) = self.remaining.next() {
+                return Some(v);
             }
 
             // Increment index
@@ -446,7 +451,7 @@ impl<'a> core::iter::Iterator for USBConfigDescIter<'a> {
                 USBConfigDescIndex::Config => {
                     if let Some(new_remaining) = self.set.interface(self.config_index, 0) {
                         self.current_index = USBConfigDescIndex::Interface(0);
-                        self.remaining = unsafe { struct_bytes(new_remaining) };
+                        self.remaining = new_remaining.iter_bytes();
                     } else {
                         return None;
                     }
@@ -454,11 +459,11 @@ impl<'a> core::iter::Iterator for USBConfigDescIter<'a> {
                 USBConfigDescIndex::Interface(n) => {
                     if let Some(new_remaining) = self.set.endpoint(self.config_index, n, 0) {
                         self.current_index = USBConfigDescIndex::Endpoint(n, 0);
-                        self.remaining = unsafe { struct_bytes(new_remaining) };
+                        self.remaining = new_remaining.iter_bytes();
                     } else if let Some(new_remaining) = self.set.interface(self.config_index, n + 1)
                     {
                         self.current_index = USBConfigDescIndex::Interface(n + 1);
-                        self.remaining = unsafe { struct_bytes(new_remaining) };
+                        self.remaining = new_remaining.iter_bytes();
                     } else {
                         return None;
                     }
@@ -470,12 +475,12 @@ impl<'a> core::iter::Iterator for USBConfigDescIter<'a> {
                         self.set.endpoint(self.config_index, iface_num, ep_num + 1)
                     {
                         self.current_index = USBConfigDescIndex::Endpoint(iface_num, ep_num + 1);
-                        self.remaining = unsafe { struct_bytes(new_remaining) };
+                        self.remaining = new_remaining.iter_bytes();
                     } else if let Some(new_remaining) =
                         self.set.interface(self.config_index, iface_num + 1)
                     {
                         self.current_index = USBConfigDescIndex::Interface(iface_num + 1);
-                        self.remaining = unsafe { struct_bytes(new_remaining) };
+                        self.remaining = new_remaining.iter_bytes();
                     } else {
                         return None;
                     }
@@ -530,6 +535,8 @@ async fn usb_reset_thread() -> () {
         USBControlThread::start();
         // USBRxThread::start();
         // USBTxThread::start();
+
+        USART1::send_blocking(b"RESET!\n");
     }
 }
 
@@ -552,13 +559,14 @@ unsafe fn struct_bytes_mut<'a, T>(v: &'a mut T) -> &'a mut [u8] {
 
 const ADDEN: u8 = 7;
 
-fn read_setup(pkt: &mut SetupPacket) {
+fn read_setup(pkt: &mut SetupPacket) -> bool {
     let pkt_buf = unsafe { struct_bytes_mut(pkt) };
     let bytec: u16 = USB_EP0.bytec();
 
     // On error, just perform a STALL
-    assert_eq!(bytec, pkt_buf.len() as u16);
-    assert_eq!(bytec, 8);
+    if bytec != (pkt_buf.len() as u16) || bytec != 8 {
+        return false;
+    }
 
     // NOTE: If pkt.wLength == 0, then there is no data stage and thus no need to
     // send data.
@@ -566,6 +574,7 @@ fn read_setup(pkt: &mut SetupPacket) {
     drop(pkt_buf);
 
     USB_EP0.clear_setup();
+    true
 }
 
 define_thread!(
@@ -592,14 +601,24 @@ async fn usb_control_thread() -> () {
     loop {
         EP.wait_setup().await;
 
-        read_setup(&mut pkt);
+        if !read_setup(&mut pkt) {
+            USART1::send_blocking(b"E0\n");
+            EP.request_stale();
+            continue;
+        }
 
         if pkt.bRequest == StandardRequestType::SET_ADDRESS as u8 {
-            assert_eq!(pkt.bmRequestType, 0b00000000);
-            assert_eq!(pkt.wIndex, 0);
-            assert_eq!(pkt.wLength, 0);
+            if pkt.bmRequestType != 0b00000000 || pkt.wIndex != 0 || pkt.wLength != 0 {
+                EP.request_stale();
+                // USART1::send_blocking(b"E1\n");
+                continue;
+            }
 
-            assert_eq!(unsafe { avr_read_volatile(UDADDR) }, 0);
+            if unsafe { avr_read_volatile(UDADDR) } != 0 {
+                EP.request_stale();
+                // USART1::send_blocking(b"E2\n");
+                continue;
+            }
 
             let addr = (pkt.wValue & 0x7f) as u8;
             // Store address. Not enabled yet
@@ -618,7 +637,11 @@ async fn usb_control_thread() -> () {
             // Enable address
             unsafe { avr_write_volatile(UDADDR, avr_read_volatile(UDADDR) | 1 << ADDEN) };
         } else if pkt.bRequest == StandardRequestType::SET_CONFIGURATION as u8 {
-            assert_eq!(pkt.bmRequestType, 0b00000000);
+            if pkt.bmRequestType != 0b00000000 {
+                EP.request_stale();
+                // USART1::send_blocking(b"E3\n");
+                continue;
+            }
 
             // TODO: upper byte of wValue is reserved.
             // TODO: Value of 0 puts device in address state.
@@ -636,24 +659,33 @@ async fn usb_control_thread() -> () {
             EP.wait_transmitter_ready().await;
             EP.clear_transmitter_ready();
         } else if pkt.bRequest == StandardRequestType::GET_CONFIGURATION as u8 {
-            assert_eq!(pkt.bmRequestType, 0b10000000);
-            assert_eq!(pkt.wValue, 0);
-            assert_eq!(pkt.wIndex, 0);
-            assert_eq!(pkt.wLength, 1);
+            if pkt.bmRequestType != 0b10000000 || pkt.wValue != 0 || pkt.wIndex != 0 || pkt.wLength != 1 {
+                EP.request_stale();
+                // USART1::send_blocking(b"E4\n");
+                continue;
+            }
 
-            EP.control_respond(&pkt, (&[1]).iter().cloned());
+            EP.control_respond(&pkt, (&[1]).iter().cloned()).await;
         } else if pkt.bRequest == StandardRequestType::GET_DESCRIPTOR as u8 {
-            assert_eq!(pkt.bmRequestType, 0b10000000);
+            if pkt.bmRequestType != 0b10000000 {
+                EP.request_stale();
+                // USART1::send_blocking(b"E5\n");
+                continue;
+            }
 
             let desc_type = (pkt.wValue >> 8) as u8;
             let desc_index = (pkt.wValue & 0xff) as u8; // NOTE: Starts at 0
 
             if desc_type == DescriptorType::DEVICE as u8 {
                 let data = struct_bytes(&DEVICE_DESC);
-                assert_eq!(desc_index, 0);
+                if desc_index != 0 {
+                    EP.request_stale();
+                    USART1::send_blocking(b"EX\n");
+                    continue;
+                }
                 // TODO: Assert language code.
 
-                // assert_eq!(pkt.wLength, data.len() as u16);
+                // avr_assert_eq!(pkt.wLength, data.len() as u16);
                 EP.control_respond(&pkt, data.iter().cloned()).await;
             } else if desc_type == DescriptorType::CONFIGURATION as u8 {
                 let inst = FanControllerUSBDesc {};
@@ -751,7 +783,7 @@ async fn usb_rx_thread() -> () {
         /*
         match header.typ {
             FanControllerPacketType::GetSettings as u8 => {
-                assert_eq!(header.payload_size, 0);
+                avr_assert_eq!(header.payload_size, 0);
 
                 // Loop through settings and continuously append to
 
@@ -761,7 +793,7 @@ async fn usb_rx_thread() -> () {
 
             },
             FanControllerPacketType::SetSettings as u8 => {
-                assert_eq!(header.payload_size, core::mem::size_of::<FanControllerSettings>());
+                avr_assert_eq!(header.payload_size, core::mem::size_of::<FanControllerSettings>());
 
                 // Acquire lock to have exclusive access to the in-memory settings.
 
@@ -798,33 +830,6 @@ async fn usb_tx_thread() -> () {
     // P0: Printing debug info
     // P1: State available
     // P2: Responses to RX'ed commands
-}
-
-#[cfg(target_arch = "avr")]
-#[no_mangle]
-pub extern "C" fn abort() -> ! {
-    // TODO: Shut off the PLL
-    // TODO: Disable all clocks, interrupts, and go to sleep.
-    // (otherwise we will still be sending signals to fans, etc.)
-
-    unsafe {
-        disable_interrupts();
-    }
-
-    loop {
-        PB0::write(false);
-        for _i in 0..100000 {
-            unsafe {
-                llvm_asm!("nop");
-            }
-        }
-        PB0::write(true);
-        for _i in 0..100000 {
-            unsafe {
-                llvm_asm!("nop");
-            }
-        }
-    }
 }
 
 // Becuase of this, we should try to yield time to other threads if this occurs:
@@ -886,8 +891,6 @@ pub extern "C" fn main() {
     // bit.
     USART1::send_blocking(b"START!\n");
 
-    // usb_control_sync();
-
     TestThread::start();
 
     USBResetThread::start();
@@ -918,10 +921,4 @@ pub extern "C" fn main() {
 
     avr::thread::block_on_threads();
     */
-}
-
-#[cfg(target_arch = "avr")]
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    abort();
 }

@@ -13,7 +13,7 @@ impl USART1 {
         let f_osc = 16000000;
         // Based on Table 18-1 (first row)
         let ubbr: u32 = (f_osc / (16 * baud)) - 1;
-        // assert_eq!(ubbr, 51);
+        // avr_assert_eq!(ubbr, 51);
         unsafe {
             // Set baud rate
             avr_write_volatile(UBRR1L, ubbr as u8);

@@ -1,0 +1,12 @@
+[build]
+rustflags=""
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = 1
+
+[unstable]
+build-std-features = ["panic_immediate_abort"]

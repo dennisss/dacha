@@ -1,0 +1,9 @@
+[package]
+name = "avr_test"
+version = "0.0.1"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = '2018'
+
+[dependencies]
+
+[workspace]

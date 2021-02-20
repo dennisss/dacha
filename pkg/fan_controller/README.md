@@ -1,3 +1,29 @@
+- Power inputs:
+    - 5V from FPanel connector
+        - Alternatives:
+            - Motherboard USB or SATA
+    - 12V
+        - From CPU fan connector
+        - Could also use this to determine if the computer is on?
+- If we default to an internal connection, then we can use 
+- Do I need a switchable power?
+
+- ESP8266 will 
+
+
+HDMI switch
+- Need to read EDID from the display
+
+
+Wireless boards:
+- nRF52832 can do zigbee
+
+- Or use ESP8268 / ESP8285
+- ESP32 is more capable but also bigger.
+- nRF52840 is reasonable but I can't solver it down.
+
+https://raw.githubusercontent.com/sparkfun/Arduino_Boards/master/IDE_Board_Manager/package_sparkfun_index.json
+
 AVR Bugs
 - https://github.com/rust-lang/compiler-builtins/issues/400
 - https://gitter.im/avr-rust/Lobby?at=5ef3f129613d3b3394080eae
@@ -9,6 +35,8 @@ AVR Bugs
 
 `rustup override set nightly-2021-01-07`
 
+Instructions for patching and building custom rust stage 2 toolchain:
+- https://objectdisoriented.evokewonder.com/posts/patching-llvm/
 
 Build using:
 - `RUSTFLAGS="--emit asm" cargo build --release`
@@ -18,6 +46,8 @@ Build using:
 - `avrdude -v -patmega32u4 -P/dev/ttyACM0 -b57600 -cavr109 -D -Uflash:w:target/atmega32u4/release/fan_controller.elf:e`
 
 - `avrdude -v -patmega32u4 -P/dev/ttyACM0 -b57600 -cavr109`
+
+- `avr-size --mcu=atmega32u4 --format=avr target/atmega32u4/release/fan_controller.elf`
 
 Testing:
 

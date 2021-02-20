@@ -3,8 +3,11 @@ use core::future::Future;
 use core::iter::Iterator;
 use core::pin::Pin;
 use core::task::Poll;
+use crate::{avr_assert, avr_assert_ne};
 
-const MAX_NUM_THREADS: usize = 16;
+// 1398
+// 1454 - 687
+pub const MAX_NUM_THREADS: usize = 16;
 
 // TODO: Implement support for sleeping
 // (e.g. when the computer is off or not receiving any USB traffic).
@@ -17,7 +20,9 @@ const MAX_NUM_THREADS: usize = 16;
 /// NOTE: This implies that we can have up to 256 threads.
 pub type ThreadId = u8;
 
-/// Reference to the thread's
+/// Reference to the thread's polling function
+/// TODO: Should be possible to optimize this down to only a single pointer to a
+/// 'fn() -> Poll<()>'
 #[derive(Clone, Copy)]
 struct ThreadReference {
     /// Type erased Future<Output=()> which contains the state of the thread.
@@ -44,15 +49,22 @@ impl ThreadVec {
         }
     }
 
+    #[inline(never)]
     fn get(&self, index: ThreadId) -> &ThreadReference {
-        self.values[index as usize].as_ref().unwrap()
+        if let Some(value) = self.values.get(index as usize) {
+            if let Some(thread) = value {
+                return thread;
+            }  
+        }
+
+        panic!();
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn push(&mut self, value: ThreadReference) -> ThreadId {
-        for i in 0..self.values.len() {
-            if self.values[i].is_none() {
-                self.values[i] = Some(value);
+        for (i, item) in self.values.iter_mut().enumerate() {
+            if item.is_none() {
+                *item = Some(value);
                 self.length += 1;
                 return i as ThreadId;
             }
@@ -61,16 +73,19 @@ impl ThreadVec {
         panic!();
     }
 
+    #[inline(never)]
     fn remove(&mut self, index: ThreadId) {
         // assert!(self.values[index as usize].take().is_some());
         self.values[index as usize] = None;
         self.length -= 1;
     }
 
+    #[inline(never)]
     fn is_empty(&self) -> bool {
         self.length == 0
     }
 
+    #[inline(never)]
     fn iter(&self) -> impl Iterator<Item = (ThreadId, &ThreadReference)> {
         self.values
             .iter()
@@ -110,6 +125,8 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
 
         let restarting = self.fut.is_some();
 
+        // self.fut = None;
+
         self.fut = Some(f());
 
         // TODO: This assumes that the thread didn't previosuly terminate.
@@ -122,19 +139,11 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
             };
         }
 
-        // Schedule an interrupt to run later for this thread.
-
         unsafe {
             // If the executor is already running, schedule the initial run of this thread
             // for the next cycle. NOTE: We don't have directly calling
             // poll_thread here as would require having possibly large nested stacks.
             if THREADS_INITIALIZED {
-                // crate::USART1::send_blocking(b"WAKE NEW THREAD\n");
-                // crate::avr::debug::num_to_slice(self.id, |s| {
-                //     crate::USART1::send_blocking(s);
-                // });
-                // crate::USART1::send_blocking(b"\n");
-
                 crate::avr::interrupts::wake_up_thread_by_id(self.id);
             }
         }
@@ -159,7 +168,7 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
         }
 
         // A thread stopping itself is undefined behavior and should panic.
-        assert_ne!(unsafe { CURRENT_THREAD_ID }, Some(self.id));
+        avr_assert_ne!(unsafe { CURRENT_THREAD_ID }, Some(self.id));
 
         // Drop all variables. This should also drop any WakerFutures used by the thread
         // (thus ensuring that this thread id is safe to re-use later).
@@ -204,6 +213,7 @@ macro_rules! define_thread {
 
             // TODO: If a thread is stopped while one thread is running, we may want to intentionally run an extra cycle to ensure that we re-process them.
 
+            // TODO: Ensure that this doesn't first restart the thread.
             // pub fn stop() {
             //     let thread = Self::ptr();
             //     thread.stop();
@@ -223,6 +233,24 @@ pub fn block_on_threads() -> ! {
 
     crate::avr::waker::init();
     unsafe { crate::avr::interrupts::init() };
+
+    // {
+    //     // NOTE: Stack is from 256 - 2815.
+    //     let x: u8 = 0;
+    //     let sp: u16 = unsafe { core::mem::transmute(&x) };
+    //     crate::usart::USART1::send_blocking(b"Stack: ");
+    //     crate::debug::num_to_slice16(sp, |s| {
+    //         crate::usart::USART1::send_blocking(s);
+    //     });
+    //     crate::usart::USART1::send_blocking(b"\n");
+
+    //     let xp: u16 = unsafe { core::mem::transmute(&THREADS_INITIALIZED) };
+    //     crate::usart::USART1::send_blocking(b"Threads: ");
+    //     crate::debug::num_to_slice16(xp, |s| {
+    //         crate::usart::USART1::send_blocking(s);
+    //     });
+    //     crate::usart::USART1::send_blocking(b"\n");
+    // }
 
     unsafe {
         THREADS_INITIALIZED = true;
@@ -275,7 +303,7 @@ pub unsafe fn poll_thread(thread_id: ThreadId) {
     let thread_ref = RUNNING_THREADS.get(thread_id);
 
     // Should not be polling within a thread
-    assert!(CURRENT_THREAD_ID.is_none());
+    avr_assert!(CURRENT_THREAD_ID.is_none());
     CURRENT_THREAD_ID = Some(thread_id);
 
     let result = (thread_ref.poll_fn)(thread_ref.future);
@@ -283,13 +311,14 @@ pub unsafe fn poll_thread(thread_id: ThreadId) {
     CURRENT_THREAD_ID = None;
 
     if result.is_ready() {
-        // TODO: Also set the future to None in the thread instance?
+        // TODO: Also set the future to None in the thread instance to ensure that everything is dropped?
         // TODO: Must also ensure that all events are cleaned up
         crate::USART1::send_blocking(b"THREAD READY\n");
         RUNNING_THREADS.remove(thread_id);
     }
 
     if RUNNING_THREADS.is_empty() {
+        // TODO: Use AVR panic
         panic!();
     }
 }

@@ -119,6 +119,7 @@ pub fn fire_internal_interrupt() {
 unsafe fn event_handler(e: InterruptEvent) {
     e.waker_list().wake_all();
     wake_all_internal();
+    // crate::avr::usart::USART1::send_blocking(b"<\n");
 }
 
 // Fast skipping of an interrupt if we don't care about it.
@@ -182,17 +183,25 @@ unsafe extern "avr-interrupt" fn __vector_9() {
 #[cfg(target_arch = "avr")]
 #[no_mangle]
 unsafe extern "avr-interrupt" fn __vector_10() {
+    crate::avr::usart::USART1::send_blocking(b"USBG\n");
+
     // NOTE: Users of this event are responsible for clearing the appropriate bit in
     // UDINT.
     event_handler(InterruptEvent::USBGeneral);
+
+    // crate::avr::usart::USART1::send_blocking(b"]\n");
 }
 
 // USB Endpoint/Pipe Interrupt Communication Request
 #[cfg(target_arch = "avr")]
 #[no_mangle]
 unsafe extern "avr-interrupt" fn __vector_11() {
+    crate::avr::usart::USART1::send_blocking(b"USBE\n");
+
     // NOTE: UEINT is automatically cleared after executing the interrupt.
     event_handler(InterruptEvent::USBEndpoint);
+
+    // crate::avr::usart::USART1::send_blocking(b"]\n");
 }
 
 ignore_interrupt!(__vector_12);
@@ -347,6 +356,7 @@ mod tests {
         assert_eq!(counter(), 0);
 
         crate::avr::waker::init();
+        unsafe { init() };
 
         // We haven't polled the thread yet, so no wakers are registered.
         wake_all0();

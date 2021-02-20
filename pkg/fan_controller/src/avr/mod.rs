@@ -18,6 +18,9 @@ pub mod usart;
 pub mod usb;
 mod waker;
 
+#[macro_use]
+pub mod assert;
+
 pub use crate::avr::adc::*;
 pub use crate::avr::channel::*;
 pub use crate::avr::interrupts::*;

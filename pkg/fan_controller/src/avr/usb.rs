@@ -1,6 +1,7 @@
 use crate::avr::interrupts::*;
 use crate::avr::registers::*;
 use crate::usb::SetupPacket;
+use crate::avr_assert;
 
 // From the INTERNET:
 // "Thank you for the reply. The USB interface is now receiving the setup
@@ -53,52 +54,28 @@ Control Read
 
 */
 
+
 pub fn init_endpoints() {
-    assert!(USB_EP0.configure(
+    avr_assert!(USB_EP0.configure(
         USBEndpointType::Control,
         USBEndpointDirection::OutOrControl,
         USBEndpointSize::B64,
         USBEndpointBanks::One,
     ));
 
-    // assert!(USB_EP1.configure(
-    //     USBEndpointType::Interrupt,
-    //     USBEndpointDirection::In,
-    //     USBEndpointSize::B64,
-    //     USBEndpointBanks::Double,
-    // ));
+    avr_assert!(USB_EP1.configure(
+        USBEndpointType::Interrupt,
+        USBEndpointDirection::In,
+        USBEndpointSize::B64,
+        USBEndpointBanks::Double,
+    ));
 
-    // assert!(USB_EP2.configure(
-    //     USBEndpointType::Interrupt,
-    //     USBEndpointDirection::OutOrControl,
-    //     USBEndpointSize::B64,
-    //     USBEndpointBanks::Double,
-    // ));
-}
-
-fn usb_control_thread() {
-    loop {
-        // Issues:
-        // - If endpoints are reset while waiting for the RXSTPI intterupt or
-        //   another, we won't have the interrupt enabled anymore so will never
-        //   get ti
-
-        // TODO: On any async delay, we need to remember to re-configure the
-        // current endpoint
-
-        // Wait for RXSTPI
-
-        // Read SETUP packet
-
-        // Clear RXSTPI and TXINI
-
-        // Looping over data to send:
-        // Wait for TXINI
-        // Send response data
-
-        // Wait for RXOUTI
-        // Clear to finish?
-    }
+    avr_assert!(USB_EP2.configure(
+        USBEndpointType::Interrupt,
+        USBEndpointDirection::OutOrControl,
+        USBEndpointSize::B64,
+        USBEndpointBanks::Double,
+    ));
 }
 
 const EORSTE: u8 = 3;

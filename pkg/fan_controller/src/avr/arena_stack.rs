@@ -7,6 +7,8 @@
 /// up to one list,
 use core::marker::PhantomData;
 
+use crate::{avr_assert, avr_assert_eq};
+
 pub type ArenaIndex = u8;
 
 pub trait Arena<T> {
@@ -21,7 +23,7 @@ pub trait Arena<T> {
 }
 
 // TODO: Remove Clone/Copy.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 #[repr(packed)]
 pub struct ArenaStackItem<T> {
     /// Index of the previous entry in this linked list.
@@ -96,23 +98,53 @@ impl<T, A: Arena<ArenaStackItem<T>>> ArenaStack<T, A> {
         );
     }
 
+    pub fn update<F: FnOnce(&mut T)>(&self, index: ArenaIndex, f: F) {
+        self.arena.update(index, |item| {
+            f(&mut item.value);
+        });
+    }
+
     /// NOTE: We do not validate the 'index' is actually owned by this list.
     /// Returns the previous item before the removed one.
+    /// 
+    /// TODO: No longer needs to 
     pub fn remove(&mut self, index: ArenaIndex) -> Option<(T, ArenaIndex)> {
         let mut next_idx = self.arena.get(index).next;
         let prev_idx = self.arena.get(index).prev;
 
+        // TODO: Let's just have one way of deleting the waker
+        // e.g. only via the destructor to the function.
+
         // This means that we are removing the head
         if next_idx == index {
-            assert!(Some(index) == self.head);
+            // Sometimes it is '30 29' or '31 31'?
+            // if Some(index) != self.head {
+            //     crate::avr::usart::USART1::send_blocking(b"XX\n");
+            //     crate::avr::debug::num_to_slice(index, |s| {
+            //         crate::avr::usart::USART1::send_blocking(s);
+            //     });
+            //     crate::avr::usart::USART1::send_blocking(b" ");
+            //     crate::avr::debug::num_to_slice(self.head.unwrap(), |s| {
+            //         crate::avr::usart::USART1::send_blocking(s);
+            //     });
+            //     crate::avr::usart::USART1::send_blocking(b"\n");
 
-            self.head = if prev_idx == index {
-                None
-            } else {
-                // This will be used later in this function to mark that there is no item after
-                // the previous item (if there is a previous item).
-                next_idx = prev_idx;
-                Some(prev_idx)
+            //     if self.head.is_none() {
+            //         crate::avr::usart::USART1::send_blocking(b"YY\n");
+            //     }
+                
+            // }
+            avr_assert_eq!(Some(index), self.head);
+
+            self.head = {
+                if prev_idx == index {
+                    None
+                } else {
+                    // This will be used later in this function to mark that there is no item after
+                    // the previous item (if there is a previous item).
+                    next_idx = prev_idx;
+                    Some(prev_idx)
+                }
             };
         } else {
             self.arena.update(next_idx, |next_item| {
@@ -131,6 +163,16 @@ impl<T, A: Arena<ArenaStackItem<T>>> ArenaStack<T, A> {
             return Some((self.arena.get(prev_idx).value, prev_idx));
         } else {
             return None;
+        }
+    }
+
+    // NOTE: This assumes that index exists in the list
+    pub fn before(&self, index: ArenaIndex) -> Option<(T, ArenaIndex)> {
+        let cur = self.arena.get(index);
+        if cur.prev == index {
+            None
+        } else {
+            Some((self.arena.get(cur.prev).value, cur.prev))
         }
     }
 
@@ -194,6 +236,10 @@ mod tests {
         list.push(0, 10);
         list.push(1, 11);
         list.push(2, 12);
+
+        assert_eq!(list.before(0), None);
+        assert_eq!(list.before(1), Some((10, 0)));
+        assert_eq!(list.before(2), Some((11, 1)));
 
         assert_eq!(list.peek(), Some((12, 2)));
         assert_eq!(list.peek(), Some((12, 2)));
