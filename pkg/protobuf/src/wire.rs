@@ -1,4 +1,4 @@
-use crate::spec::FieldNumber;
+use protobuf_compiler::spec::FieldNumber;
 use crate::{Enum, Message};
 use byteorder::{ByteOrder, LittleEndian};
 use common::bytes::{Bytes, BytesMut};
@@ -429,19 +429,20 @@ impl WireField<'_> {
         E::parse(self.parse_int32()?)
     }
 
-    pub fn serialize_enum<E: Enum>(field_number: FieldNumber, v: E, out: &mut Vec<u8>) {
+    pub fn serialize_enum<E: Enum>(field_number: FieldNumber, v: &E, out: &mut Vec<u8>) {
         // TODO: Support up to 64bits?
         Self::serialize_int32(field_number, v.value(), out);
     }
 
+    // TODO: Instead use a dynamic version that parses into an existing struct.
     pub fn parse_message<M: Message>(&self) -> Result<M> {
         let data = self.value.length_delim()?;
         M::parse(Bytes::from(data))
     }
 
-    pub fn serialize_message<M: Message>(
+    pub fn serialize_message(
         field_number: FieldNumber,
-        m: M,
+        m: &dyn Message,
         out: &mut Vec<u8>,
     ) -> Result<()> {
         let data = m.serialize()?;

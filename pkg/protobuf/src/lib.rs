@@ -11,27 +11,26 @@ extern crate common;
 extern crate byteorder;
 extern crate parsing; // < Mainly needed for f32/f64 conversions
 
-mod build;
-pub mod compiler;
+// TODO: Eventually remove dependencies on the compiler
+extern crate protobuf_compiler;
+
 pub mod reflection;
 pub mod service;
-pub mod spec;
-pub mod syntax;
 pub mod text;
-pub mod tokenizer;
 pub mod wire;
-pub use build::build;
+mod proto;
 
 pub use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
-use reflection::MessageReflection;
-pub use spec::EnumValue;
-pub use spec::FieldNumber;
+use crate::reflection::MessageReflection;
+pub use protobuf_compiler::spec::EnumValue;
+pub use protobuf_compiler::spec::FieldNumber;
 
 // NOTE: Construct an empty proto by calling MessageType::default()
-pub trait Message: Clone + std::fmt::Debug + std::default::Default + MessageReflection {
+// Clone + std::fmt::Debug + std::default::Default + MessageReflection
+pub trait Message {
     // NOTE: This will append values to
-    fn parse(data: Bytes) -> Result<Self>;
+    fn parse(data: Bytes) -> Result<Self> where Self: Sized;
 
     /// Serializes the protobuf as a
     fn serialize(&self) -> Result<Vec<u8>>;

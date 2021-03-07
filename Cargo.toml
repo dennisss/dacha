@@ -9,6 +9,7 @@ members = [
 	"pkg/parsing",
 	"pkg/compression",
 	"pkg/math",
+	"pkg/protobuf_compiler",
 	"pkg/protobuf",
 	"pkg/automata",
 	"pkg/http",

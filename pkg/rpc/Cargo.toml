@@ -12,4 +12,4 @@ http = { path = "../http" }
 protobuf = { path = "../protobuf" }
 
 [build-dependencies]
-protobuf = { path = "../../pkg/protobuf" }
+protobuf_compiler = { path = "../protobuf_compiler" }

@@ -2,51 +2,13 @@
 // aka what the C++ DebugString outputs and can re-parse as a proto.
 
 use crate::reflection::{MessageReflection, ReflectionMut};
-use crate::tokenizer::{float_lit, int_lit, strLit};
+use protobuf_compiler::tokenizer::{float_lit, int_lit, strLit};
 use common::errors::*;
 use parsing::*;
 use std::convert::TryInto;
 
-/*
-
-name :? {
-
-}
-
-name: "val\"ue"
-name: 'val\'ue'
-name: [{}, "", 1]
-
-name: true|false
-name: 123
-name: 12.0
-name: -4
-
-name: "\\"
-name: "\002" <- octal
-
-name: ENUM_VALUE
-
-[google.protobuf.Extension] :? {
-
-}
-
-input <
-    hello: 123
->
-
-TODO: According th this example, commas can be used after fields:
-    input {
-    dimension: [128, 8, 32, 32],
-    data_type: DATA_HALF
-    format: TENSOR_NCHW
-  }
-
-TODO: Text strings must appear on one line.
-
-*/
 //
-const SYMBOLS: &'static str = "{}[]:,.";
+const SYMBOLS: &'static str = "{}[]<>:,.";
 
 enum TextToken {
     Whitespace,
@@ -67,7 +29,7 @@ impl TextToken {
         map(Self::comment, |_| Self::Comment),
         map(Self::symbol, |v| Self::Symbol(v)),
         map(Self::string, |v| Self::String(v)),
-        map(crate::tokenizer::ident, |v| Self::Identifier(v)),
+        map(protobuf_compiler::tokenizer::ident, |v| Self::Identifier(v)),
         Self::number
     ));
 
@@ -143,9 +105,11 @@ parser!(fullIdent<&str, String> => seq!(c => {
     Ok(id)
 }));
 
+/// Represents the text format of a 
+/// 
 // TextMessage = TextField*
 #[derive(Debug)]
-struct TextMessage {
+pub struct TextMessage {
     fields: Vec<TextField>,
 }
 
@@ -187,7 +151,10 @@ impl TextField {
         let name = c.next(TextFieldName::parse)?;
         println!("{:?}", name);
         // TODO: Also allowed to be a <
-        let is_message = c.next(opt(peek(is(symbol, '{'))))?.is_some();
+        let is_message = c.next(opt(peek(alt!(
+            is(symbol, '{'),
+            is(symbol, '<')
+        ))))?.is_some();
         if !is_message {
             c.next(is(symbol, ':'))?;
         }
@@ -239,7 +206,6 @@ impl TextValue {
         map(integer, |v| Self::Integer(v)),
         map(float, |v| Self::Float(v)),
         map(string, |v| Self::String(v)),
-        // TODO: Add special cases for bools
         map(ident, |v| {
             if v == "true" {
                 Self::Bool(true)
@@ -253,6 +219,12 @@ impl TextValue {
             c.next(is(symbol, '{'))?;
             let val = c.next(TextMessage::parse)?;
             c.next(is(symbol, '}'))?;
+            Ok(Self::Message(val))
+        }),
+        seq!(c => {
+            c.next(is(symbol, '<'))?;
+            let val = c.next(TextMessage::parse)?;
+            c.next(is(symbol, '>'))?;
             Ok(Self::Message(val))
         }),
         seq!(c => {
@@ -344,10 +316,23 @@ impl TextValue {
                     // TODO: Must verify that that we aren't losing precision.
                     e.assign(*v as i32)?;
                 }
-                _ => {}
+                _ => {
+                    return Err(err_msg("Can't cast to enum"));
+                }
             },
-            _ => {
-                return Err(err_msg("Unsupported reflect type"));
+            ReflectionMut::String(s) => match self {
+                Self::String(s_value) => {
+                    *s = s_value.clone();
+                }
+                _ => {
+                    println!("Problematic: {:?}", self);
+                    return Err(err_msg("Can't cast to string"));
+                }
+            }
+            ReflectionMut::Bytes => match  self {
+                _ => {
+                    return Err(err_msg("Can't cast to bytes"));
+                }
             }
         };
 
@@ -355,7 +340,14 @@ impl TextValue {
     }
 }
 
-fn parse_text_syntax(text: &str) -> Result<TextMessage> {
+/// Parses a text proto string into its raw components
+/// 
+/// NOTE: This function shoulnd't be used directly.
+/// 
+/// TODO: Make this a loseless parser so that we can perform formatting.
+/// 
+/// TODO: Long term this should be ideally a streaming interface for more efficient parsing.
+pub fn parse_text_syntax(text: &str) -> Result<TextMessage> {
     let (v, _) = complete(seq!(c => {
         let v = c.next(TextMessage::parse)?;
         // Can not end with any other meaningful tokens.
@@ -371,7 +363,7 @@ fn parse_text_syntax(text: &str) -> Result<TextMessage> {
 
 pub fn parse_text_proto(text: &str, message: &mut dyn MessageReflection) -> Result<()> {
     let v = parse_text_syntax(text)?;
-    println!("{:#?}", v);
+    println!("We Parsed: {:#?}", v);
 
     v.apply(message)?;
 
@@ -385,4 +377,57 @@ pub fn serialize_text_proto(message: &dyn MessageReflection) -> String {
     // Basically visiting a bunch of stuff.
 
     String::new()
+}
+
+/*
+
+name :? {
+
+}
+
+name: "val\"ue"
+name: 'val\'ue'
+name: [{}, "", 1]
+
+name: true|false
+name: 123
+name: 12.0
+name: -4
+
+name: "\\"
+name: "\002" <- octal
+
+name: ENUM_VALUE
+
+[google.protobuf.Extension] :? {
+
+}
+
+input <
+    hello: 123
+>
+
+TODO: According th this example, commas can be used after fields:
+    input {
+    dimension: [128, 8, 32, 32],
+    data_type: DATA_HALF
+    format: TENSOR_NCHW
+  }
+
+TODO: Text strings must appear on one line.
+
+*/
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::proto::test::*;
+
+    #[test]
+    fn works() {
+        let mut list = ShoppingList::default();
+        parse_text_proto("name: \"Groceries\" id: 3 cost: 12.50", &mut list).unwrap();
+
+        println!("{:?}", list);
+    }
 }

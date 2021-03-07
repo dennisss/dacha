@@ -5,13 +5,13 @@ use crate::avr::pins::PB0;
 #[cfg(target_arch = "avr")]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    unsafe { crate::avr::disable_interrupts(); };
+    // unsafe { crate::avr::disable_interrupts(); };
 
-    crate::usart::USART1::send_blocking(b"E:\n");
-    if let Some(s) = info.payload().downcast_ref::<&str>() {
-        crate::usart::USART1::send_blocking(s.as_bytes());
-        crate::usart::USART1::send_blocking(b"\n");
-    }
+    // crate::usart::USART1::send_blocking(b"E:\n");
+    // if let Some(s) = info.payload().downcast_ref::<&str>() {
+    //     crate::usart::USART1::send_blocking(s.as_bytes());
+    //     crate::usart::USART1::send_blocking(b"\n");
+    // }
 
     abort();
 }
@@ -49,7 +49,9 @@ pub extern "C" fn abort() -> ! {
 #[inline(never)]
 pub fn avr_assert_impl(v: bool) {
     if !v {
-        panic!();
+        abort();
+        // crate::avr::USART1::send_blocking(b"BAD");
+        // panic!();
     }
 }
 
@@ -57,12 +59,8 @@ pub fn avr_assert_impl(v: bool) {
 macro_rules! avr_assert {
     ($e: expr) => ({
         if !($e) {
-            unsafe { crate::usart::USART1::send_blocking(b"AS\n") };
-            // $crate::avr::assert::avr_assert_impl(false);
             panic!();
         }
-
-        // 
     });
 }
 
@@ -72,9 +70,7 @@ macro_rules! avr_assert_eq {
         match (&$left, &$right) {
             (left_val, right_val) => {
                 if !(*left_val == *right_val) {
-                    unsafe { crate::usart::USART1::send_blocking(b"EQ\n") };
                     panic!();
-                    // $crate::avr::assert::avr_assert_impl(false)
                 }
             }
         }
@@ -87,10 +83,7 @@ macro_rules! avr_assert_ne {
         match (&$left, &$right) {
             (left_val, right_val) => {
                 if (*left_val == *right_val) {
-                    unsafe { crate::usart::USART1::send_blocking(b"NE\n") };
-
                     panic!();
-                    // $crate::avr::assert::avr_assert_impl(false);
                 }
             }
         }

@@ -118,6 +118,7 @@ pub fn fire_internal_interrupt() {
 #[inline(never)]
 unsafe fn event_handler(e: InterruptEvent) {
     e.waker_list().wake_all();
+
     wake_all_internal();
     // crate::avr::usart::USART1::send_blocking(b"<\n");
 }
@@ -183,7 +184,7 @@ unsafe extern "avr-interrupt" fn __vector_9() {
 #[cfg(target_arch = "avr")]
 #[no_mangle]
 unsafe extern "avr-interrupt" fn __vector_10() {
-    crate::avr::usart::USART1::send_blocking(b"USBG\n");
+    // crate::avr::usart::USART1::send_blocking(b"USBG\n");
 
     // NOTE: Users of this event are responsible for clearing the appropriate bit in
     // UDINT.
@@ -196,7 +197,7 @@ unsafe extern "avr-interrupt" fn __vector_10() {
 #[cfg(target_arch = "avr")]
 #[no_mangle]
 unsafe extern "avr-interrupt" fn __vector_11() {
-    crate::avr::usart::USART1::send_blocking(b"USBE\n");
+    // crate::avr::usart::USART1::send_blocking(b"USBE\n");
 
     // NOTE: UEINT is automatically cleared after executing the interrupt.
     event_handler(InterruptEvent::USBEndpoint);

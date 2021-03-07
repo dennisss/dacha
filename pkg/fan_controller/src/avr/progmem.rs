@@ -51,7 +51,7 @@ impl<T> ProgMem<T> {
 
     pub fn iter_bytes(&'static self) -> ProgMemIterBytes {
         ProgMemIterBytes {
-            addr: unsafe { core::mem::transmute(self) },
+            addr: unsafe { core::mem::transmute::<_, u16>(self) },
             remaining: self.size_of()
         }
     }
@@ -76,7 +76,7 @@ avr_progmem_load_byte:
 
 #[cfg(target_arch = "avr")]
 extern "C" {
-    pub fn avr_progmem_load_byte(addr: *const ()) -> u8;
+    pub fn avr_progmem_load_byte(addr: u16) -> u8;
 }
 
 
@@ -109,7 +109,7 @@ extern "C" {
 // }
 
 pub struct ProgMemIterBytes {
-    addr: *const (),
+    addr: u16,
     remaining: usize
 }
 
@@ -125,7 +125,7 @@ impl core::iter::Iterator for ProgMemIterBytes {
         let v: u8 = unsafe { *core::mem::transmute::<_, *const u8>(self.addr) };
         self.remaining -= 1;
 
-        self.addr = unsafe { core::mem::transmute(core::mem::transmute::<_, usize>(self.addr) + 1) };
+        self.addr += 1;
 
         Some(v)
     }

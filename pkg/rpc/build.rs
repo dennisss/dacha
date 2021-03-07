@@ -1,5 +1,5 @@
-extern crate protobuf;
+extern crate protobuf_compiler;
 
 fn main() {
-    protobuf::build().unwrap();
+    protobuf_compiler::build().unwrap();
 }

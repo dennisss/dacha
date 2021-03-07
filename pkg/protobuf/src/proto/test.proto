@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+// package dacha;
+
+enum Fruit {
+    UNKNOWN = 0;
+    APPLES = 1;
+    ORANGES = 2;
+    BERRIES = 3;
+}
+
+message ShoppingList {
+
+    string name = 1;
+    int32 id = 2;
+    float cost = 3;
+
+    enum Store {
+        UNKNOWN = 0;
+        WALMART = 1;
+        TARGET = 2;
+        WHOLE_FOODS = 3;
+    }
+
+    message Item {
+        string name = 1;
+        Fruit fruit_type = 2;
+    }
+    repeated Item items = 4;
+}
+

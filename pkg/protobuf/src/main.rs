@@ -2,11 +2,7 @@ extern crate base64;
 extern crate protobuf;
 
 use common::errors::*;
-use protobuf::compiler::Compiler;
-use protobuf::spec::*;
-use protobuf::syntax::{proto, syntax};
 use protobuf::text::parse_text_proto;
-use protobuf::tokenizer::Token;
 use std::io::Write;
 
 /*
@@ -80,6 +76,7 @@ fn main() -> Result<()> {
 
      */
 
+     /*
     // Unpin
     let data =
     base64::decode_config("CAsQAhoaVWd4OHM5UVIzZjVUY0d3SjNycDRBYUFCQWcqC1lRT0x2VVNRendZMABKFTExMzc5NjA4MDQ0NzI2MDk0NTAxNVABigEmEgtZUU9MdlVTUXp3WcABAMgBAOABA6ICDSj___________8BQACoAQy6ARhVQ3IyMnhpa1dVSzJ5VVc0WXhPS1hjbFE=", base64::URL_SAFE)?;
@@ -87,13 +84,16 @@ fn main() -> Result<()> {
     print_message(&data, "")?;
 
     return Ok(());
+    */
 
-    // let v = parse_text_proto(SAMPLE_TEXTPROTO)?;
+    let v = protobuf::text::parse_text_syntax(SAMPLE_TEXTPROTO)?;
+    println!("{:#?}", v);
     return Ok(());
 
     //	let src = std::fs::read_to_string("testdata/message.proto")?;
     //	let mut outfile = std::fs::File::create("testdata/message.proto.rs")?;
 
+    /*
     let src = std::fs::read_to_string("pkg/rpc/src/proto/adder.proto")?;
     let mut outfile = std::fs::File::create("pkg/rpc/src/proto/adder.rs")?;
 
@@ -116,6 +116,7 @@ fn main() -> Result<()> {
 
     outfile.write_all(outstr.as_bytes())?;
     outfile.flush()?;
+    */
 
     /*
     let s = "syntax = \"proto2\"; message A { required int b = 3 [default = \"sdfsdf\"]; }";

@@ -6,4 +6,7 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
-opt-level = 3
+opt-level = "z"
+
+[unstable]
+build-std-features = ["panic_immediate_abort"]

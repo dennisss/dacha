@@ -1,4 +1,4 @@
-use crate::spec::FieldNumber;
+use protobuf_compiler::spec::FieldNumber;
 use crate::Enum;
 use std::default::Default;
 use std::ops::{Deref, DerefMut};
@@ -33,11 +33,6 @@ pub enum ReflectionMut<'a> {
     Enum(&'a mut dyn Enum),
 }
 
-// pub struct FieldReflection {
-//     pub name: &'static str,
-//     pub number: FieldNumber
-// }
-
 /// NOTE: Should be implemented by all Messages.
 pub trait MessageReflection {
     // A non-mutable version would be required for the regular
@@ -52,8 +47,6 @@ pub trait MessageReflection {
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut>;
 
     fn field_number_by_name(&self, name: &str) -> Option<FieldNumber>;
-
-    //	fn field_by_name_mut(&mut self, name: &str) -> Option<Reflection>;
 }
 
 pub trait Reflect {

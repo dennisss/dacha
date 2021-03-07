@@ -190,7 +190,8 @@ macro_rules! define_thread {
 
         impl $name {
             #[inline(always)]
-            fn ptr() /* -> &'static mut $crate::avr::thread::Thread<impl ::core::future::Future<Output=()>> */ {
+            /* -> &'static mut $crate::avr::thread::Thread<impl ::core::future::Future<Output=()>> */
+            fn ptr() -> (fn(), fn()) {
                 type RetType = impl ::core::future::Future<Output = ()>;
                 #[inline(always)]
                 fn handler_wrap() -> RetType {
@@ -201,23 +202,33 @@ macro_rules! define_thread {
                     $crate::avr::thread::Thread::new()
                 };
 
-                unsafe { THREAD.start(handler_wrap) };
+                fn start() {
+                    unsafe { THREAD.start(handler_wrap) };
+                }
+
+                fn stop() {
+                    unsafe { THREAD.stop() };
+                }
+
+                (start, stop)
+
+                // unsafe { THREAD.start(handler_wrap) };
 
                 // unsafe { &mut THREAD }
             }
 
             #[inline(always)]
             pub fn start() {
-                Self::ptr();
+                (Self::ptr().0)();
             }
 
             // TODO: If a thread is stopped while one thread is running, we may want to intentionally run an extra cycle to ensure that we re-process them.
 
             // TODO: Ensure that this doesn't first restart the thread.
-            // pub fn stop() {
-            //     let thread = Self::ptr();
-            //     thread.stop();
-            // }
+            pub fn stop() {
+                (Self::ptr().1)();
+                // thread.stop();
+            }
         }
     };
 }
@@ -313,8 +324,10 @@ pub unsafe fn poll_thread(thread_id: ThreadId) {
     if result.is_ready() {
         // TODO: Also set the future to None in the thread instance to ensure that everything is dropped?
         // TODO: Must also ensure that all events are cleaned up
-        crate::USART1::send_blocking(b"THREAD READY\n");
+        // crate::USART1::send_blocking(b"THREAD READY!\n");
+        // panic!();
         RUNNING_THREADS.remove(thread_id);
+        
     }
 
     if RUNNING_THREADS.is_empty() {

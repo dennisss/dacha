@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package youtube;
+
+message PerformCommentAction {
+  int32 action = 1;
+  int32 unknown2 = 2;
+  string comment_id = 3;
+  string video_id = 5;
+  int32 unknown6 = 6;
+  string datasync_id = 9;
+  int32 unknown10 = 10;
+
+  message Unknown17 {
+    string vide_id = 2;
+    int32 unknown24 = 24;
+    int32 unknown25 = 25;
+    int32 unknown28 = 28;
+    bytes unknown36 = 36;
+  }
+  Unknown17 unknown17 = 17;
+
+  int32 unknown21 = 21;
+  string channel_id = 23;
+}
