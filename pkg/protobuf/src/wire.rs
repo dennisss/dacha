@@ -134,6 +134,9 @@ impl Tag {
 /// This code is mainly used by the auto-generated code as follows:
 /// - When serializing:
 ///   - call 'WireField::serialize_{type}()' for every present field value.
+///   - if the field has no field presence (and isn't repeated),
+///     `WireField::serialize_sparse_{type}()` should be called instead to
+///     avoid appending fields with default values.
 /// - When parsing:
 ///   - call 'WireField::parse_all()' to get all fields in an input stream.
 ///   - then call field.parse_{type}() to downcast to the expected type.
@@ -270,6 +273,12 @@ impl WireField<'_> {
         .serialize(out);
     }
 
+    pub fn serialize_sparse_double(field_number: FieldNumber, v: f64, out: &mut Vec<u8>) {
+        if v != 0.0 {
+            Self::serialize_double(field_number, v, out);
+        }
+    }
+
     pub fn parse_float(&self) -> Result<f32> {
         Ok(LittleEndian::read_f32(self.value.word32()?))
     }
@@ -283,6 +292,12 @@ impl WireField<'_> {
         .serialize(out);
     }
 
+    pub fn serialize_sparse_float(field_number: FieldNumber, v: f32, out: &mut Vec<u8>) {
+        if v != 0.0 {
+            Self::serialize_float(field_number, v, out);
+        }
+    }
+
     pub fn parse_int32(&self) -> Result<i32> {
         Ok(self.value.varint()? as i32)
     }
@@ -293,6 +308,12 @@ impl WireField<'_> {
             value: WireValue::Varint(v as i64 as u64),
         }
         .serialize(out);
+    }
+
+    pub fn serialize_sparse_int32(field_number: FieldNumber, v: i32, out: &mut Vec<u8>) {
+        if v != 0 {
+            Self::serialize_int32(field_number, v, out);
+        }
     }
 
     pub fn parse_int64(&self) -> Result<i64> {
@@ -308,6 +329,12 @@ impl WireField<'_> {
         .serialize(out);
     }
 
+    pub fn serialize_sparse_int64(field_number: FieldNumber, v: i64, out: &mut Vec<u8>) {
+        if v != 0 {
+            Self::serialize_int64(field_number, v, out);
+        }
+    }
+
     pub fn parse_uint32(&self) -> Result<u32> {
         Ok(self.value.varint()? as u32)
     }
@@ -318,6 +345,12 @@ impl WireField<'_> {
             value: WireValue::Varint(v as u64),
         }
         .serialize(out);
+    }
+
+    pub fn serialize_sparse_uint32(field_number: FieldNumber, v: u32, out: &mut Vec<u8>) {
+        if v != 0 {
+            Self::serialize_uint32(field_number, v, out);
+        }
     }
 
     pub fn parse_uint64(&self) -> Result<u64> {
@@ -332,6 +365,12 @@ impl WireField<'_> {
         .serialize(out);
     }
 
+    pub fn serialize_sparse_uint64(field_number: FieldNumber, v: u64, out: &mut Vec<u8>) {
+        if v != 0 {
+            Self::serialize_uint64(field_number, v, out);
+        }
+    }
+
     pub fn parse_sint32(&self) -> Result<i32> {
         decode_zigzag32(self.value.varint()?)
     }
@@ -344,6 +383,12 @@ impl WireField<'_> {
         .serialize(out);
     }
 
+    pub fn serialize_sparse_sint32(field_number: FieldNumber, v: i32, out: &mut Vec<u8>) {
+        if v != 0 {
+            Self::serialize_sint32(field_number, v, out);
+        }
+    }
+
     pub fn parse_sint64(&self) -> Result<i64> {
         Ok(decode_zigzag64(self.value.varint()?))
     }
@@ -354,6 +399,12 @@ impl WireField<'_> {
             value: WireValue::Varint(encode_zigzag64(v)),
         }
         .serialize(out);
+    }
+
+    pub fn serialize_sparse_sint64(field_number: FieldNumber, v: i64, out: &mut Vec<u8>) {
+        if v != 0 {
+            Self::serialize_sint64(field_number, v, out);
+        }
     }
 
     pub fn parse_fixed32(&self) -> Result<u32> {
@@ -369,6 +420,12 @@ impl WireField<'_> {
         .serialize(out);
     }
 
+    pub fn serialize_sparse_fixed32(field_number: FieldNumber, v: u32, out: &mut Vec<u8>) {
+        if v != 0 {
+            Self::serialize_fixed32(field_number, v, out);
+        }
+    }
+
     pub fn parse_fixed64(&self) -> Result<u64> {
         Ok(LittleEndian::read_u64(self.value.word64()?))
     }
@@ -380,6 +437,12 @@ impl WireField<'_> {
             value: WireValue::Word64(&data),
         }
         .serialize(out);
+    }
+
+    pub fn serialize_sparse_fixed64(field_number: FieldNumber, v: u64, out: &mut Vec<u8>) {
+        if v != 0 {
+            Self::serialize_fixed64(field_number, v, out);
+        }
     }
 
     pub fn parse_sfixed32(&self) -> Result<i32> {
@@ -397,6 +460,12 @@ impl WireField<'_> {
         Self::serialize_uint32(field_number, if v { 1 } else { 0 }, out);
     }
 
+    pub fn serialize_sparse_bool(field_number: FieldNumber, v: bool, out: &mut Vec<u8>) {
+        if v {
+            Self::serialize_bool(field_number, v, out);
+        }
+    }
+
     pub fn parse_string(&self) -> Result<String> {
         let mut val = vec![];
         val.extend_from_slice(self.value.length_delim()?);
@@ -409,6 +478,12 @@ impl WireField<'_> {
             value: WireValue::LengthDelim(v.as_ref()),
         }
         .serialize(out);
+    }
+
+    pub fn serialize_sparse_string(field_number: FieldNumber, v: &str, out: &mut Vec<u8>) {
+        if v.len() > 0 {
+            Self::serialize_string(field_number, v, out);
+        } 
     }
 
     pub fn parse_bytes(&self) -> Result<BytesMut> {
@@ -425,6 +500,12 @@ impl WireField<'_> {
         .serialize(out);
     }
 
+    pub fn serialize_sparse_bytes(field_number: FieldNumber, v: &[u8], out: &mut Vec<u8>) {
+        if v.len() > 0 {
+            Self::serialize_bytes(field_number, v, out);
+        }
+    }
+
     pub fn parse_enum<E: Enum>(&self) -> Result<E> {
         E::parse(self.parse_int32()?)
     }
@@ -432,6 +513,13 @@ impl WireField<'_> {
     pub fn serialize_enum<E: Enum>(field_number: FieldNumber, v: &E, out: &mut Vec<u8>) {
         // TODO: Support up to 64bits?
         Self::serialize_int32(field_number, v.value(), out);
+    }
+
+    pub fn serialize_sparse_enum<E: Enum>(field_number: FieldNumber, v: &E, out: &mut Vec<u8>) {
+        // TODO: This one is tricky!
+        if v.value() != 0 {
+            Self::serialize_enum(field_number, v, out);
+        }
     }
 
     // TODO: Instead use a dynamic version that parses into an existing struct.

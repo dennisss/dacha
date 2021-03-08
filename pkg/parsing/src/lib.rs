@@ -361,7 +361,7 @@ impl ParserFeed for &str {
 #[macro_export]
 macro_rules! alt {
 	( $first:expr, $( $next:expr ),* ) => {
-		|input| {
+		move |input| {
 			let mut errs = vec![];
 			match ($first)(::std::clone::Clone::clone(&input)) {
 				Ok(v) => { return Ok(v); },

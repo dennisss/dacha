@@ -153,7 +153,7 @@ parser!(exponent<&str, String> => seq!(c => {
 // strLit = ( "'" { charValue } "'" ) | ( '"' { charValue } '"' )
 parser!(pub strLit<&str, String> => seq!(c => {
     let q = c.next(quote)?;
-    let val = c.next(many(charValue))?;
+    let val = c.next(many(charValue(q)))?;
     c.next(atom(q))?;
 
     let mut s = String::new();
@@ -165,12 +165,14 @@ parser!(pub strLit<&str, String> => seq!(c => {
 }));
 
 // charValue = hexEscape | octEscape | charEscape | /[^\0\n\\]/
-parser!(charValue<&str, char> => alt!(
-    hexEscape, oct_escape, char_escape,
-
-    // NOTE: Can't be '"' because of strLit
-    like(|c| c != '"' && c != '\0' && c != '\n' && c != '\\')
-));
+fn charValue(quote: char) -> impl Fn(&str) -> Result<(char, &str)> {
+    alt!(
+        hexEscape, oct_escape, char_escape,
+    
+        // NOTE: Can't be a quote because of strLit
+        like(|c| c != quote && c != '\0' && c != '\n' && c != '\\')
+    )
+}
 
 // hexEscape = '\' ( "x" | "X" ) hexDigit hexDigit
 parser!(hexEscape<&str, char> => seq!(c => {

@@ -72,3 +72,32 @@ pub trait Enum {
 
     fn assign_name(&mut self, name: &str) -> Result<()>;
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::proto::test::*;
+
+    #[test]
+    fn generated_code_usage() {
+        let mut list = ShoppingList::default();
+
+        assert_eq!(list.id(), 0);
+        assert_eq!(list.items_len(), 0);
+        assert_eq!(list.store(), ShoppingList_Store::UNKNOWN);
+
+        // A protobuf with all default fields should have no custom fields.
+        assert_eq!(&list.serialize().unwrap(), &[]);
+
+        list.set_id(0);
+        list.set_name("".to_string());
+        assert_eq!(&list.serialize().unwrap(), &[]);
+
+        list.set_id(4);
+        assert_eq!(&list.serialize().unwrap(), &[0x10, 4]);
+
+
+
+    }
+
+}

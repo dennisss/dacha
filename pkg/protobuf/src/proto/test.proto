@@ -21,6 +21,7 @@ message ShoppingList {
         TARGET = 2;
         WHOLE_FOODS = 3;
     }
+    Store store = 5;
 
     message Item {
         string name = 1;

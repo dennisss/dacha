@@ -116,7 +116,7 @@ pub struct TextMessage {
 impl TextMessage {
     parser!(parse<&str, Self> => {
         // TODO: Each field may be optionally followed by a ','
-        map(many(TextField::parse), |fields| Self { fields })
+        map(delimited(TextField::parse, opt(is(symbol, ','))), |fields| Self { fields })
     });
 
     fn apply(&self, message: &mut dyn MessageReflection) -> Result<()> {
@@ -316,6 +316,9 @@ impl TextValue {
                     // TODO: Must verify that that we aren't losing precision.
                     e.assign(*v as i32)?;
                 }
+                Self::Identifier(v) => {
+                    e.assign_name(&v)?;
+                }
                 _ => {
                     return Err(err_msg("Can't cast to enum"));
                 }
@@ -426,7 +429,35 @@ mod test {
     #[test]
     fn works() {
         let mut list = ShoppingList::default();
-        parse_text_proto("name: \"Groceries\" id: 3 cost: 12.50", &mut list).unwrap();
+        parse_text_proto(r#"
+            # This is a comment
+            name: "Groceries"
+            id: 3
+            cost: 12.50
+            items: [
+                # And here is another
+                {
+                    name: "First"
+                    fruit_type: ORANGES
+                },
+                <
+                    name: "Second",
+                    fruit_type: APPLES
+                >
+            ]
+            store: WALMART
+            items {
+                fruit_type: BERRIES
+                name: 'Third'
+            }
+            "#, &mut list).unwrap();
+
+        assert_eq!(list.name(), "Groceries");
+        assert_eq!(list.id(), 3);
+        assert_eq!(list.cost(), 12.5);
+        assert_eq!(list.store(), ShoppingList_Store::WALMART);
+
+        assert_eq!(list.items().len(), 3);
 
         println!("{:?}", list);
     }

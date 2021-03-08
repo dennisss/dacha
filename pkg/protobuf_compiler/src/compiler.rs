@@ -244,6 +244,7 @@ impl Compiler<'_> {
         lines.add("}");
         lines.nl();
 
+        // TODO: RE-use this above with the proto3 check.
         let mut default_option = None;
         for i in &e.body {
             match i {
@@ -298,7 +299,7 @@ impl Compiler<'_> {
                     }
                 }
             }
-            lines.add("_ => { return Err(err_msg(\"Unknown enum name\")); }");
+            lines.add("_ => { return Err(format_err!(\"Unknown enum name: {}\", s)); }");
             lines.add("})");
             lines.add("}");
 
@@ -397,6 +398,22 @@ impl Compiler<'_> {
         }
     }
 
+    fn is_copyable(&self, typ: &FieldType, path: Path) -> bool {
+        match typ {
+            FieldType::Named(name) => {
+                let resolved = self.resolve(name, path).expect(&format!("Failed to resolve type: {}", name));
+                match resolved.descriptor {
+                    ResolvedTypeDesc::Enum(_) => true,
+                    ResolvedTypeDesc::Message(_) => false,
+                }
+            }
+            FieldType::String => false,
+            FieldType::Bytes => false,
+            _ => true
+        }
+    }
+
+
     fn compile_field(&self, field: &Field, path: Path) -> String {
         let mut s = String::new();
         s += "\t";
@@ -449,6 +466,8 @@ impl Compiler<'_> {
         // TODO: Complain if we include a proto2 enum directly as a field of a proto3
         // message.
 
+        // TODO: Complain about any unsupported options in fields
+
         let mut inner_path = Vec::from(path);
         inner_path.push(&msg.name);
 
@@ -456,6 +475,15 @@ impl Compiler<'_> {
         for field in msg.fields() {
             if !used_nums.insert(field.num) {
                 panic!("Duplicate field number: {}", field.num);
+            }
+            if self.proto.syntax == Syntax::Proto3 {
+                if field.label != Label::None && field.label != Label::Repeated {
+                    panic!("Invalid field label in proto3");
+                }
+            } else {
+                if field.label == Label::None {
+                    panic!("Missing field label in proto2 field");
+                }
             }
         }
 
@@ -486,6 +514,7 @@ impl Compiler<'_> {
             let typ = self.compile_field_type(&field.typ, &inner_path);
 
             let is_primitive = self.is_primitive(&field.typ, &inner_path);
+            let is_copyable = self.is_copyable(&field.typ, &inner_path);
 
             // TODO: Messages should always have options?
             let use_option = !(field.label == Label::Required
@@ -497,10 +526,12 @@ impl Compiler<'_> {
                 lines.add_inline(format!(" &self.{}", name));
                 lines.add_inline(" }");
             } else {
+                let modifier = if is_copyable { "" } else { "&" };
+
                 // TODO: For Option<>, we need a &'static thing to use.
                 // For primitives, it is sufficient to copy it.
-                lines.add(format!("\tpub fn {}(&self) -> &{} {{", name, typ));
-                lines.add_inline(format!(" &self.{} }}", name));
+                lines.add(format!("\tpub fn {}(&self) -> {}{} {{", name, modifier, typ));
+                lines.add_inline(format!(" {}self.{} }}", modifier, name));
             }
 
             if is_repeated {
@@ -576,7 +607,7 @@ impl Compiler<'_> {
             let use_option =
                 !(self.is_primitive(&field.typ, &inner_path) && self.proto.syntax == Syntax::Proto3);
 
-            let typename = match &field.typ {
+            let typeclass = match &field.typ {
                 FieldType::Named(n) => {
                     // TODO: Call compile_field_type
                     let typ = self
@@ -593,12 +624,12 @@ impl Compiler<'_> {
 
             let mut p = String::new();
             if is_repeated {
-                p += &format!("msg.{}.push(f.parse_{}()?)", name, typename);
+                p += &format!("msg.{}.push(f.parse_{}()?)", name, typeclass);
             } else {
                 if use_option {
-                    p += &format!("msg.{} = Some(f.parse_{}()?)", name, typename);
+                    p += &format!("msg.{} = Some(f.parse_{}()?)", name, typeclass);
                 } else {
-                    p += &format!("msg.{} = f.parse_{}()?", name, typename);
+                    p += &format!("msg.{} = f.parse_{}()?", name, typeclass);
                 }
             }
 
@@ -616,12 +647,15 @@ impl Compiler<'_> {
         lines.add("\tfn serialize(&self) -> Result<Vec<u8>> {");
         lines.add("\t\tlet mut data = vec![];");
 
+        // TODO: Sort the serialization by the field numbers so that we get nice cross version compatible formats.
+
+        // TODO: Need to implement packed serialization/deserialization.
         for field in msg.fields() {
             let name = self.field_name(field);
             let is_repeated = field.label == Label::Repeated;
 
             // TODO: Dedup with above
-            let typename = match &field.typ {
+            let mut typeclass = match &field.typ {
                 FieldType::Named(n) => {
                     let typ = self
                         .resolve(&n, &inner_path)
@@ -633,7 +667,7 @@ impl Compiler<'_> {
                     }
                 }
                 _ => field.typ.as_str(),
-            };
+            }.to_string();
 
             let pass_reference = match &field.typ {
                 FieldType::String => true,
@@ -643,8 +677,12 @@ impl Compiler<'_> {
             };
 
             let use_option =
-                !(self.is_primitive(&field.typ, &inner_path) && self.proto.syntax == Syntax::Proto3);
+                !(self.is_primitive(&field.typ, &inner_path) && self.proto.syntax == Syntax::Proto3) && !is_repeated;
 
+            // TODO: Should also check that we aren't using a 'required' label?
+            if !use_option && !is_repeated {
+                typeclass = format!("sparse_{}", typeclass);
+            }
 
             let given_reference = is_repeated || use_option;
 
@@ -658,7 +696,7 @@ impl Compiler<'_> {
 
             let serialize_line = format!(
                 "\t\t\tWireField::serialize_{}({}, {}v, &mut data)?;",
-                typename, field.num, reference_str
+                typeclass, field.num, reference_str
             );
 
             if is_repeated {
@@ -676,7 +714,7 @@ impl Compiler<'_> {
                     // TODO: Should borrow the value when using messages
                     lines.add(format!(
                         "\t\tWireField::serialize_{}({}, {}self.{}, &mut data);",
-                        typename, field.num, reference_str, name,
+                        typeclass, field.num, reference_str, name,
                     ));
                 }
 
