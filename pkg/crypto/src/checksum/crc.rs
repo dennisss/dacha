@@ -60,8 +60,8 @@ impl Hasher for CRC32Hasher {
 
     fn update(&mut self, data: &[u8]) {
         // TODO: Speed up with CLMUL?
-        for i in data {
-            let idx = ((self.val & 0xff) as u8) ^ *i;
+        for byte in data {
+            let idx = ((self.val & 0xff) as u8) ^ *byte;
             self.val = (self.val >> 8) ^ CRC32_TABLE[idx as usize];
         }
     }

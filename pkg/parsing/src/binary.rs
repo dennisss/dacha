@@ -40,6 +40,10 @@ pub fn be_u8(mut input: &[u8]) -> ParseResult<u8, &[u8]> {
     Ok((v, &input[1..]))
 }
 
+pub fn le_u8(input: &[u8]) -> ParseResult<u8, &[u8]> {
+    be_u8(input)
+}
+
 pub fn be_u24(mut input: &[u8]) -> ParseResult<u32, &[u8]> {
     if input.len() < 3 {
         return Err(incomplete_error());

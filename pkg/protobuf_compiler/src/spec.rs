@@ -160,6 +160,7 @@ pub type Range = (FieldNumber, FieldNumber);
 #[derive(Debug, Clone)]
 pub enum Reserved {
     Ranges(Ranges),
+    // Names of fields that are not allowed to appear again in the message.
     Fields(Vec<String>),
 }
 

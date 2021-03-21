@@ -228,3 +228,42 @@ pub fn derive_defaultable(input: TokenStream) -> TokenStream {
 
     proc_macro::TokenStream::from(out)
 }
+
+pub fn derive_const_default(input: TokenStream) -> TokenStream {
+    // Parse the input tokens into a syntax tree.
+    let input = parse_macro_input!(input as DeriveInput);
+
+    // Used in the quasi-quotation below as `#name`.
+    let name = input.ident;
+
+    let mut fields = vec![];
+
+    match &input.data {
+        Data::Struct(s) => {
+            for field in s.fields.iter() {
+                let field_name = field.ident.clone().unwrap();
+
+
+                let ty = &field.ty;
+                let value = {
+                    quote! { <#ty as ::common::const_default::ConstDefault>::DEFAULT }
+                };
+
+                fields.push(quote! {
+                    #field_name: #value
+                });
+            }
+        }
+        _ => {}
+    }
+
+    let out = quote! {
+        impl ::common::const_default::ConstDefault for #name {
+            const DEFAULT: Self = #name {
+                #(#fields,)*
+            };
+        }
+    };
+
+    proc_macro::TokenStream::from(out)
+}

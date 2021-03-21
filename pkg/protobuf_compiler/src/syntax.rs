@@ -362,7 +362,7 @@ parser!(oneofField<&str, Field> => seq!(c => {
     let num = c.next(fieldNumber)?;
     let unknown_options = c.next(fieldOptionsWrap).unwrap_or(vec![]);
     c.next(is(symbol, ';'))?;
-    Ok(Field { label: Label::Optional, typ, name,
+    Ok(Field { label: Label::None, typ, name,
         num, options: FieldOptions::default(), unknown_options })
 }));
 

@@ -1,15 +1,12 @@
 [package]
-name = "protobuf"
+name = "parsing_compiler"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
-parsing = { path = "../parsing" }
-byteorder = "1.3.2"
-base64 = "0.11.0"
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 
 [build-dependencies]

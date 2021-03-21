@@ -1,0 +1,82 @@
+// Defines the 
+
+syntax = "proto3";
+
+message BinaryDescriptorLibrary {
+    repeated Struct structs = 1;
+    repeated Enum enums = 2;
+}
+
+message Enum {
+    string name = 1;
+    // NOTE: Must resolve to an integer type
+    Type type = 2;
+
+    Endian endian = 4;
+
+    repeated EnumValue values = 3;
+}
+
+message EnumValue {
+    string name = 1;
+    uint64 value = 2;
+}
+
+enum Endian {
+    UNKNOWN = 0;
+    LITTLE_ENDIAN = 1;
+    BIG_ENDIAN = 2;
+}
+
+message Struct {
+    string name = 1;
+    Endian endian = 2;
+    repeated Field field = 3;
+}
+
+enum PrimitiveType {
+    UNKNOWN = 0;
+    U8 = 1;
+    I8 = 2;
+    U16 = 3;
+    I16 = 4;
+    U32 = 5;
+    I32 = 6;
+    U64 = 7;
+    I64 = 8;
+    FLOAT = 9;
+    DOUBLE = 10;
+
+    // TODO: Also include variable length integer types?
+}
+
+message BufferType {
+    // TODO: I guess we could also have a buffer of buffers
+    Type element_type = 1;
+    oneof size {
+        uint64 fixed_length = 2;
+
+        // NOTE: The length field must currently be in the same struct as the buffer.
+        string length_field_name = 3;
+
+        // Zero terminated?
+    }
+}
+
+message Type {
+    oneof type {
+        PrimitiveType primitive = 1;
+
+        // TODO: Possibly recursive?
+        BufferType buffer = 2;
+
+        // should be the same of the struct
+        string named = 3;
+    }
+}
+
+message Field {
+    string name = 1;
+    Type type = 2;
+    string comment = 3;
+}

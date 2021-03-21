@@ -110,3 +110,8 @@ pub fn derive_reflection(input: TokenStream) -> TokenStream {
 pub fn derive_defaultable(input: TokenStream) -> TokenStream {
     reflect::derive_defaultable(input)
 }
+
+#[proc_macro_derive(ConstDefault)]
+pub fn derive_const_default(input: TokenStream) -> TokenStream {
+    reflect::derive_const_default(input)
+}

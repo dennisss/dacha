@@ -1,6 +1,7 @@
 pub use deflate::*;
 pub use inflate::*;
 
+#[derive(Debug)]
 pub struct Progress {
     /// Number of input bytes consumed during the update.
     pub input_read: usize,

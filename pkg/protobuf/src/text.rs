@@ -149,8 +149,6 @@ struct TextField {
 impl TextField {
     parser!(parse<&str, Self> => seq!(c => {
         let name = c.next(TextFieldName::parse)?;
-        println!("{:?}", name);
-        // TODO: Also allowed to be a <
         let is_message = c.next(opt(peek(alt!(
             is(symbol, '{'),
             is(symbol, '<')
@@ -366,7 +364,6 @@ pub fn parse_text_syntax(text: &str) -> Result<TextMessage> {
 
 pub fn parse_text_proto(text: &str, message: &mut dyn MessageReflection) -> Result<()> {
     let v = parse_text_syntax(text)?;
-    println!("We Parsed: {:#?}", v);
 
     v.apply(message)?;
 

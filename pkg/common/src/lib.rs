@@ -26,6 +26,7 @@ pub mod io;
 pub mod iter;
 pub mod line_builder;
 pub mod vec;
+pub mod const_default;
 
 pub use async_trait::*;
 pub use lazy_static::*;
@@ -163,11 +164,30 @@ pub fn block_size_remainder(block_size: u64, end_offset: u64) -> u64 {
 pub fn camel_to_snake_case(name: &str) -> String {
     let mut s = String::new();
     for c in name.chars() {
+        // TODO: Don't push if this is the first item.
         if c.is_alphabetic() && c.is_ascii_uppercase() {
             s.push('_');
         }
 
         s.push(c.to_ascii_lowercase());
+    }
+
+    s
+}
+
+pub fn snake_to_camel_case(name: &str) -> String {
+    let mut s = String::new();
+
+    let mut next_upper = true;
+    for c in name.chars() {
+        if c == '_' {
+            next_upper = true;
+        } else if next_upper {
+            s.push(c.to_ascii_uppercase());
+            next_upper = false;
+        } else {
+            s.push(c);
+        }
     }
 
     s

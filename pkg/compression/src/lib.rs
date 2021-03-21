@@ -12,3 +12,4 @@ pub mod gzip;
 pub mod huffman;
 pub mod snappy;
 pub mod zlib;
+pub mod zip;

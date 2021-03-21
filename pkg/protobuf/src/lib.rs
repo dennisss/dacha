@@ -11,6 +11,9 @@ extern crate common;
 extern crate byteorder;
 extern crate parsing; // < Mainly needed for f32/f64 conversions
 
+#[macro_use]
+extern crate macros;
+
 // TODO: Eventually remove dependencies on the compiler
 extern crate protobuf_compiler;
 
@@ -22,7 +25,7 @@ mod proto;
 
 pub use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
-use crate::reflection::MessageReflection;
+pub use crate::reflection::MessageReflection;
 pub use protobuf_compiler::spec::EnumValue;
 pub use protobuf_compiler::spec::FieldNumber;
 
@@ -72,6 +75,52 @@ pub trait Enum {
 
     fn assign_name(&mut self, name: &str) -> Result<()>;
 }
+
+#[derive(Default, Clone, Debug, PartialEq)]
+pub struct HashMap<K: Clone + PartialEq + std::hash::Hash + Eq, V: Clone + PartialEq + Eq> {
+    pub inner: Option<std::collections::HashMap<K, V>>
+}
+
+impl<K: Clone + PartialEq + std::hash::Hash + Eq, V: Clone + PartialEq + Eq> common::const_default::ConstDefault for HashMap<K, V> {
+    const DEFAULT: Self = Self { inner: None };
+}
+
+#[derive(Default, Clone, Debug, PartialEq)]
+pub struct MessagePtr<T> {
+    value: Box<T>
+}
+
+impl<T> MessagePtr<T> {
+    pub fn new(value: T) -> Self {
+        Self { value: Box::new(value) }
+    }
+}
+
+impl<T> std::ops::Deref for MessagePtr<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl<T> std::ops::DerefMut for MessagePtr<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
+    }
+}
+
+impl<T> std::convert::AsRef<T> for MessagePtr<T> {
+    fn as_ref(&self) -> &T {
+        self.value.as_ref()
+    }
+}
+
+impl<T> std::convert::AsMut<T> for MessagePtr<T> {
+    fn as_mut(&mut self) -> &mut T {
+        self.value.as_mut()
+    }
+}
+
 
 #[cfg(test)]
 mod test {

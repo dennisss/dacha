@@ -1,0 +1,339 @@
+structs {
+    name: "LocalFileHeader"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "extractor_version"
+        type { primitive: U16 }
+    }
+    field {
+        name: "flags"
+        type { primitive: U16 }
+    }
+    field {
+        name: "compression_method"
+        type { named: "CompressionMethod" }
+    }
+    field {
+        name: "modified_time"
+        type { primitive: U16 }
+    }
+    field {
+        name: "modified_date"
+        type { primitive: U16 }
+    }
+
+    field {
+        name: "checksum"
+        type { primitive: U32 }
+    }
+    field {
+        name: "compressed_size"
+        type { primitive: U32 }
+    }
+    field {
+        name: "uncompressed_size"
+        type { primitive: U32 }
+    }
+    field {
+        name: "file_name_length"
+        type { primitive: U16 }
+    }
+    field {
+        name: "extra_field_length"
+        type { primitive: U16 }
+    }
+    field {
+        name: "file_name"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                length_field_name: "file_name_length"
+            }
+        }
+    }
+    field {
+        name: "extra_field"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                length_field_name: "extra_field_length"
+            }
+        }
+    }
+}
+
+enums {
+    name: "CompressionMethod"
+    endian: LITTLE_ENDIAN
+    type { primitive: U16 }
+    values {
+        name: "Stored"
+        value: 0
+    }
+    values {
+        name: "Shrunk"
+        value: 1
+    }
+    values {
+        name: "ReducedFactor1"
+        value: 2
+    }
+    values {
+        name: "ReducedFactor2"
+        value: 3
+    }
+    values {
+        name: "ReducedFactor3"
+        value: 4
+    }
+    values {
+        name: "ReducedFactor4"
+        value: 5
+    }
+    values {
+        name: "Imploded"
+        value: 6
+    }
+    values {
+        name: "ReservedTokenizing"
+        value: 7
+    }
+    values {
+        name: "Deflated"
+        value: 8
+    }
+    values {
+        name: "Deflated64"
+        value: 9
+    }
+    values {
+        # PKWARE Data Compression Library Imploding (old IBM TERSE)
+        name: "IBM_TERSE_OLD"
+        value: 10
+    }
+    values {
+        name: "Reserved11"
+        value: 11
+    }
+    values {
+        name: "BZIP2"
+        value: 12
+    }
+    values {
+        name: "Reserved13"
+        value: 13
+    }
+    values {
+        name: "LZMA"
+        value: 14
+    }
+    values {
+        name: "Reserved15"
+        value: 15
+    }
+    values {
+        name: "IBM_CMPSC"
+        value: 16
+    }
+    values {
+        name: "Reserved17"
+        value: 17
+    }
+    values {
+        name: "IBM_TERSE_NEW"
+        value: 18
+    }
+    values {
+        name: "IBM_LZ77"
+        value: 19
+    }
+    values {
+        name: "DeprecatedZstd"
+        value: 20
+    }
+    values {
+        name: "Zstandard"
+        value: 93
+    }
+    values {
+        name: "MP3"
+        value: 94
+    }
+    values {
+        name: "XZ"
+        value: 95
+    }
+    values {
+        name: "JPEG"
+        value: 96
+    }
+    values {
+        name: "WavPack"
+        value: 97
+    }
+    values {
+        name: "PPMd"
+        value: 98
+    }
+    values {
+        name: "AExEncryption"
+        value: 99
+    }
+}
+
+structs {
+    name: "DataDescriptor"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "checksum"
+        type { primitive: U32 }
+    }
+    field {
+        name: "compressed_size"
+        type { primitive: U32 }
+    }
+    field {
+        name: "uncompressed_size"
+        type { primitive: U32 }
+    }
+}
+
+structs {
+    name: "CentralDirectoryFileHeader"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "creator_version"
+        type { primitive: U16 }
+    }
+    field {
+        name: "extractor_version"
+        type { primitive: U16 }
+    }
+    field {
+        name: "flags"
+        type { primitive: U16 }
+    }
+    field {
+        name: "compression_method"
+        type { named: "CompressionMethod" }
+    }
+    field {
+        name: "modified_time"
+        type { primitive: U16 }
+    }
+    field {
+        name: "modified_date"
+        type { primitive: U16 }
+    }
+    field {
+        name: "checksum"
+        type { primitive: U32 }
+    }
+    field {
+        name: "compressed_size"
+        type { primitive: U32 }
+    }
+    field {
+        name: "uncompressed_size"
+        type { primitive: U32 }
+    }
+    field {
+        name: "file_name_length"
+        type { primitive: U16 }
+    }
+    field {
+        name: "extra_field_length"
+        type { primitive: U16 }
+    }
+    field {
+        name: "file_comment_length"
+        type { primitive: U16 }
+    }
+    field {
+        name: "disc_number_start"
+        type { primitive: U16 }
+    }
+    field {
+        name: "internal_file_attributes"
+        type { primitive: U16 }
+    }
+    field {
+        name: "external_file_attributes"
+        type { primitive: U32 }
+    }
+    field {
+        name: "relative_offset"
+        type { primitive: U32 }
+    }
+    field {
+        name: "file_name"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                length_field_name: "file_name_length"
+            }
+        }
+    }
+    field {
+        name: "extra_field"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                length_field_name: "extra_field_length"
+            }
+        }
+    }
+    field {
+        name: "file_comment"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                length_field_name: "file_comment_length"
+            }
+        }
+    }
+}
+
+structs {
+    name: "EndOfCentralDirectoryRecord"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "disk_number"
+        comment: "Disk number for this file."
+        type { primitive: U16 }
+    }
+    field {
+        name: "central_dir_start_disk"
+        type { primitive: U16 }
+    }
+    field {
+        name: "num_central_dir_entries_in_disk"
+        type { primitive: U16 }
+    }
+    field {
+        name: "num_central_dir_entries_total"
+        type { primitive: U16 }
+    }
+    field {
+        name: "central_dir_size"
+        type { primitive: U32 }
+    }
+    field {
+        name: "central_dir_start_offset"
+        comment: "Offset to the start of the central directory on the starting disk"
+        type { primitive: U32 }
+    }
+    field {
+        name: "zip_file_comment_length"
+        type { primitive: U16 }
+    }
+    field {
+        name: "zip_file_comment"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                length_field_name: "zip_file_comment_length"
+            }
+        }
+    }
+}

@@ -16,6 +16,7 @@ pub enum Reflection<'a> {
     Repeated(&'a dyn RepeatedFieldReflection),
     Message(&'a dyn MessageReflection),
     Enum(&'a dyn Enum),
+    Option(Option<&'a dyn Reflect>)
 }
 
 pub enum ReflectionMut<'a> {
@@ -30,7 +31,10 @@ pub enum ReflectionMut<'a> {
     Bytes,
     Repeated(&'a mut dyn RepeatedFieldReflection),
     Message(&'a mut dyn MessageReflection),
-    Enum(&'a mut dyn Enum),
+    Enum(&'a mut dyn Enum)
+    // NOTE: reflect_mut() on an option will simply assign a new default value.
+    // TODO: Support controlling presence with reflection?
+    // Option(Option<&'a mut dyn Reflect>)
 }
 
 /// NOTE: Should be implemented by all Messages.
@@ -48,6 +52,11 @@ pub trait MessageReflection {
 
     fn field_number_by_name(&self, name: &str) -> Option<FieldNumber>;
 }
+
+// pub trait OptionReflection {
+//     fn reflect_inner(&self) -> Option<Reflection>;
+//     fn reflect_inner_mut(&mut self) -> Option<ReflectionMut>
+// }
 
 pub trait Reflect {
     fn reflect(&self) -> Reflection;
@@ -84,6 +93,31 @@ impl<T: MessageReflection> Reflect for T {
         ReflectionMut::Message(self)
     }
 }
+
+impl<T: Reflect> Reflect for crate::MessagePtr<T> {
+    fn reflect(&self) -> Reflection {
+        self.value.as_ref().reflect()
+    }
+    fn reflect_mut(&mut self) -> ReflectionMut {
+        self.value.as_mut().reflect_mut()
+    }
+}
+
+impl<T: Reflect + Default> Reflect for Option<T> {
+    fn reflect(&self) -> Reflection {
+        Reflection::Option(self.as_ref().map(|v: &T| v as &dyn Reflect))
+    }
+    fn reflect_mut(&mut self) -> ReflectionMut {
+        if !self.is_some() {
+            *self = Some(T::default());
+        }
+
+        self.as_mut().unwrap().reflect_mut()
+    }
+}
+
+
+
 
 impl<T: Reflect + Default> Reflect for Vec<T> {
     fn reflect(&self) -> Reflection {

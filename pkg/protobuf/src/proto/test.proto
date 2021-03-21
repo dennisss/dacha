@@ -28,5 +28,7 @@ message ShoppingList {
         Fruit fruit_type = 2;
     }
     repeated Item items = 4;
+
+    map<string, int32> table = 6;
 }
 
