@@ -20,3 +20,6 @@ typenum = "1.11.2"
 lazy_static = "1.4.0"
 base64 = "0.11.0"
 chrono = "0.4.9"
+
+[dev-dependencies]
+openssl = { path = "../../third_party/openssl" }

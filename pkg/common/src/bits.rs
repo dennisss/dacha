@@ -13,6 +13,7 @@ pub enum BitIoError {
 }
 
 /// Sets a bit to either by 1 or 0 based on the given boolean.
+/// TODO: Refactor so that 'val' is the last argument.
 pub fn bitset(i: &mut u8, val: bool, bit: u8) {
     let mask = 1 << bit;
     *i = *i & !mask;
@@ -65,6 +66,7 @@ impl BitVector {
             self.data.push(0);
         }
 
+        // NOTE: This assumes that all unused bits are 0.
         let last = self.data.last_mut().unwrap();
         *last |= bit << 7 - (self.len % 8);
         self.len += 1;
@@ -90,6 +92,33 @@ impl BitVector {
 
         Some((self.data[i / 8] >> (7 - (i % 8))) & 0b1)
     }
+
+    pub fn set(&mut self, i: usize, value: u8) -> bool {
+        if i >= self.len {
+            return false;
+        }
+
+        bitset(&mut self.data[i / 8], value != 0, (7 - (i % 8)) as u8);
+
+        true
+    }
+
+    pub fn get_byte(&self, bit_i: usize) -> Option<u8> {
+        if bit_i + 8 > self.len {
+            return None;
+        }
+
+        let byte_i = bit_i / 8;
+        let rel_bit_i = bit_i % 8;
+
+        let mut v = self.data[byte_i];
+        if rel_bit_i != 0 {
+            v <<= rel_bit_i;
+            v |= self.data[byte_i + 1] >> rel_bit_i
+        }
+
+        Some(v)
+    } 
 
     /// Generates a bitvector from a number. The corresponding vector will start
     /// with the MSB of the number.
@@ -124,11 +153,83 @@ impl BitVector {
         out
     }
 
+    pub fn to_lower_msb(&self) -> usize {
+        let mut out = 0;
+
+        for i in 0..self.len() {
+            out = (out << 1) | (self.get(i).unwrap() as usize);
+        }
+
+        out
+    }
+
     pub fn from(data: &[u8], len: usize) -> Self {
         let mut data = Vec::from(data);
         data.resize(ceil_div(len, 8), 0);
 
+        // Zero out any bits in the last byte that don't go up to 'len'
+        let r = len % 8;
+        if r != 0 {
+            let i = data.len() - 1;
+            let lastb = data[i];
+            data[i] = (lastb >> (8 - r)) << (8 - r);
+        }
+
         Self { data, len }
+    }
+
+    pub fn permute(&self, permutation: &[u8]) -> Self {
+        let mut out = Self::new();
+        for i in 0..permutation.len() {
+            let j = permutation[i] as usize;
+            out.push(self.get(j).unwrap());
+        }
+        out
+    }
+
+    /// Concatenates two bitvectors together.
+    pub fn concat(&self, other: &BitVector) -> Self {
+        let mut output = self.clone();
+        for i in 0..other.len() {
+            output.push(other.get(i).unwrap());
+        }
+
+        output
+    }
+
+    pub fn rotate_left(&self, n: usize) -> BitVector {
+        let mut output = self.clone();
+        for i in 0..self.len() {
+            assert!(output.set(i, self.get((i + n) % self.len()).unwrap()));
+        }
+
+        output
+    }
+
+    pub fn xor(&self, other: &BitVector) -> BitVector {
+        assert_eq!(self.len(), other.len());
+
+        let mut output = self.clone();
+        for i in 0..output.data.len() {
+            output.data[i] ^= other.data[i];
+        }
+
+        output
+    }
+
+    pub fn split_at(&self, mid: usize) -> (BitVector, BitVector) {
+        let mut left = BitVector::new();
+        let mut right = BitVector::new();
+
+        for i in 0..mid {
+            left.push(self.get(i).unwrap());
+        }
+
+        for i in mid..self.len() {
+            right.push(self.get(i).unwrap());
+        }
+
+        (left, right)
     }
 }
 
@@ -389,10 +490,38 @@ impl<T> BitReader<'_, std::io::Cursor<T>> {
 */
 
 impl Read for BitReader<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, mut buf: &mut [u8]) -> std::io::Result<usize> {
+        // TODO: A lot of this code assumes that we are storing bits MSB first.
+        /*
+        if self.buffer.len() - self.offset % 8 != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "BitReader not aligned to a whole byte offset: regular reading not supported",
+            ));
+        }
+
+        while buf.len() > 0 && self.offset < self.buffer.len() {
+            buf[0] = self.buffer.get_byte(self.offset).unwrap();
+            self.offset += 8;
+            buf = &mut buf[1..];
+        }
+
+        // Rest of the bytes need 
+
+        // Return as many as possible 
+
+        // XXX: Actually we should allow reading so long as 
+        if self.buffer.len() != self.offset {
+            
+        }
+        */
+
         // We do not buffer unconsumed bits when reading full bytes, so
         // NOTE: This would also check for 'self.buffer.len() != self.offset'
+        //
+        // TODO: At the very least, we have to have self.buffer.len() == self.offset().
         if self.buffer.len() != self.consumed_offset {
+            // println!("AAA: {} {} {}", self.buffer.len(), self.consumed_offset, self.offset);
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "Reading would drop trailing bits",
@@ -510,5 +639,38 @@ mod tests {
         strm.finish().unwrap();
 
         assert_eq!(data[0], 0b011);
+    }
+
+    #[test]
+    fn bitvector_set() {
+        let mut v = BitVector::from(&[0, 0], 13);
+        assert_eq!(v.len(), 13);
+        assert_eq!(v.as_ref(), &[0, 0]);
+
+        v.set(0, 1);
+        assert_eq!(v.as_ref(), &[0x80, 0]);
+
+        v.set(2, 1);
+        assert_eq!(v.as_ref(), &[0xA0, 0]);
+
+        v.set(11, 1);
+        assert_eq!(v.as_ref(), &[0xA0, 0x10]);
+
+        v.set(2, 0);
+        assert_eq!(v.as_ref(), &[0x80, 0x10]);
+    }
+
+    #[test]
+    fn bitvector_rotate_left() {
+        let v = BitVector::from(&[0b11010000], 4);
+        assert_eq!(v.rotate_left(1).as_ref(), &[0b10110000]);
+        assert_eq!(v.rotate_left(3).as_ref(), &[0b11100000]);
+    }
+
+    #[test]
+    fn bitvector_concat() {
+        let a = BitVector::from(&[0xde, 0xff], 10);
+        let b = BitVector::from(&[0b01011000], 6);
+        assert_eq!(a.concat(&b).as_ref(), &[0xde, 0b11010110]);
     }
 }

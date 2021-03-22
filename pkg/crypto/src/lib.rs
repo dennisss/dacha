@@ -138,6 +138,7 @@ pub mod aes;
 pub mod chacha20;
 pub mod checksum;
 pub mod cipher;
+pub mod des;
 pub mod dh;
 pub mod elliptic;
 pub mod gcm;
