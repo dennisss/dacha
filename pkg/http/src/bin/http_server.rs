@@ -5,6 +5,15 @@ extern crate common;
 extern crate http;
 extern crate parsing;
 
+use std::borrow::BorrowMut;
+use std::convert::AsMut;
+use std::convert::TryFrom;
+use std::io;
+use std::io::{Cursor, Read, Write};
+use std::str::FromStr;
+use std::sync::Arc;
+use std::thread;
+
 use common::async_std::net::{TcpListener, TcpStream};
 use common::async_std::prelude::*;
 use common::async_std::task;
@@ -22,14 +31,8 @@ use http::spec::*;
 use http::status_code::*;
 use http::transfer_encoding::*;
 use parsing::iso::*;
-use std::borrow::BorrowMut;
-use std::convert::AsMut;
-use std::convert::TryFrom;
-use std::io;
-use std::io::{Cursor, Read, Write};
-use std::str::FromStr;
-use std::sync::Arc;
-use std::thread;
+use http::response::*;
+use http::request::*;
 
 // TODO: Pipelining?
 

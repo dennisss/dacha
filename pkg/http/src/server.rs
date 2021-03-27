@@ -1,10 +1,3 @@
-use crate::body::*;
-use crate::header_parser::*;
-use crate::message::*;
-use crate::message_parser::*;
-use crate::reader::*;
-use crate::spec::*;
-use common::async_std::future;
 use common::async_std::net::{TcpListener, TcpStream};
 use common::async_std::task;
 use common::errors::*;
@@ -14,7 +7,16 @@ use std::convert::TryFrom;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-//use common::async_std::prelude::*;
+
+use crate::body::*;
+use crate::header_parser::*;
+use crate::message::*;
+use crate::message_parser::*;
+use crate::reader::*;
+use crate::spec::*;
+use crate::method::*;
+use crate::request::*;
+use crate::response::*;
 
 //pub type HttpRequestHandler = dyn (Fn(Request) -> Pin<Box<dyn
 // Future<Output=Response> + Send>>) + Send + Sync;
@@ -75,6 +77,7 @@ impl HttpServer {
         }
     }
 
+    // TODO: Ideally we'd support using some alternative connection (e.g. a TlsServer)
     pub async fn run(&self) -> Result<()> {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", self.port)).await?;
 
@@ -96,7 +99,7 @@ impl HttpServer {
 
     async fn handle_client(stream: TcpStream, handler: Arc<dyn HttpRequestHandler>) -> Result<()> {
         let stream = Arc::new(stream);
-        let mut write_stream = stream.as_ref();
+        let write_stream = stream.as_ref();
         let mut read_stream = StreamReader::new(stream.clone());
 
         // Remaining bytes from the last request read.

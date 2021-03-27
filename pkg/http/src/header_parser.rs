@@ -1,28 +1,15 @@
-use crate::common_parser::*;
-use crate::header::*;
-use crate::spec::*;
 use common::errors::*;
 use parsing::ascii::AsciiString;
 use parsing::*;
 
-// See https://tools.ietf.org/html/rfc7230#section-3.3.1
+use crate::common_parser::*;
+use crate::message_parser::*;
+use crate::header::*;
 
-/// NOTE: Names are case insensitive
+// Transfer-Encoding: https://tools.ietf.org/html/rfc7230#section-3.3.1
 
-pub struct TransferCoding {
-    name: String,
-    pub params: Vec<(String, String)>,
-}
+// Content-Length: https://tools.ietf.org/html/rfc7230#section-3.3.2
 
-impl TransferCoding {
-    pub fn name(&self) -> String {
-        self.name.to_ascii_lowercase()
-    }
-
-    pub fn raw_name(&self) -> &str {
-        &self.name
-    }
-}
 
 // TODO: What to do about empty elements again?
 
@@ -38,7 +25,7 @@ impl TransferCoding {
 /// `1#element => element *( OWS "," OWS element )`
 /// `#element => [ 1#element ]`
 /// `<n>#<m>element => element <n-1>*<m-1>( OWS "," OWS element )`
-fn comma_delimited<T, P: Parser<T> + Copy>(p: P, min: usize, max: usize) -> impl Parser<Vec<T>> {
+pub fn comma_delimited<T, P: Parser<T> + Copy>(p: P, min: usize, max: usize) -> impl Parser<Vec<T>> {
     assert!(max >= min && max >= 1);
 
     seq!(c => {
@@ -69,69 +56,6 @@ fn comma_delimited<T, P: Parser<T> + Copy>(p: P, min: usize, max: usize) -> impl
 
         Ok(out)
     })
-}
-
-// `transfer-parameter = token BWS "=" BWS ( token / quoted-string )`
-parser!(parse_transfer_parameter<(String, String)> => {
-    seq!(c => {
-        let name = c.next(parse_token)?.to_string();
-        c.next(parse_bws)?;
-        c.next(one_of("="))?;
-        c.next(parse_bws)?;
-        let value = c.next(alt!(
-            map(parse_token, |s| s.to_string()),
-            map(parse_quoted_string, |s| s.to_string())
-        ))?;
-        Ok((name, value))
-    })
-});
-
-// `transfer-extension = token *( OWS ";" OWS transfer-parameter )`
-parser!(parse_transfer_extension<TransferCoding> => {
-    seq!(c => {
-        let name = c.next(parse_token)?.to_string();
-        let params = c.many(seq!(c => {
-            c.next(parse_ows)?;
-            c.next(one_of(";"))?;
-            c.next(parse_ows)?;
-            Ok(c.next(parse_transfer_parameter)?)
-        }));
-
-        Ok(TransferCoding {
-            name, params
-        })
-    })
-});
-
-// `transfer-coding = "chunked" / "compress"
-//					/ "deflate" / "gzip" / transfer-extension`
-parser!(parse_transfer_coding<TransferCoding> => {
-    parse_transfer_extension
-});
-
-pub const MAX_TRANSFER_CODINGS: usize = 4;
-
-// TODO: Must tolerate empty items in comma delimited lsit
-pub fn parse_transfer_encoding(headers: &HttpHeaders) -> Result<Vec<TransferCoding>> {
-    let mut out = vec![];
-    for h in headers.find(TRANSFER_ENCODING) {
-        let (items, _) = complete(comma_delimited(
-            parse_transfer_coding,
-            1,
-            MAX_TRANSFER_CODINGS,
-        ))(h.value.data.clone())?;
-
-        out.reserve(items.len());
-        for i in items.into_iter() {
-            out.push(i);
-        }
-
-        if out.len() > MAX_TRANSFER_CODINGS {
-            return Err(err_msg("Too many Transfer-Codings"));
-        }
-    }
-
-    Ok(out)
 }
 
 // A sender MUST

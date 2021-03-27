@@ -1,13 +1,8 @@
-use common::async_std::io::Read;
+use std::sync::Arc;
+
 use common::bytes::Bytes;
 use common::errors::*;
-use common::futures::io::{AsyncRead, AsyncWrite};
 use common::io::*;
-use std::convert::AsRef;
-use std::marker::Unpin;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::Poll;
 
 pub trait Matcher {
     /// Considering all previous data passed to this function, try to find a
@@ -18,7 +13,7 @@ pub trait Matcher {
 
 // TODO: Move this somewhere else as this is very specific to http.
 /// Matches the end of the next empty line where a line is terminated by the
-/// exact sequence '\r\n'.
+/// exact sequence of bytes b"\r\n".
 pub struct LineMatcher {
     seen_cr: bool,
     cur_length: usize,
@@ -70,7 +65,7 @@ impl Matcher for LineMatcher {
 
 // TODO: Rename StreamIO as this now supports passing through write as well
 pub struct StreamReader {
-    reader: Arc<dyn Readable>,
+    reader: Box<dyn Readable>,
     head: Bytes,
 }
 
@@ -108,7 +103,7 @@ const MAX_BUFFER_SIZE: usize = 16 * 1024; // 16KB
 // impl<R> StreamReader<R> where R: AsRead, for<'a> &'a R::Inner: AsyncRead +
 // Unpin  {
 impl StreamReader {
-    pub fn new(reader: Arc<dyn Readable>) -> Self {
+    pub fn new(reader: Box<dyn Readable>) -> Self {
         StreamReader {
             reader,
             head: Bytes::new(),
@@ -198,7 +193,7 @@ impl StreamReader {
         }
 
         if rest.len() > 0 {
-            let mut r = self.reader.as_ref();
+            let r = self.reader.as_ref();
             let nread = r.read(rest).await?;
             total_read += nread;
         }

@@ -1,5 +1,12 @@
+use std::convert::TryInto;
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use common::async_std::net::TcpStream;
+use common::async_std::prelude::*;
+use common::errors::*;
+
 use crate::body::*;
-use crate::chunked::*;
 use crate::dns::*;
 use crate::header::*;
 use crate::header_parser::*;
@@ -9,16 +16,13 @@ use crate::reader::*;
 use crate::spec::*;
 use crate::status_code::*;
 use crate::transfer_encoding::*;
+use crate::transfer_encoding_syntax::*;
 use crate::uri::*;
-use crate::uri_parser::*;
-use common::async_std::net::TcpStream;
-use common::async_std::prelude::*;
-use common::errors::*;
-use std::convert::AsMut;
-use std::convert::TryInto;
-use std::io::Read;
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use crate::response::*;
+use crate::request::*;
+use crate::method::*;
+
+// TODO: Need to clearly document which responsibilities are reserved for the client.
 
 /// NOTE: As Transfer-Encoding must be handled in order to delimit messages in
 /// a connection, it will be processed internally.
@@ -98,6 +102,7 @@ impl Client {
 
         let ip = match authority.host {
             Host::Name(n) => {
+                // TODO: This should become async.
                 let addrs = lookup_hostname(n.as_ref())?;
                 let mut ip = None;
                 // TODO: Prefer ipv6 over ipv4?
@@ -200,11 +205,9 @@ impl Client {
         // TODO: Use timeout?
         let stream = TcpStream::connect(self.socket_addr).await?;
         stream.set_nodelay(true)?;
-
-        let stream = Arc::new(stream);
-
-        let mut write_stream = stream.as_ref();
-        let mut read_stream = StreamReader::new(stream.clone());
+        
+        let mut write_stream = stream.clone();
+        let mut read_stream = StreamReader::new(Box::new(stream));
 
         // TODO: Set 'Connection: keep-alive' to support talking to legacy (1.0 servers)
 

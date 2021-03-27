@@ -2,16 +2,24 @@ use crate::uri_parser::*;
 use common::bytes::Bytes;
 use common::errors::*;
 use parsing::ascii::*;
-use std::net::ToSocketAddrs;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6}; // TODO: Cyclic reference
+use std::net::{IpAddr, Ipv4Addr};
 
-#[derive(Debug)]
+/// Uniform Resource Indicator
+/// 
+/// This struct is also used for storing a URI reference which may be relative
+/// and not contain a scheme or authority.
+/// NOTE: URLs are a subset of URIs.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Uri {
+    /// e.g. for a URL 'http://localhost', the scheme will be 'http'
     pub scheme: Option<AsciiString>,
+
     pub authority: Option<Authority>,
+    
     pub path: String,
+    
     pub query: Option<AsciiString>,
+    
     // NOTE: This will always be empty for absolute_uri
     pub fragment: Option<AsciiString>,
 }
@@ -53,20 +61,20 @@ impl std::str::FromStr for Uri {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Authority {
     pub user: Option<AsciiString>,
     pub host: Host,
     pub port: Option<usize>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Host {
     Name(AsciiString),
     IP(IPAddress),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum IPAddress {
     V4(Vec<u8>),
     V6(Vec<u8>),
@@ -101,6 +109,7 @@ pub enum UriPath {
 }
 
 impl UriPath {
+    // TODO: Return an Ascii string.
     pub fn to_string(&self) -> String {
         let join = |strs: &Vec<AsciiString>| {
             strs.iter()
@@ -126,3 +135,4 @@ pub enum Path {
     PathRootless(Vec<AsciiString>),
     PathEmpty,
 }
+

@@ -1,91 +1,32 @@
-use crate::body::{Body, BoxFutureResult};
-use crate::common_parser::*;
-use crate::message_parser::*;
-use crate::reader::*;
-use crate::spec::*;
-use common::async_std::net::TcpStream;
-use common::bytes::Bytes;
 use common::errors::*;
-use common::FutureResult;
-use parsing::ascii::*;
-use parsing::iso::*;
-use parsing::*;
-use std::future::Future;
-use std::io::Read;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use parsing::ascii::AsciiString;
+use parsing::iso::Latin1String;
+use parsing::complete;
 
-struct ChunkExtension {
-    name: AsciiString,
-    value: Option<Latin1String>,
+use crate::body::Body;
+use crate::reader::*;
+use crate::chunked_syntax::*;
+
+pub struct ChunkExtension {
+    pub name: AsciiString,
+    pub value: Option<Latin1String>,
 }
 
-struct ChunkHead {
-    size: usize,
-    extensions: Vec<ChunkExtension>,
+pub struct ChunkHead {
+    pub size: usize,
+    pub extensions: Vec<ChunkExtension>,
 }
 
-// `chunk-size = 1*HEXDIG`
-// TODO: Ensure not out of range.
-parser!(parse_chunk_size<usize> => {
-    map(take_while1(|i: u8| (i as char).is_digit(16)),
-        |data: Bytes| usize::from_str_radix(
-            std::str::from_utf8(&data).unwrap(), 16).unwrap())
-});
 
-// chunk-ext = *( ";" chunk-ext-name [ "=" chunk-ext-val ] )
-parser!(parse_chunk_ext<Vec<ChunkExtension>> => {
-    many(seq!(c => {
-        c.next(one_of(";"))?;
-        let name = c.next(parse_chunk_ext_name)?;
-        let value = c.next(opt(seq!(c => {
-            c.next(one_of("="))?;
-            Ok(c.next(parse_chunk_ext_val)?)
-        })))?;
-
-        Ok(ChunkExtension { name, value })
-    }))
-});
-
-// `chunk-ext-name = token`
-parser!(parse_chunk_ext_name<AsciiString> => parse_token);
-
-// `chunk-ext-val = token / quoted-string`
-parser!(parse_chunk_ext_val<Latin1String> => alt!(
-    parse_quoted_string,
-    and_then(parse_token, |s| Latin1String::from_bytes(s.data))
-));
-
-// `= chunk-size [ chunk-ext ] CRLF`
-parser!(parse_chunk_start<ChunkHead> => seq!(c => {
-    let size = c.next(parse_chunk_size)?;
-    let extensions = c.next(opt(parse_chunk_ext))?
-        .unwrap_or(vec![]);
-    c.next(parse_crlf)?;
-
-    Ok(ChunkHead { size, extensions })
-}));
-
-// `= trailer-part CRLF`
-parser!(parse_chunk_end<Vec<HttpHeader>> => {
-    seq!(c => {
-        let headers = c.next(parse_trailer_part)?;
-        c.next(parse_crlf)?;
-        Ok(headers)
-    })
-});
-
-// `trailer-part = *( header-field CRLF )`
-parser!(parse_trailer_part<Vec<HttpHeader>> => {
-    many(parse_header_field)
-});
-
+/// Current state while reading a chunked body.
 #[derive(Clone)]
 enum ChunkState {
-    /// Reading the first line of the chunk containing the size
+    /// Reading the first line of the chunk containing the size.
     Start,
-    /// Reading the data in the chunk
-    Data(usize),
+    /// Reading the data in the chunk.
+    Data {
+        remaining_len: usize
+    },
     /// Done reading the data in the chunk and reading the empty line endings
     /// immediately after the data.
     End,
@@ -95,14 +36,14 @@ enum ChunkState {
     Done,
 }
 
-pub struct IncomingChunkedBody {
-    stream: StreamReader,
-    state: ChunkState,
-}
-
 enum CycleValue {
     StateChange,
     Read(usize),
+}
+
+pub struct IncomingChunkedBody {
+    stream: StreamReader,
+    state: ChunkState,
 }
 
 impl IncomingChunkedBody {
@@ -139,24 +80,24 @@ impl IncomingChunkedBody {
                 if head.size == 0 {
                     self.state = ChunkState::Trailer;
                 } else {
-                    self.state = ChunkState::Data(head.size);
+                    self.state = ChunkState::Data { remaining_len: head.size };
                 }
 
                 Ok(CycleValue::StateChange)
             }
-            ChunkState::Data(len) => {
+            ChunkState::Data { remaining_len } => {
                 // TODO: Also try reading = \r\n in the same call?
-                let n = std::cmp::min(len, buf.len());
+                let n = std::cmp::min(remaining_len, buf.len());
                 let nread = self.stream.read(&mut buf[0..n]).await?;
                 if nread == 0 && buf.len() > 0 {
                     return Err(err_msg("Reached end of stream before end of data"));
                 }
 
-                let new_len = len - nread;
+                let new_len = remaining_len - nread;
                 if new_len == 0 {
                     self.state = ChunkState::End;
                 } else {
-                    self.state = ChunkState::Data(new_len);
+                    self.state = ChunkState::Data { remaining_len: new_len };
                 }
 
                 Ok(CycleValue::Read(nread))
@@ -207,7 +148,7 @@ impl Body for IncomingChunkedBody {
         None
     }
 
-    async fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         // TODO: Have a solution that doesn't require a loop here.
         loop {
             match self.read_cycle(buf).await? {
@@ -222,8 +163,10 @@ impl Body for IncomingChunkedBody {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Cursor;
+    use std::sync::Arc;
+
+    use super::*;
 
     const TEST_BODY: &'static [u8] = b"7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n";
 
@@ -231,7 +174,7 @@ mod tests {
     fn chunked_body_test() {
         let data = Cursor::new(TEST_BODY);
         let stream = StreamReader::new(data);
-        let mut body = IncomingChunkedBody::new(stream);
+        let mut body = IncomingChunkedBody::new(Arc::new(stream));
 
         let mut outbuf = String::new();
         body.read_to_string(&mut outbuf).unwrap();

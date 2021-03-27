@@ -5,6 +5,15 @@ extern crate common;
 extern crate http;
 extern crate parsing;
 
+use std::borrow::BorrowMut;
+use std::convert::AsMut;
+use std::convert::TryFrom;
+use std::io;
+use std::io::{Cursor, Read, Write};
+use std::str::FromStr;
+use std::sync::Arc;
+use std::thread;
+
 use common::async_std::net::{TcpListener, TcpStream};
 use common::async_std::prelude::*;
 use common::async_std::task;
@@ -21,15 +30,10 @@ use http::message::*;
 use http::spec::*;
 use http::status_code::*;
 use http::transfer_encoding::*;
+use http::request::*;
+use http::method::*;
 use parsing::iso::*;
-use std::borrow::BorrowMut;
-use std::convert::AsMut;
-use std::convert::TryFrom;
-use std::io;
-use std::io::{Cursor, Read, Write};
-use std::str::FromStr;
-use std::sync::Arc;
-use std::thread;
+
 
 async fn run_client() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set

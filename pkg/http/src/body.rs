@@ -1,21 +1,17 @@
-use crate::reader::*;
-use common::bytes::Bytes;
-use common::errors::*;
-use common::futures::io::AsyncRead;
-use common::FutureResult;
-use std::borrow::{Borrow, BorrowMut};
-use std::convert::TryFrom;
-use std::future::Future;
 use std::io::Cursor;
-use std::io::{Read, Write};
-use std::marker::Unpin;
 use std::pin::Pin;
 use std::sync::mpsc;
-use std::sync::Arc;
+
+use common::bytes::Bytes;
+use common::errors::*;
+use common::FutureResult;
+
+use crate::reader::*;
 
 pub type BoxFutureResult<'a, T> = Pin<Box<dyn FutureResult<T> + Send + 'a>>;
 
 // TODO: Merge with Readable trait?
+// TODO: Rename IncomingBody?
 #[async_trait]
 pub trait Body: Send + Sync {
     /// Returns the total length in bytes of the body payload. Will return None

@@ -1,8 +1,19 @@
+use common::errors::*;
+
 use crate::body::*;
 use crate::chunked::*;
-use crate::header_parser::*;
 use crate::reader::*;
-use common::errors::*;
+
+pub struct TransferCoding {
+    pub raw_name: String,
+    pub params: Vec<(String, String)>,
+}
+
+impl TransferCoding {
+    pub fn name(&self) -> String {
+        self.raw_name.to_ascii_lowercase()
+    }
+}
 
 pub fn get_transfer_encoding_body(
     mut transfer_encoding: Vec<TransferCoding>,

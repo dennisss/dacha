@@ -24,6 +24,10 @@ impl AsciiString {
         })
     }
 
+    pub fn from_str(s: &str) -> Result<AsciiString> {
+        Self::from_bytes(Bytes::from(s.as_bytes()))
+    }
+
     pub fn from_string(s: String) -> Result<AsciiString> {
         Self::from_bytes(s.into_bytes().into())
     }

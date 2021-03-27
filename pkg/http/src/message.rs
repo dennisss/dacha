@@ -1,8 +1,11 @@
-use crate::reader::*;
-use common::async_std::net::TcpStream;
 use common::bytes::Bytes;
 use common::errors::*;
-use std::sync::Arc;
+use parsing::ascii::AsciiString;
+use parsing::iso::Latin1String;
+
+use crate::reader::*;
+use crate::uri::*;
+use crate::header::*;
 
 // Marker that indicates the end of the HTTP headers.
 const HTTP_MESSAGE_ENDMARKER: &'static [u8] = b"\r\n\r\n";
@@ -13,6 +16,100 @@ const HTTP_MESSAGE_ENDMARKER: &'static [u8] = b"\r\n\r\n";
 // If we average an http preamable (request line + headers) larger than this
 // size, then we will fail the request. const max_buffer_size: usize = 16*1024;
 // // 16KB
+
+// TODO: Read https://www.ietf.org/rfc/rfc1945.txt, we should never actually see 0.9 in a one-liner
+
+pub const HTTP_V0_9: HttpVersion = HttpVersion { major: 0, minor: 9 };
+pub const HTTP_V1_0: HttpVersion = HttpVersion { major: 1, minor: 0 };
+pub const HTTP_V1_1: HttpVersion = HttpVersion { major: 1, minor: 1 };
+pub const HTTP_V2_0: HttpVersion = HttpVersion { major: 2, minor: 0 };
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct HttpVersion {
+    pub major: u8,
+    pub minor: u8,
+}
+
+impl HttpVersion {
+    pub fn to_string(&self) -> String {
+        format!("{}.{}", self.major, self.minor)
+    }
+}
+
+#[derive(Debug)]
+pub struct HttpMessageHead {
+    pub start_line: StartLine,
+    pub headers: HttpHeaders,
+}
+
+#[derive(Debug)]
+pub enum StartLine {
+    Request(RequestLine),
+    Response(StatusLine),
+}
+
+#[derive(Debug)]
+pub struct RequestLine {
+    pub method: AsciiString,
+    pub target: RequestTarget,
+    pub version: HttpVersion,
+}
+
+#[derive(Debug)]
+pub struct StatusLine {
+    pub version: HttpVersion,
+    pub status_code: u16,
+    pub reason: Latin1String,
+}
+
+// https://tools.ietf.org/html/rfc7230#section-5.3
+#[derive(Debug)]
+pub enum RequestTarget {
+    /// Standard relative path. This is the typical request
+    OriginForm(Vec<AsciiString>, Option<AsciiString>),
+
+    /// Typically a proxy request
+    /// NOTE: Must be accepted ALWAYS be servers.
+    AbsoluteForm(Uri),
+
+    /// Only used for CONNECT.
+    AuthorityForm(Authority),
+
+    /// Used for OPTIONS.
+    AsteriskForm,
+}
+
+impl RequestTarget {
+    pub fn into_uri(self) -> Uri {
+        match self {
+            RequestTarget::OriginForm(path_abs, query) => Uri {
+                scheme: None,
+                authority: None,
+                path: UriPath::Absolute(path_abs).to_string(),
+                query,
+                fragment: None,
+            },
+            RequestTarget::AbsoluteForm(u) => u,
+            RequestTarget::AuthorityForm(a) => Uri {
+                scheme: None,
+                authority: Some(a),
+                // TODO: Wrong?
+                path: String::new(),
+                query: None,
+                fragment: None,
+            },
+            RequestTarget::AsteriskForm => Uri {
+                scheme: None,
+                authority: None,
+                path: String::from("*"),
+                query: None,
+                fragment: None,
+            },
+        }
+    }
+}
+
+
 
 pub enum HttpStreamEvent {
     /// Read the entire head of a http request/response message.
