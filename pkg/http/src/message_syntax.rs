@@ -9,9 +9,9 @@ use parsing::ascii::*;
 use parsing::iso::*;
 use parsing::*;
 
-use crate::common_parser::*;
+use crate::common_syntax::*;
 use crate::uri::*;
-use crate::uri_parser::*;
+use crate::uri_syntax::*;
 use crate::message::*;
 use crate::header::*;
 
@@ -67,6 +67,10 @@ parser!(parse_http_version<HttpVersion> => {
         })
     })
 });
+
+fn serialize_version(version: &HttpVersion, out: &mut Vec<u8>) {
+
+}
 
 // RFC 7230: Section 2.6
 //
@@ -299,7 +303,7 @@ fn is_qdtext(i: u8) -> bool {
 /// TODO: 128 to 159 are undefined in ISO-8859-1
 /// (Obsolete) Text
 /// `obs-text = %x80-FF`
-pub fn is_obs_text(i: u8) -> bool {
+fn is_obs_text(i: u8) -> bool {
     i >= 0x80 && i <= 0xff
 }
 

@@ -2,8 +2,8 @@ use common::errors::*;
 use parsing::ascii::AsciiString;
 use parsing::*;
 
-use crate::common_parser::*;
-use crate::message_parser::*;
+use crate::common_syntax::*;
+use crate::message_syntax::*;
 use crate::header::*;
 
 // Transfer-Encoding: https://tools.ietf.org/html/rfc7230#section-3.3.1
@@ -19,7 +19,7 @@ use crate::header::*;
 /// Encodes http comma separated values as used in headers.
 /// It is recommended to always explicitly define a maximum number of items.
 ///
-/// Per RFC7230, this will tolerate empty items.
+/// Per RFC7230 Section 7, this will tolerate empty items.
 ///
 /// In the RFCs, this corresponds to these grammar rules:
 /// `1#element => element *( OWS "," OWS element )`
@@ -65,7 +65,9 @@ pub fn comma_delimited<T, P: Parser<T> + Copy>(p: P, min: usize, max: usize) -> 
 //    MUST apply chunked as the final transfer coding to ensure that the
 //    message is properly framed.
 
-// `Content-Length = 1*DIGIT`
+/// RFC 7230: Section 3.3.2
+///
+/// `Content-Length = 1*DIGIT`
 pub fn parse_content_length(headers: &HttpHeaders) -> Result<Option<usize>> {
     let mut hs = headers.find(CONTENT_LENGTH);
     let len = if let Some(h) = hs.next() {

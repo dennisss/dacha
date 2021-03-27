@@ -7,6 +7,7 @@ use common::errors::*;
 use parsing::ascii::*;
 use parsing::*;
 use std::fmt::Write;
+use common::hex;
 
 // TODO: Ensure URLs never get 2K bytes (especially in the incremental form)
 // https://stackoverflow.com/questions/417142/what-is-the-maximum-length-of-a-url-in-different-browsers
@@ -39,9 +40,9 @@ fn parse_pct_encoded(input: Bytes) -> ParseResult<u8> {
     Ok((v, input.slice(3..)))
 }
 
-fn serialize_pct_encoded(value: u8, out: &mut String) {
+fn serialize_pct_encoded(value: u8, out: &mut Vec<u8>) {
     // TODO: Consider checking if the given value is in the ascii range.
-    write!(out, "%{:02X}", value);
+    out.extend_from_slice(format!("%{:02X}", value).as_bytes());
 }
 
 /// RFC 3986: Section 2.2
@@ -191,10 +192,10 @@ parser!(parse_userinfo<AsciiString> => {
 });
 
 // RFC 3986: Section 3.2.1
-fn serialize_userinfo(info: &AsciiString, out: &mut String) {
+fn serialize_userinfo(info: &AsciiString, out: &mut Vec<u8>) {
     for b in info.as_ref().as_bytes().iter().cloned() {
         if is_unreserved(b) || is_sub_delims(b) || b == (':' as u8) {
-            out.push(b as char);
+            out.push(b);
         } else {
             serialize_pct_encoded(b, out);
         }
@@ -341,7 +342,7 @@ fn parse_h16(input: Bytes) -> ParseResult<Vec<u8>> {
     let mut padded: [u8; 4] = *b"0000";    
     padded[(4-i)..].copy_from_slice(&input[0..i]);
 
-    let mut decoded = common::hex::decode(padded).unwrap();
+    let mut decoded = hex::decode(padded).unwrap();
     if decoded.len() == 1 {
         decoded.insert(0, 0);
     }

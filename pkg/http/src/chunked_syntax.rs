@@ -6,9 +6,9 @@ use parsing::iso::Latin1String;
 
 use crate::chunked::*;
 use crate::header::*;
-use crate::header_parser;
-use crate::message_parser::*;
-use crate::common_parser::*;
+use crate::header_syntax;
+use crate::message_syntax::*;
+use crate::common_syntax::*;
 
 // RFC 7230: Section 4.1.1
 //

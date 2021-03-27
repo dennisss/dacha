@@ -3,9 +3,9 @@ use parsing::*;
 
 use crate::header::*;
 use crate::transfer_encoding::*;
-use crate::header_parser::*;
-use crate::common_parser::*;
-use crate::message_parser::*;
+use crate::header_syntax::*;
+use crate::common_syntax::*;
+use crate::message_syntax::*;
 
 pub const MAX_TRANSFER_CODINGS: usize = 4;
 

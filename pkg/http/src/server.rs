@@ -9,9 +9,9 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::body::*;
-use crate::header_parser::*;
+use crate::header_syntax::*;
 use crate::message::*;
-use crate::message_parser::*;
+use crate::message_syntax::*;
 use crate::reader::*;
 use crate::spec::*;
 use crate::method::*;

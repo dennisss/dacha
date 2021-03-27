@@ -1,4 +1,4 @@
-use crate::uri_parser::*;
+use crate::uri_syntax::*;
 use common::bytes::Bytes;
 use common::errors::*;
 use parsing::ascii::*;

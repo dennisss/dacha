@@ -52,7 +52,7 @@ async fn run_client() -> Result<()> {
     let mut res = client.request(req).await?;
     println!("{:?}", res.head);
 
-    let content_encoding = http::header_parser::parse_content_encoding(&res.head.headers)?;
+    let content_encoding = http::header_syntax::parse_content_encoding(&res.head.headers)?;
     if content_encoding.len() > 1 {
         return Err(err_msg("More than one Content-Encoding not supported"));
     }

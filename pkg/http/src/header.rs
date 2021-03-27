@@ -3,7 +3,7 @@ use common::bytes::*;
 use parsing::ascii::*;
 use parsing::iso::*;
 
-use crate::message_parser::*;
+use crate::message_syntax::*;
 
 pub const CONNECTION: &'static [u8] = b"Connection";
 

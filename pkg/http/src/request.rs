@@ -5,7 +5,7 @@ use crate::body::*;
 use crate::header::*;
 use crate::method::*;
 use crate::message::*;
-use crate::message_parser::*;
+use crate::message_syntax::*;
 use crate::uri::*;
 
 pub struct Request {
