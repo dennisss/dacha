@@ -1,6 +1,6 @@
 // TLS specific helpers for parsing binary packets.
 
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 use parsing::binary::*;
 use parsing::*;

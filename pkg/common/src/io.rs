@@ -315,10 +315,10 @@ impl<T: 'static + Send, S: crate::futures::sink::Sink<T> + Send + Unpin> Sinkabl
 /// locking is performed.
 #[async_trait]
 pub trait Readable: Send + Sync + Unpin + 'static {
-    async fn read(&self, buf: &mut [u8]) -> Result<usize>;
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
 
     // TODO: Deduplicate for http::Body
-    async fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<()> {
+    async fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<()> {
         let mut i = buf.len();
         loop {
             buf.resize(i + BUF_SIZE, 0);
@@ -340,7 +340,7 @@ pub trait Readable: Send + Sync + Unpin + 'static {
         }
     }
 
-    async fn read_exact(&self, mut buf: &mut [u8]) -> Result<()> {
+    async fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<()> {
         while buf.len() > 0 {
             let n = self.read(buf).await?;
             if n == 0 {
@@ -356,11 +356,11 @@ pub trait Readable: Send + Sync + Unpin + 'static {
 
 #[async_trait]
 pub trait Writeable: Send + Sync + Unpin + 'static {
-    async fn write(&self, buf: &[u8]) -> Result<usize>;
+    async fn write(&mut self, buf: &[u8]) -> Result<usize>;
 
-    async fn flush(&self) -> Result<()>;
+    async fn flush(&mut self) -> Result<()>;
 
-    async fn write_all(&self, mut buf: &[u8]) -> Result<()> {
+    async fn write_all(&mut self, mut buf: &[u8]) -> Result<()> {
         while buf.len() > 0 {
             let n = self.write(buf).await?;
             if n == 0 {
@@ -375,39 +375,43 @@ pub trait Writeable: Send + Sync + Unpin + 'static {
 }
 
 #[async_trait]
+impl Readable for std::io::Cursor<&'static [u8]> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        Ok(std::io::Read::read(self, buf)?)
+    }
+}
+
+#[async_trait]
 impl Readable for async_std::net::TcpStream {
-    async fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        let mut r = self;
-        let n = async_std::io::prelude::ReadExt::read(&mut r, buf).await?;
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let n = async_std::io::prelude::ReadExt::read(self, buf).await?;
         Ok(n)
     }
 }
 
 #[async_trait]
 impl Writeable for async_std::net::TcpStream {
-    async fn write(&self, buf: &[u8]) -> Result<usize> {
-        let mut r = self;
-        let n = async_std::io::prelude::WriteExt::write(&mut r, buf).await?;
+    async fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        let n = async_std::io::prelude::WriteExt::write(self, buf).await?;
         Ok(n)
     }
 
-    async fn flush(&self) -> Result<()> {
-        let mut r = self;
-        async_std::io::prelude::WriteExt::flush(&mut r).await?;
+    async fn flush(&mut self) -> Result<()> {
+        async_std::io::prelude::WriteExt::flush(self).await?;
         Ok(())
     }
 }
 
 pub trait ReadWriteable: Readable + Writeable {
-    fn as_read(&self) -> &dyn Readable;
-    fn as_write(&self) -> &dyn Writeable;
+    fn as_read(&mut self) -> &mut dyn Readable;
+    fn as_write(&mut self) -> &mut dyn Writeable;
 }
 
 impl<T: Readable + Writeable> ReadWriteable for T {
-    fn as_read(&self) -> &dyn Readable {
+    fn as_read(&mut self) -> &mut dyn Readable {
         self
     }
-    fn as_write(&self) -> &dyn Writeable {
+    fn as_write(&mut self) -> &mut dyn Writeable {
         self
     }
 }

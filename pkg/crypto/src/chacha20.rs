@@ -15,6 +15,7 @@ struct ChaCha20 {
     /// This will always contain the key, nonce, etc.
     /// The only part of this that should be mutated is the counter.
     state: State,
+
     /// Number of bytes processed up to now.
     bytes_processed: usize,
 }
@@ -237,13 +238,13 @@ mod tests {
 
     #[test]
     fn chacha20_encrypt_test() {
-        let key = hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+        let key = common::hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
             .unwrap();
-        let nonce = hex::decode("000000000000004a00000000").unwrap();
+        let nonce = common::hex::decode("000000000000004a00000000").unwrap();
 
         let plain = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
 
-        let cipher = hex::decode("6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0bf91b65c5524733ab8f593dabcd62b3571639d624e65152ab8f530c359f0861d807ca0dbf500d6a6156a38e088a22b65e52bc514d16ccf806818ce91ab77937365af90bbf74a35be6b40b8eedf2785e42874d").unwrap();
+        let cipher = common::hex::decode("6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0bf91b65c5524733ab8f593dabcd62b3571639d624e65152ab8f530c359f0861d807ca0dbf500d6a6156a38e088a22b65e52bc514d16ccf806818ce91ab77937365af90bbf74a35be6b40b8eedf2785e42874d").unwrap();
 
         let mut out = vec![];
         out.resize(plain.len(), 0);
@@ -259,10 +260,10 @@ mod tests {
 
     #[test]
     fn poly1305_test() {
-        let key = hex::decode("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
+        let key = common::hex::decode("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
             .unwrap();
         let plain = b"Cryptographic Forum Research Group";
-        let tag = hex::decode("a8061dc1305136c6c22b8baf0c0127a9").unwrap();
+        let tag = common::hex::decode("a8061dc1305136c6c22b8baf0c0127a9").unwrap();
 
         assert_eq!(&Poly1305::new().mac(&plain[..], &key), &tag);
     }

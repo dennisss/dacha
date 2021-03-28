@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 use parsing::ascii::*;
 use parsing::*;
@@ -62,7 +62,7 @@ impl PEMEntry {
             }
         }
 
-        let out = base64::decode(&input)?;
+        let out = common::base64::decode(&input)?;
         println!("IN {} {}", input.len(), out.len());
         Ok(out)
     }

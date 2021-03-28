@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 
 /// An str backed by bytes that we know only contain bytes 0-127.

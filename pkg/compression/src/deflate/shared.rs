@@ -44,16 +44,16 @@ pub const CODE_LEN_CODE_LEN_ORDERING: [u8; CODE_LEN_ALPHA_SIZE] = [
 // specified.
 pub fn fixed_huffman_lenlit_tree() -> Result<HuffmanTree> {
     let mut lens = vec![];
-    for i in 0..144 {
+    for _ in 0..144 {
         lens.push(8);
     }
-    for i in 144..256 {
+    for _ in 144..256 {
         lens.push(9);
     }
-    for i in 256..280 {
+    for _ in 256..280 {
         lens.push(7);
     }
-    for i in 280..288 {
+    for _ in 280..288 {
         lens.push(8);
     }
 

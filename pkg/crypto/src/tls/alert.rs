@@ -1,5 +1,5 @@
 use super::parsing::*;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use parsing::binary::*;
 use parsing::*;
 

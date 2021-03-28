@@ -20,7 +20,7 @@ const BODY_BUFFER_SIZE: usize = 4096;
 
 // TODO: Move this out of the spec as it is the only async thing here.
 // Probably move under Body
-pub async fn write_body(body: &mut dyn Body, writer: &dyn Writeable) -> Result<()> {
+pub async fn write_body(body: &mut dyn Body, writer: &mut dyn Writeable) -> Result<()> {
     // TODO: If we sent a Content-Length, make sure that we are consistent.
     let mut buf = [0u8; BODY_BUFFER_SIZE];
     loop {

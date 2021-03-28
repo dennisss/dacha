@@ -1,12 +1,12 @@
 // TODO: Move to third_party
 
 use crate::elliptic::EllipticCurveGroup;
-use crate::hasher::{Hasher, HasherFactory};
+use crate::hasher::Hasher;
 use crate::pem::*;
 use crate::tls::extensions::ExtensionType::psk_key_exchange_modes;
 use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{der_eq, Any, DERReadable, DERReader, DERWriteable};
-use bytes::Bytes;
+use common::bytes::Bytes;
 use chrono::{DateTime, Utc};
 use common::errors::*;
 use common::LeftPad;
@@ -15,7 +15,6 @@ use pkix::{
     PKIX1Algorithms2008, PKIX1Algorithms88, PKIX1Explicit88, PKIX1Implicit88,
     PKIX1_PSS_OAEP_Algorithms, NIST_SHA2, PKCS_1,
 };
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::convert::AsRef;
 use std::sync::Arc;

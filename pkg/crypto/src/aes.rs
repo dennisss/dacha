@@ -291,6 +291,7 @@ impl<C: BlockCipher> CBCModeCipher<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common::hex;
 
     #[test]
     fn aes128_test() {

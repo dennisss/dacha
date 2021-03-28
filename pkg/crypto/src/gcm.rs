@@ -388,6 +388,7 @@ impl GHasher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common::hex;
 
     // TODO: Must test for partial encryption/decryption of plaintext that
     // doesn't fill an exact number of blocks.

@@ -3,7 +3,7 @@ use super::parsing::*;
 use crate::dh::DiffieHellmanFn;
 use crate::elliptic::*;
 use crate::random::*;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 use parsing::binary::*;
 use parsing::*;

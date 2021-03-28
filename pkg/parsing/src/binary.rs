@@ -1,7 +1,7 @@
 use crate::bytes::Buf;
 use crate::incomplete_error;
 use crate::ParseResult;
-use bytes::Bytes;
+use common::bytes::Bytes;
 
 macro_rules! primitive_parser {
     ($name:ident, $t:ty, $from:ident) => {

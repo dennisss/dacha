@@ -1,6 +1,5 @@
 use std::convert::TryInto;
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 use common::async_std::net::TcpStream;
 use common::async_std::prelude::*;
@@ -24,38 +23,10 @@ use crate::method::*;
 
 // TODO: Need to clearly document which responsibilities are reserved for the client.
 
-/// NOTE: As Transfer-Encoding must be handled in order to delimit messages in
-/// a connection, it will be processed internally.
+/// HTTP client connected to a single server.
 pub struct Client {
     socket_addr: SocketAddr,
 }
-
-// Things about the body:
-//
-
-struct GZipReader {
-    body: Box<dyn Body>,
-}
-
-/*
-impl Read for GZipReader {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
-        // let gz = read_gzip(&mut f)?;
-        // println!("{:?}", gz);
-
-        // // TODO: Don't allow reading beyond end of range
-        // f.seek(std::io::SeekFrom::Start(gz.compressed_range.0))?;
-
-        // // Next step is to validate the CRC and decompressed size?
-        // // Also must implement as an incremental state machine using async/awaits!
-
-        // read_inflate(&mut f)?;
-
-    }
-}
-*/
-
-struct DeflateReader {}
 
 impl Client {
     /// Creates a new client connecting to the given host/protocol.
@@ -214,7 +185,7 @@ impl Client {
         let mut out = vec![];
         req.head.serialize(&mut out);
         write_stream.write_all(&out).await?;
-        write_body(req.body.as_mut(), write_stream).await?;
+        write_body(req.body.as_mut(), &mut write_stream).await?;
 
         let head = match read_http_message(&mut read_stream).await? {
             HttpStreamEvent::MessageHead(h) => h,
@@ -274,5 +245,3 @@ impl Client {
         Ok(Response { head, body })
     }
 }
-
-// A single

@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use common::bytes::Bytes;
 use common::errors::*;
 
 /// String of Latin-1 (ISO-8859-1) encoded characters.

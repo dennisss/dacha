@@ -123,7 +123,7 @@ impl Compiler {
                     BufferTypeSizeCase::LengthFieldName(name) => {
                         lines.add("\tlet mut buf = vec![];");
                         lines.add(format!("\tbuf.reserve({}_value as usize);", name));
-                        lines.add(format!("\tfor i in 0..{}_value {{", name));
+                        lines.add(format!("\tfor _ in 0..{}_value {{", name));
                         lines.add(format!("\t\tbuf.push({});", element_parser));
                         lines.add("\t}");
                     }

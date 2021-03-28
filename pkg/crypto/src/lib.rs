@@ -1,6 +1,5 @@
 #![feature(
     core_intrinsics,
-    async_await,
     const_fn,
     const_constructor,
     proc_macro_hygiene,
@@ -18,7 +17,6 @@ extern crate asn;
 #[macro_use]
 extern crate lazy_static;
 extern crate generic_array;
-extern crate hex;
 extern crate pkix;
 extern crate typenum;
 

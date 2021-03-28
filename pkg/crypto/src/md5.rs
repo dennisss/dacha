@@ -107,6 +107,7 @@ impl Hasher for MD5Hasher {
 
 #[cfg(test)]
 mod tests {
+    use common::hex;
     use super::*;
 
     #[test]

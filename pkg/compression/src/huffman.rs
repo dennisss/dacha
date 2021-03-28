@@ -359,7 +359,7 @@ fn code2vec(code: usize, len: usize) -> BitVector {
 // TODO: For deflate, it is more efficient to do this from the sparse form
 // See RFC1951 3.2.1
 pub fn huffman_canonical_codes_from_lens(lens: &[usize]) -> Result<Vec<(usize, BitVector)>> {
-    let mut max_len = lens.iter().fold(0, |x, y| std::cmp::max(x, *y));
+    let max_len = lens.iter().fold(0, |x, y| std::cmp::max(x, *y));
 
     let mut bl_count = vec![];
     bl_count.resize(max_len + 1, 0);

@@ -79,6 +79,7 @@ mod tests {
     use crate::md5::MD5Hasher;
     use crate::sha1::SHA1Hasher;
     use crate::sha256::SHA256Hasher;
+    use common::hex;
 
     #[test]
     fn hmac_test() {

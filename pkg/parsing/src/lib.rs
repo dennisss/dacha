@@ -7,8 +7,8 @@ extern crate failure;
 extern crate bytes;
 extern crate reflection;
 
-use crate::bytes::Buf;
-use bytes::Bytes;
+use common::bytes::Buf;
+use common::bytes::Bytes;
 use common::errors::*;
 use std::str::Chars;
 

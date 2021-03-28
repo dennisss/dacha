@@ -1,5 +1,5 @@
 use crate::tls::parsing::*;
-use bytes::Bytes;
+use common::bytes::Bytes;
 use parsing::binary::*;
 use parsing::*;
 //use common::async_std::io::Read;
@@ -51,7 +51,7 @@ pub struct Record {
 }
 
 impl Record {
-    pub async fn read(reader: &dyn Readable) -> Result<Record> {
+    pub async fn read(reader: &mut dyn Readable) -> Result<Record> {
         let mut buf = [0u8; 5];
         reader.read_exact(&mut buf).await?;
 

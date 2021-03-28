@@ -1,9 +1,18 @@
-use super::alert::*;
-use super::extensions::*;
-use super::handshake::*;
-use super::key_schedule::*;
-use super::record::*;
-use super::transcript::*;
+use common::async_std::net::TcpStream;
+use common::async_std::prelude::*;
+use common::async_std::sync::Mutex;
+use common::errors::*;
+use common::io::*;
+use common::bytes::{Buf, Bytes, BytesMut};
+use parsing::is_incomplete;
+use std::collections::VecDeque;
+
+use crate::tls::alert::*;
+use crate::tls::extensions::*;
+use crate::tls::handshake::*;
+use crate::tls::key_schedule::*;
+use crate::tls::record::*;
+use crate::tls::transcript::*;
 use crate::aead::*;
 use crate::dh::*;
 use crate::elliptic::*;
@@ -12,15 +21,7 @@ use crate::hasher::*;
 use crate::hkdf::*;
 use crate::sha256::SHA256Hasher;
 use crate::sha384::SHA384Hasher;
-use common::async_std::net::TcpStream;
-use common::async_std::prelude::*;
-use common::async_std::sync::Mutex;
-use common::errors::*;
-use common::io::*;
-use parsing::is_incomplete;
-use std::collections::VecDeque;
 
-use bytes::{Buf, Bytes, BytesMut};
 
 // TODO: Should abort the connection if negotiation results in more than one
 // retry as the first retry should always have enough information.
@@ -43,25 +44,34 @@ enum Message {
     ApplicationData(Bytes),
 }
 
-/*
-    We should implement a TLSStream which optionally can
-*/
 
 pub struct Stream {
-    stream: Box<dyn ReadWriteable>,
-
-    // If specified then the connection is encrypted.
-    cipher_spec: Option<CipherSpec>,
-
+    raw_stream: RawStream,
     read_buffer: Mutex<Bytes>,
 }
 
 impl Stream {
-    pub(crate) fn from(stream: Box<dyn ReadWriteable>) -> Self {
+    pub(crate) fn new(channel: Box<dyn ReadWriteable>) -> Self {
         Self {
-            stream,
+            raw_stream: RawStream::new(channel),
+            read_buffer: Mutex::new(Bytes::new())
+        }
+    }
+}
+
+
+pub struct RawStream {
+    channel: Box<dyn ReadWriteable>,
+
+    // If specified then the connection is encrypted.
+    cipher_spec: Option<CipherSpec>,
+}
+
+impl RawStream {
+    pub(crate) fn new(channel: Box<dyn ReadWriteable>) -> Self {
+        Self {
+            channel,
             cipher_spec: None,
-            read_buffer: Mutex::new(Bytes::new()),
         }
     }
 
@@ -83,11 +93,11 @@ impl Stream {
         self.send_record(record).await
     }
 
-    async fn recv_record(&self) -> Result<RecordInner> {
+    async fn recv_record(&mut self) -> Result<RecordInner> {
         // TODO: Eventually remove this loop once change_cipher_spec is handled
         // elsewhere.
         loop {
-            let record = Record::read(self.stream.as_read()).await?;
+            let record = Record::read(self.channel.as_read()).await?;
 
             // TODO: Disallow zero length records unless using application data.
 
@@ -174,7 +184,7 @@ impl Stream {
         }
     }
 
-    async fn send_record(&self, inner: RecordInner) -> Result<()> {
+    async fn send_record(&mut self, inner: RecordInner) -> Result<()> {
         let record = if let Some(cipher_spec) = self.cipher_spec.as_ref() {
             // All encrypted records will be sent with an outer version of
             // TLS 1.2 for backwards compatibility.
@@ -242,12 +252,12 @@ impl Stream {
         let mut record_data = vec![];
         record.serialize(&mut record_data);
 
-        self.stream.write_all(&record_data).await?;
+        self.channel.write_all(&record_data).await?;
         Ok(())
     }
 
     /// Recieves the next full message from the socket.
-    async fn recv(&self, mut handshake_state: Option<&mut HandshakeState>) -> Result<Message> {
+    async fn recv(&mut self, mut handshake_state: Option<&mut HandshakeState>) -> Result<Message> {
         // Partial data received for a handshake message. Handshakes may be
         // split between consecutive records.
         let mut handshake_buf = BytesMut::new();
@@ -351,7 +361,7 @@ impl Stream {
         Ok(())
     }
 
-    pub async fn send(&self, data: &[u8]) -> Result<()> {
+    pub async fn send(&mut self, data: &[u8]) -> Result<()> {
         // TODO: Avoid the clone in converting to a Bytes
         self.send_record(RecordInner {
             data: data.into(),
@@ -363,7 +373,7 @@ impl Stream {
 
 #[async_trait]
 impl Readable for Stream {
-    async fn read(&self, mut buf: &mut [u8]) -> Result<usize> {
+    async fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
         // TODO: We should dedup this with the http::Body code.
         let mut read_buffer = self.read_buffer.lock().await;
         let mut nread = 0;
@@ -379,7 +389,7 @@ impl Readable for Stream {
             return Ok(nread);
         }
 
-        let msg = self.recv(None).await?;
+        let msg = self.raw_stream.recv(None).await?;
         if let Message::ApplicationData(mut data) = msg {
             let n = std::cmp::min(data.len(), buf.len());
             buf[0..n].copy_from_slice(&data[0..n]);
@@ -397,14 +407,14 @@ impl Readable for Stream {
 
 #[async_trait]
 impl Writeable for Stream {
-    async fn write(&self, buf: &[u8]) -> Result<usize> {
+    async fn write(&mut self, buf: &[u8]) -> Result<usize> {
         // TODO: We may need to split up a packet that is too large.
-        self.send(buf).await?;
+        self.raw_stream.send(buf).await?;
         Ok(buf.len())
     }
 
-    async fn flush(&self) -> Result<()> {
-        self.stream.flush().await?;
+    async fn flush(&mut self) -> Result<()> {
+        self.raw_stream.channel.flush().await?;
         Ok(())
     }
 }
@@ -570,7 +580,7 @@ impl Client {
         input: Box<dyn ReadWriteable>,
         hostname: &str,
     ) -> Result<Stream> {
-        let mut stream = Stream::from(input);
+        let mut stream = Stream::new(input);
 
         let mut handshake_state = HandshakeState::new();
 
@@ -582,7 +592,7 @@ impl Client {
         };
 
         let client_hello = Handshake::ClientHello(ClientHello::plain(client_share).await?);
-        stream
+        stream.raw_stream
             .send_handshake(client_hello, &mut handshake_state)
             .await?;
 
@@ -594,7 +604,7 @@ impl Client {
         // Receive ServerHello
         // let mut handshake_buf = vec![];
 
-        let msg = stream.recv(Some(&mut handshake_state)).await?;
+        let msg = stream.raw_stream.recv(Some(&mut handshake_state)).await?;
         // TODO: First handle all alerts.
 
         let server_hello = if let Message::Handshake(Handshake::ServerHello(sh)) = msg {
@@ -667,7 +677,7 @@ impl Client {
 
         key_schedule.master_secret();
 
-        stream.cipher_spec = Some(CipherSpec::from_keys(
+        stream.raw_stream.cipher_spec = Some(CipherSpec::from_keys(
             aead,
             hkdf.clone(),
             client_handshake_traffic_secret.into(),
@@ -676,9 +686,9 @@ impl Client {
 
         // Receive Encrypted Extensions
 
-        let _ee = stream.recv(Some(&mut handshake_state)).await?;
+        let _ee = stream.raw_stream.recv(Some(&mut handshake_state)).await?;
 
-        let cert = match stream.recv(Some(&mut handshake_state)).await? {
+        let cert = match stream.raw_stream.recv(Some(&mut handshake_state)).await? {
             Message::Handshake(Handshake::Certificate(c)) => c,
             _ => {
                 return Err(err_msg("Expected certificate message"));
@@ -723,7 +733,7 @@ impl Client {
         // Transcript hash for ClientHello through to the Certificate.
         let ch_ct_transcript_hash = handshake_state.transcript.hash(&hasher_factory);
 
-        let cert_verify = match stream.recv(Some(&mut handshake_state)).await? {
+        let cert_verify = match stream.raw_stream.recv(Some(&mut handshake_state)).await? {
             Message::Handshake(Handshake::CertificateVerify(c)) => c,
             _ => {
                 return Err(err_msg("Expected certificate verify"));
@@ -766,7 +776,7 @@ impl Client {
 
         let verify_data_server = key_schedule.verify_data_server(&handshake_state.transcript);
 
-        let finished = match stream.recv(Some(&mut handshake_state)).await? {
+        let finished = match stream.raw_stream.recv(Some(&mut handshake_state)).await? {
             Message::Handshake(Handshake::Finished(v)) => v,
             _ => {
                 return Err(err_msg("Expected Finished messages"));
@@ -785,11 +795,11 @@ impl Client {
 
         let final_secrets = key_schedule.finished(&handshake_state.transcript);
 
-        stream
+        stream.raw_stream
             .send_handshake(finished_client, &mut handshake_state)
             .await?;
 
-        stream
+        stream.raw_stream
             .cipher_spec
             .as_mut()
             .unwrap()

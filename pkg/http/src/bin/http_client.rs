@@ -9,9 +9,8 @@ use std::borrow::BorrowMut;
 use std::convert::AsMut;
 use std::convert::TryFrom;
 use std::io;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Write};
 use std::str::FromStr;
-use std::sync::Arc;
 use std::thread;
 
 use common::async_std::net::{TcpListener, TcpStream};
@@ -38,7 +37,7 @@ use parsing::iso::*;
 async fn run_client() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set
 
-    let mut client = Client::create("http://www.google.com")?;
+    let client = Client::create("http://www.google.com")?;
 
     let req = RequestBuilder::new()
         .method(Method::GET)

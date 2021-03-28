@@ -4,7 +4,7 @@ extern crate async_trait;
 #[macro_use]
 extern crate failure;
 pub extern crate async_std;
-extern crate base64;
+pub extern crate base64;
 pub extern crate bytes;
 extern crate fs2;
 pub extern crate futures;

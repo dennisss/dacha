@@ -98,9 +98,8 @@ impl HttpServer {
     }
 
     async fn handle_client(stream: TcpStream, handler: Arc<dyn HttpRequestHandler>) -> Result<()> {
-        let stream = Arc::new(stream);
-        let write_stream = stream.as_ref();
-        let mut read_stream = StreamReader::new(stream.clone());
+        let mut write_stream = stream.clone();
+        let mut read_stream = StreamReader::new(Box::new(stream));
 
         // Remaining bytes from the last request read.
         // TODO: Start using this?
@@ -233,7 +232,7 @@ impl HttpServer {
         res.head.serialize(&mut buf);
         write_stream.write_all(&buf).await?;
 
-        write_body(res.body.as_mut(), write_stream).await?;
+        write_body(res.body.as_mut(), &mut write_stream).await?;
 
         Ok(())
     }

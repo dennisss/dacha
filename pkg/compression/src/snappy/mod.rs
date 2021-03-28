@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn snappy_decompress_test() {
-        let encoded = hex::decode(
+        let encoded = common::hex::decode(
             "51f05057696b697065646961206973206120667265652c207765622d6261736564\
 			2c20636f6c6c61626f7261746976652c206d756c74696c696e6775616c20656e63\
 			79636c6f70656469612070726f6a6563742e000000",

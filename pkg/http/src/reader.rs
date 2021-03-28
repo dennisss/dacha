@@ -136,8 +136,7 @@ impl StreamReader {
                 self.head = Bytes::new();
                 n
             } else {
-                let r = self.reader.as_ref();
-                let nread = r.read(&mut buf[idx..]).await?;
+                let nread = self.reader.read(&mut buf[idx..]).await?;
                 if nread == 0 {
                     if idx != 0 {
                         // TODO: In this case, this is too much to return?
@@ -194,7 +193,7 @@ impl StreamReader {
 
         if rest.len() > 0 {
             let r = self.reader.as_ref();
-            let nread = r.read(rest).await?;
+            let nread = self.reader.read(rest).await?;
             total_read += nread;
         }
 

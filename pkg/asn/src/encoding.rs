@@ -1427,7 +1427,7 @@ impl<T: DERWriteable> PartialEq<T> for Any {
 #[macro_export]
 macro_rules! asn_any {
     ($e:expr) => {{
-        Any::from(::bytes::Bytes::from($e.to_der())).unwrap()
+        Any::from(::common::bytes::Bytes::from($e.to_der())).unwrap()
     }};
 }
 

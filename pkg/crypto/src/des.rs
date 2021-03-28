@@ -288,7 +288,7 @@ impl TripleDESBlockCipher {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use common::hex;
 
     #[test]
     fn des_initial_final_permute() {

@@ -7,7 +7,7 @@ use crate::aead::*;
 use crate::hasher::*;
 use crate::hkdf::*;
 use crate::utils::*;
-use bytes::Bytes;
+use common::bytes::Bytes;
 
 pub struct KeySchedule {
     hkdf: HKDF,

@@ -170,15 +170,17 @@ mod tests {
 
     const TEST_BODY: &'static [u8] = b"7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n";
 
-    #[test]
-    fn chunked_body_test() {
+    #[async_std::test]
+    async fn chunked_body_test() -> Result<()> {
         let data = Cursor::new(TEST_BODY);
-        let stream = StreamReader::new(data);
-        let mut body = IncomingChunkedBody::new(Arc::new(stream));
+        let stream = StreamReader::new(Box::new(data));
+        let mut body = IncomingChunkedBody::new(stream);
 
-        let mut outbuf = String::new();
-        body.read_to_string(&mut outbuf).unwrap();
+        let mut outbuf = vec![];
+        body.read_to_end(&mut outbuf).await?;
 
-        assert_eq!(&outbuf, "MozillaDeveloperNetwork");
+        assert_eq!(&outbuf, b"MozillaDeveloperNetwork");
+
+        Ok(())
     }
 }

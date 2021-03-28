@@ -1,5 +1,6 @@
+use common::bytes::Bytes;
+
 use crate::hasher::*;
-use bytes::Bytes;
 
 /// Stores a list of all handshake messages seen as part of the TLS handshake.
 pub struct Transcript {

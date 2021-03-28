@@ -1,9 +1,10 @@
-use super::handshake::{HandshakeType, ProtocolVersion};
-use super::parsing::*;
-use bytes::{Buf, Bytes};
+use common::bytes::{Buf, Bytes};
 use common::errors::*;
 use parsing::binary::*;
 use parsing::*;
+
+use super::handshake::{HandshakeType, ProtocolVersion};
+use super::parsing::*;
 
 // List of all extensions: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xml
 
