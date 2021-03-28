@@ -1,9 +1,10 @@
 # HTTP Client and Server
 
-## Support
+## References
 
-[HTTP 1.1](https://tools.ietf.org/html/rfc7230)
-
+- [HTTP 1.1](https://tools.ietf.org/html/rfc7230)
+- [URI](https://tools.ietf.org/html/rfc3986)
+- [URL](https://tools.ietf.org/html/rfc1738)
 
 
 

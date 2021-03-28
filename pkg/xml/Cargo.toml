@@ -1,0 +1,9 @@
+[package]
+name = "xml"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+parsing = { path = "../parsing" }

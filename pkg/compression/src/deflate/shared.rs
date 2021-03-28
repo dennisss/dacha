@@ -136,7 +136,7 @@ pub fn append_len(len: usize, out: &mut Vec<Atom>) -> Result<()> {
             let nbits = log2(len - MIN_REFERENCE_LENGTH) - 2;
             let mul = 1 << nbits; // 2^nbits
             let start = (mul << 2) + MIN_REFERENCE_LENGTH; // (2^(nbits + 2) + min)
-            println!("N {}  MUL {} START {} LEN {}", nbits, mul, start, len);
+
             let extra = (len - start) % mul;
             let code = ((len - start) / mul) + (261 + 4 * nbits);
 

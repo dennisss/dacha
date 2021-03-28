@@ -490,45 +490,40 @@ impl<T> BitReader<'_, std::io::Cursor<T>> {
 */
 
 impl Read for BitReader<'_> {
-    fn read(&mut self, mut buf: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         // TODO: A lot of this code assumes that we are storing bits MSB first.
-        /*
-        if self.buffer.len() - self.offset % 8 != 0 {
+        
+        // NOTE: Because we always push full bytes into the end of the buffer, the end of the
+        // buffer will always be aligned to an underlying byte offset.
+        if (self.buffer.len() - self.offset) % 8 != 0 {
+            println!("{} {}", self.buffer.len(), self.offset);
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "BitReader not aligned to a whole byte offset: regular reading not supported",
             ));
         }
 
-        while buf.len() > 0 && self.offset < self.buffer.len() {
-            buf[0] = self.buffer.get_byte(self.offset).unwrap();
-            self.offset += 8;
-            buf = &mut buf[1..];
+        for i in 0..buf.len() {
+            let res = match self.bit_order {
+                BitOrder::LSBFirst => self.read_bits_exact(8),
+                BitOrder::MSBFirst => self.read_bits_be(8)
+            };
+
+            let b = match res {
+                Ok(v) => v as u8,
+                Err(e) => {
+                    if let Some(BitIoError::NotEnoughBits) = e.downcast_ref() {
+                        break;
+                    }
+
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "Unknown error"));
+                }
+            };
+
+            buf[i] = b;
         }
 
-        // Rest of the bytes need 
-
-        // Return as many as possible 
-
-        // XXX: Actually we should allow reading so long as 
-        if self.buffer.len() != self.offset {
-            
-        }
-        */
-
-        // We do not buffer unconsumed bits when reading full bytes, so
-        // NOTE: This would also check for 'self.buffer.len() != self.offset'
-        //
-        // TODO: At the very least, we have to have self.buffer.len() == self.offset().
-        if self.buffer.len() != self.consumed_offset {
-            // println!("AAA: {} {} {}", self.buffer.len(), self.consumed_offset, self.offset);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Reading would drop trailing bits",
-            ));
-        }
-
-        self.reader.read(buf)
+        Ok(buf.len())
     }
 }
 
@@ -551,6 +546,7 @@ pub trait BitWrite {
     fn finish(&mut self) -> Result<()>;
 }
 
+// TODO: This should also support different LSB or MSB styles.
 pub struct BitWriter<'a> {
     writer: &'a mut dyn Write,
     bit_offset: u8,

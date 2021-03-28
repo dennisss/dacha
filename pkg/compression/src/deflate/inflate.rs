@@ -215,6 +215,7 @@ impl Inflater {
             State::UncompressedBlock { num_remaining } => {
                 let n = std::cmp::min(out.buf.len() - out.index, *num_remaining as usize);
 
+                // TODO: We should ensure try to ensure that this is never buffered as we don't need it to be.
                 let nread = strm.read(&mut out.buf[out.index..(out.index + n)])?;
                 out.index += nread;
 
@@ -321,11 +322,14 @@ impl Inflater {
     }
 
     fn read_uncompressed_header(&mut self, strm: &mut BitReader) -> Result<u16> {
+        // NOTE: The consume after align_to_byte() is only safe here because the caller of read_uncompressed_header didn't do any other reading on the byte before calling this function. So if we restart later, we will always be attempting to read the uncompressed header.
         strm.align_to_byte();
+        strm.consume();
+
         let len = strm.read_u16::<LittleEndian>()?;
         let nlen = strm.read_u16::<LittleEndian>()?;
         if len != !nlen {
-            return Err(err_msg("Lengths do not match"));
+            return Err(err_msg("Uncompressed block lengths do not match"));
         }
 
         Ok(len)
