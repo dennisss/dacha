@@ -8,3 +8,4 @@ edition = "2018"
 common = { path = "../common" }
 parsing = { path = "../parsing" }
 compression = { path = "../compression" }
+async-std = "1.9.0"

@@ -3,15 +3,17 @@
     -
 */
 
-use super::shared::*;
-use super::Progress;
-use crate::deflate::cyclic_buffer::CyclicBuffer;
-use crate::deflate::matching_window::{MatchingWindow, MatchingWindowOptions};
-use crate::huffman::*;
 use byteorder::{LittleEndian, WriteBytesExt};
 use common::bits::*;
 use common::errors::*;
 use std::io::Write;
+
+use crate::deflate::shared::*;
+use crate::transform::TransformProgress;
+use crate::deflate::cyclic_buffer::CyclicBuffer;
+use crate::deflate::matching_window::{MatchingWindow, MatchingWindowOptions};
+use crate::huffman::*;
+use crate::buffer_queue::BufferQueue;
 
 /// Maximum size of the data contained in an uncompressed block.
 const MAX_UNCOMPRESSED_BLOCK_SIZE: usize = u16::max_value() as usize;
@@ -46,6 +48,7 @@ const MAX_CODE_LEN_CODE_LEN: usize = 0b111;
 // TODO: The zlib input threshold is based on number of encoded symbols rather
 // than number of bits In order to add a
 
+/// Compresses a stream of data using the Deflate algorithm.
 pub struct Deflater {
     /// A sliding window of all previous input data that has already been
     /// compressed.
@@ -56,16 +59,18 @@ pub struct Deflater {
     input_buffer: Vec<u8>,
 
     /// Compressed data that has yet been consumed by the reader.
-    /// This will grow indefinately until a client reads all data from the
-    output_buffer: Option<Vec<u8>>,
-
-    /// Offset into output_buffer representing how many bytes have been consumed
-    /// by the user
-    output_buffer_offset: usize,
+    /// This will grow indefinately until a client reads all data from the deflater.
+    /// 
+    /// This is an Option so that a client can take the entire 
+    output_buffer: BufferQueue,
 
     /// Remainder of the last output_buffer byte which hasn't resulted in a full
     /// byte. This will always be [0, 8) bits long.
     output_buffer_end: BitVector,
+
+    /// True if we've received an indication that all inputs 
+    /// TODO: Instead store the number of bytes so that we can validate this later.
+    end_of_input: bool,
 }
 
 // TODO: Implement all of the zlib style signals
@@ -86,9 +91,9 @@ impl Deflater {
                 },
             ),
             input_buffer: vec![],
-            output_buffer: None,
-            output_buffer_offset: 0,
+            output_buffer: BufferQueue::new(),
             output_buffer_end: BitVector::new(),
+            end_of_input: false,
         }
     }
 
@@ -97,7 +102,7 @@ impl Deflater {
     ///
     /// The first time this is called with input, it will accumulate the input
     /// in an internal buffer until enough is collected to start compression.
-    /// Then the data in the internal buffer will be compressed and accumalated
+    /// Then the data in the internal buffer will be compressed and accumulated
     /// in an internal output buffer.
     ///
     /// If an output buffer is given to update(), then it will not consume any
@@ -110,31 +115,41 @@ impl Deflater {
         &mut self,
         mut input: &[u8],
         mut output: &mut [u8],
-        is_final: bool,
-    ) -> Result<Progress> {
+        end_of_input: bool,
+    ) -> Result<TransformProgress> {
+        // TODO: Fix this. Also need to check for !end_of_input
+        if end_of_input {
+            if self.end_of_input || input.len() != 0 {
+                return Err(err_msg("Received extra data after end of input hint"));
+            }
+
+            self.end_of_input = true;
+        }
+
+        // TODO: Once we are out of output space, stop compressing.
+
         let mut nread = 0;
 
         // Write buffered output from previous runs to output.
         let mut noutput = 0;
         if output.len() > 0 {
-            noutput = self.copy_to_output(output);
+            noutput = self.output_buffer.copy_to(output);
             output = &mut output[noutput..];
 
-            let output_buffer_len = self.output_buffer.as_ref().map(|v| v.len()).unwrap_or(0);
+            // let output_buffer_len = self.output_buffer.as_ref().map(|v| v.len()).unwrap_or(0);
 
-            if output_buffer_len != 0 {
-                // This is more output internally buffers. So stop.
-                return Ok(Progress {
-                    input_read: 0,
-                    output_written: noutput,
-                    done: false, // TODO
-                });
-            }
+            // if output_buffer_len != 0 {
+            //     // This is more output internally buffers. So stop.
+            //     return Ok(Progress {
+            //         input_read: 0,
+            //         output_written: noutput,
+            //         done: (end_of_input && ), // TODO
+            //     });
+            // }
         }
 
         // Setup stream
-        let output_buffer = &mut self.output_buffer.get_or_insert(vec![]);
-        let mut strm = BitWriter::new(output_buffer);
+        let mut strm = BitWriter::new(&mut self.output_buffer.buffer);
         strm.write_bitvec(&self.output_buffer_end)?;
 
         // TODO: Enforce size limits on the output buffer
@@ -153,7 +168,7 @@ impl Deflater {
                     &mut self.window,
                     &self.input_buffer,
                     &mut strm,
-                    is_final && input.len() == 0,
+                    end_of_input && input.len() == 0,
                 )?;
                 self.input_buffer.clear();
             }
@@ -176,14 +191,24 @@ impl Deflater {
         }
 
         // Save remainder into the internal input buffer
+        // TODO: This doesn't work as expected.
+
+        // Handle remaining input data that doesn't align to a chunk boundary.
+        // If all input data has been seen, compress an incomplete chunk, else store the
+        // 
         if remaining > 0 {
-            Self::compress_chunk(&mut self.window, &input[i..], &mut strm, is_final)?;
+            nread += remaining;
+            if end_of_input {
+                Self::compress_chunk(&mut self.window, &input[i..], &mut strm, end_of_input)?;
+            } else {
+                self.input_buffer.extend_from_slice(&input[i..]);
+            }
         }
 
         // TODO: Right here is the only time we should really need to copy bytes into
-        // the matching window (not needed though if is_final)
+        // the matching window (not needed though if end_of_input)
 
-        if is_final {
+        if end_of_input {
             strm.finish()?;
             // TODO: Reset all internal state
         }
@@ -192,12 +217,13 @@ impl Deflater {
         self.output_buffer_end = strm.into_bits();
 
         // Copy output
-        self.copy_to_output(output);
+        // TODO: Make this unwrap safer.
+        noutput += self.output_buffer.copy_to(output);
 
-        Ok(Progress {
-            input_read: 0, // TODO
+        Ok(TransformProgress {
+            input_read: nread, // NOTE: Currently we will always read the entire input given
             output_written: noutput,
-            done: false, // TODO
+            done: (end_of_input && self.output_buffer.is_empty()), // TODO
         })
     }
 
@@ -225,9 +251,9 @@ impl Deflater {
                 ReferenceEncoded::Literal(v) => {
                     append_lit(v, &mut atoms)?;
                 }
-                ReferenceEncoded::LengthDistance(len, dist) => {
-                    append_len(len, &mut atoms)?;
-                    append_distance(dist, &mut atoms)?;
+                ReferenceEncoded::LengthDistance { length, distance } => {
+                    append_len(length, &mut atoms)?;
+                    append_distance(distance, &mut atoms)?;
                 }
             }
         }
@@ -347,32 +373,14 @@ impl Deflater {
         Ok(())
     }
 
-    /// Copies from the internal output buffer into the provided buffer.
-    /// Returns the number of bytes that were copied.
-    fn copy_to_output(&mut self, output: &mut [u8]) -> usize {
-        // Number of bytes remaining in the internal buffer.
-        let output_buffer = self.output_buffer.as_mut().unwrap();
-        let rem = output_buffer.len() - self.output_buffer_offset;
+    // /// Returns all data in the internal output buffer. This is a zero copy
+    // /// operation and will leave the internal buffer empty.
+    // pub fn take_output(&mut self) -> Vec<u8> {
+    //     // TODO: Don't allow 
 
-        let n = std::cmp::min(rem, output.len());
-        output[0..n].copy_from_slice(
-            &output_buffer[self.output_buffer_offset..(self.output_buffer_offset + n)],
-        );
-
-        self.output_buffer_offset += n;
-        if self.output_buffer_offset == output_buffer.len() {
-            output_buffer.clear();
-            self.output_buffer_offset = 0;
-        }
-
-        n
-    }
-
-    /// Returns all data in the internal output buffer. This is a zero copy
-    /// operation and will leave the internal
-    pub fn take_output(&mut self) -> Vec<u8> {
-        self.output_buffer.take().unwrap_or(vec![])
-    }
+    //     // TODO: This should only take data after the buffer offset. 
+    //     self.output_buffer.take().unwrap_or(BufferQueue::new()).buffer
+    // }
 }
 
 // NOTE: Assumes that the header has already been written
@@ -392,7 +400,10 @@ fn write_uncompressed_block<W: BitWrite + Write>(data: &[u8], strm: &mut W) -> R
 
 enum ReferenceEncoded {
     Literal(u8),
-    LengthDistance(usize, usize),
+    LengthDistance {
+        length: usize,
+        distance: usize
+    }
 }
 
 // TODO: Return an iterator.
@@ -407,7 +418,7 @@ fn reference_encode(
         let mut n = 1;
         if let Some(m) = window.find_match(&data[i..]) {
             n = m.length;
-            out.push(ReferenceEncoded::LengthDistance(m.length, m.distance));
+            out.push(ReferenceEncoded::LengthDistance { length: m.length, distance: m.distance});
         } else {
             out.push(ReferenceEncoded::Literal(data[i]));
         }

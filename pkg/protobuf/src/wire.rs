@@ -167,6 +167,8 @@ impl WireField<'_> {
             input = rest;
             let value = match tag.wire_type {
                 WireType::Varint => {
+                    // TODO: In some cases, 
+
                     let (v, rest) = parse_varint(input)?;
                     input = rest;
                     WireValue::Varint(v)
@@ -178,6 +180,14 @@ impl WireField<'_> {
                     let v = &input[0..8];
                     input = &input[8..];
                     WireValue::Word64(v)
+                }
+                WireType::Word32 => {
+                    if input.len() < 4 {
+                        return Err(err_msg("Too few bytes for word32"));
+                    }
+                    let v = &input[0..4];
+                    input = &input[4..];
+                    WireValue::Word32(v)
                 }
                 WireType::LengthDelim => {
                     let (len, rest) = parse_varint(input)?;
@@ -206,14 +216,6 @@ impl WireField<'_> {
 
                     v
                 }
-                WireType::Word32 => {
-                    if input.len() < 4 {
-                        return Err(err_msg("Too few bytes for word32"));
-                    }
-                    let v = &input[0..4];
-                    input = &input[4..];
-                    WireValue::Word32(v)
-                }
             };
 
             out.push(WireField {
@@ -230,7 +232,7 @@ impl WireField<'_> {
             Ok(out)
         } else {
             // This should pretty much never happen due to the while loop above
-            Err(err_msg("Could not parse all input"))
+            Err(err_msg("Could not parse all input."))
         }
     }
 
@@ -282,6 +284,8 @@ impl WireField<'_> {
     pub fn parse_float(&self) -> Result<f32> {
         Ok(LittleEndian::read_f32(self.value.word32()?))
     }
+
+    // pub fn parse_repeated_float
 
     pub fn serialize_float(field_number: FieldNumber, v: f32, out: &mut Vec<u8>) {
         let buf = v.to_le_bytes();
@@ -558,6 +562,55 @@ impl WireValue<'_> {
     enum_accessor!(word64, Word64, &[u8]);
     enum_accessor!(length_delim, LengthDelim, &[u8]);
     enum_accessor!(word32, Word32, &[u8]);
+
+    /*
+    WireType::Varint => {
+        // TODO: In some cases, 
+
+        let (v, rest) = parse_varint(input)?;
+        input = rest;
+        WireValue::Varint(v)
+    }
+    WireType::Word64 => {
+        if input.len() < 8 {
+            return Err(err_msg("Too few bytes for word64"));
+        }
+        let v = &input[0..8];
+        input = &input[8..];
+        WireValue::Word64(v)
+    }
+    WireType::Word32 => {
+        if input.len() < 4 {
+            return Err(err_msg("Too few bytes for word32"));
+        }
+        
+        WireValue::Word32(v)
+    }
+    */
+
+    /*
+    fn repeated_word32(&self) -> Result<Vec<&[u8]>> {
+        let mut out = vec![]
+        match self {
+            Self::Word32(v) => { out.push(v) },
+            Self::LengthDelim(mut input) => {
+                while input.len() >= 4 {
+                    let v = &input[0..4];
+                    input = &input[4..];
+                }
+
+                if input.len() != 0 {
+                    return Err(err_msg("Packed word32 field contains too many/few bytes"));
+                }
+            }
+        }
+
+        Ok(out)
+    }
+    */
+
+    // Now we do the same thing for varint and 
+
 
     fn serialize(&self, out: &mut Vec<u8>) {
         match self {

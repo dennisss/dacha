@@ -1,6 +1,6 @@
 use super::cyclic_buffer::*;
-use super::shared::*;
-use super::Progress;
+use crate::deflate::shared::*;
+use crate::transform::TransformProgress;
 use crate::huffman::*;
 use byteorder::{LittleEndian, ReadBytesExt};
 use common::bits::*;
@@ -111,7 +111,7 @@ impl Inflater {
         &mut self,
         input: &mut dyn Read, /* &[u8] */
         output: &mut [u8],
-    ) -> Result<Progress> {
+    ) -> Result<TransformProgress> {
         // let mut cursor = std::io::Cursor::new(&input);
         let cursor = input;
         let mut strm = BitReader::new(cursor);
@@ -159,7 +159,7 @@ impl Inflater {
         // TODO: If the input is fully consumed without making any progress, then that
         // would be problematic.
 
-        Ok(Progress {
+        Ok(TransformProgress {
             input_read: 0, // TODO
             output_written,
             done,

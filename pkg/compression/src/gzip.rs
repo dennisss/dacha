@@ -1,12 +1,16 @@
-use crate::deflate::*;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::convert::{TryFrom, TryInto};
+use std::io::{Read, Seek, Write};
+
 use common::bits::{bitget, bitset};
 use common::errors::*;
 use crypto::checksum::crc::*;
 use crypto::hasher::*;
 use parsing::iso::*;
-use std::convert::{TryFrom, TryInto};
-use std::io::{Read, Seek, Write};
+
+use crate::deflate::*;
+use crate::buffer_queue::BufferQueue;
+use crate::transform::*;
 
 // ZLib RFC http://www.zlib.org/rfc-gzip.html
 // This is based on v4.3
@@ -18,7 +22,7 @@ use std::io::{Read, Seek, Write};
 
 // TODO: See https://github.com/Distrotech/gzip/blob/94cfaabe3ae7640b8c0334283df37cbdd7f7a0a9/gzip.h#L161 for new and old magic bytes
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum CompressionMethod {
     // Stored = 0,
     // Compressed = 1,
@@ -99,6 +103,51 @@ pub struct Header {
     pub header_validated: bool,
 }
 
+impl Header {
+    fn serialize(&self, output: &mut Vec<u8>) -> Result<()> {
+        let flags = Flags {
+            ftext: false,
+            fhcrc: false,
+            fextra: self.extra_field.is_some(),
+            fname: self.filename.is_some(),
+            fcomment: self.comment.is_some(),
+        };
+
+        let writer = output as &mut dyn Write;
+    
+        let mut header_buf = [0u8; HEADER_SIZE];
+        header_buf[0..2].copy_from_slice(GZIP_MAGIC);
+        header_buf[2] = self.compression_method as u8;
+        header_buf[3] = flags.to_byte();
+        LittleEndian::write_u32(&mut header_buf[4..8], self.mtime);
+        header_buf[8] = self.extra_flags;
+        header_buf[9] = self.os;
+        writer.write_all(&header_buf)?;
+    
+        if let Some(data) = &self.extra_field {
+            writer.write_u32::<LittleEndian>(data.len() as u32)?;
+            writer.write_all(&data)?;
+        }
+    
+        let null = [0u8; 1];
+        if let Some(s) = &self.filename {
+            // TODO: Validate is Latin1String.
+            writer.write_all(s.as_bytes())?;
+            writer.write_all(&null)?;
+        }
+    
+        if let Some(s) = &self.comment {
+            // TODO: Validate is Latin1String.
+            writer.write_all(s.as_bytes())?;
+            writer.write_all(&null)?;
+        }
+
+
+        Ok(())
+    }
+}
+
+
 #[derive(Debug)]
 pub struct GZipFile {
     pub header: Header,
@@ -150,19 +199,10 @@ enum GzipDecodeState {
     /// Very start of the file including all conditional fields
     Header,
 
-    /// This will need to have an Inflater, and a rolling checksum
+    /// This will need to have an Inflater, and a rolling checksum calculator (for either )
     Body {},
 
     Footer,
-}
-
-struct GzipDecoder {}
-
-impl GzipDecoder {
-    // /// Will return non-None once
-    // pub fn header(&self) -> Option<&Header> {
-
-    // }
 }
 
 /*
@@ -309,41 +349,101 @@ fn is_text(data: &[u8]) -> bool {
     true
 }
 
+
+struct GzipEncoder {
+    output_buffer: BufferQueue,
+
+    deflater: Deflater,
+    
+    hasher: CRC32Hasher,
+
+    /// Total size of all uncompressed input data seen so far.
+    input_size: usize,
+
+    trailer_written: bool
+}
+
+impl GzipEncoder {
+    pub fn new(header: Header) -> Result<Self> {
+        let mut output_buffer = BufferQueue::new();
+        header.serialize(&mut output_buffer.buffer);
+
+        if header.compression_method != CompressionMethod::Deflate {
+            return Err(err_msg("Only deflate"))
+        }
+
+        Ok(Self {
+            output_buffer,
+            deflater: Deflater::new(),
+            hasher: CRC32Hasher::new(),
+            input_size: 0,
+            trailer_written: false
+        })
+    }
+
+    pub fn update(&mut self, input: &[u8], end_of_input: bool, mut output: &mut [u8]) -> Result<TransformProgress> {
+        let mut input_read = 0;
+        let mut output_written = 0;
+
+        // Copy any pending output to the provided buffer.
+        {
+            let n = self.output_buffer.copy_to(output);
+            output_written += n;
+            output = &mut output[n..];
+        }
+
+        // Run compression
+        // Simple solution is to get a Write buffer that never runs out of space.
+        /*
+        let mut inner_done = false;
+        loop {
+            let inner_output = {
+                let start = self.output_buffer.buffer.len();
+                self.output_buffer.buffer.resize(start + CHUNK_SIZE);
+                &mut self.output_buffer[start..];
+            };
+
+            let inner_progress = self.deflater.update(input, inner_output, end_of_input)?;
+            inner_done = inner_progress.done;
+
+            input_read += inner_progress.input_read;
+            input = &input[inner_progress.input_read...];
+
+            // Continue doing stuff while 
+            
+            // if inner_progress.done || inner_progress.input_read <
+
+
+        }
+        */
+
+
+        self.hasher.update(&input[0..input_read]);
+        // output = &mut output[inner_progress.output_written..];
+        // self.input_size += inner_progress.input_read;
+
+        // TODO: Uncomment this.
+        if /* inner_progress.done && */ !self.trailer_written {
+            self.output_buffer.buffer.extend_from_slice(&self.hasher.finish_u32().to_le_bytes());
+            self.output_buffer.buffer.extend_from_slice(&(self.input_size as u32).to_le_bytes());
+            self.trailer_written = true;
+        }
+
+        output_written += self.output_buffer.copy_to(output);
+
+        let done = self.trailer_written && self.output_buffer.is_empty();
+        Ok(TransformProgress {
+            input_read,
+            output_written,
+            done
+        })
+    }
+}
+
+
 pub fn write_gzip(header: Header, data: &[u8], writer: &mut dyn Write) -> Result<()> {
-    let flags = Flags {
-        ftext: false,
-        fhcrc: false,
-        fextra: header.extra_field.is_some(),
-        fname: header.filename.is_some(),
-        fcomment: header.comment.is_some(),
-    };
-
-    let mut header_buf = [0u8; HEADER_SIZE];
-    header_buf[0..2].copy_from_slice(GZIP_MAGIC);
-    header_buf[2] = header.compression_method as u8;
-    header_buf[3] = flags.to_byte();
-    LittleEndian::write_u32(&mut header_buf[4..8], header.mtime);
-    header_buf[8] = header.extra_flags;
-    header_buf[9] = header.os;
-    writer.write_all(&header_buf)?;
-
-    if let Some(data) = header.extra_field {
-        writer.write_u32::<LittleEndian>(data.len() as u32)?;
-        writer.write_all(&data)?;
-    }
-
-    let null = [0u8; 1];
-    if let Some(s) = header.filename {
-        // TODO: Validate is Latin1String.
-        writer.write_all(s.as_bytes())?;
-        writer.write_all(&null)?;
-    }
-
-    if let Some(s) = header.comment {
-        // TODO: Validate is Latin1String.
-        writer.write_all(s.as_bytes())?;
-        writer.write_all(&null)?;
-    }
+    
+    /*
 
     // TODO: Validate that the compresson method is set correctly.
     let mut deflater = Deflater::new();
@@ -360,5 +460,10 @@ pub fn write_gzip(header: Header, data: &[u8], writer: &mut dyn Write) -> Result
 
     writer.write_u32::<LittleEndian>(checksum)?;
     writer.write_u32::<LittleEndian>(data.len() as u32)?;
+    Ok(())
+
+
+    */
+
     Ok(())
 }

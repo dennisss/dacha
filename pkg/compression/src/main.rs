@@ -63,11 +63,16 @@ fn main() -> Result<()> {
 
         return Ok(());
     */
+
+    let data = std::fs::read("/home/dennis/Downloads/dmg_sound.zip")?;
+    compression::zip::read_zip_file(&data)?;
+
+    /*
     ///
     let mut f = File::open("testdata/out/lorem_ipsum.txt.test.gz")?;
-
     let gz = read_gzip(&mut f)?;
     println!("{:?}", gz);
+    */
 
     // TODO: Assert that we now at the end of the file after reading.
 

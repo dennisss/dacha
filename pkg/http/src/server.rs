@@ -18,16 +18,31 @@ use crate::method::*;
 use crate::request::*;
 use crate::response::*;
 
-//pub type HttpRequestHandler = dyn (Fn(Request) -> Pin<Box<dyn
-// Future<Output=Response> + Send>>) + Send + Sync;
-
-//pub trait HttpRequestHandlerRaw =
-//	(Fn(Request) -> dyn Future<Output=Response> + Send + Sync + Unpin) + Send +
-// Sync;
 
 #[async_trait]
 pub trait HttpRequestHandler: Send + Sync {
+    /// Processes an HTTP request returning a response eventually.
+    /// 
+    /// While the full request is available in the first argument, the following
+    /// headers are handled automatically in the server:
+    /// - Content-Length
+    /// - Transfer-Encoding
+    /// - Connection
+    /// - Keep-Alive
     async fn handle_request(&self, request: Request) -> Response;
+}
+
+/// Wraps a simple static function as a server request handler.
+/// See HttpRequestHandler::handle_request for more information.
+pub fn HttpFn<
+    F: Future<Output = Response> + Send + 'static,
+    H: (Fn(Request) -> F) + Send + Sync + 'static,
+>(
+    handler_fn: H,
+) -> HttpRequestHandlerFnCaller {
+    HttpRequestHandlerFnCaller {
+        value: Box::new(move |req| Box::pin(handler_fn(req))),
+    }
 }
 
 /// Internal: Used by HttpFn.
@@ -42,18 +57,8 @@ impl HttpRequestHandler for HttpRequestHandlerFnCaller {
     }
 }
 
-/// Wraps a simple static function as a server request handler.
-pub fn HttpFn<
-    F: Future<Output = Response> + Send + 'static,
-    H: (Fn(Request) -> F) + Send + Sync + 'static,
->(
-    handler_fn: H,
-) -> HttpRequestHandlerFnCaller {
-    HttpRequestHandlerFnCaller {
-        value: Box::new(move |req| Box::pin(handler_fn(req))),
-    }
-}
-
+/// Receives HTTP requests and parses them.
+/// Passes the request to a handler which can produce a response.
 pub struct HttpServer {
     port: u16,
     handler: Arc<dyn HttpRequestHandler>,
@@ -90,6 +95,7 @@ impl HttpServer {
         Ok(())
     }
 
+    // TODO: Should be refactored to 
     async fn handle_stream(stream: TcpStream, handler: Arc<dyn HttpRequestHandler>) {
         match Self::handle_client(stream, handler).await {
             Ok(v) => {}

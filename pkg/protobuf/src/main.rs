@@ -72,14 +72,14 @@ fn main() -> Result<()> {
     // Repin
     /*
     let data =
-    base64::decode("CAsQAhoaVWd6XzQzWmQtRTFDU1R4VldUQjRBYUFCQWcqCzlBdGhsWHVVU1RjMABKFTEwNjA4NTUwNDI4ODM5NTk1MjMyOVABqAEMugEYVUNzUS00LWlMTHVNMUNjeE15VVJKM2xB")?;
+    common::base64::decode("CAsQAhoaVWd6XzQzWmQtRTFDU1R4VldUQjRBYUFCQWcqCzlBdGhsWHVVU1RjMABKFTEwNjA4NTUwNDI4ODM5NTk1MjMyOVABqAEMugEYVUNzUS00LWlMTHVNMUNjeE15VVJKM2xB")?;
 
      */
 
      /*
     // Unpin
     let data =
-    base64::decode_config("CAsQAhoaVWd4OHM5UVIzZjVUY0d3SjNycDRBYUFCQWcqC1lRT0x2VVNRendZMABKFTExMzc5NjA4MDQ0NzI2MDk0NTAxNVABigEmEgtZUU9MdlVTUXp3WcABAMgBAOABA6ICDSj___________8BQACoAQy6ARhVQ3IyMnhpa1dVSzJ5VVc0WXhPS1hjbFE=", base64::URL_SAFE)?;
+    common::base64::decode_config("CAsQAhoaVWd4OHM5UVIzZjVUY0d3SjNycDRBYUFCQWcqC1lRT0x2VVNRendZMABKFTExMzc5NjA4MDQ0NzI2MDk0NTAxNVABigEmEgtZUU9MdlVTUXp3WcABAMgBAOABA6ICDSj___________8BQACoAQy6ARhVQ3IyMnhpa1dVSzJ5VVc0WXhPS1hjbFE=", base64::URL_SAFE)?;
 
     print_message(&data, "")?;
 

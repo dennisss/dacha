@@ -903,7 +903,7 @@ impl Compiler<'_> {
                 if use_option {
                     lines.add(format!("\t\tif let Some(v) = self.{}.as_ref() {{", name));
                     if is_message {
-                        lines.add(format!("\t\tWireField::serialize_message({}, v.as_ref(), &mut data);", field.num));
+                        lines.add(format!("\t\tWireField::serialize_message({}, v.as_ref(), &mut data)?;", field.num));
                     } else {
                         lines.add(serialize_line);
                     }
