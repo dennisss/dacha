@@ -1,3 +1,12 @@
+pub trait WindowBuffer: std::ops::Index<usize, Output = u8> {
+    fn extend_from_slice(&mut self, data: &[u8]);
+    fn start_offset(&self) -> usize;
+    fn end_offset(&self) -> usize;
+    fn slice_from(&self, start_off: usize) -> ConcatSlice;
+}
+
+/// A byte buffer of fixed length which is typically used to store the last N bytes of some larger
+/// stream of bytes.
 pub struct CyclicBuffer {
     data: Vec<u8>,
 
@@ -19,19 +28,14 @@ impl CyclicBuffer {
     }
 }
 
-pub trait WindowBuffer: std::ops::Index<usize, Output = u8> {
-    fn extend_from_slice(&mut self, data: &[u8]);
-    fn start_offset(&self) -> usize;
-    fn end_offset(&self) -> usize;
-    fn slice_from(&self, start_off: usize) -> ConcatSlice;
-}
-
 impl WindowBuffer for CyclicBuffer {
     fn extend_from_slice(&mut self, mut data: &[u8]) {
         // Skip complete cycles of the buffer if the data is longer than the buffer.
-        let nskip = (data.len() / self.data.len()) * self.data.len();
-        self.end_offset += nskip;
-        data = &data[nskip..];
+        if data.len() >= self.data.len() {
+            let nskip = data.len() - self.data.len();
+            data = &data[nskip..];
+            self.end_offset += nskip;
+        }
 
         // NOTE: This will only ever have up to two iterations.
         while data.len() > 0 {
@@ -58,7 +62,7 @@ impl WindowBuffer for CyclicBuffer {
     }
 
     fn slice_from(&self, start_off: usize) -> ConcatSlice {
-        assert!(start_off >= self.start_offset() && start_off < self.end_offset);
+        assert!(start_off >= self.start_offset() && start_off <= self.end_offset);
 
         let off = start_off % self.data.len();
         let mut n = self.end_offset - start_off;
@@ -142,6 +146,15 @@ impl<'a> ConcatSlice<'a> {
     pub fn len(&self) -> usize {
         self.inner.iter().map(|s| s.len()).sum()
     }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        let mut out = vec![];
+        for piece in &self.inner {
+            out.extend_from_slice(piece);
+        }
+
+        out
+    }
 }
 
 impl<'a> std::ops::Index<usize> for ConcatSlice<'a> {
@@ -159,3 +172,42 @@ impl<'a> std::ops::Index<usize> for ConcatSlice<'a> {
         panic!("Index out of range");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cyclic_buffer_test() {
+        let mut b = CyclicBuffer::new(8);
+        assert_eq!(b.start_offset(), 0);
+        assert_eq!(b.end_offset(), 0);
+        
+        b.extend_from_slice(&[1,2,3,4]);
+        assert_eq!(b.start_offset(), 0);
+        assert_eq!(b.end_offset(), 4);
+        assert_eq!(b[0], 1);
+        assert_eq!(b[2], 3);
+
+        b.extend_from_slice(&[15,16,17,18,19]);
+
+        assert_eq!(b.start_offset(), 1);
+        assert_eq!(b.end_offset(), 9);
+        assert_eq!(b[1], 2);
+        assert_eq!(b[5], 16);
+        assert_eq!(&b.slice_from(1).to_vec(), &[2,3,4,15,16,17,18,19]);
+
+        b.extend_from_slice(&[0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 4, 3, 2, 1]);
+        assert_eq!(b.start_offset(), 21);
+        assert_eq!(b.end_offset(), 29);
+        assert_eq!(&b.slice_from(21).to_vec(), &[0,0,0,0, 4, 3, 2, 1]);
+        assert_eq!(&b.slice_from(23).to_vec(), &[0,0, 4, 3, 2, 1]);
+        assert_eq!(&b.slice_from(28).to_vec(), &[1]);
+        assert_eq!(&b.slice_from(29).to_vec(), &[]);
+
+        // TODO: Also test extend_from_slice() with a zero length slice or a slice that is the exact length of the buffer
+    }
+
+}
+
+// TODO: Add lot's of tests to this.

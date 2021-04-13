@@ -147,6 +147,11 @@ impl Header {
     }
 }
 
+struct Trailer {
+    body_checksum: u32,
+    uncompressed_size: u32
+}
+
 
 #[derive(Debug)]
 pub struct GZipFile {
@@ -195,16 +200,6 @@ const GZIP_MAGIC: &'static [u8] = &[0x1f, 0x8b];
 
 // Reader will buffer all input until
 
-enum GzipDecodeState {
-    /// Very start of the file including all conditional fields
-    Header,
-
-    /// This will need to have an Inflater, and a rolling checksum calculator (for either )
-    Body {},
-
-    Footer,
-}
-
 /*
     Reader wrapper:
     - Implements Read
@@ -228,100 +223,178 @@ trait RecordedRead: Read {
 
 // }
 
-// TODO: Convert this to a state machine.
-// TODO: Can't seek a TcpStream
-pub fn read_gzip<F: Read>(f: &mut F) -> Result<GZipFile> {
-    // TODO: Verify compression properties such as maximum code length.
 
-    let mut header_reader = HashReader::new(f, CRC32Hasher::new());
+pub struct GzipDecoder {
+    state: GzipDecoderState,
 
-    let mut header_buf = [0u8; HEADER_SIZE];
-    header_reader.read_exact(&mut header_buf)?;
+    input_buffer: BufferQueue,
 
-    if &header_buf[0..2] != GZIP_MAGIC {
-        return Err(err_msg("Invalid header bytes"));
+    header: Option<Header>,
+
+    output_size: usize,
+
+    inflater: Inflater,
+
+    hasher: CRC32Hasher,
+
+    // header: Option<Header>,
+    // body_read: bool,
+    // trailer_read: bool,
+}
+
+impl GzipDecoder {
+
+    pub fn new() -> Self {
+        Self {
+            state: GzipDecoderState::Header,
+            input_buffer: BufferQueue::new(),
+            header: None,
+            output_size: 0,
+            inflater: Inflater::new(),
+            hasher: CRC32Hasher::new()
+        }
     }
 
-    let compression_method = CompressionMethod::try_from(header_buf[2])?;
+    fn update_impl(&mut self, mut input: &[u8], end_of_input: bool, mut output: &mut [u8]) -> Result<TransformProgress> {
+        let mut input_read = 0;
+        let mut output_written = 0;
+        let mut done = false;
 
-    let flags = Flags::from_byte(header_buf[3]);
+        loop {
+            match self.state.clone() {
+                GzipDecoderState::Header => {
+                    let (maybe_header, n) = self.input_buffer.try_read(input, Self::read_header)?;
+                    input_read += n;
+                    input = &input[n..];
 
-    let mtime = LittleEndian::read_u32(&header_buf[4..8]);
+                    if let Some(header) = maybe_header {
+                        if header.compression_method != CompressionMethod::Deflate {
+                            return Err(err_msg("Unsupported compression method"));
+                        }
+    
+                        self.state = GzipDecoderState::Body;
+                    } else {
+                        break;
+                    }
+                }
+                GzipDecoderState::Body => {
+                    let inner_progress = self.inflater.update(input, end_of_input, output)?;
 
-    let extra_flags = header_buf[8];
-    let os = header_buf[9];
+                    input_read += inner_progress.input_read;
+                    input = &input[inner_progress.input_read..];
 
-    let extra_field = if flags.fextra {
-        let xlen = header_reader.read_u32::<LittleEndian>()? as usize;
-        let mut field = vec![];
-        field.resize(xlen, 0);
-        header_reader.read_exact(&mut field)?;
-        Some(field)
-    } else {
-        None
-    };
+                    output_written += inner_progress.output_written;
+                    self.hasher.update(&output[0..inner_progress.output_written]);
+                    self.output_size += inner_progress.output_written;
 
-    let filename = if flags.fname {
-        let data = read_null_terminated(&mut header_reader)?;
-        Some(Latin1String::from_bytes(data.into())?.to_string())
-    } else {
-        None
-    };
+                    if inner_progress.done {
+                        self.state = GzipDecoderState::Trailer;
+                    } else {
+                        // Won't make any progress without more inputs/outputs.
+                        break;
+                    }
+                }
+                GzipDecoderState::Trailer => {
+                    let (maybe_trailer, n) = self.input_buffer.try_read(input, Self::read_trailer)?;
+                    input_read += n;
+                    input = &input[n..];
+                    
+                    if let Some(trailer) = maybe_trailer {
+                        if trailer.uncompressed_size as usize != self.output_size {
+                            return Err(format_err!(
+                                "Footer length mismatch, expected: {}, actual: {}",
+                                trailer.uncompressed_size,
+                                self.output_size
+                            ));
+                        }
+                    
+                        let actual_checksum = self.hasher.finish_u32();
+                        if trailer.body_checksum != actual_checksum {
+                            return Err(format_err!("Trailer wrong checksum: {:x} {:x}", actual_checksum, trailer.body_checksum));
+                        }
 
-    let comment = if flags.fcomment {
-        let data = read_null_terminated(&mut header_reader)?;
-        Some(Latin1String::from_bytes(data.into())?.to_string())
-    } else {
-        None
-    };
+                        self.state = GzipDecoderState::Done;
 
-    let header_sum = header_reader.into_hasher().finish_u32();
+                        done = true;
 
-    let header_validated = if flags.fhcrc {
-        let stored_checksum = f.read_u16::<LittleEndian>()?;
-        println!("{:x} {:x}", header_sum, stored_checksum);
+                        // TODO: Can now clear the self.input_buffer completely. 
+                    }
 
-        // TODO: Compare it
+                    break;
+                }
+                Done => {
+                    return Err(err_msg("GzipDecoder already done"));
+                }
+            }
+        }
 
-        true
-    } else {
-        false
-    };
+        // TODO: If we are the end of all inputs and we don't finish, return an error?
 
-    let mut checksum_reader = HashReader::new(f, CRC32Hasher::new());
-
-    let uncompressed_data = if compression_method == CompressionMethod::Deflate {
-        checksum_reader.read_inflate()?
-    } else {
-        return Err(err_msg("Unsupported compression method"));
-    };
-
-    let actual_checksum = {
-        let mut hasher = CRC32Hasher::new();
-        hasher.update(&uncompressed_data);
-        hasher.finish_u32()
-    };
-
-    let body_checksum = f.read_u32::<LittleEndian>()?;
-    let input_size = f.read_u32::<LittleEndian>()? as usize;
-
-    if input_size != uncompressed_data.len() {
-        return Err(format_err!(
-            "Footer length mismatch, expected: {}, actual: {}",
-            uncompressed_data.len(),
-            input_size
-        ));
+        Ok(TransformProgress {
+            done,
+            input_read,
+            output_written
+        })
     }
 
-    if body_checksum != actual_checksum {
-        return Err(err_msg("Footer wrong checksum"));
-    }
+    // Issue with Read is that it uses an io::Error which doesn't work very well.
+    fn read_header(reader: &mut dyn Read) -> Result<Header> {
+        let mut header_reader = HashReader::new(reader, CRC32Hasher::new());
 
-    // TODO: If reading from a file, validate that we are at the end after parsing
-    // it
+        let mut header_buf = [0u8; HEADER_SIZE];
+        header_reader.read_exact(&mut header_buf)?;
 
-    Ok(GZipFile {
-        header: Header {
+        if &header_buf[0..2] != GZIP_MAGIC {
+            return Err(err_msg("Invalid header bytes"));
+        }
+
+        let compression_method = CompressionMethod::try_from(header_buf[2])?;
+
+        let flags = Flags::from_byte(header_buf[3]);
+
+        let mtime = LittleEndian::read_u32(&header_buf[4..8]);
+
+        let extra_flags = header_buf[8];
+        let os = header_buf[9];
+
+        let extra_field = if flags.fextra {
+            let xlen = header_reader.read_u32::<LittleEndian>()? as usize;
+            let mut field = vec![];
+            field.resize(xlen, 0);
+            header_reader.read_exact(&mut field)?;
+            Some(field)
+        } else {
+            None
+        };
+
+        let filename = if flags.fname {
+            let data = read_null_terminated(&mut header_reader)?;
+            Some(Latin1String::from_bytes(data.into())?.to_string())
+        } else {
+            None
+        };
+
+        let comment = if flags.fcomment {
+            let data = read_null_terminated(&mut header_reader)?;
+            Some(Latin1String::from_bytes(data.into())?.to_string())
+        } else {
+            None
+        };
+
+        let header_sum = header_reader.into_hasher().finish_u32();
+
+        let header_validated = if flags.fhcrc {
+            let stored_checksum = reader.read_u16::<LittleEndian>()?;
+            println!("{:x} {:x}", header_sum, stored_checksum);
+
+            // TODO: Compare it
+
+            true
+        } else {
+            false
+        };
+
+        Ok(Header {
             compression_method,
             is_text: flags.ftext,
             mtime,
@@ -331,9 +404,39 @@ pub fn read_gzip<F: Read>(f: &mut F) -> Result<GZipFile> {
             filename,
             comment,
             header_validated,
-        },
-        data: uncompressed_data,
-    })
+        })
+    }
+
+    fn read_trailer(reader: &mut dyn Read) -> Result<Trailer> {
+        let body_checksum = reader.read_u32::<LittleEndian>()?;
+        let uncompressed_size = reader.read_u32::<LittleEndian>()?;
+    
+        Ok(Trailer { body_checksum, uncompressed_size })
+    }
+}
+
+impl Transform for GzipDecoder {
+    fn update(
+        &mut self,
+        input: &[u8],
+        end_of_input: bool,
+        output: &mut [u8],        
+    ) -> Result<TransformProgress> {
+        self.update_impl(input, end_of_input, output)
+    }
+}
+
+#[derive(Clone, Debug)]
+enum GzipDecoderState {
+    /// Very start of the file including all conditional fields
+    Header,
+
+    /// This will need to have an Inflater, and a rolling checksum calculator (for either )
+    Body,
+
+    Trailer,
+
+    Done
 }
 
 // TODO: Must operate on the uncompressed data.
@@ -381,7 +484,7 @@ impl GzipEncoder {
         })
     }
 
-    pub fn update(&mut self, input: &[u8], end_of_input: bool, mut output: &mut [u8]) -> Result<TransformProgress> {
+    pub fn update_impl(&mut self, input: &[u8], end_of_input: bool, mut output: &mut [u8]) -> Result<TransformProgress> {
         let mut input_read = 0;
         let mut output_written = 0;
 
@@ -393,42 +496,27 @@ impl GzipEncoder {
         }
 
         // Run compression
-        // Simple solution is to get a Write buffer that never runs out of space.
-        /*
-        let mut inner_done = false;
-        loop {
-            let inner_output = {
-                let start = self.output_buffer.buffer.len();
-                self.output_buffer.buffer.resize(start + CHUNK_SIZE);
-                &mut self.output_buffer[start..];
-            };
-
-            let inner_progress = self.deflater.update(input, inner_output, end_of_input)?;
-            inner_done = inner_progress.done;
-
-            input_read += inner_progress.input_read;
-            input = &input[inner_progress.input_read...];
-
-            // Continue doing stuff while 
-            
-            // if inner_progress.done || inner_progress.input_read <
-
-
-        }
-        */
-
-
+        // NOTE: The inner compressor will never push bytes into the user's output buffer until
+        // self.output_buffer is empty.
+        let inner_progress = self.deflater.update(input, end_of_input, output)?;
+        
+        // Advance input counters and hasher.
+        input_read += inner_progress.input_read;
+        self.input_size += inner_progress.input_read;
         self.hasher.update(&input[0..input_read]);
-        // output = &mut output[inner_progress.output_written..];
-        // self.input_size += inner_progress.input_read;
 
-        // TODO: Uncomment this.
-        if /* inner_progress.done && */ !self.trailer_written {
+        // Advance output.
+        output_written += inner_progress.output_written;
+        output = &mut output[inner_progress.output_written..];
+
+        // Enqueue trailer to be written if all compressed bytes have been written.
+        if inner_progress.done && !self.trailer_written {
             self.output_buffer.buffer.extend_from_slice(&self.hasher.finish_u32().to_le_bytes());
             self.output_buffer.buffer.extend_from_slice(&(self.input_size as u32).to_le_bytes());
             self.trailer_written = true;
         }
 
+        // Maybe copy the trailer to the output if there is still space remaining.
         output_written += self.output_buffer.copy_to(output);
 
         let done = self.trailer_written && self.output_buffer.is_empty();
@@ -440,30 +528,55 @@ impl GzipEncoder {
     }
 }
 
-
-pub fn write_gzip(header: Header, data: &[u8], writer: &mut dyn Write) -> Result<()> {
-    
-    /*
-
-    // TODO: Validate that the compresson method is set correctly.
-    let mut deflater = Deflater::new();
-    deflater.update(&data, &mut [], true)?;
-    let compressed_data = deflater.take_output();
-
-    println!("{:?}", compressed_data);
-
-    writer.write_all(&compressed_data)?;
-
-    let mut hasher = CRC32Hasher::new();
-    hasher.update(&data);
-    let checksum = hasher.finish_u32();
-
-    writer.write_u32::<LittleEndian>(checksum)?;
-    writer.write_u32::<LittleEndian>(data.len() as u32)?;
-    Ok(())
-
-
-    */
-
-    Ok(())
+impl Transform for GzipEncoder {
+    fn update(
+        &mut self,
+        input: &[u8],
+        end_of_input: bool,
+        output: &mut [u8],        
+    ) -> Result<TransformProgress> {
+        self.update_impl(input, end_of_input, output)
+    }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gzip_decoder_on_testdata() -> Result<()> {
+        let root_dir = std::path::Path::new("../../");
+
+        let test_cases: &[(&'static str, &'static str)] = &[
+            ("testdata/gutenberg/shakespeare.txt", "testdata/derived/shakespeare.txt.9.gz"),
+            ("testdata/gutenberg/shakespeare.txt", "testdata/derived/shakespeare.txt.1.gz"),
+            ("testdata/gutenberg/shakespeare.txt", "testdata/derived/shakespeare.txt.2.gz"),
+            ("testdata/gutenberg/shakespeare.txt", "testdata/derived/shakespeare.txt.4.gz"),
+
+            ("testdata/random/random_100", "testdata/derived/random_100.5.gz"),    
+            ("testdata/random/random_463", "testdata/derived/random_463.5.gz"),
+            ("testdata/random/random_4096", "testdata/derived/random_4096.5.gz"),
+        ];
+
+        for (uncompressed_path, compressed_path) in test_cases.iter().clone() {
+            println!("{:?} {:?}", uncompressed_path, compressed_path);
+
+            let uncompressed = std::fs::read(root_dir.join(uncompressed_path))?;
+            let compressed = std::fs::read(root_dir.join(compressed_path))?;
+
+            let mut decoder = GzipDecoder::new();
+
+            let mut uncompressed_test = vec![];
+            crate::transform::transform_to_vec(&mut decoder, &compressed, true, &mut uncompressed_test)?;
+
+            assert_eq!(uncompressed_test, uncompressed);
+        }
+
+        // TODO: Need to attempt decompressing while at different byte offsets
+
+        Ok(())
+    }
+
+}
+

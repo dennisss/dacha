@@ -4,6 +4,8 @@ use parsing::binary::*;
 use crypto::checksum::crc::CRC32Hasher;
 use crypto::hasher::Hasher;
 
+use crate::transform::*;
+
 include!(concat!(env!("OUT_DIR"), "/src/zip.rs"));
 
 
@@ -40,11 +42,14 @@ pub fn read_zip_file(mut input: &[u8]) -> Result<()> {
                 if let CompressionMethod::Stored = header.compression_method {
                     uncompressed.extend_from_slice(file_data);
                 } else if let CompressionMethod::Deflated = header.compression_method {
-                    uncompressed.resize(header.uncompressed_size as usize, 0);
+                    uncompressed.reserve_exact(header.uncompressed_size as usize);
 
                     let mut inflater = crate::deflate::Inflater::new();
-                    let progress = inflater.update(&mut std::io::Cursor::new(file_data), &mut uncompressed)?;
-                    if /* !progress.done || progress.input_read != file_data.len() || */ progress.output_written != uncompressed.len() {
+
+                    // TODO: This should be optimized to automatically read up to the known reserved size.
+                    let progress = transform_to_vec(&mut inflater, file_data, true, &mut uncompressed)?;
+
+                    if !progress.done || progress.input_read != file_data.len() || progress.output_written != uncompressed.len() {
                         println!("{:?}", header);
                         println!("{:?}", progress);
 

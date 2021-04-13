@@ -15,3 +15,4 @@ pub mod snappy;
 pub mod zlib;
 pub mod zip;
 mod buffer_queue;
+mod slice_reader;

@@ -353,24 +353,31 @@ fn code2vec(code: usize, len: usize) -> BitVector {
         v.push(b);
     }
 
+    assert_eq!(code >> len, 0);
+
     v
 }
 
+// TODO: Doesn't seem to work when there are 0 length symbols
 // TODO: For deflate, it is more efficient to do this from the sparse form
 // See RFC1951 3.2.1
 pub fn huffman_canonical_codes_from_lens(lens: &[usize]) -> Result<Vec<(usize, BitVector)>> {
     let max_len = lens.iter().fold(0, |x, y| std::cmp::max(x, *y));
 
+    // Count of how many times each length occurs in all codes.
     let mut bl_count = vec![];
     bl_count.resize(max_len + 1, 0);
     for l in lens {
         bl_count[*l] += 1;
     }
 
-    let mut next_code = vec![];
+    // Zero length codes should not contribute to constructing the codes.
+    bl_count[0] = 0;
+
+    let mut next_code: Vec<usize> = vec![];
     next_code.resize(max_len + 1, 0);
 
-    let mut code = 0;
+    let mut code: usize = 0;
     for bits in 1..(max_len + 1) {
         code = (code + bl_count[bits - 1]) << 1;
         next_code[bits] = code;
@@ -380,6 +387,7 @@ pub fn huffman_canonical_codes_from_lens(lens: &[usize]) -> Result<Vec<(usize, B
 
     // TODO: We should be able to reserve this vector memory.
     let mut out = vec![];
+    out.reserve_exact(lens.len()); // NOTE: This may over-allocate.
 
     // TODO: This should actually go up to max_code
     for (i, len) in lens.iter().enumerate() {
@@ -505,6 +513,25 @@ mod tests {
                 (5, "00".try_into().unwrap()),
                 (6, "1110".try_into().unwrap()),
                 (7, "1111".try_into().unwrap())
+            ]
+        );
+    }
+
+    #[test]
+    fn huffman_codes_from_lens_test_zeros() {
+        let codes = huffman_canonical_codes_from_lens(&[0, 0, 3, 3, 3, 3, 3, 2, 4, 4]).unwrap();
+
+        assert_eq!(
+            &codes,
+            &[
+                (2, "010".try_into().unwrap()),
+                (3, "011".try_into().unwrap()),
+                (4, "100".try_into().unwrap()),
+                (5, "101".try_into().unwrap()),
+                (6, "110".try_into().unwrap()),
+                (7, "00".try_into().unwrap()),
+                (8, "1110".try_into().unwrap()),
+                (9, "1111".try_into().unwrap())
             ]
         );
     }

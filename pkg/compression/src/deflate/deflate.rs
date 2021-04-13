@@ -9,7 +9,7 @@ use common::errors::*;
 use std::io::Write;
 
 use crate::deflate::shared::*;
-use crate::transform::TransformProgress;
+use crate::transform::{Transform, TransformProgress};
 use crate::deflate::cyclic_buffer::CyclicBuffer;
 use crate::deflate::matching_window::{MatchingWindow, MatchingWindowOptions};
 use crate::huffman::*;
@@ -111,11 +111,11 @@ impl Deflater {
     /// output will be internally accumalated until the user consumes it.
     /// TODO: Instead use a configuration option tht defines whether the
     /// internal output buffer should have any bounded size.
-    pub fn update(
+    fn update_impl(
         &mut self,
         mut input: &[u8],
-        mut output: &mut [u8],
         end_of_input: bool,
+        mut output: &mut [u8],        
     ) -> Result<TransformProgress> {
         // TODO: Fix this. Also need to check for !end_of_input
         if end_of_input {
@@ -381,6 +381,18 @@ impl Deflater {
     //     // TODO: This should only take data after the buffer offset. 
     //     self.output_buffer.take().unwrap_or(BufferQueue::new()).buffer
     // }
+
+}
+
+impl Transform for Deflater {
+    fn update(
+        &mut self,
+        input: &[u8],
+        end_of_input: bool,
+        output: &mut [u8],        
+    ) -> Result<TransformProgress> {
+        self.update_impl(input, end_of_input, output)
+    }
 }
 
 // NOTE: Assumes that the header has already been written
@@ -392,6 +404,8 @@ fn write_uncompressed_block<W: BitWrite + Write>(data: &[u8], strm: &mut W) -> R
     let l = data.len() as u16;
     strm.write_u16::<LittleEndian>(l)?;
     strm.write_u16::<LittleEndian>(!l)?;
+
+    // TODO: Don't write if we consume the entire output buffer.
     strm.write_all(data)?;
     Ok(())
 }

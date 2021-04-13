@@ -1,11 +1,15 @@
 use super::cyclic_buffer::*;
 use crate::deflate::shared::*;
-use crate::transform::TransformProgress;
+use crate::transform::{Transform, TransformProgress};
 use crate::huffman::*;
 use byteorder::{LittleEndian, ReadBytesExt};
 use common::bits::*;
 use common::errors::*;
 use std::io::Read;
+
+// TODO: Ensure that RFC 1951 Section 3.3 is implemented.
+
+// TODO: If the user always has the output buffer available, maybe we should be able to re-use that instead of using a cyclic buffer.
 
 /*
 Some guidelines for compression:
@@ -17,6 +21,7 @@ Some guidelines for decompression
 */
 
 /// Top-level state for the Inflater state machine.
+#[derive(Debug)]
 enum State {
     /// Waiting to read the next block's header.
     Start,
@@ -56,6 +61,7 @@ enum State {
     },
 }
 
+#[derive(Debug)]
 struct LenDist {
     len: usize,
     dist: usize,
@@ -107,14 +113,14 @@ impl Inflater {
     }
 
     /// NOTE: This assumes that all input is
-    pub fn update(
+    fn update_impl(
         &mut self,
-        input: &mut dyn Read, /* &[u8] */
+        input: &[u8],
+        end_of_input: bool,
         output: &mut [u8],
     ) -> Result<TransformProgress> {
-        // let mut cursor = std::io::Cursor::new(&input);
-        let cursor = input;
-        let mut strm = BitReader::new(cursor);
+        let mut cursor = std::io::Cursor::new(&input);
+        let mut strm = BitReader::new(&mut cursor);
         strm.load(self.input_prefix.clone())?; // TODO: Should delete the old value
 
         if self.is_done() {
@@ -126,7 +132,11 @@ impl Inflater {
             index: 0,
         };
 
+        // NOTE: We don't wait for the output buffer to be fully consumed as there are cases where
+        // the final input byte marking that the block is done isn't read just because this is no
+        // output data remaining.
         while out.index < out.buf.len() {
+        // loop {
             match self.update_inner(&mut strm, &mut out) {
                 Ok(_) => {}
                 Err(e) => {
@@ -153,14 +163,14 @@ impl Inflater {
 
         // drop(strm);
 
-        // let input_read = cursor.position();
+        let input_read = cursor.position() as usize;
         let output_written = out.index;
 
         // TODO: If the input is fully consumed without making any progress, then that
         // would be problematic.
 
         Ok(TransformProgress {
-            input_read: 0, // TODO
+            input_read,
             output_written,
             done,
         })
@@ -241,6 +251,11 @@ impl Inflater {
                 let hdist = strm.read_bits_exact(5)? + 1;
                 // Number of code length codes - 4
                 let hclen = strm.read_bits_exact(4)? + 4;
+
+                if hlit > 286 {
+                    return Err(err_msg("hlit too large"));
+                }
+
 
                 State::DynamicBlockCodeLenCodeLens { hlit, hdist, hclen }
             }
@@ -341,6 +356,7 @@ impl Inflater {
         nsymbols: usize,
     ) -> Result<Vec<usize>> {
         let mut lens = vec![]; // TODO: Reserve elements.
+        lens.reserve_exact(nsymbols);
         while lens.len() < nsymbols {
             let c = code_len_tree.read_code(strm)?;
 
@@ -350,6 +366,7 @@ impl Inflater {
                 }
                 16 => {
                     let n = 3 + (strm.read_bits(2)?.unwrap());
+                    // TODO: Avoid the unwrap here.
                     let l = *lens.last().unwrap();
                     for i in 0..n {
                         lens.push(l);
@@ -387,9 +404,14 @@ impl Inflater {
         out: &mut OutputBuffer,
     ) -> Result<ReadCodesResult> {
         while out.index < out.buf.len() {
+        // loop {
             let code = litlen_tree.read_code(strm)?;
 
             if code < END_OF_BLOCK {
+                // if out.index >= out.buf.len() {
+                //     break;
+                // }
+
                 out.buf[out.index] = code as u8;
                 out.index += 1;
                 strm.consume();
@@ -470,6 +492,18 @@ impl Inflater {
     }
 }
 
+impl Transform for Inflater {
+    fn update(
+        &mut self,
+        input: &[u8],
+        end_of_input: bool,
+        output: &mut [u8],        
+    ) -> Result<TransformProgress> {
+        self.update_impl(input, end_of_input, output)
+    }
+}
+
+/*
 pub trait InflateRead {
     ///
     /// NOTE: This creates a new Inflater context each time so is not efficient
@@ -507,5 +541,6 @@ impl<T: Read> InflateRead for T {
         Ok(out)
     }
 }
+*/
 
 // reader.read_inflate();
