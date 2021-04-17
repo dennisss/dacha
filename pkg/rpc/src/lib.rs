@@ -10,7 +10,7 @@ use common::errors::*;
 use http::body::*;
 use http::client::Client;
 use http::header::*;
-use http::server::{HttpRequestHandler, HttpServer};
+use http::server::{HttpRequestHandler};
 use http::spec::{Request, RequestBuilder, Response, ResponseBuilder};
 use http::status_code::*;
 use protobuf::service::{Channel, Service};
@@ -43,7 +43,7 @@ impl RPCServer {
     }
 
     pub async fn run(self) -> Result<()> {
-        let server = HttpServer::new(self.port, self);
+        let server = http::server::Server::new(self.port, self);
         server.run().await
     }
 

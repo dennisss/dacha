@@ -39,6 +39,7 @@ pub mod ascii;
 pub mod binary;
 pub mod cstruct;
 pub mod iso;
+pub mod opaque;
 
 //
 //pub trait CharIter {
@@ -415,12 +416,24 @@ macro_rules! parser {
 	(pub $c:ident<$t:ty> => $e:expr) => {
 		parser!(pub $c<ParserInput, $t> => $e);
 	};
+    (pub(crate) $c:ident<$t:ty> => $e:expr) => {
+		parser!(pub(crate) $c<ParserInput, $t> => $e);
+	};
 	($c:ident<$t:ty> => $e:expr) => {
 		parser!($c<ParserInput, $t> => $e);
 	};
 
 	(pub $c:ident<$r:ty, $t:ty> => $e:expr) => {
 		pub fn $c(input: $r) -> ParseResult2<$t, $r> {
+			let p = $e;
+			p(input)
+
+			// TODO: Must support passing through Incomplete error
+			//.map_err(|e: Error| Error::from(format!("{}({})", function!(), e)))
+		}
+	};
+    (pub(crate) $c:ident<$r:ty, $t:ty> => $e:expr) => {
+		pub(crate) fn $c(input: $r) -> ParseResult2<$t, $r> {
 			let p = $e;
 			p(input)
 

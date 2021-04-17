@@ -103,6 +103,7 @@ impl Hasher for SHA1Hasher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common::hex;
 
     #[test]
     fn sha1_test() {

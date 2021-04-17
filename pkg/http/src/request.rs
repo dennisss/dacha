@@ -1,6 +1,8 @@
 use common::errors::*;
 use common::bytes::Bytes;
 use parsing::complete;
+use parsing::ascii::AsciiString;
+
 use crate::body::*;
 use crate::header::*;
 use crate::method::*;
@@ -13,30 +15,6 @@ pub struct Request {
     pub body: Box<dyn Body>,
 }
 
-#[derive(Debug)]
-pub struct RequestHead {
-    // TODO: Only certain types of URIs are valid in this context
-    pub method: Method,
-    pub uri: Uri,
-    pub version: HttpVersion,
-    pub headers: HttpHeaders,
-}
-
-impl RequestHead {
-    pub fn serialize(&self, buf: &mut Vec<u8>) {
-        let request_line = format!(
-            "{} {} HTTP/{}\r\n",
-            std::str::from_utf8(self.method.as_str()).unwrap(),
-            self.uri.to_string(),
-            self.version.to_string()
-        );
-        buf.extend_from_slice(request_line.as_bytes());
-
-        self.headers.serialize(buf);
-        buf.extend_from_slice(b"\r\n");
-    }
-}
-
 // TODO: Instead just implement for head (or add some length info to describe
 // the body)?
 impl std::fmt::Debug for Request {
@@ -45,10 +23,30 @@ impl std::fmt::Debug for Request {
     }
 }
 
+#[derive(Debug)]
+pub struct RequestHead {
+    // TODO: Only certain types of URIs are valid in this context
+    pub method: Method,
+    pub uri: Uri,
+    pub version: Version,
+    pub headers: Headers,
+}
+
+impl RequestHead {
+    pub fn serialize(&self, out: &mut Vec<u8>) -> Result<()> {
+        serialize_request_line(&AsciiString::from_str(self.method.as_str())?, &self.uri, &self.version, out)?;
+
+        self.headers.serialize(out)?;
+        out.extend_from_slice(b"\r\n");
+        Ok(())
+    }
+}
+
+/// Helper for creating 
 pub struct RequestBuilder {
     method: Option<Method>,
     uri: Option<Uri>,
-    headers: Vec<HttpHeader>,
+    headers: Vec<Header>,
     body: Option<Box<dyn Body>>,
 
     // First error that occured in the building process
@@ -104,7 +102,7 @@ impl RequestBuilder {
             }
         };
 
-        self.headers.push(HttpHeader { name, value });
+        self.headers.push(Header { name, value });
         self
     }
 
@@ -113,6 +111,10 @@ impl RequestBuilder {
         self
     }
 
+    /// Constructs the request from the previously provided value.
+    /// 
+    /// NOTE: Even if this succeeds, then the request may still be invalid and this will only be
+    /// caught when you attempt to serialize/run the request.
     pub fn build(self) -> Result<Request> {
         if let Some(e) = self.error {
             return Err(e);
@@ -123,7 +125,7 @@ impl RequestBuilder {
         // TODO: Only certain types of uris are allowed here
         let uri = self.uri.ok_or_else(|| err_msg("No uri specified"))?;
 
-        let headers = HttpHeaders::from(self.headers);
+        let headers = Headers::from(self.headers);
 
         let body = self.body.ok_or_else(|| err_msg("No body specified"))?;
 

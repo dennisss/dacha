@@ -1,9 +1,9 @@
-use std::sync::Arc;
-
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::*;
 
+
+/// An object that matches some pattern in a stream of bytes.
 pub trait Matcher {
     /// Considering all previous data passed to this function, try to find a
     /// match given a new chunk of data returning the index immediately after
@@ -14,9 +14,15 @@ pub trait Matcher {
 // TODO: Move this somewhere else as this is very specific to http.
 /// Matches the end of the next empty line where a line is terminated by the
 /// exact sequence of bytes b"\r\n".
+/// 
+/// NOTE: This assumes that the input bytes re
 pub struct LineMatcher {
+    
     seen_cr: bool,
+    
+    /// Number of bytes seen in the current line.
     cur_length: usize,
+
     empty_only: bool,
 }
 
@@ -63,58 +69,34 @@ impl Matcher for LineMatcher {
     }
 }
 
-// TODO: Rename StreamIO as this now supports passing through write as well
+/// Wrapper around a byte stream with special operations that require buffering of the input data.
+///
+/// TODO: Find a better name for this. Rename StreamIO as this now supports passing through write as well
 pub struct StreamReader {
     reader: Box<dyn Readable>,
+
+    /// TODO: Use something lighter weight like the BufferQueue.
     head: Bytes,
+
+    options: StreamBufferOptions
 }
 
-// pub struct StreamBufferOptions {
-// 	buffer_size: usize,
-// 	max_buffer_size: usize
-// }
-
-pub enum StreamReadUntil {
-    /// The first item will be the bytes up to and including the delimiter.
-    /// The second item will be
-    Value(Bytes),
-    TooLarge,
-    Incomplete(Bytes),
-    EndOfStream,
-}
-
-const BUFFER_SIZE: usize = 1024;
-const MAX_BUFFER_SIZE: usize = 16 * 1024; // 16KB
-
-/// A trait for any type that can be referenced as an AsyncRead.
-// trait AsRead {
-// 	type Inner;
-// 	fn as_read(&self) -> &Self::Inner;
-// }
-
-// // TODO: Generalize this for non-Arc types?
-// impl<T> AsRead for Arc<T> where for<'a> &'a T: AsyncRead + Unpin {
-// 	type Inner = T;
-// 	fn as_read(&self) -> &T {
-// 		self.as_ref()
-// 	}
-// }
-
-// impl<R> StreamReader<R> where R: AsRead, for<'a> &'a R::Inner: AsyncRead +
-// Unpin  {
 impl StreamReader {
-    pub fn new(reader: Box<dyn Readable>) -> Self {
+    pub fn new(reader: Box<dyn Readable>, options: StreamBufferOptions) -> Self {
         StreamReader {
             reader,
             head: Bytes::new(),
+            options
         }
     }
 
-    // TODO: If this ends up being called too many times, then the total amount of
-    // memory used by a single connection may get very large.
+    /// Read from the underlying stream until a match is found.
+    ///
+    /// TODO: If this ends up being called too many times, then the total amount of
+    /// memory used by a single connection may get very large.
     pub async fn read_matching<M: Matcher>(&mut self, mut matcher: M) -> Result<StreamReadUntil> {
         let mut buf = vec![];
-        buf.resize(BUFFER_SIZE, 0u8);
+        buf.resize(self.options.buffer_size, 0u8);
 
         // Index up to which we have read.
         let mut idx = 0;
@@ -125,7 +107,7 @@ impl StreamReader {
         // Read until we see the pattern or overflow our buffer limit.
         loop {
             let next_idx = if self.head.len() > 0 {
-                if self.head.len() > MAX_BUFFER_SIZE {
+                if self.head.len() > self.options.max_buffer_size {
                     return Err(err_msg("No much data remaining from last run"));
                 }
 
@@ -136,6 +118,7 @@ impl StreamReader {
                 self.head = Bytes::new();
                 n
             } else {
+                // TODO: Validate that this buffer slice is not empty.
                 let nread = self.reader.read(&mut buf[idx..]).await?;
                 if nread == 0 {
                     if idx != 0 {
@@ -158,8 +141,8 @@ impl StreamReader {
                 break;
             }
 
-            if buf.len() - idx < BUFFER_SIZE {
-                let num_to_add = std::cmp::min(BUFFER_SIZE, MAX_BUFFER_SIZE - buf.len());
+            if buf.len() - idx < self.options.buffer_size {
+                let num_to_add = std::cmp::min(self.options.buffer_size, self.options.max_buffer_size - buf.len());
 
                 if num_to_add == 0 {
                     return Ok(StreamReadUntil::TooLarge);
@@ -178,8 +161,11 @@ impl StreamReader {
 
         Ok(StreamReadUntil::Value(b.slice(0..match_idx)))
     }
+}
 
-    pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+#[async_trait]
+impl Readable for StreamReader {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let mut rest = buf;
         let mut total_read = 0;
 
@@ -199,71 +185,36 @@ impl StreamReader {
 
         Ok(total_read)
     }
+}
 
-    pub async fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<()> {
-        while buf.len() > 0 {
-            let n = self.read(buf).await?;
-            buf = &mut buf[n..];
+pub struct StreamBufferOptions {
+    /// Number of bytes we will try to read in each step of internal algorithms. 
+	pub buffer_size: usize,
+	
+    /// Maximum size of all buffered data.
+    pub max_buffer_size: usize
+}
+
+impl StreamBufferOptions {
+    pub fn default() -> Self {
+        Self {
+            buffer_size: 1024,
+            max_buffer_size: 16 * 1024 // 16KB
         }
-
-        Ok(())
     }
 }
 
-// impl AsyncWrite for StreamReader {
-// 	fn poll_write(
-//         self: Pin<&mut Self>,
-//         cx: &mut std::task::Context,
-//         buf: &[u8]
-//     ) -> Poll<std::io::Result<usize>> {
-// 		let mut r = &*self.reader;
-// 		r.poll_write(cx, buf)
-// 	}
 
-// 	// fn poll_flush(
-//     //     self: Pin<&mut Self>,
-//     //     cx: &mut std::task::Context
-//     // ) -> Poll<std::io::Result<()>> {
-// 	// 	self.reader.poll_flush(cx)
-// 	// }
-//     // fn poll_close(
-//     //     self: Pin<&mut Self>,
-//     //     cx: &mut std::task::Context
-//     // ) -> Poll<std::io::Result<()>> {
-// 	// 	let a: Arc<TcpStream> = self.reader.clone();
-// 	// 	let mut r: &dyn AsyncWrite = &*a;
-// 	// 	r.write_all(b"hello");
-// 	// 	(*r).poll_close(cx)
-// 	// }
-// }
+pub enum StreamReadUntil {
+    /// The first item will be the bytes up to and including the delimiter.
+    /// The second item will be
+    Value(Bytes),
+    
+    /// Error: We have hit our memory buffer size limit before getting a match.
+    TooLarge,
 
-// / Wrapper around StreamReader for having multiple copies
-// pub struct SharedStreamReader<R> {
-// 	stream: Arc<Mutex<StreamReader<R>>>
-// }
+    /// 
+    Incomplete(Bytes),
 
-// impl<R> SharedStreamReader<R> {
-// 	pub fn new(stream: StreamReader<R>) -> Self {
-// 		SharedStreamReader { stream: Arc::new(Mutex::new(stream)) }
-// 	}
-// }
-
-// impl<R: AsyncRead> SharedStreamReader<R> {
-// 	pub fn read(&mut self, buf: &mut [u8]) -> impl common::FutureResult<usize> {
-// 		self.stream.lock().unwrap().read(buf)
-// 	}
-
-// 	pub fn read_exact(&mut self, mut buf: &mut [u8]) -> impl
-// common::FutureResult<()> { 		self.stream.lock().unwrap().read_exact(buf)
-// 	}
-// }
-
-// impl<R: AsyncWrite> AsyncWrite for SharedStreamReader<R> {
-// 	fn poll_write(
-//         self: Pin<&mut Self>,
-//         cx: &mut std::task::Context,
-//         buf: &[u8]
-//     ) -> Poll<std::io::Result<usize>> {
-// 		self.stream.lock().unwrap().poll_write(cx, buf)
-// 	}
-// }
+    EndOfStream,
+}

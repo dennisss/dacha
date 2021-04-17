@@ -108,18 +108,18 @@ impl Extension {
         use Extension::*;
 
         let typ = match self {
-            ServerName(e) => ExtensionType::server_name,
-            MaxFragmentLength(e) => ExtensionType::max_fragment_length,
-            SupportedGroups(e) => ExtensionType::supported_groups,
-            SignatureAlgorithms(e) => ExtensionType::signature_algorithms,
-            SupportedVersionsClientHello(e) => ExtensionType::supported_versions,
-            SupportedVersionsServerHello(e) => ExtensionType::supported_versions,
-            Cookie(e) => ExtensionType::cookie,
+            ServerName(_) => ExtensionType::server_name,
+            MaxFragmentLength(_) => ExtensionType::max_fragment_length,
+            SupportedGroups(_) => ExtensionType::supported_groups,
+            SignatureAlgorithms(_) => ExtensionType::signature_algorithms,
+            SupportedVersionsClientHello(_) => ExtensionType::supported_versions,
+            SupportedVersionsServerHello(_) => ExtensionType::supported_versions,
+            Cookie(_) => ExtensionType::cookie,
             PostHandshakeAuth => ExtensionType::post_handshake_auth,
-            SignatureAlgorithmsCert(e) => ExtensionType::signature_algorithms_cert,
-            KeyShareClientHello(e) => ExtensionType::key_share,
-            KeyShareHelloRetryRequest(e) => ExtensionType::key_share,
-            KeyShareServerHello(e) => ExtensionType::key_share,
+            SignatureAlgorithmsCert(_) => ExtensionType::signature_algorithms_cert,
+            KeyShareClientHello(_) => ExtensionType::key_share,
+            KeyShareHelloRetryRequest(_) => ExtensionType::key_share,
+            KeyShareServerHello(_) => ExtensionType::key_share,
             Unknown { typ, data } => ExtensionType::from_u16(*typ),
         };
 

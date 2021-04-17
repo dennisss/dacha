@@ -1,12 +1,10 @@
 use common::errors::*;
-use parsing::ascii::AsciiString;
 use parsing::*;
 
 use crate::common_syntax::*;
 use crate::message_syntax::*;
 use crate::header::*;
 
-// Transfer-Encoding: https://tools.ietf.org/html/rfc7230#section-3.3.1
 
 // Content-Length: https://tools.ietf.org/html/rfc7230#section-3.3.2
 
@@ -68,10 +66,10 @@ pub fn comma_delimited<T, P: Parser<T> + Copy>(p: P, min: usize, max: usize) -> 
 /// RFC 7230: Section 3.3.2
 ///
 /// `Content-Length = 1*DIGIT`
-pub fn parse_content_length(headers: &HttpHeaders) -> Result<Option<usize>> {
+pub fn parse_content_length(headers: &Headers) -> Result<Option<usize>> {
     let mut hs = headers.find(CONTENT_LENGTH);
     let len = if let Some(h) = hs.next() {
-        if let Ok(v) = usize::from_str_radix(&h.value.to_string(), 10) {
+        if let Ok(v) = usize::from_str_radix(h.value.to_ascii_str()?, 10) {
             Some(v)
         } else {
             return Err(format_err!("Invalid Content-Length: {:?}", h.value));
@@ -89,31 +87,4 @@ pub fn parse_content_length(headers: &HttpHeaders) -> Result<Option<usize>> {
     Ok(len)
 }
 
-parser!(parse_content_coding<AsciiString> => parse_token);
 
-const MAX_CONTENT_ENCODINGS: usize = 4;
-
-/// This will return a list of all content encodings in the message.
-/// For simplicity they will all be lowercased as
-pub fn parse_content_encoding(headers: &HttpHeaders) -> Result<Vec<String>> {
-    // TODO: Deduplicate this code with parse_transfer_encoding
-    let mut out = vec![];
-    for h in headers.find(CONTENT_ENCODING) {
-        let (items, _) = complete(comma_delimited(
-            parse_content_coding,
-            1,
-            MAX_CONTENT_ENCODINGS,
-        ))(h.value.data.clone())?;
-
-        out.reserve(items.len());
-        for i in items.into_iter() {
-            out.push(i.to_string().to_ascii_lowercase());
-        }
-
-        if out.len() > MAX_CONTENT_ENCODINGS {
-            return Err(err_msg("Too many Transfer-Codings"));
-        }
-    }
-
-    Ok(out)
-}

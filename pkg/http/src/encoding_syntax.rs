@@ -1,25 +1,28 @@
 use common::errors::*;
 use parsing::*;
+use parsing::ascii::AsciiString;
 
 use crate::header::*;
-use crate::transfer_encoding::*;
+use crate::encoding::*;
 use crate::header_syntax::*;
 use crate::common_syntax::*;
 use crate::message_syntax::*;
 
 pub const MAX_TRANSFER_CODINGS: usize = 4;
 
+const MAX_CONTENT_ENCODINGS: usize = 4;
+
 /// RFC 7230: Section 3.3.1
 /// 
 /// TODO: Must tolerate empty items in comma delimited lsit
-pub fn parse_transfer_encoding(headers: &HttpHeaders) -> Result<Vec<TransferCoding>> {
+pub fn parse_transfer_encoding(headers: &Headers) -> Result<Vec<TransferCoding>> {
     let mut out = vec![];
     for h in headers.find(TRANSFER_ENCODING) {
         let (items, _) = complete(comma_delimited(
             parse_transfer_coding,
             1,
             MAX_TRANSFER_CODINGS,
-        ))(h.value.data.clone())?;
+        ))(h.value.to_bytes())?;
 
         out.reserve(items.len());
         for i in items.into_iter() {
@@ -79,5 +82,33 @@ parser!(parse_transfer_parameter<(String, String)> => {
 });
 
 
+
+/// This will return a list of all content encodings in the message.
+/// Will result an empty list if there are no Content-Encoding headers.
+/// For simplicity they will all be lowercased as
+pub fn parse_content_encoding(headers: &Headers) -> Result<Vec<String>> {
+    // TODO: Deduplicate this code with parse_transfer_encoding
+    let mut out = vec![];
+    for h in headers.find(CONTENT_ENCODING) {
+        let (items, _) = complete(comma_delimited(
+            parse_content_coding,
+            1,
+            MAX_CONTENT_ENCODINGS,
+        ))(h.value.to_bytes())?;
+
+        out.reserve(items.len());
+        for i in items.into_iter() {
+            out.push(i.to_string().to_ascii_lowercase());
+        }
+
+        if out.len() > MAX_CONTENT_ENCODINGS {
+            return Err(err_msg("Too many Transfer-Codings"));
+        }
+    }
+
+    Ok(out)
+}
+
+parser!(parse_content_coding<AsciiString> => parse_token);
 
 

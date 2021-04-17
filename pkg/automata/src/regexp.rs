@@ -166,12 +166,12 @@ impl RegExp {
         self.state_machine.accepts(iter)
     }
 
-    pub fn exec<'a, 'b>(&'a self, value: &'b [u8]) -> Result<Option<RegExpMatch<'a, 'b>>> {
+    pub fn exec<'a, 'b, T: AsRef<[u8]> + ?Sized>(&'a self, value: &'b T) -> Result<Option<RegExpMatch<'a, 'b>>> {
         let state = RegExpMatch {
             instance: self,
-            value,
+            value: value.as_ref(),
             index: 0,
-            remaining: value,
+            remaining: value.as_ref(),
             consumed_start: false,
             consumed_end: false,
             state: 0, // Will be initialized in the next statement.
@@ -1221,13 +1221,13 @@ mod tests {
         let match2 = b.exec("aYc blah blah blah aXc hello").unwrap().unwrap();
         assert_eq!(match2.as_str(), "aYc");
         assert_eq!(match2.index(), 0);
-        assert_eq!(match2.groups(), &[None, Some("aYc")]);
+        assert_eq!(match2.groups().collect::<Vec<_>>(), &[None, Some("aYc")]);
         println!("{:?}", match2);
 
         let match21 = match2.next().unwrap().unwrap();
         assert_eq!(match21.as_str(), "aXc");
         assert_eq!(match21.index(), 19);
-        assert_eq!(match21.groups(), &[Some("aXc"), None]);
+        assert_eq!(match21.groups().collect::<Vec<_>>(), &[Some("aXc"), None]);
         println!("{:?}", match21);
 
         assert!(match21.next().unwrap().is_none());

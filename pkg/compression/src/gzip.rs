@@ -255,7 +255,7 @@ impl GzipDecoder {
         }
     }
 
-    fn update_impl(&mut self, mut input: &[u8], end_of_input: bool, mut output: &mut [u8]) -> Result<TransformProgress> {
+    fn update_impl(&mut self, mut input: &[u8], end_of_input: bool, output: &mut [u8]) -> Result<TransformProgress> {
         let mut input_read = 0;
         let mut output_written = 0;
         let mut done = false;

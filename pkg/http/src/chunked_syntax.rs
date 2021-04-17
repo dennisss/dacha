@@ -36,7 +36,7 @@ parser!(pub parse_chunk_start<ChunkHead> => seq!(c => {
 // RFC 7230: Section 4.1
 //
 // `= trailer-part CRLF`
-parser!(pub parse_chunk_end<Vec<HttpHeader>> => {
+parser!(pub parse_chunk_end<Vec<Header>> => {
     seq!(c => {
         let headers = c.next(parse_trailer_part)?;
         c.next(parse_crlf)?;
@@ -73,6 +73,6 @@ parser!(parse_chunk_ext<Vec<ChunkExtension>> => {
 // RFC 7230: Section 4.1.2
 //
 // `trailer-part = *( header-field CRLF )`
-parser!(parse_trailer_part<Vec<HttpHeader>> => {
+parser!(parse_trailer_part<Vec<Header>> => {
     many(parse_header_field)
 });

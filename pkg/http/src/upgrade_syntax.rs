@@ -26,7 +26,6 @@ parser!(pub parse_protocol<Protocol> => {
 // `protocol-name = token`
 parser!(parse_protocol_name<AsciiString> => parse_token);
 
-
 // RFC 7230: 6.7
 //
 // `protocol-version = token`

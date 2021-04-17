@@ -8,6 +8,9 @@
 
 
 
+Dealing with obs-fold:
+- We will replace any '\r' or '\n' characters in the the value sent be a client or received by a server with spaces.
+
 
 
 Old

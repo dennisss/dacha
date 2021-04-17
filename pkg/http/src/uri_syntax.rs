@@ -1,13 +1,16 @@
 // Parsers for the URI syntax.
 // This file closely follows RFC 3986.
 
-use crate::uri::*;
+use std::fmt::Write;
+
 use common::bytes::Bytes;
 use common::errors::*;
-use parsing::ascii::*;
-use parsing::*;
-use std::fmt::Write;
 use common::hex;
+use parsing::ascii::*;
+use parsing::opaque::OpaqueString;
+use parsing::*;
+
+use crate::uri::*;
 
 // TODO: Ensure URLs never get 2K bytes (especially in the incremental form)
 // https://stackoverflow.com/questions/417142/what-is-the-maximum-length-of-a-url-in-different-browsers
@@ -20,7 +23,6 @@ use common::hex;
 // RFC 3986: Section 2.1
 //
 // NOTE: Upper case hex digits should be preferred but either should be accedpted by parsers.
-// NOTE: This is strictly ASCII.
 // `pct-encoded = "%" HEXDIG HEXDIG`
 fn parse_pct_encoded(input: Bytes) -> ParseResult<u8> {
     if input.len() < 3 || input[0] != ('%' as u8) {
@@ -29,18 +31,12 @@ fn parse_pct_encoded(input: Bytes) -> ParseResult<u8> {
 
     let s = std::str::from_utf8(&input[1..3])?;
     let v = u8::from_str_radix(s, 16)?;
-
-    if v > 0x7f || v <= 0x1f {
-        return Err(format_err!(
-            "Percent encoded byte outside ASCII range: 0x{:x}",
-            v
-        ));
-    }
-
     Ok((v, input.slice(3..)))
 }
 
 fn serialize_pct_encoded(value: u8, out: &mut Vec<u8>) {
+    // NOTE: For standardization, there is a preference specified in the RFC to use upper
+    // case hex characters.
     // TODO: Consider checking if the given value is in the ascii range.
     out.extend_from_slice(format!("%{:02X}", value).as_bytes());
 }
@@ -106,6 +102,49 @@ parser!(pub parse_uri<Uri> => {
     })
 });
 
+/// The algorithm for this is defined in:
+/// RFC 3986: Secion 5.3
+///
+/// TODO: Improve this.
+pub fn serialize_uri(uri: &Uri, out: &mut Vec<u8>) -> Result<()> {
+    if let Some(scheme) = &uri.scheme {
+        serialize_scheme(scheme, out)?;
+        out.push(b':');
+    }
+
+    if let Some(authority) = &uri.authority {
+        out.extend_from_slice(b"//");
+        serialize_authority(authority, out)?;
+    }
+
+    {
+        // TODO: Key things we need to validate:
+        // 1. There are no '?' symbols in this string.
+        // 2. If there are any percent encoded components, they are valid.
+        // 3. Can't start with '//'
+        // 4. Doesn't contain any non-ascii characters (should have all been encoded)
+        //
+        // NOTE: Because we can't distinguish between '/' and the pct-encoded version of it in this stage,
+        // we ideally shouldn't try to decode it yet.
+        out.extend_from_slice(uri.path.as_bytes());
+    }
+
+
+    // TODO: Definately need to improve these by a lot.
+    if let Some(query) = &uri.query {
+        out.push(b'?');
+        serialize_query(query, out);
+    }
+
+    if let Some(fragment) = &uri.fragment {
+        out.push(b'#');
+        serialize_fragment(fragment, out);
+    }
+
+    Ok(())
+}
+
+
 // RFC 3986: Section 3
 //
 // `hier-part = "//" authority path-abempty
@@ -130,6 +169,8 @@ parser!(parse_hier_part<(Option<Authority>, UriPath)> => {
 /// 
 /// NOTE: This is strictly ASCII.
 /// `scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )`
+/// 
+/// TODO: Implement as a regular expression.
 fn parse_scheme(input: Bytes) -> ParseResult<AsciiString> {
     let mut i = 0;
     while i < input.len() {
@@ -157,6 +198,15 @@ fn parse_scheme(input: Bytes) -> ParseResult<AsciiString> {
     }
 }
 
+fn serialize_scheme(value: &AsciiString, out: &mut Vec<u8>) -> Result<()> {
+    // Validate syntax
+    complete(parse_scheme)(value.data.clone())?;
+
+    out.reserve(value.data.len());
+    out.extend_from_slice(value.as_ref().as_bytes());
+    Ok(())
+}
+
 // RFC 3986: Section 3.2
 // 
 // `authority = [ userinfo "@" ] host [ ":" port ]`
@@ -182,18 +232,34 @@ parser!(pub parse_authority<Authority> => {
     })
 });
 
+pub fn serialize_authority(value: &Authority, out: &mut Vec<u8>) -> Result<()> {
+    if let Some(user) = &value.user {
+        serialize_userinfo(user, out);
+        out.push(b'@');
+    }
+
+    serialize_host(&value.host, out)?;
+
+    if let Some(port) = &value.port {
+        let s = format!(":{}", port);
+        out.extend_from_slice(s.as_bytes());
+    }
+
+    Ok(())
+}
+
 // RFC 3986: Section 3.2.1
 //
 // `userinfo = *( unreserved / pct-encoded / sub-delims / ":" )`
-parser!(parse_userinfo<AsciiString> => {
+parser!(parse_userinfo<OpaqueString> => {
     map(many(alt!(
         parse_unreserved, parse_pct_encoded, parse_sub_delims, one_of(":")
-    )), |s| unsafe { AsciiString::from_ascii_unchecked(Bytes::from(s)) })
+    )), |s| OpaqueString::from(s))
 });
 
 // RFC 3986: Section 3.2.1
-fn serialize_userinfo(info: &AsciiString, out: &mut Vec<u8>) {
-    for b in info.as_ref().as_bytes().iter().cloned() {
+fn serialize_userinfo(info: &OpaqueString, out: &mut Vec<u8>) {
+    for b in info.as_bytes().iter().cloned() {
         if is_unreserved(b) || is_sub_delims(b) || b == (':' as u8) {
             out.push(b);
         } else {
@@ -213,6 +279,15 @@ parser!(parse_host<Host> => {
     )
 });
 
+fn serialize_host(host: &Host, out: &mut Vec<u8>) -> Result<()> {
+    match host {
+        Host::IP(ip) => serialize_ip(ip, out)?,
+        Host::Name(name) => serialize_reg_name(name, out)
+    }
+
+    Ok(())
+}
+
 // RFC 3986: Section 3.2.2
 //
 // TODO: Add IPv6addrz as in https://tools.ietf.org/html/rfc6874
@@ -228,6 +303,67 @@ parser!(parse_ip_literal<IPAddress> => {
         Ok(addr)
     })
 });
+
+pub fn serialize_ip(value: &IPAddress, out: &mut Vec<u8>) -> Result<()> {
+    let s: String = match value {
+        IPAddress::V4(v) => {
+            if v.len() != 4 {
+                return Err(err_msg("IPv4 must be 4 bytes long"));
+            }
+        
+            format!("{}.{}.{}.{}", v[0], v[1], v[2], v[3])
+        }
+        IPAddress::V6(v) => {
+            if v.len() != 16 {
+                return Err(err_msg("IPv6 must be 16 bytes long"));
+            }
+
+            /// (start_index, end_index) of the longest range of zero bytes seen in the address.
+            /// Initialized to a range that is trivially outside the address length.
+            let mut longest_zero_range = (255,255);
+            {
+                let mut cur_zero_range = (0, 0);
+                for i in 0..v.len() {
+                    if v[i] == 0 {
+                        if cur_zero_range.1 == i {
+                            cur_zero_range = (cur_zero_range.0, i + 1);
+                        } else {
+                            cur_zero_range = (i, i + 1);
+                        }
+
+                        if cur_zero_range.1 - cur_zero_range.0 > longest_zero_range.1 - longest_zero_range.0 {
+                            longest_zero_range = cur_zero_range;
+                        }
+                    }
+                }
+            }
+
+            let mut s = String::new();
+
+            for (i, byte) in v.iter().enumerate() {
+                if i >= longest_zero_range.0 && i < longest_zero_range.1 {
+                    continue;
+                }
+
+                write!(&mut s, "{:02x}", byte);
+                if i < v.len() {
+                    s.push(':');
+                }
+                if i + 1 == longest_zero_range.0 {
+                    s.push(':');
+                }
+            }
+
+            s
+        }
+        IPAddress::VFuture(v) => {
+            return Err(err_msg("Serializing future IP formats not yet supported"));   
+        }
+    };
+
+    out.extend_from_slice(s.as_bytes());
+    Ok(())
+}
 
 // RFC 3986: Section 3.2.2
 //
@@ -404,16 +540,25 @@ fn parse_dec_octet(input: Bytes) -> ParseResult<u8> {
 
 // RFC 3986: Section 3.2.2
 //
-// NOTE: This is strictly ASCII.
+// According to the RFC, when percent encoding is used in a name, it should only be for
+// representing UTF-8 octets.
+//
 // `reg-name = *( unreserved / pct-encoded / sub-delims )`
-parser!(parse_reg_name<AsciiString> => {
-    map(many(alt!(
+parser!(parse_reg_name<String> => {
+    and_then(many(alt!(
         parse_unreserved, parse_pct_encoded, parse_sub_delims
-    )), |s| unsafe { AsciiString::from_ascii_unchecked(Bytes::from(s)) })
+    )), |s: Vec<u8>| Ok(String::from_utf8(s)?) )
 });
 
-fn serialize_reg_name(name: &AsciiString, out: &mut String) {
-    
+fn serialize_reg_name(name: &str, out: &mut Vec<u8>) {
+    out.reserve(name.len());
+    for byte in name.as_bytes().iter().cloned() {
+        if is_unreserved(byte) || is_sub_delims(byte) {
+            out.push(byte)
+        } else {
+            serialize_pct_encoded(byte, out);
+        }
+    }
 }
 
 /// RFC 3986: Section 3.2.3
@@ -430,6 +575,7 @@ fn parse_port(input: Bytes) -> ParseResult<Option<usize>> {
 }
 
 
+// TODO: Is this ever used?
 // RFC 3986: Section 3.3
 //
 // `path = path-abempty    ; begins with "/" or is empty
@@ -449,9 +595,8 @@ parser!(parse_path<Path> => {
 
 // RFC 3986: Section 3.3
 //
-// NOTE: This is strictly ASCII.
 // `path-abempty = *( "/" segment )`
-parser!(parse_path_abempty<Vec<AsciiString>> => {
+parser!(parse_path_abempty<Vec<OpaqueString>> => {
     many(seq!(c => {
         c.next(one_of("/"))?; // TODO
         c.next(parse_segment)
@@ -460,9 +605,8 @@ parser!(parse_path_abempty<Vec<AsciiString>> => {
 
 // RFC 3986: Section 3.3
 //
-// NOTE: This is strictly ASCII.
 // `path-absolute = "/" [ segment-nz *( "/" segment ) ]`
-parser!(parse_path_absolute<Vec<AsciiString>> => {
+parser!(parse_path_absolute<Vec<OpaqueString>> => {
     seq!(c => {
         c.next(one_of("/"))?; // TODO
         c.next(parse_path_rootless)
@@ -471,9 +615,8 @@ parser!(parse_path_absolute<Vec<AsciiString>> => {
 
 // RFC 3986: Section 3.3
 //
-// NOTE: This is strictly ASCII.
 // `path-noscheme = segment-nz-nc *( "/" segment )`
-parser!(parse_path_noscheme<Vec<AsciiString>> => {
+parser!(parse_path_noscheme<Vec<OpaqueString>> => {
     seq!(c => {
         let first_seg = c.next(parse_segment_nz_nc)?;
         let next_segs = c.next(many(seq!(c => {
@@ -490,9 +633,8 @@ parser!(parse_path_noscheme<Vec<AsciiString>> => {
 
 // RFC 3986: Section 3.3
 //
-// NOTE: This is strictly ASCII.
 // `path-rootless = segment-nz *( "/" segment )`
-parser!(parse_path_rootless<Vec<AsciiString>> => {
+parser!(parse_path_rootless<Vec<OpaqueString>> => {
     seq!(c => {
         let first_seg = c.next(parse_segment_nz)?;
         let next_segs = c.next(many(seq!(c => {
@@ -509,7 +651,6 @@ parser!(parse_path_rootless<Vec<AsciiString>> => {
 
 /// RFC 3986: Section 3.3
 ///
-/// NOTE: This is strictly ASCII.
 /// `path-empty = 0<pchar>`
 fn parse_path_empty(input: Bytes) -> ParseResult<()> {
     Ok(((), input.clone()))
@@ -517,28 +658,23 @@ fn parse_path_empty(input: Bytes) -> ParseResult<()> {
 
 // RFC 3986: Section 3.3
 //
-// NOTE: This is strictly ASCII.
 // `segment = *pchar`
-parser!(pub parse_segment<AsciiString> => {
-    map(many(parse_pchar),
-        |s| unsafe { AsciiString::from_ascii_unchecked(Bytes::from(s)) })
+parser!(pub parse_segment<OpaqueString> => {
+    map(many(parse_pchar), |s| OpaqueString::from(s))
 });
 
 // RFC 3986: Section 3.3
 //
-// NOTE: This is strictly ASCII.
 // `segment-nz = 1*pchar`
-parser!(parse_segment_nz<AsciiString> => {
-    map(many1(parse_pchar),
-        |s| unsafe { AsciiString::from_ascii_unchecked(Bytes::from(s)) })
+parser!(parse_segment_nz<OpaqueString> => {
+    map(many1(parse_pchar), |s| OpaqueString::from(s))
 });
 
 /// RFC 3986: Section 3.3
 ///
-/// NOTE: This is strictly ASCII.
 /// `segment-nz-nc = 1*( unreserved / pct-encoded / sub-delims / "@" )
 /// 				; non-zero-length segment without any colon ":"`
-fn parse_segment_nz_nc(input: Bytes) -> ParseResult<AsciiString> {
+fn parse_segment_nz_nc(input: Bytes) -> ParseResult<OpaqueString> {
     let p = map(
         many1(alt!(
             parse_unreserved,
@@ -546,7 +682,7 @@ fn parse_segment_nz_nc(input: Bytes) -> ParseResult<AsciiString> {
             parse_sub_delims,
             one_of("@")
         )),
-        |s| unsafe { AsciiString::from_ascii_unchecked(Bytes::from(s)) },
+        |s| OpaqueString::from(s),
     );
 
     p(input)
@@ -554,7 +690,6 @@ fn parse_segment_nz_nc(input: Bytes) -> ParseResult<AsciiString> {
 
 // RFC 3986: Section 3.3
 //
-// NOTE: This is strictly ASCII.
 // `pchar = unreserved / pct-encoded / sub-delims / ":" / "@"`
 parser!(parse_pchar<u8> => {
     alt!(
@@ -562,21 +697,41 @@ parser!(parse_pchar<u8> => {
     )
 });
 
+fn serialize_pchar(v: u8, out: &mut Vec<u8>) {
+    if is_unreserved(v) || is_sub_delims(v) || v == b':' || v == b'@' {
+        out.push(v);
+    } else {
+        serialize_pct_encoded(v, out);
+    }
+}
+
 // RFC 3986: Section 3.4
 //
-// NOTE: This is strictly ASCII.
 // `query = *( pchar / "/" / "?" )`
-parser!(pub parse_query<AsciiString> => parse_fragment);
+parser!(pub parse_query<OpaqueString> => parse_fragment);
+
+pub fn serialize_query(value: &OpaqueString, out: &mut Vec<u8>) {
+    serialize_fragment(value, out);
+}
 
 // RFC 3986: Section 3.5
 //
-// NOTE: This is strictly ASCII.
 // `fragment = *( pchar / "/" / "?" )`
-parser!(parse_fragment<AsciiString> => {
+parser!(parse_fragment<OpaqueString> => {
     map(many(alt!(
         parse_pchar, one_of("/?")
-    )), |s| unsafe { AsciiString::from_ascii_unchecked(Bytes::from(s)) })
+    )), |s| OpaqueString::from(s))
 });
+
+pub fn serialize_fragment(value: &OpaqueString, out: &mut Vec<u8>) {
+    for char in value.as_bytes().iter().cloned() {
+        if char == b'/' || char == b'?' {
+            out.push(char);
+        } else {
+            serialize_pchar(char, out);
+        }
+    }
+}
 
 // RFC 3986: Section 4.1
 //
@@ -608,7 +763,7 @@ parser!(parse_relative_ref<Uri> => {
         Ok(Uri {
             scheme: None,
             authority,
-            path: path.to_string(),
+            path: path.to_opaque_string(),
             query,
             fragment
         })
@@ -630,7 +785,7 @@ parser!(parse_relative_part<(Option<Authority>, UriPath)> => alt!(
     }),
     map(parse_path_absolute, |p| (None, UriPath::Absolute(p))),
     map(parse_path_noscheme, |p| (None, UriPath::Rootless(p))),
-    map(parse_path_empty, |p| (None, UriPath::Empty))
+    map(parse_path_empty, |_| (None, UriPath::Empty))
 ));
 
 // RFC 3986: Section 4.3
@@ -646,7 +801,7 @@ parser!(pub parse_absolute_uri<Uri> => {
             c.next(parse_query)
         })))?;
 
-        Ok(Uri { scheme: Some(s), authority: auth, path: p.to_string(), query: q, fragment: None })
+        Ok(Uri { scheme: Some(s), authority: auth, path: p.to_opaque_string(), query: q, fragment: None })
     })
 });
 
@@ -675,10 +830,10 @@ mod tests {
                 scheme: Some(AsciiString::from_str("ftp").unwrap()),
                 authority: Some(Authority {
                     user: None,
-                    host: Host::Name(AsciiString::from_str("ftp.is.co.za").unwrap()),
+                    host: Host::Name("ftp.is.co.za".to_string()),
                     port: None
                 }),
-                path: String::from("/rfc/rfc1808.txt"),
+                path: OpaqueString::from("/rfc/rfc1808.txt"),
                 query: None,
                 fragment: None
             }),
@@ -686,10 +841,10 @@ mod tests {
                 scheme: Some(AsciiString::from_str("http").unwrap()),
                 authority: Some(Authority {
                     user: None,
-                    host: Host::Name(AsciiString::from_str("www.ietf.org").unwrap()),
+                    host: Host::Name("www.ietf.org".to_string()),
                     port: None
                 }),
-                path: String::from("/rfc/rfc2396.txt"),
+                path: OpaqueString::from("/rfc/rfc2396.txt"),
                 query: None,
                 fragment: None
             }),
@@ -697,31 +852,31 @@ mod tests {
                 scheme: Some(AsciiString::from_str("ldap").unwrap()),
                 authority: Some(Authority {
                     user: None,
-                    host: Host::IP(IPAddress::V6(vec![])),
+                    host: Host::IP(IPAddress::V6(vec![0x20, 0x01, 0x0D, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x07])),
                     port: None
                 }),
-                path: String::from("/c=GB"),
-                query: Some(AsciiString::from_str("objectClass?one").unwrap()),
+                path: OpaqueString::from("/c=GB"),
+                query: Some(OpaqueString::from("objectClass?one")),
                 fragment: None
             }),
             ("mailto:John.Doe@example.com", Uri {
                 scheme: Some(AsciiString::from_str("mailto").unwrap()),
                 authority: None,
-                path: String::from("John.Doe@example.com"),
+                path: OpaqueString::from("John.Doe@example.com"),
                 query: None,
                 fragment: None
             }),
             ("news:comp.infosystems.www.servers.unix", Uri {
                 scheme: Some(AsciiString::from_str("news").unwrap()),
                 authority: None,
-                path: String::from("comp.infosystems.www.servers.unix"),
+                path: OpaqueString::from("comp.infosystems.www.servers.unix"),
                 query: None,
                 fragment: None
             }),
             ("tel:+1-816-555-1212", Uri {
                 scheme: Some(AsciiString::from_str("tel").unwrap()),
                 authority: None,
-                path: String::from("+1-816-555-1212"),
+                path: OpaqueString::from("+1-816-555-1212"),
                 query: None,
                 fragment: None
             }),
@@ -729,17 +884,17 @@ mod tests {
                 scheme: Some(AsciiString::from_str("telnet").unwrap()),
                 authority: Some(Authority {
                     user: None,
-                    host: Host::IP(IPAddress::V4(vec![])),
+                    host: Host::IP(IPAddress::V4(vec![192, 0, 2, 16])),
                     port: Some(80)
                 }),
-                path: String::from("/"),
+                path: OpaqueString::from("/"),
                 query: None,
                 fragment: None
             }),
             ("urn:oasis:names:specification:docbook:dtd:xml:4.1.2", Uri {
                 scheme: Some(AsciiString::from_str("urn").unwrap()),
                 authority: None,
-                path: String::from("oasis:names:specification:docbook:dtd:xml:4.1.2"),
+                path: OpaqueString::from("oasis:names:specification:docbook:dtd:xml:4.1.2"),
                 query: None,
                 fragment: None
             }),
@@ -749,17 +904,17 @@ mod tests {
                 scheme: Some(AsciiString::from_str("foo").unwrap()),
                 authority: Some(Authority {
                     user: None,
-                    host: Host::Name(AsciiString::from_str("example.com").unwrap()),
+                    host: Host::Name("example.com".to_string()),
                     port: Some(8042)
                 }),
-                path: String::from("/over/there"),
-                query: Some(AsciiString::from_str("name=ferret").unwrap()),
-                fragment: Some(AsciiString::from_str("nose").unwrap())
+                path: OpaqueString::from("/over/there"),
+                query: Some(OpaqueString::from("name=ferret")),
+                fragment: Some(OpaqueString::from("nose"))
             }),
             ("urn:example:animal:ferret:nose", Uri {
                 scheme: Some(AsciiString::from_str("urn").unwrap()),
                 authority: None,
-                path: String::from("example:animal:ferret:nose"),
+                path: OpaqueString::from("example:animal:ferret:nose"),
                 query: None,
                 fragment: None
             }),

@@ -5,7 +5,7 @@ use common::bytes::Bytes;
 use common::errors::*;
 use http::body::*;
 use http::header;
-use http::spec::{HttpHeader, Method, RequestBuilder, ResponseBuilder};
+use http::spec::{Header, Method, RequestBuilder, ResponseBuilder};
 use http::status_code;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
@@ -213,7 +213,7 @@ where
 }
 
 fn parse_metadata(
-    headers: &http::spec::HttpHeaders,
+    headers: &http::spec::Headers,
 ) -> std::result::Result<Metadata, &'static str> {
     let mut meta = HashMap::new();
     for h in headers.raw_headers.iter() {
@@ -248,7 +248,7 @@ where
 {
     //	let addr = ([127, 0, 0, 1], port).into();
 
-    //	let server = http::server::HttpServer::new(port, )
+    //	let server = http::server::Server::new(port, )
 
     let service_fn = move |mut req: http::spec::Request| {
         let inst = inst.clone();
@@ -283,7 +283,7 @@ where
         f()
     };
 
-    http::server::HttpServer::new(port, http::server::HttpFn(service_fn))
+    http::server::Server::new(port, http::server::HttpFn(service_fn))
         .run()
         .await
         .map_err(|e| eprintln!("server error: {}", e))
@@ -460,7 +460,7 @@ where
     };
 
     if !cluster_validated {
-        res.head.headers.raw_headers.push(HttpHeader::new(
+        res.head.headers.raw_headers.push(Header::new(
             format!("x-{}", ClusterIdKey),
             agent.cluster_id.unwrap().to_string(),
         ));
@@ -470,7 +470,7 @@ where
         let our_ident = agent.identity.as_ref().unwrap();
 
         // TODO: This is basically redundant with the line that we have further above
-        res.head.headers.raw_headers.push(HttpHeader::new(
+        res.head.headers.raw_headers.push(Header::new(
             format!("x-{}", FromKey),
             our_ident.to_string(),
         ));

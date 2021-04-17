@@ -17,6 +17,7 @@ use crate::spec::*;
 use crate::method::*;
 use crate::request::*;
 use crate::response::*;
+use crate::uri::IPAddress;
 
 
 #[async_trait]
@@ -57,22 +58,33 @@ impl HttpRequestHandler for HttpRequestHandlerFnCaller {
     }
 }
 
+
+struct RequestContext {
+
+    pub secure: bool,
+
+    pub peer_addr: IPAddress,
+
+    // TODO: In the future, it will also be useful to have HTTP2 specific information.
+}
+
+
 /// Receives HTTP requests and parses them.
 /// Passes the request to a handler which can produce a response.
-pub struct HttpServer {
+pub struct Server {
     port: u16,
     handler: Arc<dyn HttpRequestHandler>,
 }
 
-impl HttpServer {
+impl Server {
     //	pub fn new<F: 'static + Future<Output=Response> + Send,
     //			   H: 'static + Send + Sync + Fn(Request) -> F>(
-    //		port: u16, handler: &'static H) -> HttpServer {
+    //		port: u16, handler: &'static H) -> Server {
     //		let boxed_handler = move |r| -> Pin<Box<dyn Future<Output=Response> + Send>>
     // { 			Box::pin(handler(r))
     //		};
     //
-    //		HttpServer { port, handler: Arc::new(boxed_handler) }
+    //		Server { port, handler: Arc::new(boxed_handler) }
     //	}
 
     pub fn new<H: 'static + HttpRequestHandler>(port: u16, handler: H) -> Self {
@@ -95,6 +107,9 @@ impl HttpServer {
         Ok(())
     }
 
+    /*
+        TODO: We want to have a way of introspecting a request stream to see things like the client's IP.
+    */
     // TODO: Should be refactored to 
     async fn handle_stream(stream: TcpStream, handler: Arc<dyn HttpRequestHandler>) {
         match Self::handle_client(stream, handler).await {
@@ -105,7 +120,7 @@ impl HttpServer {
 
     async fn handle_client(stream: TcpStream, handler: Arc<dyn HttpRequestHandler>) -> Result<()> {
         let mut write_stream = stream.clone();
-        let mut read_stream = StreamReader::new(Box::new(stream));
+        let mut read_stream = StreamReader::new(Box::new(stream), MESSAGE_HEAD_BUFFER_OPTIONS);
 
         // Remaining bytes from the last request read.
         // TODO: Start using this?
@@ -179,6 +194,13 @@ impl HttpServer {
                 return Ok(());
             }
         };
+
+        // TODO:
+        // A server MUST respond with a 400 (Bad Request) status code to any
+        // HTTP/1.1 request message that lacks a Host header field and to any
+        // request message that contains more than one Host header field or a
+        // Host header field with an invalid field-value.
+
 
         // TODO: Extract content-length and transfer-encoding
         // ^ It would be problematic for a request/response to have both

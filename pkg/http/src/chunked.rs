@@ -1,4 +1,5 @@
 use common::errors::*;
+use common::io::Readable;
 use parsing::ascii::AsciiString;
 use parsing::iso::Latin1String;
 use parsing::complete;
@@ -161,6 +162,10 @@ impl Body for IncomingChunkedBody {
     }
 }
 
+// TODO: Implement an OutgoingChunkedBody.
+// - Will need to pick a chunk size and be able to flush from upstream.
+
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
@@ -173,7 +178,7 @@ mod tests {
     #[async_std::test]
     async fn chunked_body_test() -> Result<()> {
         let data = Cursor::new(TEST_BODY);
-        let stream = StreamReader::new(Box::new(data));
+        let stream = StreamReader::new(Box::new(data), StreamBufferOptions::default());
         let mut body = IncomingChunkedBody::new(stream);
 
         let mut outbuf = vec![];

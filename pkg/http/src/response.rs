@@ -1,4 +1,6 @@
 use common::errors::*;
+use parsing::opaque::OpaqueString;
+
 use crate::body::*;
 use crate::header::*;
 use crate::message::*;
@@ -11,24 +13,23 @@ pub struct Response {
 
 #[derive(Debug)]
 pub struct ResponseHead {
-    pub version: HttpVersion,
+    pub version: Version,
     pub status_code: StatusCode,
-    pub reason: String,
-    pub headers: HttpHeaders,
+    pub reason: OpaqueString,
+    pub headers: Headers,
 }
 
 impl ResponseHead {
-    pub fn serialize(&self, out: &mut Vec<u8>) {
-        let status_line = format!(
-            "HTTP/{} {} {}\r\n",
-            self.version.to_string(),
-            self.status_code.as_u16(),
-            self.reason.to_string()
-        );
-        out.extend_from_slice(status_line.as_bytes());
+    pub fn serialize(&self, out: &mut Vec<u8>) -> Result<()> {
+        crate::message_syntax::serialize_status_line(&StatusLine {
+            version: self.version.clone(),
+            status_code: self.status_code.as_u16(),
+            reason: self.reason.clone()
+        }, out)?;
 
-        self.headers.serialize(out);
+        self.headers.serialize(out)?;
         out.extend_from_slice(b"\r\n");
+        Ok(())
     }
 }
 
@@ -36,7 +37,7 @@ impl ResponseHead {
 pub struct ResponseBuilder {
     status_code: Option<StatusCode>,
     reason: Option<String>,
-    headers: Vec<HttpHeader>,
+    headers: Vec<Header>,
     body: Option<Box<dyn Body>>,
 
     // First error that occured in the building process
@@ -76,7 +77,7 @@ impl ResponseBuilder {
             }
         };
 
-        self.headers.push(HttpHeader { name, value });
+        self.headers.push(Header { name, value });
         self
     }
 
@@ -95,9 +96,11 @@ impl ResponseBuilder {
             .ok_or_else(|| err_msg("No status specified"))?;
 
         // TODO: Support custom reason and don't unwrap this.
-        let reason = String::from(status_code.default_reason().unwrap());
+        let reason = OpaqueString::from(status_code.default_reason().ok_or_else(|| {
+            format_err!("No default reason for status code: {}", status_code.as_u16())
+        })?);
 
-        let headers = HttpHeaders::from(self.headers);
+        let headers = Headers::from(self.headers);
 
         let body = self.body.ok_or_else(|| err_msg("No body specified"))?;
 

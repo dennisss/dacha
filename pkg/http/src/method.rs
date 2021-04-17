@@ -14,17 +14,17 @@ pub enum Method {
 }
 
 impl Method {
-    pub fn as_str(&self) -> &'static [u8] {
+    pub fn as_str(&self) -> &'static str {
         match self {
-            Method::GET => b"GET",
-            Method::HEAD => b"HEAD",
-            Method::POST => b"POST",
-            Method::PUT => b"PUT",
-            Method::DELETE => b"DELETE",
-            Method::CONNECT => b"CONNECT",
-            Method::OPTIONS => b"OPTIONS",
-            Method::TRACE => b"TRACE",
-            Method::PATCH => b"PATCH",
+            Method::GET => "GET",
+            Method::HEAD => "HEAD",
+            Method::POST => "POST",
+            Method::PUT => "PUT",
+            Method::DELETE => "DELETE",
+            Method::CONNECT => "CONNECT",
+            Method::OPTIONS => "OPTIONS",
+            Method::TRACE => "TRACE",
+            Method::PATCH => "PATCH",
         }
     }
 }

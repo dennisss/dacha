@@ -281,6 +281,7 @@ impl Hasher for SHA512_256Hasher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common::hex;
 
     #[test]
     fn sha512_test() {

@@ -45,6 +45,7 @@ impl Hasher for SHA384Hasher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common::hex;
 
     #[test]
     fn sha384_test() {

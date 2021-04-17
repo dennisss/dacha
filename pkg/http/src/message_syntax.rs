@@ -7,6 +7,7 @@ use common::bytes::Bytes;
 use common::errors::*;
 use parsing::ascii::*;
 use parsing::iso::*;
+use parsing::opaque::OpaqueString;
 use parsing::*;
 
 use crate::common_syntax::*;
@@ -29,6 +30,25 @@ use crate::header::*;
 
 //////////////////
 
+/*
+    TODO: Remaining challenge is what to do with request-target?
+
+    origin-form (typical)
+        "/hello/world?.."
+
+    absolute-form (for proxying)
+        "http://www.example.org/pub/WWW/TheProject.html"
+    
+    authority-form (only for CONNECT)
+        "www.example.com:80"
+
+        ^ I don't think this can be constructed from a URI?
+
+    asterisk-form
+        "*""
+
+*/
+
 
 // RFC 1945: Section 4.1
 // Parser for the entire HTTP 0.9 request.
@@ -47,7 +67,7 @@ parser!(pub parse_simple_request<Uri> => {
 // RFC 7230: Section 2.6
 //
 // `HTTP-version = HTTP-name "/" DIGIT "." DIGIT`
-parser!(parse_http_version<HttpVersion> => {
+parser!(parse_http_version<Version> => {
     let digit = |input| {
         let (i, rest) = any(input)?;
         let v: [u8; 1] = [i];
@@ -62,14 +82,20 @@ parser!(parse_http_version<HttpVersion> => {
         let major = c.next(digit)?;
         c.next(one_of(b"."))?;
         let minor = c.next(digit)?;
-        Ok(HttpVersion {
+        Ok(Version {
             major, minor
         })
     })
 });
 
-fn serialize_version(version: &HttpVersion, out: &mut Vec<u8>) {
+fn serialize_http_version(version: &Version, out: &mut Vec<u8>) -> Result<()> {
+    if version.major > 10 || version.minor > 10 {
+        return Err(err_msg("Version out of range"));
+    }
 
+    let s = format!("HTTP/{}.{}", version.major, version.minor);
+    out.extend_from_slice(s.as_bytes());
+    Ok(())
 }
 
 // RFC 7230: Section 2.6
@@ -87,13 +113,15 @@ parser!(parse_http_name<()> => {
 
 // RFC 7230: Section 2.7.2
 //
+// TODO: Errata exist for this.
+//
 // "https:" "//" authority path-abempty [ "?" query ] [ "#" fragment ]
 
 // RFC 7230: Section 3
 //
 // NOTE: This does not parse the body
 // `HTTP-message = start-line *( header-field CRLF ) CRLF [ message-body ]`
-parser!(pub parse_http_message_head<HttpMessageHead> => {
+parser!(pub(crate) parse_http_message_head<HttpMessageHead> => {
     seq!(c => {
         let start_line = c.next(parse_start_line)?;
         let raw_headers = c.next(many(seq!(c => {
@@ -104,7 +132,7 @@ parser!(pub parse_http_message_head<HttpMessageHead> => {
 
         c.next(parse_crlf)?;
         Ok(HttpMessageHead {
-            start_line, headers: HttpHeaders::from(raw_headers)
+            start_line, headers: Headers::from(raw_headers)
         })
     })
 });
@@ -134,10 +162,28 @@ parser!(parse_request_line<RequestLine> => {
     })
 });
 
+pub fn serialize_request_line(method: &AsciiString, uri: &Uri, version: &Version, out: &mut Vec<u8>) -> Result<()> {
+    serialize_method(&method, out)?;
+    out.push(b' ');
+    {
+        // TODO: Improve this.
+        serialize_uri(uri, out)?;
+    }
+    out.push(b' ');
+    serialize_http_version(version, out)?;
+    out.extend_from_slice(b"\r\n");
+    Ok(())
+}
+
+
 // RFC 7230: Section 3.1.1
 //
 // `method = token`
 parser!(parse_method<AsciiString> => parse_token);
+
+fn serialize_method(value: &AsciiString, out: &mut Vec<u8>) -> Result<()> {
+    serialize_token(value, out)
+}
 
 // RFC 7230: Section 3.1.2
 //
@@ -154,6 +200,16 @@ parser!(parse_status_line<StatusLine> => {
     })
 });
 
+pub(crate) fn serialize_status_line(line: &StatusLine, out: &mut Vec<u8>) -> Result<()> {
+    serialize_http_version(&line.version, out)?;
+    out.push(b' ');
+    serialize_status_code(line.status_code, out)?;
+    out.push(b' ');
+    serialize_reason_phrase(&line.reason, out)?;
+    out.extend_from_slice(b"\r\n");
+    Ok(())
+}
+
 /// RFC 7230: Section 3.1.2
 /// 
 /// `status-code = 3DIGIT`
@@ -166,31 +222,64 @@ fn parse_status_code(input: Bytes) -> ParseResult<u16> {
     Ok((code, input.slice(3..)))
 }
 
+fn serialize_status_code(value: u16, out: &mut Vec<u8>) -> Result<()> {
+    if value < 100 || value > 999 {
+        return Err(err_msg("Status code must be 3 digits long"));
+    }
+
+    let s = value.to_string();
+    out.extend_from_slice(s.as_bytes());
+    Ok(())
+}
+
+
 // RFC 7230: Section 3.1.2
 //
 // TODO: Because of obs-text, this is not necessarily ascii
 // `reason-phrase = *( HTAB / SP / VCHAR / obs-text )`
-parser!(parse_reason_phrase<Latin1String> => {
-    and_then(take_while(|i| is_htab(i) || is_sp(i) ||
+//
+// TODO: Implement as a regexp
+parser!(parse_reason_phrase<OpaqueString> => {
+    map(take_while(|i| is_htab(i) || is_sp(i) ||
                                 is_vchar(i) || is_obs_text(i)),
-        |v| Latin1String::from_bytes(v))
+        |v| OpaqueString::from(v))
 });
+
+fn serialize_reason_phrase(value: &OpaqueString, out: &mut Vec<u8>) -> Result<()> {
+    out.reserve(value.len());
+    for i in value.as_bytes().iter().cloned() {
+        if is_htab(i) || is_sp(i) || is_vchar(i) || is_obs_text(i) {
+            out.push(i);
+        } else {
+            return Err(err_msg("Invalid character in reason phrase"));
+        }
+    }
+
+    Ok(())
+}
 
 // RFC 7230: Section 3.2
 //
 // TODO: Validate that based on section 3.2.4, whitespace between the field name and the colon is rejected.
 //
 // `header-field = field-name ":" OWS field-value OWS`
-parser!(pub parse_header_field<HttpHeader> => {
+parser!(pub parse_header_field<Header> => {
     seq!(c => {
         let name = c.next(parse_field_name)?;
         c.next(one_of(":"))?;
         c.next(parse_ows)?;
         let value = c.next(parse_field_value)?;
         c.next(parse_ows)?;
-        Ok(HttpHeader { name, value })
+        Ok(Header { name, value })
     })
 });
+
+pub fn serialize_header_field(header: &Header, out: &mut Vec<u8>) -> Result<()> {
+    serialize_field_name(&header.name, out)?;
+    out.extend_from_slice(b": ");
+    serialize_field_value(&header.value, out);
+    Ok(())
+}
 
 // RFC 7230: Section 3.2
 //
@@ -198,25 +287,58 @@ parser!(pub parse_header_field<HttpHeader> => {
 // `field-name = token`
 parser!(pub parse_field_name<AsciiString> => parse_token);
 
+fn serialize_field_name(value: &AsciiString, out: &mut Vec<u8>) -> Result<()> {
+    serialize_token(value, out)
+}
+
 // RFC 7230: Section 3.2
 //
 // TODO: Perform special error to client if we get obs-fold
 // According to section 3.2.4, obs-fold is only allowed if the media type is message/http.
 //
 // `field-value = *( field-content / obs-fold )`
-parser!(parse_field_value<Latin1String> => {
-    and_then(slice(many(alt!(
+parser!(parse_field_value<OpaqueString> => {
+    map(slice(many(alt!(
         parse_field_content, parse_obs_fold
-    ))), |v| Latin1String::from_bytes(v))
+    ))), |v: Bytes| {
+        // Re-generate without any obs-fold.
+        // TODO: Ideally modify the original buffer in-place (or use an arena)
+        let mut out = vec![];
+        out.reserve_exact(v.len());
+        serialize_field_value_internal(&v, &mut out);
+        OpaqueString::from(out)
+    })
 });
+
+fn serialize_field_value(value: &OpaqueString, out: &mut Vec<u8>) {
+    out.reserve(value.len());
+
+    // TODO: Not all bytes are valid.
+    // TODO: NEed to validate that it matches field-content or obs-fold.
+
+    serialize_field_value_internal(value.as_bytes(), out);
+}
+
+fn serialize_field_value_internal(data: &[u8], out: &mut Vec<u8>) {
+    for byte in data.iter().cloned() {
+        // Convert obs-fold before forwarding. This will also prevent \r\n\r\n for being
+        // serialized in a header
+        if byte == b'\r' || byte == b'\n' {
+            out.push(b' ');
+        } else {
+            out.push(byte);
+        }
+    }
+}
 
 // RFC 7230: Section 3.2
 //
 // NOTE: Errata exists for this
 // TODO: See also https://tools.ietf.org/html/rfc8187
 // It's not entirely clear if the header can be non-ASCII, but for now, we leave
-// it to be ISO- `field-content = field-vchar [ 1*( SP / HTAB / field-vchar )
-// field-vchar ]`
+// it to be ISO-
+//
+// `field-content = field-vchar [ 1*( SP / HTAB / field-vchar ) field-vchar ]`
 parser!(pub parse_field_content<Bytes> => {
     // TODO: No point in using a slice as field_value already has this. Avoid extra Bytes clones and instead return ()
     slice(seq!(c => {
@@ -246,7 +368,6 @@ parser!(parse_obs_fold<Bytes> => {
         c.next(parse_ows)?;
         c.next(tag(b"\r\n"))?;
         c.next(take_while1(|i| is_sp(i) || is_htab(i)))?;
-        println!("FOLD");
         Ok(())
     }))
 });
@@ -263,6 +384,18 @@ pub fn parse_token(input: Bytes) -> ParseResult<AsciiString> {
     let s = unsafe { AsciiString::from_ascii_unchecked(v) };
     Ok((s, rest))
 }
+
+pub fn serialize_token(value: &AsciiString, out: &mut Vec<u8>) -> Result<()> {
+    for byte in value.as_ref().bytes() {
+        if !is_tchar(byte) {
+            return Err(format_err!("Invalid character in token: 0x{:x}", byte));
+        }
+    }
+
+    out.extend_from_slice(value.as_ref().as_bytes());
+    Ok(())
+}
+
 
 /// RFC 7230: Section 3.2.6
 /// 
@@ -342,7 +475,7 @@ parser!(pub parse_request_target<RequestTarget> => {
 // RFC 7230: Section 5.3.1
 //
 // `origin-form = absolute-path [ "?" query ]`
-parser!(parse_origin_form<(Vec<AsciiString>, Option<AsciiString>)> => {
+parser!(parse_origin_form<(Vec<OpaqueString>, Option<OpaqueString>)> => {
     seq!(c => {
         let abspath = c.next(parse_absolute_path)?;
         let q = c.next(opt(seq!(c => {
@@ -370,12 +503,12 @@ parser!(parse_authority_form<Authority> => parse_authority);
 parser!(parse_asterisk_form<u8> => one_of(b"*"));
 
 // RFC 7230: Section 5.7.1
-// TODO: USed for the Via header.
+// TODO: Used for the Via header.
 //
 // `received-protocol = [ protocol-name "/" ] protocol-version`
 
 // RFC 7230: Section 5.7.1
-// TODO: USed for the Via header.
+// TODO: Used for the Via header.
 //
 // `received-by = ( uri-host [ ":" port ] ) / pseudonym`
 
@@ -389,14 +522,8 @@ parser!(parse_pseudonym<AsciiString> => parse_token);
 //////////////////
 
 
-
-
-
 //    Connection = *( "," OWS ) connection-option *( OWS "," [ OWS
 //     connection-option ] )
-
-
-
 
 
 // TODO: Well known uri: https://tools.ietf.org/html/rfc8615
@@ -419,9 +546,8 @@ parser!(parse_pseudonym<AsciiString> => parse_token);
 
 
 
-// NOTE: This is strictly ASCII.
 // `absolute-path = 1*( "/" segment )`
-parser!(parse_absolute_path<Vec<AsciiString>> => {
+parser!(parse_absolute_path<Vec<OpaqueString>> => {
     many1(seq!(c => {
         c.next(one_of(b"/"))?;
         c.next(parse_segment)
@@ -439,37 +565,12 @@ parser!(parse_connection_option<AsciiString> => {
 // TODO: Can't ever use this directly without doing many!
 // ^ So don't make it public.
 
-
-
-// `message-body = *OCTET`
-
-
-
-
-
-
-
-
-
 // `partial-URI = relative-part [ "?" query ]`
 
 // `rank = ( "0" [ "." *3DIGIT ] ) / ( "1" [ "." *3"0" ] )`
 
-
-
-
-
-
-
-
 //    t-codings = "trailers" / ( transfer-coding [ t-ranking ] )
 //    t-ranking = OWS ";" OWS "q=" rank
-
-// trailer-part = *( header-field CRLF )
-// transfer-coding = "chunked" / "compress" / "deflate" / "gzip" /
-//  transfer-extension
-// transfer-extension = token *( OWS ";" OWS transfer-parameter )
-// transfer-parameter = token BWS "=" BWS ( token / quoted-string )
 
 
 #[cfg(test)]

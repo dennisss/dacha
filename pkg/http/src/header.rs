@@ -1,7 +1,7 @@
 use common::errors::*;
 use common::bytes::*;
 use parsing::ascii::*;
-use parsing::iso::*;
+use parsing::opaque::OpaqueString;
 
 use crate::message_syntax::*;
 
@@ -18,25 +18,24 @@ pub const CONTENT_ENCODING: &'static [u8] = b"Content-Encoding";
 pub const CONTENT_TYPE: &'static [u8] = b"Content-Type";
 
 #[derive(Debug)]
-pub struct HttpHeader {
+pub struct Header {
     pub name: AsciiString,
-    pub value: Latin1String,
+    pub value: OpaqueString,
 }
 
-impl HttpHeader {
+impl Header {
     pub fn new(name: String, value: String) -> Self {
+        // TODO: Remove the lack of safety here.
         Self {
             name: unsafe { AsciiString::from_ascii_unchecked(Bytes::from(name)) },
-            value: Latin1String::from_bytes(Bytes::from(value)).unwrap(),
+            value: OpaqueString::from(value.as_str()),
         }
     }
 
-    pub fn serialize(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(&self.name.data);
-        buf.extend_from_slice(b": ");
-        // TODO: Need to better sanity check the value.
-        buf.extend_from_slice(&self.value.data);
-        buf.extend_from_slice(b"\r\n");
+    pub fn serialize(&self, out: &mut Vec<u8>) -> Result<()> {
+        serialize_header_field(self, out)?;
+        out.extend_from_slice(b"\r\n");
+        Ok(())
     }
 }
 
@@ -48,7 +47,7 @@ impl<T: AsRef<[u8]>> ToHeaderName for T {
     fn to_header_name(self) -> Result<AsciiString> {
         let f = || {
             let s = AsciiString::from(self.as_ref())?;
-            parse_field_name(s.data.clone())?;
+            // parse_field_name(s.data.clone())?;
             Ok(s)
         };
 
@@ -57,14 +56,15 @@ impl<T: AsRef<[u8]>> ToHeaderName for T {
 }
 
 pub trait ToHeaderValue {
-    fn to_header_value(self, name: &AsciiString) -> Result<Latin1String>;
+    fn to_header_value(self, name: &AsciiString) -> Result<OpaqueString>;
 }
 
 impl<T: AsRef<str>> ToHeaderValue for T {
-    fn to_header_value(self, name: &AsciiString) -> Result<Latin1String> {
+    fn to_header_value(self, name: &AsciiString) -> Result<OpaqueString> {
         let f = || {
-            let s = Latin1String::from(self.as_ref())?;
-            parse_field_content(s.data.clone())?;
+            let s = OpaqueString::from(self.as_ref());
+            // TODO: Need not do this as it will be done later during serialization anyway.
+            // parse_field_content(s.data.clone())?;
             Ok(s)
         };
 
@@ -74,25 +74,25 @@ impl<T: AsRef<str>> ToHeaderValue for T {
     }
 }
 
-/// Container for storing many HttpHeaders associated with one request/response.
+/// Container for storing many Headers associated with one request/response.
 #[derive(Debug)]
-pub struct HttpHeaders {
-    pub raw_headers: Vec<HttpHeader>,
+pub struct Headers {
+    pub raw_headers: Vec<Header>,
 }
 
-impl HttpHeaders {
-    pub fn new() -> HttpHeaders {
-        HttpHeaders {
+impl Headers {
+    pub fn new() -> Headers {
+        Headers {
             raw_headers: vec![],
         }
     }
 
-    pub fn from(raw_headers: Vec<HttpHeader>) -> HttpHeaders {
-        HttpHeaders { raw_headers }
+    pub fn from(raw_headers: Vec<Header>) -> Headers {
+        Headers { raw_headers }
     }
 
     /// Finds all headers matching a given name.
-    pub fn find<'a>(&'a self, name: &'a [u8]) -> impl Iterator<Item = &'a HttpHeader> {
+    pub fn find<'a>(&'a self, name: &'a [u8]) -> impl Iterator<Item = &'a Header> {
         self.raw_headers
             .iter()
             .filter(move |h| h.name.eq_ignore_case(name))
@@ -108,9 +108,13 @@ impl HttpHeaders {
         false
     }
 
-    pub fn serialize(&self, buf: &mut Vec<u8>) {
+    pub fn serialize(&self, buf: &mut Vec<u8>) -> Result<()> {
+        // TODO: Prefer to serialize the 'Host' header first in requests (according to RFC 7230 5.4)
+
         for h in &self.raw_headers {
-            h.serialize(buf);
+            h.serialize(buf)?;
         }
+
+        Ok(())
     }
 }

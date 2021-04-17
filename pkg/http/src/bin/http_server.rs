@@ -35,8 +35,8 @@ async fn handle_request(req: Request) -> Response {
     // println!("READ: {:?}", data);
 
     // let res_headers = vec![
-    //     HttpHeader::new("Content-Length".to_string(), format!("{}", data.len())),
-    //     HttpHeader::new("Content-Type".to_string(), "text/plain".to_string()),
+    //     Header::new("Content-Length".to_string(), format!("{}", data.len())),
+    //     Header::new("Content-Type".to_string(), "text/plain".to_string()),
     // ];
 
     ResponseBuilder::new()
@@ -49,7 +49,7 @@ async fn handle_request(req: Request) -> Response {
 }
 
 async fn run_server() -> Result<()> {
-    let server = http::server::HttpServer::new(8000, http::server::HttpFn(handle_request));
+    let server = http::server::Server::new(8000, http::server::HttpFn(handle_request));
     server.run().await
 }
 

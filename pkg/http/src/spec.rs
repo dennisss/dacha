@@ -8,9 +8,6 @@ use common::io::*;
 // // Body must be either Read or a buffer
 // // Regardless must be ov
 
-// use std::sync::Arc;
-// trait Body : Arc {}
-
 // TODO: Need validation of duplicate headers.
 
 

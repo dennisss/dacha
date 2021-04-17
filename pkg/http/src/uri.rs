@@ -1,8 +1,14 @@
-use crate::uri_syntax::*;
+use std::net::{IpAddr, Ipv4Addr};
+
 use common::bytes::Bytes;
 use common::errors::*;
 use parsing::ascii::*;
-use std::net::{IpAddr, Ipv4Addr};
+use parsing::opaque::OpaqueString;
+
+use crate::uri_syntax::*;
+
+// TODO: WE need to support parsing with a base Uri and also removing dot segments
+// https://tools.ietf.org/html/rfc3986#section-5.2.4
 
 /// Uniform Resource Indicator
 /// 
@@ -16,36 +22,16 @@ pub struct Uri {
 
     pub authority: Option<Authority>,
     
-    pub path: String,
+    pub path: OpaqueString,
     
-    pub query: Option<AsciiString>,
+    pub query: Option<OpaqueString>,
     
     // NOTE: This will always be empty for absolute_uri
-    pub fragment: Option<AsciiString>,
+    pub fragment: Option<OpaqueString>,
 }
 
 impl Uri {
-    // TODO: Encode any characters that we need to encode for this.
-    pub fn to_string(&self) -> String {
-        let mut out = String::new();
-        if let Some(scheme) = &self.scheme {
-            out += &format!("{}:", scheme.to_string());
-        }
 
-        // TODO: Authority
-
-        out += &self.path;
-
-        if let Some(query) = &self.query {
-            out += &format!("?{}", query.to_string());
-        }
-
-        if let Some(fragment) = &self.fragment {
-            out += &format!("#{}", fragment.to_string());
-        }
-
-        out
-    }
 }
 
 impl std::str::FromStr for Uri {
@@ -63,14 +49,14 @@ impl std::str::FromStr for Uri {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Authority {
-    pub user: Option<AsciiString>,
+    pub user: Option<OpaqueString>,
     pub host: Host,
     pub port: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Host {
-    Name(AsciiString),
+    Name(String),
     IP(IPAddress),
 }
 
@@ -100,39 +86,48 @@ impl std::convert::TryFrom<IPAddress> for IpAddr {
     }
 }
 
+/// NOTE: This is mainly used internally. Users should prefer to use Uri.
 #[derive(Debug)]
-pub enum UriPath {
-    AbEmpty(Vec<AsciiString>),
-    Absolute(Vec<AsciiString>),
-    Rootless(Vec<AsciiString>),
+pub(crate) enum UriPath {
+    AbEmpty(Vec<OpaqueString>),
+    Absolute(Vec<OpaqueString>),
+    Rootless(Vec<OpaqueString>),
     Empty,
 }
 
 impl UriPath {
-    // TODO: Return an Ascii string.
-    pub fn to_string(&self) -> String {
-        let join = |strs: &Vec<AsciiString>| {
-            strs.iter()
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>()
-                .join("/")
+    // TODO: THe problem with this is that we can't distinguish between '/' and the percent encoded form.
+    pub fn to_opaque_string(&self) -> OpaqueString {
+        let append_joined = |strs: &[OpaqueString], out: &mut Vec<u8>| {
+            for (i, s) in strs.iter().enumerate() {
+                out.extend_from_slice(s.as_bytes());
+                if i < strs.len() - 1 {
+                    out.push(b'/');
+                }
+            }
         };
 
+        let mut out = vec![];
         match self {
-            UriPath::AbEmpty(v) => format!("/{}", join(v)),
-            UriPath::Absolute(v) => format!("/{}", join(v)),
-            UriPath::Rootless(v) => join(v),
-            UriPath::Empty => String::new(),
+            UriPath::AbEmpty(v) | UriPath::Absolute(v) => {
+                out.push(b'/');
+                append_joined(v, &mut out);
+            },
+            UriPath::Rootless(v) => append_joined(v, &mut out),
+            UriPath::Empty => {},
         }
+
+        OpaqueString::from(out)
     }
 }
 
+// TODO: What is this used for?
 #[derive(Debug)]
-pub enum Path {
-    PathAbEmpty(Vec<AsciiString>),
-    PathAbsolute(Vec<AsciiString>),
-    PathNoScheme(Vec<AsciiString>),
-    PathRootless(Vec<AsciiString>),
+pub(crate) enum Path {
+    PathAbEmpty(Vec<OpaqueString>),
+    PathAbsolute(Vec<OpaqueString>),
+    PathNoScheme(Vec<OpaqueString>),
+    PathRootless(Vec<OpaqueString>),
     PathEmpty,
 }
 

@@ -126,6 +126,7 @@ impl Hasher for SHA256Hasher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common::hex;
 
     #[test]
     fn sha256_test() {

@@ -45,7 +45,7 @@ parser!(parse_media_type<MediaType> => {
     })
 });
 
-pub fn parse_content_type(headers: &HttpHeaders) -> Result<Option<MediaType>> {
+pub fn parse_content_type(headers: &Headers) -> Result<Option<MediaType>> {
     let mut h_iter = headers.find(CONTENT_TYPE);
     let h = if let Some(h) = h_iter.next() {
         h

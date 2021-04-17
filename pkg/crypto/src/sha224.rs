@@ -38,6 +38,7 @@ impl Hasher for SHA224Hasher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use common::hex;
 
     #[test]
     fn sha224_test() {

@@ -14,8 +14,8 @@ use crate::message_syntax::*;
 use crate::reader::*;
 use crate::spec::*;
 use crate::status_code::*;
-use crate::transfer_encoding::*;
-use crate::transfer_encoding_syntax::*;
+use crate::encoding::*;
+use crate::encoding_syntax::*;
 use crate::uri::*;
 use crate::response::*;
 use crate::request::*;
@@ -178,7 +178,7 @@ impl Client {
         stream.set_nodelay(true)?;
         
         let mut write_stream = stream.clone();
-        let mut read_stream = StreamReader::new(Box::new(stream));
+        let mut read_stream = StreamReader::new(Box::new(stream), MESSAGE_HEAD_BUFFER_OPTIONS);
 
         // TODO: Set 'Connection: keep-alive' to support talking to legacy (1.0 servers)
 
@@ -236,7 +236,7 @@ impl Client {
             version: status_line.version,
             // TODO: Print the code in the error case
             status_code,
-            reason: status_line.reason.to_string(),
+            reason: status_line.reason,
             headers,
         };
 
