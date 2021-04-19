@@ -1,18 +1,16 @@
-use crate::bytes::Buf;
 use crate::incomplete_error;
 use crate::ParseResult;
-use common::bytes::Bytes;
 
 macro_rules! primitive_parser {
     ($name:ident, $t:ty, $from:ident) => {
-        pub fn $name<'a>(mut input: &'a [u8]) -> ParseResult<$t, &'a [u8]> {
-            const len: usize = std::mem::size_of::<$t>();
-            if input.len() < len {
+        pub fn $name<'a>(input: &'a [u8]) -> ParseResult<$t, &'a [u8]> {
+            const LEN: usize = std::mem::size_of::<$t>();
+            if input.len() < LEN {
                 return Err(incomplete_error());
             }
 
-            let v = <$t>::$from(*array_ref![input, 0, len]);
-            Ok((v, &input[len..]))
+            let v = <$t>::$from(*array_ref![input, 0, LEN]);
+            Ok((v, &input[LEN..]))
         }
     };
 }
@@ -31,7 +29,7 @@ primitive_parser!(le_i32, i32, from_le_bytes);
 primitive_parser!(le_u64, u64, from_le_bytes);
 primitive_parser!(le_i64, i64, from_le_bytes);
 
-pub fn be_u8(mut input: &[u8]) -> ParseResult<u8, &[u8]> {
+pub fn be_u8(input: &[u8]) -> ParseResult<u8, &[u8]> {
     if input.len() < 1 {
         return Err(incomplete_error());
     }
@@ -44,7 +42,7 @@ pub fn le_u8(input: &[u8]) -> ParseResult<u8, &[u8]> {
     be_u8(input)
 }
 
-pub fn be_u24(mut input: &[u8]) -> ParseResult<u32, &[u8]> {
+pub fn be_u24(input: &[u8]) -> ParseResult<u32, &[u8]> {
     if input.len() < 3 {
         return Err(incomplete_error());
     }

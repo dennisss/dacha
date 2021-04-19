@@ -1,15 +1,17 @@
 // Implementations of builtin types for use in compiled code.
 
-use chrono::{Date, DateTime, FixedOffset, TimeZone, Utc};
+use std::clone::Clone;
+use std::convert::AsRef;
+use std::fmt::Debug;
+use std::string::ToString;
+
+use common::chrono::{Date, DateTime, FixedOffset, TimeZone, Utc};
 use common::bits::BitVector;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::vec::VecPtr;
 use parsing::ascii::AsciiString;
-use std::clone::Clone;
-use std::convert::AsRef;
-use std::fmt::Debug;
-use std::string::ToString;
+
 // use super::encoding::Element;
 
 /// A wrapper around Bytes which can be statically initialized and this can't

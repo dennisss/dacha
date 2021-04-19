@@ -612,7 +612,7 @@ impl BuiltinType {
     parser!(parse<Self> => alt!(
         map(AnyType::parse, |v| Self::Any(v)),
         map(BitStringType::parse, |v| Self::BitString(v)),
-        map(BooleanType::parse, |v| Self::Boolean),
+        map(BooleanType::parse, |_| Self::Boolean),
         map(CharacterStringType::parse, |v| Self::CharacterString(v)),
         map(ChoiceType::parse, |v| Self::Choice(v)),
         map(reserved("DATE"), |_| BuiltinType::Date),

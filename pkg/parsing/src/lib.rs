@@ -10,7 +10,6 @@ extern crate reflection;
 use common::bytes::Buf;
 use common::bytes::Bytes;
 use common::errors::*;
-use std::str::Chars;
 
 #[derive(Debug, Fail)]
 pub enum ParserError {

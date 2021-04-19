@@ -14,6 +14,7 @@ pub extern crate libc;
 extern crate lazy_static;
 extern crate generic_array;
 extern crate typenum;
+pub extern crate chrono;
 
 pub mod algorithms;
 pub mod args;

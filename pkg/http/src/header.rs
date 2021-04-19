@@ -17,6 +17,8 @@ pub const CONTENT_ENCODING: &'static [u8] = b"Content-Encoding";
 
 pub const CONTENT_TYPE: &'static [u8] = b"Content-Type";
 
+pub const DATE: &'static [u8] = b"Date";
+
 #[derive(Debug)]
 pub struct Header {
     pub name: AsciiString,
