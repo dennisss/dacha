@@ -21,7 +21,7 @@ use crate::uri::IPAddress;
 
 
 #[async_trait]
-pub trait HttpRequestHandler: Send + Sync {
+pub trait RequestHandler: Send + Sync {
     /// Processes an HTTP request returning a response eventually.
     /// 
     /// While the full request is available in the first argument, the following
@@ -30,29 +30,31 @@ pub trait HttpRequestHandler: Send + Sync {
     /// - Transfer-Encoding
     /// - Connection
     /// - Keep-Alive
+    /// - TE
+    /// 
     async fn handle_request(&self, request: Request) -> Response;
 }
 
 /// Wraps a simple static function as a server request handler.
-/// See HttpRequestHandler::handle_request for more information.
+/// See RequestHandler::handle_request for more information.
 pub fn HttpFn<
     F: Future<Output = Response> + Send + 'static,
     H: (Fn(Request) -> F) + Send + Sync + 'static,
 >(
     handler_fn: H,
-) -> HttpRequestHandlerFnCaller {
-    HttpRequestHandlerFnCaller {
+) -> RequestHandlerFnCaller {
+    RequestHandlerFnCaller {
         value: Box::new(move |req| Box::pin(handler_fn(req))),
     }
 }
 
 /// Internal: Used by HttpFn.
-pub struct HttpRequestHandlerFnCaller {
+pub struct RequestHandlerFnCaller {
     value: Box<dyn (Fn(Request) -> Pin<Box<dyn Future<Output = Response> + Send>>) + Send + Sync>,
 }
 
 #[async_trait]
-impl HttpRequestHandler for HttpRequestHandlerFnCaller {
+impl RequestHandler for RequestHandlerFnCaller {
     async fn handle_request(&self, request: Request) -> Response {
         (self.value)(request).await
     }
@@ -73,7 +75,7 @@ struct RequestContext {
 /// Passes the request to a handler which can produce a response.
 pub struct Server {
     port: u16,
-    handler: Arc<dyn HttpRequestHandler>,
+    handler: Arc<dyn RequestHandler>,
 }
 
 impl Server {
@@ -87,7 +89,7 @@ impl Server {
     //		Server { port, handler: Arc::new(boxed_handler) }
     //	}
 
-    pub fn new<H: 'static + HttpRequestHandler>(port: u16, handler: H) -> Self {
+    pub fn new<H: 'static + RequestHandler>(port: u16, handler: H) -> Self {
         Self {
             port,
             handler: Arc::new(handler),
@@ -111,14 +113,14 @@ impl Server {
         TODO: We want to have a way of introspecting a request stream to see things like the client's IP.
     */
     // TODO: Should be refactored to 
-    async fn handle_stream(stream: TcpStream, handler: Arc<dyn HttpRequestHandler>) {
+    async fn handle_stream(stream: TcpStream, handler: Arc<dyn RequestHandler>) {
         match Self::handle_client(stream, handler).await {
             Ok(v) => {}
             Err(e) => println!("Client thread failed: {}", e),
         };
     }
 
-    async fn handle_client(stream: TcpStream, handler: Arc<dyn HttpRequestHandler>) -> Result<()> {
+    async fn handle_client(stream: TcpStream, handler: Arc<dyn RequestHandler>) -> Result<()> {
         let mut write_stream = stream.clone();
         let mut read_stream = StreamReader::new(Box::new(stream), MESSAGE_HEAD_BUFFER_OPTIONS);
 
@@ -205,6 +207,7 @@ impl Server {
         // TODO: Extract content-length and transfer-encoding
         // ^ It would be problematic for a request/response to have both
 
+        // TODO: There is a problem if the Content-Length is specified when the body is chunked.
         let content_length = match parse_content_length(&headers) {
             Ok(len) => len,
             Err(e) => {
@@ -234,6 +237,11 @@ impl Server {
                 stream: read_stream,
             }),
         };
+        // TODO: Also apply any Transfer-Encoding stuff. If it is chunked, then we need not create an unboudned body, but rather, a chunked body would be better to use.
+
+        // TODO: How would I implement a cancelation?
+
+        
 
         let req = Request {
             head: RequestHead {
@@ -246,6 +254,10 @@ impl Server {
         };
 
         let mut res = handler.handle_request(req).await;
+
+        crate::headers::date::append_current_date(&mut res.head.headers);
+
+        // if res.head.headers.
 
         // TODO: Don't allow headers such as 'Connection'
 

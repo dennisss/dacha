@@ -1,7 +1,7 @@
 use parsing::*;
 use parsing::ascii::*;
 
-use crate::upgrade::*;
+use crate::headers::upgrade::*;
 use crate::message_syntax::parse_token;
 
 // RFC 7230: 6.7

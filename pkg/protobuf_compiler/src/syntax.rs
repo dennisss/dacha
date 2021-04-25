@@ -27,14 +27,14 @@ macro_rules! token_atom {
 // Wrappers for reading a single type of token and returning the inner
 // representation
 token_atom!(ident, Identifier, String);
-token_atom!(floatLit, Float, f64);
-token_atom!(intLit, Integer, usize);
+token_atom!(float_lit, Float, f64);
+token_atom!(int_lit, Integer, usize);
 token_atom!(symbol, Symbol, char);
-token_atom!(strLit, String, String);
+token_atom!(str_lit, String, String);
 
 // Proto 2 and 3
 // fullIdent = ident { "." ident }
-parser!(fullIdent<&str, String> => seq!(c => {
+parser!(full_ident<&str, String> => seq!(c => {
     let mut id = c.next(ident)?;
 
     while let Ok('.') = c.next(symbol) {
@@ -49,18 +49,18 @@ parser!(fullIdent<&str, String> => seq!(c => {
 }));
 
 // Proto 2 and 3
-parser!(enumName<&str, String> => ident);
-parser!(messageName<&str, String> => ident);
-parser!(fieldName<&str, String> => ident);
-parser!(oneofName<&str, String> => ident);
-parser!(mapName<&str, String> => ident);
-parser!(serviceName<&str, String> => ident);
-parser!(rpcName<&str, String> => ident);
-parser!(streamName<&str, String> => ident);
+parser!(enum_name<&str, String> => ident);
+parser!(message_name<&str, String> => ident);
+parser!(field_name<&str, String> => ident);
+parser!(oneof_name<&str, String> => ident);
+parser!(map_name<&str, String> => ident);
+parser!(service_name<&str, String> => ident);
+parser!(rpc_name<&str, String> => ident);
+parser!(stream_name<&str, String> => ident);
 
 // Proto 2 and 3
 // messageType = [ "." ] { ident "." } messageName
-parser!(messageType<&str, String> => seq!(c => {
+parser!(message_type<&str, String> => seq!(c => {
     let mut s = String::new();
     if let Ok(dot) = c.next(is(symbol, '.')) {
         s.push(dot);
@@ -74,7 +74,7 @@ parser!(messageType<&str, String> => seq!(c => {
 
     s.push_str(&path.join(""));
 
-    let name = c.next(messageName)?;
+    let name = c.next(message_name)?;
     s.push_str(name.as_str());
 
     Ok(s)
@@ -82,14 +82,14 @@ parser!(messageType<&str, String> => seq!(c => {
 
 // Proto 2 and 3
 // enumType = [ "." ] { ident "." } enumName
-parser!(enumType<&str, String> => {
+parser!(enum_type<&str, String> => {
     // TODO: Instead internally use enumName instead of messageName
-    messageType
+    message_type
 });
 
 // Proto 2
 // groupName = capitalLetter { letter | decimalDigit | "_" }
-parser!(groupName<&str, String> => seq!(c => {
+parser!(group_name<&str, String> => seq!(c => {
     let id = c.next(ident)?;
 
     for (i, c) in id.chars().enumerate() {
@@ -109,7 +109,7 @@ parser!(groupName<&str, String> => seq!(c => {
 
 // Proto 2 and 3
 // boolLit = "true" | "false"
-parser!(boolLit<&str, bool> => seq!(c => {
+parser!(bool_lit<&str, bool> => seq!(c => {
     let id = c.next(ident)?;
     let val = match id.as_ref() {
         "true" => true,
@@ -122,7 +122,7 @@ parser!(boolLit<&str, bool> => seq!(c => {
 
 // Proto 2 and 3
 // emptyStatement = ";"
-parser!(emptyStatement<&str, char> => is(symbol, ';'));
+parser!(empty_statement<&str, char> => is(symbol, ';'));
 
 fn sign(input: &str) -> ParseResult<isize, &str> {
     let (c, rest) = symbol(input)?;
@@ -134,15 +134,15 @@ fn sign(input: &str) -> ParseResult<isize, &str> {
 }
 
 // TODO: Can be combined with floatValue
-parser!(intValue<&str, isize> => seq!(c => {
+parser!(int_value<&str, isize> => seq!(c => {
     let sign: isize = c.next(sign).unwrap_or(1);
-    let f = c.next(intLit)?;
+    let f = c.next(int_lit)?;
     Ok(sign * (f as isize))
 }));
 
-parser!(floatValue<&str, f64> => seq!(c => {
+parser!(float_value<&str, f64> => seq!(c => {
     let sign: isize = c.next(sign).unwrap_or(1);
-    let f = c.next(floatLit)?;
+    let f = c.next(float_lit)?;
     Ok((sign as f64) * f)
 }));
 
@@ -152,17 +152,17 @@ parser!(floatValue<&str, f64> => seq!(c => {
 // |                 strLit | boolLit
 parser!(constant<&str, Constant> => seq!(c => {
     let str_const = |input| {
-        strLit(input).map(|(s, rest)| (Constant::String(s), rest))
+        str_lit(input).map(|(s, rest)| (Constant::String(s), rest))
     };
 
     let bool_const = |input| {
-        boolLit(input).map(|(b, rest)| (Constant::Bool(b), rest))
+        bool_lit(input).map(|(b, rest)| (Constant::Bool(b), rest))
     };
 
     c.next(alt!(
-        map(fullIdent, |s| Constant::Identifier(s)),
-        map(intValue, |i| Constant::Integer(i)),
-        map(floatValue, |f| Constant::Float(f)),
+        map(full_ident, |s| Constant::Identifier(s)),
+        map(int_value, |i| Constant::Integer(i)),
+        map(float_value, |f| Constant::Float(f)),
         str_const,
         bool_const
     ))
@@ -172,8 +172,8 @@ parser!(constant<&str, Constant> => seq!(c => {
 parser!(pub syntax<&str, Syntax> => seq!(c => {
     c.next(is(ident, "syntax"))?;
     c.next(is(symbol, '='))?;
-    let s = c.next(is(strLit, "proto2")).map(|_| Syntax::Proto2)
-        .or_else(|_| c.next(is(strLit, "proto3")).map(|_| Syntax::Proto3))?;
+    let s = c.next(is(str_lit, "proto2")).map(|_| Syntax::Proto2)
+        .or_else(|_| c.next(is(str_lit, "proto3")).map(|_| Syntax::Proto3))?;
     c.next(is(symbol, ';'))?;
     Ok(s)
 }));
@@ -186,7 +186,7 @@ parser!(import<&str, Import> => seq!(c => {
     let mut typ = c.next(is(ident, "weak")).map(|_| ImportType::Weak)
         .or_else(|_| c.next(is(ident, "public")).map(|_| ImportType::Public))
         .unwrap_or(ImportType::Default);
-    let path = c.next(strLit)?;
+    let path = c.next(str_lit)?;
     c.next(is(symbol, ';'))?;
     Ok(Import { typ, path })
 }));
@@ -195,7 +195,7 @@ parser!(import<&str, Import> => seq!(c => {
 // package = "package" fullIdent ";"
 parser!(package<&str, String> => seq!(c => {
     c.next(is(ident, "package"))?;
-    let name = c.next(fullIdent)?;
+    let name = c.next(full_ident)?;
     c.next(is(symbol, ';'))?;
     Ok(name)
 }));
@@ -204,7 +204,7 @@ parser!(package<&str, String> => seq!(c => {
 // option = "option" optionName  "=" constant ";"
 parser!(option<&str, Opt> => seq!(c => {
     c.next(is(ident, "option"))?;
-    let name = c.next(optionName)?;
+    let name = c.next(option_name)?;
     let value = c.next(constant)?;
     c.next(is(symbol, ';'))?;
     Ok(Opt { name, value })
@@ -212,11 +212,11 @@ parser!(option<&str, Opt> => seq!(c => {
 
 // Proto 2 and 3
 // optionName = ( ident | "(" fullIdent ")" ) { "." ident }
-parser!(optionName<&str, String> => seq!(c => {
+parser!(option_name<&str, String> => seq!(c => {
     let prefix = c.next(ident)
         .or_else(|_| c.next(seq!(c => {
             c.next(is(symbol, '('))?;
-            let s = c.next(fullIdent)?;
+            let s = c.next(full_ident)?;
             c.next(is(symbol, ')'))?;
             Ok(String::from("(") + &s + &")")
         })))?;
@@ -246,7 +246,7 @@ parser!(label<&str, Label> => seq!(c => {
 // type = "double" | "float" | "int32" | "int64" | "uint32" | "uint64"
 //       | "sint32" | "sint64" | "fixed32" | "fixed64" | "sfixed32" | "sfixed64"
 //       | "bool" | "string" | "bytes" | messageType | enumType
-parser!(fieldType<&str, FieldType> => seq!(c => {
+parser!(field_type<&str, FieldType> => seq!(c => {
     let primitive = seq!(c => {
         let name = c.next(ident)?;
         let t = match name.as_str() {
@@ -272,24 +272,24 @@ parser!(fieldType<&str, FieldType> => seq!(c => {
     });
 
     let t = c.next(primitive)
-        .or_else(|_| c.next(messageType).map(|n| FieldType::Named(n)))?;
+        .or_else(|_| c.next(message_type).map(|n| FieldType::Named(n)))?;
 
     Ok(t)
 }));
 
 // Proto 2 and 3
 // fieldNumber = intLit;
-parser!(fieldNumber<&str, FieldNumber> => map(intLit, |v| v as FieldNumber));
+parser!(field_number<&str, FieldNumber> => map(int_lit, |v| v as FieldNumber));
 
 // TODO: In proto 3, 'label' should be replaced with '[ "repeated" ]'
 // field = label type fieldName "=" fieldNumber [ "[" fieldOptions "]" ] ";"
 parser!(field<&str, Field> => seq!(c => {
     let labl = c.next(label)?;
-    let typ = c.next(fieldType)?;
-    let name = c.next(fieldName)?;
+    let typ = c.next(field_type)?;
+    let name = c.next(field_name)?;
     c.next(is(symbol, '='))?;
-    let num = c.next(fieldNumber)?;
-    let unknown_options = c.next(fieldOptionsWrap).unwrap_or(vec![]);
+    let num = c.next(field_number)?;
+    let unknown_options = c.next(field_options_wrap).unwrap_or(vec![]);
 
     c.next(is(symbol, ';'))?;
 
@@ -302,9 +302,9 @@ parser!(field<&str, Field> => seq!(c => {
 // Proto 2 and 3
 // Not on the official grammar page, but useful to reuse.
 // "[" fieldOptions "]"
-parser!(fieldOptionsWrap<&str, Vec<Opt>> => seq!(c => {
+parser!(field_options_wrap<&str, Vec<Opt>> => seq!(c => {
     c.next(is(symbol, '['))?;
-    let list = c.next(fieldOptions)?;
+    let list = c.next(field_options)?;
     c.next(is(symbol, ']'))?;
     Ok(list)
 }));
@@ -315,12 +315,12 @@ parser!(comma<&str, char> => is(symbol, ','));
 
 // Proto 2 and 3
 // fieldOptions = fieldOption { ","  fieldOption }
-parser!(fieldOptions<&str, Vec<Opt>> => delimited1(fieldOption, comma));
+parser!(field_options<&str, Vec<Opt>> => delimited1(field_option, comma));
 
 // Proto 2 and 3
 // fieldOption = optionName "=" constant
-parser!(fieldOption<&str, Opt> => seq!(c => {
-    let name = c.next(optionName)?;
+parser!(field_option<&str, Opt> => seq!(c => {
+    let name = c.next(option_name)?;
     c.next(is(symbol, '='))?;
     let value = c.next(constant)?;
     Ok(Opt { name, value })
@@ -331,10 +331,10 @@ parser!(fieldOption<&str, Opt> => seq!(c => {
 parser!(group<&str, Group> => seq!(c => {
     let lbl = c.next(label)?;
     c.next(is(ident, "group"))?;
-    let name = c.next(groupName)?;
+    let name = c.next(group_name)?;
     c.next(is(symbol, '='))?;
-    let num = c.next(fieldNumber)?;
-    let body = c.next(messageBody)?;
+    let num = c.next(field_number)?;
+    let body = c.next(message_body)?;
     Ok(Group { label: lbl, name, num, body })
 }));
 
@@ -342,11 +342,11 @@ parser!(group<&str, Group> => seq!(c => {
 // oneof = "oneof" oneofName "{" { oneofField | emptyStatement } "}"
 parser!(oneof<&str, OneOf> => seq!(c => {
     c.next(is(ident, "oneof"))?;
-    let name = c.next(oneofName)?;
+    let name = c.next(oneof_name)?;
     c.next(is(symbol, '{'))?;
     let fields = c.many(seq!(c => {
-        let f = c.next(oneofField).map(|f| Some(f))
-            .or_else(|_| c.next(emptyStatement).map(|_| None))?;
+        let f = c.next(oneof_field).map(|f| Some(f))
+            .or_else(|_| c.next(empty_statement).map(|_| None))?;
         Ok(f)
     })).into_iter().filter_map(|x| x).collect::<Vec<_>>();
     c.next(is(symbol, '}'))?;
@@ -355,12 +355,12 @@ parser!(oneof<&str, OneOf> => seq!(c => {
 
 // Proto 2 and 3
 // oneofField = type fieldName "=" fieldNumber [ "[" fieldOptions "]" ] ";"
-parser!(oneofField<&str, Field> => seq!(c => {
-    let typ = c.next(fieldType)?;
-    let name = c.next(fieldName)?;
+parser!(oneof_field<&str, Field> => seq!(c => {
+    let typ = c.next(field_type)?;
+    let name = c.next(field_name)?;
     c.next(is(symbol, '='))?;
-    let num = c.next(fieldNumber)?;
-    let unknown_options = c.next(fieldOptionsWrap).unwrap_or(vec![]);
+    let num = c.next(field_number)?;
+    let unknown_options = c.next(field_options_wrap).unwrap_or(vec![]);
     c.next(is(symbol, ';'))?;
     Ok(Field { label: Label::None, typ, name,
         num, options: FieldOptions::default(), unknown_options })
@@ -369,17 +369,17 @@ parser!(oneofField<&str, Field> => seq!(c => {
 // Proto 2 and 3
 // mapField = "map" "<" keyType "," type ">" mapName "=" fieldNumber [ "["
 // fieldOptions "]" ] ";"
-parser!(mapField<&str, MapField> => seq!(c => {
+parser!(map_field<&str, MapField> => seq!(c => {
     c.next(is(ident, "map"))?;
     c.next(is(symbol, '<'))?;
-    let key_type = c.next(keyType)?;
+    let key_type = c.next(key_type)?;
     c.next(is(symbol, ','))?;
-    let value_type = c.next(fieldType)?;
+    let value_type = c.next(field_type)?;
     c.next(is(symbol, '>'))?;
-    let name = c.next(mapName)?;
+    let name = c.next(map_name)?;
     c.next(is(symbol, '='))?;
-    let num = c.next(fieldNumber)?;
-    let options = c.next(fieldOptionsWrap).unwrap_or(vec![]);
+    let num = c.next(field_number)?;
+    let options = c.next(field_options_wrap).unwrap_or(vec![]);
     c.next(is(symbol, ';'))?;
     Ok(MapField { key_type, value_type, name, num, options })
 }));
@@ -387,7 +387,7 @@ parser!(mapField<&str, MapField> => seq!(c => {
 // Proto 2 and 3
 // keyType = "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64" |
 //           "fixed32" | "fixed64" | "sfixed32" | "sfixed64" | "bool" | "string"
-parser!(keyType<&str, FieldType> => seq!(c => {
+parser!(key_type<&str, FieldType> => seq!(c => {
     let name = c.next(ident)?;
     let t = match name.as_str() {
         "int32" => FieldType::Int32,
@@ -424,11 +424,11 @@ parser!(ranges<&str, Ranges> => delimited1(range, comma));
 // Proto 2 and 3
 // range =  intLit [ "to" ( intLit | "max" ) ]
 parser!(range<&str, Range> => seq!(c => {
-    let lower = c.next(intLit)?;
+    let lower = c.next(int_lit)?;
 
     let upper_parser = seq!(c => {
         c.next(is(ident, "to"))?;
-        let v = c.next(intLit)
+        let v = c.next(int_lit)
             .or_else(|_| c.next(is(ident, "max")).map(|_| std::usize::MAX))?;
         Ok(v)
     });
@@ -442,32 +442,32 @@ parser!(range<&str, Range> => seq!(c => {
 parser!(reserved<&str, Reserved> => seq!(c => {
     c.next(is(ident, "reserved"))?;
     let val = c.next(ranges).map(|rs| Reserved::Ranges(rs))
-        .or_else(|_| c.next(fieldNames).map(|ns| Reserved::Fields(ns)))?;
+        .or_else(|_| c.next(field_names).map(|ns| Reserved::Fields(ns)))?;
     c.next(is(symbol, ';'))?;
     Ok(val)
 }));
 
 // Proto 2 and 3
 // fieldNames = fieldName { "," fieldName }
-parser!(fieldNames<&str, Vec<String>> => delimited1(fieldName, comma));
+parser!(field_names<&str, Vec<String>> => delimited1(field_name, comma));
 
 // Proto 2 and 3
 // enum = "enum" enumName enumBody
 parser!(enum_<&str, Enum> => seq!(c => {
     c.next(is(ident, "enum"))?;
-    let name = c.next(enumName)?;
-    let body = c.next(enumBody)?;
+    let name = c.next(enum_name)?;
+    let body = c.next(enum_body)?;
     Ok(Enum { name, body })
 }));
 
 // Proto 2 and 3
 // enumBody = "{" { option | enumField | emptyStatement } "}"
-parser!(enumBody<&str, Vec<EnumBodyItem>> => seq!(c => {
+parser!(enum_body<&str, Vec<EnumBodyItem>> => seq!(c => {
     c.next(is(symbol, '{'))?;
     let inner = c.many(seq!(c => {
         let item = c.next(option).map(|o| Some(EnumBodyItem::Option(o)))
-            .or_else(|_| c.next(enumField).map(|f| Some(EnumBodyItem::Field(f))))
-            .or_else(|_| c.next(emptyStatement).map(|_| None))?;
+            .or_else(|_| c.next(enum_field).map(|f| Some(EnumBodyItem::Field(f))))
+            .or_else(|_| c.next(empty_statement).map(|_| None))?;
         Ok(item)
     })).into_iter().filter_map(|x| x).collect::<Vec<_>>();
     c.next(is(symbol, '}'))?;
@@ -477,14 +477,14 @@ parser!(enumBody<&str, Vec<EnumBodyItem>> => seq!(c => {
 // Proto 2 and 3
 // enumField = ident "=" [ "-" ] intLit [ "[" enumValueOption { ","
 //             enumValueOption } "]" ]";"
-parser!(enumField<&str, EnumField> => seq!(c => {
+parser!(enum_field<&str, EnumField> => seq!(c => {
     let name = c.next(ident)?;
     c.next(is(symbol, '='))?;
     let is_negative = c.next(opt(is(symbol, '-')))?.is_some();
-    let num = (c.next(intLit)? as i32) * if is_negative { -1 } else { 1 };
+    let num = (c.next(int_lit)? as i32) * if is_negative { -1 } else { 1 };
     let options = c.next(seq!(c => {
         c.next(is(symbol, '['))?;
-        let opts = c.next(delimited1(enumValueOption, comma))?;
+        let opts = c.next(delimited1(enum_value_option, comma))?;
         c.next(is(symbol, ']'))?;
         Ok(opts)
     })).unwrap_or(vec![]);
@@ -495,23 +495,23 @@ parser!(enumField<&str, EnumField> => seq!(c => {
 
 // Proto 2 and 3
 // enumValueOption = optionName "=" constant
-parser!(enumValueOption<&str, Opt> => {
-    fieldOption
+parser!(enum_value_option<&str, Opt> => {
+    field_option
 });
 
 // Proto 2 and 3
 // message = "message" messageName messageBody
 parser!(message<&str, Message> => seq!(c => {
     c.next(is(ident, "message"))?;
-    let name = c.next(messageName)?;
-    let body = c.next(messageBody)?;
+    let name = c.next(message_name)?;
+    let body = c.next(message_body)?;
     Ok(Message { name, body })
 }));
 
 // TODO: Proto3 has no 'extensions' or 'group'
 // messageBody = "{" { field | enum | message | extend | extensions | group |
 // option | oneof | mapField | reserved | emptyStatement } "}"
-parser!(messageBody<&str, Vec<MessageItem>> => seq!(c => {
+parser!(message_body<&str, Vec<MessageItem>> => seq!(c => {
     c.next(is(symbol, '{'))?;
 
     let items = c.many(alt!(
@@ -521,9 +521,9 @@ parser!(messageBody<&str, Vec<MessageItem>> => seq!(c => {
         map(extend, |v| Some(MessageItem::Extend(v))),
         map(extensions, |v| Some(MessageItem::Extensions(v))),
         map(oneof, |v| Some(MessageItem::OneOf(v))),
-        map(mapField, |v| Some(MessageItem::MapField(v))),
+        map(map_field, |v| Some(MessageItem::MapField(v))),
         map(reserved, |v| Some(MessageItem::Reserved(v))),
-        map(emptyStatement, |v| None)
+        map(empty_statement, |v| None)
     )).into_iter().filter_map(|x| x).collect::<Vec<_>>();
 
     c.next(is(symbol, '}'))?;
@@ -534,12 +534,12 @@ parser!(messageBody<&str, Vec<MessageItem>> => seq!(c => {
 // extend = "extend" messageType "{" {field | group | emptyStatement} "}"
 parser!(extend<&str, Extend> => seq!(c => {
     c.next(is(ident, "extend"))?;
-    let typ = c.next(messageType)?;
+    let typ = c.next(message_type)?;
     c.next(is(symbol, '{'))?;
     let body = c.many(seq!(c => {
         let item = c.next(field).map(|f| Some(ExtendItem::Field(f)))
             .or_else(|_| c.next(group).map(|g| Some(ExtendItem::Group(g))))
-            .or_else(|_| c.next(emptyStatement).map(|_| None))?;
+            .or_else(|_| c.next(empty_statement).map(|_| None))?;
         Ok(item)
     })).into_iter().filter_map(|x| x).collect::<Vec<_>>();
     c.next(is(symbol, '}'))?;
@@ -551,13 +551,13 @@ parser!(extend<&str, Extend> => seq!(c => {
 // } "}"
 parser!(service<&str, Service> => seq!(c => {
     c.next(is(ident, "service"))?;
-    let name = c.next(serviceName)?;
+    let name = c.next(service_name)?;
     c.next(is(symbol, '{'))?;
     let body = c.many(alt!(
         map(option, |v| Some(ServiceItem::Option(v))),
         map(rpc, |v| Some(ServiceItem::RPC(v))),
         map(stream, |v| Some(ServiceItem::Stream(v))),
-        map(emptyStatement, |_| None)
+        map(empty_statement, |_| None)
     )).into_iter().filter_map(|x| x).collect::<Vec<_>>();
     c.next(is(symbol, '}'))?;
     Ok(Service { name, body })
@@ -569,7 +569,7 @@ parser!(options_body<&str, Vec<Opt>> => seq!(c => {
         c.next(is(symbol, '{'))?;
         let opts = c.many(seq!(c => {
             let item = c.next(option).map(|o| Some(o))
-                .or_else(|_| c.next(emptyStatement).map(|_| None))?;
+                .or_else(|_| c.next(empty_statement).map(|_| None))?;
             Ok(item)
         })).into_iter().filter_map(|x| x).collect::<Vec<_>>();
         c.next(is(symbol, '}'))?;
@@ -586,7 +586,7 @@ parser!(options_body<&str, Vec<Opt>> => seq!(c => {
 // ]       messageType ")" (( "{" { option | emptyStatement } "}" ) | ";" )
 parser!(rpc<&str, RPC> => seq!(c => {
     c.next(is(ident, "rpc"))?;
-    let name = c.next(rpcName)?;
+    let name = c.next(rpc_name)?;
     c.next(is(symbol, '('))?;
 
     let is_stream = map(
@@ -594,13 +594,13 @@ parser!(rpc<&str, RPC> => seq!(c => {
         |v| v.map(|_| true).unwrap_or(false));
 
     let req_stream = c.next(&is_stream)?;
-    let req_type = c.next(messageType)?;
+    let req_type = c.next(message_type)?;
     c.next(is(symbol, ')'))?;
     c.next(is(ident, "returns"))?;
     c.next(is(symbol, '('))?;
 
     let res_stream = c.next(is_stream)?;
-    let res_type = c.next(messageType)?;
+    let res_type = c.next(message_type)?;
     c.next(is(symbol, ')'))?;
 
     let options = c.next(options_body)?;
@@ -613,11 +613,11 @@ parser!(rpc<&str, RPC> => seq!(c => {
 // { option | emptyStatement } "}") | ";" )
 parser!(stream<&str, Stream> => seq!(c => {
     c.next(is(ident, "stream"))?;
-    let name = c.next(streamName)?;
+    let name = c.next(stream_name)?;
     c.next(is(symbol, '('))?;
-    let input_type = c.next(messageType)?;
+    let input_type = c.next(message_type)?;
     c.next(is(symbol, ','))?;
-    let output_type = c.next(messageType)?;
+    let output_type = c.next(message_type)?;
     c.next(is(symbol, ')'))?;
     let options = c.next(options_body)?;
     Ok(Stream { name, input_type, output_type, options })
@@ -641,7 +641,7 @@ parser!(proto<&str, Proto> => seq!(c => {
         map(package, |v| ProtoItem::Package(v)),
         map(option, |v| ProtoItem::Option(v)),
         map(top_level_def, |v| ProtoItem::TopLevelDef(v)),
-        map(emptyStatement, |v| ProtoItem::None)
+        map(empty_statement, |v| ProtoItem::None)
     ));
 
     let mut p = Proto {

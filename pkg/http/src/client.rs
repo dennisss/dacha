@@ -36,7 +36,7 @@ impl Client {
         // accept anything but the scheme, authority
         let u = uri.parse::<Uri>()?;
         // NOTE: u.path may be '/'
-        if u.path.len() > 1 || u.query.is_some() || u.fragment.is_some() {
+        if !u.path.is_empty() || u.query.is_some() || u.fragment.is_some() {
             return Err(err_msg("Can't create a client with a uri path"));
         }
 
@@ -142,6 +142,16 @@ impl Client {
         if transfer_encoding.len() > 0 {
             return get_transfer_encoding_body(transfer_encoding, stream);
         }
+        /*
+        If a Transfer-Encoding header field is present in a response and
+       the chunked transfer coding is not the final encoding, the
+       message body length is determined by reading the connection until
+       it is closed by the server.  If a Transfer-Encoding header field
+       is present in a request and the chunked transfer coding is not
+       the final encoding, the message body length cannot be determined
+       reliably; the server MUST respond with the 400 (Bad Request)
+       status code and then close the connection.
+        */
 
         // 4.
         // This is handled by the parse_content_length validation from earlier.

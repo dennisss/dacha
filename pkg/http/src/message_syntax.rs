@@ -475,7 +475,7 @@ parser!(pub parse_request_target<RequestTarget> => {
 // RFC 7230: Section 5.3.1
 //
 // `origin-form = absolute-path [ "?" query ]`
-parser!(parse_origin_form<(Vec<OpaqueString>, Option<OpaqueString>)> => {
+parser!(parse_origin_form<(Vec<OpaqueString>, Option<AsciiString>)> => {
     seq!(c => {
         let abspath = c.next(parse_absolute_path)?;
         let q = c.next(opt(seq!(c => {
@@ -522,10 +522,6 @@ parser!(parse_pseudonym<AsciiString> => parse_token);
 //////////////////
 
 
-//    Connection = *( "," OWS ) connection-option *( OWS "," [ OWS
-//     connection-option ] )
-
-
 // TODO: Well known uri: https://tools.ietf.org/html/rfc8615
 
 // RFC 7230: Section 5.4
@@ -552,13 +548,6 @@ parser!(parse_absolute_path<Vec<OpaqueString>> => {
         c.next(one_of(b"/"))?;
         c.next(parse_segment)
     }))
-});
-
-
-
-// `connection-option = token`
-parser!(parse_connection_option<AsciiString> => {
-    parse_token
 });
 
 

@@ -10,7 +10,7 @@ use common::errors::*;
 use http::body::*;
 use http::client::Client;
 use http::header::*;
-use http::server::{HttpRequestHandler};
+use http::server::{RequestHandler};
 use http::spec::{Request, RequestBuilder, Response, ResponseBuilder};
 use http::status_code::*;
 use protobuf::service::{Channel, Service};
@@ -79,7 +79,7 @@ impl RPCServer {
 }
 
 #[async_trait]
-impl HttpRequestHandler for RPCServer {
+impl RequestHandler for RPCServer {
     async fn handle_request(&self, request: Request) -> Response {
         match self.handle_request_impl(request).await {
             Ok(r) => r,

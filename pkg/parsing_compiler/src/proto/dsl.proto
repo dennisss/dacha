@@ -46,6 +46,8 @@ enum PrimitiveType {
     I64 = 8;
     FLOAT = 9;
     DOUBLE = 10;
+    BOOL = 11;
+    // TODO: Also have a boolean type.
 
     // TODO: Also include variable length integer types?
 }
@@ -70,8 +72,15 @@ message Type {
         // TODO: Possibly recursive?
         BufferType buffer = 2;
 
-        // should be the same of the struct
+        // Should be the name of the struct
         string named = 3;
+    }
+}
+
+message Value {
+    oneof value {
+        int64 i = 1;
+        bool b = 2;
     }
 }
 
@@ -79,4 +88,16 @@ message Field {
     string name = 1;
     Type type = 2;
     string comment = 3;
+
+    // Width of this field in bits. Only applicable when the type is a primitive integer.
+    // Non-zero values mean that this is set.
+    //
+    // NOTE: All adjacent fields 
+    uint64 bit_width = 4;
+
+    // TODO: Implement this.
+    // If set, then this field will always have this value in serialized form.
+    // We will not generate accessors for the value, but we will ensure this value
+    // is used when serializing the struct and we will validate when parsing, that this is present.
+    Value constant_value = 5;
 }

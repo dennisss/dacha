@@ -37,25 +37,41 @@ impl OpaqueString {
 
         Ok(std::str::from_utf8(&self.data).unwrap())
     }
-}
-
-impl From<Vec<u8>> for OpaqueString {
-    fn from(data: Vec<u8>) -> Self {
-        Self { data: Bytes::from(data) }
+    
+    pub fn to_utf8_str(&self) -> Result<&str> {
+        Ok(std::str::from_utf8(&self.data)?)
     }
 }
 
-impl From<Bytes> for OpaqueString {
-    fn from(data: Bytes) -> Self {
-        Self { data }
+impl<T: Into<Bytes>> From<T> for OpaqueString {
+    fn from(data: T) -> Self {
+        Self { data: data.into() }
     }
 }
 
-impl From<&str> for OpaqueString {
-    fn from(s: &str) -> Self {
-        Self { data: Bytes::from(s) }
-    }
-}
+// impl From<String> for OpaqueString {
+//     fn from(data: String) -> Self {
+//         Self { data: Bytes::from(data) }
+//     }
+// }
+
+// impl From<Vec<u8>> for OpaqueString {
+//     fn from(data: Vec<u8>) -> Self {
+//         Self { data: Bytes::from(data) }
+//     }
+// }
+
+// impl From<Bytes> for OpaqueString {
+//     fn from(data: Bytes) -> Self {
+//         Self { data }
+//     }
+// }
+
+// impl From<&str> for OpaqueString {
+//     fn from(s: &str) -> Self {
+//         Self { data: Bytes::from(s) }
+//     }
+// }
 
 impl std::fmt::Debug for OpaqueString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

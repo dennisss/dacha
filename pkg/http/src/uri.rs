@@ -22,12 +22,18 @@ pub struct Uri {
 
     pub authority: Option<Authority>,
     
-    pub path: OpaqueString,
+    // TODO: Simplify the parsing of this to just the AsciiString and then
+    // it can later be interpreted if needed.
+    //
+    // Main challenge will be that depending on the context, we may expect different grammars.
+    pub path: UriPath,
     
-    pub query: Option<OpaqueString>,
+    /// Portion of the Uri after the '?' (not including the '?').
+    /// NOTE: This may still not contain percent encoded 
+    pub query: Option<AsciiString>,
     
     // NOTE: This will always be empty for absolute_uri
-    pub fragment: Option<OpaqueString>,
+    pub fragment: Option<AsciiString>,
 }
 
 impl Uri {
@@ -86,44 +92,70 @@ impl std::convert::TryFrom<IPAddress> for IpAddr {
     }
 }
 
+/// The parsed path of the URI broken down into individual segments with
+/// any entities decoded.
+#[derive(PartialEq, Clone, Debug)]
+pub struct UriPath {
+    is_absolute: bool,
+
+    segments: Vec<OpaqueString>
+}
+
+impl UriPath {
+    pub fn new(is_absolute: bool, segments: &[&str]) -> Self {
+        Self { is_absolute, segments: segments.iter().map(|s| OpaqueString::from(*s)).collect() }
+    }
+
+    /// Whether or not the path starts with a '/'
+    pub fn is_absolute(&self) -> bool {
+        self.is_absolute
+    }
+
+    /// Gets the individual segments in the path.
+    /// e.g. "/hello/world" has segments ["hello", "world"]
+    ///      "/" has segments [""]
+    ///      "" has segments []
+    pub fn segments(&self) -> &[OpaqueString] {
+        &self.segments
+    }
+
+    /// Whether or not the path is equivalent to the empty string "".
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
+    }
+}
+
+
+//////////////////
+
 /// NOTE: This is mainly used internally. Users should prefer to use Uri.
 #[derive(Debug)]
-pub(crate) enum UriPath {
+pub(crate) enum RawUriPath {
     AbEmpty(Vec<OpaqueString>),
     Absolute(Vec<OpaqueString>),
     Rootless(Vec<OpaqueString>),
     Empty,
 }
 
-impl UriPath {
-    // TODO: THe problem with this is that we can't distinguish between '/' and the percent encoded form.
-    pub fn to_opaque_string(&self) -> OpaqueString {
-        let append_joined = |strs: &[OpaqueString], out: &mut Vec<u8>| {
-            for (i, s) in strs.iter().enumerate() {
-                out.extend_from_slice(s.as_bytes());
-                if i < strs.len() - 1 {
-                    out.push(b'/');
-                }
-            }
-        };
-
-        let mut out = vec![];
+impl RawUriPath {
+    pub fn into_path(self) -> UriPath {
         match self {
-            UriPath::AbEmpty(v) | UriPath::Absolute(v) => {
-                out.push(b'/');
-                append_joined(v, &mut out);
-            },
-            UriPath::Rootless(v) => append_joined(v, &mut out),
-            UriPath::Empty => {},
+            RawUriPath::AbEmpty(v) | RawUriPath::Absolute(v) => {
+                UriPath { is_absolute: true, segments: v }
+            }
+            RawUriPath::Rootless(v) => {
+                UriPath { is_absolute: false, segments: v }
+            }
+            RawUriPath::Empty => {
+                UriPath { is_absolute: false, segments: vec![] }
+            }
         }
-
-        OpaqueString::from(out)
     }
 }
 
 // TODO: What is this used for?
 #[derive(Debug)]
-pub(crate) enum Path {
+pub(crate) enum RawPath {
     PathAbEmpty(Vec<OpaqueString>),
     PathAbsolute(Vec<OpaqueString>),
     PathNoScheme(Vec<OpaqueString>),

@@ -55,7 +55,7 @@ pub fn build() -> Result<()> {
         let mut output_path = output_dir.join(relative_path);
         output_path.set_extension("rs");
 
-        std::fs::create_dir_all(output_path.parent().unwrap());
+        std::fs::create_dir_all(output_path.parent().unwrap())?;
 
         let output = Compiler::compile(&lib, runtime_package)?;
         std::fs::write(output_path, output)?;

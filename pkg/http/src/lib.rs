@@ -25,9 +25,10 @@ pub mod uri_syntax;
 pub mod method;
 pub mod request;
 pub mod response;
-mod upgrade;
-mod upgrade_syntax;
 mod v2;
+mod headers;
+pub mod static_file_handler;
+mod query;
 
 pub use crate::server::Server;
 pub use crate::client::Client;

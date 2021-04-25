@@ -42,6 +42,7 @@ async fn handle_request(req: Request) -> Response {
     ResponseBuilder::new()
         .status(OK)
         .header(CONTENT_TYPE, "text/plain")
+        // TODO: Move this to the Server internal implementation.
         .header(CONTENT_LENGTH, format!("{}", data.len()))
         .body(BodyFromData(data))
         .build()
@@ -49,7 +50,9 @@ async fn handle_request(req: Request) -> Response {
 }
 
 async fn run_server() -> Result<()> {
-    let server = http::server::Server::new(8000, http::server::HttpFn(handle_request));
+    let handler = http::static_file_handler::StaticFileHandler::new("/home/dennis/workspace/dacha");
+    // let handler = http::server::HttpFn(handle_request);
+    let server = http::server::Server::new(8000, handler);
     server.run().await
 }
 

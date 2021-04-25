@@ -126,24 +126,39 @@ pub fn serialize_uri(uri: &Uri, out: &mut Vec<u8>) -> Result<()> {
         //
         // NOTE: Because we can't distinguish between '/' and the pct-encoded version of it in this stage,
         // we ideally shouldn't try to decode it yet.
-        out.extend_from_slice(uri.path.as_bytes());
+        for (i, segment) in uri.path.segments().iter().enumerate() {
+            if i != 0 || uri.path.is_absolute() {
+                out.push(b'/');
+            }
+
+            out.extend_from_slice(segment.as_bytes());
+        }
     }
 
 
     // TODO: Definately need to improve these by a lot.
+    // TOOD: We shouldn't be doing any serialization of these (only sanitization).
     if let Some(query) = &uri.query {
         out.push(b'?');
-        serialize_query(query, out);
+
+        // TODO: Instead, we can try automatically encoding anything that violated the syntax?
+        for byte in query.as_ref().as_bytes() {
+            if *byte == b'#' {
+                return Err(err_msg("Invalid query"));
+            }
+        }
+
+        out.extend_from_slice(query.as_ref().as_bytes());
     }
 
     if let Some(fragment) = &uri.fragment {
         out.push(b'#');
-        serialize_fragment(fragment, out);
+        out.extend_from_slice(fragment.as_ref().as_bytes());
+        // serialize_fragment(fragment, out);
     }
 
     Ok(())
 }
-
 
 // RFC 3986: Section 3
 //
@@ -151,17 +166,17 @@ pub fn serialize_uri(uri: &Uri, out: &mut Vec<u8>) -> Result<()> {
 // 			  / path-absolute
 // 			  / path-rootless
 // 			  / path-empty`
-parser!(parse_hier_part<(Option<Authority>, UriPath)> => {
+parser!(parse_hier_part<(Option<Authority>, RawUriPath)> => {
     alt!(
         seq!(c => {
             c.next(tag("//"))?;
             let a = c.next(parse_authority)?;
             let p = c.next(parse_path_abempty)?;
-            Ok((Some(a), UriPath::AbEmpty(p)))
+            Ok((Some(a), RawUriPath::AbEmpty(p)))
         }),
-        map(parse_path_absolute, |p| (None, UriPath::Absolute(p))),
-        map(parse_path_rootless, |p| (None, UriPath::Rootless(p))),
-        map(parse_path_empty, |p| (None, UriPath::Empty))
+        map(parse_path_absolute, |p| (None, RawUriPath::Absolute(p))),
+        map(parse_path_rootless, |p| (None, RawUriPath::Rootless(p))),
+        map(parse_path_empty, |p| (None, RawUriPath::Empty))
     )
 });
 
@@ -271,7 +286,7 @@ fn serialize_userinfo(info: &OpaqueString, out: &mut Vec<u8>) {
 // RFC 3986: Section 3.2.2
 //
 // `host = IP-literal / IPv4address / reg-name`
-parser!(parse_host<Host> => {
+parser!(pub(crate) parse_host<Host> => {
     alt!(
         map(parse_ip_literal, |i| Host::IP(i)),
         map(parse_ipv4_address, |v| Host::IP(IPAddress::V4(v))),
@@ -583,13 +598,13 @@ fn parse_port(input: Bytes) -> ParseResult<Option<usize>> {
 // 		 / path-noscheme   ; begins with a non-colon segment
 // 		 / path-rootless   ; begins with a segment
 // 		 / path-empty      ; zero characters`
-parser!(parse_path<Path> => {
+parser!(parse_path<RawPath> => {
     alt!(
-        map(parse_path_abempty, |s| Path::PathAbEmpty(s)),
-        map(parse_path_absolute, |s| Path::PathAbsolute(s)),
-        map(parse_path_noscheme, |s| Path::PathNoScheme(s)),
-        map(parse_path_rootless, |s| Path::PathRootless(s)),
-        map(parse_path_empty, |_| Path::PathEmpty)
+        map(parse_path_abempty, |s| RawPath::PathAbEmpty(s)),
+        map(parse_path_absolute, |s| RawPath::PathAbsolute(s)),
+        map(parse_path_noscheme, |s| RawPath::PathNoScheme(s)),
+        map(parse_path_rootless, |s| RawPath::PathRootless(s)),
+        map(parse_path_empty, |_| RawPath::PathEmpty)
     )
 });
 
@@ -691,6 +706,8 @@ fn parse_segment_nz_nc(input: Bytes) -> ParseResult<OpaqueString> {
 // RFC 3986: Section 3.3
 //
 // `pchar = unreserved / pct-encoded / sub-delims / ":" / "@"`
+//
+// TODO: Parse as a regular expression
 parser!(parse_pchar<u8> => {
     alt!(
         parse_unreserved, parse_pct_encoded, parse_sub_delims, one_of(":@")
@@ -708,21 +725,24 @@ fn serialize_pchar(v: u8, out: &mut Vec<u8>) {
 // RFC 3986: Section 3.4
 //
 // `query = *( pchar / "/" / "?" )`
-parser!(pub parse_query<OpaqueString> => parse_fragment);
+parser!(pub parse_query<AsciiString> => parse_fragment);
 
+/*
 pub fn serialize_query(value: &OpaqueString, out: &mut Vec<u8>) {
     serialize_fragment(value, out);
 }
+*/
 
 // RFC 3986: Section 3.5
 //
 // `fragment = *( pchar / "/" / "?" )`
-parser!(parse_fragment<OpaqueString> => {
-    map(many(alt!(
+parser!(parse_fragment<AsciiString> => {
+    map(slice(many(alt!(
         parse_pchar, one_of("/?")
-    )), |s| OpaqueString::from(s))
+    ))), |s| AsciiString::from(s).unwrap())
 });
 
+/*
 pub fn serialize_fragment(value: &OpaqueString, out: &mut Vec<u8>) {
     for char in value.as_bytes().iter().cloned() {
         if char == b'/' || char == b'?' {
@@ -732,6 +752,7 @@ pub fn serialize_fragment(value: &OpaqueString, out: &mut Vec<u8>) {
         }
     }
 }
+*/
 
 // RFC 3986: Section 4.1
 //
@@ -763,7 +784,7 @@ parser!(parse_relative_ref<Uri> => {
         Ok(Uri {
             scheme: None,
             authority,
-            path: path.to_opaque_string(),
+            path: path.into_path(),
             query,
             fragment
         })
@@ -776,16 +797,16 @@ parser!(parse_relative_ref<Uri> => {
 // 				  / path-absolute
 // 				  / path-noscheme
 // 				  / path-empty`
-parser!(parse_relative_part<(Option<Authority>, UriPath)> => alt!(
+parser!(parse_relative_part<(Option<Authority>, RawUriPath)> => alt!(
     seq!(c => {
         c.next(tag("//"))?;
         let a = c.next(parse_authority)?;
         let p = c.next(parse_path_abempty)?;
-        Ok((Some(a), UriPath::AbEmpty(p)))
+        Ok((Some(a), RawUriPath::AbEmpty(p)))
     }),
-    map(parse_path_absolute, |p| (None, UriPath::Absolute(p))),
-    map(parse_path_noscheme, |p| (None, UriPath::Rootless(p))),
-    map(parse_path_empty, |_| (None, UriPath::Empty))
+    map(parse_path_absolute, |p| (None, RawUriPath::Absolute(p))),
+    map(parse_path_noscheme, |p| (None, RawUriPath::Rootless(p))),
+    map(parse_path_empty, |_| (None, RawUriPath::Empty))
 ));
 
 // RFC 3986: Section 4.3
@@ -801,7 +822,7 @@ parser!(pub parse_absolute_uri<Uri> => {
             c.next(parse_query)
         })))?;
 
-        Ok(Uri { scheme: Some(s), authority: auth, path: p.to_opaque_string(), query: q, fragment: None })
+        Ok(Uri { scheme: Some(s), authority: auth, path: p.into_path(), query: q, fragment: None })
     })
 });
 
@@ -833,7 +854,7 @@ mod tests {
                     host: Host::Name("ftp.is.co.za".to_string()),
                     port: None
                 }),
-                path: OpaqueString::from("/rfc/rfc1808.txt"),
+                path: UriPath::new(true, &["rfc", "rfc1808.txt"]),
                 query: None,
                 fragment: None
             }),
@@ -844,7 +865,7 @@ mod tests {
                     host: Host::Name("www.ietf.org".to_string()),
                     port: None
                 }),
-                path: OpaqueString::from("/rfc/rfc2396.txt"),
+                path: UriPath::new(true, &["rfc", "rfc2396.txt"]),
                 query: None,
                 fragment: None
             }),
@@ -855,28 +876,28 @@ mod tests {
                     host: Host::IP(IPAddress::V6(vec![0x20, 0x01, 0x0D, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x07])),
                     port: None
                 }),
-                path: OpaqueString::from("/c=GB"),
-                query: Some(OpaqueString::from("objectClass?one")),
+                path: UriPath::new(true, &["c=GB"]),
+                query: Some(AsciiString::from("objectClass?one").unwrap()),
                 fragment: None
             }),
             ("mailto:John.Doe@example.com", Uri {
                 scheme: Some(AsciiString::from_str("mailto").unwrap()),
                 authority: None,
-                path: OpaqueString::from("John.Doe@example.com"),
+                path: UriPath::new(false, &["John.Doe@example.com"]),
                 query: None,
                 fragment: None
             }),
             ("news:comp.infosystems.www.servers.unix", Uri {
                 scheme: Some(AsciiString::from_str("news").unwrap()),
                 authority: None,
-                path: OpaqueString::from("comp.infosystems.www.servers.unix"),
+                path: UriPath::new(false, &["comp.infosystems.www.servers.unix"]),
                 query: None,
                 fragment: None
             }),
             ("tel:+1-816-555-1212", Uri {
                 scheme: Some(AsciiString::from_str("tel").unwrap()),
                 authority: None,
-                path: OpaqueString::from("+1-816-555-1212"),
+                path: UriPath::new(false, &["+1-816-555-1212"]),
                 query: None,
                 fragment: None
             }),
@@ -887,14 +908,14 @@ mod tests {
                     host: Host::IP(IPAddress::V4(vec![192, 0, 2, 16])),
                     port: Some(80)
                 }),
-                path: OpaqueString::from("/"),
+                path: UriPath::new(true, &[""]),
                 query: None,
                 fragment: None
             }),
             ("urn:oasis:names:specification:docbook:dtd:xml:4.1.2", Uri {
                 scheme: Some(AsciiString::from_str("urn").unwrap()),
                 authority: None,
-                path: OpaqueString::from("oasis:names:specification:docbook:dtd:xml:4.1.2"),
+                path: UriPath::new(false, &["oasis:names:specification:docbook:dtd:xml:4.1.2"]),
                 query: None,
                 fragment: None
             }),
@@ -907,14 +928,32 @@ mod tests {
                     host: Host::Name("example.com".to_string()),
                     port: Some(8042)
                 }),
-                path: OpaqueString::from("/over/there"),
-                query: Some(OpaqueString::from("name=ferret")),
-                fragment: Some(OpaqueString::from("nose"))
+                path: UriPath::new(true, &["over", "there"]),
+                query: Some(AsciiString::from("name=ferret").unwrap()),
+                fragment: Some(AsciiString::from("nose").unwrap())
             }),
             ("urn:example:animal:ferret:nose", Uri {
                 scheme: Some(AsciiString::from_str("urn").unwrap()),
                 authority: None,
-                path: OpaqueString::from("example:animal:ferret:nose"),
+                path: UriPath::new(false, &["example:animal:ferret:nose"]),
+                query: None,
+                fragment: None
+            }),
+            ("urn:/example/world", Uri {
+                scheme: Some(AsciiString::from_str("urn").unwrap()),
+                authority: None,
+                path: UriPath::new(true, &["example", "world"]),
+                query: None,
+                fragment: None
+            }),
+            ("https://localhost:8000", Uri {
+                scheme: Some(AsciiString::from_str("https").unwrap()),
+                authority: Some(Authority {
+                    user: None,
+                    host: Host::Name("localhost".to_string()),
+                    port: Some(8000)
+                }),
+                path: UriPath::new(true, &[]),
                 query: None,
                 fragment: None
             }),

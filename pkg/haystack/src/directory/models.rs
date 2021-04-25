@@ -1,7 +1,7 @@
 use diesel::*;
 use super::schema::*;
 use super::super::common::Config;
-use chrono::{DateTime, Utc, Duration};
+use common::chrono::{DateTime, Utc, Duration};
 
 pub enum ParamKey {
 	ClusterId = 1
