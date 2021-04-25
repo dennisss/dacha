@@ -113,7 +113,8 @@ impl<'c> Compiler<'c> {
 
 
         let mut lines = LineBuilder::new();
-        lines.add("use common::errors::*;");
+        lines.add("use ::common::errors::*;");
+        lines.add("use ::parsing::parse_next;");
 
         for s in lib.structs() {
             lines.add(compiler.compile_struct(s)?);
@@ -156,7 +157,8 @@ impl<'c> Compiler<'c> {
                         // TODO: Only do this up to some size threshold.
                         format!("[{}; {}]", element_type, len)
                     }
-                    BufferTypeSizeCase::LengthFieldName(_) => {
+                    BufferTypeSizeCase::LengthFieldName(_) |
+                    BufferTypeSizeCase::EndTerminated(_) => {
                         format!("Vec<{}>", element_type)
                     }
                     BufferTypeSizeCase::Unknown => {
@@ -286,7 +288,10 @@ impl<'c> Compiler<'c> {
     /// advance the 'input' buffer to the position after the value.
     ///
     /// TODO: For bit fields, this needs to be given a bit shift and mask to perform (only will work for primitives)
-    fn compile_parse_type(&self, typ: &Type, endian: Endian, bit_slice: Option<(usize, usize)>) -> Result<String> {
+    fn compile_parse_type(
+        &self, typ: &Type, endian: Endian, bit_slice: Option<(usize, usize)>,
+        after_bytes: Option<usize>
+    ) -> Result<String> {
         Ok(match typ.type_case() {
             TypeTypeCase::Primitive(p) => {
                 if let Some((bit_offset, bit_width)) = bit_slice {
@@ -297,10 +302,15 @@ impl<'c> Compiler<'c> {
                         self.endian_str(endian)?, self.compile_primitive_type(*p)?)
             },
             TypeTypeCase::Buffer(buf) => {
+
+                // TODO: Other important cases:
+                // - Sometimes want to support zero-copy access
+                // - If the endian is the same as the host, then we don't need to perform any individual element parsing.
+
                 // Step 1: allocate memory given that we should know the length and then assign or push to that.
                 // In some cases, we may want to give the inner parser a mutable reference to improve efficiency? 
 
-                let element_parser = self.compile_parse_type(&buf.element_type(), endian, None)?;
+                let element_parser = self.compile_parse_type(&buf.element_type(), endian, None, None)?;
 
                 let mut lines = LineBuilder::new();
                 lines.add("{");
@@ -309,17 +319,43 @@ impl<'c> Compiler<'c> {
                     // TODO: Some types like large primitive slices can be optimized.
                     BufferTypeSizeCase::FixedLength(len) => {
                         lines.add(format!("\tlet mut buf = [{}::default(); {}];", self.compile_type(buf.element_type())?, len));
-                        lines.add("\tfor i in 0..buf.len() {");
-                        lines.add(format!("\t\tbuf[i] = {};", element_parser));
-                        lines.add("\t}");
-                        lines.add("\tbuf");
+                        
+                        if let TypeTypeCase::Primitive(PrimitiveType::U8) = typ.type_case() {
+                            // TODO: Ensure that we always take exact a slice (and not Bytes as that is an expensive copy)!
+                            lines.add("\tbuf.copy_from_slice(parse_next!(input, ::parsing::take_exact(buf.len())));");
+                        } else {
+                            lines.add("\tfor i in 0..buf.len() {");
+                            lines.add(format!("\t\tbuf[i] = {};", element_parser));
+                            lines.add("\t}");
+                        }
                     }
                     BufferTypeSizeCase::LengthFieldName(name) => {
                         lines.add("\tlet mut buf = vec![];");
-                        lines.add(format!("\tbuf.reserve({}_value as usize);", name));
-                        lines.add(format!("\tfor _ in 0..{}_value {{", name));
-                        lines.add(format!("\t\tbuf.push({});", element_parser));
-                        lines.add("\t}");
+                        
+                        if let TypeTypeCase::Primitive(PrimitiveType::U8) = typ.type_case() {
+                            lines.add(format!("\tbuf.extend_from_slice(parse_next!(input, ::parsing::take_exact({})));", name));
+                        } else {
+                            lines.add(format!("\tbuf.reserve({}_value as usize);", name));
+                            lines.add(format!("\tfor _ in 0..{}_value {{", name));
+                            lines.add(format!("\t\tbuf.push({});", element_parser));
+                            lines.add("\t}");
+                        }
+                    }
+                    BufferTypeSizeCase::EndTerminated(_) => {
+                        let after_count = after_bytes.ok_or(
+                            err_msg("end_terminated buffer not validated"))?;
+
+                        lines.add("\tlet mut buf = vec![];");
+                        lines.add(format!("\tlet length = input.len() - {};", after_count));
+
+                        if let TypeTypeCase::Primitive(PrimitiveType::U8) = typ.type_case() {
+                            lines.add("\tbuf.extend_from_slice(parse_next!(input, ::parsing::take_exact(length)));");
+                        } else {
+                            lines.add("\tbuf.reserve(length);");
+                            lines.add("\tfor _ in 0..length {");
+                            lines.add(format!("\t\tbuf.push({});", element_parser));
+                            lines.add("\t}");
+                        }
                     }
                     BufferTypeSizeCase::Unknown => { panic!(); }
                 }
@@ -340,7 +376,10 @@ impl<'c> Compiler<'c> {
         })
     }
 
-    fn compile_serialize_type(&self, typ: &Type, value: &str, endian: Endian, bit_slice: Option<(usize, usize)>) -> Result<String> {
+    // TODO: We don't use after_bytes for this!!
+    fn compile_serialize_type(
+        &self, typ: &Type, value: &str, endian: Endian, bit_slice: Option<(usize, usize)>,
+    ) -> Result<String> {
         if let Some((bit_offset, bit_width)) = bit_slice {
             return self.compile_serialize_bit_type(typ, endian, bit_offset, bit_width, value);
         }
@@ -350,6 +389,11 @@ impl<'c> Compiler<'c> {
                 format!("out.extend_from_slice(&{}.to_{}_bytes());", value, self.endian_str(endian)?)
             },
             TypeTypeCase::Buffer(buf) => {
+                // Optimized case for [u8]
+                if let TypeTypeCase::Primitive(PrimitiveType::U8) = buf.element_type().type_case() {
+                    return Ok(format!("out.extend_from_slice(&{});", value));
+                }
+
                 let mut lines = LineBuilder::new();
                 lines.add(format!("for item in &{} {{", value));
                 lines.add(format!("\t{}", self.compile_serialize_type(buf.element_type(), "item", endian, None)?));
@@ -498,6 +542,7 @@ impl<'c> Compiler<'c> {
                         return Err(err_msg("Bits do not align to whole byte offsets"));
                     }
 
+                    // TODO: This is no longer unique if there are 
                     bit_field_spans.insert(first_field, nbits);
                 }
             }
@@ -512,6 +557,37 @@ impl<'c> Compiler<'c> {
             }
         }
 
+        let mut end_terminated_marker = None;
+        {
+            let mut end_bits = 0;
+            let mut well_defined = true;
+
+            for field in desc.field().iter().rev() {
+                if let TypeTypeCase::Buffer(b) = field.typ().type_case() {
+                    if let BufferTypeSizeCase::EndTerminated(is_end_terminated) = b.size_case() {
+                        if !is_end_terminated {
+                            return Err(err_msg("end_terminated field present but not true"));
+                        }
+
+                        if !well_defined {
+                            return Err(err_msg(
+                                "end_terminated buffer doesn't have a well defined number of bytes following it."));
+                        }
+
+                        end_terminated_marker = Some((field.name(), (end_bits / 8) as usize));
+                        well_defined = false;
+                    }
+                }
+                
+                if field.bit_width() > 0 {
+                    end_bits += field.bit_width() as usize;
+                } else if let Some(byte_size) = self.sizeof_type(field.typ())? {
+                    end_bits += byte_size * 8;
+                } else {
+                    well_defined = false;
+                }
+            }
+        }
 
         // TODO: Consider using packed memory?
         lines.add("#[derive(Debug, PartialEq)]");
@@ -531,6 +607,9 @@ impl<'c> Compiler<'c> {
             }
 
             let typename = self.compile_type(field.typ())?;
+            if !field.comment().is_empty() {
+                lines.add(format!("\t/// {}", field.comment()));
+            }
             lines.add(format!("\tpub {}: {},", field.name(), typename));
         }
 
@@ -573,8 +652,19 @@ impl<'c> Compiler<'c> {
                     bit_offset += field.bit_width() as usize;
                 }
 
+
+                let after_bytes = end_terminated_marker.and_then(|(name, bytes)| {
+                    if name == field.name() {
+                        Some(bytes)
+                    } else {
+                        None
+                    }
+                });
+
+                // May need to add the end_terminated_
+
                 lines.add(format!("\t\tlet {}_value = {};",
-                        field.name(), self.compile_parse_type(field.typ(), desc.endian(), bit_slice)?));
+                        field.name(), self.compile_parse_type(field.typ(), desc.endian(), bit_slice, after_bytes)?));
             }
             lines.nl();
 
@@ -618,9 +708,13 @@ impl<'c> Compiler<'c> {
                 }
 
                 let line = if derivated_fields.contains(field.name()) {
-                    self.compile_serialize_type(field.typ(), &format!("self.{}()", field.name()), desc.endian(), bit_slice)?
+                    self.compile_serialize_type(
+                        field.typ(), &format!("self.{}()", field.name()), desc.endian(),
+                        bit_slice)?
                 } else {
-                    self.compile_serialize_type(field.typ(), &format!("self.{}", field.name()), desc.endian(), bit_slice)?
+                    self.compile_serialize_type(
+                        field.typ(), &format!("self.{}", field.name()), desc.endian(),
+                        bit_slice)?
                 };
 
                 lines.add(format!("\t\t{}", line));
@@ -648,6 +742,9 @@ impl<'c> Compiler<'c> {
         lines.add("#[derive(Debug)]");
         lines.add(format!("pub enum {} {{", desc.name()));
         for value in desc.values() {
+            if !value.comment().is_empty() {
+                lines.add(format!("\t/// {}", value.comment()));
+            }
             lines.add(format!("\t{},", value.name()));
         }
         lines.add(format!("\tUnknown({})", raw_type));
@@ -657,7 +754,7 @@ impl<'c> Compiler<'c> {
         lines.add(format!("impl {} {{", desc.name()));
         lines.indented(|lines| -> Result<()> {
             lines.add("pub fn parse(mut input: &[u8]) -> Result<(Self, &[u8])> {");
-            lines.add(format!("\tlet value = {};", self.compile_parse_type(desc.typ(), desc.endian(), None)?));
+            lines.add(format!("\tlet value = {};", self.compile_parse_type(desc.typ(), desc.endian(), None, None)?));
             lines.add("\tlet inst = match value {");
             for value in desc.values() {
                 lines.add(format!("\t\t{} => {}::{},", value.value(), desc.name(), value.name()));

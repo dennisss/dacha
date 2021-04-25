@@ -1,0 +1,68 @@
+
+
+structs {
+    name: "BitFlags"
+    endian: BIG_ENDIAN
+    field {
+        name: "a"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    field {
+        name: "b"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    field {
+        name: "c"
+        type { primitive: U8 }
+        bit_width: 4
+    }
+    field {
+        name: "d"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    field {
+        name: "e"
+        type { primitive: U8 }
+        bit_width: 1
+    }
+}
+
+structs {
+    name: "BitHigh32"
+    endian: BIG_ENDIAN
+    field {
+        name: "flag"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    field {
+        name: "value"
+        type { primitive: U32 }
+        bit_width: 31
+    }
+}
+
+structs {
+    name: "EndTerminated"
+    endian: BIG_ENDIAN
+    field {
+        name: "head"
+        type { primitive: FLOAT }
+    }
+    field {
+        name: "body"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                end_terminated: true
+            }
+        }
+    }
+    field {
+        name: "trailer"
+        type { named: "BitHigh32" }
+    }
+}

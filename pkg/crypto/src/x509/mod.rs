@@ -7,7 +7,7 @@ use crate::tls::extensions::ExtensionType::psk_key_exchange_modes;
 use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{der_eq, Any, DERReadable, DERReader, DERWriteable};
 use common::bytes::Bytes;
-use chrono::{DateTime, Utc};
+use common::chrono::{DateTime, Utc};
 use common::errors::*;
 use common::LeftPad;
 use math::big::{BigInt, BigUint, Modulo};

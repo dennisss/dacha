@@ -33,7 +33,7 @@ pub fn build() -> Result<()> {
             .unwrap_or(std::ffi::OsStr::new(""))
             .to_str()
             .unwrap()
-            != "bdl"
+            != "binproto"
         {
             return;
         }

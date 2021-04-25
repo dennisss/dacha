@@ -89,11 +89,11 @@ parser!(pub ident<&str, String> => {
 // NOTE: Only public to be used in the textproto format.
 // intLit = decimalLit | octalLit | hexLit
 parser!(pub int_lit<&str, usize> => alt!(
-    decimalLit, octalLit, hexLit
+    decimal_lit, octal_lit, hex_lit
 ));
 
 // decimalLit = ( "1" … "9" ) { decimalDigit }
-parser!(decimalLit<&str, usize> => seq!(c => {
+parser!(decimal_lit<&str, usize> => seq!(c => {
     c.next(peek(like(|c| c != '0')))?;
     let digits = c.next(take_while1(|v| decimal_digit(v)))?;
 
@@ -101,14 +101,14 @@ parser!(decimalLit<&str, usize> => seq!(c => {
 }));
 
 // octalLit   = "0" { octalDigit }
-parser!(octalLit<&str, usize> => seq!(c => {
+parser!(octal_lit<&str, usize> => seq!(c => {
     c.next(tag("0"))?;
     let digits = c.next(take_while(|v| octalDigit(v as char)))?;
     Ok(usize::from_str_radix(digits, 8).unwrap_or(0))
 }));
 
 // hexLit     = "0" ( "x" | "X" ) hexDigit { hexDigit }
-parser!(hexLit<&str, usize> => seq!(c => {
+parser!(hex_lit<&str, usize> => seq!(c => {
     c.next(tag("0"))?;
     c.next(one_of("xX"))?;
     let digits = c.next(take_while1(|v| hexDigit(v)))?;
@@ -153,7 +153,7 @@ parser!(exponent<&str, String> => seq!(c => {
 // strLit = ( "'" { charValue } "'" ) | ( '"' { charValue } '"' )
 parser!(pub strLit<&str, String> => seq!(c => {
     let q = c.next(quote)?;
-    let val = c.next(many(charValue(q)))?;
+    let val = c.next(many(char_value(q)))?;
     c.next(atom(q))?;
 
     let mut s = String::new();
@@ -165,9 +165,9 @@ parser!(pub strLit<&str, String> => seq!(c => {
 }));
 
 // charValue = hexEscape | octEscape | charEscape | /[^\0\n\\]/
-fn charValue(quote: char) -> impl Fn(&str) -> Result<(char, &str)> {
+fn char_value(quote: char) -> impl Fn(&str) -> Result<(char, &str)> {
     alt!(
-        hexEscape, oct_escape, char_escape,
+        hex_escape, oct_escape, char_escape,
     
         // NOTE: Can't be a quote because of strLit
         like(|c| c != quote && c != '\0' && c != '\n' && c != '\\')
@@ -175,7 +175,7 @@ fn charValue(quote: char) -> impl Fn(&str) -> Result<(char, &str)> {
 }
 
 // hexEscape = '\' ( "x" | "X" ) hexDigit hexDigit
-parser!(hexEscape<&str, char> => seq!(c => {
+parser!(hex_escape<&str, char> => seq!(c => {
     c.next(tag("\\"))?;
     c.next(one_of("xX"))?;
     let digits = c.next(take_exact::<&str>(2))?;

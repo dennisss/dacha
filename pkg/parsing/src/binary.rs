@@ -21,6 +21,8 @@ primitive_parser!(be_u32, u32, from_be_bytes);
 primitive_parser!(be_i32, i32, from_be_bytes);
 primitive_parser!(be_u64, u64, from_be_bytes);
 primitive_parser!(be_i64, i64, from_be_bytes);
+primitive_parser!(be_f32, f32, from_be_bytes);
+primitive_parser!(be_f64, f64, from_be_bytes);
 
 primitive_parser!(le_u16, u16, from_le_bytes);
 primitive_parser!(le_i16, i16, from_le_bytes);
@@ -28,6 +30,8 @@ primitive_parser!(le_u32, u32, from_le_bytes);
 primitive_parser!(le_i32, i32, from_le_bytes);
 primitive_parser!(le_u64, u64, from_le_bytes);
 primitive_parser!(le_i64, i64, from_le_bytes);
+primitive_parser!(le_f32, f32, from_le_bytes);
+primitive_parser!(le_f64, f64, from_le_bytes);
 
 pub fn be_u8(input: &[u8]) -> ParseResult<u8, &[u8]> {
     if input.len() < 1 {

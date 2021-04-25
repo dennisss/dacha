@@ -12,6 +12,7 @@ macro_rules! impl_const_default {
     };
 }
 
+impl_const_default!(bool, false);
 impl_const_default!(u8, 0);
 impl_const_default!(i8, 0);
 impl_const_default!(u16, 0);

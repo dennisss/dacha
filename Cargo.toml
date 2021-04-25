@@ -7,6 +7,7 @@ members = [
 	"pkg/asn",
 	"pkg/crypto",
 	"pkg/parsing",
+	"pkg/parsing_compiler",
 	"pkg/compression",
 	"pkg/math",
 	"pkg/protobuf_compiler",
@@ -20,15 +21,22 @@ members = [
 	"pkg/sstable",
 	"pkg/graphics",
 	"pkg/stadia_controller",
+	"pkg/stream_deck",
 	"pkg/raft",
 	# "pkg/haystack",
 	"pkg/emulator",
+	"pkg/bittorrent",
 	# "pkg/symbolic"
+	"pkg/siglent",
+	"third_party/openssl",
+	"pkg/xml",
+	"third_party/crates",
+	"pkg/parsing_test"
 ]
 
 [profile.dev]
-opt-level = 3
-lto = true
+#opt-level = 3
+#lto = true
 
 [profile.release]
 lto = true
