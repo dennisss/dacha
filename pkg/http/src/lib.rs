@@ -29,6 +29,7 @@ mod v2;
 mod headers;
 pub mod static_file_handler;
 mod query;
+mod hpack;
 
 pub use crate::server::Server;
 pub use crate::client::Client;

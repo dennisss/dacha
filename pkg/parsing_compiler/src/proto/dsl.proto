@@ -20,6 +20,7 @@ message Enum {
 message EnumValue {
     string name = 1;
     uint64 value = 2;
+    string comment = 3;
 }
 
 enum Endian {
@@ -61,7 +62,11 @@ message BufferType {
         // NOTE: The length field must currently be in the same struct as the buffer.
         string length_field_name = 3;
 
-        // Zero terminated?
+        // If true, this buffer is terminated at the end of the input buffer.
+        // If this field is followed by additional 
+        bool end_terminated = 4;
+
+        // Null terminated?
     }
 }
 
