@@ -142,7 +142,7 @@ pub mod errors {
 
 pub trait FutureResult<T> = std::future::Future<Output = errors::Result<T>>;
 
-pub fn ceil_div(a: usize, b: usize) -> usize {
+pub const fn ceil_div(a: usize, b: usize) -> usize {
     let mut out = a / b;
     if a % b != 0 {
         out += 1;

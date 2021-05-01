@@ -5,8 +5,7 @@
 - [HTTP 1.1](https://tools.ietf.org/html/rfc7230)
 - [URI](https://tools.ietf.org/html/rfc3986)
 - [URL](https://tools.ietf.org/html/rfc1738)
-
-
+- [HPACK](https://tools.ietf.org/html/rfc7541)
 
 Dealing with obs-fold:
 - We will replace any '\r' or '\n' characters in the the value sent be a client or received by a server with spaces.

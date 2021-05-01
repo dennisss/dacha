@@ -28,10 +28,14 @@ impl TransferCoding {
     }
 }
 
+// TODO: When encoding, we need to check TE 
+
 pub fn get_transfer_encoding_body(
     mut transfer_encoding: Vec<TransferCoding>,
     stream: StreamReader,
 ) -> Result<Box<dyn Body>> {
+
+    // TODO: 'chunked' is allowed to not be first for responses?
     let mut body: Box<dyn Body> = if transfer_encoding.last().unwrap().name() == "chunked" {
         transfer_encoding.pop();
         Box::new(IncomingChunkedBody::new(stream))

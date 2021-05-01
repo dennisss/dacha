@@ -1,14 +1,28 @@
+// Helpers for encoding/decoding the string literal and varint formats used in the
+// HPACK binary format.
+//
+// For varints, we use 'usize' as these values are used upstream exclusively as buffer indexes,
+// so there is no point in making them bigger.
+
 use common::errors::*;
+use common::bits::{BitWriter, BitWrite};
+use common::bits::BitIoError;
 use parsing::{parse_next, take_exact};
 use parsing::binary::be_u8;
 
+use crate::hpack::static_tables::*;
+
+// NOTE: For a 64 bit integer, we can bound the number of bytes needed as 'ceil(64 / 7) = 10 bytes'
+const MAX_VARINT_EXTRA_BYTES: usize = common::ceil_div(8*std::mem::size_of::<usize>(), 7);
 
 /// RFC 7541: Section 5.1
-pub fn serialize_varint(mut value: u64, prefix_bits: usize, out: &mut Vec<u8>) {
+pub fn serialize_varint(mut value: usize, prefix_bits: usize, out: &mut Vec<u8>) {
     assert!(prefix_bits >= 1 && prefix_bits <= 8);
+    // On 8-bit addressed systems, the '1 << prefix_bits' will overflow.  
+    assert!(std::mem::size_of::<usize>() > 1);
 
     // Thisi s the prefix mask. Contains exactly 'prefix_bits' 1-bits 
-    let limit: u64 = (1 << prefix_bits) - 1;
+    let limit: usize = (1 << prefix_bits) - 1;
  
     if value < limit {
         out.push(value as u8);
@@ -29,23 +43,25 @@ pub fn serialize_varint(mut value: u64, prefix_bits: usize, out: &mut Vec<u8>) {
 }
 
 /// RFC 7541: Section 5.1
-pub fn parse_varint(mut input: &[u8], prefix_bits: usize) -> Result<(u64, &[u8])> {
+pub fn parse_varint(mut input: &[u8], prefix_bits: usize) -> Result<(usize, &[u8])> {
     assert!(prefix_bits >= 1 && prefix_bits <= 8);
-    let limit: u64 = (1 << prefix_bits) - 1;
+    // On 8-bit addressed systems, the '1 << prefix_bits' will overflow.  
+    assert!(std::mem::size_of::<usize>() > 1);
 
-    let mut value = (parse_next!(input, be_u8) as u64) & limit;
+    let limit: usize = (1 << prefix_bits) - 1;
+
+    let mut value = (parse_next!(input, be_u8) as usize) & limit;
     if value != limit {
         return Ok((value, input));
     }
 
-    // NOTE: For a 64 bit integer, we can bound the number of bytes needed as 'ceil(64 / 7) = 10 bytes'
     let mut done = false;
-    for i in 0..10 {
+    for i in 0..MAX_VARINT_EXTRA_BYTES {
         let next_byte = parse_next!(input, be_u8);
         
         // TODO: Technically the shift could also overflow.
         value =
-            ((next_byte as u64) & limit).checked_shl(7 * i)
+            ((next_byte as usize) & limit).checked_shl(7 * (i as u32))
             .and_then(|v| value.checked_add(v))
             .ok_or_else(|| err_msg("Too large to fit in 64-bit integer"))?;            
 
@@ -62,10 +78,25 @@ pub fn parse_varint(mut input: &[u8], prefix_bits: usize) -> Result<(u64, &[u8])
     Ok((value, input))
 }
 
-pub fn serialize_string_literal(value: &[u8], maybe_compress: bool, out: &mut Vec<u8>) {
-    // TODO: We want to support not compressing something.
+pub fn serialize_string_literal(data: &[u8], maybe_compress: bool, out: &mut Vec<u8>) {
+    let first_i = out.len(); 
 
-    // let first_byte = 
+    // NOTE: We use a heuristic here to guess that small data up to 5 bytes in length is
+    // probably not worth compressing.
+    if maybe_compress && data.len() > 5 {
+        // TODO: Refactor huffman_encode to abandon compression if it exceeds the length
+        // of the input early.
+        let compressed = huffman_encode(data);
+        if compressed.len() < data.len() {
+            serialize_varint(compressed.len(), 7, out);
+            out[first_i] |= 1 << 7;
+            out.extend_from_slice(&compressed);
+            return;
+        }
+    }
+
+    serialize_varint(data.len(), 7, out);
+    out.extend_from_slice(&data);    
 }
 
 // TODO: Limit the expanded size?
@@ -86,15 +117,19 @@ pub fn parse_string_literal(mut input: &[u8]) -> Result<(Vec<u8>, &[u8])> {
             let mut out = vec![];
 
             let mut cursor = std::io::Cursor::new(raw_data);
-            let mut reader = common::bits::BitReader::new(&mut cursor);
+            let mut reader = common::bits::BitReader::new_with_order(
+                &mut cursor, common::bits::BitOrder::MSBFirst);
 
             let tree= &*crate::hpack::static_tables::HUFFMAN_TREE;
 
             loop {
                 match tree.read_code(&mut reader) {
-                    Ok(value) => out.push(value as u8),
+                    Ok(value) => {
+                        reader.consume();
+                        out.push(value as u8)
+                    },
                     Err(e) => {
-                        if parsing::is_incomplete(&e) {
+                        if let Some(BitIoError::NotEnoughBits) = e.downcast_ref() {
                             break;
                         }
 
@@ -172,7 +207,7 @@ mod tests {
             assert_eq!(rest2, &[]);
         }
 
-        let test_pair = |value: u64, nbits: usize, input: &[u8]| -> Result<()> {
+        let test_pair = |value: usize, nbits: usize, input: &[u8]| -> Result<()> {
             let mut out = vec![];
             serialize_varint(value, nbits, &mut out);
             assert_eq!(&out, input);

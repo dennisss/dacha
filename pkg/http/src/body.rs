@@ -6,6 +6,7 @@ use common::io::Readable;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::FutureResult;
+use common::futures::channel::oneshot;
 use compression::transform::Transform;
 
 use crate::reader::*;
@@ -19,7 +20,8 @@ pub trait Body: Send + Sync {
     /// Returns the total length in bytes of the body payload. Will return None
     /// if the length is unknown without reading the entire body.
     ///
-    /// NOTE: This is only guaranteed to be valid before read() is called.
+    /// NOTE: This is only guaranteed to be valid before read() is called
+    /// (otherwise some implementations may return the remaining length).
     fn len(&self) -> Option<usize>;
 
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
@@ -104,23 +106,7 @@ pub fn BodyFromData<T: 'static + AsRef<[u8]> + Send + Sync>(data: T) -> Box<dyn 
 // TODO: Any response to a HEAD request is always an empty body (headers should
 // not be interpreted)
 
-// pub struct OutgoingBody {
-// 	pub stream: TcpStream
-// }
-
-// impl Write for OutgoingBody {
-// 	fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-// 		let mut guard = self.stream.lock().unwrap();
-// 		let s: &mut TcpStream = guard.borrow_mut();
-// 		s.write(buf)
-// 	}
-// 	fn flush(&mut self) -> std::io::Result<()> {
-// 		let mut guard = self.stream.lock().unwrap();
-// 		let s: &mut TcpStream = guard.borrow_mut();
-// 		s.flush()
-// 	}
-// }
-
+// TODO: Move to the chunked file.
 pub enum Chunk {
     Data(Bytes),
     End,
@@ -295,6 +281,40 @@ impl Body for TransformBody {
         }
     }
 }
+
+/// A body which 'borrows' another inner body. All operations on this body call the inner one.
+/// Later on, once the body is about to be dropped, it is sent back to the original owner. 
+pub struct BorrowedBody {
+    inner: Option<(Box<dyn Body>, oneshot::Sender<Box<dyn Body>>)>
+}
+
+impl BorrowedBody {
+    pub fn wrap(body: Box<dyn Body>) -> (Box<dyn Body>, oneshot::Receiver<Box<dyn Body>>) {
+        let (sender, receiver) = oneshot::channel();
+        (Box::new(Self { inner: Some((body, sender)) }), receiver)
+    }
+}
+
+#[async_trait]
+impl Body for BorrowedBody {
+    fn len(&self) -> Option<usize> {
+        self.inner.as_ref().unwrap().0.len()
+    }
+
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        self.inner.as_mut().unwrap().0.read(buf).await
+    }
+}
+
+impl Drop for BorrowedBody {
+    fn drop(&mut self) {
+        let (body, sender) = self.inner.take().unwrap();
+        // TODO: Handle this error
+        sender.send(body);
+    }
+}
+
+
 
 // TODO: Make these all private
 // XXX: The important thing is that we never allow reading if we are out of sync

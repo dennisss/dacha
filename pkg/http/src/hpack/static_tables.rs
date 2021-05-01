@@ -5,21 +5,17 @@ use parsing::parse_next;
 use parsing::binary::be_u8;
 use compression::huffman::HuffmanTree;
 
-pub struct StaticTableEntry {
-    pub index: u8,
-    pub header_name: &'static [u8],
-    pub header_value: &'static [u8]
-}
+use crate::hpack::header_field::HeaderFieldRef;
 
 macro_rules! static_table {
     ($($i:expr, $name:expr, $value: expr),+) => {
         &[
-            $(StaticTableEntry { index: $i, header_name: $name.as_bytes(), header_value: $value.as_bytes() }),+
+            $(HeaderFieldRef { /* index: $i, */ name: $name.as_bytes(), value: $value.as_bytes() }),+
         ]
     };
 }
 
-pub const STATIC_TABLE: &'static [StaticTableEntry] = static_table!(
+pub const STATIC_TABLE: &'static [HeaderFieldRef<'static>] = static_table!(
     1, ":authority", "",
     2, ":method", "GET",
     3, ":method", "POST",
@@ -83,6 +79,8 @@ pub const STATIC_TABLE: &'static [StaticTableEntry] = static_table!(
     61, "www-authenticate", ""
 );
 
+/// Compact representation of a huffman code (aka just a bit vector) as a
+/// integer 'code' whose lower 'length' bits store the code.
 #[repr(packed)]
 struct HuffmanCodeEntry {
     code: u32,
@@ -373,3 +371,91 @@ lazy_static! {
         tree
     };
 }
+
+/// Optimized method fo huffman encode some input data using the static HPACK code table.
+/// Because all codes are 30bits or less, we can fully operate on them using 64-bit slices at a time.
+///
+/// TODO: Consolidate this with the generic huffman libraries.
+pub fn huffman_encode(input: &[u8]) -> Vec<u8> {
+    const U64_BYTES: usize = std::mem::size_of::<u64>();
+    const U64_BITS: usize = U64_BYTES * 8;
+
+    let mut out = vec![];
+    out.resize(U64_BYTES, 0);
+
+    let mut bit_offset = 0;
+
+    for byte in input.iter().cloned() {
+        let byte_offset = bit_offset / 8;
+        let bit_rel_offset = bit_offset % 8;
+
+        // Exponentially expand the size of the output buffer to ensure that at least a
+        // single u64 can fit without truncation at the current position.
+        if out.len() - byte_offset < U64_BYTES {
+            out.resize(std::cmp::max(2*out.len(), out.len() + U64_BYTES), 0);
+        }
+
+        // Read a u64 view from the current position.
+        let out_slice = array_mut_ref![out, byte_offset, U64_BYTES];
+        let mut out_int = u64::from_be_bytes(*out_slice);
+
+        // Insert the code
+        let code_entry = &HUFFMAN_CODES[byte as usize];
+        out_int |= (code_entry.code as u64) << (U64_BITS - bit_rel_offset - (code_entry.length as usize));
+        
+        // Store the u64 view back into the output buffer.
+        *out_slice = out_int.to_be_bytes();
+
+        bit_offset += code_entry.length as usize;
+    }
+
+    // Finalize the output buffer by truncating/filling it to the final size.
+    {
+        let byte_offset = bit_offset / 8;
+        let bit_rel_offset = bit_offset % 8;
+
+        if bit_rel_offset != 0 {
+            out.truncate(byte_offset + 1);
+            // Set all unused bits in the final byte to 1's.
+            out[byte_offset] |= (1 << (8 - bit_rel_offset)) - 1;
+        } else {
+            out.truncate(byte_offset);
+            // No need for masking as the final byte it full.
+        }
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hpack_static_find_perfect_hash() {
+        let mut seen_hashes = std::collections::HashMap::new();
+
+        for entry in STATIC_TABLE {
+
+            // TODO: We an also fast threshold on the length of the name.
+            let mut hash = entry.name.len();
+            for (i, b) in entry.name.iter().enumerate() {
+                hash += (*b as usize) << i;
+            }
+
+            if let Some(old_name) = seen_hashes.insert(hash, entry.name) {
+                if old_name != entry.name {
+                    panic!("Duplicate entries with same hash: {:?} {:?}", old_name, entry.name);
+                }
+            }
+        }
+
+        // Now we need to brute force some mapping from the hash to the right starting index.
+
+        println!("{:?}", seen_hashes);
+
+        println!("{}", seen_hashes.len());
+
+    }
+}
+

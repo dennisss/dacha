@@ -4,6 +4,9 @@
 extern crate common;
 extern crate parsing;
 
+#[macro_use]
+extern crate arrayref;
+
 pub mod body;
 pub mod chunked;
 mod chunked_syntax;
