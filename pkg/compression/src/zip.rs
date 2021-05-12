@@ -6,8 +6,12 @@ use crypto::hasher::Hasher;
 
 use crate::transform::*;
 
-include!(concat!(env!("OUT_DIR"), "/src/zip.rs"));
+mod proto {
+    #![allow(dead_code, non_snake_case)]
+    include!(concat!(env!("OUT_DIR"), "/src/zip.rs"));
+}
 
+use proto::*;
 
 const LOCAL_FILE_HEADER_SIG: u32 = 0x04034b50;
 const ARCHIVE_EXTRA_DATA_SIG: u32 = 0x08064b50;
@@ -92,9 +96,3 @@ pub fn read_zip_file(mut input: &[u8]) -> Result<()> {
 
     Ok(())
 }
-
-
-
-/*
-    All little endian numbers.
-*/

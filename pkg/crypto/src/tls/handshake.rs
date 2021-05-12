@@ -95,16 +95,16 @@ impl Handshake {
         use Handshake::*;
         use HandshakeType::*;
         let msg_type = match self {
-            ClientHello(v) => client_hello,
-            ServerHello(v) => server_hello,
+            ClientHello(_) => client_hello,
+            ServerHello(_) => server_hello,
             EndOfEarlyData => end_of_early_data,
-            EncryptedExtensions(v) => encrypted_extensions,
-            CertificateRequest(v) => certificate_request,
-            Certificate(v) => certificate,
-            CertificateVerify(v) => certificate_verify,
-            Finished(v) => finished,
-            NewSessionTicket(v) => new_session_ticket,
-            KeyUpdate(v) => key_update,
+            EncryptedExtensions(_) => encrypted_extensions,
+            CertificateRequest(_) => certificate_request,
+            Certificate(_) => certificate,
+            CertificateVerify(_) => certificate_verify,
+            Finished(_) => finished,
+            NewSessionTicket(_) => new_session_ticket,
+            KeyUpdate(_) => key_update,
         };
 
         msg_type.serialize(out);

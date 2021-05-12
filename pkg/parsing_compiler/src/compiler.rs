@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use common::line_builder::*;
 use common::errors::*;
+
 use crate::proto::dsl::*;
+use crate::primitive::PrimitiveTypeImpl;
+use crate::size::SizeExpression;
 
 #[derive(Copy, Clone)]
 enum NamedEntity<'a> {
@@ -115,6 +118,7 @@ impl<'c> Compiler<'c> {
         let mut lines = LineBuilder::new();
         lines.add("use ::common::errors::*;");
         lines.add("use ::parsing::parse_next;");
+        lines.nl();
 
         for s in lib.structs() {
             lines.add(compiler.compile_struct(s)?);
@@ -127,28 +131,9 @@ impl<'c> Compiler<'c> {
         Ok(lines.to_string())
     }
 
-    fn compile_primitive_type(&self, typ: PrimitiveType) -> Result<&'static str> {
-        Ok(match typ {
-            PrimitiveType::UNKNOWN => {
-                return Err(err_msg("No primitive type specified"));
-            }
-            PrimitiveType::U8 => "u8",
-            PrimitiveType::I8 => "i8",
-            PrimitiveType::U16 => "u16",
-            PrimitiveType::I16 => "i16",
-            PrimitiveType::U32 => "u32",
-            PrimitiveType::I32 => "i32",
-            PrimitiveType::U64 => "u64",
-            PrimitiveType::I64 => "i64",
-            PrimitiveType::FLOAT => "f32",
-            PrimitiveType::DOUBLE => "f64",
-            PrimitiveType::BOOL => "bool"
-        })
-    }
-
     fn compile_type(&self, typ: &Type) -> Result<String> {
         Ok(match typ.type_case() {
-            TypeTypeCase::Primitive(p) => self.compile_primitive_type(*p)?.to_string(),
+            TypeTypeCase::Primitive(p) => PrimitiveTypeImpl::typename(*p)?.to_string(),
             TypeTypeCase::Buffer(buf) => {
                 let element_type = self.compile_type(&buf.element_type())?;
 
@@ -230,7 +215,7 @@ impl<'c> Compiler<'c> {
         if ptype == PrimitiveType::BOOL {
             lines.add("val != 0");
         } else {
-            lines.add(format!("(val as {})", self.compile_primitive_type(ptype)?));
+            lines.add(format!("(val as {})", PrimitiveTypeImpl::typename(ptype)?));
         }
 
         lines.add("}");
@@ -290,7 +275,7 @@ impl<'c> Compiler<'c> {
     /// TODO: For bit fields, this needs to be given a bit shift and mask to perform (only will work for primitives)
     fn compile_parse_type(
         &self, typ: &Type, endian: Endian, bit_slice: Option<(usize, usize)>,
-        after_bytes: Option<usize>
+        after_bytes: Option<String>, scope: &HashMap<&str, &Field>
     ) -> Result<String> {
         Ok(match typ.type_case() {
             TypeTypeCase::Primitive(p) => {
@@ -299,7 +284,7 @@ impl<'c> Compiler<'c> {
                 }
 
                 format!("parse_next!(input, ::parsing::binary::{}_{})",
-                        self.endian_str(endian)?, self.compile_primitive_type(*p)?)
+                        self.endian_str(endian)?, PrimitiveTypeImpl::typename(*p)?)
             },
             TypeTypeCase::Buffer(buf) => {
 
@@ -310,7 +295,7 @@ impl<'c> Compiler<'c> {
                 // Step 1: allocate memory given that we should know the length and then assign or push to that.
                 // In some cases, we may want to give the inner parser a mutable reference to improve efficiency? 
 
-                let element_parser = self.compile_parse_type(&buf.element_type(), endian, None, None)?;
+                let element_parser = self.compile_parse_type(&buf.element_type(), endian, None, None, scope)?;
 
                 let mut lines = LineBuilder::new();
                 lines.add("{");
@@ -320,7 +305,7 @@ impl<'c> Compiler<'c> {
                     BufferTypeSizeCase::FixedLength(len) => {
                         lines.add(format!("\tlet mut buf = [{}::default(); {}];", self.compile_type(buf.element_type())?, len));
                         
-                        if let TypeTypeCase::Primitive(PrimitiveType::U8) = typ.type_case() {
+                        if let TypeTypeCase::Primitive(PrimitiveType::U8) = buf.element_type().type_case() {
                             // TODO: Ensure that we always take exact a slice (and not Bytes as that is an expensive copy)!
                             lines.add("\tbuf.copy_from_slice(parse_next!(input, ::parsing::take_exact(buf.len())));");
                         } else {
@@ -332,10 +317,24 @@ impl<'c> Compiler<'c> {
                     BufferTypeSizeCase::LengthFieldName(name) => {
                         lines.add("\tlet mut buf = vec![];");
                         
-                        if let TypeTypeCase::Primitive(PrimitiveType::U8) = typ.type_case() {
-                            lines.add(format!("\tbuf.extend_from_slice(parse_next!(input, ::parsing::take_exact({})));", name));
+                        // TODO: Have a better way of handling this.
+                        // Maybe require that both fields have matching presence expressions?
+                        let len_expr = {
+                            let field = scope.get(name.as_str()).unwrap();
+                            if !field.presence().is_empty() {
+                                format!("{}_value.unwrap_or(0) as usize", name)
+                            } else {
+                                format!("{}_value as usize", name)
+                            }
+                        };
+
+
+                        if let TypeTypeCase::Primitive(PrimitiveType::U8) = buf.element_type().type_case() {
+                            lines.add(format!(
+                                "\tbuf.extend_from_slice(parse_next!(input, ::parsing::take_exact({})));",
+                                len_expr));
                         } else {
-                            lines.add(format!("\tbuf.reserve({}_value as usize);", name));
+                            lines.add(format!("\tbuf.reserve({});", len_expr));
                             lines.add(format!("\tfor _ in 0..{}_value {{", name));
                             lines.add(format!("\t\tbuf.push({});", element_parser));
                             lines.add("\t}");
@@ -346,9 +345,12 @@ impl<'c> Compiler<'c> {
                             err_msg("end_terminated buffer not validated"))?;
 
                         lines.add("\tlet mut buf = vec![];");
-                        lines.add(format!("\tlet length = input.len() - {};", after_count));
 
-                        if let TypeTypeCase::Primitive(PrimitiveType::U8) = typ.type_case() {
+                        lines.add(format!(r#"\t
+                            let length = input.len().checked_sub({})
+                                .ok_or_else(|| ::parsing::incomplete_error())?;"#, after_count));
+
+                        if let TypeTypeCase::Primitive(PrimitiveType::U8) = buf.element_type().type_case() {
                             lines.add("\tbuf.extend_from_slice(parse_next!(input, ::parsing::take_exact(length)));");
                         } else {
                             lines.add("\tbuf.reserve(length);");
@@ -368,6 +370,7 @@ impl<'c> Compiler<'c> {
                 lines.to_string()
             }
             TypeTypeCase::Named(name) => {
+                // TODO: I should actually validate that this is a defined type.
                 format!("parse_next!(input, {}::parse)", name)
             }
             TypeTypeCase::Unknown => {
@@ -401,13 +404,25 @@ impl<'c> Compiler<'c> {
                 lines.to_string()
             }
             TypeTypeCase::Named(name) => {
-                format!("{}.serialize(out);", value)
+                format!("{}.serialize(out)?;", value)
             }
             TypeTypeCase::Unknown => {
                 return Err(err_msg("Unspecified type"));
             }
         })
     }
+
+    fn nice_field_name(name: &str) -> &str {
+        if name == "type" {
+            "typ"
+        } else {
+            name
+        }
+    }
+
+    // TODO: Can't have multiple end_terminated fields (where the first is in a nested struct).
+
+    // Need to support multiplication by a field length.
 
     // Hello world this is a test of the new keycaps and how well they work compared to the old keycaps. THe anser
     // Is that it's pretty good and there is generally no issues with it so that's great.
@@ -416,36 +431,37 @@ impl<'c> Compiler<'c> {
     ///
     /// NOTE: This won't return the correct value if this is the type of a field using 
     /// This is used primarily 
-    fn sizeof_type(&self, typ: &Type) -> Result<Option<usize>> {
+    ///
+    /// TODO: Will need to know the name
+    fn sizeof_type(&self, field_name: &str, typ: &Type) -> Result<Option<SizeExpression>> {
         Ok(match typ.type_case() {
             TypeTypeCase::Primitive(p) => {
-                Some(match p {
-                    PrimitiveType::UNKNOWN => {
-                        return Err(err_msg("No primitive type specified"));
-                    }
-                    PrimitiveType::U8 => 1,
-                    PrimitiveType::I8 => 1,
-                    PrimitiveType::U16 => 2,
-                    PrimitiveType::I16 => 2,
-                    PrimitiveType::U32 => 4,
-                    PrimitiveType::I32 => 4,
-                    PrimitiveType::U64 => 8,
-                    PrimitiveType::I64 => 8,
-                    PrimitiveType::FLOAT => 4,
-                    PrimitiveType::DOUBLE => 8,
-                    PrimitiveType::BOOL => 1, // TODO: Check this?
-                })
+                Some(SizeExpression::Constant(PrimitiveTypeImpl::sizeof(*p)?))
             }
+            // TODO: This will have a well defined length if we can reference a field (unfortunately this is harder for nested fields).
             TypeTypeCase::Buffer(buf) => {
-                let maybe_element_size = self.sizeof_type(buf.element_type())?;
-                if let Some(element_size) = maybe_element_size {
-                    // TODO: If we have already parsed the 
-                    if let BufferTypeSizeCase::FixedLength(len) = buf.size_case() {
-                        return Ok(Some((*len as usize) * element_size));
-                    }
-                }
+                // TODO: What if the element size is dynamic (e.g. each buffer has another buffer inside of it with a length field)
+                let element_size = match self.sizeof_type("", buf.element_type())? {
+                    Some(v) => v,
+                    None => { return Ok(None); }
+                }.scoped(field_name);
 
-                None
+                let len = match buf.size_case() {
+                    BufferTypeSizeCase::FixedLength(len) => {
+                        SizeExpression::Constant(*len as usize)
+                    }
+                    BufferTypeSizeCase::LengthFieldName(name) => {
+                        SizeExpression::FieldLength(vec![name.to_string()])
+                    }
+                    BufferTypeSizeCase::EndTerminated(_) => {
+                        return Ok(None);
+                    }
+                    BufferTypeSizeCase::Unknown => {
+                        return Err(err_msg("Unspecified buffer size"));
+                    }
+                };
+
+                Some(element_size.mul(len))
             }
             TypeTypeCase::Named(name) => {
                 let entity = self.index.get(name.as_str())
@@ -454,12 +470,12 @@ impl<'c> Compiler<'c> {
                 
                 match entity {
                     NamedEntity::Enum(e) => {
-                        return self.sizeof_type(e.typ());
+                        self.sizeof_type(field_name, e.typ())?
                     }
                     NamedEntity::Struct(s) => {
                         // TODO: Ideally we should cache these.
 
-                        let mut total_bytes = 0;
+                        let mut total_size = SizeExpression::Constant(0);
                         let mut bits = 0;
 
                         for field in s.field() {
@@ -467,19 +483,20 @@ impl<'c> Compiler<'c> {
                                 bits += field.bit_width() as usize;
                             } else {
                                 let field_size = {
-                                    if let Some(v) = self.sizeof_type(field.typ())? {
+                                    if let Some(v) = self.sizeof_type(field.name(), field.typ())? {
                                         v
                                     } else {
                                         return Ok(None);
                                     }
-                                };
+                                }.scoped(field_name);
 
-                                total_bytes += field_size;
+                                total_size = total_size.add(field_size);
                             }
                         }
 
-                        total_bytes += bits / 8;
-                        Some(total_bytes)
+                        total_size = total_size.add(SizeExpression::Constant(bits / 8));
+
+                        Some(total_size)
                     }
                 }
             }
@@ -516,7 +533,9 @@ impl<'c> Compiler<'c> {
             derivated_fields.extend(&used_names);
         }
 
-        // For each first bit field in a sequence, this will store the number of bits 
+        // TODO: Validate no duplicate arguments and not conflicting with arguments.
+
+        // For each first bit field in a sequence, this will store the number of bits left until the last field in the sequence.
         let mut bit_field_spans: HashMap<&str, usize> = HashMap::new();
 
         // Validate that all bit fields align together to 8-bit boundaries
@@ -557,12 +576,23 @@ impl<'c> Compiler<'c> {
             }
         }
 
+        // Option<field_name, num_bytes>
         let mut end_terminated_marker = None;
         {
+            let mut end_size = SizeExpression::Constant(0);
             let mut end_bits = 0;
             let mut well_defined = true;
 
+            // Set of all fields available before the current one being parsed.
+            // aka this is all fields which can be referenced
+            let mut previous_fields = HashSet::new();
+            for field in desc.field().iter() {
+                previous_fields.insert(field.name());
+            }
+
             for field in desc.field().iter().rev() {
+                previous_fields.remove(&field.name());
+
                 if let TypeTypeCase::Buffer(b) = field.typ().type_case() {
                     if let BufferTypeSizeCase::EndTerminated(is_end_terminated) = b.size_case() {
                         if !is_end_terminated {
@@ -574,15 +604,23 @@ impl<'c> Compiler<'c> {
                                 "end_terminated buffer doesn't have a well defined number of bytes following it."));
                         }
 
-                        end_terminated_marker = Some((field.name(), (end_bits / 8) as usize));
+                        let combined_size = end_size.clone().add(SizeExpression::Constant(end_bits / 8));
+
+                        if !combined_size.referenced_field_names().is_subset(&previous_fields) {
+                            return Err(err_msg("Evaluating the size of an end_terminated field with look aheads is not supported"));
+                        }
+
+                        end_terminated_marker = Some((field.name(), combined_size));
                         well_defined = false;
                     }
                 }
+
+                // TODO: For the size, we need to verify that we size well defined based on only already parsed values (assuming parsing from start to end)
                 
                 if field.bit_width() > 0 {
                     end_bits += field.bit_width() as usize;
-                } else if let Some(byte_size) = self.sizeof_type(field.typ())? {
-                    end_bits += byte_size * 8;
+                } else if let Some(byte_size) = self.sizeof_type(field.name(), field.typ())? {
+                    end_size = end_size.add(byte_size);
                 } else {
                     well_defined = false;
                 }
@@ -606,17 +644,35 @@ impl<'c> Compiler<'c> {
                 continue;
             }
 
-            let typename = self.compile_type(field.typ())?;
+            let mut typename = self.compile_type(field.typ())?;
+            if !field.presence().is_empty() {
+                typename = format!("Option<{}>", typename);
+            }
+
             if !field.comment().is_empty() {
                 lines.add(format!("\t/// {}", field.comment()));
             }
-            lines.add(format!("\tpub {}: {},", field.name(), typename));
+            lines.add(format!("\tpub {}: {},", Self::nice_field_name(field.name()), typename));
         }
 
         lines.add("}");
         lines.nl();
 
         lines.add(format!("impl {} {{", desc.name()));
+
+
+        // Consider adding a size_of
+        let struct_size = {
+            let mut typ = Type::default();
+            typ.set_named(desc.name().to_string());
+            self.sizeof_type("", &typ)?
+        };
+
+        // TODO: Verify that there are no fields named 'size_of'
+        if let Some(fixed_size) = struct_size.clone().and_then(|s| s.to_constant()) {
+            lines.add(format!("\tpub const fn size_of() -> usize {{ {} }}", fixed_size));
+            lines.nl();
+        }
 
         // Add accessors for derived fuekds,
         //
@@ -627,14 +683,31 @@ impl<'c> Compiler<'c> {
                 if let BufferTypeSizeCase::LengthFieldName(name) = buf.size_case() {
                     // TODO: Challenge here is that we must ensure that the size fits within the limits of the type (no overflows when serializing).
                     let size_type = self.compile_type(field_index.get(name.as_str()).unwrap().typ())?;
-                    lines.add(format!("\tpub fn {}(&self) -> {} {{ self.{}.len() as {} }}", name, size_type, field.name(), size_type));
+                    lines.add(format!("\tpub fn {}(&self) -> {} {{ self.{}.len() as {} }}", name, size_type,
+                                Self::nice_field_name(field.name()), size_type));
                 }
             }
         }
 
 
+        let mut function_args = String::new();
+        let mut function_arg_names = String::new();
+        for arg in desc.argument() {
+            // TODO: Conditionally take by reference depending on whether or not the type is copyable.
+            function_args.push_str(&format!(", {}: &{}", arg.name(), self.compile_type(arg.typ())?));
+
+            function_arg_names.push_str(&format!(", {}", arg.name()));
+        }
+
+        lines.add(format!(r#"
+            pub fn parse_complete(input: &[u8]{}) -> Result<Self> {{
+                let (v, _) = ::parsing::complete(move |i| Self::parse(i{}))(input)?;
+                Ok(v)
+            }} 
+        "#, function_args, function_arg_names));
+
         // Also need to support parsing from Bytes to have fewer copies.
-        lines.add("\tpub fn parse(mut input: &[u8]) -> Result<(Self, &[u8])> {");
+        lines.add(format!("\tpub fn parse<'a>(mut input: &'a [u8]{}) -> Result<(Self, &'a [u8])> {{", function_args));
         {
             let mut bit_offset = 0;
 
@@ -653,18 +726,35 @@ impl<'c> Compiler<'c> {
                 }
 
 
-                let after_bytes = end_terminated_marker.and_then(|(name, bytes)| {
+                let after_bytes = end_terminated_marker.clone()
+                .and_then(|(name, bytes)| {
                     if name == field.name() {
-                        Some(bytes)
+                        Some(bytes.compile(&field_index))
                     } else {
                         None
                     }
                 });
 
-                // May need to add the end_terminated_
+                // Need to implement  'presence'
+                // - Evaluate the value of the field.
+                // - Then if true, parse as normal, otherwise, don't and eval to None.
+
+                let mut expr = self.compile_parse_type(field.typ(), desc.endian(), bit_slice, after_bytes, &field_index)?;
+                if !field.presence().is_empty() {
+                    // TODO: Parse the presence field to validate that it actually is a valid field reference rather
+                    // than just arbitrary code.
+                    expr = format!(r#"{{
+                        let present = {};
+                        if present {{
+                            Some({})
+                        }} else {{
+                            None
+                        }}
+                    }}"#, field.presence(), expr);
+                }
 
                 lines.add(format!("\t\tlet {}_value = {};",
-                        field.name(), self.compile_parse_type(field.typ(), desc.endian(), bit_slice, after_bytes)?));
+                        Self::nice_field_name(field.name()), expr));
             }
             lines.nl();
 
@@ -674,7 +764,7 @@ impl<'c> Compiler<'c> {
                     continue;
                 }
 
-                lines.add(format!("\t\t\t{}: {}_value,", field.name(), field.name()));
+                lines.add(format!("\t\t\t{}: {}_value,", Self::nice_field_name(field.name()), Self::nice_field_name(field.name())));
             }
             lines.add("\t\t}, input))");
 
@@ -682,7 +772,20 @@ impl<'c> Compiler<'c> {
         lines.add("\t}");
         lines.nl();
 
-        lines.add("\tpub fn serialize(&self, out: &mut Vec<u8>) -> Result<()> {");
+        if let Some(1) = struct_size.and_then(|s| s.to_constant()) {
+            // TODO: Optimize this further?
+            lines.add(format!(r#"
+                pub fn to_u8(&self{}) -> Result<u8> {{
+                    let mut data = vec![];
+                    data.reserve_exact(1);
+                    self.serialize(&mut data{})?;
+                    assert_eq!(data.len(), 1);
+                    Ok(data[0])
+                }}
+            "#, function_args, function_arg_names));
+        }
+
+        lines.add(format!("\tpub fn serialize(&self, out: &mut Vec<u8>{}) -> Result<()> {{", function_args));
         {
             // TODO: Need to support lots of exotic derived fields.
 
@@ -707,14 +810,40 @@ impl<'c> Compiler<'c> {
                     bit_offset += field.bit_width() as usize;
                 }
 
-                let line = if derivated_fields.contains(field.name()) {
+                let value_expr = {
+                    if derivated_fields.contains(field.name()) {
+                        format!("self.{}()", Self::nice_field_name(field.name()))
+                    } else {
+                        format!("self.{}", Self::nice_field_name(field.name()))
+                    }
+                };
+
+                let get_parser = |value_expr: &str| {
                     self.compile_serialize_type(
-                        field.typ(), &format!("self.{}()", field.name()), desc.endian(),
-                        bit_slice)?
-                } else {
-                    self.compile_serialize_type(
-                        field.typ(), &format!("self.{}", field.name()), desc.endian(),
-                        bit_slice)?
+                        field.typ(), &value_expr, desc.endian(),
+                        bit_slice)
+                };
+
+
+                let line = {
+                    // TODO: 'presence' fields should be considered to be derived so we can
+                    // skip adding it to the struct (but we can keep the runtime check which will
+                    // hopefully compile away). 
+                    if !field.presence().is_empty() && !derivated_fields.contains(field.name()) {
+                        format!(r#"{{
+                            let present = {};
+                            let value = &{};
+                            if value.is_some() != present {{
+                                return Err(err_msg("Mismatch between"));
+                            }}
+
+                            if let Some(v) = value {{
+                                {}
+                            }}
+                        }}"#, field.presence(), value_expr, get_parser("v")?)
+                    } else {
+                        get_parser(&value_expr)?
+                    }
                 };
 
                 lines.add(format!("\t\t{}", line));
@@ -739,7 +868,7 @@ impl<'c> Compiler<'c> {
 
         let raw_type = self.compile_type(desc.typ())?;
 
-        lines.add("#[derive(Debug)]");
+        lines.add("#[derive(Debug, Clone)]");
         lines.add(format!("pub enum {} {{", desc.name()));
         for value in desc.values() {
             if !value.comment().is_empty() {
@@ -754,7 +883,7 @@ impl<'c> Compiler<'c> {
         lines.add(format!("impl {} {{", desc.name()));
         lines.indented(|lines| -> Result<()> {
             lines.add("pub fn parse(mut input: &[u8]) -> Result<(Self, &[u8])> {");
-            lines.add(format!("\tlet value = {};", self.compile_parse_type(desc.typ(), desc.endian(), None, None)?));
+            lines.add(format!("\tlet value = {};", self.compile_parse_type(desc.typ(), desc.endian(), None, None, &HashMap::new())?));
             lines.add("\tlet inst = match value {");
             for value in desc.values() {
                 lines.add(format!("\t\t{} => {}::{},", value.value(), desc.name(), value.name()));
@@ -768,23 +897,46 @@ impl<'c> Compiler<'c> {
             lines.nl();
 
             lines.add("pub fn serialize(&self, out: &mut Vec<u8>) -> Result<()> {");
-            lines.add(format!("\tlet value: {} = match self {{", raw_type));
+            lines.add(format!("\tlet value = self.to_{}();", raw_type));
+            lines.add(self.compile_serialize_type(desc.typ(), "value", desc.endian(), None)?);
+            lines.add("\tOk(())");
+            lines.add("}");
+            lines.nl();
+
+            lines.add(format!("pub fn to_{}(&self) -> {} {{", raw_type, raw_type));
+            lines.add("\tmatch self {");
             for value in desc.values() {
                 lines.add(format!("\t\t{}::{} => {},", desc.name(), value.name(), value.value()));
             }
             lines.add(format!("\t\t{}::Unknown(v) => *v", desc.name()));
-            lines.add("\t};");
-            lines.nl();
-
-            lines.add(self.compile_serialize_type(desc.typ(), "value", desc.endian(), None)?);
-
-            lines.add("\tOk(())");
+            lines.add("\t}");
             lines.add("}");
 
             Ok(())
         })?;
         lines.add("}");
         lines.nl();
+
+        // NOTE: This custom PartialEq is used to ensure that an Unknown(x) value equals the known
+        // variation of it.
+        lines.add(format!("impl ::std::cmp::PartialEq for {} {{", desc.name()));
+        lines.indented(|lines| {
+            lines.add("fn eq(&self, other: &Self) -> bool {");
+            lines.add(format!("\tself.to_{}() == other.to_{}()", raw_type, raw_type));
+            lines.add("}");
+        });
+        lines.add("}");
+        lines.nl();
+
+        lines.add(format!("impl ::std::cmp::Eq for {} {{}}", desc.name()));
+        lines.nl();
+
+        lines.add(format!("impl ::std::hash::Hash for {} {{", desc.name()));
+        lines.add("\tfn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {");
+        lines.add(format!("\t\t::std::hash::Hash::hash(&self.to_{}(), state);", raw_type));
+        lines.add("\t}");
+        lines.add("}");
+
 
         Ok(lines.to_string())
     }

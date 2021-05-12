@@ -55,7 +55,7 @@ impl TextToken {
     parser!(symbol<&str, char> => one_of(SYMBOLS));
     parser!(string<&str, String> => strLit);
 
-    // TODO: Use the 'fullIdent' token type from the protobuf spec?
+    // TODO: Use the 'full_ident' token type from the protobuf spec?
     // TODO: Should not allow two sequential dots?
     parser!(path<&str, &str> => {
         take_while1(
@@ -73,6 +73,8 @@ impl TextToken {
     }));
 }
 
+// token(A, B, C) will create a function named 'A' which parses the next token in the input
+// as a TextToken::B(C) (ignoring whitespace/comment tokens).
 macro_rules! token_atom {
     ($name:ident, $e:ident, $t:ty) => {
         fn $name(input: &str) -> ParseResult<$t, &str> {
@@ -91,7 +93,7 @@ token_atom!(integer, Integer, isize);
 token_atom!(float, Float, f64);
 
 // TODO: Dedup with syntax.rs
-parser!(fullIdent<&str, String> => seq!(c => {
+parser!(full_ident<&str, String> => seq!(c => {
     let mut id = c.next(ident)?;
 
     while let Ok('.') = c.next(symbol) {
@@ -172,7 +174,7 @@ impl TextFieldName {
     parser!(parse<&str, Self> => alt!(
         seq!(c => {
             c.next(is(symbol, '['))?;
-            let name = c.next(fullIdent)?;
+            let name = c.next(full_ident)?;
             c.next(is(symbol, ']'))?;
             Ok(Self::Extension(name))
         }),

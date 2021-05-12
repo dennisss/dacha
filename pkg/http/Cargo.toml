@@ -10,3 +10,6 @@ parsing = { path = "../parsing" }
 compression = { path = "../compression" }
 async-std = "1.9.0"
 arrayref = "0.3.5"
+
+[build-dependencies]
+parsing_compiler = { path = "../parsing_compiler" }

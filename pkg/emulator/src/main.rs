@@ -1,5 +1,7 @@
+extern crate common;
 extern crate emulator;
-use emulator::errors::*;
+
+use common::errors::*;
 
 macro_rules! sss {
     ($name:ident) => {
@@ -7,7 +9,7 @@ macro_rules! sss {
     };
 }
 
-fn main() -> emulator::errors::Result<()> {
+fn main() -> Result<()> {
     //	println!("{}", sss!(hello));
 
     emulator::gameboy::run()

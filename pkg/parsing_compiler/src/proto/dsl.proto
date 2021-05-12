@@ -29,10 +29,17 @@ enum Endian {
     BIG_ENDIAN = 2;
 }
 
+message Argument {
+    string name = 1;
+    Type type = 2;
+}
+
 message Struct {
     string name = 1;
     Endian endian = 2;
     repeated Field field = 3;
+
+    repeated Argument argument = 4;
 }
 
 enum PrimitiveType {
@@ -91,18 +98,33 @@ message Value {
 
 message Field {
     string name = 1;
+
     Type type = 2;
+
     string comment = 3;
 
     // Width of this field in bits. Only applicable when the type is a primitive integer.
     // Non-zero values mean that this is set.
     //
-    // NOTE: All adjacent fields 
+    // NOTE: If this is not divisible by 8, then additional adjacent bit fields must be
+    // present which sum up with this field to an even number of bytes with width.
     uint64 bit_width = 4;
 
     // TODO: Implement this.
     // If set, then this field will always have this value in serialized form.
     // We will not generate accessors for the value, but we will ensure this value
     // is used when serializing the struct and we will validate when parsing, that this is present.
-    Value constant_value = 5;
+    // Value constant_value = 5;
+
+    // TODO: Implement this.
+    // If true, this field is a placeholder. It's only meant to advance forward the cursor in the
+    // serialized form, but it's value won't be settable or readable.
+    // bool skip = 6;
+
+    // Path to a boolean field which determines whether or not this field is present in the binary
+    // format. Will be represented as an Option<> type in Rust.
+    //
+    // NOTE: When a struct field with this field set is used as the length of a buffer, it will be
+    // interpreted as having a value of 0  
+    string presence = 7;
 }

@@ -4,6 +4,8 @@ extern crate protobuf;
 extern crate macros;
 
 mod proto;
+mod primitive;
+mod size;
 mod compiler;
 mod build;
 

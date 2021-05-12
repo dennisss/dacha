@@ -1,9 +1,10 @@
-use crate::gameboy::memory::*;
-use common::errors::*;
 use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
+
+use common::errors::*;
+
+use crate::gameboy::memory::*;
+
 
 pub struct HalfRegister<T: Borrow<u16>> {
     full: T,
@@ -352,7 +353,7 @@ impl Step {
 
 struct Instruction {
     mnemonic: &'static str,
-    handler: &'static Fn(&mut InstructionState) -> Result<Step>,
+    handler: &'static dyn Fn(&mut InstructionState) -> Result<Step>,
 }
 
 macro_rules! inc16 {
@@ -1174,7 +1175,6 @@ const RESERVED: Instruction = Instruction {
 // TODO: Ensure that the memory at which an instruction is located isn't edited
 // mid instruction.
 
-// TODO: Enforce that this buffer is 256 elements.
 const INSTRUCTION_SET: &'static [Instruction; 256] = &[
     // 0x
     Instruction {

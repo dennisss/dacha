@@ -89,7 +89,8 @@ parser!(pub ident<&str, String> => {
 // NOTE: Only public to be used in the textproto format.
 // intLit = decimalLit | octalLit | hexLit
 parser!(pub int_lit<&str, usize> => alt!(
-    decimal_lit, octal_lit, hex_lit
+    // NOTE: decimal_lit must be after hex_lit as overlaps with decimal_lit.
+    hex_lit, octal_lit, decimal_lit
 ));
 
 // decimalLit = ( "1" … "9" ) { decimalDigit }

@@ -1,0 +1,554 @@
+# NOTE: All values are in network byte order (big endian).
+
+structs {
+    name: "FrameHeader"
+    endian: BIG_ENDIAN
+    field {
+        name: "length"
+        type { primitive: U32 }
+        bit_width: 24
+    }
+    field {
+        name: "type"
+        type { named: "FrameType" }
+    }
+    field {
+        name: "flags"
+        type { primitive: U8 }
+    }
+    field {
+        name: "reserved"
+        type { primitive: U8 }
+        bit_width: 1
+    }
+    field {
+        name: "stream_id"
+        type { primitive: U32 }
+        bit_width: 31
+    }
+    # TODO: Payload here
+}
+
+enums {
+    name: "FrameType"
+    endian: BIG_ENDIAN
+    type { primitive: U8 }
+    values {
+        name: "DATA"
+        value: 0
+    }
+    values {
+        name: "HEADERS"
+        value: 1
+    }
+    values {
+        name: "PRIORITY"
+        value: 2
+    }
+    values {
+        name: "RST_STREAM"
+        value: 3
+    }
+    values {
+        name: "SETTINGS"
+        value: 4
+    }
+    values {
+        name: "PUSH_PROMISE"
+        value: 5
+    }
+    values {
+        name: "PING"
+        value: 6
+    }
+    values {
+        name: "GOAWAY"
+        value: 7
+    }
+    values {
+        name: "WINDOW_UPDATE"
+        value: 8
+    }
+    values {
+        name: "CONTINUATION"
+        value: 9
+    }
+}
+
+enums {
+    name: "ErrorCode"
+    endian: BIG_ENDIAN
+    type { primitive: U32 }
+    values {
+        name: "NO_ERROR"
+        value: 0x0
+        comment: "The associated condition is not a result of an error.  For example, a GOAWAY might include this code to indicate graceful shutdown of a connection."
+    }
+    values {
+        name: "PROTOCOL_ERROR"
+        value: 0x01
+        comment: "The endpoint detected an unspecific protocol error.  This error is for use when a more specific error code is not available."
+    }
+    values {
+        name: "INTERNAL_ERROR"
+        value: 0x2
+        comment: "The endpoint encountered an unexpected internal error."
+    }
+    values {
+        name: "FLOW_CONTROL_ERROR"
+        value: 0x3
+        comment: "The endpoint detected that its peer violated the flow-control protocol."
+    }
+    values {
+        name: "SETTINGS_TIMEOUT"
+        value: 0x4
+        comment: "The endpoint sent a SETTINGS frame but did not receive a response in a timely manner."
+    }
+    values {
+        name: "STREAM_CLOSED"
+        value: 0x5
+        comment: "The endpoint received a frame after a stream was half-closed."
+    }
+    values {
+        name: "FRAME_SIZE_ERROR"
+        value: 0x6
+        comment: "The endpoint received a frame with an invalid size."
+    }
+    values {
+        name: "REFUSED_STREAM"
+        value: 0x7
+        comment: "The endpoint refused the stream prior to performing any application processing"
+    }
+    values {
+        name: "CANCEL"
+        value: 0x8
+        comment: "Used by the endpoint to indicate that the stream is no longer needed."
+    }
+    values {
+        name: "COMPRESSION_ERROR"
+        value: 0x9
+        comment: "The endpoint is unable to maintain the header compression context for the connection."
+    }
+    values { 
+        name: "CONNECT_ERROR"
+        value: 0xA
+        comment: "The connection established in response to a CONNECT request was reset or abnormally closed."
+    }
+    values {
+        name: "ENHANCE_YOUR_CALM"
+        value: 0xB
+        comment: "The endpoint detected that its peer is exhibiting a behavior that might be generating excessive load."
+    }
+    values {
+        name: "INADEQUATE_SECURITY"
+        value: 0xC
+        comment: "The underlying transport has properties that do not meet minimum security requirements"
+    }
+    values {
+        name: "HTTP_1_1_REQUIRED"
+        value: 0xD
+        comment: "The endpoint requires that HTTP/1.1 be used instead of HTTP/2."
+    }
+}
+
+
+structs {
+    name: "DataFramePayload"
+    endian: BIG_ENDIAN
+    argument {
+        name: "flags"
+        type { named: "DataFrameFlags" }
+    }
+    field {
+        name: "padding_length"
+        type { primitive: U8 }
+        presence: "flags.padded"
+    }
+    field {
+        name: "data"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                end_terminated: true
+            }
+        }
+    }
+    field {
+        name: "padding"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                length_field_name: "padding_length"
+            }
+        }
+    }
+}
+
+# TODO: Make sure that bit flags are only stored as one byte in memory.
+# Bit 0: End stream
+# Bit 0: ACK
+# Bit 2: End Headers
+# Bit 3: padded
+# Bit 5: Priority
+structs {
+    name: "DataFrameFlags"
+    endian: BIG_ENDIAN
+    field {
+        name: "reserved1"
+        type { primitive: U8 }
+        # skip: true
+        bit_width: 4
+    }
+    # Bit 3
+    field {
+        name: "padded"
+        comment: "When set, bit 3 indicates that the Pad Length field and any padding that it describes are present."
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    field {
+        name: "reserved2"
+        type { primitive: U8 }
+        # skip: true
+        bit_width: 2
+    }
+    # Bit 0
+    field {
+        name: "end_stream"
+        comment: "When set, bit 0 indicates that this frame is the last that the endpoint will send for the identified stream."
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+}
+
+structs {
+    name: "HeadersFramePayload"
+    endian: BIG_ENDIAN
+    argument {
+        name: "flags"
+        type { named: "HeadersFrameFlags" }
+    }
+    field {
+        name: "padding_length"
+        type { primitive: U8 }
+        presence: "flags.padded"
+    }
+    field {
+        name: "priority"
+        type { named: "PriorityFramePayload" }
+        presence: "flags.priority"
+    }
+    field {
+        name: "header_block_fragment"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                end_terminated: true
+            }
+        }
+    }
+    field {
+        name: "padding"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                length_field_name: "padding_length"
+            }
+        }
+    }
+}
+
+structs {
+    name: "HeadersFrameFlags"
+    endian: BIG_ENDIAN
+    # Bit 6-7
+    field {
+        name: "reserved67"
+        type { primitive: BOOL }
+        bit_width: 2
+    }
+    # Bit 5
+    field {
+        name: "priority"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    # Bit 4
+    field {
+        name: "reserved4"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    # Bit 3
+    field {
+        name: "padded"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    # Bit 2
+    field {
+        name: "end_headers"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    # Bit 1
+    field {
+        name: "reserved1"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    # Bit 0
+    field {
+        name: "end_stream"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+}
+
+structs {
+    name: "PriorityFramePayload"
+    endian: BIG_ENDIAN
+    field {
+        name: "exlusive"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    field {
+        name: "stream_dependency"
+        type { primitive: U32 }
+        bit_width: 31
+    }
+    field {
+        name: "weight"
+        type { primitive: U8 }
+    }
+}
+
+structs {
+    name: "RstStreamFramePayload"
+    endian: BIG_ENDIAN
+    field {
+        name: "error_code"
+        type { named: "ErrorCode" }
+    }
+}
+
+structs {
+    name: "SettingsFramePayload"
+    endian: BIG_ENDIAN
+    field {
+        name: "parameters"
+        type {
+            buffer {
+                element_type { named: "SettingsParameter" }
+                end_terminated: true
+            }
+        }
+    }
+}
+
+structs {
+    name: "SettingsParameter"
+    endian: BIG_ENDIAN
+    field {
+        name: "id"
+        type { named: "SettingId" }
+    }
+    field {
+        name: "value"
+        type { primitive: U32 }
+    }
+}
+
+structs {
+    name: "SettingsFrameFlags"
+    endian: BIG_ENDIAN
+    # Bit 1-7
+    field {
+        name: "reserved1234567"
+        type { primitive: BOOL }
+        bit_width: 7
+    }
+    # Bit 0
+    field {
+        name: "ack"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+}
+
+enums {
+    name: "SettingId"
+    endian: BIG_ENDIAN
+    type { primitive: U16 }
+    values {
+        name: "HEADER_TABLE_SIZE"
+        value: 0x1
+    }
+    values {
+        name: "ENABLE_PUSH"
+        value: 0x2
+    }
+    values {
+        name: "MAX_CONCURRENT_STREAMS"
+        value: 0x3
+    }
+    values {
+        name: "INITIAL_WINDOW_SIZE"
+        value: 0x4
+    }
+    values {
+        name: "MAX_FRAME_SIZE"
+        value: 0x5
+    }
+    values {
+        name: "MAX_HEADER_LIST_SIZE"
+        value: 0x6
+    }
+}
+
+
+structs {
+    name: "PushPromiseFramePayload"
+    endian: BIG_ENDIAN
+    argument {
+        name: "flags"
+        type { named: "PushPromiseFrameFlags" }
+    }
+    field {
+        name: "padding_length"
+        type { primitive: U8 }
+        presence: "flags.padded"
+    }
+    field {
+        name: "reserved"
+        type { primitive: U8 }
+        bit_width: 1
+    }
+    field {
+        name: "promised_stream_id"
+        type { primitive: U32 }
+        bit_width: 31
+    }
+    field {
+        name: "header_block_fragment"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                end_terminated: true
+            }
+        }
+    }
+    field {
+        name: "padding"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                length_field_name: "padding_length"
+            }
+        }
+    }
+}
+
+structs {
+    name: "PushPromiseFrameFlags"
+    endian: BIG_ENDIAN
+    # Bit 4-7
+    field {
+        name: "reserved4567"
+        type { primitive: BOOL }
+        bit_width: 4
+    }
+    # Bit 3
+    field {
+        name: "padded"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    # Bit 2
+    field {
+        name: "end_headers"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    # Bit 0-1
+    field {
+        name: "reserved01"
+        type { primitive: BOOL }
+        bit_width: 2
+    }
+}
+
+structs {
+    name: "PingFramePayload"
+    endian: BIG_ENDIAN
+    field {
+        name: "opaque_data"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                fixed_length: 8
+            }
+        }
+    }
+}
+
+structs {
+    name: "PingFrameFlags"
+    endian: BIG_ENDIAN
+    # Bit 1-7
+    field {
+        name: "reserved1234567"
+        type { primitive: U8 }
+        bit_width: 7
+    }
+    # Bit 0
+    field {
+        name: "ack"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+}
+
+structs {
+    name: "GoawayFramePayload"
+    endian: BIG_ENDIAN
+    field {
+        name: "reserved"
+        type { primitive: U8 }
+        bit_width: 1
+    }
+    field {
+        name: "last_stream_id"
+        type { primitive: U32 }
+        bit_width: 31
+    }
+    field {
+        name: "error_code"
+        type { named: "ErrorCode" }
+    }
+    field {
+        name: "additional_debug_data"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                end_terminated: true
+            }
+        }
+    }
+}
+
+structs {
+    name: "WindowUpdateFramePayload"
+    endian: BIG_ENDIAN
+    field {
+        name: "reserved"
+        type { primitive: U8 }
+        bit_width: 1
+    }
+    field {
+        name: "window_size_increment"
+        type { primitive: U32 }
+        bit_width: 31
+    }
+}

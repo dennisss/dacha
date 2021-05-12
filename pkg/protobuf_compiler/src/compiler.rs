@@ -162,10 +162,10 @@ impl Compiler<'_> {
         c.outer += "use std::sync::Arc;\n";
         c.outer += "use common::errors::*;\n";
         c.outer += "use common::const_default::ConstDefault;\n";
-        write!(c.outer, "use {}::*;\n", c.runtime_package);
-        write!(c.outer, "use {}::wire::*;\n", c.runtime_package);
-        write!(c.outer, "use {}::service::*;\n", c.runtime_package);
-        write!(c.outer, "use {}::reflection::*;\n\n", c.runtime_package);
+        write!(c.outer, "use {}::*;\n", c.runtime_package).unwrap();
+        write!(c.outer, "use {}::wire::*;\n", c.runtime_package).unwrap();
+        write!(c.outer, "use {}::service::*;\n", c.runtime_package).unwrap();
+        write!(c.outer, "use {}::reflection::*;\n\n", c.runtime_package).unwrap();
 
         // TODO: Eventually, this will become the package name
         let path = vec![];
@@ -554,6 +554,185 @@ impl Compiler<'_> {
         }
     }
 
+    fn compile_field_accessors(&self, field: &Field, path: Path, oneof: Option<&OneOf>) -> String {
+        let mut lines = LineBuilder::new();
+
+        let name = self.field_name(field);
+
+        // TODO: Verify the given label is allowed in the current syntax
+        // version
+
+        // TOOD: verify that the label is handled appropriately for oneof fields.
+
+        let is_repeated = field.label == Label::Repeated;
+        let typ = self.compile_field_type(&field.typ, &path);
+
+        let is_primitive = self.is_primitive(&field.typ, &path);
+        let is_copyable = self.is_copyable(&field.typ, &path);
+        let is_message = self.is_message(&field.typ, &path);
+
+        // TODO: Messages should always have options?
+        let use_option = !(field.label == Label::Required
+            || (is_primitive && self.proto.syntax == Syntax::Proto3)
+            || oneof.is_some());
+
+        // field()
+        if is_repeated {
+            lines.add(format!("\tpub fn {}(&self) -> &[{}] {{", name, typ));
+            lines.add_inline(format!(" &self.{}", name));
+            lines.add_inline(" }");
+        } else {
+            let modifier = if is_copyable { "" } else { "&" };
+
+            let rettype = {
+                match &field.typ {
+                    FieldType::String => "str",
+                    FieldType::Bytes => "[u8]",
+                    _ => &typ
+                }
+            };
+
+            // NOTE: For primitives, it is sufficient to copy it.
+            lines.add(format!("\tpub fn {}(&self) -> {}{} {{", name, modifier, rettype));
+            if use_option {
+                if is_copyable {
+                    lines.add_inline(format!(" self.{}.unwrap_or_default() }}", name));
+                } else {
+                    if is_message {
+                        lines.add_inline(
+                            format!(" self.{}.as_ref().map(|v| v.as_ref()).unwrap_or({}::default_value()) }}", name, typ));    
+                    } else {
+                        lines.add_inline(
+                            format!(" self.{}.as_ref().unwrap_or({}::default_value()) }}", name, typ));
+                    }
+                }
+            } else if let Some(oneof) = oneof.clone() {
+                let oneof_typename = self.oneof_typename(oneof, path);
+                let oneof_fieldname = Self::field_name_inner(&oneof.name);
+                let oneof_case = common::snake_to_camel_case(&field.name);
+                
+                let default_value = {
+                    if rettype == "str" {
+                        "\"\"".to_string()
+                    } else if rettype == "[u8]" {
+                        "[]".to_string()
+                    } else if is_message {
+                        format!("{}::default_value()", typ)
+                    } else {
+                        // For now it's a const, 
+                        format!("{}{}::DEFAULT", modifier, typ)
+                    }
+                };
+
+                // Step 1: Ensure that the enum has the right case. Else give it a default value.
+                lines.add_inline(format!(" if let {}::{}(v) = &self.{} {{ {}{}v }} else {{ {} }} }}",
+                          oneof_typename, oneof_case, oneof_fieldname, modifier, if is_copyable { "*" } else { "" }, default_value));
+            } else {  
+                lines.add_inline(format!(" {}self.{} }}", modifier, name));
+            }
+        }
+
+        if is_repeated {
+            // field_len()
+            lines.add(format!("\tpub fn {}_len(&self) -> usize {{", name));
+            lines.add_inline(format!(" self.{}.len() }}", name));
+        } else {
+            // has_field() -> bool
+            if use_option {
+                lines.add(format!("\tpub fn has_{}(&self) -> bool {{", name));
+                lines.add_inline(format!(" self.{}.is_some() }}", name));
+            }
+        }
+
+        if is_repeated {
+            // add_field(v: T) -> &mut T
+            lines.add(format!(
+                "\tpub fn add_{}(&mut self, v: {}) -> &mut {} {{",
+                name, typ, typ
+            ));
+            lines.add(format!(
+                "\t\tself.{}.push(v); self.{}.last_mut().unwrap()",
+                name, name
+            ));
+            lines.add("\t}");
+
+        // NOTE: We do not define 'fn add_field() -> &mut T'
+        } else {
+            if
+            /* is_primitive */
+            true {
+                // set_field(v: T)
+                lines.add(format!("\tpub fn set_{}(&mut self, v: {}) {{", name, typ));
+                if use_option {
+                    if is_message {
+                        lines.add(format!("\t\tself.{} = Some(MessagePtr::new(v));", name));
+                    } else {
+                        lines.add(format!("\t\tself.{} = Some(v);", name));
+                    }
+                } else {
+                    if let Some(oneof) = oneof.clone() {
+                        let oneof_typename = self.oneof_typename(oneof, path);
+                        let oneof_fieldname = Self::field_name_inner(&oneof.name);
+                        let oneof_case = common::snake_to_camel_case(&field.name);
+                        
+                        lines.add(format!("\t\tself.{} = {}::{}(v);", oneof_fieldname, oneof_typename, oneof_case));
+
+                    } else {
+                        lines.add(format!("\t\tself.{} = v;", name));
+                    }                    
+                }
+                lines.add("\t}");
+            }
+
+            // TODO: For Option<>, must set it to be a Some(Type::default())
+            // ^ Will also need to
+            // field_mut() -> &mut T
+            lines.add(format!(
+                "\tpub fn {}_mut(&mut self) -> &mut {} {{",
+                name, typ
+            ));
+            
+            if use_option {
+                if is_message {
+                    lines.add_inline(format!(" self.{}.get_or_insert_with(|| MessagePtr::new({}::default())).as_mut() }}", name, typ));
+                } else {
+                    lines.add_inline(format!(" self.{}.get_or_insert_with(|| {}::default()) }}", name, typ));
+                }
+            } else {
+                if let Some(oneof) = oneof.clone() {
+                    let oneof_typename = self.oneof_typename(oneof, path);
+                    let oneof_fieldname = Self::field_name_inner(&oneof.name);
+                    let oneof_case = common::snake_to_camel_case(&field.name);
+
+                    
+                    // Step 1: Ensure that the enum has the right case. Else give it a default value.
+                    lines.add(format!("\t\tif let {}::{}(_) = &self.{} {{ }} else {{ self.{} = {}::{}({}::DEFAULT); }}",
+                              oneof_typename, oneof_case, oneof_fieldname, oneof_fieldname, oneof_typename, oneof_case, typ));
+
+                    // Step 2: Return the mutable reference.
+                    lines.add(format!("\t\tif let {}::{}(v) = &mut self.{} {{ v }} else {{ panic!() }}",
+                              oneof_typename, oneof_case, oneof_fieldname));
+
+                    lines.add("\t}");
+                } else {
+                    lines.add_inline(format!(" &mut self.{} }}", name));
+                }
+            }
+        }
+
+        // clear_field()
+        if is_repeated || use_option {
+            lines.add(format!("\tpub fn clear_{}(&mut self) {{", name));
+            if is_repeated {
+                lines.add_inline(format!(" self.{}.clear(); }}", name));
+            } else {
+                lines.add_inline(format!(" self.{} = None; }}", name));
+            }
+        }
+
+        lines.to_string()
+    }
+
     fn compile_message(&mut self, msg: &Message, path: Path) -> String {
         /*
         Supporting oneof:
@@ -642,135 +821,18 @@ impl Compiler<'_> {
                 MessageItem::OneOf(oneof) => {
                     let oneof_typename = self.oneof_typename(oneof, &inner_path);
                     lines.add(format!("\tpub fn {}_case(&self) -> &{} {{ &self.{} }}", oneof.name, oneof_typename, Self::field_name_inner(&oneof.name)));
+
+                    for field in &oneof.fields {
+                        lines.add(self.compile_field_accessors(field, &inner_path, Some(oneof)));
+                    }
+
                     // Should also add fields to assign to each of the items
                 }
+                MessageItem::Field(field) => {
+                    lines.add(self.compile_field_accessors(field, &inner_path, None));
+                }
+                // TODO: Add map field accessors.
                 _ => {}
-            }
-        }
-
-        for field in msg.fields() {
-            let name = self.field_name(field);
-
-            // TODO: Verify the given label is allowed in the current syntax
-            // version
-
-            let is_repeated = field.label == Label::Repeated;
-            let typ = self.compile_field_type(&field.typ, &inner_path);
-
-            let is_primitive = self.is_primitive(&field.typ, &inner_path);
-            let is_copyable = self.is_copyable(&field.typ, &inner_path);
-            let is_message = self.is_message(&field.typ, &inner_path);
-
-
-            // TODO: Messages should always have options?
-            let use_option = !(field.label == Label::Required
-                || (is_primitive && self.proto.syntax == Syntax::Proto3));
-
-            // field()
-            if is_repeated {
-                lines.add(format!("\tpub fn {}(&self) -> &[{}] {{", name, typ));
-                lines.add_inline(format!(" &self.{}", name));
-                lines.add_inline(" }");
-            } else {
-                let modifier = if is_copyable { "" } else { "&" };
-
-                let rettype = {
-                    match &field.typ {
-                        FieldType::String => "str",
-                        FieldType::Bytes => "[u8]",
-                        _ => &typ
-                    }
-                };
-
-                // NOTE: For primitives, it is sufficient to copy it.
-                lines.add(format!("\tpub fn {}(&self) -> {}{} {{", name, modifier, rettype));
-                if use_option {
-                    if is_copyable {
-                        lines.add_inline(format!(" self.{}.unwrap_or_default() }}", name));
-                    } else {
-                        if is_message {
-                            lines.add_inline(
-                                format!(" self.{}.as_ref().map(|v| v.as_ref()).unwrap_or({}::default_value()) }}", name, typ));    
-                        } else {
-                            lines.add_inline(
-                                format!(" self.{}.as_ref().unwrap_or({}::default_value()) }}", name, typ));
-                        }
-                    }
-                } else {
-                    lines.add_inline(format!(" {}self.{} }}", modifier, name));
-                }
-            }
-
-            if is_repeated {
-                // field_len()
-                lines.add(format!("\tpub fn {}_len(&self) -> usize {{", name));
-                lines.add_inline(format!(" self.{}.len() }}", name));
-            } else {
-                // has_field() -> bool
-                if use_option {
-                    lines.add(format!("\tpub fn has_{}(&self) -> bool {{", name));
-                    lines.add_inline(format!(" self.{}.is_some() }}", name));
-                }
-            }
-
-            if is_repeated {
-                // add_field(v: T) -> &mut T
-                lines.add(format!(
-                    "\tpub fn add_{}(&mut self, v: {}) -> &mut {} {{",
-                    name, typ, typ
-                ));
-                lines.add(format!(
-                    "\t\tself.{}.push(v); self.{}.last_mut().unwrap()",
-                    name, name
-                ));
-                lines.add("\t}");
-
-            // NOTE: We do not define 'fn add_field() -> &mut T'
-            } else {
-                if
-                /* is_primitive */
-                true {
-                    // set_field(v: T)
-                    lines.add(format!("\tpub fn set_{}(&mut self, v: {}) {{", name, typ));
-                    if use_option {
-                        if is_message {
-                            lines.add(format!("\t\tself.{} = Some(MessagePtr::new(v));", name));
-                        } else {
-                            lines.add(format!("\t\tself.{} = Some(v);", name));
-                        }
-                    } else {
-                        lines.add(format!("\t\tself.{} = v;", name));
-                    }
-                    lines.add("\t}");
-                }
-
-                // TODO: For Option<>, must set it to be a Some(Type::default())
-                // ^ Will also need to
-                // field_mut() -> &mut T
-                lines.add(format!(
-                    "\tpub fn {}_mut(&mut self) -> &mut {} {{",
-                    name, typ
-                ));
-                
-                if use_option {
-                    if is_message {
-                        lines.add_inline(format!(" self.{}.get_or_insert_with(|| MessagePtr::new({}::default())).as_mut() }}", name, typ));
-                    } else {
-                        lines.add_inline(format!(" self.{}.get_or_insert_with(|| {}::default()) }}", name, typ));
-                    }
-                } else {
-                    lines.add_inline(format!(" &mut self.{} }}", name));
-                }
-            }
-
-            // clear_field()
-            if is_repeated || use_option {
-                lines.add(format!("\tpub fn clear_{}(&mut self) {{", name));
-                if is_repeated {
-                    lines.add_inline(format!(" self.{}.clear(); }}", name));
-                } else {
-                    lines.add_inline(format!(" self.{} = None; }}", name));
-                }
             }
         }
 
@@ -801,8 +863,8 @@ impl Compiler<'_> {
                         .expect(&format!("Failed to resolve type type: {}", n));
 
                     match &typ.descriptor {
-                        ResolvedTypeDesc::Enum(e) => "enum",
-                        ResolvedTypeDesc::Message(m) => "message",
+                        ResolvedTypeDesc::Enum(_) => "enum",
+                        ResolvedTypeDesc::Message(_) => "message",
                     }
                 }
                 _ => field.typ.as_str(),
@@ -856,8 +918,8 @@ impl Compiler<'_> {
                         .expect("Failed to resolve type");
 
                     match &typ.descriptor {
-                        ResolvedTypeDesc::Enum(e) => "enum",
-                        ResolvedTypeDesc::Message(m) => "message",
+                        ResolvedTypeDesc::Enum(_) => "enum",
+                        ResolvedTypeDesc::Message(_) => "message",
                     }
                 }
                 _ => field.typ.as_str(),
@@ -971,9 +1033,6 @@ impl Compiler<'_> {
                     }
                 }
 
-                for field in msg.fields() {
-                    
-                }
                 lines.add("\t_ => { return None; }");
                 lines.add("})");
             });

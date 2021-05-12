@@ -44,7 +44,7 @@ impl SoundController {
         let stream = device.build_output_stream(
             &config.into(),
             // TODO: Check if this format is supported?
-            move |data: &mut [f32]| {
+            move |data: &mut [f32], _info| {
                 let mut guard = state2.lock().unwrap();
                 guard.compute(data, sample_index, sample_rate);
                 sample_index += (data.len() / NUM_CHANNELS) as u64;

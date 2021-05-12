@@ -1,5 +1,4 @@
 
-
 structs {
     name: "BitFlags"
     endian: BIG_ENDIAN

@@ -53,7 +53,7 @@ async fn tls_connect() -> Result<()> {
     let input = Box::new(TcpStream::connect("google.com:443").await?);
 
     let mut client = crypto::tls::client::Client::new();
-    let stream = client.connect(input, "google.com").await?;
+    let mut stream = client.connect(input, "google.com").await?;
 
     stream
         .write_all(b"GET / HTTP/1.1\r\nHost: google.com\r\n\r\n")

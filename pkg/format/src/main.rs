@@ -3,8 +3,9 @@
 // extern crate minifb;
 extern crate common;
 
+use std::ops::Mul;
+
 use common::errors::*;
-use common::futures::core_reexport::ops::Mul;
 
 // use format::errors::*;
 // use format::image::bitmap::Bitmap;
@@ -19,7 +20,7 @@ pub trait Matrix<N, R, C>: std::ops::Index<(usize, usize), Output = N> {
     fn cols(&self) -> usize;
 }
 
-impl<N, R, C, T: Matrix<N, R, C>> std::ops::Mul for T {
+impl<N, R, C, T: Matrix<N, R, C>> Mul for T {
     type Output = ();
 
     fn mul(self, rhs: Self) -> Self::Output {
