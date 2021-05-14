@@ -3,6 +3,8 @@
 #[macro_use]
 extern crate common;
 extern crate parsing;
+#[macro_use]
+extern crate failure;
 
 #[macro_use]
 extern crate arrayref;

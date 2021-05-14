@@ -9,6 +9,7 @@ use crate::proto::v2::*;
 
 const INFINITE: u32 = u32::MAX;
 
+#[derive(Clone)]
 pub struct SettingsContainer {
     data: HashMap<SettingId, u32>
 }
@@ -28,7 +29,7 @@ impl SettingsContainer {
                 }
             }
 
-            SettingsParameter { id: *id, value: *value }.serialize(out);
+            SettingsParameter { id: *id, value: *value }.serialize(out).unwrap();
         }
     }
 }

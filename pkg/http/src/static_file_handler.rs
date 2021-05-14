@@ -32,19 +32,30 @@ impl RequestHandler for StaticFileHandler {
     async fn handle_request(&self, request: Request) -> Response {
         let mut file_path = self.base_path.clone();
         
+        let mut segments = request.head.uri.path.as_ref().split('/');
+        
+        // Switch the initial empty segment before the first '/'
+        segments.next();
+
         // TODO: Ensure no .. or .
         // TODO: Validate that the Uri contains nothing but a path.
-        for segment in request.head.uri.path.segments() {
+        // TODO: Decode URI components.
+
+        // TODO: First steps is 
+
+        for segment in segments {
             // Interpet each path segment as UTF-8.
             let segment_str = {
-                if let Ok(s) = segment.to_utf8_str() {
-                    s
-                } else {
-                    return ResponseBuilder::new()
-                        .status(status_code::BAD_REQUEST)
-                        .body(EmptyBody())
-                        .build().unwrap();
-                }
+                segment
+
+                // if let Ok(s) = segment.to_utf8_str() {
+                //     s
+                // } else {
+                //     return ResponseBuilder::new()
+                //         .status(status_code::BAD_REQUEST)
+                //         .body(EmptyBody())
+                //         .build().unwrap();
+                // }
             };
 
             file_path.push(segment_str);

@@ -213,7 +213,7 @@ pub(crate) fn serialize_status_line(line: &StatusLine, out: &mut Vec<u8>) -> Res
 /// RFC 7230: Section 3.1.2
 /// 
 /// `status-code = 3DIGIT`
-fn parse_status_code(input: Bytes) -> ParseResult<u16> {
+pub(crate) fn parse_status_code(input: Bytes) -> ParseResult<u16> {
     if input.len() < 3 {
         return Err(err_msg("status_code: input too short"));
     }
@@ -222,7 +222,7 @@ fn parse_status_code(input: Bytes) -> ParseResult<u16> {
     Ok((code, input.slice(3..)))
 }
 
-fn serialize_status_code(value: u16, out: &mut Vec<u8>) -> Result<()> {
+pub(crate) fn serialize_status_code(value: u16, out: &mut Vec<u8>) -> Result<()> {
     if value < 100 || value > 999 {
         return Err(err_msg("Status code must be 3 digits long"));
     }
@@ -475,7 +475,7 @@ parser!(pub parse_request_target<RequestTarget> => {
 // RFC 7230: Section 5.3.1
 //
 // `origin-form = absolute-path [ "?" query ]`
-parser!(parse_origin_form<(Vec<OpaqueString>, Option<AsciiString>)> => {
+parser!(parse_origin_form<(AsciiString, Option<AsciiString>)> => {
     seq!(c => {
         let abspath = c.next(parse_absolute_path)?;
         let q = c.next(opt(seq!(c => {
@@ -543,11 +543,13 @@ parser!(parse_pseudonym<AsciiString> => parse_token);
 
 
 // `absolute-path = 1*( "/" segment )`
-parser!(parse_absolute_path<Vec<OpaqueString>> => {
-    many1(seq!(c => {
+parser!(parse_absolute_path<AsciiString> => {
+    map(slice(many1(seq!(c => {
         c.next(one_of(b"/"))?;
-        c.next(parse_segment)
-    }))
+        c.next(parse_segment);
+        Ok(())
+    }))),
+    |data: Bytes| AsciiString::from(data).unwrap())
 });
 
 

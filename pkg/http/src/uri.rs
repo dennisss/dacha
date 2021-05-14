@@ -26,7 +26,7 @@ pub struct Uri {
     // it can later be interpreted if needed.
     //
     // Main challenge will be that depending on the context, we may expect different grammars.
-    pub path: UriPath,
+    pub path: AsciiString,
     
     /// Portion of the Uri after the '?' (not including the '?').
     /// NOTE: This may still not contain percent encoded 

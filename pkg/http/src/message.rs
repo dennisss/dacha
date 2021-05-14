@@ -69,7 +69,7 @@ pub(crate) struct StatusLine {
 #[derive(Debug)]
 pub enum RequestTarget {
     /// Standard relative path. This is the typical request
-    OriginForm(Vec<OpaqueString>, Option<AsciiString>),
+    OriginForm(AsciiString, Option<AsciiString>),
 
     /// Typically a proxy request
     /// NOTE: Must be accepted ALWAYS be servers.
@@ -88,7 +88,8 @@ impl RequestTarget {
             RequestTarget::OriginForm(path_abs, query) => Uri {
                 scheme: None,
                 authority: None,
-                path: RawUriPath::Absolute(path_abs).into_path(),
+                // path: RawUriPath::Absolute(path_abs).into_path(),
+                path: path_abs,
                 query,
                 fragment: None,
             },
@@ -96,15 +97,16 @@ impl RequestTarget {
             RequestTarget::AuthorityForm(a) => Uri {
                 scheme: None,
                 authority: Some(a),
+                path: AsciiString::from_str("").unwrap(),
                 // TODO: Wrong?
-                path: UriPath::new(false, &[]),
+                // path: UriPath::new(false, &[]),
                 query: None,
                 fragment: None,
             },
             RequestTarget::AsteriskForm => Uri {
                 scheme: None,
                 authority: None,
-                path: UriPath::new(false, &["*"]),
+                path: AsciiString::from_str("*").unwrap(), // UriPath::new(false, &["*"]),
                 query: None,
                 fragment: None,
             },

@@ -2,7 +2,7 @@
 #[macro_use]
 extern crate async_trait;
 #[macro_use]
-extern crate failure;
+pub extern crate failure;
 pub extern crate async_std;
 pub extern crate base64;
 pub extern crate bytes;
@@ -28,9 +28,11 @@ pub mod iter;
 pub mod line_builder;
 pub mod vec;
 pub mod const_default;
+pub mod pipe;
 
 pub use async_trait::*;
 pub use lazy_static::*;
+pub use failure::Fail;
 
 pub async fn wait_for(dur: std::time::Duration) {
     let never = async_std::future::pending::<()>();
@@ -159,7 +161,7 @@ pub fn block_size_remainder(block_size: u64, end_offset: u64) -> u64 {
         return 0;
     }
 
-    (block_size - rem)
+    block_size - rem
 }
 
 pub fn camel_to_snake_case(name: &str) -> String {

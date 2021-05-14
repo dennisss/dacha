@@ -307,7 +307,7 @@ impl<'c> Compiler<'c> {
                         
                         if let TypeTypeCase::Primitive(PrimitiveType::U8) = buf.element_type().type_case() {
                             // TODO: Ensure that we always take exact a slice (and not Bytes as that is an expensive copy)!
-                            lines.add("\tbuf.copy_from_slice(parse_next!(input, ::parsing::take_exact(buf.len())));");
+                            lines.add("\t{ let n = buf.len(); buf.copy_from_slice(parse_next!(input, ::parsing::take_exact(n))); }");
                         } else {
                             lines.add("\tfor i in 0..buf.len() {");
                             lines.add(format!("\t\tbuf[i] = {};", element_parser));
@@ -346,7 +346,7 @@ impl<'c> Compiler<'c> {
 
                         lines.add("\tlet mut buf = vec![];");
 
-                        lines.add(format!(r#"\t
+                        lines.add(format!(r#"
                             let length = input.len().checked_sub({})
                                 .ok_or_else(|| ::parsing::incomplete_error())?;"#, after_count));
 
@@ -868,7 +868,7 @@ impl<'c> Compiler<'c> {
 
         let raw_type = self.compile_type(desc.typ())?;
 
-        lines.add("#[derive(Debug, Clone)]");
+        lines.add("#[derive(Debug, Clone, Copy)]");
         lines.add(format!("pub enum {} {{", desc.name()));
         for value in desc.values() {
             if !value.comment().is_empty() {

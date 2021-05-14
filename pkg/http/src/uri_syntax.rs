@@ -126,13 +126,15 @@ pub fn serialize_uri(uri: &Uri, out: &mut Vec<u8>) -> Result<()> {
         //
         // NOTE: Because we can't distinguish between '/' and the pct-encoded version of it in this stage,
         // we ideally shouldn't try to decode it yet.
-        for (i, segment) in uri.path.segments().iter().enumerate() {
-            if i != 0 || uri.path.is_absolute() {
-                out.push(b'/');
-            }
+        out.extend_from_slice(uri.path.as_ref().as_bytes());
 
-            out.extend_from_slice(segment.as_bytes());
-        }
+        // for (i, segment) in uri.path.segments().iter().enumerate() {
+        //     if i != 0 || uri.path.is_absolute() {
+        //         out.push(b'/');
+        //     }
+
+        //     out.extend_from_slice(segment.as_bytes());
+        // }
     }
 
 
@@ -166,17 +168,17 @@ pub fn serialize_uri(uri: &Uri, out: &mut Vec<u8>) -> Result<()> {
 // 			  / path-absolute
 // 			  / path-rootless
 // 			  / path-empty`
-parser!(parse_hier_part<(Option<Authority>, RawUriPath)> => {
+parser!(parse_hier_part<(Option<Authority>, AsciiString)> => {
     alt!(
         seq!(c => {
             c.next(tag("//"))?;
             let a = c.next(parse_authority)?;
-            let p = c.next(parse_path_abempty)?;
-            Ok((Some(a), RawUriPath::AbEmpty(p)))
+            let p = c.next(slice(parse_path_abempty))?;
+            Ok((Some(a), AsciiString::from(p).unwrap()))
         }),
-        map(parse_path_absolute, |p| (None, RawUriPath::Absolute(p))),
-        map(parse_path_rootless, |p| (None, RawUriPath::Rootless(p))),
-        map(parse_path_empty, |p| (None, RawUriPath::Empty))
+        map(slice(alt!(
+            map(parse_path_absolute, |_| ()), map(parse_path_rootless, |_| ()), parse_path_empty
+        )), |data| (None, AsciiString::from(data).unwrap()))
     )
 });
 
@@ -784,7 +786,7 @@ parser!(parse_relative_ref<Uri> => {
         Ok(Uri {
             scheme: None,
             authority,
-            path: path.into_path(),
+            path,
             query,
             fragment
         })
@@ -797,16 +799,16 @@ parser!(parse_relative_ref<Uri> => {
 // 				  / path-absolute
 // 				  / path-noscheme
 // 				  / path-empty`
-parser!(parse_relative_part<(Option<Authority>, RawUriPath)> => alt!(
+parser!(parse_relative_part<(Option<Authority>, AsciiString)> => alt!(
     seq!(c => {
         c.next(tag("//"))?;
         let a = c.next(parse_authority)?;
-        let p = c.next(parse_path_abempty)?;
-        Ok((Some(a), RawUriPath::AbEmpty(p)))
+        let p = c.next(slice(parse_path_abempty))?;
+        Ok((Some(a), AsciiString::from(p).unwrap()))
     }),
-    map(parse_path_absolute, |p| (None, RawUriPath::Absolute(p))),
-    map(parse_path_noscheme, |p| (None, RawUriPath::Rootless(p))),
-    map(parse_path_empty, |_| (None, RawUriPath::Empty))
+    map(slice(alt!(
+        map(parse_path_absolute, |_| ()), map(parse_path_noscheme, |_| ()), parse_path_empty
+    )), |data: Bytes| (None, AsciiString::from(data).unwrap()))
 ));
 
 // RFC 3986: Section 4.3
@@ -822,7 +824,7 @@ parser!(pub parse_absolute_uri<Uri> => {
             c.next(parse_query)
         })))?;
 
-        Ok(Uri { scheme: Some(s), authority: auth, path: p.into_path(), query: q, fragment: None })
+        Ok(Uri { scheme: Some(s), authority: auth, path: p, query: q, fragment: None })
     })
 });
 
@@ -854,7 +856,8 @@ mod tests {
                     host: Host::Name("ftp.is.co.za".to_string()),
                     port: None
                 }),
-                path: UriPath::new(true, &["rfc", "rfc1808.txt"]),
+                path: AsciiString::from_str("/rfc/rfc1808.txt").unwrap(),
+                // path: UriPath::new(true, &["rfc", "rfc1808.txt"]),
                 query: None,
                 fragment: None
             }),
@@ -865,7 +868,8 @@ mod tests {
                     host: Host::Name("www.ietf.org".to_string()),
                     port: None
                 }),
-                path: UriPath::new(true, &["rfc", "rfc2396.txt"]),
+                path: AsciiString::from_str("/rfc/rfc2396.txt").unwrap(),
+                // path: UriPath::new(true, &["rfc", "rfc2396.txt"]),
                 query: None,
                 fragment: None
             }),
@@ -876,28 +880,32 @@ mod tests {
                     host: Host::IP(IPAddress::V6(vec![0x20, 0x01, 0x0D, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x07])),
                     port: None
                 }),
-                path: UriPath::new(true, &["c=GB"]),
+                path: AsciiString::from_str("/c=GB").unwrap(),
+                // path: UriPath::new(true, &["c=GB"]),
                 query: Some(AsciiString::from("objectClass?one").unwrap()),
                 fragment: None
             }),
             ("mailto:John.Doe@example.com", Uri {
                 scheme: Some(AsciiString::from_str("mailto").unwrap()),
                 authority: None,
-                path: UriPath::new(false, &["John.Doe@example.com"]),
+                path: AsciiString::from_str("John.Doe@example.com").unwrap(),
+                // path: UriPath::new(false, &["John.Doe@example.com"]),
                 query: None,
                 fragment: None
             }),
             ("news:comp.infosystems.www.servers.unix", Uri {
                 scheme: Some(AsciiString::from_str("news").unwrap()),
                 authority: None,
-                path: UriPath::new(false, &["comp.infosystems.www.servers.unix"]),
+                path: AsciiString::from_str("comp.infosystems.www.servers.unix").unwrap(),
+                // path: UriPath::new(false, &["comp.infosystems.www.servers.unix"]),
                 query: None,
                 fragment: None
             }),
             ("tel:+1-816-555-1212", Uri {
                 scheme: Some(AsciiString::from_str("tel").unwrap()),
                 authority: None,
-                path: UriPath::new(false, &["+1-816-555-1212"]),
+                path: AsciiString::from_str("+1-816-555-1212").unwrap(),
+                // path: UriPath::new(false, &["+1-816-555-1212"]),
                 query: None,
                 fragment: None
             }),
@@ -908,14 +916,16 @@ mod tests {
                     host: Host::IP(IPAddress::V4(vec![192, 0, 2, 16])),
                     port: Some(80)
                 }),
-                path: UriPath::new(true, &[""]),
+                path: AsciiString::from_str("/").unwrap(),
+                // path: UriPath::new(true, &[""]),
                 query: None,
                 fragment: None
             }),
             ("urn:oasis:names:specification:docbook:dtd:xml:4.1.2", Uri {
                 scheme: Some(AsciiString::from_str("urn").unwrap()),
                 authority: None,
-                path: UriPath::new(false, &["oasis:names:specification:docbook:dtd:xml:4.1.2"]),
+                path: AsciiString::from_str("oasis:names:specification:docbook:dtd:xml:4.1.2").unwrap(),
+                // path: UriPath::new(false, &["oasis:names:specification:docbook:dtd:xml:4.1.2"]),
                 query: None,
                 fragment: None
             }),
@@ -928,21 +938,23 @@ mod tests {
                     host: Host::Name("example.com".to_string()),
                     port: Some(8042)
                 }),
-                path: UriPath::new(true, &["over", "there"]),
+                path: AsciiString::from_str("/over/there").unwrap(),
+                // path: UriPath::new(true, &["over", "there"]),
                 query: Some(AsciiString::from("name=ferret").unwrap()),
                 fragment: Some(AsciiString::from("nose").unwrap())
             }),
             ("urn:example:animal:ferret:nose", Uri {
                 scheme: Some(AsciiString::from_str("urn").unwrap()),
                 authority: None,
-                path: UriPath::new(false, &["example:animal:ferret:nose"]),
+                path: AsciiString::from_str("example:animal:ferret:nose").unwrap(),
+                // path: UriPath::new(false, &["example:animal:ferret:nose"]),
                 query: None,
                 fragment: None
             }),
             ("urn:/example/world", Uri {
                 scheme: Some(AsciiString::from_str("urn").unwrap()),
                 authority: None,
-                path: UriPath::new(true, &["example", "world"]),
+                path: AsciiString::from_str("/example/world").unwrap(), // UriPath::new(true, &["example", "world"]),
                 query: None,
                 fragment: None
             }),
@@ -953,7 +965,9 @@ mod tests {
                     host: Host::Name("localhost".to_string()),
                     port: Some(8000)
                 }),
-                path: UriPath::new(true, &[]),
+                // TODO: Normalize this to '/' as it is actually absolute.
+                path: AsciiString::from_str("").unwrap(),
+                // path: UriPath::new(true, &[]),
                 query: None,
                 fragment: None
             }),

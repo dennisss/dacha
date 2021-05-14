@@ -264,7 +264,7 @@ structs {
     # Bit 6-7
     field {
         name: "reserved67"
-        type { primitive: BOOL }
+        type { primitive: U8 }
         bit_width: 2
     }
     # Bit 5
@@ -276,7 +276,7 @@ structs {
     # Bit 4
     field {
         name: "reserved4"
-        type { primitive: BOOL }
+        type { primitive: U8 }
         bit_width: 1
     }
     # Bit 3
@@ -294,7 +294,7 @@ structs {
     # Bit 1
     field {
         name: "reserved1"
-        type { primitive: BOOL }
+        type { primitive: U8 }
         bit_width: 1
     }
     # Bit 0
@@ -366,7 +366,7 @@ structs {
     # Bit 1-7
     field {
         name: "reserved1234567"
-        type { primitive: BOOL }
+        type { primitive: U8 }
         bit_width: 7
     }
     # Bit 0
@@ -550,5 +550,28 @@ structs {
         name: "window_size_increment"
         type { primitive: U32 }
         bit_width: 31
+    }
+}
+
+structs {
+    name: "ContinuationFrameFlags"
+    endian: BIG_ENDIAN
+    # Bit 3-7
+    field {
+        name: "reserved34567"
+        type { primitive: U8 }
+        bit_width: 5
+    }
+    # Bit 2
+    field {
+        name: "end_headers"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    # Bit 0-1
+    field {
+        name: "reserved01"
+        type { primitive: U8 }
+        bit_width: 2
     }
 }

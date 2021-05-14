@@ -36,7 +36,7 @@ impl Client {
         // accept anything but the scheme, authority
         let u = uri.parse::<Uri>()?;
         // NOTE: u.path may be '/'
-        if !u.path.is_empty() || u.query.is_some() || u.fragment.is_some() {
+        if !u.path.as_ref().is_empty() || u.query.is_some() || u.fragment.is_some() {
             return Err(err_msg("Can't create a client with a uri path"));
         }
 

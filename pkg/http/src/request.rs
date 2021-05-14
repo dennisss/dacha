@@ -69,6 +69,10 @@ impl RequestBuilder {
         self
     }
 
+    // TODO: Use a different parsing rule for this?
+    // We should allow either relative or absolute URIs (or things like '*').
+    // When an absolute Uri is given, we should move the authority to the 'Host' header. 
+    // Schemes other than 'http(s)' should be rejected unless using HTTP2 or in a proxy connect mode.
     pub fn uri<U: AsRef<[u8]>>(mut self, uri: U) -> Self {
         // TODO: Implement a complete() parser combinator to deal with ensuring nothing
         // is left
