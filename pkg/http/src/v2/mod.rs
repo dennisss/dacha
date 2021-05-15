@@ -9,4 +9,6 @@ mod connection_state;
 
 mod body;
 mod settings;
-mod endpoint;
+mod connection;
+
+pub use connection::Connection;

@@ -26,6 +26,13 @@ pub struct StreamState {
     /// TODO: Support non-data trailers?
     pub received_end_of_stream: bool,
 
+    /// Number of bytes that we expect to be read from the stream.
+    /// Derived from the 'Content-Length' header received if any.
+    pub received_expected_bytes: Option<usize>,
+
+    /// Total number of bytes that we've received from the remote endpoint on this stream.
+    pub received_total_bytes: usize,
+
     /// Number of bytes the remote endpoint is willing to accept from the local endpoint for
     /// this stream.
     pub remote_window: WindowSize,

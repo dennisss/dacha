@@ -120,11 +120,16 @@ pub struct IncomingStreamBody {
 
     /// Used by the body to wait for more data to become available to read from the stream (or for an error to occur).
     pub read_available_receiver: channel::Receiver<()>,
+
+    /// Expected length of this body derived from the 'Content-Length' header.
+    /// NOTE: Validation that we don't read less or more than this number is
+    /// done in the connection code and not in this file.
+    pub expected_length: Option<usize>
 }
 
 #[async_trait]
 impl Body for IncomingStreamBody {
-    fn len(&self) -> Option<usize> { None }
+    fn len(&self) -> Option<usize> { self.expected_length.clone() }
 
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         Readable::read(self, buf).await
@@ -163,7 +168,8 @@ impl Readable for IncomingStreamBody {
                 self.connection_event_sender.send(ConnectionEvent::StreamRead {
                     stream_id: self.stream_id,
                     count: n
-                }).await?;
+                }).await
+                .map_err(|_| err_msg("Connection hung up.")) ?;
 
                 nread += n;
 

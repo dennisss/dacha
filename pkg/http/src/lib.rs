@@ -13,7 +13,7 @@ mod proto;
 pub mod body;
 pub mod chunked;
 mod chunked_syntax;
-pub mod client;
+
 mod common_syntax;
 mod dns;
 pub mod header;
@@ -36,6 +36,7 @@ mod headers;
 pub mod static_file_handler;
 mod query;
 mod hpack;
+pub mod client;
 
 pub use crate::server::Server;
 pub use crate::client::Client;

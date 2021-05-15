@@ -1,13 +1,14 @@
-use std::io::Cursor;
+use std::{io::Cursor, ops::DerefMut};
 use std::pin::Pin;
 use std::sync::mpsc;
+use std::ops::Deref;
 
 use common::io::Readable;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::FutureResult;
-use common::futures::channel::oneshot;
 use compression::transform::Transform;
+use common::borrowed::Borrowed;
 
 use crate::reader::*;
 
@@ -16,7 +17,7 @@ pub type BoxFutureResult<'a, T> = Pin<Box<dyn FutureResult<T> + Send + 'a>>;
 // TODO: Merge with Readable trait?
 // TODO: Rename IncomingBody?
 #[async_trait]
-pub trait Body: Send + Sync {
+pub trait Body: Send {
     /// Returns the total length in bytes of the body payload. Will return None
     /// if the length is unknown without reading the entire body.
     ///
@@ -52,7 +53,7 @@ pub trait Body: Send + Sync {
 const BUF_SIZE: usize = 4096;
 
 // TODO: Add a generic trait for allowing using a future impl for Read?
-impl dyn Body + Send + Sync {
+impl dyn Body + Send {
     pub async fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<()> {
         while buf.len() > 0 {
             let n = self.read(buf).await?;
@@ -137,7 +138,8 @@ impl ChunkedBody {
 
 /// A body which is terminated by the end of the stream and has no known length.
 pub struct IncomingUnboundedBody {
-    pub stream: StreamReader,
+    // TODO: This doesn't need to be borrowed. It mainly is in order to simplify things.
+    pub reader: Borrowed<PatternReader>,
 }
 
 #[async_trait]
@@ -147,14 +149,14 @@ impl Body for IncomingUnboundedBody {
     }
 
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        self.stream.read(buf).await
+        self.reader.read(buf).await
     }
 }
 
 /// A body which has a well known length.
 pub struct IncomingSizedBody {
     pub length: usize,
-    pub stream: StreamReader,
+    pub reader: Borrowed<PatternReader>, // TODO: Use a generic instead?
 }
 
 #[async_trait]
@@ -169,7 +171,7 @@ impl Body for IncomingSizedBody {
         }
 
         let n = std::cmp::min(self.length, buf.len());
-        let nread = self.stream.read(&mut buf[0..n]).await?;
+        let nread = self.reader.read(&mut buf[0..n]).await?;
         self.length -= nread;
 
         if n == 0 && self.length != 0 {
@@ -282,35 +284,15 @@ impl Body for TransformBody {
     }
 }
 
-/// A body which 'borrows' another inner body. All operations on this body call the inner one.
-/// Later on, once the body is about to be dropped, it is sent back to the original owner. 
-pub struct BorrowedBody {
-    inner: Option<(Box<dyn Body>, oneshot::Sender<Box<dyn Body>>)>
-}
-
-impl BorrowedBody {
-    pub fn wrap(body: Box<dyn Body>) -> (Box<dyn Body>, oneshot::Receiver<Box<dyn Body>>) {
-        let (sender, receiver) = oneshot::channel();
-        (Box::new(Self { inner: Some((body, sender)) }), receiver)
-    }
-}
 
 #[async_trait]
-impl Body for BorrowedBody {
+impl Body for Borrowed<Box<dyn Body>> {
     fn len(&self) -> Option<usize> {
-        self.inner.as_ref().unwrap().0.len()
+        self.deref().len()
     }
 
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        self.inner.as_mut().unwrap().0.read(buf).await
-    }
-}
-
-impl Drop for BorrowedBody {
-    fn drop(&mut self) {
-        let (body, sender) = self.inner.take().unwrap();
-        // TODO: Handle this error
-        sender.send(body);
+        self.deref_mut().read(buf).await
     }
 }
 

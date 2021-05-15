@@ -1,12 +1,14 @@
-use crate::errors::*;
-//use crate::futures::stream::{Stream, StreamExt};
+use std::future::Future;
+use std::pin::Pin;
 use core::task::Context;
+
+//use crate::futures::stream::{Stream, StreamExt};
 use futures::future::Select;
 use futures::task::Poll;
 use futures::Stream;
 use futures::StreamExt;
-use std::future::Future;
-use std::pin::Pin;
+
+use crate::errors::*;
 
 const BUF_SIZE: usize = 4096;
 
@@ -314,7 +316,7 @@ impl<T: 'static + Send, S: crate::futures::sink::Sink<T> + Send + Unpin> Sinkabl
 /// internal implementation is responsible for ensuring that any necessary
 /// locking is performed.
 #[async_trait]
-pub trait Readable: Send + Sync + Unpin + 'static {
+pub trait Readable: Send + Unpin + 'static {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
 
     // TODO: Deduplicate for http::Body
@@ -353,6 +355,44 @@ pub trait Readable: Send + Sync + Unpin + 'static {
         Ok(())
     }
 }
+
+/// Wrapper around a future which resolves to a Readable that will eventually be ready.
+pub enum DeferredReadable<R: Readable> {
+    Ready(R),
+    Waiting(Pin<Box<dyn Future<Output=Result<R>> + Send + 'static>>),
+    Error(Option<Error>)
+}
+
+impl<R: Readable> DeferredReadable<R> {
+    pub fn wrap<F: 'static + Send + Future<Output=Result<R>>>(f: F) -> Self {
+        Self::Waiting(Box::pin(f))
+    }
+}
+
+#[async_trait]
+impl<R: Readable>
+Readable for DeferredReadable<R> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        loop {
+            match self {
+                DeferredReadable::Ready(r) => {
+                    return r.read(buf).await;
+                }
+                DeferredReadable::Waiting(f) => {
+                    let r = f.await;
+                    match r {
+                        Ok(r) => *self = DeferredReadable::Ready(r),
+                        Err(e) => *self = DeferredReadable::Error(Some(e))
+                    }
+                }
+                DeferredReadable::Error(e) => {
+                    return Err(e.take().unwrap_or_else(|| err_msg("Deferred reader previously errored out")));
+                }
+            }
+        }
+    }
+}
+
 
 #[async_trait]
 pub trait Writeable: Send + Sync + Unpin + 'static {

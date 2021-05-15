@@ -19,6 +19,11 @@ pub const CONTENT_TYPE: &'static [u8] = b"Content-Type";
 
 pub const DATE: &'static [u8] = b"Date";
 
+pub const HOST: &'static [u8] = b"Host";
+
+pub const UPGRADE: &'static [u8] = b"Upgrade";
+
+
 #[derive(Debug)]
 pub struct Header {
     pub name: AsciiString,

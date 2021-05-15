@@ -66,7 +66,7 @@ pub(crate) struct StatusLine {
 }
 
 // https://tools.ietf.org/html/rfc7230#section-5.3
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum RequestTarget {
     /// Standard relative path. This is the typical request
     OriginForm(AsciiString, Option<AsciiString>),
@@ -134,7 +134,7 @@ pub enum HttpStreamEvent {
     EndOfStream,
 }
 
-pub async fn read_http_message<'a>(stream: &mut StreamReader) -> Result<HttpStreamEvent> {
+pub async fn read_http_message<'a>(stream: &mut PatternReader) -> Result<HttpStreamEvent> {
     // TODO: When we get the *first* CRLF, check if we got a 0.9 request
     // ^ TODO: Should only do the above when processing a request (it would be
     // invalid during a response).

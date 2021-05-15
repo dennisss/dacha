@@ -14,8 +14,12 @@ pub struct Response {
 #[derive(Debug)]
 pub struct ResponseHead {
     pub version: Version,
+    
     pub status_code: StatusCode,
+    
+    /// NOTE: Will be empty in HTTP 2.
     pub reason: OpaqueString,
+
     pub headers: Headers,
 }
 

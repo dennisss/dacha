@@ -74,7 +74,47 @@ pub fn new_settings_ack_frame() -> Vec<u8> {
         }.to_u8().unwrap(),
         reserved: 0,
         stream_id: 0
-    }.serialize(&mut frame);
+    }.serialize(&mut frame).unwrap();
+
+    frame
+}
+
+pub fn new_rst_stream_frame(stream_id: StreamId, error: ProtocolError) -> Vec<u8> {
+    let mut frame = vec![];
+    FrameHeader {
+        typ: FrameType::RST_STREAM,
+        length: RstStreamFramePayload::size_of() as u32,
+        flags: 0,
+        reserved: 0,
+        stream_id
+    }.serialize(&mut frame).unwrap();
+
+    RstStreamFramePayload {
+        error_code: error.code
+    }.serialize(&mut frame).unwrap();
+
+    frame
+}
+
+pub fn new_goaway_frame(last_stream_id: StreamId, error: ProtocolError) -> Vec<u8> {
+    let mut payload = vec![];
+    GoawayFramePayload {
+        reserved: 0,
+        last_stream_id,
+        error_code: error.code,
+        additional_debug_data: error.message.as_bytes().to_vec()
+    }.serialize(&mut payload).unwrap();
+
+    let mut frame = vec![];
+    FrameHeader {
+        typ: FrameType::GOAWAY,
+        length: payload.len() as u32,
+        flags: 0,
+        reserved: 0,
+        stream_id: 0
+    }.serialize(&mut frame).unwrap();
+
+    frame.extend_from_slice(&payload);
 
     frame
 }

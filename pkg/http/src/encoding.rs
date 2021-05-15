@@ -30,18 +30,20 @@ impl TransferCoding {
 
 // TODO: When encoding, we need to check TE 
 
-pub fn get_transfer_encoding_body(
+/// NOTE: This assumes that 'chunked' has already been removed from the end of the list. 
+pub fn decode_transfer_encoding_body(
     mut transfer_encoding: Vec<TransferCoding>,
-    stream: StreamReader,
+    // stream: PatternReader,
+    mut body: Box<dyn Body>
 ) -> Result<Box<dyn Body>> {
 
     // TODO: 'chunked' is allowed to not be first for responses?
-    let mut body: Box<dyn Body> = if transfer_encoding.last().unwrap().name() == "chunked" {
-        transfer_encoding.pop();
-        Box::new(IncomingChunkedBody::new(stream))
-    } else {
-        Box::new(IncomingUnboundedBody { stream })
-    };
+    // let mut body: Box<dyn Body> = if transfer_encoding.last().unwrap().name() == "chunked" {
+    //     transfer_encoding.pop();
+    //     Box::new(IncomingChunkedBody::new(stream))
+    // } else {
+    //     Box::new(IncomingUnboundedBody { stream })
+    // };
 
     for coding in transfer_encoding.iter().rev() {
         if coding.name() == "identity" {
@@ -52,6 +54,8 @@ pub fn get_transfer_encoding_body(
             body = Box::new(TransformBody::new(body, Box::new(Inflater::new())));
         } else {
             // TODO: Support "compress"
+
+            // TODO: Seeing "chunked" should result in a 400 (Bad Request)
 
             // NOTE: Chunked is not handled here as it is only allow to occur once at the
             // end (which is handled above).

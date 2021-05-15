@@ -72,7 +72,10 @@ pub enum ConnectionEvent {
 
     /// A locally initialized GOAWAY was triggered. In response, we should let the other endpoint
     /// know about it.
-    Goaway(ProtocolError),
+    Goaway {
+        last_stream_id: StreamId,
+        error: ProtocolError
+    },
     
     /// We received a remote GOAWAY with a non-NO_ERROR code or the reader thread failed, so we
     /// should close the connection ASAP.

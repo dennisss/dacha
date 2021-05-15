@@ -29,6 +29,7 @@ pub mod line_builder;
 pub mod vec;
 pub mod const_default;
 pub mod pipe;
+pub mod borrowed;
 
 pub use async_trait::*;
 pub use lazy_static::*;

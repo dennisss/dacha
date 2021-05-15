@@ -37,9 +37,8 @@ async fn run_client() -> Result<()> {
 
     let req = RequestBuilder::new()
         .method(Method::GET)
-        .uri("/index.html")
+        .uri("http://www.google.com/index.html")
         .header("Accept", "text/html")
-        .header("Host", "www.google.com")
         .header("Accept-Encoding", "gzip")
         .body(EmptyBody()) // TODO: Should we make this the default?
         .build()?;

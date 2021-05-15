@@ -980,6 +980,7 @@ dependencies = [
  "async-std",
  "common",
  "compression",
+ "failure",
  "parsing",
  "parsing_compiler",
 ]

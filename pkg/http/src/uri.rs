@@ -22,6 +22,10 @@ pub struct Uri {
 
     pub authority: Option<Authority>,
     
+    // TODO: Normalize to "/"
+    // See RFC 7230 5.7.2.  Transformations
+    // See also 2.7.3 for how to do normalization / comparison of http(s) URIs.
+
     // TODO: Simplify the parsing of this to just the AsciiString and then
     // it can later be interpreted if needed.
     //

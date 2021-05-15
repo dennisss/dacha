@@ -11,6 +11,8 @@ pub enum Method {
     OPTIONS,
     TRACE,
     PATCH,
+    // /// Only used when upgrading to HTTP2
+    // PRI,
 }
 
 impl Method {

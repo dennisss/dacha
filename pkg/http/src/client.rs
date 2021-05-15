@@ -4,8 +4,9 @@ use std::net::SocketAddr;
 use common::async_std::net::TcpStream;
 use common::async_std::prelude::*;
 use common::errors::*;
+use common::borrowed::Borrowed;
 
-use crate::body::*;
+use crate::{body::*, chunked::IncomingChunkedBody, uri_syntax::serialize_authority};
 use crate::dns::*;
 use crate::header::*;
 use crate::header_syntax::*;
@@ -103,13 +104,19 @@ impl Client {
     // TODO: If we recieve an unterminated body, then we should close the
     // connection right afterwards.
 
+    // TODO: All of this logic should also apply to HTTP 2 with the main exception being that we don't need to
+    // shard the reader.
+
     /// Based on the procedure in RFC7230 3.3.3. Message Body Length
     /// Implemented from the client/requester point of view.
     fn create_body(
         req: &Request,
         res_head: &ResponseHead,
-        stream: StreamReader,
+        reader: PatternReader,
     ) -> Result<Box<dyn Body>> {
+        let (reader, reader_returner) = Borrowed::wrap(reader);
+        let mut close_delimited = false;
+
         // 1.
         let code = res_head.status_code.as_u16();
         if req.head.method == Method::HEAD
@@ -117,30 +124,39 @@ impl Client {
             || res_head.status_code == NO_CONTENT
             || res_head.status_code == NOT_MODIFIED
         {
+            close_delimited = false;
             return Ok(EmptyBody());
         }
 
         // 2.
         if req.head.method == Method::CONNECT && (code >= 200 && code < 300) {
+            close_delimited = false;
             return Ok(EmptyBody());
         }
 
-        let transfer_encoding = parse_transfer_encoding(&res_head.headers)?;
-        let content_length = parse_content_length(&res_head.headers)?;
+        let mut transfer_encoding = parse_transfer_encoding(&res_head.headers)?;
 
-        // These should never both be present.
-        if transfer_encoding.len() > 0 && content_length.is_some() {
-            return Err(err_msg(
-                "Messages can not have both a Transfer-Encoding \
-								and Content-Length",
-            ));
-        }
+        // // These should never both be present.
+        // if transfer_encoding.len() > 0 && content_length.is_some() {
+        //     return Err(err_msg(
+        //         "Messages can not have both a Transfer-Encoding \
+		// 						and Content-Length",
+        //     ));
+        // }
 
         // 3.
         // NOTE: The length of the transfer_encoding is limited by
         // parse_transfer_encoding already.
         if transfer_encoding.len() > 0 {
-            return get_transfer_encoding_body(transfer_encoding, stream);
+            let body: Box<dyn Body> = {
+                if transfer_encoding.pop().unwrap().name() == "chunked" {
+                    Box::new(IncomingChunkedBody::new(reader))
+                } else {
+                    Box::new(IncomingUnboundedBody { reader })
+                }
+            };
+
+            return decode_transfer_encoding_body(transfer_encoding, body);
         }
         /*
         If a Transfer-Encoding header field is present in a response and
@@ -154,18 +170,18 @@ impl Client {
         */
 
         // 4.
-        // This is handled by the parse_content_length validation from earlier.
+        let content_length = parse_content_length(&res_head.headers)?;
 
         // 5.
         if let Some(length) = content_length {
-            return Ok(Box::new(IncomingSizedBody { stream, length }));
+            return Ok(Box::new(IncomingSizedBody { reader, length }));
         }
 
         // 6.
         // Only applicable on the server side
 
         // 7.
-        Ok(Box::new(IncomingUnboundedBody { stream }))
+        Ok(Box::new(IncomingUnboundedBody { reader }))
     }
 
     // Given request, if not connected, connect
@@ -176,7 +192,9 @@ impl Client {
     // If not using a content length, then we should close the connection
     pub async fn request(&self, mut req: Request) -> Result<Response> {
         if
-        /* req.head.headers.has(CONTENT_LENGTH) || */
+        req.head.headers.has(CONNECTION) ||
+        req.head.headers.has(CONTENT_LENGTH) ||
+        req.head.headers.has(HOST) ||
         req.head.headers.has(KEEP_ALIVE) || req.head.headers.has(TRANSFER_ENCODING) {
             return Err(err_msg("Given reserved header"));
         }
@@ -188,9 +206,29 @@ impl Client {
         stream.set_nodelay(true)?;
         
         let mut write_stream = stream.clone();
-        let mut read_stream = StreamReader::new(Box::new(stream), MESSAGE_HEAD_BUFFER_OPTIONS);
+        let mut read_stream = PatternReader::new(Box::new(stream), MESSAGE_HEAD_BUFFER_OPTIONS);
 
         // TODO: Set 'Connection: keep-alive' to support talking to legacy (1.0 servers)
+
+        if let Some(scheme) = req.head.uri.scheme.take() {
+            // TODO: Verify if 'http(s)' as others aren't supported by this client.  
+        } else {
+            return Err(err_msg("Missing scheme in URI"));
+        }
+
+        // TODO: When using the 'Host' header, we can't provie the userinfo
+        if let Some(authority) = req.head.uri.authority.take() {
+            let mut value = vec![];
+            serialize_authority(&authority, &mut value)?;
+
+            // TODO: Ensure that this is the first header sent.
+            req.head.headers.raw_headers.push(Header {
+                name: parsing::ascii::AsciiString::from(HOST).unwrap(),
+                value: parsing::opaque::OpaqueString::from(value)
+            });
+        } else {
+            return Err(err_msg("Missing authority in URI"));
+        }
 
         let mut out = vec![];
         req.head.serialize(&mut out);

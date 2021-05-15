@@ -1,9 +1,12 @@
 use common::errors::*;
+use common::bytes::Bytes;
 use parsing::ascii::AsciiString;
+use parsing::opaque::OpaqueString;
 use parsing::complete;
 
-use crate::message_syntax::parse_token;
-use crate::header::Headers;
+use crate::{message::HTTP_V1_1, message_syntax::parse_token};
+use crate::header::{Headers, Header};
+use crate::header::CONNECTION;
 use crate::header_syntax::comma_delimited;
 use crate::message::Version;
 
@@ -13,6 +16,7 @@ const MAX_CONNECTION_OPTIONS: usize = 4;
 const KEEP_ALIVE: &'static str = "Keep-Alive";
 const CLOSE: &'static str = "Close";
 
+#[derive(PartialEq)]
 pub enum ConnectionOption {
     // TODO: Also parse Keep-Alive related options. 
     KeepAlive,
@@ -68,6 +72,41 @@ pub fn parse_connection(headers: &Headers) -> Result<Vec<ConnectionOption>> {
 /// 
 /// NOTE: If the body doesn't have a well defined length, then the connection may have to close
 /// anyway.
-pub fn can_connection_persistent(version: &Version, headers: &Headers) -> Result<bool> {
+///
+/// Returns whether or not the connection can persist or an error if the request is invalid. 
+pub fn can_connection_persistent(received_version: &Version, headers: &Headers) -> Result<bool> {
+    let options = parse_connection(headers)?;
+
+    let mut has_close_option = false;
+    let mut has_keep_alive_option = false;
+    for option in &options {
+        if option == &ConnectionOption::KeepAlive {
+            has_keep_alive_option = true;
+        } else if option == &ConnectionOption::Close {
+            has_close_option = true;
+        }
+    }
+
+    if has_close_option {
+        return Ok(false);
+    }
+
+    // TODO: Technically this should be any version >= 1.1
+    if received_version == &HTTP_V1_1 {
+        return Ok(true);
+    }
+
+    // TODO: We must also not be a proxy.
+    if has_keep_alive_option {
+        return Ok(true);
+    }
+
     Ok(false)
+}
+
+pub fn append_connection_header(persist_connection: bool, headers: &mut Headers) {
+    headers.raw_headers.push(Header {
+        name: AsciiString::from(Bytes::from(CONNECTION)).unwrap(),
+        value: OpaqueString::from(if persist_connection { "keep-alive" } else { "close" })
+    });
 }

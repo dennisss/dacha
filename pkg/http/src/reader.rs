@@ -69,10 +69,18 @@ impl Matcher for LineMatcher {
     }
 }
 
-/// Wrapper around a byte stream with special operations that require buffering of the input data.
+/*
+    Buffer a lot.
+
+*/
+
+/// Wrapper around a byte stream which makes pattern matching more efficient.
 ///
-/// TODO: Find a better name for this. Rename StreamIO as this now supports passing through write as well
-pub struct StreamReader {
+/// See the read_matching() method which implements buffered reading from the underlying
+/// stream to efficiently detect patterns with unknown byte offsets. After it is called,
+/// the reader can continue to be used as a Readable as if the pattern was read exactly
+/// without overreading.
+pub struct PatternReader {
     reader: Box<dyn Readable>,
 
     /// TODO: Use something lighter weight like the BufferQueue.
@@ -81,9 +89,9 @@ pub struct StreamReader {
     options: StreamBufferOptions
 }
 
-impl StreamReader {
+impl PatternReader {
     pub fn new(reader: Box<dyn Readable>, options: StreamBufferOptions) -> Self {
-        StreamReader {
+        PatternReader {
             reader,
             head: Bytes::new(),
             options
@@ -164,7 +172,7 @@ impl StreamReader {
 }
 
 #[async_trait]
-impl Readable for StreamReader {
+impl Readable for PatternReader {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let mut rest = buf;
         let mut total_read = 0;
@@ -178,7 +186,6 @@ impl Readable for StreamReader {
         }
 
         if rest.len() > 0 {
-            let r = self.reader.as_ref();
             let nread = self.reader.read(rest).await?;
             total_read += nread;
         }

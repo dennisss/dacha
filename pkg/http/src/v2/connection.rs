@@ -10,13 +10,13 @@ use common::futures::select;
 use common::chrono::prelude::*;
 use parsing::ascii::AsciiString;
 
-use crate::{message::Version, request::RequestHead, uri::Uri, v2::types::*};
+use crate::{header::UPGRADE, message::Version, request::RequestHead, uri::Uri, v2::types::*};
 use crate::v2::body::*;
 use crate::v2::stream::*;
 use crate::v2::stream_state::*;
 use crate::v2::headers::*;
 use crate::v2::connection_state::*;
-use crate::{headers::connection, method::Method, uri_syntax::serialize_authority, v2::settings::*};
+use crate::{headers::connection, method::Method, v2::settings::*};
 use crate::hpack::HeaderFieldRef;
 use crate::hpack;
 use crate::request::Request;
@@ -34,6 +34,8 @@ const MAX_STREAM_ID: StreamId = (1 << 31) - 1;
 /// Amount of time after which we'll close the connection if we don't receive an acknowledment to our
 /// 
 const SETTINGS_ACK_TIMEOUT_SECS: usize = 10;
+
+const UPGRADE_STREAM_ID: StreamId = 1;
 
 // TODO: Should also use PING to countinuously verify that the server is still alive.
 //
@@ -120,7 +122,7 @@ impl Connection {
 
         Connection {
             shared: Arc::new(ConnectionShared {
-                is_server: server_request_handler.is_some(),
+                is_server,
                 request_handler: server_request_handler,
                 connection_event_channel: channel::unbounded(),
                 state: Mutex::new(ConnectionState {
@@ -143,6 +145,95 @@ impl Connection {
             })
         }
     }
+
+    /// Called on a client which just sent a request over HTTP 1.1 with an Upgrade to 2.0.
+    /// Calling this with register this request as running on stream 1 and returning the response
+    /// when it is available.
+    ///
+    /// NOTE: Must be called before 'run()'. The returned future MUST be waited on after run() though.
+    pub async fn receive_upgrade_response(&self) -> Result<impl std::future::Future<Output=Result<Response>>> {
+        let mut connection_state = self.shared.state.lock().await;
+
+        if self.shared.is_server {
+            return Err(err_msg("Must be a client to receive a upgrade response"));
+        }
+
+        if connection_state.running {
+            return Err(err_msg("receive_upgrade_response() called after the connection is running"));
+        }
+
+        if connection_state.last_sent_stream_id >= UPGRADE_STREAM_ID {
+            return Err(err_msg("Upgrade stream already created?"))
+        }
+
+        connection_state.last_sent_stream_id = UPGRADE_STREAM_ID;
+
+        let (mut stream, incoming_body, outgoing_body) = self.shared.new_stream(
+            &connection_state, UPGRADE_STREAM_ID);
+
+        // Perform a local close.
+        {
+            let mut stream_state = stream.state.lock().await;
+            stream_state.sending_at_end = true;
+            drop(outgoing_body);
+        }
+
+
+        let (sender, receiver) = channel::bounded::<Result<Response>>(1);
+
+        stream.incoming_response_handler = Some((Box::new(sender), incoming_body));
+
+        connection_state.streams.insert(UPGRADE_STREAM_ID, stream);
+
+        Ok(Self::receiver_future(receiver))
+    }
+
+    async fn receiver_future(receiver: channel::Receiver<Result<Response>>) -> Result<Response> {
+        receiver.recv().await?
+    }
+
+    /// Called on a server which received a request over HTTP 1.1 with an Upgrade to 2.0.
+    /// Calling this will
+    ///
+    /// NOTE: Must be called before 'run()'
+    pub async fn process_upgrade_request(&self, request: Request) -> Result<()> {
+        let mut connection_state = self.shared.state.lock().await;
+
+        // NOTE: Because it isn't running, it likely hasn't gotten into an error state yet.
+        if connection_state.running {
+            return Err(err_msg("Connection running before upgrade request registered"));
+        }
+
+        if !self.shared.is_server {
+            return Err(err_msg("Only servers can receive upgrade requests."));
+        }
+
+        if connection_state.last_received_stream_id >= UPGRADE_STREAM_ID {
+            return Err(err_msg("Multiple upgrade requests received?"));
+        }
+
+        connection_state.last_received_stream_id = UPGRADE_STREAM_ID;
+
+        let (mut stream, incoming_body, outgoing_body) = self.shared.new_stream(
+            &connection_state,  UPGRADE_STREAM_ID);
+
+        // Completely close the remote (client) endpoint. 
+        {
+            let mut stream_state = stream.state.lock().await;
+            stream_state.received_end_of_stream = true;
+            drop(incoming_body);
+        }
+
+        stream.outgoing_response_handler = Some(outgoing_body);
+
+        stream.processing_tasks.push(task::spawn(self.shared.clone().request_handler_driver(
+            UPGRADE_STREAM_ID, request)));
+
+        connection_state.streams.insert(UPGRADE_STREAM_ID, stream);
+
+        Ok(())
+    }
+
 
     pub async fn request(&self, request: Request) -> Result<Response> {
         if request.head.method == Method::CONNECT {
@@ -217,6 +308,8 @@ impl Connection {
     pub fn run(&self, reader: Box<dyn Readable>, writer: Box<dyn Writeable>) -> impl std::future::Future<Output=Result<()>> {
         self.shared.clone().run(reader, writer)
     }
+
+    
 }
 
 struct ConnectionShared {
@@ -253,6 +346,7 @@ struct ConnectionShared {
 }
 
 impl ConnectionShared {
+    
     
     async fn run(self: Arc<Self>, reader: Box<dyn Readable>, writer: Box<dyn Writeable>) -> Result<()> {
         {
@@ -296,21 +390,6 @@ impl ConnectionShared {
 
         // TODO: While sending/receiving headers, we should still be able to receive/send on the other half of the pipe.
 
-        /*
-            Events to look out for:
-            - New packets received from remote endpoint
-            - Local 'requests'
-                - A local request will contain the headers and other info needed to init the stream
-                - Will respond back with a stream id which can be used to read or write stuff.
-                - The main thread will wait for an mpsc queue
-
-            - A response will be a buffered quueue (for writing a request body we could just hold an Arc<Mutex> to the connection and wait for it to become free to be able to send more data?)
-                - Issue is that we can't hold for too long.
-
-
-            - NOTE: The connection will buffer any received data which hasn't yet been read 
-
-        */
     }
 
     // TODO: According to RFC 7540 Section 4.1, undefined flags should be left as zeros.
@@ -330,7 +409,19 @@ impl ConnectionShared {
         let mut stream_state = stream.state.lock().await;
         stream_state.error = Some(error.clone());
 
+        // TODO: Whenever we are resetting a stream, we can allow the other stream to 
+
+        // If there is unread data when resetting a stream we can clear it and count it as 'read' by
+        // increasing the connection level flow control limit. 
+        if stream_state.received_buffer.len() > 0 {
+            self.connection_event_channel.0.send(ConnectionEvent::StreamRead {
+                stream_id: 0,
+                count: stream_state.received_buffer.len()
+            }).await;
+        }
+
         // Clear no longer needed memory.
+        // TODO: Make sure that this doesn't happen if we are just gracefully closing a stream.
         stream_state.received_buffer.clear();
         stream_state.sending_buffer.clear();
 
@@ -415,7 +506,15 @@ impl ConnectionShared {
                     }
                 };
 
-                let _ = self.connection_event_channel.0.send(ConnectionEvent::Goaway(proto_error)).await;
+                let last_stream_id = {
+                    let connection_state = self.state.lock().await;
+                    connection_state.last_received_stream_id
+                };
+
+                let _ = self.connection_event_channel.0.send(ConnectionEvent::Goaway {
+                    error: proto_error,
+                    last_stream_id
+                }).await;
             }
         }
     }
@@ -566,8 +665,17 @@ impl ConnectionShared {
 
                     let mut stream_state = stream.state.lock().await;
 
+                    stream_state.received_total_bytes += data_frame.data.len();
+                    if data_flags.end_stream {
+                        if let Some(expected_size) = stream_state.received_expected_bytes.clone() {
+                            if expected_size != stream_state.received_total_bytes {
+                                // Error. Mismatch between content-length and data framing.
+                            }
+                        }
+                    }
+
                     if stream_state.received_end_of_stream {
-                        // Send a STREAM_CLOSED error.
+                        // Send a STREAM_CLOSED error (should be sent even if the stream is closed??)
                     }
 
                     if stream_state.local_window < (header_frame.length as WindowSize) {
@@ -675,7 +783,8 @@ impl ConnectionShared {
 
                     } else {
                         // TODO: Block if too many pings in a short period of time.
-                        self.connection_event_channel.0.send(ConnectionEvent::Ping { ping_frame }).await?;
+                        self.connection_event_channel.0.send(ConnectionEvent::Ping { ping_frame }).await
+                            .map_err(|_| err_msg("Writer thread closed"))?;
                     }
 
                 }
@@ -841,15 +950,28 @@ impl ConnectionShared {
                     // TODO: Only do this if the stream is successfully started?
                     connection_state.last_received_stream_id = received_headers.stream_id;
 
-                    
                     // Make new a new stream
 
-                    let (mut stream, incoming_body, outgoing_body) = self.new_stream(
+                    let (mut stream, mut incoming_body, outgoing_body) = self.new_stream(
                         &connection_state,  received_headers.stream_id);
+
+                    // TODO: What should we do if the 'Connection' header is present in an HTTP 2 request.
+
+                    let head = process_request_head(headers)?;
+
+                    // TODO: I will also need to verify things like whether or not a Transfer-Encoding is given (which is
+                    // limited when )
+                    if let Some(len) = crate::header_syntax::parse_content_length(&head.headers)? {
+                        let mut stream_state = stream.state.lock().await;
+                        stream_state.received_expected_bytes = Some(len);
+
+                        incoming_body.expected_length = Some(len);
+                    }
+                    // TODO: Verify that Transfer-Encoding header isn't used (not allowed when Content-Length is present).
 
                     let request = Request {
                         // TODO: Convert these to stream errors if possible?
-                        head: process_request_head(headers)?,
+                        head,
                         // TODO: Need to create a new stream to generate this
                         body: Box::new(incoming_body)
                     };
@@ -965,55 +1087,12 @@ impl ConnectionShared {
                     // Send the request headers.
                     // Initialize the stream
 
-                    let mut header_block = vec![];
-
                     let mut connection_state = self.state.lock().await;
 
-                    connection_state.local_header_encoder.append(HeaderFieldRef {
-                        name: METHOD_PSEUDO_HEADER_NAME.as_bytes(),
-                        value: request.head.method.as_str().as_bytes()
-                    }, &mut header_block);
+                    // Encode request headers block
 
-                    if let Some(scheme) = request.head.uri.scheme {
-                        connection_state.local_header_encoder.append(HeaderFieldRef {
-                            name: SCHEME_PSEUDO_HEADER_NAME.as_bytes(),
-                            value: scheme.as_ref().as_bytes(),
-                        }, &mut header_block);
-                    }
-
-                    // TODO: Ensure that the path is always '/' instead of empty (this should apply to HTTP1 as well).
-                    // Basically we should always normalize it to '/' when parsing a path.
-                    {
-                        let mut path = request.head.uri.path.as_ref().to_string();
-                        // TODO: For this we'd need to validate that 'path' doesn't have a '?'
-                        if let Some(query) = &request.head.uri.query {
-                            path.push('?');
-                            path.push_str(query.as_ref());
-                        }
-                        connection_state.local_header_encoder.append(HeaderFieldRef {
-                            name: PATH_PSEUDO_HEADER_NAME.as_bytes(),
-                            value: path.as_bytes()
-                        }, &mut header_block);
-                    }
-
-                    if let Some(authority) = &request.head.uri.authority {
-                        let mut authority_value = vec![];
-                        serialize_authority(authority, &mut authority_value)?;
-                        
-                        connection_state.local_header_encoder.append(HeaderFieldRef {
-                            name: AUTHORITY_PSEUDO_HEADER_NAME.as_bytes(),
-                            value: &authority_value
-                        }, &mut header_block);
-                    }
-
-                    for header in request.head.headers.raw_headers.iter() {
-                        // TODO: Verify that it doesn't start with a ':'
-                        let name = header.name.as_ref().to_ascii_lowercase();
-                        connection_state.local_header_encoder.append(HeaderFieldRef {
-                            name: name.as_bytes(),
-                            value: header.value.as_bytes()
-                        }, &mut header_block);
-                    }
+                    let header_block = encode_request_headers_block(
+                        &request.head, &mut connection_state.local_header_encoder)?;
 
                     // TODO: Write the rest of the headers (all names should be converted to ascii lowercase)
                     // (aside get a reference from the RFC)
@@ -1027,7 +1106,6 @@ impl ConnectionShared {
                     };
                     connection_state.last_sent_stream_id = stream_id;
 
-                    // XXX: Right here.
                     let (mut stream, incoming_body, outgoing_body) = self.new_stream(
                         &connection_state, stream_id);
 
@@ -1072,7 +1150,7 @@ impl ConnectionShared {
                     // We are now done setting up the stream.
                     // Now we should just send the request to the other side.
 
-                    Self::write_headers(writer.as_mut(), stream_id, &header_block, local_end,
+                    write_headers_block(writer.as_mut(), stream_id, &header_block, local_end,
                                         max_remote_frame_size).await?;
 
                     println!("Done request send!");
@@ -1115,27 +1193,14 @@ impl ConnectionShared {
                     };
 
                     // TODO: Verify that whenever we start encoding headers, we definately send them
-                    let mut header_block = vec![];
-
-                    connection_state.local_header_encoder.append(HeaderFieldRef {
-                        name: STATUS_PSEUDO_HEADER_NAME.as_bytes(),
-                        value: response.head.status_code.as_u16().to_string().as_bytes()
-                    }, &mut header_block);
-
-                    for header in response.head.headers.raw_headers.iter() {
-                        // TODO: Verify that it doesn't start with a ':'
-                        let name = header.name.as_ref().to_ascii_lowercase();
-                        connection_state.local_header_encoder.append(HeaderFieldRef {
-                            name: name.as_bytes(),
-                            value: header.value.as_bytes()
-                        }, &mut header_block);
-                    }
+                    let header_block = encode_response_headers_block(
+                        &response.head, &mut connection_state.local_header_encoder)?;
 
                     let max_remote_frame_size = connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
 
                     drop(connection_state);
 
-                    Self::write_headers(writer.as_mut(), stream_id, &header_block, local_end,
+                    write_headers_block(writer.as_mut(), stream_id, &header_block, local_end,
                                         max_remote_frame_size).await?;
 
                 }
@@ -1143,14 +1208,14 @@ impl ConnectionShared {
                     // TODO: this should receive an event from the other thread.
                     return Ok(());
                 }
-                ConnectionEvent::Goaway(error) => {
-                    
+                ConnectionEvent::Goaway { last_stream_id, error } => {
+                    writer.write_all(&frame_utils::new_goaway_frame(last_stream_id, error)).await?;
                 }
                 ConnectionEvent::AcknowledgeSettings => {
                     writer.write_all(&frame_utils::new_settings_ack_frame()).await?;
                 }
                 ConnectionEvent::ResetStream { stream_id, error } => {
-                    // TODO: Send this to the remote endpoint.
+                    writer.write_all(&frame_utils::new_rst_stream_frame(stream_id, error)).await?;
                 }
                 ConnectionEvent::Ping { ping_frame } => {
                     writer.write_all(&frame_utils::new_ping_frame(ping_frame.opaque_data, true)).await?;
@@ -1163,7 +1228,9 @@ impl ConnectionShared {
                     // TODO: Ideally batch these so that individual reads can't be used to determine internal control
                     // flow state. 
                     writer.write_all(&frame_utils::new_window_update_frame(0, count)).await?;
-                    writer.write_all(&frame_utils::new_window_update_frame(stream_id, count)).await?;
+                    if stream_id != 0 {
+                        writer.write_all(&frame_utils::new_window_update_frame(stream_id, count)).await?;
+                    }
                 }
                 // Write event:
                 // - Happens on either remote flow control updates or 
@@ -1240,6 +1307,9 @@ impl ConnectionShared {
 
                 received_buffer: vec![],
                 received_end_of_stream: false,
+                received_expected_bytes: None,
+                received_total_bytes: 0,
+
                 sending_buffer: vec![],
                 sending_at_end: false
             }))
@@ -1249,7 +1319,8 @@ impl ConnectionShared {
             stream_id,
             stream_state: stream.state.clone(),
             connection_event_sender: self.connection_event_channel.0.clone(),
-            read_available_receiver
+            read_available_receiver,
+            expected_length: None
         };
 
         let outgoing_body = OutgoingStreamBody {
@@ -1259,68 +1330,7 @@ impl ConnectionShared {
             write_available_receiver
         };
 
-        // What can we do with the OutgoingBody:
-        // - Bodies are trivially dependent on the Stream itself (or at least the StreamState)
-        // - Usually with streams we want to know the 
-
         (stream, incoming_body, outgoing_body)
-    }
-
-    /// Writes a block of headers in one or more frames.
-    async fn write_headers(writer: &mut dyn Writeable, stream_id: StreamId, header_block: &[u8], end_stream: bool,
-        max_remote_frame_size: usize) -> Result<()> {
-        let mut remaining: &[u8] = &header_block;
-        if remaining.len() == 0 {
-            return Err(err_msg("For some reason the header block is empty?"));
-        }
-
-        // TODO: Mark headers with END_STREAM if the body is empty.
-        let mut first = true;
-        while remaining.len() > 0 || first {
-            // TODO: Make this more robust. Currently this assumes that we don't include any padding or
-            // priority information which means that the entire payload is for the header fragment.
-            let n = std::cmp::min(remaining.len(), max_remote_frame_size);
-            let end_headers = n == remaining.len();
-
-            let mut frame = vec![];
-            if first {
-                FrameHeader {
-                    typ: FrameType::HEADERS,
-                    length: n as u32,
-                    flags: HeadersFrameFlags {
-                        priority: false,
-                        padded: false,
-                        end_headers,
-                        end_stream,
-                        reserved67: 0,
-                        reserved4: 0,
-                        reserved1: 0,
-                    }.to_u8().unwrap(),
-                    stream_id,
-                    reserved: 0
-                }.serialize(&mut frame)?;
-                first = false;
-            } else {
-                FrameHeader {
-                    typ: FrameType::CONTINUATION,
-                    length: n as u32,
-                    flags: ContinuationFrameFlags {
-                        end_headers,
-                        reserved34567: 0,
-                        reserved01: 0
-                    }.to_u8().unwrap(),
-                    stream_id,
-                    reserved: 0
-                }.serialize(&mut frame)?;
-            }
-
-            frame.extend_from_slice(&remaining[0..n]);
-            remaining = &remaining[n..];
-
-            writer.write_all(&frame).await?;
-        }
-
-        Ok(())
     }
 }
 
