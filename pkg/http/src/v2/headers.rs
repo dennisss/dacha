@@ -41,7 +41,7 @@ fn process_header_fields<F: FnMut(hpack::HeaderField) -> Result<()>>(
 
     for header in headers {
         if header.name.to_ascii_lowercase() != header.name {
-            return Err(ProtocolError {
+            return Err(ProtocolErrorV2 {
                 code: ErrorCode::PROTOCOL_ERROR,
                 message: "Header name is not lower case",
                 local: true
@@ -51,7 +51,7 @@ fn process_header_fields<F: FnMut(hpack::HeaderField) -> Result<()>>(
         if header.name.starts_with(b":") {
             if done_pseudo_headers {
                 // TODO: Convert to just a stream level error.
-                return Err(ProtocolError {
+                return Err(ProtocolErrorV2 {
                     code: ErrorCode::PROTOCOL_ERROR,
                     message: "Pseudo headers not at the beginning of the headers block",
                     local: true
@@ -124,6 +124,7 @@ pub fn encode_request_headers_block(head: &RequestHead, encoder: &mut hpack::Enc
     Ok(header_block)
 }
 
+// TODO: Perform Cookie field compression (also for requests)
 pub fn encode_response_headers_block(head: &ResponseHead, encoder: &mut hpack::Encoder) -> Result<Vec<u8>> {
     let mut header_block = vec![];
 
@@ -211,7 +212,7 @@ pub fn process_response_head(headers: Vec<hpack::HeaderField>) -> Result<Respons
             // TODO: COnvert to a stream error if this fails.
             status = Some(parsing::complete(crate::message_syntax::parse_status_code)(header.value.into())?.0);
         } else {
-            return Err(ProtocolError {
+            return Err(ProtocolErrorV2 {
                 code: ErrorCode::PROTOCOL_ERROR,
                 message: "Unknown pseudo header received",
                 local: true
@@ -224,7 +225,7 @@ pub fn process_response_head(headers: Vec<hpack::HeaderField>) -> Result<Respons
     Ok(ResponseHead {
         version: HTTP_V2_0,
         // TODO: Remove the unwrap
-        status_code: crate::status_code::StatusCode::from_u16(status.ok_or(ProtocolError {
+        status_code: crate::status_code::StatusCode::from_u16(status.ok_or(ProtocolErrorV2 {
             code: ErrorCode::PROTOCOL_ERROR,
             message: "Response missing status header",
             local: true

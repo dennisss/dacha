@@ -10,7 +10,7 @@ use common::futures::select;
 use common::chrono::prelude::*;
 use parsing::ascii::AsciiString;
 
-use crate::{header::UPGRADE, message::Version, request::RequestHead, uri::Uri, v2::types::*};
+use crate::v2::types::*;
 use crate::v2::body::*;
 use crate::v2::stream::*;
 use crate::v2::stream_state::*;
@@ -27,15 +27,31 @@ use crate::v2::frame_utils;
 
 const CONNECTION_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
+const CONNECTION_PREFACE_BODY: &[u8] = b"SM\r\n\r\n";
+
 const FLOW_CONTROL_MAX_SIZE: WindowSize = ((1u32 << 1) - 1) as i32;
 
 const MAX_STREAM_ID: StreamId = (1 << 31) - 1;
+
+/// Maximum number of bytes per stream that we will allow to be enqueued for sending to the
+/// remote server.
+///
+/// The actual max used will be the min of this value of the remote flow control window
+/// size. We maintain this as a separate setting to ensure that a misbehaving remote endpoint
+/// can't force us to use large amounts of memory while queuing data. 
+const MAX_SENDING_BUFFER_SIZE: usize = 1 << 16;  // 64 KB
+
+/// 
+const MAX_ENCODER_TABLE_SIZE: usize = 8192;
 
 /// Amount of time after which we'll close the connection if we don't receive an acknowledment to our
 /// 
 const SETTINGS_ACK_TIMEOUT_SECS: usize = 10;
 
 const UPGRADE_STREAM_ID: StreamId = 1;
+
+// NOTE: The connection frame control window is only updated on WINDOW_UPDATE frames (not SETTINGS)
+const INITIAL_CONNECTION_WINDOW_SIZE: WindowSize = 65535;
 
 // TODO: Should also use PING to countinuously verify that the server is still alive.
 //
@@ -89,6 +105,43 @@ struct ReceivedHeaders {
     typ: ReceivedHeadersType
 }
 
+pub struct ConnectionOptions {
+    pub protocol_settings: SettingsContainer,
+
+    pub max_sending_buffer_size: usize,
+
+    pub max_local_encoder_table_size: usize,
+
+    pub settings_ack_timeout: Duration
+}
+
+
+/// Describes any past processing which has already happened on the connection
+/// before it was handed to the HTTP2 'Connection' for further processing.
+pub struct ConnectionInitialState {
+    /// This is an HTTP server and we've already read the first line of the HTTP 2.0 preface
+    /// from the client. The second half of the preface still needs to be read.
+    ///
+    /// This is a convenience feature that is for enabling the easy implementation of HTTP 2
+    /// on top of an existing HTTP 1 server which scans the request head and then upgrades
+    /// if seeing an HTTP 2 version.
+    pub seen_preface_head: bool,
+
+    /// We are upgrading using an HTTP 1.1 request/response.
+    /// Usually this requires that some remaining data is written out to the stream before
+    /// it can be used for HTTP 2. (e.g. the HTTP 1.1 request body or the HTTP 1.1 101 upgrade
+    /// response). To support these requirements, this data can be passed in this state and
+    /// the HTTP2 connection will ensure that this data is written prior to HTTP2 data.
+    pub upgrade_payload: Option<Box<dyn Readable>>,
+}
+
+impl ConnectionInitialState {
+    pub fn raw() -> Self {
+        Self { seen_preface_head: false, upgrade_payload: None }
+    }
+}
+
+
 // TODO: Make sure we signal a small enough value to the hpack encoder to be reasonable.
 
 // TODO: Make sure we reject new streams when in a goaway state.
@@ -113,10 +166,11 @@ impl Connection {
         for OPTIONS, :path should be '*' instead of empty.
     */
 
+
     pub fn new(server_request_handler: Option<Box<dyn RequestHandler>>) -> Self {
-        let is_server = server_request_handler.is_some();
         let local_settings = SettingsContainer::default();
         let remote_settings = SettingsContainer::default();
+        let is_server = server_request_handler.is_some();
 
         // TODO: Implement SETTINGS_MAX_HEADER_LIST_SIZE.
 
@@ -128,16 +182,17 @@ impl Connection {
                 state: Mutex::new(ConnectionState {
                     running: false,
                     error: None,
-                    local_header_encoder: hpack::Encoder::new(
-                        remote_settings[SettingId::HEADER_TABLE_SIZE] as usize),
                     remote_header_decoder: hpack::Decoder::new(
                         local_settings[SettingId::HEADER_TABLE_SIZE] as usize),
                     local_settings: local_settings.clone(),
                     local_settings_sent_time: None,
                     local_pending_settings: local_settings.clone(),
-                    local_connection_window: local_settings[SettingId::INITIAL_WINDOW_SIZE] as WindowSize,
+                    local_connection_window: INITIAL_CONNECTION_WINDOW_SIZE,
+                    // local_connection_window: local_settings[SettingId::INITIAL_WINDOW_SIZE] as WindowSize,
                     remote_settings: remote_settings.clone(),
-                    remote_connection_window: remote_settings[SettingId::INITIAL_WINDOW_SIZE] as WindowSize,
+                    remote_settings_known: false,
+                    remote_connection_window: INITIAL_CONNECTION_WINDOW_SIZE,
+                    // remote_connection_window: remote_settings[SettingId::INITIAL_WINDOW_SIZE] as WindowSize,
                     last_received_stream_id: 0,
                     last_sent_stream_id: 0,
                     streams: HashMap::new()
@@ -199,6 +254,8 @@ impl Connection {
     pub async fn process_upgrade_request(&self, request: Request) -> Result<()> {
         let mut connection_state = self.shared.state.lock().await;
 
+        // TODO: This could be a convenienct place to deal with reading the settings header?
+
         // NOTE: Because it isn't running, it likely hasn't gotten into an error state yet.
         if connection_state.running {
             return Err(err_msg("Connection running before upgrade request registered"));
@@ -213,6 +270,14 @@ impl Connection {
         }
 
         connection_state.last_received_stream_id = UPGRADE_STREAM_ID;
+
+
+        let remote_settings = SettingsContainer::read_from_request(&request.head.headers)?;
+        // NOTE: Because we aren't running yet and we haven't created any streams yet, we don't need to do
+        // anything special to reconcile our state with the new settings.
+        connection_state.remote_settings = remote_settings;
+        connection_state.remote_settings_known = true;
+
 
         let (mut stream, incoming_body, outgoing_body) = self.shared.new_stream(
             &connection_state,  UPGRADE_STREAM_ID);
@@ -305,8 +370,10 @@ impl Connection {
     /// - The connection was gracefully shut down
     /// If an unexpected connection level error occurs, it will be returned from 
     ///
-    pub fn run(&self, reader: Box<dyn Readable>, writer: Box<dyn Writeable>) -> impl std::future::Future<Output=Result<()>> {
-        self.shared.clone().run(reader, writer)
+    pub fn run(
+        &self, initial_state: ConnectionInitialState, reader: Box<dyn Readable>, writer: Box<dyn Writeable>
+    ) -> impl std::future::Future<Output=Result<()>> {
+        self.shared.clone().run(initial_state, reader, writer)
     }
 
     
@@ -331,24 +398,17 @@ struct ConnectionShared {
     /// TODO: Make this a bounded channel?
     connection_event_channel: (channel::Sender<ConnectionEvent>, channel::Receiver<ConnectionEvent>),
 
+    // remote_settings_known_channel: (channel::Sender<ConnectionEvent>, )
+
     // Stream ids can't be re-used.
     // Also, stream ids can't be 
-
-    // How to implement a request:
-    // - Allowed to acquire a lock to the connection state and underlying writer,
-    //    - It should block if the flow control window is exceeded.
-    // ^ But wait, we don't support a push model, only a pull model?
-
-    // So do we want to poll all the distinct streams?
-    // - Probably not. would rather create one task per stream.
-    // - It will loop trying to read as much as we can until we exceed the remote flow control limit?
-    // - We'll have a separate priority queue of which data is available to be sent.    
 }
 
 impl ConnectionShared {
-    
-    
-    async fn run(self: Arc<Self>, reader: Box<dyn Readable>, writer: Box<dyn Writeable>) -> Result<()> {
+    async fn run(
+        self: Arc<Self>, initial_state: ConnectionInitialState,
+        reader: Box<dyn Readable>, writer: Box<dyn Writeable>
+    ) -> Result<()> {
         {
             let mut state = self.state.lock().await;
 
@@ -360,9 +420,10 @@ impl ConnectionShared {
 
         // NOTE: We could use a select! for these, but we'd rather run them in separate tasks so that they
         // can run in separate CPU threads.
-        let reader_task = task::spawn(self.clone().run_read_thread(reader));
+        let reader_task = task::spawn(self.clone().run_read_thread(
+            reader, initial_state.seen_preface_head));
 
-        let result = self.run_write_thread(writer).await;
+        let result = self.run_write_thread(writer, initial_state.upgrade_payload).await;
         println!("HTTP2 WRITE THREAD FAILED: {:?}", result);
 
         let _ = reader_task.cancel().await;
@@ -394,7 +455,7 @@ impl ConnectionShared {
 
     // TODO: According to RFC 7540 Section 4.1, undefined flags should be left as zeros.
 
-    async fn recv_reset_stream(&self, stream_id: StreamId, error: ProtocolError) -> Result<()> {
+    async fn recv_reset_stream(&self, stream_id: StreamId, error: ProtocolErrorV2) -> Result<()> {
         let mut connection_state = self.state.lock().await;
 
         let mut stream = {
@@ -449,7 +510,7 @@ impl ConnectionShared {
         Ok(())
     }
 
-    async fn send_reset_stream(&self, stream_id: StreamId, error: ProtocolError) -> Result<()> {
+    async fn send_reset_stream(&self, stream_id: StreamId, error: ProtocolErrorV2) -> Result<()> {
         self.recv_reset_stream(stream_id, error.clone());
         
         // Notify the writer thread that to let the other endpoint know that the stream should be killed.
@@ -479,8 +540,9 @@ impl ConnectionShared {
     ///
     /// External Error Handling:
     /// - The caller should cancel this future when it wants to 
-    async fn run_read_thread(self: Arc<Self>, reader: Box<dyn Readable>) {
-        let result = self.run_read_thread_inner(reader).await;
+    async fn run_read_thread(self: Arc<Self>, reader: Box<dyn Readable>,
+                             skip_preface_head: bool) {
+        let result = self.run_read_thread_inner(reader, skip_preface_head).await;
         
         match result {
             Ok(()) => {
@@ -490,7 +552,7 @@ impl ConnectionShared {
                 // TODO: Improve reporting of these errors up the call chain.
                 println!("HTTP2 READ THREAD FAILED: {:?}", e);
 
-                let proto_error = if let Some(e) = e.downcast_ref::<ProtocolError>() {
+                let proto_error = if let Some(e) = e.downcast_ref::<ProtocolErrorV2>() {
                     // We don't need to send a GOAWAY from remotely generated errors.
                     if !e.local {
                         let _ = self.connection_event_channel.0.send(ConnectionEvent::Closing).await;
@@ -499,7 +561,7 @@ impl ConnectionShared {
 
                     e.clone()
                 } else {
-                    ProtocolError {
+                    ProtocolErrorV2 {
                         code: ErrorCode::INTERNAL_ERROR,
                         message: "Unknown internal error occured",
                         local: true
@@ -520,12 +582,19 @@ impl ConnectionShared {
     }
 
     // NOTE: Will return an Ok(()) if and only if the 
-    async fn run_read_thread_inner(self: &Arc<Self>, mut reader: Box<dyn Readable>) -> Result<()> {
-        let mut preface = [0u8; CONNECTION_PREFACE.len()];
-        reader.read_exact(&mut preface).await?;
-        println!("Read thread started");
+    async fn run_read_thread_inner(self: &Arc<Self>, mut reader: Box<dyn Readable>,
+                                   seen_preface_head: bool) -> Result<()> {
+        if self.is_server {
+            let preface_str = if seen_preface_head { CONNECTION_PREFACE_BODY } else { CONNECTION_PREFACE };
 
-        // TODO: Don't allow starting any new streams until we've 
+            let mut preface = [0u8; CONNECTION_PREFACE.len()];
+            reader.read_exact(&mut preface[0..preface_str.len()]).await?;
+            if &preface[0..preface_str.len()] != preface_str {
+                return Err(err_msg("Incorrect preface received"));
+            }
+        }
+
+        // TODO: Don't allow starting any new streams until we've gotten the remote settings 
 
         // If the read thread fails, we should tell the write thread to complain about an error.
         // Likewise we need to be able to send other types of events to the write thread.
@@ -551,6 +620,7 @@ impl ConnectionShared {
                 state.local_settings[SettingId::MAX_FRAME_SIZE]
             };
 
+            // TODO: first frame must always be the Settings frame 
             
 
             // Error handling based on RFC 7540: Section 4.2
@@ -563,13 +633,13 @@ impl ConnectionShared {
                     header_frame.stream_id == 0;
                 
                 if can_alter_state {
-                    return Err(ProtocolError {
+                    return Err(ProtocolErrorV2 {
                         code: ErrorCode::FRAME_SIZE_ERROR,
                         message: "Received state altering frame larger than max frame size",
                         local: true
                     }.into());
                 } else {
-                    self.send_reset_stream(header_frame.stream_id, ProtocolError {
+                    self.send_reset_stream(header_frame.stream_id, ProtocolErrorV2 {
                         code: ErrorCode::FRAME_SIZE_ERROR,
                         message: "Received frame larger than max frame size",
                         local: true
@@ -598,7 +668,7 @@ impl ConnectionShared {
                 if header_frame.stream_id == received_header.stream_id ||
                    header_frame.typ != FrameType::CONTINUATION {
                     // TODO: Verify that this is the right error code.
-                    return Err(ProtocolError {
+                    return Err(ProtocolErrorV2 {
                         code: ErrorCode::PROTOCOL_ERROR,
                         message: "",
                         local: true
@@ -616,7 +686,7 @@ impl ConnectionShared {
             match header_frame.typ {
                 FrameType::DATA => {
                     if header_frame.stream_id == 0 {
-                        return Err(ProtocolError {
+                        return Err(ProtocolErrorV2 {
                             code: ErrorCode::PROTOCOL_ERROR,
                             message: "DATA frame received on the connection control stream.",
                             local: true
@@ -641,7 +711,7 @@ impl ConnectionShared {
                     let mut connection_state = self.state.lock().await;
                     if connection_state.local_connection_window < (header_frame.length as WindowSize) {
                         // TODO: Should we still 
-                        return Err(ProtocolError {
+                        return Err(ProtocolErrorV2 {
                             code: ErrorCode::FLOW_CONTROL_ERROR,
                             message: "Exceeded connection level window",
                             local: true
@@ -717,7 +787,7 @@ impl ConnectionShared {
                 }
                 FrameType::RST_STREAM => {
                     if header_frame.stream_id == 0 {
-                        return Err(ProtocolError {
+                        return Err(ProtocolErrorV2 {
                             code: ErrorCode::PROTOCOL_ERROR,
                             message: "Received RST_STREAM frame on connection control stream",
                             local: true
@@ -725,7 +795,7 @@ impl ConnectionShared {
                     }
 
                     if (header_frame.length as usize) != RstStreamFramePayload::size_of() {
-                        return Err(ProtocolError {
+                        return Err(ProtocolErrorV2 {
                             code: ErrorCode::FRAME_SIZE_ERROR,
                             message: "Received RST_STREAM frame of wrong length",
                             local: true
@@ -736,7 +806,7 @@ impl ConnectionShared {
                         let mut connection_state = self.state.lock().await;
                         if (self.is_local_stream_id(header_frame.stream_id) && header_frame.stream_id > connection_state.last_sent_stream_id) ||
                             (self.is_remote_stream_id(header_frame.stream_id) && header_frame.stream_id > connection_state.last_received_stream_id) {
-                            return Err(ProtocolError {
+                            return Err(ProtocolErrorV2 {
                                 code: ErrorCode::PROTOCOL_ERROR,
                                 message: "Received RST_STREAM for idle stream",
                                 local: true
@@ -746,30 +816,111 @@ impl ConnectionShared {
 
                     let rst_stream_frame = RstStreamFramePayload::parse_complete(&payload)?;
 
-                    self.recv_reset_stream(header_frame.stream_id, ProtocolError {
+                    self.recv_reset_stream(header_frame.stream_id, ProtocolErrorV2 {
                         code: rst_stream_frame.error_code,
                         message: "",
                         local: true
                     }).await?;
                 }
                 FrameType::SETTINGS => {
-                    // Need to immediately validate and apply the new settings.
-                    // then send out a message to ACK the change.
+                    if header_frame.stream_id != 0 {
+                        return Err(ProtocolErrorV2 {
+                            code: ErrorCode::PROTOCOL_ERROR,
+                            message: "Received SETTINGS frame on non-connection control stream",
+                            local: true
+                        }.into());
+                    }
+
+                    if header_frame.length % 6 != 0 {
+                        return Err(ProtocolErrorV2 {
+                            code: ErrorCode::FRAME_SIZE_ERROR,
+                            message: "Received SETTINGS frame of wrong length",
+                            local: true
+                        }.into());
+                    }
+
+                    let settings_flags = SettingsFrameFlags::parse_complete(&[header_frame.flags])?;
+                    let settings_frame = SettingsFramePayload::parse_complete(&payload)?;
+
+                    let mut connection_state = self.state.lock().await;
+
+                    if settings_flags.ack {
+                        if header_frame.length != 0 {
+                            return Err(ProtocolErrorV2 {
+                                code: ErrorCode::FRAME_SIZE_ERROR,
+                                message: "Received SETTINGS ACK with non-zero length",
+                                local: true
+                            }.into());
+                        }
+
+                        if connection_state.local_settings_sent_time.is_none() {
+                            return Err(ProtocolErrorV2 {
+                                code: ErrorCode::PROTOCOL_ERROR,
+                                message: "Received SETTINGS ACK while no settings where pending ACK",
+                                local: true
+                            }.into());
+                        }
+
+                        // TODO: Apply any other state changes that are needed.
+                        connection_state.local_settings = connection_state.local_pending_settings.clone();
+                        connection_state.local_settings_sent_time = None;
+                    } else {
+
+                        let mut header_table_size = None;
+
+                        // Apply the settings.
+                        for param in settings_frame.parameters {
+                            let old_value = connection_state.remote_settings.set(param.id, param.value)?;
+
+                            if param.id == SettingId::HEADER_TABLE_SIZE {
+                                // NOTE: This will be applied on the writer thread as it needs to ACK'ed in lock step
+                                // with any usages of the header encoder.
+                                header_table_size = Some(param.value);
+                            } else if param.id == SettingId::INITIAL_WINDOW_SIZE {
+                                // NOTE: Changes to this parameter DO NOT update the 
+
+                                let window_diff = (param.value - old_value.unwrap_or(0)) as WindowSize;
+
+                                for (stream_id, stream) in &connection_state.streams {
+                                    let mut stream_state = stream.state.lock().await;
+
+                                    if stream_state.sending_at_end && stream_state.sending_buffer.is_empty() {
+                                        continue;
+                                    }
+
+                                    stream_state.remote_window = stream_state.remote_window.checked_add(
+                                        window_diff).ok_or_else(|| Error::from(ProtocolErrorV2 {
+                                            code: ErrorCode::FLOW_CONTROL_ERROR,
+                                            message: "Change in INITIAL_WINDOW_SIZE cause a window to overflow",
+                                            local: true
+                                        }))?;
+
+                                    // The window size change may have make it possible for more data to be send.
+                                    stream.write_available_notifier.try_send(());
+                                }
+
+                                // Force a re-check of whether or not more data can be sent.
+                                self.connection_event_channel.0.send(ConnectionEvent::StreamWrite { stream_id: 0 }).await;
+                            }
+                        }
+
+                        self.connection_event_channel.0.send(ConnectionEvent::AcknowledgeSettings { header_table_size }).await;
+                    }
                 }
                 FrameType::PUSH_PROMISE => {
 
                 }
                 FrameType::PING => {
                     if header_frame.stream_id != 0 {
-                        return Err(ProtocolError {
+                        return Err(ProtocolErrorV2 {
                             code: ErrorCode::PROTOCOL_ERROR,
-                            message: "Received PING message of non-connection control stream",
+                            message: "Received PING message on non-connection control stream",
                             local: true
                         }.into());
                     }
 
                     if (header_frame.length as usize) != PingFramePayload::size_of() {
-                        return Err(ProtocolError {
+                        return Err(ProtocolErrorV2 {
                             code: ErrorCode::FRAME_SIZE_ERROR,
                             message: "Received PING message of wrong length",
                             local: true
@@ -790,7 +941,7 @@ impl ConnectionShared {
                 }
                 FrameType::GOAWAY => {
                     if header_frame.stream_id != 0 {
-                        return Err(ProtocolError {
+                        return Err(ProtocolErrorV2 {
                             code: ErrorCode::PROTOCOL_ERROR,
                             message: "Received GOAWAY frame on non-connection control stream",
                             local: true
@@ -811,7 +962,7 @@ impl ConnectionShared {
                     let mut connection_state = self.state.lock().await;
 
                     // TODO: Verify that once this is set, we won't generate any new streams.
-                    connection_state.error = Some(ProtocolError {
+                    connection_state.error = Some(ProtocolErrorV2 {
                         code: goaway_frame.error_code,
                         message: "Remote GOAWAY received", // TODO: Read the opaque message from the remote packet.
                         local: true
@@ -831,6 +982,7 @@ impl ConnectionShared {
                             // TODO: Only applies to locally initialized streams?
                             if self.is_local_stream_id(*stream_id) && *stream_id > goaway_frame.last_stream_id {
                                 // Reset the stream with a 'retryable' error.
+                                // Main challenge is deadling with locks.
                             }
                         }
 
@@ -849,7 +1001,7 @@ impl ConnectionShared {
                 FrameType::WINDOW_UPDATE => {
                     if (header_frame.length as usize) != WindowUpdateFramePayload::size_of() {
                         // Connection error: FRAME_SIZE_ERROR
-                        return Err(ProtocolError {
+                        return Err(ProtocolErrorV2 {
                             code: ErrorCode::FRAME_SIZE_ERROR,
                             message: "Received WINDOW_UPDATE message of wrong length",
                             local: true
@@ -861,7 +1013,7 @@ impl ConnectionShared {
                     let window_update_frame = WindowUpdateFramePayload::parse_complete(&payload)?;
                     if window_update_frame.window_size_increment == 0 {
                         if header_frame.stream_id == 0 {
-                            return Err(ProtocolError {
+                            return Err(ProtocolErrorV2 {
                                 code: ErrorCode::PROTOCOL_ERROR,
                                 message: "Received WINDOW_UPDATE with invalid 0 increment",
                                 local: true
@@ -869,7 +1021,7 @@ impl ConnectionShared {
                         }
 
                         // TODO: Send this even if the stream is unknown?
-                        self.send_reset_stream(header_frame.stream_id, ProtocolError {
+                        self.send_reset_stream(header_frame.stream_id, ProtocolErrorV2 {
                             code: ErrorCode::PROTOCOL_ERROR,
                             message: "Received WINDOW_UPDATE with invalid 0 increment",
                             local: true
@@ -879,7 +1031,7 @@ impl ConnectionShared {
 
                     let mut connection_state = self.state.lock().await;
                     if header_frame.stream_id == 0 {
-                        connection_state.remote_connection_window = connection_state.remote_connection_window.checked_add(window_update_frame.window_size_increment as WindowSize).ok_or_else(|| ProtocolError {
+                        connection_state.remote_connection_window = connection_state.remote_connection_window.checked_add(window_update_frame.window_size_increment as WindowSize).ok_or_else(|| ProtocolErrorV2 {
                             code: ErrorCode::PROTOCOL_ERROR,
                             message: "Overflow in connection flow control window size",
                             local: true
@@ -888,7 +1040,7 @@ impl ConnectionShared {
                         let mut stream_state = stream.state.lock().await;
                         
                         // TODO: Make this just a stream error? 
-                        stream_state.remote_window = stream_state.remote_window.checked_add(window_update_frame.window_size_increment as WindowSize).ok_or_else(|| ProtocolError {
+                        stream_state.remote_window = stream_state.remote_window.checked_add(window_update_frame.window_size_increment as WindowSize).ok_or_else(|| ProtocolErrorV2 {
                             code: ErrorCode::PROTOCOL_ERROR,
                             message: "Overflow in stream flow control window size",
                             local: true
@@ -934,7 +1086,7 @@ impl ConnectionShared {
                     if !self.is_remote_stream_id(received_headers.stream_id) ||
                        received_headers.stream_id < connection_state.last_received_stream_id ||
                        connection_state.streams.contains_key(&received_headers.stream_id) {
-                        return Err(ProtocolError {
+                        return Err(ProtocolErrorV2 {
                             code: ErrorCode::PROTOCOL_ERROR,
                             message: "Headers block received on non-new remotely initialized stream",
                             local: true
@@ -1011,7 +1163,7 @@ impl ConnectionShared {
                     let (response_handler, incoming_body) = match stream.incoming_response_handler.take() {
                         Some(v) => v,
                         None => {
-                            return Err(ProtocolError {
+                            return Err(ProtocolErrorV2 {
                                 code: ErrorCode::PROTOCOL_ERROR,
                                 message: "Received headers while not waiting for a response",
                                 local: true
@@ -1051,9 +1203,22 @@ impl ConnectionShared {
 
     /// Needs to listen for a bunch of stuff:
     /// - 
-    async fn run_write_thread(&self, mut writer: Box<dyn Writeable>) -> Result<()> {
+    async fn run_write_thread(&self, mut writer: Box<dyn Writeable>, upgrade_payload: Option<Box<dyn Readable>>,) -> Result<()> {
+        if let Some(mut reader) = upgrade_payload {
+            let mut buf = [0u8; 4096];
+            loop {
+                let n = reader.read(&mut buf).await?;
+                if n == 0 {
+                    break;
+                }
+                writer.write_all(&buf[0..n]).await?;
+            }
+        }
+        
         {
-            writer.write_all(CONNECTION_PREFACE).await?;
+            if !self.is_server {
+                writer.write_all(CONNECTION_PREFACE).await?;
+            }
 
             let mut state = self.state.lock().await;
 
@@ -1068,6 +1233,16 @@ impl ConnectionShared {
 
             state.local_settings_sent_time = Some(Utc::now());
         }
+
+        // TODO: Block right here if we haven't yet received the remote settings.
+
+        // Used to encode locally created headers to be sent to the other endpoint.
+        // NOTE: This is shared across all streams on the connection.
+        let mut local_header_encoder = {
+            let state = self.state.lock().await;
+            hpack::Encoder::new(
+                state.remote_settings[SettingId::HEADER_TABLE_SIZE] as usize)
+        };
 
         loop {
             // TODO: If we are gracefully shutting down, stop waiting for events once all pending
@@ -1084,15 +1259,7 @@ impl ConnectionShared {
                     // TODO: If anything in here fails, we should report it to the requester rather than
                     // killing the whole thread.
 
-                    // Send the request headers.
-                    // Initialize the stream
-
                     let mut connection_state = self.state.lock().await;
-
-                    // Encode request headers block
-
-                    let header_block = encode_request_headers_block(
-                        &request.head, &mut connection_state.local_header_encoder)?;
 
                     // TODO: Write the rest of the headers (all names should be converted to ascii lowercase)
                     // (aside get a reference from the RFC)
@@ -1150,6 +1317,8 @@ impl ConnectionShared {
                     // We are now done setting up the stream.
                     // Now we should just send the request to the other side.
 
+                    let header_block = encode_request_headers_block(
+                        &request.head, &mut local_header_encoder)?;
                     write_headers_block(writer.as_mut(), stream_id, &header_block, local_end,
                                         max_remote_frame_size).await?;
 
@@ -1192,13 +1361,13 @@ impl ConnectionShared {
                         }
                     };
 
-                    // TODO: Verify that whenever we start encoding headers, we definately send them
-                    let header_block = encode_response_headers_block(
-                        &response.head, &mut connection_state.local_header_encoder)?;
-
                     let max_remote_frame_size = connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
 
                     drop(connection_state);
+
+                    // TODO: Verify that whenever we start encoding headers, we definately send them
+                    let header_block = encode_response_headers_block(
+                        &response.head, &mut local_header_encoder)?;
 
                     write_headers_block(writer.as_mut(), stream_id, &header_block, local_end,
                                         max_remote_frame_size).await?;
@@ -1211,7 +1380,11 @@ impl ConnectionShared {
                 ConnectionEvent::Goaway { last_stream_id, error } => {
                     writer.write_all(&frame_utils::new_goaway_frame(last_stream_id, error)).await?;
                 }
-                ConnectionEvent::AcknowledgeSettings => {
+                ConnectionEvent::AcknowledgeSettings { header_table_size } => {
+                    if let Some(value) = header_table_size {
+                        local_header_encoder.set_protocol_max_size(value as usize);
+                    }
+
                     writer.write_all(&frame_utils::new_settings_ack_frame()).await?;
                 }
                 ConnectionEvent::ResetStream { stream_id, error } => {
@@ -1409,12 +1582,12 @@ mod tests {
 
         let server_conn = Connection::new(
             Some(Box::new(CalculatorRequestHandler {})));
-        let server_task = task::spawn(
-            server_conn.run(Box::new(reader1), Box::new(writer2)));
+        let server_task = task::spawn(server_conn.run(
+            ConnectionInitialState::raw(), Box::new(reader1), Box::new(writer2)));
 
         let client_conn = Connection::new(None);
-        let client_task = task::spawn(
-            client_conn.run(Box::new(reader2), Box::new(writer1)));
+        let client_task = task::spawn(client_conn.run(
+            ConnectionInitialState::raw(),Box::new(reader2), Box::new(writer1)));
 
         let res = client_conn.request(RequestBuilder::new()
             .method(Method::GET)

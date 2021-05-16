@@ -21,6 +21,7 @@ pub mod header_syntax;
 pub mod message;
 mod message_syntax;
 mod reader;
+mod message_body;
 pub mod server;
 pub mod spec;
 pub mod status_code;

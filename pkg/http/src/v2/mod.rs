@@ -12,3 +12,5 @@ mod settings;
 mod connection;
 
 pub use connection::Connection;
+pub use connection::ConnectionInitialState;
+pub use settings::SettingsContainer;

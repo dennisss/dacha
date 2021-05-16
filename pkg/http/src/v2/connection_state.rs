@@ -7,7 +7,7 @@ use crate::v2::settings::*;
 use crate::v2::types::*;
 use crate::hpack;
 use crate::request::Request;
-use crate::response::Response;
+use crate::response::{Response, ResponseHandler};
 use crate::v2::stream::Stream;
 
 /// Volatile data associated with the connection.
@@ -20,13 +20,9 @@ pub struct ConnectionState {
     // Likewise if we send a GOAWAY, we shoulnd't create new streams?? (e.g. no more requests or PUSH_PROMISES??)
 
     /// If present, then the 
-    pub error: Option<ProtocolError>,
+    pub error: Option<ProtocolErrorV2>,
 
     // TODO: Shard this into the reader and writer states.
-
-    /// Used to encode locally created headers to be sent to the other endpoint.
-    /// NOTE: This is shared across all streams on the connection.
-    pub local_header_encoder: hpack::Encoder,
 
     /// Used to decode remotely created headers received on the connection.
     /// NOTE: This is shared across all streams on the connection.
@@ -46,6 +42,13 @@ pub struct ConnectionState {
     pub local_connection_window: WindowSize,
 
     pub remote_settings: SettingsContainer,
+
+    /// Whether or not we have received some set of settings from the remote endpoint
+    /// (e.g. the HTTP2-Settings header or an initial SETTINGS frame)
+    /// Else, the remote_settings field will only contain the default settings defined
+    /// by the HTTP2 protocol.
+    pub remote_settings_known: bool,
+
     pub remote_connection_window: WindowSize,
 
     pub last_received_stream_id: StreamId,
@@ -67,14 +70,14 @@ pub enum ConnectionEvent {
     /// are closing the stream prematurely.
     ResetStream {
         stream_id: StreamId,
-        error: ProtocolError
+        error: ProtocolErrorV2
     },
 
     /// A locally initialized GOAWAY was triggered. In response, we should let the other endpoint
     /// know about it.
     Goaway {
         last_stream_id: StreamId,
-        error: ProtocolError
+        error: ProtocolErrorV2
     },
     
     /// We received a remote GOAWAY with a non-NO_ERROR code or the reader thread failed, so we
@@ -83,7 +86,9 @@ pub enum ConnectionEvent {
 
     /// We received remote settings which we've applied to the local state and should now be
     /// acknowledged.
-    AcknowledgeSettings,
+    AcknowledgeSettings {
+        header_table_size: Option<u32>
+    },
 
     /////
 

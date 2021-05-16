@@ -1,12 +1,17 @@
+use std::sync::Arc;
 use std::convert::TryInto;
 use std::net::SocketAddr;
 
-use common::async_std::net::TcpStream;
+use common::{async_std::net::TcpStream};
 use common::async_std::prelude::*;
 use common::errors::*;
 use common::borrowed::Borrowed;
+use common::async_std::channel;
+use common::async_std::sync::Mutex;
+use common::io::{Readable, Writeable};
+use common::async_std::task;
 
-use crate::{body::*, chunked::IncomingChunkedBody, uri_syntax::serialize_authority};
+use crate::uri_syntax::serialize_authority;
 use crate::dns::*;
 use crate::header::*;
 use crate::header_syntax::*;
@@ -15,8 +20,6 @@ use crate::message_syntax::*;
 use crate::reader::*;
 use crate::spec::*;
 use crate::status_code::*;
-use crate::encoding::*;
-use crate::encoding_syntax::*;
 use crate::uri::*;
 use crate::response::*;
 use crate::request::*;
@@ -27,6 +30,8 @@ use crate::method::*;
 /// HTTP client connected to a single server.
 pub struct Client {
     socket_addr: SocketAddr,
+
+    // A client should have a list of 
 }
 
 impl Client {
@@ -104,99 +109,27 @@ impl Client {
     // TODO: If we recieve an unterminated body, then we should close the
     // connection right afterwards.
 
-    // TODO: All of this logic should also apply to HTTP 2 with the main exception being that we don't need to
-    // shard the reader.
-
-    /// Based on the procedure in RFC7230 3.3.3. Message Body Length
-    /// Implemented from the client/requester point of view.
-    fn create_body(
-        req: &Request,
-        res_head: &ResponseHead,
-        reader: PatternReader,
-    ) -> Result<Box<dyn Body>> {
-        let (reader, reader_returner) = Borrowed::wrap(reader);
-        let mut close_delimited = false;
-
-        // 1.
-        let code = res_head.status_code.as_u16();
-        if req.head.method == Method::HEAD
-            || (code >= 100 && code < 200)
-            || res_head.status_code == NO_CONTENT
-            || res_head.status_code == NOT_MODIFIED
-        {
-            close_delimited = false;
-            return Ok(EmptyBody());
-        }
-
-        // 2.
-        if req.head.method == Method::CONNECT && (code >= 200 && code < 300) {
-            close_delimited = false;
-            return Ok(EmptyBody());
-        }
-
-        let mut transfer_encoding = parse_transfer_encoding(&res_head.headers)?;
-
-        // // These should never both be present.
-        // if transfer_encoding.len() > 0 && content_length.is_some() {
-        //     return Err(err_msg(
-        //         "Messages can not have both a Transfer-Encoding \
-		// 						and Content-Length",
-        //     ));
-        // }
-
-        // 3.
-        // NOTE: The length of the transfer_encoding is limited by
-        // parse_transfer_encoding already.
-        if transfer_encoding.len() > 0 {
-            let body: Box<dyn Body> = {
-                if transfer_encoding.pop().unwrap().name() == "chunked" {
-                    Box::new(IncomingChunkedBody::new(reader))
-                } else {
-                    Box::new(IncomingUnboundedBody { reader })
-                }
-            };
-
-            return decode_transfer_encoding_body(transfer_encoding, body);
-        }
-        /*
-        If a Transfer-Encoding header field is present in a response and
-       the chunked transfer coding is not the final encoding, the
-       message body length is determined by reading the connection until
-       it is closed by the server.  If a Transfer-Encoding header field
-       is present in a request and the chunked transfer coding is not
-       the final encoding, the message body length cannot be determined
-       reliably; the server MUST respond with the 400 (Bad Request)
-       status code and then close the connection.
-        */
-
-        // 4.
-        let content_length = parse_content_length(&res_head.headers)?;
-
-        // 5.
-        if let Some(length) = content_length {
-            return Ok(Box::new(IncomingSizedBody { reader, length }));
-        }
-
-        // 6.
-        // Only applicable on the server side
-
-        // 7.
-        Ok(Box::new(IncomingUnboundedBody { reader }))
-    }
-
     // Given request, if not connected, connect
     // Write request to stream
     // Read response
     // - TODO: Response may be available before the request is sent (in the case of
     //   bodies)
     // If not using a content length, then we should close the connection
-    pub async fn request(&self, mut req: Request) -> Result<Response> {
+    pub async fn request(&self, mut request: Request) -> Result<Response> {
+        // TODO: We should allow the Connection header, but we shouldn't allow any options
+        // which are used internally (keep-alive and close)
         if
-        req.head.headers.has(CONNECTION) ||
-        req.head.headers.has(CONTENT_LENGTH) ||
-        req.head.headers.has(HOST) ||
-        req.head.headers.has(KEEP_ALIVE) || req.head.headers.has(TRANSFER_ENCODING) {
+        request.head.headers.has(CONNECTION) ||
+        request.head.headers.has(CONTENT_LENGTH) ||
+        request.head.headers.has(HOST) ||
+        request.head.headers.has(KEEP_ALIVE) || request.head.headers.has(TRANSFER_ENCODING) {
             return Err(err_msg("Given reserved header"));
+        }
+
+        if let Some(scheme) = request.head.uri.scheme.take() {
+            // TODO: Verify if 'http(s)' as others aren't supported by this client.  
+        } else {
+            return Err(err_msg("Missing scheme in URI"));
         }
 
         // TODO: For an empty body, the client doesn't need to send any special headers.
@@ -204,92 +137,320 @@ impl Client {
         // TODO: Use timeout?
         let stream = TcpStream::connect(self.socket_addr).await?;
         stream.set_nodelay(true)?;
+
+        let conn = ClientConnection::new();
+
+        let conn_runner = task::spawn(conn.shared.clone().run(
+            Box::new(stream.clone()), Box::new(stream)));
+
+        {
+            let mut local_settings = crate::v2::SettingsContainer::default();
+
+            let mut connection_options = vec![];
+            connection_options.push(crate::headers::connection::ConnectionOption::Unknown(
+                parsing::ascii::AsciiString::from("Upgrade").unwrap()));
+
+            // TODO: Copy the host from the request.
+            let mut upgrade_request = RequestBuilder::new()
+                .method(Method::GET)
+                .uri("http://www.google.com/")
+                // .header("Host", "www.google.com")
+                .header("Connection", "Upgrade, HTTP2-Settings")
+                .header("Upgrade", "h2c")
+                .body(crate::body::EmptyBody())
+                .build()
+                .unwrap();
+
+            local_settings.append_to_request(&mut upgrade_request.head.headers, &mut connection_options);
+            // TODO: Serialize the connection options vector into the header.
+
+            let (sender, receiver) = channel::bounded(1);
+
+            conn.shared.connection_event_channel.0.send(ClientConnectionEvent::Request {
+                request: upgrade_request,
+                upgrading: false,
+                response_handler: sender
+            }).await.map_err(|_| err_msg("Connection hung up"))?;
+
+            let res = receiver.recv().await??;
+
+            let res = match res {
+                ClientResponse::Regular { response } => {
+                    println!("{:?}", response.head);
+                    println!("DID NOT UPGRADE")
+                },
+                ClientResponse::Upgrading { response_head, .. } => {
+                    return Err(err_msg("UPGRADING"));
+                }
+            };
+        }
+
+
+        let (sender, receiver) = channel::bounded(1);
+
+        conn.shared.connection_event_channel.0.send(ClientConnectionEvent::Request {
+            request,
+            upgrading: false,
+            response_handler: sender
+        }).await.map_err(|_| err_msg("Connection hung up"))?;
+
+        let res = receiver.recv().await??;
+        let res = match res {
+            ClientResponse::Regular { response } => response,
+            ClientResponse::Upgrading { response_head, .. } => {
+                return Err(err_msg("Did not expect an upgrade"));
+            }
+        };
+
+
+        if let Some(r) = conn_runner.cancel().await {
+            r?;
+        }
+
         
-        let mut write_stream = stream.clone();
-        let mut read_stream = PatternReader::new(Box::new(stream), MESSAGE_HEAD_BUFFER_OPTIONS);
 
-        // TODO: Set 'Connection: keep-alive' to support talking to legacy (1.0 servers)
+        Ok(res)
 
-        if let Some(scheme) = req.head.uri.scheme.take() {
-            // TODO: Verify if 'http(s)' as others aren't supported by this client.  
-        } else {
-            return Err(err_msg("Missing scheme in URI"));
-        }
+    }
 
-        // TODO: When using the 'Host' header, we can't provie the userinfo
-        if let Some(authority) = req.head.uri.authority.take() {
-            let mut value = vec![];
-            serialize_authority(&authority, &mut value)?;
+    // pub async fn request_upgrade()
+}
 
-            // TODO: Ensure that this is the first header sent.
-            req.head.headers.raw_headers.push(Header {
-                name: parsing::ascii::AsciiString::from(HOST).unwrap(),
-                value: parsing::opaque::OpaqueString::from(value)
-            });
-        } else {
-            return Err(err_msg("Missing authority in URI"));
-        }
 
-        let mut out = vec![];
-        req.head.serialize(&mut out);
-        write_stream.write_all(&out).await?;
-        write_body(req.body.as_mut(), &mut write_stream).await?;
-
-        let head = match read_http_message(&mut read_stream).await? {
-            HttpStreamEvent::MessageHead(h) => h,
-            // TODO: Handle other bad cases such as too large headers.
-            _ => {
-                return Err(err_msg("Connection closed without a complete response"));
-            }
-        };
-
-        let body_start_idx = head.len();
-
-        //		println!("{:?}", String::from_utf8(head.to_vec()).unwrap());
-
-        let msg = match parse_http_message_head(head) {
-            Ok((msg, rest)) => {
-                assert_eq!(rest.len(), 0);
-                msg
-            }
-            Err(e) => {
-                // TODO: Consolidate these lines.
-                println!("Failed to parse message\n{}", e);
-                return Err(err_msg("Invalid message received"));
-            }
-        };
-
-        let start_line = msg.start_line;
-        let headers = msg.headers;
-
-        // Verify that we got a Request style message
-        let status_line = match start_line {
-            StartLine::Request(r) => {
-                return Err(err_msg("Received a request?"));
-            }
-            StartLine::Response(r) => r,
-        };
-
-        let status_code = StatusCode::from_u16(status_line.status_code)
-            .ok_or(Error::from(err_msg("Invalid status code")))?;
-
-        // TODO: If this is a HEAD request, do not receive any body
-
-        // If chunked encoding is used, then it msut b
-
-        // A sender MUST NOT send a Content-Length header field in any message
-        //    that contains a Transfer-Encoding header field.
-
-        let head = ResponseHead {
-            version: status_line.version,
-            // TODO: Print the code in the error case
-            status_code,
-            reason: status_line.reason,
-            headers,
-        };
-
-        let body = Self::create_body(&req, &head, read_stream)?;
-
-        Ok(Response { head, body })
+enum ClientConnectionEvent {
+    Request {
+        request: Request,
+        upgrading: bool,
+        response_handler: channel::Sender<Result<ClientResponse>>
     }
 }
+
+// Other challenges: If we are going to have an HTTP 1.1 connection pool, then we could re-use the 
+
+// If there is an upgrade pending, then we can't 
+
+/*
+TODO:
+A server MUST NOT switch protocols unless the received message semantics can be honored by the new protocol
+
+*/
+
+/*
+    Suppose we get a 
+*/
+
+// Upgraded: Will kill 
+
+/*
+    Key details about an upgrade request:
+    - We shouldn't send any more requests on a connection which is in the process of being upgraded.
+        - This implies that we should know if we're upgrading
+
+*/
+
+/// Stores the 
+enum ClientResponse {
+    Regular {
+        response: Response
+    },
+    Upgrading {
+        response_head: ResponseHead, 
+        reader: Box<dyn Readable>,
+        writer: Box<dyn Writeable>
+    },
+    
+}
+
+
+struct ClientConnection {
+    shared: Arc<ClientConnectionShared>,
+}
+
+impl ClientConnection {
+    fn new() -> Self {
+        ClientConnection {
+            shared: Arc::new(ClientConnectionShared {
+                connection_event_channel: channel::unbounded(),
+                state: Mutex::new(ClientConnectionState {
+                    running: false,
+                    pending_upgrade: false
+                })
+            })
+        }
+    }
+}
+
+struct ClientConnectionShared {
+    connection_event_channel: (channel::Sender<ClientConnectionEvent>, channel::Receiver<ClientConnectionEvent>),
+    state: Mutex<ClientConnectionState>
+}
+
+struct ClientConnectionState {
+    running: bool,
+
+
+    /*
+        State can be:
+        - Running
+        - PendingUpgrade
+        - Upgraded
+        - ErroredOut
+    */
+
+    // Either<Response, UpgradeResponse>
+
+    /// If true, then we sent a request on this connection to try to upgrade 
+    pending_upgrade: bool,
+}
+
+
+impl ClientConnectionShared {
+    /*
+        Creating a new client connection:
+        - If we know that the server supports HTTP2 (or we force it),
+            - Run an internal HTTP2 connection (pass all burden onto that)
+        - Else
+            - Run an 'OPTIONS *' request in order to attempt an upgrade to HTTP 2 (or maybe get some Alt-Svcs)
+            - If we upgraded, Do it!!!
+
+        - Future optimization:
+            - If we are sending a request as soon as the client is created, we can use that as the upgrade request
+                instead of the 'OPTION *' to avoid a 
+    */
+
+    async fn run(self: Arc<Self>, reader: Box<dyn Readable>, writer: Box<dyn Writeable>) -> Result<()> {
+        let r = self.run_inner(reader, writer).await;
+        println!("ClientConnection: {:?}", r);
+        r
+    }
+
+    async fn run_inner(self: Arc<Self>, reader: Box<dyn Readable>, mut writer: Box<dyn Writeable>) -> Result<()> {
+
+        let mut reader = PatternReader::new(reader, MESSAGE_HEAD_BUFFER_OPTIONS);
+
+        // How to block it 
+
+        loop {
+            let e = self.connection_event_channel.1.recv().await?;
+
+            match e {
+                ClientConnectionEvent::Request { mut request, upgrading, response_handler } => {
+                    // TODO: Set 'Connection: keep-alive' to support talking to legacy (1.0 servers)
+
+                    // TODO: When using the 'Host' header, we can't provie the userinfo
+                    if let Some(authority) = request.head.uri.authority.take() {
+                        let mut value = vec![];
+                        serialize_authority(&authority, &mut value)?;
+
+                        // TODO: Ensure that this is the first header sent.
+                        request.head.headers.raw_headers.push(Header {
+                            name: parsing::ascii::AsciiString::from(HOST).unwrap(),
+                            value: parsing::opaque::OpaqueString::from(value)
+                        });
+                    } else {
+                        return Err(err_msg("Missing authority in URI"));
+                    }
+
+                    let mut out = vec![];
+                    request.head.serialize(&mut out)?;
+                    writer.write_all(&out).await?;
+                    write_body(request.body.as_mut(), writer.as_mut()).await?;
+
+                    let head = match read_http_message(&mut reader).await? {
+                        HttpStreamEvent::MessageHead(h) => h,
+                        // TODO: Handle other bad cases such as too large headers.
+                        _ => {
+                            return Err(err_msg("Connection closed without a complete response"));
+                        }
+                    };
+
+                    let body_start_idx = head.len();
+
+                    //		println!("{:?}", String::from_utf8(head.to_vec()).unwrap());
+
+                    let msg = match parse_http_message_head(head) {
+                        Ok((msg, rest)) => {
+                            assert_eq!(rest.len(), 0);
+                            msg
+                        }
+                        Err(e) => {
+                            // TODO: Consolidate these lines.
+                            println!("Failed to parse message\n{}", e);
+                            return Err(err_msg("Invalid message received"));
+                        }
+                    };
+
+                    let start_line = msg.start_line;
+                    let headers = msg.headers;
+
+                    // Verify that we got a Request style message
+                    let status_line = match start_line {
+                        StartLine::Request(r) => {
+                            return Err(err_msg("Received a request?"));
+                        }
+                        StartLine::Response(r) => r,
+                    };
+
+                    let status_code = StatusCode::from_u16(status_line.status_code)
+                        .ok_or(Error::from(err_msg("Invalid status code")))?;
+
+                    // TODO: If this is a HEAD request, do not receive any body
+
+                    // If chunked encoding is used, then it msut b
+
+                    // A sender MUST NOT send a Content-Length header field in any message
+                    //    that contains a Transfer-Encoding header field.
+
+                    let head = ResponseHead {
+                        version: status_line.version,
+                        // TODO: Print the code in the error case
+                        status_code,
+                        reason: status_line.reason,
+                        headers,
+                    };
+
+
+                    let persist_connection = crate::headers::connection::can_connection_persist(
+                        &head.version, &head.headers)?;
+
+                    if head.status_code == SWITCHING_PROTOCOLS {
+                        let _ = response_handler.try_send(Ok(ClientResponse::Upgrading {
+                            response_head: head,
+                            reader: Box::new(reader),
+                            writer
+                        }));
+                        return Ok(());
+                    }
+
+                    let (body, reader_returner) = crate::message_body::create_client_response_body(
+                        &request, &head, reader)?;
+
+
+                    let _ = response_handler.try_send(Ok(ClientResponse::Regular {
+                        response: Response { head, body }
+                    }));
+
+                    println!("WAITING FOR FULLY READ");
+
+                    // With a well framed response body, we can perist the connection.
+                    if persist_connection {
+                        if let Some(returner) = reader_returner {
+                            reader = returner.wait().await?;
+                            continue;
+                        }
+                    }
+
+                    println!("ON TO NEXT REQUEST");
+
+                    // Connection can no longer persist.
+                    break;
+                }
+            }
+        }
+
+
+        Ok(())
+    }
+
+}
+

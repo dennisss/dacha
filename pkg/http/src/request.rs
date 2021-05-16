@@ -13,6 +13,8 @@ use crate::uri::*;
 pub struct Request {
     pub head: RequestHead,
     pub body: Box<dyn Body>,
+
+    // TODO: trailers (Option<Receiver<Result<_>>>) (also add the same thing tot the Response)
 }
 
 // TODO: Instead just implement for head (or add some length info to describe

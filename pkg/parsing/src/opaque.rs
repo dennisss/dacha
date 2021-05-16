@@ -75,16 +75,20 @@ impl<T: Into<Bytes>> From<T> for OpaqueString {
 
 impl std::fmt::Debug for OpaqueString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('"')?;
         for byte in self.data.iter().cloned() {
             // TODO: Limit this to only visible 
             if byte == b'\\' {
                 write!(f, "\\\\")?;
+            } else if byte == b'"' {
+                write!(f, "\\\"")?;
             } else if byte.is_ascii() {
-                f.write_char(byte as char);
+                f.write_char(byte as char)?;
             } else {
                 write!(f, "\\x{:02X}", byte)?
             }
         }
+        f.write_char('"')?;
 
         Ok(())
     }

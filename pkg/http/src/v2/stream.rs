@@ -4,7 +4,7 @@ use common::async_std::task;
 use common::async_std::channel;
 use common::async_std::sync::Mutex;
 
-use crate::v2::types::*;
+use crate::response::ResponseHandler;
 use crate::v2::body::*;
 use crate::v2::stream_state::*;
 

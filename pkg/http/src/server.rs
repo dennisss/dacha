@@ -20,6 +20,16 @@ use crate::method::*;
 use crate::request::*;
 use crate::response::*;
 use crate::uri::IPAddress;
+use crate::status_code::*;
+use crate::v2;
+use crate::message_body::create_server_request_body;
+
+
+// TODO: See https://tools.ietf.org/html/rfc7230#section-3.5 for
+// robustness tips and accepting empty lines before a request-line.
+
+// TODO: See https://tools.ietf.org/html/rfc7230#section-3.3.3 with
+// special HEAD/status code behavior
 
 
 #[async_trait]
@@ -113,6 +123,8 @@ impl Server {
     async fn handle_stream(stream: TcpStream, handler: Arc<dyn RequestHandler>) {
         match Self::handle_client(stream, handler).await {
             Ok(v) => {}
+            // TODO: If we see a ProtocolErrorV1, form an HTTP 1.1 resposne.
+            // A ProtocolErrorV2 should probably also be a 
             Err(e) => println!("Client thread failed: {}", e),
         };
     }
@@ -124,318 +136,224 @@ impl Server {
         let mut write_stream = stream.clone();
         let mut read_stream = PatternReader::new(Box::new(stream), MESSAGE_HEAD_BUFFER_OPTIONS);
 
-        let head = match read_http_message(&mut read_stream).await? {
-            HttpStreamEvent::MessageHead(h) => h,
-            HttpStreamEvent::HeadersTooLarge => {
-                write_stream
-                    .write_all(b"HTTP/1.1 431 Request Header Fields Too Large\r\n\r\n")
-                    .await?;
-                return Ok(());
-            }
-            HttpStreamEvent::EndOfStream | HttpStreamEvent::Incomplete(_) => {
-                return Ok(());
-            }
-        };
+        loop {
+            let head = match read_http_message(&mut read_stream).await? {
+                HttpStreamEvent::MessageHead(h) => h,
+                HttpStreamEvent::HeadersTooLarge => {
+                    return Err(ProtocolErrorV1 {
+                        code: REQUEST_HEADER_FIELDS_TOO_LARGE,
+                        message: ""
+                    }.into());
+                }
+                HttpStreamEvent::EndOfStream | HttpStreamEvent::Incomplete(_) => {
+                    return Ok(());
+                }
+            };
 
-        let msg = match parse_http_message_head(head) {
-            Ok((msg, rest)) => {
-                assert_eq!(rest.len(), 0);
-                msg
-            }
-            Err(e) => {
-                println!("Failed to parse message\n{}", e);
-                write_stream
-                    .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-                    .await?;
-                return Ok(());
-            }
-        };
-
-        let start_line = msg.start_line;
-        let headers = msg.headers;
-
-        // Verify that we got a Request style message
-        let request_line = match start_line {
-            StartLine::Request(r) => r,
-            StartLine::Response(r) => {
-                println!("Unexpected response: {:?}", r);
-                write_stream
-                    .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-                    .await?;
-                return Ok(());
-            }
-        };
-
-        // TODO: If we previously negotiated HTTP2, complain if we didn't actually end up using it.
-
-        // TODO: In HTTP2, does the client need to send a headers frame?
-        // TODO: "Upon receiving the 101 response, the client MUST send a connection preface (Section 3.5), which includes a SETTINGS frame"
-
-        // Verify supported HTTP version
-        match request_line.version {
-            HTTP_V0_9 => {}
-            HTTP_V1_0 => {}
-            HTTP_V1_1 => {}
-            HTTP_V2_0 => {
-                // In this case, we received the first two lines of the HTTP 2 connection preface
-                // which should always be "PRI * HTTP/2.0\r\n\r\n"
-                if request_line.method.as_ref() != "PRI" || request_line.target != RequestTarget::AsteriskForm ||
-                   !headers.raw_headers.is_empty() {
+            let msg = match parse_http_message_head(head) {
+                Ok((msg, rest)) => {
+                    assert_eq!(rest.len(), 0);
+                    msg
+                }
+                Err(e) => {
+                    println!("Failed to parse message\n{}", e);
                     write_stream
                         .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
                         .await?;
                     return Ok(());
                 }
+            };
 
-                // Need to read the "SM\r\n" line.
+            let start_line = msg.start_line;
+            let headers = msg.headers;
 
-                // Initialize the connection.
-
-                // Call the request handler (possibly after some request normalization)
-
-                let server_handler = ServerRequestHandlerV2 { request_handler: handler };
-                let conn = crate::v2::Connection::new(Some(Box::new(server_handler)));
-
-                // TODO: Record errors.
-                return conn.run(Box::new(read_stream), Box::new(write_stream)).await;
-            },
-            _ => {
-                println!("Unsupported http version: {:?}", request_line.version);
-                write_stream
-                    .write_all(b"HTTP/1.1 505 HTTP Version Not Supported\r\n\r\n")
-                    .await?;
-                return Ok(());
-            }
-        };
-
-        // Validate method
-        let method = match Method::try_from(request_line.method.data.as_ref()) {
-            Ok(m) => m,
-            Err(_) => {
-                println!("Unsupported http method: {:?}", request_line.method);
-                write_stream
-                    .write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
-                    .await?;
-                return Ok(());
-            }
-        };
-
-        // TODO:
-        // A server MUST respond with a 400 (Bad Request) status code to any
-        // HTTP/1.1 request message that lacks a Host header field and to any
-        // request message that contains more than one Host header field or a
-        // Host header field with an invalid field-value.
-
-        let request_head = RequestHead {
-            method,
-            uri: request_line.target.into_uri(),
-            version: request_line.version,
-            headers,
-        };
-
-        // TODO: Convert the error into a response.
-        let mut persistent_connection = crate::headers::connection::can_connection_persistent(
-            &request_head.version, &request_head.headers)?;
-
-        let (body, mut reader_waiter) = match Self::create_request_body(
-            &request_head, read_stream) {
-            Ok(pair) => pair,
-            Err(e) => {
-                println!("{}", e);
-                write_stream
-                    .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-                    .await?;
-                return Ok(());
-            }
-        };
-
-        if reader_waiter.is_none() {
-            persistent_connection = false;
-        }
-
-
-
-
-        // TODO: See https://tools.ietf.org/html/rfc7230#section-3.5 for
-        // robustness tips and accepting empty lines before a request-line.
-
-        // TODO: See https://tools.ietf.org/html/rfc7230#section-3.3.3 with
-        // special HEAD/status code behavior
-
-        // NOTE: We assume that the body that borrows the reader 
-
-        // TODO: How would I implement a cancelation?
-
-
-        let req = Request {
-            head: request_head,
-            body,
-        };
-
-
-        let upgrade_protocols = crate::headers::upgrade_syntax::parse_upgrade(&req.head.headers)?;
-
-        let mut has_h2c_upgrade = false;
-        for protocol in &upgrade_protocols {
-            if protocol.name.as_ref() == "h2c" && protocol.version.is_none() {
-                has_h2c_upgrade = true;
-                break;
-            }
-        }
-
-        // Two modes:
-        // - Straight away using HTTP2
-        // - Upgrade to HTTP2.
-
-        if has_h2c_upgrade {
-            // TODO: 
-
-            let reader_waiter = match reader_waiter.take() {
-                Some(w) => w,
-                None => {
-                    return Err(err_msg("Can't upgrade connection that doesn't have a well framed body"));
+            // Verify that we got a Request style message
+            let request_line = match start_line {
+                StartLine::Request(r) => r,
+                StartLine::Response(r) => {
+                    println!("Unexpected response: {:?}", r);
+                    write_stream
+                        .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+                        .await?;
+                    return Ok(());
                 }
             };
 
-            // TODO: Refactor to serialize this from a struct
-            // TODO: Parallelize the execution of this with the initialization of the connection.
-            write_stream.write_all(b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n").await?;
+            // TODO: If we previously negotiated HTTP2, complain if we didn't actually end up using it.
 
-            // TODO: Initialize the connection with the settings received from the client.
-            let server_handler = ServerRequestHandlerV2 { request_handler: handler };
-            let conn = crate::v2::Connection::new(Some(Box::new(server_handler)));
+            // TODO: In HTTP2, does the client need to send a headers frame?
+            // TODO: "Upon receiving the 101 response, the client MUST send a connection preface (Section 3.5), which includes a SETTINGS frame"
 
-            conn.process_upgrade_request(req).await?;
-
-            let reader = DeferredReadable::wrap(reader_waiter.wait());
-
-            return conn.run(Box::new(reader), Box::new(write_stream)).await;
-        }
-
-
-        // TODO: Apply the transforms here.
-
-
-        /*
-        Check for upgrade that looks like:
-            Connection: Upgrade, HTTP2-Settings
-            Upgrade: h2c
-            HTTP2-Settings: <base64url encoding of HTTP/2 SETTINGS payload>
-        
-        If we do get it, verify that the body has a well defined size.
-
-        Write the 101 upgrading response.
-
-        Give the request handler a borrowed body.
-
-        Start running the HTTP2 writer thread for the connection preface stuff
-            And let it know about he 
-
-        Reader thread can also be started but must block on getting the borrowed body back first:
-            - Which will need to be read to completion and then downcast to the Readable instance to be fully allowed
-            - 
-
-        */
-
-        let mut res = handler.handle_request(req).await;
-
-        res = Self::transform_response(res)?;
-
-        crate::headers::connection::append_connection_header(
-            persistent_connection, &mut res.head.headers);
-
-        // TODO: If we do detect multiple aliases to a TcpStream, shutdown the
-        // tcpstream explicitly
-
-        // let mut res_writer = OutgoingBody { stream: shared_stream.clone() };
-        let mut buf = vec![];
-        res.head.serialize(&mut buf);
-        write_stream.write_all(&buf).await?;
-
-        write_body(res.body.as_mut(), &mut write_stream).await?;
-
-        Ok(())
-    }
-
-    /// Based on the procedure in RFC7230 3.3.3. Message Body Length
-    /// Implemented from the server/receiver point of view.
-    ///
-    /// Returns the constructed body and if the body has well defined framing (not
-    /// connection close terminated), we'll return a future reference to the underlying reader.
-    ///
-    /// NOTE: Even if the  
-    fn create_request_body(
-        req_head: &RequestHead, reader: PatternReader
-    ) -> Result<(Box<dyn Body>, Option<RequestReaderWaiter>)> {
-
-        let (reader, reader_returner) = Borrowed::wrap(reader);
-
-        let mut close_delimited = true;
-
-        // 1-2.
-        // Only applicable to a client
-
-        let body = {
-            let mut transfer_encoding = crate::encoding_syntax::parse_transfer_encoding(&req_head.headers)?;
-
-            // 3. The Transfer-Encoding header is present (overrides whatever is in Content-Length)
-            if transfer_encoding.len() > 0 {
-                
-                let body = {
-                    if transfer_encoding.pop().unwrap().name() == "chunked" {
-                        close_delimited = false;
-                        Box::new(crate::chunked::IncomingChunkedBody::new(reader))
-                    } else {
-                        // From the RFC: "If a Transfer-Encoding header field is present in a request and the chunked transfer coding is not the final encoding, the message body length cannot be determined reliably; the server MUST respond with the 400 (Bad Request) status code and then close the connection."
-                        return Err(err_msg("Request has unknown length"));
+            // Verify supported HTTP version
+            match request_line.version {
+                HTTP_V0_9 => {}
+                HTTP_V1_0 => {}
+                HTTP_V1_1 => {}
+                HTTP_V2_0 => {
+                    // In this case, we received the first two lines of the HTTP 2 connection preface
+                    // which should always be "PRI * HTTP/2.0\r\n\r\n"
+                    if request_line.method.as_ref() != "PRI" || request_line.target != RequestTarget::AsteriskForm ||
+                    !headers.raw_headers.is_empty() {
+                        return Err(ProtocolErrorV1 {
+                            code: BAD_REQUEST,
+                            message: "Interface preface head for HTTP 2.0"
+                        }.into());
                     }
-                };
-                
-                decode_transfer_encoding_body(transfer_encoding, body)?
 
-            } else {
-                // 4. Parsing the Content-Length. Invalid values should close the connection
-                let content_length = parse_content_length(&req_head.headers)?;
+                    let server_handler = ServerRequestHandlerV2 { request_handler: handler };
+                    let conn = crate::v2::Connection::new(Some(Box::new(server_handler)));
 
-                if let Some(length) = content_length {
-                    // 5.
-                    close_delimited = false;
-                    Box::new(IncomingSizedBody { reader, length })
-                } else {
-                    // 6. Empty body!
-                    close_delimited = false;
-                    crate::body::EmptyBody()
+                    let mut initial_state = v2::ConnectionInitialState::raw();
+                    initial_state.seen_preface_head = true;
+
+                    // TODO: Record errors.
+                    return conn.run(initial_state,Box::new(read_stream), Box::new(write_stream)).await;
+                },
+                _ => {
+                    println!("Unsupported http version: {:?}", request_line.version);
+                    write_stream
+                        .write_all(b"HTTP/1.1 505 HTTP Version Not Supported\r\n\r\n")
+                        .await?;
+                    return Ok(());
+                }
+            };
+
+            // Validate method
+            let method = match Method::try_from(request_line.method.data.as_ref()) {
+                Ok(m) => m,
+                Err(_) => {
+                    println!("Unsupported http method: {:?}", request_line.method);
+                    write_stream
+                        .write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
+                        .await?;
+                    return Ok(());
+                }
+            };
+
+            // TODO:
+            // A server MUST respond with a 400 (Bad Request) status code to any
+            // HTTP/1.1 request message that lacks a Host header field and to any
+            // request message that contains more than one Host header field or a
+            // Host header field with an invalid field-value.
+            // ^ Do this. Move it into the uri. (unless the URI already has one)
+
+            let request_head = RequestHead {
+                method,
+                uri: request_line.target.into_uri(),
+                version: request_line.version,
+                headers,
+            };
+
+            // TODO: Convert the error into a response.
+            let mut persist_connection = crate::headers::connection::can_connection_persist(
+                &request_head.version, &request_head.headers)?;
+
+            let (body, mut reader_waiter) = match create_server_request_body(
+                &request_head, read_stream) {
+                Ok(pair) => pair,
+                Err(e) => {
+                    println!("{}", e);
+                    write_stream
+                        .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+                        .await?;
+                    return Ok(());
+                }
+            };
+
+            if reader_waiter.is_none() {
+                persist_connection = false;
+            }
+
+            let req = Request {
+                head: request_head,
+                body,
+            };
+
+
+            let upgrade_protocols = crate::headers::upgrade_syntax::parse_upgrade(&req.head.headers)?;
+
+            let mut has_h2c_upgrade = false;
+            for protocol in &upgrade_protocols {
+                if protocol.name.as_ref() == "h2c" && protocol.version.is_none() {
+                    has_h2c_upgrade = true;
+                    break;
                 }
             }
-        };
 
-        // 7.
-        // Only applicable a client / responses.
+            // Two modes:
+            // - Straight away using HTTP2
+            // - Upgrade to HTTP2.
 
-        // Construct the returners/waiters.
+            if has_h2c_upgrade {
+                // TODO: 
 
-        // TODO: Instead wrap the body so that when it returns a 0 or Error, we can relinguish the underlying body.
-        // (this will usually be much quicker than when we )
+                let reader_waiter = match reader_waiter.take() {
+                    Some(w) => w,
+                    None => {
+                        return Err(err_msg("Can't upgrade connection that doesn't have a well framed body"));
+                    }
+                };
 
-        let (body, body_returner) = {
-            if body.len() == Some(0) {
-                // Optimization for when the body is known to be empty:
-                // In this case we don't need to wait for the body to be free'd
-                (body, Borrowed::wrap(crate::body::EmptyBody()).1)
-            } else {
-                let (b, ret) = Borrowed::wrap(body);
-                (Box::new(b) as Box<dyn Body>, ret)
+                // TODO: Initialize the connection with the settings received from the client.
+                let server_handler = ServerRequestHandlerV2 { request_handler: handler };
+                let conn = v2::Connection::new(Some(Box::new(server_handler)));
+
+                conn.process_upgrade_request(req).await?;
+
+                let reader = DeferredReadable::wrap(reader_waiter.wait());
+
+                // TODO: Refactor to serialize this from a struct
+                // TODO: Parallelize the execution of this with the initialization of the connection.
+                let mut initial_state = v2::ConnectionInitialState::raw();
+                initial_state.upgrade_payload = Some(Box::new(std::io::Cursor::new(
+                    b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n" as &'static [u8])));
+
+                return conn.run(initial_state, Box::new(reader), Box::new(write_stream)).await;
             }
-        };
 
-        let waiter = if close_delimited { None } else {
-            Some(RequestReaderWaiter {
-                body_returner,
-                reader_returner
-            })
-        };
 
-        Ok((body, waiter))
+            // TODO: Apply the transforms here.
+
+
+            /*
+            Check for upgrade that looks like:
+                Connection: Upgrade, HTTP2-Settings
+                Upgrade: h2c
+                HTTP2-Settings: <base64url encoding of HTTP/2 SETTINGS payload>
+            */
+
+
+            // In the case of pipelining, start this in a separate task.
+
+            let mut res = handler.handle_request(req).await;
+
+            res = Self::transform_response(res)?;
+
+            crate::headers::connection::append_connection_header(
+                persist_connection, &mut res.head.headers);
+
+            // TODO: If we do detect multiple aliases to a TcpStream, shutdown the
+            // tcpstream explicitly
+
+            // let mut res_writer = OutgoingBody { stream: shared_stream.clone() };
+            let mut buf = vec![];
+            res.head.serialize(&mut buf)?;
+            write_stream.write_all(&buf).await?;
+
+            write_body(res.body.as_mut(), &mut write_stream).await?;
+
+
+            if persist_connection {
+                if let Some(reader_waiter) = reader_waiter {
+                    read_stream = reader_waiter.wait().await?;
+                    continue;
+                }
+            }
+
+            break;
+        }
+
+        Ok(())
     }
 
     fn transform_request(mut req: Request) -> Result<Request> {
@@ -459,31 +377,6 @@ impl Server {
         Ok(res)
     }
 
-}
-
-struct RequestReaderWaiter {
-    body_returner: BorrowedReturner<Box<dyn Body>>,
-    reader_returner: BorrowedReturner<PatternReader>
-}
-
-impl RequestReaderWaiter {
-    async fn wait(self: Self) -> Result<PatternReader> {
-        let mut body = self.body_returner.await;
-
-        // Discard any unread bytes of the body.
-        // If the body was fully read, then this will also detect if the
-        // body ended in an error state.
-        loop {
-            let mut buf = [0u8; 512];
-            let n = body.read(&mut buf).await?;
-            if n == 0 {
-                break;
-            }
-        }
-        
-        let reader = self.reader_returner.await;
-        Ok(reader)
-    }
 }
 
 

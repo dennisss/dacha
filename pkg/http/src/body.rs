@@ -155,9 +155,21 @@ impl Body for IncomingUnboundedBody {
 
 /// A body which has a well known length.
 pub struct IncomingSizedBody {
-    pub length: usize,
-    pub reader: Borrowed<PatternReader>, // TODO: Use a generic instead?
+    length: usize,
+    error: bool,
+    reader: Borrowed<PatternReader>, // TODO: Use a generic instead? (just needs to be 'Readable')
 }
+
+impl IncomingSizedBody {
+    pub fn new(reader: Borrowed<PatternReader>, length: usize) -> Self {
+        Self {
+            length,
+            reader,
+            error: false
+        }
+    }
+}
+
 
 #[async_trait]
 impl Body for IncomingSizedBody {
@@ -166,15 +178,27 @@ impl Body for IncomingSizedBody {
     }
 
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        if self.error {
+            return Err(err_msg("Body has previously failed while being read"));
+        }
+
         if self.length == 0 || buf.len() == 0 {
             return Ok(0);
         }
 
         let n = std::cmp::min(self.length, buf.len());
-        let nread = self.reader.read(&mut buf[0..n]).await?;
+        let nread = match self.reader.read(&mut buf[0..n]).await {
+            Ok(n) => n,
+            Err(e) => {
+                self.error = true;
+                return Err(e);
+            }
+        };
+
         self.length -= nread;
 
         if n == 0 && self.length != 0 {
+            self.error = true;
             return Err(err_msg("Unexpected end to stream"));
         }
 

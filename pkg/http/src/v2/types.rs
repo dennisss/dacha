@@ -1,9 +1,4 @@
-use common::async_std::channel;
-use common::errors::Result;
-
 use crate::proto::v2::ErrorCode;
-use crate::response::Response;
-
 
 pub type StreamId = u32;
 
@@ -15,8 +10,11 @@ pub type WindowSize = i32;
 
 // TODO: Distinguish between locally created errors vs remotely created errors.
 #[derive(Debug, Clone, Fail)]
-pub struct ProtocolError {
+pub struct ProtocolErrorV2 {
     pub code: ErrorCode,
+
+    /// NOTE: This message should only contain non-sensitive data that can be safely
+    /// sent to the other endpoint.
     pub message: &'static str,
     
     /// If true, this error was generated locally rather than being received from
@@ -24,7 +22,7 @@ pub struct ProtocolError {
     pub local: bool,
 }
 
-impl ProtocolError {
+impl ProtocolErrorV2 {
     /// In the context of a request sent from a client to a server, this indicates
     /// whether or not the client is safe to retry the request because no application
     /// level processing was started on the request.
@@ -33,24 +31,10 @@ impl ProtocolError {
     }
 }
 
-impl std::fmt::Display for ProtocolError {
+impl std::fmt::Display for ProtocolErrorV2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}: [{}] {}", self.code, if self.local { "LOCAL" } else { "REMOTE" }, self.message)
     }
 }
 
-pub type ProtocolResult<T> = std::result::Result<T, ProtocolError>;
-
-#[async_trait]
-pub trait ResponseHandler: Send + Sync {
-    // TODO: Document whether or not this should be a 'fast' running function. This will determine
-    // whether or not we need to spawn a new task in the connection code to run it.
-    async fn handle_response(&self, response: Result<Response>);
-}
-
-#[async_trait]
-impl ResponseHandler for channel::Sender<Result<Response>> {
-    async fn handle_response(&self, response: Result<Response>) {
-        let _ = self.send(response).await;
-    }
-}
+pub type ProtocolResult<T> = std::result::Result<T, ProtocolErrorV2>;

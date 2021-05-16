@@ -16,7 +16,6 @@ const MAX_CONNECTION_OPTIONS: usize = 4;
 const KEEP_ALIVE: &'static str = "Keep-Alive";
 const CLOSE: &'static str = "Close";
 
-#[derive(PartialEq)]
 pub enum ConnectionOption {
     // TODO: Also parse Keep-Alive related options. 
     KeepAlive,
@@ -25,6 +24,23 @@ pub enum ConnectionOption {
     
     Unknown(AsciiString)
 }
+
+impl AsRef<[u8]> for ConnectionOption {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            ConnectionOption::KeepAlive => KEEP_ALIVE.as_bytes(),
+            ConnectionOption::Close => CLOSE.as_bytes(),
+            ConnectionOption::Unknown(v) => v.as_ref().as_bytes()
+        }
+    }
+}
+
+impl<T: AsRef<[u8]>> PartialEq<T>  for ConnectionOption {
+    fn eq(&self, other: &T) -> bool {
+        self.as_ref().eq_ignore_ascii_case(other.as_ref())
+    }
+}
+
 
 
 
@@ -74,7 +90,7 @@ pub fn parse_connection(headers: &Headers) -> Result<Vec<ConnectionOption>> {
 /// anyway.
 ///
 /// Returns whether or not the connection can persist or an error if the request is invalid. 
-pub fn can_connection_persistent(received_version: &Version, headers: &Headers) -> Result<bool> {
+pub fn can_connection_persist(received_version: &Version, headers: &Headers) -> Result<bool> {
     let options = parse_connection(headers)?;
 
     let mut has_close_option = false;

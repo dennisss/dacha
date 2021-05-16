@@ -105,6 +105,16 @@ impl Headers {
             .filter(move |h| h.name.eq_ignore_case(name))
     }
 
+    pub fn find_mut<'a>(&'a mut self, name: &'a [u8]) -> Option<&'a mut Header> {
+        for header in self.raw_headers.iter_mut() {
+            if header.name.eq_ignore_case(name) {
+                return Some(header);
+            }
+        }
+
+        None
+    }
+
     pub fn has(&self, name: &[u8]) -> bool {
         for h in self.raw_headers.iter() {
             if h.name.eq_ignore_case(name) {

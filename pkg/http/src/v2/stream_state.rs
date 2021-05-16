@@ -7,7 +7,7 @@ pub struct StreamState {
     /// Error state of the stream. If present, then this stream was abruptly closed.
     ///
     /// This corresponds to either a local/remote RST_STREAM or GOAWAY frame being sent.
-    pub error: Option<ProtocolError>,
+    pub error: Option<ProtocolErrorV2>,
 
     /// Number of bytes of data the local endpoint is willing to accept from the remote endpoint for
     /// this stream. 

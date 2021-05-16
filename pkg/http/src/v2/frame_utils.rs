@@ -79,7 +79,7 @@ pub fn new_settings_ack_frame() -> Vec<u8> {
     frame
 }
 
-pub fn new_rst_stream_frame(stream_id: StreamId, error: ProtocolError) -> Vec<u8> {
+pub fn new_rst_stream_frame(stream_id: StreamId, error: ProtocolErrorV2) -> Vec<u8> {
     let mut frame = vec![];
     FrameHeader {
         typ: FrameType::RST_STREAM,
@@ -96,7 +96,7 @@ pub fn new_rst_stream_frame(stream_id: StreamId, error: ProtocolError) -> Vec<u8
     frame
 }
 
-pub fn new_goaway_frame(last_stream_id: StreamId, error: ProtocolError) -> Vec<u8> {
+pub fn new_goaway_frame(last_stream_id: StreamId, error: ProtocolErrorV2) -> Vec<u8> {
     let mut payload = vec![];
     GoawayFramePayload {
         reserved: 0,
@@ -122,7 +122,7 @@ pub fn new_goaway_frame(last_stream_id: StreamId, error: ProtocolError) -> Vec<u
 pub fn check_padding(padding: &[u8]) -> Result<()> {
     for byte in padding {
         if *byte != 0 {
-            return Err(ProtocolError {
+            return Err(ProtocolErrorV2 {
                 code: ErrorCode::PROTOCOL_ERROR,
                 message: "Received non-zero padding in DATA frame",
                 local: true

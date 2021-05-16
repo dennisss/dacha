@@ -23,6 +23,15 @@ impl Encoder {
         self.dynamic_table.resize(std::cmp::min(protocol_max_size, self.dynamic_table.max_size()));
     }
 
+    /// NOTE: We assume that new_max_size is smaller than the protocol_max_size.
+    pub fn append_table_size_update(&mut self, max_size: usize, out: &mut Vec<u8>) {
+        self.dynamic_table.resize(max_size);
+        
+        HeaderFieldRepresentation::DynamicTableSizeUpdate {
+            max_size
+        }.serialize(out);
+    }
+
     pub fn append<'a>(&mut self, header: HeaderFieldRef<'a>, out: &mut Vec<u8>) {
         let mut name = StringReference::LiteralRef(header.name);
         let mut value = StringReference::LiteralRef(header.value);

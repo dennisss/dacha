@@ -134,12 +134,12 @@ pub enum HttpStreamEvent {
     EndOfStream,
 }
 
-pub async fn read_http_message<'a>(stream: &mut PatternReader) -> Result<HttpStreamEvent> {
+pub async fn read_http_message<'a>(reader: &mut PatternReader) -> Result<HttpStreamEvent> {
     // TODO: When we get the *first* CRLF, check if we got a 0.9 request
     // ^ TODO: Should only do the above when processing a request (it would be
     // invalid during a response).
 
-    let val = stream.read_matching(LineMatcher::empty()).await?;
+    let val = reader.read_matching(LineMatcher::empty()).await?;
     Ok(match val {
         StreamReadUntil::Value(buf) => HttpStreamEvent::MessageHead(buf),
         StreamReadUntil::TooLarge => HttpStreamEvent::HeadersTooLarge,
