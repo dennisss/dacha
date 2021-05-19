@@ -1,6 +1,5 @@
 use common::async_std::fs::File;
 use common::async_std::io::prelude::ReadExt;
-use common::async_std::io::Read;
 use common::errors::*;
 use math::big::BigUint;
 

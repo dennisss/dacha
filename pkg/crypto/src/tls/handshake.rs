@@ -177,15 +177,19 @@ pub struct ClientHello {
     pub extensions: Vec<Extension>,
 }
 
+// TODO: Support ESNI: https://blog.cloudflare.com/encrypted-sni/
+
 impl ClientHello {
-    pub async fn plain(client_share: KeyShareEntry) -> Result<Self> {
+    /// Creates a reasonable 
+    pub async fn plain(hostname: &str, client_share: KeyShareEntry) -> Result<Self> {
         let mut random_buf = [0u8; 32];
         secure_random_bytes(&mut random_buf).await?;
 
+        // TODO: Can we send this later as an encrypted header.
         let server_name = ServerNameList {
             names: vec![ServerName {
                 typ: NameType::host_name,
-                data: Bytes::from(b"google.com".to_vec()),
+                data: Bytes::from(hostname), // TOOD: Must be ASCII
             }],
         };
 
@@ -193,17 +197,24 @@ impl ClientHello {
             versions: vec![TLS_1_3_VERSION, TLS_1_2_VERSION],
         };
 
+
+        // TLS 1.3 mandatory-to-implement ciphers are documented in:
+        // https://datatracker.ietf.org/doc/html/rfc8446#section-9.1
+
         let supported_groups = NamedGroupList {
             groups: vec![
+                // SHOULD support
                 NamedGroup::x25519,
+                // MUST implement
                 NamedGroup::secp256r1,
+                // optional
                 NamedGroup::secp384r1,
             ],
         };
 
         let supported_algorithms = SignatureSchemeList {
             algorithms: vec![
-                // Minimum required set to implement.
+                // These three are the minimum required set to implement.
                 SignatureScheme::ecdsa_secp256r1_sha256,
                 SignatureScheme::rsa_pkcs1_sha256,
                 SignatureScheme::rsa_pss_rsae_sha256,
@@ -219,8 +230,11 @@ impl ClientHello {
             random: Bytes::from(random_buf.to_vec()),
             legacy_session_id: Bytes::new(),
             cipher_suites: vec![
+                // MUST implement
                 CipherSuite::TLS_AES_128_GCM_SHA256,
+                // SHOULD implement
                 CipherSuite::TLS_AES_256_GCM_SHA384,
+                // SHOULD implement
                 CipherSuite::TLS_CHACHA20_POLY1305_SHA256,
             ],
             legacy_compression_methods: Bytes::from((&[0]).to_vec()),

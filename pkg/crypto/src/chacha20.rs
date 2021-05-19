@@ -1,5 +1,6 @@
 // Stream cipher as defined in:
 // https://tools.ietf.org/html/rfc7539
+// TODO: Look at the updated version in rfc8439.
 
 use math::big::*;
 

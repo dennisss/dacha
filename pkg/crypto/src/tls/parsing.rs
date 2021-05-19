@@ -15,7 +15,10 @@ pub fn exp2(v: usize) -> usize {
 }
 
 /// Creates a parser for a variable length vector of bytes.
-/// The max_bytes will be used to determine how large the
+///
+/// The max_bytes will be used to determine how large the length field is. In TLS,
+/// the minimum number of bytes required to store the max_length are used to encode
+/// the length of the vector.  
 pub fn varlen_vector(min_bytes: usize, max_bytes: usize) -> impl Parser<Bytes> {
     seq!(c => {
         let len =
@@ -39,6 +42,7 @@ pub fn varlen_vector(min_bytes: usize, max_bytes: usize) -> impl Parser<Bytes> {
     })
 }
 
+/// Encodes a byte vector using the length prefixed wire format defined by TLS. 
 pub fn serialize_varlen_vector<F: FnMut(&mut Vec<u8>)>(
     min_bytes: usize,
     max_bytes: usize,
@@ -64,6 +68,8 @@ pub fn serialize_varlen_vector<F: FnMut(&mut Vec<u8>)>(
     f(out);
 
     let size = out.len() - ii;
+
+    // TODO: Instead we should return an error.
     assert!(size >= min_bytes && size <= max_bytes);
 
     match n {

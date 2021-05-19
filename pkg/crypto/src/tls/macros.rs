@@ -6,7 +6,7 @@ macro_rules! tls_enum_u8 {
 			$(
 				$case,
 			)*
-			unknown(u8)
+			Unknown(u8)
 		}
 
 		impl $name {
@@ -15,7 +15,7 @@ macro_rules! tls_enum_u8 {
 					$(
 						$name::$case => $val,
 					)*
-					$name::unknown(v) => *v
+					$name::Unknown(v) => *v
 				}
 			}
 
@@ -24,7 +24,7 @@ macro_rules! tls_enum_u8 {
 					$(
 						$val => $name::$case,
 					)*
-					_ => $name::unknown(v)
+					_ => $name::Unknown(v)
 				}
 			}
 

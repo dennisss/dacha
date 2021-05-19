@@ -37,6 +37,8 @@ pub enum Extension {
     KeyShareHelloRetryRequest(KeyShareHelloRetryRequest),
     KeyShareServerHello(KeyShareServerHello),
 
+    ALPN(ProtocolNameList),
+
     Unknown { typ: u16, data: Bytes },
 }
 
@@ -54,42 +56,45 @@ impl Extension {
 
             let data = c.next(varlen_vector(0, U16_LIMIT))?;
 
-            use ExtensionType::*;
             let res = match extension_type {
-                server_name => {
+                ExtensionType::ServerName => {
                     map(complete(ServerNameList::parse),
                         |v| Extension::ServerName(v))(data)
                 },
-                max_fragment_length => {
+                ExtensionType::MaxFragmentLength => {
                     map(complete(MaxFragmentLength::parse),
                         |v| Extension::MaxFragmentLength(v))(data)
                 },
-                supported_groups => {
+                ExtensionType::SupportedGroups => {
                     map(complete(NamedGroupList::parse),
                         |v| Extension::SupportedGroups(v))(data)
                 },
-                signature_algorithms => {
+                ExtensionType::SignatureAlgorithms => {
                     map(complete(SignatureSchemeList::parse),
                         |v| Extension::SignatureAlgorithms(v))(data)
                 },
-                supported_versions => {
+                ExtensionType::SupportedVersions => {
                     complete(|d| parse_supported_versions(d, msg_type))(data)
                 },
-                cookie => map(Cookie::parse, |v| Extension::Cookie(v))(data),
-                post_handshake_auth => {
+                ExtensionType::Cookie => map(Cookie::parse, |v| Extension::Cookie(v))(data),
+                ExtensionType::PostHandshakeAuth => {
                     if data.len() != 0 {
                         Err(err_msg("Expected empty data"))
                     } else {
                         Ok((Extension::PostHandshakeAuth, Bytes::new()))
                     }
                 },
-                signature_algorithms_cert => {
+                ExtensionType::SignatureAlgorithmsCert => {
                     map(complete(SignatureSchemeList::parse),
                         |v| Extension::SignatureAlgorithmsCert(v))(data)
                 },
-                key_share => {
+                ExtensionType::KeyShare => {
                     complete(|d| parse_key_share(d, msg_type))(data)
                 },
+                ExtensionType::ApplicationLayerProtocolNegotiation => {
+                    map(complete(ProtocolNameList::parse),
+                        |l| Extension::ALPN(l))(data)
+                }
                 _ => {
                     Ok((Extension::Unknown {
                         typ: extension_type.to_u16(),
@@ -108,18 +113,19 @@ impl Extension {
         use Extension::*;
 
         let typ = match self {
-            ServerName(_) => ExtensionType::server_name,
-            MaxFragmentLength(_) => ExtensionType::max_fragment_length,
-            SupportedGroups(_) => ExtensionType::supported_groups,
-            SignatureAlgorithms(_) => ExtensionType::signature_algorithms,
-            SupportedVersionsClientHello(_) => ExtensionType::supported_versions,
-            SupportedVersionsServerHello(_) => ExtensionType::supported_versions,
-            Cookie(_) => ExtensionType::cookie,
-            PostHandshakeAuth => ExtensionType::post_handshake_auth,
-            SignatureAlgorithmsCert(_) => ExtensionType::signature_algorithms_cert,
-            KeyShareClientHello(_) => ExtensionType::key_share,
-            KeyShareHelloRetryRequest(_) => ExtensionType::key_share,
-            KeyShareServerHello(_) => ExtensionType::key_share,
+            ServerName(_) => ExtensionType::ServerName,
+            MaxFragmentLength(_) => ExtensionType::MaxFragmentLength,
+            SupportedGroups(_) => ExtensionType::SupportedGroups,
+            SignatureAlgorithms(_) => ExtensionType::SignatureAlgorithms,
+            SupportedVersionsClientHello(_) => ExtensionType::SupportedVersions,
+            SupportedVersionsServerHello(_) => ExtensionType::SupportedVersions,
+            Cookie(_) => ExtensionType::Cookie,
+            PostHandshakeAuth => ExtensionType::PostHandshakeAuth,
+            SignatureAlgorithmsCert(_) => ExtensionType::SignatureAlgorithmsCert,
+            KeyShareClientHello(_) => ExtensionType::KeyShare,
+            KeyShareHelloRetryRequest(_) => ExtensionType::KeyShare,
+            KeyShareServerHello(_) => ExtensionType::KeyShare,
+            ALPN(_) => ExtensionType::ApplicationLayerProtocolNegotiation,
             Unknown { typ, data } => ExtensionType::from_u16(*typ),
         };
 
@@ -142,6 +148,7 @@ impl Extension {
             KeyShareClientHello(e) => e.serialize(out),
             KeyShareHelloRetryRequest(e) => e.serialize(out),
             KeyShareServerHello(e) => e.serialize(out),
+            ALPN(e) => e.serialize(out),
             Unknown { typ, data } => out.extend_from_slice(&data),
         });
 
@@ -151,87 +158,87 @@ impl Extension {
 
 #[derive(Debug)]
 pub enum ExtensionType {
-    server_name,
-    max_fragment_length,
-    status_request,
-    supported_groups,
-    signature_algorithms,
-    use_srtp,
-    heartbeat,
-    application_layer_protocol_negotiation,
-    signed_certificate_timestamp,
-    client_certificate_type,
-    server_certificate_type,
-    padding,
-    pre_shared_key,
-    early_data,
-    supported_versions,
-    cookie,
-    psk_key_exchange_modes,
-    certificate_authorities,
-    oid_filters,
-    post_handshake_auth, // < Empty struct
-    signature_algorithms_cert,
-    key_share,
-    unknown(u16),
+    ServerName,
+    MaxFragmentLength,
+    StatusRequest,
+    SupportedGroups,
+    SignatureAlgorithms,
+    UseSRTP,
+    Heartbeat,
+    ApplicationLayerProtocolNegotiation,
+    SignedCertificateTimestamp,
+    ClientCertificateType,
+    ServerCertificateType,
+    Padding,
+    PreSharedKey,
+    EarlyData,
+    SupportedVersions,
+    Cookie,
+    PskKeyExchangeModes,
+    CertificateAuthorities,
+    OidFilters,
+    PostHandshakeAuth, // < Empty struct
+    SignatureAlgorithmsCert,
+    KeyShare,
+    Unknown(u16),
 }
 
 impl ExtensionType {
     fn to_u16(&self) -> u16 {
         use ExtensionType::*;
         match self {
-            server_name => 0,
-            max_fragment_length => 1,
-            status_request => 5,
-            supported_groups => 10,
-            signature_algorithms => 13,
-            use_srtp => 14,
-            heartbeat => 15,
-            application_layer_protocol_negotiation => 16,
-            signed_certificate_timestamp => 18,
-            client_certificate_type => 19,
-            server_certificate_type => 20,
-            padding => 21,
-            pre_shared_key => 41,
-            early_data => 42,
-            supported_versions => 43,
-            cookie => 44,
-            psk_key_exchange_modes => 45,
-            certificate_authorities => 47,
-            oid_filters => 48,
-            post_handshake_auth => 49,
-            signature_algorithms_cert => 50,
-            key_share => 51,
-            unknown(v) => *v,
+            ServerName => 0,
+            MaxFragmentLength => 1,
+            StatusRequest => 5,
+            SupportedGroups => 10,
+            SignatureAlgorithms => 13,
+            UseSRTP => 14,
+            Heartbeat => 15,
+            ApplicationLayerProtocolNegotiation => 16,
+            SignedCertificateTimestamp => 18,
+            ClientCertificateType => 19,
+            ServerCertificateType => 20,
+            Padding => 21,
+            PreSharedKey => 41,
+            EarlyData => 42,
+            SupportedVersions => 43,
+            Cookie => 44,
+            PskKeyExchangeModes => 45,
+            CertificateAuthorities => 47,
+            OidFilters => 48,
+            PostHandshakeAuth => 49,
+            SignatureAlgorithmsCert => 50,
+            KeyShare => 51,
+            Unknown(v) => *v,
         }
     }
     // TODO: This should be allowed to return None so that we can store unknown
     // extensions opaquely?
     fn from_u16(v: u16) -> Self {
         match v {
-            0 => Self::server_name,
-            1 => Self::max_fragment_length,
-            5 => Self::status_request,
-            10 => Self::supported_groups,
-            13 => Self::signature_algorithms,
-            14 => Self::use_srtp,
-            15 => Self::heartbeat,
-            16 => Self::application_layer_protocol_negotiation,
-            18 => Self::signed_certificate_timestamp,
-            19 => Self::client_certificate_type,
-            20 => Self::server_certificate_type,
-            21 => Self::padding,
-            41 => Self::pre_shared_key,
-            42 => Self::early_data,
-            43 => Self::supported_versions,
-            44 => Self::cookie,
-            45 => Self::psk_key_exchange_modes,
-            47 => Self::certificate_authorities,
-            48 => Self::oid_filters,
-            49 => Self::post_handshake_auth,
-            50 => Self::signature_algorithms_cert,
-            51 => Self::key_share,
-            _ => Self::unknown(v),
+            0 => Self::ServerName,
+            1 => Self::MaxFragmentLength,
+            5 => Self::StatusRequest,
+            10 => Self::SupportedGroups,
+            13 => Self::SignatureAlgorithms,
+            14 => Self::UseSRTP,
+            15 => Self::Heartbeat,
+            16 => Self::ApplicationLayerProtocolNegotiation,
+            18 => Self::SignedCertificateTimestamp,
+            19 => Self::ClientCertificateType,
+            20 => Self::ServerCertificateType,
+            21 => Self::Padding,
+            41 => Self::PreSharedKey,
+            42 => Self::EarlyData,
+            43 => Self::SupportedVersions,
+            44 => Self::Cookie,
+            45 => Self::PskKeyExchangeModes,
+            47 => Self::CertificateAuthorities,
+            48 => Self::OidFilters,
+            49 => Self::PostHandshakeAuth,
+            50 => Self::SignatureAlgorithmsCert,
+            51 => Self::KeyShare,
+            _ => Self::Unknown(v),
         }
     }
 
@@ -241,54 +248,54 @@ impl ExtensionType {
         use ExtensionType::*;
         use HandshakeType::*;
         match self {
-            server_name => (msg_type == client_hello || msg_type == encrypted_extensions),
-            max_fragment_length => (msg_type == client_hello || msg_type == encrypted_extensions),
-            status_request => {
-                (msg_type == client_hello
+            ServerName => (msg_type == client_hello || msg_type == encrypted_extensions),
+            MaxFragmentLength => (msg_type == client_hello || msg_type == encrypted_extensions),
+            StatusRequest => {
+                msg_type == client_hello
                     || msg_type == certificate_request
-                    || msg_type == certificate)
+                    || msg_type == certificate
             }
-            supported_groups => (msg_type == client_hello || msg_type == encrypted_extensions),
-            signature_algorithms => (msg_type == client_hello || msg_type == certificate_request),
-            use_srtp => (msg_type == client_hello || msg_type == encrypted_extensions),
-            heartbeat => (msg_type == client_hello || msg_type == encrypted_extensions),
-            application_layer_protocol_negotiation => {
-                (msg_type == client_hello || msg_type == encrypted_extensions)
+            SupportedGroups => (msg_type == client_hello || msg_type == encrypted_extensions),
+            SignatureAlgorithms => (msg_type == client_hello || msg_type == certificate_request),
+            UseSRTP => (msg_type == client_hello || msg_type == encrypted_extensions),
+            Heartbeat => (msg_type == client_hello || msg_type == encrypted_extensions),
+            ApplicationLayerProtocolNegotiation => {
+                msg_type == client_hello || msg_type == encrypted_extensions
             }
-            signed_certificate_timestamp => {
-                (msg_type == client_hello
+            SignedCertificateTimestamp => {
+                msg_type == client_hello
                     || msg_type == certificate_request
-                    || msg_type == certificate)
+                    || msg_type == certificate
             }
-            client_certificate_type => {
-                (msg_type == client_hello || msg_type == encrypted_extensions)
+            ClientCertificateType => {
+                msg_type == client_hello || msg_type == encrypted_extensions
             }
-            server_certificate_type => {
-                (msg_type == client_hello || msg_type == encrypted_extensions)
+            ServerCertificateType => {
+                msg_type == client_hello || msg_type == encrypted_extensions
             }
-            padding => (msg_type == client_hello),
-            key_share => {
-                (msg_type == client_hello
+            Padding => (msg_type == client_hello),
+            KeyShare => {
+                msg_type == client_hello
                     || msg_type == server_hello
-                    || msg_type == hello_retry_request)
+                    || msg_type == hello_retry_request
             }
-            pre_shared_key => (msg_type == client_hello || msg_type == server_hello),
-            psk_key_exchange_modes => (msg_type == client_hello),
-            early_data => {
-                (msg_type == client_hello
+            PreSharedKey => (msg_type == client_hello || msg_type == server_hello),
+            PskKeyExchangeModes => (msg_type == client_hello),
+            EarlyData => {
+                msg_type == client_hello
                     || msg_type == encrypted_extensions
-                    || msg_type == new_session_ticket)
+                    || msg_type == new_session_ticket
             }
-            cookie => (msg_type == client_hello || msg_type == hello_retry_request),
-            supported_versions => {
-                (msg_type == client_hello
+            Cookie => (msg_type == client_hello || msg_type == hello_retry_request),
+            SupportedVersions => {
+                msg_type == client_hello
                     || msg_type == server_hello
-                    || msg_type == hello_retry_request)
+                    || msg_type == hello_retry_request
             }
-            certificate_authorities => (msg_type == client_hello || msg_type == certificate),
-            oid_filters => (msg_type == certificate),
-            post_handshake_auth => (msg_type == client_hello),
-            signature_algorithms_cert => (msg_type == client_hello || msg_type == certificate),
+            CertificateAuthorities => (msg_type == client_hello || msg_type == certificate),
+            OidFilters => (msg_type == certificate),
+            PostHandshakeAuth => (msg_type == client_hello),
+            SignatureAlgorithmsCert => (msg_type == client_hello || msg_type == certificate),
             _ => true,
         }
     }
@@ -319,6 +326,7 @@ struct {
 } ServerNameList;
 */
 
+/// See RFC 6066 Section 3
 #[derive(Debug)]
 pub struct ServerNameList {
     pub names: Vec<ServerName>,
@@ -347,6 +355,8 @@ impl ServerNameList {
 #[derive(Debug)]
 pub struct ServerName {
     pub typ: NameType,
+
+    // TODO: When a HostName, this will be strictly ASCII
     pub data: Bytes,
 }
 
@@ -420,8 +430,7 @@ impl NamedGroupList {
     parser!(parse<Self> => {
         seq!(c => {
             let data = c.next(varlen_vector(2, U16_LIMIT))?;
-            let groups = c.next(complete(
-                many1(NamedGroup::parse)))?;
+            let (groups, _) = complete(many1(NamedGroup::parse))(data)?;
             Ok(NamedGroupList { groups })
         })
     });
@@ -455,7 +464,7 @@ pub enum NamedGroup {
     ffdhe_private_use(u16),
     ecdhe_private_use(u16),
 
-    unknown(u16),
+    Unknown(u16),
 }
 impl NamedGroup {
     pub fn to_u16(&self) -> u16 {
@@ -474,7 +483,7 @@ impl NamedGroup {
             // TODO: Assert that the values and all other unknowns are in the correct range
             ffdhe_private_use(v) => *v,
             ecdhe_private_use(v) => *v,
-            unknown(v) => *v,
+            Unknown(v) => *v,
         }
     }
     pub fn from_u16(v: u16) -> Self {
@@ -491,7 +500,7 @@ impl NamedGroup {
             0x0104 => Self::ffdhe8192,
             0x01FC..=0x01FF => Self::ffdhe_private_use(v),
             0xFE00..=0xFEFF => Self::ecdhe_private_use(v),
-            _ => Self::unknown(v),
+            _ => Self::Unknown(v),
         }
     }
 
@@ -899,3 +908,40 @@ impl UncompressedPointRepresentation {
         Ok(())
     }
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+// RFC 7301: Section 3.1
+// https://datatracker.ietf.org/doc/html/rfc7301#section-3.1
+
+/*
+opaque ProtocolName<1..2^8-1>;
+
+struct {
+    ProtocolName protocol_name_list<2..2^16-1>
+} ProtocolNameList;
+*/
+
+#[derive(Debug)]
+pub struct ProtocolNameList {
+    /// In descending order of preferance.
+    pub names: Vec<Bytes>
+}
+
+impl ProtocolNameList {
+    parser!(parse<Self> => {
+        seq!(c => {
+            let names = c.next(many(varlen_vector(1, U8_LIMIT)))?;
+            Ok(ProtocolNameList { names })
+        })
+    });
+
+    fn serialize(&self, out: &mut Vec<u8>) {
+        for name in &self.names {
+            serialize_varlen_vector(1, U8_LIMIT, out, |out| {
+                out.extend_from_slice(name.as_ref());
+            })
+        }
+    }
+}
+

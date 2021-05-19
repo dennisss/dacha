@@ -1,11 +1,10 @@
-use crate::tls::parsing::*;
 use common::bytes::Bytes;
 use parsing::binary::*;
 use parsing::*;
-//use common::async_std::io::Read;
 use common::errors::*;
 use common::io::Readable;
-//use common::futures::io::AsyncRead;
+
+use crate::tls::parsing::*;
 
 // 'Implementations MUST NOT send zero-length fragments of Handshake,
 // Alert, or ChangeCipherSpec content types.  Zero-length fragments of
@@ -84,11 +83,11 @@ impl Record {
 }
 
 tls_enum_u8!(ContentType => {
-    invalid(0),
-    change_cipher_spec(20),
-    alert(21),
-    handshake(22),
-    application_data(23),
+    Invalid(0),
+    ChangeCipherSpec(20),
+    Alert(21),
+    Handshake(22),
+    ApplicationData(23),
     (255)
 });
 

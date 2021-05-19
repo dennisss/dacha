@@ -3,7 +3,7 @@
 use crate::elliptic::EllipticCurveGroup;
 use crate::hasher::Hasher;
 use crate::pem::*;
-use crate::tls::extensions::ExtensionType::psk_key_exchange_modes;
+use crate::tls::extensions::ExtensionType::PskKeyExchangeModes;
 use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{der_eq, Any, DERReadable, DERReader, DERWriteable};
 use common::bytes::Bytes;
