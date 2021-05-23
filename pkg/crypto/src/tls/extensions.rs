@@ -3,6 +3,7 @@ use common::errors::*;
 use parsing::binary::*;
 use parsing::*;
 
+use crate::dh::DiffieHellmanFn;
 use super::handshake::{HandshakeType, ProtocolVersion};
 use super::parsing::*;
 
@@ -20,7 +21,7 @@ struct {
 } Extension;
 */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Extension {
     ServerName(ServerNameList),
     MaxFragmentLength(MaxFragmentLength),
@@ -248,54 +249,54 @@ impl ExtensionType {
         use ExtensionType::*;
         use HandshakeType::*;
         match self {
-            ServerName => (msg_type == client_hello || msg_type == encrypted_extensions),
-            MaxFragmentLength => (msg_type == client_hello || msg_type == encrypted_extensions),
+            ServerName => (msg_type == ClientHello || msg_type == EncryptedExtensions),
+            MaxFragmentLength => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             StatusRequest => {
-                msg_type == client_hello
-                    || msg_type == certificate_request
-                    || msg_type == certificate
+                msg_type == ClientHello
+                    || msg_type == CertificateRequest
+                    || msg_type == Certificate
             }
-            SupportedGroups => (msg_type == client_hello || msg_type == encrypted_extensions),
-            SignatureAlgorithms => (msg_type == client_hello || msg_type == certificate_request),
-            UseSRTP => (msg_type == client_hello || msg_type == encrypted_extensions),
-            Heartbeat => (msg_type == client_hello || msg_type == encrypted_extensions),
+            SupportedGroups => (msg_type == ClientHello || msg_type == EncryptedExtensions),
+            SignatureAlgorithms => (msg_type == ClientHello || msg_type == CertificateRequest),
+            UseSRTP => (msg_type == ClientHello || msg_type == EncryptedExtensions),
+            Heartbeat => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             ApplicationLayerProtocolNegotiation => {
-                msg_type == client_hello || msg_type == encrypted_extensions
+                msg_type == ClientHello || msg_type == EncryptedExtensions
             }
             SignedCertificateTimestamp => {
-                msg_type == client_hello
-                    || msg_type == certificate_request
-                    || msg_type == certificate
+                msg_type == ClientHello
+                    || msg_type == CertificateRequest
+                    || msg_type == Certificate
             }
             ClientCertificateType => {
-                msg_type == client_hello || msg_type == encrypted_extensions
+                msg_type == ClientHello || msg_type == EncryptedExtensions
             }
             ServerCertificateType => {
-                msg_type == client_hello || msg_type == encrypted_extensions
+                msg_type == ClientHello || msg_type == EncryptedExtensions
             }
-            Padding => (msg_type == client_hello),
+            Padding => (msg_type == ClientHello),
             KeyShare => {
-                msg_type == client_hello
-                    || msg_type == server_hello
-                    || msg_type == hello_retry_request
+                msg_type == ClientHello
+                    || msg_type == ServerHello
+                    || msg_type == HelloRetryRequest
             }
-            PreSharedKey => (msg_type == client_hello || msg_type == server_hello),
-            PskKeyExchangeModes => (msg_type == client_hello),
+            PreSharedKey => (msg_type == ClientHello || msg_type == ServerHello),
+            PskKeyExchangeModes => (msg_type == ClientHello),
             EarlyData => {
-                msg_type == client_hello
-                    || msg_type == encrypted_extensions
-                    || msg_type == new_session_ticket
+                msg_type == ClientHello
+                    || msg_type == EncryptedExtensions
+                    || msg_type == NewSessionTicket
             }
-            Cookie => (msg_type == client_hello || msg_type == hello_retry_request),
+            Cookie => (msg_type == ClientHello || msg_type == HelloRetryRequest),
             SupportedVersions => {
-                msg_type == client_hello
-                    || msg_type == server_hello
-                    || msg_type == hello_retry_request
+                msg_type == ClientHello
+                    || msg_type == ServerHello
+                    || msg_type == HelloRetryRequest
             }
-            CertificateAuthorities => (msg_type == client_hello || msg_type == certificate),
-            OidFilters => (msg_type == certificate),
-            PostHandshakeAuth => (msg_type == client_hello),
-            SignatureAlgorithmsCert => (msg_type == client_hello || msg_type == certificate),
+            CertificateAuthorities => (msg_type == ClientHello || msg_type == Certificate),
+            OidFilters => (msg_type == Certificate),
+            PostHandshakeAuth => (msg_type == ClientHello),
+            SignatureAlgorithmsCert => (msg_type == ClientHello || msg_type == Certificate),
             _ => true,
         }
     }
@@ -327,7 +328,7 @@ struct {
 */
 
 /// See RFC 6066 Section 3
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ServerNameList {
     pub names: Vec<ServerName>,
 }
@@ -352,7 +353,7 @@ impl ServerNameList {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ServerName {
     pub typ: NameType,
 
@@ -421,7 +422,7 @@ struct {
 } NamedGroupList;
 */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NamedGroupList {
     pub groups: Vec<NamedGroup>,
 }
@@ -444,7 +445,8 @@ impl NamedGroupList {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
+#[allow(non_camel_case_types)]
 pub enum NamedGroup {
     // Elliptic Curve Groups (ECDHE)
     secp256r1,
@@ -466,7 +468,29 @@ pub enum NamedGroup {
 
     Unknown(u16),
 }
+
+use crate::elliptic::MontgomeryCurveGroup;
+use crate::elliptic::EllipticCurveGroup;
+
 impl NamedGroup {
+    pub fn create(&self) -> Option<Box<dyn DiffieHellmanFn>> {
+        Some(match self {
+            NamedGroup::secp384r1 => Box::new(EllipticCurveGroup::secp256r1()),
+            NamedGroup::secp521r1 => Box::new(EllipticCurveGroup::secp521r1()),
+            NamedGroup::x25519 => Box::new(MontgomeryCurveGroup::x25519()),
+            NamedGroup::x448 => Box::new(MontgomeryCurveGroup::x448()),
+            _ => { return None; }
+            // NamedGroup::ffdhe2048 => {}
+            // NamedGroup::ffdhe3072 => {}
+            // NamedGroup::ffdhe4096 => {}
+            // NamedGroup::ffdhe6144 => {}
+            // NamedGroup::ffdhe8192 => {}
+            // NamedGroup::ffdhe_private_use(_) => {}
+            // NamedGroup::ecdhe_private_use(_) => {}
+            // NamedGroup::Unknown(_) => {}
+        })
+    }
+
     pub fn to_u16(&self) -> u16 {
         use NamedGroup::*;
         match self {
@@ -557,7 +581,7 @@ struct {
 } SignatureSchemeList;
 */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SignatureSchemeList {
     pub algorithms: Vec<SignatureScheme>,
 }
@@ -579,7 +603,9 @@ impl SignatureSchemeList {
     }
 }
 
-#[derive(Debug)]
+// TODO: Make sure all these enums are compared based on u16 value.
+#[derive(Clone, Copy, PartialEq, Debug)]
+#[allow(non_camel_case_types)]
 pub enum SignatureScheme {
     // RSASSA-PKCS1-v1_5 algorithms
     rsa_pkcs1_sha256,
@@ -688,7 +714,7 @@ struct {
 } SupportedVersions;
 */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SupportedVersionsClientHello {
     /// At least one version supported by the client.
     pub versions: Vec<ProtocolVersion>,
@@ -712,7 +738,7 @@ impl SupportedVersionsClientHello {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SupportedVersionsServerHello {
     pub selected_version: ProtocolVersion,
 }
@@ -728,11 +754,11 @@ impl SupportedVersionsServerHello {
 }
 
 fn parse_supported_versions(input: Bytes, msg_type: HandshakeType) -> ParseResult<Extension> {
-    if msg_type == HandshakeType::client_hello {
+    if msg_type == HandshakeType::ClientHello {
         map(SupportedVersionsClientHello::parse, |v| {
             Extension::SupportedVersionsClientHello(v)
         })(input)
-    } else if msg_type == HandshakeType::server_hello {
+    } else if msg_type == HandshakeType::ServerHello {
         map(SupportedVersionsServerHello::parse, |v| {
             Extension::SupportedVersionsServerHello(v)
         })(input)
@@ -749,7 +775,7 @@ struct {
 } Cookie;
 */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Cookie {
     pub data: Bytes,
 }
@@ -782,7 +808,7 @@ struct {
 } KeyShareClientHello;
 */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KeyShareClientHello {
     pub client_shares: Vec<KeyShareEntry>,
 }
@@ -816,7 +842,7 @@ tls_struct!(KeyShareServerHello => {
     KeyShareEntry server_share;
 });
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KeyShareEntry {
     pub group: NamedGroup,
     pub key_exchange: Bytes,
@@ -843,13 +869,13 @@ impl KeyShareEntry {
 
 fn parse_key_share(input: Bytes, msg_type: HandshakeType) -> ParseResult<Extension> {
     match msg_type {
-        HandshakeType::client_hello => map(KeyShareClientHello::parse, |v| {
+        HandshakeType::ClientHello => map(KeyShareClientHello::parse, |v| {
             Extension::KeyShareClientHello(v)
         })(input),
-        HandshakeType::hello_retry_request => map(KeyShareHelloRetryRequest::parse, |v| {
+        HandshakeType::HelloRetryRequest => map(KeyShareHelloRetryRequest::parse, |v| {
             Extension::KeyShareHelloRetryRequest(v)
         })(input),
-        HandshakeType::server_hello => map(KeyShareServerHello::parse, |v| {
+        HandshakeType::ServerHello => map(KeyShareServerHello::parse, |v| {
             Extension::KeyShareServerHello(v)
         })(input),
         _ => Err(err_msg("Unsupported msg_type")),
@@ -922,7 +948,7 @@ struct {
 } ProtocolNameList;
 */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProtocolNameList {
     /// In descending order of preferance.
     pub names: Vec<Bytes>
@@ -931,17 +957,21 @@ pub struct ProtocolNameList {
 impl ProtocolNameList {
     parser!(parse<Self> => {
         seq!(c => {
-            let names = c.next(many(varlen_vector(1, U8_LIMIT)))?;
+            let data = c.next(varlen_vector(1, U16_LIMIT))?;
+
+            let (names, _) = complete(many(varlen_vector(1, U8_LIMIT)))(data)?;
             Ok(ProtocolNameList { names })
         })
     });
 
     fn serialize(&self, out: &mut Vec<u8>) {
-        for name in &self.names {
-            serialize_varlen_vector(1, U8_LIMIT, out, |out| {
-                out.extend_from_slice(name.as_ref());
-            })
-        }
+        serialize_varlen_vector(2, U16_LIMIT, out, |out| {
+            for name in &self.names {
+                serialize_varlen_vector(1, U8_LIMIT, out, |out| {
+                    out.extend_from_slice(name.as_ref());
+                })
+            }
+        });
     }
 }
 

@@ -42,7 +42,7 @@ macro_rules! tls_enum_u8 {
 #[macro_export]
 macro_rules! tls_struct {
 	($name:ident => { $( $typ:ident $field:ident );* ; }) => {
-		#[derive(Debug)]
+		#[derive(Debug, Clone)]
 		pub struct $name {
 			$(
 				pub $field: $typ,

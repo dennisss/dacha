@@ -9,6 +9,7 @@ use common::hex;
 
 /// Parameters of an elliptic curve of the form:
 /// y^2 = x^3 + a*x + b
+#[derive(PartialEq)]
 pub struct EllipticCurve {
     pub a: BigUint,
     pub b: BigUint,
@@ -87,6 +88,7 @@ impl EllipticCurvePoint {
 
 /// Parameters for a group of points on an elliptic curve definited over a
 /// finite field of integers.
+#[derive(PartialEq)]
 pub struct EllipticCurveGroup {
     /// Base curve.
     curve: EllipticCurve,

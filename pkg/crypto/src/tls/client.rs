@@ -1,3 +1,7 @@
+use std::collections::VecDeque;
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use common::async_std::net::TcpStream;
 use common::async_std::prelude::*;
 use common::async_std::sync::Mutex;
@@ -5,7 +9,7 @@ use common::errors::*;
 use common::io::*;
 use common::bytes::{Buf, Bytes, BytesMut};
 use parsing::is_incomplete;
-use std::collections::VecDeque;
+
 
 use crate::tls::alert::*;
 use crate::tls::extensions::*;
@@ -13,6 +17,7 @@ use crate::tls::handshake::*;
 use crate::tls::key_schedule::*;
 use crate::tls::record::*;
 use crate::tls::transcript::*;
+use crate::tls::options::ClientOptions;
 use crate::aead::*;
 use crate::dh::*;
 use crate::elliptic::*;
@@ -21,520 +26,23 @@ use crate::hasher::*;
 use crate::hkdf::*;
 use crate::sha256::SHA256Hasher;
 use crate::sha384::SHA384Hasher;
+use crate::tls::cipher::*;
+use crate::tls::record_stream::*;
+use crate::tls::application_stream::*;
+use crate::x509;
 
 
 // TODO: Should abort the connection if negotiation results in more than one
 // retry as the first retry should always have enough information.
 
-enum State {
+enum ClientState {
     Start,
     WaitServerHello,
     WaitEncryptedExtensions,
+    WaitCertificateRequest,
     WaitCertificate,
     WaitCertificateVerify,
-    Wait,
-}
-
-#[derive(Debug)]
-enum Message {
-    ChangeCipherSpec,
-    Alert(Alert),
-    Handshake(Handshake),
-    /// Unencrypted data to go directly to the application.
-    ApplicationData(Bytes),
-}
-
-
-/// Wrapper around the stream which buffers read bytes so that it can be used
-/// as a Readable / Writeable stream.
-pub struct Stream {
-    raw_stream: RecordStream,
-    read_buffer: Mutex<Bytes>,
-}
-
-impl Stream {
-    pub(crate) fn new(channel: Box<dyn ReadWriteable>) -> Self {
-        Self {
-            raw_stream: RecordStream::new(channel),
-            read_buffer: Mutex::new(Bytes::new())
-        }
-    }
-}
-
-#[async_trait]
-impl Readable for Stream {
-    async fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
-        // TODO: We should dedup this with the http::Body code.
-        let mut read_buffer = self.read_buffer.lock().await;
-        let mut nread = 0;
-        if read_buffer.len() > 0 {
-            let n = std::cmp::min(buf.len(), read_buffer.len());
-            buf[0..n].copy_from_slice(&read_buffer[0..n]);
-            read_buffer.advance(n);
-            buf = &mut buf[n..];
-            nread += n;
-        }
-
-        if buf.len() == 0 {
-            return Ok(nread);
-        }
-
-        let msg = self.raw_stream.recv(None).await?;
-        if let Message::ApplicationData(mut data) = msg {
-            let n = std::cmp::min(data.len(), buf.len());
-            buf[0..n].copy_from_slice(&data[0..n]);
-            nread += n;
-            data.advance(n);
-
-            *read_buffer = data;
-
-            Ok(nread)
-        } else {
-            Err(err_msg("Unexpected data seen on stream"))
-        }
-    }
-}
-
-#[async_trait]
-impl Writeable for Stream {
-    async fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        // TODO: We may need to split up a packet that is too large.
-        self.raw_stream.send(buf).await?;
-        Ok(buf.len())
-    }
-
-    async fn flush(&mut self) -> Result<()> {
-        self.raw_stream.channel.flush().await?;
-        Ok(())
-    }
-}
-
-/// Interface for sending and receiving TLS Records over the raw connection.
-///
-/// This interface also handles appropriately encrypting/decrypting records once
-/// keys have been negotiated.
-pub struct RecordStream {
-    /// The underlying byte based transport layer used for sending/recieving Records.
-    channel: Box<dyn ReadWriteable>,
-
-    /// Current encrpytion configuration for the connection.
-    ///
-    /// Initially this will None indicating that we haven't yet agreed upon keys and
-    /// will eventually 
-    ///  If specified then the connection is encrypted.
-    cipher_spec: Option<CipherSpec>,
-}
-
-impl RecordStream {
-    pub(crate) fn new(channel: Box<dyn ReadWriteable>) -> Self {
-        Self {
-            channel,
-            cipher_spec: None,
-        }
-    }
-
-    // TODO: Instead functions should return a Result indicating the Alert
-    // they want to convey back to the server.
-    async fn fatal(&mut self, description: AlertDescription) -> Result<()> {
-        let alert = Alert {
-            level: AlertLevel::fatal,
-            description,
-        };
-        let mut data = vec![];
-        alert.serialize(&mut data);
-
-        let record = RecordInner {
-            typ: ContentType::Alert,
-            data: data.into(),
-        };
-
-        self.send_record(record).await
-    }
-
-    async fn recv_record(&mut self) -> Result<RecordInner> {
-        // TODO: Eventually remove this loop once ChangeCipherSpec is handled
-        // elsewhere.
-        loop {
-            let record = Record::read(self.channel.as_read()).await?;
-
-            // TODO: Disallow zero length records unless using application data.
-
-            // Only the ClientHello should be using a different record version.
-            if record.legacy_record_version != TLS_1_2_VERSION {
-                return Err(err_msg("Unexpected version"));
-            }
-
-            // TODO: Can't remove this until we have a better check for
-            // enforcing that everything is encrypted.
-            if record.typ == ContentType::ChangeCipherSpec {
-                // TODO: After the ClientHello is sent and before a Finished is
-                // received, this should be valid.
-                continue;
-            }
-
-            let inner = if let Some(cipher_spec) = self.cipher_spec.as_ref() {
-                // TODO: I know that at least application_data and keyupdates
-                // must always be encrypted after getting keys.
-
-                if record.typ != ContentType::ApplicationData {
-                    return Err(err_msg("Expected only encrypted data not"));
-                }
-
-                let mut key_guard = cipher_spec.server_key.lock().await;
-                let key = key_guard.keying.next_keys();
-
-                // additional_data = TLSCiphertext.opaque_type ||
-                //     TLSCiphertext.legacy_record_version ||
-                //     TLSCiphertext.length
-                // TODO: Implement this as a slice of the original record.
-                let mut additional_data = vec![];
-                record.typ.serialize(&mut additional_data);
-                additional_data.extend_from_slice(&record.legacy_record_version.to_be_bytes());
-                additional_data.extend_from_slice(&(record.data.len() as u16).to_be_bytes());
-
-                let mut plaintext = vec![];
-                cipher_spec.aead.decrypt(
-                    &key.key,
-                    &key.iv,
-                    &record.data,
-                    &additional_data,
-                    &mut plaintext,
-                )?;
-
-                // The content type is the the last non-zero byte. All zeros
-                // after that are padding and can be ignored.
-                let mut content_type_res = None;
-                for i in (0..plaintext.len()).rev() {
-                    if plaintext[i] != 0 {
-                        content_type_res = Some(i);
-                        break;
-                    }
-                }
-
-                let content_type_i = content_type_res.ok_or_else(|| err_msg("All zero"))?;
-
-                let content_type = ContentType::from_u8(plaintext[content_type_i]);
-
-                plaintext.truncate(content_type_i);
-
-                RecordInner {
-                    typ: content_type,
-                    data: plaintext.into(),
-                }
-            } else {
-                if record.typ == ContentType::ApplicationData {
-                    return Err(err_msg("Received application_data without a cipher"));
-                }
-
-                RecordInner {
-                    typ: record.typ,
-                    data: record.data,
-                }
-            };
-
-            // Empty records are only allowed for
-            // TODO: Does this apply to anything other than Handshake?
-            // if inner.typ != ContentType::application_data && inner.data.len() == 0 {
-            // 	return Err(err_msg("Empty record not allowed"));
-            // }
-
-            return Ok(inner);
-        }
-    }
-
-    async fn send_record(&mut self, inner: RecordInner) -> Result<()> {
-        let record = if let Some(cipher_spec) = self.cipher_spec.as_ref() {
-            // All encrypted records will be sent with an outer version of
-            // TLS 1.2 for backwards compatibility.
-            let legacy_record_version: u16 = 0x0303;
-
-            let typ = ContentType::ApplicationData;
-
-            // How much padding to add to each plaintext record.
-            // TODO: Support padding up to a block size or accepting a callback
-            // to configure this.
-            let padding_size = 0;
-
-            // Total expected size of cipher text. We need one byte at the end
-            // for the content type.
-            let total_size = cipher_spec.aead.expanded_size(inner.data.len() + 1) + padding_size;
-
-            let mut additional_data = vec![];
-            typ.serialize(&mut additional_data);
-            additional_data.extend_from_slice(&legacy_record_version.to_be_bytes());
-            additional_data.extend_from_slice(&(total_size as u16).to_be_bytes());
-
-            let mut plaintext = vec![];
-            plaintext.resize(inner.data.len() + 1 + padding_size, 0);
-            plaintext[0..inner.data.len()].copy_from_slice(&inner.data);
-            plaintext[inner.data.len()] = inner.typ.to_u8();
-
-            let mut key_guard = cipher_spec.client_key.lock().await;
-            let key = key_guard.keying.next_keys();
-
-            let mut ciphertext = vec![];
-            ciphertext.reserve(total_size);
-            cipher_spec.aead.encrypt(
-                &key.key,
-                &key.iv,
-                &plaintext,
-                &additional_data,
-                &mut ciphertext,
-            );
-
-            assert_eq!(ciphertext.len(), total_size);
-
-            Record {
-                legacy_record_version,
-                typ,
-                data: ciphertext.into(),
-            }
-        } else {
-            if inner.typ == ContentType::ApplicationData {
-                return Err(err_msg(
-                    "Should not be sending unencrypted application data",
-                ));
-            }
-
-            Record {
-                // TODO: Implement this.
-                // rfc8446: 'In order to maximize backward compatibility, a record containing an
-                // initial ClientHello SHOULD have version 0x0301 (reflecting TLS 1.0) and a record
-                // containing a second ClientHello or a ServerHello MUST have version 0x0303'
-                legacy_record_version: 0x0301, // TLS 1.0
-                typ: inner.typ,
-                data: inner.data,
-            }
-        };
-
-        let mut record_data = vec![];
-        record.serialize(&mut record_data);
-
-        self.channel.write_all(&record_data).await?;
-        Ok(())
-    }
-
-    /// Recieves the next full message from the socket.
-    async fn recv(&mut self, mut handshake_state: Option<&mut HandshakeState>) -> Result<Message> {
-        // Partial data received for a handshake message. Handshakes may be
-        // split between consecutive records.
-        let mut handshake_buf = BytesMut::new();
-
-        let mut previous_handshake_record = None;
-        if let Some(state) = handshake_state.as_mut() {
-            if state.handshake_buf.len() > 0 {
-                previous_handshake_record = Some(RecordInner {
-                    typ: ContentType::Handshake,
-                    data: state.handshake_buf.split_off(0),
-                });
-            }
-        }
-
-        loop {
-            let record = if let Some(r) = previous_handshake_record.take() {
-                r
-            } else {
-                self.recv_record().await?
-            };
-
-            if handshake_buf.len() != 0 && record.typ != ContentType::Handshake {
-                return Err(err_msg("Data interleaved in handshake"));
-            }
-
-            let (val, rest) = match record.typ {
-                ContentType::Handshake => {
-                    let handshake_data = if handshake_buf.len() > 0 {
-                        let mut data_mut = handshake_buf;
-                        data_mut.extend_from_slice(&record.data);
-                        data_mut.freeze()
-                    } else {
-                        record.data
-                    };
-                    let res = Handshake::parse(handshake_data.clone());
-
-                    let (val, rest) = match res {
-                        Ok(v) => v,
-                        Err(e) => {
-                            if is_incomplete(&e) {
-                                handshake_buf = handshake_data.try_mut().unwrap();
-                                continue;
-                            } else {
-                                // TODO: We received an invalid message, send an alert.
-                                return Err(e);
-                            }
-                        }
-                    };
-
-                    let state = if let Some(s) = handshake_state {
-                        s
-                    } else {
-                        return Err(err_msg("Not currently performing a handshake"));
-                    };
-
-                    // Append to transcript ignoring any padding
-                    state
-                        .transcript
-                        .push(handshake_data.slice(0..(handshake_data.len() - rest.len())));
-
-                    state.handshake_buf = rest;
-
-                    (Message::Handshake(val), Bytes::new())
-                }
-                ContentType::Alert => {
-                    Alert::parse(record.data).map(|(a, r)| (Message::Alert(a), r))?
-                }
-                ContentType::ApplicationData => {
-                    (Message::ApplicationData(record.data), Bytes::new())
-                }
-                _ => {
-                    return Err(format_err!("Unknown record type {:?}", record.typ));
-                }
-            };
-
-            if rest.len() != 0 {
-                return Err(err_msg("Unexpected data after message"));
-            }
-
-            return Ok(val);
-        }
-    }
-
-    // TODO: Messages that are too long may need to be split up.
-    pub async fn send_handshake(
-        &mut self,
-        msg: Handshake,
-        state: &mut HandshakeState,
-    ) -> Result<()> {
-        let mut data = vec![];
-        msg.serialize(&mut data);
-        let buf = Bytes::from(data);
-
-        state.transcript.push(buf.clone());
-
-        self.send_record(RecordInner {
-            typ: ContentType::Handshake,
-            data: buf,
-        })
-        .await?;
-        Ok(())
-    }
-
-    pub async fn send(&mut self, data: &[u8]) -> Result<()> {
-        // TODO: Avoid the clone in converting to a Bytes
-        self.send_record(RecordInner {
-            data: data.into(),
-            typ: ContentType::ApplicationData,
-        })
-        .await
-    }
-}
-
-pub struct HandshakeState {
-    transcript: Transcript,
-
-    /// Bytes of a partial handshake message which haven't been able to be
-    /// parse. This is used to support coalescing/splitting of handshake
-    /// messages in one or more messages.
-    ///
-    /// TODO: If this is non-empty, then we can't change keys and receive other
-    /// types of messages.
-    handshake_buf: Bytes,
-}
-
-impl HandshakeState {
-    fn new() -> Self {
-        Self {
-            handshake_buf: Bytes::new(),
-            transcript: Transcript::new(),
-        }
-    }
-}
-
-struct CipherSpec {
-    aead: Box<dyn AuthEncAD>,
-    hkdf: HKDF,
-
-    client_key: Mutex<CipherEndpointKey>,
-    server_key: Mutex<CipherEndpointKey>,
-}
-
-impl CipherSpec {
-    pub fn from_keys(
-        aead: Box<dyn AuthEncAD>,
-        hkdf: HKDF,
-        client_traffic_secret: Bytes,
-        server_traffic_secret: Bytes,
-    ) -> Self {
-        // TODO: This is very redundant with replace_keys
-        let client_key = Mutex::new(CipherEndpointKey::from_key(
-            aead.as_ref(),
-            &hkdf,
-            client_traffic_secret,
-        ));
-        let server_key = Mutex::new(CipherEndpointKey::from_key(
-            aead.as_ref(),
-            &hkdf,
-            server_traffic_secret,
-        ));
-
-        Self {
-            aead,
-            hkdf,
-            client_key,
-            server_key,
-        }
-    }
-
-    // TODO: If there are multiple readers, then this must always occur
-    // during the same locking cycle as the
-    // TODO: Only valid for application keys and not for handshake keys.
-
-    pub async fn replace_keys(
-        &mut self,
-        client_traffic_secret: Bytes,
-        server_traffic_secret: Bytes,
-    ) {
-        *self.client_key.lock().await =
-            CipherEndpointKey::from_key(self.aead.as_ref(), &self.hkdf, client_traffic_secret);
-        *self.server_key.lock().await =
-            CipherEndpointKey::from_key(self.aead.as_ref(), &self.hkdf, server_traffic_secret);
-    }
-}
-
-pub struct CipherEndpointKey {
-    traffic_secret: Bytes,
-    /// Derived from the above key.
-    keying: TrafficKeyingMaterial,
-}
-
-impl CipherEndpointKey {
-    fn from_key(aead: &dyn AuthEncAD, hkdf: &HKDF, traffic_secret: Bytes) -> Self {
-        let keying = TrafficKeyingMaterial::from_secret(hkdf, aead, &traffic_secret);
-        Self {
-            traffic_secret,
-            keying,
-        }
-    }
-
-    // NOTE: This must be called under the same lock that sent/received the key
-    // change request to ensure no other messages are received/send under the
-    // old keys.
-    //
-    // application_traffic_secret_N+1 =
-    //        HKDF-Expand-Label(application_traffic_secret_N,
-    //                          "traffic upd", "", Hash.length)
-    fn update_key(&mut self, aead: &dyn AuthEncAD, hkdf: &HKDF) {
-        let next_secret = hkdf_expand_label(
-            &hkdf,
-            &self.traffic_secret,
-            b"traffic upd",
-            b"",
-            hkdf.hash_size() as u16,
-        )
-        .into();
-
-        *self = Self::from_key(aead, hkdf, next_secret);
-    }
+    WaitFinished,
 }
 
 pub struct Client {
@@ -574,11 +82,28 @@ fn find_key_share_sh(extensions: &Vec<Extension>) -> Option<&KeyShareServerHello
     None
 }
 
+fn find_key_share_retry(extensions: &[Extension]) -> Option<&KeyShareHelloRetryRequest> {
+    for e in extensions {
+        if let Extension::KeyShareHelloRetryRequest(v) = e {
+            return Some(v);
+        }
+    }
+
+    None
+}
+
 // TODO: Must implement bubbling up Alert messages
 
 // TODO: Unused?
 const TLS13_CERTIFICATEVERIFY_CLIENT_CTX: &'static [u8] = b"TLS 1.3, client CertificateVerify";
 const TLS13_CERTIFICATEVERIFY_SERVER_CTX: &'static [u8] = b"TLS 1.3, server CertificateVerify";
+
+/// SHA-256 of the string "HelloRetryRequest" which indicates that a ServerHello is a
+/// HelloRetryRequest.
+const HELLO_RETRY_REQUEST_SHA256: &'static [u8] = &[
+    0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11, 0xBE, 0x1D, 0x8C, 0x02, 0x1E, 0x65, 0xB8, 0x91,
+    0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB, 0x8C, 0x5E, 0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C
+];
 
 /*
 Because TLS 1.3 forbids renegotiation, if a server has negotiated
@@ -586,126 +111,309 @@ TLS 1.3 and receives a ClientHello at any other time, it MUST
 terminate the connection with an "unexpected_message" alert.
 */
 
-impl Client {
-    pub fn new() -> Self {
-        Self {}
+
+/// Performs a handshake with a server for a single TLS connection.
+/// Implemented from the client point of view.
+struct ClientHandshakeExecutor<'a> {
+    options: &'a ClientOptions,
+    
+    stream: RecordStream,
+
+    handshake_state: HandshakeState,
+
+    /// Secrets offered to the server in the last ClientHello sent.
+    secrets: HashMap<NamedGroup, Vec<u8>>,
+
+    certificate_registry: x509::CertificateRegistry
+}
+
+impl<'a> ClientHandshakeExecutor<'a> {
+    async fn new(input: Box<dyn ReadWriteable>, options: &'a ClientOptions) -> Result<ClientHandshakeExecutor<'a>> {
+        Ok(ClientHandshakeExecutor {
+            options,
+            stream: RecordStream::new(input),
+            handshake_state: HandshakeState::new(),
+            secrets: HashMap::new(),
+            certificate_registry: x509::CertificateRegistry::public_roots().await?
+        })
     }
 
-    pub async fn connect(
-        &mut self,
-        input: Box<dyn ReadWriteable>,
-        hostname: &str,
-    ) -> Result<Stream> {
-        let mut stream = Stream::new(input);
+    async fn run(mut self) -> Result<ApplicationStream> {
+        // Send the initial ClientHello message.
+        let client_hello = {
+            let mut client_shares = vec![];
 
-        let mut handshake_state = HandshakeState::new();
+            for group in self.options.initial_keys_shared.iter().cloned() {
+                client_shares.push(self.new_secret(group).await?);
+            }
 
-        let group = MontgomeryCurveGroup::x25519();
-        let secret_value = group.secret_value().await?;
-        let client_share = KeyShareEntry {
-            group: NamedGroup::x25519,
-            key_exchange: group.public_value(&secret_value)?.into(),
+            ClientHello::plain(&client_shares, self.options).await?   
         };
 
-        let client_hello = Handshake::ClientHello(ClientHello::plain(hostname, client_share).await?);
-        stream.raw_stream
-            .send_handshake(client_hello, &mut handshake_state)
+        self.stream.send_handshake(
+            Handshake::ClientHello(client_hello.clone()), &mut self.handshake_state)
             .await?;
 
-        // TODO: Use buffered reads.
-        // let mut res_data = vec![];
-        // res_data.resize(512, 0);
-        // let n = stream.read(&mut res_data).await?;
+        let state = ClientState::WaitServerHello;
 
-        // Receive ServerHello
-        // let mut handshake_buf = vec![];
+        let (server_hello, key_schedule, hasher_factory) =
+            self.wait_server_hello(client_hello).await?;
 
-        let msg = stream.raw_stream.recv(Some(&mut handshake_state)).await?;
-        // TODO: First handle all alerts.
+        self.wait_encrypted_extensions().await?;
 
-        let server_hello = if let Message::Handshake(Handshake::ServerHello(sh)) = msg {
-            sh
-        } else {
-            return Err(err_msg("Unexpected message"));
+        // TODO: Could receive either CertificateRequest or Certificate
+
+        let cert = self.wait_certificate().await?;
+
+        self.wait_certificate_verify(&cert, &hasher_factory).await?;
+        
+        self.wait_finished(key_schedule).await?;
+
+        Ok(ApplicationStream::new(self.stream))
+    }
+
+    /// Generates a new random secret key and returns the corresponding public key
+    /// that can be sent to the server for key exchange.
+    async fn new_secret(&mut self, group: NamedGroup) -> Result<KeyShareEntry> {
+        let inst = group.create()
+            .ok_or_else(|| err_msg("NamedGroup not supported"))?;
+        
+        let secret_value = inst.secret_value().await?;
+        let entry = KeyShareEntry {
+            group,
+            key_exchange: inst.public_value(&secret_value)?.into(),
         };
 
-        // Check that the version is TLS 1.2
-        // Then look for a SupportedVersions extension to see if it is TLS 1.3
-        let is_tls13 = server_hello.legacy_version == TLS_1_2_VERSION
-            && find_supported_versions_sh(&server_hello.extensions)
-                .map(|sv| sv.selected_version == TLS_1_3_VERSION)
-                .unwrap_or(false);
-        if !is_tls13 {
-            return Err(err_msg("Only support TLS 1.3"));
+        // TODO: Verify no duplicates.
+        self.secrets.insert(group, secret_value);
+
+        Ok(entry)
+    }
+
+    async fn receive_handshake_message(&mut self) -> Result<Handshake> {
+        loop {
+            let msg = self.stream.recv(Some(&mut self.handshake_state)).await?;
+
+            match msg {
+                Message::Handshake(m) => { return Ok(m); },
+                Message::ApplicationData(_) => {
+                    return Err(err_msg("Unexpected application data during handshake"));
+                },
+                Message::ChangeCipherSpec(_) => {
+                    // TODO: Improve this.
+                    continue;
+                },
+                Message::Alert(alert) => {
+                    if alert.level == AlertLevel::fatal {
+                        return Err(err_msg("Received fatal alert"));
+                    }
+
+                    println!("Received Alert!");
+                    continue;
+                }
+            };
         }
+    }
 
-        // TODO: Must match ClientHello?
-        if server_hello.legacy_compression_method != 0 {
-            return Err(err_msg("Unexpected compression method"));
+    async fn wait_server_hello(
+        &mut self, mut client_hello: ClientHello
+    ) -> Result<(ServerHello, KeySchedule, HasherFactory)> {
+        let mut last_server_hello = None;
+
+        loop {
+            let server_hello = {
+                if let Handshake::ServerHello(sh) = self.receive_handshake_message().await? { sh }
+                else { return Err(err_msg("Unexpected message")); }
+            };
+
+            let is_retry = &server_hello.random == HELLO_RETRY_REQUEST_SHA256;
+
+            // Check that the version is TLS 1.2
+            // Then look for a SupportedVersions extension to see if it is TLS 1.3
+            let is_tls13 = server_hello.legacy_version == TLS_1_2_VERSION
+                && find_supported_versions_sh(&server_hello.extensions)
+                    .map(|sv| sv.selected_version == TLS_1_3_VERSION)
+                    .unwrap_or(false);
+            if !is_tls13 {
+
+                // TODO: If we switch to TLS 1.2, make sure that we don't allow retrying again.
+                // ^ Also if this isn't a retry request, then we should complain??
+
+                return Err(err_msg("Only support TLS 1.3"));
+            }
+
+            // TODO: Must match ClientHello?
+            if server_hello.legacy_compression_method != 0 {
+                return Err(err_msg("Unexpected compression method"));
+            }
+
+            // TODO: Check legacy_session_id_echo
+
+            // TODO: Must check the random bytes received.
+
+            // Verify that the cipher suite was offered.
+            if !self.options.supported_cipher_suites.iter().find(
+                |c| **c == server_hello.cipher_suite).is_some() {
+                return Err(err_msg("Server selected a cipher suite that we didn't advertise"));
+            } 
+
+            if is_retry {
+                // TODO: A client MUST process all extensions?
+
+                if last_server_hello.is_some() {
+                    // TODO: Abort with "unexpected_message"
+                    return Err(err_msg("Retrying ClientHello more than once"));
+                }
+
+                let selected_group =
+                    find_key_share_retry(&server_hello.extensions)
+                    .ok_or_else(|| err_msg("Expected key_share in retry"))?
+                    .selected_group;
+
+                if self.secrets.contains_key(&selected_group) {
+                    return Err(err_msg("Server selected a group that we already picked"));
+                }
+
+                if !self.options.supported_groups.iter().find(|g| **g == selected_group).is_some() {
+                    return Err(err_msg("Server selected a group that we didn't advertise"));
+                }
+
+
+                // TODO: See 4.1.2 for retry specific details.
+                // In that case, the client MUST send the same
+                // ClientHello without modification, except as follows:
+
+                // Remove existing key shares and early_data
+                client_hello.extensions.retain(|e| {
+                    match e {
+                        Extension::KeyShareClientHello(_) => false,
+                        _ => true
+                    }
+                });
+
+                // replace shared keys if key_share extension was given
+                // NOTE: We clear the secrets from the first client hello as the server shouldn't be able to
+                // back track and use a key it initially rejected.
+                self.secrets.clear();
+                client_hello.extensions.push(Extension::KeyShareClientHello(KeyShareClientHello {
+                    client_shares: vec![
+                        self.new_secret(selected_group).await?
+                    ]
+                }));
+
+
+                // TODO: Remove early_data.
+
+                // Add cookie if given.
+                if let Some(cookie) = server_hello.extensions.iter().find(|e| {
+                    match e {
+                        Extension::Cookie(_) => true,
+                        _ => false
+                    }
+                }) {
+                    client_hello.extensions.push(cookie.clone());
+                }
+
+                // Update PSK?
+
+                // Need to send a new client hello.
+
+                self.stream.send_handshake(
+                    Handshake::ClientHello(client_hello.clone()), &mut self.handshake_state).await?;
+
+                // Wait for the ServerHello again.
+                last_server_hello = Some(server_hello);
+                continue;
+            }
+
+            if let Some(hello_retry) = &last_server_hello {
+                if hello_retry.cipher_suite != server_hello.cipher_suite {
+                    // TODO: Abort with "illegal_parameter"
+                    return Err(err_msg("cipher_suite changed after retry"));
+                }
+            }
+
+            let cipher_suite = server_hello.cipher_suite.clone();
+
+            let (aead, hasher_factory) = match cipher_suite {
+                CipherSuite::TLS_AES_128_GCM_SHA256 => {
+                    (Box::new(AES_GCM::aes128()), SHA256Hasher::factory())
+                }
+                CipherSuite::TLS_AES_256_GCM_SHA384 => {
+                    (Box::new(AES_GCM::aes256()), SHA384Hasher::factory())
+                }
+                // CipherSuite::TLS_CHACHA20_POLY1305_SHA256 => {
+                // 	SHA256Hasher::factory()
+                // },
+                _ => {
+                    return Err(err_msg("Bad cipher suite"));
+                }
+            };
+
+            let hkdf = HKDF::new(hasher_factory.box_clone());
+
+            let mut key_schedule = KeySchedule::new(hkdf.clone(), hasher_factory.box_clone());
+
+            key_schedule.early_secret(None);
+
+            let server_public = find_key_share_sh(&server_hello.extensions)
+                .ok_or(err_msg("ServerHello missing key_share"))?;
+
+            if !self.secrets.contains_key(&server_public.server_share.group) {
+                return Err(err_msg("ServerHello key share group not offered in most recent ClientHello"));
+            }
+
+            let group = server_public.server_share.group.create().unwrap();
+
+            let shared_secret =
+                group.shared_secret(&server_public.server_share.key_exchange,
+                    &self.secrets[&server_public.server_share.group])?;
+
+            // TODO: Use this return value? 
+            key_schedule.handshake_secret(&shared_secret);
+
+            let (client_handshake_traffic_secret, server_handshake_traffic_secret) = {
+                let s = key_schedule.handshake_traffic_secrets(&self.handshake_state.transcript);
+                (
+                    s.client_handshake_traffic_secret,
+                    s.server_handshake_traffic_secret,
+                )
+            };
+
+            // TODO: Use this?
+            key_schedule.master_secret();
+
+            self.stream.cipher_spec = Some(CipherSpec::from_keys(
+                aead,
+                hkdf.clone(),
+                client_handshake_traffic_secret.into(),
+                server_handshake_traffic_secret.into(),
+            ));
+
+            return Ok((server_hello, key_schedule, hasher_factory));
         }
-
-        // TODO: Must check the random bytes received.
-
-        // Derive the key_share
-
-        let cipher_suite = server_hello.cipher_suite;
-
-        // TODO: Validate it was one of the ones we asked for.
-        let (aead, hasher_factory) = match cipher_suite {
-            CipherSuite::TLS_AES_128_GCM_SHA256 => {
-                (Box::new(AES_GCM::aes128()), SHA256Hasher::factory())
-            }
-            CipherSuite::TLS_AES_256_GCM_SHA384 => {
-                (Box::new(AES_GCM::aes256()), SHA384Hasher::factory())
-            }
-            // CipherSuite::TLS_CHACHA20_POLY1305_SHA256 => {
-            // 	SHA256Hasher::factory()
-            // },
+    }
+    
+    async fn wait_encrypted_extensions(&mut self) -> Result<()> {
+        let _ee = match self.receive_handshake_message().await? {
+            Handshake::EncryptedExtensions(e) => e,
             _ => {
-                return Err(err_msg("Bad cipher suite"));
+                return Err(err_msg("Expected encrypted extensions"));
             }
         };
 
-        let hkdf = HKDF::new(hasher_factory.box_clone());
+        // TODO: Process all of these extensions.
 
-        let mut key_schedule = KeySchedule::new(hkdf.clone(), hasher_factory.box_clone());
+        Ok(())
+    } 
 
-        key_schedule.early_secret(None);
-
-        let server_public = find_key_share_sh(&server_hello.extensions)
-            .ok_or(err_msg("ServerHello missing key_share"))?;
-
-        // Must match what was given in our ClientHello
-        assert_eq!(server_public.server_share.group, NamedGroup::x25519);
-
-        let shared_secret =
-            group.shared_secret(&server_public.server_share.key_exchange, &secret_value)?;
-
-        key_schedule.handshake_secret(&shared_secret);
-
-        let (client_handshake_traffic_secret, server_handshake_traffic_secret) = {
-            let s = key_schedule.handshake_traffic_secrets(&handshake_state.transcript);
-            (
-                s.client_handshake_traffic_secret,
-                s.server_handshake_traffic_secret,
-            )
-        };
-
-        key_schedule.master_secret();
-
-        stream.raw_stream.cipher_spec = Some(CipherSpec::from_keys(
-            aead,
-            hkdf.clone(),
-            client_handshake_traffic_secret.into(),
-            server_handshake_traffic_secret.into(),
-        ));
-
-        // Receive Encrypted Extensions
-
-        let _ee = stream.raw_stream.recv(Some(&mut handshake_state)).await?;
-
-        let cert = match stream.raw_stream.recv(Some(&mut handshake_state)).await? {
-            Message::Handshake(Handshake::Certificate(c)) => c,
+    /// Receives the server's certificate. Responsible for verifying that:
+    /// 1. The certificate is valid now
+    /// 2. The certificate is valid for the remote host name.
+    /// 3. The certificate forms a valid chain to a trusted root certificate.
+    async fn wait_certificate(&mut self) -> Result<Arc<x509::Certificate>> {
+        let cert = match self.receive_handshake_message().await? {
+            Handshake::Certificate(c) => c,
             _ => {
                 return Err(err_msg("Expected certificate message"));
             }
@@ -717,7 +425,7 @@ impl Client {
 
         let mut cert_list = vec![];
         for c in &cert.certificate_list {
-            cert_list.push(std::sync::Arc::new(crate::x509::Certificate::read(
+            cert_list.push(Arc::new(x509::Certificate::read(
                 c.cert.clone(),
             )?));
         }
@@ -726,9 +434,11 @@ impl Client {
             return Err(err_msg("Expected at least one certificate"));
         }
 
-        let mut registry = crate::x509::CertificateRegistry::public_roots()?;
-        // This will verify that they are all legit.
-        registry.append(&cert_list, false)?;
+        // NOTE: This will return an error if any of the certificates are invalid.
+        // TODO: Technically we only need to ensure that the first one is valid.
+        self.certificate_registry.append(&cert_list, false)?;
+
+        // Verify the terminal certificate is valid (MUST always be first).
 
         if !cert_list[0].valid_now() {
             return Err(err_msg("Certificate not valid now"));
@@ -742,19 +452,24 @@ impl Client {
             }
         }
 
-        if !cert_list[0].for_dns_name(hostname)? {
+        if !cert_list[0].for_dns_name(&self.options.hostname)? {
             return Err(err_msg("Certificate not valid for DNS name"));
         }
 
-        // Transcript hash for ClientHello through to the Certificate.
-        let ch_ct_transcript_hash = handshake_state.transcript.hash(&hasher_factory);
+        Ok(cert_list.remove(0))
+    }
 
-        let cert_verify = match stream.raw_stream.recv(Some(&mut handshake_state)).await? {
-            Message::Handshake(Handshake::CertificateVerify(c)) => c,
+    async fn wait_certificate_verify(&mut self, cert: &x509::Certificate, hasher_factory: &HasherFactory) -> Result<()> {
+        // Transcript hash for ClientHello through to the Certificate.
+        let ch_ct_transcript_hash = self.handshake_state.transcript.hash(&hasher_factory);
+
+        let cert_verify = match self.receive_handshake_message().await? {
+            Handshake::CertificateVerify(c) => c,
             _ => {
                 return Err(err_msg("Expected certificate verify"));
             }
         };
+
 
         let mut plaintext = vec![];
         for _ in 0..64 {
@@ -764,12 +479,30 @@ impl Client {
         plaintext.push(0);
         plaintext.extend_from_slice(&ch_ct_transcript_hash);
 
+        if self.options.supported_signature_algorithms.iter().find(|a| **a == cert_verify.algorithm).is_none() {
+            // TODO: This may happen if no certificate exists that can be used with any of the requested
+            // algorithms.
+            return Err(err_msg("Received certificate verification with non-advertised algorithm."));
+        }
+
+        /*
+        TODO:
+        For TLS 1.3:
+        RSA signatures MUST use an RSASSA-PSS algorithm, regardless of whether RSASSA-PKCS1-v1_5
+        algorithms appear in "signature_algorithms".
+        */
+
         // TODO: Verify this is an algorithm that we requested (and that it
         // matches all relevant params in the certificate.
+        // TOOD: Most of this code should be easy to modularize.
         match cert_verify.algorithm {
             SignatureScheme::ecdsa_secp256r1_sha256 => {
-                let (params, point) = cert_list[0].ec_public_key(&registry)?;
+                let (params, point) = cert.ec_public_key(&self.certificate_registry)?;
                 let group = EllipticCurveGroup::secp256r1();
+
+                if params != group {
+                    return Err(err_msg("Mismatch between signature and public key algorithm!!"));
+                }
 
                 let mut hasher = crate::sha256::SHA256Hasher::default();
                 let good = group.verify_signature(
@@ -779,9 +512,21 @@ impl Client {
                     &mut hasher,
                 )?;
                 if !good {
-                    return Err(err_msg("Invalid certificate verify signature"));
+                    return Err(err_msg("Invalid ECSDA certificate verify signature"));
                 }
             }
+            SignatureScheme::rsa_pss_rsae_sha256 => {
+                // NOTE: Salt length should be the same as the digest/hash length.
+                let public_key = cert.rsa_public_key()?;
+                let rsa = crate::rsa::RSASSA_PSS::new(
+                    crate::sha256::SHA256Hasher::factory(), 256 / 8);
+                
+                let good = rsa.verify_signature(&public_key, &cert_verify.signature, &plaintext)?;
+                if !good {
+                    return Err(err_msg("Invalid RSA certificate verify signature"));
+                }
+            }
+
             // TODO:
             // SignatureScheme::rsa_pkcs1_sha256,
             // SignatureScheme::rsa_pss_rsae_sha256
@@ -790,9 +535,13 @@ impl Client {
             }
         };
 
-        let verify_data_server = key_schedule.verify_data_server(&handshake_state.transcript);
+        Ok(())
+    }
 
-        let finished = match stream.raw_stream.recv(Some(&mut handshake_state)).await? {
+    async fn wait_finished(&mut self, key_schedule: KeySchedule) -> Result<()> {
+        let verify_data_server = key_schedule.verify_data_server(&self.handshake_state.transcript);
+
+        let finished = match self.stream.recv(Some(&mut self.handshake_state)).await? {
             Message::Handshake(Handshake::Finished(v)) => v,
             _ => {
                 return Err(err_msg("Expected Finished messages"));
@@ -803,19 +552,19 @@ impl Client {
             return Err(err_msg("Incorrect server verify_data"));
         }
 
-        let verify_data_client = key_schedule.verify_data_client(&handshake_state.transcript);
+        let verify_data_client = key_schedule.verify_data_client(&self.handshake_state.transcript);
 
         let finished_client = Handshake::Finished(Finished {
             verify_data: verify_data_client,
         });
 
-        let final_secrets = key_schedule.finished(&handshake_state.transcript);
+        let final_secrets = key_schedule.finished(&self.handshake_state.transcript);
 
-        stream.raw_stream
-            .send_handshake(finished_client, &mut handshake_state)
+        self.stream
+            .send_handshake(finished_client, &mut self.handshake_state)
             .await?;
 
-        stream.raw_stream
+            self.stream
             .cipher_spec
             .as_mut()
             .unwrap()
@@ -825,7 +574,28 @@ impl Client {
             )
             .await;
 
-        Ok(stream)
+        Ok(())
+    }
+
+
+}
+
+
+impl Client {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub async fn connect(
+        &mut self,
+        input: Box<dyn ReadWriteable>,
+        options: &ClientOptions,
+        // hostname: &str,
+    ) -> Result<ApplicationStream> {
+
+        let handshake_exec = ClientHandshakeExecutor::new(input, options).await?;
+        handshake_exec.run().await
+        
 
         //////
 

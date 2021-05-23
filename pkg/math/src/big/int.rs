@@ -115,7 +115,9 @@ impl BigInt {
             n -= (!last).leading_zeros() as usize
         }
 
+        // Need one bit for the sign.
         n += 1;
+
         n
     }
 

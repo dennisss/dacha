@@ -5,9 +5,13 @@ pub mod client;
 pub mod extensions;
 pub mod handshake;
 pub mod key_schedule;
+pub mod options;
 mod parsing;
 pub mod record;
 pub mod transcript;
+mod record_stream;
+mod cipher;
+pub mod application_stream;
 
 // Big-endian network order
 

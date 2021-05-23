@@ -1,25 +1,27 @@
 // TODO: Move to third_party
 
-use crate::elliptic::EllipticCurveGroup;
-use crate::hasher::Hasher;
-use crate::pem::*;
-use crate::tls::extensions::ExtensionType::PskKeyExchangeModes;
+use std::collections::HashMap;
+use std::convert::AsRef;
+use std::sync::Arc;
+
 use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{der_eq, Any, DERReadable, DERReader, DERWriteable};
 use common::bytes::Bytes;
 use common::chrono::{DateTime, Utc};
 use common::errors::*;
-use common::LeftPad;
+use common::async_std::fs::File;
+use common::async_std::io::ReadExt;
 use math::big::{BigInt, BigUint, Modulo};
 use pkix::{
     PKIX1Algorithms2008, PKIX1Algorithms88, PKIX1Explicit88, PKIX1Implicit88,
     PKIX1_PSS_OAEP_Algorithms, NIST_SHA2, PKCS_1,
 };
-use std::collections::HashMap;
-use std::convert::AsRef;
-use std::sync::Arc;
 
-use std::io::Read;
+use crate::elliptic::EllipticCurveGroup;
+use crate::hasher::Hasher;
+use crate::pem::*;
+use crate::tls::extensions::ExtensionType::PskKeyExchangeModes;
+use crate::rsa::*;
 
 const SKIP_TRUSTED_VERIFICATION: bool = true;
 
@@ -95,13 +97,14 @@ pub struct CertificateRegistry {
 
 impl CertificateRegistry {
     /// Creates a registry filled with all publicly trusted root certificates.
-    pub fn public_roots() -> Result<Self> {
-        let mut f = std::fs::File::open(
+    pub async fn public_roots() -> Result<Self> {
+        // TODO: Make this async.
+        let mut f = File::open(
             "/home/dennis/workspace/dacha/third_party/ca-certificates/google/roots.pem",
-        )?;
+        ).await?;
 
         let mut data = vec![];
-        f.read_to_end(&mut data)?;
+        f.read_to_end(&mut data).await?;
 
         let buf = Bytes::from(data);
 
@@ -331,31 +334,6 @@ impl CertificateExtensions {
     }
 }
 
-/// EMSA-PKCS1-v1_5
-fn pkcs1_encode(
-    input: &[u8],
-    algorithm: &PKIX1Explicit88::AlgorithmIdentifier,
-    hasher: &mut dyn Hasher,
-    output_len: usize,
-) -> Vec<u8> {
-    hasher.update(input);
-    let digest = hasher.finish();
-
-    let info = PKCS_1::DigestInfo {
-        digestAlgorithm: algorithm.clone(),
-        digest: digest.into(),
-    }
-    .to_der();
-
-    let mut output = vec![];
-    output.push(0x00);
-    output.push(0x01);
-    output.resize(output_len - info.len() - 1, 0xff);
-    output.push(0x00);
-    output.extend_from_slice(&info);
-    output
-}
-
 impl Certificate {
     // TODO: Verify that we have used all critical extensions.
     // critical to implement: keyUsage 2.5.29.15, basicConstraints 2.5.29.19
@@ -422,9 +400,10 @@ impl Certificate {
         Ok(out)
     }
 
+    /// Reads a certficate from DER encoded data.
     pub fn read(buf: Bytes) -> Result<Self> {
         // TODO: Ensure the buffer is read till completion.
-        let mut r = DERReader::new(buf.clone());
+        let mut r = DERReader::new(buf);
         let raw = PKIX1Explicit88::Certificate::read_der(&mut r)?;
         Self::new(raw, r.slices[1].clone())
     }
@@ -492,7 +471,8 @@ impl Certificate {
         )
     }
 
-    pub fn rsa_public_key(&self) -> Result<PKIX1Algorithms2008::RSAPublicKey> {
+    /// NOTE: The return value is basically equivalent to PKIX1Algorithms2008::RSAPublicKey.
+    pub fn rsa_public_key(&self) -> Result<PKCS_1::RSAPublicKey> {
         let pk = &self.raw.tbsCertificate.subjectPublicKeyInfo;
 
         if pk.algorithm.algorithm != PKIX1Algorithms2008::RSAENCRYPTION
@@ -510,6 +490,25 @@ impl Certificate {
         }
 
         Any::from(Bytes::from(data.as_ref()))?.parse_as()
+    }
+
+    pub fn rsassa_pss_public_key(&self) -> Result<(PKCS_1::RSAPublicKey, PKIX1_PSS_OAEP_Algorithms::RSASSA_PSS_params)> {
+        let pk = &self.raw.tbsCertificate.subjectPublicKeyInfo;
+
+        if pk.algorithm.algorithm != PKIX1_PSS_OAEP_Algorithms::ID_RSASSA_PSS {
+            return Err(format_err!("Wrong public key info: {:?}", pk.algorithm));
+        }
+
+        let params_data = pk.algorithm.parameters
+            .as_ref()
+            .ok_or_else(|| err_msg("Missing params"))?;
+        
+        let params = params_data.parse_as::<PKIX1_PSS_OAEP_Algorithms::RSASSA_PSS_params>()?;
+
+        let data = &pk.subjectPublicKey.data;
+        let public_key: PKCS_1::RSAPublicKey = Any::from(Bytes::from(data.as_ref()))?.parse_as()?;
+
+        Ok((public_key, params))
     }
 
     pub fn ec_public_key(&self, reg: &CertificateRegistry) -> Result<(EllipticCurveGroup, Bytes)> {
@@ -609,31 +608,10 @@ impl Certificate {
         //		eprintln!("{} {}", der.len(), plaintext.len());
         //		assert_eq!(plaintext, &der[..]);
 
-        // TODO: Follow everything outlined in https://tools.ietf.org/html/rfc8017
-
-        let check_rsa = |hasher: &mut dyn Hasher,
-                         hash_algo: PKIX1Explicit88::AlgorithmIdentifier| {
-            // TODO: We shouldn't trust the length of the signature.
-            let encoded = pkcs1_encode(plaintext, &hash_algo, hasher, sig.len());
-
-            let pk = self.rsa_public_key()?;
-            let e = pk.publicExponent.to_uint()?;
-            let n = pk.modulus.to_uint()?;
-
-            let cipher = BigUint::from_be_bytes(sig);
-            let k = Modulo::new(&n).pow(&cipher, &e);
-            let txt2 = k.to_be_bytes().left_pad(encoded.len(), 0);
-
-            Ok(&encoded == &txt2)
-        };
+        
 
         let check_ecdsa = |hasher: &mut dyn Hasher| {
-            if child.raw.signatureAlgorithm.parameters.is_some() {
-                return Err(err_msg("Did not expect any params"));
-            }
-
             let (group, point) = self.ec_public_key(reg)?;
-
             return group.verify_signature(point.as_ref(), sig, plaintext, hasher);
         };
 
@@ -647,64 +625,38 @@ impl Certificate {
         let alg = &child.raw.signatureAlgorithm.algorithm;
         if alg == &PKIX1_PSS_OAEP_Algorithms::SHA224WITHRSAENCRYPTION {
             check_null_params()?;
-            let mut hasher = crate::sha224::SHA224Hasher::default();
-            let hash_algo = PKIX1Explicit88::AlgorithmIdentifier {
-                algorithm: NIST_SHA2::ID_SHA224.clone(),
-                parameters: Some(asn_any!(Null::new())),
-            };
-            return check_rsa(&mut hasher, hash_algo);
-        } else if alg == &PKIX1Algorithms2008::SHA1WITHRSAENCRYPTION {
+            return RSASSA_PKCS_v1_5::sha224().verify_signature(
+                &self.rsa_public_key()?, sig, plaintext);
+        } else if alg == &PKCS_1::SHA1WITHRSAENCRYPTION {
             check_null_params()?;
-            let hash_algo = PKIX1Explicit88::AlgorithmIdentifier {
-                algorithm: NIST_SHA2::ID_SHA1.clone(),
-                parameters: Some(asn_any!(Null::new())),
-            };
-            let mut hasher = crate::sha1::SHA1Hasher::default();
-            return check_rsa(&mut hasher, hash_algo);
+            return RSASSA_PKCS_v1_5::sha1().verify_signature(
+                &self.rsa_public_key()?, sig, plaintext);
         } else if alg == &PKCS_1::SHA256WITHRSAENCRYPTION {
             check_null_params()?;
-            let hash_algo = PKIX1Explicit88::AlgorithmIdentifier {
-                algorithm: NIST_SHA2::ID_SHA256.clone(),
-                parameters: Some(asn_any!(Null::new())),
-            };
-            let mut hasher = crate::sha256::SHA256Hasher::default();
-            return check_rsa(&mut hasher, hash_algo);
+            return RSASSA_PKCS_v1_5::sha256().verify_signature(
+                &self.rsa_public_key()?, sig, plaintext);
         } else if alg == &PKCS_1::SHA384WITHRSAENCRYPTION {
             check_null_params()?;
-            let hash_algo = PKIX1Explicit88::AlgorithmIdentifier {
-                algorithm: NIST_SHA2::ID_SHA384.clone(),
-                parameters: Some(asn_any!(Null::new())),
-            };
-            let mut hasher = crate::sha384::SHA384Hasher::default();
-            return check_rsa(&mut hasher, hash_algo);
+            return RSASSA_PKCS_v1_5::sha384().verify_signature(
+                &self.rsa_public_key()?, sig, plaintext);
         } else if alg == &PKCS_1::SHA512_224WITHRSAENCRYPTION {
             check_null_params()?;
-            let hash_algo = PKIX1Explicit88::AlgorithmIdentifier {
-                algorithm: NIST_SHA2::ID_SHA512_224.clone(),
-                parameters: Some(asn_any!(Null::new())),
-            };
-            let mut hasher = crate::sha512::SHA512_224Hasher::default();
-            return check_rsa(&mut hasher, hash_algo);
+            return RSASSA_PKCS_v1_5::sha512_224().verify_signature(
+                &self.rsa_public_key()?, sig, plaintext);
         } else if alg == &PKCS_1::SHA512_256WITHRSAENCRYPTION {
             check_null_params()?;
-            let hash_algo = PKIX1Explicit88::AlgorithmIdentifier {
-                algorithm: NIST_SHA2::ID_SHA512_256.clone(),
-                parameters: Some(asn_any!(Null::new())),
-            };
-            let mut hasher = crate::sha512::SHA512_256Hasher::default();
-            return check_rsa(&mut hasher, hash_algo);
+            return RSASSA_PKCS_v1_5::sha512_256().verify_signature(
+                &self.rsa_public_key()?, sig, plaintext);
         } else if alg == &PKCS_1::SHA512WITHRSAENCRYPTION {
             check_null_params()?;
-            let hash_algo = PKIX1Explicit88::AlgorithmIdentifier {
-                algorithm: NIST_SHA2::ID_SHA512.clone(),
-                parameters: Some(asn_any!(Null::new())),
-            };
-            let mut hasher = crate::sha512::SHA512Hasher::default();
-            return check_rsa(&mut hasher, hash_algo);
+            return RSASSA_PKCS_v1_5::sha512().verify_signature(
+                &self.rsa_public_key()?, sig, plaintext);
         } else if alg == &PKIX1Algorithms2008::ECDSA_WITH_SHA384 {
+            check_null_params()?;
             let mut hasher = crate::sha384::SHA384Hasher::default();
             return check_ecdsa(&mut hasher);
         } else if alg == &PKIX1Algorithms2008::ECDSA_WITH_SHA256 {
+            check_null_params()?;
             let mut hasher = crate::sha256::SHA256Hasher::default();
             return check_ecdsa(&mut hasher);
         }

@@ -1,12 +1,14 @@
-use super::extensions::*;
-use super::parsing::*;
-use crate::dh::DiffieHellmanFn;
-use crate::elliptic::*;
-use crate::random::*;
 use common::bytes::Bytes;
 use common::errors::*;
 use parsing::binary::*;
 use parsing::*;
+
+use crate::dh::DiffieHellmanFn;
+use crate::elliptic::*;
+use crate::random::*;
+use super::extensions::*;
+use super::parsing::*;
+use crate::tls::options::ClientOptions;
 
 pub type ProtocolVersion = u16;
 
@@ -53,36 +55,35 @@ impl Handshake {
             let msg_type = c.next(HandshakeType::parse)?;
             let payload = c.next(varlen_vector(0, U24_LIMIT))?;
 
-            use HandshakeType::*;
             let res = match msg_type {
-                client_hello => complete(map(
-                        ClientHello::parse, |v| Handshake::ClientHello(v))
-                    )(payload),
-                server_hello => complete(map(
-                        ServerHello::parse, |v| Handshake::ServerHello(v))
-                    )(payload),
-                end_of_early_data => {
+                HandshakeType::ClientHello => complete(map(
+                    ClientHello::parse, |v| Handshake::ClientHello(v))
+                )(payload),
+                HandshakeType::ServerHello => complete(map(
+                    ServerHello::parse, |v| Handshake::ServerHello(v))
+                )(payload),
+                HandshakeType::EndOfEarlyData => {
                     if payload.len() == 0 {
                         Ok((Handshake::EndOfEarlyData, Bytes::new()))
                     } else {
                         Err(err_msg("Expected emptydata"))
                     }
                 },
-                encrypted_extensions => complete(map(
-                        EncryptedExtensions::parse, |v| Handshake::EncryptedExtensions(v))
-                    )(payload),
-                certificate_request => complete(map(
-                        CertificateRequest::parse, |v| Handshake::CertificateRequest(v))
-                    )(payload),
-                certificate => complete(map(
-                        Certificate::parse, |v| Handshake::Certificate(v))
-                    )(payload),
-                certificate_verify => complete(map(
-                        CertificateVerify::parse, |v| Handshake::CertificateVerify(v))
-                    )(payload),
-                finished => complete(map(
-                        Finished::parse, |v| Handshake::Finished(v))
-                    )(payload),
+                HandshakeType::EncryptedExtensions => complete(map(
+                    EncryptedExtensions::parse, |v| Handshake::EncryptedExtensions(v))
+                )(payload),
+                HandshakeType::CertificateRequest => complete(map(
+                    CertificateRequest::parse, |v| Handshake::CertificateRequest(v))
+                )(payload),
+                HandshakeType::Certificate => complete(map(
+                    Certificate::parse, |v| Handshake::Certificate(v))
+                )(payload),
+                HandshakeType::CertificateVerify => complete(map(
+                    CertificateVerify::parse, |v| Handshake::CertificateVerify(v))
+                )(payload),
+                HandshakeType::Finished => complete(map(
+                    Finished::parse, |v| Handshake::Finished(v))
+                )(payload),
                 _ => panic!("Unsupported handshake type")
             };
 
@@ -92,32 +93,30 @@ impl Handshake {
     });
 
     pub fn serialize(&self, out: &mut Vec<u8>) {
-        use Handshake::*;
-        use HandshakeType::*;
         let msg_type = match self {
-            ClientHello(_) => client_hello,
-            ServerHello(_) => server_hello,
-            EndOfEarlyData => end_of_early_data,
-            EncryptedExtensions(_) => encrypted_extensions,
-            CertificateRequest(_) => certificate_request,
-            Certificate(_) => certificate,
-            CertificateVerify(_) => certificate_verify,
-            Finished(_) => finished,
-            NewSessionTicket(_) => new_session_ticket,
-            KeyUpdate(_) => key_update,
+            Handshake::ClientHello(_) => HandshakeType::ClientHello,
+            Handshake::ServerHello(_) => HandshakeType::ServerHello,
+            Handshake::EndOfEarlyData => HandshakeType::EndOfEarlyData,
+            Handshake::EncryptedExtensions(_) => HandshakeType::EncryptedExtensions,
+            Handshake::CertificateRequest(_) => HandshakeType::CertificateRequest,
+            Handshake::Certificate(_) => HandshakeType::Certificate,
+            Handshake::CertificateVerify(_) => HandshakeType::CertificateVerify,
+            Handshake::Finished(_) => HandshakeType::Finished,
+            Handshake::NewSessionTicket(_) => HandshakeType::NewSessionTicket,
+            Handshake::KeyUpdate(_) => HandshakeType::KeyUpdate,
         };
 
         msg_type.serialize(out);
 
         serialize_varlen_vector(0, U24_LIMIT, out, |out| match self {
-            ClientHello(v) => v.serialize(out),
-            ServerHello(v) => v.serialize(out),
-            EndOfEarlyData => {}
-            EncryptedExtensions(v) => v.serialize(out),
-            CertificateRequest(v) => v.serialize(out),
-            Certificate(v) => v.serialize(out),
-            CertificateVerify(v) => v.serialize(out),
-            Finished(v) => v.serialize(out),
+            Handshake::ClientHello(v) => v.serialize(out),
+            Handshake::ServerHello(v) => v.serialize(out),
+            Handshake::EndOfEarlyData => {}
+            Handshake::EncryptedExtensions(v) => v.serialize(out),
+            Handshake::CertificateRequest(v) => v.serialize(out),
+            Handshake::Certificate(v) => v.serialize(out),
+            Handshake::CertificateVerify(v) => v.serialize(out),
+            Handshake::Finished(v) => v.serialize(out),
             // NewSessionTicket(v) => v.serialize(out),
             // KeyUpdate(v) => v.serialize(out)
             _ => panic!("Unimplemented"),
@@ -126,21 +125,21 @@ impl Handshake {
 }
 
 tls_enum_u8!(HandshakeType => {
-    hello_request(0), // TLS 1.2
-    client_hello(1),
-    server_hello(2),
-    new_session_ticket(4),
-    end_of_early_data(5),
-    hello_retry_request(6), // RESERVED
-    encrypted_extensions(8),
-    certificate(11),
-    server_key_exchange(12), // TLS 1.2
-    certificate_request(13),
-    certificate_verify(15),
-    client_key_exchange(16), // TLS 1.2
-    finished(20),
-    key_update(24),
-    message_hash(254),
+    HelloRequest(0), // TLS 1.2
+    ClientHello(1),
+    ServerHello(2),
+    NewSessionTicket(4),
+    EndOfEarlyData(5),
+    HelloRetryRequest(6), // RESERVED
+    EncryptedExtensions(8),
+    Certificate(11),
+    ServerKeyExchange(12), // TLS 1.2
+    CertificateRequest(13),
+    CertificateVerify(15),
+    ClientKeyExchange(16), // TLS 1.2
+    Finished(20),
+    KeyUpdate(24),
+    MessageHash(254),
     (255)
 });
 
@@ -165,7 +164,7 @@ struct {
     Extension extensions<8..2^16-1>;
 } ClientHello;
 */
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ClientHello {
     pub legacy_version: ProtocolVersion,
     // 32 random bytes
@@ -179,72 +178,66 @@ pub struct ClientHello {
 
 // TODO: Support ESNI: https://blog.cloudflare.com/encrypted-sni/
 
+
+
 impl ClientHello {
     /// Creates a reasonable 
-    pub async fn plain(hostname: &str, client_share: KeyShareEntry) -> Result<Self> {
+    pub async fn plain(client_shares: &[KeyShareEntry], options: &ClientOptions) -> Result<Self> {
+
+        let mut extensions = vec![];
+
         let mut random_buf = [0u8; 32];
         secure_random_bytes(&mut random_buf).await?;
 
         // TODO: Can we send this later as an encrypted header.
-        let server_name = ServerNameList {
+        extensions.push(Extension::ServerName(ServerNameList {
             names: vec![ServerName {
                 typ: NameType::host_name,
-                data: Bytes::from(hostname), // TOOD: Must be ASCII
+                data: Bytes::from(options.hostname.as_bytes()), // TODO: Must be ASCII
             }],
-        };
+        }));
 
-        let supported_versions = SupportedVersionsClientHello {
+        // Required to be sent in ClientHello.
+        extensions.push(Extension::SupportedVersionsClientHello(SupportedVersionsClientHello {
             versions: vec![TLS_1_3_VERSION, TLS_1_2_VERSION],
-        };
+        }));
 
 
         // TLS 1.3 mandatory-to-implement ciphers are documented in:
         // https://datatracker.ietf.org/doc/html/rfc8446#section-9.1
 
-        let supported_groups = NamedGroupList {
-            groups: vec![
-                // SHOULD support
-                NamedGroup::x25519,
-                // MUST implement
-                NamedGroup::secp256r1,
-                // optional
-                NamedGroup::secp384r1,
-            ],
-        };
+        // Required to be send in ClientHello for DHE/ECDHE
+        extensions.push(Extension::SupportedGroups(NamedGroupList {
+            groups: options.supported_groups.clone()
+        }));
 
-        let supported_algorithms = SignatureSchemeList {
-            algorithms: vec![
-                // These three are the minimum required set to implement.
-                SignatureScheme::ecdsa_secp256r1_sha256,
-                SignatureScheme::rsa_pkcs1_sha256,
-                SignatureScheme::rsa_pss_rsae_sha256,
-            ],
-        };
+        // Required for certificate authentication
+        extensions.push(Extension::SignatureAlgorithms(SignatureSchemeList {
+            algorithms: options.supported_signature_algorithms.clone()
+        }));
 
-        let key_share = KeyShareClientHello {
-            client_shares: vec![client_share],
-        };
+        extensions.push(Extension::KeyShareClientHello(KeyShareClientHello {
+            client_shares: client_shares.to_vec(),
+        }));
+
+        if !options.alpn_ids.is_empty() {
+            extensions.push(Extension::ALPN(ProtocolNameList {
+                names: options.alpn_ids.clone()
+            }));
+        }
+
+        // TODO: PSK if any must always be the last extension.
+
+        // XXX: See
+        //  9.2.  Mandatory-to-Implement Extensions
 
         Ok(Self {
             legacy_version: TLS_1_2_VERSION,
             random: Bytes::from(random_buf.to_vec()),
             legacy_session_id: Bytes::new(),
-            cipher_suites: vec![
-                // MUST implement
-                CipherSuite::TLS_AES_128_GCM_SHA256,
-                // SHOULD implement
-                CipherSuite::TLS_AES_256_GCM_SHA384,
-                // SHOULD implement
-                CipherSuite::TLS_CHACHA20_POLY1305_SHA256,
-            ],
+            cipher_suites: options.supported_cipher_suites.clone(),
             legacy_compression_methods: Bytes::from((&[0]).to_vec()),
-            extensions: vec![
-                Extension::ServerName(server_name),
-                Extension::SupportedVersionsClientHello(supported_versions),
-                Extension::SupportedGroups(supported_groups),
-                Extension::SignatureAlgorithms(supported_algorithms),
-                Extension::KeyShareClientHello(key_share),
-            ],
+            extensions,
         })
     }
 
@@ -261,7 +254,7 @@ impl ClientHello {
 		let extensions = {
 			let data = c.next(varlen_vector(8, U16_LIMIT))?;
 			let (arr, _) = complete(many(
-				|v| Extension::parse(v, HandshakeType::client_hello)))(data)?;
+				|v| Extension::parse(v, HandshakeType::ClientHello)))(data)?;
 			arr
 		};
 
@@ -289,13 +282,14 @@ impl ClientHello {
         });
         serialize_varlen_vector(8, U16_LIMIT, out, |out| {
             for e in self.extensions.iter() {
-                e.serialize(HandshakeType::client_hello, out).unwrap();
+                e.serialize(HandshakeType::ClientHello, out).unwrap();
             }
         });
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
+#[allow(non_camel_case_types)]
 pub enum CipherSuite {
     TLS_AES_128_GCM_SHA256,
     TLS_AES_256_GCM_SHA384,
@@ -373,7 +367,7 @@ impl ServerHello {
 		let extensions = {
 			let data = c.next(varlen_vector(6, U16_LIMIT))?;
 			let (arr, _) = complete(many(
-				|i| Extension::parse(i, HandshakeType::server_hello)))(data)?;
+				|i| Extension::parse(i, HandshakeType::ServerHello)))(data)?;
 			arr
 		};
 
@@ -393,7 +387,7 @@ impl ServerHello {
         out.push(self.legacy_compression_method);
         serialize_varlen_vector(6, U16_LIMIT, out, |out| {
             for e in self.extensions.iter() {
-                e.serialize(HandshakeType::server_hello, out).unwrap();
+                e.serialize(HandshakeType::ServerHello, out).unwrap();
             }
         });
     }
@@ -446,7 +440,7 @@ impl EncryptedExtensions {
         seq!(c => {
             let data = c.next(varlen_vector(0, U16_LIMIT))?;
             let (extensions, _) = complete(many(
-                    |i| Extension::parse(i, HandshakeType::encrypted_extensions)
+                    |i| Extension::parse(i, HandshakeType::EncryptedExtensions)
                 ))(data)?;
             Ok(Self { extensions })
         })
@@ -455,7 +449,7 @@ impl EncryptedExtensions {
     fn serialize(&self, out: &mut Vec<u8>) {
         serialize_varlen_vector(0, U16_LIMIT, out, |out| {
             for e in self.extensions.iter() {
-                e.serialize(HandshakeType::encrypted_extensions, out)
+                e.serialize(HandshakeType::EncryptedExtensions, out)
                     .unwrap();
             }
         });
@@ -526,7 +520,7 @@ impl CertificateEntry {
 		let extensions = {
 			let data = c.next(varlen_vector(0, U16_LIMIT))?;
 			let (arr, _) = complete(many(
-				|i| Extension::parse(i, HandshakeType::certificate)))(data)?;
+				|i| Extension::parse(i, HandshakeType::Certificate)))(data)?;
 			arr
 		};
 
@@ -539,7 +533,7 @@ impl CertificateEntry {
         });
         serialize_varlen_vector(0, U16_LIMIT, out, |out| {
             for e in self.extensions.iter() {
-                e.serialize(HandshakeType::certificate, out).unwrap();
+                e.serialize(HandshakeType::Certificate, out).unwrap();
             }
         });
     }
@@ -572,7 +566,7 @@ impl CertificateRequest {
 		let extensions = {
 			let data = c.next(varlen_vector(2, U16_LIMIT))?;
 			let (arr, _) = complete(many(
-					|i| Extension::parse(i, HandshakeType::certificate_request)
+					|i| Extension::parse(i, HandshakeType::CertificateRequest)
 				))(data)?;
 			arr
 		};
@@ -586,7 +580,7 @@ impl CertificateRequest {
         });
         serialize_varlen_vector(2, U16_LIMIT, out, |out| {
             for e in self.extensions.iter() {
-                e.serialize(HandshakeType::certificate_request, out)
+                e.serialize(HandshakeType::CertificateRequest, out)
                     .unwrap();
             }
         });

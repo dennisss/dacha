@@ -87,7 +87,7 @@ pub trait LeftPad<T> {
 }
 
 impl<T: Copy> LeftPad<T> for Vec<T> {
-    fn left_pad(mut self, size: usize, default_value: T) -> Self {
+    fn left_pad(mut self, size: usize, default_value: T) -> Vec<T> {
         if self.len() == size {
             return self;
         }

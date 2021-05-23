@@ -20,6 +20,8 @@ impl Transcript {
         self.messages.clear();
     }
 
+    /// Computes the hash of all messages seen,
+    ///
     /// TODO: Implement a rolling hash. But the transcript should still be
     /// initializable without a hash.
     pub fn hash(&self, hasher_factory: &HasherFactory) -> Vec<u8> {

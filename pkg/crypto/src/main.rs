@@ -52,8 +52,13 @@ use std::io::Read;
 async fn tls_connect() -> Result<()> {
     let input = Box::new(TcpStream::connect("google.com:443").await?);
 
+    let mut client_options = crypto::tls::options::ClientOptions::recommended();
+    client_options.hostname = "google.com".into();
+    client_options.alpn_ids.push("h2".into());
+    // TODO: Add ALPNI
+
     let mut client = crypto::tls::client::Client::new();
-    let mut stream = client.connect(input, "google.com").await?;
+    let mut stream = client.connect(input, &client_options).await?;
 
     stream
         .write_all(b"GET / HTTP/1.1\r\nHost: google.com\r\n\r\n")
