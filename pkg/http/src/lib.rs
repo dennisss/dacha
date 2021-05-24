@@ -9,6 +9,8 @@ extern crate failure;
 #[macro_use]
 extern crate arrayref;
 
+extern crate crypto;
+
 mod proto;
 pub mod body;
 pub mod chunked;

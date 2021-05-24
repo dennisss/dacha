@@ -1,4 +1,4 @@
-extern crate common;
+#[macro_use] extern crate common;
 extern crate image;
 
 use common::errors::*;
@@ -6,7 +6,7 @@ use image::format::bitmap::Bitmap;
 use image::format::jpeg::JPEG;
 
 fn main() -> Result<()> {
-    let jpg = JPEG::open("/home/dennis/workspace/dacha/testdata/jpeg422jfif.jpg").unwrap();
+    let jpg = JPEG::open(project_path!("testdata/jpeg422jfif.jpg")).unwrap();
 
     // println!("{}", std::mem::size_of::<Vec<u8>>());
 
@@ -14,7 +14,7 @@ fn main() -> Result<()> {
 
     return Ok(());
 
-    let bmp = Bitmap::open("/home/dennis/workspace/dacha/testdata/valve.bmp")?;
+    let bmp = Bitmap::open(project_path!("testdata/valve.bmp"))?;
 
     bmp.image.show()?;
 

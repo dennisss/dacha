@@ -517,8 +517,8 @@ mod tests {
     // fn asn1_tokenize_test() {
 
     // 	// let mut file =
-    // std::fs::File::open("/home/dennis/workspace/dacha/pkg/crypto/src/asn/asn.
-    // grammar").unwrap(); 	// let mut data = vec![];
+    // std::fs::File::open(project_path!("pkg/crypto/src/asn/asn.
+    // grammar")).unwrap(); 	// let mut data = vec![];
     // 	// file.read_to_end(&mut data).unwrap();
 
     // 	let (tokens, _) =

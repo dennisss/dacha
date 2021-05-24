@@ -30,6 +30,7 @@ use crate::tls::cipher::*;
 use crate::tls::record_stream::*;
 use crate::tls::application_stream::*;
 use crate::x509;
+use crate::tls::handshake_summary::*;
 
 
 // TODO: Should abort the connection if negotiation results in more than one
@@ -117,24 +118,32 @@ terminate the connection with an "unexpected_message" alert.
 struct ClientHandshakeExecutor<'a> {
     options: &'a ClientOptions,
     
-    stream: RecordStream,
+    reader: RecordReader,
+    writer: RecordWriter,
 
     handshake_state: HandshakeState,
 
     /// Secrets offered to the server in the last ClientHello sent.
     secrets: HashMap<NamedGroup, Vec<u8>>,
 
-    certificate_registry: x509::CertificateRegistry
+    certificate_registry: x509::CertificateRegistry,
+
+    summary: HandshakeSummary
 }
 
 impl<'a> ClientHandshakeExecutor<'a> {
-    async fn new(input: Box<dyn ReadWriteable>, options: &'a ClientOptions) -> Result<ClientHandshakeExecutor<'a>> {
+    async fn new(
+        reader: Box<dyn Readable>, writer: Box<dyn Writeable>,
+        options: &'a ClientOptions
+    ) -> Result<ClientHandshakeExecutor<'a>> {
         Ok(ClientHandshakeExecutor {
             options,
-            stream: RecordStream::new(input),
+            reader: RecordReader::new(reader),
+            writer: RecordWriter::new(writer),
             handshake_state: HandshakeState::new(),
             secrets: HashMap::new(),
-            certificate_registry: x509::CertificateRegistry::public_roots().await?
+            certificate_registry: x509::CertificateRegistry::public_roots().await?,
+            summary: HandshakeSummary::default()
         })
     }
 
@@ -150,7 +159,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
             ClientHello::plain(&client_shares, self.options).await?   
         };
 
-        self.stream.send_handshake(
+        self.writer.send_handshake(
             Handshake::ClientHello(client_hello.clone()), &mut self.handshake_state)
             .await?;
 
@@ -158,6 +167,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
         let (server_hello, key_schedule, hasher_factory) =
             self.wait_server_hello(client_hello).await?;
+        self.process_received_extensions(&server_hello.extensions)?;
 
         self.wait_encrypted_extensions().await?;
 
@@ -169,7 +179,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
         
         self.wait_finished(key_schedule).await?;
 
-        Ok(ApplicationStream::new(self.stream))
+        Ok(ApplicationStream::new(self.reader, self.writer, self.summary))
     }
 
     /// Generates a new random secret key and returns the corresponding public key
@@ -192,7 +202,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
     async fn receive_handshake_message(&mut self) -> Result<Handshake> {
         loop {
-            let msg = self.stream.recv(Some(&mut self.handshake_state)).await?;
+            let msg = self.reader.recv(Some(&mut self.handshake_state)).await?;
 
             match msg {
                 Message::Handshake(m) => { return Ok(m); },
@@ -205,6 +215,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
                 },
                 Message::Alert(alert) => {
                     if alert.level == AlertLevel::fatal {
+                        println!("{:?}", alert);
                         return Err(err_msg("Received fatal alert"));
                     }
 
@@ -225,6 +236,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
                 if let Handshake::ServerHello(sh) = self.receive_handshake_message().await? { sh }
                 else { return Err(err_msg("Unexpected message")); }
             };
+
+            println!("{:#?}", server_hello);
 
             let is_retry = &server_hello.random == HELLO_RETRY_REQUEST_SHA256;
 
@@ -314,11 +327,9 @@ impl<'a> ClientHandshakeExecutor<'a> {
                     client_hello.extensions.push(cookie.clone());
                 }
 
-                // Update PSK?
+                // TODO: Update PSK?
 
-                // Need to send a new client hello.
-
-                self.stream.send_handshake(
+                self.writer.send_handshake(
                     Handshake::ClientHello(client_hello.clone()), &mut self.handshake_state).await?;
 
                 // Wait for the ServerHello again.
@@ -337,10 +348,10 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
             let (aead, hasher_factory) = match cipher_suite {
                 CipherSuite::TLS_AES_128_GCM_SHA256 => {
-                    (Box::new(AES_GCM::aes128()), SHA256Hasher::factory())
+                    (Box::new(AesGCM::aes128()), SHA256Hasher::factory())
                 }
                 CipherSuite::TLS_AES_256_GCM_SHA384 => {
-                    (Box::new(AES_GCM::aes256()), SHA384Hasher::factory())
+                    (Box::new(AesGCM::aes256()), SHA384Hasher::factory())
                 }
                 // CipherSuite::TLS_CHACHA20_POLY1305_SHA256 => {
                 // 	SHA256Hasher::factory()
@@ -383,11 +394,16 @@ impl<'a> ClientHandshakeExecutor<'a> {
             // TODO: Use this?
             key_schedule.master_secret();
 
-            self.stream.cipher_spec = Some(CipherSpec::from_keys(
-                aead,
+            self.writer.local_cipher_spec = Some(CipherEndpointSpec::new(
+                aead.clone(),
                 hkdf.clone(),
-                client_handshake_traffic_secret.into(),
-                server_handshake_traffic_secret.into(),
+                client_handshake_traffic_secret.into()
+            ));
+
+            self.reader.remote_cipher_spec = Some(CipherEndpointSpec::new(
+                aead.clone(),
+                hkdf.clone(),
+                server_handshake_traffic_secret.into()
             ));
 
             return Ok((server_hello, key_schedule, hasher_factory));
@@ -395,17 +411,38 @@ impl<'a> ClientHandshakeExecutor<'a> {
     }
     
     async fn wait_encrypted_extensions(&mut self) -> Result<()> {
-        let _ee = match self.receive_handshake_message().await? {
+        let ee = match self.receive_handshake_message().await? {
             Handshake::EncryptedExtensions(e) => e,
             _ => {
                 return Err(err_msg("Expected encrypted extensions"));
             }
         };
 
+        println!("{:#?}", ee);
+
+        self.process_received_extensions(&ee.extensions)?;
+
         // TODO: Process all of these extensions.
 
         Ok(())
-    } 
+    }
+
+    fn process_received_extensions(&mut self, extensions: &[Extension]) -> Result<()> {
+        for e in extensions {
+            match e {
+                Extension::ALPN(protocols) => {
+                    if protocols.names.len() != 1 || self.summary.selected_alpn_protocol.is_some() {
+                        return Err(err_msg("Expected to get exactly one ALPN selection"));
+                    }
+
+                    self.summary.selected_alpn_protocol = Some(protocols.names[0].clone());
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
 
     /// Receives the server's certificate. Responsible for verifying that:
     /// 1. The certificate is valid now
@@ -541,7 +578,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
     async fn wait_finished(&mut self, key_schedule: KeySchedule) -> Result<()> {
         let verify_data_server = key_schedule.verify_data_server(&self.handshake_state.transcript);
 
-        let finished = match self.stream.recv(Some(&mut self.handshake_state)).await? {
+        let finished = match self.reader.recv(Some(&mut self.handshake_state)).await? {
             Message::Handshake(Handshake::Finished(v)) => v,
             _ => {
                 return Err(err_msg("Expected Finished messages"));
@@ -560,19 +597,17 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
         let final_secrets = key_schedule.finished(&self.handshake_state.transcript);
 
-        self.stream
+        self.writer
             .send_handshake(finished_client, &mut self.handshake_state)
             .await?;
 
-            self.stream
-            .cipher_spec
-            .as_mut()
-            .unwrap()
-            .replace_keys(
-                final_secrets.client_application_traffic_secret_0,
-                final_secrets.server_application_traffic_secret_0,
-            )
-            .await;
+        self.reader
+            .remote_cipher_spec.as_mut().unwrap()
+            .replace_key(final_secrets.server_application_traffic_secret_0);
+
+        self.writer
+            .local_cipher_spec.as_mut().unwrap()
+            .replace_key(final_secrets.client_application_traffic_secret_0);
 
         Ok(())
     }
@@ -588,12 +623,11 @@ impl Client {
 
     pub async fn connect(
         &mut self,
-        input: Box<dyn ReadWriteable>,
+        reader: Box<dyn Readable>,
+        writer: Box<dyn Writeable>,
         options: &ClientOptions,
-        // hostname: &str,
     ) -> Result<ApplicationStream> {
-
-        let handshake_exec = ClientHandshakeExecutor::new(input, options).await?;
+        let handshake_exec = ClientHandshakeExecutor::new(reader, writer, options).await?;
         handshake_exec.run().await
         
 

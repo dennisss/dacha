@@ -41,6 +41,7 @@ use std::string::ToString;
 use common::async_std::net::TcpStream;
 use common::async_std::prelude::*;
 use common::async_std::task;
+use asn::encoding::DERReadable;
 
 use crypto::tls::handshake::*;
 use crypto::tls::record::*;
@@ -50,31 +51,32 @@ use common::io::*;
 use std::io::Read;
 
 async fn tls_connect() -> Result<()> {
-    let input = Box::new(TcpStream::connect("google.com:443").await?);
+    let raw_stream = TcpStream::connect("google.com:443").await?;
+    let reader = Box::new(raw_stream.clone());
+    let writer = Box::new(raw_stream);
 
     let mut client_options = crypto::tls::options::ClientOptions::recommended();
     client_options.hostname = "google.com".into();
     client_options.alpn_ids.push("h2".into());
-    // TODO: Add ALPNI
+    client_options.alpn_ids.push("http/1.1".into());
 
     let mut client = crypto::tls::client::Client::new();
-    let mut stream = client.connect(input, &client_options).await?;
+    let mut stream = client.connect(reader, writer, &client_options).await?;
 
-    stream
+    stream.writer
         .write_all(b"GET / HTTP/1.1\r\nHost: google.com\r\n\r\n")
         .await?;
 
     let mut buf = vec![];
     buf.resize(100, 0);
-    stream.read_exact(&mut buf).await?;
+    stream.reader.read_exact(&mut buf).await?;
     println!("{}", String::from_utf8(buf).unwrap());
 
     Ok(())
 }
 
 fn debug_pem() -> Result<()> {
-    //	let path = "/home/dennis/workspace/dacha/server-key.pem";
-    let path = "/home/dennis/workspace/insight/config/server.key";
+    let path = project_path!("testdata/certificates/server.key");
 
     let mut f = std::fs::File::open(path)?;
 
@@ -86,14 +88,21 @@ fn debug_pem() -> Result<()> {
     for entry in pem.entries {
         println!("{}", entry.label.as_ref());
         let data = entry.to_binary()?.into();
-        asn::debug::print_debug_string(data);
+
+        let pkey_info = pkix::PKCS_8::PrivateKeyInfo::from_der(data)?;
+        println!("{:#?}", pkey_info);
+
+        let pkey = pkix::PKCS_1::RSAPrivateKey::from_der(pkey_info.privateKey.to_bytes())?;
+        println!("{:#?}", pkey);
+
+        // asn::debug::print_debug_string(data);
     }
 
     Ok(())
 }
 
 fn main() -> Result<()> {
-    return debug_pem();
+    // return debug_pem();
 
     return task::block_on(tls_connect());
 

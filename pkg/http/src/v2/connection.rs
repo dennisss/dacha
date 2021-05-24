@@ -112,7 +112,12 @@ pub struct ConnectionOptions {
 
     pub max_local_encoder_table_size: usize,
 
-    pub settings_ack_timeout: Duration
+    pub settings_ack_timeout: Duration,
+
+    /// Maximum number of locally initialized streams
+    /// The actual number used will be:
+    /// 'min(max_outgoing_stream, remote_settings.MAX_CONCURRENT_STREAMS)'
+    pub max_outgoing_streams: usize
 }
 
 
@@ -573,6 +578,7 @@ impl ConnectionShared {
                     connection_state.last_received_stream_id
                 };
 
+                // TODO: Who should be responislbe for marking the connection_state.error?
                 let _ = self.connection_event_channel.0.send(ConnectionEvent::Goaway {
                     error: proto_error,
                     last_stream_id
@@ -1082,6 +1088,8 @@ impl ConnectionShared {
 
         match received_headers.typ {
             ReceivedHeadersType::RegularHeaders { end_stream, priority } => {
+                // TODO: Need to implement usage of 'end_stream'
+
                 if self.is_server {
                     if !self.is_remote_stream_id(received_headers.stream_id) ||
                        received_headers.stream_id < connection_state.last_received_stream_id ||
@@ -1201,8 +1209,6 @@ impl ConnectionShared {
         // This will require us to validate the stream is still open, but this may help with latency.
     }
 
-    /// Needs to listen for a bunch of stuff:
-    /// - 
     async fn run_write_thread(&self, mut writer: Box<dyn Writeable>, upgrade_payload: Option<Box<dyn Readable>>,) -> Result<()> {
         if let Some(mut reader) = upgrade_payload {
             let mut buf = [0u8; 4096];
@@ -1214,7 +1220,9 @@ impl ConnectionShared {
                 writer.write_all(&buf[0..n]).await?;
             }
         }
-        
+
+        let mut remote_settings_known;
+
         {
             if !self.is_server {
                 writer.write_all(CONNECTION_PREFACE).await?;
@@ -1225,31 +1233,70 @@ impl ConnectionShared {
             let mut payload = vec![];
             state.local_pending_settings.serialize_payload(&state.local_settings, &mut payload);
 
+            state.local_settings_sent_time = Some(Utc::now());
+            remote_settings_known = state.remote_settings_known;
+            drop(state);
+
             let mut frame = vec![];
             FrameHeader { length: payload.len() as u32, typ: FrameType::SETTINGS, flags: 0, reserved: 0, stream_id: 0 }
                 .serialize(&mut frame).unwrap();
             frame.extend(payload);
             writer.write_all(&frame).await?;
-
-            state.local_settings_sent_time = Some(Utc::now());
         }
-
-        // TODO: Block right here if we haven't yet received the remote settings.
 
         // Used to encode locally created headers to be sent to the other endpoint.
         // NOTE: This is shared across all streams on the connection.
+        // TODO: COnsiderate this with the above lock.
         let mut local_header_encoder = {
             let state = self.state.lock().await;
             hpack::Encoder::new(
                 state.remote_settings[SettingId::HEADER_TABLE_SIZE] as usize)
         };
 
+        // List of events which we've deferred processing due to remote settings not being known yet.
+        let mut pending_events: Vec<ConnectionEvent> = vec![];
+
+
+        // TODO: Once we fail, we should consider cleaning out all remaining events in the channel and
+        // make sure that any pending requests to be sent are properly rejected with the right error
+        // code/message (indicating that are retryable and weren't really sent)
+        /*
+        TODO: The desired behavior is that if there are too many requests pending, we should queue
+        the next request. We could have an opt-in solution to failing if queuing is required.
+        - We should also be able to query the connection to check how many requests/streams are pending
+
+        */
+
         loop {
             // TODO: If we are gracefully shutting down, stop waiting for events once all pending
             // streams have been closed.
 
-            let event = self.connection_event_channel.1.recv().await?;
+            let event = {
+                if remote_settings_known && !pending_events.is_empty() {
+                    pending_events.remove(0)
+                } else {
+                    self.connection_event_channel.1.recv().await?
+                }
+            };
+
+            // Until we receive the first settings acknowledgement, we will queue all events.
+            // TODO: Find a better solution than this.
+            if !remote_settings_known {
+                let allow = match event {
+                    ConnectionEvent::AcknowledgeSettings { .. } => true,
+                    ConnectionEvent::Closing => true,
+                    ConnectionEvent::Goaway { .. } => true,
+                    _ => false
+                };
+
+                if !allow {
+                    pending_events.push(event);
+                    continue;
+                }
+            }
+
             println!("Got ConnectionEvent!");
+
             match event {
                 ConnectionEvent::SendRequest { request, response_handler } => {
                     // TODO: Only allow if we are a client.
@@ -1378,6 +1425,7 @@ impl ConnectionShared {
                     return Ok(());
                 }
                 ConnectionEvent::Goaway { last_stream_id, error } => {
+                    // TODO: Should we break out of the thread when we send this.
                     writer.write_all(&frame_utils::new_goaway_frame(last_stream_id, error)).await?;
                 }
                 ConnectionEvent::AcknowledgeSettings { header_table_size } => {
@@ -1386,6 +1434,8 @@ impl ConnectionShared {
                     }
 
                     writer.write_all(&frame_utils::new_settings_ack_frame()).await?;
+
+                    remote_settings_known = true;
                 }
                 ConnectionEvent::ResetStream { stream_id, error } => {
                     writer.write_all(&frame_utils::new_rst_stream_frame(stream_id, error)).await?;

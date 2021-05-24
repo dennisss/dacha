@@ -1,6 +1,6 @@
 use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
-use common::io::ReadWriteable;
+use common::io::{Readable, Writeable};
 
 use crate::tls::alert::*;
 use crate::tls::record::*;
@@ -19,6 +19,8 @@ pub enum Message {
 
 pub struct HandshakeState {
     /// NOTE: This is updated internally in the RecordStream.
+    ///
+    /// TODO: When we read KeyUpdate messages, we don't care about them updating the transcript.
     pub transcript: Transcript,
 
     /// Bytes of a partial handshake message which haven't been able to be
@@ -40,218 +42,24 @@ impl HandshakeState {
 }
 
 
-/// Interface for sending and receiving TLS Records over the raw connection.
-///
-/// This interface also handles appropriately encrypting/decrypting records once
-/// keys have been negotiated.
-pub struct RecordStream {
-    /// The underlying byte based transport layer used for sending/recieving Records.
-    channel: Box<dyn ReadWriteable>,
+// We can just have atomic counters to deal with key updates and avoid half locking
+// TODO: If we do have a split interface, then we need to ensure that if there is a fatal processing
+// error on only one half, then we close both the reader and writer halves  of the connection.
 
-    /// Current encryption configuration for the connection.
-    ///
-    /// Initially this will None indicating that we haven't yet agreed upon keys and
-    /// will eventually 
-    ///  If specified then the connection is encrypted.
-    ///
-    /// TODO: Make this private.
-    pub cipher_spec: Option<CipherSpec>,
+
+
+pub struct RecordReader {
+    reader: Box<dyn Readable>,
+
+    /// Cipher parameters used by the remote endpoint to encrypt records.
+    /// Initially this is empty meaning that no encryption is expected.
+    /// This should always be set after the handshake is complete.
+    pub remote_cipher_spec: Option<CipherEndpointSpec>
 }
 
-impl RecordStream {
-    pub fn new(channel: Box<dyn ReadWriteable>) -> Self {
-        Self {
-            channel,
-            cipher_spec: None,
-        }
-    }
-
-    // TODO: Instead functions should return a Result indicating the Alert
-    // they want to convey back to the server.
-    async fn fatal(&mut self, description: AlertDescription) -> Result<()> {
-        let alert = Alert {
-            level: AlertLevel::fatal,
-            description,
-        };
-        let mut data = vec![];
-        alert.serialize(&mut data);
-
-        let record = RecordInner {
-            typ: ContentType::Alert,
-            data: data.into(),
-        };
-
-        self.send_record(record).await
-    }
-
-    async fn recv_record(&mut self) -> Result<RecordInner> {
-        // TODO: Eventually remove this loop once ChangeCipherSpec is handled
-        // elsewhere.
-        loop {
-            let record = Record::read(self.channel.as_read()).await?;
-
-            // TODO: Disallow zero length records unless using application data.
-
-            // TODO: 'Handshake messages MUST NOT span key changes'
-
-            // Only the ClientHello should be using a different record version.
-            // TODO: Client hello retry should be allowed to have a different version.
-            if record.legacy_record_version != TLS_1_2_VERSION {
-                return Err(err_msg("Unexpected version"));
-            }
-
-            // TODO: Can't remove this until we have a better check for
-            // enforcing that everything is encrypted.
-            if record.typ == ContentType::ChangeCipherSpec {
-                // TODO: After the ClientHello is sent and before a Finished is
-                // received, this should be valid.
-
-                // TODO: We should validate the contents of this message.
-                continue;
-            }
-
-            let inner = if let Some(cipher_spec) = self.cipher_spec.as_ref() {
-                // TODO: I know that at least application_data and keyupdates
-                // must always be encrypted after getting keys.
-
-                if record.typ != ContentType::ApplicationData {
-                    return Err(err_msg("Expected only encrypted data not"));
-                }
-
-                let mut key_guard = cipher_spec.server_key.lock().await;
-                let key = key_guard.keying.next_keys();
-
-                // additional_data = TLSCiphertext.opaque_type ||
-                //     TLSCiphertext.legacy_record_version ||
-                //     TLSCiphertext.length
-                // TODO: Implement this as a slice of the original record.
-                let mut additional_data = vec![];
-                record.typ.serialize(&mut additional_data);
-                additional_data.extend_from_slice(&record.legacy_record_version.to_be_bytes());
-                additional_data.extend_from_slice(&(record.data.len() as u16).to_be_bytes());
-
-                let mut plaintext = vec![];
-                cipher_spec.aead.decrypt(
-                    &key.key,
-                    &key.iv,
-                    &record.data,
-                    &additional_data,
-                    &mut plaintext,
-                )?;
-
-                // The content type is the the last non-zero byte. All zeros
-                // after that are padding and can be ignored.
-                let mut content_type_res = None;
-                for i in (0..plaintext.len()).rev() {
-                    if plaintext[i] != 0 {
-                        content_type_res = Some(i);
-                        break;
-                    }
-                }
-
-                let content_type_i = content_type_res.ok_or_else(|| err_msg("All zero"))?;
-
-                let content_type = ContentType::from_u8(plaintext[content_type_i]);
-
-                plaintext.truncate(content_type_i);
-
-                RecordInner {
-                    typ: content_type,
-                    data: plaintext.into(),
-                }
-            } else {
-                if record.typ == ContentType::ApplicationData {
-                    return Err(err_msg("Received application_data without a cipher"));
-                }
-
-                RecordInner {
-                    typ: record.typ,
-                    data: record.data,
-                }
-            };
-
-            // Empty records are only allowed for
-            // TODO: Does this apply to anything other than Handshake?
-            // if inner.typ != ContentType::application_data && inner.data.len() == 0 {
-            // 	return Err(err_msg("Empty record not allowed"));
-            // }
-
-            return Ok(inner);
-        }
-    }
-
-    async fn send_record(&mut self, inner: RecordInner) -> Result<()> {
-        let record = if let Some(cipher_spec) = self.cipher_spec.as_ref() {
-            // All encrypted records will be sent with an outer version of
-            // TLS 1.2 for backwards compatibility.
-            let legacy_record_version: u16 = 0x0303;
-
-            let typ = ContentType::ApplicationData;
-
-            // How much padding to add to each plaintext record.
-            // TODO: Support padding up to a block size or accepting a callback
-            // to configure this.
-            let padding_size = 0;
-
-            // Total expected size of cipher text. We need one byte at the end
-            // for the content type.
-            let total_size = cipher_spec.aead.expanded_size(inner.data.len() + 1) + padding_size;
-
-            let mut additional_data = vec![];
-            typ.serialize(&mut additional_data);
-            additional_data.extend_from_slice(&legacy_record_version.to_be_bytes());
-            additional_data.extend_from_slice(&(total_size as u16).to_be_bytes());
-
-            let mut plaintext = vec![];
-            plaintext.resize(inner.data.len() + 1 + padding_size, 0);
-            plaintext[0..inner.data.len()].copy_from_slice(&inner.data);
-            plaintext[inner.data.len()] = inner.typ.to_u8();
-
-            // TODO: Make this condition depending on whether we are the client or server.
-            let mut key_guard = cipher_spec.client_key.lock().await;
-
-            let key = key_guard.keying.next_keys();
-
-            let mut ciphertext = vec![];
-            ciphertext.reserve(total_size);
-            cipher_spec.aead.encrypt(
-                &key.key,
-                &key.iv,
-                &plaintext,
-                &additional_data,
-                &mut ciphertext,
-            );
-
-            assert_eq!(ciphertext.len(), total_size);
-
-            Record {
-                legacy_record_version,
-                typ,
-                data: ciphertext.into(),
-            }
-        } else {
-            if inner.typ == ContentType::ApplicationData {
-                return Err(err_msg(
-                    "Should not be sending unencrypted application data",
-                ));
-            }
-
-            Record {
-                // TODO: Implement this.
-                // rfc8446: 'In order to maximize backward compatibility, a record containing an
-                // initial ClientHello SHOULD have version 0x0301 (reflecting TLS 1.0) and a record
-                // containing a second ClientHello or a ServerHello MUST have version 0x0303'
-                legacy_record_version: 0x0301, // TLS 1.0
-                typ: inner.typ,
-                data: inner.data,
-            }
-        };
-
-        let mut record_data = vec![];
-        record.serialize(&mut record_data);
-
-        self.channel.write_all(&record_data).await?;
-        Ok(())
+impl RecordReader {
+    pub fn new(reader: Box<dyn Readable>) -> Self {
+        Self { reader, remote_cipher_spec: None }
     }
 
     /// Recieves the next full message from the socket.
@@ -340,6 +148,114 @@ impl RecordStream {
         }
     }
 
+    async fn recv_record(&mut self) -> Result<RecordInner> {
+        // TODO: Eventually remove this loop once ChangeCipherSpec is handled
+        // elsewhere.
+        loop {
+            let record = Record::read(self.reader.as_mut()).await?;
+
+            // TODO: Disallow zero length records unless using application data.
+
+            // TODO: 'Handshake messages MUST NOT span key changes'
+
+            // Only the ClientHello should be using a different record version.
+            // TODO: Client hello retry should be allowed to have a different version.
+            if record.legacy_record_version != TLS_1_2_VERSION {
+                return Err(err_msg("Unexpected version"));
+            }
+
+            // TODO: Can't remove this until we have a better check for
+            // enforcing that everything is encrypted.
+            if record.typ == ContentType::ChangeCipherSpec {
+                // TODO: After the ClientHello is sent and before a Finished is
+                // received, this should be valid.
+
+                // TODO: We should validate the contents of this message.
+                continue;
+            }
+
+            let inner = if let Some(cipher_spec) = self.remote_cipher_spec.as_mut() {
+                // TODO: I know that at least application_data and keyupdates
+                // must always be encrypted after getting keys.
+
+                if record.typ != ContentType::ApplicationData {
+                    return Err(err_msg("Expected only encrypted data not"));
+                }
+
+                let key = cipher_spec.keying.next_keys();
+
+                // additional_data = TLSCiphertext.opaque_type ||
+                //     TLSCiphertext.legacy_record_version ||
+                //     TLSCiphertext.length
+                // TODO: Implement this as a slice of the original record.
+                let mut additional_data = vec![];
+                record.typ.serialize(&mut additional_data);
+                additional_data.extend_from_slice(&record.legacy_record_version.to_be_bytes());
+                additional_data.extend_from_slice(&(record.data.len() as u16).to_be_bytes());
+
+                let mut plaintext = vec![];
+                cipher_spec.aead.decrypt(
+                    &key.key,
+                    &key.iv,
+                    &record.data,
+                    &additional_data,
+                    &mut plaintext,
+                )?;
+
+                // The content type is the the last non-zero byte. All zeros
+                // after that are padding and can be ignored.
+                let mut content_type_res = None;
+                for i in (0..plaintext.len()).rev() {
+                    if plaintext[i] != 0 {
+                        content_type_res = Some(i);
+                        break;
+                    }
+                }
+
+                let content_type_i = content_type_res.ok_or_else(|| err_msg("All zero"))?;
+
+                let content_type = ContentType::from_u8(plaintext[content_type_i]);
+
+                plaintext.truncate(content_type_i);
+
+                RecordInner {
+                    typ: content_type,
+                    data: plaintext.into(),
+                }
+            } else {
+                if record.typ == ContentType::ApplicationData {
+                    return Err(err_msg("Received application_data without a cipher"));
+                }
+
+                RecordInner {
+                    typ: record.typ,
+                    data: record.data,
+                }
+            };
+
+            // Empty records are only allowed for
+            // TODO: Does this apply to anything other than Handshake?
+            // if inner.typ != ContentType::application_data && inner.data.len() == 0 {
+            // 	return Err(err_msg("Empty record not allowed"));
+            // }
+
+            return Ok(inner);
+        }
+    }
+}
+
+
+pub struct RecordWriter {
+    writer: Box<dyn Writeable>,
+
+    pub local_cipher_spec: Option<CipherEndpointSpec>
+}
+
+impl RecordWriter {
+    pub fn new(writer: Box<dyn Writeable>) -> Self {
+        Self { writer, local_cipher_spec: None }
+    }
+
     // TODO: Messages that are too long may need to be split up.
     pub async fn send_handshake(
         &mut self,
@@ -370,6 +286,119 @@ impl RecordStream {
     }
 
     pub async fn flush(&mut self) -> Result<()> {
-        self.channel.flush().await
+        self.writer.flush().await
     }
+
+    // TODO: Instead functions should return a Result indicating the Alert
+    // they want to convey back to the server.
+    async fn fatal(&mut self, description: AlertDescription) -> Result<()> {
+        let alert = Alert {
+            level: AlertLevel::fatal,
+            description,
+        };
+        let mut data = vec![];
+        alert.serialize(&mut data);
+
+        let record = RecordInner {
+            typ: ContentType::Alert,
+            data: data.into(),
+        };
+
+        self.send_record(record).await
+    }
+
+    async fn send_record(&mut self, inner: RecordInner) -> Result<()> {
+        let record = if let Some(cipher_spec) = self.local_cipher_spec.as_mut() {
+            // All encrypted records will be sent with an outer version of
+            // TLS 1.2 for backwards compatibility.
+            let legacy_record_version: u16 = 0x0303;
+
+            let typ = ContentType::ApplicationData;
+
+            // How much padding to add to each plaintext record.
+            // TODO: Support padding up to a block size or accepting a callback
+            // to configure this.
+            let padding_size = 0;
+
+            // Total expected size of cipher text. We need one byte at the end
+            // for the content type.
+            let total_size = cipher_spec.aead.expanded_size(inner.data.len() + 1) + padding_size;
+
+            let mut additional_data = vec![];
+            typ.serialize(&mut additional_data);
+            additional_data.extend_from_slice(&legacy_record_version.to_be_bytes());
+            additional_data.extend_from_slice(&(total_size as u16).to_be_bytes());
+
+            let mut plaintext = vec![];
+            plaintext.resize(inner.data.len() + 1 + padding_size, 0);
+            plaintext[0..inner.data.len()].copy_from_slice(&inner.data);
+            plaintext[inner.data.len()] = inner.typ.to_u8();
+
+            let key = cipher_spec.keying.next_keys();
+
+            let mut ciphertext = vec![];
+            ciphertext.reserve(total_size);
+            cipher_spec.aead.encrypt(
+                &key.key,
+                &key.iv,
+                &plaintext,
+                &additional_data,
+                &mut ciphertext,
+            );
+
+            assert_eq!(ciphertext.len(), total_size);
+
+            Record {
+                legacy_record_version,
+                typ,
+                data: ciphertext.into(),
+            }
+        } else {
+            if inner.typ == ContentType::ApplicationData {
+                return Err(err_msg(
+                    "Should not be sending unencrypted application data",
+                ));
+            }
+
+            Record {
+                // TODO: Implement this.
+                // rfc8446: 'In order to maximize backward compatibility, a record containing an
+                // initial ClientHello SHOULD have version 0x0301 (reflecting TLS 1.0) and a record
+                // containing a second ClientHello or a ServerHello MUST have version 0x0303'
+                legacy_record_version: 0x0301, // TLS 1.0
+                typ: inner.typ,
+                data: inner.data,
+            }
+        };
+
+        let mut record_data = vec![];
+        record.serialize(&mut record_data);
+
+        self.writer.write_all(&record_data).await?;
+        Ok(())
+    }
+
 }
+
+
+/*
+
+/// Interface for sending and receiving TLS Records over the raw connection.
+///
+/// This interface also handles appropriately encrypting/decrypting records once
+/// keys have been negotiated.
+pub struct RecordStream {
+    /// The underlying byte based transport layer used for sending/recieving Records.
+    channel: Box<dyn ReadWriteable>,
+
+    /// Current encryption configuration for the connection.
+    ///
+    /// Initially this will None indicating that we haven't yet agreed upon keys and
+    /// will eventually 
+    ///  If specified then the connection is encrypted.
+    ///
+    /// TODO: Make this private.
+    pub cipher_spec: Option<CipherSpec>,
+}
+
+*/

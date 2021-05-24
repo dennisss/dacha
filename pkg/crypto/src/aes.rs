@@ -222,11 +222,6 @@ impl BlockCipher for AESBlockCipher {
     }
 }
 
-struct CBCModeCipher<C: BlockCipher> {
-    cipher: C,
-    iv: Vec<u8>,
-}
-
 macro_rules! next_block {
     ($data:ident, $size:expr) => {{
         let (block, rest) = $data.split_at($size);
@@ -243,6 +238,53 @@ macro_rules! next_block_mut {
     }};
 }
 
+struct ECBModeCipher<C: BlockCipher> {
+    cipher: C
+}
+
+impl<C: BlockCipher> ECBModeCipher<C> {
+    fn new(cipher: C) -> Self {
+        Self { cipher }
+    }
+
+    pub fn encrypt(&mut self, mut input: &[u8], mut output: &mut [u8]) {
+        assert_eq!(input.len() % self.cipher.block_size(), 0);
+        assert_eq!(input.len(), output.len());
+
+        let block_size = self.cipher.block_size();
+        let nblocks = input.len() / block_size;
+
+        for _ in 0..nblocks {
+            let input_block = next_block!(input, block_size);
+            let output_block = next_block_mut!(output, block_size);
+
+            self.cipher.encrypt_block(input_block, output_block);
+        }
+    }
+
+    pub fn decrypt(&mut self, mut input: &[u8], mut output: &mut [u8]) {
+        assert_eq!(input.len() % self.cipher.block_size(), 0);
+        assert_eq!(input.len(), output.len());
+
+        let block_size = self.cipher.block_size();
+        let nblocks = input.len() / block_size;
+
+        for _ in 0..nblocks {
+            let input_block = next_block!(input, block_size);
+            let output_block = next_block_mut!(output, block_size);
+
+            self.cipher.decrypt_block(input_block, output_block);
+        }
+    }
+}
+
+
+// TODO: Start testing this.
+struct CBCModeCipher<C: BlockCipher> {
+    cipher: C,
+    iv: Vec<u8>,
+}
+
 impl<C: BlockCipher> CBCModeCipher<C> {
     pub fn encrypt(&mut self, mut input: &[u8], mut output: &mut [u8]) {
         assert_eq!(input.len() % self.cipher.block_size(), 0);
@@ -256,7 +298,7 @@ impl<C: BlockCipher> CBCModeCipher<C> {
 
         let mut iv: &[u8] = &self.iv;
 
-        for i in 0..nblocks {
+        for _ in 0..nblocks {
             let input_block = next_block!(input, block_size);
             let output_block = next_block_mut!(output, block_size);
 
@@ -277,7 +319,7 @@ impl<C: BlockCipher> CBCModeCipher<C> {
 
         let mut iv: &[u8] = &self.iv;
 
-        for i in 0..nblocks {
+        for _ in 0..nblocks {
             let input_block = next_block!(input, block_size);
             let output_block = next_block_mut!(output, block_size);
 
@@ -347,5 +389,69 @@ mod tests {
 
         c.decrypt_block(&cipher, &mut buf);
         assert_eq!(&buf, &plain);
+    }
+
+    #[async_std::test]
+    async fn aes_ecb_nist_test() -> Result<()> {
+        let project_dir = common::project_dir();
+
+        let paths = &[
+            "testdata/nist/aes/kat/ECBGFSbox128.rsp",
+            "testdata/nist/aes/kat/ECBGFSbox256.rsp",
+            "testdata/nist/aes/kat/ECBKeySbox128.rsp",
+            "testdata/nist/aes/kat/ECBKeySbox256.rsp",
+            "testdata/nist/aes/kat/ECBVarKey128.rsp",
+            "testdata/nist/aes/kat/ECBVarKey256.rsp",
+            "testdata/nist/aes/kat/ECBVarTxt128.rsp",
+            "testdata/nist/aes/kat/ECBVarTxt256.rsp",
+            // "testdata/nist/aes/mct/ECBMCT128.rsp",
+            // "testdata/nist/aes/mct/ECBMCT256.rsp",
+            "testdata/nist/aes/mmt/ECBMMT128.rsp",
+            "testdata/nist/aes/mmt/ECBMMT256.rsp"
+        ];
+
+        for path in paths.iter().cloned() {
+            // println!("FILE {}", path);
+
+            let file = crate::nist::response::ResponseFile::open(project_dir.join(path)).await?;
+
+            for response in file.iter() {
+                let response = response?;
+                
+                let encrypt = response.attributes.contains_key("ENCRYPT");
+                let decrypt = response.attributes.contains_key("DECRYPT");
+                
+                let key = hex::decode(response.fields.get("KEY").unwrap())?;
+                let plaintext = hex::decode(response.fields.get("PLAINTEXT").unwrap())?;
+                let ciphertext = hex::decode(response.fields.get("CIPHERTEXT").unwrap())?;
+
+                let mut aes = ECBModeCipher::new(AESBlockCipher::create(&key)?);
+
+                // println!("RUNNING {}", response.fields["COUNT"]);
+
+                if encrypt {
+                    let mut output = vec![];
+                    output.resize(plaintext.len(), 0);
+
+                    aes.encrypt(&plaintext, &mut output);
+
+                    assert_eq!(output, ciphertext, "{} vs {}", hex::encode(&output), hex::encode(&ciphertext));
+
+                } else if decrypt {
+                    let mut output = vec![];
+                    output.resize(ciphertext.len(), 0);
+
+                    aes.decrypt(&ciphertext, &mut output);
+
+                    assert_eq!(output, plaintext);
+
+                } else {
+                    panic!("Unknown testing mode");
+                }
+            }
+
+        }
+
+        Ok(())
     }
 }

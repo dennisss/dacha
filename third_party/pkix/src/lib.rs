@@ -31,3 +31,6 @@ pub mod PKIX1Algorithms2008 {
 pub mod PKCS_1 {
     include!(concat!(env!("OUT_DIR"), "/src/PKCS_1.rs"));
 }
+pub mod PKCS_8 {
+    include!(concat!(env!("OUT_DIR"), "/src/PKCS_8.rs"));
+}

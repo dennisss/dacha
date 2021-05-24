@@ -58,10 +58,13 @@ pub struct ConnectionState {
     pub streams: HashMap<StreamId, Stream>,
 }
 
-/// Event emitted when the connection frame reading thread has read some frames from the remote
-/// endpoint and needs some action done by the writer thread. 
+/// Event received by the writer thread of the connection from other processing
+/// threads. Most of these require that the writer take some action in response
+/// to the event.
 pub enum ConnectionEvent {
     /// We received a ping from the remote endpoint. In response, we should respond with an ACK.
+    ///
+    /// Sender: Connection level reader thread
     Ping {
         ping_frame: PingFramePayload
     },
@@ -86,6 +89,8 @@ pub enum ConnectionEvent {
 
     /// We received remote settings which we've applied to the local state and should now be
     /// acknowledged.
+    ///
+    /// Sender: Connection level reader thread
     AcknowledgeSettings {
         header_table_size: Option<u32>
     },
@@ -103,7 +108,8 @@ pub enum ConnectionEvent {
         stream_id: StreamId
     },
 
-    /// A local request to 
+    /// We are an HTTP client connection and a locally generated request needs to be sent to the
+    /// other endpoint.
     SendRequest {
         request: Request,
         response_handler: Box<dyn ResponseHandler>

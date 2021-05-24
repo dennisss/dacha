@@ -18,13 +18,8 @@ pub mod video;
 
 const SLOW_DOWN: u64 = 1;
 
-// /home/dennis/workspace/dacha/ext/gameboy/dmg_rom.bin
-
 // ext/gameboy/pokemon_blue.gbc
 // ^ MBC3+RAM+BATTERY
-
-//const CARTRIDGE_FILE: &'static str =
-//	"/home/dennis/workspace/dacha/ext/gameboy/pokemon_blue.gbc";
 
 pub fn diff_logs() -> Result<()> {
     let f1 = File::open("golden-2")?;
@@ -71,17 +66,17 @@ pub fn diff_logs() -> Result<()> {
 // '10-bit ops.gb'             - passed
 // '11-op a,(hl).gb'           - passed
 
-const CARTRIDGE_FILE: &'static str = "/home/dennis/workspace/dacha/ext/gameboy/pokemon_blue.gbc";
+const CARTRIDGE_FILE: &'static str = "ext/gameboy/pokemon_blue.gbc";
 
 pub fn run() -> Result<()> {
     //	diff_logs()?;
 
     let mut boot_rom = vec![];
-    let mut boot_rom_file = File::open("/home/dennis/workspace/dacha/ext/gameboy/dmg_rom.bin")?;
+    let mut boot_rom_file = File::open(project_path!("ext/gameboy/dmg_rom.bin"))?;
     boot_rom_file.read_to_end(&mut boot_rom)?;
 
     let mut rom = vec![];
-    let mut rom_file = File::open(CARTRIDGE_FILE)?;
+    let mut rom_file = File::open(project_path!(CARTRIDGE_FILE))?;
     rom_file.read_to_end(&mut rom)?;
 
     let clock = Rc::new(RefCell::new(clock::Clock::new()));

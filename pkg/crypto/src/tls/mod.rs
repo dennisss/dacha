@@ -12,6 +12,7 @@ pub mod transcript;
 mod record_stream;
 mod cipher;
 pub mod application_stream;
+pub mod handshake_summary;
 
 // Big-endian network order
 

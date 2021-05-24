@@ -10,6 +10,7 @@ use common::async_std::channel;
 use common::async_std::sync::Mutex;
 use common::io::{Readable, Writeable};
 use common::async_std::task;
+use parsing::ascii::AsciiString;
 
 use crate::uri_syntax::serialize_authority;
 use crate::dns::*;
@@ -30,6 +31,7 @@ use crate::method::*;
 /// HTTP client connected to a single server.
 pub struct Client {
     socket_addr: SocketAddr,
+    is_secure: bool
 
     // A client should have a list of 
 }
@@ -60,10 +62,6 @@ impl Client {
                 return Err(format_err!("Unsupported scheme {}", scheme));
             }
         };
-
-        if is_secure {
-            return Err(err_msg("TLS/SSL currently not supported"));
-        }
 
         let authority = u
             .authority
@@ -103,6 +101,7 @@ impl Client {
         Ok(Client {
             // TODO: Check port is in u16 range in the parser
             socket_addr: SocketAddr::new(ip.try_into()?, port as u16),
+            is_secure
         })
     }
 
@@ -135,15 +134,60 @@ impl Client {
         // TODO: For an empty body, the client doesn't need to send any special headers.
 
         // TODO: Use timeout?
-        let stream = TcpStream::connect(self.socket_addr).await?;
-        stream.set_nodelay(true)?;
+        let raw_stream = TcpStream::connect(self.socket_addr).await?;
+        raw_stream.set_nodelay(true)?;
+
+        let mut reader: Box<dyn Readable> = Box::new(raw_stream.clone());
+        let mut writer: Box<dyn Writeable> = Box::new(raw_stream);
+
+        let mut start_http2 = false;
+
+        if self.is_secure {
+            let mut client_options = crypto::tls::options::ClientOptions::recommended();
+            client_options.hostname = "google.com".into();
+            client_options.alpn_ids.push("h2".into());
+            client_options.alpn_ids.push("http/1.1".into());
+
+            let mut tls_client = crypto::tls::client::Client::new();
+
+            let tls_stream = tls_client.connect(reader, writer, &client_options).await?;
+
+            reader = Box::new(tls_stream.reader);
+            writer = Box::new(tls_stream.writer);
+
+            if let Some(protocol) = tls_stream.handshake_summary.selected_alpn_protocol {
+                if protocol.as_ref() == b"h2" {
+                    start_http2 = true;
+                    println!("NEGOTIATED HTTP2 OVER TLS");
+                }
+            }
+        }
+
+        if start_http2 {
+            let connection_v2 = crate::v2::Connection::new(None);
+
+            let initial_state = crate::v2::ConnectionInitialState::raw();
+
+            let conn_runner = task::spawn(
+                connection_v2.run(initial_state, reader, writer));
+
+            request.head.uri.scheme = Some(AsciiString::from_str("https").unwrap());
+
+            let response = connection_v2.request(request).await?;
+            // TODO: Shut down the connection and join the conn_runner.
+
+            return Ok(response);
+        }
+
+
 
         let conn = ClientConnection::new();
 
-        let conn_runner = task::spawn(conn.shared.clone().run(
-            Box::new(stream.clone()), Box::new(stream)));
+        let conn_runner = task::spawn(
+            conn.shared.clone().run(reader, writer));
 
-        {
+        // Attempt to upgrade to HTTP2 over clear text.
+        if !self.is_secure {
             let mut local_settings = crate::v2::SettingsContainer::default();
 
             let mut connection_options = vec![];

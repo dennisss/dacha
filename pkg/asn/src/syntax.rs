@@ -2496,7 +2496,7 @@ mod tests {
 
         // PKIX1Explicit88
         let mut file = std::fs::File::open(
-            "/home/dennis/workspace/dacha/third_party/pkix/src/PKIX1Explicit88.asn1",
+            common::project_dir().join("third_party/pkix/src/PKIX1Explicit88.asn1")
         )
         .unwrap();
         let mut data = vec![];

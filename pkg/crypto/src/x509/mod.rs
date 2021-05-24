@@ -100,7 +100,7 @@ impl CertificateRegistry {
     pub async fn public_roots() -> Result<Self> {
         // TODO: Make this async.
         let mut f = File::open(
-            "/home/dennis/workspace/dacha/third_party/ca-certificates/google/roots.pem",
+            project_path!("third_party/ca-certificates/google/roots.pem"),
         ).await?;
 
         let mut data = vec![];
@@ -807,8 +807,10 @@ attrs!(ATTRIBUTE_REGISTRY,
 mod tests {
     use super::*;
 
-    #[test]
-    fn x509_google_cert_test() {
+    use std::io::Read;
+
+    #[async_std::test]
+    async fn x509_google_cert_test() -> Result<()> {
         let read_file = |path| -> Result<Arc<Certificate>> {
             let mut f = std::fs::File::open(path)?;
 
@@ -820,11 +822,11 @@ mod tests {
             Ok(Arc::new(cert))
         };
 
-        let cert = read_file("/home/dennis/workspace/dacha/testdata/x509/google.der").unwrap();
-        let cert2 = read_file("/home/dennis/workspace/dacha/testdata/x509/gts.der").unwrap();
+        let cert = read_file(project_path!("testdata/x509/google.der")).unwrap();
+        let cert2 = read_file(project_path!("testdata/x509/gts.der")).unwrap();
 
-        let mut reg = CertificateRegistry::public_roots().unwrap();
-        reg.append(&[cert, cert2], false).unwrap();
+        let mut reg = CertificateRegistry::public_roots().await?;
+        reg.append(&[cert, cert2], false)?;
 
         // let san = cert.subject_alt_name().unwrap().unwrap();
 
@@ -833,10 +835,13 @@ mod tests {
         //		println!("Subject: {:?}", cert.subject_key_id());
         //		println!("{}", cert.issuer().to_string().unwrap());
         //		println!("{}", cert.subject().to_string().unwrap());
+
+        Ok(())
     }
 
-    #[test]
-    fn x509_registry() {
-        CertificateRegistry::public_roots().unwrap();
+    #[async_std::test]
+    async fn x509_registry() -> Result<()> {
+        CertificateRegistry::public_roots().await?;
+        Ok(())
     }
 }

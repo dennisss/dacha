@@ -157,3 +157,4 @@ pub mod rsa;
 pub mod tls;
 pub mod utils;
 pub mod x509;
+pub mod nist;

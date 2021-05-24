@@ -219,9 +219,9 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
 
     pub fn decrypt(
         &mut self,
-        mut auth_cipher: &[u8],
+        auth_cipher: &[u8],
         additional_data: &[u8],
-        mut plain: &mut Vec<u8>,
+        plain: &mut Vec<u8>,
     ) -> Result<()> {
         // Must have enough bytes for the tag.
         if auth_cipher.len() < BLOCK_SIZE {
@@ -254,7 +254,7 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
         xor_inplace(&self.enc_counter_0, &mut expected_tag);
 
         if !constant_eq(tag, &expected_tag) {
-            println!("{:?}\n{:?}", tag, expected_tag);
+            // println!("{:?}\n{:?}", tag, expected_tag);
             return Err(err_msg("Incorrect tag"));
         }
 
@@ -462,5 +462,87 @@ mod tests {
         out.clear();
         aes_gcm.encrypt(&key, &iv, &plain, add_data, &mut out);
         assert_eq!(out, cipher);
+    }
+
+    #[async_std::test]
+    async fn aes_gcm_nist_test() -> Result<()> {
+        let project_dir = common::project_dir();
+
+        let paths = &[
+            "testdata/nist/aes_gcm/gcmDecrypt128.rsp",
+            // "testdata/nist/aes_gcm/gcmDecrypt192.rsp",
+            "testdata/nist/aes_gcm/gcmDecrypt256.rsp",
+            "testdata/nist/aes_gcm/gcmEncryptExtIV128.rsp",
+            // "testdata/nist/aes_gcm/gcmEncryptExtIV192.rsp",
+            "testdata/nist/aes_gcm/gcmEncryptExtIV256.rsp"
+        ];
+
+        for path in paths.iter().cloned() {
+            // println!("FILE {}", path);
+
+            let file = crate::nist::response::ResponseFile::open(project_dir.join(path)).await?;
+
+            for response in file.iter() {
+                let response = response?;
+
+                // println!("Response {}", response.fields["COUNT"]);
+                
+                let fail = response.fields.contains_key("FAIL");
+                
+                let key = hex::decode(response.fields.get("KEY").unwrap())?;
+                let iv = hex::decode(response.fields.get("IV").unwrap())?;
+                let plaintext = {
+                    if let Some(data) = response.fields.get("PT") {
+                        hex::decode(data)?
+                    } else {
+                        vec![]
+                    }
+                };
+                let additional_data = hex::decode(response.fields.get("AAD").unwrap())?;
+                let ciphertext = hex::decode(response.fields.get("CT").unwrap())?;
+                let tag = hex::decode(response.fields.get("TAG").unwrap())?;
+
+                if tag.len() != 16 {
+                    continue;
+                }
+
+                let aes = {
+                    if key.len() == 16 {
+                        AesGCM::aes128()
+                    } else {
+                        AesGCM::aes256()
+                    }
+                };
+
+                let full_ciphertext = {
+                    let mut v = ciphertext.clone();
+                    v.extend_from_slice(&tag);
+                    v
+                };
+
+                // NOTE: Even though the files are only for just one of (encryption, decryption), we try 
+                // both directions always for thoroughness.
+
+                // Decrypt
+                {
+                    let mut out = vec![];
+                    let result = aes.decrypt(&key, &iv, &full_ciphertext, &additional_data, &mut out);
+                    assert_eq!(result.is_err(), fail);
+                    if !fail {
+                        assert_eq!(out, plaintext);
+                    } 
+                }
+
+                // Encrypt
+                if !fail {
+                    let mut out = vec![];
+                    aes.encrypt(&key, &iv, &plaintext, &additional_data, &mut out);
+                    assert_eq!(out, full_ciphertext);
+                }
+            }
+        }
+
+        Ok(())
+
     }
 }

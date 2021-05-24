@@ -50,7 +50,7 @@ async fn handle_request(req: Request) -> Response {
 }
 
 async fn run_server() -> Result<()> {
-    let handler = http::static_file_handler::StaticFileHandler::new("/home/dennis/workspace/dacha");
+    let handler = http::static_file_handler::StaticFileHandler::new(common::project_dir());
     // let handler = http::server::HttpFn(handle_request);
     let server = http::server::Server::new(8000, handler);
     server.run().await

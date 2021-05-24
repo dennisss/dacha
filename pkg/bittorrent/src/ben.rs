@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn torrent_test() {
         let data = std::fs::read(
-            "/home/dennis/workspace/dacha/pkg/bittorrent/2020-08-20-raspios-buster-armhf-full.zip.torrent",
+            common::project_dir().join("pkg/bittorrent/2020-08-20-raspios-buster-armhf-full.zip.torrent")
         )
         .unwrap();
         println!("{:#?}", BENValue::parse(&data).unwrap());

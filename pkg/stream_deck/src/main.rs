@@ -54,7 +54,7 @@ fn read_controller() -> Result<()> {
     device_handle.claim_interface(USB_IFACE)?;
     device_handle.set_alternate_setting(USB_IFACE, 0)?;
 
-    let image = std::fs::read("/home/dennis/workspace/dacha/pkg/stream_deck/sample_icon.jpg")?;
+    let image = std::fs::read(project_path!("pkg/stream_deck/sample_icon.jpg"))?;
 
     // 0: 0x02
     // 1: 0x07
