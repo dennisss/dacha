@@ -262,11 +262,12 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
     }
 }
 
-pub struct AES_GCM {
+#[derive(Clone)]
+pub struct AesGCM {
     key_size: usize,
 }
 
-impl AES_GCM {
+impl AesGCM {
     pub fn aes128() -> Self {
         Self {
             key_size: (128 / 8),
@@ -279,7 +280,7 @@ impl AES_GCM {
     }
 }
 
-impl AuthEncAD for AES_GCM {
+impl AuthEncAD for AesGCM {
     fn key_size(&self) -> usize {
         self.key_size
     }
@@ -320,6 +321,10 @@ impl AuthEncAD for AES_GCM {
         let c = AESBlockCipher::create(key).unwrap();
         let mut gcm = GaloisCounterMode::new(nonce, c);
         gcm.decrypt(ciphertext, additional_data, out)
+    }
+
+    fn box_clone(&self) -> Box<dyn AuthEncAD> {
+        Box::new(self.clone())
     }
 }
 
@@ -447,7 +452,7 @@ mod tests {
         let plain = hex::decode("51756d23ab2b2c4d4609e3133a").unwrap();
 
         let mut out = vec![];
-        let aes_gcm = AES_GCM::aes128();
+        let aes_gcm = AesGCM::aes128();
         aes_gcm
             .decrypt(&key, &iv, &cipher, add_data, &mut out)
             .unwrap();

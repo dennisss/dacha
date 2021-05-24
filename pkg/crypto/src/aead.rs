@@ -32,4 +32,6 @@ pub trait AuthEncAD: Send + Sync {
         additional_data: &[u8],
         out: &mut Vec<u8>,
     ) -> Result<()>;
+
+    fn box_clone(&self) -> Box<dyn AuthEncAD>;
 }

@@ -17,6 +17,7 @@ generic-array = "0.13.2"
 typenum = "1.11.2"
 lazy_static = "1.4.0"
 chrono = "0.4.9"
+async-std = "1.9.0"
 
 [dev-dependencies]
 openssl = { path = "../../third_party/openssl" }
