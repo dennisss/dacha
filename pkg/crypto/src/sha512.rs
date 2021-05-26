@@ -125,11 +125,11 @@ type HashState = [u64; 8];
 
 #[derive(Clone)]
 pub struct SHA512Hasher {
-    inner: MerkleDamgard<HashState, U128>,
+    inner: MerkleDamgard<HashState, U128>, // 128 bytes is 1024 bits.
 }
 
 impl SHA512Hasher {
-    pub fn new_with_hash(initial_hash: &[u64; 8]) -> Self {
+    pub fn new_with_hash(initial_hash: &HashState) -> Self {
         let padding = LengthPadding {
             big_endian: true,
             int128: true,
@@ -203,6 +203,10 @@ impl Default for SHA512Hasher {
 }
 
 impl Hasher for SHA512Hasher {
+    fn block_size(&self) -> usize {
+        128
+    }
+
     fn output_size(&self) -> usize {
         64
     }
@@ -222,9 +226,14 @@ impl Hasher for SHA512Hasher {
 
         hh.to_vec()
     }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
+    }
 }
 
 /// SHA-512/224
+#[derive(Clone)]
 pub struct SHA512_224Hasher {
     inner: SHA512Hasher,
 }
@@ -238,20 +247,31 @@ impl Default for SHA512_224Hasher {
 }
 
 impl Hasher for SHA512_224Hasher {
+    fn block_size(&self) -> usize {
+        self.inner.block_size()
+    }
+
     fn output_size(&self) -> usize {
         28
     }
+
     fn update(&mut self, data: &[u8]) {
         self.inner.update(data);
     }
+    
     fn finish(&self) -> Vec<u8> {
         let mut out = self.inner.finish();
         out.truncate(self.output_size());
         out
     }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
+    }
 }
 
 /// SHA-512/256
+#[derive(Clone)]
 pub struct SHA512_256Hasher {
     inner: SHA512Hasher,
 }
@@ -265,16 +285,26 @@ impl Default for SHA512_256Hasher {
 }
 
 impl Hasher for SHA512_256Hasher {
+    fn block_size(&self) -> usize {
+        self.inner.block_size()
+    }
+
     fn output_size(&self) -> usize {
         32
     }
+
     fn update(&mut self, data: &[u8]) {
         self.inner.update(data);
     }
+
     fn finish(&self) -> Vec<u8> {
         let mut out = self.inner.finish();
         out.truncate(self.output_size());
         out
+    }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
     }
 }
 

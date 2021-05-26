@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::convert::TryInto;
 
 use common::async_std::net::TcpStream;
 use common::async_std::prelude::*;
@@ -35,16 +36,6 @@ use crate::tls::handshake_summary::*;
 
 // TODO: Should abort the connection if negotiation results in more than one
 // retry as the first retry should always have enough information.
-
-enum ClientState {
-    Start,
-    WaitServerHello,
-    WaitEncryptedExtensions,
-    WaitCertificateRequest,
-    WaitCertificate,
-    WaitCertificateVerify,
-    WaitFinished,
-}
 
 pub struct Client {
     // hasher
@@ -394,6 +385,10 @@ impl<'a> ClientHandshakeExecutor<'a> {
             // TODO: Use this?
             key_schedule.master_secret();
 
+            if !self.handshake_state.handshake_buf.is_empty() {
+                return Err(err_msg("Changing keys across a handshake message?"));
+            }
+
             self.writer.local_cipher_spec = Some(CipherEndpointSpec::new(
                 aead.clone(),
                 hkdf.clone(),
@@ -558,7 +553,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
                 let rsa = crate::rsa::RSASSA_PSS::new(
                     crate::sha256::SHA256Hasher::factory(), 256 / 8);
                 
-                let good = rsa.verify_signature(&public_key, &cert_verify.signature, &plaintext)?;
+                let good = rsa.verify_signature(&public_key.try_into()?, &cert_verify.signature, &plaintext)?;
                 if !good {
                     return Err(err_msg("Invalid RSA certificate verify signature"));
                 }
@@ -600,6 +595,11 @@ impl<'a> ClientHandshakeExecutor<'a> {
         self.writer
             .send_handshake(finished_client, &mut self.handshake_state)
             .await?;
+
+        // TODO: Verify that this is the correct way and place to check this.
+        if !self.handshake_state.handshake_buf.is_empty() {
+            return Err(err_msg("Changing keys across a handshake message?"));
+        }
 
         self.reader
             .remote_cipher_spec.as_mut().unwrap()

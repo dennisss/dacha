@@ -1,21 +1,11 @@
 use crate::hasher::*;
 use crate::utils::*;
 
-/*
-Standard block sizes:
-MD5: 64 bytes
-SHA1: 64 bytes
-SHA256: 64 bytes
-*/
-
-// TODO: Make dynamic
-const BLOCK_SIZE: usize = 64;
-
 /// https://tools.ietf.org/html/rfc2104
 pub struct HMAC {
     // TODO: The size of this is bounded by the block size assuming block size
     // <= output size of the hash.
-    derived_key: [u8; BLOCK_SIZE],
+    derived_key: Vec<u8>,
 
     hash: HasherFactory,
 
@@ -25,8 +15,10 @@ pub struct HMAC {
 
 impl HMAC {
     pub fn new(hash: HasherFactory, key: &[u8]) -> Self {
-        let mut derived_key = [0u8; BLOCK_SIZE];
-        if key.len() <= BLOCK_SIZE {
+        let block_size = hash.create().block_size();
+
+        let mut derived_key = vec![0u8; block_size];
+        if key.len() <= block_size {
             derived_key[0..key.len()].copy_from_slice(key);
         } else {
             let mut h = hash.create();
@@ -38,8 +30,8 @@ impl HMAC {
         let mut inner_hasher = hash.create();
 
         // Initialize inner hash with 'derived_key xor ipad'.
-        let mut inner_start = [0u8; BLOCK_SIZE];
-        let ipad = [0x36u8; BLOCK_SIZE];
+        let mut inner_start = vec![0u8; block_size];
+        let ipad = vec![0x36u8; block_size];
         xor(&ipad, &derived_key, &mut inner_start);
         inner_hasher.update(&inner_start);
 
@@ -61,10 +53,11 @@ impl HMAC {
 
     pub fn finish(&self) -> Vec<u8> {
         let mut outer_hasher = self.hash.create();
+        let block_size = outer_hasher.block_size();
 
         // Initialize outer hasher with 'derived_key xor opad'
-        let mut outer_start = [0u8; BLOCK_SIZE];
-        let opad = [0x5cu8; BLOCK_SIZE];
+        let mut outer_start = vec![0u8; block_size];
+        let opad = vec![0x5cu8; block_size];
         xor(&opad, &self.derived_key, &mut outer_start);
         outer_hasher.update(&outer_start);
 
@@ -79,6 +72,7 @@ mod tests {
     use crate::md5::MD5Hasher;
     use crate::sha1::SHA1Hasher;
     use crate::sha256::SHA256Hasher;
+    use common::errors::*;
     use common::hex;
 
     #[test]
@@ -106,5 +100,41 @@ mod tests {
         );
 
         // TODO: Test partial updates
+    }
+
+    #[async_std::test]
+    async fn hmac_nist_test() -> Result<()> {
+        let file = crate::nist::response::ResponseFile::open(
+            project_path!("testdata/nist/hmac/HMAC.rsp")).await?;
+
+        for response in file.iter() {
+            let response = response?;
+            
+            let hash_length = response.attributes["L"].parse::<usize>()?;
+            
+            let key_length = response.fields["KLEN"].parse::<usize>()?;
+            let mac_length = response.fields["TLEN"].parse::<usize>()?;
+
+            let key = hex::decode(response.fields.get("KEY").unwrap())?;
+            let message = hex::decode(response.fields.get("MSG").unwrap())?;
+            let mac = hex::decode(response.fields.get("MAC").unwrap())?;
+
+            let hasher_factory = match hash_length {
+                20 => crate::sha1::SHA1Hasher::factory(),
+                28 => crate::sha224::SHA224Hasher::factory(),
+                32 => crate::sha256::SHA256Hasher::factory(),
+                48 => crate::sha384::SHA384Hasher::factory(),
+                64 => crate::sha512::SHA512Hasher::factory(),
+                _ => panic!("Unsupported hash length in NIST test vectors")
+            };
+
+            let mut hmac = HMAC::new(hasher_factory, &key[0..key_length]);
+            hmac.update(&message);
+            let output = hmac.finish();
+
+            assert_eq!(&output[0..mac_length], mac);
+        }
+
+        Ok(())
     }
 }

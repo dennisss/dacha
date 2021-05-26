@@ -31,6 +31,7 @@ const D0: u32 = 0x10325476;
 
 type HashState = [u32; 4];
 
+#[derive(Clone)]
 pub struct MD5Hasher {
     inner: MerkleDamgard<HashState, U64>,
 }
@@ -85,6 +86,10 @@ impl Default for MD5Hasher {
 }
 
 impl Hasher for MD5Hasher {
+    fn block_size(&self) -> usize {
+        64
+    }
+
     fn output_size(&self) -> usize {
         16
     }
@@ -102,6 +107,10 @@ impl Hasher for MD5Hasher {
         *array_mut_ref![hh, 8, 4] = state[2].to_le_bytes();
         *array_mut_ref![hh, 12, 4] = state[3].to_le_bytes();
         hh.to_vec()
+    }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
     }
 }
 

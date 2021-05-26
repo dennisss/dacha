@@ -102,6 +102,10 @@ impl Default for SHA256Hasher {
 }
 
 impl Hasher for SHA256Hasher {
+    fn block_size(&self) -> usize {
+        64
+    }
+
     fn output_size(&self) -> usize {
         32
     }
@@ -120,6 +124,10 @@ impl Hasher for SHA256Hasher {
         }
 
         hh.to_vec()
+    }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
     }
 }
 

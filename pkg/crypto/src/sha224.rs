@@ -7,6 +7,7 @@ const INITIAL_HASH: [u32; 8] = [
 
 const OUTPUT_SIZE: usize = 28;
 
+#[derive(Clone)]
 pub struct SHA224Hasher {
     inner: SHA256Hasher,
 }
@@ -20,6 +21,10 @@ impl Default for SHA224Hasher {
 }
 
 impl Hasher for SHA224Hasher {
+    fn block_size(&self) -> usize {
+        self.inner.block_size()
+    }
+
     fn output_size(&self) -> usize {
         OUTPUT_SIZE
     }
@@ -32,6 +37,10 @@ impl Hasher for SHA224Hasher {
         let mut hash = self.inner.finish();
         hash.truncate(self.output_size());
         hash
+    }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
     }
 }
 

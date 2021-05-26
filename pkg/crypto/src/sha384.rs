@@ -12,8 +12,9 @@ const INITIAL_HASH: [u64; 8] = [
     0x47b5481dbefa4fa4,
 ];
 
-const OUTPUT_SIZE: usize = 48;
+const OUTPUT_SIZE: usize = 384 / 8;
 
+#[derive(Clone)]
 pub struct SHA384Hasher {
     inner: SHA512Hasher,
 }
@@ -27,6 +28,10 @@ impl Default for SHA384Hasher {
 }
 
 impl Hasher for SHA384Hasher {
+    fn block_size(&self) -> usize {
+        self.inner.block_size()
+    }
+
     fn output_size(&self) -> usize {
         OUTPUT_SIZE
     }
@@ -39,6 +44,10 @@ impl Hasher for SHA384Hasher {
         let mut hash = self.inner.finish();
         hash.truncate(self.output_size());
         hash
+    }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
     }
 }
 

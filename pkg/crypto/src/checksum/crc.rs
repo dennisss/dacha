@@ -39,6 +39,7 @@ const CRC32_TABLE: [u32; 256] = [
 ];
 
 /// NOTE: The hash is returned in big endian.
+#[derive(Clone)]
 pub struct CRC32Hasher {
     val: u32,
 }
@@ -54,6 +55,10 @@ impl CRC32Hasher {
 }
 
 impl Hasher for CRC32Hasher {
+    fn block_size(&self) -> usize {
+        1
+    }
+
     fn output_size(&self) -> usize {
         4
     }
@@ -69,10 +74,15 @@ impl Hasher for CRC32Hasher {
     fn finish(&self) -> Vec<u8> {
         self.finish_u32().to_be_bytes().to_vec()
     }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
+    }
 }
 
 /// SSE4.2 CRC-32C computation.
 /// NOTE: The hash is returned in big endian.
+#[derive(Clone)]
 pub struct CRC32CHasher {
     val: u32,
 }
@@ -92,6 +102,10 @@ impl CRC32CHasher {
 }
 
 impl Hasher for CRC32CHasher {
+    fn block_size(&self) -> usize {
+        1
+    }
+
     fn output_size(&self) -> usize {
         4
     }
@@ -119,6 +133,10 @@ impl Hasher for CRC32CHasher {
     // TODO: Ideally find a way to directly return the inner.
     fn finish(&self) -> Vec<u8> {
         self.finish_u32().to_be_bytes().to_vec()
+    }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
     }
 }
 

@@ -2,6 +2,7 @@ use crate::hasher::*;
 
 const ADLER32_PRIME_MOD: usize = 65521;
 
+#[derive(Clone)]
 pub struct Adler32Hasher {
     // NOTE: Must be >16bits each
     s1: usize,
@@ -26,6 +27,10 @@ impl Adler32Hasher {
 }
 
 impl Hasher for Adler32Hasher {
+    fn block_size(&self) -> usize {
+        1
+    }
+
     fn output_size(&self) -> usize {
         4
     }
@@ -39,5 +44,9 @@ impl Hasher for Adler32Hasher {
 
     fn finish(&self) -> Vec<u8> {
         self.finish_u32().to_be_bytes().to_vec()
+    }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
     }
 }

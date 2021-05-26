@@ -78,6 +78,10 @@ impl Default for SHA1Hasher {
 }
 
 impl Hasher for SHA1Hasher {
+    fn block_size(&self) -> usize {
+        64
+    }
+
     fn output_size(&self) -> usize {
         20
     }
@@ -97,6 +101,10 @@ impl Hasher for SHA1Hasher {
         *array_mut_ref![hh, 12, 4] = state[3].to_be_bytes();
         *array_mut_ref![hh, 16, 4] = state[4].to_be_bytes();
         hh.to_vec()
+    }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
     }
 }
 

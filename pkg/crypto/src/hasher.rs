@@ -4,7 +4,7 @@ use std::io::Read;
 /// Encapsulates an algorithm for creating hashes (i.e. MD5, SHA1, CRC32, etc.).
 /// TODO: Rename to Digest(er) to not conflict with the std::hash::Hasher
 pub trait Hasher: Send {
-    // fn block_size() -> usize;
+    fn block_size(&self) -> usize;
 
     /// Should return the expected size of the output digest in bytes.
     fn output_size(&self) -> usize;
@@ -22,6 +22,10 @@ pub trait Hasher: Send {
     /// case all further calls to finish() will still be cumulative since the
     /// construction of this struct).
     fn finish(&self) -> Vec<u8>;
+
+    /// Should create a cloned copy of this hasher such that the new and old
+    /// hashers effectively have also data seen by update() applied already. 
+    fn box_clone(&self) -> Box<dyn Hasher>;
 }
 
 pub type HasherFactory = Box<dyn Factory<dyn Hasher>>;
@@ -85,5 +89,39 @@ impl<H: Hasher> Read for HashReader<'_, H> {
         let n = self.reader.read(buf)?;
         self.hasher.update(&buf[0..n]);
         Ok(n)
+    }
+}
+
+/// Creates a hasher from an existing hasher by truncating the output to
+/// a given length.
+#[derive(Default, Clone)]
+pub struct TruncatedHasher<H: Hasher, N: typenum::Unsigned + Send> {
+    inner: H,
+    _output_size: std::marker::PhantomData<N>
+}
+
+impl<H: 'static + Hasher + Clone, N: 'static + typenum::Unsigned + Send + Clone>
+Hasher for TruncatedHasher<H, N> {
+    fn block_size(&self) -> usize {
+        self.inner.block_size()
+    }
+
+    fn output_size(&self) -> usize {
+        // TODO: Will be wrong if the inner hasher is smaller than given length.
+        N::to_usize()
+    }
+
+    fn update(&mut self, data: &[u8]) {
+        self.inner.update(data);
+    }
+
+    fn finish(&self) -> Vec<u8> {
+        let mut data = self.inner.finish();
+        data.truncate(self.output_size());
+        data
+    }
+
+    fn box_clone(&self) -> Box<dyn Hasher> {
+        Box::new(self.clone())
     }
 }

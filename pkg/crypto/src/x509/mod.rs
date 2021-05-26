@@ -1,7 +1,7 @@
 // TODO: Move to third_party
 
 use std::collections::HashMap;
-use std::convert::AsRef;
+use std::convert::{AsRef, TryFrom, TryInto};
 use std::sync::Arc;
 
 use asn::builtin::{Null, ObjectIdentifier, OctetString};
@@ -626,31 +626,31 @@ impl Certificate {
         if alg == &PKIX1_PSS_OAEP_Algorithms::SHA224WITHRSAENCRYPTION {
             check_null_params()?;
             return RSASSA_PKCS_v1_5::sha224().verify_signature(
-                &self.rsa_public_key()?, sig, plaintext);
+                &self.rsa_public_key()?.try_into()?, sig, plaintext);
         } else if alg == &PKCS_1::SHA1WITHRSAENCRYPTION {
             check_null_params()?;
             return RSASSA_PKCS_v1_5::sha1().verify_signature(
-                &self.rsa_public_key()?, sig, plaintext);
+                &self.rsa_public_key()?.try_into()?, sig, plaintext);
         } else if alg == &PKCS_1::SHA256WITHRSAENCRYPTION {
             check_null_params()?;
             return RSASSA_PKCS_v1_5::sha256().verify_signature(
-                &self.rsa_public_key()?, sig, plaintext);
+                &self.rsa_public_key()?.try_into()?, sig, plaintext);
         } else if alg == &PKCS_1::SHA384WITHRSAENCRYPTION {
             check_null_params()?;
             return RSASSA_PKCS_v1_5::sha384().verify_signature(
-                &self.rsa_public_key()?, sig, plaintext);
+                &self.rsa_public_key()?.try_into()?, sig, plaintext);
         } else if alg == &PKCS_1::SHA512_224WITHRSAENCRYPTION {
             check_null_params()?;
             return RSASSA_PKCS_v1_5::sha512_224().verify_signature(
-                &self.rsa_public_key()?, sig, plaintext);
+                &self.rsa_public_key()?.try_into()?, sig, plaintext);
         } else if alg == &PKCS_1::SHA512_256WITHRSAENCRYPTION {
             check_null_params()?;
             return RSASSA_PKCS_v1_5::sha512_256().verify_signature(
-                &self.rsa_public_key()?, sig, plaintext);
+                &self.rsa_public_key()?.try_into()?, sig, plaintext);
         } else if alg == &PKCS_1::SHA512WITHRSAENCRYPTION {
             check_null_params()?;
             return RSASSA_PKCS_v1_5::sha512().verify_signature(
-                &self.rsa_public_key()?, sig, plaintext);
+                &self.rsa_public_key()?.try_into()?, sig, plaintext);
         } else if alg == &PKIX1Algorithms2008::ECDSA_WITH_SHA384 {
             check_null_params()?;
             let mut hasher = crate::sha384::SHA384Hasher::default();
@@ -704,7 +704,8 @@ impl Certificate {
                 }
             }
             None => {
-                // TODO: Check subject common name?
+                // TODO: We could check the subject common name but it is pretty
+                // much deprecated and discourages from being used.
             }
         };
 

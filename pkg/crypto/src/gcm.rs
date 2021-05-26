@@ -285,6 +285,8 @@ impl AuthEncAD for AesGCM {
         self.key_size
     }
 
+    // See https://datatracker.ietf.org/doc/html/rfc5116#section-5.1
+    //
     // NOTE: Technically any size of nonce is valid, but to get TLS to use the
     // recommended size, we fix it.
     fn nonce_range(&self) -> (usize, usize) {

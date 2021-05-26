@@ -23,18 +23,25 @@ pub trait ArrayLen = ArrayLength<u8> + Add<U17> + Clone;
 /// function implemented for a single block. Chunking the data will be handled
 /// by this helper.
 ///
-/// Block size: 512bit
+/// Generic parameters:
+/// - S: Compression function state type: arbitrary value that is passed to the
+///      compression function with changes changes perspected
+/// - ChunkSize: Size of each chunk/block that is processed. The compression
+///              function will always be given chunks of this size.
 ///
 /// Padding:
+/// - Let N be the number of bits in the length marker (either 64 or 128)
 /// - Appends '1' bit to end of message
-/// - Pads up to block_size - 64bits
-/// - Appends message length in bits as 64bit integer (big endian)
+/// - Pads up to block_size - N bits
+/// - Appends message length in bits as an N-bit integer (big endian)
 #[derive(Clone)]
 pub struct MerkleDamgard<S: HashState, ChunkSize: ArrayLen> {
     /// Current hash state produced by the last compression function or the IV.
     hash: S,
+    
     /// Total number of *bytes* seen so far.
     length: usize,
+
     /// Unprocessed data in the last incomplete chunk. Will be processed once
     /// enough data is received to fill an entire chunk.  
     pending_chunk: GenericArray<u8, ChunkSize>,
@@ -106,8 +113,8 @@ impl<S: HashState, ChunkSize: ArrayLen> MerkleDamgard<S, ChunkSize> {
         // We need at least enough space to append the '1' bit and the 64bit
         // message length. Then we will pad this up to the next chunk boundary.
         // NOTE: This is only valid as we are only operating on byte boundaries.
-        let mut padded_len = self.length + (1 + 8);
-        padded_len += common::block_size_remainder(message_length_bits, padded_len as u64) as usize;
+        let mut padded_len = self.length + common::ceil_div(1 +  message_length_bits, 8);
+        padded_len += common::block_size_remainder(message_length_bits as u64, padded_len as u64) as usize;
         // Number of extra bytes that need to be added to the message to fit the 1 bit,
         // message length and padding.
         let num_extra = padded_len - self.length;
@@ -115,6 +122,7 @@ impl<S: HashState, ChunkSize: ArrayLen> MerkleDamgard<S, ChunkSize> {
         // Buffer allocated for the maximum number of extra bytes that we may
         // need we will only use num_extra at runtime.
         // (this is calculated as chunk_size + 1byte + 128bit)
+        // ^ this is excessive if we are only using a 64bit length, but its good enough.
         // TODO: Instead only allocat up to ChunkSize and update one chunk at
         // a time to simplify this.
         let mut buf = GenericArray::<u8, Sum<ChunkSize, U17>>::default();

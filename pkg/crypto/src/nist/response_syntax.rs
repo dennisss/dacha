@@ -1,6 +1,7 @@
 use common::errors::*;
 use parsing::*;
 
+#[derive(Debug)]
 pub enum Element<'a> {
     Attribute {
         key: &'a str,

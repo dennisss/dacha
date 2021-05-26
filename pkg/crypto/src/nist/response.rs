@@ -6,11 +6,23 @@ use common::{async_std::fs::File, futures::AsyncReadExt};
 use crate::nist::response_syntax::*;
 
 /// NOTE: All the keys are normalized to be uppercase.
+///
+/// TODO: Verify that all fields and attributes are always used.
 #[derive(Debug, PartialEq)]
-pub struct Response {
+pub struct ResponseBlock {
+    pub new_attributes: bool,
     pub attributes: HashMap<String, String>,
     pub fields: HashMap<String, String>
 }
+
+impl ResponseBlock {
+    pub fn binary_field(&self, name: &str) -> Result<Vec<u8>> {
+        Ok(common::hex::decode(
+            &self.fields.get(name).ok_or_else(|| format_err!("No field name: {}", name))?)?)
+    }
+}
+
+
 /// A Response (.rsp) file typically containing test vectors.
 pub struct ResponseFile {
     data: String
@@ -30,20 +42,19 @@ impl ResponseFile {
         Self { data }
     }
 
-    pub fn iter(&self) -> ResponseIter {
-        ResponseIter { remaining_data: &self.data, next_element: None, last_attributes: HashMap::new() }
+    pub fn iter(&self) -> ResponseBlockIter {
+        ResponseBlockIter { remaining_data: &self.data, next_element: None, last_attributes: HashMap::new() }
     }
-
 }
 
-pub struct ResponseIter<'a> {
+pub struct ResponseBlockIter<'a> {
     remaining_data: &'a str,
     next_element: Option<Element<'a>>,
     last_attributes: HashMap<String, String>
 }
 
-impl<'a> std::iter::Iterator for ResponseIter<'a> {
-    type Item = Result<Response>;
+impl<'a> std::iter::Iterator for ResponseBlockIter<'a> {
+    type Item = Result<ResponseBlock>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut fields = HashMap::new();
@@ -66,12 +77,7 @@ impl<'a> std::iter::Iterator for ResponseIter<'a> {
 
             match el {
                 Element::Field { key, value } => {
-                    // TODO: Should we use empty lines instead to delimiter responses?
-                    // if !fields.is_empty() && key.eq_ignore_ascii_case("COUNT") {
-                    //     self.next_element = el;
-                    //     break;
-                    // }
-
+                    // TODO: Check no duplicates.
                     fields.insert(key.to_ascii_uppercase(), value.unwrap_or("").to_string());
                 }
                 Element::Attribute { key, value } => {
@@ -81,6 +87,7 @@ impl<'a> std::iter::Iterator for ResponseIter<'a> {
                             cleared_attrs = true;
                         }
 
+                        // TODO: Check no duplicates.
                         self.last_attributes.insert(key.to_ascii_uppercase(), value.unwrap_or("").to_string());
 
                     } else {
@@ -102,7 +109,8 @@ impl<'a> std::iter::Iterator for ResponseIter<'a> {
             return None;
         }
 
-        Some(Ok(Response {
+        Some(Ok(ResponseBlock {
+            new_attributes: cleared_attrs,
             attributes: self.last_attributes.clone(),
             fields
         }))
@@ -140,7 +148,8 @@ Oranges = Tasty"#.to_string());
 
         let mut iter = file.iter();
 
-        assert_eq!(iter.next().unwrap().unwrap(), Response {
+        assert_eq!(iter.next().unwrap().unwrap(), ResponseBlock {
+            new_attributes: true,
             attributes: map! {
                 "APPLES" => "12",
                 "ORANGES" => "4"
@@ -152,7 +161,8 @@ Oranges = Tasty"#.to_string());
             }
         });
 
-        assert_eq!(iter.next().unwrap().unwrap(), Response {
+        assert_eq!(iter.next().unwrap().unwrap(), ResponseBlock {
+            new_attributes: false,
             attributes: map! {
                 "APPLES" => "12",
                 "ORANGES" => "4"
@@ -165,7 +175,8 @@ Oranges = Tasty"#.to_string());
             }
         });
 
-        assert_eq!(iter.next().unwrap().unwrap(), Response {
+        assert_eq!(iter.next().unwrap().unwrap(), ResponseBlock {
+            new_attributes: true,
             attributes: map! {
                 "ENCRYPT" => ""
             },

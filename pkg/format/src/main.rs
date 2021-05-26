@@ -29,8 +29,8 @@ impl<N, R, C, T: Matrix<N, R, C>> Mul for T {
 }
 
 fn main() -> Result<()> {
-    // let jpeg = JPEG::open("/home/dennis/workspace/dacha/testdata/lena.jpg")?;
-    // let bmp = Bitmap::open("/home/dennis/workspace/dacha/testdata/valve.bmp")?;
+    // let jpeg = JPEG::open(project_path!("testdata/lena.jpg"))?;
+    // let bmp = Bitmap::open(project_path!("testdata/valve.bmp"))?;
     // display(&bmp.image.to_grayscale());
 
     // let edges = CannyEdgeDetector::detect(&bmp.image);
