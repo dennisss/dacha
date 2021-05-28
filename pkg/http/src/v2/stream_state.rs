@@ -1,7 +1,11 @@
 use crate::v2::types::*;
 
 /// Variable state associated with the stream.
-/// NOTE: 
+///
+/// This object defines which of the stream states (as defined in the RFC) the
+/// stream is currently in. Note that we do not maintain a StreamState for idle
+/// streams.
+///
 /// TODO: Split into reader and writer states 
 pub struct StreamState {
     /// Error state of the stream. If present, then this stream was abruptly closed.
@@ -42,14 +46,26 @@ pub struct StreamState {
     /// max for this as that may be an insanely large number)
     pub sending_buffer: Vec<u8>,
 
-    /// If true, 'sending_buffer' contains the last remaining data that needs to be sent through
-    /// this stream.
+    // pub 
+
+    /// If true, 'sending_buffer' and 'sending_trailers' contains the last
+    /// remaining data that needs to be sent through this stream.
     pub sending_at_end: bool,
 }
 
 impl StreamState {
-    // pub fn is_closed(&self) -> bool {
+    /// TODO: This will change if we allow sending trailers?
+    pub fn is_closed(&self) -> bool {
+        if self.error.is_some() {
+            return true;
+        }
 
-    // }
+        // Unless all of the data is actually sent, we can't consider it closed.
+        if !self.sending_at_end || !self.sending_buffer.is_empty() {
+            return false;
+        }
+
+        self.received_end_of_stream
+    }
 
 }

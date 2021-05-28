@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use common::bytes::{Buf, Bytes};
 use common::errors::*;
 use parsing::binary::*;
@@ -13,6 +15,11 @@ use super::parsing::*;
 
 // TODO: Implement ec_point_formats with just 'uncompressed' being send in
 // client hello
+
+// TODO: 'There MUST NOT be more than one extension of the same type.'
+
+// TODO: Validate which extensions are allowed to go in which message types.
+
 
 /*
 struct {
@@ -35,6 +42,8 @@ pub enum Extension {
     SignatureAlgorithmsCert(SignatureSchemeList),
 
     KeyShareClientHello(KeyShareClientHello),
+
+    /// TODO: It is difficult to have this. 
     KeyShareHelloRetryRequest(KeyShareHelloRetryRequest),
     KeyShareServerHello(KeyShareServerHello),
 
@@ -42,10 +51,6 @@ pub enum Extension {
 
     Unknown { typ: u16, data: Bytes },
 }
-
-// TODO: 'There MUST NOT be more than one extension of the same type.'
-
-// TODO: Validate which extensions are allowed to go in which message types.
 
 impl Extension {
     pub fn parse(input: Bytes, msg_type: HandshakeType) -> ParseResult<Self> {
@@ -156,6 +161,62 @@ impl Extension {
         Ok(())
     }
 }
+
+/*
+    which MUST be the last extension in the ClientHello
+*/
+
+/*
+pub struct ExtensionsCollection {
+    /// Map of ExtensionType to Extension
+    data: HashMap<u16, Extension>
+}
+
+macro_rules! extension_accessor {
+    ($name:ident, $typ:ident, $case:ident, $ret:ident) => {
+        pub fn $name(&self) -> Option<&$ret> {
+            match self.data.get(&ExtensionType::$typ.to_u16()) {
+                Some(e) => {
+                    match e {
+                        Extension::$case(v) => Some(v),
+                        _ => None
+                    }
+                }
+                None => None 
+            }
+        }
+    };
+}
+
+impl ExtensionsCollection {
+    extension_accessor!(server_name, ServerName, ServerName, ServerNameList);
+    extension_accessor!(max_fragment_length, MaxFragmentLength, MaxFragmentLength, MaxFragmentLength);
+    extension_accessor!(supported_groups, SupportedGroups, SupportedGroups, NamedGroupList);
+    extension_accessor!(signature_algorithms, SignatureAlgorithms, SignatureAlgorithms, SignatureSchemeList);
+    extension_accessor!(supported_versions_client_hello, SupportedVersions, SupportedVersionsClientHello, SupportedVersionsClientHello);
+    extension_accessor!(supported_versions_server_hello, SupportedVersions, SupportedVersionsServerHello, SupportedVersionsServerHello);
+    extension_accessor!(cookie, Cookie, Cookie, Cookie);
+    extension_accessor!(key_share_client_hello, KeyShare, KeyShareClientHello, KeyShareClientHello);
+    extension_accessor!(key_share_server_hello, KeyShare, KeyShareServerHello, KeyShareServerHello);
+    extension_accessor!(alpn, ALPN, ALPN, ProtocolNameList);
+
+    // TODO: Is this wrong. How do we know that it is a retry request here?
+    // KeyShareHelloRetryRequest(KeyShareHelloRetryRequest),
+    // KeyShareServerHello(KeyShareServerHello),
+}
+*/
+
+
+/*
+ExtensionsCollection
+
+- HashMap<ExtensionType, Extension value>
+
+- But we also what it is be deterministic / sorted.
+- BtreeMap
+
+
+*/
 
 #[derive(Debug)]
 pub enum ExtensionType {
@@ -278,7 +339,7 @@ impl ExtensionType {
             KeyShare => {
                 msg_type == ClientHello
                     || msg_type == ServerHello
-                    || msg_type == HelloRetryRequest
+                 //   || msg_type == HelloRetryRequest
             }
             PreSharedKey => (msg_type == ClientHello || msg_type == ServerHello),
             PskKeyExchangeModes => (msg_type == ClientHello),
@@ -287,11 +348,11 @@ impl ExtensionType {
                     || msg_type == EncryptedExtensions
                     || msg_type == NewSessionTicket
             }
-            Cookie => (msg_type == ClientHello || msg_type == HelloRetryRequest),
+            Cookie => (msg_type == ClientHello /* || msg_type == HelloRetryRequest */),
             SupportedVersions => {
                 msg_type == ClientHello
                     || msg_type == ServerHello
-                    || msg_type == HelloRetryRequest
+                //  || msg_type == HelloRetryRequest
             }
             CertificateAuthorities => (msg_type == ClientHello || msg_type == Certificate),
             OidFilters => (msg_type == Certificate),
@@ -872,9 +933,9 @@ fn parse_key_share(input: Bytes, msg_type: HandshakeType) -> ParseResult<Extensi
         HandshakeType::ClientHello => map(KeyShareClientHello::parse, |v| {
             Extension::KeyShareClientHello(v)
         })(input),
-        HandshakeType::HelloRetryRequest => map(KeyShareHelloRetryRequest::parse, |v| {
-            Extension::KeyShareHelloRetryRequest(v)
-        })(input),
+        // HandshakeType::HelloRetryRequest => map(KeyShareHelloRetryRequest::parse, |v| {
+        //     Extension::KeyShareHelloRetryRequest(v)
+        // })(input),
         HandshakeType::ServerHello => map(KeyShareServerHello::parse, |v| {
             Extension::KeyShareServerHello(v)
         })(input),

@@ -6,9 +6,8 @@ use common::io::{Writeable, Readable};
 use common::async_std::channel;
 use common::async_std::sync::Mutex;
 use common::async_std::task;
-use common::futures::select;
 use common::chrono::prelude::*;
-use parsing::ascii::AsciiString;
+use common::task::ChildTask;
 
 use crate::v2::types::*;
 use crate::v2::body::*;
@@ -46,7 +45,7 @@ const MAX_ENCODER_TABLE_SIZE: usize = 8192;
 
 /// Amount of time after which we'll close the connection if we don't receive an acknowledment to our
 /// 
-const SETTINGS_ACK_TIMEOUT_SECS: usize = 10;
+const SETTINGS_ACK_TIMEOUT_SECS: u64 = 10;
 
 const UPGRADE_STREAM_ID: StreamId = 1;
 
@@ -154,10 +153,6 @@ impl ConnectionInitialState {
 // TODO: Should we support allowing the connection itself to stay half open.
 
 /// A single HTTP2 connection to a remote endpoint.
-///
-/// NOTE: This is not a complete HTTP Client/Server interface as it is mainly focused
-/// on implementing the protocol details and doesn't handle transfer level details like
-/// Content-Length or Transfer-Encoding, etc. 
 pub struct Connection {
     shared: Arc<ConnectionShared>
 }
@@ -190,14 +185,12 @@ impl Connection {
                     remote_header_decoder: hpack::Decoder::new(
                         local_settings[SettingId::HEADER_TABLE_SIZE] as usize),
                     local_settings: local_settings.clone(),
-                    local_settings_sent_time: None,
+                    local_settings_ack_waiter: None,
                     local_pending_settings: local_settings.clone(),
                     local_connection_window: INITIAL_CONNECTION_WINDOW_SIZE,
-                    // local_connection_window: local_settings[SettingId::INITIAL_WINDOW_SIZE] as WindowSize,
                     remote_settings: remote_settings.clone(),
                     remote_settings_known: false,
                     remote_connection_window: INITIAL_CONNECTION_WINDOW_SIZE,
-                    // remote_connection_window: remote_settings[SettingId::INITIAL_WINDOW_SIZE] as WindowSize,
                     last_received_stream_id: 0,
                     last_sent_stream_id: 0,
                     streams: HashMap::new()
@@ -296,7 +289,7 @@ impl Connection {
 
         stream.outgoing_response_handler = Some(outgoing_body);
 
-        stream.processing_tasks.push(task::spawn(self.shared.clone().request_handler_driver(
+        stream.processing_tasks.push(ChildTask::spawn(self.shared.clone().request_handler_driver(
             UPGRADE_STREAM_ID, request)));
 
         connection_state.streams.insert(UPGRADE_STREAM_ID, stream);
@@ -333,6 +326,7 @@ impl Connection {
 
         // TODO: Check if the connection is still alive before shipping out the request.
 
+        // TODO: Instead lcok and enqueu the request.
         self.shared.connection_event_channel.0.send(ConnectionEvent::SendRequest {
             request,
             response_handler: Box::new(sender)
@@ -403,8 +397,6 @@ struct ConnectionShared {
     /// TODO: Make this a bounded channel?
     connection_event_channel: (channel::Sender<ConnectionEvent>, channel::Receiver<ConnectionEvent>),
 
-    // remote_settings_known_channel: (channel::Sender<ConnectionEvent>, )
-
     // Stream ids can't be re-used.
     // Also, stream ids can't be 
 }
@@ -460,7 +452,8 @@ impl ConnectionShared {
 
     // TODO: According to RFC 7540 Section 4.1, undefined flags should be left as zeros.
 
-    async fn recv_reset_stream(&self, stream_id: StreamId, error: ProtocolErrorV2) -> Result<()> {
+    // TODO: Verify that this is never called when we already have a lock?
+    async fn recv_reset_stream(&self, stream_id: StreamId, error: ProtocolErrorV2) {
         let mut connection_state = self.state.lock().await;
 
         let mut stream = {
@@ -468,7 +461,7 @@ impl ConnectionShared {
                 stream
             } else {
                 // Ignore requests for already closed streams.
-                return Ok(())
+                return;
             }
         };
 
@@ -491,10 +484,10 @@ impl ConnectionShared {
         stream_state.received_buffer.clear();
         stream_state.sending_buffer.clear();
 
-        while let Some(handle) = stream.processing_tasks.pop() {
-            // TODO: Do I need to task::spawn() this?
-            handle.cancel();
-        }
+        // while let Some(handle) = stream.processing_tasks.pop() {
+        //     // TODO: Do I need to task::spawn() this?
+        //     handle.cancel();
+        // }
 
         // If the error happened before response headers will received by a client, response with an error.
         // TODO: Also need to notify the requester of whether or not the request is trivially retryable
@@ -509,16 +502,15 @@ impl ConnectionShared {
 
         // Notify all reader/writer threads that the stream is dead.
         // TODO: Handle errors on all these things.
-        stream.read_available_notifier.send(()).await;
-        stream.write_available_notifier.send(()).await;
-
-        Ok(())
+        let _ = stream.read_available_notifier.try_send(());
+        let _ = stream.write_available_notifier.try_send(());
     }
 
     async fn send_reset_stream(&self, stream_id: StreamId, error: ProtocolErrorV2) -> Result<()> {
-        self.recv_reset_stream(stream_id, error.clone());
+        self.recv_reset_stream(stream_id, error.clone()).await;
         
         // Notify the writer thread that to let the other endpoint know that the stream should be killed.
+        // TODO: Do we care if this fails?
         self.connection_event_channel.0.send(ConnectionEvent::ResetStream { stream_id, error }).await;
 
         Ok(())
@@ -537,6 +529,27 @@ impl ConnectionShared {
     // is malformed (stream error PROTOCOL_ERROR)
 
 
+    /// Performs cleanup on a stream which is gracefully closing with both endpoints having sent a frame
+    /// with an END_STREAM flag.
+    fn finish_stream(&self, connection_state: &mut ConnectionState, stream_id: StreamId) {
+        println!("CLOSING STREAM");
+
+        // TODO: Verify that there are no cyclic references to Arc<StreamState> (otherwise the stream state may never get freed)
+        connection_state.streams.remove(&stream_id);
+
+        // If we are in a graceful shutdown mode, trigger a full shutdown once we have
+        // completed all streams.
+        //
+        // TODO: What should we do about promised streams?
+        //
+        // NOTE: If connection_state.error is not None, then it's likely an OK error, because we
+        // close the connection immediately on other types of errors.
+        if connection_state.error.is_some() && connection_state.streams.is_empty() {
+            println!("CLOSING CONNECTION");
+            let _ = self.connection_event_channel.0.try_send(ConnectionEvent::Closing { error: None });
+        }
+    }
+
     /// Runs the thread that is the exlusive reader of incoming data from the raw connection.
     ///
     /// Internal Error handling:
@@ -551,7 +564,8 @@ impl ConnectionShared {
         
         match result {
             Ok(()) => {
-                let _ = self.connection_event_channel.0.send(ConnectionEvent::Closing).await;
+                // TODO: Will this ever happen?
+                let _ = self.connection_event_channel.0.send(ConnectionEvent::Closing { error: None }).await;
             }
             Err(e) => {
                 // TODO: Improve reporting of these errors up the call chain.
@@ -560,7 +574,9 @@ impl ConnectionShared {
                 let proto_error = if let Some(e) = e.downcast_ref::<ProtocolErrorV2>() {
                     // We don't need to send a GOAWAY from remotely generated errors.
                     if !e.local {
-                        let _ = self.connection_event_channel.0.send(ConnectionEvent::Closing).await;
+                        let _ = self.connection_event_channel.0.send(ConnectionEvent::Closing {
+                            error: Some(e.clone())
+                        }).await;
                         return;
                     }
 
@@ -760,10 +776,15 @@ impl ConnectionShared {
                     stream_state.local_window += header_frame.length as WindowSize;
 
 
-                    stream_state.received_end_of_stream = data_flags.end_stream;
-                    stream_state.received_buffer.extend_from_slice(&data_frame.data);
+                    stream.receive_data(&data_frame.data, data_flags.end_stream, &mut stream_state);
 
-                    let _ = stream.read_available_notifier.try_send(());
+                    let stream_closed = stream_state.is_closed();
+                    drop(stream_state);
+                    drop(stream);
+
+                    if stream_closed {
+                        self.finish_stream(&mut connection_state, header_frame.stream_id);
+                    }
                 }
                 FrameType::HEADERS => {
                     let headers_flags = HeadersFrameFlags::parse_complete(&[header_frame.flags])?;
@@ -809,7 +830,7 @@ impl ConnectionShared {
                     }
 
                     {
-                        let mut connection_state = self.state.lock().await;
+                        let connection_state = self.state.lock().await;
                         if (self.is_local_stream_id(header_frame.stream_id) && header_frame.stream_id > connection_state.last_sent_stream_id) ||
                             (self.is_remote_stream_id(header_frame.stream_id) && header_frame.stream_id > connection_state.last_received_stream_id) {
                             return Err(ProtocolErrorV2 {
@@ -826,7 +847,7 @@ impl ConnectionShared {
                         code: rst_stream_frame.error_code,
                         message: "",
                         local: true
-                    }).await?;
+                    }).await;
                 }
                 FrameType::SETTINGS => {
                     if header_frame.stream_id != 0 {
@@ -859,7 +880,10 @@ impl ConnectionShared {
                             }.into());
                         }
 
-                        if connection_state.local_settings_sent_time.is_none() {
+                        if let Some(waiter) = connection_state.local_settings_ack_waiter.take() {
+                            // Stop waiting
+                            drop(waiter);
+                        } else {
                             return Err(ProtocolErrorV2 {
                                 code: ErrorCode::PROTOCOL_ERROR,
                                 message: "Received SETTINGS ACK while no settings where pending ACK",
@@ -869,7 +893,6 @@ impl ConnectionShared {
 
                         // TODO: Apply any other state changes that are needed.
                         connection_state.local_settings = connection_state.local_pending_settings.clone();
-                        connection_state.local_settings_sent_time = None;
                     } else {
 
                         let mut header_table_size = None;
@@ -967,6 +990,9 @@ impl ConnectionShared {
 
                     let mut connection_state = self.state.lock().await;
 
+                    // TODO: We need to be much more consistent about always setting this.
+                    // TODO: We need to uphold the gurantee that while this is None, an incoming request is guranteed to be
+                    // processed.
                     // TODO: Verify that once this is set, we won't generate any new streams.
                     connection_state.error = Some(ProtocolErrorV2 {
                         code: goaway_frame.error_code,
@@ -1092,8 +1118,7 @@ impl ConnectionShared {
 
                 if self.is_server {
                     if !self.is_remote_stream_id(received_headers.stream_id) ||
-                       received_headers.stream_id < connection_state.last_received_stream_id ||
-                       connection_state.streams.contains_key(&received_headers.stream_id) {
+                       received_headers.stream_id < connection_state.last_received_stream_id {
                         return Err(ProtocolErrorV2 {
                             code: ErrorCode::PROTOCOL_ERROR,
                             message: "Headers block received on non-new remotely initialized stream",
@@ -1107,6 +1132,35 @@ impl ConnectionShared {
                         return Ok(());
                     }
 
+                    // If receiving headers on an existing stream, this is trailers.
+                    // TODO: This could also happen if we performed a 'push promise' and we are receiving data.
+                    if let Some(stream) = connection_state.streams.get(&received_headers.stream_id) {
+                        if !end_stream {
+                            // TODO: Make this a stream error?
+                            return Err(err_msg("Received trailers for request without closing stream"));
+                        }
+
+                        let mut state = stream.state.lock().await;
+                        if state.received_end_of_stream {
+                            // TODO: Make this a stream error?
+                            return Err(err_msg("Already received end of stream"));
+                        }
+
+                        stream.receive_data(&[], end_stream, &mut state);
+
+                        // TODO: Send out the trailers here.
+
+                        if state.is_closed() {
+                            drop(state);
+                            self.finish_stream(&mut connection_state, received_headers.stream_id);
+                        }
+
+                        return Ok(());
+                    }
+
+                    // When receiving headers on server,
+                    // - end stream means the remote stream is done.
+
                     // TODO: Only do this if the stream is successfully started?
                     connection_state.last_received_stream_id = received_headers.stream_id;
 
@@ -1119,6 +1173,14 @@ impl ConnectionShared {
 
                     let head = process_request_head(headers)?;
 
+                    // 8.1.2.2
+                    // Verify that there are no HTTP 1 connection level headers exist.
+                    if head.headers.find(crate::header::CONNECTION).next().is_some() ||
+                       head.headers.find(crate::header::TRANSFER_ENCODING).next().is_some() {
+                        // TODO: Make this a stream error
+                        return Err(err_msg("Received HTTP 1 connection level headers"));
+                    }
+
                     // TODO: I will also need to verify things like whether or not a Transfer-Encoding is given (which is
                     // limited when )
                     if let Some(len) = crate::header_syntax::parse_content_length(&head.headers)? {
@@ -1127,7 +1189,6 @@ impl ConnectionShared {
 
                         incoming_body.expected_length = Some(len);
                     }
-                    // TODO: Verify that Transfer-Encoding header isn't used (not allowed when Content-Length is present).
 
                     let request = Request {
                         // TODO: Convert these to stream errors if possible?
@@ -1136,9 +1197,13 @@ impl ConnectionShared {
                         body: Box::new(incoming_body)
                     };
 
+                    // NOTE: We don't need to check if the stream is closed as the local end hasn't even
+                    // been started yet.
+                    stream.receive_data(&[], end_stream, &mut *stream.state.lock().await);
+
                     stream.outgoing_response_handler = Some(outgoing_body);
 
-                    stream.processing_tasks.push(task::spawn(self.clone().request_handler_driver(
+                    stream.processing_tasks.push(ChildTask::spawn(self.clone().request_handler_driver(
                         received_headers.stream_id, request)));
 
                     connection_state.streams.insert(received_headers.stream_id, stream);
@@ -1168,23 +1233,46 @@ impl ConnectionShared {
 
                     // TODO: Maybe update priority
 
-                    let (response_handler, incoming_body) = match stream.incoming_response_handler.take() {
-                        Some(v) => v,
-                        None => {
+                    let stream_closed;
+                    {
+                        let mut stream_state = stream.state.lock().await;
+                        if stream_state.received_end_of_stream {
+                            // TODO: Send a stream error.
+                        }
+                        
+                        stream.receive_data(&[], end_stream, &mut stream_state);
+
+                        stream_closed = stream_state.is_closed();
+                    }
+
+                    if let Some((response_handler, incoming_body)) =
+                        stream.incoming_response_handler.take() {
+                        // TODO: Apply Content-Length, verify no connection level headers, etc.
+
+                        let response = Response {
+                            head: process_response_head(headers)?,
+                            body: Box::new(incoming_body)
+                        };
+
+                        response_handler.handle_response(Ok(response)).await;
+
+                    } else {
+                        // Otherwise we just received trailers.
+                        if !end_stream {
+                            // TODO: Pick a bigger type of error
                             return Err(ProtocolErrorV2 {
                                 code: ErrorCode::PROTOCOL_ERROR,
-                                message: "Received headers while not waiting for a response",
+                                message: "Expected trailers to end the stream",
                                 local: true
                             }.into());
                         }
-                    };
 
-                    let response = Response {
-                        head: process_response_head(headers)?,
-                        body: Box::new(incoming_body)
-                    };
+                        // Send the trailers out here.
+                    }
 
-                    response_handler.handle_response(Ok(response)).await;
+                    if stream_closed {
+                        self.finish_stream(&mut connection_state, received_headers.stream_id);
+                    }
                 }
             }
             ReceivedHeadersType::PushPromise { promised_stream_id } => {
@@ -1209,7 +1297,37 @@ impl ConnectionShared {
         // This will require us to validate the stream is still open, but this may help with latency.
     }
 
-    async fn run_write_thread(&self, mut writer: Box<dyn Writeable>, upgrade_payload: Option<Box<dyn Readable>>,) -> Result<()> {
+    async fn wait_for_settings_ack(self: Arc<Self>) {
+        common::wait_for(std::time::Duration::from_secs(SETTINGS_ACK_TIMEOUT_SECS)).await;
+
+        // NOTE: This
+        let error = ProtocolErrorV2 {
+            code: ErrorCode::SETTINGS_TIMEOUT,
+            message: "Settings took too long to be acknowledged",
+            local: true
+        };
+
+        let mut connection_state = self.state.lock().await;
+        if connection_state.error.is_some() {
+            // TODO: Also check that the error is not OK
+            return;
+        }
+
+        let last_stream_id = connection_state.last_received_stream_id;
+
+        connection_state.error = Some(error.clone());
+        drop(connection_state);
+
+        // TODO: Must coordinate this with the reader thread.
+        let _ = self.connection_event_channel.0.try_send(ConnectionEvent::Goaway {
+            last_stream_id,
+            error
+        });
+    }
+
+    async fn run_write_thread(
+        self: Arc<Self>, mut writer: Box<dyn Writeable>, upgrade_payload: Option<Box<dyn Readable>>
+    ) -> Result<()> {
         if let Some(mut reader) = upgrade_payload {
             let mut buf = [0u8; 4096];
             loop {
@@ -1221,22 +1339,23 @@ impl ConnectionShared {
             }
         }
 
+        if !self.is_server {
+            writer.write_all(CONNECTION_PREFACE).await?;
+        }
+
         let mut remote_settings_known;
 
         {
-            if !self.is_server {
-                writer.write_all(CONNECTION_PREFACE).await?;
-            }
-
             let mut state = self.state.lock().await;
 
             let mut payload = vec![];
             state.local_pending_settings.serialize_payload(&state.local_settings, &mut payload);
 
-            state.local_settings_sent_time = Some(Utc::now());
+            state.local_settings_ack_waiter = Some(ChildTask::spawn(self.clone().wait_for_settings_ack()));
             remote_settings_known = state.remote_settings_known;
             drop(state);
 
+            // Write out the initial settings frame.
             let mut frame = vec![];
             FrameHeader { length: payload.len() as u32, typ: FrameType::SETTINGS, flags: 0, reserved: 0, stream_id: 0 }
                 .serialize(&mut frame).unwrap();
@@ -1284,7 +1403,7 @@ impl ConnectionShared {
             if !remote_settings_known {
                 let allow = match event {
                     ConnectionEvent::AcknowledgeSettings { .. } => true,
-                    ConnectionEvent::Closing => true,
+                    ConnectionEvent::Closing { .. } => true,
                     ConnectionEvent::Goaway { .. } => true,
                     _ => false
                 };
@@ -1298,6 +1417,7 @@ impl ConnectionShared {
             println!("Got ConnectionEvent!");
 
             match event {
+                // TODO: Instead alwas enqueue requests and always 
                 ConnectionEvent::SendRequest { request, response_handler } => {
                     // TODO: Only allow if we are a client.
                     
@@ -1338,7 +1458,7 @@ impl ConnectionShared {
                         } else {
                             // NOTE: Because we are still blocking the writing thread later down in this function,
                             // this won't trigger DATA frames to be sent until the HEADERS frame will be sent.
-                            stream.processing_tasks.push(task::spawn(outgoing_body.run(request.body)));
+                            stream.processing_tasks.push(ChildTask::spawn(outgoing_body.run(request.body)));
                             false
                         }
                     };
@@ -1403,7 +1523,7 @@ impl ConnectionShared {
                         } else {
                             // NOTE: Because we are still blocking the writing thread later down in this function,
                             // this won't trigger DATA frames to be sent until the HEADERS frame will be sent.
-                            stream.processing_tasks.push(task::spawn(outgoing_body.run(response.body)));
+                            stream.processing_tasks.push(ChildTask::spawn(outgoing_body.run(response.body)));
                             false
                         }
                     };
@@ -1420,13 +1540,33 @@ impl ConnectionShared {
                                         max_remote_frame_size).await?;
 
                 }
-                ConnectionEvent::Closing => {
-                    // TODO: this should receive an event from the other thread.
-                    return Ok(());
+                ConnectionEvent::Closing { error } => {
+                    if let Some(error) = error {
+                        return Err(error.into());
+                    } else {
+                        // Fully flush any outgoing packets.
+                        // TODO: Make the wait relative to the last write.
+                        // TODO: Ignore connection closed errors?
+                        writer.flush().await?;
+                        common::wait_for(std::time::Duration::from_secs(1));
+                        return Ok(());
+                    }
                 }
                 ConnectionEvent::Goaway { last_stream_id, error } => {
                     // TODO: Should we break out of the thread when we send this.
-                    writer.write_all(&frame_utils::new_goaway_frame(last_stream_id, error)).await?;
+                    writer.write_all(&frame_utils::new_goaway_frame(last_stream_id, error.clone())).await?;
+                    writer.flush().await?;
+                    common::wait_for(std::time::Duration::from_secs(1));
+
+                    if error.code == ErrorCode::NO_ERROR {
+                        let connection_state = self.state.lock().await;
+                        // TODO: Ensure that the read thread doesn't accept any more streams.
+                        if connection_state.streams.is_empty() {
+                            return Ok(());
+                        }
+                    } else {
+                        return Err(error.into());
+                    }
                 }
                 ConnectionEvent::AcknowledgeSettings { header_table_size } => {
                     if let Some(value) = header_table_size {
@@ -1457,8 +1597,8 @@ impl ConnectionShared {
                 }
                 // Write event:
                 // - Happens on either remote flow control updates or 
-                ConnectionEvent::StreamWrite { stream_id } => {
-                    let connection_state = self.state.lock().await;
+                ConnectionEvent::StreamWrite { .. } => {
+                    let mut connection_state = self.state.lock().await;
                 
                     let max_frame_size = connection_state.remote_settings[SettingId::MAX_FRAME_SIZE];
     
@@ -1469,34 +1609,46 @@ impl ConnectionShared {
                             break;
                         }
     
-                        // TODO: This will probably deadlock with other threads which lock the stream first.
                         let mut stream_state = stream.state.lock().await;
     
                         let min_window = std::cmp::min(
                             connection_state.remote_connection_window,
                             stream_state.remote_window) as usize;
     
-                        let n_raw = std::cmp::min(min_window, stream_state.received_buffer.len());
+                        let n_raw = std::cmp::min(min_window, stream_state.sending_buffer.len());
                         let n = std::cmp::min(n_raw, max_frame_size as usize);
                         
                         if n == 0 {
                             continue;
                         }
     
-                        let remaining = stream_state.received_buffer.split_off(n);
-                        next_frame = Some((*stream_id, stream_state.received_buffer.clone()));
-                        stream_state.received_buffer = remaining;
+                        let remaining = stream_state.sending_buffer.split_off(n);
+                        let frame_data = stream_state.sending_buffer.clone();
+                        stream_state.sending_buffer = remaining;
 
                         let _ = stream.write_available_notifier.try_send(());
+
+                        let stream_closed = stream_state.is_closed();
+                        drop(stream_state);
+
+                        next_frame = Some((*stream_id, frame_data, stream_closed));
+
                         break;
                     }
-    
-                    // Drop all locks.
-                    drop(connection_state);
+
+                    // TODO: Should we ignore stream errors if the stream is already marked as closed based on
+                    // received_at_end and sending_at_end
     
                     // Write out the next frame.
                     // TODO: To avoid so much copying, consider never sending until we have one full 'chunk' of data.
-                    if let Some((stream_id, frame_data)) = next_frame {
+                    if let Some((stream_id, frame_data, stream_closed)) = next_frame {
+                        if stream_closed {
+                            self.finish_stream(&mut connection_state, stream_id);
+                        }
+
+                        // Ensure all locks are dropped before we perform a blocking write.
+                        drop(connection_state);
+
                         let frame = frame_utils::new_data_frame(stream_id, frame_data);
                         writer.write_all(&frame).await?;
                     }

@@ -144,9 +144,13 @@ impl Client {
 
         if self.is_secure {
             let mut client_options = crypto::tls::options::ClientOptions::recommended();
+            // TODO: 
             client_options.hostname = "google.com".into();
             client_options.alpn_ids.push("h2".into());
             client_options.alpn_ids.push("http/1.1".into());
+
+            // TODO: Require that this by exported to a client level setting.
+            client_options.trust_server_certificate = true;
 
             let mut tls_client = crypto::tls::client::Client::new();
 
@@ -188,7 +192,7 @@ impl Client {
 
         // Attempt to upgrade to HTTP2 over clear text.
         if !self.is_secure {
-            let mut local_settings = crate::v2::SettingsContainer::default();
+            let local_settings = crate::v2::SettingsContainer::default();
 
             let mut connection_options = vec![];
             connection_options.push(crate::headers::connection::ConnectionOption::Unknown(

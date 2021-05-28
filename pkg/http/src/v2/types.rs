@@ -37,4 +37,4 @@ impl std::fmt::Display for ProtocolErrorV2 {
     }
 }
 
-pub type ProtocolResult<T> = std::result::Result<T, ProtocolErrorV2>;
+pub type ProtocolResultV2<T> = std::result::Result<T, ProtocolErrorV2>;

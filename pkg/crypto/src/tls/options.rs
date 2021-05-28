@@ -35,6 +35,14 @@ pub struct ClientOptions {
     
     /// Supported algorithms to use when verifying certificates.
     pub supported_signature_algorithms: Vec<SignatureScheme>,
+
+    /// If true, we will allow trust self-signed server certificates which
+    /// aren't in our root of trust registry.
+    ///
+    /// All other checks such as the certificate chain having valid signatures,
+    /// the certificate being valid at the current point in time, etc. will
+    /// apply. 
+    pub trust_server_certificate: bool
 }
 
 impl ClientOptions {
@@ -69,6 +77,8 @@ impl ClientOptions {
                 SignatureScheme::rsa_pkcs1_sha256,
                 SignatureScheme::rsa_pss_rsae_sha256,
             ],
+
+            trust_server_certificate: false
         }
     }
 }

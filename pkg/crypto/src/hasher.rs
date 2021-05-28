@@ -23,6 +23,11 @@ pub trait Hasher: Send {
     /// construction of this struct).
     fn finish(&self) -> Vec<u8>;
 
+    fn finish_with(&mut self, data: &[u8]) -> Vec<u8> {
+        self.update(data);
+        self.finish()
+    }
+
     /// Should create a cloned copy of this hasher such that the new and old
     /// hashers effectively have also data seen by update() applied already. 
     fn box_clone(&self) -> Box<dyn Hasher>;

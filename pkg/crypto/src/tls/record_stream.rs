@@ -17,30 +17,6 @@ pub enum Message {
     ApplicationData(Bytes),
 }
 
-pub struct HandshakeState {
-    /// NOTE: This is updated internally in the RecordStream.
-    ///
-    /// TODO: When we read KeyUpdate messages, we don't care about them updating the transcript.
-    pub transcript: Transcript,
-
-    /// Bytes of a partial handshake message which haven't been able to be
-    /// parse. This is used to support coalescing/splitting of handshake
-    /// messages in one or more messages.
-    ///
-    /// TODO: If this is non-empty, then we can't change keys and receive other
-    /// types of messages.
-    handshake_buf: Bytes,
-}
-
-impl HandshakeState {
-    pub fn new() -> Self {
-        Self {
-            handshake_buf: Bytes::new(),
-            transcript: Transcript::new(),
-        }
-    }
-}
-
 
 // We can just have atomic counters to deal with key updates and avoid half locking
 // TODO: If we do have a split interface, then we need to ensure that if there is a fatal processing
@@ -54,29 +30,54 @@ pub struct RecordReader {
     /// Cipher parameters used by the remote endpoint to encrypt records.
     /// Initially this is empty meaning that no encryption is expected.
     /// This should always be set after the handshake is complete.
-    pub remote_cipher_spec: Option<CipherEndpointSpec>
+    remote_cipher_spec: Option<CipherEndpointSpec>,
+
+    /// Bytes of a partial handshake message which haven't been able to be
+    /// parse. This is used to support coalescing/splitting of handshake
+    /// messages in one or more messages.
+    ///
+    /// TODO: If this is non-empty, then we can't change keys and receive other
+    /// types of messages.
+    handshake_buffer: Bytes
 }
 
 impl RecordReader {
     pub fn new(reader: Box<dyn Readable>) -> Self {
-        Self { reader, remote_cipher_spec: None }
+        Self { reader, remote_cipher_spec: None, handshake_buffer: Bytes::new() }
+    }
+
+    pub fn set_remote_cipher_spec(&mut self, remote_cipher_spec: CipherEndpointSpec) -> Result<()> {
+        if !self.handshake_buffer.is_empty() {
+            return Err(err_msg("Key change across a partial handshake message"))
+        }
+
+        self.remote_cipher_spec = Some(remote_cipher_spec);
+        Ok(())
+    }
+
+    pub fn replace_remote_key(&mut self, traffic_secret: Bytes) -> Result<()> {
+        let cipher_spec = self.remote_cipher_spec
+            .as_mut().ok_or_else(|| err_msg("Cipher spec not set yet"))?;
+        cipher_spec.replace_key(traffic_secret);
+        Ok(())
     }
 
     /// Recieves the next full message from the socket.
     /// In the case of handshake messages, this message may span multiple previous/future records.
-    pub async fn recv(&mut self, mut handshake_state: Option<&mut HandshakeState>) -> Result<Message> {
+    ///
+    /// During the initial handshake, the 'transcript' can also be passed and the
+    /// reader will append the raw bytes of any handshake message received.
+    pub async fn recv(&mut self, transcript: Option<&mut Transcript>) -> Result<Message> {
         // Partial data received for a handshake message. Handshakes may be
         // split between consecutive records.
         let mut handshake_buf = BytesMut::new();
 
         let mut previous_handshake_record = None;
-        if let Some(state) = handshake_state.as_mut() {
-            if state.handshake_buf.len() > 0 {
-                previous_handshake_record = Some(RecordInner {
-                    typ: ContentType::Handshake,
-                    data: state.handshake_buf.split_off(0),
-                });
-            }
+        if self.handshake_buffer.len() > 0 {
+            previous_handshake_record = Some(RecordInner {
+                typ: ContentType::Handshake,
+                data: self.handshake_buffer.split_off(0),
+            });
         }
 
         loop {
@@ -114,18 +115,13 @@ impl RecordReader {
                         }
                     };
 
-                    let state = if let Some(s) = handshake_state {
-                        s
-                    } else {
-                        return Err(err_msg("Not currently performing a handshake"));
-                    };
-
                     // Append to transcript ignoring any padding
-                    state
-                        .transcript
-                        .push(handshake_data.slice(0..(handshake_data.len() - rest.len())));
+                    if let Some(transcript) = transcript {
+                        transcript
+                            .push(handshake_data.slice(0..(handshake_data.len() - rest.len())));
+                    }
 
-                    state.handshake_buf = rest;
+                    self.handshake_buffer = rest;
 
                     (Message::Handshake(val), Bytes::new())
                 }
@@ -260,13 +256,15 @@ impl RecordWriter {
     pub async fn send_handshake(
         &mut self,
         msg: Handshake,
-        state: &mut HandshakeState,
+        transcript: Option<&mut Transcript>,
     ) -> Result<()> {
         let mut data = vec![];
         msg.serialize(&mut data);
         let buf = Bytes::from(data);
 
-        state.transcript.push(buf.clone());
+        if let Some(transcript) = transcript {
+            transcript.push(buf.clone());
+        }
 
         self.send_record(RecordInner {
             typ: ContentType::Handshake,

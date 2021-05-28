@@ -161,7 +161,7 @@ fn wrap_created_body(
     body: Box<dyn Body>, reader_returner: BorrowedReturner<PatternReader>, close_delimited: bool
 ) -> (Box<dyn Body>, Option<BodyReadCompletion>) {
     // TODO: Instead wrap the body so that when it returns a 0 or Error, we can relinguish the underlying body.
-    // (this will usually be much quicker than when we )
+    // (this will usually be much quicker than when we get back the entire body object)
 
     let (body, body_returner) = {
         if body.len() == Some(0) {

@@ -30,6 +30,7 @@ pub mod vec;
 pub mod const_default;
 pub mod pipe;
 pub mod borrowed;
+pub mod task;
 
 pub use async_trait::*;
 pub use lazy_static::*;
@@ -38,18 +39,18 @@ pub use failure::Fail;
 /// Gets the root directory of this project (the directory that contains the
 /// 'pkg' and '.git' directory).
 pub fn project_dir() -> std::path::PathBuf {
-    // 'cargo run' switches the directory to the running crate.
-    // so this will initially be something like '/home/.../dacha/pkg/http'
     let mut dir = std::env::current_dir().unwrap();
-    dir.pop(); // Remove the crate/package name.
-    dir.pop(); // Remove the 'pkg' dir.
-    // We should now be in a directory named 'dacha'.
+
+    while dir.file_name().unwrap() != "dacha" {
+        dir.pop();
+    }
     
     dir
 }
 
 #[macro_export]
 macro_rules! project_path {
+    // TODO: Assert that relpath is relative and not absolute.
     ($relpath:expr) => {
         $crate::project_dir().join($relpath)
     };

@@ -21,9 +21,7 @@ impl HMAC {
         if key.len() <= block_size {
             derived_key[0..key.len()].copy_from_slice(key);
         } else {
-            let mut h = hash.create();
-            h.update(key);
-            let key_hash = h.finish();
+            let key_hash = hash.create().finish_with(key);
             derived_key[0..key_hash.len()].copy_from_slice(&key_hash);
         };
 

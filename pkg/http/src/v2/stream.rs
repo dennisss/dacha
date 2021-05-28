@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common::async_std::task;
 use common::async_std::channel;
 use common::async_std::sync::Mutex;
+use common::task::ChildTask;
 
 use crate::response::ResponseHandler;
 use crate::v2::body::*;
@@ -10,12 +11,13 @@ use crate::v2::stream_state::*;
 
 /// Representation of an HTTP2 stream.
 ///
-/// NOTE: Stream objects are only created for non-idle streams. 
+/// Stream objects are only created for non-idle streams.
+/// Streams are owned by the ConnectionState object.  
 pub struct Stream {
     /// Internal state variables used by multiple threads.
     pub state: Arc<Mutex<StreamState>>,
 
-    /// Used to let the body object know that data is available to be read.
+    /// Used to let the IncomingStreamBody know that data is available to be read.
     pub read_available_notifier: channel::Sender<()>,
 
     /// Used to let the local thread that is processing this stream know that
@@ -37,7 +39,21 @@ pub struct Stream {
     /// stream due to protocol level errors.
     ///
     /// TODO: Ensure that this is ALWAYS cancelled when the stream or connection is garbage collected.
-    pub processing_tasks: Vec<task::JoinHandle<()>>,
+    pub processing_tasks: Vec<ChildTask>,
+}
+
+impl Stream {
+    /// Called whenever we successfully received a DATA frame or another frame
+    /// that has an END_STREAM flag.
+    pub fn receive_data(&self, data: &[u8], end_stream: bool, state: &mut StreamState) {
+        state.received_end_of_stream = end_stream;
+        state.received_buffer.extend_from_slice(&data);
+
+        // Notify the IncomingStreamBody if there was a change.
+        if !data.is_empty() || end_stream {
+            let _ = self.read_available_notifier.try_send(());
+        }
+    } 
 }
 
 /*

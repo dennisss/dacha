@@ -42,22 +42,21 @@ impl CipherEndpointSpec {
         self.traffic_secret = traffic_secret;
     }
 
-    // NOTE: This must be called under the same lock that sent/received the key
-    // change request to ensure no other messages are received/send under the
-    // old keys.
-    //
-    // NOTE: It's only valid to call this after the TLS handshake.
-    //
-    // application_traffic_secret_N+1 =
-    //        HKDF-Expand-Label(application_traffic_secret_N,
-    //                          "traffic upd", "", Hash.length)
-    pub fn update_key(&mut self, aead: &dyn AuthEncAD, hkdf: &HKDF) {
+    /// Switches to using the next application secret / keys. This should
+    /// correspond to sending / receiving a KeyUpdate.
+    ///
+    /// NOTE: It's only valid to call this after the TLS handshake.
+    ///
+    /// application_traffic_secret_N+1 =
+    ///        HKDF-Expand-Label(application_traffic_secret_N,
+    ///                          "traffic upd", "", Hash.length)
+    pub fn update_key(&mut self) {
         let next_secret = hkdf_expand_label(
-            &hkdf,
+            &self.hkdf,
             &self.traffic_secret,
             b"traffic upd",
             b"",
-            hkdf.hash_size() as u16,
+            self.hkdf.hash_size() as u16,
         )
         .into();
 

@@ -19,6 +19,17 @@ use crate::sha384::*;
 use crate::sha512::*;
 
 
+/*
+https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-4.pdf
+
+The lengths for p and q that are recommended for use in RSA signature algorithms are 512, 1024
+and 1536 bits; recall that n = pq, so the corresponding lengths for n are 1024, 2048 and 3072 bits,
+respectively
+
+
+*/
+
+
 // TODO: Follow everything outlined in https://tools.ietf.org/html/rfc8017
 
 macro_rules! ctor {

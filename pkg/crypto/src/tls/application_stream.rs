@@ -5,8 +5,11 @@ use common::errors::*;
 use common::io::{Readable, Writeable};
 use common::bytes::{Bytes, Buf};
 
+use crate::tls::handshake::Handshake;
 use crate::tls::record_stream::*;
 use crate::tls::handshake_summary::HandshakeSummary;
+
+// TODO: Must mention that these interfaces must be constantly polled for the connection to stay healthy?
 
 /// Abstraction around the raw TLS record layer for reading/writing application data.
 /// It buffers read bytes so that it can be used as a Readable / Writeable stream.
@@ -67,19 +70,25 @@ impl Readable for ApplicationDataReader {
             return Ok(nread);
         }
 
-        let msg = self.record_reader.recv(None).await?;
-        if let Message::ApplicationData(mut data) = msg {
-            let n = std::cmp::min(data.len(), buf.len());
-            buf[0..n].copy_from_slice(&data[0..n]);
-            nread += n;
-            data.advance(n);
+        loop {
+            let msg = self.record_reader.recv(None).await?;
+            if let Message::ApplicationData(mut data) = msg {
+                let n = std::cmp::min(data.len(), buf.len());
+                buf[0..n].copy_from_slice(&data[0..n]);
+                nread += n;
+                data.advance(n);
 
-            self.read_buffer = data;
+                self.read_buffer = data;
 
-            Ok(nread)
-        } else {
-            // TODO: Now in an error state. Future reads should fail?
-            Err(err_msg("Unexpected data seen on stream"))
+                return Ok(nread)
+            } else if let Message::Handshake(Handshake::NewSessionTicket(_)) = msg {
+                println!("IGNORING NEW SESSION TICKET");
+                continue;
+            } else {
+                println!("{:?}", msg);
+                // TODO: Now in an error state. Future reads should fail?
+                return Err(err_msg("Unexpected data seen on stream"));
+            }
         }
     }
 }

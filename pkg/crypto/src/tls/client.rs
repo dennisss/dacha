@@ -112,7 +112,7 @@ struct ClientHandshakeExecutor<'a> {
     reader: RecordReader,
     writer: RecordWriter,
 
-    handshake_state: HandshakeState,
+    handshake_transcript: Transcript,
 
     /// Secrets offered to the server in the last ClientHello sent.
     secrets: HashMap<NamedGroup, Vec<u8>>,
@@ -131,7 +131,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
             options,
             reader: RecordReader::new(reader),
             writer: RecordWriter::new(writer),
-            handshake_state: HandshakeState::new(),
+            handshake_transcript: Transcript::new(),
             secrets: HashMap::new(),
             certificate_registry: x509::CertificateRegistry::public_roots().await?,
             summary: HandshakeSummary::default()
@@ -150,25 +150,34 @@ impl<'a> ClientHandshakeExecutor<'a> {
             ClientHello::plain(&client_shares, self.options).await?   
         };
 
+        // TODO: Sometimes we should support sending multiple handshake messags in one frame
+        // (e.g. for certificate use-cases).
+
         self.writer.send_handshake(
-            Handshake::ClientHello(client_hello.clone()), &mut self.handshake_state)
+            Handshake::ClientHello(client_hello.clone()), Some(&mut self.handshake_transcript))
             .await?;
 
-        let state = ClientState::WaitServerHello;
+        println!("WAIT_SH");
 
         let (server_hello, key_schedule, hasher_factory) =
             self.wait_server_hello(client_hello).await?;
         self.process_received_extensions(&server_hello.extensions)?;
 
+        println!("WAIT_EE");
         self.wait_encrypted_extensions().await?;
 
         // TODO: Could receive either CertificateRequest or Certificate
 
+        println!("WAIT_CERT");
         let cert = self.wait_certificate().await?;
 
         self.wait_certificate_verify(&cert, &hasher_factory).await?;
         
+        println!("WAIT_FINISHED");
+
         self.wait_finished(key_schedule).await?;
+
+        println!("DONE");
 
         Ok(ApplicationStream::new(self.reader, self.writer, self.summary))
     }
@@ -193,7 +202,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
     async fn receive_handshake_message(&mut self) -> Result<Handshake> {
         loop {
-            let msg = self.reader.recv(Some(&mut self.handshake_state)).await?;
+            let msg = self.reader.recv(Some(&mut self.handshake_transcript)).await?;
 
             match msg {
                 Message::Handshake(m) => { return Ok(m); },
@@ -321,7 +330,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
                 // TODO: Update PSK?
 
                 self.writer.send_handshake(
-                    Handshake::ClientHello(client_hello.clone()), &mut self.handshake_state).await?;
+                    Handshake::ClientHello(client_hello.clone()), Some(&mut self.handshake_transcript)).await?;
 
                 // Wait for the ServerHello again.
                 last_server_hello = Some(server_hello);
@@ -375,7 +384,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
             key_schedule.handshake_secret(&shared_secret);
 
             let (client_handshake_traffic_secret, server_handshake_traffic_secret) = {
-                let s = key_schedule.handshake_traffic_secrets(&self.handshake_state.transcript);
+                let s = key_schedule.handshake_traffic_secrets(&self.handshake_transcript);
                 (
                     s.client_handshake_traffic_secret,
                     s.server_handshake_traffic_secret,
@@ -385,9 +394,6 @@ impl<'a> ClientHandshakeExecutor<'a> {
             // TODO: Use this?
             key_schedule.master_secret();
 
-            if !self.handshake_state.handshake_buf.is_empty() {
-                return Err(err_msg("Changing keys across a handshake message?"));
-            }
 
             self.writer.local_cipher_spec = Some(CipherEndpointSpec::new(
                 aead.clone(),
@@ -395,7 +401,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
                 client_handshake_traffic_secret.into()
             ));
 
-            self.reader.remote_cipher_spec = Some(CipherEndpointSpec::new(
+            self.reader.set_remote_cipher_spec(CipherEndpointSpec::new(
                 aead.clone(),
                 hkdf.clone(),
                 server_handshake_traffic_secret.into()
@@ -468,7 +474,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
         // NOTE: This will return an error if any of the certificates are invalid.
         // TODO: Technically we only need to ensure that the first one is valid.
-        self.certificate_registry.append(&cert_list, false)?;
+        self.certificate_registry.append(
+            &cert_list, self.options.trust_server_certificate)?;
 
         // Verify the terminal certificate is valid (MUST always be first).
 
@@ -484,8 +491,11 @@ impl<'a> ClientHandshakeExecutor<'a> {
             }
         }
 
-        if !cert_list[0].for_dns_name(&self.options.hostname)? {
-            return Err(err_msg("Certificate not valid for DNS name"));
+        // TODO: Remove the trust_server_certificate exception and instead always check this.
+        if !self.options.trust_server_certificate {
+            if !cert_list[0].for_dns_name(&self.options.hostname)? {
+                return Err(err_msg("Certificate not valid for DNS name"));
+            }
         }
 
         Ok(cert_list.remove(0))
@@ -493,7 +503,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
     async fn wait_certificate_verify(&mut self, cert: &x509::Certificate, hasher_factory: &HasherFactory) -> Result<()> {
         // Transcript hash for ClientHello through to the Certificate.
-        let ch_ct_transcript_hash = self.handshake_state.transcript.hash(&hasher_factory);
+        let ch_ct_transcript_hash = self.handshake_transcript.hash(&hasher_factory);
 
         let cert_verify = match self.receive_handshake_message().await? {
             Handshake::CertificateVerify(c) => c,
@@ -571,9 +581,9 @@ impl<'a> ClientHandshakeExecutor<'a> {
     }
 
     async fn wait_finished(&mut self, key_schedule: KeySchedule) -> Result<()> {
-        let verify_data_server = key_schedule.verify_data_server(&self.handshake_state.transcript);
+        let verify_data_server = key_schedule.verify_data_server(&self.handshake_transcript);
 
-        let finished = match self.reader.recv(Some(&mut self.handshake_state)).await? {
+        let finished = match self.reader.recv(Some(&mut self.handshake_transcript)).await? {
             Message::Handshake(Handshake::Finished(v)) => v,
             _ => {
                 return Err(err_msg("Expected Finished messages"));
@@ -584,26 +594,20 @@ impl<'a> ClientHandshakeExecutor<'a> {
             return Err(err_msg("Incorrect server verify_data"));
         }
 
-        let verify_data_client = key_schedule.verify_data_client(&self.handshake_state.transcript);
+        let verify_data_client = key_schedule.verify_data_client(&self.handshake_transcript);
 
         let finished_client = Handshake::Finished(Finished {
             verify_data: verify_data_client,
         });
 
-        let final_secrets = key_schedule.finished(&self.handshake_state.transcript);
+        let final_secrets = key_schedule.finished(&self.handshake_transcript);
 
         self.writer
-            .send_handshake(finished_client, &mut self.handshake_state)
+            .send_handshake(finished_client, Some(&mut self.handshake_transcript))
             .await?;
 
-        // TODO: Verify that this is the correct way and place to check this.
-        if !self.handshake_state.handshake_buf.is_empty() {
-            return Err(err_msg("Changing keys across a handshake message?"));
-        }
-
         self.reader
-            .remote_cipher_spec.as_mut().unwrap()
-            .replace_key(final_secrets.server_application_traffic_secret_0);
+            .replace_remote_key(final_secrets.server_application_traffic_secret_0)?;
 
         self.writer
             .local_cipher_spec.as_mut().unwrap()

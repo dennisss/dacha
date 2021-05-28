@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::chrono::prelude::*;
+use common::task::ChildTask;
 
 use crate::proto::v2::*;
 use crate::v2::settings::*;
@@ -22,6 +22,10 @@ pub struct ConnectionState {
     /// If present, then the 
     pub error: Option<ProtocolErrorV2>,
 
+    // /// TODO: If the client side hands up on a request either before it was sent or before we were done receiving the response
+    // /// we need to ensure that we can cancel the request. 
+    // pub pending_requests: Vec<ConnectionLocalRequest>,
+
     // TODO: Shard this into the reader and writer states.
 
     /// Used to decode remotely created headers received on the connection.
@@ -31,9 +35,10 @@ pub struct ConnectionState {
     /// Settings currently in use by this endpoint.
     pub local_settings: SettingsContainer,
 
-    /// Time at which the 'local_pending_settings' were sent to the remote server.
-    /// A value of None means that no settings changes are pending.
-    pub local_settings_sent_time: Option<DateTime<Utc>>,
+    /// If we have sent out settings that are still pending acknowledgement
+    /// from the remote server, then this will be thread which waits for
+    /// a timeout to elapse before we close the connection.
+    pub local_settings_ack_waiter: Option<ChildTask>,
 
     /// Next value of 'local_settings' which is pending acknowledgement from the other endpoint.
     pub local_pending_settings: SettingsContainer,
@@ -83,9 +88,15 @@ pub enum ConnectionEvent {
         error: ProtocolErrorV2
     },
     
-    /// We received a remote GOAWAY with a non-NO_ERROR code or the reader thread failed, so we
-    /// should close the connection ASAP.
-    Closing,
+    /// The connection is ready to be closed immediately.
+    ///
+    /// This means that either:
+    /// 1. All streams are closed, so error == None and we are done gracefully shutting down.
+    /// 2. We received a remote GOAWAY with a non-NO_ERROR code or the reader thread failed, so we
+    ///    should close the connection ASAP.
+    Closing {
+        error: Option<ProtocolErrorV2>
+    },
 
     /// We received remote settings which we've applied to the local state and should now be
     /// acknowledged.
@@ -127,4 +138,10 @@ pub enum ConnectionEvent {
         request: Request,
         response: Response
     }
+}
+
+
+pub struct ConnectionLocalRequest {
+    request: Request,
+    response_handler: Box<dyn ResponseHandler>
 }

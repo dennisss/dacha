@@ -46,7 +46,7 @@ pub enum Handshake {
     CertificateVerify(CertificateVerify),
     Finished(Finished),
     NewSessionTicket(NewSessionTicket),
-    KeyUpdate(KeyUpdate),
+    KeyUpdate(KeyUpdate), // TODO: This is something that should implement at the record layer.
 }
 
 impl Handshake {
@@ -84,7 +84,12 @@ impl Handshake {
                 HandshakeType::Finished => complete(map(
                     Finished::parse, |v| Handshake::Finished(v))
                 )(payload),
-                _ => panic!("Unsupported handshake type")
+                HandshakeType::NewSessionTicket => complete(map(
+                    NewSessionTicket::parse, |v| Handshake::NewSessionTicket(v))
+                )(payload),
+                _ => {
+                    return Err(format_err!("Unsupported handshake type: {:?}", msg_type));
+                }
             };
 
             let (v, _) = res?;
@@ -117,8 +122,8 @@ impl Handshake {
             Handshake::Certificate(v) => v.serialize(out),
             Handshake::CertificateVerify(v) => v.serialize(out),
             Handshake::Finished(v) => v.serialize(out),
-            // NewSessionTicket(v) => v.serialize(out),
-            // KeyUpdate(v) => v.serialize(out)
+            Handshake::NewSessionTicket(v) => v.serialize(out),
+            Handshake::KeyUpdate(v) => v.serialize(out),
             _ => panic!("Unimplemented"),
         });
     }
@@ -130,14 +135,18 @@ tls_enum_u8!(HandshakeType => {
     ServerHello(2),
     NewSessionTicket(4),
     EndOfEarlyData(5),
-    HelloRetryRequest(6), // RESERVED
+    HelloRetryRequestRESERVED(6), // RESERVED
     EncryptedExtensions(8),
     Certificate(11),
     ServerKeyExchange(12), // TLS 1.2
     CertificateRequest(13),
+    ServerHelloDone(14), // TLS 1.2
     CertificateVerify(15),
     ClientKeyExchange(16), // TLS 1.2
     Finished(20),
+    certificate_url_RESERVED(21),
+    certificate_status_RESERVED(22),
+    supplemental_data_RESERVED(23),
     KeyUpdate(24),
     MessageHash(254),
     (255)
@@ -412,6 +421,47 @@ pub struct NewSessionTicket {
     pub ticket_nonce: Bytes,
     pub ticket: Bytes,
     pub extensions: Vec<Extension>,
+}
+
+impl NewSessionTicket {
+    parser!(parse<Self> => {
+        seq!(c => {
+            let ticket_lifetime = c.nexts(be_u32)?;
+            let ticket_age_add = c.nexts(be_u32)?;
+
+            let ticket_nonce = c.next(varlen_vector(0, U8_LIMIT))?;
+            let ticket = c.next(varlen_vector(1, U16_LIMIT))?;
+
+            let extensions_data = c.next(varlen_vector(0, U16_LIMIT - 1))?;
+            let (extensions, _) = complete(many(
+                    |i| Extension::parse(i, HandshakeType::NewSessionTicket)
+                ))(extensions_data)?;
+            Ok(Self {
+                ticket_lifetime,
+                ticket_age_add,
+                ticket_nonce,
+                ticket,    
+                extensions
+            })
+        })
+    });
+
+    fn serialize(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.ticket_lifetime.to_be_bytes());
+        out.extend_from_slice(&self.ticket_age_add.to_be_bytes());
+        serialize_varlen_vector(0, U8_LIMIT, out, |out| {
+            out.extend_from_slice(&self.ticket_nonce)
+        });
+        serialize_varlen_vector(1, U16_LIMIT, out, |out| {
+            out.extend_from_slice(&self.ticket)
+        });
+        serialize_varlen_vector(0, U16_LIMIT - 1, out, |out| {
+            for extension in &self.extensions {
+                extension.serialize(HandshakeType::NewSessionTicket, out).unwrap();
+            }
+        });
+    }
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
