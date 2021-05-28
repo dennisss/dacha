@@ -47,9 +47,10 @@ const MAX_ENCODER_TABLE_SIZE: usize = 8192;
 /// 
 const SETTINGS_ACK_TIMEOUT_SECS: u64 = 10;
 
+/// NOTE: This is a client stream id. 
 const UPGRADE_STREAM_ID: StreamId = 1;
 
-// NOTE: The connection frame control window is only updated on WINDOW_UPDATE frames (not SETTINGS)
+/// NOTE: The connection frame control window is only updated on WINDOW_UPDATE frames (not SETTINGS)
 const INITIAL_CONNECTION_WINDOW_SIZE: WindowSize = 65535;
 
 // TODO: Should also use PING to countinuously verify that the server is still alive.
@@ -193,6 +194,10 @@ impl Connection {
                     remote_connection_window: INITIAL_CONNECTION_WINDOW_SIZE,
                     last_received_stream_id: 0,
                     last_sent_stream_id: 0,
+                    pending_requests: std::collections::VecDeque::new(),
+                    local_stream_count: 0,
+                    remote_stream_count: 0,
+
                     streams: HashMap::new()
                 })
             })
@@ -220,6 +225,7 @@ impl Connection {
         }
 
         connection_state.last_sent_stream_id = UPGRADE_STREAM_ID;
+        connection_state.local_stream_count += 1;
 
         let (mut stream, incoming_body, outgoing_body) = self.shared.new_stream(
             &connection_state, UPGRADE_STREAM_ID);
@@ -229,6 +235,7 @@ impl Connection {
             let mut stream_state = stream.state.lock().await;
             stream_state.sending_at_end = true;
             drop(outgoing_body);
+            stream.sent_end_of_stream = true;
         }
 
 
@@ -237,6 +244,10 @@ impl Connection {
         stream.incoming_response_handler = Some((Box::new(sender), incoming_body));
 
         connection_state.streams.insert(UPGRADE_STREAM_ID, stream);
+        
+
+        // TODO: Assuming that we sent the right settings, we can assume that the server now knows 
+        // our settings and we can start using them.
 
         Ok(Self::receiver_future(receiver))
     }
@@ -268,6 +279,7 @@ impl Connection {
         }
 
         connection_state.last_received_stream_id = UPGRADE_STREAM_ID;
+        connection_state.remote_stream_count += 1;
 
 
         let remote_settings = SettingsContainer::read_from_request(&request.head.headers)?;
@@ -324,13 +336,31 @@ impl Connection {
         
         let (sender, receiver) = channel::bounded::<Result<Response>>(1);
 
-        // TODO: Check if the connection is still alive before shipping out the request.
 
-        // TODO: Instead lcok and enqueu the request.
-        self.shared.connection_event_channel.0.send(ConnectionEvent::SendRequest {
-            request,
-            response_handler: Box::new(sender)
-        }).await;
+        let empty_queue;
+        {
+            let mut connection_state = self.shared.state.lock().await;
+            if connection_state.error.is_some() {
+                return Err(ProtocolErrorV2 {
+                    code: ErrorCode::REFUSED_STREAM,
+                    message: "Connection is shutting down",
+                    local: true
+                }.into());
+            }
+
+            empty_queue = connection_state.pending_requests.is_empty();
+
+            connection_state.pending_requests.push_front(ConnectionLocalRequest {
+                request,
+                response_handler: Box::new(sender)
+            });
+        }
+
+        // For the first request in the queue, send an event so that the
+        // connection takes notice
+        if empty_queue {
+            let _ = self.shared.connection_event_channel.0.try_send(ConnectionEvent::SendRequest);
+        }
         
         // TODO: If the receiver fails, does that mean that we can definately retry the request?
         receiver.recv().await?
@@ -465,6 +495,14 @@ impl ConnectionShared {
             }
         };
 
+        if self.is_local_stream_id(stream_id) {
+            connection_state.local_stream_count -= 1;
+            // After removing a local stream, try to send any remaining queued requests. 
+            let _ = self.connection_event_channel.0.try_send(ConnectionEvent::SendRequest);
+        } else {
+            connection_state.remote_stream_count -= 1;
+        }
+
         let mut stream_state = stream.state.lock().await;
         stream_state.error = Some(error.clone());
 
@@ -547,6 +585,17 @@ impl ConnectionShared {
         if connection_state.error.is_some() && connection_state.streams.is_empty() {
             println!("CLOSING CONNECTION");
             let _ = self.connection_event_channel.0.try_send(ConnectionEvent::Closing { error: None });
+            return;
+        }
+
+        if self.is_local_stream_id(stream_id) {
+            connection_state.local_stream_count -= 1;
+            if !connection_state.pending_requests.is_empty() {
+                // After removing a local stream, try to send any remaining queued requests. 
+                let _ = self.connection_event_channel.0.try_send(ConnectionEvent::SendRequest);
+            }
+        } else {
+            connection_state.remote_stream_count -= 1;
         }
     }
 
@@ -1018,6 +1067,16 @@ impl ConnectionShared {
                             }
                         }
 
+                        while let Some(req) = connection_state.pending_requests.pop_front() {
+                            req.response_handler.handle_response(Err(ProtocolErrorV2 {
+                                code: ErrorCode::REFUSED_STREAM,
+                                message: "Connection shutting down",
+                                local: false,
+                            }.into())).await;
+                        }
+
+                        // All 'pending_requests' should 
+
                     } else {
 
                         // Need to reset all the streams!
@@ -1146,9 +1205,8 @@ impl ConnectionShared {
                             return Err(err_msg("Already received end of stream"));
                         }
 
+                        state.received_trailers = Some(process_trailers(headers)?);
                         stream.receive_data(&[], end_stream, &mut state);
-
-                        // TODO: Send out the trailers here.
 
                         if state.is_closed() {
                             drop(state);
@@ -1158,11 +1216,16 @@ impl ConnectionShared {
                         return Ok(());
                     }
 
+                    if connection_state.remote_stream_count >= connection_state.local_settings[SettingId::MAX_CONCURRENT_STREAMS] as usize {
+                        // Send a REFUSED_STREAM stream error (or as described in 5.1.2, PROTOCOL_ERROR is also allowed if we don't want it to be retryable)..
+                    }
+
                     // When receiving headers on server,
                     // - end stream means the remote stream is done.
 
                     // TODO: Only do this if the stream is successfully started?
                     connection_state.last_received_stream_id = received_headers.stream_id;
+                    connection_state.remote_stream_count += 1;
 
                     // Make new a new stream
 
@@ -1276,6 +1339,8 @@ impl ConnectionShared {
                 }
             }
             ReceivedHeadersType::PushPromise { promised_stream_id } => {
+                // TODO: Reserved streams don't count towards the MAX_CONCURRNET_STREAM limit.
+
                 return Err(err_msg("Push promise not yet implemented"));
             }
         }
@@ -1418,7 +1483,7 @@ impl ConnectionShared {
 
             match event {
                 // TODO: Instead alwas enqueue requests and always 
-                ConnectionEvent::SendRequest { request, response_handler } => {
+                ConnectionEvent::SendRequest => {
                     // TODO: Only allow if we are a client.
                     
                     println!("Sending request...");
@@ -1428,9 +1493,21 @@ impl ConnectionShared {
 
                     let mut connection_state = self.state.lock().await;
 
+                    // Checking that we are able to send a stream.
+                    let remote_stream_limit = connection_state.remote_settings[SettingId::MAX_CONCURRENT_STREAMS];
+                    if connection_state.local_stream_count >= remote_stream_limit as usize {
+                        continue;
+                    }
+
+                    let (request, response_handler) = match connection_state.pending_requests.pop_front() {
+                        Some(v) => (v.request, v.response_handler),
+                        None => continue
+                    };
+
                     // TODO: Write the rest of the headers (all names should be converted to ascii lowercase)
                     // (aside get a reference from the RFC)
 
+                    // Generate a new stream id.
                     let stream_id = {
                         if connection_state.last_sent_stream_id == 0 {
                             if self.is_server { 2 } else { 1 }
@@ -1463,6 +1540,7 @@ impl ConnectionShared {
                         }
                     };
 
+                    connection_state.local_stream_count += 1;
                     connection_state.streams.insert(stream_id, stream);
 
                     // 
@@ -1598,29 +1676,41 @@ impl ConnectionShared {
                 // Write event:
                 // - Happens on either remote flow control updates or 
                 ConnectionEvent::StreamWrite { .. } => {
-                    let mut connection_state = self.state.lock().await;
+                    let mut connection_state_guard = self.state.lock().await;
+                    let connection_state = &mut *connection_state_guard;
                 
-                    let max_frame_size = connection_state.remote_settings[SettingId::MAX_FRAME_SIZE];
+                    let max_remote_frame_size = connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
     
                     let mut next_frame = None;
     
-                    for (stream_id, stream) in &connection_state.streams {
+
+                    for (stream_id, stream) in &mut connection_state.streams {
                         if connection_state.remote_connection_window <= 0 {
                             break;
+                        }
+
+                        if stream.sent_end_of_stream {
+                            continue;
                         }
     
                         let mut stream_state = stream.state.lock().await;
     
                         let min_window = std::cmp::min(
                             connection_state.remote_connection_window,
-                            stream_state.remote_window) as usize;
-    
-                        let n_raw = std::cmp::min(min_window, stream_state.sending_buffer.len());
-                        let n = std::cmp::min(n_raw, max_frame_size as usize);
-                        
-                        if n == 0 {
+                            stream_state.remote_window);
+                        if min_window < 0 {
                             continue;
                         }
+    
+                        let n_raw = std::cmp::min(min_window as usize, stream_state.sending_buffer.len());
+                        let n = std::cmp::min(n_raw, max_remote_frame_size as usize);
+                        
+                        if n == 0 && !stream_state.sending_at_end {
+                            continue;
+                        }
+
+                        stream_state.remote_window -= n as WindowSize;
+                        connection_state.remote_connection_window -= n as WindowSize;
     
                         let remaining = stream_state.sending_buffer.split_off(n);
                         let frame_data = stream_state.sending_buffer.clone();
@@ -1628,10 +1718,9 @@ impl ConnectionShared {
 
                         let _ = stream.write_available_notifier.try_send(());
 
-                        let stream_closed = stream_state.is_closed();
-                        drop(stream_state);
+                        stream.sent_end_of_stream = stream_state.sending_at_end;
 
-                        next_frame = Some((*stream_id, frame_data, stream_closed));
+                        next_frame = Some((*stream_id, frame_data, stream_state.sending_trailers.take(), stream_state.sending_at_end, stream_state.is_closed()));
 
                         break;
                     }
@@ -1641,16 +1730,26 @@ impl ConnectionShared {
     
                     // Write out the next frame.
                     // TODO: To avoid so much copying, consider never sending until we have one full 'chunk' of data.
-                    if let Some((stream_id, frame_data, stream_closed)) = next_frame {
+                    if let Some((stream_id, frame_data, trailers, end_stream, stream_closed)) = next_frame {
                         if stream_closed {
-                            self.finish_stream(&mut connection_state, stream_id);
+                            self.finish_stream(connection_state, stream_id);
                         }
 
                         // Ensure all locks are dropped before we perform a blocking write.
-                        drop(connection_state);
+                        drop(connection_state_guard);
 
-                        let frame = frame_utils::new_data_frame(stream_id, frame_data);
-                        writer.write_all(&frame).await?;
+                        if frame_data.len() > 0 || (trailers.is_none()) {
+                            let frame = frame_utils::new_data_frame(
+                                stream_id, frame_data, end_stream && trailers.is_none());
+                            writer.write_all(&frame).await?;
+                        }
+
+                        if let Some(trailers) = trailers {
+                            // Write the trailers (will always had end_of_strema)
+                            let header_block = encode_trailers_block(&trailers, &mut local_header_encoder);
+                            write_headers_block(
+                                &mut *writer, stream_id, &header_block, end_stream, max_remote_frame_size).await?;
+                        }
                     }
                 }
             }
@@ -1671,6 +1770,7 @@ impl ConnectionShared {
             incoming_response_handler: None,
             outgoing_response_handler: None,
             processing_tasks: vec![],
+            sent_end_of_stream: false,
             state: Arc::new(Mutex::new(StreamState {
                 // weight: 16, // Default weight
                 // dependency: 0,
@@ -1681,11 +1781,13 @@ impl ConnectionShared {
                 remote_window: connection_state.remote_settings[SettingId::INITIAL_WINDOW_SIZE] as WindowSize,
 
                 received_buffer: vec![],
+                received_trailers: None,
                 received_end_of_stream: false,
                 received_expected_bytes: None,
                 received_total_bytes: 0,
 
                 sending_buffer: vec![],
+                sending_trailers: None,
                 sending_at_end: false
             }))
         };

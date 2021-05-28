@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::VecDeque;
 
 use common::task::ChildTask;
 
@@ -22,9 +23,16 @@ pub struct ConnectionState {
     /// If present, then the 
     pub error: Option<ProtocolErrorV2>,
 
-    // /// TODO: If the client side hands up on a request either before it was sent or before we were done receiving the response
-    // /// we need to ensure that we can cancel the request. 
-    // pub pending_requests: Vec<ConnectionLocalRequest>,
+    /// Used by an client to enqueue requests to be sent to the other endpoint.
+    /// If a request is still in this list then it definately hasn't been sent to the other
+    /// endpoint yet.
+    ///
+    /// On a client, the total number of outstanding requests is:
+    ///     'pending_requests.len() + local_open_stream_count'
+    ///
+    /// TODO: If the client side hands up on a request either before it was sent or before we were done receiving the response
+    /// we need to ensure that we can cancel the request. 
+    pub pending_requests: VecDeque<ConnectionLocalRequest>,
 
     // TODO: Shard this into the reader and writer states.
 
@@ -58,6 +66,11 @@ pub struct ConnectionState {
 
     pub last_received_stream_id: StreamId,
     pub last_sent_stream_id: StreamId,
+
+    /// Number of locally initialized 
+    pub local_stream_count: usize,
+
+    pub remote_stream_count: usize,
 
     /// All currently active locally and remotely initialized streams.
     pub streams: HashMap<StreamId, Stream>,
@@ -121,10 +134,7 @@ pub enum ConnectionEvent {
 
     /// We are an HTTP client connection and a locally generated request needs to be sent to the
     /// other endpoint.
-    SendRequest {
-        request: Request,
-        response_handler: Box<dyn ResponseHandler>
-    },
+    SendRequest,
 
     // NOTE: Because the DATA frames should ideally follow the header frames, the writer
     // frame will be the one responsible for starting the reading task for this stream once
@@ -142,6 +152,6 @@ pub enum ConnectionEvent {
 
 
 pub struct ConnectionLocalRequest {
-    request: Request,
-    response_handler: Box<dyn ResponseHandler>
+    pub request: Request,
+    pub response_handler: Box<dyn ResponseHandler>
 }

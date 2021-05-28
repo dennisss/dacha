@@ -8,6 +8,7 @@ use parsing::complete;
 use crate::body::Body;
 use crate::reader::*;
 use crate::chunked_syntax::*;
+use crate::header::Headers;
 
 pub struct ChunkExtension {
     pub name: AsciiString,
@@ -21,7 +22,6 @@ pub struct ChunkHead {
 
 
 /// Current state while reading a chunked body.
-#[derive(Clone)]
 enum ChunkState {
     /// Reading the first line of the chunk containing the size.
     Start,
@@ -39,7 +39,9 @@ enum ChunkState {
     Trailer,
     
     /// The entire body has been read.
-    Done,
+    Done {
+        trailers: Option<Headers>
+    },
 
     /// A previous attemtpt to read from the body caused a failure so we are in
     /// an undefined state and can't reliably continue reading from the body.
@@ -66,7 +68,7 @@ impl IncomingChunkedBody {
 
     // TODO: Once an error occurs, then all sequential reads should also error out.
     async fn read_cycle(&mut self, buf: &mut [u8]) -> Result<CycleValue> {
-        match self.state.clone() {
+        match self.state {
             ChunkState::Start => {
                 let line = match self.reader.read_matching(LineMatcher::any()).await {
                     Ok(StreamReadUntil::Value(v)) => v,
@@ -141,13 +143,13 @@ impl IncomingChunkedBody {
                     }
                 };
 
-                // TODO: Do something with the headers
-
-                self.state = ChunkState::Done;
+                self.state = ChunkState::Done {
+                    trailers: if headers.is_empty() { None } else { Some(Headers::from(headers)) }
+                };
 
                 Ok(CycleValue::StateChange)
             }
-            ChunkState::Done => Ok(CycleValue::Read(0)),
+            ChunkState::Done { .. } => Ok(CycleValue::Read(0)),
 
             ChunkState::Error => {
                 return Err(err_msg("Chunked body in an undefined state."));
@@ -162,6 +164,19 @@ impl Body for IncomingChunkedBody {
         None
     }
 
+    async fn trailers(&mut self) -> Result<Option<Headers>> {
+        if let ChunkState::Done { trailers  } = &mut self.state {
+            let trailers = trailers.take();
+            self.state = ChunkState::Error;
+            return Ok(trailers);
+        }
+
+        Err(err_msg("Trailers already read or body not fully read"))
+    }
+}
+
+#[async_trait]
+impl Readable for IncomingChunkedBody {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         // TODO: Have a solution that doesn't require a loop here.
         loop {

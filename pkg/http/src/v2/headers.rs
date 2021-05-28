@@ -145,6 +145,21 @@ pub fn encode_response_headers_block(head: &ResponseHead, encoder: &mut hpack::E
     Ok(header_block)
 }
 
+pub fn encode_trailers_block(headers: &Headers, encoder: &mut hpack::Encoder) -> Vec<u8> {
+    let mut header_block = vec![];
+
+    for header in headers.raw_headers.iter() {
+        // TODO: Verify that no headers start with ':'
+        let name = header.name.as_ref().to_ascii_lowercase();
+        encoder.append(HeaderFieldRef {
+            name: name.as_bytes(),
+            value: header.value.as_bytes()
+        }, &mut header_block);
+    }
+
+    header_block
+}
+
 pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> Result<RequestHead> {
     let mut method = None;
     let mut scheme = None;
@@ -233,6 +248,22 @@ pub fn process_response_head(headers: Vec<hpack::HeaderField>) -> Result<Respons
         reason: OpaqueString::new(),
         headers: regular_headers
     })
+} 
+
+pub fn process_trailers(headers: Vec<hpack::HeaderField>) -> Result<Headers> {
+    let mut out = vec![];
+    out.reserve_exact(headers.len());
+    
+    for header in headers {
+        // TODO: Should not be allowed to get a pseudo-header
+
+        out.push(Header {
+            name: AsciiString::from(header.name)?,
+            value: OpaqueString::from(header.value)
+        });
+    }
+
+    Ok(Headers::from(out))
 }
 
 /// Writes a block of headers in one or more frames.

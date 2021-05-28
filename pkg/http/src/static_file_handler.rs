@@ -1,4 +1,5 @@
 use common::errors::*;
+use common::io::Readable;
 use common::async_std::path::{PathBuf, Path};
 use common::async_std::fs::File;
 use common::async_std::io::ReadExt;
@@ -124,6 +125,13 @@ impl Body for StaticFileBody {
         Some(self.length)
     }
 
+    async fn trailers(&mut self) -> Result<Option<crate::header::Headers>> {
+        Ok(None)
+    }
+}
+
+#[async_trait]
+impl Readable for StaticFileBody {
     // TODO: If the file changed since reading it, return an error (if possible?)
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         // TODO: Ensure that we are buffering based on file system chunk sizes.

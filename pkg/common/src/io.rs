@@ -1,14 +1,15 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::ops::DerefMut;
 use core::task::Context;
 
 //use crate::futures::stream::{Stream, StreamExt};
-use futures::future::Select;
 use futures::task::Poll;
 use futures::Stream;
 use futures::StreamExt;
 
 use crate::errors::*;
+use crate::borrowed::Borrowed;
 
 const BUF_SIZE: usize = 4096;
 
@@ -312,11 +313,9 @@ impl<T: 'static + Send, S: crate::futures::sink::Sink<T> + Send + Unpin> Sinkabl
 }
 
 /// An asynchronously readable object. Works similarly to std::io::Read except
-/// allows multiple readers to operate simultaneously on the object. The
-/// internal implementation is responsible for ensuring that any necessary
-/// locking is performed.
+/// is easier to implement for async.
 #[async_trait]
-pub trait Readable: Send + Unpin + 'static {
+pub trait Readable: 'static + Send + Unpin {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
 
     // TODO: Deduplicate for http::Body
@@ -354,6 +353,21 @@ pub trait Readable: Send + Unpin + 'static {
 
         Ok(())
     }
+}
+
+
+#[async_trait]
+impl<R: Readable> Readable for Borrowed<R> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        self.deref_mut().read(buf).await
+    }    
+}
+
+#[async_trait]
+impl<R: Readable + ?Sized> Readable for Box<R> {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        self.deref_mut().read(buf).await
+    }    
 }
 
 /// Wrapper around a future which resolves to a Readable that will eventually be ready.
@@ -415,7 +429,7 @@ pub trait Writeable: Send + Sync + Unpin + 'static {
 }
 
 #[async_trait]
-impl Readable for std::io::Cursor<&'static [u8]> {
+impl<T: 'static + AsRef<[u8]> + Send + Unpin> Readable for std::io::Cursor<T> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         Ok(std::io::Read::read(self, buf)?)
     }

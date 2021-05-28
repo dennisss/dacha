@@ -11,13 +11,14 @@ use compression::transform::Transform;
 use common::borrowed::Borrowed;
 
 use crate::reader::*;
+use crate::header::Headers;
 
 pub type BoxFutureResult<'a, T> = Pin<Box<dyn FutureResult<T> + Send + 'a>>;
 
 // TODO: Merge with Readable trait?
 // TODO: Rename IncomingBody?
 #[async_trait]
-pub trait Body: Send {
+pub trait Body: Readable {
     /// Returns the total length in bytes of the body payload. Will return None
     /// if the length is unknown without reading the entire body.
     ///
@@ -25,80 +26,37 @@ pub trait Body: Send {
     /// (otherwise some implementations may return the remaining length).
     fn len(&self) -> Option<usize>;
 
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
-
-    async fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<()> {
-        let mut i = buf.len();
-        loop {
-            buf.resize(i + BUF_SIZE, 0);
-
-            let res = self.read(&mut buf[i..]).await;
-            match res {
-                Ok(n) => {
-                    i += n;
-                    if n == 0 {
-                        buf.resize(i, 0);
-                        return Ok(());
-                    }
-                }
-                Err(e) => {
-                    buf.resize(i, 0);
-                    return Err(e);
-                }
-            }
-        }
-    }
+    /// Retrieves the trailer headers that follow the body (if any).
+    ///
+    /// This should only be called after all data has been read from the body.
+    /// Otherwise, this may fail. It's also invalid to call this more than
+    /// once.
+    async fn trailers(&mut self) -> Result<Option<Headers>>;
 }
 
-const BUF_SIZE: usize = 4096;
-
-// TODO: Add a generic trait for allowing using a future impl for Read?
-impl dyn Body + Send {
-    pub async fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<()> {
-        while buf.len() > 0 {
-            let n = self.read(buf).await?;
-            buf = &mut buf[n..];
-        }
-
-        Ok(())
-    }
-}
 
 /*
     In the response, If I have a
 */
 
 #[async_trait]
-impl<T: AsRef<[u8]> + Send + Sync> Body for Cursor<T> {
+impl<T: 'static + AsRef<[u8]> + Send + Unpin> Body for Cursor<T> {
     fn len(&self) -> Option<usize> {
         Some(self.get_ref().as_ref().len())
     }
 
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        std::io::Read::read(self, buf).map_err(|e| Error::from(e))
+    async fn trailers(&mut self) -> Result<Option<Headers>> {
+        Ok(None)
     }
 }
 
-// pub struct BodyAsyncRead<'a> {
-// 	fut: Pin<Box<dyn FutureResult<usize> + Send + 'a>>
-// }
-// use std::poll::Poll;
-// use std::task::Context;
-// impl<'a> AsyncRead for BodyAsyncRead<'a> {
-// 	fn poll_read(
-// 		self: Pin<&mut Self>,
-// 		cx: &mut Context,
-// 		buf: &mut [u8]
-// 	) -> std::poll::Poll<std::io::Result<usize, Error>> {
-// 		self.fut.poll
-// 	}
-// }
-
+/// Creates a body containing no data.
 pub fn EmptyBody() -> Box<dyn Body> {
     Box::new(Cursor::new(Vec::new()))
 }
 
-pub fn BodyFromData<T: 'static + AsRef<[u8]> + Send + Sync>(data: T) -> Box<dyn Body> {
+/// Creates a body from a precomputed blob of data.
+pub fn BodyFromData<T: 'static + AsRef<[u8]> + Send + Unpin>(data: T) -> Box<dyn Body> {
     Box::new(Cursor::new(data))
 }
 
@@ -115,6 +73,8 @@ pub enum Chunk {
 
 pub type ChunkSender = mpsc::Sender<Chunk>;
 
+
+/// TODO: Implement this?
 /// A body that gets incrementally sent over the wire and receives whole chunks
 /// from a TODO: Need flow control
 pub struct ChunkedBody {
@@ -139,7 +99,13 @@ impl ChunkedBody {
 /// A body which is terminated by the end of the stream and has no known length.
 pub struct IncomingUnboundedBody {
     // TODO: This doesn't need to be borrowed. It mainly is in order to simplify things.
-    pub reader: Borrowed<PatternReader>,
+    reader: Borrowed<PatternReader>,
+}
+
+impl IncomingUnboundedBody {
+    pub fn new(reader: Borrowed<PatternReader>) -> Self {
+        Self { reader }
+    }
 }
 
 #[async_trait]
@@ -148,10 +114,16 @@ impl Body for IncomingUnboundedBody {
         None
     }
 
+    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }
+}
+
+#[async_trait]
+impl Readable for IncomingUnboundedBody {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         self.reader.read(buf).await
     }
 }
+
 
 /// A body which has a well known length.
 pub struct IncomingSizedBody {
@@ -170,13 +142,17 @@ impl IncomingSizedBody {
     }
 }
 
-
 #[async_trait]
 impl Body for IncomingSizedBody {
     fn len(&self) -> Option<usize> {
         None
     }
 
+    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }
+}
+
+#[async_trait]
+impl Readable for IncomingSizedBody {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         if self.error {
             return Err(err_msg("Body has previously failed while being read"));
@@ -243,6 +219,11 @@ impl TransformBody {
 impl Body for TransformBody {
     fn len(&self) -> Option<usize> { self.body.len() }
 
+    async fn trailers(&mut self) -> Result<Option<Headers>> { self.body.trailers().await }
+}
+
+#[async_trait]
+impl Readable for TransformBody {
     async fn read(&mut self, mut output: &mut [u8]) -> Result<usize> {
         let mut output_written = 0;
         
@@ -315,8 +296,8 @@ impl Body for Borrowed<Box<dyn Body>> {
         self.deref().len()
     }
 
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        self.deref_mut().read(buf).await
+    async fn trailers(&mut self) -> Result<Option<Headers>> {
+        self.deref_mut().trailers().await
     }
 }
 

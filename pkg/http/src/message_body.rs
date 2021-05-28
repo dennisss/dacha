@@ -62,7 +62,7 @@ pub fn create_client_response_body(
                     close_delimited = false;
                     Box::new(IncomingChunkedBody::new(reader))
                 } else {
-                    Box::new(IncomingUnboundedBody { reader })
+                    Box::new(IncomingUnboundedBody::new(reader))
                 }
             };
 
@@ -91,7 +91,7 @@ pub fn create_client_response_body(
         // Only applicable on the server side
 
         // 7.
-        Ok(Box::new(IncomingUnboundedBody { reader }))
+        Ok(Box::new(IncomingUnboundedBody::new(reader)))
     }()?;
 
     Ok(wrap_created_body(body, reader_returner, close_delimited))

@@ -1,3 +1,4 @@
+use crate::header::Headers;
 use crate::v2::types::*;
 
 /// Variable state associated with the stream.
@@ -24,8 +25,10 @@ pub struct StreamState {
     /// buffer is that we should block accidentally overriding data)
     pub received_buffer: Vec<u8>,
 
-    /// If true, aside from what is in 'received_buffer', we have received all data on this stream from
-    /// the remote endpoint.
+    pub received_trailers: Option<Headers>,
+
+    /// If true, aside from what is in 'received_buffer' and 'received_trailers',
+    /// we have received all data on this stream from the remote endpoint.
     ///
     /// TODO: Support non-data trailers?
     pub received_end_of_stream: bool,
@@ -46,7 +49,7 @@ pub struct StreamState {
     /// max for this as that may be an insanely large number)
     pub sending_buffer: Vec<u8>,
 
-    // pub 
+    pub sending_trailers: Option<Headers>,
 
     /// If true, 'sending_buffer' and 'sending_trailers' contains the last
     /// remaining data that needs to be sent through this stream.
@@ -61,7 +64,7 @@ impl StreamState {
         }
 
         // Unless all of the data is actually sent, we can't consider it closed.
-        if !self.sending_at_end || !self.sending_buffer.is_empty() {
+        if !self.sending_at_end || !self.sending_buffer.is_empty() || self.sending_trailers.is_some() {
             return false;
         }
 

@@ -8,9 +8,11 @@ use common::async_std::sync::Mutex;
 use common::io::Readable;
 
 use crate::body::Body;
+use crate::header::Headers;
 use crate::v2::stream_state::StreamState;
 use crate::v2::types::*;
 use crate::v2::connection_state::ConnectionEvent;
+use crate::proto::v2::{ErrorCode};
 
 /// Wrapper around a Body that is used to read it and feed it to a stream.
 /// This is intended to be run as a separate task.
@@ -45,8 +47,37 @@ impl OutgoingStreamBody {
     pub async fn run(mut self, body: Box<dyn Body>) {
         if let Err(e) = self.run_internal(body).await {
             // TODO: Re-use guard from run_internal
-            let mut stream = self.stream_state.lock().await;
+            let mut stream_state = self.stream_state.lock().await;
             // stream.
+
+            println!("OUTGOING BODY FAILURE: {}", e);
+
+            // TODO: Consider using some standard way of emitting an error right here?
+            // One possible challenge is deal with propagating errors (e.g. remote endpoint
+            // hangs up and that causes our outgoing computation to fail.)
+
+            if stream_state.error.is_some() {
+                return;
+            }
+
+            stream_state.error = Some(ProtocolErrorV2 {
+                code: ErrorCode::INTERNAL_ERROR,
+                message: "Internal error occured while processing this stream",
+                local: true
+            });
+
+            drop(stream_state);
+
+            // TODO: This means that the writer thread needs to be responsible for removing streams
+            // from the list.
+            self.connection_event_sender.send(ConnectionEvent::ResetStream {
+                stream_id: self.stream_id,
+                error: ProtocolErrorV2 {
+                    code: ErrorCode::INTERNAL_ERROR,
+                    message: "Internal error occured while processing this stream",
+                    local: true
+                }
+            }).await;
 
             // Need to mark an error on the stream and trigger a total reset of the stream
             // (this likely requirs a lot of clean up).
@@ -76,24 +107,49 @@ impl OutgoingStreamBody {
 
                 let n = body.read(&mut stream.sending_buffer[start..]).await?;
                 stream.sending_buffer.truncate(start + n);
-                if n == 0 {
-                    stream.received_end_of_stream = true;
-                }
+                
+                // TODO: Must also check the trailers.
+                // if n == 0 {
+                //     break;
+                //     stream.sending_at_end = true;
+                // }
 
-                self.connection_event_sender.send(ConnectionEvent::StreamWrite {
-                    stream_id: self.stream_id
-                }).await;
-
+                // NOTE: We break before we send the StreamWrite event as we'd rather get the
+                // trailers first (which will usually avoid multiple transfers).
                 if n == 0 {
                     break;
+                }
+
+                // TODO: Prefer not to send this until we figure out if we have trailers.
+                let r = self.connection_event_sender.send(ConnectionEvent::StreamWrite {
+                    stream_id: self.stream_id
+                }).await;
+                if r.is_err() {
+                    // Writer thread hung up. No point in continuing to run.
+                    return Ok(());
                 }
 
             } else {
                 drop(stream);
 
-                self.write_available_receiver.recv().await;
+                let r = self.write_available_receiver.recv().await;
+                if r.is_err() {
+                    return Ok(());
+                }
             }
         }
+
+        // Checking trailers
+        {
+            let trailers = body.trailers().await?;
+            let mut stream_state = self.stream_state.lock().await;
+            stream_state.sending_trailers = trailers;
+            stream_state.sending_at_end = true;
+        }
+
+        self.connection_event_sender.send(ConnectionEvent::StreamWrite {
+            stream_id: self.stream_id
+        }).await;
 
         Ok(())
     }
@@ -131,8 +187,15 @@ pub struct IncomingStreamBody {
 impl Body for IncomingStreamBody {
     fn len(&self) -> Option<usize> { self.expected_length.clone() }
 
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        Readable::read(self, buf).await
+    async fn trailers(&mut self) -> Result<Option<Headers>> {
+        let mut stream_state = self.stream_state.lock().await;
+        if !stream_state.received_end_of_stream {
+            return Err(err_msg("Haven't read entire stream yet"));
+        }
+
+        // NOTE: Currently if this is called twice, it will return None the
+        // second time.
+        Ok(stream_state.received_trailers.take())
     }
 }
 

@@ -23,13 +23,13 @@ pub fn new_window_update_frame(stream_id: StreamId, increment: usize) -> Vec<u8>
     frame
 }
 
-pub fn new_data_frame(stream_id: StreamId, data: Vec<u8>) -> Vec<u8> {
+pub fn new_data_frame(stream_id: StreamId, data: Vec<u8>, end_stream: bool) -> Vec<u8> {
     let mut frame = vec![];
     FrameHeader {
         typ: FrameType::DATA,
         flags: DataFrameFlags {
             padded: false,
-            end_stream: false,
+            end_stream,
             reserved1: 0,
             reserved2: 0
         }.to_u8().unwrap(),

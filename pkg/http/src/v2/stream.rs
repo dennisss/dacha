@@ -30,6 +30,12 @@ pub struct Stream {
 
     pub outgoing_response_handler: Option<OutgoingStreamBody>,
 
+    /// Whether or not the writer thread has written a packet with end_of_stream
+    /// flag yet.
+    /// This is needed to ensure that we can tell if an empty outgoing body
+    /// has already been communicated to the other side.
+    pub sent_end_of_stream: bool,
+
     /// Tasks used to process this stream. Specifically we use tasks for:
     /// - Computing/sending the body to be sent to the other endpoint.
     /// - For servers, we spawn a new task for generating the response that should be sent to the

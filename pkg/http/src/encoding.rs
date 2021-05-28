@@ -42,7 +42,7 @@ pub fn decode_transfer_encoding_body(
     //     transfer_encoding.pop();
     //     Box::new(IncomingChunkedBody::new(stream))
     // } else {
-    //     Box::new(IncomingUnboundedBody { stream })
+    //     Box::new(IncomingUnboundedBody::new(stream))
     // };
 
     for coding in transfer_encoding.iter().rev() {

@@ -584,6 +584,7 @@ version = "0.1.0"
 dependencies = [
  "arrayref",
  "asn",
+ "async-std",
  "byteorder",
  "chrono",
  "common",
@@ -980,6 +981,7 @@ dependencies = [
  "async-std",
  "common",
  "compression",
+ "crypto",
  "failure",
  "parsing",
  "parsing_compiler",
