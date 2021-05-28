@@ -26,7 +26,7 @@ pub struct Stream {
 
     /// If not None, then this stream was used to send a request to a remote server and we are
     /// currently waiting for the response headers to become available.
-    pub incoming_response_handler: Option<(Box<dyn ResponseHandler>, IncomingStreamBody)>,
+    pub incoming_response_handler: Option<(crate::method::Method, Box<dyn ResponseHandler>, IncomingStreamBody)>,
 
     pub outgoing_response_handler: Option<OutgoingStreamBody>,
 

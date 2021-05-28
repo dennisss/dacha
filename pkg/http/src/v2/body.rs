@@ -9,6 +9,9 @@ use common::io::Readable;
 
 use crate::body::Body;
 use crate::header::Headers;
+use crate::request::RequestHead;
+use crate::response::ResponseHead;
+use crate::method::Method;
 use crate::v2::stream_state::StreamState;
 use crate::v2::types::*;
 use crate::v2::connection_state::ConnectionEvent;
@@ -251,4 +254,65 @@ impl Readable for IncomingStreamBody {
 
         Ok(nread)
     }
+}
+
+
+pub async fn create_server_request_body(
+    request_head: &RequestHead, mut incoming_body: IncomingStreamBody
+) -> Result<Box<dyn Body>> {
+    // 8.1.2.2
+    // Verify that there are no HTTP 1 connection level headers exist.
+    if request_head.headers.find(crate::header::CONNECTION).next().is_some() ||
+       request_head.headers.find(crate::header::TRANSFER_ENCODING).next().is_some() {
+        // TODO: Make this a stream error
+        return Err(err_msg("Received HTTP 1 connection level headers"));
+    }
+
+    if let Some(len) = crate::header_syntax::parse_content_length(&request_head.headers)? {
+        let mut stream_state = incoming_body.stream_state.lock().await;
+        stream_state.received_expected_bytes = Some(len);
+
+        incoming_body.expected_length = Some(len);
+    }
+
+    Ok(Box::new(incoming_body))
+}
+
+pub async fn create_client_response_body(
+    request_method: Method,
+    response_head: &ResponseHead,
+    mut incoming_body: IncomingStreamBody
+) -> Result<Box<dyn Body>> {
+    // 8.1.2.2
+    // Verify that there are no HTTP 1 connection level headers exist.
+    if response_head.headers.find(crate::header::CONNECTION).next().is_some() ||
+       response_head.headers.find(crate::header::TRANSFER_ENCODING).next().is_some() {
+        // TODO: Make this a stream error
+        return Err(err_msg("Received HTTP 1 connection level headers"));
+    }
+
+    let mut expected_length = None;
+
+    let status_num = response_head.status_code.as_u16();
+    // 1xx
+    let info_status = status_num >= 100 && status_num < 200;
+    // 2xx
+    let success_status = status_num >= 200 && status_num < 300;
+
+
+    if request_method == Method::HEAD || info_status || status_num == 204 ||
+       status_num == 304 || (request_method == Method::CONNECT && success_status) {
+        expected_length = Some(0);
+    } else if let Some(len) = crate::header_syntax::parse_content_length(&response_head.headers)? {
+        expected_length = Some(len)
+    }
+
+    if let Some(len) = expected_length {
+        let mut stream_state = incoming_body.stream_state.lock().await;
+        stream_state.received_expected_bytes = Some(len);
+
+        incoming_body.expected_length = Some(len);
+    }
+
+    Ok(Box::new(incoming_body))
 }

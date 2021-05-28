@@ -209,7 +209,8 @@ impl Connection {
     /// when it is available.
     ///
     /// NOTE: Must be called before 'run()'. The returned future MUST be waited on after run() though.
-    pub async fn receive_upgrade_response(&self) -> Result<impl std::future::Future<Output=Result<Response>>> {
+    pub async fn receive_upgrade_response(&self, request_method: Method)
+    -> Result<impl std::future::Future<Output=Result<Response>>> {
         let mut connection_state = self.shared.state.lock().await;
 
         if self.shared.is_server {
@@ -241,7 +242,7 @@ impl Connection {
 
         let (sender, receiver) = channel::bounded::<Result<Response>>(1);
 
-        stream.incoming_response_handler = Some((Box::new(sender), incoming_body));
+        stream.incoming_response_handler = Some((request_method, Box::new(sender), incoming_body));
 
         connection_state.streams.insert(UPGRADE_STREAM_ID, stream);
         
@@ -530,7 +531,7 @@ impl ConnectionShared {
         // If the error happened before response headers will received by a client, response with an error.
         // TODO: Also need to notify the requester of whether or not the request is trivially retryable
         // (based on the stream id in the latest GOAWAY message).
-        if let Some((response_handler, body)) = stream.incoming_response_handler.take() {
+        if let Some((request_method, response_handler, body)) = stream.incoming_response_handler.take() {
             response_handler.handle_response(Err(error.into()));
         }
 
@@ -1229,35 +1230,15 @@ impl ConnectionShared {
 
                     // Make new a new stream
 
-                    let (mut stream, mut incoming_body, outgoing_body) = self.new_stream(
+                    let (mut stream, incoming_body, outgoing_body) = self.new_stream(
                         &connection_state,  received_headers.stream_id);
 
-                    // TODO: What should we do if the 'Connection' header is present in an HTTP 2 request.
-
                     let head = process_request_head(headers)?;
-
-                    // 8.1.2.2
-                    // Verify that there are no HTTP 1 connection level headers exist.
-                    if head.headers.find(crate::header::CONNECTION).next().is_some() ||
-                       head.headers.find(crate::header::TRANSFER_ENCODING).next().is_some() {
-                        // TODO: Make this a stream error
-                        return Err(err_msg("Received HTTP 1 connection level headers"));
-                    }
-
-                    // TODO: I will also need to verify things like whether or not a Transfer-Encoding is given (which is
-                    // limited when )
-                    if let Some(len) = crate::header_syntax::parse_content_length(&head.headers)? {
-                        let mut stream_state = stream.state.lock().await;
-                        stream_state.received_expected_bytes = Some(len);
-
-                        incoming_body.expected_length = Some(len);
-                    }
+                    let body = create_server_request_body(&head, incoming_body).await?;
 
                     let request = Request {
-                        // TODO: Convert these to stream errors if possible?
                         head,
-                        // TODO: Need to create a new stream to generate this
-                        body: Box::new(incoming_body)
+                        body
                     };
 
                     // NOTE: We don't need to check if the stream is closed as the local end hasn't even
@@ -1296,31 +1277,31 @@ impl ConnectionShared {
 
                     // TODO: Maybe update priority
 
-                    let stream_closed;
-                    {
-                        let mut stream_state = stream.state.lock().await;
-                        if stream_state.received_end_of_stream {
-                            // TODO: Send a stream error.
-                        }
-                        
-                        stream.receive_data(&[], end_stream, &mut stream_state);
-
-                        stream_closed = stream_state.is_closed();
-                    }
-
-                    if let Some((response_handler, incoming_body)) =
+                    if let Some((request_method, response_handler, incoming_body)) =
                         stream.incoming_response_handler.take() {
-                        // TODO: Apply Content-Length, verify no connection level headers, etc.
+
+                        // NOTE: 
+
+                        let head = process_response_head(headers)?;
+                        let body = create_client_response_body(request_method, &head, incoming_body).await?;
 
                         let response = Response {
-                            head: process_response_head(headers)?,
-                            body: Box::new(incoming_body)
+                            head,
+                            body
                         };
 
                         response_handler.handle_response(Ok(response)).await;
 
                     } else {
                         // Otherwise we just received trailers.
+                        
+                        let mut stream_state = stream.state.lock().await;
+
+                        // TODO: Check this also for the response headers case?
+                        if stream_state.received_end_of_stream {
+                            // TODO: Send a stream error.
+                        }
+                        
                         if !end_stream {
                             // TODO: Pick a bigger type of error
                             return Err(ProtocolErrorV2 {
@@ -1330,7 +1311,17 @@ impl ConnectionShared {
                             }.into());
                         }
 
-                        // Send the trailers out here.
+                        stream_state.received_trailers = Some(process_trailers(headers)?);
+                    }
+
+                    let stream_closed;
+                    {
+                        let mut stream_state = stream.state.lock().await;
+                        
+                        // TODO: This must always run after we set the trailers.
+                        stream.receive_data(&[], end_stream, &mut stream_state);
+
+                        stream_closed = stream_state.is_closed();
                     }
 
                     if stream_closed {
@@ -1520,9 +1511,11 @@ impl ConnectionShared {
                     let (mut stream, incoming_body, outgoing_body) = self.new_stream(
                         &connection_state, stream_id);
 
+                    // The type of request will determine if we allow a response
+
                     // Apply client request specific details to the stream's state. 
                     let local_end = {
-                        stream.incoming_response_handler = Some((response_handler, incoming_body));
+                        stream.incoming_response_handler = Some((request.head.method, response_handler, incoming_body));
 
                         // TODO: Verify that compression layers have a known length for a known length underlying stream
                         // (or just don't encode zero length streams or really anything very tiny)

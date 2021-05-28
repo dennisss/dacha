@@ -22,6 +22,10 @@ pub trait Body: Readable {
     /// Returns the total length in bytes of the body payload. Will return None
     /// if the length is unknown without reading the entire body.
     ///
+    /// This is the actual transferred length after decoding. Some response bodies
+    /// to requests such as HEAD may still have a Content-Length header while
+    /// having a body.len() of 0.
+    ///
     /// NOTE: This is only guaranteed to be valid before read() is called
     /// (otherwise some implementations may return the remaining length).
     fn len(&self) -> Option<usize>;
