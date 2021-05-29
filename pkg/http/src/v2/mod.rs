@@ -10,6 +10,9 @@ mod connection_state;
 mod body;
 mod settings;
 mod connection;
+mod connection_shared;
+mod connection_reader;
+mod connection_writer;
 
 pub use connection::Connection;
 pub use connection::ConnectionInitialState;
