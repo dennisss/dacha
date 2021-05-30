@@ -119,6 +119,8 @@ pub fn new_goaway_frame(last_stream_id: StreamId, error: ProtocolErrorV2) -> Vec
     frame
 }
 
+/// Verifies that some block of padding contains only zeros.
+/// Returns a connection error if that is not true.
 pub fn check_padding(padding: &[u8]) -> Result<()> {
     for byte in padding {
         if *byte != 0 {

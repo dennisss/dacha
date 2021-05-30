@@ -20,42 +20,53 @@ use crate::uri::Uri;
 use crate::method::Method;
 use crate::uri_syntax::serialize_authority;
 
-// TODO: Make these all private if possible
-pub const METHOD_PSEUDO_HEADER_NAME: &'static str = ":method";
-pub const SCHEME_PSEUDO_HEADER_NAME: &'static str = ":scheme";
-pub const PATH_PSEUDO_HEADER_NAME: &'static str = ":path";
-pub const AUTHORITY_PSEUDO_HEADER_NAME: &'static str = ":authority";
+// Request pseudo headers
+const METHOD_PSEUDO_HEADER_NAME: &'static str = ":method";
+const SCHEME_PSEUDO_HEADER_NAME: &'static str = ":scheme";
+const PATH_PSEUDO_HEADER_NAME: &'static str = ":path";
+const AUTHORITY_PSEUDO_HEADER_NAME: &'static str = ":authority";
 
-pub const STATUS_PSEUDO_HEADER_NAME: &'static str = ":status";
+// Response pseudo headers
+const STATUS_PSEUDO_HEADER_NAME: &'static str = ":status";
+
+
+fn is_ascii_lowercase(s: &str) -> bool {
+    for c in s.chars() {
+        if c.is_ascii_alphabetic() && !c.is_ascii_lowercase() {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn to_ascii_string(data: Vec<u8>) -> StreamResult<AsciiString> {
+    Ok(AsciiString::from_bytes(Bytes::from(data))
+        .map_err(|_| StreamError::malformed_message("Received non ASCII header name/value"))?)   
+}
 
 
 /// Reads the initial chunk of pseudo headers from the given full chunk of headers.
 /// Each pseudo header is passed to pseudo_handler
 /// Returns the list of regular headers.
-fn process_header_fields<F: FnMut(hpack::HeaderField) -> Result<()>>(
+fn process_header_fields<F: FnMut(hpack::HeaderField) -> StreamResult<()>>(
     headers: Vec<hpack::HeaderField>, mut pseudo_handler: F
-) -> Result<Headers> {
+) -> StreamResult<Headers> {
     let mut done_pseudo_headers = false;
 
     let mut regular_headers = vec![];
 
     for header in headers {
         if header.name.to_ascii_lowercase() != header.name {
-            return Err(ProtocolErrorV2 {
-                code: ErrorCode::PROTOCOL_ERROR,
-                message: "Header name is not lower case",
-                local: true
-            }.into());
+            return Err(StreamError::malformed_message("Header name is not lower case"));
         }
 
         if header.name.starts_with(b":") {
             if done_pseudo_headers {
-                // TODO: Convert to just a stream level error.
-                return Err(ProtocolErrorV2 {
-                    code: ErrorCode::PROTOCOL_ERROR,
-                    message: "Pseudo headers not at the beginning of the headers block",
-                    local: true
-                }.into());
+                // Receiving regular headers before pseudo headers is invalid. 
+                // See RFC 7540: Section 8.1.2.1
+                return Err(StreamError::malformed_message(
+                    "Pseudo headers not at the beginning of the headers block"));
             }
 
             pseudo_handler(header)?;
@@ -63,7 +74,7 @@ fn process_header_fields<F: FnMut(hpack::HeaderField) -> Result<()>>(
             done_pseudo_headers = true;
             
             regular_headers.push(Header {
-                name: AsciiString::from(header.name)?,
+                name: to_ascii_string(header.name)?,
                 value: OpaqueString::from(header.value)
             });
         }
@@ -160,7 +171,7 @@ pub fn encode_trailers_block(headers: &Headers, encoder: &mut hpack::Encoder) ->
     header_block
 }
 
-pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> Result<RequestHead> {
+pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<RequestHead> {
     let mut method = None;
     let mut scheme = None;
     let mut authority = None;
@@ -171,30 +182,31 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> Result<RequestH
 
         if header.name == METHOD_PSEUDO_HEADER_NAME.as_bytes() {
             method = Some(Method::try_from(header.value.as_ref())
-                .map_err(|_| err_msg("Invalid method"))?);
+                .map_err(|_| StreamError::malformed_message("Invalid method"))?);
         } else if header.name == SCHEME_PSEUDO_HEADER_NAME.as_bytes() {
-            scheme = Some(AsciiString::from(Bytes::from(header.value))?);
+            scheme = Some(to_ascii_string(header.value)?);
         } else if header.name == AUTHORITY_PSEUDO_HEADER_NAME.as_bytes() {
-            authority = Some(parsing::complete(crate::uri_syntax::parse_authority)(header.value.into())?.0);
+            authority = Some(parsing::complete(crate::uri_syntax::parse_authority)(header.value.into())
+                .map_err(|_| StreamError::malformed_message("Received malformed authority header"))?.0);
         } else if header.name == PATH_PSEUDO_HEADER_NAME.as_bytes() {
-            path = Some(AsciiString::from(Bytes::from(header.value))?);
+            path = Some(to_ascii_string(header.value)?);
         } else {
-            return Err(err_msg("Received unknown pseudo header"));
+            return Err(StreamError::malformed_message("Received unknown pseudo header"));
             // Error
         }
 
         Ok(())
     })?;
 
-    let method = method.ok_or(err_msg("Missing method header"))?;
+    let method = method.ok_or(StreamError::malformed_message("Missing method header"))?;
 
     if method == Method::CONNECT {
         if scheme.is_some() || path.is_some() || authority.is_none() {
-            return Err(err_msg("Missing required headers"));
+            return Err(StreamError::malformed_message("Missing required headers"));
         }
     } else {
         if scheme.is_none() || path.is_none() {
-            return Err(err_msg("Missing required headers"));
+            return Err(StreamError::malformed_message("Missing required headers"));
         }
     }
 
@@ -219,19 +231,16 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> Result<RequestH
     })
 }
 
-pub fn process_response_head(headers: Vec<hpack::HeaderField>) -> Result<ResponseHead> {
+pub fn process_response_head(headers: Vec<hpack::HeaderField>) -> StreamResult<ResponseHead> {
     let mut status = None;
                     
     let regular_headers = process_header_fields(headers, |header| {
         if header.name == STATUS_PSEUDO_HEADER_NAME.as_bytes() {
             // TODO: COnvert to a stream error if this fails.
-            status = Some(parsing::complete(crate::message_syntax::parse_status_code)(header.value.into())?.0);
+            status = Some(parsing::complete(crate::message_syntax::parse_status_code)(header.value.into())
+                .map_err(|_| StreamError::malformed_message("Received malformed status code"))?.0);
         } else {
-            return Err(ProtocolErrorV2 {
-                code: ErrorCode::PROTOCOL_ERROR,
-                message: "Unknown pseudo header received",
-                local: true
-            }.into());
+            return Err(StreamError::malformed_message("Unknown pseudo header received"));
         }
 
         Ok(())
@@ -240,25 +249,44 @@ pub fn process_response_head(headers: Vec<hpack::HeaderField>) -> Result<Respons
     Ok(ResponseHead {
         version: HTTP_V2_0,
         // TODO: Remove the unwrap
-        status_code: crate::status_code::StatusCode::from_u16(status.ok_or(ProtocolErrorV2 {
-            code: ErrorCode::PROTOCOL_ERROR,
-            message: "Response missing status header",
-            local: true
-        })?).unwrap(),
+        status_code: crate::status_code::StatusCode::from_u16(status
+            .ok_or(StreamError::malformed_message("Response missing status header"))?)
+            .ok_or(StreamError::malformed_message("Response contains out of range status code"))?,
         reason: OpaqueString::new(),
         headers: regular_headers
     })
 } 
 
-pub fn process_trailers(headers: Vec<hpack::HeaderField>) -> Result<Headers> {
+pub fn process_trailers(headers: Vec<hpack::HeaderField>) -> StreamResult<Headers> {
     let mut out = vec![];
     out.reserve_exact(headers.len());
     
     for header in headers {
-        // TODO: Should not be allowed to get a pseudo-header
+        let name = AsciiString::from(header.name)
+            .map_err(|_| StreamError(ProtocolErrorV2 {
+                code: ErrorCode::PROTOCOL_ERROR,
+                message: "Received non-ASCII header name",
+                local: true
+            }))?;
+
+        if !is_ascii_lowercase(name.as_ref()) {
+            return Err(StreamError(ProtocolErrorV2 {
+                code: ErrorCode::PROTOCOL_ERROR,
+                message: "Received non-lowercase header name",
+                local: true
+            }));
+        }
+
+        if name.as_ref().starts_with(":") {
+            return Err(StreamError(ProtocolErrorV2 {
+                code: ErrorCode::PROTOCOL_ERROR,
+                message: "Received pseudo-header in trailers",
+                local: true
+            }));
+        }
 
         out.push(Header {
-            name: AsciiString::from(header.name)?,
+            name,
             value: OpaqueString::from(header.value)
         });
     }

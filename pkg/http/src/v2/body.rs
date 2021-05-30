@@ -8,7 +8,7 @@ use common::async_std::sync::Mutex;
 use common::io::Readable;
 
 use crate::body::Body;
-use crate::header::Headers;
+use crate::header::{Headers, TRANSFER_ENCODING, CONNECTION};
 use crate::request::RequestHead;
 use crate::response::ResponseHead;
 use crate::method::Method;
@@ -49,41 +49,12 @@ impl OutgoingStreamBody {
 
     pub async fn run(mut self, body: Box<dyn Body>) {
         if let Err(e) = self.run_internal(body).await {
-            // TODO: Re-use guard from run_internal
-            let mut stream_state = self.stream_state.lock().await;
-            // stream.
-
+            // TODO: Find the best way to make sure that we always log this error.
             println!("OUTGOING BODY FAILURE: {}", e);
-
-            // TODO: Consider using some standard way of emitting an error right here?
-            // One possible challenge is deal with propagating errors (e.g. remote endpoint
-            // hangs up and that causes our outgoing computation to fail.)
-
-            if stream_state.error.is_some() {
-                return;
-            }
-
-            stream_state.error = Some(ProtocolErrorV2 {
-                code: ErrorCode::INTERNAL_ERROR,
-                message: "Internal error occured while processing this stream",
-                local: true
-            });
-
-            drop(stream_state);
-
-            // TODO: This means that the writer thread needs to be responsible for removing streams
-            // from the list.
-            self.connection_event_sender.send(ConnectionEvent::ResetStream {
+            let _ = self.connection_event_sender.send(ConnectionEvent::StreamWriteFailure {
                 stream_id: self.stream_id,
-                error: ProtocolErrorV2 {
-                    code: ErrorCode::INTERNAL_ERROR,
-                    message: "Internal error occured while processing this stream",
-                    local: true
-                }
+                internal_error: e
             }).await;
-
-            // Need to mark an error on the stream and trigger a total reset of the stream
-            // (this likely requirs a lot of clean up).
         }
     }
 
@@ -98,6 +69,7 @@ impl OutgoingStreamBody {
                 return Ok(());
             }
 
+            // TODO: Must subtract from this.
             let max_to_read = stream.remote_window;
             
             // NOTE: We don't want to hold the stream for performing the reading from the body
@@ -108,15 +80,12 @@ impl OutgoingStreamBody {
                 let start = stream.sending_buffer.len();
                 stream.sending_buffer.resize(start + (max_to_read as usize), 0);
 
+                // TODO: If this errors, out, then we will be in an inconsistent state (the sending_buffer will be too big).
                 let n = body.read(&mut stream.sending_buffer[start..]).await?;
                 stream.sending_buffer.truncate(start + n);
-                
-                // TODO: Must also check the trailers.
-                // if n == 0 {
-                //     break;
-                //     stream.sending_at_end = true;
-                // }
 
+                // Once we've read all the data, we're done.
+                //
                 // NOTE: We break before we send the StreamWrite event as we'd rather get the
                 // trailers first (which will usually avoid multiple transfers).
                 if n == 0 {
@@ -147,10 +116,15 @@ impl OutgoingStreamBody {
             let trailers = body.trailers().await?;
             let mut stream_state = self.stream_state.lock().await;
             stream_state.sending_trailers = trailers;
-            stream_state.sending_at_end = true;
+            stream_state.sending_end = true;
         }
 
-        self.connection_event_sender.send(ConnectionEvent::StreamWrite {
+        // Let the ConnectionWriter know that we completed generating the
+        // outgoing body.
+        //
+        // NOTE: It doesn't matter if this fails as we are going to exit this
+        // function immediately afterwards anyway.
+        let _ = self.connection_event_sender.send(ConnectionEvent::StreamWrite {
             stream_id: self.stream_id
         }).await;
 
@@ -161,8 +135,9 @@ impl OutgoingStreamBody {
 
 /// Reader of data received on a HTTP2 stream from a remote endpoint.
 ///
+/// TODO: If an IncomingStreamBody gets dropped, any data that is still unread
+/// should be freed and given back to the other endpoint via a WINDOW_UPDATE
 /// TODO: Sometimes we may want read() to return an error (e.g. if there was a stream error.)
-/// TODO: Dropping this object should imply what?
 /// TODO: This is unsufficient as it doesn't do things like read the Content-Type or other things like Transfer-Encoding (requests a layer on top of this.)
 pub struct IncomingStreamBody {
     pub stream_id: StreamId,
@@ -180,10 +155,23 @@ pub struct IncomingStreamBody {
     /// Used by the body to wait for more data to become available to read from the stream (or for an error to occur).
     pub read_available_receiver: channel::Receiver<()>,
 
-    /// Expected length of this body derived from the 'Content-Length' header.
+    /// Expected length of this body typically derived from the 'Content-Length' header.
+    ///
     /// NOTE: Validation that we don't read less or more than this number is
     /// done in the connection code and not in this file.
     pub expected_length: Option<usize>
+}
+
+impl Drop for IncomingStreamBody {
+    fn drop(&mut self) {
+        // Notify the connection that we are done reading from the stream. Any remaining
+        // data received on this stream can be discarded. 
+        // TODO: If the stream was fully read successfully, then we don't need to send this.
+        self.connection_event_sender.try_send(ConnectionEvent::StreamReaderClosed {
+            stream_id: self.stream_id,
+            stream_state: self.stream_state.clone()
+        });
+    }
 }
 
 #[async_trait]
@@ -192,7 +180,7 @@ impl Body for IncomingStreamBody {
 
     async fn trailers(&mut self) -> Result<Option<Headers>> {
         let mut stream_state = self.stream_state.lock().await;
-        if !stream_state.received_end_of_stream {
+        if !stream_state.received_end {
             return Err(err_msg("Haven't read entire stream yet"));
         }
 
@@ -202,6 +190,10 @@ impl Body for IncomingStreamBody {
     }
 }
 
+// When this is dropped, there as a few things that can happen.
+// 1. We become an infinite sink hole for new data.
+// 2. 
+
 #[async_trait]
 impl Readable for IncomingStreamBody {
     async fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
@@ -210,8 +202,6 @@ impl Readable for IncomingStreamBody {
         // TODO: Error out if this has to loop more than twice.
         while !buf.is_empty() {
             let mut stream_state = self.stream_state.lock().await;
-
-            // TODO: Ideally stream errors should take precedance as some of them could be retryable?
 
             if let Some(e) = &stream_state.error {
                 return Err(e.clone().into());
@@ -230,18 +220,26 @@ impl Readable for IncomingStreamBody {
                 // to avoid acquiring a connection wide lock in this function.
                 stream_state.local_window += n as WindowSize;
 
+                // Notify the connection that we can receive more data (as the
+                // received buffer has shrunk).
+                //
+                // NOTE: It is ok for this to fail as we are allowed to continue reading from a
+                // body even after the connection has been closed so long as all data has already
+                // been received. This would typically happen if either side tries to gracefully
+                // close the connection. See the later self.read_available_receiver.recv() which
+                // will fail if we didn't get all the data.
+                //
                 // TODO: Optimize this so that we only need the channel to store a HashSet of stream ids
-                self.connection_event_sender.send(ConnectionEvent::StreamRead {
+                let _ = self.connection_event_sender.send(ConnectionEvent::StreamRead {
                     stream_id: self.stream_id,
                     count: n
-                }).await
-                .map_err(|_| err_msg("Connection hung up.")) ?;
+                }).await;
 
                 nread += n;
 
                 // Stop as soon as we read any data
                 break;
-            } else if stream_state.received_end_of_stream {
+            } else if stream_state.received_end {
                 break;
             }
 
@@ -249,7 +247,11 @@ impl Readable for IncomingStreamBody {
             drop(stream_state);
 
             // Wait for a change in the reader buffer.
-            self.read_available_receiver.recv().await?;
+            // If this fails, then that means that we haven't received all data yet, but the
+            // connection is closed so we will never get all the data.
+            // TODO: If this fails, check one last time to see if these is a better error in the state?
+            self.read_available_receiver.recv().await
+                .map_err(|_| err_msg("Connection closed before receiving all data"))?;
         }
 
         Ok(nread)
@@ -257,38 +259,45 @@ impl Readable for IncomingStreamBody {
 }
 
 
-pub async fn create_server_request_body(
-    request_head: &RequestHead, mut incoming_body: IncomingStreamBody
-) -> Result<Box<dyn Body>> {
+/// NOTE: We assume that the 'stream_state' matches the one in 'incoming_body'.
+pub fn create_server_request_body(
+    request_head: &RequestHead, mut incoming_body: IncomingStreamBody,
+    stream_state: &mut StreamState,
+) -> StreamResult<Box<dyn Body>> {
     // 8.1.2.2
     // Verify that there are no HTTP 1 connection level headers exist.
-    if request_head.headers.find(crate::header::CONNECTION).next().is_some() ||
-       request_head.headers.find(crate::header::TRANSFER_ENCODING).next().is_some() {
+    if request_head.headers.find(CONNECTION).next().is_some() ||
+       request_head.headers.find(TRANSFER_ENCODING).next().is_some() {
         // TODO: Make this a stream error
-        return Err(err_msg("Received HTTP 1 connection level headers"));
+        return Err(StreamError::malformed_message(
+            "Received HTTP 1 connection level headers"));
     }
 
-    if let Some(len) = crate::header_syntax::parse_content_length(&request_head.headers)? {
-        let mut stream_state = incoming_body.stream_state.lock().await;
-        stream_state.received_expected_bytes = Some(len);
+    let content_length = crate::header_syntax::parse_content_length(&request_head.headers)
+        .map_err(|_| StreamError::malformed_message("Request contains invalid Content-Length"))?;
 
+    if let Some(len) = content_length {
+        stream_state.received_expected_bytes = Some(len);
         incoming_body.expected_length = Some(len);
     }
 
     Ok(Box::new(incoming_body))
 }
 
-pub async fn create_client_response_body(
+/// NOTE: We assume that the 'stream_state' matches the one in 'incoming_body'.
+pub fn create_client_response_body(
     request_method: Method,
     response_head: &ResponseHead,
-    mut incoming_body: IncomingStreamBody
-) -> Result<Box<dyn Body>> {
+    mut incoming_body: IncomingStreamBody,
+    stream_state: &mut StreamState
+) -> StreamResult<Box<dyn Body>> {
     // 8.1.2.2
     // Verify that there are no HTTP 1 connection level headers exist.
-    if response_head.headers.find(crate::header::CONNECTION).next().is_some() ||
-       response_head.headers.find(crate::header::TRANSFER_ENCODING).next().is_some() {
+    if response_head.headers.find(CONNECTION).next().is_some() ||
+       response_head.headers.find(TRANSFER_ENCODING).next().is_some() {
         // TODO: Make this a stream error
-        return Err(err_msg("Received HTTP 1 connection level headers"));
+        return Err(StreamError::malformed_message(
+            "Received HTTP 1 connection level headers"));
     }
 
     let mut expected_length = None;
@@ -303,14 +312,13 @@ pub async fn create_client_response_body(
     if request_method == Method::HEAD || info_status || status_num == 204 ||
        status_num == 304 || (request_method == Method::CONNECT && success_status) {
         expected_length = Some(0);
-    } else if let Some(len) = crate::header_syntax::parse_content_length(&response_head.headers)? {
-        expected_length = Some(len)
+    } else {
+        expected_length = crate::header_syntax::parse_content_length(&response_head.headers)
+            .map_err(|_| StreamError::malformed_message("Response contains invalid Content-Length"))?;
     }
 
     if let Some(len) = expected_length {
-        let mut stream_state = incoming_body.stream_state.lock().await;
         stream_state.received_expected_bytes = Some(len);
-
         incoming_body.expected_length = Some(len);
     }
 

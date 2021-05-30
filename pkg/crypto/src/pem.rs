@@ -38,6 +38,7 @@ impl PEM {
 pub struct PEMEntry {
     /// Type name associated with this entry.
     pub label: AsciiString,
+
     /// Value of this entry as present in the file. (Not parsed)
     pub value: AsciiString,
 }
@@ -68,7 +69,6 @@ impl PEMEntry {
         }
 
         let out = common::base64::decode(&input)?;
-        println!("IN {} {}", input.len(), out.len());
         Ok(out)
     }
 }

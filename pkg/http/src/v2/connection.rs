@@ -152,16 +152,17 @@ impl Connection {
 
         // TODO: Implement SETTINGS_MAX_HEADER_LIST_SIZE.
 
+        let (connection_event_sender, connection_event_receiver) = channel::unbounded();
+
         Connection {
             shared: Arc::new(ConnectionShared {
                 is_server,
                 request_handler: server_request_handler,
-                connection_event_channel: channel::unbounded(),
+                connection_event_sender,
                 state: Mutex::new(ConnectionState {
                     running: false,
                     error: None,
-                    remote_header_decoder: hpack::Decoder::new(
-                        local_settings[SettingId::HEADER_TABLE_SIZE] as usize),
+                    connection_event_receiver: Some(connection_event_receiver),
                     local_settings: local_settings.clone(),
                     local_settings_ack_waiter: None,
                     local_pending_settings: local_settings.clone(),
@@ -211,9 +212,9 @@ impl Connection {
         // Perform a local close.
         {
             let mut stream_state = stream.state.lock().await;
-            stream_state.sending_at_end = true;
+            stream_state.sending_end = true;
             drop(outgoing_body);
-            stream.sent_end_of_stream = true;
+            stream.sending_end_flushed = true;
         }
 
 
@@ -273,7 +274,7 @@ impl Connection {
         // Completely close the remote (client) endpoint. 
         {
             let mut stream_state = stream.state.lock().await;
-            stream_state.received_end_of_stream = true;
+            stream_state.received_end = true;
             drop(incoming_body);
         }
 
@@ -337,7 +338,7 @@ impl Connection {
         // For the first request in the queue, send an event so that the
         // connection takes notice
         if empty_queue {
-            let _ = self.shared.connection_event_channel.0.try_send(ConnectionEvent::SendRequest);
+            let _ = self.shared.connection_event_sender.try_send(ConnectionEvent::SendRequest);
         }
         
         // TODO: If the receiver fails, does that mean that we can definately retry the request?
@@ -359,10 +360,43 @@ impl Connection {
     ///             amount of time. Even if graceful is set to true, shutdown() may be called
     ///             additional times later with the flag to set to false to expedite the shutdown.
     pub async fn shutdown(&self, graceful: bool) -> Result<()> {
-        
-        // Need to set an error
+        let mut connection_state = self.shared.state.lock().await;
+        if !connection_state.running {
+            return Err(err_msg("Can't shut down a non-started connection"));
+        }
 
-        Err(err_msg("Shutting down"))
+        let error = {
+            if graceful {
+                // TODO: Disallow gracefully shutting down while already gracefully shutting down.
+                ProtocolErrorV2 {
+                    code: ErrorCode::NO_ERROR,
+                    message: "Gracefully closing connection",
+                    local: true
+                }
+            } else {
+                ProtocolErrorV2 {
+                    code: ErrorCode::PROTOCOL_ERROR,
+                    message: "Abruptly closing connection",
+                    local: true
+                }
+            }
+        };
+        connection_state.error = Some(error.clone());
+     
+        let last_stream_id = connection_state.last_received_stream_id;
+
+        let _ = self.shared.connection_event_sender.send(ConnectionEvent::Goaway {
+            last_stream_id,
+            error
+        }).await;
+
+        if graceful && connection_state.streams.is_empty() {
+            let _ = self.shared.connection_event_sender.try_send(ConnectionEvent::Closing { error: None });
+        }
+
+        // TODO: We should also immediately cancel anything in 'pending_requests'
+
+        Ok(())
     }
 
     // TODO: Need to support initializing with settings already negiotated via HTTP
@@ -408,32 +442,14 @@ impl Connection {
 
         let _ = reader_task.cancel().await;
 
+        // TODO: No matter what, go through the state and verify that every pending request is
+        // refused gracefully. Any streams that are still active should also be cleaned out.
+
         // TODO: If the write thread failed, we probably need to cleanup the streams, mark the connection is errored out
         // and probably also kill any pending requests.
 
         result
-        
-        // TODO: Ensure that the first set of settings are acknowledged.
-
-        // Write settings frame
-        // TODO: If the settings frame contains parameters with default values, don't send them.
-
-        // Wait for first settings frame from remote endpoint if we haven't already figured out the remote
-        // endpoint's settings.
-
-        // Let's say we get a Request, what do we do?
-        // - Get a new stream/id
-        // - begin sending the headers is a contigous chunk
-        // - Set stream is Open and start sending 
-        // - Start a new thread to read from the body into a buffer. 
-
-        // Depending on the 
-
-        // TODO: While sending/receiving headers, we should still be able to receive/send on the other half of the pipe.
-
     }
-
-    // TODO: According to RFC 7540 Section 4.1, undefined flags should be left as zeros.
 }
 
 

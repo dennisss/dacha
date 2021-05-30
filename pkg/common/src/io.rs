@@ -416,12 +416,23 @@ pub trait Writeable: Send + Sync + Unpin + 'static {
 
     async fn write_all(&mut self, mut buf: &[u8]) -> Result<()> {
         while buf.len() > 0 {
-            let n = self.write(buf).await?;
-            if n == 0 {
-                return Err(err_msg("Underlying stream closed"));
-            }
+            match self.write(buf).await {
+                Ok(0) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::WriteZero, "No progress made while writing").into())
+                }
+                Ok(n) => { buf = &buf[n..]; }
+                Err(error) => {
+                    if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
+                        if io_error.kind() == std::io::ErrorKind::Interrupted {
+                            continue;
+                        }
+                    }
 
-            buf = &buf[n..];
+                    return Err(error);
+                }
+
+            }            
         }
 
         Ok(())

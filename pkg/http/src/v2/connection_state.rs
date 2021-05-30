@@ -1,26 +1,33 @@
+use std::sync::Arc;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
 use common::task::ChildTask;
+use common::async_std::channel;
+use common::async_std::sync::Mutex;
 
 use crate::proto::v2::*;
 use crate::v2::settings::*;
 use crate::v2::types::*;
-use crate::hpack;
 use crate::request::Request;
 use crate::response::{Response, ResponseHandler};
 use crate::v2::stream::Stream;
+use crate::v2::stream_state::StreamState;
 
 /// Volatile data associated with the connection.
 pub struct ConnectionState {
     /// Whether or not run() was ever called on this Connection.
     /// This is mainly used to ensure that at most one set of reader/writer threads are associated with the connection.
     pub running: bool,
+    
+    /// Will be taken by the ConnectionWriter once it starts running.
+    pub connection_event_receiver: Option<channel::Receiver<ConnectionEvent>>,
 
     // TODO: Need to have solid understanding of the GOAWAY state where we are gracefully shutting down but there was no error.
     // Likewise if we send a GOAWAY, we shoulnd't create new streams?? (e.g. no more requests or PUSH_PROMISES??)
 
-    /// If present, then the 
+    /// If present, then the connection is either shutting down or already
+    /// closed.
     pub error: Option<ProtocolErrorV2>,
 
     /// Used by an client to enqueue requests to be sent to the other endpoint.
@@ -35,10 +42,6 @@ pub struct ConnectionState {
     pub pending_requests: VecDeque<ConnectionLocalRequest>,
 
     // TODO: Shard this into the reader and writer states.
-
-    /// Used to decode remotely created headers received on the connection.
-    /// NOTE: This is shared across all streams on the connection.
-    pub remote_header_decoder: hpack::Decoder,
 
     /// Settings currently in use by this endpoint.
     pub local_settings: SettingsContainer,
@@ -128,8 +131,22 @@ pub enum ConnectionEvent {
         count: usize
     },
 
+    /// Indicates that no more data will ever be read from the given stream.
+    /// In response, we can drop any future data received on this stream.
+    StreamReaderClosed {
+        stream_id: StreamId,
+        stream_state: Arc<Mutex<StreamState>>
+    },
+
     StreamWrite {
         stream_id: StreamId
+    },
+
+    /// Sent when the OutgoingStreamBody fails to generate more data to write into the stream.
+    /// In response, we should close the stream.
+    StreamWriteFailure {
+        stream_id: StreamId,
+        internal_error: common::errors::Error
     },
 
     /// We are an HTTP client connection and a locally generated request needs to be sent to the
@@ -147,7 +164,7 @@ pub enum ConnectionEvent {
     SendPushPromise {
         request: Request,
         response: Response
-    }
+    },
 }
 
 

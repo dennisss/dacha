@@ -465,10 +465,10 @@ parser!(parse_quoted_pair<u8> => seq!(c => {
 // asterisk-form`
 parser!(pub parse_request_target<RequestTarget> => {
     alt!(
+        map(parse_asterisk_form, |_| RequestTarget::AsteriskForm),
         map(parse_origin_form, |(p, q)| RequestTarget::OriginForm(p, q)),
         map(parse_absolute_form, |u| RequestTarget::AbsoluteForm(u)),
-        map(parse_authority_form, |a| RequestTarget::AuthorityForm(a)),
-        map(parse_asterisk_form, |_| RequestTarget::AsteriskForm)
+        map(parse_authority_form, |a| RequestTarget::AuthorityForm(a))
     )
 });
 

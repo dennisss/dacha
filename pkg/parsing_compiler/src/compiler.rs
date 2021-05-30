@@ -353,10 +353,12 @@ impl<'c> Compiler<'c> {
                         if let TypeTypeCase::Primitive(PrimitiveType::U8) = buf.element_type().type_case() {
                             lines.add("\tbuf.extend_from_slice(parse_next!(input, ::parsing::take_exact(length)));");
                         } else {
-                            lines.add("\tbuf.reserve(length);");
-                            lines.add("\tfor _ in 0..length {");
-                            lines.add(format!("\t\tbuf.push({});", element_parser));
-                            lines.add("\t}");
+                            lines.add(format!(r#"{{
+                                let mut input = parse_next!(input, ::parsing::take_exact(length));
+                                while !input.is_empty() {{
+                                    buf.push({});
+                                }}
+                            }}"#, element_parser));
                         }
                     }
                     BufferTypeSizeCase::Unknown => { panic!(); }

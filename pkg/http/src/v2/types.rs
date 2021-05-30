@@ -29,6 +29,14 @@ impl ProtocolErrorV2 {
     pub fn is_retryable(&self) -> bool {
         self.code == ErrorCode::REFUSED_STREAM
     }
+
+    pub fn malformed(message: &'static str) -> Self {
+        Self {
+            code: ErrorCode::PROTOCOL_ERROR,
+            message,
+            local: true
+        }
+    }
 }
 
 impl std::fmt::Display for ProtocolErrorV2 {
@@ -38,3 +46,28 @@ impl std::fmt::Display for ProtocolErrorV2 {
 }
 
 pub type ProtocolResultV2<T> = std::result::Result<T, ProtocolErrorV2>;
+
+
+/// Wrapped ProtocolErrorV2 which indicates explicitly that the error is
+/// isolated just to one stream.
+pub struct StreamError(pub ProtocolErrorV2);
+
+impl StreamError {
+    pub fn stream_closed(message: &'static str) -> Self {
+        Self(ProtocolErrorV2 {
+            code: ErrorCode::STREAM_CLOSED,
+            message,
+            local: true
+        })
+    }
+
+    pub fn malformed_message(message: &'static str) -> Self {
+        Self(ProtocolErrorV2 {
+            code: ErrorCode::PROTOCOL_ERROR,
+            message,
+            local: true
+        })
+    }
+}
+
+pub type StreamResult<T> = std::result::Result<T, StreamError>;

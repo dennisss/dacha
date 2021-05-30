@@ -1,29 +1,27 @@
-use std::{convert::TryFrom, sync::Arc};
-use std::collections::HashMap;
+use std::sync::Arc;
 
-use common::{chrono::Duration, errors::*};
+use common::errors::*;
 use common::io::{Writeable, Readable};
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
-use common::chrono::prelude::*;
 use common::task::ChildTask;
 
 use crate::v2::types::*;
-use crate::v2::body::*;
-use crate::v2::stream::*;
-use crate::v2::stream_state::*;
 use crate::v2::headers::*;
 use crate::v2::connection_state::*;
-use crate::{headers::connection, method::Method, v2::settings::*};
-use crate::hpack::HeaderFieldRef;
 use crate::hpack;
-use crate::request::Request;
-use crate::response::{Response, ResponseHead};
-use crate::server::RequestHandler;
 use crate::proto::v2::*;
 use crate::v2::frame_utils;
 use crate::v2::connection_shared::*;
+
+/*
+    Streams will be one in one of a few odd temporary states:
+    - New stream created by  Client: pending 
+        => the client task can block on getting th result.
+            We mainly need to later on send it back a 
+    - New stream received by Server: pending getting a response
+        => We'll create a new task to generate the response.
+        => later that initial task will end and instead become the sending task
+*/
+
 
 pub struct ConnectionWriter {
     shared: Arc<ConnectionShared>
@@ -54,8 +52,13 @@ impl ConnectionWriter {
 
         let mut remote_settings_known;
 
+        let connection_event_receiver;
+
         {
             let mut state = self.shared.state.lock().await;
+
+            connection_event_receiver = state.connection_event_receiver.take()
+                .ok_or(err_msg("Multiple ConnectionWriters started?"))?;
 
             let mut payload = vec![];
             state.local_pending_settings.serialize_payload(&state.local_settings, &mut payload);
@@ -104,7 +107,7 @@ impl ConnectionWriter {
                 if remote_settings_known && !pending_events.is_empty() {
                     pending_events.remove(0)
                 } else {
-                    self.shared.connection_event_channel.1.recv().await?
+                    connection_event_receiver.recv().await?
                 }
             };
 
@@ -124,13 +127,9 @@ impl ConnectionWriter {
                 }
             }
 
-            println!("Got ConnectionEvent!");
-
             match event {
                 // TODO: Instead alwas enqueue requests and always 
-                ConnectionEvent::SendRequest => {
-                    // TODO: Only allow if we are a client.
-                    
+                ConnectionEvent::SendRequest => {                    
                     println!("Sending request...");
 
                     // TODO: If anything in here fails, we should report it to the requester rather than
@@ -176,7 +175,8 @@ impl ConnectionWriter {
                         if request.body.len() == Some(0) {
                             // TODO: Lock and mark as locally closed?
                             let mut stream_state = stream.state.lock().await;
-                            stream_state.sending_at_end = true;
+                            stream_state.sending_end = true;
+                            stream.sending_end_flushed = true;
 
                             true
                         } else {
@@ -190,18 +190,6 @@ impl ConnectionWriter {
                     connection_state.local_stream_count += 1;
                     connection_state.streams.insert(stream_id, stream);
 
-                    // 
-                
-                    /*
-                        Streams will be one in one of a few odd temporary states:
-                        - New stream created by  Client: pending 
-                            => the client task can block on getting th result.
-                               We mainly need to later on send it back a 
-                        - New stream received by Server: pending getting a response
-                            => We'll create a new task to generate the response.
-                            => later that initial task will end and instead become the sending task
-                    */
-
                     let max_remote_frame_size = connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
 
                     drop(connection_state);
@@ -209,12 +197,13 @@ impl ConnectionWriter {
                     // We are now done setting up the stream.
                     // Now we should just send the request to the other side.
 
+                    // TODO: Split this up into the request validation and header encoding components so that we can
+                    // return errors if it is invalid.
                     let header_block = encode_request_headers_block(
                         &request.head, &mut local_header_encoder)?;
+
                     write_headers_block(writer.as_mut(), stream_id, &header_block, local_end,
                                         max_remote_frame_size).await?;
-
-                    println!("Done request send!");
                 }
                 ConnectionEvent::SendPushPromise { request, response } => {
 
@@ -242,7 +231,8 @@ impl ConnectionWriter {
                         if response.body.len() == Some(0) {
                             // TODO: Lock and mark as locally closed?
                             let mut stream_state = stream.state.lock().await;
-                            stream_state.sending_at_end = true;
+                            stream_state.sending_end = true;
+                            stream.sending_end_flushed = true;
 
                             true
                         } else {
@@ -256,6 +246,8 @@ impl ConnectionWriter {
                     let max_remote_frame_size = connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
 
                     drop(connection_state);
+
+                    println!("SENDING RESPONSE!");
 
                     // TODO: Verify that whenever we start encoding headers, we definately send them
                     let header_block = encode_response_headers_block(
@@ -273,7 +265,7 @@ impl ConnectionWriter {
                         // TODO: Make the wait relative to the last write.
                         // TODO: Ignore connection closed errors?
                         writer.flush().await?;
-                        common::wait_for(std::time::Duration::from_secs(1));
+                        common::wait_for(std::time::Duration::from_secs(1)).await;
                         return Ok(());
                     }
                 }
@@ -281,7 +273,7 @@ impl ConnectionWriter {
                     // TODO: Should we break out of the thread when we send this.
                     writer.write_all(&frame_utils::new_goaway_frame(last_stream_id, error.clone())).await?;
                     writer.flush().await?;
-                    common::wait_for(std::time::Duration::from_secs(1));
+                    common::wait_for(std::time::Duration::from_secs(1)).await;
 
                     if error.code == ErrorCode::NO_ERROR {
                         let connection_state = self.shared.state.lock().await;
@@ -303,6 +295,7 @@ impl ConnectionWriter {
                     remote_settings_known = true;
                 }
                 ConnectionEvent::ResetStream { stream_id, error } => {
+                    println!("SENDING RST STREAM : {:?}", error);
                     writer.write_all(&frame_utils::new_rst_stream_frame(stream_id, error)).await?;
                 }
                 ConnectionEvent::Ping { ping_frame } => {
@@ -320,6 +313,11 @@ impl ConnectionWriter {
                         writer.write_all(&frame_utils::new_window_update_frame(stream_id, count)).await?;
                     }
                 }
+                ConnectionEvent::StreamReaderClosed { stream_id, stream_state } => {
+                    // TODO:
+                    // - Reclaim any connection/stream level quota.
+                    // - Mark as reader_closed for future packets. 
+                }
                 // Write event:
                 // - Happens on either remote flow control updates or 
                 ConnectionEvent::StreamWrite { .. } => {
@@ -330,13 +328,13 @@ impl ConnectionWriter {
     
                     let mut next_frame = None;
     
+                    // TODO: Ensure that whenever we receive window updates, we retry sending something.
+                    if connection_state.remote_connection_window <= 0 {
+                        continue;
+                    }
 
                     for (stream_id, stream) in &mut connection_state.streams {
-                        if connection_state.remote_connection_window <= 0 {
-                            break;
-                        }
-
-                        if stream.sent_end_of_stream {
+                        if stream.sending_end_flushed {
                             continue;
                         }
     
@@ -352,7 +350,7 @@ impl ConnectionWriter {
                         let n_raw = std::cmp::min(min_window as usize, stream_state.sending_buffer.len());
                         let n = std::cmp::min(n_raw, max_remote_frame_size as usize);
                         
-                        if n == 0 && !stream_state.sending_at_end {
+                        if n == 0 && !stream_state.sending_end {
                             continue;
                         }
 
@@ -365,9 +363,11 @@ impl ConnectionWriter {
 
                         let _ = stream.write_available_notifier.try_send(());
 
-                        stream.sent_end_of_stream = stream_state.sending_at_end;
+                        stream.sending_end_flushed = stream_state.sending_end;
 
-                        next_frame = Some((*stream_id, frame_data, stream_state.sending_trailers.take(), stream_state.sending_at_end, stream_state.is_closed()));
+                        next_frame = Some((
+                            *stream_id, frame_data, stream_state.sending_trailers.take(),
+                            stream_state.sending_end, stream.is_closed(&stream_state)));
 
                         break;
                     }
@@ -377,9 +377,10 @@ impl ConnectionWriter {
     
                     // Write out the next frame.
                     // TODO: To avoid so much copying, consider never sending until we have one full 'chunk' of data.
-                    if let Some((stream_id, frame_data, trailers, end_stream, stream_closed)) = next_frame {
+                    if let Some((stream_id, frame_data, trailers,
+                                 end_stream, stream_closed)) = next_frame {
                         if stream_closed {
-                            self.shared.finish_stream(connection_state, stream_id);
+                            self.shared.finish_stream(connection_state, stream_id, None).await;
                         }
 
                         // Ensure all locks are dropped before we perform a blocking write.
@@ -399,10 +400,20 @@ impl ConnectionWriter {
                         }
                     }
                 }
+                ConnectionEvent::StreamWriteFailure { stream_id, internal_error } => {
+                    let mut connection_state = self.shared.state.lock().await;
+                    self.shared.finish_stream(&mut connection_state, stream_id, Some(ProtocolErrorV2 {
+                        code: ErrorCode::INTERNAL_ERROR,
+                        message: "Internal error occured while sending data",
+                        local: true
+                    })).await;
+                }
             }
         }
     }
 
+    // TODO: Have a better way of cancelling this as we can't partially close this as it may set the error without
+    // ending the Goaway?
     async fn wait_for_settings_ack(shared: Arc<ConnectionShared>) {
         common::wait_for(std::time::Duration::from_secs(SETTINGS_ACK_TIMEOUT_SECS)).await;
 
@@ -425,7 +436,7 @@ impl ConnectionWriter {
         drop(connection_state);
 
         // TODO: Must coordinate this with the reader thread.
-        let _ = shared.connection_event_channel.0.try_send(ConnectionEvent::Goaway {
+        let _ = shared.connection_event_sender.try_send(ConnectionEvent::Goaway {
             last_stream_id,
             error
         });

@@ -55,15 +55,17 @@ pub fn parse_varint(mut input: &[u8], prefix_bits: usize) -> Result<(usize, &[u8
         return Ok((value, input));
     }
 
+    const LOWER7: usize = (1 << 7) - 1;
+
     let mut done = false;
     for i in 0..MAX_VARINT_EXTRA_BYTES {
         let next_byte = parse_next!(input, be_u8);
         
         // TODO: Technically the shift could also overflow.
         value =
-            ((next_byte as usize) & limit).checked_shl(7 * (i as u32))
+            ((next_byte as usize) & LOWER7).checked_shl(7 * (i as u32))
             .and_then(|v| value.checked_add(v))
-            .ok_or_else(|| err_msg("Too large to fit in 64-bit integer"))?;            
+            .ok_or_else(|| err_msg("Too large to fit in usize"))?;
 
         if (next_byte & (1 << 7)) == 0 {
             done = true;
@@ -72,7 +74,7 @@ pub fn parse_varint(mut input: &[u8], prefix_bits: usize) -> Result<(usize, &[u8
     }
 
     if !done {
-        return Err(err_msg("Too large to fit in 64-bit integer"));
+        return Err(err_msg("Too large to fit in usize"));
     }
 
     Ok((value, input))
@@ -227,6 +229,22 @@ mod tests {
         // RFC 7541: Appendix C.1.2
         test_pair(1337, 5, &[ 0b00011111, 0b10011010, 0b00001010 ])?;
         // TODO: Add another!
+
+        Ok(())
+    }
+
+    #[test]
+    fn varint2_test() -> Result<()> {
+
+        let mut out = vec![];
+
+        serialize_varint(4097, 5, &mut out);
+        assert_eq!(&out, &[31, 226, 31]);
+
+        let (v, rest) = parse_varint(&out, 5)?;
+        assert_eq!(rest.len(), 0);
+        assert_eq!(v, 4097);
+        
 
         Ok(())
     }

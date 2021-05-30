@@ -196,7 +196,7 @@ impl Server {
                     !headers.raw_headers.is_empty() {
                         return Err(ProtocolErrorV1 {
                             code: BAD_REQUEST,
-                            message: "Interface preface head for HTTP 2.0"
+                            message: "Incorrect start line for HTTP 2.0"
                         }.into());
                     }
 

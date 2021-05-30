@@ -21,7 +21,7 @@ const SETTINGS_HEADER: &'static [u8] = b"HTTP2-Settings";
 const MIN_ALLOWED_FRAME_SIZE: u32 = 1 << 14;
 const MAX_ALLOWED_FRAME_SIZE: u32 = (2 << 24) - 1;
 
-
+/// Container of HTTP2 settings.
 #[derive(Clone)]
 pub struct SettingsContainer {
     data: HashMap<SettingId, u32>

@@ -31,7 +31,7 @@ pub struct StreamState {
     /// we have received all data on this stream from the remote endpoint.
     ///
     /// TODO: Support non-data trailers?
-    pub received_end_of_stream: bool,
+    pub received_end: bool,
 
     /// Number of bytes that we expect to be read from the stream.
     /// Derived from the 'Content-Length' header received if any.
@@ -53,22 +53,5 @@ pub struct StreamState {
 
     /// If true, 'sending_buffer' and 'sending_trailers' contains the last
     /// remaining data that needs to be sent through this stream.
-    pub sending_at_end: bool,
-}
-
-impl StreamState {
-    /// TODO: This will change if we allow sending trailers?
-    pub fn is_closed(&self) -> bool {
-        if self.error.is_some() {
-            return true;
-        }
-
-        // Unless all of the data is actually sent, we can't consider it closed.
-        if !self.sending_at_end || !self.sending_buffer.is_empty() || self.sending_trailers.is_some() {
-            return false;
-        }
-
-        self.received_end_of_stream
-    }
-
+    pub sending_end: bool,
 }

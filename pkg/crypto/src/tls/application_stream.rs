@@ -5,6 +5,7 @@ use common::errors::*;
 use common::io::{Readable, Writeable};
 use common::bytes::{Bytes, Buf};
 
+use crate::tls::alert::*;
 use crate::tls::handshake::Handshake;
 use crate::tls::record_stream::*;
 use crate::tls::handshake_summary::HandshakeSummary;
@@ -84,6 +85,20 @@ impl Readable for ApplicationDataReader {
             } else if let Message::Handshake(Handshake::NewSessionTicket(_)) = msg {
                 println!("IGNORING NEW SESSION TICKET");
                 continue;
+            } else if let Message::Alert(alert) = msg {
+                if alert.level == AlertLevel::fatal {
+                    // TODO: In this case, close the underlying stream?
+                    return Err(err_msg("Fatal TLS error received"));
+                }
+
+                if alert.description == AlertDescription::close_notify {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionAborted, "TLS close_notify received").into());
+                }
+                // TODO: Fatal errors should 
+
+                println!("ALERT: {:?}", alert);
+
             } else {
                 println!("{:?}", msg);
                 // TODO: Now in an error state. Future reads should fail?
@@ -107,6 +122,9 @@ impl Writeable for ApplicationDataWriter {
         // TODO: We may need to split up a packet that is too large.
         self.record_writer.send(buf).await?;
         Ok(buf.len())
+
+
+        // TODO: Need to implement a close that sends a close_notify.
     }
 
     async fn flush(&mut self) -> Result<()> {
