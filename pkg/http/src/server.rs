@@ -200,8 +200,10 @@ impl Server {
                         }.into());
                     }
 
+                    let options = crate::v2::ConnectionOptions::default();
+
                     let server_handler = ServerRequestHandlerV2 { request_handler: handler };
-                    let conn = crate::v2::Connection::new(Some(Box::new(server_handler)));
+                    let conn = crate::v2::Connection::new(options, Some(Box::new(server_handler)));
 
                     let mut initial_state = v2::ConnectionInitialState::raw();
                     initial_state.seen_preface_head = true;
@@ -294,9 +296,11 @@ impl Server {
                     }
                 };
 
+                let options = crate::v2::ConnectionOptions::default();
+
                 // TODO: Initialize the connection with the settings received from the client.
                 let server_handler = ServerRequestHandlerV2 { request_handler: handler };
-                let conn = v2::Connection::new(Some(Box::new(server_handler)));
+                let conn = v2::Connection::new(options, Some(Box::new(server_handler)));
 
                 conn.process_upgrade_request(req).await?;
 

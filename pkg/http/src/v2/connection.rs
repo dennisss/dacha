@@ -10,43 +10,28 @@ use common::chrono::prelude::*;
 use common::task::ChildTask;
 
 use crate::v2::types::*;
-use crate::v2::body::*;
-use crate::v2::stream::*;
-use crate::v2::stream_state::*;
-use crate::v2::headers::*;
+use crate::v2::options::ConnectionOptions;
 use crate::v2::connection_state::*;
 use crate::{headers::connection, method::Method, v2::settings::*};
-use crate::hpack::HeaderFieldRef;
-use crate::hpack;
 use crate::request::Request;
 use crate::response::{Response, ResponseHead};
 use crate::server::RequestHandler;
 use crate::proto::v2::*;
-use crate::v2::frame_utils;
 use crate::v2::connection_shared::ConnectionShared;
 use crate::v2::connection_reader::ConnectionReader;
 use crate::v2::connection_writer::ConnectionWriter;
 
-
-const FLOW_CONTROL_MAX_SIZE: WindowSize = ((1u32 << 1) - 1) as i32;
-
+// TODO: Use this.
 const MAX_STREAM_ID: StreamId = (1 << 31) - 1;
 
-/// Maximum number of bytes per stream that we will allow to be enqueued for sending to the
-/// remote server.
-///
-/// The actual max used will be the min of this value of the remote flow control window
-/// size. We maintain this as a separate setting to ensure that a misbehaving remote endpoint
-/// can't force us to use large amounts of memory while queuing data. 
-const MAX_SENDING_BUFFER_SIZE: usize = 1 << 16;  // 64 KB
-
-/// 
-const MAX_ENCODER_TABLE_SIZE: usize = 8192;
-
+/// Stream id used when 
 /// NOTE: This is a client stream id. 
 const UPGRADE_STREAM_ID: StreamId = 1;
 
-/// NOTE: The connection frame control window is only updated on WINDOW_UPDATE frames (not SETTINGS)
+/// Initial size of the connection flow control window at both endpoints.
+///
+/// NOTE: The connection frame control window is only updated on WINDOW_UPDATE frames
+/// (not SETTINGS)
 const INITIAL_CONNECTION_WINDOW_SIZE: WindowSize = 65535;
 
 // TODO: Should also use PING to countinuously verify that the server is still alive.
@@ -56,46 +41,11 @@ const INITIAL_CONNECTION_WINDOW_SIZE: WindowSize = 65535;
 //
 // 
 
-// 6.9.3.
-
-/*
-#[derive(PartialEq, Debug)]
-enum StreamState {
-    Idle,
-    Open,
-    ReservedLocal,
-    ReservedRemote,
-
-    /// The local endpoint is no longer sending data on the stream. There may still be remote
-    /// data available for reading.
-    HalfClosedLocal,
-
-    HalfClosedRemote,
-
-    Closed
-}
-*/
-
-
 /*
     Eventually we want to have a HTTP2 specific wrapper around a Request/Response to support
     changing settings, assessing stream/connection ids, or using the push functionality.
 */
 
-pub struct ConnectionOptions {
-    pub protocol_settings: SettingsContainer,
-
-    pub max_sending_buffer_size: usize,
-
-    pub max_local_encoder_table_size: usize,
-
-    pub settings_ack_timeout: Duration,
-
-    /// Maximum number of locally initialized streams
-    /// The actual number used will be:
-    /// 'min(max_outgoing_stream, remote_settings.MAX_CONCURRENT_STREAMS)'
-    pub max_outgoing_streams: usize
-}
 
 
 /// Describes any past processing which has already happened on the connection
@@ -136,38 +86,31 @@ pub struct Connection {
 }
 
 impl Connection {
-    /*
-        Based on 8.1.2.3, Request must contain :method, :scheme, :path unless it is a CONNECT request (8.3)
-        
-        May contain ':authority'
-
-        for OPTIONS, :path should be '*' instead of empty.
-    */
-
-
-    pub fn new(server_request_handler: Option<Box<dyn RequestHandler>>) -> Self {
-        let local_settings = SettingsContainer::default();
-        let remote_settings = SettingsContainer::default();
+    pub fn new(options: ConnectionOptions,
+               server_request_handler: Option<Box<dyn RequestHandler>>) -> Self {
         let is_server = server_request_handler.is_some();
 
         // TODO: Implement SETTINGS_MAX_HEADER_LIST_SIZE.
 
+        let local_pending_settings = options.protocol_settings.clone();
+        
         let (connection_event_sender, connection_event_receiver) = channel::unbounded();
 
         Connection {
             shared: Arc::new(ConnectionShared {
                 is_server,
+                options,
                 request_handler: server_request_handler,
                 connection_event_sender,
                 state: Mutex::new(ConnectionState {
                     running: false,
                     error: None,
                     connection_event_receiver: Some(connection_event_receiver),
-                    local_settings: local_settings.clone(),
+                    local_settings: SettingsContainer::default(),
                     local_settings_ack_waiter: None,
-                    local_pending_settings: local_settings.clone(),
+                    local_pending_settings,
                     local_connection_window: INITIAL_CONNECTION_WINDOW_SIZE,
-                    remote_settings: remote_settings.clone(),
+                    remote_settings: SettingsContainer::default(),
                     remote_settings_known: false,
                     remote_connection_window: INITIAL_CONNECTION_WINDOW_SIZE,
                     last_received_stream_id: 0,
@@ -224,13 +167,13 @@ impl Connection {
 
         connection_state.streams.insert(UPGRADE_STREAM_ID, stream);
         
-
         // TODO: Assuming that we sent the right settings, we can assume that the server now knows 
         // our settings and we can start using them.
 
         Ok(Self::receiver_future(receiver))
     }
 
+    /// Static lifetime helper for waiting for a receiver's value.
     async fn receiver_future(receiver: channel::Receiver<Result<Response>>) -> Result<Response> {
         receiver.recv().await?
     }

@@ -19,7 +19,7 @@ const INFINITE: u32 = u32::MAX;
 const SETTINGS_HEADER: &'static [u8] = b"HTTP2-Settings";
 
 const MIN_ALLOWED_FRAME_SIZE: u32 = 1 << 14;
-const MAX_ALLOWED_FRAME_SIZE: u32 = (2 << 24) - 1;
+const MAX_ALLOWED_FRAME_SIZE: u32 = (1 << 24) - 1; 
 
 /// Container of HTTP2 settings.
 #[derive(Clone)]
@@ -116,7 +116,7 @@ impl SettingsContainer {
     ///
     /// TODO: Also check against usize for values which are sensitive 
     ///
-    /// Returns the old value of the setting if any
+    /// Returns the old value of the setting if any.
     pub fn set(&mut self, id: SettingId, value: u32) -> Result<Option<u32>> {
         match id {
             SettingId::HEADER_TABLE_SIZE => {},

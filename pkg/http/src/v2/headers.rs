@@ -171,6 +171,13 @@ pub fn encode_trailers_block(headers: &Headers, encoder: &mut hpack::Encoder) ->
     header_block
 }
 
+fn check_pseudo_value_not_set<T>(value: &Option<T>) -> StreamResult<()> {
+    if value.is_some() {
+        return Err(StreamError::malformed_message("Duplicate pseudo header"));
+    }
+    Ok(())
+}
+
 pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<RequestHead> {
     let mut method = None;
     let mut scheme = None;
@@ -181,14 +188,18 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
         // TODO: Validate no duplicates
 
         if header.name == METHOD_PSEUDO_HEADER_NAME.as_bytes() {
+            check_pseudo_value_not_set(&method)?;
             method = Some(Method::try_from(header.value.as_ref())
                 .map_err(|_| StreamError::malformed_message("Invalid method"))?);
         } else if header.name == SCHEME_PSEUDO_HEADER_NAME.as_bytes() {
+            check_pseudo_value_not_set(&scheme)?;
             scheme = Some(to_ascii_string(header.value)?);
         } else if header.name == AUTHORITY_PSEUDO_HEADER_NAME.as_bytes() {
+            check_pseudo_value_not_set(&authority)?;
             authority = Some(parsing::complete(crate::uri_syntax::parse_authority)(header.value.into())
                 .map_err(|_| StreamError::malformed_message("Received malformed authority header"))?.0);
         } else if header.name == PATH_PSEUDO_HEADER_NAME.as_bytes() {
+            check_pseudo_value_not_set(&path)?;
             path = Some(to_ascii_string(header.value)?);
         } else {
             return Err(StreamError::malformed_message("Received unknown pseudo header"));
@@ -200,6 +211,13 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
 
     let method = method.ok_or(StreamError::malformed_message("Missing method header"))?;
 
+    /*
+        Based on 8.1.2.3, Request must contain :method, :scheme, :path unless it is a CONNECT request (8.3)
+        
+        May contain ':authority'
+
+        for OPTIONS, :path should be '*' instead of empty.
+    */
     if method == Method::CONNECT {
         if scheme.is_some() || path.is_some() || authority.is_none() {
             return Err(StreamError::malformed_message("Missing required headers"));
@@ -207,6 +225,26 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
     } else {
         if scheme.is_none() || path.is_none() {
             return Err(StreamError::malformed_message("Missing required headers"));
+        }
+    }
+
+    if let Some(path) = &path {
+        if let Some(scheme) = &scheme {
+            if scheme.as_ref().eq_ignore_ascii_case("http") || scheme.as_ref().eq_ignore_ascii_case("other") {
+                if path.as_ref().is_empty() {
+                    return Err(StreamError::malformed_message("Empty path for http(s) request"));
+                }
+            }
+        }
+    }
+
+    // TODO: Check for duplicate "TE" headers
+    // TODO: Also parse this header based on its defined syntax.
+    for header in &regular_headers.raw_headers {
+        if header.name.as_ref() == "te" {
+            if header.value.as_bytes() != b"trailers" {
+                return Err(StreamError::malformed_message("Only \"trailers\" may be present in TE header"));
+            }
         }
     }
 
@@ -236,7 +274,7 @@ pub fn process_response_head(headers: Vec<hpack::HeaderField>) -> StreamResult<R
                     
     let regular_headers = process_header_fields(headers, |header| {
         if header.name == STATUS_PSEUDO_HEADER_NAME.as_bytes() {
-            // TODO: COnvert to a stream error if this fails.
+            check_pseudo_value_not_set(&status)?;
             status = Some(parsing::complete(crate::message_syntax::parse_status_code)(header.value.into())
                 .map_err(|_| StreamError::malformed_message("Received malformed status code"))?.0);
         } else {

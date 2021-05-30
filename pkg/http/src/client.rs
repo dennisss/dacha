@@ -168,7 +168,9 @@ impl Client {
         }
 
         if start_http2 {
-            let connection_v2 = crate::v2::Connection::new(None);
+            let connection_options = crate::v2::ConnectionOptions::default();
+
+            let connection_v2 = crate::v2::Connection::new(connection_options, None);
 
             let initial_state = crate::v2::ConnectionInitialState::raw();
 

@@ -29,14 +29,6 @@ impl ProtocolErrorV2 {
     pub fn is_retryable(&self) -> bool {
         self.code == ErrorCode::REFUSED_STREAM
     }
-
-    pub fn malformed(message: &'static str) -> Self {
-        Self {
-            code: ErrorCode::PROTOCOL_ERROR,
-            message,
-            local: true
-        }
-    }
 }
 
 impl std::fmt::Display for ProtocolErrorV2 {

@@ -138,7 +138,9 @@ impl ConnectionWriter {
                     let mut connection_state = self.shared.state.lock().await;
 
                     // Checking that we are able to send a stream.
-                    let remote_stream_limit = connection_state.remote_settings[SettingId::MAX_CONCURRENT_STREAMS];
+                    let remote_stream_limit = std::cmp::min(
+                        connection_state.remote_settings[SettingId::MAX_CONCURRENT_STREAMS],
+                            self.shared.options.max_outgoing_streams as u32);
                     if connection_state.local_stream_count >= remote_stream_limit as usize {
                         continue;
                     }
@@ -324,6 +326,7 @@ impl ConnectionWriter {
                     let mut connection_state_guard = self.shared.state.lock().await;
                     let connection_state = &mut *connection_state_guard;
                 
+                    // TODO: Consider limiting this if we think it is too large.
                     let max_remote_frame_size = connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
     
                     let mut next_frame = None;
@@ -363,7 +366,7 @@ impl ConnectionWriter {
 
                         let _ = stream.write_available_notifier.try_send(());
 
-                        stream.sending_end_flushed = stream_state.sending_end;
+                        stream.sending_end_flushed = stream_state.sending_end && stream_state.sending_buffer.is_empty();
 
                         next_frame = Some((
                             *stream_id, frame_data, stream_state.sending_trailers.take(),

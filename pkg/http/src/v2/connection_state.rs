@@ -167,7 +167,6 @@ pub enum ConnectionEvent {
     },
 }
 
-
 pub struct ConnectionLocalRequest {
     pub request: Request,
     pub response_handler: Box<dyn ResponseHandler>

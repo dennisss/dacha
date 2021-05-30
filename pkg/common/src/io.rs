@@ -343,12 +343,22 @@ pub trait Readable: 'static + Send + Unpin {
 
     async fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<()> {
         while buf.len() > 0 {
-            let n = self.read(buf).await?;
-            if n == 0 {
-                return Err(err_msg("Underlying stream closed"));
-            }
+            match self.read(buf).await {
+                Ok(0) => {
+                    return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, 
+                        "Unexpected end of stream").into());
+                }
+                Ok(n ) => { buf = &mut buf[n..]; }
+                Err(error) => {
+                    if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
+                        if io_error.kind() == std::io::ErrorKind::Interrupted {
+                            continue;
+                        }
+                    }
 
-            buf = &mut buf[n..];
+                    return Err(error);
+                }
+            }            
         }
 
         Ok(())
@@ -431,7 +441,6 @@ pub trait Writeable: Send + Sync + Unpin + 'static {
 
                     return Err(error);
                 }
-
             }            
         }
 

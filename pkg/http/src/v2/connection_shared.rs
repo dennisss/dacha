@@ -1,23 +1,15 @@
 use std::{convert::TryFrom, sync::Arc};
-use std::collections::HashMap;
 
-use common::{chrono::Duration, errors::*};
-use common::io::{Writeable, Readable};
 use common::async_std::channel;
 use common::async_std::sync::Mutex;
-use common::async_std::task;
-use common::chrono::prelude::*;
-use common::task::ChildTask;
 
 use crate::v2::types::*;
 use crate::v2::body::*;
 use crate::v2::stream::*;
 use crate::v2::stream_state::*;
-use crate::v2::headers::*;
 use crate::v2::connection_state::*;
-use crate::{headers::connection, method::Method, v2::settings::*};
+use crate::v2::options::ConnectionOptions;
 use crate::request::Request;
-use crate::response::{Response, ResponseHead};
 use crate::server::RequestHandler;
 use crate::proto::v2::*;
 
@@ -51,6 +43,9 @@ pub struct ConnectionShared {
     /// TODO: Make this a bounded channel?
     pub connection_event_sender: channel::Sender<ConnectionEvent>,
 
+    /// TODO: Eventually support changing this. 
+    pub options: ConnectionOptions
+
     // Stream ids can't be re-used.
     // Also, stream ids can't be 
 }
@@ -66,14 +61,14 @@ impl ConnectionShared {
         !self.is_local_stream_id(id)
     }
 
+
+    
     /// Performs cleanup on a stream which is gracefully closing with both endpoints having sent a frame
     /// with an END_STREAM flag.
     pub async fn finish_stream(&self,
         connection_state: &mut ConnectionState, stream_id: StreamId,
         additional_error: Option<ProtocolErrorV2>
     ) {
-        println!("CLOSING STREAM");
-
         // TODO: Verify that there are no cyclic references to Arc<StreamState> (otherwise the stream state may never get freed)
         let mut stream = match connection_state.streams.remove(&stream_id) {
             Some(s) => s,
@@ -140,7 +135,7 @@ impl ConnectionShared {
             //
             // TODO: Ensure that this is never present when the stream has a value.
             if let Some((request_method, response_handler, body)) = stream.incoming_response_handler.take() {
-                response_handler.handle_response(Err(error.into()));
+                response_handler.handle_response(Err(error.into())).await;
             }
 
             if let Some(outgoing_body) = stream.outgoing_response_handler.take() {
