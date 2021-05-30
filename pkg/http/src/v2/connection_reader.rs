@@ -20,6 +20,17 @@ that receives any frames after receiving a frame with the
 END_STREAM flag set MUST treat that as a connection error
 (Section 5.4.1) of type STREAM_CLOSED, unless the frame is
 permitted as described below.
+
+^ We need to gurantee this on both the sneder and receiver end.
+*/
+
+/*
+TODO:
+The first use of a new stream identifier implicitly closes all
+streams in the "idle" state that might have been initiated by that
+peer with a lower-valued stream identifier.
+
+This should count in a number of places such as RST_STREAM or PRIORITY
 */
 
 // TODO: One major weakness of all this code right now is that it may deadlock if we forget to send
@@ -329,7 +340,7 @@ impl ConnectionReader {
                     // fails later down to ensure that it stays in sync with the remote endpoint.
                     connection_state.local_connection_window += frame_header.length as WindowSize;
 
-                    let stream = match self.find_recieved_stream(frame_header.stream_id, &mut connection_state)? {
+                    let stream = match self.find_received_stream(frame_header.stream_id, &mut connection_state)? {
                         StreamEntry::Open(s) => s,
                         StreamEntry::New => {
                             // TODO: Normalize this error.
@@ -465,7 +476,10 @@ impl ConnectionReader {
                         }.into());
                     }
 
+                    let priority_frame = PriorityFramePayload::parse_complete(&payload)?;
 
+                    let mut connection_state = self.shared.state.lock().await;
+                    self.set_priority(frame_header.stream_id, &priority_frame, &mut connection_state).await?;
                 }
                 FrameType::RST_STREAM => {
                     if frame_header.stream_id == 0 {
@@ -827,16 +841,29 @@ impl ConnectionReader {
                 local: true
             })?;
 
+
+        let mut connection_state = self.shared.state.lock().await;
+
         match received_headers.typ {
             ReceivedHeadersType::RegularHeaders { end_stream, priority } => {
                 // TODO: Need to implement usage of 'priority'
 
+                
                 if self.shared.is_server {
-                    self.receive_headers_server(received_headers.stream_id, headers, end_stream).await?;
+                    self.receive_headers_server(received_headers.stream_id, headers, end_stream,
+                        &mut connection_state).await?;
                 } else {
-                    self.receive_headers_client(received_headers.stream_id, headers, end_stream).await?;
-                    // TODO: Maybe update priority                    
+                    self.receive_headers_client(received_headers.stream_id, headers, end_stream,
+                        &mut connection_state).await?;
+                    // TODO: Maybe update priority    
+
                 }
+
+                // TODO: Only do this if the headers methods succeeded?
+                if let Some(priority) = priority {
+                    self.set_priority(received_headers.stream_id, &priority, &mut connection_state).await?;
+                }
+
             }
             ReceivedHeadersType::PushPromise { promised_stream_id } => {
                 if self.shared.is_server {
@@ -849,6 +876,8 @@ impl ConnectionReader {
 
                 // TODO: Reserved streams don't count towards the MAX_CONCURRNET_STREAM limit.
 
+                // TODO: Implement prioritization using the correct parent stream.
+
                 return Err(err_msg("Push promise not yet implemented"));
             }
         }
@@ -858,11 +887,10 @@ impl ConnectionReader {
 
     /// Implementation on receiving a block of headers on a server from a client.
     async fn receive_headers_server(
-        &self, stream_id: StreamId, headers: Vec<hpack::HeaderField>, end_stream: bool
+        &self, stream_id: StreamId, headers: Vec<hpack::HeaderField>, end_stream: bool,
+        connection_state: &mut ConnectionState
     ) -> Result<()> {
-        let mut connection_state = self.shared.state.lock().await;
-
-        match self.find_recieved_stream(stream_id, &mut connection_state)? {
+        match self.find_received_stream(stream_id, connection_state)? {
             // Client sent new request headers.
             StreamEntry::New => {
                 if connection_state.error.is_some() {
@@ -922,7 +950,7 @@ impl ConnectionReader {
                 connection_state.streams.insert(stream_id, stream);
                 
                 if stream_closed {
-                    self.shared.finish_stream(&mut connection_state, stream_id, None).await;
+                    self.shared.finish_stream(connection_state, stream_id, None).await;
                 }
 
             }
@@ -934,7 +962,7 @@ impl ConnectionReader {
 
                 if stream.is_closed(&stream_state) {
                     drop(stream_state);
-                    self.shared.finish_stream(&mut connection_state, stream_id, None).await;
+                    self.shared.finish_stream(connection_state, stream_id, None).await;
                 }
             }
             StreamEntry::Closed => {
@@ -953,11 +981,10 @@ impl ConnectionReader {
     }
 
     async fn receive_headers_client(
-        &self, stream_id: StreamId, headers: Vec<hpack::HeaderField>, end_stream: bool
+        &self, stream_id: StreamId, headers: Vec<hpack::HeaderField>, end_stream: bool,
+        connection_state: &mut ConnectionState
     ) -> Result<()> {
-        let mut connection_state = self.shared.state.lock().await;
-
-        match self.find_recieved_stream(stream_id, &mut connection_state)? {
+        match self.find_received_stream(stream_id, connection_state)? {
             StreamEntry::New => {
                 return Err(ProtocolErrorV2 {
                     code: ErrorCode::PROTOCOL_ERROR,
@@ -989,7 +1016,7 @@ impl ConnectionReader {
                 drop(stream_state);
 
                 if stream_closed {
-                    self.shared.finish_stream(&mut connection_state, stream_id, None).await;
+                    self.shared.finish_stream(connection_state, stream_id, None).await;
                 }
             }
             StreamEntry::Closed => {
@@ -1012,7 +1039,7 @@ impl ConnectionReader {
     /// This performs a few validation checks:
     /// 1. Idle streams with a local stream id are invalid.
     /// 2. If the stream_id == 0, we will error out.
-    fn find_recieved_stream<'a>(&self, stream_id: StreamId, connection_state: &'a mut ConnectionState) -> Result<StreamEntry<'a>> {
+    fn find_received_stream<'a>(&self, stream_id: StreamId, connection_state: &'a mut ConnectionState) -> Result<StreamEntry<'a>> {
         if stream_id == 0 {
             return Err(ProtocolErrorV2 {
                 code: ErrorCode::PROTOCOL_ERROR,
@@ -1042,6 +1069,27 @@ impl ConnectionReader {
 
             Ok(StreamEntry::Closed)
         }
+    }
+
+    /// NOTE: This assumes that we've verified that we are not usign stream_id 0
+    async fn set_priority(&self, stream_id: StreamId, frame: &PriorityFramePayload,
+                          connection_state: &mut ConnectionState) -> Result<()> {
+        // NOTE: See https://github.com/httpwg/http2-spec/pull/813. PRIORITY frames
+        // can't implicitly close lower numbered streams.
+        
+        // TODO: This is problematic. IF 
+        if stream_id == frame.stream_dependency {
+            // Stream Error PROTOCOL_ERROR
+            self.shared.finish_stream(connection_state, stream_id, Some(ProtocolErrorV2 {
+                code: ErrorCode::PROTOCOL_ERROR,
+                message: "Stream can't depend on itself",
+                local: true
+            })).await;
+        }
+
+        // TODO: Implement prioritization logic here.
+
+        Ok(())
     }
 }
 

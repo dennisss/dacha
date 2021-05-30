@@ -14,6 +14,7 @@ mod connection;
 mod connection_shared;
 mod connection_reader;
 mod connection_writer;
+mod priority;
 
 pub use connection::Connection;
 pub use connection::ConnectionInitialState;
