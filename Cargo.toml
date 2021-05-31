@@ -31,7 +31,8 @@ members = [
 	"third_party/openssl",
 	"pkg/xml",
 	"third_party/crates",
-	"pkg/parsing_test"
+	"pkg/parsing_test",
+	"pkg/regexp_macros"
 ]
 
 [profile.dev]

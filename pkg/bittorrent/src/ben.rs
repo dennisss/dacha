@@ -1,4 +1,4 @@
-use automata::regexp::RegExpMatch;
+use automata::regexp::vm::instance::RegExpMatch;
 use common::bytes::BytesMut;
 use common::errors::*;
 use parsing::*;
@@ -28,24 +28,24 @@ impl BENValue {
     // enum_accessor!(dict, String, String);
 
     pub fn parse(mut input: &[u8]) -> Result<(Self, &[u8])> {
-        let m: RegExpMatch = (*TAG)
-            .exec(input)?
+        let m: RegExpMatch = TAG
+            .exec(input)
             .ok_or_else(|| err_msg("Unknown BEN tag"))?;
         input = &input[m.last_index()..];
 
-        Ok(if let Some(len_str) = m.group(0) {
-            let len = len_str.parse::<usize>()?;
+        Ok(if let Some(len_str) = m.group_str(1) {
+            let len = len_str?.parse::<usize>()?;
             let data = parse_next!(input, take_exact(len)).into();
             (Self::String(data), input)
-        } else if let Some(int_str) = m.group(1) {
-            let int = int_str.parse::<isize>()?;
+        } else if let Some(int_str) = m.group_str(2) {
+            let int = int_str?.parse::<isize>()?;
             (Self::Integer(int), input)
-        } else if m.group(2).is_some() {
+        } else if m.group_str(3).is_some() {
             // List
             let items = parse_next!(input, many(Self::parse));
             parse_next!(input, tag("e"));
             (Self::List(items), input)
-        } else if m.group(3).is_some() {
+        } else if m.group_str(4).is_some() {
             // Dict
             let items = parse_next!(input, many(Self::parse));
             parse_next!(input, tag("e"));

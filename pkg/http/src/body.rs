@@ -293,7 +293,6 @@ impl Readable for TransformBody {
     }
 }
 
-
 #[async_trait]
 impl Body for Borrowed<Box<dyn Body>> {
     fn len(&self) -> Option<usize> {
@@ -304,71 +303,3 @@ impl Body for Borrowed<Box<dyn Body>> {
         self.deref_mut().trailers().await
     }
 }
-
-
-
-// TODO: Make these all private
-// XXX: The important thing is that we never allow reading if we are out of sync
-// with the underylying ReadStream pub struct IncomingBody {
-// 	/// Absolute index in the underlying ReadStream at which this body starts.
-// 	pub start_idx: usize,
-
-// 	// Current position relative to the start of the body (incremented on reads).
-// 	pub idx: usize,
-// 	// Number of bytes we expect (if a Content-Length header was given).
-// 	pub length: Option<usize>,
-// 	// Extra bytes already read after the end of the
-// 	// TODO: This may contain extra bytes after completion for the next request.
-// 	pub head: Bytes,
-
-// 	pub stream: Arc<Mutex<StreamReader<TcpStream>>>
-// }
-
-// impl Read for IncomingBody {
-// 	fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-
-// 		// TODO: Should block reading after the response has been sent (aka error
-// out).
-
-// 		if Some(self.idx) == self.length {
-// 			return Ok(0);
-// 		}
-
-// 		let mut rest = buf;
-// 		let mut total_read = 0;
-
-// 		// TODO: Eventually we cn drop the head bytes reference
-// 		if rest.len() > 0 && self.idx < self.head.len() {
-// 			let n = std::cmp::min(rest.len(), self.head.len() - self.idx);
-// 			rest[0..n].copy_from_slice(&self.head[self.idx..(self.idx + n)]);
-// 			total_read += n;
-// 			rest = &mut rest[n..];
-// 			self.idx += n;
-// 		}
-
-// 		if rest.len() > 0 && self.idx < self.head.len() {
-// 			let n = if let Some(length) = self.length {
-// 				std::cmp::min(rest.len(), length - self.idx)
-// 			} else {
-// 				rest.len()
-// 			};
-
-// 			if n > 0 {
-// 				let mut s = self.stream.lock().unwrap();
-
-// 				// Because there can be multiple requests per connection, we can't allow a
-// handler to hold on to a reference to the body after the response has finished
-// being sent. 				if s.idx != self.idx + self.start_idx {
-// 					return Err(std::io::Error::new(std::io::ErrorKind::Other,
-// 						"Reading from incoming body after response was sent"));
-// 				}
-
-// 				let nread = s.read(&mut rest[0..n])?;
-// 				self.idx += nread;
-// 				total_read += nread;
-// 			}
-// 		}
-
-// 		Ok(total_read)
-// 	}
-// }

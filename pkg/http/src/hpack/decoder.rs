@@ -29,8 +29,6 @@ Dynamic Table is FIFO (oldest has higher index)
 
 
 use common::errors::*;
-use parsing::parse_next;
-use parsing::binary::be_u8;
 
 use crate::hpack::dynamic_table::DynamicTable;
 use crate::hpack::indexing_tables::lookup_header_by_index;
@@ -397,9 +395,5 @@ mod tests {
         
         Ok(())
     }
-
-
-
-
 }
 

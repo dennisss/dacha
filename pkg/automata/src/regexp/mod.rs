@@ -6,6 +6,9 @@ mod node;
 mod state_machine;
 mod symbol;
 mod syntax;
+mod rune;
+pub mod vm;
+mod encoding;
 
 pub use self::instance::RegExp;
 

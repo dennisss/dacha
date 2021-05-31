@@ -4,6 +4,8 @@ extern crate automata;
 extern crate common;
 #[macro_use]
 extern crate parsing;
+#[macro_use]
+extern crate regexp_macros;
 
 pub mod ben;
 

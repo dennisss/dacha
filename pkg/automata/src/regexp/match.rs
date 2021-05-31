@@ -41,6 +41,7 @@ impl<'a, 'b> RegExpMatch<'a, 'b> {
         .unwrap()
     }
 
+    /// Index at which the matching port
     pub fn index(&self) -> usize {
         self.index
     }

@@ -44,7 +44,8 @@ impl RegExpSymbol {
         }
     }
 
-    fn debug_offset(v: u32) -> String {
+    // TODO: Make private eventually
+    pub(crate) fn debug_offset(v: u32) -> String {
         if v == 0 {
             "0".into()
         } else if v == START_SYMBOL {

@@ -9,10 +9,7 @@ use compression::deflate::Inflater;
 
 // Transfer-Encoding: https://tools.ietf.org/html/rfc7230#section-3.3.1
 
-
 use crate::body::*;
-use crate::chunked::*;
-use crate::reader::*;
 use crate::header::Headers;
 
 pub struct TransferCoding {
@@ -32,19 +29,9 @@ impl TransferCoding {
 
 /// NOTE: This assumes that 'chunked' has already been removed from the end of the list. 
 pub fn decode_transfer_encoding_body(
-    mut transfer_encoding: Vec<TransferCoding>,
-    // stream: PatternReader,
+    transfer_encoding: Vec<TransferCoding>,
     mut body: Box<dyn Body>
 ) -> Result<Box<dyn Body>> {
-
-    // TODO: 'chunked' is allowed to not be first for responses?
-    // let mut body: Box<dyn Body> = if transfer_encoding.last().unwrap().name() == "chunked" {
-    //     transfer_encoding.pop();
-    //     Box::new(IncomingChunkedBody::new(stream))
-    // } else {
-    //     Box::new(IncomingUnboundedBody::new(stream))
-    // };
-
     for coding in transfer_encoding.iter().rev() {
         if coding.name() == "identity" {
             continue;

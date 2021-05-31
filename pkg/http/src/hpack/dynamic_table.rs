@@ -1,7 +1,5 @@
 use std::collections::VecDeque;
 
-use compression::gzip::Header;
-
 use crate::hpack::header_field::HeaderField;
 
 // TODO: For the purposes of encoding, this should be indexed by name.

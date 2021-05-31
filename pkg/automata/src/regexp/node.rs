@@ -10,20 +10,36 @@ use crate::regexp::instance::RegExpMetadata;  // TODO: Refactor out this edge.
 
 pub type RegExpNodePtr = Box<RegExpNode>;
 
+
+// TODO: Whenever we see an alternation of many single character nodes
+// we can probably compile it down to a simple class of values.
+
+/*
+Other safe simplifications:
+- Collapse a Capture group that is non-capturing.
+    - Either change into an Expr or merge into an upper Expr
+- Collapse single item Alt
+- Remove zero item Alt
+
+*/
+
+
 /// A node in the tree 
 #[derive(Debug)]
 pub enum RegExpNode {
     /// Alternation. e.g. 'a|b|c|d'
     Alt(Vec<RegExpNodePtr>),
+    
     /// Many adjacent nodes. e.g. 'abcd'
     Expr(Vec<RegExpNodePtr>),
+
     /// e.g. 'a*' or 'a?'
     Quantified(RegExpNodePtr, Quantifier),
 
     // We will most likely replace these with capture groups
     // Simplifying method:
     // For each operation, we will
-    Class(Vec<Char>, bool),
+    Class { chars: Vec<Char>, inverted: bool },
 
     /// e.g. '(a)'
     Capture {
@@ -168,7 +184,7 @@ impl RegExpNode {
             // TODO: After an automata has been built, we need to go back and
             // split all automata (or merge any indivual characters into a
             // single character class if they all point to the same place)
-            Self::Class(chars, inverted) => {
+            Self::Class { chars, inverted } => {
                 let mut syms = vec![];
                 for c in chars {
                     syms.extend_from_slice(&alpha.decimate_many(c.raw_symbols()));
@@ -237,8 +253,8 @@ impl RegExpNode {
                 }
             }
             Self::Capture { inner, .. } => inner.fill_alphabet(alpha),
-            Self::Class(items, _invert) => {
-                for item in items {
+            Self::Class { chars, .. } => {
+                for item in chars {
                     item.fill_alphabet(alpha);
                 }
             }
@@ -287,7 +303,7 @@ pub enum Char {
 
 impl Char {
     // NOTE: These symbols may contain a lot of overlap.
-    fn raw_symbols(&self) -> Vec<RegExpSymbol> {
+    pub fn raw_symbols(&self) -> Vec<RegExpSymbol> {
         let mut out = vec![];
 
         match self {

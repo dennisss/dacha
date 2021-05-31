@@ -80,6 +80,7 @@ parser!(quantifier<&str, Quantifier> => alt!(
 
 parser!(atom<&str, RegExpNodePtr> => alt!(
     map(shared_atom, |c| Box::new(RegExpNode::Literal(c))),
+    map(tag("."), |_| Box::new(RegExpNode::Literal(Char::Wildcard))), // TODO: Check this
     literal,
     character_class,
     capture
@@ -87,6 +88,8 @@ parser!(atom<&str, RegExpNodePtr> => alt!(
 
 // TODO: Strategy for implementing character classes
 // If there are other overlapping symbols,
+
+// TODO: Test what the pattern "[.]" matches.
 
 // TODO: In PCRE, '[]]' would parse as a character class matching the character
 // ']' but for simplity we will require that that ']' be escaped in a character
@@ -97,7 +100,7 @@ parser!(character_class<&str, RegExpNodePtr> => seq!(c => {
     let inner = c.next(many(character_class_atom))?; // NOTE: We allow this to be empty.
     c.next(tag("]"))?;
 
-    return Ok(Box::new(RegExpNode::Class(inner, invert.is_some())));
+    return Ok(Box::new(RegExpNode::Class { chars: inner, inverted: invert.is_some() }));
 }));
 
 parser!(capture<&str, RegExpNodePtr> => seq!(c => {
@@ -174,7 +177,7 @@ parser!(character_class_literal<&str, char> => {
 // (excluding symbols which may have a different meaning depending on context)
 parser!(shared_literal<&str, char> => alt!(
     map(not_one_of("[]\\^$.|?*+()"), |v| v as char),
-    quoted
+    escaped_literal
 ));
 
 // TODO: Verify that '01' is a valid number
@@ -185,7 +188,7 @@ parser!(number<&str, usize> => and_then(
 ));
 
 // Matches '\' followed by the character being escaped.
-parser!(quoted<&str, char> => {
+parser!(escaped_literal<&str, char> => {
     seq!(c => {
         c.next(tag("\\"))?;
         let v = c.next::<&str, _>(take_exact(1))?.chars().next().unwrap() as char;
