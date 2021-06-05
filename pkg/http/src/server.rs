@@ -8,10 +8,7 @@ use common::async_std::task;
 use common::errors::*;
 use common::futures::stream::StreamExt;
 use common::io::*;
-use common::borrowed::{Borrowed, BorrowedReturner};
 
-use crate::{body::*, encoding::decode_transfer_encoding_body};
-use crate::header_syntax::*;
 use crate::message::*;
 use crate::message_syntax::*;
 use crate::reader::*;
@@ -22,7 +19,7 @@ use crate::response::*;
 use crate::uri::IPAddress;
 use crate::status_code::*;
 use crate::v2;
-use crate::message_body::create_server_request_body;
+use crate::message_body::{decode_request_body_v1, encode_response_body_v1};
 
 
 // TODO: See https://tools.ietf.org/html/rfc7230#section-3.5 for
@@ -232,25 +229,53 @@ impl Server {
                 }
             };
 
-            // TODO:
-            // A server MUST respond with a 400 (Bad Request) status code to any
-            // HTTP/1.1 request message that lacks a Host header field and to any
-            // request message that contains more than one Host header field or a
-            // Host header field with an invalid field-value.
-            // ^ Do this. Move it into the uri. (unless the URI already has one)
 
-            let request_head = RequestHead {
+            let mut request_head = RequestHead {
                 method,
                 uri: request_line.target.into_uri(),
                 version: request_line.version,
                 headers,
             };
 
+            // TODO:
+            // A server MUST respond with a 400 (Bad Request) status code to any
+            // HTTP/1.1 request message that lacks a Host header field and to any
+            // request message that contains more than one Host header field or a
+            // Host header field with an invalid field-value.
+            // ^ Do this. Move it into the uri. (unless the URI already has one)
+            let host = match crate::headers::host::parse_host_header(&request_head.headers) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("{}", e);
+                    write_stream
+                        .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+                        .await?;
+                    return Ok(());
+                }
+            };
+
+            if let Some(host) = host {
+                // According to RFC 7230 Section 5.4, if the request target received if in
+                // absolute-form, the Host header should be ignored. 
+                if !request_head.uri.authority.is_some() {
+                    request_head.uri.authority = Some(host);
+                }
+
+            } else {
+                if request_head.version == HTTP_V1_1 {
+                    write_stream
+                        .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+                        .await?;
+                    return Ok(());
+                }
+            }
+
+
             // TODO: Convert the error into a response.
             let mut persist_connection = crate::headers::connection::can_connection_persist(
                 &request_head.version, &request_head.headers)?;
 
-            let (body, mut reader_waiter) = match create_server_request_body(
+            let (body, mut reader_waiter) = match decode_request_body_v1(
                 &request_head, read_stream) {
                 Ok(pair) => pair,
                 Err(e) => {
@@ -282,10 +307,6 @@ impl Server {
                 }
             }
 
-            // Two modes:
-            // - Straight away using HTTP2
-            // - Upgrade to HTTP2.
-
             if has_h2c_upgrade {
                 // TODO: 
 
@@ -302,7 +323,7 @@ impl Server {
                 let server_handler = ServerRequestHandlerV2 { request_handler: handler };
                 let conn = v2::Connection::new(options, Some(Box::new(server_handler)));
 
-                conn.process_upgrade_request(req).await?;
+                conn.receive_upgrade_request(req).await?;
 
                 let reader = DeferredReadable::wrap(reader_waiter.wait());
 
@@ -329,9 +350,15 @@ impl Server {
 
             // In the case of pipelining, start this in a separate task.
 
+            let req_method = req.head.method.clone();
+
             let mut res = handler.handle_request(req).await;
 
+            // TODO: Validate that no denylisted headers are given in the response (especially Content-Length)
+            
             res = Self::transform_response(res)?;
+
+            let res_body = encode_response_body_v1(req_method, &mut res.head, res.body);
 
             crate::headers::connection::append_connection_header(
                 persist_connection, &mut res.head.headers);
@@ -339,13 +366,14 @@ impl Server {
             // TODO: If we do detect multiple aliases to a TcpStream, shutdown the
             // tcpstream explicitly
 
-            // let mut res_writer = OutgoingBody { stream: shared_stream.clone() };
+            // Write the response head
             let mut buf = vec![];
             res.head.serialize(&mut buf)?;
             write_stream.write_all(&buf).await?;
 
-            write_body(res.body.as_mut(), &mut write_stream).await?;
-
+            if let Some(mut body) = res_body {
+                write_body(body.as_mut(), &mut write_stream).await?;
+            }
 
             if persist_connection {
                 if let Some(reader_waiter) = reader_waiter {
@@ -370,6 +398,8 @@ impl Server {
 
     fn transform_response(mut res: Response) -> Result<Response> {
         crate::headers::date::append_current_date(&mut res.head.headers);
+
+        // if if let Some(res.body)
 
         // if res.head.headers.
 

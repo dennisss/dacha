@@ -6,11 +6,7 @@ extern crate rpc;
 
 use common::async_std::task;
 use common::errors::*;
-use protobuf::service::Service;
 use rpc::proto::adder::*;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
 
 struct AdderImpl {}
 

@@ -11,9 +11,18 @@ use common::bytes::Buf;
 use common::bytes::Bytes;
 use common::errors::*;
 
-#[derive(Debug, Fail)]
-pub enum ParserError {
+
+#[derive(Debug, PartialEq)]
+pub enum ParserErrorKind {
     Incomplete,
+    UnexpectedValue
+}
+
+#[derive(Debug, Fail)]
+pub struct ParserError {
+    pub kind: ParserErrorKind,
+    pub message: String,
+    pub remaining_bytes: usize
 }
 
 impl std::fmt::Display for ParserError {
@@ -22,13 +31,17 @@ impl std::fmt::Display for ParserError {
     }
 }
 
-pub fn incomplete_error() -> Error {
-    ParserError::Incomplete.into()
+pub fn incomplete_error(remaining_bytes: usize) -> Error {
+    ParserError {
+        kind: ParserErrorKind::Incomplete,
+        message: "Incomplete".into(),
+        remaining_bytes
+    }.into()
 }
 
 pub fn is_incomplete(e: &Error) -> bool {
-    if let Some(ParserError::Incomplete) = e.downcast_ref() {
-        true
+    if let Some(ParserError { kind, .. }) = e.downcast_ref() {
+        *kind == ParserErrorKind::Incomplete
     } else {
         false
     }
@@ -126,15 +139,17 @@ where
     I: ParserFeed<Item = T>,
 {
     move |mut input: I| {
-        if input.empty() {
-            return Err(incomplete_error());
-        }
+        let remaining_bytes = input.remaining_bytes();
 
-        let item = input.next().ok_or(err_msg("Did not find atom"))?;
+        let item = input.next().ok_or(incomplete_error(remaining_bytes))?;
         if v == item {
             Ok((item, input))
         } else {
-            Err(err_msg("Wrong atom in input"))
+            Err(ParserError {
+                kind: ParserErrorKind::UnexpectedValue,
+                message: "Wrong atom in input".into(),
+                remaining_bytes
+            }.into())
         }
     }
 }
@@ -144,11 +159,16 @@ where
     I: ParserFeed,
 {
     move |input: I| {
+        let remaining_bytes = input.remaining_bytes();
         let (value, rest) = p(input)?;
         if v == value {
             Ok((value, rest))
         } else {
-            Err(err_msg("Wrong value of atom"))
+            Err(ParserError {
+                kind: ParserErrorKind::UnexpectedValue,
+                message: "Wrong value of atom".into(),
+                remaining_bytes
+            }.into())
         }
     }
 }
@@ -363,20 +383,38 @@ macro_rules! alt {
 	( $first:expr, $( $next:expr ),* ) => {
 		move |input| {
 			let mut errs = vec![];
+            let mut max_remaining = std::usize::MAX;
+
 			match ($first)(::std::clone::Clone::clone(&input)) {
 				Ok(v) => { return Ok(v); },
-				Err(e) => { errs.push(e.to_string()); }
+				Err(e) => {
+                    if let Some(ParserError { remaining_bytes, .. }) = e.downcast_ref() {
+                        max_remaining = std::cmp::min(max_remaining, *remaining_bytes);
+                    }
+                    
+                    errs.push(e.to_string());
+                }
 			};
 
 			$(
 			match ($next)(::std::clone::Clone::clone(&input)) {
 				Ok(v) => { return Ok(v); },
-				Err(e) => { errs.push(e.to_string()); }
+				Err(e) => {
+                    if let Some(ParserError { remaining_bytes, .. }) = e.downcast_ref() {
+                        max_remaining = std::cmp::min(max_remaining, *remaining_bytes);
+                    }
+
+                    errs.push(e.to_string());
+                }
 			};
 			)*
 
 			// TODO: Must support Incomplete error in some reasonable way.
-			Err(format_err!("({})", errs.join(" | ")).into())
+            Err(Error::from(ParserError {
+                kind: ParserErrorKind::UnexpectedValue,
+                message: format!("({})", errs.join(" | ")),
+                remaining_bytes: max_remaining
+            }))
 		}
 	};
 }
@@ -487,7 +525,8 @@ where
     I: ParserFeed<Item = T>,
 {
     move |mut input: I| {
-        let item = input.next().ok_or(incomplete_error())?;
+        let remaining_bytes = input.remaining_bytes();
+        let item = input.next().ok_or(incomplete_error(remaining_bytes))?;
 
         if f(item) {
             Ok((item, input))
@@ -504,6 +543,11 @@ pub fn complete<I: ParserFeed, T, P: Parser<T, I>>(p: P) -> impl Parser<T, I> {
         p(input)
             .and_then(|(v, rest)| {
                 if !rest.empty() {
+                    // Err(ParserError {
+                    //     kind: ParserErrorKind::UnexpectedValue,
+
+                    // })
+
                     Err(format_err!(
                         "Failed to parse last {} bytes",
                         rest.remaining_bytes()
@@ -535,7 +579,10 @@ pub fn peek<I: Clone, T, P: Parser<T, I>>(p: P) -> impl Parser<(), I> {
 
 /// Takes a specified number of bytes from the input
 pub fn take_exact<I: ParserFeed>(length: usize) -> impl Parser<I, I> {
-    move |input: I| input.take_exact(length).ok_or_else(incomplete_error)
+    move |input: I| {
+        let remaining_bytes = input.remaining_bytes();
+        input.take_exact(length).ok_or_else(|| incomplete_error(remaining_bytes))
+    }
 }
 
 pub fn take_while<I: ParserFeed, T: Copy, F: Fn(T) -> bool>(f: F) -> impl Parser<I, I>
@@ -582,7 +629,11 @@ pub fn take_until<I: ParserFeed, T, P: Parser<T, I>>(p: P) -> impl Parser<I, I> 
         }
 
         // TODO: Return Incomplete error.
-        Err(err_msg("Hit end of input before seeing pattern"))
+        Err(ParserError {
+            kind: ParserErrorKind::UnexpectedValue,
+            message: "Hit end of input before seeing pattern".into(),
+            remaining_bytes: input.remaining_bytes()
+        }.into())
     }
 }
 
@@ -602,7 +653,11 @@ where
         if input.strip_prefix(t) {
             Ok(((), input))
         } else {
-            Err(format_err!("Expected \"{:?}\"", s))
+            Err(ParserError {
+                kind: ParserErrorKind::UnexpectedValue,
+                message: format!("Expected \"{:?}\"", s),
+                remaining_bytes: input.remaining_bytes()
+            }.into())
         }
 
         /*
@@ -637,11 +692,12 @@ where
         // println!("{:?}", std::str::from_utf8(
         // 	&input[0..std::cmp::min(40, input.len())].as_ref()).unwrap());
 
-        // TODO: Incomplete errors?
-        Err(format_err!(
-            "No matching tag (remaining: {})",
-            input.remaining_bytes()
-        ))
+        // TODO: Should we convert to an Incomplete error in some cases?
+        Err(ParserError {
+            kind: ParserErrorKind::UnexpectedValue,
+            message: "No matching tag".into(),
+            remaining_bytes: input.remaining_bytes()
+        }.into())
     }
 }
 

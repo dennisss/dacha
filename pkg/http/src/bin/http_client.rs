@@ -17,30 +17,26 @@ use common::errors::*;
 use common::errors::*;
 use common::io::ReadWriteable;
 use compression::gzip::*;
-use http::body::*;
 use http::chunked::*;
 use http::client::*;
 use http::header::*;
 use http::message::*;
-use http::spec::*;
 use http::status_code::*;
 use http::encoding::*;
-use http::request::*;
-use http::method::*;
 use parsing::iso::*;
 
+// TODO: THe Google TLS server will timeout the connection if the SETTINGs packet isn't received fast enough.
 
 async fn run_client() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set
 
-    let client = Client::create("http://www.google.com")?;
+    let client = http::Client::create("https://google.com")?;
 
-    let req = RequestBuilder::new()
-        .method(Method::GET)
-        .uri("http://www.google.com/index.html")
+    let req = http::RequestBuilder::new()
+        .method(http::Method::GET)
+        .path("/index.html")
         .header("Accept", "text/html")
         .header("Accept-Encoding", "gzip")
-        .body(EmptyBody()) // TODO: Should we make this the default?
         .build()?;
 
     let mut res = client.request(req).await?;

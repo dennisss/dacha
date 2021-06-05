@@ -15,8 +15,6 @@ use crate::header::Headers;
 
 pub type BoxFutureResult<'a, T> = Pin<Box<dyn FutureResult<T> + Send + 'a>>;
 
-// TODO: Merge with Readable trait?
-// TODO: Rename IncomingBody?
 #[async_trait]
 pub trait Body: Readable {
     /// Returns the total length in bytes of the body payload. Will return None
@@ -26,16 +24,23 @@ pub trait Body: Readable {
     /// to requests such as HEAD may still have a Content-Length header while
     /// having a body.len() of 0.
     ///
+    ///
     /// NOTE: This is only guaranteed to be valid before read() is called
     /// (otherwise some implementations may return the remaining length).
     fn len(&self) -> Option<usize>;
+
+    /// Returns whether or not this body MAY have trailers.
+    ///
+    /// If this returns false, then trailers() may never be called or send to the remote endpoint.
+    /// But, returning false does allow options to occur.
+    fn has_trailers(&self) -> bool { false }
 
     /// Retrieves the trailer headers that follow the body (if any).
     ///
     /// This should only be called after all data has been read from the body.
     /// Otherwise, this may fail. It's also invalid to call this more than
     /// once.
-    async fn trailers(&mut self) -> Result<Option<Headers>>;
+    async fn trailers(&mut self) -> Result<Option<Headers>>; // { Ok(None) }
 }
 
 
@@ -62,42 +67,6 @@ pub fn EmptyBody() -> Box<dyn Body> {
 /// Creates a body from a precomputed blob of data.
 pub fn BodyFromData<T: 'static + AsRef<[u8]> + Send + Unpin>(data: T) -> Box<dyn Body> {
     Box::new(Cursor::new(data))
-}
-
-// TODO: HTTP/1.0 clients should not be assumes to support chunked encoding
-
-// TODO: Any response to a HEAD request is always an empty body (headers should
-// not be interpreted)
-
-// TODO: Move to the chunked file.
-pub enum Chunk {
-    Data(Bytes),
-    End,
-}
-
-pub type ChunkSender = mpsc::Sender<Chunk>;
-
-
-/// TODO: Implement this?
-/// A body that gets incrementally sent over the wire and receives whole chunks
-/// from a TODO: Need flow control
-pub struct ChunkedBody {
-    receiver: mpsc::Receiver<Chunk>,
-
-    /// Last chunk that we have received over the channel.
-    chunk: Option<Chunk>,
-}
-
-impl ChunkedBody {
-    pub fn new() -> (Self, ChunkSender) {
-        let (send, recv) = mpsc::channel();
-        let c = ChunkedBody {
-            receiver: recv,
-            chunk: None,
-        };
-
-        (c, send)
-    }
 }
 
 /// A body which is terminated by the end of the stream and has no known length.

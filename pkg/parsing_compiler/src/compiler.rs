@@ -346,9 +346,10 @@ impl<'c> Compiler<'c> {
 
                         lines.add("\tlet mut buf = vec![];");
 
+                        // TODO: Fix the remaining_bytes value used.
                         lines.add(format!(r#"
                             let length = input.len().checked_sub({})
-                                .ok_or_else(|| ::parsing::incomplete_error())?;"#, after_count));
+                                .ok_or_else(|| ::parsing::incomplete_error(0))?;"#, after_count));
 
                         if let TypeTypeCase::Primitive(PrimitiveType::U8) = buf.element_type().type_case() {
                             lines.add("\tbuf.extend_from_slice(parse_next!(input, ::parsing::take_exact(length)));");

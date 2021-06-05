@@ -5,7 +5,6 @@ extern crate automata;
 
 regexp!(TEST => "(hello)|(world)");
 
-
 fn main() {
     assert_eq!(TEST.test("hello"), true);
 
@@ -25,5 +24,5 @@ fn main() {
 
     assert!(m.next().is_none());
 
-    println!("All good!")
+    println!("All good!");
 }

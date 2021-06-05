@@ -938,7 +938,7 @@ impl ConnectionReader {
                 let mut stream_state = stream.state.lock().await;
                 
                 if let Some(request) = stream.receive_request(headers, end_stream, incoming_body, &mut stream_state) {
-                    stream.outgoing_response_handler = Some(outgoing_body);
+                    stream.outgoing_response_handler = Some((request.head.method, outgoing_body));
 
                     stream.processing_tasks.push(ChildTask::spawn(self.shared.clone().request_handler_driver(
                         stream_id, request)));

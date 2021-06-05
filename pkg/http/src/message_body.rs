@@ -1,9 +1,11 @@
 use common::errors::*;
 use common::borrowed::{Borrowed, BorrowedReturner};
+use parsing::ascii::AsciiString;
+use parsing::opaque::OpaqueString;
 
 use crate::reader::PatternReader;
 use crate::body::*;
-use crate::chunked::IncomingChunkedBody;
+use crate::chunked::{IncomingChunkedBody, OutgoingChunkedBody};
 use crate::method::*;
 use crate::status_code::*;
 use crate::header_syntax::parse_content_length;
@@ -11,14 +13,50 @@ use crate::encoding::*;
 use crate::encoding_syntax::*;
 use crate::request::*;
 use crate::response::*;
+use crate::header::{CONTENT_LENGTH, TRANSFER_ENCODING, Header};
 
-// TODO: All of this logic should also apply to HTTP 2 with the main exception being that we don't need to
-// shard the reader.
+pub fn encode_response_body_v1(request_method: Method, res_head: &mut ResponseHead, mut body: Box<dyn Body>) -> Option<Box<dyn Body>> {
+    // 1. NOTE: HEAD case is handled after the Content-Length is set.
+    let code = res_head.status_code.as_u16();
+    if (code >= 100 && code < 200)
+        || res_head.status_code == NO_CONTENT
+        || res_head.status_code == NOT_MODIFIED
+    {
+        return None;
+    }
+
+    // 2.
+    if request_method == Method::CONNECT && (code >= 200 && code < 300) {
+        return None;
+    }
+
+    // 3,4,5
+    if let Some(len) = body.len() {
+        res_head.headers.raw_headers.push(Header {
+            name: AsciiString::from(CONTENT_LENGTH).unwrap(),
+            value: OpaqueString::from(len.to_string())
+        });
+    } else {
+        res_head.headers.raw_headers.push(Header {
+            name: AsciiString::from(TRANSFER_ENCODING).unwrap(),
+            value: OpaqueString::from(b"chunked".as_ref())
+        });
+
+        body = Box::new(OutgoingChunkedBody::new(body));
+    }
+
+    // 1.
+    if request_method == Method::HEAD {
+        return None;
+    }
+
+    Some(body)
+}
 
 /// Based on the procedure in RFC7230 3.3.3. Message Body Length
 /// Implemented from the client/requester point of view.
-pub fn create_client_response_body(
-    req: &Request,
+pub fn decode_response_body_v1(
+    request_method: Method,
     res_head: &ResponseHead,
     reader: PatternReader,
 ) -> Result<(Box<dyn Body>, Option<BodyReadCompletion>)> {
@@ -28,7 +66,7 @@ pub fn create_client_response_body(
     let body = || -> Result<Box<dyn Body>> {
         // 1.
         let code = res_head.status_code.as_u16();
-        if req.head.method == Method::HEAD
+        if request_method == Method::HEAD
             || (code >= 100 && code < 200)
             || res_head.status_code == NO_CONTENT
             || res_head.status_code == NOT_MODIFIED
@@ -38,7 +76,7 @@ pub fn create_client_response_body(
         }
 
         // 2.
-        if req.head.method == Method::CONNECT && (code >= 200 && code < 300) {
+        if request_method == Method::CONNECT && (code >= 200 && code < 300) {
             close_delimited = false;
             return Ok(EmptyBody());
         }
@@ -97,6 +135,37 @@ pub fn create_client_response_body(
     Ok(wrap_created_body(body, reader_returner, close_delimited))
 }
 
+
+/// Should run immediately before a request is sent by a client to a server. This will
+/// annotate the request head with the appropriate Content-Length and make the
+/// body chunked if it has no length.
+///
+/// TODO: If we don't believe that the server can support at least HTTP 1.1, don't
+/// use a chunked body (instead we will need to be able to use a connection closed body).
+/// 
+/// TODO: What happens if we send an HTTP 1 server a chunked body. Will it gracefully
+/// fail?
+///
+/// Assumes no Transfer-Encoding has been applied yet.
+/// The returned body will always be suitable for persisting an HTTP1 conneciton.
+pub fn encode_request_body_v1(req_head: &mut RequestHead, body: Box<dyn Body>) -> Box<dyn Body> {
+    if let Some(len) = body.len() {
+        req_head.headers.raw_headers.push(Header {
+            name: AsciiString::from(CONTENT_LENGTH).unwrap(),
+            value: OpaqueString::from(len.to_string())
+        });
+    } else {
+        req_head.headers.raw_headers.push(Header {
+            name: AsciiString::from(TRANSFER_ENCODING).unwrap(),
+            value: OpaqueString::from(b"chunked".as_ref())
+        });
+
+        return Box::new(OutgoingChunkedBody::new(body));
+    }
+
+    body
+}
+
 /// Based on the procedure in RFC7230 3.3.3. Message Body Length
 /// Implemented from the server/receiver point of view.
 ///
@@ -104,7 +173,7 @@ pub fn create_client_response_body(
 /// connection close terminated), we'll return a future reference to the underlying reader.
 ///
 /// NOTE: Even if the  
-pub fn create_server_request_body(
+pub fn decode_request_body_v1(
     req_head: &RequestHead, reader: PatternReader
 ) -> Result<(Box<dyn Body>, Option<BodyReadCompletion>)> {
 

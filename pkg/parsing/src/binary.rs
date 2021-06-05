@@ -6,7 +6,7 @@ macro_rules! primitive_parser {
         pub fn $name<'a>(input: &'a [u8]) -> ParseResult<$t, &'a [u8]> {
             const LEN: usize = std::mem::size_of::<$t>();
             if input.len() < LEN {
-                return Err(incomplete_error());
+                return Err(incomplete_error(input.len()));
             }
 
             let v = <$t>::$from(*array_ref![input, 0, LEN]);
@@ -35,7 +35,7 @@ primitive_parser!(le_f64, f64, from_le_bytes);
 
 pub fn be_u8(input: &[u8]) -> ParseResult<u8, &[u8]> {
     if input.len() < 1 {
-        return Err(incomplete_error());
+        return Err(incomplete_error(input.len()));
     }
 
     let v = input[0];
@@ -48,7 +48,7 @@ pub fn le_u8(input: &[u8]) -> ParseResult<u8, &[u8]> {
 
 pub fn be_u24(input: &[u8]) -> ParseResult<u32, &[u8]> {
     if input.len() < 3 {
-        return Err(incomplete_error());
+        return Err(incomplete_error(input.len()));
     }
 
     let mut buf = [0u8; 4];

@@ -11,6 +11,7 @@ use common::async_std::sync::Mutex;
 use common::io::{Readable, Writeable};
 use common::async_std::task;
 use parsing::ascii::AsciiString;
+use parsing::opaque::OpaqueString;
 
 use crate::uri_syntax::serialize_authority;
 use crate::dns::*;
@@ -25,11 +26,22 @@ use crate::uri::*;
 use crate::response::*;
 use crate::request::*;
 use crate::method::*;
+use crate::message_body::{encode_request_body_v1, decode_response_body_v1};
 
 // TODO: Need to clearly document which responsibilities are reserved for the client.
 
+/// List of headers which are managed internally and not allowed to be given by external clients.
+const CLIENT_RESERVED_HEADERS: &'static [&'static [u8]] = &[
+    CONNECTION, CONTENT_LENGTH, HOST, KEEP_ALIVE, TRANSFER_ENCODING
+];
+
 /// HTTP client connected to a single server.
 pub struct Client {
+
+    /// Uri to which we should connection.
+    /// This should only a scheme and authority.
+    base_uri: Uri,
+
     socket_addr: SocketAddr,
     is_secure: bool
 
@@ -39,16 +51,18 @@ pub struct Client {
 impl Client {
     /// Creates a new client connecting to the given host/protocol.
     /// NOTE: This will not start a connection.
+    /// TODO: Instead just take as input an authority string and whether or not we want it to be secure?
     pub fn create(uri: &str) -> Result<Client> {
         // TODO: Implement some other form of parser function that doesn't
         // accept anything but the scheme, authority
-        let u = uri.parse::<Uri>()?;
+        let base_uri = uri.parse::<Uri>()?;
         // NOTE: u.path may be '/'
-        if !u.path.as_ref().is_empty() || u.query.is_some() || u.fragment.is_some() {
+        if !base_uri.path.as_ref().is_empty() || base_uri.query.is_some() || base_uri.fragment.is_some() {
             return Err(err_msg("Can't create a client with a uri path"));
         }
 
-        let scheme = u
+        let scheme = base_uri
+            .clone()
             .scheme
             .map(|s| s.to_string())
             .unwrap_or("http".into())
@@ -58,12 +72,14 @@ impl Client {
             "http" => (80, false),
             "https" => (443, true),
             _ => {
+                // TODO: This is ok as long we alternatively have a port specified.
                 // TODO: Create an err! macro
                 return Err(format_err!("Unsupported scheme {}", scheme));
             }
         };
 
-        let authority = u
+        let authority = base_uri
+            .clone()
             .authority
             .ok_or(err_msg("No authority/hostname specified"))?;
 
@@ -75,6 +91,7 @@ impl Client {
 
         let port = authority.port.unwrap_or(default_port);
 
+        // TODO: Whenever we need to create a new connection, consider 
         let ip = match authority.host {
             Host::Name(n) => {
                 // TODO: This should become async.
@@ -99,6 +116,7 @@ impl Client {
         };
 
         Ok(Client {
+            base_uri,
             // TODO: Check port is in u16 range in the parser
             socket_addr: SocketAddr::new(ip.try_into()?, port as u16),
             is_secure
@@ -117,18 +135,22 @@ impl Client {
     pub async fn request(&self, mut request: Request) -> Result<Response> {
         // TODO: We should allow the Connection header, but we shouldn't allow any options
         // which are used internally (keep-alive and close)
-        if
-        request.head.headers.has(CONNECTION) ||
-        request.head.headers.has(CONTENT_LENGTH) ||
-        request.head.headers.has(HOST) ||
-        request.head.headers.has(KEEP_ALIVE) || request.head.headers.has(TRANSFER_ENCODING) {
-            return Err(err_msg("Given reserved header"));
+        for header_name in CLIENT_RESERVED_HEADERS {
+            if request.head.headers.has(*header_name) {
+                return Err(format_err!("Request contains reserved header: {}",
+                                       std::str::from_utf8(*header_name).unwrap()));
+            }
         }
 
+        // TODO: Only pop this if we need to perfect an HTTP1 request (in HTTP2 we can forward a lot of stuff).
         if let Some(scheme) = request.head.uri.scheme.take() {
             // TODO: Verify if 'http(s)' as others aren't supported by this client.  
         } else {
-            return Err(err_msg("Missing scheme in URI"));
+            // return Err(err_msg("Missing scheme in URI"));
+        }
+
+        if !request.head.uri.authority.is_some() {
+            request.head.uri.authority = self.base_uri.authority.clone();
         }
 
         // TODO: For an empty body, the client doesn't need to send any special headers.
@@ -145,7 +167,10 @@ impl Client {
         if self.is_secure {
             let mut client_options = crypto::tls::options::ClientOptions::recommended();
             // TODO: 
-            client_options.hostname = "google.com".into();
+
+            if let Host::Name(name) = &self.base_uri.authority.as_ref().unwrap().host {
+                client_options.hostname = name.clone();
+            }
             client_options.alpn_ids.push("h2".into());
             client_options.alpn_ids.push("http/1.1".into());
 
@@ -182,6 +207,10 @@ impl Client {
             let response = connection_v2.request(request).await?;
             // TODO: Shut down the connection and join the conn_runner.
 
+            connection_v2.shutdown(true).await?;
+
+            conn_runner.await?;
+
             return Ok(response);
         }
 
@@ -193,21 +222,20 @@ impl Client {
             conn.shared.clone().run(reader, writer));
 
         // Attempt to upgrade to HTTP2 over clear text.
-        if !self.is_secure {
+        if !self.is_secure && false {
             let local_settings = crate::v2::SettingsContainer::default();
 
             let mut connection_options = vec![];
             connection_options.push(crate::headers::connection::ConnectionOption::Unknown(
                 parsing::ascii::AsciiString::from("Upgrade").unwrap()));
 
-            // TODO: Copy the host from the request.
+            // TODO: Copy the host and uri from the request.
             let mut upgrade_request = RequestBuilder::new()
                 .method(Method::GET)
-                .uri("http://www.google.com/")
+                // .uri("http://www.google.com/")
                 // .header("Host", "www.google.com")
-                .header("Connection", "Upgrade, HTTP2-Settings")
+                .header(CONNECTION, "Upgrade, HTTP2-Settings")
                 .header("Upgrade", "h2c")
-                .body(crate::body::EmptyBody())
                 .build()
                 .unwrap();
 
@@ -251,7 +279,6 @@ impl Client {
                 return Err(err_msg("Did not expect an upgrade"));
             }
         };
-
 
         if let Some(r) = conn_runner.cancel().await {
             r?;
@@ -385,8 +412,6 @@ impl ClientConnectionShared {
 
             match e {
                 ClientConnectionEvent::Request { mut request, upgrading, response_handler } => {
-                    // TODO: Set 'Connection: keep-alive' to support talking to legacy (1.0 servers)
-
                     // TODO: When using the 'Host' header, we can't provie the userinfo
                     if let Some(authority) = request.head.uri.authority.take() {
                         let mut value = vec![];
@@ -394,17 +419,30 @@ impl ClientConnectionShared {
 
                         // TODO: Ensure that this is the first header sent.
                         request.head.headers.raw_headers.push(Header {
-                            name: parsing::ascii::AsciiString::from(HOST).unwrap(),
-                            value: parsing::opaque::OpaqueString::from(value)
+                            name: AsciiString::from(HOST).unwrap(),
+                            value: OpaqueString::from(value)
                         });
                     } else {
                         return Err(err_msg("Missing authority in URI"));
                     }
+                
+                    // This is mainly needed to allow talking to HTTP 1.0 servers (in 1.1 it is
+                    // the default).
+                    // TODO: USe the append_connection_header() method.
+                    // TODO: It may have "Upgrade" so we need to be careful to concatenate values here.
+                    request.head.headers.raw_headers.push(Header {
+                        name: AsciiString::from(CONNECTION).unwrap(),
+                        value: "keep-alive".into()
+                    });
+
+                    let mut body = encode_request_body_v1(&mut request.head, request.body);
 
                     let mut out = vec![];
+                    // TODO: If this fails, we should notify the local requster rather than
+                    // bailing out on the entire connection.
                     request.head.serialize(&mut out)?;
                     writer.write_all(&out).await?;
-                    write_body(request.body.as_mut(), writer.as_mut()).await?;
+                    write_body(body.as_mut(), writer.as_mut()).await?;
 
                     let head = match read_http_message(&mut reader).await? {
                         HttpStreamEvent::MessageHead(h) => h,
@@ -472,15 +510,13 @@ impl ClientConnectionShared {
                         return Ok(());
                     }
 
-                    let (body, reader_returner) = crate::message_body::create_client_response_body(
-                        &request, &head, reader)?;
+                    let (body, reader_returner) = decode_response_body_v1(
+                        request.head.method, &head, reader)?;
 
 
                     let _ = response_handler.try_send(Ok(ClientResponse::Regular {
                         response: Response { head, body }
                     }));
-
-                    println!("WAITING FOR FULLY READ");
 
                     // With a well framed response body, we can perist the connection.
                     if persist_connection {
@@ -489,8 +525,6 @@ impl ClientConnectionShared {
                             continue;
                         }
                     }
-
-                    println!("ON TO NEXT REQUEST");
 
                     // Connection can no longer persist.
                     break;

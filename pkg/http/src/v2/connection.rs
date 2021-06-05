@@ -182,7 +182,7 @@ impl Connection {
     /// Calling this will
     ///
     /// NOTE: Must be called before 'run()'
-    pub async fn process_upgrade_request(&self, request: Request) -> Result<()> {
+    pub async fn receive_upgrade_request(&self, request: Request) -> Result<()> {
         let mut connection_state = self.shared.state.lock().await;
 
         // TODO: This could be a convenienct place to deal with reading the settings header?
@@ -221,7 +221,7 @@ impl Connection {
             drop(incoming_body);
         }
 
-        stream.outgoing_response_handler = Some(outgoing_body);
+        stream.outgoing_response_handler = Some((request.head.method, outgoing_body));
 
         stream.processing_tasks.push(ChildTask::spawn(self.shared.clone().request_handler_driver(
             UPGRADE_STREAM_ID, request)));
@@ -256,6 +256,8 @@ impl Connection {
             }
         }
         
+        // TODO: Somewhere add the Content-Length header. (on both client and server as long as not )
+
         let (sender, receiver) = channel::bounded::<Result<Response>>(1);
 
 
@@ -469,19 +471,20 @@ mod tests {
         let (writer1, reader1) = pipe();
         let (writer2, reader2) = pipe();
 
+        let options = ConnectionOptions::default();
+
         let server_conn = Connection::new(
-            Some(Box::new(CalculatorRequestHandler {})));
+            options.clone(), Some(Box::new(CalculatorRequestHandler {})));
         let server_task = task::spawn(server_conn.run(
             ConnectionInitialState::raw(), Box::new(reader1), Box::new(writer2)));
 
-        let client_conn = Connection::new(None);
+        let client_conn = Connection::new(options, None);
         let client_task = task::spawn(client_conn.run(
             ConnectionInitialState::raw(),Box::new(reader2), Box::new(writer1)));
 
         let res = client_conn.request(RequestBuilder::new()
             .method(Method::GET)
-            .uri("http://localhost/hello")
-            .body(EmptyBody())
+            // .uri("http://localhost/hello")
             .build()
             .unwrap()).await?;
 

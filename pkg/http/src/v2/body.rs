@@ -2,20 +2,23 @@
 
 use std::sync::Arc;
 
+use common::InRange;
 use common::errors::*;
 use common::async_std::channel;
 use common::async_std::sync::Mutex;
 use common::io::Readable;
+use parsing::ascii::AsciiString;
+use parsing::opaque::OpaqueString;
 
 use crate::body::Body;
-use crate::header::{Headers, TRANSFER_ENCODING, CONNECTION};
+use crate::header::{Headers, Header, TRANSFER_ENCODING, CONNECTION, CONTENT_LENGTH};
 use crate::request::RequestHead;
 use crate::response::ResponseHead;
 use crate::method::Method;
+use crate::status_code::NOT_MODIFIED;
 use crate::v2::stream_state::StreamState;
 use crate::v2::types::*;
 use crate::v2::connection_state::ConnectionEvent;
-use crate::proto::v2::{ErrorCode};
 
 /// Wrapper around a Body that is used to read it and feed it to a stream.
 /// This is intended to be run as a separate task.
@@ -167,7 +170,7 @@ impl Drop for IncomingStreamBody {
         // Notify the connection that we are done reading from the stream. Any remaining
         // data received on this stream can be discarded. 
         // TODO: If the stream was fully read successfully, then we don't need to send this.
-        self.connection_event_sender.try_send(ConnectionEvent::StreamReaderClosed {
+        let _ = self.connection_event_sender.try_send(ConnectionEvent::StreamReaderClosed {
             stream_id: self.stream_id,
             stream_state: self.stream_state.clone()
         });
@@ -177,6 +180,8 @@ impl Drop for IncomingStreamBody {
 #[async_trait]
 impl Body for IncomingStreamBody {
     fn len(&self) -> Option<usize> { self.expected_length.clone() }
+
+    fn has_trailers(&self) -> bool { true }
 
     async fn trailers(&mut self) -> Result<Option<Headers>> {
         let mut stream_state = self.stream_state.lock().await;
@@ -258,9 +263,26 @@ impl Readable for IncomingStreamBody {
     }
 }
 
+pub fn encode_request_body_v2(
+    request_head: &mut RequestHead,
+    body: Box<dyn Body>,
+) -> Option<Box<dyn Body>> {
+    if let Some(len) = body.len() {
+        request_head.headers.raw_headers.push(Header {
+            name: AsciiString::from(CONTENT_LENGTH).unwrap(),
+            value: OpaqueString::from(len.to_string())
+        });
+
+        if len == 0 && !body.has_trailers() {
+            return None;
+        }
+    }
+
+    Some(body)
+}
 
 /// NOTE: We assume that the 'stream_state' matches the one in 'incoming_body'.
-pub fn create_server_request_body(
+pub fn decode_request_body_v2(
     request_head: &RequestHead, mut incoming_body: IncomingStreamBody,
     stream_state: &mut StreamState,
 ) -> StreamResult<Box<dyn Body>> {
@@ -284,8 +306,43 @@ pub fn create_server_request_body(
     Ok(Box::new(incoming_body))
 }
 
+pub fn encode_response_body_v2(
+    request_method: Method,
+    response_head: &mut ResponseHead,
+    body: Box<dyn Body>
+) -> Option<Box<dyn Body>> {
+    // NOTE: We are much more generous than the decoder in allowing sending back response bodies
+    // in places where it possibly not allowed
+
+    // TODO: Eventually consider performing more validation like in decode_response_body_v2.
+
+    if response_head.status_code == NOT_MODIFIED {
+        return None;
+    }
+
+    if let Some(len) = body.len() {
+        response_head.headers.raw_headers.push(Header {
+            name: AsciiString::from(CONTENT_LENGTH).unwrap(),
+            value: OpaqueString::from(len.to_string())
+        });
+
+        // Optimization so that the ConnectionWriter code simply doesn't write any body if we don't
+        // have any data or trailers to send back (instead the response HEADERS frame will have the
+        // END_STREAM flag set).
+        if len == 0 && !body.has_trailers() {
+            return None;
+        }
+    }
+
+    if request_method == Method::HEAD {
+        return None;
+    }
+
+    Some(body)
+}
+
 /// NOTE: We assume that the 'stream_state' matches the one in 'incoming_body'.
-pub fn create_client_response_body(
+pub fn decode_response_body_v2(
     request_method: Method,
     response_head: &ResponseHead,
     mut incoming_body: IncomingStreamBody,
@@ -304,13 +361,13 @@ pub fn create_client_response_body(
 
     let status_num = response_head.status_code.as_u16();
     // 1xx
-    let info_status = status_num >= 100 && status_num < 200;
+    let info_status = status_num.in_range(100, 199);
     // 2xx
-    let success_status = status_num >= 200 && status_num < 300;
+    let success_status = status_num.in_range(200, 299);
 
 
     if request_method == Method::HEAD || info_status || status_num == 204 ||
-       status_num == 304 || (request_method == Method::CONNECT && success_status) {
+       status_num == NOT_MODIFIED.as_u16() || (request_method == Method::CONNECT && success_status) {
         expected_length = Some(0);
     } else {
         expected_length = crate::header_syntax::parse_content_length(&response_head.headers)

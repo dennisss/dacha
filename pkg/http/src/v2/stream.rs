@@ -37,7 +37,7 @@ pub struct Stream {
     /// currently waiting for the response headers to become available.
     pub incoming_response_handler: Option<(Method, Box<dyn ResponseHandler>, IncomingStreamBody)>,
 
-    pub outgoing_response_handler: Option<OutgoingStreamBody>,
+    pub outgoing_response_handler: Option<(Method, OutgoingStreamBody)>,
 
     /// Whether or not the writer thread has written a packet with end_of_stream
     /// flag yet.
@@ -125,7 +125,7 @@ impl Stream {
     ) -> StreamResult<Request> {
         // TODO: These may cause the stream to immediately fail.
         let head = crate::v2::headers::process_request_head(headers)?;
-        let body = create_server_request_body(
+        let body = decode_request_body_v2(
             &head, incoming_body, state)?;
 
         let request = Request {
@@ -165,7 +165,7 @@ impl Stream {
     ) -> StreamResult<Response> {
 
         let head = crate::v2::headers::process_response_head(headers)?;
-        let body = crate::v2::body::create_client_response_body(
+        let body = crate::v2::body::decode_response_body_v2(
             request_method, &head, incoming_body, state)?;
 
         let response = Response {

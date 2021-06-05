@@ -10,6 +10,7 @@ parsing = { path = "../parsing" }
 compression = { path = "../compression" }
 http = { path = "../http" }
 protobuf = { path = "../protobuf" }
+macros = { path = "../macros" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

@@ -22,6 +22,7 @@ use crate::uri::*;
 
 // RFC 3986: Section 2.1
 //
+//
 // NOTE: Upper case hex digits should be preferred but either should be accedpted by parsers.
 // `pct-encoded = "%" HEXDIG HEXDIG`
 fn parse_pct_encoded(input: Bytes) -> ParseResult<u8> {

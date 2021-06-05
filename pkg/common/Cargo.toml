@@ -9,7 +9,7 @@ fs2 = "0.4.3"
 libc = "0.2.62"
 hex = "0.3.2"
 base64 = "0.11.0"
-async-trait = "0.1.30"
+async-trait = "0.1.50"
 failure = "0.1.8"
 futures = "0.3.13"
 bytes = { git = "https://github.com/tokio-rs/bytes" }

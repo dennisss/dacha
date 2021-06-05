@@ -11,6 +11,7 @@ use crate::hpack;
 use crate::proto::v2::*;
 use crate::v2::frame_utils;
 use crate::v2::connection_shared::*;
+use crate::v2::body::{encode_request_body_v2, encode_response_body_v2};
 
 /*
     Streams will be one in one of a few odd temporary states:
@@ -145,13 +146,12 @@ impl ConnectionWriter {
                         continue;
                     }
 
-                    let (request, response_handler) = match connection_state.pending_requests.pop_front() {
+                    let (mut request, response_handler) = match connection_state.pending_requests.pop_front() {
                         Some(v) => (v.request, v.response_handler),
                         None => continue
                     };
 
-                    // TODO: Write the rest of the headers (all names should be converted to ascii lowercase)
-                    // (aside get a reference from the RFC)
+                    let body = encode_request_body_v2(&mut request.head, request.body);
 
                     // Generate a new stream id.
                     let stream_id = {
@@ -172,20 +172,21 @@ impl ConnectionWriter {
                     let local_end = {
                         stream.incoming_response_handler = Some((request.head.method, response_handler, incoming_body));
 
-                        // TODO: Verify that compression layers have a known length for a known length underlying stream
-                        // (or just don't encode zero length streams or really anything very tiny)
-                        if request.body.len() == Some(0) {
+                        // TODO: Deduplicate this logic with the other side.
+                        // TODO: Also ensure that the case of zero length bodies is optimized when
+                        // it comes to intermediate body compression layers.
+                        if let Some(body) = body {
+                            // NOTE: Because we are still blocking the writing thread later down in this function,
+                            // this won't trigger DATA frames to be sent until the HEADERS frame will be sent.
+                            stream.processing_tasks.push(ChildTask::spawn(outgoing_body.run(body)));
+                            false
+                        } else {
                             // TODO: Lock and mark as locally closed?
                             let mut stream_state = stream.state.lock().await;
                             stream_state.sending_end = true;
                             stream.sending_end_flushed = true;
 
                             true
-                        } else {
-                            // NOTE: Because we are still blocking the writing thread later down in this function,
-                            // this won't trigger DATA frames to be sent until the HEADERS frame will be sent.
-                            stream.processing_tasks.push(ChildTask::spawn(outgoing_body.run(request.body)));
-                            false
                         }
                     };
 
@@ -210,7 +211,7 @@ impl ConnectionWriter {
                 ConnectionEvent::SendPushPromise { request, response } => {
 
                 }
-                ConnectionEvent::SendResponse { stream_id, response } => {
+                ConnectionEvent::SendResponse { stream_id, mut response } => {
                     let mut connection_state = self.shared.state.lock().await;
 
                     let stream = match connection_state.streams.get_mut(&stream_id) {
@@ -223,33 +224,32 @@ impl ConnectionWriter {
                     };
 
                     // NOTE: This should never fail as we only ever run the processing task once.
-                    let outgoing_body = stream.outgoing_response_handler.take()
+                    let (request_method, outgoing_body) = stream.outgoing_response_handler.take()
                         .ok_or_else(|| err_msg("Multiple responses received to a stream"))?;
+
+                    let body = encode_response_body_v2(
+                        request_method, &mut response.head, response.body);
 
                     // TODO: Deduplicate with the regular code.
                     let local_end = {
-                        // TODO: Verify that compression layers have a known length for a known length underlying stream
-                        // (or just don't encode zero length streams or really anything very tiny)
-                        if response.body.len() == Some(0) {
-                            // TODO: Lock and mark as locally closed?
+                        if let Some(body) = body {
+                            // NOTE: Because we are still blocking the writing thread later down in this function,
+                            // this won't trigger DATA frames to be sent until the HEADERS frame will be sent.
+                            stream.processing_tasks.push(ChildTask::spawn(outgoing_body.run(body)));
+                            false                            
+                        } else {
+                            // Mark as locally closed.
                             let mut stream_state = stream.state.lock().await;
                             stream_state.sending_end = true;
                             stream.sending_end_flushed = true;
 
                             true
-                        } else {
-                            // NOTE: Because we are still blocking the writing thread later down in this function,
-                            // this won't trigger DATA frames to be sent until the HEADERS frame will be sent.
-                            stream.processing_tasks.push(ChildTask::spawn(outgoing_body.run(response.body)));
-                            false
                         }
                     };
 
                     let max_remote_frame_size = connection_state.remote_settings[SettingId::MAX_FRAME_SIZE] as usize;
 
                     drop(connection_state);
-
-                    println!("SENDING RESPONSE!");
 
                     // TODO: Verify that whenever we start encoding headers, we definately send them
                     let header_block = encode_response_headers_block(

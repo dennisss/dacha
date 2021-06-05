@@ -263,8 +263,9 @@ parser!(parse_element<&str, Element> => alt!(
     seq!(c => {
         let mut el = c.next(parse_stag)?;
         el.content = c.next(parse_content)?;
-        let mut etag = c.next(parse_etag)?;
+        let etag = c.next(parse_etag)?;
         if etag != el.name {
+            panic!("MISTMATCH");
             return Err(err_msg("Mismatching start/end tag name"));
         }
 
@@ -475,7 +476,14 @@ parser!(parse_entity_ref<&str, char> => seq!(c => {
     let name = c.next(parse_name)?;
     c.next(tag(";"))?;
 
-    Err(format_err!("Unknown named entity: {}", name))
+    Ok(match name {
+        "amp" => '&',
+        "gt" => '>',
+        "lt" => '<',
+        _ => {
+            return Err(format_err!("Unknown named entity: {}", name));
+        }
+    })
 }));
 
 

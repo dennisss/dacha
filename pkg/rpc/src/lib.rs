@@ -3,15 +3,14 @@ extern crate common;
 extern crate http;
 extern crate protobuf;
 
+#[macro_use]
+extern crate macros;
+
 pub mod proto;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use http::body::*;
-use http::client::Client;
 use http::header::*;
-use http::server::{RequestHandler};
-use http::spec::{Request, RequestBuilder, Response, ResponseBuilder};
 use http::status_code::*;
 use protobuf::service::{Channel, Service};
 use std::collections::HashMap;
@@ -43,15 +42,16 @@ impl RPCServer {
     }
 
     pub async fn run(self) -> Result<()> {
-        let server = http::server::Server::new(self.port, self);
+        let server = http::Server::new(self.port, self);
         server.run().await
     }
 
-    async fn handle_request_impl(&self, mut request: Request) -> Result<Response> {
+    async fn handle_request_impl(&self, mut request: http::Request) -> Result<http::Response> {
         let path_parts = request
             .head
             .uri
             .path
+            .as_ref()
             .split('/')
             .map(|v| v.to_string())
             .collect::<Vec<_>>();
@@ -69,24 +69,25 @@ impl RPCServer {
 
         let response_bytes = service.call(&path_parts[2], request_bytes.into()).await?;
 
-        ResponseBuilder::new()
+        http::ResponseBuilder::new()
             .status(OK)
             .header(CONTENT_TYPE, "application/grpc+proto")
-            .header(CONTENT_LENGTH, response_bytes.len().to_string())
-            .body(BodyFromData(response_bytes))
+            .body(http::BodyFromData(response_bytes))
             .build()
     }
 }
 
 #[async_trait]
-impl RequestHandler for RPCServer {
-    async fn handle_request(&self, request: Request) -> Response {
+impl http::RequestHandler for RPCServer {
+    async fn handle_request(&self, request: http::Request) -> http::Response {
+        println!("GOT REQUEST {:#?}", request.head);
+
         match self.handle_request_impl(request).await {
             Ok(r) => r,
-            Err(e) => ResponseBuilder::new()
+            Err(e) => http::ResponseBuilder::new()
                 .status(OK)
                 .header(CONTENT_TYPE, "text/plain")
-                .body(BodyFromData(e.to_string().bytes().collect::<Vec<u8>>()))
+                .body(http::BodyFromData(e.to_string().bytes().collect::<Vec<u8>>()))
                 .build()
                 .unwrap(),
         }
@@ -94,13 +95,13 @@ impl RequestHandler for RPCServer {
 }
 
 pub struct RPCChannel {
-    client: Client,
+    client: http::Client,
 }
 
 impl RPCChannel {
     pub fn create(uri: &str) -> Result<Self> {
         Ok(Self {
-            client: Client::create(uri)?,
+            client: http::Client::create(uri)?,
         })
     }
 }
@@ -113,13 +114,12 @@ impl Channel for RPCChannel {
         method_name: &'static str,
         request_bytes: Bytes,
     ) -> Result<Bytes> {
-        let request = RequestBuilder::new()
-            .method(http::spec::Method::POST)
-            .uri(format!("/{}/{}", service_name, method_name))
+        let request = http::RequestBuilder::new()
+            .method(http::Method::POST)
+            .path(format!("/{}/{}", service_name, method_name))
             // TODO: No gurantee that we were given proto data.
             .header(CONTENT_TYPE, GRPC_PROTO_TYPE)
-            .header(CONTENT_LENGTH, request_bytes.len().to_string())
-            .body(BodyFromData(request_bytes))
+            .body(http::BodyFromData(request_bytes))
             .build()?;
 
         let mut response = self.client.request(request).await?;

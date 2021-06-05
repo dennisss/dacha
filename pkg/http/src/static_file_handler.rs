@@ -54,7 +54,6 @@ impl RequestHandler for StaticFileHandler {
                 // } else {
                 //     return ResponseBuilder::new()
                 //         .status(status_code::BAD_REQUEST)
-                //         .body(EmptyBody())
                 //         .build().unwrap();
                 // }
             };
@@ -68,13 +67,11 @@ impl RequestHandler for StaticFileHandler {
                 if e.kind() == std::io::ErrorKind::NotFound {
                     return ResponseBuilder::new()
                         .status(status_code::NOT_FOUND)
-                        .body(EmptyBody())
                         .build().unwrap();
                 }
 
                 return ResponseBuilder::new()
                     .status(status_code::INTERNAL_SERVER_ERROR)
-                    .body(EmptyBody())
                     .build().unwrap();
             }
         };
@@ -83,7 +80,6 @@ impl RequestHandler for StaticFileHandler {
         if !metadata.is_file() {
             return ResponseBuilder::new()
                         .status(status_code::BAD_REQUEST)
-                        .body(EmptyBody())
                         .build().unwrap();
         }
 
@@ -92,7 +88,6 @@ impl RequestHandler for StaticFileHandler {
             Err(_) => {
                 return ResponseBuilder::new()
                     .status(status_code::INTERNAL_SERVER_ERROR)
-                    .body(EmptyBody())
                     .build().unwrap();
             }
         };

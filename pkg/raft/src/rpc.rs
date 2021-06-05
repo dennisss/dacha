@@ -3,9 +3,7 @@ use super::routing::*;
 use common::async_std::sync::Mutex;
 use common::bytes::Bytes;
 use common::errors::*;
-use http::body::*;
 use http::header;
-use http::spec::{Header, Method, RequestBuilder, ResponseBuilder};
 use http::status_code;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
@@ -89,8 +87,6 @@ pub struct ServerConfig<S> {
 
 pub type ServerHandle<S> = Arc<ServerConfig<S>>;
 
-type HttpClient = http::client::Client;
-type HttpResponse = http::spec::Response;
 
 /// Internal RPC Server between servers participating in the consensus protocol
 #[async_trait]
@@ -113,19 +109,18 @@ pub trait ServerService {
     async fn propose(&self, req: ProposeRequest) -> Result<ProposeResponse>;
 }
 
-fn bad_request() -> HttpResponse {
+fn bad_request() -> http::Response {
     ResponseBuilder::new()
         .status(status_code::BAD_REQUEST)
-        .body(EmptyBody())
         .build()
         .unwrap()
 }
 
-pub fn bad_request_because(text: &'static str) -> HttpResponse {
+pub fn bad_request_because(text: &'static str) -> http::Response {
     text_response(status_code::BAD_REQUEST, text)
 }
 
-pub fn text_response(code: status_code::StatusCode, text: &'static str) -> HttpResponse {
+pub fn text_response(code: status_code::StatusCode, text: &'static str) -> http::Response {
     ResponseBuilder::new()
         .status(code)
         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
@@ -134,24 +129,22 @@ pub fn text_response(code: status_code::StatusCode, text: &'static str) -> HttpR
         .unwrap()
 }
 
-fn rpc_response<Res>(res: Result<Res>) -> HttpResponse
+fn rpc_response<Res>(res: Result<Res>) -> http::Response
 where
     Res: Serialize,
 {
     match res {
         Ok(r) => {
             let data = marshal(r).expect("Failed to serialize RPC response");
-            ResponseBuilder::new()
+            http::ResponseBuilder::new()
                 .status(status_code::OK)
-                .body(EmptyBody())
                 .build()
                 .unwrap()
         }
         Err(e) => {
             eprintln!("{:?}", e);
-            ResponseBuilder::new()
+            http::ResponseBuilder::new()
                 .status(status_code::INTERNAL_SERVER_ERROR)
-                .body(EmptyBody())
                 .build()
                 .unwrap()
         }
@@ -194,7 +187,7 @@ async fn run_handler<'a, S: 'static, Req, Res: 'static, F>(
     inst: &S,
     data: Bytes,
     f: F,
-) -> std::result::Result<HttpResponse, HttpResponse>
+) -> std::result::Result<http::Response, http::Response>
 where
     for<'b> F: AsyncFnOnce2<&'b S, Req, Output = Result<Res>>,
     Req: Deserialize<'a> + 'static,
@@ -244,7 +237,7 @@ pub async fn run_server<I: 'static, R, F: 'static>(port: u16, inst: I, router: &
 where
     I: Clone + Send + Sync,
     R: (Fn(http::uri::Uri, Metadata, Bytes, I) -> F) + Send + Sync,
-    F: std::future::Future<Output = std::result::Result<HttpResponse, HttpResponse>> + Send,
+    F: std::future::Future<Output = std::result::Result<http::Response, http::Response>> + Send,
 {
     //	let addr = ([127, 0, 0, 1], port).into();
 
@@ -358,7 +351,7 @@ pub async fn DiscoverService_router<R: 'static, S: 'static>(
     meta: &Metadata,
     data: &Bytes,
     inst: &R,
-) -> std::result::Result<Option<HttpResponse>, HttpResponse>
+) -> std::result::Result<Option<http::Response>, http::Response>
 where
     R: Borrow<S> + Clone + Send + Sync,
     S: ServerService + Send + Sync,
@@ -509,7 +502,7 @@ pub async fn ServerService_router<R: 'static, S: 'static>(
     meta: Metadata,
     data: Bytes,
     inst: R,
-) -> std::result::Result<HttpResponse, HttpResponse>
+) -> std::result::Result<http::Response, http::Response>
 where
     R: Borrow<S> + Clone + Send + Sync,
     S: ServerService + Send + Sync + 'static,
@@ -545,7 +538,7 @@ pub enum To<'a> {
 }
 
 pub struct Client {
-    inner: HttpClient,
+    inner: http::Client,
     agent: NetworkAgentHandle,
 }
 

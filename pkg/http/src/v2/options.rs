@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::proto::v2::*;
 use crate::v2::settings::SettingsContainer;
 
+#[derive(Clone)]
 pub struct ConnectionOptions {
     /// HTTP2 protocol defined settings. These will be communicated to the remote
     /// endpoint.

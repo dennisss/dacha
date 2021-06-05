@@ -4,11 +4,16 @@ use common::borrowed::Borrowed;
 use parsing::ascii::AsciiString;
 use parsing::iso::Latin1String;
 use parsing::complete;
+use compression::buffer_queue::BufferQueue;
 
 use crate::body::Body;
 use crate::reader::*;
 use crate::chunked_syntax::*;
 use crate::header::Headers;
+
+/// Minimum size used for chunks.
+const MIN_CHUNK_SIZE: usize = 512;
+
 
 pub struct ChunkExtension {
     pub name: AsciiString,
@@ -164,6 +169,8 @@ impl Body for IncomingChunkedBody {
         None
     }
 
+    fn has_trailers(&self) -> bool { true }
+
     async fn trailers(&mut self) -> Result<Option<Headers>> {
         if let ChunkState::Done { trailers  } = &mut self.state {
             let trailers = trailers.take();
@@ -194,6 +201,118 @@ impl Readable for IncomingChunkedBody {
     }
 }
 
+enum OutgoingChunkState {
+    Data,
+    Error,
+    Done
+}
+
+pub struct OutgoingChunkedBody {
+    inner_body: Box<dyn Body>,
+
+    buffer: BufferQueue,
+
+    state: OutgoingChunkState
+}
+
+impl OutgoingChunkedBody {
+    pub fn new(body: Box<dyn Body>) -> Self {
+        OutgoingChunkedBody {
+            inner_body: body,
+            buffer: BufferQueue::new(),
+            state: OutgoingChunkState::Data
+        }
+    }
+
+    fn chunk_size_to_string(size: usize) -> String {
+        format!("{:x}", size)
+    }
+}
+
+#[async_trait]
+impl Body for OutgoingChunkedBody {
+    fn len(&self) -> Option<usize> { None }
+
+    // NOTE: Chunked bodies can have trailers, but we will always encode them as regular body data.
+    fn has_trailers(&self) -> bool { false }
+    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }
+}
+
+#[async_trait]
+impl Readable for OutgoingChunkedBody {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        match self.state {
+            OutgoingChunkState::Error => {
+                return Err(err_msg("An error previously occured while encodidng the body"));
+            }
+            OutgoingChunkState::Done => {
+                return Ok(self.buffer.copy_to(buf));
+            }
+
+            // Implemented below
+            OutgoingChunkState::Data => {}
+        }
+        
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        loop {
+            let n = self.buffer.copy_to(buf);
+            if n > 0 {
+                return Ok(n);
+            }
+
+            // Max number of bytes needed to encode the length of the chunk + the first and
+            // last \r\n sequences.
+            let chunk_overhead = Self::chunk_size_to_string(
+                std::cmp::max(buf.len(), MIN_CHUNK_SIZE)).len() + 4;
+
+            // Number of 
+            // NOTE: Will always be > 0.
+            let target_chunk_size = std::cmp::max(
+                buf.len().checked_sub(chunk_overhead).unwrap_or(0),
+                MIN_CHUNK_SIZE);
+            
+            let mut data = vec![];
+            data.resize(target_chunk_size, 0);
+            let chunk_size = match self.inner_body.read(&mut data).await {
+                Ok(n) => n,
+                Err(e) => {
+                    self.state = OutgoingChunkState::Error;
+                    return Err(e);
+                }
+            };
+
+            self.buffer.buffer.extend_from_slice(Self::chunk_size_to_string(chunk_size).as_bytes());
+            // NOTE: We don't currently support encoding an chunked extensions.
+            self.buffer.buffer.extend_from_slice(b"\r\n");
+
+            if chunk_size == 0 {
+                let trailers = match self.inner_body.trailers().await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        self.state = OutgoingChunkState::Error;
+                        return Err(e);
+                    }
+                };
+
+                if let Some(headers) = trailers {
+                    if let Err(e) = headers.serialize(&mut self.buffer.buffer) {
+                        self.state = OutgoingChunkState::Error;
+                        return Err(e);
+                    }
+                }
+            } else {
+                self.buffer.buffer.extend_from_slice(&data[0..chunk_size]);    
+            }
+
+            self.buffer.buffer.extend_from_slice(b"\r\n");
+        }
+    }
+}
+
+
 // TODO: Implement an OutgoingChunkedBody.
 // - Will need to pick a chunk size and be able to flush from upstream.
 
@@ -205,6 +324,8 @@ mod tests {
 
     use super::*;
 
+    // Test case from:
+    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding#examples
     const TEST_BODY: &'static [u8] = b"7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n";
 
     #[async_std::test]

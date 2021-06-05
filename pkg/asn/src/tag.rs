@@ -3,6 +3,8 @@
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Hash, Clone)]
 pub struct Tag {
     pub class: TagClass,
+
+    // TODO: Use a better debug method for this if available.
     pub number: usize,
 }
 

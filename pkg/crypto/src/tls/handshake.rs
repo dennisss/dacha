@@ -199,12 +199,14 @@ impl ClientHello {
         secure_random_bytes(&mut random_buf).await?;
 
         // TODO: Can we send this later as an encrypted header.
-        extensions.push(Extension::ServerName(ServerNameList {
-            names: vec![ServerName {
-                typ: NameType::host_name,
-                data: Bytes::from(options.hostname.as_bytes()), // TODO: Must be ASCII
-            }],
-        }));
+        if !options.hostname.is_empty() {
+            extensions.push(Extension::ServerName(ServerNameList {
+                names: vec![ServerName {
+                    typ: NameType::host_name,
+                    data: Bytes::from(options.hostname.as_bytes()), // TODO: Must be ASCII
+                }],
+            }));
+        }
 
         // Required to be sent in ClientHello.
         extensions.push(Extension::SupportedVersionsClientHello(SupportedVersionsClientHello {

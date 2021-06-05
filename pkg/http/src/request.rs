@@ -1,3 +1,4 @@
+use automata::regexp::vm::instance::RegExpMatch;
 use common::errors::*;
 use common::bytes::Bytes;
 use parsing::complete;
@@ -71,23 +72,48 @@ impl RequestBuilder {
         self
     }
 
-    // TODO: Use a different parsing rule for this?
-    // We should allow either relative or absolute URIs (or things like '*').
-    // When an absolute Uri is given, we should move the authority to the 'Host' header. 
-    // Schemes other than 'http(s)' should be rejected unless using HTTP2 or in a proxy connect mode.
-    pub fn uri<U: AsRef<[u8]>>(mut self, uri: U) -> Self {
-        // TODO: Implement a complete() parser combinator to deal with ensuring nothing
-        // is left
-        self.uri = match complete(parse_request_target)(Bytes::from(uri.as_ref())) {
-            Ok((u, _)) => Some(u.into_uri()),
-            Err(e) => {
-                self.error = Some(format_err!("Invalid request uri: {:?}", e));
-                None
-            }
-        };
+    pub fn path<P: AsRef<[u8]>>(mut self, path: P) -> Self {
+        match simple_path_parser(path.as_ref()) {
+            Some((path, query)) => {
+                if self.uri.is_some() {
+                    self.error = Some(err_msg("Part of the uri is already set"));
+                    return self;
+                }
 
+                self.uri = Some(Uri {
+                    scheme: None,
+                    authority: None,
+                    path,
+                    query,
+                    fragment: None
+                });
+            }
+            None => {
+                self.error = Some(err_msg("Invalid path given"));
+            }
+        }
+
+        // TODO
         self
     }
+
+    // // TODO: Use a different parsing rule for this?
+    // // We should allow either relative or absolute URIs (or things like '*').
+    // // When an absolute Uri is given, we should move the authority to the 'Host' header. 
+    // // Schemes other than 'http(s)' should be rejected unless using HTTP2 or in a proxy connect mode.
+    // pub fn uri<U: AsRef<[u8]>>(mut self, uri: U) -> Self {
+    //     // TODO: Implement a complete() parser combinator to deal with ensuring nothing
+    //     // is left
+    //     self.uri = match complete(parse_request_target)(Bytes::from(uri.as_ref())) {
+    //         Ok((u, _)) => Some(u.into_uri()),
+    //         Err(e) => {
+    //             self.error = Some(format_err!("Invalid request uri: {:?}", e));
+    //             None
+    //         }
+    //     };
+
+    //     self
+    // }
 
     // TODO: Currently this is the only safe way to build a request
     // we will need to dedup this with
@@ -100,6 +126,7 @@ impl RequestBuilder {
             }
         };
 
+        // TODO: This will never fail?
         let value = match value.to_header_value(&name) {
             Ok(v) => v,
             Err(e) => {
@@ -129,11 +156,11 @@ impl RequestBuilder {
         let method = self.method.ok_or_else(|| err_msg("No method specified"))?;
 
         // TODO: Only certain types of uris are allowed here
-        let uri = self.uri.ok_or_else(|| err_msg("No uri specified"))?;
+        let uri = self.uri.ok_or_else(|| err_msg("No uri components specified"))?;
 
         let headers = Headers::from(self.headers);
 
-        let body = self.body.ok_or_else(|| err_msg("No body specified"))?;
+        let body = self.body.unwrap_or_else(|| crate::body::EmptyBody());
 
         Ok(Request {
             head: RequestHead {
@@ -145,4 +172,54 @@ impl RequestBuilder {
             body,
         })
     }
+}
+
+// Simple regular expression for matching a relative path allowed in a request.
+// This is allowed to contain an absolute path followed by an optional query string.
+// Or the entire string can be '*'.
+// For simplicity, we don't validate that percent encoded entities are correct.
+regexp!(REQUEST_PATH => "^(?:(\\*)|(/(?:[a-zA-Z0-9-._~!$&'()*+,;=:@%]+/?)*)(?:\\?([A-Za-z0-9-._~!$&'()*+,;=:@%?]*))?)$");
+
+fn simple_path_parser(path: &[u8]) -> Option<(AsciiString, Option<AsciiString>)> {
+    let m: RegExpMatch = match REQUEST_PATH.exec(path) {
+        Some(m) => m,
+        None => { return None; }
+    };
+
+    // Either take the '*' or the '/...' form of the path.
+    let path = AsciiString::from(
+        m.group(1).unwrap_or_else(|| m.group(2).unwrap())
+    ).unwrap();
+
+    let query = m.group(3).map(|v| AsciiString::from(v).unwrap());
+
+    Some((path, query))
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_parser_test() {
+
+        assert_eq!(simple_path_parser(b"/"), Some((AsciiString::from_str("/").unwrap(), None)));
+        assert_eq!(simple_path_parser(b"//"), None);
+        assert_eq!(simple_path_parser(b"/hello"), Some((AsciiString::from_str("/hello").unwrap(), None)));
+        assert_eq!(simple_path_parser(b""), None);
+        assert_eq!(simple_path_parser(b"/hello/world"), Some((AsciiString::from_str("/hello/world").unwrap(), None)));
+        assert_eq!(simple_path_parser(b"/hello/?world=?"),
+                   Some((AsciiString::from_str("/hello/").unwrap(), Some(AsciiString::from_str("world=?").unwrap()))));
+        assert_eq!(simple_path_parser(b"/hello/?"),
+                    Some((AsciiString::from_str("/hello/").unwrap(), Some(AsciiString::from_str("").unwrap()))));
+        assert_eq!(simple_path_parser(b"/hello?"), Some((AsciiString::from_str("/hello").unwrap(), Some(AsciiString::from_str("").unwrap()))));
+        assert_eq!(simple_path_parser(b"/?"), Some((AsciiString::from_str("/").unwrap(), Some(AsciiString::from_str("").unwrap()))));
+        assert_eq!(simple_path_parser(b"?"), None);
+        assert_eq!(simple_path_parser(b"?a"), None);
+        assert_eq!(simple_path_parser(b"*"), Some((AsciiString::from_str("*").unwrap(), None)));
+
+        println!("SIZE: {}", REQUEST_PATH.estimated_memory_usage());
+    }
+
 }

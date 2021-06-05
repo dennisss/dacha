@@ -220,6 +220,7 @@ pub fn snake_to_camel_case(name: &str) -> String {
 }
 
 pub trait InRange {
+    /// Checks if a value is the inclusive range [min, max].
     fn in_range(self, min: Self, max: Self) -> bool;
 }
 
