@@ -32,6 +32,7 @@ use crate::tls::record_stream::*;
 use crate::tls::application_stream::*;
 use crate::x509;
 use crate::tls::handshake_summary::*;
+use crate::chacha20::ChaCha20Poly1305;
 
 
 // TODO: Should abort the connection if negotiation results in more than one
@@ -346,16 +347,16 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
             let cipher_suite = server_hello.cipher_suite.clone();
 
-            let (aead, hasher_factory) = match cipher_suite {
+            let (aead, hasher_factory): (Box<dyn AuthEncAD>, HasherFactory) = match cipher_suite {
                 CipherSuite::TLS_AES_128_GCM_SHA256 => {
                     (Box::new(AesGCM::aes128()), SHA256Hasher::factory())
                 }
                 CipherSuite::TLS_AES_256_GCM_SHA384 => {
                     (Box::new(AesGCM::aes256()), SHA384Hasher::factory())
                 }
-                // CipherSuite::TLS_CHACHA20_POLY1305_SHA256 => {
-                // 	SHA256Hasher::factory()
-                // },
+                CipherSuite::TLS_CHACHA20_POLY1305_SHA256 => {
+                	(Box::new(ChaCha20Poly1305::new()), SHA256Hasher::factory())
+                },
                 _ => {
                     return Err(err_msg("Bad cipher suite"));
                 }
@@ -396,16 +397,16 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
 
             self.writer.local_cipher_spec = Some(CipherEndpointSpec::new(
-                aead.clone(),
+                aead.box_clone(),
                 hkdf.clone(),
                 client_handshake_traffic_secret.into()
             ));
 
             self.reader.set_remote_cipher_spec(CipherEndpointSpec::new(
-                aead.clone(),
+                aead.box_clone(),
                 hkdf.clone(),
                 server_handshake_traffic_secret.into()
-            ));
+            ))?;
 
             return Ok((server_hello, key_schedule, hasher_factory));
         }

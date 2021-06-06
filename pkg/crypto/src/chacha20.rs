@@ -2,7 +2,11 @@
 // https://tools.ietf.org/html/rfc7539
 // TODO: Look at the updated version in rfc8439.
 
+use common::errors::*;
 use math::big::*;
+
+use crate::aead::AuthEncAD;
+use crate::utils::xor;
 
 // TODO: Provide some warning of when the counter will overflow and wrap.
 
@@ -126,15 +130,6 @@ impl ChaCha20 {
         Self::serialize(state)
     }
 
-    // TODO: Vectorize this
-    // NOTE: a.len() should be <= b.len() as we will only xor up to the size of
-    // a.
-    fn xor(a: &[u8], b: &[u8], out: &mut [u8]) {
-        for i in 0..a.len() {
-            out[i] = a[i] ^ b[i];
-        }
-    }
-
     fn encrypt(&mut self, data: &[u8], out: &mut [u8]) {
         assert_eq!(data.len(), out.len());
 
@@ -143,7 +138,7 @@ impl ChaCha20 {
         while i < n * BLOCK_SIZE {
             let key_stream = self.get_block();
             let j = i + BLOCK_SIZE;
-            Self::xor(&data[i..j], &key_stream, &mut out[i..j]);
+            xor(&data[i..j], &key_stream, &mut out[i..j]);
             self.bytes_processed += BLOCK_SIZE;
             i = j;
         }
@@ -152,7 +147,7 @@ impl ChaCha20 {
         if r != 0 {
             let key_stream = self.get_block();
             i = data.len() - r;
-            Self::xor(&data[i..], &key_stream, &mut out[i..]);
+            xor(&data[i..], &key_stream, &mut out[i..]);
             self.bytes_processed += r;
         }
     }
@@ -168,11 +163,31 @@ impl ChaCha20 {
     }
 }
 
-struct Poly1305 {}
+// TOOD: Need to switch to a static allocation / constant time implementation.
+struct Poly1305 {
+    // Constant prime number used as modulus.
+    p: BigUint,
+
+    // Derived from key.
+    r: BigUint,
+    s: BigUint,
+
+    acc: BigUint,
+}
 
 impl Poly1305 {
-    fn new() -> Self {
-        Self {}
+    fn new(key: &[u8]) -> Self {
+        assert_eq!(key.len(), 32);
+        Self {
+            p: BigUint::from(130).exp2() - &BigUint::from(5),
+            r: {
+                let mut data = (&key[0..16]).to_vec();
+                Self::clamp(&mut data);
+                BigUint::from_le_bytes(&data)
+            },
+            s: BigUint::from_le_bytes(&key[16..]),
+            acc: BigUint::zero()
+        }
     }
 
     fn tag_size(&self) -> usize {
@@ -189,37 +204,127 @@ impl Poly1305 {
         r[12] &= 252;
     }
 
-    fn mac(&self, data: &[u8], key: &[u8]) -> Vec<u8> {
-        let p = BigUint::from(130).exp2() - &BigUint::from(5);
-        assert_eq!(key.len(), 32);
-        let r = {
-            let mut data = (&key[0..16]).to_vec();
-            Self::clamp(&mut data);
-            BigUint::from_le_bytes(&data)
-        };
-        let s = BigUint::from_le_bytes(&key[16..]);
-
-        let mut acc = BigUint::zero();
-
+    /// NOTE: Data will be interprated as if it were padded with zeros to a multiple of 16
+    /// bytes.
+    fn update(&mut self, data: &[u8], pad_to_block: bool) {
         for i in (0..data.len()).step_by(16) {
             let j = std::cmp::min(data.len(), i + 16);
             // TODO: Make sure that this internally reserves the full size + 1
             let mut n = BigUint::from_le_bytes(&data[i..j]);
-            n.set_bit((j - i) * 8, 1);
+            
+            let final_bit = if pad_to_block { 16 * 8 } else { (j - i) * 8 };
+            n.set_bit(final_bit, 1);
 
-            acc += n;
-            acc = Modulo::new(&p).mul(&r, &acc);
+            self.acc += n;
+            self.acc = Modulo::new(&self.p).mul(&self.r, &self.acc);
         }
+    }
 
-        acc += s;
-
-        let mut out = acc.to_le_bytes();
+    fn finish(mut self) -> Vec<u8> {
+        self.acc += self.s;
+        let mut out = self.acc.to_le_bytes();
         out.resize(16, 0);
         out
     }
 }
 
-struct ChaCha20Poly1305 {}
+#[derive(Clone)]
+pub struct ChaCha20Poly1305 {}
+
+impl ChaCha20Poly1305 {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    fn compute_tag(
+        otk: Vec<u8>,
+        ciphertext: &[u8],
+        additional_data: &[u8]
+    ) -> Vec<u8> {
+        let mut poly = Poly1305::new(&otk);
+
+        poly.update(additional_data, true);
+        poly.update(ciphertext, true);
+
+        let mut lengths = [0u8; 16];
+        (&mut lengths[0..8]).copy_from_slice(&(additional_data.len() as u64).to_le_bytes());
+        (&mut lengths[8..16]).copy_from_slice(&(ciphertext.len() as u64).to_le_bytes());
+        poly.update(&lengths, false);
+
+        poly.finish()
+    }
+}
+
+impl AuthEncAD for ChaCha20Poly1305 {
+    fn key_size(&self) -> usize {
+        CHACHA20_KEY_SIZE
+    }
+
+    fn nonce_range(&self) -> (usize, usize) {
+        (CHACHA20_NONCE_SIZE, CHACHA20_NONCE_SIZE)
+    }
+
+    fn expanded_size(&self, plaintext_size: usize) -> usize {
+        plaintext_size + 16
+    }
+
+    fn encrypt(
+        &self,
+        key: &[u8],
+        nonce: &[u8],
+        plaintext: &[u8],
+        additional_data: &[u8],
+        out: &mut Vec<u8>,
+    ) {
+        let start_i = out.len();
+        out.resize(start_i + self.expanded_size(plaintext.len()), 0);
+
+        let (ciphertext, tag) = out.split_at_mut(plaintext.len());
+
+        let mut chacha = ChaCha20::new(key, nonce);
+        let otk = chacha.poly1305_keygen();
+
+        println!("OTK: {:x?}", &otk);
+
+        chacha.encrypt(plaintext, ciphertext);
+
+
+        tag.copy_from_slice(&Self::compute_tag(otk, ciphertext, additional_data));
+    }
+
+    fn decrypt(
+        &self,
+        key: &[u8],
+        nonce: &[u8],
+        ciphertext: &[u8],
+        additional_data: &[u8],
+        out: &mut Vec<u8>,
+    ) -> Result<()> {
+        let (ciphertext, tag) = ciphertext.split_at(ciphertext.len() - 16);
+
+        let start_i = out.len();
+        out.resize(start_i + ciphertext.len(), 0);
+        let plaintext = &mut out[start_i..];
+
+        let mut chacha = ChaCha20::new(key, nonce);
+        let otk = chacha.poly1305_keygen();
+        chacha.decrypt(ciphertext, plaintext);
+
+        let expected_tag = Self::compute_tag(otk, ciphertext, additional_data);
+
+        if !crate::constant_eq(tag, &expected_tag) {
+            return Err(err_msg("Bad tag"));
+        }
+
+        Ok(())
+    }
+
+    fn box_clone(&self) -> Box<dyn AuthEncAD> {
+        Box::new(self.clone())
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -260,12 +365,55 @@ mod tests {
     }
 
     #[test]
+    fn chacha20_poly1305_keygen_test() {
+        let key = common::hex::decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f").unwrap();
+        let nonce = common::hex::decode("000000000001020304050607").unwrap();
+
+        let expected = common::hex::decode("8ad5a08b905f81cc815040274ab29471a833b637e3fd0da508dbb8e2fdd1a646").unwrap();
+
+        let mut chacha = ChaCha20::new(&key, &nonce);
+        let otk = chacha.poly1305_keygen();
+
+        assert_eq!(otk, expected);
+    }
+
+    #[test]
     fn poly1305_test() {
         let key = common::hex::decode("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
             .unwrap();
         let plain = b"Cryptographic Forum Research Group";
         let tag = common::hex::decode("a8061dc1305136c6c22b8baf0c0127a9").unwrap();
 
-        assert_eq!(&Poly1305::new().mac(&plain[..], &key), &tag);
+        let mut poly = Poly1305::new(&key);
+        poly.update(&plain[..], false);
+
+        assert_eq!(&poly.finish(), &tag);
+    }
+
+    #[test]
+    fn aead_test() {
+        let plaintext = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+
+        let aad = common::hex::decode("50515253c0c1c2c3c4c5c6c7").unwrap();
+
+        let key = common::hex::decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f").unwrap();
+
+        // 32-bit constant | iv
+        let nonce = common::hex::decode("070000004041424344454647").unwrap();
+
+        let ciphertext = common::hex::decode("d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b61161ae10b594f09e26a7e902ecbd0600691").unwrap();
+
+        let aead = ChaCha20Poly1305::new();
+
+        let mut out = vec![];
+        aead.encrypt(&key, &nonce, plaintext, &aad, &mut out);
+        assert_eq!(&out, &ciphertext);
+
+        let mut out2 = vec![];
+        let r = aead.decrypt(&key, &nonce, &ciphertext, &aad, &mut out2);
+        assert!(r.is_ok());
+        assert_eq!(out2, plaintext);
+
+        // TODO: Also test decryption failures.
     }
 }
