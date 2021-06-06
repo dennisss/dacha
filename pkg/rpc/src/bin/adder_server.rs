@@ -22,7 +22,7 @@ impl AdderService for AdderImpl {
 
 // TODO: Set server side request timeout.
 async fn run_server() -> Result<()> {
-    let mut server = rpc::RPCServer::new(5000);
+    let mut server = rpc::Server::new(5000);
     let adder = AdderImpl {};
     let service = adder.into_service();
     server.add_service(service)?;

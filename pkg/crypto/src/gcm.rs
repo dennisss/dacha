@@ -9,11 +9,6 @@ use math::big::BigUint;
 type Block = [u8; 16];
 const BLOCK_SIZE: usize = 16;
 
-// GCM uses polynomial:
-// x^128 + x^7 + x^2 + x + 1
-
-// const MIRROR_BYTES_MAP = [15, 14, 13, 12, 11, ];
-
 /// Operations of the field GF(2^m).
 struct GaloisField2 {
     m: usize,
@@ -31,6 +26,8 @@ impl GaloisField2 {
     }
 
     /// Creates the GF(2^128) field used by GCM.
+    ///
+    /// Reduces by the polynomial 'x^128 + x^7 + x^2 + x + 1'
     pub fn gcm128() -> Self {
         let p = {
             let mut n = BigUint::zero();

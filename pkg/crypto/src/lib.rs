@@ -133,6 +133,7 @@ mod tests {
 
 pub mod aead;
 pub mod aes;
+mod aes_generic;
 pub mod chacha20;
 pub mod checksum;
 pub mod cipher;

@@ -405,8 +405,6 @@ impl ClientConnectionShared {
 
         let mut reader = PatternReader::new(reader, MESSAGE_HEAD_BUFFER_OPTIONS);
 
-        // How to block it 
-
         loop {
             let e = self.connection_event_channel.1.recv().await?;
 
@@ -481,13 +479,6 @@ impl ClientConnectionShared {
 
                     let status_code = StatusCode::from_u16(status_line.status_code)
                         .ok_or(Error::from(err_msg("Invalid status code")))?;
-
-                    // TODO: If this is a HEAD request, do not receive any body
-
-                    // If chunked encoding is used, then it msut b
-
-                    // A sender MUST NOT send a Content-Length header field in any message
-                    //    that contains a Transfer-Encoding header field.
 
                     let head = ResponseHead {
                         version: status_line.version,

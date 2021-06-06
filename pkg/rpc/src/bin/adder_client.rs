@@ -17,7 +17,7 @@ async fn run_client() -> Result<()> {
     // read the full length, then we should error out the request.
 
     // TODO: Specify the gRPC protocal in uri?
-    let channel = Arc::new(rpc::RPCChannel::create("http://127.0.0.1:5000")?);
+    let channel = Arc::new(rpc::Channel::create("http://127.0.0.1:5000")?);
     let stub = AdderStub::new(channel);
 
     let mut req = AddRequest::default();

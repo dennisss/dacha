@@ -347,7 +347,6 @@ impl Server {
                 HTTP2-Settings: <base64url encoding of HTTP/2 SETTINGS payload>
             */
 
-
             // In the case of pipelining, start this in a separate task.
 
             let req_method = req.head.method.clone();
