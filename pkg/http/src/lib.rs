@@ -39,7 +39,7 @@ mod response;
 mod v2;
 mod headers;
 pub mod static_file_handler;
-mod query;
+pub mod query;
 mod hpack;
 mod client;
 

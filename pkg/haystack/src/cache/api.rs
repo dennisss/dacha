@@ -1,6 +1,5 @@
-use super::super::common::*;
-use super::super::store::api::*;
-
+use crate::types::*;
+use crate::store::api::*;
 
 pub enum MachineIds {
 	Data(Vec<MachineId>),

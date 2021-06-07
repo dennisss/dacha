@@ -6,7 +6,7 @@ extern crate haystack;
 extern crate toml;
 
 use clap::{App, Arg, SubCommand};
-use haystack::common::*;
+use haystack::types::*;
 use haystack::directory::Directory;
 use haystack::errors::*;
 

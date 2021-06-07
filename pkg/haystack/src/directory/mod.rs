@@ -3,16 +3,18 @@ pub mod models;
 pub mod schema;
 mod db;
 
-use super::common::*;
-use super::errors::*;
-use self::models::*;
+use std::hash::Hasher;
+use std::sync::Arc;
+
+use common::errors::*;
 use rand;
 use rand::prelude::*;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
-use core::FlipSign;
+use common::FlipSign;
+
+use crate::types::*;
+use self::models::*;
 use self::db::DB;
-use std::hash::Hasher;
-use std::sync::Arc;
 
 
 pub struct Directory {
@@ -122,9 +124,9 @@ impl Directory {
 		}
 
 		// To pick the cache server, we use a simple Distributed Hash Table approach with a random key per volume
-		let mut hasher = siphasher::sip::SipHasher::new_with_keys(vol.hash_key.flip(), 0);
-		hasher.write_u64(photo.id.flip());
-		let hash = hasher.finish();
+		let mut hasher = crypto::sip::SipHasher::default_rounds_with_key_halves(vol.hash_key.flip(), 0);
+		hasher.update((photo.id.flip() as u64).to_le_bytes());
+		let hash = hasher.finish_u64();
 		let bucket_size = std::u64::MAX / (caches.len() as u64);
 		let mut cache_idx = (hash / bucket_size) as usize; // XXX: Assumes usize is >= u64
 

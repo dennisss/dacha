@@ -5,15 +5,60 @@
 // https://url.spec.whatwg.org/#application/x-www-form-urlencoded
 
 use std::collections::HashMap;
+use std::fmt::Write;
 
 use common::errors::*;
 use parsing::opaque::OpaqueString;
+use parsing::ascii::AsciiString;
 
 // /// Map based storage of query parameters.
 // /// This is efficient for lookup but ignores any ordering between values with different names. 
 // pub struct QueryParams {
 //     params: HashMap<OpaqueString, Vec<OpaqueString>>,
 // }
+
+pub struct QueryParamsBuilder {
+    out: String
+}
+
+impl QueryParamsBuilder {
+    pub fn new() -> Self {
+        Self { out: String::new() }
+    }
+
+    pub fn add(mut self, key: &[u8], value: &[u8]) -> Self {
+        self.out.reserve(key.len() + value.len() + 2);
+        if !self.out.is_empty() {
+            self.out.push('&');
+        }
+
+        self.add_slice(key);
+        if !value.is_empty() {
+            self.out.push('=');
+            self.add_slice(value);
+        }
+
+        self
+    }
+
+    fn add_slice(&mut self, data: &[u8]) {
+        for byte in data.iter().cloned() {
+            if byte == b' ' {
+                self.out.push('+');
+            } else if byte.is_ascii_alphanumeric() {
+                // TODO: Also allow some punctionation.
+                self.out.push(byte as char);
+            } else {
+                write!(self.out, "%{:02X}", byte).unwrap();
+            }
+        }
+    }
+
+    pub fn build(self) -> AsciiString {
+        AsciiString::from_string(self.out).unwrap()
+    }
+}
+
 
 pub struct QueryParamsParser<'a> {
     input: &'a [u8],

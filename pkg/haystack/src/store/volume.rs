@@ -1,5 +1,5 @@
 
-use super::super::common::*;
+use super::super::types::*;
 use super::super::errors::*;
 use super::api::CookieBuf;
 use super::needle::*;

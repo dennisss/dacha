@@ -1,7 +1,7 @@
 use diesel::prelude::*;
 use diesel::pg::PgConnection;
 use super::super::errors::*;
-use super::super::common::*;
+use super::super::types::*;
 use super::models::*;
 use super::schema;
 use core::FlipSign;

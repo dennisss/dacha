@@ -1,7 +1,7 @@
-use super::super::common::*;
+use super::super::types::*;
 use super::super::errors::*;
 use super::super::paths::*;
-use super::super::http::*;
+use super::super::http_utils::*;
 use super::api::*;
 use super::machine::*;
 use super::volume::*;

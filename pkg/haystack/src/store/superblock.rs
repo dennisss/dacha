@@ -2,7 +2,7 @@ use std::io::{Read, Write, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use std::mem::size_of;
 use common::errors::*;
-use crate::common::*;
+use crate::types::*;
 
 const SUPERBLOCK_MAGIC_SIZE: usize = 4;
 const CHECKSUM_SIZE: usize = 4;

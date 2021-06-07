@@ -322,6 +322,8 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "common",
+ "crypto",
+ "http",
  "parsing",
  "regexp_macros",
 ]

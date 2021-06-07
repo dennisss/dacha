@@ -1,10 +1,13 @@
-use super::super::common::*;
-use super::super::errors::*;
-use super::super::directory::*;
-use super::super::background_thread::*;
-use super::memory::*;
 use std::time::Duration;
 use std::sync::{Arc, Mutex};
+
+use common::errors::*;
+
+use crate::types::*;
+use crate::directory::*;
+use crate::background_thread::*;
+use crate::cache::memory::*;
+
 
 
 pub struct MachineContext {

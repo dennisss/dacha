@@ -52,6 +52,10 @@ impl AsciiString {
     pub fn to_string(&self) -> String {
         self.as_ref().to_owned()
     }
+
+    pub fn as_str(&self) -> &str {
+        self.as_ref()
+    }
 }
 
 impl std::convert::AsRef<str> for AsciiString {

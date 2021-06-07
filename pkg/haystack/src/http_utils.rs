@@ -1,27 +1,31 @@
-use hyper::{Request, Response, Body, Server, StatusCode};
-use hyper::http::request::Parts;
-use std::future::Future;
-use hyper::service::service_fn;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
-use super::errors::Error;
-use futures::TryFutureExt;
+
+
+// use hyper::{Request, Response, Body, Server, StatusCode};
+// use hyper::http::request::Parts;
+// use hyper::service::service_fn;
+
+use common::errors::*;
+
+// use super::errors::Error;
+// use futures::TryFutureExt;
 
 // TODO: Need a better space for these shared helpers 
 
-pub fn bad_request() -> Response<Body> {
-	Response::builder().status(StatusCode::BAD_REQUEST).body(Body::empty()).unwrap()
+pub fn bad_request() -> http::Response {
+	http::ResponseBuilder::new().status(http::status_code::BAD_REQUEST).build().unwrap()
 }
 
-pub fn invalid_method() -> Response<Body> {
-	text_response(StatusCode::METHOD_NOT_ALLOWED, "Method not allowed")
+pub fn invalid_method() -> http::Response {
+	text_response(http::status_code::METHOD_NOT_ALLOWED, "Method not allowed")
 }
 
-pub fn bad_request_because(text: &'static str) -> Response<Body> {
-	text_response(StatusCode::BAD_REQUEST, text)
+pub fn bad_request_because(text: &'static str) -> http::Response {
+	text_response(http::status_code::BAD_REQUEST, text)
 }
 
-pub fn json_response<T>(code: StatusCode, obj: &T) -> Response<Body> where T: serde::Serialize {
+pub fn json_response<T>(code: http::status_code::StatusCode, obj: &T) -> http::Response where T: serde::Serialize {
 	let body = serde_json::to_string(obj).unwrap();
 	Response::builder()
 		.status(code)
@@ -30,7 +34,7 @@ pub fn json_response<T>(code: StatusCode, obj: &T) -> Response<Body> where T: se
 		.unwrap()
 }
 
-pub fn text_response(code: StatusCode, text: &'static str) -> Response<Body> {
+pub fn text_response(code: http::status_code::StatusCode, text: &'static str) -> http::Response {
 	Response::builder()
 		.status(code)
 		.header("Content-Type", "text/plain; charset=utf-8")

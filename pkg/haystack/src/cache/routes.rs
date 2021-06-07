@@ -1,8 +1,15 @@
+use std::sync::{Arc,Mutex};
+use std::time::{SystemTime, Duration};
+
+use common::errors::*;
+use rand::thread_rng;
+use rand::seq::SliceRandom;
+use bytes::Bytes;
+
 use super::api::*;
 use super::super::store::api::*;
-use super::super::common::*;
-use super::super::http::*;
-use super::super::errors::*;
+use super::super::types::*;
+use super::super::http_utils::*;
 use super::super::directory;
 use super::machine::*;
 use super::memory::*;
@@ -10,15 +17,7 @@ use super::super::paths::*;
 use hyper::{Request, Body, Response, Method, StatusCode};
 use hyper::http::request::Parts;
 use hyper::body::Payload;
-use std::sync::{Arc,Mutex};
-use std::time::{SystemTime, Duration};
-use rand::thread_rng;
-use rand::seq::SliceRandom;
-use hyper::header::HeaderMap;
-use bytes::Bytes;
-use common::futures::compat::Future01CompatExt;
-use common::futures::compat::Stream01CompatExt;
-use common::futures::stream::StreamExt;
+
 
 pub async fn handle_request(
 	parts: Parts, body: Body, mac_handle: MachineHandle

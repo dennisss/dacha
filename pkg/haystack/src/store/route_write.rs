@@ -3,9 +3,9 @@
 	As the batching stuff gets pretty envolved, it deserves its own file
 */
 
-use super::super::common::*;
+use super::super::types::*;
 use super::super::errors::*;
-use super::super::http::*;
+use super::super::http_utils::*;
 use super::machine::*;
 use super::volume::*;
 use super::needle::*;

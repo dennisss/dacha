@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
+
 use automata::regexp::vm::instance::RegExpMatch;
 use common::bytes::BytesMut;
 use common::errors::*;
 use parsing::*;
-use std::collections::HashMap;
+
 
 // String | Integer | List | Dict
 regexp!(TAG => "^(?:([1-9][0-9]*|0):|i(-?[1-9][0-9]*|0)e|(l)|(d))");
@@ -25,7 +28,17 @@ impl BENValue {
     // enum_accessor!(string, String, String);
     enum_accessor!(int, Integer, isize);
     // enum_accessor!(list, List, Vec<BENValue>);
-    // enum_accessor!(dict, String, String);
+
+    pub fn dict(self) -> Result<HashMap<BytesMut, BENValue>> {
+        match self {
+            Self::Dict(v) => {
+                Ok(v)
+            }
+            _ => {
+                Err(err_msg("Not a dict type value"))
+            }
+        }
+    }
 
     pub fn parse(mut input: &[u8]) -> Result<(Self, &[u8])> {
         let m: RegExpMatch = TAG
@@ -76,7 +89,134 @@ impl BENValue {
             return Err(err_msg("Failed to parse"));
         })
     }
+
+    pub fn serialize(&self, out: &mut Vec<u8>) {
+        match self {
+            BENValue::String(v) => {
+                out.extend_from_slice(format!("{}:", v.len()).as_ref());
+                out.extend_from_slice(v.as_ref());
+            }
+            BENValue::Integer(v) => {
+                out.extend_from_slice(format!("i{}e", *v).as_bytes());
+            }
+            BENValue::List(v) => {
+                out.push(b'l');
+                for item in v {
+                    item.serialize(out);
+                }
+                out.push(b'e');
+            }
+            BENValue::Dict(v) => {
+                out.push(b'd');
+
+                let mut keys = v.keys().map(|v| v.as_ref()).collect::<Vec<_>>();
+                keys.sort();
+
+                for key in keys {
+                    // TODO: Deduplicate with the ::String logic.
+                    out.extend_from_slice(format!("{}:", key.len()).as_ref());
+                    out.extend_from_slice(key.as_ref());
+
+                    let value = v.get(key).unwrap();
+                    value.serialize(out);
+                }
+
+                out.push(b'e');
+            }
+        }
+    }
 }
+
+impl std::convert::From<isize> for BENValue {
+    fn from(value: isize) -> BENValue {
+        BENValue::Integer(value)
+    }
+}
+
+impl std::convert::TryFrom<BENValue> for isize {
+    type Error = Error;
+
+    fn try_from(value: BENValue) -> Result<isize> {
+        value.int()
+    }
+}
+
+
+impl std::convert::From<String> for BENValue {
+    fn from(value: String) -> BENValue {
+        BENValue::String(BytesMut::from(value))
+    }
+}
+
+impl std::convert::TryFrom<BENValue> for String {
+    type Error = Error;
+
+    /// Interprets this value as a UTF-8 encoded string value.
+    fn try_from(value: BENValue) -> Result<String> {
+        match value {
+            BENValue::String(v) => {
+                Ok(String::from_utf8(v.to_vec())?)
+            }
+            _ => {
+                Err(err_msg("Not a string type value"))
+            }
+        }
+    }
+}
+
+impl std::convert::From<BytesMut> for BENValue {
+    fn from(value: BytesMut) -> BENValue {
+        BENValue::String(value)
+    }
+}
+
+impl std::convert::TryFrom<BENValue> for BytesMut {
+    type Error = Error;
+
+    fn try_from(value: BENValue) -> Result<BytesMut> {
+        match value {
+            BENValue::String(v) => {
+                Ok(v)
+            }
+            _ => {
+                Err(err_msg("Not a string type value"))
+            }
+        }
+    }
+}
+
+impl<T: Into<BENValue>> std::convert::From<Vec<T>> for BENValue {
+    fn from(value: Vec<T>) -> BENValue {
+        let mut out = vec![];
+        for item in value {
+            out.push(item.into());
+        }
+
+        BENValue::List(out)
+    }
+}
+
+impl<T: TryFrom<BENValue, Error=Error>> TryFrom<BENValue> for Vec<T> {
+    type Error = Error;
+
+    fn try_from(value: BENValue) -> Result<Vec<T>> {
+        match value {
+            BENValue::List(v) => {
+                let mut out = vec![];
+                for value in v {
+                    out.push(value.try_into()?);
+                }
+
+                Ok(out)
+            }
+            _ => {
+                Err(err_msg("Not a list type value"))
+            }
+        }
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {

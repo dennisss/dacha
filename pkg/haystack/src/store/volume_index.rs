@@ -1,4 +1,4 @@
-use super::super::common::*;
+use super::super::types::*;
 use super::super::errors::*;
 use super::needle::*;
 use super::superblock::*;

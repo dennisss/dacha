@@ -1,7 +1,7 @@
 use super::super::directory::Directory;
 use super::machine::*;
 use super::super::errors::*;
-use super::super::http::*;
+use super::super::http_utils::*;
 use std::sync::Arc;
 use std::{thread, time};
 use super::routes;

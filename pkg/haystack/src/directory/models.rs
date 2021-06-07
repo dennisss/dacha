@@ -1,6 +1,6 @@
 use diesel::*;
 use super::schema::*;
-use super::super::common::Config;
+use super::super::types::Config;
 use common::chrono::{DateTime, Utc, Duration};
 
 pub enum ParamKey {

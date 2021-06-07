@@ -3,7 +3,6 @@ use std::{thread, time};
 use std::sync::{Mutex,Condvar};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-
 /// Helper struct that wraps a start/stoppable thread that blocks for external events to occur
 pub struct BackgroundThread {
 	running: AtomicBool,

@@ -6,7 +6,7 @@ use std::mem::size_of;
 use std::path::{Path};
 use common::errors::*;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
-use crate::common::*;
+use crate::types::*;
 
 
 

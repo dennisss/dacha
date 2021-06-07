@@ -6,7 +6,7 @@
 */
 
 use super::errors::*;
-use super::common::*;
+use super::types::*;
 use super::directory::*;
 use super::paths::*;
 use super::store::api::*;

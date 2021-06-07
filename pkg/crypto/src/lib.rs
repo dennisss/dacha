@@ -4,7 +4,8 @@
     const_constructor,
     proc_macro_hygiene,
     trait_alias,
-    exclusive_range_pattern
+    exclusive_range_pattern,
+    wrapping_int_impl
 )]
 #[macro_use]
 extern crate common;
@@ -160,3 +161,4 @@ pub mod tls;
 pub mod utils;
 pub mod x509;
 pub mod nist;
+pub mod sip;

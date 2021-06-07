@@ -3,7 +3,7 @@ use std::io::{Write, Read, Seek};
 use std::fs::{File, OpenOptions};
 use std::io::{Cursor, SeekFrom};
 use std::collections::{HashMap};
-use super::super::common::*;
+use super::super::types::*;
 use super::super::errors::*;
 use super::super::paths::Host;
 use super::api::*;

@@ -96,6 +96,11 @@ impl RequestBuilder {
         // TODO
         self
     }
+    
+    pub fn uri(mut self, uri: Uri) -> Self {
+        self.uri = Some(uri);
+        self
+    }
 
     // // TODO: Use a different parsing rule for this?
     // // We should allow either relative or absolute URIs (or things like '*').

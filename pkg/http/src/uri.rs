@@ -41,7 +41,12 @@ pub struct Uri {
 }
 
 impl Uri {
-
+    pub fn to_string(&self) -> Result<String> {
+        let mut out = vec![];
+        crate::uri_syntax::serialize_uri(self, &mut out)?;
+        let s = String::from_utf8(out)?;
+        Ok(s)
+    }
 }
 
 impl std::str::FromStr for Uri {

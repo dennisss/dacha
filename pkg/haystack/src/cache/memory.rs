@@ -1,4 +1,4 @@
-use super::super::common::*;
+use super::super::types::*;
 use super::super::store::api::CookieBuf;
 use std::collections::HashMap;
 use std::collections::BTreeMap;

@@ -6,7 +6,7 @@ use rand::RngCore;
 use std::io::{Write, Read};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 use common::errors::*;
-use crate::common::*;
+use crate::types::*;
 use crate::paths::*;
 
 
@@ -160,8 +160,8 @@ impl ETag {
 		})
 	}
 
-	pub fn from_header(v: &hyper::header::HeaderValue) -> Result<ETag> {
-		match v.to_str() {
+	pub fn from_header(v: &[u8]) -> Result<ETag> {
+		match std::str::from_utf8(v) {
 			Ok(s) => {
 				match ETag::from(s) {
 					Ok(e) => Ok(e),
