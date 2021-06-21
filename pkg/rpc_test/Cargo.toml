@@ -1,20 +1,15 @@
 [package]
-name = "rpc"
+name = "rpc_test"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
-automata = { path = "../automata" }
-regexp_macros = { path = "../regexp_macros" }
-parsing = { path = "../parsing" }
-compression = { path = "../compression" }
-http = { path = "../http" }
+rpc = { path = "../rpc" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
-arrayref = "0.3.5"
-failure = "0.1.8"
+http = { path = "../http" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

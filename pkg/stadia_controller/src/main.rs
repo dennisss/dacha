@@ -12,41 +12,6 @@ use uinput::event::controller::{DPad, GamePad};
 
 type Result<T> = std::result::Result<T, Error>;
 
-// TODO: Dedup with common package.
-macro_rules! enum_def {
-    ($name:ident $t:ty => $( $case:ident = $val:expr ),*) => {
-    	#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-		pub enum $name {
-			$(
-				$case = $val
-			),*
-		}
-
-		impl $name {
-			pub fn from_value(v: $t) -> Result<Self> {
-				Ok(match v {
-					$(
-						$val => $name::$case,
-					)*
-					_ => {
-						return Err(
-							format_err!("Unknown value for '$name': {}", v));
-					}
-				})
-			}
-
-			pub fn to_value(&self) -> $t {
-				match self {
-					$(
-						$name::$case => $val,
-					)*
-				}
-			}
-		}
-
-    };
-}
-
 macro_rules! send_button_change {
     ($controller:ident, $state:ident, $last_state:ident, $prop:tt, $event:expr) => {
         if $state.$prop != $last_state.$prop {

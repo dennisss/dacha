@@ -1,7 +1,11 @@
-use protobuf_compiler::spec::FieldNumber;
-use crate::Enum;
 use std::default::Default;
 use std::ops::{Deref, DerefMut};
+
+use common::bytes::BytesMut;
+use protobuf_compiler::spec::FieldNumber;
+
+use crate::Enum;
+
 
 pub enum Reflection<'a> {
     F32(&'a f32),
@@ -12,7 +16,7 @@ pub enum Reflection<'a> {
     U64(&'a u64),
     Bool(&'a bool),
     String(&'a String),
-    Bytes,
+    Bytes(&'a [u8]),
     Repeated(&'a dyn RepeatedFieldReflection),
     Message(&'a dyn MessageReflection),
     Enum(&'a dyn Enum),
@@ -28,7 +32,7 @@ pub enum ReflectionMut<'a> {
     U64(&'a mut u64),
     Bool(&'a mut bool),
     String(&'a mut String),
-    Bytes,
+    Bytes(&'a mut Vec<u8>),
     Repeated(&'a mut dyn RepeatedFieldReflection),
     Message(&'a mut dyn MessageReflection),
     Enum(&'a mut dyn Enum)
@@ -84,6 +88,15 @@ define_reflect!(U32, u32);
 define_reflect!(U64, u64);
 define_reflect!(Bool, bool);
 define_reflect!(String, String);
+
+impl Reflect for crate::bytes::BytesField {
+    fn reflect(&self) -> Reflection {
+        Reflection::Bytes(self.0.as_ref())
+    }
+    fn reflect_mut(&mut self) -> ReflectionMut {
+        ReflectionMut::Bytes(&mut self.0)
+    }
+}
 
 impl<T: MessageReflection> Reflect for T {
     fn reflect(&self) -> Reflection {

@@ -4,6 +4,15 @@ use common::errors::*;
 // TODO: See standard GRPC codes here:
 // https://github.com/grpc/grpc/blob/master/doc/statuscodes.md
 
+/*
+How do we have a service that performs some shared processing on a service to get another service which may contain some
+request context
+
+Challenges with 
+
+*/
+
+/*
 /// A request is simply a possibly un
 #[async_trait]
 pub trait Request: Send + Sync {
@@ -19,6 +28,11 @@ pub trait Response: Send + Sync {
 
 // Request is a Box<Stream>
 
+
+
+
+// TODO: A Service must be able to accept some type of RequestContext
+
 /// A named collection of methods which can be called on a server.
 ///
 /// Typically a user will not directly implement this. Instead when a protobuf service named 'Name'
@@ -26,7 +40,7 @@ pub trait Response: Send + Sync {
 /// server and then '.into_service()' can be called on an instance of 'NameService' to create a
 /// 'Service' instance.
 #[async_trait]
-pub trait Service: Send + Sync {
+pub trait Service<RequestContext>: Send + Sync {
     /// Name of the service. 
     fn service_name(&self) -> &'static str;
 
@@ -40,15 +54,17 @@ pub trait Service: Send + Sync {
     /// - request: Serialized form of the 
     ///
     /// TODO: Should return a GRPC compatible status.
-    async fn call(&self, method_name: &str, request: Bytes) -> Result<Bytes>;
+    async fn call(&self, method_name: &str, request: Bytes, request_context: RequestContext) -> Result<Bytes>;
 }
 
 #[async_trait]
-pub trait Channel {
+pub trait Channel<RequestContext> {
     async fn call(
         &self,
         service_name: &'static str,
         method_name: &'static str,
         request_bytes: Bytes,
+        // request_options: 
     ) -> Result<Bytes>;
 }
+*/

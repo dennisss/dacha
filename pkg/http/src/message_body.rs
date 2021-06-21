@@ -31,7 +31,9 @@ pub fn encode_response_body_v1(request_method: Method, res_head: &mut ResponseHe
     }
 
     // 3,4,5
-    if let Some(len) = body.len() {
+    let body_len = body.len();
+    if body_len.is_some() && !body.has_trailers() {
+        let len = body_len.unwrap();
         res_head.headers.raw_headers.push(Header {
             name: AsciiString::from(CONTENT_LENGTH).unwrap(),
             value: OpaqueString::from(len.to_string())
@@ -149,7 +151,9 @@ pub fn decode_response_body_v1(
 /// Assumes no Transfer-Encoding has been applied yet.
 /// The returned body will always be suitable for persisting an HTTP1 conneciton.
 pub fn encode_request_body_v1(req_head: &mut RequestHead, body: Box<dyn Body>) -> Box<dyn Body> {
-    if let Some(len) = body.len() {
+    let body_len = body.len();
+    if body_len.is_some() && !body.has_trailers() {
+        let len = body_len.unwrap();
         req_head.headers.raw_headers.push(Header {
             name: AsciiString::from(CONTENT_LENGTH).unwrap(),
             value: OpaqueString::from(len.to_string())

@@ -332,7 +332,12 @@ impl TextValue {
                     return Err(err_msg("Can't cast to string"));
                 }
             }
-            ReflectionMut::Bytes => match  self {
+            ReflectionMut::Bytes(bytes) => match  self {
+                Self::String(v) => {
+                    bytes.clear();
+                    // TODO: Need to preserve the original binary meaning
+                    bytes.extend_from_slice(v.as_bytes());
+                }
                 _ => {
                     return Err(err_msg("Can't cast to bytes"));
                 }

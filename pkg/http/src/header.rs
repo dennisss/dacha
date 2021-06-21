@@ -23,8 +23,31 @@ pub const HOST: &'static [u8] = b"Host";
 
 pub const UPGRADE: &'static [u8] = b"Upgrade";
 
+pub const CONTENT_RANGE: &'static [u8] = b"Content-Range";
 
-#[derive(Debug)]
+pub const TE: &'static [u8] = b"TE";
+
+pub const TRAILERS: &'static [u8] = b"Trailers";
+
+pub const ETAG: &'static [u8] = b"ETag";
+
+
+/// List of headers which are relevant to maintaining the connection at the HTTP transport layer.
+///
+/// Users of the HTTP client and server libraries in this package are not allowed to specify any
+/// of these header names.
+const TRANSPORT_LEVEL_HEADERS: &'static [&'static [u8]] = &[
+    CONNECTION, CONTENT_LENGTH, HOST, KEEP_ALIVE, TRANSFER_ENCODING, UPGRADE,
+
+    TE, TRAILERS
+];
+
+const CONTENT_LEVEL_HEADERS: &'static [&'static [u8]] = &[
+    DATE, CONTENT_ENCODING, CONTENT_RANGE, ETAG
+];
+
+
+#[derive(Debug, Clone)]
 pub struct Header {
     pub name: AsciiString,
     pub value: OpaqueString,
@@ -43,6 +66,27 @@ impl Header {
         serialize_header_field(self, out)?;
         out.extend_from_slice(b"\r\n");
         Ok(())
+    }
+
+    /// TODO: Make this check contextual. Anything referenced in the 'Connection' header is also transport level. 
+    pub fn is_transport_level(&self) -> bool {
+        for name in TRANSPORT_LEVEL_HEADERS {
+            if name.eq_ignore_ascii_case(self.name.as_str().as_bytes()) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn is_content_level(&self) -> bool {
+        for name in CONTENT_LEVEL_HEADERS {
+            if name.eq_ignore_ascii_case(self.name.as_str().as_bytes()) {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
@@ -82,8 +126,9 @@ impl<T: AsRef<str>> ToHeaderValue for T {
 }
 
 /// Container for storing many Headers associated with one request/response.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Headers {
+    // TODO: Convert to an ordered multi hash map
     pub raw_headers: Vec<Header>,
 }
 
@@ -99,10 +144,27 @@ impl Headers {
     }
 
     /// Finds all headers matching a given name.
-    pub fn find<'a>(&'a self, name: &'a [u8]) -> impl Iterator<Item = &'a Header> {
+    pub fn find<'a, 'b>(&'a self, name: &'a [u8]) -> impl Iterator<Item = &'a Header> {
         self.raw_headers
             .iter()
             .filter(move |h| h.name.eq_ignore_case(name))
+    }
+
+    // TODO: Change to take an str as names are always Ascii
+    pub fn find_one<'a>(&'a self, name: &[u8]) -> Result<&'a Header> {
+        // TODO: Deduplicate this with find().
+        let mut iter = self.raw_headers
+            .iter()
+            .filter(move |h| h.name.eq_ignore_case(name));
+
+        let value = iter.next()
+            .ok_or_else(|| format_err!("Missing header named: {:?}", name))?;
+
+        if iter.next().is_some() {
+            return Err(format_err!("Expected exactly one header named: {:?}", name));
+        }
+        
+        Ok(value)
     }
 
     pub fn find_mut<'a>(&'a mut self, name: &'a [u8]) -> Option<&'a mut Header> {

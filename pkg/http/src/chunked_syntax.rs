@@ -74,5 +74,9 @@ parser!(parse_chunk_ext<Vec<ChunkExtension>> => {
 //
 // `trailer-part = *( header-field CRLF )`
 parser!(parse_trailer_part<Vec<Header>> => {
-    many(parse_header_field)
+    many(seq!(c => {
+        let h = c.next(parse_header_field)?;
+        c.next(parse_crlf)?;
+        Ok(h)
+    }))
 });

@@ -3,26 +3,27 @@
 #[macro_use]
 extern crate common;
 extern crate rpc;
+extern crate rpc_test;
 
 use common::async_std::task;
 use common::errors::*;
-use rpc::proto::adder::*;
+use rpc_test::proto::adder::*;
 
 struct AdderImpl {}
 
 #[async_trait]
 impl AdderService for AdderImpl {
-    async fn Add(&self, request: AddRequest) -> Result<AddResponse> {
-        println!("{:?}", request);
+    async fn Add(&self, request: rpc::ServerRequest<AddRequest>) -> Result<rpc::ServerUnaryResponse<AddResponse>> {
+        println!("{:?}", request.value);
         let mut res = AddResponse::default();
         res.set_z(request.x() + request.y());
-        Ok(res)
+        Ok(res.into())
     }
 }
 
 // TODO: Set server side request timeout.
 async fn run_server() -> Result<()> {
-    let mut server = rpc::Server::new(5000);
+    let mut server = rpc::Http2Server::new(5000);
     let adder = AdderImpl {};
     let service = adder.into_service();
     server.add_service(service)?;

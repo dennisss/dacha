@@ -57,7 +57,7 @@ pub struct RegExpMatch<'a, 'b> {
     /// Full original input given to exec().
     input: &'b [u8],
 
-    /// Byte offset at which the last match begins
+    /// Byte offset at which this match begins
     index: usize,
 
     /// Byte offset at which the last match ended.
@@ -119,6 +119,45 @@ impl<'a, 'b> RegExpMatch<'a, 'b> {
     // TODO: Support lookup by name.
 }
 
+pub struct RegExpSplitIterator<'a, 'b> {
+    input: &'b str,
+
+    current_index: usize,
+
+    last_match: Option<RegExpMatch<'a, 'b>>,
+
+    final_emitted: bool
+}
+
+impl<'a, 'b> std::iter::Iterator for RegExpSplitIterator<'a, 'b> {
+    type Item = &'b str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.final_emitted {
+            return None;
+        }
+
+        let end_index;
+        let next_current_index;
+
+        if let Some(m) = self.last_match.take() {
+            end_index = m.index();
+            next_current_index = m.last_index();
+            self.last_match = m.next();
+        } else {
+            end_index = self.input.len();
+            next_current_index = self.input.len();
+            self.final_emitted = true;
+        }
+
+        let value = &self.input[self.current_index..end_index];
+        self.current_index = next_current_index;
+
+        Some(value)
+    }
+}
+
+
 /// Pre-compiled regular expression.
 pub struct StaticRegExp {
     instructions: &'static [Instruction]
@@ -137,6 +176,15 @@ impl StaticRegExp {
 
     pub fn exec<'a, 'b, T: 'b + AsRef<[u8]> + ?Sized>(&'a self, input: &'b T) -> Option<RegExpMatch<'a, 'b>> {
         RegExp::exec_impl(&self.instructions, input.as_ref())
+    }
+
+    pub fn split<'a, 'b>(&'a self, input: &'b str) -> RegExpSplitIterator<'a, 'b> {
+        RegExpSplitIterator {
+            input,
+            current_index: 0,
+            last_match: self.exec(input),
+            final_emitted: false
+        }
     }
 
     pub fn estimated_memory_usage(&self) -> usize {

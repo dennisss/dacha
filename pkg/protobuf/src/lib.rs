@@ -22,7 +22,9 @@ pub mod service;
 pub mod text;
 pub mod wire;
 mod proto;
+mod bytes;
 
+pub use bytes::BytesField;
 pub use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
 pub use crate::reflection::MessageReflection;

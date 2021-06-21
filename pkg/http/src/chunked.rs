@@ -328,6 +328,8 @@ mod tests {
     // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding#examples
     const TEST_BODY: &'static [u8] = b"7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n";
 
+    const TEST_BODY2: &'static [u8] = b"7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\nhello: world\r\n\r\n";
+
     #[async_std::test]
     async fn chunked_body_test() -> Result<()> {
         let data = Cursor::new(TEST_BODY);
@@ -340,6 +342,28 @@ mod tests {
         body.read_to_end(&mut outbuf).await?;
 
         assert_eq!(&outbuf, b"MozillaDeveloperNetwork");
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn chunked_body_with_trailers_test() -> Result<()> {
+        let data = Cursor::new(TEST_BODY2);
+        let stream = PatternReader::new(Box::new(data), StreamBufferOptions::default());
+        let (stream, returner) = common::borrowed::Borrowed::wrap(stream);
+        
+        let mut body = IncomingChunkedBody::new(stream);
+
+        let mut outbuf = vec![];
+        body.read_to_end(&mut outbuf).await?;
+
+        assert_eq!(&outbuf, b"MozillaDeveloperNetwork");
+
+        let mut trailers = body.trailers().await?;
+
+        // TODO: Check that we got back the right value.
+
+        assert_eq!(trailers.unwrap().find_one(b"hello")?.value.as_bytes(), b"world");
 
         Ok(())
     }

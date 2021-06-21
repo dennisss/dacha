@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::net::SocketAddr;
 
 use common::{async_std::net::TcpStream};
@@ -30,69 +30,89 @@ use crate::message_body::{encode_request_body_v1, decode_response_body_v1};
 
 // TODO: Need to clearly document which responsibilities are reserved for the client.
 
-/// List of headers which are managed internally and not allowed to be given by external clients.
-const CLIENT_RESERVED_HEADERS: &'static [&'static [u8]] = &[
-    CONNECTION, CONTENT_LENGTH, HOST, KEEP_ALIVE, TRANSFER_ENCODING
-];
+#[derive(Clone)]
+pub struct ClientOptions {
+    /// Host optionally with a port to which we should connect.
+    pub authority: Authority,
+
+    /// If true, we'll connect using SSL/TLS. By default, we send HTTP2 over clear text.
+    pub secure: bool,
+
+    /// If true, we'll immediately connect using HTTP2 and fail if it is not supported by the
+    /// server. By default, we'll start by sending HTTP1 requests until we are confident that
+    /// the remote server supports HTTP2.
+    pub force_http2: bool
+}
+
+impl ClientOptions {
+    pub fn from_authority<A: TryInto<Authority, Error=Error>>(authority: A) -> Result<Self> {
+        Ok(Self {
+            authority: authority.try_into()?,
+            secure: false,
+            force_http2: false
+        })
+    }
+
+    pub fn from_uri(uri: &Uri) -> Result<Self> {
+        // let uri: Uri = uri.try_into()?;
+
+        let scheme = uri.scheme.clone().ok_or_else(|| err_msg("Uri missing a scheme"))?
+            .as_str().to_ascii_lowercase();
+
+        let secure = match scheme.as_str() {
+            "http" => false,
+            "https" => true,
+            _ => { return Err(format_err!("Unsupported scheme: {}", scheme)); }
+        };
+
+        Ok(Self {
+            authority: uri.authority.clone().ok_or_else(|| err_msg("Uri missing an authority"))?,
+            secure,
+            force_http2: false
+        })
+    }
+
+
+    // TODO: Crate a macro to generate these.
+    pub fn set_secure(mut self, value: bool) -> Self {
+        self.secure = value;
+        self
+    }
+
+    pub fn set_force_http2(mut self, value: bool) -> Self {
+        self.force_http2 = value;
+        self
+    }
+}
 
 /// HTTP client connected to a single server.
 pub struct Client {
+    // /// Uri to which we should connection.
+    // /// This should only a scheme and authority.
+    // base_uri: Uri,
 
-    /// Uri to which we should connection.
-    /// This should only a scheme and authority.
-    base_uri: Uri,
+    options: ClientOptions,
 
+    /// TODO: Re-generate this on-demand so that new connections  we start a new connection as we may want to re-query DNS.
     socket_addr: SocketAddr,
-    is_secure: bool
 
     // A client should have a list of 
 }
 
 impl Client {
-    /// Creates a new client connecting to the given host/protocol.
+    /// Creates a new HTTP client connecting to the given host/port.
+    ///
+    /// Arguments:
+    /// - authority:
+    /// - options: Options for how to start connections
+    ///
     /// NOTE: This will not start a connection.
     /// TODO: Instead just take as input an authority string and whether or not we want it to be secure?
-    pub fn create(uri: &str) -> Result<Client> {
-        // TODO: Implement some other form of parser function that doesn't
-        // accept anything but the scheme, authority
-        let base_uri = uri.parse::<Uri>()?;
-        // NOTE: u.path may be '/'
-        if !base_uri.path.as_ref().is_empty() || base_uri.query.is_some() || base_uri.fragment.is_some() {
-            return Err(err_msg("Can't create a client with a uri path"));
-        }
-
-        let scheme = base_uri
-            .clone()
-            .scheme
-            .map(|s| s.to_string())
-            .unwrap_or("http".into())
-            .to_ascii_lowercase();
-
-        let (default_port, is_secure) = match scheme.as_str() {
-            "http" => (80, false),
-            "https" => (443, true),
-            _ => {
-                // TODO: This is ok as long we alternatively have a port specified.
-                // TODO: Create an err! macro
-                return Err(format_err!("Unsupported scheme {}", scheme));
-            }
-        };
-
-        let authority = base_uri
-            .clone()
-            .authority
-            .ok_or(err_msg("No authority/hostname specified"))?;
-
-        // TODO: Definately need a more specific type of Uri to ensure that we
-        // don't miss any fields.
-        if authority.user.is_some() {
-            return Err(err_msg("Users not supported"));
-        }
-
-        let port = authority.port.unwrap_or(default_port);
+    pub fn create(options: ClientOptions) -> Result<Self> {
+        let port = options.authority.port.unwrap_or(if options.secure { 443 } else { 80 });
 
         // TODO: Whenever we need to create a new connection, consider 
-        let ip = match authority.host {
+        let ip = match &options.authority.host {
             Host::Name(n) => {
                 // TODO: This should become async.
                 let addrs = lookup_hostname(n.as_ref())?;
@@ -112,14 +132,13 @@ impl Client {
                     }
                 }
             }
-            Host::IP(ip) => ip,
+            Host::IP(ip) => ip.clone(),
         };
 
         Ok(Client {
-            base_uri,
             // TODO: Check port is in u16 range in the parser
             socket_addr: SocketAddr::new(ip.try_into()?, port as u16),
-            is_secure
+            options
         })
     }
 
@@ -135,10 +154,9 @@ impl Client {
     pub async fn request(&self, mut request: Request) -> Result<Response> {
         // TODO: We should allow the Connection header, but we shouldn't allow any options
         // which are used internally (keep-alive and close)
-        for header_name in CLIENT_RESERVED_HEADERS {
-            if request.head.headers.has(*header_name) {
-                return Err(format_err!("Request contains reserved header: {}",
-                                       std::str::from_utf8(*header_name).unwrap()));
+        for header in &request.head.headers.raw_headers {
+            if header.is_transport_level() {
+                return Err(format_err!("Request contains reserved header: {}", header.name.as_str()));
             }
         }
 
@@ -150,7 +168,7 @@ impl Client {
         }
 
         if !request.head.uri.authority.is_some() {
-            request.head.uri.authority = self.base_uri.authority.clone();
+            request.head.uri.authority = Some(self.options.authority.clone());
         }
 
         // TODO: For an empty body, the client doesn't need to send any special headers.
@@ -162,13 +180,13 @@ impl Client {
         let mut reader: Box<dyn Readable> = Box::new(raw_stream.clone());
         let mut writer: Box<dyn Writeable> = Box::new(raw_stream);
 
-        let mut start_http2 = false;
+        let mut start_http2 = self.options.force_http2;
 
-        if self.is_secure {
+        if self.options.secure {
             let mut client_options = crypto::tls::options::ClientOptions::recommended();
             // TODO: 
 
-            if let Host::Name(name) = &self.base_uri.authority.as_ref().unwrap().host {
+            if let Host::Name(name) = &self.options.authority.host {
                 client_options.hostname = name.clone();
             }
             client_options.alpn_ids.push("h2".into());
@@ -222,7 +240,7 @@ impl Client {
             conn.shared.clone().run(reader, writer));
 
         // Attempt to upgrade to HTTP2 over clear text.
-        if !self.is_secure && false {
+        if !self.options.secure && false {
             let local_settings = crate::v2::SettingsContainer::default();
 
             let mut connection_options = vec![];

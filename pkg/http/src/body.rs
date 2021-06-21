@@ -69,6 +69,39 @@ pub fn BodyFromData<T: 'static + AsRef<[u8]> + Send + Unpin>(data: T) -> Box<dyn
     Box::new(Cursor::new(data))
 }
 
+pub fn WithTrailers(body: Box<dyn Body>, trailers: Headers) -> Box<dyn Body> {
+    Box::new(WithTrailersBody {
+        body,
+        trailers: Some(trailers)
+    })
+}
+
+struct WithTrailersBody {
+    body: Box<dyn Body>,
+    trailers: Option<Headers>
+}
+
+#[async_trait]
+impl Body for WithTrailersBody {
+    fn len(&self) -> Option<usize> { self.body.len() }
+
+    fn has_trailers(&self) -> bool { true }
+
+    // TODO: Error out if called twice.
+    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(self.trailers.take()) }
+}
+
+#[async_trait]
+impl Readable for WithTrailersBody {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        self.body.read(buf).await
+    }
+}
+
+
+
+
+
 /// A body which is terminated by the end of the stream and has no known length.
 pub struct IncomingUnboundedBody {
     // TODO: This doesn't need to be borrowed. It mainly is in order to simplify things.
@@ -159,6 +192,8 @@ impl Readable for IncomingSizedBody {
 /// 
 /// If this is read to the end, then it will internally ensure the entire inner body can
 /// be transformed by the transform without extra bytes.
+///
+/// TODO: Move this to the compression package as most of this is generic readable logic.
 pub struct TransformBody {
     /// Input body which we are transforming.
     body: Box<dyn Body>,

@@ -1,4 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr};
+use std::convert::TryFrom;
 
 use common::bytes::Bytes;
 use common::errors::*;
@@ -68,6 +69,15 @@ pub struct Authority {
     pub host: Host,
     pub port: Option<usize>,
 }
+
+impl TryFrom<&str> for Authority {
+    type Error = Error;
+    fn try_from(value: &str) -> Result<Self> {
+        let (v, _) = parsing::complete(crate::uri_syntax::parse_authority)(value.into())?;
+        Ok(v)
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Host {

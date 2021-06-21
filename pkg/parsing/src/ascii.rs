@@ -2,7 +2,7 @@ use common::bytes::Bytes;
 use common::errors::*;
 
 /// An str backed by bytes that we know only contain bytes 0-127.
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Eq, Hash)]
 pub struct AsciiString {
     pub data: Bytes,
 }
@@ -55,6 +55,10 @@ impl AsciiString {
 
     pub fn as_str(&self) -> &str {
         self.as_ref()
+    }
+
+    pub fn to_bytes(&self) -> Bytes {
+        self.data.clone()
     }
 }
 

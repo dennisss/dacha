@@ -4,16 +4,21 @@ use std::sync::Arc;
 use common::errors::*;
 use http::header::*;
 use http::status_code::*;
-use protobuf::service::{Channel, Service};
 
+use crate::request::*;
+use crate::response::*;
+use crate::metadata::Metadata;
+use crate::service::Service;
 use crate::constants::GRPC_PROTO_TYPE;
+use crate::message::*;
+use crate::status::*;
 
-pub struct Server {
+pub struct Http2Server {
     port: u16,
     services: HashMap<String, Arc<dyn Service>>,
 }
 
-impl Server {
+impl Http2Server {
     pub fn new(port: u16) -> Self {
         Self {
             port,
@@ -37,6 +42,17 @@ impl Server {
     }
 
     async fn handle_request_impl(&self, mut request: http::Request) -> Result<http::Response> {
+        // TODO: Should support different methods 
+        if request.head.method != http::Method::POST {
+            return http::ResponseBuilder::new()
+                .status(http::status_code::METHOD_NOT_ALLOWED)
+                .build();
+        }
+
+        let request_context = ServerRequestContext {
+            metadata: Metadata::from_headers(&request.head.headers)?
+        };
+
         let path_parts = request
             .head
             .uri
@@ -54,27 +70,52 @@ impl Server {
             .get(&path_parts[1])
             .ok_or(format_err!("Unknown service named: {}", path_parts[1]))?;
 
-        let mut request_bytes = vec![];
-        request.body.read_to_end(&mut request_bytes).await?;
+        let mut reader = MessageReader::new(request.body.as_mut());
 
-        let response_bytes = service.call(&path_parts[2], request_bytes.into()).await?;
+        let request_bytes = reader.read().await?
+            .ok_or_else(|| err_msg("No request body received"))?;
+        // TODO: Assert no more data in the body.
 
-        http::ResponseBuilder::new()
+        // TODO: If this fails with an error that can be downcast to a status, should we propagate
+        // that back to the client.
+        //
+        // Probably no because this may imply that it was an internal RPC failure.
+        // TODO: Ensure that similarly internal HTTP2 calls aren't propagated to clients.
+        let (response_context, response_result) =  service.call(
+            &path_parts[2], request_context, request_bytes).await?;
+        
+        let response_builder = http::ResponseBuilder::new()
             .status(OK)
-            .header(CONTENT_TYPE, GRPC_PROTO_TYPE)
-            .body(http::BodyFromData(response_bytes))
-            .build()
+            .header(CONTENT_TYPE, GRPC_PROTO_TYPE);
+
+        let mut trailers = Headers::new();
+        response_context.metadata.trailer_metadata.append_to_headers(&mut trailers)?;
+
+        let body = match response_result {
+            Ok(data) => {
+                Status::ok().append_to_headers(&mut trailers)?;
+                http::WithTrailers(UnaryMessageBody::new(data), trailers)
+            }
+            Err(status) => {
+                status.append_to_headers(&mut trailers);
+                http::WithTrailers(http::EmptyBody(), trailers)
+            }
+        };
+ 
+        let mut response = response_builder.body(body).build()?;
+        response_context.metadata.head_metadata.append_to_headers(&mut response.head.headers)?;
+        Ok(response)
     }
 }
 
 #[async_trait]
-impl http::RequestHandler for Server {
+impl http::RequestHandler for Http2Server {
     async fn handle_request(&self, request: http::Request) -> http::Response {
         match self.handle_request_impl(request).await {
             Ok(r) => r,
             // TODO: Instead always use the trailers?
             Err(e) => http::ResponseBuilder::new()
-                .status(OK)
+                .status(INTERNAL_SERVER_ERROR)
                 .header(CONTENT_TYPE, "text/plain")
                 .body(http::BodyFromData(e.to_string().bytes().collect::<Vec<u8>>()))
                 .build()
