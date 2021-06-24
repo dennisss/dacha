@@ -17,8 +17,6 @@ use common::errors::*;
 use common::errors::*;
 use common::io::ReadWriteable;
 use compression::gzip::*;
-use http::chunked::*;
-use http::client::*;
 use http::header::*;
 use http::message::*;
 use http::status_code::*;
@@ -30,7 +28,8 @@ use parsing::iso::*;
 async fn run_client() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set
 
-    let client = http::Client::create("https://google.com")?;
+    let client = http::Client::create(
+        "google.com", http::ClientOptions::default().set_secure(true))?;
 
     let req = http::RequestBuilder::new()
         .method(http::Method::GET)

@@ -27,7 +27,7 @@ mod response;
 
 pub use server::Http2Server;
 pub use channel::{Channel, Http2Channel};
-pub use service::{Service, Service_call_unary_impl};
+pub use service::Service;
 
 pub use metadata::Metadata;
 pub use request::*;

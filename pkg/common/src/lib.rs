@@ -1,4 +1,4 @@
-#![feature(trait_alias, const_fn, associated_type_defaults, specialization, const_fn_trait_bound)]
+#![feature(trait_alias, associated_type_defaults, specialization, const_fn_trait_bound)]
 #[macro_use]
 extern crate async_trait;
 #[macro_use]

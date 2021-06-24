@@ -12,7 +12,7 @@ use crate::constants::{GRPC_STATUS, GRPC_STATUS_MESSAGE};
 
 pub type StatusResult<T> = std::result::Result<T, Status>;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Fail, Clone)]
 pub struct Status {
     pub code: StatusCode,
 
@@ -21,6 +21,10 @@ pub struct Status {
 }
 
 impl Status {
+    pub fn invalid_argument<S: Into<String>>(message: S) -> Self {
+        Self { code: StatusCode::InvalidArgument, message: message.into() }
+    }
+
     pub fn from_headers(headers: &Headers) -> Result<Self> {
         let code_header = headers.find_one(GRPC_STATUS.as_bytes())?;
         let code = std::str::from_utf8(code_header.value.as_bytes())?.parse::<usize>()?;

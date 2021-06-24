@@ -1228,7 +1228,7 @@ impl Compiler<'_> {
 
             for rpc in service.rpcs() {
                 lines.add(format!(
-                    "pub async fn {}(&self, request: &::rpc::ClientRequest<{}>) -> Result<::rpc::ClientUnaryResponse<{}>> {{",
+                    "pub async fn {}(&self, request: &::rpc::ClientRequest<{}>) -> ::rpc::ClientResponse<{}> {{",
                     rpc.name, rpc.req_type, rpc.res_type
                 ));
                 lines.add(format!(
@@ -1269,7 +1269,9 @@ impl Compiler<'_> {
                     res_type.typename
                 ));
             } else {
-                lines.add_inline(format!(") -> Result<::rpc::ServerUnaryResponse<{}>>;", res_type.typename));
+                lines.add_inline(
+                    format!(", response: &mut ::rpc::ServerResponse<{}>) -> Result<()>;",
+                                 res_type.typename));
             }
         }
 
@@ -1316,24 +1318,58 @@ impl Compiler<'_> {
 
             lines.add(
                 "async fn call(&self, method_name: &str, \
-					    request_context: ::rpc::ServerRequestContext, request_bytes: Bytes \
-                    ) -> Result<(::rpc::ServerResponseContext, ::rpc::StatusResult<Bytes>)> {",
+					    request_context: ::rpc::ServerRequestContext, request_bytes: Bytes, \
+                        response_context: &mut ::rpc::ServerResponseContext \
+                    ) -> Result<Bytes> {",
             );
+
 
             lines.indented(|lines| {
                 lines.add("match method_name {");
 
                 for rpc in service.rpcs() {
-                    lines.add(format!("\t\"{}\" => {{", rpc.name));
+                    let req_type = self
+                        .resolve(&rpc.req_type, path)
+                        .expect(&format!("Failed to find {}", rpc.req_type));
+                    let res_type = self.resolve(&rpc.res_type, path)
+                        .expect(&format!("Failed to find {}", rpc.res_type));
 
                     // TODO: Resolve type names.
                     // TODO: Must normalize these names to valid Rust names
-                    lines.add(format!("\t\t::rpc::Service_call_unary_impl(self.inner.as_ref(), &{}Service::{}, request_context, request_bytes).await",
-                            service.name, rpc.name));
-                    lines.add("\t},");
+                    lines.add(format!(r#"
+                        "{}" => {{
+                            let request = {}::parse(request_bytes)
+                                .map_err(|_| ::rpc::Status::invalid_argument("Failed to parse request proto."))?;
+
+                            let mut response = ::rpc::ServerResponse {{
+                                value: {}::default(),
+                                context: response_context
+                            }};
+
+                            self.inner.{}(::rpc::ServerRequest {{
+                                context: request_context,
+                                value: request
+                            }}, &mut response).await?;
+
+                            let response_bytes = response.value.serialize()?.into();
+                            Ok(response_bytes)
+                        }},
+                    "#, rpc.name, req_type.typename, res_type.typename, rpc.name));
+
+                    // let inst = self.inner.as_ref();
+                    // ::rpc::Service_call_unary_impl(
+                    //     |req, res| inst.{}(req, res),
+                    //     request_context, request_bytes, response_context).await
+
+
+                    // lines.add(format!("\t\"{}\" => {{", rpc.name));
+
+                    // lines.add(format!("\t\t::rpc::Service_call_unary_impl(self.inner.as_ref(), {}Service::{}, request_context, request_bytes, response_context).await",
+                    //         service.name, rpc.name));
+                    // lines.add("\t},");
                 }
 
-                lines.add("\t_ => Err(err_msg(\"Invalid method\"))");
+                lines.add("\t_ => Err(::rpc::Status::invalid_argument(format!(\"Invalid method: {}\", method_name)).into())");
                 lines.add("}");
             });
 

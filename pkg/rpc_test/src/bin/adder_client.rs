@@ -26,7 +26,7 @@ async fn run_client() -> Result<()> {
     req.set_x(10);
     req.set_y(6);
 
-    let res = stub.Add(&req.into()).await?.result?;
+    let res = stub.Add(&req.into()).await.result?;
 
     println!("{}", res.z());
 

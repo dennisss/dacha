@@ -101,7 +101,17 @@ impl Metadata {
         Ok(())
     }
 
-    pub fn get_text(&self, name: &str) -> Result<impl Iterator<Item=&str>> {
+    pub fn get_text(&self, name: &str) -> Result<Option<&str>> {
+        let mut iter = self.iter_text(name)?;
+        let value = iter.next();
+        if iter.next().is_some() {
+            return Err(format_err!("More than one value named: {}", name));
+        }
+
+        Ok(value)
+    }
+
+    pub fn iter_text(&self, name: &str) -> Result<impl Iterator<Item=&str>> {
         if name.ends_with("-bin") {
             return Err(err_msg("Text metadata must not end with -bin"));
         }
@@ -113,7 +123,18 @@ impl Metadata {
         Ok(values.iter().map(|v| v.as_str()))
     }
 
-    pub fn get_binary<'a>(&'a self, name: &str) -> Result<impl Iterator<Item=Result<Vec<u8>>> + 'a> {
+    pub fn get_binary(&self, name: &str) -> Result<Vec<u8>> {
+        let mut iter = self.iter_binary(name)?;
+        let value = iter.next()
+            .ok_or_else(|| format_err!("No metadata named: {}", name))??;
+        if iter.next().is_some() {
+            return Err(format_err!("More than one value named: {}", name));
+        }
+
+        Ok(value)
+    }
+
+    pub fn iter_binary<'a>(&'a self, name: &str) -> Result<impl Iterator<Item=Result<Vec<u8>>> + 'a> {
         // TODO: Verify this accepts both padded and non-padded base64
 
         if !name.ends_with("-bin") {

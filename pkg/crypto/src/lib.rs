@@ -1,6 +1,5 @@
 #![feature(
     core_intrinsics,
-    const_fn,
     const_constructor,
     proc_macro_hygiene,
     trait_alias,

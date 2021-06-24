@@ -37,11 +37,15 @@ impl Http2Server {
     }
 
     pub async fn run(self) -> Result<()> {
+        // TODO: Force usage of HTTP2.
         let server = http::Server::new(self.port, self);
         server.run().await
     }
 
     async fn handle_request_impl(&self, mut request: http::Request) -> Result<http::Response> {
+        // TODO: Convert as many of the errors in this function as possible to gRPC
+        // trailing status codes.
+        
         // TODO: Should support different methods 
         if request.head.method != http::Method::POST {
             return http::ResponseBuilder::new()
@@ -76,14 +80,16 @@ impl Http2Server {
             .ok_or_else(|| err_msg("No request body received"))?;
         // TODO: Assert no more data in the body.
 
+        let mut response_context = ServerResponseContext::default();
+
         // TODO: If this fails with an error that can be downcast to a status, should we propagate
         // that back to the client.
         //
         // Probably no because this may imply that it was an internal RPC failure.
         // TODO: Ensure that similarly internal HTTP2 calls aren't propagated to clients.
-        let (response_context, response_result) =  service.call(
-            &path_parts[2], request_context, request_bytes).await?;
-        
+        let response_result =  service.call(
+            &path_parts[2], request_context, request_bytes, &mut response_context).await;
+
         let response_builder = http::ResponseBuilder::new()
             .status(OK)
             .header(CONTENT_TYPE, GRPC_PROTO_TYPE);
@@ -96,7 +102,19 @@ impl Http2Server {
                 Status::ok().append_to_headers(&mut trailers)?;
                 http::WithTrailers(UnaryMessageBody::new(data), trailers)
             }
-            Err(status) => {
+            Err(error) => {
+                // TODO: Have some default error handler to log the raw errors.
+
+                let status = match error.downcast_ref::<Status>() {
+                    Some(s) => s.clone(),
+                    None => {
+                        Status {
+                            code: crate::StatusCode::Internal,
+                            message: "Internal error occured".into()
+                        }
+                    }
+                };
+
                 status.append_to_headers(&mut trailers);
                 http::WithTrailers(http::EmptyBody(), trailers)
             }

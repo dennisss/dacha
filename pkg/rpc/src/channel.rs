@@ -22,7 +22,8 @@ pub trait Channel: Send + Sync {
         method_name: &str,
         request_context: &ClientRequestContext,
         request_bytes: Bytes,
-    ) -> Result<ClientUnaryResponse<Bytes>>;
+        response_context: &mut ClientResponseContext
+    ) -> Result<Bytes>;
 }
 
 impl dyn Channel {
@@ -31,21 +32,28 @@ impl dyn Channel {
         service_name: &str,
         method_name: &str,
         request: &ClientRequest<Req>
-    ) -> Result<ClientUnaryResponse<Res>> {
+    ) -> ClientResponse<Res> {
+        let mut context = ClientResponseContext::default();
+        let result = self.call_unary_impl(service_name, method_name, request, &mut context).await;
+        ClientResponse {
+            result,
+            context
+        }
+    }
+
+    async fn call_unary_impl<Req: protobuf::Message, Res: protobuf::Message>(
+        &self,
+        service_name: &str,
+        method_name: &str,
+        request: &ClientRequest<Req>,
+        response_context: &mut ClientResponseContext
+    ) -> Result<Res> {
         let request_bytes = request.value.serialize()?.into();
 
         let raw_response = self.call_unary_raw(
-            service_name, method_name, &request.context, request_bytes).await?;
+            service_name, method_name, &request.context, request_bytes, response_context).await?;
 
-        let result = match raw_response.result {
-            Ok(bytes) => Ok(Res::parse(bytes)?),
-            Err(e) => Err(e)
-        };
-
-        Ok(ClientUnaryResponse {
-            result,
-            context: raw_response.context
-        })
+        Res::parse(raw_response)
     }
 }
 
@@ -69,7 +77,8 @@ impl Channel for Http2Channel {
         method_name: &str,
         request_context: &ClientRequestContext,
         request_bytes: Bytes,
-    ) -> Result<ClientUnaryResponse<Bytes>> {
+        response_context: &mut ClientResponseContext
+    ) -> Result<Bytes> {
         let mut request = http::RequestBuilder::new()
             .method(http::Method::POST)
             .path(format!("/{}/{}", service_name, method_name))
@@ -85,6 +94,8 @@ impl Channel for Http2Channel {
             return Err(err_msg("Server responded with non-OK status"));
         }
 
+        response_context.metadata.head_metadata = Metadata::from_headers(&response.head.headers)?;
+
         let response_type = response.head.headers.find_one(CONTENT_TYPE)?.value.to_ascii_str()?;
         if response_type != GRPC_PROTO_TYPE {
             return Err(format_err!("Received RPC response with unknown Content-Type: {}", response_type));
@@ -99,13 +110,7 @@ impl Channel for Http2Channel {
 
         let trailers = response.body.trailers().await?
             .ok_or_else(|| err_msg("Server responded without trailers"))?;
-
-        let response_context = ClientResponseContext {
-            metadata: ResponseMetadata {
-                head_metadata: Metadata::from_headers(&response.head.headers)?,
-                trailer_metadata: Metadata::from_headers(&trailers)?
-            }
-        };
+        response_context.metadata.trailer_metadata = Metadata::from_headers(&trailers)?;
 
         let status = Status::from_headers(&trailers)?;
         
@@ -113,10 +118,10 @@ impl Channel for Http2Channel {
             if status.is_ok() {
                 Ok(response_bytes.ok_or_else(|| err_msg("RPC returned OK without a body"))?)
             } else {
-                Err(status)
+                Err(status.into())
             }
         };
 
-        Ok(ClientUnaryResponse { context: response_context, result })
+        result
     }
 }

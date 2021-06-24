@@ -13,11 +13,10 @@ struct AdderImpl {}
 
 #[async_trait]
 impl AdderService for AdderImpl {
-    async fn Add(&self, request: rpc::ServerRequest<AddRequest>) -> Result<rpc::ServerUnaryResponse<AddResponse>> {
+    async fn Add(&self, request: rpc::ServerRequest<AddRequest>, response: &mut rpc::ServerResponse<AddResponse>) -> Result<()> {
         println!("{:?}", request.value);
-        let mut res = AddResponse::default();
-        res.set_z(request.x() + request.y());
-        Ok(res.into())
+        response.set_z(request.x() + request.y());
+        Ok(())
     }
 }
 
