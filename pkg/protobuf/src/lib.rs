@@ -23,6 +23,7 @@ pub mod text;
 pub mod wire;
 mod proto;
 mod bytes;
+mod collections;
 
 pub use bytes::BytesField;
 pub use common::bytes::{Bytes, BytesMut};
@@ -30,6 +31,7 @@ use common::errors::*;
 pub use crate::reflection::MessageReflection;
 pub use protobuf_compiler::spec::EnumValue;
 pub use protobuf_compiler::spec::FieldNumber;
+pub use collections::*;
 
 // NOTE: Construct an empty proto by calling MessageType::default()
 // Clone + std::fmt::Debug + std::default::Default + MessageReflection
@@ -76,15 +78,6 @@ pub trait Enum {
     // TODO: This is inconsistent with the other Message trait.
 
     fn assign_name(&mut self, name: &str) -> Result<()>;
-}
-
-#[derive(Default, Clone, Debug, PartialEq)]
-pub struct HashMap<K: Clone + PartialEq + std::hash::Hash + Eq, V: Clone + PartialEq + Eq> {
-    pub inner: Option<std::collections::HashMap<K, V>>
-}
-
-impl<K: Clone + PartialEq + std::hash::Hash + Eq, V: Clone + PartialEq + Eq> common::const_default::ConstDefault for HashMap<K, V> {
-    const DEFAULT: Self = Self { inner: None };
 }
 
 #[derive(Default, Clone, Debug, PartialEq)]

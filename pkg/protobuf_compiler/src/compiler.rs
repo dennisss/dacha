@@ -61,6 +61,11 @@ struct ResolvedType<'a> {
     descriptor: ResolvedTypeDesc<'a>,
 }
 
+struct ImportedProto {
+    proto: Proto,
+    package_path: String
+}
+
 pub struct Compiler<'a> {
     // The current top level code string that we are building.
     outer: String,
@@ -68,7 +73,7 @@ pub struct Compiler<'a> {
     // Top level proto file descriptor that is being compiled
     proto: &'a Proto,
 
-    imported_protos: Vec<Proto>,
+    imported_protos: Vec<ImportedProto>,
 
     // TODO: Will also need a DescriptorDatabase to look up items in other files
 
@@ -158,7 +163,7 @@ struct CompiledOneOf {
 }
 
 impl Compiler<'_> {
-    pub fn compile(desc: &Proto, runtime_package: &str) -> Result<String> {
+    pub fn compile(desc: &Proto, current_package: &str, runtime_package: &str) -> Result<String> {
         let mut c = Compiler {
             outer: String::new(),
             proto: desc,
@@ -182,7 +187,7 @@ impl Compiler<'_> {
             let relative_path = std::path::Path::new(&import.path);
 
 
-            let mut use_statement = String::from("use ::");
+            let mut package_path = String::from("::");
 
             let components = relative_path.components().collect::<Vec<_>>();
             assert!(components.len() > 3);
@@ -194,22 +199,30 @@ impl Compiler<'_> {
 
                     continue;
                 }
+                if i == 1 {
+                    if components[i].as_os_str() == current_package {
+                        package_path = "crate::".to_string();
+                        continue;
+                    }
+
+                    // If we are in the same package, we need to use 'crate'
+                }
                 if i == 2 {
                     // TODO: Check that it is 'src'
                     continue;
                 }
 
-                use_statement.push_str(components[i].as_os_str().to_str().unwrap());
-                use_statement.push_str("::");
+                package_path.push_str(components[i].as_os_str().to_str().unwrap());
+                package_path.push_str("::");
             }
 
             if relative_path.extension().unwrap_or_default() != "proto" {
                 return Err(err_msg("Expected a .proto extension for imported proto files"));
             }
 
-            use_statement.push_str(relative_path.file_stem().unwrap().to_str().unwrap());
-            use_statement.push_str(";\n");
-            c.outer += &use_statement;
+            package_path.push_str(relative_path.file_stem().unwrap().to_str().unwrap());
+            // use_statement.push_str(";\n");
+            // c.outer += &use_statement;
 
 
 
@@ -228,16 +241,20 @@ impl Compiler<'_> {
                 }
             };
 
-            let imported_proto = crate::syntax::parse_proto(&imported_file)
+            let imported_proto_value = crate::syntax::parse_proto(&imported_file)
                 .map_err(|e| format_err!("Failed while parsing {}: {:?}", import.path, e))?;
 
-            c.imported_protos.push(imported_proto);
+
+            c.imported_protos.push(ImportedProto {
+                proto: imported_proto_value,
+                package_path
+            });
         }
 
         c.outer.push_str("\n");
 
         for def in &desc.definitions {
-            let s = c.compile_topleveldef(def, &path);
+            let s = c.compile_topleveldef(def, &path)?;
             c.outer.push_str(&s);
             c.outer.push('\n');
         }
@@ -262,9 +279,10 @@ impl Compiler<'_> {
 
             // TODO: Eventually we need to check the package names.
             for imported_proto in &self.imported_protos {
-                let t = imported_proto.resolve(&fullname);
-                if t.is_some() {
-                    return t;
+                let t = imported_proto.proto.resolve(&fullname);
+                if let Some(mut t) = t {
+                    t.typename = format!("{}::{}", imported_proto.package_path, t.typename);
+                    return Some(t);
                 }
             }
 
@@ -486,7 +504,18 @@ impl Compiler<'_> {
             let resolved = self.resolve(name, path).expect(&format!("Failed to resolve type: {}", name));
             match resolved.descriptor {
                 ResolvedTypeDesc::Enum(_) => true,
-                ResolvedTypeDesc::Message(_) => false,
+                ResolvedTypeDesc::Message(m) => {
+                    for item in &m.body {
+                        if let MessageItem::Option(o) = item {
+                            if o.name == "typed_num" {
+                                // TODO: Must check if a boolean and no duplicate options and that the boolean value is true
+                                return true;
+                            }
+                        }
+                    }
+
+                    false
+                },
             }
         } else {
             true
@@ -499,7 +528,18 @@ impl Compiler<'_> {
                 let resolved = self.resolve(name, path).expect(&format!("Failed to resolve type: {}", name));
                 match resolved.descriptor {
                     ResolvedTypeDesc::Enum(_) => true,
-                    ResolvedTypeDesc::Message(_) => false,
+                    ResolvedTypeDesc::Message(m) => {
+                        for item in &m.body {
+                            if let MessageItem::Option(o) = item {
+                                if o.name == "typed_num" {
+                                    // TODO: Must check if a boolean and no duplicate options and that the boolean value is true
+                                    return true;
+                                }
+                            }
+                        }
+
+                        false   
+                    },
                 }
             }
             FieldType::String => false,
@@ -521,6 +561,20 @@ impl Compiler<'_> {
         }
     }
 
+    fn is_unordered_set(&self, field: &Field) -> bool {
+        if field.label != Label::Repeated {
+            return false;
+        }
+
+        for opt in &field.unknown_options {
+            if opt.name == "unordered_set" {
+                return true;
+            }
+        }
+
+        false
+    }
+
     fn compile_field(&self, field: &Field, path: Path) -> String {
         let mut s = String::new();
         s += self.field_name(field);
@@ -528,12 +582,12 @@ impl Compiler<'_> {
 
         let typ = self.compile_field_type(&field.typ, path);
 
-        let is_repeated = if field.label == Label::Repeated {
-            true
-        } else {
-            false
-        };
-        if is_repeated {
+        let is_repeated = field.label == Label::Repeated;
+
+        if self.is_unordered_set(field) {
+            s += &format!("{}::SetField<{}>", self.runtime_package, typ);
+
+        } else if is_repeated {
             s += &format!("Vec<{}>", typ);
         } else {
             if self.is_primitive(&field.typ, path) && self.proto.syntax == Syntax::Proto3 {
@@ -562,7 +616,7 @@ impl Compiler<'_> {
 
         let typename = self.oneof_typename(oneof, path);
 
-        lines.add("#[derive(Debug, PartialEq, Clone)]");
+        lines.add("#[derive(Debug, Clone)]");
         lines.add(format!("pub enum {} {{", typename));
         lines.add("\tUnknown,");
         for field in &oneof.fields {
@@ -591,14 +645,14 @@ impl Compiler<'_> {
     }
 
     /// Compiles a single
-    fn compile_message_item(&mut self, item: &MessageItem, path: Path) -> Option<String> {
-        match item {
+    fn compile_message_item(&mut self, item: &MessageItem, path: Path) -> Result<Option<String>> {
+        Ok(match item {
             MessageItem::Enum(e) => {
                 self.outer.push_str(&self.compile_enum(e, path));
                 None
             }
             MessageItem::Message(m) => {
-                let data = self.compile_message(m, path);
+                let data = self.compile_message(m, path)?;
                 self.outer.push_str(&data);
                 None
             }
@@ -608,7 +662,7 @@ impl Compiler<'_> {
             MessageItem::MapField(f) => {
                 let mut s = String::new();
                 s += &f.name; // TODO: Handle 'type' -> 'typ'
-                s += &format!(": {}::HashMap<", &self.runtime_package);
+                s += &format!(": {}::MapField<", &self.runtime_package);
                 s += &self.compile_field_type(&f.key_type, path);
                 s += ", ";
                 s += &self.compile_field_type(&f.value_type, path);
@@ -625,7 +679,7 @@ impl Compiler<'_> {
             MessageItem::Reserved(_) => None,
 
             _ => None,
-        }
+        })
     }
 
     fn compile_field_accessors(&self, field: &Field, path: Path, oneof: Option<&OneOf>) -> String {
@@ -651,7 +705,13 @@ impl Compiler<'_> {
             || oneof.is_some());
 
         // field()
-        if is_repeated {
+        if self.is_unordered_set(field) {
+            lines.add(format!("
+                pub fn {name}(&self) -> &{pkg}::SetField<{typ}> {{
+                    &self.{name}
+                }}
+            ", name = name, typ = typ, pkg = self.runtime_package));
+        } else if is_repeated {
             lines.add(format!("\tpub fn {}(&self) -> &[{}] {{", name, typ));
             lines.add_inline(format!(" &self.{}", name));
             lines.add_inline(" }");
@@ -691,7 +751,7 @@ impl Compiler<'_> {
                         "\"\"".to_string()
                     } else if rettype == "[u8]" {
                         "&[]".to_string()
-                    } else if is_message {
+                    } else if is_message && !is_copyable {
                         format!("{}::default_value()", typ)
                     } else {
                         // For now it's a const, 
@@ -719,7 +779,13 @@ impl Compiler<'_> {
             }
         }
 
-        if is_repeated {
+        if self.is_unordered_set(field) {
+            lines.add(format!("
+                pub fn {name}_mut(&mut self) -> &mut {pkg}::SetField<{typ}> {{
+                    &mut self.{name}
+                }}
+            ", name = name, typ = typ, pkg = self.runtime_package));
+        } else if is_repeated {
             // add_field(v: T) -> &mut T
             lines.add(format!(
                 "\tpub fn add_{}(&mut self, v: {}) -> &mut {} {{",
@@ -737,7 +803,8 @@ impl Compiler<'_> {
             /* is_primitive */
             true {
                 // set_field(v: T)
-                lines.add(format!("\tpub fn set_{}(&mut self, v: {}) {{", name, typ));
+                lines.add(format!("\tpub fn set_{}<V: ::std::convert::Into<{}>>(&mut self, v: V) {{", name, typ));
+                lines.add("\t\tlet v = v.into();");
                 if use_option {
                     if is_message {
                         lines.add(format!("\t\tself.{} = Some(MessagePtr::new(v));", name));
@@ -808,7 +875,7 @@ impl Compiler<'_> {
         lines.to_string()
     }
 
-    fn compile_message(&mut self, msg: &Message, path: Path) -> String {
+    fn compile_message(&mut self, msg: &Message, path: Path) -> Result<String> {
         /*
         Supporting oneof:
         - Internally implemented as an enum to allow simply 
@@ -827,6 +894,10 @@ impl Compiler<'_> {
 
         let mut inner_path = Vec::from(path);
         inner_path.push(&msg.name);
+
+        // TOOD: Must validate that the typed num field contains only one field which is an integer type.
+        let mut is_typed_num = false;
+        // let mut can_be_typed_num = true;
 
         let mut used_nums: HashSet<FieldNumber> = HashSet::new();
         for item in &msg.body {
@@ -860,6 +931,14 @@ impl Compiler<'_> {
                         panic!("Duplicate field number: {}", map_field.num);
                     }
                 }
+                MessageItem::Option(option) => {
+                    if option.name == "typed_num" {
+                        is_typed_num = match option.value {
+                            Constant::Bool(v) => v,
+                            _ => { return Err(err_msg("Expected typed_num option to have boolean value")); }
+                        };
+                    }
+                }
                 _ => {},
             }
         }
@@ -869,23 +948,112 @@ impl Compiler<'_> {
         let fullname: String = inner_path.join("_");
 
         let mut lines = LineBuilder::new();
+        // NOTE: We intentionally don't derive PartialEq always as it can be error prone (especially with Option<> types).
         // TODO: Use the debug_string to implement debug.
-        lines.add("#[derive(Clone, Default, Debug, ConstDefault, PartialEq)]");
+        lines.add("#[derive(Clone, Default, Debug, ConstDefault)]");
         lines.add(format!("pub struct {} {{", fullname));
-        lines.indented(|lines| {
+        lines.indented(|lines| -> Result<()> {
             for i in &msg.body {
-                if let Some(field) = self.compile_message_item(&i, &inner_path) {
+                if let Some(field) = self.compile_message_item(&i, &inner_path)? {
                     lines.add(field);
                 }
-            }    
-        });
+            }
 
+            Ok(())
+        })?;
         lines.add("}");
         lines.nl();
 
+        if is_typed_num {
+            let field = {
+                let mut field_iter = msg.fields();
+                let mut f = field_iter.next();
+                if field_iter.next().is_some() {
+                    f = None;
+                }
+
+                f.ok_or_else(|| err_msg("Expected typed_num message to have exactly one field"))?  
+            };
+
+            if let FieldType::Named(_) = field.typ {
+                return Err(err_msg("typed_num message field must be a primitive type"));
+            }
+            
+            let field_type = self.compile_field_type(&field.typ, &[]);
+
+            lines.add(format!(r#"
+                impl Copy for {msg_name} {{}}
+
+                impl ::std::ops::Add<Self> for {msg_name} {{
+                    type Output = Self;
+                    
+                    fn add(self, other: Self) -> Self {{
+                        let mut sum = self.clone();
+                        *sum.{field_name}_mut() += other.{field_name}();
+                        sum 
+                    }}
+                }}
+
+                impl ::std::ops::Add<{field_type}> for {msg_name} {{
+                    type Output = Self;
+                    
+                    fn add(self, other: {field_type}) -> Self {{
+                        let mut sum = self.clone();
+                        *sum.{field_name}_mut() += other;
+                        sum
+                    }}
+                }}
+
+                impl ::std::ops::Sub<{field_type}> for {msg_name} {{
+                    type Output = Self;
+                    
+                    fn sub(self, other: {field_type}) -> Self {{
+                        let mut result = self.clone();
+                        *result.{field_name}_mut() -= other;
+                        result
+                    }}
+                }}
+
+                impl ::std::cmp::PartialEq for {msg_name} {{
+                    fn eq(&self, other: &Self) -> bool {{
+                        self.{field_name}() == other.{field_name}()
+                    }}
+                }}
+
+                impl Eq for {msg_name} {{}}
+
+                impl ::std::cmp::PartialOrd for {msg_name} {{
+                    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {{
+                        Some(self.cmp(other))
+                    }}
+                }}
+                
+                impl Ord for {msg_name} {{
+                    fn cmp(&self, other: &Self) -> ::std::cmp::Ordering {{
+                        self.{field_name}().cmp(&other.{field_name}())
+                    }}
+                }}
+                
+                impl ::std::convert::From<{field_type}> for {msg_name} {{
+                    fn from(v: {field_type}) -> Self {{
+                        let mut inst = Self::default();
+                        inst.set_{field_name}(v);
+                        inst
+                    }}
+                }}
+
+                impl ::std::hash::Hash for {msg_name} {{
+                    fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {{
+                        self.{field_name}().hash(state);
+                    }}
+                }}
+
+            "#, msg_name = msg.name, field_type = field_type, field_name = field.name));
+        }
+
         lines.add(format!("impl {} {{", fullname));
 
-        lines.add("\tfn default_value() -> &'static Self {");
+        lines.add("\tpub fn default_value() -> &'static Self {");
         lines.add(format!("\t\tstatic VALUE: {} = {}::DEFAULT;", fullname, fullname));
         lines.add("\t\t&VALUE");
         lines.add("\t}");
@@ -917,8 +1085,9 @@ impl Compiler<'_> {
         lines.add(format!("impl {}::Message for {} {{", self.runtime_package, fullname));
         lines.add("\tfn parse(data: Bytes) -> Result<Self> {");
         lines.add("\t\tlet mut msg = Self::default();");
-        lines.add("\t\tlet fields = WireField::parse_all(&data)?;");
-        lines.add("\t\tfor f in &fields {");
+
+        lines.add("\t\tfor f in WireFieldIter::new(&data) {");
+        lines.add("\t\t\tlet f = f?;");
         lines.add("\t\t\tmatch f.field_number {");
 
         for field in msg.fields() {
@@ -946,8 +1115,11 @@ impl Compiler<'_> {
             };
 
             let mut p = String::new();
-            if is_repeated {
-                p += &format!("msg.{}.push(f.parse_{}()?)", name, typeclass);
+            if self.is_unordered_set(field) {
+                p += &format!("msg.{}.insert(f.parse_{}()?);", name, typeclass)
+
+            } else if is_repeated {
+                p += &format!("msg.{}.push(f.parse_{}()?);", name, typeclass);
             } else {
                 if use_option {
                     if is_message {
@@ -1031,7 +1203,7 @@ impl Compiler<'_> {
             );
 
             if is_repeated {
-                lines.add(format!("\t\tfor v in &self.{} {{", name));
+                lines.add(format!("\t\tfor v in self.{}.iter() {{", name));
                 lines.add(serialize_line);
                 lines.add("\t\t}");
             } else {
@@ -1083,6 +1255,11 @@ impl Compiler<'_> {
         lines.indented(|lines| {
             lines.add("fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {");
             lines.indented(|lines| {
+                if msg.body.len() == 0 {
+                    lines.add("None");
+                    return;
+                }
+
                 lines.add("Some(match num {");
                 for item in &msg.body {
                     match item {
@@ -1119,6 +1296,11 @@ impl Compiler<'_> {
                 "fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {",
             );
             lines.indented(|lines| {
+                if msg.body.len() == 0 {
+                    lines.add("None");
+                    return;
+                }
+
                 lines.add("Some(match num {");
                 for item in &msg.body {
                     match item {
@@ -1161,6 +1343,11 @@ impl Compiler<'_> {
 
             lines.add("fn field_number_by_name(&self, name: &str) -> Option<FieldNumber> {");
             lines.indented(|lines| {
+                if msg.body.len() == 0 {
+                    lines.add("None");
+                    return;
+                }
+
                 lines.add("Some(match name {");
                 for item in &msg.body {
                     match item {
@@ -1179,9 +1366,6 @@ impl Compiler<'_> {
                     }
                 }
 
-                for field in msg.fields() {
-                    
-                }
                 lines.add("\t_ => { return None; }");
                 lines.add("})");
             });
@@ -1190,7 +1374,7 @@ impl Compiler<'_> {
 
         lines.add("}");
 
-        lines.to_string()
+        Ok(lines.to_string())
     }
 
     fn compile_service(&mut self, service: &Service, path: Path) -> String {
@@ -1227,12 +1411,16 @@ impl Compiler<'_> {
             lines.nl();
 
             for rpc in service.rpcs() {
+                // Challenges with this formulation:
+                // Must be able to call with a <R: Into<::rpc::ClientRequest<AsRef<{}>>>>
+
                 lines.add(format!(
-                    "pub async fn {}(&self, request: &::rpc::ClientRequest<{}>) -> ::rpc::ClientResponse<{}> {{",
-                    rpc.name, rpc.req_type, rpc.res_type
+                    "pub async fn {rpc_name}(&self, request_context: &::rpc::ClientRequestContext, request_value: &{req_type}) ->
+                     ::rpc::ClientResponse<{res_type}> {{",
+                    rpc_name = rpc.name, req_type = rpc.req_type, res_type = rpc.res_type
                 ));
                 lines.add(format!(
-                    "\tself.channel.call_unary(\"{}\", \"{}\", request).await",
+                    "\tself.channel.call_unary(\"{}\", \"{}\", request_context, request_value).await",
                     absolute_name, rpc.name
                 ));
                 lines.add("}");
@@ -1277,26 +1465,38 @@ impl Compiler<'_> {
 
         lines.nl();
 
-        lines.add("\tfn into_service(self) -> Arc<dyn ::rpc::Service> where Self: 'static + Sized {");
-        lines.add(format!("\t\tArc::new({}ServiceCaller {{", service.name));
-        lines.add(format!(
-            "\t\t\tinner: Box::new(self) as Box<dyn {}Service>",
-            service.name
-        ));
-        lines.add("\t\t})");
-        lines.add("\t}");
-
         lines.add("}");
         lines.nl();
 
-        lines.add(format!(
-            "pub struct {}ServiceCaller {{ inner: Box<dyn {}Service> }}",
-            service.name, service.name
-        ));
-        lines.nl();
+        lines.add(format!("
+            pub trait {service_name}IntoService {{
+                fn into_service(self) -> Arc<dyn ::rpc::Service>;
+            }}
+
+            impl<T: {service_name}Service + Send + Sync + 'static> {service_name}IntoService for T {{
+                fn into_service(self) -> Arc<dyn ::rpc::Service> {{
+                    Arc::new({service_name}ServiceCaller {{
+                        inner: self
+                    }})
+                }}
+            }}
+
+            pub struct {service_name}ServiceCaller<T> {{
+                inner: T
+            }}
+
+        ", service_name = service.name));
+
+        // lines.add(format!(
+        //     "pub struct {}ServiceCaller {{ inner: Box<dyn {}Service> }}",
+        //     service.name, service.name
+        // ));
+        // lines.nl();
 
         lines.add("#[async_trait]");
-        lines.add(format!("impl ::rpc::Service for {}ServiceCaller {{", service.name));
+        lines.add(format!(
+            "impl<T: {service_name}Service + Send + Sync> ::rpc::Service for {service_name}ServiceCaller<T> {{",
+                               service_name = service.name));
         lines.indented(|lines| {
             // TODO: Escape the string if needed.
             lines.add(format!(
@@ -1383,12 +1583,12 @@ impl Compiler<'_> {
         lines.to_string()
     }
 
-    fn compile_topleveldef(&mut self, def: &TopLevelDef, path: Path) -> String {
-        match def {
-            TopLevelDef::Message(m) => self.compile_message(&m, path),
+    fn compile_topleveldef(&mut self, def: &TopLevelDef, path: Path) -> Result<String> {
+        Ok(match def {
+            TopLevelDef::Message(m) => self.compile_message(&m, path)?,
             TopLevelDef::Enum(e) => self.compile_enum(e, path),
             TopLevelDef::Service(s) => self.compile_service(s, path),
             _ => String::new(),
-        }
+        })
     }
 }

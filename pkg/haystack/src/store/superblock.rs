@@ -33,7 +33,7 @@ pub struct PhysicalVolumeSuperblock {
 
 impl PhysicalVolumeSuperblock {
 
-	pub fn read(reader: &mut Read) -> Result<PhysicalVolumeSuperblock> {
+	pub fn read(reader: &mut dyn Read) -> Result<PhysicalVolumeSuperblock> {
 		
 		let mut buf = Vec::new(); buf.resize(SUPERBLOCK_SIZE, 0);
 		reader.read_exact(&mut buf)?;

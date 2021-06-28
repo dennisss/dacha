@@ -160,11 +160,11 @@ parser!(constant<&str, Constant> => seq!(c => {
     };
 
     c.next(alt!(
+        bool_const,
+        str_const,
         map(full_ident, |s| Constant::Identifier(s)),
         map(int_value, |i| Constant::Integer(i)),
-        map(float_value, |f| Constant::Float(f)),
-        str_const,
-        bool_const
+        map(float_value, |f| Constant::Float(f))
     ))
 }));
 
@@ -205,6 +205,7 @@ parser!(package<&str, String> => seq!(c => {
 parser!(option<&str, Opt> => seq!(c => {
     c.next(is(ident, "option"))?;
     let name = c.next(option_name)?;
+    c.next(is(symbol, '='))?;
     let value = c.next(constant)?;
     c.next(is(symbol, ';'))?;
     Ok(Opt { name, value })
@@ -515,6 +516,7 @@ parser!(message_body<&str, Vec<MessageItem>> => seq!(c => {
     c.next(is(symbol, '{'))?;
 
     let items = c.many(alt!(
+        map(option, |v| Some(MessageItem::Option(v))),
         map(field, |v| Some(MessageItem::Field(v))),
         map(enum_, |v| Some(MessageItem::Enum(v))),
         map(message, |v| Some(MessageItem::Message(v))),
@@ -523,7 +525,7 @@ parser!(message_body<&str, Vec<MessageItem>> => seq!(c => {
         map(oneof, |v| Some(MessageItem::OneOf(v))),
         map(map_field, |v| Some(MessageItem::MapField(v))),
         map(reserved, |v| Some(MessageItem::Reserved(v))),
-        map(empty_statement, |v| None)
+        map(empty_statement, |_| None)
     )).into_iter().filter_map(|x| x).collect::<Vec<_>>();
 
     c.next(is(symbol, '}'))?;
@@ -692,5 +694,36 @@ parser!(top_level_def<&str, TopLevelDef> => alt!(
     map(message, |m| TopLevelDef::Message(m)),
     map(enum_, |e| TopLevelDef::Enum(e)),
     map(extend, |e| TopLevelDef::Extend(e)),
-    map(service, |s| TopLevelDef::Service(s))
+    map(service, |s| TopLevelDef::Service(s)),
+    map(option, |o| TopLevelDef::Option(o))
 ));
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn parse_options_test() {
+
+        let input = r#"
+            syntax = "proto3";
+
+            option java_package = "com.google.test";
+
+            message TestMessage {
+                option my_message_option = 123;
+
+                int32 field = 1 [deprecated = true];
+            }
+
+        "#;
+
+        println!("{:?}", option("option java_package = 123;").unwrap());
+
+        let parsed = parse_proto(input).unwrap();
+        println!("{:?}", parsed);
+
+    }
+
+}

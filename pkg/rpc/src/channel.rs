@@ -31,10 +31,12 @@ impl dyn Channel {
         &self,
         service_name: &str,
         method_name: &str,
-        request: &ClientRequest<Req>
+        request_context: &ClientRequestContext,
+        request_value: &Req,
     ) -> ClientResponse<Res> {
         let mut context = ClientResponseContext::default();
-        let result = self.call_unary_impl(service_name, method_name, request, &mut context).await;
+        let result = self.call_unary_impl(
+            service_name, method_name, request_context, request_value, &mut context).await;
         ClientResponse {
             result,
             context
@@ -45,13 +47,14 @@ impl dyn Channel {
         &self,
         service_name: &str,
         method_name: &str,
-        request: &ClientRequest<Req>,
+        request_context: &ClientRequestContext,
+        request_value: &Req,
         response_context: &mut ClientResponseContext
     ) -> Result<Res> {
-        let request_bytes = request.value.serialize()?.into();
+        let request_bytes = request_value.serialize()?.into();
 
         let raw_response = self.call_unary_raw(
-            service_name, method_name, &request.context, request_bytes, response_context).await?;
+            service_name, method_name, request_context, request_bytes, response_context).await?;
 
         Res::parse(raw_response)
     }

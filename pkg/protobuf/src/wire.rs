@@ -158,82 +158,14 @@ impl WireField<'_> {
     /// Parses all top level WireFields in the given data.
     /// TODO: Support parsing from Bytes?
     /// TODO: Make this return an iterator.
-    pub fn parse_all(mut input: &[u8]) -> Result<Vec<WireField>> {
+    pub fn parse_all(input: &[u8]) -> Result<Vec<WireField>> {
         let mut out = vec![];
-        let mut group = None;
-
-        while input.len() > 0 {
-            let (tag, rest) = Tag::parse(input)?;
-            input = rest;
-            let value = match tag.wire_type {
-                WireType::Varint => {
-                    // TODO: In some cases, 
-
-                    let (v, rest) = parse_varint(input)?;
-                    input = rest;
-                    WireValue::Varint(v)
-                }
-                WireType::Word64 => {
-                    if input.len() < 8 {
-                        return Err(err_msg("Too few bytes for word64"));
-                    }
-                    let v = &input[0..8];
-                    input = &input[8..];
-                    WireValue::Word64(v)
-                }
-                WireType::Word32 => {
-                    if input.len() < 4 {
-                        return Err(err_msg("Too few bytes for word32"));
-                    }
-                    let v = &input[0..4];
-                    input = &input[4..];
-                    WireValue::Word32(v)
-                }
-                WireType::LengthDelim => {
-                    let (len, rest) = parse_varint(input)?;
-                    let len = len as usize;
-                    input = rest;
-                    if input.len() < len {
-                        return Err(err_msg("Too few bytes for length delimited"));
-                    }
-                    let v = &input[0..len];
-                    input = &input[len..];
-                    WireValue::LengthDelim(v)
-                }
-                WireType::StartGroup => {
-                    group = Some(vec![]);
-                    continue;
-                }
-                WireType::EndGroup => {
-                    // TODO: Ensure that the start and end field numbers are
-                    // consistent for groups.
-                    let v = match group.take() {
-                        Some(items) => WireValue::Group(items),
-                        None => {
-                            return Err(err_msg("Saw EndGroup before seeing a StartGroup"));
-                        }
-                    };
-
-                    v
-                }
-            };
-
-            out.push(WireField {
-                field_number: tag.field_number,
-                value,
-            });
+        
+        for field in WireFieldIter::new(input) {
+            out.push(field?);
         }
 
-        if input.len() == 0 {
-            if group.is_some() {
-                return Err(err_msg("Unclosed group with no input remaining."));
-            }
-
-            Ok(out)
-        } else {
-            // This should pretty much never happen due to the while loop above
-            Err(err_msg("Could not parse all input."))
-        }
+        Ok(out)
     }
 
     fn serialize(&self, out: &mut Vec<u8>) {
@@ -532,6 +464,18 @@ impl WireField<'_> {
         M::parse(Bytes::from(data))
     }
 
+    pub fn serialize_sparse_message<M: Message + std::cmp::PartialEq + common::const_default::ConstDefault>(
+        field_number: FieldNumber,
+        m: &M,
+        out: &mut Vec<u8>
+    ) -> Result<()> {
+        if *m != M::DEFAULT {
+            return Self::serialize_message(field_number, m, out);
+        }
+
+        Ok(())
+    }
+
     pub fn serialize_message(
         field_number: FieldNumber,
         m: &dyn Message,
@@ -544,6 +488,103 @@ impl WireField<'_> {
         }
         .serialize(out);
         Ok(())
+    }
+}
+
+pub struct WireFieldIter<'a> {
+    input: &'a [u8],
+    group: Option<Vec<WireValue<'a>>>
+}
+
+impl<'a> WireFieldIter<'a> {
+    pub fn new(input: &[u8]) -> WireFieldIter {
+        WireFieldIter {
+            input,
+            group: None
+        }
+    }
+
+    fn next_impl(&mut self) -> Result<Option<WireField<'a>>> {
+        while !self.input.is_empty() {
+            let (tag, rest) = Tag::parse(self.input)?;
+            self.input = rest;
+            let value = match tag.wire_type {
+                WireType::Varint => {
+                    // TODO: In some cases, 
+
+                    let (v, rest) = parse_varint(self.input)?;
+                    self.input = rest;
+                    WireValue::Varint(v)
+                }
+                WireType::Word64 => {
+                    if self.input.len() < 8 {
+                        return Err(err_msg("Too few bytes for word64"));
+                    }
+                    let v = &self.input[0..8];
+                    self.input = &self.input[8..];
+                    WireValue::Word64(v)
+                }
+                WireType::Word32 => {
+                    if self.input.len() < 4 {
+                        return Err(err_msg("Too few bytes for word32"));
+                    }
+                    let v = &self.input[0..4];
+                    self.input = &self.input[4..];
+                    WireValue::Word32(v)
+                }
+                WireType::LengthDelim => {
+                    let (len, rest) = parse_varint(self.input)?;
+                    let len = len as usize;
+                    self.input = rest;
+                    if self.input.len() < len {
+                        return Err(err_msg("Too few bytes for length delimited"));
+                    }
+                    let v = &self.input[0..len];
+                    self.input = &self.input[len..];
+                    WireValue::LengthDelim(v)
+                }
+                WireType::StartGroup => {
+                    self.group = Some(vec![]);
+                    continue;
+                }
+                WireType::EndGroup => {
+                    // TODO: Ensure that the start and end field numbers are
+                    // consistent for groups.
+                    let v = match self.group.take() {
+                        Some(items) => WireValue::Group(items),
+                        None => {
+                            return Err(err_msg("Saw EndGroup before seeing a StartGroup"));
+                        }
+                    };
+
+                    v
+                }
+            };
+
+            return Ok(Some(WireField {
+                field_number: tag.field_number,
+                value,
+            }));
+        }
+
+        // If we reach this point, then the input is empty.
+
+        if self.group.is_some() {
+            return Err(err_msg("Unclosed group with no input remaining."));
+        }
+
+        Ok(None)
+    }
+}
+
+impl<'a> std::iter::Iterator for WireFieldIter<'a> {
+    type Item = Result<WireField<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next_impl() {
+            Ok(v) => v.map(|v| Ok(v)),
+            Err(e) => Some(Err(e))
+        }
     }
 }
 

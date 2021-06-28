@@ -20,7 +20,8 @@ pub enum Reflection<'a> {
     Repeated(&'a dyn RepeatedFieldReflection),
     Message(&'a dyn MessageReflection),
     Enum(&'a dyn Enum),
-    Option(Option<&'a dyn Reflect>)
+    Option(Option<&'a dyn Reflect>),
+    Set(&'a dyn SetFieldReflection)
 }
 
 pub enum ReflectionMut<'a> {
@@ -35,7 +36,8 @@ pub enum ReflectionMut<'a> {
     Bytes(&'a mut Vec<u8>),
     Repeated(&'a mut dyn RepeatedFieldReflection),
     Message(&'a mut dyn MessageReflection),
-    Enum(&'a mut dyn Enum)
+    Enum(&'a mut dyn Enum),
+    Set(&'a mut dyn SetFieldReflection)
     // NOTE: reflect_mut() on an option will simply assign a new default value.
     // TODO: Support controlling presence with reflection?
     // Option(Option<&'a mut dyn Reflect>)
@@ -165,4 +167,26 @@ impl<T: Reflect + Default> RepeatedFieldReflection for Vec<T> {
         let idx = self.len() - 1;
         self[idx].reflect_mut()
     }
+}
+
+pub trait SetFieldReflection {
+    fn len(&self) -> usize;
+ 
+    fn entry<'a>(&'a self) -> Box<dyn SetFieldEntryReflection + 'a>;
+
+    fn entry_mut<'a>(&'a mut self) -> Box<dyn SetFieldEntryReflectionMut + 'a>;
+
+    // fn iter(&self, callback: fn(Reflection));
+}
+
+pub trait SetFieldEntryReflection {
+    fn value(&mut self) -> ReflectionMut;
+
+    fn contains(&self) -> bool;
+}
+
+pub trait SetFieldEntryReflectionMut: SetFieldEntryReflection {
+    fn insert(&mut self) -> bool;
+
+    fn remove(&mut self) -> bool;
 }

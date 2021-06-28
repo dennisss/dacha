@@ -5,6 +5,8 @@ extern crate common;
 extern crate rpc;
 extern crate rpc_test;
 
+use std::sync::Arc;
+
 use common::async_std::task;
 use common::errors::*;
 use rpc_test::proto::adder::*;

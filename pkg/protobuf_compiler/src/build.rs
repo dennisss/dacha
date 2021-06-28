@@ -19,11 +19,13 @@ pub fn build() -> Result<()> {
 
     let mut input_paths: Vec<PathBuf> = vec![];
 
+    let current_package_name = input_dir.file_name().unwrap().to_str().unwrap();
+
     let runtime_package = {
-        if input_dir.file_name().unwrap() == "protobuf" {
+        if current_package_name == "protobuf" {
             "crate"
         } else {
-            "protobuf"
+            "::protobuf"
         }
     };
     
@@ -61,7 +63,8 @@ pub fn build() -> Result<()> {
 
         std::fs::create_dir_all(output_path.parent().unwrap())?;
 
-        let output = Compiler::compile(&desc, runtime_package)?;
+
+        let output = Compiler::compile(&desc, current_package_name, runtime_package)?;
         std::fs::write(output_path, output)?;
     }
 

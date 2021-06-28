@@ -304,6 +304,21 @@ impl TextValue {
                     self.apply(v.add())?;
                 }
             }
+            ReflectionMut::Set(v) => {
+                // NOTE: Sets behave pretty much the same way as repeated fields.
+
+                if let Self::Array(items) = self {
+                    for item in items {
+                        let mut e = v.entry_mut();
+                        item.apply(e.value());
+                        e.insert();
+                    }
+                } else {
+                    let mut e = v.entry_mut();
+                    self.apply(e.value())?;
+                    e.insert();
+                }
+            }
             ReflectionMut::Message(v) => {
                 if let Self::Message(m) = self {
                     m.apply(v)?;
