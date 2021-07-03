@@ -1,9 +1,12 @@
-use protobuf_compiler::spec::FieldNumber;
-use crate::{Enum, Message};
-use byteorder::{ByteOrder, LittleEndian};
+use std::intrinsics::unlikely;
+
 use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
-use std::intrinsics::unlikely;
+use protobuf_compiler::spec::FieldNumber;
+use byteorder::{ByteOrder, LittleEndian};
+
+use crate::{Enum, Message, BytesField};
+
 
 pub fn serialize_varint(mut v: u64, out: &mut Vec<u8>) {
     loop {
@@ -422,10 +425,10 @@ impl WireField<'_> {
         } 
     }
 
-    pub fn parse_bytes(&self) -> Result<BytesMut> {
+    pub fn parse_bytes(&self) -> Result<BytesField> {
         let mut val = vec![];
         val.extend_from_slice(self.value.length_delim()?);
-        Ok(BytesMut::from(val))
+        Ok(BytesField::from(val))
     }
 
     pub fn serialize_bytes(field_number: FieldNumber, v: &[u8], out: &mut Vec<u8>) {
@@ -461,7 +464,7 @@ impl WireField<'_> {
     // TODO: Instead use a dynamic version that parses into an existing struct.
     pub fn parse_message<M: Message>(&self) -> Result<M> {
         let data = self.value.length_delim()?;
-        M::parse(Bytes::from(data))
+        M::parse(data)
     }
 
     pub fn serialize_sparse_message<M: Message + std::cmp::PartialEq + common::const_default::ConstDefault>(

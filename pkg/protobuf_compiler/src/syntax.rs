@@ -37,7 +37,7 @@ token_atom!(str_lit, String, String);
 parser!(full_ident<&str, String> => seq!(c => {
     let mut id = c.next(ident)?;
 
-    while let Ok('.') = c.next(symbol) {
+    while let Ok(_) = c.next(is(symbol, '.')) {
         id.push('.');
 
         let id_more = c.next(ident)?;
@@ -403,6 +403,7 @@ parser!(key_type<&str, FieldType> => seq!(c => {
         "sfixed64" => FieldType::Sfixed64,
         "bool" => FieldType::Bool,
         "string" => FieldType::String,
+        // TODO: Make this error bubble up to the user when it is being parsed.
         _ => { return Err(err_msg("Invalid key type")); }
     };
 
@@ -425,6 +426,8 @@ parser!(ranges<&str, Ranges> => delimited1(range, comma));
 // Proto 2 and 3
 // range =  intLit [ "to" ( intLit | "max" ) ]
 parser!(range<&str, Range> => seq!(c => {
+    // TODO: Switch these to parse using the FieldNumber type for integer parsing.
+
     let lower = c.next(int_lit)?;
 
     let upper_parser = seq!(c => {
@@ -434,8 +437,8 @@ parser!(range<&str, Range> => seq!(c => {
         Ok(v)
     });
 
-    let upper = c.next(upper_parser)?;
-    Ok((lower as u32, upper  as u32))
+    let upper = c.next(opt(upper_parser))?.unwrap_or(lower);
+    Ok((lower as FieldNumber, upper  as FieldNumber))
 }));
 
 // Proto 2 and 3
@@ -723,7 +726,39 @@ mod tests {
 
         let parsed = parse_proto(input).unwrap();
         println!("{:?}", parsed);
+    }
 
+    #[test]
+    fn parse_map_field_test() {
+        let input = r#"
+            syntax = "proto3";
+
+            package google.protobuf;
+
+            message TestMessage {
+                map<int32, int32> hello = 1;
+            }
+        "#;
+
+        // println!("{:?}", option("option java_package = 123;").unwrap());
+
+        let parsed = parse_proto(input).unwrap();
+        println!("{:?}", parsed);
+    }
+
+    #[test]
+    fn parse_reserved_test() {
+        let input = r#"
+            syntax = "proto3";
+
+            message TestMessage {
+                int32 field = 1;
+                reserved 123;
+            }
+        "#;
+
+        let parsed = parse_proto(input).unwrap();
+        println!("{:?}", parsed);
     }
 
 }

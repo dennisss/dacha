@@ -88,14 +88,14 @@ pub struct Compiler<'a> {
     - All message fields have distinct numbers
 */
 
-type Path<'a> = &'a [&'a str];
+type TypePath<'a> = &'a [&'a str];
 
 trait Resolvable {
-    fn resolve(&self, path: Path) -> Option<ResolvedType>;
+    fn resolve(&self, path: TypePath) -> Option<ResolvedType>;
 }
 
 impl Resolvable for Message {
-    fn resolve(&self, path: Path) -> Option<ResolvedType> {
+    fn resolve(&self, path: TypePath) -> Option<ResolvedType> {
         if path.len() >= 1 && path[0] == &self.name {
             if path.len() == 1 {
                 Some(ResolvedType {
@@ -141,10 +141,23 @@ impl Resolvable for Enum {
 
 impl Resolvable for Proto {
     fn resolve(&self, path: &[&str]) -> Option<ResolvedType> {
+        let mut package = self.package.split('.').collect::<Vec<_>>();
+        if package.len() == 1 && package[0].len() == 0 {
+            package.pop();
+        }
+
+        // In order to be a type in this proto file, the start of the path must be the package name
+        // of this proto file.
+        if path.len() < package.len() || &package != &path[0..package.len()] {
+            return None;
+        }
+
+        let relative_path = &path[package.len()..]; 
+
         for def in &self.definitions {
             let inner = match def {
-                TopLevelDef::Enum(e) => e.resolve(&path),
-                TopLevelDef::Message(m) => m.resolve(&path),
+                TopLevelDef::Enum(e) => e.resolve(&relative_path),
+                TopLevelDef::Message(m) => m.resolve(&relative_path),
                 _ => None,
             };
 
@@ -180,9 +193,7 @@ impl Compiler<'_> {
         write!(c.outer, "use {}::service::*;\n", c.runtime_package).unwrap();
         write!(c.outer, "use {}::reflection::*;\n", c.runtime_package).unwrap();
 
-        // TODO: Eventually, this will become the package name
-        let path = vec![];
-
+        // TODO: Have an in-process cache for reading imported descriptors from disk.
         for import in &desc.imports {
             let relative_path = std::path::Path::new(&import.path);
 
@@ -190,11 +201,15 @@ impl Compiler<'_> {
             let mut package_path = String::from("::");
 
             let components = relative_path.components().collect::<Vec<_>>();
+            if components.len() <= 3 {
+                return Err(format_err!("Unsupported path format in import: {}", import.path));
+            }
+
             assert!(components.len() > 3);
             for i in 0..(components.len() - 1) {
                 if i == 0 {
-                    if components[0].as_os_str() != "pkg" {
-                        return Err(err_msg("Expected to be the pkg dir"));
+                    if components[0].as_os_str() != "pkg" && components[0].as_os_str() != "third_party" {
+                        return Err(err_msg("Expected to be the pkg|third_party dir"));
                     }
 
                     continue;
@@ -253,6 +268,8 @@ impl Compiler<'_> {
 
         c.outer.push_str("\n");
 
+        let path: TypePath = &[];
+
         for def in &desc.definitions {
             let s = c.compile_topleveldef(def, &path)?;
             c.outer.push_str(&s);
@@ -262,14 +279,20 @@ impl Compiler<'_> {
         Ok(c.outer)
     }
 
-    fn resolve(&self, name_str: &str, mut path: Path) -> Option<ResolvedType> {
+    fn resolve(&self, name_str: &str, mut path: TypePath) -> Option<ResolvedType> {
         let name = name_str.split('.').collect::<Vec<_>>();
         if name[0] == "" {
             panic!("Absolute paths currently not supported");
         }
 
+        let mut package_path = self.proto.package.split('.').collect::<Vec<_>>();
+        if package_path.len() == 1 && package_path[0].len() == 0 {
+            package_path.pop();
+        }
+
         loop {
-            let mut fullname = Vec::from(path);
+            let mut fullname = package_path.clone();
+            fullname.extend_from_slice(&path);
             fullname.extend_from_slice(&name);
 
             let t = self.proto.resolve(&fullname);
@@ -301,7 +324,7 @@ impl Compiler<'_> {
         format!("\t{} = {},", f.name, f.num)
     }
 
-    fn compile_enum(&self, e: &Enum, path: Path) -> String {
+    fn compile_enum(&self, e: &Enum, path: TypePath) -> String {
         if self.proto.syntax == Syntax::Proto3 {
             let mut has_default = false;
             for i in &e.body {
@@ -450,7 +473,7 @@ impl Compiler<'_> {
         lines.to_string()
     }
 
-    fn compile_field_type(&self, typ: &FieldType, path: Path) -> String {
+    fn compile_field_type(&self, typ: &FieldType, path: TypePath) -> String {
         String::from(match typ {
             FieldType::Double => "f64",
             FieldType::Float => "f32",
@@ -499,7 +522,7 @@ impl Compiler<'_> {
     ///
     /// A primitive is defined mainly as anything but a nested message type.
     /// In proto3, the presence of primitive fields is undefined.
-    fn is_primitive(&self, typ: &FieldType, path: Path) -> bool {
+    fn is_primitive(&self, typ: &FieldType, path: TypePath) -> bool {
         if let FieldType::Named(name) = typ {
             let resolved = self.resolve(name, path).expect(&format!("Failed to resolve type: {}", name));
             match resolved.descriptor {
@@ -522,7 +545,7 @@ impl Compiler<'_> {
         }
     }
 
-    fn is_copyable(&self, typ: &FieldType, path: Path) -> bool {
+    fn is_copyable(&self, typ: &FieldType, path: TypePath) -> bool {
         match typ {
             FieldType::Named(name) => {
                 let resolved = self.resolve(name, path).expect(&format!("Failed to resolve type: {}", name));
@@ -548,7 +571,7 @@ impl Compiler<'_> {
         }
     }
 
-    fn is_message(&self, typ: &FieldType, path: Path) -> bool {
+    fn is_message(&self, typ: &FieldType, path: TypePath) -> bool {
         match typ {
             FieldType::Named(name) => {
                 let resolved = self.resolve(name, path).expect(&format!("Failed to resolve type: {}", name));
@@ -575,7 +598,7 @@ impl Compiler<'_> {
         false
     }
 
-    fn compile_field(&self, field: &Field, path: Path) -> String {
+    fn compile_field(&self, field: &Field, path: TypePath) -> String {
         let mut s = String::new();
         s += self.field_name(field);
         s += ": ";
@@ -607,11 +630,11 @@ impl Compiler<'_> {
         s
     }
 
-    fn oneof_typename(&self, oneof: &OneOf, path: Path) -> String {
+    fn oneof_typename(&self, oneof: &OneOf, path: TypePath) -> String {
         path.join("_") + &common::snake_to_camel_case(&oneof.name) + "Case"
     }
 
-    fn compile_oneof(&mut self, oneof: &OneOf, path: Path) -> CompiledOneOf {
+    fn compile_oneof(&mut self, oneof: &OneOf, path: TypePath) -> CompiledOneOf {
         let mut lines = LineBuilder::new();
 
         let typename = self.oneof_typename(oneof, path);
@@ -645,7 +668,7 @@ impl Compiler<'_> {
     }
 
     /// Compiles a single
-    fn compile_message_item(&mut self, item: &MessageItem, path: Path) -> Result<Option<String>> {
+    fn compile_message_item(&mut self, item: &MessageItem, path: TypePath) -> Result<Option<String>> {
         Ok(match item {
             MessageItem::Enum(e) => {
                 self.outer.push_str(&self.compile_enum(e, path));
@@ -682,7 +705,7 @@ impl Compiler<'_> {
         })
     }
 
-    fn compile_field_accessors(&self, field: &Field, path: Path, oneof: Option<&OneOf>) -> String {
+    fn compile_field_accessors(&self, field: &Field, path: TypePath, oneof: Option<&OneOf>) -> String {
         let mut lines = LineBuilder::new();
 
         let name = self.field_name(field);
@@ -875,7 +898,7 @@ impl Compiler<'_> {
         lines.to_string()
     }
 
-    fn compile_message(&mut self, msg: &Message, path: Path) -> Result<String> {
+    fn compile_message(&mut self, msg: &Message, path: TypePath) -> Result<String> {
         /*
         Supporting oneof:
         - Internally implemented as an enum to allow simply 
@@ -1083,10 +1106,10 @@ impl Compiler<'_> {
         lines.nl();
 
         lines.add(format!("impl {}::Message for {} {{", self.runtime_package, fullname));
-        lines.add("\tfn parse(data: Bytes) -> Result<Self> {");
+        lines.add("\tfn parse(data: &[u8]) -> Result<Self> {");
         lines.add("\t\tlet mut msg = Self::default();");
 
-        lines.add("\t\tfor f in WireFieldIter::new(&data) {");
+        lines.add("\t\tfor f in WireFieldIter::new(data) {");
         lines.add("\t\t\tlet f = f?;");
         lines.add("\t\t\tmatch f.field_number {");
 
@@ -1377,7 +1400,7 @@ impl Compiler<'_> {
         Ok(lines.to_string())
     }
 
-    fn compile_service(&mut self, service: &Service, path: Path) -> String {
+    fn compile_service(&mut self, service: &Service, path: TypePath) -> String {
         //		let modname = common::camel_to_snake_case(&service.name);
 
         let mut lines = LineBuilder::new();
@@ -1538,7 +1561,7 @@ impl Compiler<'_> {
                     // TODO: Must normalize these names to valid Rust names
                     lines.add(format!(r#"
                         "{}" => {{
-                            let request = {}::parse(request_bytes)
+                            let request = {}::parse(&request_bytes)
                                 .map_err(|_| ::rpc::Status::invalid_argument("Failed to parse request proto."))?;
 
                             let mut response = ::rpc::ServerResponse {{
@@ -1583,7 +1606,7 @@ impl Compiler<'_> {
         lines.to_string()
     }
 
-    fn compile_topleveldef(&mut self, def: &TopLevelDef, path: Path) -> Result<String> {
+    fn compile_topleveldef(&mut self, def: &TopLevelDef, path: TypePath) -> Result<String> {
         Ok(match def {
             TopLevelDef::Message(m) => self.compile_message(&m, path)?,
             TopLevelDef::Enum(e) => self.compile_enum(e, path),

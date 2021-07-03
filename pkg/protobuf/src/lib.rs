@@ -37,7 +37,7 @@ pub use collections::*;
 // Clone + std::fmt::Debug + std::default::Default + MessageReflection
 pub trait Message {
     // NOTE: This will append values to
-    fn parse(data: Bytes) -> Result<Self> where Self: Sized;
+    fn parse(data: &[u8]) -> Result<Self> where Self: Sized;
 
     /// Serializes the protobuf as a
     fn serialize(&self) -> Result<Vec<u8>>;

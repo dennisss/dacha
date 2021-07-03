@@ -977,6 +977,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "google"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
+]
+
+[[package]]
 name = "graphics"
 version = "0.1.0"
 dependencies = [
@@ -1740,6 +1750,7 @@ dependencies = [
  "crypto",
  "ctrlc",
  "fs2",
+ "google",
  "http",
  "libc",
  "macros",

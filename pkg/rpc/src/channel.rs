@@ -56,7 +56,7 @@ impl dyn Channel {
         let raw_response = self.call_unary_raw(
             service_name, method_name, request_context, request_bytes, response_context).await?;
 
-        Res::parse(raw_response)
+        Res::parse(&raw_response)
     }
 }
 

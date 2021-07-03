@@ -32,8 +32,8 @@ syntax = "proto3";
 
 package google.protobuf;
 
-import "google/protobuf/source_context.proto";
-import "google/protobuf/type.proto";
+import "third_party/google/src/proto/source_context.proto";
+import "third_party/google/src/proto/type.proto";
 
 option csharp_namespace = "Google.Protobuf.WellKnownTypes";
 option java_package = "com.google.protobuf";

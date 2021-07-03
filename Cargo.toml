@@ -15,6 +15,7 @@ members = [
 	"pkg/automata",
 	"pkg/http",
 	"pkg/rpc",
+	"pkg/rpc_test",
 	"pkg/image",
 	"pkg/format",
 	"third_party/pkix",
@@ -32,7 +33,8 @@ members = [
 	"pkg/xml",
 	"third_party/crates",
 	"pkg/parsing_test",
-	"pkg/regexp_macros"
+	"pkg/regexp_macros",
+	"third_party/google"
 ]
 
 [profile.dev]

@@ -2,9 +2,10 @@
 name = "google"
 version = "0.1.0"
 
-[lib]
-path = "lib.rs"
-
 [dependencies]
-fs2 = "0.4.3"
-libc = "0.2"
+common = { path = "../../pkg/common" }
+protobuf = { path = "../../pkg/protobuf" }
+macros = { path = "../../pkg/macros" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../../pkg/protobuf_compiler" }

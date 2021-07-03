@@ -32,8 +32,8 @@ syntax = "proto3";
 
 package google.protobuf;
 
-import "google/protobuf/any.proto";
-import "google/protobuf/source_context.proto";
+import "third_party/google/src/proto/any.proto";
+import "third_party/google/src/proto/source_context.proto";
 
 option csharp_namespace = "Google.Protobuf.WellKnownTypes";
 option cc_enable_arenas = true;
