@@ -1,7 +1,8 @@
-use bytes::Bytes;
-use common::errors::*;
 use std::borrow::Borrow;
 use std::str;
+
+use common::errors::*;
+use common::bytes::Bytes;
 
 // TODO: Enforce some reasonable limit (for really large sizes approaching this
 // limit, we probably want to implement a stream interface rather than storing
@@ -541,54 +542,6 @@ impl RESPParser {
         Ok((i, None))
     }
 }
-
-/*
-pub struct RESPCodec {
-    parser: RESPParser,
-    buf: Vec<u8>,
-}
-
-impl RESPCodec {
-    pub fn new() -> Self {
-        let mut buf = vec![];
-        buf.reserve(128);
-
-        RESPCodec {
-            parser: RESPParser::new(),
-            buf,
-        }
-    }
-}
-
-impl tokio::codec::Decoder for RESPCodec {
-    type Item = RESPObject;
-    type Error = std::io::Error;
-
-    fn decode(&mut self, buf: &mut bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let (nused, obj) = self
-            .parser
-            .parse(&buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
-
-        // NOTE: All bytes should be consumed if an object is not produced
-        buf.advance(nused);
-        Ok(obj)
-    }
-}
-
-impl tokio::codec::Encoder for RESPCodec {
-    type Item = RESPObject;
-    type Error = std::io::Error;
-
-    fn encode(&mut self, obj: Self::Item, buf: &mut bytes::BytesMut) -> Result<(), Self::Error> {
-        // TODO: Optimize to serialize directly to the bytes array
-        self.buf.clear();
-        obj.serialize_to(&mut self.buf);
-        buf.extend_from_slice(&self.buf);
-        Ok(())
-    }
-}
-*/
 
 #[cfg(test)]
 mod tests {

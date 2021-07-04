@@ -6,13 +6,8 @@
     async_closure
 )]
 
-#[macro_use]
-extern crate serde_derive;
-extern crate bytes;
 extern crate raft;
 extern crate rand;
-extern crate rmp_serde as rmps;
-extern crate serde;
 #[macro_use]
 extern crate common;
 
@@ -26,9 +21,12 @@ use common::errors::*;
 use common::fs::DirLock;
 use common::futures::future::*;
 use common::futures::prelude::*;
+use protobuf::Message;
 use raft::node::*;
-use raft::rpc::{marshal, unmarshal, Client};
+use raft::rpc::{Client};
 use raft::server::{Server, ServerInitialState};
+use raft::proto::key_value::*;
+use raft::proto::consensus::LogIndex;
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -88,7 +86,6 @@ use redis::resp::*;
         - I think this is how etcd implements it as well
 */
 
-use raft::rpc::ServerService;
 use raft::rpc::*;
 
 struct RaftRedisServer {
@@ -119,15 +116,11 @@ impl redis::server::Service for RaftRedisServer {
         let state_machine = &self.state_machine;
         let node = &self.node;
 
-        let op = KeyValueOperation::Set {
-            key: key.as_ref().to_vec(),
-            value: value.as_ref().to_vec(),
-            expires: None,
-            compare: None,
-        };
+        let mut op = KeyValueOperation::default();
+        op.set_mut().set_key(key.as_ref().to_vec());
+        op.set_mut().set_value(value.as_ref().to_vec());
 
-        // XXX: If they are owned, it is better to
-        let op_data = marshal(op).unwrap();
+        let op_data = op.serialize()?;
 
         node.server
             .execute(op_data)
@@ -154,12 +147,11 @@ impl redis::server::Service for RaftRedisServer {
         let state_machine = &self.state_machine;
         let node = &self.node;
 
-        let op = KeyValueOperation::Delete {
-            key: key.as_ref().to_vec(),
-        };
 
-        // XXX: If they are owned, it is better to
-        let op_data = marshal(op).unwrap();
+        let mut op = KeyValueOperation::default();
+        op.delete_mut().set_key(key.as_ref().to_vec());
+
+        let op_data = op.serialize()?;
 
         let res = node
             .server
@@ -244,7 +236,7 @@ async fn main_task() -> Result<()> {
     // do that But we will end up thinking of all the stuff initially on disk as
     // one atomic unit that is initially loaded
     let state_machine = Arc::new(MemoryKVStateMachine::new());
-    let last_applied = 0;
+    let last_applied = LogIndex::from(0);
 
     let node = Node::start(NodeConfig {
         dir: lock,
@@ -260,7 +252,10 @@ async fn main_task() -> Result<()> {
         state_machine: state_machine.clone(),
     }));
 
-    let client_task = redis::server::Server::start(client_server.clone(), (5000 + node.id) as u16);
+    let port = 5000 + node.id.value();
+
+    let client_task = redis::server::Server::start(
+        client_server.clone(), port as u16);
 
     client_task.await?;
 

@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+import "pkg/raft/src/proto/consensus.proto";
+import "third_party/google/src/proto/timestamp.proto";
+
+// Identifier used to define a single set of machines running an instance of the Raft
+// protocol. ServerIds are only comparable within the same cluster.
+message ClusterId {
+    option typed_num = true;
+    uint64 value = 1;
+}
+
+// Describes a single server in the cluster using a unique identifier and any
+// information needed to contact it (which may change over time)
+message ServerDescriptor {
+    // REQUIRED
+    ServerId id = 1;
+
+    // REQUIRED
+    string addr = 2;
+}
+
+message Route {
+    // REQUIRED
+    ServerDescriptor desc = 1;
+
+    // Last time this route was retrieved or was observed in an incoming
+    // request
+    //
+    // REQUIRED
+    google.protobuf.Timestamp last_used = 2;
+}
+
+// Thin-serializable state of the server
+// Other details like the cluster_id and from_id are separately managed
+message Announcement {
+    // Emitted as a routes vector
+    // Merged with the rest of our data
+    repeated Route routes = 1;
+}
+
+service DiscoveryService {
+    rpc Announce (Announcement) returns (Announcement);
+}

@@ -1,16 +1,13 @@
-use super::protos::*;
-use super::routing::*;
-use common::async_std::sync::Mutex;
-use common::bytes::Bytes;
-use common::errors::*;
-use http::header;
-use http::status_code;
-use serde::{Deserialize, Serialize};
-use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::Arc;
-use std::time::SystemTime;
+
+use common::async_std::sync::Mutex;
+use common::errors::*;
+
+use crate::proto::{consensus::*};
+use crate::proto::routing::*;
+use crate::routing::*;
+
 
 /*
     Helpers for making an RPC server for communication between machines
@@ -51,33 +48,11 @@ use std::time::SystemTime;
 // TODO: Another big deal for the client and the server will be the Nagle packet
 // flushing optimization
 
-// In our RPC, these will contain a serialized ServerDescriptor representing
-// which server is sending the request and who is the designated receiver
-// NOTE: All key names must be lowercase as they may get normalized in http2
-// transport anyway and case may not get preversed on the other side
-const FromKey: &str = "from";
-const ToKey: &str = "to";
-const ClusterIdKey: &str = "cluster-id";
 
-pub type Metadata = HashMap<String, String>;
 
-pub fn unmarshal<'de, T>(data: &[u8]) -> Result<T>
-where
-    T: Deserialize<'de>,
-{
-    let mut de = rmps::Deserializer::new(data);
-    Deserialize::deserialize(&mut de).map_err(|e| err_msg("Failed to parse data"))
-}
 
-pub fn marshal<T>(obj: T) -> Result<Vec<u8>>
-where
-    T: Serialize,
-{
-    let mut buf = Vec::new();
-    obj.serialize(&mut rmps::Serializer::new_named(&mut buf))
-        .map_err(|_| err_msg("Failed to serialize data"))?;
-    Ok(buf)
-}
+
+/*
 
 // Probably to be pushed out of here
 pub struct ServerConfig<S> {
@@ -86,461 +61,81 @@ pub struct ServerConfig<S> {
 }
 
 pub type ServerHandle<S> = Arc<ServerConfig<S>>;
-
-
-/// Internal RPC Server between servers participating in the consensus protocol
-#[async_trait]
-pub trait ServerService {
-    fn client(&self) -> &Client;
-
-    async fn pre_vote(&self, req: RequestVoteRequest) -> Result<RequestVoteResponse>;
-
-    async fn request_vote(&self, req: RequestVoteRequest) -> Result<RequestVoteResponse>;
-
-    async fn append_entries(&self, req: AppendEntriesRequest) -> Result<AppendEntriesResponse>;
-
-    async fn timeout_now(&self, req: TimeoutNow) -> Result<()>;
-
-    // Also InstallSnapshot
-
-    /// This is the odd ball out internal client method
-    /// NOTE: 'AddServer' and 'RemoveServer' will be implemented by clients in
-    /// terms of this method
-    async fn propose(&self, req: ProposeRequest) -> Result<ProposeResponse>;
-}
-
-fn bad_request() -> http::Response {
-    ResponseBuilder::new()
-        .status(status_code::BAD_REQUEST)
-        .build()
-        .unwrap()
-}
-
-pub fn bad_request_because(text: &'static str) -> http::Response {
-    text_response(status_code::BAD_REQUEST, text)
-}
-
-pub fn text_response(code: status_code::StatusCode, text: &'static str) -> http::Response {
-    ResponseBuilder::new()
-        .status(code)
-        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-        .body(BodyFromData(text.as_bytes()))
-        .build()
-        .unwrap()
-}
-
-fn rpc_response<Res>(res: Result<Res>) -> http::Response
-where
-    Res: Serialize,
-{
-    match res {
-        Ok(r) => {
-            let data = marshal(r).expect("Failed to serialize RPC response");
-            http::ResponseBuilder::new()
-                .status(status_code::OK)
-                .build()
-                .unwrap()
-        }
-        Err(e) => {
-            eprintln!("{:?}", e);
-            http::ResponseBuilder::new()
-                .status(status_code::INTERNAL_SERVER_ERROR)
-                .build()
-                .unwrap()
-        }
-    }
-}
-
-use common::futures::TryFutureExt;
-use std::future::Future;
-use std::pin::Pin;
-
-/*
-error[E0271]: type mismatch resolving `
-
-
-for<'b> <fn(&S, protos::AppendEntriesRequest) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = std::result::Result<protos::AppendEntriesResponse, common::errors::Error>> + std::marker::Send>>
-
-{<S as rpc::ServerService>::append_entries::<'_, '_>} as std::ops::FnOnce<(&'b S, _)>>::Output == std::pin::Pin<std::boxed::Box<(dyn std::future::Future<Output = std::result::Result<_, common::errors::Error>> + std::marker::Send + 'b)>>`
-
-
-
-
-fn propose<'life0, 'async_trait>(
-            &'life0 self,
-            req: ProposeRequest,
-        ) -> ::core::pin::Pin<
-            Box<
-                dyn ::core::future::Future<Output = Result<ProposeResponse>>
-                    + ::core::marker::Send
-                    + 'async_trait,
-            >,
-        >
-        where
-            'life0: 'async_trait,
-            Self: 'async_trait;
 */
 
-use common::async_fn::AsyncFnOnce2;
 
-async fn run_handler<'a, S: 'static, Req, Res: 'static, F>(
-    inst: &S,
-    data: Bytes,
-    f: F,
-) -> std::result::Result<http::Response, http::Response>
-where
-    for<'b> F: AsyncFnOnce2<&'b S, Req, Output = Result<Res>>,
-    Req: Deserialize<'a> + 'static,
-    Res: Serialize + 'static,
-{
-    let req: Req = match unmarshal(data.as_ref()) {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("Failed to parse RPC request");
-            return Err(bad_request());
-        }
-    };
 
-    let res = f.call_once(inst, req).await;
-    Ok(rpc_response(res))
-}
-
-fn parse_metadata(
-    headers: &http::spec::Headers,
-) -> std::result::Result<Metadata, &'static str> {
-    let mut meta = HashMap::new();
-    for h in headers.raw_headers.iter() {
-        // NOTE: We assume that this will always be in lowercase
-        let name_raw: &str = h.name.as_ref();
-
-        if name_raw.starts_with("x-") {
-            let name = name_raw.split_at(2).1;
-            // TODO: Are header values allowed to contain non-string chars?
-            //			let val = match h.value v.to_str() {
-            //				Ok(s) => s,
-            //				Err(e) => return Err("Value is not a valid string")
-            //			};
-            meta.insert(name.to_owned(), h.value.to_string());
-        }
-    }
-
-    Ok(meta)
-}
-
-// Borrow<S> +
-
-// TODO: We could make it not arc if we can maintain some type of handler that
-// definitely outlives the future being returned
-// TODO: If we can provide a generic router, then we can abstract away the fact
-// that it is for a ServerService
-pub async fn run_server<I: 'static, R, F: 'static>(port: u16, inst: I, router: &'static R)
-where
-    I: Clone + Send + Sync,
-    R: (Fn(http::uri::Uri, Metadata, Bytes, I) -> F) + Send + Sync,
-    F: std::future::Future<Output = std::result::Result<http::Response, http::Response>> + Send,
-{
-    //	let addr = ([127, 0, 0, 1], port).into();
-
-    //	let server = http::server::Server::new(port, )
-
-    let service_fn = move |mut req: http::spec::Request| {
-        let inst = inst.clone();
-        println!("GOT REQUEST {:?} {:?}", req.head.method, req.head.uri);
-
-        let f = async move || {
-            if req.head.method != Method::POST {
-                return bad_request();
-            }
-
-            let mut meta = match parse_metadata(&req.head.headers) {
-                Ok(v) => v,
-                Err(_) => return bad_request(),
-            };
-
-            // TODO: Ideally filter requests based on metadata before
-            // the main data payload is read from the socket (especially
-            // for things like authentication)
-
-            let mut buf = vec![];
-            if let Err(e) = req.body.read_to_end(&mut buf).await {
-                return bad_request();
-            }
-
-            let ret = router(req.head.uri, meta, buf.into(), inst).await;
-            match ret {
-                Ok(v) => v,
-                Err(v) => v,
-            }
-        };
-
-        f()
-    };
-
-    http::server::Server::new(port, http::server::HttpFn(service_fn))
-        .run()
-        .await
-        .map_err(|e| eprintln!("server error: {}", e))
-        .ok();
-}
-
-// TODO: Ideally the response type in the future needs be encapsulated so that
-// we can manage a zero-copy deserialization
-// The figure will resolve to an error only if there is a serious
-// protocol/network error. Otherwise, regular error responses will be encoded in
-// the inner result
-fn make_request_single<'a, 'b, Res: Send + Sync + Deserialize<'a> + 'static>(
-    client: &'b http::client::Client,
-    addr: &'b String,
-    path: &'static str,
-    meta: &'b Metadata,
-    data: Bytes,
-) -> impl Future<Output = Result<(Metadata, Result<Res>)>> + Send + 'b {
-    async move {
-        let mut b = http::spec::RequestBuilder::new();
-        // TODO: Must split up into connection and path
-        b = b.uri(format!("{}{}", addr, path)).method(Method::POST);
-
-        for (k, v) in meta {
-            // On the other side we will extract custom metadata given that it will
-            // have this format
-            b = b.header(format!("x-{}", k), v);
-        }
-
-        let r = b
-            .body(BodyFromData(data))
-            .build()
-            .expect("Failed to build RPC request");
-
-        let mut resp = client.request(r).await?;
-
-        let meta2 = match parse_metadata(&resp.head.headers) {
-            Ok(v) => v,
-            Err(_) => return Err(err_msg("Invalid metadata in RPC response")),
-        };
-
-        if resp.head.status_code != status_code::OK {
-            return Ok((
-                meta2,
-                Err(format_err!(
-                    "RPC call failed with code: {}",
-                    resp.head.status_code.as_u16()
-                )
-                .into()),
-            ));
-        }
-
-        // TODO: Must check Content-Length
-        let mut buf = vec![];
-        resp.body.read_to_end(&mut buf).await?;
-
-        let ret = match unmarshal(&buf) {
-            Ok(v) => v,
-            Err(_) => return Err(err_msg("Failed to parse RPC response")),
-        };
-
-        Ok((meta2, Ok(ret)))
-    }
-}
 
 // TODO: We will eventually wrap these in an client struct that maintains a nice
 // persistent connection (will also need to negotiate proper the right
 // cluster_id and server_id on both ends for the connection to be opened)
 
-pub async fn DiscoverService_router<R: 'static, S: 'static>(
-    uri: &http::uri::Uri,
-    meta: &Metadata,
-    data: &Bytes,
-    inst: &R,
-) -> std::result::Result<Option<http::Response>, http::Response>
-where
-    R: Borrow<S> + Clone + Send + Sync,
-    S: ServerService + Send + Sync,
-{
-    let mut agent = inst.borrow().client().agent().lock().await;
 
-    let our_cluster_id = agent.cluster_id.unwrap();
+pub struct DiscoveryServer {
+    local_agent: NetworkAgentHandle
+}
 
-    // We first validate the cluster id because it must be valid for us to trust any
-    // of the other routing data
-    let cluster_validated = if let Some(h) = meta.get(ClusterIdKey) {
-        let cid = h
-            .parse::<ClusterId>()
-            .map_err(|_| bad_request_because("Invalid cluster id"))?;
+impl DiscoveryServer {
+    pub fn new(agent: NetworkAgentHandle) -> Self {
+        Self { local_agent: agent }
+    }    
+}
 
-        if cid != our_cluster_id {
-            // TODO: This is a good reason to send back our cluster_id so that
-            // they can delete us as a route
-            return Err(bad_request_because("Mismatching cluster id"));
+
+#[async_trait]
+impl DiscoveryServiceService for DiscoveryServer {
+
+    async fn Announce(
+        &self,
+        request: rpc::ServerRequest<Announcement>,
+        response: &mut rpc::ServerResponse<Announcement>
+    ) -> Result<()> {
+        // TODO: We need to do most of this validation on all requests (not just discovery ones).
+
+        let routing_ctx = ServerRequestRoutingContext::create(
+            self.local_agent.as_ref(), &request.context, &mut response.context).await?;
+
+        // TODO: Re-use the same lock as the one used to create the ServerRequestRoutingContext
+        let mut agent = self.local_agent.lock().await;
+
+        // When not verified, announcements can only be annonymous
+        if request.routes_len() > 0 && !routing_ctx.verified_cluster {
+            return Err(rpc::Status::invalid_argument(
+                "Receiving new routes from a non-verified server").into());
         }
 
-        true
-    } else {
-        false
-    };
+        agent.apply(&request);
 
-    // Record who sent us this message
-    // TODO: Should receiving a message from one's self be an error?
-    if let Some(h) = meta.get(FromKey) {
-        if !cluster_validated {
-            return Err(bad_request_because(
-                "Received From header without a cluster id check",
-            ));
-        }
+        response.value = agent.serialize();
 
-        let desc = ServerDescriptor::parse(h).map_err(|s| bad_request_because(s))?;
-        agent.add_route(desc);
+        Ok(())
     }
 
-    // Verify that we are the intended recipient of this message
-    let to_verified = if let Some(h) = meta.get(ToKey) {
-        if !cluster_validated {
-            return Err(bad_request_because(
-                "Received To header without a cluster id check",
-            ));
-        }
 
-        let addr = ServerDescriptor::parse(h).map_err(|s| bad_request_because(s))?;
-        let our_ident = agent.identity.as_ref().unwrap();
-
-        if addr.id != our_ident.id {
-            // Bail out. The client should adjust its routing info based on the
-            // identity we return back here
-            return Err(ResponseBuilder::new()
-                .status(status_code::BAD_REQUEST)
-                .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-                .header(format!("x-{}", FromKey), our_ident.to_string())
-                .body(BodyFromData(b"Not the intended recipient"))
-                .build()
-                .unwrap());
-        }
-
-        true
-    } else {
-        false
-    };
-
-    let mut res = match uri.path.as_str() {
-        "/DiscoveryService/Announce" => {
-            // TODO: Ideally don't hold the agent locked while deserializing
-            let req: Announcement = match unmarshal(data.as_ref()) {
-                Ok(v) => v,
-                Err(_) => {
-                    eprintln!("Failed to parse RPC request");
-                    return Ok(Some(bad_request()));
-                }
-            };
-
-            // When not verified, announcements can only be annonymous
-            if req.routes.len() > 0 && !cluster_validated {
-                eprintln!("Receiving new routes from a non-verified server");
-                return Ok(Some(bad_request()));
-            }
-
-            agent.apply(&req);
-
-            rpc_response(Ok(agent.serialize()))
-        }
-        // Does not match, so fallthrough to the regular routes
-        _ => {
-            // All other services depend on reliable ids, so we will block
-            // anything that is not well validated
-            if !cluster_validated || !to_verified {
-                return Err(bad_request());
-            }
-
-            return Ok(None);
-        }
-    };
-
-    if !cluster_validated {
-        res.head.headers.raw_headers.push(Header::new(
-            format!("x-{}", ClusterIdKey),
-            agent.cluster_id.unwrap().to_string(),
-        ));
-    }
-
-    if !to_verified {
-        let our_ident = agent.identity.as_ref().unwrap();
-
-        // TODO: This is basically redundant with the line that we have further above
-        res.head.headers.raw_headers.push(Header::new(
-            format!("x-{}", FromKey),
-            our_ident.to_string(),
-        ));
-    }
-
-    Ok(Some(res))
 }
-
-async fn run_pre_vote<S: ServerService>(
-    s: &S,
-    r: crate::protos::RequestVoteRequest,
-) -> Result<RequestVoteResponse> {
-    s.pre_vote(r).await
-}
-
-async fn run_request_vote<S: ServerService>(
-    s: &S,
-    r: crate::protos::RequestVoteRequest,
-) -> Result<RequestVoteResponse> {
-    s.request_vote(r).await
-}
-
-async fn run_append_entries<S: ServerService>(
-    s: &S,
-    r: AppendEntriesRequest,
-) -> Result<AppendEntriesResponse> {
-    s.append_entries(r).await
-}
-
-async fn run_propose<S: ServerService>(s: &S, r: ProposeRequest) -> Result<ProposeResponse> {
-    s.propose(r).await
-}
-
-pub async fn ServerService_router<R: 'static, S: 'static>(
-    uri: http::uri::Uri,
-    meta: Metadata,
-    data: Bytes,
-    inst: R,
-) -> std::result::Result<http::Response, http::Response>
-where
-    R: Borrow<S> + Clone + Send + Sync,
-    S: ServerService + Send + Sync + 'static,
-{
-    if let Some(res) = DiscoverService_router(&uri, &meta, &data, &inst).await? {
-        return Ok(res);
-    }
-
-    // XXX: If we can generalize this further, then this is the only thing that
-    // would need to be templated in order to run the server (i.e. for different
-    // types of rpcs)
-    match uri.path.as_str() {
-        "/ConsensusService/PreVote" => run_handler(inst.borrow(), data, run_pre_vote).await,
-        "/ConsensusService/RequestVote" => run_handler(inst.borrow(), data, run_request_vote).await,
-        "/ConsensusService/AppendEntries" => {
-            run_handler(inst.borrow(), data, run_append_entries).await
-        }
-        "/ConsensusService/Propose" => run_handler(inst.borrow(), data, run_propose).await,
-        //		"/ConsensusService/TimeoutNow" => {
-        //			run_handler(inst.borrow(), data, S::timeout_now).await
-        //		},
-        _ => Err(bad_request()),
-    }
-}
-
-/*
-expected trait `std::future::Future<Output = std::result::Result<_, common::errors::Error>>`, found trait `std::future::Future<Output = std::result::Result<protos::ProposeResponse, common::errors::Error>> + std::marker::Send
-*/
 
 pub enum To<'a> {
     Addr(&'a String),
     Id(ServerId),
 }
 
+struct ClientPeer {
+    channel: Arc<dyn rpc::Channel>,
+    consensus_stub: ConsensusStub,
+    discovery_stub: DiscoveryServiceStub,
+}
+
 pub struct Client {
-    inner: http::Client,
+
+    /// Map of ServerId to connections.
+    ///
+    /// TODO: When a connection times out we want to automatically remove it from this list.
+    peers: Mutex<HashMap<String, Arc<ClientPeer>>>,
+
     agent: NetworkAgentHandle,
 }
+
+
 
 impl Client {
     pub fn new(agent: NetworkAgentHandle) -> Self {
@@ -558,48 +153,39 @@ impl Client {
         // Duration::from_secs(30)) 			.build_http();
 
         // TODO
-        let c = http::client::Client::create("").unwrap();
+        // let c = http::Client::create("").unwrap();
 
-        Client { inner: c, agent }
+
+        Client {
+            peers: Mutex::new(HashMap::new()),
+            agent
+        }
     }
 
-    pub fn agent(&self) -> &Mutex<NetworkAgent> {
-        self.agent.as_ref()
+    pub fn agent(&self) -> &Arc<Mutex<NetworkAgent>> {
+        &self.agent
     }
 
     // TODO: Must support a mode that batches sends to many servers all in one
     // (while still allowing each individual promise to be externally controlled)
     // TODO: Also optimizable is ensuring that the metadata is only ever
     // seralize once
-    async fn make_request<'a, Req: 'static, Res: Send + Sync + 'static>(
-        &'a self,
-        to: To<'a>,
-        path: &'static str,
-        req: &'a Req,
-    ) -> Result<Res>
-    where
-        Req: Serialize,
-        Res: Deserialize<'a>,
-    {
-        let mut meta: Metadata = HashMap::new();
 
+    // Returns the address to which we should send the request.
+    async fn lookup_peer(
+        &self,
+        to: To<'_>,
+        context: &mut rpc::ClientRequestContext) -> Result<Arc<ClientPeer>> {
         let mut agent = self.agent.lock().await;
-        if let Some(c) = agent.cluster_id {
-            meta.insert(ClusterIdKey.to_owned(), c.to_string());
-        }
-
-        if let Some(ref id) = agent.identity {
-            meta.insert(FromKey.to_owned(), id.to_string());
-        }
+        agent.append_to_request_context(context)?;
 
         let addr = match to {
             To::Addr(s) => s.clone(),
             To::Id(id) => {
-                if let Some(e) = agent.lookup(id) {
-                    meta.insert(ToKey.to_owned(), e.desc.to_string());
-                    e.desc.addr.clone()
+                if let Some(e) = agent.lookup(id, context) {
+                    e.desc().addr().to_string()
                 } else {
-                    println!("MISS {}", id);
+                    println!("MISS {}", id.value());
 
                     // TODO: then this is a good incentive to ask some other
                     // server for a new list of server addrs immediately (if we
@@ -611,76 +197,88 @@ impl Client {
 
         drop(agent);
 
-        let data = marshal(req).expect("Failed to serialize RPC request");
+        let mut peers = self.peers.lock().await; 
 
-        let agent_handle = self.agent.clone();
+        if let Some(peer) = peers.get(&addr) {
+            Ok(peer.clone())
+        } else {
 
-        let (meta, res) = make_request_single(&self.inner, &addr, path, &meta, data.into()).await?;
+            let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(&addr.parse()?)?)?);
+            let consensus_stub = ConsensusStub::new(channel.clone());
+            let discovery_stub = DiscoveryServiceStub::new(channel.clone());
 
-        let mut agent = agent_handle.lock().await;
+            let peer = Arc::new(ClientPeer {
+                channel,
+                consensus_stub,
+                discovery_stub
+            });
 
-        if let Some(v) = meta.get(ClusterIdKey) {
-            let cid_given = v.parse::<u64>().unwrap();
+            peers.insert(addr, peer.clone());
 
-            if let Some(cid) = agent.cluster_id {
-                if cid != cid_given {
-                    return Err(err_msg("Received response with mismatching cluster_id"));
-                }
-            } else {
-                agent.cluster_id = Some(cid_given);
-            }
-        }
-
-        if let Some(v) = meta.get(FromKey) {
-            let desc = match ServerDescriptor::parse(v) {
-                Ok(v) => v,
-                Err(_) => return Err(err_msg("Invalid from metadata received")),
-            };
-
-            // TODO: If we originally requested this server under a
-            // different id, it would be nice to erase that other record or
-            // tombstone it
-
-            agent.add_route(desc);
-        }
-
-        res
+            Ok(peer)
+        }        
     }
+
+    async fn process_response_metadata(&self, context: &rpc::ClientResponseContext) -> Result<()> {
+        let mut agent = self.agent.lock().await;
+        agent.process_response_metadata(context)
+    }
+    
 
     pub async fn call_pre_vote(
         &self,
         to: ServerId,
-        req: &RequestVoteRequest,
+        request: &RequestVoteRequest,
     ) -> Result<RequestVoteResponse> {
-        self.make_request(To::Id(to), "/ConsensusService/PreVote", req)
-            .await
+        let mut context = rpc::ClientRequestContext::default();
+        let peer = self.lookup_peer(To::Id(to), &mut context).await?;
+
+        let response = peer.consensus_stub.PreVote(&context, &request).await;
+        self.process_response_metadata(&response.context).await?;
+
+        response.result
     }
 
     pub async fn call_request_vote(
         &self,
         to: ServerId,
-        req: &RequestVoteRequest,
+        request: &RequestVoteRequest,
     ) -> Result<RequestVoteResponse> {
-        self.make_request(To::Id(to), "/ConsensusService/RequestVote", req)
-            .await
+        let mut context = rpc::ClientRequestContext::default();
+        let peer = self.lookup_peer(To::Id(to), &mut context).await?;
+
+        let response = peer.consensus_stub.RequestVote(&context, &request).await;
+        self.process_response_metadata(&response.context).await?;
+
+        response.result
     }
 
     pub async fn call_append_entries(
         &self,
         to: ServerId,
-        req: &AppendEntriesRequest,
+        request: &AppendEntriesRequest,
     ) -> Result<AppendEntriesResponse> {
-        self.make_request(To::Id(to), "/ConsensusService/AppendEntries", req)
-            .await
+        let mut context = rpc::ClientRequestContext::default();
+        let peer = self.lookup_peer(To::Id(to), &mut context).await?;
+
+        let response = peer.consensus_stub.AppendEntries(&context, &request).await;
+        self.process_response_metadata(&response.context).await?;
+
+        response.result
     }
 
     pub async fn call_propose(
         &self,
         to: ServerId,
-        req: &ProposeRequest,
+        request: &ProposeRequest,
     ) -> Result<ProposeResponse> {
-        self.make_request(To::Id(to), "/ConsensusService/Propose", req)
-            .await
+        let mut context = rpc::ClientRequestContext::default();
+        let peer = self.lookup_peer(To::Id(to), &mut context).await?;
+
+        let response = peer.consensus_stub.Propose(&context, &request).await;
+        self.process_response_metadata(&response.context).await?;
+
+        response.result
     }
 
     // TODO: In general, we can always just send up our current list because the
@@ -705,21 +303,24 @@ impl Client {
     /// The internal implementation essentially will cause the sets of routes on
     /// both servers to converge to the same set after the request has suceeded
     pub async fn call_announce<'a>(&self, to: To<'a>) -> Result<Announcement> {
-        let agent_handle = self.agent.clone();
-
         // TODO: Eventually it would probably be more efficient to pass in a
         // single copy of the req for all of the servers that we want to
         // announce to.
-        let req = {
-            let agent = agent_handle.lock().await;
+        let request = {
+            let agent = self.agent.lock().await;
             agent.serialize()
         };
 
-        let ann = self
-            .make_request(to, "/DiscoveryService/Announce", &req)
-            .await?;
-        let mut agent = agent_handle.lock().await;
-        agent.apply(&ann);
-        Ok(ann)
+        let mut context = rpc::ClientRequestContext::default();
+        let peer = self.lookup_peer(to, &mut context).await?;
+
+        let response = peer.discovery_stub.Announce(&context, &request).await;
+        self.process_response_metadata(&response.context).await?;
+
+        let response_value = response.result?;
+
+        let mut agent = self.agent.lock().await;
+        agent.apply(&response_value);
+        Ok(response_value)
     }
 }

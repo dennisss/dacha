@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+import "pkg/raft/src/proto/consensus.proto";
+
+
+// Persistent information describing the state of the current server
+message Metadata {
+    // Latest term seen by this server (starts at 0).
+    // REQUIRED
+    Term current_term = 1;
+
+    // The id of the server that we have voted for in the current term
+	// OPTIONAL
+    ServerId voted_for = 2;
+
+    // Index of the last log entry safely replicated on a majority of servers
+    // and at same point commited in the same term
+    // NOTE: There is no invariant between the local machines commit_index and
+    // it's match_index. The commit_index can sometimes be higher than the
+    // match_index in the case that a majority of other servers have a
+    // match_index >= commit_index
+    // NOTE: It is not generally necessary to store this, and can be
+    // re-initialized always to at least the index of the last applied entry
+    // in the config or log snapshots
+    //
+    // REQUIRED
+    LogIndex commit_index = 3;
+}
+
+// TODO: Assert that no server is ever both in the members and learners list at
+// the same time (possibly convert to one single list and make the two
+// categories purely getter methods for iterators)
+message Configuration {
+    // All servers in the cluster which must be considered for votes
+    repeated ServerId members = 1 [unordered_set = true];
+
+    // All servers which do not participate in votes (at least not yet), but
+    // should still be sent new entries
+    repeated ServerId learners = 2 [unordered_set = true];
+}
+
+// Represents a configuration at a single index
+message ConfigurationSnapshot {
+    // Index of the last log entry applied to this configuration
+    // REQUIRED
+    LogIndex last_applied = 1;
+
+    // Value of the snapshot at the given index (TODO: This is the only type
+    // that actually needs to be serializiable, so it could be more verbose
+    // for all I care)
+    // REQUIRED
+    Configuration data = 2;
+}
+

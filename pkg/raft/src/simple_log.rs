@@ -1,12 +1,14 @@
+use std::path::Path;
+use std::sync::Arc;
+
+use common::async_std::sync::Mutex;
+use common::errors::*;
+use protobuf::Message;
+
 use crate::atomic::*;
 use crate::log::*;
 use crate::memory_log::*;
-use crate::protos::*;
-use crate::rpc::*;
-use common::async_std::sync::Mutex;
-use common::errors::*;
-use std::path::Path;
-use std::sync::Arc;
+use crate::proto::consensus::*;
 
 /// A simple log implementation backed be a single file that is rewritten
 /// completely every time a flush is needed and otherwise stores all entries in
@@ -25,8 +27,8 @@ impl SimpleLog {
     pub async fn create(path: &Path) -> Result<SimpleLog> {
         let b = BlobFile::builder(path)?;
 
-        let log: Vec<LogEntry> = vec![];
-        let file = b.create(&marshal(log)?)?;
+        let log = SimpleLogValue::default();
+        let file = b.create(&log.serialize()?)?;
 
         Ok(SimpleLog {
             mem: MemoryLog::new(),
@@ -39,15 +41,15 @@ impl SimpleLog {
         let b = BlobFile::builder(path)?;
         let (file, data) = b.open()?;
 
-        let log: Vec<LogEntry> = unmarshal(&data)?;
+        let log = SimpleLogValue::parse(&data)?;
         let mem = MemoryLog::new();
 
         println!("RESTORE {:?}", log);
 
         let mut seq = LogSeq(0); // log.last().map(|e| e.pos.clone()).unwrap_or(LogPosition::zero());
 
-        for e in log {
-            seq = mem.append(e).await;
+        for e in log.entries() {
+            seq = mem.append(e.clone()).await;
         }
 
         Ok(SimpleLog {
@@ -108,21 +110,22 @@ impl Log for SimpleLog {
         let mut s = self.snapshot.lock().await;
 
         let idx = self.mem.last_index().await;
-        let mut log: Vec<LogEntry> = vec![];
+        let mut log = SimpleLogValue::default();
 
         let mut last_seq = LogSeq(0);
 
-        for i in 1..(idx + 1) {
+        for i in 1..(idx.value() + 1) {
             let (e, seq) = self
                 .mem
-                .entry(i)
+                .entry(i.into())
                 .await
                 .expect("Failed to get entry from log");
             last_seq = seq;
-            log.push((*e).clone());
+
+            log.add_entries((*e).clone());
         }
 
-        s.store(&marshal(log)?)?;
+        s.store(&log.serialize()?)?;
 
         *self.last_flushed.lock().await = last_seq;
 

@@ -1,13 +1,12 @@
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use common::bytes::Bytes;
 use common::errors::*;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
-use std::fs::{File, OpenOptions};
-use std::io;
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::io::AsRawFd;
-use std::path::{Path, PathBuf};
 
 /// Amount of padding that we add to the file for the length and checksume bytes
 const PADDING: u64 = 8;

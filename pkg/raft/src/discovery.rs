@@ -1,12 +1,8 @@
-use crate::protos::*;
-use crate::routing::*;
-use crate::rpc::*;
-use common::async_std::future;
-use common::async_std::prelude::*;
-use common::errors::*;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+
+use common::async_std::future;
+use common::errors::*;
 
 /*
     Ideally we want to generalize an interface for a discovery service:
@@ -97,7 +93,7 @@ use std::time::Duration;
 // routing list (and not accidently calling ourselves)
 
 /// Most basic mode of discover service based on an initial list of server
-/// addresses We assume that each server listed equally represents the entire
+/// addresses. We assume that each server listed equally represents the entire
 /// cluster
 ///
 /// We make no assumptions about the ids or memberships of any of the servers in
@@ -113,7 +109,7 @@ use std::time::Duration;
 ///   (using this layer allows for sharing of configurations even in the
 ///   presense of failed seed servers)
 pub struct DiscoveryService {
-    client: Arc<Client>,
+    client: Arc<crate::rpc::Client>,
 
     seeds: Vec<String>,
 }
@@ -123,7 +119,7 @@ pub struct DiscoveryService {
 // gossip protocol if we assume that we have a set of
 
 impl DiscoveryService {
-    pub fn new(client: Arc<Client>, seeds: Vec<String>) -> Self {
+    pub fn new(client: Arc<crate::rpc::Client>, seeds: Vec<String>) -> Self {
         DiscoveryService { client, seeds }
     }
 
@@ -135,7 +131,7 @@ impl DiscoveryService {
             .map(async move |addr: &String| {
                 let res = future::timeout(
                     Duration::from_millis(1000), // < Servers may frequently be offline
-                    client.call_announce(To::Addr(addr)),
+                    client.call_announce(crate::rpc::To::Addr(addr)),
                 )
                 .await;
 

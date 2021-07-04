@@ -1,4 +1,5 @@
-use crate::protos::*;
+use crate::proto::consensus::*;
+use crate::proto::consensus_state::*;
 
 #[derive(Clone)]
 pub struct ConfigurationPending {
@@ -33,8 +34,8 @@ pub struct ConfigurationStateMachine {
 impl ConfigurationStateMachine {
     pub fn from(snapshot: ConfigurationSnapshot) -> Self {
         ConfigurationStateMachine {
-            value: snapshot.data,
-            last_applied: snapshot.last_applied, // Noteably last_applied must
+            value: snapshot.data().clone(),
+            last_applied: snapshot.last_applied(), // Noteably last_applied must
             pending: None,
         }
     }
@@ -42,17 +43,17 @@ impl ConfigurationStateMachine {
     /// Applies the effect of a log entry to the configuration
     /// NOTE: Configuration changes always take immediate effect as soon as they
     /// are in the log
-    pub fn apply(&mut self, entry: &LogEntry, commit_index: u64) {
+    pub fn apply(&mut self, entry: &LogEntry, commit_index: LogIndex) {
         // Ignore changes when the log is behind our snapshot
-        if entry.pos.index < self.last_applied {
+        if entry.pos().index() < self.last_applied {
             return;
         }
 
-        if let LogEntryData::Config(ref change) = entry.data {
+        if let LogEntryDataTypeCase::Config(change) = entry.data().type_case() { 
             // Only store a revert record if the change is not comitted
-            if entry.pos.index < commit_index {
+            if entry.pos().index() < commit_index {
                 self.pending = Some(ConfigurationPending {
-                    last_change: entry.pos.index,
+                    last_change: entry.pos().index(),
                     previous: self.value.clone(),
                 });
             }
@@ -62,12 +63,12 @@ impl ConfigurationStateMachine {
             // Other types of entries have no effect on the configuration
         }
 
-        self.last_applied = entry.pos.index;
+        self.last_applied = entry.pos().index();
     }
 
     /// Given the new end of the log, this will undo any config to the
     /// configuration that occured after that point
-    pub fn revert(&mut self, index: u64) {
+    pub fn revert(&mut self, index: LogIndex) {
         if let Some(ref pending) = self.pending.clone() {
             if pending.last_change <= index {
                 self.value = pending.previous.clone();
@@ -83,7 +84,7 @@ impl ConfigurationStateMachine {
     /// Should be called whenever the commit_index has changed
     /// Returns whether or not that had any effect on the latest commit snapshot
     /// available
-    pub fn commit(&mut self, commit_index: u64) -> bool {
+    pub fn commit(&mut self, commit_index: LogIndex) -> bool {
         let mut changed = false;
 
         self.pending = match self.pending.take() {

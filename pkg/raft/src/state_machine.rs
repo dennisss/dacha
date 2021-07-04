@@ -1,6 +1,7 @@
-use crate::protos::*;
 use common::bytes::Bytes;
 use common::errors::*;
+
+use crate::proto::consensus::*;
 
 // Also good to know is when the last config snapshot happened
 //

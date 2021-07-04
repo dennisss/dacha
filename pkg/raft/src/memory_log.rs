@@ -1,8 +1,10 @@
-use crate::log::*;
-use crate::protos::*;
+use std::sync::Arc;
+
 use common::async_std::sync::Mutex;
 use common::errors::*;
-use std::sync::Arc;
+
+use crate::log::*;
+use crate::proto::consensus::*;
 
 pub struct MemoryLog {
     state: Mutex<State>,
@@ -39,7 +41,7 @@ impl MemoryLog {
     pub fn new() -> Self {
         MemoryLog {
             state: Mutex::new(State {
-                prev: LogPosition { term: 0, index: 0 },
+                prev: LogPosition::zero(),
                 log: vec![],
                 breaks: vec![Break {
                     off: 0,
@@ -50,15 +52,15 @@ impl MemoryLog {
     }
 
     // EIther it is a valid index, it is the index for the previous entry, or None
-    fn off_for(index: u64, log: &Vec<Arc<LogEntry>>) -> Option<usize> {
+    fn off_for(index: LogIndex, log: &Vec<Arc<LogEntry>>) -> Option<usize> {
         if log.len() == 0 {
             return None;
         }
 
-        let first_index = log[0].pos.index;
+        let first_index = log[0].pos().index().value();
 
         // TODO: This could go negative if we are not careful
-        Some((index - first_index) as usize)
+        Some((index.value() - first_index) as usize)
     }
 
     // Assuming that all of the breaks are in sorted order based on array
@@ -76,11 +78,11 @@ impl MemoryLog {
 
 #[async_trait]
 impl Log for MemoryLog {
-    async fn term(&self, index: u64) -> Option<u64> {
+    async fn term(&self, index: LogIndex) -> Option<Term> {
         let state = self.state.lock().await;
 
-        if index == state.prev.index {
-            return Some(state.prev.term);
+        if index == state.prev.index() {
+            return Some(state.prev.term());
         }
 
         let off = match Self::off_for(index, &state.log) {
@@ -90,8 +92,8 @@ impl Log for MemoryLog {
 
         match state.log.get(off) {
             Some(v) => {
-                assert_eq!(v.pos.index, index);
-                Some(v.pos.term)
+                assert_eq!(v.pos().index(), index);
+                Some(v.pos().term())
             }
             None => None,
         }
@@ -99,17 +101,17 @@ impl Log for MemoryLog {
 
     async fn first_index(&self) -> LogIndex {
         let state = self.state.lock().await;
-        state.prev.index + 1
+        (state.prev.index().value() + 1).into()
     }
 
     async fn last_index(&self) -> LogIndex {
         let state = self.state.lock().await;
-        state.prev.index + (state.log.len() as u64)
+        (state.prev.index().value() + (state.log.len() as u64)).into() // tODO: Remove the u64
     }
 
     // Arcs would be pointless if we can support a read-only guard on it
 
-    async fn entry(&self, index: u64) -> Option<(Arc<LogEntry>, LogSeq)> {
+    async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSeq)> {
         let state = self.state.lock().await;
 
         let off = match Self::off_for(index, &state.log) {
@@ -121,7 +123,7 @@ impl Log for MemoryLog {
 
         match state.log.get(off) {
             Some(v) => {
-                assert_eq!(v.pos.index, index);
+                assert_eq!(v.pos().index(), index);
                 Some((v.clone(), seq))
             }
             None => None,
@@ -131,7 +133,7 @@ impl Log for MemoryLog {
     async fn append(&self, entry: LogEntry) -> LogSeq {
         // We assume that appends are always in order. Truncations should be explicit
         // XXX: Should actually be using the last_index from the
-        assert_eq!(self.last_index().await + 1, entry.pos.index);
+        assert_eq!(self.last_index().await + 1, entry.pos().index());
 
         let mut state = self.state.lock().await;
 
@@ -171,7 +173,8 @@ impl Log for MemoryLog {
     }
 
     async fn checkpoint(&self) -> LogPosition {
-        LogPosition { term: 0, index: 0 }
+        // term = 0, index = 0
+        LogPosition::default()
     }
 
     /// It is assumed that the
@@ -186,7 +189,7 @@ impl Log for MemoryLog {
             return;
         }
 
-        let mut i = match Self::off_for(pos.index, &state.log) {
+        let mut i = match Self::off_for(pos.index(), &state.log) {
             Some(v) => v,
             _ => state.log.len() - 1,
         };
@@ -196,7 +199,7 @@ impl Log for MemoryLog {
         loop {
             let e = &state.log[i];
 
-            if e.pos.term <= pos.term && e.pos.index <= pos.index {
+            if e.pos().term() <= pos.term() && e.pos().index() <= pos.index() {
                 break;
             }
 
@@ -243,7 +246,7 @@ impl Log for MemoryLog {
         // an argument (this would have the effect of rewiping stuff)
         // ^ complication being that we must
         // We can use pos if and only if we were successful, but regardless
-        state.prev = state.log[i].pos.clone(); // < Alternatively we would convert it to a dummy record
+        state.prev = state.log[i].pos().clone(); // < Alternatively we would convert it to a dummy record
         state.log = state.log.split_off(i + 1);
     }
 

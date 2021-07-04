@@ -1,34 +1,28 @@
-use common::bytes::Bytes;
-use common::errors::*;
-use common::futures::channel::oneshot;
-use std::collections::HashMap;
+use std::collections::LinkedList;
 use std::time::Instant;
-
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::state_machine::StateMachine;
-
-use super::atomic::*;
-use super::consensus::*;
-use super::constraint::*;
-use super::log::*;
-use super::protos::*;
-use super::routing::*;
-use super::rpc;
-use super::server_protos::*;
-use super::sync::*;
-use std::collections::LinkedList;
-use std::future::Future;
-
+use common::errors::*;
+use common::futures::channel::oneshot;
 use common::async_std::future;
-use common::async_std::prelude::*;
 use common::async_std::sync::{Mutex, MutexGuard};
 use common::async_std::task;
 use common::futures::FutureExt;
-
 use common::async_fn::AsyncFnOnce3;
-use std::pin::Pin;
+use protobuf::Message;
+
+use crate::state_machine::StateMachine;
+use crate::atomic::*;
+use crate::consensus::*;
+use crate::constraint::*;
+use crate::log::*;
+use crate::sync::*;
+use crate::proto::consensus::*;
+use crate::proto::server_metadata::*;
+use crate::proto::routing::*;
+use crate::routing::ServerRequestRoutingContext;
+
 
 /// After this amount of time, we will assume that an rpc request has failed
 ///
@@ -111,13 +105,21 @@ pub struct ServerInitialState<R> {
     /// Index of the last log entry applied to the state machine given
     /// Should be 0 unless this is a state machine that was recovered from a
     /// snapshot
-    pub last_applied: u64,
+    pub last_applied: LogIndex,
 }
 
 /// Represents a single node of the cluster
 /// Internally this manages the log, rpcs, and applying changes to the
+///
+/// NOTE: Cloning a 'Server' instance will reference the same internal state.
 pub struct Server<R> {
     shared: Arc<ServerShared<R>>,
+}
+
+impl<R> Clone for Server<R> {
+    fn clone(&self) -> Self {
+        Self { shared: self.shared.clone() }
+    }
 }
 
 /// Server variables that can be shared by many different threads
@@ -128,7 +130,7 @@ struct ServerShared<R> {
     state: Mutex<ServerState<R>>,
 
     /// Used for network message sending and connection management
-    client: Arc<rpc::Client>,
+    client: Arc<crate::rpc::Client>,
 
     // TODO: Need not have a lock for this right? as it is not mutable
     // Definately we want to lock the Log separately from the rest of this code
@@ -156,7 +158,7 @@ struct ServerShared<R> {
 
     /// Last log index applied to the state machine
     /// This should only ever be modified by the separate applier
-    last_applied: Condvar<u64, u64>,
+    last_applied: Condvar<LogIndex, LogIndex>,
 }
 
 /// All the mutable state for the server that you hold a lock in order to look
@@ -188,12 +190,14 @@ struct ServerState<R> {
 
     /// Whenever an operation is proposed, this will store callbacks that will
     /// be given back the result once it is applied
+    ///
+    /// TODO: Switch to a VecDeque, 
     callbacks: LinkedList<(LogPosition, oneshot::Sender<Option<R>>)>,
 }
 
 impl<R: Send + 'static> Server<R> {
     // TODO: Everything in this function should be immediately available.
-    pub async fn new(client: Arc<rpc::Client>, initial: ServerInitialState<R>) -> Self {
+    pub async fn new(client: Arc<crate::rpc::Client>, initial: ServerInitialState<R>) -> Self {
         let ServerInitialState {
             mut meta,
             meta_file,
@@ -211,8 +215,8 @@ impl<R: Send + 'static> Server<R> {
         // will never apply an uncomitted change to the state machine
         // NOTE: THe ConsensusModule similarly performs this check on the config
         // snapshot
-        if last_applied > meta.meta.commit_index {
-            meta.meta.commit_index = last_applied;
+        if last_applied > meta.meta().commit_index() {
+            meta.meta_mut().set_commit_index(last_applied);
         }
 
         // Gurantee no log discontinuities (only overlaps are allowed)
@@ -225,13 +229,15 @@ impl<R: Send + 'static> Server<R> {
         // TODO: If all persisted snapshots contain more entries than the log,
         // then we can trivially schedule a log prefix compaction
 
-        if meta.meta.commit_index > log.last_index().await {
+        if meta.meta().commit_index() > log.last_index().await {
             // This may occur on a leader that has not flushed itself before
             // committing an in-memory entry to followers
         }
 
         let inst =
-            ConsensusModule::new(meta.id, meta.meta, config_snapshot.config, log.clone()).await;
+            ConsensusModule::new(
+                meta.id(), meta.meta().clone(), 
+                config_snapshot.config().clone(), log.clone()).await;
 
         let (tx_state, rx_state) = change();
         let (tx_log, rx_log) = change();
@@ -252,7 +258,7 @@ impl<R: Send + 'static> Server<R> {
         };
 
         let shared = Arc::new(ServerShared {
-            cluster_id: meta.cluster_id,
+            cluster_id: meta.cluster_id(),
             state: Mutex::new(state),
             client,
             log,
@@ -260,7 +266,7 @@ impl<R: Send + 'static> Server<R> {
 
             // NOTE: these will be initialized below
             flush_seq: Condvar::new(LogSeq(0)),
-            commit_index: Condvar::new(LogPosition { index: 0, term: 0 }),
+            commit_index: Condvar::new(LogPosition::zero()),
 
             last_applied: Condvar::new(last_applied),
         });
@@ -274,9 +280,9 @@ impl<R: Send + 'static> Server<R> {
     }
 
     // NOTE: If we also give it a state machine, we can do that for people too
-    pub async fn start(server: Arc<Self>) {
+    pub async fn start(self) {
         let (id, state_changed, log_changed) = {
-            let mut state = server.shared.state.lock().await;
+            let mut state = self.shared.state.lock().await;
 
             (
                 state.inst.id(),
@@ -293,10 +299,10 @@ impl<R: Send + 'static> Server<R> {
             )
         };
 
-        let port = 4000 + (id as u16);
+        let port = 4000 + (id.value() as u16);
 
         {
-            let mut agent = server.shared.client.agent().lock().await;
+            let mut agent = self.shared.client.agent().lock().await;
             if let Some(ref desc) = agent.identity {
                 panic!("Starting server which already has a cluster identity");
             }
@@ -304,16 +310,20 @@ impl<R: Send + 'static> Server<R> {
             // Usually this won't be set for restarting nodes that haven't
             // contacted the cluster yet, but it may be set for initial nodes
             if let Some(ref v) = agent.cluster_id {
-                if *v != server.shared.cluster_id {
+                if *v != self.shared.cluster_id {
                     panic!("Mismatching server cluster_id");
                 }
             }
 
-            agent.cluster_id = Some(server.shared.cluster_id);
-            agent.identity = Some(ServerDescriptor {
-                addr: format!("http://127.0.0.1:{}", port),
-                id,
-            });
+            agent.cluster_id = Some(self.shared.cluster_id);
+
+
+            let mut identity = ServerDescriptor::default();
+            // TODO: this is subject to change if we are running over HTTPS
+            identity.set_addr(format!("http://127.0.0.1:{}", port));
+            identity.set_id(id);
+
+            agent.identity = Some(identity);
         }
 
         /*
@@ -332,24 +342,26 @@ impl<R: Send + 'static> Server<R> {
         // server Although we would ideally do this easier (but later should
         // also be fine?)
 
-        let service = rpc::run_server(
-            port,
-            server.clone(),
-            &rpc::ServerService_router::<Arc<Self>, Self>,
-        );
+        // TODO: We also need to add a DiscoveryService (DiscoveryServiceRouter)
+        let mut rpc_server = ::rpc::Http2Server::new(port);
+        
+        // TODO: Handle errors on these return values.
+        rpc_server.add_service(crate::rpc::DiscoveryServer::new(
+            self.shared.client.agent().clone()).into_service());
+        rpc_server.add_service(self.clone().into_service());
 
         // TODO: Make these lazy?
         // NOTE: Because in bootstrap mode a server can spawn requests immediately
         // without the first futures cycle, it may spawn stuff before tokio is ready, so
         // we must make this lazy
-        let cycler = Self::run_cycler(server.shared.clone(), state_changed);
-        let matcher = Self::run_matcher(server.shared.clone(), log_changed);
-        let applier = Self::run_applier(server.shared.clone());
+        let cycler = Self::run_cycler(self.shared.clone(), state_changed);
+        let matcher = Self::run_matcher(self.shared.clone(), log_changed);
+        let applier = Self::run_applier(self.shared.clone());
 
         // TODO: Finally if possible we should attempt to broadcast our ip
         // address to other servers so they can rediscover us
 
-        task::spawn(service.map(|_| ()));
+        task::spawn(rpc_server.run().map(|_| ()));
         task::spawn(cycler.map(|_| ()));
         task::spawn(matcher.map(|_| ()));
         task::spawn(applier.map(|_| ()));
@@ -445,7 +457,7 @@ impl<R: Send + 'static> Server<R> {
         let mut callbacks = std::collections::LinkedList::new();
 
         loop {
-            let commit_index = shared.commit_index.lock().await.index;
+            let commit_index = shared.commit_index.lock().await.index().clone();
             let mut last_applied = *shared.last_applied.lock().await;
 
             // Take ownership of all pending callbacks (as long as a callback is appended to
@@ -467,8 +479,9 @@ impl<R: Send + 'static> Server<R> {
                 while last_applied < commit_index {
                     let entry = shared.log.entry(last_applied + 1).await;
                     if let Some((e, _)) = entry {
-                        let ret = if let LogEntryData::Command(ref data) = e.data {
-                            match state_machine.apply(e.pos.index, data).await {
+
+                        let ret = if let LogEntryDataTypeCase::Command(data) = e.data().type_case() {
+                            match state_machine.apply(e.pos().index(), data.as_ref()).await {
                                 Ok(v) => Some(v),
                                 Err(e) => {
                                     // TODO: Ideally notify everyone that all
@@ -505,10 +518,10 @@ impl<R: Send + 'static> Server<R> {
                         while callbacks.len() > 0 {
                             let first = callbacks.front().unwrap().0.clone();
 
-                            if e.pos.term > first.term || e.pos.index >= first.index {
+                            if e.pos().term() > first.term() || e.pos().index() >= first.index() {
                                 let item = callbacks.pop_front().unwrap();
 
-                                if e.pos.term == first.term && e.pos.index == first.index {
+                                if e.pos().term() == first.term() && e.pos().index() == first.index() {
                                     item.1.send(ret).ok();
                                     break; // NOTE: This is not really necessary
                                            // asit should immediately get
@@ -526,7 +539,7 @@ impl<R: Send + 'static> Server<R> {
                             }
                         }
 
-                        last_applied += 1;
+                        *last_applied.value_mut() += 1;
                     } else {
                         // Our log may be behind the commit_index in the consensus
                         // module, but the commit_index conditional variable should
@@ -566,13 +579,14 @@ impl<R: Send + 'static> Server<R> {
 
                 // If the commit index changed since last we checked, we can
                 // immediately cycle again
-                if guard.index != commit_index {
+                if guard.index().value() != commit_index.value() {
                     // We can immediately cycle again
                     // TODO: We should be able to refactor out this clone
                     continue;
                 }
 
-                guard.wait(LogPosition { term: 0, index: 0 })
+                // term = 0, index = 0
+                guard.wait(LogPosition::default())
             };
 
             // Otherwise we will wait for it to change
@@ -634,9 +648,13 @@ impl<R: Send + 'static> Server<R> {
         tick: &mut Tick,
         cmd: Vec<u8>,
     ) -> std::result::Result<oneshot::Receiver<Option<R>>, ProposeError> {
+
+        let mut entry = LogEntryData::default();
+        entry.command_mut().0 = cmd;
+
         let r = state
             .inst
-            .propose_entry(LogEntryData::Command(cmd), tick)
+            .propose_entry(&entry, tick)
             .await;
 
         // If we were successful, add a callback.
@@ -699,38 +717,6 @@ impl<R: Send + 'static> Server<R> {
     }
 }
 
-//pub trait RunTickFn<'a: 'c, 'b: 'c, 'c, R: Send + 'static> {
-//	type Output;
-//	type Future: Future<Output=Self::Output> + Send + 'c;
-//
-//	fn call_once(self, state: &'a mut ServerState<R>, tick: &'b mut Tick) ->
-// Self::Future;
-//}
-//
-//impl<'a: 'c, 'b: 'c, 'c, R: Send + 'static, T, F> RunTickFn<'a, 'b, 'c, R>
-// for T 	where T: FnOnce(&'a mut ServerState<R>, &'b mut Tick) -> F,
-//		  F: Future + Send + 'c {
-//	type Output = F::Output;
-//	type Future = F;
-//
-//	fn call_once(self, state: &'a mut ServerState<R>, tick: &'b mut Tick) ->
-// Self::Future { 		self(state, tick)
-//	}
-//
-//}
-
-// AsyncFnOnce2<&'a mut ServerState<R>, &'b mut Tick, Output=O>
-
-//pub trait RunTickFn<R: Send + 'static, O: 'static> {
-//	fn call_once<'a, 'b, 'c>(self, state: &'a mut ServerState<S>, tick: &'b mut
-// Tick) -> 		Box<Pin<dyn Future<Output=O> + 'c>> where 'a: 'c, 'b: 'c;
-//}
-//
-//impl<R: Send + 'static, O: 'static, F> RunTickFn<R, O> for F
-//	where for<'a: 'c, 'b: 'c, 'c> F: FnOnce(&'a mut ServerState<S>, &'b mut Tick)
-// -> Box<Pin<dyn Future<Output=O> + 'c>> {
-//
-//}
 
 pub struct ServerPendingTick<'a, R: Send + 'static> {
     state: MutexGuard<'a, ServerState<R>>,
@@ -796,11 +782,13 @@ impl<R: Send + 'static> ServerShared<R> {
         if tick.meta {
             // TODO: Potentially batchable if we choose to make this something
             // that can do an async write to the disk
-            state.meta_file.store(&rpc::marshal(ServerMetadataRef {
-                id: state.inst.id(),
-                cluster_id: shared.cluster_id,
-                meta: state.inst.meta(),
-            })?)?;
+
+            // TODO: Use a reference based type to serialize this.
+            let mut server_metadata = ServerMetadata::default();
+            server_metadata.set_id(state.inst.id().clone());
+            server_metadata.set_cluster_id(shared.cluster_id.clone());
+            server_metadata.set_meta(state.inst.meta().clone());
+            state.meta_file.store(&server_metadata.serialize()?)?;
 
             should_update_commit = true;
         }
@@ -813,12 +801,15 @@ impl<R: Send + 'static> ServerShared<R> {
         // we are doing a compaction, but we should schedule a task to ensure
         // that this gets saved eventually
         if tick.config {
+            let snapshot_ref = state.inst.config_snapshot();
+
+            let mut server_config_snapshot = ServerConfigurationSnapshot::default();
+            server_config_snapshot.config_mut().set_last_applied(snapshot_ref.last_applied.clone());
+            server_config_snapshot.config_mut().set_data(snapshot_ref.data.clone());
+
             state
                 .config_file
-                .store(&rpc::marshal(ServerConfigurationSnapshotRef {
-                    config: state.inst.config_snapshot(),
-                    //routes: &state.routes
-                })?)?;
+                .store(&server_config_snapshot.serialize()?)?;
         }
 
         // TODO: We currently assume that the ConsensusModule will always output
@@ -885,13 +876,15 @@ impl<R: Send + 'static> ServerShared<R> {
     /// TODO: Realistically as long as we enforce that it atomically goes up, we
     /// don't need to have a lock on the state in order to perform this update
     async fn update_commit_index(shared: &Self, state: &ServerState<R>) {
-        let latest_commit_index = state.inst.meta().commit_index;
+        let latest_commit_index = state.inst.meta().commit_index().clone();
 
         let latest = match shared.log.term(latest_commit_index).await {
             // If the commited index is in the log, use it
-            Some(term) => LogPosition {
-                index: latest_commit_index,
-                term,
+            Some(term) => {
+                let mut pos = LogPosition::default();
+                pos.set_index(latest_commit_index);
+                pos.set_term(term);
+                pos
             },
             // Otherwise, more data has been comitted than is in our log, so we
             // will only mark up to the last entry in our lag
@@ -899,10 +892,10 @@ impl<R: Send + 'static> ServerShared<R> {
                 let last_log_index = shared.log.last_index().await;
                 let last_log_term = shared.log.term(last_log_index).await.unwrap();
 
-                LogPosition {
-                    index: last_log_index,
-                    term: last_log_term,
-                }
+                let mut pos = LogPosition::default();
+                pos.set_index(last_log_index);
+                pos.set_term(last_log_term);
+                pos
             }
         };
 
@@ -946,7 +939,7 @@ impl<R: Send + 'static> ServerShared<R> {
         shared: &Arc<Self>,
         to_id: ServerId,
         req: &AppendEntriesRequest,
-        last_log_index: u64,
+        last_log_index: LogIndex,
     ) {
         let res = future::timeout(
             Duration::from_millis(REQUEST_TIMEOUT),
@@ -969,7 +962,7 @@ impl<R: Send + 'static> ServerShared<R> {
     async fn dispatch_append_entries_tick(
         state: &mut ServerState<R>,
         tick: &mut Tick,
-        data: (ServerId, u64, Result<Result<AppendEntriesResponse>>),
+        data: (ServerId, LogIndex, Result<Result<AppendEntriesResponse>>),
     ) {
         let (to_id, last_log_index, res) = data;
 
@@ -987,7 +980,7 @@ impl<R: Send + 'static> ServerShared<R> {
         }
     }
 
-    async fn dispatch_messages(shared: Arc<Self>, messages: Vec<Message>) {
+    async fn dispatch_messages(shared: Arc<Self>, messages: Vec<ConsensusMessage>) {
         if messages.len() == 0 {
             return;
         }
@@ -998,16 +991,16 @@ impl<R: Send + 'static> ServerShared<R> {
         for msg in messages.iter() {
             for to_id in msg.to.iter() {
                 match msg.body {
-                    MessageBody::AppendEntries(ref req, ref last_log_index) => {
+                    ConsensusMessageBody::AppendEntries(ref req, ref last_log_index) => {
                         append_entries.push(Self::dispatch_append_entries(
                             &shared,
-                            *to_id,
+                            to_id.clone(),
                             req,
-                            *last_log_index,
+                            last_log_index.clone(),
                         ));
                     }
-                    MessageBody::RequestVote(ref req) => {
-                        request_votes.push(Self::dispatch_request_vote(&shared, *to_id, req));
+                    ConsensusMessageBody::RequestVote(ref req) => {
+                        request_votes.push(Self::dispatch_request_vote(&shared, to_id.clone(), req));
                     }
                     _ => {} // TODO: Handle all cases
                 };
@@ -1068,11 +1061,15 @@ impl<R: Send + 'static> ServerShared<R> {
             let waiter = {
                 let c = shared.commit_index.lock().await;
 
-                if c.term > pos.term || c.index >= pos.index {
+                if c.term().value() > pos.term().value() || c.index().value() >= pos.index().value() {
                     return Ok(());
                 }
 
-                c.wait(LogPosition { term: 0, index: 0 })
+                // term = 0
+                // index = 0
+                let mut null_pos = LogPosition::default();
+
+                c.wait(null_pos)
             };
 
             waiter.await; // TODO: Can this fail.
@@ -1099,11 +1096,11 @@ impl<R: Send + 'static> ServerShared<R> {
         loop {
             let waiter = {
                 let app = shared.last_applied.lock().await;
-                if *app >= pos.index {
+                if *app >= pos.index() {
                     return Ok(());
                 }
 
-                app.wait(pos.index)
+                app.wait(pos.index())
             };
 
             waiter.await; // TODO: Can this fail
@@ -1115,7 +1112,7 @@ impl<R: Send + 'static> Server<R> {
     async fn request_vote_tick(
         state: &mut ServerState<R>,
         tick: &mut Tick,
-        req: RequestVoteRequest,
+        req: &RequestVoteRequest,
     ) -> MustPersistMetadata<RequestVoteResponse> {
         state.inst.request_vote(req, tick).await
     }
@@ -1123,7 +1120,7 @@ impl<R: Send + 'static> Server<R> {
     async fn append_entries_tick(
         state: &mut ServerState<R>,
         tick: &mut Tick,
-        req: AppendEntriesRequest,
+        req: &AppendEntriesRequest,
     ) -> Result<FlushConstraint<AppendEntriesResponse>> {
         state.inst.append_entries(req, tick).await
     }
@@ -1131,7 +1128,7 @@ impl<R: Send + 'static> Server<R> {
     async fn timeout_now_tick(
         state: &mut ServerState<R>,
         tick: &mut Tick,
-        req: TimeoutNow,
+        req: &TimeoutNow,
     ) -> Result<()> {
         state.inst.timeout_now(req, tick).await
     }
@@ -1139,33 +1136,57 @@ impl<R: Send + 'static> Server<R> {
     async fn propose_entry_tick(
         state: &mut ServerState<R>,
         tick: &mut Tick,
-        data: LogEntryData,
+        data: &LogEntryData,
     ) -> ProposeResult {
         state.inst.propose_entry(data, tick).await
+    }
+
+    pub fn client(&self) -> &crate::rpc::Client {
+        &self.shared.client
     }
 
     // state.inst.propose_entry(data, tick)
 }
 
 #[async_trait]
-impl<R: Send + 'static> rpc::ServerService for Server<R> {
-    fn client(&self) -> &rpc::Client {
-        &self.shared.client
-    }
+impl<R: Send + 'static> ConsensusService for Server<R> {
+    async fn PreVote(
+        &self,
+        req: rpc::ServerRequest<RequestVoteRequest>,
+        res: &mut rpc::ServerResponse<RequestVoteResponse>
+    ) -> Result<()> {
+        ServerRequestRoutingContext::create(
+            &self.shared.client.agent(), &req.context, &mut res.context).await?
+            .assert_verified()?;
 
-    async fn pre_vote(&self, req: RequestVoteRequest) -> Result<RequestVoteResponse> {
         let state = self.shared.state.lock().await;
-        let res = state.inst.pre_vote(req).await;
-        Ok(res)
+        res.value = state.inst.pre_vote(&req).await;
+        Ok(())
     }
 
-    async fn request_vote(&self, req: RequestVoteRequest) -> Result<RequestVoteResponse> {
-        let res = ServerShared::run_tick(&self.shared, Self::request_vote_tick, req).await;
+    async fn RequestVote(
+        &self,
+        req: rpc::ServerRequest<RequestVoteRequest>,
+        res: &mut rpc::ServerResponse<RequestVoteResponse>
+    ) -> Result<()> {
+        ServerRequestRoutingContext::create(
+            &self.shared.client.agent(), &req.context, &mut res.context).await?
+            .assert_verified()?;
 
-        Ok(res.persisted())
+        let res_raw = ServerShared::run_tick(&self.shared, Self::request_vote_tick, &req.value).await;
+        res.value = res_raw.persisted();
+        Ok(())
     }
 
-    async fn append_entries(&self, req: AppendEntriesRequest) -> Result<AppendEntriesResponse> {
+    async fn AppendEntries(
+        &self,
+        req: rpc::ServerRequest<AppendEntriesRequest>,
+        res: &mut rpc::ServerResponse<AppendEntriesResponse>
+    ) -> Result<()> {
+        ServerRequestRoutingContext::create(
+            &self.shared.client.agent(), &req.context, &mut res.context).await?
+            .assert_verified()?;
+
         // TODO: In the case that entries are immediately written, this is
         // overly expensive
 
@@ -1174,42 +1195,60 @@ impl<R: Send + 'static> rpc::ServerService for Server<R> {
         become matched
         */
 
-        let res = ServerShared::run_tick(&self.shared, Self::append_entries_tick, req).await?;
+        let c = ServerShared::run_tick(
+            &self.shared, Self::append_entries_tick, &req.value).await?;
 
         // Once the match constraint is satisfied, this will send back a
         // response (or no response)
-        ServerShared::wait_for_match(self.shared.clone(), res).await
+        res.value = ServerShared::wait_for_match(self.shared.clone(), c).await?;
+        Ok(())
     }
 
-    async fn timeout_now(&self, req: TimeoutNow) -> Result<()> {
-        ServerShared::run_tick(&self.shared, Self::timeout_now_tick, req).await
+    async fn TimeoutNow(
+        &self,
+        req: rpc::ServerRequest<TimeoutNow>,
+        res: &mut rpc::ServerResponse<EmptyMessage>
+    ) -> Result<()> {
+        ServerRequestRoutingContext::create(
+            &self.shared.client.agent(), &req.context, &mut res.context).await?
+            .assert_verified()?;
+
+        ServerShared::run_tick(&self.shared, Self::timeout_now_tick, &req.value).await?;
+        Ok(())
     }
 
     // TODO: This may become a ClientService method only? (although it is still
     // sufficiently internal that we don't want just any old client to be using
     // this)
-    async fn propose(&self, req: ProposeRequest) -> Result<ProposeResponse> {
-        let (data, should_wait) = (req.data, req.wait);
+    async fn Propose(
+        &self,
+        req: rpc::ServerRequest<ProposeRequest>,
+        res: &mut rpc::ServerResponse<ProposeResponse>
+    ) -> Result<()> {
+        ServerRequestRoutingContext::create(
+            &self.shared.client.agent(), &req.context, &mut res.context).await?
+            .assert_verified()?;
 
-        let res = ServerShared::run_tick(&self.shared, Self::propose_entry_tick, data).await;
+        let (data, should_wait) = (req.data(), req.wait());
+
+        let r = ServerShared::run_tick(&self.shared, Self::propose_entry_tick, data).await;
 
         let shared = self.shared.clone();
 
         // Ideally cascade down to a result and an error type
 
-        let prop = if let Ok(prop) = res {
+        let prop = if let Ok(prop) = r {
             prop
         //			Ok((wait, self.shared.clone(), prop))
         } else {
-            println!("propose result: {:?}", res);
+            println!("propose result: {:?}", r);
             return Err(err_msg("Not implemented"));
         };
 
         if !should_wait {
-            return Ok(ProposeResponse {
-                term: prop.term,
-                index: prop.index,
-            });
+            res.set_term(prop.term());
+            res.set_index(prop.index());
+            return Ok(())
         }
 
         // TODO: Must ensure that wait_for_commit responses immediately if
@@ -1217,16 +1256,17 @@ impl<R: Send + 'static> rpc::ServerService for Server<R> {
         ServerShared::wait_for_commit(shared.clone(), prop.clone()).await?;
 
         let state = shared.state.lock().await;
-        let res = state.inst.proposal_status(&prop).await;
+        let r = state.inst.proposal_status(&prop).await;
 
-        match res {
-            ProposalStatus::Commited => Ok(ProposeResponse {
-                term: prop.term,
-                index: prop.index,
-            }),
+        match r {
+            ProposalStatus::Commited => {
+                res.set_term(prop.term());
+                res.set_index(prop.index());
+                Ok(())
+            },
             ProposalStatus::Failed => Err(err_msg("Proposal failed")),
             _ => {
-                println!("GOT BACK {:?}", res);
+                println!("GOT BACK {:?}", res.value);
                 Err(err_msg("Proposal indeterminant"))
             }
         }

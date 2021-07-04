@@ -1,48 +1,18 @@
-use common::async_std::sync::Mutex;
-use common::bytes::Bytes;
-use common::errors::*;
-use common::errors::*;
-use raft::atomic::*;
-use raft::protos::*;
-use raft::rpc::{marshal, unmarshal};
-use raft::state_machine::*;
-use serde::de::{self, Visitor};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 use std::time::SystemTime;
 
-#[derive(Serialize, Deserialize)]
-pub enum KeyValueCheck {
-    Exists,
-    NonExistent,
-    Version(LogIndex),
-}
+use common::async_std::sync::Mutex;
+use common::bytes::Bytes;
+use common::errors::*;
 
-// A basic store for storing in-memory data
-// Currently implemented for
-// Additionally a transaction may be composed of any number of non-transaction
-// operations (typically these will have some type of additional )
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum KeyValueOperation {
-    Set {
-        key: Vec<u8>,
-        value: Vec<u8>,
+use protobuf::Message;
+use raft::atomic::*;
+use raft::proto::key_value::*;
+use raft::proto::consensus::LogIndex;
+use raft::state_machine::*;
 
-        /// Optional check to perform before setting the key. The check must
-        /// hold for the operation to succeed
-        compare: Option<KeyValueCheck>,
-
-        /// Expiration time in milliseconds
-        expires: Option<SystemTime>,
-    },
-    Delete {
-        key: Vec<u8>,
-    }, /* May also have ops like Get, but those don't mutate the state so probably don't need
-        * to be explicitly requested */
-}
 
 pub struct KeyValueReturn {
     pub success: bool,
@@ -66,17 +36,7 @@ pub struct KeyValueData {
 
 */
 
-#[derive(Serialize, Deserialize)]
-struct KVStateMachineSnapshot {
-    last_applied: LogIndex,
-    data: HashMap<Vec<u8>, Bytes>,
-}
 
-#[derive(Serialize)]
-struct KVStateMachineSnapshotRef<'a> {
-    last_applied: LogIndex,
-    data: &'a HashMap<Vec<u8>, Bytes>,
-}
 
 struct State {
     last_applied: LogIndex,
@@ -193,31 +153,27 @@ impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
     // XXX: It would be useful to have a time and an index just for the sake of
     // versioning of it
     async fn apply(&self, index: LogIndex, data: &[u8]) -> Result<KeyValueReturn> {
-        let ret: KeyValueOperation = unmarshal(data)?;
+        let ret = KeyValueOperation::parse(data)?;
+
         let mut map = self.data.lock().await;
 
         // Could be split into a check phase and a run phase
         // Thus we can maintain transactions without lock
 
-        Ok(match ret {
-            KeyValueOperation::Set {
-                key,
-                value,
-                compare,
-                expires,
-            } => {
-                map.insert(key, value.into());
+        match ret.type_case() {
+            KeyValueOperationTypeCase::Set(op) => {
+                map.insert(op.key().to_owned(), Bytes::from(op.value()));
 
-                KeyValueReturn { success: true }
+                Ok(KeyValueReturn { success: true })
             }
-            KeyValueOperation::Delete { key } => {
-                let old = map.remove(&key);
-
-                KeyValueReturn {
-                    success: old.is_some(),
-                }
+            KeyValueOperationTypeCase::Delete(op) => {
+                let old = map.remove(op.key());
+                Ok(KeyValueReturn { success: old.is_some() })
             }
-        })
+            KeyValueOperationTypeCase::Unknown => {
+                Err(err_msg("Unknown key-value operation"))
+            }
+        }
     }
 
     async fn snapshot(&self) -> Option<StateMachineSnapshot> {

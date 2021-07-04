@@ -1,6 +1,8 @@
-use crate::protos::*;
-use common::errors::*;
 use std::sync::Arc;
+
+use common::errors::*;
+
+use crate::proto::consensus::*;
 
 /*
     If all snapshots are beyond the end of the log:

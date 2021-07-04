@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+import "pkg/raft/src/proto/consensus.proto";
+import "pkg/raft/src/proto/consensus_state.proto";
+import "pkg/raft/src/proto/routing.proto";
+
+// This is the format of the metadata file being persisted to disk
+message ServerMetadata {
+    // REQUIRED
+    ClusterId cluster_id = 1;
+    
+    // REQUIRED
+    ServerId id = 2;
+
+    // REQUIRED
+    Metadata meta = 3;
+}
+
+// This is the format of the file on disk for the snapshot of the configuration
+message ServerConfigurationSnapshot {
+    // REQUIRED
+    ConfigurationSnapshot config = 1;
+
+    //pub routes: HashMap<ServerId, String>
+}

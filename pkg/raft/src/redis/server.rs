@@ -3,10 +3,11 @@ use common::async_std::net::{TcpListener, TcpStream};
 use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::errors::*;
-use common::futures::channel::mpsc;
+use common::async_std::channel;
 //use common::futures::future::*;
 //use common::futures::prelude::*;
 use common::futures::future::ok;
+use common::futures::io::Write;
 use common::futures::stream;
 use common::futures::stream::{Stream, StreamExt};
 use common::futures::{Future, FutureExt};
@@ -78,9 +79,10 @@ enum ServerClientMode {
 struct ServerClient {
     id: ClientId,
     //mode: ServerClientMode,
+
     /// A handle for pushing packets to this client
     /// NOTE: Only push messages should be sendable through this interface
-    sender: mpsc::Sender<(RESPString, RESPObject)>,
+    sender: channel::Sender<(RESPString, RESPObject)>,
 
     /// All channels which this client is subscribed to
     /// TODO: Probably cheaper to assign each channel a unique id to avoid
@@ -142,11 +144,11 @@ pub struct RESPStream {
     buffer: Vec<u8>,
     remaining: Option<(usize, usize)>,
     parser: RESPParser,
-    inner: Arc<dyn Readable>,
+    inner: Box<dyn Readable>,
 }
 
 impl RESPStream {
-    pub fn new(inner: Arc<dyn Readable>) -> Self {
+    pub fn new(inner: Box<dyn Readable>) -> Self {
         Self {
             buffer: vec![0; 512],
             remaining: None,
@@ -197,12 +199,12 @@ impl Streamable for RESPStream {
 }
 
 pub struct RESPSink {
-    inner: Arc<dyn Writeable>,
+    inner: Box<dyn Writeable>,
     buffer: Vec<u8>,
 }
 
 impl RESPSink {
-    pub fn new(inner: Arc<dyn Writeable>) -> Self {
+    pub fn new(inner: Box<dyn Writeable>) -> Self {
         Self {
             inner,
             buffer: Vec::new(),
@@ -293,7 +295,8 @@ where
         sock.set_nodelay(true).expect("Failed to set nodelay");
         //sock.set_recv_buffer_size(128).expect("Failed to set rcv buffer");
 
-        let (tx, rx) = mpsc::channel::<(RESPString, RESPObject)>(16);
+        let (tx, rx) =
+            channel::bounded::<(RESPString, RESPObject)>(16);
 
         let client = {
             let mut server_state = inst.state.lock().await;
@@ -314,7 +317,10 @@ where
             client
         };
 
-        Self::handle_connection_body(&inst, &client, sock, rx)
+        let reader: Box<dyn Readable> = Box::new(sock.clone());
+        let writer: Box<dyn Writeable> = Box::new(sock);
+
+        Self::handle_connection_body(&inst, &client, reader, writer, rx)
             .await
             .map_err(|e| {
                 // Ignoring typical errors
@@ -341,12 +347,14 @@ where
     async fn handle_connection_body(
         inst: &Arc<Self>,
         client: &Arc<Mutex<ServerClient>>,
-        sock: TcpStream,
-        rx: mpsc::Receiver<(RESPString, RESPObject)>,
+        reader: Box<dyn Readable>,
+        writer: Box<dyn Writeable>,
+        rx: channel::Receiver<(RESPString, RESPObject)>,
     ) -> Result<()> {
-        let sock = Arc::new(sock);
-        let mut sink = RESPSink::new(sock.clone());
-        let mut stream = RESPStream::new(sock).into_stream();
+        // The gist is that we need a read and write end.
+
+        let mut sink = RESPSink::new(writer);
+        let mut stream = RESPStream::new(reader).into_stream();
 
         enum Event {
             Request(RESPObject),

@@ -1,6 +1,7 @@
-use super::protos::ServerId;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
+
+use crate::proto::consensus::{ServerId, LogIndex};
 
 /*
     Ideally we would generalize away the flow control aspect of it
@@ -12,13 +13,13 @@ use std::time::{Duration, Instant};
 pub struct ServerProgress {
     /// Index of the next log entry we should send to this server (starts at
     /// last leader index + 1)
-    pub next_index: u64,
+    pub next_index: LogIndex,
 
     /// Index of the highest entry known to be replicated to this server
     /// TODO: These can be long term persisted even after we fall out of being
     /// leader as long as we only persist the largest match_index for a client
     /// that is >= the commited_index at the time of persisting the value
-    pub match_index: u64,
+    pub match_index: LogIndex,
 
     /// Last time a heartbeat was successfully sent and received (the times in
     /// this tuple represent the corresponding send/received times for a single
@@ -44,10 +45,10 @@ impl ServerProgress {
     // - This will allow us to immediately serve read requests in many cases
 
     /// Create a new progress entry given the leader's last log index
-    pub fn new(last_log_index: u64) -> Self {
+    pub fn new(last_log_index: LogIndex) -> Self {
         ServerProgress {
             next_index: last_log_index + 1,
-            match_index: 0,
+            match_index: 0.into(),
             last_heartbeat: None,
             last_sent: None, /* This will force the leader to send initial heartbeats to all
                               * servers upon being elected */

@@ -1,20 +1,18 @@
-use common::async_std::future;
-use common::async_std::sync::{Mutex, MutexGuard};
-use common::async_std::task;
-use common::futures::channel::mpsc;
-use common::futures::channel::oneshot;
-use common::futures::future::*;
-use common::futures::prelude::Sink;
-use common::futures::{Future, Stream};
-use common::futures::{SinkExt, StreamExt};
+use std::future::Future;
 use std::borrow::{Borrow, BorrowMut};
 use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 
+use common::async_std::sync::{Mutex, MutexGuard};
+use common::async_std::task;
+use common::futures::channel::mpsc;
+use common::futures::channel::oneshot;
+use common::futures::{SinkExt, StreamExt};
+
 /// Pretty much a futures based implementation of a conditional variable that
-/// owns the condition value
+/// owns the condition value.
 /// Unlike a conditional variable, this will not relock the mutex after the wait
-/// is done
+/// is done.
 ///
 /// NOTE: It should not be locked for a long period of time as that is still a
 /// blocking operation

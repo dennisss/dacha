@@ -7,17 +7,19 @@
 )]
 
 #[macro_use]
-extern crate serde_derive;
-
-#[macro_use]
 extern crate common;
 extern crate byteorder;
-extern crate bytes;
 extern crate crypto;
 extern crate http;
 extern crate rand;
-extern crate rmp_serde as rmps;
-extern crate serde;
+extern crate protobuf;
+extern crate google;
+
+#[macro_use]
+extern crate macros;
+
+// TODO: Eventually make this private
+pub mod proto;
 
 pub mod atomic;
 pub mod sync;
@@ -40,7 +42,6 @@ pub mod rpc;
 // XXX: Should only really be required by the server itself
 pub mod discovery;
 pub mod server;
-pub mod server_protos;
 pub mod state_machine;
 
 pub mod memory_log;

@@ -1,5 +1,5 @@
 use crate::log::*;
-use crate::protos::LogPosition;
+use crate::proto::consensus::LogPosition;
 
 /// Represents the current state of a constraint retrieved by polling the
 /// constraint.
@@ -42,9 +42,9 @@ impl<T> FlushConstraint<T> {
             None => return ConstraintPoll::Satisfied(self.inner),
         };
 
-        match log.term(pos.index).await {
+        match log.term(pos.index()).await {
             Some(v) => {
-                if v != pos.term {
+                if v != pos.term() {
                     // Index has been overridden in a newer term
                     ConstraintPoll::Unsatisfiable
                 } else {

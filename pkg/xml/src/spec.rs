@@ -10,6 +10,7 @@ pub struct Document {
 #[derive(Debug, PartialEq)]
 pub struct Element {
     pub name: String,
+    /// TODO: Define the behavior for 
     pub attributes: HashMap<String, String>,
     pub content: Vec<Node>
 }

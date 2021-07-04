@@ -1,23 +1,25 @@
-use crate::atomic::*;
-use crate::discovery::*;
-use crate::log::*;
-use crate::protos::*;
-use crate::routing::*;
-use crate::rpc::*;
-use crate::server::*;
-use crate::server_protos::*;
-use crate::simple_log::*;
-use crate::state_machine::*;
-use common::async_std::future;
-use common::async_std::prelude::*;
+use std::sync::Arc;
+use std::time::Duration;
+
 use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::errors::*;
 use common::fs::DirLock;
 use common::futures::FutureExt;
-use rand::prelude::*;
-use std::sync::Arc;
-use std::time::Duration;
+use protobuf::Message;
+
+use crate::atomic::*;
+use crate::discovery::*;
+use crate::log::*;
+use crate::routing::*;
+use crate::rpc::*;
+use crate::server::*;
+use crate::simple_log::*;
+use crate::state_machine::*;
+use crate::proto::consensus::*;
+use crate::proto::server_metadata::*;
+use crate::proto::routing::*;
+
 
 /*
     Safety considerations:
@@ -44,7 +46,10 @@ pub struct Node<R> {
     pub id: ServerId,
 
     pub dir: DirLock,
-    pub server: Arc<Server<R>>,
+
+    // TODO: Is this used for anything?
+    pub server: Server<R>,
+    
     pub discovery: Arc<DiscoveryService>,
 
     routes_file: Mutex<BlobFile>,
@@ -95,12 +100,12 @@ impl<R: 'static + Send> Node<R> {
             let (routes_file, routes_data) = routes_builder.open()?;
             let mut log = SimpleLog::open(&log_path).await?;
 
-            let meta: ServerMetadata = unmarshal(meta_data.as_ref())?;
-            let config_snapshot = unmarshal(config_data.as_ref())?;
+            let meta = ServerMetadata::parse(&meta_data)?;
+            let config_snapshot = ServerConfigurationSnapshot::parse(&config_data)?;
 
-            let ann: Announcement = unmarshal(routes_data.as_ref())?;
+            let ann = Announcement::parse(&routes_data)?;
             let mut a = agent.lock().await;
-            a.cluster_id = Some(meta.cluster_id); // < Otherwise this also gets configured in Server::start, but we require that
+            a.cluster_id = Some(meta.cluster_id()); // < Otherwise this also gets configured in Server::start, but we require that
                                                   // it be set in order to apply a routes list
             a.apply(&ann);
 
@@ -120,7 +125,7 @@ impl<R: 'static + Send> Node<R> {
             // ensure that the correct log is being used for the state machine
             // Therefore if this does happen, then somehow the raft specific
             // files were deleted leaving only the state machine
-            if config.last_applied > 0 {
+            if config.last_applied > 0.into() {
                 panic!(
                     "Can not trust already state machine data without \
 						corresponding metadata"
@@ -134,7 +139,7 @@ impl<R: 'static + Send> Node<R> {
             SimpleLog::purge(&log_path)?;
 
             // Every single server starts with totally empty versions of everything
-            let mut meta = super::protos::Metadata::default();
+            let mut meta = super::proto::consensus_state::Metadata::default();
             let config_snapshot = ServerConfigurationSnapshot::default();
             let mut log = vec![];
 
@@ -144,16 +149,18 @@ impl<R: 'static + Send> Node<R> {
             // For the first server in the cluster (assuming no configs are
             // already on disk)
             if config.bootstrap {
-                id = 1;
+                id = 1.into();
 
                 // Assign a cluster id to our agent (usually would be retrieved
                 // through network discovery if not in bootstrap mode)
-                cluster_id = 0; // rand::thread_rng().next_u64();
+                cluster_id = 0.into(); // rand::thread_rng().next_u64();
 
-                log.push(LogEntry {
-                    pos: LogPosition { term: 1, index: 1 },
-                    data: LogEntryData::Config(ConfigChange::AddMember(1)),
-                });
+                let mut first_entry = LogEntry::default();
+                first_entry.pos_mut().set_term(1);
+                first_entry.pos_mut().set_index(1);
+                first_entry.data_mut().config_mut().set_AddMember(id);
+
+                log.push(first_entry);
             } else {
                 // TODO: All of this could be in while loop until we are able to
                 // connect to the leader and propose a new message on it
@@ -163,15 +170,16 @@ impl<R: 'static + Send> Node<R> {
                 // TODO: Instead pick a random one from our list
                 // TODO: This is currently our only usage of .routes() on the
                 // agent
-                let first_id = agent.lock().await.routes().values().next().unwrap().desc.id;
+                let first_id = agent.lock().await.routes().values().next().unwrap().desc().id();
+
+                let mut req = ProposeRequest::default();
+                req.set_wait(true);
+                req.data_mut().set_noop(true);
 
                 let ret = client
                     .call_propose(
                         first_id,
-                        &ProposeRequest {
-                            data: LogEntryData::Noop,
-                            wait: true,
-                        },
+                        &req,
                     )
                     .await?;
 
@@ -180,9 +188,9 @@ impl<R: 'static + Send> Node<R> {
                 // we need to ask everyone we know for a new list of server
                 // addrs
 
-                println!("Generated new index {}", ret.index);
+                println!("Generated new index {}", ret.index().value());
 
-                id = ret.index;
+                id = ret.index().value().into(); // Casting LogIndex to ServerId.
 
                 cluster_id = agent
                     .lock()
@@ -192,11 +200,10 @@ impl<R: 'static + Send> Node<R> {
                     .expect("No cluster_id obtained during initial cluster connection");
             }
 
-            let server_meta = ServerMetadata {
-                id,
-                cluster_id,
-                meta,
-            };
+            let mut server_meta = ServerMetadata::default();
+            server_meta.set_id(id);
+            server_meta.set_cluster_id(cluster_id);
+            server_meta.set_meta(meta);
 
             let log_file = SimpleLog::create(&log_path).await?;
 
@@ -209,13 +216,13 @@ impl<R: 'static + Send> Node<R> {
 
             log_file.flush().await?;
 
-            let config_file = config_builder.create(&marshal(&config_snapshot)?)?;
+            let config_file = config_builder.create(&config_snapshot.serialize()?)?;
 
-            let routes_file = routes_builder.create(&marshal(&agent.lock().await.serialize())?)?;
+            let routes_file = routes_builder.create(&agent.lock().await.serialize().serialize()?)?;
 
             // We save the meta file to disk last such that if the meta file exists, then we
             // know that we have a complete set of files on disk
-            let meta_file = meta_builder.create(&marshal(&server_meta)?)?;
+            let meta_file = meta_builder.create(&server_meta.serialize()?)?;
 
             (
                 server_meta,
@@ -227,7 +234,7 @@ impl<R: 'static + Send> Node<R> {
             )
         };
 
-        println!("Starting with id {}", meta.id);
+        println!("Starting with id {}", meta.id().value());
 
         let initial_state = ServerInitialState {
             meta,
@@ -239,14 +246,16 @@ impl<R: 'static + Send> Node<R> {
             last_applied: config.last_applied,
         };
 
-        let is_empty = initial_state.log.last_index().await == 0;
+        let is_empty = initial_state.log.last_index().await.value() == 0;
 
-        println!("COMMIT INDEX {}", initial_state.meta.meta.commit_index);
+        println!("COMMIT INDEX {}", initial_state.meta.meta().commit_index().value());
 
-        let server = Arc::new(Server::new(client.clone(), initial_state).await);
+        let server = Server::new(client.clone(), initial_state).await;
 
         // TODO: Support passing in a port (and maybe also an addr)
-        task::spawn(Server::start(server.clone()).map(|_| ()));
+        task::spawn(server.clone().start());
+        
+        // TODO: Rename this.
         task::spawn(DiscoveryService::run(discovery.clone()).map(|_| ()));
 
         // TODO: If one node joins another cluster with one node, does the old leader of
@@ -255,7 +264,7 @@ impl<R: 'static + Send> Node<R> {
         // THe simpler way to think of this is (if not bootstrap mode and there are zero
         // ) But yeah, if we can get rid of the bootstrap caveat, then this i
 
-        let our_id = client.agent().lock().await.identity.clone().unwrap().id;
+        let our_id = client.agent().lock().await.identity.clone().unwrap().id();
 
         // TODO: Will also need to spawn the task that will periodically save
         // the routes when changed
@@ -276,13 +285,14 @@ impl<R: 'static + Send> Node<R> {
             // XXX: at this point, we should know who the leader is with better
             // precision than this  (based on a leader hint from above)
 
+            let mut req = ProposeRequest::default();
+            req.data_mut().config_mut().set_AddMember(our_id);
+            req.set_wait(false);
+
             let res = client
                 .call_propose(
-                    1,
-                    &ProposeRequest {
-                        data: LogEntryData::Config(ConfigChange::AddMember(our_id)),
-                        wait: false,
-                    },
+                    1.into(),
+                    &req,
                 )
                 .await?;
             println!("call_propose response: {:?}", res);

@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+import "pkg/raft/src/proto/consensus.proto";
+import "third_party/google/src/proto/timestamp.proto";
+
+// A basic store for storing in-memory data
+// Currently implemented for
+// Additionally a transaction may be composed of any number of non-transaction
+// operations (typically these will have some type of additional )
+message KeyValueOperation {
+    message Set {
+        // REQUIRED
+        bytes key = 1;
+
+        // REQUIRED
+        bytes value = 2;
+
+        // Optional check to perform before setting the key. The check must
+        // hold for the operation to succeed
+        //
+        // OPTIONAL
+        KeyValueCheck compare = 3;
+
+        // Expiration time of this KV pair.
+        // OPTIONAL
+        google.protobuf.Timestamp expires = 4;
+    }
+
+    message Delete {
+        // REQUIRED
+        bytes key = 1;
+    }
+    // /* May also have ops like Get, but those don't mutate the state so probably don't need
+    //     * to be explicitly requested */
+
+
+    oneof type {
+        Set set = 1;
+        Delete delete = 2;
+    }
+}
+
+message KeyValueCheck {
+    // Exactly one of these MUST be set.
+    oneof type {
+        bool exists = 1;
+        bool non_existent = 2;
+        LogIndex version = 3;
+    }
+}
+
+message KVStateMachineSnapshot {
+    // REQUIRED
+    LogIndex last_applied = 1;
+
+    message Entry {
+        // REQUIRED
+        bytes key = 1;
+        // REQUIRED
+        bytes value = 2;
+    }
+
+    // Contains all the stored data in the key-value table.
+    // This shouldn't contain any duplicate keys, although the ordering of the
+    // keys is undefined.
+    repeated Entry entries = 2;
+}

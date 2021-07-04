@@ -1,15 +1,19 @@
-use crate::config_state::*;
-use crate::constraint::*;
-use crate::log::*;
-use crate::protos::*;
-use crate::state::*;
-use common::errors::*;
-use rand::RngCore;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use common::errors::*;
+use rand::RngCore;
+
+use crate::config_state::*;
+use crate::constraint::*;
+use crate::log::*;
+use crate::proto::consensus::*;
+use crate::proto::consensus_state::*;
+use crate::state::*;
+
 
 // TODO: Suppose the leader is waiting on an earlier truncation that is
 // preventing the pending_conflict from resolving. Should we allow it to still
@@ -63,6 +67,10 @@ pub enum ProposeError {
     /// The entry can't be proposed by this server because we are not the
     /// current leader
     NotLeader { leader_hint: Option<ServerId> },
+
+    Rejected {
+        reason: &'static str
+    }
 }
 
 #[derive(Debug)]
@@ -92,6 +100,23 @@ pub enum ProposalStatus {
 
 pub type ConsensusModuleHandle = Arc<Mutex<ConsensusModule>>;
 
+
+pub struct ConsensusMessage {
+    pub to: Vec<ServerId>, // Most times cheaper to
+    pub body: ConsensusMessageBody,
+}
+
+// TODO: A message should be backed by a buffer such that it can be trivially
+// forwarded and owned some binary representation of itself
+pub enum ConsensusMessageBody {
+    PreVote(RequestVoteRequest),
+    RequestVote(RequestVoteRequest),
+    AppendEntries(AppendEntriesRequest, LogIndex), /* The index is the last_index of the
+                                                    * original request (naturally not needed if
+                                                    * we support retaining the original request
+                                                    * while receiving the response) */
+}
+
 /// Represents all external side effects requested by the ConsensusModule during
 /// a single operation
 pub struct Tick {
@@ -111,7 +136,7 @@ pub struct Tick {
     // If present, meand that the given messages need to be sent out
     // This will be separate from resposnes as those are slightly different
     // The from_id is naturally available on any response
-    pub messages: Vec<Message>,
+    pub messages: Vec<ConsensusMessage>,
 
     // TODO: Possibly expose a list of entries (but we will basically always
     // internally track the most up to date position of the log)
@@ -145,7 +170,7 @@ impl Tick {
         self.config = true;
     }
 
-    pub fn send(&mut self, msg: Message) {
+    pub fn send(&mut self, msg: ConsensusMessage) {
         // TODO: Room for optimization in preallocating space for all messages
         // up front (and/or reusing the same tick object to avoid allocations)
         self.messages.push(msg);
@@ -235,22 +260,22 @@ impl ConsensusModule {
         // than in the metadata, then we can assume that we did not cast any meaningful
         // vote in that election
         let last_log_term = log.term(log.last_index().await).await.unwrap();
-        if last_log_term > meta.current_term {
-            meta.current_term = last_log_term;
-            meta.voted_for = None;
+        if last_log_term > meta.current_term() {
+            meta.set_current_term(last_log_term);
+            meta.set_voted_for(0);
         }
 
         // Snapshots are only of committed data, so seeing a newer snapshot
         // implies the config index is higher than we think it is
-        if config_snapshot.last_applied > meta.commit_index {
+        if config_snapshot.last_applied() > meta.commit_index() {
             // This means that we did not bother to persist the commit_index
-            meta.commit_index = config_snapshot.last_applied;
+            meta.set_commit_index(config_snapshot.last_applied());
         }
 
         // The external process responsible for snapshotting should never
         // compact the log until a config snapshot has been persisted (as this
         // would result in a discontinuity between the log and the snapshots)
-        if config_snapshot.last_applied + 1 < log.first_index().await {
+        if config_snapshot.last_applied() + 1 < log.first_index().await {
             panic!("Config snapshot is from before the start of the log");
         }
 
@@ -261,9 +286,9 @@ impl ConsensusModule {
         let last_log_index = log.last_index().await;
 
         // TODO: Implement an iterator over the log for this
-        for i in (config.last_applied + 1)..(last_log_index + 1) {
-            let (e, _) = log.entry(i).await.unwrap();
-            config.apply(&e, meta.commit_index);
+        for i in (config.last_applied + 1).value()..(last_log_index + 1).value() {
+            let (e, _) = log.entry(i.into()).await.unwrap();
+            config.apply(&e, meta.commit_index());
         }
 
         // TODO: Take the initial time as input
@@ -323,7 +348,7 @@ impl ConsensusModule {
             return Err(ReadIndexError::NotLeader);
         }
 
-        let ci = self.meta.commit_index;
+        let ci = self.meta.commit_index();
         // If we are the leader, then the commited index should always be
         // available in the lod
         let ct = self
@@ -335,21 +360,21 @@ impl ConsensusModule {
         // Simple helper for returning a valid index
         let ret = |i, t| {
             Ok(ReadIndex {
-                value: LogPosition { index: i, term: t },
+                value: LogPosition::new(t, i),
                 time,
             })
         };
 
         // If the commited index is in the current term as the leader, then trivially we
         // have the highest commit index in the cluster
-        if ct == self.meta.current_term {
+        if ct == self.meta.current_term() {
             return ret(ci, ct);
         }
 
         if let Some(t) = self.log.term(ci + 1).await {
             // This is the natural extension of the outer else case in which case all old
             // entries that we have were already commited therefore are all valid
-            if t == self.meta.current_term {
+            if t == self.meta.current_term() {
                 return ret(ci, ct);
             }
             // Otherwise, we must wait until at least the first operation in our term gets commited
@@ -360,11 +385,11 @@ impl ConsensusModule {
                 loop {
                     match self.log.term(idx + 1).await {
                         Some(t) => {
-                            if t == self.meta.current_term {
-                                return Err(ReadIndexError::RetryAfter(LogPosition {
-                                    index: idx,
-                                    term: self.log.term(idx).await.unwrap(),
-                                }));
+                            if t == self.meta.current_term(){
+                                return Err(ReadIndexError::RetryAfter(LogPosition::new(
+                                    self.log.term(idx).await.unwrap(),
+                                    idx
+                                )));
                             }
                         }
                         None => {
@@ -406,11 +431,17 @@ impl ConsensusModule {
     /// Propose a new state machine command given some data packet
     // NOTE: Will immediately produce an output right?
     pub async fn propose_command(&mut self, data: Vec<u8>, out: &mut Tick) -> ProposeResult {
-        self.propose_entry(LogEntryData::Command(data), out).await
+        let mut e = LogEntryData::default();
+        e.set_command(data);
+
+        self.propose_entry(&e, out).await
     }
 
     pub async fn propose_noop(&mut self, out: &mut Tick) -> ProposeResult {
-        self.propose_entry(LogEntryData::Noop, out).await
+        let mut e = LogEntryData::default();
+        e.set_noop(true);
+
+        self.propose_entry(&e, out).await
     }
 
     // How this will work, in general, wait for an AddServer RPC,
@@ -432,24 +463,24 @@ impl ConsensusModule {
         let last_log_term = self.log.term(last_log_index).await.unwrap();
 
         // In this case this proposal has not yet made it into our log
-        if prop.term > last_log_term || prop.index > last_log_index {
+        if prop.term() > last_log_term || prop.index() > last_log_index {
             return ProposalStatus::Missing;
         }
 
-        let cur_term = match self.log.term(prop.index).await {
+        let cur_term = match self.log.term(prop.index()).await {
             Some(v) => v,
 
             // In this case the proposal is before the start of our log
             None => return ProposalStatus::Unavailable,
         };
 
-        if cur_term > prop.term {
+        if cur_term > prop.term() {
             // This means that it was truncated in favor of a new pending entry
             // in a newer term (log entries at a single index will only ever
             // monotonically increase in )
             return ProposalStatus::Failed;
-        } else if cur_term < prop.term {
-            if self.meta.commit_index >= prop.index {
+        } else if cur_term < prop.term() {
+            if self.meta.commit_index() >= prop.index() {
                 return ProposalStatus::Failed;
             } else {
                 return ProposalStatus::Missing;
@@ -457,7 +488,7 @@ impl ConsensusModule {
         }
         // Otherwise we have the right term in our log
         else {
-            if self.meta.commit_index >= prop.index {
+            if self.meta.commit_index() >= prop.index() {
                 return ProposalStatus::Commited;
             } else {
                 return ProposalStatus::Failed;
@@ -467,16 +498,16 @@ impl ConsensusModule {
 
     // NOTE: This is only public in order to support being used by the Server
     // class for exposing this directly as a raw rpc to other servers
-    pub async fn propose_entry(&mut self, data: LogEntryData, out: &mut Tick) -> ProposeResult {
+    pub async fn propose_entry(&mut self, data: &LogEntryData, out: &mut Tick) -> ProposeResult {
         let ret = if let ServerState::Leader(ref mut leader_state) = self.state {
             let last_log_index = self.log.last_index().await;
 
             let index = last_log_index + 1;
-            let term = self.meta.current_term;
+            let term = self.meta.current_term();
 
             // Considering we are a leader, this should always true, as we only
             // ever start elections at 1
-            assert!(term > 0);
+            assert!(term > 0.into());
 
             // Snapshots will always contain a term and an index for simplicity
 
@@ -484,46 +515,56 @@ impl ConsensusModule {
             // last change is committed
             // TODO: Realistically we actually just need to check against the
             // current commit index for doing this (as that may be higher)
-            if let LogEntryData::Config(ref c) = data {
+
+            if let LogEntryDataTypeCase::Config(c) = data.type_case() {
                 // TODO: Refactor out this usage of an internal field in the config struct
                 if let Some(ref pending) = self.config.pending {
-                    return Err(ProposeError::RetryAfter(Proposal {
-                        index: pending.last_change,
-                        term: self.log.term(pending.last_change).await.unwrap(),
-                    }));
+                    return Err(ProposeError::RetryAfter(Proposal::new(
+                        self.log.term(pending.last_change).await.unwrap(),
+                        pending.last_change,
+                    )));
                 }
 
                 // Updating the servers progress list on the leader
                 // NOTE: Even if this is wrong, it will still be updated in replicate_entrie
-                match c {
-                    ConfigChange::RemoveServer(id) => {
+                match c.type_case() {
+                    ConfigChangeTypeCase::RemoveServer(id) => {
                         leader_state.servers.remove(id);
                     }
-                    ConfigChange::AddLearner(id) | ConfigChange::AddMember(id) => {
+                    ConfigChangeTypeCase::AddLearner(id) | ConfigChangeTypeCase::AddMember(id) => {
                         leader_state
                             .servers
                             .insert(*id, ServerProgress::new(last_log_index));
                     }
+                    ConfigChangeTypeCase::Unknown => {
+                        return Err(ProposeError::Rejected { reason: "Unsupported or unset config change type" });
+                    }
                 };
             }
 
-            let e = LogEntry {
-                pos: LogPosition { term, index },
-                data,
-            };
+            let mut e = LogEntry::default();
+            e.pos_mut().set_term(term);
+            e.pos_mut().set_index(index);
+            e.set_data(data.clone()); // TODO: Optimize this copy.
 
             // As soon as a configuration change lands in the log, we will use it
             // immediately XXX: Here the commit index won't really help optimize
             // anything out
-            self.config.apply(&e, self.meta.commit_index);
+            self.config.apply(&e, self.meta.commit_index());
 
             out.new_entries = true;
             self.log.append(e).await;
 
-            Ok(Proposal { term, index })
+            Ok(Proposal::new(term, index))
         } else if let ServerState::Follower(ref s) = self.state {
             return Err(ProposeError::NotLeader {
-                leader_hint: s.last_leader_id.or(self.meta.voted_for),
+                leader_hint: s.last_leader_id.or_else(|| {
+                    if self.meta.voted_for().value() > 0 {
+                        Some(self.meta.voted_for())
+                    } else {
+                        None
+                    }
+                }),
             });
         } else {
             return Err(ProposeError::NotLeader { leader_hint: None });
@@ -568,7 +609,7 @@ impl ConsensusModule {
         // Additionally there is no work to be done if we are not in the voting members
         // TODO: We should assert that a non-voting member never starts an
         // election and other servers should never note for a non-voting member
-        if self.config.value.members.len() == 0 || self.config.value.members.get(&self.id).is_none()
+        if self.config.value.members_len() == 0 || !self.config.value.members().contains(&self.id)
         {
             tick.next_tick = Some(Duration::from_secs(1));
             return;
@@ -589,7 +630,7 @@ impl ConsensusModule {
                 election_timeout: Duration,
             },
             Leader {
-                next_commit_index: Option<u64>,
+                next_commit_index: Option<LogIndex>,
             },
         };
 
@@ -624,7 +665,7 @@ impl ConsensusModule {
                 election_timeout,
             } => {
                 if !self.can_be_leader().await {
-                    if self.config.value.members.len() == 1 {
+                    if self.config.value.members_len() == 1 {
                         // In this scenario it is impossible for the cluster to
                         // progress
                         panic!(
@@ -639,7 +680,7 @@ impl ConsensusModule {
                 }
                 // NOTE: If we are the only server in the cluster, then we can
                 // trivially win the election without waiting
-                else if elapsed >= election_timeout || self.config.value.members.len() == 1 {
+                else if elapsed >= election_timeout || self.config.value.members_len() == 1 {
                     self.start_election(tick).await;
                 } else {
                     // Otherwise sleep until the next election
@@ -678,7 +719,7 @@ impl ConsensusModule {
                     // We are starting our leadership term with at least one
                     // uncomitted entry from a pervious term. To immediately
                     // commit it, we will propose a no-op
-                    if self.meta.commit_index < last_log_index {
+                    if self.meta.commit_index() < last_log_index {
                         self.propose_noop(tick)
                             .await
                             .expect("Failed to propose self noop as the leader");
@@ -720,7 +761,7 @@ impl ConsensusModule {
                 // If we are the only server in the cluster, then we don't
                 // really need heartbeats at all, so we will just change this
                 // to some really large value
-                if self.config.value.members.len() + self.config.value.learners.len() == 1 {
+                if self.config.value.members_len() + self.config.value.learners_len() == 1 {
                     next_heartbeat = Duration::from_secs(2);
                 }
 
@@ -742,12 +783,12 @@ impl ConsensusModule {
     /// of the entries that it has commited. In this case, it cannot become the
     /// leader again until it is resynced
     async fn can_be_leader(&self) -> bool {
-        self.log.last_index().await >= self.meta().commit_index
+        self.log.last_index().await >= self.meta().commit_index()
     }
 
     /// On the leader, this will find the best value for the next commit index
     /// if any is currently possible
-    async fn find_next_commit_index(&self, s: &ServerLeaderState) -> Option<u64> {
+    async fn find_next_commit_index(&self, s: &ServerLeaderState) -> Option<LogIndex> {
         // Starting at the last entry in our log, go backwards until we can find
         // an entry that we can mark as commited
         // TODO: ci can also more specifically start at the max value across all
@@ -757,16 +798,16 @@ impl ConsensusModule {
         let mut ci = self.log.last_index().await;
 
         let majority = self.majority_size();
-        while ci > self.meta.commit_index {
+        while ci > self.meta.commit_index() {
             // TODO: Naturally better to always take in pairs to avoid such failures?
             let term = self.log.term(ci).await.unwrap();
 
-            if term < self.meta.current_term {
+            if term < self.meta.current_term() {
                 // Because terms are monotonic, if we get to an entry that is <
                 // our current term, we will never see any more entries at our
                 // current term
                 break;
-            } else if term == self.meta.current_term {
+            } else if term == self.meta.current_term() {
                 // Count how many other voting members have successfully
                 // persisted this index
                 let mut count = 0;
@@ -781,7 +822,7 @@ impl ConsensusModule {
 
                 for (id, e) in s.servers.iter() {
                     // Skip non-voting members or ourselves
-                    if !self.config.value.members.contains(id) || *id == self.id {
+                    if !self.config.value.members().contains(id) || *id == self.id {
                         continue;
                     }
 
@@ -796,7 +837,7 @@ impl ConsensusModule {
             }
 
             // Try the previous entry next time
-            ci -= 1;
+            *ci.value_mut() -= 1;
         }
 
         None
@@ -828,8 +869,8 @@ impl ConsensusModule {
         let config = &self.config.value;
 
         let leader_id = self.id;
-        let term = self.meta.current_term;
-        let leader_commit = self.meta.commit_index;
+        let term = self.meta.current_term();
+        let leader_commit = self.meta.commit_index();
         let log = &self.log;
 
         let last_log_index = log.last_index().await;
@@ -840,25 +881,24 @@ impl ConsensusModule {
         // as we will typically be sending the same request over and over again
         // TODO: It is also possible that the next_index is too low to be able to
         // replicate without installing a snapshot
-        let new_request = async move |prev_log_index: u64| -> AppendEntriesRequest {
-            let mut entries = vec![];
-            for i in (prev_log_index + 1)..(last_log_index + 1) {
-                entries.push((*log.entry(i).await.unwrap().0).clone());
+        let new_request = async move |prev_log_index: LogIndex| -> AppendEntriesRequest {
+            let mut req = AppendEntriesRequest::default();
+            
+            for i in (prev_log_index + 1).value()..(last_log_index + 1).value() {
+                req.add_entries((*log.entry(i.into()).await.unwrap().0).clone());
             }
-
-            AppendEntriesRequest {
-                term,
-                leader_id,
-                prev_log_index,
-                prev_log_term: log.term(prev_log_index).await.unwrap(),
-                entries,
-                leader_commit,
-            }
+            
+            req.set_term(term);
+            req.set_leader_id(leader_id);
+            req.set_prev_log_index(prev_log_index);
+            req.set_prev_log_term(log.term(prev_log_index).await.unwrap());
+            req.set_leader_commit(leader_commit);
+            req
         };
 
         // Map used to duduplicate messages that will end up being exactly the
         // same to different followers
-        let mut message_map: HashMap<u64, Message> = HashMap::new();
+        let mut message_map: HashMap<LogIndex, ConsensusMessage> = HashMap::new();
 
         // Amount of time that has elapsed since the oldest timeout for any of
         // the followers we are managing
@@ -933,9 +973,9 @@ impl ConsensusModule {
 
                 message_map.insert(
                     msg_key,
-                    Message {
+                    ConsensusMessage {
                         to: vec![*server_id],
-                        body: MessageBody::AppendEntries(req, last_log_index),
+                        body: ConsensusMessageBody::AppendEntries(req, last_log_index),
                     },
                 );
             }
@@ -947,7 +987,7 @@ impl ConsensusModule {
             tick.send(msg);
         }
 
-        (HEARTBEAT_TIMEOUT - since_last_heartbeat)
+        HEARTBEAT_TIMEOUT - since_last_heartbeat
     }
 
     async fn start_election(&mut self, tick: &mut Tick) {
@@ -977,12 +1017,12 @@ impl ConsensusModule {
         };
 
         if must_increment {
-            self.meta.current_term += 1;
-            self.meta.voted_for = Some(self.id);
+            *self.meta.current_term_mut().value_mut() += 1;
+            self.meta.set_voted_for(self.id);
             tick.write_meta();
         }
 
-        println!("Starting election for term: {}", self.meta.current_term);
+        println!("Starting election for term: {}", self.meta.current_term().value());
 
         // TODO: In the case of reusing the same term as the last election we can also
         // reuse any previous votes that we received and not bother asking for those
@@ -1010,18 +1050,17 @@ impl ConsensusModule {
             (idx, term)
         };
 
-        let req = RequestVoteRequest {
-            term: self.meta.current_term,
-            candidate_id: self.id,
-            last_log_index,
-            last_log_term,
-        };
+        let mut req = RequestVoteRequest::default();
+        req.set_term(self.meta.current_term());
+        req.set_candidate_id(self.id);
+        req.set_last_log_index(last_log_index);
+        req.set_last_log_term(last_log_term);
 
         // Send to all voting members aside from ourselves
         let ids = self
             .config
             .value
-            .members
+            .members()
             .iter()
             .map(|s| *s)
             .filter(|s| *s != self.id)
@@ -1032,9 +1071,9 @@ impl ConsensusModule {
             return;
         }
 
-        tick.send(Message {
+        tick.send(ConsensusMessage {
             to: ids,
-            body: MessageBody::RequestVote(req),
+            body: ConsensusMessageBody::RequestVote(req),
         });
     }
 
@@ -1056,10 +1095,10 @@ impl ConsensusModule {
     /// Run every single time a term index is seen in a remote request or
     /// response. If another server has a higher term than us, then we must
     /// become a follower
-    async fn observe_term(&mut self, term: u64, tick: &mut Tick) {
-        if term > self.meta.current_term {
-            self.meta.current_term = term;
-            self.meta.voted_for = None;
+    async fn observe_term(&mut self, term: Term, tick: &mut Tick) {
+        if term > self.meta.current_term() {
+            self.meta.set_current_term(term);
+            self.meta.set_voted_for(0);
             tick.write_meta();
 
             self.become_follower(tick).await;
@@ -1071,13 +1110,13 @@ impl ConsensusModule {
     fn mem_commit_index(&self) -> LogIndex {
         match self.pending_commit_index {
             Some(v) => v,
-            None => self.meta.commit_index,
+            None => self.meta.commit_index(),
         }
     }
 
     /// Run this whenever the commited index should be changed
     /// This should be the only function allowed to modify it
-    async fn update_commited(&mut self, index: u64, tick: &mut Tick) {
+    async fn update_commited(&mut self, index: LogIndex, tick: &mut Tick) {
         // TOOD: Make sure this is verified by all the code that uses this method
         assert!(index > self.mem_commit_index());
 
@@ -1092,11 +1131,11 @@ impl ConsensusModule {
             }
         }
 
-        self.meta.commit_index = index;
+        self.meta.set_commit_index(index);
         tick.write_meta();
 
         // Check if any pending configuration has been resolved
-        if self.config.commit(self.meta.commit_index) {
+        if self.config.commit(self.meta.commit_index()) {
             tick.write_config();
         }
     }
@@ -1108,11 +1147,11 @@ impl ConsensusModule {
         // A safe-guard for empty clusters. Because our implementation rightn ow always
         // counts one vote from ourselves, we will just make sure that a majority in a
         // zero node cluster is near impossible instead of just requiring 1 vote
-        if self.config.value.members.len() == 0 {
+        if self.config.value.members().len() == 0 {
             return std::usize::MAX;
         }
 
-        (self.config.value.members.len() / 2) + 1
+        (self.config.value.members().len() / 2) + 1
     }
 
     // NOTE: For clients, we can basically always close the other side of the
@@ -1127,11 +1166,11 @@ impl ConsensusModule {
         resp: RequestVoteResponse,
         tick: &mut Tick,
     ) {
-        self.observe_term(resp.term, tick).await;
+        self.observe_term(resp.term(), tick).await;
 
         // All of this only matters if we are still the candidate in the current term
         // (aka the state hasn't changed since we initially requested a vote)
-        if self.meta.current_term != resp.term {
+        if self.meta.current_term() != resp.term() {
             return;
         }
 
@@ -1142,7 +1181,7 @@ impl ConsensusModule {
         }
 
         let should_cycle = if let ServerState::Candidate(ref mut s) = self.state {
-            if resp.vote_granted {
+            if resp.vote_granted() {
                 s.votes_received.insert(from_id);
             } else {
                 s.some_rejected = true;
@@ -1169,11 +1208,11 @@ impl ConsensusModule {
     pub async fn append_entries_callback(
         &mut self,
         from_id: ServerId,
-        last_index: u64,
+        last_index: LogIndex,
         resp: AppendEntriesResponse,
         tick: &mut Tick,
     ) {
-        self.observe_term(resp.term, tick).await;
+        self.observe_term(resp.term(), tick).await;
 
         let mut should_noop = false;
 
@@ -1181,7 +1220,7 @@ impl ConsensusModule {
             // TODO: Across multiple election cycles, this may no longer be available
             let mut progress = s.servers.get_mut(&from_id).unwrap();
 
-            if resp.success {
+            if resp.success() {
                 // On success, we should
                 if last_index > progress.match_index {
                     // NOTE: THis condition should only be needed if we allow multiple concurrent
@@ -1197,11 +1236,13 @@ impl ConsensusModule {
                 // follower's log) NOTE: We could alternatively just send
                 // nothing upon successful appends and remove this block of code if we just
                 // unconditionally always send a no-op as soon as any node becomes a leader
-                if let Some(idx) = resp.last_log_index {
+                if resp.last_log_index() > 0.into() {
+                    let idx = resp.last_log_index();
+
                     let last_log_index = self.log.last_index().await;
                     let last_log_term = self.log.term(last_log_index).await.unwrap();
 
-                    if idx > last_log_index && last_log_term != self.meta.current_term {
+                    if idx > last_log_index && last_log_term != self.meta.current_term() {
                         should_noop = true;
                     }
                 }
@@ -1209,11 +1250,12 @@ impl ConsensusModule {
                 // Meaning that we must role back the log index
                 // TODO: Assert that next_index becomes strictly smaller
 
-                if let Some(idx) = resp.last_log_index {
+                if resp.last_log_index() > 1.into() {
+                    let idx = resp.last_log_index();
                     progress.next_index = idx + 1;
                 } else {
                     // TODO: Integer overflow
-                    progress.next_index -= 1;
+                    *progress.next_index.value_mut() -= 1;
                 }
             }
 
@@ -1255,13 +1297,13 @@ impl ConsensusModule {
         Duration::from_millis(time)
     }
 
-    async fn pre_vote_should_grant(&self, req: RequestVoteRequest) -> bool {
+    async fn pre_vote_should_grant(&self, req: &RequestVoteRequest) -> bool {
         // NOTE: Accordingly with the last part of Section 4.1 in the Raft
         // thesis, a server should grant votes to servers not currently in
         // their configuration in order to gurantee availability during
         // member additions
 
-        if req.term < self.meta.current_term {
+        if req.term() < self.meta.current_term() {
             return false;
         }
 
@@ -1279,12 +1321,12 @@ impl ConsensusModule {
         // own log
         let up_to_date = {
             // If the terms differ, the candidate must have a higher log term
-            req.last_log_term > last_log_term ||
+            req.last_log_term() > last_log_term ||
 
 				// If the terms are equal, the index of the entry must be at
 				// least as far along as ours
-				(req.last_log_term == last_log_term &&
-					req.last_log_index >= last_log_index)
+				(req.last_log_term() == last_log_term &&
+					req.last_log_index() >= last_log_index)
 
             // If the request has a log term smaller than us, then it is
             // trivially not up to date
@@ -1298,44 +1340,46 @@ impl ConsensusModule {
         // We will trivially vote for any server at a higher term than us
         // because that implies that we have no record of voting for anyone else
         // during that time
-        if req.term > self.meta.current_term {
+        if req.term() > self.meta.current_term() {
             return true;
         }
 
-        match self.meta.voted_for {
+        if self.meta.voted_for().value() > 0 {
             // If we have already voted in this term, we are not allowed to change our minds
-            Some(id) => id == req.candidate_id,
+            let id = self.meta.voted_for();
+            id == req.candidate_id()
+        } else {
             // Grant the vote if we have not yet voted
-            None => true,
+            true
         }
     }
 
     /// Checks if a RequestVote request would be granted by the current server
     /// This will not actually grant the vote for the term and will only mutate
     /// our state if the request has a higher observed term than us
-    pub async fn pre_vote(&self, req: RequestVoteRequest) -> RequestVoteResponse {
+    pub async fn pre_vote(&self, req: &RequestVoteRequest) -> RequestVoteResponse {
         let granted = self.pre_vote_should_grant(req).await;
 
-        RequestVoteResponse {
-            term: self.meta.current_term,
-            vote_granted: granted,
-        }
+        let mut res = RequestVoteResponse::default();
+        res.set_term(self.meta.current_term());
+        res.set_vote_granted(granted);
+        res
     }
 
     /// Called when another server is requesting that we vote for it
     pub async fn request_vote(
         &mut self,
-        req: RequestVoteRequest,
+        req: &RequestVoteRequest,
         tick: &mut Tick,
     ) -> MustPersistMetadata<RequestVoteResponse> {
-        let candidate_id = req.candidate_id;
-        println!("Received request_vote from {}", candidate_id);
+        let candidate_id = req.candidate_id();
+        println!("Received request_vote from {}", candidate_id.value());
 
-        self.observe_term(req.term, tick).await;
+        self.observe_term(req.term(), tick).await;
 
         let res = self.pre_vote(req).await;
 
-        if res.vote_granted {
+        if res.vote_granted() {
             // We want to make sure that even if this is a recast of a vote in
             // the same term, that our follower election_timeout is definitely
             // reset so that the leader upon being elected can depend on an
@@ -1347,9 +1391,9 @@ impl ConsensusModule {
                 _ => panic!("Granted vote but did not transition back to being a follower"),
             };
 
-            self.meta.voted_for = Some(candidate_id);
+            self.meta.set_voted_for(candidate_id);
             tick.write_meta();
-            println!("Casted vote for: {}", candidate_id);
+            println!("Casted vote for: {}", candidate_id.value());
         }
 
         MustPersistMetadata::new(res)
@@ -1366,7 +1410,7 @@ impl ConsensusModule {
     // trivial right?
     pub async fn append_entries(
         &mut self,
-        req: AppendEntriesRequest,
+        req: &AppendEntriesRequest,
         tick: &mut Tick,
     ) -> Result<FlushConstraint<AppendEntriesResponse>> {
         // NOTE: It is totally normal for this to receive a request from a
@@ -1374,14 +1418,14 @@ impl ConsensusModule {
         // middle of a configuration change adn this could be the request that
         // adds that server to the configuration
 
-        self.observe_term(req.term, tick).await;
+        self.observe_term(req.term(), tick).await;
 
         // If a candidate observes another leader for the current term, then it
         // should become a follower
         // This is generally triggered by the initial heartbeat that a leader
         // does upon being elected to assert its authority and prevent further
         // elections
-        if req.term == self.meta.current_term {
+        if req.term() == self.meta.current_term() {
             let is_candidate = match self.state {
                 ServerState::Candidate(_) => true,
                 _ => false,
@@ -1392,15 +1436,17 @@ impl ConsensusModule {
             }
         }
 
-        let current_term = self.meta.current_term;
+        let current_term = self.meta.current_term();
 
-        let response = |success: bool, last_log_index: Option<u64>| AppendEntriesResponse {
-            term: current_term,
-            success,
-            last_log_index,
+        let response = |success: bool, last_log_index: Option<LogIndex>| {
+            let mut r = AppendEntriesResponse::default();
+            r.set_term(current_term);
+            r.set_success(success);
+            r.set_last_log_index(last_log_index.unwrap_or(0.into()));
+            r
         };
 
-        if req.term < self.meta.current_term {
+        if req.term() < self.meta.current_term() {
             // Simplest way to be parallel writing is to add another thread that
             // does the synchronous log writing
             // For now this only really applies
@@ -1414,7 +1460,7 @@ impl ConsensusModule {
         }
 
         // Trivial considering observe_term gurantees the > case
-        assert_eq!(req.term, self.meta.current_term);
+        assert_eq!(req.term(), self.meta.current_term());
 
         match self.state {
             // This is generally the only state we expect to see
@@ -1422,14 +1468,14 @@ impl ConsensusModule {
                 // Update the time now that we have seen a request from the
                 // leader in the current term
                 s.last_heartbeat = tick.time.clone();
-                s.last_leader_id = Some(req.leader_id);
+                s.last_leader_id = Some(req.leader_id());
             }
             // We will only see this when the leader is applying a change to
             // itself
             ServerState::Leader(_) => {
                 // NOTE: In all cases, we currently don't use this track for
                 // anything
-                if req.leader_id != self.id {
+                if req.leader_id() != self.id {
                     return Err(err_msg(
                         "This should never happen. We are receiving append \
 						entries from another leader in the same term",
@@ -1443,22 +1489,22 @@ impl ConsensusModule {
         };
 
         // Sanity checking the request
-        if req.entries.len() >= 1 {
+        if req.entries().len() >= 1 {
             // Sanity check 1: First entry must be immediately after the
             // previous one
-            let first = &req.entries[0];
-            if first.pos.term < req.prev_log_term || first.pos.index != req.prev_log_index + 1 {
+            let first = &req.entries()[0];
+            if first.pos().term() < req.prev_log_term() || first.pos().index() != req.prev_log_index() + 1 {
                 return Err(err_msg("Received previous entry does not follow"));
             }
 
             // Sanity check 2: All entries must be in sorted order and
             // immediately after one another (because the truncation below
             // depends on them being sorted, this must hold)
-            for i in 0..(req.entries.len() - 1) {
-                let cur = &req.entries[i];
-                let next = &req.entries[i + 1];
+            for i in 0..(req.entries().len() - 1) {
+                let cur = &req.entries()[i];
+                let next = &req.entries()[i + 1];
 
-                if cur.pos.term > next.pos.term || next.pos.index != cur.pos.index + 1 {
+                if cur.pos().term() > next.pos().term() || next.pos().index() != cur.pos().index() + 1 {
                     return Err(err_msg(
                         "Received entries are unsorted, duplicates, or inconsistent",
                     ));
@@ -1468,15 +1514,15 @@ impl ConsensusModule {
 
         // This should never happen as the snapshot should only contain comitted
         // entries which should never be resent
-        if req.prev_log_index + 1 < self.log.first_index().await {
+        if req.prev_log_index() + 1 < self.log.first_index().await {
             return Err(err_msg(
                 "Requested previous log entry is before the start of the log",
             ));
         }
 
-        match self.log.term(req.prev_log_index).await {
+        match self.log.term(req.prev_log_index()).await {
             Some(term) => {
-                if term != req.prev_log_term {
+                if term != req.prev_log_term() {
                     // In this case, our log contains an entry that conflicts
                     // with the leader and we will end up needing to
                     // overwrite/truncate at least one entry in order to reach
@@ -1489,7 +1535,7 @@ impl ConsensusModule {
                     // the conflict point
                     // TODO: Possibly do some type of binary search (next time try 3/4 of the way to
                     // the end of the prev entry from the commit_index)
-                    return Ok(response(false, Some(self.meta.commit_index)).into());
+                    return Ok(response(false, Some(self.meta.commit_index())).into());
                 }
             }
             // In this case, we are receiving changes beyond the end of our log, so we will respond
@@ -1503,16 +1549,16 @@ impl ConsensusModule {
         let mut first_new = 0;
         let mut truncated = false;
 
-        for (i, e) in req.entries.iter().enumerate() {
-            let existing_term = self.log.term(e.pos.index).await;
+        for (i, e) in req.entries().iter().enumerate() {
+            let existing_term = self.log.term(e.pos().index()).await;
             if let Some(t) = existing_term {
-                if t == e.pos.term {
+                if t == e.pos().term() {
                     // Entry is already in the log
                     first_new += 1;
                 } else {
                     // Log is inconsistent: Must roll back all changes in the local log
 
-                    if self.mem_commit_index() >= e.pos.index {
+                    if self.mem_commit_index() >= e.pos().index() {
                         return Err(err_msg(
                             "Refusing to truncate changes already locally committed",
                         ));
@@ -1520,14 +1566,14 @@ impl ConsensusModule {
 
                     // If the current configuration is uncommitted, we need to restore the old one
                     // if the last change to it is being removed from the log
-                    self.config.revert(e.pos.index);
+                    self.config.revert(e.pos().index());
 
                     // When this entry is appended below, it should mark the pending_conflict with
                     // its sequence
                     truncated = true;
 
                     // Should truncate every entry including and after e.pos.index
-                    if let Some(seq) = self.log.truncate(e.pos.index).await {
+                    if let Some(seq) = self.log.truncate(e.pos().index()).await {
                         self.pending_conflict = Some(seq);
                         truncated = false;
                     }
@@ -1545,13 +1591,13 @@ impl ConsensusModule {
         // should be moving this check close to the append implementation
         // Generally this should never happen considering all of the other checks that
         // we have above
-        if first_new < req.entries.len() {
+        if first_new < req.entries_len() {
             let last_log_index = self.log.last_index().await;
             let last_log_term = self.log.term(last_log_index).await.unwrap();
 
-            let next = &req.entries[first_new];
+            let next = &req.entries()[first_new];
 
-            if next.pos.index != last_log_index + 1 || next.pos.term < last_log_term {
+            if next.pos().index() != last_log_index + 1 || next.pos().term() < last_log_term {
                 // It is possible that this will occur near the case of snapshotting
                 // We will need to enable a log to basically reset its front without actually
                 // resetting itself entirely
@@ -1562,8 +1608,8 @@ impl ConsensusModule {
         }
 
         // TODO: This could be zero which would be annoying
-        let mut last_new = req.prev_log_index;
-        let mut last_new_term = req.prev_log_term;
+        let mut last_new = req.prev_log_index();
+        let mut last_new_term = req.prev_log_term();
         let mut last_new_seq = self
             .log
             .entry(last_new)
@@ -1572,15 +1618,15 @@ impl ConsensusModule {
             .unwrap_or(LogSeq(0));
 
         // Finally it is time to append some entries
-        if req.entries.len() - first_new > 0 {
-            let new_entries = &req.entries[first_new..];
+        if req.entries().len() - first_new > 0 {
+            let new_entries = &req.entries()[first_new..];
 
-            last_new = new_entries.last().unwrap().pos.index;
-            last_new_term = new_entries.last().unwrap().pos.term;
+            last_new = new_entries.last().unwrap().pos().index();
+            last_new_term = new_entries.last().unwrap().pos().term();
 
             // Immediately incorporate any configuration changes
             for e in new_entries {
-                let i = e.pos.index;
+                let i = e.pos().index();
 
                 tick.new_entries = true;
                 last_new_seq = self.log.append(e.clone()).await;
@@ -1593,7 +1639,7 @@ impl ConsensusModule {
                 // TODO: Ideally compute the latest commit_index before we apply
                 // these changes so that we don't need to maintain a rollback
                 // history if we don't need to
-                self.config.apply(e, self.meta.commit_index);
+                self.config.apply(e, self.meta.commit_index());
             }
         }
 
@@ -1601,12 +1647,12 @@ impl ConsensusModule {
         // the request (and not the index of the last entry in our log as we
         // have not necessarily validated up to that far in case the term or
         // leader changed)
-        if req.leader_commit > self.meta.commit_index {
-            let next_commit_index = std::cmp::min(req.leader_commit, last_new);
+        if req.leader_commit() > self.meta.commit_index() {
+            let next_commit_index = std::cmp::min(req.leader_commit(), last_new);
 
             // It is possibly for the commit_index to try to go down if we have
             // more entries snapshotted than appear in our local log
-            if next_commit_index > self.meta.commit_index {
+            if next_commit_index > self.meta.commit_index() {
                 self.update_commited(next_commit_index, tick).await;
             }
         }
@@ -1632,14 +1678,11 @@ impl ConsensusModule {
                 },
             ),
             last_new_seq,
-            LogPosition {
-                term: last_new_term,
-                index: last_new,
-            },
+            LogPosition::new(last_new_term, last_new),
         ))
     }
 
-    pub async fn timeout_now(&mut self, req: TimeoutNow, tick: &mut Tick) -> Result<()> {
+    pub async fn timeout_now(&mut self, req: &TimeoutNow, tick: &mut Tick) -> Result<()> {
         // TODO: Possibly avoid a pre-vote in this case to speed up leader transfer
         self.start_election(tick).await;
         Ok(())
