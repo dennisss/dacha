@@ -5,22 +5,8 @@ extern crate common;
 extern crate http;
 extern crate parsing;
 
-use std::convert::TryFrom;
-use std::str::FromStr;
-use std::thread;
-
-use common::async_std::net::{TcpListener, TcpStream};
-use common::async_std::prelude::*;
 use common::async_std::task;
-use common::bytes::Bytes;
 use common::errors::*;
-use common::errors::*;
-use common::io::ReadWriteable;
-use compression::gzip::*;
-use http::header::*;
-use http::message::*;
-use http::status_code::*;
-use http::encoding::*;
 use parsing::iso::*;
 
 // TODO: THe Google TLS server will timeout the connection if the SETTINGs packet isn't received fast enough.
@@ -29,7 +15,7 @@ async fn run_client() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set
 
     let client = http::Client::create(
-        "google.com", http::ClientOptions::default().set_secure(true))?;
+        http::ClientOptions::from_authority("google.com")?.set_secure(true))?;
 
     let req = http::RequestBuilder::new()
         .method(http::Method::GET)

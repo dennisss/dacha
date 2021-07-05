@@ -12,6 +12,17 @@ pub struct Response {
     pub body: Box<dyn Body>,
 }
 
+impl Response {
+    pub fn ok(&self) -> bool {
+        self.head.status_code == OK
+    }
+
+    pub fn status(&self) -> StatusCode {
+        self.head.status_code.clone()
+    }
+}
+
+
 #[derive(Debug)]
 pub struct ResponseHead {
     pub version: Version,

@@ -5,44 +5,44 @@ use parsing::opaque::OpaqueString;
 
 use crate::message_syntax::*;
 
-pub const CONNECTION: &'static [u8] = b"Connection";
+pub const CONNECTION: &'static str = "Connection";
 
-pub const KEEP_ALIVE: &'static [u8] = b"Keep-Alive";
+pub const KEEP_ALIVE: &'static str = "Keep-Alive";
 
-pub const TRANSFER_ENCODING: &'static [u8] = b"Transfer-Encoding";
+pub const TRANSFER_ENCODING: &'static str = "Transfer-Encoding";
 
-pub const CONTENT_LENGTH: &'static [u8] = b"Content-Length";
+pub const CONTENT_LENGTH: &'static str = "Content-Length";
 
-pub const CONTENT_ENCODING: &'static [u8] = b"Content-Encoding";
+pub const CONTENT_ENCODING: &'static str = "Content-Encoding";
 
-pub const CONTENT_TYPE: &'static [u8] = b"Content-Type";
+pub const CONTENT_TYPE: &'static str = "Content-Type";
 
-pub const DATE: &'static [u8] = b"Date";
+pub const DATE: &'static str = "Date";
 
-pub const HOST: &'static [u8] = b"Host";
+pub const HOST: &'static str = "Host";
 
-pub const UPGRADE: &'static [u8] = b"Upgrade";
+pub const UPGRADE: &'static str = "Upgrade";
 
-pub const CONTENT_RANGE: &'static [u8] = b"Content-Range";
+pub const CONTENT_RANGE: &'static str = "Content-Range";
 
-pub const TE: &'static [u8] = b"TE";
+pub const TE: &'static str = "TE";
 
-pub const TRAILERS: &'static [u8] = b"Trailers";
+pub const TRAILERS: &'static str = "Trailers";
 
-pub const ETAG: &'static [u8] = b"ETag";
+pub const ETAG: &'static str = "ETag";
 
 
 /// List of headers which are relevant to maintaining the connection at the HTTP transport layer.
 ///
 /// Users of the HTTP client and server libraries in this package are not allowed to specify any
 /// of these header names.
-const TRANSPORT_LEVEL_HEADERS: &'static [&'static [u8]] = &[
+const TRANSPORT_LEVEL_HEADERS: &'static [&'static str] = &[
     CONNECTION, CONTENT_LENGTH, HOST, KEEP_ALIVE, TRANSFER_ENCODING, UPGRADE,
 
     TE, TRAILERS
 ];
 
-const CONTENT_LEVEL_HEADERS: &'static [&'static [u8]] = &[
+const CONTENT_LEVEL_HEADERS: &'static [&'static str] = &[
     DATE, CONTENT_ENCODING, CONTENT_RANGE, ETAG
 ];
 
@@ -71,7 +71,7 @@ impl Header {
     /// TODO: Make this check contextual. Anything referenced in the 'Connection' header is also transport level. 
     pub fn is_transport_level(&self) -> bool {
         for name in TRANSPORT_LEVEL_HEADERS {
-            if name.eq_ignore_ascii_case(self.name.as_str().as_bytes()) {
+            if name.eq_ignore_ascii_case(self.name.as_str()) {
                 return true;
             }
         }
@@ -81,7 +81,7 @@ impl Header {
 
     pub fn is_content_level(&self) -> bool {
         for name in CONTENT_LEVEL_HEADERS {
-            if name.eq_ignore_ascii_case(self.name.as_str().as_bytes()) {
+            if name.eq_ignore_ascii_case(self.name.as_str()) {
                 return true;
             }
         }
@@ -144,32 +144,36 @@ impl Headers {
     }
 
     /// Finds all headers matching a given name.
-    pub fn find<'a, 'b>(&'a self, name: &'a [u8]) -> impl Iterator<Item = &'a Header> {
+    pub fn find<'a, 'b>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Header> {
         self.raw_headers
             .iter()
-            .filter(move |h| h.name.eq_ignore_case(name))
+            .filter(move |h| h.name.as_str().eq_ignore_ascii_case(name))
     }
 
-    // TODO: Change to take an str as names are always Ascii
-    pub fn find_one<'a>(&'a self, name: &[u8]) -> Result<&'a Header> {
+    pub fn get_one<'a>(&'a self, name: &str) -> Result<Option<&'a Header>> {
         // TODO: Deduplicate this with find().
         let mut iter = self.raw_headers
             .iter()
-            .filter(move |h| h.name.eq_ignore_case(name));
+            .filter(move |h| h.name.as_str().eq_ignore_ascii_case(name));
+        
+        let value = iter.next();
 
-        let value = iter.next()
-            .ok_or_else(|| format_err!("Missing header named: {:?}", name))?;
-
-        if iter.next().is_some() {
+        if value.is_some() && iter.next().is_some() {
             return Err(format_err!("Expected exactly one header named: {:?}", name));
         }
         
         Ok(value)
     }
 
-    pub fn find_mut<'a>(&'a mut self, name: &'a [u8]) -> Option<&'a mut Header> {
+    // TODO: Change to take an str as names are always Ascii
+    pub fn find_one<'a>(&'a self, name: &str) -> Result<&'a Header> {
+        self.get_one(name)?
+            .ok_or_else(|| format_err!("Missing header named: {:?}", name))
+    }
+
+    pub fn find_mut<'a>(&'a mut self, name: &'a str) -> Option<&'a mut Header> {
         for header in self.raw_headers.iter_mut() {
-            if header.name.eq_ignore_case(name) {
+            if header.name.as_str().eq_ignore_ascii_case(name) {
                 return Some(header);
             }
         }
@@ -177,9 +181,9 @@ impl Headers {
         None
     }
 
-    pub fn has(&self, name: &[u8]) -> bool {
+    pub fn has(&self, name: &str) -> bool {
         for h in self.raw_headers.iter() {
-            if h.name.eq_ignore_case(name) {
+            if h.name.as_str().eq_ignore_ascii_case(name) {
                 return true;
             }
         }

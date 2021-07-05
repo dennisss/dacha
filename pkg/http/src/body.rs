@@ -1,10 +1,10 @@
 use std::{io::Cursor, ops::DerefMut};
 use std::pin::Pin;
-use std::sync::mpsc;
 use std::ops::Deref;
+use std::collections::VecDeque;
 
 use common::io::Readable;
-use common::bytes::Bytes;
+use common::bytes::{Buf, Bytes};
 use common::errors::*;
 use common::FutureResult;
 use compression::transform::Transform;
@@ -99,8 +99,58 @@ impl Readable for WithTrailersBody {
 }
 
 
+struct PartsBody {
+    parts: VecDeque<Bytes>,
+    
+}
+
+#[async_trait]
+impl Body for PartsBody {
+    fn len(&self) -> Option<usize> {
+        let mut total = 0;
+        for part in &self.parts {
+            total += part.len();
+        }
+
+        Some(total)
+    }
+
+    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }
+}
+
+#[async_trait]
+impl Readable for PartsBody {
+    async fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
+        let mut nread = 0;
+        while buf.len() > 0 {
+            let part = match self.parts.get_mut(0) {
+                Some(v) => v,
+                None => { break; }
+            };
+
+            if part.len() == 0 {
+                self.parts.pop_front();
+                continue;
+            }
+
+            let n = std::cmp::min(buf.len(), part.len());
+            (&mut buf[0..n]).copy_from_slice(&part[0..n]);
+            nread += n;
+
+            buf = &mut buf[n..];
+            part.advance(n);
+        }
+
+        Ok(nread)
+    }
+}
 
 
+pub fn BodyFromParts<I: Iterator<Item=Bytes>>(parts: I) -> Box<dyn Body> {
+    Box::new(PartsBody {
+        parts: parts.collect()
+    })
+}
 
 /// A body which is terminated by the end of the stream and has no known length.
 pub struct IncomingUnboundedBody {
@@ -181,6 +231,7 @@ impl Readable for IncomingSizedBody {
 
         if n == 0 && self.length != 0 {
             self.error = true;
+            // TODO: This should trigger a client error to be returned (maybe use a ProtocolError)
             return Err(err_msg("Unexpected end to stream"));
         }
 

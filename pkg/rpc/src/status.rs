@@ -26,13 +26,13 @@ impl Status {
     }
 
     pub fn from_headers(headers: &Headers) -> Result<Self> {
-        let code_header = headers.find_one(GRPC_STATUS.as_bytes())?;
+        let code_header = headers.find_one(GRPC_STATUS)?;
         let code = std::str::from_utf8(code_header.value.as_bytes())?.parse::<usize>()?;
 
         let mut message = String::new();
-        if headers.has(GRPC_STATUS_MESSAGE.as_bytes()) {
+        if headers.has(GRPC_STATUS_MESSAGE) {
             // Raw message (ASCII and still percent encoded)
-            let raw_message = std::str::from_utf8(headers.find_one(GRPC_STATUS_MESSAGE.as_bytes())?.value.as_bytes())?;
+            let raw_message = std::str::from_utf8(headers.find_one(GRPC_STATUS_MESSAGE)?.value.as_bytes())?;
 
             // TODO: Decode according to the restricted form of allowed characters.
             // Noteably the grpc spec says that we should resilient to errors.

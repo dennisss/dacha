@@ -48,6 +48,6 @@ pub use crate::server::{Server, RequestHandler};
 pub use crate::client::{Client, ClientOptions};
 pub use crate::request::{Request, RequestBuilder, RequestHead};
 pub use crate::response::{Response, ResponseBuilder, ResponseHead};
-pub use crate::body::{Body, BodyFromData, EmptyBody, WithTrailers};
+pub use crate::body::{Body, BodyFromData, EmptyBody, WithTrailers, BodyFromParts};
 pub use crate::method::Method;
 pub use crate::header::{Headers, Header};

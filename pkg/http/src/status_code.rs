@@ -3,7 +3,7 @@
 // https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml
 
 /// Wrapper around an HTTP status code.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StatusCode(u16);
 
 impl StatusCode {

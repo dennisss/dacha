@@ -363,7 +363,7 @@ mod tests {
 
         // TODO: Check that we got back the right value.
 
-        assert_eq!(trailers.unwrap().find_one(b"hello")?.value.as_bytes(), b"world");
+        assert_eq!(trailers.unwrap().find_one("hello")?.value.as_bytes(), b"world");
 
         Ok(())
     }

@@ -16,7 +16,7 @@ use crate::status_code::*;
 
 const INFINITE: u32 = u32::MAX;
 
-const SETTINGS_HEADER: &'static [u8] = b"HTTP2-Settings";
+const SETTINGS_HEADER: &'static str = "HTTP2-Settings";
 
 const MIN_ALLOWED_FRAME_SIZE: u32 = 1 << 14;
 const MAX_ALLOWED_FRAME_SIZE: u32 = (1 << 24) - 1; 
@@ -62,21 +62,9 @@ impl SettingsContainer {
 
     // TODO: Only return ProtocolErrorV1's.
     pub fn read_from_request(headers: &Headers) -> Result<Self> {
-        let header = {
-            let mut iter = headers.find(SETTINGS_HEADER);
-            let h = iter.next()
-                .ok_or_else(|| Error::from(ProtocolErrorV1 {
-                    code: BAD_REQUEST, message: "Missing HTTP2-Settings header" }))?;
-
-            if iter.next().is_some() {
-                return Err(ProtocolErrorV1 {
-                    code: BAD_REQUEST,
-                    message: "More than one HTTP2-Settings header present"
-                }.into());
-            }
-
-            h
-        };
+        let header = headers.find_one(SETTINGS_HEADER)
+            .map_err(|_| Error::from(ProtocolErrorV1 {
+                code: BAD_REQUEST, message: "Expected exactly one HTTP2-Settings header" }))?;
 
         let connection_options = parse_connection(headers)?;
         let mut found_option = false;
