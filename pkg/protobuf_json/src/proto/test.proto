@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+
+message TestMessage {
+    int32 integer = 1;
+    bool flag = 2;
+    bytes data = 3;
+    repeated int32 ids = 4;
+    string s = 5;
+}

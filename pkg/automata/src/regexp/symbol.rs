@@ -7,6 +7,7 @@ use std::convert::TryFrom;
 /// NOTE: The largest utf-8 character is 0x10FFFF
 /// TODO: Verify that we never get inputs out of that range.
 const START_SYMBOL: u32 = (std::char::MAX as u32) + 1;
+
 // TODO: Have an assertion that this is < std::u32::max (as we need to add one
 // to this to get an inclusive range.)
 const END_SYMBOL: u32 = (std::char::MAX as u32) + 2;

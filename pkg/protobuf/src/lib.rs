@@ -16,6 +16,7 @@ extern crate macros;
 
 // TODO: Eventually remove dependencies on the compiler
 extern crate protobuf_compiler;
+extern crate json;
 
 pub mod reflection;
 pub mod service;
@@ -28,7 +29,7 @@ mod collections;
 pub use bytes::BytesField;
 pub use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
-pub use crate::reflection::MessageReflection;
+pub use crate::reflection::{MessageReflection, FieldDescriptor};
 pub use protobuf_compiler::spec::EnumValue;
 pub use protobuf_compiler::spec::FieldNumber;
 pub use collections::*;

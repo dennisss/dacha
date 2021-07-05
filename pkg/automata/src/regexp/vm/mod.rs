@@ -64,11 +64,11 @@ mod tests {
 
         println!("{}", prog.assembly());
 
-        assert_eq!(run(&prog.instructions, b"abd"), Some(vec![ Some(1), Some(2) ]));
-        assert_eq!(run(&prog.instructions, b"ad"), None);
-        assert_eq!(run(&prog.instructions, b""), None);
-        assert_eq!(run(&prog.instructions, b"acd"), Some(vec![ Some(1), Some(2) ]));
-        assert_eq!(run(&prog.instructions, b"acdd"), None);
+        assert_eq!(run(&prog.program, b"abd"), Some(vec![ Some(1), Some(2) ]));
+        assert_eq!(run(&prog.program, b"ad"), None);
+        assert_eq!(run(&prog.program, b""), None);
+        assert_eq!(run(&prog.program, b"acd"), Some(vec![ Some(1), Some(2) ]));
+        assert_eq!(run(&prog.program, b"acdd"), None);
 
         Ok(())
     }
@@ -81,13 +81,26 @@ mod tests {
 
         println!("{}", prog.assembly());
 
-        assert_eq!(run(&prog.instructions, b""), None);
-        assert_eq!(run(&prog.instructions, b"b"), None);
-        assert_eq!(run(&prog.instructions, b"a"), Some( vec![ Some(0), Some(1) ] ));
-        assert_eq!(run(&prog.instructions, b"ax"), Some( vec![ Some(0), Some(1) ] ));
-        assert_eq!(run(&prog.instructions, b"hello a"), Some( vec![ Some(6), Some(7) ] ));
+        assert_eq!(run(&prog.program, b""), None);
+        assert_eq!(run(&prog.program, b"b"), None);
+        assert_eq!(run(&prog.program, b"a"), Some( vec![ Some(0), Some(1) ] ));
+        assert_eq!(run(&prog.program, b"ax"), Some( vec![ Some(0), Some(1) ] ));
+        assert_eq!(run(&prog.program, b"hello a"), Some( vec![ Some(6), Some(7) ] ));
 
-        println!("SIZE: {}", std::mem::size_of::<Instruction>() * prog.instructions.len());
+        println!("SIZE: {}", std::mem::size_of::<Instruction>() * prog.program.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn vm_greedy_test() -> Result<()> {
+        let re = instance::RegExp::new("ba+")?;
+
+        let input = "axbaaaa";
+
+        let m = re.exec(input).unwrap();
+
+        assert_eq!(m.group_str(0).unwrap()?, "baaaa");
 
         Ok(())
     }

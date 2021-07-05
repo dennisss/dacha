@@ -8,8 +8,8 @@ use crate::regexp::node::*;
 use crate::regexp::symbol::invert_symbols;
 use crate::regexp::vm::instruction::*;
 
-pub struct Program {
-    pub instructions: Vec<Instruction>,
+pub struct Compilation {
+    pub program: VecProgram,
 
     /// For each captured group in the original expression, this contains the two indices
     /// of the string pointers used to save the start and end index of the group during
@@ -20,11 +20,11 @@ pub struct Program {
     pub groups_by_name: HashMap<String, usize>
 }
 
-impl Program {
+impl Compilation {
     pub fn assembly(&self) -> String {
         let mut out = String::new();
-        for i in 0..self.instructions.len() {
-            write!(&mut out, "{:3}: {}\n", i, self.instructions[i].assembly()).unwrap();
+        for i in 0..self.program.len() {
+            write!(&mut out, "{:3}: {}\n", i, self.program[i].assembly()).unwrap();
         }
 
         out
@@ -32,12 +32,12 @@ impl Program {
 
     /// Retrieves an iterator over all references to program counters in the instructions.
     fn iter_referenced_pcs(&mut self) -> impl Iterator<Item=&mut ProgramCounter> {
-        self.instructions.iter_mut().flat_map(|inst| {
+        self.program.iter_mut().flat_map(|inst| {
             let slice: [Option<&mut ProgramCounter>; 2] = match inst {
                 Instruction::Any | Instruction::Range { .. } | Instruction::Char(_) |
-                Instruction::Lookahead(_) | Instruction::Match |
+                Instruction::Match |
                 Instruction::Special(_) |
-                Instruction::Save(_) => [None, None],
+                Instruction::Save { .. } => [None, None],
 
                 Instruction::Jump(x) => [Some(x), None],
                 Instruction::Split(x, y) => [Some(x), Some(y)]
@@ -50,15 +50,15 @@ impl Program {
 
 /// Compiler for converting a RegExpNode to a Program that can be executed.
 pub struct Compiler {
-    program: Program,
+    output: Compilation,
     next_string_index: usize
 }
 
 impl Compiler {
-    pub fn compile(root: &RegExpNode) -> Result<Program> {
+    pub fn compile(root: &RegExpNode) -> Result<Compilation> {
         let mut inst = Self {
-            program: Program {
-                instructions: vec![],
+            output: Compilation {
+                program: VecProgram::new(),
                 groups: vec![],
                 groups_by_name: HashMap::new()
             },
@@ -72,15 +72,15 @@ impl Compiler {
         // TODO: Validate that there are no infinite loops (e.g. jump to self or any other
         // continous sequence of non-input consuming instructions)
 
-        Ok(inst.program)
+        Ok(inst.output)
     }
 
     fn add_instruction(&mut self, instruction: Instruction) {
-        self.program.instructions.push(instruction);
+        self.output.program.push(instruction);
     }
 
     fn program_counter(&self) -> ProgramCounter {
-        self.program.instructions.len() as ProgramCounter
+        self.output.program.len() as ProgramCounter
     }
 
     // TODO: For any sub-expressions that don't contain contain captured groups, we can convert
@@ -126,7 +126,7 @@ impl Compiler {
                     self.compile_node(node)?;
                 }
             }
-            RegExpNode::Quantified(node, quantifier) => {
+            RegExpNode::Quantified { node, quantifier, greedy } => {
                 match quantifier {
                     Quantifier::ZeroOrOne => { // a?
                         let split_idx = self.program_counter();
@@ -134,7 +134,11 @@ impl Compiler {
 
                         self.compile_node(node)?;
 
-                        self.program.instructions[split_idx as usize] = Instruction::Split(split_idx + 1, self.program_counter());
+                        let a = split_idx + 1;
+                        let b = self.program_counter();
+
+                        self.output.program[split_idx as usize] =
+                            if *greedy { Instruction::Split(a, b) } else { Instruction::Split(b, a) };
                     }
                     Quantifier::ZeroOrMore => {
                         let split_idx = self.program_counter();
@@ -144,12 +148,19 @@ impl Compiler {
 
                         self.add_instruction(Instruction::Jump(split_idx));
 
-                        self.program.instructions[split_idx as usize] = Instruction::Split(split_idx + 1, self.program_counter());
+                        let a = split_idx + 1;
+                        let b = self.program_counter();
+
+                        self.output.program[split_idx as usize] =
+                            if *greedy { Instruction::Split(a, b) } else { Instruction::Split(b, a) };
                     }
                     Quantifier::OneOrMore => {
                         let start_idx = self.program_counter();
                         self.compile_node(node)?;
-                        self.add_instruction(Instruction::Split(start_idx, self.program_counter() + 1));
+
+                        let a = start_idx;
+                        let b = self.program_counter() + 1;
+                        self.add_instruction(if *greedy { Instruction::Split(a, b) } else { Instruction::Split(b, a) });
                     },
                     _ => {
                         println!("Unsupported quantifier: {:?}", quantifier);
@@ -165,16 +176,16 @@ impl Compiler {
                     let end_idx = self.next_string_index;
                     self.next_string_index += 1;
 
-                    let group_idx = self.program.groups.len();
-                    self.program.groups.push((start_idx, end_idx));
+                    let group_idx = self.output.groups.len();
+                    self.output.groups.push((start_idx, end_idx));
 
                     if !name.is_empty() {
-                        self.program.groups_by_name.insert(name.to_string(), group_idx);
+                        self.output.groups_by_name.insert(name.to_string(), group_idx);
                     }
 
-                    self.add_instruction(Instruction::Save(start_idx));
+                    self.add_instruction(Instruction::Save { index: start_idx, lookbehind: false });
                     self.compile_node(inner)?;
-                    self.add_instruction(Instruction::Save(end_idx));
+                    self.add_instruction(Instruction::Save { index: end_idx, lookbehind: false });
 
                 } else {
                     self.compile_node(inner)?;
@@ -266,8 +277,8 @@ impl Compiler {
     
         let end_idx = self.program_counter();
     
-        self.program.instructions[split_idx as usize] = Instruction::Split(first_idx, second_idx);
-        self.program.instructions[jump_idx as usize] = Instruction::Jump(end_idx);
+        self.output.program[split_idx as usize] = Instruction::Split(first_idx, second_idx);
+        self.output.program[jump_idx as usize] = Instruction::Jump(end_idx);
 
         Ok(())
     }
@@ -275,16 +286,17 @@ impl Compiler {
     fn optimize(&mut self) {
 
         // Replace the instruction pattern:
-        // 'Save(x) Char(y)' with 'Lookahead(y) Save(x) Any'
+        // 'Save(x) Char(y)' with 'Char(y) BeforeSave Lookahead(y) Save(x) Any'
         //
         // This works as long as there are no jumps to the 'Char(y)' and maybe jumps to the
         // 'Save(x)'.
         //
         // This optimization avoids copies of the string pointer buffer when we see 
+        /*
         {
             for i in 0..(self.program.instructions.len() - 1) {
                 let x = match self.program.instructions[i] {
-                    Instruction::Save(x) => x,
+                    Instruction::Save { index, .. } => index,
                     _ => continue
                 };
 
@@ -320,6 +332,7 @@ impl Compiler {
                 }
             }
         }
+        */
 
         // TODO: Consolidate consecutive lookaheads?
         // 'Lookahead(x) Lookahead(y)' will trivially terminate if x != y

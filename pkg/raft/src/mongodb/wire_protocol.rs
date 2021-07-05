@@ -53,13 +53,6 @@ extern crate bson;
 */
 
 /*
-#[derive(Serialize, Deserialize)]
-struct apples {
-    pub time: std::time::Instant
-}
-*/
-
-/*
     bincode is almost perfect but it does not support me just giving it a
 
     Simple types:

@@ -186,7 +186,7 @@ impl RequestBuilder {
 regexp!(REQUEST_PATH => "^(?:(\\*)|(/(?:[a-zA-Z0-9-._~!$&'()*+,;=:@%]+/?)*)(?:\\?([A-Za-z0-9-._~!$&'()*+,;=:@%?]*))?)$");
 
 fn simple_path_parser(path: &[u8]) -> Option<(AsciiString, Option<AsciiString>)> {
-    let m: RegExpMatch = match REQUEST_PATH.exec(path) {
+    let m = match REQUEST_PATH.exec(path) {
         Some(m) => m,
         None => { return None; }
     };

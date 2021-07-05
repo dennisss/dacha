@@ -20,7 +20,6 @@ pub enum Reflection<'a> {
     Repeated(&'a dyn RepeatedFieldReflection),
     Message(&'a dyn MessageReflection),
     Enum(&'a dyn Enum),
-    Option(Option<&'a dyn Reflect>),
     Set(&'a dyn SetFieldReflection)
 }
 
@@ -43,6 +42,11 @@ pub enum ReflectionMut<'a> {
     // Option(Option<&'a mut dyn Reflect>)
 }
 
+pub struct FieldDescriptor<'a> {
+    pub number: FieldNumber,
+    pub name: &'a str
+}
+
 /// NOTE: Should be implemented by all Messages.
 pub trait MessageReflection {
     // A non-mutable version would be required for the regular
@@ -50,7 +54,12 @@ pub trait MessageReflection {
     // Should also have a fields() which iterates over fields?
 
     // Some fields may also have an empty name to indicate that they are unknown
-    //	fn fields(&self) -> &'static [(&FieldNumber)];
+
+    // List of all fields declared in the message definition.
+    //
+    // This includes fields that may not be present in the current message or are
+    // set to the default value.
+    fn fields(&self) -> &[FieldDescriptor];
 
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection>;
 
@@ -65,15 +74,15 @@ pub trait MessageReflection {
 // }
 
 pub trait Reflect {
-    fn reflect(&self) -> Reflection;
+    fn reflect(&self) -> Option<Reflection>;
     fn reflect_mut(&mut self) -> ReflectionMut;
 }
 
 macro_rules! define_reflect {
     ($name:ident, $t:ident) => {
         impl Reflect for $t {
-            fn reflect(&self) -> Reflection {
-                Reflection::$name(self)
+            fn reflect(&self) -> Option<Reflection> {
+                Some(Reflection::$name(self))
             }
             fn reflect_mut(&mut self) -> ReflectionMut {
                 ReflectionMut::$name(self)
@@ -92,8 +101,8 @@ define_reflect!(Bool, bool);
 define_reflect!(String, String);
 
 impl Reflect for crate::bytes::BytesField {
-    fn reflect(&self) -> Reflection {
-        Reflection::Bytes(self.0.as_ref())
+    fn reflect(&self) -> Option<Reflection> {
+        Some(Reflection::Bytes(self.0.as_ref()))
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
         ReflectionMut::Bytes(&mut self.0)
@@ -101,8 +110,8 @@ impl Reflect for crate::bytes::BytesField {
 }
 
 impl<T: MessageReflection> Reflect for T {
-    fn reflect(&self) -> Reflection {
-        Reflection::Message(self)
+    fn reflect(&self) -> Option<Reflection> {
+        Some(Reflection::Message(self))
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
         ReflectionMut::Message(self)
@@ -110,7 +119,7 @@ impl<T: MessageReflection> Reflect for T {
 }
 
 impl<T: Reflect> Reflect for crate::MessagePtr<T> {
-    fn reflect(&self) -> Reflection {
+    fn reflect(&self) -> Option<Reflection> {
         self.value.as_ref().reflect()
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
@@ -119,8 +128,8 @@ impl<T: Reflect> Reflect for crate::MessagePtr<T> {
 }
 
 impl<T: Reflect + Default> Reflect for Option<T> {
-    fn reflect(&self) -> Reflection {
-        Reflection::Option(self.as_ref().map(|v: &T| v as &dyn Reflect))
+    fn reflect(&self) -> Option<Reflection> {
+        self.as_ref().and_then(|v| v.reflect())
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
         if !self.is_some() {
@@ -131,12 +140,9 @@ impl<T: Reflect + Default> Reflect for Option<T> {
     }
 }
 
-
-
-
 impl<T: Reflect + Default> Reflect for Vec<T> {
-    fn reflect(&self) -> Reflection {
-        Reflection::Repeated(self)
+    fn reflect(&self) -> Option<Reflection> {
+        Some(Reflection::Repeated(self))
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
         ReflectionMut::Repeated(self)
@@ -155,7 +161,8 @@ impl<T: Reflect + Default> RepeatedFieldReflection for Vec<T> {
         Vec::len(self)
     }
     fn get(&self, index: usize) -> Option<Reflection> {
-        self.deref().get(index).map(|v: &T| v.reflect())
+        // TODO: A repeated field should never contain an element that returns None?
+        self.deref().get(index).map(|v: &T| v.reflect().unwrap())
     }
     fn get_mut(&mut self, index: usize) -> Option<ReflectionMut> {
         self.deref_mut()

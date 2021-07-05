@@ -90,8 +90,8 @@ impl<'a, T> Iterator for SetFieldIter<'a, T> {
 pub trait SetFieldReflectableElement = Reflect + Eq + Hash + Default + Clone;
 
 impl<T: SetFieldReflectableElement> Reflect for SetField<T> {
-    fn reflect(&self) -> Reflection {
-        Reflection::Set(self)
+    fn reflect(&self) -> Option<Reflection> {
+        Some(Reflection::Set(self))
     }
 
     fn reflect_mut(&mut self) -> ReflectionMut {

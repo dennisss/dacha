@@ -6,31 +6,32 @@ use crate::regexp::vm::compiler::*;
 use crate::regexp::vm::executor::*;
 
 pub struct RegExp {
-    program: Program
+    compilation: Compilation
 }
 
 impl RegExp {
     pub fn new(expr: &str) -> Result<Self> {
-        let root = RegExpNode::parse(&format!(".*({})", expr))?;
-        let program = Compiler::compile(&root)?;
-        Ok(Self { program })
+        // TODO: Don't add a '.*?' if the expression begins with a '^' 
+        let root = RegExpNode::parse(&format!(".*?({})", expr))?;
+        let compilation = Compiler::compile(&root)?;
+        Ok(Self { compilation })
     }
 
     /// Returns true if and only if a match for the given regular expression is found somewhere
     /// in the given input string.
     pub fn test<T: AsRef<[u8]>>(&self, input: T) -> bool {
-        let mut executor = Executor::new(&self.program.instructions);
+        let mut executor = Executor::new(self.compilation.program.as_referenced_program());
         let results = executor.run(input.as_ref(), 0);
         results.is_some()
     }
 
-    pub fn exec<'a, 'b, T: 'b + AsRef<[u8]> + ?Sized>(&'a self, input: &'b T) -> Option<RegExpMatch<'a, 'b>> {
-        Self::exec_impl(&self.program.instructions, input.as_ref())
+    pub fn exec<'a, 'b, T: 'b + AsRef<[u8]> + ?Sized>(&'a self, input: &'b T) -> Option<RegExpMatch<'b, ReferencedProgram<'a>>> {
+        Self::exec_impl(self.compilation.program.as_referenced_program(), input.as_ref())
     }
 
-    fn exec_impl<'a, 'b>(instructions: &'a [Instruction], input: &'b [u8]) -> Option<RegExpMatch<'a, 'b>> {
+    fn exec_impl<'a, P: Program + Copy>(program: P, input: &'a [u8]) -> Option<RegExpMatch<'a, P>> {
         let state = RegExpMatch {
-            instructions,
+            program,
             input,
             index: 0,
             last_index: 0,
@@ -44,18 +45,18 @@ impl RegExp {
     /// NOTE: Only meant for usage in the 'regexp_macros' package.
     pub fn to_static_codegen(&self) -> String {
         let instructions =
-            self.program.instructions.iter().map(|i| i.codegen()).collect::<Vec<_>>()
+            self.compilation.program.iter().map(|i| i.codegen()).collect::<Vec<_>>()
             .join(", ");
 
         format!("::automata::regexp::vm::instance::StaticRegExp::from_compilation(&[{}])", instructions)
     }
 }
 
-pub struct RegExpMatch<'a, 'b> {
-    instructions: &'a [Instruction],
+pub struct RegExpMatch<'a, P> {
+    program: P,
 
     /// Full original input given to exec().
-    input: &'b [u8],
+    input: &'a [u8],
 
     /// Byte offset at which this match begins
     index: usize,
@@ -68,9 +69,9 @@ pub struct RegExpMatch<'a, 'b> {
     string_pointers: SavedStringPointers
 }
 
-impl<'a, 'b> RegExpMatch<'a, 'b> {
+impl<'a, P: Program + Copy> RegExpMatch<'a, P> {
     pub fn next(mut self) -> Option<Self> {
-        let mut executor = Executor::new(self.instructions);
+        let mut executor = Executor::new(self.program);
         let string_pointers = match executor.run(self.input, self.last_index) {
             Some(v) => v,
             None => { return None; }
@@ -93,7 +94,7 @@ impl<'a, 'b> RegExpMatch<'a, 'b> {
     pub fn last_index(&self) -> usize { self.last_index }
 
     /// NOTE: Group 0 will always contain the complete match.
-    pub fn group(&self, i: usize) -> Option<&'b [u8]> {
+    pub fn group(&self, i: usize) -> Option<&'a [u8]> {
         let start = self.string_pointers.list.get(2*i).and_then(|v| *v);
         let end = self.string_pointers.list.get(2*i + 1).and_then(|v| *v);
 
@@ -119,18 +120,18 @@ impl<'a, 'b> RegExpMatch<'a, 'b> {
     // TODO: Support lookup by name.
 }
 
-pub struct RegExpSplitIterator<'a, 'b> {
-    input: &'b str,
+pub struct RegExpSplitIterator<'a, P> {
+    input: &'a str,
 
     current_index: usize,
 
-    last_match: Option<RegExpMatch<'a, 'b>>,
+    last_match: Option<RegExpMatch<'a, P>>,
 
     final_emitted: bool
 }
 
-impl<'a, 'b> std::iter::Iterator for RegExpSplitIterator<'a, 'b> {
-    type Item = &'b str;
+impl<'a, P: Program + Copy> std::iter::Iterator for RegExpSplitIterator<'a, P> {
+    type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.final_emitted {
@@ -160,25 +161,25 @@ impl<'a, 'b> std::iter::Iterator for RegExpSplitIterator<'a, 'b> {
 
 /// Pre-compiled regular expression.
 pub struct StaticRegExp {
-    instructions: &'static [Instruction]
+    program: ReferencedProgram<'static>
 }
 
 impl StaticRegExp {
     pub const fn from_compilation(instructions: &'static [Instruction]) -> Self {
-        Self { instructions }
+        Self { program: ReferencedProgram::new(instructions) }
     }
 
     pub fn test<T: AsRef<[u8]>>(&self, input: T) -> bool {
-        let mut executor = Executor::new(&self.instructions);
+        let mut executor = Executor::new(self.program);
         let results = executor.run(input.as_ref(), 0);
         results.is_some()
     }
 
-    pub fn exec<'a, 'b, T: 'b + AsRef<[u8]> + ?Sized>(&'a self, input: &'b T) -> Option<RegExpMatch<'a, 'b>> {
-        RegExp::exec_impl(&self.instructions, input.as_ref())
+    pub fn exec<'a, 'b, T: 'b + AsRef<[u8]> + ?Sized>(&'a self, input: &'b T) -> Option<RegExpMatch<'b, ReferencedProgram<'a>>> {
+        RegExp::exec_impl(self.program, input.as_ref())
     }
 
-    pub fn split<'a, 'b>(&'a self, input: &'b str) -> RegExpSplitIterator<'a, 'b> {
+    pub fn split<'a, 'b>(&'a self, input: &'b str) -> RegExpSplitIterator<'b, ReferencedProgram<'a>> {
         RegExpSplitIterator {
             input,
             current_index: 0,
@@ -188,6 +189,6 @@ impl StaticRegExp {
     }
 
     pub fn estimated_memory_usage(&self) -> usize {
-        std::mem::size_of::<Instruction>() * self.instructions.len()
+        self.program.size_of()
     }
 }

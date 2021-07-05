@@ -34,7 +34,11 @@ pub enum RegExpNode {
     Expr(Vec<RegExpNodePtr>),
 
     /// e.g. 'a*' or 'a?'
-    Quantified(RegExpNodePtr, Quantifier),
+    Quantified {
+        node: RegExpNodePtr,
+        quantifier: Quantifier,
+        greedy: bool
+    },
 
     // We will most likely replace these with capture groups
     // Simplifying method:
@@ -91,10 +95,10 @@ impl RegExpNode {
 
                 a
             }
-            Self::Quantified(r, q) => {
-                let mut a = r.to_automata_inner(alpha, metadata);
+            Self::Quantified { node, quantifier, greedy } => {
+                let mut a = node.to_automata_inner(alpha, metadata);
 
-                match q {
+                match quantifier {
                     Quantifier::ZeroOrOne => {
                         a.join(FiniteStateMachine::zero());
                     }
@@ -261,7 +265,7 @@ impl RegExpNode {
             Self::Literal(c) => {
                 c.fill_alphabet(alpha);
             }
-            Self::Quantified(e, _) => e.fill_alphabet(alpha),
+            Self::Quantified { node, quantifier, greedy } => node.fill_alphabet(alpha),
             Self::Expr(list) => {
                 for item in list {
                     item.fill_alphabet(alpha);

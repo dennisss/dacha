@@ -463,7 +463,7 @@ impl Compiler<'_> {
 
         lines.add(format!("impl {}::reflection::Reflect for {} {{", self.runtime_package, fullname));
         lines.indented(|lines| {
-            lines.add(format!("fn reflect(&self) -> {}::reflection::Reflection {{ {}::reflection::Reflection::Enum(self) }}",
+            lines.add(format!("fn reflect(&self) -> Option<{}::reflection::Reflection> {{ Some({}::reflection::Reflection::Enum(self)) }}",
                       self.runtime_package, self.runtime_package));
             lines.add(format!("fn reflect_mut(&mut self) -> {}::reflection::ReflectionMut {{ {}::reflection::ReflectionMut::Enum(self) }}",
                       self.runtime_package, self.runtime_package));
@@ -1243,7 +1243,7 @@ impl Compiler<'_> {
                 } else {
                     // TODO: Should borrow the value when using messages
                     lines.add(format!(
-                        "\t\tWireField::serialize_{}({}, {}self.{}, &mut data);",
+                        "\t\tWireField::serialize_{}({}, {}self.{}, &mut data)?;",
                         typeclass, field.num, reference_str, name,
                     ));
                 }
@@ -1276,6 +1276,37 @@ impl Compiler<'_> {
         ));
 
         lines.indented(|lines| {
+            lines.add(format!("fn fields(&self) -> &[{}::FieldDescriptor] {{", self.runtime_package));
+
+            let mut all_fields = vec![];
+            for item in &msg.body {
+                match item {
+                    MessageItem::Field(field) => {
+                        all_fields.push((field.num, field.name.as_str()));
+                    }
+                    MessageItem::OneOf(oneof) => {
+                        for field in &oneof.fields {
+                            all_fields.push((field.num, field.name.as_str()));
+                        }
+                    }
+                    MessageItem::MapField(map) => {
+                        all_fields.push((map.num, map.name.as_str()));
+                    }
+                    _ => {}
+                }
+            }
+
+            let field_strs = all_fields
+                .into_iter().map(|(num, name)| {
+                    format!("{}::FieldDescriptor {{ number: {}, name: \"{}\" }}", self.runtime_package, num, name)
+                }).collect::<Vec<_>>();
+            lines.add(format!("\t&[{}]", field_strs.join(", ")));
+            lines.add("}");
+        });
+
+        // lines.add()
+
+        lines.indented(|lines| {
             lines.add("fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {");
             lines.indented(|lines| {
                 if msg.body.len() == 0 {
@@ -1283,7 +1314,7 @@ impl Compiler<'_> {
                     return;
                 }
 
-                lines.add("Some(match num {");
+                lines.add("match num {");
                 for item in &msg.body {
                     match item {
                         MessageItem::Field(field) => {
@@ -1300,7 +1331,7 @@ impl Compiler<'_> {
                                 lines.add("\t\t\tv.reflect()");
 
                                 // TODO: Reflect a DEFAULT value
-                                lines.add("\t\t} else { return None; }");
+                                lines.add("\t\t} else { None }");
                                 lines.add("\t}");
                             }
                         }
@@ -1308,8 +1339,8 @@ impl Compiler<'_> {
                     }
                 }
 
-                lines.add("\t_ => { return None; }");
-                lines.add("})");
+                lines.add("\t_ => None");
+                lines.add("}");
             });
             lines.add("}");
             lines.nl();

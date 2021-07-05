@@ -1029,11 +1029,12 @@ dependencies = [
  "fs2",
  "http",
  "ipnetwork",
+ "macros",
  "mime-sniffer",
+ "protobuf",
+ "protobuf_compiler",
+ "protobuf_json",
  "rand 0.6.5",
- "serde",
- "serde_derive",
- "serde_json",
  "siphasher",
  "toml",
 ]
@@ -1181,6 +1182,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc15e39392125075f60c95ba416f5381ff6c3a948ff02ab12464715adf56c821"
 dependencies = [
  "wasm-bindgen",
+]
+
+[[package]]
+name = "json"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "common",
+ "parsing",
+ "regexp_macros",
 ]
 
 [[package]]
@@ -1709,6 +1720,7 @@ dependencies = [
  "base64 0.11.0",
  "byteorder",
  "common",
+ "json",
  "macros",
  "parsing",
  "protobuf_compiler",
@@ -1720,6 +1732,17 @@ version = "0.1.0"
 dependencies = [
  "common",
  "parsing",
+]
+
+[[package]]
+name = "protobuf_json"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "json",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
 ]
 
 [[package]]

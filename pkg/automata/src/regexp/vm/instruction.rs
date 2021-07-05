@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use common::errors::*;
+
 use crate::regexp::symbol::RegExpSymbol;
 
 
@@ -40,12 +44,6 @@ pub enum Instruction {
     /// Matches a character that contains exactly a single value.
     Char(CharacterValue),
 
-    /// Without consuming any inputs, verifies that the current character is the
-    /// given value and just procedes to the next instruction.
-    ///
-    /// TODO: Support lookahead of a Range
-    Lookahead(CharacterValue),
-
     /// Similar to 'Char', except matches a special symbol. If a regular character value is seen
     /// instead, this instruction will terminate the current thread.
     Special(SpecialSymbol),
@@ -55,16 +53,26 @@ pub enum Instruction {
 
     Jump(ProgramCounter),
 
-    /// 
+    /// Schedules execution on the next input at two different program counters in parallel.
+    ///
+    /// Effectively this schedules two threads. The first thread is considered to be
+    /// 'higher priority' and will execute first and matches from this thread will be preferred to
+    /// matches from the second thread. 
     ///
     /// TODO: Does this really need two pointers. It will always be the next instruction + 1 other.
     Split(ProgramCounter, ProgramCounter),
 
-    /// Saves the current position of the string to the given index in a list of string pointers
-    /// in the current thread.
+    /// Saves the current position of the string to the string pointers list for current thread.
     ///
     /// TODO: Reduce to u16 as we almost never need that many groups.
-    Save(usize),
+    Save {
+        /// The index into the string pointers list at which to store the position.
+        index: usize,
+    
+        /// If true, instead of storing the current position, we will store the position
+        /// immediately before the last input value.
+        lookbehind: bool
+    },
 }
 
 impl Instruction {
@@ -75,12 +83,11 @@ impl Instruction {
                 format!("range {} - {}", RegExpSymbol::debug_offset(*start), RegExpSymbol::debug_offset(*end))
             },
             Instruction::Char(v) => format!("char {}", RegExpSymbol::debug_offset(*v)),
-            Instruction::Lookahead(v) => format!("lookahead {}", RegExpSymbol::debug_offset(*v)),
             Instruction::Special(v) => format!("special {:?}", v),
             Instruction::Match => format!("match"),
             Instruction::Jump(index) => format!("jump {}", index),
             Instruction::Split(a, b) => format!("split {}, {}", a, b),
-            Instruction::Save(index) => format!("save {}", index)
+            Instruction::Save { index, lookbehind } => format!("save {} {}", index, lookbehind)
         }
     }
 
@@ -93,4 +100,106 @@ impl Instruction {
 
         format!("::automata::regexp::vm::instruction::Instruction::{:?}", self)
     }
+
 }
+
+pub trait Program {
+    /// Retrieves a single instruction from the program at a given position.
+    ///
+    /// Returns the fetched instruction and a pointer to the next instruction.
+    fn fetch(&self, pc: ProgramCounter) -> (Instruction, ProgramCounter);
+
+    fn size_of(&self) -> usize;
+}
+
+/// A simple program which just uses a dynamic Vec to store instructions.
+pub struct VecProgram {
+    instructions: Vec<Instruction>
+}
+
+impl VecProgram {
+    pub fn new() -> Self {
+        Self { instructions: vec![] }
+    }
+
+    pub fn as_referenced_program(&self) -> ReferencedProgram {
+        ReferencedProgram::new(&self.instructions)
+    }
+}
+
+impl std::ops::Deref for VecProgram {
+    type Target = Vec<Instruction>;
+    fn deref(&self) -> &Self::Target {
+        &self.instructions
+    }
+}
+
+impl std::ops::DerefMut for VecProgram {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.instructions        
+    }
+}
+
+impl Program for VecProgram {
+    fn fetch(&self, pc: ProgramCounter) -> (Instruction, ProgramCounter) {
+        (self.instructions[pc as usize].clone(), pc + 1)
+    }
+
+    fn size_of(&self) -> usize {
+        self.as_referenced_program().size_of()
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct ReferencedProgram<'a> {
+    instructions: &'a [Instruction]
+}
+
+impl<'a> ReferencedProgram<'a> {
+    pub const fn new(instructions: &[Instruction]) -> ReferencedProgram {
+        ReferencedProgram { instructions }
+    }
+}
+
+impl<'a> Program for ReferencedProgram<'a> {
+    fn fetch(&self, pc: ProgramCounter) -> (Instruction, ProgramCounter) {
+        (self.instructions[pc as usize].clone(), pc + 1)
+    }
+
+    fn size_of(&self) -> usize {
+        std::mem::size_of::<Instruction>() * self.instructions.len()
+    }
+}
+
+
+/*
+pub struct PackedProgram {
+    data: Vec<u8>
+}
+
+impl PackedProgram {
+    pub fn pack(program: ReferencedProgram) -> Self {
+        let mut pc_map = vec![];
+        let mut out = vec![];
+
+        for (i, instruction) in program.instructions.iter() {
+            pc_map.push(out.len());
+
+
+        }
+
+
+    }
+}
+
+enum_def!(InstructionType u8 => 
+    Any = 0,
+    Range = 1,
+    Char = 2,
+    Special = 3,
+    Match = 4,
+    Jump = 5,
+    Split = 6,
+    Save = 7
+);
+*/

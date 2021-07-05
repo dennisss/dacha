@@ -12,6 +12,7 @@ members = [
 	"pkg/math",
 	"pkg/protobuf_compiler",
 	"pkg/protobuf",
+	"pkg/protobuf_json",
 	"pkg/automata",
 	"pkg/http",
 	"pkg/rpc",
@@ -24,7 +25,7 @@ members = [
 	"pkg/stadia_controller",
 	"pkg/stream_deck",
 	"pkg/raft",
-	# "pkg/haystack",
+	"pkg/haystack",
 	"pkg/emulator",
 	"pkg/bittorrent",
 	# "pkg/symbolic"
@@ -34,7 +35,8 @@ members = [
 	"third_party/crates",
 	"pkg/parsing_test",
 	"pkg/regexp_macros",
-	"third_party/google"
+	"third_party/google",
+	"pkg/json"
 ]
 
 [profile.dev]

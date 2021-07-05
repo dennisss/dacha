@@ -42,7 +42,17 @@ parser!(quantified<&str, RegExpNodePtr> => {
     seq!(c => {
         let a = c.next(atom)?;
         if let Some(q) = c.next(opt(quantifier))? {
-            return Ok(Box::new(RegExpNode::Quantified(a, q)));
+
+            let mut greedy = match c.next(opt(tag("?")))? {
+                Some(_) => false,
+                None => true
+            };
+
+            return Ok(Box::new(RegExpNode::Quantified {
+                node: a,
+                quantifier: q,
+                greedy
+            }));
         }
 
         Ok(a)
