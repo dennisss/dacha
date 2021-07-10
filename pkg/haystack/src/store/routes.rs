@@ -1,54 +1,55 @@
-use super::super::types::*;
-use super::super::errors::*;
-use super::super::paths::*;
-use super::super::http_utils::*;
-use super::api::*;
-use super::machine::*;
-use super::volume::*;
-use hyper::{Body, Response, Method, StatusCode};
-use hyper::http::request::Parts;
-use hyper::body::Payload;
+use common::errors::*;
 use mime_sniffer::MimeTypeSniffer;
+
+use crate::types::*;
+use crate::paths::*;
+use crate::http_utils::*;
+use super::api::*;
+use super::volume::*;
+use crate::proto::service::*;
+use crate::store::machine::*;
 
 
 pub async fn handle_request(
-	parts: Parts, body: Body, mac_handle: MachineHandle
-) -> Result<Response<Body>> {
+	req: http::Request, mac_handle: &MachineContext
+) -> Result<http::Response> {
 
 	// Because ip addresses and ports can change across restarts, we will always verify the request based on a standard hostname pattern derived by this machine's exact id	
-	if !Host::Store(mac_handle.id).check_against(&parts) {
+	if !Host::Store(mac_handle.id).check_against(&req.head) {
 		return Ok(bad_request_because("Incorrect/invalid host"));
 	}
 
-	let segs = match split_path_segments(&parts.uri.path()) {
+	let segs = match split_path_segments(req.head.uri.path.as_str()) {
 		Some(v) => v,
 		None => return Ok(bad_request_because("Invalid path given"))
 	};
 
 	// We should not be getting any query parameters
-	if parts.uri.query() != None {
+	if req.head.uri.query.is_some() {
 		return Ok(bad_request_because("Not expecting query parameters"));
 	}
 
 	let params = match StorePath::from(&segs) {
 		Ok(v) => v,
-		Err(s) => return Ok(text_response(StatusCode::BAD_REQUEST, s))
+		Err(s) => return Ok(text_response(http::status_code::BAD_REQUEST, s))
 	};
+
+	// TODO: Need to verify no Content-Encoding present in requests?
 
 	match params {
 
 		StorePath::Index => {
-			match parts.method {
-				Method::GET => index_volumes(mac_handle),
-				Method::PATCH => super::route_write::write_batch(mac_handle, body).await,
+			match req.head.method {
+				http::Method::GET => index_volumes(mac_handle).await,
+				http::Method::PATCH => super::route_write::write_batch(mac_handle, req.body).await,
 				_ => Ok(invalid_method())
 			}
 		},
 
 		StorePath::Volume { volume_id } => {
-			match parts.method {
-				Method::GET => read_volume(mac_handle, volume_id),
-				Method::POST => create_volume(mac_handle, volume_id),
+			match req.head.method {
+				http::Method::GET => read_volume(mac_handle, volume_id).await,
+				http::Method::POST => create_volume(mac_handle, volume_id).await,
 				_ => Ok(invalid_method())
 			}
 		},
@@ -58,25 +59,25 @@ pub async fn handle_request(
 		},
 
 		StorePath::Partial { volume_id, key, alt_key } => {
-			match parts.method {
-				Method::GET => read_photo(&parts, mac_handle, volume_id, key, alt_key, None),
+			match req.head.method {
+				http::Method::GET => read_photo(&req.head, mac_handle, volume_id, key, alt_key, None).await,
 				_ => return Ok(invalid_method())
 			}
 		},
 
 		StorePath::Needle { volume_id, key, alt_key, cookie } => {
-			match parts.method {
-				Method::GET => read_photo(&parts, mac_handle, volume_id, key, alt_key, Some(cookie)),
-				Method::POST => {
+			match req.head.method {
+				http::Method::GET => read_photo(&req.head, mac_handle, volume_id, key, alt_key, Some(cookie)).await,
+				http::Method::POST => {
 					
-					let content_length = match body.content_length() {
+					let content_length = match req.body.len() {
 						Some(0) | None => {
-							return Ok(text_response(StatusCode::LENGTH_REQUIRED, "Missing Content-Length"));
+							return Ok(text_response(http::status_code::LENGTH_REQUIRED, "Missing Content-Length"));
 						},
-						Some(n) => n,
+						Some(n) => n as u64,
 					};
 
-					super::route_write::write_single(mac_handle, volume_id, key, alt_key, cookie, content_length, body).await
+					super::route_write::write_single(mac_handle, volume_id, key, alt_key, cookie, content_length, req.body).await
 				},
 				_ => return Ok(invalid_method())
 			}
@@ -86,70 +87,61 @@ pub async fn handle_request(
 	}
 }
 
-#[derive(Serialize)]
-struct StoreReadVolumeBody {
-	id: VolumeId,
-	num_needles: usize,
-	used_space: u64
+fn physical_volume_to_read_response(vol: &PhysicalVolume) -> StoreReadVolumeBody {
+	let mut body = StoreReadVolumeBody::default();
+	body.set_id(vol.superblock.volume_id);
+	body.set_num_needles(vol.num_needles() as u64);
+	body.set_used_space(vol.used_space());
+	body
 }
 
-// TODO: 'std::convert::From<&PhysicalVolume> for'
-impl StoreReadVolumeBody {
-	fn from(vol: &PhysicalVolume) -> StoreReadVolumeBody {
-		StoreReadVolumeBody {
-			id: vol.superblock.volume_id,
-			num_needles: vol.num_needles(),
-			used_space: vol.used_space()
-		}
-	}
-}
+async fn index_volumes(
+	mac_handle: &MachineContext
+) -> Result<http::Response> {
+	let mac = mac_handle.inst.read().await;
 
-fn index_volumes(
-	mac_handle: MachineHandle
-) -> Result<Response<Body>> {
-	let mac = mac_handle.inst.read().unwrap();
-
-	let mut arr: Vec<StoreReadVolumeBody> = vec![];
+	let mut res = IndexVolumesResponse::default();
 
 	for (_, v) in mac.volumes.iter() {
-		arr.push(StoreReadVolumeBody::from(&v.lock().unwrap()));
+		let volume = v.lock().await;
+		res.add_volumes(physical_volume_to_read_response(&*volume));
 	}
 
-	Ok(json_response(StatusCode::OK, &arr))
+	Ok(json_response(http::status_code::OK, &res))
 }
 
-fn read_volume(
-	mac_handle: MachineHandle,
+async fn read_volume(
+	mac_handle: &MachineContext,
 	volume_id: VolumeId
-) -> Result<Response<Body>> {
+) -> Result<http::Response> {
 	
 	// NOTE: WE only really need this for long enough to acquire 
-	let mac = mac_handle.inst.read().unwrap();
+	let mac = mac_handle.inst.read().await;
 
 	match mac.volumes.get(&volume_id) {
 		Some(v) =>  Ok(
-			json_response(StatusCode::OK, &StoreReadVolumeBody::from(&v.lock().unwrap()))
+			json_response(http::status_code::OK, &physical_volume_to_read_response(&*v.lock().await))
 		),
 		None => Ok(
-			text_response(StatusCode::NOT_FOUND, "Volume not found")
+			text_response(http::status_code::NOT_FOUND, "Volume not found")
 		)
 	}
 }
 
-fn create_volume(
-	mac_handle: MachineHandle,
+async fn create_volume(
+	mac_handle: &MachineContext,
 	volume_id: VolumeId
-) -> Result<Response<Body>> {
+) -> Result<http::Response> {
 
-	let mut mac = mac_handle.inst.write().unwrap();
+	let mut mac = mac_handle.inst.write().await;
 
 	if mac.volumes.contains_key(&volume_id) {
-		return Ok(text_response(StatusCode::OK, "Volume already exists"));
+		return Ok(text_response(http::status_code::OK, "Volume already exists"));
 	}
 
-	let stats = mac.stats();
+	let stats = mac.stats().await;
 	if !stats.can_allocate() {
-		return Ok(text_response(StatusCode::BAD_REQUEST, "Can not currently allocate volumes"));
+		return Ok(text_response(http::status_code::BAD_REQUEST, "Can not currently allocate volumes"));
 	}
 
 	mac.create_volume(volume_id)?;
@@ -157,28 +149,27 @@ fn create_volume(
 	println!("- Volume {} created on Store {}", volume_id, mac_handle.id);
 	mac_handle.thread.notify();
 
-	Ok(text_response(StatusCode::CREATED, "Volume created!"))
+	Ok(text_response(http::status_code::CREATED, "Volume created!"))
 }
 
 
 
 
-fn read_photo(
-	parts: &Parts,
-	mac_handle: MachineHandle,
+async fn read_photo(
+	req_head: &http::RequestHead,
+	mac_handle: &MachineContext,
 	volume_id: VolumeId, key: NeedleKey, alt_key: NeedleAltKey,
 	given_cookie: Option<CookieBuf>
-
-) -> Result<Response<Body>> {
+) -> Result<http::Response> {
 
 	// Briefly lock the machine just to get the volume handle
 	let vol_handle = {
-		let mac = mac_handle.inst.read().unwrap();
+		let mac = mac_handle.inst.read().await;
 
 		let v = match mac.volumes.get(&volume_id) {
 			Some(v) => v.clone(),
 			None => return Ok(
-				text_response(StatusCode::NOT_FOUND, "Volume not found")
+				text_response(http::status_code::NOT_FOUND, "Volume not found")
 			),
 		};
 
@@ -191,9 +182,9 @@ fn read_photo(
 	let mut vol = vol_handle.lock().await;
 
 
-	let given_etag = match parts.headers.get("If-None-Match") {
+	let given_etag = match req_head.headers.get_one("If-None-Match")? {
 		Some(v) => {
-			match ETag::from_header(v) {
+			match ETag::from_header(v.value.as_bytes()) {
 				Ok(e) => Some(e),
 				Err(_) => return Ok(bad_request())
 			}
@@ -208,11 +199,12 @@ fn read_photo(
 			if let Some(offset) = off {
 				if e.partial_matches(mac_id, volume_id, offset) {
 					// TODO: This response must always be as close possible to the actual response we would give lower both in this function (- the body)
-					return Ok(Response::builder()
-						.status(StatusCode::NOT_MODIFIED)
+					return Ok(http::ResponseBuilder::new()
+						.status(http::status_code::NOT_MODIFIED)
 						.header("ETag", e.to_string()) // Reflecting back the cache given ETag
 						.header("X-Haystack-Writeable", if writeable { "1" } else { "0" })
-						.body(Body::empty()).unwrap());
+						.build()
+						.unwrap());
 				}
 			}
 		}
@@ -226,19 +218,19 @@ fn read_photo(
 		Some(n) => (n.needle, n.block_offset),
 		None => {
 			return Ok(
-				text_response(StatusCode::NOT_FOUND, "Needle not found")
+				text_response(http::status_code::NOT_FOUND, "Needle not found")
 			)
 		}
 	};
 
 	// Integrity check
 	if let Err(_) = n.check() {
-		return Ok(text_response(StatusCode::INTERNAL_SERVER_ERROR, "Integrity check failed"));
+		return Ok(text_response(http::status_code::INTERNAL_SERVER_ERROR, "Integrity check failed"));
 	}
 
 	if let Some(c) = given_cookie {
 		if c.data() != n.header.cookie.data() {
-			return Ok(text_response(StatusCode::FORBIDDEN, "Incorrect cookie"));
+			return Ok(text_response(http::status_code::FORBIDDEN, "Incorrect cookie"));
 		}
 	}
 	else {
@@ -254,14 +246,14 @@ fn read_photo(
 
 	let sum = serialize_urlbase64(n.crc32c());
 
-	let mut res = Response::builder();
+	let mut res = http::ResponseBuilder::new();
 	
 	// The etag is mainly designed to make hits to the same machine very efficient and hits to other machines at least able to notice after a disk read
 	let etag = ETag {
 		store_id: mac_id, volume_id, block_offset: offset, checksum: bytes::Bytes::from(n.crc32c())
 	};	
 
-	res
+	res = res
 	.header("ETag", etag.to_string())
 	.header("X-Haystack-Cookie", cookie)
 	.header("X-Haystack-Hash", String::from("crc32c=") + &sum)
@@ -269,7 +261,7 @@ fn read_photo(
 
 	if let Some(e) = given_etag {
 		if etag.matches(&e) {
-			return Ok(res.status(StatusCode::NOT_MODIFIED).body(Body::empty()).unwrap());
+			return Ok(res.status(http::status_code::NOT_MODIFIED).build().unwrap());
 		}
 	}
 
@@ -280,7 +272,7 @@ fn read_photo(
 		let data = n.data();
 		if data.len() > 4 {
 			let magic = &data[0..std::cmp::min(8, data.len())];
-			match magic.sniff_mime_type() {
+			res = match magic.sniff_mime_type() {
 				Some(mime) => res.header("Content-Type", mime.to_owned()),
 				None => res.header("Content-Type", "application/octet-stream")
 			};
@@ -290,28 +282,29 @@ fn read_photo(
 
 	Ok(
 		res
-		.status(StatusCode::OK)
-		.body(Body::from(n.data_bytes()))
+		.status(http::status_code::OK)
+		.body(http::BodyFromData(n.data_bytes()))
+		.build()
 		.unwrap()
 	)
 }
 
 // Deletes a single photo needle
 fn delete_photo(
-	mac_handle: MachineHandle,
+	mac_handle: &MachineContext,
 	volume_id: VolumeId, key: NeedleKey, alt_key: NeedleAltKey
-) -> Result<Response<Body>> {
+) -> Result<http::Response> {
 
-	Ok(text_response(StatusCode::OK, "Woo!"))
+	Ok(text_response(http::status_code::OK, "Woo!"))
 }
 
 // Deletes all photo needles associated with a single photo
 fn delete_photo_all(
-	mac_handle: MachineHandle,
+	mac_handle: &MachineContext,
 	volume_id: VolumeId, key: NeedleKey
-) -> Result<Response<Body>> {
+) -> Result<http::Response> {
 
-	Ok(text_response(StatusCode::OK, "Woo!"))
+	Ok(text_response(http::status_code::OK, "Woo!"))
 }
 
 

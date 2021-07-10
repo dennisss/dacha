@@ -55,7 +55,7 @@ impl QueryParamsBuilder {
     }
 
     pub fn build(self) -> AsciiString {
-        AsciiString::from_string(self.out).unwrap()
+        AsciiString::from(self.out).unwrap()
     }
 }
 

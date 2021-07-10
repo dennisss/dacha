@@ -5,20 +5,23 @@
 
 */
 
-use super::errors::*;
-use super::types::*;
-use super::directory::*;
-use super::paths::*;
-use super::store::api::*;
-use super::cache::api::*;
-use core::FlipSign;
-use bytes::Bytes;
-use common::futures::prelude::*;
-use common::futures::stream;
-use common::futures::future::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::io::Cursor;
-use common::futures::Stream;
+
+use common::async_std::sync::Mutex;
+use common::FlipSign;
+use common::bytes::Bytes;
+use common::errors::*;
+use common::futures::prelude::*;
+use common::futures::future::*;
+use protobuf_json::MessageJsonParser;
+
+use crate::types::*;
+use crate::directory::*;
+use crate::paths::*;
+use crate::store::api::*;
+use crate::cache::api::*;
+use crate::proto::service::*;
 
 pub struct Client {
 	dir: Arc<Mutex<Directory>>
@@ -38,15 +41,15 @@ impl Client {
 		}
 	}
 
-	pub fn cluster_id(&self) -> String {
-		let dir = self.dir.lock().unwrap();
+	pub async fn cluster_id(&self) -> String {
+		let dir = self.dir.lock().await;
 		String::from("Hello world") 
 		//serialize_urlbase64(&dir.cluster_id)
 	}
 
 	/// Gets a url to read a photo from the cache layer
-	pub fn read_photo_cache_url(&self, keys: &NeedleKeys) -> Result<String> {
-		let dir = self.dir.lock().unwrap();
+	pub async fn read_photo_cache_url(&self, keys: &NeedleKeys) -> Result<String> {
+		let dir = self.dir.lock().await;
 
 		let photo = match dir.db.read_photo(keys.key)? {
 			Some(p) => p,
@@ -80,195 +83,147 @@ impl Client {
 
 	/// Creates a new photo containing all of the given chunks
 	/// TODO: On writeability errors, relocate the photo to a new volume that doesn't have the given machines
-	pub fn upload_photo(&self, chunks: Vec<PhotoChunk>) -> impl Future<Item=NeedleKey, Error=Error> {
+	pub async fn upload_photo(&self, chunks: Vec<PhotoChunk>) -> Result<NeedleKey> {
 		assert!(chunks.len() > 0);
 
-		let dir_handle = self.dir.clone();
+		let dir = self.dir.lock().await;
 
-		fn prepare(dir: &Directory, chunks: Vec<PhotoChunk>) -> Result<(Vec<NeedleChunk>, Vec<models::StoreMachine>)> {
-			
-			let cookie = CookieBuf::random();
+		let cookie = CookieBuf::random().await?;
 
-			let vol = dir.choose_logical_volume_for_write()?;
+		let vol = dir.choose_logical_volume_for_write()?;
 
-			let p = dir.db.create_photo(&models::NewPhoto {
-				volume_id: vol.id,
-				cookie: cookie.data()
-			})?;
+		let p = dir.db.create_photo(&models::NewPhoto {
+			volume_id: vol.id,
+			cookie: cookie.data()
+		})?;
 
-			let machines = dir.db.read_store_machines_for_volume(p.volume_id.flip())?;
+		let machines = dir.db.read_store_machines_for_volume(p.volume_id.flip())?;
 
-			if machines.len() == 0 {
-				return Err(err_msg("Missing any machines to upload to"));
+		if machines.len() == 0 {
+			return Err(err_msg("Missing any machines to upload to"));
+		}
+
+		for m in machines.iter() {
+			if !m.can_write(&dir.config) {
+				return Err(err_msg("Some machines are not writeable"));
 			}
+		}
 
-			for m in machines.iter() {
-				if !m.can_write(&dir.config) {
-					return Err(err_msg("Some machines are not writeable"));
+		let needles = chunks.into_iter().map(|c| {
+			NeedleChunk {
+				path: NeedleChunkPath {
+					volume_id: p.volume_id.flip(),
+					key: p.id.flip(),
+					alt_key: c.alt_key,
+					cookie: cookie.clone()
+				},
+				data: c.data.clone()
+			}
+		}).collect::<Vec<_>>();
+
+
+		// at this point, we have a batch of needles and machines that we'd need to sent it to.
+
+		// TODO: On failure of a request, retry the request once
+		// TODO: On failure of the retried request, bail out and choose a new volume to contain our photo (basically rerunning most of this upload_photo function)
+
+		let num = needles.len();
+
+		let photo_id = needles[0].path.key;
+
+		let arr = machines.into_iter().map(move |m| {
+			let needles = (&needles[..]).to_vec();
+			let m = Arc::new(m);
+
+			async move {
+				// Client::upload_needle_sequential(&m, needles)
+				let n = Client::upload_needle_batch(&m, &needles).await?;
+				if num != n {
+					return Err(err_msg("Not all chunks uploaded"));
 				}
+
+				Ok(())
 			}
+		}).collect::<Vec<_>>();
 
-			let needles = chunks.into_iter().map(|c| {
-				NeedleChunk {
-					path: NeedleChunkPath {
-						volume_id: p.volume_id.flip(),
-						key: p.id.flip(),
-						alt_key: c.alt_key,
-						cookie: cookie.clone()
-					},
-					data: c.data.clone()
-				}
-			}).collect::<Vec<_>>();
+		// TODO: Verify all of them are successful
+		common::futures::future::join_all(arr).await;
 
-			Ok((needles, machines))
-		};
-
-		lazy(move || {
-			let dir = dir_handle.lock().unwrap();
-
-			match prepare(&dir, chunks) {
-				Ok(v) => ok(v),
-				Err(e) => err(e)
-			}
-		})
-		.and_then(|(needles, machines)| {
-
-			// TODO: On failure of a request, retry the request once
-			// TODO: On failure of the retried request, bail out and choose a new volume to contain our photo (basically rerunning most of this upload_photo function)
-
-			let num = needles.len();
-
-			let photo_id = needles[0].path.key;
-
-			let arr = machines.into_iter().map(move |m| {
-				let needles = (&needles[..]).to_vec();
-				let m = Arc::new(m);
-
-				//Client::upload_needle_sequential(&m, needles)
-				Client::upload_needle_batch(&m, &needles)
-				.and_then(move |n| {
-					if num != n {
-						return err("Not all chunks uploaded".into());
-					}
-
-					ok(())
-				})
-
-			}).collect::<Vec<_>>();
-
-			common::futures::future::join_all(arr).map(move |_| {
-				photo_id
-			})
-		})
+		Ok(photo_id)
 	}
 
 	/// Uploads many chunks using traditional sequential requests (flushed after every single request)
 	/// TODO: Currently this will never respond with a partial count
-	fn upload_needle_sequential(mac: &models::StoreMachine, chunks: Vec<NeedleChunk>)
-		-> impl Future<Output=std::result::Result<usize, Error>> {
-
-		let client = hyper::Client::new();
-
-		let addr = mac.addr();
+	async fn upload_needle_sequential(mac: &models::StoreMachine, chunks: &[NeedleChunk]) -> Result<usize> {
+		let client = http::Client::create(http::ClientOptions::from_uri(&mac.addr().parse()?)?)?;
 		let mac_id = mac.id as MachineId;
 
-		// Better tofold and then combine
-		stream::iter(chunks).fold(0, move |num, c| {
-			let url = format!(
-				"{}{}",
-				addr,
-				StorePath::Needle {
+		for c in chunks {
+			let req = http::RequestBuilder::new()
+				.method(http::Method::POST)
+				.path(StorePath::Needle {
 					volume_id: c.path.volume_id,
 					key: c.path.key,
 					alt_key: c.path.alt_key,
-					cookie: c.path.cookie
-				}.to_string()
-			);
-
-			let req = hyper::Request::builder()
-				.uri(&url)
-				.method("POST")
+					cookie: c.path.cookie.clone()
+				}.to_string())
 				.header("Host", Host::Store(mac_id).to_string())
-				.body(hyper::Body::from(c.data.clone()))
-				.unwrap();
+				.body(http::BodyFromData(c.data.clone()))
+				.build()?;
+			
+			let res = client.request(req).await?;
+			if !res.ok() {
+				return Err(format_err!("Received status {:?} while uploading", res.status()))
+			}
+		}
 
-			// Make request, change error type to out error type
-			client.request(req)
-			.map_err(|e| Error::from(e))
-			.and_then(move |resp| {
-				if !resp.status().is_success() {
-					// TODO: Also log out the actual body message?
-					return err(format!("Received status {:?} while uploading", resp.status()).into());
-				}
-
-				ok(num + 1)
-			})
-		})
-		.and_then(|num| ok(num))
+		Ok(chunks.len())
 	}
 
 	/// Uploads some number of chunks to a single machine/volume and returns how many of the chunks succeeded in being flushed to the volume
-	fn upload_needle_batch(mac: &models::StoreMachine, chunks: &[NeedleChunk])
-		-> impl Future<Item=usize, Error=Error> {
+	async fn upload_needle_batch(mac: &models::StoreMachine, chunks: &[NeedleChunk]) -> Result<usize> {
 		
-		let mut body_chunks = vec![];
+		let mut body_parts = vec![];
 
 		for c in chunks {
 			let mut header = vec![];
 			c.write_header(&mut Cursor::new(&mut header)).expect("Failure making chunk header");
 
-			body_chunks.push(hyper::Chunk::from(Bytes::from(header)));
-			body_chunks.push(hyper::Chunk::from(c.data.clone()));
+			body_parts.push(Bytes::from(header));
+			body_parts.push(c.data.clone());
 		}
 
-		let s = stream::iter(body_chunks);
+		let client = http::Client::create(http::ClientOptions::from_uri(&mac.addr().parse()?)?)?;
 
-		let url = format!(
-			"{}{}",
-			mac.addr(),
-			StorePath::Index.to_string()
-		);
-
-		let client = hyper::Client::new();
-		let req = hyper::Request::builder()
-			.uri(url)
-			.method("PATCH")
+		let req = http::RequestBuilder::new()
+			.method(http::Method::PATCH)
+			.path(StorePath::Index.to_string())
 			.header("Host", Host::Store(mac.id as MachineId).to_string())
-			.body(hyper::Body::wrap_stream(s))
-			.unwrap();
-	
-		client.request(req)
-		.map_err(|e| e.into())
-		.and_then(|resp| {
-			if !resp.status().is_success() {
-				return err(format!("Request failed with code: {}", resp.status()).into());
-			}
+			.body(http::BodyFromParts(body_parts.into_iter()))
+			.build()?;
 
-			ok(resp)
-		})
-		.and_then(|resp| {
-			resp.into_body()
-			.map_err(|e| e.into())
-			.fold(Vec::new(), |mut buf, c| /* -> FutureResult<Vec<_>, Error> */ {
-				buf.extend_from_slice(&c);
-				ok(buf)
-			})
-			.and_then(|buf| {
-				
-				let res = match serde_json::from_slice::<StoreWriteBatchResponse>(&buf) {
-					Ok(v) => v,
-					Err(_) => return err("Invalid json response received".into())
-				};
+		let mut resp = client.request(req).await?;
 
-				if let Some(e) = res.error {
-					eprintln!("Upload error: {:?}", e);
-				}
+		if !resp.ok() {
+			return Err(format_err!("Request failed with code: {:?}", resp.status()).into());
+		}
 
-				let num = res.num_written;
+		let mut resp_body = vec![];
+		resp.body.read_to_end(&mut resp_body).await?;
 
-				ok(num as usize)
-			})
-		})
+		let resp_body_str = std::str::from_utf8(&resp_body)?;
+
+		let res = StoreWriteBatchResponse::parse_json(
+			resp_body_str, &protobuf_json::ParserOptions::default())
+			.map_err(|_| err_msg("Invalid json response received"))?;
+
+		if res.has_error() {
+			eprintln!("Upload error: {:?}", res.error());
+		}
+
+		let num = res.num_written();
+
+		Ok(num as usize)
 	}
 
 	pub fn get_photo_cache_url() {

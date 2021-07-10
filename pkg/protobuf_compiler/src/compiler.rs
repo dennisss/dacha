@@ -1106,9 +1106,15 @@ impl Compiler<'_> {
         lines.nl();
 
         lines.add(format!("impl {}::Message for {} {{", self.runtime_package, fullname));
-        lines.add("\tfn parse(data: &[u8]) -> Result<Self> {");
-        lines.add("\t\tlet mut msg = Self::default();");
+        lines.add(r#"
+            fn parse(data: &[u8]) -> Result<Self> {
+                let mut msg = Self::default();
+                msg.parse_merge(data)?;
+                Ok(msg)
+            } 
+        "#);
 
+        lines.add("\tfn parse_merge(&mut self, data: &[u8]) -> Result<()> {");
         lines.add("\t\tfor f in WireFieldIter::new(data) {");
         lines.add("\t\t\tlet f = f?;");
         lines.add("\t\t\tmatch f.field_number {");
@@ -1139,22 +1145,22 @@ impl Compiler<'_> {
 
             let mut p = String::new();
             if self.is_unordered_set(field) {
-                p += &format!("msg.{}.insert(f.parse_{}()?);", name, typeclass)
+                p += &format!("self.{}.insert(f.parse_{}()?);", name, typeclass)
 
             } else if is_repeated {
-                p += &format!("msg.{}.push(f.parse_{}()?);", name, typeclass);
+                p += &format!("self.{}.push(f.parse_{}()?);", name, typeclass);
             } else {
                 if use_option {
                     if is_message {
                         // TODO: also need to do this which not using optional but we are in
                         // proto2 required mode?
-                        p += &format!("msg.{} = Some(MessagePtr::new(f.parse_{}()?))", name, typeclass);
+                        p += &format!("self.{} = Some(MessagePtr::new(f.parse_{}()?))", name, typeclass);
 
                     } else {
-                        p += &format!("msg.{} = Some(f.parse_{}()?)", name, typeclass);
+                        p += &format!("self.{} = Some(f.parse_{}()?)", name, typeclass);
                     }
                 } else {
-                    p += &format!("msg.{} = f.parse_{}()?", name, typeclass);
+                    p += &format!("self.{} = f.parse_{}()?", name, typeclass);
                 }
             }
 
@@ -1166,7 +1172,7 @@ impl Compiler<'_> {
 
         lines.add("\t\t\t}");
         lines.add("\t\t}");
-        lines.add("\t\tOk(msg)");
+        lines.add("\t\tOk(())");
         lines.add("\t}");
 
         lines.add("\tfn serialize(&self) -> Result<Vec<u8>> {");

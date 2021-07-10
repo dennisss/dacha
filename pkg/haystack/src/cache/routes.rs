@@ -1,4 +1,4 @@
-use std::sync::{Arc,Mutex};
+use std::sync::Arc;
 use std::time::{SystemTime, Duration};
 
 use common::errors::*;
@@ -7,29 +7,27 @@ use rand::seq::SliceRandom;
 use bytes::Bytes;
 
 use super::api::*;
-use super::super::store::api::*;
-use super::super::types::*;
-use super::super::http_utils::*;
-use super::super::directory;
+use crate::store::api::*;
+use crate::types::*;
+use crate::http_utils::*;
+use crate::directory;
 use super::machine::*;
 use super::memory::*;
-use super::super::paths::*;
-use hyper::{Request, Body, Response, Method, StatusCode};
-use hyper::http::request::Parts;
-use hyper::body::Payload;
+use crate::paths::*;
+use crate::proto::service::*;
 
 
 pub async fn handle_request(
-	parts: Parts, body: Body, mac_handle: MachineHandle
-) -> Result<Response<Body>> {
+	req: http::Request, mac_handle: &MachineContext
+) -> Result<http::Response> {
 
-	let segs = match split_path_segments(&parts.uri.path()) {
+	let segs = match split_path_segments(&req.head.uri.path.as_str()) {
 		Some(v) => v,
 		None => return Ok(bad_request_because("Not enough segments"))
 	};
 
 	// We should not be getting any query parameters
-	if parts.uri.query() != None {
+	if req.head.uri.query != None {
 		return Ok(bad_request_because("Should not have given a query"));
 	}
 
@@ -40,10 +38,10 @@ pub async fn handle_request(
 
 	match params {
 
-		CachePath::Index => index_cache(mac_handle),
+		CachePath::Index => index_cache(mac_handle).await,
 
 		CachePath::Proxy { machine_ids, store } => {
-			handle_proxy_request(parts, body, mac_handle, machine_ids, store).await
+			handle_proxy_request(req, mac_handle, machine_ids, store).await
 		},
 
 		_ => Ok(bad_request_because("Unsupported path pattern"))
@@ -51,23 +49,17 @@ pub async fn handle_request(
 
 }
 
-#[derive(Serialize)]
-pub struct CacheIndexResponse {
-	pub used_space: usize,
-	pub total_space: usize,
-	pub num_entries: usize
-}
-
 // TODO: This should probably not be exposeable to random external clients
-fn index_cache(mac_handle: MachineHandle) -> Result<Response<Body>> {
-	let mac = mac_handle.inst.lock().unwrap();
+async fn index_cache(mac_handle: &MachineContext) -> Result<http::Response> {
+	let mac = mac_handle.inst.lock().await;
+
+	let mut response = CacheIndexResponse::default();
+	response.set_used_space(mac.memory.used_space as u64);
+	response.set_total_space(mac.memory.total_space as u64);
+	response.set_num_entries(mac.memory.len() as u64);
 
 	// TODO: Would also key good to hashed key-range of this cache
-	Ok(json_response(StatusCode::OK, &CacheIndexResponse {
-		used_space: mac.memory.used_space,
-		total_space: mac.memory.total_space,
-		num_entries: mac.memory.len()
-	}))
+	Ok(json_response(http::status_code::OK, &response))
 }
 
 // 
@@ -84,8 +76,8 @@ fn index_cache(mac_handle: MachineHandle) -> Result<Response<Body>> {
 const MAX_MACHINE_LIST_SIZE: usize = 6;
 
 async fn handle_proxy_request(
-	parts: Parts, body: Body, mac_handle: MachineHandle, machine_ids: MachineIds, store: StorePath
-) -> Result<Response<Body>> {
+	req: http::Request, mac_handle: &MachineContext, machine_ids: MachineIds, store: StorePath
+) -> Result<http::Response> {
 
 	// Step one is to check in the cache for the pair (inclusive of the )
 	// Check if an If-None-Match is given, etc.
@@ -125,9 +117,9 @@ async fn handle_proxy_request(
 
 		StorePath::Needle { volume_id, key, alt_key, cookie } => {
 
-			match parts.method {
+			match req.head.method {
 				// Fetching a specific needle
-				Method::GET => {
+				http::Method::GET => {
 					let keys = NeedleKeys { key, alt_key };
 
 					let mut store_macs;
@@ -135,13 +127,13 @@ async fn handle_proxy_request(
 
 					{ // Mutex scope
 					
-					let mut mac = mac_handle.inst.lock().unwrap();
+					let mut mac = mac_handle.inst.lock().await;
 
 					let res = mac.memory.lookup(&keys);
 
 					if let Cached::Valid(ref e) = res {
 						if e.logical_id == volume_id {
-							return respond_with_memory_entry(parts, cookie, e.clone(), true);
+							return respond_with_memory_entry(&req.head, cookie, e.clone(), true);
 						}
 					}
 
@@ -173,11 +165,11 @@ async fn handle_proxy_request(
 					} // End mutex scope
 
 					respond_from_backend(
-						parts, mac_handle, store_macs, store_str, old_entry,
+						&req.head, mac_handle, store_macs, store_str, old_entry,
 						volume_id, key, alt_key, cookie
 					).await
 				},
-				Method::POST => {
+				http::Method::POST => {
 					// TODO: Performing a proxied upload to one or more store machines
 					Ok(bad_request_because("Not implemented"))
 				},
@@ -190,35 +182,40 @@ async fn handle_proxy_request(
 
 
 async fn respond_from_backend(
-	parts: Parts, mac_handle: MachineHandle, store_macs: Vec<directory::models::StoreMachine>, store_path: String, old_entry: Option<Arc<MemoryEntry>>,
+	req_head: &http::RequestHead, mac_handle: &MachineContext,
+	store_macs: Vec<directory::models::StoreMachine>, store_path: String,
+	old_entry: Option<Arc<MemoryEntry>>,
 	volume_id: VolumeId, key: NeedleKey, alt_key: NeedleAltKey, cookie: CookieBuf
-) -> Result<Response<Body>> {
+) -> Result<http::Response> {
 
 	// TODO: Make this more dynamic
 	let from_cdn = false;
 
-	// TODO: Next optimization would be to maintain the connections to the backends long term
-	let client = hyper::Client::new();
-
 	// TODO: Need to support streaming back a response as we get it from the store while we are putting it into the cache
 
 	for store_mac in store_macs {
-		let route = format!("{}{}", store_mac.addr(), store_path);
-		println!("sending to: {}", route);
+		{
+			let route = format!("{}{}", store_mac.addr(), &store_path);
+			println!("sending to: {}", route);
+		}
+
+		// TODO: Next optimization would be to maintain the connections to the backends long term
+		let client = http::Client::create(http::ClientOptions::from_uri(&store_mac.addr().parse()?)?)?;
 
 		let probably_should_cache = !from_cdn && store_mac.can_write(&mac_handle.config);
 
-		let mut req = Request::builder();
+		let mut req = http::RequestBuilder::new()
+			.path(&store_path);
+			// .header(name, value)
 		
-		req.uri(&route);
-		req.header("Host", Host::Store(store_mac.id as MachineId).to_string());
+		req = req.header("Host", Host::Store(store_mac.id as MachineId).to_string());
 
 		// In an optimization to not re-hit the stores on stale caches, we will attempt to reuse the etag
 		// The backend store will recognize this by not reading from disk and not checking the cookie is the offsets in the etag are correct
 		// NOTE: We do NOT try to passthrough any etag given by the client as our etags currently contain sensitive offset information and we don't want a client to be able to partially bypass the cookie check to sniff photo offsets in the store
 		if let Some(ref e) = old_entry {
-			if let Some(v) = e.headers.get("ETag") {
-				req.header("If-None-Match", v);
+			if let Some(v) = e.headers.get_one("ETag")? {
+				req = req.header("If-None-Match", v.value.to_bytes());
 			}
 
 			// NOTE: In this case handle_proxy_request should have also stripped the store_path of the cookie
@@ -226,12 +223,12 @@ async fn respond_from_backend(
 		else if !probably_should_cache {
 			// If this case we wil allow passing through the client etag (as we should still be forwarding the full store_path in this case)
 			// NOTE: This is mainly so that we can operate in full-proxy mode for read-only stores
-			if let Some(v) = parts.headers.get("If-None-Match") {
-				req.header("If-None-Match", v);
+			if let Some(v) = req_head.headers.get_one("If-None-Match")? {
+				req = req.header("If-None-Match", v.value.to_bytes());
 			}
 		}
 
-		let res = match client.request(req.body(Body::empty()).unwrap()).compat().await {
+		let mut res = match client.request(req.build()?).await {
 			Ok(r) => r,
 			Err(e) => {
 				eprintln!("Backend failed with {:?}", e);
@@ -245,35 +242,30 @@ async fn respond_from_backend(
 			continue;
 		}
 
-		if res.status() == StatusCode::OK || res.status() == StatusCode::NOT_MODIFIED {
-			let mut headers = HeaderMap::new();
+		// TODO: Make sure that when we return a NOT_MODIFIED request, we also return a Content-Length??
+		if res.status() == http::status_code::OK || res.status() == http::status_code::NOT_MODIFIED {
+			let mut headers = http::Headers::new();
 
-			for (name, value) in res.headers().iter() {
-				let norm = name.to_string().to_lowercase();
+			for header in res.head.headers.raw_headers.iter() {
+				let norm = header.name.as_str().to_lowercase();
 
 				if norm.starts_with("x-haystack-") || &norm == "etag" {
-					headers.insert(name, value.clone());
+					headers.raw_headers.push(header.clone());
 				} 
 			}
 
-			let mut buf: Bytes;
+			let buf: Bytes;
 
 			// Regular case, get out the body
-			if res.status() == StatusCode::OK {
-				let content_length = res.headers().get("Content-Length").unwrap_or(
-					&hyper::header::HeaderValue::from(0)
-				).to_str().unwrap_or("0").parse::<usize>().unwrap_or(0);
-				// TODO: body.content_length() seems to be private?
+			if res.status() == http::status_code::OK {
+				let content_length = res.body.len().unwrap_or(0);
 
-				// TODO: This is bad
-				let body = res.into_body().compat().map(|x| x.unwrap()).concat().await;
+				let mut data = vec![];
+				data.reserve_exact(content_length);
+				data.resize(content_length, 0);
+				res.body.read_exact(&mut data).await;
 
-				buf = Bytes::with_capacity(content_length as usize);
-				
-				// while let Some(Ok(c)) = body.compat().next().await {
-				// 	buf.extend_from_slice(&c);
-				// }
-
+				buf = Bytes::from(data);
 			}
 			// Otherwise we got a NotModified
 			// This means that we had an old entry that we thought was stale and we can re-up it's lifetime
@@ -284,21 +276,22 @@ async fn respond_from_backend(
 
 					// Merge in old headers as the store may not have returned all of them again
 					// (taking an old cached header only if not overriden by a new one)
-					for (h, v) in e.headers.iter() {
-						if let None = headers.get(h) {
-							headers.insert(h, v.clone());
+					for h in e.headers.raw_headers.iter() {
+						if headers.find(h.name.as_str()).next().is_none() {
+							headers.raw_headers.push(h.clone());
 						}
 					}
 				}
 				// Otherwise, we proxied the ETag from the client, so we will just reflect that back to them
 				else {
-					let mut res = Response::builder();
-					res.status(StatusCode::NOT_MODIFIED);
-					for (h, v) in headers.iter() {
-						res.header(h, v.clone());
+					let mut res = http::ResponseBuilder::new();
+					res = res.status(http::status_code::NOT_MODIFIED);
+
+					for header in headers.raw_headers.iter() {
+						res = res.header(header.name.clone(), header.value.to_bytes());
 					}
 
-					return Ok(res.body(Body::empty()).unwrap());
+					return Ok(res.build()?);
 				}
 			}
 
@@ -311,14 +304,18 @@ async fn respond_from_backend(
 				data: buf
 			});
 
-			let mut mac = mac_handle.inst.lock().unwrap();
+			let mut mac = mac_handle.inst.lock().await;
 
 
-			let is_writeable = if let Some(v) = entry.headers.get("X-Haystack-Writeable") {
-				if v.to_str().unwrap_or("0") == "1" {
+			let is_writeable = if let Some(v) = entry.headers.get_one("X-Haystack-Writeable")? {
+				if v.value.as_bytes() == b"0" {
+					false
+				} else if v.value.as_bytes() == b"1" {
 					true
+				} else {
+					eprintln!("Invalid value for X-Haystack-Writeable");
+					false
 				}
-				else { false }
 			} else { false };
 
 			let should_cache = !from_cdn && is_writeable;
@@ -328,39 +325,38 @@ async fn respond_from_backend(
 				mac.memory.insert(NeedleKeys { key, alt_key }, entry.clone());
 			}
 
-			return respond_with_memory_entry(parts, cookie, entry, should_cache);
+			return respond_with_memory_entry(req_head, cookie, entry, should_cache);
 		}
 		else {
 			// Otherwise passthrough the successful error response
 			// TODO: Headers as well
-			return Ok(Response::builder().status(res.status())
-				.body(res.into_body())
-				.unwrap());
+			return Ok(http::ResponseBuilder::new().status(res.status())
+				.body(res.body).build()?);
 		}
 	}
 
-	Ok(text_response(StatusCode::SERVICE_UNAVAILABLE, "No backend store able to respond"))
+	Ok(text_response(http::status_code::SERVICE_UNAVAILABLE, "No backend store able to respond"))
 
 }
 
 fn respond_with_memory_entry(
-	parts: Parts, given_cookie: CookieBuf, entry: Arc<MemoryEntry>, will_cache: bool
-) -> Result<Response<Body>> {
+	req_head: &http::RequestHead, given_cookie: CookieBuf, entry: Arc<MemoryEntry>, will_cache: bool
+) -> Result<http::Response> {
 
 	if entry.cookie.data() != given_cookie.data() {
 		// TODO: Keep in sync with the responses we use for the store
-		return Ok(text_response(StatusCode::FORBIDDEN, "Incorrect cookie"))
+		return Ok(text_response(http::status_code::FORBIDDEN, "Incorrect cookie"))
 	}
 
 
 	// TODO: Implement Range, Expires headers (where the expires would be reflective of the internal cache state)
 
-	let mut res = Response::builder();
+	let mut res = http::ResponseBuilder::new();
 
-	res.status(StatusCode::OK); 
+	res = res.status(http::status_code::OK);
 
-	for (name, value) in entry.headers.iter() {
-		res.header(name, value.clone());
+	for header in entry.headers.raw_headers.iter() {
+		res = res.header(header.name.clone(), header.value.as_bytes());
 	}
 
 	// The Age header will only be on requests that we will actually store in memory
@@ -368,16 +364,16 @@ fn respond_with_memory_entry(
 		let age = SystemTime::now().duration_since(entry.inserted_at)
 			.unwrap_or(Duration::from_secs(0)).as_secs().to_string();
 
-		res.header("Age", age);
+		res = res.header("Age", age);
 	}
 
 	// This is basically a long-winded way of checking if the client gave us a matching etag
-	if let Some(v) = parts.headers.get("If-None-Match") {
-		if let Some(v2) = entry.headers.get("ETag") {
-			if let Ok(e) = ETag::from_header(v) {
-				if let Ok(e2) = ETag::from_header(v2) {
+	if let Some(v) = req_head.headers.get_one("If-None-Match")? {
+		if let Some(v2) = entry.headers.get_one("ETag")? {
+			if let Ok(e) = ETag::from_header(v.value.as_bytes()) {
+				if let Ok(e2) = ETag::from_header(v2.value.as_bytes()) {
 					if e.matches(&e2) {
-						return Ok(res.status(StatusCode::NOT_MODIFIED).body(Body::empty()).unwrap());
+						return Ok(res.status(http::status_code::NOT_MODIFIED).build().unwrap());
 					}
 				}
 			}
@@ -388,8 +384,10 @@ fn respond_with_memory_entry(
 	// We should probably be passing this out
 	Ok(
 		res
-		.status(StatusCode::OK)
-		.body(Body::from(entry.data.clone())).unwrap()
+		.status(http::status_code::OK)
+		.body(http::BodyFromData(entry.data.clone()))
+		.build()
+		.unwrap()
 	)
 }
 

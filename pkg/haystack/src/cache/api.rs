@@ -1,3 +1,5 @@
+use common::errors::*;
+
 use crate::types::*;
 use crate::store::api::*;
 
@@ -21,9 +23,9 @@ impl MachineIds {
 }
 
 impl std::str::FromStr for MachineIds {
-	type Err = &'static str;
+	type Err = common::errors::Error;
 
-	fn from_str(s: &str) -> Result<Self, Self::Err> {
+	fn from_str(s: &str) -> Result<Self> {
 		if s == "-" {
 			return Ok(MachineIds::Unspecified);
 		}
@@ -33,7 +35,7 @@ impl std::str::FromStr for MachineIds {
 		for part in s.split('-').into_iter() {
 			match part.parse::<MachineId>() {
 				Ok(v) => list.push(v),
-				Err(_) => return Err("Contains invalid ids")
+				Err(_) => return Err(err_msg("Contains invalid ids"))
 			};
 		}
 
@@ -55,6 +57,7 @@ pub enum CachePath {
 }
 
 impl CachePath {
+	/// NOTE: On failure, this returns a client friendly error message.
 	pub fn from(segs: &[String]) -> std::result::Result<CachePath, &'static str> {
 		if segs.len() == 0 {
 			return Ok(CachePath::Index);

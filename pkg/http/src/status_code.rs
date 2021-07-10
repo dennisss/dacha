@@ -19,6 +19,10 @@ impl StatusCode {
         self.0
     }
 
+    pub fn is_server_error(&self) -> bool {
+        self.0 >= 500
+    }
+
     pub fn default_reason(&self) -> Option<&'static str> {
         Some(match self.0 {
             100 => "Continue",

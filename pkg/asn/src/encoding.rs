@@ -700,18 +700,18 @@ impl DERReader {
 
     pub fn read_ia5string(&mut self) -> Result<AsciiString> {
         let data = self.read_element(TagClass::Universal, TAG_NUMBER_IA5STRING, false)?;
-        AsciiString::from_bytes(data)
+        AsciiString::from(data)
     }
 
     pub fn read_utctime(&mut self) -> Result<UTCTime> {
         let data = self.read_element(TagClass::Universal, TAG_NUMBER_UTCTIME, false)?;
-        let s = AsciiString::from_bytes(data)?;
+        let s = AsciiString::from(data)?;
         UTCTime::from_str(s.as_ref())
     }
 
     pub fn read_generalized_time(&mut self) -> Result<GeneralizedTime> {
         let data = self.read_element(TagClass::Universal, TAG_NUMBER_GENERALIZEDTIME, false)?;
-        let s = AsciiString::from_bytes(data)?;
+        let s = AsciiString::from(data)?;
         GeneralizedTime::from_str(s.as_ref())
     }
 

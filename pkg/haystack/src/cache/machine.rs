@@ -1,7 +1,8 @@
 use std::time::Duration;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use common::errors::*;
+use common::async_std::sync::Mutex;
 
 use crate::types::*;
 use crate::directory::*;
@@ -35,16 +36,11 @@ pub type MachineHandle = Arc<MachineContext>;
 
 
 pub struct CacheMachine {
-
 	pub id: MachineId,
 	pub dir: Directory,
 	pub port: u16,
 	pub memory: MemoryStore
-
 }
-
-
-
 
 impl CacheMachine {
 
@@ -53,8 +49,8 @@ impl CacheMachine {
 		let mac = dir.db.create_cache_machine("127.0.0.1", port)?;
 
 		let memory = MemoryStore::new(
-			dir.config.cache.memory_size, dir.config.cache.max_entry_size,
-			Duration::from_millis(dir.config.cache.max_age)
+			dir.config.cache().memory_size() as usize, dir.config.cache().max_entry_size() as usize,
+			Duration::from_millis(dir.config.cache().max_age())
 		);
 
 		Ok(CacheMachine {
@@ -65,29 +61,27 @@ impl CacheMachine {
 		})
 	}
 
+	pub async fn start(mac_handle: &MachineHandle) {
+		mac_handle.thread.start(Self::run_thread(mac_handle.clone())).await;
+	}
 
-	pub fn start(mac_handle_in: &MachineHandle) {
+	async fn run_thread(mac_handle: MachineHandle) {
+		while mac_handle.thread.is_running() {
+			{
+				let mac = mac_handle.inst.lock().await;
 
-		let mac_handle = mac_handle_in.clone();
-		mac_handle_in.thread.start(move || {
-
-			while mac_handle.thread.is_running() {
-				{
-					let mac = mac_handle.inst.lock().unwrap();
-
-					// TODO: Current issue is that blocking the entire machine for a long time will be very expensive during concurrent operations
-					if let Err(e) = mac.do_heartbeat(true) {
-						println!("{:?}", e);
-					}
+				// TODO: Current issue is that blocking the entire machine for a long time will be very expensive during concurrent operations
+				if let Err(e) = mac.do_heartbeat(true) {
+					println!("{:?}", e);
 				}
-
-				mac_handle.thread.wait(mac_handle.config.store.heartbeat_interval);
 			}
 
-			// Perform final heartbeart to take this node off of the ready list
-			mac_handle.inst.lock().unwrap().do_heartbeat(false).expect("Failed to mark as not-ready");
+			mac_handle.thread.wait(mac_handle.config.store().heartbeat_interval()).await;
+		}
 
-		});
+		// Perform final heartbeart to take this node off of the ready list
+		mac_handle.inst.lock().await.do_heartbeat(false).expect("Failed to mark as not-ready");
+
 	}
 
 	pub fn do_heartbeat(&self, ready: bool) -> Result<()> {

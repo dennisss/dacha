@@ -1,5 +1,6 @@
 use std::io::{Read, Write, Cursor};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+use crypto::{checksum::crc::CRC32CHasher, hasher::Hasher};
 use std::mem::size_of;
 use common::errors::*;
 use crate::types::*;
@@ -56,7 +57,11 @@ impl PhysicalVolumeSuperblock {
 		let block_size = cursor.read_u32::<LittleEndian>()?;
 		let allocated_space = cursor.read_u64::<LittleEndian>()?;
 
-		let expected_sum = crc32c_append(0, &buf[0..(cursor.position() as usize)]);
+		let expected_sum = {
+			let mut hasher = CRC32CHasher::new();
+			hasher.update(&buf[0..(cursor.position() as usize)]);
+			hasher.finish_u32()
+		};
 		let checksum = cursor.read_u32::<LittleEndian>()?;
 
 		assert_eq!(cursor.position(), SUPERBLOCK_SIZE as u64);
@@ -94,9 +99,9 @@ impl PhysicalVolumeSuperblock {
 		}
 		{
 			let sum = {
-				let mut hasher = CRC32Hasher::new();
+				let mut hasher = CRC32CHasher::new();
 				hasher.update(&buf);
-				hasher.finish_u32();
+				hasher.finish_u32()
 			};
 
 			let cur = buf.len();

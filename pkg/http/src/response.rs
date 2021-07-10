@@ -1,5 +1,6 @@
 use common::errors::*;
 use common::async_std::channel;
+use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
 
 use crate::body::*;
@@ -91,13 +92,15 @@ impl ResponseBuilder {
     }
 
     pub fn header<N: ToHeaderName, V: ToHeaderValue>(mut self, name: N, value: V) -> Self {
-        let name = match name.to_header_name() {
+                let name = match name.to_header_name() {
             Ok(v) => v,
             Err(e) => {
                 self.error = Some(e);
                 return self;
             }
         };
+
+        // TODO: Support optionally enabling a mode where we can reject non-ASCII values in header values.
 
         let value = match value.to_header_value(&name) {
             Ok(v) => v,

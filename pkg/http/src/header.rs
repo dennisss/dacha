@@ -94,10 +94,16 @@ pub trait ToHeaderName {
     fn to_header_name(self) -> Result<AsciiString>;
 }
 
-impl<T: AsRef<[u8]>> ToHeaderName for T {
+impl ToHeaderName for AsciiString {
+    fn to_header_name(self) -> Result<AsciiString> {
+        Ok(self.clone())
+    }
+}
+
+impl ToHeaderName for Bytes {
     fn to_header_name(self) -> Result<AsciiString> {
         let f = || {
-            let s = AsciiString::from(self.as_ref())?;
+            let s = AsciiString::from(self)?;
             // parse_field_name(s.data.clone())?;
             Ok(s)
         };
@@ -106,14 +112,35 @@ impl<T: AsRef<[u8]>> ToHeaderName for T {
     }
 }
 
+// These are expansions of 
+impl ToHeaderName for &[u8] {
+    fn to_header_name(self) -> Result<AsciiString> {
+        Bytes::from(self).to_header_name()
+    }
+}
+impl ToHeaderName for Vec<u8> {
+    fn to_header_name(self) -> Result<AsciiString> {
+        Bytes::from(self).to_header_name()
+    }
+}
+impl ToHeaderName for &str {
+    fn to_header_name(self) -> Result<AsciiString> {
+        Bytes::from(self).to_header_name()
+    }
+}
+
+
+
 pub trait ToHeaderValue {
     fn to_header_value(self, name: &AsciiString) -> Result<OpaqueString>;
 }
 
-impl<T: AsRef<str>> ToHeaderValue for T {
+impl<T: Into<Bytes>> ToHeaderValue for T {
     fn to_header_value(self, name: &AsciiString) -> Result<OpaqueString> {
         let f = || {
-            let s = OpaqueString::from(self.as_ref());
+            // TODO: The vast majority of standard header types should never 
+
+            let s = OpaqueString::from(self);
             // TODO: Need not do this as it will be done later during serialization anyway.
             // parse_field_content(s.data.clone())?;
             Ok(s)

@@ -37,7 +37,7 @@ pub struct RequestHead {
 
 impl RequestHead {
     pub fn serialize(&self, out: &mut Vec<u8>) -> Result<()> {
-        serialize_request_line(&AsciiString::from_str(self.method.as_str())?, &self.uri, &self.version, out)?;
+        serialize_request_line(&AsciiString::from(self.method.as_str())?, &self.uri, &self.version, out)?;
 
         self.headers.serialize(out)?;
         out.extend_from_slice(b"\r\n");
@@ -209,20 +209,20 @@ mod tests {
     #[test]
     fn path_parser_test() {
 
-        assert_eq!(simple_path_parser(b"/"), Some((AsciiString::from_str("/").unwrap(), None)));
+        assert_eq!(simple_path_parser(b"/"), Some((AsciiString::from("/").unwrap(), None)));
         assert_eq!(simple_path_parser(b"//"), None);
-        assert_eq!(simple_path_parser(b"/hello"), Some((AsciiString::from_str("/hello").unwrap(), None)));
+        assert_eq!(simple_path_parser(b"/hello"), Some((AsciiString::from("/hello").unwrap(), None)));
         assert_eq!(simple_path_parser(b""), None);
-        assert_eq!(simple_path_parser(b"/hello/world"), Some((AsciiString::from_str("/hello/world").unwrap(), None)));
+        assert_eq!(simple_path_parser(b"/hello/world"), Some((AsciiString::from("/hello/world").unwrap(), None)));
         assert_eq!(simple_path_parser(b"/hello/?world=?"),
-                   Some((AsciiString::from_str("/hello/").unwrap(), Some(AsciiString::from_str("world=?").unwrap()))));
+                   Some((AsciiString::from("/hello/").unwrap(), Some(AsciiString::from("world=?").unwrap()))));
         assert_eq!(simple_path_parser(b"/hello/?"),
-                    Some((AsciiString::from_str("/hello/").unwrap(), Some(AsciiString::from_str("").unwrap()))));
-        assert_eq!(simple_path_parser(b"/hello?"), Some((AsciiString::from_str("/hello").unwrap(), Some(AsciiString::from_str("").unwrap()))));
-        assert_eq!(simple_path_parser(b"/?"), Some((AsciiString::from_str("/").unwrap(), Some(AsciiString::from_str("").unwrap()))));
+                    Some((AsciiString::from("/hello/").unwrap(), Some(AsciiString::from("").unwrap()))));
+        assert_eq!(simple_path_parser(b"/hello?"), Some((AsciiString::from("/hello").unwrap(), Some(AsciiString::from("").unwrap()))));
+        assert_eq!(simple_path_parser(b"/?"), Some((AsciiString::from("/").unwrap(), Some(AsciiString::from("").unwrap()))));
         assert_eq!(simple_path_parser(b"?"), None);
         assert_eq!(simple_path_parser(b"?a"), None);
-        assert_eq!(simple_path_parser(b"*"), Some((AsciiString::from_str("*").unwrap(), None)));
+        assert_eq!(simple_path_parser(b"*"), Some((AsciiString::from("*").unwrap(), None)));
 
         println!("SIZE: {}", REQUEST_PATH.estimated_memory_usage());
     }

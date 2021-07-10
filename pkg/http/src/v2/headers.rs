@@ -41,7 +41,7 @@ fn is_ascii_lowercase(s: &str) -> bool {
 }
 
 fn to_ascii_string(data: Vec<u8>) -> StreamResult<AsciiString> {
-    Ok(AsciiString::from_bytes(Bytes::from(data))
+    Ok(AsciiString::from(Bytes::from(data))
         .map_err(|_| StreamError::malformed_message("Received non ASCII header name/value"))?)   
 }
 
@@ -248,7 +248,7 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
         }
     }
 
-    let mut path = path.unwrap_or(AsciiString::from_str("").unwrap());
+    let mut path = path.unwrap_or(AsciiString::from("").unwrap());
     let mut query = None;
     if let Some(idx) = path.as_ref().find('?') {
         query = Some(AsciiString::from(&path.as_ref().as_bytes()[(idx + 1)..]).unwrap());

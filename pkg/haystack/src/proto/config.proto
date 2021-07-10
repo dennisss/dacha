@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+
+message Config {
+    StoreConfig store = 1;
+
+	CacheConfig cache = 2;
+
+	// TODO: Probably also move the directory config into here as well
+}
+
+message StoreConfig {
+	// Number of replicas of each physical volume to create for a single logical volume
+	uint64 num_replicas = 1;
+
+	// Amount of space on the store machine's hdd to use for storing data
+	// Currently fixed but eventually dynamic based on hard drive checks and configurations
+	uint64 space = 2;
+
+	// All needles in the store will start at an offset aligned to this size
+	// All indexed needle offsets will be defined in units of blocks from the start of the store
+	// NOTE: Once a physical volume is created with this size, it will stay that way until compacted
+	uint64 block_size = 3;
+
+	// Maximum size of each volume on a store machine
+	uint64 allocation_size = 4;
+
+	// How many multiples of the allocation size less than the total store space to leave empty
+	// This space will ensure that we don't risk overprovisioning space and that we have working area to perform online compactions on the same machine
+	uint64 allocation_reserved = 5;
+
+	// Block size for allocations done with the filesystem. We will ensure that the amount of blocks in the filesystem allocated towards one store file is aligned aligned up to multiples of this byte size. This is used to ensure that store files use mostly contiguous blocks on the disk when possible (Facebook's paper uses 1GB)
+	// TODO: Probably good to validate this against the fs2::allocation_granularity for a volume
+	uint64 preallocate_size = 6;
+
+	uint64 heartbeat_interval = 7;
+
+	// Must get a heartbeat with-in this amount of time to be considering alive and well
+	uint64 heartbeat_timeout = 8;
+}
+
+message CacheConfig {
+	uint64 memory_size = 1;
+	uint64 max_age = 2;
+	uint64 max_entry_size = 3;
+}

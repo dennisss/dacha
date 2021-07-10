@@ -1,11 +1,14 @@
-use super::super::types::*;
-use super::super::store::api::CookieBuf;
 use std::collections::HashMap;
 use std::collections::BTreeMap;
 use std::time::*;
-use hyper::http::HeaderMap;
-use bytes::Bytes;
 use std::sync::Arc;
+
+use common::bytes::Bytes;
+use http::Headers;
+
+use crate::types::*;
+use crate::store::api::CookieBuf;
+
 
 
 /// NOTE: Everything in this entry is essentially immutable
@@ -26,7 +29,7 @@ pub struct MemoryEntry {
 	pub logical_id: VolumeId,
 
 	/// We will opaquely cache most custom and cache-related headers that we get back from the store (mainly to replicate the original response we got from the store)
-	pub headers: HeaderMap,
+	pub headers: http::Headers,
 
 	/// This will be the raw data of the needle file it is associated with 
 	pub data: Bytes,
@@ -258,7 +261,7 @@ mod tests {
 			cookie: CookieBuf::random(),
 			store_id: 1,
 			logical_id: 1,
-			headers: HeaderMap::new(),
+			headers: Headers::new(),
 			data: data.clone()
 		});
 

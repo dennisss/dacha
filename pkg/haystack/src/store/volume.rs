@@ -1,19 +1,21 @@
-
-use super::super::types::*;
-use super::super::errors::*;
-use super::api::CookieBuf;
-use super::needle::*;
-use super::volume_index::*;
-use super::superblock::*;
 use std::io;
 use std::io::{Write, Read, Seek, Cursor};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use crc32c::crc32c_append;
 use std::path::{Path, PathBuf};
-use core::block_size_remainder;
+
+use common::errors::*;
+use common::block_size_remainder;
 use fs2::FileExt;
-use core::fs::allocate_soft::*;
+use common::fs::allocate_soft::*;
+use crypto::checksum::crc::CRC32CHasher;
+use crypto::hasher::Hasher;
+
+use crate::types::*;
+use super::api::CookieBuf;
+use super::needle::*;
+use super::volume_index::*;
+use super::superblock::*;
 use super::stream::Stream;
 
 const SUPERBLOCK_MAGIC: &str = "HAYS";
@@ -78,8 +80,8 @@ impl PhysicalVolume {
 			cluster_id,
 			machine_id,
 			volume_id,
-			block_size: config.store.block_size,
-			allocated_space: config.store.allocation_size
+			block_size: config.store().block_size(),
+			allocated_space: config.store().allocation_size()
 		};
 
 		let idx_path = path.to_str().unwrap().to_owned() + ".idx";
@@ -197,7 +199,7 @@ impl PhysicalVolume {
 		if let Some(old_val) = self.index.get(&keys) {
 			if old_val.block_offset == entry.block_offset {
 				// This isn't really problematic, but does indicate that we are doing something wrong
-				return Err("Adding the exact same index entry twice")?;
+				return Err(err_msg("Adding the exact same index entry twice"))?;
 			}
 
 			self.compaction_pending += old_val.meta.occupied_size(self.superblock.block_size)
@@ -387,7 +389,7 @@ impl PhysicalVolume {
 
 			// Round up to the next preallocation block size
 			let mut next_preallocated = next_extent
-				+ block_size_remainder(self.config.store.preallocate_size, next_extent);
+				+ block_size_remainder(self.config.store().preallocate_size(), next_extent);
 
 			// Current estimate of total size needed to store the index when full
 			let index_space = self.predicted_index_size();

@@ -1,7 +1,8 @@
 use diesel::*;
-use super::schema::*;
-use super::super::types::Config;
 use common::chrono::{DateTime, Utc, Duration};
+
+use super::schema::*;
+use crate::proto::config::Config;
 
 pub enum ParamKey {
 	ClusterId = 1
@@ -53,7 +54,7 @@ impl StoreMachine {
 		}
 
 		let now = Utc::now();
-		let timeout = config.store.heartbeat_timeout;
+		let timeout = config.store().heartbeat_timeout();
 		if (
 			now.ge(&self.last_heartbeat) &&
 			(now - (self.last_heartbeat)).ge(&Duration::milliseconds(timeout as i64))
@@ -71,7 +72,7 @@ impl StoreMachine {
 
 	/// Check whether we are allowed to create a new volume on this machine
 	pub fn can_allocate(&self, config: &Config) -> bool {
-		let allocation_size = config.store.allocation_size;
+		let allocation_size = config.store().allocation_size();
 		self.can_read(config) && (self.allocated_space + (allocation_size as i64) < self.total_space)
 	}
 
@@ -112,7 +113,7 @@ impl CacheMachine {
 		}
 
 		let now = Utc::now();
-		let timeout = config.store.heartbeat_timeout;
+		let timeout = config.store().heartbeat_timeout();
 		if (
 			now.ge(&self.last_heartbeat) &&
 			(now - (self.last_heartbeat)).ge(&Duration::milliseconds(timeout as i64))

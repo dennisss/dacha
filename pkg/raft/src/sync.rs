@@ -9,6 +9,8 @@ use common::futures::channel::mpsc;
 use common::futures::channel::oneshot;
 use common::futures::{SinkExt, StreamExt};
 
+// TODO: Simplify the imlpementation of this by just using a regular channel.
+
 /// Pretty much a futures based implementation of a conditional variable that
 /// owns the condition value.
 /// Unlike a conditional variable, this will not relock the mutex after the wait

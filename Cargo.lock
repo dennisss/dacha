@@ -1021,11 +1021,13 @@ dependencies = [
  "byteorder",
  "bytes 0.5.0",
  "chrono",
+ "clap",
  "common",
  "crypto",
  "ctrlc",
  "diesel",
  "dotenv",
+ "failure",
  "fs2",
  "http",
  "ipnetwork",
@@ -1035,8 +1037,6 @@ dependencies = [
  "protobuf_compiler",
  "protobuf_json",
  "rand 0.6.5",
- "siphasher",
- "toml",
 ]
 
 [[package]]
@@ -2213,12 +2213,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "siphasher"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbce6d4507c7e4a3962091436e56e95290cb71fa302d0d270e32130b75fbff27"
-
-[[package]]
 name = "slab"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2430,15 +2424,6 @@ name = "tinyvec_macros"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
-
-[[package]]
-name = "toml"
-version = "0.4.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "758664fc71a3a69038656bee8b6be6477d2a6c315a6b81f7081f591bffa4111f"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "try_from"

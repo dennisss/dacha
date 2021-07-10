@@ -1,15 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
-
-// use hyper::{Request, Response, Body, Server, StatusCode};
-// use hyper::http::request::Parts;
-// use hyper::service::service_fn;
-
 use common::errors::*;
-
-// use super::errors::Error;
-// use futures::TryFutureExt;
+use protobuf_json::MessageJsonSerialize;
+use common::async_fn::AsyncFn2;
 
 // TODO: Need a better space for these shared helpers 
 
@@ -25,47 +19,26 @@ pub fn bad_request_because(text: &'static str) -> http::Response {
 	text_response(http::status_code::BAD_REQUEST, text)
 }
 
-pub fn json_response<T>(code: http::status_code::StatusCode, obj: &T) -> http::Response where T: serde::Serialize {
-	let body = serde_json::to_string(obj).unwrap();
-	Response::builder()
+pub fn json_response<M>(code: http::status_code::StatusCode, obj: &M) -> http::Response where M: protobuf::MessageReflection {
+	let body = obj.serialize_json();
+	
+	// TODO: Perform response compression.
+
+	http::ResponseBuilder::new()
 		.status(code)
 		.header("Content-Type", "application/json; charset=utf-8")
-		.body(Body::from(body))
+		.body(http::BodyFromData(body))
+		.build()
 		.unwrap()
 }
 
 pub fn text_response(code: http::status_code::StatusCode, text: &'static str) -> http::Response {
-	Response::builder()
+	http::ResponseBuilder::new()
 		.status(code)
 		.header("Content-Type", "text/plain; charset=utf-8")
-		.body(Body::from(text))
+		.body(http::BodyFromData(text))
+		.build()
 		.unwrap()
-}
-
-/// Wraps a regular async request in a wrapper that logs out errors and nicely responds to clients on errors
-/// NOTE: The error type doesn't really matter as we never resolve to a error, just as long as it is sendable across threads, hyper won't complain
-pub fn handle_request_guard<F, P, I>(
-	req: Request<Body>, arg: I, f: F,
-) -> impl Future<Output=std::result::Result<Response<Body>, std::io::Error>>
-	where P: Future<Output=std::result::Result<Response<Body>, Error>>,
-		  I: Clone,
-		  F: Fn(Parts, Body, I) -> P {
-
-	let (parts, body) = req.into_parts();
-
-	// Mainly for being able to print out errors
-	let method = parts.method.clone();
-	let uri = parts.uri.clone();
-
-	f(parts, body, arg).then(move |res| {
-		match res {
-			Ok(resp) => Ok(resp),
-			Err(e) => {
-				eprintln!("{} {}: {:?}", method, uri, e);
-				Ok(Response::builder().status(500).body(Body::empty()).unwrap())
-			}
-		}
-	})
 }
 
 // 00
@@ -82,61 +55,63 @@ pub fn handle_request_guard<F, P, I>(
 // (1 / 1000) + (2 / 1000)*(999 / 1000) + (3 / 1000)(998 / 1000)
 // Sum_i=(1..(k-1))( (i/n) * ((n - i + 1) / n) )
 
-// TODO: See https://docs.rs/hyper/0.12.19/hyper/server/struct.Server.html#example for graceful shutdowns
-pub fn start_http_server<F, FS, FE, P: 'static, I: 'static>(
-	port: u16, arg: &Arc<I>, f: &'static F, fstart: &FS, fend: &'static FE
-)
-	where P: Send + Future<Output=std::result::Result<Response<Body>, Error>>,
-		  I: Send + Sync,
-		  F: Sync + (Fn(Parts, Body, Arc<I>) -> P),
-		  FS: Fn(&Arc<I>),
-		  FE: Sync + Fn(&Arc<I>)
-{
-	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
 
-	let (tx, rx) = futures::channel::oneshot::channel::<()>();
+/// Wraps a regular async request in a wrapper that logs out errors and nicely responds to clients on errors
+struct RequestHandlerWrap<Func, Arg> {
+	func: Func,
+	arg: Arc<Arg>
+}
 
-	let arg = arg.clone();
-	let arg2 = arg.clone();
-	let arg3 = arg.clone();
-	let server = Server::bind(&addr)
-        .serve(move || {
-			let arg = arg.clone();
-			service_fn(move |req: Request<Body>| {
-				handle_request_guard(req, arg.clone(), f).compat()			
-			})
-		})
-		.with_graceful_shutdown(rx)
-		.compat()
-		.map_err(|e| eprintln!("HTTP Server Error: {}", e));
+#[async_trait]
+impl<
+	Arg: Send + Sync,
+	Func: 'static + Send + Sync + for<'a> AsyncFn2<http::Request, &'a Arg, Output=Result<http::Response>>
+> http::RequestHandler for RequestHandlerWrap<Func, Arg> {
+	async fn handle_request(&self, request: http::Request) -> http::Response {
+		let method = request.head.method.clone();
+		let uri = request.head.uri.clone();
 
-    println!("Listening on http://{}", addr);
-	
-
-	let tx_wrap = Arc::new(Mutex::new(Some(tx)));
-	ctrlc::set_handler(move || {
-
-		// Take the tx exactly once (all future ctrl-c's will get a None and return)
-		let tx = match tx_wrap.lock().unwrap().take() {
-			Some(tx) => tx,
-			None => return
-		};
-
-		// Everything below here should only ever be called exactly once
-
-		fend(&arg2);
-
-		// Shutdown the server
-		if let Err(e) = tx.send(()) {
-			eprintln!("Error while shutting down: {:?}", e);
+		match self.func.call(request, self.arg.as_ref()).await {
+			Ok(resp) => resp,
+			Err(e) => {
+				// eprintln!("{} {}: {:?}", method, uri, e);
+				http::ResponseBuilder::new().status(http::status_code::INTERNAL_SERVER_ERROR).build().unwrap()
+			}
 		}
+	}
+} 
 
+
+// TODO: Support graceful stopping of HTTP2 servers.
+pub async fn run_http_server<
+	Arg: 'static + Send + Sync,
+	Func: 'static + Send + Sync + for<'a> AsyncFn2<http::Request, &'a Arg, Output=Result<http::Response>>
+>(
+	port: u16,
+	func: Func,
+	arg: Arc<Arg>
+) {
+
+	let server = http::Server::new(port, RequestHandlerWrap {
+		func, arg
+	});
+
+	let (tx, rx) = common::async_std::channel::bounded(1);
+
+	let tx1 = tx.clone();
+	let handle = common::async_std::task::spawn(async move {
+		println!("Listening on http://localhost:{}", port);
+		server.run().await;
+		tx1.send(()).await;
+	});
+
+	let tx2 = tx.clone();
+	ctrlc::set_handler(move || {
+		// Shutdown the server
+		tx2.try_send(());
     }).expect("Error setting Ctrl-C handler");
 
-	fstart(&arg3);
-
-	hyper::rt::run(server);
+	rx.recv().await;
 
 	println!("Shutdown!")
 }
-

@@ -97,7 +97,7 @@ impl RequestTarget {
             RequestTarget::AuthorityForm(a) => Uri {
                 scheme: None,
                 authority: Some(a),
-                path: AsciiString::from_str("").unwrap(),
+                path: AsciiString::from("").unwrap(),
                 // TODO: Wrong?
                 // path: UriPath::new(false, &[]),
                 query: None,
@@ -106,7 +106,7 @@ impl RequestTarget {
             RequestTarget::AsteriskForm => Uri {
                 scheme: None,
                 authority: None,
-                path: AsciiString::from_str("*").unwrap(), // UriPath::new(false, &["*"]),
+                path: AsciiString::from("*").unwrap(), // UriPath::new(false, &["*"]),
                 query: None,
                 fragment: None,
             },

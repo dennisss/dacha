@@ -36,7 +36,7 @@ impl Metadata {
             }
 
             let name = header.name.clone();
-            let value = AsciiString::from_bytes(header.value.to_bytes())?;
+            let value = AsciiString::from(header.value.to_bytes())?;
 
             // NOTE: HTTP2 gurantees that all header names are lowercase so we don't have to worry
             // about normalizing the keys.
@@ -44,7 +44,7 @@ impl Metadata {
 
             for value_part in COMMA_SEPARATOR.split(value.as_str()) {
                 // TODO: Optimize this given that this should never fail.
-                values_entry.push(AsciiString::from_str(value_part)?);
+                values_entry.push(AsciiString::from(value_part)?);
             }
         }
 
@@ -84,8 +84,8 @@ impl Metadata {
             return Err(err_msg("Text metadata must not end with -bin"));
         }
 
-        let name = AsciiString::from_str(name)?;
-        self.get_values_mut(name).push(AsciiString::from_str(value)?);
+        let name = AsciiString::from(name)?;
+        self.get_values_mut(name).push(AsciiString::from(value)?);
         Ok(())
     }
 
@@ -94,7 +94,7 @@ impl Metadata {
             return Err(err_msg("Binary metadata must end with -bin"));
         }
 
-        let name = AsciiString::from_str(name)?;
+        let name = AsciiString::from(name)?;
         let value = common::base64::encode_config(value, common::base64::STANDARD_NO_PAD);
 
         self.get_values_mut(name).push(AsciiString::from(value)?);
@@ -116,7 +116,7 @@ impl Metadata {
             return Err(err_msg("Text metadata must not end with -bin"));
         }
 
-        let name = AsciiString::from_str(name)?;
+        let name = AsciiString::from(name)?;
 
         let values = self.get_values(&name);
 
@@ -141,7 +141,7 @@ impl Metadata {
             return Err(err_msg("Binary metadata must end with -bin"));
         }
 
-        let name = AsciiString::from_str(name)?;
+        let name = AsciiString::from(name)?;
 
         let values = self.get_values(&name);
 

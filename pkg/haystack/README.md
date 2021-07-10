@@ -9,6 +9,9 @@ This is an implementation that tries to stay true to the original implementation
 Setup
 -----
 
+0. Dependencies:
+	- `sudo apt install libpq-dev`
+
 0. Build using `cargo build`. All further instructions will reference the executable at `./target/debug/hay`
 	- Run `./node_modules/.bin/neon build -p pkg/haystack/bindings/node/` to build the node.js bindings for of the client
 

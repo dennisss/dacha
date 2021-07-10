@@ -1,21 +1,22 @@
 #![feature(proc_macro_hygiene, decl_macro, type_alias_enum_variants)]
 
 extern crate clap;
-extern crate futures;
 extern crate haystack;
-extern crate toml;
 
-use clap::{App, Arg, SubCommand};
-use haystack::types::*;
-use haystack::directory::Directory;
-use haystack::errors::*;
-
-use common::futures::Future;
-use haystack::client::*;
 use std::fs::File;
 use std::io::Read;
 
-fn main() -> Result<()> {
+use common::errors::*;
+use clap::{App, Arg, SubCommand};
+
+use haystack::types::*;
+use haystack::directory::Directory;
+use haystack::client::*;
+use haystack::Config;
+use protobuf::Message;
+
+
+async fn run() -> Result<()> {
     let matches = App::new("Haystack")
 		.about("Photo/object storage system")
 		.arg(Arg::with_name("config")
@@ -73,14 +74,15 @@ fn main() -> Result<()> {
 		)
 		.get_matches();
 
-    let config = if let Some(config_file) = matches.value_of("config") {
+
+    let mut config = Config::recommended();
+    if let Some(config_file) = matches.value_of("config") {
         let mut file = File::open(config_file).expect("Failed to open the specified config file");
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
-        toml::from_str::<Config>(&contents).expect("Invalid config file")
-    } else {
-        Config::default()
-    };
+
+        config.parse_merge(contents.as_bytes()).expect("Invalid config file");
+    }
 
     let dir = Directory::open(config)?;
 
@@ -92,7 +94,7 @@ fn main() -> Result<()> {
                 .parse::<u16>()
                 .expect("Invalid port given");
             let folder = m.value_of("folder").unwrap_or("/hay");
-            haystack::store::main::run(dir, port, folder)?;
+            haystack::store::main::run(dir, port, folder).await?;
         }
         ("cache", Some(m)) => {
             let port = m
@@ -100,7 +102,7 @@ fn main() -> Result<()> {
                 .unwrap_or("4001")
                 .parse::<u16>()
                 .expect("Invalid port given");
-            haystack::cache::main::run(dir, port)?;
+            haystack::cache::main::run(dir, port).await?;
         }
 
         // TODO: Will also eventually also have the pitch-fork
@@ -127,18 +129,8 @@ fn main() -> Result<()> {
                         data: data.into(),
                     }];
 
-                    let f = c
-                        .upload_photo(chunks)
-                        .map_err(|err| {
-                            println!("{:?}", err);
-                            ()
-                        })
-                        .map(|pid| {
-                            println!("Uploaded with photo id: {}", pid);
-                            ()
-                        });
-
-                    tokio::run(f);
+                    let pid = c.upload_photo(chunks).await?;
+                    println!("Uploaded with photo id: {}", pid);
                 }
                 ("read-url", Some(m)) => {
                     let key = m.value_of("KEY").unwrap().parse::<NeedleKey>().unwrap();
@@ -148,7 +140,7 @@ fn main() -> Result<()> {
                         .parse::<NeedleAltKey>()
                         .unwrap();
 
-                    let url = c.read_photo_cache_url(&NeedleKeys { key, alt_key })?;
+                    let url = c.read_photo_cache_url(&NeedleKeys { key, alt_key }).await?;
 
                     println!("{}", url);
                 }
@@ -159,4 +151,9 @@ fn main() -> Result<()> {
     };
 
     Ok(())
+}
+
+
+fn main() -> Result<()> {
+    common::async_std::task::block_on(run())
 }

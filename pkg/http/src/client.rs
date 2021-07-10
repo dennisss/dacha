@@ -220,7 +220,7 @@ impl Client {
             let conn_runner = task::spawn(
                 connection_v2.run(initial_state, reader, writer));
 
-            request.head.uri.scheme = Some(AsciiString::from_str("https").unwrap());
+            request.head.uri.scheme = Some(AsciiString::from("https").unwrap());
 
             let response = connection_v2.request(request).await?;
             // TODO: Shut down the connection and join the conn_runner.

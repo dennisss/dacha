@@ -40,6 +40,8 @@ pub trait Message {
     // NOTE: This will append values to
     fn parse(data: &[u8]) -> Result<Self> where Self: Sized;
 
+    fn parse_merge(&mut self, data: &[u8]) -> Result<()>;
+
     /// Serializes the protobuf as a
     fn serialize(&self) -> Result<Vec<u8>>;
 

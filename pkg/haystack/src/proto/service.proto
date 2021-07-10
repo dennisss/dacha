@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+
+// message VolumeId {
+//     option typed_num = true;
+//     uint32 value = 1;
+// }
+
+message CacheIndexResponse {
+	// REQUIRED
+    uint64 used_space = 1;
+
+    // REQUIRED
+	uint64 total_space = 2;
+    
+    // REQUIRED
+    uint64 num_entries = 3;
+}
+
+message StoreReadVolumeBody {
+    // NOTE: This type must match the 'VolumeId' in code.
+    // REQUIRED
+    uint32 id = 1;
+
+    // REQUIRED
+    uint64 num_needles = 2;
+
+    // REQUIRED
+    uint64 used_space = 3;
+}
+
+message IndexVolumesResponse {
+    repeated StoreReadVolumeBody volumes = 1;
+}
+
+
+message StoreError {
+    // Limited to 16bit
+    // REQUIRED
+    uint32 code = 1;
+
+    // REQUIRED
+    string message = 2;
+}
+
+message StoreWriteBatchResponse {
+    // Number of needle chunks of those received that were successfully
+    // REQUIRED
+    uint64 num_written = 1;
+
+    // If present than this error occured while writing further chunks beyond those counted in num_written
+    // OPTIONAL
+    StoreError error = 2;
+}

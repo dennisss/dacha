@@ -56,7 +56,7 @@ impl Status {
 
     pub fn append_to_headers(&self, headers: &mut Headers) -> Result<()> {
         headers.raw_headers.push(Header {
-            name: AsciiString::from_str(GRPC_STATUS)?,
+            name: AsciiString::from(GRPC_STATUS)?,
             value: OpaqueString::from(self.code.to_value().to_string())
         });
 
@@ -71,7 +71,7 @@ impl Status {
             }
 
             headers.raw_headers.push(Header {
-                name: AsciiString::from_str(GRPC_STATUS_MESSAGE)?,
+                name: AsciiString::from(GRPC_STATUS_MESSAGE)?,
                 value: OpaqueString::from(encoded_message)
             });
         }

@@ -1,16 +1,17 @@
-use super::super::types::*;
-use super::super::errors::*;
-use super::api::CookieBuf;
-use core::block_size_remainder;
 use std::io::Cursor;
 use std::io::{Write, Read};
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
-use bytes::Bytes;
-use crc32c::crc32c_append;
-use arrayref::*;
 use std::mem::size_of;
 
+use common::errors::*;
+use common::block_size_remainder;
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+use common::bytes::Bytes;
+use arrayref::*;
+use crypto::hasher::Hasher;
+use crypto::checksum::crc::CRC32CHasher;
 
+use crate::types::*;
+use super::api::CookieBuf;
 
 
 /// NOTE: We optimize for a small checksum by only really using it for data integrity on disk and not really security
@@ -110,7 +111,7 @@ pub struct NeedleHeader {
 
 impl NeedleHeader {
 
-	pub fn read(reader: &mut Read) -> Result<NeedleHeader> {
+	pub fn read(reader: &mut dyn Read) -> Result<NeedleHeader> {
 		let mut buf = [0u8; NEEDLE_HEADER_SIZE];
 		reader.read_exact(&mut buf)?;
 		NeedleHeader::parse(&buf)
@@ -170,7 +171,7 @@ pub struct NeedleFooter {
 }
 
 impl NeedleFooter {
-	pub fn write(writer: &mut Write, sum: u32) -> Result<()> {
+	pub fn write(writer: &mut dyn Write, sum: u32) -> Result<()> {
 		writer.write_all(&FOOTER_MAGIC.as_bytes())?;
 		writer.write_u32::<LittleEndian>(sum)?;
 		Ok(())
@@ -188,7 +189,7 @@ pub struct Needle {
 impl Needle {
 
 	/// Reads a single needle at the current position in one read given known metadata for it
-	pub fn read_oneshot(reader: &mut Read, meta: &NeedleMeta) -> Result<Needle> {
+	pub fn read_oneshot(reader: &mut dyn Read, meta: &NeedleMeta) -> Result<Needle> {
 
 		let mut buf = Vec::new();
 		buf.resize(meta.total_size() as usize, 0u8); // TODO: Use an unsafe resize without filling
@@ -219,7 +220,7 @@ impl Needle {
 
 
 	pub fn data_bytes(self) -> Bytes {
-		self.buf.slice(NEEDLE_HEADER_SIZE, NEEDLE_HEADER_SIZE + self.header.meta.size as usize)
+		self.buf.slice(NEEDLE_HEADER_SIZE..(NEEDLE_HEADER_SIZE + self.header.meta.size as usize))
 	}
 
 	pub fn data(&self) -> &[u8] {
@@ -228,7 +229,7 @@ impl Needle {
 
 	pub fn crc32c(&self) -> &[u8] {
 		let sum_start = NEEDLE_HEADER_SIZE + self.data().len() + HEADER_MAGIC_SIZE;
-		(&self.buf[sum_start..])
+		&self.buf[sum_start..]
 	}
 
 	/// Verifies the integrity of the needle's data based on the checksum
@@ -242,7 +243,11 @@ impl Needle {
 		// TODO: Would it be more standard if we decided on using BigEndian
 		let sum_expected = self.crc32c().read_u32::<LittleEndian>().unwrap();
 
-		let sum = crc32c_append(0, self.data());
+		let sum = {
+			let mut hasher = CRC32CHasher::new();
+			hasher.update(self.data());
+			hasher.finish_u32()
+		};
 
 		if sum != sum_expected {
 			// NOTE: I do want to support wrappning stuff

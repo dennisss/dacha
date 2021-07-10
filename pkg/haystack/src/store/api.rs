@@ -36,7 +36,7 @@ pub struct NeedleChunk {
 }
 
 impl NeedleChunk {
-	pub fn write_header(&self, writer: &mut Write) -> Result<()> {
+	pub fn write_header(&self, writer: &mut dyn Write) -> Result<()> {
 		writer.write_u32::<LittleEndian>(self.path.volume_id)?;
 		writer.write_u64::<LittleEndian>(self.path.key)?;
 		writer.write_u32::<LittleEndian>(self.path.alt_key)?;
@@ -45,7 +45,7 @@ impl NeedleChunk {
 		Ok(())
 	}
 
-	pub fn read_header(reader: &mut Read) -> Result<(NeedleChunkPath, NeedleSize)> {
+	pub fn read_header(reader: &mut dyn Read) -> Result<(NeedleChunkPath, NeedleSize)> {
 		let volume_id = reader.read_u32::<LittleEndian>()?;
 		let key = reader.read_u64::<LittleEndian>()?;
 		let alt_key = reader.read_u32::<LittleEndian>()?;
@@ -144,13 +144,13 @@ impl ETag {
 		}
 
 		let store_id = parts[0].parse::<MachineId>()
-			.map_err(|_| Error::from("Invalid store id"))?;
+			.map_err(|_| err_msg("Invalid store id"))?;
 		let volume_id = parts[1].parse::<VolumeId>()
-			.map_err(|_| Error::from("Invalid volume id"))?;
+			.map_err(|_| err_msg("Invalid volume id"))?;
 		let block_offset = parts[2].parse::<BlockOffset>()
-			.map_err(|_| Error::from("Invalid block offset"))?;
+			.map_err(|_| err_msg("Invalid block offset"))?;
 		let checksum = parse_urlbase64(parts[3])
-			.map_err(|_| Error::from("Invalid checksum"))?;
+			.map_err(|_| err_msg("Invalid checksum"))?;
 
 		Ok(ETag {
 			store_id,
@@ -234,14 +234,14 @@ pub enum StorePath {
 }
 
 impl StorePath {
-	pub fn from(segs: &[String]) -> Result<StorePath> {
+	pub fn from(segs: &[String]) -> std::result::Result<StorePath, &'static str> {
 		if segs.len() == 0 {
 			return Ok(StorePath::Index);
 		}
 
 		let volume_id = match segs[0].parse::<VolumeId>() {
 			Ok(v) => v,
-			Err(_) => return Err(err_msg("Invalid volume id"))
+			Err(_) => return Err("Invalid volume id")
 		};
 
 		if segs.len() == 1 {
@@ -252,7 +252,7 @@ impl StorePath {
 
 		let key = match segs[1].parse::<NeedleKey>() {
 			Ok(v) => v,
-			Err(_) => return Err(err_msg("Invalid needle key"))
+			Err(_) => return Err("Invalid needle key")
 		};
 		
 		if segs.len() == 2 {
@@ -263,7 +263,7 @@ impl StorePath {
 
 		let alt_key = match segs[2].parse::<NeedleAltKey>() {
 			Ok(v) => v,
-			Err(_) => return Err(err_msg("Invalid needle alt key"))
+			Err(_) => return Err("Invalid needle alt key")
 		};
 
 		if segs.len() == 3 {
@@ -274,7 +274,7 @@ impl StorePath {
 
 		let cookie = match segs[3].parse::<CookieBuf>() {
 			Ok(v) => v,
-			Err(_) => return Err(err_msg("Invalid cookie"))
+			Err(_) => return Err("Invalid cookie")
 		};
 
 		if segs.len() == 4 {
@@ -283,7 +283,7 @@ impl StorePath {
 			});
 		}
 
-		Err(err_msg("Unknown route pattern"))
+		Err("Unknown route pattern")
 	}
 
 	pub fn to_string(&self) -> String {
@@ -299,19 +299,6 @@ impl StorePath {
 				format!("/{}/{}/{}/{}", volume_id, key, alt_key, cookie.to_string()) 
 		}
 	}
-}
-
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct StoreError {
-	pub code: u16,
-	pub message: String
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct StoreWriteBatchResponse {
-	pub num_written: usize, // Number of needle chunks of those received that were successfully 
-	pub error: Option<StoreError> // If present than this error occured while writing further chunks beyond those counted in num_written
 }
 
 #[cfg(test)]

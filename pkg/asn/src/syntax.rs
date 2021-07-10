@@ -482,7 +482,7 @@ impl ExternalTypeReference {
             let module = c.next(modulereference)?;
             c.next(symbol('.'))?;
             let name = c.next(typereference)?;
-            Ok(Self(AsciiString::from_string(
+            Ok(Self(AsciiString::from(
                 format!("{}.{}", module.as_ref(), name.as_ref())).unwrap()))
         })
     });
@@ -498,7 +498,7 @@ impl ExternalValueReference {
             let module = c.next(modulereference)?;
             c.next(symbol('.'))?;
             let name = c.next(valuereference)?;
-            Ok(Self(AsciiString::from_string(
+            Ok(Self(AsciiString::from(
                 format!("{}.{}", module.as_ref(), name.as_ref())).unwrap()))
         })
     });

@@ -120,7 +120,8 @@ impl Server {
     async fn handle_stream(stream: TcpStream, handler: Arc<dyn RequestHandler>) {
         match Self::handle_client(stream, handler).await {
             Ok(v) => {}
-            // TODO: If we see a ProtocolErrorV1, form an HTTP 1.1 resposne.
+            // TODO: If we see a ProtocolErrorV1, form an HTTP 1.1 response.
+            // (but only if generated locally )
             // A ProtocolErrorV2 should probably also be a 
             Err(e) => println!("Client thread failed: {}", e),
         };
@@ -221,6 +222,7 @@ impl Server {
             let method = match Method::try_from(request_line.method.data.as_ref()) {
                 Ok(m) => m,
                 Err(_) => {
+                    // TODO: Switch to using a ProtocolErrorV1
                     println!("Unsupported http method: {:?}", request_line.method);
                     write_stream
                         .write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
