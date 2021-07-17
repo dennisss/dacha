@@ -31,6 +31,7 @@ pub enum StandardRequestType {
 }
 
 // Table 9-5 of USB2.0 Spec
+#[derive(Debug, PartialEq)]
 pub enum DescriptorType {
     DEVICE = 1,
     CONFIGURATION = 2,
@@ -42,7 +43,25 @@ pub enum DescriptorType {
     INTERFACE_POWER1 = 8,
 }
 
+impl DescriptorType {
+    pub fn from_value(value: u8) -> Option<Self> {
+        Some(match value {
+            1 => Self::DEVICE,
+            2 => Self::CONFIGURATION,
+            3 => Self::STRING,
+            4 => Self::INTERFACE,
+            5 => Self::ENDPOINT,
+            6 => Self::DEVICE_QUALIFIER,
+            7 => Self::OTHER_SPEED_CONFIGURATION,
+            8 => Self::INTERFACE_POWER1,
+            _ => { return None; }
+        })
+    }
+}
+
+
 // Table 9-8 of USB2.0 Spec
+#[derive(Clone, Copy)]
 #[repr(packed)]
 pub struct DeviceDescriptor {
     pub bLength: u8,
@@ -76,6 +95,7 @@ pub struct DeviceQualifierDescriptor {
 }
 
 // Table 9-10 of USB2.0 Spec
+#[derive(Clone, Copy)]
 #[repr(packed)]
 pub struct ConfigurationDescriptor {
     pub bLength: u8,
@@ -89,6 +109,7 @@ pub struct ConfigurationDescriptor {
 }
 
 // Table 9-12 of USB2.0 Spec
+#[derive(Clone, Copy)]
 #[repr(packed)]
 pub struct InterfaceDescriptor {
     pub bLength: u8,
@@ -103,6 +124,7 @@ pub struct InterfaceDescriptor {
 }
 
 // Table 9-13 of USB2.0 Spec
+#[derive(Clone, Copy)]
 #[repr(packed)]
 pub struct EndpointDescriptor {
     pub bLength: u8,
