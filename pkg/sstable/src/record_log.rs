@@ -34,18 +34,14 @@
 // maximum log size, we could utilize that size) At the least, we can perform
 // heuristics to preallocate for the current append at the least
 
+use std::path::Path;
+
 use common::async_std::fs::{File, OpenOptions};
 use common::async_std::io::prelude::{ReadExt, SeekExt, WriteExt};
 use common::async_std::io::{Read, Seek, SeekFrom, Write};
-use common::async_std::path::Path;
-use common::block_size_remainder;
 use common::errors::*;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
-//use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
-
-//use std::io::{Read, Write, Cursor, Seek, SeekFrom};
-//use std::fs::{OpenOptions, File};
 
 const BLOCK_SIZE: u64 = 32 * 1024;
 
@@ -138,6 +134,7 @@ impl RecordLog {
         let file = OpenOptions::new()
             .read(true)
             .write(writeable)
+            .create(true)
             .open(path)
             .await?;
 
@@ -154,6 +151,10 @@ impl RecordLog {
             block_offset: 0,
         })
     }
+
+    // pub async fn seek(&mut self, offset: u64) -> Result<()> {
+    //     // TODO: This will require supporting reading a block which in the middle of it.
+    // }
 
     /*
     pub fn create(path: &Path) -> Result<Self> {
@@ -270,7 +271,7 @@ impl RecordLog {
 
         // Must start in the next block if we can't fit at least a single
         // zero-length block in this block
-        let rem = block_size_remainder(BLOCK_SIZE, extent);
+        let rem = BLOCK_SIZE - (extent % BLOCK_SIZE); // block_size_remainder(BLOCK_SIZE, extent);
         if rem < RECORD_HEADER_SIZE {
             extent += rem;
             self.file.set_len(extent).await?;
@@ -279,10 +280,12 @@ impl RecordLog {
 
         let mut header = [0u8; RECORD_HEADER_SIZE as usize];
 
-        let mut pos = data.len();
+        let mut pos = 0;
         while pos < data.len() {
-            let rem = block_size_remainder(BLOCK_SIZE, extent) - RECORD_HEADER_SIZE;
-            let take = std::cmp::min(rem as usize, (data.len() - pos));
+            // TODO: Check for overflow although that should never happen if we did everything right.
+            let rem = (BLOCK_SIZE - (extent % BLOCK_SIZE)) - RECORD_HEADER_SIZE;
+            
+            let take = std::cmp::min(rem as usize, data.len() - pos);
 
             let typ = if pos == 0 {
                 if take == data.len() {

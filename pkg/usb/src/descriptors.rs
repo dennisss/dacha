@@ -59,7 +59,6 @@ impl DescriptorType {
     }
 }
 
-
 // Table 9-8 of USB2.0 Spec
 #[derive(Clone, Copy)]
 #[repr(packed)]

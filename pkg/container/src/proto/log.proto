@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+import "third_party/google/src/proto/timestamp.proto";
+
+enum LogStream {
+    UNKNOWN = 0;
+    STDOUT = 1;
+    STDERR = 2;
+}
+
+message LogEntry {
+    bytes value = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    LogStream stream = 3;
+
+    // The byte offset of the end of this log entry proto in the log file.
+    // NOTE: This is not stored in the log file and is only sent after reading from the log file.
+    //
+    // Used for being able to seek after this entry later on.
+    uint64 end_offset = 4;
+}
+
+
+
+message LogRequest {
+    string container_id = 1;
+    uint64 start_offset = 2;
+
+    // TODO: Consider supporting things like time/text filters?
+}
+
+// service ContainerRuntime {
+
+//     // rpc create(CreateRequest) returns (CreateResponse);
+
+//     // Streams back log entries for a single container.
+//     rpc GetLogs(LogRequest) returns (stream LogEntry);
+
+// }

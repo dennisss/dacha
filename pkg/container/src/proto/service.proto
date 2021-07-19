@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+import "pkg/container/src/proto/config.proto";
+import "pkg/container/src/proto/log.proto";
+
+
+message QueryRequest {
+    // If present, we will only return data for the container with this id.
+    // An empty list will be returned if no such container exists. 
+    string container_id = 1;
+}
+
+message QueryResponse {
+    repeated ContainerMetadata container = 1;
+}
+
+
+message StartRequest {
+    ContainerConfig config = 1;
+}
+
+message StartResponse {
+
+}
+
+message LogRequest {
+    string container_id = 1;
+    uint64 start_offset = 2;
+
+    // TODO: Consider supporting things like time/text filters?
+}
+
+service ContainerRuntime {
+
+    rpc Query (QueryRequest) returns (QueryResponse);
+
+    rpc Start (StartRequest) returns (StartResponse);
+
+    // Streams back log entries for a single container.
+    rpc GetLogs(LogRequest) returns (stream LogEntry);
+
+}

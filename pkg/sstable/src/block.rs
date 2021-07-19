@@ -186,9 +186,9 @@ pub struct BlockEntry<'a> {
 
 impl<'a> BlockEntry<'a> {
     pub fn parse(mut input: &'a [u8]) -> Result<(Self, &'a [u8])> {
-        let shared_bytes = parse_next!(input, parse_varint);
-        let unshared_bytes = parse_next!(input, parse_varint);
-        let value_length = parse_next!(input, parse_varint);
+        let shared_bytes = parse_next!(input, parse_varint) as usize;
+        let unshared_bytes = parse_next!(input, parse_varint) as usize;
+        let value_length = parse_next!(input, parse_varint) as usize;
 
         min_size!(input, unshared_bytes + value_length);
         let (key_delta, input) = input.split_at(unshared_bytes);
@@ -205,9 +205,9 @@ impl<'a> BlockEntry<'a> {
     }
 
     pub fn serialize(&self, out: &mut Vec<u8>) {
-        serialize_varint(self.shared_bytes as usize, out);
-        serialize_varint(self.key_delta.len(), out); // unshared_bytes: u32
-        serialize_varint(self.value.len(), out); // value_length: u32
+        serialize_varint(self.shared_bytes as u64, out);
+        serialize_varint(self.key_delta.len() as u64, out); // unshared_bytes: u32
+        serialize_varint(self.value.len() as u64, out); // value_length: u32
         out.extend_from_slice(self.key_delta);
         out.extend_from_slice(self.value);
     }

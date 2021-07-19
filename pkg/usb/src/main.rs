@@ -17,7 +17,7 @@ async fn run() -> Result<()> {
 
             let mut device = dev.open().await?;
 
-            let lang_ids = device.read_language_ids().await?;
+            let lang_ids = device.read_languages().await?;
             println!("Languages: {:04x?}", lang_ids);
 
             println!("Manufacturer: {}", device.read_string(desc.iManufacturer, lang_ids[0]).await?);

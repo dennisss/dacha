@@ -3,6 +3,8 @@
 extern crate async_trait;
 #[macro_use]
 pub extern crate failure;
+#[macro_use]
+extern crate arrayref;
 pub extern crate async_std;
 pub extern crate base64;
 pub extern crate bytes;
@@ -35,6 +37,8 @@ pub mod task;
 pub use async_trait::*;
 pub use lazy_static::*;
 pub use failure::Fail;
+pub use arrayref::{array_ref, array_mut_ref};
+
 
 /// Gets the root directory of this project (the directory that contains the
 /// 'pkg' and '.git' directory).
@@ -267,6 +271,43 @@ macro_rules! enum_def {
 					$(
 						$name::$case => $val,
 					)*
+				}
+			}
+		}
+
+    };
+}
+
+// TODO: Implement a smarter PartialEq that accounts for duplicates.
+#[macro_export]
+macro_rules! enum_def_with_unknown {
+    ($name:ident $t:ty => $( $case:ident = $val:expr ),*) => {
+    	#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+		pub enum $name {
+			$(
+				$case,
+			)*
+            Unknown($t)
+		}
+
+		impl $name {
+			pub fn from_value(v: $t) -> Self {
+				match v {
+					$(
+						$val => $name::$case,
+					)*
+					_ => {
+                        $name::Unknown(v)
+					}
+				}
+			}
+
+			pub fn to_value(&self) -> $t {
+				match self {
+					$(
+						$name::$case => $val,
+					)*
+                    $name::Unknown(v) => *v
 				}
 			}
 		}

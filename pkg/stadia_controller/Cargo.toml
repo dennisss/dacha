@@ -5,5 +5,5 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 
 [dependencies]
 common = { path = "../common" }
-libusb = "0.3"
+usb = { path = "../usb" }
 uinput = "0.1.3"

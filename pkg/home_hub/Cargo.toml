@@ -1,11 +1,12 @@
 [package]
-name = "usb"
+name = "home_hub"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
-libc = "0.2.97"
-nix = "0.21.0"
-failure = "0.1.8"
+peripheral = { path = "../peripheral" }
+rpi = { path = "../rpi" }
+stream_deck = { path = "../stream_deck" }
+ctrlc = "3.1.1"

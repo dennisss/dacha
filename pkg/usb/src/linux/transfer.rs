@@ -3,8 +3,30 @@ use std::sync::Arc;
 use common::errors::*;
 use common::async_std::channel;
 
-use crate::linux::usbdevfs::usbdevfs_urb;
+use crate::linux::usbdevfs::{usbdevfs_urb, usbdevfs_discardurb};
 use crate::linux::device::DeviceState;
+
+// TODO: If a reference to a transfer is dropped instead of being waited on, we should just cancel it!
+
+
+pub struct DeviceTransfer {
+    pub(crate) state: Arc<DeviceTransferState>
+}
+
+impl Drop for DeviceTransfer {
+    fn drop(&mut self) {
+        if let Err(e) = self.state.cancel() {
+            eprintln!("Error while cancelling USB transfer: {:?}", e);
+        }
+    }
+}
+
+impl DeviceTransfer {
+    pub async fn wait(&self) -> Result<()> {
+        self.state.wait().await
+    }
+}
+
 
 /// Represents a single ongoing USB I/O request to the linux kernel.
 /// (corresponds to a single Linux USBDEVFS URB)
@@ -12,7 +34,7 @@ use crate::linux::device::DeviceState;
 /// NOTE: The DeviceTransfer must be pinned at a static location in memory as the 'urb' is
 /// referenced in kernel requests (so you'll only ever see Arc<DeviceTransfer>'s and never
 /// bare ones).
-pub struct DeviceTransfer {
+pub struct DeviceTransferState {
     /// Id of this transfer. Specific to this device.
     pub(crate) id: usize,
 
@@ -29,52 +51,66 @@ pub struct DeviceTransfer {
 
     /// Channel sender used for notifying the corresponding receiver that the transfer is
     /// complete (or failed). 
-    pub(crate) sender: channel::Sender<DeviceTransferCompletion>,
-    pub(crate) receiver: channel::Receiver<DeviceTransferCompletion>
+    pub(crate) sender: channel::Sender<std::result::Result<(), crate::ErrorKind>>,
+    pub(crate) receiver: channel::Receiver<std::result::Result<(), crate::ErrorKind>>
 }
 
-impl DeviceTransfer {
+impl DeviceTransferState {
     /// NOTE: It is only valid to call this once.
-    pub async fn wait(&self) -> Result<()> {
-        match self.receiver.recv().await? {
-            DeviceTransferCompletion::Reaped => {
-                if self.urb.status != 0 {
-                    let errno = -1*self.urb.status;
+    async fn wait(&self) -> Result<()> {
+        if let Err(kind) = self.receiver.recv().await? {
+            return Err(crate::Error {
+                kind,
+                message: String::new()
+            }.into());
+        }
 
-                    // This will occur when we are performing a bulk/interrupt read and we
-                    // received a packet that would overflow our receiving buffer.
-                    //
-                    // NOTE: This will never if the buffer size is a multiple of the maximum
-                    // packet size for the endpoint.
-                    if errno == libc::EOVERFLOW {
-                        return Err(err_msg("Received data overflowed buffer"));
-                    }
+        if self.urb.status != 0 {
+            let errno = -1*self.urb.status;
 
-                    return Err(nix::Error::from_errno(nix::errno::from_i32(errno)).into());
-                }
+            // This will occur when we are performing a bulk/interrupt read and we
+            // received a packet that would overflow our receiving buffer.
+            //
+            // NOTE: This will never if the buffer size is a multiple of the maximum
+            // packet size for the endpoint.
+            if errno == libc::EOVERFLOW {
+                return Err(crate::Error {
+                    kind: crate::ErrorKind::Overflow,
+                    message: String::new()
+                }.into());
             }
-            DeviceTransferCompletion::DeviceClosing => {
-                return Err(err_msg("Device closed"));
-            }
+
+            return Err(nix::Error::from_errno(nix::errno::from_i32(errno)).into());
         }
 
         Ok(())
     }
 
     pub(crate) fn perform_reap(&self) {
-        let _ = self.sender.try_send(DeviceTransferCompletion::Reaped);
+        let _ = self.sender.try_send(Ok(()));
 
         // Remove transfer as it's no longer needed.
         let mut transfers = self.device_state.transfers.lock().unwrap();
         transfers.active.remove(&self.id);
     }
-}
 
-pub enum DeviceTransferCompletion {
-    /// The transfer was reaped normally by the Context background thread.
-    /// The status of the transfer is available in urb.status.
-    Reaped,
+    /// Cancels the transfer. This will cause a current/future call to wait() to finish.
+    fn cancel(&self) -> Result<()> {
+        let _ = self.sender.try_send(Err(crate::ErrorKind::TransferCancelled));
 
-    /// The transfer was stopped because the associated device is closing.
-    DeviceClosing,
+        // NOTE: This will cause it to be reaped with a -2 error (so I can't delete the memory yet!!)
+        let res = unsafe { usbdevfs_discardurb(self.device_state.fd, std::mem::transmute(&self.urb)) };
+        match res {
+            Ok(_) => {},
+            Err(nix::Error::Sys(nix::errno::Errno::EINVAL)) => {
+                // In this case, the transfer was already cancelled or already reaped.
+            }
+            // TODO: Figure out what the error code will be after the device is closed.
+            Err(e) => {
+                return Err(e.into());
+            }
+        }
+
+        Ok(())
+    }
 }

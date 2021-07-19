@@ -36,7 +36,12 @@ members = [
 	"pkg/parsing_test",
 	"pkg/regexp_macros",
 	"third_party/google",
-	"pkg/json"
+	"pkg/json",
+	"pkg/peripheral",
+	"pkg/rpi",
+	"pkg/home_hub",
+	"pkg/usb",
+	"pkg/container"
 ]
 
 [profile.dev]

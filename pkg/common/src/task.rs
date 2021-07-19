@@ -12,6 +12,11 @@ impl ChildTask {
             handle: Some(async_std::task::spawn(future))
         }
     }
+
+    pub async fn join(mut self) {
+        let handle = self.handle.take().unwrap();
+        handle.await;
+    }
 }
 
 impl Drop for ChildTask {

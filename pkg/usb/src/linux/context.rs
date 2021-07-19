@@ -191,7 +191,7 @@ impl Context {
                         }
 
                         let urb: &usbdevfs_urb = unsafe { &*ptr }; 
-                        let transfer: &DeviceTransfer = unsafe { std::mem::transmute(urb.usrcontext) };
+                        let transfer: &DeviceTransferState = unsafe { std::mem::transmute(urb.usrcontext) };
 
                         transfer.perform_reap();
                         

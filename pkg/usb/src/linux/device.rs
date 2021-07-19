@@ -1,4 +1,8 @@
 /*
+
+Transfer cancellation:
+- Transfers are cancelled once their corresponding futures are dropped.
+
 Memory Management Notes:
 - We give the linux kernel a pointer to:
     - the USBDEV URB
@@ -39,16 +43,16 @@ Other Assumptions that we make:
 */
 
 use std::collections::HashMap;
-use std::thread;
 use std::sync::{Arc, Weak};
-use std::ffi::CString;
-use std::os::unix::ffi::OsStrExt;
 
 use common::async_std::fs;
 use common::async_std::sync::Mutex;
+use common::async_std::task;
 use common::async_std::channel;
+use common::task::ChildTask;
 use common::{async_std::path::Path, errors::*, futures::StreamExt};
 
+use crate::language::Language;
 use crate::endpoint::*;
 use crate::descriptors::*;
 use crate::linux::usbdevfs::*;
@@ -103,7 +107,7 @@ pub(crate) struct DeviceStateTransfers {
     // TODO: There is no point in making these Arcs as we always own them.
     // It would probably be simpler to give back the use a separate transfer object that just
     // references the transfer if id.
-    pub active: HashMap<usize, Arc<DeviceTransfer>>
+    pub active: HashMap<usize, Arc<DeviceTransferState>>
 }
 
 impl Drop for Device {
@@ -149,7 +153,7 @@ impl Device {
         // Notify all pending transfers that the device is closed.
         let mut transfers = self.state.transfers.lock().unwrap();
         for (_, transfer) in transfers.active.iter() {
-            let _ = transfer.sender.try_send(DeviceTransferCompletion::DeviceClosing);
+            let _ = transfer.sender.try_send(Err(crate::ErrorKind::DeviceClosing));
         }
         transfers.active.clear();
 
@@ -237,7 +241,7 @@ impl Device {
         Ok(())
     }
 
-    fn start_transfer(&self, typ: u8, endpoint: u8, flags: libc::c_uint, buffer: Vec<u8>) -> Result<Arc<DeviceTransfer>> {
+    fn start_transfer(&self, typ: u8, endpoint: u8, flags: libc::c_uint, buffer: Vec<u8>) -> Result<DeviceTransfer> {
         let (sender, receiver) = channel::bounded(1);
 
         let mut transfers = self.state.transfers.lock().unwrap();
@@ -245,7 +249,7 @@ impl Device {
         let id = transfers.last_id + 1;
         transfers.last_id = id;
 
-        let mut transfer = Arc::new(DeviceTransfer {
+        let mut transfer = Arc::new(DeviceTransferState {
             id,
             device_state: self.state.clone(),
             urb: usbdevfs_urb {
@@ -272,7 +276,7 @@ impl Device {
 
             // Set the URB usrcontext to a reference to the DeviceTransfer itself.
             transfer_mut.urb.usrcontext =
-                std::mem::transmute::<&mut DeviceTransfer, _>(transfer_mut);
+                std::mem::transmute::<&mut DeviceTransferState, _>(transfer_mut);
 
             // Submit it!
             usbdevfs_submiturb(self.state.fd, &mut transfer_mut.urb)?;
@@ -280,34 +284,59 @@ impl Device {
 
         transfers.active.insert(id, transfer.clone());
 
-        Ok(transfer)
+        Ok(DeviceTransfer { state: transfer })
     }
 
-    /// Cancels a transfer. After this runs, the transfer will be immediately reaped
-    /// (likely with an error).
-    fn cancel_transfer(&self, transfer: &DeviceTransfer) -> Result<()> {
-        // NOTE: This will cause it to be reaped with a -2 error (so I can't delete the memory yet!!)
-        let res = unsafe { usbdevfs_discardurb(self.state.fd, std::mem::transmute(&transfer.urb)) };
-        match res {
-            Ok(_) => {},
-            Err(nix::Error::Sys(nix::errno::Errno::EINVAL)) => {
-                // In this case, the transfer was already cancelled or already reaped.
-            }
-            // TODO: Figure out what the error code will be after the device is closed.
-            Err(e) => {
-                return Err(e.into());
-            }
+    // TODO: Need to check the direction bit in the packet.
+    pub async fn write_control(&self, pkt: SetupPacket, data: &[u8]) -> Result<()> {
+        let pkt_size = std::mem::size_of::<SetupPacket>();
+        let mut buffer = vec![0u8; pkt_size + data.len()];
+
+        buffer[0..pkt_size].copy_from_slice(
+            unsafe { std::slice::from_raw_parts(std::mem::transmute(&pkt), pkt_size) }
+        );
+
+        buffer[pkt_size..].copy_from_slice(data);
+    
+        let transfer = self.start_transfer(
+            USBDEVFS_URB_TYPE_CONTROL, CONTROL_ENDPOINT, 0, buffer)?;
+
+
+        transfer.wait().await?;
+
+        if transfer.state.urb.actual_length != (data.len() as i32) {
+            return Err(err_msg("Not all data was written"));
         }
 
         Ok(())
     }
 
+    pub async fn read_control(&self, pkt: SetupPacket, data: &mut [u8]) -> Result<usize> {
+        let pkt_size = std::mem::size_of::<SetupPacket>();
+        let mut buffer = vec![0u8; pkt_size + data.len()];
+
+        buffer[0..pkt_size].copy_from_slice(
+            unsafe { std::slice::from_raw_parts(std::mem::transmute(&pkt), pkt_size) }
+        );
+
+        let transfer = self.start_transfer(
+            USBDEVFS_URB_TYPE_CONTROL, CONTROL_ENDPOINT, 0, buffer)?;
+
+
+        transfer.wait().await?;
+
+        let n = transfer.state.urb.actual_length as usize;
+        let received_data = &transfer.state.buffer[pkt_size..(pkt_size + n)];
+        data[0..n].copy_from_slice(received_data);
+        Ok(n)
+    }
+
     async fn read_string_raw(&self, index: u8, lang_id: u16) -> Result<Vec<u8>> {
         let pkt_size = std::mem::size_of::<SetupPacket>();
 
-        // TODO: Can we have a bigger than 64-byte string?
-        let mut buffer = vec![0u8; pkt_size + 256];
 
+        // 256 is larger than the maximum descriptor size.
+        let mut buffer = vec![0u8; 256];
 
         let pkt = SetupPacket {
             bmRequestType: 0b10000000,
@@ -317,20 +346,9 @@ impl Device {
             wLength: (buffer.len() - pkt_size) as u16, // TODO: Check this.
         };
 
-        buffer[0..pkt_size].copy_from_slice(
-            unsafe { std::slice::from_raw_parts(std::mem::transmute(&pkt), pkt_size) }
-        );
+        let nread = self.read_control(pkt, &mut buffer).await?;
     
-        let transfer = self.start_transfer(
-            USBDEVFS_URB_TYPE_CONTROL, CONTROL_ENDPOINT, 0, buffer)?;
-
-
-        transfer.wait().await?;
-        
-        // TODO: We need to support timeouts on URBs
-        // - This basically means supporting 
-
-        let received_data = &transfer.buffer[pkt_size..(pkt_size + (transfer.urb.actual_length as usize))];
+        let received_data = &buffer[0..nread];
 
         // TODO: Check for buffer overflows
         let blen = received_data[0] as usize;
@@ -348,25 +366,36 @@ impl Device {
         Ok(received_data[2..].to_vec())
     }
 
-    pub async fn read_language_ids(&self) -> Result<Vec<u16>> {
+    pub async fn read_languages(&self) -> Result<Vec<Language>> {
         let data = self.read_string_raw(0, 0).await?;
         if (data.len() % 2) != 0 {
             return Err(err_msg("Languages index string has invalid size"));
         }
 
-        println!("{:?}", data);
-
         let mut out = vec![];
         for i in 0..(data.len() / 2) {
-            out.push(u16::from_le_bytes(*array_ref![data, 2*i, 2]));
+            let id = u16::from_le_bytes(*array_ref![data, 2*i, 2]);
+            out.push(Language::from_id(id));
         }
 
         Ok(out)
     }
 
-    pub async fn read_string(&self, index: u8, lang_id: u16) -> Result<String> {
-        let data = self.read_string_raw(index, lang_id).await?;
+    pub async fn read_string(&self, index: u8, language: Language) -> Result<String> {
+        let data = self.read_string_raw(index, language.id()).await?;
         Ok(String::from_utf8(data)?)
+    }
+
+    pub fn descriptor(&self) -> &DeviceDescriptor {
+        &self.device_descriptor
+    }
+
+    pub async fn read_manufacturer_string(&self, language: Language) -> Result<String> {
+        self.read_string(self.device_descriptor.iManufacturer, language).await
+    }
+    
+    pub async fn read_product_string(&self, language: Language) -> Result<String> {
+        self.read_string(self.device_descriptor.iProduct, language).await
     }
 
     pub async fn read_interrupt(&self, endpoint: u8, buffer: &mut [u8]) -> Result<usize> {
@@ -379,18 +408,16 @@ impl Device {
 
         transfer.wait().await?;
 
-        
-        /*
-            How to time out a 
-        */
-
-        let n = transfer.urb.actual_length as usize;
+        let n = transfer.state.urb.actual_length as usize;
 
         if n > buffer.len() {
-            return Err(err_msg("Too many bytes read"));
+            return Err(crate::Error {
+                kind: crate::ErrorKind::Overflow,
+                message: "Too many bytes read".into()
+            }.into());
         }
 
-        buffer[0..n].copy_from_slice(&transfer.buffer[0..n]);
+        buffer[0..n].copy_from_slice(&transfer.state.buffer[0..n]);
 
         Ok(n)
     }
@@ -414,7 +441,7 @@ impl Device {
 
         transfer.wait().await?;
 
-        if transfer.urb.actual_length as usize != buffer.len() {
+        if transfer.state.urb.actual_length as usize != buffer.len() {
             return Err(err_msg("Not all bytes were written"));
         }
 

@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+
+// Configuration for starting a container.
+//
+// Meant to be loosely compatible with:
+// https://github.com/opencontainers/runtime-spec/blob/master/config.md
+message ContainerConfig {
+
+    ContainerProcess process = 1;
+
+    repeated ContainerMount mounts = 2;
+}
+
+message ContainerProcess {
+
+    // Arguments to use for starting the main process of the container.
+    // The first argument should be an absolute path to an executable binary.
+    repeated string args = 1;
+
+    // Environment variables to pass to the container. Each string should be of the form
+    // "KEY=VALUE".
+    repeated string env = 2;
+
+
+}
+
+message ContainerMount {
+    string destination = 1;
+    string type = 2;
+    string source = 3;
+    repeated string options = 4;
+}
+
+
+
+message ContainerMetadata {
+    string id = 1;
+    ContainerState state = 2;
+
+    // Present when the state is Stopped to indicate why the container stopped.
+    ContainerStatus status = 3;
+}
+
+enum ContainerState {
+    Unknown = 0;
+    Creating = 1;
+    Created = 2;
+    Running = 3;
+    Stopped = 4;
+}
+
+message ContainerStatus {
+    oneof status {
+        int32 exit_code = 1;
+        string killed_signal = 2;
+    }
+}

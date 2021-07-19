@@ -13,5 +13,4 @@ reflection = { path = "../reflection" }
 macros = { path = "../macros" }
 protobuf = { path = "../protobuf" }
 parsing = { path = "../parsing" }
-arrayref = "0.3.5"
 fs2 = "0.4.3"
