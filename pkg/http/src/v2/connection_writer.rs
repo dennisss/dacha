@@ -130,9 +130,7 @@ impl ConnectionWriter {
 
             match event {
                 // TODO: Instead alwas enqueue requests and always 
-                ConnectionEvent::SendRequest => {                    
-                    println!("Sending request...");
-
+                ConnectionEvent::SendRequest => {
                     // TODO: If anything in here fails, we should report it to the requester rather than
                     // killing the whole thread.
 

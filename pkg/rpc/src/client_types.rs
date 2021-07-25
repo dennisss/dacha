@@ -245,8 +245,6 @@ impl<Res: protobuf::Message> ClientStreamingResponse<Res> {
 
         self.state = Some(ClientStreamingResponseState::Body(response.body));
 
-        println!("GOT HEAD");
-
         Ok(())
     }
 

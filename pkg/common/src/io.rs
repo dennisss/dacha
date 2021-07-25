@@ -19,6 +19,26 @@ pub trait Streamable: Send {
     async fn next(&mut self) -> Option<Self::Item>;
 }
 
+
+pub struct SingleItemStreamable<T> {
+    item: Option<T>
+}
+
+impl<T: 'static + Send> SingleItemStreamable<T> {
+    pub fn new(value: T) -> Self {
+        Self { item: Some(value) }
+    }
+}
+
+#[async_trait]
+impl<T: 'static + Send> Streamable for SingleItemStreamable<T> {
+    type Item = T;
+
+    async fn next(&mut self) -> Option<Self::Item> {
+        self.item.take()
+    }
+}
+
 //#[async_trait]
 //impl<S: crate::futures::stream::Stream + Send + Unpin> Streamable for S
 //where
@@ -345,6 +365,7 @@ pub trait Readable: 'static + Send + Unpin {
         while buf.len() > 0 {
             match self.read(buf).await {
                 Ok(0) => {
+                    // TODO: Should we only return this if we didn't read any bytes?
                     return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, 
                         "Unexpected end of stream").into());
                 }
@@ -457,6 +478,14 @@ impl<T: 'static + AsRef<[u8]> + Send + Unpin> Readable for std::io::Cursor<T> {
 
 #[async_trait]
 impl Readable for async_std::net::TcpStream {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let n = async_std::io::prelude::ReadExt::read(self, buf).await?;
+        Ok(n)
+    }
+}
+
+#[async_trait]
+impl Readable for async_std::fs::File {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let n = async_std::io::prelude::ReadExt::read(self, buf).await?;
         Ok(n)

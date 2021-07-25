@@ -1,10 +1,11 @@
 // Huffman tree/coding
 
+use std::cmp::Ordering;
+use std::collections::HashMap;
+
 use common::algorithms::merge_by;
 use common::bits::*;
 use common::errors::*;
-use std::cmp::Ordering;
-use std::collections::HashMap;
 
 // TODO: Remove debug from these
 #[derive(Debug)]

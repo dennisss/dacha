@@ -151,7 +151,6 @@ impl ConnectionShared {
         // NOTE: If connection_state.error is not None, then it's likely an OK error, because we
         // close the connection immediately on other types of errors.
         if connection_state.error.is_some() && connection_state.streams.is_empty() {
-            println!("CLOSING CONNECTION");
             let _ = self.connection_event_sender.try_send(ConnectionEvent::Closing { error: None });
         }
 
@@ -234,7 +233,7 @@ impl ConnectionShared {
         let response = request_handler.handle_request(request).await;
 
         let _ = self.connection_event_sender.send(ConnectionEvent::SendResponse {
-            stream_id: stream_id,
+            stream_id,
             response
         }).await;
 

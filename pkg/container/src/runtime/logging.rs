@@ -8,7 +8,7 @@ use common::async_std::fs::File;
 use common::errors::*;
 use common::async_std::sync::Mutex;
 use common::async_std::io::ReadExt;
-use sstable::record_log::RecordLog;
+use sstable::record_log::{RecordWriter, RecordReader};
 use protobuf::Message;
 
 use crate::proto::log::*;
@@ -16,14 +16,39 @@ use crate::proto::log::*;
 
 const MAX_LINE_SIZE: usize = 1024*8;
 
+pub struct FileLogReader {
+    log: RecordReader
+}
+
+impl FileLogReader {
+    pub async fn open(path: &Path) -> Result<Self> {
+        Ok(Self {
+            log: RecordReader::open(path).await?
+        })
+    }
+
+    // TODO: Useful semantics would be to have this always retry from the same start position if 
+    // we need to retry.
+    pub async fn read(&mut self) -> Result<Option<LogEntry>> {
+        let data = self.log.read().await?;
+        if let Some(data) = data {
+            Ok(Some(LogEntry::parse(&data)?))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+
+
 pub struct FileLogWriter {
-    log: Mutex<RecordLog>
+    log: Mutex<RecordWriter>
 }
 
 impl FileLogWriter {
     pub async fn create(path: &Path) -> Result<Self> {
         Ok(Self {
-            log: Mutex::new(RecordLog::open(path, true).await?)
+            log: Mutex::new(RecordWriter::open(path).await?)
         })
     }
 
@@ -33,7 +58,7 @@ impl FileLogWriter {
 }
 
 struct FileLogStreamWriter<'a> {
-    log: &'a Mutex<RecordLog>,
+    log: &'a Mutex<RecordWriter>,
     stream: LogStream,
 }
 
@@ -58,7 +83,7 @@ impl<'a> FileLogStreamWriter<'a> {
                     let line = &buffer[last_line_end..(i + 1)];
                     last_line_end = i + 1;
     
-                    self.write_line(line, time).await?;
+                    self.write_line(line, time, false).await?;
                 }
             }
     
@@ -70,7 +95,7 @@ impl<'a> FileLogStreamWriter<'a> {
                 let line = &buffer;
                 last_line_end = buffer_size;
     
-                self.write_line(line, time).await?;
+                self.write_line(line, time, false).await?;
             }
     
             let remaining_size = buffer_size - last_line_end;
@@ -82,19 +107,20 @@ impl<'a> FileLogStreamWriter<'a> {
             buffer_size = remaining_size;
         }
     
-        if buffer_size > 0 {
-            let time = SystemTime::now();    
-            let line = &buffer[0..buffer_size];
-            self.write_line(line, time).await?;
-        }
+        // Always write a final entry with any remaining data to mark that the stream has now been
+        // closed.
+        let time = SystemTime::now();    
+        let line = &buffer[0..buffer_size];
+        self.write_line(line, time, true).await?;
     
         Ok(())
     }
 
-    async fn write_line(&self, line: &[u8], time: SystemTime) -> Result<()> {
+    async fn write_line(&self, line: &[u8], time: SystemTime, end_stream: bool) -> Result<()> {
         let mut log_entry = LogEntry::default();
         log_entry.set_stream(self.stream);
         log_entry.set_timestamp(time);
+        log_entry.set_end_stream(end_stream);
         log_entry.value_mut().extend_from_slice(line);
 
         let mut log = self.log.lock().await;

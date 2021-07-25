@@ -187,8 +187,6 @@ impl ConnectionReader {
 
             let frame_header = FrameHeader::parse_complete(&frame_header_buf)?;
 
-            println!("GOT FRAME {:?}", frame_header.typ);
-
             // Enforce that the first frame is SETTINGS
             if !received_remote_settings &&
                 frame_header.typ != FrameType::SETTINGS &&

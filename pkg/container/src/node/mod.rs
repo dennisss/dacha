@@ -44,21 +44,15 @@ impl ContainerNodeService for Node {
 
     async fn GetLogs(&self, request: rpc::ServerRequest<LogRequest>,
                      response: &mut rpc::ServerStreamResponse<LogEntry>) -> Result<()> {
-
-        println!("GETTING LOGS");
-
         let container_id = request.container_id();
         let mut log_reader = self.runtime.open_log(container_id).await?;
 
         loop {
-            println!("READ");
             let entry = log_reader.read().await?;
             if let Some(entry) = entry {
                 let end_stream = entry.end_stream();
 
-                println!("SEND");
                 response.send(entry).await?;
-                println!("SEND DONE");
 
                 // TODO: Check that we got an end_stream on all the streams.
                 if end_stream {
@@ -66,10 +60,8 @@ impl ContainerNodeService for Node {
                 }
 
             } else {
-
-                println!("SLEEP");
                 // TODO: Replace with receiving a notification.
-                common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
+                common::async_std::task::sleep(std::time::Duration::from_millis(100)).await;
             }
         }
 

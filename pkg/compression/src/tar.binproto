@@ -1,0 +1,73 @@
+structs {
+    name: "Header"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "file_name"
+        type { buffer { element_type { primitive: U8 } fixed_length: 100 } }
+    }
+    field {
+        name: "file_mode"
+        type { buffer { element_type { primitive: U8 } fixed_length: 8 } }
+    }
+    field {
+        name: "owner_id"
+        type { buffer { element_type { primitive: U8 } fixed_length: 8 } }
+    }
+    field {
+        name: "group_id"
+        type { buffer { element_type { primitive: U8 } fixed_length: 8 } }
+    }
+    field {
+        name: "file_size"
+        type { buffer { element_type { primitive: U8 } fixed_length: 12 } }
+    }
+    field {
+        name: "last_modified_time"
+        type { buffer { element_type { primitive: U8 } fixed_length: 12 } }
+    }
+    field {
+        name: "header_checksum"
+        type { buffer { element_type { primitive: U8 } fixed_length: 8 } }
+    }
+    field {
+        name: "file_type"
+        type { primitive: U8 }
+    }
+    field {
+        name: "linked_file_name"
+        type { buffer { element_type { primitive: U8 } fixed_length: 100 } }
+    }
+}
+
+structs {
+    name: "USTarHeaderExtension"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "ustar_magic"
+        type { buffer { element_type { primitive: U8 } fixed_length: 6 } }
+    }
+    field {
+        name: "ustar_version"
+        type { buffer { element_type { primitive: U8 } fixed_length: 2 } }
+    }
+    field {
+        name: "owner_name"
+        type { buffer { element_type { primitive: U8 } fixed_length: 32 } }
+    }
+    field {
+        name: "group_name"
+        type { buffer { element_type { primitive: U8 } fixed_length: 32 } }
+    }
+    field {
+        name: "device_major_number"
+        type { buffer { element_type { primitive: U8 } fixed_length: 8 } }
+    }
+    field {
+        name: "device_minor_number"
+        type { buffer { element_type { primitive: U8 } fixed_length: 8 } }
+    }
+    field {
+        name: "file_name_prefix"
+        type { buffer { element_type { primitive: U8 } fixed_length: 155 } }
+    }
+}

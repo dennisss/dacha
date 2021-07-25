@@ -20,7 +20,7 @@ message StartRequest {
 }
 
 message StartResponse {
-
+    string container_id = 1;
 }
 
 message LogRequest {
@@ -30,7 +30,7 @@ message LogRequest {
     // TODO: Consider supporting things like time/text filters?
 }
 
-service ContainerRuntime {
+service ContainerNode {
 
     rpc Query (QueryRequest) returns (QueryResponse);
 

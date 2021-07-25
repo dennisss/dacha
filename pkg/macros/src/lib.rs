@@ -17,6 +17,7 @@ use syn::Result;
 use syn::{Item, ItemImpl};
 
 mod reflect;
+mod args;
 
 #[derive(Debug)]
 struct BlanketInput {
@@ -114,4 +115,9 @@ pub fn derive_defaultable(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(ConstDefault)]
 pub fn derive_const_default(input: TokenStream) -> TokenStream {
     reflect::derive_const_default(input)
+}
+
+#[proc_macro_derive(Args, attributes(arg))]
+pub fn derive_args(input: TokenStream) -> TokenStream {
+    args::derive_args(input)
 }

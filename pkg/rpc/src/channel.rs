@@ -135,13 +135,13 @@ impl dyn Channel {
 }
 
 pub struct Http2Channel {
-    client: Arc<http::Client>,
+    client: http::Client,
 }
 
 impl Http2Channel {
     pub fn create(options: http::ClientOptions) -> Result<Self> {
         Ok(Self {
-            client: Arc::new(http::Client::create(options.set_force_http2(true))?),
+            client: http::Client::create(options.set_force_http2(true))?,
         })
     }
 

@@ -9,7 +9,6 @@ common = { path = "../common" }
 crypto = { path = "../crypto" }
 parsing = { path = "../parsing" }
 protobuf = { path = "../protobuf" }
-bytes = { git = "https://github.com/tokio-rs/bytes" }
 byteorder = "1.3.2"
 
 [build-dependencies]
