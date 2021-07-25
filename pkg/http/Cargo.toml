@@ -12,7 +12,6 @@ crypto = { path = "../crypto" }
 automata = { path = "../automata" }
 regexp_macros = { path = "../regexp_macros" }
 async-std = "1.9.0"
-arrayref = "0.3.5"
 failure = "0.1.8"
 
 

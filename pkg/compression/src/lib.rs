@@ -3,8 +3,6 @@
 extern crate crypto;
 extern crate protobuf;
 #[macro_use]
-extern crate arrayref;
-#[macro_use]
 extern crate parsing;
 
 pub mod transform;

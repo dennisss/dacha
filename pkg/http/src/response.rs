@@ -135,7 +135,7 @@ impl ResponseBuilder {
 
         let headers = Headers::from(self.headers);
 
-        let body = self.body.ok_or_else(|| err_msg("No body specified"))?;
+        let body = self.body.unwrap_or_else(|| crate::EmptyBody());
 
         Ok(Response {
             head: ResponseHead {

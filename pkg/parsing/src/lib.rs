@@ -1,10 +1,7 @@
 #![feature(trait_alias, core_intrinsics, str_internals)]
 
-#[macro_use]
-extern crate arrayref;
-#[macro_use]
-extern crate failure;
-extern crate bytes;
+#[macro_use] extern crate common;
+#[macro_use] extern crate failure;
 extern crate reflection;
 
 use common::bytes::Buf;
@@ -174,7 +171,7 @@ where
 }
 
 pub type ParseError = Error;
-pub type ParserInput = ::bytes::Bytes;
+pub type ParserInput = ::common::bytes::Bytes;
 pub type ParseResult<T, I = ParserInput> = ParseResult2<T, I>;
 pub type ParseResult2<T, R> = std::result::Result<(T, R), ParseError>;
 pub trait Parser<T, I = ParserInput> = Fn(I) -> ParseResult<T, I>;
@@ -258,7 +255,7 @@ impl ParserFeed for &[u8] {
     }
 }
 
-impl ParserFeed for ::bytes::Bytes {
+impl ParserFeed for ::common::bytes::Bytes {
     type Item = u8;
     type Slice = [u8];
 

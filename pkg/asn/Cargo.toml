@@ -7,11 +7,9 @@ edition = "2018"
 [dependencies]
 macros = { path = "../macros" }
 math = { path = "../math" }
-arrayref = "0.3.5"
 common = { path = "../common" }
 parsing = { path = "../parsing" }
 byteorder = "1.3.2"
-hex = "0.3.2"
 impl_ops = "0.1.1"
 typenum = "1.11.2"
 lazy_static = "1.4.0"

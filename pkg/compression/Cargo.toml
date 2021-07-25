@@ -11,8 +11,6 @@ parsing = { path = "../parsing" }
 protobuf = { path = "../protobuf" }
 bytes = { git = "https://github.com/tokio-rs/bytes" }
 byteorder = "1.3.2"
-hex = "0.3.2"
-arrayref = "0.3.5"
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing_compiler" }

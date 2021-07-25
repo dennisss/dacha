@@ -36,7 +36,7 @@ pub use collections::*;
 
 // NOTE: Construct an empty proto by calling MessageType::default()
 // Clone + std::fmt::Debug + std::default::Default + MessageReflection
-pub trait Message {
+pub trait Message: 'static + Send + Sync {
     // NOTE: This will append values to
     fn parse(data: &[u8]) -> Result<Self> where Self: Sized;
 

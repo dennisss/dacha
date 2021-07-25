@@ -1,7 +1,7 @@
 use crate::comparator::*;
 use crate::comparator_context::ComparatorContext;
 use crate::internal_key::*;
-use crate::record_log::RecordLog;
+use crate::record_log::RecordReader;
 use crate::table_builder::*;
 use crate::write_batch::Write::Value;
 use crate::write_batch::*;
@@ -100,7 +100,7 @@ impl MemTable {
 
     /// Writes WriteBatches from the given log file and applies their effects
     /// to the current table.
-    pub async fn apply_log(&mut self, log: &mut RecordLog) -> Result<()> {
+    pub async fn apply_log(&mut self, log: &mut RecordReader) -> Result<()> {
         while let Some(record) = log.read().await? {
             let (batch, rest) = WriteBatch::parse(&record)?;
             if rest.len() != 0 {

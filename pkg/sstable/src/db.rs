@@ -74,7 +74,7 @@ impl EmbeddedDB {
         current = current.trim_end().to_string();
 
         let manifest_path = path.join(&current);
-        let mut manifest_file = RecordLog::open(&manifest_path, false).await?;
+        let mut manifest_file = RecordReader::open(&manifest_path).await?;
 
         //	let mut manifest_data = vec![];
         //	manifest_file.read_to_end(&mut manifest_data).await?;
@@ -94,7 +94,7 @@ impl EmbeddedDB {
         };
 
         if let Some(num) = prev_log_number {
-            let mut log = RecordLog::open(&dir.log(num), false).await?;
+            let mut log = RecordReader::open(&dir.log(num)).await?;
             let mut table = MemTable::new(options.table_options.comparator.clone());
             table.apply_log(&mut log).await?;
             immutable_table = Some(table);
@@ -108,7 +108,7 @@ impl EmbeddedDB {
 
         // Read both log files and put them into the memtable.
 
-        let mut log = RecordLog::open(&dir.log(log_number), true).await?;
+        let mut log = RecordReader::open(&dir.log(log_number)).await?;
 
         let mut mutable_table = MemTable::new(options.table_options.comparator.clone());
         mutable_table.apply_log(&mut log).await?;
@@ -125,7 +125,7 @@ impl EmbeddedDB {
             state: RwLock::new(EmbeddedDBState {
                 prev_log_number,
                 log_number,
-                log,
+                log: log.into_writer(),
                 mutable_table,
                 immutable_table,
                 level_tables: vec![],
@@ -189,7 +189,7 @@ pub struct EmbeddedDBState {
 
     log_number: u64,
 
-    log: RecordLog,
+    log: RecordWriter,
 
     /// Primary table for reading/writing latest values.
     mutable_table: MemTable,

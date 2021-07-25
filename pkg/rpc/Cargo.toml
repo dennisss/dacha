@@ -13,7 +13,6 @@ compression = { path = "../compression" }
 http = { path = "../http" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
-arrayref = "0.3.5"
 failure = "0.1.8"
 
 [build-dependencies]

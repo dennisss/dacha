@@ -9,9 +9,6 @@ extern crate failure;
 #[macro_use]
 extern crate regexp_macros;
 
-#[macro_use]
-extern crate arrayref;
-
 extern crate crypto;
 
 mod proto;

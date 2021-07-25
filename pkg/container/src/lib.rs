@@ -27,7 +27,10 @@ extern crate rpc;
 
 mod proto;
 mod runtime;
+mod node;
 
 pub use proto::config::*;
 pub use proto::log::*;
+pub use proto::service::*;
 pub use runtime::ContainerRuntime;
+pub use node::Node;

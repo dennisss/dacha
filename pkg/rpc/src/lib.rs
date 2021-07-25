@@ -11,8 +11,6 @@ extern crate regexp_macros;
 extern crate automata;
 
 #[macro_use]
-extern crate arrayref;
-#[macro_use]
 extern crate failure;
 
 mod constants;
@@ -22,14 +20,14 @@ mod metadata;
 mod service;
 mod status;
 mod message;
-mod request;
-mod response;
+mod client_types;
+mod server_types;
 
 pub use server::Http2Server;
 pub use channel::{Channel, Http2Channel};
 pub use service::Service;
 
 pub use metadata::Metadata;
-pub use request::*;
-pub use response::*;
 pub use status::*;
+pub use client_types::*;
+pub use server_types::*;

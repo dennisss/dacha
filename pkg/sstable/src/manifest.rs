@@ -1,5 +1,5 @@
 use crate::encoding::*;
-use crate::record_log::RecordLog;
+use crate::record_log::{RecordWriter, RecordReader};
 use common::errors::*;
 use protobuf::wire::parse_varint;
 
@@ -63,7 +63,7 @@ pub struct VersionEdit {
 impl VersionEdit {
     /// Reads an entire manifest file consisting of one or more VersionEdits and
     /// merges them into a single struct.
-    pub async fn read(log: &mut RecordLog) -> Result<Self> {
+    pub async fn read(log: &mut RecordReader) -> Result<Self> {
         let mut edit = VersionEdit::default();
 
         while let Some(record) = log.read().await? {

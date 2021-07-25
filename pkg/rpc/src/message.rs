@@ -5,22 +5,22 @@ use std::io::Cursor;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Readable;
-use http::{Body, Headers};
 
 const MESSAGE_HEADER_SIZE: usize = 5;
 
 pub struct MessageReader<'a> {
-    body: &'a mut dyn Body
+    // TODO: Eventually change to use Readable instead of http::Body.
+    reader: &'a mut dyn http::Body
 }
 
 impl<'a> MessageReader<'a> {
-    pub fn new(body: &mut dyn Body) -> MessageReader {
-        MessageReader { body }
+    pub fn new(reader: &mut dyn http::Body) -> MessageReader {
+        MessageReader { reader }
     }
 
     pub async fn read(&mut self) -> Result<Option<Bytes>> {
         let mut header = [0u8; MESSAGE_HEADER_SIZE]; // Compressed flag + size.
-        if let Err(e) = self.body.read_exact(&mut header).await {
+        if let Err(e) = self.reader.read_exact(&mut header).await {
             if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
                 if io_error.kind() == std::io::ErrorKind::UnexpectedEof {
                     return Ok(None);
@@ -40,19 +40,16 @@ impl<'a> MessageReader<'a> {
         let mut data = vec![];
         data.reserve_exact(size);
         data.resize(size, 0);
-        self.body.read_exact(&mut data).await?;
+        self.reader.read_exact(&mut data).await?;
 
         Ok(Some(data.into()))
     }
 }
 
-pub struct UnaryMessageBody {
-    len: usize,
-    data: Cursor<Bytes>
-}
+pub struct MessageSerializer {}
 
-impl UnaryMessageBody {
-    pub fn new(data: Bytes) -> Box<dyn Body> {
+impl MessageSerializer {
+    pub fn serialize(data: &[u8]) -> Vec<u8> {
         // TODO: Optimize this for the uncompressed case.
 
         let mut full_body = vec![];
@@ -61,13 +58,21 @@ impl UnaryMessageBody {
 
         full_body.extend_from_slice(&data);
 
+        full_body
+    }
+}
+
+
+/*
+pub struct UnaryMessageBody {
+    len: usize,
+    data: Cursor<Bytes>
+}
+
+impl UnaryMessageBody {
+    pub fn new(data: Bytes) -> Box<dyn Body> {
+        let full_body = MessageSerializer::serialize(&data);
         http::BodyFromData(full_body)
-
-
-        // Box::new(Self {
-        //     len: data.len(),
-        //     data: Cursor::new(data),
-        // })
     }
 }
 
@@ -83,6 +88,7 @@ impl Readable for UnaryMessageBody {
         self.data.read(buf).await
     }
 }
+*/
 
 
 /*

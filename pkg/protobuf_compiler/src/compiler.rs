@@ -1167,6 +1167,49 @@ impl Compiler<'_> {
             lines.add(format!("\t\t\t\t{} => {{ {} }},", field.num, p));
         }
 
+        for item in &msg.body {
+            match item {
+                MessageItem::OneOf(oneof) => {
+                    let oneof_typename = self.oneof_typename(oneof, &inner_path);
+                    let oneof_fieldname = Self::field_name_inner(&oneof.name);
+                    
+                    for field in &oneof.fields {
+                        let oneof_case = common::snake_to_camel_case(&field.name);
+
+                        // TODO: Dedup with above
+                        let typeclass = match &field.typ {
+                            FieldType::Named(n) => {
+                                // TODO: Call compile_field_type
+                                let typ = self
+                                    .resolve(&n, &inner_path)
+                                    .expect(&format!("Failed to resolve type type: {}", n));
+            
+                                match &typ.descriptor {
+                                    ResolvedTypeDesc::Enum(_) => "enum",
+                                    ResolvedTypeDesc::Message(_) => "message",
+                                }
+                            }
+                            _ => field.typ.as_str(),
+                        };
+
+                        let value = format!("f.parse_{}()?", typeclass);
+
+                        lines.add(format!(
+                            "{field_num} => {{ self.{oneof_fieldname} = {oneof_typename}::{oneof_case}({value}); }},",
+                            field_num = field.num,
+                            oneof_fieldname = oneof_fieldname,
+                            oneof_typename = oneof_typename,
+                            oneof_case = oneof_case,
+                            value = value
+                        ));
+                    }
+
+                },
+                _ => {}
+            }
+
+        }
+
         // TODO: Will need to record this as an unknown field.
         lines.add("\t\t\t\t_ => {}");
 
@@ -1263,6 +1306,64 @@ impl Compiler<'_> {
                     ));
                     lines.add("}");
                 }
+            }
+        }
+
+        for item in &msg.body {
+            match item {
+                MessageItem::OneOf(oneof) => {
+                    let oneof_typename = self.oneof_typename(oneof, &inner_path);
+                    let oneof_fieldname = Self::field_name_inner(&oneof.name);
+                    
+                    lines.add(format!("\t\tmatch &self.{} {{", oneof_fieldname));
+
+                    for field in &oneof.fields {
+                        let oneof_case = common::snake_to_camel_case(&field.name);
+
+                        // TODO: Dedup with above
+                        let typeclass = match &field.typ {
+                            FieldType::Named(n) => {
+                                let typ = self
+                                    .resolve(&n, &inner_path)
+                                    .expect("Failed to resolve type");
+
+                                match &typ.descriptor {
+                                    ResolvedTypeDesc::Enum(_) => "enum",
+                                    ResolvedTypeDesc::Message(_) => "message",
+                                }
+                            }
+                            _ => field.typ.as_str(),
+                        }.to_string();
+
+                        // TODO: Deduplicate with above.
+                        let pass_reference = match &field.typ {
+                            FieldType::String => true,
+                            FieldType::Named(_) => true,
+                            FieldType::Bytes => true,
+                            _ => false
+                        };
+
+                        let reference = if pass_reference { "" } else { "*" };
+
+                        lines.add(format!(
+                            "\t\t\t{oneof_typename}::{oneof_case}(v) => {{
+                                WireField::serialize_{typeclass}({field_num}, {reference}v, &mut data)?; }}",
+                            oneof_typename = oneof_typename,
+                            oneof_case = oneof_case,
+                            typeclass = typeclass,
+                            reference = reference,
+                            field_num = field.num
+                        ));
+
+                    }
+
+                    lines.add(format!("\t\t\t{}::Unknown => {{}}", oneof_typename));
+
+                    lines.add("\t\t}");
+
+
+                }
+                _ => {}
             }
         }
 
@@ -1455,35 +1556,75 @@ impl Compiler<'_> {
         lines.add("}");
         lines.nl();
 
-        /*
-        For straming RPCs,
-
-        // RPC channel 
-
-        - SendStreaming(request)
-        */
-
         lines.add(format!("impl {}Stub {{", service.name));
         lines.indented(|lines| {
-            lines.add("pub fn new(channel: Arc<dyn ::rpc::Channel>) -> Self {");
-            lines.add("\tSelf { channel }");
-            lines.add("}");
-            lines.nl();
+            lines.add("
+                pub fn new(channel: Arc<dyn ::rpc::Channel>) -> Self {
+                    Self { channel }
+                }
+            ");
 
             for rpc in service.rpcs() {
-                // Challenges with this formulation:
-                // Must be able to call with a <R: Into<::rpc::ClientRequest<AsRef<{}>>>>
+                let req_type = self
+                    .resolve(&rpc.req_type, path)
+                    .expect(&format!("Failed to find {}", rpc.req_type));
+                let res_type = self.resolve(&rpc.res_type, path)
+                    .expect(&format!("Failed to find {}", rpc.res_type));
 
-                lines.add(format!(
-                    "pub async fn {rpc_name}(&self, request_context: &::rpc::ClientRequestContext, request_value: &{req_type}) ->
-                     ::rpc::ClientResponse<{res_type}> {{",
-                    rpc_name = rpc.name, req_type = rpc.req_type, res_type = rpc.res_type
-                ));
-                lines.add(format!(
-                    "\tself.channel.call_unary(\"{}\", \"{}\", request_context, request_value).await",
-                    absolute_name, rpc.name
-                ));
-                lines.add("}");
+                if rpc.req_stream && rpc.res_stream {
+                    // Bi-directional streaming
+
+                    lines.add(format!(r#"
+                        pub async fn {rpc_name}(&self, request_context: &::rpc::ClientRequestContext)
+                            -> (::rpc::ClientStreamingRequest<{req_type}>, ::rpc::ClientResponseType<{res_type}>) {{
+                            self.channel.call_stream_stream("{service_name}", "{rpc_name}", request_context).await
+                        }}"#,
+                        service_name = absolute_name,
+                        rpc_name = rpc.name,
+                        req_type = req_type.typename,
+                        res_type = res_type.typename
+                    ));
+                } else if rpc.req_stream {
+                    // Client streaming
+
+                    lines.add(format!(r#"
+                        pub async fn {rpc_name}(&self, request_context: &::rpc::ClientRequestContext)
+                            -> ::rpc::ClientStreamingCall<{req_type}, {res_type}> {{
+                            self.channel.call_stream_unary("{service_name}", "{rpc_name}", request_context).await
+                        }}"#,
+                        service_name = absolute_name,
+                        rpc_name = rpc.name,
+                        req_type = req_type.typename,
+                        res_type = res_type.typename
+                    ));
+                } else if rpc.res_stream {
+                    // Server streaming
+
+                    lines.add(format!(r#"
+                        pub async fn {rpc_name}(&self, request_context: &::rpc::ClientRequestContext, request_value: &{req_type})
+                            -> ::rpc::ClientStreamingResponse<{res_type}> {{
+                            self.channel.call_unary_stream("{service_name}", "{rpc_name}", request_context, request_value).await
+                        }}"#,
+                        service_name = absolute_name,
+                        rpc_name = rpc.name,
+                        req_type = req_type.typename,
+                        res_type = res_type.typename
+                    ));
+                } else {
+                    // Completely unary
+
+                    lines.add(format!(r#"
+                        pub async fn {rpc_name}(&self, request_context: &::rpc::ClientRequestContext, request_value: &{req_type})
+                            -> ::rpc::ClientResponse<{res_type}> {{
+                            self.channel.call_unary_unary("{service_name}", "{rpc_name}", request_context, request_value).await
+                        }}"#,
+                        service_name = absolute_name,
+                        rpc_name = rpc.name,
+                        req_type = req_type.typename,
+                        res_type = res_type.typename
+                    ));
+                }
+
                 lines.nl();
             }
         });
@@ -1501,26 +1642,16 @@ impl Compiler<'_> {
                 .expect(&format!("Failed to find {}", rpc.res_type));
 
             // TODO: Must resolve the typename.
+            // TODO: I don't need to make the response '&mut' if I am giving a stream.
             lines.add(format!(
-                "\tasync fn {}(&self, request: ::rpc::ServerRequest<{}>",
-                rpc.name,
-                if rpc.req_stream {
-                    format!("&dyn InputStream<{}>", req_type.typename)
-                } else {
-                    req_type.typename
-                }
+                "\tasync fn {rpc_name}(&self, request: ::rpc::Server{req_stream}Request<{req_type}>,
+                                       response: &mut ::rpc::Server{res_stream}Response<{res_type}>) -> Result<()>;",
+                rpc_name = rpc.name,
+                req_type = req_type.typename,
+                req_stream = if rpc.req_stream { "Stream" } else { "" },
+                res_type = res_type.typename,
+                res_stream = if rpc.res_stream { "Stream" } else { "" },
             ));
-
-            if rpc.res_stream {
-                lines.add_inline(format!(
-                    ", response: &dyn Sink<{}>) -> Result<()>;",
-                    res_type.typename
-                ));
-            } else {
-                lines.add_inline(
-                    format!(", response: &mut ::rpc::ServerResponse<{}>) -> Result<()>;",
-                                 res_type.typename));
-            }
         }
 
         lines.nl();
@@ -1577,10 +1708,10 @@ impl Compiler<'_> {
             lines.nl();
 
             lines.add(
-                "async fn call(&self, method_name: &str, \
-					    request_context: ::rpc::ServerRequestContext, request_bytes: Bytes, \
-                        response_context: &mut ::rpc::ServerResponseContext \
-                    ) -> Result<Bytes> {",
+                "async fn call<'a>(&self, method_name: &str, \
+                        request: ::rpc::ServerStreamRequest<()>,
+                        mut response: ::rpc::ServerStreamResponse<'a, ()> \
+                    ) -> Result<()> {",
             );
 
 
@@ -1594,39 +1725,49 @@ impl Compiler<'_> {
                     let res_type = self.resolve(&rpc.res_type, path)
                         .expect(&format!("Failed to find {}", rpc.res_type));
 
+                    let request_obj = {
+                        if rpc.req_stream {
+                            format!("request.into::<{}>()", req_type.typename)
+                        } else {
+                            format!("request.into_unary::<{}>().await?", req_type.typename)
+                        }
+                    };
+
+                    let response_obj = {
+                        if rpc.res_stream {
+                            format!("response.into::<{}>()", res_type.typename)
+                        } else {
+                            format!("response.new_unary::<{}>()", res_type.typename)
+                        }
+                    };
+
+                    let response_post = {
+                        if rpc.res_stream {
+                            ""
+                        } else {
+                            // TODO: Make the T in into<T> more explicit.
+                            "let response_value = response_obj.into_value(); response.into().send(response_value).await?;"
+                        }
+                    };
+
                     // TODO: Resolve type names.
                     // TODO: Must normalize these names to valid Rust names
                     lines.add(format!(r#"
-                        "{}" => {{
-                            let request = {}::parse(&request_bytes)
-                                .map_err(|_| ::rpc::Status::invalid_argument("Failed to parse request proto."))?;
+                        "{rpc_name}" => {{
+                            let request = {request};
+                            let mut response_obj = {response_obj};
 
-                            let mut response = ::rpc::ServerResponse {{
-                                value: {}::default(),
-                                context: response_context
-                            }};
+                            self.inner.{rpc_name}(request, &mut response_obj).await?;
 
-                            self.inner.{}(::rpc::ServerRequest {{
-                                context: request_context,
-                                value: request
-                            }}, &mut response).await?;
+                            {response_post}
 
-                            let response_bytes = response.value.serialize()?.into();
-                            Ok(response_bytes)
-                        }},
-                    "#, rpc.name, req_type.typename, res_type.typename, rpc.name));
-
-                    // let inst = self.inner.as_ref();
-                    // ::rpc::Service_call_unary_impl(
-                    //     |req, res| inst.{}(req, res),
-                    //     request_context, request_bytes, response_context).await
-
-
-                    // lines.add(format!("\t\"{}\" => {{", rpc.name));
-
-                    // lines.add(format!("\t\t::rpc::Service_call_unary_impl(self.inner.as_ref(), {}Service::{}, request_context, request_bytes, response_context).await",
-                    //         service.name, rpc.name));
-                    // lines.add("\t},");
+                            Ok(())
+                        }},"#,
+                        rpc_name = rpc.name,
+                        request = request_obj,
+                        response_obj = response_obj,
+                        response_post = response_post
+                    ));
                 }
 
                 lines.add("\t_ => Err(::rpc::Status::invalid_argument(format!(\"Invalid method: {}\", method_name)).into())");

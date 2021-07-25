@@ -1,3 +1,4 @@
+#[macro_use]
 extern crate common;
 #[macro_use]
 extern crate macros;
@@ -17,9 +18,6 @@ use math::geometry::bounding_box::BoundingBox;
 use math::matrix::Vector2f;
 use num_traits::{AsPrimitive, Num, NumCast, Zero};
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
-
-#[macro_use]
-extern crate arrayref;
 
 pub mod format;
 pub mod resize;

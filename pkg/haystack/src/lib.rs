@@ -6,9 +6,7 @@
 extern crate dotenv;
 extern crate rand;
 extern crate byteorder;
-extern crate arrayref;
 extern crate bytes;
-extern crate base64;
 extern crate fs2;
 extern crate mime_sniffer;
 extern crate ipnetwork;

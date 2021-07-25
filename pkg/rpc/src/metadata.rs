@@ -8,7 +8,7 @@ use parsing::ascii::AsciiString;
 // Comma separation pattern used for splitting received metadata values.
 regexp!(COMMA_SEPARATOR => "(?: \t)*,(?: \t)");
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Metadata {
     // Raw values for the metadata as encoded in the headers.
     raw_data: HashMap<AsciiString, Vec<AsciiString>>,
@@ -151,5 +151,12 @@ impl Metadata {
             ).map_err(|e| Error::from(e))
         }))
     }
+}
 
+
+/// 
+#[derive(Default)]
+pub struct ResponseMetadata {
+    pub head_metadata: Metadata,
+    pub trailer_metadata: Metadata
 }

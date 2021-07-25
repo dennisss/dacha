@@ -1,6 +1,5 @@
 #![feature(trait_alias, specialization)]
-#[macro_use]
-extern crate arrayref;
+
 #[macro_use]
 extern crate impl_ops;
 extern crate generic_array;

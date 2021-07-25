@@ -62,6 +62,9 @@ extern fn signal_handler_sigchld(signal: libc::c_int) {
 struct Container {
     metadata: ContainerMetadata,
 
+    /// Directory where we store the container root and other files such as logs.
+    directory: PathBuf,
+
     pid: Pid,
 
     // TODO: Make sure this is cleaned up
@@ -79,6 +82,8 @@ struct ContainerWaiter {
     stderr: File,
     event_receiver: channel::Receiver<ContainerStatus>
 }
+
+// We want to be able to support subscribing to any events that occur for a 
 
 pub struct ContainerRuntime {
     containers: Mutex<Vec<Container>>
@@ -160,6 +165,18 @@ impl ContainerRuntime {
         }
     }
 
+    pub async fn list(&self) -> Vec<ContainerMetadata> {
+        let containers = self.containers.lock().await;
+
+        let mut output = vec![];
+        output.reserve_exact(containers.len());
+        for container in containers.iter() {
+            output.push(container.metadata.clone());
+        }
+
+        output
+    }
+
     /// Starts a container returning the id of that container.
     pub async fn start(self: &Arc<Self>, container_config: &ContainerConfig) -> Result<String> {
         let mut container_id = vec![0u8; 16];
@@ -205,7 +222,7 @@ impl ContainerRuntime {
         let (event_sender, event_receiver) = channel::bounded(1);
 
         let waiter_task = task::spawn(self.clone().container_waiter(ContainerWaiter {
-            container_id: container_id.clone(), container_dir,
+            container_id: container_id.clone(), container_dir: container_dir.clone(),
             stdout: stdout_read.open()?.into(), stderr: stderr_read.open()?.into(), event_receiver
         }));
 
@@ -215,6 +232,7 @@ impl ContainerRuntime {
 
         containers.push(Container {
             metadata: meta,
+            directory: container_dir.clone(),
             pid,
             waiter_task,
             event_sender
@@ -243,6 +261,23 @@ impl ContainerRuntime {
         // TODO: Should I ignore ESRCH?
         nix::sys::signal::kill(container.pid, signal)?;
         Ok(())
+    }
+
+    pub async fn open_log(&self, container_id: &str) -> Result<FileLogReader> {
+        let containers = self.containers.lock().await;
+        let container = match containers.iter().find(|c| c.metadata.id() == container_id) {
+            Some(c) => c,
+            None => {
+                return Err(err_msg("Container not found"));
+            }
+        };
+
+        let log_path = container.directory.join("log");
+        drop(containers);
+
+        // TODO: For this to work we need to ensure that the log file is synchronously created before
+        // we return the container id to the person that reuqested it.
+        FileLogReader::open(&log_path).await
     }
 
     async fn write_log(file: File, log_writer: Arc<FileLogWriter>, stream: LogStream) {
@@ -284,10 +319,8 @@ impl ContainerRuntime {
         let mut container = containers.iter_mut()
             .find(|c| c.metadata.id() == container_id).unwrap();
 
-        println!("STOPPED {:?}", status);
-
         container.metadata.set_state(ContainerState::Stopped);
-        container.metadata.set_exit_status(status);
+        container.metadata.set_status(status);
 
         Ok(())
     }

@@ -67,7 +67,9 @@ impl<'a> Record<'a> {
     /// Returns (parsed record, next offset in input)
     fn parse(input: &'a [u8]) -> Result<(Self, usize)> {
         if input.len() < (RECORD_HEADER_SIZE as usize) {
-            return Err(err_msg("Input shorter than record header"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Input shorter than record header").into());
         }
 
         let checksum = u32::from_le_bytes(*array_ref![input, 0, 4]);
@@ -77,7 +79,10 @@ impl<'a> Record<'a> {
         let data_end = data_start + (length as usize);
 
         if input.len() < data_end {
-            return Err(err_msg("Input smaller than data length"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Input smaller than data length"
+            ).into());
         }
 
         let data = &input[data_start..data_end];
@@ -101,19 +106,22 @@ impl<'a> Record<'a> {
     }
 }
 
-pub struct RecordLog {
+pub struct RecordReader {
     file: File,
 
-    file_size: u64,
+    // file_size: u64,
 
     /// Current cursor into the file. This will be the offset at which the block
     /// buffer starts.
+    ///
+    /// At any point in time, we have parsed up to 'file_offset + block_offset'
     file_offset: u64,
 
-    /// Buffer containing up to a single block. May be smaller
+    /// Buffer containing up to a single block. May be smaller than the BLOCK_SIZE
+    /// if we hit the end of the file.
     block: Vec<u8>,
 
-    /// Next offset in the block offset to be read/written
+    /// Next offset in the block offset to be read
     block_offset: usize, /* TODO: Must know if at the end of the file to know if we can start
                           * writing (or consider the file offset to be
                           * at the start of the block ) */
@@ -127,28 +135,243 @@ pub struct RecordLog {
                          /*	off: Option<u64>,
                           *	recs: Vec<Record<'a>>,
                           *	buf: Vec<u8> // [u8; BLOCK_SIZE] */
+
+    /// Currently accumulated record data.
+    /// If this is non-empty, then we have already received a FIRST record and we are
+    /// currently waiting on MIDDLE|LAST records.
+    output_buffer: Option<Vec<u8>>,
 }
 
-impl RecordLog {
-    pub async fn open(path: &Path, writeable: bool) -> Result<Self> {
+impl RecordReader {
+    pub async fn open(path: &Path) -> Result<Self> {
+        let file = OpenOptions::new().read(true).open(path).await?;
+
+        let mut block = vec![];
+        block.reserve_exact(BLOCK_SIZE as usize);
+
+        Ok(Self {
+            file,
+            // file_size,
+            file_offset: 0,
+            block,
+            block_offset: 0,
+            output_buffer: None
+        })
+    }
+
+    pub fn into_writer(self) -> RecordWriter {
+        RecordWriter { file: self.file }
+    }
+
+    // Generally should return the final position of the block
+    // TODO: If we want to use this for error recovery, then it must be resilient to
+    // not reading enough of the file (basically bounds check the length given
+    // always (because even corruption in earlier blocks can have the same issue))
+    // XXX: Also easier to verify the checksume right away
+
+    /// Reads a complete block from the file starting at the given offset. After
+    /// this is successful, the internal block buffer is use-able.
+    async fn read_block(&mut self, off: u64) -> Result<()> {
+        self.file_offset = off;
+        self.block.clear();
+        self.block_offset = 0;
+
+        self.read_block_remainder().await?;
+        Ok(())
+    }
+
+    /// Assuming that the current block 
+    async fn read_block_remainder(&mut self) -> Result<()> {
+        // At any point of time in this function this will be the number of bytes in the block
+        // that we know are valid bytes read from the file. 
+        let mut valid_length = self.block.len();
+
+        if valid_length == BLOCK_SIZE as usize {
+            return Ok(());
+        }
+
+        self.file.seek(SeekFrom::Start(self.file_offset + (valid_length as u64))).await?;
+
+        self.block.resize(BLOCK_SIZE as usize, 0);
+
+        // Read either until the end of the file or until we have filled the block.
+        loop {
+            let buf = &mut self.block[valid_length..];
+            if buf.len() == 0 {
+                break;
+            }
+
+            // NOTE: We assume that if there are actually 
+            let n = self.file.read(buf).await.map_err(|e| {
+                // On an error, reset the block back to its old state before the read so that we are
+                // in a consistent state to retry later.
+                self.block.truncate(valid_length);
+                e
+            })?;
+
+            if n == 0 {
+                break;
+            }
+
+            valid_length += n;
+        }
+
+        self.block.truncate(valid_length);
+        Ok(())
+    }
+
+    // TODO: If there are multiple middle-blocks after each other in the same
+    // block, we should error out.
+
+    async fn read_record<'a>(&'a mut self) -> Result<Option<Record<'a>>> {
+        // When there are < RECORD_HEADER_SIZE bytes remaining in the block, we know that they will
+        // always be padding so we should advance to the next block.
+        //
+        // Otherwise we'll just ensure that the current block is fully read (at least up to the end of the file).
+        if BLOCK_SIZE as usize - self.block_offset < RECORD_HEADER_SIZE as usize {
+            self.read_block(self.file_offset + (self.block.len() as u64))
+                .await?;
+        } else {
+            // NOTE: If we had previously hit the end of the file, then this will act to check if
+            // more bytes have become available in the file.
+            //
+            // In the case of us not expecting any new bytes later on, then this may make reading
+            // of a incomplete final block in the file very expensive as read() will be called
+            // for every single record in the block.
+            //
+            // TODO: Consider only calling this if the block size is 0, or we just returned a None
+            // in the previous call to read_record().
+            self.read_block_remainder().await?;
+        }
+
+        let (record, record_size) = match Record::parse(&self.block[self.block_offset..]) {
+            Ok(v) => v,
+            Err(e) => {
+                // If we didn't have enough bytes to parse the record, return None. Most likely the file
+                // hasn't been flushed by a recent writer yet.
+                if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
+                    if io_error.kind() == std::io::ErrorKind::UnexpectedEof {
+                        return Ok(None);
+                    }
+                }
+
+                return Err(e);
+            }
+        };
+
+        self.block_offset += record_size;
+
+        if record.checksum_expected != record.checksum {
+            return Err(err_msg("Checksum mismatch in record"));
+        }
+
+        Ok(Some(record))
+    }
+
+    /// Returns whether or not a complete record chain was read.
+    async fn read_inner(&mut self, out: &mut Vec<u8>) -> Result<bool> {
+        if out.len() == 0 {
+            let first_record = match self.read_record().await? {
+                Some(record) => record,
+                None => {
+                    return Ok(false);
+                }
+            };
+    
+            out.extend_from_slice(first_record.data);
+            if first_record.typ == RecordType::FULL {
+                return Ok(true);
+            } else if first_record.typ == RecordType::FIRST {
+                // Keep going
+            } else {
+                return Err(err_msg("Unexpected initial record type"));
+            }
+        }
+
+        loop {
+            let next_record = match self.read_record().await? {
+                Some(record) => record,
+                None => {
+                    return Ok(false);
+                }
+            };
+
+            out.extend_from_slice(next_record.data);
+
+            match next_record.typ {
+                RecordType::MIDDLE => {
+                    continue;
+                }
+                RecordType::LAST => {
+                    break;
+                }
+                _ => {
+                    return Err(err_msg("Unexpected type in the middle of a user record"));
+                }
+            };
+        }
+
+        Ok(true)
+    }
+
+    /// NOTE: Values of Ok(None) can be retried later safely if the file grew in size.
+    pub async fn read(&mut self) -> Result<Option<Vec<u8>>> {
+        let mut out = self.output_buffer.take().unwrap_or_else(|| vec![]);
+
+        // NOTE: If read_inner fails, we will end up dropping the 'out' buffer which will ensure that
+        // we don't attempt to re-use it on subsequent read() calls.
+        let is_complete = self.read_inner(&mut out).await?;
+
+        if is_complete {
+            Ok(Some(out))
+        } else {
+            self.output_buffer = Some(out);
+            Ok(None)
+        }
+    }
+
+    /// Call after you think you've fully read the entire file to verify that there are
+    /// no more unread bytes after the current position (only use this if you know for sure
+    /// that the file won't be modified in the near future).
+    pub async fn check_eof(&self) -> Result<()> {
+        let file_size = self.file.metadata().await?.len();
+        if file_size != self.file_offset + (self.block_offset as u64) {
+            return Err(err_msg("Unread bytes remaining at end of file"));
+        }
+
+        if let Some(data) = &self.output_buffer {
+            if !data.is_empty() {
+                return Err(err_msg("Incomplete record chain was read"));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+
+pub struct RecordWriter {
+    file: File,
+
+    // NOTE: All the below are main
+
+
+}
+
+impl RecordWriter {
+    pub async fn open(path: &Path) -> Result<Self> {
         let file = OpenOptions::new()
             .read(true)
-            .write(writeable)
+            .write(true)
             .create(true)
             .open(path)
             .await?;
 
-        let file_size = file.metadata().await?.len();
+        // let file_size = file.metadata().await?.len();
 
-        let mut block = vec![];
-        block.reserve(BLOCK_SIZE as usize);
 
         Ok(Self {
             file,
-            file_size,
-            file_offset: 0,
-            block,
-            block_offset: 0,
         })
     }
 
@@ -170,102 +393,11 @@ impl RecordLog {
     }
     */
 
-    // Generally should return the final position of the block
-    // TODO: If we want to use this for error recovery, then it must be resilient to
-    // not reading enough of the file (basically bounds check the length given
-    // always (because even corruption in earlier blocks can have the same issue))
-    // XXX: Also easier to verify the checksume right away
-
-    /// Reads a complete block from the file starting at the given offset. After
-    /// this is successful, the internal block buffer is use-able.
-    async fn read_block(&mut self, off: u64) -> Result<()> {
-        self.file.seek(SeekFrom::Start(off)).await?;
-
-        let block_size = std::cmp::min(BLOCK_SIZE, self.file_size - off);
-
-        self.block.resize(block_size as usize, 0);
-        self.block_offset = 0;
-        self.file_offset = off;
-
-        self.file.read_exact(&mut self.block).await.map_err(|e| {
-            // On error, clear the block so that it can't be used in an
-            // inconsistent state.
-            self.block.clear();
-            e
-        })?;
-
-        Ok(())
-    }
-
-    // TODO: If there are multiple middle-blocks after each other in the same
-    // block, we should error out.
-
-    async fn read_record<'a>(&'a mut self) -> Result<Option<Record<'a>>> {
-        if self.block.len() - self.block_offset < (RECORD_HEADER_SIZE as usize) {
-            if self.file_offset + (self.block.len() as u64) >= self.file_size {
-                return Ok(None);
-            }
-
-            self.read_block(self.file_offset + (self.block.len() as u64))
-                .await?;
-        }
-
-        let (record, next_offset) = Record::parse(&self.block[self.block_offset..])?;
-        self.block_offset += next_offset;
-
-        if record.checksum_expected != record.checksum {
-            return Err(err_msg("Checksum mismatch in record"));
-        }
-
-        Ok(Some(record))
-    }
-
-    pub async fn read(&mut self) -> Result<Option<Vec<u8>>> {
-        let mut out = vec![];
-
-        let first_record = match self.read_record().await? {
-            Some(record) => record,
-            None => {
-                return Ok(None);
-            }
-        };
-
-        if first_record.typ == RecordType::FULL {
-            return Ok(Some(first_record.data.to_vec()));
-        } else if first_record.typ == RecordType::FIRST {
-            out.extend_from_slice(first_record.data);
-        } else {
-            return Err(err_msg("Unexpected initial record type"));
-        }
-
-        loop {
-            let next_record = match self.read_record().await? {
-                Some(record) => record,
-                None => {
-                    return Err(err_msg("Incomplete user record"));
-                }
-            };
-
-            out.extend_from_slice(next_record.data);
-
-            match next_record.typ {
-                RecordType::MIDDLE => {
-                    continue;
-                }
-                RecordType::LAST => {
-                    break;
-                }
-                _ => {
-                    return Err(err_msg("Unexpected type in the middle of a user record"));
-                }
-            };
-        }
-
-        Ok(Some(out))
-    }
-
+    // TODO: Support atomic writes across multiple unsynchronized writers?
+    // TODO: Before writing, read the final block and verify that it is valid and not partially written. If it is, then
+    // consider truncating or skipping one block ahead.
     // TODO: Verify this code
-    // TODO: Buffer all writes and have a separate flush() operation.
+    // TODO: Buffer all writes and have a separate flush() operation (ideally we'd have the flushes on a timeout)
     pub async fn append(&mut self, data: &[u8]) -> Result<()> {
         let mut extent = self.file.seek(SeekFrom::End(0)).await?;
 
