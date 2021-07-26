@@ -1,14 +1,17 @@
 extern crate byteorder;
 extern crate compression;
 
+use std::fs::File;
+use std::io::{Read, Seek};
+use std::path::{Path, PathBuf};
+
 use common::bits::*;
 use common::errors::*;
 use compression::deflate::*;
 use compression::gzip::*;
 use compression::huffman::*;
+use compression::tar::{FileMetadata, FileMetadataMask};
 use compression::zlib::*;
-use std::fs::File;
-use std::io::{Read, Seek};
 
 // https://zlib.net/feldspar.html
 // TODO: Blah b[D=5, L=18]!

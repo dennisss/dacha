@@ -58,7 +58,7 @@ pub async fn write_single(
 }
 
 // TODO: Switch to just taking as input a regular buffer as there's no longer a use-case for  
-fn perform_append(mac_handle: &MachineContext, vol: &mut PhysicalVolume, path: NeedleChunkPath, size: u64, chunks: &[bytes::Bytes]) -> Result<()> {
+fn perform_append(mac_handle: &MachineContext, vol: &mut PhysicalVolume, path: NeedleChunkPath, size: u64, chunks: &[Bytes]) -> Result<()> {
 
 	let mut strm = super::stream::ChunkedStream::from(chunks);
 

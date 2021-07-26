@@ -1,4 +1,5 @@
 use common::errors::*;
+use common::bytes::Bytes;
 use mime_sniffer::MimeTypeSniffer;
 
 use crate::types::*;
@@ -250,7 +251,7 @@ async fn read_photo(
 	
 	// The etag is mainly designed to make hits to the same machine very efficient and hits to other machines at least able to notice after a disk read
 	let etag = ETag {
-		store_id: mac_id, volume_id, block_offset: offset, checksum: bytes::Bytes::from(n.crc32c())
+		store_id: mac_id, volume_id, block_offset: offset, checksum: Bytes::from(n.crc32c())
 	};	
 
 	res = res

@@ -1,11 +1,12 @@
-use arrayref::*;
-use base64;
-use std::mem::size_of;
-use bytes::Bytes;
-use rand::RngCore;
 use std::io::{Write, Read};
+use std::mem::size_of;
+
+use common::bytes::Bytes;
+use rand::RngCore;
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 use common::errors::*;
+use common::base64;
+
 use crate::types::*;
 use crate::paths::*;
 
@@ -106,7 +107,7 @@ impl CookieBuf {
 }
 
 impl std::str::FromStr for CookieBuf {
-	type Err = base64::DecodeError;
+	type Err = common::base64::DecodeError;
 	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
 		let buf = parse_urlbase64(s)?;
 		if buf.len() != COOKIE_SIZE {

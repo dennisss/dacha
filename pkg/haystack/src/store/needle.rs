@@ -6,12 +6,11 @@ use common::errors::*;
 use common::block_size_remainder;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use common::bytes::Bytes;
-use arrayref::*;
 use crypto::hasher::Hasher;
 use crypto::checksum::crc::CRC32CHasher;
 
 use crate::types::*;
-use super::api::CookieBuf;
+use crate::store::api::CookieBuf;
 
 
 /// NOTE: We optimize for a small checksum by only really using it for data integrity on disk and not really security

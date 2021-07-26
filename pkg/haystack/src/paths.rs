@@ -1,6 +1,6 @@
 
 use common::errors::*;
-use base64;
+use common::base64;
 
 use super::types::*;
 

@@ -3,8 +3,6 @@
     https://docs.mongodb.com/manual/reference/mongodb-wire-protocol/
 */
 
-extern crate bson;
-
 /*
     - Basically one single global range of all data ever
         - Different subunits for different aspects of state

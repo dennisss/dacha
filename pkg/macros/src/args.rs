@@ -4,10 +4,41 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenTree;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{
-    parse_macro_input, parse_quote, Data, DeriveInput, Fields, GenericParam, Generics, Index, AttributeArgs
-};
+use syn::{AttributeArgs, Data, DeriveInput, Fields, GenericParam, Generics, Index, Lit, Type, Path, parse_macro_input, parse_quote};
 
+/// Gets the options specified for an element given all its attributes.
+/// These will specified with annotations of the form:
+///   #[arg(a = b, c = "d")]
+fn get_options(attrs: &[syn::Attribute]) -> HashMap<Path, Option<Lit>> {
+    let mut meta_map = HashMap::new();
+
+    let arg_attr =
+        attrs.iter().find(|attr| attr.path.is_ident("arg"));
+    if let Some(attr) = arg_attr {
+        let meta = attr.parse_meta().unwrap();
+
+        let meta_list = match meta {
+            syn::Meta::List(list) => list.nested,
+            _ => panic!("Unexpected arg attr format")
+        };
+
+        for meta_item in meta_list {
+            let name_value = match meta_item {
+                syn::NestedMeta::Meta(syn::Meta::NameValue(v)) => v,
+                syn::NestedMeta::Meta(syn::Meta::Path(p)) => {
+
+                    meta_map.insert(p, None);
+                    continue;
+                }
+                _ => panic!("Unsupported meta_item: {:?}", meta_item)
+            };
+
+            meta_map.insert(name_value.path, Some(name_value.lit));
+        }
+    }
+
+    meta_map
+}
 
 
 pub fn derive_args(input: TokenStream) -> TokenStream {
@@ -29,27 +60,60 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
 
                 let field_name_str = field_name.to_string();
 
-                field_vars.push(quote! {
-                    let #field_name = {
-                        let value = raw_args.take_named_arg(#field_name_str)?;
-                        <#field_type as ::common::args::ArgType>::parse_optional_raw_arg(value)?
-                    };
-                });
+                let options = get_options(&field.attrs);
 
-                /*
-                let default_attr = field
-                    .attrs
-                    .iter()
-                    .find(|attr| attr.path.is_ident("default".into()));
+                let mut positional = false;
+                let mut default_value = None;
+                for (key, value) in options {
+                    if key.is_ident("default") {
 
-                let ty = &field.ty;
-                let value = if let Some(attr) = default_attr {
-                    attr.tokens.clone()
+                        let v = value.unwrap();
+                        default_value = Some(quote! { #v });
+                    } else if key.is_ident("positional") {
+                        positional = true;
+                    }
+
+                    // TODO: Support 'name' and 'short'
+                }
+
+                if let Type::Path(path) = field_type {
+                    if path.path.is_ident("String") {
+                        default_value = default_value.map(|v| {
+                            quote! {
+                                #v.to_string()
+                            }
+                        });
+                    }
+                }
+
+                if positional {
+                    // NOTE: We currently don't support optional positional arguments.
+                    field_vars.push(quote! {
+                        let #field_name = {
+                            let value = raw_args.next_positional_arg()?;
+                            <#field_type as ::common::args::ArgType>::parse_raw_arg(::common::args::RawArgValue::String(value))?
+                        };
+                    });
+
+                } else if let Some(default_value) = default_value {
+                    field_vars.push(quote! {
+                        let #field_name = {
+                            let value = raw_args.take_named_arg(#field_name_str)?;
+                            if let Some(v) = value {
+                                <#field_type as ::common::args::ArgType>::parse_raw_arg(v)?
+                            } else {
+                                #default_value
+                            }
+                        };
+                    });
+    
                 } else {
-                    quote! { <#ty as ::std::default::Default>::default() }
-                };
-                */
-
+                    field_vars.push(quote! {
+                        let #field_name = {
+                            <#field_type as ::common::args::ArgFieldType>::parse_raw_arg_field(#field_name_str, raw_args)?
+                        };
+                    });
+                }
             }
 
             quote! {
@@ -62,6 +126,13 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                         })
                     }
                 }
+
+                impl ::common::args::ArgFieldType for #name {
+                    fn parse_raw_arg_field(field_name: &str, raw_args: &mut ::common::args::RawArgs) -> Result<#name> {
+                        // NOTE: The field_name is ignored.
+                        <#name as ::common::args::ArgsType>::parse_raw_args(raw_args)
+                    }
+                }
             }
         }
         Data::Enum(e) => {
@@ -72,32 +143,10 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                 let var_name = &var.ident;
                 let mut command_name = syn::Lit::Str(syn::LitStr::new(&var.ident.to_string(), var_name.span())) ;
 
-                let arg_attr =
-                    var.attrs.iter().find(|attr| attr.path.is_ident("arg"));
-                if let Some(attr) = arg_attr {
-
-                    let meta = attr.parse_meta().unwrap();
-
-                    let meta_list = match meta {
-                        syn::Meta::List(list) => list.nested,
-                        _ => panic!("Unexpected arg attr format")
-                    };
-
-                    let mut meta_map = HashMap::new();
-
-                    for meta_item in meta_list {
-                        let name_value = match meta_item {
-                            syn::NestedMeta::Meta(syn::Meta::NameValue(v)) => v,
-                            _ => panic!()
-                        };
-
-                        meta_map.insert(name_value.path, name_value.lit);
-                    }
-
-                    for (key, value) in meta_map {
-                        if key.is_ident("name") {
-                            command_name = value;
-                        }
+                let options = get_options(&var.attrs);
+                for (key, value) in options {
+                    if key.is_ident("name") {
+                        command_name = value.unwrap();
                     }
                 }
 
@@ -138,6 +187,13 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                                 return Err(::common::errors::err_msg("Unknown command"));
                             }
                         })
+                    }
+                }
+
+                impl ::common::args::ArgFieldType for #name {
+                    fn parse_raw_arg_field(field_name: &str, raw_args: &mut ::common::args::RawArgs) -> Result<#name> {
+                        // NOTE: The field_name is ignored.
+                        <#name as ::common::args::ArgsType>::parse_raw_args(raw_args)
                     }
                 }
             }

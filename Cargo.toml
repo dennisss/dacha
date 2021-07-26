@@ -18,7 +18,6 @@ members = [
 	"pkg/rpc",
 	"pkg/rpc_test",
 	"pkg/image",
-	"pkg/format",
 	"third_party/pkix",
 	"pkg/sstable",
 	"pkg/graphics",

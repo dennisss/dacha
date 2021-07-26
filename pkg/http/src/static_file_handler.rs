@@ -2,7 +2,6 @@ use common::errors::*;
 use common::io::Readable;
 use common::async_std::path::{PathBuf, Path};
 use common::async_std::fs::File;
-use common::async_std::io::ReadExt;
 
 use crate::server::RequestHandler;
 use crate::request::Request;

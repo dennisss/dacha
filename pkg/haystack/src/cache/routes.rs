@@ -4,7 +4,7 @@ use std::time::{SystemTime, Duration};
 use common::errors::*;
 use rand::thread_rng;
 use rand::seq::SliceRandom;
-use bytes::Bytes;
+use common::bytes::Bytes;
 
 use super::api::*;
 use crate::store::api::*;

@@ -8,14 +8,13 @@
 
 extern crate raft;
 extern crate rand;
-#[macro_use]
-extern crate common;
+#[macro_use] extern crate common;
+#[macro_use] extern crate macros;
 
 mod key_value;
 mod mongodb;
 mod redis;
 
-use common::args::Arg;
 use common::errors::*;
 use common::errors::*;
 use common::fs::DirLock;
@@ -201,21 +200,29 @@ impl redis::server::Service for RaftRedisServer {
 
 */
 
+// NOTE: I still need to implement default values.
+#[derive(Args)]
+struct Args {
+    #[arg(desc="An existing directory to store data file for this unique instance")]
+    dir: PathBuf,
+
+    // TODO: Also support specifying our rpc listening port
+    #[arg(desc="Address of a running server to be used for joining its cluster if this instance has not been initialized yet")]
+    join: Option<String>,
+
+    #[arg(
+        desc="Indicates that this should be created as the first node in the cluster",
+        default=false
+    )]
+    bootstrap: bool
+}
+
+
 async fn main_task() -> Result<()> {
     //    let matches = App::new("Raft")
     //        .about("Sample consensus reaching node")
 
-    let dir = Arg::<PathBuf>::required("dir")
-        .desc("An existing directory to store data file for this unique instance");
-    // TODO: Also support specifying our rpc listening port
-    let join = Arg::<String>::optional("join", "").desc(
-        "Address of a running server to be used for joining its cluster if this instance has not \
-         been initialized yet",
-    );
-    let bootstrap = Arg::<bool>::optional("bootstrap", false)
-        .desc("Indicates that this should be created as the first node in the cluster");
-
-    common::args::init(&[&dir, &join, &bootstrap]).unwrap();
+    let args = common::args::parse_args::<Args>()?;
 
     // TODO: For now, we will assume that bootstrapping is well known up front
     // although eventually to enforce that it only ever occurs exactly once, we may
@@ -230,7 +237,7 @@ async fn main_task() -> Result<()> {
     ];
 
     // XXX: Need to store this somewhere more persistent so that we don't lose it
-    let lock = DirLock::open(&dir.borrow())?;
+    let lock = DirLock::open(&args.dir)?;
 
     // XXX: Right here if we are able to retrieve a snapshot, then we are allowed to
     // do that But we will end up thinking of all the stuff initially on disk as
@@ -240,7 +247,7 @@ async fn main_task() -> Result<()> {
 
     let node = Node::start(NodeConfig {
         dir: lock,
-        bootstrap: *bootstrap.borrow(),
+        bootstrap: args.bootstrap,
         seed_list,
         state_machine: state_machine.clone(),
         last_applied,

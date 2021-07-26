@@ -7,6 +7,7 @@ use std::ffi::CString;
 use std::path::Path;
 
 use common::errors::*;
+use common::failure::ResultExt;
 use nix::mount::MsFlags;
 use nix::unistd::{Pid, dup2};
 
@@ -26,7 +27,7 @@ pub fn run_child_process(container_config: &ContainerConfig, container_dir: &Pat
     let result = run_child_process_inner(container_config, container_dir, file_mapping);
     let status = {
         if let Err(e) = result {
-            eprintln!("{:?}", e);
+            eprintln!("Child process wrapper failed: {:?}", e);
             1
         } else {
             0
@@ -52,18 +53,6 @@ fn run_child_process_inner(
         // NOTE: We will never end up actually calling close() on the 'oldfd' in te child thread.
         // instead we'll just rely on O_CLOEXEC to get rid of them once we call execve.
     }
-
-
-    // Close STDIN.
-    // nix::unistd::close(0)?;
-
-
-    // TODO: How are environment variables propagated?
-
-    // Mount stuff
-    // - 
-
-    println!("START IN {:?}", container_dir);
 
     // Prevent parent processes from seeing the new mounts.
     nix::mount::mount::<str, str, str, str>(
@@ -105,7 +94,7 @@ fn run_child_process_inner(
         // TODO: Make this an optional step?
         std::fs::create_dir_all(&target)?;
 
-        let mut flags = MsFlags::MS_BIND;
+        let mut flags = MsFlags::empty();
         let mut data = String::new();
 
         for option in mount.options() {
@@ -127,7 +116,8 @@ fn run_child_process_inner(
         }
 
         nix::mount::mount(
-            Some(mount.source()), &target, Some(mount.typ()), flags, Some(data.as_str()))?;        
+            Some(mount.source()), &target, Some(mount.typ()), flags, Some(data.as_str()))
+            .with_context(|e| format!("Mount of {:?} failed: {}", mount, e))?;        
     }
 
     // TODO: Move these symlinks to the config.
@@ -156,10 +146,9 @@ fn run_child_process_inner(
         nix::unistd::chdir("/")?;
     }
 
-    // TODO: Test this with/witohut the RDONLY flag.
-    // 
+    // TODO: Add RDONLY
     nix::mount::mount::<str, str, str, str>(
-        None, "/", None, MsFlags::MS_SHARED | MsFlags::MS_REC | MsFlags::MS_RDONLY, None)?;
+        None, "/", None, MsFlags::MS_SHARED | MsFlags::MS_REC, None)?;
 
     // TODO: Relinquish capabilities and do setuid and setgid. and effective stuff.
 

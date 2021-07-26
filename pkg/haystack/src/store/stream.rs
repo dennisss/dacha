@@ -1,6 +1,8 @@
-use common::errors::*;
 use std::cmp::min;
 use std::io::Read;
+
+use common::bytes::Bytes;
+use common::errors::*;
 
 /// Represents a synchronous stream interface similar in purpose to the futures
 /// main
@@ -34,12 +36,12 @@ impl<'a> Stream for SingleStream<'a> {
 /// A stream consisting of multiple existing byte buffers
 pub struct ChunkedStream<'a> {
     idx: usize,
-    chunks: &'a [bytes::Bytes],
+    chunks: &'a [Bytes],
 }
 
 // Much easier to define a bound for it right?
 impl<'a> ChunkedStream<'a> {
-    pub fn from(chunks: &'a [bytes::Bytes]) -> ChunkedStream<'a> {
+    pub fn from(chunks: &'a [Bytes]) -> ChunkedStream<'a> {
         ChunkedStream { idx: 0, chunks }
     }
 }
@@ -58,12 +60,12 @@ impl<'a> Stream for ChunkedStream<'a> {
 
 /// A stream derived from a Read source
 pub struct ReadStream<'a> {
-    readable: &'a mut Read,
+    readable: &'a mut dyn Read,
     buf: [u8; READ_BUF_SIZE],
 }
 
 impl<'a> ReadStream<'a> {
-    pub fn from(readable: &'a mut Read) -> ReadStream {
+    pub fn from(readable: &'a mut dyn Read) -> ReadStream {
         ReadStream {
             readable,
             buf: [0u8; READ_BUF_SIZE],

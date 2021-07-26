@@ -111,16 +111,30 @@ impl RawArgs {
 
 
 
+/// Trait implemented by a collection of multiple arguments. 
 pub trait ArgsType {
     fn parse_raw_args(raw_args: &mut RawArgs) -> Result<Self> where Self: Sized;
 }
 
+/// Trait implemented by a type which stores the value of a single argument.
 pub trait ArgType {
     fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> where Self: Sized;
 
     fn parse_optional_raw_arg(raw_arg: Option<RawArgValue>) -> Result<Self> where Self: Sized {
         let value = raw_arg.ok_or_else(|| err_msg("Missing value for argument"))?;
         Self::parse_raw_arg(value)
+    }
+}
+
+/// Trait implemented by a type which can be a named field in a struct containing arguments.
+pub trait ArgFieldType {
+    fn parse_raw_arg_field(field_name: &str, raw_args: &mut RawArgs) -> Result<Self> where Self: Sized;
+}
+
+impl<T: ArgType + Sized> ArgFieldType for T {
+    fn parse_raw_arg_field(field_name: &str, raw_args: &mut RawArgs) -> Result<Self> {
+        let value = raw_args.take_named_arg(field_name)?;
+        Self::parse_optional_raw_arg(value)
     }
 }
 
@@ -132,6 +146,66 @@ impl ArgType for String {
         }
     } 
 }
+
+impl ArgType for bool {
+    fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> {
+        match raw_arg {
+            RawArgValue::Bool(v) => { Ok(v) }
+            RawArgValue::String(_) => { Err(err_msg("Expected bool, got string")) }
+        } 
+    }
+}
+
+impl<T: ArgType> ArgType for Option<T> {
+    fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> {
+        Ok(Some(T::parse_raw_arg(raw_arg)?))
+    }
+
+    fn parse_optional_raw_arg(raw_arg: Option<RawArgValue>) -> Result<Self> where Self: Sized {
+        if let Some(value) = raw_arg {
+            Ok(Self::parse_raw_arg(value)?)
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+impl ArgType for std::path::PathBuf {
+    fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> {
+        match raw_arg {
+            RawArgValue::Bool(_) => { Err(err_msg("Expected string, got bool")) }
+            RawArgValue::String(s) => {
+                Ok(std::path::PathBuf::from(s))
+            }
+        }
+    } 
+}
+
+macro_rules! impl_arg_type_from_str {
+    ($name:ty) => {
+        impl ArgType for $name {
+            fn parse_raw_arg(raw_arg: RawArgValue) -> Result<$name> {
+                let s = match raw_arg {
+                    RawArgValue::Bool(_) => { return Err(err_msg("Expected string, got bool")); }
+                    RawArgValue::String(s) => { s }
+                };
+        
+                Ok(s.parse::<$name>()?)
+            } 
+        }
+    };
+}
+
+impl_arg_type_from_str!(u8);
+impl_arg_type_from_str!(i8);
+impl_arg_type_from_str!(u16);
+impl_arg_type_from_str!(i16);
+impl_arg_type_from_str!(u32);
+impl_arg_type_from_str!(i32);
+impl_arg_type_from_str!(u64);
+impl_arg_type_from_str!(i64);
+impl_arg_type_from_str!(usize);
+impl_arg_type_from_str!(isize);
 
 
 
