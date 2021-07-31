@@ -12,7 +12,6 @@ rpc = { path = "../rpc" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 google = { path = "../../third_party/google" }
-rand = "0.6.1"
 fs2 = "0.4.3"
 ctrlc = "3.1.1"
 libc = "0.2"

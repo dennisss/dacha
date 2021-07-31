@@ -7,7 +7,6 @@
 )]
 
 extern crate raft;
-extern crate rand;
 #[macro_use] extern crate common;
 #[macro_use] extern crate macros;
 
@@ -26,7 +25,6 @@ use raft::rpc::{Client};
 use raft::server::{Server, ServerInitialState};
 use raft::proto::key_value::*;
 use raft::proto::consensus::LogIndex;
-use rand::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

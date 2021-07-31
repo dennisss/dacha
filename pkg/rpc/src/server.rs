@@ -48,7 +48,7 @@ impl Http2Server {
         server.run().await
     }
 
-    async fn handle_request_impl(&self, mut request: http::Request) -> Result<http::Response> {
+    async fn handle_request_impl(&self, request: http::Request) -> Result<http::Response> {
         // TODO: Convert as many of the errors in this function as possible to gRPC
         // trailing status codes.
         

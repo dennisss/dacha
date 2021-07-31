@@ -1632,7 +1632,7 @@ impl Compiler<'_> {
         lines.nl();
 
         lines.add("#[async_trait]");
-        lines.add(format!("pub trait {}Service: Send + Sync {{", service.name));
+        lines.add(format!("pub trait {}Service: Send + Sync + 'static {{", service.name));
 
         for rpc in service.rpcs() {
             let req_type = self
@@ -1659,12 +1659,13 @@ impl Compiler<'_> {
         lines.add("}");
         lines.nl();
 
+        // TODO: Anything that is already clone-able should not have to be wrapped. 
         lines.add(format!("
             pub trait {service_name}IntoService {{
                 fn into_service(self) -> Arc<dyn ::rpc::Service>;
             }}
 
-            impl<T: {service_name}Service + Send + Sync + 'static> {service_name}IntoService for T {{
+            impl<T: {service_name}Service> {service_name}IntoService for T {{
                 fn into_service(self) -> Arc<dyn ::rpc::Service> {{
                     Arc::new({service_name}ServiceCaller {{
                         inner: self
@@ -1686,7 +1687,7 @@ impl Compiler<'_> {
 
         lines.add("#[async_trait]");
         lines.add(format!(
-            "impl<T: {service_name}Service + Send + Sync> ::rpc::Service for {service_name}ServiceCaller<T> {{",
+            "impl<T: {service_name}Service> ::rpc::Service for {service_name}ServiceCaller<T> {{",
                                service_name = service.name));
         lines.indented(|lines| {
             // TODO: Escape the string if needed.

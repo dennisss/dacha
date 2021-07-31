@@ -368,7 +368,7 @@ impl ConnectionWriter {
 
                         next_frame = Some((
                             *stream_id, frame_data, stream_state.sending_trailers.take(),
-                            stream_state.sending_end, stream.is_closed(&stream_state)));
+                            stream.sending_end_flushed, stream.is_closed(&stream_state)));
 
                         break;
                     }

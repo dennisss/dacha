@@ -11,7 +11,10 @@ use common::errors::*;
 use common::async_std::task;
 use common::failure::ResultExt;
 use common::futures::AsyncWriteExt;
-use container::ContainerNodeStub;
+use common::async_std::fs;
+use crypto::hasher::Hasher;
+use crypto::sha256::SHA256Hasher;
+use container::{ContainerNodeStub, TaskSpec_Volume};
 use protobuf::text::parse_text_proto;
 
 
@@ -29,7 +32,8 @@ enum Args {
 
 #[derive(Args)]
 struct LogsCommand {
-    container_id: String
+    task_name: String,
+    // container_id: String
 }
 
 async fn run() -> Result<()> {
@@ -66,54 +70,81 @@ async fn run_start() -> Result<()> {
     let stub = new_stub().await?;
     let request_context = rpc::ClientRequestContext::default();
 
-    let mut container_config = container::ContainerConfig::default();
-    parse_text_proto(r#"
-        process {
-            args: ["/usr/bin/bash", "-c", "for i in {1..5}; do echo \"Tick $i\"; sleep 1; done"]
-        }
-        mounts: [
-            {
-                destination: "/proc"
-                type: "proc"
-                source: "proc"
-                options: ["noexec", "nosuid", "nodev"]
-            },
-            {
-                destination: "/usr/bin"
-                source: "/usr/bin"
-                options: ["bind", "ro"]
-            },
-            {
-                destination: "/lib64"
-                source: "/lib64"
-                options: ["bind", "ro"]
-            },
-            {
-                destination: "/usr/lib"
-                source: "/usr/lib"
-                options: ["bind", "ro"]
+    let tmp_file = "/tmp/container_archive";
+    {
+        let mut tar_writer = compression::tar::Writer::open(tmp_file).await?;
+        
+        let root_dir = common::project_dir().join("target/release");
+        
+        let options = compression::tar::AppendFileOption {
+            mask: compression::tar::FileMetadataMask {},
+            root_dir: root_dir.clone()
+        };
+
+        tar_writer.append_file(&root_dir.join("adder_server"), &options).await?;
+        tar_writer.finish().await?;
+    }
+
+    let mut data = fs::read(tmp_file).await?;
+
+    let hash = {
+        let mut hasher = SHA256Hasher::default();
+        let hash = hasher.finish_with(&data);
+        common::hex::encode(hash)
+    };
+
+    println!("Uploading blob: {}", hash);
+
+    let mut blob_data = container::BlobData::default();
+    blob_data.set_id(hash);
+    blob_data.set_data(data);
+
+    let mut request = stub.UploadBlob(&request_context).await;
+    request.send(&blob_data).await;
+
+    // TOOD: Catch already exists errors.
+    if let Err(e) = request.finish().await {
+        let mut ignore_error = false;
+        if let Some(status) = e.downcast_ref::<rpc::Status>() {
+            if status.code == rpc::StatusCode::AlreadyExists {
+                println!("=> {}", status.message);
+                ignore_error = true;
             }
-        ]
-    "#, &mut container_config)?;
+        }
 
-    let mut start_request = container::StartRequest::default();
-    start_request.set_config(container_config);
+        if !ignore_error {
+            return Err(e);
+        }
+    }
 
-    let start_response = stub.Start(&request_context, &start_request).await.result?;
+    println!("Starting server");
 
-    println!("Container Id: {}", start_response.container_id());
+    // ["/usr/bin/bash", "-c", "for i in {1..20}; do echo \"Tick $i\"; sleep 1; done"]
+
+    let mut start_request = container::StartTaskRequest::default();
+    start_request.task_spec_mut().set_name("adder_server");
+    start_request.task_spec_mut().add_args("/volumes/main/adder_server".into());
+
+    let mut main_volume = TaskSpec_Volume::default();
+    main_volume.set_name("main");
+    main_volume.set_blob_id(blob_data.id());
+
+    start_request.task_spec_mut().add_volumes(main_volume);
+
+    let start_response = stub.StartTask(&request_context, &start_request).await.result?;
+
+    // println!("Container Id: {}", start_response.container_id());
 
     let mut log_request = container::LogRequest::default();
-    log_request.set_container_id(start_response.container_id());
+    log_request.set_task_name(start_request.task_spec().name());
 
     let mut log_stream = stub.GetLogs(&request_context, &log_request).await;
 
-    println!("UNBLOCKED");
-
+    // TODO: Currently this seems to never unblock once the connection has been closed.
     while let Some(entry) = log_stream.recv().await {
         let value = std::str::from_utf8(entry.value())?;
-        println!("{}", value);
-        common::async_std::io::stdout().flush().await?;
+        print!("{}", value);
+        // common::async_std::io::stdout().flush().await?;
     }
 
     log_stream.finish().await?;
@@ -126,14 +157,16 @@ async fn run_logs(logs_command: LogsCommand) -> Result<()> {
     let request_context = rpc::ClientRequestContext::default(); 
 
     let mut log_request = container::LogRequest::default();
-    log_request.set_container_id(&logs_command.container_id);
+    log_request.set_task_name(&logs_command.task_name);
 
     let mut log_stream = stub.GetLogs(&request_context, &log_request).await;
 
     while let Some(entry) = log_stream.recv().await {
+        println!("...");
+
         let value = std::str::from_utf8(entry.value())?;
-        println!("{}", value);
-        common::async_std::io::stdout().flush().await?;
+        print!("{}", value);
+        // common::async_std::io::stdout().flush().await?;
     }
 
     log_stream.finish().await?;

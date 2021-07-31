@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use common::errors::*;
-use rand::RngCore;
+use crypto::random::{self, RngExt};
 
 use crate::config_state::*;
 use crate::constraint::*;
@@ -1289,10 +1289,8 @@ impl ConsensusModule {
     }
 
     fn new_election_timeout() -> Duration {
-        let mut rng = rand::thread_rng();
-        let time = ELECTION_TIMEOUT.0
-            + ((rng.next_u32() as u64) * (ELECTION_TIMEOUT.1 - ELECTION_TIMEOUT.0))
-                / (std::u32::MAX as u64);
+        let mut rng = random::clocked_rng();
+        let time = rng.between(ELECTION_TIMEOUT.0, ELECTION_TIMEOUT.1);
 
         Duration::from_millis(time)
     }

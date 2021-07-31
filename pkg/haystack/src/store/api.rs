@@ -2,10 +2,10 @@ use std::io::{Write, Read};
 use std::mem::size_of;
 
 use common::bytes::Bytes;
-use rand::RngCore;
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 use common::errors::*;
 use common::base64;
+use crypto::random::SharedRng;
 
 use crate::types::*;
 use crate::paths::*;
@@ -93,7 +93,7 @@ impl CookieBuf {
 
 	pub async fn random() -> Result<CookieBuf> {
 		let mut arr = Vec::new(); arr.resize(COOKIE_SIZE, 0);
-		crypto::random::secure_random_bytes(&mut arr).await?;
+		crypto::random::global_rng().generate_bytes(&mut arr).await;
 		Ok(CookieBuf::from(arr))
 	}
 

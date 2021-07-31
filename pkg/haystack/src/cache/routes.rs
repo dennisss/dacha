@@ -2,9 +2,8 @@ use std::sync::Arc;
 use std::time::{SystemTime, Duration};
 
 use common::errors::*;
-use rand::thread_rng;
-use rand::seq::SliceRandom;
 use common::bytes::Bytes;
+use crypto::random::{self, RngExt};
 
 use super::api::*;
 use crate::store::api::*;
@@ -107,8 +106,7 @@ async fn handle_proxy_request(
 		}).collect::<Vec<_>>();
 
 		// Randomly choose any of the backends
-		let mut rng = thread_rng();
-		arr.shuffle(&mut rng);
+		random::clocked_rng().shuffle(&mut arr);
 
 		Ok(arr)
 	};

@@ -4,7 +4,6 @@
 
 #[macro_use] extern crate common;
 extern crate dotenv;
-extern crate rand;
 extern crate byteorder;
 extern crate fs2;
 extern crate mime_sniffer;

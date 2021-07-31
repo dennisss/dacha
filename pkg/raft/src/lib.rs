@@ -11,7 +11,6 @@ extern crate common;
 extern crate byteorder;
 extern crate crypto;
 extern crate http;
-extern crate rand;
 extern crate protobuf;
 extern crate google;
 

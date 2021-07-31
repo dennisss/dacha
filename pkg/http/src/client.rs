@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::convert::{TryFrom, TryInto};
 use std::net::SocketAddr;
+use std::collections::HashMap;
 
 use common::{async_std::net::TcpStream};
 use common::async_std::prelude::*;
@@ -27,6 +28,7 @@ use crate::response::*;
 use crate::request::*;
 use crate::method::*;
 use crate::message_body::{encode_request_body_v1, decode_response_body_v1};
+use crate::v2;
 
 // TODO: Need to clearly document which responsibilities are reserved for the client.
 
@@ -42,6 +44,10 @@ pub struct ClientOptions {
     /// server. By default, we'll start by sending HTTP1 requests until we are confident that
     /// the remote server supports HTTP2.
     pub force_http2: bool
+
+    // TODO: Idle timeout or allow persistent connections
+
+    // TODO: Should have a timeout for establishing a connection.
 }
 
 impl ClientOptions {
@@ -85,8 +91,36 @@ impl ClientOptions {
     }
 }
 
+enum ClientConnectionEntry {
+    V1(ClientConnection),
+    V2(v2::Connection)
+}
+
+#[derive(Default)]
+struct ClientConnectionPool {
+    connections: HashMap<usize, Arc<ClientConnectionEntry>>,
+    last_id: usize,
+}
+
+/*
+TODO: Connections should have an accepting_connections()
+
+    We need information on accepting_connections() in 
+*/
+
+
 /// HTTP client connected to a single server.
 pub struct Client {
+    shared: Arc<ClientShared>
+}
+
+impl Clone for Client {
+    fn clone(&self) -> Self {
+        Self { shared: self.shared.clone() }
+    }
+}
+
+struct ClientShared {
     // /// Uri to which we should connection.
     // /// This should only a scheme and authority.
     // base_uri: Uri,
@@ -96,8 +130,11 @@ pub struct Client {
     /// TODO: Re-generate this on-demand so that new connections  we start a new connection as we may want to re-query DNS.
     socket_addr: SocketAddr,
 
+    connection_pool: Mutex<ClientConnectionPool>,
+
     // A client should have a list of 
 }
+
 
 impl Client {
     /// Creates a new HTTP client connecting to the given host/port.
@@ -111,7 +148,7 @@ impl Client {
     pub fn create(options: ClientOptions) -> Result<Self> {
         let port = options.authority.port.unwrap_or(if options.secure { 443 } else { 80 });
 
-        // TODO: Whenever we need to create a new connection, consider 
+        // TODO: Whenever we need to create a new connection, consider re-fetching the dns result.
         let ip = match &options.authority.host {
             Host::Name(n) => {
                 // TODO: This should become async.
@@ -136,57 +173,38 @@ impl Client {
         };
 
         Ok(Client {
-            // TODO: Check port is in u16 range in the parser
-            socket_addr: SocketAddr::new(ip.try_into()?, port as u16),
-            options
+            shared: Arc::new(ClientShared {
+                // TODO: Check port is in u16 range in the parser
+                socket_addr: SocketAddr::new(ip.try_into()?, port as u16),
+                options,
+                connection_pool: Mutex::new(ClientConnectionPool::default())
+            })
         })
     }
 
     // TODO: If we recieve an unterminated body, then we should close the
     // connection right afterwards.
 
-    // Given request, if not connected, connect
-    // Write request to stream
-    // Read response
-    // - TODO: Response may be available before the request is sent (in the case of
-    //   bodies)
-    // If not using a content length, then we should close the connection
-    pub async fn request(&self, mut request: Request) -> Result<Response> {
-        // TODO: We should allow the Connection header, but we shouldn't allow any options
-        // which are used internally (keep-alive and close)
-        for header in &request.head.headers.raw_headers {
-            if header.is_transport_level() {
-                return Err(format_err!("Request contains reserved header: {}", header.name.as_str()));
-            }
-        }
+    // TODO: We need to refactor this to re-use existing connections?
 
-        // TODO: Only pop this if we need to perfect an HTTP1 request (in HTTP2 we can forward a lot of stuff).
-        if let Some(scheme) = request.head.uri.scheme.take() {
-            // TODO: Verify if 'http(s)' as others aren't supported by this client.  
-        } else {
-            // return Err(err_msg("Missing scheme in URI"));
-        }
+    // TODO: request() can be split into two halves,
 
-        if !request.head.uri.authority.is_some() {
-            request.head.uri.authority = Some(self.options.authority.clone());
-        }
-
-        // TODO: For an empty body, the client doesn't need to send any special headers.
-
+    /// NOTE: Must be called with a lock on the connection pool
+    async fn new_connection(&self, connection_id: usize) -> Result<Arc<ClientConnectionEntry>> {
         // TODO: Use timeout?
-        let raw_stream = TcpStream::connect(self.socket_addr).await?;
+        let raw_stream = TcpStream::connect(self.shared.socket_addr).await?;
         raw_stream.set_nodelay(true)?;
 
         let mut reader: Box<dyn Readable> = Box::new(raw_stream.clone());
         let mut writer: Box<dyn Writeable> = Box::new(raw_stream);
 
-        let mut start_http2 = self.options.force_http2;
+        let mut start_http2 = self.shared.options.force_http2;
 
-        if self.options.secure {
+        if self.shared.options.secure {
             let mut client_options = crypto::tls::options::ClientOptions::recommended();
-            // TODO: 
+            // TODO: Merge with self.options
 
-            if let Host::Name(name) = &self.options.authority.host {
+            if let Host::Name(name) = &self.shared.options.authority.host {
                 client_options.hostname = name.clone();
             }
             client_options.alpn_ids.push("h2".into());
@@ -211,36 +229,29 @@ impl Client {
         }
 
         if start_http2 {
-            let connection_options = crate::v2::ConnectionOptions::default();
+            let connection_options = v2::ConnectionOptions::default();
 
-            let connection_v2 = crate::v2::Connection::new(connection_options, None);
+            let connection_v2 = v2::Connection::new(connection_options, None);
 
-            let initial_state = crate::v2::ConnectionInitialState::raw();
+            let initial_state = v2::ConnectionInitialState::raw();
 
-            let conn_runner = task::spawn(
-                connection_v2.run(initial_state, reader, writer));
+            let runner = connection_v2.run(initial_state, reader, writer);
+            task::spawn(
+                Self::connection_runner(Arc::downgrade(&self.shared), connection_id, runner));
 
-            request.head.uri.scheme = Some(AsciiString::from("https").unwrap());
-
-            let response = connection_v2.request(request).await?;
-            // TODO: Shut down the connection and join the conn_runner.
-
-            connection_v2.shutdown(true).await?;
-
-            conn_runner.await?;
-
-            return Ok(response);
+            return Ok(Arc::new(ClientConnectionEntry::V2(connection_v2)));
         }
-
-
 
         let conn = ClientConnection::new();
 
         let conn_runner = task::spawn(
-            conn.shared.clone().run(reader, writer));
+            Self::connection_runner(
+                Arc::downgrade(&self.shared), connection_id,
+                conn.shared.clone().run(reader, writer))
+        );
 
         // Attempt to upgrade to HTTP2 over clear text.
-        if !self.options.secure && false {
+        if !self.shared.options.secure && false {
             let local_settings = crate::v2::SettingsContainer::default();
 
             let mut connection_options = vec![];
@@ -281,34 +292,98 @@ impl Client {
             };
         }
 
-
-        let (sender, receiver) = channel::bounded(1);
-
-        conn.shared.connection_event_channel.0.send(ClientConnectionEvent::Request {
-            request,
-            upgrading: false,
-            response_handler: sender
-        }).await.map_err(|_| err_msg("Connection hung up"))?;
-
-        let res = receiver.recv().await??;
-        let res = match res {
-            ClientResponse::Regular { response } => response,
-            ClientResponse::Upgrading { response_head, .. } => {
-                return Err(err_msg("Did not expect an upgrade"));
-            }
-        };
-
-        if let Some(r) = conn_runner.cancel().await {
-            r?;
-        }
-
-        
-
-        Ok(res)
-
+        Ok(Arc::new(ClientConnectionEntry::V1(conn)))
     }
 
-    // pub async fn request_upgrade()
+    // NOTE: This uses a Weak pointer to ensure that the ClientShared and Connection can be dropped
+    // which may lead to the Connection shutting down. 
+    async fn connection_runner<F: std::future::Future<Output=Result<()>>>(
+        client_shared: Weak<ClientShared>, connection_id: usize, f: F
+    ) {
+        if let Err(e) = f.await {
+            eprintln!("http::Client Connection failed: {:?}", e);
+        }
+
+        if let Some(client_shared) = client_shared.upgrade() {
+            let mut connection_pool = client_shared.connection_pool.lock().await;
+            connection_pool.connections.remove(&connection_id);
+        }
+    }
+
+    async fn get_connection(&self) -> Result<Arc<ClientConnectionEntry>> {
+        let mut pool = self.shared.connection_pool.lock().await;
+
+        let first_connection = pool.connections.values().next();
+        if let Some(connection) = first_connection {
+            return Ok(connection.clone());
+        }
+
+        let connection_id = pool.last_id + 1;
+        pool.last_id = connection_id;
+
+        let connection = self.new_connection(connection_id).await?;
+
+        pool.connections.insert(connection_id, connection.clone());
+        Ok(connection)
+    }
+
+    // Given request, if not connected, connect
+    // Write request to stream
+    // Read response
+    // - TODO: Response may be available before the request is sent (in the case of
+    //   bodies)
+    // If not using a content length, then we should close the connection
+    pub async fn request(&self, mut request: Request) -> Result<Response> {
+        // TODO: We should allow the Connection header, but we shouldn't allow any options
+        // which are used internally (keep-alive and close)
+        for header in &request.head.headers.raw_headers {
+            if header.is_transport_level() {
+                return Err(format_err!("Request contains reserved header: {}", header.name.as_str()));
+            }
+        }
+
+        // TODO: Only pop this if we need to perfect an HTTP1 request (in HTTP2 we can forward a lot of stuff).
+        if let Some(scheme) = request.head.uri.scheme.take() {
+            // TODO: Verify if 'http(s)' as others aren't supported by this client.  
+        } else {
+            // return Err(err_msg("Missing scheme in URI"));
+        }
+
+        if !request.head.uri.authority.is_some() {
+            request.head.uri.authority = Some(self.shared.options.authority.clone());
+        }
+
+
+        let conn_entry = self.get_connection().await?;
+
+        match conn_entry.as_ref() {
+            ClientConnectionEntry::V2(conn) => {
+                request.head.uri.scheme = Some(AsciiString::from("https").unwrap());
+
+                let response = conn.request(request).await?;
+                Ok(response)
+            }
+            ClientConnectionEntry::V1(conn) => {
+                let (sender, receiver) = channel::bounded(1);
+
+                conn.shared.connection_event_channel.0.send(ClientConnectionEvent::Request {
+                    request,
+                    upgrading: false,
+                    response_handler: sender
+                }).await.map_err(|_| err_msg("Connection hung up"))?;
+        
+                let res = receiver.recv().await??;
+                let res = match res {
+                    ClientResponse::Regular { response } => response,
+                    ClientResponse::Upgrading { response_head, .. } => {
+                        return Err(err_msg("Did not expect an upgrade"));
+                    }
+                };
+        
+                Ok(res)
+            }
+        }
+    }
 }
 
 
@@ -357,6 +432,7 @@ enum ClientResponse {
 }
 
 
+// TODO: On drop, mark the runner as closing.
 struct ClientConnection {
     shared: Arc<ClientConnectionShared>,
 }

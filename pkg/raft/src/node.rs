@@ -6,7 +6,10 @@ use common::async_std::task;
 use common::errors::*;
 use common::fs::DirLock;
 use common::futures::FutureExt;
+use crypto::random::RngExt;
+use crypto::random::SharedRngExt;
 use protobuf::Message;
+use crypto::random;
 
 use crate::atomic::*;
 use crate::discovery::*;
@@ -153,7 +156,7 @@ impl<R: 'static + Send> Node<R> {
 
                 // Assign a cluster id to our agent (usually would be retrieved
                 // through network discovery if not in bootstrap mode)
-                cluster_id = 0.into(); // rand::thread_rng().next_u64();
+                cluster_id = random::clocked_rng().uniform::<u64>().into();
 
                 let mut first_entry = LogEntry::default();
                 first_entry.pos_mut().set_term(1);

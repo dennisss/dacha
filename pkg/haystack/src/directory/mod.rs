@@ -6,11 +6,10 @@ mod db;
 use std::sync::Arc;
 
 use common::errors::*;
-use rand;
-use rand::prelude::*;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use common::FlipSign;
 use crypto::hasher::Hasher;
+use crypto::random::{self, RngExt};
 
 use crate::types::*;
 use self::models::*;
@@ -84,7 +83,7 @@ impl Directory {
 
 	pub fn create_logical_volume(&self) -> Result<LogicalVolume> {
 		self.db.create_logical_volume(&NewLogicalVolume {
-			hash_key: rand::thread_rng().next_u64().flip()
+			hash_key: random::clocked_rng().uniform()
 		})
 	}
 
@@ -103,10 +102,9 @@ impl Directory {
 			return Err(err_msg("No writeable volumes available"));
 		}
 
-		let vol_idx = (rand::thread_rng().next_u32() as usize) % avail_vols.len();
-		let vol = avail_vols[vol_idx];
+		let vol = random::clocked_rng().choose(&avail_vols);
 
-		Ok((*vol).clone())
+		Ok((**vol).clone())
 	}
 
 	/// For a photo, given its volume, picks a cache to use to 
@@ -157,8 +155,7 @@ impl Directory {
 		}
 
 		// Random load balancing
-		let mut rng = thread_rng();
-		let store = stores.choose(&mut rng).unwrap();
+		let store = random::clocked_rng().choose(&stores);
 
 		Ok((*store).clone())
 	}
@@ -187,7 +184,6 @@ impl Directory {
 }
 
 fn generate_cluster_id() -> ClusterId {
-	let mut rng = rand::thread_rng();
-	rng.next_u64()
+	random::clocked_rng().uniform()
 }
 

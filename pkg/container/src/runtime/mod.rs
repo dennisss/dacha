@@ -86,7 +86,13 @@ struct ContainerWaiter {
 // We want to be able to support subscribing to any events that occur for a 
 
 pub struct ContainerRuntime {
-    containers: Mutex<Vec<Container>>
+    containers: Mutex<Vec<Container>>,
+
+    /// 
+    ///
+    /// TODO: Convert to HashSet based listeners as we never need to deliver a single container id
+    /// if there already is an enqueued event for it. 
+    event_listeners: Mutex<Vec<channel::Sender<String>>>
 }
 
 impl Drop for ContainerRuntime {
@@ -114,10 +120,13 @@ impl ContainerRuntime {
 
         
         Ok(Arc::new(Self {
-            containers: Mutex::new(vec![])
+            containers: Mutex::new(vec![]),
+            event_listeners: Mutex::new(vec![])
         }))
     }
 
+    /// Runs the processing loop of the runtime. This must be continously polled while the ContainerRuntime
+    /// is in use.
     pub async fn run(self: Arc<Self>) -> Result<()> {
         loop {
             get_sigchld_channel().1.recv().await?;
@@ -165,7 +174,22 @@ impl ContainerRuntime {
         }
     }
 
-    pub async fn list(&self) -> Vec<ContainerMetadata> {
+    pub async fn add_event_listener(&self) -> channel::Receiver<String> {
+        let (sender, receiver) = channel::unbounded();
+
+        let mut listeners = self.event_listeners.lock().await;
+        listeners.push(sender);
+
+        receiver
+    }
+
+    pub async fn get_container(&self, container_id: &str) -> Option<ContainerMetadata> {
+        let containers = self.containers.lock().await;
+        containers.iter().find(|c| c.metadata.id() == container_id)
+            .map(|c| c.metadata.clone())
+    }
+
+    pub async fn list_containers(&self) -> Vec<ContainerMetadata> {
         let containers = self.containers.lock().await;
 
         let mut output = vec![];
@@ -178,7 +202,7 @@ impl ContainerRuntime {
     }
 
     /// Starts a container returning the id of that container.
-    pub async fn start(self: &Arc<Self>, container_config: &ContainerConfig) -> Result<String> {
+    pub async fn start_container(self: &Arc<Self>, container_config: &ContainerConfig) -> Result<String> {
         let mut container_id = vec![0u8; 16];
         crypto::random::secure_random_bytes(&mut &mut container_id).await?;
     
@@ -213,7 +237,6 @@ impl ContainerRuntime {
         let mut containers = self.containers.lock().await;
 
         // TODO: CLONE_INTO_CGROUP
-        // TODO: Set signal to SIGCHLD
         // TODO: Can memory (e.g. keys from the parent progress be read after the fork and do we need security against this?).
         let pid = nix::sched::clone(Box::new(|| {
             run_child_process(&container_config, &container_dir, &file_mapping)
@@ -246,7 +269,7 @@ impl ContainerRuntime {
         Ok(container_id)
     }
 
-    pub async fn kill(&self, container_id: &str, signal: Signal) -> Result<()> {
+    pub async fn kill_container(&self, container_id: &str, signal: Signal) -> Result<()> {
         let containers = self.containers.lock().await;
         let container = match containers.iter().find(|c| c.metadata.id() == container_id) {
             Some(c) => c,
@@ -282,7 +305,7 @@ impl ContainerRuntime {
 
     async fn write_log(file: File, log_writer: Arc<FileLogWriter>, stream: LogStream) {
         if let Err(e) = log_writer.write_stream(file, stream).await {
-            eprintln!("LOG WRITER FAILED: {:?}", e);
+            eprintln!("Log writer failed: {:?}", e);
         }
     }
 
@@ -316,11 +339,23 @@ impl ContainerRuntime {
         let container_id = input.container_id.as_str();
 
         let mut containers = self.containers.lock().await;
-        let mut container = containers.iter_mut()
+        let container = containers.iter_mut()
             .find(|c| c.metadata.id() == container_id).unwrap();
 
         container.metadata.set_state(ContainerState::Stopped);
         container.metadata.set_status(status);
+
+        {
+            let mut listeners = self.event_listeners.lock().await;
+            let mut i = 0;
+            while i < listeners.len() {
+                if let Err(_) = listeners[i].send(container_id.to_string()).await {
+                    listeners.swap_remove(i);
+                } else {
+                    i += 1;
+                }
+            }
+        }
 
         Ok(())
     }

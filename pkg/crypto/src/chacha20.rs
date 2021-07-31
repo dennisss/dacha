@@ -10,13 +10,13 @@ use crate::utils::xor;
 
 // TODO: Provide some warning of when the counter will overflow and wrap.
 
-const BLOCK_SIZE: usize = 64;
-const CHACHA20_KEY_SIZE: usize = 32;
-const CHACHA20_NONCE_SIZE: usize = 12;
+pub const CHACHA20_BLOCK_SIZE: usize = 64;
+pub const CHACHA20_KEY_SIZE: usize = 32;
+pub const CHACHA20_NONCE_SIZE: usize = 12;
 
 type State = [u32; 16];
 
-struct ChaCha20 {
+pub struct ChaCha20 {
     /// This will always contain the key, nonce, etc.
     /// The only part of this that should be mutated is the counter.
     state: State,
@@ -26,9 +26,9 @@ struct ChaCha20 {
 }
 
 impl ChaCha20 {
-    // Key should be 256bits.
-    // Nonce should be 12 bytes
-    fn new(key: &[u8], nonce: &[u8]) -> Self {
+    /// Key should be 256bits.
+    /// Nonce should be 12 bytes
+    pub fn new(key: &[u8], nonce: &[u8]) -> Self {
         assert_eq!(key.len(), CHACHA20_KEY_SIZE);
         assert_eq!(nonce.len(), CHACHA20_NONCE_SIZE);
 
@@ -112,7 +112,7 @@ impl ChaCha20 {
 
         let mut state = self.state.clone();
 
-        for i in 0..10 {
+        for _ in 0..10 {
             Self::quarter_round(&mut state, 0, 4, 8, 12);
             Self::quarter_round(&mut state, 1, 5, 9, 13);
             Self::quarter_round(&mut state, 2, 6, 10, 14);
@@ -130,20 +130,20 @@ impl ChaCha20 {
         Self::serialize(state)
     }
 
-    fn encrypt(&mut self, data: &[u8], out: &mut [u8]) {
+    pub fn encrypt(&mut self, data: &[u8], out: &mut [u8]) {
         assert_eq!(data.len(), out.len());
 
         let mut i = 0;
-        let n = data.len() / BLOCK_SIZE;
-        while i < n * BLOCK_SIZE {
+        let n = data.len() / CHACHA20_BLOCK_SIZE;
+        while i < n * CHACHA20_BLOCK_SIZE {
             let key_stream = self.get_block();
-            let j = i + BLOCK_SIZE;
+            let j = i + CHACHA20_BLOCK_SIZE;
             xor(&data[i..j], &key_stream, &mut out[i..j]);
-            self.bytes_processed += BLOCK_SIZE;
+            self.bytes_processed += CHACHA20_BLOCK_SIZE;
             i = j;
         }
 
-        let r = data.len() % BLOCK_SIZE;
+        let r = data.len() % CHACHA20_BLOCK_SIZE;
         if r != 0 {
             let key_stream = self.get_block();
             i = data.len() - r;
@@ -152,12 +152,12 @@ impl ChaCha20 {
         }
     }
 
-    fn decrypt(&mut self, data: &[u8], out: &mut [u8]) {
+    pub fn decrypt(&mut self, data: &[u8], out: &mut [u8]) {
         self.encrypt(data, out);
     }
 
     /// Generates a 32byte one time key to be used with poly1305
-    fn poly1305_keygen(&mut self) -> Vec<u8> {
+    pub fn poly1305_keygen(&mut self) -> Vec<u8> {
         let key_block = self.get_block_at_count(0);
         key_block[0..32].to_vec()
     }

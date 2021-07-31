@@ -121,7 +121,7 @@ impl dyn Channel {
         Ok(response_message.ok_or_else(|| err_msg("Unary RPC returned OK without a body"))?)
     }
 
-    pub async fn call_streaming_unary<Req: protobuf::Message, Res: protobuf::Message>(
+    pub async fn call_stream_unary<Req: protobuf::Message, Res: protobuf::Message>(
         &self,
         service_name: &str,
         method_name: &str,

@@ -14,8 +14,7 @@ use common::FlipSign;
 use common::futures::future::*;
 use common::async_std::task;
 use common::async_std::sync::{Mutex, RwLock};
-use rand::seq::SliceRandom;
-use rand::Rng;
+use crypto::random::{clocked_rng, RngExt};
 
 use crate::types::*;
 use crate::paths::Host;
@@ -271,8 +270,7 @@ impl StoreMachine {
 
 			// Because many machines can be pending allocation all at once, we will randomly sleep some fraction of the heartbeat before trying to create a volume in order to avoid many machines trying to 
 			if pending_alloc {
-				// NOTE: .gen() should return a positive float from 0-1
-				time = ((time as f64) * rand::thread_rng().gen::<f64>() * 0.25) as u64;
+				time = ((time as f64) * clocked_rng().between(0.0, 0.25)) as u64;
 			}
 
 			mac_handle.thread.wait(time).await;
@@ -373,15 +371,11 @@ impl StoreMachine {
 
 		let vol_id = vol.id.flip();
 
-		// TODO: Uncomment this once we have a Sync random number generator.
-		/*
-
-		let mut rng = rand::thread_rng();
-
 		// Random choice of which machines to choose as replicas
 		// TODO: Possibly more useful to spear across less-allocated machines first (with randomness still though)
-		macs.shuffle(&mut rng);
-		*/
+		let mut rng = clocked_rng();
+		rng.shuffle(&mut macs);
+
 
 		// TODO: Should retry once for each machine
 		// Also, if a machine fails, then we can proceed up to the next available machine (next in our random sequence)
