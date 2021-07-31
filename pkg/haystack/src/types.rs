@@ -14,7 +14,8 @@ pub type MachineId = u32;
 
 pub type VolumeId = u32;
 
-/// NOTE: This is mainly the size as stored on disk (in memory we will hold this as a u64 for more convenience)
+/// NOTE: This is mainly the size as stored on disk (in memory we will hold this
+/// as a u64 for more convenience)
 pub type BlockSize = u32;
 
 pub type BlockOffset = u32;
@@ -27,13 +28,10 @@ pub type NeedleSize = u64;
 
 pub type Cookie = [u8; 16];
 
-
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct NeedleKeys {
-	pub key: NeedleKey,
-	pub alt_key: NeedleAltKey
+    pub key: NeedleKey,
+    pub alt_key: NeedleAltKey,
 }
 
 pub type ConfigRef = std::sync::Arc<Config>;
-
-

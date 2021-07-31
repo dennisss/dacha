@@ -3,12 +3,12 @@ use std::fmt::Debug;
 use common::errors::*;
 
 const MAX_PRIMARY_LANGUAGE_ID: u16 = (1 << 10) - 1;
-const MAX_SUB_LANGUAGE_ID: u8 = (1 << 6) - 1; 
+const MAX_SUB_LANGUAGE_ID: u8 = (1 << 6) - 1;
 
 /// Values pulled from https://www.usb.org/developers/docs/USB_LANGIDs.pdf
 #[derive(Clone, Copy)]
 pub struct Language {
-    id: u16
+    id: u16,
 }
 
 impl Language {
@@ -21,7 +21,7 @@ impl Language {
         }
 
         Ok(Self {
-            id: primary_id | ((sub_id as u16) << 10)
+            id: primary_id | ((sub_id as u16) << 10),
         })
     }
 
@@ -44,7 +44,12 @@ impl Language {
 
 impl Debug for Language {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}::{:?}", self.primary_language(), self.sub_language())
+        write!(
+            f,
+            "{:?}::{:?}",
+            self.primary_language(),
+            self.sub_language()
+        )
     }
 }
 
@@ -204,7 +209,7 @@ pub enum SubLanguage {
     VendorDefined2,
     VendorDefined3,
     VendorDefined4,
-    Unknown(u8)    
+    Unknown(u8),
 }
 
 macro_rules! sublang_matchers {

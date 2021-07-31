@@ -8,7 +8,7 @@ use common::errors::*;
 How do we have a service that performs some shared processing on a service to get another service which may contain some
 request context
 
-Challenges with 
+Challenges with
 
 */
 
@@ -41,7 +41,7 @@ pub trait Response: Send + Sync {
 /// 'Service' instance.
 #[async_trait]
 pub trait Service<RequestContext>: Send + Sync {
-    /// Name of the service. 
+    /// Name of the service.
     fn service_name(&self) -> &'static str;
 
     /// Names of all methods which this service can accept. (used for reflection).
@@ -51,7 +51,7 @@ pub trait Service<RequestContext>: Send + Sync {
     ///
     /// Arguments:
     /// - method_name: Name of the method being requested.
-    /// - request: Serialized form of the 
+    /// - request: Serialized form of the
     ///
     /// TODO: Should return a GRPC compatible status.
     async fn call(&self, method_name: &str, request: Bytes, request_context: RequestContext) -> Result<Bytes>;
@@ -64,7 +64,7 @@ pub trait Channel<RequestContext> {
         service_name: &'static str,
         method_name: &'static str,
         request_bytes: Bytes,
-        // request_options: 
+        // request_options:
     ) -> Result<Bytes>;
 }
 */

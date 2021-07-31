@@ -1,7 +1,7 @@
 mod context;
+mod device;
 mod transfer;
 mod usbdevfs;
-mod device;
 
-pub use device::Device;
 pub use context::{Context, DeviceEntry};
+pub use device::Device;

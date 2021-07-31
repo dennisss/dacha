@@ -6,7 +6,6 @@ use protobuf_compiler::spec::FieldNumber;
 
 use crate::Enum;
 
-
 pub enum Reflection<'a> {
     F32(&'a f32),
     F64(&'a f64),
@@ -20,7 +19,7 @@ pub enum Reflection<'a> {
     Repeated(&'a dyn RepeatedFieldReflection),
     Message(&'a dyn MessageReflection),
     Enum(&'a dyn Enum),
-    Set(&'a dyn SetFieldReflection)
+    Set(&'a dyn SetFieldReflection),
 }
 
 pub enum ReflectionMut<'a> {
@@ -36,15 +35,15 @@ pub enum ReflectionMut<'a> {
     Repeated(&'a mut dyn RepeatedFieldReflection),
     Message(&'a mut dyn MessageReflection),
     Enum(&'a mut dyn Enum),
-    Set(&'a mut dyn SetFieldReflection)
-    // NOTE: reflect_mut() on an option will simply assign a new default value.
-    // TODO: Support controlling presence with reflection?
-    // Option(Option<&'a mut dyn Reflect>)
+    Set(&'a mut dyn SetFieldReflection), /* NOTE: reflect_mut() on an option will simply assign
+                                          * a new default value.
+                                          * TODO: Support controlling presence with reflection?
+                                          * Option(Option<&'a mut dyn Reflect>) */
 }
 
 pub struct FieldDescriptor<'a> {
     pub number: FieldNumber,
-    pub name: &'a str
+    pub name: &'a str,
 }
 
 /// NOTE: Should be implemented by all Messages.
@@ -178,7 +177,7 @@ impl<T: Reflect + Default> RepeatedFieldReflection for Vec<T> {
 
 pub trait SetFieldReflection {
     fn len(&self) -> usize;
- 
+
     fn entry<'a>(&'a self) -> Box<dyn SetFieldEntryReflection + 'a>;
 
     fn entry_mut<'a>(&'a mut self) -> Box<dyn SetFieldEntryReflectionMut + 'a>;

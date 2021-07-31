@@ -28,7 +28,7 @@ parser!(parse_object<&str, Value> => seq!(c => {
         if obj.contains_key(&key) {
             return Err(format_err!("Duplicate key in object: {:?}", key));
         }
-        
+
         obj.insert(key, value);
     }
 
@@ -108,7 +108,6 @@ parser!(parse_character<&str, char> => seq!(c => {
     Ok(v)
 }));
 
-
 regexp!(NUMBER => "^-?(?:[1-9][0-9]+|[0-9])(?:\\.[0-9]+)?(?:[eE][+\\-]?[0-9]+)?");
 
 fn parse_number(input: &str) -> ParseResult<f64, &str> {
@@ -122,7 +121,6 @@ fn parse_number(input: &str) -> ParseResult<f64, &str> {
     Err(err_msg("Not a number"))
 }
 
-
 parser!(parse_whitespace<&str, ()> => seq!(c => {
     c.next(many(one_of(" \n\r\t")))?;
     Ok(())
@@ -135,5 +133,4 @@ mod tests {
     fn regexp_usage_test() {
         println!("NUMBER REGEXP {}", super::NUMBER.estimated_memory_usage());
     }
-
 }

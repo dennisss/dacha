@@ -1,5 +1,3 @@
-
-
 #[derive(Debug, Fail)]
 pub struct Error {
     pub kind: ErrorKind,
@@ -14,7 +12,6 @@ impl std::fmt::Display for Error {
 
 #[derive(Debug)]
 pub enum ErrorKind {
-
     ///
     DeviceClosing,
 
@@ -23,7 +20,4 @@ pub enum ErrorKind {
     EndpointNotFound,
 
     Overflow,
-
-
 }
-

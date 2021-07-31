@@ -1,5 +1,5 @@
-// Utilities for working with file descriptors especially related to pluming them into
-// sub-processes.
+// Utilities for working with file descriptors especially related to pluming
+// them into sub-processes.
 
 use std::os::unix::prelude::{FromRawFd, RawFd};
 
@@ -12,11 +12,13 @@ pub const STDOUT: RawFd = 1;
 pub const STDERR: RawFd = 2;
 
 /// Assumptions make:
-/// - Should never add multiple entries with FileReference::Existing items that point to the same file.
-/// - The target fd's do not intersect with the set of existing fd's in the entris
+/// - Should never add multiple entries with FileReference::Existing items that
+///   point to the same file.
+/// - The target fd's do not intersect with the set of existing fd's in the
+///   entris
 #[derive(Default)]
 pub struct FileMapping {
-    entries: Vec<(RawFd, FileReference)>
+    entries: Vec<(RawFd, FileReference)>,
 }
 
 impl FileMapping {
@@ -25,7 +27,7 @@ impl FileMapping {
         self
     }
 
-    pub fn iter(&self) -> impl Iterator<Item=&(RawFd, FileReference)> {
+    pub fn iter(&self) -> impl Iterator<Item = &(RawFd, FileReference)> {
         self.entries.iter()
     }
 }
@@ -33,7 +35,7 @@ impl FileMapping {
 pub struct FileReference {
     // NOTE: We use in-indirection through an internal struct to allow changing the handle to None
     // before dropping.
-    handle: FileReferenceHandle
+    handle: FileReferenceHandle,
 }
 
 enum FileReferenceHandle {
@@ -42,7 +44,7 @@ enum FileReferenceHandle {
     Path(String),
 }
 
-impl Drop for FileReference { 
+impl Drop for FileReference {
     fn drop(&mut self) {
         if let FileReferenceHandle::Existing(fd) = &self.handle {
             let _ = unsafe { libc::close(*fd) };
@@ -54,12 +56,8 @@ impl FileReference {
     pub fn open(mut self) -> Result<std::fs::File> {
         let file = match &self.handle {
             FileReferenceHandle::None => panic!("Opening empty FileReference"),
-            FileReferenceHandle::Existing(fd) => {
-                unsafe { std::fs::File::from_raw_fd(*fd) }
-            }
-            FileReferenceHandle::Path(path) => {
-                std::fs::File::open(path)?
-            }
+            FileReferenceHandle::Existing(fd) => unsafe { std::fs::File::from_raw_fd(*fd) },
+            FileReferenceHandle::Path(path) => std::fs::File::open(path)?,
         };
 
         // Required in order to prevent the drop() handler from double closing it.
@@ -80,7 +78,9 @@ impl FileReference {
     }
 
     fn existing(fd: RawFd) -> Self {
-        Self { handle: FileReferenceHandle::Existing(fd) }
+        Self {
+            handle: FileReferenceHandle::Existing(fd),
+        }
     }
 
     pub fn pipe() -> Result<(Self, Self)> {

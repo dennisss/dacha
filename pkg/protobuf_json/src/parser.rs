@@ -1,12 +1,11 @@
 use common::errors::*;
-use protobuf::EnumValue;
 use protobuf::reflection::Reflect;
 use protobuf::reflection::ReflectionMut;
-
+use protobuf::EnumValue;
 
 // TODO: Support field names that are translated to lowerCamelCase
-// TODO: We should just sanitize in the protobuf compiler that all field names are unique after ignoring case and
-// delimiters
+// TODO: We should just sanitize in the protobuf compiler that all field names
+// are unique after ignoring case and delimiters
 
 // TODO: Support the 'json_name' option
 
@@ -21,9 +20,7 @@ macro_rules! integer_parser {
 
                 num
             }
-            json::Value::String(v) => {
-                v.parse()?
-            }
+            json::Value::String(v) => v.parse()?,
             _ => {
                 return Err(err_msg("Unsupported json value for integer"));
             }
@@ -31,18 +28,19 @@ macro_rules! integer_parser {
     }};
 }
 
-
 // TODO: Start using these.
 #[derive(Default)]
 pub struct ParserOptions {
-    pub ignore_unknown_fields: bool
+    pub ignore_unknown_fields: bool,
 }
 
 pub trait MessageJsonParser {
-    fn parse_json(value: &str, options: &ParserOptions) -> Result<Self> where Self: Sized;
+    fn parse_json(value: &str, options: &ParserOptions) -> Result<Self>
+    where
+        Self: Sized;
 }
 
-impl <M: Reflect + Default> MessageJsonParser for M {
+impl<M: Reflect + Default> MessageJsonParser for M {
     fn parse_json(value: &str, options: &ParserOptions) -> Result<Self> {
         let value = json::parse(value)?;
         let mut inst = M::default();
@@ -60,24 +58,28 @@ fn apply_json_value_to_reflection(r: ReflectionMut, value: &json::Value) -> Resu
             }
 
             *r = double as f32;
-        },
+        }
         ReflectionMut::F64(r) => {
             *r = get_f64(value)?;
-        },
+        }
         ReflectionMut::I32(r) => integer_parser!(r, value, i32),
         ReflectionMut::I64(r) => integer_parser!(r, value, i64),
         ReflectionMut::U32(r) => integer_parser!(r, value, u32),
         ReflectionMut::U64(r) => integer_parser!(r, value, u64),
-        ReflectionMut::Bool(r) => {
-            match value {
-                json::Value::Bool(v) => { *r = *v; }
-                _ => { return Err(err_msg("Unsupported json value for bool")); }
+        ReflectionMut::Bool(r) => match value {
+            json::Value::Bool(v) => {
+                *r = *v;
+            }
+            _ => {
+                return Err(err_msg("Unsupported json value for bool"));
             }
         },
-        ReflectionMut::String(r) => {
-            match value {
-                json::Value::String(v) => { *r = v.clone(); }
-                _ => { return Err(err_msg("Unsupported json value for string")); }
+        ReflectionMut::String(r) => match value {
+            json::Value::String(v) => {
+                *r = v.clone();
+            }
+            _ => {
+                return Err(err_msg("Unsupported json value for string"));
             }
         },
         ReflectionMut::Bytes(r) => {
@@ -85,42 +87,47 @@ fn apply_json_value_to_reflection(r: ReflectionMut, value: &json::Value) -> Resu
                 json::Value::String(v) => {
                     // TODO: Verify that this can handle multiple different character sets.
                     common::base64::decode_config_buf(
-                        v.as_str(), common::base64::URL_SAFE_NO_PAD, r)?;
-
+                        v.as_str(),
+                        common::base64::URL_SAFE_NO_PAD,
+                        r,
+                    )?;
                 }
-                _ => { return Err(err_msg("Unsupported json value for bytes")); }
+                _ => {
+                    return Err(err_msg("Unsupported json value for bytes"));
+                }
             }
-        },
+        }
         ReflectionMut::Repeated(r) => {
             let arr = match value {
                 json::Value::Array(els) => els,
-                _ => { return Err(err_msg("Unsupported json value for repeated field")); }
+                _ => {
+                    return Err(err_msg("Unsupported json value for repeated field"));
+                }
             };
 
             for value in arr {
                 apply_json_value_to_reflection(r.add(), value)?;
             }
-        },
+        }
         ReflectionMut::Message(r) => {
             let obj = match value {
                 json::Value::Object(v) => v,
-                _ => {
-                    return Err(err_msg("Expected message to be encoded as an object"))
-                }
+                _ => return Err(err_msg("Expected message to be encoded as an object")),
             };
 
             for (key, value) in obj.iter() {
-                let num = r.field_number_by_name(key.as_str())
+                let num = r
+                    .field_number_by_name(key.as_str())
                     .ok_or_else(|| format_err!("Unknown message field named: {}", key))?;
-                
+
                 if let json::Value::Null = value {
                     continue;
                 }
-    
+
                 let r = r.field_by_number_mut(num).unwrap();
                 apply_json_value_to_reflection(r, value)?;
             }
-        },
+        }
         ReflectionMut::Enum(r) => {
             match value {
                 json::Value::String(v) => {
@@ -140,7 +147,7 @@ fn apply_json_value_to_reflection(r: ReflectionMut, value: &json::Value) -> Resu
                     return Err(err_msg("Unsupported json value for enum"));
                 }
             }
-        },
+        }
         ReflectionMut::Set(_) => todo!(),
     };
 
@@ -161,8 +168,6 @@ fn get_f64(value: &json::Value) -> Result<f64> {
                 Ok(v.parse()?)
             }
         }
-        _ => {
-            Err(err_msg("Unsupported json value for float/double"))
-        }
+        _ => Err(err_msg("Unsupported json value for float/double")),
     }
 }

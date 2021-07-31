@@ -1,46 +1,42 @@
-
-
 mod child;
 mod fd;
 mod logging;
 
-use std::sync::Arc;
 use std::path::{Path, PathBuf};
-use std::sync::Once;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::sync::Once;
 
-use common::errors::*;
-use common::async_std::{fs, task};
+use common::async_std::channel;
 use common::async_std::fs::File;
 use common::async_std::sync::Mutex;
-use common::async_std::channel;
+use common::async_std::{fs, task};
+use common::errors::*;
 use common::task::ChildTask;
 use nix::sched::CloneFlags;
-use nix::sys::signal::{Signal, SigHandler, signal};
+use nix::sys::signal::{signal, SigHandler, Signal};
 use nix::sys::wait::WaitPidFlag;
 use nix::unistd::Pid;
 
-use crate::proto::log::*;
 use crate::proto::config::*;
-use crate::runtime::fd::*;
+use crate::proto::log::*;
 use crate::runtime::child::*;
+use crate::runtime::fd::*;
 use crate::runtime::logging::*;
-
-
 
 /// Directory used to per-container instance data.
 ///
 /// Under this directory, files will be stored as follows:
 /// - '{container-id}/root' : Directory used as the root fs of the container.
-/// - '{container-id}/log' : Append-only LevelDB log file containing LogEntry protos.
+/// - '{container-id}/log' : Append-only LevelDB log file containing LogEntry
+///   protos.
 const RUN_DATA_DIR: &'static str = "/opt/dacha/container/run";
 
-/// Stored a boolean value representing whether or not a ContainerRuntime instance has been created
-/// in the current process.
+/// Stored a boolean value representing whether or not a ContainerRuntime
+/// instance has been created in the current process.
 ///
 /// Used to prevent multiple instances from being started.
 static INSTANCE_LOCK: AtomicBool = AtomicBool::new(false);
-
 
 static mut SIGCHLD_CHANNEL: Option<(channel::Sender<()>, channel::Receiver<()>)> = None;
 static SIGCHLD_CHANNEL_INIT: Once = Once::new();
@@ -55,14 +51,15 @@ fn get_sigchld_channel() -> &'static (channel::Sender<()>, channel::Receiver<()>
     }
 }
 
-extern fn signal_handler_sigchld(signal: libc::c_int) {
+extern "C" fn signal_handler_sigchld(signal: libc::c_int) {
     let _ = get_sigchld_channel().0.try_send(());
 }
 
 struct Container {
     metadata: ContainerMetadata,
 
-    /// Directory where we store the container root and other files such as logs.
+    /// Directory where we store the container root and other files such as
+    /// logs.
     directory: PathBuf,
 
     pid: Pid,
@@ -70,8 +67,8 @@ struct Container {
     // TODO: Make sure this is cleaned up
     waiter_task: task::JoinHandle<()>,
 
-    /// Used to notify the waiter_task when the process associated with this container
-    /// has exited.
+    /// Used to notify the waiter_task when the process associated with this
+    /// container has exited.
     event_sender: channel::Sender<ContainerStatus>,
 }
 
@@ -80,19 +77,19 @@ struct ContainerWaiter {
     container_dir: PathBuf,
     stdout: File,
     stderr: File,
-    event_receiver: channel::Receiver<ContainerStatus>
+    event_receiver: channel::Receiver<ContainerStatus>,
 }
 
-// We want to be able to support subscribing to any events that occur for a 
+// We want to be able to support subscribing to any events that occur for a
 
 pub struct ContainerRuntime {
     containers: Mutex<Vec<Container>>,
 
-    /// 
     ///
-    /// TODO: Convert to HashSet based listeners as we never need to deliver a single container id
-    /// if there already is an enqueued event for it. 
-    event_listeners: Mutex<Vec<channel::Sender<String>>>
+    ///
+    /// TODO: Convert to HashSet based listeners as we never need to deliver a
+    /// single container id if there already is an enqueued event for it.
+    event_listeners: Mutex<Vec<channel::Sender<String>>>,
 }
 
 impl Drop for ContainerRuntime {
@@ -103,12 +100,13 @@ impl Drop for ContainerRuntime {
 }
 
 impl ContainerRuntime {
-
     /// Creates a new runtime starting any background tasks needed.
     ///
-    /// After creating a ContainerRuntime, the user wait on run() while there are running containers.
+    /// After creating a ContainerRuntime, the user wait on run() while there
+    /// are running containers.
     ///
-    /// NOTE: Only one instance of the ContainerRuntime is allowed to exist in the same process.
+    /// NOTE: Only one instance of the ContainerRuntime is allowed to exist in
+    /// the same process.
     pub async fn create() -> Result<Arc<Self>> {
         if INSTANCE_LOCK.swap(true, Ordering::SeqCst) {
             return Err(err_msg("ContainerRuntime instance already exists"));
@@ -118,28 +116,32 @@ impl ContainerRuntime {
         let handler = SigHandler::Handler(signal_handler_sigchld);
         unsafe { signal(Signal::SIGCHLD, handler) }?;
 
-        
         Ok(Arc::new(Self {
             containers: Mutex::new(vec![]),
-            event_listeners: Mutex::new(vec![])
+            event_listeners: Mutex::new(vec![]),
         }))
     }
 
-    /// Runs the processing loop of the runtime. This must be continously polled while the ContainerRuntime
-    /// is in use.
+    /// Runs the processing loop of the runtime. This must be continously polled
+    /// while the ContainerRuntime is in use.
     pub async fn run(self: Arc<Self>) -> Result<()> {
         loop {
             get_sigchld_channel().1.recv().await?;
 
             loop {
-                let e = match nix::sys::wait::waitpid(None, Some(WaitPidFlag::WUNTRACED | WaitPidFlag::WNOHANG)) {
+                let e = match nix::sys::wait::waitpid(
+                    None,
+                    Some(WaitPidFlag::WUNTRACED | WaitPidFlag::WNOHANG),
+                ) {
                     Ok(e) => e,
                     Err(nix::Error::Sys(nix::errno::Errno::ECHILD)) => {
                         // This means that we don't have any more children.
                         // Break so that we wait for the next SIGCHLD signal to reap more.
                         break;
                     }
-                    Err(e) => { return Err(e.into()); }
+                    Err(e) => {
+                        return Err(e.into());
+                    }
                 };
 
                 let containers = self.containers.lock().await;
@@ -152,7 +154,7 @@ impl ContainerRuntime {
                         status.set_exit_code(exit_code);
 
                         let _ = container.event_sender.try_send(status);
-                    },
+                    }
                     nix::sys::wait::WaitStatus::Signaled(pid, signal, _) => {
                         let container = containers.iter().find(|c| c.pid == pid).unwrap();
 
@@ -160,17 +162,18 @@ impl ContainerRuntime {
                         status.set_killed_signal(signal.as_str());
 
                         let _ = container.event_sender.try_send(status);
-                    },
-                    nix::sys::wait::WaitStatus::PtraceEvent(pid, _, _) |
-                    nix::sys::wait::WaitStatus::PtraceSyscall(pid) |
-                    nix::sys::wait::WaitStatus::Stopped(pid, _) => {
+                    }
+                    nix::sys::wait::WaitStatus::PtraceEvent(pid, _, _)
+                    | nix::sys::wait::WaitStatus::PtraceSyscall(pid)
+                    | nix::sys::wait::WaitStatus::Stopped(pid, _) => {
                         nix::sys::signal::kill(pid, Signal::SIGKILL)?;
-                    },
-                    nix::sys::wait::WaitStatus::Continued(_) => {},
-                    nix::sys::wait::WaitStatus::StillAlive => { break; },
+                    }
+                    nix::sys::wait::WaitStatus::Continued(_) => {}
+                    nix::sys::wait::WaitStatus::StillAlive => {
+                        break;
+                    }
                 }
             }
-
         }
     }
 
@@ -185,7 +188,9 @@ impl ContainerRuntime {
 
     pub async fn get_container(&self, container_id: &str) -> Option<ContainerMetadata> {
         let containers = self.containers.lock().await;
-        containers.iter().find(|c| c.metadata.id() == container_id)
+        containers
+            .iter()
+            .find(|c| c.metadata.id() == container_id)
             .map(|c| c.metadata.clone())
     }
 
@@ -202,21 +207,25 @@ impl ContainerRuntime {
     }
 
     /// Starts a container returning the id of that container.
-    pub async fn start_container(self: &Arc<Self>, container_config: &ContainerConfig) -> Result<String> {
+    pub async fn start_container(
+        self: &Arc<Self>,
+        container_config: &ContainerConfig,
+    ) -> Result<String> {
         let mut container_id = vec![0u8; 16];
         crypto::random::secure_random_bytes(&mut &mut container_id).await?;
-    
+
         let container_id = common::hex::encode(&container_id);
-    
+
         // TODO: Also lock down permissions on this dir.
         let container_dir = Path::new(RUN_DATA_DIR).join(&container_id);
         fs::create_dir_all(&container_dir).await?;
-        
-        let mut stack = vec![0u8; 1024*1024*1]; // 1MB
 
-        // NOTE: We use 'clone()' instead of 'fork()' to immediately put the sub-process into a new PID namespace
-        // ('unshare()' requires an extra fork for that)
-    
+        let mut stack = vec![0u8; 1024 * 1024 * 1]; // 1MB
+
+        // NOTE: We use 'clone()' instead of 'fork()' to immediately put the sub-process
+        // into a new PID namespace ('unshare()' requires an extra fork for
+        // that)
+
         let (stdout_read, stdout_write) = FileReference::pipe()?;
         let (stderr_read, stderr_write) = FileReference::pipe()?;
 
@@ -231,22 +240,29 @@ impl ContainerRuntime {
         // fcntl(stdout_read.as_raw_fd(), FcntlArg::F_SETFL(OFlag::O_NONBLOCK))?;
         // fcntl(stderr_read.as_raw_fd(), FcntlArg::F_SETFL(OFlag::O_NONBLOCK))?;
 
-
-        // NOTE: We must lock this before clone() and until we insert the new container to ensure
-        // that waitpid() doesn't return before the container is in the list.
+        // NOTE: We must lock this before clone() and until we insert the new container
+        // to ensure that waitpid() doesn't return before the container is in
+        // the list.
         let mut containers = self.containers.lock().await;
 
         // TODO: CLONE_INTO_CGROUP
-        // TODO: Can memory (e.g. keys from the parent progress be read after the fork and do we need security against this?).
-        let pid = nix::sched::clone(Box::new(|| {
-            run_child_process(&container_config, &container_dir, &file_mapping)
-        }), &mut stack, CloneFlags::CLONE_NEWPID | CloneFlags::CLONE_NEWNS, Some(libc::SIGCHLD))?;
+        // TODO: Can memory (e.g. keys from the parent progress be read after the fork
+        // and do we need security against this?).
+        let pid = nix::sched::clone(
+            Box::new(|| run_child_process(&container_config, &container_dir, &file_mapping)),
+            &mut stack,
+            CloneFlags::CLONE_NEWPID | CloneFlags::CLONE_NEWNS,
+            Some(libc::SIGCHLD),
+        )?;
 
         let (event_sender, event_receiver) = channel::bounded(1);
 
         let waiter_task = task::spawn(self.clone().container_waiter(ContainerWaiter {
-            container_id: container_id.clone(), container_dir: container_dir.clone(),
-            stdout: stdout_read.open()?.into(), stderr: stderr_read.open()?.into(), event_receiver
+            container_id: container_id.clone(),
+            container_dir: container_dir.clone(),
+            stdout: stdout_read.open()?.into(),
+            stderr: stderr_read.open()?.into(),
+            event_receiver,
         }));
 
         let mut meta = ContainerMetadata::default();
@@ -258,7 +274,7 @@ impl ContainerRuntime {
             directory: container_dir.clone(),
             pid,
             waiter_task,
-            event_sender
+            event_sender,
         });
 
         drop(containers);
@@ -298,8 +314,9 @@ impl ContainerRuntime {
         let log_path = container.directory.join("log");
         drop(containers);
 
-        // TODO: For this to work we need to ensure that the log file is synchronously created before
-        // we return the container id to the person that reuqested it.
+        // TODO: For this to work we need to ensure that the log file is synchronously
+        // created before we return the container id to the person that
+        // reuqested it.
         FileLogReader::open(&log_path).await
     }
 
@@ -312,25 +329,30 @@ impl ContainerRuntime {
     async fn container_waiter(self: Arc<Self>, input: ContainerWaiter) {
         let res = self.container_waiter_inner(input).await;
 
-        // TODO: Some types of errors should take down the entire server and others should be
-        // isolated to invalidating this container.
+        // TODO: Some types of errors should take down the entire server and others
+        // should be isolated to invalidating this container.
         if let Err(e) = res {
             eprintln!("Container waiter error: {:?}", e);
         }
     }
 
     async fn container_waiter_inner(self: Arc<Self>, input: ContainerWaiter) -> Result<()> {
-        let log_writer = Arc::new(FileLogWriter::create(
-            &input.container_dir.join("log")).await?);
+        let log_writer = Arc::new(FileLogWriter::create(&input.container_dir.join("log")).await?);
 
         let stdout_task = ChildTask::spawn(Self::write_log(
-            input.stdout, log_writer.clone(), LogStream::STDOUT));
-        
+            input.stdout,
+            log_writer.clone(),
+            LogStream::STDOUT,
+        ));
+
         let stderr_task = ChildTask::spawn(Self::write_log(
-            input.stderr, log_writer.clone(), LogStream::STDERR));
+            input.stderr,
+            log_writer.clone(),
+            LogStream::STDERR,
+        ));
 
         let status = input.event_receiver.recv().await?;
-        
+
         stdout_task.join().await;
         stderr_task.join().await;
 
@@ -339,8 +361,10 @@ impl ContainerRuntime {
         let container_id = input.container_id.as_str();
 
         let mut containers = self.containers.lock().await;
-        let container = containers.iter_mut()
-            .find(|c| c.metadata.id() == container_id).unwrap();
+        let container = containers
+            .iter_mut()
+            .find(|c| c.metadata.id() == container_id)
+            .unwrap();
 
         container.metadata.set_state(ContainerState::Stopped);
         container.metadata.set_status(status);
@@ -359,7 +383,4 @@ impl ContainerRuntime {
 
         Ok(())
     }
-
-
 }
-

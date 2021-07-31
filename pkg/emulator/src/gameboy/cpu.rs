@@ -5,7 +5,6 @@ use common::errors::*;
 
 use crate::gameboy::memory::*;
 
-
 pub struct HalfRegister<T: Borrow<u16>> {
     full: T,
     shift: u16,

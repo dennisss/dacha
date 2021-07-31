@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
-use common::errors::*;
 use common::async_std::channel;
+use common::errors::*;
 
-use crate::linux::usbdevfs::{usbdevfs_urb, usbdevfs_discardurb};
 use crate::linux::device::DeviceState;
+use crate::linux::usbdevfs::{usbdevfs_discardurb, usbdevfs_urb};
 
-// TODO: If a reference to a transfer is dropped instead of being waited on, we should just cancel it!
-
+// TODO: If a reference to a transfer is dropped instead of being waited on, we
+// should just cancel it!
 
 pub struct DeviceTransfer {
-    pub(crate) state: Arc<DeviceTransferState>
+    pub(crate) state: Arc<DeviceTransferState>,
 }
 
 impl Drop for DeviceTransfer {
@@ -27,32 +27,32 @@ impl DeviceTransfer {
     }
 }
 
-
 /// Represents a single ongoing USB I/O request to the linux kernel.
 /// (corresponds to a single Linux USBDEVFS URB)
 ///
-/// NOTE: The DeviceTransfer must be pinned at a static location in memory as the 'urb' is
-/// referenced in kernel requests (so you'll only ever see Arc<DeviceTransfer>'s and never
-/// bare ones).
+/// NOTE: The DeviceTransfer must be pinned at a static location in memory as
+/// the 'urb' is referenced in kernel requests (so you'll only ever see
+/// Arc<DeviceTransfer>'s and never bare ones).
 pub struct DeviceTransferState {
     /// Id of this transfer. Specific to this device.
     pub(crate) id: usize,
 
-    /// Reference to the DeviceState containing this transfer. Used for cleaning up the transfer
-    /// once it is successfully reaped.
+    /// Reference to the DeviceState containing this transfer. Used for cleaning
+    /// up the transfer once it is successfully reaped.
     pub(crate) device_state: Arc<DeviceState>,
 
     pub(crate) urb: usbdevfs_urb,
 
     /// Buffer which is referenced in the above URB.
-    /// If this is a write request, this will either contain user data being sent to the device.
-    /// Else, this will be asynchronously filled by the kernel with data received from the device. 
+    /// If this is a write request, this will either contain user data being
+    /// sent to the device. Else, this will be asynchronously filled by the
+    /// kernel with data received from the device.
     pub(crate) buffer: Vec<u8>,
 
-    /// Channel sender used for notifying the corresponding receiver that the transfer is
-    /// complete (or failed). 
+    /// Channel sender used for notifying the corresponding receiver that the
+    /// transfer is complete (or failed).
     pub(crate) sender: channel::Sender<std::result::Result<(), crate::ErrorKind>>,
-    pub(crate) receiver: channel::Receiver<std::result::Result<(), crate::ErrorKind>>
+    pub(crate) receiver: channel::Receiver<std::result::Result<(), crate::ErrorKind>>,
 }
 
 impl DeviceTransferState {
@@ -61,12 +61,13 @@ impl DeviceTransferState {
         if let Err(kind) = self.receiver.recv().await? {
             return Err(crate::Error {
                 kind,
-                message: String::new()
-            }.into());
+                message: String::new(),
+            }
+            .into());
         }
 
         if self.urb.status != 0 {
-            let errno = -1*self.urb.status;
+            let errno = -1 * self.urb.status;
 
             // This will occur when we are performing a bulk/interrupt read and we
             // received a packet that would overflow our receiving buffer.
@@ -76,8 +77,9 @@ impl DeviceTransferState {
             if errno == libc::EOVERFLOW {
                 return Err(crate::Error {
                     kind: crate::ErrorKind::Overflow,
-                    message: String::new()
-                }.into());
+                    message: String::new(),
+                }
+                .into());
             }
 
             return Err(nix::Error::from_errno(nix::errno::from_i32(errno)).into());
@@ -94,16 +96,22 @@ impl DeviceTransferState {
         transfers.active.remove(&self.id);
     }
 
-    /// Cancels the transfer. This will cause a current/future call to wait() to finish.
+    /// Cancels the transfer. This will cause a current/future call to wait() to
+    /// finish.
     fn cancel(&self) -> Result<()> {
-        let _ = self.sender.try_send(Err(crate::ErrorKind::TransferCancelled));
+        let _ = self
+            .sender
+            .try_send(Err(crate::ErrorKind::TransferCancelled));
 
-        // NOTE: This will cause it to be reaped with a -2 error (so I can't delete the memory yet!!)
-        let res = unsafe { usbdevfs_discardurb(self.device_state.fd, std::mem::transmute(&self.urb)) };
+        // NOTE: This will cause it to be reaped with a -2 error (so I can't delete the
+        // memory yet!!)
+        let res =
+            unsafe { usbdevfs_discardurb(self.device_state.fd, std::mem::transmute(&self.urb)) };
         match res {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(nix::Error::Sys(nix::errno::Errno::EINVAL)) => {
-                // In this case, the transfer was already cancelled or already reaped.
+                // In this case, the transfer was already cancelled or already
+                // reaped.
             }
             // TODO: Figure out what the error code will be after the device is closed.
             Err(e) => {

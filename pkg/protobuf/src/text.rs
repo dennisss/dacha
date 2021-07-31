@@ -2,9 +2,9 @@
 // aka what the C++ DebugString outputs and can re-parse as a proto.
 
 use crate::reflection::{MessageReflection, ReflectionMut};
-use protobuf_compiler::tokenizer::{float_lit, int_lit, strLit};
 use common::errors::*;
 use parsing::*;
+use protobuf_compiler::tokenizer::{float_lit, int_lit, strLit};
 use std::convert::TryInto;
 
 //
@@ -73,8 +73,8 @@ impl TextToken {
     }));
 }
 
-// token(A, B, C) will create a function named 'A' which parses the next token in the input
-// as a TextToken::B(C) (ignoring whitespace/comment tokens).
+// token(A, B, C) will create a function named 'A' which parses the next token
+// in the input as a TextToken::B(C) (ignoring whitespace/comment tokens).
 macro_rules! token_atom {
     ($name:ident, $e:ident, $t:ty) => {
         fn $name(input: &str) -> ParseResult<$t, &str> {
@@ -107,8 +107,7 @@ parser!(full_ident<&str, String> => seq!(c => {
     Ok(id)
 }));
 
-/// Represents the text format of a 
-/// 
+/// Represents the text format of a
 // TextMessage = TextField*
 #[derive(Debug)]
 pub struct TextMessage {
@@ -346,8 +345,8 @@ impl TextValue {
                     println!("Problematic: {:?}", self);
                     return Err(err_msg("Can't cast to string"));
                 }
-            }
-            ReflectionMut::Bytes(bytes) => match  self {
+            },
+            ReflectionMut::Bytes(bytes) => match self {
                 Self::String(v) => {
                     bytes.clear();
                     // TODO: Need to preserve the original binary meaning
@@ -356,7 +355,7 @@ impl TextValue {
                 _ => {
                     return Err(err_msg("Can't cast to bytes"));
                 }
-            }
+            },
         };
 
         Ok(())
@@ -364,12 +363,13 @@ impl TextValue {
 }
 
 /// Parses a text proto string into its raw components
-/// 
+///
 /// NOTE: This function shoulnd't be used directly.
-/// 
+///
 /// TODO: Make this a loseless parser so that we can perform formatting.
-/// 
-/// TODO: Long term this should be ideally a streaming interface for more efficient parsing.
+///
+/// TODO: Long term this should be ideally a streaming interface for more
+/// efficient parsing.
 pub fn parse_text_syntax(text: &str) -> Result<TextMessage> {
     let (v, _) = complete(seq!(c => {
         let v = c.next(TextMessage::parse)?;
@@ -448,7 +448,8 @@ mod test {
     #[test]
     fn works() {
         let mut list = ShoppingList::default();
-        parse_text_proto(r#"
+        parse_text_proto(
+            r#"
             # This is a comment
             name: "Groceries"
             id: 3
@@ -469,7 +470,10 @@ mod test {
                 fruit_type: BERRIES
                 name: 'Third'
             }
-            "#, &mut list).unwrap();
+            "#,
+            &mut list,
+        )
+        .unwrap();
 
         assert_eq!(list.name(), "Groceries");
         assert_eq!(list.id(), 3);

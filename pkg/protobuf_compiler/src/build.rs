@@ -5,7 +5,8 @@ use std::env;
 use std::fs::DirEntry;
 use std::path::PathBuf;
 
-// TODO: Most of this code is identical across the different implements and could probably be refactored out!!
+// TODO: Most of this code is identical across the different implements and
+// could probably be refactored out!!
 pub fn build() -> Result<()> {
     // NOTE: This must be the root path of the package (containing the Cargo.toml
     // and build.rs).
@@ -28,7 +29,6 @@ pub fn build() -> Result<()> {
             "::protobuf"
         }
     };
-    
 
     common::fs::recursively_list_dir(&input_dir.join("src"), &mut |entry: &DirEntry| {
         if entry
@@ -62,7 +62,6 @@ pub fn build() -> Result<()> {
         output_path.set_extension("rs");
 
         std::fs::create_dir_all(output_path.parent().unwrap())?;
-
 
         let output = Compiler::compile(&desc, current_package_name, runtime_package)?;
         std::fs::write(output_path, output)?;

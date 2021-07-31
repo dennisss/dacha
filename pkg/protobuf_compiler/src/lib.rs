@@ -1,10 +1,11 @@
 extern crate common;
-#[macro_use] extern crate parsing;
+#[macro_use]
+extern crate parsing;
 
-mod compiler;
 mod build;
+mod compiler;
 pub mod spec;
-pub mod tokenizer;
 pub mod syntax;
+pub mod tokenizer;
 
 pub use build::build;

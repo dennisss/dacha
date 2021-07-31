@@ -708,7 +708,6 @@ mod tests {
 
     #[test]
     fn parse_options_test() {
-
         let input = r#"
             syntax = "proto3";
 
@@ -760,5 +759,4 @@ mod tests {
         let parsed = parse_proto(input).unwrap();
         println!("{:?}", parsed);
     }
-
 }

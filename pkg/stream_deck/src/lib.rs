@@ -1,10 +1,11 @@
-#[macro_use] extern crate common;
+#[macro_use]
+extern crate common;
 extern crate usb;
 
 use std::time::Duration;
 
-use common::errors::*;
 use common::async_std::future::timeout;
+use common::errors::*;
 
 const USB_CONFIG: u8 = 1;
 const USB_IFACE: u8 = 0;
@@ -12,7 +13,7 @@ const USB_IFACE: u8 = 0;
 #[derive(PartialEq, Clone, Copy)]
 pub enum KeyState {
     Up,
-    Down
+    Down,
 }
 
 fn read_null_terminated_string(data: &[u8]) -> Result<String> {
@@ -25,13 +26,11 @@ fn read_null_terminated_string(data: &[u8]) -> Result<String> {
     Err(err_msg("Missing null terminator"))
 }
 
-
 pub struct StreamDeckDevice {
     device: usb::Device,
 }
 
 impl StreamDeckDevice {
-
     pub async fn open() -> Result<Self> {
         let context = usb::Context::create()?;
 
@@ -62,12 +61,11 @@ impl StreamDeckDevice {
         println!("Product name: {}", product_name);
 
         device.reset()?;
-        
+
         if device.kernel_driver_active(USB_IFACE)? {
             println!("Detaching kernel driver.");
             device.detach_kernel_driver(USB_IFACE)?;
         }
-
 
         device.set_active_configuration(USB_CONFIG)?;
         device.claim_interface(USB_IFACE)?;
@@ -75,7 +73,7 @@ impl StreamDeckDevice {
 
         /*
 
-        
+
 
         // let mut report = vec![
         //     0x03, 0x08, 0x4e, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
@@ -85,7 +83,6 @@ impl StreamDeckDevice {
         // ];
 
         */
-
 
         Ok(Self { device })
     }
@@ -97,19 +94,24 @@ impl StreamDeckDevice {
     Serial Number 0x06
 
     */
-    
-    // TODO: Change all of these to use 
+
+    // TODO: Change all of these to use
 
     pub async fn get_serial_number(&self) -> Result<String> {
         let mut report = vec![0u8; 32];
 
-        self.device.read_control(usb::descriptors::SetupPacket {
-            bmRequestType: 0xA1,
-            bRequest: usb::hid::HIDRequestType::GET_REPORT.to_value(),
-            wValue: 0x0306,
-            wIndex: 0,
-            wLength: report.len() as u16,
-        }, &mut report).await?;
+        self.device
+            .read_control(
+                usb::descriptors::SetupPacket {
+                    bmRequestType: 0xA1,
+                    bRequest: usb::hid::HIDRequestType::GET_REPORT.to_value(),
+                    wValue: 0x0306,
+                    wIndex: 0,
+                    wLength: report.len() as u16,
+                },
+                &mut report,
+            )
+            .await?;
 
         read_null_terminated_string(&report[2..])
     }
@@ -117,25 +119,35 @@ impl StreamDeckDevice {
     pub async fn get_firmware_number(&self) -> Result<String> {
         let mut report = vec![0u8; 32];
 
-        self.device.read_control(usb::descriptors::SetupPacket {
-            bmRequestType: 0xA1,
-            bRequest: usb::hid::HIDRequestType::GET_REPORT.to_value(),
-            wValue: 0x0305,
-            wIndex: 0,
-            wLength: report.len() as u16,
-        }, &mut report).await?;
+        self.device
+            .read_control(
+                usb::descriptors::SetupPacket {
+                    bmRequestType: 0xA1,
+                    bRequest: usb::hid::HIDRequestType::GET_REPORT.to_value(),
+                    wValue: 0x0305,
+                    wIndex: 0,
+                    wLength: report.len() as u16,
+                },
+                &mut report,
+            )
+            .await?;
 
         read_null_terminated_string(&report[6..])
     }
 
     pub async fn set_brightness(&self, value: u8) -> Result<()> {
-        self.device.write_control(usb::descriptors::SetupPacket {
-            bmRequestType: 0x21,
-            bRequest: usb::hid::HIDRequestType::SET_REPORT.to_value(),
-            wValue: 0x0303,
-            wIndex: 0,
-            wLength: 3 as u16,
-        }, &[ 0x03, 0x08, value ]).await
+        self.device
+            .write_control(
+                usb::descriptors::SetupPacket {
+                    bmRequestType: 0x21,
+                    bRequest: usb::hid::HIDRequestType::SET_REPORT.to_value(),
+                    wValue: 0x0303,
+                    wIndex: 0,
+                    wLength: 3 as u16,
+                },
+                &[0x03, 0x08, value],
+            )
+            .await
     }
 
     pub async fn set_display_timeout(&self, seconds: usize) -> Result<()> {
@@ -143,14 +155,19 @@ impl StreamDeckDevice {
         data[0] = 0x03;
         data[1] = 0x0d;
         *array_mut_ref![data, 2, 4] = (seconds as u32).to_le_bytes();
-        
-        self.device.write_control(usb::descriptors::SetupPacket {
-            bmRequestType: 0x21,
-            bRequest: usb::hid::HIDRequestType::SET_REPORT.to_value(),
-            wValue: 0x0303,
-            wIndex: 0,
-            wLength: 6 as u16,
-        }, &data).await
+
+        self.device
+            .write_control(
+                usb::descriptors::SetupPacket {
+                    bmRequestType: 0x21,
+                    bRequest: usb::hid::HIDRequestType::SET_REPORT.to_value(),
+                    wValue: 0x0303,
+                    wIndex: 0,
+                    wLength: 6 as u16,
+                },
+                &data,
+            )
+            .await
     }
 
     /// May return a usb::Error::Timeout.
@@ -182,10 +199,11 @@ impl StreamDeckDevice {
 
             buf[8..(8 + n)].copy_from_slice(&remaining[0..n]);
 
-
             common::async_std::future::timeout(
                 Duration::from_secs(1),
-                self.device.write_interrupt(0x02, &buf)).await??;
+                self.device.write_interrupt(0x02, &buf),
+            )
+            .await??;
 
             remaining = &remaining[n..];
             packet_idx += 1;
@@ -198,9 +216,9 @@ impl StreamDeckDevice {
         // 512 is the max packet size of the endpoint.
         let mut buf = [0u8; 512];
 
-        // TODO: It's possible that 
-        // When the first button is pressed 
-        //           
+        // TODO: It's possible that
+        // When the first button is pressed
+        //
         // [1, 0, 15, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         //               ^
 
@@ -227,11 +245,12 @@ impl StreamDeckDevice {
             out.push(match value {
                 0 => KeyState::Up,
                 1 => KeyState::Down,
-                _ => { return Err(err_msg("Invalid key state")); }
+                _ => {
+                    return Err(err_msg("Invalid key state"));
+                }
             });
         }
 
         Ok(out)
     }
-
 }

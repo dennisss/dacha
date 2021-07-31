@@ -4,7 +4,7 @@
 
 Namespace:
     - Must have CAP_SYS_ADMIN  | CAP_SYS_CHROOT
-    - CLONE_NEWNS | CLONE_FS | 
+    - CLONE_NEWNS | CLONE_FS |
     - CLONE_NEWPID | CLONE_NEWUSER
 
 Cgroup
@@ -14,23 +14,25 @@ Chroot
 NOTE: We must assume that all file descriptors created by Rust are opened with O_CLOEXEC
 */
 
-#[macro_use] extern crate common;
-extern crate nix;
-extern crate libc;
+#[macro_use]
+extern crate common;
 extern crate crypto;
+extern crate libc;
+extern crate nix;
 extern crate protobuf;
-#[macro_use] extern crate macros;
-extern crate sstable;
+#[macro_use]
+extern crate macros;
 extern crate compression;
 extern crate google;
 extern crate rpc;
+extern crate sstable;
 
+mod node;
 mod proto;
 mod runtime;
-mod node;
 
+pub use node::Node;
 pub use proto::config::*;
 pub use proto::log::*;
 pub use proto::service::*;
 pub use runtime::ContainerRuntime;
-pub use node::Node;

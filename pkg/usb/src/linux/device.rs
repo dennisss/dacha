@@ -45,44 +45,43 @@ Other Assumptions that we make:
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
+use common::async_std::channel;
 use common::async_std::fs;
 use common::async_std::sync::Mutex;
 use common::async_std::task;
-use common::async_std::channel;
 use common::task::ChildTask;
 use common::{async_std::path::Path, errors::*, futures::StreamExt};
 
-use crate::language::Language;
-use crate::endpoint::*;
 use crate::descriptors::*;
-use crate::linux::usbdevfs::*;
+use crate::endpoint::*;
+use crate::language::Language;
 use crate::linux::context::*;
 use crate::linux::transfer::*;
-
-
+use crate::linux::usbdevfs::*;
 
 /// Handle to a single open USB device.
 ///
-/// All operations are thread safe. After you are done with the device, call .close() to gracefully
-/// close the device. 
+/// All operations are thread safe. After you are done with the device, call
+/// .close() to gracefully close the device.
 ///
 /// The device will stay open until this object is dropped.
-/// The Context used to open this device similarly won't be destroyed until all Device objects
-/// associated with it are dropped. 
+/// The Context used to open this device similarly won't be destroyed until all
+/// Device objects associated with it are dropped.
 pub struct Device {
     pub(crate) id: usize,
 
     pub(crate) device_descriptor: DeviceDescriptor,
-    pub(crate) endpoint_descriptors: HashMap<u8, EndpointDescriptor>, 
+    pub(crate) endpoint_descriptors: HashMap<u8, EndpointDescriptor>,
 
     /// Context that was used to open this device.
-    /// NOTE: As the Context manages the background events thread, it must live longer than the
-    /// device, otherwise most of the Device methods will be broken.
+    /// NOTE: As the Context manages the background events thread, it must live
+    /// longer than the device, otherwise most of the Device methods will be
+    /// broken.
     pub(crate) context: Arc<Context>,
 
     pub(crate) state: Arc<DeviceState>,
 
-    pub(crate) closed: bool
+    pub(crate) closed: bool,
 }
 
 /// NOTE: The cleanup of data in this struct is handled by Device::drop().
@@ -95,8 +94,8 @@ pub(crate) struct DeviceState {
     /// All pending transfers on the this device.
     /// This is the primary owner of the DeviceTransfers.
     ///
-    /// Values are ONLY removed from this when the URB is reaped (or after we close the fd).
-    /// 
+    /// Values are ONLY removed from this when the URB is reaped (or after we
+    /// close the fd).
     pub(crate) transfers: std::sync::Mutex<DeviceStateTransfers>,
 }
 
@@ -107,7 +106,7 @@ pub(crate) struct DeviceStateTransfers {
     // TODO: There is no point in making these Arcs as we always own them.
     // It would probably be simpler to give back the use a separate transfer object that just
     // references the transfer if id.
-    pub active: HashMap<usize, Arc<DeviceTransferState>>
+    pub active: HashMap<usize, Arc<DeviceTransferState>>,
 }
 
 impl Drop for Device {
@@ -123,8 +122,8 @@ impl Device {
     /// Closes the device.
     /// Any pending transfers will be immediately cancelled.
     ///
-    /// NOTE: If not called manaully, this will also run on Drop, but you won't know if
-    /// it was successful.
+    /// NOTE: If not called manaully, this will also run on Drop, but you won't
+    /// know if it was successful.
     pub fn close(mut self) -> Result<()> {
         self.close_impl()
     }
@@ -132,33 +131,36 @@ impl Device {
     fn close_impl(&mut self) -> Result<()> {
         self.closed = true;
 
-        // Remove the device from the context so that the background thread stops listening for events.
+        // Remove the device from the context so that the background thread stops
+        // listening for events.
         self.context.remove_device(self.id)?;
 
-        // Wait for the background thread to perform at least one cycle (to ensure that it is no lpnger waiting on the device)
-        // TODO:
+        // Wait for the background thread to perform at least one cycle (to ensure that
+        // it is no lpnger waiting on the device) TODO:
 
         // TODO: Check return value.
         unsafe { libc::close(self.state.fd) };
 
-        // Wait until another background thread cycle passes so that we know that the background
-        // thread isn't working on anything related to our fd.
+        // Wait until another background thread cycle passes so that we know that the
+        // background thread isn't working on anything related to our fd.
         //
-        // This is important to ensure that all the transfers memory can be safely dropped.
+        // This is important to ensure that all the transfers memory can be safely
+        // dropped.
         let waiter = self.context.add_background_thread_waiter();
         self.context.notify_background_thread()?;
         let _ = waiter.recv();
-        
 
         // Notify all pending transfers that the device is closed.
         let mut transfers = self.state.transfers.lock().unwrap();
         for (_, transfer) in transfers.active.iter() {
-            let _ = transfer.sender.try_send(Err(crate::ErrorKind::DeviceClosing));
+            let _ = transfer
+                .sender
+                .try_send(Err(crate::ErrorKind::DeviceClosing));
         }
         transfers.active.clear();
 
         // NOTE: At this point, there may still be references to the DeviceState in
-        // DeviceTransfer objects if the 
+        // DeviceTransfer objects if the
         // if Arc::strong_count(&self.state) != 1 {
         //     return Err(err_msg("Stranded references to DeviceState"));
         // }
@@ -180,16 +182,20 @@ impl Device {
     pub fn kernel_driver_active(&self, interface: u8) -> Result<bool> {
         let mut driver = usbdevfs_getdriver {
             interface: interface as libc::c_uint,
-            driver: [0; 256]
+            driver: [0; 256],
         };
 
         // TODO: ENODATA if no driver is present?
         let r = unsafe { usbdevfs_getdriver_fn(self.state.fd, &mut driver) };
         match r {
-            Ok(_) => {},
+            Ok(_) => {}
             // TODO: Check this.
-            Err(nix::Error::Sys(nix::errno::Errno::ENODATA)) => { return Ok(false); }
-            Err(e) => { return Err(e.into()); }
+            Err(nix::Error::Sys(nix::errno::Errno::ENODATA)) => {
+                return Ok(false);
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
         };
 
         let mut null_index = 0;
@@ -206,11 +212,10 @@ impl Device {
     }
 
     pub fn detach_kernel_driver(&self, interface: u8) -> Result<()> {
-
         let mut command = usbdevfs_ioctl {
             ifno: interface as libc::c_int,
             ioctl_code: USBDEVFS_IOC_DISCONNECT,
-            data: 0
+            data: 0,
         };
 
         unsafe { usbdevfs_ioctl_fn(self.state.fd, &mut command) }?;
@@ -241,7 +246,13 @@ impl Device {
         Ok(())
     }
 
-    fn start_transfer(&self, typ: u8, endpoint: u8, flags: libc::c_uint, buffer: Vec<u8>) -> Result<DeviceTransfer> {
+    fn start_transfer(
+        &self,
+        typ: u8,
+        endpoint: u8,
+        flags: libc::c_uint,
+        buffer: Vec<u8>,
+    ) -> Result<DeviceTransfer> {
         let (sender, receiver) = channel::bounded(1);
 
         let mut transfers = self.state.transfers.lock().unwrap();
@@ -268,7 +279,7 @@ impl Device {
             },
             buffer,
             sender,
-            receiver
+            receiver,
         });
 
         unsafe {
@@ -292,15 +303,14 @@ impl Device {
         let pkt_size = std::mem::size_of::<SetupPacket>();
         let mut buffer = vec![0u8; pkt_size + data.len()];
 
-        buffer[0..pkt_size].copy_from_slice(
-            unsafe { std::slice::from_raw_parts(std::mem::transmute(&pkt), pkt_size) }
-        );
+        buffer[0..pkt_size].copy_from_slice(unsafe {
+            std::slice::from_raw_parts(std::mem::transmute(&pkt), pkt_size)
+        });
 
         buffer[pkt_size..].copy_from_slice(data);
-    
-        let transfer = self.start_transfer(
-            USBDEVFS_URB_TYPE_CONTROL, CONTROL_ENDPOINT, 0, buffer)?;
 
+        let transfer =
+            self.start_transfer(USBDEVFS_URB_TYPE_CONTROL, CONTROL_ENDPOINT, 0, buffer)?;
 
         transfer.wait().await?;
 
@@ -315,13 +325,12 @@ impl Device {
         let pkt_size = std::mem::size_of::<SetupPacket>();
         let mut buffer = vec![0u8; pkt_size + data.len()];
 
-        buffer[0..pkt_size].copy_from_slice(
-            unsafe { std::slice::from_raw_parts(std::mem::transmute(&pkt), pkt_size) }
-        );
+        buffer[0..pkt_size].copy_from_slice(unsafe {
+            std::slice::from_raw_parts(std::mem::transmute(&pkt), pkt_size)
+        });
 
-        let transfer = self.start_transfer(
-            USBDEVFS_URB_TYPE_CONTROL, CONTROL_ENDPOINT, 0, buffer)?;
-
+        let transfer =
+            self.start_transfer(USBDEVFS_URB_TYPE_CONTROL, CONTROL_ENDPOINT, 0, buffer)?;
 
         transfer.wait().await?;
 
@@ -333,7 +342,6 @@ impl Device {
 
     async fn read_string_raw(&self, index: u8, lang_id: u16) -> Result<Vec<u8>> {
         let pkt_size = std::mem::size_of::<SetupPacket>();
-
 
         // 256 is larger than the maximum descriptor size.
         let mut buffer = vec![0u8; 256];
@@ -347,7 +355,7 @@ impl Device {
         };
 
         let nread = self.read_control(pkt, &mut buffer).await?;
-    
+
         let received_data = &buffer[0..nread];
 
         // TODO: Check for buffer overflows
@@ -374,7 +382,7 @@ impl Device {
 
         let mut out = vec![];
         for i in 0..(data.len() / 2) {
-            let id = u16::from_le_bytes(*array_ref![data, 2*i, 2]);
+            let id = u16::from_le_bytes(*array_ref![data, 2 * i, 2]);
             out.push(Language::from_id(id));
         }
 
@@ -391,11 +399,13 @@ impl Device {
     }
 
     pub async fn read_manufacturer_string(&self, language: Language) -> Result<String> {
-        self.read_string(self.device_descriptor.iManufacturer, language).await
+        self.read_string(self.device_descriptor.iManufacturer, language)
+            .await
     }
-    
+
     pub async fn read_product_string(&self, language: Language) -> Result<String> {
-        self.read_string(self.device_descriptor.iProduct, language).await
+        self.read_string(self.device_descriptor.iProduct, language)
+            .await
     }
 
     pub async fn read_interrupt(&self, endpoint: u8, buffer: &mut [u8]) -> Result<usize> {
@@ -413,8 +423,9 @@ impl Device {
         if n > buffer.len() {
             return Err(crate::Error {
                 kind: crate::ErrorKind::Overflow,
-                message: "Too many bytes read".into()
-            }.into());
+                message: "Too many bytes read".into(),
+            }
+            .into());
         }
 
         buffer[0..n].copy_from_slice(&transfer.state.buffer[0..n]);
@@ -425,16 +436,19 @@ impl Device {
     pub async fn write_interrupt(&self, endpoint: u8, buffer: &[u8]) -> Result<()> {
         check_can_write_endpoint(endpoint)?;
 
-        let endpoint_desc = self.endpoint_descriptors.get(&endpoint)
+        let endpoint_desc = self
+            .endpoint_descriptors
+            .get(&endpoint)
             .ok_or_else(|| err_msg("Missing descriptor for endpoint"))?;
-        
-        // TODO: Check the behavior of linux in this case. It will likely try to split the transfer into multiple parts?
+
+        // TODO: Check the behavior of linux in this case. It will likely try to split
+        // the transfer into multiple parts?
         if buffer.len() > (endpoint_desc.wMaxPacketSize as usize) {
             return Err(err_msg("Interrupt write larger than max packet size"));
         }
 
-        // TODO: If we try to send more data than the max_packet_size or interrupt size limit., most devices will just break.
-        
+        // TODO: If we try to send more data than the max_packet_size or interrupt size
+        // limit., most devices will just break.
 
         let buf = buffer.to_vec();
         let transfer = self.start_transfer(USBDEVFS_URB_TYPE_INTERRUPT, endpoint, 0, buf)?;
@@ -447,5 +461,4 @@ impl Device {
 
         Ok(())
     }
-
 }

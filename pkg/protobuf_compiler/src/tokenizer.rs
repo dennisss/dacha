@@ -168,8 +168,9 @@ parser!(pub strLit<&str, String> => seq!(c => {
 // charValue = hexEscape | octEscape | charEscape | /[^\0\n\\]/
 fn char_value(quote: char) -> impl Fn(&str) -> Result<(char, &str)> {
     alt!(
-        hex_escape, oct_escape, char_escape,
-    
+        hex_escape,
+        oct_escape,
+        char_escape,
         // NOTE: Can't be a quote because of strLit
         like(|c| c != quote && c != '\0' && c != '\n' && c != '\\')
     )

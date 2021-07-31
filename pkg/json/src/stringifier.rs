@@ -1,14 +1,13 @@
-use std::fmt::Write;
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::marker::PhantomData;
 
 use crate::value::Value;
 
-
 #[derive(Default)]
 pub struct StringifyOptions {
     pub indent: Option<String>,
-    pub space_after_colon: bool
+    pub space_after_colon: bool,
 }
 
 pub struct Stringifier {
@@ -18,9 +17,12 @@ pub struct Stringifier {
 }
 
 impl Stringifier {
-
     pub fn new(options: StringifyOptions) -> Self {
-        Self { output: String::new(), options, current_indent_level: 0 }
+        Self {
+            output: String::new(),
+            options,
+            current_indent_level: 0,
+        }
     }
 
     /// NOTE: This should NOT be called twice.
@@ -46,7 +48,7 @@ impl Stringifier {
                 self.add_null();
             }
             Value::Bool(v) => {
-               self.add_bool(*v); 
+                self.add_bool(*v);
             }
             Value::Number(v) => {
                 self.add_number(*v);
@@ -97,11 +99,21 @@ impl Stringifier {
                         self.output.push('\\');
                         self.output.push(c);
                     }
-                    '\x08' => { self.output.push_str("\\b"); }
-                    '\x0C' => { self.output.push_str("\\f"); }
-                    '\n' => { self.output.push_str("\\n"); }
-                    '\r' => { self.output.push_str("\\r"); }
-                    '\t' => { self.output.push_str("\\t"); }
+                    '\x08' => {
+                        self.output.push_str("\\b");
+                    }
+                    '\x0C' => {
+                        self.output.push_str("\\f");
+                    }
+                    '\n' => {
+                        self.output.push_str("\\n");
+                    }
+                    '\r' => {
+                        self.output.push_str("\\r");
+                    }
+                    '\t' => {
+                        self.output.push_str("\\t");
+                    }
                     _ => {
                         write!(self.output, "\\u00{:02X}", ((c as u32) as u8)).unwrap();
                     }
@@ -142,7 +154,7 @@ impl Stringifier {
     fn add_object(&mut self, obj: &HashMap<String, Value>) {
         self.add_object_start();
 
-        let mut first=  true;
+        let mut first = true;
         for (key, value) in obj.iter() {
             self.add_object_field_key(key.as_str(), first);
             self.add_value(value);
@@ -216,14 +228,14 @@ impl<'a> ValueStringifier<'a> {
         self.outer.add_array_start();
         ArrayStringifier {
             outer: self.outer,
-            first: true
+            first: true,
         }
     }
 }
 
 pub struct ObjectStringifier<'a> {
     outer: &'a mut Stringifier,
-    first: bool
+    first: bool,
 }
 
 impl<'a> ObjectStringifier<'a> {
@@ -243,7 +255,7 @@ impl<'a> Drop for ObjectStringifier<'a> {
 
 pub struct ArrayStringifier<'a> {
     outer: &'a mut Stringifier,
-    first: bool
+    first: bool,
 }
 
 impl<'a> ArrayStringifier<'a> {
@@ -260,4 +272,3 @@ impl<'a> Drop for ArrayStringifier<'a> {
         self.outer.add_array_end(self.first);
     }
 }
-

@@ -1,4 +1,3 @@
-
 use common::errors::*;
 
 enum_def!(HIDDescriptorType u8 =>

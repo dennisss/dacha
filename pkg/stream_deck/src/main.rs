@@ -1,9 +1,8 @@
-
-#[macro_use] extern crate common;
+#[macro_use]
+extern crate common;
 extern crate stream_deck;
 
 use common::errors::*;
-
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -11,8 +10,6 @@ type Result<T> = std::result::Result<T, Error>;
 // sudo udevadm control --reload-rules
 
 async fn read_controller() -> Result<()> {
-
-
     let image = std::fs::read(project_path!("pkg/stream_deck/sample_icon.jpg"))?;
 
     // 0: 0x02
@@ -32,14 +29,13 @@ async fn read_controller() -> Result<()> {
 
     deck.set_brightness(20).await?;
     deck.set_display_timeout(30).await?;
-    
+
     println!("Serial Number: {}", deck.get_serial_number().await?);
     println!("Firmware Version: {}", deck.get_firmware_number().await?);
 
     loop {
         deck.poll_key_state().await?;
     }
-
 
     Ok(())
 }

@@ -54,7 +54,9 @@ impl DescriptorType {
             6 => Self::DEVICE_QUALIFIER,
             7 => Self::OTHER_SPEED_CONFIGURATION,
             8 => Self::INTERFACE_POWER1,
-            _ => { return None; }
+            _ => {
+                return None;
+            }
         })
     }
 }

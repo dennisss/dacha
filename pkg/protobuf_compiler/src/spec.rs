@@ -285,7 +285,7 @@ pub enum TopLevelDef {
     Enum(Enum),
     Extend(Extend),
     Service(Service),
-    Option(Opt)
+    Option(Opt),
 }
 
 pub struct Positioned {}

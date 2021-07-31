@@ -15,30 +15,32 @@ extern crate parsing; // < Mainly needed for f32/f64 conversions
 extern crate macros;
 
 // TODO: Eventually remove dependencies on the compiler
-extern crate protobuf_compiler;
 extern crate json;
+extern crate protobuf_compiler;
 
+mod bytes;
+mod collections;
+mod proto;
 pub mod reflection;
 pub mod service;
 pub mod text;
 pub mod wire;
-mod proto;
-mod bytes;
-mod collections;
 
+pub use crate::reflection::{FieldDescriptor, MessageReflection};
 pub use bytes::BytesField;
+pub use collections::*;
 pub use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
-pub use crate::reflection::{MessageReflection, FieldDescriptor};
 pub use protobuf_compiler::spec::EnumValue;
 pub use protobuf_compiler::spec::FieldNumber;
-pub use collections::*;
 
 // NOTE: Construct an empty proto by calling MessageType::default()
 // Clone + std::fmt::Debug + std::default::Default + MessageReflection
 pub trait Message: 'static + Send + Sync {
     // NOTE: This will append values to
-    fn parse(data: &[u8]) -> Result<Self> where Self: Sized;
+    fn parse(data: &[u8]) -> Result<Self>
+    where
+        Self: Sized;
 
     fn parse_merge(&mut self, data: &[u8]) -> Result<()>;
 
@@ -85,12 +87,14 @@ pub trait Enum {
 
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct MessagePtr<T> {
-    value: Box<T>
+    value: Box<T>,
 }
 
 impl<T> MessagePtr<T> {
     pub fn new(value: T) -> Self {
-        Self { value: Box::new(value) }
+        Self {
+            value: Box::new(value),
+        }
     }
 }
 
@@ -119,7 +123,6 @@ impl<T> std::convert::AsMut<T> for MessagePtr<T> {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -142,9 +145,5 @@ mod test {
 
         list.set_id(4);
         assert_eq!(&list.serialize().unwrap(), &[0x10, 4]);
-
-
-
     }
-
 }

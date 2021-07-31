@@ -1,4 +1,3 @@
-
 pub mod log {
     include!(concat!(env!("OUT_DIR"), "/src/proto/log.rs"));
 }

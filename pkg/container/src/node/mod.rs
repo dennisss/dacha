@@ -1,20 +1,20 @@
 mod backoff;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 
-use common::task::ChildTask;
+use common::async_std::channel;
 use common::async_std::io::prelude::WriteExt;
 use common::async_std::sync::Mutex;
-use common::async_std::channel;
 use common::errors::*;
+use common::task::ChildTask;
 use crypto::hasher::Hasher;
 use protobuf::text::parse_text_proto;
 
-use crate::proto::service::*;
-use crate::proto::log::*;
 use crate::proto::config::*;
+use crate::proto::log::*;
+use crate::proto::service::*;
 use crate::runtime::ContainerRuntime;
 
 /// Directory for storing data for uploaded blobs.
@@ -23,7 +23,7 @@ use crate::runtime::ContainerRuntime;
 /// - './{BLOB_ID}/raw' : Raw version of the blob as uploaded.
 /// - './{BLOB_ID}/extracted/' : Directory which contains all of the files
 /// - './{BLOB_ID}/metadata' : Present once the blob has been fully ingested.
-///                            Currently this file is always empty.
+///   Currently this file is always empty.
 const BLOB_DATA_DIR: &'static str = "/opt/dacha/container/blob";
 
 struct Task {
@@ -35,35 +35,36 @@ struct Task {
 
     state: TaskState,
 
-    /// The task was recently created or updated so we are waiting for the task to be started
-    /// using the latest TaskSpec.
+    /// The task was recently created or updated so we are waiting for the task
+    /// to be started using the latest TaskSpec.
     ///
     /// Will be reset to false once we have entired the Starting|Running state.
-    pending_update: bool
+    pending_update: bool,
 }
 
 enum TaskState {
-    /// We are still launching on resources to become available or still creating the environment
-    /// that will run this task.
+    /// We are still launching on resources to become available or still
+    /// creating the environment that will run this task.
     Pending,
 
-    /// In this state, we have a running container for this task. 
+    /// In this state, we have a running container for this task.
     Running,
 
-    /// In this state, we already sent a SIGINT to the task and are waiting for it to stop
-    /// on its own.
+    /// In this state, we already sent a SIGINT to the task and are waiting for
+    /// it to stop on its own.
     Stopping {
         timer_id: usize,
-        timeout_task: ChildTask
+        timeout_task: ChildTask,
     },
 
-    /// We were just in the Stopping state and sent a SIGKILL to the container because it was
-    /// taking too long to stop. 
-    /// We are currently waiting for the container runtime to report that the container is
-    /// completely dead.
+    /// We were just in the Stopping state and sent a SIGKILL to the container
+    /// because it was taking too long to stop.
+    /// We are currently waiting for the container runtime to report that the
+    /// container is completely dead.
     ForceStopping,
 
-    /// The task's container is dead and we are waiting a reasonable amount of time before retrying.
+    /// The task's container is dead and we are waiting a reasonable amount of
+    /// time before retrying.
     RestartBackoff,
 
     /// The container has exited and there is no plan to restart it.
@@ -77,38 +78,38 @@ State of a container:
 State of a task:
 
 - Running
-    - We've created a container for it is 
+    - We've created a container for it is
 
 - Stopping(start_time)
     - When entered, we will send a SIGINT to the task
     - If still in this state for N seconds, we will send a SIGKILL
     - Just wait for the container to enter a Stopped state.
 
-- Killed 
+- Killed
 
 - Restarting
     - We must wait until the container has been killed
-    - Once it has killed, 
+    - Once it has killed,
 
 Creating a task:
 
 
 TODO: Verify that sending a kill to the runtime doesn't cause an error if the container just recently died and we didn't process the event notification yet.
 
-- Deleting 
+- Deleting
 */
 
 enum NodeEvent {
     ContainerStateChange { container_id: String },
-    
+
     StopTimeout { task_name: String, timer_id: usize },
 
-    RuntimeEnded(Result<()>)
+    RuntimeEnded(Result<()>),
 }
 
 #[derive(Clone)]
 pub struct Node {
-    shared: Arc<NodeShared>
+    shared: Arc<NodeShared>,
 }
 
 struct NodeShared {
@@ -116,16 +117,16 @@ struct NodeShared {
     event_channel: (channel::Sender<NodeEvent>, channel::Receiver<NodeEvent>),
     state: Mutex<NodeState>,
 
-    last_timer_id: AtomicUsize
+    last_timer_id: AtomicUsize,
 }
 
 struct NodeState {
     tasks: Vec<Task>,
-    inner: NodeStateInner
+    inner: NodeStateInner,
 }
 
 struct NodeStateInner {
-    container_id_to_task_name: HashMap<String, String>
+    container_id_to_task_name: HashMap<String, String>,
 }
 
 impl Node {
@@ -137,16 +138,16 @@ impl Node {
                 state: Mutex::new(NodeState {
                     tasks: vec![],
                     inner: NodeStateInner {
-                        container_id_to_task_name: HashMap::new()
-                    }
+                        container_id_to_task_name: HashMap::new(),
+                    },
                 }),
                 event_channel: channel::unbounded(),
-                last_timer_id: AtomicUsize::new(0)
-            })
+                last_timer_id: AtomicUsize::new(0),
+            }),
         })
     }
 
-    pub fn run(&self) -> impl std::future::Future<Output=Result<()>> {
+    pub fn run(&self) -> impl std::future::Future<Output = Result<()>> {
         self.clone().run_event_loop()
     }
 
@@ -156,7 +157,9 @@ impl Node {
             let sender = self.shared.event_channel.0.clone();
 
             ChildTask::spawn(async move {
-                let _ = sender.send(NodeEvent::RuntimeEnded(runtime.run().await)).await;
+                let _ = sender
+                    .send(NodeEvent::RuntimeEnded(runtime.run().await))
+                    .await;
             })
         };
 
@@ -166,11 +169,12 @@ impl Node {
 
             ChildTask::spawn(async move {
                 while let Ok(container_id) = receiver.recv().await {
-                    let _ = sender.send(NodeEvent::ContainerStateChange { container_id }).await;
+                    let _ = sender
+                        .send(NodeEvent::ContainerStateChange { container_id })
+                        .await;
                 }
             })
         };
-
 
         loop {
             let event = self.shared.event_channel.1.recv().await?;
@@ -184,33 +188,46 @@ impl Node {
                     let task_name = match state.inner.container_id_to_task_name.get(&container_id) {
                         Some(v) => v.clone(),
                         None => {
-                            eprintln!("Container id is not associated with a task: {}", container_id);
+                            eprintln!(
+                                "Container id is not associated with a task: {}",
+                                container_id
+                            );
                             continue;
                         }
                     };
 
-                    let task = state.tasks.iter_mut().find(|t| t.spec.name() == task_name)
+                    let task = state
+                        .tasks
+                        .iter_mut()
+                        .find(|t| t.spec.name() == task_name)
                         .unwrap();
-                    
+
                     if task.pending_update {
                         // TODO: This needs to put the task into an error task if this fails.
-                        if let Err(e) = self.transition_task_to_running(&mut state.inner, task).await {
+                        if let Err(e) = self
+                            .transition_task_to_running(&mut state.inner, task)
+                            .await
+                        {
                             // Report this error back to the client.
                             eprintln!("Failed to start running task: {}", e);
 
-                            // TODO: We should determine if it is a retryable error (in which case 
+                            // TODO: We should determine if it is a retryable error (in which case
                             // we can retry based on the restart policy)
                             task.state = TaskState::Terminal;
                         }
                     } else {
-
-                        // TODO: Need to check the restart policy to see if we should restart the container.
+                        // TODO: Need to check the restart policy to see if we should restart the
+                        // container.
 
                         task.state = TaskState::Terminal;
                     }
-                },
-                NodeEvent::StopTimeout { task_name, timer_id: event_timer_id } => {
-                    // If the timer id matches the one in the current Stopped state, then we'll send a SIGKILL
+                }
+                NodeEvent::StopTimeout {
+                    task_name,
+                    timer_id: event_timer_id,
+                } => {
+                    // If the timer id matches the one in the current Stopped state, then we'll send
+                    // a SIGKILL
 
                     let mut state = self.shared.state.lock().await;
 
@@ -232,25 +249,33 @@ impl Node {
 
                     if should_force_stop {
                         let container_id = task.container_id.as_ref().unwrap();
-                        self.shared.runtime.kill_container(container_id, nix::sys::signal::Signal::SIGKILL).await?;
-                        
+                        self.shared
+                            .runtime
+                            .kill_container(container_id, nix::sys::signal::Signal::SIGKILL)
+                            .await?;
+
                         task.state = TaskState::ForceStopping;
                     }
-                },
+                }
                 NodeEvent::RuntimeEnded(result) => {
                     if result.is_ok() {
                         return Err(err_msg("Container runtime ended early"));
                     }
-                    
+
                     return result;
-                },
+                }
             }
         }
     }
 
-    async fn transition_task_to_running(&self, state_inner: &mut NodeStateInner, task: &mut Task) -> Result<()> {
+    async fn transition_task_to_running(
+        &self,
+        state_inner: &mut NodeStateInner,
+        task: &mut Task,
+    ) -> Result<()> {
         let mut container_config = ContainerConfig::default();
-        parse_text_proto(r#"
+        parse_text_proto(
+            r#"
             mounts: [
                 {
                     destination: "/proc"
@@ -274,7 +299,9 @@ impl Node {
                     options: ["bind", "ro"]
                 }
             ]
-        "#, &mut container_config)?;
+        "#,
+            &mut container_config,
+        )?;
 
         for arg in task.spec.args() {
             container_config.process_mut().add_args(arg.clone());
@@ -290,10 +317,10 @@ impl Node {
             if !metadata_path.exists().await {
                 return Err(rpc::Status {
                     code: rpc::StatusCode::NotFound,
-                    message: format!("Blob for volume {} doesn't exist", volume.name())
-                }.into());
+                    message: format!("Blob for volume {} doesn't exist", volume.name()),
+                }
+                .into());
             }
-
 
             let mut mount = ContainerMount::default();
             mount.set_destination(format!("/volumes/{}", volume.name()));
@@ -311,12 +338,20 @@ impl Node {
             task.pending_update = false;
         }
 
-        let container_id = self.shared.runtime.start_container(&container_config).await?;
+        let container_id = self
+            .shared
+            .runtime
+            .start_container(&container_config)
+            .await?;
 
         if let Some(old_container_id) = task.container_id.take() {
-            state_inner.container_id_to_task_name.remove(&old_container_id);
+            state_inner
+                .container_id_to_task_name
+                .remove(&old_container_id);
         }
-        state_inner.container_id_to_task_name.insert(container_id.clone(), task.spec.name().to_string());
+        state_inner
+            .container_id_to_task_name
+            .insert(container_id.clone(), task.spec.name().to_string());
 
         task.container_id = Some(container_id.clone());
         task.state = TaskState::Running;
@@ -326,19 +361,33 @@ impl Node {
 
     async fn transition_task_to_stopping(&self, task: &mut Task) -> Result<()> {
         let container_id = task.container_id.as_ref().unwrap();
-        self.shared.runtime.kill_container(container_id, nix::sys::signal::Signal::SIGINT).await?;
-        
+        self.shared
+            .runtime
+            .kill_container(container_id, nix::sys::signal::Signal::SIGINT)
+            .await?;
+
         // TODO: Instead use the task id of the child task.
-        let timer_id = self.shared.last_timer_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let timer_id = self
+            .shared
+            .last_timer_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         let task_name = task.spec.name().to_string();
         let timeout_sender = self.shared.event_channel.0.clone();
         let timeout_task = ChildTask::spawn(async move {
             common::async_std::task::sleep(std::time::Duration::from_secs(10)).await;
-            let _ = timeout_sender.send(NodeEvent::StopTimeout { task_name, timer_id }).await;
+            let _ = timeout_sender
+                .send(NodeEvent::StopTimeout {
+                    task_name,
+                    timer_id,
+                })
+                .await;
         });
 
-        task.state = TaskState::Stopping { timer_id, timeout_task };
+        task.state = TaskState::Stopping {
+            timer_id,
+            timeout_task,
+        };
 
         Ok(())
     }
@@ -346,9 +395,11 @@ impl Node {
 
 #[async_trait]
 impl ContainerNodeService for Node {
-
-    async fn Query(&self, request: rpc::ServerRequest<QueryRequest>,
-                   response: &mut rpc::ServerResponse<QueryResponse>) -> Result<()> {
+    async fn Query(
+        &self,
+        request: rpc::ServerRequest<QueryRequest>,
+        response: &mut rpc::ServerResponse<QueryResponse>,
+    ) -> Result<()> {
         let containers = self.shared.runtime.list_containers().await;
         for container in containers {
             response.add_container(container);
@@ -358,22 +409,26 @@ impl ContainerNodeService for Node {
     }
 
     // async fn Start(&self, request: rpc::ServerRequest<StartRequest>,
-    //                 response: &mut rpc::ServerResponse<StartResponse>) -> Result<()> {
-    //     let config = request.value.config();
+    //                 response: &mut rpc::ServerResponse<StartResponse>) ->
+    // Result<()> {     let config = request.value.config();
     //     let id = self.shared.runtime.start_container(config).await?;
     //     response.value.set_container_id(id);
     //     Ok(())
     // }
 
-    async fn StartTask(&self, request: rpc::ServerRequest<StartTaskRequest>,
-                       response: &mut rpc::ServerResponse<StartTaskResponse>) -> Result<()> {
-
+    async fn StartTask(
+        &self,
+        request: rpc::ServerRequest<StartTaskRequest>,
+        response: &mut rpc::ServerResponse<StartTaskResponse>,
+    ) -> Result<()> {
         let mut state_guard = self.shared.state.lock().await;
         let state = &mut *state_guard;
 
-        let existing_task = state.tasks.iter_mut()
+        let existing_task = state
+            .tasks
+            .iter_mut()
             .find(|t| t.spec.name() == request.task_spec().name());
-        
+
         let task = {
             if let Some(task) = existing_task {
                 // TODO: Consider preserving the previous task_spec until the new one is added.
@@ -384,7 +439,7 @@ impl ContainerNodeService for Node {
                     spec: request.task_spec().clone(),
                     container_id: None,
                     state: TaskState::Pending,
-                    pending_update: false
+                    pending_update: false,
                 });
                 state.tasks.last_mut().unwrap()
             }
@@ -394,15 +449,17 @@ impl ContainerNodeService for Node {
 
         match &task.state {
             TaskState::Pending | TaskState::RestartBackoff | TaskState::Terminal => {
-                self.transition_task_to_running(&mut state.inner, task).await?;
-            },
+                self.transition_task_to_running(&mut state.inner, task)
+                    .await?;
+            }
             TaskState::Running => {
                 self.transition_task_to_stopping(task).await?;
-            },
+            }
             TaskState::Stopping { .. } | TaskState::ForceStopping => {
-                // We don't need to anything. Once the container finishes stopping, the new
-                // container will be brought up. 
-            },
+                // We don't need to anything. Once the container finishes
+                // stopping, the new container will be brought
+                // up.
+            }
         }
 
         Ok(())
@@ -410,15 +467,23 @@ impl ContainerNodeService for Node {
 
     // TODO: When the Node closes, we should kill all tasks that it has
 
-    async fn GetLogs(&self, request: rpc::ServerRequest<LogRequest>,
-                     response: &mut rpc::ServerStreamResponse<LogEntry>) -> Result<()> {
+    async fn GetLogs(
+        &self,
+        request: rpc::ServerRequest<LogRequest>,
+        response: &mut rpc::ServerStreamResponse<LogEntry>,
+    ) -> Result<()> {
         let container_id = {
             let state = self.shared.state.lock().await;
-            let task = state.tasks.iter().find(|t| t.spec.name() == request.task_name())
-                .ok_or_else(|| Error::from(rpc::Status {
-                    code: rpc::StatusCode::NotFound,
-                    message: format!("No task found with name: {}", request.task_name())
-                }))?;
+            let task = state
+                .tasks
+                .iter()
+                .find(|t| t.spec.name() == request.task_name())
+                .ok_or_else(|| {
+                    Error::from(rpc::Status {
+                        code: rpc::StatusCode::NotFound,
+                        message: format!("No task found with name: {}", request.task_name()),
+                    })
+                })?;
 
             task.container_id.clone().unwrap()
         };
@@ -445,7 +510,6 @@ impl ContainerNodeService for Node {
                 if end_stream {
                     break;
                 }
-
             } else {
                 // TODO: Replace with receiving a notification.
                 common::async_std::task::sleep(std::time::Duration::from_millis(100)).await;
@@ -457,26 +521,32 @@ impl ContainerNodeService for Node {
         Ok(())
     }
 
-    async fn UploadBlob(&self, mut request: rpc::ServerStreamRequest<BlobData>,
-                        response: &mut rpc::ServerResponse<EmptyMessage>) -> Result<()> {
-        let first_part = request.recv().await?
-            .ok_or_else(|| rpc::Status::invalid_argument("Expected at least one request message"))?;
-        
-        // TODO: Obtain an exclusive lock via the FS on the OS on /opt/container to ensure that this is consitent.
-        // TODO: Filter '..', absolute paths, etc.
+    async fn UploadBlob(
+        &self,
+        mut request: rpc::ServerStreamRequest<BlobData>,
+        response: &mut rpc::ServerResponse<EmptyMessage>,
+    ) -> Result<()> {
+        let first_part = request.recv().await?.ok_or_else(|| {
+            rpc::Status::invalid_argument("Expected at least one request message")
+        })?;
+
+        // TODO: Obtain an exclusive lock via the FS on the OS on /opt/container to
+        // ensure that this is consitent. TODO: Filter '..', absolute paths,
+        // etc.
         let blob_dir = common::async_std::path::Path::new(BLOB_DATA_DIR).join(first_part.id());
 
         let metadata_path = blob_dir.join("metadata");
         if metadata_path.exists().await {
             return Err(rpc::Status {
                 code: rpc::StatusCode::AlreadyExists,
-                message: "Blob already exists".into()
-            }.into());
+                message: "Blob already exists".into(),
+            }
+            .into());
         }
 
         // Create the blob dir.
-        // If the directory already exists, then likely a previous attempt to upload failed, so we'll just
-        // retry.
+        // If the directory already exists, then likely a previous attempt to upload
+        // failed, so we'll just retry.
         if !blob_dir.exists().await {
             common::async_std::fs::create_dir_all(&blob_dir).await?;
         }
@@ -484,8 +554,12 @@ impl ContainerNodeService for Node {
         let mut raw_file_path = blob_dir.join("raw");
 
         let mut raw_file = common::async_std::fs::OpenOptions::new()
-            .create(true).truncate(true).write(true).open(&raw_file_path).await?;
-        
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&raw_file_path)
+            .await?;
+
         let mut hasher = crypto::sha256::SHA256Hasher::default();
 
         raw_file.write_all(first_part.data()).await?;
@@ -496,8 +570,9 @@ impl ContainerNodeService for Node {
             hasher.update(part.data());
         }
 
-        // NOTE: We expect hex capitalization to also match in case our file system is case sensitive.
-        let hash = common::hex::encode(hasher.finish()); 
+        // NOTE: We expect hex capitalization to also match in case our file system is
+        // case sensitive.
+        let hash = common::hex::encode(hasher.finish());
         if hash != first_part.id() {
             return Err(rpc::Status::invalid_argument("Blob id did not match blob data").into());
         }
@@ -505,14 +580,17 @@ impl ContainerNodeService for Node {
         raw_file.flush().await?;
 
         let mut archive_reader = compression::tar::Reader::open(&raw_file_path).await?;
-        archive_reader.extract_files(blob_dir.join("extracted").as_path().into()).await?;
+        archive_reader
+            .extract_files(blob_dir.join("extracted").as_path().into())
+            .await?;
 
         // Create an empty metadata sentinel file.
         common::async_std::fs::OpenOptions::new()
-            .create_new(true).write(true).open(&metadata_path).await?;
-        
+            .create_new(true)
+            .write(true)
+            .open(&metadata_path)
+            .await?;
+
         Ok(())
     }
 }
-
-
