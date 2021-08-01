@@ -55,12 +55,18 @@ pub trait ResponseHandler: Send + Sync {
     // TODO: Document whether or not this should be a 'fast' running function. This will determine
     // whether or not we need to spawn a new task in the connection code to run it.
     async fn handle_response(&self, response: Result<Response>);
+
+    fn is_closed(&self) -> bool;
 }
 
 #[async_trait]
 impl ResponseHandler for channel::Sender<Result<Response>> {
     async fn handle_response(&self, response: Result<Response>) {
         let _ = self.send(response).await;
+    }
+
+    fn is_closed(&self) -> bool {
+        channel::Sender::is_closed(self)
     }
 }
 

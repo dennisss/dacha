@@ -5,16 +5,21 @@ use crate::hpack::indexing_tables::search_for_header;
 
 
 pub struct Encoder {
-
     /// Maximum size of the dynamic table as specified by the protocol (e.g. HTTP2)
     protocol_max_size: usize,
+
+    /// Maximum size of the dynamic table allowed by local options. Before we append new headers to
+    /// a block, we will ensure that dynamic table is no larger than this. This is a safety feature
+    /// used to protect againt extremely large protocol_max_size values advertised by the remote
+    /// endpoint. 
+    local_max_size: Option<usize>,
 
     dynamic_table: DynamicTable
 }
 
 impl Encoder {
     pub fn new(protocol_max_size: usize) -> Self {
-        Self { protocol_max_size, dynamic_table: DynamicTable::new(protocol_max_size) }
+        Self { protocol_max_size, dynamic_table: DynamicTable::new(protocol_max_size), local_max_size: None }
     }
 
     pub fn set_protocol_max_size(&mut self, protocol_max_size: usize) {
@@ -23,16 +28,27 @@ impl Encoder {
         self.dynamic_table.resize(std::cmp::min(protocol_max_size, self.dynamic_table.max_size()));
     }
 
+    pub fn set_local_max_size(&mut self, local_max_size: usize) {
+        self.local_max_size = Some(local_max_size);
+    }
+
     /// NOTE: We assume that new_max_size is smaller than the protocol_max_size.
     pub fn append_table_size_update(&mut self, max_size: usize, out: &mut Vec<u8>) {
         self.dynamic_table.resize(max_size);
         
+        // NOTE: Should never fail.
         HeaderFieldRepresentation::DynamicTableSizeUpdate {
             max_size
-        }.serialize(out);
+        }.serialize(out).unwrap();
     }
 
     pub fn append<'a>(&mut self, header: HeaderFieldRef<'a>, out: &mut Vec<u8>) {
+        if let Some(local_max_size) = self.local_max_size.clone() {
+            if self.dynamic_table.max_size() > local_max_size {
+                self.append_table_size_update(local_max_size, out);
+            }
+        }
+
         let mut name = StringReference::LiteralRef(header.name);
         let mut value = StringReference::LiteralRef(header.value);
         let mut indexed ;

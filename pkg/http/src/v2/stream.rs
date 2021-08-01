@@ -31,6 +31,10 @@ pub struct Stream {
 
     /// Used to let the local thread that is processing this stream know that
     /// more data can be written to the stream.
+    ///
+    /// MUST be called whenever any of the following fields are changed:
+    /// - state.remote_window
+    /// - state.sending_buffer (not in OutgoingStreamBody)
     pub write_available_notifier: channel::Sender<()>,
 
     /// If not None, then this stream was used to send a request to a remote server and we are
@@ -66,6 +70,14 @@ impl Stream {
         self.sending_end_flushed && state.received_end
     }
 
+    pub fn remote_window(&self, state: &mut StreamState) -> WindowSize {
+        state.remote_window
+    }
+
+    pub fn set_remote_window(&self, state: &mut StreamState, value: WindowSize) {
+        state.remote_window = value;
+        let _ = self.write_available_notifier.try_send(());
+    }
 
     fn set_received_end(&self, end_stream: bool, state: &mut StreamState) -> StreamResult<()> {
         if state.received_end {

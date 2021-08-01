@@ -21,7 +21,7 @@ pub fn serialize_varint(mut value: usize, prefix_bits: usize, out: &mut Vec<u8>)
     // On 8-bit addressed systems, the '1 << prefix_bits' will overflow.  
     assert!(std::mem::size_of::<usize>() > 1);
 
-    // Thisi s the prefix mask. Contains exactly 'prefix_bits' 1-bits 
+    // This is the prefix mask. Contains exactly 'prefix_bits' 1-bits 
     let limit: usize = (1 << prefix_bits) - 1;
  
     if value < limit {

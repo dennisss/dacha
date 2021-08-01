@@ -143,8 +143,8 @@ pub struct RecordReader {
 }
 
 impl RecordReader {
-    pub async fn open(path: &Path) -> Result<Self> {
-        let file = OpenOptions::new().read(true).open(path).await?;
+    pub async fn open(path: &Path) -> Result<Self> {        
+        let file = OpenOptions::new().read(true).open(path).await?;        
 
         let mut block = vec![];
         block.reserve_exact(BLOCK_SIZE as usize);
@@ -160,6 +160,7 @@ impl RecordReader {
     }
 
     pub fn into_writer(self) -> RecordWriter {
+        // TODO: Need to set O_APPEND
         RecordWriter { file: self.file }
     }
 

@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
+use common::errors::Result;
 use common::task::ChildTask;
 use common::async_std::channel;
 use common::async_std::sync::Mutex;
@@ -28,7 +29,7 @@ pub struct ConnectionState {
 
     /// If present, then the connection is either shutting down or already
     /// closed.
-    pub error: Option<ProtocolErrorV2>,
+    pub shutting_down: ShuttingDownState,
 
     /// Used by an client to enqueue requests to be sent to the other endpoint.
     /// If a request is still in this list then it definately hasn't been sent to the other
@@ -70,6 +71,14 @@ pub struct ConnectionState {
     pub last_received_stream_id: StreamId,
     pub last_sent_stream_id: StreamId,
 
+    /// The highest stream id which we will accept from the remote endpoint. By default this will
+    /// be MAX_STREAM_ID, but will be decreased during graceful shutdown.
+    pub upper_received_stream_id: StreamId,
+
+    /// The highest stream id which we are allowed to send.
+    /// Will be decreased whenever we receive a GOAWAY packet.
+    pub upper_sent_stream_id: StreamId,
+
     /// Number of locally initialized 
     pub local_stream_count: usize,
 
@@ -99,10 +108,13 @@ pub enum ConnectionEvent {
 
     /// A locally initialized GOAWAY was triggered. In response, we should let the other endpoint
     /// know about it.
-    Goaway {
-        last_stream_id: StreamId,
-        error: ProtocolErrorV2
-    },
+    // Goaway {
+        
+
+    //     /// If present, then this was a local internal error was generated (not the fault of the
+    //     /// remote endpoint and this was the reason why we are )
+    //     close_with: Option<Result<()>>
+    // },
     
     /// The connection is ready to be closed immediately.
     ///
@@ -110,8 +122,13 @@ pub enum ConnectionEvent {
     /// 1. All streams are closed, so error == None and we are done gracefully shutting down.
     /// 2. We received a remote GOAWAY with a non-NO_ERROR code or the reader thread failed, so we
     ///    should close the connection ASAP.
+
+
+    /// NOTE: If you send this event, you are responsible for setting
+    /// ConnectionState::shutting_down and ConnectionState::upper_received_stream_id appropriately. 
     Closing {
-        error: Option<ProtocolErrorV2>
+        send_goaway: Option<ProtocolErrorV2>,
+        close_with: Option<Result<()>>,
     },
 
     /// We received remote settings which we've applied to the local state and should now be
@@ -165,6 +182,33 @@ pub enum ConnectionEvent {
         request: Request,
         response: Response
     },
+}
+
+pub enum ShuttingDownState {
+    No,
+
+    /// We received a remote GOAWAY
+    Remote,
+
+    Graceful {
+        /// Task which eventually triggers a transition to the Abrupt shutdown state.
+        /// Only used on Server endpoints to ensure that the server shutdown time is bounded.
+        timeout_task: Option<ChildTask>
+    },
+
+    Abrupt,
+
+    Complete
+}
+
+impl ShuttingDownState {
+    pub fn is_some(&self) -> bool {
+        if let ShuttingDownState::No = self {
+            false
+        } else {
+            true
+        }
+    }
 }
 
 pub struct ConnectionLocalRequest {

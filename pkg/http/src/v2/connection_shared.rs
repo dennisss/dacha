@@ -18,11 +18,6 @@ pub const CONNECTION_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
 pub const CONNECTION_PREFACE_BODY: &[u8] = b"SM\r\n\r\n";
 
-/// Amount of time after which we'll close the connection if we don't receive an acknowledment to our
-/// 
-pub const SETTINGS_ACK_TIMEOUT_SECS: u64 = 10;
-
-
 
 pub struct ConnectionShared {
     pub is_server: bool,
@@ -46,8 +41,6 @@ pub struct ConnectionShared {
     /// TODO: Eventually support changing this. 
     pub options: ConnectionOptions
 
-    // Stream ids can't be re-used.
-    // Also, stream ids can't be 
 }
 
 impl ConnectionShared {
@@ -148,10 +141,14 @@ impl ConnectionShared {
         //
         // TODO: What should we do about promised streams?
         //
-        // NOTE: If connection_state.error is not None, then it's likely an OK error, because we
+        // NOTE: If connection_state.shutting_down is not No, then it's likely an OK error, because we
         // close the connection immediately on other types of errors.
-        if connection_state.error.is_some() && connection_state.streams.is_empty() {
-            let _ = self.connection_event_sender.try_send(ConnectionEvent::Closing { error: None });
+        if connection_state.shutting_down.is_some() && connection_state.streams.is_empty() {
+            // NOTE: Because both of the values are None, we leave the final decision on whether or not to close to
+            // the writer thread.
+            let _ = self.connection_event_sender.try_send(ConnectionEvent::Closing {
+                send_goaway: None, close_with: None
+            });
         }
 
         if self.is_local_stream_id(stream_id) {
@@ -202,24 +199,24 @@ impl ConnectionShared {
 
                 sending_buffer: vec![],
                 sending_trailers: None,
-                sending_end: false
+                sending_end: false,
+                max_sending_buffer_size: self.options.max_sending_buffer_size
             }))
         };
 
-        let incoming_body = IncomingStreamBody {
+        let incoming_body = IncomingStreamBody::new(
             stream_id,
-            stream_state: stream.state.clone(),
-            connection_event_sender: self.connection_event_sender.clone(),
+            stream.state.clone(),
+            self.connection_event_sender.clone(),
             read_available_receiver,
-            expected_length: None
-        };
+        );
 
-        let outgoing_body = OutgoingStreamBody {
+        let outgoing_body = OutgoingStreamBody::new(
             stream_id,     
-            stream_state: stream.state.clone(),
-            connection_event_sender: self.connection_event_sender.clone(),
+            stream.state.clone(),
+            self.connection_event_sender.clone(),
             write_available_receiver
-        };
+        );
 
         (stream, incoming_body, outgoing_body)
     }

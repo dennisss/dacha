@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::fmt::Write;
 
 use common::errors::*;
 use common::io::Readable;
@@ -72,46 +73,77 @@ impl ConnectionReader {
     pub async fn run(self, reader: Box<dyn Readable>, skip_preface_head: bool) {
         let result = self.run_inner(reader, skip_preface_head).await;
         
+        // Mark that we will never receive any more stream ids.
+        // This will be sent to the remote endpoint in any GOAWAYs that we send.
+        {
+            let mut connection_state = self.shared.state.lock().await;
+            connection_state.upper_received_stream_id = connection_state.last_received_stream_id;
+
+            connection_state.shutting_down = ShuttingDownState::Complete;
+        }
+
         match result {
             Ok(()) => {
-                // TODO: Will this ever happen?
-                let _ = self.shared.connection_event_sender.send(ConnectionEvent::Closing { error: Some(ProtocolErrorV2 {
-                    code: ErrorCode::PROTOCOL_ERROR,
-                    message: "Reader thread ended",
-                    local: false
-                }) }).await;
+                // If run_inner returned Ok(), so it should have sent its own Closing message with the
+                // real error. So the below send() line isn't necessary and is mainly a guard in the
+                // case that nothing was sent.
+                //
+                // If you see this error returned to you, then there is a bug in run_inner().
+                let _ = self.shared.connection_event_sender.send(ConnectionEvent::Closing {
+                    send_goaway: None,
+                    close_with: Some(Err(err_msg("Reader thread ended without a reason."))) }).await;
             }
             Err(e) => {
-                // TODO: Improve reporting of these errors up the call chain.
-                println!("HTTP2 READ THREAD FAILED: {:?}", e);
+                let mut is_reader_ended_error = false; 
+                if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
+                    if io_error.kind() == std::io::ErrorKind::ConnectionAborted ||
+                       io_error.kind() == std::io::ErrorKind::UnexpectedEof {
+                        is_reader_ended_error = true;
+                    }
+                }
 
-                let proto_error = if let Some(e) = e.downcast_ref::<ProtocolErrorV2>() {
-                    // We don't need to send a GOAWAY from remotely generated errors.
-                    if !e.local {
+                // If the underlying read stream if closed, then we will simply ask the writer to
+                // stop right away. We could alternatively ask the writer to send a Goaway, but most
+                // likely if the reader end is closed, the writing end is closed as well. If there
+                // are outstanding streams on the connection, they will 
+                if is_reader_ended_error {
+                    let _ = self.shared.connection_event_sender.send(ConnectionEvent::Closing {
+                        send_goaway: None,
+                        close_with: Some(Ok(()))
+                    }).await;
+                    return;
+                }
+
+                if let Some(proto_error) = e.downcast_ref::<ProtocolErrorV2>() {
+                    if proto_error.local {
+                        // We locally identified an issue with the packets sent to us from the remote endpoint.
+                        // In this case, we assume that the proto_error.code != INTERNAL.
                         let _ = self.shared.connection_event_sender.send(ConnectionEvent::Closing {
-                            error: Some(e.clone())
+                            send_goaway: Some(proto_error.clone()),
+                            close_with: None
                         }).await;
-                        return;
+                    } else {
+                        // We received a GOAWAY from the remote endpoint so there is no need to
+                        // sent a GOAWAY back, but we should consider this a local mistake/error.
+                        // NOTE: If we are a server, then whoever reads the error from run() should
+                        // probably filter out INTERNAL errors as we don't really care about client-side errors.
+                        let _ = self.shared.connection_event_sender.send(ConnectionEvent::Closing {
+                            send_goaway: None,
+                            close_with: Some(Err(e))
+                        }).await;
                     }
 
-                    e.clone()
-                } else {
-                    ProtocolErrorV2 {
+                    return;
+                }
+
+                // In all other cases, we enountered an uncategorized internal error.
+                let _ = self.shared.connection_event_sender.send(ConnectionEvent::Closing {
+                    send_goaway: Some(ProtocolErrorV2 {
                         code: ErrorCode::INTERNAL_ERROR,
                         message: "Unknown internal error occured",
                         local: true
-                    }
-                };
-
-                let last_stream_id = {
-                    let connection_state = self.shared.state.lock().await;
-                    connection_state.last_received_stream_id
-                };
-
-                // TODO: Who should be responislbe for marking the connection_state.error?
-                let _ = self.shared.connection_event_sender.send(ConnectionEvent::Goaway {
-                    error: proto_error,
-                    last_stream_id
+                    }),
+                    close_with: Some(Err(e))
                 }).await;
             }
         }
@@ -129,14 +161,17 @@ impl ConnectionReader {
             let mut preface = [0u8; CONNECTION_PREFACE.len()];
             reader.read_exact(&mut preface[0..preface_str.len()]).await?;
             if &preface[0..preface_str.len()] != preface_str {
-                return Err(err_msg("Incorrect preface received"));
+                // We saw an invalid connection preface. Most likely this isn't an actual HTTP2
+                // client, so it is safest to stop talking to them right away.
+                let _ = self.shared.connection_event_sender.send(ConnectionEvent::Closing {
+                    send_goaway: None, close_with: Some(Ok(()))
+                }).await;
+                return Ok(());
             }
         }
 
         // TODO: Receiving any packet on a stream with a smaller number than any stream id ever seen
         // should casue an error.
-
-        // TODO: Ensure that the first frame received is a Settings (non-ack)
 
         // Used to decode remotely created headers received on the connection.
         // NOTE: This is shared across all streams on the connection.
@@ -171,19 +206,7 @@ impl ConnectionReader {
         let mut frame_header_buf = [0u8; FrameHeader::size_of()];
         loop {
             // Read the frame header
-            if let Err(e) = reader.read_exact(&mut frame_header_buf).await {
-                if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
-                    if io_error.kind() == std::io::ErrorKind::ConnectionAborted ||
-                       io_error.kind() == std::io::ErrorKind::UnexpectedEof {
-                        let connection_state = self.shared.state.lock().await;
-                        if connection_state.streams.is_empty() {
-                            return Ok(());
-                        }
-                    }
-                }
-
-                return Err(e);
-            }
+            reader.read_exact(&mut frame_header_buf).await?;
 
             let frame_header = FrameHeader::parse_complete(&frame_header_buf)?;
 
@@ -277,7 +300,8 @@ impl ConnectionReader {
                     num_remaining -= n;
 
                     if n == 0 {
-                        return Ok(());
+                        return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof,
+                            format!("Hit end of stream before reading entire frame")).into());
                     }
                 }
 
@@ -610,11 +634,11 @@ impl ConnectionReader {
 
                                 // Force a re-check of whether or not more data can be sent.
                                 // TODO: Prevent updating this parameter many times in the same receive settings block.
-                                self.shared.connection_event_sender.send(ConnectionEvent::StreamWrite { stream_id: 0 }).await;
+                                let _ = self.shared.connection_event_sender.send(ConnectionEvent::StreamWrite { stream_id: 0 }).await;
                             }
                         }
 
-                        self.shared.connection_event_sender.send(ConnectionEvent::AcknowledgeSettings { header_table_size }).await;
+                        let _ = self.shared.connection_event_sender.send(ConnectionEvent::AcknowledgeSettings { header_table_size }).await;
                     }
                 }
                 FrameType::PING => {
@@ -646,6 +670,8 @@ impl ConnectionReader {
                     }
 
                 }
+                // TOOD: Return an error if we ever receive multiple GOAWAY packets with the later
+                // one having a larger last_stream_id than a previous one.
                 FrameType::GOAWAY => {
                     if frame_header.stream_id != 0 {
                         return Err(ProtocolErrorV2 {
@@ -682,50 +708,89 @@ impl ConnectionReader {
                     // TODO: We need to uphold the gurantee that while this is None, an incoming request is guranteed to be
                     // processed.
                     // TODO: Verify that once this is set, we won't generate any new streams.
-                    connection_state.error = Some(ProtocolErrorV2 {
-                        code: goaway_frame.error_code,
-                        message: "Remote GOAWAY received", // TODO: Read the opaque message from the remote packet.
-                        local: true
-                    });
 
-                    // Basically what I need from the stream state is
+                    // TODO: Let's now only do this if we have a non-NO_ERROR frame.
+                    // connection_state.error = Some(ProtocolErrorV2 {
+                    //     code: goaway_frame.error_code,
+                    //     message: "Remote GOAWAY received", // TODO: Read the opaque message from the remote packet.
+                    //     local: true
+                    // });
 
-                    // All streams will ids >= last_stream_id we should report as retryable.
-                    // For all other streams:
-                    //   If there is a forceful failure, mark them as fully closed.
+                    // TODO: Check that it is monotonically lower than before.
+                    connection_state.upper_sent_stream_id = goaway_frame.last_stream_id;
 
-                    // If we have no error, 
 
+                    let refused_error = ProtocolErrorV2 {
+                        code: ErrorCode::REFUSED_STREAM,
+                        message: "Connection shutting down",
+                        local: false,
+                    };
+
+
+                    let mut stream_ids_to_finish = vec![];
+                    for (stream_id, stream) in &connection_state.streams {
+                        // TODO: Only applies to locally initialized streams?
+                        if self.shared.is_local_stream_id(*stream_id) && *stream_id > goaway_frame.last_stream_id {
+                            // Reset the stream with a 'retryable' error.
+                            // Main challenge is deadling with locks.
+                            stream_ids_to_finish.push(*stream_id);
+                        }
+                    }
+
+                    for stream_id in stream_ids_to_finish {
+                        self.shared.finish_stream(
+                            &mut connection_state, stream_id, Some(refused_error.clone())).await;
+                    }
+
+                    // This code is only relevant on the client side.
+                    // As soon as we receive a remote GOAWAY, we can cancel all unsent requests.
+                    while let Some(req) = connection_state.pending_requests.pop_front() {
+                        req.response_handler.handle_response(Err(refused_error.clone().into())).await;
+                    }
 
                     if goaway_frame.error_code == ErrorCode::NO_ERROR {
                         // Graceful shutdown.
+                        // TODO: Check this implementation.
 
-                        for (stream_id, stream) in &connection_state.streams {
-                            // TODO: Only applies to locally initialized streams?
-                            if self.shared.is_local_stream_id(*stream_id) && *stream_id > goaway_frame.last_stream_id {
-                                // Reset the stream with a 'retryable' error.
-                                // Main challenge is deadling with locks.
-                            }
+                        if !connection_state.shutting_down.is_some() {
+                            connection_state.shutting_down = ShuttingDownState::Remote;
                         }
 
-                        while let Some(req) = connection_state.pending_requests.pop_front() {
-                            req.response_handler.handle_response(Err(ProtocolErrorV2 {
-                                code: ErrorCode::REFUSED_STREAM,
-                                message: "Connection shutting down",
-                                local: false,
-                            }.into())).await;
-                        }
+                        // Check with the writer thread if it wants to stop the connection now.
+                        let _ = self.shared.connection_event_sender.send(ConnectionEvent::Closing {
+                            send_goaway: None,
+                            close_with: None
+                        }).await;
+                        
 
+
+                        // TODO: Set connection_state.shuttind_down and maybe send a CLOSED
+                        // notification as we may want to stop now.
+
+                        // TODO: Even if we receive an error, we can still perform this right?
+                        
                     } else {
-
+                        
                         // Need to reset all the streams!
 
                         // Need to return an error but shouldn't ask the writer thread to repeat it.
 
+
+                        // Via the CLOSING, we should propagate the error.
+
+                        connection_state.shutting_down = ShuttingDownState::Complete;
+                        let _ = self.shared.connection_event_sender.send(ConnectionEvent::Closing {
+                            send_goaway: None,
+                            close_with: Some(Err(ProtocolErrorV2 {
+                                code: goaway_frame.error_code,
+                                message: "Remote GOAWAY received",
+                                // TODO: Support returning the raw message
+                                // message: Self::debug_data_to_string(&goaway_frame.additional_debug_data),
+                                local: false
+                            }.into()))
+                        }).await;
                         return Ok(());
                     }
-                    // 
-                    // Send a notification to the other side that we need to GOAWAY
 
                 }
                 FrameType::WINDOW_UPDATE => {
@@ -776,7 +841,7 @@ impl ConnectionReader {
                         // TODO: Make this just a stream error? 
                         match stream_state.remote_window.checked_add(window_update_frame.window_size_increment as WindowSize) {
                             Some(v) => {
-                                stream_state.remote_window = v;
+                                stream.set_remote_window(&mut stream_state, v);
                             },
                             None => {
                                 stream_state.error = Some(ProtocolErrorV2 {
@@ -794,7 +859,7 @@ impl ConnectionReader {
 
                     // Check again if there is any data available for writing now that the window
                     // has been updated.
-                    self.shared.connection_event_sender.send(
+                    let _ = self.shared.connection_event_sender.send(
                         ConnectionEvent::StreamWrite { stream_id: frame_header.stream_id }).await;
                 }
                 FrameType::CONTINUATION => {
@@ -827,6 +892,19 @@ impl ConnectionReader {
                 }
             }
         }
+    }
+
+    fn debug_data_to_string(data: &[u8]) -> String {
+        let mut s = String::new();
+        for b in data {
+            if *b != 0 && b.is_ascii() {
+                s.push(*b as char);
+            } else {
+                write!(s, "\\x{:02x}", b).unwrap(); // Should never fail.
+            }
+        }
+
+        s
     }
 
     async fn receive_headers(&self, received_headers: ReceivedHeaders, remote_header_decoder: &mut hpack::Decoder) -> Result<()> {
@@ -891,11 +969,11 @@ impl ConnectionReader {
         match self.find_received_stream(stream_id, connection_state)? {
             // Client sent new request headers.
             StreamEntry::New => {
-                if connection_state.error.is_some() {
+                if stream_id > connection_state.upper_received_stream_id {
                     // When shutting down, don't accept any new streams.
                     // TODO: Actually we should check if the stream_id is > the last_stream_id in
                     // our GOAWAY message.
-                    self.shared.connection_event_sender.send(ConnectionEvent::ResetStream {
+                    let _ = self.shared.connection_event_sender.send(ConnectionEvent::ResetStream {
                         stream_id: stream_id,
                         error: ProtocolErrorV2 {
                             code: ErrorCode::REFUSED_STREAM,
@@ -910,7 +988,7 @@ impl ConnectionReader {
                     // Send a REFUSED_STREAM stream error (or as described in 5.1.2, PROTOCOL_ERROR is also allowed if we don't want it to be retryable)..
                     // TODO: Should we disallow using this stream id in the future?
 
-                    self.shared.connection_event_sender.send(ConnectionEvent::ResetStream {
+                    let _ = self.shared.connection_event_sender.send(ConnectionEvent::ResetStream {
                         stream_id: stream_id,
                         error: ProtocolErrorV2 {
                             code: ErrorCode::REFUSED_STREAM,
@@ -924,6 +1002,7 @@ impl ConnectionReader {
                 // When receiving headers on server,
                 // - end stream means the remote stream is done.
 
+                // TODO: Ensure that all assignments to this are guarded by the check on upper_received_stream_id.
                 // TODO: Only do this if the stream is successfully started?
                 connection_state.last_received_stream_id = stream_id;
                 connection_state.remote_stream_count += 1;
@@ -964,7 +1043,7 @@ impl ConnectionReader {
                 }
             }
             StreamEntry::Closed => {
-                self.shared.connection_event_sender.send(ConnectionEvent::ResetStream {
+                let _ = self.shared.connection_event_sender.send(ConnectionEvent::ResetStream {
                     stream_id: stream_id,
                     error: ProtocolErrorV2 {
                         code: ErrorCode::STREAM_CLOSED,
@@ -1018,7 +1097,7 @@ impl ConnectionReader {
                 }
             }
             StreamEntry::Closed => {
-                self.shared.connection_event_sender.send(ConnectionEvent::ResetStream {
+                let _ = self.shared.connection_event_sender.send(ConnectionEvent::ResetStream {
                     stream_id: stream_id,
                     error: ProtocolErrorV2 {
                         code: ErrorCode::STREAM_CLOSED,

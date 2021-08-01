@@ -73,6 +73,23 @@ impl ConnectionInitialState {
     }
 }
 
+/*
+Client API requests:
+- When a connection dies, the client should know in order to be able to immediately clean it up and replace it
+
+- But the client should not have a handle to the Connection
+
+- The client should be smart enough to identify a lame duck server and discard the connection.
+
+*/
+
+/*
+Important points:
+- Never increase the last-stream-id sent.
+- Initially seng a NO_ERROR GOAWAY with 2^31 - 1 to initiate shutdown.
+- Clients should respect this by not sending any more messages.
+
+*/
 
 // TODO: Make sure we signal a small enough value to the hpack encoder to be reasonable.
 
@@ -81,9 +98,29 @@ impl ConnectionInitialState {
 // TODO: Should we support allowing the connection itself to stay half open.
 
 /// A single HTTP2 connection to a remote endpoint.
+///
+/// After 
+///
+/// This object should be held for as long as the user wants to issue new requests.
+/// - On drop we will 
+///
+/// On drop, we should trigger a preliminary GOAWAY so that the background thread
 pub struct Connection {
-    shared: Arc<ConnectionShared>
+    shared: Arc<ConnectionShared>,
 }
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        // TODO: Make this send a GOAWAY with the max stream id so that we can still accept new
+        // push requests but we stop the connection once done.
+    
+        let shared = self.shared.clone();
+        task::spawn(async move {
+            let _ = Self::shutdown_impl(&shared, true).await;
+        });
+    }
+}
+
 
 impl Connection {
     pub fn new(options: ConnectionOptions,
@@ -104,7 +141,7 @@ impl Connection {
                 connection_event_sender,
                 state: Mutex::new(ConnectionState {
                     running: false,
-                    error: None,
+                    shutting_down: ShuttingDownState::No,
                     connection_event_receiver: Some(connection_event_receiver),
                     local_settings: SettingsContainer::default(),
                     local_settings_ack_waiter: None,
@@ -115,6 +152,8 @@ impl Connection {
                     remote_connection_window: INITIAL_CONNECTION_WINDOW_SIZE,
                     last_received_stream_id: 0,
                     last_sent_stream_id: 0,
+                    upper_received_stream_id: MAX_STREAM_ID,
+                    upper_sent_stream_id: MAX_STREAM_ID,
                     pending_requests: std::collections::VecDeque::new(),
                     local_stream_count: 0,
                     remote_stream_count: 0,
@@ -231,6 +270,20 @@ impl Connection {
         Ok(())
     }
 
+    /// Returns whether or not this connection can be used to send additional client requests
+    /// without them being locally refused.
+    ///
+    /// A return value of false implies that the connection is closed or shutting down. Clients
+    /// should read check this value before sending a request and in the case that it is true,
+    /// then a connection should be created.
+    pub async fn can_send_request(&self) -> bool {
+        let connection_state = self.shared.state.lock().await;
+        
+        // NOTE: It is not necessary to check upper_sent_stream_id because if that is not
+        // MAX_STREAM_ID, then that would imply that we sent or received a GOAWAY which would
+        // set this field.
+        !connection_state.shutting_down.is_some()
+    }
 
     pub async fn request(&self, request: Request) -> Result<Response> {
         if request.head.method == Method::CONNECT {
@@ -260,14 +313,23 @@ impl Connection {
 
         let (sender, receiver) = channel::bounded::<Result<Response>>(1);
 
+        // TODO: Fail if the connection runner isn't started yet.
 
         let empty_queue;
         {
             let mut connection_state = self.shared.state.lock().await;
-            if connection_state.error.is_some() {
+            if connection_state.shutting_down.is_some() {
                 return Err(ProtocolErrorV2 {
                     code: ErrorCode::REFUSED_STREAM,
                     message: "Connection is shutting down",
+                    local: true
+                }.into());
+            }
+
+            if connection_state.pending_requests.len() >= self.shared.options.max_enqueued_requests {
+                return Err(ProtocolErrorV2 {
+                    code: ErrorCode::REFUSED_STREAM,
+                    message: "Hit max_enqueued_requests limit on this conneciton",
                     local: true
                 }.into());
             }
@@ -305,38 +367,76 @@ impl Connection {
     ///             amount of time. Even if graceful is set to true, shutdown() may be called
     ///             additional times later with the flag to set to false to expedite the shutdown.
     pub async fn shutdown(&self, graceful: bool) -> Result<()> {
-        let mut connection_state = self.shared.state.lock().await;
+        Self::shutdown_impl(&self.shared, graceful).await
+    }
+
+    async fn shutdown_impl(shared: &Arc<ConnectionShared>, graceful: bool) -> Result<()> {
+        let mut connection_state = shared.state.lock().await;
         if !connection_state.running {
             return Err(err_msg("Can't shut down a non-started connection"));
         }
 
-        let error = {
-            if graceful {
-                // TODO: Disallow gracefully shutting down while already gracefully shutting down.
-                ProtocolErrorV2 {
-                    code: ErrorCode::NO_ERROR,
-                    message: "Gracefully closing connection",
-                    local: true
-                }
-            } else {
-                ProtocolErrorV2 {
-                    code: ErrorCode::PROTOCOL_ERROR,
-                    message: "Abruptly closing connection",
-                    local: true
+        // Ensure that we never decrease the shutdown in severity.
+        match &connection_state.shutting_down {
+            ShuttingDownState::Complete | ShuttingDownState::Abrupt => {
+                // No need to do anything.
+                return Ok(());
+            }
+            ShuttingDownState::Graceful { .. } => {
+                // No point in doing a Graceful shutdown while one is already in process.
+                if graceful {
+                    return Ok(());
                 }
             }
+            ShuttingDownState::No | ShuttingDownState::Remote => {
+                // We can do either type of shutdown.
+            }
         };
-        connection_state.error = Some(error.clone());
-     
-        let last_stream_id = connection_state.last_received_stream_id;
 
-        let _ = self.shared.connection_event_sender.send(ConnectionEvent::Goaway {
-            last_stream_id,
-            error
-        }).await;
+        // This means that we are 
 
-        if graceful && connection_state.streams.is_empty() {
-            let _ = self.shared.connection_event_sender.try_send(ConnectionEvent::Closing { error: None });
+        if graceful {
+            // TODO: If we are a client, should we have timers?
+
+            // NOTE: We'll keep the upper_received_stream_id at MAX_STREAM_ID and just send a GOAWAY.
+
+            if shared.is_server {
+                // We won't make any changes to the upper_received_stream_id so that in-flight but
+                // unreceived client requests can still be processed.
+                
+                let timeout_task = ChildTask::spawn(Self::wait_shutdown_timeout(shared.clone()));
+                
+                connection_state.shutting_down = ShuttingDownState::Graceful {
+                    timeout_task: Some(timeout_task)
+                };
+            } else {
+                connection_state.upper_received_stream_id = connection_state.last_received_stream_id;
+                connection_state.shutting_down = ShuttingDownState::Graceful { timeout_task: None };
+            }
+
+            let _ = shared.connection_event_sender.send(ConnectionEvent::Closing {
+                send_goaway: Some(ProtocolErrorV2 {
+                    code: ErrorCode::NO_ERROR,
+                    message: "Gracefully shutting down",
+                    local: true
+                }),
+                close_with: Some(Ok(()))
+            }).await;            
+
+        } else {
+            // Escalate to an abrupt error by setting the upper_received_stream_id and sending a Closing/GOAWAY.
+
+            connection_state.upper_received_stream_id = connection_state.last_received_stream_id;
+            connection_state.shutting_down = ShuttingDownState::Abrupt;
+
+            let _ = shared.connection_event_sender.send(ConnectionEvent::Closing {
+                send_goaway: Some(ProtocolErrorV2 {
+                    code: ErrorCode::NO_ERROR,
+                    message: "About to close connection",
+                    local: true
+                }),
+                close_with: Some(Ok(()))
+            }).await;
         }
 
         // TODO: We should also immediately cancel anything in 'pending_requests'
@@ -344,12 +444,24 @@ impl Connection {
         Ok(())
     }
 
-    // TODO: Need to support initializing with settings already negiotated via HTTP
+    fn wait_shutdown_timeout(shared: Arc<ConnectionShared>) -> impl std::future::Future<Output=()> + Send + 'static {
+        async move {
+            // TODO: Make this configurable.
+            common::wait_for(std::time::Duration::from_secs(5)).await;
 
-    // TODO: Verify that run is never called more than once on the same Connection instance.
+            // TODO: This should never fail right?
+            let _ = Self::shutdown_impl(&shared, false).await;
+        }
+    }
+
+    // TODO: Need to support initializing with settings already negiotated via HTTP
 
     /// Runs the connection management threads.
     /// This must be called exactly once and continously polled to keep the connection alive.
+    ///
+    /// NOTE: The return value of this MUST be continously polled until completetion even if you are
+    /// done sending requests to the connection to ensure that any outstanding requests/responses are
+    /// completed. If we want this to stop early, then you should trigger a shutdown()
     ///
     /// This function will return once the connection has been terminated. This could be either because:
     /// - A fatal connection level error was locally/remotely generated (the error is returned in the result)
@@ -380,12 +492,43 @@ impl Connection {
         let reader_task = task::spawn(ConnectionReader::new(shared.clone()).run(
             reader, initial_state.seen_preface_head));
 
-        let result = ConnectionWriter::new(shared).run(writer, initial_state.upgrade_payload).await;
+        let result = ConnectionWriter::new(shared.clone()).run(writer, initial_state.upgrade_payload).await;
         if !result.is_ok() {
             println!("HTTP2 WRITE THREAD FAILED: {:?}", result);
         }
 
         let _ = reader_task.cancel().await;
+
+        // Cleanup all outstanding state.
+        // TODO: Ideally if we did everything correctly then this shouldn't be needed right?
+        {
+            let mut connection_state = shared.state.lock().await;
+            connection_state.shutting_down = ShuttingDownState::Complete;
+            // TODO: Hopefully this line is not needed?
+            connection_state.upper_received_stream_id = connection_state.last_received_stream_id;
+
+            // TODO: Should we call finish_stream to perform this cleanup?
+            for (stream_id, stream) in connection_state.streams.iter_mut() {
+                if let Some((_, response_handler, _)) = stream.incoming_response_handler.take() {
+                    // TODO: Check if this is a good error to return.
+                    response_handler.handle_response(Err(ProtocolErrorV2 {
+                        code: ErrorCode::STREAM_CLOSED,
+                        message: "Connection shutting down.",
+                        local: true
+                    }.into())).await;
+                }
+            }
+            connection_state.streams.clear();
+
+            while let Some(req) = connection_state.pending_requests.pop_front() {
+                req.response_handler.handle_response(Err(ProtocolErrorV2 {
+                    code: ErrorCode::REFUSED_STREAM,
+                    message: "Connection shutting down",
+                    local: true,
+                }.into())).await;
+            }
+        }
+
 
         // TODO: No matter what, go through the state and verify that every pending request is
         // refused gracefully. Any streams that are still active should also be cleaned out.
@@ -484,11 +627,39 @@ mod tests {
 
         let res = client_conn.request(RequestBuilder::new()
             .method(Method::GET)
-            // .uri("http://localhost/hello")
+            .uri("http://localhost/hello".parse()?)
             .build()
             .unwrap()).await?;
 
         println!("{:?}", res.head);
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn connect_client_closing() -> Result<()> {
+        let (writer1, reader1) = pipe();
+        let (writer2, reader2) = pipe();
+
+        let options = ConnectionOptions::default();
+
+        // let server_conn = Connection::new(
+        //     options.clone(), Some(Box::new(CalculatorRequestHandler {})));
+        // let server_task = task::spawn(server_conn.run(
+        //     ConnectionInitialState::raw(), Box::new(reader1), Box::new(writer2)));
+
+        let client_conn = Connection::new(options, None);
+        let client_task = task::spawn(client_conn.run(
+            ConnectionInitialState::raw(),Box::new(reader2), Box::new(writer1)));
+
+        drop(reader1);
+        drop(writer2);
+
+        let res = client_conn.request(RequestBuilder::new()
+            .method(Method::GET)
+            .uri("http://localhost/hello".parse()?)
+            .build()
+            .unwrap()).await?;
 
         Ok(())
     }

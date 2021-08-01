@@ -23,6 +23,8 @@ use crate::v2::connection_state::ConnectionEvent;
 /// Wrapper around a Body that is used to read it and feed it to a stream.
 /// This is intended to be run as a separate task.
 ///
+/// TODO: When this is dropped, we must ensure that we always send a RST_STREAM.
+///
 /// This will buffer data into the stream's 'sending_buffer' until the remote
 /// endpoint's stream level flow control limit is hit (up to some reasonable local limit).
 ///
@@ -33,22 +35,35 @@ use crate::v2::connection_state::ConnectionEvent;
 /// TODO: Eventually we may want to consider sharding the connection level limit to all streams
 /// whenever there is a new stream or a priotity change.
 pub struct OutgoingStreamBody {
-    pub stream_id: StreamId,
+    /// Id of the stream with which this 
+    stream_id: StreamId,
 
-    pub stream_state: Arc<Mutex<StreamState>>,
+    stream_state: Arc<Mutex<StreamState>>,
 
     /// Used to send ConnectionEvent::StreamWrite events to let the writer thread know that
     /// more data is available for writing to 
-    pub connection_event_sender: channel::Sender<ConnectionEvent>,
+    connection_event_sender: channel::Sender<ConnectionEvent>,
 
     /// Receives notifications whenever the size of the 'sending_buffer' for this stream has
     /// decreased (or the flow control limit has changed).
     ///
     /// These events typically mean that we can continue buffering more data.
-    pub write_available_receiver: channel::Receiver<()>,
+    write_available_receiver: channel::Receiver<()>,
 }
 
 impl OutgoingStreamBody {
+
+    pub fn new(
+        stream_id: StreamId, stream_state: Arc<Mutex<StreamState>>,
+        connection_event_sender: channel::Sender<ConnectionEvent>, write_available_receiver: channel::Receiver<()>
+    ) -> Self {
+        Self {
+            stream_id,
+            stream_state,
+            connection_event_sender,
+            write_available_receiver
+        }
+    }
 
     pub async fn run(mut self, body: Box<dyn Body>) {
         if let Err(e) = self.run_internal(body).await {
@@ -62,30 +77,29 @@ impl OutgoingStreamBody {
     }
 
     async fn run_internal(&mut self, mut body: Box<dyn Body>) -> Result<()> {
+        // Intermediate buffer used to read data before copying into the stream state.
+        let mut buffer = vec![];
+
         loop {
-            // TODO: Don't keep the stream locked for the body.read() operation as that
-            // may take a long time.
-            let mut stream = self.stream_state.lock().await;
+            let stream = self.stream_state.lock().await;
             
             // Stop if the stream was reset.
             if stream.error.is_some() {
                 return Ok(());
             }
 
-            // TODO: Must subtract from this.
-            let max_to_read = stream.remote_window;
+            let max_to_read = std::cmp::min(stream.max_sending_buffer_size as i32, stream.remote_window)
+                - (stream.sending_buffer.len() as WindowSize);
             
             // NOTE: We don't want to hold the stream for performing the reading from the body
             // as that may take a long time.
-            // drop(stream);
+            drop(stream);
 
             if max_to_read > 0 {
-                let start = stream.sending_buffer.len();
-                stream.sending_buffer.resize(start + (max_to_read as usize), 0);
+                buffer.resize(max_to_read as usize, 0);
 
-                // TODO: If this errors, out, then we will be in an inconsistent state (the sending_buffer will be too big).
-                let n = body.read(&mut stream.sending_buffer[start..]).await?;
-                stream.sending_buffer.truncate(start + n);
+                let n = body.read(&mut buffer).await?;
+                buffer.truncate(n);
 
                 // Once we've read all the data, we're done.
                 //
@@ -95,7 +109,19 @@ impl OutgoingStreamBody {
                     break;
                 }
 
-                // TODO: Prefer not to send this until we figure out if we have trailers.
+                // Re-lock the stream and copy the read data.
+                {
+                    let mut stream = self.stream_state.lock().await;
+                    let start = stream.sending_buffer.len();
+                    if start == 0 {
+                        std::mem::swap(&mut buffer, &mut stream.sending_buffer);
+                    } else {
+                        stream.sending_buffer.resize(start + n, 0);
+                        stream.sending_buffer[start..].copy_from_slice(&buffer);
+                    }
+                }
+
+                // Notify the writer thread that we now have more data that can be sent.
                 let r = self.connection_event_sender.send(ConnectionEvent::StreamWrite {
                     stream_id: self.stream_id
                 }).await;
@@ -105,8 +131,6 @@ impl OutgoingStreamBody {
                 }
 
             } else {
-                drop(stream);
-
                 let r = self.write_available_receiver.recv().await;
                 if r.is_err() {
                     return Ok(());
@@ -143,9 +167,9 @@ impl OutgoingStreamBody {
 /// TODO: Sometimes we may want read() to return an error (e.g. if there was a stream error.)
 /// TODO: This is unsufficient as it doesn't do things like read the Content-Type or other things like Transfer-Encoding (requests a layer on top of this.)
 pub struct IncomingStreamBody {
-    pub stream_id: StreamId,
+    stream_id: StreamId,
 
-    pub stream_state: Arc<Mutex<StreamState>>,
+    stream_state: Arc<Mutex<StreamState>>,
 
     /// Used by the body to notify the connection that data has been read.
     /// This means that the connection can let the other side know that more
@@ -153,16 +177,31 @@ pub struct IncomingStreamBody {
     ///
     /// NOTE: This will only be used to send ConnectionEvent::StreamRead events.
     /// NOTE: This is created by cloning the 'connection_event_channel' Sender in the 'ConnectionShared' instance.
-    pub connection_event_sender: channel::Sender<ConnectionEvent>,
+    connection_event_sender: channel::Sender<ConnectionEvent>,
 
     /// Used by the body to wait for more data to become available to read from the stream (or for an error to occur).
-    pub read_available_receiver: channel::Receiver<()>,
+    read_available_receiver: channel::Receiver<()>,
 
     /// Expected length of this body typically derived from the 'Content-Length' header.
     ///
     /// NOTE: Validation that we don't read less or more than this number is
     /// done in the connection code and not in this file.
-    pub expected_length: Option<usize>
+    expected_length: Option<usize>
+}
+
+impl IncomingStreamBody {
+    pub fn new(
+        stream_id: StreamId,
+        stream_state: Arc<Mutex<StreamState>>,
+        connection_event_sender: channel::Sender<ConnectionEvent>,
+        read_available_receiver: channel::Receiver<()>
+    ) -> Self {
+        Self { stream_id, stream_state, connection_event_sender, read_available_receiver, expected_length: None }
+    }
+
+    pub fn set_expected_length(&mut self, len: usize) {
+        self.expected_length = Some(len);
+    }
 }
 
 impl Drop for IncomingStreamBody {
@@ -300,7 +339,7 @@ pub fn decode_request_body_v2(
 
     if let Some(len) = content_length {
         stream_state.received_expected_bytes = Some(len);
-        incoming_body.expected_length = Some(len);
+        incoming_body.set_expected_length(len);
     }
 
     Ok(Box::new(incoming_body))
@@ -357,7 +396,7 @@ pub fn decode_response_body_v2(
             "Received HTTP 1 connection level headers"));
     }
 
-    let mut expected_length = None;
+    let expected_length;
 
     let status_num = response_head.status_code.as_u16();
     // 1xx
@@ -376,7 +415,7 @@ pub fn decode_response_body_v2(
 
     if let Some(len) = expected_length {
         stream_state.received_expected_bytes = Some(len);
-        incoming_body.expected_length = Some(len);
+        incoming_body.set_expected_length(len);
     }
 
     Ok(Box::new(incoming_body))

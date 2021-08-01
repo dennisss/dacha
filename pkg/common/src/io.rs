@@ -365,7 +365,6 @@ pub trait Readable: 'static + Send + Unpin {
         while buf.len() > 0 {
             match self.read(buf).await {
                 Ok(0) => {
-                    // TODO: Should we only return this if we didn't read any bytes?
                     return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, 
                         "Unexpected end of stream").into());
                 }

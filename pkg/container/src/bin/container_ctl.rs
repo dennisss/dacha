@@ -74,7 +74,7 @@ async fn run_start() -> Result<()> {
     {
         let mut tar_writer = compression::tar::Writer::open(tmp_file).await?;
         
-        let root_dir = common::project_dir().join("target/release");
+        let root_dir = common::project_dir().join("target/debug");
         
         let options = compression::tar::AppendFileOption {
             mask: compression::tar::FileMetadataMask {},
@@ -162,8 +162,6 @@ async fn run_logs(logs_command: LogsCommand) -> Result<()> {
     let mut log_stream = stub.GetLogs(&request_context, &log_request).await;
 
     while let Some(entry) = log_stream.recv().await {
-        println!("...");
-
         let value = std::str::from_utf8(entry.value())?;
         print!("{}", value);
         // common::async_std::io::stdout().flush().await?;

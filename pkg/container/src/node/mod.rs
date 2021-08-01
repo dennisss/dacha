@@ -500,8 +500,6 @@ impl ContainerNodeService for Node {
         loop {
             let entry = log_reader.read().await?;
             if let Some(entry) = entry {
-                println!("Entry read full!");
-
                 let end_stream = entry.end_stream();
 
                 response.send(entry).await?;

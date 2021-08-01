@@ -54,4 +54,9 @@ pub struct StreamState {
     /// If true, 'sending_buffer' and 'sending_trailers' contains the last
     /// remaining data that needs to be sent through this stream.
     pub sending_end: bool,
+
+    /// Maximum size of the sending_buffer is defined locally.
+    /// This is copied from the ConnectionOptions::max_sending_buffer_size at the time of stream
+    /// creation.
+    pub max_sending_buffer_size: usize
 }

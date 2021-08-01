@@ -33,6 +33,10 @@ impl ConnectionWriter {
         Self { shared }
     }
 
+    // TODO: Catch BrokenPipe and ConnectionAborted errors.
+    // TODO: If this returns a write error, we should prioritize other errors first.
+    // e.g. If there is an enqueued Closing event with an error, then we should prefer to return that error over others..
+
     pub async fn run(
         self, mut writer: Box<dyn Writeable>, upgrade_payload: Option<Box<dyn Readable>>
     ) -> Result<()> {
@@ -85,6 +89,7 @@ impl ConnectionWriter {
             hpack::Encoder::new(
                 state.remote_settings[SettingId::HEADER_TABLE_SIZE] as usize)
         };
+        local_header_encoder.set_local_max_size(self.shared.options.max_local_encoder_table_size);
 
         // List of events which we've deferred processing due to remote settings not being known yet.
         let mut pending_events: Vec<ConnectionEvent> = vec![];
@@ -118,7 +123,6 @@ impl ConnectionWriter {
                 let allow = match event {
                     ConnectionEvent::AcknowledgeSettings { .. } => true,
                     ConnectionEvent::Closing { .. } => true,
-                    ConnectionEvent::Goaway { .. } => true,
                     _ => false
                 };
 
@@ -144,9 +148,21 @@ impl ConnectionWriter {
                         continue;
                     }
 
-                    let (mut request, response_handler) = match connection_state.pending_requests.pop_front() {
-                        Some(v) => (v.request, v.response_handler),
-                        None => continue
+                    // TODO: Take the request with the first non-cancelled response_handle
+                    let (mut request, response_handler) = {
+                        let mut ret = None;
+                        while let Some(req) = connection_state.pending_requests.pop_front() {
+                            // As an optimization, we'll skip requests that have their response
+                            // handlers cancelled early.
+                            if req.response_handler.is_closed() {
+                                continue;
+                            }
+
+                            ret = Some((req.request, req.response_handler));
+                            break;
+                        }
+
+                        if let Some(v) = ret { v } else { continue; }
                     };
 
                     let body = encode_request_body_v2(&mut request.head, request.body);
@@ -257,32 +273,59 @@ impl ConnectionWriter {
                                         max_remote_frame_size).await?;
 
                 }
-                ConnectionEvent::Closing { error } => {
-                    if let Some(error) = error {
-                        return Err(error.into());
-                    } else {
-                        // Fully flush any outgoing packets.
-                        // TODO: Make the wait relative to the last write.
-                        // TODO: Ignore connection closed errors?
-                        writer.flush().await?;
-                        common::wait_for(std::time::Duration::from_secs(1)).await;
-                        return Ok(());
-                    }
-                }
-                ConnectionEvent::Goaway { last_stream_id, error } => {
-                    // TODO: Should we break out of the thread when we send this.
-                    writer.write_all(&frame_utils::new_goaway_frame(last_stream_id, error.clone())).await?;
-                    writer.flush().await?;
-                    common::wait_for(std::time::Duration::from_secs(1)).await;
+                // If the reading thread closes,
+                // The reader thread could either have a legitamite error or it could have had an uncaught failure:
+                // - Uncaught failures must be propagated, other messages shouldn't be 
 
-                    if error.code == ErrorCode::NO_ERROR {
+                ConnectionEvent::Closing { send_goaway, close_with } => {
+                    let mut should_close = close_with.is_some();
+                    
+                    let last_stream_id = {
                         let connection_state = self.shared.state.lock().await;
-                        // TODO: Ensure that the read thread doesn't accept any more streams.
-                        if connection_state.streams.is_empty() {
-                            return Ok(());
+
+                        // NOTE: It is illegal to send a Closing event unless you mark the
+                        // shutting_down state as non-No.
+                        assert!(connection_state.shutting_down.is_some());
+
+                        connection_state.upper_received_stream_id
+                    };
+
+                    if let Some(error) = send_goaway {
+                        // TODO: If this errors out, should we prefer to return the close_with error if available?
+                        should_close = error.code != ErrorCode::NO_ERROR;
+                        writer.write_all(&frame_utils::new_goaway_frame(
+                            last_stream_id, error)).await?;
+                        writer.flush().await?;
+                    }
+
+                    if self.shared.is_server {
+                        // On the server, we can close once there are no outstanding streams and it is impossible for
+                        // the client to send more requests.
+                        // Currently this logic doesn't make a different as we always set close_with when decreasing the
+                        // upper_received_stream_id
+
+                        let connection_state = self.shared.state.lock().await;
+
+                        if connection_state.streams.is_empty() && connection_state.upper_received_stream_id == connection_state.last_received_stream_id {
+                            should_close = true;
                         }
+
                     } else {
-                        return Err(error.into());
+                        // In the client, we will close the connection as soon as all streams have
+                        // finished running.
+
+                        let connection_state = self.shared.state.lock().await;
+
+                        if connection_state.streams.is_empty() {
+                            should_close = true;
+                        }
+                    }
+
+                    if should_close {
+                        // Give the OS some time to fully flush the outgoing GOAWAY packet.
+                        // TODO: Make the wait relative to the last write.
+                        common::wait_for(std::time::Duration::from_millis(500)).await;
+                        return close_with.unwrap_or(Ok(()));
                     }
                 }
                 ConnectionEvent::AcknowledgeSettings { header_table_size } => {
@@ -344,6 +387,7 @@ impl ConnectionWriter {
                         let min_window = std::cmp::min(
                             connection_state.remote_connection_window,
                             stream_state.remote_window);
+
                         if min_window < 0 {
                             continue;
                         }
@@ -358,9 +402,14 @@ impl ConnectionWriter {
                         stream_state.remote_window -= n as WindowSize;
                         connection_state.remote_connection_window -= n as WindowSize;
     
-                        let remaining = stream_state.sending_buffer.split_off(n);
-                        let frame_data = stream_state.sending_buffer.clone();
-                        stream_state.sending_buffer = remaining;
+                        // Split off the first n bytes of the sending_buffer as the next DATA
+                        // frame to send.
+                        let frame_data = {
+                            let remaining = stream_state.sending_buffer.split_off(n);
+                            let frame_data = stream_state.sending_buffer.clone();
+                            stream_state.sending_buffer = remaining;
+                            frame_data
+                        };
 
                         let _ = stream.write_available_notifier.try_send(());
 
@@ -387,7 +436,7 @@ impl ConnectionWriter {
                         // Ensure all locks are dropped before we perform a blocking write.
                         drop(connection_state_guard);
 
-                        if frame_data.len() > 0 || (trailers.is_none()) {
+                        if frame_data.len() > 0 || (trailers.is_none()) {                            
                             let frame = frame_utils::new_data_frame(
                                 stream_id, frame_data, end_stream && trailers.is_none());
                             writer.write_all(&frame).await?;
@@ -399,9 +448,17 @@ impl ConnectionWriter {
                             write_headers_block(
                                 &mut *writer, stream_id, &header_block, end_stream, max_remote_frame_size).await?;
                         }
+
+                        // Schedule to try sending more data as we most likely how more that we can send.
+                        let _ = self.shared.connection_event_sender.try_send(ConnectionEvent::StreamWrite { stream_id: 0 });
+
+                        // TODO: Immediately retry as we may have more data to send?
+                        // The main caveat is that we should prioritze
                     }
                 }
                 ConnectionEvent::StreamWriteFailure { stream_id, internal_error } => {
+                    eprintln!("Stream Write Failure: {}", internal_error);
+
                     let mut connection_state = self.shared.state.lock().await;
                     self.shared.finish_stream(&mut connection_state, stream_id, Some(ProtocolErrorV2 {
                         code: ErrorCode::INTERNAL_ERROR,
@@ -413,12 +470,12 @@ impl ConnectionWriter {
         }
     }
 
-    // TODO: Have a better way of cancelling this as we can't partially close this as it may set the error without
-    // ending the Goaway?
+    /// NOTE: The task running this can only be cancelled if a ConnectionState lock is held.
+    /// This enables this to operate atomically as we also perform all operations after the timeout
+    /// under a ConnectionState lock.
     async fn wait_for_settings_ack(shared: Arc<ConnectionShared>) {
-        common::wait_for(std::time::Duration::from_secs(SETTINGS_ACK_TIMEOUT_SECS)).await;
+        common::wait_for(shared.options.settings_ack_timeout.clone()).await;
 
-        // NOTE: This
         let error = ProtocolErrorV2 {
             code: ErrorCode::SETTINGS_TIMEOUT,
             message: "Settings took too long to be acknowledged",
@@ -426,21 +483,21 @@ impl ConnectionWriter {
         };
 
         let mut connection_state = shared.state.lock().await;
-        if connection_state.error.is_some() {
-            // TODO: Also check that the error is not OK
+        if let ShuttingDownState::Complete = connection_state.shutting_down {
             return;
         }
 
-        let last_stream_id = connection_state.last_received_stream_id;
+        // Mark that no more streams should be received by the reader.
+        connection_state.upper_received_stream_id = connection_state.last_received_stream_id;
 
-        connection_state.error = Some(error.clone());
-        drop(connection_state);
+        connection_state.shutting_down = ShuttingDownState::Complete;
 
-        // TODO: Must coordinate this with the reader thread.
-        let _ = shared.connection_event_sender.try_send(ConnectionEvent::Goaway {
-            last_stream_id,
-            error
+        let _ = shared.connection_event_sender.try_send(ConnectionEvent::Closing {
+            send_goaway: Some(error),
+            close_with: Some(Ok(()))
         });
+
+        drop(connection_state);
     }
     
 }
