@@ -17,14 +17,14 @@ use crate::uri::*;
 
 // TODO: See also https://tools.ietf.org/html/rfc2047
 
-// TODO: Support parsing URIs from human entered text that doesn't contain the scheme (and is assumed to be http)
-
+// TODO: Support parsing URIs from human entered text that doesn't contain the
+// scheme (and is assumed to be http)
 
 // RFC 3986: Section 2.1
 //
 //
-// NOTE: Upper case hex digits should be preferred but either should be accedpted by parsers.
-// `pct-encoded = "%" HEXDIG HEXDIG`
+// NOTE: Upper case hex digits should be preferred but either should be
+// accedpted by parsers. `pct-encoded = "%" HEXDIG HEXDIG`
 fn parse_pct_encoded(input: Bytes) -> ParseResult<u8> {
     if input.len() < 3 || input[0] != ('%' as u8) {
         return Err(err_msg("pct-encoded failed"));
@@ -36,8 +36,8 @@ fn parse_pct_encoded(input: Bytes) -> ParseResult<u8> {
 }
 
 fn serialize_pct_encoded(value: u8, out: &mut Vec<u8>) {
-    // NOTE: For standardization, there is a preference specified in the RFC to use upper
-    // case hex characters.
+    // NOTE: For standardization, there is a preference specified in the RFC to use
+    // upper case hex characters.
     // TODO: Consider checking if the given value is in the ascii range.
     out.extend_from_slice(format!("%{:02X}", value).as_bytes());
 }
@@ -125,8 +125,8 @@ pub fn serialize_uri(uri: &Uri, out: &mut Vec<u8>) -> Result<()> {
         // 3. Can't start with '//'
         // 4. Doesn't contain any non-ascii characters (should have all been encoded)
         //
-        // NOTE: Because we can't distinguish between '/' and the pct-encoded version of it in this stage,
-        // we ideally shouldn't try to decode it yet.
+        // NOTE: Because we can't distinguish between '/' and the pct-encoded version of
+        // it in this stage, we ideally shouldn't try to decode it yet.
         out.extend_from_slice(uri.path.as_ref().as_bytes());
 
         // for (i, segment) in uri.path.segments().iter().enumerate() {
@@ -138,13 +138,13 @@ pub fn serialize_uri(uri: &Uri, out: &mut Vec<u8>) -> Result<()> {
         // }
     }
 
-
     // TODO: Definately need to improve these by a lot.
     // TOOD: We shouldn't be doing any serialization of these (only sanitization).
     if let Some(query) = &uri.query {
         out.push(b'?');
 
-        // TODO: Instead, we can try automatically encoding anything that violated the syntax?
+        // TODO: Instead, we can try automatically encoding anything that violated the
+        // syntax?
         for byte in query.as_ref().as_bytes() {
             if *byte == b'#' {
                 return Err(err_msg("Invalid query"));
@@ -184,10 +184,10 @@ parser!(parse_hier_part<(Option<Authority>, AsciiString)> => {
 });
 
 /// RFC 3986: Section 3.1
-/// 
+///
 /// NOTE: This is strictly ASCII.
 /// `scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )`
-/// 
+///
 /// TODO: Implement as a regular expression.
 fn parse_scheme(input: Bytes) -> ParseResult<AsciiString> {
     let mut i = 0;
@@ -226,7 +226,7 @@ fn serialize_scheme(value: &AsciiString, out: &mut Vec<u8>) -> Result<()> {
 }
 
 // RFC 3986: Section 3.2
-// 
+//
 // `authority = [ userinfo "@" ] host [ ":" port ]`
 parser!(pub parse_authority<Authority> => {
     seq!(c => {
@@ -300,7 +300,7 @@ parser!(pub(crate) parse_host<Host> => {
 fn serialize_host(host: &Host, out: &mut Vec<u8>) -> Result<()> {
     match host {
         Host::IP(ip) => serialize_ip(ip, out)?,
-        Host::Name(name) => serialize_reg_name(name, out)
+        Host::Name(name) => serialize_reg_name(name, out),
     }
 
     Ok(())
@@ -328,7 +328,7 @@ pub fn serialize_ip(value: &IPAddress, out: &mut Vec<u8>) -> Result<()> {
             if v.len() != 4 {
                 return Err(err_msg("IPv4 must be 4 bytes long"));
             }
-        
+
             format!("{}.{}.{}.{}", v[0], v[1], v[2], v[3])
         }
         IPAddress::V6(v) => {
@@ -336,9 +336,10 @@ pub fn serialize_ip(value: &IPAddress, out: &mut Vec<u8>) -> Result<()> {
                 return Err(err_msg("IPv6 must be 16 bytes long"));
             }
 
-            /// (start_index, end_index) of the longest range of zero bytes seen in the address.
-            /// Initialized to a range that is trivially outside the address length.
-            let mut longest_zero_range = (255,255);
+            /// (start_index, end_index) of the longest range of zero bytes seen
+            /// in the address. Initialized to a range that is
+            /// trivially outside the address length.
+            let mut longest_zero_range = (255, 255);
             {
                 let mut cur_zero_range = (0, 0);
                 for i in 0..v.len() {
@@ -349,7 +350,9 @@ pub fn serialize_ip(value: &IPAddress, out: &mut Vec<u8>) -> Result<()> {
                             cur_zero_range = (i, i + 1);
                         }
 
-                        if cur_zero_range.1 - cur_zero_range.0 > longest_zero_range.1 - longest_zero_range.0 {
+                        if cur_zero_range.1 - cur_zero_range.0
+                            > longest_zero_range.1 - longest_zero_range.0
+                        {
                             longest_zero_range = cur_zero_range;
                         }
                     }
@@ -375,7 +378,7 @@ pub fn serialize_ip(value: &IPAddress, out: &mut Vec<u8>) -> Result<()> {
             s
         }
         IPAddress::VFuture(v) => {
-            return Err(err_msg("Serializing future IP formats not yet supported"));   
+            return Err(err_msg("Serializing future IP formats not yet supported"));
         }
     };
 
@@ -413,7 +416,8 @@ parser!(parse_ip_vfuture<Vec<u8>> => {
 /// 				/ [ *5( h16 ":" ) h16 ] "::"              h16
 /// 				/ [ *6( h16 ":" ) h16 ] "::"`
 fn parse_ipv6_address(input: Bytes) -> ParseResult<Vec<u8>> {
-    // TODO: Verify this implementation as it deviates from the 'RFC 3986' definition to allow special cases like '::1'.
+    // TODO: Verify this implementation as it deviates from the 'RFC 3986'
+    // definition to allow special cases like '::1'.
 
     // Parses `h16 ":"`
     let h16_colon = seq!(c => {
@@ -449,7 +453,7 @@ fn parse_ipv6_address(input: Bytes) -> ParseResult<Vec<u8>> {
         if padded {
             rest = c.next(many_h16(14 - out.len()))?;
         }
-        
+
         if let Some(ipv4) = c.next(opt(parse_ipv4_address))? {
             rest.extend_from_slice(&ipv4);
         } else if let Some(h16) = c.next(opt(parse_h16))? {
@@ -478,7 +482,6 @@ fn parse_ipv6_address(input: Bytes) -> ParseResult<Vec<u8>> {
 ///
 /// `h16 = 1*4HEXDIG`
 fn parse_h16(input: Bytes) -> ParseResult<Vec<u8>> {
-    
     let mut i = 0;
     while i < 4 && i < input.len() {
         if input[i].is_ascii_hexdigit() {
@@ -492,9 +495,8 @@ fn parse_h16(input: Bytes) -> ParseResult<Vec<u8>> {
         return Err(err_msg("h16: input too short"));
     }
 
-
-    let mut padded: [u8; 4] = *b"0000";    
-    padded[(4-i)..].copy_from_slice(&input[0..i]);
+    let mut padded: [u8; 4] = *b"0000";
+    padded[(4 - i)..].copy_from_slice(&input[0..i]);
 
     let mut decoded = hex::decode(padded).unwrap();
     if decoded.len() == 1 {
@@ -502,12 +504,12 @@ fn parse_h16(input: Bytes) -> ParseResult<Vec<u8>> {
     }
 
     assert_eq!(decoded.len(), 2);
-    
+
     Ok((decoded, input.slice(i..)))
 }
 
 /// RFC 3986: Section 3.2.2
-/// 
+///
 /// `ls32 = ( h16 ":" h16 ) / IPv4address`
 fn parse_ls32(input: Bytes) -> ParseResult<Vec<u8>> {
     let p = alt!(
@@ -525,7 +527,7 @@ fn parse_ls32(input: Bytes) -> ParseResult<Vec<u8>> {
 }
 
 /// RFC 3986: Section 3.2.2
-/// 
+///
 /// `IPv4address = dec-octet "." dec-octet "." dec-octet "." dec-octet`
 fn parse_ipv4_address(input: Bytes) -> ParseResult<Vec<u8>> {
     let p = seq!(c => {
@@ -558,8 +560,8 @@ fn parse_dec_octet(input: Bytes) -> ParseResult<u8> {
 
 // RFC 3986: Section 3.2.2
 //
-// According to the RFC, when percent encoding is used in a name, it should only be for
-// representing UTF-8 octets.
+// According to the RFC, when percent encoding is used in a name, it should only
+// be for representing UTF-8 octets.
 //
 // `reg-name = *( unreserved / pct-encoded / sub-delims )`
 parser!(parse_reg_name<String> => {
@@ -580,7 +582,7 @@ fn serialize_reg_name(name: &str, out: &mut Vec<u8>) {
 }
 
 /// RFC 3986: Section 3.2.3
-/// 
+///
 /// `port = *DIGIT`
 fn parse_port(input: Bytes) -> ParseResult<Option<usize>> {
     let (v, rest) = take_while1(|i| (i as char).is_digit(10))(input)?;
@@ -591,7 +593,6 @@ fn parse_port(input: Bytes) -> ParseResult<Option<usize>> {
     let p = usize::from_str_radix(s, 10)?;
     Ok((Some(p), rest))
 }
-
 
 // TODO: Is this ever used?
 // RFC 3986: Section 3.3
@@ -783,7 +784,7 @@ parser!(parse_relative_ref<Uri> => {
             c.next(one_of("#"))?;
             c.next(parse_fragment)
         })))?;
-        
+
         Ok(Uri {
             scheme: None,
             authority,
@@ -829,8 +830,6 @@ parser!(pub parse_absolute_uri<Uri> => {
     })
 });
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -847,139 +846,181 @@ mod tests {
 
     #[test]
     fn parse_uri2_test() {
-
         let test_cases: &[(&'static str, Uri)] = &[
             // Valid URIs based on 'RFC 3986 1.1.2'
-            ("ftp://ftp.is.co.za/rfc/rfc1808.txt", Uri {
-                scheme: Some(AsciiString::from("ftp").unwrap()),
-                authority: Some(Authority {
-                    user: None,
-                    host: Host::Name("ftp.is.co.za".to_string()),
-                    port: None
-                }),
-                path: AsciiString::from("/rfc/rfc1808.txt").unwrap(),
-                // path: UriPath::new(true, &["rfc", "rfc1808.txt"]),
-                query: None,
-                fragment: None
-            }),
-            ("http://www.ietf.org/rfc/rfc2396.txt", Uri {
-                scheme: Some(AsciiString::from("http").unwrap()),
-                authority: Some(Authority {
-                    user: None,
-                    host: Host::Name("www.ietf.org".to_string()),
-                    port: None
-                }),
-                path: AsciiString::from("/rfc/rfc2396.txt").unwrap(),
-                // path: UriPath::new(true, &["rfc", "rfc2396.txt"]),
-                query: None,
-                fragment: None
-            }),
-            ("ldap://[2001:db8::7]/c=GB?objectClass?one", Uri {
-                scheme: Some(AsciiString::from("ldap").unwrap()),
-                authority: Some(Authority {
-                    user: None,
-                    host: Host::IP(IPAddress::V6(vec![0x20, 0x01, 0x0D, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x07])),
-                    port: None
-                }),
-                path: AsciiString::from("/c=GB").unwrap(),
-                // path: UriPath::new(true, &["c=GB"]),
-                query: Some(AsciiString::from("objectClass?one").unwrap()),
-                fragment: None
-            }),
-            ("mailto:John.Doe@example.com", Uri {
-                scheme: Some(AsciiString::from("mailto").unwrap()),
-                authority: None,
-                path: AsciiString::from("John.Doe@example.com").unwrap(),
-                // path: UriPath::new(false, &["John.Doe@example.com"]),
-                query: None,
-                fragment: None
-            }),
-            ("news:comp.infosystems.www.servers.unix", Uri {
-                scheme: Some(AsciiString::from("news").unwrap()),
-                authority: None,
-                path: AsciiString::from("comp.infosystems.www.servers.unix").unwrap(),
-                // path: UriPath::new(false, &["comp.infosystems.www.servers.unix"]),
-                query: None,
-                fragment: None
-            }),
-            ("tel:+1-816-555-1212", Uri {
-                scheme: Some(AsciiString::from("tel").unwrap()),
-                authority: None,
-                path: AsciiString::from("+1-816-555-1212").unwrap(),
-                // path: UriPath::new(false, &["+1-816-555-1212"]),
-                query: None,
-                fragment: None
-            }),
-            ("telnet://192.0.2.16:80/", Uri {
-                scheme: Some(AsciiString::from("telnet").unwrap()),
-                authority: Some(Authority {
-                    user: None,
-                    host: Host::IP(IPAddress::V4(vec![192, 0, 2, 16])),
-                    port: Some(80)
-                }),
-                path: AsciiString::from("/").unwrap(),
-                // path: UriPath::new(true, &[""]),
-                query: None,
-                fragment: None
-            }),
-            ("urn:oasis:names:specification:docbook:dtd:xml:4.1.2", Uri {
-                scheme: Some(AsciiString::from("urn").unwrap()),
-                authority: None,
-                path: AsciiString::from("oasis:names:specification:docbook:dtd:xml:4.1.2").unwrap(),
-                // path: UriPath::new(false, &["oasis:names:specification:docbook:dtd:xml:4.1.2"]),
-                query: None,
-                fragment: None
-            }),
-
+            (
+                "ftp://ftp.is.co.za/rfc/rfc1808.txt",
+                Uri {
+                    scheme: Some(AsciiString::from("ftp").unwrap()),
+                    authority: Some(Authority {
+                        user: None,
+                        host: Host::Name("ftp.is.co.za".to_string()),
+                        port: None,
+                    }),
+                    path: AsciiString::from("/rfc/rfc1808.txt").unwrap(),
+                    // path: UriPath::new(true, &["rfc", "rfc1808.txt"]),
+                    query: None,
+                    fragment: None,
+                },
+            ),
+            (
+                "http://www.ietf.org/rfc/rfc2396.txt",
+                Uri {
+                    scheme: Some(AsciiString::from("http").unwrap()),
+                    authority: Some(Authority {
+                        user: None,
+                        host: Host::Name("www.ietf.org".to_string()),
+                        port: None,
+                    }),
+                    path: AsciiString::from("/rfc/rfc2396.txt").unwrap(),
+                    // path: UriPath::new(true, &["rfc", "rfc2396.txt"]),
+                    query: None,
+                    fragment: None,
+                },
+            ),
+            (
+                "ldap://[2001:db8::7]/c=GB?objectClass?one",
+                Uri {
+                    scheme: Some(AsciiString::from("ldap").unwrap()),
+                    authority: Some(Authority {
+                        user: None,
+                        host: Host::IP(IPAddress::V6(vec![
+                            0x20, 0x01, 0x0D, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x07,
+                        ])),
+                        port: None,
+                    }),
+                    path: AsciiString::from("/c=GB").unwrap(),
+                    // path: UriPath::new(true, &["c=GB"]),
+                    query: Some(AsciiString::from("objectClass?one").unwrap()),
+                    fragment: None,
+                },
+            ),
+            (
+                "mailto:John.Doe@example.com",
+                Uri {
+                    scheme: Some(AsciiString::from("mailto").unwrap()),
+                    authority: None,
+                    path: AsciiString::from("John.Doe@example.com").unwrap(),
+                    // path: UriPath::new(false, &["John.Doe@example.com"]),
+                    query: None,
+                    fragment: None,
+                },
+            ),
+            (
+                "news:comp.infosystems.www.servers.unix",
+                Uri {
+                    scheme: Some(AsciiString::from("news").unwrap()),
+                    authority: None,
+                    path: AsciiString::from("comp.infosystems.www.servers.unix").unwrap(),
+                    // path: UriPath::new(false, &["comp.infosystems.www.servers.unix"]),
+                    query: None,
+                    fragment: None,
+                },
+            ),
+            (
+                "tel:+1-816-555-1212",
+                Uri {
+                    scheme: Some(AsciiString::from("tel").unwrap()),
+                    authority: None,
+                    path: AsciiString::from("+1-816-555-1212").unwrap(),
+                    // path: UriPath::new(false, &["+1-816-555-1212"]),
+                    query: None,
+                    fragment: None,
+                },
+            ),
+            (
+                "telnet://192.0.2.16:80/",
+                Uri {
+                    scheme: Some(AsciiString::from("telnet").unwrap()),
+                    authority: Some(Authority {
+                        user: None,
+                        host: Host::IP(IPAddress::V4(vec![192, 0, 2, 16])),
+                        port: Some(80),
+                    }),
+                    path: AsciiString::from("/").unwrap(),
+                    // path: UriPath::new(true, &[""]),
+                    query: None,
+                    fragment: None,
+                },
+            ),
+            (
+                "urn:oasis:names:specification:docbook:dtd:xml:4.1.2",
+                Uri {
+                    scheme: Some(AsciiString::from("urn").unwrap()),
+                    authority: None,
+                    path: AsciiString::from("oasis:names:specification:docbook:dtd:xml:4.1.2")
+                        .unwrap(),
+                    // path: UriPath::new(false,
+                    // &["oasis:names:specification:docbook:dtd:xml:4.1.2"]),
+                    query: None,
+                    fragment: None,
+                },
+            ),
             // From RFC 3986 Section 3
-            ("foo://example.com:8042/over/there?name=ferret#nose", Uri {
-                scheme: Some(AsciiString::from("foo").unwrap()),
-                authority: Some(Authority {
-                    user: None,
-                    host: Host::Name("example.com".to_string()),
-                    port: Some(8042)
-                }),
-                path: AsciiString::from("/over/there").unwrap(),
-                // path: UriPath::new(true, &["over", "there"]),
-                query: Some(AsciiString::from("name=ferret").unwrap()),
-                fragment: Some(AsciiString::from("nose").unwrap())
-            }),
-            ("urn:example:animal:ferret:nose", Uri {
-                scheme: Some(AsciiString::from("urn").unwrap()),
-                authority: None,
-                path: AsciiString::from("example:animal:ferret:nose").unwrap(),
-                // path: UriPath::new(false, &["example:animal:ferret:nose"]),
-                query: None,
-                fragment: None
-            }),
-            ("urn:/example/world", Uri {
-                scheme: Some(AsciiString::from("urn").unwrap()),
-                authority: None,
-                path: AsciiString::from("/example/world").unwrap(), // UriPath::new(true, &["example", "world"]),
-                query: None,
-                fragment: None
-            }),
-            ("https://localhost:8000", Uri {
-                scheme: Some(AsciiString::from("https").unwrap()),
-                authority: Some(Authority {
-                    user: None,
-                    host: Host::Name("localhost".to_string()),
-                    port: Some(8000)
-                }),
-                // TODO: Normalize this to '/' as it is actually absolute.
-                path: AsciiString::from("").unwrap(),
-                // path: UriPath::new(true, &[]),
-                query: None,
-                fragment: None
-            }),
+            (
+                "foo://example.com:8042/over/there?name=ferret#nose",
+                Uri {
+                    scheme: Some(AsciiString::from("foo").unwrap()),
+                    authority: Some(Authority {
+                        user: None,
+                        host: Host::Name("example.com".to_string()),
+                        port: Some(8042),
+                    }),
+                    path: AsciiString::from("/over/there").unwrap(),
+                    // path: UriPath::new(true, &["over", "there"]),
+                    query: Some(AsciiString::from("name=ferret").unwrap()),
+                    fragment: Some(AsciiString::from("nose").unwrap()),
+                },
+            ),
+            (
+                "urn:example:animal:ferret:nose",
+                Uri {
+                    scheme: Some(AsciiString::from("urn").unwrap()),
+                    authority: None,
+                    path: AsciiString::from("example:animal:ferret:nose").unwrap(),
+                    // path: UriPath::new(false, &["example:animal:ferret:nose"]),
+                    query: None,
+                    fragment: None,
+                },
+            ),
+            (
+                "urn:/example/world",
+                Uri {
+                    scheme: Some(AsciiString::from("urn").unwrap()),
+                    authority: None,
+                    path: AsciiString::from("/example/world").unwrap(), /* UriPath::new(true,
+                                                                         * &["example",
+                                                                         * "world"]), */
+                    query: None,
+                    fragment: None,
+                },
+            ),
+            (
+                "https://localhost:8000",
+                Uri {
+                    scheme: Some(AsciiString::from("https").unwrap()),
+                    authority: Some(Authority {
+                        user: None,
+                        host: Host::Name("localhost".to_string()),
+                        port: Some(8000),
+                    }),
+                    // TODO: Normalize this to '/' as it is actually absolute.
+                    path: AsciiString::from("").unwrap(),
+                    // path: UriPath::new(true, &[]),
+                    query: None,
+                    fragment: None,
+                },
+            ),
         ];
 
         // TODO: Add invalid test cases.
 
         for (input, output) in test_cases.iter().cloned() {
-            assert_eq!(parse_uri(Bytes::from(input)).unwrap(), (output, Bytes::new()));
+            assert_eq!(
+                parse_uri(Bytes::from(input)).unwrap(),
+                (output, Bytes::new())
+            );
         }
-
     }
 
     #[test]
@@ -991,8 +1032,10 @@ mod tests {
         ];
 
         for (input, output) in test_cases {
-            assert_eq!(parse_ipv4_address(Bytes::from(input.as_bytes())).unwrap(),
-                       (output.to_vec(), Bytes::new()));
+            assert_eq!(
+                parse_ipv4_address(Bytes::from(input.as_bytes())).unwrap(),
+                (output.to_vec(), Bytes::new())
+            );
         }
     }
 
@@ -1003,18 +1046,41 @@ mod tests {
         // ::192.0.2.128 is NOT valid
 
         let test_cases: &[(&'static str, &[u8])] = &[
-            ("::ffff:192.0.2.128", &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 192, 0, 2, 128]),
-            ("0000:0000:0000:0000:0000:0000:0000:0001", &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
+            (
+                "::ffff:192.0.2.128",
+                &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 192, 0, 2, 128],
+            ),
+            (
+                "0000:0000:0000:0000:0000:0000:0000:0001",
+                &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            ),
             ("::1", &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
             ("::", &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
-            ("2001:0db8:0000:0000:0000:ff00:0042:8329", &[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29]),
-            ("2001:db8:0:0:0:ff00:42:8329", &[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29]),
-            ("2001:db8::ff00:42:8329", &[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29]),
+            (
+                "2001:0db8:0000:0000:0000:ff00:0042:8329",
+                &[
+                    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29,
+                ],
+            ),
+            (
+                "2001:db8:0:0:0:ff00:42:8329",
+                &[
+                    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29,
+                ],
+            ),
+            (
+                "2001:db8::ff00:42:8329",
+                &[
+                    0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0x42, 0x83, 0x29,
+                ],
+            ),
         ];
 
         for (input, output) in test_cases {
-            assert_eq!(parse_ipv6_address(Bytes::from(input.as_bytes())).unwrap(),
-                       (output.to_vec(), Bytes::new()));
+            assert_eq!(
+                parse_ipv6_address(Bytes::from(input.as_bytes())).unwrap(),
+                (output.to_vec(), Bytes::new())
+            );
         }
     }
 

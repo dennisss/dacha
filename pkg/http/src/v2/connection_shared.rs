@@ -3,48 +3,44 @@ use std::{convert::TryFrom, sync::Arc};
 use common::async_std::channel;
 use common::async_std::sync::Mutex;
 
-use crate::v2::types::*;
-use crate::v2::body::*;
-use crate::v2::stream::*;
-use crate::v2::stream_state::*;
-use crate::v2::connection_state::*;
-use crate::v2::options::ConnectionOptions;
+use crate::proto::v2::*;
 use crate::request::Request;
 use crate::server::RequestHandler;
-use crate::proto::v2::*;
-
+use crate::v2::body::*;
+use crate::v2::connection_state::*;
+use crate::v2::options::ConnectionOptions;
+use crate::v2::stream::*;
+use crate::v2::stream_state::*;
+use crate::v2::types::*;
 
 pub const CONNECTION_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
 pub const CONNECTION_PREFACE_BODY: &[u8] = b"SM\r\n\r\n";
-
 
 pub struct ConnectionShared {
     pub is_server: bool,
 
     pub state: Mutex<ConnectionState>,
 
-    // TODO: We may want to keep around a timer for the last time we closed a stream so that if we 
-
+    // TODO: We may want to keep around a timer for the last time we closed a stream so that if we
     /// Handler for producing responses to incoming requests.
     ///
     /// NOTE: This will only be used in HTTP servers.
     pub request_handler: Option<Box<dyn RequestHandler>>,
 
     /// Used to notify the connection of events that have occured.
-    /// The writer thread listens to these events performs actions such as sending more data, starting
-    /// requests, etc. in response to each event.
+    /// The writer thread listens to these events performs actions such as
+    /// sending more data, starting requests, etc. in response to each
+    /// event.
     ///
     /// TODO: Make this a bounded channel?
     pub connection_event_sender: channel::Sender<ConnectionEvent>,
 
-    /// TODO: Eventually support changing this. 
-    pub options: ConnectionOptions
-
+    /// TODO: Eventually support changing this.
+    pub options: ConnectionOptions,
 }
 
 impl ConnectionShared {
-
     pub fn is_local_stream_id(&self, id: StreamId) -> bool {
         // Clients have ODD numbered ids. Servers have EVEN numbered ids.
         self.is_server == (id % 2 == 0)
@@ -54,15 +50,16 @@ impl ConnectionShared {
         !self.is_local_stream_id(id)
     }
 
-
-    
-    /// Performs cleanup on a stream which is gracefully closing with both endpoints having sent a frame
-    /// with an END_STREAM flag.
-    pub async fn finish_stream(&self,
-        connection_state: &mut ConnectionState, stream_id: StreamId,
-        additional_error: Option<ProtocolErrorV2>
+    /// Performs cleanup on a stream which is gracefully closing with both
+    /// endpoints having sent a frame with an END_STREAM flag.
+    pub async fn finish_stream(
+        &self,
+        connection_state: &mut ConnectionState,
+        stream_id: StreamId,
+        additional_error: Option<ProtocolErrorV2>,
     ) {
-        // TODO: Verify that there are no cyclic references to Arc<StreamState> (otherwise the stream state may never get freed)
+        // TODO: Verify that there are no cyclic references to Arc<StreamState>
+        // (otherwise the stream state may never get freed)
         let mut stream = match connection_state.streams.remove(&stream_id) {
             Some(s) => s,
             // TODO: Should we complain in this instance?
@@ -72,8 +69,13 @@ impl ConnectionShared {
                 // to validate that the request is ok to pass to the other endpoint.
                 if let Some(error) = additional_error {
                     if error.local {
-                        let _ = self.connection_event_sender.send(
-                            ConnectionEvent::ResetStream { stream_id, error: error }).await;
+                        let _ = self
+                            .connection_event_sender
+                            .send(ConnectionEvent::ResetStream {
+                                stream_id,
+                                error: error,
+                            })
+                            .await;
                     }
                 }
 
@@ -91,30 +93,39 @@ impl ConnectionShared {
         }
 
         // Ensure that all events are propagated to the reader/writer threads.
-        // TODO: Remove these and instead find all places where we neglected to add these.
+        // TODO: Remove these and instead find all places where we neglected to add
+        // these.
         let _ = stream.read_available_notifier.try_send(());
         let _ = stream.write_available_notifier.try_send(());
 
         if let Some(error) = stream_state.error.clone() {
             if error.local {
                 // Notify the other endpoint of locally generated stream errors.
-                let _ = self.connection_event_sender.send(
-                    ConnectionEvent::ResetStream { stream_id, error: error.clone() }).await;
+                let _ = self
+                    .connection_event_sender
+                    .send(ConnectionEvent::ResetStream {
+                        stream_id,
+                        error: error.clone(),
+                    })
+                    .await;
             }
 
-            // If there is unread data when resetting a stream we can clear it and count it as 'read' by
-            // increasing the connection level flow control limit. 
+            // If there is unread data when resetting a stream we can clear it and count it
+            // as 'read' by increasing the connection level flow control limit.
             if stream_state.received_buffer.len() > 0 {
-                self.connection_event_sender.send(ConnectionEvent::StreamRead {
-                    stream_id: 0,
-                    // TODO: This will be an underestimate if we rejected any DATA frames (and thus never made it
-                    // into this buffer)
-                    count: stream_state.received_buffer.len()
-                }).await;
+                self.connection_event_sender
+                    .send(ConnectionEvent::StreamRead {
+                        stream_id: 0,
+                        // TODO: This will be an underestimate if we rejected any DATA frames (and
+                        // thus never made it into this buffer)
+                        count: stream_state.received_buffer.len(),
+                    })
+                    .await;
             }
 
             // Clear no longer needed memory.
-            // TODO: Make sure that this doesn't happen if we are just gracefully closing a stream.
+            // TODO: Make sure that this doesn't happen if we are just gracefully closing a
+            // stream.
             stream_state.received_buffer.clear();
             stream_state.sending_buffer.clear();
 
@@ -122,12 +133,15 @@ impl ConnectionShared {
                 drop(handle);
             }
 
-            // If the error happened before response headers will received by a client, response with an error.
-            // TODO: Also need to notify the requester of whether or not the request is trivially retryable
+            // If the error happened before response headers will received by a client,
+            // response with an error. TODO: Also need to notify the requester
+            // of whether or not the request is trivially retryable
             // (based on the stream id in the latest GOAWAY message).
             //
             // TODO: Ensure that this is never present when the stream has a value.
-            if let Some((request_method, response_handler, body)) = stream.incoming_response_handler.take() {
+            if let Some((request_method, response_handler, body)) =
+                stream.incoming_response_handler.take()
+            {
                 response_handler.handle_response(Err(error.into())).await;
             }
 
@@ -141,40 +155,49 @@ impl ConnectionShared {
         //
         // TODO: What should we do about promised streams?
         //
-        // NOTE: If connection_state.shutting_down is not No, then it's likely an OK error, because we
-        // close the connection immediately on other types of errors.
+        // NOTE: If connection_state.shutting_down is not No, then it's likely an OK
+        // error, because we close the connection immediately on other types of
+        // errors.
         if connection_state.shutting_down.is_some() && connection_state.streams.is_empty() {
-            // NOTE: Because both of the values are None, we leave the final decision on whether or not to close to
-            // the writer thread.
-            let _ = self.connection_event_sender.try_send(ConnectionEvent::Closing {
-                send_goaway: None, close_with: None
-            });
+            // NOTE: Because both of the values are None, we leave the final decision on
+            // whether or not to close to the writer thread.
+            let _ = self
+                .connection_event_sender
+                .try_send(ConnectionEvent::Closing {
+                    send_goaway: None,
+                    close_with: None,
+                });
         }
 
         if self.is_local_stream_id(stream_id) {
             connection_state.local_stream_count -= 1;
             if !connection_state.pending_requests.is_empty() {
-                // After removing a local stream, try to send any remaining queued requests. 
-                let _ = self.connection_event_sender.try_send(ConnectionEvent::SendRequest);
+                // After removing a local stream, try to send any remaining queued requests.
+                let _ = self
+                    .connection_event_sender
+                    .try_send(ConnectionEvent::SendRequest);
             }
         } else {
             connection_state.remote_stream_count -= 1;
         }
     }
 
-
-    /// Constructs a new stream object along with coupled readers/writers for the stream's data.
+    /// Constructs a new stream object along with coupled readers/writers for
+    /// the stream's data.
     ///
-    /// NOTE: This does NOT insert the stream into the ConnectionState. It's purely an object
-    /// construction helper.
+    /// NOTE: This does NOT insert the stream into the ConnectionState. It's
+    /// purely an object construction helper.
     pub fn new_stream(
-        &self, connection_state: &ConnectionState, stream_id: StreamId
+        &self,
+        connection_state: &ConnectionState,
+        stream_id: StreamId,
     ) -> (Stream, IncomingStreamBody, OutgoingStreamBody) {
-        // NOTE: These channels only act as a boolean flag of whether or not something has changed so we should
-        // only need to ever have at most 1 message in each of them.
+        // NOTE: These channels only act as a boolean flag of whether or not something
+        // has changed so we should only need to ever have at most 1 message in
+        // each of them.
         let (read_available_notifier, read_available_receiver) = channel::bounded(1);
         let (write_available_notifier, write_available_receiver) = channel::bounded(1);
-        
+
         let stream = Stream {
             read_available_notifier,
             write_available_notifier,
@@ -185,11 +208,12 @@ impl ConnectionShared {
             state: Arc::new(Mutex::new(StreamState {
                 // weight: 16, // Default weight
                 // dependency: 0,
-
                 error: None,
-                
-                local_window: connection_state.local_settings[SettingId::INITIAL_WINDOW_SIZE] as WindowSize,
-                remote_window: connection_state.remote_settings[SettingId::INITIAL_WINDOW_SIZE] as WindowSize,
+
+                local_window: connection_state.local_settings[SettingId::INITIAL_WINDOW_SIZE]
+                    as WindowSize,
+                remote_window: connection_state.remote_settings[SettingId::INITIAL_WINDOW_SIZE]
+                    as WindowSize,
 
                 received_buffer: vec![],
                 received_trailers: None,
@@ -200,8 +224,8 @@ impl ConnectionShared {
                 sending_buffer: vec![],
                 sending_trailers: None,
                 sending_end: false,
-                max_sending_buffer_size: self.options.max_sending_buffer_size
-            }))
+                max_sending_buffer_size: self.options.max_sending_buffer_size,
+            })),
         };
 
         let incoming_body = IncomingStreamBody::new(
@@ -212,29 +236,38 @@ impl ConnectionShared {
         );
 
         let outgoing_body = OutgoingStreamBody::new(
-            stream_id,     
+            stream_id,
             stream.state.clone(),
             self.connection_event_sender.clone(),
-            write_available_receiver
+            write_available_receiver,
         );
 
         (stream, incoming_body, outgoing_body)
     }
 
-    /// Wrapper around the server request handler which is intended to call the server request handler
-    /// in a separate task and then notify the ConnectionWriter once a response is ready to be sent
-    /// back to the client.
-    pub async fn request_handler_driver(self: Arc<ConnectionShared>, stream_id: StreamId, request: Request) {
+    /// Wrapper around the server request handler which is intended to call the
+    /// server request handler in a separate task and then notify the
+    /// ConnectionWriter once a response is ready to be sent back to the
+    /// client.
+    pub async fn request_handler_driver(
+        self: Arc<ConnectionShared>,
+        stream_id: StreamId,
+        request: Request,
+    ) {
         let request_handler = self.request_handler.as_ref().unwrap();
 
         let response = request_handler.handle_request(request).await;
 
-        let _ = self.connection_event_sender.send(ConnectionEvent::SendResponse {
-            stream_id,
-            response
-        }).await;
+        let _ = self
+            .connection_event_sender
+            .send(ConnectionEvent::SendResponse {
+                stream_id,
+                response,
+            })
+            .await;
 
-        // TODO: Consider starting the processing task for reading the outgoing body here.
-        // This will require us to validate the stream is still open, but this may help with latency.
+        // TODO: Consider starting the processing task for reading the outgoing
+        // body here. This will require us to validate the stream is
+        // still open, but this may help with latency.
     }
 }

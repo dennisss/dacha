@@ -1,11 +1,12 @@
-// Helpers to work with the Content-Encoding, Transfer-Encoding, and Accept-Encoding headers.
+// Helpers to work with the Content-Encoding, Transfer-Encoding, and
+// Accept-Encoding headers.
 //
 // The definitive list of registered coding types is here:
 // https://www.iana.org/assignments/http-parameters/http-parameters.xml#http-parameters-1
 
 use common::errors::*;
-use compression::gzip::GzipDecoder;
 use compression::deflate::Inflater;
+use compression::gzip::GzipDecoder;
 
 // Transfer-Encoding: https://tools.ietf.org/html/rfc7230#section-3.3.1
 
@@ -25,12 +26,13 @@ impl TransferCoding {
     }
 }
 
-// TODO: When encoding, we need to check TE 
+// TODO: When encoding, we need to check TE
 
-/// NOTE: This assumes that 'chunked' has already been removed from the end of the list. 
+/// NOTE: This assumes that 'chunked' has already been removed from the end of
+/// the list.
 pub fn decode_transfer_encoding_body(
     transfer_encoding: Vec<TransferCoding>,
-    mut body: Box<dyn Body>
+    mut body: Box<dyn Body>,
 ) -> Result<Box<dyn Body>> {
     for coding in transfer_encoding.iter().rev() {
         if coding.name() == "identity" {
@@ -55,7 +57,7 @@ pub fn decode_transfer_encoding_body(
 
 pub fn decode_content_encoding_body(
     response_headers: &Headers,
-    mut body: Box<dyn Body>
+    mut body: Box<dyn Body>,
 ) -> Result<Box<dyn Body>> {
     let codings = crate::encoding_syntax::parse_content_encoding(response_headers)?;
 

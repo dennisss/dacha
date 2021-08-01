@@ -1,29 +1,30 @@
-// Helpers for encoding/decoding the string literal and varint formats used in the
-// HPACK binary format.
+// Helpers for encoding/decoding the string literal and varint formats used in
+// the HPACK binary format.
 //
-// For varints, we use 'usize' as these values are used upstream exclusively as buffer indexes,
-// so there is no point in making them bigger.
+// For varints, we use 'usize' as these values are used upstream exclusively as
+// buffer indexes, so there is no point in making them bigger.
 
-use common::errors::*;
-use common::bits::{BitWriter, BitWrite};
 use common::bits::BitIoError;
-use parsing::{parse_next, take_exact};
+use common::bits::{BitWrite, BitWriter};
+use common::errors::*;
 use parsing::binary::be_u8;
+use parsing::{parse_next, take_exact};
 
 use crate::hpack::static_tables::*;
 
-// NOTE: For a 64 bit integer, we can bound the number of bytes needed as 'ceil(64 / 7) = 10 bytes'
-const MAX_VARINT_EXTRA_BYTES: usize = common::ceil_div(8*std::mem::size_of::<usize>(), 7);
+// NOTE: For a 64 bit integer, we can bound the number of bytes needed as
+// 'ceil(64 / 7) = 10 bytes'
+const MAX_VARINT_EXTRA_BYTES: usize = common::ceil_div(8 * std::mem::size_of::<usize>(), 7);
 
 /// RFC 7541: Section 5.1
 pub fn serialize_varint(mut value: usize, prefix_bits: usize, out: &mut Vec<u8>) {
     assert!(prefix_bits >= 1 && prefix_bits <= 8);
-    // On 8-bit addressed systems, the '1 << prefix_bits' will overflow.  
+    // On 8-bit addressed systems, the '1 << prefix_bits' will overflow.
     assert!(std::mem::size_of::<usize>() > 1);
 
-    // This is the prefix mask. Contains exactly 'prefix_bits' 1-bits 
+    // This is the prefix mask. Contains exactly 'prefix_bits' 1-bits
     let limit: usize = (1 << prefix_bits) - 1;
- 
+
     if value < limit {
         out.push(value as u8);
         return;
@@ -45,7 +46,7 @@ pub fn serialize_varint(mut value: usize, prefix_bits: usize, out: &mut Vec<u8>)
 /// RFC 7541: Section 5.1
 pub fn parse_varint(mut input: &[u8], prefix_bits: usize) -> Result<(usize, &[u8])> {
     assert!(prefix_bits >= 1 && prefix_bits <= 8);
-    // On 8-bit addressed systems, the '1 << prefix_bits' will overflow.  
+    // On 8-bit addressed systems, the '1 << prefix_bits' will overflow.
     assert!(std::mem::size_of::<usize>() > 1);
 
     let limit: usize = (1 << prefix_bits) - 1;
@@ -60,10 +61,10 @@ pub fn parse_varint(mut input: &[u8], prefix_bits: usize) -> Result<(usize, &[u8
     let mut done = false;
     for i in 0..MAX_VARINT_EXTRA_BYTES {
         let next_byte = parse_next!(input, be_u8);
-        
+
         // TODO: Technically the shift could also overflow.
-        value =
-            ((next_byte as usize) & LOWER7).checked_shl(7 * (i as u32))
+        value = ((next_byte as usize) & LOWER7)
+            .checked_shl(7 * (i as u32))
             .and_then(|v| value.checked_add(v))
             .ok_or_else(|| err_msg("Too large to fit in usize"))?;
 
@@ -81,10 +82,10 @@ pub fn parse_varint(mut input: &[u8], prefix_bits: usize) -> Result<(usize, &[u8
 }
 
 pub fn serialize_string_literal(data: &[u8], maybe_compress: bool, out: &mut Vec<u8>) {
-    let first_i = out.len(); 
+    let first_i = out.len();
 
-    // NOTE: We use a heuristic here to guess that small data up to 5 bytes in length is
-    // probably not worth compressing.
+    // NOTE: We use a heuristic here to guess that small data up to 5 bytes in
+    // length is probably not worth compressing.
     if maybe_compress && data.len() > 5 {
         // TODO: Refactor huffman_encode to abandon compression if it exceeds the length
         // of the input early.
@@ -98,7 +99,7 @@ pub fn serialize_string_literal(data: &[u8], maybe_compress: bool, out: &mut Vec
     }
 
     serialize_varint(data.len(), 7, out);
-    out.extend_from_slice(&data);    
+    out.extend_from_slice(&data);
 }
 
 // TODO: Limit the expanded size?
@@ -120,16 +121,18 @@ pub fn parse_string_literal(mut input: &[u8]) -> Result<(Vec<u8>, &[u8])> {
 
             let mut cursor = std::io::Cursor::new(raw_data);
             let mut reader = common::bits::BitReader::new_with_order(
-                &mut cursor, common::bits::BitOrder::MSBFirst);
+                &mut cursor,
+                common::bits::BitOrder::MSBFirst,
+            );
 
-            let tree= &*crate::hpack::static_tables::HUFFMAN_TREE;
+            let tree = &*crate::hpack::static_tables::HUFFMAN_TREE;
 
             loop {
                 match tree.read_code(&mut reader) {
                     Ok(value) => {
                         reader.consume();
                         out.push(value as u8)
-                    },
+                    }
                     Err(e) => {
                         if let Some(BitIoError::NotEnoughBits) = e.downcast_ref() {
                             break;
@@ -140,8 +143,8 @@ pub fn parse_string_literal(mut input: &[u8]) -> Result<(Vec<u8>, &[u8])> {
                 }
             }
 
-            let padding= reader.into_unconsumed_bits();
-            
+            let padding = reader.into_unconsumed_bits();
+
             // All bytes must have been consumed. In the last byte, at least 1 bit
             // must have been consumed.
             if padding.len() > 7 || (raw_data.len() as u64 != cursor.position()) {
@@ -164,7 +167,6 @@ pub fn parse_string_literal(mut input: &[u8]) -> Result<(Vec<u8>, &[u8])> {
     Ok((data, input))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,7 +177,7 @@ mod tests {
         for i in 0..254 {
             let mut out = vec![];
             serialize_varint(i, 8, &mut out);
-            assert_eq!(&out, &[ i as u8 ]);
+            assert_eq!(&out, &[i as u8]);
 
             let (v, rest) = parse_varint(&out, 8)?;
             assert_eq!(v, i);
@@ -194,10 +196,8 @@ mod tests {
         {
             let input = &[
                 // 21
-                0b11010101,
-                // 56
-                0xFF,
-                0b01011001
+                0b11010101, // 56
+                0xFF, 0b01011001,
             ];
 
             let (v1, rest1) = parse_varint(input, 5)?;
@@ -216,7 +216,8 @@ mod tests {
 
             // TODO: Test all incomplete variatiosn of the input.
 
-            // TODO: Try intentionally adding padding to verify that 'rest' cuts to the right spot. 
+            // TODO: Try intentionally adding padding to verify that 'rest' cuts to the
+            // right spot.
             let (v, rest) = parse_varint(&out, nbits)?;
             assert_eq!(v, value);
             assert_eq!(rest, &[]);
@@ -227,7 +228,7 @@ mod tests {
         // RFC 7541: Appendix C.1.1
         test_pair(10, 5, &[0b00001010])?;
         // RFC 7541: Appendix C.1.2
-        test_pair(1337, 5, &[ 0b00011111, 0b10011010, 0b00001010 ])?;
+        test_pair(1337, 5, &[0b00011111, 0b10011010, 0b00001010])?;
         // TODO: Add another!
 
         Ok(())
@@ -235,7 +236,6 @@ mod tests {
 
     #[test]
     fn varint2_test() -> Result<()> {
-
         let mut out = vec![];
 
         serialize_varint(4097, 5, &mut out);
@@ -244,9 +244,7 @@ mod tests {
         let (v, rest) = parse_varint(&out, 5)?;
         assert_eq!(rest.len(), 0);
         assert_eq!(v, 4097);
-        
 
         Ok(())
     }
-
 }

@@ -1,5 +1,5 @@
-use common::errors::*;
 use common::bytes::Bytes;
+use common::errors::*;
 use parsing::binary::be_u8;
 use parsing::parse_next;
 
@@ -10,25 +10,31 @@ use crate::hpack::primitive::*;
 #[derive(Clone, PartialEq, Debug)]
 pub struct HeaderField {
     pub name: Vec<u8>,
-    pub value: Vec<u8>
+    pub value: Vec<u8>,
 }
 
 /// Referenced version of a HeaderField.
 #[derive(Clone, Copy)]
 pub struct HeaderFieldRef<'a> {
     pub name: &'a [u8],
-    pub value: &'a [u8]
+    pub value: &'a [u8],
 }
 
 impl HeaderFieldRef<'_> {
     pub fn to_owned(&self) -> HeaderField {
-        HeaderField { name: self.name.to_owned(), value: self.value.to_owned() }
+        HeaderField {
+            name: self.name.to_owned(),
+            value: self.value.to_owned(),
+        }
     }
 }
 
 impl<'a> std::convert::From<&'a HeaderField> for HeaderFieldRef<'a> {
     fn from(header: &'a HeaderField) -> Self {
-        Self { name: &header.name, value: &header.value }
+        Self {
+            name: &header.name,
+            value: &header.value,
+        }
     }
 }
 
@@ -39,12 +45,12 @@ pub enum HeaderFieldRepresentation<'a, 'b> {
     HeaderField {
         name: StringReference<'a>,
         value: StringReference<'b>,
-        indexed: IndexingMode
+        indexed: IndexingMode,
     },
 
     DynamicTableSizeUpdate {
-        max_size: usize
-    }
+        max_size: usize,
+    },
 }
 
 impl HeaderFieldRepresentation<'_, '_> {
@@ -68,13 +74,16 @@ impl HeaderFieldRepresentation<'_, '_> {
                 HeaderFieldRepresentation::HeaderField {
                     name: StringReference::Indexed(index),
                     value: StringReference::Indexed(index),
-                    indexed: IndexingMode::No
+                    indexed: IndexingMode::No,
                 }
             }
             // Starts with '01'
             // RFC 7531: Section 6.2.1
             1 => {
-                parse_next!(input, HeaderFieldRepresentation::parse_literal_header(6, IndexingMode::Yes))
+                parse_next!(
+                    input,
+                    HeaderFieldRepresentation::parse_literal_header(6, IndexingMode::Yes)
+                )
             }
             // Starts with '001'
             // RFC 7531: Section 6.3
@@ -90,19 +99,27 @@ impl HeaderFieldRepresentation<'_, '_> {
             // Starts with '0001'
             // RFC 7531: Section 6.2.3
             3 => {
-                parse_next!(input, HeaderFieldRepresentation::parse_literal_header(4, IndexingMode::Never))
+                parse_next!(
+                    input,
+                    HeaderFieldRepresentation::parse_literal_header(4, IndexingMode::Never)
+                )
             }
             // Starts with '0000'
             // RFC 7531: Section 6.2.2
             _ => {
-                parse_next!(input, HeaderFieldRepresentation::parse_literal_header(4, IndexingMode::No))
+                parse_next!(
+                    input,
+                    HeaderFieldRepresentation::parse_literal_header(4, IndexingMode::No)
+                )
             }
         };
 
         Ok((instance, input))
     }
 
-    fn parse_literal_header(code_prefix_bits: usize, indexed: IndexingMode
+    fn parse_literal_header(
+        code_prefix_bits: usize,
+        indexed: IndexingMode,
     ) -> impl Fn(&[u8]) -> Result<(HeaderFieldRepresentation, &[u8])> {
         move |mut input| {
             let index = {
@@ -121,25 +138,36 @@ impl HeaderFieldRepresentation<'_, '_> {
 
             let value = StringReference::Literal(parse_next!(input, parse_string_literal));
 
-            Ok((HeaderFieldRepresentation::HeaderField {
-                name, value, indexed
-            }, input))
+            Ok((
+                HeaderFieldRepresentation::HeaderField {
+                    name,
+                    value,
+                    indexed,
+                },
+                input,
+            ))
         }
     }
 
     pub fn serialize(&self, out: &mut Vec<u8>) -> Result<()> {
         let first_i = out.len();
         match self {
-            HeaderFieldRepresentation::HeaderField { name, value, indexed } => {
+            HeaderFieldRepresentation::HeaderField {
+                name,
+                value,
+                indexed,
+            } => {
                 match indexed {
                     IndexingMode::No => {
                         // Special case when both are indexed.
                         if let StringReference::Indexed(name_idx) = name {
                             if let StringReference::Indexed(value_idx) = value {
                                 if *name_idx != *value_idx {
-                                    return Err(err_msg("name/value indexed with different indices"));
+                                    return Err(err_msg(
+                                        "name/value indexed with different indices",
+                                    ));
                                 }
-                                
+
                                 if *name_idx == 0 {
                                     return Err(err_msg("Zero index"));
                                 }
@@ -150,19 +178,24 @@ impl HeaderFieldRepresentation<'_, '_> {
                             }
                         }
 
-                        HeaderFieldRepresentation::serialize_literal_header(4, *indexed, name, value, out)?;
+                        HeaderFieldRepresentation::serialize_literal_header(
+                            4, *indexed, name, value, out,
+                        )?;
                         // NOTE: Mask is 0
                     }
                     IndexingMode::Yes => {
-                        HeaderFieldRepresentation::serialize_literal_header(6, *indexed, name, value, out)?;
+                        HeaderFieldRepresentation::serialize_literal_header(
+                            6, *indexed, name, value, out,
+                        )?;
                         out[first_i] |= 0b01 << 6;
                     }
                     IndexingMode::Never => {
-                        HeaderFieldRepresentation::serialize_literal_header(4, *indexed, name, value, out)?;
+                        HeaderFieldRepresentation::serialize_literal_header(
+                            4, *indexed, name, value, out,
+                        )?;
                         out[first_i] |= 0b0001 << 4;
                     }
                 }
-
             }
             HeaderFieldRepresentation::DynamicTableSizeUpdate { max_size } => {
                 serialize_varint(*max_size, 5, out);
@@ -173,8 +206,13 @@ impl HeaderFieldRepresentation<'_, '_> {
         Ok(())
     }
 
-    fn serialize_literal_header(code_prefix_bits: usize, indexed: IndexingMode,
-        name: &StringReference, value: &StringReference, out: &mut Vec<u8>) -> Result<()> {
+    fn serialize_literal_header(
+        code_prefix_bits: usize,
+        indexed: IndexingMode,
+        name: &StringReference,
+        value: &StringReference,
+        out: &mut Vec<u8>,
+    ) -> Result<()> {
         let value_data = match value {
             StringReference::Literal(data) => &*data,
             StringReference::LiteralRef(data) => *data,
@@ -216,15 +254,16 @@ pub enum StringReference<'a> {
     Literal(Vec<u8>),
 
     // TODO: Consider supporting parsing as this when not compressed.
-    LiteralRef(&'a [u8])
+    LiteralRef(&'a [u8]),
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum IndexingMode {
     No,
 
-    /// The field value will not be indexed and will not be compressed using huffman coding.
+    /// The field value will not be indexed and will not be compressed using
+    /// huffman coding.
     Never,
 
-    Yes
+    Yes,
 }

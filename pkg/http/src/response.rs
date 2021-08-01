@@ -1,5 +1,5 @@
-use common::errors::*;
 use common::async_std::channel;
+use common::errors::*;
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
 
@@ -23,13 +23,12 @@ impl Response {
     }
 }
 
-
 #[derive(Debug)]
 pub struct ResponseHead {
     pub version: Version,
-    
+
     pub status_code: StatusCode,
-    
+
     /// NOTE: Will be empty in HTTP 2.
     pub reason: OpaqueString,
 
@@ -38,11 +37,14 @@ pub struct ResponseHead {
 
 impl ResponseHead {
     pub fn serialize(&self, out: &mut Vec<u8>) -> Result<()> {
-        crate::message_syntax::serialize_status_line(&StatusLine {
-            version: self.version.clone(),
-            status_code: self.status_code.as_u16(),
-            reason: self.reason.clone()
-        }, out)?;
+        crate::message_syntax::serialize_status_line(
+            &StatusLine {
+                version: self.version.clone(),
+                status_code: self.status_code.as_u16(),
+                reason: self.reason.clone(),
+            },
+            out,
+        )?;
 
         self.headers.serialize(out)?;
         out.extend_from_slice(b"\r\n");
@@ -52,8 +54,9 @@ impl ResponseHead {
 
 #[async_trait]
 pub trait ResponseHandler: Send + Sync {
-    // TODO: Document whether or not this should be a 'fast' running function. This will determine
-    // whether or not we need to spawn a new task in the connection code to run it.
+    // TODO: Document whether or not this should be a 'fast' running function. This
+    // will determine whether or not we need to spawn a new task in the
+    // connection code to run it.
     async fn handle_response(&self, response: Result<Response>);
 
     fn is_closed(&self) -> bool;
@@ -98,7 +101,7 @@ impl ResponseBuilder {
     }
 
     pub fn header<N: ToHeaderName, V: ToHeaderValue>(mut self, name: N, value: V) -> Self {
-                let name = match name.to_header_name() {
+        let name = match name.to_header_name() {
             Ok(v) => v,
             Err(e) => {
                 self.error = Some(e);
@@ -106,7 +109,8 @@ impl ResponseBuilder {
             }
         };
 
-        // TODO: Support optionally enabling a mode where we can reject non-ASCII values in header values.
+        // TODO: Support optionally enabling a mode where we can reject non-ASCII values
+        // in header values.
 
         let value = match value.to_header_value(&name) {
             Ok(v) => v,
@@ -136,7 +140,10 @@ impl ResponseBuilder {
 
         // TODO: Support custom reason and don't unwrap this.
         let reason = OpaqueString::from(status_code.default_reason().ok_or_else(|| {
-            format_err!("No default reason for status code: {}", status_code.as_u16())
+            format_err!(
+                "No default reason for status code: {}",
+                status_code.as_u16()
+            )
         })?);
 
         let headers = Headers::from(self.headers);

@@ -1,5 +1,3 @@
-
-
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Method {
     GET,
@@ -11,8 +9,8 @@ pub enum Method {
     OPTIONS,
     TRACE,
     PATCH,
-    // /// Only used when upgrading to HTTP2
-    // PRI,
+    /* /// Only used when upgrading to HTTP2
+     * PRI, */
 }
 
 impl Method {

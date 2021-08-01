@@ -2,23 +2,23 @@
 
 use std::convert::TryFrom;
 
-use common::io::Writeable;
-use common::errors::*;
 use common::bytes::Bytes;
+use common::errors::*;
+use common::io::Writeable;
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
 
+use crate::header::{Header, Headers};
 use crate::hpack;
 use crate::hpack::HeaderFieldRef;
-use crate::header::{Headers, Header};
-use crate::v2::types::*;
+use crate::message::HTTP_V2_0;
+use crate::method::Method;
 use crate::proto::v2::*;
 use crate::request::RequestHead;
 use crate::response::ResponseHead;
-use crate::message::HTTP_V2_0;
 use crate::uri::Uri;
-use crate::method::Method;
 use crate::uri_syntax::serialize_authority;
+use crate::v2::types::*;
 
 // Request pseudo headers
 const METHOD_PSEUDO_HEADER_NAME: &'static str = ":method";
@@ -28,7 +28,6 @@ const AUTHORITY_PSEUDO_HEADER_NAME: &'static str = ":authority";
 
 // Response pseudo headers
 const STATUS_PSEUDO_HEADER_NAME: &'static str = ":status";
-
 
 fn is_ascii_lowercase(s: &str) -> bool {
     for c in s.chars() {
@@ -42,15 +41,15 @@ fn is_ascii_lowercase(s: &str) -> bool {
 
 fn to_ascii_string(data: Vec<u8>) -> StreamResult<AsciiString> {
     Ok(AsciiString::from(Bytes::from(data))
-        .map_err(|_| StreamError::malformed_message("Received non ASCII header name/value"))?)   
+        .map_err(|_| StreamError::malformed_message("Received non ASCII header name/value"))?)
 }
 
-
-/// Reads the initial chunk of pseudo headers from the given full chunk of headers.
-/// Each pseudo header is passed to pseudo_handler
+/// Reads the initial chunk of pseudo headers from the given full chunk of
+/// headers. Each pseudo header is passed to pseudo_handler
 /// Returns the list of regular headers.
 fn process_header_fields<F: FnMut(hpack::HeaderField) -> StreamResult<()>>(
-    headers: Vec<hpack::HeaderField>, mut pseudo_handler: F
+    headers: Vec<hpack::HeaderField>,
+    mut pseudo_handler: F,
 ) -> StreamResult<Headers> {
     let mut done_pseudo_headers = false;
 
@@ -58,48 +57,63 @@ fn process_header_fields<F: FnMut(hpack::HeaderField) -> StreamResult<()>>(
 
     for header in headers {
         if header.name.to_ascii_lowercase() != header.name {
-            return Err(StreamError::malformed_message("Header name is not lower case"));
+            return Err(StreamError::malformed_message(
+                "Header name is not lower case",
+            ));
         }
 
         if header.name.starts_with(b":") {
             if done_pseudo_headers {
-                // Receiving regular headers before pseudo headers is invalid. 
+                // Receiving regular headers before pseudo headers is invalid.
                 // See RFC 7540: Section 8.1.2.1
                 return Err(StreamError::malformed_message(
-                    "Pseudo headers not at the beginning of the headers block"));
+                    "Pseudo headers not at the beginning of the headers block",
+                ));
             }
 
             pseudo_handler(header)?;
         } else {
             done_pseudo_headers = true;
-            
+
             regular_headers.push(Header {
                 name: to_ascii_string(header.name)?,
-                value: OpaqueString::from(header.value)
+                value: OpaqueString::from(header.value),
             });
         }
     }
 
-    Ok(Headers { raw_headers: regular_headers })
+    Ok(Headers {
+        raw_headers: regular_headers,
+    })
 }
 
-pub fn encode_request_headers_block(head: &RequestHead, encoder: &mut hpack::Encoder) -> Result<Vec<u8>> {
+pub fn encode_request_headers_block(
+    head: &RequestHead,
+    encoder: &mut hpack::Encoder,
+) -> Result<Vec<u8>> {
     let mut header_block = vec![];
 
-    encoder.append(HeaderFieldRef {
-        name: METHOD_PSEUDO_HEADER_NAME.as_bytes(),
-        value: head.method.as_str().as_bytes()
-    }, &mut header_block);
+    encoder.append(
+        HeaderFieldRef {
+            name: METHOD_PSEUDO_HEADER_NAME.as_bytes(),
+            value: head.method.as_str().as_bytes(),
+        },
+        &mut header_block,
+    );
 
     if let Some(scheme) = &head.uri.scheme {
-        encoder.append(HeaderFieldRef {
-            name: SCHEME_PSEUDO_HEADER_NAME.as_bytes(),
-            value: scheme.as_ref().as_bytes(),
-        }, &mut header_block);
+        encoder.append(
+            HeaderFieldRef {
+                name: SCHEME_PSEUDO_HEADER_NAME.as_bytes(),
+                value: scheme.as_ref().as_bytes(),
+            },
+            &mut header_block,
+        );
     }
 
-    // TODO: Ensure that the path is always '/' instead of empty (this should apply to HTTP1 as well).
-    // Basically we should always normalize it to '/' when parsing a path.
+    // TODO: Ensure that the path is always '/' instead of empty (this should apply
+    // to HTTP1 as well). Basically we should always normalize it to '/' when
+    // parsing a path.
     {
         let mut path = head.uri.path.as_ref().to_string();
         // TODO: For this we'd need to validate that 'path' doesn't have a '?'
@@ -107,50 +121,68 @@ pub fn encode_request_headers_block(head: &RequestHead, encoder: &mut hpack::Enc
             path.push('?');
             path.push_str(query.as_ref());
         }
-        encoder.append(HeaderFieldRef {
-            name: PATH_PSEUDO_HEADER_NAME.as_bytes(),
-            value: path.as_bytes()
-        }, &mut header_block);
+        encoder.append(
+            HeaderFieldRef {
+                name: PATH_PSEUDO_HEADER_NAME.as_bytes(),
+                value: path.as_bytes(),
+            },
+            &mut header_block,
+        );
     }
 
     if let Some(authority) = &head.uri.authority {
         let mut authority_value = vec![];
         serialize_authority(authority, &mut authority_value)?;
-        
-        encoder.append(HeaderFieldRef {
-            name: AUTHORITY_PSEUDO_HEADER_NAME.as_bytes(),
-            value: &authority_value
-        }, &mut header_block);
+
+        encoder.append(
+            HeaderFieldRef {
+                name: AUTHORITY_PSEUDO_HEADER_NAME.as_bytes(),
+                value: &authority_value,
+            },
+            &mut header_block,
+        );
     }
 
     for header in head.headers.raw_headers.iter() {
         // TODO: Verify that it doesn't start with a ':'
         let name = header.name.as_ref().to_ascii_lowercase();
-        encoder.append(HeaderFieldRef {
-            name: name.as_bytes(),
-            value: header.value.as_bytes()
-        }, &mut header_block);
+        encoder.append(
+            HeaderFieldRef {
+                name: name.as_bytes(),
+                value: header.value.as_bytes(),
+            },
+            &mut header_block,
+        );
     }
 
     Ok(header_block)
 }
 
 // TODO: Perform Cookie field compression (also for requests)
-pub fn encode_response_headers_block(head: &ResponseHead, encoder: &mut hpack::Encoder) -> Result<Vec<u8>> {
+pub fn encode_response_headers_block(
+    head: &ResponseHead,
+    encoder: &mut hpack::Encoder,
+) -> Result<Vec<u8>> {
     let mut header_block = vec![];
 
-    encoder.append(HeaderFieldRef {
-        name: STATUS_PSEUDO_HEADER_NAME.as_bytes(),
-        value: head.status_code.as_u16().to_string().as_bytes()
-    }, &mut header_block);
+    encoder.append(
+        HeaderFieldRef {
+            name: STATUS_PSEUDO_HEADER_NAME.as_bytes(),
+            value: head.status_code.as_u16().to_string().as_bytes(),
+        },
+        &mut header_block,
+    );
 
     for header in head.headers.raw_headers.iter() {
         // TODO: Verify that it doesn't start with a ':'
         let name = header.name.as_ref().to_ascii_lowercase();
-        encoder.append(HeaderFieldRef {
-            name: name.as_bytes(),
-            value: header.value.as_bytes()
-        }, &mut header_block);
+        encoder.append(
+            HeaderFieldRef {
+                name: name.as_bytes(),
+                value: header.value.as_bytes(),
+            },
+            &mut header_block,
+        );
     }
 
     Ok(header_block)
@@ -162,10 +194,13 @@ pub fn encode_trailers_block(headers: &Headers, encoder: &mut hpack::Encoder) ->
     for header in headers.raw_headers.iter() {
         // TODO: Verify that no headers start with ':'
         let name = header.name.as_ref().to_ascii_lowercase();
-        encoder.append(HeaderFieldRef {
-            name: name.as_bytes(),
-            value: header.value.as_bytes()
-        }, &mut header_block);
+        encoder.append(
+            HeaderFieldRef {
+                name: name.as_bytes(),
+                value: header.value.as_bytes(),
+            },
+            &mut header_block,
+        );
     }
 
     header_block
@@ -189,20 +224,29 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
 
         if header.name == METHOD_PSEUDO_HEADER_NAME.as_bytes() {
             check_pseudo_value_not_set(&method)?;
-            method = Some(Method::try_from(header.value.as_ref())
-                .map_err(|_| StreamError::malformed_message("Invalid method"))?);
+            method = Some(
+                Method::try_from(header.value.as_ref())
+                    .map_err(|_| StreamError::malformed_message("Invalid method"))?,
+            );
         } else if header.name == SCHEME_PSEUDO_HEADER_NAME.as_bytes() {
             check_pseudo_value_not_set(&scheme)?;
             scheme = Some(to_ascii_string(header.value)?);
         } else if header.name == AUTHORITY_PSEUDO_HEADER_NAME.as_bytes() {
             check_pseudo_value_not_set(&authority)?;
-            authority = Some(parsing::complete(crate::uri_syntax::parse_authority)(header.value.into())
-                .map_err(|_| StreamError::malformed_message("Received malformed authority header"))?.0);
+            authority = Some(
+                parsing::complete(crate::uri_syntax::parse_authority)(header.value.into())
+                    .map_err(|_| {
+                        StreamError::malformed_message("Received malformed authority header")
+                    })?
+                    .0,
+            );
         } else if header.name == PATH_PSEUDO_HEADER_NAME.as_bytes() {
             check_pseudo_value_not_set(&path)?;
             path = Some(to_ascii_string(header.value)?);
         } else {
-            return Err(StreamError::malformed_message("Received unknown pseudo header"));
+            return Err(StreamError::malformed_message(
+                "Received unknown pseudo header",
+            ));
             // Error
         }
 
@@ -213,7 +257,7 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
 
     /*
         Based on 8.1.2.3, Request must contain :method, :scheme, :path unless it is a CONNECT request (8.3)
-        
+
         May contain ':authority'
 
         for OPTIONS, :path should be '*' instead of empty.
@@ -230,9 +274,13 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
 
     if let Some(path) = &path {
         if let Some(scheme) = &scheme {
-            if scheme.as_ref().eq_ignore_ascii_case("http") || scheme.as_ref().eq_ignore_ascii_case("other") {
+            if scheme.as_ref().eq_ignore_ascii_case("http")
+                || scheme.as_ref().eq_ignore_ascii_case("other")
+            {
                 if path.as_ref().is_empty() {
-                    return Err(StreamError::malformed_message("Empty path for http(s) request"));
+                    return Err(StreamError::malformed_message(
+                        "Empty path for http(s) request",
+                    ));
                 }
             }
         }
@@ -243,7 +291,9 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
     for header in &regular_headers.raw_headers {
         if header.name.as_ref() == "te" {
             if header.value.as_bytes() != b"trailers" {
-                return Err(StreamError::malformed_message("Only \"trailers\" may be present in TE header"));
+                return Err(StreamError::malformed_message(
+                    "Only \"trailers\" may be present in TE header",
+                ));
             }
         }
     }
@@ -262,23 +312,28 @@ pub fn process_request_head(headers: Vec<hpack::HeaderField>) -> StreamResult<Re
             authority,
             path,
             query,
-            fragment: None
+            fragment: None,
         },
         version: HTTP_V2_0,
-        headers: regular_headers
+        headers: regular_headers,
     })
 }
 
 pub fn process_response_head(headers: Vec<hpack::HeaderField>) -> StreamResult<ResponseHead> {
     let mut status = None;
-                    
+
     let regular_headers = process_header_fields(headers, |header| {
         if header.name == STATUS_PSEUDO_HEADER_NAME.as_bytes() {
             check_pseudo_value_not_set(&status)?;
-            status = Some(parsing::complete(crate::message_syntax::parse_status_code)(header.value.into())
-                .map_err(|_| StreamError::malformed_message("Received malformed status code"))?.0);
+            status = Some(
+                parsing::complete(crate::message_syntax::parse_status_code)(header.value.into())
+                    .map_err(|_| StreamError::malformed_message("Received malformed status code"))?
+                    .0,
+            );
         } else {
-            return Err(StreamError::malformed_message("Unknown pseudo header received"));
+            return Err(StreamError::malformed_message(
+                "Unknown pseudo header received",
+            ));
         }
 
         Ok(())
@@ -287,31 +342,35 @@ pub fn process_response_head(headers: Vec<hpack::HeaderField>) -> StreamResult<R
     Ok(ResponseHead {
         version: HTTP_V2_0,
         // TODO: Remove the unwrap
-        status_code: crate::status_code::StatusCode::from_u16(status
-            .ok_or(StreamError::malformed_message("Response missing status header"))?)
-            .ok_or(StreamError::malformed_message("Response contains out of range status code"))?,
+        status_code: crate::status_code::StatusCode::from_u16(status.ok_or(
+            StreamError::malformed_message("Response missing status header"),
+        )?)
+        .ok_or(StreamError::malformed_message(
+            "Response contains out of range status code",
+        ))?,
         reason: OpaqueString::new(),
-        headers: regular_headers
+        headers: regular_headers,
     })
-} 
+}
 
 pub fn process_trailers(headers: Vec<hpack::HeaderField>) -> StreamResult<Headers> {
     let mut out = vec![];
     out.reserve_exact(headers.len());
-    
+
     for header in headers {
-        let name = AsciiString::from(header.name)
-            .map_err(|_| StreamError(ProtocolErrorV2 {
+        let name = AsciiString::from(header.name).map_err(|_| {
+            StreamError(ProtocolErrorV2 {
                 code: ErrorCode::PROTOCOL_ERROR,
                 message: "Received non-ASCII header name",
-                local: true
-            }))?;
+                local: true,
+            })
+        })?;
 
         if !is_ascii_lowercase(name.as_ref()) {
             return Err(StreamError(ProtocolErrorV2 {
                 code: ErrorCode::PROTOCOL_ERROR,
                 message: "Received non-lowercase header name",
-                local: true
+                local: true,
             }));
         }
 
@@ -319,13 +378,13 @@ pub fn process_trailers(headers: Vec<hpack::HeaderField>) -> StreamResult<Header
             return Err(StreamError(ProtocolErrorV2 {
                 code: ErrorCode::PROTOCOL_ERROR,
                 message: "Received pseudo-header in trailers",
-                local: true
+                local: true,
             }));
         }
 
         out.push(Header {
             name,
-            value: OpaqueString::from(header.value)
+            value: OpaqueString::from(header.value),
         });
     }
 
@@ -334,8 +393,11 @@ pub fn process_trailers(headers: Vec<hpack::HeaderField>) -> StreamResult<Header
 
 /// Writes a block of headers in one or more frames.
 pub async fn write_headers_block(
-    writer: &mut dyn Writeable, stream_id: StreamId, header_block: &[u8], end_stream: bool,
-    max_remote_frame_size: usize
+    writer: &mut dyn Writeable,
+    stream_id: StreamId,
+    header_block: &[u8],
+    end_stream: bool,
+    max_remote_frame_size: usize,
 ) -> Result<()> {
     let mut remaining: &[u8] = &header_block;
     if remaining.len() == 0 {
@@ -344,8 +406,9 @@ pub async fn write_headers_block(
 
     let mut first = true;
     while remaining.len() > 0 || first {
-        // TODO: Make this more robust. Currently this assumes that we don't include any padding or
-        // priority information which means that the entire payload is for the header fragment.
+        // TODO: Make this more robust. Currently this assumes that we don't include any
+        // padding or priority information which means that the entire payload
+        // is for the header fragment.
         let n = std::cmp::min(remaining.len(), max_remote_frame_size);
         let end_headers = n == remaining.len();
 
@@ -362,10 +425,13 @@ pub async fn write_headers_block(
                     reserved67: 0,
                     reserved4: 0,
                     reserved1: 0,
-                }.to_u8().unwrap(),
+                }
+                .to_u8()
+                .unwrap(),
                 stream_id,
-                reserved: 0
-            }.serialize(&mut frame)?;
+                reserved: 0,
+            }
+            .serialize(&mut frame)?;
             first = false;
         } else {
             FrameHeader {
@@ -374,11 +440,14 @@ pub async fn write_headers_block(
                 flags: ContinuationFrameFlags {
                     end_headers,
                     reserved34567: 0,
-                    reserved01: 0
-                }.to_u8().unwrap(),
+                    reserved01: 0,
+                }
+                .to_u8()
+                .unwrap(),
                 stream_id,
-                reserved: 0
-            }.serialize(&mut frame)?;
+                reserved: 0,
+            }
+            .serialize(&mut frame)?;
         }
 
         frame.extend_from_slice(&remaining[0..n]);

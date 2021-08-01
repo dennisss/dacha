@@ -1,10 +1,9 @@
-use common::errors::*;
 use common::chrono::prelude::*;
+use common::errors::*;
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
 
-use crate::header::{Headers, Header, DATE};
-
+use crate::header::{Header, Headers, DATE};
 
 // Format defined in RFC 7231 Section 7.1.1.1
 
@@ -18,9 +17,10 @@ const LEGACY_RFC_850_TIME_FORMAT: &'static str = "%A, %d-%b-%y %H:%M:%S %Z";
 const LEGACY_ASCTIME_FORMAT: &'static str = "%a %b %e %H:%M:%S %Y";
 
 const TIME_FORMATS: &'static [&'static str] = &[
-    TIME_FORMAT, LEGACY_RFC_850_TIME_FORMAT, LEGACY_ASCTIME_FORMAT
+    TIME_FORMAT,
+    LEGACY_RFC_850_TIME_FORMAT,
+    LEGACY_ASCTIME_FORMAT,
 ];
-
 
 pub fn append_current_date(headers: &mut Headers) {
     if headers.has(DATE) {
@@ -32,16 +32,18 @@ pub fn append_current_date(headers: &mut Headers) {
 
     headers.raw_headers.push(Header {
         name: AsciiString::from(DATE).unwrap(),
-        value: OpaqueString::from(timestr)
+        value: OpaqueString::from(timestr),
     });
 }
 
 pub fn parse_date(headers: &mut Headers) -> Result<Option<DateTime<Utc>>> {
     let mut iter = headers.find(DATE);
-    
+
     let header = match iter.next() {
         Some(header) => header,
-        None => { return Ok(None); }
+        None => {
+            return Ok(None);
+        }
     };
 
     if iter.next().is_some() {

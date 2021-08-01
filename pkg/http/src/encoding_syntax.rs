@@ -1,11 +1,11 @@
 use common::errors::*;
-use parsing::*;
 use parsing::ascii::AsciiString;
+use parsing::*;
 
-use crate::header::*;
-use crate::encoding::*;
-use crate::header_syntax::*;
 use crate::common_syntax::*;
+use crate::encoding::*;
+use crate::header::*;
+use crate::header_syntax::*;
 use crate::message_syntax::*;
 
 pub const MAX_TRANSFER_CODINGS: usize = 4;
@@ -13,7 +13,7 @@ pub const MAX_TRANSFER_CODINGS: usize = 4;
 const MAX_CONTENT_ENCODINGS: usize = 4;
 
 /// RFC 7230: Section 3.3.1
-/// 
+///
 /// TODO: Must tolerate empty items in comma delimited lsit
 pub fn parse_transfer_encoding(headers: &Headers) -> Result<Vec<TransferCoding>> {
     let mut out = vec![];
@@ -81,8 +81,6 @@ parser!(parse_transfer_parameter<(String, String)> => {
     })
 });
 
-
-
 /// This will return a list of all content encodings in the message.
 /// Will result an empty list if there are no Content-Encoding headers.
 /// For simplicity they will all be lowercased as
@@ -110,5 +108,3 @@ pub fn parse_content_encoding(headers: &Headers) -> Result<Vec<String>> {
 }
 
 parser!(parse_content_coding<AsciiString> => parse_token);
-
-

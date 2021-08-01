@@ -1,4 +1,3 @@
-
 /*
     Codes between 0 and 0xEFFF are reviewed while codes between 0xF000 to 0xFFFF are for experimental use.
 */
@@ -8,28 +7,28 @@ use std::{collections::HashMap, ops::Index};
 use common::errors::*;
 use parsing::ascii::AsciiString;
 
-use crate::{headers::connection::parse_connection, proto::v2::*};
-use crate::header::{Headers, Header};
+use crate::header::{Header, Headers};
 use crate::headers::connection::ConnectionOption;
-use crate::v2::types::*;
 use crate::status_code::*;
+use crate::v2::types::*;
+use crate::{headers::connection::parse_connection, proto::v2::*};
 
 const INFINITE: u32 = u32::MAX;
 
 const SETTINGS_HEADER: &'static str = "HTTP2-Settings";
 
 const MIN_ALLOWED_FRAME_SIZE: u32 = 1 << 14;
-const MAX_ALLOWED_FRAME_SIZE: u32 = (1 << 24) - 1; 
+const MAX_ALLOWED_FRAME_SIZE: u32 = (1 << 24) - 1;
 
 /// Container of HTTP2 settings.
 #[derive(Clone)]
 pub struct SettingsContainer {
-    data: HashMap<SettingId, u32>
+    data: HashMap<SettingId, u32>,
 }
 
 impl SettingsContainer {
-
-    /// Serializes the settings in this container into the payload of a SETTINGS frame.
+    /// Serializes the settings in this container into the payload of a SETTINGS
+    /// frame.
     ///
     /// Only values which differ from the last_settings will be included.
     /// NOTE: We assume that the set of keys in each is the same.
@@ -42,11 +41,20 @@ impl SettingsContainer {
                 }
             }
 
-            SettingsParameter { id: *id, value: *value }.serialize(out).unwrap();
+            SettingsParameter {
+                id: *id,
+                value: *value,
+            }
+            .serialize(out)
+            .unwrap();
         }
     }
 
-    pub fn append_to_request(&self, headers: &mut Headers, connection_options: &mut Vec<ConnectionOption>) {
+    pub fn append_to_request(
+        &self,
+        headers: &mut Headers,
+        connection_options: &mut Vec<ConnectionOption>,
+    ) {
         let mut payload = vec![];
         self.serialize_payload(&Self::default(), &mut payload);
 
@@ -54,17 +62,22 @@ impl SettingsContainer {
 
         headers.raw_headers.push(Header {
             name: AsciiString::from(SETTINGS_HEADER).unwrap(),
-            value: value.into()
+            value: value.into(),
         });
 
-        connection_options.push(ConnectionOption::Unknown(AsciiString::from(SETTINGS_HEADER).unwrap()));
+        connection_options.push(ConnectionOption::Unknown(
+            AsciiString::from(SETTINGS_HEADER).unwrap(),
+        ));
     }
 
     // TODO: Only return ProtocolErrorV1's.
     pub fn read_from_request(headers: &Headers) -> Result<Self> {
-        let header = headers.find_one(SETTINGS_HEADER)
-            .map_err(|_| Error::from(ProtocolErrorV1 {
-                code: BAD_REQUEST, message: "Expected exactly one HTTP2-Settings header" }))?;
+        let header = headers.find_one(SETTINGS_HEADER).map_err(|_| {
+            Error::from(ProtocolErrorV1 {
+                code: BAD_REQUEST,
+                message: "Expected exactly one HTTP2-Settings header",
+            })
+        })?;
 
         let connection_options = parse_connection(headers)?;
         let mut found_option = false;
@@ -78,17 +91,20 @@ impl SettingsContainer {
         if !found_option {
             return Err(ProtocolErrorV1 {
                 code: BAD_REQUEST,
-                message: "HTTP2-Settings not present in Connection options"
-            }.into());
+                message: "HTTP2-Settings not present in Connection options",
+            }
+            .into());
         }
 
-        let payload = common::base64::decode_config(
-            header.value.as_bytes(), common::base64::URL_SAFE_NO_PAD)
-            .map_err(|_| Error::from(ProtocolErrorV1 {
-                code: BAD_REQUEST,
-                message: "HTTP2-Settings header can't be parsed as url safe base64"
-            }))?;
-        
+        let payload =
+            common::base64::decode_config(header.value.as_bytes(), common::base64::URL_SAFE_NO_PAD)
+                .map_err(|_| {
+                    Error::from(ProtocolErrorV1 {
+                        code: BAD_REQUEST,
+                        message: "HTTP2-Settings header can't be parsed as url safe base64",
+                    })
+                })?;
+
         let frame = SettingsFramePayload::parse_complete(&payload)?;
 
         let mut out = Self::default();
@@ -99,32 +115,34 @@ impl SettingsContainer {
         Ok(out)
     }
 
-    /// NOTE: This will validate that the setting is in the allowed range of values.
-    /// Unknown settings will be ignored.
+    /// NOTE: This will validate that the setting is in the allowed range of
+    /// values. Unknown settings will be ignored.
     ///
-    /// TODO: Also check against usize for values which are sensitive 
+    /// TODO: Also check against usize for values which are sensitive
     ///
     /// Returns the old value of the setting if any.
     pub fn set(&mut self, id: SettingId, value: u32) -> Result<Option<u32>> {
         match id {
-            SettingId::HEADER_TABLE_SIZE => {},
+            SettingId::HEADER_TABLE_SIZE => {}
             SettingId::ENABLE_PUSH => {
                 if value != 0 && value != 1 {
                     return Err(ProtocolErrorV2 {
                         code: ErrorCode::PROTOCOL_ERROR,
                         message: "ENABLE_PUSH setting can only be 0 or 1",
-                        local: true
-                    }.into());
+                        local: true,
+                    }
+                    .into());
                 }
-            },
-            SettingId::MAX_CONCURRENT_STREAMS => {},
+            }
+            SettingId::MAX_CONCURRENT_STREAMS => {}
             SettingId::INITIAL_WINDOW_SIZE => {
                 if value > (WindowSize::MAX as u32) {
                     return Err(ProtocolErrorV2 {
                         code: ErrorCode::FLOW_CONTROL_ERROR,
                         message: "INITIAL_WINDOW_SIZE value too large",
-                        local: true
-                    }.into());
+                        local: true,
+                    }
+                    .into());
                 }
             }
             SettingId::MAX_FRAME_SIZE => {
@@ -132,11 +150,12 @@ impl SettingsContainer {
                     return Err(ProtocolErrorV2 {
                         code: ErrorCode::PROTOCOL_ERROR,
                         message: "MAX_FRAME_SIZE outside of allowed range",
-                        local: true
-                    }.into());
+                        local: true,
+                    }
+                    .into());
                 }
             }
-            SettingId::MAX_HEADER_LIST_SIZE => {},
+            SettingId::MAX_HEADER_LIST_SIZE => {}
             SettingId::Unknown(_) => {
                 // Ignore
                 return Ok(None);

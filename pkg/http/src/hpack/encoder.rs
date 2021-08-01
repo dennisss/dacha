@@ -1,31 +1,39 @@
 use crate::hpack::dynamic_table::DynamicTable;
-use crate::hpack::header_field::*;
 use crate::hpack::header_field::IndexingMode;
+use crate::hpack::header_field::*;
 use crate::hpack::indexing_tables::search_for_header;
 
-
 pub struct Encoder {
-    /// Maximum size of the dynamic table as specified by the protocol (e.g. HTTP2)
+    /// Maximum size of the dynamic table as specified by the protocol (e.g.
+    /// HTTP2)
     protocol_max_size: usize,
 
-    /// Maximum size of the dynamic table allowed by local options. Before we append new headers to
-    /// a block, we will ensure that dynamic table is no larger than this. This is a safety feature
-    /// used to protect againt extremely large protocol_max_size values advertised by the remote
-    /// endpoint. 
+    /// Maximum size of the dynamic table allowed by local options. Before we
+    /// append new headers to a block, we will ensure that dynamic table is
+    /// no larger than this. This is a safety feature used to protect againt
+    /// extremely large protocol_max_size values advertised by the remote
+    /// endpoint.
     local_max_size: Option<usize>,
 
-    dynamic_table: DynamicTable
+    dynamic_table: DynamicTable,
 }
 
 impl Encoder {
     pub fn new(protocol_max_size: usize) -> Self {
-        Self { protocol_max_size, dynamic_table: DynamicTable::new(protocol_max_size), local_max_size: None }
+        Self {
+            protocol_max_size,
+            dynamic_table: DynamicTable::new(protocol_max_size),
+            local_max_size: None,
+        }
     }
 
     pub fn set_protocol_max_size(&mut self, protocol_max_size: usize) {
-        // If the protocol specifies a new max size that is smaller than the current size of the dynamic table
-        // we'll shunk it.
-        self.dynamic_table.resize(std::cmp::min(protocol_max_size, self.dynamic_table.max_size()));
+        // If the protocol specifies a new max size that is smaller than the current
+        // size of the dynamic table we'll shunk it.
+        self.dynamic_table.resize(std::cmp::min(
+            protocol_max_size,
+            self.dynamic_table.max_size(),
+        ));
     }
 
     pub fn set_local_max_size(&mut self, local_max_size: usize) {
@@ -35,11 +43,11 @@ impl Encoder {
     /// NOTE: We assume that new_max_size is smaller than the protocol_max_size.
     pub fn append_table_size_update(&mut self, max_size: usize, out: &mut Vec<u8>) {
         self.dynamic_table.resize(max_size);
-        
+
         // NOTE: Should never fail.
-        HeaderFieldRepresentation::DynamicTableSizeUpdate {
-            max_size
-        }.serialize(out).unwrap();
+        HeaderFieldRepresentation::DynamicTableSizeUpdate { max_size }
+            .serialize(out)
+            .unwrap();
     }
 
     pub fn append<'a>(&mut self, header: HeaderFieldRef<'a>, out: &mut Vec<u8>) {
@@ -51,12 +59,12 @@ impl Encoder {
 
         let mut name = StringReference::LiteralRef(header.name);
         let mut value = StringReference::LiteralRef(header.value);
-        let mut indexed ;
+        let mut indexed;
 
         // TODO: Instead take an indexing mode hint as an argument.
         let never_index = header.name.eq_ignore_ascii_case(b"Authentication")
             || header.name.eq_ignore_ascii_case(b"Cookie");
-        
+
         if never_index {
             indexed = IndexingMode::Never;
         } else {
@@ -83,15 +91,17 @@ impl Encoder {
         HeaderFieldRepresentation::HeaderField {
             name,
             value,
-            indexed
-        }.serialize(out).unwrap();
+            indexed,
+        }
+        .serialize(out)
+        .unwrap();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use common::errors::*;
     use super::*;
+    use common::errors::*;
 
     #[test]
     fn hpack_encoder_test() -> Result<()> {
@@ -99,48 +109,71 @@ mod tests {
 
         // Lookup from static table.
         let mut out = vec![];
-        encoder.append(HeaderFieldRef {
-            name: b":status",
-            value: b"200"
-        }, &mut out);
+        encoder.append(
+            HeaderFieldRef {
+                name: b":status",
+                value: b"200",
+            },
+            &mut out,
+        );
         assert_eq!(&out, &[0x88]);
 
         // Literal name + literal value.
         // TODO: Verify the output value using the decoder
         let mut out = vec![];
-        encoder.append(HeaderFieldRef {
-            name: b"awesome-header",
-            value: b"awesome-value"
-        }, &mut out);
-        assert_eq!(&out, &[64, 138, 31, 130, 160, 244, 149, 105, 202, 57, 11, 103, 138, 31, 130, 160, 244, 149, 110, 227, 162, 210, 255]);
+        encoder.append(
+            HeaderFieldRef {
+                name: b"awesome-header",
+                value: b"awesome-value",
+            },
+            &mut out,
+        );
+        assert_eq!(
+            &out,
+            &[
+                64, 138, 31, 130, 160, 244, 149, 105, 202, 57, 11, 103, 138, 31, 130, 160, 244,
+                149, 110, 227, 162, 210, 255
+            ]
+        );
 
         // Same thing as before. Should be completely indexed.
         let mut out = vec![];
-        encoder.append(HeaderFieldRef {
-            name: b"awesome-header",
-            value: b"awesome-value"
-        }, &mut out);
+        encoder.append(
+            HeaderFieldRef {
+                name: b"awesome-header",
+                value: b"awesome-value",
+            },
+            &mut out,
+        );
         assert_eq!(&out, &[190]);
 
         // Indexed name + literal value.
         let mut out = vec![];
-        encoder.append(HeaderFieldRef {
-            name: b"awesome-header",
-            value: b"brand-new-value"
-        }, &mut out);
-        assert_eq!(&out, &[126, 139, 142, 193, 213, 34, 213, 23, 194, 221, 199, 69, 165]);
-
+        encoder.append(
+            HeaderFieldRef {
+                name: b"awesome-header",
+                value: b"brand-new-value",
+            },
+            &mut out,
+        );
+        assert_eq!(
+            &out,
+            &[126, 139, 142, 193, 213, 34, 213, 23, 194, 221, 199, 69, 165]
+        );
 
         let mut out = vec![];
-        encoder.append(HeaderFieldRef {
-            name: b"awesome-header",
-            value: b"awesome-value"
-        }, &mut out);
+        encoder.append(
+            HeaderFieldRef {
+                name: b"awesome-header",
+                value: b"awesome-value",
+            },
+            &mut out,
+        );
         assert_eq!(&out, &[191]);
 
-        // println!("{:?}", crate::hpack::header_field::HeaderFieldRepresentation::parse(&out)?.0);
+        // println!("{:?}",
+        // crate::hpack::header_field::HeaderFieldRepresentation::parse(&out)?.0);
 
         Ok(())
     }
-
 }

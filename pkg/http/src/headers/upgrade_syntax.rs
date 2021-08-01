@@ -1,10 +1,10 @@
 use common::errors::*;
-use parsing::*;
 use parsing::ascii::*;
+use parsing::*;
 
-use crate::{header_syntax::comma_delimited, headers::upgrade::*};
-use crate::message_syntax::parse_token;
 use crate::header::{Headers, UPGRADE};
+use crate::message_syntax::parse_token;
+use crate::{header_syntax::comma_delimited, headers::upgrade::*};
 
 // RFC 7230: 6.7
 //
@@ -32,7 +32,6 @@ parser!(parse_protocol_name<AsciiString> => parse_token);
 //
 // `protocol-version = token`
 parser!(parse_protocol_version<AsciiString> => parse_token);
-
 
 /// RFC 7230: 6.7
 ///

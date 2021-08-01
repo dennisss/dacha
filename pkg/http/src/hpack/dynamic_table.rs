@@ -6,26 +6,24 @@ use crate::hpack::header_field::HeaderField;
 pub struct DynamicTable {
     // /// Absolute maximum size of the table as indicated by the protocol using HPACK.
     // ceiling_size: usize,
-    
-    /// Maximum size of the table. When the size of the table exceeds this value,
-    /// entries will be evicted. 
+    /// Maximum size of the table. When the size of the table exceeds this
+    /// value, entries will be evicted.
     max_size: usize,
 
     current_size: usize,
-    
+
     entries: VecDeque<HeaderField>,
+    /* */
 
-    // 
+    /* Reclaiming must decode
+     * BTreeMap will be fine : need a way to hash it. */
 
-    // Reclaiming must decode
-    // BTreeMap will be fine : need a way to hash it.
+    /* HashMap<> */
 
-    // HashMap<>
-
-    // entry_index: 
+    /* entry_index: */
 }
 
-// TODO: Enqueue multiple max size changes together to ensure 
+// TODO: Enqueue multiple max size changes together to ensure
 
 // SETTINGS_HEADER_TABLE_SIZE changes only apply when it is acknowledged.
 
@@ -33,7 +31,11 @@ pub struct DynamicTable {
 
 impl DynamicTable {
     pub fn new(max_size: usize) -> Self {
-        DynamicTable { max_size, current_size: 0, entries: VecDeque::new() }
+        DynamicTable {
+            max_size,
+            current_size: 0,
+            entries: VecDeque::new(),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -95,7 +97,6 @@ impl DynamicTable {
     fn entry_size(header_field: &HeaderField) -> usize {
         header_field.name.len() + header_field.value.len() + 32
     }
-
 }
 
 /*

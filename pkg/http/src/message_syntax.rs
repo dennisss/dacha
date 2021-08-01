@@ -11,10 +11,10 @@ use parsing::opaque::OpaqueString;
 use parsing::*;
 
 use crate::common_syntax::*;
+use crate::header::*;
+use crate::message::*;
 use crate::uri::*;
 use crate::uri_syntax::*;
-use crate::message::*;
-use crate::header::*;
 
 // Syntax RFC: https://tools.ietf.org/html/rfc7230
 // ^ Key thing being that 8bits per character in ISO-... encoding.
@@ -27,7 +27,6 @@ use crate::header::*;
 
 // TODO: See https://tools.ietf.org/html/rfc7230#section-6.7 for upgrade
 
-
 //////////////////
 
 /*
@@ -38,7 +37,7 @@ use crate::header::*;
 
     absolute-form (for proxying)
         "http://www.example.org/pub/WWW/TheProject.html"
-    
+
     authority-form (only for CONNECT)
         "www.example.com:80"
 
@@ -48,7 +47,6 @@ use crate::header::*;
         "*""
 
 */
-
 
 // RFC 1945: Section 4.1
 // Parser for the entire HTTP 0.9 request.
@@ -107,8 +105,9 @@ parser!(parse_http_name<()> => {
 
 // RFC 7230: Section 2.7.1
 //
-// `http-URI = "http:" "//" authority path-abempty [ "?" query ] [ "#" fragment ]`
-// 
+// `http-URI = "http:" "//" authority path-abempty [ "?" query ] [ "#" fragment
+// ]`
+//
 // TODO: Must reject Uris with an empty host.
 
 // RFC 7230: Section 2.7.2
@@ -148,7 +147,7 @@ parser!(parse_start_line<StartLine> => {
 });
 
 // RFC 7230: Section 3.1.1
-// 
+//
 // `request-line = method SP request-target SP HTTP-version CRLF`
 parser!(parse_request_line<RequestLine> => {
     seq!(c => {
@@ -162,7 +161,12 @@ parser!(parse_request_line<RequestLine> => {
     })
 });
 
-pub fn serialize_request_line(method: &AsciiString, uri: &Uri, version: &Version, out: &mut Vec<u8>) -> Result<()> {
+pub fn serialize_request_line(
+    method: &AsciiString,
+    uri: &Uri,
+    version: &Version,
+    out: &mut Vec<u8>,
+) -> Result<()> {
     serialize_method(&method, out)?;
     out.push(b' ');
     {
@@ -174,7 +178,6 @@ pub fn serialize_request_line(method: &AsciiString, uri: &Uri, version: &Version
     out.extend_from_slice(b"\r\n");
     Ok(())
 }
-
 
 // RFC 7230: Section 3.1.1
 //
@@ -211,7 +214,7 @@ pub(crate) fn serialize_status_line(line: &StatusLine, out: &mut Vec<u8>) -> Res
 }
 
 /// RFC 7230: Section 3.1.2
-/// 
+///
 /// `status-code = 3DIGIT`
 pub(crate) fn parse_status_code(input: Bytes) -> ParseResult<u16> {
     if input.len() < 3 {
@@ -231,7 +234,6 @@ pub(crate) fn serialize_status_code(value: u16, out: &mut Vec<u8>) -> Result<()>
     out.extend_from_slice(s.as_bytes());
     Ok(())
 }
-
 
 // RFC 7230: Section 3.1.2
 //
@@ -260,7 +262,8 @@ fn serialize_reason_phrase(value: &OpaqueString, out: &mut Vec<u8>) -> Result<()
 
 // RFC 7230: Section 3.2
 //
-// TODO: Validate that based on section 3.2.4, whitespace between the field name and the colon is rejected.
+// TODO: Validate that based on section 3.2.4, whitespace between the field name
+// and the colon is rejected.
 //
 // `header-field = field-name ":" OWS field-value OWS`
 parser!(pub parse_header_field<Header> => {
@@ -294,7 +297,8 @@ fn serialize_field_name(value: &AsciiString, out: &mut Vec<u8>) -> Result<()> {
 // RFC 7230: Section 3.2
 //
 // TODO: Perform special error to client if we get obs-fold
-// According to section 3.2.4, obs-fold is only allowed if the media type is message/http.
+// According to section 3.2.4, obs-fold is only allowed if the media type is
+// message/http.
 //
 // `field-value = *( field-content / obs-fold )`
 parser!(parse_field_value<OpaqueString> => {
@@ -373,7 +377,7 @@ parser!(parse_obs_fold<Bytes> => {
 });
 
 /// RFC 7230: Section 3.2.6
-/// 
+///
 /// NOTE: This is strictly ASCII.
 /// `token = 1*tchar`
 pub fn parse_token(input: Bytes) -> ParseResult<AsciiString> {
@@ -396,9 +400,8 @@ pub fn serialize_token(value: &AsciiString, out: &mut Vec<u8>) -> Result<()> {
     Ok(())
 }
 
-
 /// RFC 7230: Section 3.2.6
-/// 
+///
 /// NOTE: This is strictly ASCII.
 /// `tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
 ///  "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA`
@@ -518,9 +521,7 @@ parser!(parse_asterisk_form<u8> => one_of(b"*"));
 // `pseudonym = token`
 parser!(parse_pseudonym<AsciiString> => parse_token);
 
-
 //////////////////
-
 
 // TODO: Well known uri: https://tools.ietf.org/html/rfc8615
 
@@ -540,8 +541,6 @@ parser!(parse_pseudonym<AsciiString> => parse_token);
 //     ] ) *( OWS "," [ OWS ( received-protocol RWS received-by [ RWS
 //     comment ] ) ] )
 
-
-
 // `absolute-path = 1*( "/" segment )`
 parser!(parse_absolute_path<AsciiString> => {
     map(slice(many1(seq!(c => {
@@ -552,7 +551,6 @@ parser!(parse_absolute_path<AsciiString> => {
     |data: Bytes| AsciiString::from(data).unwrap())
 });
 
-
 // TODO: Can't ever use this directly without doing many!
 // ^ So don't make it public.
 
@@ -562,7 +560,6 @@ parser!(parse_absolute_path<AsciiString> => {
 
 //    t-codings = "trailers" / ( transfer-coding [ t-ranking ] )
 //    t-ranking = OWS ";" OWS "q=" rank
-
 
 #[cfg(test)]
 mod tests {

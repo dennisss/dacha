@@ -3,13 +3,13 @@ use common::errors::*;
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
 
+use crate::header::*;
 use crate::reader::*;
 use crate::uri::*;
-use crate::header::*;
 
 /// Buffering options to use when reading the head of an HTTP request/response.
 pub const MESSAGE_HEAD_BUFFER_OPTIONS: StreamBufferOptions = StreamBufferOptions {
-    max_buffer_size: 256*1024,  // 256KB
+    max_buffer_size: 256 * 1024, // 256KB
     buffer_size: 1024,
 };
 
@@ -113,8 +113,6 @@ impl RequestTarget {
         }
     }
 }
-
-
 
 pub enum HttpStreamEvent {
     /// Read the entire head of a http request/response message.

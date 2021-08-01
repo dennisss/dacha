@@ -1,20 +1,19 @@
 use automata::regexp::vm::instance::RegExpMatch;
-use common::errors::*;
 use common::bytes::Bytes;
-use parsing::complete;
+use common::errors::*;
 use parsing::ascii::AsciiString;
+use parsing::complete;
 
 use crate::body::*;
 use crate::header::*;
-use crate::method::*;
 use crate::message::*;
 use crate::message_syntax::*;
+use crate::method::*;
 use crate::uri::*;
 
 pub struct Request {
     pub head: RequestHead,
     pub body: Box<dyn Body>,
-
     // TODO: trailers (Option<Receiver<Result<_>>>) (also add the same thing tot the Response)
 }
 
@@ -37,7 +36,12 @@ pub struct RequestHead {
 
 impl RequestHead {
     pub fn serialize(&self, out: &mut Vec<u8>) -> Result<()> {
-        serialize_request_line(&AsciiString::from(self.method.as_str())?, &self.uri, &self.version, out)?;
+        serialize_request_line(
+            &AsciiString::from(self.method.as_str())?,
+            &self.uri,
+            &self.version,
+            out,
+        )?;
 
         self.headers.serialize(out)?;
         out.extend_from_slice(b"\r\n");
@@ -45,7 +49,7 @@ impl RequestHead {
     }
 }
 
-/// Helper for creating 
+/// Helper for creating
 pub struct RequestBuilder {
     method: Option<Method>,
     uri: Option<Uri>,
@@ -85,7 +89,7 @@ impl RequestBuilder {
                     authority: None,
                     path,
                     query,
-                    fragment: None
+                    fragment: None,
                 });
             }
             None => {
@@ -96,7 +100,7 @@ impl RequestBuilder {
         // TODO
         self
     }
-    
+
     pub fn uri(mut self, uri: Uri) -> Self {
         self.uri = Some(uri);
         self
@@ -104,12 +108,13 @@ impl RequestBuilder {
 
     // // TODO: Use a different parsing rule for this?
     // // We should allow either relative or absolute URIs (or things like '*').
-    // // When an absolute Uri is given, we should move the authority to the 'Host' header. 
-    // // Schemes other than 'http(s)' should be rejected unless using HTTP2 or in a proxy connect mode.
-    // pub fn uri<U: AsRef<[u8]>>(mut self, uri: U) -> Self {
-    //     // TODO: Implement a complete() parser combinator to deal with ensuring nothing
-    //     // is left
-    //     self.uri = match complete(parse_request_target)(Bytes::from(uri.as_ref())) {
+    // // When an absolute Uri is given, we should move the authority to the 'Host'
+    // header. // Schemes other than 'http(s)' should be rejected unless using
+    // HTTP2 or in a proxy connect mode. pub fn uri<U: AsRef<[u8]>>(mut self,
+    // uri: U) -> Self {     // TODO: Implement a complete() parser combinator
+    // to deal with ensuring nothing     // is left
+    //     self.uri = match
+    // complete(parse_request_target)(Bytes::from(uri.as_ref())) {
     //         Ok((u, _)) => Some(u.into_uri()),
     //         Err(e) => {
     //             self.error = Some(format_err!("Invalid request uri: {:?}", e));
@@ -150,9 +155,10 @@ impl RequestBuilder {
     }
 
     /// Constructs the request from the previously provided value.
-    /// 
-    /// NOTE: Even if this succeeds, then the request may still be invalid and this will only be
-    /// caught when you attempt to serialize/run the request.
+    ///
+    /// NOTE: Even if this succeeds, then the request may still be invalid and
+    /// this will only be caught when you attempt to serialize/run the
+    /// request.
     pub fn build(self) -> Result<Request> {
         if let Some(e) = self.error {
             return Err(e);
@@ -161,7 +167,9 @@ impl RequestBuilder {
         let method = self.method.ok_or_else(|| err_msg("No method specified"))?;
 
         // TODO: Only certain types of uris are allowed here
-        let uri = self.uri.ok_or_else(|| err_msg("No uri components specified"))?;
+        let uri = self
+            .uri
+            .ok_or_else(|| err_msg("No uri components specified"))?;
 
         let headers = Headers::from(self.headers);
 
@@ -180,27 +188,26 @@ impl RequestBuilder {
 }
 
 // Simple regular expression for matching a relative path allowed in a request.
-// This is allowed to contain an absolute path followed by an optional query string.
-// Or the entire string can be '*'.
+// This is allowed to contain an absolute path followed by an optional query
+// string. Or the entire string can be '*'.
 // For simplicity, we don't validate that percent encoded entities are correct.
 regexp!(REQUEST_PATH => "^(?:(\\*)|(/(?:[a-zA-Z0-9-._~!$&'()*+,;=:@%]+/?)*)(?:\\?([A-Za-z0-9-._~!$&'()*+,;=:@%?]*))?)$");
 
 fn simple_path_parser(path: &[u8]) -> Option<(AsciiString, Option<AsciiString>)> {
     let m = match REQUEST_PATH.exec(path) {
         Some(m) => m,
-        None => { return None; }
+        None => {
+            return None;
+        }
     };
 
     // Either take the '*' or the '/...' form of the path.
-    let path = AsciiString::from(
-        m.group(1).unwrap_or_else(|| m.group(2).unwrap())
-    ).unwrap();
+    let path = AsciiString::from(m.group(1).unwrap_or_else(|| m.group(2).unwrap())).unwrap();
 
     let query = m.group(3).map(|v| AsciiString::from(v).unwrap());
 
     Some((path, query))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -208,23 +215,55 @@ mod tests {
 
     #[test]
     fn path_parser_test() {
-
-        assert_eq!(simple_path_parser(b"/"), Some((AsciiString::from("/").unwrap(), None)));
+        assert_eq!(
+            simple_path_parser(b"/"),
+            Some((AsciiString::from("/").unwrap(), None))
+        );
         assert_eq!(simple_path_parser(b"//"), None);
-        assert_eq!(simple_path_parser(b"/hello"), Some((AsciiString::from("/hello").unwrap(), None)));
+        assert_eq!(
+            simple_path_parser(b"/hello"),
+            Some((AsciiString::from("/hello").unwrap(), None))
+        );
         assert_eq!(simple_path_parser(b""), None);
-        assert_eq!(simple_path_parser(b"/hello/world"), Some((AsciiString::from("/hello/world").unwrap(), None)));
-        assert_eq!(simple_path_parser(b"/hello/?world=?"),
-                   Some((AsciiString::from("/hello/").unwrap(), Some(AsciiString::from("world=?").unwrap()))));
-        assert_eq!(simple_path_parser(b"/hello/?"),
-                    Some((AsciiString::from("/hello/").unwrap(), Some(AsciiString::from("").unwrap()))));
-        assert_eq!(simple_path_parser(b"/hello?"), Some((AsciiString::from("/hello").unwrap(), Some(AsciiString::from("").unwrap()))));
-        assert_eq!(simple_path_parser(b"/?"), Some((AsciiString::from("/").unwrap(), Some(AsciiString::from("").unwrap()))));
+        assert_eq!(
+            simple_path_parser(b"/hello/world"),
+            Some((AsciiString::from("/hello/world").unwrap(), None))
+        );
+        assert_eq!(
+            simple_path_parser(b"/hello/?world=?"),
+            Some((
+                AsciiString::from("/hello/").unwrap(),
+                Some(AsciiString::from("world=?").unwrap())
+            ))
+        );
+        assert_eq!(
+            simple_path_parser(b"/hello/?"),
+            Some((
+                AsciiString::from("/hello/").unwrap(),
+                Some(AsciiString::from("").unwrap())
+            ))
+        );
+        assert_eq!(
+            simple_path_parser(b"/hello?"),
+            Some((
+                AsciiString::from("/hello").unwrap(),
+                Some(AsciiString::from("").unwrap())
+            ))
+        );
+        assert_eq!(
+            simple_path_parser(b"/?"),
+            Some((
+                AsciiString::from("/").unwrap(),
+                Some(AsciiString::from("").unwrap())
+            ))
+        );
         assert_eq!(simple_path_parser(b"?"), None);
         assert_eq!(simple_path_parser(b"?a"), None);
-        assert_eq!(simple_path_parser(b"*"), Some((AsciiString::from("*").unwrap(), None)));
+        assert_eq!(
+            simple_path_parser(b"*"),
+            Some((AsciiString::from("*").unwrap(), None))
+        );
 
         println!("SIZE: {}", REQUEST_PATH.estimated_memory_usage());
     }
-
 }

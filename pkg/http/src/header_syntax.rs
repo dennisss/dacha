@@ -2,12 +2,10 @@ use common::errors::*;
 use parsing::*;
 
 use crate::common_syntax::*;
-use crate::message_syntax::*;
 use crate::header::*;
-
+use crate::message_syntax::*;
 
 // Content-Length: https://tools.ietf.org/html/rfc7230#section-3.3.2
-
 
 // TODO: What to do about empty elements again?
 
@@ -23,7 +21,11 @@ use crate::header::*;
 /// `1#element => element *( OWS "," OWS element )`
 /// `#element => [ 1#element ]`
 /// `<n>#<m>element => element <n-1>*<m-1>( OWS "," OWS element )`
-pub fn comma_delimited<T, P: Parser<T> + Copy>(p: P, min: usize, max: usize) -> impl Parser<Vec<T>> {
+pub fn comma_delimited<T, P: Parser<T> + Copy>(
+    p: P,
+    min: usize,
+    max: usize,
+) -> impl Parser<Vec<T>> {
     assert!(max >= min && max >= 1);
 
     seq!(c => {
@@ -86,5 +88,3 @@ pub fn parse_content_length(headers: &Headers) -> Result<Option<usize>> {
 
     Ok(len)
 }
-
-

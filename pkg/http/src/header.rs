@@ -1,5 +1,5 @@
-use common::errors::*;
 use common::bytes::*;
+use common::errors::*;
 use parsing::ascii::*;
 use parsing::opaque::OpaqueString;
 
@@ -31,21 +31,24 @@ pub const TRAILERS: &'static str = "Trailers";
 
 pub const ETAG: &'static str = "ETag";
 
-
-/// List of headers which are relevant to maintaining the connection at the HTTP transport layer.
+/// List of headers which are relevant to maintaining the connection at the HTTP
+/// transport layer.
 ///
-/// Users of the HTTP client and server libraries in this package are not allowed to specify any
-/// of these header names.
+/// Users of the HTTP client and server libraries in this package are not
+/// allowed to specify any of these header names.
 const TRANSPORT_LEVEL_HEADERS: &'static [&'static str] = &[
-    CONNECTION, CONTENT_LENGTH, HOST, KEEP_ALIVE, TRANSFER_ENCODING, UPGRADE,
-
-    TE, TRAILERS
+    CONNECTION,
+    CONTENT_LENGTH,
+    HOST,
+    KEEP_ALIVE,
+    TRANSFER_ENCODING,
+    UPGRADE,
+    TE,
+    TRAILERS,
 ];
 
-const CONTENT_LEVEL_HEADERS: &'static [&'static str] = &[
-    DATE, CONTENT_ENCODING, CONTENT_RANGE, ETAG
-];
-
+const CONTENT_LEVEL_HEADERS: &'static [&'static str] =
+    &[DATE, CONTENT_ENCODING, CONTENT_RANGE, ETAG];
 
 #[derive(Debug, Clone)]
 pub struct Header {
@@ -68,7 +71,8 @@ impl Header {
         Ok(())
     }
 
-    /// TODO: Make this check contextual. Anything referenced in the 'Connection' header is also transport level. 
+    /// TODO: Make this check contextual. Anything referenced in the
+    /// 'Connection' header is also transport level.
     pub fn is_transport_level(&self) -> bool {
         for name in TRANSPORT_LEVEL_HEADERS {
             if name.eq_ignore_ascii_case(self.name.as_str()) {
@@ -112,7 +116,7 @@ impl ToHeaderName for Bytes {
     }
 }
 
-// These are expansions of 
+// These are expansions of
 impl ToHeaderName for &[u8] {
     fn to_header_name(self) -> Result<AsciiString> {
         Bytes::from(self).to_header_name()
@@ -129,8 +133,6 @@ impl ToHeaderName for &str {
     }
 }
 
-
-
 pub trait ToHeaderValue {
     fn to_header_value(self, name: &AsciiString) -> Result<OpaqueString>;
 }
@@ -138,7 +140,7 @@ pub trait ToHeaderValue {
 impl<T: Into<Bytes>> ToHeaderValue for T {
     fn to_header_value(self, name: &AsciiString) -> Result<OpaqueString> {
         let f = || {
-            // TODO: The vast majority of standard header types should never 
+            // TODO: The vast majority of standard header types should never
 
             let s = OpaqueString::from(self);
             // TODO: Need not do this as it will be done later during serialization anyway.
@@ -179,16 +181,17 @@ impl Headers {
 
     pub fn get_one<'a>(&'a self, name: &str) -> Result<Option<&'a Header>> {
         // TODO: Deduplicate this with find().
-        let mut iter = self.raw_headers
+        let mut iter = self
+            .raw_headers
             .iter()
             .filter(move |h| h.name.as_str().eq_ignore_ascii_case(name));
-        
+
         let value = iter.next();
 
         if value.is_some() && iter.next().is_some() {
             return Err(format_err!("Expected exactly one header named: {:?}", name));
         }
-        
+
         Ok(value)
     }
 
@@ -219,7 +222,8 @@ impl Headers {
     }
 
     pub fn serialize(&self, buf: &mut Vec<u8>) -> Result<()> {
-        // TODO: Prefer to serialize the 'Host' header first in requests (according to RFC 7230 5.4)
+        // TODO: Prefer to serialize the 'Host' header first in requests (according to
+        // RFC 7230 5.4)
 
         for h in &self.raw_headers {
             h.serialize(buf)?;

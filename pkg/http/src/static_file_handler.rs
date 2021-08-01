@@ -1,29 +1,30 @@
+use common::async_std::fs::File;
+use common::async_std::path::{Path, PathBuf};
 use common::errors::*;
 use common::io::Readable;
-use common::async_std::path::{PathBuf, Path};
-use common::async_std::fs::File;
 
-use crate::server::RequestHandler;
+use crate::body::*;
 use crate::request::Request;
 use crate::response::{Response, ResponseBuilder};
+use crate::server::RequestHandler;
 use crate::status_code;
-use crate::body::*;
-
 
 /// HTTP request handler which serves static files from the local file system.
 pub struct StaticFileHandler {
     // mount_path: UriPath,
-    base_path: PathBuf
-    
-    // Need to be able to detect content types of files (either from extensions or binary)
-    // Need to be able to know if a content type is compressable (or if it is already compressed)
-    
-    // TODO: Need to support Last-Modified and ETag stuff (will be difficult if we need to store the entire thing in memory)
+    base_path: PathBuf, /* Need to be able to detect content types of files (either from
+                         * extensions or binary) Need to be able to know
+                         * if a content type is compressable (or if it is already compressed) */
+
+                        /* TODO: Need to support Last-Modified and ETag stuff (will be difficult
+                         * if we need to store the entire thing in memory) */
 }
 
 impl StaticFileHandler {
     pub fn new<P: AsRef<Path>>(base_path: P) -> Self {
-        Self { base_path: base_path.as_ref().into() }
+        Self {
+            base_path: base_path.as_ref().into(),
+        }
     }
 }
 
@@ -31,9 +32,9 @@ impl StaticFileHandler {
 impl RequestHandler for StaticFileHandler {
     async fn handle_request(&self, request: Request) -> Response {
         let mut file_path = self.base_path.clone();
-        
+
         let mut segments = request.head.uri.path.as_ref().split('/');
-        
+
         // Switch the initial empty segment before the first '/'
         segments.next();
 
@@ -41,7 +42,7 @@ impl RequestHandler for StaticFileHandler {
         // TODO: Validate that the Uri contains nothing but a path.
         // TODO: Decode URI components.
 
-        // TODO: First steps is 
+        // TODO: First steps is
 
         for segment in segments {
             // Interpet each path segment as UTF-8.
@@ -66,20 +67,23 @@ impl RequestHandler for StaticFileHandler {
                 if e.kind() == std::io::ErrorKind::NotFound {
                     return ResponseBuilder::new()
                         .status(status_code::NOT_FOUND)
-                        .build().unwrap();
+                        .build()
+                        .unwrap();
                 }
 
                 return ResponseBuilder::new()
                     .status(status_code::INTERNAL_SERVER_ERROR)
-                    .build().unwrap();
+                    .build()
+                    .unwrap();
             }
         };
-        
+
         // Only regular files are supported.
         if !metadata.is_file() {
             return ResponseBuilder::new()
-                        .status(status_code::BAD_REQUEST)
-                        .build().unwrap();
+                .status(status_code::BAD_REQUEST)
+                .build()
+                .unwrap();
         }
 
         let file = match File::open(&file_path).await {
@@ -87,12 +91,14 @@ impl RequestHandler for StaticFileHandler {
             Err(_) => {
                 return ResponseBuilder::new()
                     .status(status_code::INTERNAL_SERVER_ERROR)
-                    .build().unwrap();
+                    .build()
+                    .unwrap();
             }
         };
 
         let body = StaticFileBody {
-            file, length: metadata.len() as usize
+            file,
+            length: metadata.len() as usize,
         };
 
         ResponseBuilder::new()
@@ -103,15 +109,12 @@ impl RequestHandler for StaticFileHandler {
     }
 }
 
-
 pub struct StaticFileBody {
     file: File,
     length: usize,
 }
 
-impl StaticFileBody {
-
-}
+impl StaticFileBody {}
 
 #[async_trait]
 impl Body for StaticFileBody {
@@ -132,5 +135,3 @@ impl Readable for StaticFileBody {
         Ok(self.file.read(buf).await?)
     }
 }
-
-

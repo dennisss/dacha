@@ -10,17 +10,16 @@ use common::futures::stream::StreamExt;
 use common::io::*;
 
 use crate::message::*;
+use crate::message_body::{decode_request_body_v1, encode_response_body_v1};
 use crate::message_syntax::*;
-use crate::reader::*;
-use crate::spec::*;
 use crate::method::*;
+use crate::reader::*;
 use crate::request::*;
 use crate::response::*;
-use crate::uri::IPAddress;
+use crate::spec::*;
 use crate::status_code::*;
+use crate::uri::IPAddress;
 use crate::v2;
-use crate::message_body::{decode_request_body_v1, encode_response_body_v1};
-
 
 // TODO: See https://tools.ietf.org/html/rfc7230#section-3.5 for
 // robustness tips and accepting empty lines before a request-line.
@@ -28,11 +27,10 @@ use crate::message_body::{decode_request_body_v1, encode_response_body_v1};
 // TODO: See https://tools.ietf.org/html/rfc7230#section-3.3.3 with
 // special HEAD/status code behavior
 
-
 #[async_trait]
 pub trait RequestHandler: Send + Sync {
     /// Processes an HTTP request returning a response eventually.
-    /// 
+    ///
     /// While the full request is available in the first argument, the following
     /// headers are handled automatically in the server:
     /// - Content-Length
@@ -72,23 +70,19 @@ impl RequestHandler for RequestHandlerFnCaller {
 // I can read from a Borrowed<Readable> once it is done.
 
 struct RequestContext {
-
     pub secure: bool,
 
     pub peer_addr: IPAddress,
-
     // TODO: In the future, it will also be useful to have HTTP2 specific information.
 }
 
-
-// TODO: Need to 
+// TODO: Need to
 
 /// Receives HTTP requests and parses them.
 /// Passes the request to a handler which can produce a response.
 pub struct Server {
     port: u16,
     handler: Arc<dyn RequestHandler>,
-
     // TODO: Maintain a list of all the connections that are currently active?
 }
 
@@ -100,7 +94,8 @@ impl Server {
         }
     }
 
-    // TODO: Ideally we'd support using some alternative connection (e.g. a TlsServer)
+    // TODO: Ideally we'd support using some alternative connection (e.g. a
+    // TlsServer)
     pub async fn run(&self) -> Result<()> {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", self.port)).await?;
 
@@ -116,13 +111,13 @@ impl Server {
     /*
         TODO: We want to have a way of introspecting a request stream to see things like the client's IP.
     */
-    // TODO: Should be refactored to 
+    // TODO: Should be refactored to
     async fn handle_stream(stream: TcpStream, handler: Arc<dyn RequestHandler>) {
         match Self::handle_client(stream, handler).await {
             Ok(v) => {}
             // TODO: If we see a ProtocolErrorV1, form an HTTP 1.1 response.
             // (but only if generated locally )
-            // A ProtocolErrorV2 should probably also be a 
+            // A ProtocolErrorV2 should probably also be a
             Err(e) => println!("Client thread failed: {}", e),
         };
     }
@@ -140,8 +135,9 @@ impl Server {
                 HttpStreamEvent::HeadersTooLarge => {
                     return Err(ProtocolErrorV1 {
                         code: REQUEST_HEADER_FIELDS_TOO_LARGE,
-                        message: ""
-                    }.into());
+                        message: "",
+                    }
+                    .into());
                 }
                 HttpStreamEvent::EndOfStream | HttpStreamEvent::Incomplete(_) => {
                     return Ok(());
@@ -177,10 +173,12 @@ impl Server {
                 }
             };
 
-            // TODO: If we previously negotiated HTTP2, complain if we didn't actually end up using it.
+            // TODO: If we previously negotiated HTTP2, complain if we didn't actually end
+            // up using it.
 
             // TODO: In HTTP2, does the client need to send a headers frame?
-            // TODO: "Upon receiving the 101 response, the client MUST send a connection preface (Section 3.5), which includes a SETTINGS frame"
+            // TODO: "Upon receiving the 101 response, the client MUST send a connection
+            // preface (Section 3.5), which includes a SETTINGS frame"
 
             // Verify supported HTTP version
             match request_line.version {
@@ -188,27 +186,34 @@ impl Server {
                 HTTP_V1_0 => {}
                 HTTP_V1_1 => {}
                 HTTP_V2_0 => {
-                    // In this case, we received the first two lines of the HTTP 2 connection preface
-                    // which should always be "PRI * HTTP/2.0\r\n\r\n"
-                    if request_line.method.as_ref() != "PRI" || request_line.target != RequestTarget::AsteriskForm ||
-                    !headers.raw_headers.is_empty() {
+                    // In this case, we received the first two lines of the HTTP 2 connection
+                    // preface which should always be "PRI * HTTP/2.0\r\n\r\n"
+                    if request_line.method.as_ref() != "PRI"
+                        || request_line.target != RequestTarget::AsteriskForm
+                        || !headers.raw_headers.is_empty()
+                    {
                         return Err(ProtocolErrorV1 {
                             code: BAD_REQUEST,
-                            message: "Incorrect start line for HTTP 2.0"
-                        }.into());
+                            message: "Incorrect start line for HTTP 2.0",
+                        }
+                        .into());
                     }
 
                     let options = crate::v2::ConnectionOptions::default();
 
-                    let server_handler = ServerRequestHandlerV2 { request_handler: handler };
+                    let server_handler = ServerRequestHandlerV2 {
+                        request_handler: handler,
+                    };
                     let conn = crate::v2::Connection::new(options, Some(Box::new(server_handler)));
 
                     let mut initial_state = v2::ConnectionInitialState::raw();
                     initial_state.seen_preface_head = true;
 
                     // TODO: Record errors.
-                    return conn.run(initial_state,Box::new(read_stream), Box::new(write_stream)).await;
-                },
+                    return conn
+                        .run(initial_state, Box::new(read_stream), Box::new(write_stream))
+                        .await;
+                }
                 _ => {
                     println!("Unsupported http version: {:?}", request_line.version);
                     write_stream
@@ -230,7 +235,6 @@ impl Server {
                     return Ok(());
                 }
             };
-
 
             let mut request_head = RequestHead {
                 method,
@@ -258,11 +262,10 @@ impl Server {
 
             if let Some(host) = host {
                 // According to RFC 7230 Section 5.4, if the request target received if in
-                // absolute-form, the Host header should be ignored. 
+                // absolute-form, the Host header should be ignored.
                 if !request_head.uri.authority.is_some() {
                     request_head.uri.authority = Some(host);
                 }
-
             } else {
                 if request_head.version == HTTP_V1_1 {
                     write_stream
@@ -272,13 +275,14 @@ impl Server {
                 }
             }
 
-
             // TODO: Convert the error into a response.
             let mut persist_connection = crate::headers::connection::can_connection_persist(
-                &request_head.version, &request_head.headers)?;
+                &request_head.version,
+                &request_head.headers,
+            )?;
 
-            let (body, mut reader_waiter) = match decode_request_body_v1(
-                &request_head, read_stream) {
+            let (body, mut reader_waiter) = match decode_request_body_v1(&request_head, read_stream)
+            {
                 Ok(pair) => pair,
                 Err(e) => {
                     println!("{}", e);
@@ -298,8 +302,8 @@ impl Server {
                 body,
             };
 
-
-            let upgrade_protocols = crate::headers::upgrade_syntax::parse_upgrade(&req.head.headers)?;
+            let upgrade_protocols =
+                crate::headers::upgrade_syntax::parse_upgrade(&req.head.headers)?;
 
             let mut has_h2c_upgrade = false;
             for protocol in &upgrade_protocols {
@@ -310,19 +314,23 @@ impl Server {
             }
 
             if has_h2c_upgrade {
-                // TODO: 
+                // TODO:
 
                 let reader_waiter = match reader_waiter.take() {
                     Some(w) => w,
                     None => {
-                        return Err(err_msg("Can't upgrade connection that doesn't have a well framed body"));
+                        return Err(err_msg(
+                            "Can't upgrade connection that doesn't have a well framed body",
+                        ));
                     }
                 };
 
                 let options = crate::v2::ConnectionOptions::default();
 
                 // TODO: Initialize the connection with the settings received from the client.
-                let server_handler = ServerRequestHandlerV2 { request_handler: handler };
+                let server_handler = ServerRequestHandlerV2 {
+                    request_handler: handler,
+                };
                 let conn = v2::Connection::new(options, Some(Box::new(server_handler)));
 
                 conn.receive_upgrade_request(req).await?;
@@ -330,17 +338,18 @@ impl Server {
                 let reader = DeferredReadable::wrap(reader_waiter.wait());
 
                 // TODO: Refactor to serialize this from a struct
-                // TODO: Parallelize the execution of this with the initialization of the connection.
+                // TODO: Parallelize the execution of this with the initialization of the
+                // connection.
                 let mut initial_state = v2::ConnectionInitialState::raw();
                 initial_state.upgrade_payload = Some(Box::new(std::io::Cursor::new(
                     b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n" as &'static [u8])));
 
-                return conn.run(initial_state, Box::new(reader), Box::new(write_stream)).await;
+                return conn
+                    .run(initial_state, Box::new(reader), Box::new(write_stream))
+                    .await;
             }
 
-
             // TODO: Apply the transforms here.
-
 
             /*
             Check for upgrade that looks like:
@@ -355,14 +364,17 @@ impl Server {
 
             let mut res = handler.handle_request(req).await;
 
-            // TODO: Validate that no denylisted headers are given in the response (especially Content-Length)
-            
+            // TODO: Validate that no denylisted headers are given in the response
+            // (especially Content-Length)
+
             res = Self::transform_response(res)?;
 
             let res_body = encode_response_body_v1(req_method, &mut res.head, res.body);
 
             crate::headers::connection::append_connection_header(
-                persist_connection, &mut res.head.headers);
+                persist_connection,
+                &mut res.head.headers,
+            );
 
             // TODO: If we do detect multiple aliases to a TcpStream, shutdown the
             // tcpstream explicitly
@@ -391,8 +403,8 @@ impl Server {
 
     fn transform_request(mut req: Request) -> Result<Request> {
         // Apply Transfer-Encoding stuff to the body.
-        
-        // Move the 'Host' header into the 
+
+        // Move the 'Host' header into the
 
         Ok(req)
     }
@@ -411,16 +423,12 @@ impl Server {
 
         Ok(res)
     }
-
 }
-
-
-
 
 /// Request handler used by the 'Server' for HTTP 2 connections.
 /// It wraps the regular request handler given to the 'Server'
 struct ServerRequestHandlerV2 {
-    request_handler: Arc<dyn RequestHandler>
+    request_handler: Arc<dyn RequestHandler>,
 }
 
 #[async_trait]
@@ -430,4 +438,3 @@ impl RequestHandler for ServerRequestHandlerV2 {
         self.request_handler.handle_request(request).await
     }
 }
-

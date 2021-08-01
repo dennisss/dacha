@@ -13,7 +13,6 @@ use crate::body::Body;
 
 const BODY_BUFFER_SIZE: usize = 4096;
 
-
 // TODO: Move this out of the spec as it is the only async thing here.
 // Probably move under Body
 //
@@ -34,6 +33,3 @@ pub async fn write_body(body: &mut dyn Body, writer: &mut dyn Writeable) -> Resu
 
     Ok(())
 }
-
-
-

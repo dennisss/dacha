@@ -1,5 +1,5 @@
-// Utilities for dealing with the form parameters encoded in a URL's query string or form
-// body also known as 'application/x-www-form-urlencoded'.
+// Utilities for dealing with the form parameters encoded in a URL's query
+// string or form body also known as 'application/x-www-form-urlencoded'.
 //
 // The specificication is defined in:
 // https://url.spec.whatwg.org/#application/x-www-form-urlencoded
@@ -8,17 +8,17 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 use common::errors::*;
-use parsing::opaque::OpaqueString;
 use parsing::ascii::AsciiString;
+use parsing::opaque::OpaqueString;
 
 // /// Map based storage of query parameters.
-// /// This is efficient for lookup but ignores any ordering between values with different names. 
-// pub struct QueryParams {
+// /// This is efficient for lookup but ignores any ordering between values with
+// different names. pub struct QueryParams {
 //     params: HashMap<OpaqueString, Vec<OpaqueString>>,
 // }
 
 pub struct QueryParamsBuilder {
-    out: String
+    out: String,
 }
 
 impl QueryParamsBuilder {
@@ -59,7 +59,6 @@ impl QueryParamsBuilder {
     }
 }
 
-
 pub struct QueryParamsParser<'a> {
     input: &'a [u8],
 }
@@ -73,18 +72,20 @@ impl<'a> QueryParamsParser<'a> {
         if self.input.len() < 2 {
             return None;
         }
-        
+
         let s = match std::str::from_utf8(&self.input[0..2]) {
             Ok(s) => s,
-            Err(_) => { return None; }
+            Err(_) => {
+                return None;
+            }
         };
 
         match u8::from_str_radix(s, 16) {
             Ok(v) => {
                 self.input = &self.input[2..];
                 Some(v)
-            },
-            Err(_) => None
+            }
+            Err(_) => None,
         }
     }
 }
@@ -117,7 +118,7 @@ impl std::iter::Iterator for QueryParamsParser<'_> {
             } else if byte == b'&' {
                 break;
             }
-            
+
             if byte == b'+' {
                 byte = b' ';
             } else if byte == b'%' {
@@ -138,7 +139,7 @@ impl std::iter::Iterator for QueryParamsParser<'_> {
 }
 
 #[cfg(test)]
-mod tests{
+mod tests {
     use super::*;
 
     #[test]
@@ -150,14 +151,15 @@ mod tests{
             (b"value", b"123  go"),
             (b"", b""),
             (b"name", b""),
-            (b"encoded", b"33r%ZZ%")
+            (b"encoded", b"33r%ZZ%"),
         ];
 
-        let expected_outputs = raw_expected_outputs.iter()
-            .map(|(k, v)| (OpaqueString::from(*k), OpaqueString::from(*v))).collect::<Vec<_>>();
+        let expected_outputs = raw_expected_outputs
+            .iter()
+            .map(|(k, v)| (OpaqueString::from(*k), OpaqueString::from(*v)))
+            .collect::<Vec<_>>();
 
         let outputs = QueryParamsParser::new(input).collect::<Vec<_>>();
         assert_eq!(outputs, expected_outputs);
     }
-
 }

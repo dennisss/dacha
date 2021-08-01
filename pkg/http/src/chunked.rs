@@ -1,19 +1,18 @@
+use common::borrowed::Borrowed;
 use common::errors::*;
 use common::io::Readable;
-use common::borrowed::Borrowed;
-use parsing::ascii::AsciiString;
-use parsing::iso::Latin1String;
-use parsing::complete;
 use compression::buffer_queue::BufferQueue;
+use parsing::ascii::AsciiString;
+use parsing::complete;
+use parsing::iso::Latin1String;
 
 use crate::body::Body;
-use crate::reader::*;
 use crate::chunked_syntax::*;
 use crate::header::Headers;
+use crate::reader::*;
 
 /// Minimum size used for chunks.
 const MIN_CHUNK_SIZE: usize = 512;
-
 
 pub struct ChunkExtension {
     pub name: AsciiString,
@@ -25,28 +24,23 @@ pub struct ChunkHead {
     pub extensions: Vec<ChunkExtension>,
 }
 
-
 /// Current state while reading a chunked body.
 enum ChunkState {
     /// Reading the first line of the chunk containing the size.
     Start,
-    
+
     /// Reading the data in the chunk.
-    Data {
-        remaining_len: usize
-    },
-    
+    Data { remaining_len: usize },
+
     /// Done reading the data in the chunk and reading the empty line endings
     /// immediately after the data.
     End,
-    
+
     /// Reading the final trailer of body until
     Trailer,
-    
+
     /// The entire body has been read.
-    Done {
-        trailers: Option<Headers>
-    },
+    Done { trailers: Option<Headers> },
 
     /// A previous attemtpt to read from the body caused a failure so we are in
     /// an undefined state and can't reliably continue reading from the body.
@@ -97,7 +91,9 @@ impl IncomingChunkedBody {
                 if head.size == 0 {
                     self.state = ChunkState::Trailer;
                 } else {
-                    self.state = ChunkState::Data { remaining_len: head.size };
+                    self.state = ChunkState::Data {
+                        remaining_len: head.size,
+                    };
                 }
 
                 Ok(CycleValue::StateChange)
@@ -114,7 +110,9 @@ impl IncomingChunkedBody {
                 if new_len == 0 {
                     self.state = ChunkState::End;
                 } else {
-                    self.state = ChunkState::Data { remaining_len: new_len };
+                    self.state = ChunkState::Data {
+                        remaining_len: new_len,
+                    };
                 }
 
                 Ok(CycleValue::Read(nread))
@@ -149,7 +147,11 @@ impl IncomingChunkedBody {
                 };
 
                 self.state = ChunkState::Done {
-                    trailers: if headers.is_empty() { None } else { Some(Headers::from(headers)) }
+                    trailers: if headers.is_empty() {
+                        None
+                    } else {
+                        Some(Headers::from(headers))
+                    },
                 };
 
                 Ok(CycleValue::StateChange)
@@ -169,10 +171,12 @@ impl Body for IncomingChunkedBody {
         None
     }
 
-    fn has_trailers(&self) -> bool { true }
+    fn has_trailers(&self) -> bool {
+        true
+    }
 
     async fn trailers(&mut self) -> Result<Option<Headers>> {
-        if let ChunkState::Done { trailers  } = &mut self.state {
+        if let ChunkState::Done { trailers } = &mut self.state {
             let trailers = trailers.take();
             self.state = ChunkState::Error;
             return Ok(trailers);
@@ -191,7 +195,7 @@ impl Readable for IncomingChunkedBody {
                 Ok(CycleValue::Read(n)) => {
                     return Ok(n);
                 }
-                Ok(CycleValue::StateChange) => {},
+                Ok(CycleValue::StateChange) => {}
                 Err(e) => {
                     self.state = ChunkState::Error;
                     return Err(e);
@@ -204,7 +208,7 @@ impl Readable for IncomingChunkedBody {
 enum OutgoingChunkState {
     Data,
     Error,
-    Done
+    Done,
 }
 
 pub struct OutgoingChunkedBody {
@@ -212,7 +216,7 @@ pub struct OutgoingChunkedBody {
 
     buffer: BufferQueue,
 
-    state: OutgoingChunkState
+    state: OutgoingChunkState,
 }
 
 impl OutgoingChunkedBody {
@@ -220,7 +224,7 @@ impl OutgoingChunkedBody {
         OutgoingChunkedBody {
             inner_body: body,
             buffer: BufferQueue::new(),
-            state: OutgoingChunkState::Data
+            state: OutgoingChunkState::Data,
         }
     }
 
@@ -231,11 +235,18 @@ impl OutgoingChunkedBody {
 
 #[async_trait]
 impl Body for OutgoingChunkedBody {
-    fn len(&self) -> Option<usize> { None }
+    fn len(&self) -> Option<usize> {
+        None
+    }
 
-    // NOTE: Chunked bodies can have trailers, but we will always encode them as regular body data.
-    fn has_trailers(&self) -> bool { false }
-    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }
+    // NOTE: Chunked bodies can have trailers, but we will always encode them as
+    // regular body data.
+    fn has_trailers(&self) -> bool {
+        false
+    }
+    async fn trailers(&mut self) -> Result<Option<Headers>> {
+        Ok(None)
+    }
 }
 
 #[async_trait]
@@ -243,7 +254,9 @@ impl Readable for OutgoingChunkedBody {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         match self.state {
             OutgoingChunkState::Error => {
-                return Err(err_msg("An error previously occured while encodidng the body"));
+                return Err(err_msg(
+                    "An error previously occured while encodidng the body",
+                ));
             }
             OutgoingChunkState::Done => {
                 return Ok(self.buffer.copy_to(buf));
@@ -252,7 +265,7 @@ impl Readable for OutgoingChunkedBody {
             // Implemented below
             OutgoingChunkState::Data => {}
         }
-        
+
         if buf.is_empty() {
             return Ok(0);
         }
@@ -265,15 +278,16 @@ impl Readable for OutgoingChunkedBody {
 
             // Max number of bytes needed to encode the length of the chunk + the first and
             // last \r\n sequences.
-            let chunk_overhead = Self::chunk_size_to_string(
-                std::cmp::max(buf.len(), MIN_CHUNK_SIZE)).len() + 4;
+            let chunk_overhead =
+                Self::chunk_size_to_string(std::cmp::max(buf.len(), MIN_CHUNK_SIZE)).len() + 4;
 
-            // Number of 
+            // Number of
             // NOTE: Will always be > 0.
             let target_chunk_size = std::cmp::max(
                 buf.len().checked_sub(chunk_overhead).unwrap_or(0),
-                MIN_CHUNK_SIZE);
-            
+                MIN_CHUNK_SIZE,
+            );
+
             let mut data = vec![];
             data.resize(target_chunk_size, 0);
             let chunk_size = match self.inner_body.read(&mut data).await {
@@ -284,7 +298,9 @@ impl Readable for OutgoingChunkedBody {
                 }
             };
 
-            self.buffer.buffer.extend_from_slice(Self::chunk_size_to_string(chunk_size).as_bytes());
+            self.buffer
+                .buffer
+                .extend_from_slice(Self::chunk_size_to_string(chunk_size).as_bytes());
             // NOTE: We don't currently support encoding an chunked extensions.
             self.buffer.buffer.extend_from_slice(b"\r\n");
 
@@ -304,7 +320,7 @@ impl Readable for OutgoingChunkedBody {
                     }
                 }
             } else {
-                self.buffer.buffer.extend_from_slice(&data[0..chunk_size]);    
+                self.buffer.buffer.extend_from_slice(&data[0..chunk_size]);
             }
 
             self.buffer.buffer.extend_from_slice(b"\r\n");
@@ -312,10 +328,8 @@ impl Readable for OutgoingChunkedBody {
     }
 }
 
-
 // TODO: Implement an OutgoingChunkedBody.
 // - Will need to pick a chunk size and be able to flush from upstream.
-
 
 #[cfg(test)]
 mod tests {
@@ -328,14 +342,15 @@ mod tests {
     // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Transfer-Encoding#examples
     const TEST_BODY: &'static [u8] = b"7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n";
 
-    const TEST_BODY2: &'static [u8] = b"7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\nhello: world\r\n\r\n";
+    const TEST_BODY2: &'static [u8] =
+        b"7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\nhello: world\r\n\r\n";
 
     #[async_std::test]
     async fn chunked_body_test() -> Result<()> {
         let data = Cursor::new(TEST_BODY);
         let stream = PatternReader::new(Box::new(data), StreamBufferOptions::default());
         let (stream, returner) = common::borrowed::Borrowed::wrap(stream);
-        
+
         let mut body = IncomingChunkedBody::new(stream);
 
         let mut outbuf = vec![];
@@ -351,7 +366,7 @@ mod tests {
         let data = Cursor::new(TEST_BODY2);
         let stream = PatternReader::new(Box::new(data), StreamBufferOptions::default());
         let (stream, returner) = common::borrowed::Borrowed::wrap(stream);
-        
+
         let mut body = IncomingChunkedBody::new(stream);
 
         let mut outbuf = vec![];
@@ -363,7 +378,10 @@ mod tests {
 
         // TODO: Check that we got back the right value.
 
-        assert_eq!(trailers.unwrap().find_one("hello")?.value.as_bytes(), b"world");
+        assert_eq!(
+            trailers.unwrap().find_one("hello")?.value.as_bytes(),
+            b"world"
+        );
 
         Ok(())
     }

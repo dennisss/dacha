@@ -1,17 +1,17 @@
-use std::{io::Cursor, ops::DerefMut};
-use std::pin::Pin;
-use std::ops::Deref;
 use std::collections::VecDeque;
+use std::ops::Deref;
+use std::pin::Pin;
+use std::{io::Cursor, ops::DerefMut};
 
-use common::io::Readable;
+use common::borrowed::Borrowed;
 use common::bytes::{Buf, Bytes};
 use common::errors::*;
+use common::io::Readable;
 use common::FutureResult;
 use compression::transform::Transform;
-use common::borrowed::Borrowed;
 
-use crate::reader::*;
 use crate::header::Headers;
+use crate::reader::*;
 
 pub type BoxFutureResult<'a, T> = Pin<Box<dyn FutureResult<T> + Send + 'a>>;
 
@@ -20,9 +20,9 @@ pub trait Body: Readable {
     /// Returns the total length in bytes of the body payload. Will return None
     /// if the length is unknown without reading the entire body.
     ///
-    /// This is the actual transferred length after decoding. Some response bodies
-    /// to requests such as HEAD may still have a Content-Length header while
-    /// having a body.len() of 0.
+    /// This is the actual transferred length after decoding. Some response
+    /// bodies to requests such as HEAD may still have a Content-Length
+    /// header while having a body.len() of 0.
     ///
     ///
     /// NOTE: This is only guaranteed to be valid before read() is called
@@ -31,9 +31,12 @@ pub trait Body: Readable {
 
     /// Returns whether or not this body MAY have trailers.
     ///
-    /// If this returns false, then trailers() may never be called or send to the remote endpoint.
-    /// But, returning false does allow options to occur.
-    fn has_trailers(&self) -> bool { false }
+    /// If this returns false, then trailers() may never be called or send to
+    /// the remote endpoint. But, returning false does allow options to
+    /// occur.
+    fn has_trailers(&self) -> bool {
+        false
+    }
 
     /// Retrieves the trailer headers that follow the body (if any).
     ///
@@ -42,7 +45,6 @@ pub trait Body: Readable {
     /// once.
     async fn trailers(&mut self) -> Result<Option<Headers>>; // { Ok(None) }
 }
-
 
 /*
     In the response, If I have a
@@ -72,23 +74,29 @@ pub fn BodyFromData<T: 'static + AsRef<[u8]> + Send + Unpin>(data: T) -> Box<dyn
 pub fn WithTrailers(body: Box<dyn Body>, trailers: Headers) -> Box<dyn Body> {
     Box::new(WithTrailersBody {
         body,
-        trailers: Some(trailers)
+        trailers: Some(trailers),
     })
 }
 
 struct WithTrailersBody {
     body: Box<dyn Body>,
-    trailers: Option<Headers>
+    trailers: Option<Headers>,
 }
 
 #[async_trait]
 impl Body for WithTrailersBody {
-    fn len(&self) -> Option<usize> { self.body.len() }
+    fn len(&self) -> Option<usize> {
+        self.body.len()
+    }
 
-    fn has_trailers(&self) -> bool { true }
+    fn has_trailers(&self) -> bool {
+        true
+    }
 
     // TODO: Error out if called twice.
-    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(self.trailers.take()) }
+    async fn trailers(&mut self) -> Result<Option<Headers>> {
+        Ok(self.trailers.take())
+    }
 }
 
 #[async_trait]
@@ -98,10 +106,8 @@ impl Readable for WithTrailersBody {
     }
 }
 
-
 struct PartsBody {
     parts: VecDeque<Bytes>,
-    
 }
 
 #[async_trait]
@@ -115,7 +121,9 @@ impl Body for PartsBody {
         Some(total)
     }
 
-    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }
+    async fn trailers(&mut self) -> Result<Option<Headers>> {
+        Ok(None)
+    }
 }
 
 #[async_trait]
@@ -125,7 +133,9 @@ impl Readable for PartsBody {
         while buf.len() > 0 {
             let part = match self.parts.get_mut(0) {
                 Some(v) => v,
-                None => { break; }
+                None => {
+                    break;
+                }
             };
 
             if part.len() == 0 {
@@ -145,10 +155,9 @@ impl Readable for PartsBody {
     }
 }
 
-
-pub fn BodyFromParts<I: Iterator<Item=Bytes>>(parts: I) -> Box<dyn Body> {
+pub fn BodyFromParts<I: Iterator<Item = Bytes>>(parts: I) -> Box<dyn Body> {
     Box::new(PartsBody {
-        parts: parts.collect()
+        parts: parts.collect(),
     })
 }
 
@@ -170,7 +179,9 @@ impl Body for IncomingUnboundedBody {
         None
     }
 
-    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }
+    async fn trailers(&mut self) -> Result<Option<Headers>> {
+        Ok(None)
+    }
 }
 
 #[async_trait]
@@ -179,7 +190,6 @@ impl Readable for IncomingUnboundedBody {
         self.reader.read(buf).await
     }
 }
-
 
 /// A body which has a well known length.
 pub struct IncomingSizedBody {
@@ -193,7 +203,7 @@ impl IncomingSizedBody {
         Self {
             length,
             reader,
-            error: false
+            error: false,
         }
     }
 }
@@ -204,7 +214,9 @@ impl Body for IncomingSizedBody {
         None
     }
 
-    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }
+    async fn trailers(&mut self) -> Result<Option<Headers>> {
+        Ok(None)
+    }
 }
 
 #[async_trait]
@@ -231,7 +243,8 @@ impl Readable for IncomingSizedBody {
 
         if n == 0 && self.length != 0 {
             self.error = true;
-            // TODO: This should trigger a client error to be returned (maybe use a ProtocolError)
+            // TODO: This should trigger a client error to be returned (maybe use a
+            // ProtocolError)
             return Err(err_msg("Unexpected end to stream"));
         }
 
@@ -240,11 +253,12 @@ impl Readable for IncomingSizedBody {
 }
 
 /// Body which applies a given transform to another body.
-/// 
-/// If this is read to the end, then it will internally ensure the entire inner body can
-/// be transformed by the transform without extra bytes.
 ///
-/// TODO: Move this to the compression package as most of this is generic readable logic.
+/// If this is read to the end, then it will internally ensure the entire inner
+/// body can be transformed by the transform without extra bytes.
+///
+/// TODO: Move this to the compression package as most of this is generic
+/// readable logic.
 pub struct TransformBody {
     /// Input body which we are transforming.
     body: Box<dyn Body>,
@@ -270,22 +284,33 @@ impl TransformBody {
         let mut input_buffer = vec![];
         input_buffer.reserve_exact(512);
 
-        Self { body, transform, input_buffer, input_buffer_offset: 0, end_of_input: false, end_of_output: false }
+        Self {
+            body,
+            transform,
+            input_buffer,
+            input_buffer_offset: 0,
+            end_of_input: false,
+            end_of_output: false,
+        }
     }
 }
 
 #[async_trait]
 impl Body for TransformBody {
-    fn len(&self) -> Option<usize> { self.body.len() }
+    fn len(&self) -> Option<usize> {
+        self.body.len()
+    }
 
-    async fn trailers(&mut self) -> Result<Option<Headers>> { self.body.trailers().await }
+    async fn trailers(&mut self) -> Result<Option<Headers>> {
+        self.body.trailers().await
+    }
 }
 
 #[async_trait]
 impl Readable for TransformBody {
     async fn read(&mut self, mut output: &mut [u8]) -> Result<usize> {
         let mut output_written = 0;
-        
+
         loop {
             // Trivially can't do anything in this case.
             // NOTE: end_of_input will always be set after end_of_output.
@@ -296,7 +321,10 @@ impl Readable for TransformBody {
             if !self.input_buffer.is_empty() {
                 // TODO: attempt to execute this multiple times if no data was consumed.
                 let progress = self.transform.update(
-                    &self.input_buffer[self.input_buffer_offset..], self.end_of_input, output)?;
+                    &self.input_buffer[self.input_buffer_offset..],
+                    self.end_of_input,
+                    output,
+                )?;
 
                 self.input_buffer_offset += progress.input_read;
                 if self.input_buffer_offset == self.input_buffer.len() {
@@ -316,8 +344,9 @@ impl Readable for TransformBody {
                 }
 
                 if !self.input_buffer.is_empty() {
-                    // Input data is remaining. Likely we ran out of space in the output buffer. 
-                    // NOTE: We won't read new data from the input body until all current data has been consumed. 
+                    // Input data is remaining. Likely we ran out of space in the output buffer.
+                    // NOTE: We won't read new data from the input body until all current data has
+                    // been consumed.
 
                     if output_written == 0 {
                         return Err(err_msg("Transform made no progress"));
@@ -343,7 +372,8 @@ impl Readable for TransformBody {
                 return Ok(0);
             }
 
-            // We now have data in our buffer which will be transformed in the next iteration of this loop. 
+            // We now have data in our buffer which will be transformed in the
+            // next iteration of this loop.
         }
     }
 }

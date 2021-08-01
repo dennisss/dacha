@@ -1,7 +1,6 @@
 use common::errors::*;
 use parsing::*;
 
-
 pub struct Parameter {
     pub name: String,
     // NOTE: Case sentitive detepending on the parameter name.

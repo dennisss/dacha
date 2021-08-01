@@ -1,14 +1,14 @@
-use common::errors::*;
 use common::bytes::Bytes;
+use common::errors::*;
 use parsing::ascii::AsciiString;
-use parsing::opaque::OpaqueString;
 use parsing::complete;
+use parsing::opaque::OpaqueString;
 
-use crate::{message::HTTP_V1_1, message_syntax::parse_token};
-use crate::header::{Headers, Header};
 use crate::header::CONNECTION;
+use crate::header::{Header, Headers};
 use crate::header_syntax::comma_delimited;
 use crate::message::Version;
+use crate::{message::HTTP_V1_1, message_syntax::parse_token};
 
 const MAX_CONNECTION_OPTIONS: usize = 4;
 
@@ -17,12 +17,12 @@ const KEEP_ALIVE: &'static str = "Keep-Alive";
 const CLOSE: &'static str = "Close";
 
 pub enum ConnectionOption {
-    // TODO: Also parse Keep-Alive related options. 
+    // TODO: Also parse Keep-Alive related options.
     KeepAlive,
-    
+
     Close,
-    
-    Unknown(AsciiString)
+
+    Unknown(AsciiString),
 }
 
 impl AsRef<[u8]> for ConnectionOption {
@@ -30,36 +30,36 @@ impl AsRef<[u8]> for ConnectionOption {
         match self {
             ConnectionOption::KeepAlive => KEEP_ALIVE.as_bytes(),
             ConnectionOption::Close => CLOSE.as_bytes(),
-            ConnectionOption::Unknown(v) => v.as_ref().as_bytes()
+            ConnectionOption::Unknown(v) => v.as_ref().as_bytes(),
         }
     }
 }
 
-impl<T: AsRef<[u8]>> PartialEq<T>  for ConnectionOption {
+impl<T: AsRef<[u8]>> PartialEq<T> for ConnectionOption {
     fn eq(&self, other: &T) -> bool {
         self.as_ref().eq_ignore_ascii_case(other.as_ref())
     }
 }
-
-
-
 
 // `connection-option = token`
 // parser!(parse_connection_option<AsciiString> => {
 //     parse_token
 // });
 
-
 /// Syntax defined in RFC 7230 Section 6.1 as:
 /// `Connection = 1#connection-option`
 /// `connection-option = token`
-/// 
-/// TODO: Ideally we would return a set (and verify that a connection type isn't specified twice.)
+///
+/// TODO: Ideally we would return a set (and verify that a connection type isn't
+/// specified twice.)
 pub fn parse_connection(headers: &Headers) -> Result<Vec<ConnectionOption>> {
     let mut option_names = vec![];
     for header in headers.find(crate::header::CONNECTION) {
-        let (names, _) = complete(comma_delimited(parse_token, 1, MAX_CONNECTION_OPTIONS - option_names.len()))
-            (header.value.to_bytes())?;
+        let (names, _) = complete(comma_delimited(
+            parse_token,
+            1,
+            MAX_CONNECTION_OPTIONS - option_names.len(),
+        ))(header.value.to_bytes())?;
         option_names.extend(names.into_iter());
     }
 
@@ -77,19 +77,21 @@ pub fn parse_connection(headers: &Headers) -> Result<Vec<ConnectionOption>> {
     // TODO: Implement support for the header options:
     // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Keep-Alive
 
-    // NOTE: If a header corresponding to a connection option is received but the option isn't mentioned
-    // in the 'Connection' header, then it must be ignored.
+    // NOTE: If a header corresponding to a connection option is received but the
+    // option isn't mentioned in the 'Connection' header, then it must be
+    // ignored.
 
     Ok(options)
 }
 
-/// Based on the HTTP version and Connection header, determines if the connection can persistent.
-/// Algorithm from RFC 7230 Section 6.3
-/// 
-/// NOTE: If the body doesn't have a well defined length, then the connection may have to close
-/// anyway.
+/// Based on the HTTP version and Connection header, determines if the
+/// connection can persistent. Algorithm from RFC 7230 Section 6.3
 ///
-/// Returns whether or not the connection can persist or an error if the request is invalid. 
+/// NOTE: If the body doesn't have a well defined length, then the connection
+/// may have to close anyway.
+///
+/// Returns whether or not the connection can persist or an error if the request
+/// is invalid.
 pub fn can_connection_persist(received_version: &Version, headers: &Headers) -> Result<bool> {
     let options = parse_connection(headers)?;
 
@@ -123,6 +125,10 @@ pub fn can_connection_persist(received_version: &Version, headers: &Headers) -> 
 pub fn append_connection_header(persist_connection: bool, headers: &mut Headers) {
     headers.raw_headers.push(Header {
         name: AsciiString::from(Bytes::from(CONNECTION)).unwrap(),
-        value: OpaqueString::from(if persist_connection { "keep-alive" } else { "close" })
+        value: OpaqueString::from(if persist_connection {
+            "keep-alive"
+        } else {
+            "close"
+        }),
     });
 }

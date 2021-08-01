@@ -2,7 +2,6 @@ use common::bytes::Bytes;
 use common::errors::*;
 use common::io::*;
 
-
 /// An object that matches some pattern in a stream of bytes.
 pub trait Matcher {
     /// Considering all previous data passed to this function, try to find a
@@ -14,12 +13,11 @@ pub trait Matcher {
 // TODO: Move this somewhere else as this is very specific to http.
 /// Matches the end of the next empty line where a line is terminated by the
 /// exact sequence of bytes b"\r\n".
-/// 
+///
 /// NOTE: This assumes that the input bytes re
 pub struct LineMatcher {
-    
     seen_cr: bool,
-    
+
     /// Number of bytes seen in the current line.
     cur_length: usize,
 
@@ -76,17 +74,17 @@ impl Matcher for LineMatcher {
 
 /// Wrapper around a byte stream which makes pattern matching more efficient.
 ///
-/// See the read_matching() method which implements buffered reading from the underlying
-/// stream to efficiently detect patterns with unknown byte offsets. After it is called,
-/// the reader can continue to be used as a Readable as if the pattern was read exactly
-/// without overreading.
+/// See the read_matching() method which implements buffered reading from the
+/// underlying stream to efficiently detect patterns with unknown byte offsets.
+/// After it is called, the reader can continue to be used as a Readable as if
+/// the pattern was read exactly without overreading.
 pub struct PatternReader {
     reader: Box<dyn Readable>,
 
     /// TODO: Use something lighter weight like the BufferQueue.
     head: Bytes,
 
-    options: StreamBufferOptions
+    options: StreamBufferOptions,
 }
 
 impl PatternReader {
@@ -94,14 +92,14 @@ impl PatternReader {
         PatternReader {
             reader,
             head: Bytes::new(),
-            options
+            options,
         }
     }
 
     /// Read from the underlying stream until a match is found.
     ///
-    /// TODO: If this ends up being called too many times, then the total amount of
-    /// memory used by a single connection may get very large.
+    /// TODO: If this ends up being called too many times, then the total amount
+    /// of memory used by a single connection may get very large.
     pub async fn read_matching<M: Matcher>(&mut self, mut matcher: M) -> Result<StreamReadUntil> {
         let mut buf = vec![];
         buf.resize(self.options.buffer_size, 0u8);
@@ -150,7 +148,10 @@ impl PatternReader {
             }
 
             if buf.len() - idx < self.options.buffer_size {
-                let num_to_add = std::cmp::min(self.options.buffer_size, self.options.max_buffer_size - buf.len());
+                let num_to_add = std::cmp::min(
+                    self.options.buffer_size,
+                    self.options.max_buffer_size - buf.len(),
+                );
 
                 if num_to_add == 0 {
                     return Ok(StreamReadUntil::TooLarge);
@@ -195,32 +196,31 @@ impl Readable for PatternReader {
 }
 
 pub struct StreamBufferOptions {
-    /// Number of bytes we will try to read in each step of internal algorithms. 
-	pub buffer_size: usize,
-	
+    /// Number of bytes we will try to read in each step of internal algorithms.
+    pub buffer_size: usize,
+
     /// Maximum size of all buffered data.
-    pub max_buffer_size: usize
+    pub max_buffer_size: usize,
 }
 
 impl StreamBufferOptions {
     pub fn default() -> Self {
         Self {
             buffer_size: 1024,
-            max_buffer_size: 16 * 1024 // 16KB
+            max_buffer_size: 16 * 1024, // 16KB
         }
     }
 }
-
 
 pub enum StreamReadUntil {
     /// The first item will be the bytes up to and including the delimiter.
     /// The second item will be
     Value(Bytes),
-    
+
     /// Error: We have hit our memory buffer size limit before getting a match.
     TooLarge,
 
-    /// 
+    ///
     Incomplete(Bytes),
 
     EndOfStream,

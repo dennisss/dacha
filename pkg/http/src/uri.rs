@@ -1,5 +1,5 @@
-use std::net::{IpAddr, Ipv4Addr};
 use std::convert::TryFrom;
+use std::net::{IpAddr, Ipv4Addr};
 
 use common::bytes::Bytes;
 use common::errors::*;
@@ -8,11 +8,11 @@ use parsing::opaque::OpaqueString;
 
 use crate::uri_syntax::*;
 
-// TODO: WE need to support parsing with a base Uri and also removing dot segments
-// https://tools.ietf.org/html/rfc3986#section-5.2.4
+// TODO: WE need to support parsing with a base Uri and also removing dot
+// segments https://tools.ietf.org/html/rfc3986#section-5.2.4
 
 /// Uniform Resource Indicator
-/// 
+///
 /// This struct is also used for storing a URI reference which may be relative
 /// and not contain a scheme or authority.
 /// NOTE: URLs are a subset of URIs.
@@ -22,7 +22,7 @@ pub struct Uri {
     pub scheme: Option<AsciiString>,
 
     pub authority: Option<Authority>,
-    
+
     // TODO: Normalize to "/"
     // See RFC 7230 5.7.2.  Transformations
     // See also 2.7.3 for how to do normalization / comparison of http(s) URIs.
@@ -32,11 +32,11 @@ pub struct Uri {
     //
     // Main challenge will be that depending on the context, we may expect different grammars.
     pub path: AsciiString,
-    
+
     /// Portion of the Uri after the '?' (not including the '?').
-    /// NOTE: This may still not contain percent encoded 
+    /// NOTE: This may still not contain percent encoded
     pub query: Option<AsciiString>,
-    
+
     // NOTE: This will always be empty for absolute_uri
     pub fragment: Option<AsciiString>,
 }
@@ -78,7 +78,6 @@ impl TryFrom<&str> for Authority {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Host {
     Name(String),
@@ -117,12 +116,15 @@ impl std::convert::TryFrom<IPAddress> for IpAddr {
 pub struct UriPath {
     is_absolute: bool,
 
-    segments: Vec<OpaqueString>
+    segments: Vec<OpaqueString>,
 }
 
 impl UriPath {
     pub fn new(is_absolute: bool, segments: &[&str]) -> Self {
-        Self { is_absolute, segments: segments.iter().map(|s| OpaqueString::from(*s)).collect() }
+        Self {
+            is_absolute,
+            segments: segments.iter().map(|s| OpaqueString::from(*s)).collect(),
+        }
     }
 
     /// Whether or not the path starts with a '/'
@@ -144,7 +146,6 @@ impl UriPath {
     }
 }
 
-
 //////////////////
 
 /// NOTE: This is mainly used internally. Users should prefer to use Uri.
@@ -159,15 +160,18 @@ pub(crate) enum RawUriPath {
 impl RawUriPath {
     pub fn into_path(self) -> UriPath {
         match self {
-            RawUriPath::AbEmpty(v) | RawUriPath::Absolute(v) => {
-                UriPath { is_absolute: true, segments: v }
-            }
-            RawUriPath::Rootless(v) => {
-                UriPath { is_absolute: false, segments: v }
-            }
-            RawUriPath::Empty => {
-                UriPath { is_absolute: false, segments: vec![] }
-            }
+            RawUriPath::AbEmpty(v) | RawUriPath::Absolute(v) => UriPath {
+                is_absolute: true,
+                segments: v,
+            },
+            RawUriPath::Rootless(v) => UriPath {
+                is_absolute: false,
+                segments: v,
+            },
+            RawUriPath::Empty => UriPath {
+                is_absolute: false,
+                segments: vec![],
+            },
         }
     }
 }
@@ -181,4 +185,3 @@ pub(crate) enum RawPath {
     PathRootless(Vec<OpaqueString>),
     PathEmpty,
 }
-

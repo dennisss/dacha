@@ -1,20 +1,19 @@
-
-mod types;
-mod headers;
-mod stream_state;
-mod stream;
 mod frame_utils;
+mod headers;
+mod stream;
+mod stream_state;
+mod types;
 
 mod connection_state;
 
 mod body;
-mod settings;
-mod options;
 mod connection;
-mod connection_shared;
 mod connection_reader;
+mod connection_shared;
 mod connection_writer;
+mod options;
 mod priority;
+mod settings;
 
 pub use connection::Connection;
 pub use connection::ConnectionInitialState;

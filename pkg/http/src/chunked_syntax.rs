@@ -1,14 +1,14 @@
 use common::bytes::Bytes;
 use common::errors::*;
-use parsing::*;
 use parsing::ascii::AsciiString;
 use parsing::iso::Latin1String;
+use parsing::*;
 
 use crate::chunked::*;
+use crate::common_syntax::*;
 use crate::header::*;
 use crate::header_syntax;
 use crate::message_syntax::*;
-use crate::common_syntax::*;
 
 // RFC 7230: Section 4.1.1
 //

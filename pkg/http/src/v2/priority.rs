@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::v2::types::*;
 
@@ -26,7 +26,7 @@ minimally should have on priority entry per stream on which we are still sending
 
 
 When trying to send data:
-- 
+-
 
 
 A
@@ -37,37 +37,29 @@ A
 
 pub struct PriorityTree {
     root: PriorityTreeNode,
-    index: HashMap<StreamId, PriorityTreeNode>
+    index: HashMap<StreamId, PriorityTreeNode>,
 }
 
 impl PriorityTree {
     pub fn new() -> Self {
         Self {
             root: PriorityTreeNode {
-               weight: DEFAULT_PRIORITY,
-               parent: 0,
-               children: vec![] 
+                weight: DEFAULT_PRIORITY,
+                parent: 0,
+                children: vec![],
             },
-            index: HashMap::new()
+            index: HashMap::new(),
         }
     }
 
-    pub fn set(&mut self, stream_id: StreamId, weight: u8, dependency_id: StreamId) {
-
-
-
-    }
+    pub fn set(&mut self, stream_id: StreamId, weight: u8, dependency_id: StreamId) {}
 
     /// Traverse the tree first emitting ids for streams with no dependencies
-    pub fn traverse(&self) {
-
-    }
-
+    pub fn traverse(&self) {}
 }
-
 
 struct PriorityTreeNode {
     weight: u8,
     parent: StreamId,
-    children: Vec<StreamId>
+    children: Vec<StreamId>,
 }

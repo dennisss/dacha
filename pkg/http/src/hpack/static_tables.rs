@@ -1,9 +1,9 @@
 // Contains static data used by the HPACK algorithm.
 
 use common::{bits::BitVector, errors::*};
-use parsing::parse_next;
-use parsing::binary::be_u8;
 use compression::huffman::HuffmanTree;
+use parsing::binary::be_u8;
+use parsing::parse_next;
 
 use crate::hpack::header_field::HeaderFieldRef;
 
@@ -15,6 +15,7 @@ macro_rules! static_table {
     };
 }
 
+#[rustfmt::skip]
 pub const STATIC_TABLE: &'static [HeaderFieldRef<'static>] = static_table!(
     1, ":authority", "",
     2, ":method", "GET",
@@ -84,7 +85,7 @@ pub const STATIC_TABLE: &'static [HeaderFieldRef<'static>] = static_table!(
 #[repr(packed)]
 struct HuffmanCodeEntry {
     code: u32,
-    length: u8 // TODO: I could encode this in the u32 as the last 1 bit. 
+    length: u8, // TODO: I could encode this in the u32 as the last 1 bit.
 }
 
 macro_rules! huffman_table {
@@ -96,8 +97,9 @@ macro_rules! huffman_table {
 }
 
 /// The (code, length) to encode a byte value 'i' is located at index 'i'.
-/// A value of 256 is the End of String symbol. 
+/// A value of 256 is the End of String symbol.
 /// RFC 7541: Appendix B
+#[rustfmt::skip]
 const HUFFMAN_CODES: &[HuffmanCodeEntry; 256] = huffman_table!(
     0b1111111111000, 13,
     0b11111111111111111011000, 23,
@@ -372,8 +374,9 @@ lazy_static! {
     };
 }
 
-/// Optimized method fo huffman encode some input data using the static HPACK code table.
-/// Because all codes are 30bits or less, we can fully operate on them using 64-bit slices at a time.
+/// Optimized method fo huffman encode some input data using the static HPACK
+/// code table. Because all codes are 30bits or less, we can fully operate on
+/// them using 64-bit slices at a time.
 ///
 /// TODO: Consolidate this with the generic huffman libraries.
 pub fn huffman_encode(input: &[u8]) -> Vec<u8> {
@@ -392,7 +395,7 @@ pub fn huffman_encode(input: &[u8]) -> Vec<u8> {
         // Exponentially expand the size of the output buffer to ensure that at least a
         // single u64 can fit without truncation at the current position.
         if out.len() - byte_offset < U64_BYTES {
-            out.resize(std::cmp::max(2*out.len(), out.len() + U64_BYTES), 0);
+            out.resize(std::cmp::max(2 * out.len(), out.len() + U64_BYTES), 0);
         }
 
         // Read a u64 view from the current position.
@@ -401,8 +404,9 @@ pub fn huffman_encode(input: &[u8]) -> Vec<u8> {
 
         // Insert the code
         let code_entry = &HUFFMAN_CODES[byte as usize];
-        out_int |= (code_entry.code as u64) << (U64_BITS - bit_rel_offset - (code_entry.length as usize));
-        
+        out_int |=
+            (code_entry.code as u64) << (U64_BITS - bit_rel_offset - (code_entry.length as usize));
+
         // Store the u64 view back into the output buffer.
         *out_slice = out_int.to_be_bytes();
 
@@ -436,7 +440,6 @@ mod tests {
         let mut seen_hashes = std::collections::HashMap::new();
 
         for entry in STATIC_TABLE {
-
             // TODO: We an also fast threshold on the length of the name.
             let mut hash = entry.name.len();
             for (i, b) in entry.name.iter().enumerate() {
@@ -445,17 +448,19 @@ mod tests {
 
             if let Some(old_name) = seen_hashes.insert(hash, entry.name) {
                 if old_name != entry.name {
-                    panic!("Duplicate entries with same hash: {:?} {:?}", old_name, entry.name);
+                    panic!(
+                        "Duplicate entries with same hash: {:?} {:?}",
+                        old_name, entry.name
+                    );
                 }
             }
         }
 
-        // Now we need to brute force some mapping from the hash to the right starting index.
+        // Now we need to brute force some mapping from the hash to the right starting
+        // index.
 
         println!("{:?}", seen_hashes);
 
         println!("{}", seen_hashes.len());
-
     }
 }
-

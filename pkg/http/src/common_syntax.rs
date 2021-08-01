@@ -41,11 +41,3 @@ pub fn is_vchar(i: u8) -> bool {
 }
 
 parser!(pub parse_crlf<()> => tag(b"\r\n"));
-
-
-
-
-
-
-
-
