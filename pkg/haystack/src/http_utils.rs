@@ -106,14 +106,14 @@ pub async fn run_http_server<
     func: Func,
     arg: Arc<Arg>,
 ) {
-    let server = http::Server::new(port, RequestHandlerWrap { func, arg });
+    let server = http::Server::new(RequestHandlerWrap { func, arg });
 
     let (tx, rx) = common::async_std::channel::bounded(1);
 
     let tx1 = tx.clone();
     let handle = common::async_std::task::spawn(async move {
         println!("Listening on http://localhost:{}", port);
-        server.run().await;
+        server.run(port).await;
         tx1.send(()).await;
     });
 

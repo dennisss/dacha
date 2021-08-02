@@ -367,7 +367,7 @@ lazy_static! {
         let mut tree = HuffmanTree::new();
         for (i, entry) in HUFFMAN_CODES.iter().enumerate() {
             // TODO: from_lower_msb may lose precision is usize is < 30 bits.
-            tree.insert(i, BitVector::from_lower_msb(entry.code as usize, entry.length));
+            tree.insert(i, BitVector::from_lower_msb(entry.code as usize, entry.length)).unwrap();
         }
 
         tree

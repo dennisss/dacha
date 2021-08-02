@@ -1730,7 +1730,7 @@ impl Compiler<'_> {
 
                     lines.add(format!(r#"
                         pub async fn {rpc_name}(&self, request_context: &::rpc::ClientRequestContext)
-                            -> (::rpc::ClientStreamingRequest<{req_type}>, ::rpc::ClientResponseType<{res_type}>) {{
+                            -> (::rpc::ClientStreamingRequest<{req_type}>, ::rpc::ClientStreamingResponse<{res_type}>) {{
                             self.channel.call_stream_stream("{service_name}", "{rpc_name}", request_context).await
                         }}"#,
                         service_name = absolute_name,

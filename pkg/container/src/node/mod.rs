@@ -26,6 +26,8 @@ use crate::runtime::ContainerRuntime;
 ///   Currently this file is always empty.
 const BLOB_DATA_DIR: &'static str = "/opt/dacha/container/blob";
 
+const GRACEFUL_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 struct Task {
     /// Spec that was used to start this task.
     spec: TaskSpec,
@@ -375,7 +377,7 @@ impl Node {
         let task_name = task.spec.name().to_string();
         let timeout_sender = self.shared.event_channel.0.clone();
         let timeout_task = ChildTask::spawn(async move {
-            common::async_std::task::sleep(std::time::Duration::from_secs(10)).await;
+            common::async_std::task::sleep(GRACEFUL_SHUTDOWN_TIMEOUT.clone()).await;
             let _ = timeout_sender
                 .send(NodeEvent::StopTimeout {
                     task_name,
@@ -488,6 +490,8 @@ impl ContainerNodeService for Node {
             task.container_id.clone().unwrap()
         };
 
+        // TODO: If the container is being shutdown then we may temporarily get the wrong
+        // container id
         println!("GetLogs Container Id: {}", container_id);
 
         // TODO: Support log seeking.

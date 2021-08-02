@@ -26,6 +26,7 @@ extern crate compression;
 extern crate google;
 extern crate rpc;
 extern crate sstable;
+#[macro_use] extern crate async_std;
 
 mod node;
 mod proto;

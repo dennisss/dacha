@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::marker::PhantomData;
 
@@ -20,33 +22,50 @@ use crate::message::*;
 use crate::status::*;
 
 pub struct Http2Server {
-    port: u16,
-    services: HashMap<String, Arc<dyn Service>>,
+    handler: Http2ResponseHandler,
+    shutdown_token: Option<Pin<Box<dyn Future<Output=()>>>>
 }
 
 impl Http2Server {
-    pub fn new(port: u16) -> Self {
+    pub fn new() -> Self {
         Self {
-            port,
-            services: HashMap::new(),
+            handler: Http2ResponseHandler {
+                services: HashMap::new(),
+            },
+            shutdown_token: None
         }
     }
 
     pub fn add_service(&mut self, service: Arc<dyn Service>) -> Result<()> {
         let service_name = service.service_name().to_string();
-        if self.services.contains_key(&service_name) {
+        if self.handler.services.contains_key(&service_name) {
             return Err(err_msg("Adding duplicate service to RPCServer"));
         }
 
-        self.services.insert(service_name, service);
+        self.handler.services.insert(service_name, service);
         Ok(())
     }
 
-    pub async fn run(self) -> Result<()> {
-        // TODO: Force usage of HTTP2.
-        let server = http::Server::new(self.port, self);
-        server.run().await
+    pub fn set_shutdown_token<F: 'static + Future<Output=()>>(&mut self, token: F) {
+        self.shutdown_token = Some(Box::pin(token));
     }
+
+    pub async fn run(mut self, port: u16) -> Result<()> {
+        // TODO: Force usage of HTTP2.
+        let mut server = http::Server::new(self.handler, http::ServerOptions::default());
+        if let Some(token) = self.shutdown_token.take() {
+            server.set_shutdown_token(token);
+        }
+
+        server.run(port).await
+    }
+}
+
+struct Http2ResponseHandler {
+    services: HashMap<String, Arc<dyn Service>>,
+}
+
+impl Http2ResponseHandler {
 
     async fn handle_request_impl(&self, request: http::Request) -> Result<http::Response> {
         // TODO: Convert as many of the errors in this function as possible to gRPC
@@ -152,7 +171,7 @@ impl Http2Server {
 }
 
 #[async_trait]
-impl http::RequestHandler for Http2Server {
+impl http::RequestHandler for Http2ResponseHandler {
     async fn handle_request(&self, request: http::Request) -> http::Response {
         match self.handle_request_impl(request).await {
             Ok(r) => r,

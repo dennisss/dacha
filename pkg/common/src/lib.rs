@@ -33,12 +33,14 @@ pub mod const_default;
 pub mod pipe;
 pub mod borrowed;
 pub mod task;
+pub mod signals;
+pub mod shutdown;
+pub mod future;
 
 pub use async_trait::*;
 pub use lazy_static::*;
 pub use failure::Fail;
 pub use arrayref::{array_ref, array_mut_ref};
-
 
 /// Gets the root directory of this project (the directory that contains the
 /// 'pkg' and '.git' directory).

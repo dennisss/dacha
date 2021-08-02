@@ -11,6 +11,9 @@ use std::path::Path;
 use common::errors::*;
 use common::failure::ResultExt;
 use nix::mount::MsFlags;
+use nix::sys::signal::SigSet;
+use nix::sys::signal::SigmaskHow;
+use nix::sys::signal::sigprocmask;
 use nix::unistd::{dup2, Pid};
 
 use crate::proto::config::*;
@@ -43,6 +46,7 @@ pub fn run_child_process(
     status
 }
 
+
 fn run_child_process_inner(
     container_config: &ContainerConfig,
     container_dir: &Path,
@@ -52,7 +56,20 @@ fn run_child_process_inner(
     // process group and kill the node process.
     // Run everything in a separate process group to broadcast signals down.
     // TODO: What if we send a signal to this process before this code runs?
-    // nix::unistd::setsid()?;
+    nix::unistd::setsid()?;
+
+    // Ensure that all signals are unblocked.
+    sigprocmask(SigmaskHow::SIG_UNBLOCK, Some(&SigSet::all()), None)?;
+
+    // When the parent container runtime dies, kill this process. Under normal operation,
+    // the runtime should gracefully kill all of its child processes if it needs to exit,
+    // but this is for the case of the parent being abrutly terminated.
+    //
+    // TODO: Instead of relying of this, start the runtime in its own PID namespace so that
+    // when it exits, all children naturally also die.
+    if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) } != 0 {
+        return Err(err_msg("Failed to set PR_SET_PDEATHSIG"));
+    }
 
     for (newfd, file) in file_mapping.iter() {
         // NOTE: Files created using dup2 don't share file descriptor flags, so

@@ -16,6 +16,7 @@ sstable = { path = "../sstable" }
 compression = { path = "../compression" }
 rpc = { path = "../rpc" }
 google = { path = "../../third_party/google" }
+async-std = "1.9.0"
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

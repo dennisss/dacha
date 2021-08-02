@@ -47,4 +47,4 @@ pub use crate::header::{Header, Headers};
 pub use crate::method::Method;
 pub use crate::request::{Request, RequestBuilder, RequestHead};
 pub use crate::response::{Response, ResponseBuilder, ResponseHead};
-pub use crate::server::{RequestHandler, Server};
+pub use crate::server::{RequestHandler, Server, ServerOptions};

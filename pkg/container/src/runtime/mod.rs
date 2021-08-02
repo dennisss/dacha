@@ -13,8 +13,10 @@ use common::async_std::sync::Mutex;
 use common::async_std::{fs, task};
 use common::errors::*;
 use common::task::ChildTask;
+use common::signals::*;
+use crypto::tls::extensions::SignatureSchemeList;
 use nix::sched::CloneFlags;
-use nix::sys::signal::{signal, SigHandler, Signal};
+
 use nix::sys::wait::WaitPidFlag;
 use nix::unistd::Pid;
 
@@ -35,25 +37,9 @@ const RUN_DATA_DIR: &'static str = "/opt/dacha/container/run";
 /// Stored a boolean value representing whether or not a ContainerRuntime
 /// instance has been created in the current process.
 ///
-/// Used to prevent multiple instances from being started.
+/// Used to prevent multiple instances from being started. We only support having
+/// one instance per process because we can't multiplex SIGCHLD signals.
 static INSTANCE_LOCK: AtomicBool = AtomicBool::new(false);
-
-static mut SIGCHLD_CHANNEL: Option<(channel::Sender<()>, channel::Receiver<()>)> = None;
-static SIGCHLD_CHANNEL_INIT: Once = Once::new();
-
-fn get_sigchld_channel() -> &'static (channel::Sender<()>, channel::Receiver<()>) {
-    unsafe {
-        SIGCHLD_CHANNEL_INIT.call_once(|| {
-            SIGCHLD_CHANNEL = Some(channel::bounded(1));
-        });
-
-        SIGCHLD_CHANNEL.as_ref().unwrap()
-    }
-}
-
-extern "C" fn signal_handler_sigchld(signal: libc::c_int) {
-    let _ = get_sigchld_channel().0.try_send(());
-}
 
 struct Container {
     metadata: ContainerMetadata,
@@ -112,10 +98,6 @@ impl ContainerRuntime {
             return Err(err_msg("ContainerRuntime instance already exists"));
         }
 
-        // TODO: Verify that there is only one copy of this handler.
-        let handler = SigHandler::Handler(signal_handler_sigchld);
-        unsafe { signal(Signal::SIGCHLD, handler) }?;
-
         Ok(Arc::new(Self {
             containers: Mutex::new(vec![]),
             event_listeners: Mutex::new(vec![]),
@@ -125,8 +107,10 @@ impl ContainerRuntime {
     /// Runs the processing loop of the runtime. This must be continously polled
     /// while the ContainerRuntime is in use.
     pub async fn run(self: Arc<Self>) -> Result<()> {
+        let mut sigchld_receiver = register_signal_handler(Signal::SIGCHLD)?;
+
         loop {
-            get_sigchld_channel().1.recv().await?;
+            sigchld_receiver.recv().await;
 
             loop {
                 let e = match nix::sys::wait::waitpid(
@@ -243,11 +227,25 @@ impl ContainerRuntime {
         // NOTE: We must lock this before clone() and until we insert the new container
         // to ensure that waitpid() doesn't return before the container is in
         // the list.
+        //
+        // This is similar in purpose to the trick of running sigprocmask() to mask SIGCHLD and
+        // then unmask it after the job has been added to the list. That trick won't work in our
+        // case though as we could be running the waitpid() loop in a separate thread. 
         let mut containers = self.containers.lock().await;
 
         // TODO: CLONE_INTO_CGROUP
         // TODO: Can memory (e.g. keys from the parent progress be read after the fork
         // and do we need security against this?).
+        //
+        // TODO: Use CloneFlags::CLONE_CLEAR_SIGHAND. Currently it is Ok for the child to receive
+        // signals though as we send the signals through an channel before processing them. Because
+        // the async framework will stop running when cloned, we will never take any actions in
+        // response to signals.
+        //
+        // TODO: Ideally we should use sigprocmask() to temporarily disable signals until the child
+        // process sets up signal handlers. It should be noted that by default the init process
+        // won't be killed by SIGINT|SIGTERM so if we ask to immediately kill a container after it is
+        // started, the container init process may not notice until 
         let pid = nix::sched::clone(
             Box::new(|| run_child_process(&container_config, &container_dir, &file_mapping)),
             &mut stack,

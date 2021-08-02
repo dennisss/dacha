@@ -26,9 +26,36 @@ async fn run_client() -> Result<()> {
     req.set_x(10);
     req.set_y(6);
 
-    let res = stub.Add(&rpc::ClientRequestContext::default(), &req).await.result?;
+    if true {
+        let (mut req_stream, mut res_stream) = stub.AddStreaming(&rpc::ClientRequestContext::default()).await;
 
-    println!("{}", res.z());
+        loop {
+            if !req_stream.send(&req).await {
+                break;
+            }
+
+            let res = res_stream.recv().await;
+            if !res.is_some() {
+                break;
+            }
+
+            println!("{:?}", res);
+
+            common::wait_for(std::time::Duration::from_secs(1)).await;
+        }
+
+        return res_stream.finish().await;
+
+
+    } else {
+
+    
+        let res = stub.Add(&rpc::ClientRequestContext::default(), &req).await.result?;
+    
+        println!("{}", res.z());
+    }
+
+
 
     Ok(())
 }

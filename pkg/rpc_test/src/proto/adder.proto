@@ -11,4 +11,6 @@ message AddResponse {
 
 service Adder {
     rpc Add (AddRequest) returns (AddResponse);
+
+    rpc AddStreaming (stream AddRequest) returns (stream AddResponse);
 }

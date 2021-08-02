@@ -390,6 +390,12 @@ impl Connection {
     /// the actual shutdown occuring later in time (when the run() function
     /// returns).
     ///
+    /// NOTE: It is a valid operation to call shutdown on a connection that has
+    /// not been starting yet by calling run(). This effectively means that we
+    /// prefer shutting down the connection or serving new requests. You should
+    /// still call run() if the connection is being shutdown to ensure that we
+    /// send the appropriate GOAWAY packets to the other endpoint.
+    ///
     /// NOTE: Calling this on an already shutdown connection is a no-op.
     ///
     /// TODO: Need timeouts on the underlying stream if we want to gurantee a
@@ -401,26 +407,23 @@ impl Connection {
     ///   within a fixed amount of time. Even if graceful is set to true,
     ///   shutdown() may be called additional times later with the flag to set
     ///   to false to expedite the shutdown.
-    pub async fn shutdown(&self, graceful: bool) -> Result<()> {
+    pub async fn shutdown(&self, graceful: bool) {
         Self::shutdown_impl(&self.shared, graceful).await
     }
 
-    async fn shutdown_impl(shared: &Arc<ConnectionShared>, graceful: bool) -> Result<()> {
+    async fn shutdown_impl(shared: &Arc<ConnectionShared>, graceful: bool) {
         let mut connection_state = shared.state.lock().await;
-        if !connection_state.running {
-            return Err(err_msg("Can't shut down a non-started connection"));
-        }
 
         // Ensure that we never decrease the shutdown in severity.
         match &connection_state.shutting_down {
             ShuttingDownState::Complete | ShuttingDownState::Abrupt => {
                 // No need to do anything.
-                return Ok(());
+                return;
             }
             ShuttingDownState::Graceful { .. } => {
                 // No point in doing a Graceful shutdown while one is already in process.
                 if graceful {
-                    return Ok(());
+                    return;
                 }
             }
             ShuttingDownState::No | ShuttingDownState::Remote => {
@@ -428,13 +431,8 @@ impl Connection {
             }
         };
 
-        // This means that we are
-
         if graceful {
-            // TODO: If we are a client, should we have timers?
-
-            // NOTE: We'll keep the upper_received_stream_id at MAX_STREAM_ID and just send
-            // a GOAWAY.
+            // We'll keep the upper_received_stream_id at MAX_STREAM_ID and just send a GOAWAY.
 
             if shared.is_server {
                 // We won't make any changes to the upper_received_stream_id so that in-flight
@@ -459,7 +457,7 @@ impl Connection {
                         message: "Gracefully shutting down",
                         local: true,
                     }),
-                    close_with: Some(Ok(())),
+                    close_with: None,
                 })
                 .await;
         } else {
@@ -483,8 +481,6 @@ impl Connection {
         }
 
         // TODO: We should also immediately cancel anything in 'pending_requests'
-
-        Ok(())
     }
 
     fn wait_shutdown_timeout(
@@ -494,7 +490,6 @@ impl Connection {
             // TODO: Make this configurable.
             common::wait_for(std::time::Duration::from_secs(5)).await;
 
-            // TODO: This should never fail right?
             let _ = Self::shutdown_impl(&shared, false).await;
         }
     }

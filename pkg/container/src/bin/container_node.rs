@@ -18,9 +18,9 @@ async fn run() -> Result<()> {
 
     let task_handle = task::spawn(node.run());
 
-    let mut server = rpc::Http2Server::new(8080);
+    let mut server = rpc::Http2Server::new();
     server.add_service(node.into_service());
-    server.run().await;
+    server.run(8080).await;
 
     // TODO: Join the task.
 

@@ -404,7 +404,7 @@ impl RecordWriter {
 
         // Must start in the next block if we can't fit at least a single
         // zero-length block in this block
-        let rem = BLOCK_SIZE - (extent % BLOCK_SIZE); // block_size_remainder(BLOCK_SIZE, extent);
+        let rem = BLOCK_SIZE - (extent % BLOCK_SIZE);
         if rem < RECORD_HEADER_SIZE {
             extent += rem;
             self.file.set_len(extent).await?;
@@ -449,7 +449,11 @@ impl RecordWriter {
             self.file.write_all(&header).await?;
             self.file.write_all(&data[pos..(pos + take)]).await?;
             pos += take;
+            extent += (header.len() + take) as u64;
         }
+
+        // TODO: Instead do this with a timeout if we don't care about immediately writing.
+        self.file.flush().await?;
 
         Ok(())
     }

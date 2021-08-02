@@ -20,15 +20,32 @@ impl AdderService for AdderImpl {
         response.set_z(request.x() + request.y());
         Ok(())
     }
+
+    async fn AddStreaming(
+        &self,
+        mut request: rpc::ServerStreamRequest<AddRequest>,
+        response: &mut rpc::ServerStreamResponse<AddResponse>
+    ) -> Result<()> {
+        while let Some(req) = request.recv().await? {
+            println!("{:?}", req);
+            let mut res = AddResponse::default();
+            res.set_z(req.x() + req.y());
+            response.send(res).await?;
+        }
+
+        Ok(())
+    }
 }
 
 // TODO: Set server side request timeout.
 async fn run_server() -> Result<()> {
-    let mut server = rpc::Http2Server::new(5000);
+    let mut server = rpc::Http2Server::new();
     let adder = AdderImpl {};
     let service = adder.into_service();
     server.add_service(service)?;
-    server.run().await
+    server.set_shutdown_token(common::shutdown::new_shutdown_token());
+
+    server.run(5000).await
 }
 
 fn main() {

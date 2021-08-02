@@ -343,7 +343,7 @@ impl<R: Send + 'static> Server<R> {
         // also be fine?)
 
         // TODO: We also need to add a DiscoveryService (DiscoveryServiceRouter)
-        let mut rpc_server = ::rpc::Http2Server::new(port);
+        let mut rpc_server = ::rpc::Http2Server::new();
         
         // TODO: Handle errors on these return values.
         rpc_server.add_service(crate::rpc::DiscoveryServer::new(
@@ -361,7 +361,8 @@ impl<R: Send + 'static> Server<R> {
         // TODO: Finally if possible we should attempt to broadcast our ip
         // address to other servers so they can rediscover us
 
-        task::spawn(rpc_server.run().map(|_| ()));
+        // TODO: Block until they are all done.
+        task::spawn(rpc_server.run(port).map(|_| ()));
         task::spawn(cycler.map(|_| ()));
         task::spawn(matcher.map(|_| ()));
         task::spawn(applier.map(|_| ()));

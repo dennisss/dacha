@@ -33,8 +33,8 @@ async fn handle_request(req: http::Request) -> http::Response {
 async fn run_server() -> Result<()> {
     let handler = http::static_file_handler::StaticFileHandler::new(common::project_dir());
     // let handler = http::server::HttpFn(handle_request);
-    let server = http::Server::new(8000, handler);
-    server.run().await
+    let server = http::Server::new(handler, http::ServerOptions::default());
+    server.run(8000).await
 }
 
 fn main() -> Result<()> {

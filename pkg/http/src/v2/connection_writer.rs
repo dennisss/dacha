@@ -343,10 +343,13 @@ impl ConnectionWriter {
                     if let Some(error) = send_goaway {
                         // TODO: If this errors out, should we prefer to return the close_with error
                         // if available?
-                        should_close = error.code != ErrorCode::NO_ERROR;
+                        should_close |= error.code != ErrorCode::NO_ERROR;
                         writer
                             .write_all(&frame_utils::new_goaway_frame(last_stream_id, error))
                             .await?;
+
+                        // TODO: Figure out if there is an upper bound to how long this flush will time.
+                        // If it is not fast, then it will block shutdown for a while.
                         writer.flush().await?;
                     }
 
