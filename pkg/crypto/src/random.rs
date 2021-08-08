@@ -1,3 +1,4 @@
+use std::f64::consts::PI;
 use std::sync::Arc;
 use std::num::Wrapping;
 
@@ -362,7 +363,7 @@ pub trait RngExt {
 }
 
 
-impl<R: Rng> RngExt for R {
+impl<R: Rng + ?Sized> RngExt for R {
     fn shuffle<T>(&mut self, elements: &mut [T]) {
         for i in 0..elements.len() {
             let j = self.uniform::<usize>() % elements.len();
@@ -554,6 +555,49 @@ impl Rng for FixedBytesRng {
     }
 }
 
+
+pub struct NormalDistribution {
+    mean: f64,
+    stddev: f64,
+    next_number: Option<f64>
+}
+
+impl NormalDistribution {
+    pub fn new(mean: f64, stddev: f64) -> Self {
+        Self { mean, stddev, next_number: None }
+    }
+
+    /// Given two uniformly sampled random numbers in the range [0, 1], computes two independent
+    /// random values with a normal/gaussian distribution with mean of 0 and standard deviation of
+    /// 1.
+    /// See https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform
+    fn box_muller_transform(u1: f64, u2: f64) -> (f64, f64) {
+        let theta = 2.0 * PI * u2;
+        let (sin, cos) = theta.sin_cos();
+        let r = (-2.0 * u1.ln()).sqrt();
+
+        (r*sin, r*cos)
+    }
+}
+
+pub trait NormalDistributionRngExt {
+    fn next(&mut self, rng: &mut dyn Rng) -> f64;
+}
+
+impl NormalDistributionRngExt for NormalDistribution {
+    fn next(&mut self, rng: &mut dyn Rng) -> f64 {
+        if let Some(v) = self.next_number.take() {
+            return v;
+        }
+
+        let u1 = rng.between(0.0, 1.0);
+        let u2 = rng.between(0.0, 1.0);
+
+        let (z1, z2) = Self::box_muller_transform(u1, u2);
+        self.next_number = Some(z2);
+        z1
+    }
+}
 
 
 #[cfg(test)]

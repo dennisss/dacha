@@ -1,11 +1,14 @@
-use crate::{Colorspace, Image};
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
+
 use byteorder::{LittleEndian, ReadBytesExt};
 use common::errors::*;
 use math::array::Array;
 use parsing::cstruct::*;
 use parsing::ParseResult;
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+
+use crate::{Colorspace, Image};
 
 pub struct Bitmap {
     pub image: Image<u8>,
@@ -58,7 +61,7 @@ impl BitmapInfoHeader {
 }
 
 impl Bitmap {
-    pub fn open(path: &str) -> Result<Bitmap> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Bitmap> {
         let mut file = File::open(path)?;
 
         let mut header = [0u8; 14];

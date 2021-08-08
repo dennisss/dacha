@@ -66,6 +66,8 @@ impl DeviceTransferState {
             .into());
         }
 
+        // Error code meanings are documented here:
+        // https://www.kernel.org/doc/html/latest/driver-api/usb/error-codes.html#error-codes-returned-by-in-urb-status-or-in-iso-frame-desc-n-status-for-iso
         if self.urb.status != 0 {
             let errno = -1 * self.urb.status;
 
@@ -80,6 +82,27 @@ impl DeviceTransferState {
                     message: String::new(),
                 }
                 .into());
+            }
+
+            if errno == libc::ENODEV || errno == libc::ESHUTDOWN {
+                return Err(crate::Error {
+                    kind: crate::ErrorKind::DeviceDisconnected,
+                    message: String::new()
+                }.into());
+            }
+
+            if errno == libc::EPROTO || errno == libc::EILSEQ {
+                return Err(crate::Error {
+                    kind: crate::ErrorKind::TransferFailure,
+                    message: String::new()
+                }.into());
+            }
+
+            if errno == libc::EPIPE {
+                return Err(crate::Error {
+                    kind: crate::ErrorKind::TransferStalled,
+                    message: String::new()
+                }.into());
             }
 
             return Err(nix::Error::from_errno(nix::errno::from_i32(errno)).into());

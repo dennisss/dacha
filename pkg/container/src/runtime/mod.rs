@@ -1,5 +1,5 @@
 mod child;
-mod fd;
+pub(crate) mod fd;
 mod logging;
 
 use std::path::{Path, PathBuf};

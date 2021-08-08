@@ -118,6 +118,10 @@ impl Context {
 
                 let devices = context_state.devices.lock().unwrap();
                 for (_, dev) in devices.open_devices.iter() {
+                    if *dev.has_error.lock().unwrap() {
+                        continue;
+                    }
+
                     fds.push(libc::pollfd {
                         fd: dev.fd,
                         events: libc::POLLOUT,
@@ -171,8 +175,18 @@ impl Context {
                     // Next time we poll() the fd should no longer be in our devices list.
                     continue;
                 } else if (fd.revents & libc::POLLERR) != 0 {
-                    // TODO: Implement me
-                    println!("POLLERR on device")
+                    // Usually this will happen when the USB device is disconnected externally.
+                    // We'll make that the device has an error so that we don't poll it anymore.
+                    // We assume that after this point, future syscalls on this file will continue
+                    // to return errors.
+
+                    let mut devices = context_state.devices.lock().unwrap();
+                    for (_, device) in devices.open_devices.iter_mut() {
+                        if device.fd == fd.fd {
+                            *device.has_error.lock().unwrap() = true;
+                            break;
+                        }
+                    }
                 } else if (fd.revents & libc::POLLHUP) != 0 {
                     // TODO: Implement me
                     println!("POLLHUP on device")
@@ -385,6 +399,7 @@ impl DeviceEntry {
         let state = Arc::new(DeviceState {
             bus_num: self.busnum,
             dev_num: self.devnum,
+            has_error: std::sync::Mutex::new(false),
             fd,
             transfers: std::sync::Mutex::new(DeviceStateTransfers::default()),
         });

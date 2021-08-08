@@ -1,10 +1,11 @@
-extern crate libusb;
+extern crate usb;
 extern crate uinput;
 
 #[macro_use]
 extern crate common;
 
 use common::errors::*;
+use uinput::device;
 use std::time::Duration;
 use uinput::event::absolute::{Absolute, Position};
 use uinput::event::controller::Misc;
@@ -168,16 +169,16 @@ const USB_IFACE: u8 = 1;
 
 // TODO: Support the mic input
 
-fn read_controller() -> Result<()> {
-    let mut context = libusb::Context::new()?;
+async fn read_controller() -> Result<()> {
+    let mut context = usb::Context::create()?;
 
-    let (mut device_handle, device_desc) = {
+    let mut device_handle = {
         let mut handle = None;
 
-        for mut device in context.devices()?.iter() {
-            let desc = device.device_descriptor()?;
-            if desc.vendor_id() == 0x18d1 && desc.product_id() == 0x9400 {
-                handle = Some((device.open()?, desc));
+        for mut device_entry in context.enumerate_devices().await? {
+            let desc = device_entry.device_descriptor()?;
+            if desc.idVendor == 0x18d1 && desc.idProduct == 0x9400 {
+                handle = Some(device_entry.open().await?);
                 break;
             }
         }
@@ -185,13 +186,12 @@ fn read_controller() -> Result<()> {
         handle.ok_or(err_msg("No device found"))?
     };
 
-    let languages = device_handle.read_languages(Duration::from_secs(1))?;
+    let languages = device_handle.read_languages().await?;
     if languages.len() != 1 {
         return Err(err_msg("Expected only a single language"));
     }
 
-    let product_name =
-        device_handle.read_product_string(languages[0], &device_desc, Duration::from_secs(1))?;
+    let product_name = device_handle.read_product_string(languages[0]).await?;
 
     println!("Product name: {}", product_name);
 
@@ -252,13 +252,7 @@ fn read_controller() -> Result<()> {
 
     let mut buf = [0u8; 512];
     loop {
-        let nread = match device_handle.read_interrupt(0x83, &mut buf, Duration::new(1, 0)) {
-            Err(libusb::Error::Timeout) => {
-                // println!("Timed out");
-                continue;
-            }
-            result @ _ => result?,
-        };
+        let nread = device_handle.read_interrupt(0x83, &mut buf).await?;
 
         // TODO: Remove this as it is in parse_usb_packet?
 
@@ -326,7 +320,5 @@ fn read_controller() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    println!("Hello!");
-
-    read_controller()
+    common::async_std::task::block_on(read_controller())
 }

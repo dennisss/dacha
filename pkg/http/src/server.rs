@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use common::CancellationToken;
 use common::async_std::net::{TcpListener, TcpStream};
 use common::async_std::task;
 use common::errors::*;
@@ -126,7 +127,7 @@ struct RequestContext {
 pub struct Server {
     shared: Arc<ServerShared>,
 
-    shutdown_token: Option<Pin<Box<dyn Future<Output=()>>>>,
+    shutdown_token: Option<Box<dyn CancellationToken>>,
 
     shutdown_timer: Option<task::JoinHandle<()>>
 }
@@ -209,8 +210,8 @@ impl Server {
         }
     }
 
-    pub fn set_shutdown_token<F: 'static + Future<Output=()>>(&mut self, token: F) {
-        self.shutdown_token = Some(Box::pin(token));
+    pub fn set_shutdown_token(&mut self, token: Box<dyn CancellationToken>) {
+        self.shutdown_token = Some(token);
     }
 
     /// Start the shutdown of the server.
@@ -299,10 +300,10 @@ impl Server {
                     |r| r.map_err(|e| Error::from(e)))));
 
             let event = {
-                if let Some(shutdown_token) = self.shutdown_token.as_mut() {
+                if let Some(shutdown_token) = &self.shutdown_token {
 
                     let shutdown_event = common::future::map(
-                        shutdown_token.as_mut(), |_| Event::Shutdown);
+                        shutdown_token.wait(), |_| Event::Shutdown);
 
                     common::future::race(next_stream, shutdown_event).await
 

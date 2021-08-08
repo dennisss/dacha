@@ -18,6 +18,8 @@ use nix::unistd::{dup2, Pid};
 
 use crate::proto::config::*;
 use crate::runtime::fd::*;
+use crate::capabilities::*;
+
 
 // NOTE: You should only pass references as arguments to this and no async_std
 // objects can be used in this. e.g. If a async_std::fs::File object is blocked
@@ -67,9 +69,9 @@ fn run_child_process_inner(
     //
     // TODO: Instead of relying of this, start the runtime in its own PID namespace so that
     // when it exits, all children naturally also die.
-    if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) } != 0 {
-        return Err(err_msg("Failed to set PR_SET_PDEATHSIG"));
-    }
+    // if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) } != 0 {
+    //     return Err(err_msg("Failed to set PR_SET_PDEATHSIG"));
+    // }
 
     for (newfd, file) in file_mapping.iter() {
         // NOTE: Files created using dup2 don't share file descriptor flags, so
@@ -222,6 +224,49 @@ fn run_child_process_inner(
     for var in container_config.process().env() {
         env.push(CString::new(var.as_str())?);
     }
+
+    // Switch to new unpriveleged user.
+    // TODO: Make this dynamic
+    let child_uid = nix::unistd::Uid::from_raw(100001);
+    let child_gid = nix::unistd::Gid::from_raw(100001);
+
+    nix::unistd::setgroups(&[child_gid])?;
+
+    nix::unistd::setresuid(child_uid, child_uid, child_uid)?;
+    nix::unistd::setresgid(child_gid, child_gid, child_gid)?;
+    let _ = nix::unistd::setfsuid(child_uid);
+    let _ = nix::unistd::setfsgid(child_gid);
+
+    // Drop all capabilities
+
+    let hdr = cap_user_header {
+        version: LINUX_CAPABILITY_VERSION_3,
+        pid: unsafe { libc::getpid() }
+    };
+
+    let data = cap_user_data {
+        effective: 0,
+        permitted: 0,
+        inheritable: 0,
+    };
+
+    let r = unsafe { libc::syscall(libc::SYS_capset, &hdr, &data) };
+
+    if r != 0 {
+        return Err(format_err!("Failed to drop capabilities with error code {}", r));
+    }
+
+    let r = unsafe {
+        libc::prctl(libc::PR_CAP_AMBIENT, libc::PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0)
+    };
+    if r != 0 {
+        return Err(err_msg("Failed to clear ambient capabilities"));
+    }
+
+    // TODO: REmove all bounding with PR_CAPBSET_DROP
+
+    // TODO: Remove FS capabilities?
+
 
     nix::unistd::execve(&argv[0], &argv, &env)?;
 

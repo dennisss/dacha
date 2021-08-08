@@ -1,4 +1,4 @@
-extern crate common;
+#[macro_use] extern crate common;
 extern crate sstable;
 
 use common::async_std::prelude::*;

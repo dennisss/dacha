@@ -36,7 +36,9 @@ pub mod task;
 pub mod signals;
 pub mod shutdown;
 pub mod future;
+pub mod cancellation;
 
+pub use cancellation::CancellationToken;
 pub use async_trait::*;
 pub use lazy_static::*;
 pub use failure::Fail;

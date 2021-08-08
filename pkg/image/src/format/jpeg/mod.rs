@@ -19,6 +19,7 @@ use segments::*;
 use std::f32::consts::PI;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::path::Path;
 
 const START_OF_IMAGE: &[u8] = &[0xff, 0xd8]; // SOI
 const END_OF_IMAGE: u8 = 0xd9; // EOI
@@ -239,7 +240,7 @@ impl<'a, T: Read> Read for StuffedReader<'a, T> {
 // range.
 
 impl JPEG {
-    pub fn open(path: &str) -> Result<JPEG> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<JPEG> {
         let mut file = File::open(path)?;
 
         // TODO: Limit max size of the jpeg

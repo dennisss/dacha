@@ -70,7 +70,7 @@ struct RequestHandlerWrap<Func, Arg> {
 
 #[async_trait]
 impl<
-        Arg: Send + Sync,
+        Arg: 'static + Send + Sync,
         Func: 'static
             + Send
             + Sync
@@ -106,25 +106,12 @@ pub async fn run_http_server<
     func: Func,
     arg: Arc<Arg>,
 ) {
-    let server = http::Server::new(RequestHandlerWrap { func, arg });
+    let mut server = http::Server::new(RequestHandlerWrap { func, arg }, http::ServerOptions::default());
 
-    let (tx, rx) = common::async_std::channel::bounded(1);
+    server.set_shutdown_token(common::shutdown::new_shutdown_token());
 
-    let tx1 = tx.clone();
-    let handle = common::async_std::task::spawn(async move {
-        println!("Listening on http://localhost:{}", port);
-        server.run(port).await;
-        tx1.send(()).await;
-    });
-
-    let tx2 = tx.clone();
-    ctrlc::set_handler(move || {
-        // Shutdown the server
-        tx2.try_send(());
-    })
-    .expect("Error setting Ctrl-C handler");
-
-    rx.recv().await;
+    println!("Listening on http://localhost:{}", port);
+    server.run(port).await.unwrap();
 
     println!("Shutdown!")
 }

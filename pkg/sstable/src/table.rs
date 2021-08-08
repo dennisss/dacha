@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::ops::{Deref, Index};
+use std::path::Path;
 use std::slice::SliceIndex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -65,7 +66,11 @@ struct SSTableState {
 */
 
 impl SSTable {
-    pub async fn open(path: &str) -> Result<Self> {
+    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Self::open_impl(path.as_ref()).await
+    }
+
+    async fn open_impl(path: &Path) -> Result<Self> {
         // TODO: Validate that the entire file is accounted for in the block handles.
 
         let mut file = File::open(path).await?;
@@ -706,6 +711,8 @@ pub struct SSTableIterator {
 
 // Simpler strategy is to copy it, but I'd like to avoid copying potentially
 
+// TODO: Uncomment this.
+/*
 impl SSTableIterator {
     async fn next<'a>(&'a mut self) -> Option<Result<KeyValuePair<'a>>> {
         loop {
@@ -768,3 +775,4 @@ impl SSTableIterator {
         Ok(())
     }
 }
+*/

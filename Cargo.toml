@@ -40,7 +40,8 @@ members = [
 	"pkg/rpi",
 	"pkg/home_hub",
 	"pkg/usb",
-	"pkg/container"
+	"pkg/container",
+	"pkg/dymo"
 ]
 
 [profile.dev]

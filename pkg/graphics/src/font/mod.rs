@@ -670,7 +670,11 @@ pub struct OpenTypeFont {
 }
 
 impl OpenTypeFont {
-    pub async fn open(path: &str) -> Result<Self> {
+    pub async fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+        Self::open_impl(path.as_ref()).await
+    }
+
+    async fn open_impl(path: &std::path::Path) -> Result<Self> {
         let mut f = File::open(path).await?;
 
         let mut buf = vec![];
@@ -941,6 +945,39 @@ pub enum Paint {
     Solid(Color),
 }
 
+pub trait CanvasFontExt {
+    fn fill_text(&mut self, x: f32, y: f32, font: &OpenTypeFont, text: &str, font_size: f32, color: &Color) -> Result<()>;
+}
+
+impl CanvasFontExt for Canvas {
+    fn fill_text(&mut self, mut x: f32, y: f32, font: &OpenTypeFont, text: &str, font_size: f32, color: &Color) -> Result<()> {
+        for c in text.chars() {
+            let char_code = c as u32;
+            if char_code > u16::MAX as u32 {
+                return Err(err_msg("Character overflowed supported range"));
+            }
+
+            let (g, metrics) = font.char_glyph(char_code as u16)?;
+
+            self.save();
+
+            let scale = font_size / (font.head.units_per_em as f32);
+
+            self.translate(-1.0 * (metrics.left_side_bearing as f32), 0.0);
+            self.scale(scale, -1.0 * scale);
+            self.translate(x, y);
+
+            draw_glyph(self, &g, &color)?;
+
+            self.restore()?;
+
+            x += (metrics.advance_width as f32) * scale;
+        }
+        
+        Ok(())
+    }
+}
+
 pub async fn open_font() -> Result<()> {
     // TODO: Verify the encoding/platform and that there is exactly one subtable.
     //    println!(
@@ -951,13 +988,13 @@ pub async fn open_font() -> Result<()> {
     //
     //    return Ok(());
 
-    let font = OpenTypeFont::open("testdata/noto-sans.ttf").await?;
+    let font = OpenTypeFont::open(project_path!("testdata/noto-sans.ttf")).await?;
 
     const HEIGHT: usize = 650;
     const WIDTH: usize = 800;
     const SCALE: usize = 4;
 
-    let mut canvas = Canvas::create(HEIGHT, WIDTH, SCALE);
+    let canvas = Canvas::create(HEIGHT, WIDTH, SCALE);
 
     draw_loop(canvas, |canvas, window| {
         canvas.drawing_buffer.clear_white();
@@ -967,32 +1004,16 @@ pub async fn open_font() -> Result<()> {
         // - given some text, the width of that text.
         // -
 
-        let text = b"Hello world $_%!";
+        let text = "Hello world $_%!";
 
-        let mut x = 10.0;
-        let mut y = 300.0;
+        let x = 10.0;
+        let y = 300.0;
 
         let font_size = 30.0; // 14px font.
 
         let color = Color::from_slice_with_shape(3, 1, &[0, 0, 0]);
 
-        for c in text {
-            let (g, metrics) = font.char_glyph(*c as u16)?;
-
-            canvas.save();
-
-            let scale = font_size / (font.head.units_per_em as f32);
-
-            canvas.translate(-1.0 * (metrics.left_side_bearing as f32), 0.0);
-            canvas.scale(scale, -1.0 * scale);
-            canvas.translate(x, y);
-
-            draw_glyph(canvas, &g, &color)?;
-
-            canvas.restore()?;
-
-            x += (metrics.advance_width as f32) * scale;
-        }
+        canvas.fill_text(x, y, &font, text, font_size, &color)?;
 
         {
             let red = Color::from_slice_with_shape(3, 1, &[255, 0, 0]);
@@ -1041,7 +1062,7 @@ async fn draw_loop<F: FnMut(&mut Canvas, &minifb::Window) -> Result<()>>(
     mut canvas: Canvas,
     mut f: F,
 ) -> Result<()> {
-    let mut window_options = minifb::WindowOptions::default();
+    let window_options = minifb::WindowOptions::default();
 
     let mut window = minifb::Window::new(
         "Image",

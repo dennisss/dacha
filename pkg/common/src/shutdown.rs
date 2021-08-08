@@ -1,12 +1,11 @@
 // Utilities for 
 
-use std::future::Future;
 use std::sync::Once;
 use std::sync::Mutex;
 
 use async_std::channel;
 
-
+use crate::CancellationToken;
 use crate::signals::*;
 use crate::future::race;
 
@@ -40,6 +39,8 @@ fn get_shutdown_state() -> &'static Mutex<ShutdownState> {
     }
 }
 
+/// Background task used to block until a unix shutdown signal is received and then notify all
+/// subscribers.
 async fn signal_waiter() {
     let mut sigint_handler = register_signal_handler(Signal::SIGINT).unwrap();
     let mut sigterm_handler = register_signal_handler(Signal::SIGTERM).unwrap();
@@ -64,44 +65,22 @@ impl<F: 'static + Send + Sync + FnMut() -> Fut, Fut: std::future::Future<Output=
     }
 }
 
-pub trait IntoShutdownHandler {
-    fn into_shutdown_handler(self) -> Box<dyn ShutdownHandler>; 
+struct ShutdownToken {
+    receiver: channel::Receiver<()>
 }
 
-impl<T: ShutdownHandler> IntoShutdownHandler for T {
-    fn into_shutdown_handler(self) -> Box<dyn ShutdownHandler> {
-        Box::new(self)
+#[async_trait]
+impl CancellationToken for ShutdownToken {
+    async fn wait(&self) {
+        let _ = self.receiver.recv().await;
     }
 }
 
-// impl<F: 'static + Send + Sync + FnOnce() -> Fut, Fut: std::future::Future<Output=()> + Send> IntoShutdownHandler for F {
-//     fn into_shutdown_handler(self) -> Box<dyn ShutdownHandler> {
-//         todo!()
-//     }
-// }
-
-pub fn new_shutdown_token() -> impl Future<Output=()> {
+pub fn new_shutdown_token() -> Box<dyn CancellationToken> {
     let receiver = {
         let shutdown_state = get_shutdown_state().lock().unwrap();
         shutdown_state.receiver.clone()
     };
 
-    async move {
-        let _ = receiver.recv().await;
-    }
+    Box::new(ShutdownToken { receiver })
 }
-
-// pub async fn register_shutdown_handler<H: IntoShutdownHandler>(handler: H) {
-//     register_shutdown_handler_impl(handler.into_shutdown_handler()).await;
-// }
-
-// async fn register_shutdown_handler_impl(mut handler: Box<dyn ShutdownHandler>) {
-//     let mut shutdown_state = get_shutdown_state().lock().await;
-//     if shutdown_state.is_shutting_down {
-//         drop(shutdown_state);
-//         handler.shutdown().await;
-//         return;
-//     }
-
-//     shutdown_state.handlers.push(handler);
-// }

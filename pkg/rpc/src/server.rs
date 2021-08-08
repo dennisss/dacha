@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::marker::PhantomData;
 
+use common::CancellationToken;
 use common::bytes::Buf;
 use common::errors::*;
 use common::async_std::channel;
@@ -23,7 +24,7 @@ use crate::status::*;
 
 pub struct Http2Server {
     handler: Http2ResponseHandler,
-    shutdown_token: Option<Pin<Box<dyn Future<Output=()>>>>
+    shutdown_token: Option<Box<dyn CancellationToken>>
 }
 
 impl Http2Server {
@@ -46,18 +47,18 @@ impl Http2Server {
         Ok(())
     }
 
-    pub fn set_shutdown_token<F: 'static + Future<Output=()>>(&mut self, token: F) {
-        self.shutdown_token = Some(Box::pin(token));
+    pub fn set_shutdown_token(&mut self, token: Box<dyn CancellationToken>) {
+        self.shutdown_token = Some(token);
     }
 
-    pub async fn run(mut self, port: u16) -> Result<()> {
+    pub fn run(mut self, port: u16) -> impl Future<Output=Result<()>> + 'static {
         // TODO: Force usage of HTTP2.
         let mut server = http::Server::new(self.handler, http::ServerOptions::default());
         if let Some(token) = self.shutdown_token.take() {
             server.set_shutdown_token(token);
         }
 
-        server.run(port).await
+        server.run(port)
     }
 }
 

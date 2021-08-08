@@ -284,8 +284,6 @@ impl AuthEncAD for ChaCha20Poly1305 {
         let mut chacha = ChaCha20::new(key, nonce);
         let otk = chacha.poly1305_keygen();
 
-        println!("OTK: {:x?}", &otk);
-
         chacha.encrypt(plaintext, ciphertext);
 
 

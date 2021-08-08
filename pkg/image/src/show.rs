@@ -1,9 +1,10 @@
-use crate::Image;
 use common::errors::*;
+
+use crate::Image;
 
 impl Image<u8> {
     pub fn show(&self) -> Result<()> {
-        let mut window_options = minifb::WindowOptions::default();
+        let window_options = minifb::WindowOptions::default();
 
         let mut window =
             minifb::Window::new("Image", self.width(), self.height(), window_options).unwrap();

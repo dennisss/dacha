@@ -1,3 +1,4 @@
+pub mod main;
 mod backoff;
 
 use std::collections::HashMap;
@@ -501,6 +502,7 @@ impl ContainerNodeService for Node {
         println!("Log opened!");
 
         // TODO: This loop seems to keep running even if I close the request
+        let mut num_ended=  0;
         loop {
             let entry = log_reader.read().await?;
             if let Some(entry) = entry {
@@ -510,7 +512,10 @@ impl ContainerNodeService for Node {
 
                 // TODO: Check that we got an end_stream on all the streams.
                 if end_stream {
-                    break;
+                    num_ended += 1;
+                    if num_ended == 2 {
+                        break;
+                    }
                 }
             } else {
                 // TODO: Replace with receiving a notification.

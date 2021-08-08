@@ -91,6 +91,8 @@ pub(crate) struct DeviceState {
 
     pub(crate) fd: libc::c_int,
 
+    pub(crate) has_error: std::sync::Mutex<bool>,
+
     /// All pending transfers on the this device.
     /// This is the primary owner of the DeviceTransfers.
     ///
@@ -290,7 +292,26 @@ impl Device {
                 std::mem::transmute::<&mut DeviceTransferState, _>(transfer_mut);
 
             // Submit it!
-            usbdevfs_submiturb(self.state.fd, &mut transfer_mut.urb)?;
+            // Error code meanings are documented here:
+            // https://www.kernel.org/doc/html/latest/driver-api/usb/error-codes.html#error-codes-returned-by-usb-submit-urb
+            match usbdevfs_submiturb(self.state.fd, &mut transfer_mut.urb) {
+                Ok(_) => {},
+                Err(nix::Error::Sys(nix::errno::Errno::ENODEV)) => {
+                    return Err(crate::Error {
+                        kind: crate::ErrorKind::DeviceDisconnected,
+                        message: String::new()
+                    }.into());
+                }
+                Err(nix::Error::Sys(nix::errno::Errno::ENOENT)) => {
+                    return Err(crate::Error {
+                        kind: crate::ErrorKind::EndpointNotFound,
+                        message: String::new()
+                    }.into());
+                }
+                Err(e) => {
+                    return Err(e.into());
+                }
+            };
         }
 
         transfers.active.insert(id, transfer.clone());
