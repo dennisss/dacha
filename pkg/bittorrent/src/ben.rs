@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
-use automata::regexp::vm::instance::RegExpMatch;
+use automata::regexp::vm::instance::{RegExpMatch, StaticRegExpMatch};
 use common::bytes::BytesMut;
 use common::errors::*;
 use parsing::*;
@@ -41,7 +41,7 @@ impl BENValue {
     }
 
     pub fn parse(mut input: &[u8]) -> Result<(Self, &[u8])> {
-        let m: RegExpMatch = TAG
+        let m: StaticRegExpMatch = TAG
             .exec(input)
             .ok_or_else(|| err_msg("Unknown BEN tag"))?;
         input = &input[m.last_index()..];

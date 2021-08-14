@@ -312,6 +312,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "blinkstick"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "usb",
+]
+
+[[package]]
 name = "blocking"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

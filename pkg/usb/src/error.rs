@@ -10,7 +10,7 @@ impl std::fmt::Display for Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ErrorKind {
     ///
     DeviceClosing,

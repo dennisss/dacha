@@ -22,7 +22,9 @@ message ContainerProcess {
     // "KEY=VALUE".
     repeated string env = 2;
 
-
+    // If true, then we'll create a pty device that is cloned to stdin/out/err file descriptors
+    // on the container process.
+    bool terminal = 3;
 }
 
 message ContainerMount {

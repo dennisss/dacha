@@ -7,6 +7,7 @@ use std::thread;
 use common::async_std::fs;
 use common::{async_std::path::Path, errors::*, futures::StreamExt};
 
+use crate::descriptor_iter::{Descriptor, DescriptorIter};
 use crate::descriptors::*;
 use crate::linux::device::*;
 use crate::linux::transfer::*;
@@ -253,6 +254,18 @@ impl Context {
         Ok(())
     }
 
+    pub async fn open_device(self: &Arc<Self>, vendor_id: u16, product_id: u16) -> Result<Device> {
+        let mut device = None;
+        for device_entry in self.enumerate_devices().await? {
+            let device_desc = device_entry.device_descriptor()?;
+            if device_desc.idVendor == vendor_id && device_desc.idProduct == product_id {
+                device = Some(device_entry.open().await?);
+            }
+        }
+
+        device.ok_or_else(|| err_msg("No device found"))
+    }
+
     /// Lists all USB devices attached to the computer.
     ///
     /// Internally this uses sysfs for similar reasons to libusb. In particular
@@ -304,7 +317,7 @@ impl Context {
         })
     }
 
-    fn add_device(&self, state: Arc<DeviceState>) -> Result<usize> {
+    pub(crate) fn add_device(&self, state: Arc<DeviceState>) -> Result<usize> {
         let mut devices = self.state.devices.lock().unwrap();
 
         for (_, device_state) in devices.open_devices.iter() {
@@ -350,9 +363,7 @@ pub struct DeviceEntry {
 
 impl DeviceEntry {
     pub fn device_descriptor(&self) -> Result<DeviceDescriptor> {
-        let mut iter = DescriptorIter {
-            data: &self.raw_descriptors,
-        };
+        let mut iter = DescriptorIter::new(&self.raw_descriptors);
 
         match iter.next() {
             Some(Ok(Descriptor::Device(d))) => Ok(d),
@@ -363,31 +374,6 @@ impl DeviceEntry {
     }
 
     pub async fn open(&self) -> Result<Device> {
-        let mut desc_iter = DescriptorIter {
-            data: &self.raw_descriptors,
-        };
-
-        // TODO: Deduplicate with device_descriptor function.
-        let device_descriptor = match desc_iter.next() {
-            Some(Ok(Descriptor::Device(d))) => Ok(d),
-            _ => Err(err_msg(
-                "Expected first cached descriptor to be a device descriptor",
-            )),
-        }?;
-
-        let mut endpoint_descriptors = HashMap::new();
-        for r in desc_iter {
-            let desc = r?;
-            match desc {
-                Descriptor::Endpoint(e) => {
-                    if endpoint_descriptors.insert(e.bEndpointAddress, e).is_some() {
-                        return Err(err_msg("Device advertising duplicate endpoint addresses"));
-                    }
-                }
-                _ => {}
-            }
-        }
-
         let path = Path::new(USBDEVFS_PATH).join(format!("{:03}/{:03}", self.busnum, self.devnum));
 
         let path = CString::new(path.as_os_str().as_bytes())?;
@@ -401,95 +387,12 @@ impl DeviceEntry {
             dev_num: self.devnum,
             has_error: std::sync::Mutex::new(false),
             fd,
+            fd_closed: std::sync::Mutex::new(false),
             transfers: std::sync::Mutex::new(DeviceStateTransfers::default()),
         });
 
-        // TODO: If this fails, we still need to close the file descriptor.
-        let id = self.context.add_device(state.clone())?;
-
-        Ok(Device {
-            id,
-            device_descriptor,
-            endpoint_descriptors,
-            context: self.context.clone(),
-            state,
-            closed: false,
-        })
+        // TODO: If this fails, then we need to remove the device from the list.
+        Device::create(self.context.clone(), state, &self.raw_descriptors)
     }
 }
 
-enum Descriptor {
-    Device(DeviceDescriptor),
-    Configuration(ConfigurationDescriptor),
-    Endpoint(EndpointDescriptor),
-    Interface(InterfaceDescriptor),
-    // String(StringDescriptor),
-    Unknown(Vec<u8>),
-}
-
-/// Iterates over a list of concatenated USB descriptors in binary form.
-struct DescriptorIter<'a> {
-    data: &'a [u8],
-}
-
-impl<'a> DescriptorIter<'a> {
-    fn next_impl(&mut self) -> Result<Option<Descriptor>> {
-        if self.data.len() == 0 {
-            return Ok(None);
-        }
-
-        if self.data.len() < 2 {
-            return Err(err_msg("Descriptor too short"));
-        }
-
-        // First two bytes of all descriptor types are the same.
-        let len = self.data[0] as usize;
-        let typ = DescriptorType::from_value(self.data[1]);
-
-        if self.data.len() < len {
-            return Err(err_msg("Descriptor overflows buffer"));
-        }
-
-        let raw_desc = &self.data[0..len];
-        self.data = &self.data[len..];
-
-        fn decode_fixed_len_desc<T: Copy>(raw_desc: &[u8]) -> Result<T> {
-            if raw_desc.len() != std::mem::size_of::<T>() {
-                return Err(err_msg("Descriptor is the wrong size"));
-            }
-
-            // TODO: This transmute assumes that we are running on a little-endian system
-            // (same as the wire endian of the USB descriptors).
-            Ok(*unsafe { std::mem::transmute::<_, &T>(raw_desc.as_ptr()) })
-        }
-
-        Ok(Some(match typ {
-            Some(DescriptorType::DEVICE) => Descriptor::Device(decode_fixed_len_desc(raw_desc)?),
-            Some(DescriptorType::CONFIGURATION) => {
-                Descriptor::Configuration(decode_fixed_len_desc(raw_desc)?)
-            }
-            Some(DescriptorType::ENDPOINT) => {
-                Descriptor::Endpoint(decode_fixed_len_desc(raw_desc)?)
-            }
-            Some(DescriptorType::INTERFACE) => {
-                Descriptor::Interface(decode_fixed_len_desc(raw_desc)?)
-            }
-            _ => {
-                // TODO: Support all the types supported by linux. See:
-                // https://github.com/torvalds/linux/blob/master/include/uapi/linux/usb/ch9.h
-                Descriptor::Unknown(raw_desc.to_vec())
-            }
-        }))
-    }
-}
-
-impl<'a> std::iter::Iterator for DescriptorIter<'a> {
-    type Item = Result<Descriptor>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.next_impl() {
-            Ok(v) => v.map(|v| Ok(v)),
-            Err(e) => Some(Err(e)),
-        }
-    }
-}

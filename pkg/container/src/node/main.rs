@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use common::async_std::task;
+use nix::mount::MsFlags;
 use nix::unistd::Pid;
 use protobuf::text::parse_text_proto;
 use nix::sched::CloneFlags;
@@ -163,6 +164,7 @@ pub fn main() -> Result<()> {
     println!("Running as group: {}", group_entry.name);
 
     // Validate that all ids are consistent and there is no chance of escalating them later.
+    // NOTE: We don't run setgroups() so whatever supplementary groups we already have will be preserved. 
     nix::unistd::setresuid(uid.real, uid.real, uid.real)?;
     nix::unistd::setresgid(gid.real, gid.real, gid.real)?;
     let _ = nix::unistd::setfsuid(uid.real);
@@ -190,10 +192,12 @@ fn spawn_root_process() -> Result<(Pid, std::fs::File)> {
 
     let mut stack = [0u8; 6*1024*1024];
     let mut setup_reader_ref = Some(setup_reader_ref);
+
+    // TODO: Verify that CLONE_NEWNS still allows us to inherit new mounts from the parent namespace.
     let pid = nix::sched::clone(
         Box::new(|| run_root_process(setup_reader_ref.take().unwrap().open().unwrap())),
         &mut stack,
-        CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWPID,
+        CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWPID | CloneFlags::CLONE_NEWNS,
         Some(libc::SIGCHLD),
     )?;
 
@@ -228,10 +232,13 @@ async fn run(mut setup_reader: std::fs::File) -> Result<()> {
     if unsafe { libc::prctl(libc::PR_SET_SECUREBITS, crate::capabilities::SECBITS_LOCKED_DOWN) } != 0 {
         return Err(err_msg("Failed to set PR_SET_SECUREBITS"));
     }
-    
-    println!("Done setup!");
 
-    // TODO: secure bits.
+    // Now that we are in a new PID namespace, we need to re-mount /proc so that all the /proc/[pid]
+    // files make sense.
+    nix::mount::mount(Some("proc"), "/proc", Some("proc"),
+    MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID | MsFlags::MS_NODEV, Option::<&str>::None)?;
+
+    println!("Done setup!");
 
 
     println!("Starting node!");

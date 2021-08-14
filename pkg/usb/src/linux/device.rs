@@ -43,6 +43,7 @@ Other Assumptions that we make:
 */
 
 use std::collections::HashMap;
+use std::os::unix::prelude::AsRawFd;
 use std::sync::{Arc, Weak};
 
 use common::async_std::channel;
@@ -52,6 +53,7 @@ use common::async_std::task;
 use common::task::ChildTask;
 use common::{async_std::path::Path, errors::*, futures::StreamExt};
 
+use crate::descriptor_iter::{Descriptor, DescriptorIter};
 use crate::descriptors::*;
 use crate::endpoint::*;
 use crate::language::Language;
@@ -68,20 +70,21 @@ use crate::linux::usbdevfs::*;
 /// The Context used to open this device similarly won't be destroyed until all
 /// Device objects associated with it are dropped.
 pub struct Device {
-    pub(crate) id: usize,
+    id: usize,
 
-    pub(crate) device_descriptor: DeviceDescriptor,
-    pub(crate) endpoint_descriptors: HashMap<u8, EndpointDescriptor>,
+    descriptors: Vec<Descriptor>,
+    device_descriptor: DeviceDescriptor,
+    endpoint_descriptors: HashMap<u8, EndpointDescriptor>,
 
     /// Context that was used to open this device.
     /// NOTE: As the Context manages the background events thread, it must live
     /// longer than the device, otherwise most of the Device methods will be
     /// broken.
-    pub(crate) context: Arc<Context>,
+    context: Arc<Context>,
 
-    pub(crate) state: Arc<DeviceState>,
+    state: Arc<DeviceState>,
 
-    pub(crate) closed: bool,
+    closed: bool,
 }
 
 /// NOTE: The cleanup of data in this struct is handled by Device::drop().
@@ -90,6 +93,7 @@ pub(crate) struct DeviceState {
     pub(crate) dev_num: usize,
 
     pub(crate) fd: libc::c_int,
+    pub(crate) fd_closed: std::sync::Mutex<bool>,
 
     pub(crate) has_error: std::sync::Mutex<bool>,
 
@@ -100,6 +104,26 @@ pub(crate) struct DeviceState {
     /// close the fd).
     pub(crate) transfers: std::sync::Mutex<DeviceStateTransfers>,
 }
+
+impl DeviceState {
+    fn close_fd(&self) {
+        let mut closed = self.fd_closed.lock().unwrap();
+        if !*closed {
+            // TODO: Check return value.
+            unsafe { libc::close(self.fd) };
+            *closed = true;
+        }
+    }
+}
+
+impl Drop for DeviceState {
+    fn drop(&mut self) {
+        // NOTE: This will only have an effect when the DeviceState is dropped before the
+        // Device object was constructed.
+        self.close_fd();
+    }
+}
+
 
 #[derive(Default)]
 pub(crate) struct DeviceStateTransfers {
@@ -115,12 +139,60 @@ impl Drop for Device {
     fn drop(&mut self) {
         if !self.closed {
             // TODO: Print error?
-            self.close_impl();
+            if let Err(err) = self.close_impl() {
+                eprintln!("usb::Device failed to close: {}", err);
+            }
         }
     }
 }
 
 impl Device {
+    pub(crate) fn create(
+        context: Arc<Context>,
+        state: Arc<DeviceState>,
+        raw_descriptors: &[u8]
+    ) -> Result<Self> {
+        let mut descriptors = vec![];
+        for desc in DescriptorIter::new(&raw_descriptors) {
+            descriptors.push(desc?);
+        }
+
+        // TODO: Deduplicate with device_descriptor function in the Context class.
+        let device_descriptor = match descriptors.first() {
+            Some(Descriptor::Device(d)) => Ok(d.clone()),
+            _ => Err(err_msg(
+                "Expected first cached descriptor to be a device descriptor",
+            )),
+        }?;
+
+        let mut endpoint_descriptors = HashMap::new();
+        for desc in &descriptors {
+            match desc {
+                Descriptor::Endpoint(e) => {
+                    if endpoint_descriptors.insert(e.bEndpointAddress, e.clone()).is_some() {
+                        return Err(err_msg("Device advertising duplicate endpoint addresses"));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // NOTE: This must run at the very end as we need to ensure that the Device object is always
+        // constructed when the device is added. Otherwise remove_device() won't be called on Drop
+        // of the Device.
+        let id = context.add_device(state.clone())?;
+        
+        Ok(Self {
+            id,
+            descriptors,
+            device_descriptor,
+            endpoint_descriptors,
+            context,
+            state,
+            closed: false
+        })
+    }
+
     /// Closes the device.
     /// Any pending transfers will be immediately cancelled.
     ///
@@ -137,11 +209,12 @@ impl Device {
         // listening for events.
         self.context.remove_device(self.id)?;
 
-        // Wait for the background thread to perform at least one cycle (to ensure that
-        // it is no lpnger waiting on the device) TODO:
-
-        // TODO: Check return value.
-        unsafe { libc::close(self.state.fd) };
+        // Close the file. This ensures that linux releases references to any still pending
+        // transfers.
+        //
+        // Must occur after the remove_device() call to ensure that the context doesn't try
+        // polling the file more than once.
+        self.state.close_fd();
 
         // Wait until another background thread cycle passes so that we know that the
         // background thread isn't working on anything related to our fd.
@@ -168,6 +241,10 @@ impl Device {
         // }
 
         Ok(())
+    }
+
+    pub fn descriptors(&self) -> &[Descriptor] {
+        &self.descriptors
     }
 
     pub fn reset(&self) -> Result<()> {

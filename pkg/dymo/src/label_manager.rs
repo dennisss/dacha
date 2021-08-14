@@ -17,6 +17,14 @@ const USB_MAX_PACKET_SIZE: usize = 64;
 
 const STATUS_LENGTH: usize = 8;
 
+/*
+HID Details:
+- No report id is used (report_id = 0)
+- One Input report of size 8 x 8 bits
+- One Output report of size 8 x 64 bits.
+*/
+
+
 pub struct LabelManager {
     device: usb::Device
 }
@@ -30,20 +38,8 @@ impl LabelManager {
 
     pub async fn open_with_context(context: Arc<usb::Context>) -> Result<Self> {
 
-        let mut device = {
-            let mut device = None;
-    
-            let entries = context.enumerate_devices().await?;
-            for device_entry in entries {
-                let device_desc = device_entry.device_descriptor()?;
-                if device_desc.idVendor == VENDOR_ID && device_desc.idProduct == PRODUCT_ID {
-                    device = Some(device_entry.open().await?);
-                }
-            }
-    
-            device.ok_or(err_msg("No device found"))?
-        };
-    
+        let mut device = context.open_device(VENDOR_ID, PRODUCT_ID).await?;
+
         // TODO: Set 1 second timeout
         let languages = device.read_languages().await?;
         if languages.len() != 1 {

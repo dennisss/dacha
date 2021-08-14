@@ -407,20 +407,23 @@ impl RecordWriter {
         let rem = BLOCK_SIZE - (extent % BLOCK_SIZE);
         if rem < RECORD_HEADER_SIZE {
             extent += rem;
-            self.file.set_len(extent).await?;
+            self.file.set_len(extent).await?; // TODO: explicitly file with zeros instead.
             self.file.seek(SeekFrom::End(0)).await?;
         }
 
         let mut header = [0u8; RECORD_HEADER_SIZE as usize];
 
         let mut pos = 0;
+        let mut first_record = true;
         while pos < data.len() {
             // TODO: Check for overflow although that should never happen if we did everything right.
             let rem = (BLOCK_SIZE - (extent % BLOCK_SIZE)) - RECORD_HEADER_SIZE;
             
             let take = std::cmp::min(rem as usize, data.len() - pos);
 
-            let typ = if pos == 0 {
+            // NOTE: It is insufficient to check that pos == 0 as we may have written a zero length packet
+            // in the previous block.
+            let typ = if first_record {
                 if take == data.len() {
                     RecordType::FULL
                 } else {
@@ -434,11 +437,13 @@ impl RecordWriter {
                 }
             } as u8;
 
+            let data_slice = &data[pos..(pos + take)];
+
             // Checksum of [ type, data ]
             let sum = {
                 let mut hasher = CRC32CHasher::new();
-                hasher.update(std::slice::from_ref(&typ));
-                hasher.update(data);
+                hasher.update(&[typ]);
+                hasher.update(data_slice);
                 hasher.masked()
             };
 
@@ -447,14 +452,17 @@ impl RecordWriter {
             header[6] = typ;
 
             self.file.write_all(&header).await?;
-            self.file.write_all(&data[pos..(pos + take)]).await?;
+            self.file.write_all(data_slice).await?;
             pos += take;
             extent += (header.len() + take) as u64;
+            first_record = false;
         }
 
-        // TODO: Instead do this with a timeout if we don't care about immediately writing.
-        self.file.flush().await?;
+        Ok(())
+    }
 
+    pub async fn flush(&mut self) -> Result<()> {
+        self.file.flush().await?;
         Ok(())
     }
 }

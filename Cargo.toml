@@ -41,7 +41,8 @@ members = [
 	"pkg/home_hub",
 	"pkg/usb",
 	"pkg/container",
-	"pkg/dymo"
+	"pkg/dymo",
+	"pkg/blinkstick"
 ]
 
 [profile.dev]

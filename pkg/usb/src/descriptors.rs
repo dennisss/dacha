@@ -1,5 +1,7 @@
 #![allow(non_camel_case_types, non_snake_case)]
 
+use common::errors::*;
+
 // NOTE: 0 means a null string reference.
 // NOTE: All fields are little endian
 
@@ -15,6 +17,8 @@ pub struct SetupPacket {
     pub wLength: u16,
 }
 
+// This is used as the value of SetupPacket::bmRequestType
+//
 // Table 9-4 of USB2.0 Spec
 pub enum StandardRequestType {
     GET_STATUS = 0,
@@ -30,6 +34,8 @@ pub enum StandardRequestType {
     SYNCH_FRAME = 12,
 }
 
+// This is used as the value of DeviceDescriptor::bDescriptorType
+//
 // Table 9-5 of USB2.0 Spec
 #[derive(Debug, PartialEq)]
 pub enum DescriptorType {
@@ -124,6 +130,11 @@ pub struct InterfaceDescriptor {
     pub iInterface: u8,
 }
 
+enum_def!(InterfaceClass u8 =>
+    Unknown = 0,
+    HID = 3
+);
+
 // Table 9-13 of USB2.0 Spec
 #[derive(Clone, Copy)]
 #[repr(packed)]
@@ -136,9 +147,9 @@ pub struct EndpointDescriptor {
     pub bInterval: u8,
 }
 
-pub enum USBLangId {
-    EnglishUS = 0x0409,
-}
+// pub enum USBLangId {
+//     EnglishUS = 0x0409,
+// }
 
 // Table 9-16 of USB2.0 Spec
 // NOTE: Special care must be taken to serialize or de-serialize this descriptor

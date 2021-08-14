@@ -53,6 +53,13 @@ impl Drop for FileReference {
 }
 
 impl FileReference {
+    
+    pub fn path(path: &str) -> Self {
+        Self {
+            handle: FileReferenceHandle::Path(path.to_string())
+        }
+    }
+
     pub fn open(mut self) -> Result<std::fs::File> {
         let file = match &self.handle {
             FileReferenceHandle::None => panic!("Opening empty FileReference"),

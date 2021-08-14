@@ -73,6 +73,13 @@ message BlobData {
     bytes data = 2;
 }
 
+message WriteInputRequest {
+
+    string task_name = 1;
+
+    bytes data = 2;
+}
+
 message EmptyMessage {
 
 }
@@ -85,6 +92,10 @@ service ContainerNode {
     // rpc Start (StartRequest) returns (StartResponse);
 
     rpc StartTask (StartTaskRequest) returns (StartTaskResponse);
+
+    rpc WriteInput (stream WriteInputRequest) returns (EmptyMessage);
+
+    // rpc ExecProcess (ExecProcess)
 
     // Streams back log entries for a single task.
     rpc GetLogs(LogRequest) returns (stream LogEntry);

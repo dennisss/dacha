@@ -300,6 +300,38 @@ impl Node {
                     destination: "/usr/lib"
                     source: "/usr/lib"
                     options: ["bind", "ro"]
+                },
+                {
+                    destination: "/dev/pts"
+                    type: "devpts"
+                    source: "devpts"
+                    options: [
+                        "nosuid",
+                        "noexec",
+                        "newinstance",
+                        "ptmxmode=0666",
+                        "gid=100001"
+                    ]
+                },
+                {
+                    destination: "/dev/null",
+                    source: "/dev/null",
+                    options: ["bind"]
+                },
+                {
+                    destination: "/dev/zero",
+                    source: "/dev/zero",
+                    options: ["bind"]
+                },
+                {
+                    destination: "/dev/random",
+                    source: "/dev/random",
+                    options: ["bind"]
+                },
+                {
+                    destination: "/dev/urandom",
+                    source: "/dev/urandom",
+                    options: ["bind"]
                 }
             ]
         "#,
@@ -524,6 +556,42 @@ impl ContainerNodeService for Node {
         }
 
         println!("Done logs!");
+
+        Ok(())
+    }
+
+    async fn WriteInput(
+        &self,
+        mut request: rpc::ServerStreamRequest<WriteInputRequest>,
+        _response: &mut rpc::ServerResponse<EmptyMessage>
+    ) -> Result<()> {
+
+        loop {
+            let input = match request.recv().await? {
+                Some(v) => v,
+                None => break
+            };
+
+            // TODO: If we require that all messages be for the same task_name and process id, then
+            // we can cache this value instead of looking it up every time.
+            let container_id = {
+                let state = self.shared.state.lock().await;
+                let task = state
+                    .tasks
+                    .iter()
+                    .find(|t| t.spec.name() == input.task_name())
+                    .ok_or_else(|| {
+                        Error::from(rpc::Status {
+                            code: rpc::StatusCode::NotFound,
+                            message: format!("No task found with name: {}", input.task_name()),
+                        })
+                    })?;
+    
+                task.container_id.clone().unwrap()
+            };
+
+            self.shared.runtime.write_to_stdin(&container_id, input.data()).await?;
+        }
 
         Ok(())
     }

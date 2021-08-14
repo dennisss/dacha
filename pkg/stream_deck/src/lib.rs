@@ -4,11 +4,47 @@ extern crate usb;
 
 use std::time::Duration;
 
-use common::async_std::future::timeout;
 use common::errors::*;
+use usb::hid::HIDDevice;
 
 const USB_CONFIG: u8 = 1;
 const USB_IFACE: u8 = 0;
+
+const KEY_STATE_REPORT_ID: u8 = 1;
+
+const KEY_IMAGE_REPORT_ID: u8 = 2;
+
+const FIRMWARE_VERSION_REPORT_ID: u8 = 5;
+
+const SERIAL_NUMBER_REPORT_ID: u8 = 6;
+
+/*
+Report 1: 8 x 511 (bit field) Input
+- Key state
+
+Report 2: 8 x 1023 (bitfield)  Output
+- Key image
+
+Report 3: 8 x 31 Feature (array)
+- Display timeout + Brightness
+
+Report 4: 8 x 31 Feature (array)
+
+Report 5: 8 x 31 Feature (array)
+- Firmware Version
+
+Report 6: 8 x 31 Feature (array)
+- Serial
+
+Report 7: 8 x 31 Feature (array)
+
+Report 8: 8 x 31 Feature (array)
+
+Report 9: 8 x 31 Feature (array)
+
+Report 10: 8 x 31 Feature (array)
+*/
+
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum KeyState {
@@ -27,26 +63,14 @@ fn read_null_terminated_string(data: &[u8]) -> Result<String> {
 }
 
 pub struct StreamDeckDevice {
-    device: usb::Device,
+    hid: HIDDevice,
 }
 
 impl StreamDeckDevice {
     pub async fn open() -> Result<Self> {
         let context = usb::Context::create()?;
 
-        let mut device = {
-            let mut device = None;
-
-            let entries = context.enumerate_devices().await?;
-            for device_entry in entries {
-                let device_desc = device_entry.device_descriptor()?;
-                if device_desc.idVendor == 0x0fd9 && device_desc.idProduct == 0x006d {
-                    device = Some(device_entry.open().await?);
-                }
-            }
-
-            device.ok_or(err_msg("No device found"))?
-        };
+        let device = context.open_device(0x0fd9, 0x006d).await?;
 
         // TODO: Set 1 second timeout
         let languages = device.read_languages().await?;
@@ -62,112 +86,36 @@ impl StreamDeckDevice {
 
         device.reset()?;
 
-        if device.kernel_driver_active(USB_IFACE)? {
-            println!("Detaching kernel driver.");
-            device.detach_kernel_driver(USB_IFACE)?;
-        }
+        let hid = HIDDevice::open_with_existing(device).await?;
 
-        device.set_active_configuration(USB_CONFIG)?;
-        device.claim_interface(USB_IFACE)?;
-        device.set_alternate_setting(USB_IFACE, 0)?;
-
-        /*
-
-
-
-        // let mut report = vec![
-        //     0x03, 0x08, 0x4e, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
-        //     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        //     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x31, 0x8e,
-        //     0x57, 0x84, 0x01, 0x00, 0x00
-        // ];
-
-        */
-
-        Ok(Self { device })
+        Ok(Self { hid })
     }
 
-    /*
-    Report Type: 0x08: Brightness
-
-    Firmware Version: 0x05
-    Serial Number 0x06
-
-    */
-
-    // TODO: Change all of these to use
-
     pub async fn get_serial_number(&self) -> Result<String> {
-        let mut report = vec![0u8; 32];
-
-        self.device
-            .read_control(
-                usb::descriptors::SetupPacket {
-                    bmRequestType: 0xA1,
-                    bRequest: usb::hid::HIDRequestType::GET_REPORT.to_value(),
-                    wValue: 0x0306,
-                    wIndex: 0,
-                    wLength: report.len() as u16,
-                },
-                &mut report,
-            )
-            .await?;
-
-        read_null_terminated_string(&report[2..])
+        let mut report = vec![0u8; 31];
+        self.hid.get_report(SERIAL_NUMBER_REPORT_ID, usb::hid::ReportType::Feature, &mut report).await?;
+        read_null_terminated_string(&report[1..])
     }
 
     pub async fn get_firmware_number(&self) -> Result<String> {
-        let mut report = vec![0u8; 32];
+        let mut report = vec![0u8; 31];
+        self.hid.get_report(FIRMWARE_VERSION_REPORT_ID, usb::hid::ReportType::Feature, &mut report).await?;
 
-        self.device
-            .read_control(
-                usb::descriptors::SetupPacket {
-                    bmRequestType: 0xA1,
-                    bRequest: usb::hid::HIDRequestType::GET_REPORT.to_value(),
-                    wValue: 0x0305,
-                    wIndex: 0,
-                    wLength: report.len() as u16,
-                },
-                &mut report,
-            )
-            .await?;
-
-        read_null_terminated_string(&report[6..])
+        read_null_terminated_string(&report[5..])
     }
 
     pub async fn set_brightness(&self, value: u8) -> Result<()> {
-        self.device
-            .write_control(
-                usb::descriptors::SetupPacket {
-                    bmRequestType: 0x21,
-                    bRequest: usb::hid::HIDRequestType::SET_REPORT.to_value(),
-                    wValue: 0x0303,
-                    wIndex: 0,
-                    wLength: 3 as u16,
-                },
-                &[0x03, 0x08, value],
-            )
-            .await
+        self.hid.set_report(3, usb::hid::ReportType::Feature, &[0x08, value]).await
     }
 
     pub async fn set_display_timeout(&self, seconds: usize) -> Result<()> {
-        let mut data = [0u8; 6];
-        data[0] = 0x03;
-        data[1] = 0x0d;
-        *array_mut_ref![data, 2, 4] = (seconds as u32).to_le_bytes();
+        let mut data = [0u8; 5];
+        data[0] = 0x0d;
+        *array_mut_ref![data, 1, 4] = (seconds as u32).to_le_bytes();
 
-        self.device
-            .write_control(
-                usb::descriptors::SetupPacket {
-                    bmRequestType: 0x21,
-                    bRequest: usb::hid::HIDRequestType::SET_REPORT.to_value(),
-                    wValue: 0x0303,
-                    wIndex: 0,
-                    wLength: 6 as u16,
-                },
-                &data,
-            )
-            .await
+        self.hid.set_report(3, usb::hid::ReportType::Feature, &data).await?;
+
+        Ok(())
     }
 
     /// May return a usb::Error::Timeout.
@@ -177,31 +125,30 @@ impl StreamDeckDevice {
         let mut packet_idx = 0;
 
         // 1024 is the max packet size of the endpoint.
-        let mut buf = [0u8; 1024];
+        let mut buf = [0u8; 1023];
 
         while remaining.len() > 0 {
-            let n = std::cmp::min(buf.len() - 8, remaining.len());
+            let n = std::cmp::min(buf.len() - 7, remaining.len());
 
-            buf[0] = 0x02;
-            buf[1] = 0x07;
-            buf[2] = index as u8;
-            buf[3] = if n == remaining.len() { 1 } else { 0 };
+            buf[0] = 0x07;
+            buf[1] = index as u8;
+            buf[2] = if n == remaining.len() { 1 } else { 0 };
             {
                 let len = (n as u16).to_le_bytes();
-                buf[4] = len[0];
-                buf[5] = len[1];
+                buf[3] = len[0];
+                buf[4] = len[1];
             }
             {
                 let val = (packet_idx as u16).to_le_bytes();
-                buf[6] = val[0];
-                buf[7] = val[1];
+                buf[5] = val[0];
+                buf[6] = val[1];
             }
 
-            buf[8..(8 + n)].copy_from_slice(&remaining[0..n]);
+            buf[7..(7 + n)].copy_from_slice(&remaining[0..n]);
 
             common::async_std::future::timeout(
                 Duration::from_secs(1),
-                self.device.write_interrupt(0x02, &buf),
+                self.hid.set_report(KEY_IMAGE_REPORT_ID, usb::hid::ReportType::Output, &buf)
             )
             .await??;
 
@@ -222,7 +169,7 @@ impl StreamDeckDevice {
         // [1, 0, 15, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         //               ^
 
-        let nread = self.device.read_interrupt(0x81, &mut buf).await?;
+        let nread = self.hid.device().read_interrupt(0x81, &mut buf).await?;
 
         if nread < 4 {
             return Err(err_msg("Invalid key state packet"));

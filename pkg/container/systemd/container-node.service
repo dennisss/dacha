@@ -1,0 +1,15 @@
+[Unit]
+Description=Container Node Runtime
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+User=container-node
+ExecStart=/opt/dacha/bin/container_node --config=/opt/dacha/config/container_node.textproto
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
