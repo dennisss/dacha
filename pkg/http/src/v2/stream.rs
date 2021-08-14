@@ -253,6 +253,8 @@ impl Stream {
             ));
         }
 
+        // NOTE: This must run before we add the data to the received_buffer to ensure that we
+        // don't give the user bad data (e.g. a smuggled request).
         self.increment_received_bytes(data.len(), state)?;
 
         if state.local_window < ((data.len() + extra_flow_controlled_bytes) as WindowSize) {

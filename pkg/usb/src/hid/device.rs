@@ -197,7 +197,7 @@ impl HIDDevice {
                 return self.device().write_interrupt(ep, &extended_data).await;
             }
         }
-    
+
         self.device
             .write_control(
                 SetupPacket {

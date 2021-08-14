@@ -315,7 +315,9 @@ dependencies = [
 name = "blinkstick"
 version = "0.1.0"
 dependencies = [
+ "automata",
  "common",
+ "regexp_macros",
  "usb",
 ]
 

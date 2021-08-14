@@ -7,3 +7,5 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 usb = { path = "../usb" }
+automata = { path = "../automata" }
+regexp_macros = { path = "../regexp_macros" }

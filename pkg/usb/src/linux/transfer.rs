@@ -51,19 +51,15 @@ pub struct DeviceTransferState {
 
     /// Channel sender used for notifying the corresponding receiver that the
     /// transfer is complete (or failed).
-    pub(crate) sender: channel::Sender<std::result::Result<(), crate::ErrorKind>>,
-    pub(crate) receiver: channel::Receiver<std::result::Result<(), crate::ErrorKind>>,
+    pub(crate) sender: channel::Sender<std::result::Result<(), crate::Error>>,
+    pub(crate) receiver: channel::Receiver<std::result::Result<(), crate::Error>>,
 }
 
 impl DeviceTransferState {
     /// NOTE: It is only valid to call this once.
     async fn wait(&self) -> Result<()> {
-        if let Err(kind) = self.receiver.recv().await? {
-            return Err(crate::Error {
-                kind,
-                message: String::new(),
-            }
-            .into());
+        if let Err(error) = self.receiver.recv().await? {
+            return Err(error.into());
         }
 
         // Error code meanings are documented here:
@@ -77,32 +73,19 @@ impl DeviceTransferState {
             // NOTE: This will never if the buffer size is a multiple of the maximum
             // packet size for the endpoint.
             if errno == libc::EOVERFLOW {
-                return Err(crate::Error {
-                    kind: crate::ErrorKind::Overflow,
-                    message: String::new(),
-                }
-                .into());
+                return Err(crate::Error::Overflow.into());
             }
 
             if errno == libc::ENODEV || errno == libc::ESHUTDOWN {
-                return Err(crate::Error {
-                    kind: crate::ErrorKind::DeviceDisconnected,
-                    message: String::new()
-                }.into());
+                return Err(crate::Error::DeviceDisconnected.into());
             }
 
             if errno == libc::EPROTO || errno == libc::EILSEQ {
-                return Err(crate::Error {
-                    kind: crate::ErrorKind::TransferFailure,
-                    message: String::new()
-                }.into());
+                return Err(crate::Error::TransferFailure.into());
             }
 
             if errno == libc::EPIPE {
-                return Err(crate::Error {
-                    kind: crate::ErrorKind::TransferStalled,
-                    message: String::new()
-                }.into());
+                return Err(crate::Error::TransferStalled.into());
             }
 
             return Err(nix::Error::from_errno(nix::errno::from_i32(errno)).into());
@@ -124,7 +107,7 @@ impl DeviceTransferState {
     fn cancel(&self) -> Result<()> {
         let _ = self
             .sender
-            .try_send(Err(crate::ErrorKind::TransferCancelled));
+            .try_send(Err(crate::Error::TransferCancelled));
 
         // NOTE: This will cause it to be reaped with a -2 error (so I can't delete the
         // memory yet!!)

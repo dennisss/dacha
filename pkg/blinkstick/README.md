@@ -1,6 +1,6 @@
 
-SetFeature(new byte[6] { 5, channel, index, r, g, b });
-
+// sudo cp pkg/blinkstick/83-blinkstick.rules /etc/udev/rules.d/
+// sudo udevadm control --reload-rules
 
 
 

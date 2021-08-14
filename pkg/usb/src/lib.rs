@@ -14,7 +14,7 @@ pub mod hid;
 mod language;
 mod linux;
 
-pub use error::{Error, ErrorKind};
+pub use error::Error;
 pub use language::*;
 pub use linux::*;
 pub use descriptor_iter::Descriptor;

@@ -1,18 +1,7 @@
-#[derive(Debug, Fail)]
-pub struct Error {
-    pub kind: ErrorKind,
-    pub message: String,
-}
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(f, "{:?}: {}", self.kind, self.message)
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ErrorKind {
-    ///
+#[derive(Debug, PartialEq, Fail)]
+pub enum Error {
+    /// A transfer stopped because the user closed the device associated with it.
     DeviceClosing,
 
     /// The physical device was disconnected before or while making a transfer.
@@ -29,5 +18,14 @@ pub enum ErrorKind {
 
     EndpointNotFound,
 
+    /// The user attempted to send write to an IN endpoint or read from an OUT endpoint.
+    EndpointWrongDirection,
+
     Overflow,
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "usb::Error::{:?}", self)
+    }
 }

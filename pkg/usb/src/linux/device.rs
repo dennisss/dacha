@@ -43,15 +43,10 @@ Other Assumptions that we make:
 */
 
 use std::collections::HashMap;
-use std::os::unix::prelude::AsRawFd;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use common::async_std::channel;
-use common::async_std::fs;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
-use common::task::ChildTask;
-use common::{async_std::path::Path, errors::*, futures::StreamExt};
+use common::errors::*;
 
 use crate::descriptor_iter::{Descriptor, DescriptorIter};
 use crate::descriptors::*;
@@ -230,7 +225,7 @@ impl Device {
         for (_, transfer) in transfers.active.iter() {
             let _ = transfer
                 .sender
-                .try_send(Err(crate::ErrorKind::DeviceClosing));
+                .try_send(Err(crate::Error::DeviceClosing));
         }
         transfers.active.clear();
 
@@ -374,16 +369,10 @@ impl Device {
             match usbdevfs_submiturb(self.state.fd, &mut transfer_mut.urb) {
                 Ok(_) => {},
                 Err(nix::Error::Sys(nix::errno::Errno::ENODEV)) => {
-                    return Err(crate::Error {
-                        kind: crate::ErrorKind::DeviceDisconnected,
-                        message: String::new()
-                    }.into());
+                    return Err(crate::Error::DeviceDisconnected.into());
                 }
                 Err(nix::Error::Sys(nix::errno::Errno::ENOENT)) => {
-                    return Err(crate::Error {
-                        kind: crate::ErrorKind::EndpointNotFound,
-                        message: String::new()
-                    }.into());
+                    return Err(crate::Error::EndpointNotFound.into());
                 }
                 Err(e) => {
                     return Err(e.into());
@@ -489,7 +478,18 @@ impl Device {
 
     pub async fn read_string(&self, index: u8, language: Language) -> Result<String> {
         let data = self.read_string_raw(index, language.id()).await?;
-        Ok(String::from_utf8(data)?)
+
+        if (data.len() % 2) != 0 {
+            return Err(err_msg("Expected string to be in 16-bit aligned size"));
+        }
+
+        let mut out = vec![];
+        for i in 0..(data.len() / 2) {
+            let id = u16::from_le_bytes(*array_ref![data, 2 * i, 2]);
+            out.push(id);
+        }
+
+        Ok(String::from_utf16(&out)?)
     }
 
     pub fn descriptor(&self) -> &DeviceDescriptor {
@@ -506,6 +506,11 @@ impl Device {
             .await
     }
 
+    pub async fn read_serial_number_string(&self, language: Language) -> Result<String> {
+        self.read_string(self.device_descriptor.iSerialNumber, language)
+            .await
+    }
+
     pub async fn read_interrupt(&self, endpoint: u8, buffer: &mut [u8]) -> Result<usize> {
         check_can_read_endpoint(endpoint)?;
 
@@ -519,11 +524,7 @@ impl Device {
         let n = transfer.state.urb.actual_length as usize;
 
         if n > buffer.len() {
-            return Err(crate::Error {
-                kind: crate::ErrorKind::Overflow,
-                message: "Too many bytes read".into(),
-            }
-            .into());
+            return Err(crate::Error::Overflow.into());
         }
 
         buffer[0..n].copy_from_slice(&transfer.state.buffer[0..n]);
@@ -537,7 +538,7 @@ impl Device {
         let endpoint_desc = self
             .endpoint_descriptors
             .get(&endpoint)
-            .ok_or_else(|| err_msg("Missing descriptor for endpoint"))?;
+            .ok_or_else(|| Error::from(crate::Error::EndpointNotFound))?;
 
         // TODO: Check the behavior of linux in this case. It will likely try to split
         // the transfer into multiple parts?

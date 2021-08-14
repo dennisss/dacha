@@ -158,6 +158,7 @@ impl<'a, P: Program + Copy> std::iter::Iterator for RegExpSplitIterator<'a, P> {
     }
 }
 
+pub type StaticRegExpMatch<'a, 'b> = RegExpMatch<'b, ReferencedProgram<'a>>;
 
 /// Pre-compiled regular expression.
 pub struct StaticRegExp {
