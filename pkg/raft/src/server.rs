@@ -362,7 +362,9 @@ impl<R: Send + 'static> Server<R> {
         // address to other servers so they can rediscover us
 
         // TODO: Block until they are all done.
-        task::spawn(rpc_server.run(port).map(|_| ()));
+        task::spawn(async move {
+            rpc_server.run(port).await;
+        });
         task::spawn(cycler.map(|_| ()));
         task::spawn(matcher.map(|_| ()));
         task::spawn(applier.map(|_| ()));

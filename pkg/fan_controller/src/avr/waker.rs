@@ -8,7 +8,7 @@ use core::task::Poll;
 use crate::avr_assert;
 
 // NOTE: Can be at most 'ArenaIndex::MAX_VALUE + 1'
-const MAX_PENDING_WAKERS: usize = 8;
+const MAX_PENDING_WAKERS: usize = 16;
 
 const INVALID_THREAD_ID: ThreadId = 255;
 
@@ -46,7 +46,7 @@ pub fn init() {
     unsafe { FREE_LIST_INITIALIZED = true };
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 struct Waker {
     thread: ThreadId,
     ref_count: u8
@@ -125,10 +125,10 @@ impl WakerList {
     /// NOTE: This will only wake up all wakers already in the list. Any new
     /// wakers added after this function starts will not be awaken.
     pub fn wake_all(&'static mut self) {
-        let mut cur_waker = self.inner.peek();
+        let mut cur_waker: Option<(Waker, ArenaIndex)> = self.inner.peek();
 
         while let Some((waker, index)) = cur_waker.take() {
-            // self.incref(index);
+            self.incref(index);
             
             unsafe {
                 avr_assert!(CURRENT_BEING_AWAKEN.is_none());
@@ -137,10 +137,11 @@ impl WakerList {
                 CURRENT_BEING_AWAKEN = None;
             }
 
-            // cur_waker = self.inner.before(index);
+
+            cur_waker = self.inner.before(index);
 
             // crate::usart::USART1::send_blocking(b"<\n");
-            // self.deref(index);
+            self.deref(index);
             // crate::usart::USART1::send_blocking(b">\n");
 
             // TODO: When using a leaked future, this is totally feasible.
@@ -165,9 +166,16 @@ impl WakerList {
             //
             // Also
             // crate::usart::USART1::send_blocking(b"<\n");
-            cur_waker = self.inner.remove(index);
+            // cur_waker = self.inner.remove(index);
+
+            // if new_cur_waker != cur_waker {
+            //     crate::usart::USART1::send_blocking(b">\n"); 
+            // }
+
             // crate::usart::USART1::send_blocking(b">\n");
             WakerArena::free(index);
+
+            // cur_waker = new_cur_waker;
         }
     }
 }
@@ -222,8 +230,9 @@ impl Future for WakerFuture {
         if unsafe { CURRENT_BEING_AWAKEN == self.id } {
             // NOTE: The underlying waker will be freed in wake_all after the thread is done
             // running.
-            // let id = self.id.take().unwrap();
-            self.id = None;
+            let id = self.id.take().unwrap();
+            self.list.deref(id);
+            // self.id = None;
             Poll::Ready(())
         } else {
             Poll::Pending
@@ -236,12 +245,13 @@ impl Drop for WakerFuture {
         // TODO: Instead add to a 'pending deletion' list so that we don't
         // re-use in the same run.
         if let Some(id) = self.id {
+            self.list.deref(id);
+
             // NOTE: We will never remove an id that is actively being looked at by
             // wake_all().
             if unsafe { CURRENT_BEING_AWAKEN != self.id } {
-                // self.list.deref(id);
-                self.list.inner.remove(id);
-                WakerArena::free(id);
+                // self.list.inner.remove(id);
+                // WakerArena::free(id);
             }
         }
     }

@@ -317,6 +317,7 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "common",
+ "math",
  "regexp_macros",
  "usb",
 ]
