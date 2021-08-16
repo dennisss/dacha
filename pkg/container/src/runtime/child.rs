@@ -29,6 +29,7 @@ use nix::sys::stat::Mode;
 use nix::sys::stat::SFlag;
 use nix::sys::stat::makedev;
 use nix::sys::stat::mknod;
+use nix::sys::stat::umask;
 use nix::unistd::Gid;
 use nix::unistd::Uid;
 use nix::unistd::chown;
@@ -80,6 +81,10 @@ fn run_child_process_inner(
     // Block until the parent is done with setting up our environment.
     setup_socket.wait_user_ns_setup()?;
 
+    // The root directory of the container will be world readable so that the container user can
+    // read from it.
+    umask(Mode::from_bits_truncate(0o002));
+
     // Prevent parent processes from seeing the new mounts.
     // But, we will see new mounts created by the parent.
     mount::<str, str, str, str>(
@@ -94,6 +99,16 @@ fn run_child_process_inner(
     // TODO: Be very explicit about what permission flags should be set on this.
     let root_dir = container_dir.join("root");
     std::fs::create_dir(&root_dir)?;
+
+    /*
+    // If joining existing namespaces:
+
+    // TODO: Add CloneFlags::CLONE_NEWTIME
+    nix::sched::setns(root_pid_file.as_raw_fd(),
+    CloneFlags::CLONE_NEWCGROUP | CloneFlags::CLONE_NEWIPC | CloneFlags::CLONE_NEWNET | CloneFlags::CLONE_NEWNS |
+            CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWUTS)?;
+
+    */
 
     // If not creating it like this, then we'd want to MS_BIND | MS_REC the
     // root_dir.
@@ -288,11 +303,16 @@ fn exec_child_process(process: &ContainerProcess, setup_socket: &mut SetupSocket
     }
 
     // Switch to new unpriveleged user.
-    // TODO: Make this dynamic
-    let child_uid = nix::unistd::Uid::from_raw(100001);
-    let child_gid = nix::unistd::Gid::from_raw(100001);
 
-    nix::unistd::setgroups(&[child_gid])?;
+    let child_uid = Uid::from_raw(process.user().uid());
+    let child_gid = Gid::from_raw(process.user().gid());
+
+    let mut additional_gids = vec![ child_gid ];
+    for gid in process.user().additional_gids() {
+        additional_gids.push(Gid::from_raw(*gid));
+    }
+
+    nix::unistd::setgroups(&additional_gids)?;
 
     nix::unistd::setresuid(child_uid, child_uid, child_uid)?;
     nix::unistd::setresgid(child_gid, child_gid, child_gid)?;
@@ -306,18 +326,29 @@ fn exec_child_process(process: &ContainerProcess, setup_socket: &mut SetupSocket
         pid: unsafe { libc::getpid() }
     };
 
-    let data = cap_user_data {
-        effective: 0,
-        permitted: 0,
-        inheritable: 0,
-    };
+    // NOTE: This is 2 elements because on 64-bit devices, 64-bit capability sets are supported.
+    let data = [
+        cap_user_data {
+            effective: 0,
+            permitted: 0,
+            inheritable: 0,
+        },
+        cap_user_data {
+            effective: 0,
+            permitted: 0,
+            inheritable: 0,
+        }
+    ];
 
-    // NOTE: This will only work if we are using a user namespace (otherwise we won't have the capabilites needed to change our own capabilities).
-    let r = unsafe { libc::syscall(libc::SYS_capset, &hdr, &data) };
+    {
+        // NOTE: This will only work if we are using a user namespace (otherwise we won't have the
+        // capabilites needed to change our own capabilities).
+        let r = unsafe { libc::syscall(libc::SYS_capset, &hdr, &data) };
 
-    if r != 0 {
-        let e = nix::Error::last();
-        return Err(format_err!("Failed to drop capabilities with error: {:?}", e));
+        if r != 0 {
+            let e = nix::Error::last();
+            return Err(format_err!("Failed to drop capabilities with error: {:?}", e));
+        }
     }
 
     let r = unsafe {

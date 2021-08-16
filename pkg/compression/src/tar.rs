@@ -351,9 +351,15 @@ impl Reader {
         Ok(())
     }
 
+    pub async fn extract_files(&mut self, output_dir: &Path) -> Result<()> {
+        self.extract_files_with_modes(output_dir, None, None).await
+    }
+
     // NOTE: This will only success if none of the files we are extracting exist yet in the
     // output_dir.
-    pub async fn extract_files(&mut self, output_dir: &Path) -> Result<()> {
+    pub async fn extract_files_with_modes(
+        &mut self, output_dir: &Path, file_mode: Option<u32>, dir_mode: Option<u32>
+    ) -> Result<()> {
         while let Some(entry) = self.read_entry().await? {
 
             // TODO: Also remove any '..' parts from the path
@@ -367,11 +373,15 @@ impl Reader {
                 output_dir.join(relpath));
 
             if entry.is_regular() {
+                // NOTE: We assume that separate directory entries are present and precede all entries
+                // within that directory.
+                /*
                 let dir = path.parent()
                     .ok_or_else(|| err_msg("Can't get parent path"))?;
                 if !dir.exists().await {
                     common::async_std::fs::create_dir_all(dir).await?;
                 }
+                */
 
                 let mut file = OpenOptions::new().create_new(true).write(true).open(&path).await?;
                 let data = self.read_data(&entry).await?;
@@ -381,15 +391,27 @@ impl Reader {
                 // Preserve any execute bits on regular files.
                 {
                     let mut perms = file.metadata().await?.permissions();
-                    perms.set_mode(perms.mode() | (entry.metadata.header.file_mode.unwrap_or(0) & 0o111));
 
-                    // TODO: Only case this if the permissions changed.
+                    let mut base_mode = perms.mode();
+                    if let Some(mode) = file_mode {
+                        base_mode = mode;
+                    }
+
+                    perms.set_mode(base_mode | (entry.metadata.header.file_mode.unwrap_or(0) & 0o111));
+
+                    // TODO: Only run this if the permissions changed.
                     file.set_permissions(perms).await?;
                 }
                 
             } else if entry.is_directory() {
                 if !path.exists().await {
-                    common::async_std::fs::create_dir_all(path).await?;
+                    common::async_std::fs::create_dir(&path).await?;
+                }
+
+                if let Some(mode) = dir_mode {
+                    let mut perms = path.metadata().await?.permissions();
+                    perms.set_mode(mode);
+                    common::async_std::fs::set_permissions(&path, perms).await?;
                 }
             } else {
                 return Err(err_msg("Unsupported entry"));

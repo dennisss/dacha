@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+import "pkg/container/src/proto/task.proto";
+
+message JobSpec {
+    string name = 1;
+
+    TaskSpec task = 2;
+
+    // How many tasks should be brought up.
+    uint32 replicas = 3;
+}

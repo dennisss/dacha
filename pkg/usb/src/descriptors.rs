@@ -132,8 +132,11 @@ pub struct InterfaceDescriptor {
 
 enum_def!(InterfaceClass u8 =>
     Unknown = 0,
+    Communication = 2,
     HID = 3
 );
+
+// Interface subclas of 2 is Abstract Control Model for CDC
 
 // Table 9-13 of USB2.0 Spec
 #[derive(Clone, Copy)]

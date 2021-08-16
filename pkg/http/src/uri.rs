@@ -84,6 +84,8 @@ pub enum Host {
     IP(IPAddress),
 }
 
+// TODO: Verify that we aren't able to parse octal ip addresses
+// (basically no component should start with a leading 0)
 #[derive(Debug, Clone, PartialEq)]
 pub enum IPAddress {
     V4(Vec<u8>),

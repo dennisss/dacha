@@ -3,9 +3,11 @@
 use std::io::{Read, Write};
 use std::sync::Arc;
 
+use common::async_std::path::Path;
 use common::errors::*;
 use common::async_std::task;
 use nix::mount::MsFlags;
+use nix::sys::stat::{Mode, umask};
 use nix::unistd::Pid;
 use protobuf::text::parse_text_proto;
 use nix::sched::CloneFlags;
@@ -172,7 +174,7 @@ pub fn main() -> Result<()> {
 
     let (root_pid, mut setup_sender) = spawn_root_process()?;
 
-    println!("{}", root_pid.as_raw());
+    println!("Root Pid: {}", root_pid.as_raw());
 
     newidmap("newuidmap", "/etc/subuid", &user_entry.name, root_pid.as_raw())?;
     newidmap("newgidmap", "/etc/subgid", &group_entry.name, root_pid.as_raw())?;
@@ -182,7 +184,7 @@ pub fn main() -> Result<()> {
 
     let root_exit = nix::sys::wait::waitpid(root_pid, None)?;
 
-    println!("{:?}", root_exit);
+    println!("Root exited: {:?}", root_exit);
 
     Ok(())
 }
@@ -240,10 +242,21 @@ async fn run(mut setup_reader: std::fs::File) -> Result<()> {
 
     println!("Done setup!");
 
+    // NOTE: This directory should be created with mode 700 where the user running the container
+    // node is the owner. 
+    if !Path::new("/opt/dacha").exists().await {
+        return Err(err_msg("Data directory doesn't exist"));
+    }
+
+    // Files in the data directory will be created without any group/world permissions.
+    // Files which require a less restrictive should be modified on a case-by-base basis. 
+    umask(Mode::from_bits_truncate(0o077));
+
 
     println!("Starting node!");
 
 
+    // TODO: Create the root directory and set permissions to 600
 
 
     let node = Node::create().await?;

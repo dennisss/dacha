@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "pkg/container/src/proto/config.proto";
 import "pkg/container/src/proto/log.proto";
+import "pkg/container/src/proto/task.proto";
 
 
 message QueryRequest {
@@ -22,33 +23,6 @@ message StartRequest {
 message StartResponse {
     string container_id = 1;
 }
-
-
-message TaskSpec {
-    string name = 1;
-
-    repeated string args = 3;
-
-    repeated string env = 4;
-
-    // Volumes to mount. Files will be accessible at '/volumes/{name}/...'
-    message Volume {
-        string name = 1;
-        string blob_id = 2;
-    }
-    repeated Volume volumes = 2;
-
-    enum RestartPolicy {
-        UNKNOWN = 0;
-        NEVER = 1;
-        ON_FAILURE = 2;
-        ALWAYS = 3;
-    }
-    RestartPolicy restart_policy = 5;
-
-    // TODO: Add labels?
-}
-
 
 message StartTaskRequest {
     TaskSpec task_spec = 1;

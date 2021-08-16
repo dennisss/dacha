@@ -5,6 +5,8 @@ extern crate common;
 extern crate rpc;
 extern crate rpc_test;
 extern crate http;
+#[macro_use]
+extern crate macros;
 
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -13,13 +15,20 @@ use common::async_std::task;
 use common::errors::*;
 use rpc_test::proto::adder::*;
 
+#[derive(Args)]
+struct Args {
+    target: String
+}
+
 async fn run_client() -> Result<()> {
+    let args = common::args::parse_args::<Args>()?;
+
     // TODO: Must verify that in HTTP if we get a Content-Length, but we don't
     // read the full length, then we should error out the request.
 
     // TODO: Specify the gRPC protocal in uri?
     let channel = Arc::new(rpc::Http2Channel::create(
-        http::ClientOptions::from_authority("127.0.0.1:5000")?)?);
+        http::ClientOptions::from_authority(args.target.as_str())?)?);
     let stub = AdderStub::new(channel);
 
     let mut req = AddRequest::default();

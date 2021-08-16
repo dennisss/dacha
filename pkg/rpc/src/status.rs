@@ -21,6 +21,10 @@ pub struct Status {
 }
 
 impl Status {
+    pub fn not_found<S: Into<String>>(message: S) -> Self {
+        Self { code: StatusCode::NotFound, message: message.into() }        
+    }
+
     pub fn invalid_argument<S: Into<String>>(message: S) -> Self {
         Self { code: StatusCode::InvalidArgument, message: message.into() }
     }

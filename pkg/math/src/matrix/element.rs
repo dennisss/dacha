@@ -1,6 +1,7 @@
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+
 use num_traits::real::Real;
 use num_traits::{One, Zero};
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 /// TODO: Eventually we should be using a relative percentage + absolute margin
 /// based comparison.

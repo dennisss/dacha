@@ -966,6 +966,28 @@ impl<T: ScalarElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
         self.norm_squared().sqrt()
     }
 
+    pub fn max_value(&self) -> T {
+        let mut max = self[0];
+        for i in 1..(self.rows() * self.cols()) {
+            if self[i] > max {
+                max = self[i];
+            }
+        }
+
+        max
+    }
+
+    pub fn min_value(&self) -> T {
+        let mut min = self[0];
+        for i in 1..(self.rows() * self.cols()) {
+            if self[i] < min {
+                min = self[i];
+            }
+        }
+
+        min
+    }
+
     /// Computes the inner product with another matrix.
     ///
     /// The dimensions must exactly match. If you want to perform a dot product

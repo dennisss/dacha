@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+message TaskSpec {
+    string name = 1;
+
+    repeated string args = 3;
+
+    repeated string env = 4;
+
+    // Volumes to mount. Files will be accessible at '/volumes/{name}/...'
+    message Volume {
+        string name = 1;
+        
+        oneof source {
+            // The volume will be a read-only snapshot of the contents of the blob with this id.
+            string blob_id = 2;
+            
+            // The volume will be initialized by creating a new read-writeable directory on the host.
+            // Whenever a task is started on the same node with the same persistent_name, it will
+            // see the previously initialized directory and will also have read-write access to it. 
+            string persistent_name = 3;
+        }
+    }
+    repeated Volume volumes = 2;
+
+    enum RestartPolicy {
+        UNKNOWN = 0;
+        NEVER = 1;
+        ON_FAILURE = 2;
+        ALWAYS = 3;
+    }
+    RestartPolicy restart_policy = 5;
+
+    // Reading the port number at runtime will be possible through an environment variable
+    // named 'PORT_{NAME}' where the port name is concerned to all uppercase and '-' is replaced
+    // with '_'.
+    message Port {
+        string name = 1;
+
+        // Set by the container manager.
+        int32 number = 2;
+    }
+    repeated Port ports = 6;
+
+    // TODO: Add labels?
+}

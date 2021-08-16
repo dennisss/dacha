@@ -2,6 +2,8 @@ pub mod main;
 mod backoff;
 
 use std::collections::HashMap;
+use std::fs::Permissions;
+use std::os::unix::prelude::PermissionsExt;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
@@ -11,11 +13,14 @@ use common::async_std::sync::Mutex;
 use common::errors::*;
 use common::task::ChildTask;
 use crypto::hasher::Hasher;
+use nix::unistd::Gid;
+use nix::unistd::chown;
 use protobuf::text::parse_text_proto;
 
 use crate::proto::config::*;
 use crate::proto::log::*;
 use crate::proto::service::*;
+use crate::proto::task::*;
 use crate::runtime::ContainerRuntime;
 
 /// Directory for storing data for uploaded blobs.
@@ -26,6 +31,8 @@ use crate::runtime::ContainerRuntime;
 /// - './{BLOB_ID}/metadata' : Present once the blob has been fully ingested.
 ///   Currently this file is always empty.
 const BLOB_DATA_DIR: &'static str = "/opt/dacha/container/blob";
+
+const PERSISTENT_DIR: &'static str = "/opt/dacha/container/persistent";
 
 const GRACEFUL_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
@@ -276,9 +283,19 @@ impl Node {
         state_inner: &mut NodeStateInner,
         task: &mut Task,
     ) -> Result<()> {
+        // TODO: Parse this at startup time.
         let mut container_config = ContainerConfig::default();
+
+        // TODO: Change the user id of the devpts to the one.
         parse_text_proto(
             r#"
+            process {
+                user {
+                    uid: 100001
+                    gid: 100001
+                    additional_gids: [100002]
+                }
+            }
             mounts: [
                 {
                     destination: "/proc"
@@ -338,6 +355,8 @@ impl Node {
             &mut container_config,
         )?;
 
+        // container_config.process_mut().set_terminal(true);
+
         for arg in task.spec.args() {
             container_config.process_mut().add_args(arg.clone());
         }
@@ -345,24 +364,56 @@ impl Node {
             container_config.process_mut().add_env(val.clone());
         }
 
-        for volume in task.spec.volumes() {
-            let blob_dir = common::async_std::path::Path::new(BLOB_DATA_DIR).join(volume.blob_id());
-
-            let metadata_path = blob_dir.join("metadata");
-            if !metadata_path.exists().await {
-                return Err(rpc::Status {
-                    code: rpc::StatusCode::NotFound,
-                    message: format!("Blob for volume {} doesn't exist", volume.name()),
-                }
-                .into());
+        for port in task.spec.ports() {
+            if port.number() == 0 {
+                return Err(rpc::Status::invalid_argument(
+                    format!("Port not assigned a number: {}", port.name())).into());
             }
 
+            let env_name = port.name().to_uppercase().replace("-", "_");
+
+            container_config.process_mut().add_env(format!("PORT_{}={}", env_name, port.number()));
+        }
+
+        for volume in task.spec.volumes() {
             let mut mount = ContainerMount::default();
             mount.set_destination(format!("/volumes/{}", volume.name()));
-            mount.set_source(blob_dir.join("extracted").to_str().unwrap().to_string());
 
-            mount.add_options("bind".into());
-            mount.add_options("ro".into());
+            match volume.source_case() {
+                TaskSpec_VolumeSourceCase::BlobId(blob_id) => {
+                    let blob_dir = common::async_std::path::Path::new(BLOB_DATA_DIR).join(blob_id);
+
+                    let metadata_path = blob_dir.join("metadata");
+                    if !metadata_path.exists().await {
+                        return Err(rpc::Status::not_found(
+                            format!("Blob for volume {} doesn't exist", volume.name())).into());
+                    }
+                    
+                    mount.set_source(blob_dir.join("extracted").to_str().unwrap().to_string());
+        
+                    mount.add_options("bind".into());
+                    mount.add_options("ro".into());
+                }
+                TaskSpec_VolumeSourceCase::PersistentName(name) => {
+                    let dir = common::async_std::path::Path::new(PERSISTENT_DIR).join(name);
+                    let dir_str = dir.to_str().unwrap().to_string();
+
+                    if !dir.exists().await {
+                        common::async_std::fs::create_dir_all(&dir).await?;
+                        chown(dir_str.as_str(), None, Some(Gid::from_raw(100002)))?;
+                
+                        let mut perms = dir.metadata().await?.permissions();
+                        perms.set_mode(0o770 | libc::S_ISGID);
+                        common::async_std::fs::set_permissions(&dir, perms).await?;
+                    }
+
+                    mount.add_options("bind".into());
+                    mount.set_source(dir_str);
+                }
+                TaskSpec_VolumeSourceCase::Unknown => {
+                    return Err(rpc::Status::invalid_argument("No source configured for volume").into());
+                }
+            }
 
             container_config.add_mounts(mount);
         }
@@ -654,9 +705,20 @@ impl ContainerNodeService for Node {
 
         raw_file.flush().await?;
 
+        let extracted_dir = blob_dir.join("extracted");
+        if !extracted_dir.exists().await {
+            common::async_std::fs::create_dir(&extracted_dir).await?;
+
+            let mut perms = blob_dir.metadata().await?.permissions();
+            perms.set_mode(0o755);
+            common::async_std::fs::set_permissions(&extracted_dir, perms).await?;
+        }
+
+
         let mut archive_reader = compression::tar::Reader::open(&raw_file_path).await?;
-        archive_reader
-            .extract_files(blob_dir.join("extracted").as_path().into())
+        archive_reader.extract_files_with_modes(
+            extracted_dir.as_path().into(),
+            Some(0o644), Some(0o755))
             .await?;
 
         // Create an empty metadata sentinel file.

@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+
+message ClusterState {
+    repeated ClusterNode nodes = 1;
+
+    // NOTE: We assume that exactly one of 
+    repeated ClusterJob jobs = 2;
+
+    // Assignments of tasks in each job to specific nodes.
+    repeated ClusterTask tasks = 3;
+
+
+}
+
+message ClusterNode {
+    uint64 id = 1;
+
+    // Most recent ip address seen for this node.
+    string ip_address = 2;
+}
+
+message ClusterJob {
+
+
+}
+
+message ClusterTask {
+    string job_name = 1;
+    
+    uint64 index = 2;
+
+    uint64 assigned_node_id = 3;
+
+    // Also need port assignments
+}

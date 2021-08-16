@@ -14,6 +14,9 @@ message ContainerConfig {
 
 message ContainerProcess {
 
+    // TODO: cwd
+    // ^ Must be an absolute path.
+
     // Arguments to use for starting the main process of the container.
     // The first argument should be an absolute path to an executable binary.
     repeated string args = 1;
@@ -25,6 +28,15 @@ message ContainerProcess {
     // If true, then we'll create a pty device that is cloned to stdin/out/err file descriptors
     // on the container process.
     bool terminal = 3;
+
+
+    // TODO: Support adjusting the umask
+    message User {
+        uint32 uid = 1;
+        uint32 gid = 2;
+        repeated uint32 additional_gids = 3; 
+    }
+    User user = 4;
 }
 
 message ContainerMount {
