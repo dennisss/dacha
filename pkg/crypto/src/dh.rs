@@ -2,7 +2,7 @@ use common::errors::*;
 
 /// NOTE: This is not a public/private crypto system in itself.
 #[async_trait]
-pub trait DiffieHellmanFn : Send + Sync {
+pub trait DiffieHellmanFn: Send + Sync {
     /// Generates a secret value for this function. This value is expected to
     /// never to sent to another agent.
     async fn secret_value(&self) -> Result<Vec<u8>>;

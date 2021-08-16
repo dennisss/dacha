@@ -3,11 +3,11 @@ use common::errors::*;
 use parsing::binary::*;
 use parsing::*;
 
+use super::extensions::*;
+use super::parsing::*;
 use crate::dh::DiffieHellmanFn;
 use crate::elliptic::*;
 use crate::random::*;
-use super::extensions::*;
-use super::parsing::*;
 use crate::tls::options::ClientOptions;
 
 pub type ProtocolVersion = u16;
@@ -187,12 +187,9 @@ pub struct ClientHello {
 
 // TODO: Support ESNI: https://blog.cloudflare.com/encrypted-sni/
 
-
-
 impl ClientHello {
-    /// Creates a reasonable 
+    /// Creates a reasonable
     pub async fn plain(client_shares: &[KeyShareEntry], options: &ClientOptions) -> Result<Self> {
-
         let mut extensions = vec![];
 
         let mut random_buf = [0u8; 32];
@@ -209,22 +206,23 @@ impl ClientHello {
         }
 
         // Required to be sent in ClientHello.
-        extensions.push(Extension::SupportedVersionsClientHello(SupportedVersionsClientHello {
-            versions: vec![TLS_1_3_VERSION, TLS_1_2_VERSION],
-        }));
-
+        extensions.push(Extension::SupportedVersionsClientHello(
+            SupportedVersionsClientHello {
+                versions: vec![TLS_1_3_VERSION, TLS_1_2_VERSION],
+            },
+        ));
 
         // TLS 1.3 mandatory-to-implement ciphers are documented in:
         // https://datatracker.ietf.org/doc/html/rfc8446#section-9.1
 
         // Required to be send in ClientHello for DHE/ECDHE
         extensions.push(Extension::SupportedGroups(NamedGroupList {
-            groups: options.supported_groups.clone()
+            groups: options.supported_groups.clone(),
         }));
 
         // Required for certificate authentication
         extensions.push(Extension::SignatureAlgorithms(SignatureSchemeList {
-            algorithms: options.supported_signature_algorithms.clone()
+            algorithms: options.supported_signature_algorithms.clone(),
         }));
 
         extensions.push(Extension::KeyShareClientHello(KeyShareClientHello {
@@ -233,7 +231,7 @@ impl ClientHello {
 
         if !options.alpn_ids.is_empty() {
             extensions.push(Extension::ALPN(ProtocolNameList {
-                names: options.alpn_ids.clone()
+                names: options.alpn_ids.clone(),
             }));
         }
 
@@ -442,7 +440,7 @@ impl NewSessionTicket {
                 ticket_lifetime,
                 ticket_age_add,
                 ticket_nonce,
-                ticket,    
+                ticket,
                 extensions
             })
         })
@@ -454,16 +452,15 @@ impl NewSessionTicket {
         serialize_varlen_vector(0, U8_LIMIT, out, |out| {
             out.extend_from_slice(&self.ticket_nonce)
         });
-        serialize_varlen_vector(1, U16_LIMIT, out, |out| {
-            out.extend_from_slice(&self.ticket)
-        });
+        serialize_varlen_vector(1, U16_LIMIT, out, |out| out.extend_from_slice(&self.ticket));
         serialize_varlen_vector(0, U16_LIMIT - 1, out, |out| {
             for extension in &self.extensions {
-                extension.serialize(HandshakeType::NewSessionTicket, out).unwrap();
+                extension
+                    .serialize(HandshakeType::NewSessionTicket, out)
+                    .unwrap();
             }
         });
     }
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -632,8 +629,7 @@ impl CertificateRequest {
         });
         serialize_varlen_vector(2, U16_LIMIT, out, |out| {
             for e in self.extensions.iter() {
-                e.serialize(HandshakeType::CertificateRequest, out)
-                    .unwrap();
+                e.serialize(HandshakeType::CertificateRequest, out).unwrap();
             }
         });
     }

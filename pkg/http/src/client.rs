@@ -30,8 +30,8 @@ use crate::uri::*;
 use crate::uri_syntax::serialize_authority;
 use crate::v2;
 
-// TODO: ensure that ConnectionRefused or other types of errors that occur before we send out the
-// request are all retryable.
+// TODO: ensure that ConnectionRefused or other types of errors that occur
+// before we send out the request are all retryable.
 
 // TODO: Need to clearly document which responsibilities are reserved for the
 // client.

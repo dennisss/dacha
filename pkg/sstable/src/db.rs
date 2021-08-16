@@ -1,5 +1,5 @@
-use std::sync::atomic::AtomicU64;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU64;
 
 use common::async_std;
 use common::async_std::fs::{File, OpenOptions};
@@ -62,7 +62,10 @@ impl EmbeddedDB {
 
         // TODO: Exists may ignore errors such as permission errors.
         let identity_path = path.join("IDENTITY");
-        let identity = if common::async_std::path::Path::new(&identity_path).exists().await {
+        let identity = if common::async_std::path::Path::new(&identity_path)
+            .exists()
+            .await
+        {
             let data = async_std::fs::read_to_string(identity_path).await?;
             Some(common::hex::decode(&data.replace('-', ""))?)
         } else {

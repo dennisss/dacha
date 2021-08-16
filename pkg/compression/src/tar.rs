@@ -1,19 +1,18 @@
+use std::io::Cursor;
+use std::os::linux::fs::MetadataExt;
+use std::os::unix::fs::PermissionsExt;
 /// See specification in:
 /// https://en.wikipedia.org/wiki/Tar_(computing)
 /// https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html#tag_20_92_13_06
-
 use std::path::{Path, PathBuf};
 use std::usize;
-use std::os::linux::fs::MetadataExt;
-use std::io::Cursor;
-use std::os::unix::fs::PermissionsExt;
 
-use common::async_std::io::prelude::{SeekExt, WriteExt};
-use common::errors::*;
 use common::async_std::fs::{File, OpenOptions};
+use common::async_std::io::prelude::{SeekExt, WriteExt};
 use common::async_std::io::SeekFrom;
-use common::io::Readable;
 use common::async_std::prelude::StreamExt;
+use common::errors::*;
+use common::io::Readable;
 
 const BLOCK_SIZE: u64 = 512;
 
@@ -28,11 +27,10 @@ mod proto {
     include!(concat!(env!("OUT_DIR"), "/src/tar.rs"));
 }
 
-
 enum_def_with_unknown!(FileType u8 =>
     // NOTE: This could also be b'\0'
     NormalFile = b'0',
-    
+
     HardLink = b'1',
     SymbolicLink = b'2',
 
@@ -48,8 +46,8 @@ enum_def_with_unknown!(FileType u8 =>
 pub struct FileEntry {
     pub metadata: FileMetadata,
 
-    /// Position in the archive file at which 
-    pub offset: u64
+    /// Position in the archive file at which
+    pub offset: u64,
 }
 
 impl FileEntry {
@@ -59,8 +57,8 @@ impl FileEntry {
         }
 
         // NOTE: This is a heuristic and not defined in an official specification.
-        self.metadata.header.file_type == FileType::NormalFile &&
-        self.metadata.header.file_name.ends_with("/")
+        self.metadata.header.file_type == FileType::NormalFile
+            && self.metadata.header.file_name.ends_with("/")
     }
 
     pub fn is_regular(&self) -> bool {
@@ -80,7 +78,6 @@ pub struct FileMetadata {
     pub ustar_extension: Option<USTarHeaderExtension>,
 }
 
-
 #[derive(Debug)]
 pub struct Header {
     pub file_name: String,
@@ -90,7 +87,7 @@ pub struct Header {
     pub file_size: Option<u64>,
     pub last_modified_time: Option<u64>,
     pub file_type: FileType,
-    pub linked_file_name: String
+    pub linked_file_name: String,
 }
 
 #[derive(Debug)]
@@ -99,37 +96,32 @@ pub struct USTarHeaderExtension {
     pub group_name: String,
     pub device_major_number: Option<u32>,
     pub device_minor_number: Option<u32>,
-    pub file_name_prefix: String
+    pub file_name_prefix: String,
 }
-
 
 pub struct AppendFileOption {
-    /// Root directory to use for the new Tar archive. All file names stored in the archive
-    /// will be relative to this directory.
+    /// Root directory to use for the new Tar archive. All file names stored in
+    /// the archive will be relative to this directory.
     pub root_dir: PathBuf,
 
-    pub mask: FileMetadataMask
+    pub mask: FileMetadataMask,
 }
-
 
 /// When writing files originally from the local file system to
-pub struct FileMetadataMask {
-
-}
-
+pub struct FileMetadataMask {}
 
 pub struct Reader {
     file: File,
 
     /// Offset into the archive file of the next unread file header.
-    next_offset: u64
+    next_offset: u64,
 }
 
 impl Reader {
     pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         Ok(Self {
             file: File::open(path.as_ref()).await?,
-            next_offset: 0
+            next_offset: 0,
         })
     }
 
@@ -158,7 +150,6 @@ impl Reader {
             return Ok(None);
         }
 
-
         let (header, mut rest) = Self::parse_header(&block)?;
 
         let ustar = {
@@ -177,22 +168,27 @@ impl Reader {
                 header,
                 ustar_extension: ustar,
             },
-            offset: self.next_offset
+            offset: self.next_offset,
         };
 
         let file_size = entry.metadata.header.file_size.unwrap_or(0);
 
-        self.next_offset += BLOCK_SIZE + BLOCK_SIZE*(common::ceil_div(file_size as usize, BLOCK_SIZE as usize) as u64);
+        self.next_offset += BLOCK_SIZE
+            + BLOCK_SIZE * (common::ceil_div(file_size as usize, BLOCK_SIZE as usize) as u64);
 
         Ok(Some(entry))
     }
 
     pub async fn read_data(&mut self, entry: &FileEntry) -> Result<Vec<u8>> {
-        self.file.seek(SeekFrom::Start(entry.offset + BLOCK_SIZE)).await?;
+        self.file
+            .seek(SeekFrom::Start(entry.offset + BLOCK_SIZE))
+            .await?;
 
         let file_size = entry.metadata.header.file_size.unwrap_or(0);
 
-        let padded_length = (BLOCK_SIZE*(common::ceil_div(file_size as usize, BLOCK_SIZE as usize) as u64)) as usize;
+        let padded_length = (BLOCK_SIZE
+            * (common::ceil_div(file_size as usize, BLOCK_SIZE as usize) as u64))
+            as usize;
 
         let mut data = vec![];
         data.resize(padded_length, 0);
@@ -223,16 +219,19 @@ impl Reader {
             raw_file_type = b'1';
         }
 
-        Ok((Header {
-            file_name: Self::parse_string_value(&raw_header.file_name)?,
-            file_mode: Self::parse_numeric_value(&raw_header.file_mode)?.map(|v| v as u32),
-            owner_id: Self::parse_numeric_value(&raw_header.owner_id)?.map(|v| v as u32),
-            group_id: Self::parse_numeric_value(&raw_header.group_id)?.map(|v| v as u32),
-            file_size: Self::parse_numeric_value(&raw_header.file_size)?,
-            last_modified_time: Self::parse_numeric_value(&raw_header.last_modified_time)?,
-            file_type: FileType::from_value(raw_file_type),
-            linked_file_name: Self::parse_string_value(&raw_header.linked_file_name)?,
-        }, raw_header_rest))
+        Ok((
+            Header {
+                file_name: Self::parse_string_value(&raw_header.file_name)?,
+                file_mode: Self::parse_numeric_value(&raw_header.file_mode)?.map(|v| v as u32),
+                owner_id: Self::parse_numeric_value(&raw_header.owner_id)?.map(|v| v as u32),
+                group_id: Self::parse_numeric_value(&raw_header.group_id)?.map(|v| v as u32),
+                file_size: Self::parse_numeric_value(&raw_header.file_size)?,
+                last_modified_time: Self::parse_numeric_value(&raw_header.last_modified_time)?,
+                file_type: FileType::from_value(raw_file_type),
+                linked_file_name: Self::parse_string_value(&raw_header.linked_file_name)?,
+            },
+            raw_header_rest,
+        ))
     }
 
     fn calculate_checksum(block: &[u8]) -> u32 {
@@ -254,26 +253,30 @@ impl Reader {
         let (raw_ustar, raw_ustar_rest) = proto::USTarHeaderExtension::parse(data)?;
 
         let magic_version = (&raw_ustar.ustar_magic, &raw_ustar.ustar_version);
-        
-        let valid = (
-            magic_version == (USTAR_OLD_GNU_MAGIC, USTAR_OLD_GNU_VERSION) ||
-            magic_version == (USTAR_POSIX_MAGIC, USTAR_POSIX_VERSION)
-        );
+
+        let valid = (magic_version == (USTAR_OLD_GNU_MAGIC, USTAR_OLD_GNU_VERSION)
+            || magic_version == (USTAR_POSIX_MAGIC, USTAR_POSIX_VERSION));
 
         if !valid {
             return Ok(None);
         }
 
-        Ok(Some((USTarHeaderExtension {
-            owner_name: Self::parse_string_value(&raw_ustar.owner_name)?,
-            group_name: Self::parse_string_value(&raw_ustar.group_name)?,
-            device_major_number: Self::parse_numeric_value(&raw_ustar.device_major_number)?.map(|v| v as u32),
-            device_minor_number: Self::parse_numeric_value(&raw_ustar.device_minor_number)?.map(|v| v as u32),
-            file_name_prefix: Self::parse_string_value(&raw_ustar.file_name_prefix)?,
-        }, raw_ustar_rest)))
+        Ok(Some((
+            USTarHeaderExtension {
+                owner_name: Self::parse_string_value(&raw_ustar.owner_name)?,
+                group_name: Self::parse_string_value(&raw_ustar.group_name)?,
+                device_major_number: Self::parse_numeric_value(&raw_ustar.device_major_number)?
+                    .map(|v| v as u32),
+                device_minor_number: Self::parse_numeric_value(&raw_ustar.device_minor_number)?
+                    .map(|v| v as u32),
+                file_name_prefix: Self::parse_string_value(&raw_ustar.file_name_prefix)?,
+            },
+            raw_ustar_rest,
+        )))
     }
 
-    /// NOTE: All the tar strings are strictly Ascii and terminated with zero padding.
+    /// NOTE: All the tar strings are strictly Ascii and terminated with zero
+    /// padding.
     fn parse_string_value(data: &[u8]) -> Result<String> {
         let mut string_end = None;
 
@@ -291,16 +294,16 @@ impl Reader {
             }
         }
 
-        let string_end = string_end
-            .unwrap_or(data.len());
-        
+        let string_end = string_end.unwrap_or(data.len());
+
         let s = std::str::from_utf8(&data[0..string_end])?;
 
         Ok(s.to_string())
     }
 
     /// Parses a numeric value from one of the header fields.
-    /// The format is in octal with leading zeros and followed by a null or space character.
+    /// The format is in octal with leading zeros and followed by a null or
+    /// space character.
     fn parse_numeric_value(data: &[u8]) -> Result<Option<u64>> {
         if data[0] == 0 {
             Self::check_zero_padding(data)?;
@@ -309,7 +312,9 @@ impl Reader {
 
         let last_byte = data[data.len() - 1];
         if last_byte != b'\0' && last_byte != b' ' {
-            return Err(err_msg("Numeric field doens't end in NUL or space character"));
+            return Err(err_msg(
+                "Numeric field doens't end in NUL or space character",
+            ));
         }
 
         let octal_data = &data[0..(data.len() - 1)];
@@ -319,7 +324,8 @@ impl Reader {
 
     /// Parses the header checksum value.
     fn parse_checksum_value(data: &[u8]) -> Result<u32> {
-        let octal_data = data.strip_suffix(b"\0 ")
+        let octal_data = data
+            .strip_suffix(b"\0 ")
             .ok_or_else(|| err_msg("Invalid suffix on checksum field"))?;
         let num = Self::parse_octal(octal_data)? as u32;
         Ok(num)
@@ -332,9 +338,10 @@ impl Reader {
 
         let mut out = 0;
         for i in 0..data.len() {
-            let digit = (data[i] as char).to_digit(8)
+            let digit = (data[i] as char)
+                .to_digit(8)
                 .ok_or_else(|| err_msg("Invalid octal digit"))? as u64;
-            
+
             out = (out << 3) | digit;
         }
 
@@ -355,26 +362,27 @@ impl Reader {
         self.extract_files_with_modes(output_dir, None, None).await
     }
 
-    // NOTE: This will only success if none of the files we are extracting exist yet in the
-    // output_dir.
+    // NOTE: This will only success if none of the files we are extracting exist yet
+    // in the output_dir.
     pub async fn extract_files_with_modes(
-        &mut self, output_dir: &Path, file_mode: Option<u32>, dir_mode: Option<u32>
+        &mut self,
+        output_dir: &Path,
+        file_mode: Option<u32>,
+        dir_mode: Option<u32>,
     ) -> Result<()> {
         while let Some(entry) = self.read_entry().await? {
-
             // TODO: Also remove any '..' parts from the path
             let mut relpath = Path::new(&entry.metadata.header.file_name);
-            
+
             if relpath.is_absolute() {
                 relpath = relpath.strip_prefix("/")?;
             }
 
-            let path = common::async_std::path::PathBuf::from(
-                output_dir.join(relpath));
+            let path = common::async_std::path::PathBuf::from(output_dir.join(relpath));
 
             if entry.is_regular() {
-                // NOTE: We assume that separate directory entries are present and precede all entries
-                // within that directory.
+                // NOTE: We assume that separate directory entries are present and precede all
+                // entries within that directory.
                 /*
                 let dir = path.parent()
                     .ok_or_else(|| err_msg("Can't get parent path"))?;
@@ -383,7 +391,11 @@ impl Reader {
                 }
                 */
 
-                let mut file = OpenOptions::new().create_new(true).write(true).open(&path).await?;
+                let mut file = OpenOptions::new()
+                    .create_new(true)
+                    .write(true)
+                    .open(&path)
+                    .await?;
                 let data = self.read_data(&entry).await?;
                 file.write_all(&data).await?;
                 file.flush().await?;
@@ -397,12 +409,13 @@ impl Reader {
                         base_mode = mode;
                     }
 
-                    perms.set_mode(base_mode | (entry.metadata.header.file_mode.unwrap_or(0) & 0o111));
+                    perms.set_mode(
+                        base_mode | (entry.metadata.header.file_mode.unwrap_or(0) & 0o111),
+                    );
 
                     // TODO: Only run this if the permissions changed.
                     file.set_permissions(perms).await?;
                 }
-                
             } else if entry.is_directory() {
                 if !path.exists().await {
                     common::async_std::fs::create_dir(&path).await?;
@@ -423,7 +436,7 @@ impl Reader {
 }
 
 pub struct Writer {
-    file: File
+    file: File,
 }
 
 impl Writer {
@@ -434,12 +447,19 @@ impl Writer {
             file: OpenOptions::new()
                 .create(true)
                 // .create_new(true)
-                .write(true).open(path.as_ref()).await?
+                .write(true)
+                .open(path.as_ref())
+                .await?,
         })
     }
 
-    /// Appends a single file to the end of the file using the exact metadata given.
-    pub async fn append(&mut self, metadata: &FileMetadata, reader: &mut dyn Readable) -> Result<()> {
+    /// Appends a single file to the end of the file using the exact metadata
+    /// given.
+    pub async fn append(
+        &mut self,
+        metadata: &FileMetadata,
+        reader: &mut dyn Readable,
+    ) -> Result<()> {
         let mut header_block = vec![];
 
         let mut raw_header = proto::Header {
@@ -451,17 +471,32 @@ impl Writer {
             last_modified_time: [0; 12],
             header_checksum: [0; 8],
             file_type: 0,
-            linked_file_name: [0u8; 100]
+            linked_file_name: [0u8; 100],
         };
 
         Self::serialize_string(&metadata.header.file_name, &mut raw_header.file_name)?;
-        Self::serialize_numeric_value(&metadata.header.file_mode.map(|v| v as u64), &mut raw_header.file_mode)?;
-        Self::serialize_numeric_value(&metadata.header.owner_id.map(|v| v as u64), &mut raw_header.owner_id)?;
-        Self::serialize_numeric_value(&metadata.header.group_id.map(|v| v as u64), &mut raw_header.group_id)?;
+        Self::serialize_numeric_value(
+            &metadata.header.file_mode.map(|v| v as u64),
+            &mut raw_header.file_mode,
+        )?;
+        Self::serialize_numeric_value(
+            &metadata.header.owner_id.map(|v| v as u64),
+            &mut raw_header.owner_id,
+        )?;
+        Self::serialize_numeric_value(
+            &metadata.header.group_id.map(|v| v as u64),
+            &mut raw_header.group_id,
+        )?;
         Self::serialize_numeric_value(&metadata.header.file_size, &mut raw_header.file_size)?;
-        Self::serialize_numeric_value(&metadata.header.last_modified_time, &mut raw_header.last_modified_time)?;
+        Self::serialize_numeric_value(
+            &metadata.header.last_modified_time,
+            &mut raw_header.last_modified_time,
+        )?;
         raw_header.file_type = metadata.header.file_type.to_value();
-        Self::serialize_string(&metadata.header.linked_file_name, &mut raw_header.linked_file_name)?;
+        Self::serialize_string(
+            &metadata.header.linked_file_name,
+            &mut raw_header.linked_file_name,
+        )?;
         raw_header.serialize(&mut header_block)?;
 
         if let Some(ustar) = &metadata.ustar_extension {
@@ -477,8 +512,14 @@ impl Writer {
 
             Self::serialize_string(&ustar.owner_name, &mut raw_ustar.owner_name)?;
             Self::serialize_string(&ustar.group_name, &mut raw_ustar.group_name)?;
-            Self::serialize_numeric_value(&ustar.device_major_number.map(|v| v as u64), &mut raw_ustar.device_major_number)?;
-            Self::serialize_numeric_value(&ustar.device_minor_number.map(|v| v as u64), &mut raw_ustar.device_minor_number)?;
+            Self::serialize_numeric_value(
+                &ustar.device_major_number.map(|v| v as u64),
+                &mut raw_ustar.device_major_number,
+            )?;
+            Self::serialize_numeric_value(
+                &ustar.device_minor_number.map(|v| v as u64),
+                &mut raw_ustar.device_minor_number,
+            )?;
 
             // TODO: Support long file names using the file_name_prefix
 
@@ -488,17 +529,16 @@ impl Writer {
         // Add checksum now that we are done writing.
         {
             let checksum = Reader::calculate_checksum(&header_block);
-            let checksum_data = &mut header_block[148..(148+8)];
+            let checksum_data = &mut header_block[148..(148 + 8)];
 
             let s = format!("{:06o}\0 ", checksum);
             assert_eq!(s.len(), checksum_data.len());
 
             checksum_data.copy_from_slice(s.as_bytes());
-
         }
 
         header_block.resize(BLOCK_SIZE as usize, 0);
-        
+
         self.file.write_all(&header_block).await?;
 
         // Maximum number of bytes that we will transfer in a single loop cycle.
@@ -513,7 +553,8 @@ impl Writer {
             let nblock = std::cmp::min(block.len() as u64, file_size - n) as usize;
             reader.read_exact(&mut block[0..nblock]).await?;
 
-            let nblock_padded = common::ceil_div(nblock, BLOCK_SIZE as usize) * (BLOCK_SIZE as usize);
+            let nblock_padded =
+                common::ceil_div(nblock, BLOCK_SIZE as usize) * (BLOCK_SIZE as usize);
 
             self.file.write_all(&mut block[0..nblock_padded]).await?;
             n += nblock_padded as u64;
@@ -547,7 +588,9 @@ impl Writer {
 
             out[0..num_str.len()].copy_from_slice(num_str.as_bytes());
         } else {
-            for i in 0..out.len() { out[i] = 0; }
+            for i in 0..out.len() {
+                out[i] = 0;
+            }
         }
 
         Ok(())
@@ -559,41 +602,51 @@ impl Writer {
 
         // DFS
         while let Some(path) = pending_paths.pop() {
-            self.append_single_file(&path, options, &mut pending_paths).await?;
+            self.append_single_file(&path, options, &mut pending_paths)
+                .await?;
         }
 
         Ok(())
     }
 
     async fn append_single_file(
-        &mut self, path: &Path,
-        options: &AppendFileOption, pending_paths: &mut Vec<PathBuf>
+        &mut self,
+        path: &Path,
+        options: &AppendFileOption,
+        pending_paths: &mut Vec<PathBuf>,
     ) -> Result<()> {
         let path = common::async_std::path::Path::new(path);
         // NOTE: We will not follow symlinks when resolving metadata.
-        let metadata =  path.symlink_metadata().await?;
+        let metadata = path.symlink_metadata().await?;
 
         let (file_type, file_size, mut reader): (FileType, u64, Box<dyn Readable>) = {
             if metadata.is_dir() {
                 (FileType::Directory, 0, Box::new(Cursor::new(&[])))
             } else if metadata.is_file() {
                 let file = File::open(path).await?;
-                (FileType::NormalFile,  metadata.len(), Box::new(file))
+                (FileType::NormalFile, metadata.len(), Box::new(file))
             } else {
                 return Err(err_msg("Unsupported file type"));
             }
         };
 
-        let mut file_name = path.strip_prefix(&options.root_dir)?.to_str()
+        let mut file_name = path
+            .strip_prefix(&options.root_dir)?
+            .to_str()
             .ok_or_else(|| err_msg("File name is not valid UTF-8"))?
-            .trim_end_matches('/').to_string();        
+            .trim_end_matches('/')
+            .to_string();
         if file_type == FileType::Directory {
             file_name.push('/');
         }
 
         let mut last_modified_time = None;
         if let Ok(time) = metadata.modified() {
-            last_modified_time = Some(time.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
+            last_modified_time = Some(
+                time.duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            );
         }
 
         let archive_metadata = FileMetadata {
@@ -614,7 +667,7 @@ impl Writer {
                 device_major_number: None,
                 device_minor_number: None,
                 file_name_prefix: String::new(),
-            })
+            }),
         };
 
         self.append(&archive_metadata, reader.as_mut()).await?;
@@ -636,9 +689,10 @@ impl Writer {
         Ok(())
     }
 
-    /// Call when you are done appending records to add the end marker to the file.
+    /// Call when you are done appending records to add the end marker to the
+    /// file.
     pub async fn finish(mut self) -> Result<()> {
-        let zero_blocks = [0u8; 2*BLOCK_SIZE as usize];
+        let zero_blocks = [0u8; 2 * BLOCK_SIZE as usize];
         self.file.write_all(&zero_blocks).await?;
         Ok(())
     }

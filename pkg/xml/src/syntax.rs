@@ -21,7 +21,6 @@ parser!(pub parse_document<&str, Document> => seq!(c => {
     })
 }));
 
-
 /*
 Char  ::=  #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
 */
@@ -35,15 +34,20 @@ S  ::=  (#x20 | #x9 | #xD | #xA)+
 */
 parser!(parse_s<&str, ()> => map(many1(one_of("\x20\x09\x0D\x0A")), |_| ()));
 
-
 /*
 NameChar  ::=  Letter | Digit
             |  '.' | '-' | '_' | ':'
             |  CombiningChar | Extender
 */
 fn is_name_char(c: char) -> bool {
-    is_letter(c) || is_digit(c) || c == '.' || c == '-' ||
-    c == '_' || c == ':' || is_combining_char(c) || is_extender(c)
+    is_letter(c)
+        || is_digit(c)
+        || c == '.'
+        || c == '-'
+        || c == '_'
+        || c == ':'
+        || is_combining_char(c)
+        || is_extender(c)
 }
 
 /*
@@ -107,14 +111,14 @@ parser!(parse_char_data<&str, &str> => seq!(c => {
             if let Some(_) = c.next(opt(peek(tag("]]>"))))? {
                 break;
             }
-    
+
             if let Some(_) = c.next(opt(not_one_of("<&")))? {
                 // Continue
             } else {
                 break;
             }
         }
-    
+
         Ok(())
     })))?;
 
@@ -157,7 +161,6 @@ CDEnd    ::=  ']]>'
 
 */
 
-
 /*
 prolog       ::=  XMLDecl? Misc* (doctypedecl Misc*)?
 */
@@ -196,7 +199,6 @@ parser!(parse_version_info<&str, ()> => seq!(c => {
     c.next(atom(quote))?;
     Ok(())
 }));
-
 
 /*
 Eq           ::=  S? '=' S?
@@ -459,14 +461,12 @@ parser!(parse_char_ref<&str, char> => alt!(
     })
 ));
 
-
 /*
 Reference    ::=  EntityRef | CharRef
 */
 parser!(parse_reference<&str, char> => alt!(
     parse_entity_ref, parse_char_ref
 ));
-
 
 /*
 EntityRef    ::=  '&' Name ';'
@@ -486,12 +486,9 @@ parser!(parse_entity_ref<&str, char> => seq!(c => {
     })
 }));
 
-
 /*
 PEReference  ::=  '%' Name ';'
 */
-
-
 
 /*
 Entity Declarations
@@ -665,7 +662,6 @@ Extender       ::=  #xB7 | #x2D0 | #x2D1 | #x387 | #x640 | #xE46
 fn is_extender(c: char) -> bool {
     false
 }
-
 
 #[cfg(test)]
 mod tests {

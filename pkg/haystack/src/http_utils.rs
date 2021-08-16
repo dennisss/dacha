@@ -106,7 +106,10 @@ pub async fn run_http_server<
     func: Func,
     arg: Arc<Arg>,
 ) {
-    let mut server = http::Server::new(RequestHandlerWrap { func, arg }, http::ServerOptions::default());
+    let mut server = http::Server::new(
+        RequestHandlerWrap { func, arg },
+        http::ServerOptions::default(),
+    );
 
     server.set_shutdown_token(common::shutdown::new_shutdown_token());
 

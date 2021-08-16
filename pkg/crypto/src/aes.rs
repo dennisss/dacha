@@ -3,10 +3,10 @@ use core::arch::x86_64::*;
 
 use common::errors::*;
 
+use crate::aes_generic::*;
 use crate::cipher::*;
 use crate::utils::xor;
 use crate::utils::xor_inplace;
-use crate::aes_generic::*;
 
 // TODO: See also https://botan.randombit.net/doxygen/aes__ni_8cpp_source.html
 
@@ -110,7 +110,6 @@ macro_rules! aes256_key_expand {
     }};
 }
 
-
 /// Encryptor/decrypter that uses one of AES-128/192/256 on
 /// single blocks at a time. Typically you should use a stream
 /// cipher that wraps this rather than using this directly.
@@ -157,14 +156,14 @@ impl AESBlockCipher {
         })
     }
 
-    /// Round keys implementation which can run on any CPU platform, but doesn't use any special
-    /// AES acceleration instructions. 
+    /// Round keys implementation which can run on any CPU platform, but doesn't
+    /// use any special AES acceleration instructions.
     fn round_keys_generic(key: &[u8]) -> Result<Vec<RoundKey>> {
         // Number of 32 bit words in the key.
         let n = key.len() / 4;
-        
+
         // Number of round keys.
-        let r = match key.len()*8  {
+        let r = match key.len() * 8 {
             128 => 11,
             192 => 13,
             256 => 15,
@@ -175,7 +174,7 @@ impl AESBlockCipher {
 
         fn rot_word(w: u32) -> u32 {
             if cfg!(target_endian = "big") {
-                w.rotate_left(8)    
+                w.rotate_left(8)
             } else {
                 w.rotate_right(8)
             }
@@ -184,9 +183,9 @@ impl AESBlockCipher {
         let mut rc_iter = RoundConstantIter::new();
 
         let mut words = vec![];
-        for i in 0..4*r {
+        for i in 0..4 * r {
             let w_i = if i < n {
-                u32::from_ne_bytes(*array_ref![key, 4*i, 4])
+                u32::from_ne_bytes(*array_ref![key, 4 * i, 4])
             } else if (i % n) == 0 {
                 words[i - n] ^ sub_word(rot_word(words[i - 1])) ^ rc_iter.next_ne_word()
             } else if n > 6 && ((i % n) == 4) {
@@ -210,8 +209,12 @@ impl AESBlockCipher {
         //     keys.push(k);
         // }
         {
-            let word_data = unsafe { std::slice::from_raw_parts::<RoundKey>(
-                std::mem::transmute(words.as_ptr()), words.len() / 4) };
+            let word_data = unsafe {
+                std::slice::from_raw_parts::<RoundKey>(
+                    std::mem::transmute(words.as_ptr()),
+                    words.len() / 4,
+                )
+            };
             keys.extend_from_slice(word_data);
         }
 
@@ -327,7 +330,7 @@ impl AESBlockCipher {
             xor_inplace(&rks[i], &mut state);
             mix_columns(&mut state, true);
             shift_rows(&mut state, true);
-            sub_bytes(&mut state, true);        
+            sub_bytes(&mut state, true);
         }
 
         xor_inplace(&rks[0], &mut state);
@@ -354,7 +357,6 @@ impl AESBlockCipher {
 
         from_m128i(state, out);
     }
-
 }
 
 impl BlockCipher for AESBlockCipher {
@@ -396,7 +398,7 @@ macro_rules! next_block_mut {
 }
 
 struct ECBModeCipher<C: BlockCipher> {
-    cipher: C
+    cipher: C,
 }
 
 impl<C: BlockCipher> ECBModeCipher<C> {
@@ -434,7 +436,6 @@ impl<C: BlockCipher> ECBModeCipher<C> {
         }
     }
 }
-
 
 // TODO: Start testing this.
 struct CBCModeCipher<C: BlockCipher> {
@@ -495,16 +496,15 @@ mod tests {
     #[test]
     fn round_constant_test() {
         let expected = [
-            0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36,
-            0x6C, 0xD8, 0xAB, 0x4D, 0x9A, 0x2F, 0x5E, 0xBC, 0x63, 0xC6,
-            0x97, 0x35, 0x6A, 0xD4, 0xB3, 0x7D, 0xFA, 0xEF, 0xC5
+            0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36, 0x6C, 0xD8, 0xAB, 0x4D,
+            0x9A, 0x2F, 0x5E, 0xBC, 0x63, 0xC6, 0x97, 0x35, 0x6A, 0xD4, 0xB3, 0x7D, 0xFA, 0xEF,
+            0xC5,
         ];
 
         let mut iter = RoundConstantIter::new();
         for c in expected {
             assert_eq!(c, iter.next().unwrap());
         }
-
     }
 
     #[test]
@@ -513,41 +513,31 @@ mod tests {
         // https://en.wikipedia.org/wiki/Rijndael_MixColumns#Test_vectors_for_MixColumn().
 
         let initial_state1 = [
-            219, 19, 83, 69,
-            242, 10, 34, 92,
-            1, 1, 1, 1,
-            198, 198, 198, 198	
+            219, 19, 83, 69, 242, 10, 34, 92, 1, 1, 1, 1, 198, 198, 198, 198,
         ];
 
         let mut state1 = initial_state1.clone();
 
         mix_columns(&mut state1, false);
-        assert_eq!(state1, [
-            142, 77, 161, 188,
-            159, 220, 88, 157,
-            1, 1, 1, 1,
-            198, 198, 198, 198	
-        ]);
+        assert_eq!(
+            state1,
+            [142, 77, 161, 188, 159, 220, 88, 157, 1, 1, 1, 1, 198, 198, 198, 198]
+        );
 
         mix_columns(&mut state1, true);
         assert_eq!(state1, initial_state1);
 
         let initial_state2 = [
-            212, 212, 212, 213,
-            45, 38, 49, 76,
-            1, 1, 1, 1,
-            198, 198, 198, 198	
+            212, 212, 212, 213, 45, 38, 49, 76, 1, 1, 1, 1, 198, 198, 198, 198,
         ];
 
         let mut state2 = initial_state2.clone();
 
         mix_columns(&mut state2, false);
-        assert_eq!(state2, [
-            213, 213, 215, 214,
-            77, 126, 189, 248,
-            1, 1, 1, 1,
-            198, 198, 198, 198
-        ]);
+        assert_eq!(
+            state2,
+            [213, 213, 215, 214, 77, 126, 189, 248, 1, 1, 1, 1, 198, 198, 198, 198]
+        );
 
         mix_columns(&mut state2, true);
         assert_eq!(state2, initial_state2);
@@ -555,23 +545,15 @@ mod tests {
 
     #[test]
     fn shift_rows_test() {
-        let initial_state = [
-            1, 2, 3, 4,
-            5, 6, 7, 8,
-            9, 10, 11, 12,
-            13, 14, 15, 16
-        ];
-
+        let initial_state = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         let mut state = initial_state.clone();
 
         shift_rows(&mut state, false);
-        assert_eq!(state, [
-            1, 6, 11, 16,
-            5, 10, 15, 4,
-            9, 14, 3, 8,
-            13, 2, 7, 12
-        ]);
+        assert_eq!(
+            state,
+            [1, 6, 11, 16, 5, 10, 15, 4, 9, 14, 3, 8, 13, 2, 7, 12]
+        );
 
         shift_rows(&mut state, true);
         assert_eq!(state, initial_state);
@@ -649,7 +631,7 @@ mod tests {
             // "testdata/nist/aes/mct/ECBMCT128.rsp",
             // "testdata/nist/aes/mct/ECBMCT256.rsp",
             "testdata/nist/aes/mmt/ECBMMT128.rsp",
-            "testdata/nist/aes/mmt/ECBMMT256.rsp"
+            "testdata/nist/aes/mmt/ECBMMT256.rsp",
         ];
 
         for path in paths.iter().cloned() {
@@ -659,10 +641,10 @@ mod tests {
 
             for response in file.iter() {
                 let response = response?;
-                
+
                 let encrypt = response.attributes.contains_key("ENCRYPT");
                 let decrypt = response.attributes.contains_key("DECRYPT");
-                
+
                 let key = hex::decode(response.fields.get("KEY").unwrap())?;
                 let plaintext = hex::decode(response.fields.get("PLAINTEXT").unwrap())?;
                 let ciphertext = hex::decode(response.fields.get("CIPHERTEXT").unwrap())?;
@@ -677,8 +659,13 @@ mod tests {
 
                     aes.encrypt(&plaintext, &mut output);
 
-                    assert_eq!(output, ciphertext, "{} vs {}", hex::encode(&output), hex::encode(&ciphertext));
-
+                    assert_eq!(
+                        output,
+                        ciphertext,
+                        "{} vs {}",
+                        hex::encode(&output),
+                        hex::encode(&ciphertext)
+                    );
                 } else if decrypt {
                     let mut output = vec![];
                     output.resize(ciphertext.len(), 0);
@@ -686,12 +673,10 @@ mod tests {
                     aes.decrypt(&ciphertext, &mut output);
 
                     assert_eq!(output, plaintext);
-
                 } else {
                     panic!("Unknown testing mode");
                 }
             }
-
         }
 
         Ok(())

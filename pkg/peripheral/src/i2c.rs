@@ -1,4 +1,7 @@
-use std::{io::{Read, Write}, os::unix::prelude::AsRawFd};
+use std::{
+    io::{Read, Write},
+    os::unix::prelude::AsRawFd,
+};
 
 use common::errors::*;
 
@@ -9,14 +12,12 @@ https://www.kernel.org/doc/html/v5.5/i2c/dev-interface.html
 All ioctl commands return -1 on error. 0 on success. Read values read the read value.
 */
 
-
 mod linux {
     const I2C_IOC_MAGIC: u8 = 0x07;
 
     const I2C_IOC_TYPE_SLAVE: u8 = 0x03;
 
     ioctl_write_int!(i2c_set_peripheral_addr, I2C_IOC_MAGIC, I2C_IOC_TYPE_SLAVE);
-
 }
 
 pub struct I2CDevice {
@@ -24,7 +25,6 @@ pub struct I2CDevice {
 }
 
 impl I2CDevice {
-
     pub fn open(path: &str) -> Result<Self> {
         let file = std::fs::OpenOptions::new()
             .read(true)
@@ -45,8 +45,8 @@ impl I2CDevice {
             return Err(err_msg("Failed to set addr"));
         }
 
-        // let r = unsafe { linux::i2c_set_peripheral_addr(self.file.as_raw_fd(), addr as u64) }?;
-        // println!("SET ADDR RESULT: {}", r);
+        // let r = unsafe { linux::i2c_set_peripheral_addr(self.file.as_raw_fd(), addr
+        // as u64) }?; println!("SET ADDR RESULT: {}", r);
 
         // println!("READ");
 
@@ -78,5 +78,4 @@ impl I2CDevice {
 
         Ok(())
     }
-
 }

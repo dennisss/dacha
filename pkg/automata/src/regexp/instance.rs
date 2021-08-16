@@ -2,13 +2,12 @@ use std::collections::HashMap;
 
 use common::errors::*;
 
-use crate::regexp::alphabet::*;
 use crate::fsm::*;
-use crate::regexp::symbol::*;
-use crate::regexp::state_machine::*;
+use crate::regexp::alphabet::*;
 use crate::regexp::node::*;
 use crate::regexp::r#match::*;
-
+use crate::regexp::state_machine::*;
+use crate::regexp::symbol::*;
 
 #[derive(Debug)]
 pub struct RegExp {
@@ -80,7 +79,10 @@ impl RegExp {
         self.state_machine.accepts(iter)
     }
 
-    pub fn exec<'a, 'b, T: AsRef<[u8]> + ?Sized>(&'a self, value: &'b T) -> Result<Option<RegExpMatch<'a, 'b>>> {
+    pub fn exec<'a, 'b, T: AsRef<[u8]> + ?Sized>(
+        &'a self,
+        value: &'b T,
+    ) -> Result<Option<RegExpMatch<'a, 'b>>> {
         let state = RegExpMatch {
             instance: self,
             value: value.as_ref(),
@@ -102,7 +104,6 @@ pub(crate) struct RegExpMetadata {
     pub num_groups: usize,
     pub named_groups: HashMap<String, usize>,
 }
-
 
 struct RegExpSymbolIter<'a> {
     char_iter: std::str::Chars<'a>,
@@ -132,15 +133,6 @@ impl<'a> std::iter::Iterator for RegExpSymbolIter<'a> {
         }
     }
 }
-
-
-
-
-
-
-
-
-
 
 #[cfg(test)]
 mod tests {

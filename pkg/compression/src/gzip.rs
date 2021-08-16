@@ -8,8 +8,8 @@ use crypto::checksum::crc::*;
 use crypto::hasher::*;
 use parsing::iso::*;
 
-use crate::deflate::*;
 use crate::buffer_queue::BufferQueue;
+use crate::deflate::*;
 use crate::transform::*;
 
 // ZLib RFC http://www.zlib.org/rfc-gzip.html
@@ -114,7 +114,7 @@ impl Header {
         };
 
         let writer = output as &mut dyn Write;
-    
+
         let mut header_buf = [0u8; HEADER_SIZE];
         header_buf[0..2].copy_from_slice(GZIP_MAGIC);
         header_buf[2] = self.compression_method as u8;
@@ -123,25 +123,24 @@ impl Header {
         header_buf[8] = self.extra_flags;
         header_buf[9] = self.os;
         writer.write_all(&header_buf)?;
-    
+
         if let Some(data) = &self.extra_field {
             writer.write_u32::<LittleEndian>(data.len() as u32)?;
             writer.write_all(&data)?;
         }
-    
+
         let null = [0u8; 1];
         if let Some(s) = &self.filename {
             // TODO: Validate is Latin1String.
             writer.write_all(s.as_bytes())?;
             writer.write_all(&null)?;
         }
-    
+
         if let Some(s) = &self.comment {
             // TODO: Validate is Latin1String.
             writer.write_all(s.as_bytes())?;
             writer.write_all(&null)?;
         }
-
 
         Ok(())
     }
@@ -149,9 +148,8 @@ impl Header {
 
 struct Trailer {
     body_checksum: u32,
-    uncompressed_size: u32
+    uncompressed_size: u32,
 }
-
 
 #[derive(Debug)]
 pub struct GZipFile {
@@ -223,7 +221,6 @@ trait RecordedRead: Read {
 
 // }
 
-
 pub struct GzipDecoder {
     state: GzipDecoderState,
 
@@ -236,14 +233,12 @@ pub struct GzipDecoder {
     inflater: Inflater,
 
     hasher: CRC32Hasher,
-
-    // header: Option<Header>,
-    // body_read: bool,
-    // trailer_read: bool,
+    /* header: Option<Header>,
+     * body_read: bool,
+     * trailer_read: bool, */
 }
 
 impl GzipDecoder {
-
     pub fn new() -> Self {
         Self {
             state: GzipDecoderState::Header,
@@ -251,11 +246,16 @@ impl GzipDecoder {
             header: None,
             output_size: 0,
             inflater: Inflater::new(),
-            hasher: CRC32Hasher::new()
+            hasher: CRC32Hasher::new(),
         }
     }
 
-    fn update_impl(&mut self, mut input: &[u8], end_of_input: bool, output: &mut [u8]) -> Result<TransformProgress> {
+    fn update_impl(
+        &mut self,
+        mut input: &[u8],
+        end_of_input: bool,
+        output: &mut [u8],
+    ) -> Result<TransformProgress> {
         let mut input_read = 0;
         let mut output_written = 0;
         let mut done = false;
@@ -271,7 +271,7 @@ impl GzipDecoder {
                         if header.compression_method != CompressionMethod::Deflate {
                             return Err(err_msg("Unsupported compression method"));
                         }
-    
+
                         self.state = GzipDecoderState::Body;
                     } else {
                         break;
@@ -284,7 +284,8 @@ impl GzipDecoder {
                     input = &input[inner_progress.input_read..];
 
                     output_written += inner_progress.output_written;
-                    self.hasher.update(&output[0..inner_progress.output_written]);
+                    self.hasher
+                        .update(&output[0..inner_progress.output_written]);
                     self.output_size += inner_progress.output_written;
 
                     if inner_progress.done {
@@ -295,10 +296,11 @@ impl GzipDecoder {
                     }
                 }
                 GzipDecoderState::Trailer => {
-                    let (maybe_trailer, n) = self.input_buffer.try_read(input, Self::read_trailer)?;
+                    let (maybe_trailer, n) =
+                        self.input_buffer.try_read(input, Self::read_trailer)?;
                     input_read += n;
                     input = &input[n..];
-                    
+
                     if let Some(trailer) = maybe_trailer {
                         if trailer.uncompressed_size as usize != self.output_size {
                             return Err(format_err!(
@@ -307,17 +309,21 @@ impl GzipDecoder {
                                 self.output_size
                             ));
                         }
-                    
+
                         let actual_checksum = self.hasher.finish_u32();
                         if trailer.body_checksum != actual_checksum {
-                            return Err(format_err!("Trailer wrong checksum: {:x} {:x}", actual_checksum, trailer.body_checksum));
+                            return Err(format_err!(
+                                "Trailer wrong checksum: {:x} {:x}",
+                                actual_checksum,
+                                trailer.body_checksum
+                            ));
                         }
 
                         self.state = GzipDecoderState::Done;
 
                         done = true;
 
-                        // TODO: Can now clear the self.input_buffer completely. 
+                        // TODO: Can now clear the self.input_buffer completely.
                     }
 
                     break;
@@ -333,7 +339,7 @@ impl GzipDecoder {
         Ok(TransformProgress {
             done,
             input_read,
-            output_written
+            output_written,
         })
     }
 
@@ -410,8 +416,11 @@ impl GzipDecoder {
     fn read_trailer(reader: &mut dyn Read) -> Result<Trailer> {
         let body_checksum = reader.read_u32::<LittleEndian>()?;
         let uncompressed_size = reader.read_u32::<LittleEndian>()?;
-    
-        Ok(Trailer { body_checksum, uncompressed_size })
+
+        Ok(Trailer {
+            body_checksum,
+            uncompressed_size,
+        })
     }
 }
 
@@ -420,7 +429,7 @@ impl Transform for GzipDecoder {
         &mut self,
         input: &[u8],
         end_of_input: bool,
-        output: &mut [u8],        
+        output: &mut [u8],
     ) -> Result<TransformProgress> {
         self.update_impl(input, end_of_input, output)
     }
@@ -431,12 +440,13 @@ enum GzipDecoderState {
     /// Very start of the file including all conditional fields
     Header,
 
-    /// This will need to have an Inflater, and a rolling checksum calculator (for either )
+    /// This will need to have an Inflater, and a rolling checksum calculator
+    /// (for either )
     Body,
 
     Trailer,
 
-    Done
+    Done,
 }
 
 // TODO: Must operate on the uncompressed data.
@@ -452,18 +462,17 @@ fn is_text(data: &[u8]) -> bool {
     true
 }
 
-
 struct GzipEncoder {
     output_buffer: BufferQueue,
 
     deflater: Deflater,
-    
+
     hasher: CRC32Hasher,
 
     /// Total size of all uncompressed input data seen so far.
     input_size: usize,
 
-    trailer_written: bool
+    trailer_written: bool,
 }
 
 impl GzipEncoder {
@@ -472,7 +481,7 @@ impl GzipEncoder {
         header.serialize(&mut output_buffer.buffer);
 
         if header.compression_method != CompressionMethod::Deflate {
-            return Err(err_msg("Only deflate"))
+            return Err(err_msg("Only deflate"));
         }
 
         Ok(Self {
@@ -480,11 +489,16 @@ impl GzipEncoder {
             deflater: Deflater::new(),
             hasher: CRC32Hasher::new(),
             input_size: 0,
-            trailer_written: false
+            trailer_written: false,
         })
     }
 
-    pub fn update_impl(&mut self, input: &[u8], end_of_input: bool, mut output: &mut [u8]) -> Result<TransformProgress> {
+    pub fn update_impl(
+        &mut self,
+        input: &[u8],
+        end_of_input: bool,
+        mut output: &mut [u8],
+    ) -> Result<TransformProgress> {
         let mut input_read = 0;
         let mut output_written = 0;
 
@@ -496,10 +510,10 @@ impl GzipEncoder {
         }
 
         // Run compression
-        // NOTE: The inner compressor will never push bytes into the user's output buffer until
-        // self.output_buffer is empty.
+        // NOTE: The inner compressor will never push bytes into the user's output
+        // buffer until self.output_buffer is empty.
         let inner_progress = self.deflater.update(input, end_of_input, output)?;
-        
+
         // Advance input counters and hasher.
         input_read += inner_progress.input_read;
         self.input_size += inner_progress.input_read;
@@ -511,8 +525,12 @@ impl GzipEncoder {
 
         // Enqueue trailer to be written if all compressed bytes have been written.
         if inner_progress.done && !self.trailer_written {
-            self.output_buffer.buffer.extend_from_slice(&self.hasher.finish_u32().to_le_bytes());
-            self.output_buffer.buffer.extend_from_slice(&(self.input_size as u32).to_le_bytes());
+            self.output_buffer
+                .buffer
+                .extend_from_slice(&self.hasher.finish_u32().to_le_bytes());
+            self.output_buffer
+                .buffer
+                .extend_from_slice(&(self.input_size as u32).to_le_bytes());
             self.trailer_written = true;
         }
 
@@ -523,7 +541,7 @@ impl GzipEncoder {
         Ok(TransformProgress {
             input_read,
             output_written,
-            done
+            done,
         })
     }
 }
@@ -533,12 +551,11 @@ impl Transform for GzipEncoder {
         &mut self,
         input: &[u8],
         end_of_input: bool,
-        output: &mut [u8],        
+        output: &mut [u8],
     ) -> Result<TransformProgress> {
         self.update_impl(input, end_of_input, output)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -549,14 +566,34 @@ mod tests {
         let root_dir = std::path::Path::new("../../");
 
         let test_cases: &[(&'static str, &'static str)] = &[
-            ("testdata/gutenberg/shakespeare.txt", "testdata/derived/shakespeare.txt.9.gz"),
-            ("testdata/gutenberg/shakespeare.txt", "testdata/derived/shakespeare.txt.1.gz"),
-            ("testdata/gutenberg/shakespeare.txt", "testdata/derived/shakespeare.txt.2.gz"),
-            ("testdata/gutenberg/shakespeare.txt", "testdata/derived/shakespeare.txt.4.gz"),
-
-            ("testdata/random/random_100", "testdata/derived/random_100.5.gz"),    
-            ("testdata/random/random_463", "testdata/derived/random_463.5.gz"),
-            ("testdata/random/random_4096", "testdata/derived/random_4096.5.gz"),
+            (
+                "testdata/gutenberg/shakespeare.txt",
+                "testdata/derived/shakespeare.txt.9.gz",
+            ),
+            (
+                "testdata/gutenberg/shakespeare.txt",
+                "testdata/derived/shakespeare.txt.1.gz",
+            ),
+            (
+                "testdata/gutenberg/shakespeare.txt",
+                "testdata/derived/shakespeare.txt.2.gz",
+            ),
+            (
+                "testdata/gutenberg/shakespeare.txt",
+                "testdata/derived/shakespeare.txt.4.gz",
+            ),
+            (
+                "testdata/random/random_100",
+                "testdata/derived/random_100.5.gz",
+            ),
+            (
+                "testdata/random/random_463",
+                "testdata/derived/random_463.5.gz",
+            ),
+            (
+                "testdata/random/random_4096",
+                "testdata/derived/random_4096.5.gz",
+            ),
         ];
 
         for (uncompressed_path, compressed_path) in test_cases.iter().clone() {
@@ -568,7 +605,12 @@ mod tests {
             let mut decoder = GzipDecoder::new();
 
             let mut uncompressed_test = vec![];
-            crate::transform::transform_to_vec(&mut decoder, &compressed, true, &mut uncompressed_test)?;
+            crate::transform::transform_to_vec(
+                &mut decoder,
+                &compressed,
+                true,
+                &mut uncompressed_test,
+            )?;
 
             assert_eq!(uncompressed_test, uncompressed);
         }
@@ -577,6 +619,4 @@ mod tests {
 
         Ok(())
     }
-
 }
-

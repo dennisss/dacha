@@ -1,13 +1,14 @@
-#[macro_use] extern crate common;
+#[macro_use]
+extern crate common;
 extern crate dymo;
 extern crate graphics;
 extern crate image;
 
 use common::bits::BitVector;
 use common::errors::*;
+use graphics::font::CanvasFontExt;
 use graphics::font::OpenTypeFont;
 use graphics::raster::canvas::Canvas;
-use graphics::font::CanvasFontExt;
 
 /*
 NOTE: Max packet size is 64
@@ -37,9 +38,7 @@ Output: 8
 
 */
 
-
 async fn run() -> Result<()> {
-
     let mut canvas = graphics::raster::canvas::Canvas::create(64, 320, 1);
 
     let font = OpenTypeFont::open(project_path!("testdata/noto-sans.ttf")).await?;
@@ -55,12 +54,15 @@ async fn run() -> Result<()> {
     for x in 0..canvas.drawing_buffer.width() {
         let mut line = BitVector::new();
         for y in (0..canvas.drawing_buffer.height()).rev() {
-
             let c = canvas.drawing_buffer.get(y, x);
             // TODO: Add a helper to check if an entire matrix is exactly zero.
-            
+
             let bit = {
-                if c[0] == 0 { 1 } else { 0 }
+                if c[0] == 0 {
+                    1
+                } else {
+                    0
+                }
             };
 
             line.push(bit);
@@ -69,14 +71,13 @@ async fn run() -> Result<()> {
         lines.push(line.as_ref().to_vec());
     }
 
-
     let manager = dymo::LabelManager::open().await?;
 
     manager.print_label(&lines).await?;
 
     /*
     let mut lines = vec![];
-    
+
     for j in 0..3 {
         for i in 0..10 {
             let mut line = vec![];
@@ -97,7 +98,7 @@ async fn run() -> Result<()> {
         lines.push(line);
     }
 
-    
+
     */
 
     loop {

@@ -1,25 +1,26 @@
 #![feature(trait_alias, core_intrinsics, str_internals)]
 
-#[macro_use] extern crate common;
-#[macro_use] extern crate failure;
+#[macro_use]
+extern crate common;
+#[macro_use]
+extern crate failure;
 extern crate reflection;
 
 use common::bytes::Buf;
 use common::bytes::Bytes;
 use common::errors::*;
 
-
 #[derive(Debug, PartialEq)]
 pub enum ParserErrorKind {
     Incomplete,
-    UnexpectedValue
+    UnexpectedValue,
 }
 
 #[derive(Debug, Fail)]
 pub struct ParserError {
     pub kind: ParserErrorKind,
     pub message: String,
-    pub remaining_bytes: usize
+    pub remaining_bytes: usize,
 }
 
 impl std::fmt::Display for ParserError {
@@ -32,8 +33,9 @@ pub fn incomplete_error(remaining_bytes: usize) -> Error {
     ParserError {
         kind: ParserErrorKind::Incomplete,
         message: "Incomplete".into(),
-        remaining_bytes
-    }.into()
+        remaining_bytes,
+    }
+    .into()
 }
 
 pub fn is_incomplete(e: &Error) -> bool {
@@ -145,8 +147,9 @@ where
             Err(ParserError {
                 kind: ParserErrorKind::UnexpectedValue,
                 message: "Wrong atom in input".into(),
-                remaining_bytes
-            }.into())
+                remaining_bytes,
+            }
+            .into())
         }
     }
 }
@@ -164,8 +167,9 @@ where
             Err(ParserError {
                 kind: ParserErrorKind::UnexpectedValue,
                 message: "Wrong value of atom".into(),
-                remaining_bytes
-            }.into())
+                remaining_bytes,
+            }
+            .into())
         }
     }
 }
@@ -388,7 +392,7 @@ macro_rules! alt {
                     if let Some(ParserError { remaining_bytes, .. }) = e.downcast_ref() {
                         max_remaining = std::cmp::min(max_remaining, *remaining_bytes);
                     }
-                    
+
                     errs.push(e.to_string());
                 }
 			};
@@ -578,7 +582,9 @@ pub fn peek<I: Clone, T, P: Parser<T, I>>(p: P) -> impl Parser<(), I> {
 pub fn take_exact<I: ParserFeed>(length: usize) -> impl Parser<I, I> {
     move |input: I| {
         let remaining_bytes = input.remaining_bytes();
-        input.take_exact(length).ok_or_else(|| incomplete_error(remaining_bytes))
+        input
+            .take_exact(length)
+            .ok_or_else(|| incomplete_error(remaining_bytes))
     }
 }
 
@@ -629,8 +635,9 @@ pub fn take_until<I: ParserFeed, T, P: Parser<T, I>>(p: P) -> impl Parser<I, I> 
         Err(ParserError {
             kind: ParserErrorKind::UnexpectedValue,
             message: "Hit end of input before seeing pattern".into(),
-            remaining_bytes: input.remaining_bytes()
-        }.into())
+            remaining_bytes: input.remaining_bytes(),
+        }
+        .into())
     }
 }
 
@@ -653,8 +660,9 @@ where
             Err(ParserError {
                 kind: ParserErrorKind::UnexpectedValue,
                 message: format!("Expected \"{:?}\"", s),
-                remaining_bytes: input.remaining_bytes()
-            }.into())
+                remaining_bytes: input.remaining_bytes(),
+            }
+            .into())
         }
 
         /*
@@ -693,8 +701,9 @@ where
         Err(ParserError {
             kind: ParserErrorKind::UnexpectedValue,
             message: "No matching tag".into(),
-            remaining_bytes: input.remaining_bytes()
-        }.into())
+            remaining_bytes: input.remaining_bytes(),
+        }
+        .into())
     }
 }
 

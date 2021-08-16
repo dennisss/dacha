@@ -1,8 +1,8 @@
 use common::bytes::Bytes;
-use parsing::binary::*;
-use parsing::*;
 use common::errors::*;
 use common::io::Readable;
+use parsing::binary::*;
+use parsing::*;
 
 use crate::tls::parsing::*;
 
@@ -43,7 +43,8 @@ struct {
 #[derive(Debug)]
 pub struct Record {
     pub typ: ContentType,
-    // TODO: Consider propagating this out to the RecordInner so that outer code can check the version.
+    // TODO: Consider propagating this out to the RecordInner so that outer code can check the
+    // version.
     pub legacy_record_version: u16, // ProtocolVersion,
     // length: u16,
     /// If typ == application_data, then this is encrypted data.

@@ -243,7 +243,6 @@ pub fn derive_const_default(input: TokenStream) -> TokenStream {
             for field in s.fields.iter() {
                 let field_name = field.ident.clone().unwrap();
 
-
                 let ty = &field.ty;
                 let value = {
                     quote! { <#ty as ::common::const_default::ConstDefault>::DEFAULT }

@@ -53,10 +53,9 @@ impl Drop for FileReference {
 }
 
 impl FileReference {
-    
     pub fn path(path: &str) -> Self {
         Self {
-            handle: FileReferenceHandle::Path(path.to_string())
+            handle: FileReferenceHandle::Path(path.to_string()),
         }
     }
 

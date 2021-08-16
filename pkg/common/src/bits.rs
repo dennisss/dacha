@@ -118,7 +118,7 @@ impl BitVector {
         }
 
         Some(v)
-    } 
+    }
 
     /// Generates a bitvector from a number. The corresponding vector will start
     /// with the MSB of the number.
@@ -492,9 +492,9 @@ impl<T> BitReader<'_, std::io::Cursor<T>> {
 impl Read for BitReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         // TODO: A lot of this code assumes that we are storing bits MSB first.
-        
-        // NOTE: Because we always push full bytes into the end of the buffer, the end of the
-        // buffer will always be aligned to an underlying byte offset.
+
+        // NOTE: Because we always push full bytes into the end of the buffer, the end
+        // of the buffer will always be aligned to an underlying byte offset.
         if (self.buffer.len() - self.offset) % 8 != 0 {
             println!("{} {}", self.buffer.len(), self.offset);
             return Err(std::io::Error::new(
@@ -506,7 +506,7 @@ impl Read for BitReader<'_> {
         for i in 0..buf.len() {
             let res = match self.bit_order {
                 BitOrder::LSBFirst => self.read_bits_exact(8),
-                BitOrder::MSBFirst => self.read_bits_be(8)
+                BitOrder::MSBFirst => self.read_bits_be(8),
             };
 
             let b = match res {
@@ -516,7 +516,10 @@ impl Read for BitReader<'_> {
                         break;
                     }
 
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "Unknown error"));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "Unknown error",
+                    ));
                 }
             };
 

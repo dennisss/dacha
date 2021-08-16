@@ -1,15 +1,14 @@
 use async_std::task::JoinHandle;
 
-
 /// A task which stops running once it is dropped.
 pub struct ChildTask<T: 'static + Send = ()> {
-    handle: Option<JoinHandle<T>>
+    handle: Option<JoinHandle<T>>,
 }
 
 impl<T: 'static + Send> ChildTask<T> {
     pub fn spawn<Fut: 'static + std::future::Future<Output = T> + Send>(future: Fut) -> Self {
         Self {
-            handle: Some(async_std::task::spawn(future))
+            handle: Some(async_std::task::spawn(future)),
         }
     }
 

@@ -26,17 +26,18 @@ extern crate compression;
 extern crate google;
 extern crate rpc;
 extern crate sstable;
-#[macro_use] extern crate async_std;
+#[macro_use]
+extern crate async_std;
 
+mod capabilities;
 mod node;
 mod proto;
 mod runtime;
-mod capabilities;
 
+pub use node::main::main as node_main;
 pub use proto::config::*;
+pub use proto::job::*;
 pub use proto::log::*;
 pub use proto::service::*;
 pub use proto::task::*;
-pub use proto::job::*;
 pub use runtime::ContainerRuntime;
-pub use node::main::main as node_main;

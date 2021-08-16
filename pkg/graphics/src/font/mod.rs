@@ -946,11 +946,27 @@ pub enum Paint {
 }
 
 pub trait CanvasFontExt {
-    fn fill_text(&mut self, x: f32, y: f32, font: &OpenTypeFont, text: &str, font_size: f32, color: &Color) -> Result<()>;
+    fn fill_text(
+        &mut self,
+        x: f32,
+        y: f32,
+        font: &OpenTypeFont,
+        text: &str,
+        font_size: f32,
+        color: &Color,
+    ) -> Result<()>;
 }
 
 impl CanvasFontExt for Canvas {
-    fn fill_text(&mut self, mut x: f32, y: f32, font: &OpenTypeFont, text: &str, font_size: f32, color: &Color) -> Result<()> {
+    fn fill_text(
+        &mut self,
+        mut x: f32,
+        y: f32,
+        font: &OpenTypeFont,
+        text: &str,
+        font_size: f32,
+        color: &Color,
+    ) -> Result<()> {
         for c in text.chars() {
             let char_code = c as u32;
             if char_code > u16::MAX as u32 {
@@ -973,7 +989,7 @@ impl CanvasFontExt for Canvas {
 
             x += (metrics.advance_width as f32) * scale;
         }
-        
+
         Ok(())
     }
 }

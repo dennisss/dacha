@@ -1,9 +1,9 @@
 use crate::redis::resp::*;
+use common::async_std::channel;
 use common::async_std::net::{TcpListener, TcpStream};
 use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::errors::*;
-use common::async_std::channel;
 //use common::futures::future::*;
 //use common::futures::prelude::*;
 use common::futures::future::ok;
@@ -79,7 +79,6 @@ enum ServerClientMode {
 struct ServerClient {
     id: ClientId,
     //mode: ServerClientMode,
-
     /// A handle for pushing packets to this client
     /// NOTE: Only push messages should be sendable through this interface
     sender: channel::Sender<(RESPString, RESPObject)>,
@@ -295,8 +294,7 @@ where
         sock.set_nodelay(true).expect("Failed to set nodelay");
         //sock.set_recv_buffer_size(128).expect("Failed to set rcv buffer");
 
-        let (tx, rx) =
-            channel::bounded::<(RESPString, RESPObject)>(16);
+        let (tx, rx) = channel::bounded::<(RESPString, RESPObject)>(16);
 
         let client = {
             let mut server_state = inst.state.lock().await;

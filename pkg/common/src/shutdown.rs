@@ -1,25 +1,26 @@
-// Utilities for 
+// Utilities for
 
-use std::sync::Once;
 use std::sync::Mutex;
+use std::sync::Once;
 
 use async_std::channel;
 
-use crate::CancellationToken;
-use crate::signals::*;
 use crate::future::race;
+use crate::signals::*;
+use crate::CancellationToken;
 
 static mut SHUTDOWN_STATE: Option<Mutex<ShutdownState>> = None;
 static SHUTDOWN_STATE_INIT: Once = Once::new();
 
 struct ShutdownState {
-    /// Sending half of the channel used to notify tasks when a shutdown has occured.
-    /// We don't actually send any data through the sender. Instead, when the 
+    /// Sending half of the channel used to notify tasks when a shutdown has
+    /// occured. We don't actually send any data through the sender.
+    /// Instead, when the
     sender: Option<channel::Sender<()>>,
 
-    /// Receiving end of the shutdown notification channel. When receiving from this channel
-    /// fails/unblocks, the program is shutting down.
-    receiver: channel::Receiver<()>
+    /// Receiving end of the shutdown notification channel. When receiving from
+    /// this channel fails/unblocks, the program is shutting down.
+    receiver: channel::Receiver<()>,
 }
 
 fn get_shutdown_state() -> &'static Mutex<ShutdownState> {
@@ -29,7 +30,7 @@ fn get_shutdown_state() -> &'static Mutex<ShutdownState> {
 
             SHUTDOWN_STATE = Some(Mutex::new(ShutdownState {
                 sender: Some(sender),
-                receiver
+                receiver,
             }));
 
             async_std::task::spawn(signal_waiter());
@@ -39,8 +40,8 @@ fn get_shutdown_state() -> &'static Mutex<ShutdownState> {
     }
 }
 
-/// Background task used to block until a unix shutdown signal is received and then notify all
-/// subscribers.
+/// Background task used to block until a unix shutdown signal is received and
+/// then notify all subscribers.
 async fn signal_waiter() {
     let mut sigint_handler = register_signal_handler(Signal::SIGINT).unwrap();
     let mut sigterm_handler = register_signal_handler(Signal::SIGTERM).unwrap();
@@ -51,22 +52,22 @@ async fn signal_waiter() {
     shutdown_state.sender.take();
 }
 
-
 #[async_trait]
 pub trait ShutdownHandler: Send + Sync + 'static {
     async fn shutdown(&mut self);
 }
 
-
 #[async_trait]
-impl<F: 'static + Send + Sync + FnMut() -> Fut, Fut: std::future::Future<Output=()> + Send> ShutdownHandler for F {
+impl<F: 'static + Send + Sync + FnMut() -> Fut, Fut: std::future::Future<Output = ()> + Send>
+    ShutdownHandler for F
+{
     async fn shutdown(&mut self) {
         (self)().await
     }
 }
 
 struct ShutdownToken {
-    receiver: channel::Receiver<()>
+    receiver: channel::Receiver<()>,
 }
 
 #[async_trait]

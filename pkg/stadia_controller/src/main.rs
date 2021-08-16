@@ -1,12 +1,12 @@
-extern crate usb;
 extern crate uinput;
+extern crate usb;
 
 #[macro_use]
 extern crate common;
 
 use common::errors::*;
-use uinput::device;
 use std::time::Duration;
+use uinput::device;
 use uinput::event::absolute::{Absolute, Position};
 use uinput::event::controller::Misc;
 use uinput::event::controller::{DPad, GamePad};

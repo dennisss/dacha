@@ -1,4 +1,9 @@
-#![feature(trait_alias, associated_type_defaults, specialization, const_fn_trait_bound)]
+#![feature(
+    trait_alias,
+    associated_type_defaults,
+    specialization,
+    const_fn_trait_bound
+)]
 #[macro_use]
 extern crate async_trait;
 #[macro_use]
@@ -14,35 +19,35 @@ pub extern crate hex;
 pub extern crate libc;
 #[macro_use]
 extern crate lazy_static;
+pub extern crate chrono;
 extern crate generic_array;
 extern crate typenum;
-pub extern crate chrono;
 
 pub mod algorithms;
 pub mod args;
 pub mod async_fn;
 pub mod bits;
+pub mod borrowed;
 pub mod bundle;
+pub mod cancellation;
+pub mod const_default;
 pub mod factory;
 pub mod fs;
+pub mod future;
 pub mod io;
 pub mod iter;
 pub mod line_builder;
-pub mod vec;
-pub mod const_default;
 pub mod pipe;
-pub mod borrowed;
-pub mod task;
-pub mod signals;
 pub mod shutdown;
-pub mod future;
-pub mod cancellation;
+pub mod signals;
+pub mod task;
+pub mod vec;
 
-pub use cancellation::CancellationToken;
+pub use arrayref::{array_mut_ref, array_ref};
 pub use async_trait::*;
-pub use lazy_static::*;
+pub use cancellation::CancellationToken;
 pub use failure::Fail;
-pub use arrayref::{array_ref, array_mut_ref};
+pub use lazy_static::*;
 
 /// Gets the root directory of this project (the directory that contains the
 /// 'pkg' and '.git' directory).
@@ -52,7 +57,7 @@ pub fn project_dir() -> std::path::PathBuf {
     while dir.file_name().unwrap() != "dacha" {
         dir.pop();
     }
-    
+
     dir
 }
 
@@ -63,7 +68,6 @@ macro_rules! project_path {
         $crate::project_dir().join($relpath)
     };
 }
-
 
 pub async fn wait_for(dur: std::time::Duration) {
     let never = async_std::future::pending::<()>();

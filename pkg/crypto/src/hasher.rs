@@ -29,7 +29,7 @@ pub trait Hasher: Send {
     }
 
     /// Should create a cloned copy of this hasher such that the new and old
-    /// hashers effectively have also data seen by update() applied already. 
+    /// hashers effectively have also data seen by update() applied already.
     fn box_clone(&self) -> Box<dyn Hasher>;
 }
 
@@ -102,11 +102,12 @@ impl<H: Hasher> Read for HashReader<'_, H> {
 #[derive(Default, Clone)]
 pub struct TruncatedHasher<H: Hasher, N: typenum::Unsigned + Send> {
     inner: H,
-    _output_size: std::marker::PhantomData<N>
+    _output_size: std::marker::PhantomData<N>,
 }
 
-impl<H: 'static + Hasher + Clone, N: 'static + typenum::Unsigned + Send + Clone>
-Hasher for TruncatedHasher<H, N> {
+impl<H: 'static + Hasher + Clone, N: 'static + typenum::Unsigned + Send + Clone> Hasher
+    for TruncatedHasher<H, N>
+{
     fn block_size(&self) -> usize {
         self.inner.block_size()
     }

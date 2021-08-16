@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::iter::Iterator;
 
-use common::errors::*;
 use common::bytes::Bytes;
+use common::errors::*;
 use parsing::ascii::AsciiString;
 
 // Comma separation pattern used for splitting received metadata values.
@@ -15,17 +15,19 @@ pub struct Metadata {
 }
 
 impl Metadata {
-
     pub fn new() -> Self {
-        Self { raw_data: HashMap::new() }
+        Self {
+            raw_data: HashMap::new(),
+        }
     }
 
     fn is_reserved_header(header: &http::Header) -> bool {
-        header.is_transport_level() || header.is_transport_level() || header.name.as_str().starts_with("grpc-")
+        header.is_transport_level()
+            || header.is_transport_level()
+            || header.name.as_str().starts_with("grpc-")
     }
 
     pub fn from_headers(headers: &http::Headers) -> Result<Self> {
-
         let mut out = Self::new();
 
         // NOTE: In gRPC the http header values will always be ASCII strings.
@@ -38,8 +40,8 @@ impl Metadata {
             let name = header.name.clone();
             let value = AsciiString::from(header.value.to_bytes())?;
 
-            // NOTE: HTTP2 gurantees that all header names are lowercase so we don't have to worry
-            // about normalizing the keys.
+            // NOTE: HTTP2 gurantees that all header names are lowercase so we don't have to
+            // worry about normalizing the keys.
             let values_entry = out.get_values_mut(name);
 
             for value_part in COMMA_SEPARATOR.split(value.as_str()) {
@@ -49,7 +51,7 @@ impl Metadata {
         }
 
         Ok(out)
-    } 
+    }
 
     pub fn append_to_headers(&self, headers: &mut http::Headers) -> Result<()> {
         // TODO: Ideally make this use a deterministic order.
@@ -57,7 +59,7 @@ impl Metadata {
             for value in values {
                 let header = http::Header {
                     name: name.clone(),
-                    value: value.to_bytes().into()
+                    value: value.to_bytes().into(),
                 };
 
                 if Self::is_reserved_header(&header) {
@@ -72,7 +74,10 @@ impl Metadata {
     }
 
     fn get_values<'a>(&'a self, name: &AsciiString) -> &'a [AsciiString] {
-        self.raw_data.get(name).map(|v| &v[..]).unwrap_or_else(|| &[])
+        self.raw_data
+            .get(name)
+            .map(|v| &v[..])
+            .unwrap_or_else(|| &[])
     }
 
     fn get_values_mut(&mut self, name: AsciiString) -> &mut Vec<AsciiString> {
@@ -111,7 +116,7 @@ impl Metadata {
         Ok(value)
     }
 
-    pub fn iter_text(&self, name: &str) -> Result<impl Iterator<Item=&str>> {
+    pub fn iter_text(&self, name: &str) -> Result<impl Iterator<Item = &str>> {
         if name.ends_with("-bin") {
             return Err(err_msg("Text metadata must not end with -bin"));
         }
@@ -125,7 +130,8 @@ impl Metadata {
 
     pub fn get_binary(&self, name: &str) -> Result<Vec<u8>> {
         let mut iter = self.iter_binary(name)?;
-        let value = iter.next()
+        let value = iter
+            .next()
             .ok_or_else(|| format_err!("No metadata named: {}", name))??;
         if iter.next().is_some() {
             return Err(format_err!("More than one value named: {}", name));
@@ -134,7 +140,10 @@ impl Metadata {
         Ok(value)
     }
 
-    pub fn iter_binary<'a>(&'a self, name: &str) -> Result<impl Iterator<Item=Result<Vec<u8>>> + 'a> {
+    pub fn iter_binary<'a>(
+        &'a self,
+        name: &str,
+    ) -> Result<impl Iterator<Item = Result<Vec<u8>>> + 'a> {
         // TODO: Verify this accepts both padded and non-padded base64
 
         if !name.ends_with("-bin") {
@@ -146,17 +155,15 @@ impl Metadata {
         let values = self.get_values(&name);
 
         Ok(values.iter().map(|v| {
-            common::base64::decode_config(
-                v.as_str().as_bytes(), common::base64::STANDARD_NO_PAD
-            ).map_err(|e| Error::from(e))
+            common::base64::decode_config(v.as_str().as_bytes(), common::base64::STANDARD_NO_PAD)
+                .map_err(|e| Error::from(e))
         }))
     }
 }
 
-
-/// 
+///
 #[derive(Default)]
 pub struct ResponseMetadata {
     pub head_metadata: Metadata,
-    pub trailer_metadata: Metadata
+    pub trailer_metadata: Metadata,
 }

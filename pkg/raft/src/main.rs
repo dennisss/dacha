@@ -7,8 +7,10 @@
 )]
 
 extern crate raft;
-#[macro_use] extern crate common;
-#[macro_use] extern crate macros;
+#[macro_use]
+extern crate common;
+#[macro_use]
+extern crate macros;
 
 mod key_value;
 mod mongodb;
@@ -21,10 +23,10 @@ use common::futures::future::*;
 use common::futures::prelude::*;
 use protobuf::Message;
 use raft::node::*;
-use raft::rpc::{Client};
-use raft::server::{Server, ServerInitialState};
-use raft::proto::key_value::*;
 use raft::proto::consensus::LogIndex;
+use raft::proto::key_value::*;
+use raft::rpc::Client;
+use raft::server::{Server, ServerInitialState};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -144,7 +146,6 @@ impl redis::server::Service for RaftRedisServer {
         let state_machine = &self.state_machine;
         let node = &self.node;
 
-
         let mut op = KeyValueOperation::default();
         op.delete_mut().set_key(key.as_ref().to_vec());
 
@@ -201,20 +202,21 @@ impl redis::server::Service for RaftRedisServer {
 // NOTE: I still need to implement default values.
 #[derive(Args)]
 struct Args {
-    #[arg(desc="An existing directory to store data file for this unique instance")]
+    #[arg(desc = "An existing directory to store data file for this unique instance")]
     dir: PathBuf,
 
     // TODO: Also support specifying our rpc listening port
-    #[arg(desc="Address of a running server to be used for joining its cluster if this instance has not been initialized yet")]
+    #[arg(
+        desc = "Address of a running server to be used for joining its cluster if this instance has not been initialized yet"
+    )]
     join: Option<String>,
 
     #[arg(
-        desc="Indicates that this should be created as the first node in the cluster",
-        default=false
+        desc = "Indicates that this should be created as the first node in the cluster",
+        default = false
     )]
-    bootstrap: bool
+    bootstrap: bool,
 }
-
 
 async fn main_task() -> Result<()> {
     //    let matches = App::new("Raft")
@@ -259,8 +261,7 @@ async fn main_task() -> Result<()> {
 
     let port = 5000 + node.id.value();
 
-    let client_task = redis::server::Server::start(
-        client_server.clone(), port as u16);
+    let client_task = redis::server::Server::start(client_server.clone(), port as u16);
 
     client_task.await?;
 

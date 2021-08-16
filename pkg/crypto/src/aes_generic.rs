@@ -42,19 +42,13 @@ const AES_INV_S_BOX: [u8; 256] = [
     0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d,
 ];
 
-
-const MIX_COLUMNS_MAT: StateMat = [
-    [2, 3, 1, 1],
-    [1, 2, 3, 1],
-    [1, 1, 2, 3],
-    [3, 1, 1, 2]
-];
+const MIX_COLUMNS_MAT: StateMat = [[2, 3, 1, 1], [1, 2, 3, 1], [1, 1, 2, 3], [3, 1, 1, 2]];
 
 const INV_MIX_COLUMNS_MAT: StateMat = [
     [14, 11, 13, 9],
     [9, 14, 11, 13],
     [13, 9, 14, 11],
-    [11, 13, 9, 14]
+    [11, 13, 9, 14],
 ];
 
 /// Used in generating round keys.
@@ -79,14 +73,17 @@ pub fn shift_rows(state: &mut [u8], invert: bool) {
     for i in 1..4 {
         // Load column i as a u32
         let word = u32::from_be_bytes([
-            state[i], state[i + 4*1], state[i + 4*2], state[i + 4*3] 
+            state[i],
+            state[i + 4 * 1],
+            state[i + 4 * 2],
+            state[i + 4 * 3],
         ]);
 
         let new_word = {
             if invert {
-                word.rotate_right(8*i as u32)
+                word.rotate_right(8 * i as u32)
             } else {
-                word.rotate_left(8*i as u32)
+                word.rotate_left(8 * i as u32)
             }
         };
 
@@ -94,15 +91,21 @@ pub fn shift_rows(state: &mut [u8], invert: bool) {
 
         // Store back into column 'i'
         for j in 0..4 {
-            state[i + 4*j] = new_word_bytes[j];
+            state[i + 4 * j] = new_word_bytes[j];
         }
     }
 }
 
 pub fn mix_columns(state: &mut [u8], invert: bool) {
-    let state_mat = unsafe {
-        &mut *std::mem::transmute::<_, *mut StateMat>(state.as_mut_ptr()) };
-    *state_mat = gf_matmul(&if invert { INV_MIX_COLUMNS_MAT } else { MIX_COLUMNS_MAT }, state_mat);
+    let state_mat = unsafe { &mut *std::mem::transmute::<_, *mut StateMat>(state.as_mut_ptr()) };
+    *state_mat = gf_matmul(
+        &if invert {
+            INV_MIX_COLUMNS_MAT
+        } else {
+            MIX_COLUMNS_MAT
+        },
+        state_mat,
+    );
 }
 
 /// We assume that 'a' is row-major and 'b' is column-major.
@@ -123,7 +126,6 @@ fn gf_matmul(a: &StateMat, b: &StateMat) -> StateMat {
     out
 }
 
-
 /// Multiplies 'a' and 'b' representing polynomials in GF(2^8)
 /// with a modulus of 'x^8 + x^4 + x^3 + x + 1'.
 ///
@@ -132,7 +134,6 @@ fn gf_mul(mut a: u8, mut b: u8) -> u8 {
     let mut out = 0;
 
     for i in 0..8 {
-
         if (b & 1) != 0 {
             out ^= a;
         }
@@ -144,7 +145,7 @@ fn gf_mul(mut a: u8, mut b: u8) -> u8 {
         // Subtract 'x^8 + x^4 + x^3 + x + 1' to make 'a' 8-bits again
         // instead of 9 after the shift.
         if overflow_a {
-            a ^= 0x1b; 
+            a ^= 0x1b;
         }
     }
 

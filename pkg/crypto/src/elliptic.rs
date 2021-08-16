@@ -2,10 +2,10 @@ use crate::dh::*;
 use crate::random::*;
 use common::ceil_div;
 use common::errors::*;
+use common::hex;
 use common::LeftPad;
 use math::big::*;
 use std::marker::PhantomData;
-use common::hex;
 
 /// Parameters of an elliptic curve of the form:
 /// y^2 = x^3 + a*x + b

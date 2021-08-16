@@ -11,13 +11,13 @@ use crate::regexp::vm::instruction::*;
 pub struct Compilation {
     pub program: VecProgram,
 
-    /// For each captured group in the original expression, this contains the two indices
-    /// of the string pointers used to save the start and end index of the group during
-    /// execution.
+    /// For each captured group in the original expression, this contains the
+    /// two indices of the string pointers used to save the start and end
+    /// index of the group during execution.
     pub groups: Vec<(usize, usize)>,
 
     /// Map of group names to the index of the group in the 'groups' list.
-    pub groups_by_name: HashMap<String, usize>
+    pub groups_by_name: HashMap<String, usize>,
 }
 
 impl Compilation {
@@ -30,28 +30,34 @@ impl Compilation {
         out
     }
 
-    /// Retrieves an iterator over all references to program counters in the instructions.
-    fn iter_referenced_pcs(&mut self) -> impl Iterator<Item=&mut ProgramCounter> {
-        self.program.iter_mut().flat_map(|inst| {
-            let slice: [Option<&mut ProgramCounter>; 2] = match inst {
-                Instruction::Any | Instruction::Range { .. } | Instruction::Char(_) |
-                Instruction::Match |
-                Instruction::Special(_) |
-                Instruction::Save { .. } => [None, None],
+    /// Retrieves an iterator over all references to program counters in the
+    /// instructions.
+    fn iter_referenced_pcs(&mut self) -> impl Iterator<Item = &mut ProgramCounter> {
+        self.program
+            .iter_mut()
+            .flat_map(|inst| {
+                let slice: [Option<&mut ProgramCounter>; 2] = match inst {
+                    Instruction::Any
+                    | Instruction::Range { .. }
+                    | Instruction::Char(_)
+                    | Instruction::Match
+                    | Instruction::Special(_)
+                    | Instruction::Save { .. } => [None, None],
 
-                Instruction::Jump(x) => [Some(x), None],
-                Instruction::Split(x, y) => [Some(x), Some(y)]
-            };
+                    Instruction::Jump(x) => [Some(x), None],
+                    Instruction::Split(x, y) => [Some(x), Some(y)],
+                };
 
-            slice
-        }).filter_map(|v| v)
+                slice
+            })
+            .filter_map(|v| v)
     }
 }
 
 /// Compiler for converting a RegExpNode to a Program that can be executed.
 pub struct Compiler {
     output: Compilation,
-    next_string_index: usize
+    next_string_index: usize,
 }
 
 impl Compiler {
@@ -60,7 +66,7 @@ impl Compiler {
             output: Compilation {
                 program: VecProgram::new(),
                 groups: vec![],
-                groups_by_name: HashMap::new()
+                groups_by_name: HashMap::new(),
             },
             next_string_index: 0,
         };
@@ -69,8 +75,8 @@ impl Compiler {
         inst.add_instruction(Instruction::Match);
         inst.optimize();
 
-        // TODO: Validate that there are no infinite loops (e.g. jump to self or any other
-        // continous sequence of non-input consuming instructions)
+        // TODO: Validate that there are no infinite loops (e.g. jump to self or any
+        // other continous sequence of non-input consuming instructions)
 
         Ok(inst.output)
     }
@@ -83,10 +89,10 @@ impl Compiler {
         self.output.program.len() as ProgramCounter
     }
 
-    // TODO: For any sub-expressions that don't contain contain captured groups, we can convert
-    // it first to a DFA to simplify the expression before generating the instructions.
+    // TODO: For any sub-expressions that don't contain contain captured groups, we
+    // can convert it first to a DFA to simplify the expression before
+    // generating the instructions.
     fn compile_node(&mut self, node: &RegExpNode) -> Result<()> {
-
         match node {
             RegExpNode::Start => {
                 self.add_instruction(Instruction::Special(SpecialSymbol::StartOfString));
@@ -103,20 +109,22 @@ impl Compiler {
                     return Ok(());
                 }
 
-                // TODO: These may contain overlap. Need to consolidate them. (ideally that would
-                // be done generically on all alternations).
+                // TODO: These may contain overlap. Need to consolidate them. (ideally that
+                // would be done generically on all alternations).
                 let symbols = c.raw_symbols();
 
                 self.compile_alternation(&symbols, |c, sym| {
                     if sym.end == sym.start + 1 {
                         c.add_instruction(Instruction::Char(sym.start));
                     } else {
-                        c.add_instruction(Instruction::Range { start: sym.start, end: sym.end });
+                        c.add_instruction(Instruction::Range {
+                            start: sym.start,
+                            end: sym.end,
+                        });
                     }
 
                     Ok(())
                 })?;
-
             }
             RegExpNode::Alt(nodes) => {
                 self.compile_alternation(&nodes, |c, node| c.compile_node(node))?;
@@ -126,9 +134,14 @@ impl Compiler {
                     self.compile_node(node)?;
                 }
             }
-            RegExpNode::Quantified { node, quantifier, greedy } => {
+            RegExpNode::Quantified {
+                node,
+                quantifier,
+                greedy,
+            } => {
                 match quantifier {
-                    Quantifier::ZeroOrOne => { // a?
+                    Quantifier::ZeroOrOne => {
+                        // a?
                         let split_idx = self.program_counter();
                         self.add_instruction(Instruction::Split(0, 0)); // Placeholder.
 
@@ -137,8 +150,11 @@ impl Compiler {
                         let a = split_idx + 1;
                         let b = self.program_counter();
 
-                        self.output.program[split_idx as usize] =
-                            if *greedy { Instruction::Split(a, b) } else { Instruction::Split(b, a) };
+                        self.output.program[split_idx as usize] = if *greedy {
+                            Instruction::Split(a, b)
+                        } else {
+                            Instruction::Split(b, a)
+                        };
                     }
                     Quantifier::ZeroOrMore => {
                         let split_idx = self.program_counter();
@@ -151,8 +167,11 @@ impl Compiler {
                         let a = split_idx + 1;
                         let b = self.program_counter();
 
-                        self.output.program[split_idx as usize] =
-                            if *greedy { Instruction::Split(a, b) } else { Instruction::Split(b, a) };
+                        self.output.program[split_idx as usize] = if *greedy {
+                            Instruction::Split(a, b)
+                        } else {
+                            Instruction::Split(b, a)
+                        };
                     }
                     Quantifier::OneOrMore => {
                         let start_idx = self.program_counter();
@@ -160,15 +179,22 @@ impl Compiler {
 
                         let a = start_idx;
                         let b = self.program_counter() + 1;
-                        self.add_instruction(if *greedy { Instruction::Split(a, b) } else { Instruction::Split(b, a) });
-                    },
+                        self.add_instruction(if *greedy {
+                            Instruction::Split(a, b)
+                        } else {
+                            Instruction::Split(b, a)
+                        });
+                    }
                     _ => {
                         println!("Unsupported quantifier: {:?}", quantifier);
                     }
                 }
-
-            },
-            RegExpNode::Capture { inner, capturing, name } => {
+            }
+            RegExpNode::Capture {
+                inner,
+                capturing,
+                name,
+            } => {
                 if *capturing {
                     let start_idx = self.next_string_index;
                     self.next_string_index += 1;
@@ -180,13 +206,20 @@ impl Compiler {
                     self.output.groups.push((start_idx, end_idx));
 
                     if !name.is_empty() {
-                        self.output.groups_by_name.insert(name.to_string(), group_idx);
+                        self.output
+                            .groups_by_name
+                            .insert(name.to_string(), group_idx);
                     }
 
-                    self.add_instruction(Instruction::Save { index: start_idx, lookbehind: false });
+                    self.add_instruction(Instruction::Save {
+                        index: start_idx,
+                        lookbehind: false,
+                    });
                     self.compile_node(inner)?;
-                    self.add_instruction(Instruction::Save { index: end_idx, lookbehind: false });
-
+                    self.add_instruction(Instruction::Save {
+                        index: end_idx,
+                        lookbehind: false,
+                    });
                 } else {
                     self.compile_node(inner)?;
                 }
@@ -206,21 +239,21 @@ impl Compiler {
                     if sym.end == sym.start + 1 {
                         c.add_instruction(Instruction::Char(sym.start));
                     } else {
-                        c.add_instruction(Instruction::Range { start: sym.start, end: sym.end });
+                        c.add_instruction(Instruction::Range {
+                            start: sym.start,
+                            end: sym.end,
+                        });
                     }
 
                     Ok(())
                 })?;
-
             }
             _ => {
                 return Err(format_err!("Unsupported node type: {:?}", node));
             }
-            
         }
 
         Ok(())
-
 
         /*
         /// Alternation. e.g. 'a|b|c|d'
@@ -247,36 +280,37 @@ impl Compiler {
 
         Start,
         End,
-        
-        */
 
+        */
     }
 
     fn compile_alternation<T, F: Fn(&mut Compiler, &T) -> Result<()>>(
-        &mut self, nodes: &[T], compile_node: F
+        &mut self,
+        nodes: &[T],
+        compile_node: F,
     ) -> Result<()> {
         if nodes.len() == 0 {
             return Ok(());
         }
-    
+
         if nodes.len() == 1 {
             return compile_node(self, &nodes[0]);
         }
-    
+
         let split_idx = self.program_counter();
         self.add_instruction(Instruction::Split(0, 0)); // Placeholder.
-    
+
         let first_idx = self.program_counter();
         compile_node(self, &nodes[0])?;
-    
+
         let jump_idx = self.program_counter();
         self.add_instruction(Instruction::Jump(0)); // Placeholder.
-    
+
         let second_idx = self.program_counter();
         self.compile_alternation(&nodes[1..], compile_node)?;
-    
+
         let end_idx = self.program_counter();
-    
+
         self.output.program[split_idx as usize] = Instruction::Split(first_idx, second_idx);
         self.output.program[jump_idx as usize] = Instruction::Jump(end_idx);
 
@@ -288,10 +322,11 @@ impl Compiler {
         // Replace the instruction pattern:
         // 'Save(x) Char(y)' with 'Char(y) BeforeSave Lookahead(y) Save(x) Any'
         //
-        // This works as long as there are no jumps to the 'Char(y)' and maybe jumps to the
-        // 'Save(x)'.
+        // This works as long as there are no jumps to the 'Char(y)' and maybe
+        // jumps to the 'Save(x)'.
         //
-        // This optimization avoids copies of the string pointer buffer when we see 
+        // This optimization avoids copies of the string pointer buffer when we
+        // see
         /*
         {
             for i in 0..(self.program.instructions.len() - 1) {
@@ -337,11 +372,9 @@ impl Compiler {
         // TODO: Consolidate consecutive lookaheads?
         // 'Lookahead(x) Lookahead(y)' will trivially terminate if x != y
 
-        // TODO: Having a Special(StartOfString) instruction at the beginning with no jumps to it can be
-        // removed (similarly at the end)
+        // TODO: Having a Special(StartOfString) instruction at the beginning
+        // with no jumps to it can be removed (similarly at the end)
 
         // TODO: Jumps to a 'Match' can be replaced with a 'Match'
-
     }
-
 }

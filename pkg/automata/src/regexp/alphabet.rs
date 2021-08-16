@@ -2,7 +2,6 @@ use std::ops::Bound;
 
 use crate::regexp::symbol::*;
 
-
 /// e.g. The regular expression '(a|[a-z])' will have an alphabet of the
 /// following value ranges:
 /// [0, 'a'), ['a', 'b'), ['b', 'z'+1), ['z+1', MAX)

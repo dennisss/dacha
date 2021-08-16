@@ -5,7 +5,6 @@ use crate::proto::dsl::PrimitiveType;
 pub struct PrimitiveTypeImpl {}
 
 impl PrimitiveTypeImpl {
-
     pub fn typename(typ: PrimitiveType) -> Result<&'static str> {
         Ok(match typ {
             PrimitiveType::UNKNOWN => {
@@ -21,7 +20,7 @@ impl PrimitiveTypeImpl {
             PrimitiveType::I64 => "i64",
             PrimitiveType::FLOAT => "f32",
             PrimitiveType::DOUBLE => "f64",
-            PrimitiveType::BOOL => "bool"
+            PrimitiveType::BOOL => "bool",
         })
     }
 
@@ -43,6 +42,4 @@ impl PrimitiveTypeImpl {
             PrimitiveType::BOOL => 1, // TODO: Check this?
         })
     }
-
-
 }

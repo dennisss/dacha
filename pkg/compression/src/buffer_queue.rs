@@ -16,7 +16,10 @@ pub struct BufferQueue {
 
 impl BufferQueue {
     pub fn new() -> Self {
-        Self { buffer: vec![], buffer_offset: 0 }
+        Self {
+            buffer: vec![],
+            buffer_offset: 0,
+        }
     }
 
     /// Copies from the internal output buffer into the provided buffer.
@@ -26,9 +29,7 @@ impl BufferQueue {
         let rem = self.buffer.len() - self.buffer_offset;
 
         let n = std::cmp::min(rem, output.len());
-        output[0..n].copy_from_slice(
-            &self.buffer[self.buffer_offset..(self.buffer_offset + n)],
-        );
+        output[0..n].copy_from_slice(&self.buffer[self.buffer_offset..(self.buffer_offset + n)]);
 
         self.buffer_offset += n;
         if self.buffer_offset == self.buffer.len() {
@@ -51,7 +52,11 @@ impl BufferQueue {
         self.buffer.is_empty()
     }
 
-    pub fn try_read<T>(&mut self, input: &[u8], f: fn(&mut dyn Read) -> Result<T>) -> Result<(Option<T>, usize)> {
+    pub fn try_read<T>(
+        &mut self,
+        input: &[u8],
+        f: fn(&mut dyn Read) -> Result<T>,
+    ) -> Result<(Option<T>, usize)> {
         let mut reader = SliceReader::new([&self.buffer, input]);
         let result = f(&mut reader);
 

@@ -166,6 +166,13 @@ parser!(shared_atom<&str, Char> => alt!(
     map(tag("\\W"), |_| Char::NotWord),
     map(tag("\\D"), |_| Char::NotDigit),
     map(tag("\\S"), |_| Char::NotWhiteSpace)
+
+    // TODO: Other special ones:
+    // '\\A' - Start of text
+    // '\\z' - End of text
+
+    // TODO: '.' shouldn't match '\\n'
+
 ));
 
 // A single plain character that must be exactly matched.

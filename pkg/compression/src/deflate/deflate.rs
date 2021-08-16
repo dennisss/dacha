@@ -8,12 +8,12 @@ use common::bits::*;
 use common::errors::*;
 use std::io::Write;
 
-use crate::deflate::shared::*;
-use crate::transform::{Transform, TransformProgress};
+use crate::buffer_queue::BufferQueue;
 use crate::deflate::cyclic_buffer::CyclicBuffer;
 use crate::deflate::matching_window::{MatchingWindow, MatchingWindowOptions};
+use crate::deflate::shared::*;
 use crate::huffman::*;
-use crate::buffer_queue::BufferQueue;
+use crate::transform::{Transform, TransformProgress};
 
 /// Maximum size of the data contained in an uncompressed block.
 const MAX_UNCOMPRESSED_BLOCK_SIZE: usize = u16::max_value() as usize;
@@ -59,17 +59,19 @@ pub struct Deflater {
     input_buffer: Vec<u8>,
 
     /// Compressed data that has yet been consumed by the reader.
-    /// This will grow indefinately until a client reads all data from the deflater.
-    /// 
-    /// This is an Option so that a client can take the entire 
+    /// This will grow indefinately until a client reads all data from the
+    /// deflater.
+    ///
+    /// This is an Option so that a client can take the entire
     output_buffer: BufferQueue,
 
     /// Remainder of the last output_buffer byte which hasn't resulted in a full
     /// byte. This will always be [0, 8) bits long.
     output_buffer_end: BitVector,
 
-    /// True if we've received an indication that all inputs 
-    /// TODO: Instead store the number of bytes so that we can validate this later.
+    /// True if we've received an indication that all inputs
+    /// TODO: Instead store the number of bytes so that we can validate this
+    /// later.
     end_of_input: bool,
 }
 
@@ -115,7 +117,7 @@ impl Deflater {
         &mut self,
         mut input: &[u8],
         end_of_input: bool,
-        mut output: &mut [u8],        
+        mut output: &mut [u8],
     ) -> Result<TransformProgress> {
         // TODO: Fix this. Also need to check for !end_of_input
         if end_of_input {
@@ -136,7 +138,8 @@ impl Deflater {
             noutput = self.output_buffer.copy_to(output);
             output = &mut output[noutput..];
 
-            // let output_buffer_len = self.output_buffer.as_ref().map(|v| v.len()).unwrap_or(0);
+            // let output_buffer_len = self.output_buffer.as_ref().map(|v|
+            // v.len()).unwrap_or(0);
 
             // if output_buffer_len != 0 {
             //     // This is more output internally buffers. So stop.
@@ -195,7 +198,7 @@ impl Deflater {
 
         // Handle remaining input data that doesn't align to a chunk boundary.
         // If all input data has been seen, compress an incomplete chunk, else store the
-        // 
+        //
         if remaining > 0 {
             nread += remaining;
             if end_of_input {
@@ -376,12 +379,11 @@ impl Deflater {
     // /// Returns all data in the internal output buffer. This is a zero copy
     // /// operation and will leave the internal buffer empty.
     // pub fn take_output(&mut self) -> Vec<u8> {
-    //     // TODO: Don't allow 
+    //     // TODO: Don't allow
 
-    //     // TODO: This should only take data after the buffer offset. 
+    //     // TODO: This should only take data after the buffer offset.
     //     self.output_buffer.take().unwrap_or(BufferQueue::new()).buffer
     // }
-
 }
 
 impl Transform for Deflater {
@@ -389,7 +391,7 @@ impl Transform for Deflater {
         &mut self,
         input: &[u8],
         end_of_input: bool,
-        output: &mut [u8],        
+        output: &mut [u8],
     ) -> Result<TransformProgress> {
         self.update_impl(input, end_of_input, output)
     }
@@ -414,10 +416,7 @@ fn write_uncompressed_block<W: BitWrite + Write>(data: &[u8], strm: &mut W) -> R
 
 enum ReferenceEncoded {
     Literal(u8),
-    LengthDistance {
-        length: usize,
-        distance: usize
-    }
+    LengthDistance { length: usize, distance: usize },
 }
 
 // TODO: Return an iterator.
@@ -432,7 +431,10 @@ fn reference_encode(
         let mut n = 1;
         if let Some(m) = window.find_match(&data[i..]) {
             n = m.length;
-            out.push(ReferenceEncoded::LengthDistance { length: m.length, distance: m.distance});
+            out.push(ReferenceEncoded::LengthDistance {
+                length: m.length,
+                distance: m.distance,
+            });
         } else {
             out.push(ReferenceEncoded::Literal(data[i]));
         }

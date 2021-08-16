@@ -1,5 +1,3 @@
-
-
 /*
 Raspberry Pi 4:
 - BCM2711
@@ -10,7 +8,7 @@ Code examples:
 Accessing peripheral address using bcm_host_get_peripheral_address():
 https://www.raspberrypi.org/documentation/hardware/raspberrypi/peripheral_addresses.md
 
-- 
+-
 */
 
 use std::ffi::CStr;
@@ -39,7 +37,6 @@ const REGISTER_SIZE: usize = std::mem::size_of::<u32>();
 //     };
 // }
 
-
 pub struct GPIO {
     mem: MemoryBlock,
 }
@@ -52,13 +49,16 @@ impl GPIO {
 
     pub fn pin(&self, number: usize) -> GPIOPin {
         assert!(number < NUM_GPIO_PINS);
-        GPIOPin { peripheral: self, number }
+        GPIOPin {
+            peripheral: self,
+            number,
+        }
     }
 }
 
 pub struct GPIOPin<'a> {
     peripheral: &'a GPIO,
-    number: usize
+    number: usize,
 }
 
 impl<'a> GPIOPin<'a> {
@@ -66,14 +66,16 @@ impl<'a> GPIOPin<'a> {
         // Byte offset of the GPFSELn register.
         // GPFSEL0 is at offset 0 and there are 10 pins per register.
         let offset = (self.number / 10) * REGISTER_SIZE;
-        
+
         // 3 bits per pin in the register.
         let bit_offset = (self.number % 10) * 3;
 
         let mask = !(0b111 << bit_offset);
         let bits = mode.to_value() << bit_offset;
 
-        self.peripheral.mem.modify_register(offset, |v| (v & mask) | bits);
+        self.peripheral
+            .mem
+            .modify_register(offset, |v| (v & mask) | bits);
 
         self
     }
@@ -123,7 +125,9 @@ impl<'a> GPIOPin<'a> {
         let mask = !(0b11 << bit_offset);
         let bits = resistor.to_value() << bit_offset;
 
-        self.peripheral.mem.modify_register(offset, |v| (v & mask) | bits);
+        self.peripheral
+            .mem
+            .modify_register(offset, |v| (v & mask) | bits);
 
         self
     }

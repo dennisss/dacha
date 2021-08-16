@@ -395,4 +395,3 @@ impl DeviceEntry {
         Device::create(self.context.clone(), state, &self.raw_descriptors)
     }
 }
-

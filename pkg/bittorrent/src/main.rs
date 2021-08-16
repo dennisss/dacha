@@ -5,16 +5,16 @@ extern crate crypto;
 use std::str::FromStr;
 
 use bittorrent::ben::BENValue;
-use common::errors::*;
-use common::async_std::task;
 use bittorrent::*;
+use common::async_std::task;
+use common::errors::*;
 use crypto::hasher::Hasher;
 use parsing::ascii::AsciiString;
 
-
 async fn run() -> Result<()> {
     let data = std::fs::read(
-        common::project_dir().join("pkg/bittorrent/2020-08-20-raspios-buster-armhf-full.zip.torrent")
+        common::project_dir()
+            .join("pkg/bittorrent/2020-08-20-raspios-buster-armhf-full.zip.torrent"),
     )?;
 
     let info = Metainfo::parse(&data)?;
@@ -34,8 +34,6 @@ async fn run() -> Result<()> {
 
     let mut url = http::uri::Uri::from_str(&info.announce)?;
 
-    
-
     let tracker_request = TrackerRequest {
         info_hash,
         peer_id: vec![0xDA; 20],
@@ -44,13 +42,12 @@ async fn run() -> Result<()> {
         uploaded: 0,
         downloaded: 0,
         left: info.info.length.unwrap() as u64,
-        event: "empty".into()
+        event: "empty".into(),
     };
 
     url.query = Some(tracker_request.to_query_string());
 
-    let mut client = http::Client::create(
-        http::ClientOptions::from_uri(&url)?)?;
+    let mut client = http::Client::create(http::ClientOptions::from_uri(&url)?)?;
 
     let mut http_request = http::RequestBuilder::new()
         .method(http::Method::GET)
@@ -60,7 +57,10 @@ async fn run() -> Result<()> {
     let mut http_response = client.request(http_request).await?;
 
     let mut http_response_data = vec![];
-    http_response.body.read_to_end(&mut http_response_data).await?;
+    http_response
+        .body
+        .read_to_end(&mut http_response_data)
+        .await?;
 
     println!("{:?}", http_response.head);
 

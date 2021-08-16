@@ -1,15 +1,15 @@
-use std::future::Future;
-use std::pin::Pin;
-use std::ops::DerefMut;
 use core::task::Context;
+use std::future::Future;
+use std::ops::DerefMut;
+use std::pin::Pin;
 
 //use crate::futures::stream::{Stream, StreamExt};
 use futures::task::Poll;
 use futures::Stream;
 use futures::StreamExt;
 
-use crate::errors::*;
 use crate::borrowed::Borrowed;
+use crate::errors::*;
 
 const BUF_SIZE: usize = 4096;
 
@@ -19,9 +19,8 @@ pub trait Streamable: Send {
     async fn next(&mut self) -> Option<Self::Item>;
 }
 
-
 pub struct SingleItemStreamable<T> {
-    item: Option<T>
+    item: Option<T>,
 }
 
 impl<T: 'static + Send> SingleItemStreamable<T> {
@@ -365,10 +364,15 @@ pub trait Readable: 'static + Send + Unpin {
         while buf.len() > 0 {
             match self.read(buf).await {
                 Ok(0) => {
-                    return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, 
-                        "Unexpected end of stream").into());
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "Unexpected end of stream",
+                    )
+                    .into());
                 }
-                Ok(n ) => { buf = &mut buf[n..]; }
+                Ok(n) => {
+                    buf = &mut buf[n..];
+                }
                 Err(error) => {
                     if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
                         if io_error.kind() == std::io::ErrorKind::Interrupted {
@@ -378,44 +382,43 @@ pub trait Readable: 'static + Send + Unpin {
 
                     return Err(error);
                 }
-            }            
+            }
         }
 
         Ok(())
     }
 }
 
-
 #[async_trait]
 impl<R: Readable> Readable for Borrowed<R> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         self.deref_mut().read(buf).await
-    }    
+    }
 }
 
 #[async_trait]
 impl<R: Readable + ?Sized> Readable for Box<R> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         self.deref_mut().read(buf).await
-    }    
+    }
 }
 
-/// Wrapper around a future which resolves to a Readable that will eventually be ready.
+/// Wrapper around a future which resolves to a Readable that will eventually be
+/// ready.
 pub enum DeferredReadable<R: Readable> {
     Ready(R),
-    Waiting(Pin<Box<dyn Future<Output=Result<R>> + Send + 'static>>),
-    Error(Option<Error>)
+    Waiting(Pin<Box<dyn Future<Output = Result<R>> + Send + 'static>>),
+    Error(Option<Error>),
 }
 
 impl<R: Readable> DeferredReadable<R> {
-    pub fn wrap<F: 'static + Send + Future<Output=Result<R>>>(f: F) -> Self {
+    pub fn wrap<F: 'static + Send + Future<Output = Result<R>>>(f: F) -> Self {
         Self::Waiting(Box::pin(f))
     }
 }
 
 #[async_trait]
-impl<R: Readable>
-Readable for DeferredReadable<R> {
+impl<R: Readable> Readable for DeferredReadable<R> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         loop {
             match self {
@@ -426,17 +429,18 @@ Readable for DeferredReadable<R> {
                     let r = f.await;
                     match r {
                         Ok(r) => *self = DeferredReadable::Ready(r),
-                        Err(e) => *self = DeferredReadable::Error(Some(e))
+                        Err(e) => *self = DeferredReadable::Error(Some(e)),
                     }
                 }
                 DeferredReadable::Error(e) => {
-                    return Err(e.take().unwrap_or_else(|| err_msg("Deferred reader previously errored out")));
+                    return Err(e
+                        .take()
+                        .unwrap_or_else(|| err_msg("Deferred reader previously errored out")));
                 }
             }
         }
     }
 }
-
 
 #[async_trait]
 pub trait Writeable: Send + Sync + Unpin + 'static {
@@ -449,9 +453,14 @@ pub trait Writeable: Send + Sync + Unpin + 'static {
             match self.write(buf).await {
                 Ok(0) => {
                     return Err(std::io::Error::new(
-                        std::io::ErrorKind::WriteZero, "No progress made while writing").into())
+                        std::io::ErrorKind::WriteZero,
+                        "No progress made while writing",
+                    )
+                    .into())
                 }
-                Ok(n) => { buf = &buf[n..]; }
+                Ok(n) => {
+                    buf = &buf[n..];
+                }
                 Err(error) => {
                     if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
                         if io_error.kind() == std::io::ErrorKind::Interrupted {
@@ -461,7 +470,7 @@ pub trait Writeable: Send + Sync + Unpin + 'static {
 
                     return Err(error);
                 }
-            }            
+            }
         }
 
         Ok(())

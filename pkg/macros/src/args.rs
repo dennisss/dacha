@@ -4,7 +4,10 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenTree;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{AttributeArgs, Data, DeriveInput, Fields, GenericParam, Generics, Index, Lit, Type, Path, parse_macro_input, parse_quote};
+use syn::{
+    parse_macro_input, parse_quote, AttributeArgs, Data, DeriveInput, Fields, GenericParam,
+    Generics, Index, Lit, Path, Type,
+};
 
 /// Gets the options specified for an element given all its attributes.
 /// These will specified with annotations of the form:
@@ -12,25 +15,23 @@ use syn::{AttributeArgs, Data, DeriveInput, Fields, GenericParam, Generics, Inde
 fn get_options(attrs: &[syn::Attribute]) -> HashMap<Path, Option<Lit>> {
     let mut meta_map = HashMap::new();
 
-    let arg_attr =
-        attrs.iter().find(|attr| attr.path.is_ident("arg"));
+    let arg_attr = attrs.iter().find(|attr| attr.path.is_ident("arg"));
     if let Some(attr) = arg_attr {
         let meta = attr.parse_meta().unwrap();
 
         let meta_list = match meta {
             syn::Meta::List(list) => list.nested,
-            _ => panic!("Unexpected arg attr format")
+            _ => panic!("Unexpected arg attr format"),
         };
 
         for meta_item in meta_list {
             let name_value = match meta_item {
                 syn::NestedMeta::Meta(syn::Meta::NameValue(v)) => v,
                 syn::NestedMeta::Meta(syn::Meta::Path(p)) => {
-
                     meta_map.insert(p, None);
                     continue;
                 }
-                _ => panic!("Unsupported meta_item: {:?}", meta_item)
+                _ => panic!("Unsupported meta_item: {:?}", meta_item),
             };
 
             meta_map.insert(name_value.path, Some(name_value.lit));
@@ -39,7 +40,6 @@ fn get_options(attrs: &[syn::Attribute]) -> HashMap<Path, Option<Lit>> {
 
     meta_map
 }
-
 
 pub fn derive_args(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree.
@@ -66,7 +66,6 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                 let mut default_value = None;
                 for (key, value) in options {
                     if key.is_ident("default") {
-
                         let v = value.unwrap();
                         default_value = Some(quote! { #v });
                     } else if key.is_ident("positional") {
@@ -94,7 +93,6 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                             <#field_type as ::common::args::ArgType>::parse_raw_arg(::common::args::RawArgValue::String(value))?
                         };
                     });
-
                 } else if let Some(default_value) = default_value {
                     field_vars.push(quote! {
                         let #field_name = {
@@ -106,7 +104,6 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                             }
                         };
                     });
-    
                 } else {
                     field_vars.push(quote! {
                         let #field_name = {
@@ -120,7 +117,7 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                 impl ::common::args::ArgsType for #name {
                     fn parse_raw_args(raw_args: &mut ::common::args::RawArgs) -> ::common::errors::Result<#name> {
                         #(#field_vars)*
-                        
+
                         Ok(#name {
                             #(#field_names,)*
                         })
@@ -139,9 +136,9 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
             let mut commands = vec![];
 
             for var in &e.variants {
-                
                 let var_name = &var.ident;
-                let mut command_name = syn::Lit::Str(syn::LitStr::new(&var.ident.to_string(), var_name.span())) ;
+                let mut command_name =
+                    syn::Lit::Str(syn::LitStr::new(&var.ident.to_string(), var_name.span()));
 
                 let options = get_options(&var.attrs);
                 for (key, value) in options {
@@ -158,16 +155,15 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                         });
                         continue;
                     }
-                    _ => panic!("Only unnamed enum fields are supported")
+                    _ => panic!("Only unnamed enum fields are supported"),
                 };
-
 
                 if fields.len() != 1 {
                     panic!("Only one unnamed enum field is supported");
                 }
 
                 let field = &fields[0];
-                
+
                 let field_type = &field.ty;
 
                 commands.push(quote! {

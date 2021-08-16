@@ -9,13 +9,14 @@ use common::async_std::task;
 use common::errors::*;
 use parsing::iso::*;
 
-// TODO: THe Google TLS server will timeout the connection if the SETTINGs packet isn't received fast enough.
+// TODO: THe Google TLS server will timeout the connection if the SETTINGs
+// packet isn't received fast enough.
 
 async fn run_client() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set
 
-    let client = http::Client::create(
-        http::ClientOptions::from_authority("google.com")?.set_secure(true))?;
+    let client =
+        http::Client::create(http::ClientOptions::from_authority("google.com")?.set_secure(true))?;
 
     let req = http::RequestBuilder::new()
         .method(http::Method::GET)

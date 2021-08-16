@@ -1,5 +1,5 @@
-pub mod main;
 mod backoff;
+pub mod main;
 
 use std::collections::HashMap;
 use std::fs::Permissions;
@@ -13,8 +13,8 @@ use common::async_std::sync::Mutex;
 use common::errors::*;
 use common::task::ChildTask;
 use crypto::hasher::Hasher;
-use nix::unistd::Gid;
 use nix::unistd::chown;
+use nix::unistd::Gid;
 use protobuf::text::parse_text_proto;
 
 use crate::proto::config::*;
@@ -366,13 +366,18 @@ impl Node {
 
         for port in task.spec.ports() {
             if port.number() == 0 {
-                return Err(rpc::Status::invalid_argument(
-                    format!("Port not assigned a number: {}", port.name())).into());
+                return Err(rpc::Status::invalid_argument(format!(
+                    "Port not assigned a number: {}",
+                    port.name()
+                ))
+                .into());
             }
 
             let env_name = port.name().to_uppercase().replace("-", "_");
 
-            container_config.process_mut().add_env(format!("PORT_{}={}", env_name, port.number()));
+            container_config
+                .process_mut()
+                .add_env(format!("PORT_{}={}", env_name, port.number()));
         }
 
         for volume in task.spec.volumes() {
@@ -385,12 +390,15 @@ impl Node {
 
                     let metadata_path = blob_dir.join("metadata");
                     if !metadata_path.exists().await {
-                        return Err(rpc::Status::not_found(
-                            format!("Blob for volume {} doesn't exist", volume.name())).into());
+                        return Err(rpc::Status::not_found(format!(
+                            "Blob for volume {} doesn't exist",
+                            volume.name()
+                        ))
+                        .into());
                     }
-                    
+
                     mount.set_source(blob_dir.join("extracted").to_str().unwrap().to_string());
-        
+
                     mount.add_options("bind".into());
                     mount.add_options("ro".into());
                 }
@@ -401,7 +409,7 @@ impl Node {
                     if !dir.exists().await {
                         common::async_std::fs::create_dir_all(&dir).await?;
                         chown(dir_str.as_str(), None, Some(Gid::from_raw(100002)))?;
-                
+
                         let mut perms = dir.metadata().await?.permissions();
                         perms.set_mode(0o770 | libc::S_ISGID);
                         common::async_std::fs::set_permissions(&dir, perms).await?;
@@ -411,7 +419,9 @@ impl Node {
                     mount.set_source(dir_str);
                 }
                 TaskSpec_VolumeSourceCase::Unknown => {
-                    return Err(rpc::Status::invalid_argument("No source configured for volume").into());
+                    return Err(
+                        rpc::Status::invalid_argument("No source configured for volume").into(),
+                    );
                 }
             }
 
@@ -574,8 +584,8 @@ impl ContainerNodeService for Node {
             task.container_id.clone().unwrap()
         };
 
-        // TODO: If the container is being shutdown then we may temporarily get the wrong
-        // container id
+        // TODO: If the container is being shutdown then we may temporarily get the
+        // wrong container id
         println!("GetLogs Container Id: {}", container_id);
 
         // TODO: Support log seeking.
@@ -585,7 +595,7 @@ impl ContainerNodeService for Node {
         println!("Log opened!");
 
         // TODO: This loop seems to keep running even if I close the request
-        let mut num_ended=  0;
+        let mut num_ended = 0;
         loop {
             let entry = log_reader.read().await?;
             if let Some(entry) = entry {
@@ -614,17 +624,17 @@ impl ContainerNodeService for Node {
     async fn WriteInput(
         &self,
         mut request: rpc::ServerStreamRequest<WriteInputRequest>,
-        _response: &mut rpc::ServerResponse<EmptyMessage>
+        _response: &mut rpc::ServerResponse<EmptyMessage>,
     ) -> Result<()> {
-
         loop {
             let input = match request.recv().await? {
                 Some(v) => v,
-                None => break
+                None => break,
             };
 
-            // TODO: If we require that all messages be for the same task_name and process id, then
-            // we can cache this value instead of looking it up every time.
+            // TODO: If we require that all messages be for the same task_name and process
+            // id, then we can cache this value instead of looking it up every
+            // time.
             let container_id = {
                 let state = self.shared.state.lock().await;
                 let task = state
@@ -637,11 +647,14 @@ impl ContainerNodeService for Node {
                             message: format!("No task found with name: {}", input.task_name()),
                         })
                     })?;
-    
+
                 task.container_id.clone().unwrap()
             };
 
-            self.shared.runtime.write_to_stdin(&container_id, input.data()).await?;
+            self.shared
+                .runtime
+                .write_to_stdin(&container_id, input.data())
+                .await?;
         }
 
         Ok(())
@@ -714,11 +727,9 @@ impl ContainerNodeService for Node {
             common::async_std::fs::set_permissions(&extracted_dir, perms).await?;
         }
 
-
         let mut archive_reader = compression::tar::Reader::open(&raw_file_path).await?;
-        archive_reader.extract_files_with_modes(
-            extracted_dir.as_path().into(),
-            Some(0o644), Some(0o755))
+        archive_reader
+            .extract_files_with_modes(extracted_dir.as_path().into(), Some(0o644), Some(0o755))
             .await?;
 
         // Create an empty metadata sentinel file.

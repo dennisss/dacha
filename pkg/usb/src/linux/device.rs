@@ -113,12 +113,11 @@ impl DeviceState {
 
 impl Drop for DeviceState {
     fn drop(&mut self) {
-        // NOTE: This will only have an effect when the DeviceState is dropped before the
-        // Device object was constructed.
+        // NOTE: This will only have an effect when the DeviceState is dropped before
+        // the Device object was constructed.
         self.close_fd();
     }
 }
-
 
 #[derive(Default)]
 pub(crate) struct DeviceStateTransfers {
@@ -145,7 +144,7 @@ impl Device {
     pub(crate) fn create(
         context: Arc<Context>,
         state: Arc<DeviceState>,
-        raw_descriptors: &[u8]
+        raw_descriptors: &[u8],
     ) -> Result<Self> {
         let mut descriptors = vec![];
         for desc in DescriptorIter::new(&raw_descriptors) {
@@ -164,7 +163,10 @@ impl Device {
         for desc in &descriptors {
             match desc {
                 Descriptor::Endpoint(e) => {
-                    if endpoint_descriptors.insert(e.bEndpointAddress, e.clone()).is_some() {
+                    if endpoint_descriptors
+                        .insert(e.bEndpointAddress, e.clone())
+                        .is_some()
+                    {
                         return Err(err_msg("Device advertising duplicate endpoint addresses"));
                     }
                 }
@@ -172,11 +174,11 @@ impl Device {
             }
         }
 
-        // NOTE: This must run at the very end as we need to ensure that the Device object is always
-        // constructed when the device is added. Otherwise remove_device() won't be called on Drop
-        // of the Device.
+        // NOTE: This must run at the very end as we need to ensure that the Device
+        // object is always constructed when the device is added. Otherwise
+        // remove_device() won't be called on Drop of the Device.
         let id = context.add_device(state.clone())?;
-        
+
         Ok(Self {
             id,
             descriptors,
@@ -184,7 +186,7 @@ impl Device {
             endpoint_descriptors,
             context,
             state,
-            closed: false
+            closed: false,
         })
     }
 
@@ -204,11 +206,11 @@ impl Device {
         // listening for events.
         self.context.remove_device(self.id)?;
 
-        // Close the file. This ensures that linux releases references to any still pending
-        // transfers.
+        // Close the file. This ensures that linux releases references to any still
+        // pending transfers.
         //
-        // Must occur after the remove_device() call to ensure that the context doesn't try
-        // polling the file more than once.
+        // Must occur after the remove_device() call to ensure that the context doesn't
+        // try polling the file more than once.
         self.state.close_fd();
 
         // Wait until another background thread cycle passes so that we know that the
@@ -223,9 +225,7 @@ impl Device {
         // Notify all pending transfers that the device is closed.
         let mut transfers = self.state.transfers.lock().unwrap();
         for (_, transfer) in transfers.active.iter() {
-            let _ = transfer
-                .sender
-                .try_send(Err(crate::Error::DeviceClosing));
+            let _ = transfer.sender.try_send(Err(crate::Error::DeviceClosing));
         }
         transfers.active.clear();
 
@@ -367,7 +367,7 @@ impl Device {
             // Error code meanings are documented here:
             // https://www.kernel.org/doc/html/latest/driver-api/usb/error-codes.html#error-codes-returned-by-usb-submit-urb
             match usbdevfs_submiturb(self.state.fd, &mut transfer_mut.urb) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(nix::Error::Sys(nix::errno::Errno::ENODEV)) => {
                     return Err(crate::Error::DeviceDisconnected.into());
                 }

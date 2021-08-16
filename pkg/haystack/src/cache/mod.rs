@@ -1,5 +1,5 @@
 pub mod api;
-mod memory;
 mod machine;
-mod routes;
 pub mod main;
+mod memory;
+mod routes;

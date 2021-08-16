@@ -11,7 +11,7 @@ pub const PEM_CERTIFICATE_REQUEST_LABEL: &'static str = "CERTIFICATE REQUEST";
 /// The payload is a DER encoded PKCS_8::PrivateKeyInfo.
 pub const PEM_PRIVATE_KEY_LABEL: &'static str = "PRIVATE KEY";
 
-/// The payload is a DER encoded PKCS_1::RSAPrivateKey. 
+/// The payload is a DER encoded PKCS_1::RSAPrivateKey.
 pub const PEM_RSA_PRIVATE_KEY_LABEL: &'static str = "RSA PRIVATE KEY";
 
 pub const PEM_X509_CRL_LABEL: &'static str = "X509 CRL";

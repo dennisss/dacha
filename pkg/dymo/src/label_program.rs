@@ -23,7 +23,7 @@ impl LabelProgramBuilder {
         Self {
             program,
             skip_bytes: 0,
-            bytes_per_line: 0
+            bytes_per_line: 0,
         }
     }
 
@@ -31,28 +31,32 @@ impl LabelProgramBuilder {
     pub fn compile_lines(lines: &[Vec<u8>]) -> Result<Vec<u8>> {
         let mut program = Self::new();
         program.set_color(0);
-    
+
         for line in lines {
             if line.len() > MAX_BYTES_PER_LINE {
                 return Err(err_msg("Expected lines to be full"));
             }
-    
+
             let range = LineRange::from(&line);
-    
-            if range.start_index < program.skip_bytes() ||
-               range.start_index > program.skip_bytes() + INSTRUCTION_SIZE {
+
+            if range.start_index < program.skip_bytes()
+                || range.start_index > program.skip_bytes() + INSTRUCTION_SIZE
+            {
                 program.set_skip_bytes(range.start_index)?;
             }
-    
+
             let target_len = range.end_index - program.skip_bytes();
-            if target_len > program.bytes_per_line() ||
-               target_len + INSTRUCTION_SIZE < program.bytes_per_line() {
+            if target_len > program.bytes_per_line()
+                || target_len + INSTRUCTION_SIZE < program.bytes_per_line()
+            {
                 program.set_bytes_per_line(target_len)?;
             }
-    
-            program.print_line(&line[program.skip_bytes()..(program.skip_bytes() + program.bytes_per_line())])?;
+
+            program.print_line(
+                &line[program.skip_bytes()..(program.skip_bytes() + program.bytes_per_line())],
+            )?;
         }
-    
+
         Ok(program.finish())
     }
 
@@ -70,12 +74,14 @@ impl LabelProgramBuilder {
         }
 
         self.skip_bytes = num;
-        self.program.extend_from_slice(&[INSTRUCTION_START, b'B', num as u8]);
+        self.program
+            .extend_from_slice(&[INSTRUCTION_START, b'B', num as u8]);
         Ok(())
     }
 
     pub fn set_color(&mut self, color: u8) {
-        self.program.extend_from_slice(&[INSTRUCTION_START, b'C', color]);
+        self.program
+            .extend_from_slice(&[INSTRUCTION_START, b'C', color]);
     }
 
     fn bytes_per_line(&self) -> usize {
@@ -92,7 +98,8 @@ impl LabelProgramBuilder {
         }
 
         self.bytes_per_line = num;
-        self.program.extend_from_slice(&[INSTRUCTION_START, b'D', num as u8]);
+        self.program
+            .extend_from_slice(&[INSTRUCTION_START, b'D', num as u8]);
         Ok(())
     }
 
@@ -116,7 +123,6 @@ impl LabelProgramBuilder {
     }
 }
 
-
 struct LineRange {
     start_index: usize,
     end_index: usize,
@@ -134,6 +140,9 @@ impl LineRange {
             start_index += 1;
         }
 
-        LineRange { start_index, end_index }
+        LineRange {
+            start_index,
+            end_index,
+        }
     }
 }

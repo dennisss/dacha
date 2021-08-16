@@ -1,7 +1,7 @@
 use common::errors::*;
 
-use crate::hid::{HIDDescriptor, HIDDescriptorType};
 use crate::descriptors::*;
+use crate::hid::{HIDDescriptor, HIDDescriptorType};
 
 pub enum Descriptor {
     Device(DeviceDescriptor),
@@ -9,7 +9,6 @@ pub enum Descriptor {
     Endpoint(EndpointDescriptor),
     Interface(InterfaceDescriptor),
     // String(StringDescriptor),
-
     HID(HIDDescriptor),
 
     Unknown(Vec<u8>),
@@ -18,12 +17,15 @@ pub enum Descriptor {
 /// Iterates over a list of concatenated USB descriptors in binary form.
 pub struct DescriptorIter<'a> {
     data: &'a [u8],
-    in_hid_interface: bool
+    in_hid_interface: bool,
 }
 
 impl<'a> DescriptorIter<'a> {
     pub fn new(data: &[u8]) -> DescriptorIter {
-        DescriptorIter { data, in_hid_interface: false }
+        DescriptorIter {
+            data,
+            in_hid_interface: false,
+        }
     }
 
     fn next_impl(&mut self) -> Result<Option<Descriptor>> {

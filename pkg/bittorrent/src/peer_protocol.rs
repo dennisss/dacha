@@ -1,5 +1,3 @@
-
-
 /*
 2-bits of states: choked? interested?
 
@@ -11,14 +9,14 @@ Handshake:
 
     20 byte info_hash
         If both sides don't sent the sent thing, close the connection.
-    
+
     20 byte peer id
         verify matches value in tracker list or close connection
 
 
 Messages
     Length prefixed (length of 0 is a keep alive sent every 2 minuts)
-    
+
     First byte is the type:
         0 - choke (no payload)
         1 - unchoke (no payload)
@@ -32,7 +30,7 @@ Messages
             messages contain an index, begin, and length. The last two are byte offsets. Length is generally a power of two unless it gets truncated by the end of the file. All current implementations use 2^14 (16 kiB), and close connections which request an amount greater than that.
         7 - piece
             contain an index, begin, and piece. Note that they are correlated with request messages implicitly. It's possible for an unexpected piece to arrive if choke and unchoke messages are sent in quick succession and/or transfer is going very slowly.
-        8 - cancel 
+        8 - cancel
 
 
 

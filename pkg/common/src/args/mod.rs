@@ -6,7 +6,6 @@
 /// common::args::init(&[&my_bool, &my_string])?;
 ///
 /// my_bool.value()
-
 use std::any::Any;
 use std::cell::Ref;
 use std::cell::RefCell;
@@ -18,14 +17,13 @@ use std::string::ToString;
 
 use crate::errors::*;
 
-
 pub struct RawArgs {
     positional: Vec<String>,
 
     // If a None is stored, then this argument was already taken by a previous call.
     named_args: HashMap<String, RawArgValue>,
 
-    requested_args: HashSet<String>
+    requested_args: HashSet<String>,
 }
 
 pub enum RawArgValue {
@@ -34,7 +32,6 @@ pub enum RawArgValue {
 }
 
 impl RawArgs {
-
     fn create_from_env() -> Result<Self> {
         let mut escaped_mode = false;
 
@@ -45,18 +42,21 @@ impl RawArgs {
                 positional_args.push(arg_str);
                 continue;
             }
-    
+
             if let Some(arg_tuple) = arg_str.strip_prefix("--") {
                 if arg_tuple.is_empty() {
                     escaped_mode = true;
                     continue;
                 }
-    
+
                 if let Some(pos) = arg_tuple.find('=') {
                     let key = &arg_tuple[0..pos];
                     let value = &arg_tuple[(pos + 1)..];
-    
-                    if named_args.insert(key.to_string(), RawArgValue::String(value.to_string())).is_some() {
+
+                    if named_args
+                        .insert(key.to_string(), RawArgValue::String(value.to_string()))
+                        .is_some()
+                    {
                         return Err(format_err!("Duplicate argument named: {}", key));
                     }
                 } else {
@@ -67,8 +67,11 @@ impl RawArgs {
                     } else {
                         true
                     };
-    
-                    if named_args.insert(key.to_string(), RawArgValue::Bool(value)).is_some() {
+
+                    if named_args
+                        .insert(key.to_string(), RawArgValue::Bool(value))
+                        .is_some()
+                    {
                         return Err(format_err!("Duplicate argument named: {}", key));
                     }
                 }
@@ -80,7 +83,7 @@ impl RawArgs {
         Ok(Self {
             named_args,
             positional: positional_args,
-            requested_args: HashSet::new()
+            requested_args: HashSet::new(),
         })
     }
 
@@ -102,33 +105,41 @@ impl RawArgs {
 
     pub fn take_named_arg(&mut self, name: &str) -> Result<Option<RawArgValue>> {
         if !self.requested_args.insert(name.to_string()) {
-            return Err(err_msg("Duplicate definition of argument"))
+            return Err(err_msg("Duplicate definition of argument"));
         }
 
         Ok(self.named_args.remove(name))
     }
 }
 
-
-
-/// Trait implemented by a collection of multiple arguments. 
+/// Trait implemented by a collection of multiple arguments.
 pub trait ArgsType {
-    fn parse_raw_args(raw_args: &mut RawArgs) -> Result<Self> where Self: Sized;
+    fn parse_raw_args(raw_args: &mut RawArgs) -> Result<Self>
+    where
+        Self: Sized;
 }
 
 /// Trait implemented by a type which stores the value of a single argument.
 pub trait ArgType {
-    fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> where Self: Sized;
+    fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self>
+    where
+        Self: Sized;
 
-    fn parse_optional_raw_arg(raw_arg: Option<RawArgValue>) -> Result<Self> where Self: Sized {
+    fn parse_optional_raw_arg(raw_arg: Option<RawArgValue>) -> Result<Self>
+    where
+        Self: Sized,
+    {
         let value = raw_arg.ok_or_else(|| err_msg("Missing value for argument"))?;
         Self::parse_raw_arg(value)
     }
 }
 
-/// Trait implemented by a type which can be a named field in a struct containing arguments.
+/// Trait implemented by a type which can be a named field in a struct
+/// containing arguments.
 pub trait ArgFieldType {
-    fn parse_raw_arg_field(field_name: &str, raw_args: &mut RawArgs) -> Result<Self> where Self: Sized;
+    fn parse_raw_arg_field(field_name: &str, raw_args: &mut RawArgs) -> Result<Self>
+    where
+        Self: Sized;
 }
 
 impl<T: ArgType + Sized> ArgFieldType for T {
@@ -141,18 +152,18 @@ impl<T: ArgType + Sized> ArgFieldType for T {
 impl ArgType for String {
     fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> {
         match raw_arg {
-            RawArgValue::Bool(_) => { Err(err_msg("Expected string, got bool")) }
-            RawArgValue::String(s) => { Ok(s) }
+            RawArgValue::Bool(_) => Err(err_msg("Expected string, got bool")),
+            RawArgValue::String(s) => Ok(s),
         }
-    } 
+    }
 }
 
 impl ArgType for bool {
     fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> {
         match raw_arg {
-            RawArgValue::Bool(v) => { Ok(v) }
-            RawArgValue::String(_) => { Err(err_msg("Expected bool, got string")) }
-        } 
+            RawArgValue::Bool(v) => Ok(v),
+            RawArgValue::String(_) => Err(err_msg("Expected bool, got string")),
+        }
     }
 }
 
@@ -161,7 +172,10 @@ impl<T: ArgType> ArgType for Option<T> {
         Ok(Some(T::parse_raw_arg(raw_arg)?))
     }
 
-    fn parse_optional_raw_arg(raw_arg: Option<RawArgValue>) -> Result<Self> where Self: Sized {
+    fn parse_optional_raw_arg(raw_arg: Option<RawArgValue>) -> Result<Self>
+    where
+        Self: Sized,
+    {
         if let Some(value) = raw_arg {
             Ok(Self::parse_raw_arg(value)?)
         } else {
@@ -173,12 +187,10 @@ impl<T: ArgType> ArgType for Option<T> {
 impl ArgType for std::path::PathBuf {
     fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> {
         match raw_arg {
-            RawArgValue::Bool(_) => { Err(err_msg("Expected string, got bool")) }
-            RawArgValue::String(s) => {
-                Ok(std::path::PathBuf::from(s))
-            }
+            RawArgValue::Bool(_) => Err(err_msg("Expected string, got bool")),
+            RawArgValue::String(s) => Ok(std::path::PathBuf::from(s)),
         }
-    } 
+    }
 }
 
 macro_rules! impl_arg_type_from_str {
@@ -186,12 +198,14 @@ macro_rules! impl_arg_type_from_str {
         impl ArgType for $name {
             fn parse_raw_arg(raw_arg: RawArgValue) -> Result<$name> {
                 let s = match raw_arg {
-                    RawArgValue::Bool(_) => { return Err(err_msg("Expected string, got bool")); }
-                    RawArgValue::String(s) => { s }
+                    RawArgValue::Bool(_) => {
+                        return Err(err_msg("Expected string, got bool"));
+                    }
+                    RawArgValue::String(s) => s,
                 };
-        
+
                 Ok(s.parse::<$name>()?)
-            } 
+            }
         }
     };
 }
@@ -206,10 +220,6 @@ impl_arg_type_from_str!(u64);
 impl_arg_type_from_str!(i64);
 impl_arg_type_from_str!(usize);
 impl_arg_type_from_str!(isize);
-
-
-
-
 
 pub fn parse_args<Args: ArgsType + Sized>() -> Result<Args> {
     let mut raw_args = RawArgs::create_from_env()?;

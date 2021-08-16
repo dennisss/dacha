@@ -17,30 +17,29 @@ use std::path::Path;
 use common::errors::*;
 use common::failure::ResultExt;
 use nix::fcntl::OFlag;
-use nix::mount::MsFlags;
 use nix::mount::mount;
-use nix::pty::PtyMaster;
+use nix::mount::MsFlags;
 use nix::pty::posix_openpt;
+use nix::pty::PtyMaster;
 use nix::sched::CloneFlags;
+use nix::sys::signal::sigprocmask;
 use nix::sys::signal::SigSet;
 use nix::sys::signal::SigmaskHow;
-use nix::sys::signal::sigprocmask;
-use nix::sys::stat::Mode;
-use nix::sys::stat::SFlag;
 use nix::sys::stat::makedev;
 use nix::sys::stat::mknod;
 use nix::sys::stat::umask;
+use nix::sys::stat::Mode;
+use nix::sys::stat::SFlag;
+use nix::unistd::chown;
 use nix::unistd::Gid;
 use nix::unistd::Uid;
-use nix::unistd::chown;
 use nix::unistd::{dup2, Pid};
 
+use crate::capabilities::*;
 use crate::proto::config::*;
 use crate::runtime::fd::*;
-use crate::capabilities::*;
 
 use super::setup_socket::SetupSocketChild;
-
 
 // NOTE: You should only pass references as arguments to this and no async_std
 // objects can be used in this. e.g. If a async_std::fs::File object is blocked
@@ -57,7 +56,8 @@ pub fn run_child_process(
 
     // TODO: Must ensure that all files are closed.
 
-    let result = run_child_process_inner(container_config, container_dir, setup_socket, file_mapping);
+    let result =
+        run_child_process_inner(container_config, container_dir, setup_socket, file_mapping);
     let status = {
         if let Err(e) = result {
             eprintln!("Child process wrapper failed: {:?}", e);
@@ -70,8 +70,8 @@ pub fn run_child_process(
     unsafe { libc::exit(status) };
 }
 
-
-// TODO: Rename the FileMapping to the StdioMapping as we currently only support using it for that purpose.
+// TODO: Rename the FileMapping to the StdioMapping as we currently only support
+// using it for that purpose.
 fn run_child_process_inner(
     container_config: &ContainerConfig,
     container_dir: &Path,
@@ -81,19 +81,13 @@ fn run_child_process_inner(
     // Block until the parent is done with setting up our environment.
     setup_socket.wait_user_ns_setup()?;
 
-    // The root directory of the container will be world readable so that the container user can
-    // read from it.
+    // The root directory of the container will be world readable so that the
+    // container user can read from it.
     umask(Mode::from_bits_truncate(0o002));
 
     // Prevent parent processes from seeing the new mounts.
     // But, we will see new mounts created by the parent.
-    mount::<str, str, str, str>(
-        None,
-        "/",
-        None,
-        MsFlags::MS_SLAVE | MsFlags::MS_REC,
-        None,
-    )?;
+    mount::<str, str, str, str>(None, "/", None, MsFlags::MS_SLAVE | MsFlags::MS_REC, None)?;
 
     // Create the directory that we'll use for the new root fs.
     // TODO: Be very explicit about what permission flags should be set on this.
@@ -120,8 +114,8 @@ fn run_child_process_inner(
     //     None,
     // )?;
 
-    // Bind the root directory to itself so that it becomes a mount point (otherwise we can't mount
-    // it as the '/' mount point later).
+    // Bind the root directory to itself so that it becomes a mount point (otherwise
+    // we can't mount it as the '/' mount point later).
     mount::<Path, Path, str, str>(
         Some(&root_dir),
         &root_dir,
@@ -151,16 +145,14 @@ fn run_child_process_inner(
 
         let target = root_dir.join(destination);
 
-
-
         // TODO: Make this an optional step?
         if !target.exists() {
             if let Some(parent_dir) = target.parent() {
                 std::fs::create_dir_all(parent_dir)?;
             }
-    
+
             // The mount target must exist. If bind mounting a file or special device,
-            // then the target needs to be a file. Otherwise, we'll assume 
+            // then the target needs to be a file. Otherwise, we'll assume
             if mount.typ().is_empty() && !Path::new(mount.source()).is_dir() {
                 std::fs::write(&target, "")?;
             } else {
@@ -233,7 +225,7 @@ fn run_child_process_inner(
 
     // // TODO: Be explicit about the permissions for this.
     // // Instead just change this to an mknode.
-    // mknod(&root_dir.join("dev/null"), SFlag::S_IFCHR, 
+    // mknod(&root_dir.join("dev/null"), SFlag::S_IFCHR,
     // Mode::from_bits_truncate(0666), makedev(1, 3))?;
 
     // println!("DONE!");
@@ -244,8 +236,8 @@ fn run_child_process_inner(
         None,
         MsFlags::MS_REMOUNT | MsFlags::MS_BIND | MsFlags::MS_RDONLY,
         None,
-    ).with_context(|e| format!("Failed to mount root as read only: {}", e))?;
-
+    )
+    .with_context(|e| format!("Failed to mount root as read only: {}", e))?;
 
     // TODO: Also run in the exec case?
     // TODO: Compare to the pivot root here:
@@ -257,27 +249,23 @@ fn run_child_process_inner(
         nix::unistd::chdir("/")?;
     }
 
-
     // Based on https://man7.org/linux/man-pages/man4/pts.4.html,
-    // "major number 5 and minor number 2, usually with mode 0666 and ownership root:root"
-
+    // "major number 5 and minor number 2, usually with mode 0666 and ownership
+    // root:root"
 
     // TODO: Add RDONLY
-    // Switch the root mount point back to using MS_SHARED which is usually the default in most
-    // linux environments.
-    mount::<str, str, str, str>(
-        None,
-        "/",
-        None,
-        MsFlags::MS_SHARED | MsFlags::MS_REC,
-        None,
-    )?;
+    // Switch the root mount point back to using MS_SHARED which is usually the
+    // default in most linux environments.
+    mount::<str, str, str, str>(None, "/", None, MsFlags::MS_SHARED | MsFlags::MS_REC, None)?;
 
     exec_child_process(container_config.process(), setup_socket, file_mapping)
 }
 
-fn exec_child_process(process: &ContainerProcess, setup_socket: &mut SetupSocketChild, file_mapping: &FileMapping) -> Result<()> {
-
+fn exec_child_process(
+    process: &ContainerProcess,
+    setup_socket: &mut SetupSocketChild,
+    file_mapping: &FileMapping,
+) -> Result<()> {
     ///////////
     // All the post-namespace initialization stuff.
 
@@ -287,7 +275,7 @@ fn exec_child_process(process: &ContainerProcess, setup_socket: &mut SetupSocket
 
     // Ensure that all signals are unblocked.
     sigprocmask(SigmaskHow::SIG_UNBLOCK, Some(&SigSet::all()), None)?;
-    
+
     if process.args().len() == 0 {
         return Err(err_msg("Expected at least one arg in args list"));
     }
@@ -307,7 +295,7 @@ fn exec_child_process(process: &ContainerProcess, setup_socket: &mut SetupSocket
     let child_uid = Uid::from_raw(process.user().uid());
     let child_gid = Gid::from_raw(process.user().gid());
 
-    let mut additional_gids = vec![ child_gid ];
+    let mut additional_gids = vec![child_gid];
     for gid in process.user().additional_gids() {
         additional_gids.push(Gid::from_raw(*gid));
     }
@@ -323,10 +311,11 @@ fn exec_child_process(process: &ContainerProcess, setup_socket: &mut SetupSocket
 
     let hdr = cap_user_header {
         version: LINUX_CAPABILITY_VERSION_3,
-        pid: unsafe { libc::getpid() }
+        pid: unsafe { libc::getpid() },
     };
 
-    // NOTE: This is 2 elements because on 64-bit devices, 64-bit capability sets are supported.
+    // NOTE: This is 2 elements because on 64-bit devices, 64-bit capability sets
+    // are supported.
     let data = [
         cap_user_data {
             effective: 0,
@@ -337,22 +326,31 @@ fn exec_child_process(process: &ContainerProcess, setup_socket: &mut SetupSocket
             effective: 0,
             permitted: 0,
             inheritable: 0,
-        }
+        },
     ];
 
     {
-        // NOTE: This will only work if we are using a user namespace (otherwise we won't have the
-        // capabilites needed to change our own capabilities).
+        // NOTE: This will only work if we are using a user namespace (otherwise we
+        // won't have the capabilites needed to change our own capabilities).
         let r = unsafe { libc::syscall(libc::SYS_capset, &hdr, &data) };
 
         if r != 0 {
             let e = nix::Error::last();
-            return Err(format_err!("Failed to drop capabilities with error: {:?}", e));
+            return Err(format_err!(
+                "Failed to drop capabilities with error: {:?}",
+                e
+            ));
         }
     }
 
     let r = unsafe {
-        libc::prctl(libc::PR_CAP_AMBIENT, libc::PR_CAP_AMBIENT_CLEAR_ALL, 0, 0, 0)
+        libc::prctl(
+            libc::PR_CAP_AMBIENT,
+            libc::PR_CAP_AMBIENT_CLEAR_ALL,
+            0,
+            0,
+            0,
+        )
     };
     if r != 0 {
         return Err(err_msg("Failed to clear ambient capabilities"));
@@ -373,27 +371,30 @@ fn exec_child_process(process: &ContainerProcess, setup_socket: &mut SetupSocket
         nix::pty::unlockpt(&term_primary)?;
 
         let term_secondary = nix::fcntl::open(
-            std::path::Path::new(&term_secondary_path), OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())?;
+            std::path::Path::new(&term_secondary_path),
+            OFlag::O_RDWR | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )?;
         for i in 0..=2 {
             dup2(term_secondary, i)?;
         }
 
         // Send the primary end to the parent process.
-        setup_socket.send_terminal_fd(unsafe { std::fs::File::from_raw_fd(term_primary.into_raw_fd()) })?;
+        setup_socket
+            .send_terminal_fd(unsafe { std::fs::File::from_raw_fd(term_primary.into_raw_fd()) })?;
 
-        // Explicitly closing to make it clear that this file doesn't 
+        // Explicitly closing to make it clear that this file doesn't
         // drop(term_primary);
-
     } else {
         for (newfd, file) in file_mapping.iter() {
             // NOTE: Files created using dup2 don't share file descriptor flags, so
             // O_CLOEXEC will be disabled for the target fd.
             let oldfd = unsafe { file.open_raw()? };
             dup2(oldfd, *newfd)?;
-    
-            // NOTE: We will never end up actually calling close() on the 'oldfd' in
-            // te child thread. instead we'll just rely on O_CLOEXEC to get
-            // rid of them once we call execve.
+
+            // NOTE: We will never end up actually calling close() on the
+            // 'oldfd' in te child thread. instead we'll just rely
+            // on O_CLOEXEC to get rid of them once we call execve.
         }
     }
 

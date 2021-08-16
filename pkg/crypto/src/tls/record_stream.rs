@@ -3,9 +3,9 @@ use common::errors::*;
 use common::io::{Readable, Writeable};
 
 use crate::tls::alert::*;
-use crate::tls::record::*;
 use crate::tls::cipher::*;
 use crate::tls::handshake::*;
+use crate::tls::record::*;
 use crate::tls::transcript::Transcript;
 
 #[derive(Debug)]
@@ -17,12 +17,10 @@ pub enum Message {
     ApplicationData(Bytes),
 }
 
-
-// We can just have atomic counters to deal with key updates and avoid half locking
-// TODO: If we do have a split interface, then we need to ensure that if there is a fatal processing
-// error on only one half, then we close both the reader and writer halves  of the connection.
-
-
+// We can just have atomic counters to deal with key updates and avoid half
+// locking TODO: If we do have a split interface, then we need to ensure that if
+// there is a fatal processing error on only one half, then we close both the
+// reader and writer halves  of the connection.
 
 pub struct RecordReader {
     reader: Box<dyn Readable>,
@@ -38,17 +36,21 @@ pub struct RecordReader {
     ///
     /// TODO: If this is non-empty, then we can't change keys and receive other
     /// types of messages.
-    handshake_buffer: Bytes
+    handshake_buffer: Bytes,
 }
 
 impl RecordReader {
     pub fn new(reader: Box<dyn Readable>) -> Self {
-        Self { reader, remote_cipher_spec: None, handshake_buffer: Bytes::new() }
+        Self {
+            reader,
+            remote_cipher_spec: None,
+            handshake_buffer: Bytes::new(),
+        }
     }
 
     pub fn set_remote_cipher_spec(&mut self, remote_cipher_spec: CipherEndpointSpec) -> Result<()> {
         if !self.handshake_buffer.is_empty() {
-            return Err(err_msg("Key change across a partial handshake message"))
+            return Err(err_msg("Key change across a partial handshake message"));
         }
 
         self.remote_cipher_spec = Some(remote_cipher_spec);
@@ -56,17 +58,21 @@ impl RecordReader {
     }
 
     pub fn replace_remote_key(&mut self, traffic_secret: Bytes) -> Result<()> {
-        let cipher_spec = self.remote_cipher_spec
-            .as_mut().ok_or_else(|| err_msg("Cipher spec not set yet"))?;
+        let cipher_spec = self
+            .remote_cipher_spec
+            .as_mut()
+            .ok_or_else(|| err_msg("Cipher spec not set yet"))?;
         cipher_spec.replace_key(traffic_secret);
         Ok(())
     }
 
     /// Recieves the next full message from the socket.
-    /// In the case of handshake messages, this message may span multiple previous/future records.
+    /// In the case of handshake messages, this message may span multiple
+    /// previous/future records.
     ///
-    /// During the initial handshake, the 'transcript' can also be passed and the
-    /// reader will append the raw bytes of any handshake message received.
+    /// During the initial handshake, the 'transcript' can also be passed and
+    /// the reader will append the raw bytes of any handshake message
+    /// received.
     pub async fn recv(&mut self, transcript: Option<&mut Transcript>) -> Result<Message> {
         // Partial data received for a handshake message. Handshakes may be
         // split between consecutive records.
@@ -240,16 +246,18 @@ impl RecordReader {
     }
 }
 
-
 pub struct RecordWriter {
     writer: Box<dyn Writeable>,
 
-    pub local_cipher_spec: Option<CipherEndpointSpec>
+    pub local_cipher_spec: Option<CipherEndpointSpec>,
 }
 
 impl RecordWriter {
     pub fn new(writer: Box<dyn Writeable>) -> Self {
-        Self { writer, local_cipher_spec: None }
+        Self {
+            writer,
+            local_cipher_spec: None,
+        }
     }
 
     // TODO: Messages that are too long may need to be split up.
@@ -375,9 +383,7 @@ impl RecordWriter {
         self.writer.write_all(&record_data).await?;
         Ok(())
     }
-
 }
-
 
 /*
 
@@ -392,7 +398,7 @@ pub struct RecordStream {
     /// Current encryption configuration for the connection.
     ///
     /// Initially this will None indicating that we haven't yet agreed upon keys and
-    /// will eventually 
+    /// will eventually
     ///  If specified then the connection is encrypted.
     ///
     /// TODO: Make this private.

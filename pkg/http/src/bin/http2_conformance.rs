@@ -4,14 +4,14 @@ git clone git@github.com:summerwind/h2spec.git
 go run cmd/h2spec/h2spec.go --port 8888 --struct hpack/4.2
 */
 
-extern crate http;
 extern crate common;
+extern crate http;
 
-use common::errors::*;
 use common::async_std::task;
+use common::errors::*;
 use http::header::*;
-use http::status_code::*;
 use http::server::Server;
+use http::status_code::*;
 
 async fn handle_request(mut req: http::Request) -> http::Response {
     println!("REQUEST HANDLER GOT: {:?}", req);
@@ -33,11 +33,9 @@ async fn handle_request(mut req: http::Request) -> http::Response {
             .unwrap();
     }
 
-
     let mut data = vec![];
     data.extend_from_slice(b"Hello World!");
     // req.body.read_to_end(&mut data).await;
-
 
     http::ResponseBuilder::new()
         .status(OK)
@@ -46,8 +44,6 @@ async fn handle_request(mut req: http::Request) -> http::Response {
         .build()
         .unwrap()
 }
-
-
 
 async fn run_server() -> Result<()> {
     let handler = http::server::HttpFn(handle_request);

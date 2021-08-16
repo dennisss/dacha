@@ -12,20 +12,23 @@ use crate::nist::response_syntax::*;
 pub struct ResponseBlock {
     pub new_attributes: bool,
     pub attributes: HashMap<String, String>,
-    pub fields: HashMap<String, String>
+    pub fields: HashMap<String, String>,
 }
 
 impl ResponseBlock {
     pub fn binary_field(&self, name: &str) -> Result<Vec<u8>> {
         Ok(common::hex::decode(
-            &self.fields.get(name).ok_or_else(|| format_err!("No field name: {}", name))?)?)
+            &self
+                .fields
+                .get(name)
+                .ok_or_else(|| format_err!("No field name: {}", name))?,
+        )?)
     }
 }
 
-
 /// A Response (.rsp) file typically containing test vectors.
 pub struct ResponseFile {
-    data: String
+    data: String,
 }
 
 impl ResponseFile {
@@ -43,14 +46,18 @@ impl ResponseFile {
     }
 
     pub fn iter(&self) -> ResponseBlockIter {
-        ResponseBlockIter { remaining_data: &self.data, next_element: None, last_attributes: HashMap::new() }
+        ResponseBlockIter {
+            remaining_data: &self.data,
+            next_element: None,
+            last_attributes: HashMap::new(),
+        }
     }
 }
 
 pub struct ResponseBlockIter<'a> {
     remaining_data: &'a str,
     next_element: Option<Element<'a>>,
-    last_attributes: HashMap<String, String>
+    last_attributes: HashMap<String, String>,
 }
 
 impl<'a> std::iter::Iterator for ResponseBlockIter<'a> {
@@ -67,13 +74,14 @@ impl<'a> std::iter::Iterator for ResponseBlockIter<'a> {
                 } else {
                     let (e, rest) = match Element::parse_next(self.remaining_data) {
                         Ok(v) => v,
-                        Err(err) => { return Some(Err(err)); }
+                        Err(err) => {
+                            return Some(Err(err));
+                        }
                     };
                     self.remaining_data = rest;
                     e
                 }
             };
-
 
             match el {
                 Element::Field { key, value } => {
@@ -88,16 +96,16 @@ impl<'a> std::iter::Iterator for ResponseBlockIter<'a> {
                         }
 
                         // TODO: Check no duplicates.
-                        self.last_attributes.insert(key.to_ascii_uppercase(), value.unwrap_or("").to_string());
-
+                        self.last_attributes
+                            .insert(key.to_ascii_uppercase(), value.unwrap_or("").to_string());
                     } else {
                         self.next_element = Some(el);
                         break;
                     }
                 }
                 Element::EndOfLine => {
-                    // TODO: Currently this applies that a comment on a line by itself can delimit two responses.
-                    // We should check if this is acceptable.
+                    // TODO: Currently this applies that a comment on a line by itself can delimit
+                    // two responses. We should check if this is acceptable.
                     if !fields.is_empty() {
                         break;
                     }
@@ -112,11 +120,10 @@ impl<'a> std::iter::Iterator for ResponseBlockIter<'a> {
         Some(Ok(ResponseBlock {
             new_attributes: cleared_attrs,
             attributes: self.last_attributes.clone(),
-            fields
+            fields,
         }))
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -124,8 +131,8 @@ mod tests {
 
     #[test]
     fn response_file_test() -> Result<()> {
-
-        let file = ResponseFile::from(r#"# This is a comment
+        let file = ResponseFile::from(
+            r#"# This is a comment
 # And another comment
 
 [Apples = 12]
@@ -144,57 +151,65 @@ FAIL
 
 Empty = 
 EmptySpace = 
-Oranges = Tasty"#.to_string());
+Oranges = Tasty"#
+                .to_string(),
+        );
 
         let mut iter = file.iter();
 
-        assert_eq!(iter.next().unwrap().unwrap(), ResponseBlock {
-            new_attributes: true,
-            attributes: map! {
-                "APPLES" => "12",
-                "ORANGES" => "4"
-            },
-            fields: map! {
-                "COUNT" => "0",
-                "KEY" => "123456",
-                "VALUE" => "890371"
+        assert_eq!(
+            iter.next().unwrap().unwrap(),
+            ResponseBlock {
+                new_attributes: true,
+                attributes: map! {
+                    "APPLES" => "12",
+                    "ORANGES" => "4"
+                },
+                fields: map! {
+                    "COUNT" => "0",
+                    "KEY" => "123456",
+                    "VALUE" => "890371"
+                }
             }
-        });
+        );
 
-        assert_eq!(iter.next().unwrap().unwrap(), ResponseBlock {
-            new_attributes: false,
-            attributes: map! {
-                "APPLES" => "12",
-                "ORANGES" => "4"
-            },
-            fields: map! {
-                "COUNT" => "1",
-                "HELLO" => "World",
-                "RED" => "Black",
-                "FAIL" => ""
+        assert_eq!(
+            iter.next().unwrap().unwrap(),
+            ResponseBlock {
+                new_attributes: false,
+                attributes: map! {
+                    "APPLES" => "12",
+                    "ORANGES" => "4"
+                },
+                fields: map! {
+                    "COUNT" => "1",
+                    "HELLO" => "World",
+                    "RED" => "Black",
+                    "FAIL" => ""
+                }
             }
-        });
+        );
 
-        assert_eq!(iter.next().unwrap().unwrap(), ResponseBlock {
-            new_attributes: true,
-            attributes: map! {
-                "ENCRYPT" => ""
-            },
-            fields: map! {
-                "EMPTY" => "",
-                "EMPTYSPACE" => "",
-                "ORANGES" => "Tasty"
+        assert_eq!(
+            iter.next().unwrap().unwrap(),
+            ResponseBlock {
+                new_attributes: true,
+                attributes: map! {
+                    "ENCRYPT" => ""
+                },
+                fields: map! {
+                    "EMPTY" => "",
+                    "EMPTYSPACE" => "",
+                    "ORANGES" => "Tasty"
+                }
             }
-        });
+        );
 
         assert!(iter.next().is_none());
 
         Ok(())
     }
-
 }
-
-
 
 /*
 # CAVS 14.0
@@ -212,9 +227,9 @@ Oranges = Tasty"#.to_string());
 Count = 0
 Key = 11754cd72aec309bf52f7687212e8957
 IV = 3c819d9a9bed087615030b65
-PT = 
-AAD = 
-CT = 
+PT =
+AAD =
+CT =
 Tag = 250327c674aaf477aef2675748cf6971
 
 

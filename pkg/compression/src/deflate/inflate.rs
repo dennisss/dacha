@@ -1,7 +1,7 @@
 use super::cyclic_buffer::*;
 use crate::deflate::shared::*;
-use crate::transform::{Transform, TransformProgress};
 use crate::huffman::*;
+use crate::transform::{Transform, TransformProgress};
 use byteorder::{LittleEndian, ReadBytesExt};
 use common::bits::*;
 use common::errors::*;
@@ -9,7 +9,8 @@ use std::io::Read;
 
 // TODO: Ensure that RFC 1951 Section 3.3 is implemented.
 
-// TODO: If the user always has the output buffer available, maybe we should be able to re-use that instead of using a cyclic buffer.
+// TODO: If the user always has the output buffer available, maybe we should be
+// able to re-use that instead of using a cyclic buffer.
 
 /*
 Some guidelines for compression:
@@ -132,11 +133,11 @@ impl Inflater {
             index: 0,
         };
 
-        // NOTE: We don't wait for the output buffer to be fully consumed as there are cases where
-        // the final input byte marking that the block is done isn't read just because this is no
-        // output data remaining.
+        // NOTE: We don't wait for the output buffer to be fully consumed as there are
+        // cases where the final input byte marking that the block is done isn't
+        // read just because this is no output data remaining.
         while out.index < out.buf.len() {
-        // loop {
+            // loop {
             match self.update_inner(&mut strm, &mut out) {
                 Ok(_) => {}
                 Err(e) => {
@@ -225,7 +226,8 @@ impl Inflater {
             State::UncompressedBlock { num_remaining } => {
                 let n = std::cmp::min(out.buf.len() - out.index, *num_remaining as usize);
 
-                // TODO: We should ensure try to ensure that this is never buffered as we don't need it to be.
+                // TODO: We should ensure try to ensure that this is never buffered as we don't
+                // need it to be.
                 let nread = strm.read(&mut out.buf[out.index..(out.index + n)])?;
                 out.index += nread;
 
@@ -255,7 +257,6 @@ impl Inflater {
                 if hlit > 286 {
                     return Err(err_msg("hlit too large"));
                 }
-
 
                 State::DynamicBlockCodeLenCodeLens { hlit, hdist, hclen }
             }
@@ -337,7 +338,10 @@ impl Inflater {
     }
 
     fn read_uncompressed_header(&mut self, strm: &mut BitReader) -> Result<u16> {
-        // NOTE: The consume after align_to_byte() is only safe here because the caller of read_uncompressed_header didn't do any other reading on the byte before calling this function. So if we restart later, we will always be attempting to read the uncompressed header.
+        // NOTE: The consume after align_to_byte() is only safe here because the caller
+        // of read_uncompressed_header didn't do any other reading on the byte before
+        // calling this function. So if we restart later, we will always be attempting
+        // to read the uncompressed header.
         strm.align_to_byte();
         strm.consume();
 
@@ -404,7 +408,7 @@ impl Inflater {
         out: &mut OutputBuffer,
     ) -> Result<ReadCodesResult> {
         while out.index < out.buf.len() {
-        // loop {
+            // loop {
             let code = litlen_tree.read_code(strm)?;
 
             if code < END_OF_BLOCK {
@@ -497,7 +501,7 @@ impl Transform for Inflater {
         &mut self,
         input: &[u8],
         end_of_input: bool,
-        output: &mut [u8],        
+        output: &mut [u8],
     ) -> Result<TransformProgress> {
         self.update_impl(input, end_of_input, output)
     }

@@ -16,8 +16,8 @@ use common::async_std::fs::File;
 use common::async_std::sync::Mutex;
 use common::async_std::{fs, task};
 use common::errors::*;
-use common::task::ChildTask;
 use common::signals::*;
+use common::task::ChildTask;
 use crypto::random::SharedRng;
 use crypto::tls::extensions::SignatureSchemeList;
 use libc::CLONE_NEWUSER;
@@ -39,14 +39,15 @@ use crate::runtime::setup_socket::SetupSocket;
 ///
 /// Under this directory, files will be stored as follows:
 /// - '{container-id}/root' : Directory used as the root fs of the container.
-/// - '{container-id}/log' : Append-only LevelDB log file containing LogEntry protos.
+/// - '{container-id}/log' : Append-only LevelDB log file containing LogEntry
+///   protos.
 const RUN_DATA_DIR: &'static str = "/opt/dacha/container/run";
 
 /// Stored a boolean value representing whether or not a ContainerRuntime
 /// instance has been created in the current process.
 ///
-/// Used to prevent multiple instances from being started. We only support having
-/// one instance per process because we can't multiplex SIGCHLD signals.
+/// Used to prevent multiple instances from being started. We only support
+/// having one instance per process because we can't multiplex SIGCHLD signals.
 static INSTANCE_LOCK: AtomicBool = AtomicBool::new(false);
 
 struct Container {
@@ -58,7 +59,7 @@ struct Container {
 
     pid: Pid,
 
-    /// If this container was 
+    /// If this container was
     stdin: Option<Arc<File>>,
 
     // TODO: Make sure this is cleaned up
@@ -218,7 +219,9 @@ impl ContainerRuntime {
         container_config: &ContainerConfig,
     ) -> Result<String> {
         let mut container_id = vec![0u8; 16];
-        crypto::random::global_rng().generate_bytes(&mut container_id).await;
+        crypto::random::global_rng()
+            .generate_bytes(&mut container_id)
+            .await;
 
         let container_id = common::hex::encode(&container_id);
 
@@ -231,7 +234,6 @@ impl ContainerRuntime {
         // NOTE: We use 'clone()' instead of 'fork()' to immediately put the sub-process
         // into a new PID namespace ('unshare()' requires an extra fork for
         // that)
-
 
         let mut stdin = None;
         let mut output_streams = vec![];
@@ -254,16 +256,14 @@ impl ContainerRuntime {
 
             output_streams = vec![
                 (LogStream::STDOUT, stdout_read.open()?.into()),
-                (LogStream::STDERR, stderr_read.open()?.into())
+                (LogStream::STDERR, stderr_read.open()?.into()),
             ];
         }
-
 
         // TODO: Uncomment these?
         // When used in the parent, we don't want them to be blocking.
         // fcntl(stdout_read.as_raw_fd(), FcntlArg::F_SETFL(OFlag::O_NONBLOCK))?;
         // fcntl(stderr_read.as_raw_fd(), FcntlArg::F_SETFL(OFlag::O_NONBLOCK))?;
-
 
         /*
         let parent_pid = parent_container.pid.as_raw();
@@ -274,7 +274,7 @@ impl ContainerRuntime {
             if pidfd == -1 {
                 return Err(err_msg("Failed to open pidfd"));
             }
-    
+
             Some(unsafe { std::fs::File::from_raw_fd(pidfd as libc::pid_t) })
         };
 
@@ -286,9 +286,10 @@ impl ContainerRuntime {
         // to ensure that waitpid() doesn't return before the container is in
         // the list.
         //
-        // This is similar in purpose to the trick of running sigprocmask() to mask SIGCHLD and
-        // then unmask it after the job has been added to the list. That trick won't work in our
-        // case though as we could be running the waitpid() loop in a separate thread. 
+        // This is similar in purpose to the trick of running sigprocmask() to mask
+        // SIGCHLD and then unmask it after the job has been added to the list.
+        // That trick won't work in our case though as we could be running the
+        // waitpid() loop in a separate thread.
         let mut containers = self.containers.lock().await;
 
         // TODO: implement the waiter strategy and create a new uid_map and gid_map and
@@ -298,28 +299,35 @@ impl ContainerRuntime {
         // TODO: Can memory (e.g. keys from the parent progress be read after the fork
         // and do we need security against this?).
         //
-        // TODO: Use CloneFlags::CLONE_CLEAR_SIGHAND. Currently it is Ok for the child to receive
-        // signals though as we send the signals through an channel before processing them. Because
-        // the async framework will stop running when cloned, we will never take any actions in
-        // response to signals.
+        // TODO: Use CloneFlags::CLONE_CLEAR_SIGHAND. Currently it is Ok for the child
+        // to receive signals though as we send the signals through an channel
+        // before processing them. Because the async framework will stop running
+        // when cloned, we will never take any actions in response to signals.
         //
-        // TODO: Ideally we should use sigprocmask() to temporarily disable signals until the child
-        // process sets up signal handlers. It should be noted that by default the init process
-        // won't be killed by SIGINT|SIGTERM so if we ask to immediately kill a container after it is
-        // started, the container init process may not notice until 
+        // TODO: Ideally we should use sigprocmask() to temporarily disable signals
+        // until the child process sets up signal handlers. It should be noted
+        // that by default the init process won't be killed by SIGINT|SIGTERM so
+        // if we ask to immediately kill a container after it is started, the
+        // container init process may not notice until
         let pid = nix::sched::clone(
-            Box::new(|| run_child_process(
-                &container_config, &container_dir, 
-                &mut socket_c,
-                &file_mapping)),
+            Box::new(|| {
+                run_child_process(
+                    &container_config,
+                    &container_dir,
+                    &mut socket_c,
+                    &file_mapping,
+                )
+            }),
             &mut stack,
-            CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWPID | CloneFlags::CLONE_NEWNS |
-            CloneFlags::CLONE_NEWIPC,
+            CloneFlags::CLONE_NEWUSER
+                | CloneFlags::CLONE_NEWPID
+                | CloneFlags::CLONE_NEWNS
+                | CloneFlags::CLONE_NEWIPC,
             Some(libc::SIGCHLD),
         )?;
 
         let (event_sender, event_receiver) = channel::bounded(1);
-        
+
         let mut meta = ContainerMetadata::default();
         meta.set_id(container_id.clone());
         meta.set_state(ContainerState::Creating);
@@ -345,8 +353,8 @@ impl ContainerRuntime {
         // TODO: If anything below this point fails, should we kill the container?
 
         // For now just copy the uid/gid maps of the parent.
-        // NOTE: Because this contains the user that runs the main container_node process, we
-        // should never give the user CAP_SETUID in this namespace.
+        // NOTE: Because this contains the user that runs the main container_node
+        // process, we should never give the user CAP_SETUID in this namespace.
         {
             let uid_map = async_std::fs::read_to_string("/proc/self/uid_map").await?;
             let gid_map = async_std::fs::read_to_string("/proc/self/gid_map").await?;
@@ -354,9 +362,10 @@ impl ContainerRuntime {
             async_std::fs::write(format!("/proc/{}/uid_map", pid), uid_map).await?;
 
             // TODO: Before writing the gid_map, we should write "/proc/[pid]/setgroups".
-            // But this requires that we have already called setgroups for the child to initialize to the
-            // starter set of groups.
-            // Maybe we can just clone into a new PID namespace and then later create a new user namespace?
+            // But this requires that we have already called setgroups for the child to
+            // initialize to the starter set of groups.
+            // Maybe we can just clone into a new PID namespace and then later create a new
+            // user namespace?
 
             async_std::fs::write(format!("/proc/{}/gid_map", pid), gid_map).await?;
         }
@@ -372,9 +381,7 @@ impl ContainerRuntime {
             let terminal_file = socket_p.recv_terminal_fd()?;
             let terminal_file_2 = terminal_file.try_clone()?;
 
-            output_streams = vec![
-                (LogStream::STDOUT, terminal_file.into())
-            ];
+            output_streams = vec![(LogStream::STDOUT, terminal_file.into())];
 
             stdin = Some(Arc::new(terminal_file_2.into()));
         }
@@ -393,10 +400,12 @@ impl ContainerRuntime {
 
             let mut containers = self.containers.lock().await;
 
-            // TODO: Remove the unwrap. If it is removed, then that means that we probably need
-            // to close files, etc.
-            let mut container = containers.iter_mut()
-                .find(|c| c.metadata.id() == container_id).unwrap();
+            // TODO: Remove the unwrap. If it is removed, then that means that we probably
+            // need to close files, etc.
+            let mut container = containers
+                .iter_mut()
+                .find(|c| c.metadata.id() == container_id)
+                .unwrap();
 
             container.metadata.set_state(ContainerState::Running);
             container.stdin = stdin;
@@ -427,7 +436,9 @@ impl ContainerRuntime {
 
     pub async fn open_log(&self, container_id: &str) -> Result<FileLogReader> {
         let containers = self.containers.lock().await;
-        let container = containers.iter().find(|c| c.metadata.id() == container_id)
+        let container = containers
+            .iter()
+            .find(|c| c.metadata.id() == container_id)
             .ok_or_else(|| err_msg("Container not found"))?;
 
         let log_path = container.directory.join("log");
@@ -441,10 +452,14 @@ impl ContainerRuntime {
 
     pub async fn write_to_stdin(&self, container_id: &str, data: &[u8]) -> Result<()> {
         let containers = self.containers.lock().await;
-        let container = containers.iter().find(|c| c.metadata.id() == container_id)
+        let container = containers
+            .iter()
+            .find(|c| c.metadata.id() == container_id)
             .ok_or_else(|| err_msg("Container not found"))?;
 
-        let file = container.stdin.clone()
+        let file = container
+            .stdin
+            .clone()
             .ok_or_else(|| err_msg("Container has no stdin"))?;
 
         drop(containers);

@@ -1,7 +1,6 @@
 use crate::proto::consensus::*;
 use crate::proto::consensus_state::*;
 
-
 /*
     NOTE: When two servers first connect to each other, they should exchange cluster ids to validate that both of them are operating in the same namespace of server ids
 
@@ -37,7 +36,6 @@ use crate::proto::consensus_state::*;
     - Naturally next step would be to ensure that the main Raft module tries to stay at near zero allocations for state transitions
 */
 
-
 // impl Default for Metadata {
 //     fn default() -> Self {
 //         Metadata {
@@ -63,8 +61,6 @@ enum ServerRole {
 //     }
 // }
 
-
-
 pub struct Snapshot {
     // The cluster_id should probably also be part of this?
     pub config: Configuration,
@@ -77,7 +73,6 @@ pub struct Snapshot {
     - Likewise this can be used for spreading out replication if the cluster is sufficiently healthy
 
 */
-
 
 /*
     How we will generalize snapshots:
@@ -118,5 +113,3 @@ pub struct InstallSnapshotResponse {
 }
 
 pub struct AddServerRequest {}
-
-

@@ -1,7 +1,8 @@
 #[macro_use]
 extern crate common;
 extern crate usb;
-#[macro_use] extern crate regexp_macros;
+#[macro_use]
+extern crate regexp_macros;
 
 use common::errors::*;
 use usb::hid::HIDDevice;
@@ -44,7 +45,6 @@ const MAX_NUM_COLORS: usize = 64;
 
 const MAX_NUM_CHANNELS: usize = 3;
 
-
 regexp!(SERIAL_FORMAT => "^BS[0-9]+-([0-9]+)\\.([0-9]+)$");
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -59,7 +59,7 @@ pub enum BlinkStickVariant {
     /// 2 LEDs
     Nano,
     /// 32 LEDs
-    Flex
+    Flex,
 }
 
 /*
@@ -93,7 +93,7 @@ Report ID: 9   : 8 x 193
         // bmRequestType: 0x80 | 0x20,
         // bmRequest:  0x1,
         // wValue: 0x81,
-        // wIndex: 0, 
+        // wIndex: 0,
         // length: 2
 
 0x81 is the led count report??
@@ -101,7 +101,7 @@ Report ID: 9   : 8 x 193
 
 pub struct BlinkStick {
     hid: HIDDevice,
-    variant: BlinkStickVariant
+    variant: BlinkStickVariant,
 }
 
 impl BlinkStick {
@@ -112,14 +112,17 @@ impl BlinkStick {
 
         let languages = hid.device().read_languages().await?;
         if languages.len() != 1 {
-            return Err(err_msg("Expected usb device to have exactly one string language"));
+            return Err(err_msg(
+                "Expected usb device to have exactly one string language",
+            ));
         }
 
         let serial = hid.device().read_serial_number_string(languages[0]).await?;
 
-        let serial_match = SERIAL_FORMAT.exec(&serial)
+        let serial_match = SERIAL_FORMAT
+            .exec(&serial)
             .ok_or_else(|| format_err!("Unrecognized BlinkStick serial format: {}", serial))?;
-        
+
         let major_version = serial_match.group_str(1).unwrap()?.parse::<usize>()?;
         let minor_version = serial_match.group_str(2).unwrap()?.parse::<usize>()?;
         let bcd_device = hid.device().descriptor().bcdDevice;
@@ -142,13 +145,23 @@ impl BlinkStick {
     }
 
     pub async fn set_first_color(&self, color: RGB) -> Result<()> {
-        self.hid.set_report(FIRST_COLOR_REPORT_ID, usb::hid::ReportType::Feature, 
-            &[color.r, color.g, color.b]).await
+        self.hid
+            .set_report(
+                FIRST_COLOR_REPORT_ID,
+                usb::hid::ReportType::Feature,
+                &[color.r, color.g, color.b],
+            )
+            .await
     }
 
     pub async fn set_color(&self, channel: u8, index: u8, color: RGB) -> Result<()> {
-        self.hid.set_report(SPECIFIC_COLOR_REPORT_ID, usb::hid::ReportType::Feature, 
-            &[channel, index, color.r, color.g, color.b]).await
+        self.hid
+            .set_report(
+                SPECIFIC_COLOR_REPORT_ID,
+                usb::hid::ReportType::Feature,
+                &[channel, index, color.r, color.g, color.b],
+            )
+            .await
     }
 
     pub async fn set_colors(&self, channel: u8, colors: &[RGB]) -> Result<()> {
@@ -162,16 +175,19 @@ impl BlinkStick {
             }
         };
 
-        let mut payload = vec![0u8; 1 + 3*num_colors];
+        let mut payload = vec![0u8; 1 + 3 * num_colors];
         payload[0] = channel;
         for (i, c) in colors.iter().enumerate() {
-            payload[1 + 3*i] = c.g;
-            payload[2 + 3*i] = c.r;
-            payload[3 + 3*i] = c.b; 
+            payload[1 + 3 * i] = c.g;
+            payload[2 + 3 * i] = c.r;
+            payload[3 + 3 * i] = c.b;
         }
 
-        if let Err(e) = self.hid.set_report(report_id, usb::hid::ReportType::Feature, 
-            &payload).await {
+        if let Err(e) = self
+            .hid
+            .set_report(report_id, usb::hid::ReportType::Feature, &payload)
+            .await
+        {
             // Ignore stalls as some devices don't have all the LEDs.
             if let Some(usb::Error::TransferStalled) = e.downcast_ref::<usb::Error>() {
                 return Ok(());
@@ -185,7 +201,8 @@ impl BlinkStick {
 
     pub async fn turn_off(&self) -> Result<()> {
         for channel in 0..MAX_NUM_CHANNELS {
-            self.set_colors(channel as u8, &[RGB { r: 0, g: 0, b: 0 }; MAX_NUM_COLORS]).await?;
+            self.set_colors(channel as u8, &[RGB { r: 0, g: 0, b: 0 }; MAX_NUM_COLORS])
+                .await?;
         }
 
         Ok(())
@@ -196,9 +213,8 @@ impl BlinkStick {
 pub struct RGB {
     pub r: u8,
     pub g: u8,
-    pub b: u8
+    pub b: u8,
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -206,11 +222,8 @@ mod tests {
 
     #[test]
     fn test_serial() {
-        
         let m = SERIAL_FORMAT.exec("BS040001-3.0").unwrap();
         assert_eq!(m.group_str(1).unwrap().unwrap(), "3");
         assert_eq!(m.group_str(2).unwrap().unwrap(), "0");
-
     }
-
 }

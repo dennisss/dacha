@@ -1,5 +1,4 @@
 #![feature(llvm_asm)]
-
 #![no_std]
 #![no_main]
 
@@ -18,17 +17,20 @@ fn make_num() -> u8 {
 
 struct SimpleValue {
     addr: u16,
-    value: Option<u8>
+    value: Option<u8>,
 }
 
 #[no_mangle]
 #[inline(never)]
 fn make_value() -> SimpleValue {
-    SimpleValue { addr: make_num() as u16, value: Some(make_num()) }
+    SimpleValue {
+        addr: make_num() as u16,
+        value: Some(make_num()),
+    }
 }
 
 #[no_mangle]
-pub extern fn main() {
+pub extern "C" fn main() {
     make_value();
 }
 
@@ -41,7 +43,6 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 pub extern "C" fn abort() -> ! {
     loop {}
 }
-
 
 #[cfg(target_arch = "avr")]
 #[no_mangle]

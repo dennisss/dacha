@@ -9,10 +9,9 @@ use common::errors::*;
 
 use protobuf::Message;
 use raft::atomic::*;
-use raft::proto::key_value::*;
 use raft::proto::consensus::LogIndex;
+use raft::proto::key_value::*;
 use raft::state_machine::*;
-
 
 pub struct KeyValueReturn {
     pub success: bool,
@@ -35,8 +34,6 @@ pub struct KeyValueData {
         - Easiest to do this over specific key ranges as mixing consistency levels will end up downgrading the gurantees to the lowest consistency level available
 
 */
-
-
 
 struct State {
     last_applied: LogIndex,
@@ -168,11 +165,11 @@ impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
             }
             KeyValueOperationTypeCase::Delete(op) => {
                 let old = map.remove(op.key());
-                Ok(KeyValueReturn { success: old.is_some() })
+                Ok(KeyValueReturn {
+                    success: old.is_some(),
+                })
             }
-            KeyValueOperationTypeCase::Unknown => {
-                Err(err_msg("Unknown key-value operation"))
-            }
+            KeyValueOperationTypeCase::Unknown => Err(err_msg("Unknown key-value operation")),
         }
     }
 

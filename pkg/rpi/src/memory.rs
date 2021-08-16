@@ -11,7 +11,7 @@ const MEM_FILE_PATH: &'static [u8] = b"/dev/mem\0";
 
 pub struct MemoryBlock {
     memory: *mut c_void,
-    size: usize
+    size: usize,
 }
 
 impl MemoryBlock {
@@ -29,7 +29,7 @@ impl MemoryBlock {
                 libc::PROT_READ | libc::PROT_WRITE,
                 libc::MAP_SHARED,
                 fd,
-                std::mem::transmute(offset as libc::off_t)
+                std::mem::transmute(offset as libc::off_t),
             )
         };
 
@@ -40,10 +40,7 @@ impl MemoryBlock {
             return Err(err_msg("Failed to mmap memory block."));
         }
 
-        Ok(Self {
-            memory,
-            size
-        })
+        Ok(Self { memory, size })
     }
 
     pub fn read_register(&self, offset: usize) -> u32 {

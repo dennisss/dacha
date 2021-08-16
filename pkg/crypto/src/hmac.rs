@@ -102,14 +102,15 @@ mod tests {
 
     #[async_std::test]
     async fn hmac_nist_test() -> Result<()> {
-        let file = crate::nist::response::ResponseFile::open(
-            project_path!("testdata/nist/hmac/HMAC.rsp")).await?;
+        let file =
+            crate::nist::response::ResponseFile::open(project_path!("testdata/nist/hmac/HMAC.rsp"))
+                .await?;
 
         for response in file.iter() {
             let response = response?;
-            
+
             let hash_length = response.attributes["L"].parse::<usize>()?;
-            
+
             let key_length = response.fields["KLEN"].parse::<usize>()?;
             let mac_length = response.fields["TLEN"].parse::<usize>()?;
 
@@ -123,7 +124,7 @@ mod tests {
                 32 => crate::sha256::SHA256Hasher::factory(),
                 48 => crate::sha384::SHA384Hasher::factory(),
                 64 => crate::sha512::SHA512Hasher::factory(),
-                _ => panic!("Unsupported hash length in NIST test vectors")
+                _ => panic!("Unsupported hash length in NIST test vectors"),
             };
 
             let mut hmac = HMAC::new(hasher_factory, &key[0..key_length]);

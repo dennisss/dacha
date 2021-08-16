@@ -1,8 +1,8 @@
 use std::borrow::Borrow;
 use std::str;
 
-use common::errors::*;
 use common::bytes::Bytes;
+use common::errors::*;
 
 // TODO: Enforce some reasonable limit (for really large sizes approaching this
 // limit, we probably want to implement a stream interface rather than storing

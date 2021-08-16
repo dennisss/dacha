@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use common::errors::*;
 use common::async_std::sync::Mutex;
+use common::errors::*;
 
-use crate::proto::routing::*;
 use crate::proto::consensus::*;
+use crate::proto::routing::*;
 
 // In our RPC, these will contain a serialized ServerDescriptor representing
 // which server is sending the request and who is the designated receiver
@@ -67,9 +67,14 @@ impl NetworkAgent {
         self.routes.insert(desc.id(), route);
     }
 
-    /// Looks up routing information for connecting to another server in the cluster by id.
-    /// Also marks the request with routing metadata if a route is fond.
-    pub fn lookup(&mut self, id: ServerId, context: &mut rpc::ClientRequestContext) -> Option<&Route> {
+    /// Looks up routing information for connecting to another server in the
+    /// cluster by id. Also marks the request with routing metadata if a
+    /// route is fond.
+    pub fn lookup(
+        &mut self,
+        id: ServerId,
+        context: &mut rpc::ClientRequestContext,
+    ) -> Option<&Route> {
         self.routes.get_mut(&id).map(|e| {
             context.metadata.add_text(TO_KEY, &e.desc().to_string());
 
@@ -120,7 +125,9 @@ impl NetworkAgent {
 
     pub fn append_to_request_context(&self, context: &mut rpc::ClientRequestContext) -> Result<()> {
         if let Some(c) = self.cluster_id {
-            context.metadata.add_text(CLUSTER_ID_KEY, &c.value().to_string())?;
+            context
+                .metadata
+                .add_text(CLUSTER_ID_KEY, &c.value().to_string())?;
         }
 
         if let Some(ref id) = self.identity {
@@ -130,7 +137,10 @@ impl NetworkAgent {
         Ok(())
     }
 
-    pub fn process_response_metadata(&mut self, context: &rpc::ClientResponseContext) -> Result<()> {
+    pub fn process_response_metadata(
+        &mut self,
+        context: &rpc::ClientResponseContext,
+    ) -> Result<()> {
         if let Some(v) = context.metadata.head_metadata.get_text(CLUSTER_ID_KEY)? {
             let cid_given = v.parse()?;
 
@@ -163,13 +173,13 @@ impl NetworkAgent {
 
 pub type NetworkAgentHandle = Arc<Mutex<NetworkAgent>>;
 
-
 pub struct ServerRequestRoutingContext {
-    /// Whether or not the received request is known to be in the same cluster as us.
+    /// Whether or not the received request is known to be in the same cluster
+    /// as us.
     pub verified_cluster: bool,
 
-    /// Whether or not we can verify that the this server is the correct recipient of
-    /// this request.
+    /// Whether or not we can verify that the this server is the correct
+    /// recipient of this request.
     pub verified_recipient: bool,
 }
 
@@ -177,64 +187,72 @@ impl ServerRequestRoutingContext {
     pub async fn create(
         network_agent: &Mutex<NetworkAgent>,
         request_context: &rpc::ServerRequestContext,
-        response_context: &mut rpc::ServerResponseContext) -> Result<Self> {
-
+        response_context: &mut rpc::ServerResponseContext,
+    ) -> Result<Self> {
         let mut agent = network_agent.lock().await;
         let our_cluster_id = agent.cluster_id.unwrap();
         let our_ident = agent.identity.as_ref().unwrap().clone();
 
-        response_context.metadata.head_metadata.add_text(
-            CLUSTER_ID_KEY, &our_cluster_id.to_string())?;
-        response_context.metadata.head_metadata.add_text(
-            FROM_KEY, &our_ident.to_string())?;
-            
+        response_context
+            .metadata
+            .head_metadata
+            .add_text(CLUSTER_ID_KEY, &our_cluster_id.to_string())?;
+        response_context
+            .metadata
+            .head_metadata
+            .add_text(FROM_KEY, &our_ident.to_string())?;
+
         // We first validate the cluster id because it must be valid for us to trust any
         // of the other routing data
         let verified_cluster = if let Some(h) = request_context.metadata.get_text(CLUSTER_ID_KEY)? {
             let cid = h
                 .parse::<ClusterId>()
                 .map_err(|_| rpc::Status::invalid_argument("Invalid cluster id"))?;
-    
+
             if cid != our_cluster_id {
                 // TODO: This is a good reason to send back our cluster_id so that
                 // they can delete us as a route
                 return Err(rpc::Status::invalid_argument("Mismatching cluster id").into());
             }
-    
+
             true
         } else {
             false
         };
-    
+
         // Record who sent us this message
         // TODO: Should receiving a message from one's self be an error?
         if let Some(h) = request_context.metadata.get_text(FROM_KEY)? {
             if !verified_cluster {
                 return Err(rpc::Status::invalid_argument(
-                    "Received From header without a cluster id check").into());
+                    "Received From header without a cluster id check",
+                )
+                .into());
             }
-    
+
             let desc = h.parse::<ServerDescriptor>()?;
             agent.add_route(desc);
         }
-    
+
         // Verify that we are the intended recipient of this message
         let verified_recipient = if let Some(h) = request_context.metadata.get_text(TO_KEY)? {
             if !verified_cluster {
                 return Err(rpc::Status::invalid_argument(
-                    "Received To header without a cluster id check").into());
+                    "Received To header without a cluster id check",
+                )
+                .into());
             }
-    
-            let addr = h.parse::<ServerDescriptor>()
+
+            let addr = h
+                .parse::<ServerDescriptor>()
                 .map_err(|_| rpc::Status::invalid_argument("Invalid To descriptor"))?;
-            
-    
+
             if addr.id() != our_ident.id() {
                 // Bail out. The client should adjust its routing info based on the
                 // identity we return back in response metadata.
                 return Err(rpc::Status::invalid_argument("Not the intended recipient").into());
             }
-    
+
             true
         } else {
             false
@@ -242,17 +260,18 @@ impl ServerRequestRoutingContext {
 
         Ok(Self {
             verified_cluster,
-            verified_recipient
+            verified_recipient,
         })
     }
 
     pub fn assert_verified(&self) -> Result<()> {
         if !self.verified_recipient {
             return Err(rpc::Status::invalid_argument(
-                "Cluster and receipient must be specified to make this request").into());
+                "Cluster and receipient must be specified to make this request",
+            )
+            .into());
         }
 
         Ok(())
     }
 }
-

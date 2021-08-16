@@ -10,9 +10,9 @@ extern crate math;
 extern crate protobuf;
 extern crate reflection;
 
-use std::path::Path;
-use common::errors::*;
 use crate::db::EmbeddedDBOptions;
+use common::errors::*;
+use std::path::Path;
 
 mod block;
 mod block_builder;

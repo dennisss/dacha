@@ -25,9 +25,9 @@ pub trait ArrayLen = ArrayLength<u8> + Add<U17> + Clone;
 ///
 /// Generic parameters:
 /// - S: Compression function state type: arbitrary value that is passed to the
-///      compression function with changes changes perspected
+///   compression function with changes changes perspected
 /// - ChunkSize: Size of each chunk/block that is processed. The compression
-///              function will always be given chunks of this size.
+///   function will always be given chunks of this size.
 ///
 /// Padding:
 /// - Let N be the number of bits in the length marker (either 64 or 128)
@@ -38,7 +38,7 @@ pub trait ArrayLen = ArrayLength<u8> + Add<U17> + Clone;
 pub struct MerkleDamgard<S: HashState, ChunkSize: ArrayLen> {
     /// Current hash state produced by the last compression function or the IV.
     hash: S,
-    
+
     /// Total number of *bytes* seen so far.
     length: usize,
 
@@ -113,8 +113,9 @@ impl<S: HashState, ChunkSize: ArrayLen> MerkleDamgard<S, ChunkSize> {
         // We need at least enough space to append the '1' bit and the 64bit
         // message length. Then we will pad this up to the next chunk boundary.
         // NOTE: This is only valid as we are only operating on byte boundaries.
-        let mut padded_len = self.length + common::ceil_div(1 +  message_length_bits, 8);
-        padded_len += common::block_size_remainder(message_length_bits as u64, padded_len as u64) as usize;
+        let mut padded_len = self.length + common::ceil_div(1 + message_length_bits, 8);
+        padded_len +=
+            common::block_size_remainder(message_length_bits as u64, padded_len as u64) as usize;
         // Number of extra bytes that need to be added to the message to fit the 1 bit,
         // message length and padding.
         let num_extra = padded_len - self.length;

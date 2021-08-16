@@ -13,21 +13,21 @@ extern crate automata;
 #[macro_use]
 extern crate failure;
 
-mod constants;
 mod channel;
-mod server;
+mod client_types;
+mod constants;
+mod message;
 mod metadata;
+mod server;
+mod server_types;
 mod service;
 mod status;
-mod message;
-mod client_types;
-mod server_types;
 
-pub use server::Http2Server;
 pub use channel::{Channel, Http2Channel};
+pub use server::Http2Server;
 pub use service::Service;
 
-pub use metadata::Metadata;
-pub use status::*;
 pub use client_types::*;
+pub use metadata::Metadata;
 pub use server_types::*;
+pub use status::*;

@@ -6,7 +6,6 @@ use common::bytes::BytesMut;
 use common::errors::*;
 use parsing::*;
 
-
 // String | Integer | List | Dict
 regexp!(TAG => "^(?:([1-9][0-9]*|0):|i(-?[1-9][0-9]*|0)e|(l)|(d))");
 
@@ -31,19 +30,13 @@ impl BENValue {
 
     pub fn dict(self) -> Result<HashMap<BytesMut, BENValue>> {
         match self {
-            Self::Dict(v) => {
-                Ok(v)
-            }
-            _ => {
-                Err(err_msg("Not a dict type value"))
-            }
+            Self::Dict(v) => Ok(v),
+            _ => Err(err_msg("Not a dict type value")),
         }
     }
 
     pub fn parse(mut input: &[u8]) -> Result<(Self, &[u8])> {
-        let m: StaticRegExpMatch = TAG
-            .exec(input)
-            .ok_or_else(|| err_msg("Unknown BEN tag"))?;
+        let m: StaticRegExpMatch = TAG.exec(input).ok_or_else(|| err_msg("Unknown BEN tag"))?;
         input = &input[m.last_index()..];
 
         Ok(if let Some(len_str) = m.group_str(1) {
@@ -141,7 +134,6 @@ impl std::convert::TryFrom<BENValue> for isize {
     }
 }
 
-
 impl std::convert::From<String> for BENValue {
     fn from(value: String) -> BENValue {
         BENValue::String(BytesMut::from(value))
@@ -154,12 +146,8 @@ impl std::convert::TryFrom<BENValue> for String {
     /// Interprets this value as a UTF-8 encoded string value.
     fn try_from(value: BENValue) -> Result<String> {
         match value {
-            BENValue::String(v) => {
-                Ok(String::from_utf8(v.to_vec())?)
-            }
-            _ => {
-                Err(err_msg("Not a string type value"))
-            }
+            BENValue::String(v) => Ok(String::from_utf8(v.to_vec())?),
+            _ => Err(err_msg("Not a string type value")),
         }
     }
 }
@@ -175,12 +163,8 @@ impl std::convert::TryFrom<BENValue> for BytesMut {
 
     fn try_from(value: BENValue) -> Result<BytesMut> {
         match value {
-            BENValue::String(v) => {
-                Ok(v)
-            }
-            _ => {
-                Err(err_msg("Not a string type value"))
-            }
+            BENValue::String(v) => Ok(v),
+            _ => Err(err_msg("Not a string type value")),
         }
     }
 }
@@ -196,7 +180,7 @@ impl<T: Into<BENValue>> std::convert::From<Vec<T>> for BENValue {
     }
 }
 
-impl<T: TryFrom<BENValue, Error=Error>> TryFrom<BENValue> for Vec<T> {
+impl<T: TryFrom<BENValue, Error = Error>> TryFrom<BENValue> for Vec<T> {
     type Error = Error;
 
     fn try_from(value: BENValue) -> Result<Vec<T>> {
@@ -209,14 +193,10 @@ impl<T: TryFrom<BENValue, Error=Error>> TryFrom<BENValue> for Vec<T> {
 
                 Ok(out)
             }
-            _ => {
-                Err(err_msg("Not a list type value"))
-            }
+            _ => Err(err_msg("Not a list type value")),
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -263,7 +243,8 @@ mod tests {
     #[test]
     fn torrent_test() {
         let data = std::fs::read(
-            common::project_dir().join("pkg/bittorrent/2020-08-20-raspios-buster-armhf-full.zip.torrent")
+            common::project_dir()
+                .join("pkg/bittorrent/2020-08-20-raspios-buster-armhf-full.zip.torrent"),
         )
         .unwrap();
         println!("{:#?}", BENValue::parse(&data).unwrap());

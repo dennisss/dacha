@@ -1,28 +1,27 @@
 use std::collections::LinkedList;
-use std::time::Instant;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 
-use common::errors::*;
-use common::futures::channel::oneshot;
+use common::async_fn::AsyncFnOnce3;
 use common::async_std::future;
 use common::async_std::sync::{Mutex, MutexGuard};
 use common::async_std::task;
+use common::errors::*;
+use common::futures::channel::oneshot;
 use common::futures::FutureExt;
-use common::async_fn::AsyncFnOnce3;
 use protobuf::Message;
 
-use crate::state_machine::StateMachine;
 use crate::atomic::*;
 use crate::consensus::*;
 use crate::constraint::*;
 use crate::log::*;
-use crate::sync::*;
 use crate::proto::consensus::*;
-use crate::proto::server_metadata::*;
 use crate::proto::routing::*;
+use crate::proto::server_metadata::*;
 use crate::routing::ServerRequestRoutingContext;
-
+use crate::state_machine::StateMachine;
+use crate::sync::*;
 
 /// After this amount of time, we will assume that an rpc request has failed
 ///
@@ -118,7 +117,9 @@ pub struct Server<R> {
 
 impl<R> Clone for Server<R> {
     fn clone(&self) -> Self {
-        Self { shared: self.shared.clone() }
+        Self {
+            shared: self.shared.clone(),
+        }
     }
 }
 
@@ -191,7 +192,7 @@ struct ServerState<R> {
     /// Whenever an operation is proposed, this will store callbacks that will
     /// be given back the result once it is applied
     ///
-    /// TODO: Switch to a VecDeque, 
+    /// TODO: Switch to a VecDeque,
     callbacks: LinkedList<(LogPosition, oneshot::Sender<Option<R>>)>,
 }
 
@@ -234,10 +235,13 @@ impl<R: Send + 'static> Server<R> {
             // committing an in-memory entry to followers
         }
 
-        let inst =
-            ConsensusModule::new(
-                meta.id(), meta.meta().clone(), 
-                config_snapshot.config().clone(), log.clone()).await;
+        let inst = ConsensusModule::new(
+            meta.id(),
+            meta.meta().clone(),
+            config_snapshot.config().clone(),
+            log.clone(),
+        )
+        .await;
 
         let (tx_state, rx_state) = change();
         let (tx_log, rx_log) = change();
@@ -317,7 +321,6 @@ impl<R: Send + 'static> Server<R> {
 
             agent.cluster_id = Some(self.shared.cluster_id);
 
-
             let mut identity = ServerDescriptor::default();
             // TODO: this is subject to change if we are running over HTTPS
             identity.set_addr(format!("http://127.0.0.1:{}", port));
@@ -344,10 +347,11 @@ impl<R: Send + 'static> Server<R> {
 
         // TODO: We also need to add a DiscoveryService (DiscoveryServiceRouter)
         let mut rpc_server = ::rpc::Http2Server::new();
-        
+
         // TODO: Handle errors on these return values.
-        rpc_server.add_service(crate::rpc::DiscoveryServer::new(
-            self.shared.client.agent().clone()).into_service());
+        rpc_server.add_service(
+            crate::rpc::DiscoveryServer::new(self.shared.client.agent().clone()).into_service(),
+        );
         rpc_server.add_service(self.clone().into_service());
 
         // TODO: Make these lazy?
@@ -482,8 +486,8 @@ impl<R: Send + 'static> Server<R> {
                 while last_applied < commit_index {
                     let entry = shared.log.entry(last_applied + 1).await;
                     if let Some((e, _)) = entry {
-
-                        let ret = if let LogEntryDataTypeCase::Command(data) = e.data().type_case() {
+                        let ret = if let LogEntryDataTypeCase::Command(data) = e.data().type_case()
+                        {
                             match state_machine.apply(e.pos().index(), data.as_ref()).await {
                                 Ok(v) => Some(v),
                                 Err(e) => {
@@ -524,7 +528,9 @@ impl<R: Send + 'static> Server<R> {
                             if e.pos().term() > first.term() || e.pos().index() >= first.index() {
                                 let item = callbacks.pop_front().unwrap();
 
-                                if e.pos().term() == first.term() && e.pos().index() == first.index() {
+                                if e.pos().term() == first.term()
+                                    && e.pos().index() == first.index()
+                                {
                                     item.1.send(ret).ok();
                                     break; // NOTE: This is not really necessary
                                            // asit should immediately get
@@ -651,14 +657,10 @@ impl<R: Send + 'static> Server<R> {
         tick: &mut Tick,
         cmd: Vec<u8>,
     ) -> std::result::Result<oneshot::Receiver<Option<R>>, ProposeError> {
-
         let mut entry = LogEntryData::default();
         entry.command_mut().0 = cmd;
 
-        let r = state
-            .inst
-            .propose_entry(&entry, tick)
-            .await;
+        let r = state.inst.propose_entry(&entry, tick).await;
 
         // If we were successful, add a callback.
         r.map(|prop| {
@@ -719,7 +721,6 @@ impl<R: Send + 'static> Server<R> {
         Ok(())
     }
 }
-
 
 pub struct ServerPendingTick<'a, R: Send + 'static> {
     state: MutexGuard<'a, ServerState<R>>,
@@ -807,8 +808,12 @@ impl<R: Send + 'static> ServerShared<R> {
             let snapshot_ref = state.inst.config_snapshot();
 
             let mut server_config_snapshot = ServerConfigurationSnapshot::default();
-            server_config_snapshot.config_mut().set_last_applied(snapshot_ref.last_applied.clone());
-            server_config_snapshot.config_mut().set_data(snapshot_ref.data.clone());
+            server_config_snapshot
+                .config_mut()
+                .set_last_applied(snapshot_ref.last_applied.clone());
+            server_config_snapshot
+                .config_mut()
+                .set_data(snapshot_ref.data.clone());
 
             state
                 .config_file
@@ -888,7 +893,7 @@ impl<R: Send + 'static> ServerShared<R> {
                 pos.set_index(latest_commit_index);
                 pos.set_term(term);
                 pos
-            },
+            }
             // Otherwise, more data has been comitted than is in our log, so we
             // will only mark up to the last entry in our lag
             None => {
@@ -1003,7 +1008,11 @@ impl<R: Send + 'static> ServerShared<R> {
                         ));
                     }
                     ConsensusMessageBody::RequestVote(ref req) => {
-                        request_votes.push(Self::dispatch_request_vote(&shared, to_id.clone(), req));
+                        request_votes.push(Self::dispatch_request_vote(
+                            &shared,
+                            to_id.clone(),
+                            req,
+                        ));
                     }
                     _ => {} // TODO: Handle all cases
                 };
@@ -1064,7 +1073,8 @@ impl<R: Send + 'static> ServerShared<R> {
             let waiter = {
                 let c = shared.commit_index.lock().await;
 
-                if c.term().value() > pos.term().value() || c.index().value() >= pos.index().value() {
+                if c.term().value() > pos.term().value() || c.index().value() >= pos.index().value()
+                {
                     return Ok(());
                 }
 
@@ -1156,11 +1166,15 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
     async fn PreVote(
         &self,
         req: rpc::ServerRequest<RequestVoteRequest>,
-        res: &mut rpc::ServerResponse<RequestVoteResponse>
+        res: &mut rpc::ServerResponse<RequestVoteResponse>,
     ) -> Result<()> {
         ServerRequestRoutingContext::create(
-            &self.shared.client.agent(), &req.context, &mut res.context).await?
-            .assert_verified()?;
+            &self.shared.client.agent(),
+            &req.context,
+            &mut res.context,
+        )
+        .await?
+        .assert_verified()?;
 
         let state = self.shared.state.lock().await;
         res.value = state.inst.pre_vote(&req).await;
@@ -1170,13 +1184,18 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
     async fn RequestVote(
         &self,
         req: rpc::ServerRequest<RequestVoteRequest>,
-        res: &mut rpc::ServerResponse<RequestVoteResponse>
+        res: &mut rpc::ServerResponse<RequestVoteResponse>,
     ) -> Result<()> {
         ServerRequestRoutingContext::create(
-            &self.shared.client.agent(), &req.context, &mut res.context).await?
-            .assert_verified()?;
+            &self.shared.client.agent(),
+            &req.context,
+            &mut res.context,
+        )
+        .await?
+        .assert_verified()?;
 
-        let res_raw = ServerShared::run_tick(&self.shared, Self::request_vote_tick, &req.value).await;
+        let res_raw =
+            ServerShared::run_tick(&self.shared, Self::request_vote_tick, &req.value).await;
         res.value = res_raw.persisted();
         Ok(())
     }
@@ -1184,11 +1203,15 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
     async fn AppendEntries(
         &self,
         req: rpc::ServerRequest<AppendEntriesRequest>,
-        res: &mut rpc::ServerResponse<AppendEntriesResponse>
+        res: &mut rpc::ServerResponse<AppendEntriesResponse>,
     ) -> Result<()> {
         ServerRequestRoutingContext::create(
-            &self.shared.client.agent(), &req.context, &mut res.context).await?
-            .assert_verified()?;
+            &self.shared.client.agent(),
+            &req.context,
+            &mut res.context,
+        )
+        .await?
+        .assert_verified()?;
 
         // TODO: In the case that entries are immediately written, this is
         // overly expensive
@@ -1198,8 +1221,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         become matched
         */
 
-        let c = ServerShared::run_tick(
-            &self.shared, Self::append_entries_tick, &req.value).await?;
+        let c = ServerShared::run_tick(&self.shared, Self::append_entries_tick, &req.value).await?;
 
         // Once the match constraint is satisfied, this will send back a
         // response (or no response)
@@ -1210,11 +1232,15 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
     async fn TimeoutNow(
         &self,
         req: rpc::ServerRequest<TimeoutNow>,
-        res: &mut rpc::ServerResponse<EmptyMessage>
+        res: &mut rpc::ServerResponse<EmptyMessage>,
     ) -> Result<()> {
         ServerRequestRoutingContext::create(
-            &self.shared.client.agent(), &req.context, &mut res.context).await?
-            .assert_verified()?;
+            &self.shared.client.agent(),
+            &req.context,
+            &mut res.context,
+        )
+        .await?
+        .assert_verified()?;
 
         ServerShared::run_tick(&self.shared, Self::timeout_now_tick, &req.value).await?;
         Ok(())
@@ -1226,11 +1252,15 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
     async fn Propose(
         &self,
         req: rpc::ServerRequest<ProposeRequest>,
-        res: &mut rpc::ServerResponse<ProposeResponse>
+        res: &mut rpc::ServerResponse<ProposeResponse>,
     ) -> Result<()> {
         ServerRequestRoutingContext::create(
-            &self.shared.client.agent(), &req.context, &mut res.context).await?
-            .assert_verified()?;
+            &self.shared.client.agent(),
+            &req.context,
+            &mut res.context,
+        )
+        .await?
+        .assert_verified()?;
 
         let (data, should_wait) = (req.data(), req.wait());
 
@@ -1251,7 +1281,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         if !should_wait {
             res.set_term(prop.term());
             res.set_index(prop.index());
-            return Ok(())
+            return Ok(());
         }
 
         // TODO: Must ensure that wait_for_commit responses immediately if
@@ -1266,7 +1296,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
                 res.set_term(prop.term());
                 res.set_index(prop.index());
                 Ok(())
-            },
+            }
             ProposalStatus::Failed => Err(err_msg("Proposal failed")),
             _ => {
                 println!("GOT BACK {:?}", res.value);

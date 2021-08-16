@@ -1,26 +1,29 @@
 extern crate common;
 extern crate container;
+extern crate http;
 extern crate protobuf;
 extern crate rpc;
-extern crate http;
-#[macro_use] extern crate macros;
+#[macro_use]
+extern crate macros;
 
 use std::sync::Arc;
 
 use async_std::task::JoinHandle;
-use common::errors::*;
+use common::async_std::fs;
+use common::async_std::io::ReadExt;
 use common::async_std::task;
+use common::errors::*;
 use common::failure::ResultExt;
 use common::futures::AsyncWriteExt;
-use common::async_std::fs;
+use container::{ContainerNodeStub, TaskSpec_Port, TaskSpec_Volume, WriteInputRequest};
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
-use common::async_std::io::ReadExt;
-use nix::{sys::termios::{ControlFlags, InputFlags, LocalFlags, OutputFlags, tcgetattr, tcsetattr}, unistd::isatty};
-use container::{ContainerNodeStub, TaskSpec_Port, TaskSpec_Volume, WriteInputRequest};
+use nix::{
+    sys::termios::{tcgetattr, tcsetattr, ControlFlags, InputFlags, LocalFlags, OutputFlags},
+    unistd::isatty,
+};
 use protobuf::text::parse_text_proto;
 use rpc::ClientRequestContext;
-
 
 #[derive(Args)]
 enum Args {
@@ -31,7 +34,7 @@ enum Args {
     Start,
 
     #[arg(name = "logs")]
-    Logs(LogsCommand)
+    Logs(LogsCommand),
 }
 
 #[derive(Args)]
@@ -45,14 +48,15 @@ async fn run() -> Result<()> {
     match args {
         Args::List => run_list().await,
         Args::Start => run_start().await,
-        Args::Logs(logs_command) => run_logs(logs_command).await
+        Args::Logs(logs_command) => run_logs(logs_command).await,
     }
 }
 
 async fn new_stub() -> Result<ContainerNodeStub> {
-    let channel = Arc::new(rpc::Http2Channel::create(
-        http::ClientOptions::from_uri(&"http://127.0.0.1:8080".parse()?)?)?);
-    
+    let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
+        &"http://127.0.0.1:8080".parse()?,
+    )?)?);
+
     let stub = container::ContainerNodeStub::new(channel);
 
     Ok(stub)
@@ -77,15 +81,17 @@ async fn run_start() -> Result<()> {
     let tmp_file = "/tmp/container_archive";
     {
         let mut tar_writer = compression::tar::Writer::open(tmp_file).await?;
-        
+
         let root_dir = common::project_dir().join("target/debug");
-        
+
         let options = compression::tar::AppendFileOption {
             mask: compression::tar::FileMetadataMask {},
-            root_dir: root_dir.clone()
+            root_dir: root_dir.clone(),
         };
 
-        tar_writer.append_file(&root_dir.join("adder_server"), &options).await?;
+        tar_writer
+            .append_file(&root_dir.join("adder_server"), &options)
+            .await?;
         tar_writer.finish().await?;
     }
 
@@ -121,13 +127,14 @@ async fn run_start() -> Result<()> {
         }
     }
 
-
-    // TODO: Interactive exec style runs should be interactive in the sense that when the client's
-    // connection is closed, the container should also be killed.
+    // TODO: Interactive exec style runs should be interactive in the sense that
+    // when the client's connection is closed, the container should also be
+    // killed.
 
     println!("Starting server");
 
-    // ["/usr/bin/bash", "-c", "for i in {1..20}; do echo \"Tick $i\"; sleep 1; done"]
+    // ["/usr/bin/bash", "-c", "for i in {1..20}; do echo \"Tick $i\"; sleep 1;
+    // done"]
 
     let mut terminal_mode = false;
 
@@ -140,12 +147,15 @@ async fn run_start() -> Result<()> {
     port.set_name("rpc");
     port.set_number(30001);
     start_request.task_spec_mut().add_ports(port);
-    
 
     start_request.task_spec_mut().set_name("adder_server");
-    start_request.task_spec_mut().add_args("/volumes/main/adder_server".into());
+    start_request
+        .task_spec_mut()
+        .add_args("/volumes/main/adder_server".into());
     start_request.task_spec_mut().add_args("--port=rpc".into());
-    start_request.task_spec_mut().add_args("--request_log=/volumes/data/requests".into());
+    start_request
+        .task_spec_mut()
+        .add_args("--request_log=/volumes/data/requests".into());
 
     let mut main_volume = TaskSpec_Volume::default();
     main_volume.set_name("main");
@@ -157,14 +167,14 @@ async fn run_start() -> Result<()> {
     adder_volume.set_persistent_name("adder_data");
     start_request.task_spec_mut().add_volumes(adder_volume);
 
-
-
-    let start_response = stub.StartTask(&request_context, &start_request).await.result?;
+    let start_response = stub
+        .StartTask(&request_context, &start_request)
+        .await
+        .result?;
 
     // TODO: Now wait for the task to enter the Running state.
-    // ^ this is required to ensure that we don't fetch logs for a past iteration of the task.
-
-    
+    // ^ this is required to ensure that we don't fetch logs for a past iteration of
+    // the task.
 
     // println!("Container Id: {}", start_response.container_id());
 
@@ -175,15 +185,21 @@ async fn run_start() -> Result<()> {
 
     if terminal_mode {
         let stdin_task = start_terminal_input_task(
-            &stub, &request_context, start_request.task_spec().name().to_string()).await?;
+            &stub,
+            &request_context,
+            start_request.task_spec().name().to_string(),
+        )
+        .await?;
     }
 
-    // TODO: Currently this seems to never unblock once the connection has been closed.
+    // TODO: Currently this seems to never unblock once the connection has been
+    // closed.
 
     let mut stdout = common::async_std::io::stdout();
     while let Some(entry) = log_stream.recv().await {
-        // TODO: If we are not in terminal mode, restrict ourselves to only writing out characters that are
-        // in the ASCII visible range (so that we can't effect the terminal with escape codes).
+        // TODO: If we are not in terminal mode, restrict ourselves to only writing out
+        // characters that are in the ASCII visible range (so that we can't
+        // effect the terminal with escape codes).
 
         stdout.write_all(entry.value()).await?;
         stdout.flush().await?;
@@ -191,10 +207,9 @@ async fn run_start() -> Result<()> {
 
     log_stream.finish().await?;
 
-
     if terminal_mode {
         // Always write the terminal reset sequence at the end.
-        // TODO: Should should only be needed in 
+        // TODO: Should should only be needed in
         // TODO: Ensure that this is always written even if the above code fails.
         stdout.write_all(&[0x1b, b'c']).await?;
         stdout.flush().await?;
@@ -206,9 +221,8 @@ async fn run_start() -> Result<()> {
 async fn start_terminal_input_task(
     stub: &ContainerNodeStub,
     request_context: &ClientRequestContext,
-    task_name: String
+    task_name: String,
 ) -> Result<JoinHandle<()>> {
-
     let mut input_req = stub.WriteInput(&request_context).await;
 
     if !isatty(0)? {
@@ -221,8 +235,8 @@ async fn start_terminal_input_task(
     let mut termios = tcgetattr(0)?;
     // Disable echoing of every input character to the output.
     termios.local_flags.remove(LocalFlags::ECHO);
-    // Disable canonical mode: meaning we'll read bytes at a time instead of only reading once an
-    // entire line was written.
+    // Disable canonical mode: meaning we'll read bytes at a time instead of only
+    // reading once an entire line was written.
     termios.local_flags.remove(LocalFlags::ICANON);
     // Disable receiving a signal for Ctrl-C and Ctrl-Z.
     // termios.local_flags.remove(LocalFlags::ISIG);
@@ -234,12 +248,15 @@ async fn start_terminal_input_task(
     termios.input_flags.remove(InputFlags::ICRNL);
     termios.output_flags.remove(OutputFlags::OPOST);
 
-    termios.input_flags.remove(InputFlags::BRKINT | InputFlags::INPCK | InputFlags::ISTRIP);
+    termios
+        .input_flags
+        .remove(InputFlags::BRKINT | InputFlags::INPCK | InputFlags::ISTRIP);
     termios.control_flags |= ControlFlags::CS8;
 
     tcsetattr(0, nix::sys::termios::SetArg::TCSAFLUSH, &termios)?;
 
-    // TODO: When we create the tty on the server, do we need to explicitly enable all of the above flags.
+    // TODO: When we create the tty on the server, do we need to explicitly enable
+    // all of the above flags.
 
     Ok(task::spawn(async move {
         let mut stdin = common::async_std::io::stdin();
@@ -267,11 +284,9 @@ async fn start_terminal_input_task(
     }))
 }
 
-
-
 async fn run_logs(logs_command: LogsCommand) -> Result<()> {
     let stub = new_stub().await?;
-    let request_context = rpc::ClientRequestContext::default(); 
+    let request_context = rpc::ClientRequestContext::default();
 
     let mut log_request = container::LogRequest::default();
     log_request.set_task_name(&logs_command.task_name);
@@ -289,9 +304,7 @@ async fn run_logs(logs_command: LogsCommand) -> Result<()> {
     Ok(())
 
     // 5e2e72f7979c54627dc3156c34ffa794
-
 }
-
 
 fn main() -> Result<()> {
     task::block_on(run())

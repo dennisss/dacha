@@ -1,29 +1,32 @@
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
+use common::bytes::{Buf, Bytes};
 use common::errors::*;
 use common::io::{Readable, Writeable};
-use common::bytes::{Bytes, Buf};
 
 use crate::tls::alert::*;
 use crate::tls::handshake::Handshake;
-use crate::tls::record_stream::*;
 use crate::tls::handshake_summary::HandshakeSummary;
+use crate::tls::record_stream::*;
 
-// TODO: Must mention that these interfaces must be constantly polled for the connection to stay healthy?
+// TODO: Must mention that these interfaces must be constantly polled for the
+// connection to stay healthy?
 
-/// Abstraction around the raw TLS record layer for reading/writing application data.
-/// It buffers read bytes so that it can be used as a Readable / Writeable stream.
+/// Abstraction around the raw TLS record layer for reading/writing application
+/// data. It buffers read bytes so that it can be used as a Readable / Writeable
+/// stream.
 pub struct ApplicationStream {
     pub reader: ApplicationDataReader,
     pub writer: ApplicationDataWriter,
-    pub handshake_summary: HandshakeSummary
+    pub handshake_summary: HandshakeSummary,
 }
 
 impl ApplicationStream {
     pub(crate) fn new(
-        record_reader: RecordReader, record_writer: RecordWriter,
-        handshake_summary: HandshakeSummary
+        record_reader: RecordReader,
+        record_writer: RecordWriter,
+        handshake_summary: HandshakeSummary,
     ) -> Self {
         let pending_key_updates = Arc::new(AtomicUsize::new(0));
 
@@ -31,13 +34,13 @@ impl ApplicationStream {
             reader: ApplicationDataReader {
                 record_reader,
                 read_buffer: Bytes::new(),
-                pending_key_updates: pending_key_updates.clone()
+                pending_key_updates: pending_key_updates.clone(),
             },
             writer: ApplicationDataWriter {
                 record_writer,
-                pending_key_updates
+                pending_key_updates,
             },
-            handshake_summary
+            handshake_summary,
         }
     }
 }
@@ -50,9 +53,8 @@ pub struct ApplicationDataReader {
     read_buffer: Bytes,
 
     /// Number of unacknowledged KeyUpdate messages which effect our local  
-    pending_key_updates: Arc<AtomicUsize>
+    pending_key_updates: Arc<AtomicUsize>,
 }
-
 
 #[async_trait]
 impl Readable for ApplicationDataReader {
@@ -81,7 +83,7 @@ impl Readable for ApplicationDataReader {
 
                 self.read_buffer = data;
 
-                return Ok(nread)
+                return Ok(nread);
             } else if let Message::Handshake(Handshake::NewSessionTicket(_)) = msg {
                 println!("IGNORING NEW SESSION TICKET");
                 continue;
@@ -93,12 +95,14 @@ impl Readable for ApplicationDataReader {
 
                 if alert.description == AlertDescription::close_notify {
                     return Err(std::io::Error::new(
-                        std::io::ErrorKind::ConnectionAborted, "TLS close_notify received").into());
+                        std::io::ErrorKind::ConnectionAborted,
+                        "TLS close_notify received",
+                    )
+                    .into());
                 }
-                // TODO: Fatal errors should 
+                // TODO: Fatal errors should
 
                 println!("ALERT: {:?}", alert);
-
             } else {
                 println!("{:?}", msg);
                 // TODO: Now in an error state. Future reads should fail?
@@ -111,18 +115,17 @@ impl Readable for ApplicationDataReader {
 pub struct ApplicationDataWriter {
     record_writer: RecordWriter,
 
-    pending_key_updates: Arc<AtomicUsize>
+    pending_key_updates: Arc<AtomicUsize>,
 }
 
 #[async_trait]
 impl Writeable for ApplicationDataWriter {
     async fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        // TODO: Update keys 
+        // TODO: Update keys
 
         // TODO: We may need to split up a packet that is too large.
         self.record_writer.send(buf).await?;
         Ok(buf.len())
-
 
         // TODO: Need to implement a close that sends a close_notify.
     }

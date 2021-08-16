@@ -1,5 +1,3 @@
-
-
 /*
 
 struct OUT {
@@ -13,7 +11,7 @@ impl OUT {
 
     fn reset();
 
-    // Read accessors for 
+    // Read accessors for
 }
 
 
@@ -36,7 +34,7 @@ Lot's of different SVD files located here:
 
 For each peripheral:
     For each register:
-        pub mod PERIPHERAL_NAME { 
+        pub mod PERIPHERAL_NAME {
             pub const REGISTER_NAME: *mut u32 = ADDRESS as *mut u32;
         }
 

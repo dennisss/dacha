@@ -11,8 +11,8 @@ pub mod consensus {
             inst
         }
 
-        /// Gets the zero log position, will always be the starting position before
-        /// the first real log entry
+        /// Gets the zero log position, will always be the starting position
+        /// before the first real log entry
         pub fn zero() -> Self {
             let mut pos = Self::default();
             // pos.index_mut().set_value(0);
@@ -42,7 +42,7 @@ pub mod consensus_state {
                         // removing a server
                         panic!("Can not change member to learner");
                     }
-    
+
                     self.learners.insert(*s);
                 }
                 ConfigChangeTypeCase::AddMember(s) => {
@@ -58,7 +58,7 @@ pub mod consensus_state {
                 }
             };
         }
-    
+
         pub fn iter(&self) -> impl Iterator<Item = &ServerId> {
             self.members.iter().chain(self.learners.iter())
         }
@@ -102,7 +102,7 @@ pub mod routing {
             self.id.hash(state);
         }
     }
-    
+
     impl PartialEq for ServerDescriptor {
         fn eq(&self, other: &ServerDescriptor) -> bool {
             self.id == other.id
@@ -110,14 +110,14 @@ pub mod routing {
     }
     impl Eq for ServerDescriptor {}
     */
-    
+
     // Mainly so that we can look up servers directly by id in the hash sets
     impl std::borrow::Borrow<ServerId> for ServerDescriptor {
         fn borrow(&self) -> &ServerId {
             &self.id
         }
     }
-    
+
     impl ServerDescriptor {
         pub fn to_string(&self) -> String {
             self.id().value().to_string() + " " + &self.addr()
@@ -128,16 +128,14 @@ pub mod routing {
         type Err = Error;
         fn from_str(s: &str) -> Result<Self> {
             let parts = s.split(' ').collect::<Vec<_>>();
-    
+
             if parts.len() != 2 {
                 return Err(err_msg("Wrong number of parts"));
             }
-    
-            let id = parts[0]
-                .parse()
-                .map_err(|_| err_msg("Invalid server id"))?;
+
+            let id = parts[0].parse().map_err(|_| err_msg("Invalid server id"))?;
             let addr = parts[1].to_owned();
-    
+
             let mut desc = ServerDescriptor::default();
             *desc.id_mut().value_mut() = id;
             desc.set_addr(addr);

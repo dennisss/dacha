@@ -1,6 +1,3 @@
-
-
-
 /*
 CS active low
 

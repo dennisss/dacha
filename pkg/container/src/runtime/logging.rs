@@ -1,9 +1,9 @@
 // Code for performing logging of the stdout/stderr pipes of the container to
 // durable storage.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
+use std::{path::Path, time::Duration};
 
 use common::async_std::fs::File;
 use common::async_std::io::ReadExt;
@@ -21,9 +21,9 @@ pub struct FileLogReader {
 }
 
 impl FileLogReader {
-    pub async fn open(path: &Path) -> Result<Self> {
+    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         Ok(Self {
-            log: RecordReader::open(path).await?,
+            log: RecordReader::open(path.as_ref()).await?,
         })
     }
 
@@ -37,6 +37,14 @@ impl FileLogReader {
             Ok(None)
         }
     }
+}
+
+pub struct FileLogWriterOptions {
+    pub split_on_line: bool,
+    pub max_record_size: usize,
+
+    pub flush_on_line: bool,
+    pub flush_on_timeout: Duration,
 }
 
 pub struct FileLogWriter {
@@ -66,6 +74,11 @@ struct FileLogStreamWriter<'a> {
 }
 
 impl<'a> FileLogStreamWriter<'a> {
+    /*
+    Want to support not waiting for lines to be flushed.
+    Also want to support waiting for at least N bytes
+    */
+
     async fn write(&self, mut file: File) -> Result<()> {
         let mut buffer = vec![0u8; MAX_LINE_SIZE];
         let mut buffer_size = 0;
@@ -92,15 +105,17 @@ impl<'a> FileLogStreamWriter<'a> {
 
             buffer_size += nread;
 
-            if buffer_size == buffer.len() && last_line_end == 0 {
+            if (true || buffer_size == buffer.len()) && last_line_end == 0 {
                 // In this case, the line is longer that our buffer size so we'll just write a
                 // non-terminated line consisting on the entire buffer.
-                let line = &buffer;
+                let line = &buffer[0..buffer_size];
                 last_line_end = buffer_size;
 
                 self.write_line(line, time, false).await?;
             }
 
+            // Shift all remaining data to the start of the buffer
+            // Basically do buffer[0..m] = buffer[n..(n+m)]
             let remaining_size = buffer_size - last_line_end;
             let remaining_start = buffer_size - remaining_size;
             for i in 0..remaining_size {
@@ -108,6 +123,8 @@ impl<'a> FileLogStreamWriter<'a> {
             }
 
             buffer_size = remaining_size;
+
+            self.log.lock().await.flush().await?;
         }
 
         // Always write a final entry with any remaining data to mark that the stream
@@ -115,6 +132,7 @@ impl<'a> FileLogStreamWriter<'a> {
         let time = SystemTime::now();
         let line = &buffer[0..buffer_size];
         self.write_line(line, time, true).await?;
+        self.log.lock().await.flush().await?;
 
         Ok(())
     }
@@ -128,6 +146,43 @@ impl<'a> FileLogStreamWriter<'a> {
 
         let mut log = self.log.lock().await;
         log.append(&log_entry.serialize()?).await?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use crypto::random::SharedRng;
+
+    use super::*;
+
+    #[async_std::test]
+    async fn test_read_in() -> Result<()> {
+        // /opt/dacha/container/run/e82883425bad091305a70b02bc59d69d/log
+
+        let mut reader =
+            FileLogReader::open("/opt/dacha/container/run/e82883425bad091305a70b02bc59d69d/log")
+                .await?;
+
+        while let Some(record) = reader.read().await? {}
+
+        return Ok(());
+
+        let mut data = vec![];
+        data.resize(60000, 0);
+        crypto::random::global_rng().generate_bytes(&mut data).await;
+
+        let mut writer = RecordWriter::open(&Path::new("/tmp/log")).await?;
+        writer.append(&data).await?;
+        drop(writer);
+
+        let mut reader = RecordReader::open(&Path::new("/tmp/log")).await?;
+
+        let data_read = reader.read().await?;
+        assert_eq!(data_read, Some(data));
+
         Ok(())
     }
 }

@@ -1,11 +1,11 @@
 /// This module contains the Waker data type which can be used to
 use crate::avr::arena_stack::*;
 use crate::avr::thread::*;
+use crate::avr_assert;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::Context;
 use core::task::Poll;
-use crate::avr_assert;
 
 // NOTE: Can be at most 'ArenaIndex::MAX_VALUE + 1'
 const MAX_PENDING_WAKERS: usize = 16;
@@ -14,7 +14,10 @@ const INVALID_THREAD_ID: ThreadId = 255;
 
 /// Arena memory which stores
 static mut PENDING_WAKERS: [ArenaStackItem<Waker>; MAX_PENDING_WAKERS] =
-    [ArenaStackItem::empty(Waker { thread: INVALID_THREAD_ID, ref_count: 0 }); MAX_PENDING_WAKERS];
+    [ArenaStackItem::empty(Waker {
+        thread: INVALID_THREAD_ID,
+        ref_count: 0,
+    }); MAX_PENDING_WAKERS];
 
 /// List of all unused entries in the arena.
 static mut FREE_LIST: ArenaStack<Waker, WakerArena> = ArenaStack::new(WakerArena::new());
@@ -40,7 +43,15 @@ pub fn init() {
 
     // Initially every single element in the PENDING_WAKERS list is free.
     for i in 0..MAX_PENDING_WAKERS {
-        unsafe { FREE_LIST.push(i as ArenaIndex, Waker { thread: INVALID_THREAD_ID, ref_count: 0 }) };
+        unsafe {
+            FREE_LIST.push(
+                i as ArenaIndex,
+                Waker {
+                    thread: INVALID_THREAD_ID,
+                    ref_count: 0,
+                },
+            )
+        };
     }
 
     unsafe { FREE_LIST_INITIALIZED = true };
@@ -49,7 +60,7 @@ pub fn init() {
 #[derive(Clone, Copy, PartialEq)]
 struct Waker {
     thread: ThreadId,
-    ref_count: u8
+    ref_count: u8,
 }
 
 pub struct WakerList {
@@ -98,7 +109,13 @@ impl WakerList {
     pub fn add_for_thread(&'static mut self, thread: ThreadId) -> WakerFuture {
         let index = WakerArena::alloc();
 
-        self.inner.push(index, Waker { thread, ref_count: 1 });
+        self.inner.push(
+            index,
+            Waker {
+                thread,
+                ref_count: 1,
+            },
+        );
 
         // TODO: This is returned very inefficiently.
         WakerFuture {
@@ -109,18 +126,21 @@ impl WakerList {
 
     /*
         Challenges:
-        - If wake_all performs the removal of the items, then I can't stop threads because that would requie 
-        - If an item is currently being awoken, then no need for the waker to delete it because 
+        - If wake_all performs the removal of the items, then I can't stop threads because that would requie
+        - If an item is currently being awoken, then no need for the waker to delete it because
 
     */
 
     // There are a few scenarios:
-    // - Waking without caring about it being dropped (for the sake of starting a thread)
-    // - Waking and 
+    // - Waking without caring about it being dropped (for the sake of starting a
+    //   thread)
+    // - Waking and
 
     // All wakers start with ref_count of 2
-    // - When it is dropped, that is allowed to completely remove it assuming that is isn't currently being awoken.
-    // - When it seen in wake_all, wake_all will temporarily increment by 1 the reference,
+    // - When it is dropped, that is allowed to completely remove it assuming that
+    //   is isn't currently being awoken.
+    // - When it seen in wake_all, wake_all will temporarily increment by 1 the
+    //   reference,
 
     /// NOTE: This will only wake up all wakers already in the list. Any new
     /// wakers added after this function starts will not be awaken.
@@ -129,7 +149,7 @@ impl WakerList {
 
         while let Some((waker, index)) = cur_waker.take() {
             self.incref(index);
-            
+
             unsafe {
                 avr_assert!(CURRENT_BEING_AWAKEN.is_none());
                 CURRENT_BEING_AWAKEN = Some(index);
@@ -137,12 +157,9 @@ impl WakerList {
                 CURRENT_BEING_AWAKEN = None;
             }
 
-
             cur_waker = self.inner.before(index);
 
-            // crate::usart::USART1::send_blocking(b"<\n");
             self.deref(index);
-            // crate::usart::USART1::send_blocking(b">\n");
 
             // TODO: When using a leaked future, this is totally feasible.
             // if !(unsafe { CURRENT_WAS_AWAKENED }) {
@@ -153,12 +170,13 @@ impl WakerList {
             //     crate::usart::USART1::send_blocking(b"\n");
             // }
 
-            // TODO: What if we remove it from the list but the Waker instance wasn't destroyed?
-            // ^ This would mean that it would come back later 
-            // SO, we can only remove the waker here if the WakerFuture was called.
-            
+            // TODO: What if we remove it from the list but the Waker instance
+            // wasn't destroyed? ^ This would mean that it would
+            // come back later SO, we can only remove the waker here
+            // if the WakerFuture was called.
+
             // But, when wouldn't it be called (if waking the thread)?
-            // 
+            //
 
             // NOTE: This must be after the polling to ensure that we don't
             // immediately create a waker with the same id as the
@@ -169,11 +187,11 @@ impl WakerList {
             // cur_waker = self.inner.remove(index);
 
             // if new_cur_waker != cur_waker {
-            //     crate::usart::USART1::send_blocking(b">\n"); 
+            //     crate::usart::USART1::send_blocking(b">\n");
             // }
 
             // crate::usart::USART1::send_blocking(b">\n");
-            WakerArena::free(index);
+            // WakerArena::free(index);
 
             // cur_waker = new_cur_waker;
         }
@@ -194,7 +212,15 @@ impl WakerArena {
     }
 
     fn free(index: ArenaIndex) {
-        unsafe { FREE_LIST.push(index, Waker { thread: INVALID_THREAD_ID, ref_count: 0 }) };
+        unsafe {
+            FREE_LIST.push(
+                index,
+                Waker {
+                    thread: INVALID_THREAD_ID,
+                    ref_count: 0,
+                },
+            )
+        };
     }
 }
 

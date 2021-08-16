@@ -16,8 +16,8 @@ use syn::parse::{Parse, ParseStream};
 use syn::Result;
 use syn::{Item, ItemImpl};
 
-mod reflect;
 mod args;
+mod reflect;
 
 #[derive(Debug)]
 struct BlanketInput {

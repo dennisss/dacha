@@ -348,8 +348,9 @@ impl ConnectionWriter {
                             .write_all(&frame_utils::new_goaway_frame(last_stream_id, error))
                             .await?;
 
-                        // TODO: Figure out if there is an upper bound to how long this flush will time.
-                        // If it is not fast, then it will block shutdown for a while.
+                        // TODO: Figure out if there is an upper bound to how long this flush will
+                        // time. If it is not fast, then it will block
+                        // shutdown for a while.
                         writer.flush().await?;
                     }
 

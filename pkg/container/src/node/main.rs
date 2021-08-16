@@ -4,16 +4,16 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 
 use common::async_std::path::Path;
-use common::errors::*;
 use common::async_std::task;
+use common::errors::*;
 use nix::mount::MsFlags;
-use nix::sys::stat::{Mode, umask};
+use nix::sched::CloneFlags;
+use nix::sys::stat::{umask, Mode};
 use nix::unistd::Pid;
 use protobuf::text::parse_text_proto;
-use nix::sched::CloneFlags;
 
-use crate::proto::service::ContainerNodeIntoService;
 use crate::node::Node;
+use crate::proto::service::ContainerNodeIntoService;
 use crate::runtime::fd::FileReference;
 
 const MAGIC_STARTUP_BYTE: u8 = 0x88;
@@ -25,7 +25,7 @@ struct PasswdEntry {
     gid: u32,
     comment: String,
     directory: String,
-    shell: String
+    shell: String,
 }
 
 fn read_passwd() -> Result<Vec<PasswdEntry>> {
@@ -34,7 +34,10 @@ fn read_passwd() -> Result<Vec<PasswdEntry>> {
     for line in data.lines() {
         let fields = line.split(":").collect::<Vec<_>>();
         if fields.len() != 7 {
-            return Err(format_err!("Incorrect number of fields in passwd line: \"{}\"", line));
+            return Err(format_err!(
+                "Incorrect number of fields in passwd line: \"{}\"",
+                line
+            ));
         }
 
         out.push(PasswdEntry {
@@ -44,7 +47,7 @@ fn read_passwd() -> Result<Vec<PasswdEntry>> {
             gid: fields[3].parse()?,
             comment: fields[4].to_string(),
             directory: fields[5].to_string(),
-            shell: fields[6].to_string()
+            shell: fields[6].to_string(),
         });
     }
 
@@ -55,7 +58,7 @@ struct GroupEntry {
     name: String,
     password: String,
     id: u32,
-    user_list: Vec<String>
+    user_list: Vec<String>,
 }
 
 fn read_groups() -> Result<Vec<GroupEntry>> {
@@ -64,42 +67,46 @@ fn read_groups() -> Result<Vec<GroupEntry>> {
     for line in data.lines() {
         let fields = line.split(":").collect::<Vec<_>>();
         if fields.len() != 4 {
-            return Err(format_err!("Incorrect number of fields in group line: \"{}\"", line));
+            return Err(format_err!(
+                "Incorrect number of fields in group line: \"{}\"",
+                line
+            ));
         }
 
         out.push(GroupEntry {
             name: fields[0].to_string(),
             password: fields[1].to_string(),
             id: fields[2].parse()?,
-            user_list: fields[3].split(",").map(|s| s.to_string()).collect()
+            user_list: fields[3].split(",").map(|s| s.to_string()).collect(),
         });
     }
 
     Ok(out)
 }
 
-
-
 struct SubordinateIdRange {
     name: String,
     start_id: u32,
-    count: u32
+    count: u32,
 }
 
-fn read_subordinate_id_file(path: &str) -> Result<Vec<SubordinateIdRange>>  {
+fn read_subordinate_id_file(path: &str) -> Result<Vec<SubordinateIdRange>> {
     let mut out = vec![];
 
     let data = std::fs::read_to_string(path)?;
     for line in data.lines() {
         let fields = line.split(":").collect::<Vec<_>>();
         if fields.len() != 3 {
-            return Err(format_err!("Incorrect number of fields in sub id line: \"{}\"", line));
+            return Err(format_err!(
+                "Incorrect number of fields in sub id line: \"{}\"",
+                line
+            ));
         }
 
         out.push(SubordinateIdRange {
             name: fields[0].to_string(),
             start_id: fields[1].parse()?,
-            count: fields[2].parse()?
+            count: fields[2].parse()?,
         });
     }
 
@@ -108,7 +115,7 @@ fn read_subordinate_id_file(path: &str) -> Result<Vec<SubordinateIdRange>>  {
 
 /*
     In the ContainerNodeConfig we should have:
-    
+
     - username: ""
     - groupname: ""
 
@@ -135,10 +142,8 @@ fn newidmap(binary: &str, sub_ids_path: &str, entity_name: &str, pid: i32) -> Re
         args.push(range.start_id.to_string());
         args.push(range.count.to_string());
     }
-    
-    let mut child = std::process::Command::new(binary)
-        .args(&args)
-        .spawn()?;
+
+    let mut child = std::process::Command::new(binary).args(&args).spawn()?;
     let status = child.wait()?;
     if !status.success() {
         return Err(format_err!("{} exited with failure: {:?}", binary, status));
@@ -147,26 +152,28 @@ fn newidmap(binary: &str, sub_ids_path: &str, entity_name: &str, pid: i32) -> Re
     Ok(())
 }
 
-
 pub fn main() -> Result<()> {
     let uid = nix::unistd::getresuid()?;
     let gid = nix::unistd::getresgid()?;
-    if  uid.real.as_raw() == 0 || gid.real.as_raw() == 0 {
+    if uid.real.as_raw() == 0 || gid.real.as_raw() == 0 {
         return Err(err_msg("Should not be running as root"));
     }
 
     let user_entry = read_passwd()?
-        .into_iter().find(|e| e.uid == uid.real.as_raw())
+        .into_iter()
+        .find(|e| e.uid == uid.real.as_raw())
         .ok_or_else(|| format_err!("Failed to find passwd entry for uid: {}", uid.real.as_raw()))?;
     println!("Running as user: {}", user_entry.name);
 
     let group_entry = read_groups()?
-        .into_iter().find(|e| e.id == gid.real.as_raw())
+        .into_iter()
+        .find(|e| e.id == gid.real.as_raw())
         .ok_or_else(|| format_err!("Failed to find group entry for gid: {}", gid.real.as_raw()))?;
     println!("Running as group: {}", group_entry.name);
 
-    // Validate that all ids are consistent and there is no chance of escalating them later.
-    // NOTE: We don't run setgroups() so whatever supplementary groups we already have will be preserved. 
+    // Validate that all ids are consistent and there is no chance of escalating
+    // them later. NOTE: We don't run setgroups() so whatever supplementary
+    // groups we already have will be preserved.
     nix::unistd::setresuid(uid.real, uid.real, uid.real)?;
     nix::unistd::setresgid(gid.real, gid.real, gid.real)?;
     let _ = nix::unistd::setfsuid(uid.real);
@@ -176,8 +183,18 @@ pub fn main() -> Result<()> {
 
     println!("Root Pid: {}", root_pid.as_raw());
 
-    newidmap("newuidmap", "/etc/subuid", &user_entry.name, root_pid.as_raw())?;
-    newidmap("newgidmap", "/etc/subgid", &group_entry.name, root_pid.as_raw())?;
+    newidmap(
+        "newuidmap",
+        "/etc/subuid",
+        &user_entry.name,
+        root_pid.as_raw(),
+    )?;
+    newidmap(
+        "newgidmap",
+        "/etc/subgid",
+        &group_entry.name,
+        root_pid.as_raw(),
+    )?;
 
     setup_sender.write_all(&[MAGIC_STARTUP_BYTE])?;
     drop(setup_sender);
@@ -192,10 +209,11 @@ pub fn main() -> Result<()> {
 fn spawn_root_process() -> Result<(Pid, std::fs::File)> {
     let (setup_reader_ref, setup_writer_ref) = FileReference::pipe()?;
 
-    let mut stack = [0u8; 6*1024*1024];
+    let mut stack = [0u8; 6 * 1024 * 1024];
     let mut setup_reader_ref = Some(setup_reader_ref);
 
-    // TODO: Verify that CLONE_NEWNS still allows us to inherit new mounts from the parent namespace.
+    // TODO: Verify that CLONE_NEWNS still allows us to inherit new mounts from the
+    // parent namespace.
     let pid = nix::sched::clone(
         Box::new(|| run_root_process(setup_reader_ref.take().unwrap().open().unwrap())),
         &mut stack,
@@ -215,7 +233,7 @@ fn run_root_process(setup_reader: std::fs::File) -> isize {
             1
         }
     };
-    
+
     unsafe { libc::exit(code) };
 }
 
@@ -231,33 +249,42 @@ async fn run(mut setup_reader: std::fs::File) -> Result<()> {
         return Err(err_msg("Failed to set PR_SET_PDEATHSIG"));
     }
 
-    if unsafe { libc::prctl(libc::PR_SET_SECUREBITS, crate::capabilities::SECBITS_LOCKED_DOWN) } != 0 {
+    if unsafe {
+        libc::prctl(
+            libc::PR_SET_SECUREBITS,
+            crate::capabilities::SECBITS_LOCKED_DOWN,
+        )
+    } != 0
+    {
         return Err(err_msg("Failed to set PR_SET_SECUREBITS"));
     }
 
-    // Now that we are in a new PID namespace, we need to re-mount /proc so that all the /proc/[pid]
-    // files make sense.
-    nix::mount::mount(Some("proc"), "/proc", Some("proc"),
-    MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID | MsFlags::MS_NODEV, Option::<&str>::None)?;
+    // Now that we are in a new PID namespace, we need to re-mount /proc so that all
+    // the /proc/[pid] files make sense.
+    nix::mount::mount(
+        Some("proc"),
+        "/proc",
+        Some("proc"),
+        MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
+        Option::<&str>::None,
+    )?;
 
     println!("Done setup!");
 
-    // NOTE: This directory should be created with mode 700 where the user running the container
-    // node is the owner. 
+    // NOTE: This directory should be created with mode 700 where the user running
+    // the container node is the owner.
     if !Path::new("/opt/dacha").exists().await {
         return Err(err_msg("Data directory doesn't exist"));
     }
 
-    // Files in the data directory will be created without any group/world permissions.
-    // Files which require a less restrictive should be modified on a case-by-base basis. 
+    // Files in the data directory will be created without any group/world
+    // permissions. Files which require a less restrictive should be modified on
+    // a case-by-base basis.
     umask(Mode::from_bits_truncate(0o077));
-
 
     println!("Starting node!");
 
-
     // TODO: Create the root directory and set permissions to 600
-
 
     let node = Node::create().await?;
 

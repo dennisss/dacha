@@ -1,17 +1,15 @@
-
 mod alphabet;
+mod encoding;
 mod instance;
 mod r#match;
 mod node;
+mod rune;
 mod state_machine;
 mod symbol;
 mod syntax;
-mod rune;
 pub mod vm;
-mod encoding;
 
 pub use self::instance::RegExp;
-
 
 /*
     PCRE Style RegExp Parser
@@ -104,4 +102,3 @@ pub use self::instance::RegExp;
     - After one transition, we should know if it is possible to get from the current node to an acceptance state.
     - We should also know after one transition if everything will be an acceptance.
 */
-

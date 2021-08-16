@@ -22,7 +22,38 @@ use compression::zlib::*;
 // TODO: Maintain a histogram of characters in the block to determine when to
 // cut the block?
 
+async fn run() -> Result<()> {
+    let mut tar = compression::tar::Reader::open("testdata/tar/built.tar").await?;
+
+    tar.extract_files(&std::env::current_dir()?.join("testdata/tar/export"))
+        .await?;
+
+    // while let Some(entry) = tar.read_entry().await? {
+    //     println!("{:#?}", entry);
+
+    //     let data = tar.read_data(&entry).await;
+    //     println!("{:?}", data);
+    // }
+
+    /*
+    let mut tar = compression::tar::Writer::open("testdata/tar/built.tar").await?;
+
+    let options = compression::tar::AppendFileOption {
+        root_dir: std::env::current_dir()?,
+        mask: FileMetadataMask {}
+    };
+
+    tar.append_file(&options.root_dir.join("data"), &options).await?;
+
+    tar.finish().await?;
+    */
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
+    common::async_std::task::block_on(run())
+
     // let mut window = MatchingWindow::new();
     // let chars = b"Blah blah blah blah blah!";
 
@@ -42,7 +73,6 @@ fn main() -> Result<()> {
 
     // assert_eq!(i, chars.len());
 
-    ///
     /*
         let header = Header {
             compression_method: CompressionMethod::Deflate,
@@ -67,8 +97,8 @@ fn main() -> Result<()> {
         return Ok(());
     */
 
-    let data = std::fs::read("/home/dennis/Downloads/dmg_sound.zip")?;
-    compression::zip::read_zip_file(&data)?;
+    // let data = std::fs::read("/home/dennis/Downloads/dmg_sound.zip")?;
+    // compression::zip::read_zip_file(&data)?;
 
     /*
     ///
@@ -78,6 +108,4 @@ fn main() -> Result<()> {
     */
 
     // TODO: Assert that we now at the end of the file after reading.
-
-    Ok(())
 }

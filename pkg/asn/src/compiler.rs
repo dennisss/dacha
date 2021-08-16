@@ -466,7 +466,7 @@ impl FileCompiler {
                     // optimize it? 						field_lines.add(format!
                     // ("if der_eq(&{}, &{}) {{", field_name, valuec));
                     // 						field_lines.add(format!("\treturn Err(\"DER got default
-                    // value encoded for '{}'\".into());", 												
+                    // value encoded for '{}'\".into());",
                     // field_name)); 						field_lines.add("}");
                     } else {
                         field_lines.add_inline("?;");

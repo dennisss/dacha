@@ -2,8 +2,8 @@
 //
 // Simply call 'let (w, r) = pipe();' then any data written to 'w' will be
 // available to be read at some point in the future via 'r'. Data is internally
-// buffered up to a limit so the writer may block if the reader isn't reading fast
-// enough.
+// buffered up to a limit so the writer may block if the reader isn't reading
+// fast enough.
 
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ use crate::io::{Readable, Writeable};
 pub struct PipeWriter {
     buffer: Arc<Mutex<Vec<u8>>>,
     notifier: channel::Sender<()>,
-    waiter: channel::Receiver<()>
+    waiter: channel::Receiver<()>,
 }
 
 #[async_trait]
@@ -51,7 +51,7 @@ impl Writeable for PipeWriter {
 pub struct PipeReader {
     buffer: Arc<Mutex<Vec<u8>>>,
     notifier: channel::Sender<()>,
-    waiter: channel::Receiver<()>
+    waiter: channel::Receiver<()>,
 }
 
 #[async_trait]
@@ -94,13 +94,13 @@ pub fn pipe() -> (PipeWriter, PipeReader) {
     let writer = PipeWriter {
         buffer: buffer.clone(),
         notifier: reader_notifier,
-        waiter: writer_waiter
+        waiter: writer_waiter,
     };
 
     let reader = PipeReader {
         buffer,
         notifier: writer_notifier,
-        waiter: reader_waiter
+        waiter: reader_waiter,
     };
 
     (writer, reader)

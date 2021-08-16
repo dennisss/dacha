@@ -448,7 +448,8 @@ fn generate_code(rules: Vec<Rule>) -> Result<()> {
             match t {
                 // Maps to a symbol/sequence. No need to type it.
                 Token::String(v) => {
-                    s += &format!("/* {} */ ", stringify(&v));
+                    s += &format!("/* {} */
+ ", stringify(&v));
                 },
                 Token::Reference(v) => {
                     s += &stringify(&v);

@@ -1,30 +1,30 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::marker::PhantomData;
 
-use common::CancellationToken;
-use common::bytes::Buf;
-use common::errors::*;
 use common::async_std::channel;
-use common::task::ChildTask;
-use common::io::Readable;
+use common::bytes::Buf;
 use common::bytes::Bytes;
+use common::errors::*;
+use common::io::Readable;
+use common::task::ChildTask;
+use common::CancellationToken;
 use http::header::*;
 use http::status_code::*;
 use http::Body;
 
-use crate::server_types::*;
-use crate::metadata::Metadata;
-use crate::service::Service;
 use crate::constants::GRPC_PROTO_TYPE;
 use crate::message::*;
+use crate::metadata::Metadata;
+use crate::server_types::*;
+use crate::service::Service;
 use crate::status::*;
 
 pub struct Http2Server {
     handler: Http2ResponseHandler,
-    shutdown_token: Option<Box<dyn CancellationToken>>
+    shutdown_token: Option<Box<dyn CancellationToken>>,
 }
 
 impl Http2Server {
@@ -33,7 +33,7 @@ impl Http2Server {
             handler: Http2ResponseHandler {
                 services: HashMap::new(),
             },
-            shutdown_token: None
+            shutdown_token: None,
         }
     }
 
@@ -51,7 +51,7 @@ impl Http2Server {
         self.shutdown_token = Some(token);
     }
 
-    pub fn run(mut self, port: u16) -> impl Future<Output=Result<()>> + 'static {
+    pub fn run(mut self, port: u16) -> impl Future<Output = Result<()>> + 'static {
         // TODO: Force usage of HTTP2.
         let mut server = http::Server::new(self.handler, http::ServerOptions::default());
         if let Some(token) = self.shutdown_token.take() {
@@ -67,12 +67,11 @@ struct Http2ResponseHandler {
 }
 
 impl Http2ResponseHandler {
-
     async fn handle_request_impl(&self, request: http::Request) -> Result<http::Response> {
         // TODO: Convert as many of the errors in this function as possible to gRPC
         // trailing status codes.
-        
-        // TODO: Should support different methods 
+
+        // TODO: Should support different methods
         if request.head.method != http::Method::POST {
             return http::ResponseBuilder::new()
                 .status(http::status_code::METHOD_NOT_ALLOWED)
@@ -80,7 +79,7 @@ impl Http2ResponseHandler {
         }
 
         let request_context = ServerRequestContext {
-            metadata: Metadata::from_headers(&request.head.headers)?
+            metadata: Metadata::from_headers(&request.head.headers)?,
         };
 
         let path_parts = request
@@ -112,11 +111,19 @@ impl Http2ResponseHandler {
         let method_name = path_parts[2].clone();
 
         let child_task = ChildTask::spawn(Self::service_caller(
-            service.clone(), method_name, request, response_sender));
+            service.clone(),
+            method_name,
+            request,
+            response_sender,
+        ));
 
         let head_metadata = match response_receiver.recv().await? {
             ServerStreamResponseEvent::Head(metadata) => metadata,
-            _ => { return Err(err_msg("Expected a head before other parts of the response")); }
+            _ => {
+                return Err(err_msg(
+                    "Expected a head before other parts of the response",
+                ));
+            }
         };
 
         let response_builder = http::ResponseBuilder::new()
@@ -137,11 +144,14 @@ impl Http2ResponseHandler {
         Ok(response)
     }
 
-    // Wrapper which calls the Service method for a single request and ensures that a trailer is
-    // eventually sent.
-    async fn service_caller(service: Arc<dyn Service>, method_name: String,
-        request: ServerStreamRequest<()>, response_sender: channel::Sender<ServerStreamResponseEvent>) {
-
+    // Wrapper which calls the Service method for a single request and ensures that
+    // a trailer is eventually sent.
+    async fn service_caller(
+        service: Arc<dyn Service>,
+        method_name: String,
+        request: ServerStreamRequest<()>,
+        response_sender: channel::Sender<ServerStreamResponseEvent>,
+    ) {
         let mut response_context = ServerResponseContext::default();
 
         let mut head_sent = false;
@@ -153,21 +163,28 @@ impl Http2ResponseHandler {
             sender: response_sender.clone(),
         };
 
-        // TODO: If this fails with an error that can be downcast to a status, should we propagate
-        // that back to the client.
+        // TODO: If this fails with an error that can be downcast to a status, should we
+        // propagate that back to the client.
         //
         // Probably no because this may imply that it was an internal RPC failure.
-        // TODO: Ensure that similarly internal HTTP2 calls aren't propagated to clients.
-        let response_result =  service.call(
-            &method_name, request, response).await;
+        // TODO: Ensure that similarly internal HTTP2 calls aren't propagated to
+        // clients.
+        let response_result = service.call(&method_name, request, response).await;
 
         if !head_sent {
-            let _ = response_sender.send(ServerStreamResponseEvent::Head(
-                response_context.metadata.head_metadata)).await;
+            let _ = response_sender
+                .send(ServerStreamResponseEvent::Head(
+                    response_context.metadata.head_metadata,
+                ))
+                .await;
         }
 
-        let _ = response_sender.send(ServerStreamResponseEvent::Trailers(
-            response_result, response_context.metadata.trailer_metadata)).await;
+        let _ = response_sender
+            .send(ServerStreamResponseEvent::Trailers(
+                response_result,
+                response_context.metadata.trailer_metadata,
+            ))
+            .await;
     }
 }
 
@@ -181,7 +198,9 @@ impl http::RequestHandler for Http2ResponseHandler {
             Err(e) => http::ResponseBuilder::new()
                 .status(INTERNAL_SERVER_ERROR)
                 .header(CONTENT_TYPE, "text/plain")
-                .body(http::BodyFromData(e.to_string().bytes().collect::<Vec<u8>>()))
+                .body(http::BodyFromData(
+                    e.to_string().bytes().collect::<Vec<u8>>(),
+                ))
                 .build()
                 .unwrap(),
         }
@@ -203,7 +222,7 @@ struct ResponseBody {
     /// If true, then we'll completely read all data.
     done_data: bool,
 
-    trailers: Option<Headers>
+    trailers: Option<Headers>,
 }
 
 #[async_trait]
@@ -215,9 +234,9 @@ impl Readable for ResponseBody {
                 buf[0..n].copy_from_slice(&self.remaining_bytes[0..n]);
 
                 self.remaining_bytes.advance(n);
-                
-                // NOTE: We always stop after at least some amount of data is available to ensure
-                // that readers are unblocked.
+
+                // NOTE: We always stop after at least some amount of data is available to
+                // ensure that readers are unblocked.
                 return Ok(n);
             }
 
@@ -229,33 +248,30 @@ impl Readable for ResponseBody {
             match event {
                 ServerStreamResponseEvent::Head(_) => {
                     return Err(err_msg("Unexpected head event"));
-                },
+                }
                 ServerStreamResponseEvent::Message(data) => {
                     // NOTE: This supports zero length packets are the message serializer will
                     // always prepend a fixed length prefix.
                     self.remaining_bytes = Bytes::from(MessageSerializer::serialize(&data));
-                },
+                }
                 ServerStreamResponseEvent::Trailers(result, trailer_meta) => {
-
                     let mut trailers = Headers::new();
                     trailer_meta.append_to_headers(&mut trailers)?;
-           
+
                     match result {
                         Ok(()) => {
                             Status::ok().append_to_headers(&mut trailers)?;
                         }
                         Err(error) => {
                             // TODO: Have some default error handler to log the raw errors.
-                            
+
                             eprintln!("RPC Error: {:?}", error);
                             let status = match error.downcast_ref::<Status>() {
                                 Some(s) => s.clone(),
-                                None => {
-                                    Status {
-                                        code: crate::StatusCode::Internal,
-                                        message: "Internal error occured".into()
-                                    }
-                                }
+                                None => Status {
+                                    code: crate::StatusCode::Internal,
+                                    message: "Internal error occured".into(),
+                                },
                             };
 
                             status.append_to_headers(&mut trailers)?;

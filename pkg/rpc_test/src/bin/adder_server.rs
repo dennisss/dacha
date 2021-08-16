@@ -17,7 +17,7 @@ use common::errors::*;
 use rpc_test::proto::adder::*;
 
 struct ContainerPort {
-    value: u16
+    value: u16,
 }
 
 impl ContainerPort {
@@ -27,7 +27,10 @@ impl ContainerPort {
 }
 
 impl ArgType for ContainerPort {
-    fn parse_raw_arg(raw_arg: common::args::RawArgValue) -> Result<Self> where Self: Sized {
+    fn parse_raw_arg(raw_arg: common::args::RawArgValue) -> Result<Self>
+    where
+        Self: Sized,
+    {
         let s = match raw_arg {
             common::args::RawArgValue::String(s) => s,
             common::args::RawArgValue::Bool(_) => {
@@ -36,32 +39,37 @@ impl ArgType for ContainerPort {
         };
 
         if let Ok(value) = s.parse::<u16>() {
-            return Ok(Self { value })
+            return Ok(Self { value });
         }
 
         let env_name = format!("PORT_{}", s.to_uppercase().replace("-", "_"));
         if let Ok(value) = std::env::var(env_name) {
-            return Ok(Self { value: value.parse::<u16>()? });
+            return Ok(Self {
+                value: value.parse::<u16>()?,
+            });
         }
 
         Err(format_err!("Can't find port with name: {}", s))
     }
 }
 
-
 #[derive(Args)]
 struct Args {
     port: ContainerPort,
-    request_log: Option<String>
+    request_log: Option<String>,
 }
 
 struct AdderImpl {
-    log_file: Option<File>
+    log_file: Option<File>,
 }
 
 #[async_trait]
 impl AdderService for AdderImpl {
-    async fn Add(&self, request: rpc::ServerRequest<AddRequest>, response: &mut rpc::ServerResponse<AddResponse>) -> Result<()> {
+    async fn Add(
+        &self,
+        request: rpc::ServerRequest<AddRequest>,
+        response: &mut rpc::ServerResponse<AddResponse>,
+    ) -> Result<()> {
         println!("{:?}", request.value);
         response.set_z(request.x() + request.y());
         Ok(())
@@ -70,14 +78,15 @@ impl AdderService for AdderImpl {
     async fn AddStreaming(
         &self,
         mut request: rpc::ServerStreamRequest<AddRequest>,
-        response: &mut rpc::ServerStreamResponse<AddResponse>
+        response: &mut rpc::ServerStreamResponse<AddResponse>,
     ) -> Result<()> {
         while let Some(req) = request.recv().await? {
             println!("{:?}", req);
             let z = req.x() + req.y();
 
             if let Some(mut file) = self.log_file.as_ref() {
-                file.write_all(format!("{} + {} = {}\n", req.x(), req.y(), z).as_bytes()).await?;
+                file.write_all(format!("{} + {} = {}\n", req.x(), req.y(), z).as_bytes())
+                    .await?;
                 file.flush().await?;
             }
 
@@ -96,10 +105,13 @@ async fn run_server() -> Result<()> {
 
     let log_file = {
         if let Some(path) = args.request_log {
-            Some(OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open(&path).await?)
+            Some(
+                OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(&path)
+                    .await?,
+            )
         } else {
             None
         }

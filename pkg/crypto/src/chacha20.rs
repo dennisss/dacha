@@ -186,7 +186,7 @@ impl Poly1305 {
                 BigUint::from_le_bytes(&data)
             },
             s: BigUint::from_le_bytes(&key[16..]),
-            acc: BigUint::zero()
+            acc: BigUint::zero(),
         }
     }
 
@@ -204,14 +204,14 @@ impl Poly1305 {
         r[12] &= 252;
     }
 
-    /// NOTE: Data will be interprated as if it were padded with zeros to a multiple of 16
-    /// bytes.
+    /// NOTE: Data will be interprated as if it were padded with zeros to a
+    /// multiple of 16 bytes.
     fn update(&mut self, data: &[u8], pad_to_block: bool) {
         for i in (0..data.len()).step_by(16) {
             let j = std::cmp::min(data.len(), i + 16);
             // TODO: Make sure that this internally reserves the full size + 1
             let mut n = BigUint::from_le_bytes(&data[i..j]);
-            
+
             let final_bit = if pad_to_block { 16 * 8 } else { (j - i) * 8 };
             n.set_bit(final_bit, 1);
 
@@ -236,11 +236,7 @@ impl ChaCha20Poly1305 {
         Self {}
     }
 
-    fn compute_tag(
-        otk: Vec<u8>,
-        ciphertext: &[u8],
-        additional_data: &[u8]
-    ) -> Vec<u8> {
+    fn compute_tag(otk: Vec<u8>, ciphertext: &[u8], additional_data: &[u8]) -> Vec<u8> {
         let mut poly = Poly1305::new(&otk);
 
         poly.update(additional_data, true);
@@ -286,7 +282,6 @@ impl AuthEncAD for ChaCha20Poly1305 {
 
         chacha.encrypt(plaintext, ciphertext);
 
-
         tag.copy_from_slice(&Self::compute_tag(otk, ciphertext, additional_data));
     }
 
@@ -322,8 +317,6 @@ impl AuthEncAD for ChaCha20Poly1305 {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -342,8 +335,9 @@ mod tests {
 
     #[test]
     fn chacha20_encrypt_test() {
-        let key = common::hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
-            .unwrap();
+        let key =
+            common::hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+                .unwrap();
         let nonce = common::hex::decode("000000000000004a00000000").unwrap();
 
         let plain = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
@@ -364,10 +358,14 @@ mod tests {
 
     #[test]
     fn chacha20_poly1305_keygen_test() {
-        let key = common::hex::decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f").unwrap();
+        let key =
+            common::hex::decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
+                .unwrap();
         let nonce = common::hex::decode("000000000001020304050607").unwrap();
 
-        let expected = common::hex::decode("8ad5a08b905f81cc815040274ab29471a833b637e3fd0da508dbb8e2fdd1a646").unwrap();
+        let expected =
+            common::hex::decode("8ad5a08b905f81cc815040274ab29471a833b637e3fd0da508dbb8e2fdd1a646")
+                .unwrap();
 
         let mut chacha = ChaCha20::new(&key, &nonce);
         let otk = chacha.poly1305_keygen();
@@ -377,8 +375,9 @@ mod tests {
 
     #[test]
     fn poly1305_test() {
-        let key = common::hex::decode("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
-            .unwrap();
+        let key =
+            common::hex::decode("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
+                .unwrap();
         let plain = b"Cryptographic Forum Research Group";
         let tag = common::hex::decode("a8061dc1305136c6c22b8baf0c0127a9").unwrap();
 
@@ -394,7 +393,9 @@ mod tests {
 
         let aad = common::hex::decode("50515253c0c1c2c3c4c5c6c7").unwrap();
 
-        let key = common::hex::decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f").unwrap();
+        let key =
+            common::hex::decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
+                .unwrap();
 
         // 32-bit constant | iv
         let nonce = common::hex::decode("070000004041424344454647").unwrap();

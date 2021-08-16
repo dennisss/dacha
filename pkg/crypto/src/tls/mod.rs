@@ -1,18 +1,18 @@
 #[macro_use]
 mod macros;
 pub mod alert;
+pub mod application_stream;
+mod cipher;
 pub mod client;
 pub mod extensions;
 pub mod handshake;
+pub mod handshake_summary;
 pub mod key_schedule;
 pub mod options;
 mod parsing;
 pub mod record;
-pub mod transcript;
 mod record_stream;
-mod cipher;
-pub mod application_stream;
-pub mod handshake_summary;
+pub mod transcript;
 
 // Big-endian network order
 

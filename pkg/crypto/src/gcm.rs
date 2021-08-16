@@ -473,7 +473,7 @@ mod tests {
             "testdata/nist/aes_gcm/gcmDecrypt256.rsp",
             "testdata/nist/aes_gcm/gcmEncryptExtIV128.rsp",
             // "testdata/nist/aes_gcm/gcmEncryptExtIV192.rsp",
-            "testdata/nist/aes_gcm/gcmEncryptExtIV256.rsp"
+            "testdata/nist/aes_gcm/gcmEncryptExtIV256.rsp",
         ];
 
         for path in paths.iter().cloned() {
@@ -485,9 +485,9 @@ mod tests {
                 let response = response?;
 
                 // println!("Response {}", response.fields["COUNT"]);
-                
+
                 let fail = response.fields.contains_key("FAIL");
-                
+
                 let key = hex::decode(response.fields.get("KEY").unwrap())?;
                 let iv = hex::decode(response.fields.get("IV").unwrap())?;
                 let plaintext = {
@@ -519,17 +519,18 @@ mod tests {
                     v
                 };
 
-                // NOTE: Even though the files are only for just one of (encryption, decryption), we try 
-                // both directions always for thoroughness.
+                // NOTE: Even though the files are only for just one of (encryption,
+                // decryption), we try both directions always for thoroughness.
 
                 // Decrypt
                 {
                     let mut out = vec![];
-                    let result = aes.decrypt(&key, &iv, &full_ciphertext, &additional_data, &mut out);
+                    let result =
+                        aes.decrypt(&key, &iv, &full_ciphertext, &additional_data, &mut out);
                     assert_eq!(result.is_err(), fail);
                     if !fail {
                         assert_eq!(out, plaintext);
-                    } 
+                    }
                 }
 
                 // Encrypt
@@ -542,6 +543,5 @@ mod tests {
         }
 
         Ok(())
-
     }
 }

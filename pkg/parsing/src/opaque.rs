@@ -1,14 +1,14 @@
 use std::convert::From;
 use std::fmt::Write;
 
-use common::errors::*;
 use common::bytes::Bytes;
+use common::errors::*;
 
 /// A set of bytes that has no restrictions on byte values, but most likely
 /// contains visible ASCII characters.
 #[derive(Clone, PartialEq)]
 pub struct OpaqueString {
-    data: Bytes
+    data: Bytes,
 }
 
 impl OpaqueString {
@@ -37,7 +37,7 @@ impl OpaqueString {
 
         Ok(std::str::from_utf8(&self.data).unwrap())
     }
-    
+
     pub fn to_utf8_str(&self) -> Result<&str> {
         Ok(std::str::from_utf8(&self.data)?)
     }
@@ -77,7 +77,7 @@ impl std::fmt::Debug for OpaqueString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('"')?;
         for byte in self.data.iter().cloned() {
-            // TODO: Limit this to only visible 
+            // TODO: Limit this to only visible
             if byte == b'\\' {
                 write!(f, "\\\\")?;
             } else if byte == b'"' {

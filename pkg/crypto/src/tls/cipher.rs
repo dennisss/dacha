@@ -2,24 +2,24 @@ use common::async_std::sync::Mutex;
 use common::bytes::Bytes;
 
 use crate::aead::AuthEncAD;
-use crate::tls::key_schedule::*;
 use crate::hkdf::HKDF;
+use crate::tls::key_schedule::*;
 
 /// Defines how to encrypt/decrypt data on one half of a TLS connection.
 ///
-/// This is negotiated during the TLS handshake and defines which algorithm to use
-/// for encryption, what keys are currently in play, and how the keys will change
-/// in the future.
+/// This is negotiated during the TLS handshake and defines which algorithm to
+/// use for encryption, what keys are currently in play, and how the keys will
+/// change in the future.
 ///
-/// While this only defines one half of the keys in the connection, the other side
-/// will almost always be using the same AEAD and HKDF config.
+/// While this only defines one half of the keys in the connection, the other
+/// side will almost always be using the same AEAD and HKDF config.
 pub struct CipherEndpointSpec {
     pub aead: Box<dyn AuthEncAD>,
-    
+
     hkdf: HKDF,
 
     traffic_secret: Bytes,
-    
+
     /// Derived from the above traffic secret.
     ///
     /// TODO: Make this private.
@@ -38,7 +38,8 @@ impl CipherEndpointSpec {
     }
 
     pub fn replace_key(&mut self, traffic_secret: Bytes) {
-        self.keying = TrafficKeyingMaterial::from_secret(&self.hkdf, self.aead.as_ref(), &traffic_secret);
+        self.keying =
+            TrafficKeyingMaterial::from_secret(&self.hkdf, self.aead.as_ref(), &traffic_secret);
         self.traffic_secret = traffic_secret;
     }
 

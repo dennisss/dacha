@@ -12,10 +12,10 @@ pub mod ben;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
-use common::errors::*;
 use common::bytes::BytesMut;
-use parsing::ascii::AsciiString;
+use common::errors::*;
 use http::query::QueryParamsBuilder;
+use parsing::ascii::AsciiString;
 
 use crate::ben::BENValue;
 
@@ -80,7 +80,7 @@ macro_rules! ben_dict {
 
             fn try_from(value: BENValue) -> Result<Self> {
                 let mut dict = value.dict()?;
-                
+
                 $(
                     let $field = ben_try_from_dict!(dict, $key, $presence, $typ);
                 )*
@@ -121,7 +121,6 @@ impl Metainfo {
         let root_value: BENValue = parsing::complete(BENValue::parse)(input)?.0;
         root_value.try_into()
     }
-    
 }
 
 ben_dict!(
@@ -138,11 +137,9 @@ ben_dict!(
 
         /// If present, then this struct represents multiple files.
         /// MUST not be present if 'length' is present.
-        files ("files"): optional Vec<MetainfoFile>        
+        files ("files"): optional Vec<MetainfoFile>
     }
 );
-
-
 
 ben_dict!(
     pub struct MetainfoFile {
@@ -151,7 +148,6 @@ ben_dict!(
         path ("path"): required Vec<String>
     }
 );
-
 
 /// Encoded in a GET request to the tracker.
 #[derive(Debug)]
@@ -169,7 +165,6 @@ pub struct TrackerRequest {
 }
 
 impl TrackerRequest {
-
     pub fn to_query_string(&self) -> AsciiString {
         let mut qs = QueryParamsBuilder::new();
 
@@ -188,12 +183,9 @@ impl TrackerRequest {
 
         qs.build()
     }
-
 }
-
 
 #[derive(Debug)]
 struct TrackerResponse {
     failure_reason: Option<String>,
 }
-

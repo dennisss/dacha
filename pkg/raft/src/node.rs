@@ -6,23 +6,22 @@ use common::async_std::task;
 use common::errors::*;
 use common::fs::DirLock;
 use common::futures::FutureExt;
+use crypto::random;
 use crypto::random::RngExt;
 use crypto::random::SharedRngExt;
 use protobuf::Message;
-use crypto::random;
 
 use crate::atomic::*;
 use crate::discovery::*;
 use crate::log::*;
+use crate::proto::consensus::*;
+use crate::proto::routing::*;
+use crate::proto::server_metadata::*;
 use crate::routing::*;
 use crate::rpc::*;
 use crate::server::*;
 use crate::simple_log::*;
 use crate::state_machine::*;
-use crate::proto::consensus::*;
-use crate::proto::server_metadata::*;
-use crate::proto::routing::*;
-
 
 /*
     Safety considerations:
@@ -52,7 +51,7 @@ pub struct Node<R> {
 
     // TODO: Is this used for anything?
     pub server: Server<R>,
-    
+
     pub discovery: Arc<DiscoveryService>,
 
     routes_file: Mutex<BlobFile>,
@@ -109,7 +108,7 @@ impl<R: 'static + Send> Node<R> {
             let ann = Announcement::parse(&routes_data)?;
             let mut a = agent.lock().await;
             a.cluster_id = Some(meta.cluster_id()); // < Otherwise this also gets configured in Server::start, but we require that
-                                                  // it be set in order to apply a routes list
+                                                    // it be set in order to apply a routes list
             a.apply(&ann);
 
             (
@@ -173,18 +172,21 @@ impl<R: 'static + Send> Node<R> {
                 // TODO: Instead pick a random one from our list
                 // TODO: This is currently our only usage of .routes() on the
                 // agent
-                let first_id = agent.lock().await.routes().values().next().unwrap().desc().id();
+                let first_id = agent
+                    .lock()
+                    .await
+                    .routes()
+                    .values()
+                    .next()
+                    .unwrap()
+                    .desc()
+                    .id();
 
                 let mut req = ProposeRequest::default();
                 req.set_wait(true);
                 req.data_mut().set_noop(true);
 
-                let ret = client
-                    .call_propose(
-                        first_id,
-                        &req,
-                    )
-                    .await?;
+                let ret = client.call_propose(first_id, &req).await?;
 
                 // TODO: If we get here, we may get a not_leader, in which case,
                 // if we don't have information on the leader's identity, then
@@ -221,7 +223,8 @@ impl<R: 'static + Send> Node<R> {
 
             let config_file = config_builder.create(&config_snapshot.serialize()?)?;
 
-            let routes_file = routes_builder.create(&agent.lock().await.serialize().serialize()?)?;
+            let routes_file =
+                routes_builder.create(&agent.lock().await.serialize().serialize()?)?;
 
             // We save the meta file to disk last such that if the meta file exists, then we
             // know that we have a complete set of files on disk
@@ -251,13 +254,16 @@ impl<R: 'static + Send> Node<R> {
 
         let is_empty = initial_state.log.last_index().await.value() == 0;
 
-        println!("COMMIT INDEX {}", initial_state.meta.meta().commit_index().value());
+        println!(
+            "COMMIT INDEX {}",
+            initial_state.meta.meta().commit_index().value()
+        );
 
         let server = Server::new(client.clone(), initial_state).await;
 
         // TODO: Support passing in a port (and maybe also an addr)
         task::spawn(server.clone().start());
-        
+
         // TODO: Rename this.
         task::spawn(DiscoveryService::run(discovery.clone()).map(|_| ()));
 
@@ -292,12 +298,7 @@ impl<R: 'static + Send> Node<R> {
             req.data_mut().config_mut().set_AddMember(our_id);
             req.set_wait(false);
 
-            let res = client
-                .call_propose(
-                    1.into(),
-                    &req,
-                )
-                .await?;
+            let res = client.call_propose(1.into(), &req).await?;
             println!("call_propose response: {:?}", res);
         }
 

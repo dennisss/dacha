@@ -1,8 +1,8 @@
 use common::errors::*;
-use parsing::*;
-use parsing::binary::*;
 use crypto::checksum::crc::CRC32Hasher;
 use crypto::hasher::Hasher;
+use parsing::binary::*;
+use parsing::*;
 
 use crate::transform::*;
 
@@ -21,7 +21,7 @@ const ZIP64_END_OF_CENTRAL_DIR_SIG: u32 = 0x06064b50;
 const ZIP64_END_OF_CENTRAL_DIR_LOCATOR_SIG: u32 = 0x07064b50;
 const END_OF_CENTRAL_DIR_SIG: u32 = 0x06054b50;
 
-pub fn read_zip_file(mut input: &[u8]) -> Result<()> { 
+pub fn read_zip_file(mut input: &[u8]) -> Result<()> {
     while !input.is_empty() {
         let sig = parse_next!(input, le_u32);
 
@@ -40,7 +40,8 @@ pub fn read_zip_file(mut input: &[u8]) -> Result<()> {
                     data
                 };
 
-                // TODO: If we just need to check the checksum, we could decompress in chunks instead of saving the entire file in memory.
+                // TODO: If we just need to check the checksum, we could decompress in chunks
+                // instead of saving the entire file in memory.
                 let mut uncompressed: Vec<u8> = vec![];
 
                 if let CompressionMethod::Stored = header.compression_method {
@@ -50,21 +51,26 @@ pub fn read_zip_file(mut input: &[u8]) -> Result<()> {
 
                     let mut inflater = crate::deflate::Inflater::new();
 
-                    // TODO: This should be optimized to automatically read up to the known reserved size.
-                    let progress = transform_to_vec(&mut inflater, file_data, true, &mut uncompressed)?;
+                    // TODO: This should be optimized to automatically read up to the known reserved
+                    // size.
+                    let progress =
+                        transform_to_vec(&mut inflater, file_data, true, &mut uncompressed)?;
 
-                    if !progress.done || progress.input_read != file_data.len() || progress.output_written != uncompressed.len() {
+                    if !progress.done
+                        || progress.input_read != file_data.len()
+                        || progress.output_written != uncompressed.len()
+                    {
                         println!("{:?}", header);
                         println!("{:?}", progress);
 
                         return Err(err_msg("Too many/few deflate bytes"));
                     }
-
                 } else {
-                    return Err(format_err!("Unsupported compression method: {:?}", header.compression_method));
+                    return Err(format_err!(
+                        "Unsupported compression method: {:?}",
+                        header.compression_method
+                    ));
                 }
-
-
 
                 let mut hasher = CRC32Hasher::new();
                 hasher.update(&uncompressed);
@@ -85,7 +91,6 @@ pub fn read_zip_file(mut input: &[u8]) -> Result<()> {
         } else if sig == CENTRAL_DIR_SIG {
             let header = parse_next!(input, CentralDirectoryFileHeader::parse);
             println!("{:?}", header);
-
         } else if sig == END_OF_CENTRAL_DIR_SIG {
             let header = parse_next!(input, EndOfCentralDirectoryRecord::parse);
             println!("{:?}", header);

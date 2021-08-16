@@ -432,7 +432,8 @@ impl Connection {
         };
 
         if graceful {
-            // We'll keep the upper_received_stream_id at MAX_STREAM_ID and just send a GOAWAY.
+            // We'll keep the upper_received_stream_id at MAX_STREAM_ID and just send a
+            // GOAWAY.
 
             if shared.is_server {
                 // We won't make any changes to the upper_received_stream_id so that in-flight
@@ -480,7 +481,8 @@ impl Connection {
                 .await;
         }
 
-        // TODO: We should also immediately cancel anything in 'pending_requests'
+        // TODO: We should also immediately cancel anything in
+        // 'pending_requests'
     }
 
     fn wait_shutdown_timeout(

@@ -5,9 +5,9 @@ use common::errors::*;
 use parsing::binary::*;
 use parsing::*;
 
-use crate::dh::DiffieHellmanFn;
 use super::handshake::{HandshakeType, ProtocolVersion};
 use super::parsing::*;
+use crate::dh::DiffieHellmanFn;
 
 // List of all extensions: https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xml
 
@@ -19,7 +19,6 @@ use super::parsing::*;
 // TODO: 'There MUST NOT be more than one extension of the same type.'
 
 // TODO: Validate which extensions are allowed to go in which message types.
-
 
 /*
 struct {
@@ -43,13 +42,16 @@ pub enum Extension {
 
     KeyShareClientHello(KeyShareClientHello),
 
-    /// TODO: It is difficult to have this. 
+    /// TODO: It is difficult to have this.
     KeyShareHelloRetryRequest(KeyShareHelloRetryRequest),
     KeyShareServerHello(KeyShareServerHello),
 
     ALPN(ProtocolNameList),
 
-    Unknown { typ: u16, data: Bytes },
+    Unknown {
+        typ: u16,
+        data: Bytes,
+    },
 }
 
 impl Extension {
@@ -182,7 +184,7 @@ macro_rules! extension_accessor {
                         _ => None
                     }
                 }
-                None => None 
+                None => None
             }
         }
     };
@@ -205,7 +207,6 @@ impl ExtensionsCollection {
     // KeyShareServerHello(KeyShareServerHello),
 }
 */
-
 
 /*
 ExtensionsCollection
@@ -313,9 +314,7 @@ impl ExtensionType {
             ServerName => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             MaxFragmentLength => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             StatusRequest => {
-                msg_type == ClientHello
-                    || msg_type == CertificateRequest
-                    || msg_type == Certificate
+                msg_type == ClientHello || msg_type == CertificateRequest || msg_type == Certificate
             }
             SupportedGroups => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             SignatureAlgorithms => (msg_type == ClientHello || msg_type == CertificateRequest),
@@ -325,21 +324,14 @@ impl ExtensionType {
                 msg_type == ClientHello || msg_type == EncryptedExtensions
             }
             SignedCertificateTimestamp => {
-                msg_type == ClientHello
-                    || msg_type == CertificateRequest
-                    || msg_type == Certificate
+                msg_type == ClientHello || msg_type == CertificateRequest || msg_type == Certificate
             }
-            ClientCertificateType => {
-                msg_type == ClientHello || msg_type == EncryptedExtensions
-            }
-            ServerCertificateType => {
-                msg_type == ClientHello || msg_type == EncryptedExtensions
-            }
+            ClientCertificateType => msg_type == ClientHello || msg_type == EncryptedExtensions,
+            ServerCertificateType => msg_type == ClientHello || msg_type == EncryptedExtensions,
             Padding => (msg_type == ClientHello),
             KeyShare => {
-                msg_type == ClientHello
-                    || msg_type == ServerHello
-                 //   || msg_type == HelloRetryRequest
+                msg_type == ClientHello || msg_type == ServerHello
+                //   || msg_type == HelloRetryRequest
             }
             PreSharedKey => (msg_type == ClientHello || msg_type == ServerHello),
             PskKeyExchangeModes => (msg_type == ClientHello),
@@ -348,10 +340,9 @@ impl ExtensionType {
                     || msg_type == EncryptedExtensions
                     || msg_type == NewSessionTicket
             }
-            Cookie => (msg_type == ClientHello /* || msg_type == HelloRetryRequest */),
+            Cookie => (msg_type == ClientHello/* || msg_type == HelloRetryRequest */),
             SupportedVersions => {
-                msg_type == ClientHello
-                    || msg_type == ServerHello
+                msg_type == ClientHello || msg_type == ServerHello
                 //  || msg_type == HelloRetryRequest
             }
             CertificateAuthorities => (msg_type == ClientHello || msg_type == Certificate),
@@ -530,8 +521,8 @@ pub enum NamedGroup {
     Unknown(u16),
 }
 
-use crate::elliptic::MontgomeryCurveGroup;
 use crate::elliptic::EllipticCurveGroup;
+use crate::elliptic::MontgomeryCurveGroup;
 
 impl NamedGroup {
     pub fn create(&self) -> Option<Box<dyn DiffieHellmanFn>> {
@@ -540,15 +531,16 @@ impl NamedGroup {
             NamedGroup::secp521r1 => Box::new(EllipticCurveGroup::secp521r1()),
             NamedGroup::x25519 => Box::new(MontgomeryCurveGroup::x25519()),
             NamedGroup::x448 => Box::new(MontgomeryCurveGroup::x448()),
-            _ => { return None; }
-            // NamedGroup::ffdhe2048 => {}
-            // NamedGroup::ffdhe3072 => {}
-            // NamedGroup::ffdhe4096 => {}
-            // NamedGroup::ffdhe6144 => {}
-            // NamedGroup::ffdhe8192 => {}
-            // NamedGroup::ffdhe_private_use(_) => {}
-            // NamedGroup::ecdhe_private_use(_) => {}
-            // NamedGroup::Unknown(_) => {}
+            _ => {
+                return None;
+            } /* NamedGroup::ffdhe2048 => {}
+               * NamedGroup::ffdhe3072 => {}
+               * NamedGroup::ffdhe4096 => {}
+               * NamedGroup::ffdhe6144 => {}
+               * NamedGroup::ffdhe8192 => {}
+               * NamedGroup::ffdhe_private_use(_) => {}
+               * NamedGroup::ecdhe_private_use(_) => {}
+               * NamedGroup::Unknown(_) => {} */
         })
     }
 
@@ -996,7 +988,6 @@ impl UncompressedPointRepresentation {
     }
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 // RFC 7301: Section 3.1
 // https://datatracker.ietf.org/doc/html/rfc7301#section-3.1
@@ -1012,7 +1003,7 @@ struct {
 #[derive(Debug, Clone)]
 pub struct ProtocolNameList {
     /// In descending order of preferance.
-    pub names: Vec<Bytes>
+    pub names: Vec<Bytes>,
 }
 
 impl ProtocolNameList {
@@ -1035,4 +1026,3 @@ impl ProtocolNameList {
         });
     }
 }
-

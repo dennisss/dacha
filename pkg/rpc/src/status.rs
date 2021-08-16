@@ -4,7 +4,7 @@
 use std::fmt::Write;
 
 use common::errors::*;
-use http::{Headers, Header};
+use http::{Header, Headers};
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
 
@@ -17,16 +17,22 @@ pub struct Status {
     pub code: StatusCode,
 
     /// NOTE: Will always be encoded over the wire as UTF-8
-    pub message: String
+    pub message: String,
 }
 
 impl Status {
     pub fn not_found<S: Into<String>>(message: S) -> Self {
-        Self { code: StatusCode::NotFound, message: message.into() }        
+        Self {
+            code: StatusCode::NotFound,
+            message: message.into(),
+        }
     }
 
     pub fn invalid_argument<S: Into<String>>(message: S) -> Self {
-        Self { code: StatusCode::InvalidArgument, message: message.into() }
+        Self {
+            code: StatusCode::InvalidArgument,
+            message: message.into(),
+        }
     }
 
     pub fn from_headers(headers: &Headers) -> Result<Self> {
@@ -36,7 +42,8 @@ impl Status {
         let mut message = String::new();
         if headers.has(GRPC_STATUS_MESSAGE) {
             // Raw message (ASCII and still percent encoded)
-            let raw_message = std::str::from_utf8(headers.find_one(GRPC_STATUS_MESSAGE)?.value.as_bytes())?;
+            let raw_message =
+                std::str::from_utf8(headers.find_one(GRPC_STATUS_MESSAGE)?.value.as_bytes())?;
 
             // TODO: Decode according to the restricted form of allowed characters.
             // Noteably the grpc spec says that we should resilient to errors.
@@ -46,12 +53,15 @@ impl Status {
 
         Ok(Self {
             code: StatusCode::from_value(code)?,
-            message
+            message,
         })
     }
 
     pub fn ok() -> Self {
-        Self { code: StatusCode::Ok, message: String::new() }
+        Self {
+            code: StatusCode::Ok,
+            message: String::new(),
+        }
     }
 
     pub fn is_ok(&self) -> bool {
@@ -61,7 +71,7 @@ impl Status {
     pub fn append_to_headers(&self, headers: &mut Headers) -> Result<()> {
         headers.raw_headers.push(Header {
             name: AsciiString::from(GRPC_STATUS)?,
-            value: OpaqueString::from(self.code.to_value().to_string())
+            value: OpaqueString::from(self.code.to_value().to_string()),
         });
 
         if !self.message.is_empty() {
@@ -76,7 +86,7 @@ impl Status {
 
             headers.raw_headers.push(Header {
                 name: AsciiString::from(GRPC_STATUS_MESSAGE)?,
-                value: OpaqueString::from(encoded_message)
+                value: OpaqueString::from(encoded_message),
             });
         }
 
@@ -108,4 +118,3 @@ enum_def!(StatusCode usize =>
     DataLoss = 15,
     Unauthenticated = 16
 );
-

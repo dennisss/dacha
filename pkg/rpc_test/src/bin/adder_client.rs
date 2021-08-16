@@ -2,9 +2,9 @@
 #![feature(fn_traits)]
 #[macro_use]
 extern crate common;
+extern crate http;
 extern crate rpc;
 extern crate rpc_test;
-extern crate http;
 #[macro_use]
 extern crate macros;
 
@@ -17,7 +17,7 @@ use rpc_test::proto::adder::*;
 
 #[derive(Args)]
 struct Args {
-    target: String
+    target: String,
 }
 
 async fn run_client() -> Result<()> {
@@ -28,7 +28,8 @@ async fn run_client() -> Result<()> {
 
     // TODO: Specify the gRPC protocal in uri?
     let channel = Arc::new(rpc::Http2Channel::create(
-        http::ClientOptions::from_authority(args.target.as_str())?)?);
+        http::ClientOptions::from_authority(args.target.as_str())?,
+    )?);
     let stub = AdderStub::new(channel);
 
     let mut req = AddRequest::default();
@@ -36,7 +37,9 @@ async fn run_client() -> Result<()> {
     req.set_y(6);
 
     if true {
-        let (mut req_stream, mut res_stream) = stub.AddStreaming(&rpc::ClientRequestContext::default()).await;
+        let (mut req_stream, mut res_stream) = stub
+            .AddStreaming(&rpc::ClientRequestContext::default())
+            .await;
 
         loop {
             if !req_stream.send(&req).await {
@@ -54,17 +57,14 @@ async fn run_client() -> Result<()> {
         }
 
         return res_stream.finish().await;
-
-
     } else {
+        let res = stub
+            .Add(&rpc::ClientRequestContext::default(), &req)
+            .await
+            .result?;
 
-    
-        let res = stub.Add(&rpc::ClientRequestContext::default(), &req).await.result?;
-    
         println!("{}", res.z());
     }
-
-
 
     Ok(())
 }

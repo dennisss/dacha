@@ -2,20 +2,20 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Duration;
 
-use common::CancellationToken;
+use common::async_std::channel;
 use common::async_std::net::{TcpListener, TcpStream};
+use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::errors::*;
 use common::futures::stream::StreamExt;
 use common::io::*;
-use common::async_std::sync::Mutex;
-use common::async_std::channel;
 use common::task::ChildTask;
+use common::CancellationToken;
 
 use crate::message::*;
 use crate::message_body::{decode_request_body_v1, encode_response_body_v1};
@@ -37,34 +37,36 @@ use crate::v2;
 
 #[derive(Clone)]
 pub struct ServerOptions {
-
-    /// If true, we will only accept HTTPv2 connections. Setting this to true will improve the
-    /// performance of V2 connections as we will internally bypass buffering done with V1.
+    /// If true, we will only accept HTTPv2 connections. Setting this to true
+    /// will improve the performance of V2 connections as we will internally
+    /// bypass buffering done with V1.
     pub force_http2: bool,
-
 
     pub connection_options_v2: v2::ConnectionOptions,
 
     /// TODO: Provide a reasonable default and implement me.
     pub max_num_connections: usize,
 
-    /// For v2 connections, min(graceful_shutdown_timeout, connection_options_v2.server_graceful_shutdown_timeout) will effectively be used
-    pub graceful_shutdown_timeout: Duration
+    /// For v2 connections, min(graceful_shutdown_timeout,
+    /// connection_options_v2.server_graceful_shutdown_timeout) will effectively
+    /// be used
+    pub graceful_shutdown_timeout: Duration,
 }
 
 impl Default for ServerOptions {
     fn default() -> Self {
         let connection_options_v2 = v2::ConnectionOptions::default();
-        
+
         Self {
             force_http2: false,
             connection_options_v2: connection_options_v2.clone(),
             max_num_connections: 1000,
-            graceful_shutdown_timeout: connection_options_v2.server_graceful_shutdown_timeout.clone()
+            graceful_shutdown_timeout: connection_options_v2
+                .server_graceful_shutdown_timeout
+                .clone(),
         }
     }
 }
-
 
 #[async_trait]
 pub trait RequestHandler: 'static + Send + Sync {
@@ -129,7 +131,7 @@ pub struct Server {
 
     shutdown_token: Option<Box<dyn CancellationToken>>,
 
-    shutdown_timer: Option<task::JoinHandle<()>>
+    shutdown_timer: Option<task::JoinHandle<()>>,
 }
 
 struct ServerShared {
@@ -139,20 +141,22 @@ struct ServerShared {
 
     connection_pool: Mutex<ServerConnectionPool>,
 
-    // TODO: Make the channels broadcast to all listeners in the case that we call run() multiple times.
-
-    /// An event is sent on this channel whenever we remove a connection from the connection pool
-    /// and that causes the pool to become empty.
+    // TODO: Make the channels broadcast to all listeners in the case that we call run() multiple
+    // times.
+    /// An event is sent on this channel whenever we remove a connection from
+    /// the connection pool and that causes the pool to become empty.
     ///
-    /// This is used during server shutdown to know when we are done shutting down.
+    /// This is used during server shutdown to know when we are done shutting
+    /// down.
     connection_pool_empty_channel: (channel::Sender<()>, channel::Receiver<()>),
 
     shutting_down: AtomicBool,
 }
 
-// TODO: We could possibly improve performance if instead of maintaining a connection map, we simply
-// maintain a AtomicUsize with the number of connections and have a way to copy and propagate the
-// cancellation token to individual connection tasks.
+// TODO: We could possibly improve performance if instead of maintaining a
+// connection map, we simply maintain a AtomicUsize with the number of
+// connections and have a way to copy and propagate the cancellation token to
+// individual connection tasks.
 struct ServerConnectionPool {
     connections: HashMap<usize, ServerConnection>,
     last_id: usize,
@@ -166,27 +170,27 @@ struct ServerConnection {
 }
 
 enum ServerConnectionMode {
-    /// In this mode, we are still waiting for the client to send a message head indicating which
-    /// version it wants to use. 
+    /// In this mode, we are still waiting for the client to send a message head
+    /// indicating which version it wants to use.
     Unknown,
-    
+
     V1,
 
-    V2(v2::Connection)
+    V2(v2::Connection),
 }
 
 enum ServerConnectionV2Input {
     Raw,
     Upgrade(Request),
-    SkipPrefaceHead
+    SkipPrefaceHead,
 }
 
 impl Drop for Server {
     fn drop(&mut self) {
         if !self.shutdown_timer.is_some() {
             let shared = self.shared.clone();
-            // TODO: If all connections die earlier than this timeout, then we should support
-            // cleaning up this timeout.
+            // TODO: If all connections die earlier than this timeout, then we should
+            // support cleaning up this timeout.
             task::spawn(Self::run_shutdown_timer(shared));
         }
     }
@@ -220,15 +224,19 @@ impl Server {
     /// Shutdown internal behaviors:
     /// - We will immediately stop accepting new connections.
     /// - If graceful = true,
-    ///   - For all ongoing HTTPv2 connections, we will call v2::Connection::shutdown(true)
-    ///   - For all ongoing HTTPv1|Unknown connections, we will close the connection after when the
-    ///     next response is fully sent out.
-    ///     - This means that if the client is using pipelining, that all future requests already
-    ///       enqueued on the connection might have already been partially processed.
+    ///   - For all ongoing HTTPv2 connections, we will call
+    ///     v2::Connection::shutdown(true)
+    ///   - For all ongoing HTTPv1|Unknown connections, we will close the
+    ///     connection after when the next response is fully sent out.
+    ///     - This means that if the client is using pipelining, that all future
+    ///       requests already enqueued on the connection might have already
+    ///       been partially processed.
     ///   - We will start a timeout to start an abrupt shutdown
     /// - If abruptly shutting down, (graceful = false),
-    ///   - We will call v2::Connection::shutdown(false) for all HTTPv2 connections.
-    ///   - We will cancel all Unknown version or V1 connection tasks immediately.
+    ///   - We will call v2::Connection::shutdown(false) for all HTTPv2
+    ///     connections.
+    ///   - We will cancel all Unknown version or V1 connection tasks
+    ///     immediately.
     /// - In all cases, shutdown is over once all connection tasks have exited.
     ///
     /// TODO: Currently this is always called with graceful.
@@ -263,10 +271,10 @@ impl Server {
                     if !graceful {
                         cancel_ids.push(connection_id);
                     }
-                },
+                }
                 ServerConnectionMode::V2(conn_v2) => {
                     conn_v2.shutdown(graceful).await;
-                },
+                }
             }
         }
 
@@ -283,12 +291,12 @@ impl Server {
     // TODO: Ideally we'd support using some alternative connection (e.g. a
     // TlsServer)
 
-    /// Starts listening on the given port and processes new connections until the server
-    /// is shut down.
+    /// Starts listening on the given port and processes new connections until
+    /// the server is shut down.
     pub async fn run(mut self, port: u16) -> Result<()> {
         enum Event {
             NextStream(Option<Result<TcpStream>>),
-            Shutdown
+            Shutdown,
         }
 
         let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
@@ -296,17 +304,18 @@ impl Server {
         let mut incoming = listener.incoming();
         loop {
             let next_stream = common::future::map(
-                incoming.next(), |v: Option<std::result::Result<TcpStream, std::io::Error>>| Event::NextStream(v.map(
-                    |r| r.map_err(|e| Error::from(e)))));
+                incoming.next(),
+                |v: Option<std::result::Result<TcpStream, std::io::Error>>| {
+                    Event::NextStream(v.map(|r| r.map_err(|e| Error::from(e))))
+                },
+            );
 
             let event = {
                 if let Some(shutdown_token) = &self.shutdown_token {
-
-                    let shutdown_event = common::future::map(
-                        shutdown_token.wait(), |_| Event::Shutdown);
+                    let shutdown_event =
+                        common::future::map(shutdown_token.wait(), |_| Event::Shutdown);
 
                     common::future::race(next_stream, shutdown_event).await
-
                 } else {
                     next_stream.await
                 }
@@ -317,18 +326,22 @@ impl Server {
                     let s = stream?;
 
                     let mut connection_pool = self.shared.connection_pool.lock().await;
-        
-                    // TODO: Support over usize # of connections by wrapping and checking if the id is already
-                    // in the hashmap.
+
+                    // TODO: Support over usize # of connections by wrapping and checking if the id
+                    // is already in the hashmap.
                     let connection_id = connection_pool.last_id + 1;
                     connection_pool.last_id = connection_id;
-        
-                    let task_handle = task::spawn(Self::handle_stream(self.shared.clone(), connection_id, s));
-        
-                    connection_pool.connections.insert(connection_id, ServerConnection {
-                        task_handle,
-                        mode: ServerConnectionMode::Unknown
-                    });
+
+                    let task_handle =
+                        task::spawn(Self::handle_stream(self.shared.clone(), connection_id, s));
+
+                    connection_pool.connections.insert(
+                        connection_id,
+                        ServerConnection {
+                            task_handle,
+                            mode: ServerConnectionMode::Unknown,
+                        },
+                    );
                 }
                 Event::NextStream(None) => {
                     return Err(err_msg("Listener ended early"));
@@ -340,7 +353,8 @@ impl Server {
             }
         }
 
-        // TODO: Verify that when we stop accepting connections, any active connections stay active.
+        // TODO: Verify that when we stop accepting connections, any active connections
+        // stay active.
         drop(incoming);
         drop(listener);
 
@@ -385,11 +399,22 @@ impl Server {
     // TODO: Verify that the HTTP2 error handling works ok.
 
     // TODO: Errors in here should close the connection.
-    async fn handle_stream_impl(shared: &Arc<ServerShared>, connection_id: usize, stream: TcpStream) -> Result<()> {
+    async fn handle_stream_impl(
+        shared: &Arc<ServerShared>,
+        connection_id: usize,
+        stream: TcpStream,
+    ) -> Result<()> {
         if shared.options.force_http2 {
             let reader = Box::new(stream.clone());
             let writer = Box::new(stream);
-            return Self::handle_stream_v2(shared, connection_id, reader, writer, ServerConnectionV2Input::Raw).await;
+            return Self::handle_stream_v2(
+                shared,
+                connection_id,
+                reader,
+                writer,
+                ServerConnectionV2Input::Raw,
+            )
+            .await;
         }
 
         let mut write_stream = stream.clone();
@@ -465,9 +490,14 @@ impl Server {
                         .into());
                     }
 
-                    return Self::handle_stream_v2(shared, connection_id, 
-                        Box::new(read_stream), Box::new(write_stream), 
-                        ServerConnectionV2Input::SkipPrefaceHead).await;
+                    return Self::handle_stream_v2(
+                        shared,
+                        connection_id,
+                        Box::new(read_stream),
+                        Box::new(write_stream),
+                        ServerConnectionV2Input::SkipPrefaceHead,
+                    )
+                    .await;
                 }
                 _ => {
                     println!("Unsupported http version: {:?}", request_line.version);
@@ -583,9 +613,13 @@ impl Server {
                 let reader = DeferredReadable::wrap(reader_waiter.wait());
 
                 return Self::handle_stream_v2(
-                    shared, connection_id,
-                    Box::new(reader), Box::new(write_stream),
-                    ServerConnectionV2Input::Upgrade(req)).await;
+                    shared,
+                    connection_id,
+                    Box::new(reader),
+                    Box::new(write_stream),
+                    ServerConnectionV2Input::Upgrade(req),
+                )
+                .await;
             }
 
             // TODO: Apply the transforms here.
@@ -645,32 +679,37 @@ impl Server {
     }
 
     async fn handle_stream_v2(
-        shared: &Arc<ServerShared>, connection_id: usize,
-        reader: Box<dyn Readable>, writer: Box<dyn Writeable>,
-        input: ServerConnectionV2Input
+        shared: &Arc<ServerShared>,
+        connection_id: usize,
+        reader: Box<dyn Readable>,
+        writer: Box<dyn Writeable>,
+        input: ServerConnectionV2Input,
     ) -> Result<()> {
         let options = shared.options.connection_options_v2.clone();
-        let server_handler = ServerRequestHandlerV2 { shared: shared.clone() };
+        let server_handler = ServerRequestHandlerV2 {
+            shared: shared.clone(),
+        };
         let conn = v2::Connection::new(options, Some(Box::new(server_handler)));
 
         let mut initial_state = v2::ConnectionInitialState::raw();
 
         match input {
-            ServerConnectionV2Input::Raw => {},
+            ServerConnectionV2Input::Raw => {}
             ServerConnectionV2Input::Upgrade(req) => {
                 conn.receive_upgrade_request(req).await?;
 
                 initial_state.upgrade_payload = Some(Box::new(std::io::Cursor::new(
                     b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n" as &'static [u8])));
-            },
+            }
             ServerConnectionV2Input::SkipPrefaceHead => {
                 initial_state.seen_preface_head = true;
-            },
+            }
         }
 
         let conn_runner = conn.run(initial_state, reader, writer);
 
-        // Mark this connection as V2 so that we can perform graceful shutdown if needed.
+        // Mark this connection as V2 so that we can perform graceful shutdown if
+        // needed.
         {
             let mut connection_pool = shared.connection_pool.lock().await;
             let connection = connection_pool.connections.get_mut(&connection_id).unwrap();
@@ -678,7 +717,6 @@ impl Server {
         }
 
         return conn_runner.await;
-
     }
 
     // TODO: call me?
@@ -709,7 +747,7 @@ impl Server {
 /// Request handler used by the 'Server' for HTTP 2 connections.
 /// It wraps the regular request handler given to the 'Server'
 struct ServerRequestHandlerV2 {
-    shared: Arc<ServerShared>
+    shared: Arc<ServerShared>,
 }
 
 #[async_trait]

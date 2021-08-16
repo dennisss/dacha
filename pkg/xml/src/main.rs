@@ -3,10 +3,9 @@ extern crate xml;
 
 use common::errors::*;
 
-
 fn main() -> Result<()> {
-    let input = std::fs::read_to_string(
-        common::project_dir().join("third_party/nordic/nrf52840.svd"))?;
+    let input =
+        std::fs::read_to_string(common::project_dir().join("third_party/nordic/nrf52840.svd"))?;
     let doc = xml::parse(&input)?;
 
     for node in &doc.root_element.content {
@@ -18,7 +17,7 @@ fn main() -> Result<()> {
                     println!("{:?}", e.content);
                     break;
                 }
-            },
+            }
             xml::Node::Text(t) => {
                 println!("TEXT: {:?}", t);
             }
@@ -27,7 +26,6 @@ fn main() -> Result<()> {
     }
 
     println!("{}", doc.root_element.name);
-
 
     Ok(())
 }

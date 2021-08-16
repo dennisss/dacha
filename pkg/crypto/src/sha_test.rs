@@ -6,14 +6,12 @@
 use common::errors::*;
 use common::hex;
 
-use crate::hasher::{HasherFactory, GetHasherFactory};
+use crate::hasher::{GetHasherFactory, HasherFactory};
 use crate::sha1::*;
 use crate::sha224::*;
 use crate::sha256::*;
 use crate::sha384::*;
 use crate::sha512::*;
-
-
 
 async fn run_nist_hasher_test(hasher_factory: HasherFactory, paths: &[&'static str]) -> Result<()> {
     let project_dir = common::project_dir();
@@ -49,56 +47,84 @@ async fn run_nist_hasher_test(hasher_factory: HasherFactory, paths: &[&'static s
 
 #[async_std::test]
 async fn sha1_nist_test() -> Result<()> {
-    run_nist_hasher_test(SHA1Hasher::factory(), &[
-        "testdata/nist/shabytetestvectors/SHA1LongMsg.rsp",
-        "testdata/nist/shabytetestvectors/SHA1ShortMsg.rsp",
-    ]).await
+    run_nist_hasher_test(
+        SHA1Hasher::factory(),
+        &[
+            "testdata/nist/shabytetestvectors/SHA1LongMsg.rsp",
+            "testdata/nist/shabytetestvectors/SHA1ShortMsg.rsp",
+        ],
+    )
+    .await
 }
 
 #[async_std::test]
 async fn sha224_nist_test() -> Result<()> {
-    run_nist_hasher_test(SHA224Hasher::factory(), &[
-        "testdata/nist/shabytetestvectors/SHA224LongMsg.rsp",
-        "testdata/nist/shabytetestvectors/SHA224ShortMsg.rsp"
-    ]).await
+    run_nist_hasher_test(
+        SHA224Hasher::factory(),
+        &[
+            "testdata/nist/shabytetestvectors/SHA224LongMsg.rsp",
+            "testdata/nist/shabytetestvectors/SHA224ShortMsg.rsp",
+        ],
+    )
+    .await
 }
 
 #[async_std::test]
 async fn sha256_nist_test() -> Result<()> {
-    run_nist_hasher_test(SHA256Hasher::factory(), &[
-        "testdata/nist/shabytetestvectors/SHA256LongMsg.rsp",
-        "testdata/nist/shabytetestvectors/SHA256ShortMsg.rsp"
-    ]).await
+    run_nist_hasher_test(
+        SHA256Hasher::factory(),
+        &[
+            "testdata/nist/shabytetestvectors/SHA256LongMsg.rsp",
+            "testdata/nist/shabytetestvectors/SHA256ShortMsg.rsp",
+        ],
+    )
+    .await
 }
 
 #[async_std::test]
 async fn sha384_nist_test() -> Result<()> {
-    run_nist_hasher_test(SHA384Hasher::factory(), &[
-        "testdata/nist/shabytetestvectors/SHA384LongMsg.rsp",
-        "testdata/nist/shabytetestvectors/SHA384ShortMsg.rsp"
-    ]).await
+    run_nist_hasher_test(
+        SHA384Hasher::factory(),
+        &[
+            "testdata/nist/shabytetestvectors/SHA384LongMsg.rsp",
+            "testdata/nist/shabytetestvectors/SHA384ShortMsg.rsp",
+        ],
+    )
+    .await
 }
 
 #[async_std::test]
 async fn sha512_224_nist_test() -> Result<()> {
-    run_nist_hasher_test(SHA512_224Hasher::factory(), &[
-        "testdata/nist/shabytetestvectors/SHA512_224LongMsg.rsp",
-        "testdata/nist/shabytetestvectors/SHA512_224ShortMsg.rsp"
-    ]).await
+    run_nist_hasher_test(
+        SHA512_224Hasher::factory(),
+        &[
+            "testdata/nist/shabytetestvectors/SHA512_224LongMsg.rsp",
+            "testdata/nist/shabytetestvectors/SHA512_224ShortMsg.rsp",
+        ],
+    )
+    .await
 }
 
 #[async_std::test]
 async fn sha512_256_nist_test() -> Result<()> {
-    run_nist_hasher_test(SHA512_256Hasher::factory(), &[
-        "testdata/nist/shabytetestvectors/SHA512_256LongMsg.rsp",
-        "testdata/nist/shabytetestvectors/SHA512_256ShortMsg.rsp"
-    ]).await
+    run_nist_hasher_test(
+        SHA512_256Hasher::factory(),
+        &[
+            "testdata/nist/shabytetestvectors/SHA512_256LongMsg.rsp",
+            "testdata/nist/shabytetestvectors/SHA512_256ShortMsg.rsp",
+        ],
+    )
+    .await
 }
 
 #[async_std::test]
 async fn sha512_nist_test() -> Result<()> {
-    run_nist_hasher_test(SHA512Hasher::factory(), &[
-        "testdata/nist/shabytetestvectors/SHA512LongMsg.rsp",
-        "testdata/nist/shabytetestvectors/SHA512ShortMsg.rsp"
-    ]).await
+    run_nist_hasher_test(
+        SHA512Hasher::factory(),
+        &[
+            "testdata/nist/shabytetestvectors/SHA512LongMsg.rsp",
+            "testdata/nist/shabytetestvectors/SHA512ShortMsg.rsp",
+        ],
+    )
+    .await
 }

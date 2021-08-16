@@ -18,5 +18,5 @@ pub struct HandshakeSummary {
     /// certificate can be assumed to have already been validated for having
     /// a valid expiration time, chain of trust, and its private keys have
     /// been verified to be known by the remote endpoint.
-    pub certificate: Option<Arc<x509::Certificate>>
+    pub certificate: Option<Arc<x509::Certificate>>,
 }

@@ -3,10 +3,10 @@ use std::collections::{HashMap, HashSet};
 use common::async_std::task::current;
 use common::errors::*;
 
+use crate::descriptor_iter::Descriptor;
 use crate::descriptors::{SetupPacket, StandardRequestType};
 use crate::endpoint::is_in_endpoint;
 use crate::linux::Device;
-use crate::descriptor_iter::Descriptor;
 
 /*
 
@@ -78,10 +78,9 @@ macro_rules! bit_flags {
 
                 write!(f, "{}", set.join(" | "))
             }
-        } 
+        }
     };
 }
-
 
 enum_def!(ShortItemCategory u8 =>
     Main = 0,
@@ -111,8 +110,7 @@ bit_flags!(ValueFlags =>
     bit 8 ; bit_field (0) | buffered_bytes (1)
 );
 
-
-enum_def_with_unknown!(CollectionItemType u8 => 
+enum_def_with_unknown!(CollectionItemType u8 =>
     Physical = 0x00,
     Application = 0x01,
     Logical = 0x02,
@@ -121,7 +119,6 @@ enum_def_with_unknown!(CollectionItemType u8 =>
     UsageSwitch = 0x05,
     UsageModifier = 0x06
 );
-
 
 enum_def_with_unknown!(GlobalItemTag u8 =>
     UsagePage = 0,
@@ -157,17 +154,17 @@ pub enum Item {
     Output(ValueFlags),
     Feature(ValueFlags),
     Collection {
-        typ: CollectionItemType,   
-        items: Vec<Item>
+        typ: CollectionItemType,
+        items: Vec<Item>,
     },
 
     Global {
         tag: GlobalItemTag,
-        value: u32   
+        value: u32,
     },
     Local {
         tag: LocalItemTag,
-        value: u32
+        value: u32,
     },
 
     Short {
@@ -177,8 +174,8 @@ pub enum Item {
     },
     Long {
         tag: u8,
-        data: Vec<u8>
-    }
+        data: Vec<u8>,
+    },
 }
 
 impl Item {
@@ -190,7 +187,6 @@ impl Item {
             }
         }
     }
-
 }
 
 /*
@@ -205,13 +201,6 @@ enum_def_with_unknown!(ReportType u8 =>
     Output = 2,
     Feature = 3
 );
-
-
-
-
-
-
-
 
 pub fn parse_items(mut input: &[u8]) -> Result<Vec<Item>> {
     // TODO: Check for out of bounds issues.
@@ -230,7 +219,7 @@ pub fn parse_items(mut input: &[u8]) -> Result<Vec<Item>> {
 
             items.push(Item::Long {
                 tag: long_item_tag,
-                data: data.to_vec()
+                data: data.to_vec(),
             });
         } else {
             let mut size = (prefix & 0b11) as usize;
@@ -258,66 +247,65 @@ pub fn parse_items(mut input: &[u8]) -> Result<Vec<Item>> {
                         MainItemTag::Input => {
                             let flags = ValueFlags::from(value);
                             items.push(Item::Input(flags));
-                        },
+                        }
                         MainItemTag::Output => {
                             let flags = ValueFlags::from(value);
                             items.push(Item::Output(flags));
-                        },
+                        }
                         MainItemTag::Feature => {
                             let flags = ValueFlags::from(value);
                             items.push(Item::Feature(flags));
-                        },
+                        }
                         MainItemTag::Collection => {
                             // TODO: Assert that there's up to 1 byte of data
 
                             let typ = CollectionItemType::from_value(value as u8);
-                            
+
                             collection_stack.push((items, typ));
                             items = vec![];
-                        },
+                        }
                         MainItemTag::EndCollection => {
                             if size != 0 {
-                                return Err(err_msg("Expected no data for the End Collection item"));
+                                return Err(err_msg(
+                                    "Expected no data for the End Collection item",
+                                ));
                             }
 
                             // TODO: Assert that there is no data in this case.
 
-                            let (mut parent_items, collection_typ) = collection_stack.pop()
+                            let (mut parent_items, collection_typ) = collection_stack
+                                .pop()
                                 .ok_or_else(|| err_msg("Unexpected End Collection"))?;
-                            
+
                             parent_items.push(Item::Collection {
                                 typ: collection_typ,
-                                items
+                                items,
                             });
 
                             items = parent_items;
-                        },
+                        }
                         MainItemTag::Unknown(tag) => {
                             items.push(Item::Short {
                                 category,
                                 tag,
-                                value
+                                value,
                             });
-                        },
+                        }
                     }
-
                 }
                 ShortItemCategory::Global => {
                     let tag = GlobalItemTag::from_value(tag);
-                    items.push(Item::Global {
-                        tag, value
-                    });
+                    items.push(Item::Global { tag, value });
                 }
                 ShortItemCategory::Local => {
                     let tag = LocalItemTag::from_value(tag);
-                    items.push(Item::Local {
-                        tag, value
-                    });
+                    items.push(Item::Local { tag, value });
                 }
                 ShortItemCategory::Reserved => {
                     items.push(Item::Short {
                         category,
-                        tag, value
+                        tag,
+                        value,
                     });
                 }
             }

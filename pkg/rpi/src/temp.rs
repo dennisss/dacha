@@ -1,5 +1,3 @@
-
-
 /*
 Can read temperature from /sys/class/thermal/thermal_zone0/temp
 
@@ -7,14 +5,14 @@ Units are 1000 per degree C
 
 */
 
-use common::async_std::io::prelude::SeekExt;
 use common::async_std::fs::File;
+use common::async_std::io::prelude::SeekExt;
 use common::async_std::io::SeekFrom;
 use common::errors::*;
 use common::futures::AsyncReadExt;
 
 pub struct CPUTemperatureReader {
-    file: File
+    file: File,
 }
 
 impl CPUTemperatureReader {

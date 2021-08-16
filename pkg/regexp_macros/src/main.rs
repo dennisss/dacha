@@ -1,4 +1,3 @@
-
 #[macro_use]
 extern crate regexp_macros;
 extern crate automata;

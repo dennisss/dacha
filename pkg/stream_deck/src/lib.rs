@@ -45,7 +45,6 @@ Report 9: 8 x 31 Feature (array)
 Report 10: 8 x 31 Feature (array)
 */
 
-
 #[derive(PartialEq, Clone, Copy)]
 pub enum KeyState {
     Up,
@@ -93,19 +92,33 @@ impl StreamDeckDevice {
 
     pub async fn get_serial_number(&self) -> Result<String> {
         let mut report = vec![0u8; 31];
-        self.hid.get_report(SERIAL_NUMBER_REPORT_ID, usb::hid::ReportType::Feature, &mut report).await?;
+        self.hid
+            .get_report(
+                SERIAL_NUMBER_REPORT_ID,
+                usb::hid::ReportType::Feature,
+                &mut report,
+            )
+            .await?;
         read_null_terminated_string(&report[1..])
     }
 
     pub async fn get_firmware_number(&self) -> Result<String> {
         let mut report = vec![0u8; 31];
-        self.hid.get_report(FIRMWARE_VERSION_REPORT_ID, usb::hid::ReportType::Feature, &mut report).await?;
+        self.hid
+            .get_report(
+                FIRMWARE_VERSION_REPORT_ID,
+                usb::hid::ReportType::Feature,
+                &mut report,
+            )
+            .await?;
 
         read_null_terminated_string(&report[5..])
     }
 
     pub async fn set_brightness(&self, value: u8) -> Result<()> {
-        self.hid.set_report(3, usb::hid::ReportType::Feature, &[0x08, value]).await
+        self.hid
+            .set_report(3, usb::hid::ReportType::Feature, &[0x08, value])
+            .await
     }
 
     pub async fn set_display_timeout(&self, seconds: usize) -> Result<()> {
@@ -113,7 +126,9 @@ impl StreamDeckDevice {
         data[0] = 0x0d;
         *array_mut_ref![data, 1, 4] = (seconds as u32).to_le_bytes();
 
-        self.hid.set_report(3, usb::hid::ReportType::Feature, &data).await?;
+        self.hid
+            .set_report(3, usb::hid::ReportType::Feature, &data)
+            .await?;
 
         Ok(())
     }
@@ -148,7 +163,8 @@ impl StreamDeckDevice {
 
             common::async_std::future::timeout(
                 Duration::from_secs(1),
-                self.hid.set_report(KEY_IMAGE_REPORT_ID, usb::hid::ReportType::Output, &buf)
+                self.hid
+                    .set_report(KEY_IMAGE_REPORT_ID, usb::hid::ReportType::Output, &buf),
             )
             .await??;
 

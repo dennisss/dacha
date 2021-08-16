@@ -4,9 +4,7 @@ mod syntax;
 use common::errors::*;
 pub use spec::*;
 
-
 fn pretty_print_parsing_error(input: &str, remaining_bytes: usize) {
-
     let target_i = input.len() - remaining_bytes;
 
     let mut line_number = 1;
@@ -27,11 +25,10 @@ fn pretty_print_parsing_error(input: &str, remaining_bytes: usize) {
         }
     }
 
-
     let line_end = line_end.unwrap_or(input.len());
 
     println!("Line {:4}: {}", line_number, &input[line_start..line_end]);
-    
+
     let mut pointer = String::from("           ");
 
     // TODO: Verify that this will never overflow.
@@ -49,7 +46,10 @@ pub fn parse(input: &str) -> Result<Document> {
     match res {
         Ok((doc, _)) => Ok(doc),
         Err(e) => {
-            if let Some(parsing::ParserError { remaining_bytes, .. }) = e.downcast_ref() {
+            if let Some(parsing::ParserError {
+                remaining_bytes, ..
+            }) = e.downcast_ref()
+            {
                 pretty_print_parsing_error(input, *remaining_bytes);
             }
 

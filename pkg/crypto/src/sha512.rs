@@ -258,7 +258,7 @@ impl Hasher for SHA512_224Hasher {
     fn update(&mut self, data: &[u8]) {
         self.inner.update(data);
     }
-    
+
     fn finish(&self) -> Vec<u8> {
         let mut out = self.inner.finish();
         out.truncate(self.output_size());

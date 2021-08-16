@@ -1,4 +1,5 @@
-#[macro_use] extern crate common;
+#[macro_use]
+extern crate common;
 
 extern crate crypto;
 
@@ -40,10 +41,10 @@ use math::big::BigUint;
 use std::str::FromStr;
 use std::string::ToString;
 
+use asn::encoding::DERReadable;
 use common::async_std::net::TcpStream;
 use common::async_std::prelude::*;
 use common::async_std::task;
-use asn::encoding::DERReadable;
 
 use crypto::tls::handshake::*;
 use crypto::tls::record::*;
@@ -65,7 +66,8 @@ async fn tls_connect() -> Result<()> {
     let mut client = crypto::tls::client::Client::new();
     let mut stream = client.connect(reader, writer, &client_options).await?;
 
-    stream.writer
+    stream
+        .writer
         .write_all(b"GET / HTTP/1.1\r\nHost: google.com\r\n\r\n")
         .await?;
 

@@ -1,5 +1,5 @@
 use crate::encoding::*;
-use crate::record_log::{RecordWriter, RecordReader};
+use crate::record_log::{RecordReader, RecordWriter};
 use common::errors::*;
 use protobuf::wire::parse_varint;
 

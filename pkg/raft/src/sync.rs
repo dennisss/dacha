@@ -1,5 +1,5 @@
-use std::future::Future;
 use std::borrow::{Borrow, BorrowMut};
+use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 

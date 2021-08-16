@@ -56,6 +56,7 @@ struct Apple<T> {
 
 // MatrixNew<>
 
+// TODO: Replace with .in_range()
 fn is_between<T: Copy + std::cmp::PartialOrd>(value: T, range: (T, T)) -> bool {
     let mut min = range.0;
     let mut max = range.1;

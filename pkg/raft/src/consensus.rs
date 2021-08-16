@@ -14,7 +14,6 @@ use crate::proto::consensus::*;
 use crate::proto::consensus_state::*;
 use crate::state::*;
 
-
 // TODO: Suppose the leader is waiting on an earlier truncation that is
 // preventing the pending_conflict from resolving. Should we allow it to still
 // send over a commit_index to followers that is ahead of the commit_index that
@@ -66,11 +65,13 @@ pub enum ProposeError {
 
     /// The entry can't be proposed by this server because we are not the
     /// current leader
-    NotLeader { leader_hint: Option<ServerId> },
+    NotLeader {
+        leader_hint: Option<ServerId>,
+    },
 
     Rejected {
-        reason: &'static str
-    }
+        reason: &'static str,
+    },
 }
 
 #[derive(Debug)]
@@ -99,7 +100,6 @@ pub enum ProposalStatus {
 }
 
 pub type ConsensusModuleHandle = Arc<Mutex<ConsensusModule>>;
-
 
 pub struct ConsensusMessage {
     pub to: Vec<ServerId>, // Most times cheaper to
@@ -385,10 +385,10 @@ impl ConsensusModule {
                 loop {
                     match self.log.term(idx + 1).await {
                         Some(t) => {
-                            if t == self.meta.current_term(){
+                            if t == self.meta.current_term() {
                                 return Err(ReadIndexError::RetryAfter(LogPosition::new(
                                     self.log.term(idx).await.unwrap(),
-                                    idx
+                                    idx,
                                 )));
                             }
                         }
@@ -537,7 +537,9 @@ impl ConsensusModule {
                             .insert(*id, ServerProgress::new(last_log_index));
                     }
                     ConfigChangeTypeCase::Unknown => {
-                        return Err(ProposeError::Rejected { reason: "Unsupported or unset config change type" });
+                        return Err(ProposeError::Rejected {
+                            reason: "Unsupported or unset config change type",
+                        });
                     }
                 };
             }
@@ -609,8 +611,7 @@ impl ConsensusModule {
         // Additionally there is no work to be done if we are not in the voting members
         // TODO: We should assert that a non-voting member never starts an
         // election and other servers should never note for a non-voting member
-        if self.config.value.members_len() == 0 || !self.config.value.members().contains(&self.id)
-        {
+        if self.config.value.members_len() == 0 || !self.config.value.members().contains(&self.id) {
             tick.next_tick = Some(Duration::from_secs(1));
             return;
         }
@@ -883,11 +884,11 @@ impl ConsensusModule {
         // replicate without installing a snapshot
         let new_request = async move |prev_log_index: LogIndex| -> AppendEntriesRequest {
             let mut req = AppendEntriesRequest::default();
-            
+
             for i in (prev_log_index + 1).value()..(last_log_index + 1).value() {
                 req.add_entries((*log.entry(i.into()).await.unwrap().0).clone());
             }
-            
+
             req.set_term(term);
             req.set_leader_id(leader_id);
             req.set_prev_log_index(prev_log_index);
@@ -1022,7 +1023,10 @@ impl ConsensusModule {
             tick.write_meta();
         }
 
-        println!("Starting election for term: {}", self.meta.current_term().value());
+        println!(
+            "Starting election for term: {}",
+            self.meta.current_term().value()
+        );
 
         // TODO: In the case of reusing the same term as the last election we can also
         // reuse any previous votes that we received and not bother asking for those
@@ -1491,7 +1495,9 @@ impl ConsensusModule {
             // Sanity check 1: First entry must be immediately after the
             // previous one
             let first = &req.entries()[0];
-            if first.pos().term() < req.prev_log_term() || first.pos().index() != req.prev_log_index() + 1 {
+            if first.pos().term() < req.prev_log_term()
+                || first.pos().index() != req.prev_log_index() + 1
+            {
                 return Err(err_msg("Received previous entry does not follow"));
             }
 
@@ -1502,7 +1508,9 @@ impl ConsensusModule {
                 let cur = &req.entries()[i];
                 let next = &req.entries()[i + 1];
 
-                if cur.pos().term() > next.pos().term() || next.pos().index() != cur.pos().index() + 1 {
+                if cur.pos().term() > next.pos().term()
+                    || next.pos().index() != cur.pos().index() + 1
+                {
                     return Err(err_msg(
                         "Received entries are unsorted, duplicates, or inconsistent",
                     ));

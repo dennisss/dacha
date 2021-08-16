@@ -1,5 +1,3 @@
-
-
 /*
 
 
@@ -11,8 +9,8 @@
 0b 1010 0001
 */
 
-use common::errors::*;
 use crate::i2c::I2CDevice;
+use common::errors::*;
 
 fn compute_checksum(data: &[u8]) -> u8 {
     let mut sum = 0;
@@ -34,12 +32,12 @@ fn push_checksum(data: &mut Vec<u8>) {
 
 // data[0] <- Destination addr
 // data[1] <- Source addr
-// data[2] <- 
+// data[2] <-
 
 // CHK' computed using 0x50 virtual host address.
 
 pub struct DDCDevice {
-    i2c: I2CDevice
+    i2c: I2CDevice,
 }
 
 impl DDCDevice {
@@ -49,8 +47,6 @@ impl DDCDevice {
     }
 
     pub fn read_edid(&mut self) -> Result<()> {
-        
-
         self.i2c.write(0x60 >> 1, &[0])?;
 
         let mut data = vec![0; 256];
@@ -66,49 +62,53 @@ impl DDCDevice {
 
     pub fn get_capabilities(&mut self) -> Result<String> {
         let mut full_data = vec![];
-    
+
         let mut offset: u16 = 0;
         loop {
             println!("READ AT OFFSET: {}", offset);
-    
+
             // TODO: Check the first byte of the request and response.
-    
+
             let mut req = vec![0x6E, 0x51, 0x83, 0xF3];
             req.extend_from_slice(&offset.to_be_bytes());
             req.push(compute_checksum(&req));
             self.i2c.write(req[0] >> 1, &req[1..])?;
-    
+
             std::thread::sleep(std::time::Duration::from_millis(50));
-    
+
             let mut resp = [0u8; 32 + 7];
             resp[0] = 0x6E; // TODO: Check this!!
             self.i2c.read(resp[0] >> 1, &mut resp[1..])?;
-    
+
             // resp[1] is the source address
             resp[1] = 0x50;
-    
+
             let resp_len = resp[2] & 0x7f;
-    
+
             let resp_end_offset = (3 + resp_len) as usize; // TODO: Check this.
-    
+
             if resp[3] != 0xE3 {
                 return Err(err_msg("Wrong reply code"));
             }
-    
+
             let resp_offset = ((resp[4] as u16) << 8) | (resp[5] as u16);
             if offset != resp_offset {
                 return Err(err_msg("Received different offset than requested"));
             }
-    
+
             let resp_data = &resp[6..resp_end_offset];
-    
+
             let resp_checksum = resp[resp_end_offset];
-    
+
             let expected_checksum = compute_checksum(&resp[0..resp_end_offset]);
             if resp_checksum != expected_checksum {
-                return Err(format_err!("Invalid response checksum {:2x} != {:2x}", resp_checksum, expected_checksum));
+                return Err(format_err!(
+                    "Invalid response checksum {:2x} != {:2x}",
+                    resp_checksum,
+                    expected_checksum
+                ));
             }
-        
+
             let mut null_terminator = None;
             for i in 0..resp_data.len() {
                 if resp_data[i] == 0 {
@@ -116,10 +116,10 @@ impl DDCDevice {
                     break;
                 }
             }
-    
+
             full_data.extend_from_slice(&resp_data);
             offset += resp_data.len() as u16;
-    
+
             if null_terminator.is_some() || resp_data.len() == 0 {
                 break;
             }
@@ -135,7 +135,6 @@ impl DDCDevice {
         self.i2c.write(req[0] >> 1, &req[1..])?;
 
         std::thread::sleep(std::time::Duration::from_millis(40));
-
 
         let mut resp = [0u8; 12];
         resp[0] = 0x6E;
@@ -161,11 +160,13 @@ impl DDCDevice {
         }
 
         let type_code = resp[6];
-        
+
         let typ = match type_code {
             0 => FeatureType::SetParameter,
             1 => FeatureType::Momentary,
-            _ => { return Err(err_msg("Unknown feature type")); }
+            _ => {
+                return Err(err_msg("Unknown feature type"));
+            }
         };
 
         let max_value = u16::from_be_bytes(*array_ref![resp, 7, 2]);
@@ -174,11 +175,17 @@ impl DDCDevice {
         let resp_checksum = resp[resp.len() - 1];
         let expected_checksum = compute_checksum(&resp[0..(resp.len() - 1)]);
         if resp_checksum != expected_checksum {
-            return Err(format_err!("Invalid response checksum {:2x} != {:2x}", resp_checksum, expected_checksum));
+            return Err(format_err!(
+                "Invalid response checksum {:2x} != {:2x}",
+                resp_checksum,
+                expected_checksum
+            ));
         }
 
         Ok(Feature {
-            typ, max_value, current_value
+            typ,
+            max_value,
+            current_value,
         })
     }
 
@@ -197,12 +204,12 @@ impl DDCDevice {
 #[derive(Debug)]
 pub enum FeatureType {
     SetParameter,
-    Momentary
+    Momentary,
 }
 
 #[derive(Debug)]
 pub struct Feature {
     pub typ: FeatureType,
     pub max_value: u16,
-    pub current_value: u16
+    pub current_value: u16,
 }

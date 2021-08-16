@@ -4,7 +4,8 @@
     proc_macro_hygiene,
     trait_alias,
     exclusive_range_pattern,
-    wrapping_int_impl
+    wrapping_int_impl,
+    asm
 )]
 #[macro_use]
 extern crate common;
@@ -144,18 +145,18 @@ pub mod hkdf;
 pub mod hmac;
 pub mod md;
 pub mod md5;
+pub mod nist;
 pub mod pem;
 pub mod prime;
 pub mod random;
+pub mod rsa;
 pub mod sha1;
 pub mod sha224;
 pub mod sha256;
 pub mod sha384;
 pub mod sha512;
 mod sha_test;
-pub mod rsa;
+pub mod sip;
 pub mod tls;
 pub mod utils;
 pub mod x509;
-pub mod nist;
-pub mod sip;

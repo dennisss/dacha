@@ -10,9 +10,9 @@
 extern crate common;
 extern crate byteorder;
 extern crate crypto;
+extern crate google;
 extern crate http;
 extern crate protobuf;
-extern crate google;
 
 #[macro_use]
 extern crate macros;

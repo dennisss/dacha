@@ -3,13 +3,12 @@ use std::collections::HashSet;
 use common::errors::*;
 
 use crate::fsm::FiniteStateMachine;
-use crate::regexp::symbol::*;
 use crate::regexp::alphabet::*;
+use crate::regexp::instance::RegExpMetadata;
 use crate::regexp::state_machine::*;
-use crate::regexp::instance::RegExpMetadata;  // TODO: Refactor out this edge.
+use crate::regexp::symbol::*; // TODO: Refactor out this edge.
 
 pub type RegExpNodePtr = Box<RegExpNode>;
-
 
 // TODO: Whenever we see an alternation of many single character nodes
 // we can probably compile it down to a simple class of values.
@@ -23,13 +22,12 @@ Other safe simplifications:
 
 */
 
-
-/// A node in the tree 
+/// A node in the tree
 #[derive(Debug)]
 pub enum RegExpNode {
     /// Alternation. e.g. 'a|b|c|d'
     Alt(Vec<RegExpNodePtr>),
-    
+
     /// Many adjacent nodes. e.g. 'abcd'
     Expr(Vec<RegExpNodePtr>),
 
@@ -37,13 +35,16 @@ pub enum RegExpNode {
     Quantified {
         node: RegExpNodePtr,
         quantifier: Quantifier,
-        greedy: bool
+        greedy: bool,
     },
 
     // We will most likely replace these with capture groups
     // Simplifying method:
     // For each operation, we will
-    Class { chars: Vec<Char>, inverted: bool },
+    Class {
+        chars: Vec<Char>,
+        inverted: bool,
+    },
 
     /// e.g. '(a)'
     Capture {
@@ -95,7 +96,11 @@ impl RegExpNode {
 
                 a
             }
-            Self::Quantified { node, quantifier, greedy } => {
+            Self::Quantified {
+                node,
+                quantifier,
+                greedy,
+            } => {
                 let mut a = node.to_automata_inner(alpha, metadata);
 
                 match quantifier {
@@ -265,7 +270,11 @@ impl RegExpNode {
             Self::Literal(c) => {
                 c.fill_alphabet(alpha);
             }
-            Self::Quantified { node, quantifier, greedy } => node.fill_alphabet(alpha),
+            Self::Quantified {
+                node,
+                quantifier,
+                greedy,
+            } => node.fill_alphabet(alpha),
             Self::Expr(list) => {
                 for item in list {
                     item.fill_alphabet(alpha);
@@ -373,8 +382,8 @@ pub enum Quantifier {
 
     // TODO: To keep the memory usage down, these should limit the max count to say '256'
     ExactlyN(usize),
-    
+
     NOrMore(usize),
-    
+
     Between(usize, usize),
 }

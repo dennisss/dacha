@@ -105,9 +105,7 @@ impl DeviceTransferState {
     /// Cancels the transfer. This will cause a current/future call to wait() to
     /// finish.
     fn cancel(&self) -> Result<()> {
-        let _ = self
-            .sender
-            .try_send(Err(crate::Error::TransferCancelled));
+        let _ = self.sender.try_send(Err(crate::Error::TransferCancelled));
 
         // NOTE: This will cause it to be reaped with a -2 error (so I can't delete the
         // memory yet!!)

@@ -9,6 +9,7 @@ pub struct Canvas {
     // TODO: Make private.
     pub drawing_buffer: Image<u8>,
 
+    // TODO: Decouple the display buffer as its not very related to the canvas.
     pub display_buffer: Image<u8>,
     viewport_transform: Matrix3f,
     transform: Matrix3f,

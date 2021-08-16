@@ -1,5 +1,4 @@
-
-/// Enables reading from 
+/// Enables reading from
 pub struct SliceReader<'a> {
     slices: [&'a [u8]; 2],
     index: usize,
@@ -8,7 +7,11 @@ pub struct SliceReader<'a> {
 
 impl<'a> SliceReader<'a> {
     pub fn new(slices: [&'a [u8]; 2]) -> Self {
-        Self { slices, index: 0, consumed_bytes: 0 }
+        Self {
+            slices,
+            index: 0,
+            consumed_bytes: 0,
+        }
     }
 
     pub fn reserve(&self, n: usize) -> std::io::Result<()> {
@@ -28,7 +31,6 @@ impl<'a> SliceReader<'a> {
         self.consumed_bytes
     }
 }
-
 
 impl<'a> std::io::Read for SliceReader<'a> {
     fn read(&mut self, mut output: &mut [u8]) -> std::io::Result<usize> {

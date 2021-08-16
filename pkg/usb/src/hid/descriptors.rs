@@ -3,11 +3,10 @@ use std::collections::{HashMap, HashSet};
 use common::async_std::task::current;
 use common::errors::*;
 
+use crate::descriptor_iter::Descriptor;
 use crate::descriptors::{SetupPacket, StandardRequestType};
 use crate::endpoint::is_in_endpoint;
 use crate::linux::Device;
-use crate::descriptor_iter::Descriptor;
-
 
 enum_def!(HIDDescriptorType u8 =>
     HID = 0x21,
@@ -33,7 +32,5 @@ pub struct HIDDescriptor {
     pub bCountryCode: u8,
     pub bNumDescriptors: u8,
     pub bReportDescriptorType: u8,
-    pub wReportDescriptorLength: u16
+    pub wReportDescriptorLength: u16,
 }
-
-

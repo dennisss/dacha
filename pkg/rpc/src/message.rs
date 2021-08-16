@@ -10,7 +10,7 @@ const MESSAGE_HEADER_SIZE: usize = 5;
 
 pub struct MessageReader<'a> {
     // TODO: Eventually change to use Readable instead of http::Body.
-    reader: &'a mut dyn http::Body
+    reader: &'a mut dyn http::Body,
 }
 
 impl<'a> MessageReader<'a> {
@@ -62,7 +62,6 @@ impl MessageSerializer {
     }
 }
 
-
 /*
 pub struct UnaryMessageBody {
     len: usize,
@@ -79,7 +78,7 @@ impl UnaryMessageBody {
 #[async_trait]
 impl Body for UnaryMessageBody {
     fn len(&self) -> Option<usize> { Some(self.len + MESSAGE_HEADER_SIZE) }
-    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }    
+    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }
 }
 
 #[async_trait]
@@ -90,9 +89,8 @@ impl Readable for UnaryMessageBody {
 }
 */
 
-
 /*
 Challenges of sending non-unary messages:
 - Need an Outgoing body implementation which allows limits us to the HTTP2 buffer size.
-  Would be ideally be a little bit simpler 
+  Would be ideally be a little bit simpler
 */

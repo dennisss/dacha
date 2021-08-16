@@ -1,24 +1,27 @@
-use std::rc::Rc;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use crate::regexp::vm::instruction::*;
 
-/// Helper for performing a single step of the executor given the current input and position.
+/// Helper for performing a single step of the executor given the current input
+/// and position.
 macro_rules! step {
     ($executor:ident, $input_value:expr, $i:expr, $j:expr) => {
         match $executor.step($input_value, $i, $j) {
             ExecutorStepResult::Matched(v) => {
                 return Some(v);
-            },
-            ExecutorStepResult::NeedMoreInput => {},
-            ExecutorStepResult::Terminated => { return None; }
+            }
+            ExecutorStepResult::NeedMoreInput => {}
+            ExecutorStepResult::Terminated => {
+                return None;
+            }
         };
     };
 }
 
-/// Helper for getting the next regular character value while executing the VM. Either the current
-/// input value is a character or we will enqueue a retry at the same program counter next time the
-/// VM is run. 
+/// Helper for getting the next regular character value while executing the VM.
+/// Either the current input value is a character or we will enqueue a retry at
+/// the same program counter next time the VM is run.
 macro_rules! next_character {
     ($value:ident, $thread:ident, $next_threads:expr) => {
         match $value {
@@ -31,7 +34,6 @@ macro_rules! next_character {
         }
     };
 }
-
 
 pub struct Executor<P> {
     program: P,
@@ -50,9 +52,8 @@ impl<P: Program + Copy> Executor<P> {
             best_match: None,
             thread_list_a: ThreadList::new(),
             thread_list_a_active: true,
-            thread_list_b: ThreadList::new()
+            thread_list_b: ThreadList::new(),
         };
-
 
         // Add initial thread
         // TODO: Use references for program counters to avoid bounds checks.
@@ -60,21 +61,30 @@ impl<P: Program + Copy> Executor<P> {
             program: inst.program,
             input_position: 0,
             next_position: 0,
-            next_threads: &mut inst.thread_list_a
+            next_threads: &mut inst.thread_list_a,
         };
         step_state.schedule_thread(0, Rc::new(SavedStringPointers::default()));
 
         inst
     }
 
-    /// NOTE: This will execute the program with START and END symbols inserted before and after
-    /// the inputs.
-    pub fn run(&mut self, input: &[u8], start_index: usize /* , encoding: CharacterEncoding */) -> Option<SavedStringPointers> {
+    /// NOTE: This will execute the program with START and END symbols inserted
+    /// before and after the inputs.
+    pub fn run(
+        &mut self,
+        input: &[u8],
+        start_index: usize, /* , encoding: CharacterEncoding */
+    ) -> Option<SavedStringPointers> {
         let mut i = start_index;
 
         // TODO: Deal with infinite regular expressions.
         if i == 0 {
-            step!(self, InputValue::Special(SpecialSymbol::StartOfString), i, i);
+            step!(
+                self,
+                InputValue::Special(SpecialSymbol::StartOfString),
+                i,
+                i
+            );
         }
 
         while i < input.len() {
@@ -101,14 +111,17 @@ impl<P: Program + Copy> Executor<P> {
 
     /// Runs the VM on one input character value.
     ///
-    /// It should be noted that this will always trigger a match after consuming one more character
-    /// after the end of the match string.
+    /// It should be noted that this will always trigger a match after consuming
+    /// one more character after the end of the match string.
     ///
-    /// Returns whether or not a match was found. One this matches or terminates, it is invalid
-    /// to call step() any more (a new Executor should be created if execution is required on
-    /// fresh inputs).
+    /// Returns whether or not a match was found. One this matches or
+    /// terminates, it is invalid to call step() any more (a new Executor
+    /// should be created if execution is required on fresh inputs).
     fn step(
-        &mut self, value: InputValue, input_position: StringPointer, next_position: StringPointer
+        &mut self,
+        value: InputValue,
+        input_position: StringPointer,
+        next_position: StringPointer,
     ) -> ExecutorStepResult {
         let mut current_threads = &mut self.thread_list_a;
         let mut next_threads = &mut self.thread_list_b;
@@ -122,7 +135,7 @@ impl<P: Program + Copy> Executor<P> {
             program: self.program,
             input_position,
             next_position,
-            next_threads
+            next_threads,
         };
 
         for thread in current_threads.iter() {
@@ -165,10 +178,12 @@ impl<P: Program + Copy> Executor<P> {
 
                     // Skip executing lower priority threads.
                     break;
-                },
+                }
 
                 // These are handled in the schedule_thread code.
-                Instruction::Split(_, _) | Instruction::Save { .. } | Instruction::Jump(_) => panic!()
+                Instruction::Split(_, _) | Instruction::Save { .. } | Instruction::Jump(_) => {
+                    panic!()
+                }
             }
         }
 
@@ -212,8 +227,9 @@ impl<'a, P: Program> ExecutorStepState<'a, P> {
         let (op, next_pc) = self.program.fetch(pc);
         match op {
             Instruction::Jump(next_pc) => {
-                // TODO: It may still be useful to mark 'pc' as included now so that other jumps to
-                // the same location don't have to perform this same traversal.
+                // TODO: It may still be useful to mark 'pc' as included now so that other jumps
+                // to the same location don't have to perform this same
+                // traversal.
 
                 self.schedule_thread(next_pc, saved);
             }
@@ -229,7 +245,11 @@ impl<'a, P: Program> ExecutorStepState<'a, P> {
                 if saved.list.len() <= index {
                     saved.list.resize(index + 1, None);
                 }
-                saved.list[index] = Some(if lookbehind { self.input_position } else { self.next_position });
+                saved.list[index] = Some(if lookbehind {
+                    self.input_position
+                } else {
+                    self.next_position
+                });
 
                 // TODO: the new value of PC is not the same as in the reference material.
                 self.schedule_thread(next_pc, Rc::new(saved));
@@ -241,48 +261,51 @@ impl<'a, P: Program> ExecutorStepState<'a, P> {
     }
 }
 
-
 #[derive(Clone, Default)]
 pub struct SavedStringPointers {
-    pub list: Vec<Option<StringPointer>>
+    pub list: Vec<Option<StringPointer>>,
 }
 
 pub enum ExecutorStepResult {
-    /// We successfully matched some substring. The saved pointers are provided as recorded
-    /// from the last running thread.
+    /// We successfully matched some substring. The saved pointers are provided
+    /// as recorded from the last running thread.
     Matched(SavedStringPointers),
 
     /// We haven't matched yet, but may match if given more inputs.
     NeedMoreInput,
 
-    /// The program has halted and we will never match regardless of how many inputs are given.
-    Terminated
+    /// The program has halted and we will never match regardless of how many
+    /// inputs are given.
+    Terminated,
 }
-
 
 struct Thread {
     pc: ProgramCounter,
-    saved: Rc<SavedStringPointers>
+    saved: Rc<SavedStringPointers>,
 }
 
-/// NOTE: In a program with N instructions, there should only ever be at most N threads.
+/// NOTE: In a program with N instructions, there should only ever be at most N
+/// threads.
 struct ThreadList {
     /// NOTE: These are in order from highest to lowest priority.
     list: Vec<Thread>,
 
-    /// Used to deduplicate threads which are added with the same program counter as an existing
-    /// thread.
+    /// Used to deduplicate threads which are added with the same program
+    /// counter as an existing thread.
     ///
-    /// TODO: Consider using a bitmap to store this as the number of distinct PCs is finite and
-    /// known in advance.
+    /// TODO: Consider using a bitmap to store this as the number of distinct
+    /// PCs is finite and known in advance.
     ///
-    /// NOTE: We don't just store the threads in a HashMap to ensure that 
-    seen_pcs: HashSet<ProgramCounter>
+    /// NOTE: We don't just store the threads in a HashMap to ensure that
+    seen_pcs: HashSet<ProgramCounter>,
 }
 
 impl ThreadList {
     fn new() -> Self {
-        Self { list: vec![], seen_pcs: HashSet::new() }
+        Self {
+            list: vec![],
+            seen_pcs: HashSet::new(),
+        }
     }
 
     fn clear(&mut self) {
@@ -296,14 +319,10 @@ impl ThreadList {
         }
 
         self.seen_pcs.insert(pc);
-        self.list.push(Thread {
-            pc, saved
-        });
+        self.list.push(Thread { pc, saved });
     }
 
-    fn iter(&self) -> impl std::iter::Iterator<Item=&Thread> {
+    fn iter(&self) -> impl std::iter::Iterator<Item = &Thread> {
         self.list.iter()
     }
 }
-
-

@@ -2,34 +2,34 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use common::async_std::channel;
 use common::bytes::Buf;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Readable;
-use common::async_std::channel;
 use http::header::*;
 
+use crate::client_types::*;
 use crate::constants::GRPC_PROTO_TYPE;
 use crate::message::MessageSerializer;
 use crate::metadata::*;
 use crate::status::*;
-use crate::client_types::*;
 
 /*
 Scenarios:
 - Request Stream, Response Stream
     - Return (ClientRequestSender, ClientResponseReceiver)
     - Challenge: Can we simultaneously read and write?
-    - Technically once we have received the status trailers, 
+    - Technically once we have received the status trailers,
 
-    - 
+    -
 
 - Request Unary, Response Stream
     - Return (ClientResponseReceiver)
 
 - Big question:
     - How do we know from the sending end that the receiving end is done?
-    - If we aren't activel reading things, then it is 
+    - If we aren't activel reading things, then it is
 
 - Request Stream, Response Unary
     - Challenge: Prevent accessing the response object until we are done sending everything
@@ -43,16 +43,16 @@ Scenarios:
     - Easy.
 
 
-Basically if either side is unary, 
+Basically if either side is unary,
 
 
 */
 
-
 #[async_trait]
 pub trait Channel: 'static + Send + Sync {
-    /// Sends a serialized stream of serialized messages to a remote service implementation.
-    /// Returns a stream of received serialized messages and/or an error.
+    /// Sends a serialized stream of serialized messages to a remote service
+    /// implementation. Returns a stream of received serialized messages
+    /// and/or an error.
     async fn call_raw(
         &self,
         service_name: &str,
@@ -69,7 +69,9 @@ impl dyn Channel {
         method_name: &str,
         request_context: &ClientRequestContext,
     ) -> (ClientStreamingRequest<Req>, ClientStreamingResponse<Res>) {
-        let (req, res) = self.call_raw(service_name, method_name, request_context).await;
+        let (req, res) = self
+            .call_raw(service_name, method_name, request_context)
+            .await;
         (req.into(), res.into())
     }
 
@@ -80,13 +82,14 @@ impl dyn Channel {
         request_context: &ClientRequestContext,
         request_value: &Req,
     ) -> ClientStreamingResponse<Res> {
-        let (mut req, res) =
-            self.call_stream_stream(service_name, method_name, request_context).await;
+        let (mut req, res) = self
+            .call_stream_stream(service_name, method_name, request_context)
+            .await;
 
         // NOTE: If the send failed, then the response should get an error.
         let _ = req.send(request_value).await;
         req.close().await;
-        
+
         res
     }
 
@@ -97,19 +100,20 @@ impl dyn Channel {
         request_context: &ClientRequestContext,
         request_value: &Req,
     ) -> ClientResponse<Res> {
-        let mut response = self.call_unary_stream(
-            service_name, method_name, request_context, request_value).await;
+        let mut response = self
+            .call_unary_stream(service_name, method_name, request_context, request_value)
+            .await;
         let response_value = self.call_unary_unary_impl(&mut response).await;
 
         ClientResponse {
             context: response.context,
-            result: response_value
+            result: response_value,
         }
     }
 
     async fn call_unary_unary_impl<Res: protobuf::Message>(
         &self,
-        response: &mut ClientStreamingResponse<Res>
+        response: &mut ClientStreamingResponse<Res>,
     ) -> Result<Res> {
         let response_message = response.recv().await;
         if response_message.is_some() && !response.recv().await.is_none() {
@@ -125,10 +129,11 @@ impl dyn Channel {
         &self,
         service_name: &str,
         method_name: &str,
-        request_context: &ClientRequestContext
+        request_context: &ClientRequestContext,
     ) -> ClientStreamingCall<Req, Res> {
-        let (request, response) = self.call_stream_stream(
-            service_name, method_name, request_context).await;
+        let (request, response) = self
+            .call_stream_stream(service_name, method_name, request_context)
+            .await;
 
         ClientStreamingCall::new(request, response)
     }
@@ -150,11 +155,11 @@ impl Http2Channel {
         service_name: &str,
         method_name: &str,
         request_context: &ClientRequestContext,
-        request_receiver: channel::Receiver<Result<Option<Bytes>>>
+        request_receiver: channel::Receiver<Result<Option<Bytes>>>,
     ) -> Result<ClientStreamingResponse<()>> {
         let body = Box::new(RequestBody {
             request_receiver,
-            remaining_bytes: Bytes::new()
+            remaining_bytes: Bytes::new(),
         });
 
         let mut request = http::RequestBuilder::new()
@@ -166,12 +171,12 @@ impl Http2Channel {
             .body(body)
             .build()?;
 
-        request_context.metadata.append_to_headers(&mut request.head.headers)?;
+        request_context
+            .metadata
+            .append_to_headers(&mut request.head.headers)?;
 
         let client = self.client.clone();
-        let response = async move {
-            client.request(request).await
-        };
+        let response = async move { client.request(request).await };
         Ok(ClientStreamingResponse::from_response(response))
     }
 }
@@ -188,12 +193,13 @@ impl Channel for Http2Channel {
         let (request_sender, request_receiver) = channel::bounded(2);
         let request = ClientStreamingRequest::new(request_sender);
 
-        let result = self.call_raw_impl(
-            service_name, method_name, request_context, request_receiver).await;
-        
+        let result = self
+            .call_raw_impl(service_name, method_name, request_context, request_receiver)
+            .await;
+
         let response = match result {
             Ok(res) => res,
-            Err(e) => ClientStreamingResponse::from_error(e)
+            Err(e) => ClientStreamingResponse::from_error(e),
         };
 
         (request, response)
@@ -202,13 +208,17 @@ impl Channel for Http2Channel {
 
 struct RequestBody {
     request_receiver: channel::Receiver<Result<Option<Bytes>>>,
-    remaining_bytes: Bytes
+    remaining_bytes: Bytes,
 }
 
 #[async_trait]
 impl http::Body for RequestBody {
-    fn len(&self) -> Option<usize> { None }
-    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }
+    fn len(&self) -> Option<usize> {
+        None
+    }
+    async fn trailers(&mut self) -> Result<Option<Headers>> {
+        Ok(None)
+    }
 }
 
 #[async_trait]
@@ -220,9 +230,9 @@ impl Readable for RequestBody {
                 buf[0..n].copy_from_slice(&self.remaining_bytes[0..n]);
 
                 self.remaining_bytes.advance(n);
-                
-                // NOTE: We always stop after at least some amount of data is available to ensure
-                // that readers are unblocked.
+
+                // NOTE: We always stop after at least some amount of data is available to
+                // ensure that readers are unblocked.
                 return Ok(n);
             }
 
@@ -243,8 +253,9 @@ impl Readable for RequestBody {
                     // so we'll consider this to be an incomplete stream and inform the other side.
                     return Err(Status {
                         code: StatusCode::Cancelled,
-                        message: String::new()
-                    }.into());
+                        message: String::new(),
+                    }
+                    .into());
                 }
             }
         }

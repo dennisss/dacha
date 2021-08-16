@@ -1,5 +1,3 @@
-
-
 /*
 
 Want to use PWM mode (not serialiser mode)
@@ -12,7 +10,7 @@ Want to use PWM mode (not serialiser mode)
 
 - Therfore 4000 should be the range?
 
-We care about PWM0_0 
+We care about PWM0_0
 
 PWM0 is at 0x7e20c000
 - 40 byte blcok
@@ -44,30 +42,27 @@ struct PWMPinSpec {
     channel: usize,
 }
 
-const PIN_SPECS: &[PWMPinSpec] = &[
-    PWMPinSpec {
-        number: 12,
-        mode: Mode::AltFn0,
-        controller: 0,
-        channel: 0
-    }
-];
+const PIN_SPECS: &[PWMPinSpec] = &[PWMPinSpec {
+    number: 12,
+    mode: Mode::AltFn0,
+    controller: 0,
+    channel: 0,
+}];
 
 pub struct PWM {
     mem: MemoryBlock,
-    gpio: GPIO
+    gpio: GPIO,
 }
 
 impl PWM {
-
     pub fn open() -> Result<Self> {
-
         // TODO: Automatically apply the FExxxxxx part
         let mem = MemoryBlock::open(0xFE20c000, 40)?;
 
         let gpio = GPIO::open()?;
 
-        let gpio_pin = gpio.pin(12)
+        let gpio_pin = gpio
+            .pin(12)
             .set_mode(Mode::AltFn0)
             .set_resistor(Resistor::PullUp);
 
@@ -79,12 +74,7 @@ impl PWM {
 
         // DAT1
         mem.write_register(0x14, 200);
-        
 
-        Ok(Self {
-            mem,
-            gpio
-        })
+        Ok(Self { mem, gpio })
     }
-
 }

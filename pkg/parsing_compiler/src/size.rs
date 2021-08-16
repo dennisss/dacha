@@ -1,7 +1,6 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
 use crate::proto::dsl::Field;
-
 
 /// A formula for computing the size (usually in bytes) of some span of fields.
 /// Usually this will store a constant size, but it may reference the values of
@@ -14,14 +13,15 @@ pub enum SizeExpression {
     /// Defines be a field name path where the size can be found at runtime by
     /// evaluating the value located at the given path.
     ///
-    /// The path is expected to point to a primitive field that will be cast to a usize.
+    /// The path is expected to point to a primitive field that will be cast to
+    /// a usize.
     FieldLength(Vec<String>),
 
     /// Evaluated by summing up all inner expressions.
     Sum(Vec<SizeExpression>),
 
     /// Evaluated by multiplying all the inner expressions together.
-    Product(Vec<SizeExpression>)
+    Product(Vec<SizeExpression>),
 }
 
 impl SizeExpression {
@@ -38,22 +38,25 @@ impl SizeExpression {
 
         match self {
             SizeExpression::Sum(mut inner) => els.append(&mut inner),
-            _ => els.push(self)
+            _ => els.push(self),
         };
         match other {
             SizeExpression::Sum(mut inner) => els.append(&mut inner),
-            _ => els.push(other)
+            _ => els.push(other),
         };
 
         let mut const_sum = 0;
-        els = els.into_iter().filter_map(|el| {
-            if let SizeExpression::Constant(v) = el {
-                const_sum += v;
-                None
-            } else {
-                Some(el)
-            }
-        }).collect();
+        els = els
+            .into_iter()
+            .filter_map(|el| {
+                if let SizeExpression::Constant(v) = el {
+                    const_sum += v;
+                    None
+                } else {
+                    Some(el)
+                }
+            })
+            .collect();
 
         if const_sum != 0 || els.is_empty() {
             els.push(Self::Constant(const_sum));
@@ -78,11 +81,11 @@ impl SizeExpression {
 
         match self {
             SizeExpression::Product(mut inner) => els.append(&mut inner),
-            _ => els.push(self)
+            _ => els.push(self),
         };
         match other {
             SizeExpression::Product(mut inner) => els.append(&mut inner),
-            _ => els.push(other)
+            _ => els.push(other),
         };
 
         Self::Product(els)
@@ -109,7 +112,7 @@ impl SizeExpression {
     pub fn referenced_field_names<'a>(&'a self) -> HashSet<&'a str> {
         let mut out = HashSet::new();
         match self {
-            Self::Constant(_) => {},
+            Self::Constant(_) => {}
             Self::FieldLength(path) => {
                 out.insert(path[0].as_str());
             }
@@ -124,24 +127,23 @@ impl SizeExpression {
         out
     }
 
-    /// Compiles the expression to a string of Rust code that can be used in the parse() function
-    /// of a struct to evaluate the value of this expression.
+    /// Compiles the expression to a string of Rust code that can be used in the
+    /// parse() function of a struct to evaluate the value of this
+    /// expression.
     ///
     /// TODO: Must check for overflows in the compiled expression.
     pub fn compile(&self, scope: &HashMap<&str, &Field>) -> String {
         match self {
-            Self::Constant(v) => {
-                (*v).to_string()
-            }
+            Self::Constant(v) => (*v).to_string(),
             Self::FieldLength(path) => {
                 let mut expr = format!("{}_value", path[0]); // '_value' is the suffix used in the internal codegen.
-                
+
                 // TODO: Fix this so that is supports flags.
                 // TODO: Implement this for inner fields as well.
                 if !scope.get(path[0].as_str()).unwrap().presence().is_empty() {
                     expr.push_str(".unwrap_or(0)");
                 }
-             
+
                 for field in &path[1..] {
                     expr.push_str(&format!(".{}", field));
                 }
@@ -155,7 +157,8 @@ impl SizeExpression {
                 format!("({})", terms.join(" + "))
             }
             Self::Product(inner) => {
-                // TODO: Sometimes we'll need to sum unique up many uniquely sizes elements. (and some times it can be optimized away).
+                // TODO: Sometimes we'll need to sum unique up many uniquely sizes elements.
+                // (and some times it can be optimized away).
                 let terms = inner.iter().map(|e| e.compile(scope)).collect::<Vec<_>>();
                 format!("({})", terms.join(" * "))
             }

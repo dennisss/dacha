@@ -26,16 +26,21 @@ pub struct SipHasher {
 impl SipHasher {
     pub fn new(num_compression_rounds: usize, num_finalization_rounds: usize, key: &[u8]) -> Self {
         assert_eq!(key.len(), 16);
-        
-        Self::new_with_key_halves(num_compression_rounds, num_finalization_rounds,
+
+        Self::new_with_key_halves(
+            num_compression_rounds,
+            num_finalization_rounds,
             u64::from_le_bytes(*array_ref![key, 0, 8]),
-            u64::from_le_bytes(*array_ref![key, 8, 8]))
+            u64::from_le_bytes(*array_ref![key, 8, 8]),
+        )
     }
 
     pub fn new_with_key_halves(
-        num_compression_rounds: usize, num_finalization_rounds: usize,
-        key_0: u64, key_1: u64) -> Self {
-
+        num_compression_rounds: usize,
+        num_finalization_rounds: usize,
+        key_0: u64,
+        key_1: u64,
+    ) -> Self {
         Self {
             num_compression_rounds,
             num_finalization_rounds,
@@ -84,7 +89,7 @@ impl SipHasher {
     fn apply_word(&mut self) {
         let w = Wrapping(u64::from_le_bytes(self.word));
         self.v3 ^= w;
-        
+
         for _ in 0..self.num_compression_rounds {
             self.run_round();
         }
@@ -114,12 +119,15 @@ impl SipHasher {
 
         (self.v0 ^ self.v1 ^ self.v2 ^ self.v3).0
     }
-
 }
 
 impl Hasher for SipHasher {
-    fn block_size(&self) -> usize { 4 }
-    fn output_size(&self) -> usize { 4 }
+    fn block_size(&self) -> usize {
+        4
+    }
+    fn output_size(&self) -> usize {
+        4
+    }
 
     fn update(&mut self, mut data: &[u8]) {
         while !data.is_empty() {
@@ -147,26 +155,22 @@ impl Hasher for SipHasher {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn sip_test() {
+        let mut h = SipHasher::new(
+            2,
+            4,
+            &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        );
 
-        let mut h = SipHasher::new(2, 4, &[
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-        ]);
-
-        h.update(&[
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-        ]);
+        h.update(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
 
         assert_eq!(h.finish_u64(), 0xa129ca6149be45e5);
 
         // TODO: Add more test vectors.
     }
-
 }
-

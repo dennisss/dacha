@@ -5,14 +5,17 @@ extern crate math;
 
 use std::{f32::consts::PI, time::Duration};
 
-use common::errors::*;
 use blinkstick::*;
+use common::errors::*;
 use math::matrix::Vector3f;
 
 fn rgb_to_hsv_and_hsl(rgb: RGB) -> (Vector3f, Vector3f) {
     let rgb = Vector3f::from_slice(&[
-        rgb.r as f32 / 255.0, rgb.g as f32 / 255.0, rgb.b as f32 / 255.0]);
-    
+        rgb.r as f32 / 255.0,
+        rgb.g as f32 / 255.0,
+        rgb.b as f32 / 255.0,
+    ]);
+
     let x_max = rgb.max_value();
     let x_min = rgb.min_value();
 
@@ -26,11 +29,14 @@ fn rgb_to_hsv_and_hsl(rgb: RGB) -> (Vector3f, Vector3f) {
     let hue = deg60 * {
         if range.abs() < 1e-6 {
             0.0
-        } else if v == rgb[0] { // v == r
+        } else if v == rgb[0] {
+            // v == r
             0.0 + (rgb[1] - rgb[2]) / range
-        } else if v == rgb[1] { // v == g
+        } else if v == rgb[1] {
+            // v == g
             2.0 + (rgb[2] - rgb[0]) / range
-        } else { // v == b
+        } else {
+            // v == b
             4.0 + (rgb[0] - rgb[1]) / range
         }
     };
@@ -54,8 +60,8 @@ fn rgb_to_hsv_and_hsl(rgb: RGB) -> (Vector3f, Vector3f) {
     };
 
     (
-        Vector3f::from_slice(&[ hue, s_v, v ]),
-        Vector3f::from_slice(&[ hue, s_l, l ])
+        Vector3f::from_slice(&[hue, s_v, v]),
+        Vector3f::from_slice(&[hue, s_l, l]),
     )
 }
 
@@ -98,7 +104,8 @@ fn hsv_to_rgb(hsv: Vector3f) -> Vector3f {
             (0.0, x, c)
         } else if h <= 5.0 {
             (x, 0.0, c)
-        } else { // <= 6
+        } else {
+            // <= 6
             (c, 0.0, x)
         }
     };
@@ -117,13 +124,13 @@ fn linear_interpolate_hsx(a: &Vector3f, b: &Vector3f, i: f32) -> Vector3f {
         hue_distance = -1.0 * norm_radians(a[0] - b[0]);
         // hue_distance -= deg360;
     };
-    
-    let hue = norm_radians(a[0] + i*hue_distance);
+
+    let hue = norm_radians(a[0] + i * hue_distance);
 
     let s = a[1] * (1.0 - i) + b[1] * i;
     let x = a[2] * (1.0 - i) + b[2] * i;
 
-    Vector3f::from_slice(&[ hue, s, x ])
+    Vector3f::from_slice(&[hue, s, x])
 }
 
 async fn transition(blink: &BlinkStick, c1: RGB, c2: RGB, duration: Duration) -> Result<()> {
@@ -135,7 +142,7 @@ async fn transition(blink: &BlinkStick, c1: RGB, c2: RGB, duration: Duration) ->
 
     loop {
         let now = std::time::Instant::now();
-        
+
         let mut i = (now - start_time).as_secs_f32() / duration.as_secs_f32();
         if i > 1.0 {
             i = 1.0;
@@ -144,11 +151,13 @@ async fn transition(blink: &BlinkStick, c1: RGB, c2: RGB, duration: Duration) ->
         let hx = linear_interpolate_hsx(&h1, &h2, i);
         let rgb = hsv_to_rgb(hx);
 
-        blink.set_first_color(RGB {
-            r: (rgb[0] * 255.0).round() as u8,
-            g: (rgb[1] * 255.0).round() as u8,
-            b: (rgb[2] * 255.0).round() as u8
-        }).await?;
+        blink
+            .set_first_color(RGB {
+                r: (rgb[0] * 255.0).round() as u8,
+                g: (rgb[1] * 255.0).round() as u8,
+                b: (rgb[2] * 255.0).round() as u8,
+            })
+            .await?;
 
         if i == 1.0 {
             break;
@@ -162,22 +171,19 @@ async fn transition(blink: &BlinkStick, c1: RGB, c2: RGB, duration: Duration) ->
     Ok(())
 }
 
-
 async fn read_controller() -> Result<()> {
-
     println!("{}", -5.0 % 3.0);
     println!("{}", 5.0 % 3.0);
     println!("{}", 1.0 % 3.0);
 
     let blink = BlinkStick::open().await?;
 
-    let x= 50;
+    let x = 50;
     let c1 = RGB { r: 0, g: 0, b: x };
     let c2 = RGB { r: 0, g: x, b: 0 };
     let c3 = RGB { r: x, g: 0, b: 0 };
 
     for i in 0..10 {
-
         transition(&blink, c1, c2, Duration::from_millis(2000)).await?;
         transition(&blink, c2, c3, Duration::from_millis(2000)).await?;
         transition(&blink, c3, c1, Duration::from_millis(2000)).await?;
@@ -194,7 +200,6 @@ async fn read_controller() -> Result<()> {
     }
 
     blink.turn_off().await?;
-
 
     Ok(())
 }

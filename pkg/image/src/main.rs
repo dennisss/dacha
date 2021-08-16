@@ -1,4 +1,5 @@
-#[macro_use] extern crate common;
+#[macro_use]
+extern crate common;
 extern crate image;
 
 use common::errors::*;

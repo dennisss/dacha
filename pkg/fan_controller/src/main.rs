@@ -13,12 +13,12 @@ pub mod protocol;
 pub mod usb;
 
 use avr::pins::*;
+use avr::progmem::*;
 use avr::registers::*;
 use avr::thread;
 use avr::*;
 use protocol::*;
 use usb::*;
-use avr::progmem::*;
 
 /*
 PC Power Usage:
@@ -293,67 +293,77 @@ async fn main_thread() -> () {
 // TODO: Verify that these are stored in flash only to save space.
 // See also http://www.nongnu.org/avr-libc/user-manual/group__avr__pgmspace.html#ga88d7dd4863f87530e1a34ece430a587c
 // Needs to use the 'lpm' instruction.
-progmem!(DEVICE_DESC: DeviceDescriptor = DeviceDescriptor {
-    bLength: core::mem::size_of::<DeviceDescriptor>() as u8,
-    bDescriptorType: DescriptorType::DEVICE as u8,
-    bcdUSB: 0x0200, // 2.0
-    bDeviceClass: 0,
-    bDeviceSubClass: 0,
-    bDeviceProtocol: 0,
-    bMaxPacketSize0: 64,
-    idVendor: 0x8888,
-    idProduct: 0x0001,
-    bcdDevice: 0x0100, // 1.0,
-    iManufacturer: 0,
-    iProduct: 0,
-    iSerialNumber: 0,
-    bNumConfigurations: 1,
-});
+progmem!(
+    DEVICE_DESC: DeviceDescriptor = DeviceDescriptor {
+        bLength: core::mem::size_of::<DeviceDescriptor>() as u8,
+        bDescriptorType: DescriptorType::DEVICE as u8,
+        bcdUSB: 0x0200, // 2.0
+        bDeviceClass: 0,
+        bDeviceSubClass: 0,
+        bDeviceProtocol: 0,
+        bMaxPacketSize0: 64,
+        idVendor: 0x8888,
+        idProduct: 0x0001,
+        bcdDevice: 0x0100, // 1.0,
+        iManufacturer: 0,
+        iProduct: 0,
+        iSerialNumber: 0,
+        bNumConfigurations: 1,
+    }
+);
 
-progmem!(CONFIG_DESC: ConfigurationDescriptor = ConfigurationDescriptor {
-    bLength: core::mem::size_of::<ConfigurationDescriptor>() as u8,
-    bDescriptorType: DescriptorType::CONFIGURATION as u8,
-    // TODO: Make this field more maintainable.
-    wTotalLength: (core::mem::size_of::<ConfigurationDescriptor>()
-        + core::mem::size_of::<InterfaceDescriptor>()
-        + 2 * core::mem::size_of::<EndpointDescriptor>()) as u16,
-    bNumInterfaces: 1,
-    bConfigurationValue: 1,
-    iConfiguration: 0,
-    // TODO: Double check this
-    bmAttributes: 0xa0, // Bus Powered : Remote wakeup
-    bMaxPower: 50,
-});
+progmem!(
+    CONFIG_DESC: ConfigurationDescriptor = ConfigurationDescriptor {
+        bLength: core::mem::size_of::<ConfigurationDescriptor>() as u8,
+        bDescriptorType: DescriptorType::CONFIGURATION as u8,
+        // TODO: Make this field more maintainable.
+        wTotalLength: (core::mem::size_of::<ConfigurationDescriptor>()
+            + core::mem::size_of::<InterfaceDescriptor>()
+            + 2 * core::mem::size_of::<EndpointDescriptor>()) as u16,
+        bNumInterfaces: 1,
+        bConfigurationValue: 1,
+        iConfiguration: 0,
+        // TODO: Double check this
+        bmAttributes: 0xa0, // Bus Powered : Remote wakeup
+        bMaxPower: 50,
+    }
+);
 
-progmem!(IFACE_DESC: InterfaceDescriptor = InterfaceDescriptor {
-    bLength: core::mem::size_of::<InterfaceDescriptor>() as u8,
-    bDescriptorType: DescriptorType::INTERFACE as u8,
-    bInterfaceNumber: 0,
-    bAlternateSetting: 0,
-    bNumEndpoints: 2,
-    bInterfaceClass: 0, // TODO
-    bInterfaceSubClass: 0,
-    bInterfaceProtocol: 0,
-    iInterface: 0,
-});
+progmem!(
+    IFACE_DESC: InterfaceDescriptor = InterfaceDescriptor {
+        bLength: core::mem::size_of::<InterfaceDescriptor>() as u8,
+        bDescriptorType: DescriptorType::INTERFACE as u8,
+        bInterfaceNumber: 0,
+        bAlternateSetting: 0,
+        bNumEndpoints: 2,
+        bInterfaceClass: 0, // TODO
+        bInterfaceSubClass: 0,
+        bInterfaceProtocol: 0,
+        iInterface: 0,
+    }
+);
 
-progmem!(EP1_DESC: EndpointDescriptor = EndpointDescriptor {
-    bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
-    bDescriptorType: DescriptorType::ENDPOINT as u8,
-    bEndpointAddress: 0x81, // EP IN 1
-    bmAttributes: 0b11,     // Interrupt
-    wMaxPacketSize: 64,
-    bInterval: 64, // TODO: Check me.
-});
+progmem!(
+    EP1_DESC: EndpointDescriptor = EndpointDescriptor {
+        bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
+        bDescriptorType: DescriptorType::ENDPOINT as u8,
+        bEndpointAddress: 0x81, // EP IN 1
+        bmAttributes: 0b11,     // Interrupt
+        wMaxPacketSize: 64,
+        bInterval: 64, // TODO: Check me.
+    }
+);
 
-progmem!(EP2_DESC: EndpointDescriptor = EndpointDescriptor {
-    bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
-    bDescriptorType: DescriptorType::ENDPOINT as u8,
-    bEndpointAddress: 0x02, // EP OUT 2
-    bmAttributes: 0b11,     // Interrupt
-    wMaxPacketSize: 64,
-    bInterval: 64, // TODO: Check me.
-});
+progmem!(
+    EP2_DESC: EndpointDescriptor = EndpointDescriptor {
+        bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
+        bDescriptorType: DescriptorType::ENDPOINT as u8,
+        bEndpointAddress: 0x02, // EP OUT 2
+        bmAttributes: 0b11,     // Interrupt
+        wMaxPacketSize: 64,
+        bInterval: 64, // TODO: Check me.
+    }
+);
 
 pub trait USBDescriptorSet {
     fn device(&self) -> &'static ProgMem<DeviceDescriptor>;
@@ -656,7 +666,11 @@ async fn usb_control_thread() -> () {
             EP.wait_transmitter_ready().await;
             EP.clear_transmitter_ready();
         } else if pkt.bRequest == StandardRequestType::GET_CONFIGURATION as u8 {
-            if pkt.bmRequestType != 0b10000000 || pkt.wValue != 0 || pkt.wIndex != 0 || pkt.wLength != 1 {
+            if pkt.bmRequestType != 0b10000000
+                || pkt.wValue != 0
+                || pkt.wIndex != 0
+                || pkt.wLength != 1
+            {
                 EP.request_stale();
                 // USART1::send_blocking(b"E4\n");
                 continue;

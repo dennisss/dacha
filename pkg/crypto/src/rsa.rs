@@ -1,4 +1,3 @@
-
 use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{Any, DERWriteable};
 use common::errors::*;
@@ -10,14 +9,13 @@ use pkix::{
     PKIX1_PSS_OAEP_Algorithms, NIST_SHA2, PKCS_1,
 };
 
-use crate::hasher::{Hasher, HasherFactory, GetHasherFactory};
+use crate::hasher::{GetHasherFactory, Hasher, HasherFactory};
 use crate::md5::*;
 use crate::sha1::*;
 use crate::sha224::*;
 use crate::sha256::*;
 use crate::sha384::*;
 use crate::sha512::*;
-
 
 /*
 https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-4.pdf
@@ -29,7 +27,6 @@ respectively
 
 */
 
-
 // TODO: Follow everything outlined in https://tools.ietf.org/html/rfc8017
 
 macro_rules! ctor {
@@ -40,7 +37,7 @@ macro_rules! ctor {
                     algorithm: NIST_SHA2::$id.clone(),
                     parameters: Some(asn_any!(Null::new())),
                 },
-                digester_factory: $hasher::factory()
+                digester_factory: $hasher::factory(),
             }
         }
     };
@@ -48,7 +45,7 @@ macro_rules! ctor {
 
 pub struct RSAPublicKey {
     modulus: BigUint,
-    public_exponent: BigUint
+    public_exponent: BigUint,
 }
 
 // TODO: Pass by ref.
@@ -58,15 +55,14 @@ impl std::convert::TryFrom<PKCS_1::RSAPublicKey> for RSAPublicKey {
     fn try_from(value: PKCS_1::RSAPublicKey) -> Result<Self> {
         Ok(Self {
             modulus: value.modulus.to_uint()?,
-            public_exponent: value.publicExponent.to_uint()?
+            public_exponent: value.publicExponent.to_uint()?,
         })
     }
 }
 
-
 pub struct RSAPrivateKey {
     modulus: BigUint,
-    private_exponent: BigUint
+    private_exponent: BigUint,
 }
 
 impl std::convert::TryFrom<&PKCS_1::RSAPrivateKey> for RSAPrivateKey {
@@ -75,7 +71,7 @@ impl std::convert::TryFrom<&PKCS_1::RSAPrivateKey> for RSAPrivateKey {
     fn try_from(value: &PKCS_1::RSAPrivateKey) -> Result<Self> {
         Ok(Self {
             modulus: value.modulus.to_uint()?,
-            private_exponent: value.privateExponent.to_uint()?
+            private_exponent: value.privateExponent.to_uint()?,
         })
     }
 }
@@ -89,12 +85,18 @@ pub struct RSASSA_PSS {
 impl RSASSA_PSS {
     /// NOTE: This will use MGF1 as the mask generation function
     pub fn new(hasher_factory: HasherFactory, salt_length: usize) -> Self {
-        Self { hasher_factory, salt_length }
+        Self {
+            hasher_factory,
+            salt_length,
+        }
     }
 
     /// RFC 8017: Section 8.1.2
     pub fn verify_signature(
-        &self, public_key: &RSAPublicKey, signature: &[u8], data: &[u8]
+        &self,
+        public_key: &RSAPublicKey,
+        signature: &[u8],
+        data: &[u8],
     ) -> Result<bool> {
         // TODO: Implement a more efficient way of getting this size.
         let k = common::ceil_div(public_key.modulus.nbits(), 8);
@@ -116,29 +118,28 @@ impl RSASSA_PSS {
 
         // Step 3
         let result = emsa_pss_verify(
-            data, &encoded_message, public_key.modulus.nbits() - 1,
-            &self.hasher_factory, self.salt_length)?;
-        
+            data,
+            &encoded_message,
+            public_key.modulus.nbits() - 1,
+            &self.hasher_factory,
+            self.salt_length,
+        )?;
+
         // Step 4
         Ok(result)
     }
-
 }
-
-
-
 
 #[allow(non_camel_case_types)]
 pub struct RSASSA_PKCS_v1_5 {
     digest_algorithm: PKIX1Explicit88::AlgorithmIdentifier,
-    
+
     /// Factory that can be used to create a digester corresponding to the
     /// 'digest_algorithm'.
-    digester_factory: HasherFactory 
+    digester_factory: HasherFactory,
 }
 
 impl RSASSA_PKCS_v1_5 {
-
     // Supported hashes are documented in RFC 8017: A.2.4
 
     // TODO: MD2
@@ -152,14 +153,16 @@ impl RSASSA_PKCS_v1_5 {
     ctor!(sha512_256, ID_SHA512_256, SHA512_256Hasher);
 
     /// Based on RFC 8017: Section 8.2.1
-    pub fn create_signature(
-        &self, private_key: &RSAPrivateKey, data: &[u8]
-    ) -> Result<Vec<u8>> {
+    pub fn create_signature(&self, private_key: &RSAPrivateKey, data: &[u8]) -> Result<Vec<u8>> {
         let k = common::ceil_div(private_key.modulus.nbits() - 1, 8);
 
         // Step 1
         let em = emsa_pkcs1_v1_5_encode(
-            data, &self.digest_algorithm, self.digester_factory.create(), k)?;
+            data,
+            &self.digest_algorithm,
+            self.digester_factory.create(),
+            k,
+        )?;
 
         // Step 2.a
         let m = BigUint::from_be_bytes(&em);
@@ -174,10 +177,12 @@ impl RSASSA_PKCS_v1_5 {
         Ok(signature)
     }
 
-
     /// Based on RFC 8017: Section 8.2.2
     pub fn verify_signature(
-        &self, public_key: &RSAPublicKey, signature: &[u8], data: &[u8]
+        &self,
+        public_key: &RSAPublicKey,
+        signature: &[u8],
+        data: &[u8],
     ) -> Result<bool> {
         // TODO: Implement a more efficient way of getting this size.
         let k = common::ceil_div(public_key.modulus.nbits() - 1, 8);
@@ -201,12 +206,15 @@ impl RSASSA_PKCS_v1_5 {
         // Step 3
         // TODO: May want to return a "RSA modulus too short" error.
         let em2 = emsa_pkcs1_v1_5_encode(
-            data, &self.digest_algorithm, self.digester_factory.create(), k)?;
+            data,
+            &self.digest_algorithm,
+            self.digester_factory.create(),
+            k,
+        )?;
 
         // TODO: Probably want to use a secure compare here?
         Ok(em == em2)
     }
-
 }
 
 /// RFC 8017: Section 4.1
@@ -242,7 +250,7 @@ async fn emsa_pss_encode(
     message: &[u8],
     max_output_bits: usize,
     hasher_factory: &HasherFactory,
-    salt_length: usize
+    salt_length: usize,
 ) -> Result<Vec<u8>> {
     // TODO: Step 1
 
@@ -300,7 +308,7 @@ async fn emsa_pss_encode(
 
     // Step 11
     {
-        let nclear = 8*output_length - max_output_bits;
+        let nclear = 8 * output_length - max_output_bits;
         for i in 0..nclear {
             common::bits::bitset(&mut masked_db[0], false, (7 - i) as u8);
         }
@@ -316,15 +324,18 @@ async fn emsa_pss_encode(
 
 /// RFC 8017: Section 9.1.2
 fn emsa_pss_verify(
-    message: &[u8], encoded_message: &[u8], em_bits: usize,
+    message: &[u8],
+    encoded_message: &[u8],
+    em_bits: usize,
     hasher_factory: &HasherFactory,
     salt_length: usize,
 ) -> Result<bool> {
-    // TODO: Verify that the input size is within the input size limit for the hasher
+    // TODO: Verify that the input size is within the input size limit for the
+    // hasher
 
     // Step 2
     let message_hash = {
-        let mut hasher = hasher_factory.create(); 
+        let mut hasher = hasher_factory.create();
         hasher.update(message);
         hasher.finish()
     };
@@ -336,26 +347,29 @@ fn emsa_pss_verify(
 
     // Step 4
     if *encoded_message.last().unwrap() != 0xBC {
-        return Ok(false)
+        return Ok(false);
     }
 
     // Step 5
     let (masked_db, hash) = {
         let i = encoded_message.len() - message_hash.len() - 1;
-        (&encoded_message[0..i], &encoded_message[i..(i + message_hash.len())])
+        (
+            &encoded_message[0..i],
+            &encoded_message[i..(i + message_hash.len())],
+        )
     };
 
     // Step 6: Verifying that the top bits of masked_db are zero
     {
         // TODO: Check  for overflow?
-        let nbits = 8*encoded_message.len() - em_bits;
+        let nbits = 8 * encoded_message.len() - em_bits;
         for i in 0..nbits {
             if common::bits::bitget(masked_db[0], (7 - i) as u8) {
                 return Ok(false);
             }
         }
     }
-    
+
     // Step 7
     let db_mask = mgf1(&hash, masked_db.len(), hasher_factory);
 
@@ -365,7 +379,7 @@ fn emsa_pss_verify(
 
     // Step 9: Set top most bits to zero
     {
-        let nbits = 8*encoded_message.len() - em_bits;
+        let nbits = 8 * encoded_message.len() - em_bits;
         for i in 0..nbits {
             common::bits::bitset(&mut db[0], false, (7 - i) as u8);
         }
@@ -400,10 +414,9 @@ fn emsa_pss_verify(
         hasher.finish()
     };
 
-    // TODO: Use secure comparison 
+    // TODO: Use secure comparison
     Ok(hash == hash2)
 }
-
 
 /// RFC 8017: Section 9.2
 fn emsa_pkcs1_v1_5_encode(
@@ -472,8 +485,6 @@ fn mgf1(mgf_seed: &[u8], mask_len: usize, hasher_factory: &HasherFactory) -> Vec
     output
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,13 +492,15 @@ mod tests {
     use common::errors::*;
     use common::hex;
     use typenum::U20;
-    
+
     use crate::hasher::TruncatedHasher;
 
     #[async_std::test]
     async fn rsa_pkcs_15_nist_test() -> Result<()> {
-        let file = crate::nist::response::ResponseFile::open(
-            project_path!("testdata/nist/rsa/fips186_2/SigGen15_186-2.txt")).await?;
+        let file = crate::nist::response::ResponseFile::open(project_path!(
+            "testdata/nist/rsa/fips186_2/SigGen15_186-2.txt"
+        ))
+        .await?;
 
         let mut iter = file.iter();
 
@@ -496,7 +509,9 @@ mod tests {
 
         loop {
             let mut block = match iter.next() {
-                Some(v) => v?, None => break };
+                Some(v) => v?,
+                None => break,
+            };
 
             if block.new_attributes {
                 // Modulus size in bits
@@ -511,17 +526,17 @@ mod tests {
 
                 private_key = Some(RSAPrivateKey {
                     modulus: BigUint::from_be_bytes(&modulus),
-                    private_exponent: BigUint::from_be_bytes(&private_exponent)
+                    private_exponent: BigUint::from_be_bytes(&private_exponent),
                 });
-    
+
                 public_key = Some(RSAPublicKey {
                     modulus: BigUint::from_be_bytes(&modulus),
-                    public_exponent: BigUint::from_be_bytes(&public_exponent)
+                    public_exponent: BigUint::from_be_bytes(&public_exponent),
                 });
 
                 continue;
             }
-            
+
             println!("RUN");
             let hash_str = block.fields["SHAALG"].as_str();
             let message = block.binary_field("MSG")?;
@@ -533,7 +548,7 @@ mod tests {
                 "SHA256" => RSASSA_PKCS_v1_5::sha256(),
                 "SHA384" => RSASSA_PKCS_v1_5::sha384(),
                 "SHA512" => RSASSA_PKCS_v1_5::sha512(),
-                _ => panic!("Unknown algorithm {}", hash_str)
+                _ => panic!("Unknown algorithm {}", hash_str),
             };
 
             let output = pkcs.create_signature(private_key.as_ref().unwrap(), &message)?;
@@ -548,8 +563,10 @@ mod tests {
     // TODO: Deduplicate with the previous test case.
     #[async_std::test]
     async fn rsa_pss_nist_test() -> Result<()> {
-        let file = crate::nist::response::ResponseFile::open(
-            project_path!("testdata/nist/rsa/fips186_2/SigGenPSS_186-2.txt")).await?;
+        let file = crate::nist::response::ResponseFile::open(project_path!(
+            "testdata/nist/rsa/fips186_2/SigGenPSS_186-2.txt"
+        ))
+        .await?;
 
         let mut iter = file.iter();
 
@@ -558,7 +575,9 @@ mod tests {
 
         loop {
             let mut block = match iter.next() {
-                Some(v) => v?, None => break };
+                Some(v) => v?,
+                None => break,
+            };
 
             if block.new_attributes {
                 // Modulus size in bits
@@ -573,17 +592,17 @@ mod tests {
 
                 private_key = Some(RSAPrivateKey {
                     modulus: BigUint::from_be_bytes(&modulus),
-                    private_exponent: BigUint::from_be_bytes(&private_exponent)
+                    private_exponent: BigUint::from_be_bytes(&private_exponent),
                 });
-    
+
                 public_key = Some(RSAPublicKey {
                     modulus: BigUint::from_be_bytes(&modulus),
-                    public_exponent: BigUint::from_be_bytes(&public_exponent)
+                    public_exponent: BigUint::from_be_bytes(&public_exponent),
                 });
 
                 continue;
             }
-            
+
             let hash_str = block.fields["SHAALG"].as_str();
             let message = block.binary_field("MSG")?;
             let signature = block.binary_field("S")?;
@@ -595,7 +614,7 @@ mod tests {
                 "SHA256" => RSASSA_PSS::new(SHA256Hasher::factory(), salt.len()),
                 "SHA384" => RSASSA_PSS::new(SHA384Hasher::factory(), salt.len()),
                 "SHA512" => RSASSA_PSS::new(SHA512Hasher::factory(), salt.len()),
-                _ => panic!("Unknown algorithm {}", hash_str)
+                _ => panic!("Unknown algorithm {}", hash_str),
             };
 
             // let output = pkcs.create_signature(private_key.as_ref().unwrap(), &message)?;
@@ -607,13 +626,13 @@ mod tests {
         Ok(())
     }
 
-    type SHA256T20Hasher = TruncatedHasher<SHA256Hasher, U20>; 
+    type SHA256T20Hasher = TruncatedHasher<SHA256Hasher, U20>;
 
     #[test]
     fn mgf1_test() -> Result<()> {
         // Test cases from ISO/IEC 18033-2
-        // (KDF 1 used in RSA-KEM where the seed is 'R' in the doc and the output mask is 'K')
-        // (KDF 1 used in ECIES-KEM where the seed is 'Z||PEH')
+        // (KDF 1 used in RSA-KEM where the seed is 'R' in the doc and the output mask
+        // is 'K') (KDF 1 used in ECIES-KEM where the seed is 'Z||PEH')
 
         // (Hasher, Seed, Expected Mask)
         let tests: &[(HasherFactory, &'static str, &'static str)] = &[
@@ -646,6 +665,4 @@ mod tests {
 
         Ok(())
     }
-
-
 }

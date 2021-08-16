@@ -4,10 +4,9 @@ use std::sync::Arc;
 use common::async_std::sync::Mutex;
 use common::errors::*;
 
-use crate::proto::{consensus::*};
+use crate::proto::consensus::*;
 use crate::proto::routing::*;
 use crate::routing::*;
-
 
 /*
     Helpers for making an RPC server for communication between machines
@@ -48,10 +47,6 @@ use crate::routing::*;
 // TODO: Another big deal for the client and the server will be the Nagle packet
 // flushing optimization
 
-
-
-
-
 /*
 
 // Probably to be pushed out of here
@@ -63,45 +58,47 @@ pub struct ServerConfig<S> {
 pub type ServerHandle<S> = Arc<ServerConfig<S>>;
 */
 
-
-
-
 // TODO: We will eventually wrap these in an client struct that maintains a nice
 // persistent connection (will also need to negotiate proper the right
 // cluster_id and server_id on both ends for the connection to be opened)
 
-
 pub struct DiscoveryServer {
-    local_agent: NetworkAgentHandle
+    local_agent: NetworkAgentHandle,
 }
 
 impl DiscoveryServer {
     pub fn new(agent: NetworkAgentHandle) -> Self {
         Self { local_agent: agent }
-    }    
+    }
 }
-
 
 #[async_trait]
 impl DiscoveryServiceService for DiscoveryServer {
-
     async fn Announce(
         &self,
         request: rpc::ServerRequest<Announcement>,
-        response: &mut rpc::ServerResponse<Announcement>
+        response: &mut rpc::ServerResponse<Announcement>,
     ) -> Result<()> {
-        // TODO: We need to do most of this validation on all requests (not just discovery ones).
+        // TODO: We need to do most of this validation on all requests (not just
+        // discovery ones).
 
         let routing_ctx = ServerRequestRoutingContext::create(
-            self.local_agent.as_ref(), &request.context, &mut response.context).await?;
+            self.local_agent.as_ref(),
+            &request.context,
+            &mut response.context,
+        )
+        .await?;
 
-        // TODO: Re-use the same lock as the one used to create the ServerRequestRoutingContext
+        // TODO: Re-use the same lock as the one used to create the
+        // ServerRequestRoutingContext
         let mut agent = self.local_agent.lock().await;
 
         // When not verified, announcements can only be annonymous
         if request.routes_len() > 0 && !routing_ctx.verified_cluster {
             return Err(rpc::Status::invalid_argument(
-                "Receiving new routes from a non-verified server").into());
+                "Receiving new routes from a non-verified server",
+            )
+            .into());
         }
 
         agent.apply(&request);
@@ -110,8 +107,6 @@ impl DiscoveryServiceService for DiscoveryServer {
 
         Ok(())
     }
-
-
 }
 
 pub enum To<'a> {
@@ -126,16 +121,14 @@ struct ClientPeer {
 }
 
 pub struct Client {
-
     /// Map of ServerId to connections.
     ///
-    /// TODO: When a connection times out we want to automatically remove it from this list.
+    /// TODO: When a connection times out we want to automatically remove it
+    /// from this list.
     peers: Mutex<HashMap<String, Arc<ClientPeer>>>,
 
     agent: NetworkAgentHandle,
 }
-
-
 
 impl Client {
     pub fn new(agent: NetworkAgentHandle) -> Self {
@@ -155,10 +148,9 @@ impl Client {
         // TODO
         // let c = http::Client::create("").unwrap();
 
-
         Client {
             peers: Mutex::new(HashMap::new()),
-            agent
+            agent,
         }
     }
 
@@ -175,7 +167,8 @@ impl Client {
     async fn lookup_peer(
         &self,
         to: To<'_>,
-        context: &mut rpc::ClientRequestContext) -> Result<Arc<ClientPeer>> {
+        context: &mut rpc::ClientRequestContext,
+    ) -> Result<Arc<ClientPeer>> {
         let mut agent = self.agent.lock().await;
         agent.append_to_request_context(context)?;
 
@@ -197,33 +190,33 @@ impl Client {
 
         drop(agent);
 
-        let mut peers = self.peers.lock().await; 
+        let mut peers = self.peers.lock().await;
 
         if let Some(peer) = peers.get(&addr) {
             Ok(peer.clone())
         } else {
-
-            let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(&addr.parse()?)?)?);
+            let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
+                &addr.parse()?,
+            )?)?);
             let consensus_stub = ConsensusStub::new(channel.clone());
             let discovery_stub = DiscoveryServiceStub::new(channel.clone());
 
             let peer = Arc::new(ClientPeer {
                 channel,
                 consensus_stub,
-                discovery_stub
+                discovery_stub,
             });
 
             peers.insert(addr, peer.clone());
 
             Ok(peer)
-        }        
+        }
     }
 
     async fn process_response_metadata(&self, context: &rpc::ClientResponseContext) -> Result<()> {
         let mut agent = self.agent.lock().await;
         agent.process_response_metadata(context)
     }
-    
 
     pub async fn call_pre_vote(
         &self,

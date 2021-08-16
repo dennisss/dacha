@@ -5,8 +5,8 @@ pub trait WindowBuffer: std::ops::Index<usize, Output = u8> {
     fn slice_from(&self, start_off: usize) -> ConcatSlice;
 }
 
-/// A byte buffer of fixed length which is typically used to store the last N bytes of some larger
-/// stream of bytes.
+/// A byte buffer of fixed length which is typically used to store the last N
+/// bytes of some larger stream of bytes.
 pub struct CyclicBuffer {
     data: Vec<u8>,
 
@@ -182,32 +182,32 @@ mod tests {
         let mut b = CyclicBuffer::new(8);
         assert_eq!(b.start_offset(), 0);
         assert_eq!(b.end_offset(), 0);
-        
-        b.extend_from_slice(&[1,2,3,4]);
+
+        b.extend_from_slice(&[1, 2, 3, 4]);
         assert_eq!(b.start_offset(), 0);
         assert_eq!(b.end_offset(), 4);
         assert_eq!(b[0], 1);
         assert_eq!(b[2], 3);
 
-        b.extend_from_slice(&[15,16,17,18,19]);
+        b.extend_from_slice(&[15, 16, 17, 18, 19]);
 
         assert_eq!(b.start_offset(), 1);
         assert_eq!(b.end_offset(), 9);
         assert_eq!(b[1], 2);
         assert_eq!(b[5], 16);
-        assert_eq!(&b.slice_from(1).to_vec(), &[2,3,4,15,16,17,18,19]);
+        assert_eq!(&b.slice_from(1).to_vec(), &[2, 3, 4, 15, 16, 17, 18, 19]);
 
-        b.extend_from_slice(&[0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 4, 3, 2, 1]);
+        b.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 3, 2, 1]);
         assert_eq!(b.start_offset(), 21);
         assert_eq!(b.end_offset(), 29);
-        assert_eq!(&b.slice_from(21).to_vec(), &[0,0,0,0, 4, 3, 2, 1]);
-        assert_eq!(&b.slice_from(23).to_vec(), &[0,0, 4, 3, 2, 1]);
+        assert_eq!(&b.slice_from(21).to_vec(), &[0, 0, 0, 0, 4, 3, 2, 1]);
+        assert_eq!(&b.slice_from(23).to_vec(), &[0, 0, 4, 3, 2, 1]);
         assert_eq!(&b.slice_from(28).to_vec(), &[1]);
         assert_eq!(&b.slice_from(29).to_vec(), &[]);
 
-        // TODO: Also test extend_from_slice() with a zero length slice or a slice that is the exact length of the buffer
+        // TODO: Also test extend_from_slice() with a zero length slice or a
+        // slice that is the exact length of the buffer
     }
-
 }
 
 // TODO: Add lot's of tests to this.

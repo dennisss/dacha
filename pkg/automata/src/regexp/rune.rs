@@ -2,7 +2,8 @@ use common::errors::*;
 use common::InRange;
 
 /// First to last code point in for each byte length of a UTF-8 rune.
-/// UTF-8 characters are encoded in up to 4 bytes with up to 21-bits being use-able to represent the code itself.
+/// UTF-8 characters are encoded in up to 4 bytes with up to 21-bits being
+/// use-able to represent the code itself.
 const CODE_POINT_RANGES: &'static [(u32, u32)] = &[
     // Range of character codes of encoded length 1.
     (0, 0x7F),
@@ -11,9 +12,8 @@ const CODE_POINT_RANGES: &'static [(u32, u32)] = &[
     // ... of length 3
     (0x800, 0xFFFF),
     // ... of length 4
-    (0x10000, 0x10FFFF)
+    (0x10000, 0x10FFFF),
 ];
-
 
 /*
 Match all byte patterns from:
@@ -38,7 +38,7 @@ to
 01 FF
 
 
-01 02 
+01 02
 
 
 
@@ -66,13 +66,13 @@ which is:
 
 
 
-then we can get it higher, and 
+then we can get it higher, and
 
 
 */
 
-
-/// Expands a range of unicode characters to a regular expression which matches only on single bytes at a time.
+/// Expands a range of unicode characters to a regular expression which matches
+/// only on single bytes at a time.
 fn expand_rune_range(start: char, end: char) -> Result<Vec<Vec<(u8, u8)>>> {
     assert!(end >= start);
 
@@ -83,12 +83,14 @@ fn expand_rune_range(start: char, end: char) -> Result<Vec<Vec<(u8, u8)>>> {
     let mut out = vec![];
     for (lower_code, upper_code) in CODE_POINT_RANGES.iter().cloned() {
         // Skip ranges that don't overlap at all with the requested character range.
-        if ((start as u32) < lower_code && (end as u32) < upper_code) ||
-           ((start as u32) > upper_code && (end as u32) > upper_code) {
+        if ((start as u32) < lower_code && (end as u32) < upper_code)
+            || ((start as u32) > upper_code && (end as u32) > upper_code)
+        {
             continue;
         }
 
-        // For this byte length, these are the start/end codes across which we will match. 
+        // For this byte length, these are the start/end codes across which we will
+        // match.
         let lower = std::cmp::max(lower_code, start as u32);
         let upper = std::cmp::min(upper_code, end as u32);
 
@@ -99,11 +101,10 @@ fn expand_rune_range(start: char, end: char) -> Result<Vec<Vec<(u8, u8)>>> {
         let mut chain = vec![];
         for i in 0..lower_str.len() {
             chain.push((lower_str.as_bytes()[i], upper_str.as_bytes()[i]));
-        } 
+        }
 
         out.push(chain);
     }
-    
 
     Ok(out)
 }
@@ -151,25 +152,30 @@ fn ranges_between(start: &[u8], end: &[u8], out: &mut Vec<Vec<(u8, u8)>>) {
 }
 */
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn rune_test() {
+        assert_eq!(
+            expand_rune_range('A', 'C').unwrap(),
+            vec![vec![(0x41, 0x43)]]
+        );
 
-        assert_eq!(expand_rune_range('A', 'C').unwrap(), vec![ vec![ (0x41, 0x43) ] ]);
+        assert_eq!(
+            expand_rune_range('\u{00B5}', '\u{00B5}').unwrap(),
+            vec![vec![(0o0302, 0o0302), (0o0265, 0o0265)]]
+        );
 
-        assert_eq!(expand_rune_range('\u{00B5}', '\u{00B5}').unwrap(), vec![ vec![ (0o0302, 0o0302), (0o0265, 0o0265) ] ]);
-
-        assert_eq!(expand_rune_range('\u{00B5}', '\u{00D7}').unwrap(), vec![
-            vec![ (0o0302, 0o0302), (0o0265, 0xFF) ],
-            vec![ (0o0303, 0o0303), (0, 0o0227) ]    
-        ]);
+        assert_eq!(
+            expand_rune_range('\u{00B5}', '\u{00D7}').unwrap(),
+            vec![
+                vec![(0o0302, 0o0302), (0o0265, 0xFF)],
+                vec![(0o0303, 0o0303), (0, 0o0227)]
+            ]
+        );
 
         // 0303 0227
-
     }
-
 }

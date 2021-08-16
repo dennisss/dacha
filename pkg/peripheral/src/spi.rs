@@ -1,6 +1,5 @@
 use std::os::unix::prelude::AsRawFd;
 
-
 /*
 
 Linux Definitions:
@@ -16,7 +15,7 @@ mod linux {
 
     const SPI_IOC_TYPE_MESSAGE: u8 = 0; // &[spi_ioc_transfer]
     const SPI_IOC_TYPE_MODE: u8 = 1; // u8
-    const SPI_IOC_TYPE_LSB_FIRST: u8 = 2; // 
+    const SPI_IOC_TYPE_LSB_FIRST: u8 = 2; //
     const SPI_IOC_TYPE_BITS_PER_WORD: u8 = 3; // u8
     const SPI_IOC_TYPE_MAX_SPEED_HZ: u8 = 4; // u32
     const SPI_IOC_TYPE_MODE32: u8 = 5;
@@ -26,7 +25,7 @@ mod linux {
     pub struct spi_ioc_transfer {
         pub tx_buf: u64,
         pub rx_buf: u64,
-        
+
         pub len: u32,
         speed_hz: u32,
 
@@ -36,23 +35,27 @@ mod linux {
         tx_nbits: u8,
         rx_nbits: u8,
         word_delay_usecs: u8,
-        pad: u8
+        pad: u8,
     }
 
     ioctl_read!(spi_read_mode, SPI_IOC_MAGIC, SPI_IOC_TYPE_MODE, u8);
 
     // ioctl_read!(spi_read_mode, SPI_IOC_MAGIC, SPI_IOC_TYPE_MODE, u8);
 
-    ioctl_write_buf!(spi_transfer, SPI_IOC_MAGIC, SPI_IOC_TYPE_MESSAGE, spi_ioc_transfer);
+    ioctl_write_buf!(
+        spi_transfer,
+        SPI_IOC_MAGIC,
+        SPI_IOC_TYPE_MESSAGE,
+        spi_ioc_transfer
+    );
 }
 
 trait SPI {
     fn transfer(&mut self, send: &[u8], receive: &mut [u8]) -> std::result::Result<(), ()>;
 }
 
-
 pub struct SPIDevice {
-    file: std::fs::File
+    file: std::fs::File,
 }
 
 impl SPIDevice {

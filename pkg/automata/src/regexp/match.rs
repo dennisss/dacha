@@ -4,9 +4,8 @@ use common::errors::*;
 
 use crate::fsm::*;
 use crate::regexp::instance::*;
-use crate::regexp::symbol::*;
 use crate::regexp::state_machine::*;
-
+use crate::regexp::symbol::*;
 
 // NOTE: Visibility is provided to the RegExp class.
 pub struct RegExpMatch<'a, 'b> {
@@ -104,7 +103,7 @@ impl<'a, 'b> RegExpMatch<'a, 'b> {
                 Some(c) => {
                     self.remaining = &self.remaining[1..];
                     self.instance.alphabet.get(c as char)
-                },
+                }
                 None => {
                     if self.consumed_end {
                         return Ok(None);

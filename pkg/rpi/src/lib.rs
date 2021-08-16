@@ -1,9 +1,12 @@
-#[macro_use] extern crate common;
+#[macro_use]
+extern crate common;
 extern crate libc;
-#[macro_use] extern crate nix;
-#[macro_use] extern crate lazy_static;
+#[macro_use]
+extern crate nix;
+#[macro_use]
+extern crate lazy_static;
 
-mod memory;
 pub mod gpio;
+mod memory;
 pub mod pwm;
 pub mod temp;

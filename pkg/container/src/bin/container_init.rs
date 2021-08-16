@@ -4,21 +4,23 @@ while reaping any orphaned processes.
 
 */
 
-extern crate nix;
-extern crate libc;
 extern crate common;
+extern crate libc;
+extern crate nix;
 
 use std::ffi::CString;
 
 use common::errors::*;
-use nix::sys::{signal::{SigHandler, Signal, signal}, wait::WaitPidFlag};
+use nix::sys::{
+    signal::{signal, SigHandler, Signal},
+    wait::WaitPidFlag,
+};
 
-extern fn handle_sigchld(signal: libc::c_int) {
-
-}
+extern "C" fn handle_sigchld(signal: libc::c_int) {}
 
 fn run_child(args: &[CString]) -> ! {
-    // NOTE: execv() will reset all of the signal() dispositions, but not any sigprocmask() calls.
+    // NOTE: execv() will reset all of the signal() dispositions, but not any
+    // sigprocmask() calls.
     if let Err(e) = nix::unistd::execv(&args[1], &args[2..]) {
         eprintln!("Failed to start child process: {:?}", e);
     }
@@ -27,17 +29,15 @@ fn run_child(args: &[CString]) -> ! {
 }
 
 fn run() -> Result<i32> {
-
     {
         let handler = SigHandler::Handler(handle_sigchld);
         unsafe { signal(Signal::SIGCHLD, handler) }?;
 
-        // Ignore termination signals. We assume that they are sent to the entire process group
-        // (including our child process).
+        // Ignore termination signals. We assume that they are sent to the entire
+        // process group (including our child process).
         unsafe { signal(Signal::SIGINT, SigHandler::SigIgn) }?;
         unsafe { signal(Signal::SIGTERM, SigHandler::SigIgn) }?;
     }
-
 
     let mut args = vec![];
     for s in std::env::args() {
@@ -52,9 +52,7 @@ fn run() -> Result<i32> {
         nix::unistd::ForkResult::Child => {
             run_child(&args);
         }
-        nix::unistd::ForkResult::Parent { child } => {
-            child
-        }
+        nix::unistd::ForkResult::Parent { child } => child,
     };
 
     loop {
@@ -64,16 +62,16 @@ fn run() -> Result<i32> {
                 if pid == root_pid {
                     return Ok(code);
                 }
-            },
+            }
             nix::sys::wait::WaitStatus::Signaled(pid, signal, _) => {
                 if pid == root_pid {
-                    // TODO: In this case, we should kill ourselves with the same signal to emulate the death?
-                    // But will need to disable our signal handlers.
+                    // TODO: In this case, we should kill ourselves with the same signal to emulate
+                    // the death? But will need to disable our signal handlers.
 
                     eprintln!("Killed by signal {}", signal);
                     return Ok(2);
                 }
-            },
+            }
             nix::sys::wait::WaitStatus::Stopped(pid, _) => {
                 if pid == root_pid {
                     eprintln!("Process stopped!");
@@ -81,21 +79,20 @@ fn run() -> Result<i32> {
                 }
 
                 nix::sys::signal::kill(pid, Signal::SIGKILL)?;
-            },
-            nix::sys::wait::WaitStatus::Continued(_) => {},
+            }
+            nix::sys::wait::WaitStatus::Continued(_) => {}
             nix::sys::wait::WaitStatus::StillAlive => {
                 return Err(err_msg("No progress can be made in init process."))
-            },
-            nix::sys::wait::WaitStatus::PtraceEvent(_, _, _) |
-            nix::sys::wait::WaitStatus::PtraceSyscall(_) => {
+            }
+            nix::sys::wait::WaitStatus::PtraceEvent(_, _, _)
+            | nix::sys::wait::WaitStatus::PtraceSyscall(_) => {
                 return Err(format_err!("Unhandled process event {:?}", e));
-            }        
+            }
         }
     }
 }
 
 fn main() {
-
     let return_code = match run() {
         Ok(v) => v,
         Err(e) => {

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use crate::proto::consensus::{ServerId, LogIndex};
+use crate::proto::consensus::{LogIndex, ServerId};
 
 /*
     Ideally we would generalize away the flow control aspect of it

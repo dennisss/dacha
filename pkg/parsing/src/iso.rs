@@ -8,7 +8,7 @@ use common::errors::*;
 /// Byte values 0-127 is identical to US-ASCII.
 /// Byte values 128-255 interpreted as raw u8's as unicode code points.
 pub struct Latin1String {
-    // TODO: Disaallow direct assess to 
+    // TODO: Disaallow direct assess to
     pub data: Bytes,
 }
 
@@ -61,7 +61,8 @@ impl Latin1String {
         self.data.as_ref()
     }
 
-    // TODO: Add an as_ascii_str() for the case of the string using the ASCII string subset.
+    // TODO: Add an as_ascii_str() for the case of the string using the ASCII string
+    // subset.
 }
 
 impl std::fmt::Debug for Latin1String {

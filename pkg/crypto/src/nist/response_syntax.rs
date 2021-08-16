@@ -5,13 +5,13 @@ use parsing::*;
 pub enum Element<'a> {
     Attribute {
         key: &'a str,
-        value: Option<&'a str>
+        value: Option<&'a str>,
     },
     Field {
         key: &'a str,
-        value: Option<&'a str>
+        value: Option<&'a str>,
     },
-    EndOfLine
+    EndOfLine,
 }
 
 impl Element<'_> {
@@ -63,7 +63,6 @@ impl Element<'_> {
         Ok((key, value))
     }));
 
-
     parser!(parse_eol<&str, Element> => seq!(c => {
         c.next(opt(Token::parse_whitespace))?;
         c.next(alt!(
@@ -76,18 +75,15 @@ impl Element<'_> {
     }));
 }
 
-
-
 enum Token<'a> {
     Comment(&'a str),
     Symbol(char),
     Whitespace(&'a str),
     NewLine,
-    Text(&'a str)
+    Text(&'a str),
 }
 
 impl Token<'_> {
-
     /*
     /// Parses the next token while skipping non-semantic tokens like whitespace or
     /// comments.
@@ -108,7 +104,7 @@ impl Token<'_> {
 
             match tok {
                 Token::Text(_) | Token::Symbol(_) | Token::NewLine => { return Ok((Some(tok), rest)); },
-                Token::Symbol(_) => { return Ok((Some(tok), rest)) } 
+                Token::Symbol(_) => { return Ok((Some(tok), rest)) }
                 Token::Comment(_) | Token::Whitespace(_) => {
                     input = rest;
                 }
@@ -160,11 +156,11 @@ impl Token<'_> {
     }));
 
     parser!(parse_symbol<&str, char> => one_of("[]="));
-    
+
     parser!(parse_whitespace<&str, &str> => slice(many1(one_of("\t\r "))));
 
     parser!(parse_new_line<&str, char> => one_of("\n"));
-    
+
     parser!(parse_text<&str, &str> => take_while1(|c: char| c.is_alphanumeric()));
 
     fn parse_empty(input: &str) -> Result<((), &str)> {
@@ -173,6 +169,5 @@ impl Token<'_> {
         } else {
             return Err(err_msg("Not empty"));
         }
-    } 
+    }
 }
-

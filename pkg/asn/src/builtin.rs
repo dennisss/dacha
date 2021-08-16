@@ -5,9 +5,9 @@ use std::convert::AsRef;
 use std::fmt::Debug;
 use std::string::ToString;
 
-use common::chrono::{Date, DateTime, FixedOffset, TimeZone, Utc};
 use common::bits::BitVector;
 use common::bytes::Bytes;
+use common::chrono::{Date, DateTime, FixedOffset, TimeZone, Utc};
 use common::errors::*;
 use common::vec::VecPtr;
 use parsing::ascii::AsciiString;
