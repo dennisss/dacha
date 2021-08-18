@@ -14,22 +14,16 @@ use crate::db::EmbeddedDBOptions;
 use common::errors::*;
 use std::path::Path;
 
-mod block;
-mod block_builder;
-pub mod bloom;
 mod comparator;
 mod comparator_context;
 pub mod db;
 pub mod encoding;
-pub mod filter_block;
-pub mod filter_block_builder;
 mod internal_key;
 mod manifest;
 mod memtable;
 pub mod record_log;
+// mod skip_list;
 pub mod table;
-pub mod table_builder;
-mod table_properties;
 mod write_batch;
 
 /*

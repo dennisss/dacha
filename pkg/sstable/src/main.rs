@@ -11,7 +11,7 @@ async fn run() -> Result<()> {
     // await?;
 
     //	sstable::open_db(project_path!("testdata/leveldb")).await?;
-    sstable::table::SSTable::open(project_path!("testdata/rocksdb/000007.sst")).await?;
+    sstable::table::table::SSTable::open(project_path!("testdata/rocksdb/000007.sst")).await?;
 
     Ok(())
 }

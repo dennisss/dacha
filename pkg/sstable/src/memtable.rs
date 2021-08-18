@@ -2,7 +2,7 @@ use crate::comparator::*;
 use crate::comparator_context::ComparatorContext;
 use crate::internal_key::*;
 use crate::record_log::RecordReader;
-use crate::table_builder::*;
+use crate::table::table_builder::*;
 use crate::write_batch::Write::Value;
 use crate::write_batch::*;
 use common::async_std::path::Path;

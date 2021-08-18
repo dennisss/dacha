@@ -1,9 +1,9 @@
-use crate::block::{Block, BlockEntry};
-use crate::block_builder::{BlockBuilder, UnsortedBlockBuilder};
 use crate::comparator::*;
-use crate::filter_block::FilterPolicy;
-use crate::filter_block_builder::FilterBlockBuilder;
-use crate::table::{BlockHandle, ChecksumType, CompressionType};
+use crate::table::block::{Block, BlockEntry};
+use crate::table::block_builder::{BlockBuilder, UnsortedBlockBuilder};
+use crate::table::filter_block::FilterPolicy;
+use crate::table::filter_block_builder::FilterBlockBuilder;
+use crate::table::table::{BlockHandle, ChecksumType, CompressionType};
 use common::async_std::fs::{File, OpenOptions};
 use common::async_std::io::prelude::WriteExt;
 use common::async_std::path::Path;

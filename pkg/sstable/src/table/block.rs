@@ -2,11 +2,13 @@
 // many prefix-compressed entries representing key-value pairs. It should not
 // be confused with meta blocks which may have a different format.
 
-use crate::encoding::u32_slice;
+use std::cmp::Ordering;
+
 use common::errors::*;
 use parsing::*;
 use protobuf::wire::{parse_varint, serialize_varint};
-use std::cmp::Ordering;
+
+use crate::encoding::u32_slice;
 
 // TODO: The hash-based index is stored before the list of resets here:
 // https://github.com/facebook/rocksdb/blob/50e470791dafb3db017f055f79323aef9a607e43/table/block_based/block_builder.cc#L118

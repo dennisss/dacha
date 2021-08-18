@@ -1,5 +1,5 @@
 use crate::comparator::Comparator;
-use crate::filter_block::FilterPolicy;
+use crate::table::filter_block::FilterPolicy;
 use common::errors::*;
 use std::cmp::Ordering;
 use std::sync::Arc;

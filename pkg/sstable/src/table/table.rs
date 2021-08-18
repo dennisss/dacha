@@ -1,5 +1,5 @@
-use crate::block::*;
-use crate::table_properties::*;
+use crate::table::block::*;
+use crate::table::table_properties::*;
 use common::algorithms::SliceLike;
 use common::async_std::fs::File;
 use common::async_std::io::prelude::{ReadExt, SeekExt, WriteExt};

@@ -11,8 +11,8 @@ use crate::internal_key::*;
 use crate::manifest::*;
 use crate::memtable::*;
 use crate::record_log::*;
-use crate::table::{SSTable, SSTableIterator};
-use crate::table_builder::{SSTableBuilder, SSTableBuilderOptions};
+use crate::table::table::{SSTable, SSTableIterator};
+use crate::table::table_builder::{SSTableBuilder, SSTableBuilderOptions};
 use crate::write_batch::Write::Value;
 use crate::write_batch::*;
 

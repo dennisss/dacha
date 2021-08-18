@@ -1,4 +1,4 @@
-use crate::filter_block::*;
+use crate::table::filter_block::*;
 
 fn hash(data: &[u8], seed: u32) -> u32 {
     const m: u32 = 0xc6a4a793;

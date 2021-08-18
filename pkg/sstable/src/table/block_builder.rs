@@ -1,6 +1,8 @@
-use crate::block::{Block, BlockEntry};
-use common::errors::*;
 use std::collections::BTreeMap;
+
+use common::errors::*;
+
+use crate::table::block::{Block, BlockEntry};
 
 /// Builds a key-value style block.
 pub struct BlockBuilder {

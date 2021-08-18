@@ -1,4 +1,4 @@
-use crate::filter_block::*;
+use crate::table::filter_block::*;
 use std::sync::Arc;
 
 pub struct FilterBlockBuilder {
