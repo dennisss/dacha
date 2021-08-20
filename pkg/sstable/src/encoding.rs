@@ -56,3 +56,13 @@ pub fn parse_u8(mut input: &[u8]) -> Result<(u8, &[u8])> {
 pub fn u32_slice(input: &[u8]) -> &[u32] {
     unsafe { std::slice::from_raw_parts(input.as_ptr() as *const u32, input.len() / 4) }
 }
+
+pub fn check_padding(s: &[u8]) -> Result<()> {
+    for b in s {
+        if *b != 0 {
+            return Err(err_msg("Non-zero padding"));
+        }
+    }
+
+    Ok(())
+}

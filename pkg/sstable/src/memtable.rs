@@ -147,7 +147,7 @@ impl MemTable {
             let ik = InternalKey::parse(&key.key).unwrap();
             if ik.typ != ValueType::Deletion {
                 // TODO: Internalize this cloning?
-                table_builder.add(key.key.to_vec(), value.to_vec()).await?;
+                table_builder.add(key.key.to_vec(), &value).await?;
             }
         }
 

@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 
 use common::errors::*;
 
-use crate::table::block::{Block, BlockEntry};
+use crate::table::data_block::{DataBlockEntry, DataBlockRef};
 
 /// Builds a key-value style block.
-pub struct BlockBuilder {
+pub struct DataBlockBuilder {
     restart_interval: usize,
     buffer: Vec<u8>,
     restart_offsets: Vec<u32>,
@@ -13,7 +13,7 @@ pub struct BlockBuilder {
     last_key: Vec<u8>,
 }
 
-impl BlockBuilder {
+impl DataBlockBuilder {
     pub fn new(restart_interval: usize) -> Self {
         Self {
             restart_interval,
@@ -37,7 +37,7 @@ impl BlockBuilder {
         self.buffer.len() + key.len() + value.len() + 4 * self.restart_offsets.len()
     }
 
-    pub fn add(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+    pub fn add(&mut self, key: Vec<u8>, value: &[u8]) -> Result<()> {
         // Keys must be inserted strictly in sorted order.
         if key <= self.last_key {
             return Err(err_msg("Out of order or duplicate key inserted"));
@@ -58,10 +58,10 @@ impl BlockBuilder {
             }
         }
 
-        BlockEntry {
+        DataBlockEntry {
             shared_bytes: shared_bytes as u32,
             key_delta: &key[shared_bytes..],
-            value: &value,
+            value,
         }
         .serialize(&mut self.buffer);
 
@@ -71,16 +71,33 @@ impl BlockBuilder {
         Ok(())
     }
 
+    /// TODO: Split this struct into a Block and BlockFooter
+    /// NOTE: This does NOT serialize the entries.
+    fn serialize_block_footer(hash_index: Option<&[u8]>, restarts: &[u32], output: &mut Vec<u8>) {
+        if let Some(buckets) = hash_index {
+            assert!(buckets.len() <= 255);
+            output.extend_from_slice(buckets);
+            output.push(buckets.len() as u8);
+        }
+
+        output.reserve(restarts.len() * 4);
+        for r in restarts {
+            output.extend_from_slice(&r.to_le_bytes());
+        }
+
+        let mut packed = restarts.len() as u32;
+        if hash_index.is_some() {
+            packed |= 1 << 31;
+        }
+
+        output.extend_from_slice(&packed.to_le_bytes());
+    }
+
     /// Writes the footer for the block and returns the complete block.
     /// After calling this the builder is in a reset state and can be used for
     /// building different blocks.
     pub fn finish(&mut self) -> (Vec<u8>, Vec<u8>) {
-        Block {
-            entries: &[],
-            hash_index: None,
-            restarts: &self.restart_offsets,
-        }
-        .serialize(&mut self.buffer);
+        Self::serialize_block_footer(None, &self.restart_offsets, &mut self.buffer);
 
         self.restart_offsets.clear();
         self.entries_since_restart = 0;
@@ -105,12 +122,12 @@ impl BlockBuilder {
 ///
 /// This also doesn't have as many buffer re-use optimizations as BlockBuilder
 /// does.
-pub struct UnsortedBlockBuilder {
+pub struct UnsortedDataBlockBuilder {
     restart_interval: usize,
     data: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
-impl UnsortedBlockBuilder {
+impl UnsortedDataBlockBuilder {
     pub fn new(restart_interval: usize) -> Self {
         Self {
             restart_interval,
@@ -127,11 +144,11 @@ impl UnsortedBlockBuilder {
     }
 
     pub fn finish(mut self) -> Result<Vec<u8>> {
-        let mut builder = BlockBuilder::new(self.restart_interval);
+        let mut builder = DataBlockBuilder::new(self.restart_interval);
 
         self.data.sort_unstable();
         for (key, value) in self.data.into_iter() {
-            builder.add(key, value)?;
+            builder.add(key, &value)?;
         }
 
         Ok(builder.finish().0)

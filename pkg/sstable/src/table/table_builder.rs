@@ -1,18 +1,20 @@
-use crate::comparator::*;
-use crate::table::block::{Block, BlockEntry};
-use crate::table::block_builder::{BlockBuilder, UnsortedBlockBuilder};
-use crate::table::filter_block::FilterPolicy;
-use crate::table::filter_block_builder::FilterBlockBuilder;
-use crate::table::table::{BlockHandle, ChecksumType, CompressionType};
+use std::cmp::Ordering;
+use std::sync::Arc;
+
 use common::async_std::fs::{File, OpenOptions};
 use common::async_std::io::prelude::WriteExt;
 use common::async_std::path::Path;
 use common::errors::*;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
-use std::cmp::Ordering;
-use std::fs::metadata;
-use std::sync::Arc;
+
+use crate::comparator::*;
+use crate::table::block_handle::BlockHandle;
+use crate::table::data_block_builder::{DataBlockBuilder, UnsortedDataBlockBuilder};
+use crate::table::filter_block::FilterPolicy;
+use crate::table::filter_block_builder::FilterBlockBuilder;
+use crate::table::footer::*;
+use crate::table::raw_block::CompressionType;
 
 #[derive(Defaultable)]
 pub struct SSTableBuilderOptions {
@@ -94,12 +96,15 @@ pub struct SSTableBuilder {
     file: File,
     file_len: usize,
     options: SSTableBuilderOptions,
+
+    /// Buffer used to temporarily accumulate compressed bytes during block
+    /// compression. This will be cleared after each block is written.
     compressed_buffer: Vec<u8>,
 
-    index_block_builder: BlockBuilder,
+    index_block_builder: DataBlockBuilder,
     //	data_block_handles: Vec<BlockHandle>,
     filter_block_builder: Option<FilterBlockBuilder>,
-    data_block_builder: BlockBuilder,
+    data_block_builder: DataBlockBuilder,
 
     /// If set, that a data block was written to the file but hasn't been added
     /// to the
@@ -122,14 +127,14 @@ impl SSTableBuilder {
             None
         };
 
-        let data_block_builder = BlockBuilder::new(options.block_restart_interval);
+        let data_block_builder = DataBlockBuilder::new(options.block_restart_interval);
 
         Ok(Self {
             file,
             file_len: 0,
             options,
             compressed_buffer: vec![],
-            index_block_builder: BlockBuilder::new(1),
+            index_block_builder: DataBlockBuilder::new(1),
             filter_block_builder,
             data_block_builder,
             pending_data_block: None,
@@ -201,7 +206,7 @@ impl SSTableBuilder {
         Ok(())
     }
 
-    pub async fn add(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+    pub async fn add(&mut self, key: Vec<u8>, value: &[u8]) -> Result<()> {
         let min_cutoff = (self.options.block_size * self.options.block_size_deviation) / 100;
 
         // If we expect to overflow the block size, flush the flush the previous
@@ -225,10 +230,10 @@ impl SSTableBuilder {
                 .comparator
                 .find_shortest_separator(pending.last_key, &key);
             self.index_block_builder
-                .add(index_key, pending.handle.serialized())?;
+                .add(index_key, &pending.handle.serialized())?;
         }
 
-        self.data_block_builder.add(key.clone(), value)?;
+        self.data_block_builder.add(key.clone(), &value)?;
 
         if let Some(filter_builder) = self.filter_block_builder.as_mut() {
             filter_builder.add_key(key);
@@ -251,11 +256,11 @@ impl SSTableBuilder {
                 .comparator
                 .find_short_successor(pending.last_key);
             self.index_block_builder
-                .add(index_key, pending.handle.serialized())?;
+                .add(index_key, &pending.handle.serialized())?;
         }
 
         // TODO: Make the interval configurable
-        let mut metaindex_builder = UnsortedBlockBuilder::new(1);
+        let mut metaindex_builder = UnsortedDataBlockBuilder::new(1);
 
         if let Some(filter_builder) = self.filter_block_builder.take() {
             let mut buffer = filter_builder.finish();

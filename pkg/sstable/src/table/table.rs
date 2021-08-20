@@ -1,5 +1,12 @@
-use crate::table::block::*;
-use crate::table::table_properties::*;
+use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::future::Future;
+use std::ops::{Deref, Index};
+use std::path::Path;
+use std::slice::SliceIndex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 use common::algorithms::SliceLike;
 use common::async_std::fs::File;
 use common::async_std::io::prelude::{ReadExt, SeekExt, WriteExt};
@@ -15,30 +22,13 @@ use math::matrix::Dimension;
 use parsing::complete;
 use protobuf::wire::{parse_varint, serialize_varint};
 use reflection::*;
-use std::collections::HashMap;
-use std::collections::VecDeque;
-use std::future::Future;
-use std::ops::{Deref, Index};
-use std::path::Path;
-use std::slice::SliceIndex;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 
-// TODO: There are two different versions:
-// https://github.com/facebook/rocksdb/blob/master/table/block_based/block_based_table_builder.cc#L208
-const BLOCK_BASED_MAGIC: u64 = 0x88e241b785f4cff7;
-/// This is compatible with LevelDB.
-const BLOCK_BASED_MAGIC_LEGACY: u64 = 0xdb4775248b80fb57;
-const MAGIC_SIZE: usize = 8;
+use crate::table::block_handle::BlockHandle;
+use crate::table::data_block::*;
+use crate::table::footer::*;
+use crate::table::table_properties::*;
 
-const BLOCK_HANDLE_MAX_SIZE: usize = 20;
-
-const LEGACY_FOOTER_SIZE: usize = 2 * BLOCK_HANDLE_MAX_SIZE + MAGIC_SIZE;
-const FOOTER_SIZE: usize = 2 * BLOCK_HANDLE_MAX_SIZE + 1 + 4 + MAGIC_SIZE;
-
-/// Always 1 byte for CompressionType + 4 bytes for checksum.
-const BLOCK_TRAILER_SIZE: usize = 5;
-
+// TODO: Unused
 pub const METAINDEX_PROPERTIES_KEY: &'static [u8] = b"rocksdb.properties";
 
 const NEXT_ID: AtomicUsize = AtomicUsize::new(0);
@@ -74,30 +64,17 @@ impl SSTable {
         // TODO: Validate that the entire file is accounted for in the block handles.
 
         let mut file = File::open(path).await?;
-        let metadata = file.metadata().await?;
-        let len = metadata.len();
-        if len < (FOOTER_SIZE as u64) {
-            return Err(err_msg("File too small"));
-        }
 
-        let footer = {
-            file.seek(SeekFrom::Start(len - (FOOTER_SIZE as u64)))
-                .await?;
-            let mut buf = [0u8; FOOTER_SIZE];
-            file.read_exact(&mut buf).await?;
-            Footer::parse(&buf)?
-        };
-
-        println!("{:#?}", footer);
+        let footer = Footer::read_from_file(&mut file).await?;
 
         let index = IndexBlock::create(
             &DataBlock::read(&mut file, &footer, &footer.index_handle)
                 .await?
-                .block,
+                .block(),
         )?;
 
         let metaindex = DataBlock::read(&mut file, &footer, &footer.metaindex_handle).await?;
-        let mut iter = metaindex.block.before(b"")?.rows();
+        let mut iter = metaindex.block().before(b"")?.rows();
 
         let mut props = TableProperties::default();
 
@@ -113,7 +90,7 @@ impl SSTable {
             // Full list is here: https://github.com/facebook/rocksdb/blob/9bd5fce6e89fcb294a1d193f32f3e4bb2e41d994/table/meta_blocks.cc#L74
             if row.key == b"rocksdb.properties" {
                 let block = DataBlock::read(&mut file, &footer, &handle).await?;
-                props = Self::parse_properties(&block.block)?;
+                props = Self::parse_properties(block.block())?;
                 println!("{:?}", props);
             }
 
@@ -144,7 +121,7 @@ impl SSTable {
         self.state.index.block_handles.len()
     }
 
-    fn parse_properties(block: &Block) -> Result<TableProperties> {
+    fn parse_properties(block: &DataBlockRef) -> Result<TableProperties> {
         let mut pairs = HashMap::new();
 
         let mut iter = block.iter().rows();
@@ -196,236 +173,9 @@ impl SSTable {
     }
 }
 
-// From https://github.com/facebook/rocksdb/blob/ca7ccbe2ea6be042f90f31eb75ad4dca032dbed1/table/format.cc#L163:
-// legacy footer format:
-//    metaindex handle (varint64 offset, varint64 size)
-//    index handle     (varint64 offset, varint64 size)
-//    <padding> to make the total size 2 * BlockHandle::kMaxEncodedLength
-//    table_magic_number (8 bytes)
-// new footer format:
-//    checksum type (char, 1 byte)
-//    metaindex handle (varint64 offset, varint64 size)
-//    index handle     (varint64 offset, varint64 size)
-//    <padding> to make the total size 2 * BlockHandle::kMaxEncodedLength + 1
-//    footer version (4 bytes)
-//    table_magic_number (8 bytes)
-#[derive(Debug)]
-pub struct Footer {
-    pub checksum_type: ChecksumType,
-    pub metaindex_handle: BlockHandle,
-    pub index_handle: BlockHandle,
-
-    /// Version of the format as stored in the footer. This should be the
-    /// same value as the format version stored in the RocksDB properties.
-    /// Version 0 is with old  RocksDB versions and LevelDB. checksum_type
-    /// is only supported as non-CRC32C if footer_version >= 1
-    pub footer_version: u32,
-}
-
-impl Footer {
-    /// Parses a footer from the given buffer. This assumes that the input is
-    /// contains at least the entire footer but should not contain any data
-    /// after the footer.
-    pub fn parse(mut input: &[u8]) -> Result<Self> {
-        min_size!(input, MAGIC_SIZE);
-        let magic_start = input.len() - MAGIC_SIZE;
-        let magic = u64::from_le_bytes(*array_ref![input, input.len() - MAGIC_SIZE, MAGIC_SIZE]);
-
-        if magic == BLOCK_BASED_MAGIC {
-            min_size!(input, FOOTER_SIZE);
-            let data = &input[(input.len() - FOOTER_SIZE)..magic_start];
-
-            let (checksum_type, data) = (ChecksumType::from_value(data[0])?, &data[1..]);
-            let (metaindex_handle, data) = BlockHandle::parse(data)?;
-            let (index_handle, data) = BlockHandle::parse(data)?;
-
-            let footer_version_start = data.len() - 4;
-            check_padding(&data[0..footer_version_start])?;
-            let footer_version = u32::from_le_bytes(*array_ref![data, footer_version_start, 4]);
-
-            if footer_version == 0 {
-                return Err(err_msg(
-                    "Not allowed to have old footer version with new format",
-                ));
-            }
-
-            Ok(Self {
-                checksum_type,
-                metaindex_handle,
-                index_handle,
-                footer_version,
-            })
-        } else if magic == BLOCK_BASED_MAGIC_LEGACY {
-            min_size!(input, LEGACY_FOOTER_SIZE);
-            let data = &input[(input.len() - LEGACY_FOOTER_SIZE)..magic_start];
-
-            let (metaindex_handle, data) = BlockHandle::parse(data)?;
-            let (index_handle, data) = BlockHandle::parse(data)?;
-            check_padding(data)?;
-
-            Ok(Self {
-                checksum_type: ChecksumType::CRC32C,
-                metaindex_handle,
-                index_handle,
-                footer_version: 0,
-            })
-        } else {
-            return Err(err_msg("Incorrect magic"));
-        }
-    }
-
-    pub fn serialize(&self, out: &mut Vec<u8>) {
-        if self.footer_version == 0 {
-            assert_eq!(self.checksum_type, ChecksumType::CRC32C);
-
-            let start_index = out.len();
-            self.metaindex_handle.serialize(out);
-            self.index_handle.serialize(out);
-            out.resize(start_index + 2 * BLOCK_HANDLE_MAX_SIZE, 0);
-            out.extend_from_slice(&BLOCK_BASED_MAGIC_LEGACY.to_be_bytes());
-        } else {
-            out.push(self.checksum_type as u8);
-
-            let start_index = out.len();
-            self.metaindex_handle.serialize(out);
-            self.index_handle.serialize(out);
-            out.resize(start_index + 2 * BLOCK_HANDLE_MAX_SIZE, 0);
-
-            out.extend_from_slice(&self.footer_version.to_le_bytes());
-            out.extend_from_slice(&BLOCK_BASED_MAGIC.to_be_bytes());
-        };
-    }
-}
-
-enum_def!(ChecksumType u8 =>
-    None = 0,
-    CRC32C = 1,
-    XXHash = 2,
-    XXHash64 = 3
-);
-
-#[derive(Debug)]
-pub struct BlockHandle {
-    pub offset: u64,
-    pub size: u64,
-}
-
-impl BlockHandle {
-    pub fn parse(input: &[u8]) -> Result<(Self, &[u8])> {
-        let (offset, rest) = parse_varint(input)?;
-        let (size, rest) = parse_varint(rest)?;
-        Ok((
-            Self {
-                offset: offset as u64,
-                size: size as u64,
-            },
-            rest,
-        ))
-    }
-
-    pub fn serialize(&self, output: &mut Vec<u8>) {
-        serialize_varint(self.offset, output);
-        serialize_varint(self.size, output);
-    }
-
-    pub fn serialized(&self) -> Vec<u8> {
-        let mut out = vec![];
-        self.serialize(&mut out);
-        out
-    }
-}
-
-enum_def!(CompressionType u8 =>
-    None = 0,
-    Snappy = 1,
-    ZLib = 2,
-    BZip2 = 3,
-    LZ4 = 4,
-    LZ4HC = 5,
-    XPress = 6,
-    Zstd = 7
-);
-
-#[derive(Debug)]
-struct RawBlock {
-    data: Vec<u8>,
-    compression_type: CompressionType, // is_data_block
-}
-
-impl RawBlock {
-    async fn read(file: &mut File, footer: &Footer, handle: &BlockHandle) -> Result<Self> {
-        let mut buf = vec![];
-        file.seek(SeekFrom::Start(handle.offset)).await?;
-        buf.resize((handle.size as usize) + BLOCK_TRAILER_SIZE, 0);
-        file.read_exact(&mut buf).await?;
-
-        min_size!(buf, BLOCK_TRAILER_SIZE);
-        let trailer_start = buf.len() - BLOCK_TRAILER_SIZE;
-        let trailer = &buf[trailer_start..];
-
-        let compression_type = CompressionType::from_value(trailer[0])?;
-        let checksum = u32::from_le_bytes(*array_ref![trailer, 1, 4]);
-
-        let expected_checksum = match footer.checksum_type {
-            ChecksumType::None => 0,
-            ChecksumType::CRC32C => {
-                let mut hasher = CRC32CHasher::new();
-                hasher.update(&buf[..(trailer_start + 1)]);
-                hasher.masked()
-            }
-            _ => {
-                return Err(err_msg("Unsupported checksum type"));
-            }
-        };
-
-        if checksum != expected_checksum {
-            return Err(err_msg("Incorrect checksum in raw block"));
-        }
-
-        buf.truncate(trailer_start);
-
-        Ok(Self {
-            data: buf,
-            compression_type,
-        })
-    }
-
-    fn decompress(self) -> Result<Vec<u8>> {
-        Ok(match self.compression_type {
-            CompressionType::None => self.data,
-            CompressionType::Snappy => {
-                let mut out = vec![];
-                compression::snappy::snappy_decompress(&self.data, &mut out)?;
-                out
-            }
-            _ => {
-                return Err(format_err!(
-                    "Unsupported compression type {:?}",
-                    self.compression_type
-                ));
-            }
-        })
-    }
-}
-
-fn check_padding(s: &[u8]) -> Result<()> {
-    for b in s {
-        if *b != 0 {
-            return Err(err_msg("Non-zero padding"));
-        }
-    }
-
-    Ok(())
-}
-
-/// Block format:
-/// - Block contents
-/// - Trailer:
-/// 	- [0]: compression_type u8
-/// 	- [1]: Checksum of [block_contents | compression_type]
-/// 	- Padding (if a data block)
-/// 		- (RocksDB will pad to a block size of 4096 by default)
-
+/// Mapping from data key ranges to block handles that is used to find which
+/// block contains a given search key.
+///
 /// Instantiated index block.
 /// This is an optimized map<last_key, block_handle> where upper_key is >= the
 /// last key in a data block and block_handle is a pointer to the block.
@@ -441,7 +191,7 @@ struct IndexBlock {
 }
 
 impl IndexBlock {
-    pub fn create(block: &Block) -> Result<Self> {
+    pub fn create(block: &DataBlockRef) -> Result<Self> {
         let mut last_keys = vec![];
         let mut last_key_offsets = vec![];
         let mut block_handles = vec![];
@@ -461,7 +211,7 @@ impl IndexBlock {
         })
     }
 
-    /// Looks up the index of the block containing the given key
+    /// Looks up the index of the block containing the given key.
     pub fn lookup(&self, key: &[u8]) -> Option<usize> {
         common::algorithms::lower_bound_by(
             IndexBlockSlice {
@@ -540,34 +290,6 @@ impl<'a> SliceLike for IndexBlockSlice<'a> {
     -
 */
 
-/// NOTE: After creation, a DataBlock is immutable.
-/// TODO: Try doing something like https://stackoverflow.com/questions/23743566/how-can-i-force-a-structs-field-to-always-be-immutable-in-rust to force the immutability. (in particular, the Vec<u8> should never be allowed to be moved.
-pub struct DataBlock {
-    uncompressed: Vec<u8>,
-    block: Block<'static>,
-}
-
-impl DataBlock {
-    /// NOTE: This is the only safe way to create a DataBlock
-    pub fn parse(data: Vec<u8>) -> Result<Arc<Self>> {
-        let ptr: &'static [u8] = unsafe { std::mem::transmute::<&[u8], _>(&data) };
-        let block = Block::parse(ptr)?;
-        Ok(Arc::new(Self {
-            uncompressed: data,
-            block,
-        }))
-    }
-
-    /// TODO: For the index, we don't need the Arc as we will immediately cast
-    /// to a different format.
-    async fn read(file: &mut File, footer: &Footer, handle: &BlockHandle) -> Result<Arc<Self>> {
-        let raw = RawBlock::read(file, footer, handle).await?;
-        let data = raw.decompress()?;
-        let block = Self::parse(data)?;
-        Ok(block)
-    }
-}
-
 ///
 /// NOTE: Cloning this will refer to the same internal state.
 ///
@@ -599,6 +321,9 @@ impl DataBlockCache {
     async fn get_or_create(&self, table: &SSTable, block_index: usize) -> Result<DataBlockPtr> {
         let key = (table.state.id, block_index);
         loop {
+            // TODO: The main issue with this is that it only considers compressed size.
+            // Ideally we would have an index of uncompressed sizes to better
+            // keep track of memory usage.
             let block_size = table.state.index.block_handles[block_index].size;
 
             let mut state = self.state.lock().await;
@@ -618,7 +343,7 @@ impl DataBlockCache {
                 let block = table
                     .read_block(&table.state.index.block_handles[block_index])
                     .await?;
-                state.loaded_size += block.uncompressed.len() as u64;
+                state.loaded_size += block.estimated_memory_usage() as u64;
                 state.loaded_blocks.insert(key, block.clone());
                 return Ok(DataBlockPtr {
                     cache_key: key,
@@ -629,6 +354,7 @@ impl DataBlockCache {
 
             let (tx, rx) = oneshot::channel();
             state.change_listeners.push(tx);
+            drop(state);
             rx.await.ok();
         }
     }
@@ -677,7 +403,7 @@ impl Drop for DataBlockPtr {
             // it.
             if count == 2 {
                 outer_guard.loaded_blocks.remove(&cache_key);
-                outer_guard.loaded_size -= inner.uncompressed.len() as u64;
+                outer_guard.loaded_size -= inner.estimated_memory_usage() as u64;
                 drop(inner);
 
                 // Notify tasks waiting to create a block.
@@ -695,6 +421,8 @@ impl Drop for DataBlockPtr {
     }
 }
 
+/// TODO: If we know that we are going to be scanning a large amount of the
+/// table, implement read-ahead.
 pub struct SSTableIterator {
     table: SSTable,
 
@@ -704,21 +432,20 @@ pub struct SSTableIterator {
     current_block_index: usize,
 
     /// Reference to the above block. Used to
-    current_block: Option<(DataBlockPtr, BlockKeyValueIterator<'static>)>,
+    current_block: Option<(DataBlockPtr, DataBlockKeyValueIterator<'static>)>,
     /* The upper bound for keys to return.
      * end_key: Option<&'a [u8]> */
 }
 
 // Simpler strategy is to copy it, but I'd like to avoid copying potentially
 
-// TODO: Uncomment this.
-/*
 impl SSTableIterator {
-    async fn next<'a>(&'a mut self) -> Option<Result<KeyValuePair<'a>>> {
+    /// TODO: Try to avoid copying.
+    pub async fn next(&mut self) -> Option<Result<(Vec<u8>, Vec<u8>)>> {
         loop {
-            if self.current_block.is_some() {
-                if let Some(res) = self.current_block.as_mut().unwrap().1.next() {
-                    return Some(res);
+            if let Some((block, block_iter)) = self.current_block.as_mut() {
+                if let Some(res) = block_iter.next() {
+                    return Some(res.map(|kv| (kv.key.to_vec(), kv.value.to_vec())));
                 } else {
                     self.current_block = None;
                     self.current_block_index += 1;
@@ -737,16 +464,17 @@ impl SSTableIterator {
                         }
                     };
 
-                    let iter = block.block.iter().rows();
+                    let iter = block.block().iter().rows();
 
                     let iter = unsafe {
                         std::mem::transmute::<
-                            BlockKeyValueIterator<'_>,
-                            BlockKeyValueIterator<'static>,
+                            DataBlockKeyValueIterator<'_>,
+                            DataBlockKeyValueIterator<'static>,
                         >(iter)
                     };
 
                     self.current_block = Some((block, iter));
+                    continue;
                 }
 
                 return None;
@@ -754,7 +482,7 @@ impl SSTableIterator {
         }
     }
 
-    async fn seek(&mut self, start_key: &[u8]) -> Result<()> {
+    pub async fn seek(&mut self, start_key: &[u8]) -> Result<()> {
         // Find correct index
         let block_index = if let Some(idx) = self.table.state.index.lookup(start_key) {
             idx
@@ -767,12 +495,12 @@ impl SSTableIterator {
             .block_cache
             .get_or_create(&self.table, block_index)
             .await?;
-        let iter = block.block.before(start_key)?;
+        let iter = unsafe { std::mem::transmute::<_, &DataBlockRef<'static>>(block.block()) }
+            .before(start_key)?;
 
         // TODO: Iterate until at least at the key (would need to be able to peek)
 
-        self.current_block = Some((block, iter));
+        self.current_block = Some((block, iter.rows()));
         Ok(())
     }
 }
-*/

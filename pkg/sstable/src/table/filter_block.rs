@@ -3,9 +3,11 @@
 
 // This is the FilterPolicy definition: https://github.com/google/leveldb/blob/c784d63b931d07895833fb80185b10d44ad63cce/include/leveldb/filter_policy.h#L27
 
-use crate::encoding::u32_slice;
-use common::errors::*;
 use std::sync::Arc;
+
+use common::errors::*;
+
+use crate::encoding::u32_slice;
 
 pub trait FilterPolicy {
     fn name(&self) -> &'static str;
