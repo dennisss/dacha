@@ -175,7 +175,7 @@ impl Context {
                     // The fd was closed. Most likely this means that the device was just closed.
                     // Next time we poll() the fd should no longer be in our devices list.
                     continue;
-                } else if (fd.revents & libc::POLLERR) != 0 {
+                } else if (fd.revents & (libc::POLLERR | libc::POLLHUP)) != 0 {
                     // Usually this will happen when the USB device is disconnected externally.
                     // We'll make that the device has an error so that we don't poll it anymore.
                     // We assume that after this point, future syscalls on this file will continue
@@ -188,9 +188,6 @@ impl Context {
                             break;
                         }
                     }
-                } else if (fd.revents & libc::POLLHUP) != 0 {
-                    // TODO: Implement me
-                    println!("POLLHUP on device")
                 } else if (fd.revents & libc::POLLOUT) != 0 {
                     // TODO: Ensure that the receiver handles any status in the URB.
 

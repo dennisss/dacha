@@ -9,3 +9,6 @@ extern crate lazy_static;
 pub mod ddc;
 pub mod i2c;
 pub mod spi;
+
+pub mod ds3231;
+pub mod flash;
