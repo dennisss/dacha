@@ -5,17 +5,44 @@
 
 use std::sync::Arc;
 
+use common::async_std::fs::File;
 use common::errors::*;
 
 use crate::encoding::u32_slice;
+use crate::table::block_handle::BlockHandle;
+use crate::table::filter_policy::*;
 
-pub trait FilterPolicy {
-    fn name(&self) -> &'static str;
-    fn create(&self, keys: Vec<&[u8]>, out: &mut Vec<u8>);
-    fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool;
+use super::footer::Footer;
+use super::raw_block::RawBlock;
+
+pub struct FilterBlock {
+    block: Vec<u8>,
+    block_ref: FilterBlockRef<'static>,
 }
 
-pub struct FilterBlock<'a> {
+impl FilterBlock {
+    pub async fn read(
+        file: &mut File,
+        footer: &Footer,
+        block_handle: &BlockHandle,
+    ) -> Result<Self> {
+        let block = RawBlock::read(file, footer, block_handle)
+            .await?
+            .decompress()?;
+        let block_ref = FilterBlockRef::parse(&block)?;
+
+        // Make 'static
+        let block_ref = unsafe { std::mem::transmute(block_ref) };
+
+        Ok(Self { block, block_ref })
+    }
+
+    pub fn block<'a>(&'a self) -> &'a FilterBlockRef<'a> {
+        &self.block_ref
+    }
+}
+
+pub struct FilterBlockRef<'a> {
     /// Buffer containing all filter sub-blocks. They are delimited by the
     /// offsets.
     filters: &'a [u8],
@@ -25,7 +52,7 @@ pub struct FilterBlock<'a> {
     log_base: usize,
 }
 
-impl<'a> FilterBlock<'a> {
+impl<'a> FilterBlockRef<'a> {
     pub fn parse(input: &'a [u8]) -> Result<Self> {
         min_size!(input, 4 + 1);
         let log_base = input[input.len() - 1] as usize;
@@ -77,8 +104,11 @@ impl<'a> FilterBlock<'a> {
         &self,
         policy: &dyn FilterPolicy,
         block_offset: usize,
-        key: &'a [u8],
+        key: &[u8],
     ) -> bool {
+        // TODO: Check ahead of time that there aren't more filters than blocks in the
+        // table.
+
         let filter_idx = block_offset >> self.log_base;
         // NOTE: The very last offset is the end marker after all filters.
         if filter_idx >= self.offsets.len() - 1 {

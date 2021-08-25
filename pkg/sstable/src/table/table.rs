@@ -25,13 +25,23 @@ use reflection::*;
 
 use crate::table::block_handle::BlockHandle;
 use crate::table::data_block::*;
+use crate::table::filter_policy::FilterPolicyRegistry;
 use crate::table::footer::*;
 use crate::table::table_properties::*;
 
+use super::comparator::Comparator;
+use super::filter_block::FilterBlock;
+use super::filter_policy::FilterPolicy;
+
 // TODO: Unused
-pub const METAINDEX_PROPERTIES_KEY: &'static [u8] = b"rocksdb.properties";
+pub const METAINDEX_PROPERTIES_KEY: &'static str = "rocksdb.properties";
 
 const NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+
+pub struct SSTableOpenOptions {
+    pub comparator: Arc<dyn Comparator>,
+    // pub filter_factory: Arc<dyn FilterPolicy>,
+}
 
 // TODO: When in a database, we should have a common cache across all tables
 // in the database.
@@ -45,9 +55,21 @@ struct SSTableState {
     id: usize,
 
     file: Mutex<File>,
+
     index: IndexBlock,
+
     properties: TableProperties,
+
+    filter: Option<SSTableFilter>,
+
+    comparator: Arc<dyn Comparator>,
+
     footer: Footer,
+}
+
+struct SSTableFilter {
+    policy: Arc<dyn FilterPolicy>,
+    block: FilterBlock,
 }
 
 /*
@@ -56,11 +78,11 @@ struct SSTableState {
 */
 
 impl SSTable {
-    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Self::open_impl(path.as_ref()).await
+    pub async fn open<P: AsRef<Path>>(path: P, options: SSTableOpenOptions) -> Result<Self> {
+        Self::open_impl(path.as_ref(), options).await
     }
 
-    async fn open_impl(path: &Path) -> Result<Self> {
+    async fn open_impl(path: &Path, options: SSTableOpenOptions) -> Result<Self> {
         // TODO: Validate that the entire file is accounted for in the block handles.
 
         let mut file = File::open(path).await?;
@@ -74,27 +96,48 @@ impl SSTable {
         )?;
 
         let metaindex = DataBlock::read(&mut file, &footer, &footer.metaindex_handle).await?;
-        let mut iter = metaindex.block().before(b"")?.rows();
+        let mut iter = metaindex.block().iter().rows();
 
         let mut props = TableProperties::default();
+
+        let mut filter = None;
 
         while let Some(res) = iter.next() {
             let row = res?;
 
-            // TODO: Assert completely parsed.
-            let (handle, _) = BlockHandle::parse(row.value)?;
+            let name = std::str::from_utf8(row.key)?;
+            let (handle, _) = parsing::complete(BlockHandle::parse)(row.value)?;
 
             // THe properties struct is here: https://github.com/facebook/rocksdb/blob/6c2bf9e916db3dc7a43c70f3c0a482b8f7d54bdf/include/rocksdb/table_properties.h#L142
 
             // NOTE: All properties are either strings or varint64
             // Full list is here: https://github.com/facebook/rocksdb/blob/9bd5fce6e89fcb294a1d193f32f3e4bb2e41d994/table/meta_blocks.cc#L74
-            if row.key == b"rocksdb.properties" {
+            if name == METAINDEX_PROPERTIES_KEY {
                 let block = DataBlock::read(&mut file, &footer, &handle).await?;
                 props = Self::parse_properties(block.block())?;
                 println!("{:?}", props);
+            } else if let Some(filter_name) = name.strip_prefix("filter.") {
+                if filter.is_some() {
+                    return Err(err_msg("More than one filter in table"));
+                }
+
+                let filter_registry = FilterPolicyRegistry::default();
+
+                let policy = filter_registry
+                    .get(filter_name)
+                    .ok_or_else(|| format_err!("Unknown filter with name: {}", filter_name))?;
+
+                let block = FilterBlock::read(&mut file, &footer, &handle).await?;
+
+                filter = Some(SSTableFilter { policy, block });
+
+                continue;
             }
 
-            println!("{}", String::from_utf8(row.key.to_vec()).unwrap());
+            eprintln!(
+                "Unknown property key: {}",
+                String::from_utf8(row.key.to_vec()).unwrap()
+            );
         }
 
         Ok(Self {
@@ -103,6 +146,8 @@ impl SSTable {
                 file: Mutex::new(file),
                 index,
                 properties: props,
+                filter,
+                comparator: options.comparator,
                 footer,
             }),
         })
@@ -212,14 +257,14 @@ impl IndexBlock {
     }
 
     /// Looks up the index of the block containing the given key.
-    pub fn lookup(&self, key: &[u8]) -> Option<usize> {
+    pub fn lookup(&self, key: &[u8], comparator: &dyn Comparator) -> Option<usize> {
         common::algorithms::lower_bound_by(
             IndexBlockSlice {
                 last_keys: &self.last_keys,
                 last_key_offsets: &self.last_key_offsets,
             },
             key,
-            |a, b| a >= b,
+            |a, b| comparator.compare(a, b).is_ge(),
         )
     }
 }
@@ -484,19 +529,25 @@ impl SSTableIterator {
 
     pub async fn seek(&mut self, start_key: &[u8]) -> Result<()> {
         // Find correct index
-        let block_index = if let Some(idx) = self.table.state.index.lookup(start_key) {
+        let block_index = if let Some(idx) = self
+            .table
+            .state
+            .index
+            .lookup(start_key, self.table.state.comparator.as_ref())
+        {
             idx
         } else {
             self.current_block_index = self.table.num_blocks();
             return Ok(());
         };
 
+        // TODO: Optimize this if .current_block already has the block we want.
         let block = self
             .block_cache
             .get_or_create(&self.table, block_index)
             .await?;
         let iter = unsafe { std::mem::transmute::<_, &DataBlockRef<'static>>(block.block()) }
-            .before(start_key)?;
+            .before(start_key, self.table.state.comparator.as_ref())?;
 
         // TODO: Iterate until at least at the key (would need to be able to peek)
 

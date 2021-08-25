@@ -1,4 +1,4 @@
-use crate::table::filter_block::*;
+use crate::table::filter_policy::*;
 
 fn hash(data: &[u8], seed: u32) -> u32 {
     const m: u32 = 0xc6a4a793;
@@ -150,6 +150,9 @@ mod tests {
 
     #[test]
     fn test_hash() {
+        // These are from LevelDB to ensure that we are consistnet with them:
+        // https://github.com/google/leveldb/blob/f57513a1d6c99636fc5b710150d0b93713af4e43/util/hash_test.cc
+
         let data1 = &[0x62];
         let data2 = &[0xc3, 0x97];
         let data3 = &[0xe2, 0x99, 0xa5];

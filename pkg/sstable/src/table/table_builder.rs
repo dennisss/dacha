@@ -8,11 +8,11 @@ use common::errors::*;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 
-use crate::comparator::*;
 use crate::table::block_handle::BlockHandle;
+use crate::table::comparator::*;
 use crate::table::data_block_builder::{DataBlockBuilder, UnsortedDataBlockBuilder};
-use crate::table::filter_block::FilterPolicy;
 use crate::table::filter_block_builder::FilterBlockBuilder;
+use crate::table::filter_policy::FilterPolicy;
 use crate::table::footer::*;
 use crate::table::raw_block::CompressionType;
 
@@ -51,7 +51,7 @@ pub struct SSTableBuilderOptions {
     /// Base for building
     /// NOTE: In LevelDB/RocksDB this is fixed to 11 as a constant in the code.
     #[default(11)]
-    pub filter_log_base: u8, // default 11
+    pub filter_log_base: u8,
 
     /// If the given table path already exists, truncate it and start again.
     /// When being used as part of a managed database, this should always be
@@ -115,7 +115,7 @@ impl SSTableBuilder {
     pub async fn open(path: &Path, options: SSTableBuilderOptions) -> Result<Self> {
         // NOTE: We will panic if we are overwriting an existing table. This
         // should never
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(path)

@@ -1,11 +1,15 @@
-use crate::comparator::Comparator;
-use crate::table::filter_block::FilterPolicy;
-use common::errors::*;
 use std::cmp::Ordering;
 use std::sync::Arc;
 
+use common::errors::*;
+
+use crate::table::comparator::Comparator;
+use crate::table::filter_policy::FilterPolicy;
+
 const MAX_SEQUENCE: u64 = (1 << 56) - 1;
-const VALUE_FOR_SEEK: ValueType = ValueType::Deletion; // Not really meaninful right now.
+
+// TODO: Switch to the last value in the ValueType.
+const VALUE_FOR_SEEK: ValueType = ValueType::MaxValueType; // Not really meaninful right now.
 
 enum_def!(ValueType u8 =>
     Deletion = 0,
@@ -27,7 +31,9 @@ enum_def!(ValueType u8 =>
     ColumnFamilyBlobIndex = 0x10,
     BlobIndex = 0x11,
     BeginPersistedPrepareXID = 0x12,
-    BeginUnprepareXID = 0x13
+    BeginUnprepareXID = 0x13,
+
+    MaxValueType = 0xff
 );
 
 pub struct InternalKey<'a> {
@@ -101,6 +107,8 @@ impl Comparator for InternalKeyComparator {
         let a_ik = InternalKey::parse(a).unwrap();
         let b_ik = InternalKey::parse(b).unwrap();
 
+        // TODO: Consider the type as well?
+        // Just compare last 8 bytes as a little endian value.
         match self
             .user_key_comparator
             .compare(a_ik.user_key, b_ik.user_key)

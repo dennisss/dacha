@@ -1,12 +1,3 @@
-use crate::comparator::*;
-use crate::comparator_context::ComparatorContext;
-use crate::internal_key::*;
-use crate::record_log::RecordReader;
-use crate::table::table_builder::*;
-use crate::write_batch::Write::Value;
-use crate::write_batch::*;
-use common::async_std::path::Path;
-use common::errors::*;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::cmp::Ordering;
@@ -14,41 +5,23 @@ use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::sync::Arc;
 
-// TODO: Refactor to store InternalKey in parsed form to avoid parsing as part
-// of the lookups.
-struct MemTableKey<'a> {
-    key: Cow<'a, [u8]>,
-}
+use common::async_std::path::Path;
+use common::errors::*;
 
-impl<'a> MemTableKey<'a> {
-    fn new(key: Vec<u8>) -> Self {
-        Self {
-            key: Cow::Owned(key),
-        }
-    }
-    fn view(key: &'a [u8]) -> Self {
-        Self {
-            key: Cow::Borrowed(key),
-        }
-    }
-}
+use crate::internal_key::*;
+use crate::memtable::vec::*;
+use crate::record_log::RecordReader;
+use crate::table::comparator::*;
+use crate::table::table_builder::*;
+use crate::write_batch::Write::Value;
+use crate::write_batch::*;
 
-impl Ord for MemTableKey<'_> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        ComparatorContext::<()>::comparator().compare(&self.key, &other.key)
-    }
-}
-impl PartialOrd for MemTableKey<'_> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl PartialEq for MemTableKey<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
-    }
-}
-impl Eq for MemTableKey<'_> {}
+/*
+Internal table implementation needs to support:
+- Iteration (starting at a given key or the beginning)
+- Insertion
+
+*/
 
 /*
     Key operations:
@@ -61,13 +34,13 @@ impl Eq for MemTableKey<'_> {}
 // sequence which aren't on disk already. (but can be GC'ed when initializing
 // the table from a log)
 pub struct MemTable {
-    table: ComparatorContext<BTreeMap<MemTableKey<'static>, Vec<u8>>>,
+    table: VecMemTable,
 }
 
 impl MemTable {
     pub fn new(comparator: Arc<dyn Comparator>) -> Self {
         Self {
-            table: ComparatorContext::new(BTreeMap::new(), comparator),
+            table: VecMemTable::new(comparator),
         }
     }
 
@@ -86,16 +59,16 @@ impl MemTable {
     //	}
 
     /// Creates an iterator over the memtable starting at the given key.
-    pub fn range_from<'a>(&'a self, key: &'a [u8]) -> impl Iterator<Item = (&'a [u8], &'a [u8])> {
-        self.table
-            .guard()
-            .inner()
-            .range((Bound::Included(MemTableKey::view(key)), Bound::Unbounded))
-            .map(|(k, v)| (k.key.as_ref(), v.as_ref()))
+    pub fn range_from(&self, key: &[u8]) -> VecMemTableIterator {
+        let mut iter = self.table.iter();
+        iter.seek(key);
+        iter
     }
 
-    pub fn insert(&mut self, key: Vec<u8>, value: Vec<u8>) {
-        self.table.guard_mut().insert(MemTableKey::new(key), value);
+    // TODO: Change to taking references as arguments as we eventually want to copy
+    // the data into the memtable's arena.
+    pub async fn insert(&mut self, key: Vec<u8>, value: Vec<u8>) {
+        self.table.insert(key, value).await;
     }
 
     /// Writes WriteBatches from the given log file and applies their effects
@@ -117,7 +90,7 @@ impl MemTable {
                         }
                         .serialized();
 
-                        self.insert(ikey, value.to_vec());
+                        self.insert(ikey, value.to_vec()).await;
                     }
                     Write::Deletion { key } => {
                         let ikey = InternalKey {
@@ -127,7 +100,7 @@ impl MemTable {
                         }
                         .serialized();
 
-                        self.insert(ikey, vec![]);
+                        self.insert(ikey, vec![]).await;
                     }
                 }
             }
@@ -143,11 +116,12 @@ impl MemTable {
         table_options: SSTableBuilderOptions,
     ) -> Result<()> {
         let mut table_builder = SSTableBuilder::open(path, table_options).await?;
-        for (key, value) in &*self.table.guard() {
-            let ik = InternalKey::parse(&key.key).unwrap();
+        let mut iter = self.table.iter();
+        while let Some(entry) = iter.next().await {
+            let ik = InternalKey::parse(&entry.key).unwrap();
             if ik.typ != ValueType::Deletion {
                 // TODO: Internalize this cloning?
-                table_builder.add(key.key.to_vec(), &value).await?;
+                table_builder.add(entry.key.to_vec(), &entry.value).await?;
             }
         }
 

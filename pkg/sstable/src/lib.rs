@@ -14,8 +14,6 @@ use crate::db::EmbeddedDBOptions;
 use common::errors::*;
 use std::path::Path;
 
-mod comparator;
-mod comparator_context;
 pub mod db;
 pub mod encoding;
 mod internal_key;

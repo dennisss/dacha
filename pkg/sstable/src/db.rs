@@ -3,12 +3,14 @@ use std::sync::atomic::AtomicU64;
 
 use common::async_std;
 use common::async_std::fs::{File, OpenOptions};
-use common::async_std::sync::{Arc, RwLock};
+use common::async_std::sync::RwLock;
+use common::bytes::Bytes;
 use common::errors::*;
 use fs2::FileExt;
 
 use crate::internal_key::*;
 use crate::manifest::*;
+use crate::memtable::memtable::MemTable;
 use crate::memtable::*;
 use crate::record_log::*;
 use crate::table::table::{SSTable, SSTableIterator};
@@ -42,7 +44,7 @@ pub struct EmbeddedDB {
 impl EmbeddedDB {
     /// Opens an existing database or creates a new one.
     pub async fn open(path: &Path, options: EmbeddedDBOptions) -> Result<Self> {
-        let options = options.wrap_internal_keys();
+        let options = options.wrap_with_internal_keys();
 
         async_std::fs::create_dir_all(path).await?;
 
@@ -61,6 +63,7 @@ impl EmbeddedDB {
         };
 
         // TODO: Exists may ignore errors such as permission errors.
+        // TODO: Use the filepaths helper here.
         let identity_path = path.join("IDENTITY");
         let identity = if common::async_std::path::Path::new(&identity_path)
             .exists()
@@ -136,39 +139,46 @@ impl EmbeddedDB {
         })
     }
 
-    pub async fn get(&self, user_key: &[u8]) -> Result<Option<Vec<u8>>> {
+    async fn get_from_memtable(
+        &self,
+        memtable: &MemTable,
+        user_key: &[u8],
+        seek_ikey: &[u8],
+    ) -> Option<Option<Bytes>> {
+        // The first value should be the one with the highest value.
+        let mut iter = memtable.range_from(&seek_ikey);
+
+        if let Some(entry) = iter.next().await {
+            let ikey = InternalKey::parse(&entry.key).unwrap();
+
+            // TODO: Use user comparator.
+            if ikey.user_key == user_key {
+                if ikey.typ == ValueType::Deletion {
+                    return Some(None);
+                } else {
+                    return Some(Some(entry.value));
+                }
+            }
+        }
+
+        None
+    }
+
+    pub async fn get(&self, user_key: &[u8]) -> Result<Option<Bytes>> {
         let seek_ikey = InternalKey::before(user_key).serialized();
-        let snapshot_sequence = 0xffffff; // TODO:
+        // let snapshot_sequence = 0xffffff; // TODO:
 
         let state = self.state.read().await;
 
-        let get_from_memtable = |memtable: &MemTable| -> Option<Option<Vec<u8>>> {
-            // The first value should be the one with the highest value.
-            let mut iter = memtable.range_from(&seek_ikey);
-            for (key, value) in iter {
-                let ikey = InternalKey::parse(key).unwrap();
-
-                // TODO: Use user comparator.
-                if ikey.user_key == user_key {
-                    if ikey.typ == ValueType::Deletion {
-                        return Some(None);
-                    } else if ikey.sequence <= snapshot_sequence {
-                        return Some(Some(value.to_vec()));
-                    }
-                } else {
-                    break;
-                }
-            }
-
-            None
-        };
-
         // Try both memtables.
-        if let Some(result) = get_from_memtable(&state.mutable_table) {
+        if let Some(result) = self
+            .get_from_memtable(&state.mutable_table, user_key, &seek_ikey)
+            .await
+        {
             return Ok(result);
         }
         if let Some(table) = &state.immutable_table {
-            if let Some(result) = get_from_memtable(table) {
+            if let Some(result) = self.get_from_memtable(table, user_key, &seek_ikey).await {
                 return Ok(result);
             }
         }
@@ -212,6 +222,9 @@ pub struct EmbeddedDBOptions {
 
     pub error_if_exists: bool,
 
+    /// Max amount of data to store in memory before the data is flushed into an
+    /// SSTable.
+    ///
     /// Default 64MB in RocksDB, 4MB in LevelDB
     #[default(64*1024*1024)]
     pub write_buffer_size: usize,
@@ -256,7 +269,7 @@ pub struct EmbeddedDBOptions {
 }
 
 impl EmbeddedDBOptions {
-    pub fn wrap_internal_keys(mut self) -> Self {
+    pub fn wrap_with_internal_keys(mut self) -> Self {
         self.table_options.comparator = InternalKeyComparator::wrap(self.table_options.comparator);
         self.table_options.filter_policy = self
             .table_options

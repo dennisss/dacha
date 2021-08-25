@@ -43,6 +43,8 @@ impl<'a, T> SliceLike for &'a [T] {
 
 /// Returns the index of the first element with value >= the given target.
 /// NOTE: This assumes that 'values' is sorted.
+///
+/// If None is returned, then all values are < the target.
 pub fn lower_bound<T: PartialOrd>(values: &[T], target: &T) -> Option<usize> {
     lower_bound_by(values, target, |a, b| *a >= *b)
 }
@@ -68,5 +70,22 @@ pub fn lower_bound_by<T: Copy, S: SliceLike, F: Fn(<S as SliceLike>::Item, T) ->
             values = values.slice_from(mid_idx + 1);
             offset += mid_idx + 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn lower_bound_test() {
+        let values = &[10, 20, 30, 40, 50, 60];
+
+        assert_eq!(lower_bound(values, &10), Some(0));
+        assert_eq!(lower_bound(values, &12), Some(1));
+        assert_eq!(lower_bound(values, &40), Some(3));
+        assert_eq!(lower_bound(values, &49), Some(4));
+        assert_eq!(lower_bound(values, &70), None);
     }
 }

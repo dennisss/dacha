@@ -2,6 +2,84 @@ use std::sync::Arc;
 
 use common::async_std::sync::RwLock;
 
+pub struct SkipList {
+    first_node: Arc<Node<T>>,
+}
+
+struct Node<T> {
+    value: T,
+    next: RwLock<Vec<Arc<Node<T>>>>,
+}
+
+impl<T: Default> SkipList<T> {
+    async fn find_prev_chain(&self, value: &T) -> Vec<Arc<Node<T>>> {
+        let mut chain = vec![];
+
+        // Current level at which we are searching.
+        // let mut level = {
+        //     //  self.first_node.next.read().await.len() - 1;
+        // };
+
+        let mut node = self.first_node.clone();
+        let mut level = 0; // Initialized on the first iteration.
+        loop {
+            let node_next = node.next.read().await;
+
+            // Initialize the level to be the highest level in the first node in the list.
+            if chain.is_empty() {
+                if node_next.is_empty() {
+                    chain.push(node_next);
+                    break;
+                }
+
+                level = node_next.len() - 1;
+            }
+
+            // let mut done = false;
+            // while level >= node_next.len() {
+            //     chain.push(node.clone());
+
+            //     if level == 0 {
+            //         done = true;
+            //         break;
+            //     }
+            //     level -= 1;
+            // }
+
+            // if done {
+            //     break;
+            // }
+
+            if level < node_next.len() {
+                let n = &node_next[level];
+                if &n.value < value {
+                    node = n.clone();
+                    continue;
+                }
+            }
+
+            chain.push(node);
+
+            if level == 0 {
+                break;
+            }
+
+            level -= 1;
+        }
+
+        chain
+    }
+
+    pub async fn insert(&self, value: T) {
+        let mut chain = self.find_prev_chain(&value).await;
+
+        // Update all of the pointers.
+    }
+}
+
+// Find the list of all next pointers.
+
+/*
 const MIN_WIDTH_TO_SPLIT: usize = 4;
 
 // TODO: Switch T to be something that can be cloned so that we don't have to
@@ -51,17 +129,15 @@ impl<T: Default> SkipList<T> {
         chain
     }
 
-    /*
-    How to iterate:
-    - Iterator will store the full chain (just in case we want to skip around)
-    - While iterating, you will never see the same value twice right?
-    - If everything after the current node was deleted, then
-    - A full scan is not guranteed to be from a consistent snapshot of the system
-      (need higher level coordination or MVCC to do that).
+    // How to iterate:
+    // - Iterator will store the full chain (just in case we want to skip around)
+    // - While iterating, you will never see the same value twice right?
+    // - If everything after the current node was deleted, then
+    // - A full scan is not guranteed to be from a consistent snapshot of the system
+    //   (need higher level coordination or MVCC to do that).
 
-    - Can you insert/remove while iterating?
-        - Yes!
-    */
+    // - Can you insert/remove while iterating?
+    //     - Yes!
 
     async fn maybe_split_node(
         node: &Node<T>,
@@ -204,10 +280,6 @@ impl<T: Default> SkipList<T> {
     }
 }
 
-/*
-Overwritting a value while another reader is
-
-*/
 
 struct Node<T> {
     /// A special value of None is reserved for the very first element in the
@@ -243,3 +315,4 @@ struct NodeState<T> {
 
     child: Option<Arc<Node<T>>>,
 }
+*/

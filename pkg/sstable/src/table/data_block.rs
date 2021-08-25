@@ -15,6 +15,8 @@ use crate::table::block_handle::BlockHandle;
 use crate::table::footer::Footer;
 use crate::table::raw_block::RawBlock;
 
+use super::comparator::Comparator;
+
 // TODO: The hash-based index is stored before the list of resets here:
 // https://github.com/facebook/rocksdb/blob/50e470791dafb3db017f055f79323aef9a607e43/table/block_based/block_builder.cc#L118
 
@@ -124,10 +126,10 @@ impl<'a> DataBlockRef<'a> {
     /// Retrieves a single key-value pair by key.
     /// Compared to using an iterator, this may use more optimizations for point
     /// lookups.
-    pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    pub fn get(&self, key: &[u8], comparator: &dyn Comparator) -> Result<Option<Vec<u8>>> {
         // TODO: Implement hash-based lookup
 
-        let mut iter = self.before(key)?.rows();
+        let mut iter = self.before(key, comparator)?.rows();
         while let Some(kv) = iter.next() {
             let kv = kv?;
             match key.cmp(kv.key) {
@@ -158,8 +160,12 @@ impl<'a> DataBlockRef<'a> {
     ///
     /// If the given key is not in the table, then the iterator may start after
     /// the given key.
-    pub fn before(&'a self, key: &[u8]) -> Result<DataBlockEntryIterator<'a>> {
-        let closest_offset = self.restart_search(key, self.restarts)?;
+    pub fn before(
+        &'a self,
+        key: &[u8],
+        comparator: &dyn Comparator,
+    ) -> Result<DataBlockEntryIterator<'a>> {
+        let closest_offset = self.restart_search(key, self.restarts, comparator)?;
         Ok(DataBlockEntryIterator {
             remaining_entries: &self.entries[closest_offset..],
         })
@@ -168,7 +174,12 @@ impl<'a> DataBlockRef<'a> {
     /// NOTE: This assumes that restarts has a length of at least 1.
     // TODO: This will perform redundant entry parsing with the iterator.
     // ^ Possibly pre-parse all of the restart points?
-    fn restart_search(&self, key: &[u8], restarts: &[u32]) -> Result<usize> {
+    fn restart_search(
+        &self,
+        key: &[u8],
+        restarts: &[u32],
+        comparator: &dyn Comparator,
+    ) -> Result<usize> {
         if restarts.len() == 1 {
             return Ok(restarts[0] as usize);
         }
@@ -181,10 +192,10 @@ impl<'a> DataBlockRef<'a> {
         }
 
         // TODO: Refactor to be non-recursive.
-        match key.cmp(mid_entry.key_delta) {
+        match comparator.compare(key, mid_entry.key_delta) {
             Ordering::Equal => Ok(mid_offset as usize),
-            Ordering::Less => self.restart_search(key, &restarts[..mid_index]),
-            Ordering::Greater => self.restart_search(key, &restarts[mid_index..]),
+            Ordering::Less => self.restart_search(key, &restarts[..mid_index], comparator),
+            Ordering::Greater => self.restart_search(key, &restarts[mid_index..], comparator),
         }
     }
 }

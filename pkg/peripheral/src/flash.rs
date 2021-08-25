@@ -15,9 +15,6 @@ MX25L25645GMI
     - Send the WREN command
     - Set BP0-BP3 bits to zero
     - Follow figure 25 in datasheet
-
-Edge switch uses a BCM53343A0KFSBLG processor
-
 */
 
 const MACRONIX_MANUFACTURER_ID: u8 = 0xC2;

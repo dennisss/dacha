@@ -1,5 +1,6 @@
-use crate::table::filter_block::*;
 use std::sync::Arc;
+
+use crate::table::filter_policy::*;
 
 pub struct FilterBlockBuilder {
     policy: Arc<dyn FilterPolicy>,
