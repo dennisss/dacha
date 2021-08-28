@@ -1,4 +1,3 @@
-use common::algorithms::SliceLike;
 use common::errors::*;
 use protobuf::wire::{parse_varint, serialize_varint};
 
@@ -25,7 +24,7 @@ pub fn serialize_string(value: &str, out: &mut Vec<u8>) {
     serialize_slice(value.as_bytes(), out);
 }
 
-pub fn parse_fixed32(mut input: &[u8]) -> Result<(u32, &[u8])> {
+pub fn parse_fixed32(input: &[u8]) -> Result<(u32, &[u8])> {
     if input.len() < 4 {
         return Err(err_msg("Input too short for fixed32"));
     }
@@ -34,7 +33,7 @@ pub fn parse_fixed32(mut input: &[u8]) -> Result<(u32, &[u8])> {
     Ok((val, &input[4..]))
 }
 
-pub fn parse_fixed64(mut input: &[u8]) -> Result<(u64, &[u8])> {
+pub fn parse_fixed64(input: &[u8]) -> Result<(u64, &[u8])> {
     if input.len() < 8 {
         return Err(err_msg("Input too short for fixed64"));
     }
@@ -43,7 +42,7 @@ pub fn parse_fixed64(mut input: &[u8]) -> Result<(u64, &[u8])> {
     Ok((val, &input[8..]))
 }
 
-pub fn parse_u8(mut input: &[u8]) -> Result<(u8, &[u8])> {
+pub fn parse_u8(input: &[u8]) -> Result<(u8, &[u8])> {
     if input.len() < 1 {
         return Err(err_msg("Input too short for u8"));
     }

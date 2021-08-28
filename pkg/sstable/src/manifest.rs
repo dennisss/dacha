@@ -1,7 +1,12 @@
+use std::cmp::Ordering;
+use std::collections::HashSet;
+
+use common::errors::*;
+use protobuf::wire::{parse_varint, serialize_varint};
+
 use crate::encoding::*;
 use crate::record_log::{RecordReader, RecordWriter};
-use common::errors::*;
-use protobuf::wire::parse_varint;
+use crate::table::comparator::Comparator;
 
 // See https://github.com/facebook/rocksdb/blob/5f025ea8325a2ff5239ea28365073bf0b723514d/db/version_edit.cc#L29 for the complete list of tags
 // Also https://github.com/google/leveldb/blob/master/db/version_edit.cc
@@ -44,8 +49,29 @@ pub struct NewFileEntry {
     pub sequence_range: Option<(u64, u64)>,
 }
 
+impl NewFileEntry {
+    pub fn compare(&self, other: &Self, key_comparator: &dyn Comparator) -> Ordering {
+        // If the levels are not equal, then compare based on that.
+        match self.level.cmp(&other.level) {
+            Ordering::Equal => {}
+            level_ord @ _ => {
+                return level_ord;
+            }
+        };
+
+        match key_comparator.compare(&self.smallest_key, &other.smallest_key) {
+            Ordering::Equal => {}
+            key_ord @ _ => {
+                return key_ord;
+            }
+        };
+
+        self.number.cmp(&other.number)
+    }
+}
+
 #[derive(Debug)]
-struct DeletedFileEntry {
+pub struct DeletedFileEntry {
     pub level: u32,
     pub number: u64,
 }
@@ -57,100 +83,186 @@ pub struct VersionEdit {
     pub prev_log_number: Option<u64>,
     pub last_sequence: Option<u64>,
     pub new_files: Vec<NewFileEntry>,
+    pub deleted_files: Vec<DeletedFileEntry>,
     pub next_file_number: Option<u64>,
 }
 
+// TODO: Disallow file number re-use as it's likely to be error prone.
+
 impl VersionEdit {
-    /// Reads an entire manifest file consisting of one or more VersionEdits and
-    /// merges them into a single struct.
-    pub async fn read(log: &mut RecordReader) -> Result<Self> {
+    // If a manifest gets too large, make a new one?
+
+    /// Reads exactly one atomic VersionEdit from the given manifest file (or
+    /// returns None if we reached the end of the file).
+    pub async fn read(log: &mut RecordReader) -> Result<Option<Self>> {
+        let record = match log.read().await? {
+            Some(r) => r,
+            None => {
+                return Ok(None);
+            }
+        };
+
         let mut edit = VersionEdit::default();
 
-        while let Some(record) = log.read().await? {
-            let mut input: &[u8] = record.as_ref();
+        let mut input: &[u8] = record.as_ref();
 
-            while input.len() > 0 {
-                let record_id = Tag::from_value(parse_next!(input, parse_varint) as u32)?;
+        let mut touched_files = HashSet::new();
 
-                // TODO: For most of these, don't allow reparsing if a value was
-                // already found for the tag.
-                match record_id {
-                    Tag::Comparator => {
-                        let value = parse_next!(input, parse_string);
-                        edit.comparator = Some(value);
-                    }
-                    Tag::LogNumber => {
-                        let num = parse_next!(input, parse_varint);
-                        edit.log_number = Some(num as u64);
-                    }
-                    Tag::LastSequence => {
-                        let num = parse_next!(input, parse_varint);
-                        edit.last_sequence = Some(num as u64);
-                    }
-                    Tag::NewFile => {
-                        let level = parse_next!(input, parse_varint) as u32;
-                        let number = parse_next!(input, parse_varint) as u64;
-                        let file_size = parse_next!(input, parse_varint) as u64;
-                        let smallest_key = parse_next!(input, parse_slice).to_vec();
-                        let largest_key = parse_next!(input, parse_slice).to_vec();
+        // TODO: Verify that within the same record we don't create and delete the same
+        // file.
+        while input.len() > 0 {
+            let record_id = Tag::from_value(parse_next!(input, parse_varint) as u32)?;
 
-                        edit.new_files.push(NewFileEntry {
-                            level,
-                            number,
-                            file_size,
-                            smallest_key,
-                            largest_key,
-                            sequence_range: None,
-                        });
-                    }
-                    Tag::NewFile2 => {
-                        let level = parse_next!(input, parse_varint) as u32;
-                        let number = parse_next!(input, parse_varint) as u64;
-                        let file_size = parse_next!(input, parse_varint) as u64;
-                        let smallest_key = parse_next!(input, parse_slice).to_vec();
-                        let largest_key = parse_next!(input, parse_slice).to_vec();
-                        let smallest_seq = parse_next!(input, parse_varint) as u64;
-                        let largest_seq = parse_next!(input, parse_varint) as u64;
-                        edit.new_files.push(NewFileEntry {
-                            level,
-                            number,
-                            file_size,
-                            smallest_key,
-                            largest_key,
-                            sequence_range: Some((smallest_seq, largest_seq)),
-                        });
-                    }
-                    Tag::PrevLogNumber => {
-                        let num = parse_next!(input, parse_varint) as u64;
-                        edit.prev_log_number = Some(num);
-                    }
-                    Tag::NextFileNumber => {
-                        let num = parse_next!(input, parse_varint) as u64;
-                        edit.next_file_number = Some(num);
-                    }
-                    Tag::DeletedFile => {
-                        let entry = {
-                            let level = parse_next!(input, parse_varint) as u32;
-                            let file_number = parse_next!(input, parse_varint) as u64;
-                            DeletedFileEntry {
-                                level,
-                                number: file_number,
-                            }
-                        };
+            // TODO: For most of these, don't allow reparsing if a value was
+            // already found for the tag.
+            match record_id {
+                Tag::Comparator => {
+                    let value = parse_next!(input, parse_string);
+                    edit.comparator = Some(value);
+                }
+                Tag::LogNumber => {
+                    let num = parse_next!(input, parse_varint);
+                    edit.log_number = Some(num as u64);
+                }
+                Tag::LastSequence => {
+                    let num = parse_next!(input, parse_varint);
+                    edit.last_sequence = Some(num as u64);
+                }
+                Tag::NewFile => {
+                    let level = parse_next!(input, parse_varint) as u32;
+                    let number = parse_next!(input, parse_varint) as u64;
+                    let file_size = parse_next!(input, parse_varint) as u64;
+                    let smallest_key = parse_next!(input, parse_slice).to_vec();
+                    let largest_key = parse_next!(input, parse_slice).to_vec();
 
-                        // TODO: Must verify no duplicate file numbers
-                        // referenced in new/deleted entries.
-                        // for file in
+                    if !touched_files.insert(number) {
+                        return Err(err_msg(
+                            "Not allowed to create the same new file in the same record",
+                        ));
                     }
-                    _ => {
-                        return Err(format_err!("Unsupported tag {:?}", record_id));
+
+                    edit.new_files.push(NewFileEntry {
+                        level,
+                        number,
+                        file_size,
+                        smallest_key,
+                        largest_key,
+                        sequence_range: None,
+                    });
+                }
+                Tag::NewFile2 => {
+                    let level = parse_next!(input, parse_varint) as u32;
+                    let number = parse_next!(input, parse_varint) as u64;
+                    let file_size = parse_next!(input, parse_varint) as u64;
+                    let smallest_key = parse_next!(input, parse_slice).to_vec();
+                    let largest_key = parse_next!(input, parse_slice).to_vec();
+                    let smallest_seq = parse_next!(input, parse_varint) as u64;
+                    let largest_seq = parse_next!(input, parse_varint) as u64;
+                    edit.new_files.push(NewFileEntry {
+                        level,
+                        number,
+                        file_size,
+                        smallest_key,
+                        largest_key,
+                        sequence_range: Some((smallest_seq, largest_seq)),
+                    });
+                }
+                Tag::PrevLogNumber => {
+                    let num = parse_next!(input, parse_varint) as u64;
+                    // TODO:
+                    edit.prev_log_number = Some(num);
+                }
+                Tag::NextFileNumber => {
+                    let num = parse_next!(input, parse_varint) as u64;
+                    edit.next_file_number = Some(num);
+                }
+                Tag::DeletedFile => {
+                    let level = parse_next!(input, parse_varint) as u32;
+                    let file_number = parse_next!(input, parse_varint) as u64;
+
+                    if !touched_files.insert(file_number) {
+                        return Err(err_msg("Deleted a file that was already referenced in the same VersionEdit is not allowed"));
                     }
-                };
+
+                    edit.deleted_files.push(DeletedFileEntry {
+                        level,
+                        number: file_number,
+                    });
+                }
+                _ => {
+                    return Err(format_err!("Unsupported tag {:?}", record_id));
+                }
+            };
+        }
+
+        Ok(Some(edit))
+    }
+
+    /// Serializes
+    pub fn serialize(&self, out: &mut Vec<u8>) -> Result<()> {
+        if let Some(comparator) = &self.comparator {
+            serialize_varint(Tag::Comparator.to_value() as u64, out);
+            serialize_string(comparator.as_str(), out);
+        }
+
+        if let Some(num) = &self.log_number {
+            serialize_varint(Tag::LogNumber.to_value() as u64, out);
+            serialize_varint(*num, out);
+        }
+
+        if let Some(num) = &self.prev_log_number {
+            serialize_varint(Tag::PrevLogNumber.to_value() as u64, out);
+            serialize_varint(*num, out);
+        }
+
+        if let Some(num) = &self.last_sequence {
+            serialize_varint(Tag::LastSequence.to_value() as u64, out);
+            serialize_varint(*num, out);
+        }
+
+        let mut touched_files = HashSet::new();
+
+        for file in &self.new_files {
+            if !touched_files.insert(file.number) {
+                return Err(err_msg("Created the same file more than once"));
+            }
+
+            let tag = if file.sequence_range.is_some() {
+                Tag::NewFile2
+            } else {
+                Tag::NewFile
+            };
+            serialize_varint(tag.to_value() as u64, out);
+
+            serialize_varint(file.level as u64, out);
+            serialize_varint(file.number, out);
+            serialize_varint(file.file_size, out);
+            serialize_slice(&file.smallest_key, out);
+            serialize_slice(&file.largest_key, out);
+
+            if let Some((min, max)) = file.sequence_range.clone() {
+                serialize_varint(min, out);
+                serialize_varint(max, out);
             }
         }
 
-        Ok(edit)
-    }
+        // NOTE: This is a deviation from RocksDB which inserts the DeletedFile entries
+        // prior to the NewFile entries.
+        for file in &self.deleted_files {
+            // Note that if we just inserting a new file in the same record then the
+            // ordering of the change is undefined (different implementations may add all
+            // the NewFile entries first or the DeletedFile entryies first).
+            if !touched_files.insert(file.number) {
+                return Err(err_msg(
+                    "Duplicate file deletion or deletion of a new file is not allowed",
+                ));
+            }
 
-    pub fn serialize(&self, out: &mut Vec<u8>) {}
+            serialize_varint(Tag::DeletedFile.to_value() as u64, out);
+            serialize_varint(file.level as u64, out);
+            serialize_varint(file.number, out);
+        }
+
+        Ok(())
+    }
 }

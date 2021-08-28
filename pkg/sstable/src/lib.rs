@@ -10,11 +10,7 @@ extern crate math;
 extern crate protobuf;
 extern crate reflection;
 
-use crate::db::EmbeddedDBOptions;
-use common::errors::*;
-use std::path::Path;
-
-pub mod db;
+mod db;
 pub mod encoding;
 mod internal_key;
 mod manifest;
@@ -23,6 +19,9 @@ pub mod record_log;
 // mod skip_list;
 pub mod table;
 mod write_batch;
+
+use common::errors::*;
+use std::path::Path;
 
 /*
     At each level, we will store a Vec<File> that we will binary search for
@@ -37,12 +36,4 @@ mod write_batch;
     TODO: If a key was only ever in memory, we can delete it without
 */
 
-// leveldb.BytewiseComparator
-
-pub async fn open_db(path: &str) -> Result<()> {
-    db::EmbeddedDB::open(&Path::new(path), EmbeddedDBOptions::default()).await?;
-
-    //	let log = record_log::
-
-    Ok(())
-}
+pub use db::{EmbeddedDB, EmbeddedDBOptions};
