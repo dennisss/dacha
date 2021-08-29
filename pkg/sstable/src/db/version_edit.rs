@@ -37,15 +37,19 @@ enum_def!(Tag u32 =>
     InAtomicGroup = 300
 );
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NewFileEntry {
     pub level: u32,
     pub number: u64,
     pub file_size: u64,
     pub smallest_key: Vec<u8>,
     pub largest_key: Vec<u8>,
+
     /// Smallest and largest sequence numbers in the file (inclusive).
     /// Supported in NewFile2
+    ///
+    /// If we are iterating, then this could be used to skip entire tables if
+    /// they are newer than the current snapshot.
     pub sequence_range: Option<(u64, u64)>,
 }
 

@@ -888,7 +888,7 @@ impl ParseCursor<Bytes> {
 
 #[macro_export]
 macro_rules! parse_next {
-    ($input:ident, $f:expr) => {{
+    ($input:expr, $f:expr) => {{
         let (v, rest) = $f($input)?;
         $input = rest;
         v

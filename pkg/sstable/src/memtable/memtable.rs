@@ -8,13 +8,11 @@ use std::sync::Arc;
 use common::async_std::path::Path;
 use common::errors::*;
 
-use crate::internal_key::*;
+use crate::db::internal_key::*;
 use crate::memtable::vec::*;
 use crate::record_log::RecordReader;
 use crate::table::comparator::*;
 use crate::table::table_builder::*;
-use crate::write_batch::Write::Value;
-use crate::write_batch::*;
 
 /*
 Internal table implementation needs to support:
@@ -35,13 +33,21 @@ Internal table implementation needs to support:
 // the table from a log)
 pub struct MemTable {
     table: VecMemTable,
+    size: usize,
 }
 
 impl MemTable {
     pub fn new(comparator: Arc<dyn Comparator>) -> Self {
         Self {
             table: VecMemTable::new(comparator),
+            size: 0,
         }
+    }
+
+    /// Returns the total number of bytes the keys and values of this memtable
+    /// store in memory.
+    pub fn size(&self) -> usize {
+        self.size
     }
 
     //	pub fn get<'a>(&'a self, key: &'a [u8]) -> Option<TableValue<'a>> {
@@ -68,45 +74,8 @@ impl MemTable {
     // TODO: Change to taking references as arguments as we eventually want to copy
     // the data into the memtable's arena.
     pub async fn insert(&mut self, key: Vec<u8>, value: Vec<u8>) {
+        self.size += key.len() + value.len();
         self.table.insert(key, value).await;
-    }
-
-    /// Writes WriteBatches from the given log file and applies their effects
-    /// to the current table.
-    pub async fn apply_log(&mut self, log: &mut RecordReader) -> Result<()> {
-        while let Some(record) = log.read().await? {
-            let (batch, rest) = WriteBatch::parse(&record)?;
-            if rest.len() != 0 {
-                return Err(err_msg("Extra data after write batch"));
-            }
-
-            for w in &batch.writes {
-                match w {
-                    Write::Value { key, value } => {
-                        let ikey = InternalKey {
-                            user_key: key,
-                            typ: ValueType::Value,
-                            sequence: batch.sequence,
-                        }
-                        .serialized();
-
-                        self.insert(ikey, value.to_vec()).await;
-                    }
-                    Write::Deletion { key } => {
-                        let ikey = InternalKey {
-                            user_key: key,
-                            typ: ValueType::Deletion,
-                            sequence: batch.sequence,
-                        }
-                        .serialized();
-
-                        self.insert(ikey, vec![]).await;
-                    }
-                }
-            }
-        }
-
-        Ok(())
     }
 
     /// TODO: Must consider the smallest snapshot sequence

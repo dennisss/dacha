@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub trait Comparator {
@@ -13,8 +14,25 @@ pub trait Comparator {
     fn find_short_successor(&self, key: Vec<u8>) -> Vec<u8>;
 }
 
-pub trait ComparatorFactory {
-    fn create(name: &str) -> Arc<dyn Comparator>;
+pub struct ComparatorRegistry {
+    comparators: HashMap<String, Arc<dyn Comparator>>,
+}
+
+impl Default for ComparatorRegistry {
+    fn default() -> Self {
+        let mut comparators: HashMap<String, Arc<dyn Comparator>> = HashMap::new();
+
+        let c = BytewiseComparator::new();
+        comparators.insert(c.name().to_string(), Arc::new(c));
+
+        Self { comparators }
+    }
+}
+
+impl ComparatorRegistry {
+    pub fn get(&self, name: &str) -> Option<Arc<dyn Comparator>> {
+        self.comparators.get(name).map(|v| v.clone())
+    }
 }
 
 pub struct DummyComparator {}

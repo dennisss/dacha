@@ -12,16 +12,10 @@ extern crate reflection;
 
 mod db;
 pub mod encoding;
-mod internal_key;
-mod manifest;
 mod memtable;
 pub mod record_log;
 // mod skip_list;
 pub mod table;
-mod write_batch;
-
-use common::errors::*;
-use std::path::Path;
 
 /*
     At each level, we will store a Vec<File> that we will binary search for
