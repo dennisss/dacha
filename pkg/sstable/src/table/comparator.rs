@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub trait Comparator {
+pub trait KeyComparator: Send + Sync + 'static {
     fn name(&self) -> &'static str;
 
     fn compare(&self, a: &[u8], b: &[u8]) -> Ordering;
@@ -15,12 +15,12 @@ pub trait Comparator {
 }
 
 pub struct ComparatorRegistry {
-    comparators: HashMap<String, Arc<dyn Comparator>>,
+    comparators: HashMap<String, Arc<dyn KeyComparator>>,
 }
 
 impl Default for ComparatorRegistry {
     fn default() -> Self {
-        let mut comparators: HashMap<String, Arc<dyn Comparator>> = HashMap::new();
+        let mut comparators: HashMap<String, Arc<dyn KeyComparator>> = HashMap::new();
 
         let c = BytewiseComparator::new();
         comparators.insert(c.name().to_string(), Arc::new(c));
@@ -30,7 +30,7 @@ impl Default for ComparatorRegistry {
 }
 
 impl ComparatorRegistry {
-    pub fn get(&self, name: &str) -> Option<Arc<dyn Comparator>> {
+    pub fn get(&self, name: &str) -> Option<Arc<dyn KeyComparator>> {
         self.comparators.get(name).map(|v| v.clone())
     }
 }
@@ -43,7 +43,7 @@ impl DummyComparator {
     }
 }
 
-impl Comparator for DummyComparator {
+impl KeyComparator for DummyComparator {
     fn name(&self) -> &'static str {
         unimplemented!("")
     }
@@ -66,7 +66,7 @@ impl BytewiseComparator {
     }
 }
 
-impl Comparator for BytewiseComparator {
+impl KeyComparator for BytewiseComparator {
     fn name(&self) -> &'static str {
         "leveldb.BytewiseComparator"
     }

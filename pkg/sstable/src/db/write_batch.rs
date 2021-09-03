@@ -71,6 +71,8 @@ impl<'a> WriteBatchIterator<'a> {
         table: &mut MemTable,
         last_sequence: &mut u64,
     ) -> Result<()> {
+        // TODO: Ignore duplicate keys.
+
         while let Some(record) = log.read().await? {
             let mut batch = WriteBatchIterator::new(&record)?;
 

@@ -37,11 +37,13 @@ impl DataBlockBuilder {
         self.buffer.len() + key.len() + value.len() + 4 * self.restart_offsets.len()
     }
 
-    pub fn add(&mut self, key: Vec<u8>, value: &[u8]) -> Result<()> {
+    pub fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         // Keys must be inserted strictly in sorted order.
-        if key <= self.last_key {
-            return Err(err_msg("Out of order or duplicate key inserted"));
-        }
+        // TODO: Use the comparator here.
+        // TODO: Add back this check.
+        // if key <= &self.last_key {
+        //     return Err(err_msg("Out of order or duplicate key inserted"));
+        // }
 
         let mut shared_bytes = 0;
 
@@ -66,7 +68,8 @@ impl DataBlockBuilder {
         .serialize(&mut self.buffer);
 
         self.entries_since_restart += 1;
-        self.last_key = key;
+        self.last_key.clear();
+        self.last_key.extend_from_slice(key);
 
         Ok(())
     }
@@ -146,9 +149,11 @@ impl UnsortedDataBlockBuilder {
     pub fn finish(mut self) -> Result<Vec<u8>> {
         let mut builder = DataBlockBuilder::new(self.restart_interval);
 
+        // TODO: Use an appropriate comparator here.
         self.data.sort_unstable();
+
         for (key, value) in self.data.into_iter() {
-            builder.add(key, &value)?;
+            builder.add(&key, &value)?;
         }
 
         Ok(builder.finish().0)

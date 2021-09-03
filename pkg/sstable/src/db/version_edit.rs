@@ -6,7 +6,7 @@ use protobuf::wire::{parse_varint, serialize_varint};
 
 use crate::encoding::*;
 use crate::record_log::{RecordReader, RecordWriter};
-use crate::table::comparator::Comparator;
+use crate::table::comparator::KeyComparator;
 
 // See https://github.com/facebook/rocksdb/blob/5f025ea8325a2ff5239ea28365073bf0b723514d/db/version_edit.cc#L29 for the complete list of tags
 // Also https://github.com/google/leveldb/blob/master/db/version_edit.cc
@@ -54,7 +54,7 @@ pub struct NewFileEntry {
 }
 
 impl NewFileEntry {
-    pub fn compare(&self, other: &Self, key_comparator: &dyn Comparator) -> Ordering {
+    pub fn compare(&self, other: &Self, key_comparator: &dyn KeyComparator) -> Ordering {
         // If the levels are not equal, then compare based on that.
         match self.level.cmp(&other.level) {
             Ordering::Equal => {}

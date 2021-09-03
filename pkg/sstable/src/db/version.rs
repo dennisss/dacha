@@ -1,18 +1,28 @@
+use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::f32::MAX_10_EXP;
 use std::sync::Arc;
 
 use common::algorithms::lower_bound_by;
 use common::async_std::sync::Mutex;
+use common::bytes::Bytes;
 use common::errors::*;
 
 use crate::db::paths::FilePaths;
 use crate::db::version_edit::NewFileEntry;
 use crate::db::version_edit::{DeletedFileEntry, VersionEdit};
 use crate::record_log::{RecordReader, RecordWriter};
+use crate::table::comparator::KeyComparator;
 use crate::table::table::{SSTable, SSTableOpenOptions};
+use crate::table::table_builder::SSTableBuilderOptions;
 use crate::EmbeddedDBOptions;
 
+/// TODO: Implement this.
 const MAX_NUM_LEVELS: usize = 7;
+
+/// The highest level at which we will store a new SSTable resulting from a
+/// memtable flush.
+const MAX_MEMTABLE_LEVEL: usize = 2;
 
 pub struct VersionSet {
     pub options: Arc<EmbeddedDBOptions>,
@@ -31,6 +41,10 @@ pub struct VersionSet {
     pub prev_log_number: Option<u64>,
 
     pub last_sequence: u64,
+
+    /// Files that were deleted from the latest version but are still pending
+    /// deletion from disk due to outstanding in-memory references.
+    pub deleted_files: Vec<Arc<LevelTableEntry>>,
 }
 
 impl VersionSet {
@@ -44,6 +58,7 @@ impl VersionSet {
             log_number: None,
             prev_log_number: None,
             last_sequence: 0,
+            deleted_files: vec![],
         }
     }
 
@@ -160,7 +175,7 @@ impl VersionSet {
                     return Err(err_msg("Creating new file before comparator defined"));
                 }
 
-                version.insert(file, &options);
+                version.insert(file, None, &options);
             }
 
             for file in edit.deleted_files {
@@ -187,10 +202,75 @@ impl VersionSet {
             next_file_number,
             log_number: base_edit.log_number,
             prev_log_number: base_edit.prev_log_number,
+            deleted_files: vec![],
         })
+    }
+
+    /// Open all not currently opened tables in this version.
+    pub async fn open_all(&self, dir: &FilePaths) -> Result<()> {
+        let options = SSTableOpenOptions {
+            comparator: self.options.table_options.comparator.clone(),
+        };
+
+        // TODO: Parallelize me.
+        for level in &self.latest_version.levels {
+            for entry in &level.tables {
+                let mut table = entry.table.lock().await;
+                if table.is_none() {
+                    *table = Some(Arc::new(
+                        SSTable::open(dir.table(entry.entry.number), options.clone()).await?,
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn pick_memtable_level(&self, key_range: KeyRangeRef) -> SelectedMemtableLevel {
+        let mut highest_level = 0;
+        let mut found_overlap = false;
+
+        for level in 0..self.latest_version.levels.len() {
+            for table in &self.latest_version.levels[level].tables {
+                let table_range = KeyRangeRef {
+                    smallest: &table.entry.smallest_key,
+                    largest: &table.entry.largest_key,
+                };
+
+                if key_range
+                    .overlaps_with(table_range, self.options.table_options.comparator.as_ref())
+                {
+                    found_overlap = true;
+                    break;
+                }
+            }
+
+            if found_overlap {
+                break;
+            } else {
+                highest_level = level;
+            }
+        }
+
+        // In this case, self.latest_version.levels.len() < MAX_MEMTABLE_LEVEL
+        if !found_overlap && highest_level < MAX_MEMTABLE_LEVEL {
+            highest_level = MAX_MEMTABLE_LEVEL;
+        }
+
+        SelectedMemtableLevel {
+            level: std::cmp::min(MAX_MEMTABLE_LEVEL, highest_level),
+            found_overlap,
+        }
     }
 }
 
+pub struct SelectedMemtableLevel {
+    pub level: usize,
+    pub found_overlap: bool,
+}
+
+#[derive(Clone)]
 pub struct Version {
     /// All tables stored on disk.
     /// level_tables[i] corresponds to all tables in the i'th level.
@@ -200,6 +280,7 @@ pub struct Version {
     pub levels: Vec<Level>,
 }
 
+#[derive(Clone)]
 pub struct Level {
     /// Total size in bytes of all tables in this level
     pub total_size: u64,
@@ -235,7 +316,12 @@ impl Version {
 
     /// NOTE: This does not validate the new entry is not already present or
     /// doesn't overlap with other tables.
-    pub fn insert(&mut self, entry: NewFileEntry, db_options: &EmbeddedDBOptions) {
+    pub fn insert(
+        &mut self,
+        entry: NewFileEntry,
+        table: Option<Arc<SSTable>>,
+        db_options: &EmbeddedDBOptions,
+    ) {
         while self.levels.len() <= entry.level as usize {
             let number = self.levels.len() as u32;
             if number == 0 {
@@ -264,7 +350,7 @@ impl Version {
 
         if entry.level == 0 {
             self.levels[0].tables.push(Arc::new(LevelTableEntry {
-                table: Mutex::new(None),
+                table: Mutex::new(table),
                 entry,
             }));
             return;
@@ -302,26 +388,19 @@ impl Version {
             false
         }
     }
+}
 
-    /// Open all not currently opened tables in this version.
-    pub async fn open_all(&self, dir: &FilePaths) -> Result<()> {
-        /*
-        let mut options = sstable::table::table::SSTableOpenOptions {
-            comparator: Arc::new(BytewiseComparator::new()),
-        };
-        */
+pub struct KeyRangeRef<'a> {
+    pub smallest: &'a [u8],
+    pub largest: &'a [u8],
+}
 
-        // TODO: Parallelize me.
-        for level in &self.levels {
-            for entry in &level.tables {
-                let mut table = entry.table.lock().await;
-                if table.is_none() {
-                    // table = Some(Arc::new(SSTable::open(path,
-                    // SSTableOpenOptions::default())))
-                }
-            }
+impl<'a> KeyRangeRef<'a> {
+    fn overlaps_with(&self, other: KeyRangeRef, comparator: &dyn KeyComparator) -> bool {
+        match comparator.compare(self.smallest, other.smallest) {
+            Ordering::Equal => true,
+            Ordering::Less => comparator.compare(self.largest, other.smallest).is_ge(),
+            Ordering::Greater => comparator.compare(self.smallest, other.largest).is_le(),
         }
-
-        Ok(())
     }
 }

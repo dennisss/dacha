@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use common::async_std::sync::RwLock;
 use common::bytes::Bytes;
+use common::errors::*;
 
-use crate::table::comparator::Comparator;
+use crate::iterable::{Iterable, KeyValueEntry};
+use crate::table::comparator::KeyComparator;
 
 /// Very simple memory table implementation based on a simple sorted vector.
 ///
@@ -25,18 +27,12 @@ pub struct VecMemTable {
 }
 
 struct VecMemTableState {
-    comparator: Arc<dyn Comparator>,
-    data: RwLock<Vec<VecMemTableEntry>>,
-}
-
-#[derive(Clone)]
-pub struct VecMemTableEntry {
-    pub key: Bytes,
-    pub value: Bytes,
+    comparator: Arc<dyn KeyComparator>,
+    data: RwLock<Vec<KeyValueEntry>>,
 }
 
 impl VecMemTable {
-    pub fn new(comparator: Arc<dyn Comparator>) -> Self {
+    pub fn new(comparator: Arc<dyn KeyComparator>) -> Self {
         Self {
             state: Arc::new(VecMemTableState {
                 comparator,
@@ -55,7 +51,7 @@ impl VecMemTable {
 
         data.insert(
             index,
-            VecMemTableEntry {
+            KeyValueEntry {
                 key: key.into(),
                 value: value.into(),
             },
@@ -70,6 +66,15 @@ impl VecMemTable {
             last_key: None,
             seeking: false,
         }
+    }
+
+    pub async fn key_range(&self) -> Option<(Bytes, Bytes)> {
+        let data = self.state.data.read().await;
+        if data.is_empty() {
+            return None;
+        }
+
+        Some((data[0].key.clone(), data[data.len() - 1].key.clone()))
     }
 }
 
@@ -92,11 +97,12 @@ pub struct VecMemTableIterator {
     seeking: bool,
 }
 
-impl VecMemTableIterator {
-    pub async fn next(&mut self) -> Option<VecMemTableEntry> {
+#[async_trait]
+impl Iterable for VecMemTableIterator {
+    async fn next(&mut self) -> Result<Option<KeyValueEntry>> {
         let data = self.table_state.data.read().await;
         if data.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         let last_key = match &self.last_key {
@@ -106,7 +112,7 @@ impl VecMemTableIterator {
                 // the first element of the array.
                 self.last_key = Some(data[0].key.clone());
                 self.last_index = 0;
-                return Some(data[0].clone());
+                return Ok(Some(data[0].clone()));
             }
         };
 
@@ -143,7 +149,7 @@ impl VecMemTableIterator {
         };
 
         if next_index >= data.len() {
-            return None;
+            return Ok(None);
         }
 
         self.table_len = data.len();
@@ -151,13 +157,14 @@ impl VecMemTableIterator {
         self.last_key = Some(data[next_index].key.clone());
         self.seeking = false;
 
-        Some(data[next_index].clone())
+        Ok(Some(data[next_index].clone()))
     }
 
-    pub fn seek(&mut self, key: &[u8]) {
+    async fn seek(&mut self, key: &[u8]) -> Result<()> {
         self.last_key = Some(key.into());
         self.last_index = 0;
         self.table_len = 0;
         self.seeking = true;
+        Ok(())
     }
 }

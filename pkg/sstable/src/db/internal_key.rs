@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 
-use crate::table::comparator::Comparator;
+use crate::table::comparator::KeyComparator;
 use crate::table::filter_policy::FilterPolicy;
 
 const MAX_SEQUENCE: u64 = (1 << 56) - 1;
@@ -62,6 +62,11 @@ impl<'a> InternalKey<'a> {
         &input[..(input.len() - 8)]
     }
 
+    /// Creates an internal key that is positioned immediately before all keys
+    /// with the given user_key.
+    ///
+    /// This is mainly used for seeking to the position immediately before a
+    /// user key.
     pub fn before(user_key: &'a [u8]) -> Self {
         Self {
             user_key,
@@ -87,18 +92,18 @@ impl<'a> InternalKey<'a> {
 }
 
 pub struct InternalKeyComparator {
-    user_key_comparator: Arc<dyn Comparator>,
+    user_key_comparator: Arc<dyn KeyComparator>,
 }
 
 impl InternalKeyComparator {
-    pub fn wrap(user_key_comparator: Arc<dyn Comparator>) -> Arc<Self> {
+    pub fn wrap(user_key_comparator: Arc<dyn KeyComparator>) -> Arc<Self> {
         Arc::new(Self {
             user_key_comparator,
         })
     }
 }
 
-impl Comparator for InternalKeyComparator {
+impl KeyComparator for InternalKeyComparator {
     fn name(&self) -> &'static str {
         self.user_key_comparator.name()
     }

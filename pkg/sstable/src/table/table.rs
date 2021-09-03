@@ -23,13 +23,15 @@ use parsing::complete;
 use protobuf::wire::{parse_varint, serialize_varint};
 use reflection::*;
 
+use crate::iterable::Iterable;
+use crate::iterable::KeyValueEntry;
 use crate::table::block_handle::BlockHandle;
 use crate::table::data_block::*;
 use crate::table::filter_policy::FilterPolicyRegistry;
 use crate::table::footer::*;
 use crate::table::table_properties::*;
 
-use super::comparator::Comparator;
+use super::comparator::KeyComparator;
 use super::filter_block::FilterBlock;
 use super::filter_policy::FilterPolicy;
 
@@ -38,8 +40,9 @@ pub const METAINDEX_PROPERTIES_KEY: &'static str = "rocksdb.properties";
 
 const NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
+#[derive(Clone)]
 pub struct SSTableOpenOptions {
-    pub comparator: Arc<dyn Comparator>,
+    pub comparator: Arc<dyn KeyComparator>,
     // pub filter_factory: Arc<dyn FilterPolicy>,
 }
 
@@ -62,7 +65,7 @@ struct SSTableState {
 
     filter: Option<SSTableFilter>,
 
-    comparator: Arc<dyn Comparator>,
+    comparator: Arc<dyn KeyComparator>,
 
     footer: Footer,
 }
@@ -257,7 +260,7 @@ impl IndexBlock {
     }
 
     /// Looks up the index of the block containing the given key.
-    pub fn lookup(&self, key: &[u8], comparator: &dyn Comparator) -> Option<usize> {
+    pub fn lookup(&self, key: &[u8], comparator: &dyn KeyComparator) -> Option<usize> {
         common::algorithms::lower_bound_by(
             IndexBlockSlice {
                 last_keys: &self.last_keys,
@@ -484,13 +487,18 @@ pub struct SSTableIterator {
 
 // Simpler strategy is to copy it, but I'd like to avoid copying potentially
 
-impl SSTableIterator {
+#[async_trait]
+impl Iterable for SSTableIterator {
     /// TODO: Try to avoid copying.
-    pub async fn next(&mut self) -> Option<Result<(Vec<u8>, Vec<u8>)>> {
+    async fn next(&mut self) -> Result<Option<KeyValueEntry>> {
         loop {
             if let Some((block, block_iter)) = self.current_block.as_mut() {
                 if let Some(res) = block_iter.next() {
-                    return Some(res.map(|kv| (kv.key.to_vec(), kv.value.to_vec())));
+                    let kv = res?;
+                    return Ok(Some(KeyValueEntry {
+                        key: kv.key.to_vec().into(),
+                        value: kv.value.to_vec().into(),
+                    }));
                 } else {
                     self.current_block = None;
                     self.current_block_index += 1;
@@ -501,13 +509,7 @@ impl SSTableIterator {
                     let block = self
                         .block_cache
                         .get_or_create(&self.table, self.current_block_index)
-                        .await;
-                    let block = match block {
-                        Ok(b) => b,
-                        Err(e) => {
-                            return Some(Err(e));
-                        }
-                    };
+                        .await?;
 
                     let iter = block.block().iter().rows();
 
@@ -522,12 +524,12 @@ impl SSTableIterator {
                     continue;
                 }
 
-                return None;
+                return Ok(None);
             }
         }
     }
 
-    pub async fn seek(&mut self, start_key: &[u8]) -> Result<()> {
+    async fn seek(&mut self, start_key: &[u8]) -> Result<()> {
         // Find correct index
         let block_index = if let Some(idx) = self
             .table
@@ -554,4 +556,38 @@ impl SSTableIterator {
         self.current_block = Some((block, iter.rows()));
         Ok(())
     }
+
+    /*
+    /// Move the iterator to be immediately before a well known key value.
+    ///
+    /// If the key is definately not in the table, then this will return false
+    /// and the iterator will be in an undefined position.
+    ///
+    /// If this returns true, then the next call to .next() will return the
+    /// value at the given key (if it is present in the table).
+    pub async fn seek_exact(&mut self, key: &[u8]) -> Result<bool> {
+        // Find correct index
+        // TODO: Deduplicate with above.
+        let block_index = if let Some(idx) = self.table.state.index.lookup(start_key) {
+            idx
+        } else {
+            self.current_block_index = self.table.num_blocks();
+            return Ok(false);
+        };
+
+        // TODO: Check against any min-max key metadata in the table.
+
+        if let Some(filter) = self.table.state.filter {
+            if !filter
+                .block
+                .block()
+                .key_may_match(filter.policy.as_ref(), block_index, key)
+            {
+                return Ok(false);
+            }
+        }
+
+        // TODO: Next step is to check any block-level filters.
+    }
+    */
 }

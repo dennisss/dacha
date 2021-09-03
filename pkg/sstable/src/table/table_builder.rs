@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
+use std::path::Path;
 use std::sync::Arc;
 
 use common::async_std::fs::{File, OpenOptions};
 use common::async_std::io::prelude::WriteExt;
-use common::async_std::path::Path;
 use common::errors::*;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
@@ -16,7 +16,7 @@ use crate::table::filter_policy::FilterPolicy;
 use crate::table::footer::*;
 use crate::table::raw_block::CompressionType;
 
-#[derive(Defaultable)]
+#[derive(Clone, Defaultable)]
 pub struct SSTableBuilderOptions {
     #[default(4096)]
     pub block_size: usize,
@@ -40,7 +40,7 @@ pub struct SSTableBuilderOptions {
 
     // TODO: Need to route this through to the block builders.
     #[default(Arc::new(BytewiseComparator::new()))]
-    pub comparator: Arc<dyn Comparator>,
+    pub comparator: Arc<dyn KeyComparator>,
 
     // NOTE: We assume that whole_key_filtering is enabled.
     // TODO: Eventually we should make a format that saves whether or not it is
@@ -206,7 +206,7 @@ impl SSTableBuilder {
         Ok(())
     }
 
-    pub async fn add(&mut self, key: Vec<u8>, value: &[u8]) -> Result<()> {
+    pub async fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         let min_cutoff = (self.options.block_size * self.options.block_size_deviation) / 100;
 
         // If we expect to overflow the block size, flush the flush the previous
@@ -230,13 +230,13 @@ impl SSTableBuilder {
                 .comparator
                 .find_shortest_separator(pending.last_key, &key);
             self.index_block_builder
-                .add(index_key, &pending.handle.serialized())?;
+                .add(&index_key, &pending.handle.serialized())?;
         }
 
-        self.data_block_builder.add(key.clone(), &value)?;
+        self.data_block_builder.add(key, &value)?;
 
         if let Some(filter_builder) = self.filter_block_builder.as_mut() {
-            filter_builder.add_key(key);
+            filter_builder.add_key(key.to_vec());
         }
 
         Ok(())
@@ -246,7 +246,7 @@ impl SSTableBuilder {
 
     /// Complete writing the table to disk. This should always be the final
     /// method called.
-    pub async fn finish(mut self) -> Result<()> {
+    pub async fn finish(mut self) -> Result<SSTableBuiltMetadata> {
         // TODO: This check is also done inside of flush().
         self.flush().await?;
 
@@ -256,7 +256,7 @@ impl SSTableBuilder {
                 .comparator
                 .find_short_successor(pending.last_key);
             self.index_block_builder
-                .add(index_key, &pending.handle.serialized())?;
+                .add(&index_key, &pending.handle.serialized())?;
         }
 
         // TODO: Make the interval configurable
@@ -289,6 +289,15 @@ impl SSTableBuilder {
 
         // Write footer (using version in options).
 
-        Ok(())
+        // TODO: Need to fully fsync, etc. the file.
+        self.file.flush().await?;
+
+        Ok(SSTableBuiltMetadata {
+            file_size: self.file.metadata().await?.len(),
+        })
     }
+}
+
+pub struct SSTableBuiltMetadata {
+    pub file_size: u64,
 }

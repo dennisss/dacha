@@ -10,11 +10,14 @@ extern crate math;
 extern crate protobuf;
 extern crate reflection;
 
+mod arena;
 mod db;
 pub mod encoding;
 mod memtable;
 pub mod record_log;
 // mod skip_list;
+pub mod iterable;
+pub mod priority_queue;
 pub mod table;
 
 /*

@@ -15,7 +15,7 @@ use crate::table::block_handle::BlockHandle;
 use crate::table::footer::Footer;
 use crate::table::raw_block::RawBlock;
 
-use super::comparator::Comparator;
+use super::comparator::KeyComparator;
 
 // TODO: The hash-based index is stored before the list of resets here:
 // https://github.com/facebook/rocksdb/blob/50e470791dafb3db017f055f79323aef9a607e43/table/block_based/block_builder.cc#L118
@@ -126,7 +126,7 @@ impl<'a> DataBlockRef<'a> {
     /// Retrieves a single key-value pair by key.
     /// Compared to using an iterator, this may use more optimizations for point
     /// lookups.
-    pub fn get(&self, key: &[u8], comparator: &dyn Comparator) -> Result<Option<Vec<u8>>> {
+    pub fn get(&self, key: &[u8], comparator: &dyn KeyComparator) -> Result<Option<Vec<u8>>> {
         // TODO: Implement hash-based lookup
 
         let mut iter = self.before(key, comparator)?.rows();
@@ -163,7 +163,7 @@ impl<'a> DataBlockRef<'a> {
     pub fn before(
         &'a self,
         key: &[u8],
-        comparator: &dyn Comparator,
+        comparator: &dyn KeyComparator,
     ) -> Result<DataBlockEntryIterator<'a>> {
         let closest_offset = self.restart_search(key, self.restarts, comparator)?;
         Ok(DataBlockEntryIterator {
@@ -178,7 +178,7 @@ impl<'a> DataBlockRef<'a> {
         &self,
         key: &[u8],
         restarts: &[u32],
-        comparator: &dyn Comparator,
+        comparator: &dyn KeyComparator,
     ) -> Result<usize> {
         if restarts.len() == 1 {
             return Ok(restarts[0] as usize);

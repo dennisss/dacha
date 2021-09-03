@@ -1,4 +1,5 @@
 use crate::db::internal_key::*;
+use crate::table::table::DataBlockCache;
 use crate::table::table_builder::SSTableBuilderOptions;
 
 // TODO: See here for all RocksDB options:
@@ -16,6 +17,11 @@ pub struct EmbeddedDBOptions {
 
     /// Returns an error if the database already exists.
     pub error_if_exists: bool,
+
+    /// TODO: Implement this. Basically block insertions and disable the
+    /// background thread.
+    // Also we can check using the memtable on reads.
+    pub read_only: bool,
 
     /// Max amount of data to store in memory before the data is flushed into an
     /// SSTable.
@@ -70,6 +76,10 @@ pub struct EmbeddedDBOptions {
 
     #[default(2)]
     pub max_background_jobs: usize,
+
+    /// 8MB is the default in LevelDB.
+    #[default(DataBlockCache::new(8 * 1024 * 1024))]
+    pub block_cache: DataBlockCache,
 }
 
 impl EmbeddedDBOptions {

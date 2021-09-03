@@ -44,6 +44,10 @@ impl FilePaths {
         self.root_dir.join(format!("MANIFEST-{:06}", num))
     }
 
+    pub fn table(&self, num: u64) -> PathBuf {
+        self.root_dir.join(format!("{:06}.ldb", num))
+    }
+
     // TODO: Eventually should we support cleaning up unknown files in the data
     // directory?
 }

@@ -3,16 +3,16 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::ops::Bound;
+use std::path::Path;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
-use common::async_std::path::Path;
+use common::bytes::Bytes;
 use common::errors::*;
 
-use crate::db::internal_key::*;
+use crate::iterable::Iterable;
 use crate::memtable::vec::*;
-use crate::record_log::RecordReader;
 use crate::table::comparator::*;
-use crate::table::table_builder::*;
 
 /*
 Internal table implementation needs to support:
@@ -33,21 +33,21 @@ Internal table implementation needs to support:
 // the table from a log)
 pub struct MemTable {
     table: VecMemTable,
-    size: usize,
+    size: AtomicUsize,
 }
 
 impl MemTable {
-    pub fn new(comparator: Arc<dyn Comparator>) -> Self {
+    pub fn new(comparator: Arc<dyn KeyComparator>) -> Self {
         Self {
             table: VecMemTable::new(comparator),
-            size: 0,
+            size: AtomicUsize::new(0),
         }
     }
 
     /// Returns the total number of bytes the keys and values of this memtable
     /// store in memory.
     pub fn size(&self) -> usize {
-        self.size
+        self.size.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     //	pub fn get<'a>(&'a self, key: &'a [u8]) -> Option<TableValue<'a>> {
@@ -64,6 +64,10 @@ impl MemTable {
     //		Some(TableValue { sequence: entry.sequence, value: Some(&entry.value) })
     //	}
 
+    pub fn iter(&self) -> VecMemTableIterator {
+        self.table.iter()
+    }
+
     /// Creates an iterator over the memtable starting at the given key.
     pub fn range_from(&self, key: &[u8]) -> VecMemTableIterator {
         let mut iter = self.table.iter();
@@ -73,30 +77,16 @@ impl MemTable {
 
     // TODO: Change to taking references as arguments as we eventually want to copy
     // the data into the memtable's arena.
-    pub async fn insert(&mut self, key: Vec<u8>, value: Vec<u8>) {
-        self.size += key.len() + value.len();
+    pub async fn insert(&self, key: Vec<u8>, value: Vec<u8>) {
+        self.size.fetch_add(
+            key.len() + value.len(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         self.table.insert(key, value).await;
     }
 
-    /// TODO: Must consider the smallest snapshot sequence
-    pub async fn write_table(
-        &self,
-        path: &Path,
-        table_options: SSTableBuilderOptions,
-    ) -> Result<()> {
-        let mut table_builder = SSTableBuilder::open(path, table_options).await?;
-        let mut iter = self.table.iter();
-        while let Some(entry) = iter.next().await {
-            let ik = InternalKey::parse(&entry.key).unwrap();
-            if ik.typ != ValueType::Deletion {
-                // TODO: Internalize this cloning?
-                table_builder.add(entry.key.to_vec(), &entry.value).await?;
-            }
-        }
-
-        table_builder.finish().await?;
-
-        Ok(())
+    pub async fn key_range(&self) -> Option<(Bytes, Bytes)> {
+        self.table.key_range().await
     }
 }
 //

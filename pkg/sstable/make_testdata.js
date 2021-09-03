@@ -68,7 +68,7 @@ async function compactDb(db) {
 
     await compactDb(db);
 
-    for (let i = 6200; i < 5300; i++) {
+    for (let i = 3200; i < 3300; i++) {
       await db.put(i + '', i % 2 == 0 ? 'even' : 'odd');
     }
 
@@ -82,7 +82,7 @@ async function compactDb(db) {
     }
 
     await db.put('apples', 'cool');
-    await db.del('mozarella');
+    await db.del('mozzarella');
 
     await compactDb(db);
 

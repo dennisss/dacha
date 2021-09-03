@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::table::bloom::BloomFilterPolicy;
 
-pub trait FilterPolicy {
+pub trait FilterPolicy: Send + Sync + 'static {
     fn name(&self) -> &'static str;
     fn create(&self, keys: Vec<&[u8]>, out: &mut Vec<u8>);
     fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool;

@@ -1,0 +1,2 @@
+# Ignore human readable log files as they don't store any database data.
+LOG
