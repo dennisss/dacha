@@ -168,3 +168,58 @@ impl Iterable for VecMemTableIterator {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common::errors::*;
+
+    use crate::{iterable::Iterable, table::comparator::BytewiseComparator};
+
+    use super::VecMemTable;
+
+    #[async_std::test]
+    async fn vec_memtable_iterate_while_inserting() -> Result<()> {
+        let table = VecMemTable::new(Arc::new(BytewiseComparator::new()));
+
+        table.insert(vec![0, 10], vec![1]).await;
+        table.insert(vec![0, 20], vec![2]).await;
+        table.insert(vec![0, 30], vec![3]).await;
+        table.insert(vec![0, 40], vec![4]).await;
+
+        let mut iter = table.iter();
+
+        let e1 = iter.next().await?.unwrap();
+        assert_eq!(&e1.key[..], &[0, 10]);
+        assert_eq!(&e1.value[..], &[1]);
+
+        table.insert(vec![0, 15], vec![5]).await;
+
+        let e = iter.next().await?.unwrap();
+        assert_eq!(&e.key[..], &[0, 15]);
+        assert_eq!(&e.value[..], &[5]);
+
+        let e = iter.next().await?.unwrap();
+        assert_eq!(&e.key[..], &[0, 20]);
+        assert_eq!(&e.value[..], &[2]);
+
+        let e = iter.next().await?.unwrap();
+        assert_eq!(&e.key[..], &[0, 30]);
+        assert_eq!(&e.value[..], &[3]);
+
+        table.insert(vec![1, 0], vec![6]).await;
+
+        let e = iter.next().await?.unwrap();
+        assert_eq!(&e.key[..], &[0, 40]);
+        assert_eq!(&e.value[..], &[4]);
+
+        let e = iter.next().await?.unwrap();
+        assert_eq!(&e.key[..], &[1, 0]);
+        assert_eq!(&e.value[..], &[6]);
+
+        assert!(iter.next().await?.is_none());
+
+        Ok(())
+    }
+}

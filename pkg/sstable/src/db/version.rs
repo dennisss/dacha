@@ -25,7 +25,7 @@ const MAX_NUM_LEVELS: usize = 7;
 const MAX_MEMTABLE_LEVEL: usize = 2;
 
 pub struct VersionSet {
-    pub options: Arc<EmbeddedDBOptions>,
+    options: Arc<EmbeddedDBOptions>,
 
     pub latest_version: Arc<Version>,
 
@@ -164,6 +164,12 @@ impl VersionSet {
                 base_edit.next_file_number = Some(next_file_number);
             }
 
+            for file in edit.deleted_files {
+                if !version.remove(&file) {
+                    return Err(err_msg("Failed to delete non-existent file"));
+                }
+            }
+
             for file in edit.new_files {
                 if file.number <= highest_file_number_seen {
                     return Err(err_msg("Already saw a file that a >= file number"));
@@ -176,12 +182,6 @@ impl VersionSet {
                 }
 
                 version.insert(file, None, &options);
-            }
-
-            for file in edit.deleted_files {
-                if !version.remove(&file) {
-                    return Err(err_msg("Failed to delete non-existent file"));
-                }
             }
         }
 
@@ -206,6 +206,48 @@ impl VersionSet {
         })
     }
 
+    pub fn apply_new_edit(&mut self, version_edit: VersionEdit, new_tables: Vec<SSTable>) {
+        // NOTE: We ignore the sequence in VersionEdits as we will rely on writes to
+        // increment the sequence. Meanwhile this function will only be called during
+        // compactions after the initial sequence has already been recovered.
+        if let Some(last_sequence) = version_edit.last_sequence {
+            assert!(last_sequence <= self.last_sequence);
+        }
+
+        if let Some(next_file_number) = version_edit.next_file_number {
+            assert!(next_file_number >= self.next_file_number);
+            self.next_file_number = next_file_number;
+        }
+
+        if let Some(log_number) = version_edit.log_number {
+            self.log_number = Some(log_number);
+        }
+
+        if let Some(prev_log_number) = version_edit.prev_log_number {
+            if prev_log_number == 0 {
+                self.prev_log_number = None;
+            } else {
+                self.prev_log_number = Some(prev_log_number);
+            }
+        }
+
+        if !version_edit.new_files.is_empty() || !version_edit.deleted_files.is_empty() {
+            let version = Arc::make_mut(&mut self.latest_version);
+
+            for entry in &version_edit.deleted_files {
+                assert!(version.remove(&entry));
+            }
+
+            for (entry, table) in version_edit
+                .new_files
+                .into_iter()
+                .zip(new_tables.into_iter())
+            {
+                version.insert(entry, Some(Arc::new(table)), &self.options);
+            }
+        }
+    }
+
     /// Open all not currently opened tables in this version.
     pub async fn open_all(&self, dir: &FilePaths) -> Result<()> {
         let options = SSTableOpenOptions {
@@ -227,20 +269,25 @@ impl VersionSet {
         Ok(())
     }
 
+    // TODO: Deduplicate with the other code.
+    pub fn target_file_size(&self, mut level: u32) -> u64 {
+        if level == 0 {
+            level = 1;
+        }
+
+        self.options.target_file_size_base * self.options.target_file_size_multiplier.pow(level - 1)
+    }
+
     pub fn pick_memtable_level(&self, key_range: KeyRangeRef) -> SelectedMemtableLevel {
         let mut highest_level = 0;
         let mut found_overlap = false;
 
         for level in 0..self.latest_version.levels.len() {
             for table in &self.latest_version.levels[level].tables {
-                let table_range = KeyRangeRef {
-                    smallest: &table.entry.smallest_key,
-                    largest: &table.entry.largest_key,
-                };
-
-                if key_range
-                    .overlaps_with(table_range, self.options.table_options.comparator.as_ref())
-                {
+                if key_range.overlaps_with(
+                    table.key_range(),
+                    self.options.table_options.comparator.as_ref(),
+                ) {
                     found_overlap = true;
                     break;
                 }
@@ -263,10 +310,133 @@ impl VersionSet {
             found_overlap,
         }
     }
+
+    pub fn select_tables_to_compaction(&self) -> Option<CompactionSpec> {
+        let level_num;
+        let tables;
+
+        // Compacting level 0 is just based on the quantity of files and we always
+        // compact all tables in the level.
+        if self.latest_version.levels.len() > 1
+            && self.latest_version.levels[0].tables.len()
+                >= self.options.level0_file_num_compaction_trigger
+        {
+            level_num = 0;
+            tables = &self.latest_version.levels[0].tables[..];
+        } else {
+            // Set level_num to the first level which is over it's limit.
+            {
+                let mut maybe_level_num = None;
+                for level_num in 1..self.latest_version.levels.len() {
+                    let level = &self.latest_version.levels[level_num];
+                    if level.total_size > level.max_size {
+                        maybe_level_num = Some(level_num);
+                        break;
+                    }
+                }
+
+                if let Some(num) = maybe_level_num {
+                    level_num = num;
+                } else {
+                    return None;
+                }
+            }
+
+            let level = &self.latest_version.levels[level_num];
+
+            // Find a random contiguous range of tables in this level which we can remove in
+            // order to get us below the max_size.
+            // TODO: Need to also expand to any adjacent takes that contain a boundary user
+            // key.
+            let mut i = (crypto::random::clocked_rng().next_u32() as usize) % level.tables.len();
+            let mut j = i;
+            let mut new_total_size = level.total_size;
+            while new_total_size > level.max_size {
+                if j < level.tables.len() {
+                    new_total_size -= level.tables[j].entry.file_size;
+                    j += 1;
+                } else if i > 0 {
+                    i -= 1;
+                    new_total_size -= level.tables[j].entry.file_size;
+                } else {
+                    break;
+                }
+            }
+
+            tables = &level.tables[i..j];
+        }
+
+        assert!(tables.len() > 0);
+
+        let comparator = self.options.table_options.comparator.as_ref();
+
+        let mut key_range = tables[0].key_range();
+        for table in &tables[1..] {
+            key_range = key_range.union(table.key_range(), comparator);
+        }
+
+        let next_level = level_num + 1;
+
+        // Find all tables in the next level that
+        let mut next_level_tables: &[Arc<LevelTableEntry>] = &[];
+        if next_level < self.latest_version.levels.len() {
+            next_level_tables = &self.latest_version.levels[next_level].tables;
+
+            // TODO: This should be optimized by finding the start index first with binary
+            // search.
+            while next_level_tables.len() > 0 {
+                if !next_level_tables[0]
+                    .key_range()
+                    .overlaps_with(key_range, comparator)
+                {
+                    next_level_tables = &next_level_tables[1..];
+                } else if !next_level_tables[next_level_tables.len() - 1]
+                    .key_range()
+                    .overlaps_with(key_range, comparator)
+                {
+                    next_level_tables = &next_level_tables[..(next_level_tables.len() - 1)];
+                } else {
+                    break;
+                }
+            }
+        }
+
+        let mut found_overlap = false;
+        for i in (next_level + 1)..self.latest_version.levels.len() {
+            for table in &self.latest_version.levels[i].tables {
+                if table.key_range().overlaps_with(key_range, comparator) {
+                    found_overlap = true;
+                    break;
+                }
+            }
+
+            if found_overlap {
+                break;
+            }
+        }
+
+        Some(CompactionSpec {
+            level: level_num,
+            tables,
+            next_level,
+            next_level_tables,
+            found_overlap,
+        })
+    }
 }
 
 pub struct SelectedMemtableLevel {
     pub level: usize,
+    pub found_overlap: bool,
+}
+
+pub struct CompactionSpec<'a> {
+    pub level: usize,
+    pub tables: &'a [Arc<LevelTableEntry>],
+
+    pub next_level: usize,
+    pub next_level_tables: &'a [Arc<LevelTableEntry>],
+
     pub found_overlap: bool,
 }
 
@@ -307,6 +477,15 @@ pub struct LevelTableEntry {
     pub table: Mutex<Option<Arc<SSTable>>>,
 
     pub entry: NewFileEntry,
+}
+
+impl LevelTableEntry {
+    pub fn key_range(&self) -> KeyRangeRef {
+        KeyRangeRef {
+            smallest: &self.entry.smallest_key,
+            largest: &self.entry.largest_key,
+        }
+    }
 }
 
 impl Version {
@@ -368,7 +547,7 @@ impl Version {
         level.tables.insert(
             idx,
             Arc::new(LevelTableEntry {
-                table: Mutex::new(None),
+                table: Mutex::new(table),
                 entry,
             }),
         );
@@ -390,17 +569,39 @@ impl Version {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct KeyRangeRef<'a> {
     pub smallest: &'a [u8],
     pub largest: &'a [u8],
 }
 
 impl<'a> KeyRangeRef<'a> {
-    fn overlaps_with(&self, other: KeyRangeRef, comparator: &dyn KeyComparator) -> bool {
+    pub fn overlaps_with(&self, other: KeyRangeRef, comparator: &dyn KeyComparator) -> bool {
         match comparator.compare(self.smallest, other.smallest) {
             Ordering::Equal => true,
             Ordering::Less => comparator.compare(self.largest, other.smallest).is_ge(),
             Ordering::Greater => comparator.compare(self.smallest, other.largest).is_le(),
         }
+    }
+
+    /// Creates a new key range which contains all keys in two ranges.
+    pub fn union(&self, other: KeyRangeRef<'a>, comparator: &dyn KeyComparator) -> KeyRangeRef<'a> {
+        let smallest = {
+            if comparator.compare(self.smallest, other.smallest).is_le() {
+                self.smallest
+            } else {
+                other.smallest
+            }
+        };
+
+        let largest = {
+            if comparator.compare(self.largest, other.largest).is_ge() {
+                self.largest
+            } else {
+                other.largest
+            }
+        };
+
+        KeyRangeRef { smallest, largest }
     }
 }

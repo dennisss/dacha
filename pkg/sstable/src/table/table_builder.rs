@@ -5,6 +5,9 @@ use std::sync::Arc;
 use common::async_std::fs::{File, OpenOptions};
 use common::async_std::io::prelude::WriteExt;
 use common::errors::*;
+use compression::snappy::snappy_compress;
+use compression::transform::transform_to_vec;
+use compression::zlib::{ZlibDecoder, ZlibEncoder};
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 
@@ -94,7 +97,7 @@ struct PendingDataBlock {
 
 pub struct SSTableBuilder {
     file: File,
-    file_len: usize,
+    file_len: u64,
     options: SSTableBuilderOptions,
 
     /// Buffer used to temporarily accumulate compressed bytes during block
@@ -102,7 +105,6 @@ pub struct SSTableBuilder {
     compressed_buffer: Vec<u8>,
 
     index_block_builder: DataBlockBuilder,
-    //	data_block_handles: Vec<BlockHandle>,
     filter_block_builder: Option<FilterBlockBuilder>,
     data_block_builder: DataBlockBuilder,
 
@@ -141,13 +143,36 @@ impl SSTableBuilder {
         })
     }
 
+    /// Estimates how large the created table file would be if we finalized it
+    /// right now.
+    pub fn estimated_file_size(&self) -> u64 {
+        self.file_len
+            + (self.data_block_builder.current_size() as u64)
+            + (self.index_block_builder.current_size() as u64)
+    }
+
     async fn write_raw_block(&mut self, block_buffer: &mut Vec<u8>) -> Result<BlockHandle> {
         let compressed_data = match self.options.compression {
             // In the uncompressed case, we avoid copying over the data to a
             // separate buffer and reuse
             CompressionType::None => block_buffer,
+            CompressionType::Snappy => {
+                self.compressed_buffer.clear();
+                snappy_compress(&block_buffer, &mut self.compressed_buffer);
+                &mut self.compressed_buffer
+            }
             CompressionType::ZLib => {
-                // TODO:
+                self.compressed_buffer.clear();
+
+                let mut encoder = ZlibEncoder::new();
+                transform_to_vec(
+                    &mut encoder,
+                    &block_buffer,
+                    true,
+                    &mut self.compressed_buffer,
+                )?;
+                // TODO: Verify the progress is done in the above.
+
                 &mut self.compressed_buffer
             }
             _ => {
@@ -156,7 +181,7 @@ impl SSTableBuilder {
         };
 
         let block_handle = BlockHandle {
-            offset: self.file_len as u64,
+            offset: self.file_len,
             size: compressed_data.len() as u64,
         };
 
@@ -176,9 +201,10 @@ impl SSTableBuilder {
 
         compressed_data.extend_from_slice(&checksum.to_le_bytes());
 
-        self.file.write(&compressed_data).await?;
-        self.file_len += compressed_data.len();
+        self.file.write_all(&compressed_data).await?;
+        self.file_len += compressed_data.len() as u64;
         self.compressed_buffer.clear();
+
         Ok(block_handle)
     }
 
@@ -287,7 +313,17 @@ impl SSTableBuilder {
             self.write_raw_block(&mut buf).await?
         };
 
-        // Write footer (using version in options).
+        // Write footer.
+        // TOOD: Make version configurable
+        let mut footer = vec![];
+        Footer {
+            footer_version: 0,
+            checksum_type: ChecksumType::CRC32C,
+            index_handle,
+            metaindex_handle,
+        }
+        .serialize(&mut footer);
+        self.file.write_all(&footer).await?;
 
         // TODO: Need to fully fsync, etc. the file.
         self.file.flush().await?;

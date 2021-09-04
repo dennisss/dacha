@@ -74,7 +74,7 @@ pub struct DataBlockRef<'a> {
 
     hash_index: Option<&'a [u8]>,
 
-    /// TODO: Is it even required to specify zero as a restart?
+    /// NOTE: The zero restart will always have an offset of 0.
     restarts: &'a [u32],
 }
 
@@ -116,6 +116,12 @@ impl<'a> DataBlockRef<'a> {
             u32_slice(split.1)
         };
 
+        if restarts[0] != 0 {
+            return Err(err_msg(
+                "Expected blocks to always have a restart at offset 0",
+            ));
+        }
+
         Ok(Self {
             entries: input,
             hash_index,
@@ -123,13 +129,23 @@ impl<'a> DataBlockRef<'a> {
         })
     }
 
+    /*
+    // TODO: Before we use this, we need to extract the user key and use that for comparisons.
+    // Also we need to use the user key for the hash index.
+
     /// Retrieves a single key-value pair by key.
     /// Compared to using an iterator, this may use more optimizations for point
     /// lookups.
     pub fn get(&self, key: &[u8], comparator: &dyn KeyComparator) -> Result<Option<Vec<u8>>> {
         // TODO: Implement hash-based lookup
 
-        let mut iter = self.before(key, comparator)?.rows();
+        let mut iter = self.before(key, comparator)?;
+        if let Some(kv) = iter.next() {
+            let kv = kv?;
+
+            if key.cmp(kv.key).is_eq() {}
+        }
+
         while let Some(kv) = iter.next() {
             let kv = kv?;
             match key.cmp(kv.key) {
@@ -147,6 +163,7 @@ impl<'a> DataBlockRef<'a> {
 
         Ok(None)
     }
+    */
 
     /// Creates an iterator that starts at the beginning of the block.
     pub fn iter(&'a self) -> DataBlockEntryIterator<'a> {
@@ -164,11 +181,32 @@ impl<'a> DataBlockRef<'a> {
         &'a self,
         key: &[u8],
         comparator: &dyn KeyComparator,
-    ) -> Result<DataBlockEntryIterator<'a>> {
+    ) -> Result<DataBlockKeyValueIterator<'a>> {
+        // TODO: We need to test this logic. It could always return 0 and the remainder
+        // of the code would still work, but that would be inefficient.
         let closest_offset = self.restart_search(key, self.restarts, comparator)?;
-        Ok(DataBlockEntryIterator {
+
+        let mut iter = DataBlockEntryIterator {
             remaining_entries: &self.entries[closest_offset..],
-        })
+        }
+        .rows();
+
+        // Fast forward the iterator to the first value >= the seek key.
+        // The maximum number of loop iterators is the restart_interval of the block.
+        while let Some(peek) = iter.peek()? {
+            // TODO: Performing the comparison here means that we will likely need to do
+            // another comparison in the calling code to know if we seeked exactly to the
+            // correct position. Consider moving the fast forward code up the call stack to
+            // avoid
+            match comparator.compare(key, peek.entry.key) {
+                Ordering::Equal | Ordering::Less => break,
+                Ordering::Greater => {
+                    peek.consume();
+                }
+            }
+        }
+
+        Ok(iter)
     }
 
     /// NOTE: This assumes that restarts has a length of at least 1.
@@ -266,6 +304,14 @@ impl<'a> DataBlockEntryIterator<'a> {
     pub fn is_empty(&self) -> bool {
         self.remaining_entries.is_empty()
     }
+
+    pub fn peek(&self) -> Result<Option<(DataBlockEntry<'a>, &'a [u8])>> {
+        if self.remaining_entries.len() == 0 {
+            return Ok(None);
+        }
+
+        DataBlockEntry::parse(self.remaining_entries).map(|v| Some(v))
+    }
 }
 
 impl<'a> Iterator for DataBlockEntryIterator<'a> {
@@ -322,6 +368,44 @@ impl<'a> DataBlockKeyValueIterator<'a> {
 
     pub fn last_key(self) -> Vec<u8> {
         self.last_key
+    }
+
+    // TODO: Deduplicate with next().
+    pub fn peek<'b>(&'b mut self) -> Result<Option<DataBlockKeyValueIteratorPeek<'b, 'a>>> {
+        match self.inner.peek()? {
+            Some((entry, remaining_entries)) => {
+                if entry.shared_bytes as usize > self.last_key.len() {
+                    return Err(err_msg("Insufficient shared bytes from previous key."));
+                }
+
+                self.last_key.truncate(entry.shared_bytes as usize);
+                self.last_key.extend_from_slice(entry.key_delta);
+
+                Ok(Some(DataBlockKeyValueIteratorPeek {
+                    entry: KeyValuePair {
+                        key: &self.last_key,
+                        value: entry.value,
+                    },
+                    remaining_entries,
+                    remaining_entries_ptr: &mut self.inner.remaining_entries,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+}
+
+// 'a is the lifetime of the iterator object
+// 'b is the lifetime of the remaining_entries in the datablock
+pub struct DataBlockKeyValueIteratorPeek<'a, 'b> {
+    entry: KeyValuePair<'a, 'b>,
+    remaining_entries: &'b [u8],
+    remaining_entries_ptr: &'a mut &'b [u8],
+}
+
+impl<'a, 'b> DataBlockKeyValueIteratorPeek<'a, 'b> {
+    fn consume(self) {
+        *self.remaining_entries_ptr = self.remaining_entries;
     }
 }
 

@@ -119,13 +119,16 @@ impl Deflater {
         end_of_input: bool,
         mut output: &mut [u8],
     ) -> Result<TransformProgress> {
-        // TODO: Fix this. Also need to check for !end_of_input
+        let original_input_len = input.len();
+
         if end_of_input {
-            if self.end_of_input || input.len() != 0 {
+            if self.end_of_input && input.len() != 0 {
                 return Err(err_msg("Received extra data after end of input hint"));
             }
 
             self.end_of_input = true;
+        } else if self.end_of_input {
+            return Err(err_msg("No longer seeing end_of_input"));
         }
 
         // TODO: Once we are out of output space, stop compressing.
@@ -223,6 +226,8 @@ impl Deflater {
         // TODO: Make this unwrap safer.
         noutput += self.output_buffer.copy_to(output);
 
+        assert_eq!(nread, original_input_len);
+
         Ok(TransformProgress {
             input_read: nread, // NOTE: Currently we will always read the entire input given
             output_written: noutput,
@@ -289,6 +294,8 @@ impl Deflater {
             &dist_symbols,
             MAX_LITLEN_CODE_LEN,
         )?);
+        // The format only allows encoding > 1 length. So if we have zero symbols, then
+        // just mark the first one as unused (has a symbol length of zero).
         if dist_lens.len() < 1 {
             dist_lens.resize(1, 0);
         }
@@ -479,7 +486,7 @@ fn append_dynamic_lens(lens: &[usize]) -> Result<Vec<CodeLengthAtom>> {
         if v == 0 {
             let mut j = i + 1;
             let j_max = std::cmp::min(lens.len(), i + 138);
-            while j < lens.len() && lens[j] == 0 {
+            while j < j_max && lens[j] == 0 {
                 j += 1;
             }
 
@@ -527,6 +534,8 @@ fn append_dynamic_lens(lens: &[usize]) -> Result<Vec<CodeLengthAtom>> {
 
 #[cfg(test)]
 mod tests {
+    use crate::deflate::Inflater;
+
     use super::*;
 
     #[test]
@@ -534,5 +543,44 @@ mod tests {
         let input = [0, 0, 0, 0, 3, 4, 5, 5, 5, 5, 5, 5, 12, 5];
         let out = append_dynamic_lens(&input).unwrap();
         println!("{:?}", out);
+    }
+
+    #[test]
+    fn deflate_one_pass_test() {
+        let mut deflater = Deflater::new();
+
+        let mut out = [0u8; 20];
+        let progress = deflater
+            .update(&[0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2], true, &mut out)
+            .unwrap();
+
+        assert_eq!(
+            progress,
+            TransformProgress {
+                done: true,
+                input_read: 13,
+                output_written: 17
+            }
+        );
+
+        assert_eq!(
+            &out[0..17],
+            &[5, 192, 1, 13, 0, 0, 0, 130, 176, 75, 255, 208, 14, 108, 91, 213, 1]
+        );
+
+        let mut inflater = Inflater::new();
+
+        let mut out2 = [0u8; 20];
+        let progress = inflater.update(&out[0..17], true, &mut out2).unwrap();
+        assert_eq!(
+            progress,
+            TransformProgress {
+                done: true,
+                input_read: 17,
+                output_written: 13
+            }
+        );
+
+        assert_eq!(&out2[0..13], &[0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2]);
     }
 }

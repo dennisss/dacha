@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
@@ -17,6 +17,7 @@ use crypto::random::SharedRng;
 use fs2::FileExt;
 
 use crate::db::internal_key::*;
+use crate::db::merge_iterator::MergeIterator;
 use crate::db::options::*;
 use crate::db::version::*;
 use crate::db::version_edit::*;
@@ -84,9 +85,12 @@ struct EmbeddedDBShared {
 }
 
 struct EmbeddedDBState {
-    log: RecordWriter,
+    /// If true, then the database is no longer available for reads and writes.
+    /// In this state, background compaction threads should hurry up and finish
+    /// what they are doing so that we can close the database gracefully.
+    closing: bool,
 
-    manifest: RecordWriter,
+    log: RecordWriter,
 
     /// Primary table for reading/writing latest values.
     mutable_table: Arc<MemTable>,
@@ -179,6 +183,7 @@ impl EmbeddedDB {
         let log = {
             let num = version_set.next_file_number;
             version_set.next_file_number += 1;
+            version_set.log_number = Some(num);
             RecordWriter::open(&dir.log(num)).await?
         };
 
@@ -201,15 +206,16 @@ impl EmbeddedDB {
             options,
             dir,
             state: RwLock::new(EmbeddedDBState {
+                closing: false,
                 log,
-                manifest,
                 mutable_table,
                 immutable_table: None,
                 version_set,
             }),
         });
 
-        let compaction_thread = ChildTask::spawn(Self::compaction_thread(shared.clone(), receiver));
+        let compaction_thread =
+            ChildTask::spawn(Self::compaction_thread(shared.clone(), manifest, receiver));
 
         Ok(Self {
             compaction_notifier: sender,
@@ -239,6 +245,11 @@ impl EmbeddedDB {
 
         let manifest = RecordWriter::open(&manifest_path).await?;
 
+        // TODO: Need to be resilient to the final record in the log being incomplete
+        // (in this we can consider the write to have failed). This applies to both the
+        // prev_log_number and the log_number although values with the prev_log_number
+        // can only be tolerated if the log_number is not present (otherwise we should
+        // truncate it to fix it).
         let mut immutable_table = None;
         if let Some(num) = version_set.prev_log_number {
             let mut log = RecordReader::open(&dir.log(num)).await?;
@@ -295,7 +306,7 @@ impl EmbeddedDB {
             options,
             dir,
             state: RwLock::new(EmbeddedDBState {
-                manifest,
+                closing: false,
                 log,
                 mutable_table,
                 immutable_table,
@@ -303,7 +314,8 @@ impl EmbeddedDB {
             }),
         });
 
-        let compaction_thread = ChildTask::spawn(Self::compaction_thread(shared.clone(), receiver));
+        let compaction_thread =
+            ChildTask::spawn(Self::compaction_thread(shared.clone(), manifest, receiver));
 
         Ok(Self {
             lock_file,
@@ -314,15 +326,39 @@ impl EmbeddedDB {
         })
     }
 
+    /*
+
+    PUSH ENTRY KeyValueEntry { key: b"00000000\x01\xa1\0\0\0\0\0\0", value: b"\0\0\0\x02\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0" }
+
+    PUSH ENTRY KeyValueEntry { key: b"00000000\x01\xa1\0\0\0\0\0\0", value: b"\0\0\0\x02\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0" }
+
+    */
+
     pub async fn close(self) -> Result<()> {
         // TODO: Should stop new compactions from starting and wait for any existing
         // operations to finish.
+        {
+            let mut state = self.shared.state.write().await;
+            state.closing = true;
+        }
+
+        let _ = self.compaction_notifier.try_send(());
+
+        self.compaction_thread.join().await;
 
         Ok(())
     }
 
-    async fn compaction_thread(shared: Arc<EmbeddedDBShared>, receiver: channel::Receiver<()>) {
-        if let Err(e) = Self::compaction_thread_inner(shared, receiver).await {
+    async fn compaction_thread(
+        shared: Arc<EmbeddedDBShared>,
+        manifest: RecordWriter,
+        receiver: channel::Receiver<()>,
+    ) {
+        if shared.options.read_only {
+            return;
+        }
+
+        if let Err(e) = Self::compaction_thread_inner(shared, manifest, receiver).await {
             eprintln!("EmbeddedDB compaction error: {}", e);
             // TODO: Trigger server shutdown and halt all writes to the
             // memtable?
@@ -331,13 +367,26 @@ impl EmbeddedDB {
 
     async fn compaction_thread_inner(
         shared: Arc<EmbeddedDBShared>,
+        mut manifest: RecordWriter,
         receiver: channel::Receiver<()>,
     ) -> Result<()> {
-        loop {
-            receiver.recv().await; // TODO: Handle return value.
+        let key_comparator = shared.options.table_options.comparator.clone();
 
-            let mut state_guard = shared.state.write().await;
-            let mut state = state_guard.deref_mut();
+        let mut made_progress = true;
+
+        loop {
+            if made_progress {
+            } else if receiver.recv().await.is_err() {
+                return Ok(());
+            }
+
+            let state = shared.state.read().await;
+
+            if state.closing {
+                return Ok(());
+            }
+
+            made_progress = true;
 
             // TODO: How do we gurantee that no one is still writing to the table?
             // TODO: Pre-allocate the entire memtable with contiguous memory so that it is
@@ -345,34 +394,38 @@ impl EmbeddedDB {
             if state.mutable_table.size() >= shared.options.write_buffer_size
                 && !state.immutable_table.is_some()
             {
-                let mut table = Arc::new(MemTable::new(
-                    shared.options.table_options.comparator.clone(),
-                ));
-                std::mem::swap(&mut table, &mut state.mutable_table);
-                state.immutable_table = Some(table);
-
                 let new_log_num = state.version_set.next_file_number;
 
-                state.version_set.next_file_number += 1;
-                state.version_set.log_number = Some(new_log_num);
-                state.version_set.prev_log_number = state.version_set.log_number.clone();
-
-                // TODO: Deduplicate with above
                 let mut version_edit = VersionEdit::default();
-                version_edit.next_file_number = Some(state.version_set.next_file_number);
+                version_edit.next_file_number = Some(new_log_num + 1);
+                version_edit.prev_log_number = state.version_set.log_number.clone();
                 version_edit.log_number = Some(new_log_num);
-                version_edit.prev_log_number = state.version_set.prev_log_number.clone();
+
+                drop(state);
+
+                let new_log = RecordWriter::open(&shared.dir.log(new_log_num)).await?;
 
                 let mut out = vec![];
                 version_edit.serialize(&mut out)?;
-                state.manifest.append(&out).await?;
+                manifest.append(&out).await?;
+                manifest.flush().await?;
 
-                state.log = RecordWriter::open(&shared.dir.log(new_log_num)).await?;
+                let mut state = shared.state.write().await;
+
+                let mut table = Arc::new(MemTable::new(key_comparator.clone()));
+                std::mem::swap(&mut table, &mut state.mutable_table);
+                state.immutable_table = Some(table);
+
+                state.version_set.apply_new_edit(version_edit, vec![]);
+
+                state.log = new_log;
+
+                continue;
             }
 
             if let Some(memtable) = &state.immutable_table {
-                let file_number = state.version_set.next_file_number;
-                state.version_set.next_file_number += 1;
+                // let file_number = state.version_set.next_file_number;
+                // state.version_set.next_file_number += 1;
 
                 let memtable = memtable.clone();
 
@@ -387,74 +440,153 @@ impl EmbeddedDB {
                     largest: &key_range.1,
                 });
 
-                // Release lock so that we don't block IO while compacting.
-                drop(state);
-                drop(state_guard);
-
-                let builder = SSTableBuilder::open(
-                    &shared.dir.table(file_number),
-                    shared.options.table_options.clone(),
-                )
-                .await?;
-
-                let built_meta = Self::build_table_from_iterator(
-                    Box::new(memtable.iter()),
-                    builder,
-                    !selected_level.found_overlap,
-                )
-                .await?;
-
-                // TODO: Given that we just wrote the table to disk, we should be able to keep
-                // it cached in memory if we have enough RAM.
-                let sstable = SSTable::open(
-                    &shared.dir.table(file_number),
-                    SSTableOpenOptions {
-                        comparator: shared.options.table_options.comparator.clone(),
-                    },
-                )
-                .await?;
-
-                let mut state_guard = shared.state.write().await;
-
-                // TODO: We should be able to do this without locking the state.
-
                 let mut version_edit = VersionEdit::default();
-                // TODO: Should only need to go up to the last sequence in the immutable
-                // memtable
-                version_edit.last_sequence = Some(state_guard.version_set.last_sequence);
-                version_edit.next_file_number = Some(state_guard.version_set.next_file_number);
+                // NOTE: We only need to store a sequence at least as large as all keys in the
+                // immutable table.
+                version_edit.last_sequence = Some(state.version_set.last_sequence);
+                version_edit.next_file_number = Some(state.version_set.next_file_number);
                 version_edit.prev_log_number = Some(0);
 
-                let new_file_entry = NewFileEntry {
-                    level: selected_level.level as u32,
-                    number: file_number,
-                    file_size: built_meta.file_size,
-                    smallest_key: key_range.0.to_vec(),
-                    largest_key: key_range.1.to_vec(),
-                    sequence_range: None,
-                };
-                version_edit.new_files.push(new_file_entry.clone());
+                let old_log_number = state.version_set.prev_log_number.unwrap();
+
+                // TODO:
+                let target_file_size = state
+                    .version_set
+                    .target_file_size(selected_level.level as u32);
+
+                // Release lock so that we don't block IO while compacting.
+                drop(state);
+
+                let new_tables = Self::build_tables_from_iterator(
+                    &shared,
+                    Box::new(memtable.iter()),
+                    !selected_level.found_overlap,
+                    &mut version_edit,
+                    target_file_size,
+                    selected_level.level as u32,
+                )
+                .await?;
+
+                println!("MEMTABLE TO: {}", selected_level.level);
+                for entry in &version_edit.new_files {
+                    println!("- NEW: {}", entry.number);
+                }
 
                 let mut out = vec![];
                 version_edit.serialize(&mut out)?;
-                state_guard.manifest.append(&out).await?;
+                manifest.append(&out).await?;
+                manifest.flush().await?;
 
-                common::async_std::fs::remove_file(
-                    &shared
-                        .dir
-                        .log(state_guard.version_set.prev_log_number.unwrap()),
-                )
-                .await?;
+                common::async_std::fs::remove_file(&shared.dir.log(old_log_number)).await?;
 
-                let version = Arc::make_mut(&mut state_guard.version_set.latest_version);
-                version.insert(new_file_entry, Some(Arc::new(sstable)), &shared.options);
+                let mut state_guard = shared.state.write().await;
 
                 state_guard.immutable_table = None;
-                state_guard.version_set.prev_log_number = None;
+                state_guard
+                    .version_set
+                    .apply_new_edit(version_edit, new_tables);
 
                 // TODO: After this, we want to re-check the mutable_table on
                 // the next iteration to see if it can be flushed.
+
+                continue;
             }
+
+            // This handles all level i -> level j compactions.
+            if let Some(compaction) = state.version_set.select_tables_to_compaction() {
+                println!(
+                    "COMPACTION: {} -> {}",
+                    compaction.level, compaction.next_level
+                );
+
+                // TODO: Implement trivial compaction of just moving files from one level to the
+                // next if there is no overlap in the new level.
+                // Other reasons to not do trivial compaction:
+                // - Want to clean up deleted records (or overriden ones).
+                // - The file size if way smaller than the target file size of the new level and
+                //   we think that combining the files would improve
+
+                let mut iters: Vec<Box<dyn Iterable>> = vec![];
+
+                let mut version_edit = VersionEdit::default();
+                // Store the next file number (will be used to allocate file numbers later);
+                version_edit.next_file_number = Some(state.version_set.next_file_number);
+
+                // TODO: If this is not level 0, then we can optimize this with a LevelIterator.
+                for entry in compaction.tables {
+                    version_edit.deleted_files.push(DeletedFileEntry {
+                        level: entry.entry.level,
+                        number: entry.entry.number,
+                    });
+
+                    println!("- DELETE: {}", entry.entry.number);
+
+                    let table_guard = entry.table.lock().await;
+                    let table = table_guard.as_ref().unwrap();
+                    iters.push(Box::new(table.iter(&shared.options.block_cache)));
+                }
+
+                // TOOD: A few optimizations of this that we can do:
+                // - Use LevelIterator so that we don't have to open multiple levels in the
+                //   level at the same time.
+                // - Use binary search to find the start of the overlapping tables and exit
+                //   early once the overlapping is done.
+                for entry in compaction.next_level_tables {
+                    version_edit.deleted_files.push(DeletedFileEntry {
+                        level: entry.entry.level,
+                        number: entry.entry.number,
+                    });
+
+                    println!("- DELETE2: {}", entry.entry.number);
+
+                    let table_guard = entry.table.lock().await;
+                    let table = table_guard.as_ref().unwrap();
+                    iters.push(Box::new(table.iter(&shared.options.block_cache)));
+                }
+
+                let iterator = Box::new(MergeIterator::new(
+                    shared.options.table_options.comparator.clone(),
+                    iters,
+                ));
+
+                // TODO: This level may not exist yet, so this may do out of bounds.
+                let target_file_size = state
+                    .version_set
+                    .target_file_size(compaction.next_level as u32);
+
+                let remove_deleted = !compaction.found_overlap;
+
+                drop(state);
+
+                let new_tables = Self::build_tables_from_iterator(
+                    shared.as_ref(),
+                    iterator,
+                    remove_deleted,
+                    &mut version_edit,
+                    target_file_size,
+                    1,
+                )
+                .await?;
+
+                let mut out = vec![];
+                version_edit.serialize(&mut out)?;
+                manifest.append(&out).await?;
+                manifest.flush().await?;
+
+                // TODO: Re-lock and apply all of the version edits
+                let mut state_guard = shared.state.write().await;
+
+                state_guard
+                    .version_set
+                    .apply_new_edit(version_edit, new_tables);
+
+                // TODO: May be able to delete some table files if all
+                // references are done.
+
+                continue;
+            }
+
+            made_progress = false;
         }
 
         /*
@@ -473,10 +605,6 @@ impl EmbeddedDB {
             - Try to pick enough contiguous tables to merge in order to build the
 
         Other things to consider:
-        - When can we merge multiple keys with the same user_key but different sequences into one
-            - Only after all snapshots have gone past it.
-            - Need to maintain a priority queue of active iterators/snapshots.
-
         - doing Concurrent compactions
             -
 
@@ -488,14 +616,28 @@ impl EmbeddedDB {
         */
     }
 
+    /// Writes an iterator to one or more contigious tables in a single level.
+    ///
     /// Arguments:
     /// - remove_deleted: If true, keys that were deleted will be removed from
     ///   the resulting table.
-    async fn build_table_from_iterator(
+    async fn build_tables_from_iterator(
+        shared: &EmbeddedDBShared,
         mut iterator: Box<dyn Iterable>,
-        mut builder: SSTableBuilder,
         remove_deleted: bool,
-    ) -> Result<SSTableBuiltMetadata> {
+        version_edit: &mut VersionEdit,
+        target_file_size: u64,
+        level: u32,
+    ) -> Result<Vec<SSTable>> {
+        struct CurrentTable {
+            builder: SSTableBuilder,
+            first_key: Bytes,
+            last_key: Bytes,
+            number: u64,
+        }
+
+        let mut current_table = None;
+
         let mut last_user_key = None;
 
         while let Some(entry) = iterator.next().await? {
@@ -513,10 +655,77 @@ impl EmbeddedDB {
                 continue;
             }
 
-            builder.add(&entry.key, &entry.value).await?;
+            let mut table = match current_table.take() {
+                Some(table) => table,
+                None => {
+                    let number = version_edit.next_file_number.unwrap();
+                    version_edit.next_file_number = Some(number + 1);
+
+                    let builder = SSTableBuilder::open(
+                        &shared.dir.table(number),
+                        shared.options.table_options.clone(),
+                    )
+                    .await?;
+
+                    CurrentTable {
+                        builder,
+                        first_key: entry.key.clone(),
+                        last_key: entry.key.clone(),
+                        number,
+                    }
+                }
+            };
+
+            table.builder.add(&entry.key, &entry.value).await?;
+            table.last_key = entry.key;
+
+            if table.builder.estimated_file_size() >= target_file_size {
+                let meta = table.builder.finish().await?;
+
+                version_edit.new_files.push(NewFileEntry {
+                    level,
+                    number: table.number,
+                    file_size: meta.file_size,
+                    smallest_key: table.first_key.to_vec(),
+                    largest_key: table.last_key.to_vec(),
+                    sequence_range: None,
+                });
+            } else {
+                current_table = Some(table);
+            }
         }
 
-        builder.finish().await
+        // Flush the final table.
+        if let Some(table) = current_table.take() {
+            // TODO: Deduplicate with above.
+
+            let meta = table.builder.finish().await?;
+
+            version_edit.new_files.push(NewFileEntry {
+                level,
+                number: table.number,
+                file_size: meta.file_size,
+                smallest_key: table.first_key.to_vec(),
+                largest_key: table.last_key.to_vec(),
+                sequence_range: None,
+            });
+        }
+
+        // Open all newly created tables.
+        let mut new_tables = vec![];
+        for entry in &version_edit.new_files {
+            new_tables.push(
+                SSTable::open(
+                    &shared.dir.table(entry.number),
+                    SSTableOpenOptions {
+                        comparator: shared.options.table_options.comparator.clone(),
+                    },
+                )
+                .await?,
+            );
+        }
+
+        Ok(new_tables)
     }
 
     pub async fn snapshot(&self) -> Snapshot {
@@ -537,65 +746,36 @@ impl EmbeddedDB {
         }
     }
 
-    async fn get_from_memtable(
-        &self,
-        memtable: &MemTable,
-        user_key: &[u8],
-        seek_ikey: &[u8],
-    ) -> Result<Option<Option<Bytes>>> {
-        // The first value should be the one with the highest value.
-        let mut iter = memtable.range_from(&seek_ikey);
+    pub async fn get(&self, user_key: &[u8]) -> Result<Option<Bytes>> {
+        /*
+        TODO: Unique optimizations that we can perform with this:
+        - Never attempt to read from disk if the key if in the memtable.
+        - Also after we have read a key, don't immediately update the priority queue with the next value as we usually don't care.
+        - If we seek beyond the user's key, stop early (we don't care what the next entry is then.)
+        */
+
+        let snapshot = self.snapshot().await;
+        let mut iter = snapshot.iter().await;
+        iter.seek(user_key).await?;
+
+        // TODO: Must ignore any values > the sequence of the snapshot.
 
         if let Some(entry) = iter.next().await? {
-            let ikey = InternalKey::parse(&entry.key)?;
-
-            // TODO: Use user comparator.
-            if ikey.user_key == user_key {
-                if ikey.typ == ValueType::Deletion {
-                    return Ok(Some(None));
-                } else {
-                    return Ok(Some(Some(entry.value)));
-                }
+            // TODO: Use the user_key comparator (although I guess exact equality should
+            // lalways have the same definition)?
+            if entry.key == user_key {
+                return Ok(Some(entry.value));
             }
         }
-
-        Ok(None)
-    }
-
-    pub async fn get(&self, user_key: &[u8]) -> Result<Option<Bytes>> {
-        let seek_ikey = InternalKey::before(user_key).serialized();
-        // let snapshot_sequence = 0xffffff; // TODO:
-
-        let state = self.shared.state.read().await;
-
-        // Try both memtables.
-        if let Some(result) = self
-            .get_from_memtable(&state.mutable_table, user_key, &seek_ikey)
-            .await?
-        {
-            return Ok(result);
-        }
-        if let Some(table) = &state.immutable_table {
-            if let Some(result) = self.get_from_memtable(table, user_key, &seek_ikey).await? {
-                return Ok(result);
-            }
-        }
-
-        // NOTE: Don't need to write a log
-
-        // Check for all tables that would overlap with the desired key.
-        // TODO: Will need a 'contains_prefix' incase a single user key was
-        // shared across multiple tables.
-
-        // Otherwise find all relevant SSTables, clone the references, unlock
-
-        // Then using the cloned table references, look up the key until we
-        // find it.
 
         Ok(None)
     }
 
     pub async fn set(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        if self.shared.options.read_only {
+            return Err(err_msg("Database opened as read only"));
+        }
+
         let mut state = self.shared.state.write().await;
 
         let sequence = state.version_set.last_sequence + 1;
@@ -604,6 +784,7 @@ impl EmbeddedDB {
         let mut write_batch = vec![];
         serialize_write_batch(sequence, &[Write::Value { key, value }], &mut write_batch);
         state.log.append(&write_batch).await?;
+        state.log.flush().await?;
         // TODO: Need to flush the log.
 
         let ikey = InternalKey {
@@ -614,6 +795,9 @@ impl EmbeddedDB {
         .serialized();
 
         state.mutable_table.insert(ikey, value.to_vec()).await;
+
+        drop(state);
+        let _ = self.compaction_notifier.try_send(());
 
         Ok(())
     }

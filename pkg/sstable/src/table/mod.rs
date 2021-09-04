@@ -11,3 +11,8 @@ mod raw_block;
 pub mod table;
 pub mod table_builder;
 mod table_properties;
+
+pub use comparator::{BytewiseComparator, KeyComparator};
+pub use raw_block::CompressionType;
+pub use table::{SSTable, SSTableIterator, SSTableOpenOptions};
+pub use table_builder::{SSTableBuilder, SSTableBuilderOptions, SSTableBuiltMetadata};

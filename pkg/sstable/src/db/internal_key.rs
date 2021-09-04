@@ -36,6 +36,7 @@ enum_def!(ValueType u8 =>
     MaxValueType = 0xff
 );
 
+#[derive(Debug)]
 pub struct InternalKey<'a> {
     pub user_key: &'a [u8],
     pub sequence: u64,
@@ -178,5 +179,68 @@ impl FilterPolicy for InternalKeyFilterPolicy {
     fn key_may_match(&self, key: &[u8], filter: &[u8]) -> bool {
         self.user_key_filter_policy
             .key_may_match(InternalKey::user_key(key), filter)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cmp::Ordering, sync::Arc};
+
+    use crate::table::{comparator::BytewiseComparator, KeyComparator};
+
+    use super::{InternalKey, InternalKeyComparator, ValueType};
+
+    #[test]
+    fn internal_key_serialize_test() {
+        let ikey = InternalKey {
+            user_key: &[0xaa, 0xbb, 0xcc],
+            sequence: 0x5524,
+            typ: ValueType::Value,
+        };
+
+        assert_eq!(
+            &ikey.serialized(),
+            &[0xaa, 0xbb, 0xcc, 0x01, 0x24, 0x55, 0, 0, 0, 0, 0]
+        );
+
+        let ikey2 =
+            InternalKey::parse(&[0xaa, 0xbb, 0xcc, 0x01, 0x24, 0x55, 0, 0, 0, 0, 0]).unwrap();
+
+        assert_eq!(ikey2.user_key, ikey.user_key);
+        assert_eq!(ikey2.sequence, ikey.sequence);
+        assert_eq!(ikey2.typ, ikey.typ);
+    }
+
+    #[test]
+    fn internal_key_compare_test() {
+        let cmp = InternalKeyComparator::wrap(Arc::new(BytewiseComparator::new()));
+
+        let ikey1 = InternalKey {
+            user_key: &[1],
+            sequence: 100,
+            typ: ValueType::Value,
+        }
+        .serialized();
+
+        let ikey2 = InternalKey {
+            user_key: &[1],
+            sequence: 200,
+            typ: ValueType::Value,
+        }
+        .serialized();
+
+        let ikey3 = InternalKey {
+            user_key: &[2],
+            sequence: 150,
+            typ: ValueType::Value,
+        }
+        .serialized();
+
+        assert_eq!(cmp.compare(&ikey1, &ikey2), Ordering::Greater);
+        assert_eq!(cmp.compare(&ikey1, &ikey1), Ordering::Equal);
+        assert_eq!(cmp.compare(&ikey2, &ikey1), Ordering::Less);
+
+        assert_eq!(cmp.compare(&ikey1, &ikey3), Ordering::Less);
+        assert_eq!(cmp.compare(&ikey2, &ikey3), Ordering::Less);
     }
 }

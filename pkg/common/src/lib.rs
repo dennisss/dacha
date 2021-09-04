@@ -41,6 +41,7 @@ pub mod pipe;
 pub mod shutdown;
 pub mod signals;
 pub mod task;
+pub mod temp;
 pub mod vec;
 
 pub use arrayref::{array_mut_ref, array_ref};

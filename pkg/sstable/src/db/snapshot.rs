@@ -95,6 +95,6 @@ impl Iterable for SnapshotIterator {
             .seek(&InternalKey::before(key).serialized())
             .await?;
         self.last_user_key = None;
-        todo!()
+        Ok(())
     }
 }

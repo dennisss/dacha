@@ -5,6 +5,9 @@ use common::errors::*;
 use crate::table::data_block::{DataBlockEntry, DataBlockRef};
 
 /// Builds a key-value style block.
+///
+/// A data block may have zero keys in which case it will simply be serialized
+/// with no data but a single restart at offset 0.
 pub struct DataBlockBuilder {
     restart_interval: usize,
     buffer: Vec<u8>,
@@ -18,7 +21,7 @@ impl DataBlockBuilder {
         Self {
             restart_interval,
             buffer: vec![],
-            restart_offsets: vec![],
+            restart_offsets: vec![0],
             entries_since_restart: 0,
             last_key: vec![],
         }
@@ -48,7 +51,7 @@ impl DataBlockBuilder {
         let mut shared_bytes = 0;
 
         // Check if we should restart prefix compression.
-        if self.buffer.len() == 0 || self.entries_since_restart >= self.restart_interval {
+        if self.entries_since_restart >= self.restart_interval {
             self.restart_offsets.push(self.buffer.len() as u32);
         } else {
             while shared_bytes < std::cmp::min(self.last_key.len(), key.len()) {
@@ -77,6 +80,7 @@ impl DataBlockBuilder {
     /// TODO: Split this struct into a Block and BlockFooter
     /// NOTE: This does NOT serialize the entries.
     fn serialize_block_footer(hash_index: Option<&[u8]>, restarts: &[u32], output: &mut Vec<u8>) {
+        // TODO: Never include a hash index if the table is empty.
         if let Some(buckets) = hash_index {
             assert!(buckets.len() <= 255);
             output.extend_from_slice(buckets);
@@ -100,9 +104,15 @@ impl DataBlockBuilder {
     /// After calling this the builder is in a reset state and can be used for
     /// building different blocks.
     pub fn finish(&mut self) -> (Vec<u8>, Vec<u8>) {
+        // TODO: What should the data representation be for an empty block?
+        // e.g. the metaindex could be empty if no filter is configured.
+        // - Need to test that we can encode and decode an empty block.
+
         Self::serialize_block_footer(None, &self.restart_offsets, &mut self.buffer);
 
         self.restart_offsets.clear();
+        self.restart_offsets.push(0);
+
         self.entries_since_restart = 0;
 
         (self.buffer.split_off(0), self.last_key.split_off(0))

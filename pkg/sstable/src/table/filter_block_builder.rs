@@ -4,10 +4,18 @@ use crate::table::filter_policy::*;
 
 pub struct FilterBlockBuilder {
     policy: Arc<dyn FilterPolicy>,
+
+    /// Output buffer containing all fully built filters so far.
     output: Vec<u8>,
+
+    /// Offset of each individual block filter in 'output' relative to the start
+    /// of 'output'.
     offsets: Vec<u32>,
-    base: usize,
+
+    base: u64,
+
     log_base: u8,
+
     pending_keys: Vec<Vec<u8>>,
 }
 
@@ -44,11 +52,14 @@ impl FilterBlockBuilder {
         self.pending_keys.clear();
     }
 
+    /// Indicates to the filter builder that future key additions will be in a
+    /// data block whose file offset is 'offset'.
+    ///
     /// NOTE: This should only ever be called with offsets in increasing order.
     /// There is no harm in calling this multiple times with the same offset.
-    pub fn start_block(&mut self, offset: usize) {
-        let filter_idx = offset / self.base;
-        assert!(filter_idx <= self.offsets.len());
+    pub fn start_block(&mut self, offset: u64) {
+        let filter_idx = (offset / self.base) as usize;
+        assert!(filter_idx >= self.offsets.len(), "Non-monotonic blocks");
         while self.offsets.len() < filter_idx {
             self.flush();
         }

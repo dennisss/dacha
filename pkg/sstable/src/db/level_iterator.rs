@@ -72,19 +72,14 @@ impl Iterable for LevelIterator {
         });
 
         if let Some(idx) = table_idx {
-            if key_comparator
-                .compare(&tables[idx].entry.smallest_key, key)
-                .is_le()
-            {
-                let table = tables[idx].table.lock().await;
-                let mut iter = table.as_ref().unwrap().iter(&self.options.block_cache);
-                iter.seek(key).await?;
+            let table = tables[idx].table.lock().await;
+            let mut iter = table.as_ref().unwrap().iter(&self.options.block_cache);
+            iter.seek(key).await?;
 
-                self.next_table_index = idx + 1;
-                self.current_table_iterator = Some(iter);
+            self.next_table_index = idx + 1;
+            self.current_table_iterator = Some(iter);
 
-                return Ok(());
-            }
+            return Ok(());
         }
 
         self.next_table_index = tables.len();

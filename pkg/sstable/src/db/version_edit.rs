@@ -224,11 +224,35 @@ impl VersionEdit {
             serialize_varint(*num, out);
         }
 
+        if let Some(num) = &self.next_file_number {
+            serialize_varint(Tag::NextFileNumber.to_value() as u64, out);
+            serialize_varint(*num, out);
+        }
+
         let mut touched_files = HashSet::new();
+
+        // NOTE: Deletions of files must be added before creation of new files as
+        // compactions typically create new files that overlap with keys in old deleted
+        // files so we must delete the old files first to avoid having multiple files in
+        // the same level that are overlapping.
+        //
+        // RocksDB and LevelDB similarly add these to the manifest first.
+        for file in &self.deleted_files {
+            // Note that if we just inserting a new file in the same record then the
+            // ordering of the change is undefined (different implementations may add all
+            // the NewFile entries first or the DeletedFile entryies first).
+            if !touched_files.insert(file.number) {
+                return Err(err_msg("Duplicate file deletion"));
+            }
+
+            serialize_varint(Tag::DeletedFile.to_value() as u64, out);
+            serialize_varint(file.level as u64, out);
+            serialize_varint(file.number, out);
+        }
 
         for file in &self.new_files {
             if !touched_files.insert(file.number) {
-                return Err(err_msg("Created the same file more than once"));
+                return Err(err_msg("Created a file that was already touched"));
             }
 
             let tag = if file.sequence_range.is_some() {
@@ -248,23 +272,6 @@ impl VersionEdit {
                 serialize_varint(min, out);
                 serialize_varint(max, out);
             }
-        }
-
-        // NOTE: This is a deviation from RocksDB which inserts the DeletedFile entries
-        // prior to the NewFile entries.
-        for file in &self.deleted_files {
-            // Note that if we just inserting a new file in the same record then the
-            // ordering of the change is undefined (different implementations may add all
-            // the NewFile entries first or the DeletedFile entryies first).
-            if !touched_files.insert(file.number) {
-                return Err(err_msg(
-                    "Duplicate file deletion or deletion of a new file is not allowed",
-                ));
-            }
-
-            serialize_varint(Tag::DeletedFile.to_value() as u64, out);
-            serialize_varint(file.level as u64, out);
-            serialize_varint(file.number, out);
         }
 
         Ok(())

@@ -1,7 +1,7 @@
 use common::bytes::Bytes;
 use common::errors::*;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct KeyValueEntry {
     pub key: Bytes,
     pub value: Bytes,

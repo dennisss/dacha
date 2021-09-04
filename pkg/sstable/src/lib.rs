@@ -12,7 +12,7 @@ extern crate reflection;
 
 mod arena;
 mod db;
-pub mod encoding;
+mod encoding;
 mod memtable;
 pub mod record_log;
 // mod skip_list;

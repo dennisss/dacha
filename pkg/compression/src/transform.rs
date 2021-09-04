@@ -28,7 +28,7 @@ pub trait Transform {
     ) -> Result<TransformProgress>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TransformProgress {
     /// Number of input bytes consumed during the update.
     pub input_read: usize,
@@ -61,7 +61,9 @@ pub fn transform_to_vec(
     let mut input_read = 0;
     let mut output_len = output.len();
     let original_output_len = output.len();
-    let mut final_done = false;
+    let mut final_done;
+
+    // TODO: Verify that the output size is non-zero?
 
     loop {
         // Always use all data that we already allocated. If the called already knew the

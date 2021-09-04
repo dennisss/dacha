@@ -372,14 +372,8 @@ impl RecordWriter {
             .open(path)
             .await?;
 
-        // let file_size = file.metadata().await?.len();
-
         Ok(Self { file })
     }
-
-    // pub async fn seek(&mut self, offset: u64) -> Result<()> {
-    //     // TODO: This will require supporting reading a block which in the middle
-    // of it. }
 
     /*
     pub fn create(path: &Path) -> Result<Self> {

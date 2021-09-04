@@ -15,10 +15,6 @@ use common::async_std::sync::Mutex;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::futures::channel::oneshot;
-use compression::snappy::*;
-use crypto::checksum::crc::CRC32CHasher;
-use crypto::hasher::Hasher;
-use math::matrix::Dimension;
 use parsing::complete;
 use protobuf::wire::{parse_varint, serialize_varint};
 use reflection::*;
@@ -38,7 +34,7 @@ use super::filter_policy::FilterPolicy;
 // TODO: Unused
 pub const METAINDEX_PROPERTIES_KEY: &'static str = "rocksdb.properties";
 
-const NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone)]
 pub struct SSTableOpenOptions {
@@ -143,9 +139,14 @@ impl SSTable {
             );
         }
 
+        // TODO: Find a better way to do this. Maybe better to require opening a table
+        // with a block cache. That way, we just need to register a unique id
+        // with that.
+        let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
+
         Ok(Self {
             state: Arc::new(SSTableState {
-                id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+                id,
                 file: Mutex::new(file),
                 index,
                 properties: props,
@@ -551,9 +552,7 @@ impl Iterable for SSTableIterator {
         let iter = unsafe { std::mem::transmute::<_, &DataBlockRef<'static>>(block.block()) }
             .before(start_key, self.table.state.comparator.as_ref())?;
 
-        // TODO: Iterate until at least at the key (would need to be able to peek)
-
-        self.current_block = Some((block, iter.rows()));
+        self.current_block = Some((block, iter));
         Ok(())
     }
 

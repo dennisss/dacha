@@ -119,7 +119,7 @@ impl Footer {
             self.metaindex_handle.serialize(out);
             self.index_handle.serialize(out);
             out.resize(start_index + 2 * BLOCK_HANDLE_MAX_SIZE, 0);
-            out.extend_from_slice(&BLOCK_BASED_MAGIC_LEGACY.to_be_bytes());
+            out.extend_from_slice(&BLOCK_BASED_MAGIC_LEGACY.to_le_bytes());
         } else {
             out.push(self.checksum_type as u8);
 
@@ -129,7 +129,7 @@ impl Footer {
             out.resize(start_index + 2 * BLOCK_HANDLE_MAX_SIZE, 0);
 
             out.extend_from_slice(&self.footer_version.to_le_bytes());
-            out.extend_from_slice(&BLOCK_BASED_MAGIC.to_be_bytes());
+            out.extend_from_slice(&BLOCK_BASED_MAGIC.to_le_bytes());
         };
     }
 }

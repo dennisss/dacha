@@ -2087,6 +2087,7 @@ dependencies = [
 name = "sstable"
 version = "0.1.0"
 dependencies = [
+ "async-std",
  "common",
  "compression",
  "crypto",

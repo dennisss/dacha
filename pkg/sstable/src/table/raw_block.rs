@@ -3,6 +3,8 @@ use std::io::SeekFrom;
 use common::async_std::fs::File;
 use common::async_std::io::prelude::*;
 use common::errors::*;
+use compression::transform::transform_to_vec;
+use compression::zlib::ZlibDecoder;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 
@@ -29,8 +31,11 @@ pub struct RawBlock {
 }
 
 enum_def!(CompressionType u8 =>
+    // These are supported in LevelDB or RocksDB
     None = 0,
     Snappy = 1,
+
+    // Only supported in RocksDB
     ZLib = 2,
     BZip2 = 3,
     LZ4 = 4,
@@ -46,7 +51,7 @@ impl RawBlock {
         buf.resize((handle.size as usize) + BLOCK_TRAILER_SIZE, 0);
         file.read_exact(&mut buf).await?;
 
-        min_size!(buf, BLOCK_TRAILER_SIZE);
+        // min_size!(buf, BLOCK_TRAILER_SIZE);
         let trailer_start = buf.len() - BLOCK_TRAILER_SIZE;
         let trailer = &buf[trailer_start..];
 
@@ -83,6 +88,16 @@ impl RawBlock {
             CompressionType::Snappy => {
                 let mut out = vec![];
                 compression::snappy::snappy_decompress(&self.data, &mut out)?;
+                out
+            }
+            CompressionType::ZLib => {
+                let mut out = vec![];
+                let mut decoder = ZlibDecoder::new();
+                let progress = transform_to_vec(&mut decoder, &self.data, true, &mut out)?;
+                if !progress.done || progress.input_read != self.data.len() {
+                    return Err(err_msg("Failed to decode full block"));
+                }
+
                 out
             }
             _ => {

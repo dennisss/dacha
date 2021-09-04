@@ -34,8 +34,8 @@ impl Comparator<MergeIteratorEntry> for MergeKeysComparator {
 
 impl MergeIterator {
     pub fn new(key_comparator: Arc<dyn KeyComparator>, iterators: Vec<Box<dyn Iterable>>) -> Self {
-        let mut next_queue = PriorityQueue::new(Box::new(MergeKeysComparator { key_comparator }));
-        let mut exhausted_iters = vec![];
+        let next_queue = PriorityQueue::new(Box::new(MergeKeysComparator { key_comparator }));
+        let exhausted_iters = vec![];
 
         // NOTE: We don't add the iterators to the queue until the user requests
         // a key to ensure that the user can seek first.
@@ -54,6 +54,7 @@ impl Iterable for MergeIterator {
     // is in our priority queue.
 
     async fn next(&mut self) -> Result<Option<KeyValueEntry>> {
+        // Add all pending_iters to the queue.
         while let Some(mut iter) = self.pending_iters.pop() {
             let next_entry = iter.next().await?;
             if let Some(next_entry) = next_entry {
@@ -84,6 +85,7 @@ impl Iterable for MergeIterator {
     }
 
     async fn seek(&mut self, key: &[u8]) -> Result<()> {
+        // Move all iterators to the pending_iters list.
         while let Some(iter) = self.next_queue.pop_any() {
             self.pending_iters.push(iter.inner);
         }

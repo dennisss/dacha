@@ -159,6 +159,18 @@ impl HuffmanTree {
         symbols: &[usize],
         max_code_length: usize,
     ) -> Result<Vec<SymbolLength>> {
+        if symbols.len() == 0 {
+            return Ok(vec![]);
+        }
+
+        // The package-merge algorithm only makes sense with > 1 symbols.
+        if symbols.len() == 1 {
+            return Ok(vec![SymbolLength {
+                symbol: symbols[0],
+                length: 1,
+            }]);
+        }
+
         // Get frequencies of symbols.
         // TODO: Should support raw input of a histogram.
         let mut freqs_map = std::collections::HashMap::new();
@@ -168,7 +180,7 @@ impl HuffmanTree {
             freqs_map.insert(*s, f);
         }
 
-        // Sorted histogram of symbol frequencies.
+        // Histogram of symbol frequencies in increasing sorted order.
         let mut freqs = freqs_map
             .into_iter()
             .map(|(s, c)| SymbolCount {
@@ -187,7 +199,7 @@ impl HuffmanTree {
             }
         });
 
-        // Creates the list of coins for the denomination 2^(-1).
+        // Creates the list of coins for the denomination 2^(-i).
         //
         // NOTE: This is the list pre-pairing/merging which contains all initial
         // coins of this single denomination.
@@ -202,12 +214,10 @@ impl HuffmanTree {
             for f in freqs.iter() {
                 let coin = Coin {
                     denomination: (1 << i) as usize, // (-(i as f32)).exp2(),
-                    // value: f.count,
                     symbol: f.symbol,
                 };
 
                 denom.push(Package {
-                    // denomination: coin.denomination,
                     value: f.count,
                     inner: vec![coin],
                 });
@@ -298,7 +308,7 @@ impl HuffmanTree {
 
         // Ensure that we were able to produce a length for every original symbol.
         if lens.len() != freqs.len() {
-            return Err(err_msg("Failed 2"));
+            return Err(format_err!("Failed 2: {} {}", lens.len(), freqs.len()));
         }
 
         // Sanity check that we did not generate any code lengths longer than the

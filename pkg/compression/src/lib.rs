@@ -1,4 +1,4 @@
-#![feature(box_patterns)]
+#![feature(box_patterns, int_log)]
 
 #[macro_use]
 extern crate common;
