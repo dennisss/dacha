@@ -7,6 +7,7 @@ use std::sync::Arc;
 use common::algorithms::lower_bound_by;
 use common::async_std;
 use common::async_std::channel;
+use common::async_std::channel::TrySendError;
 use common::async_std::fs::{File, OpenOptions};
 use common::async_std::prelude::*;
 use common::async_std::sync::{Mutex, RwLock};
@@ -66,6 +67,55 @@ NOTE: Also check when restoring the log if the memtable can be immediately flush
 Challenges: Can't delete an old file until it is deleted.
 
 */
+
+struct CompactionReceiver {
+    state: Arc<std::sync::Mutex<CompactionState>>,
+    receiver: channel::Receiver<()>,
+}
+
+struct CompactionState {
+    // Table file numbers which we know are ok to delete as they are no longer
+    // referenced in the latest version.
+    pending_release_files: HashSet<u64>,
+
+    released_files: HashSet<u64>,
+}
+
+impl CompactionReceiver {
+    fn new() -> (
+        CompactionReceiver,
+        channel::Sender<()>,
+        FileReleasedCallback,
+    ) {
+        let (sender, receiver) = channel::bounded(1);
+
+        let state = Arc::new(std::sync::Mutex::new(CompactionState {
+            pending_release_files: HashSet::new(),
+            released_files: HashSet::new(),
+        }));
+
+        let release_callback = Self::make_release_callback(state.clone(), sender.clone());
+
+        (
+            CompactionReceiver { state, receiver },
+            sender,
+            release_callback,
+        )
+    }
+
+    fn make_release_callback(
+        state: Arc<std::sync::Mutex<CompactionState>>,
+        compaction_notifier: channel::Sender<()>,
+    ) -> FileReleasedCallback {
+        Arc::new(move |file_number: u64| {
+            let mut state = state.lock().unwrap();
+            if state.pending_release_files.remove(&file_number) {
+                state.released_files.insert(file_number);
+                let _ = compaction_notifier.try_send(());
+            }
+        })
+    }
+}
 
 /// Single-process key-value store implemented as a Log Structured Merge tree
 /// of in-memory and on-disk tables. Compatible with the LevelDB/RocksDB format.
@@ -171,7 +221,10 @@ impl EmbeddedDB {
         lock_file: std::fs::File,
         dir: FilePaths,
     ) -> Result<Self> {
-        let mut version_set = VersionSet::new(options.clone());
+        let (compaction_receiver, compaction_notifier, release_callback) =
+            CompactionReceiver::new();
+
+        let mut version_set = VersionSet::new(release_callback, options.clone());
 
         let manifest_num = version_set.next_file_number;
         version_set.next_file_number += 1;
@@ -204,8 +257,6 @@ impl EmbeddedDB {
 
         let mutable_table = Arc::new(MemTable::new(options.table_options.comparator.clone()));
 
-        let (sender, receiver) = channel::bounded(1);
-
         let shared = Arc::new(EmbeddedDBShared {
             options,
             dir,
@@ -219,11 +270,14 @@ impl EmbeddedDB {
             }),
         });
 
-        let compaction_thread =
-            ChildTask::spawn(Self::compaction_thread(shared.clone(), manifest, receiver));
+        let compaction_thread = ChildTask::spawn(Self::compaction_thread(
+            shared.clone(),
+            manifest,
+            compaction_receiver,
+        ));
 
         Ok(Self {
-            compaction_notifier: sender,
+            compaction_notifier,
             compaction_thread,
             lock_file,
             identity: Some(identity),
@@ -237,9 +291,13 @@ impl EmbeddedDB {
         dir: FilePaths,
         manifest_path: SyncedPath,
     ) -> Result<Self> {
+        let (compaction_receiver, compaction_notifier, release_callback) =
+            CompactionReceiver::new();
+
         let mut version_set = {
             let mut manifest_file = RecordReader::open(manifest_path.read_path()).await?;
-            VersionSet::recover_existing(&mut manifest_file, options.clone()).await?
+            VersionSet::recover_existing(&mut manifest_file, release_callback, options.clone())
+                .await?
         };
 
         version_set.open_all(&dir).await?;
@@ -298,10 +356,8 @@ impl EmbeddedDB {
         // by the current log.
         // ^ We should do this in the VersionSet recovery code
 
-        let (sender, receiver) = channel::bounded(1);
-
         // Schedule initial compaction check.
-        let _ = sender.try_send(());
+        let _ = compaction_notifier.try_send(());
 
         let shared = Arc::new(EmbeddedDBShared {
             options,
@@ -316,19 +372,25 @@ impl EmbeddedDB {
             }),
         });
 
-        let compaction_thread =
-            ChildTask::spawn(Self::compaction_thread(shared.clone(), manifest, receiver));
+        let compaction_thread = ChildTask::spawn(Self::compaction_thread(
+            shared.clone(),
+            manifest,
+            compaction_receiver,
+        ));
 
         Ok(Self {
             lock_file,
             identity,
-            compaction_notifier: sender,
+            compaction_notifier,
             compaction_thread,
             shared,
         })
     }
 
     pub async fn close(self) -> Result<()> {
+        // TODO: Closing should either block or fail if there still exists try
+        // references to any internal memory.
+
         // TODO: Should stop new compactions from starting and wait for any existing
         // operations to finish.
         {
@@ -363,7 +425,7 @@ impl EmbeddedDB {
     async fn compaction_thread(
         shared: Arc<EmbeddedDBShared>,
         manifest: RecordWriter,
-        receiver: channel::Receiver<()>,
+        receiver: CompactionReceiver,
     ) {
         if shared.options.read_only {
             return;
@@ -379,7 +441,7 @@ impl EmbeddedDB {
     async fn compaction_thread_inner(
         shared: Arc<EmbeddedDBShared>,
         mut manifest: RecordWriter,
-        receiver: channel::Receiver<()>,
+        receiver: CompactionReceiver,
     ) -> Result<()> {
         let key_comparator = shared.options.table_options.comparator.clone();
 
@@ -389,8 +451,24 @@ impl EmbeddedDB {
             if made_progress {
                 // Whenever we make any progress in the previous iteration, we
                 // will try a second time.
-            } else if receiver.recv().await.is_err() {
+            } else if receiver.receiver.recv().await.is_err() {
                 return Ok(());
+            }
+
+            {
+                let mut nums_to_delete = vec![];
+                {
+                    let mut compaction_state = receiver.state.lock().unwrap();
+                    for file_num in compaction_state.released_files.drain() {
+                        nums_to_delete.push(file_num);
+                    }
+                }
+
+                for file_num in nums_to_delete {
+                    println!("Deleting table number {}", file_num);
+                    let path = shared.dir.table(file_num);
+                    common::async_std::fs::remove_file(path.read_path()).await?;
+                }
             }
 
             let state = shared.state.read().await;
@@ -586,6 +664,13 @@ impl EmbeddedDB {
                 version_edit.serialize(&mut out)?;
                 manifest.append(&out).await?;
                 manifest.flush().await?;
+
+                {
+                    let mut compaction_state = receiver.state.lock().unwrap();
+                    for file in &version_edit.deleted_files {
+                        compaction_state.pending_release_files.insert(file.number);
+                    }
+                }
 
                 // TODO: Re-lock and apply all of the version edits
                 let mut state_guard = shared.state.write().await;
@@ -821,8 +906,15 @@ impl EmbeddedDB {
 
         state.mutable_table.insert(ikey, value.to_vec()).await;
 
+        // TODO: Dedup this logic with above.
+        let should_compact = state.mutable_table.size() >= self.shared.options.write_buffer_size
+            && !state.immutable_table.is_some();
+
         drop(state);
-        let _ = self.compaction_notifier.try_send(());
+
+        if should_compact {
+            let _ = self.compaction_notifier.try_send(());
+        }
 
         Ok(())
     }

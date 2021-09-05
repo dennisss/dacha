@@ -4,8 +4,8 @@ use std::f32::MAX_10_EXP;
 use std::sync::Arc;
 
 use common::algorithms::lower_bound_by;
+use common::async_std::channel;
 use common::async_std::sync::Mutex;
-use common::bytes::Bytes;
 use common::errors::*;
 
 use crate::db::paths::FilePaths;
@@ -14,7 +14,6 @@ use crate::db::version_edit::{DeletedFileEntry, VersionEdit};
 use crate::record_log::{RecordReader, RecordWriter};
 use crate::table::comparator::KeyComparator;
 use crate::table::table::{SSTable, SSTableOpenOptions};
-use crate::table::table_builder::SSTableBuilderOptions;
 use crate::EmbeddedDBOptions;
 
 /// TODO: Implement this.
@@ -23,6 +22,8 @@ const MAX_NUM_LEVELS: usize = 7;
 /// The highest level at which we will store a new SSTable resulting from a
 /// memtable flush.
 const MAX_MEMTABLE_LEVEL: usize = 2;
+
+pub type FileReleasedCallback = Arc<dyn Fn(u64) + Send + Sync + 'static>;
 
 pub struct VersionSet {
     options: Arc<EmbeddedDBOptions>,
@@ -42,13 +43,11 @@ pub struct VersionSet {
 
     pub last_sequence: u64,
 
-    /// Files that were deleted from the latest version but are still pending
-    /// deletion from disk due to outstanding in-memory references.
-    pub deleted_files: Vec<Arc<LevelTableEntry>>,
+    release_callback: FileReleasedCallback,
 }
 
 impl VersionSet {
-    pub fn new(options: Arc<EmbeddedDBOptions>) -> Self {
+    pub fn new(release_callback: FileReleasedCallback, options: Arc<EmbeddedDBOptions>) -> Self {
         Self {
             options,
             latest_version: Arc::new(Version::new()),
@@ -58,7 +57,7 @@ impl VersionSet {
             log_number: None,
             prev_log_number: None,
             last_sequence: 0,
-            deleted_files: vec![],
+            release_callback,
         }
     }
 
@@ -85,6 +84,7 @@ impl VersionSet {
 
     pub async fn recover_existing(
         reader: &mut RecordReader,
+        release_callback: FileReleasedCallback,
         options: Arc<EmbeddedDBOptions>,
     ) -> Result<Self> {
         let mut version = Version::new();
@@ -181,7 +181,7 @@ impl VersionSet {
                     return Err(err_msg("Creating new file before comparator defined"));
                 }
 
-                version.insert(file, None, &options);
+                version.insert(file, None, release_callback.clone(), &options);
             }
         }
 
@@ -202,7 +202,7 @@ impl VersionSet {
             next_file_number,
             log_number: base_edit.log_number,
             prev_log_number: base_edit.prev_log_number,
-            deleted_files: vec![],
+            release_callback,
         })
     }
 
@@ -243,7 +243,12 @@ impl VersionSet {
                 .into_iter()
                 .zip(new_tables.into_iter())
             {
-                version.insert(entry, Some(Arc::new(table)), &self.options);
+                version.insert(
+                    entry,
+                    Some(Arc::new(table)),
+                    self.release_callback.clone(),
+                    &self.options,
+                );
             }
         }
     }
@@ -478,6 +483,17 @@ pub struct LevelTableEntry {
     pub table: Mutex<Option<Arc<SSTable>>>,
 
     pub entry: NewFileEntry,
+
+    release_callback: Option<FileReleasedCallback>,
+}
+
+impl Drop for LevelTableEntry {
+    fn drop(&mut self) {
+        if let Some(release_callback) = self.release_callback.take() {
+            let file_num = self.entry.number;
+            (*release_callback)(file_num);
+        }
+    }
 }
 
 impl LevelTableEntry {
@@ -500,6 +516,7 @@ impl Version {
         &mut self,
         entry: NewFileEntry,
         table: Option<Arc<SSTable>>,
+        release_callback: FileReleasedCallback,
         db_options: &EmbeddedDBOptions,
     ) {
         while self.levels.len() <= entry.level as usize {
@@ -532,6 +549,7 @@ impl Version {
             self.levels[0].tables.push(Arc::new(LevelTableEntry {
                 table: Mutex::new(table),
                 entry,
+                release_callback: Some(release_callback),
             }));
             return;
         }
@@ -550,6 +568,7 @@ impl Version {
             Arc::new(LevelTableEntry {
                 table: Mutex::new(table),
                 entry,
+                release_callback: Some(release_callback),
             }),
         );
     }
