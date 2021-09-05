@@ -1,4 +1,6 @@
 mod db;
+#[cfg(test)]
+mod db_test;
 mod internal_key;
 mod level_iterator;
 mod merge_iterator;

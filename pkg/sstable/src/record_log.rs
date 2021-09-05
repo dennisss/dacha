@@ -43,6 +43,8 @@ use common::errors::*;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 
+use crate::file::*;
+
 const BLOCK_SIZE: u64 = 32 * 1024;
 
 /// Number of bytes needed to represent just the header of a single record (same
@@ -158,11 +160,6 @@ impl RecordReader {
             block_offset: 0,
             output_buffer: None,
         })
-    }
-
-    pub fn into_writer(self) -> RecordWriter {
-        // TODO: Need to set O_APPEND
-        RecordWriter { file: self.file }
     }
 
     // Generally should return the final position of the block
@@ -359,17 +356,21 @@ impl RecordReader {
 }
 
 pub struct RecordWriter {
-    file: File,
+    file: SyncedFile,
     // NOTE: All the below are main
 }
 
 impl RecordWriter {
+    // TODO: May need to eventually support truncation as there may be data left
+    // over from a past run.
+
     pub async fn open(path: &Path) -> Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(path)
+        Self::open_with(SyncedPath::from(path)?).await
+    }
+
+    pub async fn open_with(path: SyncedPath) -> Result<Self> {
+        let file = path
+            .open(OpenOptions::new().write(true).create(true))
             .await?;
 
         Ok(Self { file })
@@ -459,7 +460,7 @@ impl RecordWriter {
     }
 
     pub async fn flush(&mut self) -> Result<()> {
-        self.file.flush().await?;
+        self.file.flush_and_sync().await?;
         Ok(())
     }
 }

@@ -1,0 +1,281 @@
+use std::collections::{HashMap, HashSet};
+
+use common::bytes::Bytes;
+use common::errors::*;
+use common::temp::TempDir;
+
+use crate::iterable::Iterable;
+use crate::table::CompressionType;
+use crate::{EmbeddedDB, EmbeddedDBOptions};
+
+struct TestDB {
+    dir: TempDir,
+    db: EmbeddedDB,
+    values: HashMap<Bytes, Bytes>,
+}
+
+impl TestDB {
+    async fn open() -> Result<Self> {
+        let dir = TempDir::create()?;
+
+        let mut options = EmbeddedDBOptions::default();
+        options.create_if_missing = true;
+        options.error_if_exists = true;
+        // Disable compression to make it easier to predict compactions.
+        options.table_options.compression = CompressionType::None;
+
+        // Level 0 max size will be 20KB
+        options.level0_file_num_compaction_trigger = 2;
+        options.write_buffer_size = 10 * 1024; // 10KB
+
+        // Make slightly larger than the write buffer to ensure that we don't create
+        // tiny files with the overflow after accounting for file overhead.
+        options.target_file_size_base = 12 * 1024; // 12KB
+        options.target_file_size_multiplier = 1;
+
+        // Level 1 max will be 20 KB (~4 files)
+        // Level 2 max will be 40 KB (~4 files)
+        // Level 3 max will be 80 KB (~8 files)
+        options.max_bytes_for_level_base = 20 * 1024; // 20KB
+        options.max_bytes_for_level_multiplier = 2;
+
+        let db = EmbeddedDB::open(dir.path(), options).await?;
+        Ok(Self {
+            dir,
+            db,
+            values: HashMap::new(),
+        })
+    }
+
+    // TODO: test that opening the same database twice causes a lock issue.
+
+    async fn reopen(self) -> Result<Self> {
+        let mut options = EmbeddedDBOptions::default();
+        options.read_only = true;
+
+        self.db.close().await?;
+
+        let db = EmbeddedDB::open(self.dir.path(), options).await?;
+        Ok(Self {
+            dir: self.dir,
+            db,
+            values: self.values,
+        })
+    }
+
+    async fn write(&mut self, write_id: u32, key_multiplier: u32, key_offset: u32) -> Result<()> {
+        for i in 0..160 {
+            let key_i = i * key_multiplier + key_offset;
+
+            let key = format!("{:08}", key_i);
+            assert_eq!(key.len(), 8);
+
+            let mut value = [0u8; 64 - 8];
+            value[0..4].copy_from_slice(&(write_id as u32).to_be_bytes());
+            value[4..8].copy_from_slice(&(key_i as u32).to_be_bytes());
+
+            self.db.set(key.as_bytes(), &value).await?;
+
+            self.values.remove(key.as_bytes());
+            self.values.insert(key.into(), Bytes::from(&value[..]));
+        }
+
+        Ok(())
+    }
+
+    async fn verify_with_point_lookups(&self) -> Result<()> {
+        for (key, value) in &self.values {
+            let db_value = self
+                .db
+                .get(key.as_ref())
+                .await?
+                .ok_or_else(|| format_err!("DB missing key: {:?}", key))?;
+            assert_eq!(value, &db_value);
+        }
+
+        Ok(())
+    }
+
+    async fn verify_with_scan(&self) -> Result<()> {
+        let snapshot = self.db.snapshot().await;
+        let mut iter = snapshot.iter().await;
+
+        let mut num_entries = 0;
+        let mut seek_keys = HashSet::new();
+        while let Some(entry) = iter.next().await? {
+            num_entries += 1;
+            assert!(seek_keys.insert(entry.key.to_vec()), "Duplicate key seen");
+
+            let expected_value = self.values.get(&entry.key).unwrap();
+
+            if expected_value != &entry.value {
+                iter.next().await?;
+                iter.next().await?;
+                iter.next().await?;
+            }
+
+            assert_eq!(expected_value, &entry.value);
+        }
+
+        assert_eq!(num_entries, self.values.len());
+
+        Ok(())
+    }
+}
+
+#[async_std::test]
+async fn embedded_db_compaction_test() -> Result<()> {
+    /*
+    TODO: Tests to add:
+    - SSTable level creation and traversal tests.
+    - DB: Read a consistent snapshot while writing new keys.
+
+    */
+
+    let mut db = TestDB::open().await?;
+
+    /*
+        64 bytes per key-value.
+        - 160 kv pairs per file
+    */
+
+    // [0, 160) * 10,000
+    // => Create one table into level 2
+    db.write(1, 10000, 0).await?;
+
+    db.verify_with_point_lookups().await?;
+
+    db.db.wait_for_compaction().await?;
+
+    // TODO: Check exactly which files are present in the directory at each stage.
+
+    // [0, 160] * 20,000
+    // => Create one table into level 1
+    db.write(2, 20000, 0).await?;
+
+    db.db.wait_for_compaction().await?;
+
+    // [0, 160] * 5,000
+    // => Create one table into level 0
+    db.write(3, 5000, 0).await?;
+
+    db.verify_with_point_lookups().await?;
+
+    db.db.wait_for_compaction().await?;
+
+    // [0, 160] * 5,000 + 60*10,000
+    // => Create one table into level 0
+    // => Will trigger compaction with level 1
+    // => Level 1 should now contain ~3 files.
+    db.write(4, 5000, 60 * 10000).await?;
+
+    db.db.wait_for_compaction().await?;
+
+    db.verify_with_scan().await?;
+
+    db = db.reopen().await?;
+
+    db.verify_with_point_lookups().await?;
+    db.verify_with_scan().await?;
+
+    // Another possible idea is to randomly stop the program and verify that
+    // the set of written keys is still consistent and that the db is
+    // recoverable.
+
+    Ok(())
+}
+
+#[async_std::test]
+async fn embedded_db_large_range_test() -> Result<()> {
+    let dir = TempDir::create()?;
+
+    // Create and write to disk.
+    {
+        let mut options = EmbeddedDBOptions::default();
+        options.create_if_missing = true;
+        options.error_if_exists = true;
+        options.write_buffer_size = 50 * 1024;
+        options.table_options.compression = CompressionType::ZLib;
+
+        let db = EmbeddedDB::open(dir.path(), options).await?;
+
+        for i in 1000..10000 {
+            let key = i.to_string();
+            db.set(key.as_bytes(), if i % 2 == 0 { b"even" } else { b"odd" })
+                .await?;
+        }
+
+        db.wait_for_compaction().await?;
+    }
+
+    {
+        let mut options = EmbeddedDBOptions::default();
+        options.read_only = true;
+
+        let db = EmbeddedDB::open(dir.path(), options).await?;
+
+        let snapshot = db.snapshot().await;
+
+        for i in 1000..10000 {
+            let key = i.to_string();
+
+            let mut iter = snapshot.iter().await;
+            iter.seek(key.as_bytes()).await?;
+
+            let entry = iter.next().await?.unwrap();
+            assert_eq!(&entry.key, key.as_bytes(), "{:?} != {}", entry.key, key);
+            assert_eq!(
+                &entry.value,
+                if i % 2 == 0 {
+                    &b"even"[..]
+                } else {
+                    &b"odd"[..]
+                }
+            );
+        }
+
+        {
+            let mut before_iter = snapshot.iter().await;
+            before_iter.seek(b"0").await?;
+            let entry = before_iter.next().await?.unwrap();
+            assert_eq!(&entry.key[..], &b"1000"[..]);
+        }
+
+        {
+            let mut after_iter = snapshot.iter().await;
+            after_iter.seek(b"A").await?; // 'A' > '9'
+            let entry = after_iter.next().await?;
+            assert!(entry.is_none());
+        }
+
+        // Testing a full scan
+        {
+            let mut iter = db.snapshot().await.iter().await;
+
+            let mut i = 1000;
+            while let Some(entry) = iter.next().await? {
+                let key = i.to_string();
+                assert_eq!(key.as_bytes(), &entry.key);
+
+                assert_eq!(
+                    &entry.value,
+                    if i % 2 == 0 {
+                        &b"even"[..]
+                    } else {
+                        &b"odd"[..]
+                    }
+                );
+
+                i += 1;
+            }
+        }
+
+        // TODO: Test seeking to positions in between tables or in between keys.
+
+        // TODO: Test point lookups.
+    }
+
+    Ok(())
+}
+
+// TODO: Add tests for verifying leveldb compatibility.

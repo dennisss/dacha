@@ -16,6 +16,7 @@ mod encoding;
 mod memtable;
 pub mod record_log;
 // mod skip_list;
+mod file;
 pub mod iterable;
 pub mod priority_queue;
 pub mod table;

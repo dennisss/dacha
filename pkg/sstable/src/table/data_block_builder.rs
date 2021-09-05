@@ -148,7 +148,7 @@ impl UnsortedDataBlockBuilder {
         }
     }
 
-    pub fn empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.data.len() == 0
     }
 
@@ -156,13 +156,13 @@ impl UnsortedDataBlockBuilder {
         self.data.push((key, value));
     }
 
-    pub fn finish(mut self) -> Result<Vec<u8>> {
+    pub fn finish(&mut self) -> Result<Vec<u8>> {
         let mut builder = DataBlockBuilder::new(self.restart_interval);
 
         // TODO: Use an appropriate comparator here.
         self.data.sort_unstable();
 
-        for (key, value) in self.data.into_iter() {
+        for (key, value) in self.data.iter() {
             builder.add(&key, &value)?;
         }
 

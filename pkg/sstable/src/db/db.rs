@@ -8,6 +8,7 @@ use common::algorithms::lower_bound_by;
 use common::async_std;
 use common::async_std::channel;
 use common::async_std::fs::{File, OpenOptions};
+use common::async_std::prelude::*;
 use common::async_std::sync::{Mutex, RwLock};
 use common::bytes::Bytes;
 use common::errors::*;
@@ -23,6 +24,7 @@ use crate::db::version::*;
 use crate::db::version_edit::*;
 use crate::db::write_batch::Write::Value;
 use crate::db::write_batch::*;
+use crate::file::SyncedPath;
 use crate::iterable::*;
 use crate::memtable::memtable::MemTable;
 use crate::memtable::*;
@@ -100,6 +102,10 @@ struct EmbeddedDBState {
 
     /// Contains of the state persisted to disk ap
     version_set: VersionSet,
+
+    /// User callbacks which are notified next time the compaction thread is
+    /// idle and has no more work pending.
+    compaction_callbacks: Vec<channel::Sender<()>>,
 }
 
 impl EmbeddedDB {
@@ -111,10 +117,11 @@ impl EmbeddedDB {
         let options = Arc::new(options.wrap_with_internal_keys());
 
         if options.create_if_missing {
+            // TODO: Only create up to one directory.
             async_std::fs::create_dir_all(path).await?;
         }
 
-        let dir = FilePaths::new(path.to_owned());
+        let dir = FilePaths::new(path)?;
 
         let lock_file = {
             let mut opts = std::fs::OpenOptions::new();
@@ -123,25 +130,19 @@ impl EmbeddedDB {
                 .read(true);
 
             let file = opts
-                .open(dir.lock())
+                .open(dir.lock().read_path())
                 .map_err(|_| err_msg("Failed to open the lockfile"))?;
             file.try_lock_exclusive()
                 .map_err(|_| err_msg("Failed to lock database"))?;
             file
         };
 
-        let current_path = dir.current();
-
-        // TODO: Exists may ignore errors such as permission errors.
-        if common::async_std::path::Path::new(&current_path)
-            .exists()
-            .await
-        {
+        if let Some(manifest_path) = dir.current_manifest().await? {
             if options.error_if_exists {
                 return Err(err_msg("Database already exists"));
             }
 
-            Self::open_existing(options, lock_file, dir).await
+            Self::open_existing(options, lock_file, dir, manifest_path).await
         } else {
             if !options.create_if_missing {
                 return Err(err_msg("Database doesn't exist"));
@@ -172,31 +173,34 @@ impl EmbeddedDB {
     ) -> Result<Self> {
         let mut version_set = VersionSet::new(options.clone());
 
-        let manifest_path = {
-            let manifest_num = version_set.next_file_number;
-            version_set.next_file_number += 1;
-            dir.manifest(manifest_num)
-        };
+        let manifest_num = version_set.next_file_number;
+        version_set.next_file_number += 1;
 
-        let mut manifest = RecordWriter::open(&manifest_path).await?;
+        let manifest_path = dir.manifest(manifest_num);
+
+        let mut manifest = RecordWriter::open_with(manifest_path).await?;
 
         let log = {
             let num = version_set.next_file_number;
             version_set.next_file_number += 1;
             version_set.log_number = Some(num);
-            RecordWriter::open(&dir.log(num)).await?
+            RecordWriter::open_with(dir.log(num)).await?
         };
 
         version_set.write_to_new(&mut manifest).await?;
+        manifest.flush().await?;
 
         let identity = Self::uuidv4().await;
-        common::async_std::fs::write(&dir.identity(), &identity).await?;
+        {
+            let mut id_file = dir
+                .identity()
+                .open(OpenOptions::new().create(true).truncate(true).write(true))
+                .await?;
+            id_file.write_all(identity.as_bytes()).await?;
+            id_file.flush_and_sync().await?;
+        }
 
-        common::async_std::fs::write(
-            &dir.current(),
-            format!("{}\n", manifest_path.file_name().unwrap().to_str().unwrap()),
-        )
-        .await?;
+        dir.set_current_manifest(manifest_num).await?;
 
         let mutable_table = Arc::new(MemTable::new(options.table_options.comparator.clone()));
 
@@ -211,6 +215,7 @@ impl EmbeddedDB {
                 mutable_table,
                 immutable_table: None,
                 version_set,
+                compaction_callbacks: vec![],
             }),
         });
 
@@ -230,20 +235,16 @@ impl EmbeddedDB {
         options: Arc<EmbeddedDBOptions>,
         lock_file: std::fs::File,
         dir: FilePaths,
+        manifest_path: SyncedPath,
     ) -> Result<Self> {
-        let mut current = async_std::fs::read_to_string(&dir.current()).await?;
-        current = current.trim_end().to_string();
-
-        let manifest_path = dir.root_dir().join(&current);
-
         let mut version_set = {
-            let mut manifest_file = RecordReader::open(&manifest_path).await?;
+            let mut manifest_file = RecordReader::open(manifest_path.read_path()).await?;
             VersionSet::recover_existing(&mut manifest_file, options.clone()).await?
         };
 
         version_set.open_all(&dir).await?;
 
-        let manifest = RecordWriter::open(&manifest_path).await?;
+        let manifest = RecordWriter::open_with(manifest_path).await?;
 
         // TODO: Need to be resilient to the final record in the log being incomplete
         // (in this we can consider the write to have failed). This applies to both the
@@ -252,7 +253,7 @@ impl EmbeddedDB {
         // truncate it to fix it).
         let mut immutable_table = None;
         if let Some(num) = version_set.prev_log_number {
-            let mut log = RecordReader::open(&dir.log(num)).await?;
+            let mut log = RecordReader::open(dir.log(num).read_path()).await?;
             let mut table = MemTable::new(options.table_options.comparator.clone());
             WriteBatchIterator::read_table(&mut log, &mut table, &mut version_set.last_sequence)
                 .await?;
@@ -266,7 +267,7 @@ impl EmbeddedDB {
         );
 
         let mutable_table = {
-            let mut log_reader = RecordReader::open(&log_path).await?;
+            let mut log_reader = RecordReader::open(log_path.read_path()).await?;
 
             let mut table = MemTable::new(options.table_options.comparator.clone());
             WriteBatchIterator::read_table(
@@ -279,15 +280,15 @@ impl EmbeddedDB {
             Arc::new(table)
         };
 
-        let log = RecordWriter::open(&log_path).await?;
+        let log = RecordWriter::open_with(log_path).await?;
 
         // TODO: Exists may ignore errors such as permission errors.
         let identity_path = dir.identity();
-        let identity = if common::async_std::path::Path::new(&identity_path)
+        let identity = if common::async_std::path::Path::new(identity_path.read_path())
             .exists()
             .await
         {
-            let data = async_std::fs::read_to_string(identity_path).await?;
+            let data = async_std::fs::read_to_string(identity_path.read_path()).await?;
             Some(data)
         } else {
             None
@@ -300,7 +301,7 @@ impl EmbeddedDB {
         let (sender, receiver) = channel::bounded(1);
 
         // Schedule initial compaction check.
-        sender.try_send(());
+        let _ = sender.try_send(());
 
         let shared = Arc::new(EmbeddedDBShared {
             options,
@@ -311,6 +312,7 @@ impl EmbeddedDB {
                 mutable_table,
                 immutable_table,
                 version_set,
+                compaction_callbacks: vec![],
             }),
         });
 
@@ -326,14 +328,6 @@ impl EmbeddedDB {
         })
     }
 
-    /*
-
-    PUSH ENTRY KeyValueEntry { key: b"00000000\x01\xa1\0\0\0\0\0\0", value: b"\0\0\0\x02\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0" }
-
-    PUSH ENTRY KeyValueEntry { key: b"00000000\x01\xa1\0\0\0\0\0\0", value: b"\0\0\0\x02\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0" }
-
-    */
-
     pub async fn close(self) -> Result<()> {
         // TODO: Should stop new compactions from starting and wait for any existing
         // operations to finish.
@@ -346,6 +340,23 @@ impl EmbeddedDB {
 
         self.compaction_thread.join().await;
 
+        Ok(())
+    }
+
+    /// Blocks until there are no more scheduled compactions.
+    /// Note that if the database still receives writes after this is called,
+    /// then this function may never return.
+    pub async fn wait_for_compaction(&self) -> Result<()> {
+        let (sender, receiver) = channel::bounded(1);
+
+        {
+            let mut state = self.shared.state.write().await;
+            state.compaction_callbacks.push(sender);
+        }
+
+        let _ = self.compaction_notifier.try_send(());
+
+        receiver.recv().await?;
         Ok(())
     }
 
@@ -376,6 +387,8 @@ impl EmbeddedDB {
 
         loop {
             if made_progress {
+                // Whenever we make any progress in the previous iteration, we
+                // will try a second time.
             } else if receiver.recv().await.is_err() {
                 return Ok(());
             }
@@ -403,7 +416,7 @@ impl EmbeddedDB {
 
                 drop(state);
 
-                let new_log = RecordWriter::open(&shared.dir.log(new_log_num)).await?;
+                let new_log = RecordWriter::open_with(shared.dir.log(new_log_num)).await?;
 
                 let mut out = vec![];
                 version_edit.serialize(&mut out)?;
@@ -477,7 +490,8 @@ impl EmbeddedDB {
                 manifest.append(&out).await?;
                 manifest.flush().await?;
 
-                common::async_std::fs::remove_file(&shared.dir.log(old_log_number)).await?;
+                common::async_std::fs::remove_file(shared.dir.log(old_log_number).read_path())
+                    .await?;
 
                 let mut state_guard = shared.state.write().await;
 
@@ -486,7 +500,7 @@ impl EmbeddedDB {
                     .version_set
                     .apply_new_edit(version_edit, new_tables);
 
-                // TODO: After this, we want to re-check the mutable_table on
+                // NOTE: After this, we will check the mutable_table on
                 // the next iteration to see if it can be flushed.
 
                 continue;
@@ -586,6 +600,16 @@ impl EmbeddedDB {
                 continue;
             }
 
+            // TODO: Also check the manifest size to see if we should switch manifests.
+
+            if state.compaction_callbacks.len() > 0 {
+                drop(state);
+                let mut state = shared.state.write().await;
+                while let Some(sender) = state.compaction_callbacks.pop() {
+                    let _ = sender.try_send(());
+                }
+            }
+
             made_progress = false;
         }
 
@@ -661,8 +685,8 @@ impl EmbeddedDB {
                     let number = version_edit.next_file_number.unwrap();
                     version_edit.next_file_number = Some(number + 1);
 
-                    let builder = SSTableBuilder::open(
-                        &shared.dir.table(number),
+                    let builder = SSTableBuilder::open_with(
+                        shared.dir.table(number),
                         shared.options.table_options.clone(),
                     )
                     .await?;
@@ -716,7 +740,7 @@ impl EmbeddedDB {
         for entry in &version_edit.new_files {
             new_tables.push(
                 SSTable::open(
-                    &shared.dir.table(entry.number),
+                    shared.dir.table(entry.number).read_path(),
                     SSTableOpenOptions {
                         comparator: shared.options.table_options.comparator.clone(),
                     },
@@ -776,6 +800,8 @@ impl EmbeddedDB {
             return Err(err_msg("Database opened as read only"));
         }
 
+        // NOTE: We currently MUST acquire a write log to ensure that there aren't any
+        // concurrent writes to the immutable memtable.
         let mut state = self.shared.state.write().await;
 
         let sequence = state.version_set.last_sequence + 1;
@@ -785,7 +811,6 @@ impl EmbeddedDB {
         serialize_write_batch(sequence, &[Write::Value { key, value }], &mut write_batch);
         state.log.append(&write_batch).await?;
         state.log.flush().await?;
-        // TODO: Need to flush the log.
 
         let ikey = InternalKey {
             user_key: key,

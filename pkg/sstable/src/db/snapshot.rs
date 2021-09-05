@@ -23,18 +23,27 @@ impl Snapshot {
     pub async fn iter(&self) -> SnapshotIterator {
         let mut iters: Vec<Box<dyn Iterable>> = vec![];
         for table in &self.memtables {
+            // println!("SNAPSHOT MEMTABLE");
             iters.push(Box::new(table.iter()));
         }
 
         if self.version.levels.len() > 0 {
+            // TODO: These tables can be ordered with a preference towards reading from the
+            // last one.
             for entry in &self.version.levels[0].tables {
                 let guard = entry.table.lock().await;
                 let table = guard.as_ref().unwrap();
                 iters.push(Box::new(table.iter(&self.options.block_cache)));
+
+                // println!("SNAPSHOT LEVEL 0 : {}", entry.entry.number);
             }
         }
 
         for level_index in 1..self.version.levels.len() {
+            // for entry in &self.version.levels[level_index].tables {
+            //     println!("SNAPSHOT LEVEL {} : {}", level_index, entry.entry.number);
+            // }
+
             iters.push(Box::new(LevelIterator::new(
                 self.version.clone(),
                 level_index,

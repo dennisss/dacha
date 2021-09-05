@@ -2,15 +2,16 @@ use std::cmp::Ordering;
 use std::path::Path;
 use std::sync::Arc;
 
-use common::async_std::fs::{File, OpenOptions};
+use common::async_std::fs::OpenOptions;
 use common::async_std::io::prelude::WriteExt;
 use common::errors::*;
 use compression::snappy::snappy_compress;
 use compression::transform::transform_to_vec;
-use compression::zlib::{ZlibDecoder, ZlibEncoder};
+use compression::zlib::ZlibEncoder;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 
+use crate::file::{SyncedFile, SyncedPath};
 use crate::table::block_handle::BlockHandle;
 use crate::table::comparator::*;
 use crate::table::data_block_builder::{DataBlockBuilder, UnsortedDataBlockBuilder};
@@ -18,6 +19,7 @@ use crate::table::filter_block_builder::FilterBlockBuilder;
 use crate::table::filter_policy::FilterPolicy;
 use crate::table::footer::*;
 use crate::table::raw_block::CompressionType;
+use crate::table::table::METAINDEX_PROPERTIES_KEY;
 
 #[derive(Clone, Defaultable)]
 pub struct SSTableBuilderOptions {
@@ -96,7 +98,7 @@ struct PendingDataBlock {
 // I also need to do the same for the bloom filter.
 
 pub struct SSTableBuilder {
-    file: File,
+    file: SyncedFile,
     file_len: u64,
     options: SSTableBuilderOptions,
 
@@ -107,6 +109,7 @@ pub struct SSTableBuilder {
     index_block_builder: DataBlockBuilder,
     filter_block_builder: Option<FilterBlockBuilder>,
     data_block_builder: DataBlockBuilder,
+    properties_block_builder: UnsortedDataBlockBuilder,
 
     /// If set, that a data block was written to the file but hasn't been added
     /// to the
@@ -115,12 +118,14 @@ pub struct SSTableBuilder {
 
 impl SSTableBuilder {
     pub async fn open(path: &Path, options: SSTableBuilderOptions) -> Result<Self> {
+        Self::open_with(SyncedPath::from(path)?, options).await
+    }
+
+    pub async fn open_with(path: SyncedPath, options: SSTableBuilderOptions) -> Result<Self> {
         // NOTE: We will panic if we are overwriting an existing table. This
         // should never
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
+        let file = path
+            .open(OpenOptions::new().write(true).create_new(true))
             .await?;
 
         let filter_block_builder = if let Some(policy) = options.filter_policy.clone() {
@@ -139,6 +144,7 @@ impl SSTableBuilder {
             index_block_builder: DataBlockBuilder::new(1),
             filter_block_builder,
             data_block_builder,
+            properties_block_builder: UnsortedDataBlockBuilder::new(1),
             pending_data_block: None,
         })
     }
@@ -210,7 +216,7 @@ impl SSTableBuilder {
 
     /// Immediately writes any buffered keyed in the current block to disk.
     /// NOTE: The table will still not be readable until finished is called.
-    pub async fn flush(&mut self) -> Result<()> {
+    async fn flush(&mut self) -> Result<()> {
         if self.data_block_builder.empty() {
             return Ok(());
         }
@@ -268,7 +274,10 @@ impl SSTableBuilder {
         Ok(())
     }
 
-    // TODO: Add user api to add custom properties while building the table.
+    pub fn add_property(&mut self, key: &str, value: &[u8]) {
+        self.properties_block_builder
+            .add(key.as_bytes().to_vec(), value.to_vec());
+    }
 
     /// Complete writing the table to disk. This should always be the final
     /// method called.
@@ -301,12 +310,19 @@ impl SSTableBuilder {
             );
         }
 
+        if !self.properties_block_builder.is_empty() {
+            let mut buffer = self.properties_block_builder.finish()?;
+            let handle = self.write_raw_block(&mut buffer).await?;
+            metaindex_builder.add(
+                METAINDEX_PROPERTIES_KEY.as_bytes().to_vec(),
+                handle.serialized(),
+            );
+        }
+
         let index_handle = {
             let (mut buf, _) = self.index_block_builder.finish();
             self.write_raw_block(&mut buf).await?
         };
-
-        // TODO: Write properties here
 
         let metaindex_handle = {
             let mut buf = metaindex_builder.finish()?;
@@ -326,7 +342,7 @@ impl SSTableBuilder {
         self.file.write_all(&footer).await?;
 
         // TODO: Need to fully fsync, etc. the file.
-        self.file.flush().await?;
+        self.file.flush_and_sync().await?;
 
         Ok(SSTableBuiltMetadata {
             file_size: self.file.metadata().await?.len(),

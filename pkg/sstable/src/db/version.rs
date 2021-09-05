@@ -94,7 +94,7 @@ impl VersionSet {
         let mut highest_file_number_seen = 0;
 
         while let Some(edit) = VersionEdit::read(reader).await? {
-            println!("EDIT: {:#?}", edit);
+            // println!("EDIT: {:#?}", edit);
 
             // TODO: Verify that all fields are merged.
 
@@ -260,7 +260,8 @@ impl VersionSet {
                 let mut table = entry.table.lock().await;
                 if table.is_none() {
                     *table = Some(Arc::new(
-                        SSTable::open(dir.table(entry.entry.number), options.clone()).await?,
+                        SSTable::open(dir.table(entry.entry.number).read_path(), options.clone())
+                            .await?,
                     ));
                 }
             }

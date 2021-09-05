@@ -29,7 +29,7 @@ use reflection::*;
 #[derive(Default, Reflect, Debug)]
 pub struct TableProperties {
     /// the total size of all data blocks.
-    #[tags(name = "rocksdb.data.size", hello = "world")]
+    #[tags(name = "rocksdb.data.size")]
     data_size: u64,
 
     /// the size of index block.

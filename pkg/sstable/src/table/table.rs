@@ -31,7 +31,6 @@ use super::comparator::KeyComparator;
 use super::filter_block::FilterBlock;
 use super::filter_policy::FilterPolicy;
 
-// TODO: Unused
 pub const METAINDEX_PROPERTIES_KEY: &'static str = "rocksdb.properties";
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
@@ -540,6 +539,7 @@ impl Iterable for SSTableIterator {
         {
             idx
         } else {
+            self.current_block = None;
             self.current_block_index = self.table.num_blocks();
             return Ok(());
         };
@@ -553,6 +553,7 @@ impl Iterable for SSTableIterator {
             .before(start_key, self.table.state.comparator.as_ref())?;
 
         self.current_block = Some((block, iter));
+        self.current_block_index = block_index;
         Ok(())
     }
 
@@ -589,4 +590,101 @@ impl Iterable for SSTableIterator {
         // TODO: Next step is to check any block-level filters.
     }
     */
+}
+
+#[cfg(test)]
+mod tests {
+
+    use common::temp::TempDir;
+    use crypto::random::{self, Rng};
+
+    use crate::table::{table_builder::*, BytewiseComparator};
+
+    use super::*;
+
+    #[async_std::test]
+    async fn sstable_build_and_seek() -> Result<()> {
+        let dir = TempDir::create()?;
+        let table_path = dir.path().join("table");
+
+        let options = SSTableBuilderOptions::default();
+        let mut builder = SSTableBuilder::open(&table_path, options).await?;
+
+        let mut keys = vec![];
+        let mut values = vec![];
+
+        let mut rng = random::clocked_rng();
+
+        for i in 0..10000 {
+            let mut key = format!("{:08}", i);
+
+            let mut value = vec![0u8; 20];
+            rng.generate_bytes(&mut value);
+
+            builder.add(key.as_bytes(), &value).await?;
+
+            keys.push(key);
+            values.push(value);
+        }
+
+        builder.finish().await?;
+
+        let block_cache = DataBlockCache::new(32000);
+
+        let open_options = SSTableOpenOptions {
+            comparator: Arc::new(BytewiseComparator::new()),
+        };
+
+        let table = SSTable::open(&table_path, open_options).await?;
+
+        {
+            let mut iter = table.iter(&block_cache);
+            for i in 0..keys.len() {
+                let entry = iter.next().await?.unwrap();
+                assert_eq!(&entry.key, keys[i].as_bytes());
+                assert_eq!(&entry.value, &values[i]);
+            }
+
+            assert!(iter.next().await?.is_none());
+        }
+
+        // Key is beyond the end of the table.
+        {
+            let mut iter = table.iter(&block_cache);
+            iter.seek(&[b'0', b'1']).await?;
+            assert!(iter.next().await?.is_none());
+        }
+
+        // Seeking to key in the middle of the table.
+        for start_i in [1, 1000, 2000, 5000] {
+            let mut iter = table.iter(&block_cache);
+            iter.seek(keys[start_i].as_bytes()).await?;
+
+            for i in start_i..keys.len() {
+                let entry = iter.next().await?.unwrap();
+                assert_eq!(&entry.key, keys[i].as_bytes());
+                assert_eq!(&entry.value, &values[i]);
+            }
+
+            assert!(iter.next().await?.is_none());
+        }
+
+        // Seeking around the table multiple times.
+        // TODO: Also test with in-exact seeking to keys in-between existing keys.
+        {
+            let mut iter = table.iter(&block_cache);
+            for i in [10, 1, 600, 1000, 601, 5000, 8000, 702] {
+                iter.seek(keys[i].as_bytes()).await?;
+
+                let entry = iter.next().await?.unwrap();
+                assert_eq!(&entry.key, keys[i].as_bytes());
+                assert_eq!(&entry.value, &values[i]);
+            }
+        }
+
+        // TODO: Test re-using the same iterator to seek multiple times or seek after
+        // entries have already been read.
+
+        Ok(())
+    }
 }
