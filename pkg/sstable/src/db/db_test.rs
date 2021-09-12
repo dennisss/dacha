@@ -5,6 +5,7 @@ use common::errors::*;
 use common::futures::StreamExt;
 use common::temp::TempDir;
 
+use crate::db::write_batch::WriteBatch;
 use crate::iterable::Iterable;
 use crate::table::CompressionType;
 use crate::{EmbeddedDB, EmbeddedDBOptions};
@@ -24,6 +25,8 @@ impl TestDB {
         options.error_if_exists = true;
         // Disable compression to make it easier to predict compactions.
         options.table_options.compression = CompressionType::None;
+
+        options.manual_compactions_only = true;
 
         // Level 0 max size will be 20KB
         options.level0_file_num_compaction_trigger = 2;
@@ -319,10 +322,21 @@ async fn embedded_db_large_range_test() -> Result<()> {
 
         let db = EmbeddedDB::open(dir.path(), options).await?;
 
+        let mut batch = WriteBatch::new();
+
         for i in 1000..10000 {
             let key = i.to_string();
-            db.set(key.as_bytes(), if i % 2 == 0 { b"even" } else { b"odd" })
-                .await?;
+
+            batch.put(key.as_bytes(), if i % 2 == 0 { b"even" } else { b"odd" });
+
+            if batch.count() >= 100 {
+                db.write(&mut batch).await?;
+                batch.clear();
+            }
+        }
+
+        if batch.count() > 0 {
+            db.write(&mut batch).await?;
         }
 
         db.wait_for_compaction().await?;

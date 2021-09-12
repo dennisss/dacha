@@ -42,8 +42,29 @@ pub fn be_u8(input: &[u8]) -> ParseResult<u8, &[u8]> {
     Ok((v, &input[1..]))
 }
 
+pub fn be_i8(input: &[u8]) -> ParseResult<i8, &[u8]> {
+    if input.len() < 1 {
+        return Err(incomplete_error(input.len()));
+    }
+
+    let v = input[0] as i8;
+    Ok((v, &input[1..]))
+}
+
 pub fn le_u8(input: &[u8]) -> ParseResult<u8, &[u8]> {
     be_u8(input)
+}
+
+pub fn le_u24(input: &[u8]) -> ParseResult<u32, &[u8]> {
+    if input.len() < 3 {
+        return Err(incomplete_error(input.len()));
+    }
+
+    let mut buf = [0u8; 4];
+    buf[0..3].copy_from_slice(&input[0..3]);
+
+    let v = u32::from_le_bytes(buf);
+    Ok((v, &input[3..]))
 }
 
 pub fn be_u24(input: &[u8]) -> ParseResult<u32, &[u8]> {

@@ -64,49 +64,53 @@ impl<'a> WriteBatchIterator<'a> {
         self.input
     }
 
+    pub async fn apply(&mut self, table: &MemTable) -> Result<()> {
+        while let Some(w) = self.next() {
+            let w = w?;
+            match w {
+                Write::Value { key, value } => {
+                    let ikey = InternalKey {
+                        user_key: key,
+                        typ: ValueType::Value,
+                        sequence: self.sequence(),
+                    }
+                    .serialized();
+
+                    table.insert(ikey, value.to_vec()).await;
+                }
+                Write::Deletion { key } => {
+                    let ikey = InternalKey {
+                        user_key: key,
+                        typ: ValueType::Deletion,
+                        sequence: self.sequence(),
+                    }
+                    .serialized();
+
+                    table.insert(ikey, vec![]).await;
+                }
+            }
+        }
+
+        if self.input.len() != 0 {
+            return Err(err_msg("Extra data after write batch"));
+        }
+
+        Ok(())
+    }
+
     /// Writes WriteBatches from the given log file and applies their effects
     /// to the current table.
     pub async fn read_table(
         log: &mut RecordReader,
-        table: &mut MemTable,
+        table: &MemTable,
         last_sequence: &mut u64,
     ) -> Result<()> {
         // TODO: Ignore duplicate keys.
 
         while let Some(record) = log.read().await? {
             let mut batch = WriteBatchIterator::new(&record)?;
-
+            batch.apply(table).await?;
             *last_sequence = std::cmp::max(*last_sequence, batch.sequence());
-
-            while let Some(w) = batch.next() {
-                let w = w?;
-                match w {
-                    Write::Value { key, value } => {
-                        let ikey = InternalKey {
-                            user_key: key,
-                            typ: ValueType::Value,
-                            sequence: batch.sequence(),
-                        }
-                        .serialized();
-
-                        table.insert(ikey, value.to_vec()).await;
-                    }
-                    Write::Deletion { key } => {
-                        let ikey = InternalKey {
-                            user_key: key,
-                            typ: ValueType::Deletion,
-                            sequence: batch.sequence(),
-                        }
-                        .serialized();
-
-                        table.insert(ikey, vec![]).await;
-                    }
-                }
-            }
-
-            if batch.remaining_input().len() != 0 {
-                return Err(err_msg("Extra data after write batch"));
-            }
         }
 
         Ok(())
@@ -147,6 +151,65 @@ pub fn serialize_write_batch(sequence: u64, writes: &[Write], out: &mut Vec<u8>)
                 serialize_slice(*key, out);
             }
         }
+    }
+}
+
+pub struct WriteBatch {
+    data: Vec<u8>,
+}
+
+impl WriteBatch {
+    pub fn new() -> Self {
+        let data = vec![0u8; 8 + 4];
+        Self { data }
+    }
+
+    pub fn set_sequence(&mut self, sequence: u64) {
+        self.data[0..8].copy_from_slice(&sequence.to_le_bytes());
+    }
+
+    pub fn count(&self) -> usize {
+        let count_ref = array_ref![self.data, 8, 4];
+        u32::from_le_bytes(*count_ref) as usize
+    }
+
+    fn increment_count(&mut self) {
+        let count_ref = array_mut_ref![self.data, 8, 4];
+        let mut count = u32::from_le_bytes(*count_ref);
+        count += 1;
+        *count_ref = count.to_le_bytes();
+    }
+
+    pub fn put(&mut self, key: &[u8], value: &[u8]) -> &mut Self {
+        self.increment_count();
+
+        self.data.push(ValueType::Value.to_value());
+        serialize_slice(key, &mut self.data);
+        serialize_slice(value, &mut self.data);
+
+        self
+    }
+
+    pub fn delete(&mut self, key: &[u8]) -> &mut Self {
+        self.increment_count();
+
+        self.data.push(ValueType::Deletion.to_value());
+        serialize_slice(key, &mut self.data);
+
+        self
+    }
+
+    pub fn clear(&mut self) {
+        self.data.truncate(0);
+        self.data.resize(8 + 4, 0);
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.data
+    }
+
+    pub fn iter(&self) -> Result<WriteBatchIterator> {
+        WriteBatchIterator::new(&self.data)
     }
 }
 

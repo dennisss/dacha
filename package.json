@@ -1,35 +1,40 @@
 {
-	"name": "repo",
+	"name": "dacha",
 	"version": "0.0.1",
 	"private": true,
 	"description": "",
 	"repository": {
 		"type": "git",
-		"url": "git+git@github.com:dennisss/repo.git"
+		"url": "git+git@github.com:dennisss/dacha.git"
 	},
 	"author": {
 		"name": "Dennis Shtatnov",
 		"url": "https://github.com/dennisss"
 	},
 	"devDependencies": {
-		"@types/mkdirp": "^0.5.2",
-		"@types/mocha": "^5.2.5",
-		"@types/node": "^10.12.5",
+		"@types/mkdirp": "1.0.2",
+		"@types/node": "16.7.11",
+		"@types/react-dom": "17.0.2",
+		"@types/react": "17.0.2",
 		"@types/tmp": "^0.0.33",
-		"mkdirp": "^0.5.1",
-		"mocha": "^5.2.0",
+		"mkdirp": "1.0.3",
 		"neon-cli": "^0.2.0",
 		"protobufjs": "^6.8.8",
+		"react": "17.0.2",
+		"react-dom": "17.0.2",
 		"tmp": "^0.0.33",
-		"ts-node": "^7.0.1",
-		"typescript": "^3.1.6"
+		"ts-node": "10.2.1",
+		"typescript": "4.4.2",
+		"webpack": "5.52.0",
+		"webpack-cli": "4.8.0",
+		"ts-loader": "9.2.5",
+		"bootstrap": "5.1.0"
 	},
 	"dependencies": {
-		"axios": "^0.18.0",
-		"leveldown": "^5.4.1",
-		"levelup": "^4.3.2",
-		"rocksdb": "^4.1.0",
-		"snappy": "^6.2.3",
-		"tslib": "^1.9.3"
+		"axios": "0.21.4",
+		"leveldown": "6.0.1",
+		"levelup": "5.0.1",
+		"rocksdb": "5.1.0",
+		"tslib": "^2.3.1"
 	}
 }

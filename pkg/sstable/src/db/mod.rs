@@ -3,7 +3,7 @@ mod db;
 mod db_test;
 mod internal_key;
 mod level_iterator;
-mod merge_iterator;
+pub mod merge_iterator;
 mod options;
 mod paths;
 mod snapshot;
@@ -13,3 +13,5 @@ mod write_batch;
 
 pub use db::EmbeddedDB;
 pub use options::EmbeddedDBOptions;
+pub use snapshot::{Snapshot, SnapshotIterator};
+pub use write_batch::WriteBatch;

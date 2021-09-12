@@ -38,6 +38,7 @@ NOTE: There can be padding at the end by using a main tag without a usage.
 
 macro_rules! bit_flags {
     ($name:ident => $(bit $bit:expr ; $zero:ident (0) | $one:ident (1) ),*) => {
+        #[derive(Clone, Copy)]
         pub struct $name {
             data: u32
         }
@@ -153,11 +154,16 @@ pub enum Item {
     Input(ValueFlags),
     Output(ValueFlags),
     Feature(ValueFlags),
-    Collection {
-        typ: CollectionItemType,
-        items: Vec<Item>,
-    },
 
+    BeginCollection {
+        typ: CollectionItemType,
+    },
+    EndCollection,
+
+    // Collection {
+    //     typ: CollectionItemType,
+    //     items: Vec<Item>,
+    // },
     Global {
         tag: GlobalItemTag,
         value: u32,
@@ -179,20 +185,16 @@ pub enum Item {
 }
 
 impl Item {
+    // TODO: Remove me.
     pub fn visit_all<'a, F: 'a + FnMut(&Item)>(&self, f: &mut F) {
         f(self);
-        if let Item::Collection { items, .. } = self {
-            for item in items {
-                item.visit_all(f);
-            }
-        }
+        // if let Item::Collection { items, .. } = self {
+        //     for item in items {
+        //         item.visit_all(f);
+        //     }
+        // }
     }
 }
-
-/*
-
-
-*/
 
 // Section 7.2.1
 // TODO: Validate this must not be zero.
@@ -204,8 +206,6 @@ enum_def_with_unknown!(ReportType u8 =>
 
 pub fn parse_items(mut input: &[u8]) -> Result<Vec<Item>> {
     // TODO: Check for out of bounds issues.
-
-    let mut collection_stack = vec![];
 
     let mut items = vec![];
 
@@ -258,11 +258,8 @@ pub fn parse_items(mut input: &[u8]) -> Result<Vec<Item>> {
                         }
                         MainItemTag::Collection => {
                             // TODO: Assert that there's up to 1 byte of data
-
                             let typ = CollectionItemType::from_value(value as u8);
-
-                            collection_stack.push((items, typ));
-                            items = vec![];
+                            items.push(Item::BeginCollection { typ })
                         }
                         MainItemTag::EndCollection => {
                             if size != 0 {
@@ -271,18 +268,7 @@ pub fn parse_items(mut input: &[u8]) -> Result<Vec<Item>> {
                                 ));
                             }
 
-                            // TODO: Assert that there is no data in this case.
-
-                            let (mut parent_items, collection_typ) = collection_stack
-                                .pop()
-                                .ok_or_else(|| err_msg("Unexpected End Collection"))?;
-
-                            parent_items.push(Item::Collection {
-                                typ: collection_typ,
-                                items,
-                            });
-
-                            items = parent_items;
+                            items.push(Item::EndCollection);
                         }
                         MainItemTag::Unknown(tag) => {
                             items.push(Item::Short {
@@ -312,9 +298,119 @@ pub fn parse_items(mut input: &[u8]) -> Result<Vec<Item>> {
         }
     }
 
-    if collection_stack.len() != 0 {
-        return Err(err_msg("Unclosed collections in data"));
-    }
+    // if collection_stack.len() != 0 {
+    //     return Err(err_msg("Unclosed collections in data"));
+    // }
 
     Ok(items)
+}
+
+// TODO: Use hashmaps.
+#[derive(Clone, Debug)]
+pub struct ItemStateTable {
+    pub locals: HashMap<LocalItemTag, Vec<u32>>,
+    pub globals: HashMap<GlobalItemTag, u32>,
+}
+
+// TODO: Find a better name for this.
+#[derive(Clone, Debug)]
+pub struct Report {
+    pub state: ItemStateTable,
+    pub var: ReportVariant,
+}
+
+#[derive(Clone, Debug)]
+pub enum ReportVariant {
+    Collection {
+        typ: CollectionItemType,
+        children: Vec<Report>,
+    },
+    Input(ValueFlags),
+    Output(ValueFlags),
+    Feature(ValueFlags),
+}
+
+pub fn parse_reports(items: &[Item]) -> Result<Vec<Report>> {
+    let mut item_state_table_stack = vec![];
+
+    let mut item_state_table = ItemStateTable {
+        locals: HashMap::new(),
+        globals: HashMap::new(),
+    };
+
+    let mut collection_stack = vec![];
+
+    let mut reports = vec![];
+
+    for item in items {
+        match item {
+            Item::BeginCollection { typ } => {
+                collection_stack.push((reports, *typ, item_state_table.clone()));
+                item_state_table.locals.clear();
+                reports = vec![];
+            }
+            // TODO: Should I clear the locals on an EndCollection (given that it is technically a
+            // main t)
+            Item::EndCollection => {
+                let (parent_reports, collection_typ, state) = collection_stack
+                    .pop()
+                    .ok_or_else(|| err_msg("Unexpected End Collection"))?;
+
+                let collection = Report {
+                    state,
+                    var: ReportVariant::Collection {
+                        typ: collection_typ,
+                        children: reports,
+                    },
+                };
+                reports = parent_reports;
+                reports.push(collection);
+            }
+
+            Item::Input(flags) => {
+                reports.push(Report {
+                    state: item_state_table.clone(),
+                    var: ReportVariant::Input(*flags),
+                });
+                item_state_table.locals.clear();
+            }
+            Item::Output(flags) => {
+                reports.push(Report {
+                    state: item_state_table.clone(),
+                    var: ReportVariant::Output(*flags),
+                });
+                item_state_table.locals.clear();
+            }
+            Item::Feature(flags) => {
+                reports.push(Report {
+                    state: item_state_table.clone(),
+                    var: ReportVariant::Feature(*flags),
+                });
+                item_state_table.locals.clear();
+            }
+
+            Item::Global { tag, value } => {
+                if *tag == GlobalItemTag::Push {
+                    item_state_table_stack.push(item_state_table.clone());
+                } else if *tag == GlobalItemTag::Pop {
+                    item_state_table = item_state_table_stack.pop().ok_or_else(|| {
+                        err_msg("Attemping Pop, but item state table stack is empty")
+                    })?;
+                } else {
+                    item_state_table.globals.insert(*tag, *value);
+                }
+            }
+            Item::Local { tag, value } => {
+                item_state_table
+                    .locals
+                    .entry(*tag)
+                    .or_insert(vec![])
+                    .push(*value);
+            }
+            Item::Short { .. } => todo!(),
+            Item::Long { .. } => todo!(),
+        };
+    }
+
+    Ok(reports)
 }

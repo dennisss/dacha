@@ -5,3 +5,4 @@ mod item;
 pub use descriptors::*;
 pub use device::HIDDevice;
 pub use item::ReportType;
+pub use item::*;

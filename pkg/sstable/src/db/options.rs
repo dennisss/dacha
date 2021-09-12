@@ -80,6 +80,8 @@ pub struct EmbeddedDBOptions {
     /// 8MB is the default in LevelDB.
     #[default(DataBlockCache::new(8 * 1024 * 1024))]
     pub block_cache: DataBlockCache,
+
+    pub manual_compactions_only: bool,
 }
 
 impl EmbeddedDBOptions {

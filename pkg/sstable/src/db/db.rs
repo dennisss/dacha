@@ -23,7 +23,6 @@ use crate::db::merge_iterator::MergeIterator;
 use crate::db::options::*;
 use crate::db::version::*;
 use crate::db::version_edit::*;
-use crate::db::write_batch::Write::Value;
 use crate::db::write_batch::*;
 use crate::file::SyncedPath;
 use crate::iterable::*;
@@ -160,7 +159,11 @@ struct EmbeddedDBState {
 
 impl EmbeddedDB {
     /// Opens an existing database or creates a new one.
-    pub async fn open(path: &Path, options: EmbeddedDBOptions) -> Result<Self> {
+    pub async fn open<P: AsRef<Path>>(path: P, options: EmbeddedDBOptions) -> Result<Self> {
+        Self::open_impl(path.as_ref(), options).await
+    }
+
+    async fn open_impl(path: &Path, options: EmbeddedDBOptions) -> Result<Self> {
         // TODO: Cache a file description to the data directory and use openat for
         // faster opens?
 
@@ -880,9 +883,19 @@ impl EmbeddedDB {
         Ok(None)
     }
 
-    pub async fn set(&self, key: &[u8], value: &[u8]) -> Result<()> {
+    // TODO: If anything in here fails, they we need to mark the database as being
+    // in an error state and we can't allow reads or writes from the database at
+    // that point.
+    //
+    // TODO: Also note that we shouldn't increment the last_sequence until the write
+    // is successful.
+    pub async fn write(&self, batch: &mut WriteBatch) -> Result<()> {
         if self.shared.options.read_only {
             return Err(err_msg("Database opened as read only"));
+        }
+
+        if batch.count() == 0 {
+            return Err(err_msg("Writing an empty batch"));
         }
 
         // NOTE: We currently MUST acquire a write log to ensure that there aren't any
@@ -890,21 +903,15 @@ impl EmbeddedDB {
         let mut state = self.shared.state.write().await;
 
         let sequence = state.version_set.last_sequence + 1;
+        batch.set_sequence(sequence);
+
         state.version_set.last_sequence = sequence;
 
-        let mut write_batch = vec![];
-        serialize_write_batch(sequence, &[Write::Value { key, value }], &mut write_batch);
-        state.log.append(&write_batch).await?;
+        // TODO: Reads should still be allowed while this is occuring.
+        state.log.append(&batch.as_bytes()).await?;
         state.log.flush().await?;
 
-        let ikey = InternalKey {
-            user_key: key,
-            sequence,
-            typ: ValueType::Value,
-        }
-        .serialized();
-
-        state.mutable_table.insert(ikey, value.to_vec()).await;
+        batch.iter()?.apply(&state.mutable_table).await?;
 
         // TODO: Dedup this logic with above.
         let should_compact = state.mutable_table.size() >= self.shared.options.write_buffer_size
@@ -912,12 +919,23 @@ impl EmbeddedDB {
 
         drop(state);
 
-        if should_compact {
+        if should_compact && !self.shared.options.manual_compactions_only {
             let _ = self.compaction_notifier.try_send(());
         }
 
         Ok(())
     }
 
-    // pub async fn delete(&self, key: &[u8]) -> Result<()> {}
+    pub async fn set(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        let mut batch = WriteBatch::new();
+        batch.put(key, value);
+
+        self.write(&mut batch).await
+    }
+
+    pub async fn delete(&self, key: &[u8]) -> Result<()> {
+        let mut batch = WriteBatch::new();
+        batch.delete(key);
+        self.write(&mut batch).await
+    }
 }

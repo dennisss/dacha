@@ -23,6 +23,8 @@ pub struct HIDDevice {
 
     // Optional interrupt used to send out Output reports.
     out_endpoint: Option<u8>,
+
+    reports: Vec<Report>,
 }
 
 impl HIDDevice {
@@ -107,6 +109,8 @@ impl HIDDevice {
             parse_items(&report_desc_buffer)?
         };
 
+        let reports = parse_reports(&report_items)?;
+
         let mut report_ids = HashSet::new();
 
         // TODO: Verify that report ids are only 1 byte in length.
@@ -169,11 +173,16 @@ impl HIDDevice {
             iface,
             in_endpoint,
             out_endpoint,
+            reports,
         })
     }
 
     pub fn device(&self) -> &Device {
         &self.device
+    }
+
+    pub fn reports(&self) -> &[Report] {
+        &self.reports
     }
 
     pub async fn set_report(
