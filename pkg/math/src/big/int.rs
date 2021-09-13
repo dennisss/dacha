@@ -136,8 +136,8 @@ impl BigInt {
         }
 
         // TODO: This assumes we are on a 64-bit system
-        let mut v = val.get(0).cloned().unwrap_or(0) as usize;
-        v |= (val.get(1).cloned().unwrap_or(0) as usize) << 32;
+        let mut v = val.get(0).cloned().unwrap_or(0) as u64;
+        v |= (val.get(1).cloned().unwrap_or(0) as u64) << 32;
         Ok(v as isize)
     }
 

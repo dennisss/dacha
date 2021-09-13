@@ -4,28 +4,14 @@ Raspberry Pi 4:
 
 Code examples:
 - https://elinux.org/RPi_GPIO_Code_Samples#Direct_register_access
-
-Accessing peripheral address using bcm_host_get_peripheral_address():
-https://www.raspberrypi.org/documentation/hardware/raspberrypi/peripheral_addresses.md
-
 -
 */
 
-use std::ffi::CStr;
+use std::sync::Arc;
 
 use common::errors::*;
-use libc::c_void;
 
-use crate::memory::MemoryBlock;
-
-// NOTE: 0x7eXXXXXX virtual addresses map to 0x20XXXXXX
-
-// TODO: Can we use /dev/gpiomem for this?
-
-// Highest 32-bit GPIO register is at offset 0xF0
-// TODO: Eventually change this at runtime depending on the CPU used.
-const GPIO_REGISTER_BASE: u32 = 0xFE200000;
-const GPIO_REGISTER_BLOCK_SIZE: usize = 244;
+use crate::memory::{MemoryBlock, GPIO_PERIPHERAL_OFFSET, GPIO_PERIPHERAL_SIZE};
 
 const NUM_GPIO_PINS: usize = 58;
 
@@ -38,30 +24,30 @@ const REGISTER_SIZE: usize = std::mem::size_of::<u32>();
 // }
 
 pub struct GPIO {
-    mem: MemoryBlock,
+    mem: Arc<MemoryBlock>,
 }
 
 impl GPIO {
     pub fn open() -> Result<Self> {
-        let mem = MemoryBlock::open(GPIO_REGISTER_BASE, GPIO_REGISTER_BLOCK_SIZE)?;
-        Ok(Self { mem })
+        let mem = MemoryBlock::open_peripheral(GPIO_PERIPHERAL_OFFSET, GPIO_PERIPHERAL_SIZE)?;
+        Ok(Self { mem: Arc::new(mem) })
     }
 
     pub fn pin(&self, number: usize) -> GPIOPin {
         assert!(number < NUM_GPIO_PINS);
         GPIOPin {
-            peripheral: self,
+            mem: self.mem.clone(),
             number,
         }
     }
 }
 
-pub struct GPIOPin<'a> {
-    peripheral: &'a GPIO,
+pub struct GPIOPin {
+    mem: Arc<MemoryBlock>,
     number: usize,
 }
 
-impl<'a> GPIOPin<'a> {
+impl GPIOPin {
     pub fn set_mode(&self, mode: Mode) -> &Self {
         // Byte offset of the GPFSELn register.
         // GPFSEL0 is at offset 0 and there are 10 pins per register.
@@ -73,9 +59,7 @@ impl<'a> GPIOPin<'a> {
         let mask = !(0b111 << bit_offset);
         let bits = mode.to_value() << bit_offset;
 
-        self.peripheral
-            .mem
-            .modify_register(offset, |v| (v & mask) | bits);
+        self.mem.modify_register(offset, |v| (v & mask) | bits);
 
         self
     }
@@ -84,7 +68,7 @@ impl<'a> GPIOPin<'a> {
         let offset = (self.number / 10) * REGISTER_SIZE;
         let bit_offset = (self.number % 10) * 3;
 
-        let r = self.peripheral.mem.read_register(offset);
+        let r = self.mem.read_register(offset);
         let bits = (r >> bit_offset) & 0b111;
         Mode::from_value(bits).unwrap()
     }
@@ -97,7 +81,7 @@ impl<'a> GPIOPin<'a> {
         let bit_offset = self.number % 32;
 
         // NOTE: Writes of 0-bits don't do anything to the other pins.
-        self.peripheral.mem.write_register(offset, 1 << bit_offset);
+        self.mem.write_register(offset, 1 << bit_offset);
 
         self
     }
@@ -109,7 +93,7 @@ impl<'a> GPIOPin<'a> {
 
         let bit_offset = self.number % 32;
 
-        let reg = self.peripheral.mem.read_register(offset);
+        let reg = self.mem.read_register(offset);
 
         ((reg >> bit_offset) & 1) != 0
     }
@@ -125,9 +109,7 @@ impl<'a> GPIOPin<'a> {
         let mask = !(0b11 << bit_offset);
         let bits = resistor.to_value() << bit_offset;
 
-        self.peripheral
-            .mem
-            .modify_register(offset, |v| (v & mask) | bits);
+        self.mem.modify_register(offset, |v| (v & mask) | bits);
 
         self
     }
@@ -138,7 +120,7 @@ impl<'a> GPIOPin<'a> {
 
         let bit_offset = (self.number % 16) * 2;
 
-        let reg = self.peripheral.mem.read_register(offset);
+        let reg = self.mem.read_register(offset);
 
         let bits = (reg >> bit_offset) & 0b11;
 

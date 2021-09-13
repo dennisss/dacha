@@ -84,7 +84,7 @@ async fn run_start() -> Result<()> {
 
         let root_dir = common::project_dir().join("target/debug");
 
-        let options = compression::tar::AppendFileOption {
+        let options = compression::tar::AppendFileOptions {
             mask: compression::tar::FileMetadataMask {},
             root_dir: root_dir.clone(),
         };

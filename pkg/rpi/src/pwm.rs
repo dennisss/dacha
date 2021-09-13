@@ -33,7 +33,7 @@ Info on making custom overlays:
 use common::errors::*;
 
 use crate::gpio::*;
-use crate::memory::MemoryBlock;
+use crate::memory::{MemoryBlock, PWM_PERIPHERAL_OFFSET};
 
 struct PWMPinSpec {
     number: usize,
@@ -57,7 +57,7 @@ pub struct PWM {
 impl PWM {
     pub fn open() -> Result<Self> {
         // TODO: Automatically apply the FExxxxxx part
-        let mem = MemoryBlock::open(0xFE20c000, 40)?;
+        let mem = MemoryBlock::open_peripheral(PWM_PERIPHERAL_OFFSET, 40)?;
 
         let gpio = GPIO::open()?;
 

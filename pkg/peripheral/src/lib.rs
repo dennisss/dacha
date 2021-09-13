@@ -16,3 +16,4 @@ pub mod bmp388;
 pub mod ds3231;
 pub mod flash;
 pub mod sgp30;
+pub mod tft;

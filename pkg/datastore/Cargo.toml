@@ -1,13 +1,11 @@
 [package]
-name = "peripheral"
+name = "datastore"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
+http = { path = "../http" }
 parsing = { path = "../parsing" }
-rpi = { path = "../rpi" }
-nix = "0.21.0"
-libc = "0.2.97"
-lazy_static = "1.4.0"
+sstable = { path = "../sstable" }

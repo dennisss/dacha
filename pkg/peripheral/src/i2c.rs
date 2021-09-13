@@ -6,6 +6,7 @@ use std::{
 use common::errors::*;
 
 /*
+TODO: Use async files, but we should ensure that they aren't buffering the reads/writes.
 
 https://www.kernel.org/doc/html/v5.5/i2c/dev-interface.html
 
@@ -30,6 +31,8 @@ impl I2CDevice {
             .read(true)
             .write(true)
             .open(path)?;
+
+        // TODO: Should be more specific about the frequency.
 
         let r = unsafe { libc::ioctl(file.as_raw_fd(), 0x0701 as libc::c_ulong, 0) };
         if r != 0 {

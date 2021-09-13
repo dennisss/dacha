@@ -42,7 +42,11 @@ members = [
 	"pkg/usb",
 	"pkg/container",
 	"pkg/dymo",
-	"pkg/blinkstick"
+	"pkg/blinkstick",
+	"pkg/datastore",
+	"pkg/sensor_monitor",
+	"pkg/usb_device",
+	"pkg/builder"
 ]
 
 [profile.dev]

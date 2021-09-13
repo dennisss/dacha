@@ -225,14 +225,14 @@ impl Hasher for CRC32CHasher {
         4
     }
 
+    #[cfg(target_feature = "sse4.2")]
     fn update(&mut self, data: &[u8]) {
-        if cfg!(target_feature = "sse4.2") {
-            self.update_sse42(data);
-        // } else if cfg!(all(target_arch = "arm", target_feature = "crc32")) {
-        //     self.update_arm_crc32(data)
-        } else {
-            self.update_lut(data);
-        }
+        self.update_sse42(data);
+    }
+
+    #[cfg(not(target_feature = "sse4.2"))]
+    fn update(&mut self, data: &[u8]) {
+        self.update_lut(data);
     }
 
     // TODO: Ideally find a way to directly return the inner.

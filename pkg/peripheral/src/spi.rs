@@ -108,8 +108,7 @@ impl SPIDevice {
 
         let mode = 0;
         let bits_per_word = 8;
-        let speed = 8000000; // 8Mhz
-
+        let speed = 1000000; // 1MHz (default)
         let fd = file.as_raw_fd();
         unsafe { linux::spi_write_mode(fd, &mode) }?;
         unsafe { linux::spi_write_max_speed_hz(fd, &speed) }?;
@@ -120,6 +119,13 @@ impl SPIDevice {
             bits_per_word,
             speed_hz: speed,
         })
+    }
+
+    pub fn set_speed_hz(&mut self, speed_hz: u32) -> Result<()> {
+        let fd = self.file.as_raw_fd();
+        unsafe { linux::spi_write_max_speed_hz(fd, &speed_hz) }?;
+        self.speed_hz = speed_hz;
+        Ok(())
     }
 }
 

@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+
+message RustBinary {
+    string name = 1;
+    repeated string deps = 2;
+
+    string profile = 3;
+    string target = 4;
+}
+
+message FileGroup {
+    string name = 1;
+    repeated string deps = 2;
+
+    repeated string srcs = 3;
+}
+
+message Bundle {
+    string name = 1;
+    repeated string deps = 2;
+
+    repeated string absolute_srcs = 3;
+}
+
+message Webpack {
+    string name = 1;
+    repeated string deps = 2;
+}
+
+message BuildFile {
+    repeated RustBinary rust_binary = 1;
+    repeated FileGroup file_group = 2;
+    repeated Bundle bundle = 3;
+    repeated Webpack webpack = 4;
+}

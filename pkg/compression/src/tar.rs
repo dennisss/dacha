@@ -4,12 +4,12 @@ use std::os::unix::fs::PermissionsExt;
 /// See specification in:
 /// https://en.wikipedia.org/wiki/Tar_(computing)
 /// https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html#tag_20_92_13_06
-use std::path::{Path, PathBuf};
 use std::usize;
 
 use common::async_std::fs::{File, OpenOptions};
 use common::async_std::io::prelude::{SeekExt, WriteExt};
 use common::async_std::io::SeekFrom;
+use common::async_std::path::{Path, PathBuf};
 use common::async_std::prelude::StreamExt;
 use common::errors::*;
 use common::io::Readable;
@@ -99,7 +99,7 @@ pub struct USTarHeaderExtension {
     pub file_name_prefix: String,
 }
 
-pub struct AppendFileOption {
+pub struct AppendFileOptions {
     /// Root directory to use for the new Tar archive. All file names stored in
     /// the archive will be relative to this directory.
     pub root_dir: PathBuf,
@@ -596,7 +596,7 @@ impl Writer {
         Ok(())
     }
 
-    pub async fn append_file(&mut self, path: &Path, options: &AppendFileOption) -> Result<()> {
+    pub async fn append_file(&mut self, path: &Path, options: &AppendFileOptions) -> Result<()> {
         let mut pending_paths: Vec<PathBuf> = vec![];
         pending_paths.push(path.to_owned());
 
@@ -612,7 +612,7 @@ impl Writer {
     async fn append_single_file(
         &mut self,
         path: &Path,
-        options: &AppendFileOption,
+        options: &AppendFileOptions,
         pending_paths: &mut Vec<PathBuf>,
     ) -> Result<()> {
         let path = common::async_std::path::Path::new(path);

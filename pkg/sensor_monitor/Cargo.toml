@@ -1,0 +1,20 @@
+[package]
+name = "sensor_monitor"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+peripheral = { path = "../peripheral" }
+http = { path = "../http" }
+parsing = { path = "../parsing" }
+sstable = { path = "../sstable" }
+crypto = { path = "../crypto" }
+datastore = { path = "../datastore" }
+protobuf = { path = "../protobuf" }
+protobuf_json = { path = "../protobuf_json" }
+macros = { path = "../macros" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../protobuf_compiler" }

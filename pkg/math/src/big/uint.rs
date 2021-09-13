@@ -368,6 +368,7 @@ impl PartialOrd for BigUint {
     }
 }
 
+#[cfg(target_pointer_width = "64")]
 impl From<usize> for BigUint {
     fn from(mut v: usize) -> Self {
         let mut out = Self::zero();
@@ -375,6 +376,15 @@ impl From<usize> for BigUint {
             out.value.push(v as u32);
             v = v >> 32;
         }
+        out
+    }
+}
+
+#[cfg(target_pointer_width = "32")]
+impl From<usize> for BigUint {
+    fn from(mut v: usize) -> Self {
+        let mut out = Self::zero();
+        out.value.push(v as u32);
         out
     }
 }

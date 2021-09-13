@@ -337,6 +337,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "builder"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "compression",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -618,6 +629,16 @@ name = "custom_derive"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef8ae57c4978a2acd8b869ce6b9ca1dfe817bff704c220209fdef2c0b75a01b9"
+
+[[package]]
+name = "datastore"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "http",
+ "parsing",
+ "sstable",
+]
 
 [[package]]
 name = "diesel"
@@ -1549,6 +1570,8 @@ dependencies = [
  "lazy_static",
  "libc",
  "nix 0.21.0",
+ "parsing",
+ "rpi",
 ]
 
 [[package]]
@@ -2039,6 +2062,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
+name = "sensor_monitor"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "crypto",
+ "datastore",
+ "http",
+ "macros",
+ "parsing",
+ "peripheral",
+ "protobuf",
+ "protobuf_compiler",
+ "protobuf_json",
+ "sstable",
+]
+
+[[package]]
 name = "shlex"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2341,6 +2381,14 @@ dependencies = [
  "failure",
  "libc",
  "nix 0.21.0",
+]
+
+[[package]]
+name = "usb_device"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "usb",
 ]
 
 [[package]]

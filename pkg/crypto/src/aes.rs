@@ -124,36 +124,29 @@ impl AESBlockCipher {
     /// Creates a new cipher instance given a key of supported length.
     /// This will precompute all of the round keys for the key.
     pub fn create(key: &[u8]) -> Result<AESBlockCipher> {
-        // let round_keys_enc = Self::round_keys_generic(key);
-
-        let round_keys_enc = if key.len() == 16 {
-            Self::aes128_round_keys(key)
-        } else if key.len() == 32 {
-            Self::aes256_round_keys(key)
-        } else {
-            return Err(err_msg("Unsupported key length"));
-        };
-
-        let round_keys_dec = {
-            let mut rks = vec![];
-            rks.push(round_keys_enc[round_keys_enc.len() - 1]);
-            let mut buf = [0u8; AES_BLOCK_SIZE];
-            for i in 1..(round_keys_enc.len() - 1) {
-                let k = unsafe {
-                    _mm_aesimc_si128(to_m128i(&round_keys_enc[round_keys_enc.len() - i - 1]))
-                };
-                from_m128i(k, &mut buf);
-
-                rks.push(buf.clone());
-            }
-            rks.push(round_keys_enc[0]);
-            rks
-        };
+        let round_keys_enc = Self::round_keys(key)?;
+        let round_keys_dec = Self::decryption_round_keys(&round_keys_enc);
 
         Ok(Self {
             round_keys_enc,
             round_keys_dec,
         })
+    }
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "aes"))]
+    fn round_keys(key: &[u8]) -> Result<Vec<RoundKey>> {
+        if key.len() == 16 {
+            Ok(Self::aes128_round_keys(key))
+        } else if key.len() == 32 {
+            Ok(Self::aes256_round_keys(key))
+        } else {
+            Self::round_keys_generic(key)
+        }
+    }
+
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "aes")))]
+    fn round_keys(key: &[u8]) -> Result<Vec<RoundKey>> {
+        Self::round_keys_generic(key)
     }
 
     /// Round keys implementation which can run on any CPU platform, but doesn't
@@ -269,6 +262,29 @@ impl AESBlockCipher {
         out
     }
 
+    #[cfg(all(target_arch = "x86_64", target_feature = "aes"))]
+    fn decryption_round_keys(round_keys_enc: &[RoundKey]) -> Vec<RoundKey> {
+        let mut rks = vec![];
+        rks.push(round_keys_enc[round_keys_enc.len() - 1]);
+        let mut buf = [0u8; AES_BLOCK_SIZE];
+        for i in 1..(round_keys_enc.len() - 1) {
+            let k = unsafe {
+                _mm_aesimc_si128(to_m128i(&round_keys_enc[round_keys_enc.len() - i - 1]))
+            };
+            from_m128i(k, &mut buf);
+
+            rks.push(buf.clone());
+        }
+        rks.push(round_keys_enc[0]);
+        rks
+    }
+
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "aes")))]
+    fn decryption_round_keys(round_keys_enc: &[RoundKey]) -> Vec<RoundKey> {
+        // Not used in generic implementation.
+        vec![]
+    }
+
     fn encrypt_block_generic(&self, block: &[u8], out: &mut [u8]) {
         assert_eq!(block.len(), self.block_size());
         assert_eq!(block.len(), out.len());
@@ -364,20 +380,24 @@ impl BlockCipher for AESBlockCipher {
         AES_BLOCK_SIZE
     }
 
+    #[cfg(all(target_arch = "x86_64", target_feature = "aes"))]
     fn encrypt_block(&self, block: &[u8], out: &mut [u8]) {
-        if cfg!(all(target_arch = "x86_64", target_feature = "aes")) {
-            self.encrypt_block_aesni(block, out);
-        } else {
-            self.encrypt_block_generic(block, out);
-        }
+        self.encrypt_block_aesni(block, out);
     }
 
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "aes")))]
+    fn encrypt_block(&self, block: &[u8], out: &mut [u8]) {
+        self.encrypt_block_generic(block, out);
+    }
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "aes"))]
     fn decrypt_block(&self, block: &[u8], out: &mut [u8]) {
-        if cfg!(all(target_arch = "x86_64", target_feature = "aes")) {
-            self.decrypt_block_aesni(block, out);
-        } else {
-            self.decrypt_block_generic(block, out);
-        }
+        self.decrypt_block_aesni(block, out);
+    }
+
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "aes")))]
+    fn decrypt_block(&self, block: &[u8], out: &mut [u8]) {
+        self.decrypt_block_generic(block, out);
     }
 }
 
