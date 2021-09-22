@@ -28,21 +28,6 @@ use sstable::{db::SnapshotIterator, iterable::Iterable, EmbeddedDB, EmbeddedDBOp
 
 use crate::proto::data::*;
 
-/*
-
-DACHA_BUNDLE_ROOT=/volumes/dacha/
-
-
-
-
-da build //pkg/sensor_monitor:bundle
-
-da push //pkg/sensor_monitor:
-
-pkg/build/src/
-
-*/
-
 struct MetricValue {
     metric_name: String,
     /// Measurement time in micros since epoch.

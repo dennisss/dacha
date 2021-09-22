@@ -127,6 +127,12 @@ impl SPIDevice {
         self.speed_hz = speed_hz;
         Ok(())
     }
+
+    pub fn set_mode(&mut self, mode: u8) -> Result<()> {
+        let fd = self.file.as_raw_fd();
+        unsafe { linux::spi_write_mode(fd, &mode) }?;
+        Ok(())
+    }
 }
 
 impl SPI for SPIDevice {

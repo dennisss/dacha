@@ -5,8 +5,6 @@ How bundle will work:
 - Will be moved into build/pkg/sensor_monitor/bundle.tar
     - Mapped to 'pkg/sensor_monitor/bundle.tar' if used in the future
 
-build-out/
-
 */
 
 extern crate common;
@@ -22,8 +20,9 @@ use std::pin::Pin;
 use std::process::{Command, Stdio};
 
 use common::async_std::fs;
+use common::async_std::os::unix::fs::symlink;
 use common::async_std::path::{Path, PathBuf};
-use common::errors::*;
+use common::{errors::*, project_dir};
 use compression::tar::{AppendFileOptions, FileMetadataMask};
 
 use crate::proto::config::*;
@@ -137,7 +136,7 @@ struct Builder {
 }
 
 impl Builder {
-    async fn build_target(&mut self, target: &str, current_dir: &Path) -> Result<()> {
+    async fn build_target(&mut self, target: &str, current_dir: &Path) -> Result<BuildResult> {
         let target = parse_target_path(target)?;
         let target_dir = {
             if target.absolute {
@@ -147,12 +146,11 @@ impl Builder {
             }
         };
 
-        println!("TGT DIR: '{}'", target.directory);
-
         let target_key = format!("{}:{}", target_dir.to_str().unwrap(), target.name);
         if !self.built_targets.insert(target_key) {
             // Target was already built.
-            return Ok(());
+            // TODO: Look up the build result at the very end instead of returning it.
+            return Ok(BuildResult::default());
         }
 
         // TODO: Here we should acquire a lock / check if it has already been built.
@@ -189,17 +187,17 @@ impl Builder {
             self.build_target_recurse(dep.as_str(), &target_dir).await?;
         }
 
-        self.build_single_target(spec, &target_dir).await?;
-
-        Ok(())
+        self.build_single_target(spec, &target_dir).await
     }
 
     async fn build_single_target(
         &mut self,
         spec: &BuildTarget<'_>,
         target_dir: &Path,
-    ) -> Result<()> {
+    ) -> Result<BuildResult> {
         // TODO: We need to be diligent about removing old files if a target is rebuilt.
+
+        let mut result = BuildResult::default();
 
         match &spec.raw {
             BuildTargetRaw::RustBinary(spec) => {
@@ -209,24 +207,64 @@ impl Builder {
 
                 let bin_name = if spec.name() == "main" {
                     package_name
+                } else if !spec.bin().is_empty() {
+                    spec.bin()
                 } else {
                     spec.name()
                 };
 
-                let mut child = Command::new("/home/dennis/.cargo/bin/cargo")
-                    .arg("build")
+                let mut cmd = Command::new(if spec.use_cross() { "cross" } else { "cargo" });
+
+                cmd.arg("build")
                     .arg("--package")
                     .arg(package_name)
                     .arg("--bin")
                     .arg(bin_name)
                     .stdout(Stdio::inherit())
-                    .stderr(Stdio::inherit())
-                    .spawn()?;
+                    .stderr(Stdio::inherit());
+
+                let mut effective_profile = "debug";
+                match spec.profile() {
+                    "" => {}
+                    "release" => {
+                        cmd.arg("--release");
+                        effective_profile = "release";
+                    }
+                    profile @ _ => {
+                        return Err(format_err!("Unsupported rust profile: {}", profile))
+                    }
+                };
+
+                if !spec.target().is_empty() {
+                    cmd.arg("--target");
+                    cmd.arg(spec.target());
+                }
+
+                let mut child = cmd.spawn()?;
 
                 let status = child.wait()?;
                 if !status.success() {
                     return Err(format_err!("cargo failed with status: {:?}", status));
                 }
+
+                let source_path = project_dir()
+                    .join("target")
+                    .join(spec.target())
+                    .join(effective_profile)
+                    .join(bin_name);
+
+                let out_path = self
+                    .output_dir
+                    .join(target_dir.strip_prefix(&self.workspace_dir).unwrap())
+                    .join(spec.name());
+
+                fs::create_dir_all(out_path.parent().unwrap()).await?;
+
+                if out_path.exists().await {
+                    fs::remove_file(&out_path).await?;
+                }
+
+                symlink(source_path, out_path).await?;
             }
             BuildTargetRaw::FileGroup(_) => {
                 // Nothing to do. Maybe just verify that all the files exist?
@@ -239,7 +277,7 @@ impl Builder {
 
                 fs::create_dir_all(out_file.parent().unwrap()).await?;
 
-                let mut out = compression::tar::Writer::open(out_file).await?;
+                let mut out = compression::tar::Writer::open(&out_file).await?;
 
                 let options = AppendFileOptions {
                     root_dir: self.workspace_dir.clone(),
@@ -254,7 +292,7 @@ impl Builder {
 
                 out.finish().await?;
 
-                // Take all of the sources and put them into a tar file
+                result.output_files.push(out_file);
             }
             BuildTargetRaw::Webpack(spec) => {
                 // TODO: Verify at most one webpack target is present per build directory.
@@ -275,25 +313,31 @@ impl Builder {
             }
         }
 
-        Ok(())
+        Ok(result)
     }
 
     fn build_target_recurse<'a>(
         &'a mut self,
         target: &'a str,
         current_dir: &'a Path,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<BuildResult>> + 'a>> {
         Box::pin(self.build_target(target, current_dir))
     }
 }
 
-async fn run_build(target: &str) -> Result<()> {
+#[derive(Default)]
+pub struct BuildResult {
+    /// Paths to
+    pub output_files: Vec<PathBuf>,
+}
+
+pub async fn run_build(target: &str) -> Result<BuildResult> {
     let workspace_dir = PathBuf::from(common::project_dir());
 
     let mut builder = Builder {
         built_targets: HashSet::new(),
         workspace_dir: workspace_dir.clone(),
-        output_dir: workspace_dir.join("build-out"),
+        output_dir: workspace_dir.join("built"),
     };
 
     let current_dir = PathBuf::from(std::env::current_dir()?);
@@ -301,9 +345,7 @@ async fn run_build(target: &str) -> Result<()> {
         return Err(err_msg("Must run the builder from inside a workspace"));
     }
 
-    builder.build_target(target, &current_dir).await?;
-
-    Ok(())
+    builder.build_target(target, &current_dir).await
 }
 
 pub fn run() -> Result<()> {

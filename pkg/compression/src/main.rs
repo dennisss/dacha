@@ -3,8 +3,8 @@ extern crate compression;
 
 use std::fs::File;
 use std::io::{Read, Seek};
-use std::path::{Path, PathBuf};
 
+use common::async_std::path::{Path, PathBuf};
 use common::bits::*;
 use common::errors::*;
 use compression::deflate::*;

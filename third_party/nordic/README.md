@@ -1,1 +1,0 @@
-SVD downloaded from https://github.com/NordicSemiconductor/nrfx/blob/master/mdk/nrf52840.svd

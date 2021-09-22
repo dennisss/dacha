@@ -29,7 +29,6 @@ message ContainerProcess {
     // on the container process.
     bool terminal = 3;
 
-
     // TODO: Support adjusting the umask
     message User {
         uint32 uid = 1;
@@ -41,9 +40,14 @@ message ContainerProcess {
 
 message ContainerMount {
     string destination = 1;
+    
+    // Type can be 'symlink'
     string type = 2;
     string source = 3;
     repeated string options = 4;
+
+    // If true, then we will skip this mount if the 'source' doesn't exist.
+    bool optional = 5;
 }
 
 

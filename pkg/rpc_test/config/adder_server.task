@@ -1,0 +1,24 @@
+
+name: "adder_server.0"
+
+args: [
+    "/volumes/bundle/built/pkg/rpc_test/adder_server.armv7",
+    "--port=rpc",
+    "--request_log=/volumes/data/requests"
+]
+
+ports {
+    name: "rpc"
+    number: 30001
+}
+
+volumes: [
+    {
+        name: "bundle"
+        build_target: "//pkg/rpc_test:adder_server_bundle"
+    },
+    {
+        name: "data"
+        persistent_name: "adder_data"
+    }
+]

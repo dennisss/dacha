@@ -28,6 +28,7 @@ extern crate rpc;
 extern crate sstable;
 #[macro_use]
 extern crate async_std;
+extern crate datastore;
 
 mod capabilities;
 mod node;

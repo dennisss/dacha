@@ -34,11 +34,10 @@
 // maximum log size, we could utilize that size) At the least, we can perform
 // heuristics to preallocate for the current append at the least
 
-use std::path::Path;
-
 use common::async_std::fs::{File, OpenOptions};
 use common::async_std::io::prelude::{ReadExt, SeekExt, WriteExt};
 use common::async_std::io::{Read, Seek, SeekFrom, Write};
+use common::async_std::path::Path;
 use common::errors::*;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;

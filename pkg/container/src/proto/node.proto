@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+import "pkg/container/src/proto/config.proto";
+
+message NodeConfig {
+    // Path to a directory into which we will store all container related data.
+    string data_dir = 1;
+
+    // Port used for the main node management service.
+    int32 service_port = 2;
+
+    // Base template used to construct task containers.
+    ContainerConfig container_template = 3;
+    
+    // Maximum amount of time in seconds after a container is terminated with a signal before we
+    // forcefully kill it.
+    uint32 graceful_shutdown_timeout_secs = 4;
+}

@@ -299,7 +299,8 @@ impl Server {
             Shutdown,
         }
 
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+        // Bind all all interfaces.
+        let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
 
         let mut incoming = listener.incoming();
         loop {

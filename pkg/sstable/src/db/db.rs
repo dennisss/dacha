@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
-use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
@@ -9,6 +8,7 @@ use common::async_std;
 use common::async_std::channel;
 use common::async_std::channel::TrySendError;
 use common::async_std::fs::{File, OpenOptions};
+use common::async_std::path::{Path, PathBuf};
 use common::async_std::prelude::*;
 use common::async_std::sync::{Mutex, RwLock};
 use common::bytes::Bytes;
@@ -65,6 +65,11 @@ NOTE: Also check when restoring the log if the memtable can be immediately flush
 /*
 Challenges: Can't delete an old file until it is deleted.
 
+*/
+
+/*
+Abstracting away the log and internla key:
+- Will still use a manifest for tracking files (but log numbers will always be zero)
 */
 
 struct CompactionReceiver {

@@ -5,11 +5,10 @@ extern crate sstable;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::num;
-use std::path::Path;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use common::async_std::path::{Path, PathBuf};
 use common::async_std::prelude::*;
 use common::async_std::task;
 use common::bytes::Bytes;

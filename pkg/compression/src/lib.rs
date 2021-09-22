@@ -1,4 +1,4 @@
-#![feature(box_patterns, int_log)]
+#![feature(box_patterns, int_log, is_symlink)]
 
 #[macro_use]
 extern crate common;

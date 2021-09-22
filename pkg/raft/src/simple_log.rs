@@ -1,6 +1,6 @@
-use std::path::Path;
 use std::sync::Arc;
 
+use common::async_std::path::Path;
 use common::async_std::sync::Mutex;
 use common::errors::*;
 use protobuf::Message;

@@ -342,7 +342,11 @@ impl Device {
                 endpoint,
                 status: 0,
                 flags,
-                buffer: unsafe { std::mem::transmute::<&u8, _>(&buffer[0]) },
+                buffer: if !buffer.is_empty() {
+                    unsafe { std::mem::transmute::<&u8, _>(&buffer[0]) }
+                } else {
+                    0
+                },
                 buffer_length: buffer.len() as libc::c_int,
                 actual_length: 0,
                 start_frame: 0,

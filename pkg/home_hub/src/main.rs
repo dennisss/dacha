@@ -29,7 +29,7 @@ pub enum Event {
 }
 
 async fn run_stream_deck() -> Result<()> {
-    let mut deck = StreamDeckDevice::open().await?;
+    let deck = StreamDeckDevice::open().await?;
 
     let computer_active =
         common::async_std::fs::read(project_path!("pkg/home_hub/icons/computer-active.jpg"))

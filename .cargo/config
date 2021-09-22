@@ -6,3 +6,6 @@
 
 [target.x86_64-unknown-linux-gnu]
 rustflags="-C target-cpu=native -A dead_code"
+
+[target.thumbv6m-none-eabi]
+rustflags="-C link-arg=-Tpkg/rp2040/link.x -C link-arg=--nmagic"

@@ -16,6 +16,9 @@ mod key_value;
 mod mongodb;
 mod redis;
 
+use std::sync::Arc;
+
+use common::async_std::path::{Path, PathBuf};
 use common::errors::*;
 use common::errors::*;
 use common::fs::DirLock;
@@ -27,8 +30,6 @@ use raft::proto::consensus::LogIndex;
 use raft::proto::key_value::*;
 use raft::rpc::Client;
 use raft::server::{Server, ServerInitialState};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use key_value::*;
 use redis::resp::*;

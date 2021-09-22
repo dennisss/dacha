@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::{Cursor, Read, Seek, Write};
-use std::path::{Path, PathBuf};
 
+use common::async_std::path::{Path, PathBuf};
 use common::block_size_remainder;
 use common::errors::*;
 use common::fs::allocate_soft::*;

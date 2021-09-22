@@ -19,7 +19,12 @@ pub const USBDEVFS_URB_SHORT_NOT_OK: libc::c_uint = 0x01;
 pub const USBDEVFS_URB_ISO_ASAP: libc::c_uint = 0x02;
 pub const USBDEVFS_URB_BULK_CONTINUATION: libc::c_uint = 0x04;
 pub const USBDEVFS_URB_NO_FSBR: libc::c_uint = 0x20;
+
+/// If set in the URB flags, when sending a transfer that is a multiple of the
+/// max packet length, we will append a zero length packet to the transfer. This
+/// only really matters for bulk out transfers.
 pub const USBDEVFS_URB_ZERO_PACKET: libc::c_uint = 0x40;
+
 pub const USBDEVFS_URB_NO_INTERRUPT: libc::c_uint = 0x80;
 
 pub const USBDEVFS_URB_TYPE_ISO: u8 = 0;
@@ -42,15 +47,14 @@ pub struct usbdevfs_urb {
     pub endpoint: libc::c_uchar,
     pub status: libc::c_int,
     pub flags: libc::c_uint,
-    pub buffer: u64, // *const (),
+    pub buffer: libc::uintptr_t,
     pub buffer_length: libc::c_int,
     pub actual_length: libc::c_int,
     pub start_frame: libc::c_int,
     pub stream_id: libc::c_uint, // union with number_of_packets
     pub error_count: libc::c_int,
     pub signr: libc::c_uint,
-
-    pub usrcontext: u64, // *const ()
+    pub usrcontext: libc::uintptr_t,
 }
 
 #[repr(C)]
@@ -63,7 +67,7 @@ pub struct usbdevfs_getdriver {
 pub struct usbdevfs_ioctl {
     pub ifno: libc::c_int,
     pub ioctl_code: libc::c_int,
-    pub data: u64, // *const ()
+    pub data: libc::uintptr_t,
 }
 
 ioctl_write_ptr!(

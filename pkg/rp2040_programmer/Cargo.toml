@@ -1,0 +1,11 @@
+[package]
+name = "rp2040_programmer"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+usb = { path = "../usb" }
+crypto = { path = "../crypto" }
+parsing = { path = "../parsing" }

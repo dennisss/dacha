@@ -5,6 +5,7 @@ extern crate protobuf;
 extern crate rpc;
 #[macro_use]
 extern crate macros;
+extern crate builder;
 
 use std::sync::Arc;
 
@@ -15,7 +16,7 @@ use common::async_std::task;
 use common::errors::*;
 use common::failure::ResultExt;
 use common::futures::AsyncWriteExt;
-use container::{ContainerNodeStub, TaskSpec_Port, TaskSpec_Volume, WriteInputRequest};
+use container::{ContainerNodeStub, TaskSpec, TaskSpec_Port, TaskSpec_Volume, WriteInputRequest};
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
 use nix::{
@@ -25,16 +26,36 @@ use nix::{
 use protobuf::text::parse_text_proto;
 use rpc::ClientRequestContext;
 
+/*
+
+cluster_ctl apply //
+
+cluster_ctl start_task
+
+*/
+
 #[derive(Args)]
-enum Args {
+struct Args {
+    command: Command,
+    node: String,
+}
+
+#[derive(Args)]
+enum Command {
     #[arg(name = "list")]
     List,
 
-    #[arg(name = "start")]
-    Start,
+    #[arg(name = "start_task")]
+    Start(StartTaskCommand),
 
     #[arg(name = "logs")]
     Logs(LogsCommand),
+}
+
+#[derive(Args)]
+struct StartTaskCommand {
+    #[arg(positional)]
+    task_spec_path: String,
 }
 
 #[derive(Args)]
@@ -45,16 +66,16 @@ struct LogsCommand {
 
 async fn run() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
-    match args {
-        Args::List => run_list().await,
-        Args::Start => run_start().await,
-        Args::Logs(logs_command) => run_logs(logs_command).await,
+    match args.command {
+        Command::List => run_list(&args.node).await,
+        Command::Start(start_command) => run_start(&args.node, &start_command).await,
+        Command::Logs(logs_command) => run_logs(&args.node, logs_command).await,
     }
 }
 
-async fn new_stub() -> Result<ContainerNodeStub> {
+async fn new_stub(node_addr: &str) -> Result<ContainerNodeStub> {
     let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
-        &"http://127.0.0.1:8080".parse()?,
+        &format!("http://{}", node_addr).parse()?,
     )?)?);
 
     let stub = container::ContainerNodeStub::new(channel);
@@ -62,8 +83,8 @@ async fn new_stub() -> Result<ContainerNodeStub> {
     Ok(stub)
 }
 
-async fn run_list() -> Result<()> {
-    let stub = new_stub().await?;
+async fn run_list(node_addr: &str) -> Result<()> {
+    let stub = new_stub(node_addr).await?;
     let request_context = rpc::ClientRequestContext::default();
 
     let mut query_request = container::QueryRequest::default();
@@ -74,56 +95,62 @@ async fn run_list() -> Result<()> {
     Ok(())
 }
 
-async fn run_start() -> Result<()> {
-    let stub = Arc::new(new_stub().await?);
+async fn run_start(node_addr: &str, command: &StartTaskCommand) -> Result<()> {
+    let stub = Arc::new(new_stub(node_addr).await?);
     let request_context = rpc::ClientRequestContext::default();
 
-    let tmp_file = "/tmp/container_archive";
+    let mut task_spec = TaskSpec::default();
     {
-        let mut tar_writer = compression::tar::Writer::open(tmp_file).await?;
-
-        let root_dir = common::project_dir().join("target/debug");
-
-        let options = compression::tar::AppendFileOptions {
-            mask: compression::tar::FileMetadataMask {},
-            root_dir: root_dir.clone(),
-        };
-
-        tar_writer
-            .append_file(&root_dir.join("adder_server"), &options)
-            .await?;
-        tar_writer.finish().await?;
+        let data = fs::read_to_string(&command.task_spec_path).await?;
+        protobuf::text::parse_text_proto(&data, &mut task_spec)?;
     }
 
-    let mut data = fs::read(tmp_file).await?;
+    for volume in task_spec.volumes_mut() {
+        if let container::TaskSpec_VolumeSourceCase::BuildTarget(target) = volume.source_case() {
+            println!("Building volume target: {}", target);
 
-    let hash = {
-        let mut hasher = SHA256Hasher::default();
-        let hash = hasher.finish_with(&data);
-        common::hex::encode(hash)
-    };
-
-    println!("Uploading blob: {}", hash);
-
-    let mut blob_data = container::BlobData::default();
-    blob_data.set_id(hash);
-    blob_data.set_data(data);
-
-    let mut request = stub.UploadBlob(&request_context).await;
-    request.send(&blob_data).await;
-
-    // TOOD: Catch already exists errors.
-    if let Err(e) = request.finish().await {
-        let mut ignore_error = false;
-        if let Some(status) = e.downcast_ref::<rpc::Status>() {
-            if status.code == rpc::StatusCode::AlreadyExists {
-                println!("=> {}", status.message);
-                ignore_error = true;
+            let res = builder::run_build(target).await?;
+            if res.output_files.len() != 1 {
+                return Err(err_msg(
+                    "Expected exactly one output for volume build target",
+                ));
             }
-        }
 
-        if !ignore_error {
-            return Err(e);
+            let data = fs::read(&res.output_files[0]).await?;
+
+            let hash = {
+                let mut hasher = SHA256Hasher::default();
+                let hash = hasher.finish_with(&data);
+                common::hex::encode(hash)
+            };
+
+            println!("=> Upload Blob: {}", hash);
+
+            let mut blob_data = container::BlobData::default();
+            blob_data.set_id(hash);
+            blob_data.set_data(data);
+
+            let mut request = stub.UploadBlob(&request_context).await;
+            request.send(&blob_data).await;
+
+            // TOOD: Catch already exists errors.
+            if let Err(e) = request.finish().await {
+                let mut ignore_error = false;
+                if let Some(status) = e.downcast_ref::<rpc::Status>() {
+                    if status.code == rpc::StatusCode::AlreadyExists {
+                        println!("=> {}", status.message);
+                        ignore_error = true;
+                    }
+                }
+
+                if !ignore_error {
+                    return Err(e);
+                }
+            }
+
+            println!("Uploaded!");
+
+            volume.set_blob_id(blob_data.id());
         }
     }
 
@@ -139,33 +166,11 @@ async fn run_start() -> Result<()> {
     let mut terminal_mode = false;
 
     let mut start_request = container::StartTaskRequest::default();
+    start_request.set_task_spec(task_spec);
+
     // start_request.task_spec_mut().set_name("shell");
     // start_request.task_spec_mut().add_args("/bin/bash".into());
     // start_request.task_spec_mut().add_env("TERM=xterm-256color".into());
-
-    let mut port = TaskSpec_Port::default();
-    port.set_name("rpc");
-    port.set_number(30001);
-    start_request.task_spec_mut().add_ports(port);
-
-    start_request.task_spec_mut().set_name("adder_server");
-    start_request
-        .task_spec_mut()
-        .add_args("/volumes/main/adder_server".into());
-    start_request.task_spec_mut().add_args("--port=rpc".into());
-    start_request
-        .task_spec_mut()
-        .add_args("--request_log=/volumes/data/requests".into());
-
-    let mut main_volume = TaskSpec_Volume::default();
-    main_volume.set_name("main");
-    main_volume.set_blob_id(blob_data.id());
-    start_request.task_spec_mut().add_volumes(main_volume);
-
-    let mut adder_volume = TaskSpec_Volume::default();
-    adder_volume.set_name("data");
-    adder_volume.set_persistent_name("adder_data");
-    start_request.task_spec_mut().add_volumes(adder_volume);
 
     let start_response = stub
         .StartTask(&request_context, &start_request)
@@ -284,8 +289,8 @@ async fn start_terminal_input_task(
     }))
 }
 
-async fn run_logs(logs_command: LogsCommand) -> Result<()> {
-    let stub = new_stub().await?;
+async fn run_logs(node_addr: &str, logs_command: LogsCommand) -> Result<()> {
+    let stub = new_stub(node_addr).await?;
     let request_context = rpc::ClientRequestContext::default();
 
     let mut log_request = container::LogRequest::default();

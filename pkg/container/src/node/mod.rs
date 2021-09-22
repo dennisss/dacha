@@ -1,14 +1,18 @@
 mod backoff;
 pub mod main;
+mod shadow;
+mod tasks_table;
 
 use std::collections::HashMap;
 use std::fs::Permissions;
-use std::os::unix::prelude::PermissionsExt;
+use std::os::unix::prelude::{MetadataExt, PermissionsExt};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::time::Duration;
 
 use common::async_std::channel;
 use common::async_std::io::prelude::WriteExt;
+use common::async_std::path::{Path, PathBuf};
 use common::async_std::sync::Mutex;
 use common::errors::*;
 use common::task::ChildTask;
@@ -16,25 +20,15 @@ use crypto::hasher::Hasher;
 use nix::unistd::chown;
 use nix::unistd::Gid;
 use protobuf::text::parse_text_proto;
+use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
+use crate::node::shadow::*;
 use crate::proto::config::*;
 use crate::proto::log::*;
+use crate::proto::node::*;
 use crate::proto::service::*;
 use crate::proto::task::*;
 use crate::runtime::ContainerRuntime;
-
-/// Directory for storing data for uploaded blobs.
-///
-/// In this directory, the following files will be stored:
-/// - './{BLOB_ID}/raw' : Raw version of the blob as uploaded.
-/// - './{BLOB_ID}/extracted/' : Directory which contains all of the files
-/// - './{BLOB_ID}/metadata' : Present once the blob has been fully ingested.
-///   Currently this file is always empty.
-const BLOB_DATA_DIR: &'static str = "/opt/dacha/container/blob";
-
-const PERSISTENT_DIR: &'static str = "/opt/dacha/container/persistent";
-
-const GRACEFUL_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 struct Task {
     /// Spec that was used to start this task.
@@ -118,11 +112,36 @@ enum NodeEvent {
 }
 
 #[derive(Clone)]
+pub struct NodeContext {
+    /// All groups present on the system.
+    pub system_groups: HashMap<String, u32>,
+
+    /// All user ids which the node is allowed to impersonate.
+    pub sub_uids: Vec<IdRange>,
+
+    /// All group ids which the node is allowed to impersonate.
+    pub sub_gids: Vec<IdRange>,
+
+    /// User id range from which we will pull new user ids to run task
+    /// containers.
+    pub container_uids: IdRange,
+
+    /// Similar to container_uids, but for group ids. This is also used for
+    /// allocated file system ACL groups.
+    pub container_gids: IdRange,
+}
+
+#[derive(Clone)]
 pub struct Node {
     shared: Arc<NodeShared>,
 }
 
 struct NodeShared {
+    context: NodeContext,
+    config: NodeConfig,
+
+    db: EmbeddedDB,
+
     runtime: Arc<ContainerRuntime>,
     event_channel: (channel::Sender<NodeEvent>, channel::Receiver<NodeEvent>),
     state: Mutex<NodeState>,
@@ -137,24 +156,52 @@ struct NodeState {
 
 struct NodeStateInner {
     container_id_to_task_name: HashMap<String, String>,
+    next_uid: u32,
+    next_gid: u32,
 }
 
 impl Node {
-    pub async fn create() -> Result<Self> {
-        let runtime = ContainerRuntime::create().await?;
-        Ok(Self {
+    pub async fn create(context: &NodeContext, config: &NodeConfig) -> Result<Self> {
+        let mut db_options = EmbeddedDBOptions::default();
+        db_options.create_if_missing = true;
+
+        let db = EmbeddedDB::open(Path::new(config.data_dir()).join("db"), db_options).await?;
+
+        let inner = NodeStateInner {
+            container_id_to_task_name: HashMap::new(),
+            // TODO: Preserve these across reboots and attempt to not re-use ids already
+            // referenced in the file system.
+            next_uid: context.container_uids.start_id,
+            next_gid: context.container_gids.start_id,
+        };
+
+        let runtime = ContainerRuntime::create(Path::new(config.data_dir()).join("run")).await?;
+        let inst = Self {
             shared: Arc::new(NodeShared {
+                context: context.clone(),
+                config: config.clone(),
+                db,
                 runtime,
                 state: Mutex::new(NodeState {
                     tasks: vec![],
-                    inner: NodeStateInner {
-                        container_id_to_task_name: HashMap::new(),
-                    },
+                    inner,
                 }),
                 event_channel: channel::unbounded(),
                 last_timer_id: AtomicUsize::new(0),
             }),
-        })
+        };
+
+        let all_tasks = tasks_table::list_tasks(&inst.shared.db).await?;
+        for task_spec in all_tasks {
+            if !task_spec.persistent() {
+                continue;
+            }
+
+            // TODO: Don't allow the failure of this to block node startup.
+            inst.start_task(&task_spec).await?;
+        }
+
+        Ok(inst)
     }
 
     pub fn run(&self) -> impl std::future::Future<Output = Result<()>> {
@@ -278,82 +325,88 @@ impl Node {
         }
     }
 
+    /// Directory for storing data for uploaded blobs.
+    ///
+    /// In this directory, the following files will be stored:
+    /// - './{BLOB_ID}/raw' : Raw version of the blob as uploaded.
+    /// - './{BLOB_ID}/extracted/' : Directory which contains all of the files
+    /// - './{BLOB_ID}/metadata' : Present once the blob has been fully
+    ///   ingested. Currently this file is always empty.
+    fn blob_data_dir(&self) -> PathBuf {
+        Path::new(self.shared.config.data_dir()).join("blob")
+    }
+
+    fn persistent_data_dir(&self) -> PathBuf {
+        Path::new(self.shared.config.data_dir()).join("persistent")
+    }
+
     async fn transition_task_to_running(
         &self,
         state_inner: &mut NodeStateInner,
         task: &mut Task,
     ) -> Result<()> {
         // TODO: Parse this at startup time.
-        let mut container_config = ContainerConfig::default();
+        let mut container_config = self.shared.config.container_template().clone();
 
-        // TODO: Change the user id of the devpts to the one.
-        parse_text_proto(
-            r#"
-            process {
-                user {
-                    uid: 100001
-                    gid: 100001
-                    additional_gids: [100002]
+        // TODO: Check for overflows of the count in the range.
+        let process_uid = state_inner.next_uid;
+        state_inner.next_uid += 1;
+
+        let process_gid = state_inner.next_gid;
+        state_inner.next_gid += 1;
+
+        container_config
+            .process_mut()
+            .user_mut()
+            .set_uid(process_uid);
+        container_config
+            .process_mut()
+            .user_mut()
+            .set_gid(process_gid);
+
+        for additional_group in task.spec.additional_groups() {
+            let gid = *self
+                .shared
+                .context
+                .system_groups
+                .get(additional_group)
+                .ok_or_else(|| {
+                    rpc::Status::invalid_argument(format!(
+                        "No group found named: {}",
+                        additional_group
+                    ))
+                })?;
+
+            let mut matched = false;
+            for range in &self.shared.context.sub_gids {
+                if range.contains(gid) {
+                    matched = true;
+                    break;
                 }
             }
-            mounts: [
-                {
-                    destination: "/proc"
-                    type: "proc"
-                    source: "proc"
-                    options: ["noexec", "nosuid", "nodev"]
-                },
-                {
-                    destination: "/usr/bin"
-                    source: "/usr/bin"
-                    options: ["bind", "ro"]
-                },
-                {
-                    destination: "/lib64"
-                    source: "/lib64"
-                    options: ["bind", "ro"]
-                },
-                {
-                    destination: "/usr/lib"
-                    source: "/usr/lib"
-                    options: ["bind", "ro"]
-                },
-                {
-                    destination: "/dev/pts"
-                    type: "devpts"
-                    source: "devpts"
-                    options: [
-                        "nosuid",
-                        "noexec",
-                        "newinstance",
-                        "ptmxmode=0666",
-                        "gid=100001"
-                    ]
-                },
-                {
-                    destination: "/dev/null",
-                    source: "/dev/null",
-                    options: ["bind"]
-                },
-                {
-                    destination: "/dev/zero",
-                    source: "/dev/zero",
-                    options: ["bind"]
-                },
-                {
-                    destination: "/dev/random",
-                    source: "/dev/random",
-                    options: ["bind"]
-                },
-                {
-                    destination: "/dev/urandom",
-                    source: "/dev/urandom",
-                    options: ["bind"]
-                }
-            ]
-        "#,
-            &mut container_config,
-        )?;
+
+            if !matched {
+                return Err(rpc::Status::invalid_argument(format!(
+                    "Node is not allowed to delegate group: {}",
+                    additional_group
+                ))
+                .into());
+            }
+
+            container_config
+                .process_mut()
+                .user_mut()
+                .add_additional_gids(gid);
+        }
+
+        // Set the gid on /dev/pts
+        for mount in container_config.mounts_mut() {
+            if mount.typ() != "devpts" {
+                continue;
+            }
+
+            mount.add_options(format!("gid={}", process_gid));
+        }
 
         // container_config.process_mut().set_terminal(true);
 
@@ -386,7 +439,7 @@ impl Node {
 
             match volume.source_case() {
                 TaskSpec_VolumeSourceCase::BlobId(blob_id) => {
-                    let blob_dir = common::async_std::path::Path::new(BLOB_DATA_DIR).join(blob_id);
+                    let blob_dir = self.blob_data_dir().join(blob_id);
 
                     let metadata_path = blob_dir.join("metadata");
                     if !metadata_path.exists().await {
@@ -403,20 +456,63 @@ impl Node {
                     mount.add_options("ro".into());
                 }
                 TaskSpec_VolumeSourceCase::PersistentName(name) => {
-                    let dir = common::async_std::path::Path::new(PERSISTENT_DIR).join(name);
+                    let dir = self.persistent_data_dir().join(name);
                     let dir_str = dir.to_str().unwrap().to_string();
 
-                    if !dir.exists().await {
+                    let volume_gid;
+
+                    if dir.exists().await {
+                        // TODO: If the volume was partially created but the permissions were not
+                        // set, then this may raise an error.
+
+                        let gid = dir.metadata().await?.gid();
+
+                        // TODO: Keep a separate record of the gids assigned to each volume and
+                        // verify that they haven't changed.
+                        // I'm not sure if it's a security risk if a container could change the
+                        // group on a volume and then get an additional_gid when it is remounted.
+                        if gid < self.shared.context.container_gids.start_id
+                            || gid
+                                >= (self.shared.context.container_gids.start_id
+                                    + self.shared.context.container_gids.count)
+                        {
+                            return Err(format_err!(
+                                "Persistent volume belows to unmanaged group: {}",
+                                gid
+                            ));
+                        }
+
+                        volume_gid = gid;
+                    } else {
+                        volume_gid = state_inner.next_gid;
+                        if volume_gid == state_inner.next_uid {
+                            // Keep them aligned to simplify debugging.
+                            state_inner.next_uid += 1;
+                        }
+
+                        state_inner.next_gid += 1;
+
                         common::async_std::fs::create_dir_all(&dir).await?;
-                        chown(dir_str.as_str(), None, Some(Gid::from_raw(100002)))?;
+                        chown(dir_str.as_str(), None, Some(Gid::from_raw(volume_gid)))?;
 
                         let mut perms = dir.metadata().await?.permissions();
                         perms.set_mode(0o770 | libc::S_ISGID);
                         common::async_std::fs::set_permissions(&dir, perms).await?;
                     }
 
+                    container_config
+                        .process_mut()
+                        .user_mut()
+                        .add_additional_gids(volume_gid);
+
                     mount.add_options("bind".into());
                     mount.set_source(dir_str);
+                }
+                TaskSpec_VolumeSourceCase::BuildTarget(_) => {
+                    return Err(rpc::Status::invalid_argument(
+                        "Build target volumes should converted locally first",
+                    )
+                    .into());
                 }
                 TaskSpec_VolumeSourceCase::Unknown => {
                     return Err(
@@ -469,9 +565,11 @@ impl Node {
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         let task_name = task.spec.name().to_string();
+        let timeout_duration =
+            Duration::from_secs(self.shared.config.graceful_shutdown_timeout_secs() as u64);
         let timeout_sender = self.shared.event_channel.0.clone();
         let timeout_task = ChildTask::spawn(async move {
-            common::async_std::task::sleep(GRACEFUL_SHUTDOWN_TIMEOUT.clone()).await;
+            common::async_std::task::sleep(timeout_duration).await;
             let _ = timeout_sender
                 .send(NodeEvent::StopTimeout {
                     task_name,
@@ -484,6 +582,54 @@ impl Node {
             timer_id,
             timeout_task,
         };
+
+        Ok(())
+    }
+
+    pub async fn start_task(&self, task_spec: &TaskSpec) -> Result<()> {
+        let mut state_guard = self.shared.state.lock().await;
+        let state = &mut *state_guard;
+
+        // TODO: Eventually delete non-persistent tasks.
+        tasks_table::put_task(&self.shared.db, task_spec).await?;
+
+        let existing_task = state
+            .tasks
+            .iter_mut()
+            .find(|t| t.spec.name() == task_spec.name());
+
+        let task = {
+            if let Some(task) = existing_task {
+                // TODO: Consider preserving the previous task_spec until the new one is added.
+                task.spec = task_spec.clone();
+                task
+            } else {
+                state.tasks.push(Task {
+                    spec: task_spec.clone(),
+                    container_id: None,
+                    state: TaskState::Pending,
+                    pending_update: false,
+                });
+                state.tasks.last_mut().unwrap()
+            }
+        };
+
+        task.pending_update = true;
+
+        match &task.state {
+            TaskState::Pending | TaskState::RestartBackoff | TaskState::Terminal => {
+                self.transition_task_to_running(&mut state.inner, task)
+                    .await?;
+            }
+            TaskState::Running => {
+                self.transition_task_to_stopping(task).await?;
+            }
+            TaskState::Stopping { .. } | TaskState::ForceStopping => {
+                // We don't need to anything. Once the container finishes
+                // stopping, the new container will be brought
+                // up.
+            }
+        }
 
         Ok(())
     }
@@ -517,48 +663,7 @@ impl ContainerNodeService for Node {
         request: rpc::ServerRequest<StartTaskRequest>,
         response: &mut rpc::ServerResponse<StartTaskResponse>,
     ) -> Result<()> {
-        let mut state_guard = self.shared.state.lock().await;
-        let state = &mut *state_guard;
-
-        let existing_task = state
-            .tasks
-            .iter_mut()
-            .find(|t| t.spec.name() == request.task_spec().name());
-
-        let task = {
-            if let Some(task) = existing_task {
-                // TODO: Consider preserving the previous task_spec until the new one is added.
-                task.spec = request.task_spec().clone();
-                task
-            } else {
-                state.tasks.push(Task {
-                    spec: request.task_spec().clone(),
-                    container_id: None,
-                    state: TaskState::Pending,
-                    pending_update: false,
-                });
-                state.tasks.last_mut().unwrap()
-            }
-        };
-
-        task.pending_update = true;
-
-        match &task.state {
-            TaskState::Pending | TaskState::RestartBackoff | TaskState::Terminal => {
-                self.transition_task_to_running(&mut state.inner, task)
-                    .await?;
-            }
-            TaskState::Running => {
-                self.transition_task_to_stopping(task).await?;
-            }
-            TaskState::Stopping { .. } | TaskState::ForceStopping => {
-                // We don't need to anything. Once the container finishes
-                // stopping, the new container will be brought
-                // up.
-            }
-        }
-
-        Ok(())
+        self.start_task(request.task_spec()).await
     }
 
     // TODO: When the Node closes, we should kill all tasks that it has
@@ -672,7 +777,7 @@ impl ContainerNodeService for Node {
         // TODO: Obtain an exclusive lock via the FS on the OS on /opt/container to
         // ensure that this is consitent. TODO: Filter '..', absolute paths,
         // etc.
-        let blob_dir = common::async_std::path::Path::new(BLOB_DATA_DIR).join(first_part.id());
+        let blob_dir = self.blob_data_dir().join(first_part.id());
 
         let metadata_path = blob_dir.join("metadata");
         if metadata_path.exists().await {

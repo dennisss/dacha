@@ -46,7 +46,9 @@ members = [
 	"pkg/datastore",
 	"pkg/sensor_monitor",
 	"pkg/usb_device",
-	"pkg/builder"
+	"pkg/builder",
+	"pkg/rp2040",
+	"pkg/rp2040_programmer"
 ]
 
 [profile.dev]

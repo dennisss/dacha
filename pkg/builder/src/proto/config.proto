@@ -5,8 +5,10 @@ message RustBinary {
     string name = 1;
     repeated string deps = 2;
 
+    string bin = 5;
     string profile = 3;
     string target = 4;
+    bool use_cross = 6;
 }
 
 message FileGroup {

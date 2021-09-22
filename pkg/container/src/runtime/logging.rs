@@ -2,11 +2,12 @@
 // durable storage.
 
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::SystemTime;
-use std::{path::Path, time::Duration};
 
 use common::async_std::fs::File;
 use common::async_std::io::ReadExt;
+use common::async_std::path::Path;
 use common::async_std::sync::Mutex;
 use common::errors::*;
 use protobuf::Message;

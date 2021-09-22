@@ -1,5 +1,6 @@
 // This file contains the entrypoint code for the node binary.
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
 
@@ -13,104 +14,16 @@ use nix::unistd::Pid;
 use protobuf::text::parse_text_proto;
 
 use crate::node::Node;
+use crate::node::{shadow::*, NodeContext};
+use crate::proto::node::NodeConfig;
 use crate::proto::service::ContainerNodeIntoService;
 use crate::runtime::fd::FileReference;
 
 const MAGIC_STARTUP_BYTE: u8 = 0x88;
 
-struct PasswdEntry {
-    name: String,
-    password: String,
-    uid: u32,
-    gid: u32,
-    comment: String,
-    directory: String,
-    shell: String,
-}
-
-fn read_passwd() -> Result<Vec<PasswdEntry>> {
-    let mut out = vec![];
-    let data = std::fs::read_to_string("/etc/passwd")?;
-    for line in data.lines() {
-        let fields = line.split(":").collect::<Vec<_>>();
-        if fields.len() != 7 {
-            return Err(format_err!(
-                "Incorrect number of fields in passwd line: \"{}\"",
-                line
-            ));
-        }
-
-        out.push(PasswdEntry {
-            name: fields[0].to_string(),
-            password: fields[1].to_string(),
-            uid: fields[2].parse()?,
-            gid: fields[3].parse()?,
-            comment: fields[4].to_string(),
-            directory: fields[5].to_string(),
-            shell: fields[6].to_string(),
-        });
-    }
-
-    Ok(out)
-}
-
-struct GroupEntry {
-    name: String,
-    password: String,
-    id: u32,
-    user_list: Vec<String>,
-}
-
-fn read_groups() -> Result<Vec<GroupEntry>> {
-    let mut out = vec![];
-    let data = std::fs::read_to_string("/etc/group")?;
-    for line in data.lines() {
-        let fields = line.split(":").collect::<Vec<_>>();
-        if fields.len() != 4 {
-            return Err(format_err!(
-                "Incorrect number of fields in group line: \"{}\"",
-                line
-            ));
-        }
-
-        out.push(GroupEntry {
-            name: fields[0].to_string(),
-            password: fields[1].to_string(),
-            id: fields[2].parse()?,
-            user_list: fields[3].split(",").map(|s| s.to_string()).collect(),
-        });
-    }
-
-    Ok(out)
-}
-
-struct SubordinateIdRange {
-    name: String,
-    start_id: u32,
-    count: u32,
-}
-
-fn read_subordinate_id_file(path: &str) -> Result<Vec<SubordinateIdRange>> {
-    let mut out = vec![];
-
-    let data = std::fs::read_to_string(path)?;
-    for line in data.lines() {
-        let fields = line.split(":").collect::<Vec<_>>();
-        if fields.len() != 3 {
-            return Err(format_err!(
-                "Incorrect number of fields in sub id line: \"{}\"",
-                line
-            ));
-        }
-
-        out.push(SubordinateIdRange {
-            name: fields[0].to_string(),
-            start_id: fields[1].parse()?,
-            count: fields[2].parse()?,
-        });
-    }
-
-    Ok(out)
+#[derive(Args)]
+struct Args {
+    config: String,
 }
 
 /*
@@ -122,37 +35,66 @@ fn read_subordinate_id_file(path: &str) -> Result<Vec<SubordinateIdRange>> {
     TODO: Write disallow to the groups file?
 */
 
-// newuidmap <pid> <uid> <loweruid> <count> [ <uid> <loweruid> <count> ] ...
-// /usr/bin/newuidmap
-fn newidmap(binary: &str, sub_ids_path: &str, entity_name: &str, pid: i32) -> Result<()> {
-    let mut args = vec![];
-    args.push(pid.to_string());
+fn create_idmap(
+    subids: Vec<SubordinateIdRange>,
+    entity_name: &str,
+    entity_id: u32,
+) -> Vec<IdMapping> {
+    let mut idmap = vec![];
 
-    args.push("1000".to_string());
-    args.push("1000".to_string());
-    args.push("1".to_string());
+    // Map the current user/group id to the same id in the new namespace.
+    idmap.push(IdMapping {
+        id: entity_id,
+        new_ids: IdRange {
+            start_id: entity_id,
+            count: 1,
+        },
+    });
 
-    let subids = read_subordinate_id_file(sub_ids_path)?;
-    for range in subids {
-        if range.name != entity_name {
+    // Map all allowlisted ranges to the same ranges in the new namespace.
+    for range in subids.into_iter().filter(|r| &r.name == entity_name) {
+        idmap.push(IdMapping {
+            id: range.ids.start_id,
+            new_ids: range.ids.clone(),
+        });
+    }
+
+    idmap
+}
+
+fn find_container_ids_range(id_map: &[IdMapping]) -> Result<IdRange> {
+    let mut range = None;
+
+    for mapping in id_map {
+        if mapping.new_ids.count == 1 {
             continue;
         }
 
-        args.push(range.start_id.to_string());
-        args.push(range.start_id.to_string());
-        args.push(range.count.to_string());
+        if !range.is_none() {
+            return Err(err_msg("Expected only one id range with more than one id"));
+        }
+
+        range = Some(mapping.new_ids.clone());
     }
 
-    let mut child = std::process::Command::new(binary).args(&args).spawn()?;
-    let status = child.wait()?;
-    if !status.success() {
-        return Err(format_err!("{} exited with failure: {:?}", binary, status));
-    }
+    let range = range.ok_or_else(|| err_msg("Failed to find a container id range"))?;
 
-    Ok(())
+    // TODO: Verify that all named users/groups don't exist in the given mapping. It
+    // also shouldn't contain the id of the user running the node. (this would
+    // imply a potential security risk).
+
+    Ok(range)
 }
 
 pub fn main() -> Result<()> {
+    let args = common::args::parse_args::<Args>()?;
+
+    let mut config = NodeConfig::default();
+    {
+        let config_data = std::fs::read_to_string(args.config)?;
+        protobuf::text::parse_text_proto(&config_data, &mut config)?;
+    }
+
     let uid = nix::unistd::getresuid()?;
     let gid = nix::unistd::getresgid()?;
     if uid.real.as_raw() == 0 || gid.real.as_raw() == 0 {
@@ -164,6 +106,8 @@ pub fn main() -> Result<()> {
         .find(|e| e.uid == uid.real.as_raw())
         .ok_or_else(|| format_err!("Failed to find passwd entry for uid: {}", uid.real.as_raw()))?;
     println!("Running as user: {}", user_entry.name);
+
+    let all_groups = read_groups()?;
 
     let group_entry = read_groups()?
         .into_iter()
@@ -179,22 +123,36 @@ pub fn main() -> Result<()> {
     let _ = nix::unistd::setfsuid(uid.real);
     let _ = nix::unistd::setfsgid(gid.real);
 
-    let (root_pid, mut setup_sender) = spawn_root_process()?;
+    let uidmap = create_idmap(read_subuids()?, &user_entry.name, uid.real.as_raw());
+    let gidmap = create_idmap(read_subgids()?, &group_entry.name, gid.real.as_raw());
+    println!("Root UID map: {:?}", uidmap);
+    println!("Root GID map: {:?}", gidmap);
+
+    let container_uids = find_container_ids_range(&uidmap)?;
+    let container_gids = find_container_ids_range(&gidmap)?;
+    println!("Container UID range: {:?}", container_uids);
+    println!("Container GID range: {:?}", container_uids);
+
+    let node_context = NodeContext {
+        system_groups: all_groups.iter().map(|g| (g.name.clone(), g.id)).collect(),
+        sub_uids: uidmap
+            .iter()
+            .map(|mapping| mapping.new_ids.clone())
+            .collect(),
+        sub_gids: gidmap
+            .iter()
+            .map(|mapping| mapping.new_ids.clone())
+            .collect(),
+        container_uids,
+        container_gids,
+    };
+
+    let (root_pid, mut setup_sender) = spawn_root_process(&node_context, &config)?;
 
     println!("Root Pid: {}", root_pid.as_raw());
 
-    newidmap(
-        "newuidmap",
-        "/etc/subuid",
-        &user_entry.name,
-        root_pid.as_raw(),
-    )?;
-    newidmap(
-        "newgidmap",
-        "/etc/subgid",
-        &group_entry.name,
-        root_pid.as_raw(),
-    )?;
+    newuidmap(root_pid.as_raw(), &uidmap)?;
+    newgidmap(root_pid.as_raw(), &gidmap)?;
 
     setup_sender.write_all(&[MAGIC_STARTUP_BYTE])?;
     drop(setup_sender);
@@ -206,7 +164,7 @@ pub fn main() -> Result<()> {
     Ok(())
 }
 
-fn spawn_root_process() -> Result<(Pid, std::fs::File)> {
+fn spawn_root_process(context: &NodeContext, config: &NodeConfig) -> Result<(Pid, std::fs::File)> {
     let (setup_reader_ref, setup_writer_ref) = FileReference::pipe()?;
 
     let mut stack = [0u8; 6 * 1024 * 1024];
@@ -215,7 +173,13 @@ fn spawn_root_process() -> Result<(Pid, std::fs::File)> {
     // TODO: Verify that CLONE_NEWNS still allows us to inherit new mounts from the
     // parent namespace.
     let pid = nix::sched::clone(
-        Box::new(|| run_root_process(setup_reader_ref.take().unwrap().open().unwrap())),
+        Box::new(|| {
+            run_root_process(
+                context,
+                config,
+                setup_reader_ref.take().unwrap().open().unwrap(),
+            )
+        }),
         &mut stack,
         CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWPID | CloneFlags::CLONE_NEWNS,
         Some(libc::SIGCHLD),
@@ -224,8 +188,12 @@ fn spawn_root_process() -> Result<(Pid, std::fs::File)> {
     Ok((pid, setup_writer_ref.open()?))
 }
 
-fn run_root_process(setup_reader: std::fs::File) -> isize {
-    let result = task::block_on(run(setup_reader));
+fn run_root_process(
+    context: &NodeContext,
+    config: &NodeConfig,
+    setup_reader: std::fs::File,
+) -> isize {
+    let result = task::block_on(run(context, config, setup_reader));
     let code = match result {
         Ok(()) => 0,
         Err(e) => {
@@ -237,7 +205,11 @@ fn run_root_process(setup_reader: std::fs::File) -> isize {
     unsafe { libc::exit(code) };
 }
 
-async fn run(mut setup_reader: std::fs::File) -> Result<()> {
+async fn run(
+    context: &NodeContext,
+    config: &NodeConfig,
+    mut setup_reader: std::fs::File,
+) -> Result<()> {
     let mut done_byte = [0u8; 1];
     setup_reader.read_exact(&mut done_byte)?;
     if &done_byte != &[MAGIC_STARTUP_BYTE] {
@@ -271,9 +243,10 @@ async fn run(mut setup_reader: std::fs::File) -> Result<()> {
 
     println!("Done setup!");
 
+    // TODO: Create the root directory and set permissions to 600
     // NOTE: This directory should be created with mode 700 where the user running
     // the container node is the owner.
-    if !Path::new("/opt/dacha").exists().await {
+    if !Path::new(config.data_dir()).exists().await {
         return Err(err_msg("Data directory doesn't exist"));
     }
 
@@ -282,11 +255,9 @@ async fn run(mut setup_reader: std::fs::File) -> Result<()> {
     // a case-by-base basis.
     umask(Mode::from_bits_truncate(0o077));
 
-    println!("Starting node!");
+    println!("Starting node on port: {}!", config.service_port());
 
-    // TODO: Create the root directory and set permissions to 600
-
-    let node = Node::create().await?;
+    let node = Node::create(context, config).await?;
 
     // TODO: If this fails, trigger immediate server cancellation as we
     // can't really procees any requests when this fails.
@@ -295,7 +266,7 @@ async fn run(mut setup_reader: std::fs::File) -> Result<()> {
     let mut server = rpc::Http2Server::new();
     server.add_service(node.into_service())?;
     server.set_shutdown_token(common::shutdown::new_shutdown_token());
-    server.run(8080).await?;
+    server.run(config.service_port() as u16).await?;
 
     // TODO: Join the task.
 

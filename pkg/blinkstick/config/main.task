@@ -1,0 +1,26 @@
+name: "indicator_led.0"
+
+args: [
+    "/volumes/bundle/built/pkg/blinkstick/main"
+]
+
+volumes: [
+    {
+        name: "bundle"
+        build_target: "//pkg/blinkstick:bundle"
+    }
+]
+
+additional_groups: ["plugdev"]
+devices: [
+    {
+        source {
+            usb {
+                vendor: 0x20a0
+                product: 0x41e5
+            }
+            limit: 1
+        }
+        exclusive: true
+    }
+]

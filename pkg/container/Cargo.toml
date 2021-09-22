@@ -7,12 +7,14 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 crypto = { path = "../crypto" }
+builder = { path = "../builder" }
 nix = "0.21.0"
 libc = "0.2.97"
 protobuf = { path = "../protobuf" }
 http = { path = "../http" }
 macros = { path = "../macros" }
 sstable = { path = "../sstable" }
+datastore = { path = "../datastore" }
 compression = { path = "../compression" }
 rpc = { path = "../rpc" }
 google = { path = "../../third_party/google" }

@@ -17,3 +17,6 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="18d1", ATTRS{idProduct}=="9400", MODE="0660"
 
 # Cyber Power System, Inc. CP1500 AVR UPS
 SUBSYSTEM=="usb", ATTRS{idVendor}=="0764", ATTRS{idProduct}=="0501", MODE="0660", GROUP="plugdev"
+
+# RP2040 USB Bootloader
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0003", MODE="0660", GROUP="plugdev"

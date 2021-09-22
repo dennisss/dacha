@@ -145,6 +145,15 @@ fn run_child_process_inner(
 
         let target = root_dir.join(destination);
 
+        if mount.optional() {
+            // Absolute path to the source file. We must join with the target path in order
+            // to support symlinks which may use relative paths.
+            let source_path = target.parent().unwrap().join(mount.source());
+            if !source_path.exists() {
+                continue;
+            }
+        }
+
         // TODO: Make this an optional step?
         if !target.exists() {
             if let Some(parent_dir) = target.parent() {
@@ -153,11 +162,22 @@ fn run_child_process_inner(
 
             // The mount target must exist. If bind mounting a file or special device,
             // then the target needs to be a file. Otherwise, we'll assume
-            if mount.typ().is_empty() && !Path::new(mount.source()).is_dir() {
+            if mount.typ() == "symlink" {
+            } else if mount.typ().is_empty() && !Path::new(mount.source()).is_dir() {
                 std::fs::write(&target, "")?;
             } else {
                 std::fs::create_dir(&target)?;
             }
+        }
+
+        if mount.typ() == "symlink" {
+            if mount.options_len() != 0 {
+                return Err(err_msg("Options are on supported for a symlink mount"));
+            }
+
+            symlink(mount.source(), target)
+                .with_context(|e| format!("Mount of {:?} failed: {}", mount, e))?;
+            continue;
         }
 
         let mut flags = MsFlags::empty();
@@ -191,35 +211,10 @@ fn run_child_process_inner(
         .with_context(|e| format!("Mount of {:?} failed: {}", mount, e))?;
     }
 
-    // std::fs::create_dir_all(&root_dir.join("dev"))?;
-    // std::fs::write(root_dir.join("dev/null"), "")?;
-
     // // Because we can't use mknod as non-root.
     // nix::mount::mount::<_, _, str, str>(
     //     Some("/dev/null"), &root_dir.join("dev/null"), None,
     //     MsFlags::MS_BIND, None)?;
-
-    // TODO: Move these symlinks to the config.
-    {
-        let lib_target = std::ffi::CStr::from_bytes_with_nul(b"usr/lib\0")?;
-        let lib_linkpath = std::ffi::CString::new(root_dir.join("lib").to_str().unwrap())?;
-        let result = unsafe { libc::symlink(lib_target.as_ptr(), lib_linkpath.as_ptr()) };
-        if result != 0 {
-            return Err(err_msg("Failed to make symlink"));
-        }
-    }
-    {
-        let lib_target = std::ffi::CStr::from_bytes_with_nul(b"usr/bin\0")?;
-        let lib_linkpath = std::ffi::CString::new(root_dir.join("bin").to_str().unwrap())?;
-        let result = unsafe { libc::symlink(lib_target.as_ptr(), lib_linkpath.as_ptr()) };
-        if result != 0 {
-            return Err(err_msg("Failed to make symlink"));
-        }
-    }
-
-    {
-        symlink("pts/ptmx", root_dir.join("dev/ptmx"))?;
-    }
 
     // println!("MAKE NODE");
 

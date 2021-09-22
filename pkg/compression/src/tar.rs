@@ -362,6 +362,39 @@ impl Reader {
         self.extract_files_with_modes(output_dir, None, None).await
     }
 
+    async fn create_dir_all(
+        &self,
+        output_dir: &Path,
+        mut dir: &Path,
+        dir_mode: Option<u32>,
+    ) -> Result<()> {
+        let mut pending = vec![];
+
+        loop {
+            if dir == output_dir || dir.exists().await {
+                break;
+            }
+
+            pending.push(dir);
+
+            dir = dir
+                .parent()
+                .ok_or_else(|| err_msg("CAn't get parent path"))?;
+        }
+
+        while let Some(path) = pending.pop() {
+            common::async_std::fs::create_dir(path).await?;
+
+            if let Some(mode) = dir_mode {
+                let mut perms = path.metadata().await?.permissions();
+                perms.set_mode(mode);
+                common::async_std::fs::set_permissions(&path, perms).await?;
+            }
+        }
+
+        Ok(())
+    }
+
     // NOTE: This will only success if none of the files we are extracting exist yet
     // in the output_dir.
     pub async fn extract_files_with_modes(
@@ -383,13 +416,15 @@ impl Reader {
             if entry.is_regular() {
                 // NOTE: We assume that separate directory entries are present and precede all
                 // entries within that directory.
-                /*
-                let dir = path.parent()
-                    .ok_or_else(|| err_msg("Can't get parent path"))?;
-                if !dir.exists().await {
-                    common::async_std::fs::create_dir_all(dir).await?;
+                // TODO: Make this optional as we should prefer to have directory entries in the
+                // tar.
+                {
+                    let dir = path
+                        .parent()
+                        .ok_or_else(|| err_msg("Can't get parent path"))?;
+
+                    self.create_dir_all(output_dir, dir, dir_mode).await?;
                 }
-                */
 
                 let mut file = OpenOptions::new()
                     .create_new(true)
@@ -596,6 +631,8 @@ impl Writer {
         Ok(())
     }
 
+    // TODO: We should also append entries for each directory. that is a parent of
+    // the path
     pub async fn append_file(&mut self, path: &Path, options: &AppendFileOptions) -> Result<()> {
         let mut pending_paths: Vec<PathBuf> = vec![];
         pending_paths.push(path.to_owned());
@@ -617,13 +654,15 @@ impl Writer {
     ) -> Result<()> {
         let path = common::async_std::path::Path::new(path);
         // NOTE: We will not follow symlinks when resolving metadata.
-        let metadata = path.symlink_metadata().await?;
+        // TODO: Switch back this.
+        let metadata = path.metadata().await?;
 
         let (file_type, file_size, mut reader): (FileType, u64, Box<dyn Readable>) = {
             if metadata.is_dir() {
                 (FileType::Directory, 0, Box::new(Cursor::new(&[])))
-            } else if metadata.is_file() {
+            } else if metadata.is_file() || metadata.is_symlink() {
                 let file = File::open(path).await?;
+                // If this is a symlink, then the length will be wrong.
                 (FileType::NormalFile, metadata.len(), Box::new(file))
             } else {
                 return Err(err_msg("Unsupported file type"));

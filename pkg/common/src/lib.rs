@@ -55,8 +55,27 @@ pub use lazy_static::*;
 pub fn project_dir() -> std::path::PathBuf {
     let mut dir = std::env::current_dir().unwrap();
 
-    while dir.file_name().unwrap() != "dacha" {
-        dir.pop();
+    // Special case which running in the 'cross' docker container.
+    if dir.starts_with("/project") {
+        return "/project".into();
+    }
+
+    loop {
+        match dir.file_name() {
+            Some(name) => {
+                if name == "dacha" {
+                    break;
+                }
+
+                dir.pop();
+            }
+            None => {
+                panic!(
+                    "Failed to find project dir in: {:?}",
+                    std::env::current_dir().unwrap()
+                );
+            }
+        }
     }
 
     dir

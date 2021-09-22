@@ -1,0 +1,123 @@
+data_dir: "/opt/dacha/data"
+service_port: 10250
+graceful_shutdown_timeout_secs: 10
+
+# Bind existing of
+# /usr/lib    (also symlink to /lib)
+# /usr/lib32  (also symlink to /lib)
+# /usr/lib64  (also symlink to /lib64)
+container_template {
+    mounts: [
+        {
+            destination: "/proc"
+            type: "proc"
+            source: "proc"
+            options: ["noexec", "nosuid", "nodev"]
+        },
+        {
+            destination: "/dev/null",
+            source: "/dev/null",
+            options: ["bind"]
+        },
+        {
+            destination: "/dev/zero",
+            source: "/dev/zero",
+            options: ["bind"]
+        },
+        {
+            destination: "/dev/random",
+            source: "/dev/random",
+            options: ["bind"]
+        },
+        {
+            destination: "/dev/urandom",
+            source: "/dev/urandom",
+            options: ["bind"]
+        },
+        {
+            # NOTE: A 'gid' option will be added automatically at runtime based on the main group
+            # of the container.
+            destination: "/dev/pts"
+            type: "devpts"
+            source: "devpts"
+            options: [
+                "nosuid",
+                "noexec",
+                "newinstance",
+                "ptmxmode=0666"
+                # Gid will be set below.
+            ]
+        },
+        {
+            destination: "/dev/ptmx"
+            source: "pts/ptmx"
+            type: "symlink"
+        },
+        {
+            destination: "/usr/bin"
+            source: "/usr/bin"
+            options: ["bind", "ro"]
+        },
+        {
+            destination: "/bin"
+            source: "usr/bin"
+            type: "symlink"
+        },
+        {
+            destination: "/usr/lib"
+            source: "/usr/lib"
+            options: ["bind", "ro"]
+        },
+        {
+            destination: "/lib"
+            source: "usr/lib"
+            type: "symlink"
+        },
+        {
+            # Only present on 32-bit OSes.
+            optional: true
+            destination: "/usr/lib32"
+            source: "/usr/lib32"
+            options: ["bind", "ro"]
+        },
+        {
+            # Only present on 32-bit OSes
+            optional: true
+            type: "symlink"
+            destination: "/lib32"
+            source: "usr/lib32"
+        },
+        {
+            # Only present on 64-bit OSes.
+            optional: true
+            destination: "/usr/lib64"
+            source: "/usr/lib64"
+            options: ["bind", "ro"]
+        },
+        {
+            # Only present on 64-bit OSes
+            optional: true
+            type: "symlink"
+            destination: "/lib64"
+            source: "usr/lib64"
+        },
+        {
+            # Only available on Raspberry Pis.
+            optional: true
+            destination: "/opt/vc"
+            source: "/opt/vc"
+            options: ["bind", "ro"]
+        }
+
+        #{
+        #    destination: "/dev/bus/usb",
+        #    source: "/dev/bus/usb",
+        #    options: ["bind"]
+        #},
+        #{
+        #    destination: "/sys/bus/usb/devices/3-3.4",
+        #    source: "/sys/bus/usb/devices/3-3.4",
+        #    options: ["bind", "noexec", "nosuid", "nodev", "ro"]
+        #}
+    ]
+}

@@ -5,7 +5,6 @@ mod setup_socket;
 
 use std::io::Write;
 use std::os::unix::prelude::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Once;
@@ -13,6 +12,7 @@ use std::sync::Once;
 use async_std::io::prelude::WriteExt;
 use common::async_std::channel;
 use common::async_std::fs::File;
+use common::async_std::path::{Path, PathBuf};
 use common::async_std::sync::Mutex;
 use common::async_std::{fs, task};
 use common::errors::*;
@@ -34,14 +34,6 @@ use crate::runtime::child::*;
 use crate::runtime::fd::*;
 use crate::runtime::logging::*;
 use crate::runtime::setup_socket::SetupSocket;
-
-/// Directory used to per-container instance data.
-///
-/// Under this directory, files will be stored as follows:
-/// - '{container-id}/root' : Directory used as the root fs of the container.
-/// - '{container-id}/log' : Append-only LevelDB log file containing LogEntry
-///   protos.
-const RUN_DATA_DIR: &'static str = "/opt/dacha/container/run";
 
 /// Stored a boolean value representing whether or not a ContainerRuntime
 /// instance has been created in the current process.
@@ -80,6 +72,15 @@ struct ContainerWaiter {
 // We want to be able to support subscribing to any events that occur for a
 
 pub struct ContainerRuntime {
+    /// Directory used to per-container instance data.
+    ///
+    /// Under this directory, files will be stored as follows:
+    /// - '{container-id}/root' : Directory used as the root fs of the
+    ///   container.
+    /// - '{container-id}/log' : Append-only LevelDB log file containing
+    ///   LogEntry protos.
+    run_dir: PathBuf,
+
     containers: Mutex<Vec<Container>>,
 
     ///
@@ -104,12 +105,13 @@ impl ContainerRuntime {
     ///
     /// NOTE: Only one instance of the ContainerRuntime is allowed to exist in
     /// the same process.
-    pub async fn create() -> Result<Arc<Self>> {
+    pub async fn create<P: AsRef<Path>>(run_dir: P) -> Result<Arc<Self>> {
         if INSTANCE_LOCK.swap(true, Ordering::SeqCst) {
             return Err(err_msg("ContainerRuntime instance already exists"));
         }
 
         Ok(Arc::new(Self {
+            run_dir: run_dir.as_ref().to_owned(),
             containers: Mutex::new(vec![]),
             event_listeners: Mutex::new(vec![]),
         }))
@@ -226,7 +228,7 @@ impl ContainerRuntime {
         let container_id = common::hex::encode(&container_id);
 
         // TODO: Also lock down permissions on this dir.
-        let container_dir = Path::new(RUN_DATA_DIR).join(&container_id);
+        let container_dir = self.run_dir.join(&container_id);
         fs::create_dir_all(&container_dir).await?;
 
         let mut stack = vec![0u8; 1024 * 1024 * 1]; // 1MB
@@ -313,7 +315,7 @@ impl ContainerRuntime {
             Box::new(|| {
                 run_child_process(
                     &container_config,
-                    &container_dir,
+                    container_dir.as_ref(),
                     &mut socket_c,
                     &file_mapping,
                 )

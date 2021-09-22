@@ -1,14 +1,7 @@
-use std::borrow::Cow;
-use std::cell::RefCell;
-use std::cmp::Ordering;
-use std::collections::BTreeMap;
-use std::ops::Bound;
-use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
 use common::bytes::Bytes;
-use common::errors::*;
 
 use crate::iterable::Iterable;
 use crate::memtable::vec::*;

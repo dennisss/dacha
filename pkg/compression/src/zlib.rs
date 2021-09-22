@@ -60,7 +60,7 @@ impl CompressionMethod {
                 }
 
                 let window_log = info.window_size.log2();
-                if window_log < WINDOW_LOG_OFFSET as usize {
+                if window_log < WINDOW_LOG_OFFSET as u32 {
                     return Err(err_msg("Window size too small"));
                 }
 
@@ -68,7 +68,7 @@ impl CompressionMethod {
                     return Err(err_msg("Window size not a power of 2"));
                 }
 
-                ((window_log - WINDOW_LOG_OFFSET as usize) as u8) << 4 | 8
+                ((window_log - WINDOW_LOG_OFFSET as u32) as u8) << 4 | 8
             }
         })
     }

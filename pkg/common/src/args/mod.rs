@@ -15,6 +15,8 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::string::ToString;
 
+use failure::ResultExt;
+
 use crate::errors::*;
 
 pub struct RawArgs {
@@ -145,7 +147,8 @@ pub trait ArgFieldType {
 impl<T: ArgType + Sized> ArgFieldType for T {
     fn parse_raw_arg_field(field_name: &str, raw_args: &mut RawArgs) -> Result<Self> {
         let value = raw_args.take_named_arg(field_name)?;
-        Self::parse_optional_raw_arg(value)
+        Ok(Self::parse_optional_raw_arg(value)
+            .with_context(|e| format_err!("For field: {}: {}", field_name, e))?)
     }
 }
 

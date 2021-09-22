@@ -150,6 +150,23 @@ pub struct EndpointDescriptor {
     pub bInterval: u8,
 }
 
+impl EndpointDescriptor {
+    pub fn transfer_type(&self) -> TransferType {
+        TransferType::from_value(self.bmAttributes & 0b11).unwrap()
+    }
+
+    pub fn is_in(&self) -> bool {
+        crate::endpoint::is_in_endpoint(self.bEndpointAddress)
+    }
+}
+
+enum_def!(TransferType u8 =>
+    Control = 0b00,
+    Isochronous = 0b01,
+    Bulk = 0b10,
+    Interrupt = 0b11
+);
+
 // pub enum USBLangId {
 //     EnglishUS = 0x0409,
 // }

@@ -200,6 +200,11 @@ impl Context {
                                 // There are no completed URBs ready to reap without blocking.
                                 break;
                             }
+                            Err(nix::Error::Sys(nix::errno::Errno::EBADF)) => {
+                                // The device was just closed by the user. On the next poll cycle,
+                                // we shouldn't poll this file anymore.
+                                break;
+                            }
                             // TODO: Figure out what the error code will be after the device is
                             // closed.
                             Err(e) => {

@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
-use std::path::Path;
 use std::sync::Arc;
 
 use common::async_std::fs::OpenOptions;
 use common::async_std::io::prelude::WriteExt;
+use common::async_std::path::Path;
 use common::errors::*;
 use compression::snappy::snappy_compress;
 use compression::transform::transform_to_vec;

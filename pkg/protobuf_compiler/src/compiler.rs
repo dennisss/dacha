@@ -795,9 +795,19 @@ impl Compiler<'_> {
                 pkg = self.runtime_package
             ));
         } else if is_repeated {
-            lines.add(format!("\tpub fn {}(&self) -> &[{}] {{", name, typ));
-            lines.add_inline(format!(" &self.{}", name));
-            lines.add_inline(" }");
+            lines.add(format!(
+                r#"
+                pub fn {name}(&self) -> &[{typ}] {{
+                    &self.{name}
+                }}
+            
+                pub fn {name}_mut(&mut self) -> &mut [{typ}] {{
+                    &mut self.{name}
+                }}
+            "#,
+                name = name,
+                typ = typ
+            ));
         } else {
             let modifier = if is_copyable { "" } else { "&" };
 
