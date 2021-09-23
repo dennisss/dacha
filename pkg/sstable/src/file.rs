@@ -1,9 +1,9 @@
 use std::ops::{Deref, DerefMut};
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common::async_std::fs::File;
 use common::async_std::fs::OpenOptions;
+use common::async_std::path::{Path, PathBuf};
 use common::async_std::prelude::*;
 use common::errors::*;
 

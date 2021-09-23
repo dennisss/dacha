@@ -529,6 +529,7 @@ dependencies = [
  "protobuf_compiler",
  "rpc",
  "sstable",
+ "usb",
 ]
 
 [[package]]

@@ -52,57 +52,57 @@ message TaskSpec {
     // external intervention. By default, this is false, so tasks disappear when a node restarts.
     bool persistent = 7;
 
-    message USBSelector {
-        uint32 vendor = 1;
-        uint32 product = 2;
-    }
-
-    message DeviceSource {
-        oneof source {
-            // Path to a special device file on the host machine (e.g. /dev/i2c-1)
-            //
-            // This path may continue a wildcard ('*') to match multiple files (e.g. '/dev/ttyACM*')
-            //
-            // If no 'destination' is specified, this device will be mounted to the same path in
-            // the container as on the host. 
-            string raw = 1;
-
-            // Selects a USB device connected to the host.
-            //
-            // When mounted to a destination path, the usbdevfs  
-            //
-            // When mounted without a 'destination' path, we will create:
-            // - /sys/bus/usb/devices/3-3.5/
-            // - /dev/bus/usb/001/004
-            USBSelector usb = 2;
-        }
-
-        // Maximum number of devices to select if more than one matches the 
-        uint32 limit = 3;
-    }
-
-    message Device {
-        // How to find this device.
-        DeviceSource source = 1;
-
-        // Path in the container at which this device will be mounted.
-        //
-        // If the source matches multiple devices, then an arbitrary device will be picked to be
-        // mapped to this destination.
-        //
-        // If not specified, then the default path for the 'source' will be used.
-        string destination = 2;
-
-        // If true, no other task will be allowed to mount a device with the same source while it
-        // is mounted on this device. If another task has already mounted the device, then this
-        // task will fail to start.
-        bool exclusive = 3;
-    }
-
     // List of devices to mount into the container.
     repeated Device devices = 9;
 
     repeated string additional_groups = 8;
 
     // TODO: Add labels?
+}
+
+message USBSelector {
+    uint32 vendor = 1;
+    uint32 product = 2;
+}
+
+message DeviceSource {
+    oneof source {
+        // Path to a special device file on the host machine (e.g. /dev/i2c-1)
+        //
+        // This path may continue a wildcard ('*') to match multiple files (e.g. '/dev/ttyACM*')
+        //
+        // If no 'destination' is specified, this device will be mounted to the same path in
+        // the container as on the host. 
+        string raw = 1;
+
+        // Selects a USB device connected to the host.
+        //
+        // When mounted to a destination path, the usbdevfs  
+        //
+        // When mounted without a 'destination' path, we will create:
+        // - /sys/bus/usb/devices/3-3.5/
+        // - /dev/bus/usb/001/004
+        USBSelector usb = 2;
+    }
+
+    // Maximum number of devices to select if more than one matches the 
+    uint32 limit = 3;
+}
+
+message Device {
+    // How to find this device.
+    DeviceSource source = 1;
+
+    // Path in the container at which this device will be mounted.
+    //
+    // If the source matches multiple devices, then an arbitrary device will be picked to be
+    // mapped to this destination.
+    //
+    // If not specified, then the default path for the 'source' will be used.
+    string destination = 2;
+
+    // If true, no other task will be allowed to mount a device with the same source while it
+    // is mounted on this device. If another task has already mounted the device, then this
+    // task will fail to start.
+    bool exclusive = 3;
 }

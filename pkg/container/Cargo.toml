@@ -16,6 +16,7 @@ macros = { path = "../macros" }
 sstable = { path = "../sstable" }
 datastore = { path = "../datastore" }
 compression = { path = "../compression" }
+usb = { path = "../usb" }
 rpc = { path = "../rpc" }
 google = { path = "../../third_party/google" }
 async-std = "1.9.0"

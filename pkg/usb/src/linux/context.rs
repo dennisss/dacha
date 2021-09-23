@@ -5,7 +5,8 @@ use std::sync::Arc;
 use std::thread;
 
 use common::async_std::fs;
-use common::{async_std::path::Path, errors::*, futures::StreamExt};
+use common::async_std::path::{Path, PathBuf};
+use common::{errors::*, futures::StreamExt};
 
 use crate::descriptor_iter::{Descriptor, DescriptorIter};
 use crate::descriptors::*;
@@ -14,6 +15,17 @@ use crate::linux::transfer::*;
 use crate::linux::usbdevfs::*;
 
 const SYSFS_PATH: &'static str = "/sys/bus/usb/devices";
+
+/*
+USB Dev FS:
+    /dev/bus/usb/001/001
+
+SYS FS
+    /sys/bus/usb/devices
+
+Possibly check /sys/class/tty/ for a connection to TTY devices.
+
+*/
 
 /// Shared state and manager for multiple open USB devices.
 ///
@@ -316,6 +328,9 @@ impl Context {
             busnum,
             devnum,
             raw_descriptors,
+
+            sysfs_dir: sysfs_dir.to_owned(),
+            usbdevfs_path: Path::new(USBDEVFS_PATH).join(format!("{:03}/{:03}", busnum, devnum)),
         })
     }
 
@@ -361,6 +376,8 @@ pub struct DeviceEntry {
     busnum: usize,
     devnum: usize,
     raw_descriptors: Vec<u8>,
+    sysfs_dir: PathBuf,
+    usbdevfs_path: PathBuf,
 }
 
 impl DeviceEntry {
@@ -375,10 +392,18 @@ impl DeviceEntry {
         }
     }
 
-    pub async fn open(&self) -> Result<Device> {
-        let path = Path::new(USBDEVFS_PATH).join(format!("{:03}/{:03}", self.busnum, self.devnum));
+    // NOTE: This is mainly exposed for the purpose of mounting into containers.
+    pub fn sysfs_dir(&self) -> &Path {
+        &self.sysfs_dir
+    }
 
-        let path = CString::new(path.as_os_str().as_bytes())?;
+    // NOTE: This is mainly exposed for the purpose of mounting into containers.
+    pub fn devfs_path(&self) -> &Path {
+        &self.usbdevfs_path
+    }
+
+    pub async fn open(&self) -> Result<Device> {
+        let path = CString::new(self.usbdevfs_path.as_os_str().as_bytes())?;
         let fd = unsafe { libc::open(path.as_ptr(), libc::O_RDWR | libc::O_CLOEXEC) };
         if fd == -1 {
             return Err(err_msg("Failed to open USB device"));

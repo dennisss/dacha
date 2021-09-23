@@ -1,7 +1,7 @@
 name: "indicator_led.0"
 
 args: [
-    "/volumes/bundle/built/pkg/blinkstick/main"
+    "/volumes/bundle/built/pkg/blinkstick/main.armv7"
 ]
 
 volumes: [

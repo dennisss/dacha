@@ -1,3 +1,4 @@
+use common::async_std::path::Path;
 use common::errors::*;
 
 pub struct PasswdEntry {
@@ -43,9 +44,9 @@ pub struct GroupEntry {
     pub user_list: Vec<String>,
 }
 
-pub fn read_groups() -> Result<Vec<GroupEntry>> {
+pub fn read_groups_from_path<P: AsRef<Path>>(path: P) -> Result<Vec<GroupEntry>> {
     let mut out = vec![];
-    let data = std::fs::read_to_string("/etc/group")?;
+    let data = std::fs::read_to_string::<&std::path::Path>(path.as_ref().into())?;
     for line in data.lines() {
         let fields = line.split(":").collect::<Vec<_>>();
         if fields.len() != 4 {
@@ -64,6 +65,10 @@ pub fn read_groups() -> Result<Vec<GroupEntry>> {
     }
 
     Ok(out)
+}
+
+pub fn read_groups() -> Result<Vec<GroupEntry>> {
+    read_groups_from_path("/etc/group")
 }
 
 #[derive(Debug, Clone)]

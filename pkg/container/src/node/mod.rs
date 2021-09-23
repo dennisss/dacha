@@ -1,6 +1,6 @@
 mod backoff;
 pub mod main;
-mod shadow;
+pub mod shadow;
 mod tasks_table;
 
 use std::collections::HashMap;
@@ -146,6 +146,8 @@ struct NodeShared {
     event_channel: (channel::Sender<NodeEvent>, channel::Receiver<NodeEvent>),
     state: Mutex<NodeState>,
 
+    usb_context: Arc<usb::Context>,
+
     last_timer_id: AtomicUsize,
 }
 
@@ -156,8 +158,13 @@ struct NodeState {
 
 struct NodeStateInner {
     container_id_to_task_name: HashMap<String, String>,
+
     next_uid: u32,
     next_gid: u32,
+
+    /// Map of host paths to the number of running tasks referencing them. This
+    /// is used to implement exclusive locks to volumes/devices.
+    mounted_paths: HashMap<String, usize>,
 }
 
 impl Node {
@@ -173,7 +180,10 @@ impl Node {
             // referenced in the file system.
             next_uid: context.container_uids.start_id,
             next_gid: context.container_gids.start_id,
+            mounted_paths: HashMap::new(),
         };
+
+        let usb_context = usb::Context::create()?;
 
         let runtime = ContainerRuntime::create(Path::new(config.data_dir()).join("run")).await?;
         let inst = Self {
@@ -188,6 +198,7 @@ impl Node {
                 }),
                 event_channel: channel::unbounded(),
                 last_timer_id: AtomicUsize::new(0),
+                usb_context,
             }),
         };
 
@@ -203,6 +214,8 @@ impl Node {
 
         Ok(inst)
     }
+
+    // TODO: Implement graceful node shutdown which terminates all the inner nodes.
 
     pub fn run(&self) -> impl std::future::Future<Output = Result<()>> {
         self.clone().run_event_loop()
@@ -323,6 +336,9 @@ impl Node {
                 }
             }
         }
+
+        drop(runtime_task);
+        drop(runtime_listener_task);
     }
 
     /// Directory for storing data for uploaded blobs.
@@ -522,6 +538,69 @@ impl Node {
             }
 
             container_config.add_mounts(mount);
+        }
+
+        for device in task.spec.devices() {
+            // TODO: Implement
+            // - exclusive locks
+            // - min and max quantity of each device
+            // - re-mounting dynamically on hotplugs.
+            // - custom destination path
+
+            match device.source().source_case() {
+                DeviceSourceSourceCase::Usb(selector) => {
+                    let devices = self.shared.usb_context.enumerate_devices().await?;
+                    let mut num_mounted = 0;
+                    for dev in devices {
+                        let desc = dev.device_descriptor()?;
+                        if desc.idVendor == selector.vendor() as u16
+                            && desc.idProduct == selector.product() as u16
+                        {
+                            let mut mount = ContainerMount::default();
+                            mount.set_source(dev.devfs_path().to_str().unwrap());
+                            mount.set_destination(dev.devfs_path().to_str().unwrap());
+                            mount.add_options("bind".into());
+                            container_config.add_mounts(mount);
+
+                            let mut mount = ContainerMount::default();
+                            mount.set_source(dev.sysfs_dir().to_str().unwrap());
+                            mount.set_destination(dev.sysfs_dir().to_str().unwrap());
+                            mount.add_options("bind".into());
+                            container_config.add_mounts(mount);
+
+                            num_mounted += 1;
+                            break;
+                        }
+                    }
+
+                    if num_mounted == 0 {
+                        return Err(rpc::Status::invalid_argument(
+                            "Insufficient number of USB devices available",
+                        )
+                        .into());
+                    }
+                }
+                DeviceSourceSourceCase::Raw(path) => {
+                    if !path.starts_with("/dev/") {
+                        return Err(rpc::Status::invalid_argument(format!(
+                            "Path does not reference a device: {}",
+                            path
+                        ))
+                        .into());
+                    }
+
+                    let mut mount = ContainerMount::default();
+                    mount.set_source(path.as_str());
+                    mount.set_destination(path.as_str());
+                    mount.add_options("bind".into());
+                    container_config.add_mounts(mount);
+                }
+                DeviceSourceSourceCase::Unknown => {
+                    return Err(
+                        rpc::Status::invalid_argument("No source configured for device").into(),
+                    );
+                }
+            }
         }
 
         // TODO: Move this after the start_container so that the operation is atomic?

@@ -19,6 +19,7 @@ cross build --target=armv7-unknown-linux-gnueabihf --bin cluster_node --release
 extern crate common;
 #[macro_use]
 extern crate macros;
+extern crate container;
 
 use std::io::Write;
 use std::path::Path;
@@ -54,6 +55,28 @@ fn run_ssh(addr: &str, command: &str) -> Result<String> {
     Ok(String::from_utf8(output.stdout)?)
 }
 
+fn run_scp(source: &str, destination: &str) -> Result<()> {
+    let output = Command::new("scp")
+        .args([
+            "-i",
+            "~/.ssh/id_cluster",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "StrictHostKeyChecking=no",
+            source,
+            destination,
+        ])
+        .output()?;
+    if !output.status.success() {
+        std::io::stdout().write_all(&output.stdout).unwrap();
+        std::io::stderr().write_all(&output.stderr).unwrap();
+        return Err(err_msg("Command failed"));
+    }
+
+    Ok(())
+}
+
 fn copy_repo_file(addr: &str, relative_path: &str) -> Result<()> {
     println!("Copying //{}", relative_path);
 
@@ -71,27 +94,16 @@ fn copy_repo_file(addr: &str, relative_path: &str) -> Result<()> {
         ),
     )?;
 
-    {
-        let output = Command::new("scp")
-            .args([
-                "-i",
-                "~/.ssh/id_cluster",
-                "-o",
-                "UserKnownHostsFile=/dev/null",
-                "-o",
-                "StrictHostKeyChecking=no",
-                source_path.to_str().unwrap(),
-                &format!("pi@{}:{}", addr, target_path.to_str().unwrap()),
-            ])
-            .output()?;
-        if !output.status.success() {
-            std::io::stdout().write_all(&output.stdout).unwrap();
-            std::io::stderr().write_all(&output.stderr).unwrap();
-            return Err(err_msg("Command failed"));
-        }
-    }
+    run_scp(
+        source_path.to_str().unwrap(),
+        &format!("pi@{}:{}", addr, target_path.to_str().unwrap()),
+    )?;
 
     Ok(())
+}
+
+fn download_file(addr: &str, path: &str, output_path: &str) -> Result<()> {
+    run_scp(&format!("pi@{}:{}", addr, path), output_path)
 }
 
 async fn run() -> Result<()> {
@@ -124,6 +136,7 @@ async fn run() -> Result<()> {
     )?;
     run_ssh(&args.addr, "sudo chmod 700 /opt/dacha/data")?;
 
+    // TODO: Need to re-build this.
     copy_repo_file(&args.addr, "built/pkg/container/cluster_node.armv7")?;
     copy_repo_file(&args.addr, "pkg/container/config/node.textproto")?;
 
@@ -131,6 +144,42 @@ async fn run() -> Result<()> {
 
     // [target] [link_name]
     run_ssh(&args.addr, "sudo ln -f -s /opt/dacha/bundle/pkg/container/config/cluster_node.service /etc/systemd/system/cluster_node.service")?;
+
+    println!("Setting up /etc/subgid");
+    {
+        let tmpdir = common::temp::TempDir::create()?;
+        let groups_path = tmpdir.path().join("group");
+
+        download_file(&args.addr, "/etc/group", groups_path.to_str().unwrap())?;
+
+        let groups = container::node::shadow::read_groups_from_path(groups_path)?;
+
+        let mut subgid = String::new();
+        subgid.push_str("cluster-node:400000:65536\n");
+
+        let target_groups = &["gpio", "plugdev", "dialout", "i2c", "spi", "video"];
+
+        for group in groups {
+            if target_groups.iter().find(|g| *g == &group.name).is_some() {
+                subgid.push_str(&format!("cluster-node:{}:1\n", group.id));
+            }
+        }
+
+        println!("{}", subgid);
+        println!("");
+
+        let subgid_path = tmpdir.path().join("subgid");
+        std::fs::write(&subgid_path, subgid)?;
+
+        run_scp(
+            &subgid_path.to_str().unwrap(),
+            &format!("pi@{}:/tmp/next_subgid", &args.addr),
+        )?;
+
+        run_ssh(&args.addr, "sudo cp /tmp/next_subgid /etc/subgid")?;
+    }
+
+    // TODO: Also keep other files like /boot/config.txt in sync
 
     run_ssh(&args.addr, "sudo systemctl enable cluster_node")?;
     run_ssh(&args.addr, "sudo systemctl start cluster_node")?;

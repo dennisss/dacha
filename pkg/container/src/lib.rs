@@ -29,9 +29,10 @@ extern crate sstable;
 #[macro_use]
 extern crate async_std;
 extern crate datastore;
+extern crate usb;
 
 mod capabilities;
-mod node;
+pub mod node;
 mod proto;
 mod runtime;
 
