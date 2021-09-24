@@ -117,8 +117,8 @@ pub struct SSTableBuilder {
 }
 
 impl SSTableBuilder {
-    pub async fn open(path: &Path, options: SSTableBuilderOptions) -> Result<Self> {
-        Self::open_with(SyncedPath::from(path)?, options).await
+    pub async fn open<P: AsRef<Path>>(path: P, options: SSTableBuilderOptions) -> Result<Self> {
+        Self::open_with(SyncedPath::from(path.as_ref())?, options).await
     }
 
     pub async fn open_with(path: SyncedPath, options: SSTableBuilderOptions) -> Result<Self> {

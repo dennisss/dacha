@@ -257,6 +257,7 @@ impl VersionSet {
     pub async fn open_all(&self, dir: &FilePaths) -> Result<()> {
         let options = SSTableOpenOptions {
             comparator: self.options.table_options.comparator.clone(),
+            block_cache: self.options.block_cache.clone(),
         };
 
         // TODO: Parallelize me.

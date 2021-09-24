@@ -47,17 +47,18 @@ Algorithm for compacting file on disk:
 */
 
 async fn test_table() -> Result<()> {
+    let cache = DataBlockCache::new(10000000); // 10MB
+
     let mut options = sstable::table::table::SSTableOpenOptions {
         comparator: Arc::new(BytewiseComparator::new()),
+        block_cache: cache,
     };
 
     let table =
         sstable::table::table::SSTable::open(project_path!("out/big-sstable/000007.ldb"), options)
             .await?;
 
-    let cache = DataBlockCache::new(10000000); // 10MB
-
-    let mut iter = table.iter(&cache);
+    let mut iter = table.iter();
 
     while let Some(res) = iter.next().await? {
         println!("{:?} => {:?}", res.key, res.value);

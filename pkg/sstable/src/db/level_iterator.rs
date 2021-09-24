@@ -46,7 +46,7 @@ impl Iterable for LevelIterator {
 
                     let table = tables[self.next_table_index].table.lock().await;
 
-                    let iter = table.as_ref().unwrap().iter(&self.options.block_cache);
+                    let iter = table.as_ref().unwrap().iter();
                     self.next_table_index += 1;
 
                     iter
@@ -73,7 +73,7 @@ impl Iterable for LevelIterator {
 
         if let Some(idx) = table_idx {
             let table = tables[idx].table.lock().await;
-            let mut iter = table.as_ref().unwrap().iter(&self.options.block_cache);
+            let mut iter = table.as_ref().unwrap().iter();
             iter.seek(key).await?;
 
             self.next_table_index = idx + 1;

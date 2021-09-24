@@ -33,7 +33,7 @@ impl Snapshot {
             for entry in &self.version.levels[0].tables {
                 let guard = entry.table.lock().await;
                 let table = guard.as_ref().unwrap();
-                iters.push(Box::new(table.iter(&self.options.block_cache)));
+                iters.push(Box::new(table.iter()));
 
                 // println!("SNAPSHOT LEVEL 0 : {}", entry.entry.number);
             }

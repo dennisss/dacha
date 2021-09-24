@@ -623,7 +623,7 @@ impl EmbeddedDB {
 
                     let table_guard = entry.table.lock().await;
                     let table = table_guard.as_ref().unwrap();
-                    iters.push(Box::new(table.iter(&shared.options.block_cache)));
+                    iters.push(Box::new(table.iter()));
                 }
 
                 // TOOD: A few optimizations of this that we can do:
@@ -641,7 +641,7 @@ impl EmbeddedDB {
 
                     let table_guard = entry.table.lock().await;
                     let table = table_guard.as_ref().unwrap();
-                    iters.push(Box::new(table.iter(&shared.options.block_cache)));
+                    iters.push(Box::new(table.iter()));
                 }
 
                 let iterator = Box::new(MergeIterator::new(
@@ -836,6 +836,7 @@ impl EmbeddedDB {
                     shared.dir.table(entry.number).read_path(),
                     SSTableOpenOptions {
                         comparator: shared.options.table_options.comparator.clone(),
+                        block_cache: shared.options.block_cache.clone(),
                     },
                 )
                 .await?,

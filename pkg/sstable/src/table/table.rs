@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::ops::{Deref, Index};
@@ -33,13 +34,14 @@ use super::filter_policy::FilterPolicy;
 
 pub const METAINDEX_PROPERTIES_KEY: &'static str = "rocksdb.properties";
 
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-
 #[derive(Clone)]
 pub struct SSTableOpenOptions {
     pub comparator: Arc<dyn KeyComparator>,
-    // pub filter_factory: Arc<dyn FilterPolicy>,
+    pub block_cache: DataBlockCache, // pub filter_factory: Arc<dyn FilterPolicy>,
 }
+
+// TODO: When an SSTable is dropped, we can clear all of the blocks from the
+// cache.
 
 // TODO: When in a database, we should have a common cache across all tables
 // in the database.
@@ -49,10 +51,7 @@ pub struct SSTable {
 }
 
 struct SSTableState {
-    /// Unique identifier representing
-    id: usize,
-
-    file: Mutex<File>,
+    file: BlockCacheFile,
 
     index: IndexBlock,
 
@@ -61,8 +60,6 @@ struct SSTableState {
     filter: Option<SSTableFilter>,
 
     comparator: Arc<dyn KeyComparator>,
-
-    footer: Footer,
 }
 
 struct SSTableFilter {
@@ -81,6 +78,9 @@ impl SSTable {
     }
 
     async fn open_impl(path: &Path, options: SSTableOpenOptions) -> Result<Self> {
+        // TODO: Use the block cache for opening, but don't block on the cache being
+        // available (or track if we run out of space for sstable core blocks).
+
         // TODO: Validate that the entire file is accounted for in the block handles.
 
         let mut file = File::open(path).await?;
@@ -138,28 +138,20 @@ impl SSTable {
             );
         }
 
-        // TODO: Find a better way to do this. Maybe better to require opening a table
-        // with a block cache. That way, we just need to register a unique id
-        // with that.
-        let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
-
         Ok(Self {
             state: Arc::new(SSTableState {
-                id,
-                file: Mutex::new(file),
+                file: options.block_cache.cache_file(file, footer).await,
                 index,
                 properties: props,
                 filter,
                 comparator: options.comparator,
-                footer,
             }),
         })
     }
 
-    pub fn iter(&self, block_cache: &DataBlockCache) -> SSTableIterator {
+    pub fn iter(&self) -> SSTableIterator {
         SSTableIterator {
             table: self.clone(),
-            block_cache: block_cache.clone(),
             current_block_index: 0,
             current_block: None,
         }
@@ -213,11 +205,6 @@ impl SSTable {
         }
 
         Ok(props)
-    }
-
-    async fn read_block(&self, handle: &BlockHandle) -> Result<Arc<DataBlock>> {
-        let mut file = self.state.file.lock().await;
-        DataBlock::read(&mut file, &self.state.footer, handle).await
     }
 }
 
@@ -348,17 +335,20 @@ impl<'a> SliceLike for IndexBlockSlice<'a> {
 /// case that we have loaded beyond the max amount (possibly have Arc
 /// dereferences go through a channel when they hit zero).
 ///
-/// TODO: Ideally generalize this so that many things can be tracked with it.
+/// TODO: Ideally generalize this so that many things can be tracked with it in
+/// addition to non-DataBlock blocks
 #[derive(Clone)]
 pub struct DataBlockCache {
     state: Arc<Mutex<DataBlockCacheState>>,
 }
 
 impl DataBlockCache {
-    pub fn new(allowed_size: u64) -> Self {
+    pub fn new(allowed_size: usize) -> Self {
         Self {
             state: Arc::new(Mutex::new(DataBlockCacheState {
+                last_table_id: 0,
                 loaded_blocks: HashMap::new(),
+                unused_blocks: HashSet::new(),
                 change_listeners: vec![],
                 loaded_size: 0,
                 allowed_size,
@@ -366,20 +356,45 @@ impl DataBlockCache {
         }
     }
 
-    async fn get_or_create(&self, table: &SSTable, block_index: usize) -> Result<DataBlockPtr> {
-        let key = (table.state.id, block_index);
+    pub async fn cache_file(self, file: File, file_footer: Footer) -> BlockCacheFile {
+        let id = {
+            let mut state = self.state.lock().await;
+            let id = state.last_table_id + 1;
+            state.last_table_id = id;
+            id
+        };
+
+        BlockCacheFile {
+            id,
+            cache: self,
+            file: Mutex::new(file),
+            file_footer,
+        }
+    }
+}
+
+pub struct BlockCacheFile {
+    id: usize,
+    cache: DataBlockCache,
+    file: Mutex<File>,
+    file_footer: Footer,
+}
+
+impl BlockCacheFile {
+    async fn lookup_or_read(&self, block_handle: &BlockHandle) -> Result<DataBlockPtr> {
+        let key = (self.id, block_handle.offset);
         loop {
             // TODO: The main issue with this is that it only considers compressed size.
             // Ideally we would have an index of uncompressed sizes to better
             // keep track of memory usage.
-            let block_size = table.state.index.block_handles[block_index].size;
+            let block_size = block_handle.size as usize;
 
-            let mut state = self.state.lock().await;
-            if let Some(value) = state.loaded_blocks.remove(&key) {
+            let mut state = self.cache.state.lock().await;
+            if let Some(value) = state.loaded_blocks.get(&key) {
                 return Ok(DataBlockPtr {
                     cache_key: key,
                     inner: Some(value.clone()),
-                    outer: Some(self.state.clone()),
+                    outer: Some(self.cache.state.clone()),
                 });
             }
 
@@ -387,16 +402,26 @@ impl DataBlockCache {
                 return Err(err_msg("Fetching block larger than max cache size"));
             }
 
+            // If we are out of space, free unused blocks if there are any.
+            while state.loaded_size + block_size >= state.allowed_size {
+                if let Some(block_key) = state.unused_blocks.iter().next().cloned() {
+                    state.unused_blocks.remove(&block_key);
+
+                    let block = state.loaded_blocks.remove(&block_key).unwrap();
+                    state.loaded_size -= block.estimated_memory_usage();
+                } else {
+                    break;
+                }
+            }
+
             if state.loaded_size + block_size <= state.allowed_size {
-                let block = table
-                    .read_block(&table.state.index.block_handles[block_index])
-                    .await?;
-                state.loaded_size += block.estimated_memory_usage() as u64;
+                let block = self.read_block(block_handle).await?;
+                state.loaded_size += block.estimated_memory_usage();
                 state.loaded_blocks.insert(key, block.clone());
                 return Ok(DataBlockPtr {
                     cache_key: key,
                     inner: Some(block),
-                    outer: Some(self.state.clone()),
+                    outer: Some(self.cache.state.clone()),
                 });
             }
 
@@ -406,26 +431,44 @@ impl DataBlockCache {
             rx.await.ok();
         }
     }
+
+    async fn read_block(&self, handle: &BlockHandle) -> Result<Arc<DataBlock>> {
+        let mut file = self.file.lock().await;
+        DataBlock::read(&mut file, &self.file_footer, handle).await
+    }
 }
 
 struct DataBlockCacheState {
-    /// All blocks currently loaded into memory.
-    /// The key is of the form (table_id, block_index).
-    loaded_blocks: HashMap<(usize, usize), Arc<DataBlock>>,
+    /// Id of the last table assigned to this cache.
+    last_table_id: usize,
 
+    /// All blocks currently loaded into memory.
+    /// The key is of the form (table_id, block_offset).
+    loaded_blocks: HashMap<(usize, u64), Arc<DataBlock>>,
+
+    /// Subset of keys in loaded_blocks which correspond to blocks which are
+    /// loaded into memory but have no external references. If we are out of
+    /// memory we will delete entries from this set.
+    ///
+    /// TODO: Refactor so that we delete blocks in LRU order.
+    unused_blocks: HashSet<(usize, u64)>,
+
+    // Ideally have a linked list so that we can quickly un-delete a
     change_listeners: Vec<oneshot::Sender<()>>,
 
-    /// Number of bytes
-    loaded_size: u64,
+    /// Number of bytes used by all blocks in loaded_blocks.
+    loaded_size: usize,
 
-    allowed_size: u64,
+    /// Maximum number of bytes to keep in memory before we start freeing unused
+    /// blocks / blocking.
+    allowed_size: usize,
 }
 
 /// Reference counted pointer to a DataBlock in a DataBlockCache.
 /// This functions effectively the same as a Arc<DataBlock>, except will free up
 /// space in the cache when it is dropped.
 struct DataBlockPtr {
-    cache_key: (usize, usize),
+    cache_key: (usize, u64),
     inner: Option<Arc<DataBlock>>,
     outer: Option<Arc<Mutex<DataBlockCacheState>>>,
 }
@@ -443,16 +486,16 @@ impl Drop for DataBlockPtr {
         let cache_key = self.cache_key;
         let inner = self.inner.take().unwrap();
         let outer = self.outer.take().unwrap();
+        // NOTE: This must run till completion always
         common::async_std::task::spawn(async move {
             let mut outer_guard = outer.lock().await;
             let count = Arc::strong_count(&inner);
+            drop(inner);
 
             // If exactly one in the current context and one in the cache, then we can drop
             // it.
             if count == 2 {
-                outer_guard.loaded_blocks.remove(&cache_key);
-                outer_guard.loaded_size -= inner.estimated_memory_usage() as u64;
-                drop(inner);
+                outer_guard.unused_blocks.insert(cache_key);
 
                 // Notify tasks waiting to create a block.
                 // NOTE: Because we are still holding a lock in 'outer_guard', the listeners
@@ -473,8 +516,6 @@ impl Drop for DataBlockPtr {
 /// table, implement read-ahead.
 pub struct SSTableIterator {
     table: SSTable,
-
-    block_cache: DataBlockCache,
 
     /// Index of the current block we are iterating on in the SSTable.
     current_block_index: usize,
@@ -505,11 +546,11 @@ impl Iterable for SSTableIterator {
                 }
             } else {
                 if self.current_block_index < self.table.num_blocks() {
+                    let block_handle =
+                        &self.table.state.index.block_handles[self.current_block_index];
+
                     // Get a new block and put it into the cache.
-                    let block = self
-                        .block_cache
-                        .get_or_create(&self.table, self.current_block_index)
-                        .await?;
+                    let block = self.table.state.file.lookup_or_read(block_handle).await?;
 
                     let iter = block.block().iter().rows();
 
@@ -544,11 +585,10 @@ impl Iterable for SSTableIterator {
             return Ok(());
         };
 
+        let block_handle = &self.table.state.index.block_handles[block_index];
+
         // TODO: Optimize this if .current_block already has the block we want.
-        let block = self
-            .block_cache
-            .get_or_create(&self.table, block_index)
-            .await?;
+        let block = self.table.state.file.lookup_or_read(block_handle).await?;
         let iter = unsafe { std::mem::transmute::<_, &DataBlockRef<'static>>(block.block()) }
             .before(start_key, self.table.state.comparator.as_ref())?;
 
@@ -633,12 +673,13 @@ mod tests {
 
         let open_options = SSTableOpenOptions {
             comparator: Arc::new(BytewiseComparator::new()),
+            block_cache,
         };
 
         let table = SSTable::open(&table_path, open_options).await?;
 
         {
-            let mut iter = table.iter(&block_cache);
+            let mut iter = table.iter();
             for i in 0..keys.len() {
                 let entry = iter.next().await?.unwrap();
                 assert_eq!(&entry.key, keys[i].as_bytes());
@@ -650,14 +691,14 @@ mod tests {
 
         // Key is beyond the end of the table.
         {
-            let mut iter = table.iter(&block_cache);
+            let mut iter = table.iter();
             iter.seek(&[b'0', b'1']).await?;
             assert!(iter.next().await?.is_none());
         }
 
         // Seeking to key in the middle of the table.
         for start_i in [1, 1000, 2000, 5000] {
-            let mut iter = table.iter(&block_cache);
+            let mut iter = table.iter();
             iter.seek(keys[start_i].as_bytes()).await?;
 
             for i in start_i..keys.len() {
@@ -672,7 +713,7 @@ mod tests {
         // Seeking around the table multiple times.
         // TODO: Also test with in-exact seeking to keys in-between existing keys.
         {
-            let mut iter = table.iter(&block_cache);
+            let mut iter = table.iter();
             for i in [10, 1, 600, 1000, 601, 5000, 8000, 702] {
                 iter.seek(keys[i].as_bytes()).await?;
 
