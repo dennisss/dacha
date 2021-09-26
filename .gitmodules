@@ -1,0 +1,6 @@
+[submodule "third_party/ca-certificates"]
+	path = third_party/ca-certificates
+	url = https://android.googlesource.com/platform/system/ca-certificates
+[submodule "third_party/pimoroni-eagle"]
+	path = third_party/pimoroni-eagle
+	url = git@github.com:pimoroni/eagle.git
