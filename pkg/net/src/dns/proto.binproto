@@ -1,0 +1,292 @@
+
+structs {
+    name: "Header"
+    endian: BIG_ENDIAN
+    field {
+        name: "id"
+        type { primitive: U16 }
+    }
+    field {
+        name: "flags"
+        type { named: "Flags" }
+    }
+    field {
+        name: "num_questions"
+        type { primitive: U16 }
+    }
+    field {
+        name: "num_answers"
+        type { primitive: U16 }
+    }
+    field {
+        name: "num_authority_records"
+        type { primitive: U16 }
+    }
+    field {
+        name: "num_additional_records"
+        type { primitive: U16 }
+    }
+    #field {
+    #    name: "questions"
+    #    type {
+    #        buffer {
+    #            element_type { named: "Question" }
+    #            length_field_name: "num_questions"
+    #        }
+    #    }
+    #}
+    #field {
+    #    name: "answers"
+    #    type {
+    #        buffer {
+    #            element_type { named: "ResourceRecord" }
+    #            length_field_name: "num_answers"
+    #        }
+    #    }
+    #}
+    #field {
+    #    name: "authority"
+    #    type {
+    #        buffer {
+    #            element_type { named: "ResourceRecord" }
+    #            length_field_name: "num_authority_records"
+    #        }
+    #    }
+    #}
+    # field {
+    #    name: "additional"
+    #    type {
+    #        buffer {
+    #            element_type { named: "ResourceRecord" }
+    #            length_field_name: "num_additional_records"
+    #        }
+    #    }
+    # }
+}
+
+structs {
+    name: "Flags"
+    endian: BIG_ENDIAN
+    field {
+        name: "reply"
+        type { primitive: BOOL }
+        bit_width: 1
+    }
+    field {
+        name: "opcode"
+        type { named: "OpCode" }
+        bit_width: 4
+    }
+    field {
+        name: "authoritive_answer"
+        type { primitive: BOOL  }
+        bit_width: 1
+    }
+    field {
+        name: "truncated"
+        type { primitive: BOOL  }
+        bit_width: 1
+    }
+    field {
+        name: "recursion_desired"
+        type { primitive: BOOL  }
+        bit_width: 1
+    }
+    field {
+        name: "recursion_available"
+        type { primitive: BOOL  }
+        bit_width: 1
+    }
+    field {
+        name: "zero"
+        type { primitive: U8  }
+        bit_width: 3
+    }
+    field {
+        name: "response_code"
+        type { named: "ResponseCode" }
+        bit_width: 4
+    }
+}
+
+enums {
+    name: "OpCode"
+    endian: BIG_ENDIAN
+    type { primitive: U8 }
+    values {
+        name: "Query"
+        value: 0
+    }
+    values {
+        name: "InverseQuery"
+        value: 1
+    }
+    values {
+        name: "Status"
+        value: 2
+    }
+}
+
+enums {
+    name: "ResponseCode"
+    endian: BIG_ENDIAN
+    type { primitive: U8 }
+    values {
+        name: "NoError"
+        value: 0
+    }
+    values {
+        name: "FormatError"
+        value: 1
+    }
+    values {
+        name: "ServerFailure"
+        value: 2
+    }
+    values {
+        name: "NonexistentDomain"
+        value: 3
+    }
+    values {
+        name: "NotImplemented"
+        value: 4
+    }
+    values {
+        name: "Refused"
+        value: 5
+    }
+}
+
+structs {
+    name: "QuestionTrailer"
+    endian: BIG_ENDIAN
+    #field {
+    #    name: "name"
+    #    type { named: "Name" }
+    #}
+    field {
+        name: "type"
+        type { named: "RecordType" }
+    }
+    field {
+        name: "class"
+        type { named: "Class" }
+    }
+}
+
+enums {
+    name: "RecordType"
+    endian: BIG_ENDIAN
+    type { primitive: U16 }
+    values {
+        name: "A"
+        value: 1
+    }
+    values {
+        name: "AAAA"
+        value: 28
+    }
+    values {
+        name: "CNAME"
+        value: 5
+    }
+    values {
+        name: "MX"
+        value: 15
+    }
+    values {
+        name: "NS"
+        value: 2
+    }
+    values {
+        name: "SOA"
+        value: 6
+    }
+    values {
+        name: "SRV"
+        value: 33
+    }
+    values {
+        name: "TXT"
+        value: 16
+    }
+    values {
+        name: "ANY"
+        value: 255
+    }
+}
+
+enums {
+    name: "Class"
+    endian: BIG_ENDIAN
+    type { primitive: U16 }
+    values {
+        name: "IN"
+        comment: "The Internet"
+        value: 1
+    }
+    values {
+        name: "CS"
+        value: 2
+    }
+    values {
+        name: "Any"
+        comment: "Wildcard class. Only valid in queries."
+        value: 255
+    }
+}
+
+structs {
+    name: "ResourceRecordTrailer"
+    endian: BIG_ENDIAN
+    # field {
+    #    name: "name"
+    #    type { named: "Name" }
+    # }
+    field {
+        name: "type"
+        type { named: "RecordType" }
+    }
+    field {
+        name: "class"
+        type { named: "Class" }
+    }
+    field {
+        name: "ttl"
+        type { primitive: U32 }
+    }
+    field {
+        name: "data_len"
+        type { primitive: U16 }
+    }
+    field {
+        name: "data"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                length_field_name: "data_len"
+            }
+        }
+    }
+}
+
+structs {
+    name: "SRVDataHeader"
+    endian: BIG_ENDIAN
+    field {
+        name: "priority"
+        type { primitive: U16 }
+    }
+    field {
+        name: "weight"
+        type { primitive: U16 }
+    }
+    field {
+        name: "port"
+        type { primitive: U16 }
+    }
+    # field {
+    #    name: "name"
+    #    type { named: "Name" }
+    # }
+}

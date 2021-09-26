@@ -31,6 +31,8 @@ pub enum Event {
 async fn run_stream_deck() -> Result<()> {
     let deck = StreamDeckDevice::open().await?;
 
+    deck.set_display_timeout(60).await?;
+
     let computer_active =
         common::async_std::fs::read(project_path!("pkg/home_hub/icons/computer-active.jpg"))
             .await?;
@@ -42,14 +44,37 @@ async fn run_stream_deck() -> Result<()> {
     let laptop_default =
         common::async_std::fs::read(project_path!("pkg/home_hub/icons/laptop.jpg")).await?;
 
-    let mut ddc = DDCDevice::open("/dev/i2c-3")?;
+    let mut ddc = DDCDevice::open("/dev/i2c-20")?;
 
     // ddc.read_edid()?;
+
+    // TODO: Maybe we should be resilient to the display possibly dying.
 
     let mut last_key_state = vec![];
 
     loop {
-        let feature = ddc.get_vcp_feature(0x60)?;
+        let mut num_attempts = 0;
+
+        let feature;
+        loop {
+            match ddc.get_vcp_feature(0x60) {
+                Ok(f) => {
+                    feature = f;
+                    break;
+                }
+                Err(e) => {
+                    num_attempts += 1;
+                    if num_attempts == 10 {
+                        return Err(e);
+                    }
+
+                    eprintln!("Failure getting feature: {}", e);
+
+                    // TODO: Exponential backoff.
+                    common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        }
 
         let current_value = feature.current_value & 0xff;
 

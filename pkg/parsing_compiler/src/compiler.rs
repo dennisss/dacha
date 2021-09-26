@@ -184,13 +184,37 @@ impl<'c> Compiler<'c> {
         })
     }
 
+    //
+    fn cast_primitive_type(&self, typ: &Type) -> Result<(PrimitiveType, &str)> {
+        Ok(match typ.type_case() {
+            TypeTypeCase::Primitive(p) => (*p, ""),
+            TypeTypeCase::Named(name) => {
+                for e in self.root.enums() {
+                    if e.name() == name {
+                        // TODO: Verify that it is primitive
+                        return Ok((e.typ().primitive(), e.name()));
+                    }
+                }
+
+                return Err(format_err!("Missing enum named: {}", name));
+            }
+            _ => {
+                return Err(err_msg("Can't cast type to a primitive"));
+            }
+        })
+    }
+
     fn referenced_field_names<'a>(&self, typ: &'a Type) -> HashSet<&'a str> {
         let mut out = HashSet::new();
 
         fn recurse<'a>(t: &'a Type, out: &mut HashSet<&'a str>) {
             if let TypeTypeCase::Buffer(buf) = t.type_case() {
                 if let BufferTypeSizeCase::LengthFieldName(name) = buf.size_case() {
-                    out.insert(&name);
+                    if let Some((field, _)) = name.as_str().split_once('.') {
+                        out.insert(field);
+                    } else {
+                        out.insert(&name);
+                    }
                 }
 
                 recurse(buf.element_type(), out);
@@ -222,10 +246,7 @@ impl<'c> Compiler<'c> {
             return Err(err_msg("Bit fields only supported in big endian mode"));
         }
 
-        let ptype = match typ.type_case() {
-            TypeTypeCase::Primitive(p) => *p,
-            _ => return Err(err_msg("Bit field must be a primitive")),
-        };
+        let (ptype, enum_name) = self.cast_primitive_type(typ)?;
 
         let desc = BitField::new(bit_offset, bit_width, ptype)?;
 
@@ -253,8 +274,11 @@ impl<'c> Compiler<'c> {
         // Now we'll cast it to the final type
         if ptype == PrimitiveType::BOOL {
             lines.add("val != 0");
+        } else if !enum_name.is_empty() {
+            // TODO: Must check the enum is compatible with the minimally sized int type
+            lines.add(format!("{}::from_{}(val)", enum_name, desc.int_type));
         } else {
-            lines.add(format!("(val as {})", PrimitiveTypeImpl::typename(ptype)?));
+            lines.add(format!("val as {}", PrimitiveTypeImpl::typename(ptype)?));
         }
 
         lines.add("}");
@@ -274,17 +298,20 @@ impl<'c> Compiler<'c> {
             return Err(err_msg("Bit fields only supported in big endian mode"));
         }
 
-        let ptype = match typ.type_case() {
-            TypeTypeCase::Primitive(p) => *p,
-            _ => return Err(err_msg("Bit field must be a primitive")),
-        };
+        let (ptype, enum_name) = self.cast_primitive_type(typ)?;
 
         let desc = BitField::new(bit_offset, bit_width, ptype)?;
 
         let mut lines = LineBuilder::new();
         lines.add("{");
 
-        lines.add(format!("let raw_v = {};", value));
+        if !enum_name.is_empty() {
+            // TODO: This assumes that the enum is stored as the minimal integer type needed
+            // for the number of bits.
+            lines.add(format!("let raw_v = {}.to_{}();", value, desc.int_type));
+        } else {
+            lines.add(format!("let raw_v = {};", value));
+        }
 
         // validate that the value in memory can fit into the serialized number of bits
         // without truncation.
@@ -335,12 +362,12 @@ impl<'c> Compiler<'c> {
         after_bytes: Option<String>,
         scope: &HashMap<&str, &Field>,
     ) -> Result<String> {
+        if let Some((bit_offset, bit_width)) = bit_slice {
+            return self.compile_parse_bit_type(typ, endian, bit_offset, bit_width);
+        }
+
         Ok(match typ.type_case() {
             TypeTypeCase::Primitive(p) => {
-                if let Some((bit_offset, bit_width)) = bit_slice {
-                    return self.compile_parse_bit_type(typ, endian, bit_offset, bit_width);
-                }
-
                 format!(
                     "parse_next!(input, ::parsing::binary::{}_{})",
                     self.endian_str(endian)?,
@@ -565,11 +592,17 @@ impl<'c> Compiler<'c> {
                 Some(element_size.mul(len))
             }
             TypeTypeCase::Named(name) => {
-                let entity = self
-                    .index
-                    .get(name.as_str())
-                    .map(|v| *v)
-                    .ok_or_else(|| format_err!("No entity named: {}", name))?;
+                let entity = self.index.get(name.as_str()).map(|v| *v);
+
+                // TODO: Define a special type of external entity type.
+                let entity = match entity {
+                    Some(e) => e,
+                    None => {
+                        return Ok(None);
+                    }
+                };
+
+                // .ok_or_else(|| format_err!("No entity named: {}", name))?;
 
                 match entity {
                     NamedEntity::Enum(e) => self.sizeof_type(field_name, e.typ())?,
@@ -631,7 +664,7 @@ impl<'c> Compiler<'c> {
                     // do validation at serialization time that sizes are correct.
                     // TODO: Eventually support reading fields from the back of a struct in some
                     // cases.
-                    return Err(err_msg("Field referenced before parsed"));
+                    return Err(format_err!("Field referenced before parsed: {}", name));
                 }
             }
 
@@ -661,6 +694,11 @@ impl<'c> Compiler<'c> {
                         // All good
                         // TODO: Must also validate that the given primitive
                         // type can fit the num bits.
+                    } else if let TypeTypeCase::Named(name) = field.typ().type_case() {
+
+                        // TODO: Look it up and hotpe that it is an enum with a
+                        // primitive type (values can't be larger than the field
+                        // size).
                     } else {
                         return Err(err_msg("Only primitive bit fields are currently supported"));
                     }
@@ -856,6 +894,8 @@ impl<'c> Compiler<'c> {
                 if field.bit_width() > 0 {
                     if let Some(span_width) = bit_field_spans.get(field.name()).cloned() {
                         // This is the first field in the bit slice, so we'll parse the full slice.
+                        // TODO: We need to validate this this many bits actually exist in the
+                        // input.
                         bit_offset = 0;
                         lines.add(format!("let bit_input = &input[0..{}];", span_width / 8));
                         lines.add("input = &input[bit_input.len()..];");
@@ -1048,7 +1088,18 @@ impl<'c> Compiler<'c> {
                 "\tlet value = {};",
                 self.compile_parse_type(desc.typ(), desc.endian(), None, None, &HashMap::new())?
             ));
-            lines.add("\tlet inst = match value {");
+            lines.add(format!("\tlet inst = Self::from_{}(value);", raw_type));
+
+            lines.add("\tOk((inst, input))");
+            lines.add("}");
+            lines.nl();
+
+            lines.add(format!(
+                "pub fn from_{}(value: {}) -> Self {{",
+                raw_type, raw_type
+            ));
+
+            lines.add("\tmatch value {");
             for value in desc.values() {
                 lines.add(format!(
                     "\t\t{} => {}::{},",
@@ -1058,10 +1109,7 @@ impl<'c> Compiler<'c> {
                 ));
             }
             lines.add(format!("\t\tv @ _ => {}::Unknown(v)", desc.name()));
-            lines.add("\t};");
-            lines.nl();
-
-            lines.add("\tOk((inst, input))");
+            lines.add("\t}");
             lines.add("}");
             lines.nl();
 

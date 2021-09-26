@@ -3,6 +3,8 @@ syntax = "proto3";
 message TaskSpec {
     string name = 1;
 
+    string cwd = 10;
+
     repeated string args = 3;
 
     repeated string env = 4;

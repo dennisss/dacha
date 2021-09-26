@@ -14,6 +14,10 @@ message ContainerConfig {
 
 message ContainerProcess {
 
+    // Current working directory for the container.
+    // Must be absolute. If not specified, the container will be started at '/' in the container.
+    string cwd = 5;
+
     // TODO: cwd
     // ^ Must be an absolute path.
 

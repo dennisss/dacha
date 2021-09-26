@@ -433,6 +433,8 @@ impl Node {
             container_config.process_mut().add_env(val.clone());
         }
 
+        container_config.process_mut().set_cwd(task.spec.cwd());
+
         for port in task.spec.ports() {
             if port.number() == 0 {
                 return Err(rpc::Status::invalid_argument(format!(
@@ -773,6 +775,9 @@ impl ContainerNodeService for Node {
         println!("GetLogs Container Id: {}", container_id);
 
         // TODO: Support log seeking.
+
+        // TODO: Immediately after a node is started, this may return a not found error
+        // as the file wouldn't have been written to disk yet.
 
         let mut log_reader = self.shared.runtime.open_log(&container_id).await?;
 

@@ -1,20 +1,14 @@
 [package]
-name = "http"
+name = "net"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 common = { path = "../common" }
 parsing = { path = "../parsing" }
-net = { path = "../net" }
-compression = { path = "../compression" }
-crypto = { path = "../crypto" }
-automata = { path = "../automata" }
 regexp_macros = { path = "../regexp_macros" }
-async-std = "1.9.0"
-failure = "0.1.8"
-
+automata = { path = "../automata" }
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing_compiler" }

@@ -395,6 +395,9 @@ impl Reader {
         Ok(())
     }
 
+    // TODO: For the purposes of resuming the extraction of a bundle, we need to
+    // support writing over an existing archive.
+
     // NOTE: This will only success if none of the files we are extracting exist yet
     // in the output_dir.
     pub async fn extract_files_with_modes(
@@ -413,19 +416,19 @@ impl Reader {
 
             let path = common::async_std::path::PathBuf::from(output_dir.join(relpath));
 
+            // NOTE: We assume that separate directory entries are present and precede all
+            // entries within that directory.
+            // TODO: Make this optional as we should prefer to have directory entries in the
+            // tar.
+            {
+                let dir = path
+                    .parent()
+                    .ok_or_else(|| err_msg("Can't get parent path"))?;
+
+                self.create_dir_all(output_dir, dir, dir_mode).await?;
+            }
+
             if entry.is_regular() {
-                // NOTE: We assume that separate directory entries are present and precede all
-                // entries within that directory.
-                // TODO: Make this optional as we should prefer to have directory entries in the
-                // tar.
-                {
-                    let dir = path
-                        .parent()
-                        .ok_or_else(|| err_msg("Can't get parent path"))?;
-
-                    self.create_dir_all(output_dir, dir, dir_mode).await?;
-                }
-
                 let mut file = OpenOptions::new()
                     .create_new(true)
                     .write(true)

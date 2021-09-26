@@ -893,4 +893,10 @@ macro_rules! parse_next {
         $input = rest;
         v
     }};
+
+    ($input:expr, $f:expr, $( $arg:expr ),*) => {{
+        let (v, rest) = $f($input, $($arg),*)?;
+        $input = rest;
+        v
+    }};
 }

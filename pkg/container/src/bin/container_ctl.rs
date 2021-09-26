@@ -160,9 +160,6 @@ async fn run_start(node_addr: &str, command: &StartTaskCommand) -> Result<()> {
 
     println!("Starting server");
 
-    // ["/usr/bin/bash", "-c", "for i in {1..20}; do echo \"Tick $i\"; sleep 1;
-    // done"]
-
     let mut terminal_mode = false;
 
     let mut start_request = container::StartTaskRequest::default();
@@ -182,6 +179,8 @@ async fn run_start(node_addr: &str, command: &StartTaskCommand) -> Result<()> {
     // the task.
 
     // println!("Container Id: {}", start_response.container_id());
+
+    common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
 
     let mut log_request = container::LogRequest::default();
     log_request.set_task_name(start_request.task_spec().name());

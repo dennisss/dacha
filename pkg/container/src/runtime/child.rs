@@ -395,6 +395,10 @@ fn exec_child_process(
 
     setup_socket.wait_finished()?;
 
+    if !process.cwd().is_empty() {
+        std::env::set_current_dir(process.cwd())?;
+    }
+
     nix::unistd::execve(&argv[0], &argv, &env)?;
 
     unsafe { libc::exit(1) };

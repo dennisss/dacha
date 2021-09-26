@@ -143,7 +143,7 @@ impl DDCDevice {
         resp[1] = 0x50;
 
         if resp[2] != 0x88 || resp[3] != 0x02 {
-            return Err(err_msg("Invalid response"));
+            return Err(format_err!("Invalid response: {:02x?}", &resp[2..]));
         }
 
         let rc = resp[4];
@@ -195,7 +195,7 @@ impl DDCDevice {
         req.push(compute_checksum(&req));
         self.i2c.write(req[0] >> 1, &req[1..])?;
 
-        std::thread::sleep(std::time::Duration::from_millis(40));
+        std::thread::sleep(std::time::Duration::from_millis(50));
 
         Ok(())
     }
