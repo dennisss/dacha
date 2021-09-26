@@ -14,8 +14,8 @@ use common::async_std::task;
 use common::errors::*;
 use common::futures::stream::StreamExt;
 use common::io::*;
-use common::task::ChildTask;
 use common::CancellationToken;
+use net::ip::IPAddress;
 
 use crate::message::*;
 use crate::message_body::{decode_request_body_v1, encode_response_body_v1};
@@ -26,7 +26,6 @@ use crate::request::*;
 use crate::response::*;
 use crate::spec::*;
 use crate::status_code::*;
-use crate::uri::IPAddress;
 use crate::v2;
 
 // TODO: See https://tools.ietf.org/html/rfc7230#section-3.5 for

@@ -25,10 +25,10 @@ pub struct SimpleLog {
 
 impl SimpleLog {
     pub async fn create(path: &Path) -> Result<SimpleLog> {
-        let b = BlobFile::builder(path)?;
+        let b = BlobFile::builder(path).await?;
 
         let log = SimpleLogValue::default();
-        let file = b.create(&log.serialize()?)?;
+        let file = b.create(&log.serialize()?).await?;
 
         Ok(SimpleLog {
             mem: MemoryLog::new(),
@@ -38,8 +38,8 @@ impl SimpleLog {
     }
 
     pub async fn open(path: &Path) -> Result<SimpleLog> {
-        let b = BlobFile::builder(path)?;
-        let (file, data) = b.open()?;
+        let b = BlobFile::builder(path).await?;
+        let (file, data) = b.open().await?;
 
         let log = SimpleLogValue::parse(&data)?;
         let mem = MemoryLog::new();
@@ -59,9 +59,9 @@ impl SimpleLog {
         })
     }
 
-    pub fn purge(path: &Path) -> Result<()> {
-        let b = BlobFile::builder(path)?;
-        b.purge()?;
+    pub async fn purge(path: &Path) -> Result<()> {
+        let b = BlobFile::builder(path).await?;
+        b.purge().await?;
         Ok(())
     }
 }
@@ -125,7 +125,7 @@ impl Log for SimpleLog {
             log.add_entries((*e).clone());
         }
 
-        s.store(&log.serialize()?)?;
+        s.store(&log.serialize()?).await?;
 
         *self.last_flushed.lock().await = last_seq;
 

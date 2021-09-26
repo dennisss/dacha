@@ -196,6 +196,15 @@ impl ArgType for std::path::PathBuf {
     }
 }
 
+impl ArgType for async_std::path::PathBuf {
+    fn parse_raw_arg(raw_arg: RawArgValue) -> Result<Self> {
+        match raw_arg {
+            RawArgValue::Bool(_) => Err(err_msg("Expected string, got bool")),
+            RawArgValue::String(s) => Ok(async_std::path::PathBuf::from(s)),
+        }
+    }
+}
+
 macro_rules! impl_arg_type_from_str {
     ($name:ty) => {
         impl ArgType for $name {

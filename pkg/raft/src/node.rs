@@ -52,6 +52,7 @@ pub struct Node<R> {
     // TODO: Is this used for anything?
     pub server: Server<R>,
 
+    // TODO: Decouple all the discovery stuff from the Ndode
     pub discovery: Arc<DiscoveryService>,
 
     routes_file: Mutex<BlobFile>,
@@ -73,9 +74,11 @@ impl<R: 'static + Send> Node<R> {
         // Basically need to get a:
         // (meta, meta_file, config_snapshot, config_file, log_file)
 
-        let meta_builder = BlobFile::builder(&config.dir.path().join("meta".to_string()))?;
-        let config_builder = BlobFile::builder(&config.dir.path().join("config".to_string()))?;
-        let routes_builder = BlobFile::builder(&config.dir.path().join("routes".to_string()))?;
+        let meta_builder = BlobFile::builder(&config.dir.path().join("meta".to_string())).await?;
+        let config_builder =
+            BlobFile::builder(&config.dir.path().join("config".to_string())).await?;
+        let routes_builder =
+            BlobFile::builder(&config.dir.path().join("routes".to_string())).await?;
         let log_path = config.dir.path().join("log".to_string());
 
         // If a previous instance was started in this directory, restart it
@@ -93,13 +96,13 @@ impl<R: 'static + Send> Node<R> {
             BlobFile,
             SimpleLog,
             BlobFile,
-        ) = if meta_builder.exists() {
-            let (meta_file, meta_data) = meta_builder.open()?;
+        ) = if meta_builder.exists().await {
+            let (meta_file, meta_data) = meta_builder.open().await?;
 
             // TODO: In most cases, we can survive without having a routes file
             // on disk or even a config file in many cases
-            let (config_file, config_data) = config_builder.open()?;
-            let (routes_file, routes_data) = routes_builder.open()?;
+            let (config_file, config_data) = config_builder.open().await?;
+            let (routes_file, routes_data) = routes_builder.open().await?;
             let mut log = SimpleLog::open(&log_path).await?;
 
             let meta = ServerMetadata::parse(&meta_data)?;
@@ -136,9 +139,9 @@ impl<R: 'static + Send> Node<R> {
 
             // Cleanup any old partially written files
             // TODO: Log when this occurs
-            config_builder.purge()?;
-            routes_builder.purge()?;
-            SimpleLog::purge(&log_path)?;
+            config_builder.purge().await?;
+            routes_builder.purge().await?;
+            SimpleLog::purge(&log_path).await?;
 
             // Every single server starts with totally empty versions of everything
             let mut meta = super::proto::consensus_state::Metadata::default();
@@ -221,14 +224,15 @@ impl<R: 'static + Send> Node<R> {
 
             log_file.flush().await?;
 
-            let config_file = config_builder.create(&config_snapshot.serialize()?)?;
+            let config_file = config_builder.create(&config_snapshot.serialize()?).await?;
 
-            let routes_file =
-                routes_builder.create(&agent.lock().await.serialize().serialize()?)?;
+            let routes_file = routes_builder
+                .create(&agent.lock().await.serialize().serialize()?)
+                .await?;
 
             // We save the meta file to disk last such that if the meta file exists, then we
             // know that we have a complete set of files on disk
-            let meta_file = meta_builder.create(&server_meta.serialize()?)?;
+            let meta_file = meta_builder.create(&server_meta.serialize()?).await?;
 
             (
                 server_meta,

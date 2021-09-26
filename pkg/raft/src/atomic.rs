@@ -1,8 +1,8 @@
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
-
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use common::async_std::fs::{self, File, OpenOptions};
+use common::async_std::io::prelude::*;
+use common::async_std::io::SeekFrom;
+use common::async_std::path::{Path, PathBuf};
 use common::bytes::Bytes;
 use common::errors::*;
 use crypto::checksum::crc::CRC32CHasher;
@@ -87,7 +87,7 @@ impl BlobFile {
     // exists (i.e. whether create() or open() should be called) by returning an
     // enum here instead of relying on the user checking the value of exists()
     // at runtime
-    pub fn builder(path: &Path) -> Result<BlobFileBuilder> {
+    pub async fn builder(path: &Path) -> Result<BlobFileBuilder> {
         let path = path.to_owned();
         let path_tmp = PathBuf::from(&(path.to_str().unwrap().to_owned() + ".tmp"));
         let path_new = PathBuf::from(&(path.to_str().unwrap().to_owned() + ".new"));
@@ -98,11 +98,11 @@ impl BlobFile {
                 None => return Err(err_msg("Path is not in a directory")),
             };
 
-            if !path_dir.exists() {
+            if !path_dir.exists().await {
                 return Err(err_msg("Directory does not exist"));
             }
 
-            File::open(&path_dir)?
+            File::open(&path_dir).await?
         };
 
         Ok(BlobFileBuilder {
@@ -116,7 +116,9 @@ impl BlobFile {
     }
 
     /// Overwrites the file with a new value (atomically of course)
-    pub fn store(&self, data: &[u8]) -> Result<()> {
+    ///
+    /// TODO: Switch to using the SyncedPath system.
+    pub async fn store(&self, data: &[u8]) -> Result<()> {
         let new_filesize = (data.len() as u64) + PADDING;
 
         // Performant case of usually only requiring one sector write to replace the
@@ -125,38 +127,39 @@ impl BlobFile {
         // in length in order to avoid having to do all of the truncation and length
         // changes TODO: Possibly speed up by caching the size of the old file?
         if new_filesize < DISK_SECTOR_SIZE {
-            let old_filesize = self.path.metadata()?.len();
+            let old_filesize = self.path.metadata().await?.len();
 
-            let mut file = OpenOptions::new().write(true).open(&self.path)?;
+            let mut file = OpenOptions::new().write(true).open(&self.path).await?;
 
             if new_filesize > old_filesize {
-                file.set_len(new_filesize)?;
-                file.sync_data()?;
+                file.set_len(new_filesize).await?;
+                file.sync_data().await?;
             }
 
-            Self::write_simple(&mut file, data)?;
+            Self::write_simple(&mut file, data).await?;
 
             if new_filesize < old_filesize {
-                file.set_len(new_filesize)?;
+                file.set_len(new_filesize).await?;
             }
 
-            file.sync_data()?;
+            file.sync_data().await?;
 
             return Ok(());
         }
 
         // Rename old value
-        std::fs::rename(&self.path, &self.path_tmp)?;
-        self.dir.sync_data()?;
+        fs::rename(&self.path, &self.path_tmp).await?;
+        self.dir.sync_data().await?;
 
         // Write new value
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&self.path)?;
-        Self::write_simple(&mut file, data)?;
-        file.sync_data()?;
-        self.dir.sync_data()?;
+            .open(&self.path)
+            .await?;
+        Self::write_simple(&mut file, data).await?;
+        file.sync_data().await?;
+        self.dir.sync_data().await?;
 
         // Remove old value
         /*
@@ -175,26 +178,27 @@ impl BlobFile {
         }
         */
 
-        std::fs::remove_file(&self.path_tmp)?;
+        fs::remove_file(&self.path_tmp).await?;
 
         // NOTE: A dir sync should not by needed here
 
         Ok(())
     }
 
-    fn write_simple(file: &mut File, data: &[u8]) -> Result<u64> {
+    async fn write_simple(file: &mut File, data: &[u8]) -> Result<u64> {
         let sum = {
             let mut hasher = CRC32CHasher::new();
             hasher.update(data);
             hasher.finish_u32()
         };
 
-        file.seek(SeekFrom::Start(0))?;
-        file.write_u32::<LittleEndian>(data.len() as u32)?;
-        file.write_all(data)?;
-        file.write_u32::<LittleEndian>(sum)?;
+        file.seek(SeekFrom::Start(0)).await?;
 
-        let pos = file.seek(SeekFrom::Current(0))?;
+        file.write_all(&(data.len() as u32).to_le_bytes()).await?;
+        file.write_all(data).await?;
+        file.write_all(&(sum as u32).to_le_bytes()).await?;
+
+        let pos = file.seek(SeekFrom::Current(0)).await?;
         assert_eq!(pos, (data.len() as u64) + PADDING);
 
         Ok(pos)
@@ -202,22 +206,22 @@ impl BlobFile {
 }
 
 impl BlobFileBuilder {
-    pub fn exists(&self) -> bool {
-        self.inner.path.exists() || self.inner.path_tmp.exists()
+    pub async fn exists(&self) -> bool {
+        self.inner.path.exists().await || self.inner.path_tmp.exists().await
     }
 
     /// If any existing data exists, this will delete it
-    pub fn purge(&self) -> Result<()> {
-        if self.inner.path.exists() {
-            std::fs::remove_file(&self.inner.path)?;
+    pub async fn purge(&self) -> Result<()> {
+        if self.inner.path.exists().await {
+            fs::remove_file(&self.inner.path).await?;
         }
 
-        if self.inner.path_tmp.exists() {
-            std::fs::remove_file(&self.inner.path_tmp)?;
+        if self.inner.path_tmp.exists().await {
+            fs::remove_file(&self.inner.path_tmp).await?;
         }
 
-        if self.inner.path_new.exists() {
-            std::fs::remove_file(&self.inner.path_new)?;
+        if self.inner.path_new.exists().await {
+            fs::remove_file(&self.inner.path_new).await?;
         }
 
         Ok(())
@@ -226,34 +230,34 @@ impl BlobFileBuilder {
     /// Opens the file assuming that it exists
     /// Errors out if we could be not read the data because it is corrupt or
     /// non-existent
-    pub fn open(self) -> Result<(BlobFile, Bytes)> {
-        if !self.exists() {
+    pub async fn open(self) -> Result<(BlobFile, Bytes)> {
+        if !self.exists().await {
             return Err(err_msg("File does not exist"));
         }
 
         let inst = self.inner;
 
-        if inst.path.exists() {
-            let res = Self::try_open(&inst.path)?;
+        if inst.path.exists().await {
+            let res = Self::try_open(&inst.path).await?;
             if let Some(data) = res {
-                if inst.path_tmp.exists() {
-                    std::fs::remove_file(&inst.path_tmp)?;
-                    inst.dir.sync_all()?;
+                if inst.path_tmp.exists().await {
+                    fs::remove_file(&inst.path_tmp).await?;
+                    inst.dir.sync_all().await?;
                 }
 
                 return Ok((inst, data));
             }
         }
 
-        if inst.path_tmp.exists() {
-            let res = Self::try_open(&inst.path_tmp)?;
+        if inst.path_tmp.exists().await {
+            let res = Self::try_open(&inst.path_tmp).await?;
             if let Some(data) = res {
-                if inst.path.exists() {
-                    std::fs::remove_file(&inst.path)?;
+                if inst.path.exists().await {
+                    fs::remove_file(&inst.path).await?;
                 }
 
-                std::fs::rename(&inst.path_tmp, &inst.path)?;
-                inst.dir.sync_all()?;
+                fs::rename(&inst.path_tmp, &inst.path).await?;
+                inst.dir.sync_all().await?;
 
                 return Ok((inst, data));
             }
@@ -264,11 +268,11 @@ impl BlobFileBuilder {
 
     /// Tries to open the given path
     /// Returns None if the file doesn't contain valid data in it
-    fn try_open(path: &Path) -> Result<Option<Bytes>> {
-        let mut file = File::open(path)?;
+    async fn try_open(path: &Path) -> Result<Option<Bytes>> {
+        let mut file = File::open(path).await?;
 
         let mut buf = vec![];
-        file.read_to_end(&mut buf)?;
+        file.read_to_end(&mut buf).await?;
 
         let length = {
             if buf.len() < 4 {
@@ -300,7 +304,7 @@ impl BlobFileBuilder {
 
         // File is larger than its valid contents (we will just truncate it)
         if buf.len() > checksum_end {
-            file.set_len(data_end as u64)?;
+            file.set_len(data_end as u64).await?;
         }
 
         let bytes = Bytes::from(buf);
@@ -310,8 +314,8 @@ impl BlobFileBuilder {
 
     /// Creates a new file with the given initial value
     /// Errors out if any data already exists or if the write fails
-    pub fn create(self, initial_value: &[u8]) -> Result<BlobFile> {
-        if self.exists() {
+    pub async fn create(self, initial_value: &[u8]) -> Result<BlobFile> {
+        if self.exists().await {
             return Err(err_msg("Existing data already exists"));
         }
 
@@ -319,21 +323,21 @@ impl BlobFileBuilder {
 
         // This may occur if we previously tried creating a data file but we
         // were never able to suceed
-        if inst.path_new.exists() {
-            std::fs::remove_file(&inst.path_new)?;
+        if inst.path_new.exists().await {
+            fs::remove_file(&inst.path_new).await?;
         }
 
         let mut opts = OpenOptions::new();
         opts.write(true).create_new(true);
 
-        let mut file = opts.open(&inst.path_new)?;
+        let mut file = opts.open(&inst.path_new).await?;
 
-        BlobFile::write_simple(&mut file, initial_value)?;
-        file.sync_all()?;
+        BlobFile::write_simple(&mut file, initial_value).await?;
+        file.sync_all().await?;
 
-        std::fs::rename(&inst.path_new, &inst.path)?;
+        fs::rename(&inst.path_new, &inst.path).await?;
 
-        inst.dir.sync_all()?;
+        inst.dir.sync_all().await?;
 
         Ok(inst)
     }

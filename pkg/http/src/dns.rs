@@ -1,9 +1,12 @@
-use super::uri::*;
+use std::ffi::CString;
+use std::ptr::{null, null_mut};
+
 use common::errors::*;
 use common::libc;
 use common::libc::getaddrinfo;
-use std::ffi::CString;
-use std::ptr::{null, null_mut};
+use net::ip::IPAddress;
+
+use crate::uri::*;
 
 #[derive(Debug, PartialEq)]
 pub enum SocketType {

@@ -792,7 +792,7 @@ impl<R: Send + 'static> ServerShared<R> {
             server_metadata.set_id(state.inst.id().clone());
             server_metadata.set_cluster_id(shared.cluster_id.clone());
             server_metadata.set_meta(state.inst.meta().clone());
-            state.meta_file.store(&server_metadata.serialize()?)?;
+            state.meta_file.store(&server_metadata.serialize()?).await?;
 
             should_update_commit = true;
         }
@@ -817,7 +817,8 @@ impl<R: Send + 'static> ServerShared<R> {
 
             state
                 .config_file
-                .store(&server_config_snapshot.serialize()?)?;
+                .store(&server_config_snapshot.serialize()?)
+                .await?;
         }
 
         // TODO: We currently assume that the ConsensusModule will always output

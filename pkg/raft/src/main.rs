@@ -202,6 +202,7 @@ impl redis::server::Service for RaftRedisServer {
 
 // NOTE: I still need to implement default values.
 #[derive(Args)]
+#[arg(desc = "Sample consensus reaching node")]
 struct Args {
     #[arg(desc = "An existing directory to store data file for this unique instance")]
     dir: PathBuf,
@@ -220,9 +221,6 @@ struct Args {
 }
 
 async fn main_task() -> Result<()> {
-    //    let matches = App::new("Raft")
-    //        .about("Sample consensus reaching node")
-
     let args = common::args::parse_args::<Args>()?;
 
     // TODO: For now, we will assume that bootstrapping is well known up front
@@ -238,7 +236,7 @@ async fn main_task() -> Result<()> {
     ];
 
     // XXX: Need to store this somewhere more persistent so that we don't lose it
-    let lock = DirLock::open(&args.dir)?;
+    let lock = DirLock::open(&args.dir).await?;
 
     // XXX: Right here if we are able to retrieve a snapshot, then we are allowed to
     // do that But we will end up thinking of all the stuff initially on disk as

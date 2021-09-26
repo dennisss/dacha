@@ -2,7 +2,6 @@ syntax = "proto3";
 
 import "pkg/raft/src/proto/consensus.proto";
 
-
 // Persistent information describing the state of the current server
 message Metadata {
     // Latest term seen by this server (starts at 0).
@@ -31,7 +30,8 @@ message Metadata {
 // the same time (possibly convert to one single list and make the two
 // categories purely getter methods for iterators)
 message Configuration {
-    // All servers in the cluster which must be considered for votes
+    // All servers in the cluster which participate in voting rounds. A majority of servers in this
+    //  list must vote the same way for a quorem to be achieved.
     repeated ServerId members = 1 [unordered_set = true];
 
     // All servers which do not participate in votes (at least not yet), but

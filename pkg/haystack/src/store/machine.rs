@@ -77,7 +77,7 @@ impl StoreMachine {
     /// Opens or creates a new store machine configuration based out of the
     /// given directory TODO: Long term this will also take a Directory
     /// client so that we can bootstrap everything from that
-    pub fn load(dir: &Directory, port: u16, folder: &str) -> Result<StoreMachine> {
+    pub async fn load(dir: &Directory, port: u16, folder: &str) -> Result<StoreMachine> {
         // Sanity checking sizes of all sizings
         // TODO: Move this somewhere else?
         assert!(dir.config.store().preallocate_size() <= dir.config.store().allocation_size());
@@ -85,7 +85,7 @@ impl StoreMachine {
 
         let path = Path::new(folder);
 
-        let lock = DirLock::open(path)?;
+        let lock = DirLock::open(path).await?;
 
         let volumes_path = path.join(String::from("volumes"));
 
