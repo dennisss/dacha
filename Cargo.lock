@@ -1730,7 +1730,7 @@ dependencies = [
 name = "raft"
 version = "0.1.0"
 dependencies = [
- "byteorder",
+ "async-std",
  "common",
  "crypto",
  "fs2",
@@ -1741,6 +1741,7 @@ dependencies = [
  "protobuf",
  "protobuf_compiler",
  "rpc",
+ "sstable",
 ]
 
 [[package]]

@@ -39,10 +39,9 @@ use common::async_std::io::prelude::{ReadExt, SeekExt, WriteExt};
 use common::async_std::io::{Read, Seek, SeekFrom, Write};
 use common::async_std::path::Path;
 use common::errors::*;
+use common::fs::sync::*;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
-
-use crate::file::*;
 
 const BLOCK_SIZE: u64 = 32 * 1024;
 
@@ -356,7 +355,6 @@ impl RecordReader {
 
 pub struct RecordWriter {
     file: SyncedFile,
-    // NOTE: All the below are main
 }
 
 impl RecordWriter {
@@ -388,6 +386,11 @@ impl RecordWriter {
 
     }
     */
+
+    pub async fn current_size(&self) -> Result<u64> {
+        let meta = self.file.metadata().await?;
+        Ok(meta.len())
+    }
 
     // TODO: Support atomic writes across multiple unsynchronized writers?
     // TODO: Before writing, read the final block and verify that it is valid and

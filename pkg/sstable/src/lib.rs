@@ -16,7 +16,6 @@ mod encoding;
 pub mod memtable;
 pub mod record_log;
 // mod skip_list;
-mod file;
 pub mod iterable;
 pub mod priority_queue;
 pub mod table;
@@ -25,6 +24,21 @@ pub mod table;
     At each level, we will store a Vec<File> that we will binary search for
     which
 
+*/
+
+/*
+Were will be use a SyncedFile?
+- Misc Files
+    - CURRENT
+    - IDENTITY
+- RecordWriter
+    - Log
+    - Manifest
+- SSTableBuilder
+    -
+
+- Main challenges:
+    - If we need to write many files (e.g. having multiple output files during a compaction, we should prefer to flush the directory just once.
 */
 
 /*

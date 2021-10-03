@@ -623,7 +623,7 @@ mod tests {
 
         for (s, obj) in cases.iter() {
             let mut parser = RESPParser::new();
-            assert_eq!(parser.parse(s), Ok((s.len(), Some(obj.clone()))));
+            assert_eq!(parser.parse(s).unwrap(), (s.len(), Some(obj.clone())));
 
             // Trying the reverse direction
             // In the general case we can't check the serialization containing nils as it
@@ -651,7 +651,7 @@ mod tests {
 
         for (s, obj) in cases.iter() {
             let mut parser = RESPParser::new();
-            assert_eq!(parser.parse(s), Ok((s.len(), Some(obj.clone()))));
+            assert_eq!(parser.parse(s).unwrap(), (s.len(), Some(obj.clone())));
         }
     }
 

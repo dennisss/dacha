@@ -1,4 +1,3 @@
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use common::async_std::fs::{self, File, OpenOptions};
 use common::async_std::io::prelude::*;
 use common::async_std::io::SeekFrom;
@@ -17,22 +16,21 @@ const DISK_SECTOR_SIZE: u64 = 512;
     Cases to test:
     - Upon a failed creation, we should not report the file as created
         - Successive calls to create() should be able to delete any partially created state
-
 */
-
-/*
-    The read index in the case of the memory store
-    -> Important notice
-
-*/
-
 /*
     NOTE: etcd/raft assumes that the entire snapshot fits in memory
     -> Not particularly good
     -> Fine as long as limit range sizes for
 */
 
-// Simple case is to just generate a callback
+// TODO: For unlinks, unlinkat would probably be most efficient using a relative
+// path
+// XXX: Additionally openat for
+
+// Writing will always create a new file right?
+
+// TODO: open must distinguish between failing to read existing data and failing
+// because it doesn't exist
 
 // https://docs.rs/libc/0.2.48/libc/fn.unlinkat.html
 // TODO: Also linux's rename will atomically replace any overriden file so we
@@ -69,19 +67,6 @@ pub struct BlobFile {
     path_new: PathBuf,
 }
 
-pub struct BlobFileBuilder {
-    inner: BlobFile,
-}
-
-// TODO: For unlinks, unlinkat would probably be most efficient using a relative
-// path
-// XXX: Additionally openat for
-
-// Writing will always create a new file right?
-
-// TODO: open must distinguish between failing to read existing data and failing
-// because it doesn't exist
-
 impl BlobFile {
     // TODO: If I wanted to be super Rusty, I could represent whether or not it
     // exists (i.e. whether create() or open() should be called) by returning an
@@ -92,6 +77,7 @@ impl BlobFile {
         let path_tmp = PathBuf::from(&(path.to_str().unwrap().to_owned() + ".tmp"));
         let path_new = PathBuf::from(&(path.to_str().unwrap().to_owned() + ".new"));
 
+        // TODO: Should sync all parent directories of this directory.
         let dir = {
             let path_dir = match path.parent() {
                 Some(p) => p,
@@ -158,6 +144,7 @@ impl BlobFile {
             .open(&self.path)
             .await?;
         Self::write_simple(&mut file, data).await?;
+        file.flush().await?;
         file.sync_data().await?;
         self.dir.sync_data().await?;
 
@@ -203,6 +190,10 @@ impl BlobFile {
 
         Ok(pos)
     }
+}
+
+pub struct BlobFileBuilder {
+    inner: BlobFile,
 }
 
 impl BlobFileBuilder {
@@ -278,7 +269,7 @@ impl BlobFileBuilder {
             if buf.len() < 4 {
                 return Ok(None);
             }
-            (&buf[0..4]).read_u32::<LittleEndian>()? as usize
+            u32::from_le_bytes(*array_ref![buf, 0, 4]) as usize
         };
 
         let data_start = 4;
@@ -296,7 +287,7 @@ impl BlobFileBuilder {
             hasher.update(&buf[data_start..data_end]);
             hasher.finish_u32()
         };
-        let expected_sum = (&buf[data_end..checksum_end]).read_u32::<LittleEndian>()?;
+        let expected_sum = u32::from_le_bytes(*array_ref![buf, data_end, 4]);
 
         if sum != expected_sum {
             return Ok(None);

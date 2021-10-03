@@ -28,20 +28,25 @@ pub type FileReleasedCallback = Arc<dyn Fn(u64) + Send + Sync + 'static>;
 pub struct VersionSet {
     options: Arc<EmbeddedDBOptions>,
 
-    pub latest_version: Arc<Version>,
+    latest_version: Arc<Version>,
 
-    pub next_file_number: u64,
+    next_file_number: u64,
 
     /// Number of the current log file.
     /// Once a database is succesfully created, this will always be non-None.
-    pub log_number: Option<u64>,
+    ///
+    /// The main exception is when EmbeddedDBOptions::disable_wal is enabled,
+    /// then this and prev_log_number will always be None.
+    log_number: Option<u64>,
 
     /// If present, then this is the previous log number which corresponds to
     /// all values in the immutable_table. This file can be deleted once the
     /// immutable_table is flushed to disk.
-    pub prev_log_number: Option<u64>,
+    prev_log_number: Option<u64>,
 
-    pub last_sequence: u64,
+    /// Last sequence flushed to tables (excluding recent entries in the write
+    /// ahead log).
+    last_sequence: u64,
 
     release_callback: FileReleasedCallback,
 }
@@ -61,11 +66,31 @@ impl VersionSet {
         }
     }
 
+    pub fn latest_version(&self) -> &Arc<Version> {
+        &self.latest_version
+    }
+
+    pub fn next_file_number(&self) -> u64 {
+        self.next_file_number
+    }
+
+    pub fn log_number(&self) -> Option<u64> {
+        self.log_number.clone()
+    }
+
+    pub fn prev_log_number(&self) -> Option<u64> {
+        self.prev_log_number.clone()
+    }
+
+    pub fn last_sequence(&self) -> u64 {
+        self.last_sequence
+    }
+
     pub async fn write_to_new(&self, writer: &mut RecordWriter) -> Result<()> {
         let mut edit = VersionEdit::default();
         edit.next_file_number = Some(self.next_file_number);
         edit.log_number = self.log_number.clone();
-        edit.prev_log_number = Some(self.prev_log_number.unwrap_or(0));
+        edit.prev_log_number = self.prev_log_number.clone();
         edit.last_sequence = Some(self.last_sequence);
         edit.comparator = Some(self.options.table_options.comparator.name().to_string());
 
@@ -207,11 +232,9 @@ impl VersionSet {
     }
 
     pub fn apply_new_edit(&mut self, version_edit: VersionEdit, new_tables: Vec<SSTable>) {
-        // NOTE: We ignore the sequence in VersionEdits as we will rely on writes to
-        // increment the sequence. Meanwhile this function will only be called during
-        // compactions after the initial sequence has already been recovered.
         if let Some(last_sequence) = version_edit.last_sequence {
-            assert!(last_sequence <= self.last_sequence);
+            assert!(last_sequence >= self.last_sequence);
+            self.last_sequence = last_sequence;
         }
 
         if let Some(next_file_number) = version_edit.next_file_number {

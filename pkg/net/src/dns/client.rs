@@ -14,6 +14,10 @@ use crate::ip::IPAddress;
 // TODO: Also implement parallelization of queries (given that all packets are
 // sequencied, this should be straight forward).
 
+// TODO: Use EDNS to set max payload size to 4096
+// TODO: Then how we should we check syscall error codes to avoid failures if
+// part of the packet is lost?
+
 const MAX_PACKET_SIZE: usize = 512;
 const DEFAULT_PORT: u16 = 53;
 

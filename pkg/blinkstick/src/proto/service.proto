@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+service BlinkStick {
+    rpc Play (PlayRequest) returns (PlayResponse);
+}
+
+message PlayRequest {
+    enum Effect {
+        UNKNOWN = 0;
+        BLINK = 1;
+        RAINBOX = 2;
+    }
+    
+    Effect effect = 1;
+
+}
+
+message PlayResponse {
+
+}
+

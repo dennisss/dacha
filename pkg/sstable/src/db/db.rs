@@ -13,6 +13,7 @@ use common::async_std::prelude::*;
 use common::async_std::sync::{Mutex, RwLock};
 use common::bytes::Bytes;
 use common::errors::*;
+use common::fs::sync::SyncedPath;
 use common::hex;
 use common::task::ChildTask;
 use crypto::random::SharedRng;
@@ -24,7 +25,6 @@ use crate::db::options::*;
 use crate::db::version::*;
 use crate::db::version_edit::*;
 use crate::db::write_batch::*;
-use crate::file::SyncedPath;
 use crate::iterable::*;
 use crate::memtable::memtable::MemTable;
 use crate::memtable::*;
@@ -138,6 +138,7 @@ struct EmbeddedDBShared {
     options: Arc<EmbeddedDBOptions>,
     dir: FilePaths,
     state: RwLock<EmbeddedDBState>,
+    flushed_channel: (channel::Sender<()>, channel::Receiver<()>),
 }
 
 struct EmbeddedDBState {
@@ -146,20 +147,33 @@ struct EmbeddedDBState {
     /// what they are doing so that we can close the database gracefully.
     closing: bool,
 
-    log: RecordWriter,
+    /// Current log being used to write new changes before they are compacted
+    /// into a table.
+    ///
+    /// Will be None only if EmbeddedDBOptions.disable_wal was set.
+    log: Option<RecordWriter>,
+
+    /// Last sequence written to the log but not yet flushed to a table.
+    log_last_sequence: u64,
 
     /// Primary table for reading/writing latest values.
     mutable_table: Arc<MemTable>,
 
     /// Immutable table currently being written to disk.
-    immutable_table: Option<Arc<MemTable>>,
+    immutable_table: Option<ImmutableTable>,
 
-    /// Contains of the state persisted to disk ap
+    /// Contains of the state persisted to disk up to now.
     version_set: VersionSet,
 
     /// User callbacks which are notified next time the compaction thread is
     /// idle and has no more work pending.
     compaction_callbacks: Vec<channel::Sender<()>>,
+}
+
+#[derive(Clone)]
+struct ImmutableTable {
+    table: Arc<MemTable>,
+    last_sequence: u64,
 }
 
 impl EmbeddedDB {
@@ -229,23 +243,37 @@ impl EmbeddedDB {
         lock_file: std::fs::File,
         dir: FilePaths,
     ) -> Result<Self> {
+        // TODO: In this mode, ensure that we truncate any existing files (they may have
+        // been partially opened only).
+
         let (compaction_receiver, compaction_notifier, release_callback) =
             CompactionReceiver::new();
 
         let mut version_set = VersionSet::new(release_callback, options.clone());
 
-        let manifest_num = version_set.next_file_number;
-        version_set.next_file_number += 1;
+        let manifest_num = version_set.next_file_number();
+        {
+            let mut edit = VersionEdit::default();
+            edit.next_file_number = Some(manifest_num + 1);
+            version_set.apply_new_edit(edit, vec![]);
+        }
 
         let manifest_path = dir.manifest(manifest_num);
 
         let mut manifest = RecordWriter::open_with(manifest_path).await?;
 
         let log = {
-            let num = version_set.next_file_number;
-            version_set.next_file_number += 1;
-            version_set.log_number = Some(num);
-            RecordWriter::open_with(dir.log(num)).await?
+            if options.disable_wal {
+                None
+            } else {
+                let num = version_set.next_file_number();
+
+                let mut edit = VersionEdit::default();
+                edit.next_file_number = Some(num + 1);
+                edit.log_number = Some(num);
+
+                Some(RecordWriter::open_with(dir.log(num)).await?)
+            }
         };
 
         version_set.write_to_new(&mut manifest).await?;
@@ -268,9 +296,11 @@ impl EmbeddedDB {
         let shared = Arc::new(EmbeddedDBShared {
             options,
             dir,
+            flushed_channel: channel::bounded(1),
             state: RwLock::new(EmbeddedDBState {
                 closing: false,
                 log,
+                log_last_sequence: version_set.last_sequence(),
                 mutable_table,
                 immutable_table: None,
                 version_set,
@@ -302,7 +332,7 @@ impl EmbeddedDB {
         let (compaction_receiver, compaction_notifier, release_callback) =
             CompactionReceiver::new();
 
-        let mut version_set = {
+        let version_set = {
             let mut manifest_file = RecordReader::open(manifest_path.read_path()).await?;
             VersionSet::recover_existing(&mut manifest_file, release_callback, options.clone())
                 .await?
@@ -312,41 +342,59 @@ impl EmbeddedDB {
 
         let manifest = RecordWriter::open_with(manifest_path).await?;
 
+        let mut log_last_sequence = version_set.last_sequence();
+
         // TODO: Need to be resilient to the final record in the log being incomplete
         // (in this we can consider the write to have failed). This applies to both the
         // prev_log_number and the log_number although values with the prev_log_number
         // can only be tolerated if the log_number is not present (otherwise we should
         // truncate it to fix it).
         let mut immutable_table = None;
-        if let Some(num) = version_set.prev_log_number {
+        if let Some(num) = version_set.prev_log_number() {
+            if options.disable_wal {
+                return Err(err_msg(
+                    "Existing db has a prev_log_number in disable_wal mode.",
+                ));
+            }
+
             let mut log = RecordReader::open(dir.log(num).read_path()).await?;
             let mut table = MemTable::new(options.table_options.comparator.clone());
-            WriteBatchIterator::read_table(&mut log, &mut table, &mut version_set.last_sequence)
-                .await?;
-            immutable_table = Some(Arc::new(table));
+            WriteBatchIterator::read_table(&mut log, &mut table, &mut log_last_sequence).await?;
+            immutable_table = Some(ImmutableTable {
+                table: Arc::new(table),
+                last_sequence: log_last_sequence,
+            });
         }
 
-        let log_path = dir.log(
-            version_set
-                .log_number
-                .ok_or_else(|| err_msg("Existing db has no log"))?,
-        );
+        let log;
+        let mutable_table;
 
-        let mutable_table = {
-            let mut log_reader = RecordReader::open(log_path.read_path()).await?;
+        if options.disable_wal {
+            if version_set.log_number().is_some() {
+                return Err(err_msg("Existing db has a log in disable_wal mode"));
+            }
 
-            let mut table = MemTable::new(options.table_options.comparator.clone());
-            WriteBatchIterator::read_table(
-                &mut log_reader,
-                &mut table,
-                &mut version_set.last_sequence,
-            )
-            .await?;
+            log = None;
+            mutable_table = Arc::new(MemTable::new(options.table_options.comparator.clone()));
+        } else {
+            let log_path = dir.log(
+                version_set
+                    .log_number()
+                    .ok_or_else(|| err_msg("Existing db has no log"))?,
+            );
 
-            Arc::new(table)
-        };
+            mutable_table = {
+                let mut log_reader = RecordReader::open(log_path.read_path()).await?;
 
-        let log = RecordWriter::open_with(log_path).await?;
+                let mut table = MemTable::new(options.table_options.comparator.clone());
+                WriteBatchIterator::read_table(&mut log_reader, &mut table, &mut log_last_sequence)
+                    .await?;
+
+                Arc::new(table)
+            };
+
+            log = Some(RecordWriter::open_with(log_path).await?);
+        }
 
         // TODO: Exists may ignore errors such as permission errors.
         let identity_path = dir.identity();
@@ -370,9 +418,11 @@ impl EmbeddedDB {
         let shared = Arc::new(EmbeddedDBShared {
             options,
             dir,
+            flushed_channel: channel::bounded(1),
             state: RwLock::new(EmbeddedDBState {
                 closing: false,
                 log,
+                log_last_sequence,
                 mutable_table,
                 immutable_table,
                 version_set,
@@ -411,6 +461,25 @@ impl EmbeddedDB {
         self.compaction_thread.join().await;
 
         Ok(())
+    }
+
+    /// Returns the sequence of the last write which has been flushed to a table
+    /// (not to the WAL).
+    ///
+    /// NOTE: This is only guranteed to be correct for writes applied with this
+    /// library (not guranteed to be compatible with LevelDB/RocksDB behavior).
+    pub async fn last_flushed_sequence(&self) -> u64 {
+        let state = self.shared.state.read().await;
+        state.version_set.last_sequence()
+    }
+
+    /// Blocks until the database has been flushed past the last time
+    /// wait_for_flush() was called.
+    ///
+    /// last_flushed_sequence() can be used to get a monotonic marker
+    /// corresponding to last write that was flushed.
+    pub async fn wait_for_flush(&self) {
+        let _ = self.shared.flushed_channel.1.recv().await;
     }
 
     /// Blocks until there are no more scheduled compactions.
@@ -493,43 +562,54 @@ impl EmbeddedDB {
             if state.mutable_table.size() >= shared.options.write_buffer_size
                 && !state.immutable_table.is_some()
             {
-                let new_log_num = state.version_set.next_file_number;
+                // TODO: Most of this doesn't need to happen in disable_wal mode.
 
                 let mut version_edit = VersionEdit::default();
-                version_edit.next_file_number = Some(new_log_num + 1);
-                version_edit.prev_log_number = state.version_set.log_number.clone();
-                version_edit.log_number = Some(new_log_num);
+
+                if !shared.options.disable_wal {
+                    let new_log_num = state.version_set.next_file_number();
+                    version_edit.next_file_number = Some(new_log_num + 1);
+                    version_edit.prev_log_number = state.version_set.log_number();
+                    version_edit.log_number = Some(new_log_num);
+                }
 
                 drop(state);
 
-                let new_log = RecordWriter::open_with(shared.dir.log(new_log_num)).await?;
+                let new_log = match version_edit.log_number {
+                    Some(num) => Some(RecordWriter::open_with(shared.dir.log(num)).await?),
+                    None => None,
+                };
 
-                let mut out = vec![];
-                version_edit.serialize(&mut out)?;
-                manifest.append(&out).await?;
-                manifest.flush().await?;
+                if !shared.options.disable_wal {
+                    let mut out = vec![];
+                    version_edit.serialize(&mut out)?;
+                    manifest.append(&out).await?;
+                    manifest.flush().await?;
+                }
 
                 let mut state = shared.state.write().await;
 
                 let mut table = Arc::new(MemTable::new(key_comparator.clone()));
                 std::mem::swap(&mut table, &mut state.mutable_table);
-                state.immutable_table = Some(table);
+                state.immutable_table = Some(ImmutableTable {
+                    table,
+                    last_sequence: state.log_last_sequence,
+                });
 
-                state.version_set.apply_new_edit(version_edit, vec![]);
-
-                state.log = new_log;
+                if !shared.options.disable_wal {
+                    state.version_set.apply_new_edit(version_edit, vec![]);
+                    state.log = new_log;
+                }
 
                 continue;
             }
 
             if let Some(memtable) = &state.immutable_table {
-                // let file_number = state.version_set.next_file_number;
-                // state.version_set.next_file_number += 1;
-
                 let memtable = memtable.clone();
 
                 // TODO: In the case that this fails, just skip the whole compaction.
                 let key_range = memtable
+                    .table
                     .key_range()
                     .await
                     .ok_or_else(|| err_msg("Empty memtable beign compacted"))?;
@@ -540,13 +620,15 @@ impl EmbeddedDB {
                 });
 
                 let mut version_edit = VersionEdit::default();
-                // NOTE: We only need to store a sequence at least as large as all keys in the
-                // immutable table.
-                version_edit.last_sequence = Some(state.version_set.last_sequence);
-                version_edit.next_file_number = Some(state.version_set.next_file_number);
-                version_edit.prev_log_number = Some(0);
+                version_edit.last_sequence = Some(memtable.last_sequence);
+                version_edit.next_file_number = Some(state.version_set.next_file_number());
 
-                let old_log_number = state.version_set.prev_log_number.unwrap();
+                // We want to discard the old log as it is no longer needed.
+                // Will always be not-None here if we didn't disable the WAL.
+                let old_log_number = state.version_set.prev_log_number();
+                if old_log_number.is_some() {
+                    version_edit.prev_log_number = Some(0);
+                }
 
                 // TODO:
                 let target_file_size = state
@@ -558,7 +640,7 @@ impl EmbeddedDB {
 
                 let new_tables = Self::build_tables_from_iterator(
                     &shared,
-                    Box::new(memtable.iter()),
+                    Box::new(memtable.table.iter()),
                     !selected_level.found_overlap,
                     &mut version_edit,
                     target_file_size,
@@ -576,8 +658,9 @@ impl EmbeddedDB {
                 manifest.append(&out).await?;
                 manifest.flush().await?;
 
-                common::async_std::fs::remove_file(shared.dir.log(old_log_number).read_path())
-                    .await?;
+                if let Some(num) = old_log_number {
+                    common::async_std::fs::remove_file(shared.dir.log(num).read_path()).await?;
+                }
 
                 let mut state_guard = shared.state.write().await;
 
@@ -585,6 +668,10 @@ impl EmbeddedDB {
                 state_guard
                     .version_set
                     .apply_new_edit(version_edit, new_tables);
+
+                drop(state_guard);
+
+                let _ = shared.flushed_channel.0.try_send(());
 
                 // NOTE: After this, we will check the mutable_table on
                 // the next iteration to see if it can be flushed.
@@ -610,7 +697,7 @@ impl EmbeddedDB {
 
                 let mut version_edit = VersionEdit::default();
                 // Store the next file number (will be used to allocate file numbers later);
-                version_edit.next_file_number = Some(state.version_set.next_file_number);
+                version_edit.next_file_number = Some(state.version_set.next_file_number());
 
                 // TODO: If this is not level 0, then we can optimize this with a LevelIterator.
                 for entry in compaction.tables {
@@ -853,14 +940,14 @@ impl EmbeddedDB {
         let mut memtables = vec![state.mutable_table.clone()];
 
         if let Some(memtable) = &state.immutable_table {
-            memtables.push(memtable.clone());
+            memtables.push(memtable.table.clone());
         }
 
         Snapshot {
             options: self.shared.options.clone(),
-            last_sequence: state.version_set.last_sequence,
+            last_sequence: state.log_last_sequence,
             memtables,
-            version: state.version_set.latest_version.clone(),
+            version: state.version_set.latest_version().clone(),
         }
     }
 
@@ -889,12 +976,15 @@ impl EmbeddedDB {
         Ok(None)
     }
 
-    // TODO: If anything in here fails, they we need to mark the database as being
-    // in an error state and we can't allow reads or writes from the database at
-    // that point.
-    //
-    // TODO: Also note that we shouldn't increment the last_sequence until the write
-    // is successful.
+    /// Applies a set of writes to the database in one atomic operation. This
+    /// will return once the writes have been persisted to the WAL.
+    ///
+    /// TODO: If anything in here fails, they we need to mark the database as
+    /// being in an error state and we can't allow reads or writes from the
+    /// database at that point.
+    ///
+    /// TODO: Also note that we shouldn't increment the last_sequence until the
+    /// write is successful.
     pub async fn write(&self, batch: &mut WriteBatch) -> Result<()> {
         if self.shared.options.read_only {
             return Err(err_msg("Database opened as read only"));
@@ -908,14 +998,21 @@ impl EmbeddedDB {
         // concurrent writes to the immutable memtable.
         let mut state = self.shared.state.write().await;
 
-        let sequence = state.version_set.last_sequence + 1;
-        batch.set_sequence(sequence);
+        if batch.sequence() != 0 {
+            if batch.sequence() <= state.log_last_sequence {
+                return Err(err_msg("Batch has custom non-monotonic sequence"));
+            }
+        } else {
+            batch.set_sequence(state.log_last_sequence + 1);
+        }
 
-        state.version_set.last_sequence = sequence;
+        state.log_last_sequence = batch.sequence();
 
         // TODO: Reads should still be allowed while this is occuring.
-        state.log.append(&batch.as_bytes()).await?;
-        state.log.flush().await?;
+        if let Some(log) = &mut state.log {
+            log.append(&batch.as_bytes()).await?;
+            log.flush().await?;
+        }
 
         batch.iter()?.apply(&state.mutable_table).await?;
 

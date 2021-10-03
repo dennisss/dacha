@@ -14,10 +14,12 @@ message Metadata {
 
     // Index of the last log entry safely replicated on a majority of servers
     // and at same point commited in the same term
+    //
     // NOTE: There is no invariant between the local machines commit_index and
     // it's match_index. The commit_index can sometimes be higher than the
     // match_index in the case that a majority of other servers have a
     // match_index >= commit_index
+    //
     // NOTE: It is not generally necessary to store this, and can be
     // re-initialized always to at least the index of the last applied entry
     // in the config or log snapshots

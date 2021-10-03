@@ -24,8 +24,14 @@ message LogIndex {
 // Internal RPC Server between servers participating in the consensus protocol
 service Consensus {
 	rpc PreVote (RequestVoteRequest) returns (RequestVoteResponse);
+
+	// Sent from a candiate server to all other servers to request a vote for the candidate
+	// to become the new leader. 
 	rpc RequestVote (RequestVoteRequest) returns (RequestVoteResponse);
+	
+	// Sent from the current leader to followers to replicate new log entries.
 	rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesResponse);
+	
 	rpc TimeoutNow (TimeoutNow) returns (EmptyMessage);
 
 	// Also InstallSnapshot
@@ -37,6 +43,9 @@ service Consensus {
 }
 
 message RequestVoteRequest {
+	// Candidate's term.
+	// This will be the term in which the candidate is elected to be leader (if successful). This
+	// should be selected to be greater than all previously seen terms.  
 	// REQUIRED
     Term term = 1;
 
@@ -93,7 +102,9 @@ message LogPosition {
 
 // The format of a single log entry that will be appended to every server's
 // append-only log
+//
 // Each entry represents an increment by one of the current log index
+//
 // TODO: Over the wire, the term number can be skipped if it is the same as the
 // current term of the whole message of is the same as a previous entry
 message LogEntry {
@@ -125,22 +136,40 @@ message LogEntryData {
 
 
 message AppendEntriesRequest {
+	// Term in which the leader generating this request was elected.
 	// REQUIRED
 	Term term = 1;
 
+	// Id of the leader server.
+	// Generally this will be the id of the server than sent this request.
 	// REQUIRED
 	ServerId leader_id = 2; // < NOTE: For the bootstrapping process, this will be 0
 	
-	// This should be basically for all that are immediately before us
+	// Index of the log entry immediately before the first entry in 'entries'.
+	// If 'entries' is empty, then this will be the index of the last entry appended to the
+	// leader's log as of sending this request.
     // REQUIRED
 	LogIndex prev_log_index = 3;
     
+	// The term corresponding to the above prev_log_index.
 	// REQUIRED
 	Term prev_log_term = 4;
 
-    repeated LogEntry entries = 5; /* < We will assume that these all have sequential indexes and
-                                 * don't need to be explicitly mentioned */
+	// Entries to store in the recipient's log immediately after the entry at 'prev_log_index'.
+	//
+	// The recipient can ignore any entries already in it's local log at the same index and term,
+	// then they can be ignored. 
+	//
+	// Assumptions:
+	// The terms of these entries should be monotonic and the indexes should be sequential:
+	// - prev_log_term <= entries[i].position.term <= term
+	// - entries[0].position.index == prev_log_index + 1
+	// - entries[i].position.index + 1 == entries[i+1].position.index
+    repeated LogEntry entries = 5;
     
+	// Index of the newest log index which has been commited by the leader (has been durably
+	// flushed to a quorem of replicas).
+	//
 	// REQUIRED
 	LogIndex leader_commit = 6;
 }
@@ -190,8 +219,11 @@ message ProposeResponse {
     LogIndex index = 2;
 }
 
-
 // Used by the SimpleLog to implement a single file log. 
 message SimpleLogValue {
-	repeated LogEntry entries = 1;
+	// Position immediately before before the first entry in entries.
+	// This position has already been committed and applied to the state machine.
+	LogPosition prev = 1;
+
+	repeated LogEntry entries = 2;
 }

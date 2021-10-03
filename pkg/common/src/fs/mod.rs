@@ -1,5 +1,6 @@
 pub mod allocate_soft;
 mod dir_lock;
+pub mod sync;
 
 pub use self::dir_lock::DirLock;
 

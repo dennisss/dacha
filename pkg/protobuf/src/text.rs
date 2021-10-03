@@ -309,7 +309,7 @@ impl TextValue {
                 if let Self::Array(items) = self {
                     for item in items {
                         let mut e = v.entry_mut();
-                        item.apply(e.value());
+                        item.apply(e.value())?;
                         e.insert();
                     }
                 } else {

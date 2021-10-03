@@ -82,6 +82,15 @@ pub struct EmbeddedDBOptions {
     pub block_cache: DataBlockCache,
 
     pub manual_compactions_only: bool,
+
+    /// If true, we will not maintain a write ahead log. This means that
+    /// database writes will not block on disk flushing. Unpersisted entries
+    /// will only be flushed to disk if manual flushing is performed and if
+    /// enough data has been accumulated to exceed the 'write_buffer_size'.
+    ///
+    /// Note that an existing database can only be re-opened with the same
+    /// disable_wal value used to create it.
+    pub disable_wal: bool,
 }
 
 impl EmbeddedDBOptions {

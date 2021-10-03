@@ -8,11 +8,11 @@
 
 #[macro_use]
 extern crate common;
-extern crate byteorder;
 extern crate crypto;
 extern crate google;
 extern crate http;
 extern crate protobuf;
+extern crate sstable;
 
 #[macro_use]
 extern crate macros;
@@ -26,6 +26,7 @@ pub mod sync;
 pub mod protos; // TODO: Eventually make this private again
 
 pub mod log; // XXX: Likewise should be private
+mod log_metadata;
 mod state;
 //pub mod snapshot; // XXX: May eventually reoccur as a file that holds the
 // algorithm for managing whether or not we should trigger snapshots
@@ -45,4 +46,5 @@ pub mod state_machine;
 
 pub mod memory_log;
 pub mod node;
+pub mod segmented_log;
 pub mod simple_log;

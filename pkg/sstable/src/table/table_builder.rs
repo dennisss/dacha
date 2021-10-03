@@ -5,13 +5,13 @@ use common::async_std::fs::OpenOptions;
 use common::async_std::io::prelude::WriteExt;
 use common::async_std::path::Path;
 use common::errors::*;
+use common::fs::sync::{SyncedFile, SyncedPath};
 use compression::snappy::snappy_compress;
 use compression::transform::transform_to_vec;
 use compression::zlib::ZlibEncoder;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 
-use crate::file::{SyncedFile, SyncedPath};
 use crate::table::block_handle::BlockHandle;
 use crate::table::comparator::*;
 use crate::table::data_block_builder::{DataBlockBuilder, UnsortedDataBlockBuilder};

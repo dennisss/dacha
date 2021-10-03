@@ -1,4 +1,5 @@
 use crate::log::*;
+use crate::log_metadata::LogSequence;
 use crate::proto::consensus::LogPosition;
 
 /// Represents the current state of a constraint retrieved by polling the
@@ -25,18 +26,18 @@ pub enum ConstraintPoll<C, T> {
 /// sequence is high enough, then it should be OK to release the constraint
 pub struct FlushConstraint<T> {
     inner: T,
-    point: Option<(LogSeq, LogPosition)>,
+    point: Option<(LogSequence, LogPosition)>,
 }
 
 impl<T> FlushConstraint<T> {
-    pub fn new(inner: T, seq: LogSeq, pos: LogPosition) -> Self {
+    pub fn new(inner: T, seq: LogSequence, pos: LogPosition) -> Self {
         FlushConstraint {
             inner,
             point: Some((seq, pos)),
         }
     }
 
-    pub async fn poll(self, log: &dyn Log) -> ConstraintPoll<(Self, LogSeq), T> {
+    pub async fn poll(self, log: &dyn Log) -> ConstraintPoll<(Self, LogSequence), T> {
         let (seq, pos) = match self.point {
             Some(pos) => pos,
             None => return ConstraintPoll::Satisfied(self.inner),
@@ -49,7 +50,8 @@ impl<T> FlushConstraint<T> {
                     ConstraintPoll::Unsatisfiable
                 } else {
                     // Otherwise, We will need to check for a proper match here
-                    if seq.is_flushed(log).await {
+                    if log.last_flushed().await >= seq {
+                        // log.has_flushed_past(seq).await {
                         ConstraintPoll::Satisfied(self.inner)
                     } else {
                         // Not ready yet, reconstruct 'self' and expose the

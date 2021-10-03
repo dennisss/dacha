@@ -1,26 +1,11 @@
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use common::async_std::fs::File;
-use common::async_std::fs::OpenOptions;
-use common::async_std::path::{Path, PathBuf};
-use common::async_std::prelude::*;
-use common::errors::*;
-
-/*
-Were will be use a SyncedFile?
-- Misc Files
-    - CURRENT
-    - IDENTITY
-- RecordWriter
-    - Log
-    - Manifest
-- SSTableBuilder
-    -
-
-- Main challenges:
-    - If we need to write many files (e.g. having multiple output files during a compaction, we should prefer to flush the directory just once.
-*/
+use crate::errors::*;
+use async_std::fs::File;
+use async_std::fs::OpenOptions;
+use async_std::path::{Path, PathBuf};
+use async_std::prelude::*;
 
 pub struct SyncedFile {
     file: File,
@@ -41,6 +26,8 @@ impl SyncedFile {
         // fdatasync()
         self.file.sync_data().await?;
 
+        // The first time the file is flushed, we will also flush the directory
+        // containing it. This is needed for recently created files.
         if let Some(dir) = self.dir.take() {
             dir.sync_all().await?; // fsync()
         }
@@ -109,6 +96,8 @@ impl SyncedDirectory {
     ///
     /// This ensures that all parent directories are fully synced to disk such
     /// that this directory can be considered durable.
+    ///
+    /// The childmost directory itself isn't synced.
     pub fn open(path: &Path) -> Result<Self> {
         let file = Arc::new(std::fs::File::open(path)?.into());
 

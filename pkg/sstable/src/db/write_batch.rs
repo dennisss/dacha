@@ -154,6 +154,8 @@ pub fn serialize_write_batch(sequence: u64, writes: &[Write], out: &mut Vec<u8>)
     }
 }
 
+// TODO: Ensure that all changes in a WriteBatch touch distinct keys. Otherwise
+// we can't apply all of the writes with the same sequence.
 pub struct WriteBatch {
     data: Vec<u8>,
 }
@@ -164,6 +166,20 @@ impl WriteBatch {
         Self { data }
     }
 
+    /// NOTE: This will not have a meaningful value until after the batch has
+    /// been written.
+    pub fn sequence(&self) -> u64 {
+        u64::from_le_bytes(*array_ref![self.data, 0, 8])
+    }
+
+    /// Set a custom sequence value for this batch. This sequence must be
+    /// greater than all previous sequences seen by the database.
+    ///
+    /// NOTE: Specifying a custom sequence for the batch is an advanced feature
+    /// and should generally not be used. When not specified a new unique
+    /// sequence is automatically generated.
+    ///
+    /// TODO: Check that the sequence fits within 56 bits.
     pub fn set_sequence(&mut self, sequence: u64) {
         self.data[0..8].copy_from_slice(&sequence.to_le_bytes());
     }

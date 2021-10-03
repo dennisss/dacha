@@ -34,7 +34,7 @@ impl DirLock {
             return Err(err_msg("Folder does not exist"));
         }
 
-        let lockfile_path = path.join(String::from("lock"));
+        let lockfile_path = path.join(String::from("LOCK"));
 
         // Before we create a lock file, verify that the directory is empty (partially
         // ensuring that all previous owners of this directory also respected the

@@ -4,9 +4,8 @@ use common::async_std::fs::OpenOptions;
 use common::async_std::io::prelude::WriteExt;
 use common::async_std::path::{Path, PathBuf};
 use common::errors::*;
+use common::fs::sync::*;
 use common::futures::AsyncReadExt;
-
-use crate::file::*;
 
 /// Accessor for all file paths contained within a database directory.
 pub struct FilePaths {
