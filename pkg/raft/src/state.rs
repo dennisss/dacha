@@ -9,6 +9,59 @@ use crate::proto::consensus::{LogIndex, ServerId};
         - Because many ranges could be running at once, we must be able to prioritize timeout heartbeats ahead of log replication
 */
 
+// TODO: This is confusing naming as it is stored in the Concensus module and
+// notin the Server struct.
+#[derive(Clone, Debug)]
+pub enum ServerState {
+    Follower(ServerFollowerState),
+    Candidate(ServerCandidateState),
+    Leader(ServerLeaderState),
+}
+
+#[derive(Clone, Debug)]
+pub struct ServerFollowerState {
+    /// Amount of time we should wait after not receiving a hearbeat from the
+    /// leader to become a candiate and
+    pub election_timeout: Duration,
+
+    /// Id of the last leader we have been pinged by. Used to cache the location
+    /// of the current leader for the sake of proxying requests and client
+    /// hinting.
+    pub last_leader_id: Option<ServerId>,
+
+    /// Last time we received a message from the leader (or when we first
+    /// transitioned to become a follower)
+    pub last_heartbeat: Instant,
+}
+
+#[derive(Clone, Debug)]
+pub struct ServerCandidateState {
+    /// Time at which this candidate started its election
+    pub election_start: Instant,
+
+    /// Similar to the follower one this is when we should start the next
+    /// election all over again
+    pub election_timeout: Duration,
+
+    /// All the votes we have received so far from other servers
+    /// TODO: This would also be a good time to pre-warm the leader states
+    /// based on this
+    pub votes_received: HashSet<ServerId>,
+
+    /// Defaults to false, if we receive a vote rejection in a valid response,
+    /// we will mark this as true to indicate that this current term has
+    /// contention from other nodes
+    /// So if we don't win the election, we must bump the term
+    pub some_rejected: bool,
+}
+
+/// Volatile state on leaders:
+/// (Reinitialized after election)
+#[derive(Clone, Debug)]
+pub struct ServerLeaderState {
+    pub servers: HashMap<ServerId, ServerProgress>,
+}
+
 #[derive(Clone, Debug)]
 pub struct ServerProgress {
     /// Index of the next log entry we should send to this server (starts at
@@ -55,55 +108,4 @@ impl ServerProgress {
             request_pending: false,
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct ServerFollowerState {
-    pub election_timeout: Duration,
-
-    /// Id of the last leader we have been pinged by. Used to cache the location
-    /// of the current leader for the sake of proxying requests and client
-    /// hinting
-    pub last_leader_id: Option<ServerId>,
-
-    /// Last time we received a message from the leader (or when we first
-    /// transitioned to become a follower)
-    pub last_heartbeat: Instant,
-}
-
-#[derive(Clone, Debug)]
-pub struct ServerCandidateState {
-    /// Time at which this candidate started its election
-    pub election_start: Instant,
-
-    /// Similar to the follower one this is when we should start the next
-    /// election all over again
-    pub election_timeout: Duration,
-
-    /// All the votes we have received so far from other servers
-    /// TODO: This would also be a good time to pre-warm the leader states
-    /// based on this
-    pub votes_received: HashSet<ServerId>,
-
-    /// Defaults to false, if we receive a vote rejection in a valid response,
-    /// we will mark this as true to indicate that this current term has
-    /// contention from other nodes
-    /// So if we don't win the election, we must bump the term
-    pub some_rejected: bool,
-}
-
-/// Volatile state on leaders:
-/// (Reinitialized after election)
-#[derive(Clone, Debug)]
-pub struct ServerLeaderState {
-    pub servers: HashMap<ServerId, ServerProgress>,
-}
-
-// TODO: This is confusing naming as it is stored in the Concensus module and
-// notin the Server struct.
-#[derive(Clone, Debug)]
-pub enum ServerState {
-    Follower(ServerFollowerState),
-    Candidate(ServerCandidateState),
-    Leader(ServerLeaderState),
 }

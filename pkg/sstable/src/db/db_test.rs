@@ -158,14 +158,14 @@ fn sets_equal(a: &[String], b: &[&str]) -> bool {
         }
 
         if !found {
-            println!("Delete: {}", a[i]);
+            println!("Left Only: {}", a[i]);
             equal = false;
         }
     }
 
     for j in 0..b.len() {
         if !b_indices.contains(&j) {
-            println!("Insert: {}", b[j]);
+            println!("Right Only: {}", b[j]);
             equal = false;
         }
     }
@@ -221,6 +221,8 @@ async fn embedded_db_compaction_test() -> Result<()> {
         ]
     ));
 
+    println!("=====");
+
     // TODO: Check exactly which files are present in the directory at each stage.
 
     // [0, 160] * 20,000
@@ -242,6 +244,8 @@ async fn embedded_db_compaction_test() -> Result<()> {
             "000007.ldb"
         ]
     ));
+
+    println!("=====");
 
     // [0, 160] * 5,000
     // => Create one table into level 0

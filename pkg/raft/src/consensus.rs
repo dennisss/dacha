@@ -297,7 +297,7 @@ impl ConsensusModule {
             position: log.prev().await,
             sequence: LogSequence::zero(),
         });
-        for i in (log.prev().await.index().value() + 1)..log.last_index().await.value() {
+        for i in (log.prev().await.index().value() + 1)..=log.last_index().await.value() {
             let idx = LogIndex::from(i);
 
             let (entry, sequence) = log.entry(idx).await.unwrap();
@@ -685,7 +685,9 @@ impl ConsensusModule {
     pub fn cycle(&mut self, tick: &mut Tick) {
         // TODO: Main possible concern is about this function recursing a lot
 
-        // If there are no members n the cluster, there is trivially nothing to
+        // Transitioning between states is ok, but
+
+        // If there are no members in the cluster, there is trivially nothing to
         // do, so we might as well wait indefinitely
         // If we didn't have this line, then the follower code would go wild
         // trying to propose an election
@@ -763,6 +765,10 @@ impl ConsensusModule {
                     // Can not become a leader, so just wait keep deferring the
                     // election until we can potentially elect ourselves
                     self.state = Self::new_follower(tick.time.clone());
+
+                    println!("Can't be leader yet.");
+                    tick.next_tick = Some(Duration::from_secs(2));
+                    return;
                 }
                 // NOTE: If we are the only server in the cluster, then we can
                 // trivially win the election without waiting
@@ -823,8 +829,10 @@ impl ConsensusModule {
                     // election cycle
 
                     if elapsed >= election_timeout {
+                        // This always recursively calls cycle().
                         self.start_election(tick);
                     } else {
+                        // TODO: Ideally use absolute times for the next_tick.
                         tick.next_tick = Some(election_timeout - elapsed);
                         return;
                     }
@@ -875,6 +883,9 @@ impl ConsensusModule {
         self.persisted_meta = meta;
         self.cycle(tick);
     }
+
+    // TODO: Think about this check more and what it means for the ordering of
+    // metadata writes.
 
     /// Leaders are allowed to commit entries before they are locally matches
     /// This means that a leader that has crashed and restarted may not have all
@@ -1097,6 +1108,9 @@ impl ConsensusModule {
         HEARTBEAT_TIMEOUT - since_last_heartbeat
     }
 
+    // Side effects:
+    // - Changes the 'meta'
+    // - Changes the 'state'
     fn start_election(&mut self, tick: &mut Tick) {
         // Will be triggerred by a timeoutnow request
         if !self.can_be_leader() {
@@ -1107,6 +1121,8 @@ impl ConsensusModule {
         // then it should never be able to win an election therefore it should not start
         // an election TODO: This also introduces the invariant that for a
         // leader, commit_index <= last_log_index
+
+        // TODO: Check 'must_increment'
 
         // Unless we are an active candidate who has already voted for themselves in the
         // current term and we we haven't received conflicting responses, we must
@@ -1185,7 +1201,7 @@ impl ConsensusModule {
         });
     }
 
-    /// Creates a neww follower state
+    /// Creates a new follower state
     fn new_follower(now: Instant) -> ServerState {
         ServerState::Follower(ServerFollowerState {
             election_timeout: Self::new_election_timeout(),

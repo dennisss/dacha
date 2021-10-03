@@ -47,9 +47,13 @@ impl SimpleLog {
 
         println!("RESTORE {:?}", log);
 
+        let mut last_sequence = LogSequence::zero();
+
         for e in log.entries() {
-            // TODO: Find a better sequence for these?
-            mem.append(e.clone(), LogSequence::zero()).await;
+            let sequence = last_sequence.next();
+            last_sequence = sequence;
+
+            mem.append(e.clone(), sequence).await?;
         }
 
         Ok(SimpleLog {

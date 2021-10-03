@@ -76,7 +76,10 @@ impl NetworkAgent {
         context: &mut rpc::ClientRequestContext,
     ) -> Option<&Route> {
         self.routes.get_mut(&id).map(|e| {
-            context.metadata.add_text(TO_KEY, &e.desc().to_string());
+            context
+                .metadata
+                .add_text(TO_KEY, &e.desc().to_string())
+                .unwrap();
 
             e.set_last_used(SystemTime::now());
             e as &Route

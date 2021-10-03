@@ -543,9 +543,18 @@ impl Connection {
             ConnectionReader::new(shared.clone()).run(reader, initial_state.seen_preface_head),
         );
 
-        let result = ConnectionWriter::new(shared.clone())
+        let mut result = ConnectionWriter::new(shared.clone())
             .run(writer, initial_state.upgrade_payload)
             .await;
+
+        if let Err(e) = &result {
+            if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
+                if io_error.kind() == std::io::ErrorKind::BrokenPipe {
+                    result = Ok(());
+                }
+            }
+        }
+
         if !result.is_ok() {
             println!("HTTP2 WRITE THREAD FAILED: {:?}", result);
         }

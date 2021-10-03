@@ -201,6 +201,7 @@ impl<R: 'static + Send> Node<R> {
                 req.data_mut().set_noop(true);
 
                 let ret = client.call_propose(first_id, &req).await?;
+                println!("GEN ID NO-OP: {:?}", ret);
 
                 // TODO: If we get here, we may get a not_leader, in which case,
                 // if we don't have information on the leader's identity, then
@@ -263,6 +264,7 @@ impl<R: 'static + Send> Node<R> {
         println!("Starting with id {}", meta.id().value());
 
         let port = 4000 + (meta.id().value() as u16);
+        println!("PORT: {}", port);
 
         // Setup the RPC client with our server identity.
         {
@@ -315,14 +317,17 @@ impl<R: 'static + Send> Node<R> {
 
             // TODO: Handle errors on these return values.
             // TODO: Kick this out of
-            rpc_server.add_service(crate::rpc::DiscoveryServer::new(agent.clone()).into_service());
-            rpc_server.add_service(server.clone().into_service());
+            rpc_server
+                .add_service(crate::rpc::DiscoveryServer::new(agent.clone()).into_service())?;
+            rpc_server.add_service(server.clone().into_service())?;
 
             // TODO: Finally if possible we should attempt to broadcast our ip
             // address to other servers so they can rediscover us
 
             task::spawn(async move {
-                rpc_server.run(port).await;
+                if let Err(e) = rpc_server.run(port).await {
+                    eprintln!("{:?}", e);
+                }
             });
         }
 
@@ -349,6 +354,10 @@ impl<R: 'static + Send> Node<R> {
         // until the leader has populated our log with at least one entry
         if is_empty {
             println!("Planning on joining: ");
+
+            // TODO: This may fail if we previously attemped to join the cluster, but we
+            // failed to get the response. Now it could be possible that we can't propose
+            // anything to the cluster as no one can become the leader. So, we should
 
             // TODO: Possibly build another layer of client that will do the
             // extra discovery and leader_hint caching

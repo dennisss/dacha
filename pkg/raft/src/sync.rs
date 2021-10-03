@@ -3,9 +3,9 @@ use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 
+use common::async_std::channel;
 use common::async_std::sync::{Mutex, MutexGuard};
 use common::async_std::task;
-use common::futures::channel::mpsc;
 use common::futures::channel::oneshot;
 use common::futures::{SinkExt, StreamExt};
 
@@ -155,18 +155,16 @@ impl<'a, V, T> CondvarGuard<'a, V, T> {
 /// woken up. We use an atomic boolean along side an mpsc to deduplicate
 /// multiple sequential notifications occuring before the waiter gets woken up
 pub fn change() -> (ChangeSender, ChangeReceiver) {
-    let (tx, rx) = mpsc::channel(0);
-    let tx2 = tx.clone();
-
-    (ChangeSender(tx), ChangeReceiver(tx2, rx))
+    let (sender, receiver) = channel::bounded(1);
+    (ChangeSender(sender), ChangeReceiver(receiver))
 }
 
-pub struct ChangeSender(mpsc::Sender<()>);
+pub struct ChangeSender(channel::Sender<()>);
 
 impl ChangeSender {
     // TODO: In general we shouldn't use this as we are now mostly operating in a
     // threaded environment
-    pub fn notify(&mut self) {
+    pub fn notify(&self) {
         if let Err(e) = self.0.try_send(()) {
             // This will fail in one of two cases:
             // 1. Either the channel is full (which is fine as we only want a
@@ -177,67 +175,24 @@ impl ChangeSender {
     }
 }
 
-pub struct ChangeReceiver(mpsc::Sender<()>, mpsc::Receiver<()>);
+pub struct ChangeReceiver(channel::Receiver<()>);
 
 impl ChangeReceiver {
     /// Waits indefinately until the change occurs for the first time.
-    pub async fn wait(self) -> ChangeReceiver {
-        let (sender, receiver) = (self.0, self.1);
-        let (_, receiver) = receiver.into_future().await;
-        Self(sender, receiver)
-
-        //		let waiter = receiver.into_future().then(|res| -> FutureResult<_, ()>
-        // { 			match res {
-        //				Ok((_, receiver)) => ok(receiver),
-        //				Err((_, receiver)) => ok(receiver)
-        //			}
-        //		});
-        //
-        //		waiter
-        //		.and_then(|receiver| {
-        //			ok(ChangeReceiver(sender, receiver))
-        //		})
+    pub async fn wait(&self) {
+        let _ = self.0.recv().await;
     }
 
-    pub async fn wait_until(self, until: Instant) -> ChangeReceiver {
+    pub async fn wait_until(&self, until: Instant) {
         let now = Instant::now();
-        if now <= until {
-            return self;
+        if now >= until {
+            return;
         }
 
-        let mut delay_sender = self.0.clone();
-        // TODO: Ideally 'select' between this and the other one so that the
-        // timer can be cleaned up before
-        task::spawn(async move {
-            common::wait_for(now - until).await;
-            delay_sender.send(()).await
-            // Return a pending future so that this never resolves?
-        });
-
-        self.wait().await
-
-        // TODO:
-        /*
-        common::async_std::future::timeout()
-
-        let delay = tokio::timer::Delay::new(until)
-        .then(move |_| {
-            delay_sender.send(())
-        })
-        .then(|_| -> Empty<_, ()> {
-            empty()
-        });
-
-        self.wait()
-        .select(delay)
-        // In general nothing should error out with this (only the timer may
-        error out, but the delay_sender should never error out in a reasonable
-        way as we have our own dedicated copy of it)
-        .map_err(|_| ())
-        .map(|(c, _)| {
-            c
-        })
-        */
+        let dur = until - now;
+        common::async_std::future::timeout(dur, self.wait())
+            .await
+            .ok();
     }
 }
 

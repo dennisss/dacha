@@ -1,5 +1,7 @@
 use std::collections::LinkedList;
 use std::collections::VecDeque;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -190,6 +192,7 @@ struct ServerState<R> {
     meta_file: BlobFile,
     config_file: BlobFile,
 
+    // TODO: Move the ChangeSenders out of the state now that we don't need a lock for them.
     /// Trigered whenever the state or configuration is changed
     /// TODO: currently this will not fire on configuration changes
     /// Should be received by the cycler to update timeouts for
@@ -385,6 +388,8 @@ impl<R: Send + 'static> Server<R> {
             state.scheduled_cycle = Some(t.clone());
             t
         } else {
+            // TODO: This appears to be happening now.
+
             // TODO: Ideally refactor to represent always having a next
             // time as part of every operation
             eprintln!("Server cycled with no next tick time");
@@ -394,13 +399,13 @@ impl<R: Send + 'static> Server<R> {
 
     /// Runs the idle loop for managing the server and maintaining leadership,
     /// etc. in the case that no other events occur to drive the server
-    async fn run_cycler(
-        shared: Arc<ServerShared<R>>,
-        mut state_changed: ChangeReceiver,
-    ) -> Result<()> {
+    async fn run_cycler(shared: Arc<ServerShared<R>>, state_changed: ChangeReceiver) -> Result<()> {
         loop {
             // TODO: For a single node, we should almost never need to cycle
             // println!("Run cycler");
+
+            // TODO: There is no point in having a scheduled_cycle varialbe as it is never
+            // read in a meaningful way.
 
             let next_cycle = ServerShared::run_tick(&shared, Self::run_cycler_tick, ()).await;
 
@@ -411,15 +416,15 @@ impl<R: Send + 'static> Server<R> {
             // replication events and nothing else
             // println!("Sleep {:?}", next_cycle);
 
-            // common::async_std::task::sleep(std::time::Duration::from_millis(100)).await;
+            // common::async_std::task::sleep(std::time::Duration::from_millis(2000)).await;
 
-            state_changed = state_changed.wait_until(next_cycle).await;
+            state_changed.wait_until(next_cycle).await;
         }
     }
 
     async fn run_meta_writer(
         shared: Arc<ServerShared<R>>,
-        mut meta_changed: ChangeReceiver,
+        meta_changed: ChangeReceiver,
     ) -> Result<()> {
         loop {
             // TODO: Potentially batchable if we choose to make this something
@@ -452,16 +457,13 @@ impl<R: Send + 'static> Server<R> {
                 .await;
             }
 
-            meta_changed = meta_changed.wait().await;
+            meta_changed.wait().await;
         }
     }
 
     /// Flushes log entries to persistent storage as they come in
     /// This is responsible for pushing changes to the last_flushed variable
-    async fn run_matcher(
-        shared: Arc<ServerShared<R>>,
-        mut log_changed: ChangeReceiver,
-    ) -> Result<()> {
+    async fn run_matcher(shared: Arc<ServerShared<R>>, log_changed: ChangeReceiver) -> Result<()> {
         // TODO: Must explicitly run in a separate thread until we can make disk
         // flushing a non-blocking operation
 
@@ -490,7 +492,7 @@ impl<R: Send + 'static> Server<R> {
             // term that was flushed)
             ServerShared::update_last_flushed(&shared).await;
 
-            log_changed = log_changed.wait().await;
+            log_changed.wait().await;
         }
     }
 
@@ -881,7 +883,7 @@ impl<R: Send + 'static> ServerShared<R> {
 
         // TODO: Don't hold the state lock while dispatching RPCs.
 
-        //		task::spawn(Self::dispatch_messages(shared.clone(), tick.messages));
+        task::spawn(Self::dispatch_messages(shared.clone(), tick.messages));
 
         Ok(())
     }
@@ -1021,7 +1023,22 @@ impl<R: Send + 'static> ServerShared<R> {
         }
     }
 
-    async fn dispatch_messages(shared: Arc<Self>, messages: Vec<ConsensusMessage>) {
+    /*
+    TODO: While a machine is receiving a snapshot, it should still be able to receive new log entries to ensure that recovery is fast.
+
+    TODO: For new log entries, we shouldn't need to acquire a lock to get the entries to populate the AppendEntries (given that we have them handy).
+
+    TODO: I would like to manage how much memory is taken up by the in-memory log entries, but I should keep in mind that copying them for RPCs can take up more memory or prevent the existing memory references from being dropped.
+    */
+
+    fn dispatch_messages(
+        shared: Arc<Self>,
+        messages: Vec<ConsensusMessage>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+        Box::pin(Self::dispatch_messages_impl(shared, messages))
+    }
+
+    async fn dispatch_messages_impl(shared: Arc<Self>, mut messages: Vec<ConsensusMessage>) {
         if messages.len() == 0 {
             return;
         }
@@ -1029,7 +1046,20 @@ impl<R: Send + 'static> ServerShared<R> {
         let mut append_entries = vec![];
         let mut request_votes = vec![];
 
-        for msg in messages.iter() {
+        for msg in &mut messages {
+            // Populate all the log entries.
+            if let ConsensusMessageBody::AppendEntries(req, last_log_index) = &mut msg.body {
+                // TODO: If the log was truncated, then we may send the wrong sequence of
+                // entries here.
+
+                let mut idx = req.prev_log_index() + 1;
+                let last_idx = shared.log.last_index().await;
+                while idx <= last_idx {
+                    req.add_entries(shared.log.entry(idx).await.unwrap().0.as_ref().clone());
+                    idx = idx + 1;
+                }
+            }
+
             for to_id in msg.to.iter() {
                 match msg.body {
                     ConsensusMessageBody::AppendEntries(ref req, ref last_log_index) => {
@@ -1263,8 +1293,6 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         req: rpc::ServerRequest<ProposeRequest>,
         res: &mut rpc::ServerResponse<ProposeResponse>,
     ) -> Result<()> {
-        // TODO: How do we propose new entries before we have an id (or are a non-member
-        // node)?
         ServerRequestRoutingContext::create(
             &self.shared.client.agent(),
             &req.context,

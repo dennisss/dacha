@@ -235,6 +235,8 @@ async fn main_task() -> Result<()> {
         "http://127.0.0.1:4002".into(),
     ];
 
+    common::async_std::fs::create_dir_all(&args.dir).await?;
+
     // XXX: Need to store this somewhere more persistent so that we don't lose it
     let lock = DirLock::open(&args.dir).await?;
 
