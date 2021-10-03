@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use common::algorithms::upper_bound_by;
 
-use crate::proto::consensus::{LogEntry, LogIndex, LogPosition};
+use crate::proto::consensus::{LogIndex, LogPosition};
 
 /// Partial view of the full LogEntry log which only tracks the metadata
 /// associated with entries in the log (index, term, sequence).
@@ -14,98 +14,291 @@ use crate::proto::consensus::{LogEntry, LogIndex, LogPosition};
 /// Every log operation will first be applied to this LogMetadata object. This
 /// will provide LogMutations which will be later applied asyncronously to the
 /// log on durable storage.
+///
+/// In practice, operations on this data structure should feel like O(k) where k
+/// is the average number of uncomitted elections. Under normal operation, k
+/// should never go beyond 2.
 pub struct LogMetadata {
+    /// Start offsets of contiguous ranges of entries stored in the log.
+    ///
+    /// In other words, this is the compressed form of a vector of the form:
+    ///   list[log_index] = (log_term, sequence)
+    ///
+    /// These are stored in sorted order by log index (indirectly this means
+    /// they are also sorted by sequence and term).
+    ///
+    /// - This will always contain at least one entry.
+    /// - offsets[0] will always be the offset of the previous log entry before
+    /// the start of this log (index=0, term=0, sequence=0 if entries have
+    /// never been appended to any log before).
+    /// - Using this array, you can extrapolate the term/sequence of any
+    ///   arbitrary log index as follows:
+    ///   - Find an abjacent pair of offsets such that offsets[i] <= idx <
+    ///     offsets[i+1]
+    ///   - Return a term of 'offsets[i].term'
+    ///   - Return a sequence of 'offsets[i].sequence + (idx -
+    ///     offsets[i].index)'
     offsets: VecDeque<LogOffset>,
+
+    /// Offset of the most recent entry added to the log.
+    /// For an empty log, this will be equal to offsets[0].
     last_offset: LogOffset,
-
-    // NOTE: If a truncation occured, then this may not equal
-    last_sequence: u64,
-
-    /// Last sequence flushed to persistent storage.
-    last_flushed: u64,
 }
 
 impl LogMetadata {
+    pub fn new() -> Self {
+        let zero = LogOffset {
+            sequence: LogSequence::zero(),
+            position: LogPosition::zero(),
+        };
+
+        let mut offsets = VecDeque::new();
+        offsets.push_back(zero.clone());
+
+        Self {
+            offsets,
+            last_offset: zero,
+            // last_flushed: LogSequence::zero(),
+        }
+    }
+
+    /// Gets the offset of the log entry immediately before the first entry in
+    /// this log.
+    ///
+    /// This offset should be considered to be immutable as it was already
+    /// discarded and merged into the latest snapshot.
+    pub fn prev(&self) -> &LogOffset {
+        &self.offsets[0]
+    }
+
     pub fn last(&self) -> &LogOffset {
         &self.last_offset
     }
 
     pub fn lookup(&self, index: LogIndex) -> Option<LogOffset> {
-        // self.offsets.is_empty() || index < self.offsets[0].position.index() ||
-
         if index > self.last_offset.position.index() {
             return None;
         }
 
-        let prev_offset_idx =
-            match upper_bound_by(&self.offsets, index, |off, idx| off.position.index() <= idx) {
-                Some(idx) => idx,
-                None => {
-                    return None;
-                }
-            };
+        let prev_offset_idx = match upper_bound_by(self.offsets.as_slices(), index, |off, idx| {
+            off.position.index() <= idx
+        }) {
+            Some(idx) => idx,
+            None => {
+                return None;
+            }
+        };
 
         let prev_offset = &self.offsets[prev_offset_idx];
 
         Some(LogOffset {
             position: LogPosition::new(prev_offset.position.term(), index),
-            sequence: prev_offset.sequence + (index - prev_offset.position.index()),
+            sequence: prev_offset
+                .sequence
+                .plus(index.value() - prev_offset.position.index().value()),
         })
     }
 
-    pub fn last_flushed(&self) -> u64 {
-        self.last_flushed
+    pub fn append(&mut self, offset: LogOffset) {
+        assert!(offset.position.term() >= self.last().position.term());
+        assert!(offset.sequence > self.last_offset.sequence);
+
+        if offset.position.index() <= self.last().position.index() {
+            self.truncate(offset.position.index());
+        }
+
+        assert_eq!(offset.position.index(), self.last().position.index() + 1);
+
+        if offset.position.term() != self.last_offset.position.term()
+            || offset.sequence != self.last_offset.sequence.plus(1)
+        {
+            self.offsets.push_back(offset.clone());
+        }
+
+        self.last_offset = offset;
     }
 
-    pub fn set_last_flushed(&mut self, sequence: u64) {
-        assert!(sequence >= self.last_flushed);
-        self.last_flushed = sequence;
+    // TODO: Implement and call this whenever the commit_index changes in the
+    // consensus module.
+    pub fn discard(&mut self, new_start: LogOffset) {
+        if new_start.position.index() > self.last_offset.position.index() {
+            self.offsets.clear();
+            self.offsets.push_back(new_start.clone());
+            self.last_offset = new_start;
+            return;
+        }
+
+        let offset_idx = upper_bound_by(
+            self.offsets.as_slices(),
+            new_start.position.index(),
+            |off, idx| off.position.index() <= idx,
+        )
+        .unwrap();
+
+        // Truncate front
+        drop(self.offsets.drain(0..offset_idx));
+
+        self.offsets[0] = new_start;
     }
 
-    pub fn append(&mut self, entry: LogEntry) -> LogMutation {
-        let sequence = self.last_sequence + 1;
-        self.last_sequence = sequence;
+    /// Should remove all log entries starting at the given index until the end
+    /// of the log
+    fn truncate(&mut self, start_index: LogIndex) {
+        // Find the offset needed to resolve start_index - 1.
+        let prev_offset_idx =
+            upper_bound_by(self.offsets.as_slices(), start_index - 1, |off, idx| {
+                off.position.index() <= idx
+            })
+            .unwrap();
 
-        // TODO: Must update last_offset and ranges if needed.
+        // All future indexes are invalid so we only need to keep up to the
+        // prev_offset_idx offset.
+        self.offsets.truncate(prev_offset_idx + 1);
 
-        LogMutation {
-            sequence,
-            operation: LogOperation::Append(entry),
+        self.last_offset = self.lookup(start_index - 1).unwrap();
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct LogOffset {
+    pub position: LogPosition,
+    pub sequence: LogSequence,
+}
+
+impl LogOffset {
+    pub fn zero() -> Self {
+        Self {
+            position: LogPosition::zero(),
+            sequence: LogSequence::zero(),
         }
     }
 }
 
-pub struct LogOffset {
-    pub position: LogPosition,
-    pub sequence: u64,
+/// Monotonically increasing identifier for newly appended log entries.
+///
+/// Whenever a log entry is appended to the log, it will be assigned a new
+/// sequence which is greater than all prior sequences generated in the same
+/// process.
+///
+/// Note that LogSequence intentionally doesn't expose a good API for wire
+/// serialization as it meant to only be valid until the process dies, so should
+/// never be stored on disk.
+#[derive(PartialEq, PartialOrd, Clone, Copy, Debug)]
+pub struct LogSequence {
+    opaque_value: u64,
 }
 
-pub struct LogMutation {
-    pub sequence: u64,
-    pub operation: LogOperation,
+impl LogSequence {
+    /// Generates the smallest possible sequence.
+    ///
+    /// All log entries MUST have a sequence > zero().
+    pub fn zero() -> Self {
+        LogSequence { opaque_value: 0 }
+    }
+
+    /// Generates an new sequence that is larger than the current sequence.
+    pub fn next(self) -> Self {
+        self.plus(1)
+    }
+
+    fn plus(self, value: u64) -> Self {
+        Self {
+            opaque_value: self.opaque_value + value,
+        }
+    }
 }
 
-pub enum LogOperation {
-    Append(LogEntry),
-    Truncate { start_index: LogIndex },
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_metadata_test() {
+        let mut meta = LogMetadata::new();
+        assert_eq!(*meta.prev(), LogOffset::zero());
+        assert_eq!(*meta.last(), LogOffset::zero());
+        assert_eq!(meta.lookup(0.into()), Some(LogOffset::zero()));
+        assert_eq!(meta.lookup(1.into()), None);
+
+        let off1 = LogOffset {
+            position: LogPosition::new(1, 1),
+            sequence: LogSequence { opaque_value: 1 },
+        };
+
+        meta.append(off1.clone());
+        assert_eq!(*meta.prev(), LogOffset::zero());
+        assert_eq!(*meta.last(), off1);
+        assert_eq!(meta.lookup(0.into()), Some(LogOffset::zero()));
+        assert_eq!(meta.lookup(1.into()), Some(off1.clone()));
+        assert_eq!(meta.lookup(2.into()), None);
+
+        let off2 = LogOffset {
+            position: LogPosition::new(1, 2),
+            sequence: LogSequence { opaque_value: 2 },
+        };
+        let off3 = LogOffset {
+            position: LogPosition::new(1, 3),
+            sequence: LogSequence { opaque_value: 3 },
+        };
+
+        meta.append(off2.clone());
+        meta.append(off3.clone());
+        assert_eq!(*meta.prev(), LogOffset::zero());
+        assert_eq!(*meta.last(), off3);
+        assert_eq!(meta.lookup(0.into()), Some(LogOffset::zero()));
+        assert_eq!(meta.lookup(1.into()), Some(off1.clone()));
+        assert_eq!(meta.lookup(2.into()), Some(off2.clone()));
+        assert_eq!(meta.lookup(3.into()), Some(off3.clone()));
+        assert_eq!(meta.lookup(4.into()), None);
+
+        // Starting a new term
+        let off4 = LogOffset {
+            position: LogPosition::new(2, 4),
+            sequence: LogSequence { opaque_value: 4 },
+        };
+
+        meta.append(off4.clone());
+        assert_eq!(*meta.prev(), LogOffset::zero());
+        assert_eq!(*meta.last(), off4);
+        assert_eq!(meta.lookup(0.into()), Some(LogOffset::zero()));
+        assert_eq!(meta.lookup(1.into()), Some(off1.clone()));
+        assert_eq!(meta.lookup(2.into()), Some(off2.clone()));
+        assert_eq!(meta.lookup(3.into()), Some(off3.clone()));
+        assert_eq!(meta.lookup(4.into()), Some(off4.clone()));
+        assert_eq!(meta.lookup(5.into()), None);
+
+        meta.truncate(off3.position.index());
+        assert_eq!(*meta.prev(), LogOffset::zero());
+        assert_eq!(*meta.last(), off2);
+        assert_eq!(meta.lookup(0.into()), Some(LogOffset::zero()));
+        assert_eq!(meta.lookup(1.into()), Some(off1.clone()));
+        assert_eq!(meta.lookup(2.into()), Some(off2.clone()));
+        assert_eq!(meta.lookup(3.into()), None);
+        assert_eq!(meta.lookup(4.into()), None);
+    }
+
+    #[test]
+    fn discard_from_empty() {
+        let mut meta = LogMetadata::new();
+
+        let offset = LogOffset {
+            position: LogPosition::new(10, 20),
+            sequence: LogSequence { opaque_value: 30 },
+        };
+
+        meta.discard(offset.clone());
+        assert_eq!(*meta.prev(), offset);
+        assert_eq!(*meta.last(), offset);
+        assert_eq!(meta.lookup(4.into()), None);
+        assert_eq!(meta.lookup(11.into()), None);
+        assert_eq!(meta.lookup(25.into()), None);
+    }
+
+    // TODO: Test truncation of everything.
+
+    // TODO: Test discard only some existing entries.
+
+    // TODO: Test discarding all entries in a non-empty LogMetadata.
+
+    // TODO:
 }
-
-// struct LogState {
-//     // pub offsets:
-
-// // pub last_sequence: u64,
-// // pub last_log_position: LogPosition,
-// /*
-//     Need to maintain a compact map of all LogIndex ->
-
-//     Can use a Break system like for
-// */
-// // pub entries: VecDeque<(LogIndex, )>
-
-// /*
-//     Vector<(LogIndex, Term, Sequence)>
-
-//
-//     - Whenever LogIndex increments, Sequence also increments.
-
-// */}

@@ -7,6 +7,7 @@ use protobuf::Message;
 
 use crate::atomic::*;
 use crate::log::*;
+use crate::log_metadata::LogSequence;
 use crate::memory_log::*;
 use crate::proto::consensus::*;
 
@@ -17,7 +18,7 @@ pub struct SimpleLog {
     mem: MemoryLog,
 
     /// The position of the last entry stored in the snapshot
-    last_flushed: Mutex<LogSeq>,
+    last_flushed: Mutex<LogSequence>,
 
     /// The single file backing the log
     snapshot: Mutex<BlobFile>,
@@ -32,7 +33,7 @@ impl SimpleLog {
 
         Ok(SimpleLog {
             mem: MemoryLog::new(),
-            last_flushed: Mutex::new(LogSeq(0)),
+            last_flushed: Mutex::new(LogSequence::zero()),
             snapshot: Mutex::new(file),
         })
     }
@@ -46,15 +47,14 @@ impl SimpleLog {
 
         println!("RESTORE {:?}", log);
 
-        let mut seq = LogSeq(0); // log.last().map(|e| e.pos.clone()).unwrap_or(LogPosition::zero());
-
         for e in log.entries() {
-            seq = mem.append(e.clone()).await;
+            // TODO: Find a better sequence for these?
+            mem.append(e.clone(), LogSequence::zero()).await;
         }
 
         Ok(SimpleLog {
             mem,
-            last_flushed: Mutex::new(seq),
+            last_flushed: Mutex::new(LogSequence::zero()),
             snapshot: Mutex::new(file),
         })
     }
@@ -68,37 +68,32 @@ impl SimpleLog {
 
 #[async_trait]
 impl Log for SimpleLog {
+    async fn prev(&self) -> LogPosition {
+        self.mem.prev().await
+    }
+
     // TODO: Because this almost always needs to be shared, we might as well
     // force usage with a separate Log type that just implements initial
     // creation, checkpointing, truncation, and flushing related functions
     async fn term(&self, index: LogIndex) -> Option<Term> {
         self.mem.term(index).await
     }
-    async fn first_index(&self) -> LogIndex {
-        self.mem.first_index().await
-    }
     async fn last_index(&self) -> LogIndex {
         self.mem.last_index().await
     }
-    async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSeq)> {
+    async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSequence)> {
         self.mem.entry(index).await
     }
-    async fn append(&self, entry: LogEntry) -> LogSeq {
-        self.mem.append(entry).await
+    async fn append(&self, entry: LogEntry, sequence: LogSequence) -> Result<()> {
+        self.mem.append(entry, sequence).await
     }
-    async fn truncate(&self, start_index: LogIndex) -> Option<LogSeq> {
-        self.mem.truncate(start_index).await
-    }
-    async fn checkpoint(&self) -> LogPosition {
-        self.mem.checkpoint().await
-    }
-    async fn discard(&self, pos: LogPosition) {
+    async fn discard(&self, pos: LogPosition) -> Result<()> {
         self.mem.discard(pos).await
     }
 
     // TODO: Is there any point in ever
-    async fn last_flushed(&self) -> Option<LogSeq> {
-        Some(self.last_flushed.lock().await.clone())
+    async fn last_flushed(&self) -> LogSequence {
+        self.last_flushed.lock().await.clone()
     }
 
     async fn flush(&self) -> Result<()> {
@@ -107,12 +102,16 @@ impl Log for SimpleLog {
         // TODO: This should ideally also not hold a snapshot lock for too long
         // as that may
 
-        let mut s = self.snapshot.lock().await;
+        let s = self.snapshot.lock().await;
 
+        // TODO: Must also serialize the start position. (although I'm not sure if I
+        // need more than just the index?)
         let idx = self.mem.last_index().await;
         let mut log = SimpleLogValue::default();
 
-        let mut last_seq = LogSeq(0);
+        log.set_prev(self.mem.prev().await);
+
+        let mut last_seq = LogSequence::zero();
 
         for i in 1..(idx.value() + 1) {
             let (e, seq) = self
@@ -120,9 +119,8 @@ impl Log for SimpleLog {
                 .entry(i.into())
                 .await
                 .expect("Failed to get entry from log");
-            last_seq = seq;
-
             log.add_entries((*e).clone());
+            last_seq = seq;
         }
 
         s.store(&log.serialize()?).await?;

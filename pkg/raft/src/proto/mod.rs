@@ -147,3 +147,7 @@ pub mod routing {
 pub mod key_value {
     include!(concat!(env!("OUT_DIR"), "/src/proto/key_value.rs"));
 }
+
+pub mod log {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/log.rs"));
+}

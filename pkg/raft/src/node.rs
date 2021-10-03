@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::async_std::channel;
 use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::errors::*;
@@ -14,6 +15,7 @@ use protobuf::Message;
 use crate::atomic::*;
 use crate::discovery::*;
 use crate::log::*;
+use crate::log_metadata::LogSequence;
 use crate::proto::consensus::*;
 use crate::proto::routing::*;
 use crate::proto::server_metadata::*;
@@ -31,6 +33,14 @@ use crate::state_machine::*;
         - Importantly the routes file can only be stored on disk if we also have
           a metadata file present
             - Otherwise it is invalid
+*/
+
+/*
+    Other concerns:
+    - Making sure that the routes data always stays well saved on disk
+    - Won't change frequently though
+
+    - We will be making our own identity here though
 */
 
 pub struct NodeConfig<R> {
@@ -52,9 +62,8 @@ pub struct Node<R> {
     // TODO: Is this used for anything?
     pub server: Server<R>,
 
-    // TODO: Decouple all the discovery stuff from the Ndode
+    // TODO: Decouple all the discovery stuff from the Node
     pub discovery: Arc<DiscoveryService>,
-
     routes_file: Mutex<BlobFile>,
 }
 
@@ -144,12 +153,12 @@ impl<R: 'static + Send> Node<R> {
             SimpleLog::purge(&log_path).await?;
 
             // Every single server starts with totally empty versions of everything
-            let mut meta = super::proto::consensus_state::Metadata::default();
+            let meta = crate::proto::consensus_state::Metadata::default();
             let config_snapshot = ServerConfigurationSnapshot::default();
             let mut log = vec![];
 
-            let mut id: ServerId;
-            let mut cluster_id: ClusterId;
+            let id: ServerId;
+            let cluster_id: ClusterId;
 
             // For the first server in the cluster (assuming no configs are
             // already on disk)
@@ -160,6 +169,8 @@ impl<R: 'static + Send> Node<R> {
                 // through network discovery if not in bootstrap mode)
                 cluster_id = random::clocked_rng().uniform::<u64>().into();
 
+                // For this to be supported, we must be able to become a leader with zero
+                // members in the config (implying that we can know if we are )
                 let mut first_entry = LogEntry::default();
                 first_entry.pos_mut().set_term(1);
                 first_entry.pos_mut().set_index(1);
@@ -215,11 +226,16 @@ impl<R: 'static + Send> Node<R> {
 
             let log_file = SimpleLog::create(&log_path).await?;
 
+            let mut seq = LogSequence::zero();
+
             // TODO: Can we do this before creating the log so that everything
             // is flushed to disk What we could do is say that if the metadata
             // file is present, then
             for e in log {
-                log_file.append(e).await; // TODO: Convert to a Result<>?
+                let next_seq = seq.next();
+                seq = next_seq;
+
+                log_file.append(e, next_seq).await?;
             }
 
             log_file.flush().await?;
@@ -246,6 +262,33 @@ impl<R: 'static + Send> Node<R> {
 
         println!("Starting with id {}", meta.id().value());
 
+        let port = 4000 + (meta.id().value() as u16);
+
+        // Setup the RPC client with our server identity.
+        {
+            let mut agent = client.agent().lock().await;
+            if let Some(ref desc) = agent.identity {
+                panic!("Starting server which already has a cluster identity");
+            }
+
+            // Usually this won't be set for restarting nodes that haven't
+            // contacted the cluster yet, but it may be set for initial nodes
+            if let Some(ref v) = agent.cluster_id {
+                if *v != meta.cluster_id() {
+                    panic!("Mismatching server cluster_id");
+                }
+            }
+
+            agent.cluster_id = Some(meta.cluster_id());
+
+            let mut identity = ServerDescriptor::default();
+            // TODO: this is subject to change if we are running over HTTPS
+            identity.set_addr(format!("http://127.0.0.1:{}", port));
+            identity.set_id(meta.id());
+
+            agent.identity = Some(identity);
+        }
+
         let initial_state = ServerInitialState {
             meta,
             meta_file,
@@ -265,8 +308,26 @@ impl<R: 'static + Send> Node<R> {
 
         let server = Server::new(client.clone(), initial_state).await;
 
+        // Start the RPC server.
+        {
+            // TODO: We also need to add a DiscoveryService (DiscoveryServiceRouter)
+            let mut rpc_server = ::rpc::Http2Server::new();
+
+            // TODO: Handle errors on these return values.
+            // TODO: Kick this out of
+            rpc_server.add_service(crate::rpc::DiscoveryServer::new(agent.clone()).into_service());
+            rpc_server.add_service(server.clone().into_service());
+
+            // TODO: Finally if possible we should attempt to broadcast our ip
+            // address to other servers so they can rediscover us
+
+            task::spawn(async move {
+                rpc_server.run(port).await;
+            });
+        }
+
         // TODO: Support passing in a port (and maybe also an addr)
-        task::spawn(server.clone().start());
+        task::spawn(server.clone().run());
 
         // TODO: Rename this.
         task::spawn(DiscoveryService::run(discovery.clone()).map(|_| ()));

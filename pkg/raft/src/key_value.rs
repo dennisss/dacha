@@ -172,6 +172,10 @@ impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
         }
     }
 
+    async fn last_flushed(&self) -> LogIndex {
+        0.into()
+    }
+
     async fn snapshot(&self) -> Option<StateMachineSnapshot> {
         // For now just copy the
 
@@ -182,7 +186,7 @@ impl StateMachine<KeyValueReturn> for MemoryKVStateMachine {
         None
     }
 
-    async fn restore(&self, data: Bytes) -> Result<()> {
+    async fn restore(&self, data: StateMachineSnapshot) -> Result<()> {
         // A snapshot should not have been generatable
         Ok(())
     }

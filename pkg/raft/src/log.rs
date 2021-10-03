@@ -2,22 +2,8 @@ use std::sync::Arc;
 
 use common::errors::*;
 
+use crate::log_metadata::LogSequence;
 use crate::proto::consensus::*;
-
-/*
-    If all snapshots are beyond the end of the log:
-    - We can call discard() up to the highest snapshoted index
-
-    Suppose snapshots are beyond the log
-    -> should never happen
-    ->
-    ->
-
-    Suppose the log is empty:
-    - If all snapshots are beyond the end of
-
-
-*/
 
 // XXX: Also useful to have a fast estimate of the total size of the log up to
 // now to decide on snapshotting policies
@@ -35,8 +21,9 @@ pub trait Log: Send + Sync {
     /// the log
     async fn term(&self, index: LogIndex) -> Option<Term>;
 
-    /// Gets the index of the first full entry in the log
-    async fn first_index(&self) -> LogIndex;
+    /// Get's the position of the last discarded log entry (immediately before
+    /// the first entry in this log).
+    async fn prev(&self) -> LogPosition;
 
     /// Gets the index of the last entry in the log (this may be less than the
     /// first_index if the log is empty)
@@ -46,57 +33,46 @@ pub trait Log: Send + Sync {
     /// XXX: Currently we do assume that all data fits in memory (but if we ever
     /// lose that assume, then it would still be critical that the
     /// ConsensusModule never has to call any blocking code inside of itself)
-    async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSeq)>;
+    async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSequence)>;
 
     /// Should add the given entry to the log returning the seq of that entry
     ///
+    /// If there is already already an entry in the log with the same index as
+    /// the given entry, then the log implementation should atomically truncate
+    /// all old entries with index >= entry.index and append the new entry in
+    /// one operation.
+    ///
+    /// The new entry is guranteed to have a higher term. If truncation and
+    /// appending does not occur in one operation, then we may lose information
+    /// about the highest term seen.
+    ///
     /// This does not need to flush anything to the disk
     /// But the new entries should be immediately reflected in the state of the
-    /// other operations
-    async fn append(&self, entry: LogEntry) -> LogSeq;
-
-    /// Should remove all log entries starting at the given index until the end
-    /// of the log
-    ///
-    /// If the underlying storage system explicitly stores truncations as a
-    /// separate operation, then this function may return a sequence to uniquely
-    /// identify the truncation operation during flushing.
-    /// Supporting this mode allows the persistent storage to perform the
-    /// minimum number of writes to maintain progress in the consensus module
-    /// if this machine has other higher priority writes to finish first
-    async fn truncate(&self, start_index: LogIndex) -> Option<LogSeq>;
-
-    async fn checkpoint(&self) -> LogPosition;
+    /// other operations.
+    async fn append(&self, entry: LogEntry, sequence: LogSequence) -> Result<()>;
 
     /// Should schedule all log entries from the beginning of the log up to and
     /// including the given position to be deleted
     /// The given position is assumed to be valid and committed position (if it
     /// isn't present in this log, we assume that it is present in someone
     /// else's log as a committed entry)
-    async fn discard(&self, pos: LogPosition);
+    ///
+    /// TODO: Implement bypassing the local log if a follower is catching up and
+    /// gets a committed entry.
+    async fn discard(&self, pos: LogPosition) -> Result<()>;
 
     /// Retrieves the last sequence persisted to durable storage
     ///
     /// This can be implemented be tracking the position of the last entry
     /// written and synced to disk
-    async fn last_flushed(&self) -> Option<LogSeq>;
-    // ^ If this returns None, then we will assume that it is equivalent to
-    // LogPosition::zero()
+    ///
+    /// MUST always return a sequence >= than previous sequences returned
+    /// by previous calls to this. If the sync state is initially uncertain,
+    /// this can return LogSequence::zero().
+    async fn last_flushed(&self) -> LogSequence;
 
     /// Should flush all log entries to persistent storage
     /// After this is finished, the match_index for it should be equal to the
     /// last_index (at least the one as of when this was first called)
     async fn flush(&self) -> Result<()>;
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct LogSeq(pub usize);
-
-impl LogSeq {
-    /// Determines whether or not everything up to this sequence has been
-    /// persisted locally
-    pub async fn is_flushed(&self, log: &dyn Log) -> bool {
-        let last_flushed = log.last_flushed().await.unwrap_or(LogSeq(0));
-        self.0 >= last_flushed.0
-    }
 }

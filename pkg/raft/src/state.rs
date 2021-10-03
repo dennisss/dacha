@@ -99,6 +99,8 @@ pub struct ServerLeaderState {
     pub servers: HashMap<ServerId, ServerProgress>,
 }
 
+// TODO: This is confusing naming as it is stored in the Concensus module and
+// notin the Server struct.
 #[derive(Clone, Debug)]
 pub enum ServerState {
     Follower(ServerFollowerState),

@@ -1,21 +1,24 @@
 use std::collections::LinkedList;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use common::async_fn::AsyncFnOnce3;
+use common::async_std::channel;
 use common::async_std::future;
 use common::async_std::sync::{Mutex, MutexGuard};
 use common::async_std::task;
 use common::errors::*;
 use common::futures::channel::oneshot;
 use common::futures::FutureExt;
+use common::task::ChildTask;
 use protobuf::Message;
 
 use crate::atomic::*;
 use crate::consensus::*;
 use crate::constraint::*;
 use crate::log::*;
+use crate::log_metadata::LogSequence;
 use crate::proto::consensus::*;
 use crate::proto::routing::*;
 use crate::proto::server_metadata::*;
@@ -37,11 +40,6 @@ const REQUEST_TIMEOUT: u64 = 500;
 // ids on both ends otherwise we are connecting to the wrong server/cluster and
 // that would be problematic (especially when it comes to aoiding duplicate
 // votes because of duplicate connections)
-
-/*
-    NOTE: We do need to have a sense of a
-
-*/
 
 /*
     Further improvements:
@@ -107,8 +105,29 @@ pub struct ServerInitialState<R> {
     pub last_applied: LogIndex,
 }
 
-/// Represents a single node of the cluster
-/// Internally this manages the log, rpcs, and applying changes to the
+/// A single member of a Raft group.
+///
+/// This object serves as the gate keeper to reading/writing from a state
+/// machine along with associated internal raft log storage.
+///
+/// Internally this is implemented as a number of threads which advance the
+/// state:
+/// - RPC server thread: Waits for remote Raft consensus RPCs
+///   - TODO: Should support using
+/// - Cycler thread: polls the consensus module in regular intervals for work to
+///   do (e.g. heartbeats).
+/// - Matcher thread: Waits for log entries to be flushed to persistent storage.
+///   When they are, notifies listeners for 'last_flushed' changes.
+///     - Flushing entries allows the consensus module to commit them once
+///       enough servers have done the same.
+/// - Applier thread: When the consensus module indicates that more log entries
+///   have been commited, this will apply them to the state machine and notifies
+///   listeners for 'last_applied' changes.
+///      - Applying entries advances the state machine and eventually triggers
+///        snapshots to be generated.
+/// - Compaction thread: When the state machine has flushed to disk a snapshot
+///   containing log entries, this thread will tell the log that those entries
+///   can now be discarded.
 ///
 /// NOTE: Cloning a 'Server' instance will reference the same internal state.
 pub struct Server<R> {
@@ -144,7 +163,7 @@ struct ServerShared<R> {
     /// This is eventually consistent with the index in the log itself
     /// NOTE: This is safe to always have a term for as it should always be in
     /// the log
-    flush_seq: Condvar<LogSeq, LogSeq>,
+    last_flushed: Condvar<LogSequence, LogSequence>,
 
     /// Holds the value of the current commit_index for the server
     /// This is eventually consistent with the index in the internal consensus
@@ -158,7 +177,7 @@ struct ServerShared<R> {
     commit_index: Condvar<LogPosition, LogPosition>,
 
     /// Last log index applied to the state machine
-    /// This should only ever be modified by the separate applier
+    /// This should only ever be modified by the separate applier thread
     last_applied: Condvar<LogIndex, LogIndex>,
 }
 
@@ -183,6 +202,9 @@ struct ServerState<R> {
     /// The next time at which a cycle is planned to occur at (used to
     /// deduplicate notifying the state_changed event)
     scheduled_cycle: Option<Instant>,
+
+    meta_changed: ChangeSender,
+    meta_receiver: Option<ChangeReceiver>,
 
     /// Triggered whenever a new entry has been queued onto the log
     /// Used to trigger the log to get flushed to persistent storage
@@ -223,7 +245,7 @@ impl<R: Send + 'static> Server<R> {
         // Gurantee no log discontinuities (only overlaps are allowed)
         // This is similar to the check on the config snapshot that we do in the
         // consensus module
-        if last_applied + 1 < log.first_index().await {
+        if last_applied < log.prev().await.index() {
             panic!("State machine snapshot is from before the start of the log");
         }
 
@@ -239,12 +261,14 @@ impl<R: Send + 'static> Server<R> {
             meta.id(),
             meta.meta().clone(),
             config_snapshot.config().clone(),
-            log.clone(),
+            log.as_ref(),
+            Instant::now(),
         )
         .await;
 
         let (tx_state, rx_state) = change();
         let (tx_log, rx_log) = change();
+        let (tx_meta, rx_meta) = change();
 
         // TODO: Routing info now no longer a part of core server
         // responsibilities
@@ -256,6 +280,8 @@ impl<R: Send + 'static> Server<R> {
             state_changed: tx_state,
             state_receiver: Some(rx_state),
             scheduled_cycle: None,
+            meta_changed: tx_meta,
+            meta_receiver: Some(rx_meta),
             log_changed: tx_log,
             log_receiver: Some(rx_log),
             callbacks: LinkedList::new(),
@@ -269,13 +295,13 @@ impl<R: Send + 'static> Server<R> {
             state_machine,
 
             // NOTE: these will be initialized below
-            flush_seq: Condvar::new(LogSeq(0)),
+            last_flushed: Condvar::new(LogSequence::zero()),
             commit_index: Condvar::new(LogPosition::zero()),
 
             last_applied: Condvar::new(last_applied),
         });
 
-        ServerShared::update_flush_seq(&shared).await;
+        ServerShared::update_last_flushed(&shared).await;
         let state = shared.state.lock().await;
         ServerShared::update_commit_index(&shared, &state).await;
         drop(state);
@@ -284,98 +310,73 @@ impl<R: Send + 'static> Server<R> {
     }
 
     // NOTE: If we also give it a state machine, we can do that for people too
-    pub async fn start(self) {
-        let (id, state_changed, log_changed) = {
+    pub async fn run(self) -> Result<()> {
+        let (state_changed, log_changed, meta_changed) = {
             let mut state = self.shared.state.lock().await;
 
             (
-                state.inst.id(),
                 // If these errors out, then it means that we tried to start the server more than
                 // once
                 state
                     .state_receiver
                     .take()
-                    .expect("State receiver already taken"),
+                    .ok_or_else(|| err_msg("State receiver already taken"))?,
                 state
                     .log_receiver
                     .take()
-                    .expect("Log receiver already taken"),
+                    .ok_or_else(|| err_msg("Log receiver already taken"))?,
+                state
+                    .meta_receiver
+                    .take()
+                    .ok_or_else(|| err_msg("Meta receiver already taken"))?,
             )
         };
 
-        let port = 4000 + (id.value() as u16);
-
-        {
-            let mut agent = self.shared.client.agent().lock().await;
-            if let Some(ref desc) = agent.identity {
-                panic!("Starting server which already has a cluster identity");
-            }
-
-            // Usually this won't be set for restarting nodes that haven't
-            // contacted the cluster yet, but it may be set for initial nodes
-            if let Some(ref v) = agent.cluster_id {
-                if *v != self.shared.cluster_id {
-                    panic!("Mismatching server cluster_id");
-                }
-            }
-
-            agent.cluster_id = Some(self.shared.cluster_id);
-
-            let mut identity = ServerDescriptor::default();
-            // TODO: this is subject to change if we are running over HTTPS
-            identity.set_addr(format!("http://127.0.0.1:{}", port));
-            identity.set_id(id);
-
-            agent.identity = Some(identity);
-        }
-
         /*
-            Other concerns:
-            - Making sure that the routes data always stays well saved on disk
-            - Won't change frequently though
-
-            - We will be making our own identity here though
+        TODO: Implementing graceful shutdown:
+        - If we are the leader, send a TimeoutNow message to one of the followers to take over
+        - Finish flushing log entries to disk.
+        - Keep the cycler thread alive (if we are leader, we should stay leader until we timed out, but we shouldn't start new elections?)
+        - Immediately stop the applier thread.
         */
 
-        // Likewise need store
+        // TODO: This should support graceful shutdown such that we wait for the log
+        // entries to be flushed to disk prior to stopping this. Other threads like
+        // applier can be immediately cancelled in this case.
 
-        // Therefore we no longer need a tuple really
+        let (sender, receiver) = channel::bounded(1);
 
-        // XXX: Right before starting this, we can completely state the identity of our
-        // server Although we would ideally do this easier (but later should
-        // also be fine?)
+        let sender1 = sender.clone();
+        let child1 = ChildTask::spawn(Self::run_cycler(self.shared.clone(), state_changed).map(
+            move |r| {
+                let _ = sender1.try_send(r);
+            },
+        ));
 
-        // TODO: We also need to add a DiscoveryService (DiscoveryServiceRouter)
-        let mut rpc_server = ::rpc::Http2Server::new();
+        let sender2 = sender.clone();
+        let child2 = ChildTask::spawn(Self::run_matcher(self.shared.clone(), log_changed).map(
+            move |r| {
+                let _ = sender2.try_send(r);
+            },
+        ));
 
-        // TODO: Handle errors on these return values.
-        rpc_server.add_service(
-            crate::rpc::DiscoveryServer::new(self.shared.client.agent().clone()).into_service(),
+        let sender3 = sender.clone();
+        let child3 = ChildTask::spawn(Self::run_applier(self.shared.clone()).map(move |r| {
+            let _ = sender3.try_send(r);
+        }));
+
+        let sender4 = sender.clone();
+        let child4 = ChildTask::spawn(
+            Self::run_meta_writer(self.shared.clone(), meta_changed).map(move |r| {
+                let _ = sender4.try_send(r);
+            }),
         );
-        rpc_server.add_service(self.clone().into_service());
 
-        // TODO: Make these lazy?
-        // NOTE: Because in bootstrap mode a server can spawn requests immediately
-        // without the first futures cycle, it may spawn stuff before tokio is ready, so
-        // we must make this lazy
-        let cycler = Self::run_cycler(self.shared.clone(), state_changed);
-        let matcher = Self::run_matcher(self.shared.clone(), log_changed);
-        let applier = Self::run_applier(self.shared.clone());
-
-        // TODO: Finally if possible we should attempt to broadcast our ip
-        // address to other servers so they can rediscover us
-
-        // TODO: Block until they are all done.
-        task::spawn(async move {
-            rpc_server.run(port).await;
-        });
-        task::spawn(cycler.map(|_| ()));
-        task::spawn(matcher.map(|_| ()));
-        task::spawn(applier.map(|_| ()));
+        receiver.recv().await?
     }
 
-    async fn run_cycler_tick(state: &mut ServerState<R>, tick: &mut Tick, _: ()) -> Instant {
-        state.inst.cycle(tick).await;
+    fn run_cycler_tick(state: &mut ServerState<R>, tick: &mut Tick, _: ()) -> Instant {
+        state.inst.cycle(tick);
 
         // NOTE: We take it so that the finish_tick doesn't re-trigger
         // this loop and prevent sleeping all together
@@ -393,10 +394,13 @@ impl<R: Send + 'static> Server<R> {
 
     /// Runs the idle loop for managing the server and maintaining leadership,
     /// etc. in the case that no other events occur to drive the server
-    async fn run_cycler(shared: Arc<ServerShared<R>>, mut state_changed: ChangeReceiver) {
+    async fn run_cycler(
+        shared: Arc<ServerShared<R>>,
+        mut state_changed: ChangeReceiver,
+    ) -> Result<()> {
         loop {
             // TODO: For a single node, we should almost never need to cycle
-            println!("Run cycler");
+            // println!("Run cycler");
 
             let next_cycle = ServerShared::run_tick(&shared, Self::run_cycler_tick, ()).await;
 
@@ -405,14 +409,55 @@ impl<R: Send + 'static> Server<R> {
             // matter)
             // Cycles like this should generally only be for heartbeats or
             // replication events and nothing else
-            //println!("Sleep {:?}", wait_time);
+            // println!("Sleep {:?}", next_cycle);
+
+            // common::async_std::task::sleep(std::time::Duration::from_millis(100)).await;
 
             state_changed = state_changed.wait_until(next_cycle).await;
         }
     }
 
+    async fn run_meta_writer(
+        shared: Arc<ServerShared<R>>,
+        mut meta_changed: ChangeReceiver,
+    ) -> Result<()> {
+        loop {
+            // TODO: Potentially batchable if we choose to make this something
+            // that can do an async write to the disk
+
+            {
+                let state = shared.state.lock().await;
+
+                // TODO: Use a reference based type to serialize this.
+                let mut server_metadata = ServerMetadata::default();
+                server_metadata.set_id(state.inst.id().clone());
+                server_metadata.set_cluster_id(shared.cluster_id.clone());
+                server_metadata.set_meta(state.inst.meta().clone());
+
+                // TODO: Steal the reference to the meta_file so that we don't need to lock the
+                // state to save to it.
+                state.meta_file.store(&server_metadata.serialize()?).await?;
+
+                drop(state);
+
+                ServerShared::run_tick(
+                    &shared,
+                    |state, tick, _| {
+                        state
+                            .inst
+                            .persisted_metadata(server_metadata.meta().clone(), tick);
+                    },
+                    (),
+                )
+                .await;
+            }
+
+            meta_changed = meta_changed.wait().await;
+        }
+    }
+
     /// Flushes log entries to persistent storage as they come in
-    /// This is responsible for pushing changes to the flush_seq variable
+    /// This is responsible for pushing changes to the last_flushed variable
     async fn run_matcher(
         shared: Arc<ServerShared<R>>,
         mut log_changed: ChangeReceiver,
@@ -440,10 +485,10 @@ impl<R: Send + 'static> Server<R> {
             }
 
             // TODO: Ideally if the log requires a lock, this should use the
-            // same lock used for updating this as well (or the flush_seq should
+            // same lock used for updating this as well (or the last_flushed should
             // be returned from the flush method <- Preferably also with the
             // term that was flushed)
-            ServerShared::update_flush_seq(&shared).await;
+            ServerShared::update_last_flushed(&shared).await;
 
             log_changed = log_changed.wait().await;
         }
@@ -455,12 +500,7 @@ impl<R: Send + 'static> Server<R> {
     /// we want one to happen
     /// NOTE: If this thing fails, we can still participate in raft but we can
     /// not perform snapshots or handle read/write queries
-    async fn run_applier(shared: Arc<ServerShared<R>>) {
-        /*
-            Snaphotting:
-            - Check the state_machine for the
-        */
-
+    async fn run_applier(shared: Arc<ServerShared<R>>) -> Result<()> {
         let mut callbacks = std::collections::LinkedList::new();
 
         loop {
@@ -496,7 +536,7 @@ impl<R: Send + 'static> Server<R> {
                                     // If we are the leader, then we should probably
                                     // demote ourselves to a healthier node
                                     eprintln!("Applier failed to apply to state machine: {:?}", e);
-                                    return;
+                                    return Err(e);
                                 }
                             }
                         } else {
@@ -652,7 +692,7 @@ impl<R: Send + 'static> Server<R> {
             - Also useful for
     */
 
-    async fn execute_tick(
+    fn execute_tick(
         state: &mut ServerState<R>,
         tick: &mut Tick,
         cmd: Vec<u8>,
@@ -660,14 +700,12 @@ impl<R: Send + 'static> Server<R> {
         let mut entry = LogEntryData::default();
         entry.command_mut().0 = cmd;
 
-        let r = state.inst.propose_entry(&entry, tick).await;
+        let proposal = state.inst.propose_entry(&entry, tick)?;
 
         // If we were successful, add a callback.
-        r.map(|prop| {
-            let (tx, rx) = oneshot::channel();
-            state.callbacks.push_back((prop, tx));
-            rx
-        })
+        let (tx, rx) = oneshot::channel();
+        state.callbacks.push_back((proposal, tx));
+        Ok(rx)
     }
 
     /// Will propose a new change and will return a future that resolves once
@@ -722,15 +760,10 @@ impl<R: Send + 'static> Server<R> {
     }
 }
 
-pub struct ServerPendingTick<'a, R: Send + 'static> {
-    state: MutexGuard<'a, ServerState<R>>,
-    tick: Tick,
-}
-
 impl<R: Send + 'static> ServerShared<R> {
-    pub async fn run_tick<O: 'static, F, C>(shared: &Arc<Self>, f: F, captured: C) -> O
+    async fn run_tick<O: 'static, F, C>(shared: &Arc<Self>, f: F, captured: C) -> O
     where
-        for<'a, 'b> F: AsyncFnOnce3<&'a mut ServerState<R>, &'b mut Tick, C, Output = O>,
+        F: for<'a, 'b> FnOnce(&'a mut ServerState<R>, &'b mut Tick, C) -> O,
     {
         let mut state = shared.state.lock().await;
 
@@ -740,7 +773,7 @@ impl<R: Send + 'static> ServerShared<R> {
         // to
         let mut tick = Tick::empty();
 
-        let out: O = f.call_once(&mut state, &mut tick, captured).await;
+        let out: O = f(&mut state, &mut tick, captured);
 
         // In the case of a failure here, we want to attempt to backoff or
         // demote ourselves from leadership
@@ -766,7 +799,14 @@ impl<R: Send + 'static> ServerShared<R> {
         let mut should_update_commit = false;
 
         // If new entries were appended, we must notify the flusher
-        if tick.new_entries {
+        if !tick.new_entries.is_empty() {
+            for entry in &tick.new_entries {
+                shared
+                    .log
+                    .append(entry.entry.clone(), entry.sequence)
+                    .await?;
+            }
+
             // When our log has fewer entries than are committed, the commit
             // index may go up
             // TODO: Will end up being a redundant operation with the below one
@@ -784,15 +824,7 @@ impl<R: Send + 'static> ServerShared<R> {
         // first request is flushed
         // ^ This is why it would be useful to have monotonic demands on this
         if tick.meta {
-            // TODO: Potentially batchable if we choose to make this something
-            // that can do an async write to the disk
-
-            // TODO: Use a reference based type to serialize this.
-            let mut server_metadata = ServerMetadata::default();
-            server_metadata.set_id(state.inst.id().clone());
-            server_metadata.set_cluster_id(shared.cluster_id.clone());
-            server_metadata.set_meta(state.inst.meta().clone());
-            state.meta_file.store(&server_metadata.serialize()?).await?;
+            state.meta_changed.notify();
 
             should_update_commit = true;
         }
@@ -847,38 +879,39 @@ impl<R: Send + 'static> ServerShared<R> {
         // metadata so long as the metadata is flushed before it elects itself
         // as the leader (aka befoer it processes replies to RequestVote)
 
+        // TODO: Don't hold the state lock while dispatching RPCs.
+
         //		task::spawn(Self::dispatch_messages(shared.clone(), tick.messages));
 
         Ok(())
     }
 
-    async fn update_flush_seq(shared: &Arc<Self>) {
-        // Getting latest flush_seq
+    async fn update_last_flushed(shared: &Arc<Self>) {
+        let cur = shared.log.last_flushed().await;
 
-        let cur = shared.log.last_flushed().await.unwrap_or(LogSeq(0));
-
-        // Updating it
-        let mut mi = shared.flush_seq.lock().await;
-        // NOTE: The flush_seq is not necessarily monotonic in the case of log
-        // truncations
-        if *mi != cur {
-            *mi = cur;
-
-            mi.notify_all();
-
-            // TODO: It is annoying that this is in this function
-            // On the leader, a change in the match index may cause the number
-            // of matches needed to be able to able the commit index
-            // In the case of a single-node system, this let commits occur
-            // nearly immediately as no external requests need to be waited on
-            // in that case
-
-            Self::run_tick(shared, Self::update_flush_seq_tick, ()).await;
+        let mut mi = shared.last_flushed.lock().await;
+        if *mi == cur {
+            return;
         }
-    }
 
-    async fn update_flush_seq_tick(state: &mut ServerState<R>, tick: &mut Tick, _: ()) {
-        state.inst.cycle(tick).await;
+        *mi = cur;
+        mi.notify_all();
+
+        // TODO: It is annoying that this is in this function
+        // On the leader, a change in the match index may cause the number
+        // of matches needed to be able to able the commit index
+        // In the case of a single-node system, this let commits occur
+        // nearly immediately as no external requests need to be waited on
+        // in that case
+
+        Self::run_tick(
+            shared,
+            |state, tick, _| {
+                state.inst.log_flushed(cur, tick);
+            },
+            (),
+        )
+        .await;
     }
 
     /// Notifies anyone waiting on something to get committed
@@ -932,7 +965,7 @@ impl<R: Send + 'static> ServerShared<R> {
         Self::run_tick(shared, Self::dispatch_request_vote_tick, (to_id, res)).await;
     }
 
-    async fn dispatch_request_vote_tick(
+    fn dispatch_request_vote_tick(
         state: &mut ServerState<R>,
         tick: &mut Tick,
         data: (ServerId, Result<Result<RequestVoteResponse>>),
@@ -940,7 +973,7 @@ impl<R: Send + 'static> ServerShared<R> {
         let (to_id, res) = data;
 
         if let Ok(Ok(resp)) = res {
-            state.inst.request_vote_callback(to_id, resp, tick).await;
+            state.inst.request_vote_callback(to_id, resp, tick);
         }
     }
 
@@ -968,11 +1001,11 @@ impl<R: Send + 'static> ServerShared<R> {
         // to unblock this server from having a pending_request
     }
 
-    async fn dispatch_append_entries_tick(
+    fn dispatch_append_entries_tick(
         state: &mut ServerState<R>,
         tick: &mut Tick,
         data: (ServerId, LogIndex, Result<Result<AppendEntriesResponse>>),
-    ) {
+    ) -> () {
         let (to_id, last_log_index, res) = data;
 
         if let Ok(Ok(resp)) = res {
@@ -982,10 +1015,9 @@ impl<R: Send + 'static> ServerShared<R> {
             // object that we have in order to determine this
             state
                 .inst
-                .append_entries_callback(to_id, last_log_index, resp, tick)
-                .await;
+                .append_entries_callback(to_id, last_log_index, resp, tick);
         } else {
-            state.inst.append_entries_noresponse(to_id, tick).await;
+            state.inst.append_entries_noresponse(to_id, tick);
         }
     }
 
@@ -1001,6 +1033,9 @@ impl<R: Send + 'static> ServerShared<R> {
             for to_id in msg.to.iter() {
                 match msg.body {
                     ConsensusMessageBody::AppendEntries(ref req, ref last_log_index) => {
+                        // TODO: Must add the entries from the log here as the Consensus Module
+                        // hasn't done that.
+
                         append_entries.push(Self::dispatch_append_entries(
                             &shared,
                             to_id.clone(),
@@ -1041,7 +1076,7 @@ impl<R: Send + 'static> ServerShared<R> {
         loop {
             let log = shared.log.as_ref();
             let (c_next, fut) = {
-                let mi = shared.flush_seq.lock().await;
+                let mi = shared.last_flushed.lock().await;
 
                 // TODO: I don't think yields sufficient atomic gurantees
                 let (c, pos) = match c.poll(log).await {
@@ -1081,7 +1116,7 @@ impl<R: Send + 'static> ServerShared<R> {
 
                 // term = 0
                 // index = 0
-                let mut null_pos = LogPosition::default();
+                let null_pos = LogPosition::zero();
 
                 c.wait(null_pos)
             };
@@ -1123,43 +1158,9 @@ impl<R: Send + 'static> ServerShared<R> {
 }
 
 impl<R: Send + 'static> Server<R> {
-    async fn request_vote_tick(
-        state: &mut ServerState<R>,
-        tick: &mut Tick,
-        req: &RequestVoteRequest,
-    ) -> MustPersistMetadata<RequestVoteResponse> {
-        state.inst.request_vote(req, tick).await
-    }
-
-    async fn append_entries_tick(
-        state: &mut ServerState<R>,
-        tick: &mut Tick,
-        req: &AppendEntriesRequest,
-    ) -> Result<FlushConstraint<AppendEntriesResponse>> {
-        state.inst.append_entries(req, tick).await
-    }
-
-    async fn timeout_now_tick(
-        state: &mut ServerState<R>,
-        tick: &mut Tick,
-        req: &TimeoutNow,
-    ) -> Result<()> {
-        state.inst.timeout_now(req, tick).await
-    }
-
-    async fn propose_entry_tick(
-        state: &mut ServerState<R>,
-        tick: &mut Tick,
-        data: &LogEntryData,
-    ) -> ProposeResult {
-        state.inst.propose_entry(data, tick).await
-    }
-
     pub fn client(&self) -> &crate::rpc::Client {
         &self.shared.client
     }
-
-    // state.inst.propose_entry(data, tick)
 }
 
 #[async_trait]
@@ -1178,7 +1179,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         .assert_verified()?;
 
         let state = self.shared.state.lock().await;
-        res.value = state.inst.pre_vote(&req).await;
+        res.value = state.inst.pre_vote(&req);
         Ok(())
     }
 
@@ -1195,8 +1196,13 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         .await?
         .assert_verified()?;
 
-        let res_raw =
-            ServerShared::run_tick(&self.shared, Self::request_vote_tick, &req.value).await;
+        let res_raw = ServerShared::run_tick(
+            &self.shared,
+            |state, tick, req| state.inst.request_vote(req, tick),
+            &req.value,
+        )
+        .await;
+        // TODO: This is wrong as we we no longer flush metadata immediately.
         res.value = res_raw.persisted();
         Ok(())
     }
@@ -1214,15 +1220,12 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         .await?
         .assert_verified()?;
 
-        // TODO: In the case that entries are immediately written, this is
-        // overly expensive
-
-        /*
-        XXX: An interesting observation is that a truncated record will never
-        become matched
-        */
-
-        let c = ServerShared::run_tick(&self.shared, Self::append_entries_tick, &req.value).await?;
+        let c = ServerShared::run_tick(
+            &self.shared,
+            |state, tick, _| state.inst.append_entries(&req.value, tick),
+            (),
+        )
+        .await?;
 
         // Once the match constraint is satisfied, this will send back a
         // response (or no response)
@@ -1243,7 +1246,12 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         .await?
         .assert_verified()?;
 
-        ServerShared::run_tick(&self.shared, Self::timeout_now_tick, &req.value).await?;
+        ServerShared::run_tick(
+            &self.shared,
+            |state, tick, _| state.inst.timeout_now(&req.value, tick),
+            (),
+        )
+        .await?;
         Ok(())
     }
 
@@ -1255,6 +1263,8 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         req: rpc::ServerRequest<ProposeRequest>,
         res: &mut rpc::ServerResponse<ProposeResponse>,
     ) -> Result<()> {
+        // TODO: How do we propose new entries before we have an id (or are a non-member
+        // node)?
         ServerRequestRoutingContext::create(
             &self.shared.client.agent(),
             &req.context,
@@ -1265,7 +1275,12 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
         let (data, should_wait) = (req.data(), req.wait());
 
-        let r = ServerShared::run_tick(&self.shared, Self::propose_entry_tick, data).await;
+        let r = ServerShared::run_tick(
+            &self.shared,
+            |state, tick, _| state.inst.propose_entry(data, tick),
+            (),
+        )
+        .await;
 
         let shared = self.shared.clone();
 
@@ -1290,7 +1305,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         ServerShared::wait_for_commit(shared.clone(), prop.clone()).await?;
 
         let state = shared.state.lock().await;
-        let r = state.inst.proposal_status(&prop).await;
+        let r = state.inst.proposal_status(&prop);
 
         match r {
             ProposalStatus::Commited => {

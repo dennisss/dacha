@@ -1,83 +1,73 @@
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use common::async_std::sync::Mutex;
 use common::errors::*;
 
 use crate::log::*;
+use crate::log_metadata::LogSequence;
 use crate::proto::consensus::*;
 
 pub struct MemoryLog {
     state: Mutex<State>,
 }
 
-struct Break {
-    /// Offset/index into the log array
-    off: usize,
-
-    /// seq at that offset
-    seq: LogSeq,
-}
-
 struct State {
+    /// Position of th last discarded log entry.
     /// Position of the entry immediately before the first entry in this log
+    /// TODO: Rename to 'start'
     prev: LogPosition,
 
-    /// All of the actual
-    log: Vec<Arc<LogEntry>>,
-
-    /// List of continuous integer ranges of sequence numbers in the log array
-    /// above
-    /// There should always be at least one break to specify the sequences
-    /// starting at the first log entry
-    breaks: Vec<Break>,
+    /// All of the actual entries in the log.
+    /// TODO: Compress the sequences and LogPositions using a LogMetadata
+    /// object.
+    log: VecDeque<(Arc<LogEntry>, LogSequence)>,
 }
-
-/*
-    On the complications of having a previous log index:
-    - In the case of etcd, they will simply retain a dummy record that is still in the list for the sake of this
-*/
 
 impl MemoryLog {
     pub fn new() -> Self {
         MemoryLog {
             state: Mutex::new(State {
                 prev: LogPosition::zero(),
-                log: vec![],
-                breaks: vec![Break {
-                    off: 0,
-                    seq: LogSeq(1),
-                }],
+                log: VecDeque::new(),
             }),
         }
     }
 
+    // NOTE: This is only safe to call from append() as the sequence isn't advanced.
+    // TODO: Call this in append().
+    //
+    // TODO: Inline into the append
+    async fn truncate(&self, start_index: LogIndex) {
+        let mut state = self.state.lock().await;
+    }
+}
+
+impl State {
     // EIther it is a valid index, it is the index for the previous entry, or None
-    fn off_for(index: LogIndex, log: &Vec<Arc<LogEntry>>) -> Option<usize> {
-        if log.len() == 0 {
+    fn off_for(&self, index: LogIndex) -> Option<usize> {
+        if self.log.len() == 0 {
             return None;
         }
 
-        let first_index = log[0].pos().index().value();
+        let first_index = self.prev.index().value() + 1;
 
         // TODO: This could go negative if we are not careful
         Some((index.value() - first_index) as usize)
     }
 
-    // Assuming that all of the breaks are in sorted order based on array
-    // position, this will get the sequence for the entry at some position
-    fn seq_for(off: usize, breaks: &[Break]) -> Option<LogSeq> {
-        for b in breaks.iter().rev() {
-            if off >= b.off {
-                return Some(LogSeq(b.seq.0 + (off - b.off)));
-            }
-        }
-
-        None
+    fn last_index(&self) -> LogIndex {
+        (self.prev.index().value() + (self.log.len() as u64)).into() // TODO: Remove the u64
     }
 }
 
 #[async_trait]
 impl Log for MemoryLog {
+    async fn prev(&self) -> LogPosition {
+        let state = self.state.lock().await;
+        state.prev.clone()
+    }
+
     async fn term(&self, index: LogIndex) -> Option<Term> {
         let state = self.state.lock().await;
 
@@ -85,100 +75,61 @@ impl Log for MemoryLog {
             return Some(state.prev.term());
         }
 
-        let off = match Self::off_for(index, &state.log) {
+        let off = match state.off_for(index) {
             Some(v) => v,
             None => return None,
         };
 
         match state.log.get(off) {
             Some(v) => {
-                assert_eq!(v.pos().index(), index);
-                Some(v.pos().term())
+                assert_eq!(v.0.pos().index(), index);
+                Some(v.0.pos().term())
             }
             None => None,
         }
-    }
-
-    async fn first_index(&self) -> LogIndex {
-        let state = self.state.lock().await;
-        (state.prev.index().value() + 1).into()
     }
 
     async fn last_index(&self) -> LogIndex {
         let state = self.state.lock().await;
-        (state.prev.index().value() + (state.log.len() as u64)).into() // tODO: Remove the u64
+        state.last_index()
     }
 
     // Arcs would be pointless if we can support a read-only guard on it
 
-    async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSeq)> {
+    async fn entry(&self, index: LogIndex) -> Option<(Arc<LogEntry>, LogSequence)> {
         let state = self.state.lock().await;
 
-        let off = match Self::off_for(index, &state.log) {
+        let off = match state.off_for(index) {
             Some(v) => v,
             None => return None,
         };
 
-        let seq = Self::seq_for(off, &state.breaks).unwrap();
-
-        match state.log.get(off) {
-            Some(v) => {
-                assert_eq!(v.pos().index(), index);
-                Some((v.clone(), seq))
-            }
-            None => None,
-        }
+        state.log.get(off).cloned()
     }
 
-    async fn append(&self, entry: LogEntry) -> LogSeq {
-        // We assume that appends are always in order. Truncations should be explicit
-        // XXX: Should actually be using the last_index from the
-        assert_eq!(self.last_index().await + 1, entry.pos().index());
-
+    async fn append(&self, entry: LogEntry, sequence: LogSequence) -> Result<()> {
         let mut state = self.state.lock().await;
 
-        assert!(state.breaks.len() > 0);
+        // Perform truncation if getting an old entry.
+        if entry.pos().index() <= state.last_index() {
+            let off = match state.off_for(entry.pos().index()) {
+                Some(v) => v,
+                None => panic!("Truncating starting at unknown position"),
+            };
 
-        state.log.push(Arc::new(entry));
-
-        Self::seq_for(state.log.len() - 1, &state.breaks).unwrap()
-    }
-
-    async fn truncate(&self, start_index: LogIndex) -> Option<LogSeq> {
-        let mut state = self.state.lock().await;
-
-        let off = match Self::off_for(start_index, &state.log) {
-            Some(v) => v,
-            None => panic!("Truncating starting at unknown position"),
-        };
-
-        let next_seq = Self::seq_for(state.log.len(), &state.breaks).unwrap_or(LogSeq(0));
-
-        // Remove all tail breaks positioned after the truncation point
-        while let Some(last_off) = state.breaks.last().map(|b| b.off) {
-            if last_off >= off {
-                state.breaks.pop();
-            } else {
-                break;
-            }
+            // Performing the actual truncation
+            state.log.truncate(off);
         }
 
-        // Add new break
-        state.breaks.push(Break { off, seq: next_seq });
+        assert_eq!(state.last_index() + 1, entry.pos().index());
 
-        // Performing the actual truncation
-        state.log.truncate(off);
+        state.log.push_back((Arc::new(entry), sequence));
 
-        None
+        Ok(())
     }
 
-    async fn checkpoint(&self) -> LogPosition {
-        // term = 0, index = 0
-        LogPosition::default()
-    }
-
-    /// It is assumed that the
-    async fn discard(&self, pos: LogPosition) {
+    /// TODO: Fix this.
+    async fn discard(&self, pos: LogPosition) -> Result<()> {
         let mut state = self.state.lock().await;
 
         if state.log.len() == 0 {
@@ -186,10 +137,10 @@ impl Log for MemoryLog {
             // 'previous' entry here
             // Generally will still assume that we want to be able to
             // immediately start appending new entries
-            return;
+            return Ok(());
         }
 
-        let mut i = match Self::off_for(pos.index(), &state.log) {
+        let mut i = match state.off_for(pos.index()) {
             Some(v) => v,
             _ => state.log.len() - 1,
         };
@@ -197,7 +148,7 @@ impl Log for MemoryLog {
         // Look backwards until we find a position that is equal to to or older
         // than the given position
         loop {
-            let e = &state.log[i];
+            let (e, _) = &state.log[i];
 
             if e.pos().term() <= pos.term() && e.pos().index() <= pos.index() {
                 break;
@@ -205,30 +156,11 @@ impl Log for MemoryLog {
 
             // Failed to find anything
             if i == 0 {
-                return;
+                return Ok(());
             }
 
             i -= 1;
         }
-
-        // Correcting any breaks
-
-        let next_seq = Self::seq_for(i + 1, &state.breaks).unwrap();
-        let mut new_breaks = vec![Break {
-            off: 0,
-            seq: next_seq,
-        }];
-
-        for b in state.breaks.iter() {
-            if b.off > i + 1 {
-                new_breaks.push(Break {
-                    off: b.off - (i + 1),
-                    seq: b.seq.clone(),
-                });
-            }
-        }
-
-        state.breaks = new_breaks;
 
         // Realistically no matter what, we can discard even farther forward
 
@@ -246,8 +178,10 @@ impl Log for MemoryLog {
         // an argument (this would have the effect of rewiping stuff)
         // ^ complication being that we must
         // We can use pos if and only if we were successful, but regardless
-        state.prev = state.log[i].pos().clone(); // < Alternatively we would convert it to a dummy record
+        state.prev = state.log[i].0.pos().clone(); // < Alternatively we would convert it to a dummy record
         state.log = state.log.split_off(i + 1);
+
+        Ok(())
     }
 
     /*
@@ -263,11 +197,9 @@ impl Log for MemoryLog {
 
     // the memory store will just assume that everything in the log is immediately
     // durable
-    async fn last_flushed(&self) -> Option<LogSeq> {
-        let state = self.state.lock().await;
-        let last_seq = Self::seq_for(0, &state.breaks);
-
-        last_seq
+    async fn last_flushed(&self) -> LogSequence {
+        // This doesn't support flushing.
+        LogSequence::zero()
     }
 
     async fn flush(&self) -> Result<()> {
