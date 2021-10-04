@@ -5,13 +5,14 @@ use std::time::{Duration, Instant};
 use common::errors::*;
 use crypto::random::{self, RngExt};
 
-use crate::config_state::*;
-use crate::constraint::*;
+use crate::consensus::config_state::*;
+use crate::consensus::constraint::*;
+use crate::consensus::state::*;
+use crate::consensus::tick::*;
 use crate::log::*;
 use crate::log_metadata::*;
 use crate::proto::consensus::*;
 use crate::proto::consensus_state::*;
-use crate::state::*;
 
 // TODO: Suppose the leader is waiting on an earlier truncation that is
 // preventing the pending_conflict from resolving. Should we allow it to still
@@ -109,99 +110,6 @@ pub enum ProposalStatus {
 
 pub type ConsensusModuleHandle = Arc<Mutex<ConsensusModule>>;
 
-#[derive(Debug)]
-pub struct ConsensusMessage {
-    pub to: Vec<ServerId>, // Most times cheaper to
-    pub body: ConsensusMessageBody,
-}
-
-// TODO: A message should be backed by a buffer such that it can be trivially
-// forwarded and owned some binary representation of itself
-#[derive(Debug)]
-pub enum ConsensusMessageBody {
-    PreVote(RequestVoteRequest),
-    RequestVote(RequestVoteRequest),
-    AppendEntries(AppendEntriesRequest, LogIndex), /* The index is the last_index of the
-                                                    * original request (naturally not needed if
-                                                    * we support retaining the original request
-                                                    * while receiving the response) */
-}
-
-#[derive(Debug)]
-pub struct NewLogEntry {
-    pub sequence: LogSequence,
-    pub entry: LogEntry,
-}
-
-/// Represents all external side effects requested by the ConsensusModule during
-/// a single operation
-#[derive(Debug)]
-pub struct Tick {
-    /// Exact time at which this tick is happening
-    pub time: Instant,
-
-    /*
-    When must the metadata be persisted to disk:
-    - Before sending a RequestVote response
-    - Before we vote for ourselves as the leader.
-    */
-    /// If true, then the metadata was just changed, so should be persisted to
-    /// storage.
-    pub meta: bool,
-
-    // If true, the consensus configuration has changed since the last tick and should be persisted
-    // to disk at some point. In general, there is no requirement to persist the config to disk
-    // unless discarding log entries after the previous persisted state of the config.
-    pub config: bool,
-
-    /// Ordered list of new log entries that need to be appended to the log.
-    /// These must be appended after all new_entries from previous ticks.
-    pub new_entries: Vec<NewLogEntry>,
-
-    // If present, meand that the given messages need to be sent out
-    // This will be separate from resposnes as those are slightly different
-    // The from_id is naturally available on any response
-    pub messages: Vec<ConsensusMessage>,
-
-    // TODO: Possibly expose a list of entries (but we will basically always
-    // internally track the most up to date position of the log)
-    /// If no other events occur, then this is the next tick should occur
-    pub next_tick: Option<Duration>,
-}
-
-impl Tick {
-    // TODO: Gurantee that this always is created while the consensus module is
-    // locked and that the tick is immediately used (otherwise we won't get
-    // monotonic time out of it)
-    pub fn empty() -> Self {
-        Tick {
-            time: Instant::now(),
-
-            meta: false,
-            config: false,
-            new_entries: vec![],
-            messages: vec![],
-
-            // We will basically update our ticker to use this as an
-            next_tick: None,
-        }
-    }
-
-    pub fn write_meta(&mut self) {
-        self.meta = true;
-    }
-
-    pub fn write_config(&mut self) {
-        self.config = true;
-    }
-
-    pub fn send(&mut self, msg: ConsensusMessage) {
-        // TODO: Room for optimization in preallocating space for all messages
-        // up front (and/or reusing the same tick object to avoid allocations)
-        self.messages.push(msg);
-    }
-}
-
 // TODO: Finish and move to the constraint file
 
 /// Wrapper around a value which indicates that the value must NOT be accessed
@@ -255,7 +163,7 @@ pub struct ConsensusModule {
     config: ConfigurationStateMachine,
 
     // Basically this is the persistent state stuff
-    state: ServerState,
+    state: ConsensusState,
 
     /// Highest log entry sequence at which we have seen a conflict
     /// (aka this is the position of some log entry that we added to the log
@@ -403,7 +311,7 @@ impl ConsensusModule {
     /// We will probably implement clock skew as a separate layer on top of this
     pub fn read_index(&self, time: Instant) -> std::result::Result<ReadIndex, ReadIndexError> {
         let is_leader = match self.state {
-            ServerState::Leader(_) => true,
+            ConsensusState::Leader(_) => true,
             _ => false,
         };
 
@@ -579,7 +487,7 @@ impl ConsensusModule {
     // NOTE: This is only public in order to support being used by the Server
     // class for exposing this directly as a raw rpc to other servers
     pub fn propose_entry(&mut self, data: &LogEntryData, out: &mut Tick) -> ProposeResult {
-        let ret = if let ServerState::Leader(ref mut leader_state) = self.state {
+        let ret = if let ConsensusState::Leader(ref mut leader_state) = self.state {
             let last_log_index = self.log_meta.last().position.index();
 
             let index = last_log_index + 1;
@@ -647,7 +555,7 @@ impl ConsensusModule {
             out.new_entries.push(NewLogEntry { entry: e, sequence });
 
             Ok(Proposal::new(term, index))
-        } else if let ServerState::Follower(ref s) = self.state {
+        } else if let ConsensusState::Follower(ref s) = self.state {
             return Err(ProposeError::NotLeader {
                 leader_hint: s.last_leader_id.or_else(|| {
                     if self.meta.voted_for().value() > 0 {
@@ -721,11 +629,11 @@ impl ConsensusModule {
         // Move important information out of the state (mainly so that we don't
         // get into internal mutation issues)
         let summary = match self.state {
-            ServerState::Follower(ref s) => ServerStateSummary::Follower {
+            ConsensusState::Follower(ref s) => ServerStateSummary::Follower {
                 elapsed: tick.time.duration_since(s.last_heartbeat),
                 election_timeout: s.election_timeout.clone(),
             },
-            ServerState::Candidate(ref s) => {
+            ConsensusState::Candidate(ref s) => {
                 let have_self_voted = self.persisted_meta.current_term()
                     == self.meta.current_term()
                     && self.persisted_meta.voted_for() != 0.into();
@@ -741,7 +649,7 @@ impl ConsensusModule {
                     election_timeout: s.election_timeout.clone(),
                 }
             }
-            ServerState::Leader(ref s) => ServerStateSummary::Leader {
+            ConsensusState::Leader(ref s) => ServerStateSummary::Leader {
                 next_commit_index: self.find_next_commit_index(&s),
             },
         };
@@ -806,7 +714,7 @@ impl ConsensusModule {
                         .map(|s| (*s, ServerProgress::new(last_log_index)))
                         .collect::<_>();
 
-                    self.state = ServerState::Leader(ServerLeaderState { servers });
+                    self.state = ConsensusState::Leader(ServerLeaderState { servers });
 
                     // We are starting our leadership term with at least one
                     // uncomitted entry from a pervious term. To immediately
@@ -970,7 +878,7 @@ impl ConsensusModule {
     /// This will return the amount of time remaining until the next heartbeat
     fn replicate_entries<'a>(&'a mut self, tick: &mut Tick) -> Duration {
         let state: &'a mut ServerLeaderState = match self.state {
-            ServerState::Leader(ref mut s) => s,
+            ConsensusState::Leader(ref mut s) => s,
 
             // Generally this entire function should only be called if we are a leader, so hopefully
             // this never happen
@@ -1128,7 +1036,7 @@ impl ConsensusModule {
         // current term and we we haven't received conflicting responses, we must
         // increment the term counter for this election
         let must_increment = {
-            if let ServerState::Candidate(ref s) = self.state {
+            if let ConsensusState::Candidate(ref s) = self.state {
                 if !s.some_rejected {
                     false
                 } else {
@@ -1154,7 +1062,7 @@ impl ConsensusModule {
         // reuse any previous votes that we received and not bother asking for those
         // votes again? Unless it has been so long that we expect to get a new term
         // index by reasking
-        self.state = ServerState::Candidate(ServerCandidateState {
+        self.state = ConsensusState::Candidate(ServerCandidateState {
             election_start: tick.time.clone(),
             election_timeout: Self::new_election_timeout(),
             votes_received: HashSet::new(),
@@ -1202,8 +1110,8 @@ impl ConsensusModule {
     }
 
     /// Creates a new follower state
-    fn new_follower(now: Instant) -> ServerState {
-        ServerState::Follower(ServerFollowerState {
+    fn new_follower(now: Instant) -> ConsensusState {
+        ConsensusState::Follower(ConsensusFollowerState {
             election_timeout: Self::new_election_timeout(),
             last_leader_id: None,
             last_heartbeat: now,
@@ -1304,7 +1212,7 @@ impl ConsensusModule {
             return;
         }
 
-        let should_cycle = if let ServerState::Candidate(ref mut s) = self.state {
+        let should_cycle = if let ConsensusState::Candidate(ref mut s) = self.state {
             if resp.vote_granted() {
                 s.votes_received.insert(from_id);
             } else {
@@ -1340,7 +1248,7 @@ impl ConsensusModule {
 
         let mut should_noop = false;
 
-        let should_cycle = if let ServerState::Leader(ref mut s) = self.state {
+        let should_cycle = if let ConsensusState::Leader(ref mut s) = self.state {
             // TODO: Across multiple election cycles, this may no longer be available
             let mut progress = s.servers.get_mut(&from_id).unwrap();
 
@@ -1403,7 +1311,7 @@ impl ConsensusModule {
     /// Handles the event of received no response or an error/timeout from an
     /// append_entries request
     pub fn append_entries_noresponse(&mut self, from_id: ServerId, tick: &mut Tick) {
-        if let ServerState::Leader(ref mut s) = self.state {
+        if let ConsensusState::Leader(ref mut s) = self.state {
             let mut progress = s.servers.get_mut(&from_id).unwrap();
             progress.request_pending = false;
         }
@@ -1510,7 +1418,7 @@ impl ConsensusModule {
             // reset so that the leader upon being elected can depend on an
             // initial heartbeat time to use for serving read queries
             match self.state {
-                ServerState::Follower(ref mut s) => {
+                ConsensusState::Follower(ref mut s) => {
                     s.last_heartbeat = tick.time.clone();
                 }
                 _ => panic!("Granted vote but did not transition back to being a follower"),
@@ -1552,7 +1460,7 @@ impl ConsensusModule {
         // elections
         if req.term() == self.meta.current_term() {
             let is_candidate = match self.state {
-                ServerState::Candidate(_) => true,
+                ConsensusState::Candidate(_) => true,
                 _ => false,
             };
 
@@ -1589,7 +1497,7 @@ impl ConsensusModule {
 
         match self.state {
             // This is generally the only state we expect to see
-            ServerState::Follower(ref mut s) => {
+            ConsensusState::Follower(ref mut s) => {
                 // Update the time now that we have seen a request from the
                 // leader in the current term
                 s.last_heartbeat = tick.time.clone();
@@ -1597,7 +1505,7 @@ impl ConsensusModule {
             }
             // We will only see this when the leader is applying a change to
             // itself
-            ServerState::Leader(_) => {
+            ConsensusState::Leader(_) => {
                 // NOTE: In all cases, we currently don't use this track for
                 // anything
                 if req.leader_id() != self.id {
@@ -1608,7 +1516,7 @@ impl ConsensusModule {
                 }
             }
             // We should never see this
-            ServerState::Candidate(_) => {
+            ConsensusState::Candidate(_) => {
                 return Err(err_msg("How can we still be a candidate right now?"));
             }
         };

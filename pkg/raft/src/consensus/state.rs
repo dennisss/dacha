@@ -12,14 +12,14 @@ use crate::proto::consensus::{LogIndex, ServerId};
 // TODO: This is confusing naming as it is stored in the Concensus module and
 // notin the Server struct.
 #[derive(Clone, Debug)]
-pub enum ServerState {
-    Follower(ServerFollowerState),
+pub enum ConsensusState {
+    Follower(ConsensusFollowerState),
     Candidate(ServerCandidateState),
     Leader(ServerLeaderState),
 }
 
 #[derive(Clone, Debug)]
-pub struct ServerFollowerState {
+pub struct ConsensusFollowerState {
     /// Amount of time we should wait after not receiving a hearbeat from the
     /// leader to become a candiate and
     pub election_timeout: Duration,

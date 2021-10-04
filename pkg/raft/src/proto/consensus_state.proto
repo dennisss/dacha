@@ -33,7 +33,7 @@ message Metadata {
 // categories purely getter methods for iterators)
 message Configuration {
     // All servers in the cluster which participate in voting rounds. A majority of servers in this
-    //  list must vote the same way for a quorem to be achieved.
+    // list must vote the same way for a quorem to be achieved.
     repeated ServerId members = 1 [unordered_set = true];
 
     // All servers which do not participate in votes (at least not yet), but
