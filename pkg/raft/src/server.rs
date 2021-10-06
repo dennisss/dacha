@@ -72,6 +72,53 @@ pub enum ExecuteError {
     /* Also possibly that it just plain old failed to be committed */
 }
 
+/*
+Requirements:
+- Usually, I will never need to contact the log for AppendEntries requests as I can forward them
+- At least everything since the last commited index should stay in memory.
+- Although the user may want to have a few more in memory to apply asychronously to the state machine.
+
+- The consensus module must know about all entries available in memory
+
+Expose a discard() on the Consensus Module so that it can
+
+- There are a few queues:
+    - Appending
+    -
+
+
+Decision:
+=> The ConsensusModule will manage the local view of all in-memory log entries.
+=> The role of the user log implementation becomes solely to write changes.
+=> LogView, LogWriter
+=> We can't dicard log entries until we have a state machine snapshot including them.
+    => Otherwise we can't help stragglers catch up.
+    => (but this would be a huge memory amplification most likely).
+    => So contain to not store any log data in the
+        => Thus ConsensusModule won't handle discards, but must be aware of
+=> Tick will emit both 'new_entries' and 'commited_entries'
+
+
+3 types of entries:
+1. Just appended: Trivial for the ConcensusModule to add these to new_entries and AppendEntries (assuming up to date peer)
+2. Just comitted:
+3. Comitted for a while but maybe not present in a snapshot yet.
+
+
+*/
+// TODO: While Raft has no requirements on message ordering, we should try to
+// ensure that all AppendEntriesRequests are send to remote servers in order as
+// it is inefficient to process them out of order.
+// - If we don't think that a server is up to date, we also don't want to spam
+//   it with requests (at least not until we sent the last packet in a
+//   snapshot).
+// - Old client requests from previous terms can be immediately cancelled.
+// - We can use HTTP2 dependencies to ensure priority of sending one request
+//   before another, but we will need to enable stronger gurantees that the
+//   server processes them in order (but before we wait for metadata to be
+//   flushed, we should yield to start processing another AppendEntries
+//   request.)
+
 /// Represents everything needed to start up a Server object
 pub struct ServerInitialState<R> {
     /// Value of the metadata initially

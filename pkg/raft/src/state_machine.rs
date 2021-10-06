@@ -28,8 +28,13 @@ pub trait StateMachine<R> {
     async fn apply(&self, index: LogIndex, op: &[u8]) -> Result<R>;
 
     /// Gets the index of the last log entry which has been persisted to disk.
-    /// Future calls to snapshot() should
+    /// Future calls to snapshot() should return a snapshot with at least this
+    /// index.
     async fn last_flushed(&self) -> LogIndex;
+
+    /// Blocks until the state machine has been flushed since the last call to
+    /// wait_for_flush().
+    async fn wait_for_flush(&self);
 
     /// Retrieves the latest persisted snapshot of the state machine.
     ///

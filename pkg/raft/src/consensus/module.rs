@@ -48,6 +48,19 @@ TODOs:
 // to some minimum index (I say minimum for the case of point-in-time
 // transactions that don't care about newer stuff)
 
+// TODO: If a follower's state doesn't match our own, then instead of performing
+// a linear search for the truncation point, just send over the entire list of
+// log offsets from the LogMeta (assuming there are relatively few
+// discontinuities present).
+
+// TODO: Don't require the entire non-snapshoted log to be in memory.
+
+// TODO: Limit the number of log entries send in a single request.
+
+// TODO: Also limit the number of outstanding requests being sent.
+
+// TODO: Ensure that we ignore responses received to very old requests.
+
 /// At some random time in this range of milliseconds, a follower will become a
 /// candidate if no
 const ELECTION_TIMEOUT: (u64, u64) = (400, 800);
@@ -408,10 +421,22 @@ impl ConsensusModule {
     /*
         XXX: What is interesting is that whenever a round of heartbeats is obtained, it may be able to 'unwrap' a read-index as long as it started after the read_index was issued
         - So probably wrap read_indexes with a time
+
+        TODO: If many writes are going on, then this may slow down acquiring a read index as AppendEntries requests require a disk write to return a response.
+        => Consider making a heart-beat only request type.
+
+        How to execute a complete command:
+
+        1. Check that the current server is the raft leader.
+            => If it isn't ask the client to retry on the leader (or next server if unknown)
+        2. Acquire a read index
+            => Will be in the current server's leadership term
+        3.
+
     */
 
     /// Propose a new state machine command given some data packet
-    // NOTE: Will immediately produce an output right?
+    /// NOTE: Will immediately produce an output right?
     pub fn propose_command(&mut self, data: Vec<u8>, out: &mut Tick) -> ProposeResult {
         let mut e = LogEntryData::default();
         e.set_command(data);
@@ -437,7 +462,7 @@ impl ConsensusModule {
     }
     */
 
-    /// Checks the progress of a previously iniated proposal
+    /// Checks the progress of a previously initiated proposal.
     /// This can be safely queried on any server in the cluster but naturally
     /// the status on the current leader will be the first to converge
     pub fn proposal_status(&self, prop: &Proposal) -> ProposalStatus {
@@ -484,8 +509,18 @@ impl ConsensusModule {
         }
     }
 
-    // NOTE: This is only public in order to support being used by the Server
-    // class for exposing this directly as a raw rpc to other servers
+    /// Proposes that a new entry be appended to the log.
+    ///
+    /// If the current server isn't the raft leader, then this will return an
+    /// error, else the entry will be appended to this server's log and send to
+    /// other servers for consensus.
+    ///
+    /// The entry is asyncronously commited. The status of the proposal can be
+    /// checked for ConsensusModule::proposal_status().
+    ///
+    /// NOTE: This is an internal function meant to only be used in the Propose
+    /// RPC call used by other Raft members internally. Prefer to use the
+    /// specific forms of this function (e.g. ConsensusModule::propose_command).
     pub fn propose_entry(&mut self, data: &LogEntryData, out: &mut Tick) -> ProposeResult {
         let ret = if let ConsensusState::Leader(ref mut leader_state) = self.state {
             let last_log_index = self.log_meta.last().position.index();
@@ -785,6 +820,11 @@ impl ConsensusModule {
         self.cycle(tick);
     }
 
+    pub fn log_discarded(&mut self, prev: LogOffset) {
+        assert!(prev.position.index() <= self.meta.commit_index());
+        self.log_meta.discard(prev);
+    }
+
     /// NOTE: The caller is responsible for ensuring that this is called in
     /// order of metadata generation.
     pub fn persisted_metadata(&mut self, meta: Metadata, tick: &mut Tick) {
@@ -909,6 +949,9 @@ impl ConsensusModule {
             // 1).value() {     req.add_entries((*log.entry(i.into()).await.
             // unwrap().0).clone()); }
 
+            // Other issues:
+            // - Most likely the log indexes will overlap.
+
             let prev_log_term = log_meta
                 .lookup(prev_log_index)
                 .map(|off| off.position.term())
@@ -989,11 +1032,10 @@ impl ConsensusModule {
             let msg_key = progress.next_index - 1;
 
             // If we are already
-            if message_map.contains_key(&msg_key) {
-                let msg = message_map.get_mut(&msg_key).unwrap();
+            if let Some(msg) = message_map.get_mut(&msg_key) {
                 msg.to.push(*server_id);
             } else {
-                let req = new_request(msg_key);
+                let request = new_request(msg_key);
 
                 // XXX: Also record the start time so that we can hold leases
 
@@ -1001,7 +1043,10 @@ impl ConsensusModule {
                     msg_key,
                     ConsensusMessage {
                         to: vec![*server_id],
-                        body: ConsensusMessageBody::AppendEntries(req, last_log_index),
+                        body: ConsensusMessageBody::AppendEntries {
+                            request,
+                            last_log_index,
+                        },
                     },
                 );
             }
@@ -1192,6 +1237,9 @@ impl ConsensusModule {
     /// Handles the response to a RequestVote that this module issued the given
     /// server id
     /// This depends on the
+    ///
+    /// TODO: Also have a no-reply case so that we can regulate how many out
+    /// going requests we have pending.
     pub fn request_vote_callback(
         &mut self,
         from_id: ServerId,
@@ -1397,7 +1445,8 @@ impl ConsensusModule {
     /*
         Can we avoid the silly return value?
         - Instead return Result<RequestVoteResponse, MustPersistMetadata>
-        - Once metadata is polled,
+        - Once metadata is persisted, the user can call request_vote()
+
     */
     /// Called when another server is requesting that we vote for it
     pub fn request_vote(

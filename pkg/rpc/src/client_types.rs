@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use common::async_std::channel;
 use common::async_std::task;
@@ -148,6 +149,8 @@ pub struct ClientStreamingResponse<Res> {
 
     state: Option<ClientStreamingResponseState>,
 
+    interceptor: Option<Arc<dyn ClientResponseInterceptor>>,
+
     phantom_t: PhantomData<Res>,
 }
 
@@ -175,6 +178,7 @@ impl<Res> ClientStreamingResponse<Res> {
             state: Some(ClientStreamingResponseState::Head(ChildTask::spawn(
                 response,
             ))),
+            interceptor: None,
             phantom_t: PhantomData,
         }
     }
@@ -183,8 +187,14 @@ impl<Res> ClientStreamingResponse<Res> {
         Self {
             context: ClientResponseContext::default(),
             state: Some(ClientStreamingResponseState::Error(error)),
+            interceptor: None,
             phantom_t: PhantomData,
         }
+    }
+
+    /// TODO: Support multiple hooks.
+    pub fn set_interceptor(&mut self, interceptor: Arc<dyn ClientResponseInterceptor>) {
+        self.interceptor = Some(interceptor);
     }
 }
 
@@ -193,6 +203,7 @@ impl ClientStreamingResponse<()> {
         ClientStreamingResponse {
             context: self.context,
             state: self.state,
+            interceptor: self.interceptor,
             phantom_t: PhantomData,
         }
     }
@@ -253,6 +264,12 @@ impl<Res: protobuf::Message> ClientStreamingResponse<Res> {
         }
 
         self.context.metadata.head_metadata = Metadata::from_headers(&response.head.headers)?;
+
+        if let Some(interceptor) = &self.interceptor {
+            interceptor
+                .on_response_head(&mut self.context.metadata.head_metadata)
+                .await?;
+        }
 
         self.state = Some(ClientStreamingResponseState::Body(response.body));
 
@@ -348,4 +365,9 @@ impl<Req: protobuf::Message, Res: protobuf::Message> ClientStreamingCall<Req, Re
 
         Ok(response.ok_or_else(|| err_msg("Unary RPC returned OK without a body"))?)
     }
+}
+
+#[async_trait]
+pub trait ClientResponseInterceptor {
+    async fn on_response_head(&self, metadata: &mut Metadata) -> Result<()>;
 }

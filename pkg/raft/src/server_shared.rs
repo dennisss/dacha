@@ -468,6 +468,21 @@ impl<R: Send + 'static> ServerShared<R> {
         }
     }
 
+    /// Discards log entries which have been flushed to a
+    ///
+    /// TODO: Consider optimistically removing applied entries from memory but
+    /// keep them on disk before they are added to a snapshot.
+    pub async fn run_discarder(self: Arc<Self>) -> Result<()> {
+        loop {
+            let last_flushed = self.state_machine.last_flushed().await;
+            // TODO: Discard in consensus module and in the log file.
+
+            self.state_machine.wait_for_flush().await;
+        }
+
+        Ok(())
+    }
+
     pub async fn run_tick<O: 'static, F, C>(self: &Arc<Self>, f: F, captured: C) -> O
     where
         F: for<'a, 'b> FnOnce(&'a mut ServerState<R>, &'b mut Tick, C) -> O,
@@ -635,6 +650,8 @@ impl<R: Send + 'static> ServerShared<R> {
     TODO: For new log entries, we shouldn't need to acquire a lock to get the entries to populate the AppendEntries (given that we have them handy).
 
     TODO: I would like to manage how much memory is taken up by the in-memory log entries, but I should keep in mind that copying them for RPCs can take up more memory or prevent the existing memory references from being dropped.
+
+    TODO: If we don't get a response due to missing a route, don't immediately tell the ConsensusModule as this may cause an immediate retry. Instead perform backoff.
     */
 
     fn dispatch_messages(
@@ -654,27 +671,35 @@ impl<R: Send + 'static> ServerShared<R> {
 
         for msg in &mut messages {
             // Populate all the log entries.
-            if let ConsensusMessageBody::AppendEntries(req, last_log_index) = &mut msg.body {
+            if let ConsensusMessageBody::AppendEntries {
+                request,
+                last_log_index,
+            } = &mut msg.body
+            {
                 // TODO: If the log was truncated, then we may send the wrong sequence of
                 // entries here.
 
-                let mut idx = req.prev_log_index() + 1;
-                let last_idx = self.log.last_index().await;
-                while idx <= last_idx {
-                    req.add_entries(self.log.entry(idx).await.unwrap().0.as_ref().clone());
+                let mut idx = request.prev_log_index() + 1;
+                while idx <= *last_log_index {
+                    let entry = self.log.entry(idx).await;
+
+                    request.add_entries(self.log.entry(idx).await.unwrap().0.as_ref().clone());
                     idx = idx + 1;
                 }
             }
 
             for to_id in msg.to.iter() {
                 match msg.body {
-                    ConsensusMessageBody::AppendEntries(ref req, ref last_log_index) => {
+                    ConsensusMessageBody::AppendEntries {
+                        ref request,
+                        ref last_log_index,
+                    } => {
                         // TODO: Must add the entries from the log here as the Consensus Module
                         // hasn't done that.
 
                         append_entries.push(self.dispatch_append_entries(
                             to_id.clone(),
-                            req,
+                            request,
                             last_log_index.clone(),
                         ));
                     }
