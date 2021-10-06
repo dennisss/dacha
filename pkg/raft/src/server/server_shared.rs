@@ -18,12 +18,12 @@ use crate::atomic::BlobFile;
 use crate::consensus::constraint::*;
 use crate::consensus::module::*;
 use crate::consensus::tick::*;
-use crate::log::Log;
-use crate::log_metadata::LogSequence;
+use crate::log::log::Log;
+use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
-use crate::proto::routing::ClusterId;
+// use crate::proto::routing::GroupId;
 use crate::proto::server_metadata::*;
-use crate::state_machine::StateMachine;
+use crate::server::state_machine::StateMachine;
 use crate::sync::*;
 
 /// After this amount of time, we will assume that an rpc request has failed
@@ -38,7 +38,7 @@ const REQUEST_TIMEOUT: u64 = 500;
 /// Server variables that can be shared by many different threads
 pub struct ServerShared<R> {
     /// As stated in the initial metadata used to create the server
-    pub cluster_id: ClusterId,
+    pub group_id: GroupId,
 
     pub state: Mutex<ServerState<R>>,
 
@@ -232,7 +232,7 @@ impl<R: Send + 'static> ServerShared<R> {
                 // TODO: Use a reference based type to serialize this.
                 let mut server_metadata = ServerMetadata::default();
                 server_metadata.set_id(state.inst.id().clone());
-                server_metadata.set_cluster_id(self.cluster_id.clone());
+                server_metadata.set_group_id(self.group_id.clone());
                 server_metadata.set_meta(state.inst.meta().clone());
 
                 // TODO: Steal the reference to the meta_file so that we don't need to lock the

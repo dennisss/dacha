@@ -4,8 +4,8 @@ use std::sync::Arc;
 use common::async_std::sync::Mutex;
 use common::errors::*;
 
-use crate::log::*;
-use crate::log_metadata::LogSequence;
+use crate::log::log::*;
+use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
 
 pub struct MemoryLog {

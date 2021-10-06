@@ -1,5 +1,5 @@
-use crate::log::*;
-use crate::log_metadata::LogSequence;
+use crate::log::log::*;
+use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::LogPosition;
 
 /// Represents the current state of a constraint retrieved by polling the

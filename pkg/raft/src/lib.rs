@@ -26,9 +26,8 @@ pub mod sync;
 pub mod protos; // TODO: Eventually make this private again
 
 pub mod log; // XXX: Likewise should be private
-mod log_metadata;
-//pub mod snapshot; // XXX: May eventually reoccur as a file that holds the
-// algorithm for managing whether or not we should trigger snapshots
+             //pub mod snapshot; // XXX: May eventually reoccur as a file that holds the
+             // algorithm for managing whether or not we should trigger snapshots
 pub mod consensus;
 
 //pub mod record_io;
@@ -39,10 +38,5 @@ pub mod rpc;
 // XXX: Should only really be required by the server itself
 pub mod discovery;
 pub mod server;
-mod server_shared;
-pub mod state_machine;
 
-pub mod memory_log;
 pub mod node;
-pub mod segmented_log;
-pub mod simple_log;

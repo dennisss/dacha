@@ -1,20 +1,20 @@
-use crate::redis::resp::*;
+use std::collections::{HashMap, HashSet};
+use std::pin::Pin;
+use std::sync::Arc;
+
 use common::async_std::channel;
 use common::async_std::net::{TcpListener, TcpStream};
 use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::errors::*;
-//use common::futures::future::*;
-//use common::futures::prelude::*;
 use common::futures::future::ok;
 use common::futures::io::Write;
 use common::futures::stream;
 use common::futures::stream::{Stream, StreamExt};
 use common::futures::{Future, FutureExt};
 use common::io::{Readable, Sinkable, StreamExt2, Streamable, StreamableExt, Writeable};
-use std::collections::{HashMap, HashSet};
-use std::pin::Pin;
-use std::sync::Arc;
+
+use crate::redis::resp::*;
 
 // TODO: Current issue: We currently don't support disabling pub/sub
 // functionality all together as we currently don't decouple the low-level

@@ -54,7 +54,7 @@ use common::errors::*;
 // This combined with
 
 // TODO: When a regular external client connects, it would be nice for it to
-// bind to a cluster_id
+// bind to a group_id
 
 // TODO: Also important to not override more recent data if an old client is
 // connecting to us and telling us some out of date info on a server

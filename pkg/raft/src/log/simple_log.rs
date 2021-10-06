@@ -6,10 +6,11 @@ use common::errors::*;
 use protobuf::Message;
 
 use crate::atomic::*;
-use crate::log::*;
-use crate::log_metadata::LogSequence;
-use crate::memory_log::*;
+use crate::log::log::*;
+use crate::log::log_metadata::LogSequence;
+use crate::log::memory_log::*;
 use crate::proto::consensus::*;
+use crate::proto::log::SimpleLogValue;
 
 /// A simple log implementation backed be a single file that is rewritten
 /// completely every time a flush is needed and otherwise stores all entries in

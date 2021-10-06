@@ -29,7 +29,7 @@ use raft::node::*;
 use raft::proto::consensus::LogIndex;
 use raft::proto::key_value::*;
 use raft::rpc::Client;
-use raft::server::{Server, ServerInitialState};
+use raft::server::server::{Server, ServerInitialState};
 
 use key_value::*;
 use redis::resp::*;

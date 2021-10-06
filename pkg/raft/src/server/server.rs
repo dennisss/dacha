@@ -20,14 +20,13 @@ use crate::atomic::*;
 use crate::consensus::constraint::*;
 use crate::consensus::module::*;
 use crate::consensus::tick::*;
-use crate::log::*;
-use crate::log_metadata::LogSequence;
+use crate::log::log::*;
+use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
-use crate::proto::routing::*;
 use crate::proto::server_metadata::*;
 use crate::routing::ServerRequestRoutingContext;
-use crate::server_shared::*;
-use crate::state_machine::StateMachine;
+use crate::server::server_shared::*;
+use crate::server::state_machine::StateMachine;
 use crate::sync::*;
 
 // Basically whenever we connect to another node with a fresh connection, we
@@ -255,7 +254,7 @@ impl<R: Send + 'static> Server<R> {
         };
 
         let shared = Arc::new(ServerShared {
-            cluster_id: meta.cluster_id(),
+            group_id: meta.group_id(),
             state: Mutex::new(state),
             client,
             log,

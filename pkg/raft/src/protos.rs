@@ -62,7 +62,7 @@ enum ServerRole {
 // }
 
 pub struct Snapshot {
-    // The cluster_id should probably also be part of this?
+    // The group_id should probably also be part of this?
     pub config: Configuration,
     pub state_machine: Vec<u8>, // <- This is assumed to be internally parseable by some means
 }

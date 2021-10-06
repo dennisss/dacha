@@ -9,8 +9,8 @@ use crate::consensus::config_state::*;
 use crate::consensus::constraint::*;
 use crate::consensus::state::*;
 use crate::consensus::tick::*;
-use crate::log::*;
-use crate::log_metadata::*;
+use crate::log::log::*;
+use crate::log::log_metadata::*;
 use crate::proto::consensus::*;
 use crate::proto::consensus_state::*;
 

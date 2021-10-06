@@ -7,6 +7,7 @@ use common::errors::*;
 
 use crate::proto::consensus::*;
 use crate::proto::routing::*;
+use crate::proto::server_metadata::GroupId;
 
 // In our RPC, these will contain a serialized ServerDescriptor representing
 // which server is sending the request and who is the designated receiver
@@ -14,7 +15,7 @@ use crate::proto::routing::*;
 // transport anyway and case may not get preversed on the other side
 const FROM_KEY: &str = "raft-from";
 const TO_KEY: &str = "raft-to";
-const CLUSTER_ID_KEY: &str = "raft-cluster-id";
+const GROUP_ID_KEY: &str = "raft-group-id";
 
 /// Represents a single actor in the cluster trying to send/receive messages
 /// to/from other agents in the cluster
@@ -26,18 +27,18 @@ pub struct NetworkAgent {
     /// / ip network, so this ensures metadata isn't being shared between
     /// foreign clusters unintentionally
     /// NOTE: Once set, this should never get unset
-    pub cluster_id: Option<ClusterId>,
+    pub group_id: Option<GroupId>,
 
     /// Specified the route to the current server (if we are not acting purely
     /// in client mode)
-    /// NOTE: May be set only if there is also a cluster_id set
+    /// NOTE: May be set only if there is also a group_id set
     pub identity: Option<ServerDescriptor>,
 
     /// All information known about other servers in this network/cluster
     /// For each server this stores the last known location at which it can be
     /// reached
     ///
-    /// NOTE: Contains data only if a cluster_id is also set
+    /// NOTE: Contains data only if a group_id is also set
     /// TODO: Also support an empty record if we believe that the data is
     /// invalid (but when we don't won't to clean it up because of )
     routes: HashMap<ServerId, Route>,
@@ -46,7 +47,7 @@ pub struct NetworkAgent {
 impl NetworkAgent {
     pub fn new() -> Self {
         NetworkAgent {
-            cluster_id: None,
+            group_id: None,
             identity: None,
             routes: HashMap::new(),
         }
@@ -127,10 +128,10 @@ impl NetworkAgent {
     }
 
     pub fn append_to_request_context(&self, context: &mut rpc::ClientRequestContext) -> Result<()> {
-        if let Some(c) = self.cluster_id {
+        if let Some(c) = self.group_id {
             context
                 .metadata
-                .add_text(CLUSTER_ID_KEY, &c.value().to_string())?;
+                .add_text(GROUP_ID_KEY, &c.value().to_string())?;
         }
 
         if let Some(ref id) = self.identity {
@@ -144,15 +145,15 @@ impl NetworkAgent {
         &mut self,
         context: &rpc::ClientResponseContext,
     ) -> Result<()> {
-        if let Some(v) = context.metadata.head_metadata.get_text(CLUSTER_ID_KEY)? {
+        if let Some(v) = context.metadata.head_metadata.get_text(GROUP_ID_KEY)? {
             let cid_given = v.parse()?;
 
-            if let Some(cid) = self.cluster_id {
+            if let Some(cid) = self.group_id {
                 if cid != cid_given {
-                    return Err(err_msg("Received response with mismatching cluster_id"));
+                    return Err(err_msg("Received response with mismatching group_id"));
                 }
             } else {
-                self.cluster_id = Some(cid_given);
+                self.group_id = Some(cid_given);
             }
         }
 
@@ -193,13 +194,13 @@ impl ServerRequestRoutingContext {
         response_context: &mut rpc::ServerResponseContext,
     ) -> Result<Self> {
         let mut agent = network_agent.lock().await;
-        let our_cluster_id = agent.cluster_id.unwrap();
+        let our_group_id = agent.group_id.unwrap();
         let our_ident = agent.identity.as_ref().unwrap().clone();
 
         response_context
             .metadata
             .head_metadata
-            .add_text(CLUSTER_ID_KEY, &our_cluster_id.to_string())?;
+            .add_text(GROUP_ID_KEY, &our_group_id.to_string())?;
         response_context
             .metadata
             .head_metadata
@@ -207,13 +208,13 @@ impl ServerRequestRoutingContext {
 
         // We first validate the cluster id because it must be valid for us to trust any
         // of the other routing data
-        let verified_cluster = if let Some(h) = request_context.metadata.get_text(CLUSTER_ID_KEY)? {
+        let verified_cluster = if let Some(h) = request_context.metadata.get_text(GROUP_ID_KEY)? {
             let cid = h
-                .parse::<ClusterId>()
+                .parse::<GroupId>()
                 .map_err(|_| rpc::Status::invalid_argument("Invalid cluster id"))?;
 
-            if cid != our_cluster_id {
-                // TODO: This is a good reason to send back our cluster_id so that
+            if cid != our_group_id {
+                // TODO: This is a good reason to send back our group_id so that
                 // they can delete us as a route
                 return Err(rpc::Status::invalid_argument("Mismatching cluster id").into());
             }

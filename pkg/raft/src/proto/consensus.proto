@@ -175,9 +175,11 @@ message AppendEntriesRequest {
 }
 
 message AppendEntriesResponse {
+	// Current term of the server producing this response.
 	// REQUIRED
 	Term term = 1;
 
+	// Whether or not all the entries in the corresponding AppendEntriesRequest were able to be successfully 
 	// REQUIRED
 	bool success = 2;
 
@@ -217,13 +219,4 @@ message ProposeResponse {
 
 	// REQUIRED
     LogIndex index = 2;
-}
-
-// Used by the SimpleLog to implement a single file log. 
-message SimpleLogValue {
-	// Position immediately before before the first entry in entries.
-	// This position has already been committed and applied to the state machine.
-	LogPosition prev = 1;
-
-	repeated LogEntry entries = 2;
 }

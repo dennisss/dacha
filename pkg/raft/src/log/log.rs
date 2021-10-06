@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 
-use crate::log_metadata::LogSequence;
+use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
 
 // XXX: Also useful to have a fast estimate of the total size of the log up to

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::async_std::channel;
 use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::errors::*;
@@ -14,16 +13,16 @@ use protobuf::Message;
 
 use crate::atomic::*;
 use crate::discovery::*;
-use crate::log::*;
-use crate::log_metadata::LogSequence;
+use crate::log::log::*;
+use crate::log::log_metadata::LogSequence;
+use crate::log::simple_log::*;
 use crate::proto::consensus::*;
 use crate::proto::routing::*;
 use crate::proto::server_metadata::*;
 use crate::routing::*;
 use crate::rpc::*;
-use crate::server::*;
-use crate::simple_log::*;
-use crate::state_machine::*;
+use crate::server::server::*;
+use crate::server::state_machine::*;
 
 /*
     Safety considerations:
@@ -119,8 +118,8 @@ impl<R: 'static + Send> Node<R> {
 
             let ann = Announcement::parse(&routes_data)?;
             let mut a = agent.lock().await;
-            a.cluster_id = Some(meta.cluster_id()); // < Otherwise this also gets configured in Server::start, but we require that
-                                                    // it be set in order to apply a routes list
+            a.group_id = Some(meta.group_id()); // < Otherwise this also gets configured in Server::start, but we require that
+                                                // it be set in order to apply a routes list
             a.apply(&ann);
 
             (
@@ -135,7 +134,7 @@ impl<R: 'static + Send> Node<R> {
         // Otherwise we are starting a new server instance
         else {
             // In general, we should never be creating state machine snapshots
-            // before persisting our core raft state as we use the cluster_id to
+            // before persisting our core raft state as we use the group_id to
             // ensure that the correct log is being used for the state machine
             // Therefore if this does happen, then somehow the raft specific
             // files were deleted leaving only the state machine
@@ -158,7 +157,7 @@ impl<R: 'static + Send> Node<R> {
             let mut log = vec![];
 
             let id: ServerId;
-            let cluster_id: ClusterId;
+            let group_id: GroupId;
 
             // For the first server in the cluster (assuming no configs are
             // already on disk)
@@ -167,7 +166,7 @@ impl<R: 'static + Send> Node<R> {
 
                 // Assign a cluster id to our agent (usually would be retrieved
                 // through network discovery if not in bootstrap mode)
-                cluster_id = random::clocked_rng().uniform::<u64>().into();
+                group_id = random::clocked_rng().uniform::<u64>().into();
 
                 // For this to be supported, we must be able to become a leader with zero
                 // members in the config (implying that we can know if we are )
@@ -212,17 +211,17 @@ impl<R: 'static + Send> Node<R> {
 
                 id = ret.index().value().into(); // Casting LogIndex to ServerId.
 
-                cluster_id = agent
+                group_id = agent
                     .lock()
                     .await
-                    .cluster_id
+                    .group_id
                     .clone()
-                    .expect("No cluster_id obtained during initial cluster connection");
+                    .expect("No group_id obtained during initial cluster connection");
             }
 
             let mut server_meta = ServerMetadata::default();
             server_meta.set_id(id);
-            server_meta.set_cluster_id(cluster_id);
+            server_meta.set_group_id(group_id);
             server_meta.set_meta(meta);
 
             let log_file = SimpleLog::create(&log_path).await?;
@@ -275,13 +274,13 @@ impl<R: 'static + Send> Node<R> {
 
             // Usually this won't be set for restarting nodes that haven't
             // contacted the cluster yet, but it may be set for initial nodes
-            if let Some(ref v) = agent.cluster_id {
-                if *v != meta.cluster_id() {
-                    panic!("Mismatching server cluster_id");
+            if let Some(ref v) = agent.group_id {
+                if *v != meta.group_id() {
+                    panic!("Mismatching server group_id");
                 }
             }
 
-            agent.cluster_id = Some(meta.cluster_id());
+            agent.group_id = Some(meta.group_id());
 
             let mut identity = ServerDescriptor::default();
             // TODO: this is subject to change if we are running over HTTPS

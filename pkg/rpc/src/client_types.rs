@@ -368,6 +368,6 @@ impl<Req: protobuf::Message, Res: protobuf::Message> ClientStreamingCall<Req, Re
 }
 
 #[async_trait]
-pub trait ClientResponseInterceptor {
+pub trait ClientResponseInterceptor: 'static + Send + Sync {
     async fn on_response_head(&self, metadata: &mut Metadata) -> Result<()>;
 }

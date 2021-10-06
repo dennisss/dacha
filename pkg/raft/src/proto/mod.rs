@@ -70,7 +70,24 @@ pub mod consensus_state {
 }
 
 pub mod server_metadata {
+    use std::str::FromStr;
+
     include!(concat!(env!("OUT_DIR"), "/src/proto/server_metadata.rs"));
+
+    impl GroupId {
+        pub fn to_string(&self) -> String {
+            self.value().to_string()
+        }
+    }
+
+    impl FromStr for GroupId {
+        type Err = Error;
+        fn from_str(s: &str) -> Result<Self> {
+            let mut id = GroupId::default();
+            *id.value_mut() = s.parse()?;
+            Ok(id)
+        }
+    }
 }
 
 pub mod routing {
@@ -79,21 +96,6 @@ pub mod routing {
     use super::consensus::ServerId;
 
     include!(concat!(env!("OUT_DIR"), "/src/proto/routing.rs"));
-
-    impl ClusterId {
-        pub fn to_string(&self) -> String {
-            self.value().to_string()
-        }
-    }
-
-    impl FromStr for ClusterId {
-        type Err = Error;
-        fn from_str(s: &str) -> Result<Self> {
-            let mut id = ClusterId::default();
-            *id.value_mut() = s.parse()?;
-            Ok(id)
-        }
-    }
 
     // TODO: Verify that these are never used.
     /*

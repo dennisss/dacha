@@ -2,6 +2,15 @@ syntax = "proto3";
 
 import "pkg/raft/src/proto/consensus.proto";
 
+// Used by the SimpleLog to implement a single file log. 
+message SimpleLogValue {
+	// Position immediately before before the first entry in entries.
+	// This position has already been committed and applied to the state machine.
+	LogPosition prev = 1;
+
+	repeated LogEntry entries = 2;
+}
+
 // Represents a new change added to the end of the SegmentedLog.
 //
 // Each record log file will consist of many entries of this format.

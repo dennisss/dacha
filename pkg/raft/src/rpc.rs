@@ -24,14 +24,14 @@ use crate::routing::*;
     A Client can be in one of three modes:
     - Anonymous
     - ClusterClient
-        - Contains at least a cluster_id (and possibly also routes)
-        - Created from the Anonymous type upon observing a ClusterId
+        - Contains at least a group_id (and possibly also routes)
+        - Created from the Anonymous type upon observing a GroupId
     - ClusterMember
         - Contains all of a ClusterClient along with a self identity
         - Created from a ClusterClient when a server is started up
 
     - What we want to avoid is the fourth trivial state that is an
-      identity/or/routes without a cluster_id
+      identity/or/routes without a group_id
         - Such should be synactically invalid
         - Anyone making a request can alter this setup
 
@@ -60,7 +60,7 @@ pub type ServerHandle<S> = Arc<ServerConfig<S>>;
 
 // TODO: We will eventually wrap these in an client struct that maintains a nice
 // persistent connection (will also need to negotiate proper the right
-// cluster_id and server_id on both ends for the connection to be opened)
+// group_id and server_id on both ends for the connection to be opened)
 
 pub struct DiscoveryServer {
     local_agent: NetworkAgentHandle,
@@ -107,6 +107,31 @@ impl DiscoveryServiceService for DiscoveryServer {
 
         Ok(())
     }
+}
+
+/*
+    The preferance is to have an
+
+pub trait Channel: 'static + Send + Sync {
+    /// Sends a serialized stream of serialized messages to a remote service
+    /// implementation. Returns a stream of received serialized messages
+    /// and/or an error.
+    async fn call_raw(
+        &self,
+        service_name: &str,
+        method_name: &str,
+        request_context: &ClientRequestContext,
+        // request_stream: Box<dyn 'static + Streamable<Item=Result<Bytes>>>,
+    ) -> (ClientStreamingRequest<()>, ClientStreamingResponse<()>);
+}
+
+RemoteChannelPool
+
+*/
+
+#[async_trait]
+pub trait ChannelFactory {
+    async fn create(&self, server_id: ServerId) -> Result<Arc<dyn rpc::Channel>>;
 }
 
 pub enum To<'a> {

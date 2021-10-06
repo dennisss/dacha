@@ -8,9 +8,11 @@ use common::{async_std::path::Path, fs::sync::SyncedDirectory, futures::StreamEx
 use protobuf::Message;
 use sstable::record_log::{RecordReader, RecordWriter};
 
+use crate::log::log::*;
+use crate::log::log_metadata::LogSequence;
+use crate::log::memory_log::MemoryLog;
 use crate::proto::consensus::{LogEntry, LogIndex, LogPosition, Term};
 use crate::proto::log::SegmentedLogRecord;
-use crate::{log::*, log_metadata::LogSequence, memory_log::MemoryLog};
 
 /*
     A log implementation based on the RecordIO format in the other format

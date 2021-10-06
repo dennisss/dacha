@@ -10,7 +10,7 @@ use protobuf::Message;
 use raft::atomic::*;
 use raft::proto::consensus::LogIndex;
 use raft::proto::key_value::*;
-use raft::state_machine::*;
+use raft::server::state_machine::*;
 
 pub struct KeyValueReturn {
     pub success: bool,

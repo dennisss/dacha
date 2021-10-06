@@ -2,12 +2,18 @@ syntax = "proto3";
 
 import "pkg/raft/src/proto/consensus.proto";
 import "pkg/raft/src/proto/consensus_state.proto";
-import "pkg/raft/src/proto/routing.proto";
+
+// Identifier used to define a single set of machines running an instance of the Raft
+// protocol. ServerIds are only comparable within the same cluster.
+message GroupId {
+    option typed_num = true;
+    uint64 value = 1;
+}
 
 // This is the format of the metadata file being persisted to disk
 message ServerMetadata {
     // REQUIRED
-    ClusterId cluster_id = 1;
+    GroupId group_id = 1;
     
     // REQUIRED
     ServerId id = 2;
