@@ -6,7 +6,6 @@ use std::time::Instant;
 use common::async_std::channel;
 use common::async_std::sync::{Mutex, MutexGuard};
 use common::futures::channel::oneshot;
-use common::futures::{SinkExt, StreamExt};
 
 // TODO: Simplify the imlpementation of this by just using a regular channel.
 

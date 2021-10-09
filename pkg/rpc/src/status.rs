@@ -21,6 +21,13 @@ pub struct Status {
 }
 
 impl Status {
+    pub fn cancelled<S: Into<String>>(message: S) -> Self {
+        Self {
+            code: StatusCode::Cancelled,
+            message: message.into(),
+        }
+    }
+
     pub fn not_found<S: Into<String>>(message: S) -> Self {
         Self {
             code: StatusCode::NotFound,

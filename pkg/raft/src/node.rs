@@ -5,22 +5,22 @@ use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::errors::*;
 use common::fs::DirLock;
-use common::futures::FutureExt;
 use crypto::random;
 use crypto::random::RngExt;
-use crypto::random::SharedRngExt;
 use protobuf::Message;
 
 use crate::atomic::*;
-use crate::discovery::*;
 use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;
 use crate::log::simple_log::*;
 use crate::proto::consensus::*;
 use crate::proto::routing::*;
 use crate::proto::server_metadata::*;
-use crate::routing::*;
-use crate::rpc::*;
+use crate::routing::discovery_client::DiscoveryClient;
+use crate::routing::discovery_server::DiscoveryServer;
+use crate::routing::route_channel::*;
+use crate::routing::route_store::RouteStore;
+use crate::server::channel_factory::*;
 use crate::server::server::*;
 use crate::server::state_machine::*;
 
@@ -40,6 +40,16 @@ use crate::server::state_machine::*;
     - Won't change frequently though
 
     - We will be making our own identity here though
+*/
+
+/*
+TODO: If we are going to use a read index for performing a blind write operation, then we don't need need to do any waiting to acquire a read index.
+
+The basic discovery service:
+- Broadcast to all servers without any cluster id
+- Later we will filter routes by group id.
+- Most of it should fit within
+
 */
 
 pub struct NodeConfig<R> {
@@ -62,7 +72,6 @@ pub struct Node<R> {
     pub server: Server<R>,
 
     // TODO: Decouple all the discovery stuff from the Node
-    pub discovery: Arc<DiscoveryService>,
     routes_file: Mutex<BlobFile>,
 }
 
@@ -74,10 +83,9 @@ impl<R: 'static + Send> Node<R> {
 
         // Ideally an agent would encapsulate saving itself to disk via some file
         // somewhere
-        let agent = Arc::new(Mutex::new(NetworkAgent::new()));
+        let route_store = Arc::new(Mutex::new(RouteStore::new()));
 
-        let client = Arc::new(Client::new(agent.clone()));
-        let discovery = Arc::new(DiscoveryService::new(client.clone(), config.seed_list));
+        let discovery_client = DiscoveryClient::new(route_store.clone(), config.seed_list);
 
         // Basically need to get a:
         // (meta, meta_file, config_snapshot, config_file, log_file)
@@ -96,6 +104,8 @@ impl<R: 'static + Send> Node<R> {
         // ^ A known issue is that a bootstrapped node will currently not be
         // able to recover if it hasn't fully flushed its own log through the
         // server process
+
+        let channel_factory;
 
         let (meta, meta_file, config_snapshot, config_file, log, routes_file): (
             ServerMetadata,
@@ -116,11 +126,21 @@ impl<R: 'static + Send> Node<R> {
             let meta = ServerMetadata::parse(&meta_data)?;
             let config_snapshot = ServerConfigurationSnapshot::parse(&config_data)?;
 
-            let ann = Announcement::parse(&routes_data)?;
-            let mut a = agent.lock().await;
-            a.group_id = Some(meta.group_id()); // < Otherwise this also gets configured in Server::start, but we require that
-                                                // it be set in order to apply a routes list
-            a.apply(&ann);
+            // Restore any saved route information.
+            {
+                let ann = Announcement::parse(&routes_data)?;
+                let mut route_store = route_store.lock().await;
+                route_store.apply(&ann);
+            }
+
+            // a.group_id = Some(meta.group_id()); // < Otherwise this also gets configured
+            // in Server::start, but we require that
+            // // it be set in order to apply a routes list
+
+            channel_factory = Arc::new(RouteChannelFactory::new(
+                meta.group_id(),
+                route_store.clone(),
+            ));
 
             (
                 meta,
@@ -168,6 +188,8 @@ impl<R: 'static + Send> Node<R> {
                 // through network discovery if not in bootstrap mode)
                 group_id = random::clocked_rng().uniform::<u64>().into();
 
+                channel_factory = Arc::new(RouteChannelFactory::new(group_id, route_store.clone()));
+
                 // For this to be supported, we must be able to become a leader with zero
                 // members in the config (implying that we can know if we are )
                 let mut first_entry = LogEntry::default();
@@ -180,43 +202,28 @@ impl<R: 'static + Send> Node<R> {
                 // TODO: All of this could be in while loop until we are able to
                 // connect to the leader and propose a new message on it
 
-                discovery.seed().await?;
+                discovery_client.seed().await?;
 
-                // TODO: Instead pick a random one from our list
-                // TODO: This is currently our only usage of .routes() on the
-                // agent
-                let first_id = agent
+                // Pick an arbitrary group from the set of discovered groups.
+                group_id = *route_store
                     .lock()
                     .await
-                    .routes()
-                    .values()
+                    .remote_groups()
+                    .iter()
                     .next()
-                    .unwrap()
-                    .desc()
-                    .id();
+                    .unwrap();
 
-                let mut req = ProposeRequest::default();
-                req.set_wait(true);
-                req.data_mut().set_noop(true);
+                channel_factory = Arc::new(RouteChannelFactory::new(group_id, route_store.clone()));
 
-                let ret = client.call_propose(first_id, &req).await?;
-                println!("GEN ID NO-OP: {:?}", ret);
+                // TODO: Must start the discovery background thread before running this.
 
-                // TODO: If we get here, we may get a not_leader, in which case,
-                // if we don't have information on the leader's identity, then
-                // we need to ask everyone we know for a new list of server
-                // addrs
+                id = crate::server::bootstrap::generate_new_server_id(
+                    group_id,
+                    channel_factory.as_ref(),
+                )
+                .await?;
 
-                println!("Generated new index {}", ret.index().value());
-
-                id = ret.index().value().into(); // Casting LogIndex to ServerId.
-
-                group_id = agent
-                    .lock()
-                    .await
-                    .group_id
-                    .clone()
-                    .expect("No group_id obtained during initial cluster connection");
+                println!("Generated new server id: {}", id.value());
             }
 
             let mut server_meta = ServerMetadata::default();
@@ -243,7 +250,7 @@ impl<R: 'static + Send> Node<R> {
             let config_file = config_builder.create(&config_snapshot.serialize()?).await?;
 
             let routes_file = routes_builder
-                .create(&agent.lock().await.serialize().serialize()?)
+                .create(&route_store.lock().await.serialize().serialize()?)
                 .await?;
 
             // We save the meta file to disk last such that if the meta file exists, then we
@@ -261,33 +268,22 @@ impl<R: 'static + Send> Node<R> {
         };
 
         println!("Starting with id {}", meta.id().value());
+        let our_id = meta.id();
 
         let port = 4000 + (meta.id().value() as u16);
         println!("PORT: {}", port);
 
-        // Setup the RPC client with our server identity.
+        // Setup the discovery server with our server identity.
         {
-            let mut agent = client.agent().lock().await;
-            if let Some(ref desc) = agent.identity {
-                panic!("Starting server which already has a cluster identity");
-            }
+            let mut route_store = route_store.lock().await;
 
-            // Usually this won't be set for restarting nodes that haven't
-            // contacted the cluster yet, but it may be set for initial nodes
-            if let Some(ref v) = agent.group_id {
-                if *v != meta.group_id() {
-                    panic!("Mismatching server group_id");
-                }
-            }
-
-            agent.group_id = Some(meta.group_id());
-
-            let mut identity = ServerDescriptor::default();
+            let mut local_route = Route::default();
+            local_route.set_group_id(meta.group_id());
+            local_route.set_server_id(meta.id());
             // TODO: this is subject to change if we are running over HTTPS
-            identity.set_addr(format!("http://127.0.0.1:{}", port));
-            identity.set_id(meta.id());
+            local_route.set_addr(format!("http://127.0.0.1:{}", port));
 
-            agent.identity = Some(identity);
+            route_store.set_local_route(local_route);
         }
 
         let initial_state = ServerInitialState {
@@ -307,17 +303,15 @@ impl<R: 'static + Send> Node<R> {
             initial_state.meta.meta().commit_index().value()
         );
 
-        let server = Server::new(client.clone(), initial_state).await;
+        let server = Server::new(channel_factory, initial_state).await;
+
+        // TODO: We shouldn't announce our local route until the server is running.
 
         // Start the RPC server.
         {
             // TODO: We also need to add a DiscoveryService (DiscoveryServiceRouter)
             let mut rpc_server = ::rpc::Http2Server::new();
-
-            // TODO: Handle errors on these return values.
-            // TODO: Kick this out of
-            rpc_server
-                .add_service(crate::rpc::DiscoveryServer::new(agent.clone()).into_service())?;
+            rpc_server.add_service(DiscoveryServer::new(route_store.clone()).into_service())?;
             rpc_server.add_service(server.clone().into_service())?;
 
             // TODO: Finally if possible we should attempt to broadcast our ip
@@ -333,16 +327,15 @@ impl<R: 'static + Send> Node<R> {
         // TODO: Support passing in a port (and maybe also an addr)
         task::spawn(server.clone().run());
 
-        // TODO: Rename this.
-        task::spawn(DiscoveryService::run(discovery.clone()).map(|_| ()));
+        // TODO: this must start running earlier to support dynamic re-seeding during
+        // startup proposals.
+        task::spawn(discovery_client.run());
 
         // TODO: If one node joins another cluster with one node, does the old leader of
         // that cluster need to step down?
 
         // THe simpler way to think of this is (if not bootstrap mode and there are zero
         // ) But yeah, if we can get rid of the bootstrap caveat, then this i
-
-        let our_id = client.agent().lock().await.identity.clone().unwrap().id();
 
         // TODO: Will also need to spawn the task that will periodically save
         // the routes when changed
@@ -367,19 +360,15 @@ impl<R: 'static + Send> Node<R> {
             // XXX: at this point, we should know who the leader is with better
             // precision than this  (based on a leader hint from above)
 
-            let mut req = ProposeRequest::default();
-            req.data_mut().config_mut().set_AddMember(our_id);
-            req.set_wait(false);
+            // TODO: Should always first become a learner.
 
-            let res = client.call_propose(1.into(), &req).await?;
-            println!("call_propose response: {:?}", res);
+            server.join_group().await?;
         }
 
         let node = Arc::new(Node {
             id: our_id,
             dir: config.dir,
             server,
-            discovery,
             routes_file: Mutex::new(routes_file),
         });
 

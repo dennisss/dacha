@@ -1,0 +1,22 @@
+pub mod discovery_client;
+pub mod discovery_server;
+pub mod route_channel;
+pub mod route_store;
+
+/*
+Components that we need:
+- RouteStore
+    - To store mappings from (group id, server ids) to addresses
+- DiscoveryClient
+    - Uses a seed list to periodicall probe for
+- DiscoveryServer
+
+
+- RouteChannelFactory
+    - Contains an Arc<RouteStore>
+- RouteChannel
+    - Contains a ServerId, GroupId, Arc<RouterStore>
+    - Also a cached rpc::Http2Channel
+    - If we
+
+*/

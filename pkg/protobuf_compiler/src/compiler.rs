@@ -777,6 +777,9 @@ impl Compiler<'_> {
         let is_copyable = self.is_copyable(&field.typ, &path);
         let is_message = self.is_message(&field.typ, &path);
 
+        let oneof_option = !(field.label == Label::Required
+            || (is_primitive && self.proto.syntax == Syntax::Proto3));
+
         // TODO: Messages should always have options?
         let use_option = !(field.label == Label::Required
             || (is_primitive && self.proto.syntax == Syntax::Proto3)
@@ -867,6 +870,17 @@ impl Compiler<'_> {
                     if is_copyable { "*" } else { "" },
                     default_value
                 ));
+
+                if oneof_option {
+                    lines.add(format!(
+                        "
+                        pub fn has_{}(&self) -> bool {{
+                            if let {}::{}(_) = &self.{} {{ true }} else {{ false }}
+                        }}
+                    ",
+                        name, oneof_typename, oneof_case, oneof_fieldname
+                    ));
+                }
             } else {
                 lines.add_inline(format!(" {}self.{} }}", modifier, name));
             }

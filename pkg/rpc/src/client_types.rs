@@ -97,14 +97,14 @@ pub struct ClientResponse<T> {
 /// TODO: Double check that any failure in the ClientStreamingRequest is
 /// propagated to the ClientStreamingResponse and vice versa.
 pub struct ClientStreamingRequest<T> {
-    sender: channel::Sender<Result<Option<Bytes>>>,
+    sender: Option<channel::Sender<Result<Option<Bytes>>>>,
     phantom_t: PhantomData<T>,
 }
 
 impl ClientStreamingRequest<()> {
     pub(crate) fn new(sender: channel::Sender<Result<Option<Bytes>>>) -> Self {
         Self {
-            sender,
+            sender: Some(sender),
             phantom_t: PhantomData,
         }
     }
@@ -112,6 +112,15 @@ impl ClientStreamingRequest<()> {
     pub(crate) fn into<T: protobuf::Message>(self) -> ClientStreamingRequest<T> {
         ClientStreamingRequest {
             sender: self.sender,
+            phantom_t: PhantomData,
+        }
+    }
+
+    /// Creates a new request object which is permanently closed and no requests
+    /// can be send using it.
+    pub fn closed() -> Self {
+        Self {
+            sender: None,
             phantom_t: PhantomData,
         }
     }
@@ -123,19 +132,28 @@ impl<T: protobuf::Message> ClientStreamingRequest<T> {
     /// other end.
     #[must_use]
     pub async fn send(&mut self, message: &T) -> bool {
+        let sender = match self.sender.as_ref() {
+            Some(v) => v,
+            None => {
+                return false;
+            }
+        };
+
         // TODO: Verify that we see this error propagated to the response side.
         let data = match message.serialize() {
             Ok(v) => Ok(Some(v.into())),
             Err(e) => Err(e),
         };
 
-        self.sender.send(data).await.is_ok()
+        sender.send(data).await.is_ok()
     }
 
     /// Call after sending all messages to the server to indicate that no more
     /// messages will be sent for the current RPC.
     pub async fn close(&mut self) {
-        let _ = self.sender.send(Ok(None)).await;
+        if let Some(sender) = &self.sender {
+            let _ = sender.send(Ok(None)).await;
+        }
     }
 }
 
@@ -183,7 +201,7 @@ impl<Res> ClientStreamingResponse<Res> {
         }
     }
 
-    pub(crate) fn from_error(error: Error) -> Self {
+    pub fn from_error(error: Error) -> Self {
         Self {
             context: ClientResponseContext::default(),
             state: Some(ClientStreamingResponseState::Error(error)),

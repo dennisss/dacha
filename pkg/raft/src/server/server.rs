@@ -1,36 +1,27 @@
+use std::collections::HashMap;
 use std::collections::LinkedList;
-use std::collections::VecDeque;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 use std::time::Instant;
 
-use common::async_std::channel;
-use common::async_std::future;
-use common::async_std::sync::{Mutex, MutexGuard};
-use common::async_std::task;
+use common::async_std::sync::Mutex;
 use common::errors::*;
 use common::futures::channel::oneshot;
-use common::futures::FutureExt;
-use common::task::ChildTask;
-use protobuf::Message;
 
 use crate::atomic::*;
-use crate::consensus::constraint::*;
 use crate::consensus::module::*;
 use crate::consensus::tick::*;
 use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
 use crate::proto::server_metadata::*;
-use crate::routing::ServerRequestRoutingContext;
+use crate::server::channel_factory::*;
+use crate::server::server_identity::ServerIdentity;
 use crate::server::server_shared::*;
 use crate::server::state_machine::StateMachine;
 use crate::sync::*;
 
 // Basically whenever we connect to another node with a fresh connection, we
-// must be able to negogiate with each the correct pair of cluster id and server
+// must be able to negogiate with each the correct pair of group id and server
 // ids on both ends otherwise we are connecting to the wrong server/cluster and
 // that would be problematic (especially when it comes to aoiding duplicate
 // votes because of duplicate connections)
@@ -81,11 +72,6 @@ Requirements:
 
 Expose a discard() on the Consensus Module so that it can
 
-- There are a few queues:
-    - Appending
-    -
-
-
 Decision:
 => The ConsensusModule will manage the local view of all in-memory log entries.
 => The role of the user log implementation becomes solely to write changes.
@@ -119,6 +105,8 @@ Decision:
 //   request.)
 
 /// Represents everything needed to start up a Server object
+///
+/// The 'R' template parameter is the type returned
 pub struct ServerInitialState<R> {
     /// Value of the metadata initially
     pub meta: ServerMetadata,
@@ -186,7 +174,10 @@ impl<R> Clone for Server<R> {
 
 impl<R: Send + 'static> Server<R> {
     // TODO: Everything in this function should be immediately available.
-    pub async fn new(client: Arc<crate::rpc::Client>, initial: ServerInitialState<R>) -> Self {
+    pub async fn new(
+        channel_factory: Arc<dyn ChannelFactory>,
+        initial: ServerInitialState<R>,
+    ) -> Self {
         let ServerInitialState {
             mut meta,
             meta_file,
@@ -243,6 +234,7 @@ impl<R: Send + 'static> Server<R> {
             inst,
             meta_file,
             config_file,
+            client_stubs: HashMap::new(),
             state_changed: tx_state,
             state_receiver: Some(rx_state),
             scheduled_cycle: None,
@@ -254,9 +246,9 @@ impl<R: Send + 'static> Server<R> {
         };
 
         let shared = Arc::new(ServerShared {
-            group_id: meta.group_id(),
+            identity: ServerIdentity::new(meta.group_id(), meta.id()),
             state: Mutex::new(state),
-            client,
+            channel_factory,
             log,
             state_machine,
 
@@ -278,6 +270,26 @@ impl<R: Send + 'static> Server<R> {
     // NOTE: If we also give it a state machine, we can do that for people too
     pub async fn run(self) -> Result<()> {
         self.shared.run().await
+    }
+
+    pub async fn join_group(&self) -> Result<()> {
+        let mut request = ProposeRequest::default();
+        request
+            .data_mut()
+            .config_mut()
+            .set_AddMember(self.shared.identity.server_id);
+        request.set_wait(false);
+
+        let res = crate::server::bootstrap::propose_entry(
+            self.shared.identity.group_id,
+            self.shared.channel_factory.as_ref(),
+            &request,
+        )
+        .await?;
+
+        println!("call_propose response: {:?}", res);
+
+        Ok(())
     }
 
     // Executing a command remotely from a non-leader
@@ -397,12 +409,6 @@ impl<R: Send + 'static> Server<R> {
     }
 }
 
-impl<R: Send + 'static> Server<R> {
-    pub fn client(&self) -> &crate::rpc::Client {
-        &self.shared.client
-    }
-}
-
 #[async_trait]
 impl<R: Send + 'static> ConsensusService for Server<R> {
     async fn PreVote(
@@ -410,13 +416,9 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         req: rpc::ServerRequest<RequestVoteRequest>,
         res: &mut rpc::ServerResponse<RequestVoteResponse>,
     ) -> Result<()> {
-        ServerRequestRoutingContext::create(
-            &self.shared.client.agent(),
-            &req.context,
-            &mut res.context,
-        )
-        .await?
-        .assert_verified()?;
+        self.shared
+            .identity
+            .check_incoming_request_context(&req.context, &mut res.context)?;
 
         let state = self.shared.state.lock().await;
         res.value = state.inst.pre_vote(&req);
@@ -428,13 +430,9 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         req: rpc::ServerRequest<RequestVoteRequest>,
         res: &mut rpc::ServerResponse<RequestVoteResponse>,
     ) -> Result<()> {
-        ServerRequestRoutingContext::create(
-            &self.shared.client.agent(),
-            &req.context,
-            &mut res.context,
-        )
-        .await?
-        .assert_verified()?;
+        self.shared
+            .identity
+            .check_incoming_request_context(&req.context, &mut res.context)?;
 
         let res_raw = ServerShared::run_tick(
             &self.shared,
@@ -452,13 +450,9 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         req: rpc::ServerRequest<AppendEntriesRequest>,
         res: &mut rpc::ServerResponse<AppendEntriesResponse>,
     ) -> Result<()> {
-        ServerRequestRoutingContext::create(
-            &self.shared.client.agent(),
-            &req.context,
-            &mut res.context,
-        )
-        .await?
-        .assert_verified()?;
+        self.shared
+            .identity
+            .check_incoming_request_context(&req.context, &mut res.context)?;
 
         let c = ServerShared::run_tick(
             &self.shared,
@@ -478,13 +472,9 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         req: rpc::ServerRequest<TimeoutNow>,
         res: &mut rpc::ServerResponse<EmptyMessage>,
     ) -> Result<()> {
-        ServerRequestRoutingContext::create(
-            &self.shared.client.agent(),
-            &req.context,
-            &mut res.context,
-        )
-        .await?
-        .assert_verified()?;
+        self.shared
+            .identity
+            .check_incoming_request_context(&req.context, &mut res.context)?;
 
         ServerShared::run_tick(
             &self.shared,
@@ -503,13 +493,9 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         req: rpc::ServerRequest<ProposeRequest>,
         res: &mut rpc::ServerResponse<ProposeResponse>,
     ) -> Result<()> {
-        ServerRequestRoutingContext::create(
-            &self.shared.client.agent(),
-            &req.context,
-            &mut res.context,
-        )
-        .await?
-        .assert_verified()?;
+        self.shared
+            .identity
+            .check_incoming_request_context(&req.context, &mut res.context)?;
 
         let (data, should_wait) = (req.data(), req.wait());
 
@@ -524,31 +510,39 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
         // Ideally cascade down to a result and an error type
 
-        let prop = if let Ok(prop) = r {
-            prop
-        //			Ok((wait, self.shared.clone(), prop))
-        } else {
-            println!("propose result: {:?}", r);
-            return Err(err_msg("Not implemented"));
+        let proposed_position = match r {
+            Ok(prop) => prop,
+            Err(ProposeError::NotLeader { leader_hint }) => {
+                let err = res.error_mut().not_leader_mut();
+                if let Some(hint) = leader_hint {
+                    err.set_leader_hint(hint);
+                }
+
+                return Ok(());
+            }
+            _ => {
+                println!("propose result: {:?}", r);
+                return Err(err_msg("Not implemented"));
+            }
         };
 
         if !should_wait {
-            res.set_term(prop.term());
-            res.set_index(prop.index());
+            res.set_proposal(proposed_position);
             return Ok(());
         }
 
         // TODO: Must ensure that wait_for_commit responses immediately if
         // it is already comitted
-        self.shared.wait_for_commit(prop.clone()).await?;
+        self.shared
+            .wait_for_commit(proposed_position.clone())
+            .await?;
 
         let state = shared.state.lock().await;
-        let r = state.inst.proposal_status(&prop);
+        let r = state.inst.proposal_status(&proposed_position);
 
         match r {
             ProposalStatus::Commited => {
-                res.set_term(prop.term());
-                res.set_index(prop.index());
+                res.set_proposal(proposed_position);
                 Ok(())
             }
             ProposalStatus::Failed => Err(err_msg("Proposal failed")),

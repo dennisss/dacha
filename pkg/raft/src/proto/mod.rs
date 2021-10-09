@@ -91,59 +91,7 @@ pub mod server_metadata {
 }
 
 pub mod routing {
-    use std::str::FromStr;
-
-    use super::consensus::ServerId;
-
     include!(concat!(env!("OUT_DIR"), "/src/proto/routing.rs"));
-
-    // TODO: Verify that these are never used.
-    /*
-    impl std::hash::Hash for ServerDescriptor {
-        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-            self.id.hash(state);
-        }
-    }
-
-    impl PartialEq for ServerDescriptor {
-        fn eq(&self, other: &ServerDescriptor) -> bool {
-            self.id == other.id
-        }
-    }
-    impl Eq for ServerDescriptor {}
-    */
-
-    // Mainly so that we can look up servers directly by id in the hash sets
-    impl std::borrow::Borrow<ServerId> for ServerDescriptor {
-        fn borrow(&self) -> &ServerId {
-            &self.id
-        }
-    }
-
-    impl ServerDescriptor {
-        pub fn to_string(&self) -> String {
-            self.id().value().to_string() + " " + &self.addr()
-        }
-    }
-
-    impl FromStr for ServerDescriptor {
-        type Err = Error;
-        fn from_str(s: &str) -> Result<Self> {
-            let parts = s.split(' ').collect::<Vec<_>>();
-
-            if parts.len() != 2 {
-                return Err(err_msg("Wrong number of parts"));
-            }
-
-            let id = parts[0].parse().map_err(|_| err_msg("Invalid server id"))?;
-            let addr = parts[1].to_owned();
-
-            let mut desc = ServerDescriptor::default();
-            *desc.id_mut().value_mut() = id;
-            desc.set_addr(addr);
-            Ok(desc)
-        }
-    }
 }
 
 pub mod key_value {

@@ -214,9 +214,19 @@ message ProposeRequest {
 // XXX: Ideally should only be given as a response once the entries have been
 // comitted
 message ProposeResponse {
-	// REQUIRED
-    Term term = 1;
+	oneof result {
+		LogPosition proposal = 1;
+		ProposeErrorProto error = 2;
+	}
+}
 
-	// REQUIRED
-    LogIndex index = 2;
+message ProposeErrorProto {
+	message NotLeader {
+		// OPTIONAL
+		ServerId leader_hint = 1;
+	}
+
+	oneof type {
+		NotLeader not_leader = 1;
+	}
 }

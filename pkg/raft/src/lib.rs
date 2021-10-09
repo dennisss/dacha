@@ -30,13 +30,8 @@ pub mod log; // XXX: Likewise should be private
              // algorithm for managing whether or not we should trigger snapshots
 pub mod consensus;
 
-//pub mod record_io;
-
 // Higher level complete implementation dealing with actual networking issues
 pub mod routing;
-pub mod rpc;
-// XXX: Should only really be required by the server itself
-pub mod discovery;
 pub mod server;
 
 pub mod node;

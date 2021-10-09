@@ -22,9 +22,9 @@ pub mod timestamp {
 
     impl std::convert::From<&Timestamp> for std::time::SystemTime {
         fn from(v: &Timestamp) -> std::time::SystemTime {
-            std::time::UNIX_EPOCH +
-            std::time::Duration::from_secs(v.seconds() as u64) + 
-            std::time::Duration::from_nanos(v.nanos() as u64)
+            std::time::UNIX_EPOCH
+                + std::time::Duration::from_secs(v.seconds() as u64)
+                + std::time::Duration::from_nanos(v.nanos() as u64)
         }
     }
 }

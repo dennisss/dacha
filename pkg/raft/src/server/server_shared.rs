@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::collections::LinkedList;
 use std::future::Future;
 use std::pin::Pin;
@@ -21,8 +22,9 @@ use crate::consensus::tick::*;
 use crate::log::log::Log;
 use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
-// use crate::proto::routing::GroupId;
 use crate::proto::server_metadata::*;
+use crate::server::channel_factory::ChannelFactory;
+use crate::server::server_identity::ServerIdentity;
 use crate::server::state_machine::StateMachine;
 use crate::sync::*;
 
@@ -38,12 +40,14 @@ const REQUEST_TIMEOUT: u64 = 500;
 /// Server variables that can be shared by many different threads
 pub struct ServerShared<R> {
     /// As stated in the initial metadata used to create the server
-    pub group_id: GroupId,
+    pub identity: ServerIdentity,
 
     pub state: Mutex<ServerState<R>>,
 
-    /// Used for network message sending and connection management
-    pub client: Arc<crate::rpc::Client>,
+    pub channel_factory: Arc<dyn ChannelFactory>,
+
+    // /// Used for network message sending and connection management
+    // pub client: Arc<crate::rpc::Client>,
 
     // TODO: Need not have a lock for this right? as it is not mutable
     // Definately we want to lock the Log separately from the rest of this code
@@ -82,6 +86,8 @@ pub struct ServerState<R> {
     // TODO: Move those out
     pub meta_file: BlobFile,
     pub config_file: BlobFile,
+
+    pub client_stubs: HashMap<ServerId, Arc<ConsensusStub>>,
 
     // TODO: Move the ChangeSenders out of the state now that we don't need a lock for them.
     /// Trigered whenever the state or configuration is changed
@@ -232,7 +238,7 @@ impl<R: Send + 'static> ServerShared<R> {
                 // TODO: Use a reference based type to serialize this.
                 let mut server_metadata = ServerMetadata::default();
                 server_metadata.set_id(state.inst.id().clone());
-                server_metadata.set_group_id(self.group_id.clone());
+                server_metadata.set_group_id(self.identity.group_id.clone());
                 server_metadata.set_meta(state.inst.meta().clone());
 
                 // TODO: Steal the reference to the meta_file so that we don't need to lock the
@@ -723,27 +729,35 @@ impl<R: Send + 'static> ServerShared<R> {
     // so that we can cancel this entire request later if we end up needing
     // to
     async fn dispatch_request_vote(self: &Arc<Self>, to_id: ServerId, req: &RequestVoteRequest) {
-        let res = common::async_std::future::timeout(
-            Duration::from_millis(REQUEST_TIMEOUT),
-            self.client.call_request_vote(to_id, req),
-        )
-        .await
-        .map_err(|e| e.into());
+        let res = self.dispatch_request_vote_impl(to_id, req).await;
 
-        self.run_tick(Self::dispatch_request_vote_tick, (to_id, res))
-            .await;
+        self.run_tick(
+            |state, tick, _| match res {
+                Ok(resp) => state.inst.request_vote_callback(to_id, resp, tick),
+                Err(e) => eprintln!("RequestVote error: {}", e),
+            },
+            (),
+        )
+        .await;
     }
 
-    fn dispatch_request_vote_tick(
-        state: &mut ServerState<R>,
-        tick: &mut Tick,
-        data: (ServerId, Result<Result<RequestVoteResponse>>),
-    ) {
-        let (to_id, res) = data;
+    async fn dispatch_request_vote_impl(
+        &self,
+        to_id: ServerId,
+        req: &RequestVoteRequest,
+    ) -> Result<RequestVoteResponse> {
+        let stub = self.get_client(to_id).await?;
 
-        if let Ok(Ok(resp)) = res {
-            state.inst.request_vote_callback(to_id, resp, tick);
-        }
+        let request_context = self.identity.new_outgoing_request_context(to_id)?;
+
+        let res = common::async_std::future::timeout(
+            Duration::from_millis(REQUEST_TIMEOUT),
+            stub.RequestVote(&request_context, req),
+        )
+        .await?
+        .result?;
+
+        Ok(res)
     }
 
     async fn dispatch_append_entries(
@@ -752,16 +766,27 @@ impl<R: Send + 'static> ServerShared<R> {
         req: &AppendEntriesRequest,
         last_log_index: LogIndex,
     ) {
-        let res = common::async_std::future::timeout(
-            Duration::from_millis(REQUEST_TIMEOUT),
-            self.client.call_append_entries(to_id, req),
-        )
-        .await
-        .map_err(|e| e.into());
+        let res = self.dispatch_append_entries_impl(to_id, req).await;
 
         self.run_tick(
-            Self::dispatch_append_entries_tick,
-            (to_id, last_log_index, res),
+            |state, tick, _| {
+                match res {
+                    Ok(resp) => {
+                        // NOTE: Here we assume that this request send everything up
+                        // to and including last_log_index
+                        // ^ Alternatively, we could have just looked at the request
+                        // object that we have in order to determine this
+                        state
+                            .inst
+                            .append_entries_callback(to_id, last_log_index, resp, tick);
+                    }
+                    Err(e) => {
+                        eprintln!("AppendEntries failure: {} ", e);
+                        state.inst.append_entries_noresponse(to_id, tick);
+                    }
+                }
+            },
+            (),
         )
         .await;
 
@@ -769,24 +794,39 @@ impl<R: Send + 'static> ServerShared<R> {
         // to unblock this server from having a pending_request
     }
 
-    fn dispatch_append_entries_tick(
-        state: &mut ServerState<R>,
-        tick: &mut Tick,
-        data: (ServerId, LogIndex, Result<Result<AppendEntriesResponse>>),
-    ) -> () {
-        let (to_id, last_log_index, res) = data;
+    async fn dispatch_append_entries_impl(
+        &self,
+        to_id: ServerId,
+        req: &AppendEntriesRequest,
+    ) -> Result<AppendEntriesResponse> {
+        let stub = self.get_client(to_id).await?;
 
-        if let Ok(Ok(resp)) = res {
-            // NOTE: Here we assume that this request send everything up
-            // to and including last_log_index
-            // ^ Alternatively, we could have just looked at the request
-            // object that we have in order to determine this
-            state
-                .inst
-                .append_entries_callback(to_id, last_log_index, resp, tick);
-        } else {
-            state.inst.append_entries_noresponse(to_id, tick);
+        let request_context = self.identity.new_outgoing_request_context(to_id)?;
+
+        let res = common::async_std::future::timeout(
+            Duration::from_millis(REQUEST_TIMEOUT),
+            stub.AppendEntries(&request_context, &req),
+        )
+        .await?
+        .result?;
+
+        Ok(res)
+    }
+
+    async fn get_client(&self, server_id: ServerId) -> Result<Arc<ConsensusStub>> {
+        let mut state = self.state.lock().await;
+        if let Some(stub) = state.client_stubs.get(&server_id) {
+            return Ok(stub.clone());
         }
+
+        // TODO: Support parallelizing the creation of many channels. Also if this is
+        // going to take a long time, then we need to unlock the 'state' to avoid
+        // blocking the server for a long time.
+        let channel = self.channel_factory.create(server_id).await?;
+
+        let stub = Arc::new(ConsensusStub::new(channel));
+        state.client_stubs.insert(server_id, stub.clone());
+        Ok(stub)
     }
 
     // TODO: Can we more generically implement as waiting on a Constraint driven

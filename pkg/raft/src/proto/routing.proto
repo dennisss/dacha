@@ -1,27 +1,35 @@
 syntax = "proto3";
 
 import "pkg/raft/src/proto/consensus.proto";
+import "pkg/raft/src/proto/server_metadata.proto";
 import "third_party/google/src/proto/timestamp.proto";
 
-// Describes a single server in the cluster using a unique identifier and any
-// information needed to contact it (which may change over time)
-message ServerDescriptor {
-    // REQUIRED
-    ServerId id = 1;
-
-    // REQUIRED
-    string addr = 2;
-}
-
+// Record describing how a specific server in a Raft group can be reached for requests.
 message Route {
     // REQUIRED
-    ServerDescriptor desc = 1;
+    GroupId group_id = 1;
+
+    // REQUIRED
+    ServerId server_id = 2;
+
+    // Ip address and port at which this server can be contacted.
+    // TODO: Store in binary format.
+    //
+    // REQUIRED
+    string addr = 3;
+
+    // Last time this server was announced by the server that owns it (the one located at 'addr').
+    // If a server doesn't announce the path to itself for a while, other servers may consider it
+    // to be dead and discard its route.
+    //
+    // REQUIRED
+    google.protobuf.Timestamp last_seen = 4;
 
     // Last time this route was retrieved or was observed in an incoming
     // request
     //
     // REQUIRED
-    google.protobuf.Timestamp last_used = 2;
+    google.protobuf.Timestamp last_used = 5;
 }
 
 // Thin-serializable state of the server
@@ -32,6 +40,6 @@ message Announcement {
     repeated Route routes = 1;
 }
 
-service DiscoveryService {
+service Discovery {
     rpc Announce (Announcement) returns (Announcement);
 }

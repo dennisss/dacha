@@ -28,7 +28,6 @@ use protobuf::Message;
 use raft::node::*;
 use raft::proto::consensus::LogIndex;
 use raft::proto::key_value::*;
-use raft::rpc::Client;
 use raft::server::server::{Server, ServerInitialState};
 
 use key_value::*;
@@ -85,8 +84,6 @@ use redis::resp::*;
     TODO: Future optimization would be to also save the metadata into the log file so that we are only ever writing to one append-only file all the time
         - I think this is how etcd implements it as well
 */
-
-use raft::rpc::*;
 
 struct RaftRedisServer {
     node: Arc<Node<KeyValueReturn>>,
