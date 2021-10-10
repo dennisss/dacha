@@ -83,6 +83,7 @@ impl<R: 'static + Send> Node<R> {
 
         // Ideally an agent would encapsulate saving itself to disk via some file
         // somewhere
+        // TODO: We shouldn't announce our local route until the server is running.
         let route_store = Arc::new(Mutex::new(RouteStore::new()));
 
         let discovery_client = DiscoveryClient::new(route_store.clone(), config.seed_list);
@@ -115,13 +116,15 @@ impl<R: 'static + Send> Node<R> {
             SimpleLog,
             BlobFile,
         ) = if meta_builder.exists().await {
+            // TODO: Must check that the meta exists and is valid.
+
             let (meta_file, meta_data) = meta_builder.open().await?;
 
             // TODO: In most cases, we can survive without having a routes file
             // on disk or even a config file in many cases
             let (config_file, config_data) = config_builder.open().await?;
             let (routes_file, routes_data) = routes_builder.open().await?;
-            let mut log = SimpleLog::open(&log_path).await?;
+            let log = SimpleLog::open(&log_path).await?;
 
             let meta = ServerMetadata::parse(&meta_data)?;
             let config_snapshot = ServerConfigurationSnapshot::parse(&config_data)?;
@@ -174,7 +177,8 @@ impl<R: 'static + Send> Node<R> {
             // Every single server starts with totally empty versions of everything
             let meta = crate::proto::consensus_state::Metadata::default();
             let config_snapshot = ServerConfigurationSnapshot::default();
-            let mut log = vec![];
+
+            let log_file = SimpleLog::create(&log_path).await?;
 
             let id: ServerId;
             let group_id: GroupId;
@@ -182,22 +186,13 @@ impl<R: 'static + Send> Node<R> {
             // For the first server in the cluster (assuming no configs are
             // already on disk)
             if config.bootstrap {
-                id = 1.into();
-
                 // Assign a cluster id to our agent (usually would be retrieved
                 // through network discovery if not in bootstrap mode)
                 group_id = random::clocked_rng().uniform::<u64>().into();
 
                 channel_factory = Arc::new(RouteChannelFactory::new(group_id, route_store.clone()));
 
-                // For this to be supported, we must be able to become a leader with zero
-                // members in the config (implying that we can know if we are )
-                let mut first_entry = LogEntry::default();
-                first_entry.pos_mut().set_term(1);
-                first_entry.pos_mut().set_index(1);
-                first_entry.data_mut().config_mut().set_AddMember(id);
-
-                log.push(first_entry);
+                id = crate::server::bootstrap::bootstrap_first_server(&log_file).await?;
             } else {
                 // TODO: All of this could be in while loop until we are able to
                 // connect to the leader and propose a new message on it
@@ -230,22 +225,6 @@ impl<R: 'static + Send> Node<R> {
             server_meta.set_id(id);
             server_meta.set_group_id(group_id);
             server_meta.set_meta(meta);
-
-            let log_file = SimpleLog::create(&log_path).await?;
-
-            let mut seq = LogSequence::zero();
-
-            // TODO: Can we do this before creating the log so that everything
-            // is flushed to disk What we could do is say that if the metadata
-            // file is present, then
-            for e in log {
-                let next_seq = seq.next();
-                seq = next_seq;
-
-                log_file.append(e, next_seq).await?;
-            }
-
-            log_file.flush().await?;
 
             let config_file = config_builder.create(&config_snapshot.serialize()?).await?;
 
@@ -305,8 +284,6 @@ impl<R: 'static + Send> Node<R> {
 
         let server = Server::new(channel_factory, initial_state).await;
 
-        // TODO: We shouldn't announce our local route until the server is running.
-
         // Start the RPC server.
         {
             // TODO: We also need to add a DiscoveryService (DiscoveryServiceRouter)
@@ -337,8 +314,7 @@ impl<R: 'static + Send> Node<R> {
         // THe simpler way to think of this is (if not bootstrap mode and there are zero
         // ) But yeah, if we can get rid of the bootstrap caveat, then this i
 
-        // TODO: Will also need to spawn the task that will periodically save
-        // the routes when changed
+        // This basically must happen after the server is setup.
 
         // If our log is empty, then we are most likely not a member of the
         // cluster yet
@@ -350,12 +326,6 @@ impl<R: 'static + Send> Node<R> {
             // TODO: This may fail if we previously attemped to join the cluster, but we
             // failed to get the response. Now it could be possible that we can't propose
             // anything to the cluster as no one can become the leader. So, we should
-
-            // TODO: Possibly build another layer of client that will do the
-            // extra discovery and leader_hint caching
-
-            // For anything to work properly, this must occur after we have an
-            // id,
 
             // XXX: at this point, we should know who the leader is with better
             // precision than this  (based on a leader hint from above)

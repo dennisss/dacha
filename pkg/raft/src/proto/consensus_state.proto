@@ -28,29 +28,3 @@ message Metadata {
     LogIndex commit_index = 3;
 }
 
-// TODO: Assert that no server is ever both in the members and learners list at
-// the same time (possibly convert to one single list and make the two
-// categories purely getter methods for iterators)
-message Configuration {
-    // All servers in the cluster which participate in voting rounds. A majority of servers in this
-    // list must vote the same way for a quorem to be achieved.
-    repeated ServerId members = 1 [unordered_set = true];
-
-    // All servers which do not participate in votes (at least not yet), but
-    // should still be sent new entries
-    repeated ServerId learners = 2 [unordered_set = true];
-}
-
-// Represents a configuration at a single index
-message ConfigurationSnapshot {
-    // Index of the last log entry applied to this configuration
-    // REQUIRED
-    LogIndex last_applied = 1;
-
-    // Value of the snapshot at the given index (TODO: This is the only type
-    // that actually needs to be serializiable, so it could be more verbose
-    // for all I care)
-    // REQUIRED
-    Configuration data = 2;
-}
-

@@ -26,12 +26,6 @@ pub mod consensus {
             self.term() == other.term() && self.index() == other.index()
         }
     }
-}
-
-pub mod consensus_state {
-    use super::consensus::*;
-
-    include!(concat!(env!("OUT_DIR"), "/src/proto/consensus_state.rs"));
 
     impl Configuration {
         pub fn apply(&mut self, change: &ConfigChange) {
@@ -67,6 +61,10 @@ pub mod consensus_state {
         pub last_applied: LogIndex,
         pub data: &'a Configuration,
     }
+}
+
+pub mod consensus_state {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/consensus_state.rs"));
 }
 
 pub mod server_metadata {

@@ -72,24 +72,6 @@ Requirements:
 
 Expose a discard() on the Consensus Module so that it can
 
-Decision:
-=> The ConsensusModule will manage the local view of all in-memory log entries.
-=> The role of the user log implementation becomes solely to write changes.
-=> LogView, LogWriter
-=> We can't dicard log entries until we have a state machine snapshot including them.
-    => Otherwise we can't help stragglers catch up.
-    => (but this would be a huge memory amplification most likely).
-    => So contain to not store any log data in the
-        => Thus ConsensusModule won't handle discards, but must be aware of
-=> Tick will emit both 'new_entries' and 'commited_entries'
-
-
-3 types of entries:
-1. Just appended: Trivial for the ConcensusModule to add these to new_entries and AppendEntries (assuming up to date peer)
-2. Just comitted:
-3. Comitted for a while but maybe not present in a snapshot yet.
-
-
 */
 // TODO: While Raft has no requirements on message ordering, we should try to
 // ensure that all AppendEntriesRequests are send to remote servers in order as
@@ -108,13 +90,20 @@ Decision:
 ///
 /// The 'R' template parameter is the type returned
 pub struct ServerInitialState<R> {
-    /// Value of the metadata initially
+    /// Value of the server's metadata loaded from disk (or minimally
+    /// initialized for a new server).
+    ///
+    /// We will assume that this metadata hasn't been flushed to disk yet.
+    ///
+    /// MUST already have a group_id and server_id set if this is a new server.
     pub meta: ServerMetadata,
 
-    /// A way to persist the metadata
+    /// File used to persist the above metadata.
     pub meta_file: BlobFile,
 
-    /// Snapshot of the configuration to use
+    /// Snapshot of the configuration to use.
+    ///
+    /// TODO: Are we assuming that this is already flushed?
     pub config_snapshot: ServerConfigurationSnapshot,
 
     /// A way to persist the configuration snapshot
@@ -482,6 +471,20 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
             (),
         )
         .await?;
+        Ok(())
+    }
+
+    async fn InstallSnapshot(
+        &self,
+        req: rpc::ServerStreamRequest<InstallSnapshotRequest>,
+        res: &mut rpc::ServerStreamResponse<InstallSnapshotResponse>,
+    ) -> Result<()> {
+        // TODO: Ideally only one snapshot should ever be getting installed at a time.
+
+        // Basically interface with the state machine.
+        // But, also periodically send back the term.
+        // If we observe a term
+
         Ok(())
     }
 

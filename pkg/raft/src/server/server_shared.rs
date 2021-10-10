@@ -778,11 +778,13 @@ impl<R: Send + 'static> ServerShared<R> {
                         // object that we have in order to determine this
                         state
                             .inst
-                            .append_entries_callback(to_id, last_log_index, resp, tick);
+                            .append_entries_callback(to_id, req.request_id(), resp, tick);
                     }
                     Err(e) => {
                         eprintln!("AppendEntries failure: {} ", e);
-                        state.inst.append_entries_noresponse(to_id, tick);
+                        state
+                            .inst
+                            .append_entries_noresponse(to_id, req.request_id(), tick);
                     }
                 }
             },

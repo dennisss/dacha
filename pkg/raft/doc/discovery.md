@@ -42,7 +42,7 @@ TODO: But no matter what this solution ends up being, we want it to be able to w
 	- The requester will also present the id of the server it thinks that it is trying to talk to
 	- The server will respond with its own identity and reject the request if the identity requested doesn't match its own
 	- Both sides will cache each others true identities
-	- Additionally a cluster_id will be exchanged (otherwise ids in different clusters may collide)
+	- Additionally a group_id will be exchanged (otherwise ids in different clusters may collide)
 
 - Gossiping
 	- Given that a server has some list of servers

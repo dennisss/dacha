@@ -3,10 +3,38 @@ use std::sync::Arc;
 use common::errors::*;
 use crypto::random::RngExt;
 
+use crate::log::log::Log;
+use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
 use crate::proto::server_metadata::GroupId;
 use crate::server::channel_factory::*;
 use crate::server::server_identity::ServerIdentity;
+
+pub async fn bootstrap_first_server(log: &dyn Log) -> Result<ServerId> {
+    let server_id = 1.into();
+
+    // For this to be supported, we must be able to become a leader with zero
+    // members in the config (implying that we can know if we are )
+    let mut first_entry = LogEntry::default();
+    first_entry.pos_mut().set_term(1);
+    first_entry.pos_mut().set_index(1);
+    first_entry.data_mut().config_mut().set_AddMember(server_id);
+
+    let mut new_entries = vec![];
+    new_entries.push(first_entry);
+
+    let mut seq = LogSequence::zero();
+    for e in new_entries {
+        let next_seq = seq.next();
+        seq = next_seq;
+
+        log.append(e, next_seq).await?;
+    }
+
+    log.flush().await?;
+
+    Ok(server_id)
+}
 
 /// Creates a new unique server id.
 /// This is done by reaching up to existing servers in the cluster and reaching

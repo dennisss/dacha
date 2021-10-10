@@ -125,16 +125,6 @@ impl redis::server::Service for RaftRedisServer {
             .map_err(|e| format_err!("SET failed with error: {:?}", e))?;
 
         Ok(RESPObject::SimpleString(b"OK"[..].into()))
-
-        /*
-        Box::new(server.propose(raft::protos::ProposeRequest {
-            data: LogEntryData::Command(op_data),
-            wait: true
-        })
-        .map(|_| {
-            RESPObject::SimpleString(b"OK"[..].into())
-        }))
-        */
     }
 
     async fn del(&self, key: RESPString) -> Result<RESPObject> {
@@ -156,15 +146,6 @@ impl redis::server::Service for RaftRedisServer {
             .map_err(|e| format_err!("DEL failed with error: {:?}", e))?;
 
         Ok(RESPObject::Integer(if res.success { 1 } else { 0 }))
-
-        /*
-        Box::new(server.propose(raft::protos::ProposeRequest {
-            data: LogEntryData::Command(op_data),
-            wait: true
-        })
-        .map(|_| {
-            RESPObject::Integer(1)
-        }))*/
     }
 
     async fn publish(&self, channel: &RESPString, object: &RESPObject) -> Result<usize> {
@@ -227,6 +208,7 @@ async fn main_task() -> Result<()> {
     // bootstrap only once on this machine as we will persistent the bootstrapped
     // configuration before talking to other servers in the cluster
 
+    // TODO: Derive this based on an argument.
     let seed_list: Vec<String> = vec![
         "http://127.0.0.1:4001".into(),
         "http://127.0.0.1:4002".into(),

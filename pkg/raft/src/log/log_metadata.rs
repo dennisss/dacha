@@ -99,6 +99,33 @@ impl LogMetadata {
         })
     }
 
+    pub fn lookup_seq(&self, seq: LogSequence) -> Option<LogOffset> {
+        if seq > self.last_offset.sequence {
+            return None;
+        }
+
+        let prev_offset_idx = match upper_bound_by(self.offsets.as_slices(), seq, |off, seq| {
+            off.sequence <= seq
+        }) {
+            Some(idx) => idx,
+            None => {
+                return None;
+            }
+        };
+
+        let prev_offset = &self.offsets[prev_offset_idx];
+
+        let relative_offset = seq.opaque_value - prev_offset.sequence.opaque_value;
+
+        Some(LogOffset {
+            position: LogPosition::new(
+                prev_offset.position.term(),
+                prev_offset.position.index() + relative_offset,
+            ),
+            sequence: seq,
+        })
+    }
+
     pub fn append(&mut self, offset: LogOffset) {
         assert!(offset.position.term() >= self.last().position.term());
         assert!(offset.sequence > self.last_offset.sequence);

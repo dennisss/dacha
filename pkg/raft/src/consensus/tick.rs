@@ -135,4 +135,12 @@ pub enum ConsensusMessageBody {
         /// this request.
         last_log_index: LogIndex,
     },
+
+    /// The client should install a snapshot on the given machine.
+    ///
+    /// On a snapshot has been installed, the user should call
+    /// ConsensusModule::snapshot_installed()
+    InstallSnapshot {
+        to_id: ServerId,
+    },
 }

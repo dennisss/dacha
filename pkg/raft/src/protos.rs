@@ -89,27 +89,4 @@ pub struct Snapshot {
 
 */
 
-#[derive(Debug)]
-pub struct InstallSnapshotRequest {
-    pub term: Term,
-    pub leader_id: ServerId,
-
-    /// The position of the last entry integrated into the given snapshot
-    /// (this can also be used to uniquely identify which snapshot is being
-    /// sent)
-    pub last_pos: LogPosition,
-
-    //pub last_index: LogIndex, // < THis is basically why this is required right? (so the )
-    //pub last_term: Term,
-    pub last_config: Option<Configuration>,
-    pub offset: u64,
-    pub data: Vec<u8>,
-    pub done: bool,
-}
-
-#[derive(Debug)]
-pub struct InstallSnapshotResponse {
-    pub term: Term,
-}
-
 pub struct AddServerRequest {}
