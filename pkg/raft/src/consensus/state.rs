@@ -3,14 +3,7 @@ use std::time::{Duration, Instant};
 
 use crate::proto::consensus::{LogIndex, RequestId, ServerId};
 
-/*
-    Ideally we would generalize away the flow control aspect of it
-    - Such that we can poll someone to determine if we can send another message
-        - Because many ranges could be running at once, we must be able to prioritize timeout heartbeats ahead of log replication
-*/
-
-// TODO: This is confusing naming as it is stored in the Concensus module and
-// notin the Server struct.
+/// Ephemeral in-memory state associated with a server.
 #[derive(Clone, Debug)]
 pub enum ConsensusState {
     Follower(ConsensusFollowerState),
@@ -21,7 +14,7 @@ pub enum ConsensusState {
 #[derive(Clone, Debug)]
 pub struct ConsensusFollowerState {
     /// Amount of time we should wait after not receiving a hearbeat from the
-    /// leader to become a candiate and
+    /// leader to become a candiate and run an election.
     pub election_timeout: Duration,
 
     /// Id of the last leader we have been pinged by. Used to cache the location
@@ -34,9 +27,6 @@ pub struct ConsensusFollowerState {
     pub last_heartbeat: Instant,
 }
 
-// TODO: If we immediately forget the candidate state, then we may not set an
-// initial lease_start value for all servers that responded to the election (but
-// that woulnd't really help much as it doesn't advance our overall time).
 #[derive(Clone, Debug)]
 pub struct ConsensusCandidateState {
     /// Time at which this candidate started its election

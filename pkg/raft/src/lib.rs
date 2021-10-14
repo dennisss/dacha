@@ -11,6 +11,7 @@ extern crate common;
 extern crate crypto;
 extern crate google;
 extern crate http;
+extern crate nix;
 extern crate protobuf;
 extern crate sstable;
 
@@ -21,17 +22,19 @@ extern crate macros;
 pub mod proto;
 
 pub mod atomic;
-pub mod sync;
-
-pub mod protos; // TODO: Eventually make this private again
-
-pub mod log; // XXX: Likewise should be private
-             //pub mod snapshot; // XXX: May eventually reoccur as a file that holds the
-             // algorithm for managing whether or not we should trigger snapshots
-pub mod consensus;
-
-// Higher level complete implementation dealing with actual networking issues
+mod consensus;
+pub mod log;
+pub mod node;
 pub mod routing;
 pub mod server;
+mod sync;
 
-pub mod node;
+pub use log::log::Log;
+pub use log::segmented_log::SegmentedLog;
+pub use routing::discovery_client::DiscoveryClient;
+pub use routing::discovery_server::DiscoveryServer;
+pub use routing::multicast::DiscoveryMulticast;
+pub use routing::route_channel::{RouteChannel, RouteChannelFactory};
+pub use routing::route_store::{RouteStore, RouteStoreHandle};
+pub use server::server::{ExecuteError, Server, ServerInitialState};
+pub use server::state_machine::{StateMachine, StateMachineSnapshot};

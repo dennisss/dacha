@@ -401,6 +401,20 @@ pub fn serialize_text_proto(message: &dyn MessageReflection) -> String {
     String::new()
 }
 
+pub trait ParseTextProto {
+    fn parse_text(text: &str) -> Result<Self>
+    where
+        Self: Sized;
+}
+
+impl<T: Sized + Default + MessageReflection> ParseTextProto for T {
+    fn parse_text(text: &str) -> Result<Self> {
+        let mut m = T::default();
+        parse_text_proto(text, &mut m)?;
+        Ok(m)
+    }
+}
+
 /*
 
 name :? {

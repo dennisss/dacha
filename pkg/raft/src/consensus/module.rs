@@ -95,7 +95,7 @@ pub type Proposal = LogPosition;
 /// the given proposal
 pub type ProposeResult = std::result::Result<Proposal, ProposeError>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ProposeError {
     /// Implies that the entry can not currently be processed and should be
     /// retried once the given proposal has been resolved
@@ -184,14 +184,30 @@ pub struct NotLeaderError {
     pub leader_hint: Option<ServerId>,
 }
 
-pub enum ResolveReadIndexError {
-    /// Can't get a read-index because we are not the leader
-    /// It is someone else's responsibility to ensure that
-    NotLeader { leader_hint: Option<ServerId> },
+/// Error that may occur while attempting to resolve/finalize a read index.
+pub enum ReadIndexError {
+    /// The leader has changed since the read index was generated so we're not
+    /// sure if it was valid.
+    ///
+    /// Upon seeing this, a client should contact the new leader to generate a
+    /// new read index.
+    ///
+    /// NOTE: The new leader may be the local server.
+    NotLeader(NotLeaderError),
 
-    /// Meaning that a valid read index can not be obtained right now and should
-    /// be retried after the given log position has been commited
+    /// The read index can't be used until the given index has been committed.
+    ///
+    /// Upon seeing this, the client should wait for the index to be comitted
+    /// (or for an entry with a higher term to be comitted). Then
+    /// ConsensusModule::resolve_read_index() can be called again.
     RetryAfter(LogPosition),
+
+    /// The read index can't be used until an additional round of heartbeats is
+    /// received which advance the leader's lease at least up to the given time.
+    ///
+    /// The current lease time can be observed by calling
+    /// ConsensusModule::lease_start().
+    WaitForLease(Instant),
 }
 
 pub struct ConsensusModule {
@@ -342,90 +358,25 @@ impl ConsensusModule {
         self.config.snapshot()
     }
 
-    /*
-        On every tick, emit the latest time at which we know that we are definitely still the leader.
-    */
+    /// TODO: Consider adding this value into the tick.
+    pub fn lease_start(&self) -> Option<Instant> {
+        match &self.state {
+            ConsensusState::Leader(s) => Some(s.lease_start),
+            _ => None,
+        }
+    }
 
-    /*
     /// Gets what we believe is the highest log index that has been comitted
     /// across the entire raft group at the time of calling this function.
     ///
-    /// This can be used to perform a linearizable read on the state machine as
-    /// follows:
-    /// - First, the client must call read_index() on the current leader of the
-    ///   raft group as of the current point in time (read_index() will error
-    ///   out if it is not the leader).
-    /// - To be certain that the index is the highest comitted index, the client
-    ///   must wait until the 'lease_start' time in a future tick is at least
-    ///   as high as the start time of the read.
-    ///   - Internally the 'lease_start' is advanced only once
-    /// - Then the client must verify that the term hasn't advanced since the
-    ///   read started.
-    /// - Finally, the client must wait until the state machine has applied all
-    ///   entries at least up to the read index before executing reads.
+    /// In order to know for certain that the returned index was the highest
+    /// when it was returned, the caller will need to poll
+    /// ConsensusModule::resolve_read_index() until we are sure. Once the
+    /// polling is successful, the index can be safely used to implement a
+    /// linearizable
     ///
-    /// TODO: If we are currently in the candidate state, what's the best way to
-    /// gracefully block until we become the leader?
-    ///
-    /// Obtains a read-index which is the lower bound on the current state at
-    /// the point in time of calling
-    ///
-    /// Once obtaining this read-index, a caller must either:
-    /// 1. wait for a round of heartbeats to start and finish after calling
-    /// this method (and the leader must still be the leader with the latest
-    /// term having not changed)
-    ///
-    /// 2. check that the leader still has
-    /// remaining lease time within some clock skew bound
-    ///
-    /// Then the reader must wait for this read-index to be applied to the state
-    /// machine
-    ///
-    /// TODO: This function should do something with the time passed to it.
-    ///
-    /// TODO: Probably wrap the return value value in another layer so that it
-    /// needs to be unwrapped properly
-    /// We will probably implement clock skew as a separate layer on top of this
-    pub fn read_index(&self, time: Instant) -> std::result::Result<ReadIndex, ReadIndexError> {
-        let leader_hint = None;
-        let is_leader = match self.state {
-            ConsensusState::Leader(_) => true,
-            ConsensusState::Follower(state) => {
-                leader_hint = state.last_leader_id.clone();
-                false
-            }
-            _ => false,
-        };
-
-        if !is_leader {
-            return Err(ReadIndexError::NotLeader { leader_hint });
-        }
-
-        // NOTE: We must be the leader in order to get an index.
-        let index = match self.state {
-            ConsensusState::Leader(state) => state.read_index,
-            ConsensusState::Follower(state) => {
-                return Err(ReadIndexError::NotLeader {
-                    leader_hint: state.last_leader_id.clone(),
-                });
-            }
-            ConsensusState::Candidate(_) => {
-                return Err(ReadIndexError::NotLeader { leader_hint: None });
-            }
-        };
-
-        // TODO: Now cycle and force a new round of heartbeats to be sent out
-        // ^ These must be cheap enough that they don't block on flushing more records
-        // then are needed.
-
-        Ok(ReadIndex {
-            term: self.meta().current_term(),
-            index,
-            time,
-        })
-    }
-    */
-
+    /// NOTE: It is only valid for this to be called on the leader. If we aren't
+    /// the leader, this will return an error.
     pub fn read_index(&self, time: Instant) -> std::result::Result<ReadIndex, NotLeaderError> {
         match &self.state {
             ConsensusState::Leader(s) => Ok(ReadIndex {
@@ -440,31 +391,110 @@ impl ConsensusModule {
         }
     }
 
-    /*
+    /// Checks whether or not a previously proposed read index is ok to use.
+    ///
+    /// NOTE: It is only valid to call this on the same machine that created the
+    /// read index with ::read_index().
+    ///
+    /// Internally this must verify the following:
+    /// 1. That the read index is committed.
+    ///    - Currently the index returned by ::read_index() will only ever not
+    ///      be already comitted if we are at the beginning of the leader's term
+    ///      and it hasn't yet commited any entries from its own term.
+    /// 2. The current server was the leader at the time of calling
+    /// read_index().
+    ///    - We verify this by ensuring that we have received a successful
+    ///      quorum of responses at the same term as the one in which the read
+    ///      index was proposed. Additionally, because we don't retain a
+    ///      complete history of all leader time segments, we verify that we are
+    ///      still the leader and we haven't been superseded by other servers
+    ///      since ::read_index() was called. This mainly means that the user
+    ///      should promptly call resolve_read_index() and not wait too long as
+    ///      leadership changes will disrupt getting a read index.
+    ///
+    /// When optimistic=false, the maximum amount of time a user should expect
+    /// to wait between calling ::read_index() and getting a successful
+    /// response from ::resolve_read_index() is 'HEARTBEAT_TIMEOUT +
+    /// NETWORK_RTT'. If the user doesn't want to wait that long, the user can
+    /// call ::schedule_heartbeat() AFTER ::read_index() is called to schedule
+    /// an immediate set of heartbeat messages to be sent. Then the max time
+    /// should be reduced to around 'NETWORK_RTT'.
+    ///
+    /// If the user is performing an atomic 'read-modify-write' style
+    /// transaction (where values that are read are only exported if the write
+    /// is successful), it is safe to set optimistic=true and then pass the read
+    /// index to ::propose_command() which will cut down the entire operation to
+    /// only requiring a single
+    ///
+    /// Arguments:
+    /// - read_index: A proposed read index returned by ::read_index() in the
+    ///   past.
+    /// - optimistic: If true, we will trust that all the clocks in the cluster
+    ///   are reasonably in sync up to some max drift. When true,
+    ///   resolve_read_index() will typically return successfully immediately
+    ///   after read_index() is called without needing to make any network round
+    ///   trips.
+    ///
+    /// Returns:
+    /// Upon getting a successful return value, the user should wait until at
+    /// least all log entries up to that index are applied to the state machine
+    /// and then perform the read operation.
+    ///
+    /// If an error is returned, then it will contain more information on when
+    /// (if it at all) the resolve_read_index() can be retried.
     pub fn resolve_read_index(
         &self,
         read_index: &ReadIndex,
-    ) -> std::result::Result<Index, ReadIndexError> {
-        if self.meta.current_term() != read_index.term() {
-            //
+        optimistic: bool,
+    ) -> std::result::Result<LogIndex, ReadIndexError> {
+        // Verify that we are still the leader.
+        let leader_state = match &self.state {
+            ConsensusState::Leader(s) => s,
+            ConsensusState::Follower(s) => {
+                return Err(ReadIndexError::NotLeader(NotLeaderError {
+                    leader_hint: s.last_leader_id.clone(),
+                }))
+            }
+            ConsensusState::Candidate(_) => {
+                return Err(ReadIndexError::NotLeader(NotLeaderError {
+                    leader_hint: None,
+                }))
+            }
+        };
+
+        // Verify that the term hasn't changed since the index was created.
+        if self.meta.current_term() != read_index.term {
+            return Err(ReadIndexError::NotLeader(NotLeaderError {
+                leader_hint: Some(self.id),
+            }));
         }
 
+        if self.meta.commit_index() < read_index.index {
+            return Err(ReadIndexError::RetryAfter(
+                self.log_meta.lookup(read_index.index).unwrap().position,
+            ));
+        }
+
+        let mut min_time = read_index.time;
+        if optimistic {
+            min_time -=
+                Duration::from_millis(((ELECTION_TIMEOUT.0 as f32) / CLOCK_DRIFT_BOUND) as u64);
+        }
+
+        if leader_state.lease_start < min_time {
+            return Err(ReadIndexError::WaitForLease(min_time));
+        }
+
+        Ok(read_index.index)
     }
-    */
 
     /// Forces a heartbeat to immediately occur
     /// (only valid on the current leader)
-    pub fn schedule_heartbeat(&self) {}
+    pub fn schedule_heartbeat(&mut self) {
+        // TODO: Implement me.
+    }
 
     /*
-        For a lease based read index
-        - Get a local index
-        - Then either wait for a heartbeat round or
-    */
-    /*
-        XXX: What is interesting is that whenever a round of heartbeats is obtained, it may be able to 'unwrap' a read-index as long as it started after the read_index was issued
-        - So probably wrap read_indexes with a time
-
         TODO: If many writes are going on, then this may slow down acquiring a read index as AppendEntries requests require a disk write to return a response.
         => Consider making a heart-beat only request type.
 
@@ -656,12 +686,6 @@ impl ConsensusModule {
 
         ret
     }
-
-    // NOTE: Because most types are private, we probably only want to expose
-    // being able to
-
-    // TODO: Cycle should probably be left as private but triggered by some
-    // specific
 
     // TODO: We need some monitoring of wether or not a tick was completely
     // meaninless (no changes occured because of it implying that it could have
@@ -889,25 +913,11 @@ impl ConsensusModule {
         self.log_meta.last().position.index() >= self.meta().commit_index()
     }
 
-    /*
-    We can update the read index to the value of the commit_index to the min time of the top N replicas.
-    (but it may update later as well.)
-
-    */
-
     /// On the leader, this will find the best value for the next commit index
     /// if any is currently possible
     ///
     /// TODO: Optimize this. We should be able to do this in ~O(num members)
     fn find_next_commit_index(&self, s: &ConsensusLeaderState) -> Option<LogIndex> {
-        // Starting at the last entry in our log, go backwards until we can find
-        // an entry that we can mark as commited
-        // TODO: ci can also more specifically start at the max value across all
-        // match_indexes (including our own, but it should be noted that we are
-        // the leader don't actually need to make it durable in order to commit
-        // it)
-        let mut candidate_index = self.log_meta.last().position.index();
-
         if self.log_meta.last().position.index() == self.meta.commit_index() {
             // Nothing left to commit.
             return None;
@@ -956,59 +966,6 @@ impl ConsensusModule {
         }
 
         Some(candidate_index)
-
-        // 1. Early exit if the commit_index == last_index
-
-        // 2. Create list of last committed indexes on each server (including
-        // ourselves) TODO: will a leader ever not be in the voting set.
-        //
-
-        // 3. sort it.
-
-        /*
-        let majority = self.majority_size();
-        while candidate_index > self.meta.commit_index() {
-            // TODO: Naturally better to always take in pairs to avoid such failures?
-            let offset = self.log_meta.lookup(candidate_index).unwrap();
-
-            if offset.position.term() < self.meta.current_term() {
-                // Because terms are monotonic, if we get to an entry that is <
-                // our current term, we will never see any more entries at our
-                // current term
-                break;
-            } else if offset.position.term() == self.meta.current_term() {
-                // Count how many other voting members have successfully
-                // persisted this index
-                let mut count = 0;
-
-                // If the local server has flushed the entry, add one vote for ourselves.
-                //
-                // As the leader, we are naturally part of the voting members so
-                // may be able to vote for this commit
-                if self.log_last_flushed >= offset.sequence {
-                    count += 1;
-                }
-
-                for (id, e) in s.followers.iter() {
-                    // Skip non-voting members or ourselves
-                    if !self.config.value.members().contains(id) || *id == self.id {
-                        continue;
-                    }
-
-                    if e.match_index >= candidate_index {
-                        count += 1;
-                    }
-                }
-
-                if count >= majority {
-                    return Some(candidate_index);
-                }
-            }
-
-            // Try the previous entry next time
-            *candidate_index.value_mut() -= 1;
-        }
-        */
     }
 
     /*
@@ -2027,22 +1984,11 @@ impl ConsensusModule {
     }
 }
 
-/*
-How to test this:
-- Create a ConfigurationSnaphot with two members
-- New empty memlog
-- Cycle server 1
-    => It should emit RequestVote messages
-- Send them to server 2.
-    => It should accept that and return a reply.
-- Send reply back to server 1
-*/
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use protobuf::text::parse_text_proto;
+    use protobuf::text::ParseTextProto;
 
     use crate::log::memory_log::MemoryLog;
 
@@ -2050,14 +1996,11 @@ mod tests {
     async fn single_member_bootstrap_election() {
         let meta = Metadata::default();
 
-        let mut config_snapshot = ConfigurationSnapshot::default();
-        parse_text_proto(
+        let mut config_snapshot = ConfigurationSnapshot::parse_text(
             r#"
             last_applied { value: 0 }
-            data {
-            }
+            data {}
         "#,
-            &mut config_snapshot,
         )
         .unwrap();
 
@@ -2108,8 +2051,7 @@ mod tests {
         // TODO: How long to wait after sending out a vote to send out another vote?
         // - Make this a deterministic value.
 
-        let mut config_snapshot = ConfigurationSnapshot::default();
-        parse_text_proto(
+        let config_snapshot = ConfigurationSnapshot::parse_text(
             r#"
             last_applied { value: 0 }
             data {
@@ -2119,18 +2061,18 @@ mod tests {
                 ]
             }
         "#,
-            &mut config_snapshot,
         )
         .unwrap();
 
-        let log = MemoryLog::new();
+        let log1 = MemoryLog::new();
+        let log2 = MemoryLog::new();
 
         let t0 = Instant::now();
 
         let mut server1 =
-            ConsensusModule::new(1.into(), meta.clone(), config_snapshot.clone(), &log, t0).await;
+            ConsensusModule::new(1.into(), meta.clone(), config_snapshot.clone(), &log1, t0).await;
         let mut server2 =
-            ConsensusModule::new(2.into(), meta.clone(), config_snapshot.clone(), &log, t0).await;
+            ConsensusModule::new(2.into(), meta.clone(), config_snapshot.clone(), &log2, t0).await;
 
         // Execute a tick after the maximum election timeout.
         let mut tick = Tick::empty();
@@ -2141,15 +2083,43 @@ mod tests {
         // - Sends out a RequestVote RPC
         // - Asks to flush the voted_term metadata to disk.
         server1.cycle(&mut tick);
-        println!("{:#?}", tick);
 
-        assert_eq!(tick.messages.len(), 1);
-        assert_eq!(&tick.messages[0].to, &[ServerId::from(2)]);
+        let request_vote_req = RequestVoteRequest::parse_text(
+            "
+            request_id { value: 1 }
+            term { value: 1 }
+            candidate_id { value: 1 }
+            last_log_index { value: 0 }
+            last_log_term { value: 0 }
+        ",
+        )
+        .unwrap();
 
-        let req_vote = match &tick.messages[0].body {
-            ConsensusMessageBody::RequestVote(r) => r,
-            _ => panic!(),
-        };
+        assert!(tick.meta);
+        assert_eq!(
+            server1.meta(),
+            &Metadata::parse_text(
+                "
+                current_term { value: 1 }
+                voted_for { value: 1 }
+            "
+            )
+            .unwrap()
+        );
+        assert!(!tick.config);
+        assert_eq!(tick.new_entries, &[]);
+        assert_eq!(
+            &tick.messages,
+            &[ConsensusMessage {
+                to: vec![2.into()],
+                body: ConsensusMessageBody::RequestVote(request_vote_req.clone())
+            }]
+        );
+        // The next tick should be to re-start the election after a random period of
+        // time.
+        assert!(tick.next_tick.is_some());
+
+        /////////////////////
 
         // Server 2 accepts the vote:
         // - Returns a successful response
@@ -2157,30 +2127,386 @@ mod tests {
         let mut tick2 = Tick::empty();
         let t2 = t1 + Duration::from_millis(1);
         tick2.time = t2;
-        let resp = server2.request_vote(req_vote, &mut tick2).persisted();
+        let resp = server2
+            .request_vote(&request_vote_req, &mut tick2)
+            .persisted();
 
         // Should have accepted.
-        println!("{:#?}", resp);
+        assert_eq!(
+            resp,
+            RequestVoteResponse::parse_text(
+                "
+            request_id { value: 1 }
+            term { value: 1 }
+            vote_granted: true"
+            )
+            .unwrap()
+        );
 
         // Should not send anything.
-        println!("{:#?}", tick2);
+        assert!(tick2.meta);
+        assert_eq!(
+            server2.meta(),
+            &Metadata::parse_text(
+                "
+            current_term { value: 1 }
+            voted_for { value: 1 }"
+            )
+            .unwrap()
+        );
+        assert_eq!(tick2.new_entries, &[]);
+        assert_eq!(tick2.messages, &[]);
+
+        /////////////////////
+
+        {
+            // Persist the metadata (the vote for server 1).
+            // - Basically no side effects should be requested.
+            let mut tick21 = Tick::empty();
+            tick21.time = t2 + Duration::from_millis(1);
+            server2.persisted_metadata(server2.meta().clone(), &mut tick21);
+
+            assert!(!tick21.meta);
+            // TODO: Verify that the metadata hasn't changed.
+            assert!(!tick21.config);
+            assert_eq!(tick21.new_entries, &[]);
+            assert_eq!(tick21.messages, &[]);
+        }
+
+        /////////////////////
 
         // Get the vote. Should not yet be the leader as we haven't persisted server 1's
         // metadata
         // - This should not change the metadata.
         let mut tick3 = Tick::empty();
-        let t3 = t2 + Duration::from_millis(1);
+        let t3 = t2 + Duration::from_millis(2);
         tick3.time = t3;
         server1.request_vote_callback(2.into(), resp, &mut tick3);
-        println!("{:#?}", tick3);
+        assert!(!tick3.meta);
+        assert!(!tick3.config);
+        assert_eq!(tick3.new_entries, &[]);
+        assert_eq!(tick3.messages, &[]);
 
         // Persisting the metadata should cause us to become the leader.
-        // - Should emit a new no-op entry
+        // - Doesn't emit a no-op as all entries in our log are committed (because the
+        //   log is empty).
         // - Should emit an AppendEntries RPC to send to the other server.
+
+        let append_entries2 = AppendEntriesRequest::parse_text(
+            "
+            request_id { value: 2 }
+            term { value: 1 }
+            leader_id { value: 1 }
+            prev_log_index { value: 0 }
+            prev_log_term { value: 0 }
+            entries: []
+            leader_commit { value: 0 }
+        ",
+        )
+        .unwrap();
+
         let mut tick4 = Tick::empty();
         let t4 = t3 + Duration::from_millis(1);
         tick4.time = t4;
         server1.persisted_metadata(server1.meta().clone(), &mut tick4);
-        println!("{:#?}", tick4);
+        assert!(!tick4.meta);
+        // TODO: Verify that metadata hasn't changed.
+        assert!(!tick4.config);
+        assert_eq!(tick4.new_entries, &[]);
+        assert_eq!(
+            tick4.messages,
+            &[ConsensusMessage {
+                to: vec![2.into()],
+                body: ConsensusMessageBody::AppendEntries {
+                    request: append_entries2.clone(),
+                    last_log_index: 0.into()
+                }
+            }]
+        );
+
+        let log_entry1 = LogEntry::parse_text(
+            r#"
+            pos {
+                term { value: 1 }
+                index { value: 1 }
+            }
+            data {
+                command: "\x10\x11\x12"
+            }
+        "#,
+        )
+        .unwrap();
+
+        let mut tick5 = Tick::empty();
+        let t5 = t4 + Duration::from_millis(1);
+        tick5.time = t5;
+        let res = server1.propose_command(vec![0x10, 0x11, 0x12], &mut tick5);
+        assert_eq!(res, Ok(LogPosition::new(1, 1)));
+
+        assert!(!tick5.meta);
+        assert!(!tick5.config);
+        assert_eq!(
+            &tick5.new_entries,
+            &[NewLogEntry {
+                sequence: LogSequence::zero().next(),
+                entry: log_entry1.clone()
+            }]
+        );
+        // This won't immediately send any messages as servers are followers are
+        // initially pessimistic until we get the AppendEntries response back for the
+        // heartbeat.
+        assert_eq!(&tick5.messages, &[]);
+
+        // Have server2 receive the initial AppendEntries heartbeat.
+        // - It shouldn't do anything aside from producing a response. No
+        let t6 = t5 + Duration::from_millis(1);
+        let append_entries_res2 = AppendEntriesResponse::parse_text(
+            "
+            request_id { value: 2 }
+            term { value: 1 }
+            success: true
+            last_log_index { value: 0 }
+        ",
+        )
+        .unwrap();
+        {
+            let mut tick6 = Tick::empty();
+            tick6.time = t6;
+
+            let res = server2
+                .append_entries(&append_entries2, &mut tick6)
+                .unwrap();
+
+            assert!(!tick6.meta);
+            assert!(!tick6.config);
+            assert_eq!(tick6.new_entries, &[]);
+            assert_eq!(tick6.messages, &[]);
+
+            let res = match res.poll(&log2).await {
+                ConstraintPoll::Satisfied(res) => res,
+                _ => panic!("Got wrong result"),
+            };
+
+            assert_eq!(res, append_entries_res2);
+        }
+
+        // Give server1 the AppendEntriesResponse
+        // - All is good so we should be able to start sending the first entry.
+        let t7 = t6 + Duration::from_millis(1);
+        let append_entries3_raw = AppendEntriesRequest::parse_text(
+            r#"
+            request_id { value: 3 }
+            term { value: 1 }
+            leader_id { value: 1 }
+            prev_log_index { value: 0 }
+            prev_log_term { value: 0 }
+            leader_commit { value: 0 }
+        "#,
+        )
+        .unwrap();
+        // TODO: Implement this with a text merge on top of the append_entries_raw.
+        let append_entries3 = AppendEntriesRequest::parse_text(
+            r#"
+            request_id { value: 3 }
+            term { value: 1 }
+            leader_id { value: 1 }
+            prev_log_index { value: 0 }
+            prev_log_term { value: 0 }
+            entries: [{
+                pos {
+                    term { value: 1 }
+                    index { value: 1 }
+                }
+                data {
+                    command: "\x10\x11\x12"
+                }
+            }]
+            leader_commit { value: 0 }
+        "#,
+        )
+        .unwrap();
+        {
+            let mut tick7 = Tick::empty();
+            tick7.time = t7;
+
+            // TODO: Also test with the no-reply case.
+            server1.append_entries_callback(2.into(), 2.into(), append_entries_res2, &mut tick7);
+
+            assert!(!tick7.meta);
+            assert!(!tick7.config);
+            assert_eq!(tick7.new_entries, &[]);
+            assert_eq!(
+                &tick7.messages,
+                &[ConsensusMessage {
+                    to: vec![2.into()],
+                    body: ConsensusMessageBody::AppendEntries {
+                        request: append_entries3_raw.clone(),
+                        last_log_index: 1.into()
+                    }
+                }]
+            )
+        }
+
+        // Give server2 the AppendEntriesResponse.
+        // - It should persist it to its log, then
+        let t8 = t7 + Duration::from_millis(1);
+        let append_entries_res3 = AppendEntriesResponse::parse_text(
+            "
+            request_id { value: 3 }
+            term { value: 1 }
+            success: true
+            last_log_index { value: 1 }
+        ",
+        )
+        .unwrap();
+        {
+            let mut tick8 = Tick::empty();
+            tick8.time = t8;
+
+            let mut res = server2
+                .append_entries(&append_entries3, &mut tick8)
+                .unwrap();
+            assert!(!tick8.meta);
+            assert!(!tick8.config);
+            assert_eq!(&tick8.messages, &[]);
+            assert_eq!(
+                &tick8.new_entries,
+                &[NewLogEntry {
+                    sequence: LogSequence::zero().next(),
+                    entry: log_entry1.clone()
+                }]
+            );
+
+            // TODO: THis currently fails as we don't support checking the
+            // constraint before we add it to the outer log.
+
+            // // First time polling should fail as we haven't appended it yet.
+            // res = match res.poll(&log2).await {
+            //     // TODO: Check the 'seq'
+            //     ConstraintPoll::Pending((v, seq)) => v,
+            //     _ => panic!(),
+            // };
+
+            log2.append(
+                tick8.new_entries[0].entry.clone(),
+                tick8.new_entries[0].sequence,
+            )
+            .await
+            .unwrap();
+
+            // Not yet flushed so should still be pending.
+            res = match res.poll(&log2).await {
+                // TODO: Check the 'seq'
+                ConstraintPoll::Pending((v, seq)) => v,
+                _ => panic!(),
+            };
+
+            log2.flush().await.unwrap();
+
+            // Now that it's flushed, we should have it get resolved.
+
+            let res = match res.poll(&log2).await {
+                ConstraintPoll::Satisfied(v) => v,
+                _ => panic!(),
+            };
+
+            assert_eq!(res, append_entries_res3);
+
+            // TODO: Call log_flushed on server2.
+        }
+
+        // Give server1 the append entries response.
+        // - we still shouldn't commit anything as we only have it flushed on 1 of 2
+        //   servers
+        let t9 = t8 + Duration::from_millis(1);
+        {
+            let mut tick9 = Tick::empty();
+            tick9.time = t9;
+            server1.append_entries_callback(2.into(), 3.into(), append_entries_res3, &mut tick9);
+
+            assert!(!tick9.meta);
+            assert_eq!(
+                server1.meta(),
+                &Metadata::parse_text(
+                    "
+                    current_term { value: 1 }
+                    voted_for { value: 1 }
+                "
+                )
+                .unwrap()
+            );
+            assert!(!tick9.config);
+            assert_eq!(tick9.new_entries, &[]);
+            assert_eq!(tick9.messages, &[]);
+        }
+
+        // Flush the new entry on server1.
+        // - We should now be able to commit the index.
+        // NOTE: We haven't added the entry to the log1 entry, but that shouldn't be too
+        // relevant.
+        let t10 = t9 + Duration::from_millis(1);
+        {
+            let mut tick10 = Tick::empty();
+            tick10.time = t10;
+
+            server1.log_flushed(LogSequence::zero().next(), &mut tick10);
+
+            assert!(tick10.meta);
+            assert_eq!(
+                server1.meta(),
+                &Metadata::parse_text(
+                    "
+                    current_term { value: 1 }
+                    voted_for { value: 1 }
+                    commit_index { value: 1 }
+                "
+                )
+                .unwrap()
+            );
+            assert!(!tick10.config);
+            assert_eq!(tick10.new_entries, &[]);
+            assert_eq!(tick10.messages, &[]);
+        }
+
+        // TODO: Use tick11 to persist the local metadata. It shouldn't do
+        // anything.
+
+        // Propose a command on server 1. This should immediately send out a request.
+        let t12 = t10 + Duration::from_millis(2);
+        {}
+
+        // Propose a second command on server 1. This should also immediately
+        // send out a request as we are
+
+        // println!("{:#?}", tick5);
+
+        // server1.propose_command(data, out)
+
+        /*
+        Next tests:
+        - Wait a while and get the leader to send out a heartbeat.
+        - Should be accepted by the other server.
+
+        - Propose 1 entry.
+        - Verify that it can be replicated and comitted and
+
+        */
     }
+
+    /*
+    More tests:
+    - Overlapping voting sessions at the same term.
+    - 3 servers:
+        - 1 of them has too many log entries from an old term, so requires log truncation.
+        - There are two scenarios we can test:
+            - Either the leader has the shorter log or the leader has the longest log.
+            - In both cases, this will require syncing up out logs with at least 1 other servers.
+
+    - Need lot's of tests for messages come out of order or at awkward times.
+
+    - Test that we can commit a log entry which has been flushed on a majority of followers but not on the leader.
+
+    - Verify that duplicate request vote requests in the same term produce the same result.
+    - Verify that a receiving a second RequestVote from a server after we have already granted a vote.
+    */
 }

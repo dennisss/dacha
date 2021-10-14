@@ -53,39 +53,6 @@ pub struct MemoryKVStateMachine {
     data: Mutex<HashMap<Vec<u8>, Bytes>>,
 }
 
-/*
-    The simpler interface:
-    - TODO: There is still a far way to go to handle all cases for log compaction and the sending of full snapshots
-
-    - Snapshots may be multiple files
-        -
-
-
-    -
-
-
-    Restoring from snapshots
-    -
-
-    -> We assume that some sequence of snapshots can be given
-
-*/
-
-/*
-    Stuff that must be stored:
-    - A read handle may be be sometimes obtainable
-
-    - Benefits of a truncatable log file:
-        - Not really very much
-        - Just more things that we would need to get right
-
-    - In summary, we can expose a lazy reader
-        - We will record
-        - Almost always better to send over a snapshot than to send over the log (for initial machines)
-        -
-
-*/
-
 impl MemoryKVStateMachine {
     /*
     pub fn from_file(path: &Path) -> Result<(LogIndex, MemoryKVStateMachine)> {

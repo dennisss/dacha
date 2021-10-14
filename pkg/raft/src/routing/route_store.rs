@@ -82,6 +82,18 @@ impl RouteStore {
         announcement
     }
 
+    pub fn serialize_local_only(&self) -> Announcement {
+        let mut announcement = Announcement::default();
+
+        if let Some(local_route) = &self.local_route {
+            let mut r = local_route.clone();
+            r.set_last_seen(SystemTime::now());
+            announcement.add_routes(r);
+        }
+
+        announcement
+    }
+
     pub fn apply(&mut self, an: &Announcement) {
         for new_route in an.routes().iter() {
             let new_route_key = (new_route.group_id(), new_route.server_id());

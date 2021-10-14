@@ -166,7 +166,7 @@ impl<R: Send + 'static> Server<R> {
     pub async fn new(
         channel_factory: Arc<dyn ChannelFactory>,
         initial: ServerInitialState<R>,
-    ) -> Self {
+    ) -> Result<Self> {
         let ServerInitialState {
             mut meta,
             meta_file,
@@ -192,7 +192,9 @@ impl<R: Send + 'static> Server<R> {
         // This is similar to the check on the config snapshot that we do in the
         // consensus module
         if last_applied < log.prev().await.index() {
-            panic!("State machine snapshot is from before the start of the log");
+            return Err(err_msg(
+                "State machine snapshot is from before the start of the log",
+            ));
         }
 
         // TODO: If all persisted snapshots contain more entries than the log,
@@ -215,9 +217,6 @@ impl<R: Send + 'static> Server<R> {
         let (tx_state, rx_state) = change();
         let (tx_log, rx_log) = change();
         let (tx_meta, rx_meta) = change();
-
-        // TODO: Routing info now no longer a part of core server
-        // responsibilities
 
         let state = ServerState {
             inst,
@@ -246,6 +245,7 @@ impl<R: Send + 'static> Server<R> {
             commit_index: Condvar::new(LogPosition::zero()),
 
             last_applied: Condvar::new(last_applied),
+            lease_start: Condvar::new(None),
         });
 
         ServerShared::update_last_flushed(&shared).await;
@@ -253,7 +253,7 @@ impl<R: Send + 'static> Server<R> {
         ServerShared::update_commit_index(&shared, &state).await;
         drop(state);
 
-        Server { shared }
+        Ok(Server { shared })
     }
 
     // NOTE: If we also give it a state machine, we can do that for people too
@@ -281,32 +281,6 @@ impl<R: Send + 'static> Server<R> {
         Ok(())
     }
 
-    // Executing a command remotely from a non-leader
-    // -> 'Pause' the throw-away of unused results on the applier
-    // -> Instead append them to an internal buffer
-    // -> Probably best to assign it a client identifier (The only difference
-    // is that this will be a client interface which will asyncronously
-    // determine that a change is our own)
-    // -> Propose a change
-    // -> Hope that we get the response back from propose before we advance the
-    // state machine beyond that point (with issue being that we don't know the
-    // index until after the propose responds)
-    // -> Then use the locally available result to resolve the callback as needed
-
-    /*
-        The ordering assertion:
-        - given that we receive back the result of AppendEntries before that of
-
-        - Simple compare and set operation
-            - requires having a well structure schema
-            - Compare and set is most trivial to do if we have a concept of a key version
-            - any change to the key resets it's version
-            - Versions are monotonic timestamps associated with the key
-                - We will use the index of the entry being applied for this
-                - This will allow us to get proper behavior across deletions of a key as those would remove the key properly
-                - Future edits would require that the version is <= the read_index used to fetch the deleted key
-    */
-
     /*
         Upon losing our position as leader, callbacks may still end up being applied
         - But if multiple election timeouts pass without a callback making any progress (aka we are no longer the leader and don't can't communicate with the current leader), then callbacks should be timed out
@@ -329,6 +303,67 @@ impl<R: Send + 'static> Server<R> {
         We want a lite-wait way to start up arbitrary commands that don't require a return value from the state machine
             - Also useful for
     */
+
+    /// Blocks until the local state machine contains at least all committed
+    /// values as of the start time of calling ::begin_read().
+    ///
+    /// This should be called before fulfilling any new user requests that read
+    /// from the state machine.
+    ///
+    /// NOTE: This will only succeed on the current leader.
+    pub async fn begin_read(
+        &self,
+        optimistic: bool,
+    ) -> std::result::Result<ReadIndex, NotLeaderError> {
+        let read_index = {
+            let state = self.shared.state.lock().await;
+            let time = Instant::now();
+            state.inst.read_index(time)?
+        };
+
+        // Trigger heartbeat to run (subject to batching or priority).
+        if !optimistic {
+            self.shared
+                .run_tick(
+                    |state, tick, _| {
+                        state.inst.schedule_heartbeat();
+                    },
+                    (),
+                )
+                .await;
+        }
+
+        let log_index;
+        loop {
+            let state = self.shared.state.lock().await;
+            let res = state.inst.resolve_read_index(&read_index, optimistic);
+            drop(state);
+
+            match res {
+                Ok(v) => {
+                    log_index = v;
+                    break;
+                }
+                Err(ReadIndexError::NotLeader(e)) => {
+                    return Err(e);
+                }
+                Err(ReadIndexError::RetryAfter(pos)) => {
+                    self.shared.wait_for_commit(pos).await;
+                }
+                Err(ReadIndexError::WaitForLease(time)) => {
+                    let lease_guard = self.shared.lease_start.lock().await;
+                    if lease_guard.is_none() || lease_guard.unwrap() >= time {
+                        continue;
+                    }
+
+                    lease_guard.wait(time).await;
+                }
+            }
+        }
+
+        self.shared.wait_for_applied(log_index).await;
+        Ok(read_index)
+    }
 
     /// Will propose a new change and will return a future that resolves once
     /// it has either suceeded to be executed, or has failed
@@ -386,15 +421,6 @@ impl<R: Send + 'static> Server<R> {
         let (tx, rx) = oneshot::channel();
         state.callbacks.push_back((proposal, tx));
         Ok(rx)
-    }
-
-    /// Blocks until the state machine can be read such that all changes that
-    /// were commited before the time at which this was called have been
-    /// flushed to disk
-    /// TODO: Other consistency modes:
-    /// - For follower reads, it is usually sufficient to check for a
-    pub async fn linearizable_read(&self) -> Result<()> {
-        Ok(())
     }
 }
 
@@ -536,9 +562,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
         // TODO: Must ensure that wait_for_commit responses immediately if
         // it is already comitted
-        self.shared
-            .wait_for_commit(proposed_position.clone())
-            .await?;
+        self.shared.wait_for_commit(proposed_position.clone()).await;
 
         let state = shared.state.lock().await;
         let r = state.inst.proposal_status(&proposed_position);

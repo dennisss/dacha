@@ -22,6 +22,8 @@ struct State {
     /// TODO: Compress the sequences and LogPositions using a LogMetadata
     /// object.
     log: VecDeque<(Arc<LogEntry>, LogSequence)>,
+
+    last_flushed: LogSequence,
 }
 
 impl MemoryLog {
@@ -30,6 +32,7 @@ impl MemoryLog {
             state: Mutex::new(State {
                 prev: LogPosition::zero(),
                 log: VecDeque::new(),
+                last_flushed: LogSequence::zero(),
             }),
         }
     }
@@ -199,10 +202,24 @@ impl Log for MemoryLog {
     // durable
     async fn last_flushed(&self) -> LogSequence {
         // This doesn't support flushing.
-        LogSequence::zero()
+        let state = self.state.lock().await;
+        state.last_flushed
     }
 
     async fn flush(&self) -> Result<()> {
+        {
+            let state = self.state.lock().await;
+            if state.log.is_empty() {
+                return Ok(());
+            }
+        }
+
+        // TODO: Verify this doesn't ever crash.
+        let seq = self.entry(self.last_index().await).await.unwrap().1;
+
+        let mut state = self.state.lock().await;
+        state.last_flushed = seq;
+
         Ok(())
     }
 }

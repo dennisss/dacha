@@ -49,14 +49,6 @@ use redis::resp::*;
 // XXX: See https://github.com/etcd-io/etcd/blob/fa92397e182286125c72bf52d95f9f496f733bdf/raft/raft.go#L113 for more useful config parameters
 
 /*
-    In order to make a server, we must at least have a server id
-    - First and for-most, if there already exists a file on disk with metadata, then we should use that
-    - Otherwise, we must just block until we have a machine id by some other method
-        - If an existing cluster exists, then we will ask it to make a new cluster id
-        - Otherwise, the main() script must wait for someone to bootstrap us and give ourselves id 1
-*/
-
-/*
     Other scenarios
     - Server startup
         - Server always starts completely idle and in a mode that would reject external requests
@@ -80,7 +72,6 @@ use redis::resp::*;
         - Mainly to wake up the cycling thread so that it can
         - ^ This will always only have a single consumer so this may always be held as light weight as possibl
 
-
     TODO: Future optimization would be to also save the metadata into the log file so that we are only ever writing to one append-only file all the time
         - I think this is how etcd implements it as well
 */
@@ -97,6 +88,12 @@ use redis::resp::RESPString;
 impl redis::server::Service for RaftRedisServer {
     async fn get(&self, key: RESPString) -> Result<RESPObject> {
         let state_machine = &self.state_machine;
+
+        self.node
+            .server
+            .begin_read(true)
+            .await
+            .map_err(|_| err_msg("Not leader"))?;
 
         let val = state_machine.get(key.as_ref()).await;
 

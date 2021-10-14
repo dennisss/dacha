@@ -10,8 +10,6 @@ use crypto::random::RngExt;
 use protobuf::Message;
 
 use crate::atomic::*;
-use crate::log::log::*;
-use crate::log::log_metadata::LogSequence;
 use crate::log::simple_log::*;
 use crate::proto::consensus::*;
 use crate::proto::routing::*;
@@ -20,9 +18,9 @@ use crate::routing::discovery_client::DiscoveryClient;
 use crate::routing::discovery_server::DiscoveryServer;
 use crate::routing::route_channel::*;
 use crate::routing::route_store::RouteStore;
-use crate::server::channel_factory::*;
 use crate::server::server::*;
 use crate::server::state_machine::*;
+use crate::DiscoveryMulticast;
 
 /*
     Safety considerations:
@@ -35,20 +33,17 @@ use crate::server::state_machine::*;
 */
 
 /*
-    Other concerns:
-    - Making sure that the routes data always stays well saved on disk
-    - Won't change frequently though
+Recommended file structure.
 
-    - We will be making our own identity here though
-*/
+/
+    STATE <- Persistent raft state. Also marks that the group is created.
+    LOCK
+    CURRENT <- Pointer to the current snapshot.
+    log/...
+    snapshot-{...}/...
 
-/*
-TODO: If we are going to use a read index for performing a blind write operation, then we don't need need to do any waiting to acquire a read index.
-
-The basic discovery service:
-- Broadcast to all servers without any cluster id
-- Later we will filter routes by group id.
-- Most of it should fit within
+TODO: Properly document the order in which we need to start the RPC server for Raft
+- Shouldn't allow executing any Raft operations (like joining the cluster) until we have an RPC server (otherwise we can't participate in the cluster)
 
 */
 
@@ -78,13 +73,17 @@ pub struct Node<R> {
 impl<R: 'static + Send> Node<R> {
     // Ideally will produce a promise that generates a running node and then
     pub async fn start(config: NodeConfig<R>) -> Result<Arc<Node<R>>> {
-        // TODO: Verify that we never start up with snapshots that begin before
-        // the beginning of our log
-
         // Ideally an agent would encapsulate saving itself to disk via some file
         // somewhere
         // TODO: We shouldn't announce our local route until the server is running.
         let route_store = Arc::new(Mutex::new(RouteStore::new()));
+
+        let discovery_multicast = DiscoveryMulticast::create(route_store.clone()).await?;
+        task::spawn(async move {
+            if let Err(e) = discovery_multicast.run().await {
+                eprintln!("DiscoveryMulticase failure: {}", e);
+            }
+        });
 
         let discovery_client = DiscoveryClient::new(route_store.clone(), config.seed_list);
 
@@ -156,18 +155,6 @@ impl<R: 'static + Send> Node<R> {
         }
         // Otherwise we are starting a new server instance
         else {
-            // In general, we should never be creating state machine snapshots
-            // before persisting our core raft state as we use the group_id to
-            // ensure that the correct log is being used for the state machine
-            // Therefore if this does happen, then somehow the raft specific
-            // files were deleted leaving only the state machine
-            if config.last_applied > 0.into() {
-                panic!(
-                    "Can not trust already state machine data without \
-						corresponding metadata"
-                )
-            }
-
             // Cleanup any old partially written files
             // TODO: Log when this occurs
             config_builder.purge().await?;
@@ -282,11 +269,10 @@ impl<R: 'static + Send> Node<R> {
             initial_state.meta.meta().commit_index().value()
         );
 
-        let server = Server::new(channel_factory, initial_state).await;
+        let server = Server::new(channel_factory, initial_state).await?;
 
         // Start the RPC server.
         {
-            // TODO: We also need to add a DiscoveryService (DiscoveryServiceRouter)
             let mut rpc_server = ::rpc::Http2Server::new();
             rpc_server.add_service(DiscoveryServer::new(route_store.clone()).into_service())?;
             rpc_server.add_service(server.clone().into_service())?;
@@ -301,15 +287,11 @@ impl<R: 'static + Send> Node<R> {
             });
         }
 
-        // TODO: Support passing in a port (and maybe also an addr)
         task::spawn(server.clone().run());
 
         // TODO: this must start running earlier to support dynamic re-seeding during
         // startup proposals.
         task::spawn(discovery_client.run());
-
-        // TODO: If one node joins another cluster with one node, does the old leader of
-        // that cluster need to step down?
 
         // THe simpler way to think of this is (if not bootstrap mode and there are zero
         // ) But yeah, if we can get rid of the bootstrap caveat, then this i

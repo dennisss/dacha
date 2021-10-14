@@ -102,6 +102,15 @@ impl ServerIdentity {
                 .into());
             }
 
+            let from_id: ServerId = h
+                .parse::<u64>()
+                .map_err(|_| rpc::Status::invalid_argument("Invalid From id"))?
+                .into();
+
+            if from_id == self.server_id {
+                return Err(rpc::Status::invalid_argument("Sending request to self").into());
+            }
+
             // TODO: Consider exporting the from id this for internal metrics.
         }
 
@@ -140,13 +149,3 @@ impl ServerIdentity {
         Ok(())
     }
 }
-
-// pub struct ServerRequestRoutingContext {
-//     /// Whether or not the received request is known to be in the same
-// cluster     /// as us.
-//     pub verified_cluster: bool,
-
-//     /// Whether or not we can verify that the this server is the correct
-//     /// recipient of this request.
-//     pub verified_recipient: bool,
-// }

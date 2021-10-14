@@ -28,6 +28,18 @@ use crate::server::server_identity::ServerIdentity;
 use crate::server::state_machine::StateMachine;
 use crate::sync::*;
 
+/*
+TODO: While a machine is receiving a snapshot, it should still be able to receive new log entries to ensure that recovery is fast.
+
+TODO: For new log entries, we shouldn't need to acquire a lock to get the entries to populate the AppendEntries (given that we have them handy).
+
+TODO: I would like to manage how much memory is taken up by the in-memory log entries, but I should keep in mind that copying them for RPCs can take up more memory or prevent the existing memory references from being dropped.
+
+TODO: If we don't get a response due to missing a route, don't immediately tell the ConsensusModule as this may cause an immediate retry. Instead perform backoff.
+
+TODO: Regarding HTTP2 tuning, we should ideally reserve some space in the flow control to ensure that heartbeats can always be sent when we are overloaded due to AppendEntry requests.
+*/
+
 /// After this amount of time, we will assume that an rpc request has failed
 ///
 /// NOTE: This value doesn't matter very much, but the important part is that
@@ -44,6 +56,7 @@ pub struct ServerShared<R> {
 
     pub state: Mutex<ServerState<R>>,
 
+    /// Factory used for
     pub channel_factory: Arc<dyn ChannelFactory>,
 
     // /// Used for network message sending and connection management
@@ -76,6 +89,9 @@ pub struct ServerShared<R> {
     /// Last log index applied to the state machine
     /// This should only ever be modified by the separate applier thread
     pub last_applied: Condvar<LogIndex, LogIndex>,
+
+    ///
+    pub lease_start: Condvar<Option<Instant>, Instant>,
 }
 
 /// All the mutable state for the server that you hold a lock in order to look
@@ -87,6 +103,10 @@ pub struct ServerState<R> {
     pub meta_file: BlobFile,
     pub config_file: BlobFile,
 
+    /// Connections maintained by the leader to all followers for replicating
+    /// commands.
+    ///
+    /// TODO: Clean up this map if we are no longer leader.
     pub client_stubs: HashMap<ServerId, Arc<ConsensusStub>>,
 
     // TODO: Move the ChangeSenders out of the state now that we don't need a lock for them.
@@ -190,9 +210,6 @@ impl<R: Send + 'static> ServerShared<R> {
             // TODO: For a single node, we should almost never need to cycle
             // println!("Run cycler");
 
-            // TODO: There is no point in having a scheduled_cycle varialbe as it is never
-            // read in a meaningful way.
-
             let next_cycle = self.run_tick(Self::run_cycler_tick, ()).await;
 
             // TODO: Currently issue being that this gets run every single time
@@ -201,8 +218,6 @@ impl<R: Send + 'static> ServerShared<R> {
             // Cycles like this should generally only be for heartbeats or
             // replication events and nothing else
             // println!("Sleep {:?}", next_cycle);
-
-            // common::async_std::task::sleep(std::time::Duration::from_millis(2000)).await;
 
             state_changed.wait_until(next_cycle).await;
         }
@@ -351,15 +366,17 @@ impl<R: Send + 'static> ServerShared<R> {
             // operation of some type is proposed
 
             {
-                let state_machine = &self.state_machine;
-
                 // Apply all committed entries to state machine
                 while last_applied < commit_index {
                     let entry = self.log.entry(last_applied + 1).await;
                     if let Some((e, _)) = entry {
                         let ret = if let LogEntryDataTypeCase::Command(data) = e.data().type_case()
                         {
-                            match state_machine.apply(e.pos().index(), data.as_ref()).await {
+                            match self
+                                .state_machine
+                                .apply(e.pos().index(), data.as_ref())
+                                .await
+                            {
                                 Ok(v) => Some(v),
                                 Err(e) => {
                                     // TODO: Ideally notify everyone that all
@@ -430,18 +447,6 @@ impl<R: Send + 'static> ServerShared<R> {
                         break;
                     }
                 }
-
-                /*
-                let last_snapshot = match state_machine.snapshot() { Some(s) => s.last_applied, _ => 0 };
-                if last_applied - last_snapshot > 5 {
-                    // Notify the log of the snapshot
-                    // Actually will start much earlier
-                    //
-                }
-
-
-                drop(state_machine);
-                */
             }
 
             // Update last_applied
@@ -465,8 +470,7 @@ impl<R: Send + 'static> ServerShared<R> {
                     continue;
                 }
 
-                // term = 0, index = 0
-                guard.wait(LogPosition::default())
+                guard.wait(LogPosition::zero())
             };
 
             // Otherwise we will wait for it to change
@@ -474,13 +478,20 @@ impl<R: Send + 'static> ServerShared<R> {
         }
     }
 
-    /// Discards log entries which have been flushed to a
+    /// Discards log entries which have been persisted to a snapshot.
     ///
     /// TODO: Consider optimistically removing applied entries from memory but
     /// keep them on disk before they are added to a snapshot.
     pub async fn run_discarder(self: Arc<Self>) -> Result<()> {
         loop {
             let last_flushed = self.state_machine.last_flushed().await;
+            // self.log.discard(pos)
+
+            // {
+            //     let state = self.state.lock().await;
+            //     state.inst.log_discarded(prev)
+            // }
+
             // TODO: Discard in consensus module and in the log file.
 
             self.state_machine.wait_for_flush().await;
@@ -556,6 +567,17 @@ impl<R: Send + 'static> ServerShared<R> {
 
         if should_update_commit {
             self.update_commit_index(&state).await;
+        }
+
+        let lease_start = state.inst.lease_start();
+        {
+            // TODO: Do this without holding the ServerState lock.
+            // but we do need to ensure that it converges towards the final value.
+            let mut guard = self.lease_start.lock().await;
+            if *guard != lease_start {
+                *guard = lease_start;
+                guard.notify_all();
+            }
         }
 
         // TODO: In most cases it is not necessary to persist the config unless
@@ -650,16 +672,7 @@ impl<R: Send + 'static> ServerShared<R> {
         }
     }
 
-    /*
-    TODO: While a machine is receiving a snapshot, it should still be able to receive new log entries to ensure that recovery is fast.
-
-    TODO: For new log entries, we shouldn't need to acquire a lock to get the entries to populate the AppendEntries (given that we have them handy).
-
-    TODO: I would like to manage how much memory is taken up by the in-memory log entries, but I should keep in mind that copying them for RPCs can take up more memory or prevent the existing memory references from being dropped.
-
-    TODO: If we don't get a response due to missing a route, don't immediately tell the ConsensusModule as this may cause an immediate retry. Instead perform backoff.
-    */
-
+    /// Sends all requests
     fn dispatch_messages(
         self: Arc<Self>,
         messages: Vec<ConsensusMessage>,
@@ -703,11 +716,7 @@ impl<R: Send + 'static> ServerShared<R> {
                         // TODO: Must add the entries from the log here as the Consensus Module
                         // hasn't done that.
 
-                        append_entries.push(self.dispatch_append_entries(
-                            to_id.clone(),
-                            request,
-                            last_log_index.clone(),
-                        ));
+                        append_entries.push(self.dispatch_append_entries(to_id.clone(), request));
                     }
                     ConsensusMessageBody::RequestVote(ref req) => {
                         request_votes.push(self.dispatch_request_vote(to_id.clone(), req));
@@ -764,7 +773,6 @@ impl<R: Send + 'static> ServerShared<R> {
         self: &Arc<Self>,
         to_id: ServerId,
         req: &AppendEntriesRequest,
-        last_log_index: LogIndex,
     ) {
         let res = self.dispatch_append_entries_impl(to_id, req).await;
 
@@ -860,64 +868,53 @@ impl<R: Send + 'static> ServerShared<R> {
         }
     }
 
-    // Where will this still be useful: For environments where we just want to
-    // do a no-op or a change to the config but we don't really care about
-    // results
-
-    /// TODO: We must also be careful about when the commit index
-    /// Waits for some conclusion on a log entry pending committment
-    /// This can either be from it getting comitted or from it becomming never
-    /// comitted. A resolution occurs once a higher log index is comitted or a
-    /// higher term is comitted
-    pub async fn wait_for_commit(&self, pos: LogPosition) -> Result<()> {
+    /// Waits until a position in the log has been comitted (or we know for sure
+    /// that it will never be comitted).
+    ///
+    /// This is implemented by waiting until the commited index in cluster is
+    /// past the given index or we have comitted any log entry with a term
+    /// greater than the term of the given index.
+    ///
+    /// TODO: In order for this to always unblock in a bounded amount of time,
+    /// we must ensure the leader always adds a no-op entry at the beginning of
+    /// its term. Otherwise, if our local log contains many more entries than
+    /// the leader, we must wait for a real non-noop command to come in before
+    /// this unblocks.
+    pub async fn wait_for_commit(&self, pos: LogPosition) {
         loop {
             let waiter = {
                 let c = self.commit_index.lock().await;
 
                 if c.term().value() > pos.term().value() || c.index().value() >= pos.index().value()
                 {
-                    return Ok(());
+                    return;
                 }
 
-                // term = 0
-                // index = 0
-                let null_pos = LogPosition::zero();
-
-                c.wait(null_pos)
+                c.wait(LogPosition::zero())
             };
 
-            waiter.await; // TODO: Can this fail.
+            waiter.await;
         }
-
-        // TODO: Will we ever get a request to truncate the log without an
-        // actual committment? (either way it isn't binding to the future of
-        // this proposal until it actually comitted something that is in
-        // conflict with us)
     }
-
-    // TODO: wait_for_applied will basically end up mostly being absorbed into
-    // the callback system with the exception of
-
-    // NOTE: This is still somewhat relevant for blocking on a read index to be
-    // available
 
     /// Given a known to be comitted index, this waits until it is available in
     /// the state machine
+    ///
     /// NOTE: You should always first wait for an item to be comitted before
     /// waiting for it to get applied (otherwise if the leader gets demoted,
     /// then the wrong position may get applied)
-    pub async fn wait_for_applied(&self, pos: LogPosition) -> Result<()> {
+    pub async fn wait_for_applied(&self, index: LogIndex) {
         loop {
             let waiter = {
                 let app = self.last_applied.lock().await;
-                if *app >= pos.index() {
-                    return Ok(());
+                if *app >= index {
+                    return;
                 }
 
-                app.wait(pos.index())
+                app.wait(index)
             };
 
-            waiter.await; // TODO: Can this fail
+            waiter.await;
         }
     }
 }

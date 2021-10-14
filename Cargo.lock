@@ -640,6 +640,7 @@ dependencies = [
  "common",
  "http",
  "parsing",
+ "raft",
  "sstable",
 ]
 
@@ -1738,6 +1739,7 @@ dependencies = [
  "http",
  "libc",
  "macros",
+ "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
  "rpc",

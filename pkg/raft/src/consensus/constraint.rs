@@ -51,7 +51,6 @@ impl<T> FlushConstraint<T> {
                 } else {
                     // Otherwise, We will need to check for a proper match here
                     if log.last_flushed().await >= seq {
-                        // log.has_flushed_past(seq).await {
                         ConstraintPoll::Satisfied(self.inner)
                     } else {
                         // Not ready yet, reconstruct 'self' and expose the
