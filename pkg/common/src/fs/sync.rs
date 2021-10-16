@@ -86,6 +86,7 @@ impl SyncedPath {
     }
 }
 
+#[derive(Clone)]
 pub struct SyncedDirectory {
     file: Arc<File>,
     path: PathBuf,
@@ -99,9 +100,15 @@ impl SyncedDirectory {
     ///
     /// The childmost directory itself isn't synced.
     pub fn open(path: &Path) -> Result<Self> {
-        let file = Arc::new(std::fs::File::open(path)?.into());
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            PathBuf::from(std::env::current_dir()?).join(path)
+        };
 
-        let mut parent = path;
+        let file = Arc::new(std::fs::File::open(&path)?.into());
+
+        let mut parent = path.as_path();
         while let Some(path) = parent.parent() {
             let file = std::fs::File::open(path)?;
             file.sync_all()?; // fsync
@@ -109,10 +116,7 @@ impl SyncedDirectory {
             parent = path;
         }
 
-        Ok(Self {
-            file,
-            path: path.into(),
-        })
+        Ok(Self { file, path })
     }
 
     pub fn path<P: AsRef<Path>>(&self, relative_path: P) -> Result<SyncedPath> {

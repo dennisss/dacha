@@ -15,7 +15,7 @@ pub struct ConfigurationPending {
 /// Maintains the in-memory state of the configuration with the ability to roll
 /// back to the last comitted value of it in the case of log truncations
 pub struct ConfigurationStateMachine {
-    /// The active version of the configuation that should currently be used
+    /// The active version of the configuration that should currently be used.
     pub value: Configuration,
 
     /// Index of the last log entry applied to this configuration

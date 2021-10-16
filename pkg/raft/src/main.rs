@@ -39,6 +39,9 @@ use redis::resp::*;
 
     - In order to beat the 'set' benchmark, we must demonstrate efficient pipelining of all the concurrent requests to append an entry
         -
+
+    Command for testing:
+    - redis-cli -p 5001
 */
 
 /*
@@ -77,7 +80,7 @@ use redis::resp::*;
 */
 
 struct RaftRedisServer {
-    node: Arc<Node<KeyValueReturn>>,
+    server: raft::Server<KeyValueReturn>,
     state_machine: Arc<MemoryKVStateMachine>,
 }
 
@@ -89,8 +92,7 @@ impl redis::server::Service for RaftRedisServer {
     async fn get(&self, key: RESPString) -> Result<RESPObject> {
         let state_machine = &self.state_machine;
 
-        self.node
-            .server
+        self.server
             .begin_read(true)
             .await
             .map_err(|_| err_msg("Not leader"))?;
@@ -107,16 +109,13 @@ impl redis::server::Service for RaftRedisServer {
 
     // TODO: What is the best thing to do on errors?
     async fn set(&self, key: RESPString, value: RESPString) -> Result<RESPObject> {
-        let state_machine = &self.state_machine;
-        let node = &self.node;
-
         let mut op = KeyValueOperation::default();
         op.set_mut().set_key(key.as_ref().to_vec());
         op.set_mut().set_value(value.as_ref().to_vec());
 
         let op_data = op.serialize()?;
 
-        node.server
+        self.server
             .execute(op_data)
             .await
             .map_err(|e| format_err!("SET failed with error: {:?}", e))?;
@@ -128,15 +127,12 @@ impl redis::server::Service for RaftRedisServer {
         // TODO: This requires knowledge of how many keys were actually deleted
         // (for the case of non-existent keys)
 
-        let state_machine = &self.state_machine;
-        let node = &self.node;
-
         let mut op = KeyValueOperation::default();
         op.delete_mut().set_key(key.as_ref().to_vec());
 
         let op_data = op.serialize()?;
 
-        let res = node
+        let res = self
             .server
             .execute(op_data)
             .await
@@ -222,8 +218,9 @@ async fn main_task() -> Result<()> {
     let state_machine = Arc::new(MemoryKVStateMachine::new());
     let last_applied = LogIndex::from(0);
 
-    let node = Node::start(NodeConfig {
+    let node = Node::create(NodeOptions {
         dir: lock,
+        init_port: 4000,
         bootstrap: args.bootstrap,
         seed_list,
         state_machine: state_machine.clone(),
@@ -232,31 +229,24 @@ async fn main_task() -> Result<()> {
     .await?;
 
     let client_server = Arc::new(redis::server::Server::new(RaftRedisServer {
-        node: node.clone(),
+        server: node.server(),
         state_machine: state_machine.clone(),
     }));
 
-    let port = 5000 + node.id.value();
+    let mut tasks = common::bundle::TaskResultBundle::new();
 
-    let client_task = redis::server::Server::start(client_server.clone(), port as u16);
+    let raft_port = 4000 + node.id().value();
+    let client_port = 5000 + node.id().value();
 
-    client_task.await?;
+    tasks.add("raft::Node", node.run(raft_port as u16));
+    tasks.add(
+        "redis::Server",
+        redis::server::Server::run(client_server.clone(), client_port as u16),
+    );
 
-    Ok(())
+    tasks.join().await
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(main_task().map_err(|e| {
-        eprintln!("{:?}", e);
-        ()
-    }))
-    .ok();
-
-    // This is where we would perform anything needed to manage regular client
-    // requests (and utilize the server handle to perform operations)
-    // Noteably we want to respond to clients with nice responses telling them
-    // specifically if we are not the actual leader and can't actually fulfill
-    // their requests
-
-    Ok(())
+    common::async_std::task::block_on(main_task())
 }

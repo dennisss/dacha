@@ -244,7 +244,7 @@ where
         }
     }
 
-    pub async fn start(inst: Arc<Self>, port: u16) -> Result<()> {
+    pub async fn run(inst: Arc<Self>, port: u16) -> Result<()> {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
 
         let mut incoming = listener.incoming();

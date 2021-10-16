@@ -377,13 +377,20 @@ impl ConsensusModule {
     ///
     /// NOTE: It is only valid for this to be called on the leader. If we aren't
     /// the leader, this will return an error.
-    pub fn read_index(&self, time: Instant) -> std::result::Result<ReadIndex, NotLeaderError> {
+    pub fn read_index(&self, mut time: Instant) -> std::result::Result<ReadIndex, NotLeaderError> {
         match &self.state {
-            ConsensusState::Leader(s) => Ok(ReadIndex {
-                term: self.meta.current_term(),
-                index: s.read_index,
-                time,
-            }),
+            ConsensusState::Leader(s) => {
+                // In the case of a single node cluster, we shouldn't need to wait.
+                if self.config.value.members_len() == 1 {
+                    time = s.lease_start;
+                }
+
+                Ok(ReadIndex {
+                    term: self.meta.current_term(),
+                    index: s.read_index,
+                    time,
+                })
+            }
             ConsensusState::Follower(s) => Err(NotLeaderError {
                 leader_hint: s.last_leader_id.clone(),
             }),
@@ -847,7 +854,7 @@ impl ConsensusModule {
             }
             ConsensusState::Leader(state) => {
                 let next_commit_index = self.find_next_commit_index(state);
-                let next_lease_start = self.find_next_least_start(state);
+                let next_lease_start = self.find_next_lease_start(state);
 
                 if let Some(ci) = next_commit_index {
                     //println!("Commiting up to: {}", ci);
@@ -915,7 +922,7 @@ impl ConsensusModule {
 
     /// On the leader, this will find the best value for the next commit index
     /// if any is currently possible
-    ///
+    //
     /// TODO: Optimize this. We should be able to do this in ~O(num members)
     fn find_next_commit_index(&self, s: &ConsensusLeaderState) -> Option<LogIndex> {
         if self.log_meta.last().position.index() == self.meta.commit_index() {
@@ -980,7 +987,7 @@ impl ConsensusModule {
     */
 
     /// Finds the latest local time at which we know that we are the leader
-    fn find_next_least_start(&self, s: &ConsensusLeaderState) -> Instant {
+    fn find_next_lease_start(&self, s: &ConsensusLeaderState) -> Instant {
         let mut majority = self.majority_size();
         if self.config.value.members().contains(&self.id) {
             majority -= 1;
@@ -1259,7 +1266,6 @@ impl ConsensusModule {
             (off.position.index(), off.position.term())
         };
 
-        //
         let mut req = RequestVoteRequest::default();
         req.set_request_id(request_id);
         req.set_term(self.meta.current_term());

@@ -37,19 +37,28 @@ use crate::sync::*;
     - TODO: In the case that our log or snapshot gets corrupted, we want some integrated way to automatically repair from another node without having to do a full clean erase and reapply
         - NOTE: Because this may destroy our quorum, we may want to allow configuring for a minimum of quorum + 1 or something like that for new changes
             - Or enforce a durability level for old and aged entries
-*/
 
+    Outgoing RPC optimizations:
+    - Whenever the term changes, we can cancel all old outgoing RPCs.
+*/
 /*
-    Other scenarios:
-    - Ticks may be cumulative
-    - AKA use a single tick objectict to accumulate multiple changes to the metadata and to messages that must be sent out
-    - With messages, we want some method of telling the ConsensusModule to defer generating messages until everything is said and done (to avoid the situation of creating multiple messages where the initial ones could be just not sent given future information processed by the module)
+    NOTE: LogCabin adds various small additions offer the core protocol in the paper:
+    - https://github.com/logcabin/logcabin/blob/master/Protocol/Raft.proto#L126
+    - Some being:
+        - Full generic configuration changes (not just for one server at a time)
+        - System time information/synchronization happens between the leader and followers (and propagates to the clients connected to them)
+        - The response to AppendEntries contains the last index of the log on the follower (so that we can help get followers caught up if needed)
 
-    - This would require that
+    - XXX: We will probably not deal with these are these are tricky to reason about in general
+        - VoteFor <- Could be appended only locally as a way of updating the metadata without editing the metadata file (naturally we will ignore seeing these over the wire as these will )
+            - Basically we are maintaining two state machines (one is the regular one and one is the internal one holding a few fixed values)
+        - ObserveTerm <- Whenever the
 */
-
-// TODO: Would also be nice to have some warning of when a disk operation is
-// required to read back an entry as this is generally a failure on our part
+/*
+    TODO: Other optimization
+    - For very old well commited logs, a learner can get them from a follower rather than from the leader to avoid overloading the leader
+    - Likewise this can be used for spreading out replication if the cluster is sufficiently healthy
+*/
 
 #[derive(Debug)]
 #[must_use]
@@ -59,20 +68,8 @@ pub enum ExecuteError {
     /*
         Other errors
     */
-    /* Also possibly that it just plain old failed to be committed */
 }
 
-/*
-Requirements:
-- Usually, I will never need to contact the log for AppendEntries requests as I can forward them
-- At least everything since the last commited index should stay in memory.
-- Although the user may want to have a few more in memory to apply asychronously to the state machine.
-
-- The consensus module must know about all entries available in memory
-
-Expose a discard() on the Consensus Module so that it can
-
-*/
 // TODO: While Raft has no requirements on message ordering, we should try to
 // ensure that all AppendEntriesRequests are send to remote servers in order as
 // it is inefficient to process them out of order.
@@ -85,6 +82,21 @@ Expose a discard() on the Consensus Module so that it can
 //   server processes them in order (but before we wait for metadata to be
 //   flushed, we should yield to start processing another AppendEntries
 //   request.)
+/*
+    Upon losing our position as leader, callbacks may still end up being applied
+    - But if multiple election timeouts pass without a callback making any progress (aka we are no longer the leader and don't can't communicate with the current leader), then callbacks should be timed out
+*/
+
+/*
+    Maintaining client liveness
+    - Registered callback will be canceled after 4 election average election cycles have passed:
+        - As a leader, we received a quorum of followers
+        - Or we as a follow reached the leader
+        - This is to generally meant to cancel all active requests once we lose liveness of the majority of the servers
+
+    We want a lite-wait way to start up arbitrary commands that don't require a return value from the state machine
+        - Also useful for
+*/
 
 /// Represents everything needed to start up a Server object
 ///
@@ -203,6 +215,10 @@ impl<R: Send + 'static> Server<R> {
         if meta.meta().commit_index() > log.last_index().await {
             // This may occur on a leader that has not flushed itself before
             // committing an in-memory entry to followers
+
+            // TODO: In this case, how do we recover the log?
+            // Unless the state machine also stores the term, we can't recover
+            // the log?
         }
 
         let inst = ConsensusModule::new(
@@ -262,6 +278,7 @@ impl<R: Send + 'static> Server<R> {
     }
 
     pub async fn join_group(&self) -> Result<()> {
+        // TODO: Instead become a learner first and promote later.
         let mut request = ProposeRequest::default();
         request
             .data_mut()
@@ -269,6 +286,9 @@ impl<R: Send + 'static> Server<R> {
             .set_AddMember(self.shared.identity.server_id);
         request.set_wait(false);
 
+        // TODO: We can stop trying to join the group early if we get a log entry
+        // replicated from the leader (possibly due to us not noticing that a previous
+        // failed proposal attempt actually succeeded.)
         let res = crate::server::bootstrap::propose_entry(
             self.shared.identity.group_id,
             self.shared.channel_factory.as_ref(),
@@ -281,28 +301,9 @@ impl<R: Send + 'static> Server<R> {
         Ok(())
     }
 
-    /*
-        Upon losing our position as leader, callbacks may still end up being applied
-        - But if multiple election timeouts pass without a callback making any progress (aka we are no longer the leader and don't can't communicate with the current leader), then callbacks should be timed out
-    */
-
-    /*
-        Maintaining client liveness
-        - Registered callback will be canceled after 4 election average election cycles have passed:
-            - As a leader, we received a quorum of followers
-            - Or we as a follow reached the leader
-            - This is to generally meant to cancel all active requests once we lose liveness of the majority of the servers
-
-        - Other callbacks
-            - wait_for_match
-                - Mainly just needed to know when a response can be sent out to an AppendEntries request
-            - wait_for_commit
-                - Must be cancelable by the same conditions as the callbacks
-
-
-        We want a lite-wait way to start up arbitrary commands that don't require a return value from the state machine
-            - Also useful for
-    */
+    pub fn identity(&self) -> &ServerIdentity {
+        &self.shared.identity
+    }
 
     /// Blocks until the local state machine contains at least all committed
     /// values as of the start time of calling ::begin_read().
@@ -321,7 +322,8 @@ impl<R: Send + 'static> Server<R> {
             state.inst.read_index(time)?
         };
 
-        // Trigger heartbeat to run (subject to batching or priority).
+        // Trigger heartbeat to run
+        // TODO: Batch this for non-critical requests.
         if !optimistic {
             self.shared
                 .run_tick(

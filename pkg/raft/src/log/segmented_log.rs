@@ -112,6 +112,10 @@ impl SegmentedLog {
     pub async fn open<P: AsRef<Path>>(dir: P, max_segment_size: u64) -> Result<Self> {
         let dir_path = dir.as_ref();
 
+        if !dir_path.exists().await {
+            common::async_std::fs::create_dir(dir_path).await?;
+        }
+
         // List of files read from disk. Each entry is a tuple of (log_number, PathBuf)
         let mut files = vec![];
         {

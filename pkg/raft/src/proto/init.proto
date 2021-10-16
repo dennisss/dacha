@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+// Service that runs on uninitialized servers before a server identity is established.
+service ServerInit {
+    // Called once on the first server in a cluster to initialize the cluster.
+    rpc Bootstrap (BootstrapRequest) returns (BootstrapResponse);
+}
+
+message BootstrapRequest {}
+
+message BootstrapResponse {}
