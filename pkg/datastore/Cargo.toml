@@ -7,5 +7,12 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 http = { path = "../http" }
+rpc = { path = "../rpc" }
 parsing = { path = "../parsing" }
 sstable = { path = "../sstable" }
+raft = { path = "../raft" }
+protobuf = { path = "../protobuf" }
+macros = { path = "../macros" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../protobuf_compiler" }

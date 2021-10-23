@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use common::async_std::channel;
+use common::bytes::Bytes;
 use common::errors::*;
 use http::Body;
 
@@ -37,12 +38,20 @@ impl<T: protobuf::Message> std::ops::Deref for ServerRequest<T> {
 }
 
 pub struct ServerStreamRequest<T> {
-    pub(crate) request_body: Box<dyn Body>,
-    pub(crate) context: ServerRequestContext,
-    pub(crate) phantom_t: PhantomData<T>,
+    request_body: Box<dyn Body>,
+    context: ServerRequestContext,
+    phantom_t: PhantomData<T>,
 }
 
 impl ServerStreamRequest<()> {
+    pub(crate) fn new(request_body: Box<dyn Body>, context: ServerRequestContext) -> Self {
+        Self {
+            request_body,
+            context,
+            phantom_t: PhantomData,
+        }
+    }
+
     pub fn into<T: protobuf::Message>(self) -> ServerStreamRequest<T> {
         ServerStreamRequest {
             request_body: self.request_body,
@@ -72,11 +81,20 @@ impl ServerStreamRequest<()> {
     }
 }
 
+impl<T> ServerStreamRequest<T> {
+    pub fn context(&self) -> &ServerRequestContext {
+        &self.context
+    }
+
+    pub async fn recv_bytes(&mut self) -> Result<Option<Bytes>> {
+        let mut message_reader = MessageReader::new(self.request_body.as_mut());
+        message_reader.read().await
+    }
+}
+
 impl<T: protobuf::Message> ServerStreamRequest<T> {
     pub async fn recv(&mut self) -> Result<Option<T>> {
-        let mut message_reader = MessageReader::new(self.request_body.as_mut());
-
-        let data = message_reader.read().await?;
+        let data = self.recv_bytes().await?;
 
         let message = {
             if let Some(data) = data {
@@ -146,13 +164,8 @@ impl<'a> ServerStreamResponse<'a, ()> {
     }
 }
 
-impl<'a, T: protobuf::Message> ServerStreamResponse<'a, T> {
-    /// Enqueue a single message to be sent back to the client.
-    ///
-    /// Once the first message is enqueued, you can no longer append any head
-    /// metadata. NOTE: This will block based on connection level flow
-    /// control.
-    pub async fn send(&mut self, message: T) -> Result<()> {
+impl<'a, T> ServerStreamResponse<'a, T> {
+    pub(crate) async fn send_bytes(&mut self, data: Bytes) -> Result<()> {
         if !*self.head_sent {
             *self.head_sent = true;
             // TODO: Make this more efficient?
@@ -163,7 +176,6 @@ impl<'a, T: protobuf::Message> ServerStreamResponse<'a, T> {
                 .await?;
         }
 
-        let data = message.serialize()?;
         self.sender
             .send(ServerStreamResponseEvent::Message(data))
             .await?;
@@ -171,8 +183,20 @@ impl<'a, T: protobuf::Message> ServerStreamResponse<'a, T> {
     }
 }
 
+impl<'a, T: protobuf::Message> ServerStreamResponse<'a, T> {
+    /// Enqueue a single message to be sent back to the client.
+    ///
+    /// Once the first message is enqueued, you can no longer append any head
+    /// metadata. NOTE: This will block based on connection level flow
+    /// control.
+    pub async fn send(&mut self, message: T) -> Result<()> {
+        let data = message.serialize()?;
+        self.send_bytes(data.into()).await
+    }
+}
+
 pub(crate) enum ServerStreamResponseEvent {
     Head(Metadata),
-    Message(Vec<u8>),
+    Message(Bytes),
     Trailers(Result<()>, Metadata),
 }

@@ -1,3 +1,4 @@
+mod backup;
 mod db;
 #[cfg(test)]
 mod db_test;

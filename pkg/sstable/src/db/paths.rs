@@ -8,6 +8,7 @@ use common::fs::sync::*;
 use common::futures::AsyncReadExt;
 
 /// Accessor for all file paths contained within a database directory.
+#[derive(Clone)]
 pub struct FilePaths {
     root_dir: SyncedDirectory,
 }

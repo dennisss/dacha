@@ -14,6 +14,8 @@ extern crate http;
 extern crate nix;
 extern crate protobuf;
 extern crate sstable;
+#[macro_use]
+extern crate failure;
 
 #[macro_use]
 extern crate macros;
@@ -23,14 +25,19 @@ pub mod proto;
 
 pub mod atomic;
 mod consensus;
+mod leader_service;
 pub mod log;
 pub mod node;
 pub mod routing;
 pub mod server;
 mod sync;
 
+pub use consensus::module::{NotLeaderError, ProposeError};
+pub use leader_service::LeaderServiceWrapper;
 pub use log::log::Log;
 pub use log::segmented_log::SegmentedLog;
+pub use node::{Node, NodeOptions};
+pub use proto::consensus::LogIndex;
 pub use routing::discovery_client::DiscoveryClient;
 pub use routing::discovery_server::DiscoveryServer;
 pub use routing::multicast::DiscoveryMulticast;

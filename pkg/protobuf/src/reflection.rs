@@ -132,6 +132,7 @@ impl<T: Reflect + Default> Reflect for Option<T> {
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
         if !self.is_some() {
+            // TODO: If an explicit default value is available, we should use that instead.
             *self = Some(T::default());
         }
 

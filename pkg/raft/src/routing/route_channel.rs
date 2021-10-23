@@ -61,6 +61,8 @@ impl RouteChannel {
             }
         }
 
+        // TODO: We need a good mechanism for retrying this (especially based on
+        // feedback from RouteChannel changes).
         let channel = current_channel
             .as_ref()
             .ok_or_else(|| rpc::Status::cancelled("No route to server"))?;

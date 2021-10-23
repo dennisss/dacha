@@ -20,9 +20,9 @@ extern crate protobuf_compiler;
 
 mod bytes;
 mod collections;
+pub mod dynamic;
 mod proto;
 pub mod reflection;
-pub mod service;
 pub mod text;
 pub mod wire;
 
@@ -37,6 +37,8 @@ pub use protobuf_compiler::spec::FieldNumber;
 // NOTE: Construct an empty proto by calling MessageType::default()
 // Clone + std::fmt::Debug + std::default::Default + MessageReflection
 pub trait Message: 'static + Send + Sync {
+    fn type_url(&self) -> &'static str;
+
     // NOTE: This will append values to
     fn parse(data: &[u8]) -> Result<Self>
     where

@@ -251,11 +251,7 @@ impl Readable for RequestBody {
                 Err(_) => {
                     // The sender was dropped before the None (end of stream indicator) was sent
                     // so we'll consider this to be an incomplete stream and inform the other side.
-                    return Err(Status {
-                        code: StatusCode::Cancelled,
-                        message: String::new(),
-                    }
-                    .into());
+                    return Err(Status::cancelled("").into());
                 }
             }
         }

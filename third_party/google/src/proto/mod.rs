@@ -28,3 +28,41 @@ pub mod timestamp {
         }
     }
 }
+
+pub mod any {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/any.rs"));
+
+    impl Any {
+        pub fn unpack<T: protobuf::Message + Default>(&self) -> Result<Option<T>> {
+            let mut v = T::default();
+            if self.type_url() != v.type_url() {
+                return Ok(None);
+            }
+
+            v.parse_merge(self.value())?;
+            Ok(Some(v))
+        }
+
+        pub fn pack_from(&mut self, message: &dyn protobuf::Message) -> Result<()> {
+            self.set_type_url(message.type_url());
+            self.set_value(message.serialize()?);
+            Ok(())
+        }
+    }
+}
+
+pub mod rpc {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/rpc.rs"));
+}
+
+pub mod wrappers {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/wrappers.rs"));
+}
+
+pub mod empty {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/empty.rs"));
+}
+
+pub mod descriptor {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/descriptor.rs"));
+}

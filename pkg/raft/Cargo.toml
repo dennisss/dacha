@@ -16,6 +16,8 @@ google = { path = "../../third_party/google" }
 fs2 = "0.4.3"
 libc = "0.2"
 async-std = "1.9.0"
+nix = "0.21.0"
+failure = "0.1.8"
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

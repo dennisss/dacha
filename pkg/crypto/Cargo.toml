@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
+[lib]
+doctest = false
+
 [dependencies]
 macros = { path = "../macros" }
 asn = { path = "../asn" }

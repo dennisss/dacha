@@ -60,4 +60,4 @@ members = [
 lto = true
 opt-level = 3 
 panic = 'abort'
-# debug = true
+debug = true

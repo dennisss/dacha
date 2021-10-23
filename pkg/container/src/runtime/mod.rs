@@ -358,6 +358,8 @@ impl ContainerRuntime {
         // NOTE: Because this contains the user that runs the main container_node
         // process, we should never give the user CAP_SETUID in this namespace.
         {
+            // TODO: Create a helper for copying files.
+
             let uid_map = async_std::fs::read_to_string("/proc/self/uid_map").await?;
             let gid_map = async_std::fs::read_to_string("/proc/self/gid_map").await?;
 

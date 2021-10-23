@@ -25,6 +25,7 @@ use crate::status::*;
 pub struct Http2Server {
     handler: Http2ResponseHandler,
     shutdown_token: Option<Box<dyn CancellationToken>>,
+    start_callbacks: Vec<Box<dyn Fn() + 'static>>,
 }
 
 impl Http2Server {
@@ -34,6 +35,7 @@ impl Http2Server {
                 services: HashMap::new(),
             },
             shutdown_token: None,
+            start_callbacks: vec![],
         }
     }
 
@@ -47,15 +49,25 @@ impl Http2Server {
         Ok(())
     }
 
+    pub fn add_start_callback<F: Fn() + 'static>(&mut self, callback: F) {
+        self.start_callbacks.push(Box::new(callback));
+    }
+
     pub fn set_shutdown_token(&mut self, token: Box<dyn CancellationToken>) {
         self.shutdown_token = Some(token);
     }
 
     pub fn run(mut self, port: u16) -> impl Future<Output = Result<()>> + 'static {
-        // TODO: Force usage of HTTP2.
-        let mut server = http::Server::new(self.handler, http::ServerOptions::default());
+        let mut options = http::ServerOptions::default();
+        options.force_http2 = true;
+
+        let mut server = http::Server::new(self.handler, options);
         if let Some(token) = self.shutdown_token.take() {
             server.set_shutdown_token(token);
+        }
+
+        while let Some(callback) = self.start_callbacks.pop() {
+            callback();
         }
 
         server.run(port)
@@ -100,11 +112,7 @@ impl Http2ResponseHandler {
             // TODO: Return an rpc::Status
             .ok_or(format_err!("Unknown service named: {}", path_parts[1]))?;
 
-        let request = ServerStreamRequest {
-            request_body: request.body,
-            context: request_context,
-            phantom_t: PhantomData,
-        };
+        let request = ServerStreamRequest::new(request.body, request_context);
 
         let (response_sender, response_receiver) = channel::bounded(2);
 
@@ -268,10 +276,7 @@ impl Readable for ResponseBody {
                             eprintln!("RPC Error: {:?}", error);
                             let status = match error.downcast_ref::<Status>() {
                                 Some(s) => s.clone(),
-                                None => Status {
-                                    code: crate::StatusCode::Internal,
-                                    message: "Internal error occured".into(),
-                                },
+                                None => Status::internal("Internal error occured"),
                             };
 
                             status.append_to_headers(&mut trailers)?;

@@ -1,3 +1,53 @@
+
+Settings up headless Raspberry Pi
+
+Based on https://www.raspberrypi.org/documentation/configuration/wireless/headless.md
+
+Place a `wpa_supplicant.conf` in the root of the boot partition. Should contain contents like:
+
+```
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+country=US
+update_config=1
+
+network={
+ ssid="<Name of your wireless LAN>"
+ psk="<Password for your wireless LAN>"
+}
+```
+
+Based on https://www.raspberrypi.org/documentation/remote-access/ssh/README.md
+- Place an empty file named `ssh` into the root of the boot partition.
+
+TODO: Later try https://pibakery.org/download.html
+
+Run sudo `raspi-config` and go to `6 Advanced Options` to run `A1 Expand Filesystem`
+
+`sudo apt install python3-gpiozero`
+
+My fan connection:
+- PWM0 output on GPIO 12
+   - GPIO/BCM pin 12
+   - Alt0
+- Tachometer input in GPIO 6
+
+
+The `cross` tool exists to cross compile:
+- https://github.com/rust-embedded/cross
+- `cargo install cross`
+- `cross build --target=armv7-unknown-linux-gnueabihf`
+- Useful guide: https://capnfabs.net/posts/cross-compiling-rust-apps-raspberry-pi/
+
+
+MMAL header
+- https://github.com/raspberrypi/userland/blob/master/interface/mmal/mmal.hs
+- Headers in /opt/vc/include/interface/mmal
+
+
+Bindgen dependenceies:
+- `apt install llvm-dev libclang-dev clang`
+
+
 Fan
 ```
 import gpiozero

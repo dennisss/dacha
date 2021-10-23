@@ -2,22 +2,22 @@
 extern crate common;
 extern crate http;
 extern crate protobuf;
-
 #[macro_use]
 extern crate macros;
-
 #[macro_use]
 extern crate regexp_macros;
 extern crate automata;
-
 #[macro_use]
 extern crate failure;
+extern crate google;
 
 mod channel;
 mod client_types;
 mod constants;
 mod message;
 mod metadata;
+mod pipe;
+pub mod proto;
 mod server;
 mod server_types;
 mod service;
@@ -29,5 +29,6 @@ pub use service::Service;
 
 pub use client_types::*;
 pub use metadata::Metadata;
+pub use pipe::pipe;
 pub use server_types::*;
 pub use status::*;

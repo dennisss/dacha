@@ -153,3 +153,4 @@ message Any {
   // Must be a valid serialized protocol buffer of the above specified type.
   bytes value = 2;
 }
+

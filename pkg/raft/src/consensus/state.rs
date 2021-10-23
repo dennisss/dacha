@@ -20,6 +20,9 @@ pub struct ConsensusFollowerState {
     /// Id of the last leader we have been pinged by. Used to cache the location
     /// of the current leader for the sake of proxying requests and client
     /// hinting.
+    ///
+    /// If this is set, then the specified server is known to the leader in the
+    /// current term.
     pub last_leader_id: Option<ServerId>,
 
     /// Last time we received a message from the leader (or when we first

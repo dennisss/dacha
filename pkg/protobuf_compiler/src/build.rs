@@ -1,4 +1,4 @@
-use crate::compiler::Compiler;
+use crate::compiler::{Compiler, CompilerOptions};
 use crate::syntax::parse_proto;
 use common::errors::*;
 use std::env;
@@ -8,6 +8,10 @@ use std::path::PathBuf;
 // TODO: Most of this code is identical across the different implements and
 // could probably be refactored out!!
 pub fn build() -> Result<()> {
+    build_with_options(CompilerOptions::default())
+}
+
+pub fn build_with_options(options: CompilerOptions) -> Result<()> {
     // NOTE: This must be the root path of the package (containing the Cargo.toml
     // and build.rs).
     let input_dir = env::current_dir()?;
@@ -21,14 +25,6 @@ pub fn build() -> Result<()> {
     let mut input_paths: Vec<PathBuf> = vec![];
 
     let current_package_name = input_dir.file_name().unwrap().to_str().unwrap();
-
-    let runtime_package = {
-        if current_package_name == "protobuf" {
-            "crate"
-        } else {
-            "::protobuf"
-        }
-    };
 
     common::fs::recursively_list_dir(&input_dir.join("src"), &mut |entry: &DirEntry| {
         if entry
@@ -63,7 +59,7 @@ pub fn build() -> Result<()> {
 
         std::fs::create_dir_all(output_path.parent().unwrap())?;
 
-        let output = Compiler::compile(&desc, current_package_name, runtime_package)?;
+        let output = Compiler::compile(&desc, current_package_name, &options)?;
         std::fs::write(output_path, output)?;
     }
 

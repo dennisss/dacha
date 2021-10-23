@@ -8,6 +8,7 @@ use common::errors::*;
 use common::line_builder::*;
 
 use crate::spec::*;
+use crate::tokenizer::serialize_str_lit;
 
 // TODO: Lets not forget to serialize and parse unknown fields as well.
 
@@ -43,6 +44,21 @@ use crate::spec::*;
     - Check for
 */
 
+#[derive(Clone)]
+pub struct CompilerOptions {
+    pub runtime_package: String,
+    pub rpc_package: String,
+}
+
+impl Default for CompilerOptions {
+    fn default() -> Self {
+        Self {
+            runtime_package: "::protobuf".into(),
+            rpc_package: "::rpc".into(),
+        }
+    }
+}
+
 // Roughly similar to the descriptor database in the regular protobuf library
 // Stores all parsed .proto files currently loaded
 struct DescriptorDatabase {
@@ -74,8 +90,9 @@ pub struct Compiler<'a> {
 
     imported_protos: Vec<ImportedProto>,
 
-    // TODO: Will also need a DescriptorDatabase to look up items in other files
-    runtime_package: String,
+    options: CompilerOptions, /* TODO: Will also need a DescriptorDatabase to look up items in
+                               * other files runtime_package:
+                               * String */
 }
 
 /*
@@ -174,11 +191,15 @@ struct CompiledOneOf {
 }
 
 impl Compiler<'_> {
-    pub fn compile(desc: &Proto, current_package: &str, runtime_package: &str) -> Result<String> {
+    pub fn compile(
+        desc: &Proto,
+        current_package: &str,
+        options: &CompilerOptions,
+    ) -> Result<String> {
         let mut c = Compiler {
             outer: String::new(),
             proto: desc,
-            runtime_package: runtime_package.to_owned(),
+            options: options.clone(),
             imported_protos: vec![],
         };
 
@@ -186,10 +207,15 @@ impl Compiler<'_> {
         c.outer += "use std::sync::Arc;\n";
         c.outer += "use common::errors::*;\n";
         c.outer += "use common::const_default::ConstDefault;\n";
-        write!(c.outer, "use {}::*;\n", c.runtime_package).unwrap();
-        write!(c.outer, "use {}::wire::*;\n", c.runtime_package).unwrap();
-        write!(c.outer, "use {}::service::*;\n", c.runtime_package).unwrap();
-        write!(c.outer, "use {}::reflection::*;\n", c.runtime_package).unwrap();
+        write!(c.outer, "use {}::*;\n", c.options.runtime_package).unwrap();
+        write!(c.outer, "use {}::wire::*;\n", c.options.runtime_package).unwrap();
+        // write!(c.outer, "use {}::service::*;\n", c.options.runtime_package).unwrap();
+        write!(
+            c.outer,
+            "use {}::reflection::*;\n",
+            c.options.runtime_package
+        )
+        .unwrap();
 
         // TODO: Have an in-process cache for reading imported descriptors from disk.
         for import in &desc.imports {
@@ -284,7 +310,7 @@ impl Compiler<'_> {
         Ok(c.outer)
     }
 
-    fn resolve(&self, name_str: &str, mut path: TypePath) -> Option<ResolvedType> {
+    fn resolve(&self, name_str: &str, path: TypePath) -> Option<ResolvedType> {
         let name = name_str.split('.').collect::<Vec<_>>();
         if name[0] == "" {
             panic!("Absolute paths currently not supported");
@@ -295,9 +321,11 @@ impl Compiler<'_> {
             package_path.pop();
         }
 
+        package_path.extend(path);
+
+        let mut current_prefix = &package_path[..];
         loop {
-            let mut fullname = package_path.clone();
-            fullname.extend_from_slice(&path);
+            let mut fullname = current_prefix.to_vec();
             fullname.extend_from_slice(&name);
 
             let t = self.proto.resolve(&fullname);
@@ -314,12 +342,12 @@ impl Compiler<'_> {
                 }
             }
 
-            if path.len() == 0 {
+            if current_prefix.len() == 0 {
                 break;
             }
 
             // For path 'x.y.z', try 'x.y' next time.
-            path = &path[0..(path.len() - 1)];
+            current_prefix = &current_prefix[0..(current_prefix.len() - 1)];
         }
 
         None
@@ -376,7 +404,7 @@ impl Compiler<'_> {
             match i {
                 EnumBodyItem::Option(_) => {}
                 EnumBodyItem::Field(f) => {
-                    if f.num == 0 {
+                    if f.num == 0 || (self.proto.syntax == Syntax::Proto2) {
                         default_option = Some(&f.name);
                         break;
                     }
@@ -406,13 +434,13 @@ impl Compiler<'_> {
 
         lines.add(format!(
             "impl {}::Enum for {} {{",
-            self.runtime_package, fullname
+            self.options.runtime_package, fullname
         ));
         lines.indented(|lines| {
             // TODO: Just make from_usize an Option<>
             lines.add(format!(
                 "fn parse(v: {}::EnumValue) -> Result<Self> {{",
-                self.runtime_package
+                self.options.runtime_package
             ));
             lines.indented(|lines| {
                 lines.add("Ok(match v {");
@@ -463,13 +491,13 @@ impl Compiler<'_> {
 
             lines.add(format!(
                 "fn value(&self) -> {}::EnumValue {{ *self as {}::EnumValue }}",
-                self.runtime_package, self.runtime_package
+                self.options.runtime_package, self.options.runtime_package
             ));
             lines.nl();
 
             lines.add(format!(
                 "fn assign(&mut self, v: {}::EnumValue) -> Result<()> {{",
-                self.runtime_package
+                self.options.runtime_package
             ));
             lines.add("\t*self = Self::parse(v)?; Ok(())");
             lines.add("}");
@@ -485,13 +513,13 @@ impl Compiler<'_> {
 
         lines.add(format!(
             "impl {}::reflection::Reflect for {} {{",
-            self.runtime_package, fullname
+            self.options.runtime_package, fullname
         ));
         lines.indented(|lines| {
             lines.add(format!("fn reflect(&self) -> Option<{}::reflection::Reflection> {{ Some({}::reflection::Reflection::Enum(self)) }}",
-                      self.runtime_package, self.runtime_package));
+                      self.options.runtime_package, self.options.runtime_package));
             lines.add(format!("fn reflect_mut(&mut self) -> {}::reflection::ReflectionMut {{ {}::reflection::ReflectionMut::Enum(self) }}",
-                      self.runtime_package, self.runtime_package));
+                      self.options.runtime_package, self.options.runtime_package));
         });
         lines.add("}");
 
@@ -641,7 +669,7 @@ impl Compiler<'_> {
         let is_repeated = field.label == Label::Repeated;
 
         if self.is_unordered_set(field) {
-            s += &format!("{}::SetField<{}>", self.runtime_package, typ);
+            s += &format!("{}::SetField<{}>", self.options.runtime_package, typ);
         } else if is_repeated {
             s += &format!("Vec<{}>", typ);
         } else {
@@ -731,7 +759,7 @@ impl Compiler<'_> {
             MessageItem::MapField(f) => {
                 let mut s = String::new();
                 s += &f.name; // TODO: Handle 'type' -> 'typ'
-                s += &format!(": {}::MapField<", &self.runtime_package);
+                s += &format!(": {}::MapField<", &self.options.runtime_package);
                 s += &self.compile_field_type(&f.key_type, path);
                 s += ", ";
                 s += &self.compile_field_type(&f.value_type, path);
@@ -753,6 +781,23 @@ impl Compiler<'_> {
 
             _ => None,
         })
+    }
+
+    fn compile_constant(&self, typ: &FieldType, constant: &Constant, path: TypePath) -> String {
+        match constant {
+            Constant::Identifier(v) => {
+                let enum_name = self.compile_field_type(typ, path);
+                format!("{}::{}", enum_name, v)
+            }
+            Constant::Integer(v) => v.to_string(),
+            Constant::Float(v) => v.to_string(),
+            Constant::String(v) => {
+                let mut out = String::new();
+                serialize_str_lit(v.as_bytes(), &mut out);
+                out
+            }
+            Constant::Bool(v) => if *v { "true" } else { "false" }.to_string(),
+        }
     }
 
     fn compile_field_accessors(
@@ -777,13 +822,13 @@ impl Compiler<'_> {
         let is_copyable = self.is_copyable(&field.typ, &path);
         let is_message = self.is_message(&field.typ, &path);
 
-        let oneof_option = !(field.label == Label::Required
-            || (is_primitive && self.proto.syntax == Syntax::Proto3));
+        // NOTE: We
+
+        let oneof_option = !(is_primitive && self.proto.syntax == Syntax::Proto3);
 
         // TODO: Messages should always have options?
-        let use_option = !(field.label == Label::Required
-            || (is_primitive && self.proto.syntax == Syntax::Proto3)
-            || oneof.is_some());
+        let use_option =
+            !((is_primitive && self.proto.syntax == Syntax::Proto3) || oneof.is_some());
 
         // field()
         if self.is_unordered_set(field) {
@@ -795,7 +840,7 @@ impl Compiler<'_> {
             ",
                 name = name,
                 typ = typ,
-                pkg = self.runtime_package
+                pkg = self.options.runtime_package
             ));
         } else if is_repeated {
             lines.add(format!(
@@ -822,6 +867,25 @@ impl Compiler<'_> {
                 }
             };
 
+            // TODO: Need to read the 'default' property
+
+            let explicit_default = field.unknown_options.iter().find(|o| o.name == "default");
+
+            let default_value = {
+                if let Some(opt) = &explicit_default {
+                    self.compile_constant(&field.typ, &opt.value, path)
+                } else if rettype == "str" {
+                    "\"\"".to_string()
+                } else if rettype == "[u8]" {
+                    "&[]".to_string()
+                } else if is_message && !is_copyable {
+                    format!("{}::static_default_value()", typ)
+                } else {
+                    // For now it's a const,
+                    format!("{}{}::DEFAULT", modifier, typ)
+                }
+            };
+
             // NOTE: For primitives, it is sufficient to copy it.
             lines.add(format!(
                 "\tpub fn {}(&self) -> {}{} {{",
@@ -829,35 +893,21 @@ impl Compiler<'_> {
             ));
             if use_option {
                 if is_copyable {
-                    lines.add_inline(format!(" self.{}.unwrap_or_default() }}", name));
-                } else {
-                    if is_message {
-                        lines.add_inline(
-                            format!(" self.{}.as_ref().map(|v| v.as_ref()).unwrap_or({}::default_value()) }}", name, typ));
+                    if explicit_default.is_some() {
+                        lines.add_inline(format!(" self.{}.unwrap_or({}) }}", name, default_value));
                     } else {
-                        lines.add_inline(format!(
-                            " self.{}.as_ref().unwrap_or({}::default_value()) }}",
-                            name, typ
-                        ));
+                        lines.add_inline(format!(" self.{}.unwrap_or_default() }}", name));
                     }
+                } else {
+                    lines.add_inline(format!(
+                        " self.{}.as_ref().map(|v| v.as_ref()).unwrap_or({}) }}",
+                        name, default_value
+                    ));
                 }
             } else if let Some(oneof) = oneof.clone() {
                 let oneof_typename = self.oneof_typename(oneof, path);
                 let oneof_fieldname = Self::field_name_inner(&oneof.name);
                 let oneof_case = common::snake_to_camel_case(&field.name);
-
-                let default_value = {
-                    if rettype == "str" {
-                        "\"\"".to_string()
-                    } else if rettype == "[u8]" {
-                        "&[]".to_string()
-                    } else if is_message && !is_copyable {
-                        format!("{}::default_value()", typ)
-                    } else {
-                        // For now it's a const,
-                        format!("{}{}::DEFAULT", modifier, typ)
-                    }
-                };
 
                 // Step 1: Ensure that the enum has the right case. Else give it a default
                 // value.
@@ -907,7 +957,7 @@ impl Compiler<'_> {
             ",
                 name = name,
                 typ = typ,
-                pkg = self.runtime_package
+                pkg = self.options.runtime_package
             ));
         } else if is_repeated {
             // add_field(v: T) -> &mut T
@@ -1201,7 +1251,7 @@ impl Compiler<'_> {
 
         lines.add(format!("impl {} {{", fullname));
 
-        lines.add("\tpub fn default_value() -> &'static Self {");
+        lines.add("\tpub fn static_default_value() -> &'static Self {");
         lines.add(format!(
             "\t\tstatic VALUE: {} = {}::DEFAULT;",
             fullname, fullname
@@ -1240,8 +1290,25 @@ impl Compiler<'_> {
 
         lines.add(format!(
             "impl {}::Message for {} {{",
-            self.runtime_package, fullname
+            self.options.runtime_package, fullname
         ));
+
+        // "type.googleapis.com/"
+        let mut type_url_parts = vec![];
+        if !self.proto.package.is_empty() {
+            type_url_parts.push(self.proto.package.as_str());
+        }
+        type_url_parts.extend_from_slice(&inner_path);
+
+        lines.add(format!(
+            r#"
+            fn type_url(&self) -> &'static str {{
+                "type.googleapis.com/{}"
+            }}
+        "#,
+            type_url_parts.join(".")
+        ));
+
         lines.add(
             r#"
             fn parse(data: &[u8]) -> Result<Self> {
@@ -1527,13 +1594,13 @@ impl Compiler<'_> {
 
         lines.add(format!(
             "impl {}::MessageReflection for {} {{",
-            self.runtime_package, fullname
+            self.options.runtime_package, fullname
         ));
 
         lines.indented(|lines| {
             lines.add(format!(
                 "fn fields(&self) -> &[{}::FieldDescriptor] {{",
-                self.runtime_package
+                self.options.runtime_package
             ));
 
             let mut all_fields = vec![];
@@ -1559,7 +1626,7 @@ impl Compiler<'_> {
                 .map(|(num, name)| {
                     format!(
                         "{}::FieldDescriptor {{ number: {}, name: \"{}\" }}",
-                        self.runtime_package, num, name
+                        self.options.runtime_package, num, name
                     )
                 })
                 .collect::<Vec<_>>();
@@ -1729,18 +1796,24 @@ impl Compiler<'_> {
             parts.join(".")
         };
 
-        lines.add(format!("pub struct {}Stub {{", service.name));
-        lines.add("\tchannel: Arc<dyn ::rpc::Channel>");
-        lines.add("}");
-        lines.nl();
+        lines.add(format!(
+            r#"
+            pub struct {service_name}Stub {{
+                channel: Arc<dyn {rpc_package}::Channel>
+
+            }}
+        "#,
+            service_name = service.name,
+            rpc_package = self.options.rpc_package
+        ));
 
         lines.add(format!("impl {}Stub {{", service.name));
         lines.indented(|lines| {
-            lines.add("
-                pub fn new(channel: Arc<dyn ::rpc::Channel>) -> Self {
-                    Self { channel }
-                }
-            ");
+            lines.add(format!("
+                pub fn new(channel: Arc<dyn {rpc_package}::Channel>) -> Self {{
+                    Self {{ channel }}
+                }}
+            ", rpc_package = self.options.rpc_package));
 
             for rpc in service.rpcs() {
                 let req_type = self
@@ -1753,10 +1826,11 @@ impl Compiler<'_> {
                     // Bi-directional streaming
 
                     lines.add(format!(r#"
-                        pub async fn {rpc_name}(&self, request_context: &::rpc::ClientRequestContext)
-                            -> (::rpc::ClientStreamingRequest<{req_type}>, ::rpc::ClientStreamingResponse<{res_type}>) {{
+                        pub async fn {rpc_name}(&self, request_context: &{rpc_package}::ClientRequestContext)
+                            -> ({rpc_package}::ClientStreamingRequest<{req_type}>, {rpc_package}::ClientStreamingResponse<{res_type}>) {{
                             self.channel.call_stream_stream("{service_name}", "{rpc_name}", request_context).await
                         }}"#,
+                        rpc_package = self.options.rpc_package,
                         service_name = absolute_name,
                         rpc_name = rpc.name,
                         req_type = req_type.typename,
@@ -1766,10 +1840,11 @@ impl Compiler<'_> {
                     // Client streaming
 
                     lines.add(format!(r#"
-                        pub async fn {rpc_name}(&self, request_context: &::rpc::ClientRequestContext)
-                            -> ::rpc::ClientStreamingCall<{req_type}, {res_type}> {{
+                        pub async fn {rpc_name}(&self, request_context: &{rpc_package}::ClientRequestContext)
+                            -> {rpc_package}::ClientStreamingCall<{req_type}, {res_type}> {{
                             self.channel.call_stream_unary("{service_name}", "{rpc_name}", request_context).await
                         }}"#,
+                        rpc_package = self.options.rpc_package,
                         service_name = absolute_name,
                         rpc_name = rpc.name,
                         req_type = req_type.typename,
@@ -1779,10 +1854,11 @@ impl Compiler<'_> {
                     // Server streaming
 
                     lines.add(format!(r#"
-                        pub async fn {rpc_name}(&self, request_context: &::rpc::ClientRequestContext, request_value: &{req_type})
-                            -> ::rpc::ClientStreamingResponse<{res_type}> {{
+                        pub async fn {rpc_name}(&self, request_context: &{rpc_package}::ClientRequestContext, request_value: &{req_type})
+                            -> {rpc_package}::ClientStreamingResponse<{res_type}> {{
                             self.channel.call_unary_stream("{service_name}", "{rpc_name}", request_context, request_value).await
                         }}"#,
+                        rpc_package = self.options.rpc_package,
                         service_name = absolute_name,
                         rpc_name = rpc.name,
                         req_type = req_type.typename,
@@ -1792,10 +1868,11 @@ impl Compiler<'_> {
                     // Completely unary
 
                     lines.add(format!(r#"
-                        pub async fn {rpc_name}(&self, request_context: &::rpc::ClientRequestContext, request_value: &{req_type})
-                            -> ::rpc::ClientResponse<{res_type}> {{
+                        pub async fn {rpc_name}(&self, request_context: &{rpc_package}::ClientRequestContext, request_value: &{req_type})
+                            -> {rpc_package}::ClientResponse<{res_type}> {{
                             self.channel.call_unary_unary("{service_name}", "{rpc_name}", request_context, request_value).await
                         }}"#,
+                        rpc_package = self.options.rpc_package,
                         service_name = absolute_name,
                         rpc_name = rpc.name,
                         req_type = req_type.typename,
@@ -1826,8 +1903,9 @@ impl Compiler<'_> {
             // TODO: Must resolve the typename.
             // TODO: I don't need to make the response '&mut' if I am giving a stream.
             lines.add(format!(
-                "\tasync fn {rpc_name}(&self, request: ::rpc::Server{req_stream}Request<{req_type}>,
-                                       response: &mut ::rpc::Server{res_stream}Response<{res_type}>) -> Result<()>;",
+                "\tasync fn {rpc_name}(&self, request: {rpc_package}::Server{req_stream}Request<{req_type}>,
+                                       response: &mut {rpc_package}::Server{res_stream}Response<{res_type}>) -> Result<()>;",
+                rpc_package = self.options.rpc_package,
                 rpc_name = rpc.name,
                 req_type = req_type.typename,
                 req_stream = if rpc.req_stream { "Stream" } else { "" },
@@ -1845,11 +1923,11 @@ impl Compiler<'_> {
         lines.add(format!(
             "
             pub trait {service_name}IntoService {{
-                fn into_service(self) -> Arc<dyn ::rpc::Service>;
+                fn into_service(self) -> Arc<dyn {rpc_package}::Service>;
             }}
 
             impl<T: {service_name}Service> {service_name}IntoService for T {{
-                fn into_service(self) -> Arc<dyn ::rpc::Service> {{
+                fn into_service(self) -> Arc<dyn {rpc_package}::Service> {{
                     Arc::new({service_name}ServiceCaller {{
                         inner: self
                     }})
@@ -1861,6 +1939,7 @@ impl Compiler<'_> {
             }}
 
         ",
+            rpc_package = self.options.rpc_package,
             service_name = service.name
         ));
 
@@ -1873,8 +1952,8 @@ impl Compiler<'_> {
         lines.add("#[async_trait]");
         lines
             .add(format!(
-            "impl<T: {service_name}Service> ::rpc::Service for {service_name}ServiceCaller<T> {{",
-                               service_name = service.name));
+            "impl<T: {service_name}Service> {rpc_package}::Service for {service_name}ServiceCaller<T> {{",
+            rpc_package = self.options.rpc_package, service_name = service.name));
         lines.indented(|lines| {
             // TODO: Escape the string if needed.
             lines.add(format!(
@@ -1894,11 +1973,12 @@ impl Compiler<'_> {
             lines.add("}");
             lines.nl();
 
-            lines.add(
+            lines.add(format!(
                 "async fn call<'a>(&self, method_name: &str, \
-                        request: ::rpc::ServerStreamRequest<()>,
-                        mut response: ::rpc::ServerStreamResponse<'a, ()> \
-                    ) -> Result<()> {",
+                        request: {rpc_package}::ServerStreamRequest<()>,
+                        mut response: {rpc_package}::ServerStreamResponse<'a, ()> \
+                    ) -> Result<()> {{"
+                , rpc_package = self.options.rpc_package,)
             );
 
 
@@ -1957,7 +2037,7 @@ impl Compiler<'_> {
                     ));
                 }
 
-                lines.add("\t_ => Err(::rpc::Status::invalid_argument(format!(\"Invalid method: {}\", method_name)).into())");
+                lines.add(format!("\t_ => Err({rpc_package}::Status::invalid_argument(format!(\"Invalid method: {{}}\", method_name)).into())", rpc_package = self.options.rpc_package,));
                 lines.add("}");
             });
 

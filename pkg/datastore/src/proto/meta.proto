@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+message Current {
+    uint32 current_snapshot = 1;
+}

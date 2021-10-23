@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+// TODO: Need client affinity to ensure that one client is always talking to the same server.
+
+service KeyValueStore {
+    // Look up a single key-value pair from the data store.
+    // Returns a NOT_FOUND RPC status if the key doesn't exist. 
+    rpc Get (Key) returns (KeyValue);
+
+    // Looks up a set of contiguous keys.
+    rpc GetRange (KeyRange) returns (stream KeyValue);
+
+    // Assigns a new value to a key. If the key doesn't exist yet, it will be created.
+    rpc Put (KeyValue) returns (EmptyMessage);
+
+    // Deletes any value associated with the given key. If the key is not present, this will
+    // silently do nothing.
+    rpc Delete (Key) returns (EmptyMessage);
+
+    /*
+    rpc BeginTransaction (BeginTransactionRequest) returns (BeginTransactionResponse);
+
+    rpc CancelTransaction (CancelTransactionRequest) returns (EmptyMessage);
+
+    rpc CommitTransaction (CommitTransactionRequest) returns (EmptyMessage);
+    */
+}
+
+message Key {
+    bytes data = 1;
+}
+
+message KeyRange {
+    bytes start_key = 1;
+    bytes end_key = 2;
+}
+
+message KeyValue {
+    bytes key = 1;
+    bytes value = 2;
+}
+
+message EmptyMessage {}
+
+message BeginTransactionRequest {
+    // If true, then this transaction will only be used for reading from the database.
+    // This is more efficient as less  
+    bool read_only = 1;
+
+    // bool eventually_consistent = 2;
+}
+
+message BeginTransactionResponse {
+    // Identifier for a new transaction. This transaction id can be used on any request in the same
+    // client connection.
+    string transaction_id = 1;
+}
+
+message CommitTransactionRequest {
+    
+}
+
+message CommitTransactionResponse {
+    bool success = 1;
+}
+
+message CancelTransactionRequest {
+
+}

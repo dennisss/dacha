@@ -268,14 +268,22 @@ message ProposeResponse {
 	}
 }
 
-message ProposeErrorProto {
-	message NotLeader {
-		// OPTIONAL
-		ServerId leader_hint = 1;
-	}
+message LeaderHint {
+	// REQUIRED
+	Term term = 1;
 
+	// OPTIONAL
+	ServerId leader_id = 2;
+}
+
+message NotLeaderErrorProto {
+	// OPTIONAL
+	ServerId leader_hint = 1;
+}
+
+message ProposeErrorProto {
 	oneof type {
-		NotLeader not_leader = 1;
+		NotLeaderErrorProto not_leader = 1;
 	}
 }
 

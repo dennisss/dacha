@@ -271,6 +271,7 @@ impl EmbeddedDB {
                 let mut edit = VersionEdit::default();
                 edit.next_file_number = Some(num + 1);
                 edit.log_number = Some(num);
+                version_set.apply_new_edit(edit, vec![]);
 
                 Some(RecordWriter::open_with(dir.log(num)).await?)
             }

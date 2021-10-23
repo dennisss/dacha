@@ -274,7 +274,7 @@ macro_rules! tup {
 #[macro_export]
 macro_rules! enum_def {
     ($name:ident $t:ty => $( $case:ident = $val:expr ),*) => {
-    	#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    	#[derive(Clone, Copy, Debug)]
 		pub enum $name {
 			$(
 				$case = $val
@@ -303,14 +303,28 @@ macro_rules! enum_def {
 			}
 		}
 
+        impl std::cmp::PartialEq for $name {
+            fn eq(&self, other: &Self) -> bool {
+                self.to_value() == other.to_value()
+            }
+        }
+
+        impl std::cmp::Eq for $name {}
+
+        impl std::hash::Hash for $name {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                self.to_value().hash(state);
+            }
+        }
     };
 }
 
 // TODO: Implement a smarter PartialEq that accounts for duplicates.
 #[macro_export]
 macro_rules! enum_def_with_unknown {
+    // TODO: Derive a smarter hash
     ($name:ident $t:ty => $( $case:ident = $val:expr ),*) => {
-    	#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    	#[derive(Clone, Copy, Debug)]
 		pub enum $name {
 			$(
 				$case,
@@ -340,6 +354,19 @@ macro_rules! enum_def_with_unknown {
 			}
 		}
 
+        impl std::cmp::PartialEq for $name {
+            fn eq(&self, other: &Self) -> bool {
+                self.to_value() == other.to_value()
+            }
+        }
+
+        impl std::cmp::Eq for $name {}
+
+        impl std::hash::Hash for $name {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                self.to_value().hash(state);
+            }
+        }
     };
 }
 

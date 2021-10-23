@@ -71,6 +71,12 @@ pub(super) async fn propose_entry(
                     .await?
                     .into_iter()
                     .collect::<Vec<_>>();
+                if known_ids.is_empty() {
+                    println!("No servers discovered yet");
+                    common::async_std::task::sleep(std::time::Duration::from_secs(2)).await;
+                    continue;
+                }
+
                 let mut rng = crypto::random::clocked_rng();
                 let id = rng.choose(&known_ids);
                 *id

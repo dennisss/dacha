@@ -165,6 +165,18 @@ parser!(pub strLit<&str, String> => seq!(c => {
     Ok(s)
 }));
 
+pub fn serialize_str_lit(value: &[u8], out: &mut String) {
+    out.push('"');
+    for b in value.iter().cloned() {
+        if b != b'\\' && b != b'"' && (b.is_ascii_alphanumeric() || b == b' ' || b.is_ascii_punctuation()) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("\\x{:02x}", b));
+        }
+    }
+    out.push('"');
+}
+
 // charValue = hexEscape | octEscape | charEscape | /[^\0\n\\]/
 fn char_value(quote: char) -> impl Fn(&str) -> Result<(char, &str)> {
     alt!(

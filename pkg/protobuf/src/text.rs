@@ -1,11 +1,13 @@
 // Implementation of the protobuf plaintext format.
 // aka what the C++ DebugString outputs and can re-parse as a proto.
 
-use crate::reflection::{MessageReflection, ReflectionMut};
+use std::convert::TryInto;
+
 use common::errors::*;
 use parsing::*;
-use protobuf_compiler::tokenizer::{float_lit, int_lit, strLit};
-use std::convert::TryInto;
+use protobuf_compiler::tokenizer::{float_lit, int_lit, serialize_str_lit, strLit};
+
+use crate::reflection::{MessageReflection, Reflection, ReflectionMut};
 
 //
 const SYMBOLS: &'static str = "{}[]<>:,.";
@@ -395,12 +397,6 @@ pub fn parse_text_proto(text: &str, message: &mut dyn MessageReflection) -> Resu
     Ok(())
 }
 
-pub fn serialize_text_proto(message: &dyn MessageReflection) -> String {
-    // Basically visiting a bunch of stuff.
-
-    String::new()
-}
-
 pub trait ParseTextProto {
     fn parse_text(text: &str) -> Result<Self>
     where
@@ -412,6 +408,148 @@ impl<T: Sized + Default + MessageReflection> ParseTextProto for T {
         let mut m = T::default();
         parse_text_proto(text, &mut m)?;
         Ok(m)
+    }
+}
+
+pub fn serialize_text_proto(message: &dyn MessageReflection) -> String {
+    let mut out = String::new();
+    serialize_message(message, "", &mut out);
+    out
+}
+
+fn serialize_message(message: &dyn MessageReflection, indent: &str, out: &mut String) {
+    for field in message.fields() {
+        let refl = match message.field_by_number(field.number) {
+            Some(v) => v,
+            None => continue,
+        };
+
+        let is_message = match &refl {
+            Reflection::Message(_) => true,
+            _ => false,
+        };
+
+        let field_start_idx = out.len();
+
+        out.push_str(&format!(
+            "{}{}{} ",
+            indent,
+            field.name,
+            if is_message { "" } else { ":" }
+        ));
+
+        let value_start_idx = out.len();
+
+        serialize_reflection(refl, indent, out);
+
+        // Empty value
+        if out.len() == value_start_idx {
+            out.truncate(field_start_idx);
+            continue;
+        }
+
+        out.push_str("\n");
+    }
+}
+
+fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
+    match refl {
+        // TODO: Check these float cases.
+        // TODO: Ignore fields with default values?
+        Reflection::F32(v) => {
+            if *v == 0.0 {
+                return;
+            }
+            out.push_str(&v.to_string());
+        }
+        Reflection::F64(v) => {
+            if *v == 0.0 {
+                return;
+            }
+            out.push_str(&v.to_string());
+        }
+        Reflection::I32(v) => {
+            if *v == 0 {
+                return;
+            }
+            out.push_str(&v.to_string());
+        }
+        Reflection::I64(v) => {
+            if *v == 0 {
+                return;
+            }
+            out.push_str(&v.to_string());
+        }
+        Reflection::U32(v) => {
+            if *v == 0 {
+                return;
+            }
+            out.push_str(&v.to_string());
+        }
+        Reflection::U64(v) => {
+            if *v == 0 {
+                return;
+            }
+            out.push_str(&v.to_string());
+        }
+        Reflection::Bool(v) => {
+            if *v {
+                out.push_str("true");
+            } else {
+                return;
+                // out.push_str("false");
+            }
+        }
+        Reflection::String(v) => {
+            if v.is_empty() {
+                return;
+            }
+
+            serialize_str_lit(v.as_bytes(), out);
+        }
+        Reflection::Bytes(v) => {
+            if v.is_empty() {
+                return;
+            }
+            serialize_str_lit(v, out);
+        }
+        Reflection::Repeated(v) => {
+            if v.len() == 0 {
+                return;
+            }
+
+            out.push_str("[\n");
+
+            let inner_indent = format!("{}    ", indent);
+
+            for i in 0..v.len() {
+                let r = v.get(i).unwrap();
+                serialize_reflection(r, &indent, out);
+            }
+
+            out.push_str(&format!("{}]", indent));
+        }
+        Reflection::Message(v) => {
+            out.push_str("{\\n");
+
+            let initial_len = out.len();
+            let inner_indent = format!("{}    ", indent);
+
+            serialize_message(v, &inner_indent, out);
+
+            if initial_len == out.len() {
+                out.pop();
+            }
+
+            out.push_str(&format!("{}}}", indent));
+        }
+        Reflection::Enum(v) => {
+            if v.value() == 0 {
+                return;
+            }
+            out.push_str(v.name());
+        }
+        Reflection::Set(_) => todo!(),
     }
 }
 
@@ -460,7 +598,7 @@ mod test {
     use crate::proto::test::*;
 
     #[test]
-    fn works() {
+    fn parsing_test() {
         let mut list = ShoppingList::default();
         parse_text_proto(
             r#"
@@ -497,5 +635,20 @@ mod test {
         assert_eq!(list.items().len(), 3);
 
         println!("{:?}", list);
+    }
+
+    #[test]
+    fn serialize_test() {
+        let mut list = ShoppingList::default();
+        assert_eq!(serialize_text_proto(&list), "");
+
+        list.set_id(123);
+        assert_eq!(serialize_text_proto(&list), "id: 123\n");
+
+        list.set_name("Hi there!");
+        assert_eq!(
+            serialize_text_proto(&list),
+            "name: \"Hi there!\"\nid: 123\n"
+        );
     }
 }

@@ -7,17 +7,22 @@ use common::errors::*;
 use http::{Header, Headers};
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
+use protobuf::Message;
 
-use crate::constants::{GRPC_STATUS, GRPC_STATUS_MESSAGE};
+use crate::constants::{GRPC_STATUS, GRPC_STATUS_DETAILS, GRPC_STATUS_MESSAGE};
 
 pub type StatusResult<T> = std::result::Result<T, Status>;
 
+// TODO: How do we ensure that we don't propagate internal Status protos that
+// are generated (e.g. from calling other RPCs)
 #[derive(Debug, Fail, Clone)]
 pub struct Status {
     pub code: StatusCode,
 
     /// NOTE: Will always be encoded over the wire as UTF-8
     pub message: String,
+
+    pub details: Vec<google::proto::any::Any>,
 }
 
 impl Status {
@@ -25,6 +30,7 @@ impl Status {
         Self {
             code: StatusCode::Cancelled,
             message: message.into(),
+            details: vec![],
         }
     }
 
@@ -32,6 +38,7 @@ impl Status {
         Self {
             code: StatusCode::NotFound,
             message: message.into(),
+            details: vec![],
         }
     }
 
@@ -39,6 +46,15 @@ impl Status {
         Self {
             code: StatusCode::InvalidArgument,
             message: message.into(),
+            details: vec![],
+        }
+    }
+
+    pub fn internal<S: Into<String>>(message: S) -> Self {
+        Self {
+            code: StatusCode::Internal,
+            message: message.into(),
+            details: vec![],
         }
     }
 
@@ -58,9 +74,28 @@ impl Status {
             message = raw_message.to_string();
         }
 
+        let mut details = vec![];
+        if headers.has(GRPC_STATUS_DETAILS) {
+            let encoded_value = headers
+                .find_one(GRPC_STATUS_DETAILS)?
+                .value
+                .to_ascii_str()?;
+
+            let decoded_value = common::base64::decode_config(
+                encoded_value.as_bytes(),
+                common::base64::STANDARD_NO_PAD,
+            )?;
+
+            let proto = google::proto::rpc::Status::parse(&decoded_value)?;
+            for detail in proto.details() {
+                details.push(detail.clone());
+            }
+        }
+
         Ok(Self {
             code: StatusCode::from_value(code)?,
             message,
+            details,
         })
     }
 
@@ -68,6 +103,7 @@ impl Status {
         Self {
             code: StatusCode::Ok,
             message: String::new(),
+            details: vec![],
         }
     }
 
@@ -97,7 +133,39 @@ impl Status {
             });
         }
 
+        if !self.details.is_empty() {
+            let mut proto = google::proto::rpc::Status::default();
+            for detail in &self.details {
+                proto.add_details(detail.clone());
+            }
+
+            let value =
+                common::base64::encode_config(&proto.serialize()?, common::base64::STANDARD_NO_PAD);
+
+            headers.raw_headers.push(Header {
+                name: AsciiString::from(GRPC_STATUS_DETAILS)?,
+                value: OpaqueString::from(value),
+            })
+        }
+
         Ok(())
+    }
+
+    pub fn detail<T: protobuf::Message + Default>(&self) -> Result<Option<T>> {
+        for detail in &self.details {
+            if let Some(v) = detail.unpack()? {
+                return Ok(Some(v));
+            }
+        }
+
+        Ok(None)
+    }
+
+    pub fn with_detail(mut self, value: &dyn protobuf::Message) -> Result<Self> {
+        let mut any = google::proto::any::Any::default();
+        any.pack_from(value)?;
+        self.details.push(any);
+        Ok(self)
     }
 }
 

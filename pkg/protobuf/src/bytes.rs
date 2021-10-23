@@ -12,6 +12,12 @@ impl std::convert::From<Vec<u8>> for BytesField {
     }
 }
 
+impl std::convert::From<&[u8]> for BytesField {
+    fn from(v: &[u8]) -> Self {
+        Self(v.to_vec())
+    }
+}
+
 impl std::ops::Deref for BytesField {
     type Target = Vec<u8>;
 

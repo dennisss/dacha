@@ -22,6 +22,21 @@ impl Metadata {
     }
 
     fn is_reserved_header(header: &http::Header) -> bool {
+        /*
+        The list of reserved system headers can be found in https://github.com/grpc/grpc-go/blob/ba41bbac225e6e1a9b822fe636c40c3b7d977894/internal/transport/http_util.go#L101
+        isReservedHeader
+
+        "content-type",
+        "user-agent",
+        "grpc-message-type",
+        "grpc-encoding",
+        "grpc-message",
+        "grpc-status",
+        "grpc-timeout",
+        "grpc-status-details-bin",
+        "te"
+        */
+
         header.is_transport_level()
             || header.is_transport_level()
             || header.name.as_str().starts_with("grpc-")

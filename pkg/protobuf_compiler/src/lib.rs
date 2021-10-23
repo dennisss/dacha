@@ -8,4 +8,5 @@ pub mod spec;
 pub mod syntax;
 pub mod tokenizer;
 
-pub use build::build;
+pub use build::{build, build_with_options};
+pub use compiler::CompilerOptions;

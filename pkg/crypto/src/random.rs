@@ -397,6 +397,8 @@ impl<R: Rng + ?Sized> RngExt for R {
     }
 
     fn choose<'a, T>(&mut self, elements: &'a [T]) -> &'a T {
+        assert!(!elements.is_empty(), "Choosing from empty list");
+
         let n = self.uniform::<usize>();
         &elements[n % elements.len()]
     }

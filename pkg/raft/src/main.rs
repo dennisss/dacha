@@ -80,7 +80,7 @@ use redis::resp::*;
 */
 
 struct RaftRedisServer {
-    server: raft::Server<KeyValueReturn>,
+    node: raft::Node<KeyValueReturn>,
     state_machine: Arc<MemoryKVStateMachine>,
 }
 
@@ -92,7 +92,8 @@ impl redis::server::Service for RaftRedisServer {
     async fn get(&self, key: RESPString) -> Result<RESPObject> {
         let state_machine = &self.state_machine;
 
-        self.server
+        self.node
+            .server()
             .begin_read(true)
             .await
             .map_err(|_| err_msg("Not leader"))?;
@@ -115,7 +116,8 @@ impl redis::server::Service for RaftRedisServer {
 
         let op_data = op.serialize()?;
 
-        self.server
+        self.node
+            .server()
             .execute(op_data)
             .await
             .map_err(|e| format_err!("SET failed with error: {:?}", e))?;
@@ -133,7 +135,8 @@ impl redis::server::Service for RaftRedisServer {
         let op_data = op.serialize()?;
 
         let res = self
-            .server
+            .node
+            .server()
             .execute(op_data)
             .await
             .map_err(|e| format_err!("DEL failed with error: {:?}", e))?;
@@ -218,7 +221,9 @@ async fn main_task() -> Result<()> {
     let state_machine = Arc::new(MemoryKVStateMachine::new());
     let last_applied = LogIndex::from(0);
 
-    let node = Node::create(NodeOptions {
+    let mut tasks = common::bundle::TaskResultBundle::new();
+
+    let mut node = Node::create(NodeOptions {
         dir: lock,
         init_port: 4000,
         bootstrap: args.bootstrap,
@@ -228,21 +233,27 @@ async fn main_task() -> Result<()> {
     })
     .await?;
 
-    let client_server = Arc::new(redis::server::Server::new(RaftRedisServer {
-        server: node.server(),
-        state_machine: state_machine.clone(),
-    }));
-
-    let mut tasks = common::bundle::TaskResultBundle::new();
-
     let raft_port = 4000 + node.id().value();
     let client_port = 5000 + node.id().value();
 
-    tasks.add("raft::Node", node.run(raft_port as u16));
+    let mut rpc_server = rpc::Http2Server::new();
+
     tasks.add(
-        "redis::Server",
-        redis::server::Server::run(client_server.clone(), client_port as u16),
+        "raft::Node",
+        node.run(&mut rpc_server, &format!("http://127.0.0.1:{}", raft_port))?,
     );
+
+    let client_server = Arc::new(redis::server::Server::new(RaftRedisServer {
+        node,
+        state_machine: state_machine.clone(),
+    }));
+
+    tasks
+        .add("rpc::Server", rpc_server.run(raft_port as u16))
+        .add(
+            "redis::Server",
+            redis::server::Server::run(client_server.clone(), client_port as u16),
+        );
 
     tasks.join().await
 }

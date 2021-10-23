@@ -126,6 +126,28 @@ impl ClientStreamingRequest<()> {
     }
 }
 
+impl<T> ClientStreamingRequest<T> {
+    #[must_use]
+    pub async fn send_bytes(&mut self, data: Bytes) -> bool {
+        let sender = match self.sender.as_ref() {
+            Some(v) => v,
+            None => {
+                return false;
+            }
+        };
+
+        sender.send(Ok(Some(data))).await.is_ok()
+    }
+
+    /// Call after sending all messages to the server to indicate that no more
+    /// messages will be sent for the current RPC.
+    pub async fn close(&mut self) {
+        if let Some(sender) = &self.sender {
+            let _ = sender.send(Ok(None)).await;
+        }
+    }
+}
+
 impl<T: protobuf::Message> ClientStreamingRequest<T> {
     /// Returns whether or not the message was sent. If not, then the connection
     /// was broken and the client should check the finish() method on the
@@ -147,14 +169,6 @@ impl<T: protobuf::Message> ClientStreamingRequest<T> {
 
         sender.send(data).await.is_ok()
     }
-
-    /// Call after sending all messages to the server to indicate that no more
-    /// messages will be sent for the current RPC.
-    pub async fn close(&mut self) {
-        if let Some(sender) = &self.sender {
-            let _ = sender.send(Ok(None)).await;
-        }
-    }
 }
 
 /// Response returned by an RPC with a unary request and streaming response.
@@ -173,9 +187,14 @@ pub struct ClientStreamingResponse<Res> {
 }
 
 enum ClientStreamingResponseState {
+    /// We are still waiting for an initial response / head metadata from the
+    /// server.
     Head(ChildTask<Result<http::Response>>),
-    /// In this state, we have
+
+    /// We have gotten initial metadata and are receiving zero or more messages.
     Body(Box<dyn http::Body>),
+
+    /// All messages have been received and we are
     Trailers(Box<dyn http::Body>),
     Error(Error),
 }
@@ -228,9 +247,26 @@ impl ClientStreamingResponse<()> {
 }
 
 impl<Res: protobuf::Message> ClientStreamingResponse<Res> {
+    pub async fn recv(&mut self) -> Option<Res> {
+        let data = match self.recv_bytes().await {
+            Some(data) => data,
+            None => return None,
+        };
+
+        match Res::parse(&data) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                self.state = Some(ClientStreamingResponseState::Error(e));
+                None
+            }
+        }
+    }
+}
+
+impl<T> ClientStreamingResponse<T> {
     // TODO: Consider adding a method to wait for initial metadata?
 
-    pub async fn recv(&mut self) -> Option<Res> {
+    pub(crate) async fn recv_bytes(&mut self) -> Option<Bytes> {
         loop {
             return match self.state.take() {
                 Some(ClientStreamingResponseState::Head(response)) => {
@@ -294,18 +330,15 @@ impl<Res: protobuf::Message> ClientStreamingResponse<Res> {
         Ok(())
     }
 
-    async fn recv_body(&mut self, mut body: Box<dyn http::Body>) -> Result<Option<Res>> {
+    async fn recv_body(&mut self, mut body: Box<dyn http::Body>) -> Result<Option<Bytes>> {
         let mut reader = MessageReader::new(body.as_mut());
 
         let message_bytes = reader.read().await?;
 
         if let Some(data) = message_bytes {
-            let message = Res::parse(&data)?;
-
             // Keep trying to read more messages.
             self.state = Some(ClientStreamingResponseState::Body(body));
-
-            Ok(Some(message))
+            Ok(Some(data))
         } else {
             self.state = Some(ClientStreamingResponseState::Trailers(body));
             Ok(None)

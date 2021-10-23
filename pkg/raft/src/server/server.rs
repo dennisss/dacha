@@ -60,7 +60,7 @@ use crate::sync::*;
     - Likewise this can be used for spreading out replication if the cluster is sufficiently healthy
 */
 
-#[derive(Debug)]
+#[derive(Debug, Fail)]
 #[must_use]
 pub enum ExecuteError {
     Propose(ProposeError),
@@ -68,6 +68,12 @@ pub enum ExecuteError {
     /*
         Other errors
     */
+}
+
+impl std::fmt::Display for ExecuteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 // TODO: While Raft has no requirements on message ordering, we should try to
@@ -303,6 +309,11 @@ impl<R: Send + 'static> Server<R> {
 
     pub fn identity(&self) -> &ServerIdentity {
         &self.shared.identity
+    }
+
+    pub async fn leader_hint(&self) -> NotLeaderError {
+        let state = self.shared.state.lock().await;
+        state.inst.leader_hint()
     }
 
     /// Blocks until the local state machine contains at least all committed
@@ -543,7 +554,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
         let proposed_position = match r {
             Ok(prop) => prop,
-            Err(ProposeError::NotLeader { leader_hint }) => {
+            Err(ProposeError::NotLeader(NotLeaderError { term, leader_hint })) => {
                 let err = res.error_mut().not_leader_mut();
                 if let Some(hint) = leader_hint {
                     err.set_leader_hint(hint);

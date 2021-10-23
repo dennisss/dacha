@@ -99,3 +99,7 @@ pub mod key_value {
 pub mod log {
     include!(concat!(env!("OUT_DIR"), "/src/proto/log.rs"));
 }
+
+pub mod init {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/init.rs"));
+}

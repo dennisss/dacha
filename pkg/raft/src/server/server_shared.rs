@@ -9,6 +9,7 @@ use std::time::Instant;
 use common::async_std::channel;
 use common::async_std::sync::Mutex;
 use common::async_std::task;
+use common::bundle::TaskResultBundle;
 use common::errors::*;
 use common::futures::channel::oneshot;
 use common::futures::FutureExt;
@@ -145,6 +146,15 @@ impl<R: Send + 'static> ServerShared<R> {
         let (state_changed, log_changed, meta_changed) = {
             let mut state = self.state.lock().await;
 
+            // If the application required a lot of initialization, a long time may have
+            // passed since the raft::Server instance was instantiated. To avoid instantly
+            // triggering an election in this case, we will reset the timer to allow time to
+            // receive remote RPCs.
+            //
+            // TODO: Make this safer in case we receive RPCs before reset_follower is
+            // called.
+            state.inst.reset_follower(Instant::now());
+
             (
                 // If these errors out, then it means that we tried to start the server more than
                 // once
@@ -175,32 +185,15 @@ impl<R: Send + 'static> ServerShared<R> {
         // entries to be flushed to disk prior to stopping this. Other threads like
         // applier can be immediately cancelled in this case.
 
-        let (sender, receiver) = channel::bounded(1);
+        let mut task_bundle = TaskResultBundle::new();
 
-        let sender1 = sender.clone();
-        let child1 =
-            ChildTask::spawn(Self::run_cycler(self.clone(), state_changed).map(move |r| {
-                let _ = sender1.try_send(r);
-            }));
+        task_bundle
+            .add("Cycler", self.clone().run_cycler(state_changed))
+            .add("Matcher", self.clone().run_matcher(log_changed))
+            .add("Applier", self.clone().run_applier())
+            .add("MetaWriter", self.clone().run_meta_writer(meta_changed));
 
-        let sender2 = sender.clone();
-        let child2 = ChildTask::spawn(Self::run_matcher(self.clone(), log_changed).map(move |r| {
-            let _ = sender2.try_send(r);
-        }));
-
-        let sender3 = sender.clone();
-        let child3 = ChildTask::spawn(Self::run_applier(self.clone()).map(move |r| {
-            let _ = sender3.try_send(r);
-        }));
-
-        let sender4 = sender.clone();
-        let child4 = ChildTask::spawn(Self::run_meta_writer(self.clone(), meta_changed).map(
-            move |r| {
-                let _ = sender4.try_send(r);
-            },
-        ));
-
-        receiver.recv().await?
+        task_bundle.join().await
     }
 
     /// Runs the idle loop for managing the server and maintaining leadership,

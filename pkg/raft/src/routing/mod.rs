@@ -20,4 +20,9 @@ Components that we need:
     - Also a cached rpc::Http2Channel
     - If we
 
+Challenges:
+- A leader may contact us before we know it's route
+- This doesn't solve for how to get a route to other components (user RPC)
+    -
+
 */

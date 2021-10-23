@@ -85,6 +85,8 @@ pub struct SegmentedLog {
 
     max_segment_size: u64,
 
+    /// TODO: Use a MemoryLog implementation that doesn't internally use locking
+    /// given that we already have our own lock for 'state'.
     memory_log: MemoryLog,
 
     state: Mutex<SegmentedLogState>,
@@ -343,14 +345,10 @@ impl Log for SegmentedLog {
     async fn flush(&self) -> Result<()> {
         let mut state = self.state.lock().await;
 
-        let seq = self
-            .memory_log
-            .entry(self.memory_log.last_index().await)
-            .await
-            .unwrap()
-            .1;
+        self.memory_log.flush().await?;
         state.writer.flush().await?;
-        state.last_flushed = seq;
+        state.last_flushed = self.memory_log.last_flushed().await;
+
         Ok(())
     }
 }

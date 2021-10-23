@@ -109,7 +109,7 @@ impl TaskResultBundle {
         let sender = self.sender.clone();
 
         let child = ChildTask::spawn(async move {
-            let _ = sender.send((task_i, future.await));
+            let _ = sender.send((task_i, future.await)).await;
         });
 
         self.tasks.push((task_name.to_string(), child));

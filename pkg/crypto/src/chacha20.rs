@@ -2,8 +2,16 @@
 // https://tools.ietf.org/html/rfc7539
 // TODO: Look at the updated version in rfc8439.
 
+/*
+Useful resources:
+- https://loup-vaillant.fr/tutorials/poly1305-design
+*/
+
+use std::ops::SubAssign;
+
 use common::errors::*;
 use math::big::*;
+use typenum::U320;
 
 use crate::aead::AuthEncAD;
 use crate::utils::xor;
@@ -163,30 +171,388 @@ impl ChaCha20 {
     }
 }
 
+/// The modulus we use is 130 bits which fits in 5 32-bit numbers.
+/// We need twice that to support multiplication.
+type Poly1305Uint = SecureBigUint<U320>;
+
+/*
+Need the prime
+
+prime'
+
+Split
+
+
+*/
+
+/*
+/// Using the variable naming from https://en.wikipedia.org/wiki/Montgomery_modular_multiplication.
+struct MontgomeryModulo {
+    modulus: Poly1305Uint,
+    aux_modulus: Poly1305Uint,
+    aux_modulus_mask: Poly1305Uint,
+    aux_modulus_log2: usize,
+
+    modulus_inv: Poly1305Uint,
+    aux_modulus_inv: Poly1305Uint,
+}
+
+impl MontgomeryModulo {
+    /// Converts a number
+    fn to_montgomery_form(&self, value: &Poly1305Uint) -> Poly1305Uint {
+        let mut temp = Poly1305Uint::zero();
+        self.aux_modulus.mul_to(value, &mut temp);
+
+        let (_, r) = temp.quorem(&self.modulus);
+        r
+    }
+
+    // Basically zero out all upper bits.
+
+    fn mod_r(&self, value: &Poly1305Uint) -> Poly1305Uint {
+        // TOOD: Usually don't need to mask every single byte.
+        let mut value = value.clone();
+        value.and_assign(&self.aux_modulus_mask);
+        value
+    }
+
+    fn from_montgomery_form(&self, value: &Poly1305Uint) -> Poly1305Uint {
+        // m = (T mod R) N' mod R
+        let m = self.mod_r(&self.mod_r(&value).mul(&self.modulus_inv));
+
+        // t = (T + m N) / R
+        let mut t = value.add(&m.mul(&self.modulus)).shr(self.aux_modulus_log2);
+
+        let zero = Poly1305Uint::zero();
+
+        let sub = if t >= self.modulus {
+            &self.modulus
+        } else {
+            &zero
+        };
+        t.sub_assign(&sub);
+
+        t
+    }
+}
+
+fn to_secure(val: &BigUint) -> Poly1305Uint {
+    let data = val.to_le_bytes();
+    Poly1305Uint::from_le_bytes(&data)
+}
+*/
+
+/// Optimized integer for storing at least 130-bit integers while performing
+/// operations modulo the prime '2^130 - 5'.
+#[derive(Clone, Copy)]
+struct U1305 {
+    /// Each contains 26-bits of the integer. In little-endian order.
+    limbs: [u64; 5],
+}
+
+impl U1305 {
+    pub fn zero() -> Self {
+        Self { limbs: [0; 5] }
+    }
+
+    /// Returns '2^130 - 5'
+    pub fn modulus() -> Self {
+        const MAX_LIMB: u64 = (1 << 26) - 1;
+        Self {
+            limbs: [MAX_LIMB - 4, MAX_LIMB, MAX_LIMB, MAX_LIMB, MAX_LIMB],
+        }
+    }
+
+    pub fn from(value: u16) -> Self {
+        let mut v = Self::zero();
+        v.limbs[0] = value as u64;
+        v
+    }
+
+    pub fn from_le_bytes(data: &[u8; 16]) -> Self {
+        let v0 = u32::from_le_bytes(*array_ref![data, 0, 4]) & ((1 << 26) - 1);
+        // Start at 26
+        let v1 = (u32::from_le_bytes(*array_ref![data, 3, 4]) >> 2) & ((1 << 26) - 1);
+        // Start at 52
+        let v2 = (u32::from_le_bytes(*array_ref![data, 6, 4]) >> 4) & ((1 << 26) - 1);
+        let v3 = (u32::from_le_bytes(*array_ref![data, 9, 4]) >> 6) & ((1 << 26) - 1);
+        let v4 = {
+            let mut buf = [0u8; 4];
+            buf[0..3].copy_from_slice(array_ref![data, 13, 3]);
+            u32::from_le_bytes(buf) & ((1 << 26) - 1)
+        };
+
+        return Self {
+            limbs: [v0 as u64, v1 as u64, v2 as u64, v3 as u64, v4 as u64],
+        };
+
+        /*
+        let mut out = Self::zero();
+
+        let mut data_i = 0;
+        let mut acc = 0;
+        let mut acc_bits = 0;
+
+        for i in 0..out.limbs.len() {
+            while acc_bits < 26 && data_i < data.len() {
+                acc |= (data[data_i] as u64) << acc_bits;
+                data_i += 1;
+                acc_bits += 8;
+            }
+
+            out.limbs[i] = acc & ((1 << 26) - 1);
+            acc >>= 26;
+            acc_bits -= 26;
+        }
+
+        out
+        */
+    }
+
+    /// NOTE: Only preserved the least significant 16 bytes.
+    pub fn to_le_bytes(&self) -> [u8; 16] {
+        let mut data = [0u8; 16];
+
+        let mut limb_i = 0;
+        let mut acc = 0;
+        let mut acc_bits = 0;
+
+        for i in 0..data.len() {
+            while acc_bits < 8 && limb_i < self.limbs.len() {
+                acc |= self.limbs[limb_i] << acc_bits;
+                acc_bits += 26;
+                limb_i += 1;
+            }
+
+            data[i] = acc as u8;
+            acc >>= 8;
+            acc_bits -= 8;
+        }
+
+        data
+    }
+
+    pub fn add(&mut self, rhs: &Self) {
+        let mut carry = 0;
+        for i in 0..self.limbs.len() {
+            let v = carry + self.limbs[i] + rhs.limbs[i];
+
+            self.limbs[i] = v & ((1 << 26) - 1);
+            carry = v >> 26;
+        }
+
+        // Put the carry into the last limb.
+        self.limbs[4] |= carry << 26;
+    }
+
+    pub fn add_mod_n(&mut self, rhs: &Self) {
+        self.add(rhs);
+        self.maybe_sub_modulus();
+    }
+
+    pub fn add_pow2(&mut self, pow2: usize) {
+        let byte = pow2 / 26;
+        let shift = pow2 % 26;
+        self.limbs[byte] |= 1 << shift;
+    }
+
+    pub fn sub(&mut self, rhs: &Self) {
+        let mut carry = 0;
+        let n = self.limbs.len();
+        for i in 0..n {
+            // TODO: Try to use overflowing_sub instead (that way we don't need to go to
+            // 64bits)
+            let v = (self.limbs[i] as i64) - (rhs.limbs[i] as i64) + carry;
+            let offset;
+            if v < 0 {
+                offset = 1 << 26;
+                carry = -1;
+            } else {
+                offset = 0;
+                carry = 0;
+            }
+
+            self.limbs[i] = (v + offset) as u64;
+        }
+
+        debug_assert_eq!(carry, 0);
+    }
+
+    pub fn greater_eq(&self, rhs: &Self) -> bool {
+        let mut carry = 0;
+        for i in 0..self.limbs.len() {
+            let v = (self.limbs[i] as i64) - (rhs.limbs[i] as i64) + carry;
+            if v < 0 {
+                carry = -1;
+            } else {
+                carry = 0;
+            }
+        }
+
+        carry == 0
+    }
+
+    fn maybe_sub_modulus(&mut self) {
+        let sub;
+        if self.greater_eq(&Self::modulus()) {
+            sub = Self::modulus();
+        } else {
+            sub = Self::zero();
+        }
+        self.sub(&sub);
+    }
+
+    fn mul_mod_n(&self, rhs: &Self) -> Self {
+        let mut out = [0u64; 5];
+
+        // TODO: Unroll me.
+        for i in 0..self.limbs.len() {
+            for j in 0..rhs.limbs.len() {
+                let mut k = i + j;
+                let mut v = self.limbs[i] * rhs.limbs[j];
+                if k >= self.limbs.len() {
+                    k -= self.limbs.len();
+                    v *= 5;
+                }
+
+                out[k] += v;
+            }
+        }
+
+        // Perform carry propgation.
+        // 5 is 3 bits long, so worst case we overflow by 3 bits.
+        let mut carry = 0;
+        for _ in 0..3 {
+            for i in 0..out.len() {
+                let v = out[i] + carry;
+                out[i] = v & ((1 << 26) - 1);
+                carry = v >> 26;
+            }
+
+            carry *= 5;
+        }
+
+        debug_assert_eq!(carry, 0);
+
+        let mut out = Self { limbs: out };
+        out.maybe_sub_modulus();
+
+        // debug_assert!(out < Self::modulus());
+
+        out
+    }
+}
+
+/*
+impl std::cmp::Ord for U1305 {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let mut less = 0;
+        let mut greater = 0;
+
+        for i in (0..self.limbs.len()).rev() {
+            let mask = !(less | greater);
+
+            if self.limbs[i] < other.limbs[i] {
+                less |= mask & 1;
+            } else if self.limbs[i] > other.limbs[i] {
+                greater |= mask & 1;
+            }
+        }
+
+        let cmp = (less << 1) | greater;
+
+        let mut out = std::cmp::Ordering::Equal;
+        // Exactly one of these if statements should always be triggered.
+        if cmp == 0b10 {
+            out = std::cmp::Ordering::Less;
+        }
+        if cmp == 0b01 {
+            out = std::cmp::Ordering::Greater;
+        }
+        if cmp == 0b00 {
+            out = std::cmp::Ordering::Equal;
+        }
+
+        out
+    }
+}
+
+impl std::cmp::PartialEq for U1305 {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
+}
+impl std::cmp::Eq for U1305 {}
+
+impl std::cmp::PartialOrd for U1305 {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+*/
+
 // TOOD: Need to switch to a static allocation / constant time implementation.
-struct Poly1305 {
-    // Constant prime number used as modulus.
-    p: BigUint,
+#[derive(Clone)]
+pub struct Poly1305 {
+    // modulo: MontgomeryModulo,
 
-    // Derived from key.
-    r: BigUint,
-    s: BigUint,
+    // // Constant prime number used as modulus.
+    // p: Poly1305Uint,
 
-    acc: BigUint,
+    // Integer form of the first half of the key.
+    r: U1305,
+
+    /// Integer form of the second half of the key.
+    s: U1305,
+
+    /// Current accumulator value.
+    acc: U1305,
+
+    zero: U1305,
+    temp: U1305,
 }
 
 impl Poly1305 {
-    fn new(key: &[u8]) -> Self {
+    pub fn new(key: &[u8]) -> Self {
+        // let modulo = {
+        //     let p = BigUint::from(130).exp2() - BigUint::from(5);
+        //     // Auxiliary modulus that is coprime to the main modulus.
+        //     let r = BigUint::from(130).exp2();
+
+        //     let p_inv = Modulo::new(&r).inv(&p);
+        //     let r_inv = Modulo::new(&p).inv(&r);
+
+        //     MontgomeryModulo {
+        //         modulus: to_secure(&p),
+        //         modulus_inv: to_secure(&p_inv),
+        //         aux_modulus_mask: to_secure(&(&r - &BigUint::from(1))),
+        //         aux_modulus_log2: 130,
+        //         aux_modulus: to_secure(&r),
+        //         aux_modulus_inv: to_secure(&r_inv),
+        //     }
+        // };
+
         assert_eq!(key.len(), 32);
         Self {
-            p: BigUint::from(130).exp2() - &BigUint::from(5),
+            // modulo,
+            // p: {
+            //     let mut v = Poly1305Uint::from(130).exp2();
+            //     v.sub_assign(&Poly1305Uint::from(5));
+            //     v
+            // },
             r: {
-                let mut data = (&key[0..16]).to_vec();
+                let mut data = *array_ref![key, 0, 16];
                 Self::clamp(&mut data);
-                BigUint::from_le_bytes(&data)
+
+                // NOTE: The upper bits of this are cleared during the clamp so this will
+                // already by reduced modulo the prime.
+                U1305::from_le_bytes(&data)
             },
-            s: BigUint::from_le_bytes(&key[16..]),
-            acc: BigUint::zero(),
+            s: U1305::from_le_bytes(array_ref![key, 16, 16]),
+            acc: U1305::zero(),
+
+            zero: U1305::zero(),
+            temp: U1305::zero(),
         }
     }
 
@@ -196,37 +562,99 @@ impl Poly1305 {
 
     fn clamp(r: &mut [u8]) {
         r[3] &= 15;
-        r[7] &= 15;
-        r[11] &= 15;
-        r[15] &= 15;
+
         r[4] &= 252;
+        r[7] &= 15;
+
         r[8] &= 252;
+        r[11] &= 15;
+
         r[12] &= 252;
+        r[15] &= 15;
     }
+
+    /*
+    r:   Keep always in montgomery form.
+    acc: Easy to put initially into montgomery form.
+
+    Adding to it is easy.
+
+    Eventually use REDC to take out of montgomery form.
+
+    - Split input into 28-bit chunks (in 32-bit registers.)
+    - Multiply into a 64-bit wide size.
+        -
+
+    May have caries from the last column meaning that we need to
+
+    */
+
+    /*
+
+    Core cheat is that 2^130 mod N is 5
+
+    Decompose the number into a part < 2^130
+
+    ( x = i * 2^130 + j ) mod N
+
+    x = i * 5 + j mod N
+
+
+    */
+
+    // a R mod N
+    // R is a power of 2
 
     /// NOTE: Data will be interprated as if it were padded with zeros to a
     /// multiple of 16 bytes.
-    fn update(&mut self, data: &[u8], pad_to_block: bool) {
+    pub fn update(&mut self, data: &[u8], pad_to_block: bool) {
+        let mut buffer = [0u8; 16];
+
         for i in (0..data.len()).step_by(16) {
             let j = std::cmp::min(data.len(), i + 16);
-            // TODO: Make sure that this internally reserves the full size + 1
-            let mut n = BigUint::from_le_bytes(&data[i..j]);
+
+            let buf = {
+                if i + 16 <= data.len() {
+                    array_ref![data, i, 16]
+                } else {
+                    buffer[0..(j - i)].copy_from_slice(&data[i..]);
+                    &buffer
+                }
+            };
+
+            // buf[0..(j - i)].copy_from_slice(&data[i..j]);
+
+            let mut n = U1305::from_le_bytes(buf);
 
             let final_bit = if pad_to_block { 16 * 8 } else { (j - i) * 8 };
-            n.set_bit(final_bit, 1);
+            n.add_pow2(final_bit); // NOTE: Will never cause it go over the modulus.
 
-            self.acc += n;
-            self.acc = Modulo::new(&self.p).mul(&self.r, &self.acc);
+            self.acc.add_mod_n(&n);
+            self.acc = self.acc.mul_mod_n(&self.r);
         }
     }
 
-    fn finish(mut self) -> Vec<u8> {
-        self.acc += self.s;
-        let mut out = self.acc.to_le_bytes();
-        out.resize(16, 0);
-        out
+    pub fn finish(mut self) -> Vec<u8> {
+        // TODO: This doesn't need to do any mod operations.
+        self.acc.add(&self.s);
+        self.acc.to_le_bytes().to_vec()
     }
 }
+
+// fn map_blocks<F: FnMut(&Block)>(data: &[u8], mut f: F) {
+//     let n = data.len() / 16;
+//     let r = data.len() % 16;
+
+//     for i in 0..n {
+//         f(array_ref![data, BLOCK_SIZE * i, BLOCK_SIZE]);
+//     }
+
+//     if r != 0 {
+//         let mut block = [0u8; BLOCK_SIZE];
+//         block[0..r].copy_from_slice(&data[(data.len() - r)..]);
+//         f(&block);
+//     }
+// }
 
 #[derive(Clone)]
 pub struct ChaCha20Poly1305 {}
@@ -320,6 +748,7 @@ impl AuthEncAD for ChaCha20Poly1305 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::*;
     use std::str::FromStr;
 
     #[test]
@@ -373,6 +802,65 @@ mod tests {
         assert_eq!(otk, expected);
     }
 
+    /*
+    #[test]
+    fn u1305_test() {
+        let mut zero = U1305::zero();
+        zero.add_pow2(16 * 8);
+
+        let mut a = U1305::from_le_bytes(&[0xff, 0xff]);
+        assert_eq!(
+            &a.to_le_bytes(),
+            &[0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+
+        let b = U1305::from_le_bytes(&[0x00, 0x00, 0xff, 0xff]);
+        assert_eq!(
+            &b.to_le_bytes(),
+            &[0, 0, 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+
+        a.add_mod_n(&b);
+
+        assert_eq!(
+            &a.to_le_bytes(),
+            &[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+
+        // assert!(a > b);
+        // assert!(a == a);
+        // assert!(b == b);
+
+        let seven = U1305::from(7);
+        let hundred = U1305::from(100);
+        let seven_hundren = seven.mul_mod_n(&hundred);
+        assert_eq!(&seven_hundren.limbs, &[700, 0, 0, 0, 0]);
+
+        let mut five = U1305::from(20);
+        five.add_mod_n(&U1305::modulus());
+        assert_eq!(&five.limbs, &[20, 0, 0, 0, 0]);
+
+        // 2^128
+        let big1 = U1305::from_le_bytes(
+            &BigUint::from_str("340282366920938463463374607431768211456")
+                .unwrap()
+                .to_le_bytes(),
+        );
+
+        let big2 = big1.mul_mod_n(&big1);
+
+        // (2^128 * 2^128) mod N
+        let expected = BigUint::from_str("425352958651173079329218259289710264320")
+            .unwrap()
+            .to_le_bytes();
+        assert_eq!(&big2.to_le_bytes(), &expected[0..16]);
+
+        let max = U1305::from_le_bytes(&[0xff; 17]);
+        let out = max.mul_mod_n(&max);
+        assert_eq!(&out.limbs, &[16, 0, 0, 0, 0]);
+    }
+    */
+
     #[test]
     fn poly1305_test() {
         let key =
@@ -414,5 +902,71 @@ mod tests {
         assert_eq!(out2, plaintext);
 
         // TODO: Also test decryption failures.
+    }
+
+    #[test]
+    fn poly1305_leak_test() {
+        let key_inputs = typical_boundary_buffers(32);
+
+        // TODO: Switch back to 32
+        // TODO: If the number is too small, we may notice the 'Clone' performance
+        // rather than that of the algorithm.
+        let data_inputs = typical_boundary_buffers(4096);
+
+        println!("Poly1305::new() timing:");
+        TimingLeakTest::new(
+            key_inputs.iter(),
+            |key| {
+                Poly1305::new(key);
+                true
+            },
+            TimingLeakTestOptions {
+                num_iterations: 100000,
+            },
+        )
+        .run();
+
+        println!("Poly1305::update() timing:");
+
+        let mut test_cases: Vec<(Poly1305, &[u8])> = vec![];
+        for key in &key_inputs {
+            for data in &data_inputs {
+                test_cases.push((Poly1305::new(key), data));
+            }
+        }
+
+        TimingLeakTest::new(
+            test_cases.iter(),
+            |(poly, data)| {
+                let mut p = poly.clone();
+                p.update(data, false);
+                p.finish()[0] > 1
+            },
+            TimingLeakTestOptions {
+                num_iterations: 100000,
+            },
+        )
+        .run();
+
+        // TODO: Do performance tests on a flat chunk of data without cloning
+        // the poly instance.
+
+        // TODO: Test the finish method.
+        /*
+        key: 32 bytes
+
+        data: sizes from 1-32 bytes
+        pad_block either true or false.
+        */
+
+        // Need:
+        // - Test case descriptor type 'D'
+        // - Instantiated test case type 'T'
+        // - Test case generator to go from 'D' to 'T'
+        // - Function to run the code under test using 'T'
+
+        // Test cases:
+        // - Test cae
+        // - Define a set of test cases and a way to generate each of them.
     }
 }

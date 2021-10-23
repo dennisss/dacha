@@ -639,8 +639,12 @@ version = "0.1.0"
 dependencies = [
  "common",
  "http",
+ "macros",
  "parsing",
+ "protobuf",
+ "protobuf_compiler",
  "raft",
+ "rpc",
  "sstable",
 ]
 
@@ -1734,6 +1738,7 @@ dependencies = [
  "async-std",
  "common",
  "crypto",
+ "failure",
  "fs2",
  "google",
  "http",
@@ -1988,6 +1993,7 @@ dependencies = [
  "common",
  "compression",
  "failure",
+ "google",
  "http",
  "macros",
  "parsing",

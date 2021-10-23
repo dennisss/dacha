@@ -220,6 +220,13 @@ impl WriteBatch {
         self.data.resize(8 + 4, 0);
     }
 
+    pub fn from_bytes(data: &[u8]) -> Result<Self> {
+        // TODO: Perform way more validation
+        Ok(Self {
+            data: data.to_vec(),
+        })
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.data
     }

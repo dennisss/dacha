@@ -95,7 +95,7 @@ pub type Proposal = LogPosition;
 /// the given proposal
 pub type ProposeResult = std::result::Result<Proposal, ProposeError>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Fail)]
 pub enum ProposeError {
     /// Implies that the entry can not currently be processed and should be
     /// retried once the given proposal has been resolved
@@ -103,13 +103,15 @@ pub enum ProposeError {
 
     /// The entry can't be proposed by this server because we are not the
     /// current leader
-    NotLeader {
-        leader_hint: Option<ServerId>,
-    },
+    NotLeader(NotLeaderError),
 
-    Rejected {
-        reason: &'static str,
-    },
+    RejectedConfigChange,
+}
+
+impl std::fmt::Display for ProposeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Debug)]
@@ -136,8 +138,6 @@ pub enum ProposalStatus {
     /// or no where at all)
     Unavailable,
 }
-
-pub type ConsensusModuleHandle = Arc<Mutex<ConsensusModule>>;
 
 // TODO: Finish and move to the constraint file
 
@@ -173,15 +173,18 @@ pub struct ReadIndex {
     index: LogIndex,
 }
 
-///
-pub enum ReadIndexType {
-    Linearizable,
-    LazyLinearizable,
-    ProbablyLinearizable,
+pub struct NotLeaderError {
+    /// The latest observed term. Can be used by the recipient to ignore leader
+    /// hints from past terms.
+    pub term: Term,
+
+    pub leader_hint: Option<ServerId>,
 }
 
-pub struct NotLeaderError {
-    pub leader_hint: Option<ServerId>,
+impl std::fmt::Display for NotLeaderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 /// Error that may occur while attempting to resolve/finalize a read index.
@@ -326,6 +329,11 @@ impl ConsensusModule {
             config.apply(&e, meta.commit_index());
         }
 
+        // TODO: Understand exactly when this line is needed.
+        // Without this, we sometimes get into a position where proposals lead to
+        // RetryAfter(...) given the config has a pending config uppon startup.
+        config.commit(meta.commit_index());
+
         // TODO: Take the initial time as input
         let state = Self::new_follower(time);
 
@@ -349,6 +357,24 @@ impl ConsensusModule {
 
     pub fn meta(&self) -> &Metadata {
         &self.meta
+    }
+
+    /// NOTE: The returned id may be equal to the current server id.
+    pub fn leader_hint(&self) -> NotLeaderError {
+        match &self.state {
+            ConsensusState::Leader(_) => NotLeaderError {
+                term: self.meta.current_term(),
+                leader_hint: Some(self.id),
+            },
+            ConsensusState::Follower(s) => NotLeaderError {
+                term: self.meta.current_term(),
+                leader_hint: s.last_leader_id.clone(),
+            },
+            ConsensusState::Candidate(_) => NotLeaderError {
+                term: self.meta.current_term(),
+                leader_hint: None,
+            },
+        }
     }
 
     /// Gets the latest configuration snapshot currently available in memory
@@ -392,9 +418,13 @@ impl ConsensusModule {
                 })
             }
             ConsensusState::Follower(s) => Err(NotLeaderError {
+                term: self.meta.current_term(),
                 leader_hint: s.last_leader_id.clone(),
             }),
-            ConsensusState::Candidate(_) => Err(NotLeaderError { leader_hint: None }),
+            ConsensusState::Candidate(_) => Err(NotLeaderError {
+                term: self.meta.current_term(),
+                leader_hint: None,
+            }),
         }
     }
 
@@ -459,11 +489,13 @@ impl ConsensusModule {
             ConsensusState::Leader(s) => s,
             ConsensusState::Follower(s) => {
                 return Err(ReadIndexError::NotLeader(NotLeaderError {
+                    term: self.meta.current_term(),
                     leader_hint: s.last_leader_id.clone(),
                 }))
             }
             ConsensusState::Candidate(_) => {
                 return Err(ReadIndexError::NotLeader(NotLeaderError {
+                    term: self.meta.current_term(),
                     leader_hint: None,
                 }))
             }
@@ -472,6 +504,7 @@ impl ConsensusModule {
         // Verify that the term hasn't changed since the index was created.
         if self.meta.current_term() != read_index.term {
             return Err(ReadIndexError::NotLeader(NotLeaderError {
+                term: self.meta.current_term(),
                 leader_hint: Some(self.id),
             }));
         }
@@ -514,6 +547,12 @@ impl ConsensusModule {
         3.
 
     */
+
+    pub fn reset_follower(&mut self, time: Instant) {
+        if let ConsensusState::Follower(f) = &self.state {
+            self.state = Self::new_follower(time);
+        }
+    }
 
     /// Propose a new state machine command given some data packet
     /// NOTE: Will immediately produce an output right?
@@ -648,9 +687,7 @@ impl ConsensusModule {
                             .insert(*id, ConsensusFollowerProgress::new(last_log_index));
                     }
                     ConfigChangeTypeCase::Unknown => {
-                        return Err(ProposeError::Rejected {
-                            reason: "Unsupported or unset config change type",
-                        });
+                        return Err(ProposeError::RejectedConfigChange);
                     }
                 };
             }
@@ -675,7 +712,8 @@ impl ConsensusModule {
 
             Ok(Proposal::new(term, index))
         } else if let ConsensusState::Follower(ref s) = self.state {
-            return Err(ProposeError::NotLeader {
+            return Err(ProposeError::NotLeader(NotLeaderError {
+                term: self.meta.current_term(),
                 leader_hint: s.last_leader_id.or_else(|| {
                     if self.meta.voted_for().value() > 0 {
                         Some(self.meta.voted_for())
@@ -683,9 +721,12 @@ impl ConsensusModule {
                         None
                     }
                 }),
-            });
+            }));
         } else {
-            return Err(ProposeError::NotLeader { leader_hint: None });
+            return Err(ProposeError::NotLeader(NotLeaderError {
+                term: self.meta.current_term(),
+                leader_hint: None,
+            }));
         };
 
         // Cycle the state to replicate this entry to other servers

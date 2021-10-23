@@ -44,7 +44,7 @@ pub fn constant_eq(a: &[u8], b: &[u8]) -> bool {
 
     // Compare full integers at a time.
     let mut i = 0;
-    let mut last = CMP_SIZE * n;
+    let last = CMP_SIZE * n;
     while i < last {
         let ai = usize::from_le_bytes(*array_ref![a, i, CMP_SIZE]);
         let bi = usize::from_le_bytes(*array_ref![b, i, CMP_SIZE]);
@@ -65,6 +65,8 @@ pub fn constant_eq(a: &[u8], b: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::test::*;
 
     #[test]
     fn constant_eq_timing_test() {
@@ -128,6 +130,76 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn constant_eq_leak_test() {
+        const SIZE: usize = 10000;
+
+        let zero = vec![0u8; SIZE];
+        let all_set = vec![0xff; SIZE];
+        let every_other_set = {
+            let mut v = vec![0x00; SIZE];
+            for i in (0..SIZE).step_by(2) {
+                v[i] = 1;
+            }
+            v
+        };
+        let first_set = {
+            let mut v = vec![0x00; SIZE];
+            v[0] = 2;
+            v
+        };
+        let first_set2 = {
+            let mut v = vec![0x00; SIZE];
+            v[0] = 10;
+            v
+        };
+
+        let last_set = {
+            let mut v = vec![0x00; SIZE];
+            v[SIZE - 20] = 22;
+
+            v
+        };
+        let last_set2 = {
+            let mut v = vec![0x00; SIZE];
+            v[SIZE - 20] = 60;
+            v
+        };
+
+        // let random1 = crate::random::clocked_rng().generate_bytes()
+
+        let input_data = &[
+            &zero,
+            &all_set,
+            &every_other_set,
+            &first_set,
+            &first_set2,
+            &last_set,
+            &last_set2,
+        ];
+
+        let mut test_cases: Vec<(&[u8], &[u8])> = vec![];
+        for a in input_data {
+            for b in input_data {
+                test_cases.push((a, b));
+            }
+        }
+        for a in input_data {
+            for b in input_data {
+                test_cases.push((a, b));
+            }
+        }
+
+        TimingLeakTest::new(
+            test_cases.iter(),
+            |(a, b)| constant_eq(*a, *b),
+            TimingLeakTestOptions {
+                num_iterations: 10000,
+            },
+        )
+        .run();
+    }
 }
 
 pub mod aead;
@@ -157,6 +229,7 @@ pub mod sha384;
 pub mod sha512;
 mod sha_test;
 pub mod sip;
+pub mod test;
 pub mod tls;
 pub mod utils;
 pub mod x509;
