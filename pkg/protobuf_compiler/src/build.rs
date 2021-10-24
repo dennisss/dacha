@@ -1,9 +1,13 @@
-use crate::compiler::{Compiler, CompilerOptions};
-use crate::syntax::parse_proto;
-use common::errors::*;
 use std::env;
 use std::fs::DirEntry;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use common::errors::*;
+
+use crate::compiler::{Compiler, CompilerOptions};
+use crate::syntax::parse_proto;
 
 // TODO: Most of this code is identical across the different implements and
 // could probably be refactored out!!
@@ -22,9 +26,18 @@ pub fn build_with_options(options: CompilerOptions) -> Result<()> {
 
     // TODO: Propagate out the Results from inside the callback.
 
-    let mut input_paths: Vec<PathBuf> = vec![];
-
     let current_package_name = input_dir.file_name().unwrap().to_str().unwrap();
+
+    build_custom(&input_dir, &output_dir, current_package_name, options)
+}
+
+pub fn build_custom(
+    input_dir: &Path,
+    output_dir: &Path,
+    current_package_name: &str,
+    options: CompilerOptions,
+) -> Result<()> {
+    let mut input_paths: Vec<PathBuf> = vec![];
 
     common::fs::recursively_list_dir(&input_dir.join("src"), &mut |entry: &DirEntry| {
         if entry
@@ -41,6 +54,7 @@ pub fn build_with_options(options: CompilerOptions) -> Result<()> {
         input_paths.push(entry.path().clone());
     })?;
 
+    // TODO: Parallelize this?
     for input_path in input_paths {
         let relative_path = input_path.strip_prefix(&input_dir).unwrap().to_owned();
         println!("cargo:rerun-if-changed={}", relative_path.to_str().unwrap());
@@ -60,7 +74,16 @@ pub fn build_with_options(options: CompilerOptions) -> Result<()> {
         std::fs::create_dir_all(output_path.parent().unwrap())?;
 
         let output = Compiler::compile(&desc, current_package_name, &options)?;
-        std::fs::write(output_path, output)?;
+        std::fs::write(&output_path, output)?;
+
+        let res = Command::new("rustfmt")
+            .arg(output_path.to_str().unwrap())
+            .output()?;
+        if !res.status.success() {
+            std::io::stdout().write_all(&res.stdout).unwrap();
+            std::io::stderr().write_all(&res.stderr).unwrap();
+            return Err(err_msg("rustfmt failed"));
+        }
     }
 
     Ok(())

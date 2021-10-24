@@ -1,14 +1,8 @@
 // This file contains structs which define the syntax tree of a .proto file
 // describing a set of messages/services.
 
-/// In range [1, 2^29 - 1] except [19000, 19999] is reserved.
-pub type FieldNumber = u32;
-
-pub type ExtensionNumberType = FieldNumber;
-
-/// Type used in memory to store the value of an enum field.
-/// NOTE: Can be negative.
-pub type EnumValue = i32;
+use protobuf_core::{EnumValue, FieldNumber};
+use protobuf_descriptor as pb;
 
 // Proto 2 and 3
 #[derive(Clone, Debug)]
@@ -51,6 +45,17 @@ pub enum Label {
     Required,
     Optional,
     Repeated,
+}
+
+impl Label {
+    fn to_proto(&self) -> pb::FieldDescriptorProto_Label {
+        match self {
+            Label::None => pb::FieldDescriptorProto_Label::LABEL_OPTIONAL,
+            Label::Required => pb::FieldDescriptorProto_Label::LABEL_REQUIRED,
+            Label::Optional => pb::FieldDescriptorProto_Label::LABEL_OPTIONAL,
+            Label::Repeated => pb::FieldDescriptorProto_Label::LABEL_REPEATED,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -119,6 +124,45 @@ pub struct Field {
     pub unknown_options: Vec<Opt>,
 }
 
+impl Field {
+    fn to_proto(&self, oneof_index: Option<usize>) -> pb::FieldDescriptorProto {
+        let mut proto = pb::FieldDescriptorProto::default();
+        proto.set_name(&self.name);
+        proto.set_number(self.num as i32);
+        proto.set_label(self.label.to_proto());
+
+        match &self.typ {
+            FieldType::Double => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_DOUBLE),
+            FieldType::Float => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_FLOAT),
+            FieldType::Int32 => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_INT32),
+            FieldType::Int64 => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_INT64),
+            FieldType::Uint32 => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_UINT32),
+            FieldType::Uint64 => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_UINT64),
+            FieldType::Sint32 => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_SINT32),
+            FieldType::Sint64 => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_SINT64),
+            FieldType::Fixed32 => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_FIXED32),
+            FieldType::Fixed64 => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_FIXED64),
+            FieldType::Sfixed32 => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_SFIXED32),
+            FieldType::Sfixed64 => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_SFIXED64),
+            FieldType::Bool => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_BOOL),
+            FieldType::String => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_STRING),
+            FieldType::Bytes => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_BYTES),
+            FieldType::Named(name) => {
+                proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_MESSAGE);
+                proto.set_type_name(name);
+            }
+        }
+
+        if let Some(idx) = oneof_index {
+            proto.set_oneof_index(idx as i32);
+        }
+
+        // TODO: options
+
+        proto
+    }
+}
+
 // Proto 2
 #[derive(Debug, Clone)]
 pub struct Group {
@@ -170,6 +214,26 @@ pub struct Enum {
     pub body: Vec<EnumBodyItem>,
 }
 
+impl Enum {
+    fn to_proto(&self) -> pb::EnumDescriptorProto {
+        let mut proto = pb::EnumDescriptorProto::default();
+        proto.set_name(&self.name);
+        for item in &self.body {
+            match item {
+                EnumBodyItem::Option(_) => todo!(),
+                EnumBodyItem::Field(field) => {
+                    let mut v = pb::EnumValueDescriptorProto::default();
+                    v.set_name(&field.name);
+                    v.set_number(field.num);
+                    proto.add_value(v);
+                }
+            }
+        }
+
+        proto
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum EnumBodyItem {
     Option(Opt),
@@ -184,12 +248,88 @@ pub struct EnumField {
 }
 
 #[derive(Debug, Clone)]
-pub struct Message {
+pub struct MessageDescriptor {
     pub name: String,
     pub body: Vec<MessageItem>,
 }
 
-impl Message {
+impl MessageDescriptor {
+    fn to_proto(&self) -> protobuf_descriptor::DescriptorProto {
+        let mut proto = protobuf_descriptor::DescriptorProto::default();
+        proto.set_name(&self.name);
+        for item in &self.body {
+            match item {
+                MessageItem::Field(f) => {
+                    proto.add_field(f.to_proto(None));
+                }
+                MessageItem::Enum(e) => {
+                    proto.add_enum_type(e.to_proto());
+                }
+                MessageItem::OneOf(o) => {
+                    let idx = proto.oneof_decl_len();
+
+                    let mut v = pb::OneofDescriptorProto::default();
+                    v.set_name(&o.name);
+                    proto.add_oneof_decl(v);
+
+                    for field in &o.fields {
+                        proto.add_field(field.to_proto(Some(idx)));
+                    }
+                }
+                MessageItem::Message(m) => {
+                    proto.add_nested_type(m.to_proto());
+                }
+                MessageItem::MapField(f) => {
+                    let mut entry = pb::DescriptorProto::default();
+                    entry.set_name(format!("{}Entry", common::snake_to_camel_case(&f.name)));
+                    entry.options_mut().set_map_entry(true);
+                    entry.add_field(
+                        Field {
+                            label: Label::Optional,
+                            typ: f.key_type.clone(),
+                            name: "key".to_string(),
+                            num: 1, // TODO: Define this in some constants file
+                            options: FieldOptions::default(),
+                            unknown_options: vec![],
+                        }
+                        .to_proto(None),
+                    );
+                    entry.add_field(
+                        Field {
+                            label: Label::Optional,
+                            typ: f.value_type.clone(),
+                            name: "value".to_string(),
+                            num: 2, // TODO: Define this in some constants file
+                            options: FieldOptions::default(),
+                            unknown_options: vec![],
+                        }
+                        .to_proto(None),
+                    );
+
+                    proto.add_field(
+                        Field {
+                            label: Label::Repeated,
+                            typ: FieldType::Named(entry.name().to_string()),
+                            name: f.name.to_string(),
+                            num: f.num,
+                            options: FieldOptions::default(),
+                            unknown_options: vec![],
+                        }
+                        .to_proto(None),
+                    );
+
+                    proto.add_nested_type(entry);
+                }
+                v @ _ => {
+                    println!("Do not support {:?}", v);
+                    todo!()
+                }
+            }
+        }
+
+        proto
+    }
+
     pub fn fields(&self) -> impl Iterator<Item = &Field> {
         self.body.iter().filter_map(|item| {
             if let MessageItem::Field(f) = item {
@@ -205,7 +345,7 @@ impl Message {
 pub enum MessageItem {
     Field(Field),
     Enum(Enum),
-    Message(Message),
+    Message(MessageDescriptor),
     Extend(Extend),
     Extensions(Ranges),
     Group(Group),
@@ -270,6 +410,15 @@ pub struct Stream {
     pub options: Vec<Opt>,
 }
 
+/*
+- Basically convert one of these into a FileDescriptorProto.
+- When compiling a file, we will put a "const FILE_DESCRIPTOR: &'static [u8]" at the top which contains the serialized proto
+    - This also needs to be aware of all files it references (so may recursively reference the descriptors in other packages).
+- A protobuf_core::Message will have a file_descriptor() method to get the serialized descriptor of the file.
+- An rpc::Service will need to be able to register all types it uses into a descriptor pool upon request.
+*/
+
+// Basically must be able to convert this to a FileDescriptorProto
 #[derive(Debug, Clone)]
 pub struct Proto {
     pub syntax: Syntax,
@@ -279,9 +428,40 @@ pub struct Proto {
     pub definitions: Vec<TopLevelDef>,
 }
 
+impl Proto {
+    pub fn to_proto(&self) -> protobuf_descriptor::FileDescriptorProto {
+        let mut proto = protobuf_descriptor::FileDescriptorProto::default();
+        proto.set_syntax(match self.syntax {
+            Syntax::Proto2 => "proto2",
+            Syntax::Proto3 => "proto3",
+        });
+
+        proto.set_package(&self.package);
+        // for import in &self.imports {
+        //     proto.add_dependency(v)
+        // }
+
+        for def in &self.definitions {
+            match def {
+                TopLevelDef::Message(m) => {
+                    proto.add_message_type(m.to_proto());
+                }
+                TopLevelDef::Enum(e) => {
+                    proto.add_enum_type(e.to_proto());
+                }
+                TopLevelDef::Extend(_) => todo!(),
+                TopLevelDef::Service(_) => todo!(),
+                TopLevelDef::Option(_) => todo!(),
+            }
+        }
+
+        proto
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum TopLevelDef {
-    Message(Message),
+    Message(MessageDescriptor),
     Enum(Enum),
     Extend(Extend),
     Service(Service),

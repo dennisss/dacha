@@ -1,10 +1,9 @@
 use std::intrinsics::unlikely;
 
-use byteorder::{ByteOrder, LittleEndian};
 use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
-use protobuf_compiler::spec::FieldNumber;
 
+use crate::types::FieldNumber;
 use crate::{BytesField, Enum, Message};
 
 pub fn serialize_varint(mut v: u64, out: &mut Vec<u8>) {
@@ -197,7 +196,7 @@ impl WireField<'_> {
     }
 
     pub fn parse_double(&self) -> Result<f64> {
-        Ok(LittleEndian::read_f64(self.value.word64()?))
+        Ok(f64::from_le_bytes(*self.value.word64()?))
     }
 
     pub fn serialize_double(field_number: FieldNumber, v: f64, out: &mut Vec<u8>) -> Result<()> {
@@ -222,7 +221,7 @@ impl WireField<'_> {
     }
 
     pub fn parse_float(&self) -> Result<f32> {
-        Ok(LittleEndian::read_f32(self.value.word32()?))
+        Ok(f32::from_le_bytes(*self.value.word32()?))
     }
 
     // pub fn parse_repeated_float
@@ -394,7 +393,7 @@ impl WireField<'_> {
     }
 
     pub fn parse_fixed32(&self) -> Result<u32> {
-        Ok(LittleEndian::read_u32(self.value.word32()?))
+        Ok(u32::from_le_bytes(*self.value.word32()?))
     }
 
     pub fn serialize_fixed32(field_number: FieldNumber, v: u32, out: &mut Vec<u8>) -> Result<()> {
@@ -419,7 +418,7 @@ impl WireField<'_> {
     }
 
     pub fn parse_fixed64(&self) -> Result<u64> {
-        Ok(LittleEndian::read_u64(self.value.word64()?))
+        Ok(u64::from_le_bytes(*self.value.word64()?))
     }
 
     pub fn serialize_fixed64(field_number: FieldNumber, v: u64, out: &mut Vec<u8>) -> Result<()> {
@@ -444,10 +443,10 @@ impl WireField<'_> {
     }
 
     pub fn parse_sfixed32(&self) -> Result<i32> {
-        Ok(LittleEndian::read_i32(self.value.word32()?))
+        Ok(i32::from_le_bytes(*self.value.word32()?))
     }
     pub fn parse_sfixed64(&self) -> Result<i64> {
-        Ok(LittleEndian::read_i64(self.value.word64()?))
+        Ok(i64::from_le_bytes(*self.value.word64()?))
     }
 
     pub fn parse_bool(&self) -> Result<bool> {
@@ -607,7 +606,7 @@ impl<'a> WireFieldIter<'a> {
                     if self.input.len() < 8 {
                         return Err(err_msg("Too few bytes for word64"));
                     }
-                    let v = &self.input[0..8];
+                    let v = array_ref![self.input, 0, 8];
                     self.input = &self.input[8..];
                     WireValue::Word64(v)
                 }
@@ -615,7 +614,7 @@ impl<'a> WireFieldIter<'a> {
                     if self.input.len() < 4 {
                         return Err(err_msg("Too few bytes for word32"));
                     }
-                    let v = &self.input[0..4];
+                    let v = array_ref![self.input, 0, 4];
                     self.input = &self.input[4..];
                     WireValue::Word32(v)
                 }
@@ -679,17 +678,17 @@ impl<'a> std::iter::Iterator for WireFieldIter<'a> {
 pub enum WireValue<'a> {
     // TODO: Use u64 instead of usize
     Varint(u64),           // sint32, sint64, bool, enum
-    Word64(&'a [u8]),      // fixed64, sfixed64
+    Word64(&'a [u8; 8]),   // fixed64, sfixed64
     LengthDelim(&'a [u8]), // bytes, embedded messages, packed repeated fields
     Group(Vec<WireValue<'a>>),
-    Word32(&'a [u8]),
+    Word32(&'a [u8; 4]),
 }
 
 impl WireValue<'_> {
     enum_accessor!(varint, Varint, u64);
-    enum_accessor!(word64, Word64, &[u8]);
+    enum_accessor!(word64, Word64, &[u8; 8]);
     enum_accessor!(length_delim, LengthDelim, &[u8]);
-    enum_accessor!(word32, Word32, &[u8]);
+    enum_accessor!(word32, Word32, &[u8; 4]);
 
     /*
     WireType::Varint => {
@@ -742,7 +741,7 @@ impl WireValue<'_> {
     fn serialize(&self, out: &mut Vec<u8>) {
         match self {
             WireValue::Varint(n) => serialize_varint(*n, out),
-            WireValue::Word64(v) => out.extend_from_slice(&v),
+            WireValue::Word64(v) => out.extend_from_slice(&v[..]),
             WireValue::LengthDelim(v) => {
                 serialize_varint(v.len() as u64, out);
                 out.extend_from_slice(v);
@@ -752,7 +751,7 @@ impl WireValue<'_> {
                     i.serialize(out);
                 }
             }
-            WireValue::Word32(v) => out.extend_from_slice(v),
+            WireValue::Word32(v) => out.extend_from_slice(&v[..]),
         };
     }
 }

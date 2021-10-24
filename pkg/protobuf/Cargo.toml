@@ -7,9 +7,9 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 parsing = { path = "../parsing" }
-byteorder = "1.3.2"
 base64 = "0.11.0"
 protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_core = { path = "../protobuf_core" }
 macros = { path = "../macros" }
 json = { path = "../json" }
 

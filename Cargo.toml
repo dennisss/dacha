@@ -11,6 +11,8 @@ members = [
 	"pkg/parsing_compiler",
 	"pkg/compression",
 	"pkg/math",
+	"pkg/protobuf_core",
+	"third_party/protobuf_descriptor",
 	"pkg/protobuf_compiler",
 	"pkg/protobuf",
 	"pkg/protobuf_json",

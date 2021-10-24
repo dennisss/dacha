@@ -1686,12 +1686,12 @@ name = "protobuf"
 version = "0.1.0"
 dependencies = [
  "base64",
- "byteorder",
  "common",
  "json",
  "macros",
  "parsing",
  "protobuf_compiler",
+ "protobuf_core",
 ]
 
 [[package]]
@@ -1700,6 +1700,26 @@ version = "0.1.0"
 dependencies = [
  "common",
  "parsing",
+ "protobuf_core",
+ "protobuf_descriptor",
+]
+
+[[package]]
+name = "protobuf_core"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "common",
+ "macros",
+]
+
+[[package]]
+name = "protobuf_descriptor"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf_core",
 ]
 
 [[package]]

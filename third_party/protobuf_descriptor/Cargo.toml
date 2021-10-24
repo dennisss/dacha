@@ -1,0 +1,8 @@
+[package]
+name = "protobuf_descriptor"
+version = "0.1.0"
+
+[dependencies]
+common = { path = "../../pkg/common" }
+protobuf_core = { path = "../../pkg/protobuf_core" }
+macros = { path = "../../pkg/macros" }

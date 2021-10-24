@@ -1,0 +1,10 @@
+[package]
+name = "protobuf_core"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+base64 = "0.11.0"
+macros = { path = "../macros" }

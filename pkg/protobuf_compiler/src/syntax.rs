@@ -8,10 +8,12 @@
 // []  option (zero or one time)
 // {}  repetition (any number of times)
 
-use crate::spec::*;
-use crate::tokenizer::{capitalLetter, decimal_digit, letter, Token};
 use common::errors::*;
 use parsing::*;
+use protobuf_core::FieldNumber;
+
+use crate::spec::*;
+use crate::tokenizer::{capitalLetter, decimal_digit, letter, Token};
 
 macro_rules! token_atom {
     ($name:ident, $e:ident, $t:ty) => {
@@ -505,11 +507,11 @@ parser!(enum_value_option<&str, Opt> => {
 
 // Proto 2 and 3
 // message = "message" messageName messageBody
-parser!(message<&str, Message> => seq!(c => {
+parser!(message<&str, MessageDescriptor> => seq!(c => {
     c.next(is(ident, "message"))?;
     let name = c.next(message_name)?;
     let body = c.next(message_body)?;
-    Ok(Message { name, body })
+    Ok(MessageDescriptor { name, body })
 }));
 
 // TODO: Proto3 has no 'extensions' or 'group'

@@ -2,9 +2,9 @@ use std::default::Default;
 use std::ops::{Deref, DerefMut};
 
 use common::bytes::BytesMut;
-use protobuf_compiler::spec::FieldNumber;
 
-use crate::Enum;
+use crate::message::Enum;
+use crate::types::FieldNumber;
 
 pub enum Reflection<'a> {
     F32(&'a f32),
@@ -119,10 +119,10 @@ impl<T: MessageReflection> Reflect for T {
 
 impl<T: Reflect> Reflect for crate::MessagePtr<T> {
     fn reflect(&self) -> Option<Reflection> {
-        self.value.as_ref().reflect()
+        self.deref().reflect()
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
-        self.value.as_mut().reflect_mut()
+        self.deref_mut().reflect_mut()
     }
 }
 

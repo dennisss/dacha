@@ -37,6 +37,9 @@ impl<T: protobuf::Message> std::ops::Deref for ServerRequest<T> {
     }
 }
 
+/// RPC request received by a server consisting of zero or more messages.
+///
+/// Internally this is implemented by reading from an http::Body.
 pub struct ServerStreamRequest<T> {
     request_body: Box<dyn Body>,
     context: ServerRequestContext,
