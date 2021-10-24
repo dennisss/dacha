@@ -3,7 +3,7 @@
 
 use std::convert::TryInto;
 
-use common::errors::*;
+use common::{__Deref, errors::*};
 use parsing::*;
 use protobuf_compiler::tokenizer::{float_lit, int_lit, serialize_str_lit, strLit};
 
@@ -434,7 +434,7 @@ fn serialize_message(message: &dyn MessageReflection, indent: &str, out: &mut St
         out.push_str(&format!(
             "{}{}{} ",
             indent,
-            field.name,
+            field.name.deref(),
             if is_message { "" } else { ":" }
         ));
 

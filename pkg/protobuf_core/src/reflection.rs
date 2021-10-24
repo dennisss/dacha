@@ -43,18 +43,11 @@ pub enum ReflectionMut<'a> {
 
 pub struct FieldDescriptorShort {
     pub number: FieldNumber,
-    pub name: &'static str,
+    pub name: StringPtr,
 }
 
 impl FieldDescriptorShort {
-    pub const fn new_static(name: &'static str, number: FieldNumber) -> Self {
-        Self {
-            name: StringPtr::Static(name),
-            number,
-        }
-    }
-
-    pub fn new_dynamic(name: String, number: FieldNumber) -> Self {
+    pub fn new(name: String, number: FieldNumber) -> Self {
         Self {
             name: StringPtr::Dynamic(name),
             number,

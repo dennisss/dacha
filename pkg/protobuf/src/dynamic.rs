@@ -41,11 +41,11 @@ impl DynamicMessage {
             }
             TYPE_MESSAGE | TYPE_ENUM => match field_desc.find_type() {
                 Some(TypeDescriptor::Message(m)) => {
-                    let mut val = DynamicMessage::new(m);
+                    let val = DynamicMessage::new(m);
                     DynamicValue::Message(val)
                 }
                 Some(TypeDescriptor::Enum(e)) => {
-                    let mut val = DynamicEnum::new(e);
+                    let val = DynamicEnum::new(e);
                     DynamicValue::Enum(val)
                 }
                 _ => return Err(err_msg("Unknown type in descriptor")),
@@ -274,7 +274,7 @@ impl protobuf_core::Message for DynamicMessage {
 
 impl protobuf_core::MessageReflection for DynamicMessage {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
-        todo!()
+        &self.desc.fields()
     }
 
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {

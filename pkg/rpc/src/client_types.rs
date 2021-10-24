@@ -109,7 +109,7 @@ impl ClientStreamingRequest<()> {
         }
     }
 
-    pub(crate) fn into<T: protobuf::Message>(self) -> ClientStreamingRequest<T> {
+    pub fn into<T: protobuf::Message>(self) -> ClientStreamingRequest<T> {
         ClientStreamingRequest {
             sender: self.sender,
             phantom_t: PhantomData,
@@ -266,7 +266,8 @@ impl<Res: protobuf::Message> ClientStreamingResponse<Res> {
 impl<T> ClientStreamingResponse<T> {
     // TODO: Consider adding a method to wait for initial metadata?
 
-    pub(crate) async fn recv_bytes(&mut self) -> Option<Bytes> {
+    // TODO: Eventually make this pub(crate) again.
+    pub async fn recv_bytes(&mut self) -> Option<Bytes> {
         loop {
             return match self.state.take() {
                 Some(ClientStreamingResponseState::Head(response)) => {

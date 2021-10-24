@@ -1681,7 +1681,7 @@ impl Compiler<'_> {
                 .into_iter()
                 .map(|(num, name)| {
                     format!(
-                        "{pkg}::FieldDescriptorShort {{ name: {pkg}::StringPtr::Static(\"{name}\"), num: {num} }}",
+                        "{pkg}::FieldDescriptorShort {{ name: {pkg}::StringPtr::Static(\"{name}\"), number: {num} }}",
                         pkg = self.options.runtime_package, name = name, num = num
                     )
                 })
@@ -1689,8 +1689,6 @@ impl Compiler<'_> {
             lines.add(format!("\t&[{}]", field_strs.join(", ")));
             lines.add("}");
         });
-
-        // lines.add()
 
         lines.indented(|lines| {
             lines.add("fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {");

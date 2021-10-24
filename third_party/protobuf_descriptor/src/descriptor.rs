@@ -82,8 +82,8 @@ impl protobuf_core::Message for FileDescriptorSet {
 impl protobuf_core::MessageReflection for FileDescriptorSet {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[protobuf_core::FieldDescriptorShort {
+            name: protobuf_core::StringPtr::Static("file"),
             number: 1,
-            name: "file",
         }]
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
@@ -459,52 +459,52 @@ impl protobuf_core::MessageReflection for FileDescriptorProto {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("name"),
                 number: 1,
-                name: "name",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("package"),
                 number: 2,
-                name: "package",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("dependency"),
                 number: 3,
-                name: "dependency",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("public_dependency"),
                 number: 10,
-                name: "public_dependency",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("weak_dependency"),
                 number: 11,
-                name: "weak_dependency",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("message_type"),
                 number: 4,
-                name: "message_type",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("enum_type"),
                 number: 5,
-                name: "enum_type",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("service"),
                 number: 6,
-                name: "service",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("extension"),
                 number: 7,
-                name: "extension",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("options"),
                 number: 8,
-                name: "options",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("source_code_info"),
                 number: 9,
-                name: "source_code_info",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("syntax"),
                 number: 12,
-                name: "syntax",
             },
         ]
     }
@@ -683,16 +683,16 @@ impl protobuf_core::MessageReflection for DescriptorProto_ExtensionRange {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("start"),
                 number: 1,
-                name: "start",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("end"),
                 number: 2,
-                name: "end",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("options"),
                 number: 3,
-                name: "options",
             },
         ]
     }
@@ -816,12 +816,12 @@ impl protobuf_core::MessageReflection for DescriptorProto_ReservedRange {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("start"),
                 number: 1,
-                name: "start",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("end"),
                 number: 2,
-                name: "end",
             },
         ]
     }
@@ -1161,44 +1161,44 @@ impl protobuf_core::MessageReflection for DescriptorProto {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("name"),
                 number: 1,
-                name: "name",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("field"),
                 number: 2,
-                name: "field",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("extension"),
                 number: 6,
-                name: "extension",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("nested_type"),
                 number: 3,
-                name: "nested_type",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("enum_type"),
                 number: 4,
-                name: "enum_type",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("extension_range"),
                 number: 5,
-                name: "extension_range",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("oneof_decl"),
                 number: 8,
-                name: "oneof_decl",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("options"),
                 number: 7,
-                name: "options",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("reserved_range"),
                 number: 9,
-                name: "reserved_range",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("reserved_name"),
                 number: 10,
-                name: "reserved_name",
             },
         ]
     }
@@ -1325,8 +1325,8 @@ impl protobuf_core::Message for ExtensionRangeOptions {
 impl protobuf_core::MessageReflection for ExtensionRangeOptions {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[protobuf_core::FieldDescriptorShort {
+            name: protobuf_core::StringPtr::Static("uninterpreted_option"),
             number: 999,
-            name: "uninterpreted_option",
         }]
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
@@ -1830,44 +1830,44 @@ impl protobuf_core::MessageReflection for FieldDescriptorProto {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("name"),
                 number: 1,
-                name: "name",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("number"),
                 number: 3,
-                name: "number",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("label"),
                 number: 4,
-                name: "label",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("type"),
                 number: 5,
-                name: "type",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("type_name"),
                 number: 6,
-                name: "type_name",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("extendee"),
                 number: 2,
-                name: "extendee",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("default_value"),
                 number: 7,
-                name: "default_value",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("oneof_index"),
                 number: 9,
-                name: "oneof_index",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("json_name"),
                 number: 10,
-                name: "json_name",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("options"),
                 number: 8,
-                name: "options",
             },
         ]
     }
@@ -2018,12 +2018,12 @@ impl protobuf_core::MessageReflection for OneofDescriptorProto {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("name"),
                 number: 1,
-                name: "name",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("options"),
                 number: 2,
-                name: "options",
             },
         ]
     }
@@ -2146,12 +2146,12 @@ impl protobuf_core::MessageReflection for EnumDescriptorProto_EnumReservedRange 
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("start"),
                 number: 1,
-                name: "start",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("end"),
                 number: 2,
-                name: "end",
             },
         ]
     }
@@ -2358,24 +2358,24 @@ impl protobuf_core::MessageReflection for EnumDescriptorProto {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("name"),
                 number: 1,
-                name: "name",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("value"),
                 number: 2,
-                name: "value",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("options"),
                 number: 3,
-                name: "options",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("reserved_range"),
                 number: 4,
-                name: "reserved_range",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("reserved_name"),
                 number: 5,
-                name: "reserved_name",
             },
         ]
     }
@@ -2533,16 +2533,16 @@ impl protobuf_core::MessageReflection for EnumValueDescriptorProto {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("name"),
                 number: 1,
-                name: "name",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("number"),
                 number: 2,
-                name: "number",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("options"),
                 number: 3,
-                name: "options",
             },
         ]
     }
@@ -2698,16 +2698,16 @@ impl protobuf_core::MessageReflection for ServiceDescriptorProto {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("name"),
                 number: 1,
-                name: "name",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("method"),
                 number: 2,
-                name: "method",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("options"),
                 number: 3,
-                name: "options",
             },
         ]
     }
@@ -2925,28 +2925,28 @@ impl protobuf_core::MessageReflection for MethodDescriptorProto {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("name"),
                 number: 1,
-                name: "name",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("input_type"),
                 number: 2,
-                name: "input_type",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("output_type"),
                 number: 3,
-                name: "output_type",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("options"),
                 number: 4,
-                name: "options",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("client_streaming"),
                 number: 5,
-                name: "client_streaming",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("server_streaming"),
                 number: 6,
-                name: "server_streaming",
             },
         ]
     }
@@ -3603,88 +3603,88 @@ impl protobuf_core::MessageReflection for FileOptions {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("java_package"),
                 number: 1,
-                name: "java_package",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("java_outer_classname"),
                 number: 8,
-                name: "java_outer_classname",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("java_multiple_files"),
                 number: 10,
-                name: "java_multiple_files",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("java_generate_equals_and_hash"),
                 number: 20,
-                name: "java_generate_equals_and_hash",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("java_string_check_utf8"),
                 number: 27,
-                name: "java_string_check_utf8",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("optimize_for"),
                 number: 9,
-                name: "optimize_for",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("go_package"),
                 number: 11,
-                name: "go_package",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("cc_generic_services"),
                 number: 16,
-                name: "cc_generic_services",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("java_generic_services"),
                 number: 17,
-                name: "java_generic_services",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("py_generic_services"),
                 number: 18,
-                name: "py_generic_services",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("php_generic_services"),
                 number: 42,
-                name: "php_generic_services",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("deprecated"),
                 number: 23,
-                name: "deprecated",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("cc_enable_arenas"),
                 number: 31,
-                name: "cc_enable_arenas",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("objc_class_prefix"),
                 number: 36,
-                name: "objc_class_prefix",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("csharp_namespace"),
                 number: 37,
-                name: "csharp_namespace",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("swift_prefix"),
                 number: 39,
-                name: "swift_prefix",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("php_class_prefix"),
                 number: 40,
-                name: "php_class_prefix",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("php_namespace"),
                 number: 41,
-                name: "php_namespace",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("php_metadata_namespace"),
                 number: 44,
-                name: "php_metadata_namespace",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("ruby_package"),
                 number: 45,
-                name: "ruby_package",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("uninterpreted_option"),
                 number: 999,
-                name: "uninterpreted_option",
             },
         ]
     }
@@ -3935,24 +3935,24 @@ impl protobuf_core::MessageReflection for MessageOptions {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("message_set_wire_format"),
                 number: 1,
-                name: "message_set_wire_format",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("no_standard_descriptor_accessor"),
                 number: 2,
-                name: "no_standard_descriptor_accessor",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("deprecated"),
                 number: 3,
-                name: "deprecated",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("map_entry"),
                 number: 7,
-                name: "map_entry",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("uninterpreted_option"),
                 number: 999,
-                name: "uninterpreted_option",
             },
         ]
     }
@@ -4339,32 +4339,32 @@ impl protobuf_core::MessageReflection for FieldOptions {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("ctype"),
                 number: 1,
-                name: "ctype",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("packed"),
                 number: 2,
-                name: "packed",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("jstype"),
                 number: 6,
-                name: "jstype",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("lazy"),
                 number: 5,
-                name: "lazy",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("deprecated"),
                 number: 3,
-                name: "deprecated",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("weak"),
                 number: 10,
-                name: "weak",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("uninterpreted_option"),
                 number: 999,
-                name: "uninterpreted_option",
             },
         ]
     }
@@ -4482,8 +4482,8 @@ impl protobuf_core::Message for OneofOptions {
 impl protobuf_core::MessageReflection for OneofOptions {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[protobuf_core::FieldDescriptorShort {
+            name: protobuf_core::StringPtr::Static("uninterpreted_option"),
             number: 999,
-            name: "uninterpreted_option",
         }]
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
@@ -4627,16 +4627,16 @@ impl protobuf_core::MessageReflection for EnumOptions {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("allow_alias"),
                 number: 2,
-                name: "allow_alias",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("deprecated"),
                 number: 3,
-                name: "deprecated",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("uninterpreted_option"),
                 number: 999,
-                name: "uninterpreted_option",
             },
         ]
     }
@@ -4765,12 +4765,12 @@ impl protobuf_core::MessageReflection for EnumValueOptions {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("deprecated"),
                 number: 1,
-                name: "deprecated",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("uninterpreted_option"),
                 number: 999,
-                name: "uninterpreted_option",
             },
         ]
     }
@@ -4896,12 +4896,12 @@ impl protobuf_core::MessageReflection for ServiceOptions {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("deprecated"),
                 number: 33,
-                name: "deprecated",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("uninterpreted_option"),
                 number: 999,
-                name: "uninterpreted_option",
             },
         ]
     }
@@ -5124,16 +5124,16 @@ impl protobuf_core::MessageReflection for MethodOptions {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("deprecated"),
                 number: 33,
-                name: "deprecated",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("idempotency_level"),
                 number: 34,
-                name: "idempotency_level",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("uninterpreted_option"),
                 number: 999,
-                name: "uninterpreted_option",
             },
         ]
     }
@@ -5262,12 +5262,12 @@ impl protobuf_core::MessageReflection for UninterpretedOption_NamePart {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("name_part"),
                 number: 1,
-                name: "name_part",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("is_extension"),
                 number: 2,
-                name: "is_extension",
             },
         ]
     }
@@ -5519,32 +5519,32 @@ impl protobuf_core::MessageReflection for UninterpretedOption {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("name"),
                 number: 2,
-                name: "name",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("identifier_value"),
                 number: 3,
-                name: "identifier_value",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("positive_int_value"),
                 number: 4,
-                name: "positive_int_value",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("negative_int_value"),
                 number: 5,
-                name: "negative_int_value",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("double_value"),
                 number: 6,
-                name: "double_value",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("string_value"),
                 number: 7,
-                name: "string_value",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("aggregate_value"),
                 number: 8,
-                name: "aggregate_value",
             },
         ]
     }
@@ -5767,24 +5767,24 @@ impl protobuf_core::MessageReflection for SourceCodeInfo_Location {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("path"),
                 number: 1,
-                name: "path",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("span"),
                 number: 2,
-                name: "span",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("leading_comments"),
                 number: 3,
-                name: "leading_comments",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("trailing_comments"),
                 number: 4,
-                name: "trailing_comments",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("leading_detached_comments"),
                 number: 6,
-                name: "leading_detached_comments",
             },
         ]
     }
@@ -5895,8 +5895,8 @@ impl protobuf_core::Message for SourceCodeInfo {
 impl protobuf_core::MessageReflection for SourceCodeInfo {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[protobuf_core::FieldDescriptorShort {
+            name: protobuf_core::StringPtr::Static("location"),
             number: 1,
-            name: "location",
         }]
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
@@ -6062,20 +6062,20 @@ impl protobuf_core::MessageReflection for GeneratedCodeInfo_Annotation {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("path"),
                 number: 1,
-                name: "path",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("source_file"),
                 number: 2,
-                name: "source_file",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("begin"),
                 number: 3,
-                name: "begin",
             },
             protobuf_core::FieldDescriptorShort {
+                name: protobuf_core::StringPtr::Static("end"),
                 number: 4,
-                name: "end",
             },
         ]
     }
@@ -6186,8 +6186,8 @@ impl protobuf_core::Message for GeneratedCodeInfo {
 impl protobuf_core::MessageReflection for GeneratedCodeInfo {
     fn fields(&self) -> &[protobuf_core::FieldDescriptorShort] {
         &[protobuf_core::FieldDescriptorShort {
+            name: protobuf_core::StringPtr::Static("annotation"),
             number: 1,
-            name: "annotation",
         }]
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
