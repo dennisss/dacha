@@ -273,7 +273,12 @@ impl Compiler<'_> {
                     continue;
                 }
 
-                package_path.push_str(components[i].as_os_str().to_str().unwrap());
+                let mut s = components[i].as_os_str().to_str().unwrap();
+                if s == "type" {
+                    s = "r#type";
+                }
+
+                package_path.push_str(s);
                 package_path.push_str("::");
             }
 
@@ -283,7 +288,13 @@ impl Compiler<'_> {
                 ));
             }
 
-            package_path.push_str(relative_path.file_stem().unwrap().to_str().unwrap());
+            // TODO: Dedup with above.
+            let mut s = relative_path.file_stem().unwrap().to_str().unwrap();
+            if s == "type" {
+                s = "r#type";
+            }
+
+            package_path.push_str(s);
             // use_statement.push_str(";\n");
             // c.outer += &use_statement;
 
@@ -1345,9 +1356,9 @@ impl Compiler<'_> {
                 "type.googleapis.com/{type_url}"
             }}
 
-            fn file_descriptor() -> &'static {runtime_pkg}::StaticFileDescriptor {
+            fn file_descriptor() -> &'static {runtime_pkg}::StaticFileDescriptor {{
                 &FILE_DESCRIPTOR
-            }
+            }}
         
         "#,
             type_url = type_url_parts.join("."),
@@ -1644,7 +1655,7 @@ impl Compiler<'_> {
 
         lines.indented(|lines| {
             lines.add(format!(
-                "fn fields(&self) -> &[{}::FieldDescriptor] {{",
+                "fn fields(&self) -> &[{}::FieldDescriptorShort] {{",
                 self.options.runtime_package
             ));
 
@@ -1670,8 +1681,8 @@ impl Compiler<'_> {
                 .into_iter()
                 .map(|(num, name)| {
                     format!(
-                        "{}::FieldDescriptor {{ number: {}, name: \"{}\" }}",
-                        self.options.runtime_package, num, name
+                        "{pkg}::FieldDescriptorShort {{ name: {pkg}::StringPtr::Static(\"{name}\"), num: {num} }}",
+                        pkg = self.options.runtime_package, name = name, num = num
                     )
                 })
                 .collect::<Vec<_>>();
@@ -2004,6 +2015,11 @@ impl Compiler<'_> {
             lines.add(format!(
                 "fn service_name(&self) -> &'static str {{ \"{}\" }}",
                 absolute_name
+            ));
+
+            lines.add(format!(
+                "fn file_descriptor(&self) -> &'static {}::StaticFileDescriptor {{ &FILE_DESCRIPTOR }}",
+                self.options.runtime_package
             ));
 
             lines.add("fn method_names(&self) -> &'static [&'static str] {");

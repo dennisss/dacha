@@ -1004,6 +1004,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "grpc_proto"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
+ "rpc",
+]
+
+[[package]]
 name = "haystack"
 version = "0.1.0"
 dependencies = [
@@ -1692,6 +1703,7 @@ dependencies = [
  "parsing",
  "protobuf_compiler",
  "protobuf_core",
+ "protobuf_descriptor",
 ]
 
 [[package]]
@@ -2031,6 +2043,20 @@ dependencies = [
  "macros",
  "protobuf",
  "protobuf_compiler",
+ "rpc",
+ "rpc_util",
+]
+
+[[package]]
+name = "rpc_util"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "common",
+ "grpc_proto",
+ "http",
+ "macros",
+ "protobuf",
  "rpc",
 ]
 

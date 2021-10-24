@@ -57,6 +57,10 @@ impl Http2Server {
         self.shutdown_token = Some(token);
     }
 
+    pub fn services(&self) -> impl Iterator<Item = &dyn Service> {
+        self.handler.services.iter().map(|(_, v)| v.as_ref())
+    }
+
     pub fn run(mut self, port: u16) -> impl Future<Output = Result<()>> + 'static {
         let mut options = http::ServerOptions::default();
         options.force_http2 = true;
@@ -214,10 +218,6 @@ impl http::RequestHandler for Http2ResponseHandler {
         }
     }
 }
-
-/*
-    Suppose I have a write API:
-*/
 
 struct ResponseBody {
     child_task: ChildTask,

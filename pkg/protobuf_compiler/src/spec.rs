@@ -148,6 +148,7 @@ impl Field {
             FieldType::String => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_STRING),
             FieldType::Bytes => proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_BYTES),
             FieldType::Named(name) => {
+                // TODO: How do we distinguish between an enum and a message?
                 proto.set_typ(pb::FieldDescriptorProto_Type::TYPE_MESSAGE);
                 proto.set_type_name(name);
             }
@@ -320,6 +321,19 @@ impl MessageDescriptor {
 
                     proto.add_nested_type(entry);
                 }
+                MessageItem::Extensions(e) => {
+                    for (start, end) in e.iter() {
+                        let mut r = pb::DescriptorProto_ExtensionRange::default();
+                        r.set_start(*start as i32);
+                        // if *end != std::usize::MAX {
+                        r.set_end(*end as i32);
+                        // }
+                        proto.add_extension_range(r);
+                    }
+                }
+                MessageItem::Reserved(r) => {
+                    // TODO
+                }
                 v @ _ => {
                     println!("Do not support {:?}", v);
                     todo!()
@@ -381,6 +395,21 @@ pub struct Service {
 }
 
 impl Service {
+    fn to_proto(&self) -> pb::ServiceDescriptorProto {
+        let mut proto = pb::ServiceDescriptorProto::default();
+        proto.set_name(&self.name);
+        for item in &self.body {
+            match item {
+                ServiceItem::RPC(rpc) => {
+                    proto.add_method(rpc.to_proto());
+                }
+                _ => todo!(),
+            }
+        }
+
+        proto
+    }
+
     pub fn rpcs(&self) -> impl Iterator<Item = &RPC> {
         self.body.iter().filter_map(|item| {
             if let ServiceItem::RPC(r) = item {
@@ -392,6 +421,8 @@ impl Service {
     }
 }
 
+// TODO: This should be straight forward to just replace with a
+// pb::MethodDescriptorProto usage.
 #[derive(Debug, Clone)]
 pub struct RPC {
     pub name: String,
@@ -400,6 +431,21 @@ pub struct RPC {
     pub res_type: String,
     pub res_stream: bool,
     pub options: Vec<Opt>,
+}
+
+impl RPC {
+    fn to_proto(&self) -> pb::MethodDescriptorProto {
+        let mut proto = pb::MethodDescriptorProto::default();
+        proto.set_name(&self.name);
+        proto.set_input_type(&self.req_type);
+        proto.set_output_type(&self.res_type);
+        proto.set_client_streaming(self.req_stream);
+        proto.set_server_streaming(self.res_stream);
+
+        // TODO: Options
+
+        proto
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -450,7 +496,9 @@ impl Proto {
                     proto.add_enum_type(e.to_proto());
                 }
                 TopLevelDef::Extend(_) => todo!(),
-                TopLevelDef::Service(_) => todo!(),
+                TopLevelDef::Service(s) => {
+                    proto.add_service(s.to_proto());
+                }
                 TopLevelDef::Option(_) => todo!(),
             }
         }

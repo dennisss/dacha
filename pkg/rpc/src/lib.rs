@@ -17,7 +17,6 @@ mod constants;
 mod message;
 mod metadata;
 mod pipe;
-pub mod proto;
 mod server;
 mod server_types;
 mod service;

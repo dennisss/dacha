@@ -1,16 +1,14 @@
 [package]
-name = "rpc_test"
+name = "rpc_util"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
-rpc = { path = "../rpc" }
-rpc_util = { path = "../rpc_util" }
+automata = { path = "../automata" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
+rpc = { path = "../rpc" }
 http = { path = "../http" }
-
-[build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+grpc_proto = { path = "../../third_party/grpc_proto" }

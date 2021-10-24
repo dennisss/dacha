@@ -6,6 +6,7 @@ extern crate common;
 extern crate macros;
 extern crate rpc;
 extern crate rpc_test;
+extern crate rpc_util;
 
 use std::sync::Arc;
 
@@ -15,6 +16,7 @@ use common::async_std::io::prelude::WriteExt;
 use common::async_std::task;
 use common::errors::*;
 use rpc_test::proto::adder::*;
+use rpc_util::AddReflection;
 
 struct ContainerPort {
     value: u16,
@@ -121,6 +123,7 @@ async fn run_server() -> Result<()> {
     let adder = AdderImpl { log_file };
     let service = adder.into_service();
     server.add_service(service)?;
+    server.add_reflection()?;
     server.set_shutdown_token(common::shutdown::new_shutdown_token());
 
     println!("Starting on port {}", args.port.value);

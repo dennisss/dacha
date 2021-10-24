@@ -41,9 +41,41 @@ pub enum ReflectionMut<'a> {
                                           * Option(Option<&'a mut dyn Reflect>) */
 }
 
-pub struct FieldDescriptor<'a> {
+pub struct FieldDescriptorShort {
     pub number: FieldNumber,
-    pub name: &'a str,
+    pub name: &'static str,
+}
+
+impl FieldDescriptorShort {
+    pub const fn new_static(name: &'static str, number: FieldNumber) -> Self {
+        Self {
+            name: StringPtr::Static(name),
+            number,
+        }
+    }
+
+    pub fn new_dynamic(name: String, number: FieldNumber) -> Self {
+        Self {
+            name: StringPtr::Dynamic(name),
+            number,
+        }
+    }
+}
+
+pub enum StringPtr {
+    Static(&'static str),
+    Dynamic(String),
+}
+
+impl std::ops::Deref for StringPtr {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            StringPtr::Static(s) => *s,
+            StringPtr::Dynamic(s) => s.as_ref(),
+        }
+    }
 }
 
 /// NOTE: Should be implemented by all Messages.
@@ -58,7 +90,7 @@ pub trait MessageReflection {
     //
     // This includes fields that may not be present in the current message or are
     // set to the default value.
-    fn fields(&self) -> &[FieldDescriptor];
+    fn fields(&self) -> &[FieldDescriptorShort];
 
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection>;
 

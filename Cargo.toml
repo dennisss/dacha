@@ -51,7 +51,9 @@ members = [
 	"pkg/usb_device",
 	"pkg/builder",
 	"pkg/rp2040",
-	"pkg/rp2040_programmer"
+	"pkg/rp2040_programmer",
+	"third_party/grpc_proto",
+	"pkg/rpc_util",
 ]
 
 [profile.dev]

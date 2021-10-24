@@ -8,6 +8,8 @@ pub trait Service: Send + Sync {
     /// Name of the service.
     fn service_name(&self) -> &'static str;
 
+    fn file_descriptor(&self) -> &'static protobuf::StaticFileDescriptor;
+
     /// Names of all methods which this service can accept. (used for
     /// reflection).
     fn method_names(&self) -> &'static [&'static str];

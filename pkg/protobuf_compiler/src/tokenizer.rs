@@ -58,7 +58,7 @@ pub fn letter(c: char) -> bool {
     c.is_alphabetic()
 }
 // capitalLetter =  "A" … "Z"
-pub fn capitalLetter(c: char) -> bool {
+pub fn capital_letter(c: char) -> bool {
     c.is_uppercase() && letter(c)
 }
 // decimalDigit = "0" … "9"
@@ -66,11 +66,11 @@ pub fn decimal_digit(c: char) -> bool {
     c.is_digit(10)
 }
 // octalDigit   = "0" … "7"
-pub fn octalDigit(c: char) -> bool {
+pub fn octal_digit(c: char) -> bool {
     c.is_digit(8)
 }
 // hexDigit     = "0" … "9" | "A" … "F" | "a" … "f"
-pub fn hexDigit(c: char) -> bool {
+pub fn hex_digit(c: char) -> bool {
     c.is_ascii_hexdigit()
 }
 
@@ -104,7 +104,7 @@ parser!(decimal_lit<&str, usize> => seq!(c => {
 // octalLit   = "0" { octalDigit }
 parser!(octal_lit<&str, usize> => seq!(c => {
     c.next(tag("0"))?;
-    let digits = c.next(take_while(|v| octalDigit(v as char)))?;
+    let digits = c.next(take_while(|v| octal_digit(v as char)))?;
     Ok(usize::from_str_radix(digits, 8).unwrap_or(0))
 }));
 
@@ -112,7 +112,7 @@ parser!(octal_lit<&str, usize> => seq!(c => {
 parser!(hex_lit<&str, usize> => seq!(c => {
     c.next(tag("0"))?;
     c.next(one_of("xX"))?;
-    let digits = c.next(take_while1(|v| hexDigit(v)))?;
+    let digits = c.next(take_while1(|v| hex_digit(v)))?;
     Ok(usize::from_str_radix(digits, 16).unwrap())
 }));
 
@@ -168,7 +168,10 @@ parser!(pub strLit<&str, String> => seq!(c => {
 pub fn serialize_str_lit(value: &[u8], out: &mut String) {
     out.push('"');
     for b in value.iter().cloned() {
-        if b != b'\\' && b != b'"' && (b.is_ascii_alphanumeric() || b == b' ' || b.is_ascii_punctuation()) {
+        if b != b'\\'
+            && b != b'"'
+            && (b.is_ascii_alphanumeric() || b == b' ' || b.is_ascii_punctuation())
+        {
             out.push(b as char);
         } else {
             out.push_str(&format!("\\x{:02x}", b));
@@ -194,7 +197,7 @@ parser!(hex_escape<&str, char> => seq!(c => {
     c.next(one_of("xX"))?;
     let digits = c.next(take_exact::<&str>(2))?;
     for c in digits.chars() {
-        if !hexDigit(c) {
+        if !hex_digit(c) {
             return Err(err_msg("Expected hex digit"));
         }
     }
@@ -212,7 +215,7 @@ parser!(oct_escape<&str, char> => seq!(c => {
     c.next(tag("\\"))?;
     let digits = c.next(take_exact::<&str>(3))?; // TODO: Use 'n_like'
     for c in digits.chars() {
-        if !octalDigit(c) {
+        if !octal_digit(c) {
             return Err(err_msg("Not an octal digit"));
         }
     }

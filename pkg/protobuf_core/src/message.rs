@@ -8,6 +8,10 @@ use crate::StaticFileDescriptor;
 pub trait Message: 'static + Send + Sync {
     fn type_url(&self) -> &'static str;
 
+    fn file_descriptor() -> &'static StaticFileDescriptor
+    where
+        Self: Sized;
+
     // NOTE: This will append values to
     fn parse(data: &[u8]) -> Result<Self>
     where
@@ -87,7 +91,7 @@ pub trait Enum {
     where
         Self: Sized;
 
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
     fn value(&self) -> EnumValue;
 
     fn assign(&mut self, v: EnumValue) -> Result<()>;

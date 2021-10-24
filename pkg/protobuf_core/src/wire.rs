@@ -445,8 +445,27 @@ impl WireField<'_> {
     pub fn parse_sfixed32(&self) -> Result<i32> {
         Ok(i32::from_le_bytes(*self.value.word32()?))
     }
+
+    pub fn serialize_sfixed32(field_number: FieldNumber, v: i32, out: &mut Vec<u8>) -> Result<()> {
+        WireField {
+            field_number,
+            value: WireValue::Word32(&v.to_le_bytes()),
+        }
+        .serialize(out);
+        Ok(())
+    }
+
     pub fn parse_sfixed64(&self) -> Result<i64> {
         Ok(i64::from_le_bytes(*self.value.word64()?))
+    }
+
+    pub fn serialize_sfixed64(field_number: FieldNumber, v: i64, out: &mut Vec<u8>) -> Result<()> {
+        WireField {
+            field_number,
+            value: WireValue::Word64(&v.to_le_bytes()),
+        }
+        .serialize(out);
+        Ok(())
     }
 
     pub fn parse_bool(&self) -> Result<bool> {
@@ -524,6 +543,10 @@ impl WireField<'_> {
         E::parse(self.parse_int32()?)
     }
 
+    pub fn parse_enum_into(&self, out: &mut dyn Enum) -> Result<()> {
+        out.assign(self.parse_int32()?)
+    }
+
     pub fn serialize_enum<E: Enum>(
         field_number: FieldNumber,
         v: &E,
@@ -540,7 +563,7 @@ impl WireField<'_> {
     ) -> Result<()> {
         // TODO: This one is tricky!
         if v.value() != 0 {
-            Self::serialize_enum(field_number, v, out);
+            Self::serialize_enum(field_number, v, out)?;
         }
         Ok(())
     }
@@ -549,6 +572,11 @@ impl WireField<'_> {
     pub fn parse_message<M: Message>(&self) -> Result<M> {
         let data = self.value.length_delim()?;
         M::parse(data)
+    }
+
+    pub fn parse_message_into(&self, message: &mut dyn Message) -> Result<()> {
+        let data = self.value.length_delim()?;
+        message.parse_merge(data)
     }
 
     pub fn serialize_sparse_message<

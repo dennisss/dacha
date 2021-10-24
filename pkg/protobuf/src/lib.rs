@@ -3,7 +3,8 @@
     decl_macro,
     generators,
     trait_alias,
-    core_intrinsics
+    core_intrinsics,
+    entry_insert
 )]
 
 #[macro_use]
@@ -16,13 +17,16 @@ extern crate macros;
 // TODO: Eventually remove dependencies on the compiler
 extern crate json;
 extern crate protobuf_compiler;
+extern crate protobuf_descriptor;
 
+mod descriptor_pool;
 pub mod dynamic;
 mod proto;
 pub mod text;
 
 pub use common::bytes::{Bytes, BytesMut};
-use common::errors::*;
+pub use descriptor_pool::*;
+pub use dynamic::*;
 pub use protobuf_core::EnumValue;
 pub use protobuf_core::FieldNumber;
 pub use protobuf_core::*;

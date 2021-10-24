@@ -13,7 +13,7 @@ use parsing::*;
 use protobuf_core::FieldNumber;
 
 use crate::spec::*;
-use crate::tokenizer::{capitalLetter, decimal_digit, letter, Token};
+use crate::tokenizer::{capital_letter, decimal_digit, letter, Token};
 
 macro_rules! token_atom {
     ($name:ident, $e:ident, $t:ty) => {
@@ -96,7 +96,7 @@ parser!(group_name<&str, String> => seq!(c => {
 
     for (i, c) in id.chars().enumerate() {
         let valid = if i == 0 {
-            capitalLetter(c)
+            capital_letter(c)
         } else {
             letter(c) || decimal_digit(c) || c == '_'
         };
@@ -432,6 +432,7 @@ parser!(range<&str, Range> => seq!(c => {
 
     let lower = c.next(int_lit)?;
 
+    // TODO: Must parse as u32 (or really i32).
     let upper_parser = seq!(c => {
         c.next(is(ident, "to"))?;
         let v = c.next(int_lit)
