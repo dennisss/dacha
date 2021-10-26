@@ -16,7 +16,7 @@ extern crate protobuf;
 extern crate sstable;
 #[macro_use]
 extern crate failure;
-
+extern crate rpc_util;
 #[macro_use]
 extern crate macros;
 

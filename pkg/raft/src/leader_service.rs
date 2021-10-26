@@ -181,6 +181,10 @@ impl rpc::Service for LeaderServiceWrapper {
         self.local_service.method_names()
     }
 
+    fn file_descriptor(&self) -> &'static protobuf::StaticFileDescriptor {
+        self.local_service.file_descriptor()
+    }
+
     async fn call<'a>(
         &self,
         method_name: &str,

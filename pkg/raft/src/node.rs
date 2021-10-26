@@ -11,6 +11,7 @@ use common::futures::{pin_mut, select};
 use crypto::random;
 use crypto::random::RngExt;
 use protobuf::Message;
+use rpc_util::AddReflection;
 
 use crate::atomic::*;
 use crate::log::segmented_log::SegmentedLog;
@@ -408,7 +409,7 @@ impl ServerInitService for ServerInit {
         req: rpc::ServerRequest<BootstrapRequest>,
         res: &mut rpc::ServerResponse<BootstrapResponse>,
     ) -> Result<()> {
-        let _ = self.sender.send(());
+        let _ = self.sender.try_send(());
         Ok(())
     }
 }
@@ -419,6 +420,7 @@ impl ServerInit {
 
         let mut rpc_server = ::rpc::Http2Server::new();
         rpc_server.add_service(Self { sender }.into_service())?;
+        rpc_server.add_reflection()?;
 
         common::future::race(rpc_server.run(port), async move {
             receiver.recv().await?;

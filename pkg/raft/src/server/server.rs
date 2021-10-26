@@ -498,7 +498,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
     async fn TimeoutNow(
         &self,
         req: rpc::ServerRequest<TimeoutNow>,
-        res: &mut rpc::ServerResponse<EmptyMessage>,
+        res: &mut rpc::ServerResponse<google::proto::empty::Empty>,
     ) -> Result<()> {
         self.shared
             .identity

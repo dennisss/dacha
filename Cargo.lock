@@ -638,6 +638,7 @@ name = "datastore"
 version = "0.1.0"
 dependencies = [
  "common",
+ "google",
  "http",
  "macros",
  "parsing",
@@ -645,6 +646,7 @@ dependencies = [
  "protobuf_compiler",
  "raft",
  "rpc",
+ "rpc_util",
  "sstable",
 ]
 
@@ -1780,6 +1782,7 @@ dependencies = [
  "protobuf",
  "protobuf_compiler",
  "rpc",
+ "rpc_util",
  "sstable",
 ]
 

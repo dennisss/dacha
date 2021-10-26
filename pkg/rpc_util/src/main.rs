@@ -141,6 +141,12 @@ impl ServerClient {
             }
         }
 
+        // Close the stream.
+        // TODO: Do this automatically when things are dropped!
+        reflection.request.close().await;
+        let _ = reflection.response.recv().await;
+        reflection.response.finish().await?;
+
         Ok(Self {
             channel,
             services,
@@ -230,10 +236,16 @@ async fn run_call(cmd: CallCommand) -> Result<()> {
     assert!(req.send(&request_message).await);
     req.close().await;
 
-    let response_bytes = res.recv_bytes().await.unwrap();
+    let response_bytes = match res.recv_bytes().await {
+        Some(v) => v,
+        None => {
+            res.finish().await?;
+            return Err(err_msg("Failed to receive response"));
+        }
+    };
     response_message.parse_merge(&response_bytes)?;
 
-    println!(
+    print!(
         "{}",
         protobuf::text::serialize_text_proto(&response_message)
     );

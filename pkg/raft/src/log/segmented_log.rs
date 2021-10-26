@@ -143,6 +143,8 @@ impl SegmentedLog {
 
         let mut last_sequence = LogSequence::zero();
 
+        let mut last_log_path = None;
+
         for (log_number, log_path) in &files {
             let mut reader = RecordReader::open(log_path).await?;
 
@@ -190,6 +192,7 @@ impl SegmentedLog {
                 }
             }
 
+            last_log_path = Some(log_path.as_path());
             segments.push_back(Segment {
                 number: *log_number,
                 last_position,
@@ -199,7 +202,7 @@ impl SegmentedLog {
         let dir = SyncedDirectory::open(dir_path)?;
 
         let writer = {
-            if let Some((_, last_path)) = files.last() {
+            if let Some(last_path) = last_log_path {
                 // TODO: Use the SyncedDirectory object.
                 RecordWriter::open(last_path).await?
             } else {
@@ -270,6 +273,7 @@ impl Log for SegmentedLog {
 
         state.writer.append(&record.serialize()?).await?;
 
+        // TODO: This sometimes fails.
         let segment = state.segments.back_mut().unwrap();
         segment.last_position = entry.pos().clone();
 
@@ -313,7 +317,7 @@ impl Log for SegmentedLog {
         while state.segments.len() > 1 {
             let last_pos = &state.segments[0].last_position;
             if pos.term() > last_pos.term() || pos.index() >= last_pos.index() {
-                let seg = state.segments.pop_back().unwrap();
+                let seg = state.segments.pop_front().unwrap();
 
                 // Delete the discarded log file.
                 // NOTE: We don't care about fsyncing this as there is no problem with having

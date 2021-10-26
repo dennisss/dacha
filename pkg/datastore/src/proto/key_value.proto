@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "third_party/google/src/proto/empty.proto";
+
 // TODO: Need client affinity to ensure that one client is always talking to the same server.
 
 service KeyValueStore {
@@ -11,18 +13,18 @@ service KeyValueStore {
     rpc GetRange (KeyRange) returns (stream KeyValue);
 
     // Assigns a new value to a key. If the key doesn't exist yet, it will be created.
-    rpc Put (KeyValue) returns (EmptyMessage);
+    rpc Put (KeyValue) returns (google.protobuf.Empty);
 
     // Deletes any value associated with the given key. If the key is not present, this will
     // silently do nothing.
-    rpc Delete (Key) returns (EmptyMessage);
+    rpc Delete (Key) returns (google.protobuf.Empty);
 
     /*
     rpc BeginTransaction (BeginTransactionRequest) returns (BeginTransactionResponse);
 
-    rpc CancelTransaction (CancelTransactionRequest) returns (EmptyMessage);
+    rpc CancelTransaction (CancelTransactionRequest) returns (google.protobuf.Empty);
 
-    rpc CommitTransaction (CommitTransactionRequest) returns (EmptyMessage);
+    rpc CommitTransaction (CommitTransactionRequest) returns (google.protobuf.Empty);
     */
 }
 
@@ -39,8 +41,6 @@ message KeyValue {
     bytes key = 1;
     bytes value = 2;
 }
-
-message EmptyMessage {}
 
 message BeginTransactionRequest {
     // If true, then this transaction will only be used for reading from the database.

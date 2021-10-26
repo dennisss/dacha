@@ -3,7 +3,7 @@ syntax = "proto3";
 import "pkg/container/src/proto/config.proto";
 import "pkg/container/src/proto/log.proto";
 import "pkg/container/src/proto/task.proto";
-
+import "third_party/google/src/proto/empty.proto";
 
 message QueryRequest {
     // If present, we will only return data for the container with this id.
@@ -16,13 +16,13 @@ message QueryResponse {
 }
 
 
-message StartRequest {
-    ContainerConfig config = 1;
-}
+// message StartRequest {
+//     ContainerConfig config = 1;
+// }
 
-message StartResponse {
-    string container_id = 1;
-}
+// message StartResponse {
+//     string container_id = 1;
+// }
 
 message StartTaskRequest {
     TaskSpec task_spec = 1;
@@ -54,26 +54,22 @@ message WriteInputRequest {
     bytes data = 2;
 }
 
-message EmptyMessage {
-
-}
-
-
 service ContainerNode {
 
     rpc Query (QueryRequest) returns (QueryResponse);
 
     // rpc Start (StartRequest) returns (StartResponse);
 
+    // TODO: Eventually also need an API to delete a task and know for sure this node will no longer try to start it.
     rpc StartTask (StartTaskRequest) returns (StartTaskResponse);
 
-    rpc WriteInput (stream WriteInputRequest) returns (EmptyMessage);
+    rpc WriteInput (stream WriteInputRequest) returns (google.protobuf.Empty);
 
     // rpc ExecProcess (ExecProcess)
 
     // Streams back log entries for a single task.
     rpc GetLogs(LogRequest) returns (stream LogEntry);
 
-    rpc UploadBlob(stream BlobData) returns (EmptyMessage);
+    rpc UploadBlob(stream BlobData) returns (google.protobuf.Empty);
 
 }

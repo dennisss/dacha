@@ -59,7 +59,7 @@ pub fn build_custom(
         let relative_path = input_path.strip_prefix(&input_dir).unwrap().to_owned();
         println!("cargo:rerun-if-changed={}", relative_path.to_str().unwrap());
 
-        let input_src = std::fs::read_to_string(input_path)?;
+        let input_src = std::fs::read_to_string(&input_path)?;
 
         let desc = match parse_proto(&input_src) {
             Ok(d) => d,
@@ -73,7 +73,7 @@ pub fn build_custom(
 
         std::fs::create_dir_all(output_path.parent().unwrap())?;
 
-        let output = Compiler::compile(&desc, current_package_name, &options)?;
+        let output = Compiler::compile(&desc, &input_path, current_package_name, &options)?;
         std::fs::write(&output_path, output)?;
 
         let res = Command::new("rustfmt")

@@ -10,6 +10,7 @@ use common::fs::DirLock;
 use protobuf::Message;
 use raft::atomic::{BlobFile, BlobFileBuilder};
 use raft::StateMachine;
+use rpc_util::AddReflection;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
 use crate::meta::state_machine::*;
@@ -135,15 +136,15 @@ impl KeyValueStoreService for MetaStore {
     async fn Put(
         &self,
         request: rpc::ServerRequest<KeyValue>,
-        response: &mut rpc::ServerResponse<EmptyMessage>,
+        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
     ) -> Result<()> {
-        Ok(())
+        self.put(&request.value).await
     }
 
     async fn Delete(
         &self,
         request: rpc::ServerRequest<Key>,
-        response: &mut rpc::ServerResponse<EmptyMessage>,
+        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
     ) -> Result<()> {
         Ok(())
     }
@@ -195,7 +196,11 @@ pub async fn run(config: &MetaStoreConfig) -> Result<()> {
         local_service,
     )))?;
 
+    rpc_server.add_reflection()?;
+
     task_bundle.add("rpc::Server", rpc_server.run(config.service_port));
+
+    task_bundle.join().await?;
 
     Ok(())
 }

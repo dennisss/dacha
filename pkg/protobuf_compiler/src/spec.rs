@@ -334,6 +334,9 @@ impl MessageDescriptor {
                 MessageItem::Reserved(r) => {
                     // TODO
                 }
+                MessageItem::Option(v) => {
+                    // TODO
+                }
                 v @ _ => {
                     println!("Do not support {:?}", v);
                     todo!()

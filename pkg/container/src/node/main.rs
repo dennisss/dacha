@@ -12,6 +12,7 @@ use nix::sched::CloneFlags;
 use nix::sys::stat::{umask, Mode};
 use nix::unistd::Pid;
 use protobuf::text::parse_text_proto;
+use rpc_util::AddReflection;
 
 use crate::node::Node;
 use crate::node::{shadow::*, NodeContext};
@@ -265,6 +266,7 @@ async fn run(
 
     let mut server = rpc::Http2Server::new();
     server.add_service(node.into_service())?;
+    server.add_reflection()?;
     server.set_shutdown_token(common::shutdown::new_shutdown_token());
     server.run(config.service_port() as u16).await?;
 

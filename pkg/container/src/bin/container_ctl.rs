@@ -137,8 +137,8 @@ async fn run_start(node_addr: &str, command: &StartTaskCommand) -> Result<()> {
             if let Err(e) = request.finish().await {
                 let mut ignore_error = false;
                 if let Some(status) = e.downcast_ref::<rpc::Status>() {
-                    if status.code == rpc::StatusCode::AlreadyExists {
-                        println!("=> {}", status.message);
+                    if status.code() == rpc::StatusCode::AlreadyExists {
+                        println!("=> {}", status.message());
                         ignore_error = true;
                     }
                 }

@@ -1,0 +1,13 @@
+[package]
+name = "grpc_proto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+common = { path = "../../pkg/common" }
+protobuf = { path = "../../pkg/protobuf" }
+macros = { path = "../../pkg/macros" }
+rpc = { path = "../../pkg/rpc" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../../pkg/protobuf_compiler" }

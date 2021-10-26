@@ -761,10 +761,10 @@ impl ContainerNodeService for Node {
                 .iter()
                 .find(|t| t.spec.name() == request.task_name())
                 .ok_or_else(|| {
-                    Error::from(rpc::Status {
-                        code: rpc::StatusCode::NotFound,
-                        message: format!("No task found with name: {}", request.task_name()),
-                    })
+                    Error::from(rpc::Status::not_found(format!(
+                        "No task found with name: {}",
+                        request.task_name()
+                    )))
                 })?;
 
             task.container_id.clone().unwrap()
@@ -813,7 +813,7 @@ impl ContainerNodeService for Node {
     async fn WriteInput(
         &self,
         mut request: rpc::ServerStreamRequest<WriteInputRequest>,
-        _response: &mut rpc::ServerResponse<EmptyMessage>,
+        _response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
     ) -> Result<()> {
         loop {
             let input = match request.recv().await? {
@@ -831,10 +831,10 @@ impl ContainerNodeService for Node {
                     .iter()
                     .find(|t| t.spec.name() == input.task_name())
                     .ok_or_else(|| {
-                        Error::from(rpc::Status {
-                            code: rpc::StatusCode::NotFound,
-                            message: format!("No task found with name: {}", input.task_name()),
-                        })
+                        Error::from(rpc::Status::not_found(format!(
+                            "No task found with name: {}",
+                            input.task_name()
+                        )))
                     })?;
 
                 task.container_id.clone().unwrap()
@@ -852,7 +852,7 @@ impl ContainerNodeService for Node {
     async fn UploadBlob(
         &self,
         mut request: rpc::ServerStreamRequest<BlobData>,
-        response: &mut rpc::ServerResponse<EmptyMessage>,
+        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
     ) -> Result<()> {
         let first_part = request.recv().await?.ok_or_else(|| {
             rpc::Status::invalid_argument("Expected at least one request message")
@@ -865,11 +865,7 @@ impl ContainerNodeService for Node {
 
         let metadata_path = blob_dir.join("metadata");
         if metadata_path.exists().await {
-            return Err(rpc::Status {
-                code: rpc::StatusCode::AlreadyExists,
-                message: "Blob already exists".into(),
-            }
-            .into());
+            return Err(rpc::Status::already_exists("Blob already exists").into());
         }
 
         // Create the blob dir.

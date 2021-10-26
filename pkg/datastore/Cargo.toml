@@ -8,11 +8,13 @@ edition = "2018"
 common = { path = "../common" }
 http = { path = "../http" }
 rpc = { path = "../rpc" }
+rpc_util = { path = "../rpc_util" }
 parsing = { path = "../parsing" }
 sstable = { path = "../sstable" }
 raft = { path = "../raft" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
+google = { path = "../../third_party/google" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

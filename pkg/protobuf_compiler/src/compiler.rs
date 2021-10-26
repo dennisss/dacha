@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 use std::fmt::Write;
+use std::path::{Path, PathBuf};
 
 use common::errors::*;
 use common::line_builder::*;
@@ -211,6 +212,7 @@ struct CompiledOneOf {
 impl Compiler<'_> {
     pub fn compile(
         desc: &Proto,
+        path: &Path,
         current_package: &str,
         options: &CompilerOptions,
     ) -> Result<String> {
@@ -330,7 +332,10 @@ impl Compiler<'_> {
 
         // Add the file descriptor
         {
-            let proto = rust_bytestring(&c.proto.to_proto().serialize()?);
+            let mut p = c.proto.to_proto();
+            p.set_name(path.strip_prefix(common::project_dir())?.to_str().unwrap());
+
+            let proto = rust_bytestring(&p.serialize()?);
             let mut deps = vec![];
             for import in &c.imported_protos {
                 deps.push(format!("&{}::FILE_DESCRIPTOR", import.package_path));

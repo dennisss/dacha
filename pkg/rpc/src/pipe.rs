@@ -17,7 +17,7 @@ pub async fn pipe<'a>(
     try_join!(
         pipe_request(server_request, client_request),
         pipe_response(client_response, server_response)
-    );
+    )?;
 
     Ok(())
 }

@@ -37,7 +37,7 @@ impl Metadata {
         "te"
         */
 
-        header.is_transport_level()
+        header.is_content_level()
             || header.is_transport_level()
             || header.name.as_str().starts_with("grpc-")
     }

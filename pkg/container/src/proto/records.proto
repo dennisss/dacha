@@ -2,6 +2,8 @@ syntax = "proto3";
 
 // This file contains the format of the records stored in the Metadata Store and 
 
+import "pkg/container/src/proto/task.proto";
+import "pkg/container/src/proto/job.proto";
 
 message NodeRecord {
     uint64 id = 1;

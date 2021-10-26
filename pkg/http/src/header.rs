@@ -48,7 +48,7 @@ const TRANSPORT_LEVEL_HEADERS: &'static [&'static str] = &[
 ];
 
 const CONTENT_LEVEL_HEADERS: &'static [&'static str] =
-    &[DATE, CONTENT_ENCODING, CONTENT_RANGE, ETAG];
+    &[DATE, CONTENT_ENCODING, CONTENT_RANGE, ETAG, CONTENT_TYPE];
 
 #[derive(Debug, Clone)]
 pub struct Header {

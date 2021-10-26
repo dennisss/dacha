@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Mutex;
 use std::{collections::HashMap, sync::Arc};
@@ -17,6 +18,7 @@ struct DescriptorPoolState {
     /// Map from the fully qualified name of each symbol in this pool to it's
     /// descriptor object.
     types: HashMap<String, TypeDescriptorInner>,
+    added_files: HashSet<String>,
 }
 
 impl DescriptorPool {
@@ -25,6 +27,7 @@ impl DescriptorPool {
         Self {
             state: Arc::new(Mutex::new(DescriptorPoolState {
                 types: HashMap::new(),
+                added_files: HashSet::new(),
             })),
         }
     }
@@ -33,6 +36,11 @@ impl DescriptorPool {
         let proto = FileDescriptorProto::parse(data)?;
 
         let mut state = self.state.lock().unwrap();
+
+        // Don't re-add files.
+        if !state.added_files.insert(proto.name().to_string()) {
+            return Ok(());
+        }
 
         for m in proto.message_type() {
             let name = if proto.package().is_empty() {

@@ -9,6 +9,7 @@ common = { path = "../common" }
 crypto = { path = "../crypto" }
 http = { path = "../http" }
 rpc = { path = "../rpc" }
+rpc_util = { path = "../rpc_util" }
 protobuf = { path = "../protobuf" }
 sstable = { path = "../sstable" }
 macros = { path = "../macros" }

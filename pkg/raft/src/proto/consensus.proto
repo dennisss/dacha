@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "third_party/google/src/proto/empty.proto";
 
 // Type used to uniquely identify each server. These are assigned automatically
 // and increment monotonically starting with the first server having an id of
@@ -37,7 +38,7 @@ service Consensus {
 	// Sent from the current leader to followers to replicate new log entries.
 	rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesResponse);
 	
-	rpc TimeoutNow (TimeoutNow) returns (EmptyMessage);
+	rpc TimeoutNow (TimeoutNow) returns (google.protobuf.Empty);
 
 	rpc InstallSnapshot (stream InstallSnapshotRequest) returns (stream InstallSnapshotResponse);
 
@@ -242,8 +243,6 @@ General algorithm:
 // Upon being received a server should immediatley timeout and start its own
 // election
 message TimeoutNow {}
-
-message EmptyMessage {}
 
 // Asks the server to propose a single entry to the state machine
 message ProposeRequest {
