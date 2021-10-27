@@ -1,33 +1,22 @@
 use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 
-use common::async_std::channel;
 use common::async_std::net::TcpStream;
-use common::async_std::prelude::*;
 use common::async_std::sync::Mutex;
 use common::async_std::task;
-use common::borrowed::Borrowed;
 use common::errors::*;
 use common::io::{Readable, Writeable};
 use parsing::ascii::AsciiString;
-use parsing::opaque::OpaqueString;
 
 use crate::dns::*;
 use crate::header::*;
-use crate::header_syntax::*;
-use crate::message::*;
-use crate::message_body::{decode_response_body_v1, encode_request_body_v1};
-use crate::message_syntax::*;
 use crate::method::*;
-use crate::reader::*;
 use crate::request::*;
 use crate::response::*;
-use crate::spec::*;
-use crate::status_code::*;
 use crate::uri::*;
-use crate::uri_syntax::serialize_authority;
+use crate::v1;
 use crate::v2;
 
 // TODO: ensure that ConnectionRefused or other types of errors that occur
@@ -104,7 +93,7 @@ impl ClientOptions {
 }
 
 enum ClientConnectionEntry {
-    V1(ClientConnection),
+    V1(v1::ClientConnection),
     V2(v2::Connection),
 }
 
@@ -207,8 +196,11 @@ impl Client {
 
     /// NOTE: Must be called with a lock on the connection pool
     async fn new_connection(&self, connection_id: usize) -> Result<Arc<ClientConnectionEntry>> {
-        // TODO: Use timeout?
-        let raw_stream = TcpStream::connect(self.shared.socket_addr).await?;
+        let raw_stream = common::async_std::future::timeout(
+            std::time::Duration::from_millis(500),
+            TcpStream::connect(self.shared.socket_addr),
+        )
+        .await??;
         raw_stream.set_nodelay(true)?;
 
         let mut reader: Box<dyn Readable> = Box::new(raw_stream.clone());
@@ -261,12 +253,12 @@ impl Client {
             return Ok(Arc::new(ClientConnectionEntry::V2(connection_v2)));
         }
 
-        let conn = ClientConnection::new();
+        let conn = v1::ClientConnection::new();
 
         let conn_runner = task::spawn(Self::connection_runner(
             Arc::downgrade(&self.shared),
             connection_id,
-            conn.shared.clone().run(reader, writer),
+            conn.run(reader, writer),
         ));
 
         // Attempt to upgrade to HTTP2 over clear text.
@@ -292,27 +284,16 @@ impl Client {
                 .append_to_request(&mut upgrade_request.head.headers, &mut connection_options);
             // TODO: Serialize the connection options vector into the header.
 
-            let (sender, receiver) = channel::bounded(1);
-
-            conn.shared
-                .connection_event_channel
-                .0
-                .send(ClientConnectionEvent::Request {
-                    request: upgrade_request,
-                    upgrading: false,
-                    response_handler: sender,
-                })
-                .await
-                .map_err(|_| err_msg("Connection hung up"))?;
-
-            let res = receiver.recv().await??;
+            // TODO: Explicitly enqueue the requests. If the connection dies but we never
+            // started sending the reuqest, then we can immediately re-try it.
+            let res = conn.request(upgrade_request).await?;
 
             let res = match res {
-                ClientResponse::Regular { response } => {
+                v1::ClientConnectionResponse::Regular { response } => {
                     println!("{:?}", response.head);
                     println!("DID NOT UPGRADE")
                 }
-                ClientResponse::Upgrading { response_head, .. } => {
+                v1::ClientConnectionResponse::Upgrading { response_head, .. } => {
                     return Err(err_msg("UPGRADING"));
                 }
             };
@@ -390,29 +371,18 @@ impl Client {
 
         match conn_entry.as_ref() {
             ClientConnectionEntry::V2(conn) => {
+                // TODO: Make this less hard coded.
                 request.head.uri.scheme = Some(AsciiString::from("https").unwrap());
 
                 let response = conn.request(request).await?;
                 Ok(response)
             }
             ClientConnectionEntry::V1(conn) => {
-                let (sender, receiver) = channel::bounded(1);
+                let res = conn.request(request).await?;
 
-                conn.shared
-                    .connection_event_channel
-                    .0
-                    .send(ClientConnectionEvent::Request {
-                        request,
-                        upgrading: false,
-                        response_handler: sender,
-                    })
-                    .await
-                    .map_err(|_| err_msg("Connection hung up"))?;
-
-                let res = receiver.recv().await??;
                 let res = match res {
-                    ClientResponse::Regular { response } => response,
-                    ClientResponse::Upgrading { response_head, .. } => {
+                    v1::ClientConnectionResponse::Regular { response } => response,
+                    v1::ClientConnectionResponse::Upgrading { response_head, .. } => {
                         return Err(err_msg("Did not expect an upgrade"));
                     }
                 };
@@ -421,14 +391,6 @@ impl Client {
             }
         }
     }
-}
-
-enum ClientConnectionEvent {
-    Request {
-        request: Request,
-        upgrading: bool,
-        response_handler: channel::Sender<Result<ClientResponse>>,
-    },
 }
 
 // Other challenges: If we are going to have an HTTP 1.1 connection pool, then
@@ -454,215 +416,3 @@ A server MUST NOT switch protocols unless the received message semantics can be 
         - This implies that we should know if we're upgrading
 
 */
-
-/// Stores the
-enum ClientResponse {
-    Regular {
-        response: Response,
-    },
-    Upgrading {
-        response_head: ResponseHead,
-        reader: Box<dyn Readable>,
-        writer: Box<dyn Writeable>,
-    },
-}
-
-// TODO: On drop, mark the runner as closing.
-struct ClientConnection {
-    shared: Arc<ClientConnectionShared>,
-}
-
-impl ClientConnection {
-    fn new() -> Self {
-        ClientConnection {
-            shared: Arc::new(ClientConnectionShared {
-                connection_event_channel: channel::unbounded(),
-                state: Mutex::new(ClientConnectionState {
-                    running: false,
-                    pending_upgrade: false,
-                }),
-            }),
-        }
-    }
-}
-
-struct ClientConnectionShared {
-    connection_event_channel: (
-        channel::Sender<ClientConnectionEvent>,
-        channel::Receiver<ClientConnectionEvent>,
-    ),
-    state: Mutex<ClientConnectionState>,
-}
-
-struct ClientConnectionState {
-    running: bool,
-
-    /*
-        State can be:
-        - Running
-        - PendingUpgrade
-        - Upgraded
-        - ErroredOut
-    */
-    // Either<Response, UpgradeResponse>
-    /// If true, then we sent a request on this connection to try to upgrade
-    pending_upgrade: bool,
-}
-
-impl ClientConnectionShared {
-    /*
-        Creating a new client connection:
-        - If we know that the server supports HTTP2 (or we force it),
-            - Run an internal HTTP2 connection (pass all burden onto that)
-        - Else
-            - Run an 'OPTIONS *' request in order to attempt an upgrade to HTTP 2 (or maybe get some Alt-Svcs)
-            - If we upgraded, Do it!!!
-
-        - Future optimization:
-            - If we are sending a request as soon as the client is created, we can use that as the upgrade request
-                instead of the 'OPTION *' to avoid a
-    */
-
-    async fn run(
-        self: Arc<Self>,
-        reader: Box<dyn Readable>,
-        writer: Box<dyn Writeable>,
-    ) -> Result<()> {
-        let r = self.run_inner(reader, writer).await;
-        println!("ClientConnection: {:?}", r);
-        r
-    }
-
-    async fn run_inner(
-        self: Arc<Self>,
-        reader: Box<dyn Readable>,
-        mut writer: Box<dyn Writeable>,
-    ) -> Result<()> {
-        let mut reader = PatternReader::new(reader, MESSAGE_HEAD_BUFFER_OPTIONS);
-
-        loop {
-            let e = self.connection_event_channel.1.recv().await?;
-
-            match e {
-                ClientConnectionEvent::Request {
-                    mut request,
-                    upgrading,
-                    response_handler,
-                } => {
-                    // TODO: When using the 'Host' header, we can't provie the userinfo
-                    if let Some(authority) = request.head.uri.authority.take() {
-                        let mut value = vec![];
-                        serialize_authority(&authority, &mut value)?;
-
-                        // TODO: Ensure that this is the first header sent.
-                        request.head.headers.raw_headers.push(Header {
-                            name: AsciiString::from(HOST).unwrap(),
-                            value: OpaqueString::from(value),
-                        });
-                    } else {
-                        return Err(err_msg("Missing authority in URI"));
-                    }
-
-                    // This is mainly needed to allow talking to HTTP 1.0 servers (in 1.1 it is
-                    // the default).
-                    // TODO: USe the append_connection_header() method.
-                    // TODO: It may have "Upgrade" so we need to be careful to concatenate values
-                    // here.
-                    request.head.headers.raw_headers.push(Header {
-                        name: AsciiString::from(CONNECTION).unwrap(),
-                        value: "keep-alive".into(),
-                    });
-
-                    let mut body = encode_request_body_v1(&mut request.head, request.body);
-
-                    let mut out = vec![];
-                    // TODO: If this fails, we should notify the local requster rather than
-                    // bailing out on the entire connection.
-                    request.head.serialize(&mut out)?;
-                    writer.write_all(&out).await?;
-                    write_body(body.as_mut(), writer.as_mut()).await?;
-
-                    let head = match read_http_message(&mut reader).await? {
-                        HttpStreamEvent::MessageHead(h) => h,
-                        // TODO: Handle other bad cases such as too large headers.
-                        _ => {
-                            return Err(err_msg("Connection closed without a complete response"));
-                        }
-                    };
-
-                    let body_start_idx = head.len();
-
-                    //		println!("{:?}", String::from_utf8(head.to_vec()).unwrap());
-
-                    let msg = match parse_http_message_head(head) {
-                        Ok((msg, rest)) => {
-                            assert_eq!(rest.len(), 0);
-                            msg
-                        }
-                        Err(e) => {
-                            // TODO: Consolidate these lines.
-                            println!("Failed to parse message\n{}", e);
-                            return Err(err_msg("Invalid message received"));
-                        }
-                    };
-
-                    let start_line = msg.start_line;
-                    let headers = msg.headers;
-
-                    // Verify that we got a Request style message
-                    let status_line = match start_line {
-                        StartLine::Request(r) => {
-                            return Err(err_msg("Received a request?"));
-                        }
-                        StartLine::Response(r) => r,
-                    };
-
-                    let status_code = StatusCode::from_u16(status_line.status_code)
-                        .ok_or(Error::from(err_msg("Invalid status code")))?;
-
-                    let head = ResponseHead {
-                        version: status_line.version,
-                        // TODO: Print the code in the error case
-                        status_code,
-                        reason: status_line.reason,
-                        headers,
-                    };
-
-                    let persist_connection = crate::headers::connection::can_connection_persist(
-                        &head.version,
-                        &head.headers,
-                    )?;
-
-                    if head.status_code == SWITCHING_PROTOCOLS {
-                        let _ = response_handler.try_send(Ok(ClientResponse::Upgrading {
-                            response_head: head,
-                            reader: Box::new(reader),
-                            writer,
-                        }));
-                        return Ok(());
-                    }
-
-                    let (body, reader_returner) =
-                        decode_response_body_v1(request.head.method, &head, reader)?;
-
-                    let _ = response_handler.try_send(Ok(ClientResponse::Regular {
-                        response: Response { head, body },
-                    }));
-
-                    // With a well framed response body, we can perist the connection.
-                    if persist_connection {
-                        if let Some(returner) = reader_returner {
-                            reader = returner.wait().await?;
-                            continue;
-                        }
-                    }
-
-                    // Connection can no longer persist.
-                    break;
-                }
-            }
-        }
-
-        Ok(())
-    }
-}

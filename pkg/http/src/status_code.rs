@@ -93,8 +93,18 @@ impl StatusCode {
     }
 }
 
+/// Server-side HTTPv1 request processing error.
+///
+/// This is used internally such that whenever this type of error is propagated
+/// from the request handler code, it will be serialized to the
+///
 /// NOTE: This is mainly used internally to return an error which should can be
 /// written back to the  
+///
+/// TODO: Ensure that this is only written to the connection if no other
+/// response has been written to the stream yet.
+///
+/// NOTE: These are only used on the server side.
 #[derive(Debug, Fail)]
 pub(crate) struct ProtocolErrorV1 {
     pub code: StatusCode,

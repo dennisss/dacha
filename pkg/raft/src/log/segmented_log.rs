@@ -273,7 +273,6 @@ impl Log for SegmentedLog {
 
         state.writer.append(&record.serialize()?).await?;
 
-        // TODO: This sometimes fails.
         let segment = state.segments.back_mut().unwrap();
         segment.last_position = entry.pos().clone();
 

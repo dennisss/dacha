@@ -37,6 +37,7 @@ pub mod static_file_handler;
 pub mod status_code;
 pub mod uri;
 pub mod uri_syntax;
+mod v1;
 mod v2;
 
 // Public exports.
