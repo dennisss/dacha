@@ -196,6 +196,10 @@ impl Client {
 
     /// NOTE: Must be called with a lock on the connection pool
     async fn new_connection(&self, connection_id: usize) -> Result<Arc<ClientConnectionEntry>> {
+        // Ways in which this can fail:
+        // - Timeout: Unable to reach the destination ip.
+        // - io::ErrorKind::ConnectionRefused: REached the server but it's not serving
+        //   on the given port.
         let raw_stream = common::async_std::future::timeout(
             std::time::Duration::from_millis(500),
             TcpStream::connect(self.shared.socket_addr),
@@ -255,6 +259,7 @@ impl Client {
 
         let conn = v1::ClientConnection::new();
 
+        // TODO: Take care of this return value.
         let conn_runner = task::spawn(Self::connection_runner(
             Arc::downgrade(&self.shared),
             connection_id,
