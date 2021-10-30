@@ -10,6 +10,7 @@ use common::async_std::channel;
 use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::bundle::TaskResultBundle;
+use common::condvar::*;
 use common::errors::*;
 use common::futures::channel::oneshot;
 use common::futures::FutureExt;
@@ -797,6 +798,7 @@ impl<R: Send + 'static> ServerShared<R> {
         // to unblock this server from having a pending_request
     }
 
+    // TODO: If a route doesn't exist, these will immediately fail.
     async fn dispatch_append_entries_impl(
         &self,
         to_id: ServerId,

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use common::async_std::net::TcpStream;
 use common::async_std::sync::Mutex;
@@ -10,7 +11,11 @@ use common::errors::*;
 use common::io::{Readable, Writeable};
 use parsing::ascii::AsciiString;
 
-use crate::dns::*;
+use crate::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
+use crate::client::client_interface::ClientInterface;
+use crate::client::direct_client::DirectClientOptions;
+use crate::client::load_balanced_client::{LoadBalancedClient, LoadBalancedClientOptions};
+use crate::client::resolver::SystemDNSResolver;
 use crate::header::*;
 use crate::method::*;
 use crate::request::*;
@@ -25,35 +30,35 @@ use crate::v2;
 // TODO: Need to clearly document which responsibilities are reserved for the
 // client.
 
-#[derive(Clone)]
+/*
+Top level responsibilities:
+- Retry retryable failures
+-
+*/
+
+/*
+TODO: Connections should have an accepting_connections()
+
+    We need information on accepting_connections() in
+*/
+
+// TODO: If we recieve an unterminated body, then we should close the
+// connection right afterwards.
+
 pub struct ClientOptions {
-    /// Host optionally with a port to which we should connect.
-    pub authority: Authority,
+    pub max_num_retries: usize,
 
-    /// If true, we'll connect using SSL/TLS. By default, we send HTTP2 over
-    /// clear text.
-    pub secure: bool,
+    pub retry_backoff: ExponentialBackoffOptions,
 
-    /// If true, we'll immediately connect using HTTP2 and fail if it is not
-    /// supported by the server. By default, we'll start by sending HTTP1
-    /// requests until we are confident that the remote server supports
-    /// HTTP2.
-    pub force_http2: bool, /* TODO: Idle timeout or allow persistent connections */
-
-                           /* TODO: Should have a timeout for establishing a connection. */
+    pub backend_balancer: LoadBalancedClientOptions,
 }
 
 impl ClientOptions {
-    pub fn from_authority<A: TryInto<Authority, Error = Error>>(authority: A) -> Result<Self> {
-        Ok(Self {
-            authority: authority.try_into()?,
-            secure: false,
-            force_http2: false,
-        })
-    }
-
     pub fn from_uri(uri: &Uri) -> Result<Self> {
-        // let uri: Uri = uri.try_into()?;
+        let authority = uri
+            .authority
+            .clone()
+            .ok_or_else(|| err_msg("Uri missing an authority"))?;
 
         let scheme = uri
             .scheme
@@ -70,70 +75,84 @@ impl ClientOptions {
             }
         };
 
+        let port = authority.port.unwrap_or(if secure { 443 } else { 80 });
+
+        // TODO: Explicitly check that the port fits within a u16.
+        let resolver = Arc::new(SystemDNSResolver::new(authority.host.clone(), port as u16));
+
         Ok(Self {
-            authority: uri
-                .authority
-                .clone()
-                .ok_or_else(|| err_msg("Uri missing an authority"))?,
-            secure,
-            force_http2: false,
+            max_num_retries: 5,
+            retry_backoff: ExponentialBackoffOptions {
+                base_duration: Duration::from_millis(10),
+                jitter_duration: Duration::from_millis(200),
+                max_duration: Duration::from_secs(30),
+                cooldown_duration: Duration::from_secs(60),
+            },
+            backend_balancer: LoadBalancedClientOptions {
+                resolver,
+                backend: DirectClientOptions {
+                    authority,
+                    secure,
+                    force_http2: false,
+                    connection_backoff: ExponentialBackoffOptions {
+                        base_duration: Duration::from_millis(100),
+                        jitter_duration: Duration::from_millis(200),
+                        max_duration: Duration::from_secs(20),
+                        cooldown_duration: Duration::from_secs(60),
+                    },
+                    connect_timeout: Duration::from_millis(500),
+                    idle_timeout: Duration::from_secs(2),
+                },
+                resolver_backoff: ExponentialBackoffOptions {
+                    base_duration: Duration::from_millis(100),
+                    jitter_duration: Duration::from_millis(200),
+                    max_duration: Duration::from_secs(20),
+                    cooldown_duration: Duration::from_secs(60),
+                },
+                subset_size: 10,
+            },
         })
     }
 
-    // TODO: Crate a macro to generate these.
-    pub fn set_secure(mut self, value: bool) -> Self {
-        self.secure = value;
-        self
-    }
-
     pub fn set_force_http2(mut self, value: bool) -> Self {
-        self.force_http2 = value;
+        self.backend_balancer.backend.force_http2 = value;
         self
     }
 }
 
-enum ClientConnectionEntry {
-    V1(v1::ClientConnection),
-    V2(v2::Connection),
+impl TryFrom<Uri> for ClientOptions {
+    type Error = Error;
+
+    fn try_from(value: Uri) -> Result<Self> {
+        Self::from_uri(&value)
+    }
 }
 
-#[derive(Default)]
-struct ClientConnectionPool {
-    connections: HashMap<usize, Arc<ClientConnectionEntry>>,
-    last_id: usize,
+impl TryFrom<&str> for ClientOptions {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        let uri = value.parse()?;
+        Self::from_uri(&uri)
+    }
 }
-
-/*
-TODO: Connections should have an accepting_connections()
-
-    We need information on accepting_connections() in
-*/
 
 /// HTTP client connected to a single server.
+///
+/// TODO: When the Client is dropped, we know that no more requests will be made
+/// so we should initiate the shutdown of internal connections.
+#[derive(Clone)]
 pub struct Client {
-    shared: Arc<ClientShared>,
+    shared: Arc<Shared>,
 }
 
-impl Clone for Client {
-    fn clone(&self) -> Self {
-        Self {
-            shared: self.shared.clone(),
-        }
-    }
-}
-
-struct ClientShared {
+struct Shared {
     // /// Uri to which we should connection.
     // /// This should only a scheme and authority.
     // base_uri: Uri,
     options: ClientOptions,
 
-    /// TODO: Re-generate this on-demand so that new connections  we start a new
-    /// connection as we may want to re-query DNS.
-    socket_addr: SocketAddr,
-
-    connection_pool: Mutex<ClientConnectionPool>,
-    // A client should have a list of
+    lb_client: LoadBalancedClient,
 }
 
 impl Client {
@@ -146,278 +165,61 @@ impl Client {
     /// NOTE: This will not start a connection.
     /// TODO: Instead just take as input an authority string and whether or not
     /// we want it to be secure?
-    pub fn create(options: ClientOptions) -> Result<Self> {
-        let port = options
-            .authority
-            .port
-            .unwrap_or(if options.secure { 443 } else { 80 });
+    pub fn create<E: Into<Error> + Send, O: TryInto<ClientOptions, Error = E>>(
+        options: O,
+    ) -> Result<Self> {
+        let options = options.try_into().map_err(|e| e.into())?;
+        Self::create_impl(options)
+    }
 
-        // TODO: Whenever we need to create a new connection, consider re-fetching the
-        // dns result.
-        let ip = match &options.authority.host {
-            Host::Name(n) => {
-                // TODO: This should become async.
-                let addrs = lookup_hostname(n.as_ref())?;
-                let mut ip = None;
-                // TODO: Prefer ipv6 over ipv4?
-                for a in addrs {
-                    if a.socket_type == SocketType::Stream {
-                        ip = Some(a.address);
-                        break;
-                    }
-                }
-
-                match ip {
-                    Some(i) => i,
-                    None => {
-                        return Err(err_msg("Failed to resolve host to an ip"));
-                    }
-                }
-            }
-            Host::IP(ip) => ip.clone(),
-        };
+    fn create_impl(options: ClientOptions) -> Result<Self> {
+        let lb_client = LoadBalancedClient::new(options.backend_balancer.clone());
+        task::spawn(lb_client.clone().run());
 
         Ok(Client {
-            shared: Arc::new(ClientShared {
-                // TODO: Check port is in u16 range in the parser
-                socket_addr: SocketAddr::new(ip.try_into()?, port as u16),
-                options,
-                connection_pool: Mutex::new(ClientConnectionPool::default()),
-            }),
+            shared: Arc::new(Shared { options, lb_client }),
         })
-    }
-
-    // TODO: If we recieve an unterminated body, then we should close the
-    // connection right afterwards.
-
-    // TODO: We need to refactor this to re-use existing connections?
-
-    // TODO: request() can be split into two halves,
-
-    /// NOTE: Must be called with a lock on the connection pool
-    async fn new_connection(&self, connection_id: usize) -> Result<Arc<ClientConnectionEntry>> {
-        // Ways in which this can fail:
-        // - Timeout: Unable to reach the destination ip.
-        // - io::ErrorKind::ConnectionRefused: REached the server but it's not serving
-        //   on the given port.
-        let raw_stream = common::async_std::future::timeout(
-            std::time::Duration::from_millis(500),
-            TcpStream::connect(self.shared.socket_addr),
-        )
-        .await??;
-        raw_stream.set_nodelay(true)?;
-
-        let mut reader: Box<dyn Readable> = Box::new(raw_stream.clone());
-        let mut writer: Box<dyn Writeable> = Box::new(raw_stream);
-
-        let mut start_http2 = self.shared.options.force_http2;
-
-        if self.shared.options.secure {
-            let mut client_options = crypto::tls::options::ClientOptions::recommended();
-            // TODO: Merge with self.options
-
-            if let Host::Name(name) = &self.shared.options.authority.host {
-                client_options.hostname = name.clone();
-            }
-            client_options.alpn_ids.push("h2".into());
-            client_options.alpn_ids.push("http/1.1".into());
-
-            // TODO: Require that this by exported to a client level setting.
-            client_options.trust_server_certificate = true;
-
-            let mut tls_client = crypto::tls::client::Client::new();
-
-            let tls_stream = tls_client.connect(reader, writer, &client_options).await?;
-
-            reader = Box::new(tls_stream.reader);
-            writer = Box::new(tls_stream.writer);
-
-            if let Some(protocol) = tls_stream.handshake_summary.selected_alpn_protocol {
-                if protocol.as_ref() == b"h2" {
-                    start_http2 = true;
-                    println!("NEGOTIATED HTTP2 OVER TLS");
-                }
-            }
-        }
-
-        if start_http2 {
-            let connection_options = v2::ConnectionOptions::default();
-
-            let connection_v2 = v2::Connection::new(connection_options, None);
-
-            let initial_state = v2::ConnectionInitialState::raw();
-
-            let runner = connection_v2.run(initial_state, reader, writer);
-            task::spawn(Self::connection_runner(
-                Arc::downgrade(&self.shared),
-                connection_id,
-                runner,
-            ));
-
-            return Ok(Arc::new(ClientConnectionEntry::V2(connection_v2)));
-        }
-
-        let conn = v1::ClientConnection::new();
-
-        // TODO: Take care of this return value.
-        let conn_runner = task::spawn(Self::connection_runner(
-            Arc::downgrade(&self.shared),
-            connection_id,
-            conn.run(reader, writer),
-        ));
-
-        // Attempt to upgrade to HTTP2 over clear text.
-        if !self.shared.options.secure && false {
-            let local_settings = crate::v2::SettingsContainer::default();
-
-            let mut connection_options = vec![];
-            connection_options.push(crate::headers::connection::ConnectionOption::Unknown(
-                parsing::ascii::AsciiString::from("Upgrade").unwrap(),
-            ));
-
-            // TODO: Copy the host and uri from the request.
-            let mut upgrade_request = RequestBuilder::new()
-                .method(Method::GET)
-                // .uri("http://www.google.com/")
-                // .header("Host", "www.google.com")
-                .header(CONNECTION, "Upgrade, HTTP2-Settings")
-                .header("Upgrade", "h2c")
-                .build()
-                .unwrap();
-
-            local_settings
-                .append_to_request(&mut upgrade_request.head.headers, &mut connection_options);
-            // TODO: Serialize the connection options vector into the header.
-
-            // TODO: Explicitly enqueue the requests. If the connection dies but we never
-            // started sending the reuqest, then we can immediately re-try it.
-            let res = conn.request(upgrade_request).await?;
-
-            let res = match res {
-                v1::ClientConnectionResponse::Regular { response } => {
-                    println!("{:?}", response.head);
-                    println!("DID NOT UPGRADE")
-                }
-                v1::ClientConnectionResponse::Upgrading { response_head, .. } => {
-                    return Err(err_msg("UPGRADING"));
-                }
-            };
-        }
-
-        Ok(Arc::new(ClientConnectionEntry::V1(conn)))
-    }
-
-    // NOTE: This uses a Weak pointer to ensure that the ClientShared and Connection
-    // can be dropped which may lead to the Connection shutting down.
-    async fn connection_runner<F: std::future::Future<Output = Result<()>>>(
-        client_shared: Weak<ClientShared>,
-        connection_id: usize,
-        f: F,
-    ) {
-        if let Err(e) = f.await {
-            eprintln!("http::Client Connection failed: {:?}", e);
-        }
-
-        if let Some(client_shared) = client_shared.upgrade() {
-            let mut connection_pool = client_shared.connection_pool.lock().await;
-            connection_pool.connections.remove(&connection_id);
-        }
-    }
-
-    async fn get_connection(&self) -> Result<Arc<ClientConnectionEntry>> {
-        let mut pool = self.shared.connection_pool.lock().await;
-
-        let first_connection = pool.connections.values().next();
-        if let Some(connection) = first_connection {
-            return Ok(connection.clone());
-        }
-
-        let connection_id = pool.last_id + 1;
-        pool.last_id = connection_id;
-
-        let connection = self.new_connection(connection_id).await?;
-
-        pool.connections.insert(connection_id, connection.clone());
-        Ok(connection)
-    }
-
-    // Given request, if not connected, connect
-    // Write request to stream
-    // Read response
-    // - TODO: Response may be available before the request is sent (in the case of
-    //   bodies)
-    // If not using a content length, then we should close the connection
-    pub async fn request(&self, mut request: Request) -> Result<Response> {
-        // TODO: We should allow the Connection header, but we shouldn't allow any
-        // options which are used internally (keep-alive and close)
-        for header in &request.head.headers.raw_headers {
-            if header.is_transport_level() {
-                return Err(format_err!(
-                    "Request contains reserved header: {}",
-                    header.name.as_str()
-                ));
-            }
-        }
-
-        // TODO: Only pop this if we need to perfect an HTTP1 request (in HTTP2 we can
-        // forward a lot of stuff).
-        if let Some(scheme) = request.head.uri.scheme.take() {
-            // TODO: Verify if 'http(s)' as others aren't supported by this
-            // client.
-        } else {
-            // return Err(err_msg("Missing scheme in URI"));
-        }
-
-        if !request.head.uri.authority.is_some() {
-            request.head.uri.authority = Some(self.shared.options.authority.clone());
-        }
-
-        let conn_entry = self.get_connection().await?;
-
-        match conn_entry.as_ref() {
-            ClientConnectionEntry::V2(conn) => {
-                // TODO: Make this less hard coded.
-                request.head.uri.scheme = Some(AsciiString::from("https").unwrap());
-
-                let response = conn.request(request).await?;
-                Ok(response)
-            }
-            ClientConnectionEntry::V1(conn) => {
-                let res = conn.request(request).await?;
-
-                let res = match res {
-                    v1::ClientConnectionResponse::Regular { response } => response,
-                    v1::ClientConnectionResponse::Upgrading { response_head, .. } => {
-                        return Err(err_msg("Did not expect an upgrade"));
-                    }
-                };
-
-                Ok(res)
-            }
-        }
     }
 }
 
-// Other challenges: If we are going to have an HTTP 1.1 connection pool, then
-// we could re-use the
+#[async_trait]
+impl ClientInterface for Client {
+    async fn request(&self, request: Request) -> Result<Response> {
+        // TODO: Retrying requires that we can reset the HTTP body.
 
-// If there is an upgrade pending, then we can't
+        return self.shared.lb_client.request(request).await;
 
-/*
-TODO:
-A server MUST NOT switch protocols unless the received message semantics can be honored by the new protocol
+        /*
+        let mut retry_backoff = ExponentialBackoff::new(self.shared.options.retry_backoff.clone());
 
-*/
+        for _ in 0..self.shared.options.max_num_retries {
+            if let Some(wait_time) = retry_backoff.start_attempt() {
+                task::sleep(wait_time).await;
+            }
 
-/*
-    Suppose we get a
-*/
+            match self.shared.lb_client.request(request).await {
+                Ok(v) => {
+                    return Ok(v);
+                }
+                Err(e) => {
+                    let mut retryable = false;
+                    if let Some(e) = e.downcast_ref::<v2::ProtocolErrorV2>() {
+                        if e.is_retryable() {
+                            retryable = true;
+                        }
+                    }
 
-// Upgraded: Will kill
+                    if retryable {
+                        retry_backoff.end_attempt(false);
+                        // continue;
+                    }
 
-/*
-    Key details about an upgrade request:
-    - We shouldn't send any more requests on a connection which is in the process of being upgraded.
-        - This implies that we should know if we're upgrading
+                    return Err(e);
+                }
+            }
+        }
 
-*/
+        Err(err_msg("Exceeded max num request retries"))
+        */
+    }
+}

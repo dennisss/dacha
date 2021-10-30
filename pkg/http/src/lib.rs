@@ -10,6 +10,7 @@ extern crate regexp_macros;
 extern crate crypto;
 extern crate net;
 
+mod backoff;
 mod body;
 mod chunked;
 mod chunked_syntax;
@@ -42,7 +43,7 @@ mod v2;
 
 // Public exports.
 pub use crate::body::{Body, BodyFromData, BodyFromParts, EmptyBody, WithTrailers};
-pub use crate::client::{Client, ClientOptions};
+pub use crate::client::{Client, ClientInterface, ClientOptions};
 pub use crate::header::{Header, Headers};
 pub use crate::method::Method;
 pub use crate::request::{Request, RequestBuilder, RequestHead};

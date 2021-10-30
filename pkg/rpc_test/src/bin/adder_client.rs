@@ -8,7 +8,7 @@ extern crate rpc_test;
 #[macro_use]
 extern crate macros;
 
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 
 use common::async_std::task;
@@ -27,9 +27,9 @@ async fn run_client() -> Result<()> {
     // read the full length, then we should error out the request.
 
     // TODO: Specify the gRPC protocal in uri?
-    let channel = Arc::new(rpc::Http2Channel::create(
-        http::ClientOptions::from_authority(args.target.as_str())?,
-    )?);
+    let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::try_from(
+        args.target.as_str(),
+    )?)?);
     let stub = AdderStub::new(channel);
 
     let mut req = AddRequest::default();

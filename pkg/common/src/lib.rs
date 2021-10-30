@@ -30,6 +30,7 @@ pub mod bits;
 pub mod borrowed;
 pub mod bundle;
 pub mod cancellation;
+pub mod condvar;
 pub mod const_default;
 pub mod factory;
 pub mod fs;
@@ -43,6 +44,7 @@ pub mod signals;
 pub mod task;
 pub mod temp;
 pub mod vec;
+pub mod vec_hash_set;
 
 pub use arrayref::{array_mut_ref, array_ref};
 pub use async_trait::*;

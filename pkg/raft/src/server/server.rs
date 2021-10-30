@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use common::async_std::sync::Mutex;
+use common::condvar::*;
 use common::errors::*;
 use common::futures::channel::oneshot;
 
@@ -165,18 +166,8 @@ pub struct ServerInitialState<R> {
 /// - Compaction thread: When the state machine has flushed to disk a snapshot
 ///   containing log entries, this thread will tell the log that those entries
 ///   can now be discarded.
-///
-/// NOTE: Cloning a 'Server' instance will reference the same internal state.
 pub struct Server<R> {
     shared: Arc<ServerShared<R>>,
-}
-
-impl<R> Clone for Server<R> {
-    fn clone(&self) -> Self {
-        Self {
-            shared: self.shared.clone(),
-        }
-    }
 }
 
 impl<R: Send + 'static> Server<R> {

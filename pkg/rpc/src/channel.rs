@@ -8,6 +8,7 @@ use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Readable;
 use http::header::*;
+use http::ClientInterface;
 
 use crate::client_types::*;
 use crate::constants::GRPC_PROTO_TYPE;
@@ -145,9 +146,9 @@ pub struct Http2Channel {
 
 impl Http2Channel {
     pub fn create(options: http::ClientOptions) -> Result<Self> {
-        Ok(Self {
-            client: http::Client::create(options.set_force_http2(true))?,
-        })
+        let client = http::Client::create(options.set_force_http2(true))?;
+
+        Ok(Self { client })
     }
 
     async fn call_raw_impl(

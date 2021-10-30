@@ -48,7 +48,7 @@ pub struct Context {
     state: Arc<ContextState>,
 }
 
-pub struct ContextState {
+pub(crate) struct ContextState {
     /// Reference to the background thread that receives context/device events.
     /// NOTE: This will always be not-None after Context::create() is done.
     background_thread_handle: std::sync::Mutex<Option<thread::JoinHandle<()>>>,
@@ -65,21 +65,34 @@ pub struct ContextState {
     devices: std::sync::Mutex<ContextDevices>,
 }
 
-impl Drop for Context {
+impl Drop for ContextState {
     fn drop(&mut self) {
         self.close();
     }
 }
 
+impl ContextState {
+    // TODO: Don't make this public! When this is called, it won't destroy the
+    // devices so must only be called after all devices are destroyed.
+    fn close(&mut self) {
+        // TODO: Check return value
+        unsafe { libc::close(self.background_thread_eventfd) };
+
+        // NOTE: The background thread should terminate itself shortly now that
+        // the eventfd is dead.
+    }
+}
+
 impl Context {
-    pub fn create() -> Result<Arc<Self>> {
+    pub fn create() -> Result<Self> {
         let background_thread_eventfd =
             unsafe { libc::eventfd(0, libc::O_CLOEXEC | libc::O_NONBLOCK) };
         if background_thread_eventfd == -1 {
             return Err(err_msg("Failed to create eventfd for background thread"));
         }
 
-        let instance = Arc::new(Context {
+        // TODO: Drop the outer Arc and return a regular object.
+        let instance = Context {
             state: Arc::new(ContextState {
                 background_thread_eventfd,
                 background_thread_handle: std::sync::Mutex::new(None),
@@ -89,7 +102,7 @@ impl Context {
                     last_device_id: 0,
                 }),
             }),
-        });
+        };
 
         let background_state = instance.state.clone();
         *instance.state.background_thread_handle.lock().unwrap() = Some(thread::spawn(move || {
@@ -97,16 +110,6 @@ impl Context {
         }));
 
         Ok(instance)
-    }
-
-    // TODO: Don't make this public! When this is called, it won't destroy the
-    // devices so must only be called after all devices are destroyed.
-    fn close(&mut self) {
-        // TODO: Check return value
-        unsafe { libc::close(self.state.background_thread_eventfd) };
-
-        // NOTE: The background thread should terminate itself shortly now that
-        // the eventfd is dead.
     }
 
     fn run_background_thread(context_state: Arc<ContextState>) {
@@ -241,34 +244,7 @@ impl Context {
         }
     }
 
-    pub(crate) fn add_background_thread_waiter(&self) -> std::sync::mpsc::Receiver<()> {
-        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-        let mut waiters = self.state.background_thread_waiters.lock().unwrap();
-        waiters.push(sender);
-        receiver
-    }
-
-    pub(crate) fn notify_background_thread(&self) -> Result<()> {
-        // TODO: If this fails, should we remove the device from the list?
-        let event_num: u64 = 1;
-        let n = unsafe {
-            libc::write(
-                self.state.background_thread_eventfd,
-                std::mem::transmute(&event_num),
-                std::mem::size_of::<u64>(),
-            )
-        };
-        if n != (std::mem::size_of::<u64>() as isize) {
-            return Err(err_msg("Failed to notify background thread"));
-        }
-
-        // TODO: Ignore EAGAIN errors. Mains that the counter overflowed (meaning that
-        // it already has a value set.)
-
-        Ok(())
-    }
-
-    pub async fn open_device(self: &Arc<Self>, vendor_id: u16, product_id: u16) -> Result<Device> {
+    pub async fn open_device(&self, vendor_id: u16, product_id: u16) -> Result<Device> {
         let mut device = None;
         for device_entry in self.enumerate_devices().await? {
             let device_desc = device_entry.device_descriptor()?;
@@ -285,7 +261,7 @@ impl Context {
     /// Internally this uses sysfs for similar reasons to libusb. In particular
     /// this enables us to use cached kernel device descriptors rather than
     /// opening each device.
-    pub async fn enumerate_devices(self: &Arc<Self>) -> Result<Vec<DeviceEntry>> {
+    pub async fn enumerate_devices(&self) -> Result<Vec<DeviceEntry>> {
         let mut out = vec![];
 
         let mut entries = common::async_std::fs::read_dir(SYSFS_PATH).await?;
@@ -310,7 +286,7 @@ impl Context {
         Ok(out)
     }
 
-    async fn enumerate_single_device(self: &Arc<Self>, sysfs_dir: &Path) -> Result<DeviceEntry> {
+    async fn enumerate_single_device(&self, sysfs_dir: &Path) -> Result<DeviceEntry> {
         let busnum = fs::read_to_string(sysfs_dir.join("busnum"))
             .await?
             .trim_end()
@@ -324,7 +300,7 @@ impl Context {
         let raw_descriptors = fs::read(sysfs_dir.join("descriptors")).await?;
 
         Ok(DeviceEntry {
-            context: self.clone(),
+            context_state: self.state.clone(),
             busnum,
             devnum,
             raw_descriptors,
@@ -333,9 +309,38 @@ impl Context {
             usbdevfs_path: Path::new(USBDEVFS_PATH).join(format!("{:03}/{:03}", busnum, devnum)),
         })
     }
+}
+
+impl ContextState {
+    pub(crate) fn add_background_thread_waiter(&self) -> std::sync::mpsc::Receiver<()> {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let mut waiters = self.background_thread_waiters.lock().unwrap();
+        waiters.push(sender);
+        receiver
+    }
+
+    pub(crate) fn notify_background_thread(&self) -> Result<()> {
+        // TODO: If this fails, should we remove the device from the list?
+        let event_num: u64 = 1;
+        let n = unsafe {
+            libc::write(
+                self.background_thread_eventfd,
+                std::mem::transmute(&event_num),
+                std::mem::size_of::<u64>(),
+            )
+        };
+        if n != (std::mem::size_of::<u64>() as isize) {
+            return Err(err_msg("Failed to notify background thread"));
+        }
+
+        // TODO: Ignore EAGAIN errors. Mains that the counter overflowed (meaning that
+        // it already has a value set.)
+
+        Ok(())
+    }
 
     pub(crate) fn add_device(&self, state: Arc<DeviceState>) -> Result<usize> {
-        let mut devices = self.state.devices.lock().unwrap();
+        let mut devices = self.devices.lock().unwrap();
 
         for (_, device_state) in devices.open_devices.iter() {
             if device_state.bus_num == state.bus_num && device_state.dev_num == state.dev_num {
@@ -354,7 +359,7 @@ impl Context {
     }
 
     pub(crate) fn remove_device(&self, id: usize) -> Result<()> {
-        let mut devices = self.state.devices.lock().unwrap();
+        let mut devices = self.devices.lock().unwrap();
         devices.open_devices.remove(&id);
         drop(devices);
 
@@ -372,7 +377,7 @@ struct ContextDevices {
 /// Can be used to open the device or preview descriptors that are cached by the
 /// system.
 pub struct DeviceEntry {
-    context: Arc<Context>,
+    context_state: Arc<ContextState>,
     busnum: usize,
     devnum: usize,
     raw_descriptors: Vec<u8>,
@@ -419,6 +424,6 @@ impl DeviceEntry {
         });
 
         // TODO: If this fails, then we need to remove the device from the list.
-        Device::create(self.context.clone(), state, &self.raw_descriptors)
+        Device::create(self.context_state.clone(), state, &self.raw_descriptors)
     }
 }

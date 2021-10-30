@@ -75,7 +75,7 @@ pub struct Device {
     /// NOTE: As the Context manages the background events thread, it must live
     /// longer than the device, otherwise most of the Device methods will be
     /// broken.
-    context: Arc<Context>,
+    context_state: Arc<ContextState>,
 
     state: Arc<DeviceState>,
 
@@ -142,7 +142,7 @@ impl Drop for Device {
 
 impl Device {
     pub(crate) fn create(
-        context: Arc<Context>,
+        context_state: Arc<ContextState>,
         state: Arc<DeviceState>,
         raw_descriptors: &[u8],
     ) -> Result<Self> {
@@ -177,14 +177,14 @@ impl Device {
         // NOTE: This must run at the very end as we need to ensure that the Device
         // object is always constructed when the device is added. Otherwise
         // remove_device() won't be called on Drop of the Device.
-        let id = context.add_device(state.clone())?;
+        let id = context_state.add_device(state.clone())?;
 
         Ok(Self {
             id,
             descriptors,
             device_descriptor,
             endpoint_descriptors,
-            context,
+            context_state,
             state,
             closed: false,
         })
@@ -204,7 +204,7 @@ impl Device {
 
         // Remove the device from the context so that the background thread stops
         // listening for events.
-        self.context.remove_device(self.id)?;
+        self.context_state.remove_device(self.id)?;
 
         // Close the file. This ensures that linux releases references to any still
         // pending transfers.
@@ -218,8 +218,8 @@ impl Device {
         //
         // This is important to ensure that all the transfers memory can be safely
         // dropped.
-        let waiter = self.context.add_background_thread_waiter();
-        self.context.notify_background_thread()?;
+        let waiter = self.context_state.add_background_thread_waiter();
+        self.context_state.notify_background_thread()?;
         let _ = waiter.recv();
 
         // Notify all pending transfers that the device is closed.

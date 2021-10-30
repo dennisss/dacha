@@ -528,6 +528,7 @@ dependencies = [
  "protobuf",
  "protobuf_compiler",
  "rpc",
+ "rpc_util",
  "sstable",
  "usb",
 ]
