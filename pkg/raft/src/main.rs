@@ -205,9 +205,10 @@ async fn main_task() -> Result<()> {
     // configuration before talking to other servers in the cluster
 
     // TODO: Derive this based on an argument.
+    // TODO: remove the http:// ?
     let seed_list: Vec<String> = vec![
-        "http://127.0.0.1:4001".into(),
-        "http://127.0.0.1:4002".into(),
+        // "http://127.0.0.1:4001".into(),
+        // "http://127.0.0.1:4002".into(),
     ];
 
     common::async_std::fs::create_dir_all(&args.dir).await?;
@@ -240,7 +241,7 @@ async fn main_task() -> Result<()> {
 
     tasks.add(
         "raft::Node",
-        node.run(&mut rpc_server, &format!("http://127.0.0.1:{}", raft_port))?,
+        node.run(&mut rpc_server, &format!("127.0.0.1:{}", raft_port))?,
     );
 
     let client_server = Arc::new(redis::server::Server::new(RaftRedisServer {

@@ -22,7 +22,7 @@ use crate::proto::server_metadata::*;
 use crate::routing::discovery_client::DiscoveryClient;
 use crate::routing::discovery_server::DiscoveryServer;
 use crate::routing::route_channel::*;
-use crate::routing::route_store::{RouteStore, RouteStoreHandle};
+use crate::routing::route_store::RouteStore;
 use crate::server::server::*;
 use crate::server::state_machine::*;
 use crate::DiscoveryMulticast;
@@ -114,7 +114,7 @@ pub struct Node<R> {
     /// alive.
     dir: Arc<DirLock>,
 
-    route_store: RouteStoreHandle,
+    route_store: RouteStore,
 
     channel_factory: Arc<RouteChannelFactory>,
 
@@ -129,7 +129,7 @@ impl<R: 'static + Send> Node<R> {
     // Creates a new Node instance, attachs it to the server, and starts up
     // background tasks.
     pub async fn create(options: NodeOptions<R>) -> Result<Node<R>> {
-        let route_store = Arc::new(Mutex::new(RouteStore::new()));
+        let route_store = RouteStore::new();
 
         let mut task_bundle = TaskResultBundle::new();
 
@@ -294,7 +294,7 @@ impl<R: 'static + Send> Node<R> {
         })
     }
 
-    async fn find_peer_group_id(route_store: RouteStoreHandle) -> GroupId {
+    async fn find_peer_group_id(route_store: RouteStore) -> GroupId {
         loop {
             let remote_groups = {
                 let route_store = route_store.lock().await;

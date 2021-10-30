@@ -23,7 +23,7 @@ use crate::routing::route_store::*;
 ///   (using this layer allows for sharing of configurations even in the
 ///   presense of failed seed servers)
 pub struct DiscoveryClient {
-    route_store: RouteStoreHandle,
+    route_store: RouteStore,
     seeds: Vec<String>,
 }
 
@@ -31,8 +31,11 @@ pub struct DiscoveryClient {
 // periodically refresh our list with them) In this way, we may not even need a
 // gossip protocol if we assume that we have a set of
 
+// TODO: Refactor this so that the seed list is a list of authorities rather
+// than a list of uris.
+
 impl DiscoveryClient {
-    pub fn new(route_store: RouteStoreHandle, seeds: Vec<String>) -> Self {
+    pub fn new(route_store: RouteStore, seeds: Vec<String>) -> Self {
         Self { route_store, seeds }
     }
 

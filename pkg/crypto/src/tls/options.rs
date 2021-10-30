@@ -8,6 +8,7 @@ use crate::tls::handshake::CipherSuite;
 /// what information we will validate about the server (certificate), and what
 /// credentials (certificate) we can use to authenticate ourselves to the
 /// server.
+#[derive(Clone)]
 pub struct ClientOptions {
     /// If not empty, then we will initially try to offer keys for these groups
     /// to the server to use for (EC)DHE key exchange.

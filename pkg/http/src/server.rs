@@ -441,6 +441,7 @@ impl Server {
                     msg
                 }
                 Err(e) => {
+                    // TODO: Switch to returning protocol errors.
                     println!("Failed to parse message\n{}", e);
                     write_stream
                         .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")

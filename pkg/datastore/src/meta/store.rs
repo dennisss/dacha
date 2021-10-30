@@ -176,7 +176,7 @@ pub async fn run(config: &MetaStoreConfig) -> Result<()> {
         "raft::Node",
         node.run(
             &mut rpc_server,
-            &format!("http://127.0.0.1:{}", config.service_port),
+            &format!("127.0.0.1:{}", config.service_port),
         )?,
     );
 

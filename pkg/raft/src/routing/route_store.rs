@@ -2,18 +2,24 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use common::async_std::sync::Mutex;
-use common::errors::*;
+use common::condvar::{Condvar, CondvarGuard};
 
 use crate::proto::consensus::*;
 use crate::proto::routing::*;
 use crate::proto::server_metadata::GroupId;
 
-pub type RouteStoreHandle = Arc<Mutex<RouteStore>>;
+/*
+A RouteResolver can have a child task which waits for changes and notifies all
+*/
 
 /// Container of all server-to-server routing information known by the local
 /// server.
+#[derive(Clone)]
 pub struct RouteStore {
+    state: Arc<Condvar<State>>,
+}
+
+struct State {
     /// TODO: When a connection times out we want to automatically remove it
     /// from this list.
     routes: HashMap<(GroupId, ServerId), Route>,
@@ -23,14 +29,30 @@ pub struct RouteStore {
 impl RouteStore {
     pub fn new() -> Self {
         Self {
-            routes: HashMap::new(),
-            local_route: None,
+            state: Arc::new(Condvar::new(State {
+                routes: HashMap::new(),
+                local_route: None,
+            })),
         }
     }
 
+    pub async fn lock<'a>(&'a self) -> RouteStoreGuard<'a> {
+        RouteStoreGuard {
+            state: self.state.lock().await,
+        }
+    }
+}
+
+pub struct RouteStoreGuard<'a> {
+    state: CondvarGuard<'a, State, ()>,
+}
+
+impl<'a> RouteStoreGuard<'a> {
     pub fn set_local_route(&mut self, route: Route) {
-        self.routes.remove(&(route.group_id(), route.server_id()));
-        self.local_route = Some(route);
+        self.state
+            .routes
+            .remove(&(route.group_id(), route.server_id()));
+        self.state.local_route = Some(route);
     }
 
     /// Looks up routing information for connecting to another server in the
@@ -41,12 +63,12 @@ impl RouteStore {
 
         // TODO: Mark the route as recently used.
 
-        self.routes.get(&(group_id, server_id))
+        self.state.routes.get(&(group_id, server_id))
     }
 
     pub fn remote_groups(&self) -> HashSet<GroupId> {
         let mut groups = HashSet::new();
-        for (group_id, _) in self.routes.keys().cloned() {
+        for (group_id, _) in self.state.routes.keys().cloned() {
             groups.insert(group_id);
         }
 
@@ -55,7 +77,7 @@ impl RouteStore {
 
     pub fn remote_servers(&self, group_id: GroupId) -> HashSet<ServerId> {
         let mut servers = HashSet::new();
-        for (cur_group_id, server_id) in self.routes.keys().cloned() {
+        for (cur_group_id, server_id) in self.state.routes.keys().cloned() {
             if cur_group_id != group_id {
                 continue;
             }
@@ -67,15 +89,9 @@ impl RouteStore {
     }
 
     pub fn serialize(&self) -> Announcement {
-        let mut announcement = Announcement::default();
+        let mut announcement = self.serialize_local_only();
 
-        if let Some(local_route) = &self.local_route {
-            let mut r = local_route.clone();
-            r.set_last_seen(SystemTime::now());
-            announcement.add_routes(r);
-        }
-
-        for route in self.routes.values() {
+        for route in self.state.routes.values() {
             announcement.add_routes(route.clone());
         }
 
@@ -85,7 +101,7 @@ impl RouteStore {
     pub fn serialize_local_only(&self) -> Announcement {
         let mut announcement = Announcement::default();
 
-        if let Some(local_route) = &self.local_route {
+        if let Some(local_route) = &self.state.local_route {
             let mut r = local_route.clone();
             r.set_last_seen(SystemTime::now());
             announcement.add_routes(r);
@@ -95,10 +111,12 @@ impl RouteStore {
     }
 
     pub fn apply(&mut self, an: &Announcement) {
+        let mut changed = false;
+
         for new_route in an.routes().iter() {
             let new_route_key = (new_route.group_id(), new_route.server_id());
 
-            if let Some(local_route) = &self.local_route {
+            if let Some(local_route) = &self.state.local_route {
                 if (local_route.group_id(), local_route.server_id()) == new_route_key {
                     continue;
                 }
@@ -107,6 +125,7 @@ impl RouteStore {
             // We will only accept the new path if it is fresher than the existing route
             // where freshness is defined by when the origin server broadcast this route.
             let should_insert = match self
+                .state
                 .routes
                 .get(&(new_route.group_id(), new_route.server_id()))
             {
@@ -118,12 +137,22 @@ impl RouteStore {
             };
 
             if should_insert {
-                self.routes.insert(
+                self.state.routes.insert(
                     (new_route.group_id(), new_route.server_id()),
                     new_route.clone(),
                 );
+
+                changed = true;
             }
         }
+
+        if changed {
+            self.state.notify_all();
+        }
+    }
+
+    pub async fn wait(self) {
+        self.state.wait(()).await
     }
 
     // pub fn apply(&mut self, an: &Announcement) {

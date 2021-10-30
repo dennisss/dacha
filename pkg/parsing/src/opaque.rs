@@ -6,7 +6,7 @@ use common::errors::*;
 
 /// A set of bytes that has no restrictions on byte values, but most likely
 /// contains visible ASCII characters.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct OpaqueString {
     data: Bytes,
 }

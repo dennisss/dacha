@@ -13,6 +13,7 @@ message Route {
     ServerId server_id = 2;
 
     // Ip address and port at which this server can be contacted.
+    // e.g. "127.0.0.1:8000"
     // TODO: Store in binary format.
     //
     // REQUIRED

@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 use common::bytes::Bytes;
 use common::errors::*;
@@ -63,7 +64,7 @@ impl std::str::FromStr for Uri {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Authority {
     pub user: Option<OpaqueString>,
     pub host: Host,
@@ -78,7 +79,15 @@ impl TryFrom<&str> for Authority {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl FromStr for Authority {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Self::try_from(s)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Host {
     Name(String),
     IP(IPAddress),

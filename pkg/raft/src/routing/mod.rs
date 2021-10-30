@@ -2,6 +2,7 @@ pub mod discovery_client;
 pub mod discovery_server;
 pub mod multicast;
 pub mod route_channel;
+pub mod route_resolver;
 pub mod route_store;
 
 /*

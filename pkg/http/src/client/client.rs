@@ -15,7 +15,7 @@ use crate::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
 use crate::client::client_interface::ClientInterface;
 use crate::client::direct_client::DirectClientOptions;
 use crate::client::load_balanced_client::{LoadBalancedClient, LoadBalancedClientOptions};
-use crate::client::resolver::SystemDNSResolver;
+use crate::client::resolver::{Resolver, SystemDNSResolver};
 use crate::header::*;
 use crate::method::*;
 use crate::request::*;
@@ -54,6 +54,40 @@ pub struct ClientOptions {
 }
 
 impl ClientOptions {
+    pub fn from_resolver(resolver: Arc<dyn Resolver>) -> Self {
+        Self {
+            max_num_retries: 5,
+            retry_backoff: ExponentialBackoffOptions {
+                base_duration: Duration::from_millis(10),
+                jitter_duration: Duration::from_millis(200),
+                max_duration: Duration::from_secs(30),
+                cooldown_duration: Duration::from_secs(60),
+            },
+            backend_balancer: LoadBalancedClientOptions {
+                resolver,
+                backend: DirectClientOptions {
+                    tls: None,
+                    force_http2: false,
+                    connection_backoff: ExponentialBackoffOptions {
+                        base_duration: Duration::from_millis(100),
+                        jitter_duration: Duration::from_millis(200),
+                        max_duration: Duration::from_secs(20),
+                        cooldown_duration: Duration::from_secs(60),
+                    },
+                    connect_timeout: Duration::from_millis(500),
+                    idle_timeout: Duration::from_secs(2),
+                },
+                resolver_backoff: ExponentialBackoffOptions {
+                    base_duration: Duration::from_millis(100),
+                    jitter_duration: Duration::from_millis(200),
+                    max_duration: Duration::from_secs(20),
+                    cooldown_duration: Duration::from_secs(60),
+                },
+                subset_size: 10,
+            },
+        }
+    }
+
     pub fn from_uri(uri: &Uri) -> Result<Self> {
         let authority = uri
             .authority
@@ -80,38 +114,13 @@ impl ClientOptions {
         // TODO: Explicitly check that the port fits within a u16.
         let resolver = Arc::new(SystemDNSResolver::new(authority.host.clone(), port as u16));
 
-        Ok(Self {
-            max_num_retries: 5,
-            retry_backoff: ExponentialBackoffOptions {
-                base_duration: Duration::from_millis(10),
-                jitter_duration: Duration::from_millis(200),
-                max_duration: Duration::from_secs(30),
-                cooldown_duration: Duration::from_secs(60),
-            },
-            backend_balancer: LoadBalancedClientOptions {
-                resolver,
-                backend: DirectClientOptions {
-                    authority,
-                    secure,
-                    force_http2: false,
-                    connection_backoff: ExponentialBackoffOptions {
-                        base_duration: Duration::from_millis(100),
-                        jitter_duration: Duration::from_millis(200),
-                        max_duration: Duration::from_secs(20),
-                        cooldown_duration: Duration::from_secs(60),
-                    },
-                    connect_timeout: Duration::from_millis(500),
-                    idle_timeout: Duration::from_secs(2),
-                },
-                resolver_backoff: ExponentialBackoffOptions {
-                    base_duration: Duration::from_millis(100),
-                    jitter_duration: Duration::from_millis(200),
-                    max_duration: Duration::from_secs(20),
-                    cooldown_duration: Duration::from_secs(60),
-                },
-                subset_size: 10,
-            },
-        })
+        let mut options = Self::from_resolver(resolver);
+        if secure {
+            options.backend_balancer.backend.tls =
+                Some(crypto::tls::options::ClientOptions::recommended());
+        }
+
+        Ok(options)
     }
 
     pub fn set_force_http2(mut self, value: bool) -> Self {

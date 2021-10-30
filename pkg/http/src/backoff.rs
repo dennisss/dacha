@@ -70,7 +70,7 @@ impl ExponentialBackoff {
                     .between(0, self.options.jitter_duration.as_micros() as u64),
         );
 
-        Some(wait_time)
+        Some(std::cmp::min(wait_time, self.options.max_duration))
     }
 
     /// Reports that a recent attempt was successful.

@@ -4,7 +4,7 @@ use common::errors::*;
 
 // TODO: Verify that we aren't able to parse octal ip addresses
 // (basically no component should start with a leading 0)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum IPAddress {
     V4(Vec<u8>),
     V6(Vec<u8>),

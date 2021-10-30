@@ -19,11 +19,11 @@ const IFACE_ADDR: Ipv4Addr = Ipv4Addr::new(0, 0, 0, 0);
 
 pub struct DiscoveryMulticast {
     socket: UdpSocket,
-    route_store: RouteStoreHandle,
+    route_store: RouteStore,
 }
 
 impl DiscoveryMulticast {
-    pub async fn create(route_store: RouteStoreHandle) -> Result<Self> {
+    pub async fn create(route_store: RouteStore) -> Result<Self> {
         let socket = unsafe {
             UdpSocket::from_raw_fd(nix::sys::socket::socket(
                 AddressFamily::Inet,

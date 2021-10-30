@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::slice::SliceIndex;
 use std::sync::Arc;
 
+use common::async_std::channel;
 use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::condvar::Condvar;
@@ -14,7 +15,7 @@ use crate::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
 use crate::client::client_interface::ClientInterface;
 use crate::client::direct_client::DirectClient;
 use crate::client::direct_client::DirectClientOptions;
-use crate::client::resolver::Resolver;
+use crate::client::resolver::{ResolvedEndpoint, Resolver};
 use crate::request::Request;
 use crate::response::Response;
 
@@ -45,7 +46,7 @@ struct Shared {
 }
 
 struct State {
-    backends: VecHashSet<SocketAddr, DirectClient>,
+    backends: VecHashSet<ResolvedEndpoint, DirectClient>,
 }
 
 impl LoadBalancedClient {
@@ -64,13 +65,27 @@ impl LoadBalancedClient {
         let mut resolve_backoff =
             ExponentialBackoff::new(self.shared.options.resolver_backoff.clone());
 
+        let resolver_listener = {
+            let (sender, receiver) = channel::bounded(1);
+            self.shared
+                .options
+                .resolver
+                .add_change_listener(Box::new(move || match sender.try_send(()) {
+                    Ok(()) => true,
+                    Err(channel::TrySendError::Full(_)) => true,
+                    Err(channel::TrySendError::Closed(_)) => false,
+                }))
+                .await;
+
+            receiver
+        };
+
         loop {
             if let Some(wait_time) = resolve_backoff.start_attempt() {
                 task::sleep(wait_time).await;
             }
 
-            // TODO: Retry .resolve() with backoff.
-            let backend_addrs = match self.shared.options.resolver.resolve().await {
+            let backend_endpoints = match self.shared.options.resolver.resolve().await {
                 Ok(v) => v,
                 Err(e) => {
                     eprintln!("Resolver failed: {}", e);
@@ -79,49 +94,52 @@ impl LoadBalancedClient {
                 }
             };
 
-            let backend_addrs = backend_addrs.into_iter().collect::<HashSet<_>>();
+            let backend_endpoints = backend_endpoints.into_iter().collect::<HashSet<_>>();
 
-            let mut add_addrs = Vec::new();
+            let mut add_endpoints = Vec::new();
             {
                 let mut state = self.shared.state.lock().await;
 
-                let mut remove_addrs = Vec::new();
-                for existing_addr in state.backends.keys() {
-                    if !backend_addrs.contains(existing_addr) {
-                        remove_addrs.push(*existing_addr);
+                let mut remove_endpoints = Vec::new();
+                for existing_endpoint in state.backends.keys() {
+                    if !backend_endpoints.contains(existing_endpoint) {
+                        remove_endpoints.push(existing_endpoint.clone());
                     }
                 }
 
                 // TODO: Gracefully shut down all of these.
-                for addr in remove_addrs {
-                    state.backends.remove(&addr);
+                for endpoint in remove_endpoints {
+                    state.backends.remove(&endpoint);
                 }
 
-                for new_addr in &backend_addrs {
-                    if !state.backends.contains_key(new_addr) {
-                        add_addrs.push(*new_addr);
+                for new_endpoint in &backend_endpoints {
+                    if !state.backends.contains_key(new_endpoint) {
+                        add_endpoints.push(new_endpoint.clone());
                     }
                 }
             }
 
             let mut created_clients = vec![];
-            for addr in add_addrs {
-                let client = DirectClient::new(addr.clone(), self.shared.options.backend.clone());
+            for endpoint in add_endpoints {
+                let client =
+                    DirectClient::new(endpoint.clone(), self.shared.options.backend.clone());
                 task::spawn(client.clone().run());
-                created_clients.push((addr, client));
+                created_clients.push((endpoint, client));
             }
 
             {
                 let mut state = self.shared.state.lock().await;
 
-                for (addr, client) in created_clients {
-                    state.backends.insert(addr, client);
+                for (endpoint, client) in created_clients {
+                    state.backends.insert(endpoint, client);
                 }
 
                 state.notify_all();
             }
 
-            self.shared.options.resolver.wait_for_update().await;
+            if let Err(_) = resolver_listener.recv().await {
+                return;
+            }
         }
     }
 }

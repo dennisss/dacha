@@ -170,6 +170,14 @@ pub struct Server<R> {
     shared: Arc<ServerShared<R>>,
 }
 
+impl<R> Clone for Server<R> {
+    fn clone(&self) -> Self {
+        Self {
+            shared: self.shared.clone(),
+        }
+    }
+}
+
 impl<R: Send + 'static> Server<R> {
     // TODO: Everything in this function should be immediately available.
     pub async fn new(

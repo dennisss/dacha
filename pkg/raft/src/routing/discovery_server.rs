@@ -6,11 +6,11 @@ use crate::proto::routing::*;
 use crate::routing::route_store::*;
 
 pub struct DiscoveryServer {
-    route_store: RouteStoreHandle,
+    route_store: RouteStore,
 }
 
 impl DiscoveryServer {
-    pub fn new(route_store: RouteStoreHandle) -> Self {
+    pub fn new(route_store: RouteStore) -> Self {
         Self { route_store }
     }
 }

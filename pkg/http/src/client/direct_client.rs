@@ -14,6 +14,7 @@ use parsing::ascii::AsciiString;
 
 use crate::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
 use crate::client::client_interface::*;
+use crate::client::resolver::ResolvedEndpoint;
 use crate::header::*;
 use crate::method::*;
 use crate::request::*;
@@ -40,12 +41,9 @@ Key details about an upgrade request:
 
 #[derive(Clone)]
 pub struct DirectClientOptions {
-    /// Host optionally with a port to which we should connect.
-    pub authority: Authority,
-
-    /// If true, we'll connect using SSL/TLS. By default, we send HTTP2 over
-    /// clear text.
-    pub secure: bool,
+    /// If present, use these options to connect with SSL/TLS. Otherwise, we'll
+    /// send requests over plain text.
+    pub tls: Option<crypto::tls::options::ClientOptions>,
 
     /// If true, we'll immediately connect using HTTP2 and fail if it is not
     /// supported by the server. By default, we'll start by sending HTTP1
@@ -88,7 +86,7 @@ pub struct DirectClient {
 }
 
 struct Shared {
-    socket_addr: SocketAddr,
+    endpoint: ResolvedEndpoint,
     options: DirectClientOptions,
 
     state: Condvar<ClientState>,
@@ -111,10 +109,10 @@ enum ConnectionEvent {
 }
 
 impl DirectClient {
-    pub fn new(socket_addr: SocketAddr, options: DirectClientOptions) -> Self {
+    pub fn new(endpoint: ResolvedEndpoint, options: DirectClientOptions) -> Self {
         Self {
             shared: Arc::new(Shared {
-                socket_addr,
+                endpoint,
                 options,
                 state: Condvar::new(ClientState::NotConnected),
                 connection_pool: Mutex::new(ConnectionPool::default()),
@@ -160,7 +158,7 @@ impl DirectClient {
                         true
                     }
                     Err(e) => {
-                        eprintln!("Failure while connecting: {}", e);
+                        eprintln!("Failure while connecting {:?}: {}", self.shared.endpoint, e);
                         false
                     }
                 };
@@ -203,7 +201,7 @@ impl DirectClient {
         // handshake).
         let raw_stream = common::async_std::future::timeout(
             self.shared.options.connect_timeout.clone(),
-            TcpStream::connect(self.shared.socket_addr),
+            TcpStream::connect(self.shared.endpoint.address),
         )
         .await??;
         raw_stream.set_nodelay(true)?;
@@ -213,18 +211,15 @@ impl DirectClient {
 
         let mut start_http2 = self.shared.options.force_http2;
 
-        if self.shared.options.secure {
-            let mut client_options = crypto::tls::options::ClientOptions::recommended();
-            // TODO: Merge with self.options
-
-            if let Host::Name(name) = &self.shared.options.authority.host {
+        if let Some(mut client_options) = self.shared.options.tls.clone() {
+            if let Host::Name(name) = &self.shared.endpoint.authority.host {
                 client_options.hostname = name.clone();
             }
             client_options.alpn_ids.push("h2".into());
             client_options.alpn_ids.push("http/1.1".into());
 
             // TODO: Require that this by exported to a client level setting.
-            client_options.trust_server_certificate = true;
+            // client_options.trust_server_certificate = true;
 
             let mut tls_client = crypto::tls::client::Client::new();
 
@@ -270,7 +265,7 @@ impl DirectClient {
         ));
 
         // Attempt to upgrade to HTTP2 over clear text.
-        if !self.shared.options.secure && false {
+        if !self.shared.options.tls.is_some() && false {
             let local_settings = crate::v2::SettingsContainer::default();
 
             let mut connection_options = vec![];
@@ -352,23 +347,6 @@ impl DirectClient {
                 return Ok(connection.clone());
             }
         }
-
-        /*
-        let mut pool = self.shared.connection_pool.lock().await;
-
-        let first_connection = pool.connections.values().next();
-        if let Some(connection) = first_connection {
-            return Ok(connection.clone());
-        }
-
-        let connection_id = pool.last_id + 1;
-        pool.last_id = connection_id;
-
-        let connection = self.new_connection(connection_id).await?;
-
-        pool.connections.insert(connection_id, connection.clone());
-        Ok(connection)
-        */
     }
 }
 
@@ -401,8 +379,15 @@ impl ClientInterface for DirectClient {
             // return Err(err_msg("Missing scheme in URI"));
         }
 
+        // TODO: Explicitly always set the scheme based on the
+
+        // TODO: We should just disallow using an authority in requests as it goes
+        // against TLS and load balancing assumptions.
+
+        //
         if !request.head.uri.authority.is_some() {
-            request.head.uri.authority = Some(self.shared.options.authority.clone());
+            request.head.uri.authority = Some(self.shared.endpoint.authority.clone());
+            // TODO: Remove default ports (80 and 443).
         }
 
         let conn_entry = self.get_connection().await?;
