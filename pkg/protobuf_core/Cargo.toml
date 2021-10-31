@@ -8,3 +8,4 @@ edition = "2018"
 common = { path = "../common" }
 base64 = "0.11.0"
 macros = { path = "../macros" }
+parsing = { path = "../parsing" }

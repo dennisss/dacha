@@ -296,15 +296,16 @@ impl<R: 'static + Send> Node<R> {
 
     async fn find_peer_group_id(route_store: RouteStore) -> GroupId {
         loop {
-            let remote_groups = {
-                let route_store = route_store.lock().await;
-                route_store.remote_groups()
-            };
+            let route_store = route_store.lock().await;
+
+            let remote_groups = route_store.remote_groups();
 
             if remote_groups.is_empty() {
-                common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
+                route_store.wait().await;
                 continue;
             }
+
+            drop(route_store);
 
             return *remote_groups.iter().next().unwrap();
         }

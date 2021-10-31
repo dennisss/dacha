@@ -2,10 +2,11 @@
 // aka what the C++ DebugString outputs and can re-parse as a proto.
 
 use std::convert::TryInto;
+use std::ops::Deref;
 
-use common::{__Deref, errors::*};
+use crate::tokenizer::{float_lit, int_lit, serialize_str_lit, strLit};
+use common::errors::*;
 use parsing::*;
-use protobuf_compiler::tokenizer::{float_lit, int_lit, serialize_str_lit, strLit};
 
 use crate::reflection::{MessageReflection, Reflection, ReflectionMut};
 
@@ -31,7 +32,7 @@ impl TextToken {
         map(Self::comment, |_| Self::Comment),
         map(Self::symbol, |v| Self::Symbol(v)),
         map(Self::string, |v| Self::String(v)),
-        map(protobuf_compiler::tokenizer::ident, |v| Self::Identifier(v)),
+        map(crate::tokenizer::ident, |v| Self::Identifier(v)),
         Self::number
     ));
 

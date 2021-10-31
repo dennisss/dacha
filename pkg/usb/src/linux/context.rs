@@ -44,6 +44,7 @@ Possibly check /sys/class/tty/ for a connection to TTY devices.
 ///   - User's will always be given an Arc<Context>
 ///   - Internally the Context and every open Device contains a
 ///     Arc<ContextState>
+#[derive(Clone)]
 pub struct Context {
     state: Arc<ContextState>,
 }

@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 
 use common::errors::*;
 use common::line_builder::*;
+use protobuf_core::tokenizer::serialize_str_lit;
 use protobuf_core::FieldNumber;
 use protobuf_core::Message;
 
 use crate::spec::*;
-use crate::tokenizer::serialize_str_lit;
 
 // TODO: Lets not forget to serialize and parse unknown fields as well.
 
@@ -1198,7 +1198,7 @@ impl Compiler<'_> {
         // NOTE: We intentionally don't derive PartialEq always as it can be error prone
         // (especially with Option<> types). TODO: Use the debug_string to
         // implement debug.
-        lines.add("#[derive(Clone, Default, Debug, ConstDefault)]");
+        lines.add("#[derive(Clone, Default, ConstDefault)]");
         lines.add(format!("pub struct {} {{", fullname));
         lines.indented(|lines| -> Result<()> {
             for i in &msg.body {
@@ -1211,6 +1211,21 @@ impl Compiler<'_> {
         })?;
         lines.add("}");
         lines.nl();
+
+        lines.add(format!(
+            "
+            impl ::std::fmt::Debug for {name} {{
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {{
+                    f.write_str(&{pkg}::text::serialize_text_proto(self))
+                }}
+            }}
+
+        ",
+            name = fullname,
+            pkg = self.options.runtime_package
+        ));
+
+        // TODO: Use text format for
 
         if is_typed_num {
             let field = {

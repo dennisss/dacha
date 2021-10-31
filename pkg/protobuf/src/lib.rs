@@ -14,15 +14,12 @@ extern crate parsing; // < Mainly needed for f32/f64 conversions
 #[macro_use]
 extern crate macros;
 
-// TODO: Eventually remove dependencies on the compiler
 extern crate json;
-extern crate protobuf_compiler;
 extern crate protobuf_descriptor;
 
 mod descriptor_pool;
 pub mod dynamic;
 mod proto;
-pub mod text;
 
 pub use common::bytes::{Bytes, BytesMut};
 pub use descriptor_pool::*;

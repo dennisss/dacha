@@ -10,10 +10,10 @@
 
 use common::errors::*;
 use parsing::*;
+use protobuf_core::tokenizer::{capital_letter, decimal_digit, letter, Token};
 use protobuf_core::FieldNumber;
 
 use crate::spec::*;
-use crate::tokenizer::{capital_letter, decimal_digit, letter, Token};
 
 macro_rules! token_atom {
     ($name:ident, $e:ident, $t:ty) => {
