@@ -524,6 +524,7 @@ dependencies = [
  "http",
  "libc",
  "macros",
+ "net",
  "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
@@ -642,6 +643,7 @@ dependencies = [
  "google",
  "http",
  "macros",
+ "net",
  "parsing",
  "protobuf",
  "protobuf_compiler",
@@ -1357,6 +1359,8 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "common",
+ "libc",
+ "nix 0.21.0",
  "parsing",
  "parsing_compiler",
  "regexp_macros",
@@ -1726,6 +1730,7 @@ dependencies = [
  "base64",
  "common",
  "macros",
+ "parsing",
 ]
 
 [[package]]

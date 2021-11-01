@@ -1,11 +1,12 @@
 data_dir: "/opt/dacha/data"
 service_port: 10250
 graceful_shutdown_timeout_secs: 10
+bootstrap_id_from_machine_id: true
+allocatable_port_range {
+    start: 30000
+    end: 32767
+}
 
-# Bind existing of
-# /usr/lib    (also symlink to /lib)
-# /usr/lib32  (also symlink to /lib)
-# /usr/lib64  (also symlink to /lib64)
 container_template {
     mounts: [
         {

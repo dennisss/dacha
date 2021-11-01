@@ -9,6 +9,8 @@ common = { path = "../common" }
 parsing = { path = "../parsing" }
 regexp_macros = { path = "../regexp_macros" }
 automata = { path = "../automata" }
+libc = "0.2"
+nix = "0.21.0"
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing_compiler" }

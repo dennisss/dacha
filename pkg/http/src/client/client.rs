@@ -112,7 +112,7 @@ impl ClientOptions {
         let port = authority.port.unwrap_or(if secure { 443 } else { 80 });
 
         // TODO: Explicitly check that the port fits within a u16.
-        let resolver = Arc::new(SystemDNSResolver::new(authority.host.clone(), port as u16));
+        let resolver = Arc::new(SystemDNSResolver::new(authority.host.clone(), port));
 
         let mut options = Self::from_resolver(resolver);
         if secure {

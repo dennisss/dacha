@@ -1,4 +1,9 @@
+// This file contains the definition of the JobSpec which is the main proto tht users will submit
+// to the cluster to schedule work to be done.
+
 syntax = "proto3";
+
+package cluster;
 
 import "pkg/container/src/proto/task.proto";
 

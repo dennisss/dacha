@@ -3,6 +3,7 @@ syntax = "proto3";
 import "pkg/raft/src/proto/consensus.proto";
 
 // Persistent information describing the state of the current server
+// TODO: Rename this to PersistentState.
 message Metadata {
     // Latest term seen by this server (starts at 0).
     // REQUIRED

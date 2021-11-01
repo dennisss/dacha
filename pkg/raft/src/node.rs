@@ -212,7 +212,7 @@ impl<R: 'static + Send> Node<R> {
                     None
                 } else {
                     let init_signal = ServerInit::wait_for_init(options.init_port).fuse();
-                    let found_peer = Self::find_peer_group_id(route_store.clone()).fuse();
+                    let found_peer = Self::find_peer_group_id(&route_store).fuse();
                     let background_error = task_bundle.join().fuse();
 
                     pin_mut!(init_signal, found_peer, background_error);
@@ -294,7 +294,7 @@ impl<R: 'static + Send> Node<R> {
         })
     }
 
-    async fn find_peer_group_id(route_store: RouteStore) -> GroupId {
+    pub(crate) async fn find_peer_group_id(route_store: &RouteStore) -> GroupId {
         loop {
             let route_store = route_store.lock().await;
 

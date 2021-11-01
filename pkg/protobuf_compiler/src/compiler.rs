@@ -1219,7 +1219,6 @@ impl Compiler<'_> {
                     f.write_str(&{pkg}::text::serialize_text_proto(self))
                 }}
             }}
-
         ",
             name = fullname,
             pkg = self.options.runtime_package
@@ -1857,6 +1856,7 @@ impl Compiler<'_> {
         Ok(lines.to_string())
     }
 
+    // TODO: 'path' will always be empty?
     fn compile_service(&mut self, service: &Service, path: TypePath) -> String {
         //		let modname = common::camel_to_snake_case(&service.name);
 
@@ -1865,8 +1865,13 @@ impl Compiler<'_> {
         // Full name of the service including the package name
         // e.g. google.api.MyService
         let absolute_name: String = {
-            let mut parts = path.to_vec();
+            let mut parts = vec![];
+            if !self.proto.package.is_empty() {
+                parts.push(self.proto.package.as_str());
+            }
+            parts.extend_from_slice(path);
             parts.push(service.name.as_str());
+
             parts.join(".")
         };
 

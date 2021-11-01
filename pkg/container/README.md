@@ -1,11 +1,8 @@
-Container Runtime / Orchestration framework
-===========================================
+# Cluster Runtime / Orchestration framework
 
+This is a system for managing a fleet of machines and assigning work to run on them. This is similar to other systems like Google's Borg or Kubernetes.
 
-
-
-Terminology
------------
+## Terminology
 
 - `Container`: Set of processes running inside of an isolated environment (using Linux cgroups,
   namespaces, chroot, etc.).
@@ -29,8 +26,20 @@ Terminology
       persists across cluster failures.
     - There will be a single `Manager` job per `Cluster`
 
-- `Metadata Store`: Strongly consistent and durable key-value store and lock service used to store
+- `Metastore`: Strongly consistent and durable key-value store and lock service used to store
   the state of the cluster. There will be exactly one of these for the entire cluster.
+
+- `Blob`: A single usually large binary file identified by a hash. Blobs may also have a small amount of metadata such as a content type (e.g. tar or zip) to describe how they should be processed.
+
+- `Bundle`: Collection of files typically containing a binary + static assets and distributed as a `Blob` archive.
+
+- `Volume`:
+
+
+## Blob System
+
+
+
 
 
 
@@ -97,13 +106,18 @@ Next Steps:
       - Create an entry in the jobs table
 
 - Metadata Key Format:
-  - `/cluster/job/{job_name}`' JobProto
-  - `/cluster/task/{task_name}`: TaskProto
+  - `/cluster/job/{job_name}`' JobMetadata
+  - `/cluster/task/{task_name}`: TaskMetadata
   - `/cluster/node/{node_id}`
+  - `/cluster/manager/lock`
+  - `/cluster/blob/{blob_id}`: BlobMetadata
+
+  - `/cluster/node/{node_id}/task/{task_name}`
   - `/cluster/last_node_id`
   - For now, it will all be 
 - Every node has an id
   - Incremented 
+
 
 
 
@@ -186,6 +200,129 @@ Data:
 
 
 
+Network discovery protocals:
+- SSDP (used by Hue)
+- mDNS
+
+
+- Must be resilient to single node restarts.
+
+
+## DNS
+
+Within a cluster, we will maintain a virtual name server that enables discovery between different tasks using canonical names rather than ip addresses and port numbers.
+
+All names in the cluster have the format:
+
+- `[task_index].[job_name].[user_name].[cluster_name].cluster.local.`
+
+All dot-separated components in the above name format must match the regexp `[a-z0-9_-]{1,63}`. The main exception is the `job_name` which may also contain a `.` character. All components are case-insensitive and their canonical form is lower case.
+
+There will some special system jobs which always exist and have names of the following format:
+
+- `[task_index].metadata.system.[cluster_name].cluster.local.`
+  - Refers to the Metadata Store job for this cluster
+- `[node_id].node.system.[cluster_name].cluster.local.`
+  - Special job which corresponds to every node machine in the cluster.
+
+A full host name pointing to an individual task will have the following DNS records:
+
+- `A` record pointing to the ip address of the node running the task.
+- `SRV` record for each named port defined on the job/task.
+
+Additionally, a user may query an entire job using an entity name of the form:
+
+- `[job_name].[user_name].[cluster_name].cluster.local.`
+
+Querying all DNS records for the above entity will result in receiving records for all tasks in that job.
+
+### Name Servers
+
+The name servers which provide the aforementioned records are run by each `Metadata Store` task and exposed by the `dns` named port. The network protocol is standard DNS. Therefore in order to query the cluster-level DNS records, a program must know:
+
+1. The `cluster_name`
+2. The `[ip address:port]` pair for at least one `Metadata Store` task
+
+If running on a node, the parameters will be propagated to each task via enviroment variables named `CLUSTER_NAME` and `CLUSTER_NAME_SERVER`.
+
+If not running on a node, but the cluster nodes are on the local network, the `Metadata Store` tasks can also be contacted via mDNS on the standard 5353 port (visible at the node level). It is recommended that programs first use mDNS to query the records for the `system.metadata` job itself and then use regular uni-cast DNS to perform all remaining queries.
+
+
+## Node Startup
+
+- The node will acquire an IP address via DHCP.
+
+- The node blocks on recovering the current time from a local RTC
+
+- Next if the node is attached to a cluster,
+  - It will use mDNS to find Metadata Store nodes.
+  - It will update it's entry in the Metadata Store to reflect its current ip
+    - Note that because a node may be hosting one of the metastore instance, the node will continue to start up even before it has registered itself. 
+  - It will remember the ip addresses of all the Metadata Store replicas
+  - Periodically the node will query one of the replicas in order to refresh it's list of ip addresses for the Metadata Store replicas.
+  - The node runtime will host a DNS service which proxies / caches queries to the metadata store.
+    - TODO: Eventually run the DNS service as a container.
+
+- It will begin to start up any persistent tasks assigned to it.
+  - When asks are started, a CLUSTER_NAME_SERVER environment variable is added with the ip/port of the DNS service.
+
+- Node will start an RPC server on port 10280
+
+- It will now advertise itself as healthy.
+
+
+Adding a job:
+  - Check that it doesn't already exist,
+  - In one transaction
+    - Insert the job extra
+    - Find nodes to assign it to.
+    - Assign it to those nodes. (by creating Task entries)
+  - Finally contact the affected nodes and notify that 
+
+
+
+
+The Metadata Store tasks each host a 
+
+In order to query cluster-level DNS records, 
+
+
+
+
+We will support the following forms of addresses:
+
+
+
+- `node_id.node.[zone].cluster.internal`
+
+
+- `task_index.job_name.task.cluster.local:port_name`
+
+
+
+
+
+
+
+Metadata Tables
+---------------
+
+
+- The 
+
+
+A job name must match /[A-z0-9_\-]{1,63}/
+
+
+
+How to start a new job:
+- Contact the metastore to find the manager
+- Send a JobSpec to the manager (which will have all the state in RAM so should be )
+
+- Making the manager atomic
+  - The leader will 
+
+
 /*
 
 Bootstraping a cluster:
@@ -223,3 +360,39 @@ CONTAINER_NAME_SERVER=127.0.0.1:30001
 Port range to use:
     - Same as kubernetes: 30000-32767 per node
 */
+
+
+
+
+Examples of USB cgroup propagation:
+
+- https://www.zigbee2mqtt.io/information/docker.html
+- https://git.lavasoftware.org/lava/pkg/docker-compose/-/merge_requests/7/diffs#386915d504f62f40813228b183d8b9bb1fff7433_0_39
+
+
+
+
+
+```
+Start a node:
+  cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
+
+Start a metastore instance on that node:
+  cargo run --bin container_ctl -- start_task pkg/datastore/config/metastore.task --node=127.0.0.1:10250
+
+Bootstrap the metastore:
+  cargo run --package rpc_util -- call 127.0.0.1:30001 ServerInit.Bootstrap ''
+
+Populate the metastore task and job into the store:
+  (adds keys into '/cluster/task/system.meta.0' and '/cluster/job/system.meta')
+
+
+Done!
+
+cargo run --package rpc_util -- ls 127.0.0.1:30001
+
+cargo run --bin container_ctl -- list --node=abc
+```
+
+
+

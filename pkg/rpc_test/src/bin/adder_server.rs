@@ -18,46 +18,9 @@ use common::errors::*;
 use rpc_test::proto::adder::*;
 use rpc_util::AddReflection;
 
-struct ContainerPort {
-    value: u16,
-}
-
-impl ContainerPort {
-    pub fn value(&self) -> u16 {
-        self.value
-    }
-}
-
-impl ArgType for ContainerPort {
-    fn parse_raw_arg(raw_arg: common::args::RawArgValue) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        let s = match raw_arg {
-            common::args::RawArgValue::String(s) => s,
-            common::args::RawArgValue::Bool(_) => {
-                return Err(err_msg("Invalid port value"));
-            }
-        };
-
-        if let Ok(value) = s.parse::<u16>() {
-            return Ok(Self { value });
-        }
-
-        let env_name = format!("PORT_{}", s.to_uppercase().replace("-", "_"));
-        if let Ok(value) = std::env::var(env_name) {
-            return Ok(Self {
-                value: value.parse::<u16>()?,
-            });
-        }
-
-        Err(format_err!("Can't find port with name: {}", s))
-    }
-}
-
 #[derive(Args)]
 struct Args {
-    port: ContainerPort,
+    port: rpc_util::NamedPortArg,
     request_log: Option<String>,
 }
 

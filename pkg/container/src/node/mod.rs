@@ -20,11 +20,13 @@ use crypto::hasher::Hasher;
 use nix::unistd::chown;
 use nix::unistd::Gid;
 use protobuf::text::parse_text_proto;
+use protobuf::Message;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
 use crate::node::shadow::*;
 use crate::proto::config::*;
 use crate::proto::log::*;
+use crate::proto::meta::*;
 use crate::proto::node::*;
 use crate::proto::service::*;
 use crate::proto::task::*;
@@ -47,8 +49,12 @@ struct Task {
 }
 
 enum TaskState {
-    /// We are still launching on resources to become available or still
-    /// creating the environment that will run this task.
+    /// The task hasn't yet been scheduled to start running.
+    ///
+    /// This may be because the task was only just recently added or it is
+    /// missing some resources/dependencies needed to run. By default, if there
+    /// are missing resources, we will wait until the resources become available
+    /// and then start running the task.
     Pending,
 
     /// In this state, we have a running container for this task.
@@ -103,12 +109,32 @@ TODO: Verify that sending a kill to the runtime doesn't cause an error if the co
 - Deleting
 */
 
+/*
+Node start up procedure:
+- Generate the id
+- Start any persistent containers that don't require metastore knowledge
+- Connect to the meta store and update our own ip address
+- Start normal containers with:
+    - CLUSTER_NODE_ID=1234
+    - CLUSTER_META_GROUP_ID=
+    - CLUSTER
+-
+
+Have all persistent nodes marked as pending:
+- Until we know the
+
+Start up immediately.
+=> Have dependencies
+    =>
+
+*/
+
 enum NodeEvent {
     ContainerStateChange { container_id: String },
 
-    StopTimeout { task_name: String, timer_id: usize },
+    ContainerRuntimeEnded(Result<()>),
 
-    RuntimeEnded(Result<()>),
+    StopTimeout { task_name: String, timer_id: usize },
 }
 
 #[derive(Clone)]
@@ -129,6 +155,12 @@ pub struct NodeContext {
     /// Similar to container_uids, but for group ids. This is also used for
     /// allocated file system ACL groups.
     pub container_gids: IdRange,
+
+    /// Address at which the node can be reached by other nodes.
+    /// This should contain the port on which the Node service will be started.
+    ///
+    /// e.g. '10.1.0.123:10250'
+    pub local_address: String,
 }
 
 #[derive(Clone)]
@@ -137,6 +169,8 @@ pub struct Node {
 }
 
 struct NodeShared {
+    id: u64,
+
     context: NodeContext,
     config: NodeConfig,
 
@@ -146,7 +180,7 @@ struct NodeShared {
     event_channel: (channel::Sender<NodeEvent>, channel::Receiver<NodeEvent>),
     state: Mutex<NodeState>,
 
-    usb_context: Arc<usb::Context>,
+    usb_context: usb::Context,
 
     last_timer_id: AtomicUsize,
 }
@@ -174,6 +208,33 @@ impl Node {
 
         let db = EmbeddedDB::open(Path::new(config.data_dir()).join("db"), db_options).await?;
 
+        let id = match tasks_table::get_saved_node_id(&db).await? {
+            Some(id) => id,
+            None => {
+                let id = if config.bootstrap_id_from_machine_id() {
+                    let machine_id = common::hex::decode(
+                        common::async_std::fs::read_to_string("/etc/machine-id")
+                            .await?
+                            .trim(),
+                    )?;
+
+                    if machine_id.len() < 8 {
+                        return Err(err_msg("Expected machine id to have at least 8 bytes"));
+                    }
+
+                    u64::from_be_bytes(*array_ref![machine_id, 0, 8])
+                } else {
+                    return Err(err_msg("Node not initialized with an id"));
+                };
+
+                tasks_table::set_saved_node_id(&db, id).await?;
+
+                id
+            }
+        };
+
+        println!("Node id: {:08x}", id);
+
         let inner = NodeStateInner {
             container_id_to_task_name: HashMap::new(),
             // TODO: Preserve these across reboots and attempt to not re-use ids already
@@ -188,6 +249,7 @@ impl Node {
         let runtime = ContainerRuntime::create(Path::new(config.data_dir()).join("run")).await?;
         let inst = Self {
             shared: Arc::new(NodeShared {
+                id,
                 context: context.clone(),
                 config: config.clone(),
                 db,
@@ -209,43 +271,99 @@ impl Node {
             }
 
             // TODO: Don't allow the failure of this to block node startup.
-            inst.start_task(&task_spec).await?;
+            // We don't want the
+            // TODO: Provide more gurantees that any tasks that are persisted will actually
+            // be start-able.
+            if let Err(e) = inst.start_task(&task_spec).await {
+                eprintln!("Persistent task failed to start: {}", e);
+            }
         }
+
+        // TODO: Ideally this should run after the server is started so that we can mark
+        // ourselves as available at the right time.
 
         Ok(inst)
     }
 
     // TODO: Implement graceful node shutdown which terminates all the inner nodes.
+    // ^ Also flush any pending data to disk.
 
     pub fn run(&self) -> impl std::future::Future<Output = Result<()>> {
-        self.clone().run_event_loop()
+        self.clone().run_impl()
     }
 
-    async fn run_event_loop(self) -> Result<()> {
-        let runtime_task = {
+    async fn run_impl(self) -> Result<()> {
+        let mut task_bundle = common::bundle::TaskResultBundle::new();
+
+        // This task runs the internal container runtime.
+        task_bundle.add("cluster::ContainerRuntime::run", {
             let runtime = self.shared.runtime.clone();
             let sender = self.shared.event_channel.0.clone();
 
-            ChildTask::spawn(async move {
-                let _ = sender
-                    .send(NodeEvent::RuntimeEnded(runtime.run().await))
-                    .await;
-            })
-        };
+            async move {
+                let result = runtime.run().await;
+                let _ = sender.send(NodeEvent::ContainerRuntimeEnded(result)).await;
+                Ok(())
+            }
+        });
 
-        let runtime_listener_task = {
+        // This task forwards container events from the container runtime to the node
+        // event loop.
+        task_bundle.add("cluster::Node::runtime_listener", {
             let receiver = self.shared.runtime.add_event_listener().await;
             let sender = self.shared.event_channel.0.clone();
 
-            ChildTask::spawn(async move {
+            async move {
                 while let Ok(container_id) = receiver.recv().await {
                     let _ = sender
                         .send(NodeEvent::ContainerStateChange { container_id })
                         .await;
                 }
-            })
-        };
 
+                Ok(())
+            }
+        });
+
+        task_bundle.add(
+            "cluster::Node::run_node_registration",
+            self.clone().run_node_registration(),
+        );
+
+        task_bundle.add("cluster::Node::run_event_loop", self.run_event_loop());
+
+        task_bundle.join().await
+    }
+
+    /// Registers the node in the cluster.
+    ///
+    /// Internally this tries to contact the metastore instance and update our
+    /// entry. Because the metastore may be running on this node, this will
+    /// aggresively retry and backoff until the metastore is found.
+    ///
+    /// TODO: Make this run after the RPC server has started.
+    async fn run_node_registration(self) -> Result<()> {
+        let meta_client = datastore::meta::client::MetastoreClient::create().await?;
+
+        let mut node_meta = NodeMetadata::default();
+        node_meta.set_id(self.shared.id);
+        node_meta.set_address(&self.shared.context.local_address);
+        node_meta.set_state(NodeMetadata_State::READY);
+
+        println!("Node registration starting...");
+
+        meta_client
+            .put(
+                format!("/cluster/node/{:08x}", node_meta.id()).as_bytes(),
+                &node_meta.serialize()?,
+            )
+            .await?;
+
+        println!("Node registered in metastore!");
+
+        Ok(())
+    }
+
+    async fn run_event_loop(self) -> Result<()> {
         loop {
             let event = self.shared.event_channel.1.recv().await?;
             match event {
@@ -327,7 +445,7 @@ impl Node {
                         task.state = TaskState::ForceStopping;
                     }
                 }
-                NodeEvent::RuntimeEnded(result) => {
+                NodeEvent::ContainerRuntimeEnded(result) => {
                     if result.is_ok() {
                         return Err(err_msg("Container runtime ended early"));
                     }
@@ -336,9 +454,6 @@ impl Node {
                 }
             }
         }
-
-        drop(runtime_task);
-        drop(runtime_listener_task);
     }
 
     /// Directory for storing data for uploaded blobs.
@@ -718,6 +833,15 @@ impl Node {
 
 #[async_trait]
 impl ContainerNodeService for Node {
+    async fn Identity(
+        &self,
+        request: rpc::ServerRequest<google::proto::empty::Empty>,
+        response: &mut rpc::ServerResponse<NodeMetadata>,
+    ) -> Result<()> {
+        response.value.set_id(self.shared.id);
+        Ok(())
+    }
+
     async fn Query(
         &self,
         request: rpc::ServerRequest<QueryRequest>,

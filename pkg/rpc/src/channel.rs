@@ -163,6 +163,7 @@ impl Http2Channel {
             remaining_bytes: Bytes::new(),
         });
 
+        // TODO: Use GET for methods known to be idempotnet.
         let mut request = http::RequestBuilder::new()
             .method(http::Method::POST)
             // TODO: Add the full package path.
@@ -177,6 +178,9 @@ impl Http2Channel {
             .append_to_headers(&mut request.head.headers)?;
 
         let client = self.client.clone();
+
+        // TODO: Need to implement custom logic for retrying service RPC errors (some
+        // GRPC statuses should only be returned by the service exclusively).
         let response = async move { client.request(request).await };
         Ok(ClientStreamingResponse::from_response(response))
     }
@@ -207,6 +211,7 @@ impl Channel for Http2Channel {
     }
 }
 
+// TODO: For the case of a unary RPC, this should be optimized to be retryable.
 struct RequestBody {
     request_receiver: channel::Receiver<Result<Option<Bytes>>>,
     remaining_bytes: Bytes,

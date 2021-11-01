@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package db.meta;
+
 import "third_party/google/src/proto/empty.proto";
 
 // TODO: Need client affinity to ensure that one client is always talking to the same server.
@@ -9,7 +11,9 @@ service KeyValueStore {
     // Returns a NOT_FOUND RPC status if the key doesn't exist. 
     rpc Get (Key) returns (KeyValue);
 
-    // Looks up a set of contiguous keys.
+    // Looks up a set of contiguous keys and enumerates all of the keys and values.
+    //
+    // TODO: Add a request option to support key-only responses.
     rpc GetRange (KeyRange) returns (stream KeyValue);
 
     // Assigns a new value to a key. If the key doesn't exist yet, it will be created.
@@ -40,6 +44,8 @@ message KeyRange {
 message KeyValue {
     bytes key = 1;
     bytes value = 2;
+
+    // TODO: Also include metadata about the key.
 }
 
 message BeginTransactionRequest {

@@ -1,0 +1,26 @@
+name: "system.meta.0"
+
+persistent: true
+
+args: [
+    "/volumes/bundle/built/pkg/datastore/metastore.x64",
+    "--port=rpc",
+    "--init_port=rpc",
+    "--dir=/volumes/data"
+]
+
+ports {
+    name: "rpc"
+    number: 30001
+}
+
+volumes: [
+    {
+        name: "bundle"
+        build_target: "//pkg/datastore:metastore_bundle"
+    },
+    {
+        name: "data"
+        persistent_name: "metastore_data"
+    }
+]

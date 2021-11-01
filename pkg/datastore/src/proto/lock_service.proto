@@ -1,0 +1,56 @@
+
+syntax = "proto3";
+
+import "third_party/google/src/proto/empty.proto";
+import "third_party/google/src/proto/timestamp.proto";
+import "third_party/google/src/proto/duration.proto";
+
+/*
+Need to ensure the there's enough for 
+
+
+I would like to store all the data in the 
+
+I do need per-key metadata so it will be a little more complicated than just saying that 
+
+*/
+
+service LockService {
+    // Initializes a new client.
+    //
+    // This should be called once by a client and then the client should pass the returned
+    // client_id as metadata to all future requests.
+    rpc NewClient (google.protobuf.Empty) returns (NewClientResponse);
+
+    // Called by a client periodically to let the lock service know that it is still alive and that
+    // any held locks should be preserved.
+    rpc KeepAlive (google.protobuf.Empty) returns (KeepAliveResponse);
+
+    rpc Acquire (AcquireRequest) returns (Lease);
+
+    rpc Release (ReleaseRequest) returns (google.protobuf.Empty);
+}
+
+message NewClientResponse {
+    uint64 client_id = 1;
+}
+
+message Lease {
+    bytes key = 1;
+    google.protobuf.Timestamp expiration_time = 2;
+}
+
+message KeepAliveResponse {
+    // List of key locks which are still active.
+    repeated Lease leases = 1; 
+}
+
+message AcquireRequest {
+    bytes key = 1;
+    bool exclusive = 2;
+    google.protobuf.Duration duration = 3;
+}
+
+message ReleaseRequest {
+    bytes key = 1;
+}

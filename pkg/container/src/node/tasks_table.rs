@@ -1,3 +1,6 @@
+// This file contains utilities for reading/writing from the node local database
+// used by a node to remember what has done in the past.
+
 use common::errors::*;
 use datastore::key_encoding::KeyEncoder;
 use protobuf::Message;
@@ -7,6 +10,7 @@ use sstable::EmbeddedDB;
 use crate::proto::task::TaskSpec;
 
 const TASKS_TABLE_ID: u64 = 11;
+const NODE_ID_TABLE_ID: u64 = 12;
 
 pub async fn list_tasks(db: &EmbeddedDB) -> Result<Vec<TaskSpec>> {
     let mut start_key = vec![];
@@ -44,6 +48,32 @@ pub async fn put_task(db: &EmbeddedDB, task: &TaskSpec) -> Result<()> {
     KeyEncoder::encode_bytes(task.name().as_bytes(), &mut key);
 
     let value = task.serialize()?;
+
+    db.set(&key, &value).await
+}
+
+pub async fn get_saved_node_id(db: &EmbeddedDB) -> Result<Option<u64>> {
+    let mut key = vec![];
+    KeyEncoder::encode_varuint(NODE_ID_TABLE_ID, false, &mut key);
+
+    let value = db.get(&key).await?;
+
+    if let Some(value) = value {
+        if value.len() != 8 {
+            return Err(err_msg("Invalid node id length"));
+        }
+
+        return Ok(Some(u64::from_le_bytes(*array_ref![value, 0, 8])));
+    }
+
+    Ok(None)
+}
+
+pub async fn set_saved_node_id(db: &EmbeddedDB, id: u64) -> Result<()> {
+    let mut key = vec![];
+    KeyEncoder::encode_varuint(NODE_ID_TABLE_ID, false, &mut key);
+
+    let value = id.to_le_bytes();
 
     db.set(&key, &value).await
 }

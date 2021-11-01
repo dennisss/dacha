@@ -1,0 +1,67 @@
+// The file contains the format of the records stored in the source of truth metastore instance
+// used by the entire cluster.
+
+syntax = "proto3";
+
+package cluster;
+
+import "pkg/container/src/proto/task.proto";
+import "pkg/container/src/proto/job.proto";
+import "pkg/container/src/proto/blob.proto";
+import "third_party/google/src/proto/timestamp.proto";
+
+// Stored at a singleton at the metastore key '/cluster/zone'
+message ZoneMetadata {
+    string name = 1;
+}
+
+// Information about a node attached to the cluster.
+// Stored at the metastore key '/cluster/node/[node_id]'
+message NodeMetadata {
+    uint64 id = 1;
+
+    string address = 2;
+
+    enum State {
+        UNKNOWN = 0;
+
+        // This node is up and accepting new tasks.
+        READY = 1;
+    }
+    State state = 3;
+
+    // TODO: Enumerate capabilities, platform, etc.
+
+    // TODO: When was the node added
+
+    // TODO: When was the node last seen.
+
+    // TODO: Build time of the runtime
+}
+
+message JobMetadata {
+    JobSpec spec = 1;
+}
+
+// 
+message TaskMetadata {
+    // Spec used to run this task.
+    // This should be mostly the same as the spec in the JobSpec but also includes a resolved
+    // 'name', port numbers, etc.
+    TaskSpec spec = 1;
+
+    // Id of the node which this task is running on.
+    uint64 assigned_node = 2;
+}
+
+message BlobMetadata {
+    BlobSpec spec = 1;
+
+    // List of the ids of all nodes which are known to have this blob.
+    repeated uint64 replica_nodes = 2;
+
+    // Last time this blob was referenced in some registered job.
+    // If this is empty, then it is actively in use.
+    google.protobuf.Timestamp last_used = 3;
+}
+

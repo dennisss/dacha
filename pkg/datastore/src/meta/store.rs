@@ -11,12 +11,15 @@ use protobuf::Message;
 use raft::atomic::{BlobFile, BlobFileBuilder};
 use raft::StateMachine;
 use rpc_util::AddReflection;
+use sstable::iterable::Iterable;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
 use crate::meta::state_machine::*;
+use crate::meta::table_key::TableKey;
 use crate::proto::key_value::*;
+use crate::proto::meta::UserDataSubKey;
 
-pub struct MetaStoreConfig {
+pub struct MetastoreConfig {
     /// Path to the directory used to store all of the store's data (at least
     /// this machine's copy).
     pub dir: PathBuf,
@@ -32,17 +35,17 @@ pub struct MetaStoreConfig {
     pub service_port: u16,
 }
 
-pub struct MetaStore {
+pub struct Metastore {
     node: Arc<raft::Node<()>>,
 
-    state: Mutex<MetaStoreState>,
+    state: Mutex<MetastoreState>,
 
     /// NOTE: Only reads go through this object. Writes must go through the
     /// replication_Server.
     state_machine: Arc<EmbeddedDBStateMachine>,
 }
 
-struct MetaStoreState {
+struct MetastoreState {
     // Should also keep track of actively leased out transactions.
     // transactions should die
     /// Set of keys which are currently locked by some transaction that is
@@ -62,7 +65,7 @@ Limits on transactions:
 - max lifetime: 10 seconds
 
 - We are either the leader or we have a
-
+ableKey::user_value(
 Should I re-use the internal replication port?
 - Pros: Can directly re-use the normal raft server discovery mechanism
 - Cons: Difficult to run
@@ -77,7 +80,7 @@ Also, the channel factory doesn't do channel caching.
 
 // XXX: If I store the method name in the
 
-impl MetaStore {
+impl Metastore {
     /*
     pub fn start_transaction(&self) {}
 
@@ -94,8 +97,10 @@ impl MetaStore {
         let db = self.state_machine.db();
         // let snapshot = db.snapshot().await;
 
+        let table_key = TableKey::user_value(request.data());
+
         let value = db
-            .get(request.data())
+            .get(&table_key)
             .await?
             .ok_or_else(|| rpc::Status::not_found("Key doesn't exist"))?;
 
@@ -104,9 +109,52 @@ impl MetaStore {
         Ok(())
     }
 
+    async fn get_range<'a>(
+        &self,
+        request: &KeyRange,
+        response: &mut rpc::ServerStreamResponse<'a, KeyValue>,
+    ) -> Result<()> {
+        self.node.server().begin_read(false).await?;
+
+        let db = self.state_machine.db();
+        let snapshot = db.snapshot().await;
+
+        let start_key = TableKey::user_value(request.start_key());
+        let end_key = TableKey::user_value(request.end_key());
+
+        let mut iter = snapshot.iter().await;
+        iter.seek(&start_key).await?;
+
+        while let Some(entry) = iter.next().await? {
+            // TODO: Use a proper key comparator.
+            if &entry.key[..] >= &end_key[..] {
+                break;
+            }
+
+            let table_key = TableKey::parse(&entry.key)?;
+
+            let user_key = match table_key {
+                TableKey::UserData {
+                    user_key,
+                    sub_key: UserDataSubKey::USER_VALUE,
+                } => user_key,
+                _ => continue,
+            };
+
+            let mut res = KeyValue::default();
+            res.set_key(&user_key[..]);
+            res.set_value(entry.value.as_ref());
+            response.send(res).await?;
+        }
+
+        Ok(())
+    }
+
     async fn put(&self, request: &KeyValue) -> Result<()> {
+        let table_key = TableKey::user_value(request.key());
+
         let mut write = sstable::db::WriteBatch::new();
-        write.put(request.key(), request.value());
+        write.put(&table_key, request.value());
         self.node
             .server()
             .execute(write.as_bytes().to_vec())
@@ -116,7 +164,7 @@ impl MetaStore {
 }
 
 #[async_trait]
-impl KeyValueStoreService for MetaStore {
+impl KeyValueStoreService for Metastore {
     async fn Get(
         &self,
         request: rpc::ServerRequest<Key>,
@@ -130,7 +178,7 @@ impl KeyValueStoreService for MetaStore {
         request: rpc::ServerRequest<KeyRange>,
         response: &mut rpc::ServerStreamResponse<KeyValue>,
     ) -> Result<()> {
-        Ok(())
+        self.get_range(&request.value, response).await
     }
 
     async fn Put(
@@ -150,9 +198,9 @@ impl KeyValueStoreService for MetaStore {
     }
 }
 
-pub async fn run(config: &MetaStoreConfig) -> Result<()> {
+pub async fn run(config: &MetastoreConfig) -> Result<()> {
     if !config.dir.exists().await {
-        common::async_std::fs::create_dir(&config.dir).await;
+        common::async_std::fs::create_dir(&config.dir).await?;
     }
 
     let dir = DirLock::open(&config.dir).await?;
@@ -172,20 +220,21 @@ pub async fn run(config: &MetaStoreConfig) -> Result<()> {
     })
     .await?;
 
-    task_bundle.add(
-        "raft::Node",
-        node.run(
-            &mut rpc_server,
-            &format!("127.0.0.1:{}", config.service_port),
-        )?,
-    );
+    let local_address = http::uri::Authority {
+        user: None,
+        host: http::uri::Host::IP(net::local_ip()?),
+        port: Some(config.service_port),
+    }
+    .to_string()?;
+
+    task_bundle.add("raft::Node", node.run(&mut rpc_server, &local_address)?);
 
     let node = Arc::new(node);
 
-    let local_service = MetaStore {
+    let local_service = Metastore {
         node: node.clone(),
         state_machine,
-        state: Mutex::new(MetaStoreState {
+        state: Mutex::new(MetastoreState {
             key_locks: HashSet::new(),
         }),
     }

@@ -15,6 +15,18 @@ pub struct RouteChannelFactory {
 }
 
 impl RouteChannelFactory {
+    /// Assuming there is some discovery mechanism finding new servers, this
+    /// will wait for the first server group to be discovered and create a
+    /// factory that connects to it.
+    pub async fn find_group(route_store: RouteStore) -> Self {
+        let group_id = crate::node::Node::<()>::find_peer_group_id(&route_store).await;
+
+        Self {
+            group_id,
+            route_store,
+        }
+    }
+
     pub fn new(group_id: GroupId, route_store: RouteStore) -> Self {
         Self {
             group_id,

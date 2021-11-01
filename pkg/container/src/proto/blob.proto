@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package cluster;
+
+service Blob {
+    // Enumerates all blobs persisted to this server.
+    rpc List (google.protobuf.Empty) returns (BlobListResponse);
+    
+    // Adds a new blob to this server.
+    //
+    // Errors:
+    // - ALREADY_EXISTS: If the 
+    rpc Upload (stream BlobData) returns (google.protobuf.Empty);
+
+    // Retrieves the contents of an uploaded blob from the server.
+    // TODO: Support range queries.
+    rpc Download (stream BlobDownloadRequest) returns (stream BlobData);
+
+    // Errors:
+    // - NOT_FOUND: The requested blob isn't present on this server.
+    // - FAILED_PRECONDITION: The blob can't be deleted as it is currently in use.
+    rpc Delete (BlobDeleteRequest) returns (google.protobuf.Empty);
+}
+
+message BlobSpec {
+    // Id of this blob. Typically this will be the SHA256 hash of the contents of the blob in
+    // hex form.
+    string id = 1;
+
+    // Raw size in bytes of this blob (before any decompression/unpacking that may need to occur
+    // if this is a file archive).
+    uint64 size = 2;
+
+    // File format of the blob.
+    // This is stored here as it is often useful for a node to decompress an archive ahead of its
+    // usage. For ahead of time storage allocation, it is good to know that a blob will/will-not
+    // grow in size once it is  
+    BlobFormat format = 3;
+}
+
+enum BlobFormat {
+    UNKNOWN = 0;
+    TAR_GZ_ARCHIVE = 1;
+}
+
+message BlobListResponse {
+    repeated BlobSpec = 1;
+}
+
+message BlobData {
+    BlobSpec spec = 1;
+    bytes data = 2;
+}
+
+message BlobDownloadRequest {
+    string id = 1;
+}
+
+message BlobDeleteRequest {
+    string id = 1;
+}

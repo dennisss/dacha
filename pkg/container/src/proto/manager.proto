@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package cluster;
+
+service Manager {
+    rpc StartJob (StartJobRequests) returns (StartJobResponse);
+}
+
+message StartJobRequests {
+
+}
+
+message StartJobResponse {
+
+}

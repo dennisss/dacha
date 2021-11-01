@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package cluster;
+
 import "pkg/container/src/proto/config.proto";
 
 message NodeConfig {
@@ -15,4 +17,18 @@ message NodeConfig {
     // Maximum amount of time in seconds after a container is terminated with a signal before we
     // forcefully kill it.
     uint32 graceful_shutdown_timeout_secs = 4;
+
+    // If true and this is the first time the node is running, we will initialize the id of this
+    // node with the first 16 characters of /etc/machine-id
+    bool bootstrap_id_from_machine_id = 5;
+
+    // Range of network ports which may be used by tasks running on this node.
+    // TODO: Have the node runtime validate that we only receive tasks with ports in this range. 
+    PortRange allocatable_port_range = 6;
+}
+
+// Represents all port numbers in the range [start, end).
+message PortRange {
+    uint32 start = 1;
+    uint32 end = 2;
 }

@@ -323,6 +323,7 @@ parser!(parse_ip_literal<IPAddress> => {
     })
 });
 
+// RFC 3986: Section 3.2.2
 pub fn serialize_ip(value: &IPAddress, out: &mut Vec<u8>) -> Result<()> {
     let s: String = match value {
         IPAddress::V4(v) => {
@@ -337,9 +338,9 @@ pub fn serialize_ip(value: &IPAddress, out: &mut Vec<u8>) -> Result<()> {
                 return Err(err_msg("IPv6 must be 16 bytes long"));
             }
 
-            /// (start_index, end_index) of the longest range of zero bytes seen
-            /// in the address. Initialized to a range that is
-            /// trivially outside the address length.
+            // (start_index, end_index) of the longest range of zero bytes seen
+            // in the address. Initialized to a range that is
+            // trivially outside the address length.
             let mut longest_zero_range = (255, 255);
             {
                 let mut cur_zero_range = (0, 0);
@@ -361,13 +362,14 @@ pub fn serialize_ip(value: &IPAddress, out: &mut Vec<u8>) -> Result<()> {
             }
 
             let mut s = String::new();
+            s.push('[');
 
             for (i, byte) in v.iter().enumerate() {
                 if i >= longest_zero_range.0 && i < longest_zero_range.1 {
                     continue;
                 }
 
-                write!(&mut s, "{:02x}", byte);
+                write!(&mut s, "{:02x}", byte).unwrap();
                 if i < v.len() {
                     s.push(':');
                 }
@@ -375,6 +377,8 @@ pub fn serialize_ip(value: &IPAddress, out: &mut Vec<u8>) -> Result<()> {
                     s.push(':');
                 }
             }
+
+            s.push(']');
 
             s
         }
@@ -585,13 +589,13 @@ fn serialize_reg_name(name: &str, out: &mut Vec<u8>) {
 /// RFC 3986: Section 3.2.3
 ///
 /// `port = *DIGIT`
-fn parse_port(input: Bytes) -> ParseResult<Option<usize>> {
+fn parse_port(input: Bytes) -> ParseResult<Option<u16>> {
     let (v, rest) = take_while1(|i| (i as char).is_digit(10))(input)?;
     if v.len() == 0 {
         return Ok((None, rest));
     }
     let s = std::str::from_utf8(&v)?;
-    let p = usize::from_str_radix(s, 10)?;
+    let p = u16::from_str_radix(s, 10)?;
     Ok((Some(p), rest))
 }
 

@@ -134,6 +134,14 @@ pub fn main() -> Result<()> {
     println!("Container UID range: {:?}", container_uids);
     println!("Container GID range: {:?}", container_uids);
 
+    let local_address = http::uri::Authority {
+        user: None,
+        host: http::uri::Host::IP(net::local_ip()?),
+        port: Some(config.service_port() as u16),
+    }
+    .to_string()?;
+    println!("Starting node on address: {}", local_address);
+
     let node_context = NodeContext {
         system_groups: all_groups.iter().map(|g| (g.name.clone(), g.id)).collect(),
         sub_uids: uidmap
@@ -146,6 +154,7 @@ pub fn main() -> Result<()> {
             .collect(),
         container_uids,
         container_gids,
+        local_address,
     };
 
     let (root_pid, mut setup_sender) = spawn_root_process(&node_context, &config)?;
@@ -242,8 +251,6 @@ async fn run(
         Option::<&str>::None,
     )?;
 
-    println!("Done setup!");
-
     // TODO: Create the root directory and set permissions to 600
     // NOTE: This directory should be created with mode 700 where the user running
     // the container node is the owner.
@@ -256,21 +263,23 @@ async fn run(
     // a case-by-base basis.
     umask(Mode::from_bits_truncate(0o077));
 
-    println!("Starting node on port: {}!", config.service_port());
+    let mut task_bundle = common::bundle::TaskResultBundle::new();
 
     let node = Node::create(context, config).await?;
 
-    // TODO: If this fails, trigger immediate server cancellation as we
-    // can't really procees any requests when this fails.
-    let task_handle = task::spawn(node.run());
+    // TODO: Implement shutdown for this.
+    task_bundle.add("cluster::Node", node.run());
 
     let mut server = rpc::Http2Server::new();
     server.add_service(node.into_service())?;
     server.add_reflection()?;
     server.set_shutdown_token(common::shutdown::new_shutdown_token());
-    server.run(config.service_port() as u16).await?;
+
+    task_bundle.add("rpc::Server", server.run(config.service_port() as u16));
 
     // TODO: Join the task.
+
+    task_bundle.join().await?;
 
     Ok(())
 }

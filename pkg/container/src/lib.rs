@@ -29,10 +29,13 @@ extern crate sstable;
 #[macro_use]
 extern crate async_std;
 extern crate datastore;
+extern crate net;
 extern crate rpc_util;
 extern crate usb;
 
 mod capabilities;
+pub mod manager;
+mod meta;
 pub mod node;
 mod proto;
 mod runtime;
@@ -41,6 +44,8 @@ pub use node::main::main as node_main;
 pub use proto::config::*;
 pub use proto::job::*;
 pub use proto::log::*;
+pub use proto::meta::*; /* TODO: Eventually remove this once the bootstrapping code becomes
+                         * private. */
 pub use proto::service::*;
 pub use proto::task::*;
 pub use runtime::ContainerRuntime;

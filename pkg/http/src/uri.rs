@@ -68,7 +68,16 @@ impl std::str::FromStr for Uri {
 pub struct Authority {
     pub user: Option<OpaqueString>,
     pub host: Host,
-    pub port: Option<usize>,
+    pub port: Option<u16>,
+}
+
+impl Authority {
+    pub fn to_string(&self) -> Result<String> {
+        let mut out = vec![];
+        crate::uri_syntax::serialize_authority(self, &mut out)?;
+        let s = String::from_utf8(out)?;
+        Ok(s)
+    }
 }
 
 impl TryFrom<&str> for Authority {

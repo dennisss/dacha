@@ -96,7 +96,7 @@ impl http::Resolver for RouteResolver {
 
             let port = authority.port.ok_or_else(|| err_msg("No port in route"))?;
 
-            let address = SocketAddr::new(ip, port as u16);
+            let address = SocketAddr::new(ip, port);
 
             endpoints.push(http::ResolvedEndpoint { address, authority });
         }

@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package cluster;
+
 message TaskSpec {
     string name = 1;
 
@@ -46,6 +48,7 @@ message TaskSpec {
         string name = 1;
 
         // Set by the container manager.
+        // TODO: Verify that this is not set by the user.
         int32 number = 2;
     }
     repeated Port ports = 6;

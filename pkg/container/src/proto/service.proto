@@ -1,8 +1,11 @@
 syntax = "proto3";
 
+package cluster;
+
 import "pkg/container/src/proto/config.proto";
 import "pkg/container/src/proto/log.proto";
 import "pkg/container/src/proto/task.proto";
+import "pkg/container/src/proto/meta.proto";
 import "third_party/google/src/proto/empty.proto";
 
 message QueryRequest {
@@ -55,6 +58,10 @@ message WriteInputRequest {
 }
 
 service ContainerNode {
+
+    // TODO: How do we ensure that a node never switches places with another node ip. (then the manager may be sending the wrong requests to the wrong server if data is stale). So we need every request to be richly authenticated with a host name.
+    // ^ RPC HTTP servers should minimally reject any request coming to the wrong host name.
+    rpc Identity (google.protobuf.Empty) returns (NodeMetadata);
 
     rpc Query (QueryRequest) returns (QueryResponse);
 

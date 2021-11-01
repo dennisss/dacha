@@ -4,6 +4,8 @@ extern crate common;
 extern crate rpc;
 extern crate grpc_proto;
 
+mod args;
 mod reflection;
 
+pub use args::NamedPortArg;
 pub use reflection::AddReflection;

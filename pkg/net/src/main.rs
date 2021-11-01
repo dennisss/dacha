@@ -7,6 +7,14 @@ use net::dns;
 // Port 53
 
 async fn run() -> Result<()> {
+    let ip = net::netlink::local_ip()?;
+    println!("My local ip: {:?}", ip.to_string());
+
+    // let ifaces = net::netlink::read_interfaces().await?;
+    // println!("{:#?}", ifaces);
+
+    return Ok(());
+
     let mut client = dns::Client::create_insecure().await?;
 
     // TODO: Auto-add the '.'

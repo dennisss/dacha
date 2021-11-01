@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+package cluster;
 
 // Configuration for starting a container.
 //

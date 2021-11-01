@@ -14,6 +14,7 @@ sstable = { path = "../sstable" }
 raft = { path = "../raft" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
+net = { path = "../net" }
 google = { path = "../../third_party/google" }
 
 [build-dependencies]

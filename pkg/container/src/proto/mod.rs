@@ -21,3 +21,7 @@ pub mod job {
 pub mod node {
     include!(concat!(env!("OUT_DIR"), "/src/proto/node.rs"));
 }
+
+pub mod meta {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/meta.rs"));
+}

@@ -34,7 +34,7 @@ impl LabelManager {
         Self::open_with_context(context).await
     }
 
-    pub async fn open_with_context(context: Arc<usb::Context>) -> Result<Self> {
+    pub async fn open_with_context(context: usb::Context) -> Result<Self> {
         let mut device = context.open_device(VENDOR_ID, PRODUCT_ID).await?;
 
         // TODO: Set 1 second timeout

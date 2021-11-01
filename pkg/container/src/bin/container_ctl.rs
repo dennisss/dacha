@@ -90,6 +90,7 @@ async fn run_list(node_addr: &str) -> Result<()> {
     let mut query_request = container::QueryRequest::default();
 
     let mut query_response = stub.Query(&request_context, &query_request).await.result?;
+    println!("Response:");
     println!("{:#?}", query_response);
 
     Ok(())

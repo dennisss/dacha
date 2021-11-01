@@ -4,7 +4,8 @@ use std::os::unix::prelude::FromRawFd;
 
 use common::async_std::net::UdpSocket;
 use common::errors::*;
-use nix::sys::socket::sockopt::ReusePort;
+use failure::ResultExt;
+use nix::sys::socket::sockopt::{ReuseAddr, ReusePort};
 use nix::sys::socket::{AddressFamily, InetAddr, SockAddr, SockFlag, SockProtocol, SockType};
 use protobuf::Message;
 
@@ -36,6 +37,7 @@ impl DiscoveryMulticast {
         // Must be called before bind() to allow multiple servers to bind to the same
         // port (mainly relevant if running multiple servers on the same machine).
         nix::sys::socket::setsockopt(socket.as_raw_fd(), ReusePort, &true)?;
+        nix::sys::socket::setsockopt(socket.as_raw_fd(), ReuseAddr, &true)?;
 
         nix::sys::socket::bind(
             socket.as_raw_fd(),
@@ -43,7 +45,8 @@ impl DiscoveryMulticast {
                 IFACE_ADDR,
                 MULTICAST_PORT,
             )))),
-        )?;
+        )
+        .with_context(|e| format!("Failed to bind to discovery multi-cast port: {}", e))?;
 
         socket.join_multicast_v4(MULTICAST_ADDR, IFACE_ADDR)?;
 

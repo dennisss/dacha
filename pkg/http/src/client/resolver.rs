@@ -59,7 +59,7 @@ impl Resolver for SystemDNSResolver {
         let authority = Authority {
             user: None,
             host: self.host.clone(),
-            port: Some(self.port as usize),
+            port: Some(self.port),
         };
 
         match &self.host {
