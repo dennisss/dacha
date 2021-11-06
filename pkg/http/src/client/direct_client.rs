@@ -12,7 +12,7 @@ use common::errors::*;
 use common::io::{Readable, Writeable};
 use parsing::ascii::AsciiString;
 
-use crate::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
+use crate::backoff::*;
 use crate::client::client_interface::*;
 use crate::client::resolver::ResolvedEndpoint;
 use crate::header::*;
@@ -140,8 +140,12 @@ impl DirectClient {
                     state.notify_all();
                 }
 
-                if let Some(wait_time) = backoff.start_attempt() {
-                    task::sleep(wait_time).await;
+                match backoff.start_attempt() {
+                    ExponentialBackoffResult::Start => {}
+                    ExponentialBackoffResult::StartAfter(wait_time) => task::sleep(wait_time).await,
+                    ExponentialBackoffResult::Stop => {
+                        eprintln!("DirectClient ran out of connection attempts");
+                    }
                 }
 
                 let connection_id = last_id + 1;

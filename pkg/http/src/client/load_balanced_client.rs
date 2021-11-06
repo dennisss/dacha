@@ -11,7 +11,7 @@ use common::errors::*;
 use common::vec_hash_set::VecHashSet;
 use crypto::random::RngExt;
 
-use crate::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
+use crate::backoff::*;
 use crate::client::client_interface::ClientInterface;
 use crate::client::direct_client::DirectClient;
 use crate::client::direct_client::DirectClientOptions;
@@ -81,8 +81,15 @@ impl LoadBalancedClient {
         };
 
         loop {
-            if let Some(wait_time) = resolve_backoff.start_attempt() {
-                task::sleep(wait_time).await;
+            match resolve_backoff.start_attempt() {
+                ExponentialBackoffResult::Start => {}
+                ExponentialBackoffResult::StartAfter(wait_time) => {
+                    task::sleep(wait_time).await;
+                }
+                ExponentialBackoffResult::Stop => {
+                    eprintln!("LoadBalancedClient failed too many times.");
+                    return;
+                }
             }
 
             let backend_endpoints = match self.shared.options.resolver.resolve().await {

@@ -266,12 +266,28 @@ impl<Res: protobuf::Message> ClientStreamingResponse<Res> {
 impl<T> ClientStreamingResponse<T> {
     // TODO: Consider adding a method to wait for initial metadata?
 
+    pub async fn recv_head(&mut self) {
+        match self.state.take() {
+            Some(ClientStreamingResponseState::Head(response)) => {
+                if let Err(e) = self.recv_head_impl(response).await {
+                    self.state = Some(ClientStreamingResponseState::Error(e));
+                }
+            }
+            state @ _ => {
+                self.state = state;
+            }
+        }
+    }
+
+    // TODO: One issue with this implementation is that if we ever drop the future,
+    // the response will be in an invalid state?.
+    //
     // TODO: Eventually make this pub(crate) again.
     pub async fn recv_bytes(&mut self) -> Option<Bytes> {
         loop {
             return match self.state.take() {
                 Some(ClientStreamingResponseState::Head(response)) => {
-                    if let Err(e) = self.recv_head(response).await {
+                    if let Err(e) = self.recv_head_impl(response).await {
                         self.state = Some(ClientStreamingResponseState::Error(e));
                         None
                     } else {
@@ -298,7 +314,7 @@ impl<T> ClientStreamingResponse<T> {
         }
     }
 
-    async fn recv_head(&mut self, response: ChildTask<Result<http::Response>>) -> Result<()> {
+    async fn recv_head_impl(&mut self, response: ChildTask<Result<http::Response>>) -> Result<()> {
         let response = response.join().await?;
 
         if response.head.status_code != http::status_code::OK {

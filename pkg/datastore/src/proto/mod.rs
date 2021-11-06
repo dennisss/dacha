@@ -5,3 +5,11 @@ pub mod key_value {
 pub mod meta {
     include!(concat!(env!("OUT_DIR"), "/src/proto/meta.rs"));
 }
+
+pub mod client {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/client.rs"));
+}
+
+pub mod lock {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/lock.rs"));
+}

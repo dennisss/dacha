@@ -1,29 +1,32 @@
-mod backoff;
+mod blob_store;
 pub mod main;
 pub mod shadow;
 mod tasks_table;
 
-use std::collections::HashMap;
-use std::fs::Permissions;
+use std::collections::{HashMap, HashSet};
+use std::convert::TryFrom;
 use std::os::unix::prelude::{MetadataExt, PermissionsExt};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
 use common::async_std::channel;
-use common::async_std::io::prelude::WriteExt;
 use common::async_std::path::{Path, PathBuf};
 use common::async_std::sync::Mutex;
 use common::errors::*;
+use common::eventually::Eventually;
 use common::task::ChildTask;
-use crypto::hasher::Hasher;
+use crypto::random::RngExt;
+use datastore::meta::client::MetastoreClient;
+use http::backoff::*;
 use nix::unistd::chown;
 use nix::unistd::Gid;
-use protobuf::text::parse_text_proto;
 use protobuf::Message;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
+use crate::node::blob_store::*;
 use crate::node::shadow::*;
+use crate::proto::blob::*;
 use crate::proto::config::*;
 use crate::proto::log::*;
 use crate::proto::meta::*;
@@ -41,11 +44,18 @@ struct Task {
 
     state: TaskState,
 
+    start_backoff: ExponentialBackoff,
+
     /// The task was recently created or updated so we are waiting for the task
     /// to be started using the latest TaskSpec.
     ///
     /// Will be reset to false once we have entired the Starting|Running state.
     pending_update: bool,
+
+    /// Leases for all blobs in use by this task when running.
+    /// This is set when transitioning to the Running state and cleared when
+    /// entering the Terminal state.
+    blob_leases: Vec<BlobLease>,
 }
 
 enum TaskState {
@@ -55,7 +65,13 @@ enum TaskState {
     /// missing some resources/dependencies needed to run. By default, if there
     /// are missing resources, we will wait until the resources become available
     /// and then start running the task.
-    Pending,
+    ///
+    /// TODO: In this state, enumerate all missing requirements
+    Pending {
+        /// Partial set of requirements needed by this task which aren't
+        /// currently available.
+        missing_requirements: ResourceSet,
+    },
 
     /// In this state, we have a running container for this task.
     Running,
@@ -75,10 +91,25 @@ enum TaskState {
 
     /// The task's container is dead and we are waiting a reasonable amount of
     /// time before retrying.
-    RestartBackoff,
+    RestartBackoff {
+        timer_id: usize,
+        timeout_task: ChildTask,
+    },
 
     /// The container has exited and there is no plan to restart it.
     Terminal,
+}
+
+#[derive(Default)]
+struct ResourceSet {
+    /// Set of blob ids needed.
+    blobs: HashSet<String>,
+}
+
+impl ResourceSet {
+    pub fn is_empty(&self) -> bool {
+        self.blobs.is_empty()
+    }
 }
 
 /*
@@ -127,14 +158,36 @@ Start up immediately.
 => Have dependencies
     =>
 
+TODO: Should support one-off tasks which only run once without re-starting on failures (if they were successful?)
 */
 
 enum NodeEvent {
-    ContainerStateChange { container_id: String },
+    /// Triggered by the internal container runtime whenever the container
+    /// running a task has changed in state.
+    ContainerStateChange {
+        container_id: String,
+    },
 
+    /// TODO: Remove this and use a TaskResultBundle instead.
     ContainerRuntimeEnded(Result<()>),
 
-    StopTimeout { task_name: String, timer_id: usize },
+    ///
+    /// Triggered by the blob fetcher task.
+    BlobAvailable {
+        blob_id: String,
+    },
+
+    StopTimeout {
+        task_name: String,
+        timer_id: usize,
+    },
+
+    /// We have waited long enough to re-start a task in the RestartBackoff
+    /// state.
+    StartBackoffTimeout {
+        task_name: String,
+        timer_id: usize,
+    },
 }
 
 #[derive(Clone)]
@@ -165,6 +218,13 @@ pub struct NodeContext {
 
 #[derive(Clone)]
 pub struct Node {
+    inner: NodeInner,
+}
+
+/// Split out from Node to make the service implementations private. Users
+/// should add RPC services with add_services().
+#[derive(Clone)]
+struct NodeInner {
     shared: Arc<NodeShared>,
 }
 
@@ -174,7 +234,9 @@ struct NodeShared {
     context: NodeContext,
     config: NodeConfig,
 
-    db: EmbeddedDB,
+    db: Arc<EmbeddedDB>,
+
+    blobs: BlobStore,
 
     runtime: Arc<ContainerRuntime>,
     event_channel: (channel::Sender<NodeEvent>, channel::Receiver<NodeEvent>),
@@ -183,6 +245,10 @@ struct NodeShared {
     usb_context: usb::Context,
 
     last_timer_id: AtomicUsize,
+
+    /// Available once we have connected and registered our node in the meta
+    /// store.
+    meta_client: Eventually<MetastoreClient>,
 }
 
 struct NodeState {
@@ -199,6 +265,12 @@ struct NodeStateInner {
     /// Map of host paths to the number of running tasks referencing them. This
     /// is used to implement exclusive locks to volumes/devices.
     mounted_paths: HashMap<String, usize>,
+
+    /// Tasks used to retrieve blobs from other servers.
+    ///
+    /// TODO: Need persistent backoff.
+    /// TODO: If all tasks requiring a blob are removed, stop the fetcher task.
+    blob_fetchers: HashMap<String, ChildTask>,
 }
 
 impl Node {
@@ -206,7 +278,8 @@ impl Node {
         let mut db_options = EmbeddedDBOptions::default();
         db_options.create_if_missing = true;
 
-        let db = EmbeddedDB::open(Path::new(config.data_dir()).join("db"), db_options).await?;
+        let db =
+            Arc::new(EmbeddedDB::open(Path::new(config.data_dir()).join("db"), db_options).await?);
 
         let id = match tasks_table::get_saved_node_id(&db).await? {
             Some(id) => id,
@@ -242,17 +315,22 @@ impl Node {
             next_uid: context.container_uids.start_id,
             next_gid: context.container_gids.start_id,
             mounted_paths: HashMap::new(),
+            blob_fetchers: HashMap::new(),
         };
 
         let usb_context = usb::Context::create()?;
 
+        let blobs =
+            BlobStore::create(Path::new(config.data_dir()).join("blob"), db.clone()).await?;
+
         let runtime = ContainerRuntime::create(Path::new(config.data_dir()).join("run")).await?;
-        let inst = Self {
+        let inst = NodeInner {
             shared: Arc::new(NodeShared {
                 id,
                 context: context.clone(),
                 config: config.clone(),
                 db,
+                blobs,
                 runtime,
                 state: Mutex::new(NodeState {
                     tasks: vec![],
@@ -261,6 +339,7 @@ impl Node {
                 event_channel: channel::unbounded(),
                 last_timer_id: AtomicUsize::new(0),
                 usb_context,
+                meta_client: Eventually::new(),
             }),
         };
 
@@ -282,15 +361,23 @@ impl Node {
         // TODO: Ideally this should run after the server is started so that we can mark
         // ourselves as available at the right time.
 
-        Ok(inst)
+        Ok(Self { inner: inst })
     }
-
-    // TODO: Implement graceful node shutdown which terminates all the inner nodes.
-    // ^ Also flush any pending data to disk.
 
     pub fn run(&self) -> impl std::future::Future<Output = Result<()>> {
-        self.clone().run_impl()
+        self.clone().inner.run_impl()
     }
+
+    pub fn add_services(&self, rpc_server: &mut rpc::Http2Server) -> Result<()> {
+        rpc_server.add_service(self.inner.clone().into_service())?;
+        rpc_server.add_service(self.inner.shared.blobs.clone().into_service())?;
+        Ok(())
+    }
+}
+
+impl NodeInner {
+    // TODO: Implement graceful node shutdown which terminates all the inner nodes.
+    // ^ Also flush any pending data to disk.
 
     async fn run_impl(self) -> Result<()> {
         let mut task_bundle = common::bundle::TaskResultBundle::new();
@@ -360,6 +447,8 @@ impl Node {
 
         println!("Node registered in metastore!");
 
+        self.shared.meta_client.set(meta_client).await?;
+
         Ok(())
     }
 
@@ -391,23 +480,10 @@ impl Node {
                         .unwrap();
 
                     if task.pending_update {
-                        // TODO: This needs to put the task into an error task if this fails.
-                        if let Err(e) = self
-                            .transition_task_to_running(&mut state.inner, task)
-                            .await
-                        {
-                            // Report this error back to the client.
-                            eprintln!("Failed to start running task: {}", e);
-
-                            // TODO: We should determine if it is a retryable error (in which case
-                            // we can retry based on the restart policy)
-                            task.state = TaskState::Terminal;
-                        }
+                        self.transition_task_to_running(&mut state.inner, task)
+                            .await;
                     } else {
-                        // TODO: Need to check the restart policy to see if we should restart the
-                        // container.
-
-                        task.state = TaskState::Terminal;
+                        self.transition_task_to_backoff(task).await;
                     }
                 }
                 NodeEvent::StopTimeout {
@@ -445,6 +521,57 @@ impl Node {
                         task.state = TaskState::ForceStopping;
                     }
                 }
+                NodeEvent::BlobAvailable { blob_id } => {
+                    // When a blob is available, we want to check all pending tasks to see if that
+                    // allows us to start running it.
+
+                    let mut state_guard = self.shared.state.lock().await;
+                    let state = &mut *state_guard;
+
+                    // We no longer need to be fetching the blob.
+                    state.inner.blob_fetchers.remove(&blob_id);
+
+                    for task in &mut state.tasks {
+                        if let TaskState::Pending {
+                            missing_requirements,
+                        } = &mut task.state
+                        {
+                            missing_requirements.blobs.remove(&blob_id);
+
+                            if missing_requirements.is_empty() {
+                                self.transition_task_to_running(&mut state.inner, task)
+                                    .await;
+                            }
+                        }
+                    }
+                }
+                NodeEvent::StartBackoffTimeout {
+                    task_name,
+                    timer_id: event_timer_id,
+                } => {
+                    let mut state_guard = self.shared.state.lock().await;
+                    let state = &mut *state_guard;
+
+                    let task = match state.tasks.iter_mut().find(|t| t.spec.name() == task_name) {
+                        Some(t) => t,
+                        None => {
+                            // Most likely a race condition with the timer event being processed
+                            // after the task was deleted.
+                            continue;
+                        }
+                    };
+
+                    let mut should_start = false;
+                    if let TaskState::RestartBackoff { timer_id, .. } = &task.state {
+                        if *timer_id == event_timer_id {
+                            should_start = true;
+                        }
+                    }
+
+                    if should_start {
+                        self.transition_task_to_running(state_inner, task).await;
+                    }
+                }
                 NodeEvent::ContainerRuntimeEnded(result) => {
                     if result.is_ok() {
                         return Err(err_msg("Container runtime ended early"));
@@ -456,22 +583,27 @@ impl Node {
         }
     }
 
-    /// Directory for storing data for uploaded blobs.
-    ///
-    /// In this directory, the following files will be stored:
-    /// - './{BLOB_ID}/raw' : Raw version of the blob as uploaded.
-    /// - './{BLOB_ID}/extracted/' : Directory which contains all of the files
-    /// - './{BLOB_ID}/metadata' : Present once the blob has been fully
-    ///   ingested. Currently this file is always empty.
-    fn blob_data_dir(&self) -> PathBuf {
-        Path::new(self.shared.config.data_dir()).join("blob")
-    }
-
     fn persistent_data_dir(&self) -> PathBuf {
         Path::new(self.shared.config.data_dir()).join("persistent")
     }
 
-    async fn transition_task_to_running(
+    /// Tries to transition the task to the Running state.
+    /// When this is called, we assume that if any backoff was required, it has
+    /// already been waited.
+    async fn transition_task_to_running(&self, state_inner: &mut NodeStateInner, task: &mut Task) {
+        task.pending_update = false;
+
+        if let Err(e) = self
+            .transition_task_to_running_impl(state_inner, task)
+            .await
+        {
+            // TODO: Report this back to the client.
+            eprintln!("Failed to start task {}", e);
+            self.transition_task_to_backoff(task).await;
+        }
+    }
+
+    async fn transition_task_to_running_impl(
         &self,
         state_inner: &mut NodeStateInner,
         task: &mut Task,
@@ -566,27 +698,36 @@ impl Node {
                 .add_env(format!("PORT_{}={}", env_name, port.number()));
         }
 
+        let mut missing_requirements = ResourceSet::default();
+
+        let mut blob_leases = vec![];
+
         for volume in task.spec.volumes() {
             let mut mount = ContainerMount::default();
             mount.set_destination(format!("/volumes/{}", volume.name()));
 
             match volume.source_case() {
                 TaskSpec_VolumeSourceCase::BlobId(blob_id) => {
-                    let blob_dir = self.blob_data_dir().join(blob_id);
+                    let blob_lease = match self.shared.blobs.read_lease(blob_id.as_str()).await {
+                        Ok(v) => v,
+                        Err(ReadBlobError::BeingWritten) | Err(ReadBlobError::NotFound) => {
+                            // TODO: Limit max blob fetching parallelism.
+                            if !state_inner.blob_fetchers.contains_key(blob_id) {
+                                state_inner.blob_fetchers.insert(
+                                    blob_id.to_string(),
+                                    ChildTask::spawn(inst.clone().fetch_blob(blob_id.to_string())),
+                                );
+                            }
 
-                    let metadata_path = blob_dir.join("metadata");
-                    if !metadata_path.exists().await {
-                        return Err(rpc::Status::not_found(format!(
-                            "Blob for volume {} doesn't exist",
-                            volume.name()
-                        ))
-                        .into());
-                    }
+                            missing_requirements.blobs.insert(blob_id.clone());
+                            continue;
+                        }
+                    };
 
-                    mount.set_source(blob_dir.join("extracted").to_str().unwrap().to_string());
-
+                    mount.set_source(blob_lease.extracted_dir());
                     mount.add_options("bind".into());
                     mount.add_options("ro".into());
+                    blob_leases.push(blob_lease);
                 }
                 TaskSpec_VolumeSourceCase::PersistentName(name) => {
                     let dir = self.persistent_data_dir().join(name);
@@ -720,10 +861,11 @@ impl Node {
             }
         }
 
-        // TODO: Move this after the start_container so that the operation is atomic?
-        if task.pending_update {
-            // TODO: Reset any backoff state.
-            task.pending_update = false;
+        if !missing_requirements.is_empty() {
+            task.state = TaskState::Pending {
+                missing_requirements,
+            };
+            return Ok(());
         }
 
         let container_id = self
@@ -741,8 +883,158 @@ impl Node {
             .container_id_to_task_name
             .insert(container_id.clone(), task.spec.name().to_string());
 
+        task.blob_leases = blob_leases;
         task.container_id = Some(container_id.clone());
         task.state = TaskState::Running;
+
+        Ok(())
+    }
+
+    async fn transition_task_to_backoff(&self, task: &mut Task) {
+        task.start_backoff.end_attempt(false);
+
+        match task.start_backoff.start_attempt() {
+            ExponentialBackoffResult::Start => {
+                // NOTE: This should never happen as we marked the attempt as failing.
+                // TODO: consider waiting for a minimum amount of time in this case.
+                panic!("No backoff time for container task")
+            }
+            ExponentialBackoffResult::StartAfter(wait_time) => {
+                // TODO: Deduplicate this timer code.
+                // TODO: Instead use the task id of the child task.
+                let timer_id = self
+                    .shared
+                    .last_timer_id
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+                let task_name = task.spec.name().to_string();
+                let timeout_sender = self.shared.event_channel.0.clone();
+                let timeout_task = ChildTask::spawn(async move {
+                    common::async_std::task::sleep(wait_time).await;
+                    let _ = timeout_sender
+                        .send(NodeEvent::StartBackoffTimeout {
+                            task_name,
+                            timer_id,
+                        })
+                        .await;
+                });
+
+                task.state = TaskState::RestartBackoff {
+                    timer_id,
+                    timeout_task,
+                };
+            }
+            ExponentialBackoffResult::Stop => {
+                self.transition_task_to_terminal(task);
+            }
+        }
+    }
+
+    fn transition_task_to_terminal(&self, task: &mut Task) {
+        task.state = TaskState::Terminal;
+        task.blob_leases.clear();
+    }
+
+    async fn fetch_blob(self, blob_id: String) {
+        let mut backoff = ExponentialBackoff::new(ExponentialBackoffOptions {
+            base_duration: Duration::from_secs(10),
+            jitter_duration: Duration::from_secs(10),
+            max_duration: Duration::from_secs(2 * 60),
+            cooldown_duration: Duration::from_secs(4 * 60),
+            max_num_attempts: 0,
+        });
+
+        loop {
+            match backoff.start_attempt() {
+                ExponentialBackoffResult::Start => {}
+                ExponentialBackoffResult::StartAfter(wait_time) => {
+                    common::async_std::task::sleep(wait_time).await
+                }
+                ExponentialBackoffResult::Stop => {
+                    // TODO: If all attempts fail, then mark all pending tasks as failed.
+                    return;
+                }
+            }
+
+            match self.fetch_blob_once(&blob_id).await {
+                Ok(()) => {
+                    self.shared
+                        .event_channel
+                        .0
+                        .send(NodeEvent::BlobAvailable { blob_id: blob_id })
+                        .await;
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("Failed to fetch blob: {}", e);
+                    continue;
+                }
+            }
+        }
+    }
+
+    async fn fetch_blob_once(&self, blob_id: &str) -> Result<()> {
+        // Check if we already have the blob.
+        // This would mainly happen if the user recently uploaded the blob directly to
+        // this server. TODO: Have the BlobStore object directly emit events to
+        // the Node
+        if let Ok(_) = self.shared.blobs.read_lease(blob_id).await {
+            return Ok(());
+        }
+
+        let meta_client = self.shared.meta_client.get().await;
+
+        let blob_meta: BlobMetadata = meta_client
+            .get_proto(format!("/cluster/blob/{}", blob_id).as_bytes())
+            .await?;
+
+        if blob_meta.replica_nodes().is_empty() {
+            return Err(err_msg("No replicas for blob"));
+        }
+
+        let remote_node_id = *crypto::random::clocked_rng().choose(blob_meta.replica_nodes());
+
+        // TODO: Exclude nodes not marked as ready recently.
+        let remote_node_meta: NodeMetadata = meta_client
+            .get_proto(format!("/cluster/node/{:08x}", remote_node_id).as_bytes())
+            .await?;
+
+        let client =
+            rpc::Http2Channel::create(http::ClientOptions::try_from(remote_node_meta.address())?)?;
+
+        let stub = BlobStoreStub::new(Arc::new(client));
+
+        let request_context = rpc::ClientRequestContext::default();
+
+        let mut request = BlobDownloadRequest::default();
+        request.set_blob_id(blob_id);
+
+        let mut res = stub.Download(&request_context, &request).await;
+
+        let first_part = match res.recv().await {
+            Some(v) => v,
+            None => {
+                res.finish().await?;
+                return Err(err_msg("Didn't get first part to Download response"));
+            }
+        };
+
+        let mut blob_writer = match self.shared.blobs.new_writer(&first_part.spec()).await? {
+            Ok(v) => v,
+            Err(_) => {
+                return Err(err_msg("Failed to acquire blob writer"));
+            }
+        };
+
+        blob_writer.write(first_part.data()).await?;
+
+        while let Some(part) = res.recv().await {
+            blob_writer.write(part.data()).await?;
+        }
+
+        res.finish().await?;
+
+        blob_writer.finish().await?;
 
         Ok(())
     }
@@ -787,6 +1079,7 @@ impl Node {
         let state = &mut *state_guard;
 
         // TODO: Eventually delete non-persistent tasks.
+        // TODO: Once a task has failed, don't restart it on node re-boots.
         tasks_table::put_task(&self.shared.db, task_spec).await?;
 
         let existing_task = state
@@ -805,23 +1098,33 @@ impl Node {
                     container_id: None,
                     state: TaskState::Pending,
                     pending_update: false,
+                    blob_leases: vec![],
+                    start_backoff: ExponentialBackoff::new(ExponentialBackoffOptions {
+                        base_duration: Duration::from_secs(10),
+                        jitter_duration: Duration::from_secs(5),
+                        max_duration: Duration::from_secs(5 * 60), // 5 minutes
+                        cooldown_duration: Duration::from_secs(10 * 60), // 10 minutes
+                        max_num_attempts: 8,
+                    }),
                 });
                 state.tasks.last_mut().unwrap()
             }
         };
 
         task.pending_update = true;
+        task.start_backoff.reset();
 
         match &task.state {
+            // TODO: Clear the backoff timer?
             TaskState::Pending | TaskState::RestartBackoff | TaskState::Terminal => {
                 self.transition_task_to_running(&mut state.inner, task)
-                    .await?;
+                    .await;
             }
             TaskState::Running => {
                 self.transition_task_to_stopping(task).await?;
             }
             TaskState::Stopping { .. } | TaskState::ForceStopping => {
-                // We don't need to anything. Once the container finishes
+                // We don't need to do anything. Once the container finishes
                 // stopping, the new container will be brought
                 // up.
             }
@@ -832,7 +1135,7 @@ impl Node {
 }
 
 #[async_trait]
-impl ContainerNodeService for Node {
+impl ContainerNodeService for NodeInner {
     async fn Identity(
         &self,
         request: rpc::ServerRequest<google::proto::empty::Empty>,
@@ -969,84 +1272,6 @@ impl ContainerNodeService for Node {
                 .write_to_stdin(&container_id, input.data())
                 .await?;
         }
-
-        Ok(())
-    }
-
-    async fn UploadBlob(
-        &self,
-        mut request: rpc::ServerStreamRequest<BlobData>,
-        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
-    ) -> Result<()> {
-        let first_part = request.recv().await?.ok_or_else(|| {
-            rpc::Status::invalid_argument("Expected at least one request message")
-        })?;
-
-        // TODO: Obtain an exclusive lock via the FS on the OS on /opt/container to
-        // ensure that this is consitent. TODO: Filter '..', absolute paths,
-        // etc.
-        let blob_dir = self.blob_data_dir().join(first_part.id());
-
-        let metadata_path = blob_dir.join("metadata");
-        if metadata_path.exists().await {
-            return Err(rpc::Status::already_exists("Blob already exists").into());
-        }
-
-        // Create the blob dir.
-        // If the directory already exists, then likely a previous attempt to upload
-        // failed, so we'll just retry.
-        if !blob_dir.exists().await {
-            common::async_std::fs::create_dir_all(&blob_dir).await?;
-        }
-
-        let mut raw_file_path = blob_dir.join("raw");
-
-        let mut raw_file = common::async_std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&raw_file_path)
-            .await?;
-
-        let mut hasher = crypto::sha256::SHA256Hasher::default();
-
-        raw_file.write_all(first_part.data()).await?;
-        hasher.update(first_part.data());
-
-        while let Some(part) = request.recv().await? {
-            raw_file.write_all(part.data()).await?;
-            hasher.update(part.data());
-        }
-
-        // NOTE: We expect hex capitalization to also match in case our file system is
-        // case sensitive.
-        let hash = common::hex::encode(hasher.finish());
-        if hash != first_part.id() {
-            return Err(rpc::Status::invalid_argument("Blob id did not match blob data").into());
-        }
-
-        raw_file.flush().await?;
-
-        let extracted_dir = blob_dir.join("extracted");
-        if !extracted_dir.exists().await {
-            common::async_std::fs::create_dir(&extracted_dir).await?;
-
-            let mut perms = blob_dir.metadata().await?.permissions();
-            perms.set_mode(0o755);
-            common::async_std::fs::set_permissions(&extracted_dir, perms).await?;
-        }
-
-        let mut archive_reader = compression::tar::Reader::open(&raw_file_path).await?;
-        archive_reader
-            .extract_files_with_modes(extracted_dir.as_path().into(), Some(0o644), Some(0o755))
-            .await?;
-
-        // Create an empty metadata sentinel file.
-        common::async_std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&metadata_path)
-            .await?;
 
         Ok(())
     }

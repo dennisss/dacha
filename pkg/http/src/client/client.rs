@@ -62,6 +62,7 @@ impl ClientOptions {
                 jitter_duration: Duration::from_millis(200),
                 max_duration: Duration::from_secs(30),
                 cooldown_duration: Duration::from_secs(60),
+                max_num_attempts: 0,
             },
             backend_balancer: LoadBalancedClientOptions {
                 resolver,
@@ -73,6 +74,7 @@ impl ClientOptions {
                         jitter_duration: Duration::from_millis(200),
                         max_duration: Duration::from_secs(20),
                         cooldown_duration: Duration::from_secs(60),
+                        max_num_attempts: 0,
                     },
                     connect_timeout: Duration::from_millis(500),
                     idle_timeout: Duration::from_secs(2),
@@ -82,6 +84,7 @@ impl ClientOptions {
                     jitter_duration: Duration::from_millis(200),
                     max_duration: Duration::from_secs(20),
                     cooldown_duration: Duration::from_secs(60),
+                    max_num_attempts: 0,
                 },
                 subset_size: 10,
             },

@@ -370,7 +370,18 @@ Examples of USB cgroup propagation:
 - https://git.lavasoftware.org/lava/pkg/docker-compose/-/merge_requests/7/diffs#386915d504f62f40813228b183d8b9bb1fff7433_0_39
 
 
+/*
+How to enumerate all tasks in a job?
+- Some general rules: If 'system.meta.' exists, then we shouldn't be able to create 'system.meta.x'
+    - Alternative solution is to 
 
+'system.meta.0'
+'system.meta.repo.0'
+
+/cluster/jobs/{,,,}
+/
+
+*/
 
 
 ```

@@ -515,6 +515,7 @@ name = "container"
 version = "0.1.0"
 dependencies = [
  "async-std",
+ "automata",
  "builder",
  "common",
  "compression",
@@ -528,6 +529,7 @@ dependencies = [
  "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
+ "regexp_macros",
  "rpc",
  "rpc_util",
  "sstable",
@@ -1456,6 +1458,10 @@ dependencies = [
  "memchr",
  "version_check",
 ]
+
+[[package]]
+name = "nordic"
+version = "0.1.0"
 
 [[package]]
 name = "num"

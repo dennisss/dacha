@@ -1,8 +1,11 @@
 use std::collections::HashSet;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
+use common::async_std::channel;
 use common::async_std::path::{Path, PathBuf};
 use common::async_std::sync::Mutex;
+use common::async_std::task;
 use common::bundle::TaskResultBundle;
 use common::bytes::Bytes;
 use common::errors::*;
@@ -16,8 +19,11 @@ use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
 use crate::meta::state_machine::*;
 use crate::meta::table_key::TableKey;
+use crate::proto::client::*;
 use crate::proto::key_value::*;
 use crate::proto::meta::UserDataSubKey;
+
+use super::constants::CLIENT_ID_KEY;
 
 pub struct MetastoreConfig {
     /// Path to the directory used to store all of the store's data (at least
@@ -35,10 +41,19 @@ pub struct MetastoreConfig {
     pub service_port: u16,
 }
 
+#[derive(Clone)]
 pub struct Metastore {
+    shared: Arc<Shared>,
+}
+
+struct Shared {
     node: Arc<raft::Node<()>>,
 
     state: Mutex<MetastoreState>,
+
+    watchers: Arc<Mutex<WatchersState>>,
+
+    next_client_index: AtomicUsize,
 
     /// NOTE: Only reads go through this object. Writes must go through the
     /// replication_Server.
@@ -51,6 +66,45 @@ struct MetastoreState {
     /// Set of keys which are currently locked by some transaction that is
     /// currently getting comitted.
     key_locks: HashSet<Bytes>,
+    /* List of transactios
+     * - Die after a TTL
+     * - Need to know client id so that we can check for leases. */
+}
+
+struct WatchersState {
+    // TODO: Use a BTreeMap
+    prefix_watchers: Vec<WatcherEntry>,
+
+    last_id: usize,
+}
+
+struct WatcherEntry {
+    key_prefix: Bytes,
+    id: usize,
+    client_id: String,
+    sender: channel::Sender<KeyValue>,
+}
+
+struct WatcherRegistration {
+    state: Arc<Mutex<WatchersState>>,
+    id: usize,
+    receiver: channel::Receiver<KeyValue>,
+}
+
+impl Drop for WatcherRegistration {
+    fn drop(&mut self) {
+        let state = self.state.clone();
+        let id = self.id;
+        task::spawn(async move {
+            let mut state = state.lock().await;
+            for i in 0..state.prefix_watchers.len() {
+                if state.prefix_watchers[i].id == id {
+                    state.prefix_watchers.swap_remove(i);
+                    break;
+                }
+            }
+        });
+    }
 }
 
 /*
@@ -91,10 +145,20 @@ impl Metastore {
     }
     */
 
-    async fn get(&self, request: &Key, response: &mut KeyValue) -> Result<()> {
-        self.node.server().begin_read(false).await?;
+    fn get_client_id<T: protobuf::Message>(request: &rpc::ServerRequest<T>) -> Result<&str> {
+        match request.context.metadata.get_text(CLIENT_ID_KEY) {
+            Ok(Some(v)) => Ok(v),
+            _ => Err(rpc::Status::invalid_argument(
+                "Invalid or missing client id in request context",
+            )
+            .into()),
+        }
+    }
 
-        let db = self.state_machine.db();
+    async fn get(&self, request: rpc::ServerRequest<Key>, response: &mut KeyValue) -> Result<()> {
+        self.shared.node.server().begin_read(false).await?;
+
+        let db = self.shared.state_machine.db();
         // let snapshot = db.snapshot().await;
 
         let table_key = TableKey::user_value(request.data());
@@ -111,12 +175,12 @@ impl Metastore {
 
     async fn get_range<'a>(
         &self,
-        request: &KeyRange,
+        request: rpc::ServerRequest<KeyRange>,
         response: &mut rpc::ServerStreamResponse<'a, KeyValue>,
     ) -> Result<()> {
-        self.node.server().begin_read(false).await?;
+        self.shared.node.server().begin_read(false).await?;
 
-        let db = self.state_machine.db();
+        let db = self.shared.state_machine.db();
         let snapshot = db.snapshot().await;
 
         let start_key = TableKey::user_value(request.start_key());
@@ -150,15 +214,104 @@ impl Metastore {
         Ok(())
     }
 
-    async fn put(&self, request: &KeyValue) -> Result<()> {
+    async fn put(&self, request: rpc::ServerRequest<KeyValue>) -> Result<()> {
+        let client_id = Self::get_client_id(&request)?;
+
         let table_key = TableKey::user_value(request.key());
 
         let mut write = sstable::db::WriteBatch::new();
         write.put(&table_key, request.value());
-        self.node
+        self.shared
+            .node
             .server()
             .execute(write.as_bytes().to_vec())
             .await?;
+
+        let state = self.shared.watchers.lock().await;
+        for watcher in &state.prefix_watchers {
+            if &watcher.client_id == client_id {
+                continue;
+            }
+
+            if request.key().starts_with(watcher.key_prefix.as_ref()) {
+                // NOTE: To prevent blocking the write path, this must use an unbounded channel.
+                let _ = watcher.sender.send(request.clone()).await;
+            }
+        }
+
+        Ok(())
+    }
+
+    // TODO: This can be implemented on any follower server if we pull changes from
+    // the state machine.
+    //
+    // TODO: Support ignoring changes from the same client as the one that initiated
+    // the watch?
+    async fn watch<'a>(
+        &self,
+        request: rpc::ServerRequest<WatchRequest>,
+        response: &mut rpc::ServerStreamResponse<'a, KeyValue>,
+    ) -> Result<()> {
+        let client_id = Self::get_client_id(&request)?;
+
+        let registration = {
+            let mut state = self.shared.watchers.lock().await;
+
+            let id = state.last_id + 1;
+            state.last_id = id;
+
+            let (sender, receiver) = channel::unbounded();
+
+            let entry = WatcherEntry {
+                key_prefix: Bytes::from(request.key_prefix()),
+                client_id: client_id.to_string(),
+                id,
+                sender,
+            };
+
+            // NOTE: These two lines must happen atomically to ensure that the entry is
+            // always cleaned up.
+            state.prefix_watchers.push(entry);
+            WatcherRegistration {
+                state: self.shared.watchers.clone(),
+                id,
+                receiver,
+            }
+        };
+
+        // Send head so that the client can properly syncronize the time at which
+        // watching starts.
+        response.send_head().await?;
+
+        loop {
+            let kv = registration.receiver.recv().await?;
+            response.send(kv).await?;
+        }
+    }
+
+    async fn new_client(&self) -> Result<String> {
+        // If this succeeds, then we know that we were the leader in the given term.
+        // If we have a locally unique value, we can make it globally unique by
+        // prepending this term.
+        let term = self.shared.node.server().begin_read(true).await?.term();
+
+        let index = self
+            .shared
+            .next_client_index
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        Ok(format!("{}:{}", term.value(), index))
+    }
+}
+
+#[async_trait]
+impl ClientManagementService for Metastore {
+    async fn NewClient(
+        &self,
+        request: rpc::ServerRequest<google::proto::empty::Empty>,
+        response: &mut rpc::ServerResponse<NewClientResponse>,
+    ) -> Result<()> {
+        response.value.set_client_id(self.new_client().await?);
         Ok(())
     }
 }
@@ -170,7 +323,7 @@ impl KeyValueStoreService for Metastore {
         request: rpc::ServerRequest<Key>,
         response: &mut rpc::ServerResponse<KeyValue>,
     ) -> Result<()> {
-        self.get(&request.value, &mut response.value).await
+        self.get(request, &mut response.value).await
     }
 
     async fn GetRange(
@@ -178,7 +331,7 @@ impl KeyValueStoreService for Metastore {
         request: rpc::ServerRequest<KeyRange>,
         response: &mut rpc::ServerStreamResponse<KeyValue>,
     ) -> Result<()> {
-        self.get_range(&request.value, response).await
+        self.get_range(request, response).await
     }
 
     async fn Put(
@@ -186,7 +339,7 @@ impl KeyValueStoreService for Metastore {
         request: rpc::ServerRequest<KeyValue>,
         response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
     ) -> Result<()> {
-        self.put(&request.value).await
+        self.put(request).await
     }
 
     async fn Delete(
@@ -194,7 +347,15 @@ impl KeyValueStoreService for Metastore {
         request: rpc::ServerRequest<Key>,
         response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
     ) -> Result<()> {
-        Ok(())
+        Err(err_msg("Not implemented"))
+    }
+
+    async fn Watch(
+        &self,
+        request: rpc::ServerRequest<WatchRequest>,
+        response: &mut rpc::ServerStreamResponse<KeyValue>,
+    ) -> Result<()> {
+        self.watch(request, response).await
     }
 }
 
@@ -231,18 +392,29 @@ pub async fn run(config: &MetastoreConfig) -> Result<()> {
 
     let node = Arc::new(node);
 
-    let local_service = Metastore {
-        node: node.clone(),
-        state_machine,
-        state: Mutex::new(MetastoreState {
-            key_locks: HashSet::new(),
+    let instance = Metastore {
+        shared: Arc::new(Shared {
+            node: node.clone(),
+            state_machine,
+            watchers: Arc::new(Mutex::new(WatchersState {
+                prefix_watchers: vec![],
+                last_id: 0,
+            })),
+            state: Mutex::new(MetastoreState {
+                key_locks: HashSet::new(),
+            }),
+            next_client_index: AtomicUsize::new(1),
         }),
-    }
-    .into_service();
+    };
 
     rpc_server.add_service(Arc::new(raft::LeaderServiceWrapper::new(
         node.clone(),
-        local_service,
+        ClientManagementIntoService::into_service(instance.clone()),
+    )))?;
+
+    rpc_server.add_service(Arc::new(raft::LeaderServiceWrapper::new(
+        node.clone(),
+        KeyValueStoreIntoService::into_service(instance.clone()),
     )))?;
 
     rpc_server.add_reflection()?;

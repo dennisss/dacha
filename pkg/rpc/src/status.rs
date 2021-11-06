@@ -43,6 +43,7 @@ impl Status {
     status_ctor!(invalid_argument, InvalidArgument);
     status_ctor!(internal, Internal);
     status_ctor!(already_exists, AlreadyExists);
+    status_ctor!(failed_precondition, FailedPrecondition);
 
     pub fn code(&self) -> StatusCode {
         self.code

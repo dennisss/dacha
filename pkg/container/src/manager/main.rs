@@ -35,11 +35,24 @@ struct ClusterSnapshot {}
 
 impl Manager {
     async fn fetch_snapshot(&self) -> Result<ClusterSnapshot> {
-        let mut jobs = vec![];
-        for entry in self.meta_client.list("/cluster/job").await? {
-            let spec = JobMetadata::parse(entry.value())?;
-            jobs.push(spec);
-        }
+        let jobs = self
+            .meta_client
+            .list_protos::<JobMetadata>("/cluster/job")
+            .await?;
+        let tasks = self
+            .meta_client
+            .list_protos::<TaskMetadata>("/cluster/task")
+            .await?;
+        let nodes = self
+            .meta_client
+            .list_protos::<NodeMetadata>("/cluster/node")
+            .await?;
+        let blobs = self
+            .meta_client
+            .list_protos::<BlobMetadata>("/cluster/blob")
+            .await?;
+
+        // Watch(prefix)
 
         Err(err_msg(""))
     }
@@ -55,6 +68,8 @@ pub async fn run() -> Result<()> {
     // Step 1: Create a metastore client.
     // Step 2: Acquire a manager lock
     // Step 3: Enumerate
+
+    todo!()
 
     /*
     Threads:

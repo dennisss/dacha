@@ -168,7 +168,7 @@ impl<'a> ServerStreamResponse<'a, ()> {
 }
 
 impl<'a, T> ServerStreamResponse<'a, T> {
-    pub(crate) async fn send_bytes(&mut self, data: Bytes) -> Result<()> {
+    pub async fn send_head(&mut self) -> Result<()> {
         if !*self.head_sent {
             *self.head_sent = true;
             // TODO: Make this more efficient?
@@ -178,6 +178,12 @@ impl<'a, T> ServerStreamResponse<'a, T> {
                 ))
                 .await?;
         }
+
+        Ok(())
+    }
+
+    pub(crate) async fn send_bytes(&mut self, data: Bytes) -> Result<()> {
+        self.send_head().await?;
 
         self.sender
             .send(ServerStreamResponseEvent::Message(data))

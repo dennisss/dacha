@@ -23,6 +23,8 @@ service KeyValueStore {
     // silently do nothing.
     rpc Delete (Key) returns (google.protobuf.Empty);
 
+    rpc Watch (WatchRequest) returns (stream KeyValue);
+
     /*
     rpc BeginTransaction (BeginTransactionRequest) returns (BeginTransactionResponse);
 
@@ -43,9 +45,17 @@ message KeyRange {
 
 message KeyValue {
     bytes key = 1;
+
     bytes value = 2;
 
+    // When returned by the Watch() method, this is true to indicate that this key was deleted.
+    bool deleted = 3;
+
     // TODO: Also include metadata about the key.
+}
+
+message WatchRequest {
+    bytes key_prefix = 1;
 }
 
 message BeginTransactionRequest {

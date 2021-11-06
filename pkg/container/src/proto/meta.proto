@@ -45,6 +45,8 @@ message JobMetadata {
 
 // 
 message TaskMetadata {
+    // TODO: Should we give each generation of a task a unique name so that we can reliably move tasks to different machines while distinguishing by 
+
     // Spec used to run this task.
     // This should be mostly the same as the spec in the JobSpec but also includes a resolved
     // 'name', port numbers, etc.
@@ -52,6 +54,22 @@ message TaskMetadata {
 
     // Id of the node which this task is running on.
     uint64 assigned_node = 2;
+
+    // If true, this task has been observed to be fully started up and ready to serve client
+    // requests.
+    //
+    // TODO: Connections to the metastore should ideally not be dependent on this flag 
+    //
+    // Transitions:
+    // - The manager will open a server streaming RPC to all nodes.
+    // - Nodes should respond whenver there is a readiness transition.
+    // - Based on HTTP2 keep alive pings, if the connection becomes unhealthy, the manager will
+    //   mark all tasks on that node as not ready.
+    //
+    // Usage:
+    // - A client may use this establish a load balanced connection to any job.
+    // - Basically, watch for task updates
+    bool ready = 3;
 }
 
 message BlobMetadata {

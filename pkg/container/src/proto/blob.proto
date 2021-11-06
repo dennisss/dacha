@@ -2,7 +2,9 @@ syntax = "proto3";
 
 package cluster;
 
-service Blob {
+import "third_party/google/src/proto/empty.proto";
+
+service BlobStore {
     // Enumerates all blobs persisted to this server.
     rpc List (google.protobuf.Empty) returns (BlobListResponse);
     
@@ -14,7 +16,7 @@ service Blob {
 
     // Retrieves the contents of an uploaded blob from the server.
     // TODO: Support range queries.
-    rpc Download (stream BlobDownloadRequest) returns (stream BlobData);
+    rpc Download (BlobDownloadRequest) returns (stream BlobData);
 
     // Errors:
     // - NOT_FOUND: The requested blob isn't present on this server.
@@ -25,6 +27,8 @@ service Blob {
 message BlobSpec {
     // Id of this blob. Typically this will be the SHA256 hash of the contents of the blob in
     // hex form.
+    //
+    // e.g. 'sha256:00123456789abcdef..'
     string id = 1;
 
     // Raw size in bytes of this blob (before any decompression/unpacking that may need to occur
@@ -44,7 +48,7 @@ enum BlobFormat {
 }
 
 message BlobListResponse {
-    repeated BlobSpec = 1;
+    repeated BlobSpec blob = 1;
 }
 
 message BlobData {
@@ -53,9 +57,9 @@ message BlobData {
 }
 
 message BlobDownloadRequest {
-    string id = 1;
+    string blob_id = 1;
 }
 
 message BlobDeleteRequest {
-    string id = 1;
+    string blob_id = 1;
 }

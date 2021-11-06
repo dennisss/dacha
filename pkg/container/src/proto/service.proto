@@ -42,14 +42,6 @@ message LogRequest {
     // TODO: Consider supporting things like time/text filters?
 }
 
-
-message BlobData {
-    // Id of the blob. Should be the hex version of the SHA256
-    string id = 1;
-
-    bytes data = 2;
-}
-
 message WriteInputRequest {
 
     string task_name = 1;
@@ -76,7 +68,4 @@ service ContainerNode {
 
     // Streams back log entries for a single task.
     rpc GetLogs(LogRequest) returns (stream LogEntry);
-
-    rpc UploadBlob(stream BlobData) returns (google.protobuf.Empty);
-
 }

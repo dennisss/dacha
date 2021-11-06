@@ -7,10 +7,12 @@ use protobuf::Message;
 use sstable::iterable::Iterable;
 use sstable::EmbeddedDB;
 
+use crate::proto::blob::BlobSpec;
 use crate::proto::task::TaskSpec;
 
 const TASKS_TABLE_ID: u64 = 11;
 const NODE_ID_TABLE_ID: u64 = 12;
+const BLOBS_TABLE_ID: u64 = 13;
 
 pub async fn list_tasks(db: &EmbeddedDB) -> Result<Vec<TaskSpec>> {
     let mut start_key = vec![];
@@ -76,4 +78,42 @@ pub async fn set_saved_node_id(db: &EmbeddedDB, id: u64) -> Result<()> {
     let value = id.to_le_bytes();
 
     db.set(&key, &value).await
+}
+
+pub async fn put_blob_spec(db: &EmbeddedDB, spec: BlobSpec) -> Result<()> {
+    let mut key = vec![];
+    KeyEncoder::encode_varuint(BLOBS_TABLE_ID, false, &mut key);
+    KeyEncoder::encode_bytes(spec.id().as_bytes(), &mut key);
+
+    let value = spec.serialize()?;
+    db.set(&key, &value).await?;
+    Ok(())
+}
+
+pub async fn delete_blob_spec(db: &EmbeddedDB, blob_id: &str) -> Result<()> {
+    let mut key = vec![];
+    KeyEncoder::encode_varuint(BLOBS_TABLE_ID, false, &mut key);
+    KeyEncoder::encode_bytes(blob_id.as_bytes(), &mut key);
+
+    db.delete(&key).await?;
+    Ok(())
+}
+
+pub async fn get_blob_specs(db: &EmbeddedDB) -> Result<Vec<BlobSpec>> {
+    let mut key = vec![];
+    KeyEncoder::encode_varuint(BLOBS_TABLE_ID, false, &mut key);
+
+    let mut iter = db.snapshot().await.iter().await;
+    iter.seek(&key).await?;
+
+    let mut out = vec![];
+    while let Some(entry) = iter.next().await? {
+        if !entry.key.starts_with(key.as_ref()) {
+            break;
+        }
+
+        out.push(BlobSpec::parse(&entry.value)?);
+    }
+
+    Ok(out)
 }

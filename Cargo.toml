@@ -54,6 +54,7 @@ members = [
 	"pkg/rp2040_programmer",
 	"third_party/grpc_proto",
 	"pkg/rpc_util",
+	"pkg/nordic",
 ]
 
 [profile.dev]

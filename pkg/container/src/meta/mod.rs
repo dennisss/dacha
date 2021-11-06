@@ -4,8 +4,10 @@ What we need:
 
 */
 
+use datastore::meta::client::MetastoreClient;
+
 pub struct ClusterMetaClient {
-    meta_client: datastore::meta::client::MetastoreClient,
+    meta_client: MetastoreClient,
 }
 
 impl ClusterMetaClient {

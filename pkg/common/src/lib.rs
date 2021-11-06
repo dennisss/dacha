@@ -32,6 +32,7 @@ pub mod bundle;
 pub mod cancellation;
 pub mod condvar;
 pub mod const_default;
+pub mod eventually;
 pub mod factory;
 pub mod fs;
 pub mod future;

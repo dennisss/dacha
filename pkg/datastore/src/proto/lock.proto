@@ -1,6 +1,8 @@
 
 syntax = "proto3";
 
+package db.meta;
+
 import "third_party/google/src/proto/empty.proto";
 import "third_party/google/src/proto/timestamp.proto";
 import "third_party/google/src/proto/duration.proto";
@@ -15,13 +17,7 @@ I do need per-key metadata so it will be a little more complicated than just say
 
 */
 
-service LockService {
-    // Initializes a new client.
-    //
-    // This should be called once by a client and then the client should pass the returned
-    // client_id as metadata to all future requests.
-    rpc NewClient (google.protobuf.Empty) returns (NewClientResponse);
-
+service Lock {
     // Called by a client periodically to let the lock service know that it is still alive and that
     // any held locks should be preserved.
     rpc KeepAlive (google.protobuf.Empty) returns (KeepAliveResponse);
@@ -29,10 +25,6 @@ service LockService {
     rpc Acquire (AcquireRequest) returns (Lease);
 
     rpc Release (ReleaseRequest) returns (google.protobuf.Empty);
-}
-
-message NewClientResponse {
-    uint64 client_id = 1;
 }
 
 message Lease {

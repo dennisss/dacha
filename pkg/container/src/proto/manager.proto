@@ -4,6 +4,8 @@ package cluster;
 
 service Manager {
     rpc StartJob (StartJobRequests) returns (StartJobResponse);
+
+    // rpc UploadBlob
 }
 
 message StartJobRequests {

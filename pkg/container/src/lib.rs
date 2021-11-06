@@ -32,6 +32,9 @@ extern crate datastore;
 extern crate net;
 extern crate rpc_util;
 extern crate usb;
+#[macro_use]
+extern crate regexp_macros;
+extern crate automata;
 
 mod capabilities;
 pub mod manager;

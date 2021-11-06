@@ -271,7 +271,7 @@ async fn run(
     task_bundle.add("cluster::Node", node.run());
 
     let mut server = rpc::Http2Server::new();
-    server.add_service(node.into_service())?;
+    node.add_services(&mut server)?;
     server.add_reflection()?;
     server.set_shutdown_token(common::shutdown::new_shutdown_token());
 

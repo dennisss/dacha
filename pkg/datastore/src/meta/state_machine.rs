@@ -72,6 +72,7 @@ impl EmbeddedDBStateMachine {
     }
 
     /// TODO: Don't expose this.
+    /// Instead just expose creating snapshots.
     pub fn db(&self) -> &EmbeddedDB {
         &self.db
     }

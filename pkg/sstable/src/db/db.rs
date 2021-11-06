@@ -953,28 +953,8 @@ impl EmbeddedDB {
     }
 
     pub async fn get(&self, user_key: &[u8]) -> Result<Option<Bytes>> {
-        /*
-        TODO: Unique optimizations that we can perform with this:
-        - Never attempt to read from disk if the key if in the memtable.
-        - Also after we have read a key, don't immediately update the priority queue with the next value as we usually don't care.
-        - If we seek beyond the user's key, stop early (we don't care what the next entry is then.)
-        */
-
         let snapshot = self.snapshot().await;
-        let mut iter = snapshot.iter().await;
-        iter.seek(user_key).await?;
-
-        // TODO: Must ignore any values > the sequence of the snapshot.
-
-        if let Some(entry) = iter.next().await? {
-            // TODO: Use the user_key comparator (although I guess exact equality should
-            // lalways have the same definition)?
-            if entry.key == user_key {
-                return Ok(Some(entry.value));
-            }
-        }
-
-        Ok(None)
+        snapshot.get(user_key).await
     }
 
     /// Applies a set of writes to the database in one atomic operation. This
