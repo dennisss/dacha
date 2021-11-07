@@ -524,14 +524,20 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
             let inner_indent = format!("{}    ", indent);
 
             for i in 0..v.len() {
+                out.push_str(&inner_indent);
                 let r = v.get(i).unwrap();
-                serialize_reflection(r, &indent, out);
+                serialize_reflection(r, &inner_indent, out);
+
+                if i != v.len() - 1 {
+                    out.push(',');
+                }
+                out.push('\n');
             }
 
             out.push_str(&format!("{}]", indent));
         }
         Reflection::Message(v) => {
-            out.push_str("{\\n");
+            out.push_str("{\n");
 
             let initial_len = out.len();
             let inner_indent = format!("{}    ", indent);

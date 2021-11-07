@@ -529,6 +529,7 @@ dependencies = [
  "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
+ "raft",
  "regexp_macros",
  "rpc",
  "rpc_util",

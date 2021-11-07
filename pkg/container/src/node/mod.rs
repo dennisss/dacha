@@ -31,7 +31,7 @@ use crate::proto::config::*;
 use crate::proto::log::*;
 use crate::proto::meta::*;
 use crate::proto::node::*;
-use crate::proto::service::*;
+use crate::proto::node_service::*;
 use crate::proto::task::*;
 use crate::runtime::ContainerRuntime;
 
@@ -436,8 +436,6 @@ impl NodeInner {
         node_meta.set_address(&self.shared.context.local_address);
         node_meta.set_state(NodeMetadata_State::READY);
 
-        println!("Node registration starting...");
-
         meta_client
             .put(
                 format!("/cluster/node/{:08x}", node_meta.id()).as_bytes(),
@@ -569,7 +567,8 @@ impl NodeInner {
                     }
 
                     if should_start {
-                        self.transition_task_to_running(state_inner, task).await;
+                        self.transition_task_to_running(&mut state.inner, task)
+                            .await;
                     }
                 }
                 NodeEvent::ContainerRuntimeEnded(result) => {
@@ -585,6 +584,42 @@ impl NodeInner {
 
     fn persistent_data_dir(&self) -> PathBuf {
         Path::new(self.shared.config.data_dir()).join("persistent")
+    }
+
+    async fn list_tasks_impl(&self) -> Result<ListTasksResponse> {
+        let state = self.shared.state.lock().await;
+        let mut out = ListTasksResponse::default();
+        for task in &state.tasks {
+            let mut proto = TaskProto::default();
+            proto.set_spec(task.spec.clone());
+            proto.set_pending_update(task.pending_update);
+            if let Some(id) = &task.container_id {
+                if let Some(meta) = self.shared.runtime.get_container(id.as_str()).await {
+                    proto.set_container(meta);
+                }
+            }
+
+            proto.set_state(match &task.state {
+                TaskState::Pending {
+                    missing_requirements,
+                } => TaskStateProto::PENDING,
+                TaskState::Running => TaskStateProto::RUNNING,
+                TaskState::Stopping {
+                    timer_id,
+                    timeout_task,
+                } => TaskStateProto::STOPPING,
+                TaskState::ForceStopping => TaskStateProto::FORCE_STOPPING,
+                TaskState::RestartBackoff {
+                    timer_id,
+                    timeout_task,
+                } => TaskStateProto::RESTART_BACKOFF,
+                TaskState::Terminal => TaskStateProto::TERMINAL,
+            });
+
+            out.add_tasks(proto);
+        }
+
+        Ok(out)
     }
 
     /// Tries to transition the task to the Running state.
@@ -711,20 +746,14 @@ impl NodeInner {
                     let blob_lease = match self.shared.blobs.read_lease(blob_id.as_str()).await {
                         Ok(v) => v,
                         Err(ReadBlobError::BeingWritten) | Err(ReadBlobError::NotFound) => {
-                            // TODO: Limit max blob fetching parallelism.
-                            if !state_inner.blob_fetchers.contains_key(blob_id) {
-                                state_inner.blob_fetchers.insert(
-                                    blob_id.to_string(),
-                                    ChildTask::spawn(inst.clone().fetch_blob(blob_id.to_string())),
-                                );
-                            }
-
+                            self.start_fetching_blob(state_inner, blob_id.as_str())
+                                .await;
                             missing_requirements.blobs.insert(blob_id.clone());
                             continue;
                         }
                     };
 
-                    mount.set_source(blob_lease.extracted_dir());
+                    mount.set_source(blob_lease.extracted_dir().to_str().unwrap());
                     mount.add_options("bind".into());
                     mount.add_options("ro".into());
                     blob_leases.push(blob_lease);
@@ -890,6 +919,17 @@ impl NodeInner {
         Ok(())
     }
 
+    async fn start_fetching_blob(&self, state_inner: &mut NodeStateInner, blob_id: &str) {
+        // TODO: Limit max blob fetching parallelism.
+        if !state_inner.blob_fetchers.contains_key(blob_id) {
+            // TODO: Verify that fetchers are always cleaned up upon completion.
+            state_inner.blob_fetchers.insert(
+                blob_id.to_string(),
+                ChildTask::spawn(self.clone().fetch_blob(blob_id.to_string())),
+            );
+        }
+    }
+
     async fn transition_task_to_backoff(&self, task: &mut Task) {
         task.start_backoff.end_attempt(false);
 
@@ -992,6 +1032,7 @@ impl NodeInner {
             return Err(err_msg("No replicas for blob"));
         }
 
+        // TODO: Don't try fetching the blob from ourselves.
         let remote_node_id = *crypto::random::clocked_rng().choose(blob_meta.replica_nodes());
 
         // TODO: Exclude nodes not marked as ready recently.
@@ -1096,7 +1137,9 @@ impl NodeInner {
                 state.tasks.push(Task {
                     spec: task_spec.clone(),
                     container_id: None,
-                    state: TaskState::Pending,
+                    state: TaskState::Pending {
+                        missing_requirements: ResourceSet::default(),
+                    },
                     pending_update: false,
                     blob_leases: vec![],
                     start_backoff: ExponentialBackoff::new(ExponentialBackoffOptions {
@@ -1115,8 +1158,7 @@ impl NodeInner {
         task.start_backoff.reset();
 
         match &task.state {
-            // TODO: Clear the backoff timer?
-            TaskState::Pending | TaskState::RestartBackoff | TaskState::Terminal => {
+            TaskState::Pending { .. } | TaskState::RestartBackoff { .. } | TaskState::Terminal => {
                 self.transition_task_to_running(&mut state.inner, task)
                     .await;
             }
@@ -1145,15 +1187,36 @@ impl ContainerNodeService for NodeInner {
         Ok(())
     }
 
-    async fn Query(
+    // rpc ListTasks (ListTasksRequest) returns (ListTasksResponse);
+
+    async fn ListTasks(
         &self,
-        request: rpc::ServerRequest<QueryRequest>,
-        response: &mut rpc::ServerResponse<QueryResponse>,
+        request: rpc::ServerRequest<ListTasksRequest>,
+        response: &mut rpc::ServerResponse<ListTasksResponse>,
     ) -> Result<()> {
-        let containers = self.shared.runtime.list_containers().await;
-        for container in containers {
-            response.add_container(container);
+        // let containers = self.shared.runtime.list_containers().await;
+        // for container in containers {
+        //     response.add_container(container);
+        // }
+
+        response.value = self.list_tasks_impl().await?;
+
+        Ok(())
+    }
+
+    async fn ReplicateBlob(
+        &self,
+        request: rpc::ServerRequest<ReplicateBlobRequest>,
+        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
+    ) -> Result<()> {
+        // Start the replication
+        {
+            let mut state = self.shared.state.lock().await;
+            self.start_fetching_blob(&mut state.inner, request.blob_id())
+                .await;
         }
+
+        // TODO: Block for the replication to succeed or permanently fail?
 
         Ok(())
     }

@@ -17,7 +17,7 @@ use rpc_util::AddReflection;
 use crate::node::Node;
 use crate::node::{shadow::*, NodeContext};
 use crate::proto::node::NodeConfig;
-use crate::proto::service::ContainerNodeIntoService;
+use crate::proto::node_service::ContainerNodeIntoService;
 use crate::runtime::fd::FileReference;
 
 const MAGIC_STARTUP_BYTE: u8 = 0x88;

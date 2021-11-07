@@ -118,12 +118,13 @@ impl dyn Channel {
     ) -> Result<Res> {
         let response_message = response.recv().await;
         if response_message.is_some() && !response.recv().await.is_none() {
-            return Err(err_msg("Expected only one response message"));
+            return Err(crate::Status::unimplemented("Expected only one response message").into());
         }
 
         response.finish().await?;
 
-        Ok(response_message.ok_or_else(|| err_msg("Unary RPC returned OK without a body"))?)
+        Ok(response_message
+            .ok_or_else(|| crate::Status::unimplemented("Unary RPC returned OK without a body"))?)
     }
 
     pub async fn call_stream_unary<Req: protobuf::Message, Res: protobuf::Message>(

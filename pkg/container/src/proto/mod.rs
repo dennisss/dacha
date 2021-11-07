@@ -6,8 +6,8 @@ pub mod config {
     include!(concat!(env!("OUT_DIR"), "/src/proto/config.rs"));
 }
 
-pub mod service {
-    include!(concat!(env!("OUT_DIR"), "/src/proto/service.rs"));
+pub mod node_service {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/node_service.rs"));
 }
 
 pub mod task {

@@ -3,12 +3,10 @@ syntax = "proto3";
 package cluster;
 
 service Manager {
-    rpc StartJob (StartJobRequests) returns (StartJobResponse);
-
-    // rpc UploadBlob
+    rpc StartJob (StartJobRequest) returns (StartJobResponse);
 }
 
-message StartJobRequests {
+message StartJobRequest {
 
 }
 

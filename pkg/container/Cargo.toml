@@ -22,6 +22,7 @@ usb = { path = "../usb" }
 rpc = { path = "../rpc" }
 rpc_util = { path = "../rpc_util" }
 net = { path = "../net" }
+raft = { path = "../raft" }
 google = { path = "../../third_party/google" }
 async-std = "1.9.0"
 

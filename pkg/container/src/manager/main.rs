@@ -25,8 +25,6 @@ use protobuf::Message;
 
 use crate::proto::meta::*;
 
-// TODO: Should we support having multiple zones use a single metastore client?
-
 pub struct Manager {
     meta_client: MetastoreClient,
 }

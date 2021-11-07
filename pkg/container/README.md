@@ -7,7 +7,7 @@ This is a system for managing a fleet of machines and assigning work to run on t
 - `Container`: Set of processes running inside of an isolated environment (using Linux cgroups,
   namespaces, chroot, etc.).
     - Individual `Container` instances will usually be identified by ramdom uuids and will be
-      treated as ephemeral: if a task ever crashes and needs to be restarted, it will be assigned
+      treated as ephemeral: if a `Task` ever crashes and needs to be restarted, it will be assigned
       a fresh new container.
 
 - `Node`: A single machine in a `Cluster` which has a fixed resource ceiling for running `Tasks`
@@ -21,10 +21,8 @@ This is a system for managing a fleet of machines and assigning work to run on t
 - `Job`: A replicated set of `Task`s with the same configuration.
 
 - `Manager`: Special process which manages the state of the cluster.
-    - Will be replicas but there will only be one leader node at a time.
-    - Runs in the cluster as a special `Job` that is bootstraped during cluster initialization and
-      persists across cluster failures.
-    - There will be a single `Manager` job per `Cluster`
+    - There will be a single `Manager` `Job` per `Cluster` with one leader `Task` at a time which ensures that the cluster is in a healthy state.
+    - This process also hosts the user facing API and interacting with `Job`s in the cluster.
 
 - `Metastore`: Strongly consistent and durable key-value store and lock service used to store
   the state of the cluster. There will be exactly one of these for the entire cluster.
@@ -33,12 +31,271 @@ This is a system for managing a fleet of machines and assigning work to run on t
 
 - `Bundle`: Collection of files typically containing a binary + static assets and distributed as a `Blob` archive.
 
-- `Volume`:
+- `Volume`: Mounted path in a `Container`. Typically the source will be a `Blob` or a persistent directory on the `Node`.
+
+## User Guide
+
+This section describes the main user journeys for creating a cluster, updating it, and using it to run user workloads.
+
+Note: Currently we assume that you are executing all `cluster` binary commands mentioned below in the same LAN as your cluster.
+
+Note: Currently only one cluster can happily exist in each LAN network.
+
+### Node Setup
+
+The first step in setting up a cluster is starting at least one node machine to run the `cluster_node` binary. If you later want to add nodes to an existing cluster, this process is identical.
+
+We will present two sets of instructions:
+
+1. For a 'Generic' : If you want to setup a node on your machine of choice
+2. For a 'Raspberry Pi' : alternative simplified instructions if you are going to be running on a Raspberry Pi. 
+
+#### Generic
+
+##### Prerequisites
+
+**Linux packages:**
+
+- `sudo apt install uidmap`
+  - Provides the `newuidmap` and `newgidmap` SETUID binaries for enabling us to support using a range of
+    user ids for running containers while running the runtime binary as an unprivileged user.
+
+**Configuration**
+
+If running in production on a dedicated node machine, we recommend the following config steps:
+
+- Create a new user to run the node runtime
+  - `sudo adduser --system --no-create-home --disabled-password --group cluster-node`
+  - Append to both `/etc/subuid` and `/etc/subgid` the line:
+    - `cluster-node:400000:65536`
+    - The above line assumes that no other users are already using this uid/gid range.
+- Create the node data directory
+  - `sudo mkdir -p /opt/dacha`
+  - `sudo chown cluster-node:cluster-node /opt/dacha`
+
+If just doing local testing/development as your user, you only need to create the `/opt/dacha` directory and 
+
+##### Running
+
+It is up to figure out how to ensure that the node binary is run at startup on the node machine as the `cluster-node` user. But, we recommend using the systemd service located at `./pkg/container/config/cluster_node.service`.
+
+To run a node locally for testing (accessible at `127.0.0.1:10250`), run the following command:
+
+```
+cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
+```
+
+#### Raspberry Pi
+
+In this section, we will describe the complete canonical process for setting up a Raspberry Pi as a cluster node.
+
+Note: Only using a 32-bit Pi OS is supported right now.
+
+**Custom Image Features**
+
+We will be using a custom built Raspbian Lite image which has the following major deviations from the standard distribution:
+
+- Packages/users needed for running a cluster node are pre-installed.
+- Has UDev rules to allowlist all GPIO/I2C/SPI/USB/video devices for use by the cluster node
+- Disables unneeded features like HDMI output / Audio
+- On boot, disables WiFi if Ethernet is available.
+
+**Step 1**: Create an ssh key that will be used to access all node machines.
+
+- `ssh-keygen -t ed25519` and save to `~/.ssh/id_cluster`
+
+**Step 2**: Configure the node image.
+
+Create a file at `third_party/pi-gen/config` with a config of the following form:
+
+```
+IMG_NAME='Daspbian'
+ENABLE_SSH=1
+PUBKEY_SSH_FIRST_USER='<PASTE FROM ~/.ssh/id_cluster.pub>'
+PUBKEY_ONLY_SSH=1
+TARGET_HOSTNAME=cluster-node
+DEPLOY_ZIP=0
+TIMEZONE_DEFAULT=America/Los_Angeles
+LOCALE_DEFAULT=en_US.UTF-8
+WPA_ESSID=<NETWORK_NAME>
+WPA_PASSWORD=<PASSWORD>
+WPA_COUNTRY=US
+```
+
+**Step 3**: Build the image:
+
+```
+cd third_party/pi-gen
+./build-docker.sh
+```
+
+**Step 4**: Flash the image located in `third_party/pi-gen/deploy/YYYY-MM-DD-Daspbian-lite.img` to all Pi SDCards.
+
+**Step 5**: Power on a Raspberry Pi with the above SDCard
+
+**Step 6**: Initialize the Pi:
+
+Run the following
+
+```
+cross build --target=armv7-unknown-linux-gnueabihf --bin cluster_node --release
+cargo run --bin cluster_node_setup -- --addr=[RASPBERRY_PI_IP_ADDRESS]
+```
+
+This will copy over the `cluster_node` binary, setup the persistent service and more
+
+You are now done setting up your Pi!
+
+### Cluster Initialization
+
+Now that you have at least one node running the `cluster_node` binary, we want to not initialize the cluster by starting up the control plane (metastore and manager jobs) on the cluster. To do this you need to know the ip address of one node in the cluster. For example to initialize a node running locally run:
+
+```
+cargo run --bin cluster -- bootstrap --node=127.0.0.1:10250
+```
+
+The above command should only be run ONCE on a single node in your LAN. All other running nodes in the same LAN should automatically discover the initialized control plane and register with it via multi-cast.
+
+Note: Currently only nodes on the same LAN can be added to the same cluster.
+
+### Running a user workload
+
+TODO: How to create a JobSpec file and start it (or update it) on the control plane.
+
+TODO: What environment variables are present to tasks.
+
+### Networking
+
+TODO: 
+
+### Cluster monitoring
+
+TODO: How to view registered nodes, running jobs/tasks, etc.
+
+## Design
+
+### Node
+
+#### Functionality
+
+Each node is effectively just a service for running individual tasks.
+
+The node runtime itself should generally not be making any outgoing RPCs to other services as the management of the cluster is managed top down by the `Manager` jobs which call individual nodes.
+
+The main outgoing RPCs that do occur in the node runtime are:
+- When running in a LAN, on startup each Node discovers the metastore via multi-cast and registers itself in the metastore (updates the ip address and port at which it is reachable).
+  - This is mainly needed to support potential re-assignment of IPs in LANs over time if nodes restart.
+  - This could be replaced by requiring static ips for nodes or in the cloud this could be replaced with a lookup by the manager in the VM API (or using static hostnames with lookups over regular DNS).
+- When a node is missing a blob, it may fetch it from another node.
+
+#### Node Permissions
+
+Each node in a cluster runs the `cluster_node` binary which implements the container runtime.
+This binary runs as a non-root unpriveleged user starting with no capabilities (the `cluster-node` user in producer clusters).
+
+When the binary starts, it will:
+0. TODO: Should we first verify that all the real/effective/fs ids are the same?
+0. Creates an `pipe()`
+1. Run `clone()` with
+  - CLONE_NEWUSER: Will be used to own the other namespaces created by this `clone()` call and grant permission to our unprivileged user to run as other users (see steps 2).
+  - CLONE_NEWPID: Creates a new pid space for all containers. The main reason for this is to ensure that when the container_node binary dies, all containers it was running also die instead of ending up detached and unaccounted.
+2. The parent process will call the `newuidmap` and `newgidmap` binaries to setup the `/proc/[pid]/uid_map` and `/proc/[pid]/gid_map` maps for the child process.
+  - We will use an exact mapping from ids in the child user namespace to ids in the parent namespace for all ids in `/etc/subuid` and `/etc/subgid` for the current user in addition to the current user id itself. 
+3. If the above fails, we will just exit.
+4. Else, the parent will send a single byte through the pipe with value 0 to indicate that the child is fully setup.
+5. For the remainder of the parent's lifetime, it will simply be running `waitpid` until the child exits and will then return the child's exit code.
+6. When the child starts running, it will call `setsid()` and then block on getting a 0 through the pipe shared with the parent.
+
+TODO: Set kill on parent death hook in child
+
+7. At this point, we are all setup!
+  - TODO: Set the secure bits to prevent capability escalation
+
+8. When we want to start a new container
+  - We will pick a new never before used userid and groupid
+  - Call clone() with CLONE_NEWUSER, etc.
+  - Similarly set the uid_map and gid_map from the parent while the child waits
+    - In this case, we will contain to use an exact mapping of ids, but we will only expose a single user id and group id to the contianer
+  - In the child we will call `setresuid()` and `setresgid()` to use this new uid/gid
+  - Finally use `capset()` to clear all effective, permitted, and inheritable capabilities.
+
+TODO: Use PR_SET_NAME in prctl to set nice thread names.
+- TODO: Set PR_SET_NO_NEW_PRIVS
+- PR_SET_SECUREBITS
 
 
-## Blob System
+#### Container Permissions
+
+Each container will run using a unique newly allocated user id and group id. Restarting a container
+for the same task cause it to re-use the same user/group id (although users should not depend on this).
+
+#### Persistent Volume
+
+Volumes will be directories created on disk at `/opt/dacha/container/persistent/{name}`.
+
+The owner of the directory will be the user running the container node binary. The group of the
+directory will be a newly allocated group id which is reserved just for this volume. The directory
+will have mode `660`.
+
+The `S_ISGID` will be set on the volume directory to indicate that all files/directories under it
+will inherit the same group id by default. Note: We don't currently prevent containers from
+changing the group id of their files afterwards.
+
+It is possible for the container to change the owner of a file in the volume to its own group id
+and thus prevent attempt to prevent the container node from later deleting it. This won't stop the
+container node from being able to delete the files as it has CAP_SYS_ADMIN in the user namespace
+containing all of the user/group ids usable by containers.
 
 
+#### File Permissions
+
+- Blob Data:
+ - Will be 644 as the main process should be able to write, but all containers must be able to read.
+ - Eventually we should switch this to be a single group id per blob and switch this to 640 
+- Container root directory stuff.
+  - Is this directory even sensitive?
+
+
+### Cluster Bootstrapping
+
+TODO: Also describe resilience to cold starts (if all nodes suddenly power off and must be restarted).
+
+### Manager
+
+TODO
+
+### Blob Registry
+
+To support storing core cluster binaries (and user binaries/files), the cluster implements a self-standing blob registry. This means that we don't need to have a dependency on external image registries (e.g. Docker Hub) for bringing up the cluster from nothing.
+
+Protocol:
+1. When a user has a `JobSpec` they want to start on the cluster, they will list enumerate all blobs that the job requires.
+  - This may require compiling the blob from source.
+2. The user contacts the managers `Manager.AllocateBlobs` method with a list of `BlobSpec` protos defining the blobs that the user has and wants to use in the cluster
+  - TODO: AllocateBlobs should probably create a provisional_replica_nodes entry in the metastore to make it aware that some nodes will soon have the blobs.
+3. For all blobs not already present in the cluster, the `Manager` responds with the id of nodes to which the blobs should be uploaded initially.
+  - TODO: Consider requesting replication to multiple nodes so that `StartJob` is less likely to stall if a node goes down (the main exception would be for jobs that are pinned to run on specific nodes). 
+4. The user uploads the blobs directly to the aformentioned nodes.
+  - Each `Node` implements a `BlobStore` service which is simply a CRUD-style bucket of blobs.
+5. The manager will notice that the blobs were uploaded to each node and add a `BlobMetadata` entry to the metastore under `/cluster/blob/[blob_id]` which records which nodes have blob replicas.
+6. The user will then send a `StartJob` request to the manager
+7. The manager will call `StartTask` on nodes.
+8. When starting a task, if a Node doesn't have a blob, it will look up the blob in the metastore to see where it is replicated and directly fetches it from the replica node's `BlobStore` service.
+9. If a node had to fetch a blob, the manager notices this and adds that node as a new replica of that blob.
+10. Over time, the manager checks the replication state of all blobs and does the following:
+  - For all blobs actively in use by some task in the cluster
+    - Ensure the blob is replicated to at least 3 nodes and all nodes which are running a task using it.
+      - We ignore any node has hasn't been reachable for the past hour.
+    - Delete the blob on all nodes not needed to achieve the above requirement.
+    - TODO: Also want to avoid overwhelming single nodes with many blobs (must take into consideration storage space).
+    - TODO: Periodically check that no nodes have corrupted data.
+  - For all blobs that haven't been used in 1 week, delete the blobs from all nodes. 
+
+
+
+## Old
+
+TODO: Explain the task and node readiness protocols.
 
 
 
@@ -53,23 +310,6 @@ use `setns` to enter another process's namespaces?
 
 TODO: After running chroot, we should drop capacbilities for doing that.
 
-
-Node Prerequisites
-------------------
-
-Linux packages:
-
-- `sudo apt install uidmap`
-  - Provides the `newuidmap` and `newgidmap` SETUID binaries for enabling us to support using a range of
-    user ids for running containers while running the runtime binary as an unprivileged user.
-
-
-Configuration:
-
-- `sudo adduser --system --no-create-home --disabled-password --group cluster-node`
-- Append to both `/etc/subuid` and `/etc/subgid` the line:
-  - `container-node:400000:65536`
-  - The above line assumes that no other users are already using this uid/gid range.
 
 
 Raspberry Pi Files:
@@ -122,76 +362,6 @@ Next Steps:
 
 
 
-Node Permissions
-----------------
-
-Each node in a cluster runs the `container_node` binary which implements the container runtime.
-This binary runs as a non-root unpriveleged user starting with no capabilities (the `container-node` user in producer clusters).
-
-When the binary starts, it will:
-0. TODO: Should we first verify that all the real/effective/fs ids are the same?
-0. Creates an `pipe()`
-1. Run `clone()` with
-  - CLONE_NEWUSER: Will be used to own the other namespaces created by this `clone()` call and grant permission to our unprivileged user to run as other users (see steps 2).
-  - CLONE_NEWPID: Creates a new pid space for all containers. The main reason for this is to ensure that when the container_node binary dies, all containers it was running also die instead of ending up detached and unaccounted.
-2. The parent process will call the `newuidmap` and `newgidmap` binaries to setup the `/proc/[pid]/uid_map` and `/proc/[pid]/gid_map` maps for the child process.
-  - We will use an exact mapping from ids in the child user namespace to ids in the parent namespace for all ids in `/etc/subuid` and `/etc/subgid` for the current user in addition to the current user id itself. 
-3. If the above fails, we will just exit.
-4. Else, the parent will send a single byte through the pipe with value 0 to indicate that the child is fully setup.
-5. For the remainder of the parent's lifetime, it will simply be running `waitpid` until the child exits and will then return the child's exit code.
-6. When the child starts running, it will call `setsid()` and then block on getting a 0 through the pipe shared with the parent.
-
-TODO: Set kill on parent death hook in child
-
-7. At this point, we are all setup!
-  - TODO: Set the secure bits to prevent capability escalation
-
-8. When we want to start a new container
-  - We will pick a new never before used userid and groupid
-  - Call clone() with CLONE_NEWUSER, etc.
-  - Similarly set the uid_map and gid_map from the parent while the child waits
-    - In this case, we will contain to use an exact mapping of ids, but we will only expose a single user id and group id to the contianer
-  - In the child we will call `setresuid()` and `setresgid()` to use this new uid/gid
-  - Finally use `capset()` to clear all effective, permitted, and inheritable capabilities.
-
-TODO: Use PR_SET_NAME in prctl to set nice thread names.
-- TODO: Set PR_SET_NO_NEW_PRIVS
-- PR_SET_SECUREBITS
-
-
-Container Permissions
----------------------
-
-Each container will run using a unique newly allocated user id and group id. Restarting a container
-for the same task cause it to re-use the same user/group id (although users should not depend on this).
-
-Persistent Volume
------------------
-
-Volumes will be directories created on disk at `/opt/dacha/container/persistent/{name}`.
-
-The owner of the directory will be the user running the container node binary. The group of the
-directory will be a newly allocated group id which is reserved just for this volume. The directory
-will have mode `660`.
-
-The `S_ISGID` will be set on the volume directory to indicate that all files/directories under it
-will inherit the same group id by default. Note: We don't currently prevent containers from
-changing the group id of their files afterwards.
-
-It is possible for the container to change the owner of a file in the volume to its own group id
-and thus prevent attempt to prevent the container node from later deleting it. This won't stop the
-container node from being able to delete the files as it has CAP_SYS_ADMIN in the user namespace
-containing all of the user/group ids usable by containers.
-
-
-File Permissions
-----------------
-
-- Blob Data:
- - Will be 644 as the main process should be able to write, but all containers must be able to read.
- - Eventually we should switch this to be a single group id per blob and switch this to 640 
-- Container root directory stuff.
-  - Is this directory even sensitive?
 
 
 
@@ -387,6 +557,8 @@ How to enumerate all tasks in a job?
 ```
 Start a node:
   cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
+
+  cargo run --bin cluster -- bootstrap --node=127.0.0.1:10250
 
 Start a metastore instance on that node:
   cargo run --bin container_ctl -- start_task pkg/datastore/config/metastore.task --node=127.0.0.1:10250

@@ -10,7 +10,7 @@ extern crate regexp_macros;
 extern crate crypto;
 extern crate net;
 
-mod backoff;
+pub mod backoff;
 mod body;
 mod chunked;
 mod chunked_syntax;

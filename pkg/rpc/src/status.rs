@@ -44,6 +44,8 @@ impl Status {
     status_ctor!(internal, Internal);
     status_ctor!(already_exists, AlreadyExists);
     status_ctor!(failed_precondition, FailedPrecondition);
+    status_ctor!(unimplemented, Unimplemented);
+    status_ctor!(unknown, Unknown);
 
     pub fn code(&self) -> StatusCode {
         self.code
@@ -118,7 +120,7 @@ impl Status {
                 if byte.is_ascii() {
                     encoded_message.push(*byte as char);
                 } else {
-                    write!(&mut encoded_message, "%{:02X}", byte);
+                    write!(&mut encoded_message, "%{:02X}", byte)?;
                 }
             }
 

@@ -163,9 +163,26 @@ pub struct Interface {
     pub name: String,
     pub loopback: bool,
     pub up: bool,
+    pub operational_state: OperationalState,
     pub link_address: Vec<u8>,
     pub link_broadcast_address: Vec<u8>,
     pub addrs: Vec<InterfaceAddr>,
+}
+
+enum_def!(OperationalState u8 =>
+    Unknown = 0,
+    NotPresent = 1,
+    Down = 2,
+    LowerLayerDown = 3,
+    Testing = 4,
+    Dormant = 5,
+    Up = 6
+);
+
+impl Default for OperationalState {
+    fn default() -> Self {
+        Self::Unknown
+    }
 }
 
 #[derive(Debug)]
@@ -251,9 +268,13 @@ pub fn read_interfaces() -> Result<Vec<Interface>> {
             if attr.rta_type == libc::IFLA_BROADCAST {
                 iface.link_broadcast_address = value.to_vec();
             }
+            if attr.rta_type == libc::IFLA_OPERSTATE {
+                if value.len() != 1 {
+                    return Err(err_msg("Invalid operstate value length"));
+                }
 
-            // println!("{:?}", attr);
-            // println!("{:?}", common::bytes::Bytes::from(value));
+                iface.operational_state = OperationalState::from_value(value[0])?;
+            }
         }
     }
 
@@ -315,6 +336,9 @@ pub fn read_interfaces() -> Result<Vec<Interface>> {
 }
 
 /// Tries to find the local network ip address of the current machine.
+///
+/// We assume that there is only one active network interface on the machine.
+///
 /// If both a V4 and V6 address are available, we will prefer the V4 address (as
 /// it is likely shorter and more user friendly).
 pub fn local_ip() -> Result<IPAddress> {
@@ -322,7 +346,7 @@ pub fn local_ip() -> Result<IPAddress> {
 
     let mut found_ip = None;
     for iface in ifaces {
-        if !iface.up || iface.loopback {
+        if !iface.up || iface.loopback || iface.operational_state != OperationalState::Up {
             continue;
         }
 

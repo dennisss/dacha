@@ -134,7 +134,12 @@ impl protobuf_core::Message for DynamicMessage {
                         wire_field.parse_enum_into(&mut val)?;
                         DynamicValue::Enum(val)
                     }
-                    _ => return Err(err_msg("Unknown type while parsing")),
+                    _ => {
+                        return Err(format_err!(
+                            "Unknown type while parsing: {:?}",
+                            field_desc.proto()
+                        ))
+                    }
                 },
                 TYPE_BYTES => {
                     DynamicValue::Primitive(DynamicPrimitiveValue::Bytes(wire_field.parse_bytes()?))

@@ -53,7 +53,7 @@ pub struct ExponentialBackoff {
 
     attempt_pending: bool,
 
-    rng: Box<dyn Rng + Send + 'static>,
+    rng: Box<dyn Rng + Send + Sync + 'static>,
 }
 
 impl ExponentialBackoff {

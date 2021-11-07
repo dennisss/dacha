@@ -173,6 +173,11 @@ pub struct ReadIndex {
     index: LogIndex,
 }
 
+impl ReadIndex {
+    pub fn term(&self) -> Term {
+        self.term
+    }
+}
 pub struct NotLeaderError {
     /// The latest observed term. Can be used by the recipient to ignore leader
     /// hints from past terms.

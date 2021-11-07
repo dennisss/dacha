@@ -1,14 +1,17 @@
+use std::os::unix::fs::PermissionsExt;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
 
+use common::async_std::fs;
+use common::async_std::fs::{File, OpenOptions};
 use common::async_std::path::Path;
 use common::async_std::path::PathBuf;
+use common::async_std::prelude::*;
 use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::errors::*;
-use common::{async_std::fs, io::Readable};
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
 use sstable::EmbeddedDB;
@@ -173,9 +176,6 @@ impl BlobStore {
                 return Ok(Err(NewBlobError::AlreadyExists));
             }
 
-            let mut spec = BlobSpec::default();
-            spec.set_id(blob_id);
-
             state.blobs.insert(
                 blob_id.to_string(),
                 BlobEntry {
@@ -187,7 +187,7 @@ impl BlobStore {
             );
 
             BlobLease {
-                spec,
+                spec: spec.clone(),
                 shared: self.shared.clone(),
             }
         };
@@ -197,12 +197,12 @@ impl BlobStore {
         // failed, so we'll just retry.
         let blob_dir = self.shared.dir.join(blob_id);
         if !blob_dir.exists().await {
-            common::async_std::fs::create_dir_all(&blob_dir).await?;
+            fs::create_dir_all(&blob_dir).await?;
         }
 
         let mut raw_file_path = lease.raw_path();
 
-        let mut raw_file = common::async_std::fs::OpenOptions::new()
+        let mut raw_file = OpenOptions::new()
             .create(true)
             .truncate(true)
             .write(true)
@@ -279,7 +279,7 @@ impl BlobStore {
         first_part.set_spec(lease.spec().clone());
         response.send(first_part).await?;
 
-        let mut raw_file_path = lease.raw_path();
+        let raw_file_path = lease.raw_path();
         let mut raw_file = fs::File::open(raw_file_path).await?;
 
         let mut offset = 0;
@@ -401,6 +401,7 @@ impl BlobWriter {
         self.bytes_written += data.len() as u64;
         if self.bytes_written > self.lease.spec().size() {
             // TODO: In this case, delete the partially written blob.
+            println!("{} vs {}", self.bytes_written, self.lease.spec().size());
             return Err(rpc::Status::invalid_argument("Too many bytes written to the blob").into());
         }
 
@@ -428,8 +429,6 @@ impl BlobWriter {
 
         self.raw_file.flush().await?;
 
-        // TODO: check the format of the blob.
-
         match self.lease.spec().format() {
             BlobFormat::UNKNOWN => {} // This should have been filtered out
             BlobFormat::TAR_GZ_ARCHIVE => {
@@ -438,7 +437,7 @@ impl BlobWriter {
                 if !extracted_dir.exists().await {
                     common::async_std::fs::create_dir(&extracted_dir).await?;
 
-                    let mut perms = blob_dir.metadata().await?.permissions();
+                    let mut perms = extracted_dir.metadata().await?.permissions();
                     perms.set_mode(0o755);
                     common::async_std::fs::set_permissions(&extracted_dir, perms).await?;
                 }
@@ -455,7 +454,7 @@ impl BlobWriter {
             }
         }
 
-        put_blob_spec(self.lease.shared.db.as_ref(), spec).await?;
+        put_blob_spec(self.lease.shared.db.as_ref(), self.lease.spec().clone()).await?;
 
         {
             let mut state = self.lease.shared.state.lock().await;

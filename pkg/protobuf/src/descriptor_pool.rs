@@ -370,6 +370,6 @@ impl FieldDescriptor {
     pub fn find_type(&self) -> Option<TypeDescriptor> {
         self.message
             .pool
-            .find_relative_type(self.message.inner.proto.name(), self.proto().type_name())
+            .find_relative_type(&self.message.name, self.proto().type_name())
     }
 }

@@ -8,16 +8,32 @@ import "pkg/container/src/proto/task.proto";
 import "pkg/container/src/proto/meta.proto";
 import "third_party/google/src/proto/empty.proto";
 
-message QueryRequest {
+message ListTasksRequest {
     // If present, we will only return data for the container with this id.
     // An empty list will be returned if no such container exists. 
     string container_id = 1;
 }
 
-message QueryResponse {
-    repeated ContainerMetadata container = 1;
+message ListTasksResponse {
+    repeated TaskProto tasks = 1;
 }
 
+message TaskProto {
+    TaskSpec spec = 1;
+    TaskStateProto state = 2;
+    ContainerMetadata container = 3;
+    bool pending_update = 4;
+}
+
+enum TaskStateProto {
+    UNKOWN = 0;
+    PENDING = 1;
+    RUNNING = 2;
+    STOPPING = 3;
+    FORCE_STOPPING = 4;
+    RESTART_BACKOFF = 5;
+    TERMINAL = 6;
+}
 
 // message StartRequest {
 //     ContainerConfig config = 1;
@@ -49,13 +65,18 @@ message WriteInputRequest {
     bytes data = 2;
 }
 
+message ReplicateBlobRequest {
+    string blob_id = 1;
+}
+
 service ContainerNode {
 
     // TODO: How do we ensure that a node never switches places with another node ip. (then the manager may be sending the wrong requests to the wrong server if data is stale). So we need every request to be richly authenticated with a host name.
     // ^ RPC HTTP servers should minimally reject any request coming to the wrong host name.
     rpc Identity (google.protobuf.Empty) returns (NodeMetadata);
 
-    rpc Query (QueryRequest) returns (QueryResponse);
+    // Enumerates all tasks present on this node.
+    rpc ListTasks (ListTasksRequest) returns (ListTasksResponse);
 
     // rpc Start (StartRequest) returns (StartResponse);
 
@@ -63,6 +84,10 @@ service ContainerNode {
     rpc StartTask (StartTaskRequest) returns (StartTaskResponse);
 
     rpc WriteInput (stream WriteInputRequest) returns (google.protobuf.Empty);
+
+    /// Asks the node to fetch and locally store the blob with the given id.
+    /// THis is called by the manager to ensure blobs are sufficiently mirrored.
+    rpc ReplicateBlob (ReplicateBlobRequest) returns (google.protobuf.Empty);
 
     // rpc ExecProcess (ExecProcess)
 

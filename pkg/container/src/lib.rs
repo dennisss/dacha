@@ -49,6 +49,7 @@ pub use proto::job::*;
 pub use proto::log::*;
 pub use proto::meta::*; /* TODO: Eventually remove this once the bootstrapping code becomes
                          * private. */
-pub use proto::service::*;
+pub use proto::blob::*;
+pub use proto::node_service::*;
 pub use proto::task::*;
 pub use runtime::ContainerRuntime;

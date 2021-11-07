@@ -318,7 +318,7 @@ impl<T> ClientStreamingResponse<T> {
         let response = response.join().await?;
 
         if response.head.status_code != http::status_code::OK {
-            return Err(err_msg("Server responded with non-OK status"));
+            return Err(crate::Status::unknown("Server responded with non-OK status").into());
         }
 
         let response_type = response

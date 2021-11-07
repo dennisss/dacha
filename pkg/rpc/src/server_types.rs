@@ -65,16 +65,20 @@ impl ServerStreamRequest<()> {
 
     /// NOTE: It's only valid to call this before using recv().
     pub async fn into_unary<T: protobuf::Message>(self) -> Result<ServerRequest<T>> {
-        // TODO: Change all of these to RPC errors.
-
         let mut stream = self.into::<T>();
 
-        let message = stream.recv().await?.ok_or_else(|| err_msg("Empty body"))?;
+        let message = stream
+            .recv()
+            .await?
+            .ok_or_else(|| crate::Status::unimplemented("Empty body"))?;
 
         // TODO: I'm not sure if all client libraries will immediately sent the request
         // END_STREAM before getting some response?
         if !stream.recv().await?.is_none() {
-            return Err(err_msg("Expected exactly one message in the request"));
+            return Err(crate::Status::unimplemented(
+                "Expected exactly one message in the request",
+            )
+            .into());
         }
 
         Ok(ServerRequest {
@@ -101,9 +105,10 @@ impl<T: protobuf::Message> ServerStreamRequest<T> {
 
         let message = {
             if let Some(data) = data {
-                Some(T::parse(&data).map_err(|_| {
-                    crate::Status::invalid_argument("Failed to parse request proto.")
-                })?)
+                Some(
+                    T::parse(&data)
+                        .map_err(|_| crate::Status::internal("Failed to parse request proto."))?,
+                )
             } else {
                 None
             }

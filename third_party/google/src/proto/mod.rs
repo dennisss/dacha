@@ -62,3 +62,7 @@ pub mod wrappers {
 pub mod empty {
     include!(concat!(env!("OUT_DIR"), "/src/proto/empty.rs"));
 }
+
+pub mod duration {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/duration.rs"));
+}

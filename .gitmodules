@@ -4,3 +4,6 @@
 [submodule "third_party/pimoroni-eagle"]
 	path = third_party/pimoroni-eagle
 	url = git@github.com:pimoroni/eagle.git
+[submodule "third_party/pi-gen"]
+	path = third_party/pi-gen
+	url = git@github.com:dennisss/pi-gen.git
