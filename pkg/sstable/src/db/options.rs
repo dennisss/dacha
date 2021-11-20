@@ -91,6 +91,11 @@ pub struct EmbeddedDBOptions {
     /// Note that an existing database can only be re-opened with the same
     /// disable_wal value used to create it.
     pub disable_wal: bool,
+
+    /// If given a non-zero value N, we will not garbage collect any mutations
+    /// with a sequence number >= N. This includes both Put and Delete
+    /// mutations.
+    pub initial_compaction_waterline: u64,
 }
 
 impl EmbeddedDBOptions {

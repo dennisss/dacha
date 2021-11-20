@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
@@ -10,20 +11,52 @@ use common::bundle::TaskResultBundle;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::fs::DirLock;
+use common::task::ChildTask;
 use protobuf::Message;
 use raft::atomic::{BlobFile, BlobFileBuilder};
 use raft::StateMachine;
 use rpc_util::AddReflection;
+use sstable::db::{SnapshotIteratorOptions, WriteBatch};
 use sstable::iterable::Iterable;
-use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
+use crate::meta::constants::*;
 use crate::meta::state_machine::*;
 use crate::meta::table_key::TableKey;
+use crate::meta::transaction::*;
 use crate::proto::client::*;
 use crate::proto::key_value::*;
 use crate::proto::meta::UserDataSubKey;
 
-use super::constants::CLIENT_ID_KEY;
+/*
+Performing transaction checking in the metastore:
+- makes it easier to parallelize in the future
+- if we can get the sequence number, then that could bebest
+
+*/
+
+/*
+
+Need an event listener on the Server to tell when we become a leader vs. stop being the leader
+- If we are not the leader, we need to cancel all transactions.
+
+Limits on transactions:
+- max lifetime: 10 seconds
+
+- We are either the leader or we have a
+ableKey::user_value(
+Should I re-use the internal replication port?
+- Pros: Can directly re-use the normal raft server discovery mechanism
+- Cons: Difficult to run
+*/
+
+// RouteChannel is challenging as it only uses the regular RPC port and not the
+// service's one? Must start RPC port before registering currentl port.
+
+/*
+Also, the channel factory doesn't do channel caching.
+*/
+
+// XXX: If I store the method name in the
 
 pub struct MetastoreConfig {
     /// Path to the directory used to store all of the store's data (at least
@@ -49,102 +82,26 @@ pub struct Metastore {
 struct Shared {
     node: Arc<raft::Node<()>>,
 
-    state: Mutex<MetastoreState>,
-
-    watchers: Arc<Mutex<WatchersState>>,
-
-    next_client_index: AtomicUsize,
-
     /// NOTE: Only reads go through this object. Writes must go through the
     /// replication_Server.
     state_machine: Arc<EmbeddedDBStateMachine>,
-}
 
-struct MetastoreState {
-    // Should also keep track of actively leased out transactions.
-    // transactions should die
-    /// Set of keys which are currently locked by some transaction that is
-    /// currently getting comitted.
-    key_locks: HashSet<Bytes>,
-    /* List of transactios
-     * - Die after a TTL
-     * - Need to know client id so that we can check for leases. */
-}
+    transaction_manager: TransactionManager,
 
-struct WatchersState {
-    // TODO: Use a BTreeMap
-    prefix_watchers: Vec<WatcherEntry>,
-
-    last_id: usize,
-}
-
-struct WatcherEntry {
-    key_prefix: Bytes,
-    id: usize,
-    client_id: String,
-    sender: channel::Sender<KeyValue>,
-}
-
-struct WatcherRegistration {
-    state: Arc<Mutex<WatchersState>>,
-    id: usize,
-    receiver: channel::Receiver<KeyValue>,
-}
-
-impl Drop for WatcherRegistration {
-    fn drop(&mut self) {
-        let state = self.state.clone();
-        let id = self.id;
-        task::spawn(async move {
-            let mut state = state.lock().await;
-            for i in 0..state.prefix_watchers.len() {
-                if state.prefix_watchers[i].id == id {
-                    state.prefix_watchers.swap_remove(i);
-                    break;
-                }
-            }
-        });
-    }
+    next_local_id: AtomicUsize,
 }
 
 /*
-TODO: If the RouteChannel doesn't know the leader tempoarily, we need to support retrying the RPCs internally.
+Long term:
+- Use the raft log index as the revision
+- perform TTLing of
 
-- Routestore
+- We should be able to determine what is the highest compacted sequence.
 
-Need an event listener on the Server to tell when we become a leader vs. stop being the leader
-- If we are not the leader, we need to cancel all transactions.
-
-Limits on transactions:
-- max lifetime: 10 seconds
-
-- We are either the leader or we have a
-ableKey::user_value(
-Should I re-use the internal replication port?
-- Pros: Can directly re-use the normal raft server discovery mechanism
-- Cons: Difficult to run
+-> Can only remove a key if the overwrite of that key was more than 24 hours ago
 */
-
-// RouteChannel is challenging as it only uses the regular RPC port and not the
-// service's one? Must start RPC port before registering currentl port.
-
-/*
-Also, the channel factory doesn't do channel caching.
-*/
-
-// XXX: If I store the method name in the
 
 impl Metastore {
-    /*
-    pub fn start_transaction(&self) {}
-
-    pub async fn commit_transaction(&self, transaction: Transaction) {
-        // Acquire locks for all keys (make sure that this can bail out)
-        // - Note: We may need to issue a cleanup task::spawn() if the task
-        //   isn't polled
-    }
-    */
-
     fn get_client_id<T: protobuf::Message>(request: &rpc::ServerRequest<T>) -> Result<&str> {
         match request.context.metadata.get_text(CLIENT_ID_KEY) {
             Ok(Some(v)) => Ok(v),
@@ -155,38 +112,53 @@ impl Metastore {
         }
     }
 
-    async fn get(&self, request: rpc::ServerRequest<Key>, response: &mut KeyValue) -> Result<()> {
-        self.shared.node.server().begin_read(false).await?;
+    async fn snapshot_impl<'a>(
+        &self,
+        request: rpc::ServerRequest<SnapshotRequest>,
+        response: &mut rpc::ServerResponse<'a, SnapshotResponse>,
+    ) -> Result<()> {
+        if !request.latest() {
+            return Err(rpc::Status::invalid_argument("Unsupported snapshotting method").into());
+        }
 
-        let db = self.shared.state_machine.db();
-        // let snapshot = db.snapshot().await;
+        // TODO: If we know it's going to be used for a transaction, we should use the
+        // optimistic mode.
+        let read_index = self
+            .shared
+            .node
+            .server()
+            .begin_read(request.optimistic())
+            .await?;
 
-        let table_key = TableKey::user_value(request.data());
+        response.set_read_index(read_index.index().value());
 
-        let value = db
-            .get(&table_key)
-            .await?
-            .ok_or_else(|| rpc::Status::not_found("Key doesn't exist"))?;
-
-        response.set_key(request.data());
-        response.set_value(value.as_ref());
         Ok(())
     }
 
-    async fn get_range<'a>(
+    async fn read_impl<'a>(
         &self,
-        request: rpc::ServerRequest<KeyRange>,
-        response: &mut rpc::ServerStreamResponse<'a, KeyValue>,
+        request: rpc::ServerRequest<ReadRequest>,
+        response: &mut rpc::ServerStreamResponse<'a, ReadResponse>,
     ) -> Result<()> {
-        self.shared.node.server().begin_read(false).await?;
+        self.shared
+            .node
+            .server()
+            .begin_read(request.read_index() != 0)
+            .await?;
 
-        let db = self.shared.state_machine.db();
-        let snapshot = db.snapshot().await;
+        // TODO: Support changing to a specific read_index (will require checking the
+        // flush index).
+        let snapshot = self.shared.state_machine.snapshot().await;
 
-        let start_key = TableKey::user_value(request.start_key());
-        let end_key = TableKey::user_value(request.end_key());
+        let start_key = TableKey::user_value(request.keys().start_key());
+        let end_key = TableKey::user_value(request.keys().end_key());
 
-        let mut iter = snapshot.iter().await;
+        let mut iter_options = SnapshotIteratorOptions::default();
+        if request.read_index() > 0 {
+            iter_options.last_sequence = Some(request.read_index());
+        }
+
+        let mut iter = snapshot.iter_with_options(iter_options).await?;
         iter.seek(&start_key).await?;
 
         while let Some(entry) = iter.next().await? {
@@ -205,39 +177,71 @@ impl Metastore {
                 _ => continue,
             };
 
-            let mut res = KeyValue::default();
-            res.set_key(&user_key[..]);
-            res.set_value(entry.value.as_ref());
+            let mut res = ReadResponse::default();
+            res.entry_mut().set_key(&user_key[..]);
+
+            if let Some(value) = entry.value {
+                res.entry_mut().set_value(value.as_ref());
+            } else {
+                res.entry_mut().set_deleted(true);
+            }
+
             response.send(res).await?;
         }
 
         Ok(())
     }
 
-    async fn put(&self, request: rpc::ServerRequest<KeyValue>) -> Result<()> {
-        let client_id = Self::get_client_id(&request)?;
+    /*
+    Performing conflict analysis on the server:
+    - Pros:
+        - Simplifies the WAL format
+        - More easy to parallelize
+    - Cons:
+        - The naive implementation will not allow concurrent executions (as the state machine won't get updated until )
 
-        let table_key = TableKey::user_value(request.key());
+    - Need light weight list of writer locks.
+        => Must be able to lock all desired keys.
 
-        let mut write = sstable::db::WriteBatch::new();
-        write.put(&table_key, request.value());
-        self.shared
-            .node
-            .server()
-            .execute(write.as_bytes().to_vec())
+    Cons of this:
+    - If there are conflicts, it will take an entire
+    */
+
+    async fn execute_impl<'a>(
+        &self,
+        request: rpc::ServerRequest<ExecuteRequest>,
+        response: &mut rpc::ServerResponse<'a, ExecuteResponse>,
+    ) -> Result<()> {
+        // Translate to an internally keyed transaction
+        let user_txn = request.value.transaction();
+        let mut internal_txn = Transaction::default();
+
+        internal_txn.set_read_index(user_txn.read_index());
+
+        for range in user_txn.reads() {
+            let mut internal_range = KeyRange::default();
+            internal_range.set_start_key(TableKey::user_value(range.start_key()));
+            internal_range.set_end_key(TableKey::user_value(range.end_key()));
+            internal_txn.add_reads(internal_range);
+        }
+
+        for op in user_txn.writes() {
+            let mut internal_op = op.clone();
+            internal_op.set_key(TableKey::user_value(op.key()));
+            internal_txn.add_writes(internal_op);
+        }
+
+        let index = self
+            .shared
+            .transaction_manager
+            .execute(
+                &internal_txn,
+                self.shared.node.clone(),
+                &self.shared.state_machine,
+            )
             .await?;
 
-        let state = self.shared.watchers.lock().await;
-        for watcher in &state.prefix_watchers {
-            if &watcher.client_id == client_id {
-                continue;
-            }
-
-            if request.key().starts_with(watcher.key_prefix.as_ref()) {
-                // NOTE: To prevent blocking the write path, this must use an unbounded channel.
-                let _ = watcher.sender.send(request.clone()).await;
-            }
-        }
+        response.value.set_read_index(index.value());
 
         Ok(())
     }
@@ -247,49 +251,33 @@ impl Metastore {
     //
     // TODO: Support ignoring changes from the same client as the one that initiated
     // the watch?
-    async fn watch<'a>(
+    async fn watch_impl<'a>(
         &self,
         request: rpc::ServerRequest<WatchRequest>,
-        response: &mut rpc::ServerStreamResponse<'a, KeyValue>,
+        response: &mut rpc::ServerStreamResponse<'a, KeyValueEntry>,
     ) -> Result<()> {
         let client_id = Self::get_client_id(&request)?;
 
-        let registration = {
-            let mut state = self.shared.watchers.lock().await;
-
-            let id = state.last_id + 1;
-            state.last_id = id;
-
-            let (sender, receiver) = channel::unbounded();
-
-            let entry = WatcherEntry {
-                key_prefix: Bytes::from(request.key_prefix()),
-                client_id: client_id.to_string(),
-                id,
-                sender,
-            };
-
-            // NOTE: These two lines must happen atomically to ensure that the entry is
-            // always cleaned up.
-            state.prefix_watchers.push(entry);
-            WatcherRegistration {
-                state: self.shared.watchers.clone(),
-                id,
-                receiver,
-            }
-        };
+        let registration = self
+            .shared
+            .state_machine
+            .watchers()
+            .register(request.key_prefix())
+            .await;
 
         // Send head so that the client can properly syncronize the time at which
         // watching starts.
         response.send_head().await?;
 
+        // TODO: Must translate back to user keys.
+
         loop {
-            let kv = registration.receiver.recv().await?;
+            let kv = registration.recv().await?;
             response.send(kv).await?;
         }
     }
 
-    async fn new_client(&self) -> Result<String> {
+    async fn new_unique_id(&self) -> Result<String> {
         // If this succeeds, then we know that we were the leader in the given term.
         // If we have a locally unique value, we can make it globally unique by
         // prepending this term.
@@ -297,7 +285,7 @@ impl Metastore {
 
         let index = self
             .shared
-            .next_client_index
+            .next_local_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         Ok(format!("{}:{}", term.value(), index))
@@ -311,51 +299,43 @@ impl ClientManagementService for Metastore {
         request: rpc::ServerRequest<google::proto::empty::Empty>,
         response: &mut rpc::ServerResponse<NewClientResponse>,
     ) -> Result<()> {
-        response.value.set_client_id(self.new_client().await?);
+        response.value.set_client_id(self.new_unique_id().await?);
         Ok(())
     }
 }
 
 #[async_trait]
 impl KeyValueStoreService for Metastore {
-    async fn Get(
+    async fn Snapshot(
         &self,
-        request: rpc::ServerRequest<Key>,
-        response: &mut rpc::ServerResponse<KeyValue>,
+        request: rpc::ServerRequest<SnapshotRequest>,
+        response: &mut rpc::ServerResponse<SnapshotResponse>,
     ) -> Result<()> {
-        self.get(request, &mut response.value).await
+        self.snapshot_impl(request, response).await
     }
 
-    async fn GetRange(
+    async fn Read(
         &self,
-        request: rpc::ServerRequest<KeyRange>,
-        response: &mut rpc::ServerStreamResponse<KeyValue>,
+        request: rpc::ServerRequest<ReadRequest>,
+        response: &mut rpc::ServerStreamResponse<ReadResponse>,
     ) -> Result<()> {
-        self.get_range(request, response).await
+        self.read_impl(request, response).await
     }
 
-    async fn Put(
+    async fn Execute(
         &self,
-        request: rpc::ServerRequest<KeyValue>,
-        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
+        request: rpc::ServerRequest<ExecuteRequest>,
+        response: &mut rpc::ServerResponse<ExecuteResponse>,
     ) -> Result<()> {
-        self.put(request).await
-    }
-
-    async fn Delete(
-        &self,
-        request: rpc::ServerRequest<Key>,
-        response: &mut rpc::ServerResponse<google::proto::empty::Empty>,
-    ) -> Result<()> {
-        Err(err_msg("Not implemented"))
+        self.execute_impl(request, response).await
     }
 
     async fn Watch(
         &self,
         request: rpc::ServerRequest<WatchRequest>,
-        response: &mut rpc::ServerStreamResponse<KeyValue>,
+        response: &mut rpc::ServerStreamResponse<KeyValueEntry>,
     ) -> Result<()> {
-        self.watch(request, response).await
+        self.watch_impl(request, response).await
     }
 }
 
@@ -396,14 +376,8 @@ pub async fn run(config: &MetastoreConfig) -> Result<()> {
         shared: Arc::new(Shared {
             node: node.clone(),
             state_machine,
-            watchers: Arc::new(Mutex::new(WatchersState {
-                prefix_watchers: vec![],
-                last_id: 0,
-            })),
-            state: Mutex::new(MetastoreState {
-                key_locks: HashSet::new(),
-            }),
-            next_client_index: AtomicUsize::new(1),
+            transaction_manager: TransactionManager::new(),
+            next_local_id: AtomicUsize::new(1),
         }),
     };
 

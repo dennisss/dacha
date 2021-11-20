@@ -10,7 +10,7 @@ use crate::proto::consensus::NotLeaderErrorProto;
 use crate::proto::consensus::Term;
 use crate::server::channel_factory::ChannelFactory;
 
-const META_PROXY_KEY: &'static str = "meta-proxy";
+const PROXY_KEY: &'static str = "raft-proxy";
 
 /// Wrapper around an RPC service which ensures that the given RPC service is
 /// only called on the leader of the raft group.
@@ -24,8 +24,8 @@ const META_PROXY_KEY: &'static str = "meta-proxy";
 ///
 /// NOTE: This assumes that the service is available on the same RPC server as
 /// the replication server used for raft.
-pub struct LeaderServiceWrapper {
-    node: Arc<Node<()>>,
+pub struct LeaderServiceWrapper<R> {
+    node: Arc<Node<R>>,
 
     local_service: Arc<dyn rpc::Service>,
 
@@ -41,8 +41,8 @@ struct State {
     leader_client: Option<Arc<dyn rpc::Channel>>,
 }
 
-impl LeaderServiceWrapper {
-    pub fn new(node: Arc<Node<()>>, local_service: Arc<dyn rpc::Service>) -> Self {
+impl<R: 'static + Send> LeaderServiceWrapper<R> {
+    pub fn new(node: Arc<Node<R>>, local_service: Arc<dyn rpc::Service>) -> Self {
         Self {
             node,
             local_service,
@@ -62,7 +62,7 @@ impl LeaderServiceWrapper {
         let is_proxied_request = server_request
             .context()
             .metadata
-            .get_text(META_PROXY_KEY)?
+            .get_text(PROXY_KEY)?
             .is_some();
 
         let leader_client = {
@@ -82,9 +82,7 @@ impl LeaderServiceWrapper {
         if let Some(leader_client) = leader_client {
             let mut client_request_context = rpc::ClientRequestContext::default();
             client_request_context.metadata = server_request.context().metadata.clone();
-            client_request_context
-                .metadata
-                .add_text(META_PROXY_KEY, "1")?;
+            client_request_context.metadata.add_text(PROXY_KEY, "1")?;
 
             let (client_request, client_response) = leader_client
                 .call_raw(
@@ -132,16 +130,14 @@ impl LeaderServiceWrapper {
                 // TOOD: Apply the leader hint.
             }
 
-            if let Some(crate::ExecuteError::Propose(crate::ProposeError::NotLeader(e))) =
-                e.downcast_ref()
-            {
-                // TODO: Apply the leader hint.
-            }
+            // if let Some(crate::ExecuteError::Propose(crate::ProposeError::NotLeader(e)))
+            // =     e.downcast_ref()
+            // {
+            //     // TODO: Apply the leader hint.
+            // }
 
             return Err(e);
         }
-
-        return Ok(());
     }
 
     async fn apply_leader_hint(
@@ -172,7 +168,7 @@ impl LeaderServiceWrapper {
 }
 
 #[async_trait]
-impl rpc::Service for LeaderServiceWrapper {
+impl<R: 'static + Send> rpc::Service for LeaderServiceWrapper<R> {
     fn service_name(&self) -> &'static str {
         self.local_service.service_name()
     }

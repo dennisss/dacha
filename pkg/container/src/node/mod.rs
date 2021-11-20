@@ -97,7 +97,28 @@ enum TaskState {
     },
 
     /// The container has exited and there is no plan to restart it.
-    Terminal,
+    ///
+    /// TODO: How do we determine if the
+    Terminal, /*  {
+               *     state: TaskTerminalState
+               * } */
+}
+
+enum TaskTerminalState {
+    /// This was a one-off task (with restart_policy set to something other than
+    /// ALWAYS|UNKNOWN) and it completed with a successful exit code (of 0).
+    Successful,
+
+    /// This task was stopped before it completed its intended number of
+    /// attempts.
+    ///
+    /// - If a task is killed gracefully with a signal like SIGINT but exits
+    ///   with a code of 0, this is considered an Abort instead of a Success.
+    /// - If a task had to be force killed because it was not responding, it is
+    ///   considered a failure and will have a Failed terminal state.
+    Aborted,
+
+    Failed,
 }
 
 #[derive(Default)]
@@ -346,6 +367,7 @@ impl Node {
         let all_tasks = tasks_table::list_tasks(&inst.shared.db).await?;
         for task_spec in all_tasks {
             if !task_spec.persistent() {
+                // TODO: Also add non-persistent tasks in a terminal state.
                 continue;
             }
 
@@ -633,6 +655,8 @@ impl NodeInner {
             .await
         {
             // TODO: Report this back to the client.
+            // TODO: Can we differentiate between failures caused by the node and failures
+            // caused by the task's specification?
             eprintln!("Failed to start task {}", e);
             self.transition_task_to_backoff(task).await;
         }
@@ -930,7 +954,25 @@ impl NodeInner {
         }
     }
 
-    async fn transition_task_to_backoff(&self, task: &mut Task) {
+    /// Arguments:
+    /// - task:
+    /// - successful: true if the task has been run and exited with a successful
+    ///   status code.
+    async fn transition_task_to_backoff(&self, task: &mut Task /* , successful: bool */) {
+        // let should_retry = match task.spec.restart_policy() {
+        //     TaskSpec_RestartPolicy::UNKNOWN | TaskSpec_RestartPolicy::ALWAYS => true,
+        //     TaskSpec_RestartPolicy::NEVER => false,
+        //     TaskSpec_RestartPolicy::ON_FAILURE => !successful,
+        // };
+
+        // if !should_retry {
+        //     self.transition_task_to_terminal(task);
+        //     return;
+        // }
+
+        // TODO: Check the restart policy to see if we should
+
+        // NOTE: This is intentionally false and not using the 'successful' bool.
         task.start_backoff.end_attempt(false);
 
         match task.start_backoff.start_attempt() {

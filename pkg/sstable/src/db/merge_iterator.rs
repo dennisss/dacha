@@ -10,13 +10,13 @@ use crate::table::comparator::KeyComparator;
 /// Iterable wrapper around multiple Iterable objects created by iterating
 /// through them in sorted order.
 pub struct MergeIterator {
-    pending_iters: Vec<Box<dyn Iterable>>,
+    pending_iters: Vec<Box<dyn Iterable<KeyValueEntry>>>,
     next_queue: PriorityQueue<MergeIteratorEntry>,
-    exhausted_iters: Vec<Box<dyn Iterable>>,
+    exhausted_iters: Vec<Box<dyn Iterable<KeyValueEntry>>>,
 }
 
 struct MergeIteratorEntry {
-    inner: Box<dyn Iterable>,
+    inner: Box<dyn Iterable<KeyValueEntry>>,
     next_entry: KeyValueEntry,
 }
 
@@ -33,7 +33,10 @@ impl Comparator<MergeIteratorEntry> for MergeKeysComparator {
 }
 
 impl MergeIterator {
-    pub fn new(key_comparator: Arc<dyn KeyComparator>, iterators: Vec<Box<dyn Iterable>>) -> Self {
+    pub fn new(
+        key_comparator: Arc<dyn KeyComparator>,
+        iterators: Vec<Box<dyn Iterable<KeyValueEntry>>>,
+    ) -> Self {
         let next_queue = PriorityQueue::new(Box::new(MergeKeysComparator { key_comparator }));
         let exhausted_iters = vec![];
 
@@ -48,7 +51,7 @@ impl MergeIterator {
 }
 
 #[async_trait]
-impl Iterable for MergeIterator {
+impl Iterable<KeyValueEntry> for MergeIterator {
     // TODO: When calling .next() on an inner iterator, pass it a min key hint such
     // that it stops early if we know that it doesn't have a smaller key than what
     // is in our priority queue.

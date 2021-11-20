@@ -15,4 +15,4 @@ mod write_batch;
 pub use db::EmbeddedDB;
 pub use options::EmbeddedDBOptions;
 pub use snapshot::{Snapshot, SnapshotIterator};
-pub use write_batch::WriteBatch;
+pub use write_batch::{Write, WriteBatch, WriteBatchIterator};

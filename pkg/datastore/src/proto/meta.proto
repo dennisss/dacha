@@ -3,6 +3,7 @@ syntax = "proto3";
 package db.meta;
 
 import "third_party/google/src/proto/timestamp.proto";
+import "pkg/datastore/src/proto/key_value.proto";
 
 // Value stored in the CURRENT file in the metastore's data directory. Contains information about
 // the current state of which files are in use in the data directory.
@@ -25,6 +26,7 @@ enum TableId {
     UNKNOWN = 0;
     USER_DATA = 1;
     CLIENTS = 2;
+    TRANSACTION_TIME = 3;
 }
 
 enum UserDataSubKey {

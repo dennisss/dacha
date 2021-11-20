@@ -134,12 +134,17 @@ impl redis::server::Service for RaftRedisServer {
 
         let op_data = op.serialize()?;
 
-        let res = self
+        let pending_exec = self
             .node
             .server()
             .execute(op_data)
             .await
             .map_err(|e| format_err!("DEL failed with error: {:?}", e))?;
+
+        let (res, _) = pending_exec
+            .wait()
+            .await
+            .map_err(|_| format_err!("Failed to commit DEL entry"))?;
 
         Ok(RESPObject::Integer(if res.success { 1 } else { 0 }))
     }

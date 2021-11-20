@@ -99,6 +99,8 @@ pub type ProposeResult = std::result::Result<Proposal, ProposeError>;
 pub enum ProposeError {
     /// Implies that the entry can not currently be processed and should be
     /// retried once the given proposal has been resolved
+    ///
+    /// NOTE: This will only happen if a config change was proposed.
     RetryAfter(Proposal),
 
     /// The entry can't be proposed by this server because we are not the
@@ -160,6 +162,7 @@ impl<T> MustPersistMetadata<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct ReadIndex {
     /// Term in which the current server generated this read index.
     /// NOTE: This will not necessarily be the same as the term corresponding to
@@ -177,7 +180,13 @@ impl ReadIndex {
     pub fn term(&self) -> Term {
         self.term
     }
+
+    pub fn index(&self) -> LogIndex {
+        self.index
+    }
 }
+
+#[derive(Debug, Fail)]
 pub struct NotLeaderError {
     /// The latest observed term. Can be used by the recipient to ignore leader
     /// hints from past terms.
@@ -565,14 +574,14 @@ impl ConsensusModule {
         let mut e = LogEntryData::default();
         e.set_command(data);
 
-        self.propose_entry(&e, out)
+        self.propose_entry(&e, None, out)
     }
 
     pub fn propose_noop(&mut self, out: &mut Tick) -> ProposeResult {
         let mut e = LogEntryData::default();
         e.set_noop(true);
 
-        self.propose_entry(&e, out)
+        self.propose_entry(&e, None, out)
     }
 
     // How this will work, in general, wait for an AddServer RPC,
@@ -645,17 +654,33 @@ impl ConsensusModule {
     /// TODO: Support providing a ReadIndex. If provided, we should be able to
     /// gurantee that the new entry is comitted in the same term as the read
     /// index.
+    /// ^ NOTE: We assume that the user has already resolved the read index (at
+    /// least optimistically).
     ///
     /// NOTE: This is an internal function meant to only be used in the Propose
     /// RPC call used by other Raft members internally. Prefer to use the
     /// specific forms of this function (e.g. ConsensusModule::propose_command).
-    pub fn propose_entry(&mut self, data: &LogEntryData, out: &mut Tick) -> ProposeResult {
+    pub fn propose_entry(
+        &mut self,
+        data: &LogEntryData,
+        read_index: Option<ReadIndex>,
+        out: &mut Tick,
+    ) -> ProposeResult {
         let ret = if let ConsensusState::Leader(ref mut leader_state) = self.state {
             let last_log_index = self.log_meta.last().position.index();
 
             let index = last_log_index + 1;
             let term = self.meta.current_term();
             let sequence = self.log_meta.last().sequence.next();
+
+            if let Some(read) = read_index {
+                if read.term() != term {
+                    return Err(ProposeError::NotLeader(NotLeaderError {
+                        term,
+                        leader_hint: Some(self.id()),
+                    }));
+                }
+            }
 
             // Considering we are a leader, this should always true, as we only
             // ever start elections at 1
@@ -2018,11 +2043,11 @@ impl ConsensusModule {
         Ok(FlushConstraint::new(
             make_response(
                 true,
-                if last_log_index != last_new {
+                // if last_log_index != last_new {
                     Some(last_log_index)
-                } else {
-                    None
-                },
+                // } else {
+                //     None
+                // },
             ),
             last_new_seq,
             LogPosition::new(last_new_term, last_new),

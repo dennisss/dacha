@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use common::algorithms::lower_bound_by;
@@ -139,6 +139,7 @@ struct EmbeddedDBShared {
     dir: FilePaths,
     state: RwLock<EmbeddedDBState>,
     flushed_channel: (channel::Sender<()>, channel::Receiver<()>),
+    compaction_waterline: AtomicU64,
 }
 
 struct EmbeddedDBState {
@@ -295,7 +296,7 @@ impl EmbeddedDB {
         let mutable_table = Arc::new(MemTable::new(options.table_options.comparator.clone()));
 
         let shared = Arc::new(EmbeddedDBShared {
-            options,
+            options: options.clone(),
             dir,
             flushed_channel: channel::bounded(1),
             state: RwLock::new(EmbeddedDBState {
@@ -307,6 +308,7 @@ impl EmbeddedDB {
                 version_set,
                 compaction_callbacks: vec![],
             }),
+            compaction_waterline: AtomicU64::new(options.initial_compaction_waterline),
         });
 
         let compaction_thread = ChildTask::spawn(Self::compaction_thread(
@@ -417,7 +419,7 @@ impl EmbeddedDB {
         let _ = compaction_notifier.try_send(());
 
         let shared = Arc::new(EmbeddedDBShared {
-            options,
+            options: options.clone(),
             dir,
             flushed_channel: channel::bounded(1),
             state: RwLock::new(EmbeddedDBState {
@@ -429,6 +431,7 @@ impl EmbeddedDB {
                 version_set,
                 compaction_callbacks: vec![],
             }),
+            compaction_waterline: AtomicU64::new(options.initial_compaction_waterline),
         });
 
         let compaction_thread = ChildTask::spawn(Self::compaction_thread(
@@ -694,7 +697,7 @@ impl EmbeddedDB {
                 // - The file size if way smaller than the target file size of the new level and
                 //   we think that combining the files would improve
 
-                let mut iters: Vec<Box<dyn Iterable>> = vec![];
+                let mut iters: Vec<Box<dyn Iterable<KeyValueEntry>>> = vec![];
 
                 let mut version_edit = VersionEdit::default();
                 // Store the next file number (will be used to allocate file numbers later);
@@ -828,7 +831,7 @@ impl EmbeddedDB {
     ///   the resulting table.
     async fn build_tables_from_iterator(
         shared: &EmbeddedDBShared,
-        mut iterator: Box<dyn Iterable>,
+        mut iterator: Box<dyn Iterable<KeyValueEntry>>,
         remove_deleted: bool,
         version_edit: &mut VersionEdit,
         target_file_size: u64,
@@ -841,6 +844,8 @@ impl EmbeddedDB {
             number: u64,
         }
 
+        let compaction_waterline = shared.compaction_waterline.load(Ordering::SeqCst);
+
         let mut current_table = None;
 
         let mut last_user_key = None;
@@ -850,13 +855,16 @@ impl EmbeddedDB {
             // TODO: Re-use the entry.user_key reference.
             let user_key = entry.key.slice(0..ikey.user_key.len());
 
+            let compaction_guard =
+                compaction_waterline > 0 && ikey.sequence >= compaction_waterline;
+
             // We will only store the value with the highest sequence per unique user key.
-            if Some(&user_key) == last_user_key.as_ref() {
+            if Some(&user_key) == last_user_key.as_ref() && !compaction_guard {
                 continue;
             }
 
             last_user_key = Some(user_key.clone());
-            if remove_deleted && ikey.typ == ValueType::Deletion {
+            if remove_deleted && ikey.typ == ValueType::Deletion && !compaction_guard {
                 continue;
             }
 

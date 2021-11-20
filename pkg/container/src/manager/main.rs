@@ -9,6 +9,8 @@ When a manager test starts up, it will
 - Finally, loop through each Node and ensure that it has all required nodes.
   ^ After the initial
 
+- Want to have an active connection to each node to receive change updates.
+
 
 Manager Role:
 - Keep the metadata store alive
@@ -76,6 +78,11 @@ pub async fn run() -> Result<()> {
         - Listened to events:
             - NewJob
             - NewBlob
+    - Node poller
+        - Tries to contact all nodes in the cluster.
+        - Verifies they are running the right tasks.
+        - When tasks become ready, the manager will mark them as ready/not-ready in the metadata store.
+            -> Issue is that this is fragile?
 
     The blob protocol:
     - When a user wants to

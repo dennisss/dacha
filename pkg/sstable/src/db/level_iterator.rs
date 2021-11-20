@@ -32,7 +32,7 @@ impl LevelIterator {
 }
 
 #[async_trait]
-impl Iterable for LevelIterator {
+impl Iterable<KeyValueEntry> for LevelIterator {
     async fn next(&mut self) -> Result<Option<KeyValueEntry>> {
         let tables = &self.version.levels[self.level_index].tables;
 

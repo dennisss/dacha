@@ -384,15 +384,15 @@ Within a cluster, we will maintain a virtual name server that enables discovery 
 
 All names in the cluster have the format:
 
-- `[task_index].[job_name].[user_name].[cluster_name].cluster.local.`
+- `[task_index].[job_name].[user_name].[cluster_name].cluster.internal.`
 
 All dot-separated components in the above name format must match the regexp `[a-z0-9_-]{1,63}`. The main exception is the `job_name` which may also contain a `.` character. All components are case-insensitive and their canonical form is lower case.
 
 There will some special system jobs which always exist and have names of the following format:
 
-- `[task_index].metadata.system.[cluster_name].cluster.local.`
+- `[task_index].metadata.system.[cluster_name].cluster.internal.`
   - Refers to the Metadata Store job for this cluster
-- `[node_id].node.system.[cluster_name].cluster.local.`
+- `[node_id].node.system.[cluster_name].cluster.internal.`
   - Special job which corresponds to every node machine in the cluster.
 
 A full host name pointing to an individual task will have the following DNS records:
@@ -402,7 +402,7 @@ A full host name pointing to an individual task will have the following DNS reco
 
 Additionally, a user may query an entire job using an entity name of the form:
 
-- `[job_name].[user_name].[cluster_name].cluster.local.`
+- `[job_name].[user_name].[cluster_name].cluster.internal.`
 
 Querying all DNS records for the above entity will result in receiving records for all tasks in that job.
 

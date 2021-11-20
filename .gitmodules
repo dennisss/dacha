@@ -7,3 +7,6 @@
 [submodule "third_party/pi-gen"]
 	path = third_party/pi-gen
 	url = git@github.com:dennisss/pi-gen.git
+[submodule "third_party/libcamera"]
+	path = third_party/libcamera
+	url = https://git.libcamera.org/libcamera/libcamera.git

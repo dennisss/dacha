@@ -35,14 +35,6 @@ enum TaskStateProto {
     TERMINAL = 6;
 }
 
-// message StartRequest {
-//     ContainerConfig config = 1;
-// }
-
-// message StartResponse {
-//     string container_id = 1;
-// }
-
 message StartTaskRequest {
     TaskSpec task_spec = 1;
 }
@@ -50,6 +42,15 @@ message StartTaskRequest {
 message StartTaskResponse {
 
 }
+
+message RestartTaskRequest {
+
+}
+
+message RestartTaskResponse {
+
+}
+
 
 message LogRequest {
     string task_name = 1;
@@ -78,10 +79,42 @@ service ContainerNode {
     // Enumerates all tasks present on this node.
     rpc ListTasks (ListTasksRequest) returns (ListTasksResponse);
 
-    // rpc Start (StartRequest) returns (StartResponse);
-
-    // TODO: Eventually also need an API to delete a task and know for sure this node will no longer try to start it.
+    /// Starts running a task on this node using the given spec.
+    ///
+    /// - If a task with the same name already exists on this node, it will stopped and replaced
+    ///   with one using the new spec.
+    /// - This will return as soon as the node has durably ingested the request. The actual
+    ///   starting/stopping of the task will occur asynchronously.
+    ///
+    /// TODO: Eventually also need an API to delete a task and know for sure this node will no longer try to start it.
     rpc StartTask (StartTaskRequest) returns (StartTaskResponse);
+
+    // // Triggers the stopping of a task.
+    // //
+    // // This executes asynchronously.
+    // // - If the task is running, we will try to gracefully stop it
+    // // - If the task is not running, we will stop trying to backoff, etc. and enter a Terminal state.
+    // // - If 
+    // //
+    // rpc StopTask (StopTaskRequest) returns (StopTaskResponse);
+
+    // /// Triggers the stopping of an existing task followed by immediately starting it again.
+    // ///
+    // /// If the task is currently in backoff, the backoff will be reset.  
+    // rpc RestartTask (RestartTaskRequest) returns (RestartTaskResponse);
+
+    // // Removes all data associated with a given task from this node.
+    // //
+    // // This includes:
+    // // - task spec
+    // // - stdout/stderr logs.
+    // // - information on past attempts
+    // //
+    // // By default all the above data is retained even after a task is stopped to allow it to be
+    // // backed up to a remote logging service before being deleted.
+    // //
+    // // NOTE: The task must first be in a Terminal state before it can be deleted.
+    // rpc DeleteTask (DeleteTaskRequest) returns (DeleteTaskResponse); 
 
     rpc WriteInput (stream WriteInputRequest) returns (google.protobuf.Empty);
 

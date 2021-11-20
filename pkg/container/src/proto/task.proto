@@ -34,7 +34,10 @@ message TaskSpec {
     repeated Volume volumes = 2;
 
     enum RestartPolicy {
+        // Equivalent to ALWAYS.
         UNKNOWN = 0;
+
+        // When we 
         NEVER = 1;
         ON_FAILURE = 2;
         ALWAYS = 3;
@@ -47,14 +50,22 @@ message TaskSpec {
     message Port {
         string name = 1;
 
-        // Set by the container manager.
+        // INTERNAL ONLY
+        // The port number on the node to use. Set by the Cluster Manager when assigning the task
+        // to a node.
+        //
         // TODO: Verify that this is not set by the user.
         int32 number = 2;
     }
     repeated Port ports = 6;
 
+    // INTERNAL ONLY
     // If true, then this task will restart when the node is restarted without the need for
     // external intervention. By default, this is false, so tasks disappear when a node restarts.
+    //
+    // This is set by the Cluster Manager for system tasks that must survive a cluster cold-start
+    // and any tasks which can't be moved to another node (e.g. due to resources local to only one
+    // node). If set by a user, then the task will be rejected.
     bool persistent = 7;
 
     // List of devices to mount into the container.

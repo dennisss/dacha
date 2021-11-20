@@ -6,36 +6,44 @@ import "third_party/google/src/proto/empty.proto";
 
 // TODO: Need client affinity to ensure that one client is always talking to the same server.
 
+// TODO: Add an option in the HTTP client library to support request affinity with a single server
+
 service KeyValueStore {
-    // Look up a single key-value pair from the data store.
-    // Returns a NOT_FOUND RPC status if the key doesn't exist. 
-    rpc Get (Key) returns (KeyValue);
+    // Retrieves a reference to a consistent point in time snapshot of the whole store.
+    rpc Snapshot (SnapshotRequest) returns (SnapshotResponse);
 
-    // Looks up a set of contiguous keys and enumerates all of the keys and values.
+    // Reads one or more key-value entries from storage.
+    rpc Read (ReadRequest) returns (stream ReadResponse);
+
+    // Executes one or more write operations (setting or deleting key-value pairs).
+    rpc Execute (ExecuteRequest) returns (ExecuteResponse);
+
+    // Monitors a key prefix for changes returning all changes that occured since the server
+    // received this request. 
     //
-    // TODO: Add a request option to support key-only responses.
-    rpc GetRange (KeyRange) returns (stream KeyValue);
-
-    // Assigns a new value to a key. If the key doesn't exist yet, it will be created.
-    rpc Put (KeyValue) returns (google.protobuf.Empty);
-
-    // Deletes any value associated with the given key. If the key is not present, this will
-    // silently do nothing.
-    rpc Delete (Key) returns (google.protobuf.Empty);
-
-    rpc Watch (WatchRequest) returns (stream KeyValue);
-
-    /*
-    rpc BeginTransaction (BeginTransactionRequest) returns (BeginTransactionResponse);
-
-    rpc CancelTransaction (CancelTransactionRequest) returns (google.protobuf.Empty);
-
-    rpc CommitTransaction (CommitTransactionRequest) returns (google.protobuf.Empty);
-    */
+    // Notes:
+    // - A client should wait for the initial response head metadata to be returned to ensure
+    //   that the 
+    rpc Watch (WatchRequest) returns (stream KeyValueEntry);
 }
 
-message Key {
-    bytes data = 1;
+message SnapshotRequest {
+    oneof type {
+        bool latest = 1;
+    }
+
+    bool optimistic = 2;
+}
+
+message SnapshotResponse {
+    uint64 read_index = 1;
+}
+
+message ReadRequest {
+    KeyRange keys = 1;
+
+    // If not specified, we will perform a linearizable read of the latest value.
+    uint64 read_index = 2;
 }
 
 message KeyRange {
@@ -43,7 +51,13 @@ message KeyRange {
     bytes end_key = 2;
 }
 
-message KeyValue {
+message ReadResponse {
+    // Key-value pairs retrieved by executing the query in the ReadRequest.
+    // Values that were deleted will be excluded.
+    KeyValueEntry entry = 1;
+}
+
+message KeyValueEntry {
     bytes key = 1;
 
     bytes value = 2;
@@ -54,32 +68,38 @@ message KeyValue {
     // TODO: Also include metadata about the key.
 }
 
+message ExecuteRequest {
+    Transaction transaction = 1;
+}
+
+message Transaction {
+    // TODO: Support checking the state of a lock lease in a transaction.
+
+    // Index at which reads from this transaction where performed.
+    uint64 read_index = 1;
+
+    // Set of key ranges which must have not changed since read_index for this transaction to be
+    // executed.
+    repeated KeyRange reads = 2;
+
+    // New mutations to perform on the databse.
+    repeated Operation writes = 3;
+}
+
+message Operation {
+    bytes key = 1;
+ 
+    oneof type {
+        bytes put = 2;
+        bool delete = 3;
+    }
+}
+
+message ExecuteResponse {
+    // Minimum database log index at which the effects of this write operation are visible. 
+    uint64 read_index = 1;
+}
+
 message WatchRequest {
     bytes key_prefix = 1;
-}
-
-message BeginTransactionRequest {
-    // If true, then this transaction will only be used for reading from the database.
-    // This is more efficient as less  
-    bool read_only = 1;
-
-    // bool eventually_consistent = 2;
-}
-
-message BeginTransactionResponse {
-    // Identifier for a new transaction. This transaction id can be used on any request in the same
-    // client connection.
-    string transaction_id = 1;
-}
-
-message CommitTransactionRequest {
-    
-}
-
-message CommitTransactionResponse {
-    bool success = 1;
-}
-
-message CancelTransactionRequest {
-
 }

@@ -98,7 +98,7 @@ pub struct VecMemTableIterator {
 }
 
 #[async_trait]
-impl Iterable for VecMemTableIterator {
+impl Iterable<KeyValueEntry> for VecMemTableIterator {
     async fn next(&mut self) -> Result<Option<KeyValueEntry>> {
         let data = self.table_state.data.read().await;
         if data.is_empty() {

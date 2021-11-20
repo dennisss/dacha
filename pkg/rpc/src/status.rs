@@ -38,6 +38,7 @@ macro_rules! status_ctor {
 }
 
 impl Status {
+    status_ctor!(aborted, Aborted);
     status_ctor!(cancelled, Cancelled);
     status_ctor!(not_found, NotFound);
     status_ctor!(invalid_argument, InvalidArgument);

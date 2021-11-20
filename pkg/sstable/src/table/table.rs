@@ -529,7 +529,7 @@ pub struct SSTableIterator {
 // Simpler strategy is to copy it, but I'd like to avoid copying potentially
 
 #[async_trait]
-impl Iterable for SSTableIterator {
+impl Iterable<KeyValueEntry> for SSTableIterator {
     /// TODO: Try to avoid copying.
     async fn next(&mut self) -> Result<Option<KeyValueEntry>> {
         loop {

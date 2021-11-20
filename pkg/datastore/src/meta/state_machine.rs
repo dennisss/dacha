@@ -5,9 +5,25 @@ use common::async_std::sync::Mutex;
 use common::errors::*;
 use protobuf::Message;
 use raft::atomic::BlobFile;
+use sstable::db::{Snapshot, Write, WriteBatch};
+use sstable::iterable::Iterable;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
+use crate::meta::watchers::*;
 use crate::proto::meta::*;
+
+/*
+Compaction strategy:
+- There will be a special metastore key which contains the waterline value
+    => It will be changed by executing a command on the state machine
+- The state machine will reject any mutation whose read_index is < the waterline
+
+Every 1 hour, the metastore background thread will try to find a log index which is more than 1 hour
+
+Other complexities:
+- If a key wasn't changed for a while, it may
+
+*/
 
 /// Key-value state machine based on the EmbeddedDB implementation.
 ///
@@ -36,6 +52,8 @@ pub struct EmbeddedDBStateMachine {
     /// Root data directory containing the individual snapshot sub-folders.
     dir: PathBuf,
     current: Mutex<(Current, BlobFile)>,
+
+    watchers: Watchers,
 }
 
 impl EmbeddedDBStateMachine {
@@ -61,6 +79,7 @@ impl EmbeddedDBStateMachine {
         db_options.create_if_missing = true;
         db_options.error_if_exists = false;
         db_options.disable_wal = true;
+        db_options.initial_compaction_waterline = 1;
 
         let db = EmbeddedDB::open(db_path, db_options).await?;
 
@@ -68,13 +87,16 @@ impl EmbeddedDBStateMachine {
             db,
             dir: dir.to_owned(),
             current: Mutex::new((current, current_file)),
+            watchers: Watchers::new(),
         })
     }
 
-    /// TODO: Don't expose this.
-    /// Instead just expose creating snapshots.
-    pub fn db(&self) -> &EmbeddedDB {
-        &self.db
+    pub async fn snapshot(&self) -> Snapshot {
+        self.db.snapshot().await
+    }
+
+    pub fn watchers(&self) -> &Watchers {
+        &self.watchers
     }
 }
 
@@ -84,9 +106,22 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         // The operation should be a serialized WriteBatch
         // We just need to add the sequence to it and then apply it.
 
-        let mut write = sstable::db::WriteBatch::from_bytes(op)?;
+        let mut write = WriteBatch::from_bytes(op)?;
         write.set_sequence(index.value());
         self.db.write(&mut write).await?;
+
+        // TODO: Emit the entire transaction to the watcher at once.
+        // This would help with maintaining consistencyon the reader side.
+        for res in write.iter()? {
+            let write = res?;
+            match write {
+                Write::Deletion { key } => {}
+                Write::Value { key, value } => {}
+            }
+        }
+
+        // TODO:
+
         Ok(())
     }
 

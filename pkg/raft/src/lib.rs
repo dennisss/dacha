@@ -1,10 +1,4 @@
-#![feature(
-    proc_macro_hygiene,
-    decl_macro,
-    type_alias_enum_variants,
-    generators,
-    async_closure
-)]
+#![feature(proc_macro_hygiene, decl_macro, generators, async_closure)]
 
 #[macro_use]
 extern crate common;
@@ -32,7 +26,7 @@ pub mod routing;
 pub mod server;
 mod sync;
 
-pub use consensus::module::{NotLeaderError, ProposeError};
+pub use consensus::module::{NotLeaderError, ReadIndex};
 pub use leader_service::LeaderServiceWrapper;
 pub use log::log::Log;
 pub use log::segmented_log::SegmentedLog;
@@ -44,5 +38,5 @@ pub use routing::discovery_server::DiscoveryServer;
 pub use routing::multicast::DiscoveryMulticast;
 pub use routing::route_channel::RouteChannelFactory;
 pub use routing::route_store::{RouteStore, RouteStoreGuard};
-pub use server::server::{ExecuteError, Server, ServerInitialState};
+pub use server::server::{PendingExecution, PendingExecutionResult, Server, ServerInitialState};
 pub use server::state_machine::{StateMachine, StateMachineSnapshot};
