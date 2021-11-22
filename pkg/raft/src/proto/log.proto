@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package raft;
+
 import "pkg/raft/src/proto/consensus.proto";
 
 // Used by the SimpleLog to implement a single file log. 

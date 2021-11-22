@@ -23,6 +23,7 @@ message TaskProto {
     TaskStateProto state = 2;
     ContainerMetadata container = 3;
     bool pending_update = 4;
+    uint64 revision = 5;
 }
 
 enum TaskStateProto {
@@ -36,7 +37,8 @@ enum TaskStateProto {
 }
 
 message StartTaskRequest {
-    TaskSpec task_spec = 1;
+    TaskSpec spec = 1;
+    uint64 revision = 2;
 }
 
 message StartTaskResponse {

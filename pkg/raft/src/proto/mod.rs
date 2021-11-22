@@ -21,12 +21,6 @@ pub mod consensus {
         }
     }
 
-    impl PartialEq for LogPosition {
-        fn eq(&self, other: &Self) -> bool {
-            self.term() == other.term() && self.index() == other.index()
-        }
-    }
-
     impl Configuration {
         pub fn apply(&mut self, change: &ConfigChange) {
             match change.type_case() {

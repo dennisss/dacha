@@ -8,6 +8,7 @@ package cluster;
 import "pkg/container/src/proto/task.proto";
 import "pkg/container/src/proto/job.proto";
 import "pkg/container/src/proto/blob.proto";
+import "pkg/container/src/proto/node.proto";
 import "third_party/google/src/proto/timestamp.proto";
 
 // Stored at a singleton at the metastore key '/cluster/zone'
@@ -15,45 +16,104 @@ message ZoneMetadata {
     string name = 1;
 }
 
+/*
+Restarting a node:
+- Mark it as draining
+- Suppose we drain a node because it is offline
+    - If we re-assign tasks to another node and the old machine comes back online, we must prevent TaskMetadata contention by having each node check the 'assigned_node' field to verify that it is actually still the owner of a task
+*/
+
+
 // Information about a node attached to the cluster.
 // Stored at the metastore key '/cluster/node/[node_id]'
 message NodeMetadata {
     uint64 id = 1;
 
+    // Address at which this node can be contacted including the port on which the control RPC
+    // server is running.
+    //
+    // e.g. "10.0.0.102:10400"
     string address = 2;
 
     enum State {
         UNKNOWN = 0;
-
-        // This node is up and accepting new tasks.
-        READY = 1;
+        
+        // This is a brand new node this has just joined the cluster.
+        // This node won't be used for anything until it's state is transitioned externally to active.
+        NEW = 1;
+        
+        ACTIVE = 2;
+        
+        DRAINING = 3;
+        
+        RESTARTING = 4;
     }
     State state = 3;
+
+    // Last time this node started its runtime (e.g. after the last reboot).
+    google.protobuf.Timestamp start_time = 4;
+
+    //
+    google.protobuf.Timestamp last_seen = 5;
+
+    PortRange allocatable_port_range = 6;
+
+    repeated uint32 allocated_ports = 7 [unordered_set = true];
 
     // TODO: Enumerate capabilities, platform, etc.
 
     // TODO: When was the node added
-
-    // TODO: When was the node last seen.
 
     // TODO: Build time of the runtime
 }
 
 message JobMetadata {
     JobSpec spec = 1;
+
+    // Monotonic counter which is increased each time the TaskSpec is changed.
+    uint64 task_revision = 2;
 }
 
 // 
 message TaskMetadata {
-    // TODO: Should we give each generation of a task a unique name so that we can reliably move tasks to different machines while distinguishing by 
-
     // Spec used to run this task.
     // This should be mostly the same as the spec in the JobSpec but also includes a resolved
     // 'name', port numbers, etc.
+    //
+    // REQUIRED
     TaskSpec spec = 1;
 
     // Id of the node which this task is running on.
+    //
+    // REQUIRED
     uint64 assigned_node = 2;
+
+    // Current intended state of the task.
+    //
+    // REQUIRED
+    enum State {
+        UNKNOWN = 0;
+
+        // This task is actively being started on the assigned node.
+        STARTING = 1;
+        
+        // This task is running on the assigned node and has passed readiness checks.
+        // This is the only state in which it is ok for users to send traffic to this task.
+        READY = 2;
+        
+        // This task may still be running but should be stopped soon by by node.
+        STOPPING = 3;
+
+        // 
+        STOPPED = 4;
+    }
+    State state = 3;
+
+    // Revision of this task.
+    // When this is equal to the corresponding JobMetadata::task_revision, this task doesn't need
+    // to be updated.
+    uint64 revision = 4;
+
 
     // If true, this task has been observed to be fully started up and ready to serve client
     // requests.
@@ -69,17 +129,22 @@ message TaskMetadata {
     // Usage:
     // - A client may use this establish a load balanced connection to any job.
     // - Basically, watch for task updates
-    bool ready = 3;
+    // bool ready = 3;
 }
 
 message BlobMetadata {
     BlobSpec spec = 1;
 
     // List of the ids of all nodes which are known to have this blob.
-    repeated uint64 replica_nodes = 2;
+    repeated BlobReplica replicas = 2;
 
     // Last time this blob was referenced in some registered job.
     // If this is empty, then it is actively in use.
     google.protobuf.Timestamp last_used = 3;
+}
+
+message BlobReplica {
+    uint64 node_id = 1;
+    bool uploaded = 2;
 }
 

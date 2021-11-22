@@ -1,5 +1,5 @@
 data_dir: "/opt/dacha/data"
-service_port: 10250
+service_port: 10400
 graceful_shutdown_timeout_secs: 10
 bootstrap_id_from_machine_id: true
 allocatable_port_range {

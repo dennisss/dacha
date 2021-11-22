@@ -1,1 +1,2 @@
-mod main;
+pub mod main;
+mod manager;

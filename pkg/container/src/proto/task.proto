@@ -3,7 +3,8 @@ syntax = "proto3";
 package cluster;
 
 message TaskSpec {
-    string name = 1;
+    // Name of the task. This is assigned by the manager job.
+    string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
     string cwd = 10;
 
@@ -20,13 +21,19 @@ message TaskSpec {
             string blob_id = 2;
             
             // The volume will be initialized by creating a new read-writeable directory on the host.
-            // Whenever a task is started on the same node with the same persistent_name, it will
-            // see the previously initialized directory and will also have read-write access to it. 
+            // - Whenever a task is started on the same node with the same persistent_name, it will
+            //   see the previously initialized directory and will also have read-write access to it. 
+            // - Each persistent directory is exclusive to the current task and not shareable across
+            //   multiple tasks.
+            // - Having a persistnet directory will prevent this task from being moved to another
+            //   machine in the future.
             string persistent_name = 3;
 
             // Path to the build target for a bundle which should be built to derive the source for this volume.
             // NOTE: This will only be present locally.
             string build_target = 4;
+
+            // TODO: Support temp dir
         }
         
         // TODO: Should support exclusive/reader/reader-writer locks to persistent volumes.
@@ -53,9 +60,7 @@ message TaskSpec {
         // INTERNAL ONLY
         // The port number on the node to use. Set by the Cluster Manager when assigning the task
         // to a node.
-        //
-        // TODO: Verify that this is not set by the user.
-        int32 number = 2;
+        uint32 number = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
     }
     repeated Port ports = 6;
 
@@ -66,15 +71,33 @@ message TaskSpec {
     // This is set by the Cluster Manager for system tasks that must survive a cluster cold-start
     // and any tasks which can't be moved to another node (e.g. due to resources local to only one
     // node). If set by a user, then the task will be rejected.
-    bool persistent = 7;
+    bool persistent = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
 
     // List of devices to mount into the container.
     repeated Device devices = 9;
 
     repeated string additional_groups = 8;
 
+    Probe readiness_probe = 11;
+
     // TODO: Add labels?
 }
+
+message Probe {
+    // Time in-between attempts to probe the task.
+    uint32 interval_secs = 1;
+
+
+
+    // Number of seconds 
+    // uint32 initial_delay_secs = 1;
+}
+
+message HttpProbe {
+    string port_name = 1;
+    string path = 2;
+}
+
 
 message USBSelector {
     uint32 vendor = 1;

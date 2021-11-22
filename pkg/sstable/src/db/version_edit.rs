@@ -277,3 +277,14 @@ impl VersionEdit {
         Ok(())
     }
 }
+
+/*
+
+Write Lock VersionEdit { comparator: None, log_number: Some(4), prev_log_number: Some(3), last_sequence: None, new_files: [], deleted_files: [], next_file_number: Some(5) }
+
+Write Flush VersionEdit { comparator: None, log_number: None, prev_log_number: Some(0), last_sequence: Some(9000), new_files: [NewFileEntry { level: 2, number: 5, file_size: 24063, smallest_key: [49, 48, 48, 48, 1, 1, 0, 0, 0, 0, 0, 0], largest_key: [52, 51, 48, 53, 1, 234, 12, 0, 0, 0, 0, 0], sequence_range: None }], deleted_files: [], next_file_number: Some(6) }
+
+Write Lock VersionEdit { comparator: None, log_number: Some(6), prev_log_number: Some(4), last_sequence: None, new_files: [], deleted_files: [], next_file_number: Some(7) }
+
+Write Flush VersionEdit { comparator: None, log_number: None, prev_log_number: Some(0), last_sequence: Some(9000), new_files: [NewFileEntry { level: 2, number: 7, file_size: 40700, smallest_key: [52, 51, 48, 54, 1, 235, 12, 0, 0, 0, 0, 0], largest_key: [57, 57, 57, 57, 1, 40, 35, 0, 0, 0, 0, 0], sequence_range: None }], deleted_files: [], next_file_number: Some(8) }
+*/

@@ -1,5 +1,4 @@
-The Log
-=======
+# The Log
 
 The log is responsible for storing all commands being executed.
 
@@ -55,6 +54,9 @@ Instead, every entry in memory will have a monotonic sequence number associated 
 	- Truncations will cause more to be added
 
 NOTE: The sequences need not include every integer as long as they are monotonic. This can be useful for implementing a multiplexec log store which multiple raft groups sharing a single striped sequence space
+
+^ The main complexity with implementing that is how to support dishing out new sequence numbers sequentially.
+- Also if multiple concensus module s are running at the same time, I would need to 
 
 
 Flusher Implementation

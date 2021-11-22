@@ -38,7 +38,7 @@ async fn run() -> Result<()> {
         txn1.commit().await?;
 
         println!("COMMIT TXN 2");
-        txn2.commit().await?;
+        txn2.commit().await?; // < This must fail
     }
 
     let txn = client.new_transaction().await?;

@@ -102,7 +102,7 @@ impl TestDB {
 
     async fn verify_with_scan(&self) -> Result<()> {
         let snapshot = self.db.snapshot().await;
-        let mut iter = snapshot.iter().await;
+        let mut iter = snapshot.iter().await?;
 
         let mut num_entries = 0;
         let mut seek_keys = HashSet::new();
@@ -357,7 +357,7 @@ async fn embedded_db_large_range_test() -> Result<()> {
         for i in 1000..10000 {
             let key = i.to_string();
 
-            let mut iter = snapshot.iter().await;
+            let mut iter = snapshot.iter().await?;
             iter.seek(key.as_bytes()).await?;
 
             let entry = iter.next().await?.unwrap();
@@ -380,7 +380,7 @@ async fn embedded_db_large_range_test() -> Result<()> {
         }
 
         {
-            let mut after_iter = snapshot.iter().await;
+            let mut after_iter = snapshot.iter().await?;
             after_iter.seek(b"A").await?; // 'A' > '9'
             let entry = after_iter.next().await?;
             assert!(entry.is_none());
@@ -388,7 +388,7 @@ async fn embedded_db_large_range_test() -> Result<()> {
 
         // Testing a full scan
         {
-            let mut iter = db.snapshot().await.iter().await;
+            let mut iter = db.snapshot().await.iter().await?;
 
             let mut i = 1000;
             while let Some(entry) = iter.next().await? {
@@ -424,7 +424,7 @@ async fn read_to_vec(path: &str) -> Result<Vec<Bytes>> {
 
     let db = EmbeddedDB::open(&project_path!(path), options).await?;
     let snapshot = db.snapshot().await;
-    let mut iter = snapshot.iter().await;
+    let mut iter = snapshot.iter().await?;
 
     while let Some(entry) = iter.next().await? {
         out.push(entry.key);

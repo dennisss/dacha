@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package raft;
+
 import "pkg/raft/src/proto/consensus.proto";
 
 // Persistent information describing the state of the current server

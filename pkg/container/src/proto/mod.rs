@@ -29,3 +29,7 @@ pub mod meta {
 pub mod blob {
     include!(concat!(env!("OUT_DIR"), "/src/proto/blob.rs"));
 }
+
+pub mod manager {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/manager.rs"));
+}

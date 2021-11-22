@@ -1,0 +1,21 @@
+name: "system.manager"
+replicas: 1
+task {
+    persistent: true
+
+    args: [
+        "/volumes/bundle/built/pkg/container/cluster_manager",
+        "--port=rpc"
+    ]
+
+    ports {
+        name: "rpc"
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/container:cluster_manager_bundle"
+        }
+    ]
+}

@@ -14,14 +14,39 @@ use super::merge_iterator::MergeIterator;
 
 pub struct Snapshot {
     pub(crate) options: Arc<EmbeddedDBOptions>,
+
+    /// Highest sequence number present in the current snapshot. We won't return
+    /// any values with a higher sequence than this.
     pub(crate) last_sequence: u64,
+
     pub(crate) memtables: Vec<Arc<MemTable>>,
+
     pub(crate) version: Arc<Version>,
 }
 
 impl Snapshot {
-    pub async fn iter(&self) -> SnapshotIterator {
-        let mut iters: Vec<Box<dyn Iterable>> = vec![];
+    pub async fn iter(&self) -> Result<SnapshotIterator> {
+        self.iter_with_options(SnapshotIteratorOptions::default())
+            .await
+    }
+
+    pub async fn iter_with_options(
+        &self,
+        mut options: SnapshotIteratorOptions,
+    ) -> Result<SnapshotIterator> {
+        if *options.last_sequence.get_or_insert(self.last_sequence) > self.last_sequence {
+            return Err(err_msg(
+                "Requested sequence is greater than the max sequence in this snapshot",
+            ));
+        }
+
+        if let Some(first_sequence) = &options.first_sequence {
+            if *first_sequence > self.last_sequence {
+                return Err(err_msg("first_sequence > last_sequence"));
+            }
+        }
+
+        let mut iters: Vec<Box<dyn Iterable<KeyValueEntry>>> = vec![];
         for table in &self.memtables {
             // println!("SNAPSHOT MEMTABLE");
             iters.push(Box::new(table.iter()));
@@ -39,6 +64,7 @@ impl Snapshot {
             }
         }
 
+        // TODO: Skip tables which don't include the sequence range desired.
         for level_index in 1..self.version.levels.len() {
             // for entry in &self.version.levels[level_index].tables {
             //     println!("SNAPSHOT LEVEL {} : {}", level_index, entry.entry.number);
@@ -51,14 +77,32 @@ impl Snapshot {
             )));
         }
 
-        SnapshotIterator {
-            snapshot_last_sequence: self.last_sequence,
+        Ok(SnapshotIterator {
+            options,
             inner: MergeIterator::new(self.options.table_options.comparator.clone(), iters),
             last_user_key: None,
-        }
+        })
+    }
+
+    pub fn last_sequence(&self) -> u64 {
+        self.last_sequence
     }
 
     pub async fn get(&self, user_key: &[u8]) -> Result<Option<Bytes>> {
+        if let Some(entry) = self.entry(user_key).await? {
+            Ok(entry.value)
+        } else {
+            Ok(None)
+        }
+    }
+
+    // So when can we remove a tombstone:
+    // - When we know that
+
+    // I can't rely on any DB internals to determine if a transaction can finish as
+    // that would require all clocks to be in sync.
+
+    pub async fn entry(&self, user_key: &[u8]) -> Result<Option<SnapshotKeyValueEntry>> {
         /*
         TODO: If any bloom/hash filters available.
 
@@ -68,16 +112,14 @@ impl Snapshot {
         - If we seek beyond the user's key, stop early (we don't care what the next entry is then.)
         */
 
-        let mut iter = self.iter().await;
+        let mut iter = self.iter().await?;
         iter.seek(user_key).await?;
-
-        // TODO: Must ignore any values > the sequence of the snapshot.
 
         if let Some(entry) = iter.next().await? {
             // TODO: Use the user_key comparator (although I guess exact equality should
             // lalways have the same definition)?
             if entry.key == user_key {
-                return Ok(Some(entry.value));
+                return Ok(Some(entry));
             }
         }
 
@@ -85,10 +127,31 @@ impl Snapshot {
     }
 }
 
+#[derive(Default, Clone)]
+pub struct SnapshotIteratorOptions {
+    /// If true, all versions of a key may are present in storage are returned.
+    /// By default, only all the latest version of each key is returned.
+    pub return_all_versions: bool,
+
+    /// Defaults to the last sequence in the database at the point at which the
+    /// snapshot was created.
+    pub last_sequence: Option<u64>,
+
+    pub first_sequence: Option<u64>,
+}
+
+#[derive(Debug)]
+pub struct SnapshotKeyValueEntry {
+    pub key: Bytes,
+
+    /// If none, then this key is deleted
+    pub value: Option<Bytes>,
+
+    pub sequence: u64,
+}
+
 pub struct SnapshotIterator {
-    /// Highest sequence number present in the current snapshot. We won't return
-    /// any values with a higher sequence than this.
-    snapshot_last_sequence: u64,
+    options: SnapshotIteratorOptions,
 
     inner: MergeIterator,
 
@@ -96,29 +159,43 @@ pub struct SnapshotIterator {
 }
 
 #[async_trait]
-impl Iterable for SnapshotIterator {
-    async fn next(&mut self) -> Result<Option<KeyValueEntry>> {
+impl Iterable<SnapshotKeyValueEntry> for SnapshotIterator {
+    async fn next(&mut self) -> Result<Option<SnapshotKeyValueEntry>> {
         while let Some(entry) = self.inner.next().await? {
             let ikey = InternalKey::parse(&entry.key)?;
             // TODO: Re-use the entry.key reference
             let user_key = entry.key.slice(0..ikey.user_key.len());
 
-            if ikey.sequence > self.snapshot_last_sequence {
-                continue;
+            if let Some(last_sequence) = &self.options.last_sequence {
+                if ikey.sequence > *last_sequence {
+                    continue;
+                }
             }
 
-            if Some(&user_key) == self.last_user_key.as_ref() {
-                continue;
+            if let Some(first_sequence) = &self.options.first_sequence {
+                if ikey.sequence < *first_sequence {
+                    continue;
+                }
             }
 
-            self.last_user_key = Some(user_key.clone());
-            if ikey.typ == crate::db::internal_key::ValueType::Deletion {
-                continue;
+            if !self.options.return_all_versions {
+                if Some(&user_key) == self.last_user_key.as_ref() {
+                    continue;
+                }
+
+                self.last_user_key = Some(user_key.clone());
             }
 
-            return Ok(Some(KeyValueEntry {
+            let value = if ikey.typ == crate::db::internal_key::ValueType::Deletion {
+                None
+            } else {
+                Some(entry.value)
+            };
+
+            return Ok(Some(SnapshotKeyValueEntry {
                 key: user_key,
-                value: entry.value,
+                value,
+                sequence: ikey.sequence,
             }));
         }
 

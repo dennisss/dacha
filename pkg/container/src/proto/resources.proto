@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package cluster;
+
+/*
+Types of resources:
+- Labels:
+    - These are simply key-value pair like values associated with a node.
+    - They can be infinitely re-used by any task on a node.
+    - e.g. the node id or node cpu architecture
+- Discrete scalars
+    - Each node has an exact number of some finite resource
+    - Each task can take zero or more of these, can all tasks in a node can't take more than the total.
+    - (aka limit == reserved)
+- Flexible scalars
+    - CPU/Memory
+- Ranges
+    - e.g. ports (don't want to re-use ports).
+
+
+Also we want to track the actual usage of each task's resources
+- e.g. CPU usage or 
+
+Attributes of resources
+- Over-provisionable
+    - Task resource 'limit's can be greater than their 'reserved' quantity
+    - Realtime usage can determine how overprovisioned we are.
+    - e.g. CPU/Memory/Network
+- Locked to one machine:
+    - 
+
+Some types of resources may be dynamically creates (e.g. a persistent volume or hot-plugged USB devices).
+    => Simple solution is two fold:
+        -> 0. When a job is created, we must define some form of unique id for resources.
+        -> 1. Have a resource controller allocate a resource on a node.
+        -> 2. 
+
+Some ResourceController hooks:
+    -> When a job is being assigned to tasks, ask the ResourceController which nodes can run a resource
+        (must ask all resource controllers )
+
+Some types of resources may be moveable to other machines (e.g. )
+
+Resource
+
+*/
+
+message ResourceSpec {
+
+}

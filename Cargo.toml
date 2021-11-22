@@ -61,6 +61,11 @@ members = [
 #opt-level = 3
 #lto = true
 
+# Crypto is expensive. Always optimize it.
+[profile.dev.package.crypto]
+opt-level = 3
+debug = false
+
 [profile.release]
 lto = true
 opt-level = 3 

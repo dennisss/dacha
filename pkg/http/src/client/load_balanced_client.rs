@@ -157,6 +157,9 @@ impl ClientInterface for LoadBalancedClient {
         let client;
         loop {
             let state = self.shared.state.lock().await;
+
+            // TODO: Distinguish between the backends list being empty and the resolver
+            // still pending an initial response or being in an error state.
             if state.backends.values().is_empty() {
                 state.wait(()).await;
                 continue;

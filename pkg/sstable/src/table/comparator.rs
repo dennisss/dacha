@@ -104,7 +104,9 @@ impl KeyComparator for BytewiseComparator {
     }
 
     fn find_short_successor(&self, mut key: Vec<u8>) -> Vec<u8> {
-        for i in 0..key.len() {
+        // NOTE: This is only valid for keys that don't match '(0xFF)*'.
+
+        for i in (0..key.len()).rev() {
             if key[i] != 0xff {
                 key[i] += 1;
                 key.truncate(i + 1);

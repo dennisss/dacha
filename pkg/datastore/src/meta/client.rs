@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
+use std::future::Future;
 use std::ops::Bound;
 use std::sync::Arc;
 
+use common::async_fn::AsyncFn1;
 use common::async_std::sync::{Mutex, MutexGuard};
 use common::bytes::Bytes;
 use common::{errors::*, task::ChildTask};
@@ -10,6 +12,8 @@ use sstable::table::KeyComparator;
 use crate::meta::key_utils::*;
 use crate::proto::client::*;
 use crate::proto::key_value::*;
+
+pub const MAX_TRANSACTION_RETRIES: usize = 5;
 
 pub struct MetastoreClient {
     client_id: String,
@@ -106,9 +110,10 @@ impl MetastoreClient {
     }
 
     /// Lists all files in a directory (along with their contents.)
-    async fn list_impl(
+    async fn get_range_impl(
         &self,
-        dir: &[u8],
+        start_key: &[u8],
+        end_key: &[u8],
         transaction_state: Option<&mut MetastoreTransactionState>,
     ) -> Result<Vec<KeyValueEntry>> {
         let stub = KeyValueStoreStub::new(self.channel.clone());
@@ -116,9 +121,8 @@ impl MetastoreClient {
 
         let mut request = ReadRequest::default();
 
-        let (start_key, end_key) = directory_key_range(dir);
-        request.keys_mut().set_start_key(start_key.as_ref());
-        request.keys_mut().set_end_key(end_key.as_ref());
+        request.keys_mut().set_start_key(start_key);
+        request.keys_mut().set_end_key(end_key);
 
         // TODO: Deduplicate this code.
         if let Some(transaction_state) = transaction_state {
@@ -214,9 +218,19 @@ pub trait MetastoreClientInterface: Send + Sync {
     /// Looks up a single value from the metastore.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
 
+    async fn get_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>>;
+
+    async fn get_prefix(&self, prefix: &[u8]) -> Result<Vec<KeyValueEntry>> {
+        let (start_key, end_key) = prefix_key_range(prefix);
+        self.get_range(&start_key, &end_key).await
+    }
+
     /// Lists all key-value pairs in a directory.
     /// ('/' is used the path segmenter)
-    async fn list(&self, dir: &[u8]) -> Result<Vec<KeyValueEntry>>;
+    async fn list(&self, dir: &[u8]) -> Result<Vec<KeyValueEntry>> {
+        let (start_key, end_key) = directory_key_range(dir);
+        self.get_range(&start_key, &end_key).await
+    }
 
     async fn put(&self, key: &[u8], value: &[u8]) -> Result<()>;
 
@@ -231,8 +245,8 @@ impl MetastoreClientInterface for MetastoreClient {
         self.get_impl(key, None).await
     }
 
-    async fn list(&self, prefix: &[u8]) -> Result<Vec<KeyValueEntry>> {
-        self.list_impl(prefix, None).await
+    async fn get_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>> {
+        self.get_range_impl(start_key, end_key, None).await
     }
 
     async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
@@ -278,8 +292,8 @@ impl<'a> MetastoreClientInterface for MetastoreTransaction<'a> {
         self.get_impl(key).await
     }
 
-    async fn list(&self, dir: &[u8]) -> Result<Vec<KeyValueEntry>> {
-        self.list_impl(dir).await
+    async fn get_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>> {
+        self.get_range_impl(start_key, end_key).await
     }
 
     async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
@@ -296,6 +310,11 @@ impl<'a> MetastoreClientInterface for MetastoreTransaction<'a> {
 }
 
 impl<'a> MetastoreTransaction<'a> {
+    pub async fn read_index(&self) -> u64 {
+        let (_, state) = self.get_top_level().await;
+        state.read_index
+    }
+
     async fn get_top_level<'b>(
         &'b self,
     ) -> (
@@ -326,16 +345,14 @@ impl<'a> MetastoreTransaction<'a> {
         client.get_impl(key, Some(&mut state)).await
     }
 
-    async fn list_impl(&self, dir: &[u8]) -> Result<Vec<KeyValueEntry>> {
+    async fn get_range_impl(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>> {
         let (client, mut state) = self.get_top_level().await;
 
         let written_values = {
-            let (start_key, end_key) = directory_key_range(dir);
-
             let mut out = vec![];
             for (_, op) in state
                 .writes
-                .range((Bound::Included(start_key), Bound::Excluded(end_key)))
+                .range::<[u8], _>((Bound::Included(start_key), Bound::Excluded(end_key)))
             {
                 let mut entry = KeyValueEntry::default();
                 entry.set_key(op.key());
@@ -357,7 +374,9 @@ impl<'a> MetastoreTransaction<'a> {
 
         // NOTE: These will always be returned by the server in sorted order.
         // TODO: Support caching this.
-        let snapshot_values = client.list_impl(dir, Some(&mut state)).await?;
+        let snapshot_values = client
+            .get_range_impl(start_key, end_key, Some(&mut state))
+            .await?;
 
         // Merge preferring the new written_values
         let merged = common::algorithms::merge_by(written_values, snapshot_values, |a, b| {
@@ -414,6 +433,10 @@ impl<'a> MetastoreTransaction<'a> {
 
         let (client, mut state) = self.get_top_level().await;
 
+        if state.writes.is_empty() {
+            return Ok(());
+        }
+
         let stub = KeyValueStoreStub::new(client.channel.clone());
         let request_context = client.default_request_context()?;
 
@@ -436,4 +459,21 @@ impl<'a> MetastoreTransaction<'a> {
 
 pub struct WatchStream {
     response: rpc::ClientStreamingResponse<KeyValueEntry>,
+}
+
+//
+
+#[macro_export]
+macro_rules! run_transaction {
+    ($client:expr, $txn:ident, $f:expr) => {{
+        let mut retval = None;
+        for i in 0..$crate::meta::client::MAX_TRANSACTION_RETRIES {
+            let $txn = $client.new_transaction().await?;
+            retval = Some($f);
+            $txn.commit().await?;
+            break;
+        }
+
+        retval.ok_or_else(|| err_msg("Transaction exceeded max number of retries"))?
+    }};
 }

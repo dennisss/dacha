@@ -28,13 +28,6 @@ use crate::proto::key_value::*;
 use crate::proto::meta::UserDataSubKey;
 
 /*
-Performing transaction checking in the metastore:
-- makes it easier to parallelize in the future
-- if we can get the sequence number, then that could bebest
-
-*/
-
-/*
 
 Need an event listener on the Server to tell when we become a leader vs. stop being the leader
 - If we are not the leader, we need to cancel all transactions.
@@ -91,16 +84,6 @@ struct Shared {
     next_local_id: AtomicUsize,
 }
 
-/*
-Long term:
-- Use the raft log index as the revision
-- perform TTLing of
-
-- We should be able to determine what is the highest compacted sequence.
-
--> Can only remove a key if the overwrite of that key was more than 24 hours ago
-*/
-
 impl Metastore {
     fn get_client_id<T: protobuf::Message>(request: &rpc::ServerRequest<T>) -> Result<&str> {
         match request.context.metadata.get_text(CLIENT_ID_KEY) {
@@ -130,7 +113,11 @@ impl Metastore {
             .begin_read(request.optimistic())
             .await?;
 
-        response.set_read_index(read_index.index().value());
+        let snapshot = self.shared.state_machine.snapshot().await;
+
+        // NOTE: This may be < the read_index as raft config changes aren't applied to
+        // the state machine.
+        response.set_read_index(snapshot.last_sequence());
 
         Ok(())
     }
@@ -191,21 +178,6 @@ impl Metastore {
 
         Ok(())
     }
-
-    /*
-    Performing conflict analysis on the server:
-    - Pros:
-        - Simplifies the WAL format
-        - More easy to parallelize
-    - Cons:
-        - The naive implementation will not allow concurrent executions (as the state machine won't get updated until )
-
-    - Need light weight list of writer locks.
-        => Must be able to lock all desired keys.
-
-    Cons of this:
-    - If there are conflicts, it will take an entire
-    */
 
     async fn execute_impl<'a>(
         &self,

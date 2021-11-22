@@ -22,3 +22,9 @@ Individual data entries described here:
 https://github.com/facebook/rocksdb/blob/master/table/block_based/block_builder.cc#L21
 
 TODO: Must go through all of the varints and parse them with the proper width (i.e. u32, u64, i32, i64, etc.)
+
+
+TODOs:
+- Write batch
+- Pipelined log writing
+- Deleting tables that are obsolete.

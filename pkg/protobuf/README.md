@@ -14,3 +14,7 @@ By default .proto files are compiled to corresponding .proto.rs files in the sam
 A directory containing .proto files should contain a `mod.rs` containing `pub mod proto_file_base_name;` statements to include the generated code.
 
 Inside of .proto files, all types are references by proto buffer package names and are not effected by the fact that they are being compiled for Rust.
+
+
+Package structure:
+- Need to be able to compile the descriptors 

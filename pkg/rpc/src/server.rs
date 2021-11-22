@@ -25,7 +25,7 @@ use crate::status::*;
 pub struct Http2Server {
     handler: Http2ResponseHandler,
     shutdown_token: Option<Box<dyn CancellationToken>>,
-    start_callbacks: Vec<Box<dyn Fn() + 'static>>,
+    start_callbacks: Vec<Box<dyn Fn() + Send + Sync + 'static>>,
 }
 
 impl Http2Server {
@@ -49,7 +49,7 @@ impl Http2Server {
         Ok(())
     }
 
-    pub fn add_start_callback<F: Fn() + 'static>(&mut self, callback: F) {
+    pub fn add_start_callback<F: Fn() + Send + Sync + 'static>(&mut self, callback: F) {
         self.start_callbacks.push(Box::new(callback));
     }
 
@@ -272,6 +272,8 @@ impl Readable for ResponseBody {
                         }
                         Err(error) => {
                             // TODO: Have some default error handler to log the raw errors.
+                            // TODO: Only forward statuses that were generated locally and not ones
+                            // that were returned as part of an internal client RPC call.
 
                             eprintln!("RPC Error: {:?}", error);
                             let status = match error.downcast_ref::<Status>() {

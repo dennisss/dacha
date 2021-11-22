@@ -7,12 +7,15 @@ extern crate rpc;
 extern crate rpc_test;
 #[macro_use]
 extern crate macros;
+extern crate container;
+extern crate datastore;
 
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 
 use common::async_std::task;
 use common::errors::*;
+use datastore::meta::client::MetastoreClient;
 use rpc_test::proto::adder::*;
 
 #[derive(Args)]
@@ -27,9 +30,21 @@ async fn run_client() -> Result<()> {
     // read the full length, then we should error out the request.
 
     // TODO: Specify the gRPC protocal in uri?
-    let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::try_from(
-        args.target.as_str(),
-    )?)?);
+    // let channel =
+    // Arc::new(rpc::Http2Channel::create(http::ClientOptions::try_from(
+    //     args.target.as_str(),
+    // )?)?);
+
+    let channel = {
+        let meta_client = Arc::new(MetastoreClient::create().await?);
+        let resolver =
+            Arc::new(container::ServiceResolver::create(&args.target, meta_client).await?);
+
+        Arc::new(rpc::Http2Channel::create(
+            http::ClientOptions::from_resolver(resolver),
+        )?)
+    };
+
     let stub = AdderStub::new(channel);
 
     let mut req = AddRequest::default();

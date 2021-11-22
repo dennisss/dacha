@@ -25,95 +25,64 @@ Supported features:
 
 ## Implementation
 
-Implemented as a single Raft group using an LSM tree.
+The server is implement using a single Raft group which is used for consensus and writing to a key-value state machine based on LSM trees.
 
-Each key in the storage has the form `[table_id] ...`.
+### Internal Tables
 
-Keys with `table_id=1` have the following format:
+Each key provided by the user in an RPC request is not directly used as the key in the internal key-value storage on disk. Instead, the user key is mapped to internal keys which store the actual user data and associated metadata.
+
+The internal key range is grouped into multiple tables. For example, the `UserData` table is used the user provided data on put/delete operations. Below are some examples of internal keys in this table:
 
 - `[table_id=1] [user_key] [sub_key=1]`
-    - As a value, stored the value that the user has associated with `user_key`
+    - Stores the value that the user has associated with `user_key`
 - `[table_id=1] [user_key] [sub_key=2]`
-    - Contains a `KeyLockInfo` protobuf describing how this 
+    - Contains a `KeyLockInfo` protobuf describing any locks acquired by the user via the `LockService` API.
 
-TODO: How do we proxy values while ensuring that client ids are mapped correctly.
+Another internal table used is the `TransactionTime` table. It only has a single key of the form `[table_id=3]` with its value being the timestamp of the most recent transaction performed on the store.
 
-When a client connects, we will propose a no-op entry on the Raft log in order to get a unique `client_id` for it. 
+### State Machine
 
-## Transaction Lifecycle
+We use the `EmbeddedDB` interface to store the internal tables mentioned above on disk on each Raft replica:
 
-Each transaction exists within the scope of a single raft leader's term. This means that all metadata associated with all ongoing transactions are stored in-memory on the leader node.
+- All mutations to the state machine are read from the Raft log as `WriteBatch` structs.
+- Each `WriteBatch` has a sequence number set to it's Raft log index.
+- Newly deleted/overriden values are kept in the database and are not compacted right away.
+    - A special `CompactionWaterline` singleton table stores the value of the oldest sequence we want to compact.
+    - Every hour, we search the `TransactionTime` table for the next oldest transaction from time 'Now - 24 hours' and set that transactions sequence as the new value of the `CompactionWaterline` singleton.
+    - Additionally we have custom logic to ensure that no individual key revision is compacted if the next revision after the compaction window was < 24 hours since now.
 
-### Creating 
+The complicated compaction scheme described above is used to ensure that short lived transactions and distributed snapshots are possible:
 
-First we generate a unique id for the transaction of the form `[term]:[local_monotonic_id]`.
+- We can't just use `EmbeddingDB::snapshot()` as that only gurantees snapshot consistency on a single replica.
+- We must preserve deletions for transactions as a Put followed by a Delete on a single key can hide the fact that the key has changed since the start index if we have already compacted away the deletion tombstone.
 
-Then we acquire a linearizable read index from the raft::Server (this index should be at least as large as the final log entry known to the node at the time at which it become the leader).
+### Transactions
 
-We store the transaction (`id`, `read_index`) as a new `TransactionEntry` in the `TransactionManager` container along with all other ongoing transactions. At this point we also do some cleanup: if there are transaction entries in the `TransactionManager` from an earlier term, we delete them.
+We support 'compare and set'-style transactions where we can:
 
-### Performing a read
+- Verify that no keys in a set of key ranges read earlier have changed since some global read sequence.
+    - To make this claim, we only accept requests with a read sequence >= the current `CompactionWaterline`.
+- Atomically perform one or more Put/Delete operations.
 
-Each read will acquire a temporary reader lock on the key range being read. Each `TransactionRangeLock` object contains a:
+All transactions are executed on the leader as follows:
 
-- `key_range`: Range to which it applies
-- `ref_count`: Number of transactions reading from this range. Which this goes to 0 the lock is deleted.
-- `write_lock`: If true, another transaction is currently writing to this range. Thus is can't be overwritten until that transaction is comitted. 
+- Acquire in-memory reader/writer/reader-writer locks to all ranges touched by the transaction
+    - Conflicts will require overlapping transactions to block for the first one to finish.
+- Verify that all read/compare conditions are still valid:
+    - This can be done in parallel as each transaction holds a reader lock on the corresponding key ranges at this point which gurantee that no concurrent transactions in the same raft term commit first and override the values we are reading.
+- Append the write operations to the Raft log
+- Wait for the log entry to be applied to the local state machine
+    - This must happen before we release our locks.
+    - TODO: Given that the state machine uses MVCC, we should eventually implement parallel execution of multiple `WriteBatch`s on the `EmbeddedDB`.
+- Release locks held for the current transaction.
 
-NOTE: All locked ranges are non-overlapping so if two transactions read overlapping ranges, each of them may end up having more than one lock to just read one range.
+TODO: If a transaction needs to be retried due to conflicts, have some mechanism to prioritize retrying of the longest waiting transactions first.
 
-First we create or get the existing lock entry and increment its ref count. If the `recent_write_index` is set to a value greater than the current transaction's `read_index`, then we must stop the current transaction.
+Transactions are executed as a single request to the metastore service so the aforementioned locks should be short lived as they don't block on client round trips.
 
-Then we look up the key from the head of the database. If the entry in the database has a higher sequence than your `read_index` we also cancel the transaction.
+TODO: Eventually further improve the liveness of the system by adding more restrictions to ensure that transactions are short lived such as limits on the size of each transaction.
 
-Else, we return the value to the client.
-
-### Performing a write
-
-This will simply append the 
-
-NOTE: Writes are only linearizable if the key was previously read in the same transaction.
-
-
-
-/*
-    Typical transaction lifecycle (read modify write)
-    - Step 1: Acquire a sequence pointer from the DB
-        => Add to the Transaction
-    - Step 2: Performing a read:
-        - Increment the ref count on the key in the key_locks map and mark recent_write as None if not present.
-        - Perform the read at the head of the DB
-        - If the DB returned a value at a sequence higher than our transaction bail out.
-
-    - Step 3: Application makes some change
-
-    - Step 4: Performing the write:
-        - Simply append the key to our write table
-
-    - Step 5: Committing
-        - Lock the metastore state
-        - Atomically get the next commit index
-        - Check that no read keys were modified and de-ref all of them.
-        - Assuming we can proceed, loop back through the key locks and mark the dirty state of all of them
-        - Finally commit using the read index acquired from raft at the start.
-
-    Main
-
-
-
-    So a transaction starts (marked by a beginning sequence in the db)
-    - Read a key from the head of the DB.
-        -
-
-
-    Challenges:
-    -
-
-    When a transaction reads a key, it will
-
-    An optimistic transaction would perform the write and bail out when being applied to the state machine if we noticed a c
-*/
-
+Before the client issues a transaction, it may use other non-locking `KeyValueStore` service methods such as `Read()` and `Snapshot()` to cheaply prepare the contents of the transaction request.
 
 ## Old
 

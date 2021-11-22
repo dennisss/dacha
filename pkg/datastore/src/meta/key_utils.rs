@@ -18,7 +18,11 @@ pub fn directory_key_range(dir: &[u8]) -> (Bytes, Bytes) {
         start_key.push(b'/');
     }
 
-    let end_key = sstable::table::BytewiseComparator::new().find_short_successor(start_key.clone());
+    prefix_key_range(&start_key)
+}
 
+pub fn prefix_key_range(prefix: &[u8]) -> (Bytes, Bytes) {
+    let start_key = prefix.to_vec();
+    let end_key = sstable::table::BytewiseComparator::new().find_short_successor(start_key.clone());
     (start_key.into(), end_key.into())
 }

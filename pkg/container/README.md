@@ -79,7 +79,7 @@ If just doing local testing/development as your user, you only need to create th
 
 It is up to figure out how to ensure that the node binary is run at startup on the node machine as the `cluster-node` user. But, we recommend using the systemd service located at `./pkg/container/config/cluster_node.service`.
 
-To run a node locally for testing (accessible at `127.0.0.1:10250`), run the following command:
+To run a node locally for testing (accessible at `127.0.0.1:10400`), run the following command:
 
 ```
 cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
@@ -151,7 +151,7 @@ You are now done setting up your Pi!
 Now that you have at least one node running the `cluster_node` binary, we want to not initialize the cluster by starting up the control plane (metastore and manager jobs) on the cluster. To do this you need to know the ip address of one node in the cluster. For example to initialize a node running locally run:
 
 ```
-cargo run --bin cluster -- bootstrap --node=127.0.0.1:10250
+cargo run --bin cluster -- bootstrap --node=127.0.0.1:10400
 ```
 
 The above command should only be run ONCE on a single node in your LAN. All other running nodes in the same LAN should automatically discover the initialized control plane and register with it via multi-cast.
@@ -187,6 +187,22 @@ The main outgoing RPCs that do occur in the node runtime are:
   - This is mainly needed to support potential re-assignment of IPs in LANs over time if nodes restart.
   - This could be replaced by requiring static ips for nodes or in the cloud this could be replaced with a lookup by the manager in the VM API (or using static hostnames with lookups over regular DNS).
 - When a node is missing a blob, it may fetch it from another node.
+
+#### Local Storage
+
+Each node has a local EmbeddedDB instance it uses to store information about tasks that have been added to it.
+
+- For each task, we want to store the following information:
+  - creation_time: When was the latest TaskSpec configured for the task
+  - updated_time: When did the last state transition occur for this task
+  - num_attempts: Number of times the job was restarted since the last TaskSpec was updated.
+
+TODO: What about logs?
+
+Types of tasks:
+- 
+
+
 
 #### Node Permissions
 
@@ -558,10 +574,10 @@ How to enumerate all tasks in a job?
 Start a node:
   cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
 
-  cargo run --bin cluster -- bootstrap --node=127.0.0.1:10250
+  cargo run --bin cluster -- bootstrap --node=127.0.0.1:10400
 
 Start a metastore instance on that node:
-  cargo run --bin container_ctl -- start_task pkg/datastore/config/metastore.task --node=127.0.0.1:10250
+  cargo run --bin container_ctl -- start_task pkg/datastore/config/metastore.task --node=127.0.0.1:10400
 
 Bootstrap the metastore:
   cargo run --package rpc_util -- call 127.0.0.1:30001 ServerInit.Bootstrap ''

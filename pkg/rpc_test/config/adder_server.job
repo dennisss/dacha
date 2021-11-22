@@ -1,0 +1,26 @@
+name: "adder_server"
+
+replicas: 1
+
+task {
+    args: [
+        "/volumes/bundle/built/pkg/rpc_test/adder_server",
+        "--port=rpc",
+        "--request_log=/volumes/data/requests"
+    ]
+
+    ports {
+        name: "rpc"
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/rpc_test:adder_server_bundle"
+        },
+        {
+            name: "data"
+            persistent_name: "adder_data"
+        }
+    ]
+}

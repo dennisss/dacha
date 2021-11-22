@@ -81,13 +81,13 @@ impl MetricStore {
         self.db.set(&key, &value).await
     }
 
-    pub async fn iter(&self, metric_name: &str) -> MetricValueIterator {
+    pub async fn iter(&self, metric_name: &str) -> Result<MetricValueIterator> {
         let snapshot = self.db.snapshot().await;
-        let iter = snapshot.iter().await;
-        MetricValueIterator {
+        let iter = snapshot.iter().await?;
+        Ok(MetricValueIterator {
             iter,
             metric_name: metric_name.to_string(),
-        }
+        })
     }
 
     pub async fn query(
@@ -96,7 +96,7 @@ impl MetricStore {
         start_timestamp: u64,
         end_timestamp: u64,
     ) -> Result<Vec<MetricValue>> {
-        let mut iter = self.iter(metric_name).await;
+        let mut iter = self.iter(metric_name).await?;
         iter.seek(end_timestamp).await?;
 
         let mut out = vec![];

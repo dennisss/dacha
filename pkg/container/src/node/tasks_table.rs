@@ -8,17 +8,17 @@ use sstable::iterable::Iterable;
 use sstable::EmbeddedDB;
 
 use crate::proto::blob::BlobSpec;
-use crate::proto::task::TaskSpec;
+use crate::proto::meta::TaskMetadata;
 
 const TASKS_TABLE_ID: u64 = 11;
 const NODE_ID_TABLE_ID: u64 = 12;
 const BLOBS_TABLE_ID: u64 = 13;
 
-pub async fn list_tasks(db: &EmbeddedDB) -> Result<Vec<TaskSpec>> {
+pub async fn list_tasks(db: &EmbeddedDB) -> Result<Vec<TaskMetadata>> {
     let mut start_key = vec![];
     KeyEncoder::encode_varuint(TASKS_TABLE_ID, false, &mut start_key);
 
-    let mut iter = db.snapshot().await.iter().await;
+    let mut iter = db.snapshot().await.iter().await?;
     iter.seek(&start_key).await?;
 
     let mut tasks = vec![];
@@ -30,24 +30,26 @@ pub async fn list_tasks(db: &EmbeddedDB) -> Result<Vec<TaskSpec>> {
         }
 
         // TODO: Pull the name out of the key.
-        tasks.push(TaskSpec::parse(&entry.value)?);
+        if let Some(value) = entry.value {
+            tasks.push(TaskMetadata::parse(&value)?);
+        }
     }
 
     Ok(tasks)
 }
 
-pub async fn delete_task(db: &EmbeddedDB, task: &TaskSpec) -> Result<()> {
+pub async fn delete_task(db: &EmbeddedDB, task: &TaskMetadata) -> Result<()> {
     let mut key = vec![];
     KeyEncoder::encode_varuint(TASKS_TABLE_ID, false, &mut key);
-    KeyEncoder::encode_bytes(task.name().as_bytes(), &mut key);
+    KeyEncoder::encode_bytes(task.spec().name().as_bytes(), &mut key);
 
     db.delete(&key).await
 }
 
-pub async fn put_task(db: &EmbeddedDB, task: &TaskSpec) -> Result<()> {
+pub async fn put_task(db: &EmbeddedDB, task: &TaskMetadata) -> Result<()> {
     let mut key = vec![];
     KeyEncoder::encode_varuint(TASKS_TABLE_ID, false, &mut key);
-    KeyEncoder::encode_bytes(task.name().as_bytes(), &mut key);
+    KeyEncoder::encode_bytes(task.spec().name().as_bytes(), &mut key);
 
     let value = task.serialize()?;
 
@@ -103,7 +105,7 @@ pub async fn get_blob_specs(db: &EmbeddedDB) -> Result<Vec<BlobSpec>> {
     let mut key = vec![];
     KeyEncoder::encode_varuint(BLOBS_TABLE_ID, false, &mut key);
 
-    let mut iter = db.snapshot().await.iter().await;
+    let mut iter = db.snapshot().await.iter().await?;
     iter.seek(&key).await?;
 
     let mut out = vec![];
@@ -112,7 +114,9 @@ pub async fn get_blob_specs(db: &EmbeddedDB) -> Result<Vec<BlobSpec>> {
             break;
         }
 
-        out.push(BlobSpec::parse(&entry.value)?);
+        if let Some(value) = entry.value {
+            out.push(BlobSpec::parse(&value)?);
+        }
     }
 
     Ok(out)

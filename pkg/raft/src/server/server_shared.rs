@@ -49,7 +49,7 @@ TODO: Regarding HTTP2 tuning, we should ideally reserve some space in the flow c
 /// the number of pending incomplete requests from growing indefinately in the
 /// case of other servers leaving connections open for an infinite amount of
 /// time (so that we never run out of file descriptors)
-const REQUEST_TIMEOUT: u64 = 500;
+const REQUEST_TIMEOUT: u64 = 2000;
 
 /// Server variables that can be shared by many different threads
 pub struct ServerShared<R> {
@@ -753,6 +753,8 @@ impl<R: Send + 'static> ServerShared<R> {
 
         let request_context = self.identity.new_outgoing_request_context(to_id)?;
 
+        // TODO: Even though the future times up, it seems like the requests still end
+        // up getting sent.
         let res = common::async_std::future::timeout(
             Duration::from_millis(REQUEST_TIMEOUT),
             stub.RequestVote(&request_context, req),

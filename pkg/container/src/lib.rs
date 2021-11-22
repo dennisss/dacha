@@ -28,6 +28,7 @@ extern crate rpc;
 extern crate sstable;
 #[macro_use]
 extern crate async_std;
+#[macro_use]
 extern crate datastore;
 extern crate net;
 extern crate rpc_util;
@@ -38,18 +39,22 @@ extern crate automata;
 
 mod capabilities;
 pub mod manager;
-mod meta;
+pub mod meta;
 pub mod node;
 mod proto;
 mod runtime;
+pub mod service;
 
+pub use manager::main::main as manager_main;
+pub use manager::main::main_with_port as manager_main_with_port;
 pub use node::main::main as node_main;
+pub use proto::blob::*;
 pub use proto::config::*;
 pub use proto::job::*;
 pub use proto::log::*;
-pub use proto::meta::*; /* TODO: Eventually remove this once the bootstrapping code becomes
-                         * private. */
-pub use proto::blob::*;
+pub use proto::manager::*;
+pub use proto::meta::*;
 pub use proto::node_service::*;
 pub use proto::task::*;
 pub use runtime::ContainerRuntime;
+pub use service::resolver::ServiceResolver;

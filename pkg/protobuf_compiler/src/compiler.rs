@@ -754,7 +754,7 @@ impl Compiler<'_> {
 
         let typename = self.oneof_typename(oneof, path);
 
-        lines.add("#[derive(Debug, Clone)]");
+        lines.add("#[derive(Debug, Clone, PartialEq)]");
         lines.add(format!("pub enum {} {{", typename));
         lines.add("\tUnknown,");
         for field in &oneof.fields {
@@ -1195,10 +1195,7 @@ impl Compiler<'_> {
         let fullname: String = inner_path.join("_");
 
         let mut lines = LineBuilder::new();
-        // NOTE: We intentionally don't derive PartialEq always as it can be error prone
-        // (especially with Option<> types). TODO: Use the debug_string to
-        // implement debug.
-        lines.add("#[derive(Clone, Default, ConstDefault)]");
+        lines.add("#[derive(Clone, Default, PartialEq, ConstDefault)]");
         lines.add(format!("pub struct {} {{", fullname));
         lines.indented(|lines| -> Result<()> {
             for i in &msg.body {
@@ -1274,12 +1271,6 @@ impl Compiler<'_> {
                         let mut result = self.clone();
                         *result.{field_name}_mut() -= other;
                         result
-                    }}
-                }}
-
-                impl ::std::cmp::PartialEq for {msg_name} {{
-                    fn eq(&self, other: &Self) -> bool {{
-                        self.{field_name}() == other.{field_name}()
                     }}
                 }}
 

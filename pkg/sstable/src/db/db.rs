@@ -841,6 +841,8 @@ impl EmbeddedDB {
             builder: SSTableBuilder,
             first_key: Bytes,
             last_key: Bytes,
+            smallest_seq: u64,
+            largest_seq: u64,
             number: u64,
         }
 
@@ -884,12 +886,16 @@ impl EmbeddedDB {
                         builder,
                         first_key: entry.key.clone(),
                         last_key: entry.key.clone(),
+                        smallest_seq: ikey.sequence,
+                        largest_seq: ikey.sequence,
                         number,
                     }
                 }
             };
 
             table.builder.add(&entry.key, &entry.value).await?;
+            table.smallest_seq = std::cmp::min(ikey.sequence, table.smallest_seq);
+            table.largest_seq = std::cmp::max(ikey.sequence, table.largest_seq);
             table.last_key = entry.key;
 
             if table.builder.estimated_file_size() >= target_file_size {
@@ -901,7 +907,7 @@ impl EmbeddedDB {
                     file_size: meta.file_size,
                     smallest_key: table.first_key.to_vec(),
                     largest_key: table.last_key.to_vec(),
-                    sequence_range: None,
+                    sequence_range: Some((table.smallest_seq, table.largest_seq)),
                 });
             } else {
                 current_table = Some(table);
@@ -920,7 +926,7 @@ impl EmbeddedDB {
                 file_size: meta.file_size,
                 smallest_key: table.first_key.to_vec(),
                 largest_key: table.last_key.to_vec(),
-                sequence_range: None,
+                sequence_range: Some((table.smallest_seq, table.largest_seq)),
             });
         }
 

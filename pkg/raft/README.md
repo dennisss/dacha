@@ -1,6 +1,34 @@
 Raft Consensus
 ==============
 
+Next steps:
+- Need a raw to get a read index.
+- Requires an 
+
+/*
+    TODO: Also some standardization of location estimation based on pings, ip ranges, or some other topology information sharing
+*/
+
+
+We want to use the embedded DB for this:
+
+When we want to snapshot the DB:
+- Split the log and [A, B]
+- Write all values through A into a snapshot
+- Atomically discard log A and switch to the new snapshot.
+- Very similar to the EmbeddedDB class, except that we control what is written to the log and when log entries can be applied to the state machine.
+
+- A VersionEdit can also be implemented as appending to the main log (assuming the log starts with a snapshot).
+
+
+Things to try out:
+- Different policies to know when to clear recent log entries from disk
+	- If there are straggler tasks, we may need to keep entries for a while.
+- Trigger log snapshotting/segmenting in the server implementation rather than in log implementation
+- Instead of the state machine internally determining when to flush, flush it based on the size of the log (this is necessary if the state machine doesn't keep increasing in size when it is  )
+
+
+TODO: Consider moving the recipient validation into the raft layer.
 
 /*
 	Basically generating a perfect hash table

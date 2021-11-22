@@ -1,94 +1,29 @@
 use common::errors::*;
+use rpc_util::{AddReflection, NamedPortArg};
 
-/*
-When a manager test starts up, it will
-- Acquire a metastore lock under `/system/manager/lock`
-  - If it can't it will sleep for 30 seconds and try again.
-- Enumerate all Job instances in the database.
-  - For each job instance, verify that they there are tasks for each job assigned to nodes.
-- Finally, loop through each Node and ensure that it has all required nodes.
-  ^ After the initial
+use crate::manager::manager::Manager;
+use crate::proto::manager::*;
+use crate::proto::task::*;
 
-- Want to have an active connection to each node to receive change updates.
-
-
-Manager Role:
-- Keep the metadata store alive
-- Ping the nodes and see that they have the
-- Ensure that every job has all its tasks to some node
-- Ensure that every blob has at least N replicas.
-- Delete blobs that are not in use for at least N days.
-
-*/
-
-use common::errors::*;
-use datastore::meta::client::MetastoreClient;
-use protobuf::Message;
-
-use crate::proto::meta::*;
-
-pub struct Manager {
-    meta_client: MetastoreClient,
+#[derive(Args)]
+struct Args {
+    port: NamedPortArg,
 }
 
-struct ClusterSnapshot {}
-
-impl Manager {
-    async fn fetch_snapshot(&self) -> Result<ClusterSnapshot> {
-        let jobs = self
-            .meta_client
-            .list_protos::<JobMetadata>("/cluster/job")
-            .await?;
-        let tasks = self
-            .meta_client
-            .list_protos::<TaskMetadata>("/cluster/task")
-            .await?;
-        let nodes = self
-            .meta_client
-            .list_protos::<NodeMetadata>("/cluster/node")
-            .await?;
-        let blobs = self
-            .meta_client
-            .list_protos::<BlobMetadata>("/cluster/blob")
-            .await?;
-
-        // Watch(prefix)
-
-        Err(err_msg(""))
-    }
+pub fn main() -> Result<()> {
+    let args = common::args::parse_args::<Args>()?;
+    common::async_std::task::block_on(main_with_port(args.port.value()))
 }
 
-/*
-When a user wants to star a job:
-- upload blob (basically add to any node one replica (more than one not needed until we have a task to put it on))
-- Then tell the manager server that it has been uploaded so that there is knowledge of this (or just have it proxy the request?)
-*/
+pub async fn main_with_port(port: u16) -> Result<()> {
+    // TODO: In order to shut down, the manager should release any locks it has.
 
-pub async fn run() -> Result<()> {
-    // Step 1: Create a metastore client.
-    // Step 2: Acquire a manager lock
-    // Step 3: Enumerate
+    let manager = Manager::create().await?;
+    let mut server = rpc::Http2Server::new();
+    server.add_service(manager.into_service())?;
+    server.add_reflection()?;
+    server.set_shutdown_token(common::shutdown::new_shutdown_token());
+    server.run(port).await?;
 
-    todo!()
-
-    /*
-    Threads:
-    - RPC server
-    - Change actuator.
-        - Listened to events:
-            - NewJob
-            - NewBlob
-    - Node poller
-        - Tries to contact all nodes in the cluster.
-        - Verifies they are running the right tasks.
-        - When tasks become ready, the manager will mark them as ready/not-ready in the metadata store.
-            -> Issue is that this is fragile?
-
-    The blob protocol:
-    - When a user wants to
-
-    Should notes support pulling blobs from our servers?
-    - Yes because that is more efficient.
-
-    */
+    Ok(())
 }

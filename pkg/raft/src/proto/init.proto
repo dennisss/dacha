@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package raft;
+
 // Service that runs on uninitialized servers before a server identity is established.
 service ServerInit {
     // Called once on the first server in a cluster to initialize the cluster.

@@ -8,7 +8,7 @@ use common::const_default::ConstDefault;
 
 use crate::reflection::*;
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, PartialEq)]
 pub struct MapField<K: Clone + PartialEq + Hash + Eq, V: Clone + PartialEq + Eq> {
     pub inner: Option<HashMap<K, V>>,
 }
@@ -17,8 +17,8 @@ impl<K: Clone + PartialEq + Hash + Eq, V: Clone + PartialEq + Eq> ConstDefault f
     const DEFAULT: Self = Self { inner: None };
 }
 
-#[derive(Default, Clone, Debug)]
-pub struct SetField<T: Eq + Hash> {
+#[derive(Default, Clone, Debug, PartialEq)]
+pub struct SetField<T: PartialEq + Eq + Hash> {
     inner: Option<HashSet<T>>,
 }
 

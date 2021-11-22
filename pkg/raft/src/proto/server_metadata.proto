@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package raft;
+
 import "pkg/raft/src/proto/consensus.proto";
 import "pkg/raft/src/proto/consensus_state.proto";
 

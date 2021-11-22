@@ -9,6 +9,7 @@ extern crate macros;
 // this dependency.
 extern crate raft;
 
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::{collections::HashSet, sync::Arc};
 
@@ -19,8 +20,10 @@ use common::async_std::task;
 use common::errors::*;
 use common::failure::ResultExt;
 use common::futures::AsyncWriteExt;
+use common::task::ChildTask;
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
+use datastore::meta::client::{MetastoreClient, MetastoreClientInterface};
 use nix::{
     sys::termios::{tcgetattr, tcsetattr, ControlFlags, InputFlags, LocalFlags, OutputFlags},
     unistd::isatty,
@@ -31,8 +34,12 @@ use protobuf::Message;
 use rpc::ClientRequestContext;
 
 use container::{
-    BlobStoreStub, ContainerNodeStub, JobMetadata, TaskMetadata, TaskSpec, TaskSpec_Port,
-    TaskSpec_Volume, WriteInputRequest, ZoneMetadata,
+    meta::*, AllocateBlobsRequest, AllocateBlobsResponse, JobSpec, ManagerStub, NodeMetadata,
+    StartJobRequest,
+};
+use container::{
+    BlobStoreStub, ContainerNodeStub, JobMetadata, NodeMetadata_State, TaskMetadata,
+    TaskMetadata_State, TaskSpec, TaskSpec_Port, TaskSpec_Volume, WriteInputRequest, ZoneMetadata,
 };
 
 #[derive(Args)]
@@ -53,6 +60,9 @@ enum Command {
     #[arg(name = "list")]
     List(ListCommand),
 
+    #[arg(name = "start_job")]
+    StartJob(StartJobCommand),
+
     /// Start a single task directly on a node. This is mainly for cluster
     /// bootstrapping.
     #[arg(name = "start_task")]
@@ -69,6 +79,12 @@ struct BootstrapCommand {
 
 #[derive(Args)]
 struct ListCommand {}
+
+#[derive(Args)]
+pub struct StartJobCommand {
+    #[arg(positional)]
+    job_spec_path: String,
+}
 
 #[derive(Args)]
 struct StartTaskCommand {
@@ -101,6 +117,9 @@ async fn connect_to_node(node_addr: &str) -> Result<NodeStubs> {
 }
 
 /// Assuming that we have a single
+///
+/// TODO: Improve this so that we can continue running it if a previous run
+/// failed.
 async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     let node = connect_to_node(&cmd.node).await?;
 
@@ -145,50 +164,113 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
             .result?;
     }
 
-    let meta_client = datastore::meta::client::MetastoreClient::create().await?;
+    let meta_client = Arc::new(MetastoreClient::create().await?);
+
+    // Wait for the node to register itself
+
+    println!("Waiting for node to register itself:");
+    loop {
+        if let Some(_) = meta_client
+            .cluster_table::<NodeMetadata>()
+            .get(&node_id)
+            .await?
+        {
+            break;
+        }
+
+        common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    println!("=> Done!");
 
     // TODO: We should instead infer the zone from some flag on the node.
     let mut zone_record = ZoneMetadata::default();
     zone_record.set_name("home");
     meta_client
-        .put(b"/cluster/zone", &zone_record.serialize()?)
+        .cluster_table::<ZoneMetadata>()
+        .put(&zone_record)
         .await?;
 
     let mut meta_job_record = JobMetadata::default();
     meta_job_record.spec_mut().set_name("system.meta");
     meta_job_record.spec_mut().set_replicas(1u32);
     meta_job_record.spec_mut().set_task(meta_task_spec.clone());
+    meta_job_record.set_task_revision(0u64);
+
     meta_client
-        .put(
-            format!("/cluster/job/{}", meta_job_record.spec().name()).as_bytes(),
-            &meta_job_record.serialize()?,
-        )
+        .cluster_table::<JobMetadata>()
+        .put(&meta_job_record)
         .await?;
 
     let mut meta_task_record = TaskMetadata::default();
     meta_task_record.set_spec(meta_task_spec.clone());
     meta_task_record.set_assigned_node(node_id);
+    meta_task_record.set_revision(0u64);
+    meta_task_record.set_state(TaskMetadata_State::STARTING);
     meta_client
-        .put(
-            format!("/cluster/task/{}", meta_task_record.spec().name()).as_bytes(),
-            &meta_task_record.serialize()?,
-        )
+        .cluster_table::<TaskMetadata>()
+        .put(&meta_task_record)
         .await?;
 
-    // TODO: Also
+    // Mark the node as active.
+    // This can't be done until the TaskMetadata is added to the metastore to
+    // prevent the node deleting the unknown metastore task.
+    {
+        let txn = meta_client.new_transaction().await?;
+        let mut node_meta = meta_client
+            .cluster_table::<NodeMetadata>()
+            .get(&node_id)
+            .await?
+            .ok_or_else(|| err_msg("Node metadata disappeared?"))?;
+
+        node_meta.set_state(NodeMetadata_State::ACTIVE);
+
+        for port in meta_task_spec.ports() {
+            node_meta.allocated_ports_mut().insert(port.number());
+        }
+
+        txn.cluster_table::<NodeMetadata>().put(&node_meta).await?;
+
+        txn.commit().await?;
+    }
 
     // TOOD: Now bring up a local manager instance and use it to start a manager job
     // on the cluster.
 
-    // Done!
+    let manager_thread = ChildTask::spawn(run_manager());
+
+    let mut manager_job_spec = JobSpec::parse_text(
+        &fs::read_to_string(project_path!("pkg/container/config/manager.job")).await?,
+    )?;
+
+    let manager_channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
+        &format!("http://127.0.0.1:{}", 10500).parse()?,
+    )?)?);
+
+    let manager_stub = container::ManagerStub::new(manager_channel);
+
+    start_job_impl(
+        meta_client,
+        &manager_stub,
+        &manager_job_spec,
+        &request_context,
+    )
+    .await?;
+
+    drop(manager_thread);
 
     Ok(())
+}
+
+async fn run_manager() {
+    if let Err(e) = container::manager_main_with_port(10500).await {
+        eprintln!("Manager failed: {}", e);
+    }
 }
 
 async fn run_list(cmd: ListCommand) -> Result<()> {
     let meta_client = datastore::meta::client::MetastoreClient::create().await?;
 
-    let nodes = meta_client.list("/").await?;
+    let nodes = meta_client.list(b"/").await?;
     for kv in nodes {
         println!("{:?}", kv);
     }
@@ -267,6 +349,110 @@ async fn run_start_task(cmd: StartTaskCommand) -> Result<()> {
     Ok(())
 }
 
+// x.node.home.cluster.internal
+
+async fn run_start_job(cmd: StartJobCommand) -> Result<()> {
+    let meta_client = Arc::new(MetastoreClient::create().await?);
+
+    let resolver = Arc::new(
+        container::ServiceResolver::create(
+            "manager.system.job.local.cluster.internal",
+            meta_client.clone(),
+        )
+        .await?,
+    );
+
+    let manager_channel = rpc::Http2Channel::create(http::ClientOptions::from_resolver(resolver))?;
+
+    let manager_stub = ManagerStub::new(Arc::new(manager_channel));
+
+    let job_spec = JobSpec::parse_text(&fs::read_to_string(cmd.job_spec_path).await?)?;
+
+    let request_context = rpc::ClientRequestContext::default();
+
+    start_job_impl(meta_client, &manager_stub, &job_spec, &request_context).await
+}
+
+async fn start_job_impl(
+    meta_client: Arc<MetastoreClient>,
+    manager: &ManagerStub,
+    job_spec: &JobSpec,
+    request_context: &rpc::ClientRequestContext,
+) -> Result<()> {
+    let mut job_spec = job_spec.clone();
+    let mut blobs = build_task_blobs(job_spec.task_mut()).await?;
+
+    let blob_allocations = {
+        let mut req = AllocateBlobsRequest::default();
+        for blob in &blobs {
+            req.add_blob_specs(blob.spec().clone());
+        }
+
+        manager.AllocateBlobs(request_context, &req).await.result?
+    };
+
+    let blobs_by_id = blobs
+        .into_iter()
+        .map(|b| (b.spec().id().to_string(), b))
+        .collect::<HashMap<_, _>>();
+
+    // Upload blbos to all desired replicas.
+    // TODO: Parallelize this
+    for assignment in blob_allocations.new_assignments() {
+        println!("Uploading: {:?}", assignment);
+
+        let node = {
+            let resolver = Arc::new(
+                container::ServiceResolver::create(
+                    &format!("{:08x}.node.local.cluster.internal", assignment.node_id()),
+                    meta_client.clone(),
+                )
+                .await?,
+            );
+
+            let channel = Arc::new(rpc::Http2Channel::create(
+                http::ClientOptions::from_resolver(resolver),
+            )?);
+
+            NodeStubs {
+                service: ContainerNodeStub::new(channel.clone()),
+                blobs: BlobStoreStub::new(channel.clone()),
+            }
+        };
+
+        let blob_data = blobs_by_id
+            .get(assignment.blob_id())
+            .ok_or_else(|| err_msg("Missing blob"))?;
+
+        // TODO: Make sure this request fails fast if the node doesn't currently exist
+        let mut request = node.blobs.Upload(request_context).await;
+        request.send(&blob_data).await;
+
+        if let Err(e) = request.finish().await {
+            let mut ignore_error = false;
+            if let Some(status) = e.downcast_ref::<rpc::Status>() {
+                if status.code() == rpc::StatusCode::AlreadyExists {
+                    println!("=> {}", status.message());
+                    ignore_error = true;
+                }
+            }
+
+            if !ignore_error {
+                return Err(e);
+            }
+        }
+
+        println!("Uploaded!");
+    }
+
+    let mut req = StartJobRequest::default();
+    req.set_spec(job_spec);
+    manager.StartJob(request_context, &req).await.result?;
+
+    Ok(())
+}
+
+/// Directly starts a task by contacting a node.
 async fn start_task_impl(
     node: &NodeStubs,
     task_spec: &mut TaskSpec,
@@ -284,6 +470,58 @@ async fn start_task_impl(
             existing_blobs.insert(blob.id().to_string());
         }
     }
+
+    for blob_data in build_task_blobs(task_spec).await? {
+        println!("=> Upload Blob: {}", blob_data.spec().id());
+        if existing_blobs.contains(blob_data.spec().id()) {
+            println!("Already uploaded");
+            continue;
+        }
+
+        let mut request = node.blobs.Upload(request_context).await;
+        request.send(&blob_data).await;
+
+        if let Err(e) = request.finish().await {
+            let mut ignore_error = false;
+            if let Some(status) = e.downcast_ref::<rpc::Status>() {
+                if status.code() == rpc::StatusCode::AlreadyExists {
+                    println!("=> {}", status.message());
+                    ignore_error = true;
+                }
+            }
+
+            if !ignore_error {
+                return Err(e);
+            }
+        }
+
+        println!("Uploaded!");
+    }
+
+    // TODO: Interactive exec style runs should be interactive in the sense that
+    // when the client's connection is closed, the container should also be
+    // killed.
+
+    println!("Starting server");
+
+    let mut start_request = container::StartTaskRequest::default();
+    start_request.set_spec(task_spec.clone());
+
+    // start_request.task_spec_mut().set_name("shell");
+    // start_request.task_spec_mut().add_args("/bin/bash".into());
+    // start_request.task_spec_mut().add_env("TERM=xterm-256color".into());
+
+    let start_response = node
+        .service
+        .StartTask(request_context, &start_request)
+        .await
+        .result?;
+
+    Ok(())
+}
+
+async fn build_task_blobs(task_spec: &mut TaskSpec) -> Result<Vec<container::BlobData>> {
+    let mut out = vec![];
 
     for volume in task_spec.volumes_mut() {
         if let container::TaskSpec_VolumeSourceCase::BuildTarget(target) = volume.source_case() {
@@ -304,13 +542,7 @@ async fn start_task_impl(
                 format!("sha256:{}", common::hex::encode(hash))
             };
 
-            println!("=> Upload Blob: {}", hash);
             volume.set_blob_id(&hash);
-
-            if existing_blobs.contains(&hash) {
-                println!("Already uploaded");
-                continue;
-            }
 
             let mut blob_data = container::BlobData::default();
             blob_data.spec_mut().set_id(hash);
@@ -321,47 +553,11 @@ async fn start_task_impl(
                 .set_format(container::BlobFormat::TAR_GZ_ARCHIVE);
             blob_data.set_data(data);
 
-            let mut request = node.blobs.Upload(request_context).await;
-            request.send(&blob_data).await;
-
-            if let Err(e) = request.finish().await {
-                let mut ignore_error = false;
-                if let Some(status) = e.downcast_ref::<rpc::Status>() {
-                    if status.code() == rpc::StatusCode::AlreadyExists {
-                        println!("=> {}", status.message());
-                        ignore_error = true;
-                    }
-                }
-
-                if !ignore_error {
-                    return Err(e);
-                }
-            }
-
-            println!("Uploaded!");
+            out.push(blob_data);
         }
     }
 
-    // TODO: Interactive exec style runs should be interactive in the sense that
-    // when the client's connection is closed, the container should also be
-    // killed.
-
-    println!("Starting server");
-
-    let mut start_request = container::StartTaskRequest::default();
-    start_request.set_task_spec(task_spec.clone());
-
-    // start_request.task_spec_mut().set_name("shell");
-    // start_request.task_spec_mut().add_args("/bin/bash".into());
-    // start_request.task_spec_mut().add_env("TERM=xterm-256color".into());
-
-    let start_response = node
-        .service
-        .StartTask(request_context, &start_request)
-        .await
-        .result?;
-
-    Ok(())
+    Ok(out)
 }
 
 async fn start_terminal_input_task(
@@ -457,6 +653,7 @@ async fn run() -> Result<()> {
         Command::List(cmd) => run_list(cmd).await,
         Command::StartTask(cmd) => run_start_task(cmd).await,
         Command::Logs(cmd) => run_logs(cmd).await,
+        Command::StartJob(cmd) => run_start_job(cmd).await,
     }
 }
 

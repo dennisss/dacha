@@ -8,7 +8,7 @@ use std::convert::TryFrom;
 use std::os::unix::prelude::{MetadataExt, PermissionsExt};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use common::async_std::channel;
 use common::async_std::path::{Path, PathBuf};
@@ -17,13 +17,15 @@ use common::errors::*;
 use common::eventually::Eventually;
 use common::task::ChildTask;
 use crypto::random::RngExt;
-use datastore::meta::client::MetastoreClient;
+use datastore::meta::client::{MetastoreClient, MetastoreClientInterface, MetastoreTransaction};
 use http::backoff::*;
 use nix::unistd::chown;
 use nix::unistd::Gid;
 use protobuf::Message;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
+use crate::meta::constants::NODE_HEARTBEAT_INTERVAL;
+use crate::meta::GetClusterMetaTable;
 use crate::node::blob_store::*;
 use crate::node::shadow::*;
 use crate::proto::blob::*;
@@ -39,6 +41,8 @@ struct Task {
     /// Spec that was used to start this task.
     spec: TaskSpec,
 
+    revision: u64,
+
     /// Id of the most recent container running this task.
     container_id: Option<String>,
 
@@ -51,6 +55,8 @@ struct Task {
     ///
     /// Will be reset to false once we have entired the Starting|Running state.
     pending_update: bool,
+
+    permanent_stop: bool,
 
     /// Leases for all blobs in use by this task when running.
     /// This is set when transitioning to the Running state and cleared when
@@ -233,7 +239,7 @@ pub struct NodeContext {
     /// Address at which the node can be reached by other nodes.
     /// This should contain the port on which the Node service will be started.
     ///
-    /// e.g. '10.1.0.123:10250'
+    /// e.g. '10.1.0.123:10400'
     pub local_address: String,
 }
 
@@ -365,17 +371,27 @@ impl Node {
         };
 
         let all_tasks = tasks_table::list_tasks(&inst.shared.db).await?;
-        for task_spec in all_tasks {
-            if !task_spec.persistent() {
+        for task_meta in all_tasks {
+            if !task_meta.spec().persistent() {
                 // TODO: Also add non-persistent tasks in a terminal state.
                 continue;
+            }
+
+            match task_meta.state() {
+                TaskMetadata_State::STARTING | TaskMetadata_State::READY => {
+                    // Should work
+                }
+                _ => continue,
             }
 
             // TODO: Don't allow the failure of this to block node startup.
             // We don't want the
             // TODO: Provide more gurantees that any tasks that are persisted will actually
             // be start-able.
-            if let Err(e) = inst.start_task(&task_spec).await {
+            if let Err(e) = inst
+                .start_task(task_meta.spec(), task_meta.revision())
+                .await
+            {
                 eprintln!("Persistent task failed to start: {}", e);
             }
         }
@@ -451,23 +467,94 @@ impl NodeInner {
     ///
     /// TODO: Make this run after the RPC server has started.
     async fn run_node_registration(self) -> Result<()> {
+        let start_time = SystemTime::now();
+
         let meta_client = datastore::meta::client::MetastoreClient::create().await?;
 
-        let mut node_meta = NodeMetadata::default();
-        node_meta.set_id(self.shared.id);
-        node_meta.set_address(&self.shared.context.local_address);
-        node_meta.set_state(NodeMetadata_State::READY);
-
-        meta_client
-            .put(
-                format!("/cluster/node/{:08x}", node_meta.id()).as_bytes(),
-                &node_meta.serialize()?,
-            )
-            .await?;
+        // Perform initial update of our node entry.
+        run_transaction!(&meta_client, txn, {
+            let node_table = txn.cluster_table::<NodeMetadata>();
+            let mut node_meta = node_table.get(&self.shared.id).await?.unwrap_or_default();
+            node_meta.set_id(self.shared.id);
+            node_meta.set_address(&self.shared.context.local_address);
+            node_meta.set_start_time(start_time);
+            node_meta.set_last_seen(SystemTime::now());
+            if node_meta.state() == NodeMetadata_State::UNKNOWN {
+                node_meta.set_state(NodeMetadata_State::NEW);
+            }
+            node_meta
+                .set_allocatable_port_range(self.shared.config.allocatable_port_range().clone());
+            node_table.put(&node_meta).await?;
+        });
 
         println!("Node registered in metastore!");
 
         self.shared.meta_client.set(meta_client).await?;
+
+        // Periodically mark this node as still active.
+        // TODO: Allow this is fail and continue to retry.
+        loop {
+            let meta_client = self.shared.meta_client.get().await;
+
+            let node_meta = run_transaction!(meta_client, txn, {
+                let node_table = txn.cluster_table::<NodeMetadata>();
+                let mut node_meta = node_table.get(&self.shared.id).await?.unwrap();
+                node_meta.set_last_seen(SystemTime::now());
+                node_table.put(&node_meta).await?;
+                node_meta
+            });
+
+            if node_meta.state() != NodeMetadata_State::NEW {
+                self.reconcile_tasks().await?;
+            }
+
+            common::async_std::task::sleep(NODE_HEARTBEAT_INTERVAL).await;
+        }
+
+        Ok(())
+    }
+
+    /// Diffs the set of tasks on the current node with these specified for this
+    /// node in the metastore (and applied the differences to this node).
+    ///
+    /// TODO: Run this with it's own backoff loop.
+    /// TODO: Make sure that all external requests have deadlines.
+    async fn reconcile_tasks(&self) -> Result<()> {
+        let meta_client = self.shared.meta_client.get().await;
+
+        let intended_tasks = meta_client
+            .cluster_table::<TaskMetadata>()
+            .list_by_node(self.shared.id)
+            .await?;
+
+        let existing_tasks = self.list_tasks_impl().await?;
+
+        let existing_tasks_list = self.list_tasks_impl().await?;
+        let mut existing_tasks = HashMap::new();
+        for task in existing_tasks_list.tasks() {
+            // TODO: Skip permanently stopped tasks.
+            existing_tasks.insert(task.spec().name(), task);
+        }
+
+        for task in intended_tasks {
+            // TODO: Split any tasks which are in the STOPPED | STOP state.
+
+            if let Some(existing_task) = existing_tasks.remove(task.spec().name()) {
+                if existing_task.revision() == task.revision() {
+                    continue;
+                }
+            }
+
+            // TODO: If this fails, record it in the TaskMetadata.
+            self.start_task(task.spec(), task.revision()).await?;
+        }
+
+        for (_, task) in existing_tasks {
+            // TODO: Stop task.
+            self.stop_task(task.spec().name()).await?;
+        }
+
+        // TODO: When tasks reach their terminal state, record that in the metastore?
 
         Ok(())
     }
@@ -614,6 +701,7 @@ impl NodeInner {
         for task in &state.tasks {
             let mut proto = TaskProto::default();
             proto.set_spec(task.spec.clone());
+            proto.set_revision(task.revision);
             proto.set_pending_update(task.pending_update);
             if let Some(id) = &task.container_id {
                 if let Some(meta) = self.shared.runtime.get_container(id.as_str()).await {
@@ -972,6 +1060,11 @@ impl NodeInner {
 
         // TODO: Check the restart policy to see if we should
 
+        if task.permanent_stop {
+            self.transition_task_to_terminal(task);
+            return;
+        }
+
         // NOTE: This is intentionally false and not using the 'successful' bool.
         task.start_backoff.end_attempt(false);
 
@@ -1066,24 +1159,37 @@ impl NodeInner {
 
         let meta_client = self.shared.meta_client.get().await;
 
-        let blob_meta: BlobMetadata = meta_client
-            .get_proto(format!("/cluster/blob/{}", blob_id).as_bytes())
-            .await?;
+        let blob_meta = meta_client
+            .cluster_table::<BlobMetadata>()
+            .get(blob_id)
+            .await?
+            .ok_or_else(|| err_msg("No such blob"))?;
 
-        if blob_meta.replica_nodes().is_empty() {
+        let uploaded_replicas = blob_meta
+            .replicas()
+            .iter()
+            .filter(|replica| replica.uploaded())
+            .collect::<Vec<_>>();
+
+        if uploaded_replicas.is_empty() {
             return Err(err_msg("No replicas for blob"));
         }
 
         // TODO: Don't try fetching the blob from ourselves.
-        let remote_node_id = *crypto::random::clocked_rng().choose(blob_meta.replica_nodes());
+        let remote_node_id = crypto::random::clocked_rng()
+            .choose(&uploaded_replicas)
+            .node_id();
 
         // TODO: Exclude nodes not marked as ready recently.
-        let remote_node_meta: NodeMetadata = meta_client
-            .get_proto(format!("/cluster/node/{:08x}", remote_node_id).as_bytes())
-            .await?;
+        let remote_node_meta = meta_client
+            .cluster_table::<NodeMetadata>()
+            .get(&remote_node_id)
+            .await?
+            .ok_or_else(|| err_msg("No such node"))?;
 
-        let client =
-            rpc::Http2Channel::create(http::ClientOptions::try_from(remote_node_meta.address())?)?;
+        let client = rpc::Http2Channel::create(http::ClientOptions::try_from(
+            format!("http://{}", remote_node_meta.address()).as_str(),
+        )?)?;
 
         let stub = BlobStoreStub::new(Arc::new(client));
 
@@ -1157,13 +1263,17 @@ impl NodeInner {
         Ok(())
     }
 
-    pub async fn start_task(&self, task_spec: &TaskSpec) -> Result<()> {
+    pub async fn start_task(&self, task_spec: &TaskSpec, task_revision: u64) -> Result<()> {
         let mut state_guard = self.shared.state.lock().await;
         let state = &mut *state_guard;
 
         // TODO: Eventually delete non-persistent tasks.
         // TODO: Once a task has failed, don't restart it on node re-boots.
-        tasks_table::put_task(&self.shared.db, task_spec).await?;
+        let mut meta = TaskMetadata::default();
+        meta.set_spec(task_spec.clone());
+        meta.set_state(TaskMetadata_State::STARTING);
+        meta.set_revision(task_revision);
+        tasks_table::put_task(&self.shared.db, &meta).await?;
 
         let existing_task = state
             .tasks
@@ -1174,15 +1284,18 @@ impl NodeInner {
             if let Some(task) = existing_task {
                 // TODO: Consider preserving the previous task_spec until the new one is added.
                 task.spec = task_spec.clone();
+                task.revision = task_revision;
                 task
             } else {
                 state.tasks.push(Task {
                     spec: task_spec.clone(),
+                    revision: task_revision,
                     container_id: None,
                     state: TaskState::Pending {
                         missing_requirements: ResourceSet::default(),
                     },
                     pending_update: false,
+                    permanent_stop: false,
                     blob_leases: vec![],
                     start_backoff: ExponentialBackoff::new(ExponentialBackoffOptions {
                         base_duration: Duration::from_secs(10),
@@ -1197,6 +1310,7 @@ impl NodeInner {
         };
 
         task.pending_update = true;
+        task.permanent_stop = false;
         task.start_backoff.reset();
 
         match &task.state {
@@ -1211,6 +1325,36 @@ impl NodeInner {
                 // We don't need to do anything. Once the container finishes
                 // stopping, the new container will be brought
                 // up.
+            }
+        }
+
+        Ok(())
+    }
+
+    /// TODO: Should we have this compare to the revision of the task?
+    pub async fn stop_task(&self, name: &str) -> Result<()> {
+        let mut state_guard = self.shared.state.lock().await;
+        let state = &mut *state_guard;
+
+        let task = state
+            .tasks
+            .iter_mut()
+            .find(|t| t.spec.name() == name)
+            .ok_or_else(|| rpc::Status::not_found("Task not found"))?;
+
+        task.pending_update = false;
+        task.permanent_stop = true;
+
+        let mut meta = TaskMetadata::default();
+        meta.set_state(TaskMetadata_State::STOPPING);
+        tasks_table::put_task(&self.shared.db, &meta).await?;
+
+        match &task.state {
+            TaskState::Pending { .. } | TaskState::RestartBackoff { .. } | TaskState::Running => {
+                self.transition_task_to_stopping(task).await?;
+            }
+            TaskState::Stopping { .. } | TaskState::ForceStopping | TaskState::Terminal => {
+                // Nothing to do.
             }
         }
 
@@ -1236,11 +1380,6 @@ impl ContainerNodeService for NodeInner {
         request: rpc::ServerRequest<ListTasksRequest>,
         response: &mut rpc::ServerResponse<ListTasksResponse>,
     ) -> Result<()> {
-        // let containers = self.shared.runtime.list_containers().await;
-        // for container in containers {
-        //     response.add_container(container);
-        // }
-
         response.value = self.list_tasks_impl().await?;
 
         Ok(())
@@ -1263,20 +1402,12 @@ impl ContainerNodeService for NodeInner {
         Ok(())
     }
 
-    // async fn Start(&self, request: rpc::ServerRequest<StartRequest>,
-    //                 response: &mut rpc::ServerResponse<StartResponse>) ->
-    // Result<()> {     let config = request.value.config();
-    //     let id = self.shared.runtime.start_container(config).await?;
-    //     response.value.set_container_id(id);
-    //     Ok(())
-    // }
-
     async fn StartTask(
         &self,
         request: rpc::ServerRequest<StartTaskRequest>,
         response: &mut rpc::ServerResponse<StartTaskResponse>,
     ) -> Result<()> {
-        self.start_task(request.task_spec()).await
+        self.start_task(request.spec(), request.revision()).await
     }
 
     // TODO: When the Node closes, we should kill all tasks that it has

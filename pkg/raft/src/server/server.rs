@@ -61,22 +61,6 @@ use crate::sync::*;
     - Likewise this can be used for spreading out replication if the cluster is sufficiently healthy
 */
 
-#[derive(Debug, Fail)]
-#[must_use]
-pub enum ExecuteError {
-    Propose(ProposeError),
-    NoResult,
-    /*
-        Other errors
-    */
-}
-
-impl std::fmt::Display for ExecuteError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
 // TODO: While Raft has no requirements on message ordering, we should try to
 // ensure that all AppendEntriesRequests are send to remote servers in order as
 // it is inefficient to process them out of order.
@@ -104,6 +88,46 @@ impl std::fmt::Display for ExecuteError {
     We want a lite-wait way to start up arbitrary commands that don't require a return value from the state machine
         - Also useful for
 */
+
+pub struct PendingExecution<R> {
+    proposal: LogPosition,
+    receiver: oneshot::Receiver<Option<R>>,
+}
+
+pub enum PendingExecutionResult<R> {
+    Committed {
+        value: R,
+        log_index: LogIndex,
+    },
+    /// The command requested to be executed was superseded by another execution
+    /// and will never be executed.
+    Cancelled,
+}
+
+impl<R> PendingExecution<R> {
+    pub async fn wait(self) -> PendingExecutionResult<R> {
+        let v = self.receiver.await;
+        match v {
+            Ok(Some(v)) => PendingExecutionResult::Committed {
+                value: v,
+                log_index: self.proposal.index(),
+            },
+            _ => {
+                // TODO: Distinguish between a Receiver error and a server error.
+
+                // TODO: In this case, we would like to distinguish between an
+                // operation that was rejected and one that is known to have
+                // properly failed
+                // ^ If we don't know if it will ever be applied, then we can retry only
+                // idempotent commands without needing to ask the client to retry it's full
+                // cycle ^ Otherwise, if it is known to be no where in the log,
+                // then we can definitely retry it
+
+                PendingExecutionResult::Cancelled
+            }
+        }
+    }
+}
 
 /// Represents everything needed to start up a Server object
 ///
@@ -373,7 +397,9 @@ impl<R: Send + 'static> Server<R> {
             }
         }
 
+        //
         self.shared.wait_for_applied(log_index).await;
+
         Ok(read_index)
     }
 
@@ -392,47 +418,57 @@ impl<R: Send + 'static> Server<R> {
     /// NOTE: If we are the leader and we lose contact with our followers or if
     /// we are executing via a connection to a leader that we lose, then we
     /// should trigger all pending callbacks to fail because of timeout
-    pub async fn execute(&self, cmd: Vec<u8>) -> std::result::Result<R, ExecuteError> {
-        let res = ServerShared::run_tick(&self.shared, Self::execute_tick, cmd).await;
+    pub async fn execute(
+        &self,
+        cmd: Vec<u8>,
+    ) -> std::result::Result<PendingExecution<R>, NotLeaderError> {
+        self.execute_after_read(cmd, None).await
+    }
 
-        let rx: oneshot::Receiver<Option<R>> = match res {
+    // NOTE: We assume that this read has come from Self::begin_read() so it has
+    // already been at least optimistically resolved, so checking that the term
+    // hasn't changed since the read started should be good enough.
+    pub async fn execute_after_read(
+        &self,
+        cmd: Vec<u8>,
+        read_index: Option<ReadIndex>,
+    ) -> std::result::Result<PendingExecution<R>, NotLeaderError> {
+        let res = ServerShared::run_tick(
+            &self.shared,
+            move |s, t, _| Self::execute_tick(s, t, cmd, read_index),
+            (),
+        )
+        .await;
+
+        let (proposal, rx) = match res {
             Ok(v) => v,
-            Err(e) => return Err(ExecuteError::Propose(e)),
+            Err(ProposeError::NotLeader(e)) => return Err(e),
+            // These errors should only happen if proposing a config change (which we are not
+            // doing).
+            Err(ProposeError::RejectedConfigChange) | Err(ProposeError::RetryAfter(_)) => panic!(),
         };
 
-        let v = rx.await;
-        match v {
-            Ok(Some(v)) => Ok(v),
-            _ => {
-                // TODO: Distinguish between a Receiver error and a server error.
-
-                // TODO: In this case, we would like to distinguish between an
-                // operation that was rejected and one that is known to have
-                // properly failed
-                // ^ If we don't know if it will ever be applied, then we can retry only
-                // idempotent commands without needing to ask the client to retry it's full
-                // cycle ^ Otherwise, if it is known to be no where in the log,
-                // then we can definitely retry it
-                Err(ExecuteError::NoResult) // < TODO: In this case check what
-                                            // is up in the commit
-            }
-        }
+        Ok(PendingExecution {
+            proposal,
+            receiver: rx,
+        })
     }
 
     fn execute_tick(
         state: &mut ServerState<R>,
         tick: &mut Tick,
         cmd: Vec<u8>,
-    ) -> std::result::Result<oneshot::Receiver<Option<R>>, ProposeError> {
+        read_index: Option<ReadIndex>,
+    ) -> std::result::Result<(LogPosition, oneshot::Receiver<Option<R>>), ProposeError> {
         let mut entry = LogEntryData::default();
         entry.command_mut().0 = cmd;
 
-        let proposal = state.inst.propose_entry(&entry, tick)?;
+        let proposal = state.inst.propose_entry(&entry, read_index, tick)?;
 
         // If we were successful, add a callback.
         let (tx, rx) = oneshot::channel();
-        state.callbacks.push_back((proposal, tx));
-        Ok(rx)
+        state.callbacks.push_back((proposal.clone(), tx));
+        Ok((proposal, rx))
     }
 }
 
@@ -542,7 +578,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
 
         let r = ServerShared::run_tick(
             &self.shared,
-            |state, tick, _| state.inst.propose_entry(data, tick),
+            |state, tick, _| state.inst.propose_entry(data, None, tick),
             (),
         )
         .await;

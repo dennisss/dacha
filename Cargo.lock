@@ -521,6 +521,7 @@ dependencies = [
  "compression",
  "crypto",
  "datastore",
+ "failure",
  "google",
  "http",
  "libc",
@@ -2055,6 +2056,8 @@ name = "rpc_test"
 version = "0.1.0"
 dependencies = [
  "common",
+ "container",
+ "datastore",
  "http",
  "macros",
  "protobuf",

@@ -89,8 +89,8 @@ async fn run_server() -> Result<()> {
     server.add_reflection()?;
     server.set_shutdown_token(common::shutdown::new_shutdown_token());
 
-    println!("Starting on port {}", args.port.value);
-    server.run(args.port.value).await
+    println!("Starting on port {}", args.port.value());
+    server.run(args.port.value()).await
 }
 
 fn main() {

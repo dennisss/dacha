@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+package build;
 
 message RustBinary {
     string name = 1;
@@ -18,11 +19,15 @@ message FileGroup {
     repeated string srcs = 3;
 }
 
+// This is interesting because it doesn't really have 
 message Bundle {
     string name = 1;
+
     repeated string deps = 2;
 
     repeated string absolute_srcs = 3;
+
+    repeated string configs = 4;
 }
 
 message Webpack {
@@ -30,9 +35,20 @@ message Webpack {
     repeated string deps = 2;
 }
 
+message BuildConfig {
+    string name = 1;
+
+    RustBinary rust_binary = 2;
+    
+    // Platform
+
+    // This also declares a bundle variant?
+}
+
 message BuildFile {
     repeated RustBinary rust_binary = 1;
     repeated FileGroup file_group = 2;
     repeated Bundle bundle = 3;
     repeated Webpack webpack = 4;
+    repeated BuildConfig build_config = 5;
 }

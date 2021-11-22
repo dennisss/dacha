@@ -74,7 +74,7 @@ async fn run() -> Result<()> {
 
     let mut db = EmbeddedDB::open(Path::new("/tmp/dacha/1630808067193796771"), options).await?;
 
-    let mut iter = db.snapshot().await.iter().await;
+    let mut iter = db.snapshot().await.iter().await?;
 
     while let Some(entry) = iter.next().await? {
         println!("{:?} => {:?}", entry.key, entry.value);

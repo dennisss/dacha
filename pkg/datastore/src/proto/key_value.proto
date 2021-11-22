@@ -100,6 +100,17 @@ message ExecuteResponse {
     uint64 read_index = 1;
 }
 
+message TransactionError {
+    TransactionErrorCode code = 1;
+}
+
+enum TransactionErrorCode {
+    UNKNOWN = 0;
+    
+}
+
+
+
 message WatchRequest {
     bytes key_prefix = 1;
 }

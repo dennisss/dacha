@@ -25,7 +25,7 @@ message ClientInfo {
 enum TableId {
     UNKNOWN = 0;
     USER_DATA = 1;
-    CLIENTS = 2;
+    COMPACTION_WATERLINE = 2;
     TRANSACTION_TIME = 3;
 }
 
