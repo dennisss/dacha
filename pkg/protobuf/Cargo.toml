@@ -12,6 +12,7 @@ protobuf_core = { path = "../protobuf_core" }
 protobuf_descriptor = { path = "../../third_party/protobuf_descriptor" }
 macros = { path = "../macros" }
 json = { path = "../json" }
+protobuf_compiler = { path = "../protobuf_compiler" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

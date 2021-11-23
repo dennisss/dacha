@@ -536,6 +536,30 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
 
             out.push_str(&format!("{}]", indent));
         }
+        Reflection::Set(s) => {
+            if s.len() == 0 {
+                return;
+            }
+
+            out.push_str("[\n");
+
+            let inner_indent = format!("{}    ", indent);
+
+            // TODO: Deduplicate with the repeated field code.
+            let mut first = true;
+            let mut iter = s.iter();
+            while let Some(r) = iter.next() {
+                if !first {
+                    out.push_str(",\n");
+                }
+                first = false;
+
+                out.push_str(&inner_indent);
+                serialize_reflection(r, &inner_indent, out);
+            }
+
+            out.push_str(&format!("\n{}]", indent));
+        }
         Reflection::Message(v) => {
             out.push_str("{\n");
 
@@ -556,7 +580,6 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
             }
             out.push_str(v.name());
         }
-        Reflection::Set(_) => todo!(),
     }
 }
 

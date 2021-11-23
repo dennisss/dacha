@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use std::{collections::HashMap, sync::Arc};
 
 use common::errors::*;
+use protobuf_compiler::spec::Syntax;
 use protobuf_core::{FieldDescriptorShort, FieldNumber, Message};
 use protobuf_descriptor::{
     DescriptorProto, FieldDescriptorProto, FileDescriptorProto, MethodDescriptorProto,
@@ -35,6 +36,14 @@ impl DescriptorPool {
     pub fn add_file(&self, data: &[u8]) -> Result<()> {
         let proto = FileDescriptorProto::parse(data)?;
 
+        let syntax = match proto.syntax() {
+            "proto2" => Syntax::Proto2,
+            "proto3" => Syntax::Proto3,
+            _ => {
+                return Err(err_msg("Unsupported proto syntax."));
+            }
+        };
+
         let mut state = self.state.lock().unwrap();
 
         // Don't re-add files.
@@ -51,11 +60,11 @@ impl DescriptorPool {
 
             self.insert_unique_symbol(
                 &name,
-                TypeDescriptorInner::Message(Arc::new(MessageDescriptorInner::new(m))),
+                TypeDescriptorInner::Message(Arc::new(MessageDescriptorInner::new(syntax, m))),
                 state.deref_mut(),
             )?;
 
-            self.add_nested_types(&name, m, state.deref_mut())?;
+            self.add_nested_types(syntax, &name, m, state.deref_mut())?;
         }
 
         for e in proto.enum_type() {
@@ -93,6 +102,7 @@ impl DescriptorPool {
     /// itself).
     fn add_nested_types(
         &self,
+        syntax: Syntax,
         message_name: &str,
         message: &DescriptorProto,
         state: &mut DescriptorPoolState,
@@ -101,10 +111,10 @@ impl DescriptorPool {
             let name = format!("{}.{}", message_name, m.name());
             self.insert_unique_symbol(
                 &name,
-                TypeDescriptorInner::Message(Arc::new(MessageDescriptorInner::new(m))),
+                TypeDescriptorInner::Message(Arc::new(MessageDescriptorInner::new(syntax, m))),
                 state,
             )?;
-            self.add_nested_types(&name, m, state)?;
+            self.add_nested_types(syntax, &name, m, state)?;
         }
 
         for e in message.enum_type() {
@@ -226,6 +236,10 @@ pub struct MessageDescriptor {
 }
 
 impl MessageDescriptor {
+    pub fn syntax(&self) -> Syntax {
+        self.inner.syntax
+    }
+
     pub fn fields(&self) -> &[FieldDescriptorShort] {
         &self.inner.fields_short
     }
@@ -257,12 +271,13 @@ impl MessageDescriptor {
 }
 
 struct MessageDescriptorInner {
+    syntax: Syntax,
     proto: protobuf_descriptor::DescriptorProto,
     fields_short: Vec<FieldDescriptorShort>,
 }
 
 impl MessageDescriptorInner {
-    fn new(proto: &protobuf_descriptor::DescriptorProto) -> Self {
+    fn new(syntax: Syntax, proto: &protobuf_descriptor::DescriptorProto) -> Self {
         let mut fields_short = vec![];
         for field in proto.field() {
             fields_short.push(FieldDescriptorShort::new(
@@ -272,6 +287,7 @@ impl MessageDescriptorInner {
         }
 
         Self {
+            syntax,
             proto: proto.clone(),
             fields_short,
         }

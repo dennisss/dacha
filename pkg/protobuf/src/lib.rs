@@ -15,6 +15,7 @@ extern crate parsing; // < Mainly needed for f32/f64 conversions
 extern crate macros;
 
 extern crate json;
+extern crate protobuf_compiler;
 extern crate protobuf_descriptor;
 
 mod descriptor_pool;

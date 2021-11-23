@@ -12,9 +12,15 @@ pub static FILE_DESCRIPTOR: protobuf_core::StaticFileDescriptor = protobuf_core:
                 proto: b"\x0a4third\x5fparty\x2fprotobuf\x5fdescriptor\x2fsrc\x2fdescriptor\x2eproto\x12\x0fgoogle\x2eprotobuf\x226\x0a\x11FileDescriptorSet\x12\x21\x0a\x04file\x18\x01\x20\x03\x28\x0b2\x13FileDescriptorProto\x22\xf5\x02\x0a\x13FileDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x0f\x0a\x07package\x18\x02\x20\x01\x28\x09\x12\x12\x0a\x0adependency\x18\x03\x20\x03\x28\x09\x12\x19\x0a\x11public\x5fdependency\x18\x0a\x20\x03\x28\x05\x12\x17\x0a\x0fweak\x5fdependency\x18\x0b\x20\x03\x28\x05\x12\x25\x0a\x0cmessage\x5ftype\x18\x04\x20\x03\x28\x0b2\x0fDescriptorProto\x12\x26\x0a\x09enum\x5ftype\x18\x05\x20\x03\x28\x0b2\x13EnumDescriptorProto\x12\x27\x0a\x07service\x18\x06\x20\x03\x28\x0b2\x16ServiceDescriptorProto\x12\x27\x0a\x09extension\x18\x07\x20\x03\x28\x0b2\x14FieldDescriptorProto\x12\x1c\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0bFileOptions\x12\x28\x0a\x10source\x5fcode\x5finfo\x18\x09\x20\x01\x28\x0b2\x0eSourceCodeInfo\x12\x0e\x0a\x06syntax\x18\x0c\x20\x01\x28\x09\x22\xf0\x03\x0a\x0fDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x23\x0a\x05field\x18\x02\x20\x03\x28\x0b2\x14FieldDescriptorProto\x12\x27\x0a\x09extension\x18\x06\x20\x03\x28\x0b2\x14FieldDescriptorProto\x12\x24\x0a\x0bnested\x5ftype\x18\x03\x20\x03\x28\x0b2\x0fDescriptorProto\x12\x26\x0a\x09enum\x5ftype\x18\x04\x20\x03\x28\x0b2\x13EnumDescriptorProto\x12\x27\x0a\x0fextension\x5frange\x18\x05\x20\x03\x28\x0b2\x0eExtensionRange\x12\x28\x0a\x0aoneof\x5fdecl\x18\x08\x20\x03\x28\x0b2\x14OneofDescriptorProto\x12\x1f\x0a\x07options\x18\x07\x20\x01\x28\x0b2\x0eMessageOptions\x12\x25\x0a\x0ereserved\x5frange\x18\x09\x20\x03\x28\x0b2\x0dReservedRange\x12\x15\x0a\x0dreserved\x5fname\x18\x0a\x20\x03\x28\x09\x1aT\x0a\x0eExtensionRange\x12\x0d\x0a\x05start\x18\x01\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x02\x20\x01\x28\x05\x12\x26\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x15ExtensionRangeOptions\x1a\x2b\x0a\x0dReservedRange\x12\x0d\x0a\x05start\x18\x01\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x02\x20\x01\x28\x05\x22\x5b\x0a\x15ExtensionRangeOptions\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xdf\x04\x0a\x14FieldDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x0e\x0a\x06number\x18\x03\x20\x01\x28\x05\x12\x14\x0a\x05label\x18\x04\x20\x01\x28\x0b2\x05Label\x12\x12\x0a\x04type\x18\x05\x20\x01\x28\x0b2\x04Type\x12\x11\x0a\x09type\x5fname\x18\x06\x20\x01\x28\x09\x12\x10\x0a\x08extendee\x18\x02\x20\x01\x28\x09\x12\x15\x0a\x0ddefault\x5fvalue\x18\x07\x20\x01\x28\x09\x12\x13\x0a\x0boneof\x5findex\x18\x09\x20\x01\x28\x05\x12\x11\x0a\x09json\x5fname\x18\x0a\x20\x01\x28\x09\x12\x1d\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0cFieldOptions\x22\xb6\x02\x0a\x04Type\x12\x0f\x0a\x0bTYPE\x5fDOUBLE\x10\x01\x12\x0e\x0a\x0aTYPE\x5fFLOAT\x10\x02\x12\x0e\x0a\x0aTYPE\x5fINT64\x10\x03\x12\x0f\x0a\x0bTYPE\x5fUINT64\x10\x04\x12\x0e\x0a\x0aTYPE\x5fINT32\x10\x05\x12\x10\x0a\x0cTYPE\x5fFIXED64\x10\x06\x12\x10\x0a\x0cTYPE\x5fFIXED32\x10\x07\x12\x0d\x0a\x09TYPE\x5fBOOL\x10\x08\x12\x0f\x0a\x0bTYPE\x5fSTRING\x10\x09\x12\x0e\x0a\x0aTYPE\x5fGROUP\x10\x0a\x12\x10\x0a\x0cTYPE\x5fMESSAGE\x10\x0b\x12\x0e\x0a\x0aTYPE\x5fBYTES\x10\x0c\x12\x0f\x0a\x0bTYPE\x5fUINT32\x10\x0d\x12\x0d\x0a\x09TYPE\x5fENUM\x10\x0e\x12\x11\x0a\x0dTYPE\x5fSFIXED32\x10\x0f\x12\x11\x0a\x0dTYPE\x5fSFIXED64\x10\x10\x12\x0f\x0a\x0bTYPE\x5fSINT32\x10\x11\x12\x0f\x0a\x0bTYPE\x5fSINT64\x10\x12\x22C\x0a\x05Label\x12\x12\x0a\x0eLABEL\x5fOPTIONAL\x10\x01\x12\x12\x0a\x0eLABEL\x5fREQUIRED\x10\x02\x12\x12\x0a\x0eLABEL\x5fREPEATED\x10\x03\x22C\x0a\x14OneofDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x1d\x0a\x07options\x18\x02\x20\x01\x28\x0b2\x0cOneofOptions\x22\xdd\x01\x0a\x13EnumDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x27\x0a\x05value\x18\x02\x20\x03\x28\x0b2\x18EnumValueDescriptorProto\x12\x1c\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0bEnumOptions\x12\x29\x0a\x0ereserved\x5frange\x18\x04\x20\x03\x28\x0b2\x11EnumReservedRange\x12\x15\x0a\x0dreserved\x5fname\x18\x05\x20\x03\x28\x09\x1a\x2f\x0a\x11EnumReservedRange\x12\x0d\x0a\x05start\x18\x01\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x02\x20\x01\x28\x05\x22\x5b\x0a\x18EnumValueDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x0e\x0a\x06number\x18\x02\x20\x01\x28\x05\x12\x21\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x10EnumValueOptions\x22n\x0a\x16ServiceDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x25\x0a\x06method\x18\x02\x20\x03\x28\x0b2\x15MethodDescriptorProto\x12\x1f\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0eServiceOptions\x22\xa2\x01\x0a\x15MethodDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x12\x0a\x0ainput\x5ftype\x18\x02\x20\x01\x28\x09\x12\x13\x0a\x0boutput\x5ftype\x18\x03\x20\x01\x28\x09\x12\x1e\x0a\x07options\x18\x04\x20\x01\x28\x0b2\x0dMethodOptions\x12\x18\x0a\x10client\x5fstreaming\x18\x05\x20\x01\x28\x08\x12\x18\x0a\x10server\x5fstreaming\x18\x06\x20\x01\x28\x08\x22\xb4\x05\x0a\x0bFileOptions\x12\x14\x0a\x0cjava\x5fpackage\x18\x01\x20\x01\x28\x09\x12\x1c\x0a\x14java\x5fouter\x5fclassname\x18\x08\x20\x01\x28\x09\x12\x1b\x0a\x13java\x5fmultiple\x5ffiles\x18\x0a\x20\x01\x28\x08\x12\x25\x0a\x1djava\x5fgenerate\x5fequals\x5fand\x5fhash\x18\x14\x20\x01\x28\x08\x12\x1e\x0a\x16java\x5fstring\x5fcheck\x5futf8\x18\x1b\x20\x01\x28\x08\x12\x22\x0a\x0coptimize\x5ffor\x18\x09\x20\x01\x28\x0b2\x0cOptimizeMode\x12\x12\x0a\x0ago\x5fpackage\x18\x0b\x20\x01\x28\x09\x12\x1b\x0a\x13cc\x5fgeneric\x5fservices\x18\x10\x20\x01\x28\x08\x12\x1d\x0a\x15java\x5fgeneric\x5fservices\x18\x11\x20\x01\x28\x08\x12\x1b\x0a\x13py\x5fgeneric\x5fservices\x18\x12\x20\x01\x28\x08\x12\x1c\x0a\x14php\x5fgeneric\x5fservices\x18\x2a\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x17\x20\x01\x28\x08\x12\x18\x0a\x10cc\x5fenable\x5farenas\x18\x1f\x20\x01\x28\x08\x12\x19\x0a\x11objc\x5fclass\x5fprefix\x18\x24\x20\x01\x28\x09\x12\x18\x0a\x10csharp\x5fnamespace\x18\x25\x20\x01\x28\x09\x12\x14\x0a\x0cswift\x5fprefix\x18\x27\x20\x01\x28\x09\x12\x18\x0a\x10php\x5fclass\x5fprefix\x18\x28\x20\x01\x28\x09\x12\x15\x0a\x0dphp\x5fnamespace\x18\x29\x20\x01\x28\x09\x12\x1e\x0a\x16php\x5fmetadata\x5fnamespace\x18\x2c\x20\x01\x28\x09\x12\x14\x0a\x0cruby\x5fpackage\x18\x2d\x20\x01\x28\x09\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x22\x3a\x0a\x0cOptimizeMode\x12\x09\x0a\x05SPEED\x10\x01\x12\x0d\x0a\x09CODE\x5fSIZE\x10\x02\x12\x10\x0a\x0cLITE\x5fRUNTIME\x10\x03\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xc5\x01\x0a\x0eMessageOptions\x12\x1f\x0a\x17message\x5fset\x5fwire\x5fformat\x18\x01\x20\x01\x28\x08\x12\x27\x0a\x1fno\x5fstandard\x5fdescriptor\x5faccessor\x18\x02\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x12\x11\x0a\x09map\x5fentry\x18\x07\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xa8\x02\x0a\x0cFieldOptions\x12\x14\x0a\x05ctype\x18\x01\x20\x01\x28\x0b2\x05CType\x12\x0e\x0a\x06packed\x18\x02\x20\x01\x28\x08\x12\x16\x0a\x06jstype\x18\x06\x20\x01\x28\x0b2\x06JSType\x12\x0c\x0a\x04lazy\x18\x05\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x12\x0c\x0a\x04weak\x18\x0a\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x22\x2f\x0a\x05CType\x12\x0a\x0a\x06STRING\x10\x00\x12\x08\x0a\x04CORD\x10\x01\x12\x10\x0a\x0cSTRING\x5fPIECE\x10\x02\x225\x0a\x06JSType\x12\x0d\x0a\x09JS\x5fNORMAL\x10\x00\x12\x0d\x0a\x09JS\x5fSTRING\x10\x01\x12\x0d\x0a\x09JS\x5fNUMBER\x10\x02\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22R\x0a\x0cOneofOptions\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22z\x0a\x0bEnumOptions\x12\x13\x0a\x0ballow\x5falias\x18\x02\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22j\x0a\x10EnumValueOptions\x12\x12\x0a\x0adeprecated\x18\x01\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22h\x0a\x0eServiceOptions\x12\x12\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xe6\x01\x0a\x0dMethodOptions\x12\x12\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x12\x2b\x0a\x11idempotency\x5flevel\x18\x22\x20\x01\x28\x0b2\x10IdempotencyLevel\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x22P\x0a\x10IdempotencyLevel\x12\x17\x0a\x13IDEMPOTENCY\x5fUNKNOWN\x10\x00\x12\x13\x0a\x0fNO\x5fSIDE\x5fEFFECTS\x10\x01\x12\x0e\x0a\x0aIDEMPOTENT\x10\x02\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xf9\x01\x0a\x13UninterpretedOption\x12\x16\x0a\x04name\x18\x02\x20\x03\x28\x0b2\x08NamePart\x12\x18\x0a\x10identifier\x5fvalue\x18\x03\x20\x01\x28\x09\x12\x1a\x0a\x12positive\x5fint\x5fvalue\x18\x04\x20\x01\x28\x04\x12\x1a\x0a\x12negative\x5fint\x5fvalue\x18\x05\x20\x01\x28\x03\x12\x14\x0a\x0cdouble\x5fvalue\x18\x06\x20\x01\x28\x01\x12\x14\x0a\x0cstring\x5fvalue\x18\x07\x20\x01\x28\x0c\x12\x17\x0a\x0faggregate\x5fvalue\x18\x08\x20\x01\x28\x09\x1a3\x0a\x08NamePart\x12\x11\x0a\x09name\x5fpart\x18\x01\x20\x02\x28\x09\x12\x14\x0a\x0cis\x5fextension\x18\x02\x20\x02\x28\x08\x22\xac\x01\x0a\x0eSourceCodeInfo\x12\x1a\x0a\x08location\x18\x01\x20\x03\x28\x0b2\x08Location\x1a\x7e\x0a\x08Location\x12\x0c\x0a\x04path\x18\x01\x20\x03\x28\x05\x12\x0c\x0a\x04span\x18\x02\x20\x03\x28\x05\x12\x18\x0a\x10leading\x5fcomments\x18\x03\x20\x01\x28\x09\x12\x19\x0a\x11trailing\x5fcomments\x18\x04\x20\x01\x28\x09\x12\x21\x0a\x19leading\x5fdetached\x5fcomments\x18\x06\x20\x03\x28\x09\x22\x80\x01\x0a\x11GeneratedCodeInfo\x12\x1e\x0a\x0aannotation\x18\x01\x20\x03\x28\x0b2\x0aAnnotation\x1aK\x0a\x0aAnnotation\x12\x0c\x0a\x04path\x18\x01\x20\x03\x28\x05\x12\x13\x0a\x0bsource\x5ffile\x18\x02\x20\x01\x28\x09\x12\x0d\x0a\x05begin\x18\x03\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x04\x20\x01\x28\x05b\x06proto2",
                 dependencies: &[]
             };
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct FileDescriptorSet {
     file: Vec<FileDescriptorProto>,
+}
+
+impl ::std::fmt::Debug for FileDescriptorSet {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl FileDescriptorSet {
@@ -88,14 +94,14 @@ impl protobuf_core::MessageReflection for FileDescriptorSet {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.file.reflect(),
+            1 => self.file.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.file.reflect_mut(),
+            1 => self.file.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -112,7 +118,7 @@ impl protobuf_core::MessageReflection for FileDescriptorSet {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct FileDescriptorProto {
     name: Option<String>,
     package: Option<String>,
@@ -126,6 +132,12 @@ pub struct FileDescriptorProto {
     options: Option<MessagePtr<FileOptions>>,
     source_code_info: Option<MessagePtr<SourceCodeInfo>>,
     syntax: Option<String>,
+}
+
+impl ::std::fmt::Debug for FileDescriptorProto {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl FileDescriptorProto {
@@ -510,36 +522,36 @@ impl protobuf_core::MessageReflection for FileDescriptorProto {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.name.reflect(),
-            2 => self.package.reflect(),
-            3 => self.dependency.reflect(),
-            10 => self.public_dependency.reflect(),
-            11 => self.weak_dependency.reflect(),
-            4 => self.message_type.reflect(),
-            5 => self.enum_type.reflect(),
-            6 => self.service.reflect(),
-            7 => self.extension.reflect(),
-            8 => self.options.reflect(),
-            9 => self.source_code_info.reflect(),
-            12 => self.syntax.reflect(),
+            1 => self.name.reflect_field_proto2(),
+            2 => self.package.reflect_field_proto2(),
+            3 => self.dependency.reflect_field_proto2(),
+            10 => self.public_dependency.reflect_field_proto2(),
+            11 => self.weak_dependency.reflect_field_proto2(),
+            4 => self.message_type.reflect_field_proto2(),
+            5 => self.enum_type.reflect_field_proto2(),
+            6 => self.service.reflect_field_proto2(),
+            7 => self.extension.reflect_field_proto2(),
+            8 => self.options.reflect_field_proto2(),
+            9 => self.source_code_info.reflect_field_proto2(),
+            12 => self.syntax.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_mut(),
-            2 => self.package.reflect_mut(),
-            3 => self.dependency.reflect_mut(),
-            10 => self.public_dependency.reflect_mut(),
-            11 => self.weak_dependency.reflect_mut(),
-            4 => self.message_type.reflect_mut(),
-            5 => self.enum_type.reflect_mut(),
-            6 => self.service.reflect_mut(),
-            7 => self.extension.reflect_mut(),
-            8 => self.options.reflect_mut(),
-            9 => self.source_code_info.reflect_mut(),
-            12 => self.syntax.reflect_mut(),
+            1 => self.name.reflect_field_mut_proto2(),
+            2 => self.package.reflect_field_mut_proto2(),
+            3 => self.dependency.reflect_field_mut_proto2(),
+            10 => self.public_dependency.reflect_field_mut_proto2(),
+            11 => self.weak_dependency.reflect_field_mut_proto2(),
+            4 => self.message_type.reflect_field_mut_proto2(),
+            5 => self.enum_type.reflect_field_mut_proto2(),
+            6 => self.service.reflect_field_mut_proto2(),
+            7 => self.extension.reflect_field_mut_proto2(),
+            8 => self.options.reflect_field_mut_proto2(),
+            9 => self.source_code_info.reflect_field_mut_proto2(),
+            12 => self.syntax.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -567,11 +579,17 @@ impl protobuf_core::MessageReflection for FileDescriptorProto {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct DescriptorProto_ExtensionRange {
     start: Option<i32>,
     end: Option<i32>,
     options: Option<MessagePtr<ExtensionRangeOptions>>,
+}
+
+impl ::std::fmt::Debug for DescriptorProto_ExtensionRange {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl DescriptorProto_ExtensionRange {
@@ -698,18 +716,18 @@ impl protobuf_core::MessageReflection for DescriptorProto_ExtensionRange {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.start.reflect(),
-            2 => self.end.reflect(),
-            3 => self.options.reflect(),
+            1 => self.start.reflect_field_proto2(),
+            2 => self.end.reflect_field_proto2(),
+            3 => self.options.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.start.reflect_mut(),
-            2 => self.end.reflect_mut(),
-            3 => self.options.reflect_mut(),
+            1 => self.start.reflect_field_mut_proto2(),
+            2 => self.end.reflect_field_mut_proto2(),
+            3 => self.options.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -727,10 +745,16 @@ impl protobuf_core::MessageReflection for DescriptorProto_ExtensionRange {
         })
     }
 }
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct DescriptorProto_ReservedRange {
     start: Option<i32>,
     end: Option<i32>,
+}
+
+impl ::std::fmt::Debug for DescriptorProto_ReservedRange {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl DescriptorProto_ReservedRange {
@@ -827,16 +851,16 @@ impl protobuf_core::MessageReflection for DescriptorProto_ReservedRange {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.start.reflect(),
-            2 => self.end.reflect(),
+            1 => self.start.reflect_field_proto2(),
+            2 => self.end.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.start.reflect_mut(),
-            2 => self.end.reflect_mut(),
+            1 => self.start.reflect_field_mut_proto2(),
+            2 => self.end.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -853,7 +877,7 @@ impl protobuf_core::MessageReflection for DescriptorProto_ReservedRange {
         })
     }
 }
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct DescriptorProto {
     name: Option<String>,
     field: Vec<FieldDescriptorProto>,
@@ -865,6 +889,12 @@ pub struct DescriptorProto {
     options: Option<MessagePtr<MessageOptions>>,
     reserved_range: Vec<DescriptorProto_ReservedRange>,
     reserved_name: Vec<String>,
+}
+
+impl ::std::fmt::Debug for DescriptorProto {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl DescriptorProto {
@@ -1204,32 +1234,32 @@ impl protobuf_core::MessageReflection for DescriptorProto {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.name.reflect(),
-            2 => self.field.reflect(),
-            6 => self.extension.reflect(),
-            3 => self.nested_type.reflect(),
-            4 => self.enum_type.reflect(),
-            5 => self.extension_range.reflect(),
-            8 => self.oneof_decl.reflect(),
-            7 => self.options.reflect(),
-            9 => self.reserved_range.reflect(),
-            10 => self.reserved_name.reflect(),
+            1 => self.name.reflect_field_proto2(),
+            2 => self.field.reflect_field_proto2(),
+            6 => self.extension.reflect_field_proto2(),
+            3 => self.nested_type.reflect_field_proto2(),
+            4 => self.enum_type.reflect_field_proto2(),
+            5 => self.extension_range.reflect_field_proto2(),
+            8 => self.oneof_decl.reflect_field_proto2(),
+            7 => self.options.reflect_field_proto2(),
+            9 => self.reserved_range.reflect_field_proto2(),
+            10 => self.reserved_name.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_mut(),
-            2 => self.field.reflect_mut(),
-            6 => self.extension.reflect_mut(),
-            3 => self.nested_type.reflect_mut(),
-            4 => self.enum_type.reflect_mut(),
-            5 => self.extension_range.reflect_mut(),
-            8 => self.oneof_decl.reflect_mut(),
-            7 => self.options.reflect_mut(),
-            9 => self.reserved_range.reflect_mut(),
-            10 => self.reserved_name.reflect_mut(),
+            1 => self.name.reflect_field_mut_proto2(),
+            2 => self.field.reflect_field_mut_proto2(),
+            6 => self.extension.reflect_field_mut_proto2(),
+            3 => self.nested_type.reflect_field_mut_proto2(),
+            4 => self.enum_type.reflect_field_mut_proto2(),
+            5 => self.extension_range.reflect_field_mut_proto2(),
+            8 => self.oneof_decl.reflect_field_mut_proto2(),
+            7 => self.options.reflect_field_mut_proto2(),
+            9 => self.reserved_range.reflect_field_mut_proto2(),
+            10 => self.reserved_name.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -1255,9 +1285,15 @@ impl protobuf_core::MessageReflection for DescriptorProto {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct ExtensionRangeOptions {
     uninterpreted_option: Vec<UninterpretedOption>,
+}
+
+impl ::std::fmt::Debug for ExtensionRangeOptions {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl ExtensionRangeOptions {
@@ -1331,14 +1367,14 @@ impl protobuf_core::MessageReflection for ExtensionRangeOptions {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            999 => self.uninterpreted_option.reflect(),
+            999 => self.uninterpreted_option.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            999 => self.uninterpreted_option.reflect_mut(),
+            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -1478,8 +1514,8 @@ impl protobuf_core::Enum for FieldDescriptorProto_Type {
 }
 
 impl protobuf_core::reflection::Reflect for FieldDescriptorProto_Type {
-    fn reflect(&self) -> Option<protobuf_core::reflection::Reflection> {
-        Some(protobuf_core::reflection::Reflection::Enum(self))
+    fn reflect(&self) -> protobuf_core::reflection::Reflection {
+        protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
@@ -1548,14 +1584,14 @@ impl protobuf_core::Enum for FieldDescriptorProto_Label {
 }
 
 impl protobuf_core::reflection::Reflect for FieldDescriptorProto_Label {
-    fn reflect(&self) -> Option<protobuf_core::reflection::Reflection> {
-        Some(protobuf_core::reflection::Reflection::Enum(self))
+    fn reflect(&self) -> protobuf_core::reflection::Reflection {
+        protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
     }
 }
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct FieldDescriptorProto {
     name: Option<String>,
     number: Option<i32>,
@@ -1567,6 +1603,12 @@ pub struct FieldDescriptorProto {
     oneof_index: Option<i32>,
     json_name: Option<String>,
     options: Option<MessagePtr<FieldOptions>>,
+}
+
+impl ::std::fmt::Debug for FieldDescriptorProto {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl FieldDescriptorProto {
@@ -1873,32 +1915,32 @@ impl protobuf_core::MessageReflection for FieldDescriptorProto {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.name.reflect(),
-            3 => self.number.reflect(),
-            4 => self.label.reflect(),
-            5 => self.typ.reflect(),
-            6 => self.type_name.reflect(),
-            2 => self.extendee.reflect(),
-            7 => self.default_value.reflect(),
-            9 => self.oneof_index.reflect(),
-            10 => self.json_name.reflect(),
-            8 => self.options.reflect(),
+            1 => self.name.reflect_field_proto2(),
+            3 => self.number.reflect_field_proto2(),
+            4 => self.label.reflect_field_proto2(),
+            5 => self.typ.reflect_field_proto2(),
+            6 => self.type_name.reflect_field_proto2(),
+            2 => self.extendee.reflect_field_proto2(),
+            7 => self.default_value.reflect_field_proto2(),
+            9 => self.oneof_index.reflect_field_proto2(),
+            10 => self.json_name.reflect_field_proto2(),
+            8 => self.options.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_mut(),
-            3 => self.number.reflect_mut(),
-            4 => self.label.reflect_mut(),
-            5 => self.typ.reflect_mut(),
-            6 => self.type_name.reflect_mut(),
-            2 => self.extendee.reflect_mut(),
-            7 => self.default_value.reflect_mut(),
-            9 => self.oneof_index.reflect_mut(),
-            10 => self.json_name.reflect_mut(),
-            8 => self.options.reflect_mut(),
+            1 => self.name.reflect_field_mut_proto2(),
+            3 => self.number.reflect_field_mut_proto2(),
+            4 => self.label.reflect_field_mut_proto2(),
+            5 => self.typ.reflect_field_mut_proto2(),
+            6 => self.type_name.reflect_field_mut_proto2(),
+            2 => self.extendee.reflect_field_mut_proto2(),
+            7 => self.default_value.reflect_field_mut_proto2(),
+            9 => self.oneof_index.reflect_field_mut_proto2(),
+            10 => self.json_name.reflect_field_mut_proto2(),
+            8 => self.options.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -1924,10 +1966,16 @@ impl protobuf_core::MessageReflection for FieldDescriptorProto {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct OneofDescriptorProto {
     name: Option<String>,
     options: Option<MessagePtr<OneofOptions>>,
+}
+
+impl ::std::fmt::Debug for OneofDescriptorProto {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl OneofDescriptorProto {
@@ -2029,16 +2077,16 @@ impl protobuf_core::MessageReflection for OneofDescriptorProto {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.name.reflect(),
-            2 => self.options.reflect(),
+            1 => self.name.reflect_field_proto2(),
+            2 => self.options.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_mut(),
-            2 => self.options.reflect_mut(),
+            1 => self.name.reflect_field_mut_proto2(),
+            2 => self.options.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -2056,10 +2104,16 @@ impl protobuf_core::MessageReflection for OneofDescriptorProto {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct EnumDescriptorProto_EnumReservedRange {
     start: Option<i32>,
     end: Option<i32>,
+}
+
+impl ::std::fmt::Debug for EnumDescriptorProto_EnumReservedRange {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl EnumDescriptorProto_EnumReservedRange {
@@ -2157,16 +2211,16 @@ impl protobuf_core::MessageReflection for EnumDescriptorProto_EnumReservedRange 
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.start.reflect(),
-            2 => self.end.reflect(),
+            1 => self.start.reflect_field_proto2(),
+            2 => self.end.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.start.reflect_mut(),
-            2 => self.end.reflect_mut(),
+            1 => self.start.reflect_field_mut_proto2(),
+            2 => self.end.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -2183,13 +2237,19 @@ impl protobuf_core::MessageReflection for EnumDescriptorProto_EnumReservedRange 
         })
     }
 }
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct EnumDescriptorProto {
     name: Option<String>,
     value: Vec<EnumValueDescriptorProto>,
     options: Option<MessagePtr<EnumOptions>>,
     reserved_range: Vec<EnumDescriptorProto_EnumReservedRange>,
     reserved_name: Vec<String>,
+}
+
+impl ::std::fmt::Debug for EnumDescriptorProto {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl EnumDescriptorProto {
@@ -2381,22 +2441,22 @@ impl protobuf_core::MessageReflection for EnumDescriptorProto {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.name.reflect(),
-            2 => self.value.reflect(),
-            3 => self.options.reflect(),
-            4 => self.reserved_range.reflect(),
-            5 => self.reserved_name.reflect(),
+            1 => self.name.reflect_field_proto2(),
+            2 => self.value.reflect_field_proto2(),
+            3 => self.options.reflect_field_proto2(),
+            4 => self.reserved_range.reflect_field_proto2(),
+            5 => self.reserved_name.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_mut(),
-            2 => self.value.reflect_mut(),
-            3 => self.options.reflect_mut(),
-            4 => self.reserved_range.reflect_mut(),
-            5 => self.reserved_name.reflect_mut(),
+            1 => self.name.reflect_field_mut_proto2(),
+            2 => self.value.reflect_field_mut_proto2(),
+            3 => self.options.reflect_field_mut_proto2(),
+            4 => self.reserved_range.reflect_field_mut_proto2(),
+            5 => self.reserved_name.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -2417,11 +2477,17 @@ impl protobuf_core::MessageReflection for EnumDescriptorProto {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct EnumValueDescriptorProto {
     name: Option<String>,
     number: Option<i32>,
     options: Option<MessagePtr<EnumValueOptions>>,
+}
+
+impl ::std::fmt::Debug for EnumValueDescriptorProto {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl EnumValueDescriptorProto {
@@ -2548,18 +2614,18 @@ impl protobuf_core::MessageReflection for EnumValueDescriptorProto {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.name.reflect(),
-            2 => self.number.reflect(),
-            3 => self.options.reflect(),
+            1 => self.name.reflect_field_proto2(),
+            2 => self.number.reflect_field_proto2(),
+            3 => self.options.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_mut(),
-            2 => self.number.reflect_mut(),
-            3 => self.options.reflect_mut(),
+            1 => self.name.reflect_field_mut_proto2(),
+            2 => self.number.reflect_field_mut_proto2(),
+            3 => self.options.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -2578,11 +2644,17 @@ impl protobuf_core::MessageReflection for EnumValueDescriptorProto {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct ServiceDescriptorProto {
     name: Option<String>,
     method: Vec<MethodDescriptorProto>,
     options: Option<MessagePtr<ServiceOptions>>,
+}
+
+impl ::std::fmt::Debug for ServiceDescriptorProto {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl ServiceDescriptorProto {
@@ -2713,18 +2785,18 @@ impl protobuf_core::MessageReflection for ServiceDescriptorProto {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.name.reflect(),
-            2 => self.method.reflect(),
-            3 => self.options.reflect(),
+            1 => self.name.reflect_field_proto2(),
+            2 => self.method.reflect_field_proto2(),
+            3 => self.options.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_mut(),
-            2 => self.method.reflect_mut(),
-            3 => self.options.reflect_mut(),
+            1 => self.name.reflect_field_mut_proto2(),
+            2 => self.method.reflect_field_mut_proto2(),
+            3 => self.options.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -2743,7 +2815,7 @@ impl protobuf_core::MessageReflection for ServiceDescriptorProto {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct MethodDescriptorProto {
     name: Option<String>,
     input_type: Option<String>,
@@ -2751,6 +2823,12 @@ pub struct MethodDescriptorProto {
     options: Option<MessagePtr<MethodOptions>>,
     client_streaming: Option<bool>,
     server_streaming: Option<bool>,
+}
+
+impl ::std::fmt::Debug for MethodDescriptorProto {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl MethodDescriptorProto {
@@ -2952,24 +3030,24 @@ impl protobuf_core::MessageReflection for MethodDescriptorProto {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.name.reflect(),
-            2 => self.input_type.reflect(),
-            3 => self.output_type.reflect(),
-            4 => self.options.reflect(),
-            5 => self.client_streaming.reflect(),
-            6 => self.server_streaming.reflect(),
+            1 => self.name.reflect_field_proto2(),
+            2 => self.input_type.reflect_field_proto2(),
+            3 => self.output_type.reflect_field_proto2(),
+            4 => self.options.reflect_field_proto2(),
+            5 => self.client_streaming.reflect_field_proto2(),
+            6 => self.server_streaming.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name.reflect_mut(),
-            2 => self.input_type.reflect_mut(),
-            3 => self.output_type.reflect_mut(),
-            4 => self.options.reflect_mut(),
-            5 => self.client_streaming.reflect_mut(),
-            6 => self.server_streaming.reflect_mut(),
+            1 => self.name.reflect_field_mut_proto2(),
+            2 => self.input_type.reflect_field_mut_proto2(),
+            3 => self.output_type.reflect_field_mut_proto2(),
+            4 => self.options.reflect_field_mut_proto2(),
+            5 => self.client_streaming.reflect_field_mut_proto2(),
+            6 => self.server_streaming.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -3054,14 +3132,14 @@ impl protobuf_core::Enum for FileOptions_OptimizeMode {
 }
 
 impl protobuf_core::reflection::Reflect for FileOptions_OptimizeMode {
-    fn reflect(&self) -> Option<protobuf_core::reflection::Reflection> {
-        Some(protobuf_core::reflection::Reflection::Enum(self))
+    fn reflect(&self) -> protobuf_core::reflection::Reflection {
+        protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
     }
 }
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct FileOptions {
     java_package: Option<String>,
     java_outer_classname: Option<String>,
@@ -3084,6 +3162,12 @@ pub struct FileOptions {
     php_metadata_namespace: Option<String>,
     ruby_package: Option<String>,
     uninterpreted_option: Vec<UninterpretedOption>,
+}
+
+impl ::std::fmt::Debug for FileOptions {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl FileOptions {
@@ -3690,54 +3774,56 @@ impl protobuf_core::MessageReflection for FileOptions {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.java_package.reflect(),
-            8 => self.java_outer_classname.reflect(),
-            10 => self.java_multiple_files.reflect(),
-            20 => self.java_generate_equals_and_hash.reflect(),
-            27 => self.java_string_check_utf8.reflect(),
-            9 => self.optimize_for.reflect(),
-            11 => self.go_package.reflect(),
-            16 => self.cc_generic_services.reflect(),
-            17 => self.java_generic_services.reflect(),
-            18 => self.py_generic_services.reflect(),
-            42 => self.php_generic_services.reflect(),
-            23 => self.deprecated.reflect(),
-            31 => self.cc_enable_arenas.reflect(),
-            36 => self.objc_class_prefix.reflect(),
-            37 => self.csharp_namespace.reflect(),
-            39 => self.swift_prefix.reflect(),
-            40 => self.php_class_prefix.reflect(),
-            41 => self.php_namespace.reflect(),
-            44 => self.php_metadata_namespace.reflect(),
-            45 => self.ruby_package.reflect(),
-            999 => self.uninterpreted_option.reflect(),
+            1 => self.java_package.reflect_field_proto2(),
+            8 => self.java_outer_classname.reflect_field_proto2(),
+            10 => self.java_multiple_files.reflect_field_proto2(),
+            20 => self.java_generate_equals_and_hash.reflect_field_proto2(),
+            27 => self.java_string_check_utf8.reflect_field_proto2(),
+            9 => self.optimize_for.reflect_field_proto2(),
+            11 => self.go_package.reflect_field_proto2(),
+            16 => self.cc_generic_services.reflect_field_proto2(),
+            17 => self.java_generic_services.reflect_field_proto2(),
+            18 => self.py_generic_services.reflect_field_proto2(),
+            42 => self.php_generic_services.reflect_field_proto2(),
+            23 => self.deprecated.reflect_field_proto2(),
+            31 => self.cc_enable_arenas.reflect_field_proto2(),
+            36 => self.objc_class_prefix.reflect_field_proto2(),
+            37 => self.csharp_namespace.reflect_field_proto2(),
+            39 => self.swift_prefix.reflect_field_proto2(),
+            40 => self.php_class_prefix.reflect_field_proto2(),
+            41 => self.php_namespace.reflect_field_proto2(),
+            44 => self.php_metadata_namespace.reflect_field_proto2(),
+            45 => self.ruby_package.reflect_field_proto2(),
+            999 => self.uninterpreted_option.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.java_package.reflect_mut(),
-            8 => self.java_outer_classname.reflect_mut(),
-            10 => self.java_multiple_files.reflect_mut(),
-            20 => self.java_generate_equals_and_hash.reflect_mut(),
-            27 => self.java_string_check_utf8.reflect_mut(),
-            9 => self.optimize_for.reflect_mut(),
-            11 => self.go_package.reflect_mut(),
-            16 => self.cc_generic_services.reflect_mut(),
-            17 => self.java_generic_services.reflect_mut(),
-            18 => self.py_generic_services.reflect_mut(),
-            42 => self.php_generic_services.reflect_mut(),
-            23 => self.deprecated.reflect_mut(),
-            31 => self.cc_enable_arenas.reflect_mut(),
-            36 => self.objc_class_prefix.reflect_mut(),
-            37 => self.csharp_namespace.reflect_mut(),
-            39 => self.swift_prefix.reflect_mut(),
-            40 => self.php_class_prefix.reflect_mut(),
-            41 => self.php_namespace.reflect_mut(),
-            44 => self.php_metadata_namespace.reflect_mut(),
-            45 => self.ruby_package.reflect_mut(),
-            999 => self.uninterpreted_option.reflect_mut(),
+            1 => self.java_package.reflect_field_mut_proto2(),
+            8 => self.java_outer_classname.reflect_field_mut_proto2(),
+            10 => self.java_multiple_files.reflect_field_mut_proto2(),
+            20 => self
+                .java_generate_equals_and_hash
+                .reflect_field_mut_proto2(),
+            27 => self.java_string_check_utf8.reflect_field_mut_proto2(),
+            9 => self.optimize_for.reflect_field_mut_proto2(),
+            11 => self.go_package.reflect_field_mut_proto2(),
+            16 => self.cc_generic_services.reflect_field_mut_proto2(),
+            17 => self.java_generic_services.reflect_field_mut_proto2(),
+            18 => self.py_generic_services.reflect_field_mut_proto2(),
+            42 => self.php_generic_services.reflect_field_mut_proto2(),
+            23 => self.deprecated.reflect_field_mut_proto2(),
+            31 => self.cc_enable_arenas.reflect_field_mut_proto2(),
+            36 => self.objc_class_prefix.reflect_field_mut_proto2(),
+            37 => self.csharp_namespace.reflect_field_mut_proto2(),
+            39 => self.swift_prefix.reflect_field_mut_proto2(),
+            40 => self.php_class_prefix.reflect_field_mut_proto2(),
+            41 => self.php_namespace.reflect_field_mut_proto2(),
+            44 => self.php_metadata_namespace.reflect_field_mut_proto2(),
+            45 => self.ruby_package.reflect_field_mut_proto2(),
+            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -3774,13 +3860,19 @@ impl protobuf_core::MessageReflection for FileOptions {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct MessageOptions {
     message_set_wire_format: Option<bool>,
     no_standard_descriptor_accessor: Option<bool>,
     deprecated: Option<bool>,
     map_entry: Option<bool>,
     uninterpreted_option: Vec<UninterpretedOption>,
+}
+
+impl ::std::fmt::Debug for MessageOptions {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl MessageOptions {
@@ -3958,22 +4050,24 @@ impl protobuf_core::MessageReflection for MessageOptions {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.message_set_wire_format.reflect(),
-            2 => self.no_standard_descriptor_accessor.reflect(),
-            3 => self.deprecated.reflect(),
-            7 => self.map_entry.reflect(),
-            999 => self.uninterpreted_option.reflect(),
+            1 => self.message_set_wire_format.reflect_field_proto2(),
+            2 => self.no_standard_descriptor_accessor.reflect_field_proto2(),
+            3 => self.deprecated.reflect_field_proto2(),
+            7 => self.map_entry.reflect_field_proto2(),
+            999 => self.uninterpreted_option.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.message_set_wire_format.reflect_mut(),
-            2 => self.no_standard_descriptor_accessor.reflect_mut(),
-            3 => self.deprecated.reflect_mut(),
-            7 => self.map_entry.reflect_mut(),
-            999 => self.uninterpreted_option.reflect_mut(),
+            1 => self.message_set_wire_format.reflect_field_mut_proto2(),
+            2 => self
+                .no_standard_descriptor_accessor
+                .reflect_field_mut_proto2(),
+            3 => self.deprecated.reflect_field_mut_proto2(),
+            7 => self.map_entry.reflect_field_mut_proto2(),
+            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -4057,8 +4151,8 @@ impl protobuf_core::Enum for FieldOptions_CType {
 }
 
 impl protobuf_core::reflection::Reflect for FieldOptions_CType {
-    fn reflect(&self) -> Option<protobuf_core::reflection::Reflection> {
-        Some(protobuf_core::reflection::Reflection::Enum(self))
+    fn reflect(&self) -> protobuf_core::reflection::Reflection {
+        protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
@@ -4127,14 +4221,14 @@ impl protobuf_core::Enum for FieldOptions_JSType {
 }
 
 impl protobuf_core::reflection::Reflect for FieldOptions_JSType {
-    fn reflect(&self) -> Option<protobuf_core::reflection::Reflection> {
-        Some(protobuf_core::reflection::Reflection::Enum(self))
+    fn reflect(&self) -> protobuf_core::reflection::Reflection {
+        protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
     }
 }
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct FieldOptions {
     ctype: Option<FieldOptions_CType>,
     packed: Option<bool>,
@@ -4143,6 +4237,12 @@ pub struct FieldOptions {
     deprecated: Option<bool>,
     weak: Option<bool>,
     uninterpreted_option: Vec<UninterpretedOption>,
+}
+
+impl ::std::fmt::Debug for FieldOptions {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl FieldOptions {
@@ -4370,26 +4470,26 @@ impl protobuf_core::MessageReflection for FieldOptions {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.ctype.reflect(),
-            2 => self.packed.reflect(),
-            6 => self.jstype.reflect(),
-            5 => self.lazy.reflect(),
-            3 => self.deprecated.reflect(),
-            10 => self.weak.reflect(),
-            999 => self.uninterpreted_option.reflect(),
+            1 => self.ctype.reflect_field_proto2(),
+            2 => self.packed.reflect_field_proto2(),
+            6 => self.jstype.reflect_field_proto2(),
+            5 => self.lazy.reflect_field_proto2(),
+            3 => self.deprecated.reflect_field_proto2(),
+            10 => self.weak.reflect_field_proto2(),
+            999 => self.uninterpreted_option.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.ctype.reflect_mut(),
-            2 => self.packed.reflect_mut(),
-            6 => self.jstype.reflect_mut(),
-            5 => self.lazy.reflect_mut(),
-            3 => self.deprecated.reflect_mut(),
-            10 => self.weak.reflect_mut(),
-            999 => self.uninterpreted_option.reflect_mut(),
+            1 => self.ctype.reflect_field_mut_proto2(),
+            2 => self.packed.reflect_field_mut_proto2(),
+            6 => self.jstype.reflect_field_mut_proto2(),
+            5 => self.lazy.reflect_field_mut_proto2(),
+            3 => self.deprecated.reflect_field_mut_proto2(),
+            10 => self.weak.reflect_field_mut_proto2(),
+            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -4412,9 +4512,15 @@ impl protobuf_core::MessageReflection for FieldOptions {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct OneofOptions {
     uninterpreted_option: Vec<UninterpretedOption>,
+}
+
+impl ::std::fmt::Debug for OneofOptions {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl OneofOptions {
@@ -4488,14 +4594,14 @@ impl protobuf_core::MessageReflection for OneofOptions {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            999 => self.uninterpreted_option.reflect(),
+            999 => self.uninterpreted_option.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            999 => self.uninterpreted_option.reflect_mut(),
+            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -4512,11 +4618,17 @@ impl protobuf_core::MessageReflection for OneofOptions {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct EnumOptions {
     allow_alias: Option<bool>,
     deprecated: Option<bool>,
     uninterpreted_option: Vec<UninterpretedOption>,
+}
+
+impl ::std::fmt::Debug for EnumOptions {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl EnumOptions {
@@ -4642,18 +4754,18 @@ impl protobuf_core::MessageReflection for EnumOptions {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            2 => self.allow_alias.reflect(),
-            3 => self.deprecated.reflect(),
-            999 => self.uninterpreted_option.reflect(),
+            2 => self.allow_alias.reflect_field_proto2(),
+            3 => self.deprecated.reflect_field_proto2(),
+            999 => self.uninterpreted_option.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            2 => self.allow_alias.reflect_mut(),
-            3 => self.deprecated.reflect_mut(),
-            999 => self.uninterpreted_option.reflect_mut(),
+            2 => self.allow_alias.reflect_field_mut_proto2(),
+            3 => self.deprecated.reflect_field_mut_proto2(),
+            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -4672,10 +4784,16 @@ impl protobuf_core::MessageReflection for EnumOptions {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct EnumValueOptions {
     deprecated: Option<bool>,
     uninterpreted_option: Vec<UninterpretedOption>,
+}
+
+impl ::std::fmt::Debug for EnumValueOptions {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl EnumValueOptions {
@@ -4776,16 +4894,16 @@ impl protobuf_core::MessageReflection for EnumValueOptions {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.deprecated.reflect(),
-            999 => self.uninterpreted_option.reflect(),
+            1 => self.deprecated.reflect_field_proto2(),
+            999 => self.uninterpreted_option.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.deprecated.reflect_mut(),
-            999 => self.uninterpreted_option.reflect_mut(),
+            1 => self.deprecated.reflect_field_mut_proto2(),
+            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -4803,10 +4921,16 @@ impl protobuf_core::MessageReflection for EnumValueOptions {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct ServiceOptions {
     deprecated: Option<bool>,
     uninterpreted_option: Vec<UninterpretedOption>,
+}
+
+impl ::std::fmt::Debug for ServiceOptions {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl ServiceOptions {
@@ -4907,16 +5031,16 @@ impl protobuf_core::MessageReflection for ServiceOptions {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            33 => self.deprecated.reflect(),
-            999 => self.uninterpreted_option.reflect(),
+            33 => self.deprecated.reflect_field_proto2(),
+            999 => self.uninterpreted_option.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            33 => self.deprecated.reflect_mut(),
-            999 => self.uninterpreted_option.reflect_mut(),
+            33 => self.deprecated.reflect_field_mut_proto2(),
+            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -4997,18 +5121,24 @@ impl protobuf_core::Enum for MethodOptions_IdempotencyLevel {
 }
 
 impl protobuf_core::reflection::Reflect for MethodOptions_IdempotencyLevel {
-    fn reflect(&self) -> Option<protobuf_core::reflection::Reflection> {
-        Some(protobuf_core::reflection::Reflection::Enum(self))
+    fn reflect(&self) -> protobuf_core::reflection::Reflection {
+        protobuf_core::reflection::Reflection::Enum(self)
     }
     fn reflect_mut(&mut self) -> protobuf_core::reflection::ReflectionMut {
         protobuf_core::reflection::ReflectionMut::Enum(self)
     }
 }
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct MethodOptions {
     deprecated: Option<bool>,
     idempotency_level: Option<MethodOptions_IdempotencyLevel>,
     uninterpreted_option: Vec<UninterpretedOption>,
+}
+
+impl ::std::fmt::Debug for MethodOptions {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl MethodOptions {
@@ -5139,18 +5269,18 @@ impl protobuf_core::MessageReflection for MethodOptions {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            33 => self.deprecated.reflect(),
-            34 => self.idempotency_level.reflect(),
-            999 => self.uninterpreted_option.reflect(),
+            33 => self.deprecated.reflect_field_proto2(),
+            34 => self.idempotency_level.reflect_field_proto2(),
+            999 => self.uninterpreted_option.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            33 => self.deprecated.reflect_mut(),
-            34 => self.idempotency_level.reflect_mut(),
-            999 => self.uninterpreted_option.reflect_mut(),
+            33 => self.deprecated.reflect_field_mut_proto2(),
+            34 => self.idempotency_level.reflect_field_mut_proto2(),
+            999 => self.uninterpreted_option.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -5169,10 +5299,16 @@ impl protobuf_core::MessageReflection for MethodOptions {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct UninterpretedOption_NamePart {
     name_part: Option<String>,
     is_extension: Option<bool>,
+}
+
+impl ::std::fmt::Debug for UninterpretedOption_NamePart {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl UninterpretedOption_NamePart {
@@ -5273,16 +5409,16 @@ impl protobuf_core::MessageReflection for UninterpretedOption_NamePart {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.name_part.reflect(),
-            2 => self.is_extension.reflect(),
+            1 => self.name_part.reflect_field_proto2(),
+            2 => self.is_extension.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.name_part.reflect_mut(),
-            2 => self.is_extension.reflect_mut(),
+            1 => self.name_part.reflect_field_mut_proto2(),
+            2 => self.is_extension.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -5299,7 +5435,7 @@ impl protobuf_core::MessageReflection for UninterpretedOption_NamePart {
         })
     }
 }
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct UninterpretedOption {
     name: Vec<UninterpretedOption_NamePart>,
     identifier_value: Option<String>,
@@ -5308,6 +5444,12 @@ pub struct UninterpretedOption {
     double_value: Option<f64>,
     string_value: Option<BytesField>,
     aggregate_value: Option<String>,
+}
+
+impl ::std::fmt::Debug for UninterpretedOption {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl UninterpretedOption {
@@ -5550,26 +5692,26 @@ impl protobuf_core::MessageReflection for UninterpretedOption {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            2 => self.name.reflect(),
-            3 => self.identifier_value.reflect(),
-            4 => self.positive_int_value.reflect(),
-            5 => self.negative_int_value.reflect(),
-            6 => self.double_value.reflect(),
-            7 => self.string_value.reflect(),
-            8 => self.aggregate_value.reflect(),
+            2 => self.name.reflect_field_proto2(),
+            3 => self.identifier_value.reflect_field_proto2(),
+            4 => self.positive_int_value.reflect_field_proto2(),
+            5 => self.negative_int_value.reflect_field_proto2(),
+            6 => self.double_value.reflect_field_proto2(),
+            7 => self.string_value.reflect_field_proto2(),
+            8 => self.aggregate_value.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            2 => self.name.reflect_mut(),
-            3 => self.identifier_value.reflect_mut(),
-            4 => self.positive_int_value.reflect_mut(),
-            5 => self.negative_int_value.reflect_mut(),
-            6 => self.double_value.reflect_mut(),
-            7 => self.string_value.reflect_mut(),
-            8 => self.aggregate_value.reflect_mut(),
+            2 => self.name.reflect_field_mut_proto2(),
+            3 => self.identifier_value.reflect_field_mut_proto2(),
+            4 => self.positive_int_value.reflect_field_mut_proto2(),
+            5 => self.negative_int_value.reflect_field_mut_proto2(),
+            6 => self.double_value.reflect_field_mut_proto2(),
+            7 => self.string_value.reflect_field_mut_proto2(),
+            8 => self.aggregate_value.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -5592,13 +5734,19 @@ impl protobuf_core::MessageReflection for UninterpretedOption {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct SourceCodeInfo_Location {
     path: Vec<i32>,
     span: Vec<i32>,
     leading_comments: Option<String>,
     trailing_comments: Option<String>,
     leading_detached_comments: Vec<String>,
+}
+
+impl ::std::fmt::Debug for SourceCodeInfo_Location {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl SourceCodeInfo_Location {
@@ -5790,22 +5938,22 @@ impl protobuf_core::MessageReflection for SourceCodeInfo_Location {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.path.reflect(),
-            2 => self.span.reflect(),
-            3 => self.leading_comments.reflect(),
-            4 => self.trailing_comments.reflect(),
-            6 => self.leading_detached_comments.reflect(),
+            1 => self.path.reflect_field_proto2(),
+            2 => self.span.reflect_field_proto2(),
+            3 => self.leading_comments.reflect_field_proto2(),
+            4 => self.trailing_comments.reflect_field_proto2(),
+            6 => self.leading_detached_comments.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.path.reflect_mut(),
-            2 => self.span.reflect_mut(),
-            3 => self.leading_comments.reflect_mut(),
-            4 => self.trailing_comments.reflect_mut(),
-            6 => self.leading_detached_comments.reflect_mut(),
+            1 => self.path.reflect_field_mut_proto2(),
+            2 => self.span.reflect_field_mut_proto2(),
+            3 => self.leading_comments.reflect_field_mut_proto2(),
+            4 => self.trailing_comments.reflect_field_mut_proto2(),
+            6 => self.leading_detached_comments.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -5825,9 +5973,15 @@ impl protobuf_core::MessageReflection for SourceCodeInfo_Location {
         })
     }
 }
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct SourceCodeInfo {
     location: Vec<SourceCodeInfo_Location>,
+}
+
+impl ::std::fmt::Debug for SourceCodeInfo {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl SourceCodeInfo {
@@ -5901,14 +6055,14 @@ impl protobuf_core::MessageReflection for SourceCodeInfo {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.location.reflect(),
+            1 => self.location.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.location.reflect_mut(),
+            1 => self.location.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -5925,12 +6079,18 @@ impl protobuf_core::MessageReflection for SourceCodeInfo {
     }
 }
 
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct GeneratedCodeInfo_Annotation {
     path: Vec<i32>,
     source_file: Option<String>,
     begin: Option<i32>,
     end: Option<i32>,
+}
+
+impl ::std::fmt::Debug for GeneratedCodeInfo_Annotation {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl GeneratedCodeInfo_Annotation {
@@ -6081,20 +6241,20 @@ impl protobuf_core::MessageReflection for GeneratedCodeInfo_Annotation {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.path.reflect(),
-            2 => self.source_file.reflect(),
-            3 => self.begin.reflect(),
-            4 => self.end.reflect(),
+            1 => self.path.reflect_field_proto2(),
+            2 => self.source_file.reflect_field_proto2(),
+            3 => self.begin.reflect_field_proto2(),
+            4 => self.end.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.path.reflect_mut(),
-            2 => self.source_file.reflect_mut(),
-            3 => self.begin.reflect_mut(),
-            4 => self.end.reflect_mut(),
+            1 => self.path.reflect_field_mut_proto2(),
+            2 => self.source_file.reflect_field_mut_proto2(),
+            3 => self.begin.reflect_field_mut_proto2(),
+            4 => self.end.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }
@@ -6113,9 +6273,15 @@ impl protobuf_core::MessageReflection for GeneratedCodeInfo_Annotation {
         })
     }
 }
-#[derive(Clone, Default, Debug, ConstDefault)]
+#[derive(Clone, Default, PartialEq, ConstDefault)]
 pub struct GeneratedCodeInfo {
     annotation: Vec<GeneratedCodeInfo_Annotation>,
+}
+
+impl ::std::fmt::Debug for GeneratedCodeInfo {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(&protobuf_core::text::serialize_text_proto(self))
+    }
 }
 
 impl GeneratedCodeInfo {
@@ -6192,14 +6358,14 @@ impl protobuf_core::MessageReflection for GeneratedCodeInfo {
     }
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
         match num {
-            1 => self.annotation.reflect(),
+            1 => self.annotation.reflect_field_proto2(),
             _ => None,
         }
     }
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut> {
         Some(match num {
-            1 => self.annotation.reflect_mut(),
+            1 => self.annotation.reflect_field_mut_proto2(),
             _ => {
                 return None;
             }

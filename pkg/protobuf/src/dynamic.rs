@@ -1,6 +1,8 @@
+use std::cmp::PartialEq;
 use std::collections::HashMap;
 
 use common::errors::*;
+use protobuf_compiler::spec::Syntax;
 use protobuf_core::reflection::RepeatedFieldReflection;
 use protobuf_core::wire::{WireField, WireFieldIter};
 use protobuf_core::{EnumValue, FieldNumber};
@@ -60,6 +62,13 @@ impl DynamicMessage {
     }
 }
 
+impl PartialEq for DynamicMessage {
+    fn eq(&self, other: &Self) -> bool {
+        // TODO: Check that the type URLs are equal
+        self.fields == other.fields
+    }
+}
+
 impl protobuf_core::Message for DynamicMessage {
     fn type_url(&self) -> &'static str {
         todo!()
@@ -70,7 +79,7 @@ impl protobuf_core::Message for DynamicMessage {
         Self: Sized,
     {
         // Note possible to do statically.
-        todo!()
+        panic!()
     }
 
     fn parse(data: &[u8]) -> Result<Self>
@@ -78,7 +87,7 @@ impl protobuf_core::Message for DynamicMessage {
         Self: Sized,
     {
         // It's not possible for us to implement this as we don't have a descriptor.
-        todo!()
+        panic!()
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
@@ -197,7 +206,8 @@ impl protobuf_core::Message for DynamicMessage {
 
     fn serialize(&self) -> Result<Vec<u8>> {
         // TODO: Go in field number order.
-        // TODO: Ignore fields with default values (by using the sparse serializers).
+        // TODO: Ignore fields with default values in proto3 (by using the sparse
+        // serializers).
 
         let mut out = vec![];
 
@@ -283,10 +293,43 @@ impl protobuf_core::MessageReflection for DynamicMessage {
     }
 
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection> {
-        self.fields.get(&num).and_then(|f| f.reflect())
+        let field = match self.fields.get(&num) {
+            Some(v) => v,
+            None => return None,
+        };
+
+        // Check field presence.
+        let present = match self.desc.syntax() {
+            Syntax::Proto2 => {
+                // Nothing else to check.
+                // Presence of the value in the map is good enough.
+                true
+            }
+            Syntax::Proto3 => match field {
+                DynamicField::Singular(v) => {
+                    let field_desc = self.desc.field_by_number(num).unwrap();
+                    if field_desc.proto().has_oneof_index() {
+                        true
+                    } else {
+                        let default_value = Self::default_value_for_field(&field_desc).unwrap();
+
+                        *v != default_value
+                    }
+                }
+                DynamicField::Repeated(v) => true,
+            },
+        };
+
+        if !present {
+            return None;
+        }
+
+        Some(field.reflect())
     }
 
     fn field_by_number_mut<'a>(&'a mut self, num: FieldNumber) -> Option<ReflectionMut<'a>> {
+        // TODO: Mutating a oneof field should clear all of the other ones.
+
         if !self.fields.contains_key(&num) {
             let field_desc = match self.desc.field_by_number(num) {
                 Some(v) => v,
@@ -324,17 +367,17 @@ impl protobuf_core::MessageReflection for DynamicMessage {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum DynamicField {
     Singular(DynamicValue),
     Repeated(DynamicRepeatedField),
 }
 
 impl Reflect for DynamicField {
-    fn reflect(&self) -> Option<Reflection> {
+    fn reflect(&self) -> Reflection {
         match self {
             DynamicField::Singular(v) => v.reflect(),
-            DynamicField::Repeated(v) => Some(Reflection::Repeated(v)),
+            DynamicField::Repeated(v) => Reflection::Repeated(v),
         }
     }
 
@@ -346,7 +389,7 @@ impl Reflect for DynamicField {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum DynamicValue {
     Primitive(DynamicPrimitiveValue),
     Enum(DynamicEnum),
@@ -354,11 +397,11 @@ enum DynamicValue {
 }
 
 impl Reflect for DynamicValue {
-    fn reflect(&self) -> Option<Reflection> {
+    fn reflect(&self) -> Reflection {
         match self {
             DynamicValue::Primitive(v) => v.reflect(),
-            DynamicValue::Enum(v) => Some(Reflection::Enum(v)),
-            DynamicValue::Message(v) => Some(Reflection::Message(v)),
+            DynamicValue::Enum(v) => Reflection::Enum(v),
+            DynamicValue::Message(v) => Reflection::Message(v),
         }
     }
 
@@ -378,13 +421,19 @@ struct DynamicRepeatedField {
     desc: FieldDescriptor,
 }
 
+impl PartialEq for DynamicRepeatedField {
+    fn eq(&self, other: &Self) -> bool {
+        self.values == other.values
+    }
+}
+
 impl RepeatedFieldReflection for DynamicRepeatedField {
     fn len(&self) -> usize {
         self.values.len()
     }
 
     fn get(&self, index: usize) -> Option<Reflection> {
-        self.values.get(index).and_then(|v| v.reflect())
+        self.values.get(index).map(|v| v.reflect())
     }
 
     fn get_mut(&mut self, index: usize) -> Option<ReflectionMut> {
@@ -407,6 +456,13 @@ impl DynamicEnum {
     pub fn new(desc: EnumDescriptor) -> Self {
         // TODO: Need to have better comprehension of the default value.
         Self { value: 0, desc }
+    }
+}
+
+impl PartialEq for DynamicEnum {
+    fn eq(&self, other: &Self) -> bool {
+        // TODO: Check the type URL
+        self.value == other.value
     }
 }
 
@@ -464,7 +520,7 @@ impl protobuf_core::Enum for DynamicEnum {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum DynamicPrimitiveValue {
     Double(f64),
     Float(f32),
@@ -484,8 +540,8 @@ enum DynamicPrimitiveValue {
 }
 
 impl Reflect for DynamicPrimitiveValue {
-    fn reflect(&self) -> Option<Reflection> {
-        Some(match self {
+    fn reflect(&self) -> Reflection {
+        match self {
             DynamicPrimitiveValue::Double(v) => Reflection::F64(v),
             DynamicPrimitiveValue::Float(v) => Reflection::F32(v),
             DynamicPrimitiveValue::Int32(v) => Reflection::I32(v),
@@ -501,7 +557,7 @@ impl Reflect for DynamicPrimitiveValue {
             DynamicPrimitiveValue::Bool(v) => Reflection::Bool(v),
             DynamicPrimitiveValue::String(v) => Reflection::String(v),
             DynamicPrimitiveValue::Bytes(v) => Reflection::Bytes(v.as_ref()),
-        })
+        }
     }
 
     fn reflect_mut(&mut self) -> ReflectionMut {

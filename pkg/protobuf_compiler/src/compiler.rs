@@ -257,7 +257,10 @@ impl Compiler<'_> {
                     if components[0].as_os_str() != "pkg"
                         && components[0].as_os_str() != "third_party"
                     {
-                        return Err(err_msg("Expected to be the pkg|third_party dir"));
+                        return Err(format_err!(
+                            "Expected to be the pkg|third_party dir: {:?}",
+                            relative_path
+                        ));
                     }
 
                     continue;
@@ -336,6 +339,7 @@ impl Compiler<'_> {
             p.set_name(path.strip_prefix(common::project_dir())?.to_str().unwrap());
 
             let proto = rust_bytestring(&p.serialize()?);
+
             let mut deps = vec![];
             for import in &c.imported_protos {
                 deps.push(format!("&{}::FILE_DESCRIPTOR", import.package_path));
@@ -571,7 +575,7 @@ impl Compiler<'_> {
             self.options.runtime_package, fullname
         ));
         lines.indented(|lines| {
-            lines.add(format!("fn reflect(&self) -> Option<{}::reflection::Reflection> {{ Some({}::reflection::Reflection::Enum(self)) }}",
+            lines.add(format!("fn reflect(&self) -> {}::reflection::Reflection {{ {}::reflection::Reflection::Enum(self) }}",
                       self.options.runtime_package, self.options.runtime_package));
             lines.add(format!("fn reflect_mut(&mut self) -> {}::reflection::ReflectionMut {{ {}::reflection::ReflectionMut::Enum(self) }}",
                       self.options.runtime_package, self.options.runtime_package));
@@ -1713,7 +1717,13 @@ impl Compiler<'_> {
                     match item {
                         MessageItem::Field(field) => {
                             let name = self.field_name(field);
-                            lines.add(format!("\t{} => self.{}.reflect(),", field.num, name));
+
+                            let f = match self.proto.syntax {
+                                Syntax::Proto2 => "reflect_field_proto2",
+                                Syntax::Proto3 => "reflect_field_proto3",
+                            };
+
+                            lines.add(format!("\t{} => self.{}.{}(),", field.num, name, f));
                         }
                         MessageItem::OneOf(oneof) => {
                             let name = Self::field_name_inner(&oneof.name);
@@ -1728,7 +1738,7 @@ impl Compiler<'_> {
                                     common::snake_to_camel_case(&field.name),
                                     name
                                 ));
-                                lines.add("\t\t\tv.reflect()");
+                                lines.add("\t\t\tSome(v.reflect())");
 
                                 // TODO: Reflect a DEFAULT value
                                 lines.add("\t\t} else { None }");
@@ -1760,7 +1770,13 @@ impl Compiler<'_> {
                     match item {
                         MessageItem::Field(field) => {
                             let name = self.field_name(field);
-                            lines.add(format!("\t{} => self.{}.reflect_mut(),", field.num, name));
+
+                            let f = match self.proto.syntax {
+                                Syntax::Proto2 => "reflect_field_mut_proto2",
+                                Syntax::Proto3 => "reflect_field_mut_proto3",
+                            };
+
+                            lines.add(format!("\t{} => self.{}.{}(),", field.num, name, f));
                         }
                         MessageItem::OneOf(oneof) => {
                             let name = Self::field_name_inner(&oneof.name);

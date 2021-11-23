@@ -18,7 +18,10 @@ pub mod wire;
 pub use bytes::BytesField;
 pub use collections::*;
 pub use message::{Enum, Message, MessagePtr};
-pub use reflection::{FieldDescriptorShort, MessageReflection, StringPtr};
+pub use reflection::{
+    FieldDescriptorShort, MessageReflection, SingularFieldReflectionProto2,
+    SingularFieldReflectionProto3, StringPtr,
+};
 pub use types::EnumValue;
 pub use types::FieldNumber;
 

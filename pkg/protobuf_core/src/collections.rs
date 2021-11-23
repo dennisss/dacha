@@ -99,8 +99,8 @@ impl<'a, T> Iterator for SetFieldIter<'a, T> {
 pub trait SetFieldReflectableElement = Reflect + Eq + Hash + Default + Clone;
 
 impl<T: SetFieldReflectableElement> Reflect for SetField<T> {
-    fn reflect(&self) -> Option<Reflection> {
-        Some(Reflection::Set(self))
+    fn reflect(&self) -> Reflection {
+        Reflection::Set(self)
     }
 
     fn reflect_mut(&mut self) -> ReflectionMut {
@@ -129,9 +129,9 @@ impl<T: SetFieldReflectableElement> SetFieldReflection for SetField<T> {
         })
     }
 
-    // fn iter(&self, callback: fn(Reflection)) {
-
-    // }
+    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = Reflection<'a>> + 'a> {
+        Box::new(SetField::iter(self).map(|v| v.reflect()))
+    }
 }
 
 struct SetFieldEntry<'a, T: SetFieldReflectableElement, F: 'a + Deref<Target = SetField<T>>> {

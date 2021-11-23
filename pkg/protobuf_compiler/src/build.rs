@@ -76,6 +76,7 @@ pub fn build_custom(
         let output = Compiler::compile(&desc, &input_path, current_package_name, &options)?;
         std::fs::write(&output_path, output)?;
 
+        // TODO: This doesn't work with 'cross'
         let res = Command::new("rustfmt")
             .arg(output_path.to_str().unwrap())
             .output()?;

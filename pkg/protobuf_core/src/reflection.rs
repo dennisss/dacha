@@ -85,6 +85,8 @@ pub trait MessageReflection {
     // set to the default value.
     fn fields(&self) -> &[FieldDescriptorShort];
 
+    /// Returns None if the field is now defined in the descriptor or the field
+    /// doesn't have a value (based on field presence rules).
     fn field_by_number(&self, num: FieldNumber) -> Option<Reflection>;
 
     fn field_by_number_mut(&mut self, num: FieldNumber) -> Option<ReflectionMut>;
@@ -98,15 +100,15 @@ pub trait MessageReflection {
 // }
 
 pub trait Reflect {
-    fn reflect(&self) -> Option<Reflection>;
+    fn reflect(&self) -> Reflection;
     fn reflect_mut(&mut self) -> ReflectionMut;
 }
 
 macro_rules! define_reflect {
     ($name:ident, $t:ident) => {
         impl Reflect for $t {
-            fn reflect(&self) -> Option<Reflection> {
-                Some(Reflection::$name(self))
+            fn reflect(&self) -> Reflection {
+                Reflection::$name(self)
             }
             fn reflect_mut(&mut self) -> ReflectionMut {
                 ReflectionMut::$name(self)
@@ -125,8 +127,8 @@ define_reflect!(Bool, bool);
 define_reflect!(String, String);
 
 impl Reflect for crate::bytes::BytesField {
-    fn reflect(&self) -> Option<Reflection> {
-        Some(Reflection::Bytes(self.0.as_ref()))
+    fn reflect(&self) -> Reflection {
+        Reflection::Bytes(self.0.as_ref())
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
         ReflectionMut::Bytes(&mut self.0)
@@ -134,8 +136,8 @@ impl Reflect for crate::bytes::BytesField {
 }
 
 impl<T: MessageReflection> Reflect for T {
-    fn reflect(&self) -> Option<Reflection> {
-        Some(Reflection::Message(self))
+    fn reflect(&self) -> Reflection {
+        Reflection::Message(self)
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
         ReflectionMut::Message(self)
@@ -143,7 +145,7 @@ impl<T: MessageReflection> Reflect for T {
 }
 
 impl<T: Reflect> Reflect for crate::MessagePtr<T> {
-    fn reflect(&self) -> Option<Reflection> {
+    fn reflect(&self) -> Reflection {
         self.deref().reflect()
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
@@ -151,11 +153,25 @@ impl<T: Reflect> Reflect for crate::MessagePtr<T> {
     }
 }
 
-impl<T: Reflect + Default> Reflect for Option<T> {
-    fn reflect(&self) -> Option<Reflection> {
-        self.as_ref().and_then(|v| v.reflect())
+impl<T: Reflect + Default> Reflect for Vec<T> {
+    fn reflect(&self) -> Reflection {
+        Reflection::Repeated(self)
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
+        ReflectionMut::Repeated(self)
+    }
+}
+
+pub trait SingularFieldReflectionProto2 {
+    fn reflect_field_proto2(&self) -> Option<Reflection>;
+    fn reflect_field_mut_proto2(&mut self) -> ReflectionMut;
+}
+
+impl<T: Reflect + Default> SingularFieldReflectionProto2 for Option<T> {
+    fn reflect_field_proto2(&self) -> Option<Reflection> {
+        self.as_ref().map(|v| v.reflect())
+    }
+    fn reflect_field_mut_proto2(&mut self) -> ReflectionMut {
         if !self.is_some() {
             // TODO: If an explicit default value is available, we should use that instead.
             *self = Some(T::default());
@@ -165,12 +181,45 @@ impl<T: Reflect + Default> Reflect for Option<T> {
     }
 }
 
-impl<T: Reflect + Default> Reflect for Vec<T> {
-    fn reflect(&self) -> Option<Reflection> {
-        Some(Reflection::Repeated(self))
+impl<T: Reflect> SingularFieldReflectionProto2 for T {
+    fn reflect_field_proto2(&self) -> Option<Reflection> {
+        Some(self.reflect())
     }
-    fn reflect_mut(&mut self) -> ReflectionMut {
-        ReflectionMut::Repeated(self)
+    fn reflect_field_mut_proto2(&mut self) -> ReflectionMut {
+        self.reflect_mut()
+    }
+}
+
+pub trait SingularFieldReflectionProto3 {
+    fn reflect_field_proto3(&self) -> Option<Reflection>;
+    fn reflect_field_mut_proto3(&mut self) -> ReflectionMut;
+}
+
+// This should only apply to embedded messages in Proto3.
+impl<T: Reflect + Default> SingularFieldReflectionProto3 for Option<T> {
+    fn reflect_field_proto3(&self) -> Option<Reflection> {
+        self.as_ref().map(|v| v.reflect())
+    }
+    fn reflect_field_mut_proto3(&mut self) -> ReflectionMut {
+        if !self.is_some() {
+            *self = Some(T::default());
+        }
+
+        self.as_mut().unwrap().reflect_mut()
+    }
+}
+
+// TODO: Make sure that this doesn't accidentally get used for repeated fields.
+impl<T: Reflect + Default + PartialEq> SingularFieldReflectionProto3 for T {
+    fn reflect_field_proto3(&self) -> Option<Reflection> {
+        if *self == T::default() {
+            return None;
+        }
+
+        Some(self.reflect())
+    }
+    fn reflect_field_mut_proto3(&mut self) -> ReflectionMut {
+        self.reflect_mut()
     }
 }
 
@@ -187,7 +236,7 @@ impl<T: Reflect + Default> RepeatedFieldReflection for Vec<T> {
     }
     fn get(&self, index: usize) -> Option<Reflection> {
         // TODO: A repeated field should never contain an element that returns None?
-        self.deref().get(index).map(|v: &T| v.reflect().unwrap())
+        self.deref().get(index).map(|v: &T| v.reflect())
     }
     fn get_mut(&mut self, index: usize) -> Option<ReflectionMut> {
         self.deref_mut()
@@ -208,7 +257,7 @@ pub trait SetFieldReflection {
 
     fn entry_mut<'a>(&'a mut self) -> Box<dyn SetFieldEntryReflectionMut + 'a>;
 
-    // fn iter(&self, callback: fn(Reflection));
+    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = Reflection<'a>> + 'a>;
 }
 
 pub trait SetFieldEntryReflection {

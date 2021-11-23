@@ -66,6 +66,11 @@ members = [
 opt-level = 3
 debug = false
 
+# Also very expensive
+[profile.dev.package.compression]
+opt-level = 3
+debug = false
+
 [profile.release]
 lto = true
 opt-level = 3 

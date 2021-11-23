@@ -25,14 +25,8 @@ pub trait Message: 'static + Send + Sync {
     // TODO: should be a shared reference?
     // fn descriptor() -> Descriptor;
 
-    //	fn parse_text(data: &str) -> Result<Self>;
-
-    // TODO: Must also be able to parse a text proto
-
     // TODO: Serializers must return a result because required conditions may
     // not be satisfied.
-
-    //	fn debug_string(&self) -> String;
 
     //	fn merge_from(&mut self, other: &Self);
 

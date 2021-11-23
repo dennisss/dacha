@@ -14,7 +14,7 @@ pub enum Constant {
     Bool(bool),
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Syntax {
     Proto2,
     Proto3,
