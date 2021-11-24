@@ -1,0 +1,5 @@
+[package]
+name = "pico_core"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2021"

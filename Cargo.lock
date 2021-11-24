@@ -1623,6 +1623,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pico_core"
+version = "0.1.0"
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2025,6 +2029,9 @@ dependencies = [
 [[package]]
 name = "rp2040"
 version = "0.1.0"
+dependencies = [
+ "pico_core",
+]
 
 [[package]]
 name = "rp2040_programmer"

@@ -23,3 +23,8 @@ __MACOSX
 
 .ipynb_checkpoints
 
+# KiCad Stuff
+fp-info-cache
+_autosave*.kicad_pcb
+*_pcb-bak
+*.sch-bak

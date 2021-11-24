@@ -4,6 +4,14 @@ The Repository
 This is a monorepo for housing many exciting projects and research implementations that I'm building. Individual subprojects are located in the `pkg/[name]` folders.
 
 
+Next steps:
+- Fix the cluster_node_setup script to re-build the binary each time.
+- Improve the experience with running the builder.
+- Blinkstick node identification task.
+	- Given an RPC, can identify a node.
+	- Small CLI for identifying the node.
+
+
 Listing
 -------
 

@@ -1,0 +1,8 @@
+[package]
+name = "rp2040"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+pico_core = { path = "../../third_party/pico_core" }

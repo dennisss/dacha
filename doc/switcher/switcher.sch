@@ -1,0 +1,532 @@
+EESchema Schematic File Version 4
+EELAYER 30 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title ""
+Date ""
+Rev ""
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+Text GLabel 1450 1350 0    50   Input ~ 0
+VAC+
+Text GLabel 1450 1850 0    50   Output ~ 0
+VAC-
+$Comp
+L Device:CP_Small C3
+U 1 1 5F7B2010
+P 4600 1350
+F 0 "C3" H 4688 1396 50  0000 L CNN
+F 1 "CP_Small" H 4688 1305 50  0000 L CNN
+F 2 "Capacitor_THT:CP_Axial_L11.0mm_D5.0mm_P18.00mm_Horizontal" H 4600 1350 50  0001 C CNN
+F 3 "~" H 4600 1350 50  0001 C CNN
+	1    4600 1350
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:GND #PWR05
+U 1 1 5F7B5D61
+P 4600 1800
+F 0 "#PWR05" H 4600 1550 50  0001 C CNN
+F 1 "GND" H 4605 1627 50  0000 C CNN
+F 2 "" H 4600 1800 50  0001 C CNN
+F 3 "" H 4600 1800 50  0001 C CNN
+	1    4600 1800
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:+12V #PWR04
+U 1 1 5F7B6DA9
+P 4600 950
+F 0 "#PWR04" H 4600 800 50  0001 C CNN
+F 1 "+12V" H 4615 1123 50  0000 C CNN
+F 2 "" H 4600 950 50  0001 C CNN
+F 3 "" H 4600 950 50  0001 C CNN
+	1    4600 950 
+	1    0    0    -1  
+$EndComp
+$Comp
+L Regulator_Switching:LM2594HVM-3.3 U1
+U 1 1 5F7D965B
+P 2600 2700
+F 0 "U1" H 2600 3067 50  0000 C CNN
+F 1 "LM2594HVM-3.3" H 2600 2976 50  0000 C CNN
+F 2 "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm" H 2800 2450 50  0001 L CIN
+F 3 "http://www.ti.com/lit/ds/symlink/lm2594.pdf" H 2600 2800 50  0001 C CNN
+	1    2600 2700
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:+12V #PWR01
+U 1 1 5F7D9665
+P 1600 2600
+F 0 "#PWR01" H 1600 2450 50  0001 C CNN
+F 1 "+12V" V 1615 2728 50  0000 L CNN
+F 2 "" H 1600 2600 50  0001 C CNN
+F 3 "" H 1600 2600 50  0001 C CNN
+	1    1600 2600
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	2200 2600 1850 2600
+$Comp
+L power:GND #PWR02
+U 1 1 5F7D9670
+P 1850 3200
+F 0 "#PWR02" H 1850 2950 50  0001 C CNN
+F 1 "GND" H 1855 3027 50  0000 C CNN
+F 2 "" H 1850 3200 50  0001 C CNN
+F 3 "" H 1850 3200 50  0001 C CNN
+	1    1850 3200
+	1    0    0    -1  
+$EndComp
+$Comp
+L Device:CP_Small C1
+U 1 1 5F7D967A
+P 1850 2800
+F 0 "C1" H 1938 2846 50  0000 L CNN
+F 1 "CP_Small" H 1938 2755 50  0000 L CNN
+F 2 "Capacitor_THT:CP_Axial_L11.0mm_D5.0mm_P18.00mm_Horizontal" H 1850 2800 50  0001 C CNN
+F 3 "~" H 1850 2800 50  0001 C CNN
+	1    1850 2800
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	1850 2700 1850 2600
+Connection ~ 1850 2600
+Wire Wire Line
+	1850 2600 1600 2600
+Wire Wire Line
+	2200 2700 2200 3050
+Wire Wire Line
+	2200 3050 1850 3050
+Wire Wire Line
+	1850 3050 1850 2900
+Connection ~ 1850 3050
+Wire Wire Line
+	1850 3200 1850 3050
+Wire Wire Line
+	2200 3050 2800 3050
+Wire Wire Line
+	2800 3050 2800 3000
+Connection ~ 2200 3050
+$Comp
+L Diode:1N5817 D1
+U 1 1 5F7D968F
+P 3300 2900
+F 0 "D1" V 3254 2979 50  0000 L CNN
+F 1 "1N5817" V 3345 2979 50  0000 L CNN
+F 2 "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal" H 3300 2725 50  0001 C CNN
+F 3 "http://www.vishay.com/docs/88525/1n5817.pdf" H 3300 2900 50  0001 C CNN
+	1    3300 2900
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	3300 3050 2800 3050
+Connection ~ 2800 3050
+$Comp
+L Device:CP_Small C2
+U 1 1 5F7D969B
+P 3950 2850
+F 0 "C2" H 4038 2896 50  0000 L CNN
+F 1 "CP_Small" H 4038 2805 50  0000 L CNN
+F 2 "Capacitor_THT:CP_Axial_L11.0mm_D5.0mm_P18.00mm_Horizontal" H 3950 2850 50  0001 C CNN
+F 3 "~" H 3950 2850 50  0001 C CNN
+	1    3950 2850
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	3950 2950 3950 3050
+Wire Wire Line
+	3950 3050 3300 3050
+Connection ~ 3300 3050
+NoConn ~ 2600 3000
+NoConn ~ 2500 3000
+NoConn ~ 2400 3000
+$Comp
+L Device:L L1
+U 1 1 5F7D96AB
+P 3650 2700
+F 0 "L1" V 3840 2700 50  0000 C CNN
+F 1 "150uH" V 3749 2700 50  0000 C CNN
+F 2 "Inductor_THT:L_Toroid_Vertical_L10.0mm_W5.0mm_P5.08mm" H 3650 2700 50  0001 C CNN
+F 3 "~" H 3650 2700 50  0001 C CNN
+	1    3650 2700
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	3000 2700 3300 2700
+Wire Wire Line
+	3300 2750 3300 2700
+Connection ~ 3300 2700
+Wire Wire Line
+	3300 2700 3500 2700
+Wire Wire Line
+	3950 2700 3950 2750
+Wire Wire Line
+	3800 2700 3950 2700
+Wire Wire Line
+	3000 2600 3300 2600
+Wire Wire Line
+	3300 2600 3300 2400
+Wire Wire Line
+	3300 2400 3950 2400
+Wire Wire Line
+	3950 2400 3950 2700
+Connection ~ 3950 2700
+Wire Wire Line
+	4400 2700 3950 2700
+$Comp
+L power:+3.3V #PWR03
+U 1 1 5F7EA04D
+P 4400 2700
+F 0 "#PWR03" H 4400 2550 50  0001 C CNN
+F 1 "+3.3V" V 4415 2828 50  0000 L CNN
+F 2 "" H 4400 2700 50  0001 C CNN
+F 3 "" H 4400 2700 50  0001 C CNN
+	1    4400 2700
+	0    1    1    0   
+$EndComp
+$Comp
+L Connector_Generic:Conn_02x04_Odd_Even J3
+U 1 1 5F7FE8C1
+P 7200 1200
+F 0 "J3" H 7250 1517 50  0000 C CNN
+F 1 "ESP8266" H 7250 1426 50  0000 C CNN
+F 2 "Connector_PinHeader_2.54mm:PinHeader_2x04_P2.54mm_Vertical" H 7200 1200 50  0001 C CNN
+F 3 "~" H 7200 1200 50  0001 C CNN
+	1    7200 1200
+	1    0    0    -1  
+$EndComp
+Text GLabel 6800 1100 0    50   Input ~ 0
+GPIO1
+Wire Wire Line
+	6800 1100 7000 1100
+$Comp
+L power:GND #PWR09
+U 1 1 5F80B7E2
+P 7900 1100
+F 0 "#PWR09" H 7900 850 50  0001 C CNN
+F 1 "GND" V 7905 972 50  0000 R CNN
+F 2 "" H 7900 1100 50  0001 C CNN
+F 3 "" H 7900 1100 50  0001 C CNN
+	1    7900 1100
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	7900 1100 7500 1100
+$Comp
+L power:+3.3V #PWR08
+U 1 1 5F820659
+P 6700 1400
+F 0 "#PWR08" H 6700 1250 50  0001 C CNN
+F 1 "+3.3V" V 6715 1528 50  0000 L CNN
+F 2 "" H 6700 1400 50  0001 C CNN
+F 3 "" H 6700 1400 50  0001 C CNN
+	1    6700 1400
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	6700 1400 6850 1400
+Wire Wire Line
+	7000 1200 6850 1200
+Wire Wire Line
+	6850 1200 6850 1400
+Connection ~ 6850 1400
+Wire Wire Line
+	6850 1400 7000 1400
+Text GLabel 7600 1200 2    50   Input ~ 0
+GPIO2
+Text GLabel 7600 1300 2    50   Input ~ 0
+GPIO0
+Text GLabel 7600 1400 2    50   Input ~ 0
+GPIO3
+Wire Wire Line
+	7600 1200 7500 1200
+Wire Wire Line
+	7600 1300 7500 1300
+Wire Wire Line
+	7600 1400 7500 1400
+$Comp
+L Relay:G5LE-1 K1
+U 1 1 5F83EE27
+P 7750 2450
+F 0 "K1" V 7183 2450 50  0000 C CNN
+F 1 "G5LE-1" V 7274 2450 50  0000 C CNN
+F 2 "Relay_THT:Relay_SPDT_Omron-G5LE-1" H 8200 2400 50  0001 L CNN
+F 3 "http://www.omron.com/ecb/products/pdf/en-g5le.pdf" H 7750 2450 50  0001 C CNN
+	1    7750 2450
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	6300 2900 6300 2750
+Connection ~ 6300 2900
+Wire Wire Line
+	5800 2900 5800 2850
+Wire Wire Line
+	6300 2900 5800 2900
+Wire Wire Line
+	6300 3000 6300 2900
+$Comp
+L power:GND #PWR06
+U 1 1 5F855AF9
+P 6300 3000
+F 0 "#PWR06" H 6300 2750 50  0001 C CNN
+F 1 "GND" H 6305 2827 50  0000 C CNN
+F 2 "" H 6300 3000 50  0001 C CNN
+F 3 "" H 6300 3000 50  0001 C CNN
+	1    6300 3000
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	5800 2550 6000 2550
+Connection ~ 5800 2550
+Wire Wire Line
+	5800 2650 5800 2550
+Wire Wire Line
+	5600 2550 5800 2550
+$Comp
+L Device:R_Small R1
+U 1 1 5F84B17D
+P 5800 2750
+F 0 "R1" H 5859 2796 50  0000 L CNN
+F 1 "10K" H 5859 2705 50  0000 L CNN
+F 2 "Resistor_SMD:R_1206_3216Metric_Pad1.42x1.75mm_HandSolder" H 5800 2750 50  0001 C CNN
+F 3 "~" H 5800 2750 50  0001 C CNN
+	1    5800 2750
+	1    0    0    -1  
+$EndComp
+Text GLabel 5600 2550 0    50   Input ~ 0
+GPIO2
+$Comp
+L Transistor_FET:BSS138 Q1
+U 1 1 5F846AA5
+P 6200 2550
+F 0 "Q1" H 6404 2596 50  0000 L CNN
+F 1 "BSS138" H 6404 2505 50  0000 L CNN
+F 2 "Package_TO_SOT_SMD:SOT-23" H 6400 2475 50  0001 L CIN
+F 3 "https://www.fairchildsemi.com/datasheets/BS/BSS138.pdf" H 6200 2550 50  0001 L CNN
+	1    6200 2550
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	6300 2350 6300 2250
+Wire Wire Line
+	6300 2250 7450 2250
+$Comp
+L power:+12V #PWR010
+U 1 1 5F8B9F9F
+P 8350 2250
+F 0 "#PWR010" H 8350 2100 50  0001 C CNN
+F 1 "+12V" V 8365 2378 50  0000 L CNN
+F 2 "" H 8350 2250 50  0001 C CNN
+F 3 "" H 8350 2250 50  0001 C CNN
+	1    8350 2250
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	8350 2250 8050 2250
+$Comp
+L Connector:Conn_01x01_Male J1
+U 1 1 5F8BE838
+P 7100 2650
+F 0 "J1" H 7208 2831 50  0000 C CNN
+F 1 "IN1+" H 7208 2740 50  0000 C CNN
+F 2 "Connector_Pin:Pin_D0.7mm_L6.5mm_W1.8mm_FlatFork" H 7100 2650 50  0001 C CNN
+F 3 "~" H 7100 2650 50  0001 C CNN
+	1    7100 2650
+	1    0    0    -1  
+$EndComp
+$Comp
+L Connector:Conn_01x01_Male J4
+U 1 1 5F8BEFE5
+P 8400 2750
+F 0 "J4" H 8372 2682 50  0000 R CNN
+F 1 "IN1-" H 8372 2773 50  0000 R CNN
+F 2 "Connector_Pin:Pin_D0.7mm_L6.5mm_W1.8mm_FlatFork" H 8400 2750 50  0001 C CNN
+F 3 "~" H 8400 2750 50  0001 C CNN
+	1    8400 2750
+	-1   0    0    1   
+$EndComp
+Wire Wire Line
+	8200 2750 8050 2750
+Wire Wire Line
+	7300 2650 7450 2650
+$Comp
+L Relay:G5LE-1 K2
+U 1 1 5F8DB9AD
+P 7800 3850
+F 0 "K2" V 7233 3850 50  0000 C CNN
+F 1 "G5LE-1" V 7324 3850 50  0000 C CNN
+F 2 "Relay_THT:Relay_SPDT_Omron-G5LE-1" H 8250 3800 50  0001 L CNN
+F 3 "http://www.omron.com/ecb/products/pdf/en-g5le.pdf" H 7800 3850 50  0001 C CNN
+	1    7800 3850
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	6350 4300 6350 4150
+Connection ~ 6350 4300
+Wire Wire Line
+	5850 4300 5850 4250
+Wire Wire Line
+	6350 4300 5850 4300
+Wire Wire Line
+	6350 4400 6350 4300
+$Comp
+L power:GND #PWR07
+U 1 1 5F8DB9BC
+P 6350 4400
+F 0 "#PWR07" H 6350 4150 50  0001 C CNN
+F 1 "GND" H 6355 4227 50  0000 C CNN
+F 2 "" H 6350 4400 50  0001 C CNN
+F 3 "" H 6350 4400 50  0001 C CNN
+	1    6350 4400
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	5850 3950 6050 3950
+Connection ~ 5850 3950
+Wire Wire Line
+	5850 4050 5850 3950
+Wire Wire Line
+	5650 3950 5850 3950
+$Comp
+L Device:R_Small R2
+U 1 1 5F8DB9CA
+P 5850 4150
+F 0 "R2" H 5909 4196 50  0000 L CNN
+F 1 "10K" H 5909 4105 50  0000 L CNN
+F 2 "Resistor_SMD:R_1206_3216Metric_Pad1.42x1.75mm_HandSolder" H 5850 4150 50  0001 C CNN
+F 3 "~" H 5850 4150 50  0001 C CNN
+	1    5850 4150
+	1    0    0    -1  
+$EndComp
+$Comp
+L Transistor_FET:BSS138 Q2
+U 1 1 5F8DB9D5
+P 6250 3950
+F 0 "Q2" H 6454 3996 50  0000 L CNN
+F 1 "BSS138" H 6454 3905 50  0000 L CNN
+F 2 "Package_TO_SOT_SMD:SOT-23" H 6450 3875 50  0001 L CIN
+F 3 "https://www.fairchildsemi.com/datasheets/BS/BSS138.pdf" H 6250 3950 50  0001 L CNN
+	1    6250 3950
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	6350 3750 6350 3650
+Wire Wire Line
+	6350 3650 7500 3650
+$Comp
+L power:+12V #PWR011
+U 1 1 5F8DB9E1
+P 8400 3650
+F 0 "#PWR011" H 8400 3500 50  0001 C CNN
+F 1 "+12V" V 8415 3778 50  0000 L CNN
+F 2 "" H 8400 3650 50  0001 C CNN
+F 3 "" H 8400 3650 50  0001 C CNN
+	1    8400 3650
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	8400 3650 8100 3650
+$Comp
+L Connector:Conn_01x01_Male J2
+U 1 1 5F8DB9EC
+P 7150 4050
+F 0 "J2" H 7258 4231 50  0000 C CNN
+F 1 "IN2+" H 7258 4140 50  0000 C CNN
+F 2 "Connector_Pin:Pin_D0.7mm_L6.5mm_W1.8mm_FlatFork" H 7150 4050 50  0001 C CNN
+F 3 "~" H 7150 4050 50  0001 C CNN
+	1    7150 4050
+	1    0    0    -1  
+$EndComp
+$Comp
+L Connector:Conn_01x01_Male J5
+U 1 1 5F8DB9F6
+P 8450 4150
+F 0 "J5" H 8422 4082 50  0000 R CNN
+F 1 "IN2-" H 8422 4173 50  0000 R CNN
+F 2 "Connector_Pin:Pin_D0.7mm_L6.5mm_W1.8mm_FlatFork" H 8450 4150 50  0001 C CNN
+F 3 "~" H 8450 4150 50  0001 C CNN
+	1    8450 4150
+	-1   0    0    1   
+$EndComp
+Wire Wire Line
+	8250 4150 8100 4150
+Wire Wire Line
+	7350 4050 7500 4050
+Text GLabel 5650 3950 0    50   Input ~ 0
+GPIO0
+Wire Wire Line
+	1800 1350 1450 1350
+Wire Wire Line
+	4600 950  4600 1050
+Wire Wire Line
+	4600 1450 4600 1650
+Wire Wire Line
+	3700 1050 4600 1050
+Connection ~ 4600 1050
+Wire Wire Line
+	4600 1050 4600 1250
+Wire Wire Line
+	4150 1850 4150 1350
+Wire Wire Line
+	4150 1350 4000 1350
+Wire Wire Line
+	3700 1650 4600 1650
+Connection ~ 4600 1650
+Wire Wire Line
+	4600 1650 4600 1800
+$Comp
+L Device:D_Bridge_+AA- D2
+U 1 1 5F83A045
+P 3700 1350
+F 0 "D2" V 3746 1006 50  0000 R CNN
+F 1 "D_Bridge_+AA-" V 3655 1006 50  0000 R CNN
+F 2 "cad:KBP210G" H 3700 1350 50  0001 C CNN
+F 3 "~" H 3700 1350 50  0001 C CNN
+	1    3700 1350
+	0    -1   -1   0   
+$EndComp
+$Comp
+L kicad:F16-150-C2 T1
+U 1 1 5F857634
+P 2900 1600
+F 0 "T1" H 2875 2075 50  0000 C CNN
+F 1 "F16-150-C2" H 2875 1984 50  0000 C CNN
+F 2 "cad:F16-150-C2" H 2850 1600 50  0001 C CNN
+F 3 "" H 2850 1600 50  0001 C CNN
+	1    2900 1600
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	3100 1350 3400 1350
+Wire Wire Line
+	3100 1550 3100 1650
+Wire Wire Line
+	3100 1850 4150 1850
+Wire Wire Line
+	2650 1850 2650 1700
+Wire Wire Line
+	1450 1850 2650 1850
+Wire Wire Line
+	2650 1350 2650 1500
+Wire Wire Line
+	2100 1350 2650 1350
+$Comp
+L Device:Thermistor_NTC TH?
+U 1 1 5F86AC7F
+P 1950 1350
+F 0 "TH?" V 1660 1350 50  0000 C CNN
+F 1 "Thermistor_NTC" V 1751 1350 50  0000 C CNN
+F 2 "" H 1950 1400 50  0001 C CNN
+F 3 "~" H 1950 1400 50  0001 C CNN
+	1    1950 1350
+	0    1    1    0   
+$EndComp
+$EndSCHEMATC

@@ -1,0 +1,11 @@
+{
+  "files.watcherExclude": {
+    "**/target/**": true,
+    "**/built-rust/**": true,
+    "**/built-config/**": true
+  },
+  "editor.scrollBeyondLastLine": false,
+  "rust-client.logToFile": true,
+  "editor.wordWrap": "on",
+  "editor.formatOnSave": true
+}
