@@ -1,3 +1,34 @@
+
+# Board Details
+
+- Tiny 2040
+- RP2040 Pull up/down resistance is ~50K
+
+Requirements:
+- When just 12V is connected, it must work
+- When just USB is connected, it should work (to power it)
+- Should protect power from flowing back down the USB 
+
+
+Minimum Connection Requirement:
+- 1 x Fans 1/2 PWM (A)
+- 1 x Fans 3/4 PWM (B)
+- 4 x Fan Speed Input (could be muxed)
+- 1 x Pump PWM
+- 1 x Pump Speed INput
+
+- 1 x PC Power
+- 1 x PC Reset
+
+- 1 x Flow Speed input
+- 2 x Temperature inputs
+
+- Do I want to 
+
+
+## Old
+
+
 - Power inputs:
     - 5V from FPanel connector
         - Alternatives:
