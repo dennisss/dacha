@@ -104,6 +104,9 @@ pub struct AppendFileOptions {
     /// the archive will be relative to this directory.
     pub root_dir: PathBuf,
 
+    /// Directory in the archive at which
+    pub output_dir: Option<PathBuf>,
+
     pub mask: FileMetadataMask,
 }
 
@@ -672,8 +675,12 @@ impl Writer {
             }
         };
 
-        let mut file_name = path
-            .strip_prefix(&options.root_dir)?
+        let mut file_name = options
+            .output_dir
+            .as_ref()
+            .map(|v| v.as_path())
+            .unwrap_or(Path::new("/"))
+            .join(path.strip_prefix(&options.root_dir)?)
             .to_str()
             .ok_or_else(|| err_msg("File name is not valid UTF-8"))?
             .trim_end_matches('/')

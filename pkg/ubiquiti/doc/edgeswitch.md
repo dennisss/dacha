@@ -19,6 +19,28 @@ Below is information on the ES-8-150W ethernet switch.
         - TLS 1.2, ECDHE_RSA with P-384, and AES_128_GCM.
 
 
+## SSH
+
+49
+53
+39
+39
+
+
+```
+(UBNT EdgeSwitch) >show environment
+
+Temperature Sensors:
+Unit     Sensor  Description       Temp (C)    State           Max_Temp (C)
+----     ------  ----------------  ----------  --------------  --------------
+1        1       TEMP-1            48          Normal          48
+1        2       TEMP-2            53          Normal          53
+1        3       PoE-01            39          Normal          39
+1        4       PoE-02            39          Normal          39
+```
+
+
+
 ## HTTP API
 
 

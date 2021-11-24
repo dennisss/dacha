@@ -123,10 +123,10 @@ impl SipHasher {
 
 impl Hasher for SipHasher {
     fn block_size(&self) -> usize {
-        4
+        8
     }
     fn output_size(&self) -> usize {
-        4
+        8
     }
 
     fn update(&mut self, mut data: &[u8]) {

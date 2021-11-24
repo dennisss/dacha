@@ -3,7 +3,7 @@ rust_binary {
     name: "main.armv7"
     bin: "blinkstick"
 
-    use_cross: true
+    compiler: CROSS
     profile: "release"
     target: "armv7-unknown-linux-gnueabihf"
 }

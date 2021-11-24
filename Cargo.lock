@@ -342,7 +342,9 @@ version = "0.1.0"
 dependencies = [
  "common",
  "compression",
+ "crypto",
  "macros",
+ "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
 ]

@@ -4,7 +4,7 @@ rust_binary {
     name: "main.armv7"
     bin: "home_hub"
 
-    use_cross: true
+    compiler: CROSS
     profile: "release"
     target: "armv7-unknown-linux-gnueabihf"
 }

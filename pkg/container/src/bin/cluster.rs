@@ -14,6 +14,7 @@ use std::str::FromStr;
 use std::{collections::HashSet, sync::Arc};
 
 use async_std::task::JoinHandle;
+use builder::proto::bundle::{BlobFormat, BundleSpec};
 use common::async_std::fs;
 use common::async_std::io::ReadExt;
 use common::async_std::task;
@@ -34,8 +35,8 @@ use protobuf::Message;
 use rpc::ClientRequestContext;
 
 use container::{
-    meta::*, AllocateBlobsRequest, AllocateBlobsResponse, JobSpec, ManagerStub, NodeMetadata,
-    StartJobRequest,
+    meta::*, AllocateBlobsRequest, AllocateBlobsResponse, BlobMetadata, JobSpec, ManagerStub,
+    NodeMetadata, StartJobRequest,
 };
 use container::{
     BlobStoreStub, ContainerNodeStub, JobMetadata, NodeMetadata_State, TaskMetadata,
@@ -270,10 +271,34 @@ async fn run_manager() {
 async fn run_list(cmd: ListCommand) -> Result<()> {
     let meta_client = datastore::meta::client::MetastoreClient::create().await?;
 
-    let nodes = meta_client.list(b"/").await?;
-    for kv in nodes {
-        println!("{:?}", kv);
+    println!("Nodes:");
+    let nodes = meta_client.cluster_table::<NodeMetadata>().list().await?;
+    for node in nodes {
+        println!("{:?}", node);
     }
+
+    println!("Jobs:");
+    let nodes = meta_client.cluster_table::<JobMetadata>().list().await?;
+    for node in nodes {
+        println!("{:?}", node);
+    }
+
+    println!("Tasks:");
+    let nodes = meta_client.cluster_table::<TaskMetadata>().list().await?;
+    for node in nodes {
+        println!("{:?}", node);
+    }
+
+    println!("Blobs:");
+    let nodes = meta_client.cluster_table::<BlobMetadata>().list().await?;
+    for node in nodes {
+        println!("{:?}", node);
+    }
+
+    // let nodes = meta_client.list(b"/").await?;
+    // for kv in nodes {
+    //     println!("{:?}", kv);
+    // }
 
     // meta_client.put(b"/hello", b"world").await?;
 
@@ -348,8 +373,6 @@ async fn run_start_task(cmd: StartTaskCommand) -> Result<()> {
 
     Ok(())
 }
-
-// x.node.home.cluster.internal
 
 async fn run_start_job(cmd: StartJobCommand) -> Result<()> {
     let meta_client = Arc::new(MetastoreClient::create().await?);
@@ -523,37 +546,40 @@ async fn start_task_impl(
 async fn build_task_blobs(task_spec: &mut TaskSpec) -> Result<Vec<container::BlobData>> {
     let mut out = vec![];
 
+    let build_context = builder::BuildContext::default_for_local_machine().await?;
+
     for volume in task_spec.volumes_mut() {
-        if let container::TaskSpec_VolumeSourceCase::BuildTarget(target) = volume.source_case() {
-            println!("Building volume target: {}", target);
+        if let container::TaskSpec_VolumeSourceCase::BuildTarget(label) = volume.source_case() {
+            println!("Building volume target: {}", label);
 
-            let res = builder::run_build(target).await?;
-            if res.output_files.len() != 1 {
-                return Err(err_msg(
-                    "Expected exactly one output for volume build target",
-                ));
-            }
+            let res = builder::run_build(label, &build_context).await?;
 
-            let data = fs::read(&res.output_files[0]).await?;
+            // TODO: Instead just have the bundle_dir added to ouptut_files
+            let (bundle_dir, bundle_spec) = {
+                let (_, path) = res
+                    .output_files
+                    .into_iter()
+                    .find(|(r, _)| r.ends_with("/spec.textproto"))
+                    .ok_or_else(|| err_msg("Failed to find bundle descriptor"))?;
 
-            let hash = {
-                let mut hasher = SHA256Hasher::default();
-                let hash = hasher.finish_with(&data);
-                format!("sha256:{}", common::hex::encode(hash))
+                let text = fs::read_to_string(&path).await?;
+                let spec = BundleSpec::parse_text(&text)?;
+                let dir = path.parent().unwrap().to_path_buf();
+
+                (dir, spec)
             };
 
-            volume.set_blob_id(&hash);
+            volume.set_bundle(bundle_spec.clone());
 
-            let mut blob_data = container::BlobData::default();
-            blob_data.spec_mut().set_id(hash);
-            blob_data.spec_mut().set_size(data.len() as u64);
-            // TODO: Get this info from the build system.
-            blob_data
-                .spec_mut()
-                .set_format(container::BlobFormat::TAR_GZ_ARCHIVE);
-            blob_data.set_data(data);
+            for variant in bundle_spec.variants() {
+                let mut blob_data = container::BlobData::default();
+                blob_data.set_spec(variant.blob().clone());
 
-            out.push(blob_data);
+                let data = fs::read(bundle_dir.join(variant.blob().id())).await?;
+                blob_data.set_data(data);
+
+                out.push(blob_data);
+            }
         }
     }
 

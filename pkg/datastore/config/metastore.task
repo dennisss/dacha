@@ -3,7 +3,7 @@ name: "system.meta.0"
 persistent: true
 
 args: [
-    "/volumes/bundle/built/pkg/datastore/metastore.x64",
+    "/volumes/bundle/built/pkg/datastore/metastore",
     "--port=rpc",
     "--init_port=rpc",
     "--dir=/volumes/data"

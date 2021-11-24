@@ -1,13 +1,13 @@
 // This file contains utilities for reading/writing from the node local database
 // used by a node to remember what has done in the past.
 
+use builder::proto::bundle::BlobSpec;
 use common::errors::*;
 use datastore::key_encoding::KeyEncoder;
 use protobuf::Message;
 use sstable::iterable::Iterable;
 use sstable::EmbeddedDB;
 
-use crate::proto::blob::BlobSpec;
 use crate::proto::meta::TaskMetadata;
 
 const TASKS_TABLE_ID: u64 = 11;

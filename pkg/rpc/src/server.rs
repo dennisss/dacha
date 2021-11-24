@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use common::async_std::channel;
@@ -23,7 +22,7 @@ use crate::service::Service;
 use crate::status::*;
 
 pub struct Http2Server {
-    handler: Http2ResponseHandler,
+    handler: Http2RequestHandler,
     shutdown_token: Option<Box<dyn CancellationToken>>,
     start_callbacks: Vec<Box<dyn Fn() + Send + Sync + 'static>>,
 }
@@ -31,7 +30,8 @@ pub struct Http2Server {
 impl Http2Server {
     pub fn new() -> Self {
         Self {
-            handler: Http2ResponseHandler {
+            handler: Http2RequestHandler {
+                request_handlers: HashMap::new(),
                 services: HashMap::new(),
             },
             shutdown_token: None,
@@ -46,6 +46,24 @@ impl Http2Server {
         }
 
         self.handler.services.insert(service_name, service);
+        Ok(())
+    }
+
+    pub fn add_request_handler<H: http::RequestHandler>(
+        &mut self,
+        path: &str,
+        handler: H,
+    ) -> Result<()> {
+        // TODO: Also check for service conflicts?
+        if self
+            .handler
+            .request_handlers
+            .insert(path.to_string(), Box::new(handler))
+            .is_some()
+        {
+            return Err(err_msg("Duplicate request handler mounted"));
+        }
+
         Ok(())
     }
 
@@ -78,14 +96,20 @@ impl Http2Server {
     }
 }
 
-struct Http2ResponseHandler {
+struct Http2RequestHandler {
+    request_handlers: HashMap<String, Box<dyn http::RequestHandler>>,
+
     services: HashMap<String, Arc<dyn Service>>,
 }
 
-impl Http2ResponseHandler {
+impl Http2RequestHandler {
     async fn handle_request_impl(&self, request: http::Request) -> Result<http::Response> {
         // TODO: Convert as many of the errors in this function as possible to gRPC
         // trailing status codes.
+
+        if let Some(request_handler) = self.request_handlers.get(request.head.uri.path.as_str()) {
+            return Ok(request_handler.handle_request(request).await);
+        }
 
         // TODO: Should support different methods
         if request.head.method != http::Method::POST {
@@ -201,7 +225,7 @@ impl Http2ResponseHandler {
 }
 
 #[async_trait]
-impl http::RequestHandler for Http2ResponseHandler {
+impl http::RequestHandler for Http2RequestHandler {
     async fn handle_request(&self, request: http::Request) -> http::Response {
         match self.handle_request_impl(request).await {
             Ok(r) => r,

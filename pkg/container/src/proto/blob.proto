@@ -3,6 +3,7 @@ syntax = "proto3";
 package cluster;
 
 import "third_party/google/src/proto/empty.proto";
+import "pkg/builder/src/proto/bundle.proto";
 
 service BlobStore {
     // Enumerates all blobs persisted to this server.
@@ -24,35 +25,12 @@ service BlobStore {
     rpc Delete (BlobDeleteRequest) returns (google.protobuf.Empty);
 }
 
-message BlobSpec {
-    // Id of this blob. Typically this will be the SHA256 hash of the contents of the blob in
-    // hex form.
-    //
-    // e.g. 'sha256:00123456789abcdef..'
-    string id = 1;
-
-    // Raw size in bytes of this blob (before any decompression/unpacking that may need to occur
-    // if this is a file archive).
-    uint64 size = 2;
-
-    // File format of the blob.
-    // This is stored here as it is often useful for a node to decompress an archive ahead of its
-    // usage. For ahead of time storage allocation, it is good to know that a blob will/will-not
-    // grow in size once it is  
-    BlobFormat format = 3;
-}
-
-enum BlobFormat {
-    UNKNOWN = 0;
-    TAR_GZ_ARCHIVE = 1;
-}
-
 message BlobListResponse {
-    repeated BlobSpec blob = 1;
+    repeated builder.BlobSpec blob = 1;
 }
 
 message BlobData {
-    BlobSpec spec = 1;
+    builder.BlobSpec spec = 1;
     bytes data = 2;
 }
 

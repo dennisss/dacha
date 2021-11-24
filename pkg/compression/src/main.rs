@@ -23,9 +23,12 @@ use compression::zlib::*;
 // cut the block?
 
 async fn run() -> Result<()> {
-    let mut tar = compression::tar::Reader::open("testdata/tar/built.tar").await?;
+    let mut tar = compression::tar::Reader::open(
+        "/home/dennis/workspace/dacha/built/pkg/home_hub/bundle.tar",
+    )
+    .await?;
 
-    tar.extract_files(&std::env::current_dir()?.join("testdata/tar/export"))
+    tar.extract_files(&PathBuf::from(std::env::current_dir()?).join("/tmp/bundle"))
         .await?;
 
     // while let Some(entry) = tar.read_entry().await? {

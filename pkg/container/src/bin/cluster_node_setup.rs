@@ -140,10 +140,10 @@ async fn run() -> Result<()> {
     copy_repo_file(&args.addr, "built/pkg/container/cluster_node.armv7")?;
     copy_repo_file(&args.addr, "pkg/container/config/node.textproto")?;
 
-    copy_repo_file(&args.addr, "pkg/container/config/cluster_node.service")?;
+    copy_repo_file(&args.addr, "pkg/container/config/node.service")?;
 
     // [target] [link_name]
-    run_ssh(&args.addr, "sudo ln -f -s /opt/dacha/bundle/pkg/container/config/cluster_node.service /etc/systemd/system/cluster_node.service")?;
+    run_ssh(&args.addr, "sudo ln -f -s /opt/dacha/bundle/pkg/container/config/node.service /etc/systemd/system/cluster_node.service")?;
 
     println!("Setting up /etc/subgid");
     {

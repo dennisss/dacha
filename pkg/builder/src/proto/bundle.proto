@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package builder;
+
+// TODO: Need more support around knowing when a bundle was built and authenticating that
+// information.
+message BundleSpec {
+    repeated BundleVariant variants = 1;
+}
+
+message BundleVariant {
+    BlobSpec blob = 1;
+    Platform platform = 2;
+}
+
+message BlobSpec {
+    // Id of this blob. Typically this will be the SHA256 hash of the contents of the blob in
+    // hex form.
+    //
+    // e.g. 'sha256:00123456789abcdef..'
+    string id = 1;
+
+    // Raw size in bytes of this blob (before any decompression/unpacking that may need to occur
+    // if this is a file archive).
+    uint64 size = 2;
+
+    // File format of the blob.
+    // This is stored here as it is often useful for a node to decompress an archive ahead of its
+    // usage. For ahead of time storage allocation, it is good to know that a blob will/will-not
+    // grow in size once it is  
+    BlobFormat format = 3;
+}
+
+enum BlobFormat {
+    UNKNOWN = 0;
+    TAR_ARCHIVE = 1;
+}
+
+message Platform {
+    Os os = 1;
+
+    Architecture architecture = 2;
+}
+
+enum Os {
+    UNKNOWN = 0;
+    LINUX = 1;
+}
+
+enum Architecture {
+    UNKNOWN = 0;
+    AMD64 = 1;
+    ARM32v7 = 2;
+}

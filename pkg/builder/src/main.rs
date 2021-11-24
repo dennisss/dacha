@@ -4,5 +4,5 @@ extern crate common;
 use common::errors::*;
 
 fn main() -> Result<()> {
-    builder::run()
+    builder::cli::run()
 }

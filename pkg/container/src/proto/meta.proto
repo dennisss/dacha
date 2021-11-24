@@ -10,6 +10,7 @@ import "pkg/container/src/proto/job.proto";
 import "pkg/container/src/proto/blob.proto";
 import "pkg/container/src/proto/node.proto";
 import "third_party/google/src/proto/timestamp.proto";
+import "pkg/builder/src/proto/bundle.proto";
 
 // Stored at a singleton at the metastore key '/cluster/zone'
 message ZoneMetadata {
@@ -133,7 +134,7 @@ message TaskMetadata {
 }
 
 message BlobMetadata {
-    BlobSpec spec = 1;
+    builder.BlobSpec spec = 1;
 
     // List of the ids of all nodes which are known to have this blob.
     repeated BlobReplica replicas = 2;

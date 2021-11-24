@@ -14,9 +14,12 @@ node_modules
 .DS_Store
 dist/*
 /built
+/built-config
+/built-rust
 
 __MACOSX
 
 *.so
 
 .ipynb_checkpoints
+

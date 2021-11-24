@@ -13,7 +13,7 @@ This is a system for managing a fleet of machines and assigning work to run on t
 - `Node`: A single machine in a `Cluster` which has a fixed resource ceiling for running `Tasks`
   locally.
 
-- `Cluster`: A collection of `Node`s 
+- `Zone`: An isolated collection of `Node`s. One should typically have one or more `Zone`s per data center or geographic region. All machines in a zone as expected to be well connected in the network and each zone should be completely self sufficient in terms of workload management capabilities.
 
 - `Task`: A set of `Container`s running in a shared resource envelope on a single `Node`. Usually
   this will only be running a single `Container`.
@@ -21,15 +21,15 @@ This is a system for managing a fleet of machines and assigning work to run on t
 - `Job`: A replicated set of `Task`s with the same configuration.
 
 - `Manager`: Special process which manages the state of the cluster.
-    - There will be a single `Manager` `Job` per `Cluster` with one leader `Task` at a time which ensures that the cluster is in a healthy state.
-    - This process also hosts the user facing API and interacting with `Job`s in the cluster.
+    - There will be a single `Manager` `Job` per `Zone` with one leader `Task` at a time which ensures that the cluster is in a healthy state.
+    - This process also hosts the user facing API for performing CRUD operations on `Job`s.
 
 - `Metastore`: Strongly consistent and durable key-value store and lock service used to store
-  the state of the cluster. There will be exactly one of these for the entire cluster.
+  the state of a `Zone`. There will be exactly one of these per `Zone`.
 
 - `Blob`: A single usually large binary file identified by a hash. Blobs may also have a small amount of metadata such as a content type (e.g. tar or zip) to describe how they should be processed.
 
-- `Bundle`: Collection of files typically containing a binary + static assets and distributed as a `Blob` archive.
+- `Bundle`: Collection of files typically containing a binary + static assets and distributed as one or more `Blob` archives.
 
 - `Volume`: Mounted path in a `Container`. Typically the source will be a `Blob` or a persistent directory on the `Node`.
 
@@ -47,8 +47,8 @@ The first step in setting up a cluster is starting at least one node machine to 
 
 We will present two sets of instructions:
 
-1. For a 'Generic' : If you want to setup a node on your machine of choice
-2. For a 'Raspberry Pi' : alternative simplified instructions if you are going to be running on a Raspberry Pi. 
+1. For a 'Generic' machine: If you want to setup a node on your machine / Linux flavor of choice.
+2. For a 'Raspberry Pi' : Simplified instructions if you are going to be running on a Raspberry Pi.
 
 #### Generic
 
@@ -73,11 +73,11 @@ If running in production on a dedicated node machine, we recommend the following
   - `sudo mkdir -p /opt/dacha`
   - `sudo chown cluster-node:cluster-node /opt/dacha`
 
-If just doing local testing/development as your user, you only need to create the `/opt/dacha` directory and 
+If just doing local testing/development as your user, you only need to create the `/opt/dacha` directory and make it owned by `$USER` on your local machine.
 
 ##### Running
 
-It is up to figure out how to ensure that the node binary is run at startup on the node machine as the `cluster-node` user. But, we recommend using the systemd service located at `./pkg/container/config/cluster_node.service`.
+It is up to the user to figure out how to ensure that the node binary is run at startup on the node machine as the `cluster-node` user. But, we recommend using the systemd service located at `./pkg/container/config/node.service`.
 
 To run a node locally for testing (accessible at `127.0.0.1:10400`), run the following command:
 
@@ -96,8 +96,8 @@ Note: Only using a 32-bit Pi OS is supported right now.
 We will be using a custom built Raspbian Lite image which has the following major deviations from the standard distribution:
 
 - Packages/users needed for running a cluster node are pre-installed.
-- Has UDev rules to allowlist all GPIO/I2C/SPI/USB/video devices for use by the cluster node
-- Disables unneeded features like HDMI output / Audio
+- Has UDev rules to allowlist all GPIO/I2C/SPI/USB/video devices for use by the the `cluster-node` user.
+- Disables unneeded features like HDMI output / Audio.
 - On boot, disables WiFi if Ethernet is available.
 
 **Step 1**: Create an ssh key that will be used to access all node machines.
@@ -106,7 +106,7 @@ We will be using a custom built Raspbian Lite image which has the following majo
 
 **Step 2**: Configure the node image.
 
-Create a file at `third_party/pi-gen/config` with a config of the following form:
+Create a file at `third_party/pi-gen/config` with a config of the following form (by sure to populate the marked fields):
 
 ```
 IMG_NAME='Daspbian'
@@ -142,7 +142,7 @@ cross build --target=armv7-unknown-linux-gnueabihf --bin cluster_node --release
 cargo run --bin cluster_node_setup -- --addr=[RASPBERRY_PI_IP_ADDRESS]
 ```
 
-This will copy over the `cluster_node` binary, setup the persistent service and more
+This will copy over the `cluster_node` binary, setup the persistent service and more.
 
 You are now done setting up your Pi!
 
@@ -468,13 +468,6 @@ Adding a job:
 
 
 
-The Metadata Store tasks each host a 
-
-In order to query cluster-level DNS records, 
-
-
-
-
 We will support the following forms of addresses:
 
 
@@ -592,6 +585,21 @@ cargo run --package rpc_util -- ls 127.0.0.1:30001
 
 cargo run --bin container_ctl -- list --node=abc
 ```
+
+
+
+Debugability Requirements
+- Want to 
+
+- About task indices: It is desirable for 
+
+- We do have a revision inde 
+
+- About task names
+  - Using numbers wil lhelp make the ids consistnet across restarts
+  - This is useful for storage services where we need to uniquely identify replicas
+  - I'd like to prefer to not use numbers as numbers as shady
+
 
 
 

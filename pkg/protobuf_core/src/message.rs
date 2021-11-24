@@ -1,11 +1,12 @@
 use common::errors::*;
 
+use crate::merge::ReflectMergeFrom;
 use crate::types::EnumValue;
-use crate::StaticFileDescriptor;
+use crate::{MessageReflection, StaticFileDescriptor};
 
 // NOTE: Construct an empty proto by calling MessageType::default()
 // Clone + std::fmt::Debug + std::default::Default + MessageReflection
-pub trait Message: 'static + Send + Sync {
+pub trait Message: 'static + Send + Sync + MessageReflection {
     fn type_url(&self) -> &'static str;
 
     fn file_descriptor() -> &'static StaticFileDescriptor
@@ -28,7 +29,12 @@ pub trait Message: 'static + Send + Sync {
     // TODO: Serializers must return a result because required conditions may
     // not be satisfied.
 
-    //	fn merge_from(&mut self, other: &Self);
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        self.reflect_merge_from(other)
+    }
 
     // fn unknown_fields() -> &[UnknownField];
 }

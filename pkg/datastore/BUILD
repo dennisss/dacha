@@ -1,20 +1,19 @@
 
 
 rust_binary {
-    name: "metastore.x64"
-    bin: "metastore"
-
-    # use_cross: true
-    # profile: "release"
-    # target: "armv7-unknown-linux-gnueabihf"
+    name: "metastore"
 }
 
 bundle {
     name: "metastore_bundle"
     absolute_srcs: [
-        "built/pkg/datastore/metastore.x64"
+        "built/pkg/datastore/metastore"
     ]
     deps: [
-        ":metastore.x64"
+        ":metastore"
+    ]
+    configs: [
+        "//pkg/builder/config:x64",
+        "//pkg/builder/config:rpi",
     ]
 }

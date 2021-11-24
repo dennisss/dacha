@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use builder::proto::bundle::{BlobFormat, BlobSpec};
 use common::async_std::fs;
 use common::async_std::fs::{File, OpenOptions};
 use common::async_std::path::Path;
@@ -422,6 +423,7 @@ impl BlobWriter {
 
         // NOTE: We expect hex capitalization to also match in case our file system is
         // case sensitive.
+        // TODO: Deduplicate the logic for hashing blobs.
         let hash = format!("sha256:{}", common::hex::encode(self.hasher.finish()));
         if hash != self.lease.spec().id() {
             return Err(rpc::Status::invalid_argument("Blob id did not match blob data").into());
@@ -431,7 +433,7 @@ impl BlobWriter {
 
         match self.lease.spec().format() {
             BlobFormat::UNKNOWN => {} // This should have been filtered out
-            BlobFormat::TAR_GZ_ARCHIVE => {
+            BlobFormat::TAR_ARCHIVE => {
                 // TODO: Consider deferring extraction untul we actually need to use it.
                 let extracted_dir = self.lease.extracted_dir();
                 if !extracted_dir.exists().await {

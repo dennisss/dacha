@@ -18,3 +18,11 @@ Inside of .proto files, all types are references by proto buffer package names a
 
 Package structure:
 - Need to be able to compile the descriptors 
+
+
+TODOs
+-----
+
+- Validate that Proto2 enums can't be added in Proto3 messages.
+
+- Validate that repeated fields aren't used in oneof.

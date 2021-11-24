@@ -1,6 +1,8 @@
 syntax = "proto3";
 
-package build;
+package builder;
+
+import "pkg/builder/src/proto/bundle.proto";
 
 message RustBinary {
     string name = 1;
@@ -9,7 +11,13 @@ message RustBinary {
     string bin = 5;
     string profile = 3;
     string target = 4;
-    bool use_cross = 6;
+    RustCompiler compiler = 6;
+}
+
+enum RustCompiler {
+    UNKNOWN = 0;
+    CARGO = 1;
+    CROSS = 2;
 }
 
 message FileGroup {
@@ -19,7 +27,6 @@ message FileGroup {
     repeated string srcs = 3;
 }
 
-// This is interesting because it doesn't really have 
 message Bundle {
     string name = 1;
 
@@ -38,7 +45,9 @@ message Webpack {
 message BuildConfig {
     string name = 1;
 
-    RustBinary rust_binary = 2;
+    Platform platform = 2;
+
+    RustBinary rust_binary = 3;
     
     // Platform
 

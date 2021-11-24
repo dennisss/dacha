@@ -16,7 +16,7 @@ use common::async_std::io::prelude::WriteExt;
 use common::async_std::task;
 use common::errors::*;
 use rpc_test::proto::adder::*;
-use rpc_util::AddReflection;
+use rpc_util::{AddHealthEndpoints, AddReflection};
 
 #[derive(Args)]
 struct Args {
@@ -87,6 +87,7 @@ async fn run_server() -> Result<()> {
     let service = adder.into_service();
     server.add_service(service)?;
     server.add_reflection()?;
+    server.add_healthz()?;
     server.set_shutdown_token(common::shutdown::new_shutdown_token());
 
     println!("Starting on port {}", args.port.value());

@@ -78,6 +78,8 @@ const CRC32_POLYNOMIAL: u32 = 0x04C11DB7;
 const CRC32_POLYNOMIAL_REVERSED: u32 = 0xEDB88320;
 const CRC32C_POLYNOMIAL: u32 = 0x1edc6f41;
 
+// 0x4c11db7
+
 /// NOTE: The hash is returned in big endian.
 #[derive(Clone)]
 pub struct CRC32Hasher {
@@ -96,6 +98,20 @@ impl CRC32Hasher {
     // TODO: Speed up with CLMUL?
 
     fn update_bytewise(&mut self, data: &[u8]) {
+        /*
+        for byte in data.iter().cloned() {
+            self.val ^= (byte as u32) << 24;
+
+            for _ in 0..8 {
+                let overflow = (self.val & (0b1 << 31)) != 0;
+                self.val <<= 1;
+                if overflow {
+                    self.val ^= CRC32_POLYNOMIAL;
+                }
+            }
+        }
+        */
+
         for byte in data.iter().cloned() {
             self.val ^= byte as u32;
 

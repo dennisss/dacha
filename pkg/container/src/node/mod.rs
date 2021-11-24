@@ -10,6 +10,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use builder::proto::bundle::BundleSpec;
 use common::async_std::channel;
 use common::async_std::path::{Path, PathBuf};
 use common::async_std::sync::Mutex;
@@ -854,7 +855,9 @@ impl NodeInner {
             mount.set_destination(format!("/volumes/{}", volume.name()));
 
             match volume.source_case() {
-                TaskSpec_VolumeSourceCase::BlobId(blob_id) => {
+                TaskSpec_VolumeSourceCase::Bundle(bundle) => {
+                    let blob_id = self.select_bundle_blob(bundle)?;
+
                     let blob_lease = match self.shared.blobs.read_lease(blob_id.as_str()).await {
                         Ok(v) => v,
                         Err(ReadBlobError::BeingWritten) | Err(ReadBlobError::NotFound) => {
@@ -1029,6 +1032,22 @@ impl NodeInner {
         task.state = TaskState::Running;
 
         Ok(())
+    }
+
+    fn select_bundle_blob(&self, bundle: &BundleSpec) -> Result<String> {
+        let platform = builder::current_platform()?;
+
+        for variant in bundle.variants() {
+            if variant.platform() == &platform {
+                return Ok(variant.blob().id().to_string());
+            }
+        }
+
+        Err(rpc::Status::invalid_argument(format!(
+            "No bundle variant matches platform: {:?}",
+            platform
+        ))
+        .into())
     }
 
     async fn start_fetching_blob(&self, state_inner: &mut NodeStateInner, blob_id: &str) {

@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package cluster;
 
+import "pkg/builder/src/proto/bundle.proto";
+
 message TaskSpec {
     // Name of the task. This is assigned by the manager job.
     string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -17,8 +19,6 @@ message TaskSpec {
         string name = 1;
         
         oneof source {
-            // The volume will be a read-only snapshot of the contents of the blob with this id.
-            string blob_id = 2;
             
             // The volume will be initialized by creating a new read-writeable directory on the host.
             // - Whenever a task is started on the same node with the same persistent_name, it will
@@ -33,9 +33,15 @@ message TaskSpec {
             // NOTE: This will only be present locally.
             string build_target = 4;
 
+            // The volume will be a read-only snapshot of the contents of the blob with this id.
+            builder.BundleSpec bundle = 5;
+
             // TODO: Support temp dir
+            
         }
         
+        reserved 2;
+
         // TODO: Should support exclusive/reader/reader-writer locks to persistent volumes.
     }
     repeated Volume volumes = 2;

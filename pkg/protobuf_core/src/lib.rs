@@ -8,6 +8,7 @@ extern crate parsing;
 
 mod bytes;
 mod collections;
+mod merge;
 mod message;
 pub mod reflection;
 pub mod text;

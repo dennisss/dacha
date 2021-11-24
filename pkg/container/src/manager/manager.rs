@@ -437,7 +437,7 @@ impl Manager {
         for volume in spec.volumes_mut() {
             match volume.source_case() {
                 TaskSpec_VolumeSourceCase::Unknown => {}
-                TaskSpec_VolumeSourceCase::BlobId(_) => {}
+                TaskSpec_VolumeSourceCase::Bundle(_) => {}
                 TaskSpec_VolumeSourceCase::PersistentName(name) => {
                     // Persistent volumes should be specific to individual tasks.
                     // TODO: Consider moving this local to the node?

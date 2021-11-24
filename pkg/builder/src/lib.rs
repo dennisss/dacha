@@ -11,8 +11,15 @@ extern crate common;
 #[macro_use]
 extern crate macros;
 extern crate compression;
+extern crate crypto;
+extern crate nix;
 
-mod proto;
+pub mod cli;
+mod context;
+mod label;
+mod platform;
+pub mod proto;
+mod target;
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -24,136 +31,112 @@ use common::async_std::os::unix::fs::symlink;
 use common::async_std::path::{Path, PathBuf};
 use common::{errors::*, project_dir};
 use compression::tar::{AppendFileOptions, FileMetadataMask};
+use crypto::hasher::Hasher;
+use crypto::sha256::SHA256Hasher;
+use protobuf::Message;
 
+use crate::label::*;
+use crate::proto::bundle::*;
 use crate::proto::config::*;
+use crate::target::*;
 
-#[derive(Args)]
-struct Args {
-    command: ArgCommand,
-}
-
-#[derive(Args)]
-enum ArgCommand {
-    #[arg(name = "build")]
-    Build(BuildCommand),
-}
-
-#[derive(Args)]
-struct BuildCommand {
-    #[arg(positional)]
-    target: String,
-}
-
-#[derive(Debug)]
-struct TargetPath {
-    absolute: bool,
-    directory: String,
-    name: String,
-}
-
-#[derive(Clone, Copy)]
-struct BuildTarget<'a> {
-    name: &'a str,
-    deps: &'a [String],
-    raw: BuildTargetRaw<'a>,
-}
-
-#[derive(Clone, Copy)]
-enum BuildTargetRaw<'a> {
-    Bundle(&'a Bundle),
-    RustBinary(&'a RustBinary),
-    FileGroup(&'a FileGroup),
-    Webpack(&'a Webpack),
-}
-
-impl<'a> BuildTarget<'a> {
-    fn list_all(file: &BuildFile) -> Vec<BuildTarget> {
-        let mut out = vec![];
-
-        for raw in file.file_group() {
-            out.push(BuildTarget {
-                name: raw.name(),
-                deps: raw.deps(),
-                raw: BuildTargetRaw::FileGroup(raw),
-            });
-        }
-
-        for raw in file.rust_binary() {
-            out.push(BuildTarget {
-                name: raw.name(),
-                deps: raw.deps(),
-                raw: BuildTargetRaw::RustBinary(raw),
-            });
-        }
-
-        for raw in file.bundle() {
-            out.push(BuildTarget {
-                name: raw.name(),
-                deps: raw.deps(),
-                raw: BuildTargetRaw::Bundle(raw),
-            });
-        }
-
-        for raw in file.webpack() {
-            out.push(BuildTarget {
-                name: raw.name(),
-                deps: raw.deps(),
-                raw: BuildTargetRaw::Webpack(raw),
-            });
-        }
-
-        out
-    }
-}
-
-fn parse_target_path(mut target: &str) -> Result<TargetPath> {
-    let absolute = if let Some(t) = target.strip_prefix("//") {
-        target = t;
-        true
-    } else {
-        false
-    };
-
-    let (dir, name) = target
-        .split_once(':')
-        .ok_or_else(|| err_msg("Expected a : in the target path"))?;
-
-    if dir.starts_with("/") {
-        return Err(err_msg("Invalid directory in target path"));
-    }
-
-    Ok(TargetPath {
-        absolute,
-        directory: dir.to_string(),
-        name: name.to_string(),
-    })
-}
+pub use context::BuildContext;
+pub use platform::current_platform;
 
 struct Builder {
-    built_targets: HashSet<String>,
+    // TODO: Could make the option tri-state:
+    // We are always either:
+    // 1. Enqueing,
+    // 2. Running, or
+    // 3. Completed.
+    built_targets: HashMap<BuildResultKey, Option<BuildResult>>,
     workspace_dir: PathBuf,
     output_dir: PathBuf,
 }
 
 impl Builder {
-    async fn build_target(&mut self, target: &str, current_dir: &Path) -> Result<BuildResult> {
-        let target = parse_target_path(target)?;
-        let target_dir = {
-            if target.absolute {
-                self.workspace_dir.join(&target.directory)
-            } else {
-                current_dir.join(&target.directory)
-            }
+    pub fn new(workspace_dir: &Path) -> Self {
+        Self {
+            built_targets: HashMap::new(),
+            workspace_dir: workspace_dir.to_path_buf(),
+            output_dir: workspace_dir.join("built"),
+        }
+    }
+
+    pub async fn build_target(
+        &mut self,
+        label: &str,
+        current_dir: &Path,
+        context: &BuildContext,
+    ) -> Result<BuildResult> {
+        let (label, target_dir, spec) = self.lookup_target(label, current_dir).await?;
+
+        let result_key = BuildResultKey {
+            label,
+            config_key: context.config_key.clone(),
         };
 
-        let target_key = format!("{}:{}", target_dir.to_str().unwrap(), target.name);
-        if !self.built_targets.insert(target_key) {
-            // Target was already built.
-            // TODO: Look up the build result at the very end instead of returning it.
-            return Ok(BuildResult::default());
+        if let Some(existing_result) = self.built_targets.get(&result_key) {
+            match existing_result {
+                Some(result) => {
+                    return Ok(result.clone());
+                }
+                None => {
+                    return Err(err_msg("Target already being built. Recursive loop?"));
+                }
+            }
         }
 
-        // TODO: Here we should acquire a lock / check if it has already been built.
+        // Mark that it is currently been built to prevent recursive looks.
+        self.built_targets.insert(result_key.clone(), None);
+
+        for dep in spec.deps() {
+            self.build_target_recurse(dep.as_str(), &target_dir, context)
+                .await?;
+        }
+
+        let result = self
+            .build_single_target(result_key, &spec, &target_dir, context)
+            .await?;
+
+        self.built_targets
+            .insert(result.key.clone(), Some(result.clone()));
+
+        Ok(result)
+    }
+
+    /// Invokes self.build_target(). Can be used inside of functions called by
+    /// build_target().
+    fn build_target_recurse<'a>(
+        &'a mut self,
+        label: &'a str,
+        current_dir: &'a Path,
+        context: &'a BuildContext,
+    ) -> Pin<Box<dyn Future<Output = Result<BuildResult>> + 'a>> {
+        Box::pin(self.build_target(label, current_dir, context))
+    }
+
+    async fn lookup_target(
+        &self,
+        label: &str,
+        current_dir: &Path,
+    ) -> Result<(Label, PathBuf, BuildTarget)> {
+        let mut label = Label::parse(label)?;
+
+        // Make the label absolute.
+        if !label.absolute {
+            label.directory = current_dir
+                .strip_prefix(&&self.workspace_dir)
+                .unwrap()
+                .join(&label.directory)
+                .to_str()
+                .unwrap()
+                .to_string();
+            label.absolute = true;
+        }
+
+        // Directory in which the BUILD file for the required
+        let target_dir = self.workspace_dir.join(&label.directory);
 
         let build_file_path = target_dir.join("BUILD");
         if !build_file_path.exists().await {
@@ -162,69 +145,94 @@ impl Builder {
 
         let build_file_data = fs::read_to_string(build_file_path).await?;
 
+        // TODO: Cache these in the builder instance.
         let mut build_file = proto::config::BuildFile::default();
         protobuf::text::parse_text_proto(&build_file_data, &mut build_file)?;
 
         let mut targets = HashMap::new();
         for target in BuildTarget::list_all(&build_file).into_iter() {
-            if targets.insert(target.name, target).is_some() {
-                return Err(format_err!("Duplicate target named: {}", target.name));
+            if targets
+                .insert(target.name().to_string(), target.clone())
+                .is_some()
+            {
+                return Err(format_err!("Duplicate target named: {}", target.name()));
             }
         }
 
-        let spec = match targets.get(&target.name.as_str()) {
+        let spec = match targets.get(label.target_name.as_str()) {
             Some(v) => v,
             None => {
                 return Err(format_err!(
                     "Failed to find target named: '{}' in dir '{}'",
-                    target.name.as_str(),
+                    label.target_name.as_str(),
                     target_dir.to_str().unwrap()
                 ));
             }
         };
 
-        for dep in spec.deps {
-            self.build_target_recurse(dep.as_str(), &target_dir).await?;
-        }
-
-        self.build_single_target(spec, &target_dir).await
+        Ok((label, target_dir, spec.clone()))
     }
 
     async fn build_single_target(
         &mut self,
-        spec: &BuildTarget<'_>,
+        key: BuildResultKey,
+        spec: &BuildTarget,
         target_dir: &Path,
+        context: &BuildContext,
     ) -> Result<BuildResult> {
         // TODO: We need to be diligent about removing old files if a target is rebuilt.
 
-        let mut result = BuildResult::default();
+        let mut result = BuildResult {
+            key: key.clone(),
+            output_files: HashMap::new(),
+        };
 
         match &spec.raw {
-            BuildTargetRaw::RustBinary(spec) => {
+            BuildTargetRaw::RustBinary(raw_target) => {
+                let mut target = context.config.rust_binary().clone();
+                target.merge_from(&raw_target)?;
+
                 // NOTE: We assume that the name of the rust package is the same as the name of
                 // the directory in which the BUILD file is located.
                 let package_name = target_dir.file_name().unwrap().to_str().unwrap();
 
-                let bin_name = if spec.name() == "main" {
+                let bin_name = if target.name() == "main" {
                     package_name
-                } else if !spec.bin().is_empty() {
-                    spec.bin()
+                } else if !target.bin().is_empty() {
+                    target.bin()
                 } else {
-                    spec.name()
+                    target.name()
                 };
 
-                let mut cmd = Command::new(if spec.use_cross() { "cross" } else { "cargo" });
+                let rust_target_dir = self
+                    .workspace_dir
+                    .join("built-rust")
+                    .join(&context.config_key);
+                // NOTE: we must create the directory otherwise 'cross' tends to screw up the
+                // permissions and make root the owner of the directory.
+                fs::create_dir_all(&rust_target_dir).await?;
+
+                // Add --target-dir when using cross.
+
+                let program = match target.compiler() {
+                    RustCompiler::UNKNOWN | RustCompiler::CARGO => "cargo",
+                    RustCompiler::CROSS => "cross",
+                };
+
+                let mut cmd = Command::new(program);
 
                 cmd.arg("build")
                     .arg("--package")
                     .arg(package_name)
                     .arg("--bin")
                     .arg(bin_name)
+                    .arg("--target-dir")
+                    .arg(rust_target_dir.to_str().unwrap())
                     .stdout(Stdio::inherit())
                     .stderr(Stdio::inherit());
 
                 let mut effective_profile = "debug";
-                match spec.profile() {
+                match target.profile() {
                     "" => {}
                     "release" => {
                         cmd.arg("--release");
@@ -235,9 +243,10 @@ impl Builder {
                     }
                 };
 
-                if !spec.target().is_empty() {
+                // TODO: Assert this is always
+                if !target.target().is_empty() {
                     cmd.arg("--target");
-                    cmd.arg(spec.target());
+                    cmd.arg(target.target());
                 }
 
                 let mut child = cmd.spawn()?;
@@ -247,52 +256,143 @@ impl Builder {
                     return Err(format_err!("cargo failed with status: {:?}", status));
                 }
 
-                let source_path = project_dir()
-                    .join("target")
-                    .join(spec.target())
+                let binary_path = rust_target_dir
+                    .join(target.target())
                     .join(effective_profile)
                     .join(bin_name);
 
-                let out_path = self
-                    .output_dir
-                    .join(target_dir.strip_prefix(&self.workspace_dir).unwrap())
-                    .join(spec.name());
+                let mount_path = Path::new("built")
+                    .join(&key.label.directory)
+                    .join(&key.label.target_name)
+                    .to_str()
+                    .unwrap()
+                    .to_string();
 
-                fs::create_dir_all(out_path.parent().unwrap()).await?;
-
-                if out_path.exists().await {
-                    fs::remove_file(&out_path).await?;
-                }
-
-                symlink(source_path, out_path).await?;
+                result.output_files.insert(mount_path, binary_path);
             }
             BuildTargetRaw::FileGroup(_) => {
                 // Nothing to do. Maybe just verify that all the files exist?
             }
-            BuildTargetRaw::Bundle(spec) => {
-                let out_file = self
-                    .output_dir
-                    .join(target_dir.strip_prefix(&self.workspace_dir).unwrap())
-                    .join(format!("{}.tar", spec.name()));
+            BuildTargetRaw::Bundle(target) => {
+                let bundle_mount_dir = Path::new("built")
+                    .join(&key.label.directory)
+                    .join(&key.label.target_name);
 
-                fs::create_dir_all(out_file.parent().unwrap()).await?;
+                let bundle_dir = self
+                    .workspace_dir
+                    .join("built-config")
+                    .join(&context.config_key)
+                    .join(&key.label.directory)
+                    .join(&key.label.target_name);
+                if bundle_dir.exists().await {
+                    // TODO: We may need to use the regular remove_file function if it was
+                    // originally a file.
+                    fs::remove_dir_all(&bundle_dir).await?;
+                }
+                fs::create_dir_all(&bundle_dir).await?;
 
-                let mut out = compression::tar::Writer::open(&out_file).await?;
+                let mut bundle_spec = BundleSpec::default();
 
-                let options = AppendFileOptions {
-                    root_dir: self.workspace_dir.clone(),
-                    mask: FileMetadataMask {},
-                };
-
-                for src in spec.absolute_srcs() {
-                    // TODO: Verify that all of the 'absolute_srcs' are relative paths.
-                    out.append_file(&self.workspace_dir.join(src), &options)
-                        .await?;
+                if target.configs_len() == 0 {
+                    return Err(err_msg("Bundle must define at least one config"));
                 }
 
-                out.finish().await?;
+                for config in target.configs() {
+                    let (label, _, config_target) = self.lookup_target(&config, target_dir).await?;
 
-                result.output_files.push(out_file);
+                    let sub_context = BuildContext::from(match config_target.raw {
+                        BuildTargetRaw::BuildConfig(c) => c,
+                        _ => {
+                            return Err(format_err!(
+                                "Target is not a build config: {}",
+                                label.target_name
+                            ));
+                        }
+                    })?;
+
+                    let mut combined_outputs = HashMap::new();
+
+                    for dep in target.deps() {
+                        let mut res = self
+                            .build_target_recurse(dep, target_dir, &sub_context)
+                            .await?;
+                        combined_outputs.extend(res.output_files);
+                    }
+
+                    // Temporary path to which we'll write the archive before we know the hash of
+                    // the file.
+                    let archive_path = bundle_dir.join("archive.tar");
+                    let mut out = compression::tar::Writer::open(&archive_path).await?;
+
+                    // Add all files to the archive.
+                    // NOTE: A current limitation is that because BuildResult only lists files, we
+                    // don't preserve any directory metadata.
+                    for src in target.absolute_srcs() {
+                        // TODO: Verify that all of the 'absolute_srcs' are relative paths.
+
+                        let path = combined_outputs
+                            .get(src)
+                            .ok_or_else(|| format_err!("Missing build output for: {}", src))?;
+
+                        let options = AppendFileOptions {
+                            root_dir: path.clone(),
+                            output_dir: Some(src.into()),
+                            mask: FileMetadataMask {},
+                        };
+                        out.append_file(path, &options).await?;
+                    }
+
+                    // TODO: Given the entire archive will be passing through memory, can we hash it
+                    // while we are writing it to disk?
+                    out.finish().await?;
+
+                    let blob_spec = {
+                        let data = fs::read(&archive_path).await?;
+
+                        let hash = {
+                            let mut hasher = SHA256Hasher::default();
+                            let hash = hasher.finish_with(&data);
+                            format!("sha256:{}", common::hex::encode(hash))
+                        };
+
+                        let mut spec = BlobSpec::default();
+                        spec.set_id(hash);
+                        spec.set_size(data.len() as u64);
+                        spec.set_format(BlobFormat::TAR_ARCHIVE);
+                        spec
+                    };
+
+                    // Move to final location
+                    let blob_path = bundle_dir.join(blob_spec.id());
+                    fs::rename(archive_path, &blob_path).await?;
+
+                    result.output_files.insert(
+                        bundle_mount_dir
+                            .join(blob_spec.id())
+                            .to_str()
+                            .unwrap()
+                            .to_string(),
+                        blob_path,
+                    );
+
+                    let mut variant = BundleVariant::default();
+                    variant.set_platform(sub_context.config.platform().clone());
+                    variant.set_blob(blob_spec);
+                    bundle_spec.add_variants(variant);
+                }
+
+                let spec_path = bundle_dir.join("spec.textproto");
+                let spec_mount_path = bundle_mount_dir.join("spec.textproto");
+
+                fs::write(
+                    &spec_path,
+                    protobuf::text::serialize_text_proto(&bundle_spec),
+                )
+                .await?;
+
+                result
+                    .output_files
+                    .insert(spec_mount_path.to_str().unwrap().to_string(), spec_path);
             }
             BuildTargetRaw::Webpack(spec) => {
                 // TODO: Verify at most one webpack target is present per build directory.
@@ -311,52 +411,50 @@ impl Builder {
                     return Err(format_err!("Webpack failed: {:?}", status));
                 }
             }
+            BuildTargetRaw::BuildConfig(_) => {
+                // Just used as metadata.
+            }
         }
 
         Ok(result)
     }
-
-    fn build_target_recurse<'a>(
-        &'a mut self,
-        target: &'a str,
-        current_dir: &'a Path,
-    ) -> Pin<Box<dyn Future<Output = Result<BuildResult>> + 'a>> {
-        Box::pin(self.build_target(target, current_dir))
-    }
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct BuildResultKey {
+    /// NOTE: This will be absolute.
+    pub label: Label,
+
+    pub config_key: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct BuildResult {
-    /// Paths to
-    pub output_files: Vec<PathBuf>,
+    pub key: BuildResultKey,
+
+    /// Absolute paths to files generated by directly building the requested
+    /// target. This doesn't include any files linked as dependencies.
+    pub output_files: HashMap<String, PathBuf>,
 }
 
-pub async fn run_build(target: &str) -> Result<BuildResult> {
+// #[derive(Debug, Clone)]
+// pub struct OutputFile {
+//     /// NOTE: Every single OutputFile must have a distinct mount_path. This
+// must     /// also be unique across different rules.
+//     pub mount_path: String,
+
+//     pub source_path: PathBuf,
+// }
+
+pub async fn run_build(label: &str, context: &BuildContext) -> Result<BuildResult> {
     let workspace_dir = PathBuf::from(common::project_dir());
 
-    let mut builder = Builder {
-        built_targets: HashSet::new(),
-        workspace_dir: workspace_dir.clone(),
-        output_dir: workspace_dir.join("built"),
-    };
+    let mut builder = Builder::new(&workspace_dir);
 
     let current_dir = PathBuf::from(std::env::current_dir()?);
     if !current_dir.starts_with(workspace_dir) {
         return Err(err_msg("Must run the builder from inside a workspace"));
     }
 
-    builder.build_target(target, &current_dir).await
-}
-
-pub fn run() -> Result<()> {
-    common::async_std::task::block_on(async {
-        let args = common::args::parse_args::<Args>()?;
-        match args.command {
-            ArgCommand::Build(build) => {
-                run_build(&build.target).await?;
-            }
-        }
-
-        Ok(())
-    })
+    builder.build_target(label, &current_dir, context).await
 }

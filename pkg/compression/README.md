@@ -1,5 +1,15 @@
 
 
+API
+---
+
+All compression methods should support a 
+
+
+Old
+---
+
+
 DEFLATE:
 - https://tools.ietf.org/html/rfc1951
 - Little endian numbers
@@ -49,3 +59,9 @@ Summary of compression modes:
 - Large chunks no copies
 	- Provide input to the codec
 	- Take internal reference to the 
+
+
+Starting with least siginificant bit
+
+
+Huffman codes start with most significant bit
