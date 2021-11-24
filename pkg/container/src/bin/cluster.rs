@@ -547,12 +547,13 @@ async fn build_task_blobs(task_spec: &mut TaskSpec) -> Result<Vec<container::Blo
     let mut out = vec![];
 
     let build_context = builder::BuildContext::default_for_local_machine().await?;
+    let mut builder_inst = builder::Builder::default();
 
     for volume in task_spec.volumes_mut() {
         if let container::TaskSpec_VolumeSourceCase::BuildTarget(label) = volume.source_case() {
             println!("Building volume target: {}", label);
 
-            let res = builder::run_build(label, &build_context).await?;
+            let res = builder_inst.build_target_cwd(label, &build_context).await?;
 
             // TODO: Instead just have the bundle_dir added to ouptut_files
             let (bundle_dir, bundle_spec) = {

@@ -1,7 +1,7 @@
 use common::errors::*;
 
+use crate::builder::Builder;
 use crate::context::BuildContext;
-use crate::run_build;
 
 #[derive(Args)]
 struct Args {
@@ -30,11 +30,18 @@ pub fn run() -> Result<()> {
             ArgCommand::Build(build) => {
                 // TODO: Support the --config flag.
 
-                run_build(
-                    &build.label,
-                    &BuildContext::default_for_local_machine().await?,
-                )
-                .await?;
+                let mut builder = Builder::default();
+
+                let build_context = match build.config {
+                    Some(label) => BuildContext::from(builder.lookup_config(&label, None).await?)?,
+                    None => BuildContext::default_for_local_machine().await?,
+                };
+
+                let result = builder
+                    .build_target_cwd(&build.label, &build_context)
+                    .await?;
+
+                println!("BuildResult:\n{:#?}", result);
             }
         }
 
