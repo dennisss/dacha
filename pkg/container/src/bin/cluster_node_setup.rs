@@ -136,7 +136,7 @@ async fn run() -> Result<()> {
     )?;
     run_ssh(&args.addr, "sudo chmod 700 /opt/dacha/data")?;
 
-    // TODO: Need to re-build this.
+    // TODO: Need to re-build this (and use a platform independent name).
     copy_repo_file(&args.addr, "built/pkg/container/cluster_node.armv7")?;
     copy_repo_file(&args.addr, "pkg/container/config/node.textproto")?;
 

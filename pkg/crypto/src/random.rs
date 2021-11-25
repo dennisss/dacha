@@ -68,9 +68,14 @@ pub async fn secure_random_range(lower: &BigUint, upper: &BigUint) -> Result<Big
 
     let msb_mask: u8 = {
         let r = upper.nbits() % 8;
-        !((1 << (8 - r)) - 1)
+        if r == 0 {
+            0xff
+        } else {
+            !((1 << (8 - r)) - 1)
+        }
     };
 
+    // TODO: Refactor out retrying. Instead shift to 0
     loop {
         secure_random_bytes(&mut buf).await?;
         *buf.last_mut().unwrap() &= msb_mask;

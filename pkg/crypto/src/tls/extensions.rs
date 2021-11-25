@@ -777,7 +777,7 @@ impl SupportedVersionsClientHello {
     parser!(parse<Self> => {
         seq!(c => {
             let data = c.next(varlen_vector(2, 254))?;
-            let versions = c.next(complete(many1(as_bytes(be_u16))))?;
+            let (versions, _) = complete(many1(as_bytes(be_u16)))(data)?;
             Ok(Self { versions })
         })
     });

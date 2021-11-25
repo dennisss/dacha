@@ -550,7 +550,6 @@ impl_op_ex!(^ |lhs: &BigUint, rhs: &BigUint| -> BigUint {
     out
 });
 
-// NOTE: Currently not used.
 impl_op_ex!(>> |a: &BigUint, shift: &BigUint| -> BigUint {
     let mut out = BigUint::zero();
     assert!(shift.value.len() <= 1);
@@ -716,5 +715,14 @@ mod tests {
         let x = m.inv(&2.into());
         assert_eq!(x, BigUint::from(4));
         assert_eq!(m.div(&1.into(), &2.into()), BigUint::from(4));
+    }
+
+    #[test]
+    fn biguint_shift() {
+        let num = BigUint::from(0b10011100);
+        let shift = BigUint::from(3);
+        let expected = BigUint::from(0b10011);
+
+        assert!((num >> shift) == expected);
     }
 }

@@ -1,7 +1,11 @@
+use std::sync::Arc;
+
 use common::bytes::Bytes;
+use common::errors::*;
 
 use crate::tls::extensions::{NamedGroup, SignatureScheme};
 use crate::tls::handshake::CipherSuite;
+use crate::x509;
 
 /// Configuration for how a TLS client will negotiate a handshake with the
 /// remote. It puts constrains on which types of encryption algorithms we will,
@@ -45,7 +49,7 @@ pub struct ClientOptions {
 
 impl ClientOptions {
     pub fn recommended() -> Self {
-        ClientOptions {
+        Self {
             // TODO: Should almost always have a value.
             hostname: String::new(),
 
@@ -72,8 +76,8 @@ impl ClientOptions {
             supported_signature_algorithms: vec![
                 // These three are the minimum required set to implement.
                 SignatureScheme::ecdsa_secp256r1_sha256,
-                SignatureScheme::rsa_pkcs1_sha256,
                 SignatureScheme::rsa_pss_rsae_sha256,
+                SignatureScheme::rsa_pkcs1_sha256,
             ],
 
             trust_server_certificate: false,
@@ -81,4 +85,55 @@ impl ClientOptions {
     }
 }
 
-struct ServerOptions {}
+// openssl req -new -newkey ec:<(openssl ecparam -name prime256v1) -x509 -sha256
+// -days 1460 -nodes -out testdata/certificates/server-ec.crt -keyout
+// testdata/certificates/server-ec.key
+
+#[derive(Clone)]
+pub struct ServerOptions {
+    /// Certificates to advertise to the client.
+    ///
+    /// This must contain at least 1 certificate where:
+    /// - the first certificate corresponds to this server's identity
+    ///   - We'll reject any client request that requests a host name not named
+    ///     in this certificate
+    ///   - We will verify to the client that we own this certificate using the
+    ///     below private key.
+    /// - other certificates are simply passed along to the client without extra
+    ///   processing.
+    ///   - This is mainly to provide the client with the whole chain of trust
+    ///     if we believe the client doesn't know it.
+    ///
+    /// NOTE: We currently only support using a server having a single identity
+    /// certificate (so if the server will be used to server as multiple host
+    /// names they must all be in the same certificate),
+    pub certificates: Vec<Arc<x509::Certificate>>,
+
+    pub private_key: x509::PrivateKey,
+
+    /// Protocol ids to accept in the order from highest to lowest preferance.
+    /// TODO: Support rejecting requests that don't have a negotiated protocol?
+    pub alpn_ids: Vec<Bytes>,
+
+    pub supported_groups: Vec<NamedGroup>,
+
+    /// Should also be used for validating client certificates.
+    pub supported_signature_algorithms: Vec<SignatureScheme>,
+}
+
+impl ServerOptions {
+    pub fn recommended(certificate_file: Bytes, private_key_file: Bytes) -> Result<Self> {
+        let client_options = ClientOptions::recommended();
+
+        let certificates = x509::Certificate::from_pem(certificate_file)?;
+        let private_key = x509::PrivateKey::from_pem(private_key_file)?;
+
+        Ok(Self {
+            certificates,
+            private_key,
+            alpn_ids: vec![],
+            supported_groups: client_options.supported_groups,
+            supported_signature_algorithms: client_options.supported_signature_algorithms,
+        })
+    }
+}

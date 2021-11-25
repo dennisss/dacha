@@ -549,6 +549,7 @@ pub fn complete<I: ParserFeed, T, P: Parser<T, I>>(p: P) -> impl Parser<T, I> {
 
                     // })
 
+                    // TODO: Have a special extra data error for this.
                     Err(format_err!(
                         "Failed to parse last {} bytes",
                         rest.remaining_bytes()

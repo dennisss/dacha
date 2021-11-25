@@ -111,7 +111,7 @@ impl DESBlockCipher {
         let key_vec = BitVector::from(key, 8 * 8);
 
         let mut key_schedule = DESKeySchedule::new(&key_vec);
-        for i in 0..NUM_ROUNDS {
+        for _ in 0..NUM_ROUNDS {
             round_keys.push(key_schedule.next_key());
         }
 

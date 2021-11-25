@@ -60,6 +60,7 @@ impl std::convert::TryFrom<PKCS_1::RSAPublicKey> for RSAPublicKey {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct RSAPrivateKey {
     modulus: BigUint,
     private_exponent: BigUint,
@@ -90,6 +91,39 @@ impl RSASSA_PSS {
             salt_length,
         }
     }
+
+    /// RFC 8017: Section 8.1.1
+    pub async fn create_signature(
+        &self,
+        private_key: &RSAPrivateKey,
+        data: &[u8],
+    ) -> Result<Vec<u8>> {
+        // TODO: Implement a more efficient way of getting this size.
+        let k = common::ceil_div(private_key.modulus.nbits(), 8);
+
+        // Step 1
+        let encoded_message = emsa_pss_encode(
+            data,
+            private_key.modulus.nbits() - 1,
+            &self.hasher_factory,
+            self.salt_length,
+        )
+        .await?;
+
+        // Step 2.a
+        let message = os2ip(&encoded_message);
+
+        // Step 2.b
+        let s = rsasp1(private_key, &message)?;
+
+        // Step 2.c
+        let s = i2osp(&s, k);
+
+        // Step 3
+        Ok(s)
+    }
+
+    // TODO: Implementa certificate creater.
 
     /// RFC 8017: Section 8.1.2
     pub fn verify_signature(
@@ -220,6 +254,11 @@ impl RSASSA_PKCS_v1_5 {
 /// RFC 8017: Section 4.1
 fn i2osp(x: &BigUint, x_len: usize) -> Vec<u8> {
     x.to_be_bytes().left_pad(x_len, 0)
+}
+
+/// RFC 8017: Section 4.2
+fn os2ip(x: &[u8]) -> BigUint {
+    BigUint::from_be_bytes(x)
 }
 
 /// RFC 8017: 5.2.1

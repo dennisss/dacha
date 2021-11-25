@@ -80,7 +80,7 @@ async fn tls_connect() -> Result<()> {
 }
 
 fn debug_pem() -> Result<()> {
-    let path = project_path!("testdata/certificates/server.key");
+    let path = project_path!("testdata/certificates/server-ec.key");
 
     let mut f = std::fs::File::open(path)?;
 
@@ -106,7 +106,7 @@ fn debug_pem() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    // return debug_pem();
+    return debug_pem();
 
     return task::block_on(tls_connect());
 

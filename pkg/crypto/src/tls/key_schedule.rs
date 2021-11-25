@@ -45,6 +45,10 @@ impl KeySchedule {
         }
     }
 
+    pub fn hasher_factory(&self) -> &HasherFactory {
+        &self.hasher_factory
+    }
+
     pub fn early_secret(&mut self, psk: Option<&[u8]>) -> &[u8] {
         let psk = self.zero_salt.clone();
 

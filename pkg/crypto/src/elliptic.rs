@@ -1,15 +1,19 @@
-use crate::dh::*;
-use crate::random::*;
+use std::marker::PhantomData;
+
+use asn::encoding::DERWriteable;
 use common::ceil_div;
 use common::errors::*;
 use common::hex;
 use common::LeftPad;
 use math::big::*;
-use std::marker::PhantomData;
+
+use crate::dh::*;
+use crate::hasher::Hasher;
+use crate::random::*;
 
 /// Parameters of an elliptic curve of the form:
 /// y^2 = x^3 + a*x + b
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct EllipticCurve {
     pub a: BigUint,
     pub b: BigUint,
@@ -48,6 +52,7 @@ impl EllipticCurve {
 
     /// Scalar*point multiplication using the 'double-and-add' method
     /// TODO: Switch to using the montgomery ladder method.
+    /// XXX: Yes, must become constant time.
     pub fn scalar_mul(
         &self,
         d: &BigUint,
@@ -88,18 +93,22 @@ impl EllipticCurvePoint {
 
 /// Parameters for a group of points on an elliptic curve definited over a
 /// finite field of integers.
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct EllipticCurveGroup {
     /// Base curve.
     curve: EllipticCurve,
+
     /// Prime number which is the size of the finite field (all operations are
     /// performed 'mod p').
     p: BigUint,
-    /// Base point
+
+    /// Base point on the curve.
     g: EllipticCurvePoint,
-    // Order
+
+    /// Order
     n: BigUint,
-    // Cofactor
+
+    /// Cofactor
     k: usize,
 }
 
@@ -117,12 +126,18 @@ impl DiffieHellmanFn for EllipticCurveGroup {
     }
 
     fn public_value(&self, secret: &[u8]) -> Result<Vec<u8>> {
-        unimplemented!("");
+        // TODO: Check that this is correct for usage in TLS.
+
+        let sk = self.decode_scalar(secret)?;
+        let modulo = Modulo::new(&self.p);
+        let p = self.curve.scalar_mul(&sk, &self.g, &modulo);
+
+        Ok(self.encode_point(&p))
     }
 
     // TODO: Validate tht point is non-infinity
     // TODO: For TLS, shared secret should be the X coordinate of this only!!
-    fn shared_secret(&self, secret: &[u8], public: &[u8]) -> Result<Vec<u8>> {
+    fn shared_secret(&self, remote_public: &[u8], local_secret: &[u8]) -> Result<Vec<u8>> {
         unimplemented!("");
     }
 }
@@ -130,13 +145,81 @@ impl DiffieHellmanFn for EllipticCurveGroup {
 use asn::encoding::DERReadable;
 
 impl EllipticCurveGroup {
+    pub async fn create_signature(
+        &self,
+        private_key: &[u8],
+        data: &[u8],
+        hasher: &mut dyn Hasher,
+    ) -> Result<Vec<u8>> {
+        let d_a = self.decode_scalar(private_key)?;
+
+        hasher.update(data);
+        let mut digest = hasher.finish();
+
+        let two = BigUint::from(2);
+
+        for _ in 0..4 {
+            let k = secure_random_range(&two, &self.n).await?;
+            if let Some(val) = self.create_signature_with(private_key, &digest, &k)? {
+                return Ok(val);
+            }
+        }
+
+        Err(err_msg("Exhausted tried to make a signature"))
+    }
+
+    pub fn create_signature_with(
+        &self,
+        private_key: &[u8],
+        digest: &[u8],
+        random: &BigUint,
+    ) -> Result<Option<Vec<u8>>> {
+        let d_a = self.decode_scalar(private_key)?;
+
+        let L_z = self.n.nbits();
+        assert!(L_z <= 8 * digest.len());
+
+        let z = BigUint::from_be_bytes(digest) >> BigUint::from((8 * digest.len()) - L_z);
+        let modulo = Modulo::new(&self.n);
+
+        let p = self.curve_mul(random);
+
+        let r = p.x;
+        if r.is_zero() {
+            return Ok(None);
+        }
+
+        let s = modulo.mul(&modulo.inv(random), &modulo.add(&z, &modulo.mul(&r, &d_a)));
+        if s.is_zero() {
+            return Ok(None);
+        }
+
+        let sig = pkix::PKIX1Algorithms2008::ECDSA_Sig_Value {
+            r: r.into(),
+            s: s.into(),
+        };
+
+        Ok(Some(sig.to_der()))
+    }
+
     // ECDSA
     pub fn verify_signature(
         &self,
         public_key: &[u8],
         signature: &[u8],
         data: &[u8],
-        hasher: &mut dyn crate::hasher::Hasher,
+        hasher: &mut dyn Hasher,
+    ) -> Result<bool> {
+        hasher.update(data);
+        let digest = hasher.finish();
+        self.verify_digest_signature(public_key, signature, &digest)
+    }
+
+    pub fn verify_digest_signature(
+        &self,
+        public_key: &[u8],
+        signature: &[u8],
+        digest: &[u8],
     ) -> Result<bool> {
         // TODO: We should allow passing in an Into<Bytes> to avoid cloning the
         // data here.
@@ -145,15 +228,12 @@ impl EllipticCurveGroup {
             (parsed.r.to_uint()?, parsed.s.to_uint()?)
         };
 
-        hasher.update(data);
-        let mut digest = hasher.finish();
-
         let L_z = self.n.nbits();
-        assert_eq!(L_z % 8, 0);
+        // assert_eq!(L_z % 8, 0);
         assert!(L_z <= 8 * digest.len());
-        digest.truncate(L_z / 8);
+        // digest.truncate(L_z / 8);
 
-        let z = BigUint::from_be_bytes(&digest);
+        let z = BigUint::from_be_bytes(digest) >> BigUint::from((8 * digest.len()) - L_z);
         let modulo = Modulo::new(&self.n);
         let u_1 = modulo.div(&z, &s);
         let u_2 = modulo.div(&r, &s);
@@ -172,13 +252,16 @@ impl EllipticCurveGroup {
 
     fn decode_scalar(&self, data: &[u8]) -> Result<BigUint> {
         if data.len() != self.p.min_bytes() {
-            return Err(err_msg("Scalar wrong size"));
+            return Err(format_err!(
+                "Scalar wrong size: {} vs {}",
+                data.len(),
+                self.p.min_bytes()
+            ));
         }
 
         Ok(BigUint::from_be_bytes(data))
     }
 
-    // TODO: Not used anywhere right now.
     fn decode_point(&self, data: &[u8]) -> Result<EllipticCurvePoint> {
         if data.len() <= 1 {
             return Err(err_msg("Point too small"));
@@ -237,6 +320,18 @@ impl EllipticCurveGroup {
     }
 
     // TODO: Output uncompressed, but with padding
+    fn encode_point(&self, p: &EllipticCurvePoint) -> Vec<u8> {
+        let nbytes = ceil_div(self.p.nbits(), 8);
+
+        let mut out = vec![];
+        out.push(4); // Uncompressed form
+
+        // TODO: Check that the curve points don't overflow.
+        out.extend_from_slice(&p.x.to_be_bytes().left_pad(nbytes, 0));
+        out.extend_from_slice(&p.y.to_be_bytes().left_pad(nbytes, 0));
+        out
+    }
+
     // fn encode_point(&self )
 
     fn from_hex(
@@ -357,7 +452,7 @@ impl EllipticCurveGroup {
     }
 
     /// Returns whether or not the given point is on the curve.
-    /// TODO: There is also a 'point on curve' verification algorith here:
+    /// TODO: There is also a 'point on curve' verification algorithm here:
     /// https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm#Signature_verification_algorithm
     pub fn verify_point(&self, p: &EllipticCurvePoint) -> bool {
         // TODO: Must deal with three criteria:
@@ -469,9 +564,9 @@ impl<C: MontgomeryCurveCodec + Send + Sync> DiffieHellmanFn for MontgomeryCurveG
         Ok(C::encode_u_cord(&out))
     }
 
-    fn shared_secret(&self, public: &[u8], secret: &[u8]) -> Result<Vec<u8>> {
-        let u = C::decode_u_cord(public);
-        let k = C::decode_scalar(secret);
+    fn shared_secret(&self, remote_public: &[u8], local_secret: &[u8]) -> Result<Vec<u8>> {
+        let u = C::decode_u_cord(remote_public);
+        let k = C::decode_scalar(local_secret);
         let out = self.mul(&k, &u);
         Ok(C::encode_u_cord(&out))
 
@@ -547,6 +642,7 @@ impl MontgomeryCurveCodec for X448 {
     }
 }
 
+// TODO: Everything in here must become constant time.
 fn curve_mul(k: &BigUint, u: &BigUint, p: &BigUint, bits: usize, a24: &BigUint) -> BigUint {
     let modulo = Modulo::new(p);
 
@@ -763,15 +859,22 @@ mod tests {
     }
 
     #[test]
-    fn ecdsa_test() {
+    fn ecdsa_test() -> Result<()> {
         // Test vectors grabbed from:
         // https://github.com/bcgit/bc-java/blob/master/core/src/test/java/org/bouncycastle/crypto/test/ECTest.java#L384
         // testECDSASecP224k1sha256
 
         let curve = EllipticCurveGroup::secp224k1();
 
-        let msg = hex::decode("E5D5A7ADF73C5476FAEE93A2C76CE94DC0557DB04CDC189504779117920B896D")
-            .unwrap();
+        let private_key =
+            hex::decode("BE6F6E91FE96840A6518B56F3FE21689903A64FA729057AB872A9F51").unwrap();
+        let random =
+            hex::decode("00c39beac93db21c3266084429eb9b846b787c094f23a4de66447efbb3").unwrap();
+
+        // TODO: This is the message post digestion.
+        let digest =
+            hex::decode("E5D5A7ADF73C5476FAEE93A2C76CE94DC0557DB04CDC189504779117920B896D")
+                .unwrap();
         let r = BigUint::from_be_bytes(
             &hex::decode("8163E5941BED41DA441B33E653C632A55A110893133351E20CE7CB75").unwrap(),
         );
@@ -785,12 +888,39 @@ mod tests {
         }
         .to_der();
 
+        let new_sig = curve
+            .create_signature_with(&private_key, &digest, &BigUint::from_be_bytes(&random))?
+            .unwrap();
+
+        assert_eq!(new_sig, sig);
+
         let point = hex::decode("04C5C9B38D3603FCCD6994CBB9594E152B658721E483669BB42728520F484B537647EC816E58A8284D3B89DFEDB173AFDC214ECA95A836FA7C").unwrap();
 
-        let mut hasher = crate::sha256::SHA256Hasher::default();
+        // let mut hasher = crate::sha256::SHA256Hasher::default();
 
         assert!(curve
-            .verify_signature(&point, &sig, &msg, &mut hasher)
+            .verify_digest_signature(&point, &sig, &digest)
             .unwrap());
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn ecdsa_sign_test() -> Result<()> {
+        let group = EllipticCurveGroup::secp256r1();
+
+        let secret = group.secret_value().await?;
+        let data = b"hello world";
+        let mut hasher = crate::sha256::SHA256Hasher::default();
+
+        let signature = group.create_signature(&secret, data, &mut hasher).await?;
+
+        let mut hasher2 = crate::sha256::SHA256Hasher::default();
+
+        let public = group.public_value(&secret)?;
+
+        assert!(group.verify_signature(&public, &signature, data, &mut hasher2)?);
+
+        Ok(())
     }
 }

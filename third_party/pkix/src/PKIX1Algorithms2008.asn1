@@ -146,6 +146,15 @@ ECParameters ::= CHOICE {
 	-- Any future additions to this CHOICE should be coordinated
 	-- with ANSI X9.
 
+
+-- Snagged from RFC 5915
+ECPrivateKey ::= SEQUENCE {
+    version        INTEGER { ecPrivkeyVer1(1) } (ecPrivkeyVer1),
+    privateKey     OCTET STRING,
+    parameters [0] ECParameters OPTIONAL,
+    publicKey  [1] BIT STRING OPTIONAL
+}
+
 -- Sec 2.1.2 Restricted Algorithm IDs, Key, and Parameters: ECDH
 
 id-ecDH OBJECT IDENTIFIER ::= {

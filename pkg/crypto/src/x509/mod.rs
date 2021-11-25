@@ -25,6 +25,10 @@ use crate::tls::extensions::ExtensionType::PskKeyExchangeModes;
 
 const SKIP_TRUSTED_VERIFICATION: bool = true;
 
+mod private_key;
+
+pub use private_key::*;
+
 // TODO: For validating this, we also need to able to check max allowed
 // certificate chain length.
 
@@ -109,10 +113,7 @@ impl CertificateRegistry {
 
         let buf = Bytes::from(data);
 
-        let certs = Certificate::from_pem(buf)?
-            .into_iter()
-            .map(|c| Arc::new(c))
-            .collect::<Vec<_>>();
+        let certs = Certificate::from_pem(buf)?;
 
         let mut reg = CertificateRegistry::new();
         reg.append(&certs, true)?;
@@ -296,7 +297,9 @@ pub struct Certificate {
     extensions: CertificateExtensions,
 
     /// Raw parsed ASN sequence backing this certificate.
-    raw: PKIX1Explicit88::Certificate,
+    ///
+    /// TODO: Eventualyl make private again.
+    pub raw: PKIX1Explicit88::Certificate,
 }
 
 #[derive(Debug)]
@@ -383,7 +386,7 @@ impl Certificate {
         })
     }
 
-    pub fn from_pem(buf: Bytes) -> Result<Vec<Certificate>> {
+    pub fn from_pem(buf: Bytes) -> Result<Vec<Arc<Certificate>>> {
         let pem = PEM::parse(buf)?;
 
         let mut out = vec![];
@@ -395,7 +398,7 @@ impl Certificate {
             }
 
             let c = Self::read(entry.to_binary()?.into())?;
-            out.push(c);
+            out.push(Arc::new(c));
         }
 
         Ok(out)

@@ -1,34 +1,22 @@
 use std::collections::HashMap;
-use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use common::async_std::net::TcpStream;
-use common::async_std::prelude::*;
-use common::async_std::sync::Mutex;
-use common::bytes::{Buf, Bytes, BytesMut};
 use common::errors::*;
 use common::io::*;
-use parsing::is_incomplete;
 
-use crate::aead::*;
-use crate::chacha20::ChaCha20Poly1305;
-use crate::dh::*;
 use crate::elliptic::*;
-use crate::gcm::*;
 use crate::hasher::*;
-use crate::hkdf::*;
-use crate::sha256::SHA256Hasher;
-use crate::sha384::SHA384Hasher;
 use crate::tls::alert::*;
 use crate::tls::application_stream::*;
-use crate::tls::cipher::*;
+use crate::tls::constants::*;
 use crate::tls::extensions::*;
+use crate::tls::extensions_util::*;
 use crate::tls::handshake::*;
 use crate::tls::handshake_summary::*;
 use crate::tls::key_schedule::*;
+use crate::tls::key_schedule_helper::*;
 use crate::tls::options::ClientOptions;
-use crate::tls::record::*;
 use crate::tls::record_stream::*;
 use crate::tls::transcript::*;
 use crate::x509;
@@ -51,50 +39,43 @@ pub struct Client {
 // pending_messages: VecDeque<Message>
 }
 
-fn find_supported_versions_sh(
-    extensions: &Vec<Extension>,
-) -> Option<&SupportedVersionsServerHello> {
-    for e in extensions {
-        if let Extension::SupportedVersionsServerHello(v) = e {
-            return Some(v);
-        }
+impl Client {
+    pub fn new() -> Self {
+        Self {}
     }
 
-    None
-}
+    pub async fn connect(
+        &mut self,
+        reader: Box<dyn Readable>,
+        writer: Box<dyn Writeable>,
+        options: &ClientOptions,
+    ) -> Result<ApplicationStream> {
+        let handshake_exec = ClientHandshakeExecutor::new(reader, writer, options).await?;
+        handshake_exec.run().await
 
-fn find_key_share_sh(extensions: &Vec<Extension>) -> Option<&KeyShareServerHello> {
-    for e in extensions {
-        if let Extension::KeyShareServerHello(v) = e {
-            return Some(v);
-        }
+        //////
+
+        // TODO: Validate that all extensions have been interprated in some way.
+
+        // If 1.3, check the selected group is one of the ones that we wanted
+
+        // Assert that there is a key_share in the ServerHello
+
+        // Decode the cipher suite in order to at least start using the right
+        // hash.
+
+        // Generate the shared secret
+
+        // AES AEAD stuff is here: https://tools.ietf.org/html/rfc5116
+        // https://tools.ietf.org/html/rfc5288
+
+        // ChaCha20 in here: https://tools.ietf.org/html/rfc8439
+
+        // println!("RES: {:?}", &res_data[0..n]);
     }
-
-    None
-}
-
-fn find_key_share_retry(extensions: &[Extension]) -> Option<&KeyShareHelloRetryRequest> {
-    for e in extensions {
-        if let Extension::KeyShareHelloRetryRequest(v) = e {
-            return Some(v);
-        }
-    }
-
-    None
 }
 
 // TODO: Must implement bubbling up Alert messages
-
-// TODO: Unused?
-const TLS13_CERTIFICATEVERIFY_CLIENT_CTX: &'static [u8] = b"TLS 1.3, client CertificateVerify";
-const TLS13_CERTIFICATEVERIFY_SERVER_CTX: &'static [u8] = b"TLS 1.3, server CertificateVerify";
-
-/// SHA-256 of the string "HelloRetryRequest" which indicates that a ServerHello
-/// is a HelloRetryRequest.
-const HELLO_RETRY_REQUEST_SHA256: &'static [u8] = &[
-    0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11, 0xBE, 0x1D, 0x8C, 0x02, 0x1E, 0x65, 0xB8, 0x91,
-    0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB, 0x8C, 0x5E, 0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C,
-];
 
 /*
 Because TLS 1.3 forbids renegotiation, if a server has negotiated
@@ -105,10 +86,10 @@ terminate the connection with an "unexpected_message" alert.
 /// Performs a handshake with a server for a single TLS connection.
 /// Implemented from the client point of view.
 struct ClientHandshakeExecutor<'a> {
-    options: &'a ClientOptions,
-
     reader: RecordReader,
     writer: RecordWriter,
+
+    options: &'a ClientOptions,
 
     handshake_transcript: Transcript,
 
@@ -127,9 +108,9 @@ impl<'a> ClientHandshakeExecutor<'a> {
         options: &'a ClientOptions,
     ) -> Result<ClientHandshakeExecutor<'a>> {
         Ok(ClientHandshakeExecutor {
-            options,
             reader: RecordReader::new(reader),
             writer: RecordWriter::new(writer),
+            options,
             handshake_transcript: Transcript::new(),
             secrets: HashMap::new(),
             certificate_registry: x509::CertificateRegistry::public_roots().await?,
@@ -161,8 +142,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
         println!("WAIT_SH");
 
-        let (server_hello, key_schedule, hasher_factory) =
-            self.wait_server_hello(client_hello).await?;
+        let (server_hello, key_schedule) = self.wait_server_hello(client_hello).await?;
         self.process_received_extensions(&server_hello.extensions)?;
 
         println!("WAIT_EE");
@@ -173,7 +153,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
         println!("WAIT_CERT");
         let cert = self.wait_certificate().await?;
 
-        self.wait_certificate_verify(&cert, &hasher_factory).await?;
+        self.wait_certificate_verify(&cert, key_schedule.hasher_factory())
+            .await?;
 
         println!("WAIT_FINISHED");
 
@@ -241,7 +222,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
     async fn wait_server_hello(
         &mut self,
         mut client_hello: ClientHello,
-    ) -> Result<(ServerHello, KeySchedule, HasherFactory)> {
+    ) -> Result<(ServerHello, KeySchedule)> {
         let mut last_server_hello = None;
 
         loop {
@@ -372,29 +353,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
             let cipher_suite = server_hello.cipher_suite.clone();
 
-            let (aead, hasher_factory): (Box<dyn AuthEncAD>, HasherFactory) = match cipher_suite {
-                CipherSuite::TLS_AES_128_GCM_SHA256 => {
-                    (Box::new(AesGCM::aes128()), SHA256Hasher::factory())
-                }
-                CipherSuite::TLS_AES_256_GCM_SHA384 => {
-                    (Box::new(AesGCM::aes256()), SHA384Hasher::factory())
-                }
-                CipherSuite::TLS_CHACHA20_POLY1305_SHA256 => {
-                    (Box::new(ChaCha20Poly1305::new()), SHA256Hasher::factory())
-                }
-                _ => {
-                    return Err(err_msg("Bad cipher suite"));
-                }
-            };
-
-            let hkdf = HKDF::new(hasher_factory.box_clone());
-
-            let mut key_schedule = KeySchedule::new(hkdf.clone(), hasher_factory.box_clone());
-
-            key_schedule.early_secret(None);
-
             let server_public = find_key_share_sh(&server_hello.extensions)
-                .ok_or(err_msg("ServerHello missing key_share"))?;
+                .ok_or_else(|| err_msg("ServerHello missing key_share"))?;
 
             if !self.secrets.contains_key(&server_public.server_share.group) {
                 return Err(err_msg(
@@ -402,40 +362,20 @@ impl<'a> ClientHandshakeExecutor<'a> {
                 ));
             }
 
-            let group = server_public.server_share.group.create().unwrap();
+            let client_secret = &self.secrets[&server_public.server_share.group];
 
-            let shared_secret = group.shared_secret(
+            let key_schedule = KeyScheduleHelper::create_for_handshake(
+                false,
+                cipher_suite,
+                server_public.server_share.group,
                 &server_public.server_share.key_exchange,
-                &self.secrets[&server_public.server_share.group],
+                client_secret,
+                &self.handshake_transcript,
+                &mut self.reader,
+                &mut self.writer,
             )?;
 
-            // TODO: Use this return value?
-            key_schedule.handshake_secret(&shared_secret);
-
-            let (client_handshake_traffic_secret, server_handshake_traffic_secret) = {
-                let s = key_schedule.handshake_traffic_secrets(&self.handshake_transcript);
-                (
-                    s.client_handshake_traffic_secret,
-                    s.server_handshake_traffic_secret,
-                )
-            };
-
-            // TODO: Use this?
-            key_schedule.master_secret();
-
-            self.writer.local_cipher_spec = Some(CipherEndpointSpec::new(
-                aead.box_clone(),
-                hkdf.clone(),
-                client_handshake_traffic_secret.into(),
-            ));
-
-            self.reader.set_remote_cipher_spec(CipherEndpointSpec::new(
-                aead.box_clone(),
-                hkdf.clone(),
-                server_handshake_traffic_secret.into(),
-            ))?;
-
-            return Ok((server_hello, key_schedule, hasher_factory));
+            return Ok((server_hello, key_schedule));
         }
     }
 
@@ -572,6 +512,10 @@ impl<'a> ClientHandshakeExecutor<'a> {
         algorithms appear in "signature_algorithms".
         */
 
+        // Given a
+
+        // TODO: Move more of this code into the certificate class.
+
         // TODO: Verify this is an algorithm that we requested (and that it
         // matches all relevant params in the certificate.
         // TOOD: Most of this code should be easy to modularize.
@@ -612,10 +556,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
                     return Err(err_msg("Invalid RSA certificate verify signature"));
                 }
             }
-
             // TODO:
             // SignatureScheme::rsa_pkcs1_sha256,
-            // SignatureScheme::rsa_pss_rsae_sha256
             _ => {
                 return Err(err_msg("Unsupported cert verify algorithm"));
             }
@@ -648,6 +590,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
             verify_data: verify_data_client,
         });
 
+        // Should be everything up to server finished.
         let final_secrets = key_schedule.finished(&self.handshake_transcript);
 
         self.writer
@@ -664,41 +607,5 @@ impl<'a> ClientHandshakeExecutor<'a> {
             .replace_key(final_secrets.client_application_traffic_secret_0);
 
         Ok(())
-    }
-}
-
-impl Client {
-    pub fn new() -> Self {
-        Self {}
-    }
-
-    pub async fn connect(
-        &mut self,
-        reader: Box<dyn Readable>,
-        writer: Box<dyn Writeable>,
-        options: &ClientOptions,
-    ) -> Result<ApplicationStream> {
-        let handshake_exec = ClientHandshakeExecutor::new(reader, writer, options).await?;
-        handshake_exec.run().await
-
-        //////
-
-        // TODO: Validate that all extensions have been interprated in some way.
-
-        // If 1.3, check the selected group is one of the ones that we wanted
-
-        // Assert that there is a key_share in the ServerHello
-
-        // Decode the cipher suite in order to at least start using the right
-        // hash.
-
-        // Generate the shared secret
-
-        // AES AEAD stuff is here: https://tools.ietf.org/html/rfc5116
-        // https://tools.ietf.org/html/rfc5288
-
-        // ChaCha20 in here: https://tools.ietf.org/html/rfc8439
-
-        // println!("RES: {:?}", &res_data[0..n]);
     }
 }

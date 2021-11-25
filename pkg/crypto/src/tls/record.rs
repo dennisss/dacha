@@ -94,6 +94,7 @@ tls_enum_u8!(ContentType => {
 });
 
 /// This is the plaintext of a unencrypted application_data record.
+#[derive(Debug)]
 pub struct RecordInner {
     pub typ: ContentType,
     pub data: Bytes,

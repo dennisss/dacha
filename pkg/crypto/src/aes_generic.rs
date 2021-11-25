@@ -133,7 +133,7 @@ fn gf_matmul(a: &StateMat, b: &StateMat) -> StateMat {
 fn gf_mul(mut a: u8, mut b: u8) -> u8 {
     let mut out = 0;
 
-    for i in 0..8 {
+    for _ in 0..8 {
         if (b & 1) != 0 {
             out ^= a;
         }

@@ -5,7 +5,9 @@ use parsing::*;
 
 // NOTE: PEM files should only ever be ASCII.
 
+/// Will contain a binary PKIX1Explicit88::Certificate ASN DER encoded value.
 pub const PEM_CERTIFICATE_LABEL: &'static str = "CERTIFICATE";
+
 pub const PEM_CERTIFICATE_REQUEST_LABEL: &'static str = "CERTIFICATE REQUEST";
 
 /// The payload is a DER encoded PKCS_8::PrivateKeyInfo.

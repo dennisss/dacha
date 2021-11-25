@@ -10,6 +10,9 @@ use crate::elliptic::*;
 use crate::random::*;
 use crate::tls::options::ClientOptions;
 
+pub const TLS_1_2_VERSION: u16 = 0x0303;
+pub const TLS_1_3_VERSION: u16 = 0x0304;
+
 pub type ProtocolVersion = u16;
 
 // TODO: Use test vectors
@@ -151,9 +154,6 @@ tls_enum_u8!(HandshakeType => {
     MessageHash(254),
     (255)
 });
-
-pub const TLS_1_2_VERSION: u16 = 0x0303;
-pub const TLS_1_3_VERSION: u16 = 0x0304;
 
 ////////////////////////////////////////////////////////////////////////////////
 // https://tools.ietf.org/html/rfc8446#section-4.1.2
