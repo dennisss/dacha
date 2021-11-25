@@ -63,3 +63,13 @@ pub fn find_signature_algorithms(extensions: &[Extension]) -> Option<&SignatureS
 
     None
 }
+
+pub fn find_server_name(extensions: &[Extension]) -> Option<&ServerNameList> {
+    for e in extensions {
+        if let Extension::ServerName(v) = e {
+            return Some(v);
+        }
+    }
+
+    None
+}

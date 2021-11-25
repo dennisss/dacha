@@ -108,8 +108,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
         options: &'a ClientOptions,
     ) -> Result<ClientHandshakeExecutor<'a>> {
         Ok(ClientHandshakeExecutor {
-            reader: RecordReader::new(reader),
-            writer: RecordWriter::new(writer),
+            reader: RecordReader::new(reader, false),
+            writer: RecordWriter::new(writer, false),
             options,
             handshake_transcript: Transcript::new(),
             secrets: HashMap::new(),

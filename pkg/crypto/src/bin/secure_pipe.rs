@@ -48,7 +48,7 @@ async fn run() -> Result<()> {
             let writer = Box::new(raw_stream);
 
             let mut client_options = crypto::tls::options::ClientOptions::recommended();
-            client_options.hostname = "google.com".into();
+            client_options.hostname = "localhost".into();
             client_options.alpn_ids.push("h2".into());
             client_options.alpn_ids.push("http/1.1".into());
             client_options.trust_server_certificate = true;

@@ -8,6 +8,7 @@ use crate::tls::handshake::*;
 use crate::tls::record::*;
 use crate::tls::transcript::Transcript;
 
+// TODO: Also include information on the hinted legacy version.
 #[derive(Debug)]
 pub enum Message {
     ChangeCipherSpec(Bytes),
@@ -25,6 +26,10 @@ pub enum Message {
 pub struct RecordReader {
     reader: Box<dyn Readable>,
 
+    is_server: bool,
+
+    received_first_record: bool,
+
     /// Cipher parameters used by the remote endpoint to encrypt records.
     /// Initially this is empty meaning that no encryption is expected.
     /// This should always be set after the handshake is complete.
@@ -40,9 +45,11 @@ pub struct RecordReader {
 }
 
 impl RecordReader {
-    pub fn new(reader: Box<dyn Readable>) -> Self {
+    pub fn new(reader: Box<dyn Readable>, is_server: bool) -> Self {
         Self {
             reader,
+            is_server,
+            received_first_record: false,
             remote_cipher_spec: None,
             handshake_buffer: Bytes::new(),
         }
@@ -160,11 +167,22 @@ impl RecordReader {
 
             // TODO: 'Handshake messages MUST NOT span key changes'
 
-            // Only the ClientHello should be using a different record version.
-            // TODO: Client hello retry should be allowed to have a different version.
-            if record.legacy_record_version != TLS_1_2_VERSION {
+            // We only support TLS 1.2 and 1.3.
+            // Only the first ClientHello should have a backwards compat version of 1.0 and
+            // all following packets should use 1.2.
+            let expected_version = {
+                if self.is_server && !self.received_first_record {
+                    TLS_1_0_VERSION
+                } else {
+                    TLS_1_2_VERSION
+                }
+            };
+
+            if expected_version != record.legacy_record_version {
                 return Err(err_msg("Unexpected version"));
             }
+
+            self.received_first_record = true;
 
             // TODO: Can't remove this until we have a better check for
             // enforcing that everything is encrypted.
@@ -249,13 +267,19 @@ impl RecordReader {
 pub struct RecordWriter {
     writer: Box<dyn Writeable>,
 
+    is_server: bool,
+
+    sent_first_record: bool,
+
     pub local_cipher_spec: Option<CipherEndpointSpec>,
 }
 
 impl RecordWriter {
-    pub fn new(writer: Box<dyn Writeable>) -> Self {
+    pub fn new(writer: Box<dyn Writeable>, is_server: bool) -> Self {
         Self {
             writer,
+            is_server,
+            sent_first_record: false,
             local_cipher_spec: None,
         }
     }
@@ -314,11 +338,21 @@ impl RecordWriter {
     }
 
     async fn send_record(&mut self, inner: RecordInner) -> Result<()> {
-        let record = if let Some(cipher_spec) = self.local_cipher_spec.as_mut() {
-            // All encrypted records will be sent with an outer version of
-            // TLS 1.2 for backwards compatibility.
-            let legacy_record_version: u16 = 0x0303;
+        // All encrypted records will be sent with an outer version of
+        // TLS 1.2 for backwards compatibility.
+        let legacy_record_version = {
+            // rfc8446: 'In order to maximize backward compatibility, a record containing an
+            // initial ClientHello SHOULD have version 0x0301 (reflecting TLS 1.0) and a
+            // record containing a second ClientHello or a ServerHello MUST have
+            // version 0x0303'
+            if !self.is_server && !self.sent_first_record {
+                TLS_1_0_VERSION
+            } else {
+                TLS_1_2_VERSION
+            }
+        };
 
+        let record = if let Some(cipher_spec) = self.local_cipher_spec.as_mut() {
             let typ = ContentType::ApplicationData;
 
             // How much padding to add to each plaintext record.
@@ -367,15 +401,13 @@ impl RecordWriter {
             }
 
             Record {
-                // TODO: Implement this.
-                // rfc8446: 'In order to maximize backward compatibility, a record containing an
-                // initial ClientHello SHOULD have version 0x0301 (reflecting TLS 1.0) and a record
-                // containing a second ClientHello or a ServerHello MUST have version 0x0303'
-                legacy_record_version: 0x0301, // TLS 1.0
+                legacy_record_version,
                 typ: inner.typ,
                 data: inner.data,
             }
         };
+
+        self.sent_first_record = true;
 
         let mut record_data = vec![];
         record.serialize(&mut record_data);

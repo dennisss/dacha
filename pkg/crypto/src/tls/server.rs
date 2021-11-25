@@ -93,8 +93,8 @@ impl<'a> ServerHandshakeExecutor<'a> {
         options: &'a ServerOptions,
     ) -> Self {
         Self {
-            reader: RecordReader::new(reader),
-            writer: RecordWriter::new(writer),
+            reader: RecordReader::new(reader, true),
+            writer: RecordWriter::new(writer, true),
             options,
             handshake_transcript: Transcript::new(),
             summary: HandshakeSummary::default(),
@@ -141,8 +141,6 @@ impl<'a> ServerHandshakeExecutor<'a> {
 
         // TODO: Verify that we weren't given a pre-shared key or early data
 
-        // client_key_share.client_shares
-
         let client_key_share = {
             let mut selected_client_share = None;
             for client_share in &client_key_share_ext.client_shares {
@@ -168,6 +166,22 @@ impl<'a> ServerHandshakeExecutor<'a> {
 
         // TODO: Check that the ServerName against our host name (or the host name or
         // our certificates).
+
+        let server_name = find_server_name(&client_hello.extensions)
+            .ok_or_else(|| err_msg("Expected request to have a server name extension"))?;
+        if server_name.names.len() != 1 {
+            return Err(err_msg("Expected request to have exactly one name"));
+        }
+
+        let name = std::str::from_utf8(&server_name.names[0].data)?;
+        if server_name.names[0].typ != NameType::host_name
+            || !self.options.certificates[0].for_dns_name(name)?
+        {
+            return Err(format_err!(
+                "Our certificate is not valid for the requested domain: {}",
+                name
+            ));
+        }
 
         // Find a KeyShareClientHello and use that to return a ServerHello
 
@@ -266,8 +280,6 @@ impl<'a> ServerHandshakeExecutor<'a> {
             self.summary,
         ))
     }
-
-    // id == PKIX1Algorithms2008::SECP256R1
 
     // TODO: Deduplicate much of this logic with the client.
     async fn create_certificate_verify(

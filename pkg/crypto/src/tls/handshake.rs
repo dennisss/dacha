@@ -10,6 +10,7 @@ use crate::elliptic::*;
 use crate::random::*;
 use crate::tls::options::ClientOptions;
 
+pub const TLS_1_0_VERSION: u16 = 0x0301;
 pub const TLS_1_2_VERSION: u16 = 0x0303;
 pub const TLS_1_3_VERSION: u16 = 0x0304;
 
