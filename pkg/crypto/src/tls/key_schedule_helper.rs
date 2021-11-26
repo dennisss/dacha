@@ -7,7 +7,7 @@ use crate::hasher::*;
 use crate::hkdf::HKDF;
 use crate::sha256::SHA256Hasher;
 use crate::sha384::SHA384Hasher;
-use crate::tls::cipher::CipherEndpointSpec;
+use crate::tls::cipher::*;
 use crate::tls::extensions::NamedGroup;
 use crate::tls::handshake::CipherSuite;
 use crate::tls::key_schedule::*;
@@ -97,17 +97,17 @@ impl KeyScheduleHelper {
             }
         };
 
-        writer.local_cipher_spec = Some(CipherEndpointSpec::new(
+        writer.local_cipher_spec = Some(CipherEndpointSpec::TLS13(CipherEndpointSpecTLS13::new(
             aead.box_clone(),
             hkdf.clone(),
             local_traffic_secret,
-        ));
+        )));
 
-        reader.set_remote_cipher_spec(CipherEndpointSpec::new(
+        reader.set_remote_cipher_spec(CipherEndpointSpec::TLS13(CipherEndpointSpecTLS13::new(
             aead.box_clone(),
             hkdf.clone(),
             remote_traffic_secret,
-        ))?;
+        )))?;
 
         Ok(key_schedule)
     }

@@ -8,13 +8,15 @@ use crate::tls::handshake::*;
 use crate::tls::record::*;
 use crate::tls::transcript::Transcript;
 
+use super::cipher::CipherEndpointSpec;
+
 // TODO: Also include information on the hinted legacy version.
 #[derive(Debug)]
 pub enum Message {
     ChangeCipherSpec(Bytes),
     Alert(Alert),
     Handshake(Handshake),
-    /// Unencrypted data to go directly to the application.
+    /// Unencrypted data to go directed to the application.
     ApplicationData(Bytes),
 }
 
@@ -29,6 +31,9 @@ pub struct RecordReader {
     is_server: bool,
 
     received_first_record: bool,
+
+    /// TODO: Make private.
+    pub protocol_version: ProtocolVersion,
 
     /// Cipher parameters used by the remote endpoint to encrypt records.
     /// Initially this is empty meaning that no encryption is expected.
@@ -51,6 +56,7 @@ impl RecordReader {
             is_server,
             received_first_record: false,
             remote_cipher_spec: None,
+            protocol_version: TLS_1_0_VERSION,
             handshake_buffer: Bytes::new(),
         }
     }
@@ -64,13 +70,17 @@ impl RecordReader {
         Ok(())
     }
 
+    /// Assuming we have configured a TLS 1.3 cipher, this will change the
+    /// cipher to a new traffic secret.
     pub fn replace_remote_key(&mut self, traffic_secret: Bytes) -> Result<()> {
-        let cipher_spec = self
-            .remote_cipher_spec
-            .as_mut()
-            .ok_or_else(|| err_msg("Cipher spec not set yet"))?;
-        cipher_spec.replace_key(traffic_secret);
-        Ok(())
+        match self.remote_cipher_spec.as_mut() {
+            Some(CipherEndpointSpec::TLS13(cipher_spec)) => {
+                cipher_spec.replace_key(traffic_secret);
+                Ok(())
+            }
+            Some(_) => Err(err_msg("No using TLS 1.3")),
+            None => Err(err_msg("Cipher spec not set yet")),
+        }
     }
 
     /// Recieves the next full message from the socket.
@@ -87,7 +97,8 @@ impl RecordReader {
 
         let mut previous_handshake_record = None;
         if self.handshake_buffer.len() > 0 {
-            previous_handshake_record = Some(RecordInner {
+            previous_handshake_record = Some(Record {
+                legacy_record_version: 0, // Not currently used.
                 typ: ContentType::Handshake,
                 data: self.handshake_buffer.split_off(0),
             });
@@ -113,7 +124,8 @@ impl RecordReader {
                     } else {
                         record.data
                     };
-                    let res = Handshake::parse(handshake_data.clone());
+
+                    let res = Handshake::parse(handshake_data.clone(), self.protocol_version);
 
                     let (val, rest) = match res {
                         Ok(v) => v,
@@ -157,7 +169,11 @@ impl RecordReader {
         }
     }
 
-    async fn recv_record(&mut self) -> Result<RecordInner> {
+    async fn recv_record(&mut self) -> Result<Record> {
+        // TODO: In TLS 1.2, we should be able to receive un-encrypted alert messages
+        // before the ChangeCipherSpec is received. (also need to support this when
+        // sending stuff).
+
         // TODO: Eventually remove this loop once ChangeCipherSpec is handled
         // elsewhere.
         loop {
@@ -194,62 +210,20 @@ impl RecordReader {
                 continue;
             }
 
-            let inner = if let Some(cipher_spec) = self.remote_cipher_spec.as_mut() {
-                // TODO: I know that at least application_data and keyupdates
-                // must always be encrypted after getting keys.
+            let inner = match self.remote_cipher_spec.as_mut() {
+                Some(CipherEndpointSpec::TLS13(cipher_spec)) => {
+                    // TODO: I know that at least application_data and keyupdates
+                    // must always be encrypted after getting keys.
 
-                if record.typ != ContentType::ApplicationData {
-                    return Err(err_msg("Expected only encrypted data not"));
+                    cipher_spec.decrypt(record)?
                 }
-
-                let key = cipher_spec.keying.next_keys();
-
-                // additional_data = TLSCiphertext.opaque_type ||
-                //     TLSCiphertext.legacy_record_version ||
-                //     TLSCiphertext.length
-                // TODO: Implement this as a slice of the original record.
-                let mut additional_data = vec![];
-                record.typ.serialize(&mut additional_data);
-                additional_data.extend_from_slice(&record.legacy_record_version.to_be_bytes());
-                additional_data.extend_from_slice(&(record.data.len() as u16).to_be_bytes());
-
-                let mut plaintext = vec![];
-                cipher_spec.aead.decrypt(
-                    &key.key,
-                    &key.iv,
-                    &record.data,
-                    &additional_data,
-                    &mut plaintext,
-                )?;
-
-                // The content type is the the last non-zero byte. All zeros
-                // after that are padding and can be ignored.
-                let mut content_type_res = None;
-                for i in (0..plaintext.len()).rev() {
-                    if plaintext[i] != 0 {
-                        content_type_res = Some(i);
-                        break;
+                Some(CipherEndpointSpec::TLS12(cipher_spec)) => cipher_spec.decrypt(record)?,
+                None => {
+                    if record.typ == ContentType::ApplicationData {
+                        return Err(err_msg("Received application_data without a cipher"));
                     }
-                }
 
-                let content_type_i = content_type_res.ok_or_else(|| err_msg("All zero"))?;
-
-                let content_type = ContentType::from_u8(plaintext[content_type_i]);
-
-                plaintext.truncate(content_type_i);
-
-                RecordInner {
-                    typ: content_type,
-                    data: plaintext.into(),
-                }
-            } else {
-                if record.typ == ContentType::ApplicationData {
-                    return Err(err_msg("Received application_data without a cipher"));
-                }
-
-                RecordInner {
-                    typ: record.typ,
-                    data: record.data,
+                    record
                 }
             };
 
@@ -284,6 +258,17 @@ impl RecordWriter {
         }
     }
 
+    pub fn replace_local_key(&mut self, traffic_secret: Bytes) -> Result<()> {
+        match self.local_cipher_spec.as_mut() {
+            Some(CipherEndpointSpec::TLS13(cipher_spec)) => {
+                cipher_spec.replace_key(traffic_secret);
+                Ok(())
+            }
+            Some(_) => Err(err_msg("No using TLS 1.3")),
+            None => Err(err_msg("Cipher spec not set yet")),
+        }
+    }
+
     // TODO: Messages that are too long may need to be split up.
     pub async fn send_handshake(
         &mut self,
@@ -304,6 +289,14 @@ impl RecordWriter {
         })
         .await?;
         Ok(())
+    }
+
+    pub async fn send_change_cipher_spec(&mut self) -> Result<()> {
+        self.send_record(RecordInner {
+            data: vec![1].into(),
+            typ: ContentType::ChangeCipherSpec,
+        })
+        .await
     }
 
     pub async fn send(&mut self, data: &[u8]) -> Result<()> {
@@ -352,58 +345,23 @@ impl RecordWriter {
             }
         };
 
-        let record = if let Some(cipher_spec) = self.local_cipher_spec.as_mut() {
-            let typ = ContentType::ApplicationData;
+        let inner = Record {
+            legacy_record_version,
+            typ: inner.typ,
+            data: inner.data,
+        };
 
-            // How much padding to add to each plaintext record.
-            // TODO: Support padding up to a block size or accepting a callback
-            // to configure this.
-            let padding_size = 0;
+        let record = match self.local_cipher_spec.as_mut() {
+            Some(CipherEndpointSpec::TLS13(cipher_spec)) => cipher_spec.encrypt(inner),
+            Some(CipherEndpointSpec::TLS12(cipher_spec)) => cipher_spec.encrypt(inner),
+            None => {
+                if inner.typ == ContentType::ApplicationData {
+                    return Err(err_msg(
+                        "Should not be sending unencrypted application data",
+                    ));
+                }
 
-            // Total expected size of cipher text. We need one byte at the end
-            // for the content type.
-            let total_size = cipher_spec.aead.expanded_size(inner.data.len() + 1) + padding_size;
-
-            let mut additional_data = vec![];
-            typ.serialize(&mut additional_data);
-            additional_data.extend_from_slice(&legacy_record_version.to_be_bytes());
-            additional_data.extend_from_slice(&(total_size as u16).to_be_bytes());
-
-            let mut plaintext = vec![];
-            plaintext.resize(inner.data.len() + 1 + padding_size, 0);
-            plaintext[0..inner.data.len()].copy_from_slice(&inner.data);
-            plaintext[inner.data.len()] = inner.typ.to_u8();
-
-            let key = cipher_spec.keying.next_keys();
-
-            let mut ciphertext = vec![];
-            ciphertext.reserve(total_size);
-            cipher_spec.aead.encrypt(
-                &key.key,
-                &key.iv,
-                &plaintext,
-                &additional_data,
-                &mut ciphertext,
-            );
-
-            assert_eq!(ciphertext.len(), total_size);
-
-            Record {
-                legacy_record_version,
-                typ,
-                data: ciphertext.into(),
-            }
-        } else {
-            if inner.typ == ContentType::ApplicationData {
-                return Err(err_msg(
-                    "Should not be sending unencrypted application data",
-                ));
-            }
-
-            Record {
-                legacy_record_version,
-                typ: inner.typ,
-                data: inner.data,
+                inner
             }
         };
 

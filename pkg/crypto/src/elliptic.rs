@@ -122,6 +122,7 @@ impl DiffieHellmanFn for EllipticCurveGroup {
         assert!(self.k == 1);
         let two = BigUint::from(2);
         let n = secure_random_range(&two, &self.n).await?;
+        // TODO: Use encode_scalar
         Ok(n.to_be_bytes().left_pad(self.p.min_bytes(), 0))
     }
 
@@ -137,8 +138,15 @@ impl DiffieHellmanFn for EllipticCurveGroup {
 
     // TODO: Validate tht point is non-infinity
     // TODO: For TLS, shared secret should be the X coordinate of this only!!
+    // TODO: Must match FE2OSP definition.
     fn shared_secret(&self, remote_public: &[u8], local_secret: &[u8]) -> Result<Vec<u8>> {
-        unimplemented!("");
+        let p = self.decode_point(remote_public)?;
+        let s = self.decode_scalar(local_secret)?;
+
+        let modulo = Modulo::new(&self.p);
+        let v = self.curve.scalar_mul(&s, &p, &modulo);
+
+        Ok(v.x.to_be_bytes().left_pad(self.p.min_bytes(), 0))
     }
 }
 
@@ -272,7 +280,11 @@ impl EllipticCurveGroup {
             // Uncompressed form
             // TODO: For TLS 1.3, this is the only supported format
             if data.len() != 1 + 2 * nbytes {
-                return Err(err_msg("Point data too small"));
+                return Err(format_err!(
+                    "Point data too small: {} vs {}",
+                    data.len(),
+                    1 + 2 * nbytes
+                ));
             }
 
             // TODO:

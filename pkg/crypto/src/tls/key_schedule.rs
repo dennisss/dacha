@@ -1,5 +1,5 @@
-// This file includes the algorithms used for deriving the traffic keys.
-// https://tools.ietf.org/html/rfc8446#section-7.1
+// This file includes the algorithms used for deriving the traffic keys for TLS
+// 1.3. https://tools.ietf.org/html/rfc8446#section-7.1
 
 use super::parsing::*;
 use super::transcript::Transcript;

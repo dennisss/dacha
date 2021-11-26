@@ -5,15 +5,23 @@ use std::sync::Arc;
 use common::errors::*;
 use common::io::*;
 
+use crate::aead::AuthEncAD;
 use crate::elliptic::*;
+use crate::gcm::AesGCM;
 use crate::hasher::*;
+use crate::sha256::SHA256Hasher;
 use crate::tls::alert::*;
 use crate::tls::application_stream::*;
+use crate::tls::cipher::CipherEndpointSpec;
+use crate::tls::cipher_tls12::CipherEndpointSpecTLS12;
+use crate::tls::cipher_tls12::GCMNonceGenerator;
+use crate::tls::cipher_tls12::NonceGenerator;
 use crate::tls::constants::*;
 use crate::tls::extensions::*;
 use crate::tls::extensions_util::*;
 use crate::tls::handshake::*;
 use crate::tls::handshake_summary::*;
+use crate::tls::key_expansion_tls12;
 use crate::tls::key_schedule::*;
 use crate::tls::key_schedule_helper::*;
 use crate::tls::options::ClientOptions;
@@ -83,6 +91,11 @@ TLS 1.3 and receives a ClientHello at any other time, it MUST
 terminate the connection with an "unexpected_message" alert.
 */
 
+enum ServerHelloResult {
+    TLS13(ServerHello, KeySchedule),
+    TLS12(ServerHello),
+}
+
 /// Performs a handshake with a server for a single TLS connection.
 /// Implemented from the client point of view.
 struct ClientHandshakeExecutor<'a> {
@@ -118,6 +131,16 @@ impl<'a> ClientHandshakeExecutor<'a> {
         })
     }
 
+    /*
+    TODO:
+    "If not offering early data, the client sends a dummy
+    change_cipher_spec record (see the third paragraph of Section 5)
+    immediately before its second flight.  This may either be before
+    its second ClientHello or before its encrypted handshake flight.
+    If offering early data, the record is placed immediately after the
+    first ClientHello."
+    */
+
     async fn run(mut self) -> Result<ApplicationStream> {
         // Send the initial ClientHello message.
         let client_hello = {
@@ -142,7 +165,18 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
         println!("WAIT_SH");
 
-        let (server_hello, key_schedule) = self.wait_server_hello(client_hello).await?;
+        let (server_hello, key_schedule) =
+            match self.wait_server_hello(client_hello.clone()).await? {
+                ServerHelloResult::TLS12(sh) => {
+                    self.reader.protocol_version = TLS_1_2_VERSION;
+                    return self.run_tls12(client_hello, sh).await;
+                }
+                ServerHelloResult::TLS13(sh, ks) => {
+                    self.reader.protocol_version = TLS_1_3_VERSION;
+                    (sh, ks)
+                }
+            };
+
         self.process_received_extensions(&server_hello.extensions)?;
 
         println!("WAIT_EE");
@@ -222,7 +256,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
     async fn wait_server_hello(
         &mut self,
         mut client_hello: ClientHello,
-    ) -> Result<(ServerHello, KeySchedule)> {
+    ) -> Result<ServerHelloResult> {
         let mut last_server_hello = None;
 
         loop {
@@ -245,6 +279,10 @@ impl<'a> ClientHandshakeExecutor<'a> {
                     .map(|sv| sv.selected_version == TLS_1_3_VERSION)
                     .unwrap_or(false);
             if !is_tls13 {
+                if server_hello.legacy_version == TLS_1_2_VERSION {
+                    return Ok(ServerHelloResult::TLS12(server_hello));
+                }
+
                 // TODO: If we switch to TLS 1.2, make sure that we don't allow retrying again.
                 // ^ Also if this isn't a retry request, then we should complain??
 
@@ -375,7 +413,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
                 &mut self.writer,
             )?;
 
-            return Ok((server_hello, key_schedule));
+            return Ok(ServerHelloResult::TLS13(server_hello, key_schedule));
         }
     }
 
@@ -445,9 +483,10 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
         // Verify the terminal certificate is valid (MUST always be first).
 
-        if !cert_list[0].valid_now() {
-            return Err(err_msg("Certificate not valid now"));
-        }
+        // TODO: How do we verify that all parent certificates are allowed to issue
+        // sub-certificates.
+        // - Must validate 'Certificate Basic Constraints' and 'Certificate Key Usage'
+        //   to verify that certificates can be signed.
 
         if let Some(usage) = cert_list[0].key_usage()? {
             if !usage.digitalSignature().unwrap_or(false) {
@@ -460,6 +499,10 @@ impl<'a> ClientHandshakeExecutor<'a> {
         // TODO: Remove the trust_server_certificate exception and instead always check
         // this.
         if !self.options.trust_server_certificate {
+            if !cert_list[0].valid_now() {
+                return Err(err_msg("Certificate not valid now"));
+            }
+
             if !cert_list[0].for_dns_name(&self.options.hostname)? {
                 return Err(err_msg("Certificate not valid for DNS name"));
             }
@@ -510,10 +553,23 @@ impl<'a> ClientHandshakeExecutor<'a> {
         For TLS 1.3:
         RSA signatures MUST use an RSASSA-PSS algorithm, regardless of whether RSASSA-PKCS1-v1_5
         algorithms appear in "signature_algorithms".
+
+        ^ Probably the simplest way to verify this is to
         */
 
         // Given a
 
+        self.verify_certificate(&plaintext, cert, &cert_verify)?;
+
+        Ok(())
+    }
+
+    fn verify_certificate(
+        &self,
+        plaintext: &[u8],
+        cert: &x509::Certificate,
+        cert_verify: &CertificateVerify,
+    ) -> Result<()> {
         // TODO: Move more of this code into the certificate class.
 
         // TODO: Verify this is an algorithm that we requested (and that it
@@ -556,6 +612,21 @@ impl<'a> ClientHandshakeExecutor<'a> {
                     return Err(err_msg("Invalid RSA certificate verify signature"));
                 }
             }
+            SignatureScheme::rsa_pkcs1_sha512 => {
+                let public_key = cert.rsa_public_key()?;
+                let rsa = crate::rsa::RSASSA_PKCS_v1_5::sha512();
+
+                let good = rsa.verify_signature(
+                    &public_key.try_into()?,
+                    &cert_verify.signature,
+                    &plaintext,
+                )?;
+
+                if !good {
+                    return Err(err_msg("Invalid RSA PKCS certificate verify signature"));
+                }
+            }
+
             // TODO:
             // SignatureScheme::rsa_pkcs1_sha256,
             _ => {
@@ -569,6 +640,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
     async fn wait_finished(&mut self, key_schedule: KeySchedule) -> Result<()> {
         let verify_data_server = key_schedule.verify_data_server(&self.handshake_transcript);
 
+        // TODO: Split to using recv_handshake_message
         let finished = match self
             .reader
             .recv(Some(&mut self.handshake_transcript))
@@ -601,11 +673,224 @@ impl<'a> ClientHandshakeExecutor<'a> {
             .replace_remote_key(final_secrets.server_application_traffic_secret_0)?;
 
         self.writer
-            .local_cipher_spec
-            .as_mut()
-            .unwrap()
-            .replace_key(final_secrets.client_application_traffic_secret_0);
+            .replace_local_key(final_secrets.client_application_traffic_secret_0)?;
 
         Ok(())
+    }
+
+    async fn run_tls12(
+        mut self,
+        client_hello: ClientHello,
+        server_hello: ServerHello,
+    ) -> Result<ApplicationStream> {
+        println!("PROCESS TLS1.2");
+
+        // TODO: Must verify that the algorithms sent by the server are ok for us to us.
+
+        // TODO: Dedup with the other code that calls this
+        self.process_received_extensions(&server_hello.extensions)?;
+
+        println!("WAIT 1.2 CERT");
+
+        let certificate = self.wait_certificate().await?;
+
+        let server_key_exchange = match self.receive_handshake_message().await? {
+            Handshake::ServerKeyExchange(c) => c,
+            _ => {
+                return Err(err_msg("Expected ServerKeyExchange"));
+            }
+        };
+
+        let server_hello_done = match self.receive_handshake_message().await? {
+            Handshake::ServerHelloDone => (),
+            _ => {
+                return Err(err_msg("Expected ServerKeyExchange"));
+            }
+        };
+
+        let server_ecdhe_key = server_key_exchange.ec_diffie_hellman()?;
+        println!("SKE: {:#?}", server_ecdhe_key);
+
+        // Server should be digitally signing:
+        // SHA(ClientHello.random + ServerHello.random +
+        //     ServerKeyExchange.params);
+        // (for ecdsa algorithms)
+        {
+            let mut plaintext = vec![];
+            plaintext.extend_from_slice(&client_hello.random);
+            plaintext.extend_from_slice(&server_hello.random);
+            // TODO: Copy this directly out of the original buffer.
+            server_ecdhe_key.params.serialize(&mut plaintext);
+
+            self.verify_certificate(&plaintext, &certificate, &server_ecdhe_key.signed_params)?;
+        }
+
+        let client_pub_key = self
+            .new_secret(server_ecdhe_key.params.curve_params.named_curve)
+            .await?;
+
+        let mut client_point = vec![];
+        ECPoint {
+            point: client_pub_key.key_exchange,
+        }
+        .serialize(&mut client_point);
+
+        self.writer
+            .send_handshake(
+                Handshake::ClientKeyExchange(ClientKeyExchange {
+                    data: client_point.into(),
+                }),
+                Some(&mut self.handshake_transcript),
+            )
+            .await?;
+
+        self.writer.send_change_cipher_spec().await?;
+
+        let group = client_pub_key.group.create().unwrap();
+        let pre_master_secret = group.shared_secret(
+            &server_ecdhe_key.params.public.point,
+            &self.secrets[&client_pub_key.group],
+        )?;
+
+        // TODO: The transcript hash shouldn't include any HelloRequests
+        // TODO: Set the transcript's hasher earlier to avoid caching the entire thing.
+
+        // NOTE: We currently assume that all ciphers use the standard TLS PRF and use
+        // the same hasher for the PRF and the transcript hash.
+
+        // Hash doesn't include HelloRequest
+
+        // If not specified, verify_data_length is 12
+
+        let (aead, nonce_gen, hasher_factory) = match server_hello.cipher_suite {
+            CipherSuite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 => (
+                AesGCM::aes128(),
+                GCMNonceGenerator::new(),
+                SHA256Hasher::factory(),
+            ),
+            _ => {
+                return Err(err_msg("Unsupported TLS 1.2 cipher suite"));
+            }
+        };
+
+        let key_block = key_expansion_tls12::key_block(
+            &pre_master_secret,
+            &client_hello,
+            &server_hello,
+            &hasher_factory,
+            0,
+            aead.key_size(),
+            nonce_gen.implicit_size(),
+        );
+
+        let verify_data_length = 12;
+
+        let client_spec = CipherEndpointSpec::TLS12(CipherEndpointSpecTLS12 {
+            sequence_num: 0,
+            aead: Box::new(aead.clone()),
+            nonce_gen: Box::new(nonce_gen.clone()),
+            encryption_key: key_block.client_write_key,
+            implicit_iv: key_block.client_write_iv,
+        });
+
+        let server_spec = CipherEndpointSpec::TLS12(CipherEndpointSpecTLS12 {
+            sequence_num: 0,
+            aead: Box::new(aead.clone()),
+            nonce_gen: Box::new(nonce_gen.clone()),
+            encryption_key: key_block.server_write_key,
+            implicit_iv: key_block.server_write_iv,
+        });
+
+        self.writer.local_cipher_spec = Some(client_spec);
+        self.reader.set_remote_cipher_spec(server_spec)?;
+
+        let verify_data = {
+            let hash = self.handshake_transcript.hash(&hasher_factory);
+            key_expansion_tls12::prf(
+                &key_block.master_secret,
+                b"client finished",
+                &hash,
+                verify_data_length,
+                &hasher_factory,
+            )
+        };
+
+        self.writer
+            .send_handshake(
+                Handshake::Finished(Finished {
+                    verify_data: verify_data.into(),
+                }),
+                Some(&mut self.handshake_transcript),
+            )
+            .await?;
+
+        // TODO: Verify we get a cipher spec message.
+
+        let verify_data_server = {
+            let hash = self.handshake_transcript.hash(&hasher_factory);
+            key_expansion_tls12::prf(
+                &key_block.master_secret,
+                b"server finished",
+                &hash,
+                verify_data_length,
+                &hasher_factory,
+            )
+        };
+
+        let server_finished = match self.receive_handshake_message().await? {
+            Handshake::Finished(v) => v,
+            _ => {
+                return Err(err_msg("Expected Finished"));
+            }
+        };
+        println!("{:#?}", server_finished);
+
+        if &server_finished.verify_data != &verify_data_server {
+            return Err(err_msg("Bad server finished"));
+        }
+
+        /*
+        verify_data
+            PRF(master_secret, finished_label, Hash(handshake_messages))
+                [0..verify_data_length-1];
+        */
+
+        /*
+             For TLS 1.2:
+             - Decide on cipher using ServerHello
+             - Receive Certificate
+             - Receive ServerKeyExchange
+                 - Vrify Cerificate
+             - Receive ServerHelloDone
+
+             - Send ClientKeyExchnage
+                 Contains ECPoint serialized with client public key
+
+             - Change cipher spec
+
+
+             where "pre_master_secret" is the ECDHE secret
+                        All ECDH calculations for the NIST curves (including parameter and
+        key generation as well as the shared secret calculation) are
+        performed according to [IEEE.P1363] using the ECKAS-DH1 scheme with
+        the identity map as the Key Derivation Function (KDF) so that the
+        premaster secret is the x-coordinate of the ECDH shared secret
+        elliptic curve point represented as an octet string.
+
+             - Send Finished
+
+            - Check that we receive a ChangeCipherSpec.
+
+             - Receive Finished
+
+
+
+             */
+
+        Ok(ApplicationStream::new(
+            self.reader,
+            self.writer,
+            self.summary,
+        ))
     }
 }

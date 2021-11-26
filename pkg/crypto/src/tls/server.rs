@@ -452,10 +452,7 @@ impl<'a> ServerHandshakeExecutor<'a> {
             .replace_remote_key(final_secrets.client_application_traffic_secret_0)?;
 
         self.writer
-            .local_cipher_spec
-            .as_mut()
-            .unwrap()
-            .replace_key(final_secrets.server_application_traffic_secret_0);
+            .replace_local_key(final_secrets.server_application_traffic_secret_0)?;
 
         Ok(())
     }

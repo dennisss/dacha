@@ -32,6 +32,7 @@ pub enum Extension {
     ServerName(ServerNameList),
     MaxFragmentLength(MaxFragmentLength),
     SupportedGroups(NamedGroupList),
+    SupportedPointFormats(ECPointFormatList),
     SignatureAlgorithms(SignatureSchemeList),
 
     SupportedVersionsClientHello(SupportedVersionsClientHello),
@@ -76,6 +77,10 @@ impl Extension {
                 ExtensionType::SupportedGroups => {
                     map(complete(NamedGroupList::parse),
                         |v| Extension::SupportedGroups(v))(data)
+                },
+                ExtensionType::SupportedPointFormats => {
+                    map(complete(ECPointFormatList::parse),
+                        |v| Extension::SupportedPointFormats(v))(data)
                 },
                 ExtensionType::SignatureAlgorithms => {
                     map(complete(SignatureSchemeList::parse),
@@ -124,6 +129,7 @@ impl Extension {
             ServerName(_) => ExtensionType::ServerName,
             MaxFragmentLength(_) => ExtensionType::MaxFragmentLength,
             SupportedGroups(_) => ExtensionType::SupportedGroups,
+            SupportedPointFormats(_) => ExtensionType::SupportedPointFormats,
             SignatureAlgorithms(_) => ExtensionType::SignatureAlgorithms,
             SupportedVersionsClientHello(_) => ExtensionType::SupportedVersions,
             SupportedVersionsServerHello(_) => ExtensionType::SupportedVersions,
@@ -134,7 +140,7 @@ impl Extension {
             KeyShareHelloRetryRequest(_) => ExtensionType::KeyShare,
             KeyShareServerHello(_) => ExtensionType::KeyShare,
             ALPN(_) => ExtensionType::ApplicationLayerProtocolNegotiation,
-            Unknown { typ, data } => ExtensionType::from_u16(*typ),
+            Unknown { typ, data: _ } => ExtensionType::from_u16(*typ),
         };
 
         if !typ.allowed(msg_type) {
@@ -147,6 +153,7 @@ impl Extension {
             ServerName(e) => e.serialize(out),
             MaxFragmentLength(e) => e.serialize(out),
             SupportedGroups(e) => e.serialize(out),
+            SupportedPointFormats(e) => e.serialize(out),
             SignatureAlgorithms(e) => e.serialize(out),
             SupportedVersionsClientHello(e) => e.serialize(out),
             SupportedVersionsServerHello(e) => e.serialize(out),
@@ -157,7 +164,7 @@ impl Extension {
             KeyShareHelloRetryRequest(e) => e.serialize(out),
             KeyShareServerHello(e) => e.serialize(out),
             ALPN(e) => e.serialize(out),
-            Unknown { typ, data } => out.extend_from_slice(&data),
+            Unknown { typ: _, data } => out.extend_from_slice(&data),
         });
 
         Ok(())
@@ -219,12 +226,14 @@ ExtensionsCollection
 
 */
 
+// TODO: Use enum with unknown
 #[derive(Debug)]
 pub enum ExtensionType {
     ServerName,
     MaxFragmentLength,
     StatusRequest,
-    SupportedGroups,
+    SupportedGroups,       // TLS 1.2 / 1.3
+    SupportedPointFormats, // TLS 1.2: RFC 4492
     SignatureAlgorithms,
     UseSRTP,
     Heartbeat,
@@ -254,6 +263,7 @@ impl ExtensionType {
             MaxFragmentLength => 1,
             StatusRequest => 5,
             SupportedGroups => 10,
+            SupportedPointFormats => 11,
             SignatureAlgorithms => 13,
             UseSRTP => 14,
             Heartbeat => 15,
@@ -283,6 +293,7 @@ impl ExtensionType {
             1 => Self::MaxFragmentLength,
             5 => Self::StatusRequest,
             10 => Self::SupportedGroups,
+            11 => Self::SupportedPointFormats,
             13 => Self::SignatureAlgorithms,
             14 => Self::UseSRTP,
             15 => Self::Heartbeat,
@@ -317,6 +328,7 @@ impl ExtensionType {
                 msg_type == ClientHello || msg_type == CertificateRequest || msg_type == Certificate
             }
             SupportedGroups => (msg_type == ClientHello || msg_type == EncryptedExtensions),
+            SupportedPointFormats => (msg_type == ClientHello || msg_type == ServerHello),
             SignatureAlgorithms => (msg_type == ClientHello || msg_type == CertificateRequest),
             UseSRTP => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             Heartbeat => (msg_type == ClientHello || msg_type == EncryptedExtensions),
@@ -349,7 +361,7 @@ impl ExtensionType {
             OidFilters => (msg_type == Certificate),
             PostHandshakeAuth => (msg_type == ClientHello),
             SignatureAlgorithmsCert => (msg_type == ClientHello || msg_type == Certificate),
-            _ => true,
+            ExtensionType::Unknown(_) => true,
         }
     }
 
@@ -527,7 +539,8 @@ use crate::elliptic::MontgomeryCurveGroup;
 impl NamedGroup {
     pub fn create(&self) -> Option<Box<dyn DiffieHellmanFn>> {
         Some(match self {
-            NamedGroup::secp384r1 => Box::new(EllipticCurveGroup::secp256r1()),
+            NamedGroup::secp256r1 => Box::new(EllipticCurveGroup::secp256r1()),
+            NamedGroup::secp384r1 => Box::new(EllipticCurveGroup::secp384r1()),
             NamedGroup::secp521r1 => Box::new(EllipticCurveGroup::secp521r1()),
             NamedGroup::x25519 => Box::new(MontgomeryCurveGroup::x25519()),
             NamedGroup::x448 => Box::new(MontgomeryCurveGroup::x448()),
@@ -581,11 +594,11 @@ impl NamedGroup {
         }
     }
 
-    parser!(parse<Self> => {
+    parser!(pub parse<Self> => {
         map(as_bytes(be_u16), |v| NamedGroup::from_u16(v))
     });
 
-    fn serialize(&self, out: &mut Vec<u8>) {
+    pub fn serialize(&self, out: &mut Vec<u8>) {
         out.extend_from_slice(&self.to_u16().to_be_bytes());
     }
 }
@@ -656,7 +669,11 @@ impl SignatureSchemeList {
     }
 }
 
-// TODO: Make sure all these enums are compared based on u16 value.
+/// NOTE: In TLS 1.2, this is the SignatureAndHashAlgorithm struct. the u16 is a
+/// tuple of the 'hash' and 'signature' algorithms, although not all schemes
+/// listed below are supported in 1.2.
+///
+/// TODO: Make sure all these enums are compared based on u16 value.
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[allow(non_camel_case_types)]
 pub enum SignatureScheme {
@@ -1022,6 +1039,47 @@ impl ProtocolNameList {
                 serialize_varlen_vector(1, U8_LIMIT, out, |out| {
                     out.extend_from_slice(name.as_ref());
                 })
+            }
+        });
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// RFC 4492: 5.1.2
+// https://datatracker.ietf.org/doc/html/rfc4492#section-5.1.2
+
+/*
+enum { uncompressed (0), ansiX962_compressed_prime (1),
+        ansiX962_compressed_char2 (2), reserved (248..255)
+} ECPointFormat;
+
+struct {
+    ECPointFormat ec_point_format_list<1..2^8-1>
+} ECPointFormatList;
+*/
+
+tls_enum_u8!(ECPointFormat => {
+    uncompressed(0), ansiX962_compressed_prime(1), ansiX962_compressed_char2(2), (255)
+});
+
+#[derive(Debug, Clone)]
+pub struct ECPointFormatList {
+    pub formats: Vec<ECPointFormat>,
+}
+
+impl ECPointFormatList {
+    parser!(parse<Self> => {
+        seq!(c => {
+            let data = c.next(varlen_vector(1, U8_LIMIT))?;
+            let (formats, _) = complete(many(ECPointFormat::parse))(data)?;
+            Ok(Self { formats })
+        })
+    });
+
+    fn serialize(&self, out: &mut Vec<u8>) {
+        serialize_varlen_vector(1, U8_LIMIT, out, |out| {
+            for format in &self.formats {
+                format.serialize(out);
             }
         });
     }

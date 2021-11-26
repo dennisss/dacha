@@ -57,6 +57,7 @@ impl ClientOptions {
 
             initial_keys_shared: vec![NamedGroup::x25519],
 
+            // TODO: Prefer Chacha on ARM platforms.
             supported_cipher_suites: vec![
                 // MUST implement
                 CipherSuite::TLS_AES_128_GCM_SHA256,
@@ -64,6 +65,19 @@ impl ClientOptions {
                 CipherSuite::TLS_AES_256_GCM_SHA384,
                 // SHOULD implement
                 CipherSuite::TLS_CHACHA20_POLY1305_SHA256,
+                // TLS 1.2 Only
+                CipherSuite::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+                CipherSuite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+                CipherSuite::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+                CipherSuite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+                /*
+                 * CipherSuite::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+                 * CipherSuite::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+                 * CipherSuite::TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,
+                 *
+                 * CipherSuite::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+                 * CipherSuite::TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
+                 * CipherSuite::TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384, */
             ],
             supported_groups: vec![
                 // SHOULD support
@@ -74,10 +88,13 @@ impl ClientOptions {
                 NamedGroup::secp384r1,
             ],
             supported_signature_algorithms: vec![
-                // These three are the minimum required set to implement.
+                // TLS 1.3: These three are the minimum required set to implement.
                 SignatureScheme::ecdsa_secp256r1_sha256,
                 SignatureScheme::rsa_pss_rsae_sha256,
                 SignatureScheme::rsa_pkcs1_sha256,
+                // Extra to allow old TLS 1.2 servers to have a decent fallback.
+                SignatureScheme::rsa_pkcs1_sha384,
+                SignatureScheme::rsa_pkcs1_sha512,
             ],
 
             trust_server_certificate: false,

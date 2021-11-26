@@ -14,6 +14,8 @@ use crate::tls::parsing::*;
 // See https://tools.ietf.org/html/rfc5246#section-7.1 for TLS 1.2 change cipher
 
 /*
+TLS 1.3
+
 struct {
     ContentType type;
     ProtocolVersion legacy_record_version;
@@ -33,6 +35,41 @@ struct {
     uint16 length;
     opaque encrypted_record[TLSCiphertext.length];
 } TLSCiphertext;
+
+TLS 1.2
+
+struct {
+    ContentType type;
+    ProtocolVersion version;
+    uint16 length;
+    opaque fragment[TLSPlaintext.length];
+} TLSPlaintext;
+
+struct {
+    ContentType type;       /* same as TLSPlaintext.type */
+    ProtocolVersion version;/* same as TLSPlaintext.version */
+    uint16 length;
+    opaque fragment[TLSCompressed.length];
+} TLSCompressed;
+
+struct {
+    ContentType type;
+    ProtocolVersion version;
+    uint16 length;
+    select (SecurityParameters.cipher_type) {
+        case stream: GenericStreamCipher;
+        case block:  GenericBlockCipher;
+        case aead:   GenericAEADCipher;
+    } fragment;
+} TLSCiphertext;
+
+struct {
+    opaque nonce_explicit[SecurityParameters.record_iv_length];
+    aead-ciphered struct {
+        opaque content[TLSCompressed.length];
+    };
+} GenericAEADCipher;
+
 */
 
 // XXX: We can use a fixed size buffer:
@@ -93,7 +130,9 @@ tls_enum_u8!(ContentType => {
     (255)
 });
 
-/// This is the plaintext of a unencrypted application_data record.
+/// Inner record format used as the plain text data of encrypted TLS 1.3
+/// records. This will always be sent inside an outer Record with ContentType
+/// application_data.
 #[derive(Debug)]
 pub struct RecordInner {
     pub typ: ContentType,

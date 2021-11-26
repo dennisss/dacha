@@ -51,10 +51,13 @@ pub enum Handshake {
     Finished(Finished),
     NewSessionTicket(NewSessionTicket),
     KeyUpdate(KeyUpdate), // TODO: This is something that should implement at the record layer.
+    ServerHelloDone,      // Emptydata
+    ClientKeyExchange(ClientKeyExchange),
+    ServerKeyExchange(ServerKeyExchange),
 }
 
 impl Handshake {
-    parser!(pub parse<Self> => {
+    pub fn parse(input: Bytes, protocol_version: ProtocolVersion) -> Result<(Self, Bytes)> {
         seq!(c => {
             let msg_type = c.next(HandshakeType::parse)?;
             let payload = c.next(varlen_vector(0, U24_LIMIT))?;
@@ -80,7 +83,7 @@ impl Handshake {
                     CertificateRequest::parse, |v| Handshake::CertificateRequest(v))
                 )(payload),
                 HandshakeType::Certificate => complete(map(
-                    Certificate::parse, |v| Handshake::Certificate(v))
+                    |input| Certificate::parse(input, protocol_version), |v| Handshake::Certificate(v))
                 )(payload),
                 HandshakeType::CertificateVerify => complete(map(
                     CertificateVerify::parse, |v| Handshake::CertificateVerify(v))
@@ -91,6 +94,24 @@ impl Handshake {
                 HandshakeType::NewSessionTicket => complete(map(
                     NewSessionTicket::parse, |v| Handshake::NewSessionTicket(v))
                 )(payload),
+
+                // HandshakeType::HelloRequest => todo!(),
+                HandshakeType::ServerKeyExchange => {
+                    Ok((Handshake::ServerKeyExchange(ServerKeyExchange { data: payload }), Bytes::new()))
+                },
+                HandshakeType::ServerHelloDone => {
+                    if payload.len() != 0 {
+                        return Err(err_msg("Expected empty ServerHelloDone"));
+                    }
+
+                    Ok((Handshake::ServerHelloDone, Bytes::new()))
+                },
+                HandshakeType::ClientKeyExchange => {
+                    Ok((Handshake::ClientKeyExchange(ClientKeyExchange { data: payload }), Bytes::new()))
+                },
+                // HandshakeType::KeyUpdate => todo!(),
+                // HandshakeType::MessageHash => todo!(),
+
                 _ => {
                     return Err(format_err!("Unsupported handshake type: {:?}", msg_type));
                 }
@@ -98,8 +119,8 @@ impl Handshake {
 
             let (v, _) = res?;
             Ok(v)
-        })
-    });
+        })(input)
+    }
 
     pub fn serialize(&self, out: &mut Vec<u8>) {
         let msg_type = match self {
@@ -113,6 +134,9 @@ impl Handshake {
             Handshake::Finished(_) => HandshakeType::Finished,
             Handshake::NewSessionTicket(_) => HandshakeType::NewSessionTicket,
             Handshake::KeyUpdate(_) => HandshakeType::KeyUpdate,
+            Handshake::ServerHelloDone => HandshakeType::ServerHelloDone,
+            Handshake::ClientKeyExchange(_) => HandshakeType::ClientKeyExchange,
+            Handshake::ServerKeyExchange(_) => HandshakeType::ServerKeyExchange,
         };
 
         msg_type.serialize(out);
@@ -128,7 +152,9 @@ impl Handshake {
             Handshake::Finished(v) => v.serialize(out),
             Handshake::NewSessionTicket(v) => v.serialize(out),
             Handshake::KeyUpdate(v) => v.serialize(out),
-            _ => panic!("Unimplemented"),
+            Handshake::ServerHelloDone => {}
+            Handshake::ClientKeyExchange(v) => out.extend_from_slice(&v.data),
+            Handshake::ServerKeyExchange(v) => out.extend_from_slice(&v.data),
         });
     }
 }
@@ -139,7 +165,7 @@ tls_enum_u8!(HandshakeType => {
     ServerHello(2),
     NewSessionTicket(4),
     EndOfEarlyData(5),
-    HelloRetryRequestRESERVED(6), // RESERVED
+    // HelloRetryRequestRESERVED(6), // RESERVED
     EncryptedExtensions(8),
     Certificate(11),
     ServerKeyExchange(12), // TLS 1.2
@@ -148,9 +174,9 @@ tls_enum_u8!(HandshakeType => {
     CertificateVerify(15),
     ClientKeyExchange(16), // TLS 1.2
     Finished(20),
-    certificate_url_RESERVED(21),
-    certificate_status_RESERVED(22),
-    supplemental_data_RESERVED(23),
+    // certificate_url_RESERVED(21),
+    // certificate_status_RESERVED(22),
+    // supplemental_data_RESERVED(23),
     KeyUpdate(24),
     MessageHash(254),
     (255)
@@ -206,6 +232,12 @@ impl ClientHello {
             }));
         }
 
+        /*
+        Other extensions to look into:
+        - post_handshake_auth
+        - encrypt_then_mac
+        */
+
         // Required to be sent in ClientHello.
         extensions.push(Extension::SupportedVersionsClientHello(
             SupportedVersionsClientHello {
@@ -235,6 +267,11 @@ impl ClientHello {
                 names: options.alpn_ids.clone(),
             }));
         }
+
+        // For TLS 1.2
+        extensions.push(Extension::SupportedPointFormats(ECPointFormatList {
+            formats: vec![ECPointFormat::uncompressed],
+        }));
 
         // TODO: PSK if any must always be the last extension.
 
@@ -298,44 +335,40 @@ impl ClientHello {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-#[allow(non_camel_case_types)]
-pub enum CipherSuite {
-    TLS_AES_128_GCM_SHA256,
-    TLS_AES_256_GCM_SHA384,
-    TLS_CHACHA20_POLY1305_SHA256,
-    TLS_AES_128_CCM_SHA256,
-    TLS_AES_128_CCM_8_SHA256,
-    Unknown(u16),
-}
+// TODO: There's a nice priority list from mozilla here:
+// https://wiki.mozilla.org/Security/Cipher_Suites
+
+enum_def_with_unknown!(
+    #[allow(non_camel_case_types)] CipherSuite u16 =>
+    // TLS 1.3
+    TLS_AES_128_GCM_SHA256 = 0x1301,
+    TLS_AES_256_GCM_SHA384 = 0x1302,
+    TLS_CHACHA20_POLY1305_SHA256 = 0x1303,
+    TLS_AES_128_CCM_SHA256 = 0x1304,
+    TLS_AES_128_CCM_8_SHA256 = 0x1305,
+
+    // TLS 1.2 : RFC 8422 recommended to mplement
+    TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 = 0xc02f,
+    TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA = 0xc013,
+    TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 = 0xc02b,
+    TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA = 0xc009,
+
+    TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 = 0xc02c,
+    TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 = 0xc023,
+    TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 = 0xc024,
+    TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 = 0xc030,
+    TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 = 0xc027,
+    TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 = 0xc028,
+    TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 = 0xcca9,
+    TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 = 0xcca8
+);
+
 impl CipherSuite {
-    fn to_u16(&self) -> u16 {
-        use CipherSuite::*;
-        match self {
-            TLS_AES_128_GCM_SHA256 => 0x1301,
-            TLS_AES_256_GCM_SHA384 => 0x1302,
-            TLS_CHACHA20_POLY1305_SHA256 => 0x1303,
-            TLS_AES_128_CCM_SHA256 => 0x1304,
-            TLS_AES_128_CCM_8_SHA256 => 0x1305,
-            Unknown(v) => *v,
-        }
-    }
-    fn from_u16(v: u16) -> Self {
-        use CipherSuite::*;
-        match v {
-            0x1301 => TLS_AES_128_GCM_SHA256,
-            0x1302 => TLS_AES_256_GCM_SHA384,
-            0x1303 => TLS_CHACHA20_POLY1305_SHA256,
-            0x1304 => TLS_AES_128_CCM_SHA256,
-            0x1305 => TLS_AES_128_CCM_8_SHA256,
-            _ => Unknown(v),
-        }
-    }
     parser!(parse<Self> => {
-        map(as_bytes(be_u16), |v| Self::from_u16(v))
+        map(as_bytes(be_u16), |v| Self::from_value(v))
     });
     fn serialize(&self, out: &mut Vec<u8>) {
-        out.extend_from_slice(&self.to_u16().to_be_bytes());
+        out.extend_from_slice(&self.to_value().to_be_bytes());
     }
 }
 
@@ -359,7 +392,7 @@ struct {
 pub struct ServerHello {
     pub legacy_version: ProtocolVersion,
     pub random: Bytes,
-    pub legacy_session_id_echo: Bytes,
+    pub legacy_session_id_echo: Bytes, // TODO: Check this matches the client hello
     pub cipher_suite: CipherSuite,
     pub legacy_compression_method: u8,
     pub extensions: Vec<Extension>,
@@ -525,6 +558,15 @@ struct {
     opaque certificate_request_context<0..2^8-1>;
     CertificateEntry certificate_list<0..2^24-1>;
 } Certificate;
+
+
+In TLS 1.2 the format is:
+
+opaque ASN.1Cert<1..2^24-1>;
+
+struct {
+    ASN.1Cert certificate_list<0..2^24-1>;
+} Certificate;
 */
 
 #[derive(Debug)]
@@ -534,18 +576,35 @@ pub struct Certificate {
 }
 
 impl Certificate {
-    parser!(parse<Self> => { seq!(c => {
-		let certificate_request_context = c.next(varlen_vector(0, U8_LIMIT))?;
-		let certificate_list = {
-			let data = c.next(varlen_vector(0, U24_LIMIT))?;
-			let (arr, _) = complete(many(CertificateEntry::parse))(data)?;
-			arr
-		};
+    fn parse(input: Bytes, protocol_version: ProtocolVersion) -> Result<(Self, Bytes)> {
+        seq!(c => {
+            if protocol_version == TLS_1_3_VERSION {
+                let certificate_request_context = c.next(varlen_vector(0, U8_LIMIT))?;
+                let certificate_list = {
+                    let data = c.next(varlen_vector(0, U24_LIMIT))?;
+                    let (arr, _) = complete(many(CertificateEntry::parse))(data)?;
+                    arr
+                };
 
-		Ok(Self { certificate_request_context, certificate_list })
-	}) });
+                Ok(Self { certificate_request_context, certificate_list })
+            } else {
+                let certificate_list = c.next(varlen_vector(0, U24_LIMIT))?;
+                let (certs, _) = complete(many(varlen_vector(1, U24_LIMIT)))(certificate_list)?;
+
+                Ok(Self {
+                    certificate_request_context: Bytes::new(),
+                    certificate_list: certs.into_iter().map(|cert| {
+                        CertificateEntry { cert, extensions: vec![] }
+                    }).collect()
+                })
+            }
+        })(input)
+    }
 
     fn serialize(&self, out: &mut Vec<u8>) {
+        // TODO: Implement TLS 1.2 certificate serialization
+        // Must warn if unsupported fields are passed.
+
         serialize_varlen_vector(0, U8_LIMIT, out, |out| {
             out.extend_from_slice(&self.certificate_request_context);
         });
@@ -639,13 +698,39 @@ impl CertificateRequest {
 ////////////////////////////////////////////////////////////////////////////////
 
 /*
+--- TLS 1.3
 struct {
     SignatureScheme algorithm;
     opaque signature<0..2^16-1>;
 } CertificateVerify;
+
+--- TLS 1.2:
+struct {
+    SignatureAndHashAlgorithm algorithm;
+    opaque signature<0..2^16-1>;
+} DigitallySigned;
+
+enum {
+    signature_algorithms(13), (65535)
+} ExtensionType;
+
+enum{
+    none(0), md5(1), sha1(2), sha224(3), sha256(4), sha384(5),
+    sha512(6), (255)
+} HashAlgorithm;
+enum {
+    anonymous(0), rsa(1), dsa(2), ecdsa(3), (255)
+} SignatureAlgorithm;
+
+struct {
+    HashAlgorithm hash;
+    SignatureAlgorithm signature;
+} SignatureAndHashAlgorithm;
 */
 
-#[derive(Debug)]
+/// The CertificateVerify struct in TLS 1.2/1.3 and the DigitallySigned struct
+/// in TLS 1.2
+#[derive(Debug, Clone)]
 pub struct CertificateVerify {
     pub algorithm: SignatureScheme,
     pub signature: Bytes,
@@ -704,4 +789,135 @@ tls_struct!(KeyUpdate => {
 
 tls_enum_u8!(KeyUpdateRequest => {
     update_not_requested(0), update_requested(1), (255)
+});
+
+////////////////////////////////////////////////////////////////////////////////
+
+// rfc8422
+
+#[derive(Debug)]
+pub struct ServerKeyExchange {
+    pub data: Bytes,
+}
+
+impl ServerKeyExchange {
+    pub fn ec_diffie_hellman(&self) -> Result<ServerKeyExchangeECDHE> {
+        let (v, _) = complete(ServerKeyExchangeECDHE::parse)(self.data.clone())?;
+        Ok(v)
+    }
+}
+
+// Parsing as 'ec_diffie_hellman()'
+
+#[derive(Debug)]
+pub struct ClientKeyExchange {
+    pub data: Bytes,
+}
+
+/*
+struct {
+    select (KeyExchangeAlgorithm) {
+        case rsa:
+            EncryptedPreMasterSecret;
+        case dhe_dss:
+        case dhe_rsa:
+        case dh_dss:
+        case dh_rsa:
+        case dh_anon:
+            ClientDiffieHellmanPublic;
+    } exchange_keys;
+} ClientKeyExchange;
+*/
+
+/*
+struct {
+    select (KeyExchangeAlgorithm) {
+        case dh_anon:
+            ServerDHParams params;
+        case dhe_dss:
+        case dhe_rsa:
+            ServerDHParams params;
+            digitally-signed struct {
+                opaque client_random[32];
+                opaque server_random[32];
+                ServerDHParams params;
+            } signed_params;
+        case rsa:
+        case dh_dss:
+        case dh_rsa:
+            struct {} ;
+            /* message is omitted for rsa, dh_dss, and dh_rsa */
+        /* may be extended, e.g., for ECDH -- see [TLSECC] */
+    };
+} ServerKeyExchange;
+
+enum {
+    deprecated (1..2),
+    named_curve (3),
+    reserved(248..255)
+} ECCurveType;
+
+struct {
+    ECCurveType    curve_type;
+    select (curve_type) {
+        case named_curve:
+            NamedCurve namedcurve;
+    };
+} ECParameters;
+
+struct {
+    opaque point <1..2^8-1>;
+} ECPoint;
+
+struct {
+    ECParameters    curve_params;
+    ECPoint         public;
+} ServerECDHParams;
+
+select (KeyExchangeAlgorithm) {
+    case ec_diffie_hellman:
+        ServerECDHParams    params;
+        Signature           signed_params;
+} ServerKeyExchange;
+*/
+
+#[derive(Debug, Clone)]
+pub struct ECPoint {
+    pub point: Bytes,
+}
+
+impl ECPoint {
+    parser!(parse<Self> => {
+        seq!(c => {
+            let point = c.next(varlen_vector(1, U8_LIMIT))?;
+            Ok(Self { point })
+        })
+    });
+
+    pub fn serialize(&self, out: &mut Vec<u8>) {
+        serialize_varlen_vector(1, U8_LIMIT, out, |out| {
+            out.extend_from_slice(&self.point);
+        })
+    }
+}
+
+tls_enum_u8!(ECCurveType => {
+    named_curve(3),
+    (255)
+});
+
+tls_struct!(ECParameters => {
+    ECCurveType curve_type;
+    // TODO: Only present if the curve_type == named_curve
+    NamedGroup named_curve;
+});
+
+tls_struct!(ServerECDHParams => {
+    ECParameters curve_params;
+    ECPoint public;
+});
+
+tls_struct!(ServerKeyExchangeECDHE => {
+    ServerECDHParams params;
+    CertificateVerify signed_params;
 });

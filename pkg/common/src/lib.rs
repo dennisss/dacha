@@ -326,8 +326,9 @@ macro_rules! enum_def {
 #[macro_export]
 macro_rules! enum_def_with_unknown {
     // TODO: Derive a smarter hash
-    ($name:ident $t:ty => $( $case:ident = $val:expr ),*) => {
-    	#[derive(Clone, Copy, Debug)]
+    ($(#[$meta:meta])* $name:ident $t:ty => $( $case:ident = $val:expr ),*) => {
+    	$(#[$meta])*
+        #[derive(Clone, Copy, Debug)]
 		pub enum $name {
 			$(
 				$case,
