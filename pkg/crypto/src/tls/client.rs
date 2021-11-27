@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::Arc;
 
+use common::bytes::Bytes;
 use common::errors::*;
 use common::io::*;
 
@@ -13,6 +14,7 @@ use crate::sha256::SHA256Hasher;
 use crate::tls::alert::*;
 use crate::tls::application_stream::*;
 use crate::tls::cipher::CipherEndpointSpec;
+use crate::tls::cipher_suite::*;
 use crate::tls::cipher_tls12::CipherEndpointSpecTLS12;
 use crate::tls::cipher_tls12::GCMNonceGenerator;
 use crate::tls::cipher_tls12::NonceGenerator;
@@ -21,9 +23,9 @@ use crate::tls::extensions::*;
 use crate::tls::extensions_util::*;
 use crate::tls::handshake::*;
 use crate::tls::handshake_summary::*;
-use crate::tls::key_expansion_tls12;
 use crate::tls::key_schedule::*;
 use crate::tls::key_schedule_helper::*;
+use crate::tls::key_schedule_tls12::KeyScheduleTLS12;
 use crate::tls::options::ClientOptions;
 use crate::tls::record_stream::*;
 use crate::tls::transcript::*;
@@ -708,6 +710,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
             }
         };
 
+        // TODO: Some cipher suites will constrain the type of signature allowed (RSA or
+        // ECDSA)
         let server_ecdhe_key = server_key_exchange.ec_diffie_hellman()?;
         println!("SKE: {:#?}", server_ecdhe_key);
 
@@ -755,70 +759,30 @@ impl<'a> ClientHandshakeExecutor<'a> {
         // TODO: The transcript hash shouldn't include any HelloRequests
         // TODO: Set the transcript's hasher earlier to avoid caching the entire thing.
 
-        // NOTE: We currently assume that all ciphers use the standard TLS PRF and use
-        // the same hasher for the PRF and the transcript hash.
-
-        // Hash doesn't include HelloRequest
-
-        // If not specified, verify_data_length is 12
-
-        let (aead, nonce_gen, hasher_factory) = match server_hello.cipher_suite {
-            CipherSuite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 => (
-                AesGCM::aes128(),
-                GCMNonceGenerator::new(),
-                SHA256Hasher::factory(),
-            ),
+        let cipher_suite = match server_hello.cipher_suite.decode() {
+            Ok(CipherSuiteParts::TLS12(v)) => v,
             _ => {
                 return Err(err_msg("Unsupported TLS 1.2 cipher suite"));
             }
         };
 
-        let key_block = key_expansion_tls12::key_block(
+        let key_schedule = KeyScheduleTLS12::create(
+            cipher_suite,
             &pre_master_secret,
             &client_hello,
             &server_hello,
-            &hasher_factory,
-            0,
-            aead.key_size(),
-            nonce_gen.implicit_size(),
         );
 
-        let verify_data_length = 12;
+        self.writer.local_cipher_spec = Some(key_schedule.client_cipher_spec());
+        self.reader
+            .set_remote_cipher_spec(key_schedule.server_cipher_spec())?;
 
-        let client_spec = CipherEndpointSpec::TLS12(CipherEndpointSpecTLS12 {
-            sequence_num: 0,
-            aead: Box::new(aead.clone()),
-            nonce_gen: Box::new(nonce_gen.clone()),
-            encryption_key: key_block.client_write_key,
-            implicit_iv: key_block.client_write_iv,
-        });
-
-        let server_spec = CipherEndpointSpec::TLS12(CipherEndpointSpecTLS12 {
-            sequence_num: 0,
-            aead: Box::new(aead.clone()),
-            nonce_gen: Box::new(nonce_gen.clone()),
-            encryption_key: key_block.server_write_key,
-            implicit_iv: key_block.server_write_iv,
-        });
-
-        self.writer.local_cipher_spec = Some(client_spec);
-        self.reader.set_remote_cipher_spec(server_spec)?;
-
-        let verify_data = {
-            let hash = self.handshake_transcript.hash(&hasher_factory);
-            key_expansion_tls12::prf(
-                &key_block.master_secret,
-                b"client finished",
-                &hash,
-                verify_data_length,
-                &hasher_factory,
-            )
-        };
+        let verify_data_client = key_schedule.verify_data_client(&self.handshake_transcript);
 
         self.writer
             .send_handshake(
                 Handshake::Finished(Finished {
-                    verify_data: verify_data.into(),
+                    verify_data: verify_data_client.into(),
                 }),
                 Some(&mut self.handshake_transcript),
             )
@@ -826,16 +790,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
         // TODO: Verify we get a cipher spec message.
 
-        let verify_data_server = {
-            let hash = self.handshake_transcript.hash(&hasher_factory);
-            key_expansion_tls12::prf(
-                &key_block.master_secret,
-                b"server finished",
-                &hash,
-                verify_data_length,
-                &hasher_factory,
-            )
-        };
+        let verify_data_server = key_schedule.verify_data_server(&self.handshake_transcript);
 
         let server_finished = match self.receive_handshake_message().await? {
             Handshake::Finished(v) => v,
@@ -848,12 +803,6 @@ impl<'a> ClientHandshakeExecutor<'a> {
         if &server_finished.verify_data != &verify_data_server {
             return Err(err_msg("Bad server finished"));
         }
-
-        /*
-        verify_data
-            PRF(master_secret, finished_label, Hash(handshake_messages))
-                [0..verify_data_length-1];
-        */
 
         /*
              For TLS 1.2:

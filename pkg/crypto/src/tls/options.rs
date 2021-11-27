@@ -3,8 +3,8 @@ use std::sync::Arc;
 use common::bytes::Bytes;
 use common::errors::*;
 
+use crate::tls::cipher_suite::CipherSuite;
 use crate::tls::extensions::{NamedGroup, SignatureScheme};
-use crate::tls::handshake::CipherSuite;
 use crate::x509;
 
 /// Configuration for how a TLS client will negotiate a handshake with the

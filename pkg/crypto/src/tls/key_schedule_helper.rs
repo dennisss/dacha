@@ -1,15 +1,9 @@
 use common::errors::*;
 
-use crate::aead::AuthEncAD;
-use crate::chacha20::ChaCha20Poly1305;
-use crate::gcm::*;
-use crate::hasher::*;
 use crate::hkdf::HKDF;
-use crate::sha256::SHA256Hasher;
-use crate::sha384::SHA384Hasher;
 use crate::tls::cipher::*;
+use crate::tls::cipher_suite::{CipherSuite, CipherSuiteParts};
 use crate::tls::extensions::NamedGroup;
-use crate::tls::handshake::CipherSuite;
 use crate::tls::key_schedule::*;
 use crate::tls::record_stream::{RecordReader, RecordWriter};
 use crate::tls::transcript::Transcript;
@@ -40,16 +34,8 @@ impl KeyScheduleHelper {
         reader: &mut RecordReader,
         writer: &mut RecordWriter,
     ) -> Result<KeySchedule> {
-        let (aead, hasher_factory): (Box<dyn AuthEncAD>, HasherFactory) = match cipher_suite {
-            CipherSuite::TLS_AES_128_GCM_SHA256 => {
-                (Box::new(AesGCM::aes128()), SHA256Hasher::factory())
-            }
-            CipherSuite::TLS_AES_256_GCM_SHA384 => {
-                (Box::new(AesGCM::aes256()), SHA384Hasher::factory())
-            }
-            CipherSuite::TLS_CHACHA20_POLY1305_SHA256 => {
-                (Box::new(ChaCha20Poly1305::new()), SHA256Hasher::factory())
-            }
+        let (aead, hasher_factory) = match cipher_suite.decode()? {
+            CipherSuiteParts::TLS13(suite) => (suite.aead, suite.hasher_factory),
             _ => {
                 return Err(err_msg("Bad cipher suite"));
             }

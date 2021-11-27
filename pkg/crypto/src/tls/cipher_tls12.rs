@@ -9,15 +9,17 @@ use crate::tls::record::Record;
 pub struct CipherEndpointSpecTLS12 {
     /// Sequence number for the next record to be sent with this cipher.
     /// Starts at 0 for the first record sent with this cipher. Never wraps.
-    pub sequence_num: u64,
+    sequence_num: u64,
 
-    pub aead: Box<dyn AuthEncAD>,
+    mac_key: Bytes,
 
-    pub nonce_gen: Box<dyn NonceGenerator>,
+    encryption_key: Bytes,
 
-    pub encryption_key: Bytes,
+    implicit_iv: Bytes,
 
-    pub implicit_iv: Bytes,
+    aead: Box<dyn AuthEncAD>,
+
+    nonce_gen: Box<dyn NonceGenerator>,
 }
 
 // pub enum CipherEndpointSpecTypeTLS12 {
@@ -25,9 +27,22 @@ pub struct CipherEndpointSpecTLS12 {
 // }
 
 impl CipherEndpointSpecTLS12 {
-    // pub fn create(cipher_suite: CipherSuite) -> Result<(Self, Self)> {
-
-    // }
+    pub fn new(
+        mac_key: Bytes,
+        encryption_key: Bytes,
+        implicit_iv: Bytes,
+        aead: Box<dyn AuthEncAD>,
+        nonce_gen: Box<dyn NonceGenerator>,
+    ) -> Self {
+        Self {
+            sequence_num: 0,
+            mac_key,
+            encryption_key,
+            implicit_iv,
+            aead,
+            nonce_gen,
+        }
+    }
 
     /// Encrypts a TLS 1.2 TLSCompressed (or TLSPlaintext if no compression is
     /// used) record into a TLSCiphertext record used this cipher.
@@ -115,6 +130,8 @@ pub trait NonceGenerator: 'static + Send + Sync {
     fn generate_explicit(&self, cipher_spec: &CipherEndpointSpecTLS12) -> Vec<u8>;
 
     fn generate_full(&self, cipher_spec: &CipherEndpointSpecTLS12, explicit: &[u8]) -> Vec<u8>;
+
+    fn box_clone(&self) -> Box<dyn NonceGenerator>;
 }
 
 /*
@@ -165,5 +182,44 @@ impl NonceGenerator for GCMNonceGenerator {
         let mut out = cipher_spec.implicit_iv.to_vec();
         out.extend_from_slice(explicit);
         out
+    }
+
+    fn box_clone(&self) -> Box<dyn NonceGenerator> {
+        Box::new(self.clone())
+    }
+}
+
+/// Based on RFC 7905 (https://datatracker.ietf.org/doc/html/rfc7905)
+#[derive(Clone)]
+pub struct ChaChaPoly1305NonceGenerator {}
+
+impl ChaChaPoly1305NonceGenerator {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl NonceGenerator for ChaChaPoly1305NonceGenerator {
+    fn explicit_size(&self) -> usize {
+        0
+    }
+
+    fn implicit_size(&self) -> usize {
+        12
+    }
+
+    fn generate_explicit(&self, cipher_spec: &CipherEndpointSpecTLS12) -> Vec<u8> {
+        vec![]
+    }
+
+    fn generate_full(&self, cipher_spec: &CipherEndpointSpecTLS12, explicit: &[u8]) -> Vec<u8> {
+        let mut out = vec![0u8; 12];
+        out[4..].copy_from_slice(&cipher_spec.sequence_num.to_be_bytes());
+        crate::utils::xor_inplace(&cipher_spec.implicit_iv, &mut out);
+        out
+    }
+
+    fn box_clone(&self) -> Box<dyn NonceGenerator> {
+        Box::new(self.clone())
     }
 }

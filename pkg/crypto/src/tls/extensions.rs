@@ -669,101 +669,52 @@ impl SignatureSchemeList {
     }
 }
 
-/// NOTE: In TLS 1.2, this is the SignatureAndHashAlgorithm struct. the u16 is a
-/// tuple of the 'hash' and 'signature' algorithms, although not all schemes
-/// listed below are supported in 1.2.
-///
-/// TODO: Make sure all these enums are compared based on u16 value.
-#[derive(Clone, Copy, PartialEq, Debug)]
-#[allow(non_camel_case_types)]
-pub enum SignatureScheme {
+enum_def_with_unknown!(
+    /// NOTE: In TLS 1.2, this is the SignatureAndHashAlgorithm struct. the u16 is a
+    /// tuple of the 'hash' and 'signature' algorithms, although not all schemes
+    /// listed below are supported in 1.2.
+    #[allow(non_camel_case_types)]
+    SignatureScheme u16 =>
+
     // RSASSA-PKCS1-v1_5 algorithms
-    rsa_pkcs1_sha256,
-    rsa_pkcs1_sha384,
-    rsa_pkcs1_sha512,
+    rsa_pkcs1_sha256 = 0x0401,
+    rsa_pkcs1_sha384 = 0x0501,
+    rsa_pkcs1_sha512 = 0x0601,
 
     // ECDSA algorithms
-    ecdsa_secp256r1_sha256,
-    ecdsa_secp384r1_sha384,
-    ecdsa_secp521r1_sha512,
+    ecdsa_secp256r1_sha256 = 0x0403,
+    ecdsa_secp384r1_sha384 = 0x0503,
+    ecdsa_secp521r1_sha512 = 0x0603,
 
     // RSASSA-PSS algorithms with public key OID rsaEncryption
-    rsa_pss_rsae_sha256,
-    rsa_pss_rsae_sha384,
-    rsa_pss_rsae_sha512,
+    rsa_pss_rsae_sha256 = 0x0804,
+    rsa_pss_rsae_sha384 = 0x0805,
+    rsa_pss_rsae_sha512 = 0x0806,
 
     // EdDSA algorithms
-    ed25519,
-    ed448,
+    ed25519 = 0x0807,
+    ed448 = 0x0808,
 
     // RSASSA-PSS algorithms with public key OID RSASSA-PSS
-    rsa_pss_pss_sha256,
-    rsa_pss_pss_sha384,
-    rsa_pss_pss_sha512,
+    rsa_pss_pss_sha256 = 0x0809,
+    rsa_pss_pss_sha384 = 0x080a,
+    rsa_pss_pss_sha512 = 0x080b,
 
     // Legacy algorithms
-    rsa_pkcs1_sha1,
-    ecdsa_sha1,
+    rsa_pkcs1_sha1 = 0x0201,
+    ecdsa_sha1 = 0x0203
 
     // Reserved Code Points
-    private_use(u16),
-
-    unknown(u16),
-}
+    // private_use(u16) = 0xFE00..=0xFFFF,
+);
 
 impl SignatureScheme {
-    fn to_u16(&self) -> u16 {
-        use SignatureScheme::*;
-        match self {
-            rsa_pkcs1_sha256 => 0x0401,
-            rsa_pkcs1_sha384 => 0x0501,
-            rsa_pkcs1_sha512 => 0x0601,
-            ecdsa_secp256r1_sha256 => 0x0403,
-            ecdsa_secp384r1_sha384 => 0x0503,
-            ecdsa_secp521r1_sha512 => 0x0603,
-            rsa_pss_rsae_sha256 => 0x0804,
-            rsa_pss_rsae_sha384 => 0x0805,
-            rsa_pss_rsae_sha512 => 0x0806,
-            ed25519 => 0x0807,
-            ed448 => 0x0808,
-            rsa_pss_pss_sha256 => 0x0809,
-            rsa_pss_pss_sha384 => 0x080a,
-            rsa_pss_pss_sha512 => 0x080b,
-            rsa_pkcs1_sha1 => 0x0201,
-            ecdsa_sha1 => 0x0203,
-            private_use(v) => *v,
-            unknown(v) => *v,
-        }
-    }
-    fn from_u16(v: u16) -> Self {
-        use SignatureScheme::*;
-        match v {
-            0x0401 => rsa_pkcs1_sha256,
-            0x0501 => rsa_pkcs1_sha384,
-            0x0601 => rsa_pkcs1_sha512,
-            0x0403 => ecdsa_secp256r1_sha256,
-            0x0503 => ecdsa_secp384r1_sha384,
-            0x0603 => ecdsa_secp521r1_sha512,
-            0x0804 => rsa_pss_rsae_sha256,
-            0x0805 => rsa_pss_rsae_sha384,
-            0x0806 => rsa_pss_rsae_sha512,
-            0x0807 => ed25519,
-            0x0808 => ed448,
-            0x0809 => rsa_pss_pss_sha256,
-            0x080a => rsa_pss_pss_sha384,
-            0x080b => rsa_pss_pss_sha512,
-            0x0201 => rsa_pkcs1_sha1,
-            0x0203 => ecdsa_sha1,
-            0xFE00..=0xFFFF => private_use(v),
-            _ => unknown(v),
-        }
-    }
     parser!(pub parse<Self> => {
-        map(as_bytes(be_u16), |v| Self::from_u16(v))
+        map(as_bytes(be_u16), |v| Self::from_value(v))
     });
 
     pub fn serialize(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(&self.to_u16().to_be_bytes());
+        buf.extend_from_slice(&self.to_value().to_be_bytes());
     }
 }
 

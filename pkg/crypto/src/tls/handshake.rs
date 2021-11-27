@@ -8,6 +8,7 @@ use super::parsing::*;
 use crate::dh::DiffieHellmanFn;
 use crate::elliptic::*;
 use crate::random::*;
+use crate::tls::cipher_suite::CipherSuite;
 use crate::tls::options::ClientOptions;
 
 pub const TLS_1_0_VERSION: u16 = 0x0301;
@@ -332,43 +333,6 @@ impl ClientHello {
                 e.serialize(HandshakeType::ClientHello, out).unwrap();
             }
         });
-    }
-}
-
-// TODO: There's a nice priority list from mozilla here:
-// https://wiki.mozilla.org/Security/Cipher_Suites
-
-enum_def_with_unknown!(
-    #[allow(non_camel_case_types)] CipherSuite u16 =>
-    // TLS 1.3
-    TLS_AES_128_GCM_SHA256 = 0x1301,
-    TLS_AES_256_GCM_SHA384 = 0x1302,
-    TLS_CHACHA20_POLY1305_SHA256 = 0x1303,
-    TLS_AES_128_CCM_SHA256 = 0x1304,
-    TLS_AES_128_CCM_8_SHA256 = 0x1305,
-
-    // TLS 1.2 : RFC 8422 recommended to mplement
-    TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 = 0xc02f,
-    TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA = 0xc013,
-    TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 = 0xc02b,
-    TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA = 0xc009,
-
-    TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 = 0xc02c,
-    TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 = 0xc023,
-    TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 = 0xc024,
-    TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 = 0xc030,
-    TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 = 0xc027,
-    TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 = 0xc028,
-    TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 = 0xcca9,
-    TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 = 0xcca8
-);
-
-impl CipherSuite {
-    parser!(parse<Self> => {
-        map(as_bytes(be_u16), |v| Self::from_value(v))
-    });
-    fn serialize(&self, out: &mut Vec<u8>) {
-        out.extend_from_slice(&self.to_value().to_be_bytes());
     }
 }
 

@@ -38,6 +38,12 @@ struct ServerCommand {
     port: u16,
 }
 
+/*
+System wide certificates located at:
+- /etc/ssl/certs/ca-certificates.crt
+- https://serverfault.com/questions/62496/ssl-certificate-location-on-unix-linux
+*/
+
 async fn run() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
@@ -48,20 +54,18 @@ async fn run() -> Result<()> {
             let writer = Box::new(raw_stream);
 
             let mut client_options = crypto::tls::options::ClientOptions::recommended();
-            client_options.hostname = "localhost".into();
-            client_options.alpn_ids.push("h2".into());
-            client_options.alpn_ids.push("http/1.1".into());
+            // client_options.hostname = "google.com".into();
+            // client_options.alpn_ids.push("h2".into());
+            // client_options.alpn_ids.push("http/1.1".into());
             client_options.trust_server_certificate = true;
 
             let mut client = crypto::tls::client::Client::new();
             let mut stream = client.connect(reader, writer, &client_options).await?;
 
-            let mut buf = vec![0u8; 100];
-            let n = stream.reader.read(&mut buf).await?;
+            // let mut buf = vec![0u8; 100];
+            // let n = stream.reader.read(&mut buf).await?;
 
-            println!("Read {}: {:?}", n, Bytes::from(&buf[0..n]));
-
-            /*
+            // println!("Read {}: {:?}", n, Bytes::from(&buf[0..n]));
 
             stream
                 .writer
@@ -72,7 +76,6 @@ async fn run() -> Result<()> {
             buf.resize(100, 0);
             stream.reader.read_exact(&mut buf).await?;
             println!("{}", String::from_utf8(buf).unwrap());
-            */
 
             Ok(())
         }

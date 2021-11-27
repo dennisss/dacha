@@ -9,12 +9,13 @@ use pkix::PKIX1Algorithms2008;
 use crate::hasher::GetHasherFactory;
 use crate::random::secure_random_bytes;
 use crate::tls::application_stream::ApplicationStream;
+use crate::tls::cipher_suite::*;
 use crate::tls::constants::*;
 use crate::tls::extensions::*;
 use crate::tls::extensions_util::*;
 use crate::tls::handshake::{
-    Certificate, CertificateEntry, CertificateVerify, CipherSuite, EncryptedExtensions, Finished,
-    Handshake, ServerHello, TLS_1_2_VERSION, TLS_1_3_VERSION,
+    Certificate, CertificateEntry, CertificateVerify, EncryptedExtensions, Finished, Handshake,
+    ServerHello, TLS_1_2_VERSION, TLS_1_3_VERSION,
 };
 use crate::tls::handshake_summary::HandshakeSummary;
 use crate::tls::key_schedule::KeySchedule;
