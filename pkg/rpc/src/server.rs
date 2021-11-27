@@ -49,7 +49,7 @@ impl Http2Server {
         Ok(())
     }
 
-    pub fn add_request_handler<H: http::RequestHandler>(
+    pub fn add_request_handler<H: http::ServerHandler>(
         &mut self,
         path: &str,
         handler: H,
@@ -97,18 +97,22 @@ impl Http2Server {
 }
 
 struct Http2RequestHandler {
-    request_handlers: HashMap<String, Box<dyn http::RequestHandler>>,
+    request_handlers: HashMap<String, Box<dyn http::ServerHandler>>,
 
     services: HashMap<String, Arc<dyn Service>>,
 }
 
 impl Http2RequestHandler {
-    async fn handle_request_impl(&self, request: http::Request) -> Result<http::Response> {
+    async fn handle_request_impl<'a>(
+        &self,
+        request: http::Request,
+        context: http::ServerRequestContext<'a>,
+    ) -> Result<http::Response> {
         // TODO: Convert as many of the errors in this function as possible to gRPC
         // trailing status codes.
 
         if let Some(request_handler) = self.request_handlers.get(request.head.uri.path.as_str()) {
-            return Ok(request_handler.handle_request(request).await);
+            return Ok(request_handler.handle_request(request, context).await);
         }
 
         // TODO: Should support different methods
@@ -225,9 +229,13 @@ impl Http2RequestHandler {
 }
 
 #[async_trait]
-impl http::RequestHandler for Http2RequestHandler {
-    async fn handle_request(&self, request: http::Request) -> http::Response {
-        match self.handle_request_impl(request).await {
+impl http::ServerHandler for Http2RequestHandler {
+    async fn handle_request<'a>(
+        &self,
+        request: http::Request,
+        context: http::ServerRequestContext<'a>,
+    ) -> http::Response {
+        match self.handle_request_impl(request, context).await {
             Ok(r) => r,
             // TODO: Instead always use the trailers?
             // TODO: Don't share the raw error.

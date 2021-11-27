@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::proto::v2::*;
+use crate::server_handler::{ServerConnectionContext, ServerHandler};
 use crate::v2::settings::SettingsContainer;
 
 #[derive(Clone)]
@@ -80,4 +81,12 @@ impl std::default::Default for ConnectionOptions {
             max_enqueued_requests: 100,
         }
     }
+}
+
+pub struct ServerConnectionOptions {
+    pub connection_context: ServerConnectionContext,
+
+    /// NOTE: We assume that handle_connection was already called and we will
+    /// only call the handle_request method of this.
+    pub request_handler: Box<dyn ServerHandler>,
 }

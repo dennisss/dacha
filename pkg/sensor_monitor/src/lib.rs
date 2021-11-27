@@ -248,7 +248,7 @@ impl RequestHandler {
 }
 
 #[async_trait]
-impl http::server::RequestHandler for RequestHandler {
+impl http::ServerHandler for RequestHandler {
     async fn handle_request(&self, mut request: http::Request) -> http::Response {
         let mut path = request.head.uri.path.as_str();
         if path == "/" {

@@ -23,6 +23,7 @@ pub mod server;
 pub mod transcript;
 
 pub use client::Client;
+pub use handshake_summary::HandshakeSummary;
 pub use options::{ClientOptions, ServerOptions};
 pub use server::Server;
 

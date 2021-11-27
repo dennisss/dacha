@@ -12,12 +12,12 @@ use common::{chrono::Duration, errors::*};
 use crate::proto::v2::*;
 use crate::request::Request;
 use crate::response::{Response, ResponseHead};
-use crate::server::RequestHandler;
+use crate::server_handler::ServerHandler;
 use crate::v2::connection_reader::ConnectionReader;
 use crate::v2::connection_shared::ConnectionShared;
 use crate::v2::connection_state::*;
 use crate::v2::connection_writer::ConnectionWriter;
-use crate::v2::options::ConnectionOptions;
+use crate::v2::options::{ConnectionOptions, ServerConnectionOptions};
 use crate::v2::types::*;
 use crate::{headers::connection, method::Method, v2::settings::*};
 
@@ -133,9 +133,9 @@ impl Drop for Connection {
 impl Connection {
     pub fn new(
         options: ConnectionOptions,
-        server_request_handler: Option<Box<dyn RequestHandler>>,
+        server_options: Option<ServerConnectionOptions>,
     ) -> Self {
-        let is_server = server_request_handler.is_some();
+        let is_server = server_options.is_some();
 
         // TODO: Implement SETTINGS_MAX_HEADER_LIST_SIZE.
 
@@ -147,7 +147,7 @@ impl Connection {
             shared: Arc::new(ConnectionShared {
                 is_server,
                 options,
-                request_handler: server_request_handler,
+                server_options,
                 connection_event_sender,
                 state: Mutex::new(ConnectionState {
                     running: false,

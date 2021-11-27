@@ -46,7 +46,7 @@ async fn handle_request(mut req: http::Request) -> http::Response {
 }
 
 async fn run_server() -> Result<()> {
-    let handler = http::server::HttpFn(handle_request);
+    let handler = http::HttpFn(handle_request);
     let server = Server::new(handler, http::ServerOptions::default());
     server.run(8888).await
 }

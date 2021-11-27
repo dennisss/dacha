@@ -55,7 +55,8 @@ members = [
 	"third_party/grpc_proto",
 	"pkg/rpc_util",
 	"pkg/nordic",
-	"third_party/pico_core"
+	"third_party/pico_core",
+	"third_party/mime_types"
 ]
 
 [profile.dev]

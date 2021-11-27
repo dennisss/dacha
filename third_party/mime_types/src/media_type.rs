@@ -14,8 +14,7 @@ pub struct MediaTypeEntry {
     pub compressible: bool,
 }
 
-// List grabbed from Mozilla.
-const MEDIA_TYPES_LIST: &'static [MediaTypeEntry] = &[
+pub const MEDIA_TYPES_LIST: &'static [MediaTypeEntry] = &[
     MediaTypeEntry {
         types: &["audio/aac"],
         extensions: &["aac"],
@@ -448,4 +447,10 @@ const MEDIA_TYPES_LIST: &'static [MediaTypeEntry] = &[
         description: "7-zip archive",
         compressible: false
     },
+    MediaTypeEntry {
+        types: &["application/pem-certificate-chain"],
+        extensions: &["pem"],
+        description: "PEM encoded certificate chain",
+        compressible: true
+    }
 ];

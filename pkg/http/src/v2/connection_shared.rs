@@ -5,10 +5,10 @@ use common::async_std::sync::Mutex;
 
 use crate::proto::v2::*;
 use crate::request::Request;
-use crate::server::RequestHandler;
+use crate::server_handler::{ServerHandler, ServerRequestContext};
 use crate::v2::body::*;
 use crate::v2::connection_state::*;
-use crate::v2::options::ConnectionOptions;
+use crate::v2::options::{ConnectionOptions, ServerConnectionOptions};
 use crate::v2::stream::*;
 use crate::v2::stream_state::*;
 use crate::v2::types::*;
@@ -26,7 +26,7 @@ pub struct ConnectionShared {
     /// Handler for producing responses to incoming requests.
     ///
     /// NOTE: This will only be used in HTTP servers.
-    pub request_handler: Option<Box<dyn RequestHandler>>,
+    pub server_options: Option<ServerConnectionOptions>,
 
     /// Used to notify the connection of events that have occured.
     /// The writer thread listens to these events performs actions such as
@@ -254,9 +254,17 @@ impl ConnectionShared {
         stream_id: StreamId,
         request: Request,
     ) {
-        let request_handler = self.request_handler.as_ref().unwrap();
+        let server_options = self.server_options.as_ref().unwrap();
 
-        let response = request_handler.handle_request(request).await;
+        let context = ServerRequestContext {
+            connection_context: &server_options.connection_context,
+            // TODO: Add the stream id
+        };
+
+        let response = server_options
+            .request_handler
+            .handle_request(request, context)
+            .await;
 
         let _ = self
             .connection_event_sender

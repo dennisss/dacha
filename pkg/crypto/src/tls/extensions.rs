@@ -60,7 +60,11 @@ impl Extension {
         let parser = seq!(c => {
             let extension_type = c.next(as_bytes(ExtensionType::parse))?;
             if !extension_type.allowed(msg_type) {
-                return Err(err_msg("Extension not allowed in this message"));
+                return Err(format_err!(
+                    "Parsing extension not allowed in this message: {:?} on {:?}",
+                    extension_type,
+                    msg_type
+                ));
             }
 
             let data = c.next(varlen_vector(0, U16_LIMIT))?;
@@ -144,7 +148,11 @@ impl Extension {
         };
 
         if !typ.allowed(msg_type) {
-            return Err(err_msg("Extension not allowed in this message"));
+            return Err(format_err!(
+                "Serializing extension not allowed in this message: {:?} on {:?}",
+                typ,
+                msg_type
+            ));
         }
 
         typ.serialize(out);
@@ -333,6 +341,7 @@ impl ExtensionType {
             UseSRTP => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             Heartbeat => (msg_type == ClientHello || msg_type == EncryptedExtensions),
             ApplicationLayerProtocolNegotiation => {
+                // TODO: In TLS 1.2, this cna be sent in ServerHello
                 msg_type == ClientHello || msg_type == EncryptedExtensions
             }
             SignedCertificateTimestamp => {

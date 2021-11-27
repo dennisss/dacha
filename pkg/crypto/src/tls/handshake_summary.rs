@@ -5,7 +5,7 @@ use common::bytes::Bytes;
 use crate::x509;
 
 /// Contains any interesting information collected during the TLS handshake.
-#[derive(Default)]
+#[derive(Default, Clone, Debug)]
 pub struct HandshakeSummary {
     /// If ALPN ids were given by the client, this will be which one of them
     /// was selected by the server.

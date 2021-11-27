@@ -29,3 +29,12 @@ impl std::convert::TryFrom<IPAddress> for IpAddr {
         })
     }
 }
+
+impl std::convert::From<IpAddr> for IPAddress {
+    fn from(v: IpAddr) -> Self {
+        match v {
+            IpAddr::V4(v) => Self::V4(v.octets().to_vec()),
+            IpAddr::V6(v) => Self::V6(v.octets().to_vec()),
+        }
+    }
+}

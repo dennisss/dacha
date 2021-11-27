@@ -157,20 +157,21 @@ impl<'a> ServerHandshakeExecutor<'a> {
         // TODO: Check that the ServerName against our host name (or the host name or
         // our certificates).
 
-        let server_name = find_server_name(&client_hello.extensions)
-            .ok_or_else(|| err_msg("Expected request to have a server name extension"))?;
-        if server_name.names.len() != 1 {
-            return Err(err_msg("Expected request to have exactly one name"));
-        }
+        // When being requested with an ip address, we won't have a host name.
+        if let Some(server_name) = find_server_name(&client_hello.extensions) {
+            if server_name.names.len() != 1 {
+                return Err(err_msg("Expected request to have exactly one name"));
+            }
 
-        let name = std::str::from_utf8(&server_name.names[0].data)?;
-        if server_name.names[0].typ != NameType::host_name
-            || !self.options.certificates[0].for_dns_name(name)?
-        {
-            return Err(format_err!(
-                "Our certificate is not valid for the requested domain: {}",
-                name
-            ));
+            let name = std::str::from_utf8(&server_name.names[0].data)?;
+            if server_name.names[0].typ != NameType::host_name
+                || !self.options.certificates[0].for_dns_name(name)?
+            {
+                return Err(format_err!(
+                    "Our certificate is not valid for the requested domain: {}",
+                    name
+                ));
+            }
         }
 
         // Find a KeyShareClientHello and use that to return a ServerHello
@@ -193,18 +194,6 @@ impl<'a> ServerHandshakeExecutor<'a> {
             },
         }));
 
-        if let Some(name_list) = find_alpn_extension(&client_hello.extensions) {
-            for name in &name_list.names {
-                if self.options.alpn_ids.contains(name) {
-                    self.summary.selected_alpn_protocol = Some(name.clone());
-                    extensions.push(Extension::ALPN(ProtocolNameList {
-                        names: vec![name.clone()],
-                    }));
-                    break;
-                }
-            }
-        }
-
         // TODO: Verify that this is supported by client and server.
         let cipher_suite = {
             let mut selected = None;
@@ -220,8 +209,6 @@ impl<'a> ServerHandshakeExecutor<'a> {
 
             selected.ok_or_else(|| err_msg("Can't agree on a cipher suite with the client"))?
         };
-
-        // CipherSuite::TLS_CHACHA20_POLY1305_SHA256;
 
         let server_hello = ServerHello {
             legacy_version: TLS_1_2_VERSION,
@@ -249,9 +236,24 @@ impl<'a> ServerHandshakeExecutor<'a> {
             &mut self.executor.writer,
         )?;
 
+        let mut encrypted_extensions = vec![];
+
+        // TODO: In TLS 1.2, this can only be sent in the ServerHello.
+        if let Some(name_list) = find_alpn_extension(&client_hello.extensions) {
+            for name in &name_list.names {
+                if self.options.alpn_ids.contains(name) {
+                    self.summary.selected_alpn_protocol = Some(name.clone());
+                    encrypted_extensions.push(Extension::ALPN(ProtocolNameList {
+                        names: vec![name.clone()],
+                    }));
+                    break;
+                }
+            }
+        }
+
         self.executor
             .send_handshake_message(Handshake::EncryptedExtensions(EncryptedExtensions {
-                extensions: vec![],
+                extensions: encrypted_extensions,
             }))
             .await?;
 

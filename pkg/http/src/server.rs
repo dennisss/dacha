@@ -17,6 +17,7 @@ use common::io::*;
 use common::CancellationToken;
 use net::ip::IPAddress;
 
+use crate::alpn::*;
 use crate::message::*;
 use crate::message_body::{decode_request_body_v1, encode_response_body_v1};
 use crate::message_syntax::*;
@@ -24,6 +25,7 @@ use crate::method::*;
 use crate::reader::*;
 use crate::request::*;
 use crate::response::*;
+use crate::server_handler::*;
 use crate::spec::*;
 use crate::status_code::*;
 use crate::v2;
@@ -36,6 +38,11 @@ use crate::v2;
 
 #[derive(Clone)]
 pub struct ServerOptions {
+    // TODO: We should make sure that the client uses the "https" scheme
+    /// If present, use these options to connect with SSL/TLS. Otherwise, we'll
+    /// send requests over plain text.
+    pub tls: Option<crypto::tls::ServerOptions>,
+
     /// If true, we will only accept HTTPv2 connections. Setting this to true
     /// will improve the performance of V2 connections as we will internally
     /// bypass buffering done with V1.
@@ -57,6 +64,7 @@ impl Default for ServerOptions {
         let connection_options_v2 = v2::ConnectionOptions::default();
 
         Self {
+            tls: None,
             force_http2: false,
             connection_options_v2: connection_options_v2.clone(),
             max_num_connections: 1000,
@@ -65,60 +73,6 @@ impl Default for ServerOptions {
                 .clone(),
         }
     }
-}
-
-#[async_trait]
-pub trait RequestHandler: 'static + Send + Sync {
-    /// Processes an HTTP request returning a response eventually.
-    ///
-    /// While the full request is available in the first argument, the following
-    /// headers are handled automatically in the server:
-    /// - Content-Length
-    /// - Transfer-Encoding
-    /// - Connection
-    /// - Keep-Alive
-    /// - TE
-    /// - Host
-    async fn handle_request(&self, request: Request) -> Response;
-}
-
-#[async_trait]
-impl<T: RequestHandler> RequestHandler for Arc<T> {
-    async fn handle_request(&self, request: Request) -> Response {
-        self.as_ref().handle_request(request).await
-    }
-}
-
-/// Wraps a simple static function as a server request handler.
-/// See RequestHandler::handle_request for more information.
-pub fn HttpFn<
-    F: Future<Output = Response> + Send + 'static,
-    H: (Fn(Request) -> F) + Send + Sync + 'static,
->(
-    handler_fn: H,
-) -> RequestHandlerFnCaller {
-    RequestHandlerFnCaller {
-        value: Box::new(move |req| Box::pin(handler_fn(req))),
-    }
-}
-
-/// Internal: Used by HttpFn.
-pub struct RequestHandlerFnCaller {
-    value: Box<dyn (Fn(Request) -> Pin<Box<dyn Future<Output = Response> + Send>>) + Send + Sync>,
-}
-
-#[async_trait]
-impl RequestHandler for RequestHandlerFnCaller {
-    async fn handle_request(&self, request: Request) -> Response {
-        (self.value)(request).await
-    }
-}
-
-struct RequestContext {
-    pub secure: bool,
-
-    pub peer_addr: IPAddress,
-    // TODO: In the future, it will also be useful to have HTTP2 specific information.
 }
 
 // TODO: Start shutdown when dropped?
@@ -134,7 +88,7 @@ pub struct Server {
 }
 
 struct ServerShared {
-    handler: Box<dyn RequestHandler>,
+    handler: Box<dyn ServerHandler>,
 
     options: ServerOptions,
 
@@ -157,8 +111,8 @@ struct ServerShared {
 // connections and have a way to copy and propagate the cancellation token to
 // individual connection tasks.
 struct ServerConnectionPool {
-    connections: HashMap<usize, ServerConnection>,
-    last_id: usize,
+    connections: HashMap<ServerConnectionId, ServerConnection>,
+    last_id: ServerConnectionId,
 }
 
 struct ServerConnection {
@@ -196,7 +150,14 @@ impl Drop for Server {
 }
 
 impl Server {
-    pub fn new<H: RequestHandler>(handler: H, options: ServerOptions) -> Self {
+    pub fn new<H: ServerHandler>(handler: H, mut options: ServerOptions) -> Self {
+        if let Some(tls_options) = &mut options.tls {
+            tls_options.alpn_ids.push(ALPN_HTTP2.into());
+            if !options.force_http2 {
+                tls_options.alpn_ids.push(ALPN_HTTP11.into());
+            }
+        }
+
         Self {
             shared: Arc::new(ServerShared {
                 handler: Box::new(handler),
@@ -377,7 +338,11 @@ impl Server {
         TODO: We want to have a way of introspecting a request stream to see things like the client's IP.
     */
     // TODO: Should be refactored to
-    async fn handle_stream(shared: Arc<ServerShared>, connection_id: usize, stream: TcpStream) {
+    async fn handle_stream(
+        shared: Arc<ServerShared>,
+        connection_id: ServerConnectionId,
+        stream: TcpStream,
+    ) {
         match Self::handle_stream_impl(&shared, connection_id, stream).await {
             Ok(v) => {}
             // TODO: If we see a ProtocolErrorV1, form an HTTP 1.1 response.
@@ -398,27 +363,60 @@ impl Server {
 
     // TODO: Verify that the HTTP2 error handling works ok.
 
+    // TODO: Check that the received scheme matches the encrpytion level used.
+
     // TODO: Errors in here should close the connection.
     async fn handle_stream_impl(
         shared: &Arc<ServerShared>,
-        connection_id: usize,
+        connection_id: ServerConnectionId,
         stream: TcpStream,
     ) -> Result<()> {
-        if shared.options.force_http2 {
-            let reader = Box::new(stream.clone());
-            let writer = Box::new(stream);
+        let raw_peer_addr = stream.peer_addr()?;
+
+        let mut connection_context = ServerConnectionContext {
+            id: connection_id,
+            peer_addr: raw_peer_addr.ip().into(),
+            peer_port: raw_peer_addr.port(),
+            tls: None,
+        };
+
+        let mut read_stream: Box<dyn Readable + Sync> = Box::new(stream.clone());
+        let mut write_stream: Box<dyn Writeable> = Box::new(stream);
+
+        let mut negotatied_http11 = false;
+        let mut negotiated_http2 = false;
+        if let Some(tls_options) = &shared.options.tls {
+            let app = crypto::tls::Server::connect(read_stream, write_stream, tls_options).await?;
+            if let Some(proto) = &app.handshake_summary.selected_alpn_protocol {
+                if proto == ALPN_HTTP11.as_bytes() {
+                    negotatied_http11 = true;
+                } else if proto == ALPN_HTTP2.as_bytes() {
+                    println!("NEGOTIATED HTTP2");
+                    negotiated_http2 = true;
+                }
+            }
+
+            connection_context.tls = Some(app.handshake_summary);
+            read_stream = Box::new(app.reader);
+            write_stream = Box::new(app.writer);
+        }
+
+        if !shared.handler.handle_connection(&connection_context).await {
+            return Ok(());
+        }
+
+        if shared.options.force_http2 || negotiated_http2 {
             return Self::handle_stream_v2(
                 shared,
-                connection_id,
-                reader,
-                writer,
+                connection_context,
+                read_stream,
+                write_stream,
                 ServerConnectionV2Input::Raw,
             )
             .await;
         }
 
-        let mut write_stream = stream.clone();
-        let mut read_stream = PatternReader::new(Box::new(stream), MESSAGE_HEAD_BUFFER_OPTIONS);
+        let mut read_stream = PatternReader::new(read_stream, MESSAGE_HEAD_BUFFER_OPTIONS);
 
         loop {
             let head = match read_http_message(&mut read_stream).await? {
@@ -478,6 +476,14 @@ impl Server {
                 HTTP_V1_0 => {}
                 HTTP_V1_1 => {}
                 HTTP_V2_0 => {
+                    if negotatied_http11 {
+                        return Err(ProtocolErrorV1 {
+                            code: BAD_REQUEST,
+                            message: "Negotiated HTTP 1.1, but using 2.0",
+                        }
+                        .into());
+                    }
+
                     // In this case, we received the first two lines of the HTTP 2 connection
                     // preface which should always be "PRI * HTTP/2.0\r\n\r\n"
                     if request_line.method.as_ref() != "PRI"
@@ -493,9 +499,9 @@ impl Server {
 
                     return Self::handle_stream_v2(
                         shared,
-                        connection_id,
+                        connection_context,
                         Box::new(read_stream),
-                        Box::new(write_stream),
+                        write_stream,
                         ServerConnectionV2Input::SkipPrefaceHead,
                     )
                     .await;
@@ -615,9 +621,9 @@ impl Server {
 
                 return Self::handle_stream_v2(
                     shared,
-                    connection_id,
+                    connection_context,
                     Box::new(reader),
-                    Box::new(write_stream),
+                    write_stream,
                     ServerConnectionV2Input::Upgrade(req),
                 )
                 .await;
@@ -636,12 +642,16 @@ impl Server {
 
             let req_method = req.head.method.clone();
 
-            let mut res = shared.handler.handle_request(req).await;
+            let req_context = ServerRequestContext {
+                connection_context: &connection_context,
+            };
+
+            let mut res = shared.handler.handle_request(req, req_context).await;
 
             // TODO: Validate that no denylisted headers are given in the response
             // (especially Content-Length)
 
-            res = Self::transform_response(res)?;
+            res = Self::transform_response(res);
 
             let res_body = encode_response_body_v1(req_method, &mut res.head, res.body);
 
@@ -663,7 +673,7 @@ impl Server {
             write_stream.write_all(&buf).await?;
 
             if let Some(mut body) = res_body {
-                write_body(body.as_mut(), &mut write_stream).await?;
+                write_body(body.as_mut(), write_stream.as_mut()).await?;
             }
 
             if persist_connection {
@@ -681,16 +691,22 @@ impl Server {
 
     async fn handle_stream_v2(
         shared: &Arc<ServerShared>,
-        connection_id: usize,
+        connection_context: ServerConnectionContext,
         reader: Box<dyn Readable>,
         writer: Box<dyn Writeable>,
         input: ServerConnectionV2Input,
     ) -> Result<()> {
+        let connection_id = connection_context.id;
+
         let options = shared.options.connection_options_v2.clone();
-        let server_handler = ServerRequestHandlerV2 {
-            shared: shared.clone(),
+        let server_options = v2::ServerConnectionOptions {
+            connection_context,
+            request_handler: Box::new(ServerHandlerWrap {
+                shared: shared.clone(),
+            }),
         };
-        let conn = v2::Connection::new(options, Some(Box::new(server_handler)));
+
+        let conn = v2::Connection::new(options, Some(server_options));
 
         let mut initial_state = v2::ConnectionInitialState::raw();
 
@@ -729,7 +745,7 @@ impl Server {
         Ok(req)
     }
 
-    fn transform_response(mut res: Response) -> Result<Response> {
+    fn transform_response(mut res: Response) -> Response {
         crate::headers::date::append_current_date(&mut res.head.headers);
 
         // if if let Some(res.body)
@@ -741,20 +757,28 @@ impl Server {
         // TODO: Must always send 'Date' header.
         // TODO: Add 'Server' header
 
-        Ok(res)
+        res
     }
 }
 
 /// Request handler used by the 'Server' for HTTP 2 connections.
 /// It wraps the regular request handler given to the 'Server'
-struct ServerRequestHandlerV2 {
+struct ServerHandlerWrap {
     shared: Arc<ServerShared>,
 }
 
 #[async_trait]
-impl RequestHandler for ServerRequestHandlerV2 {
-    async fn handle_request(&self, request: Request) -> Response {
+impl ServerHandler for ServerHandlerWrap {
+    // NOTE: We do not pass through handle_connection as that should have already
+    // been called by the Server struct.
+
+    async fn handle_request<'a>(
+        &self,
+        request: Request,
+        context: ServerRequestContext<'a>,
+    ) -> Response {
         // TODO: transform request/response
-        self.shared.handler.handle_request(request).await
+        let res = self.shared.handler.handle_request(request, context).await;
+        Server::transform_response(res)
     }
 }

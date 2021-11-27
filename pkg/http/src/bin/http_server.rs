@@ -5,6 +5,7 @@ extern crate common;
 extern crate http;
 extern crate parsing;
 
+use common::async_std::fs;
 use common::async_std::task;
 use common::errors::*;
 use http::header::*;
@@ -32,8 +33,22 @@ async fn handle_request(req: http::Request) -> http::Response {
 
 async fn run_server() -> Result<()> {
     let handler = http::static_file_handler::StaticFileHandler::new(common::project_dir());
-    // let handler = http::server::HttpFn(handle_request);
-    let server = http::Server::new(handler, http::ServerOptions::default());
+    // let handler = http::HttpFn(handle_request);
+
+    let certificate_file = fs::read(project_path!("testdata/certificates/server-ec.crt"))
+        .await?
+        .into();
+    let private_key_file = fs::read(project_path!("testdata/certificates/server-ec.key"))
+        .await?
+        .into();
+
+    let mut options = http::ServerOptions::default();
+    options.tls = Some(crypto::tls::ServerOptions::recommended(
+        certificate_file,
+        private_key_file,
+    )?);
+
+    let server = http::Server::new(handler, options);
     server.run(8000).await
 }
 

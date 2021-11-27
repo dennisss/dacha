@@ -12,9 +12,14 @@ impl AddHealthEndpoints for rpc::Http2Server {
 
 struct HealthzRequestHandler {}
 
+// TODO: Just make this an http::RequestHandler
 #[async_trait]
-impl http::RequestHandler for HealthzRequestHandler {
-    async fn handle_request(&self, request: http::Request) -> http::Response {
+impl http::ServerHandler for HealthzRequestHandler {
+    async fn handle_request<'a>(
+        &self,
+        request: http::Request,
+        _context: http::ServerRequestContext<'a>,
+    ) -> http::Response {
         http::ResponseBuilder::new()
             .status(http::status_code::OK)
             .body(http::BodyFromData("OK"))

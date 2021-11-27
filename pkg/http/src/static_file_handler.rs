@@ -6,7 +6,7 @@ use common::io::Readable;
 use crate::body::*;
 use crate::request::Request;
 use crate::response::{Response, ResponseBuilder};
-use crate::server::RequestHandler;
+use crate::server_handler::{ServerHandler, ServerRequestContext};
 use crate::status_code;
 
 /// HTTP request handler which serves static files from the local file system.
@@ -29,8 +29,8 @@ impl StaticFileHandler {
 }
 
 #[async_trait]
-impl RequestHandler for StaticFileHandler {
-    async fn handle_request(&self, request: Request) -> Response {
+impl ServerHandler for StaticFileHandler {
+    async fn handle_request<'a>(&self, request: Request, _: ServerRequestContext<'a>) -> Response {
         let mut file_path = self.base_path.clone();
 
         let mut segments = request.head.uri.path.as_ref().split('/');

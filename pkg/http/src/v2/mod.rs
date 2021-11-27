@@ -17,6 +17,6 @@ mod settings;
 
 pub use connection::Connection;
 pub use connection::ConnectionInitialState;
-pub use options::ConnectionOptions;
+pub use options::{ConnectionOptions, ServerConnectionOptions};
 pub use settings::SettingsContainer;
 pub use types::ProtocolErrorV2;

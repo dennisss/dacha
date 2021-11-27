@@ -4,6 +4,8 @@ extern crate common;
 extern crate http;
 extern crate parsing;
 
+use std::convert::TryFrom;
+
 use common::async_std::task;
 use common::errors::*;
 use http::ClientInterface;
@@ -15,7 +17,16 @@ use parsing::iso::*;
 async fn run_client() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set
 
-    let client = http::Client::create("https://google.com")?;
+    let mut options = http::ClientOptions::try_from("https://localhost:8000")?;
+    options
+        .backend_balancer
+        .backend
+        .tls
+        .as_mut()
+        .unwrap()
+        .trust_server_certificate = true;
+
+    let client = http::Client::create(options)?;
 
     let req = http::RequestBuilder::new()
         .method(http::Method::GET)

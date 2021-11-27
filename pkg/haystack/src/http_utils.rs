@@ -75,9 +75,13 @@ impl<
             + Send
             + Sync
             + for<'a> AsyncFn2<http::Request, &'a Arg, Output = Result<http::Response>>,
-    > http::RequestHandler for RequestHandlerWrap<Func, Arg>
+    > http::ServerHandler for RequestHandlerWrap<Func, Arg>
 {
-    async fn handle_request(&self, request: http::Request) -> http::Response {
+    async fn handle_request<'a>(
+        &self,
+        request: http::Request,
+        _: http::ServerRequestContext<'a>,
+    ) -> http::Response {
         let method = request.head.method.clone();
         let uri = request.head.uri.clone();
 
