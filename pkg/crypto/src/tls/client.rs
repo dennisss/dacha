@@ -22,6 +22,7 @@ use crate::tls::constants::*;
 use crate::tls::extensions::*;
 use crate::tls::extensions_util::*;
 use crate::tls::handshake::*;
+use crate::tls::handshake_executor::HandshakeExecutor;
 use crate::tls::handshake_summary::*;
 use crate::tls::key_schedule::*;
 use crate::tls::key_schedule_helper::*;
@@ -101,8 +102,7 @@ enum ServerHelloResult {
 /// Performs a handshake with a server for a single TLS connection.
 /// Implemented from the client point of view.
 struct ClientHandshakeExecutor<'a> {
-    reader: RecordReader,
-    writer: RecordWriter,
+    executor: HandshakeExecutor,
 
     options: &'a ClientOptions,
 
@@ -123,8 +123,10 @@ impl<'a> ClientHandshakeExecutor<'a> {
         options: &'a ClientOptions,
     ) -> Result<ClientHandshakeExecutor<'a>> {
         Ok(ClientHandshakeExecutor {
-            reader: RecordReader::new(reader, false),
-            writer: RecordWriter::new(writer, false),
+            executor: HandshakeExecutor::new(
+                RecordReader::new(reader, false),
+                RecordWriter::new(writer, false),
+            ),
             options,
             handshake_transcript: Transcript::new(),
             secrets: HashMap::new(),
@@ -158,11 +160,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
         // TODO: Sometimes we should support sending multiple handshake messags in one
         // frame (e.g. for certificate use-cases).
 
-        self.writer
-            .send_handshake(
-                Handshake::ClientHello(client_hello.clone()),
-                Some(&mut self.handshake_transcript),
-            )
+        self.executor
+            .send_handshake_message(Handshake::ClientHello(client_hello.clone()))
             .await?;
 
         println!("WAIT_SH");
@@ -170,11 +169,11 @@ impl<'a> ClientHandshakeExecutor<'a> {
         let (server_hello, key_schedule) =
             match self.wait_server_hello(client_hello.clone()).await? {
                 ServerHelloResult::TLS12(sh) => {
-                    self.reader.protocol_version = TLS_1_2_VERSION;
+                    self.executor.reader.protocol_version = TLS_1_2_VERSION;
                     return self.run_tls12(client_hello, sh).await;
                 }
                 ServerHelloResult::TLS13(sh, ks) => {
-                    self.reader.protocol_version = TLS_1_3_VERSION;
+                    self.executor.reader.protocol_version = TLS_1_3_VERSION;
                     (sh, ks)
                 }
             };
@@ -187,9 +186,16 @@ impl<'a> ClientHandshakeExecutor<'a> {
         // TODO: Could receive either CertificateRequest or Certificate
 
         println!("WAIT_CERT");
-        let cert = self.wait_certificate().await?;
+        let cert = self.receive_certificate().await?;
 
-        self.wait_certificate_verify(&cert, key_schedule.hasher_factory())
+        self.executor
+            .receive_certificate_verify_v13(
+                false,
+                &cert,
+                key_schedule.hasher_factory(),
+                &self.options.supported_signature_algorithms,
+                &self.certificate_registry,
+            )
             .await?;
 
         println!("WAIT_FINISHED");
@@ -199,8 +205,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
         println!("DONE");
 
         Ok(ApplicationStream::new(
-            self.reader,
-            self.writer,
+            self.executor.reader,
+            self.executor.writer,
             self.summary,
         ))
     }
@@ -224,37 +230,6 @@ impl<'a> ClientHandshakeExecutor<'a> {
         Ok(entry)
     }
 
-    async fn receive_handshake_message(&mut self) -> Result<Handshake> {
-        loop {
-            let msg = self
-                .reader
-                .recv(Some(&mut self.handshake_transcript))
-                .await?;
-
-            match msg {
-                Message::Handshake(m) => {
-                    return Ok(m);
-                }
-                Message::ApplicationData(_) => {
-                    return Err(err_msg("Unexpected application data during handshake"));
-                }
-                Message::ChangeCipherSpec(_) => {
-                    // TODO: Improve this.
-                    continue;
-                }
-                Message::Alert(alert) => {
-                    if alert.level == AlertLevel::fatal {
-                        println!("{:?}", alert);
-                        return Err(err_msg("Received fatal alert"));
-                    }
-
-                    println!("Received Alert!");
-                    continue;
-                }
-            };
-        }
-    }
-
     async fn wait_server_hello(
         &mut self,
         mut client_hello: ClientHello,
@@ -263,7 +238,9 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
         loop {
             let server_hello = {
-                if let Handshake::ServerHello(sh) = self.receive_handshake_message().await? {
+                if let Handshake::ServerHello(sh) =
+                    self.executor.receive_handshake_message().await?
+                {
                     sh
                 } else {
                     return Err(err_msg("Unexpected message"));
@@ -372,11 +349,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
                 // TODO: Update PSK?
 
-                self.writer
-                    .send_handshake(
-                        Handshake::ClientHello(client_hello.clone()),
-                        Some(&mut self.handshake_transcript),
-                    )
+                self.executor
+                    .send_handshake_message(Handshake::ClientHello(client_hello.clone()))
                     .await?;
 
                 // Wait for the ServerHello again.
@@ -411,8 +385,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
                 &server_public.server_share.key_exchange,
                 client_secret,
                 &self.handshake_transcript,
-                &mut self.reader,
-                &mut self.writer,
+                &mut self.executor.reader,
+                &mut self.executor.writer,
             )?;
 
             return Ok(ServerHelloResult::TLS13(server_hello, key_schedule));
@@ -420,7 +394,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
     }
 
     async fn wait_encrypted_extensions(&mut self) -> Result<()> {
-        let ee = match self.receive_handshake_message().await? {
+        let ee = match self.executor.receive_handshake_message().await? {
             Handshake::EncryptedExtensions(e) => e,
             _ => {
                 return Err(err_msg("Expected encrypted extensions"));
@@ -453,12 +427,17 @@ impl<'a> ClientHandshakeExecutor<'a> {
         Ok(())
     }
 
-    /// Receives the server's certificate. Responsible for verifying that:
+    /// Receives the client/server's Certificate and verifies that:
     /// 1. The certificate is valid now
     /// 2. The certificate is valid for the remote host name.
     /// 3. The certificate forms a valid chain to a trusted root certificate.
-    async fn wait_certificate(&mut self) -> Result<Arc<x509::Certificate>> {
-        let cert = match self.receive_handshake_message().await? {
+    ///
+    /// This is both TLS 1.2 and 1.3.
+    async fn receive_certificate(
+        &mut self,
+        // certificate_registry: &mut x509::CertificateRegistry,
+    ) -> Result<Arc<x509::Certificate>> {
+        let cert = match self.executor.receive_handshake_message().await? {
             Handshake::Certificate(c) => c,
             _ => {
                 return Err(err_msg("Expected certificate message"));
@@ -513,142 +492,13 @@ impl<'a> ClientHandshakeExecutor<'a> {
         Ok(cert_list.remove(0))
     }
 
-    async fn wait_certificate_verify(
-        &mut self,
-        cert: &x509::Certificate,
-        hasher_factory: &HasherFactory,
-    ) -> Result<()> {
-        // Transcript hash for ClientHello through to the Certificate.
-        let ch_ct_transcript_hash = self.handshake_transcript.hash(&hasher_factory);
-
-        let cert_verify = match self.receive_handshake_message().await? {
-            Handshake::CertificateVerify(c) => c,
-            _ => {
-                return Err(err_msg("Expected certificate verify"));
-            }
-        };
-
-        let mut plaintext = vec![];
-        for _ in 0..64 {
-            plaintext.push(0x20);
-        }
-        plaintext.extend_from_slice(&TLS13_CERTIFICATEVERIFY_SERVER_CTX);
-        plaintext.push(0);
-        plaintext.extend_from_slice(&ch_ct_transcript_hash);
-
-        if self
-            .options
-            .supported_signature_algorithms
-            .iter()
-            .find(|a| **a == cert_verify.algorithm)
-            .is_none()
-        {
-            // TODO: This may happen if no certificate exists that can be used with any of
-            // the requested algorithms.
-            return Err(err_msg(
-                "Received certificate verification with non-advertised algorithm.",
-            ));
-        }
-
-        /*
-        TODO:
-        For TLS 1.3:
-        RSA signatures MUST use an RSASSA-PSS algorithm, regardless of whether RSASSA-PKCS1-v1_5
-        algorithms appear in "signature_algorithms".
-
-        ^ Probably the simplest way to verify this is to
-        */
-
-        // Given a
-
-        self.verify_certificate(&plaintext, cert, &cert_verify)?;
-
-        Ok(())
-    }
-
-    fn verify_certificate(
-        &self,
-        plaintext: &[u8],
-        cert: &x509::Certificate,
-        cert_verify: &CertificateVerify,
-    ) -> Result<()> {
-        // TODO: Move more of this code into the certificate class.
-
-        // TODO: Verify this is an algorithm that we requested (and that it
-        // matches all relevant params in the certificate.
-        // TOOD: Most of this code should be easy to modularize.
-        match cert_verify.algorithm {
-            SignatureScheme::ecdsa_secp256r1_sha256 => {
-                let (params, point) = cert.ec_public_key(&self.certificate_registry)?;
-                let group = EllipticCurveGroup::secp256r1();
-
-                if params != group {
-                    return Err(err_msg(
-                        "Mismatch between signature and public key algorithm!!",
-                    ));
-                }
-
-                let mut hasher = crate::sha256::SHA256Hasher::default();
-                let good = group.verify_signature(
-                    point.as_ref(),
-                    &cert_verify.signature,
-                    &plaintext,
-                    &mut hasher,
-                )?;
-                if !good {
-                    return Err(err_msg("Invalid ECSDA certificate verify signature"));
-                }
-            }
-            SignatureScheme::rsa_pss_rsae_sha256 => {
-                // NOTE: Salt length should be the same as the digest/hash length.
-                let public_key = cert.rsa_public_key()?;
-                let rsa =
-                    crate::rsa::RSASSA_PSS::new(crate::sha256::SHA256Hasher::factory(), 256 / 8);
-
-                let good = rsa.verify_signature(
-                    &public_key.try_into()?,
-                    &cert_verify.signature,
-                    &plaintext,
-                )?;
-                if !good {
-                    return Err(err_msg("Invalid RSA certificate verify signature"));
-                }
-            }
-            SignatureScheme::rsa_pkcs1_sha512 => {
-                let public_key = cert.rsa_public_key()?;
-                let rsa = crate::rsa::RSASSA_PKCS_v1_5::sha512();
-
-                let good = rsa.verify_signature(
-                    &public_key.try_into()?,
-                    &cert_verify.signature,
-                    &plaintext,
-                )?;
-
-                if !good {
-                    return Err(err_msg("Invalid RSA PKCS certificate verify signature"));
-                }
-            }
-
-            // TODO:
-            // SignatureScheme::rsa_pkcs1_sha256,
-            _ => {
-                return Err(err_msg("Unsupported cert verify algorithm"));
-            }
-        };
-
-        Ok(())
-    }
-
     async fn wait_finished(&mut self, key_schedule: KeySchedule) -> Result<()> {
-        let verify_data_server = key_schedule.verify_data_server(&self.handshake_transcript);
+        let verify_data_server =
+            key_schedule.verify_data_server(&self.executor.handshake_transcript);
 
         // TODO: Split to using recv_handshake_message
-        let finished = match self
-            .reader
-            .recv(Some(&mut self.handshake_transcript))
-            .await?
-        {
-            Message::Handshake(Handshake::Finished(v)) => v,
+        let finished = match self.executor.receive_handshake_message().await? {
+            Handshake::Finished(v) => v,
             _ => {
                 return Err(err_msg("Expected Finished messages"));
             }
@@ -658,23 +508,26 @@ impl<'a> ClientHandshakeExecutor<'a> {
             return Err(err_msg("Incorrect server verify_data"));
         }
 
-        let verify_data_client = key_schedule.verify_data_client(&self.handshake_transcript);
+        let verify_data_client =
+            key_schedule.verify_data_client(&self.executor.handshake_transcript);
 
         let finished_client = Handshake::Finished(Finished {
             verify_data: verify_data_client,
         });
 
         // Should be everything up to server finished.
-        let final_secrets = key_schedule.finished(&self.handshake_transcript);
+        let final_secrets = key_schedule.finished(&self.executor.handshake_transcript);
 
-        self.writer
-            .send_handshake(finished_client, Some(&mut self.handshake_transcript))
+        self.executor
+            .send_handshake_message(finished_client)
             .await?;
 
-        self.reader
+        self.executor
+            .reader
             .replace_remote_key(final_secrets.server_application_traffic_secret_0)?;
 
-        self.writer
+        self.executor
+            .writer
             .replace_local_key(final_secrets.client_application_traffic_secret_0)?;
 
         Ok(())
@@ -694,16 +547,16 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
         println!("WAIT 1.2 CERT");
 
-        let certificate = self.wait_certificate().await?;
+        let certificate = self.receive_certificate().await?;
 
-        let server_key_exchange = match self.receive_handshake_message().await? {
+        let server_key_exchange = match self.executor.receive_handshake_message().await? {
             Handshake::ServerKeyExchange(c) => c,
             _ => {
                 return Err(err_msg("Expected ServerKeyExchange"));
             }
         };
 
-        let server_hello_done = match self.receive_handshake_message().await? {
+        let server_hello_done = match self.executor.receive_handshake_message().await? {
             Handshake::ServerHelloDone => (),
             _ => {
                 return Err(err_msg("Expected ServerKeyExchange"));
@@ -726,7 +579,12 @@ impl<'a> ClientHandshakeExecutor<'a> {
             // TODO: Copy this directly out of the original buffer.
             server_ecdhe_key.params.serialize(&mut plaintext);
 
-            self.verify_certificate(&plaintext, &certificate, &server_ecdhe_key.signed_params)?;
+            self.executor.check_certificate_verify(
+                &plaintext,
+                &certificate,
+                &server_ecdhe_key.signed_params,
+                &self.certificate_registry,
+            )?;
         }
 
         let client_pub_key = self
@@ -739,16 +597,13 @@ impl<'a> ClientHandshakeExecutor<'a> {
         }
         .serialize(&mut client_point);
 
-        self.writer
-            .send_handshake(
-                Handshake::ClientKeyExchange(ClientKeyExchange {
-                    data: client_point.into(),
-                }),
-                Some(&mut self.handshake_transcript),
-            )
+        self.executor
+            .send_handshake_message(Handshake::ClientKeyExchange(ClientKeyExchange {
+                data: client_point.into(),
+            }))
             .await?;
 
-        self.writer.send_change_cipher_spec().await?;
+        self.executor.writer.send_change_cipher_spec().await?;
 
         let group = client_pub_key.group.create().unwrap();
         let pre_master_secret = group.shared_secret(
@@ -773,26 +628,26 @@ impl<'a> ClientHandshakeExecutor<'a> {
             &server_hello,
         );
 
-        self.writer.local_cipher_spec = Some(key_schedule.client_cipher_spec());
-        self.reader
+        self.executor.writer.local_cipher_spec = Some(key_schedule.client_cipher_spec());
+        self.executor
+            .reader
             .set_remote_cipher_spec(key_schedule.server_cipher_spec())?;
 
-        let verify_data_client = key_schedule.verify_data_client(&self.handshake_transcript);
+        let verify_data_client =
+            key_schedule.verify_data_client(&self.executor.handshake_transcript);
 
-        self.writer
-            .send_handshake(
-                Handshake::Finished(Finished {
-                    verify_data: verify_data_client.into(),
-                }),
-                Some(&mut self.handshake_transcript),
-            )
+        self.executor
+            .send_handshake_message(Handshake::Finished(Finished {
+                verify_data: verify_data_client.into(),
+            }))
             .await?;
 
         // TODO: Verify we get a cipher spec message.
 
-        let verify_data_server = key_schedule.verify_data_server(&self.handshake_transcript);
+        let verify_data_server =
+            key_schedule.verify_data_server(&self.executor.handshake_transcript);
 
-        let server_finished = match self.receive_handshake_message().await? {
+        let server_finished = match self.executor.receive_handshake_message().await? {
             Handshake::Finished(v) => v,
             _ => {
                 return Err(err_msg("Expected Finished"));
@@ -837,8 +692,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
              */
 
         Ok(ApplicationStream::new(
-            self.reader,
-            self.writer,
+            self.executor.reader,
+            self.executor.writer,
             self.summary,
         ))
     }

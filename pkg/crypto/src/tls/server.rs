@@ -26,6 +26,8 @@ use crate::tls::record_stream::{RecordReader, RecordWriter};
 use crate::tls::transcript::Transcript;
 use crate::x509;
 
+use super::handshake_executor::HandshakeExecutor;
+
 /*
 - Load the Certificate and private key files into memory.
 
@@ -78,12 +80,8 @@ impl Server {
 }
 
 struct ServerHandshakeExecutor<'a> {
-    reader: RecordReader,
-    writer: RecordWriter,
+    executor: HandshakeExecutor,
     options: &'a ServerOptions,
-
-    handshake_transcript: Transcript,
-
     summary: HandshakeSummary,
 }
 
@@ -94,10 +92,11 @@ impl<'a> ServerHandshakeExecutor<'a> {
         options: &'a ServerOptions,
     ) -> Self {
         Self {
-            reader: RecordReader::new(reader, true),
-            writer: RecordWriter::new(writer, true),
+            executor: HandshakeExecutor::new(
+                RecordReader::new(reader, true),
+                RecordWriter::new(writer, true),
+            ),
             options,
-            handshake_transcript: Transcript::new(),
             summary: HandshakeSummary::default(),
         }
     }
@@ -105,19 +104,7 @@ impl<'a> ServerHandshakeExecutor<'a> {
     /// TODO: Pick a better name for this?
     /// TODO: Filter out io errors.
     pub async fn run(mut self) -> Result<ApplicationStream> {
-        let message = self
-            .reader
-            .recv(Some(&mut self.handshake_transcript))
-            .await?;
-
-        let handshake = match message {
-            Message::ChangeCipherSpec(_) => todo!(),
-            Message::Alert(_) => todo!(),
-            Message::Handshake(v) => v,
-            Message::ApplicationData(_) => todo!(),
-        };
-
-        let client_hello = match handshake {
+        let client_hello = match self.executor.receive_handshake_message().await? {
             Handshake::ClientHello(v) => v,
             // TODO: Send an alert?
             _ => return Err(err_msg("Expected ClientHello")),
@@ -218,11 +205,8 @@ impl<'a> ServerHandshakeExecutor<'a> {
             extensions,
         };
 
-        self.writer
-            .send_handshake(
-                Handshake::ServerHello(server_hello),
-                Some(&mut self.handshake_transcript),
-            )
+        self.executor
+            .send_handshake_message(Handshake::ServerHello(server_hello))
             .await?;
 
         // Create key schedule
@@ -233,17 +217,24 @@ impl<'a> ServerHandshakeExecutor<'a> {
             client_key_share.group,
             &client_key_share.key_exchange,
             &server_secret,
-            &self.handshake_transcript,
-            &mut self.reader,
-            &mut self.writer,
+            &self.executor.handshake_transcript,
+            &mut self.executor.reader,
+            &mut self.executor.writer,
         )?;
 
-        self.writer
-            .send_handshake(
-                Handshake::EncryptedExtensions(EncryptedExtensions { extensions: vec![] }),
-                Some(&mut self.handshake_transcript),
-            )
+        self.executor
+            .send_handshake_message(Handshake::EncryptedExtensions(EncryptedExtensions {
+                extensions: vec![],
+            }))
             .await?;
+
+        // CertificateRequest
+        // - Can only send if client has used PostHandshakeAuth
+        // - with certificate_authorities
+        // - oid_filters
+        // - MUST have signature_algorithms
+        // - If a client declines, it will send a Certificate that has an empty list and
+        //   not CertificateVerify
 
         let mut certificate_list = vec![];
         for cert in &self.options.certificates {
@@ -259,187 +250,51 @@ impl<'a> ServerHandshakeExecutor<'a> {
             certificate_list,
         });
 
-        self.writer
-            .send_handshake(certs, Some(&mut self.handshake_transcript))
-            .await?;
+        self.executor.send_handshake_message(certs).await?;
 
         let cert_ver = self
-            .create_certificate_verify(&key_schedule, &client_signature_algorithms_ext.algorithms)
-            .await?;
-        self.writer
-            .send_handshake(
-                Handshake::CertificateVerify(cert_ver),
-                Some(&mut self.handshake_transcript),
+            .executor
+            .create_certificate_verify(
+                true,
+                &key_schedule,
+                &self.options.supported_signature_algorithms,
+                &client_signature_algorithms_ext.algorithms,
+                &self.options.private_key,
             )
+            .await?;
+
+        self.executor
+            .send_handshake_message(Handshake::CertificateVerify(cert_ver))
             .await?;
 
         self.wait_finished(key_schedule).await?;
 
         Ok(ApplicationStream::new(
-            self.reader,
-            self.writer,
+            self.executor.reader,
+            self.executor.writer,
             self.summary,
         ))
     }
 
-    // TODO: Deduplicate much of this logic with the client.
-    async fn create_certificate_verify(
-        &self,
-        key_schedule: &KeySchedule,
-        client_supported_algorithms: &[SignatureScheme],
-    ) -> Result<CertificateVerify> {
-        // Transcript hash for ClientHello through to the Certificate.
-        let ch_ct_transcript_hash = self
-            .handshake_transcript
-            .hash(key_schedule.hasher_factory());
-
-        let mut plaintext = vec![];
-        for _ in 0..64 {
-            plaintext.push(0x20);
-        }
-        plaintext.extend_from_slice(&TLS13_CERTIFICATEVERIFY_SERVER_CTX);
-        plaintext.push(0);
-        plaintext.extend_from_slice(&ch_ct_transcript_hash);
-
-        // Select the best signature scheme.
-        // - Must be supported by the client.
-        // - Must be supported by our certificate/private key.
-        let mut selected_signature_algorithm = None;
-        for algorithm in &self.options.supported_signature_algorithms {
-            if !client_supported_algorithms.contains(algorithm) {
-                continue;
-            }
-
-            let compatible = match &self.options.private_key {
-                x509::PrivateKey::RSA(_) => {
-                    // TODO: Better distinguish between the two types of RSA.
-                    match algorithm {
-                        SignatureScheme::rsa_pkcs1_sha256
-                        | SignatureScheme::rsa_pkcs1_sha384
-                        | SignatureScheme::rsa_pss_rsae_sha256
-                        | SignatureScheme::rsa_pss_rsae_sha384
-                        | SignatureScheme::rsa_pss_rsae_sha512
-                        | SignatureScheme::rsa_pss_pss_sha256
-                        | SignatureScheme::rsa_pss_pss_sha384
-                        | SignatureScheme::rsa_pss_pss_sha512
-                        | SignatureScheme::rsa_pkcs1_sha1 => true,
-                        _ => false,
-                    }
-                }
-                x509::PrivateKey::ECDSA(group, _, _) => match algorithm {
-                    SignatureScheme::ecdsa_secp256r1_sha256 => {
-                        *group == PKIX1Algorithms2008::SECP256R1
-                    }
-                    SignatureScheme::ecdsa_secp384r1_sha384 => {
-                        *group == PKIX1Algorithms2008::SECP384R1
-                    }
-                    SignatureScheme::ecdsa_secp521r1_sha512 => {
-                        *group == PKIX1Algorithms2008::SECP521R1
-                    }
-                    _ => false,
-                },
-            };
-
-            if !compatible {
-                continue;
-            }
-
-            selected_signature_algorithm = Some(algorithm.clone());
-            break;
-        }
-
-        let selected_signature_algorithm = selected_signature_algorithm
-            .ok_or_else(|| err_msg("Failed to get a good algorithm"))?;
-
-        match selected_signature_algorithm {
-            SignatureScheme::ecdsa_secp256r1_sha256 => {
-                // TODO: Check that the group is SECP256R1
-                let (_, group, private_key) = match &self.options.private_key {
-                    x509::PrivateKey::ECDSA(a, b, c) => (a, b, c),
-                    _ => {
-                        return Err(err_msg("Wrong private key format"));
-                    }
-                };
-
-                let mut hasher = crate::sha256::SHA256Hasher::default();
-
-                let signature = group
-                    .create_signature(&private_key, &plaintext, &mut hasher)
-                    .await?;
-
-                return Ok(CertificateVerify {
-                    algorithm: selected_signature_algorithm,
-                    signature: signature.into(),
-                });
-            }
-            SignatureScheme::rsa_pss_rsae_sha256 => {
-                let private_key = match &self.options.private_key {
-                    x509::PrivateKey::RSA(key) => key,
-                    _ => {
-                        return Err(err_msg("Wrong private key format"));
-                    }
-                };
-
-                // NOTE: Salt length should be the same as the digest/hash length.
-                let rsa =
-                    crate::rsa::RSASSA_PSS::new(crate::sha256::SHA256Hasher::factory(), 256 / 8);
-
-                let signature = rsa.create_signature(private_key, &plaintext).await?;
-
-                return Ok(CertificateVerify {
-                    algorithm: selected_signature_algorithm,
-                    signature: signature.into(),
-                });
-            }
-            SignatureScheme::rsa_pkcs1_sha256 => {
-                // TODO: This shouldn't be used in TLS 1.3
-
-                let private_key = match &self.options.private_key {
-                    x509::PrivateKey::RSA(key) => key,
-                    _ => {
-                        return Err(err_msg("Wrong private key format"));
-                    }
-                };
-
-                let rsa = crate::rsa::RSASSA_PKCS_v1_5::sha256();
-
-                let signature = rsa.create_signature(private_key, &plaintext)?;
-
-                return Ok(CertificateVerify {
-                    algorithm: selected_signature_algorithm,
-                    signature: signature.into(),
-                });
-            }
-            _ => {
-                return Err(err_msg("Unsupported cert verify algorithm"));
-            }
-        };
-    }
-
     async fn wait_finished(&mut self, key_schedule: KeySchedule) -> Result<()> {
-        let verify_data_server = key_schedule.verify_data_server(&self.handshake_transcript);
+        let verify_data_server =
+            key_schedule.verify_data_server(&self.executor.handshake_transcript);
 
-        self.writer
-            .send_handshake(
-                Handshake::Finished(Finished {
-                    verify_data: verify_data_server,
-                }),
-                Some(&mut self.handshake_transcript),
-            )
+        self.executor
+            .send_handshake_message(Handshake::Finished(Finished {
+                verify_data: verify_data_server,
+            }))
             .await?;
 
-        let verify_data_client = key_schedule.verify_data_client(&self.handshake_transcript);
+        let verify_data_client =
+            key_schedule.verify_data_client(&self.executor.handshake_transcript);
 
         // TODO: Can also obtain the "resumption_master_secret" after we incorporate the
         // 'client Finished' message into the transcript.
-        let final_secrets = key_schedule.finished(&self.handshake_transcript);
+        let final_secrets = key_schedule.finished(&self.executor.handshake_transcript);
 
-        let finished_client = match self
-            .reader
-            .recv(Some(&mut self.handshake_transcript))
-            .await?
-        {
-            Message::Handshake(Handshake::Finished(v)) => v,
+        let finished_client = match self.executor.receive_handshake_message().await? {
+            Handshake::Finished(v) => v,
             _ => {
                 return Err(err_msg("Expected client finished"));
             }
@@ -449,10 +304,12 @@ impl<'a> ServerHandshakeExecutor<'a> {
             return Err(err_msg("Incorrect client verify_data"));
         }
 
-        self.reader
+        self.executor
+            .reader
             .replace_remote_key(final_secrets.client_application_traffic_secret_0)?;
 
-        self.writer
+        self.executor
+            .writer
             .replace_local_key(final_secrets.server_application_traffic_secret_0)?;
 
         Ok(())

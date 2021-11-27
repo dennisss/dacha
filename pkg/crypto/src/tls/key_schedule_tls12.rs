@@ -1,7 +1,6 @@
 // Helpers for deriving the traffic keys used in TLS 1.2.
 
 use common::bytes::Bytes;
-use common::errors::*;
 
 use crate::hasher::HasherFactory;
 use crate::hmac::HMAC;
@@ -9,8 +8,7 @@ use crate::tls::cipher::CipherEndpointSpec;
 use crate::tls::cipher_suite::CipherSuiteTLS12;
 use crate::tls::cipher_tls12::*;
 use crate::tls::handshake::{ClientHello, ServerHello};
-
-use super::transcript::Transcript;
+use crate::tls::transcript::Transcript;
 
 // TODO: Parameterize this based on the CipherSuite.
 const VERIFY_DATA_LENGTH: usize = 12;

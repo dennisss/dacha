@@ -10,6 +10,7 @@ mod constants;
 pub mod extensions;
 mod extensions_util;
 pub mod handshake;
+mod handshake_executor;
 pub mod handshake_summary;
 pub mod key_schedule;
 mod key_schedule_helper;
