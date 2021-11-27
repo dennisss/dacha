@@ -165,7 +165,7 @@ impl Client {
         mac: &models::StoreMachine,
         chunks: &[NeedleChunk],
     ) -> Result<usize> {
-        let client = http::Client::create(http::ClientOptions::from_uri(&mac.addr().parse()?)?)?;
+        let client = http::Client::create(mac.addr())?;
         let mac_id = mac.id as MachineId;
 
         for c in chunks {
@@ -213,7 +213,7 @@ impl Client {
             body_parts.push(c.data.clone());
         }
 
-        let client = http::Client::create(http::ClientOptions::from_uri(&mac.addr().parse()?)?)?;
+        let client = http::Client::create(mac.addr())?;
 
         let req = http::RequestBuilder::new()
             .method(http::Method::PATCH)

@@ -91,15 +91,26 @@ impl NameKey {
 /// have valid signatures and for each certificate in a registry all
 /// certificates in the chain up to a root certificate are also in the registry.
 /// (thus certificates can only be added if they are added with the full chain)
+///
+/// NOTE: This is intentionally not clonable as this will typically be very
+/// large.
 pub struct CertificateRegistry {
     /// Map of a certificate's subject name to a list of all certificates issued
     /// to that subject.
     /// TODO: Add the certificate's subjectUniqueID to the key and then use that
     /// for lookups as well
     certs: HashMap<NameKey, Vec<Arc<Certificate>>>,
+
+    parent: Option<Arc<CertificateRegistry>>,
 }
 
 impl CertificateRegistry {
+    /*
+    System wide certificates located at:
+    - /etc/ssl/certs/ca-certificates.crt
+    - https://serverfault.com/questions/62496/ssl-certificate-location-on-unix-linux
+    */
+
     /// Creates a registry filled with all publicly trusted root certificates.
     pub async fn public_roots() -> Result<Self> {
         // TODO: Make this async.
@@ -123,11 +134,25 @@ impl CertificateRegistry {
     pub fn new() -> Self {
         Self {
             certs: HashMap::new(),
+            parent: None,
+        }
+    }
+
+    pub fn child(self: &Arc<Self>) -> Self {
+        Self {
+            certs: HashMap::new(),
+            parent: Some(self.clone()),
         }
     }
 
     /// NOTE: This does not support looking up the parent of a self-signed cert.
     pub fn lookup_parent(&self, cert: &Certificate) -> Result<Option<Arc<Certificate>>> {
+        if let Some(parent) = &self.parent {
+            if let Some(v) = parent.lookup_parent(cert)? {
+                return Ok(Some(v));
+            }
+        }
+
         if cert.self_issued()? {
             return Err(err_msg(
                 "Trying to lookup parent of self-issued certificate",
@@ -177,8 +202,32 @@ impl CertificateRegistry {
         Ok(None)
     }
 
-    // TODO:
-    fn contains(cert: &Arc<Certificate>) {}
+    // TODO: Need to perform an exact comparison to be sure.
+    fn contains(&self, cert: &Certificate) -> bool {
+        let list = self
+            .certs
+            .get(&NameKey::from(&cert.raw.tbsCertificate.subject))
+            .map(|v| &v[..])
+            .unwrap_or(&[]);
+
+        for c2 in list.iter() {
+            if cert.serial_number() == c2.serial_number() {
+                // return Err(err_msg("Cert already exists with same serial number"));
+                return true;
+            }
+
+            if cert.subject_key_id() == c2.subject_key_id() {
+                // return Err(err_msg("Cert already exists with same subject key id"));
+                return true;
+            }
+        }
+
+        if let Some(parent) = &self.parent {
+            return parent.contains(cert);
+        }
+
+        false
+    }
 
     /// Performs insertion into the inner certificate map. This assumes that the
     /// certificate chain has already been verified.
@@ -192,20 +241,15 @@ impl CertificateRegistry {
     /// TODO: Implement allowing exact matches.
     fn insert(&mut self, cert: Arc<Certificate>) -> Result<bool> {
         let c = cert.as_ref();
+
+        if self.contains(c) {
+            return Err(err_msg("Registry may already contain the certificate"));
+        }
+
         let list = self
             .certs
             .entry(NameKey::from(&c.raw.tbsCertificate.subject))
             .or_insert(vec![]);
-
-        for c2 in list.iter() {
-            if c.serial_number() == c2.serial_number() {
-                return Err(err_msg("Cert already exists with same serial number"));
-            }
-
-            if c.subject_key_id() == c2.subject_key_id() {
-                return Err(err_msg("Cert already exists with same subject key id"));
-            }
-        }
 
         list.push(cert);
         Ok(true)

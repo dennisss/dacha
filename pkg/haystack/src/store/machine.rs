@@ -421,8 +421,7 @@ impl StoreMachine {
         let arr = macs[0..n_other]
             .iter()
             .map(|m| async move {
-                let client =
-                    http::Client::create(http::ClientOptions::from_uri(&m.addr().parse()?)?)?;
+                let client = http::Client::create(m.addr())?;
 
                 let req = http::RequestBuilder::new()
                     .method(http::Method::POST)

@@ -47,7 +47,7 @@ async fn run() -> Result<()> {
 
     url.query = Some(tracker_request.to_query_string());
 
-    let mut client = http::Client::create(http::ClientOptions::from_uri(&url)?)?;
+    let mut client = http::Client::create(url)?;
 
     let mut http_request = http::RequestBuilder::new()
         .method(http::Method::GET)

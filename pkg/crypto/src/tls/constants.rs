@@ -1,6 +1,3 @@
-pub const TLS13_CERTIFICATEVERIFY_CLIENT_CTX: &'static [u8] = b"TLS 1.3, client CertificateVerify";
-pub const TLS13_CERTIFICATEVERIFY_SERVER_CTX: &'static [u8] = b"TLS 1.3, server CertificateVerify";
-
 /// SHA-256 of the string "HelloRetryRequest" which indicates that a ServerHello
 /// is a HelloRetryRequest.
 pub const HELLO_RETRY_REQUEST_SHA256: &'static [u8] = &[

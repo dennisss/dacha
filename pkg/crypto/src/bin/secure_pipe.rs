@@ -38,12 +38,6 @@ struct ServerCommand {
     port: u16,
 }
 
-/*
-System wide certificates located at:
-- /etc/ssl/certs/ca-certificates.crt
-- https://serverfault.com/questions/62496/ssl-certificate-location-on-unix-linux
-*/
-
 async fn run() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
@@ -53,13 +47,13 @@ async fn run() -> Result<()> {
             let reader = Box::new(raw_stream.clone());
             let writer = Box::new(raw_stream);
 
-            let mut client_options = crypto::tls::options::ClientOptions::recommended();
+            let mut client_options = crypto::tls::ClientOptions::recommended();
             // client_options.hostname = "google.com".into();
             // client_options.alpn_ids.push("h2".into());
             // client_options.alpn_ids.push("http/1.1".into());
             client_options.trust_server_certificate = true;
 
-            let mut client = crypto::tls::client::Client::new();
+            let mut client = crypto::tls::Client::new();
             let mut stream = client.connect(reader, writer, &client_options).await?;
 
             // let mut buf = vec![0u8; 100];

@@ -17,10 +17,11 @@ pub struct ClientOptions {
     /// If not empty, then we will initially try to offer keys for these groups
     /// to the server to use for (EC)DHE key exchange.
     ///
+    /// This mainly effects TLS 1.3 connections.
+    ///
     /// NOTE: Must be a subset of 'supported_groups'
     pub initial_keys_shared: Vec<NamedGroup>,
 
-    // TODO: Alternatively
     /// DNS name of the remote server. e.g. "google.com"
     pub hostname: String,
 
@@ -38,6 +39,19 @@ pub struct ClientOptions {
     /// Supported algorithms to use when verifying certificates.
     pub supported_signature_algorithms: Vec<SignatureScheme>,
 
+    /// Registry to use for validating server certificates.
+    /// If using trust_server_certificate==true, this can be empty.
+    ///
+    /// This won't be used directly but rather the registry that results from
+    /// combining this with any additional certificates provided by the remote
+    /// endpoint will be used.
+    ///
+    /// Self::recommended() will default to using a set of public CA's for this.
+    ///
+    /// NOTE: Currently we assume that the CA certificates don't need to be
+    /// remoted/invokes while this client is in use.
+    pub root_certificate_registry: CertificateRegistrySource,
+
     /// If true, we will allow trust self-signed server certificates which
     /// aren't in our root of trust registry.
     ///
@@ -48,6 +62,7 @@ pub struct ClientOptions {
 }
 
 impl ClientOptions {
+    /// Also using this, you probably want to set the 'hostname' field.
     pub fn recommended() -> Self {
         Self {
             // TODO: Should almost always have a value.
@@ -57,7 +72,6 @@ impl ClientOptions {
 
             initial_keys_shared: vec![NamedGroup::x25519],
 
-            // TODO: Prefer Chacha on ARM platforms.
             supported_cipher_suites: vec![
                 // SHOULD implement
                 CipherSuite::TLS_CHACHA20_POLY1305_SHA256,
@@ -97,14 +111,12 @@ impl ClientOptions {
                 SignatureScheme::rsa_pkcs1_sha512,
             ],
 
+            root_certificate_registry: CertificateRegistrySource::PublicRoots,
+
             trust_server_certificate: false,
         }
     }
 }
-
-// openssl req -new -newkey ec:<(openssl ecparam -name prime256v1) -x509 -sha256
-// -days 1460 -nodes -out testdata/certificates/server-ec.crt -keyout
-// testdata/certificates/server-ec.key
 
 #[derive(Clone)]
 pub struct ServerOptions {
@@ -132,6 +144,8 @@ pub struct ServerOptions {
     /// TODO: Support rejecting requests that don't have a negotiated protocol?
     pub alpn_ids: Vec<Bytes>,
 
+    pub supported_cipher_suites: Vec<CipherSuite>,
+
     pub supported_groups: Vec<NamedGroup>,
 
     /// Should also be used for validating client certificates.
@@ -149,8 +163,26 @@ impl ServerOptions {
             certificates,
             private_key,
             alpn_ids: vec![],
+            supported_cipher_suites: client_options.supported_cipher_suites,
             supported_groups: client_options.supported_groups,
             supported_signature_algorithms: client_options.supported_signature_algorithms,
+        })
+    }
+}
+
+#[derive(Clone)]
+pub enum CertificateRegistrySource {
+    PublicRoots,
+    Custom(Arc<x509::CertificateRegistry>),
+}
+
+impl CertificateRegistrySource {
+    pub async fn resolve(&self) -> Result<Arc<x509::CertificateRegistry>> {
+        Ok(match self {
+            CertificateRegistrySource::PublicRoots => {
+                Arc::new(x509::CertificateRegistry::public_roots().await?)
+            }
+            CertificateRegistrySource::Custom(v) => v.clone(),
         })
     }
 }

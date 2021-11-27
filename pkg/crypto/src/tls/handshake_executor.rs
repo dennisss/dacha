@@ -277,6 +277,8 @@ impl HandshakeExecutor {
 
     /// Checks that a signature for some plaintext is validly signed by the
     /// given certificate.
+    ///
+    /// TODO: Make this private.
     pub fn check_certificate_verify(
         &self,
         plaintext: &[u8],

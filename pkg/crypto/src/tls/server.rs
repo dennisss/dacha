@@ -69,7 +69,7 @@ impl Server {
     }
 
     pub async fn connect(
-        reader: Box<dyn Readable>,
+        reader: Box<dyn Readable + Sync>,
         writer: Box<dyn Writeable>,
         options: &ServerOptions,
     ) -> Result<ApplicationStream> {
@@ -87,7 +87,7 @@ struct ServerHandshakeExecutor<'a> {
 
 impl<'a> ServerHandshakeExecutor<'a> {
     pub fn new(
-        reader: Box<dyn Readable>,
+        reader: Box<dyn Readable + Sync>,
         writer: Box<dyn Writeable>,
         options: &'a ServerOptions,
     ) -> Self {
@@ -119,6 +119,8 @@ impl<'a> ServerHandshakeExecutor<'a> {
         {
             return Err(err_msg("Client doesn't supported TLS 1.3"));
         }
+
+        self.executor.reader.protocol_version = TLS_1_3_VERSION;
 
         let client_key_share_ext = find_key_share_ch(&client_hello.extensions)
             .ok_or_else(|| err_msg("Expected client key share"))?;
@@ -191,10 +193,35 @@ impl<'a> ServerHandshakeExecutor<'a> {
             },
         }));
 
-        // TODO: Also append ALPN selection.
+        if let Some(name_list) = find_alpn_extension(&client_hello.extensions) {
+            for name in &name_list.names {
+                if self.options.alpn_ids.contains(name) {
+                    self.summary.selected_alpn_protocol = Some(name.clone());
+                    extensions.push(Extension::ALPN(ProtocolNameList {
+                        names: vec![name.clone()],
+                    }));
+                    break;
+                }
+            }
+        }
 
         // TODO: Verify that this is supported by client and server.
-        let cipher_suite = CipherSuite::TLS_CHACHA20_POLY1305_SHA256;
+        let cipher_suite = {
+            let mut selected = None;
+            for suite in &client_hello.cipher_suites {
+                if !self.options.supported_cipher_suites.contains(suite) {
+                    continue;
+                }
+
+                if let Ok(CipherSuiteParts::TLS13(_)) = suite.decode() {
+                    selected = Some(*suite);
+                }
+            }
+
+            selected.ok_or_else(|| err_msg("Can't agree on a cipher suite with the client"))?
+        };
+
+        // CipherSuite::TLS_CHACHA20_POLY1305_SHA256;
 
         let server_hello = ServerHello {
             legacy_version: TLS_1_2_VERSION,

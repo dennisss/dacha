@@ -6,18 +6,8 @@ use common::bytes::Bytes;
 use common::errors::*;
 use common::io::*;
 
-use crate::aead::AuthEncAD;
-use crate::elliptic::*;
-use crate::gcm::AesGCM;
-use crate::hasher::*;
-use crate::sha256::SHA256Hasher;
-use crate::tls::alert::*;
 use crate::tls::application_stream::*;
-use crate::tls::cipher::CipherEndpointSpec;
 use crate::tls::cipher_suite::*;
-use crate::tls::cipher_tls12::CipherEndpointSpecTLS12;
-use crate::tls::cipher_tls12::GCMNonceGenerator;
-use crate::tls::cipher_tls12::NonceGenerator;
 use crate::tls::constants::*;
 use crate::tls::extensions::*;
 use crate::tls::extensions_util::*;
@@ -29,7 +19,6 @@ use crate::tls::key_schedule_helper::*;
 use crate::tls::key_schedule_tls12::KeyScheduleTLS12;
 use crate::tls::options::ClientOptions;
 use crate::tls::record_stream::*;
-use crate::tls::transcript::*;
 use crate::x509;
 
 // TODO: Should abort the connection if negotiation results in more than one
@@ -57,7 +46,7 @@ impl Client {
 
     pub async fn connect(
         &mut self,
-        reader: Box<dyn Readable>,
+        reader: Box<dyn Readable + Sync>,
         writer: Box<dyn Writeable>,
         options: &ClientOptions,
     ) -> Result<ApplicationStream> {
@@ -106,8 +95,6 @@ struct ClientHandshakeExecutor<'a> {
 
     options: &'a ClientOptions,
 
-    handshake_transcript: Transcript,
-
     /// Secrets offered to the server in the last ClientHello sent.
     secrets: HashMap<NamedGroup, Vec<u8>>,
 
@@ -118,7 +105,7 @@ struct ClientHandshakeExecutor<'a> {
 
 impl<'a> ClientHandshakeExecutor<'a> {
     async fn new(
-        reader: Box<dyn Readable>,
+        reader: Box<dyn Readable + Sync>,
         writer: Box<dyn Writeable>,
         options: &'a ClientOptions,
     ) -> Result<ClientHandshakeExecutor<'a>> {
@@ -128,9 +115,8 @@ impl<'a> ClientHandshakeExecutor<'a> {
                 RecordWriter::new(writer, false),
             ),
             options,
-            handshake_transcript: Transcript::new(),
             secrets: HashMap::new(),
-            certificate_registry: x509::CertificateRegistry::public_roots().await?,
+            certificate_registry: options.root_certificate_registry.resolve().await?.child(),
             summary: HandshakeSummary::default(),
         })
     }
@@ -384,7 +370,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
                 server_public.server_share.group,
                 &server_public.server_share.key_exchange,
                 client_secret,
-                &self.handshake_transcript,
+                &self.executor.handshake_transcript,
                 &mut self.executor.reader,
                 &mut self.executor.writer,
             )?;

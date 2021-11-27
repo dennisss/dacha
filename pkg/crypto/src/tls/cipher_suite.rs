@@ -8,7 +8,6 @@ use crate::chacha20::ChaCha20Poly1305;
 use crate::gcm::AesGCM;
 use crate::hasher::GetHasherFactory;
 use crate::hasher::HasherFactory;
-use crate::sha224::*;
 use crate::sha256::*;
 use crate::sha384::*;
 use crate::tls::cipher_tls12::*;
@@ -63,10 +62,19 @@ impl CipherSuite {
             CipherSuite::TLS_CHACHA20_POLY1305_SHA256 => CipherSuiteParts::TLS13(
                 CipherSuiteTLS13::new(ChaCha20Poly1305::new(), SHA256Hasher::factory()),
             ),
-            CipherSuite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 => {
+            CipherSuite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+            | CipherSuite::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 => {
                 CipherSuiteParts::TLS12(CipherSuiteTLS12 {
                     aead: Box::new(AesGCM::aes128()),
                     nonce_gen: Box::new(GCMNonceGenerator::new()),
+                    hasher_factory: SHA256Hasher::factory(),
+                })
+            }
+            CipherSuite::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+            | CipherSuite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 => {
+                CipherSuiteParts::TLS12(CipherSuiteTLS12 {
+                    aead: Box::new(ChaCha20Poly1305::new()),
+                    nonce_gen: Box::new(ChaChaPoly1305NonceGenerator::new()),
                     hasher_factory: SHA256Hasher::factory(),
                 })
             }

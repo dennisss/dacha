@@ -22,6 +22,10 @@ mod record_stream;
 pub mod server;
 pub mod transcript;
 
+pub use client::Client;
+pub use options::{ClientOptions, ServerOptions};
+pub use server::Server;
+
 // Big-endian network order
 
 // https://tools.ietf.org/html/rfc8446

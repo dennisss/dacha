@@ -12,6 +12,7 @@ use common::errors::*;
 use common::io::{Readable, Writeable};
 use parsing::ascii::AsciiString;
 
+use crate::alpn::*;
 use crate::backoff::*;
 use crate::client::client_interface::*;
 use crate::client::resolver::ResolvedEndpoint;
@@ -43,7 +44,7 @@ Key details about an upgrade request:
 pub struct DirectClientOptions {
     /// If present, use these options to connect with SSL/TLS. Otherwise, we'll
     /// send requests over plain text.
-    pub tls: Option<crypto::tls::options::ClientOptions>,
+    pub tls: Option<crypto::tls::ClientOptions>,
 
     /// If true, we'll immediately connect using HTTP2 and fail if it is not
     /// supported by the server. By default, we'll start by sending HTTP1
@@ -98,7 +99,13 @@ struct ConnectionPool {
     connections: HashMap<usize, Arc<ConnectionEntry>>,
 }
 
-enum ConnectionEntry {
+struct ConnectionEntry {
+    /// If true,
+    is_secure: bool,
+    typ: ConnectionType,
+}
+
+enum ConnectionType {
     V1(v1::ClientConnection),
     V2(v2::Connection),
 }
@@ -109,7 +116,15 @@ enum ConnectionEvent {
 }
 
 impl DirectClient {
-    pub fn new(endpoint: ResolvedEndpoint, options: DirectClientOptions) -> Self {
+    pub fn new(endpoint: ResolvedEndpoint, mut options: DirectClientOptions) -> Self {
+        if let Some(tls_options) = &mut options.tls {
+            if let Host::Name(name) = &endpoint.authority.host {
+                tls_options.hostname = name.clone();
+            }
+            tls_options.alpn_ids.push(ALPN_HTTP2.into());
+            tls_options.alpn_ids.push(ALPN_HTTP11.into());
+        }
+
         Self {
             shared: Arc::new(Shared {
                 endpoint,
@@ -210,30 +225,27 @@ impl DirectClient {
         .await??;
         raw_stream.set_nodelay(true)?;
 
-        let mut reader: Box<dyn Readable> = Box::new(raw_stream.clone());
+        let mut reader: Box<dyn Readable + Sync> = Box::new(raw_stream.clone());
         let mut writer: Box<dyn Writeable> = Box::new(raw_stream);
 
         let mut start_http2 = self.shared.options.force_http2;
 
-        if let Some(mut client_options) = self.shared.options.tls.clone() {
-            if let Host::Name(name) = &self.shared.endpoint.authority.host {
-                client_options.hostname = name.clone();
-            }
-            client_options.alpn_ids.push("h2".into());
-            client_options.alpn_ids.push("http/1.1".into());
+        let mut is_secure = false;
 
-            // TODO: Require that this by exported to a client level setting.
-            // client_options.trust_server_certificate = true;
+        if let Some(client_options) = &self.shared.options.tls {
+            is_secure = true;
 
-            let mut tls_client = crypto::tls::client::Client::new();
+            let mut tls_client = crypto::tls::Client::new();
 
-            let tls_stream = tls_client.connect(reader, writer, &client_options).await?;
+            let tls_stream = tls_client.connect(reader, writer, client_options).await?;
+
+            // TODO: Save handshake info so that the user can access it.
 
             reader = Box::new(tls_stream.reader);
             writer = Box::new(tls_stream.writer);
 
             if let Some(protocol) = tls_stream.handshake_summary.selected_alpn_protocol {
-                if protocol.as_ref() == b"h2" {
+                if protocol.as_ref() == ALPN_HTTP2.as_bytes() {
                     start_http2 = true;
                     println!("NEGOTIATED HTTP2 OVER TLS");
                 }
@@ -255,7 +267,10 @@ impl DirectClient {
                 runner,
             ));
 
-            return Ok(Arc::new(ConnectionEntry::V2(connection_v2)));
+            return Ok(Arc::new(ConnectionEntry {
+                is_secure,
+                typ: ConnectionType::V2(connection_v2),
+            }));
         }
 
         let conn = v1::ClientConnection::new();
@@ -306,7 +321,10 @@ impl DirectClient {
             };
         }
 
-        Ok(Arc::new(ConnectionEntry::V1(conn)))
+        Ok(Arc::new(ConnectionEntry {
+            is_secure,
+            typ: ConnectionType::V1(conn),
+        }))
     }
 
     // NOTE: This uses a Weak pointer to ensure that the ClientShared and Connection
@@ -374,37 +392,52 @@ impl ClientInterface for DirectClient {
             }
         }
 
-        // TODO: Only pop this if we need to perfect an HTTP1 request (in HTTP2 we can
-        // forward a lot of stuff).
-        if let Some(scheme) = request.head.uri.scheme.take() {
-            // TODO: Verify if 'http(s)' as others aren't supported by this
-            // client.
-        } else {
-            // return Err(err_msg("Missing scheme in URI"));
-        }
-
-        // TODO: Explicitly always set the scheme based on the
-
         // TODO: We should just disallow using an authority in requests as it goes
         // against TLS and load balancing assumptions.
 
-        //
-        if !request.head.uri.authority.is_some() {
-            request.head.uri.authority = Some(self.shared.endpoint.authority.clone());
-            // TODO: Remove default ports (80 and 443).
-        }
-
         let conn_entry = self.get_connection().await?;
 
-        match conn_entry.as_ref() {
-            ConnectionEntry::V2(conn) => {
-                // TODO: Make this less hard coded.
-                request.head.uri.scheme = Some(AsciiString::from("https").unwrap());
+        let authority = request
+            .head
+            .uri
+            .authority
+            .get_or_insert_with(|| self.shared.endpoint.authority.clone());
+
+        // Normalize the port sent in the Host header to exclude default values.
+        let default_port = Some(if conn_entry.is_secure { 443 } else { 80 });
+        if default_port == authority.port {
+            authority.port = None;
+        }
+
+        let actual_scheme = if conn_entry.is_secure {
+            "https"
+        } else {
+            "http"
+        };
+
+        // In general. user's shouldn't provide a scheme or authority in their requests
+        // but if they do, ensure that they aren't accidentally getting the wrong level
+        // of security.
+        if let Some(scheme) = &request.head.uri.scheme {
+            if scheme.as_str() != actual_scheme {
+                return Err(err_msg(
+                    "Mismatch between requested scheme and connection scheme",
+                ));
+            }
+        }
+
+        // TODO: Ensure that the scheme is also validated on the server.
+
+        match &conn_entry.typ {
+            ConnectionType::V2(conn) => {
+                request.head.uri.scheme = Some(AsciiString::from(actual_scheme).unwrap());
 
                 let response = conn.request(request).await?;
                 Ok(response)
             }
-            ConnectionEntry::V1(conn) => {
+            ConnectionType::V1(conn) => {
+                request.head.uri.scheme = None;
+
                 let res = conn.request(request).await?;
 
                 let res = match res {

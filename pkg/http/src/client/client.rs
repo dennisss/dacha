@@ -104,6 +104,7 @@ impl ClientOptions {
             .as_str()
             .to_ascii_lowercase();
 
+        // TODO: Deduplicate this code.
         let secure = match scheme.as_str() {
             "http" => false,
             "https" => true,
@@ -114,13 +115,11 @@ impl ClientOptions {
 
         let port = authority.port.unwrap_or(if secure { 443 } else { 80 });
 
-        // TODO: Explicitly check that the port fits within a u16.
         let resolver = Arc::new(SystemDNSResolver::new(authority.host.clone(), port));
 
         let mut options = Self::from_resolver(resolver);
         if secure {
-            options.backend_balancer.backend.tls =
-                Some(crypto::tls::options::ClientOptions::recommended());
+            options.backend_balancer.backend.tls = Some(crypto::tls::ClientOptions::recommended());
         }
 
         Ok(options)

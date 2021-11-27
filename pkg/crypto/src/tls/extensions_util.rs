@@ -73,3 +73,13 @@ pub fn find_server_name(extensions: &[Extension]) -> Option<&ServerNameList> {
 
     None
 }
+
+pub fn find_alpn_extension(extensions: &[Extension]) -> Option<&ProtocolNameList> {
+    for e in extensions {
+        if let Extension::ALPN(v) = e {
+            return Some(v);
+        }
+    }
+
+    None
+}

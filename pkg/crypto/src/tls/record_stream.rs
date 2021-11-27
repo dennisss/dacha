@@ -3,7 +3,6 @@ use common::errors::*;
 use common::io::{Readable, Writeable};
 
 use crate::tls::alert::*;
-use crate::tls::cipher::*;
 use crate::tls::handshake::*;
 use crate::tls::record::*;
 use crate::tls::transcript::Transcript;
@@ -26,7 +25,7 @@ pub enum Message {
 // reader and writer halves  of the connection.
 
 pub struct RecordReader {
-    reader: Box<dyn Readable>,
+    reader: Box<dyn Readable + Sync>,
 
     is_server: bool,
 
@@ -50,7 +49,7 @@ pub struct RecordReader {
 }
 
 impl RecordReader {
-    pub fn new(reader: Box<dyn Readable>, is_server: bool) -> Self {
+    pub fn new(reader: Box<dyn Readable + Sync>, is_server: bool) -> Self {
         Self {
             reader,
             is_server,
