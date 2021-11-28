@@ -391,7 +391,6 @@ impl Server {
                 if proto == ALPN_HTTP11.as_bytes() {
                     negotatied_http11 = true;
                 } else if proto == ALPN_HTTP2.as_bytes() {
-                    println!("NEGOTIATED HTTP2");
                     negotiated_http2 = true;
                 }
             }

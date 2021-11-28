@@ -83,3 +83,14 @@ pub fn find_alpn_extension(extensions: &[Extension]) -> Option<&ProtocolNameList
 
     None
 }
+
+#[must_use]
+pub fn has_post_handshake_auth(extensions: &[Extension]) -> bool {
+    for e in extensions {
+        if let Extension::PostHandshakeAuth = e {
+            return true;
+        }
+    }
+
+    false
+}

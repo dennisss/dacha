@@ -168,10 +168,10 @@ impl KeySchedule {
 
     /// NOTE: Should be called after the server Finished, but before any other
     /// messages are sent.
-    pub fn finished(self, transcript: &Transcript) -> FinalSecrets {
+    pub fn server_finished(&self, transcript: &Transcript) -> ServerFinishedSecrets {
         let ch_fin_transcript_hash = transcript.hash(&self.hasher_factory);
 
-        FinalSecrets {
+        ServerFinishedSecrets {
             client_application_traffic_secret_0: hkdf_expand_label(
                 &self.hkdf,
                 &self.current_salt,
@@ -198,7 +198,15 @@ impl KeySchedule {
                 self.hkdf.hash_size() as u16,
             )
             .into(),
+        }
+    }
 
+    /// Call after sending or receiving the client Finished message to get the
+    /// remainder of the TLS secrets.
+    pub fn client_finished(&self, transcript: &Transcript) -> ClientFinishedSecrets {
+        let ch_fin_transcript_hash = transcript.hash(&self.hasher_factory);
+
+        ClientFinishedSecrets {
             resumption_master_secret: hkdf_expand_label(
                 &self.hkdf,
                 &self.current_salt,
@@ -217,10 +225,13 @@ pub struct HandshakeTrafficSecrets {
     pub server_handshake_traffic_secret: Bytes,
 }
 
-pub struct FinalSecrets {
+pub struct ServerFinishedSecrets {
     pub client_application_traffic_secret_0: Bytes,
     pub server_application_traffic_secret_0: Bytes,
     pub exporter_master_secret: Bytes,
+}
+
+pub struct ClientFinishedSecrets {
     pub resumption_master_secret: Bytes,
 }
 

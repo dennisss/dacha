@@ -51,7 +51,7 @@ async fn run() -> Result<()> {
             // client_options.hostname = "google.com".into();
             // client_options.alpn_ids.push("h2".into());
             // client_options.alpn_ids.push("http/1.1".into());
-            client_options.trust_server_certificate = true;
+            client_options.certificate_request.trust_remote_certificate = true;
 
             let mut client = crypto::tls::Client::new();
             let mut stream = client.connect(reader, writer, &client_options).await?;

@@ -1,5 +1,8 @@
 use std::convert::TryInto;
+use std::sync::Arc;
 
+use asn::encoding::DERWriteable;
+use common::bytes::Bytes;
 use common::errors::*;
 use pkix::PKIX1Algorithms2008;
 
@@ -8,30 +11,45 @@ use crate::hasher::{GetHasherFactory, HasherFactory};
 use crate::tls::alert::AlertLevel;
 use crate::tls::constants::*;
 use crate::tls::extensions::SignatureScheme;
-use crate::tls::handshake::{CertificateVerify, Handshake};
+use crate::tls::handshake::{Certificate, CertificateEntry, CertificateVerify, Handshake};
 use crate::tls::key_schedule::KeySchedule;
 use crate::tls::record_stream::{Message, RecordReader, RecordWriter};
 use crate::tls::transcript::Transcript;
 use crate::x509;
 
+use super::{CertificateAuthenticationOptions, CertificateRequestOptions};
+
 const TLS13_CERTIFICATEVERIFY_CLIENT_CTX: &'static [u8] = b"TLS 1.3, client CertificateVerify";
 const TLS13_CERTIFICATEVERIFY_SERVER_CTX: &'static [u8] = b"TLS 1.3, server CertificateVerify";
+
+pub(super) struct HandshakeExecutorOptions<'a> {
+    pub is_server: bool,
+
+    pub local_supported_algorithms: &'a [SignatureScheme],
+    // pub certificate_request: Option<&'a >
+}
 
 /// Common interface for executing client/server TLS handshakes.
 ///
 /// NOTE: This is an internal interface to be primarily used by the 'client' and
 /// 'server' modules.
-pub(super) struct HandshakeExecutor {
+pub(super) struct HandshakeExecutor<'a> {
     pub reader: RecordReader,
     pub writer: RecordWriter,
+    pub options: HandshakeExecutorOptions<'a>,
     pub handshake_transcript: Transcript,
 }
 
-impl HandshakeExecutor {
-    pub fn new(reader: RecordReader, writer: RecordWriter) -> Self {
+impl<'a> HandshakeExecutor<'a> {
+    pub fn new(
+        reader: RecordReader,
+        writer: RecordWriter,
+        options: HandshakeExecutorOptions<'a>,
+    ) -> Self {
         Self {
             reader,
             writer,
+            options,
             handshake_transcript: Transcript::new(),
         }
     }
@@ -73,13 +91,111 @@ impl HandshakeExecutor {
         }
     }
 
+    pub async fn send_certificate(
+        &mut self,
+        options: &CertificateAuthenticationOptions,
+        certificate_request_context: Bytes,
+    ) -> Result<()> {
+        // TODO: In the future this will need to be clever enough to pick between
+        // multiple certificates based on the supported signature algorithms on the
+        // remote machine.
+
+        // While it is technically allowed for a client to send 0 certificates (and skip
+        // the CertificateVerify), we don't currently support this. For now the client
+        // must just not set the certificate_auth options upfront if certificate
+        // authentication shouldn't be performed.
+        if options.certificates.len() < 1 {
+            return Err(err_msg("Expected to send at least one certificate"));
+        }
+
+        // TODO: Must verify that this contains at least one certificate.
+        let mut certificate_list = vec![];
+        for cert in &options.certificates {
+            certificate_list.push(CertificateEntry {
+                cert: cert.raw.to_der().into(), /* TODO: Can we implement this without
+                                                 * re-serialization. */
+                extensions: vec![],
+            });
+        }
+
+        let certs = Handshake::Certificate(Certificate {
+            certificate_request_context,
+            certificate_list,
+        });
+
+        self.send_handshake_message(certs).await
+    }
+
+    /// Receives the client/server's Certificate and verifies that:
+    /// 1. The certificate is valid now
+    /// 2. The certificate is valid for the remote host name.
+    /// 3. The certificate forms a valid chain to a trusted root certificate.
+    ///
+    /// This is both TLS 1.2 and 1.3.
+    pub async fn process_certificate(
+        &mut self,
+        cert: Certificate,
+        certificate_registry: &mut x509::CertificateRegistry,
+        options: &CertificateRequestOptions,
+        remote_host_name: Option<&str>,
+    ) -> Result<Option<Arc<x509::Certificate>>> {
+        // On a client, the certicate received from the server should always have an
+        // empty context and our server implementation doesn't use this field either, so
+        // this should always be empty.
+        if cert.certificate_request_context.len() != 0 {
+            return Err(err_msg("Unexpected request context width certificate"));
+        }
+
+        let mut cert_list = vec![];
+        for c in &cert.certificate_list {
+            cert_list.push(Arc::new(x509::Certificate::read(c.cert.clone())?));
+        }
+
+        if cert_list.len() < 1 {
+            return Ok(None);
+        }
+
+        // NOTE: This will return an error if any of the certificates are invalid.
+        // TODO: Technically we only need to ensure that the first one is valid.
+        certificate_registry.append(&cert_list, options.trust_remote_certificate)?;
+
+        // Verify the terminal certificate is valid (MUST always be first).
+
+        // TODO: How do we verify that all parent certificates are allowed to issue
+        // sub-certificates.
+        // - Must validate 'Certificate Basic Constraints' and 'Certificate Key Usage'
+        //   to verify that certificates can be signed.
+
+        if let Some(usage) = cert_list[0].key_usage()? {
+            if !usage.digitalSignature().unwrap_or(false) {
+                return Err(err_msg(
+                    "Certificate can't be used for signature verification",
+                ));
+            }
+        }
+
+        // TODO: Remove the trust_remote_certificate exception and instead always check
+        // this.
+        if !options.trust_remote_certificate {
+            if !cert_list[0].valid_now() {
+                return Err(err_msg("Certificate not valid now"));
+            }
+
+            if let Some(name) = remote_host_name {
+                if !cert_list[0].for_dns_name(name)? {
+                    return Err(err_msg("Certificate not valid for DNS name"));
+                }
+            }
+        }
+
+        Ok(Some(cert_list.remove(0)))
+    }
+
     /// Creates a TLS 1.3 CertificateVerify message to be sent after a
     /// Certificate.
     pub async fn create_certificate_verify(
         &self,
-        is_server: bool,
         key_schedule: &KeySchedule,
-        local_supported_algorithms: &[SignatureScheme],
         remote_supported_algorithms: &[SignatureScheme],
         private_key: &x509::PrivateKey,
     ) -> Result<CertificateVerify> {
@@ -92,7 +208,7 @@ impl HandshakeExecutor {
         for _ in 0..64 {
             plaintext.push(0x20);
         }
-        plaintext.extend_from_slice(if is_server {
+        plaintext.extend_from_slice(if self.options.is_server {
             &TLS13_CERTIFICATEVERIFY_SERVER_CTX
         } else {
             &TLS13_CERTIFICATEVERIFY_CLIENT_CTX
@@ -104,7 +220,7 @@ impl HandshakeExecutor {
         // - Must be supported by the client.
         // - Must be supported by our certificate/private key.
         let mut selected_signature_algorithm = None;
-        for algorithm in local_supported_algorithms {
+        for algorithm in self.options.local_supported_algorithms {
             if !remote_supported_algorithms.contains(algorithm) {
                 continue;
             }
@@ -219,10 +335,8 @@ impl HandshakeExecutor {
     /// server and verifies that it is valid.
     pub async fn receive_certificate_verify_v13(
         &mut self,
-        is_server: bool,
         cert: &x509::Certificate,
         hasher_factory: &HasherFactory,
-        local_supported_algorithms: &[SignatureScheme],
         certificate_registry: &x509::CertificateRegistry,
     ) -> Result<()> {
         // Transcript hash for ClientHello through to the Certificate.
@@ -239,7 +353,7 @@ impl HandshakeExecutor {
         for _ in 0..64 {
             plaintext.push(0x20);
         }
-        plaintext.extend_from_slice(if is_server {
+        plaintext.extend_from_slice(if self.options.is_server {
             &TLS13_CERTIFICATEVERIFY_CLIENT_CTX
         } else {
             &TLS13_CERTIFICATEVERIFY_SERVER_CTX
@@ -247,7 +361,9 @@ impl HandshakeExecutor {
         plaintext.push(0);
         plaintext.extend_from_slice(&ch_ct_transcript_hash);
 
-        if local_supported_algorithms
+        if self
+            .options
+            .local_supported_algorithms
             .iter()
             .find(|a| **a == cert_verify.algorithm)
             .is_none()
@@ -349,6 +465,23 @@ impl HandshakeExecutor {
                 return Err(err_msg("Unsupported cert verify algorithm"));
             }
         };
+
+        Ok(())
+    }
+
+    /// Receives a Finished handshake message from the remote endpoint and
+    /// verifies that it has the given value.
+    pub async fn receive_finished(&mut self, expected_value: &[u8]) -> Result<()> {
+        let finished = match self.receive_handshake_message().await? {
+            Handshake::Finished(v) => v,
+            _ => {
+                return Err(err_msg("Expected Finished messages"));
+            }
+        };
+
+        if !crate::constant_eq(&finished.verify_data, expected_value) {
+            return Err(err_msg("Incorrect remote verify_data"));
+        }
 
         Ok(())
     }

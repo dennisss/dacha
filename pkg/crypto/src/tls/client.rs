@@ -21,6 +21,8 @@ use crate::tls::options::ClientOptions;
 use crate::tls::record_stream::*;
 use crate::x509;
 
+use super::handshake_executor::HandshakeExecutorOptions;
+
 // TODO: Should abort the connection if negotiation results in more than one
 // retry as the first retry should always have enough information.
 
@@ -91,7 +93,7 @@ enum ServerHelloResult {
 /// Performs a handshake with a server for a single TLS connection.
 /// Implemented from the client point of view.
 struct ClientHandshakeExecutor<'a> {
-    executor: HandshakeExecutor,
+    executor: HandshakeExecutor<'a>,
 
     options: &'a ClientOptions,
 
@@ -113,10 +115,19 @@ impl<'a> ClientHandshakeExecutor<'a> {
             executor: HandshakeExecutor::new(
                 RecordReader::new(reader, false),
                 RecordWriter::new(writer, false),
+                HandshakeExecutorOptions {
+                    is_server: false,
+                    local_supported_algorithms: &options.supported_signature_algorithms,
+                },
             ),
             options,
             secrets: HashMap::new(),
-            certificate_registry: options.root_certificate_registry.resolve().await?.child(),
+            certificate_registry: options
+                .certificate_request
+                .root_certificate_registry
+                .resolve()
+                .await?
+                .child(),
             summary: HandshakeSummary::default(),
         })
     }
@@ -150,8 +161,6 @@ impl<'a> ClientHandshakeExecutor<'a> {
             .send_handshake_message(Handshake::ClientHello(client_hello.clone()))
             .await?;
 
-        println!("WAIT_SH");
-
         let (server_hello, key_schedule) =
             match self.wait_server_hello(client_hello.clone()).await? {
                 ServerHelloResult::TLS12(sh) => {
@@ -166,29 +175,94 @@ impl<'a> ClientHandshakeExecutor<'a> {
 
         self.process_received_extensions(&server_hello.extensions)?;
 
-        println!("WAIT_EE");
         self.wait_encrypted_extensions().await?;
 
-        // TODO: Could receive either CertificateRequest or Certificate
+        let mut cert_request = None;
+        let cert;
+        // Receive optionally a CertificateRequest followed by a Certificate.
+        loop {
+            match self.executor.receive_handshake_message().await? {
+                Handshake::CertificateRequest(req) => {
+                    if cert_request.is_some() {
+                        return Err(err_msg("Received multiple certificate requests"));
+                    }
 
-        println!("WAIT_CERT");
-        let cert = self.receive_certificate().await?;
+                    cert_request = Some(req);
+                }
+                Handshake::Certificate(c) => {
+                    cert = self.process_certificate(c).await?;
+                    break;
+                }
+                _ => {
+                    return Err(err_msg("Expected certificate message"));
+                }
+            };
+        }
 
         self.executor
             .receive_certificate_verify_v13(
-                false,
                 &cert,
                 key_schedule.hasher_factory(),
-                &self.options.supported_signature_algorithms,
                 &self.certificate_registry,
             )
             .await?;
 
-        println!("WAIT_FINISHED");
+        let verify_data_server =
+            key_schedule.verify_data_server(&self.executor.handshake_transcript);
+        self.executor.receive_finished(&verify_data_server).await?;
 
-        self.wait_finished(key_schedule).await?;
+        // Should be everything up to server finished.
+        let server_finished_secrets =
+            key_schedule.server_finished(&self.executor.handshake_transcript);
 
-        println!("DONE");
+        if let Some(cert_request) = cert_request {
+            let options = match &self.options.certificate_auth {
+                Some(v) => v,
+                None => {
+                    // Lack of the options means that we wouldn't have send the post_handshake_auth
+                    // message.
+                    return Err(err_msg("Didn't advertise support for certificate auth"));
+                }
+            };
+
+            let server_supported_algoritms = find_signature_algorithms(&cert_request.extensions)
+                .ok_or_else(|| err_msg("Missing supporting algorithms in CR"))?;
+
+            self.executor
+                .send_certificate(options, cert_request.certificate_request_context)
+                .await?;
+
+            let cert_verify = self
+                .executor
+                .create_certificate_verify(
+                    &key_schedule,
+                    &server_supported_algoritms.algorithms,
+                    &options.private_key,
+                )
+                .await?;
+            self.executor
+                .send_handshake_message(Handshake::CertificateVerify(cert_verify))
+                .await?;
+        }
+
+        let verify_data_client =
+            key_schedule.verify_data_client(&self.executor.handshake_transcript);
+
+        let finished_client = Handshake::Finished(Finished {
+            verify_data: verify_data_client,
+        });
+
+        self.executor
+            .send_handshake_message(finished_client)
+            .await?;
+
+        self.executor
+            .reader
+            .replace_remote_key(server_finished_secrets.server_application_traffic_secret_0)?;
+
+        self.executor
+            .writer
+            .replace_local_key(server_finished_secrets.client_application_traffic_secret_0)?;
 
         Ok(ApplicationStream::new(
             self.executor.reader,
@@ -232,8 +306,6 @@ impl<'a> ClientHandshakeExecutor<'a> {
                     return Err(err_msg("Unexpected message"));
                 }
             };
-
-            println!("{:#?}", server_hello);
 
             let is_retry = &server_hello.random == HELLO_RETRY_REQUEST_SHA256;
 
@@ -387,8 +459,6 @@ impl<'a> ClientHandshakeExecutor<'a> {
             }
         };
 
-        println!("{:#?}", ee);
-
         self.process_received_extensions(&ee.extensions)?;
 
         // TODO: Process all of these extensions.
@@ -413,110 +483,22 @@ impl<'a> ClientHandshakeExecutor<'a> {
         Ok(())
     }
 
-    /// Receives the client/server's Certificate and verifies that:
-    /// 1. The certificate is valid now
-    /// 2. The certificate is valid for the remote host name.
-    /// 3. The certificate forms a valid chain to a trusted root certificate.
-    ///
-    /// This is both TLS 1.2 and 1.3.
-    async fn receive_certificate(
+    async fn process_certificate(
         &mut self,
-        // certificate_registry: &mut x509::CertificateRegistry,
+        raw_cert: Certificate,
     ) -> Result<Arc<x509::Certificate>> {
-        let cert = match self.executor.receive_handshake_message().await? {
-            Handshake::Certificate(c) => c,
-            _ => {
-                return Err(err_msg("Expected certificate message"));
-            }
-        };
+        let cert = self
+            .executor
+            .process_certificate(
+                raw_cert,
+                &mut self.certificate_registry,
+                &self.options.certificate_request,
+                Some(&self.options.hostname),
+            )
+            .await?
+            .ok_or_else(|| err_msg("Expected at least one certificate"))?;
 
-        if cert.certificate_request_context.len() != 0 {
-            return Err(err_msg("Unexpected request context width certificate"));
-        }
-
-        let mut cert_list = vec![];
-        for c in &cert.certificate_list {
-            cert_list.push(Arc::new(x509::Certificate::read(c.cert.clone())?));
-        }
-
-        if cert_list.len() < 1 {
-            return Err(err_msg("Expected at least one certificate"));
-        }
-
-        // NOTE: This will return an error if any of the certificates are invalid.
-        // TODO: Technically we only need to ensure that the first one is valid.
-        self.certificate_registry
-            .append(&cert_list, self.options.trust_server_certificate)?;
-
-        // Verify the terminal certificate is valid (MUST always be first).
-
-        // TODO: How do we verify that all parent certificates are allowed to issue
-        // sub-certificates.
-        // - Must validate 'Certificate Basic Constraints' and 'Certificate Key Usage'
-        //   to verify that certificates can be signed.
-
-        if let Some(usage) = cert_list[0].key_usage()? {
-            if !usage.digitalSignature().unwrap_or(false) {
-                return Err(err_msg(
-                    "Certificate can't be used for signature verification",
-                ));
-            }
-        }
-
-        // TODO: Remove the trust_server_certificate exception and instead always check
-        // this.
-        if !self.options.trust_server_certificate {
-            if !cert_list[0].valid_now() {
-                return Err(err_msg("Certificate not valid now"));
-            }
-
-            if !cert_list[0].for_dns_name(&self.options.hostname)? {
-                return Err(err_msg("Certificate not valid for DNS name"));
-            }
-        }
-
-        Ok(cert_list.remove(0))
-    }
-
-    async fn wait_finished(&mut self, key_schedule: KeySchedule) -> Result<()> {
-        let verify_data_server =
-            key_schedule.verify_data_server(&self.executor.handshake_transcript);
-
-        // TODO: Split to using recv_handshake_message
-        let finished = match self.executor.receive_handshake_message().await? {
-            Handshake::Finished(v) => v,
-            _ => {
-                return Err(err_msg("Expected Finished messages"));
-            }
-        };
-
-        if finished.verify_data != verify_data_server {
-            return Err(err_msg("Incorrect server verify_data"));
-        }
-
-        let verify_data_client =
-            key_schedule.verify_data_client(&self.executor.handshake_transcript);
-
-        let finished_client = Handshake::Finished(Finished {
-            verify_data: verify_data_client,
-        });
-
-        // Should be everything up to server finished.
-        let final_secrets = key_schedule.finished(&self.executor.handshake_transcript);
-
-        self.executor
-            .send_handshake_message(finished_client)
-            .await?;
-
-        self.executor
-            .reader
-            .replace_remote_key(final_secrets.server_application_traffic_secret_0)?;
-
-        self.executor
-            .writer
-            .replace_local_key(final_secrets.client_application_traffic_secret_0)?;
-
-        Ok(())
+        Ok(cert)
     }
 
     async fn run_tls12(
@@ -524,16 +506,17 @@ impl<'a> ClientHandshakeExecutor<'a> {
         client_hello: ClientHello,
         server_hello: ServerHello,
     ) -> Result<ApplicationStream> {
-        println!("PROCESS TLS1.2");
-
         // TODO: Must verify that the algorithms sent by the server are ok for us to us.
 
         // TODO: Dedup with the other code that calls this
         self.process_received_extensions(&server_hello.extensions)?;
 
-        println!("WAIT 1.2 CERT");
-
-        let certificate = self.receive_certificate().await?;
+        let certificate = match self.executor.receive_handshake_message().await? {
+            Handshake::Certificate(c) => self.process_certificate(c).await?,
+            _ => {
+                return Err(err_msg("Expected certificate message"));
+            }
+        };
 
         let server_key_exchange = match self.executor.receive_handshake_message().await? {
             Handshake::ServerKeyExchange(c) => c,
@@ -552,7 +535,6 @@ impl<'a> ClientHandshakeExecutor<'a> {
         // TODO: Some cipher suites will constrain the type of signature allowed (RSA or
         // ECDSA)
         let server_ecdhe_key = server_key_exchange.ec_diffie_hellman()?;
-        println!("SKE: {:#?}", server_ecdhe_key);
 
         // Server should be digitally signing:
         // SHA(ClientHello.random + ServerHello.random +
@@ -633,17 +615,7 @@ impl<'a> ClientHandshakeExecutor<'a> {
         let verify_data_server =
             key_schedule.verify_data_server(&self.executor.handshake_transcript);
 
-        let server_finished = match self.executor.receive_handshake_message().await? {
-            Handshake::Finished(v) => v,
-            _ => {
-                return Err(err_msg("Expected Finished"));
-            }
-        };
-        println!("{:#?}", server_finished);
-
-        if &server_finished.verify_data != &verify_data_server {
-            return Err(err_msg("Bad server finished"));
-        }
+        self.executor.receive_finished(&verify_data_server).await?;
 
         /*
              For TLS 1.2:
@@ -672,9 +644,6 @@ impl<'a> ClientHandshakeExecutor<'a> {
             - Check that we receive a ChangeCipherSpec.
 
              - Receive Finished
-
-
-
              */
 
         Ok(ApplicationStream::new(

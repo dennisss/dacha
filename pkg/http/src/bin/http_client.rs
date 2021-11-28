@@ -1,11 +1,13 @@
 #![feature(core_intrinsics, trait_alias)]
 
+#[macro_use]
 extern crate common;
 extern crate http;
 extern crate parsing;
 
 use std::convert::TryFrom;
 
+use common::async_std::fs;
 use common::async_std::task;
 use common::errors::*;
 use http::ClientInterface;
@@ -17,14 +19,22 @@ use parsing::iso::*;
 async fn run_client() -> Result<()> {
     // TODO: Follow redirects (301 and 302) or if Location is set
 
+    let certificate_file = fs::read(project_path!("testdata/certificates/alice.crt"))
+        .await?
+        .into();
+    let private_key_file = fs::read(project_path!("testdata/certificates/alice.key"))
+        .await?
+        .into();
+
     let mut options = http::ClientOptions::try_from("https://localhost:8000")?;
-    options
-        .backend_balancer
-        .backend
-        .tls
-        .as_mut()
-        .unwrap()
-        .trust_server_certificate = true;
+    let tls_options = options.backend_balancer.backend.tls.as_mut().unwrap();
+
+    tls_options.certificate_request.trust_remote_certificate = true;
+
+    tls_options.certificate_auth = Some(crypto::tls::CertificateAuthenticationOptions::create(
+        certificate_file,
+        private_key_file,
+    )?);
 
     let client = http::Client::create(options)?;
 

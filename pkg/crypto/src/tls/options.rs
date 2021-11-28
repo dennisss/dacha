@@ -39,26 +39,11 @@ pub struct ClientOptions {
     /// Supported algorithms to use when verifying certificates.
     pub supported_signature_algorithms: Vec<SignatureScheme>,
 
-    /// Registry to use for validating server certificates.
-    /// If using trust_server_certificate==true, this can be empty.
-    ///
-    /// This won't be used directly but rather the registry that results from
-    /// combining this with any additional certificates provided by the remote
-    /// endpoint will be used.
-    ///
-    /// Self::recommended() will default to using a set of public CA's for this.
-    ///
-    /// NOTE: Currently we assume that the CA certificates don't need to be
-    /// remoted/invokes while this client is in use.
-    pub root_certificate_registry: CertificateRegistrySource,
+    pub certificate_request: CertificateRequestOptions,
 
-    /// If true, we will allow trust self-signed server certificates which
-    /// aren't in our root of trust registry.
-    ///
-    /// All other checks such as the certificate chain having valid signatures,
-    /// the certificate being valid at the current point in time, etc. will
-    /// apply.
-    pub trust_server_certificate: bool,
+    /// If present, the client will support authenticating using a certificate
+    /// in response to a server CertificateRequest.
+    pub certificate_auth: Option<CertificateAuthenticationOptions>,
 }
 
 impl ClientOptions {
@@ -111,15 +96,81 @@ impl ClientOptions {
                 SignatureScheme::rsa_pkcs1_sha512,
             ],
 
-            root_certificate_registry: CertificateRegistrySource::PublicRoots,
+            certificate_request: CertificateRequestOptions {
+                root_certificate_registry: CertificateRegistrySource::PublicRoots,
+                trust_remote_certificate: false,
+            },
 
-            trust_server_certificate: false,
+            certificate_auth: None,
         }
     }
 }
 
 #[derive(Clone)]
 pub struct ServerOptions {
+    /// If present, will be used to make a CertificateRequest to the client.
+    ///
+    /// NOTE: We do not
+    pub certificate_request: Option<CertificateRequestOptions>,
+
+    pub certificate_auth: CertificateAuthenticationOptions,
+
+    /// Protocol ids to accept in the order from highest to lowest preferance.
+    /// TODO: Support rejecting requests that don't have a negotiated protocol?
+    pub alpn_ids: Vec<Bytes>,
+
+    pub supported_cipher_suites: Vec<CipherSuite>,
+
+    pub supported_groups: Vec<NamedGroup>,
+
+    /// Should also be used for validating client certificates.
+    pub supported_signature_algorithms: Vec<SignatureScheme>,
+}
+
+impl ServerOptions {
+    pub fn recommended(certificate_file: Bytes, private_key_file: Bytes) -> Result<Self> {
+        let client_options = ClientOptions::recommended();
+
+        Ok(Self {
+            certificate_request: None,
+            certificate_auth: CertificateAuthenticationOptions::create(
+                certificate_file,
+                private_key_file,
+            )?,
+            alpn_ids: vec![],
+            supported_cipher_suites: client_options.supported_cipher_suites,
+            supported_groups: client_options.supported_groups,
+            supported_signature_algorithms: client_options.supported_signature_algorithms,
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct CertificateRequestOptions {
+    /// Registry to use for validating server certificates.
+    /// If using trust_server_certificate==true, this can be empty.
+    ///
+    /// This won't be used directly but rather the registry that results from
+    /// combining this with any additional certificates provided by the remote
+    /// endpoint will be used.
+    ///
+    /// Self::recommended() will default to using a set of public CA's for this.
+    ///
+    /// NOTE: Currently we assume that the CA certificates don't need to be
+    /// remoted/invokes while this client is in use.
+    pub root_certificate_registry: CertificateRegistrySource,
+
+    /// If true, we will allow trust self-signed server certificates which
+    /// aren't in our root of trust registry.
+    ///
+    /// All other checks such as the certificate chain having valid signatures,
+    /// the certificate being valid at the current point in time, etc. will
+    /// apply.
+    pub trust_remote_certificate: bool,
+}
+
+#[derive(Clone)]
+pub struct CertificateAuthenticationOptions {
     /// Certificates to advertise to the client.
     ///
     /// This must contain at least 1 certificate where:
@@ -139,33 +190,15 @@ pub struct ServerOptions {
     pub certificates: Vec<Arc<x509::Certificate>>,
 
     pub private_key: x509::PrivateKey,
-
-    /// Protocol ids to accept in the order from highest to lowest preferance.
-    /// TODO: Support rejecting requests that don't have a negotiated protocol?
-    pub alpn_ids: Vec<Bytes>,
-
-    pub supported_cipher_suites: Vec<CipherSuite>,
-
-    pub supported_groups: Vec<NamedGroup>,
-
-    /// Should also be used for validating client certificates.
-    pub supported_signature_algorithms: Vec<SignatureScheme>,
 }
 
-impl ServerOptions {
-    pub fn recommended(certificate_file: Bytes, private_key_file: Bytes) -> Result<Self> {
-        let client_options = ClientOptions::recommended();
-
+impl CertificateAuthenticationOptions {
+    pub fn create(certificate_file: Bytes, private_key_file: Bytes) -> Result<Self> {
         let certificates = x509::Certificate::from_pem(certificate_file)?;
         let private_key = x509::PrivateKey::from_pem(private_key_file)?;
-
         Ok(Self {
             certificates,
             private_key,
-            alpn_ids: vec![],
-            supported_cipher_suites: client_options.supported_cipher_suites,
-            supported_groups: client_options.supported_groups,
-            supported_signature_algorithms: client_options.supported_signature_algorithms,
         })
     }
 }

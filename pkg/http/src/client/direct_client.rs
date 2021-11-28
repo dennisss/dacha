@@ -247,7 +247,6 @@ impl DirectClient {
             if let Some(protocol) = tls_stream.handshake_summary.selected_alpn_protocol {
                 if protocol.as_ref() == ALPN_HTTP2.as_bytes() {
                     start_http2 = true;
-                    println!("NEGOTIATED HTTP2 OVER TLS");
                 }
             }
         }

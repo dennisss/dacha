@@ -1,53 +1,25 @@
-use asn::encoding::DERWriteable;
 use common::async_std::net::TcpListener;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::futures::StreamExt;
 use common::io::{Readable, Writeable};
-use pkix::PKIX1Algorithms2008;
 
-use crate::hasher::GetHasherFactory;
 use crate::random::secure_random_bytes;
 use crate::tls::application_stream::ApplicationStream;
 use crate::tls::cipher_suite::*;
-use crate::tls::constants::*;
 use crate::tls::extensions::*;
 use crate::tls::extensions_util::*;
+use crate::tls::handshake::ClientHello;
 use crate::tls::handshake::{
-    Certificate, CertificateEntry, CertificateVerify, EncryptedExtensions, Finished, Handshake,
-    ServerHello, TLS_1_2_VERSION, TLS_1_3_VERSION,
+    CertificateRequest, EncryptedExtensions, Finished, Handshake, ServerHello, TLS_1_2_VERSION,
+    TLS_1_3_VERSION,
 };
+use crate::tls::handshake_executor::{HandshakeExecutor, HandshakeExecutorOptions};
 use crate::tls::handshake_summary::HandshakeSummary;
-use crate::tls::key_schedule::KeySchedule;
 use crate::tls::key_schedule_helper::KeyScheduleHelper;
 use crate::tls::options::ServerOptions;
-use crate::tls::record_stream::Message;
 use crate::tls::record_stream::{RecordReader, RecordWriter};
-use crate::tls::transcript::Transcript;
 use crate::x509;
-
-use super::handshake_executor::HandshakeExecutor;
-
-/*
-- Load the Certificate and private key files into memory.
-
-- Wait for ClientHello
-
-- Figure out if using TLS 1.3
-    - Must minally have a supported_versions extension with TLS 1.3 mentioned.
-
-- Either send a ServerHello or Retry record
-
-
-- Send Certificate
-
-- Send CertificateVerify
-
-
-
-*/
-
-// TODO: We want a ServerHandshakeExecutor struct to separate out the logic.
 
 pub struct Server {}
 
@@ -73,32 +45,43 @@ impl Server {
         writer: Box<dyn Writeable>,
         options: &ServerOptions,
     ) -> Result<ApplicationStream> {
-        ServerHandshakeExecutor::new(reader, writer, options)
-            .run()
-            .await
+        let executor = ServerHandshakeExecutor::create(reader, writer, options).await?;
+        executor.run().await
     }
 }
 
 struct ServerHandshakeExecutor<'a> {
-    executor: HandshakeExecutor,
+    executor: HandshakeExecutor<'a>,
     options: &'a ServerOptions,
     summary: HandshakeSummary,
+    /// If performing a certificate request, this will be present.
+    certificate_registry: Option<x509::CertificateRegistry>,
 }
 
 impl<'a> ServerHandshakeExecutor<'a> {
-    pub fn new(
+    pub async fn create(
         reader: Box<dyn Readable + Sync>,
         writer: Box<dyn Writeable>,
         options: &'a ServerOptions,
-    ) -> Self {
-        Self {
+    ) -> Result<ServerHandshakeExecutor<'a>> {
+        let mut certificate_registry = None;
+        if let Some(options) = &options.certificate_request {
+            certificate_registry = Some(options.root_certificate_registry.resolve().await?.child());
+        }
+
+        Ok(Self {
             executor: HandshakeExecutor::new(
                 RecordReader::new(reader, true),
                 RecordWriter::new(writer, true),
+                HandshakeExecutorOptions {
+                    is_server: true,
+                    local_supported_algorithms: &options.supported_signature_algorithms,
+                },
             ),
             options,
             summary: HandshakeSummary::default(),
-        }
+            certificate_registry,
+        })
     }
 
     /// TODO: Pick a better name for this?
@@ -163,9 +146,10 @@ impl<'a> ServerHandshakeExecutor<'a> {
                 return Err(err_msg("Expected request to have exactly one name"));
             }
 
+            // TODO: Check that certificate_auth has at least one cert.
             let name = std::str::from_utf8(&server_name.names[0].data)?;
             if server_name.names[0].typ != NameType::host_name
-                || !self.options.certificates[0].for_dns_name(name)?
+                || !self.options.certificate_auth.certificates[0].for_dns_name(name)?
             {
                 return Err(format_err!(
                     "Our certificate is not valid for the requested domain: {}",
@@ -213,7 +197,7 @@ impl<'a> ServerHandshakeExecutor<'a> {
         let server_hello = ServerHello {
             legacy_version: TLS_1_2_VERSION,
             random: random.into(),
-            legacy_session_id_echo: client_hello.legacy_session_id,
+            legacy_session_id_echo: client_hello.legacy_session_id.clone(),
             cipher_suite: cipher_suite.clone(),
             legacy_compression_method: 0,
             extensions,
@@ -257,38 +241,18 @@ impl<'a> ServerHandshakeExecutor<'a> {
             }))
             .await?;
 
-        // CertificateRequest
-        // - Can only send if client has used PostHandshakeAuth
-        // - with certificate_authorities
-        // - oid_filters
-        // - MUST have signature_algorithms
-        // - If a client declines, it will send a Certificate that has an empty list and
-        //   not CertificateVerify
+        let cert_req_send = self.maybe_send_certificate_request(&client_hello).await?;
 
-        let mut certificate_list = vec![];
-        for cert in &self.options.certificates {
-            certificate_list.push(CertificateEntry {
-                cert: cert.raw.to_der().into(), /* TODO: Can we implement this without
-                                                 * re-serialization. */
-                extensions: vec![],
-            });
-        }
-
-        let certs = Handshake::Certificate(Certificate {
-            certificate_request_context: Bytes::new(),
-            certificate_list,
-        });
-
-        self.executor.send_handshake_message(certs).await?;
+        self.executor
+            .send_certificate(&self.options.certificate_auth, Bytes::new())
+            .await?;
 
         let cert_ver = self
             .executor
             .create_certificate_verify(
-                true,
                 &key_schedule,
-                &self.options.supported_signature_algorithms,
                 &client_signature_algorithms_ext.algorithms,
-                &self.options.private_key,
+                &self.options.certificate_auth.private_key,
             )
             .await?;
 
@@ -296,16 +260,6 @@ impl<'a> ServerHandshakeExecutor<'a> {
             .send_handshake_message(Handshake::CertificateVerify(cert_ver))
             .await?;
 
-        self.wait_finished(key_schedule).await?;
-
-        Ok(ApplicationStream::new(
-            self.executor.reader,
-            self.executor.writer,
-            self.summary,
-        ))
-    }
-
-    async fn wait_finished(&mut self, key_schedule: KeySchedule) -> Result<()> {
         let verify_data_server =
             key_schedule.verify_data_server(&self.executor.handshake_transcript);
 
@@ -315,32 +269,81 @@ impl<'a> ServerHandshakeExecutor<'a> {
             }))
             .await?;
 
-        let verify_data_client =
-            key_schedule.verify_data_client(&self.executor.handshake_transcript);
-
         // TODO: Can also obtain the "resumption_master_secret" after we incorporate the
         // 'client Finished' message into the transcript.
-        let final_secrets = key_schedule.finished(&self.executor.handshake_transcript);
+        let server_finished_secrets =
+            key_schedule.server_finished(&self.executor.handshake_transcript);
 
-        let finished_client = match self.executor.receive_handshake_message().await? {
-            Handshake::Finished(v) => v,
-            _ => {
-                return Err(err_msg("Expected client finished"));
+        if cert_req_send {
+            let raw_certificate = match self.executor.receive_handshake_message().await? {
+                Handshake::Certificate(c) => c,
+                _ => {
+                    return Err(err_msg("Expected certificate message"));
+                }
+            };
+
+            let certificate_registry = self.certificate_registry.as_mut().unwrap();
+            let options = self.options.certificate_request.as_ref().unwrap();
+
+            let cert = self
+                .executor
+                .process_certificate(raw_certificate, certificate_registry, options, None)
+                .await?;
+
+            // NOTE: A client is allowed to advertise that they can do post_handshake_auth
+            // and still send no certificates (and no CertificateVerify).
+            if let Some(cert) = cert {
+                self.executor
+                    .receive_certificate_verify_v13(
+                        &cert,
+                        key_schedule.hasher_factory(),
+                        certificate_registry,
+                    )
+                    .await?;
+
+                self.summary.certificate = Some(cert);
             }
-        };
-
-        if finished_client.verify_data != verify_data_client {
-            return Err(err_msg("Incorrect client verify_data"));
         }
+
+        let verify_data_client =
+            key_schedule.verify_data_client(&self.executor.handshake_transcript);
+        self.executor.receive_finished(&verify_data_client).await?;
 
         self.executor
             .reader
-            .replace_remote_key(final_secrets.client_application_traffic_secret_0)?;
+            .replace_remote_key(server_finished_secrets.client_application_traffic_secret_0)?;
 
         self.executor
             .writer
-            .replace_local_key(final_secrets.server_application_traffic_secret_0)?;
+            .replace_local_key(server_finished_secrets.server_application_traffic_secret_0)?;
 
-        Ok(())
+        Ok(ApplicationStream::new(
+            self.executor.reader,
+            self.executor.writer,
+            self.summary,
+        ))
+    }
+
+    async fn maybe_send_certificate_request(&mut self, client_hello: &ClientHello) -> Result<bool> {
+        if !has_post_handshake_auth(&client_hello.extensions)
+            || self.options.certificate_request.is_none()
+        {
+            return Ok(false);
+        }
+
+        // TODO: Support other extensions like 'certificate_authorities' and
+        // 'oid_filters'.
+        let cert_req = CertificateRequest {
+            certificate_request_context: Bytes::new(),
+            // This is the only extension that MUST be present.
+            extensions: vec![Extension::SignatureAlgorithms(SignatureSchemeList {
+                algorithms: self.options.supported_signature_algorithms.clone(),
+            })],
+        };
+        self.executor
+            .send_handshake_message(Handshake::CertificateRequest(cert_req))
+            .await?;
+
+        Ok(true)
     }
 }

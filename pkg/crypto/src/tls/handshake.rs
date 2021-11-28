@@ -235,7 +235,6 @@ impl ClientHello {
 
         /*
         Other extensions to look into:
-        - post_handshake_auth
         - encrypt_then_mac
         */
 
@@ -273,6 +272,10 @@ impl ClientHello {
         extensions.push(Extension::SupportedPointFormats(ECPointFormatList {
             formats: vec![ECPointFormat::uncompressed],
         }));
+
+        if options.certificate_auth.is_some() {
+            extensions.push(Extension::PostHandshakeAuth);
+        }
 
         // TODO: PSK if any must always be the last extension.
 
