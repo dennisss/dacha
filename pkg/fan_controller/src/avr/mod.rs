@@ -2,7 +2,6 @@
 // Could also grab from https://github.com/avr-rust/avr-mcu/blob/master/packs/atmega/ATmega32U4.atdf
 
 pub mod adc;
-pub mod arena_stack;
 // pub mod fixed_array;
 pub mod channel;
 pub mod debug;

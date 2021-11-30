@@ -7,8 +7,6 @@
 /// up to one list,
 use core::marker::PhantomData;
 
-use crate::{avr_assert, avr_assert_eq};
-
 pub type ArenaIndex = u8;
 
 pub trait Arena<T> {
@@ -22,9 +20,7 @@ pub trait Arena<T> {
     }
 }
 
-// TODO: Remove Clone/Copy.
 #[derive(Clone, Copy)]
-#[repr(packed)]
 pub struct ArenaStackItem<T> {
     /// Index of the previous entry in this linked list.
     /// If equal to the index of the current item, then there is no previous
@@ -106,8 +102,8 @@ impl<T, A: Arena<ArenaStackItem<T>>> ArenaStack<T, A> {
 
     /// NOTE: We do not validate the 'index' is actually owned by this list.
     /// Returns the previous item before the removed one.
-    /// 
-    /// TODO: No longer needs to 
+    ///
+    /// TODO: No longer needs to
     pub fn remove(&mut self, index: ArenaIndex) -> Option<(T, ArenaIndex)> {
         let mut next_idx = self.arena.get(index).next;
         let prev_idx = self.arena.get(index).prev;
@@ -132,9 +128,9 @@ impl<T, A: Arena<ArenaStackItem<T>>> ArenaStack<T, A> {
             //     if self.head.is_none() {
             //         crate::avr::usart::USART1::send_blocking(b"YY\n");
             //     }
-                
+
             // }
-            avr_assert_eq!(Some(index), self.head);
+            assert_eq!(Some(index), self.head);
 
             self.head = {
                 if prev_idx == index {
@@ -197,9 +193,10 @@ impl<T, A: Arena<ArenaStackItem<T>>> ArenaStack<T, A> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::cell::Cell;
     use std::vec::Vec;
+
+    use super::*;
 
     struct IntArena {
         values: Vec<Cell<ArenaStackItem<u32>>>,

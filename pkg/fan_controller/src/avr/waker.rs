@@ -1,11 +1,13 @@
 /// This module contains the Waker data type which can be used to
-use crate::avr::arena_stack::*;
-use crate::avr::thread::*;
-use crate::avr_assert;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::Context;
 use core::task::Poll;
+
+use executor::avr::arena_stack::*;
+
+use crate::avr::thread::*;
+use crate::avr_assert;
 
 // NOTE: Can be at most 'ArenaIndex::MAX_VALUE + 1'
 const MAX_PENDING_WAKERS: usize = 16;

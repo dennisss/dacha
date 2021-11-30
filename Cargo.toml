@@ -56,7 +56,8 @@ members = [
 	"pkg/rpc_util",
 	"pkg/nordic",
 	"third_party/pico_core",
-	"third_party/mime_types"
+	"third_party/mime_types",
+	"pkg/executor"
 ]
 
 [profile.dev]

@@ -375,17 +375,6 @@ Next Steps:
   - Incremented 
 
 
-
-
-
-
-
-
-Data:
-
-
-
-
 Network discovery protocals:
 - SSDP (used by Hue)
 - mDNS

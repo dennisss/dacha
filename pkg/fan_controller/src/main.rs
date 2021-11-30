@@ -6,6 +6,7 @@
 #![cfg_attr(target_arch = "avr", no_std)]
 
 // extern crate core;
+extern crate executor;
 
 #[macro_use]
 pub mod avr;
