@@ -1,10 +1,15 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenTree;
-use quote::{quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{
-    parse_macro_input, parse_quote, Data, DeriveInput, Fields, GenericParam, Generics, Index,
+    parse_macro_input, parse_quote, Data, DeriveInput, Fields, GenericParam, Generics, Ident,
+    Index, Lit,
 };
+
+use crate::utils::get_options;
+
+const PARSE_ATTR_NAME: &'static str = "parse";
 
 macro_rules! ast_string {
     ($val:expr) => {{
@@ -179,6 +184,104 @@ pub fn derive_reflection(input: TokenStream) -> TokenStream {
     // We'd need to lookup
 
     // Hand the output tokens back to the compiler.
+    proc_macro::TokenStream::from(out)
+}
+
+pub fn derive_parseable(input: TokenStream) -> TokenStream {
+    // Parse the input tokens into a syntax tree.
+    let input = parse_macro_input!(input as DeriveInput);
+
+    // Used in the quasi-quotation below as `#name`.
+    let name = input.ident;
+
+    let mut parse_values = vec![];
+    let mut parse_branch = vec![];
+    let mut parse_fields = vec![];
+    let mut serialize_fields = vec![];
+
+    match &input.data {
+        Data::Struct(s) => {
+            for (i, field) in s.fields.iter().enumerate() {
+                // let typename = ast_string!(&field.ty);
+
+                let field_ty = &field.ty;
+                let field_ident = field.ident.clone().unwrap();
+                let mut field_name = field_ident.to_string();
+
+                let options = get_options(PARSE_ATTR_NAME, &field.attrs);
+                for (key, value) in options {
+                    if key.is_ident("name") {
+                        let v = value.unwrap();
+                        field_name = match &v {
+                            Lit::Str(s) => s.value().to_string(),
+                            _ => panic!("Bad name format"),
+                        };
+                    }
+                }
+
+                let field_value = format_ident!("{}_value", field_ident);
+
+                parse_values.push(quote! {
+                    let mut #field_value = None;
+                });
+
+                parse_branch.push(quote! {
+                    #field_name => {
+                        if #field_value.is_some() {
+                            return Err(err_msg("Duplicate value for field"));
+                        }
+
+                        #field_value = Some(
+                            <#field_ty as ::reflection::ParseFrom<'a>>::parse_from(value)?
+                        );
+                    }
+                });
+
+                parse_fields.push(quote! {
+                    #field_ident: #field_value.ok_or_else(|| err_msg("Missing field"))?
+                });
+
+                serialize_fields.push(quote! {
+                    ::reflection::ObjectSerializer::serialize_field(&mut obj, #field_name, &self.#field_ident)?;
+                });
+            }
+        }
+        _ => {}
+    }
+
+    // TODO: Is the order of execution defined for which fields will be parsed
+    // first.
+    let out = quote! {
+        impl<'a> ::reflection::ParseFrom<'a> for #name {
+            fn parse_from<Input: ::reflection::ValueParser<'a>>(input: Input) -> Result<Self> {
+                let mut obj = input.parse()?.into_object()?;
+
+                #(#parse_values)*
+
+                while let Some((key, value)) = ::reflection::ObjectParser::next_field(&mut obj)? {
+                    match key.as_ref() {
+                        #(#parse_branch,)*
+                        _ => {
+                            return Err(format_err!("Unknown field: {}", key.as_ref()));
+                        }
+                    }
+                }
+
+                Ok(#name {
+                    #(#parse_fields,)*
+                })
+            }
+        }
+
+        impl ::reflection::SerializeTo for #name {
+            fn serialize_to<Output: ::reflection::ValueSerializer>(&self, output: Output) -> Result<()> {
+                let mut obj = output.serialize_object();
+                #(#serialize_fields)*
+                Ok(())
+            }
+        }
+    };
+
     proc_macro::TokenStream::from(out)
 }
 

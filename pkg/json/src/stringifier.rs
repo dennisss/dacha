@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::marker::PhantomData;
 
+use common::errors::*;
+use reflection::SerializeTo;
+
 use crate::value::Value;
 
 #[derive(Default)]
@@ -198,6 +201,23 @@ impl Stringifier {
     }
 }
 
+impl<'a> reflection::ValueSerializer for &'a mut Stringifier {
+    type ObjectSerializerType = ObjectStringifier<'a>;
+    type ListSerializerType = ArrayStringifier<'a>;
+
+    fn serialize_primitive(self, value: reflection::PrimitiveValue) -> common::errors::Result<()> {
+        self.root_value().serialize_primitive(value)
+    }
+
+    fn serialize_object(self) -> ObjectStringifier<'a> {
+        self.root_value().serialize_object()
+    }
+
+    fn serialize_list(self) -> ArrayStringifier<'a> {
+        self.root_value().serialize_list()
+    }
+}
+
 /// Interface for serializing a single instance of a value.
 pub struct ValueStringifier<'a> {
     outer: &'a mut Stringifier,
@@ -233,6 +253,42 @@ impl<'a> ValueStringifier<'a> {
     }
 }
 
+impl<'a> reflection::ValueSerializer for ValueStringifier<'a> {
+    type ObjectSerializerType = ObjectStringifier<'a>;
+    type ListSerializerType = ArrayStringifier<'a>;
+
+    fn serialize_primitive(self, value: reflection::PrimitiveValue) -> Result<()> {
+        match value {
+            reflection::PrimitiveValue::Null => self.outer.add_null(),
+            reflection::PrimitiveValue::Bool(v) => self.bool(v),
+            reflection::PrimitiveValue::I8(v) => self.number(v as f64),
+            reflection::PrimitiveValue::U8(v) => self.number(v as f64),
+            reflection::PrimitiveValue::I16(v) => self.number(v as f64),
+            reflection::PrimitiveValue::U16(v) => self.number(v as f64),
+            reflection::PrimitiveValue::I32(v) => self.number(v as f64),
+            reflection::PrimitiveValue::U32(v) => self.number(v as f64),
+            reflection::PrimitiveValue::I64(v) => self.number(v as f64),
+            reflection::PrimitiveValue::U64(v) => self.number(v as f64),
+            reflection::PrimitiveValue::ISize(v) => self.number(v as f64),
+            reflection::PrimitiveValue::USize(v) => self.number(v as f64),
+            reflection::PrimitiveValue::F32(v) => self.number(v as f64),
+            reflection::PrimitiveValue::F64(v) => self.number(v as f64),
+            reflection::PrimitiveValue::Str(v) => self.string(v),
+            reflection::PrimitiveValue::String(v) => self.string(&v),
+        }
+
+        Ok(())
+    }
+
+    fn serialize_object(self) -> Self::ObjectSerializerType {
+        self.object()
+    }
+
+    fn serialize_list(self) -> Self::ListSerializerType {
+        self.array()
+    }
+}
+
 pub struct ObjectStringifier<'a> {
     outer: &'a mut Stringifier,
     first: bool,
@@ -253,6 +309,16 @@ impl<'a> Drop for ObjectStringifier<'a> {
     }
 }
 
+impl<'a> reflection::ObjectSerializer for ObjectStringifier<'a> {
+    fn serialize_field<Value: reflection::SerializeTo>(
+        &mut self,
+        name: &str,
+        value: &Value,
+    ) -> Result<()> {
+        value.serialize_to(self.key(name))
+    }
+}
+
 pub struct ArrayStringifier<'a> {
     outer: &'a mut Stringifier,
     first: bool,
@@ -270,5 +336,11 @@ impl<'a> ArrayStringifier<'a> {
 impl<'a> Drop for ArrayStringifier<'a> {
     fn drop(&mut self) {
         self.outer.add_array_end(self.first);
+    }
+}
+
+impl<'a> reflection::ListSerializer for ArrayStringifier<'a> {
+    fn serialize_element<Value: reflection::SerializeTo>(&mut self, value: &Value) -> Result<()> {
+        value.serialize_to(self.element())
     }
 }

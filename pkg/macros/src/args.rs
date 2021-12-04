@@ -9,37 +9,9 @@ use syn::{
     Generics, Index, Lit, Path, Type,
 };
 
-/// Gets the options specified for an element given all its attributes.
-/// These will specified with annotations of the form:
-///   #[arg(a = b, c = "d")]
-fn get_options(attrs: &[syn::Attribute]) -> HashMap<Path, Option<Lit>> {
-    let mut meta_map = HashMap::new();
+use crate::utils::get_options;
 
-    let arg_attr = attrs.iter().find(|attr| attr.path.is_ident("arg"));
-    if let Some(attr) = arg_attr {
-        let meta = attr.parse_meta().unwrap();
-
-        let meta_list = match meta {
-            syn::Meta::List(list) => list.nested,
-            _ => panic!("Unexpected arg attr format"),
-        };
-
-        for meta_item in meta_list {
-            let name_value = match meta_item {
-                syn::NestedMeta::Meta(syn::Meta::NameValue(v)) => v,
-                syn::NestedMeta::Meta(syn::Meta::Path(p)) => {
-                    meta_map.insert(p, None);
-                    continue;
-                }
-                _ => panic!("Unsupported meta_item: {:?}", meta_item),
-            };
-
-            meta_map.insert(name_value.path, Some(name_value.lit));
-        }
-    }
-
-    meta_map
-}
+const ATTR_NAME: &'static str = "arg";
 
 pub fn derive_args(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree.
@@ -60,7 +32,7 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
 
                 let field_name_str = field_name.to_string();
 
-                let options = get_options(&field.attrs);
+                let options = get_options(ATTR_NAME, &field.attrs);
 
                 let mut positional = false;
                 let mut default_value = None;
@@ -140,7 +112,7 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                 let mut command_name =
                     syn::Lit::Str(syn::LitStr::new(&var.ident.to_string(), var_name.span()));
 
-                let options = get_options(&var.attrs);
+                let options = get_options(ATTR_NAME, &var.attrs);
                 for (key, value) in options {
                     if key.is_ident("name") {
                         command_name = value.unwrap();

@@ -1,3 +1,11 @@
+extern crate common;
+
+mod parser;
+mod serializer;
+
+pub use parser::*;
+pub use serializer::*;
+
 pub trait Reflect {
     fn fields_index_mut(&mut self, index: usize) -> ReflectField;
     fn fields_len(&self) -> usize;

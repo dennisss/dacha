@@ -1,0 +1,14 @@
+[package]
+name = "ubiquiti"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+http = { path = "../http" }
+protobuf = { path = "../protobuf" }
+macros = { path = "../macros" }
+json = { path = "../json" }
+reflection = { path = "../reflection" }
+parsing = { path = "../parsing" }

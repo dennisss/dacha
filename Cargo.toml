@@ -57,7 +57,8 @@ members = [
 	"pkg/nordic",
 	"third_party/pico_core",
 	"third_party/mime_types",
-	"pkg/executor"
+	"pkg/executor",
+	"pkg/ubiquiti"
 ]
 
 [profile.dev]
@@ -69,8 +70,16 @@ members = [
 opt-level = 3
 debug = false
 
+[profile.dev.package.http]
+opt-level = 3
+debug = false
+
 # Also very expensive
 [profile.dev.package.compression]
+opt-level = 3
+debug = false
+
+[profile.dev.package.math]
 opt-level = 3
 debug = false
 

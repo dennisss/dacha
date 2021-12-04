@@ -52,7 +52,7 @@ Login with wrong user/pass:
 
 ```
 POST https://10.1.0.49/api/v1.0/user/login
-REQUEST: {"username":"ubnt","password":"asas"}
+REQUEST: {"username":"ubnt","password":"password"}
 HTTP STATUS: 401
 RESPONSE: {"statusCode":401,"error":1,"detail":"User account invalid (does not exist or invalid password).","message":"Failure"}
 ```

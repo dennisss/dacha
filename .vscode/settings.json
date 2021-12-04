@@ -7,5 +7,6 @@
   "editor.scrollBeyondLastLine": false,
   "rust-client.logToFile": true,
   "editor.wordWrap": "on",
-  "editor.formatOnSave": true
+  "editor.formatOnSave": true,
+  "rust-analyzer.checkOnSave.enable": true
 }

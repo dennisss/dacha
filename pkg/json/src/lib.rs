@@ -9,19 +9,25 @@ extern crate regexp_macros;
 mod parser;
 mod stringifier;
 mod value;
+mod value_parser;
 
 use common::errors::*;
 
 pub use stringifier::*;
 pub use value::Value;
+pub use value_parser::ValueParser;
 
 pub fn parse(input: &str) -> Result<Value> {
     let (v, _) = parsing::complete(parser::parse_json)(input)?;
     Ok(v)
 }
 
-pub fn stringify(value: &Value) -> String {
-    Stringifier::run(value, StringifyOptions::default())
+pub fn stringify<Input: reflection::SerializeTo>(value: &Input) -> Result<String> {
+    let mut s = Stringifier::new(StringifyOptions::default());
+    value.serialize_to(&mut s)?;
+    Ok(s.finish())
+
+    // Stringifier::run(value, StringifyOptions::default())
 }
 
 pub fn pretty_stringify(value: &Value) -> String {
