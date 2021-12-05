@@ -97,18 +97,42 @@ pub extern "C" fn entry() -> () {
 
 /*
 Dev kit LEDs
-P0.13
-P0.14
-P0.15
-P0.16
+    P0.13
+    P0.14
+    P0.15
+    P0.16
 
-active low
+    active low
+
+Dongle LEDS
+    Regular:
+        P0.06
+    RGB
+        P0.08
+        P1.09
+        P0.12
+
+
+    active low
 */
 
 /*
 Notes:
 - Interrupt handlers must be at least 4 clock cycles long to ensure that the interrupt flags are cleared and it doesn't immediately reoccur
 */
+
+/*
+Example in ext/nRF5_SDK_17.0.2_d674dde/examples/peripheral/radio/receiver/main.c
+*/
+
+unsafe fn init_high_freq_clk() {
+    // Init HFXO (must be started to use RADIO)
+    write_volatile(EVENTS_HFCLKSTARTED, 0);
+    write_volatile(TASKS_HFCLKSTART, 1);
+    while read_volatile(EVENTS_HFCLKSTARTED) == 0 {
+        asm!("nop")
+    }
+}
 
 unsafe fn init_low_freq_clk() {
     // TODO: Must unsure the clock is stopped before changing the source.
@@ -219,7 +243,7 @@ pub enum RadioState {
     TxDisable = 12,
 }
 
-unsafe fn send_packet(message: &[u8]) {
+unsafe fn send_packet(message: &[u8], receiving: bool) {
     // TODO: Just have a global buffer given that only one that can be copied at a
     // time anyway.
     let mut data = [0u8; 256];
@@ -231,8 +255,8 @@ unsafe fn send_packet(message: &[u8]) {
 
     write_volatile(RADIO_PACKETPTR, core::mem::transmute(&data));
 
-    write_volatile(RADIO_FREQUENCY, 0); // Exactly 2400 MHz
-    write_volatile(RADIO_TXPOWER, 0x08); // +8 dBm (max power)
+    write_volatile(RADIO_FREQUENCY, 5); // 0 // Exactly 2400 MHz
+    write_volatile(RADIO_TXPOWER, 0); // 8 // +8 dBm (max power)
     write_volatile(RADIO_MODE, 0); // Nrf_1Mbit
 
     // 1 LENGTH byte (8 bits). 0 S0, S1 bits. 8-bit preamble.
@@ -251,6 +275,34 @@ unsafe fn send_packet(message: &[u8]) {
     write_volatile(RADIO_CRCCNF, 0x202);
     write_volatile(RADIO_CRCPOLY, 0x11021);
     write_volatile(RADIO_CRCINIT, 0);
+
+    if receiving {
+        // data[0] = 0;
+
+        write_volatile(RADIO_TASKS_RXEN, 1);
+        while read_volatile(RADIO_STATE) != RadioState::RxIdle as u32 {
+            asm!("nop");
+        }
+
+        write_volatile(RADIO_EVENTS_END, 0);
+
+        // Start receiving
+        write_volatile(RADIO_TASKS_START, 1);
+
+        while read_volatile(RADIO_STATE) != RadioState::Rx as u32 {
+            asm!("nop");
+        }
+
+        // write_volatile(RADIO_TASKS_STOP, 1);
+
+        while read_volatile(RADIO_STATE) == RadioState::Rx as u32
+            && read_volatile(RADIO_EVENTS_END) == 0
+        {
+            asm!("nop");
+        }
+
+        return;
+    }
 
     // Ramp up the radio
     // TODO: If currnetly in the middle of disabling, wait for that to finish before
@@ -286,15 +338,23 @@ unsafe fn send_packet(message: &[u8]) {
     */
 }
 
+const USING_DEV_KIT: bool = false;
+const RECEIVING: bool = false;
+
 // TODO: Switch back to returning '!'
 fn main() -> () {
     unsafe {
-        // zero_bss();
+        zero_bss();
 
+        init_high_freq_clk();
         init_low_freq_clk();
         init_rtc0();
 
-        write_volatile(GPIO_P0_DIR, 1 << 14 | 1 << 15);
+        if USING_DEV_KIT {
+            write_volatile(GPIO_P0_DIR, 1 << 14 | 1 << 15);
+        } else {
+            write_volatile(GPIO_P0_DIR, 1 << 6);
+        }
 
         // Enable interrupts.
         asm!("cpsie i"); // cpsid to disable
@@ -303,17 +363,27 @@ fn main() -> () {
         write_volatile(NVIC_ISER0 as *mut u32, 1 << 11);
 
         loop {
-            write_volatile(GPIO_P0_OUTCLR, 1 << 14);
+            if USING_DEV_KIT {
+                write_volatile(GPIO_P0_OUTCLR, 1 << 14);
+            } else {
+                write_volatile(GPIO_P0_OUTCLR, 1 << 6);
+            }
 
-            send_packet(b"hello");
+            send_packet(b"hello", RECEIVING);
+            if !RECEIVING {
+                delay_1s();
+            }
 
-            delay_1s();
+            if USING_DEV_KIT {
+                write_volatile(GPIO_P0_OUTSET, 1 << 14);
+            } else {
+                write_volatile(GPIO_P0_OUTSET, 1 << 6);
+            }
 
-            write_volatile(GPIO_P0_OUTSET, 1 << 14);
-
-            send_packet(b"world");
-
-            delay_1s();
+            send_packet(b"world", RECEIVING);
+            if !RECEIVING {
+                delay_1s();
+            }
         }
     }
 }

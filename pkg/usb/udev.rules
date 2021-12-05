@@ -20,3 +20,6 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="0764", ATTRS{idProduct}=="0501", MODE="0660"
 
 # RP2040 USB Bootloader
 SUBSYSTEM=="usb", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0003", MODE="0660", GROUP="plugdev"
+
+# HackRF One
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="6089", SYMLINK+="hackrf-one-%k", MODE="0660", GROUP="plugdev"

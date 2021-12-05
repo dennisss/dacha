@@ -7,6 +7,9 @@ pub const GPIO_P0_OUTCLR: *mut u32 = (GPIO_P0 + 0x50C) as *mut u32;
 pub const GPIO_P0_DIR: *mut u32 = (GPIO_P0 + 0x514) as *mut u32;
 
 const CLOCK: u32 = 0x40000000;
+pub const TASKS_HFCLKSTART: *mut u32 = (CLOCK + 0x000) as *mut u32;
+pub const EVENTS_HFCLKSTARTED: *mut u32 = (CLOCK + 0x100) as *mut u32;
+
 pub const TASKS_LFCLKSTART: *mut u32 = (CLOCK + 0x008) as *mut u32;
 pub const TASKS_LFCLKSTOP: *mut u32 = (CLOCK + 0x00C) as *mut u32;
 

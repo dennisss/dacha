@@ -33,12 +33,19 @@ SECTIONS
 
     .bss (NOLOAD) : ALIGN(4)
     {
-        . = ALIGN(4);
-        __sbss = .;
-        *(.bss .bss.*);
-        *(COMMON); /* Uninitialized C statics */
-        . = ALIGN(4); /* 4-byte align the end (VMA) of this section */
+        _sbss = .;
+        *(.bss.*);
+        _ebss = ALIGN(4);
     } > RAM
+
+    .data : ALIGN(4)
+    {
+        _sdata = .;
+        *(.data.*);
+        _edata = ALIGN(4);
+    } > RAM AT > FLASH
+
+    _sidata = LOADADDR(.data);
 
     /DISCARD/ :
     {

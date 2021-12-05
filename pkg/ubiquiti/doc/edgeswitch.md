@@ -21,12 +21,6 @@ Below is information on the ES-8-150W ethernet switch.
 
 ## SSH
 
-49
-53
-39
-39
-
-
 ```
 (UBNT EdgeSwitch) >show environment
 
@@ -38,7 +32,6 @@ Unit     Sensor  Description       Temp (C)    State           Max_Temp (C)
 1        3       PoE-01            39          Normal          39
 1        4       PoE-02            39          Normal          39
 ```
-
 
 
 ## HTTP API
