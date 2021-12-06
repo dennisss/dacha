@@ -41,6 +41,7 @@ pub const RTC0_CC0: *mut u32 = (RTC0 + 0x540) as *mut u32;
 pub const NVIC_ICSR: *mut u32 = 0xE000ED04 as *mut u32;
 pub const NVIC_ICTR: *mut u32 = 0xE000E004 as *mut u32;
 pub const NVIC_ISER0: u32 = 0xE000E100;
+pub const NVIC_ICER0: u32 = 0xE000E180;
 
 const RADIO: u32 = 0x40001000;
 pub const RADIO_TASKS_TXEN: *mut u32 = (RADIO + 0x000) as *mut u32;

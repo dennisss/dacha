@@ -25,11 +25,63 @@ cargo build --package nordic --target thumbv7em-none-eabihf --release
 
 openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program target/thumbv7em-none-eabihf/release/nordic verify" -c reset -c exit
 
+~/apps/gcc-arm-none-eabi-10.3-2021.10/bin/arm-none-eabi-gdb target/thumbv7em-none-eabihf/release/nordic
+- https://openocd.org/doc/html/GDB-and-OpenOCD.html
+
+
+
+
+Flashing via Raspberry Pi
+
+- Follow Adafruit guide for adding Open OCD
+  - https://learn.adafruit.com/programming-microcontrollers-using-openocd-on-raspberry-pi/overview
+  - Pins 24 and 25 for SWD
+
+Create board file:
+  source [find interface/raspberrypi-native.cfg]
+  bcm2835gpio_swd_nums 25 24
+  transport select swd
+  source [find target/nrf52.cfg]
+
+^ May need to change to 'interface/raspberrypi2-native.cfg' depending on the pi.
+
+
+cargo build --package nordic --target thumbv7em-none-eabihf --release
+
+scp -i ~/.ssh/id_cluster target/thumbv7em-none-eabihf/release/nordic pi@10.1.0.67:~/binary
+
+openocd -f nrf52_pi.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program /home/pi/binary verify" -c reset -c exit
+
+
+
+Nice instructions for using CC2531 as Zigbee sniffer:
+- https://www.zigbee2mqtt.io/advanced/zigbee/04_sniff_zigbee_traffic.html#with-cc2531
 
 
 https://github.com/openocd-org/openocd/blob/master/tcl/board/nordic_nrf52_dk.cfg
 
 
+Flashing using a Black Magic Probe
+
+- Useful links:
+  - https://github.com/blacksphere/blackmagic/wiki/Useful-GDB-commands
+  - 
+
+- Download GDB from:
+  - https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm/downloads
+  - `sudo apt install libncurses5`
+
+- `~/apps/gcc-arm-none-eabi-10.3-2021.10/bin/arm-none-eabi-gdb`
+- `target extended-remote /dev/ttyACM0`
+- `monitor tpwr enable`: Power the device via 3.3V
+- `monitor swdp_scan`
+- `attach 1`
+- `load target/thumbv7em-none-eabihf/release/nordic`
+
+
+Updating black magic probe:
+- `sudo apt install dfu-util`
+- `sudo dfu-util -d 1d50:6018,:6017 -s 0x08002000:leave -D ~/Downloads/blackmagic-native.bin`
 
 
 Programming the NRF dongle

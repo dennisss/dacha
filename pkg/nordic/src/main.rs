@@ -1,17 +1,17 @@
 #![no_std]
 #![no_main]
-#![feature(lang_items, asm)]
+#![feature(lang_items, asm, type_alias_impl_trait)]
 
+#[macro_use]
+extern crate executor;
+
+mod interrupts;
 mod registers;
 
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
 use crate::registers::*;
-
-type InterruptHandler = unsafe extern "C" fn() -> ();
-
-// TODO: Need code for RAM initialization.
 
 extern "C" {
     static mut _sbss: u32;
@@ -23,62 +23,28 @@ extern "C" {
     static _sidata: u32;
 }
 
+#[inline(never)]
 unsafe fn zero_bss() {
+    let start = core::mem::transmute::<_, u32>(&_sbss);
+    let end = core::mem::transmute::<_, u32>(&_ebss);
+
     let z: u32 = 0;
-    for addr in _sbss.._ebss {
+    for addr in start..end {
         asm!("strb {}, [{}]", in(reg) z, in(reg) addr);
     }
 }
 
-#[link_section = ".vector_table.reset_vector"]
-#[no_mangle]
-pub static RESET_VECTOR: [InterruptHandler; 15 + 20] = [
-    entry,             // Reset
-    default_interrupt, // NMI
-    default_interrupt, // Hard fault
-    default_interrupt, // Memory management fauly
-    default_interrupt, // Bus fault
-    default_interrupt, // Usage fault
-    default_interrupt, // reserved 7
-    default_interrupt, // reserved 8
-    default_interrupt, // reserved 9
-    default_interrupt, // reserved 10
-    default_interrupt, // SVCall
-    default_interrupt, // Reserved for debug
-    default_interrupt, // Reserved
-    interrupt_pendsv,  // PendSV
-    default_interrupt, // Systick
-    default_interrupt, // IRQ0
-    interrupt_radio,   // IRQ1
-    default_interrupt, // IRQ2
-    default_interrupt, // IRQ3
-    default_interrupt, // IRQ4
-    default_interrupt, // IRQ5
-    default_interrupt, // IRQ6
-    default_interrupt, // IRQ7
-    default_interrupt, // IRQ8
-    default_interrupt, // IRQ9
-    default_interrupt, // IRQ10
-    interrupt_rtc,     // IRQ11
-    default_interrupt, // IRQ12
-    default_interrupt, // IRQ13
-    default_interrupt, // IRQ14
-    default_interrupt, // IRQ15
-    default_interrupt, // IRQ16
-    default_interrupt, // IRQ17
-    default_interrupt, // IRQ18
-    default_interrupt, // IRQ19
-];
+#[inline(never)]
+unsafe fn init_data() {
+    let in_start = core::mem::transmute::<_, u32>(&_sidata);
+    let out_start = core::mem::transmute::<_, u32>(&_sdata);
+    let out_end = core::mem::transmute::<_, u32>(&_edata);
 
-pub enum IRQn {
-    RTC0 = 11,
-}
+    for i in 0..(out_end - out_start) {
+        let z = read_volatile((in_start + i) as *mut u8);
+        let addr = out_start + i;
 
-#[no_mangle]
-unsafe extern "C" fn default_interrupt() -> () {
-    write_volatile(GPIO_P0_OUTSET, 1 << 14);
-    loop {
-        asm!("nop")
+        asm!("strb {}, [{}]", in(reg) z, in(reg) addr);
     }
 }
 
@@ -162,39 +128,7 @@ unsafe fn init_rtc0() {
     }
 }
 
-static mut INTERRUPT_TRIGGERD: bool = false;
-
-unsafe extern "C" fn interrupt_rtc() -> () {
-    // write_volatile(GPIO_P0_OUTSET, 1 << 14);
-
-    // Clear event so that the interrupt doesn't happen again.
-    write_volatile(RTC0_EVENTS_COMPARE0, 0);
-
-    asm!("nop");
-    asm!("nop");
-    asm!("nop");
-    asm!("nop");
-    INTERRUPT_TRIGGERD = true;
-}
-
-unsafe extern "C" fn interrupt_pendsv() -> () {
-    asm!("nop");
-    asm!("nop");
-    asm!("nop");
-    asm!("nop");
-    INTERRUPT_TRIGGERD = true;
-}
-
-unsafe extern "C" fn interrupt_radio() -> () {
-    asm!("nop");
-    asm!("nop");
-    asm!("nop");
-    asm!("nop");
-}
-
-unsafe fn delay_1s() {
-    INTERRUPT_TRIGGERD = false;
-
+async unsafe fn delay_1s() {
     let initial_count = read_volatile(RTC0_COUNTER);
     let target_count = initial_count + (32768 / 4);
 
@@ -205,6 +139,7 @@ unsafe fn delay_1s() {
 
     // write_volatile(RTC0_EVENTS_TICK, 0);
 
+    //
     write_volatile(RTC0_CC0, target_count);
 
     write_volatile(RTC0_EVENTS_COMPARE0, 0); // TODO: Is this needed?
@@ -222,9 +157,16 @@ unsafe fn delay_1s() {
     // write_volatile(NVIC_ICSR, 1 << 28);
     // asm!("isb");
 
-    while !INTERRUPT_TRIGGERD {
-        asm!("nop")
-    }
+    crate::interrupts::wait_for_irq(crate::interrupts::IRQn::RTC0).await;
+
+    // Clear event so that the interrupt doesn't happen again.
+    write_volatile(RTC0_EVENTS_COMPARE0, 0);
+
+    // TODO: Unset the interrupt.
+
+    // while !INTERRUPT_TRIGGERD {
+    //     asm!("nop")
+    // }
 
     // while read_volatile(RTC0_COUNTER) < target_count {
     //     asm!("nop")
@@ -243,7 +185,7 @@ pub enum RadioState {
     TxDisable = 12,
 }
 
-unsafe fn send_packet(message: &[u8], receiving: bool) {
+async unsafe fn send_packet(message: &[u8], receiving: bool) {
     // TODO: Just have a global buffer given that only one that can be copied at a
     // time anyway.
     let mut data = [0u8; 256];
@@ -304,20 +246,29 @@ unsafe fn send_packet(message: &[u8], receiving: bool) {
         return;
     }
 
+    write_volatile(RADIO_EVENTS_READY, 0);
+    write_volatile(RADIO_INTENSET, 1 << 0); // Enable interrupt for READY event.
+
     // Ramp up the radio
     // TODO: If currnetly in the middle of disabling, wait for that to finish before
     // attempting to starramp up.
     // TODO: Also support switching from rx to tx and vice versa.
     write_volatile(RADIO_TASKS_TXEN, 1);
 
-    while read_volatile(RADIO_STATE) != RadioState::TxIdle as u32 {
-        asm!("nop");
+    while read_volatile(RADIO_EVENTS_READY) == 0 {
+        crate::interrupts::wait_for_irq(crate::interrupts::IRQn::RADIO).await;
     }
+    write_volatile(RADIO_EVENTS_READY, 0);
+    assert!(read_volatile(RADIO_STATE) == RadioState::TxIdle as u32);
+
+    write_volatile(RADIO_EVENTS_READY, 0);
 
     write_volatile(RADIO_EVENTS_END, 0);
 
     // Start transmitting.
     write_volatile(RADIO_TASKS_START, 1);
+
+    // EVENTS_END
 
     while read_volatile(RADIO_EVENTS_END) == 0 {
         asm!("nop");
@@ -338,18 +289,14 @@ unsafe fn send_packet(message: &[u8], receiving: bool) {
     */
 }
 
-const USING_DEV_KIT: bool = false;
+const USING_DEV_KIT: bool = true;
 const RECEIVING: bool = false;
 
-// TODO: Switch back to returning '!'
-fn main() -> () {
+static mut HELLO: [u8; 5] = [4, 1, 2, 3, 4];
+
+define_thread!(Blinker, BlinkerThreadFn);
+async fn BlinkerThreadFn() {
     unsafe {
-        zero_bss();
-
-        init_high_freq_clk();
-        init_low_freq_clk();
-        init_rtc0();
-
         if USING_DEV_KIT {
             write_volatile(GPIO_P0_DIR, 1 << 14 | 1 << 15);
         } else {
@@ -360,7 +307,7 @@ fn main() -> () {
         asm!("cpsie i"); // cpsid to disable
 
         // Enable external interrupt 11
-        write_volatile(NVIC_ISER0 as *mut u32, 1 << 11);
+        // write_volatile(NVIC_ISER0 as *mut u32, 1 << 11);
 
         loop {
             if USING_DEV_KIT {
@@ -369,9 +316,9 @@ fn main() -> () {
                 write_volatile(GPIO_P0_OUTCLR, 1 << 6);
             }
 
-            send_packet(b"hello", RECEIVING);
+            send_packet(b"hello", RECEIVING).await;
             if !RECEIVING {
-                delay_1s();
+                delay_1s().await;
             }
 
             if USING_DEV_KIT {
@@ -380,10 +327,33 @@ fn main() -> () {
                 write_volatile(GPIO_P0_OUTSET, 1 << 6);
             }
 
-            send_packet(b"world", RECEIVING);
+            send_packet(b"world", RECEIVING).await;
             if !RECEIVING {
-                delay_1s();
+                delay_1s().await;
             }
         }
+    }
+}
+
+// TODO: Switch back to returning '!'
+fn main() -> () {
+    unsafe {
+        zero_bss();
+        init_data();
+
+        init_high_freq_clk();
+        init_low_freq_clk();
+        init_rtc0();
+
+        if HELLO[0] != 4 {
+            loop {
+                unsafe { asm!("nop") };
+            }
+        }
+    }
+
+    Blinker::start();
+    loop {
+        unsafe { asm!("nop") };
     }
 }

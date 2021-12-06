@@ -31,7 +31,7 @@ SECTIONS
         *(.rodata .rodata.*);
     } > FLASH
 
-    .bss (NOLOAD) : ALIGN(4)
+    .bss : ALIGN(4)
     {
         _sbss = .;
         *(.bss.*);

@@ -191,6 +191,7 @@ impl<T, A: Arena<ArenaStackItem<T>>> ArenaStack<T, A> {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
@@ -291,4 +292,4 @@ mod tests {
         assert_eq!(list.pop(), Some((10, 0)));
         assert_eq!(list.pop(), None);
     }
-}
+}*/
