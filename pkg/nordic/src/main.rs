@@ -1,9 +1,15 @@
 #![no_std]
 #![no_main]
-#![feature(lang_items, asm, type_alias_impl_trait)]
+#![feature(lang_items, asm, type_alias_impl_trait, inherent_associated_types)]
 
 #[macro_use]
 extern crate executor;
+extern crate peripherals;
+
+/*
+Old binary uses 2763 flash bytes.
+Currently we use 3078 flash bytes if we don't count offsets
+*/
 
 mod interrupts;
 mod registers;
@@ -11,7 +17,12 @@ mod registers;
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
-use crate::registers::*;
+// use crate::registers::*;
+use peripherals::clock::CLOCK;
+use peripherals::radio::RADIO;
+use peripherals::rtc0::RTC0;
+use peripherals::{EventState, Interrupt, PinDirection, RegisterRead, RegisterWrite};
+// use crate::peripherals::
 
 extern "C" {
     static mut _sbss: u32;
@@ -91,45 +102,55 @@ Notes:
 Example in ext/nRF5_SDK_17.0.2_d674dde/examples/peripheral/radio/receiver/main.c
 */
 
-unsafe fn init_high_freq_clk() {
+fn init_high_freq_clk(clock: &mut CLOCK) {
     // Init HFXO (must be started to use RADIO)
-    write_volatile(EVENTS_HFCLKSTARTED, 0);
-    write_volatile(TASKS_HFCLKSTART, 1);
-    while read_volatile(EVENTS_HFCLKSTARTED) == 0 {
-        asm!("nop")
+    clock.events_hfclkstarted.write_notgenerated();
+    clock.tasks_hfclkstart.write_trigger();
+
+    while clock.events_hfclkstarted.read().is_notgenerated() {
+        unsafe { asm!("nop") };
     }
 }
 
-unsafe fn init_low_freq_clk() {
+fn init_low_freq_clk(clock: &mut CLOCK) {
     // TODO: Must unsure the clock is stopped before changing the source.
     // ^ But clock can only be stopped if clock is running.
 
-    write_volatile(LFCLKSRC, 1); // Use XTAL
-    write_volatile(TASKS_LFCLKSTART, 1); // Start the clock.
+    // Use XTAL
+    clock
+        .lfclksrc
+        .write_with(|v| v.set_src_with(|v| v.set_xtal()));
 
-    loop {
-        let running = read_volatile(LFCLKSTAT) >> 16 == 0b1;
-        if running {
-            break;
-        }
-        asm!("nop")
+    // Start the clock.
+    clock.tasks_lfclkstart.write_trigger();
+
+    while clock.lfclkstat.read().state().is_notrunning() {
+        unsafe { asm!("nop") };
     }
 }
 
 /// NOTE: This function assumes that RTC0 is currently stopped.
-unsafe fn init_rtc0() {
-    write_volatile(RTC0_PRESCALER, 0); // Explictly request a 32.7kHz tick.
-    write_volatile(RTC0_TASKS_START, 1);
+fn init_rtc0(rtc0: &mut RTC0) {
+    rtc0.prescaler.write(0); // Explictly request a 32.7kHz tick.
+    rtc0.tasks_start.write_trigger();
 
     // Wait for the first tick to know the RTC has started.
-    let initial_count = read_volatile(RTC0_COUNTER);
-    while initial_count == read_volatile(RTC0_COUNTER) {
-        asm!("nop")
+    let initial_count = rtc0.counter.read();
+    while initial_count == rtc0.counter.read() {
+        unsafe { asm!("nop") };
     }
 }
 
-async unsafe fn delay_1s() {
-    let initial_count = read_volatile(RTC0_COUNTER);
+/*
+Waiting for an interrupt:
+- Need:
+    - EVENTS_* register
+    - Need INTEN register / field.
+    - Need the interrupt number (for NVIC)
+*/
+
+async fn delay_1s(rtc0: &mut RTC0) {
+    let initial_count = rtc0.counter.read();
     let target_count = initial_count + (32768 / 4);
 
     // To produce an interrupt must have bits set:
@@ -140,12 +161,13 @@ async unsafe fn delay_1s() {
     // write_volatile(RTC0_EVENTS_TICK, 0);
 
     //
-    write_volatile(RTC0_CC0, target_count);
+    rtc0.cc[0].write_with(|v| v.set_compare(target_count));
 
-    write_volatile(RTC0_EVENTS_COMPARE0, 0); // TODO: Is this needed?
+    rtc0.events_compare[0].write_notgenerated();
 
+    // Enable interrupt on COMPARE0.
     // NOTE: We don't need to set EVTEN
-    write_volatile(RTC0_INTENSET, 1 << 16); // Enable interrupt on COMPARE0.
+    rtc0.intenset.write_with(|v| v.set_compare0());
 
     // write_volatile(RTC0_EVTENSET, 1 << 16 | 1); // Just enable for CC0
 
@@ -157,10 +179,12 @@ async unsafe fn delay_1s() {
     // write_volatile(NVIC_ICSR, 1 << 28);
     // asm!("isb");
 
-    crate::interrupts::wait_for_irq(crate::interrupts::IRQn::RTC0).await;
+    crate::interrupts::wait_for_irq(Interrupt::RTC0).await;
+
+    // TODO: Explicitly wait for EVENTS_COMPARE0 to be set?
 
     // Clear event so that the interrupt doesn't happen again.
-    write_volatile(RTC0_EVENTS_COMPARE0, 0);
+    rtc0.events_compare[0].write_notgenerated();
 
     // TODO: Unset the interrupt.
 
@@ -173,19 +197,7 @@ async unsafe fn delay_1s() {
     // }
 }
 
-pub enum RadioState {
-    Disabled = 0,
-    RxRu = 1,
-    RxIdle = 2,
-    Rx = 3,
-    RxDisable = 4,
-    TxRu = 9,
-    TxIdle = 10,
-    Tx = 11,
-    TxDisable = 12,
-}
-
-async unsafe fn send_packet(message: &[u8], receiving: bool) {
+async fn send_packet(radio: &mut RADIO, message: &[u8], receiving: bool) {
     // TODO: Just have a global buffer given that only one that can be copied at a
     // time anyway.
     let mut data = [0u8; 256];
@@ -195,83 +207,90 @@ async unsafe fn send_packet(message: &[u8], receiving: bool) {
     // NOTE: THe POWER register is 1 at boot so we shouldn't need to turn on the
     // peripheral.
 
-    write_volatile(RADIO_PACKETPTR, core::mem::transmute(&data));
+    radio
+        .packetptr
+        .write(unsafe { core::mem::transmute(&data) });
 
-    write_volatile(RADIO_FREQUENCY, 5); // 0 // Exactly 2400 MHz
-    write_volatile(RADIO_TXPOWER, 0); // 8 // +8 dBm (max power)
-    write_volatile(RADIO_MODE, 0); // Nrf_1Mbit
+    radio.frequency.write_with(|v| v.set_frequency(5)); // 0 // Exactly 2400 MHz
+    radio.txpower.write_0dbm(); // TODO: +8 dBm (max power)
+    radio.mode.write_nrf_1mbit();
 
     // 1 LENGTH byte (8 bits). 0 S0, S1 bits. 8-bit preamble.
-    write_volatile(RADIO_PCNF0, 8);
+    radio
+        .pcnf0
+        .write_with(|v| v.set_lflen(8).set_plen_with(|v| v.set_8bit()));
+    // write_volatile(RADIO_PCNF0, 8);
 
     // MAXLEN=255. STATLEN=0, BALEN=2 (so we have 3 byte addresses), little endian
-    write_volatile(RADIO_PCNF1, 255 | (2 << 16));
+    radio.pcnf1.write_with(|v| v.set_maxlen(255).set_balen(2));
 
-    write_volatile(RADIO_BASE0, 0xAABBCCDD);
-    write_volatile(RADIO_PREFIX0, 0xEE);
+    radio.base0.write(0xAABBCCDD);
+    radio.prefix0.write_with(|v| v.set_ap0(0xEE));
 
-    write_volatile(RADIO_TXADDRESS, 0); // Trasmit on address 0
-    write_volatile(RADIO_RXADDRESSES, 0b1); // Receive from address 0
+    radio.txaddress.write(0); // Transmit on address 0
+
+    // Receive from address 0
+    radio
+        .rxaddresses
+        .write_with(|v| v.set_addr0_with(|v| v.set_enabled()));
 
     // Copies the 802.15.4 mode.
-    write_volatile(RADIO_CRCCNF, 0x202);
-    write_volatile(RADIO_CRCPOLY, 0x11021);
-    write_volatile(RADIO_CRCINIT, 0);
+    radio.crccnf.write_with(|v| {
+        v.set_len_with(|v| v.set_two())
+            .set_skipaddr_with(|v| v.set_ieee802154())
+    });
+    radio.crcpoly.write(0x11021);
+    radio.crcinit.write(0);
 
     if receiving {
         // data[0] = 0;
 
-        write_volatile(RADIO_TASKS_RXEN, 1);
-        while read_volatile(RADIO_STATE) != RadioState::RxIdle as u32 {
-            asm!("nop");
+        radio.tasks_rxen.write_trigger();
+        while !radio.state.read().is_rxidle() {
+            unsafe { asm!("nop") };
         }
 
-        write_volatile(RADIO_EVENTS_END, 0);
+        radio.events_end.write_notgenerated();
 
         // Start receiving
-        write_volatile(RADIO_TASKS_START, 1);
+        radio.tasks_start.write_trigger();
 
-        while read_volatile(RADIO_STATE) != RadioState::Rx as u32 {
-            asm!("nop");
+        while !radio.state.read().is_rx() {
+            unsafe { asm!("nop") };
         }
 
         // write_volatile(RADIO_TASKS_STOP, 1);
 
-        while read_volatile(RADIO_STATE) == RadioState::Rx as u32
-            && read_volatile(RADIO_EVENTS_END) == 0
-        {
-            asm!("nop");
+        while radio.state.read().is_rx() && radio.events_end.read().is_notgenerated() {
+            unsafe { asm!("nop") };
         }
 
         return;
     }
 
-    write_volatile(RADIO_EVENTS_READY, 0);
-    write_volatile(RADIO_INTENSET, 1 << 0); // Enable interrupt for READY event.
+    radio.events_ready.write_notgenerated();
+    radio.intenset.write_with(|v| v.set_ready());
 
     // Ramp up the radio
     // TODO: If currnetly in the middle of disabling, wait for that to finish before
     // attempting to starramp up.
     // TODO: Also support switching from rx to tx and vice versa.
-    write_volatile(RADIO_TASKS_TXEN, 1);
+    radio.tasks_txen.write_trigger();
 
-    while read_volatile(RADIO_EVENTS_READY) == 0 {
-        crate::interrupts::wait_for_irq(crate::interrupts::IRQn::RADIO).await;
+    while !radio.state.read().is_txidle() && radio.events_ready.read().is_notgenerated() {
+        crate::interrupts::wait_for_irq(Interrupt::RADIO).await;
     }
-    write_volatile(RADIO_EVENTS_READY, 0);
-    assert!(read_volatile(RADIO_STATE) == RadioState::TxIdle as u32);
+    radio.events_ready.write_notgenerated();
 
-    write_volatile(RADIO_EVENTS_READY, 0);
+    assert!(radio.state.read().is_txidle());
 
-    write_volatile(RADIO_EVENTS_END, 0);
+    radio.events_end.write_notgenerated();
 
     // Start transmitting.
-    write_volatile(RADIO_TASKS_START, 1);
+    radio.tasks_start.write_trigger();
 
-    // EVENTS_END
-
-    while read_volatile(RADIO_EVENTS_END) == 0 {
-        asm!("nop");
+    while radio.events_end.read().is_notgenerated() {
+        unsafe { asm!("nop") };
     }
 
     // Mode: Nrf_250Kbit
@@ -296,41 +315,44 @@ static mut HELLO: [u8; 5] = [4, 1, 2, 3, 4];
 
 define_thread!(Blinker, BlinkerThreadFn);
 async fn BlinkerThreadFn() {
-    unsafe {
+    let mut peripherals = peripherals::Peripherals::new();
+
+    if USING_DEV_KIT {
+        peripherals.p0.dir.write_with(|v| {
+            v.set_pin14(PinDirection::Output)
+                .set_pin15(PinDirection::Output)
+        });
+    } else {
+        peripherals
+            .p0
+            .dir
+            .write_with(|v| v.set_pin6(PinDirection::Output));
+    }
+
+    // Enable interrupts.
+    unsafe { asm!("cpsie i") }; // cpsid to disable
+
+    loop {
         if USING_DEV_KIT {
-            write_volatile(GPIO_P0_DIR, 1 << 14 | 1 << 15);
+            peripherals.p0.outclr.write_with(|v| v.set_pin14());
         } else {
-            write_volatile(GPIO_P0_DIR, 1 << 6);
+            peripherals.p0.outclr.write_with(|v| v.set_pin6());
         }
 
-        // Enable interrupts.
-        asm!("cpsie i"); // cpsid to disable
+        send_packet(&mut peripherals.radio, b"hello", RECEIVING).await;
+        if !RECEIVING {
+            delay_1s(&mut peripherals.rtc0).await;
+        }
 
-        // Enable external interrupt 11
-        // write_volatile(NVIC_ISER0 as *mut u32, 1 << 11);
+        if USING_DEV_KIT {
+            peripherals.p0.outset.write_with(|v| v.set_pin14());
+        } else {
+            peripherals.p0.outset.write_with(|v| v.set_pin6());
+        }
 
-        loop {
-            if USING_DEV_KIT {
-                write_volatile(GPIO_P0_OUTCLR, 1 << 14);
-            } else {
-                write_volatile(GPIO_P0_OUTCLR, 1 << 6);
-            }
-
-            send_packet(b"hello", RECEIVING).await;
-            if !RECEIVING {
-                delay_1s().await;
-            }
-
-            if USING_DEV_KIT {
-                write_volatile(GPIO_P0_OUTSET, 1 << 14);
-            } else {
-                write_volatile(GPIO_P0_OUTSET, 1 << 6);
-            }
-
-            send_packet(b"world", RECEIVING).await;
-            if !RECEIVING {
-                delay_1s().await;
-            }
+        send_packet(&mut peripherals.radio, b"world", RECEIVING).await;
+        if !RECEIVING {
+            delay_1s(&mut peripherals.rtc0).await;
         }
     }
 }
@@ -340,17 +362,13 @@ fn main() -> () {
     unsafe {
         zero_bss();
         init_data();
-
-        init_high_freq_clk();
-        init_low_freq_clk();
-        init_rtc0();
-
-        if HELLO[0] != 4 {
-            loop {
-                unsafe { asm!("nop") };
-            }
-        }
     }
+
+    let mut peripherals = peripherals::Peripherals::new();
+
+    init_high_freq_clk(&mut peripherals.clock);
+    init_low_freq_clk(&mut peripherals.clock);
+    init_rtc0(&mut peripherals.rtc0);
 
     Blinker::start();
     loop {

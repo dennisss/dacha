@@ -26,9 +26,8 @@ cargo build --package nordic --target thumbv7em-none-eabihf --release
 openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program target/thumbv7em-none-eabihf/release/nordic verify" -c reset -c exit
 
 ~/apps/gcc-arm-none-eabi-10.3-2021.10/bin/arm-none-eabi-gdb target/thumbv7em-none-eabihf/release/nordic
+- `target extended-remote localhost:3333`
 - https://openocd.org/doc/html/GDB-and-OpenOCD.html
-
-
 
 
 Flashing via Raspberry Pi

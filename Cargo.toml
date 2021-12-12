@@ -58,7 +58,9 @@ members = [
 	"third_party/pico_core",
 	"third_party/mime_types",
 	"pkg/executor",
-	"pkg/ubiquiti"
+	"pkg/ubiquiti",
+	"pkg/cmsis_svd",
+	"pkg/peripherals"
 ]
 
 [profile.dev]
@@ -80,6 +82,10 @@ opt-level = 3
 debug = false
 
 [profile.dev.package.math]
+opt-level = 3
+debug = false
+
+[profile.dev.package.xml]
 opt-level = 3
 debug = false
 

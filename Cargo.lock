@@ -470,6 +470,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmsis_svd"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "common",
+ "parsing",
+ "regexp_macros",
+ "xml",
+]
+
+[[package]]
 name = "common"
 version = "0.1.0"
 dependencies = [
@@ -1477,6 +1488,7 @@ name = "nordic"
 version = "0.1.0"
 dependencies = [
  "executor",
+ "peripherals",
 ]
 
 [[package]]
@@ -1632,6 +1644,15 @@ dependencies = [
  "nix 0.21.0",
  "parsing",
  "rpi",
+]
+
+[[package]]
+name = "peripherals"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "cmsis_svd",
+ "common",
 ]
 
 [[package]]

@@ -1,4 +1,9 @@
+pub mod compiler;
+pub mod helpers;
+pub mod spec;
+
 /*
+
 
 struct OUT {
     value: u32
@@ -41,6 +46,3 @@ For each peripheral:
 
 TODO: headerStructName on the peripheral
 */
-
-// denniss.me
-// dennis.page

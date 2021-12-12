@@ -8,10 +8,10 @@ use core::task::Poll;
 /// 'fn() -> Poll<()>'
 #[derive(Clone, Copy)]
 struct ThreadReference {
-    /// Type erased Future<Output=()> which contains the state of the thread.
+    /// Type erased thread instance pointer (a '*mut Thread<Fut>').
     ptr: *mut (),
 
-    /// Function which can be passed the above 'future' to poll/wake the thread.
+    /// Function which can be passed the above 'ptr' to poll/wake the thread.
     poll_fn: fn(*mut ()),
 }
 
@@ -92,10 +92,6 @@ pub fn new_waker_for_current_thread() -> crate::waker::Waker {
     crate::waker::Waker::new(current_ref.poll_fn, current_ref.ptr)
 }
 
-// pub fn current_thread_id() -> ThreadId {
-//     unsafe { CURRENT_THREAD_ID.unwrap() }
-// }
-
 #[macro_export]
 macro_rules! define_thread {
     ($(#[$meta:meta])* $name: ident, $handler: expr) => {
@@ -104,7 +100,6 @@ macro_rules! define_thread {
 
         impl $name {
             #[inline(always)]
-            /* -> &'static mut $crate::avr::thread::Thread<impl ::core::future::Future<Output=()>> */
             fn ptr() -> (fn(), fn()) {
                 type RetType = impl ::core::future::Future<Output = ()>;
                 #[inline(always)]

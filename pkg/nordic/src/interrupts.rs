@@ -4,23 +4,18 @@ use core::{
 };
 
 use executor::waker::WakerList;
+use peripherals::Interrupt;
 
 use crate::registers::{NVIC_ICER0, NVIC_ICSR, NVIC_ISER0};
 
 /// Interrupt/exception number of the first external interrupt.
 const EXTERNAL_INTERRUPT_OFFSET: usize = 16;
-const NUM_EXTERNAL_INTERRUPTS: usize = 20;
+const NUM_EXTERNAL_INTERRUPTS: usize = 20; // TODO: Use Interrupt::MAX.
 
 const NUM_INTERRUPTS: usize = 35;
 static mut INTERRUPT_WAKER_LISTS: [WakerList; NUM_INTERRUPTS] = [WakerList::new(); NUM_INTERRUPTS];
 
 type InterruptHandler = unsafe extern "C" fn() -> ();
-
-#[derive(Clone, Copy)]
-pub enum IRQn {
-    RADIO = 1,
-    RTC0 = 11,
-}
 
 /// Waits for the given external interrupt to be triggered.
 ///
@@ -30,7 +25,7 @@ pub enum IRQn {
 /// For NRF52 chips, the user MUST write 0 to the EVENT registers that were set
 /// high by the interrupt to avoid marking the interrupt as pending immediately
 /// after the interrupt handler returns.
-pub async fn wait_for_irq(num: IRQn) {
+pub async fn wait_for_irq(num: Interrupt) {
     let mut waker =
         executor::stack_pinned::stack_pinned(executor::thread::new_waker_for_current_thread());
 

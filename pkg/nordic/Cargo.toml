@@ -6,3 +6,4 @@ edition = "2018"
 
 [dependencies]
 executor = { path = "../executor", default-features = false }
+peripherals = { path = "../peripherals", default-features = false }

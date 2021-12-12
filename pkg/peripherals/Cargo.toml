@@ -1,0 +1,12 @@
+[package]
+name = "peripherals"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+
+[build-dependencies]
+common = { path = "../common" }
+automata = { path = "../automata" }
+cmsis_svd = { path = "../cmsis_svd" }
