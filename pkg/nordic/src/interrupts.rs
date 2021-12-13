@@ -59,7 +59,7 @@ static RESET_VECTOR: [InterruptHandler; EXTERNAL_INTERRUPT_OFFSET - 1 + NUM_EXTE
     entry,             // Reset
     default_interrupt, // NMI
     default_interrupt, // Hard fault
-    default_interrupt, // Memory management fauly
+    default_interrupt, // Memory management fault
     default_interrupt, // Bus fault
     default_interrupt, // Usage fault
     default_interrupt, // reserved 7
@@ -96,7 +96,20 @@ static RESET_VECTOR: [InterruptHandler; EXTERNAL_INTERRUPT_OFFSET - 1 + NUM_EXTE
 #[no_mangle]
 unsafe extern "C" fn default_interrupt() -> () {
     let interrupt_num = (read_volatile(NVIC_ICSR) & 0xff) as usize;
+
+    if interrupt_num <= 8 {
+        loop {
+            asm!("nop");
+        }
+    }
+
+    // unsafe { asm!("cpsid i") }
+
+    // TODO: Subtract 1 from this?
     INTERRUPT_WAKER_LISTS[interrupt_num].wake_all();
+
+    // Enable interrupts.
+    // unsafe { asm!("cpsie i") };
 
     asm!("nop");
     asm!("nop");

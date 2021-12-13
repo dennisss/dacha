@@ -1,5 +1,37 @@
 
 
+AES-CCM:
+- Overall nonce - 14 bytes
+
+- 8-byte IV
+- 16-byte AES key
+- 39-bit counter.
+
+- Central hub computer has a static Key and IV known to the remote peer
+  - Peer sends over plain text a request to get a traffic key on start up
+    - This request contains a random 64-bit number
+  - Hub responses with an AES-CCM encrypted message 
+
+- First, send to computer a random number and have the computer encrypt that number 
+
+- Assuming you are sending at 2MBit with each message being at least (4 bytes for MIC + 1 bytes for length + 4 bytes for counter + 1 byte preamble + 1 byte CRC)
+  - You can send at most ~23000 packets per second.
+
+
+TODO: Should enable ICACHE of flash
+
+- 1024 kB of flash. Each page is 4 kB
+  - 10,000 erase cycles
+  - Partial 
+
+- Alternative strategy is to exchange a random number for a 
+
+Use S0 as a packet header.
+- For now, will always be '1'
+- Key and IV will be randomly generated.
+
+
+
 Flashing a CC2531 sniffer:
 - https://www.zigbee2mqtt.io/guide/adapters/flashing/alternative_flashing_methods.html
 

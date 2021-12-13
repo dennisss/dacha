@@ -122,8 +122,14 @@ impl Waker {
     fn unlink(&mut self) {
         if self.prev != null_mut() {
             *unsafe { &mut *self.prev } = self.next;
-            self.prev = null_mut();
         }
+
+        if self.next != null_mut() {
+            unsafe { &mut *self.next }.prev = self.prev;
+        }
+
+        self.prev = null_mut();
+        self.next = null_mut();
     }
 }
 

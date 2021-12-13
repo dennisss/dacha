@@ -5,6 +5,7 @@
 extern crate std;
 
 pub mod arena_stack;
+mod raw_waker;
 pub mod stack_pinned;
 pub mod thread;
 pub mod waker;
@@ -31,23 +32,36 @@ mod tests {
         println!("THREE");
     }
 
+    define_thread!(TestThread2, TestThread2Fn);
+    async fn TestThread2Fn() {
+        println!("2 ONE");
+
+        wait_once().await;
+
+        println!("2 TWO");
+
+        wait_once().await;
+
+        println!("2 THREE");
+    }
+
     async fn wait_once() {
         let mut waker =
             crate::stack_pinned::stack_pinned(crate::thread::new_waker_for_current_thread());
 
-        let waker = unsafe { waker.into_pin().get_unchecked_mut() };
+        let waker = unsafe { WAKER_LIST.insert(waker.into_pin()) };
 
-        unsafe {
-            WAKER_LIST.insert(waker);
-        }
-
-        unsafe { core::pin::Pin::new_unchecked(waker) }.await;
+        waker.await;
     }
 
     #[test]
     fn run_wakers() {
         let starter = std::thread::spawn(|| {
             TestThread::start();
+        });
+
+        let starter2 = std::thread::spawn(|| {
+            TestThread2::start();
         });
 
         std::thread::sleep(std::time::Duration::from_secs(1));

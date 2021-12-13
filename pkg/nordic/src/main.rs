@@ -13,6 +13,10 @@ Currently we use 3078 flash bytes if we don't count offsets
 
 mod interrupts;
 mod registers;
+mod rng;
+mod temp;
+mod timer;
+mod uarte;
 
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
@@ -23,6 +27,12 @@ use peripherals::radio::RADIO;
 use peripherals::rtc0::RTC0;
 use peripherals::{EventState, Interrupt, PinDirection, RegisterRead, RegisterWrite};
 // use crate::peripherals::
+use peripherals::uarte0::UARTE0;
+
+use crate::rng::Rng;
+use crate::temp::Temp;
+use crate::timer::Timer;
+use crate::uarte::UARTE;
 
 extern "C" {
     static mut _sbss: u32;
@@ -113,6 +123,8 @@ fn init_high_freq_clk(clock: &mut CLOCK) {
 }
 
 fn init_low_freq_clk(clock: &mut CLOCK) {
+    // NOTE: This must be initialized to use the RTCs.
+
     // TODO: Must unsure the clock is stopped before changing the source.
     // ^ But clock can only be stopped if clock is running.
 
@@ -129,17 +141,13 @@ fn init_low_freq_clk(clock: &mut CLOCK) {
     }
 }
 
-/// NOTE: This function assumes that RTC0 is currently stopped.
-fn init_rtc0(rtc0: &mut RTC0) {
-    rtc0.prescaler.write(0); // Explictly request a 32.7kHz tick.
-    rtc0.tasks_start.write_trigger();
-
-    // Wait for the first tick to know the RTC has started.
-    let initial_count = rtc0.counter.read();
-    while initial_count == rtc0.counter.read() {
-        unsafe { asm!("nop") };
-    }
-}
+/*
+Implementing a global sleeper:
+- Take as input RTC0
+- Each timeout knows it's start and count.
+- Each one will simply set CC[0]
+- Just have INTEN always enabled given that no one cares.
+*/
 
 /*
 Waiting for an interrupt:
@@ -148,54 +156,6 @@ Waiting for an interrupt:
     - Need INTEN register / field.
     - Need the interrupt number (for NVIC)
 */
-
-async fn delay_1s(rtc0: &mut RTC0) {
-    let initial_count = rtc0.counter.read();
-    let target_count = initial_count + (32768 / 4);
-
-    // To produce an interrupt must have bits set:
-    // - EVTEN
-    // - INTEN
-    // - And EVENT must be set.
-
-    // write_volatile(RTC0_EVENTS_TICK, 0);
-
-    //
-    rtc0.cc[0].write_with(|v| v.set_compare(target_count));
-
-    rtc0.events_compare[0].write_notgenerated();
-
-    // Enable interrupt on COMPARE0.
-    // NOTE: We don't need to set EVTEN
-    rtc0.intenset.write_with(|v| v.set_compare0());
-
-    // write_volatile(RTC0_EVTENSET, 1 << 16 | 1); // Just enable for CC0
-
-    // write_volatile(RTC0_INTENSET, 1 << 16 | 1);
-
-    // write_volatile(RTC0_EVENTS_TICK, 1);
-
-    // // Set PENDSVSET
-    // write_volatile(NVIC_ICSR, 1 << 28);
-    // asm!("isb");
-
-    crate::interrupts::wait_for_irq(Interrupt::RTC0).await;
-
-    // TODO: Explicitly wait for EVENTS_COMPARE0 to be set?
-
-    // Clear event so that the interrupt doesn't happen again.
-    rtc0.events_compare[0].write_notgenerated();
-
-    // TODO: Unset the interrupt.
-
-    // while !INTERRUPT_TRIGGERD {
-    //     asm!("nop")
-    // }
-
-    // while read_volatile(RTC0_COUNTER) < target_count {
-    //     asm!("nop")
-    // }
-}
 
 async fn send_packet(radio: &mut RADIO, message: &[u8], receiving: bool) {
     // TODO: Just have a global buffer given that only one that can be copied at a
@@ -313,9 +273,97 @@ const RECEIVING: bool = false;
 
 static mut HELLO: [u8; 5] = [4, 1, 2, 3, 4];
 
-define_thread!(Blinker, BlinkerThreadFn);
-async fn BlinkerThreadFn() {
+pub struct NumberSlice {
+    buf: [u8; 10],
+    len: usize,
+}
+
+impl AsRef<[u8]> for NumberSlice {
+    fn as_ref(&self) -> &[u8] {
+        &self.buf[(self.buf.len() - self.len)..]
+    }
+}
+
+pub fn num_to_slice(mut num: u32) -> NumberSlice {
+    // A u32 has a maximum length of 10 base-10 digits
+    let mut buf: [u8; 10] = [0; 10];
+    let mut num_digits = 0;
+    while num > 0 {
+        // TODO: perform this as one operation?
+        let r = (num % 10) as u8;
+        num /= 10;
+
+        num_digits += 1;
+
+        buf[buf.len() - num_digits] = ('0' as u8) + r;
+    }
+
+    if num_digits == 0 {
+        num_digits = 1;
+        buf[buf.len() - 1] = '0' as u8;
+    }
+
+    NumberSlice {
+        buf,
+        len: num_digits,
+    }
+
+    // f(&buf[(buf.len() - num_digits)..]);
+}
+
+define_thread!(
+    Echo,
+    echo_thread_fn,
+    uarte0: UARTE0,
+    timer: Timer,
+    temp: Temp,
+    rng: Rng
+);
+async fn echo_thread_fn(uarte0: UARTE0, mut timer: Timer, mut temp: Temp, mut rng: Rng) {
+    let mut serial = UARTE::new(uarte0);
+
+    let mut buf = [0u8; 256];
+    loop {
+        timer.wait_ms(2000).await;
+
+        let t = temp.measure().await;
+
+        let mut rand = [0u32; 2];
+        rng.generate(&mut rand).await;
+
+        serial.write(b"Temperature is: ").await;
+        serial.write(num_to_slice(t).as_ref()).await;
+        serial.write(b" | ").await;
+        serial.write(num_to_slice(rand[0]).as_ref()).await;
+        serial.write(b" | ").await;
+        serial.write(num_to_slice(rand[1]).as_ref()).await;
+        serial.write(b"\n").await;
+
+        // b"hello world this is long\n"
+        // serial.write(b"Hi there\n").await;
+
+        // serial.read_exact(&mut buf[0..8]).await;
+    }
+}
+
+define_thread!(Blinker, blinker_thread_fn);
+async fn blinker_thread_fn() {
     let mut peripherals = peripherals::Peripherals::new();
+
+    let mut timer = Timer::new(peripherals.rtc0);
+
+    let temp = Temp::new(peripherals.temp);
+
+    // TODO: Which Send/Sync requirements are needed of these arguments?
+    Echo::start(
+        peripherals.uarte0,
+        timer.clone(),
+        temp,
+        Rng::new(peripherals.rng),
+    );
+
+    // peripherals.p0.dirset.write_with(|v| v.set_pin30());
+    // peripherals.p0.outset.write_with(|v| v.set_pin30());
 
     if USING_DEV_KIT {
         peripherals.p0.dir.write_with(|v| {
@@ -329,9 +377,6 @@ async fn BlinkerThreadFn() {
             .write_with(|v| v.set_pin6(PinDirection::Output));
     }
 
-    // Enable interrupts.
-    unsafe { asm!("cpsie i") }; // cpsid to disable
-
     loop {
         if USING_DEV_KIT {
             peripherals.p0.outclr.write_with(|v| v.set_pin14());
@@ -341,7 +386,7 @@ async fn BlinkerThreadFn() {
 
         send_packet(&mut peripherals.radio, b"hello", RECEIVING).await;
         if !RECEIVING {
-            delay_1s(&mut peripherals.rtc0).await;
+            timer.wait_ms(100).await;
         }
 
         if USING_DEV_KIT {
@@ -352,13 +397,17 @@ async fn BlinkerThreadFn() {
 
         send_packet(&mut peripherals.radio, b"world", RECEIVING).await;
         if !RECEIVING {
-            delay_1s(&mut peripherals.rtc0).await;
+            timer.wait_ms(100).await;
         }
     }
 }
 
 // TODO: Switch back to returning '!'
 fn main() -> () {
+    // Disable interrupts.
+    // TODO: Disable FIQ interrupts?
+    unsafe { asm!("cpsid i") }
+
     unsafe {
         zero_bss();
         init_data();
@@ -368,9 +417,12 @@ fn main() -> () {
 
     init_high_freq_clk(&mut peripherals.clock);
     init_low_freq_clk(&mut peripherals.clock);
-    init_rtc0(&mut peripherals.rtc0);
 
     Blinker::start();
+
+    // Enable interrupts.
+    unsafe { asm!("cpsie i") };
+
     loop {
         unsafe { asm!("nop") };
     }

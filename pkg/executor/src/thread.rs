@@ -1,7 +1,9 @@
 use core::future::Future;
 use core::iter::Iterator;
 use core::pin::Pin;
-use core::task::Poll;
+use core::task::{Context, Poll, Waker};
+
+use crate::raw_waker::RAW_WAKER;
 
 /// Reference to the thread's polling function
 /// TODO: Should be possible to optimize this down to only a single pointer to a
@@ -28,7 +30,7 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
     }
 
     #[inline(always)]
-    pub fn start(&'static mut self, f: fn() -> Fut) {
+    pub fn start<F: FnOnce() -> Fut>(&'static mut self, f: F) {
         // TODO: Validate not restarting inside of our own thread.
 
         // Clean up the past run of this thread.
@@ -39,6 +41,7 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
         Self::poll(unsafe { core::mem::transmute(&mut *self) });
     }
 
+    #[inline(never)]
     fn poll(ptr: *mut ()) {
         let this: &mut Self = unsafe { core::mem::transmute(ptr) };
 
@@ -49,6 +52,8 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
         let waker = unsafe { Waker::from_raw(RAW_WAKER) };
         let mut cx = Context::from_waker(&waker);
         let p = unsafe { Pin::new_unchecked(this.fut.as_mut().unwrap()) };
+
+        let parent_thread = unsafe { CURRENT_THREAD.take() };
 
         unsafe {
             CURRENT_THREAD = Some(ThreadReference {
@@ -65,7 +70,7 @@ impl<Fut: 'static + Sized + Future<Output = ()>> Thread<Fut> {
         }
 
         unsafe {
-            CURRENT_THREAD = None;
+            CURRENT_THREAD = parent_thread;
         }
     }
 
@@ -92,68 +97,34 @@ pub fn new_waker_for_current_thread() -> crate::waker::Waker {
     crate::waker::Waker::new(current_ref.poll_fn, current_ref.ptr)
 }
 
+// Must return a stack pinned value!
+// pub fn spawn<F: Future<Output = ()>>(f: F) {
+//     static mut THREAD: Thread = Thread::new();
+//     unsafe { THREAD.start(move || f) };
+// }
+
 #[macro_export]
 macro_rules! define_thread {
-    ($(#[$meta:meta])* $name: ident, $handler: expr) => {
+    ($(#[$meta:meta])* $name: ident, $handler: ident $(, $arg:ident : $t:ty )*) => {
         $(#[$meta])*
         struct $name {}
 
-        impl $name {
-            #[inline(always)]
-            fn ptr() -> (fn(), fn()) {
-                type RetType = impl ::core::future::Future<Output = ()>;
-                #[inline(always)]
-                fn handler_wrap() -> RetType {
-                    ($handler)()
-                }
+        const _: () = {
+            type RetType = impl ::core::future::Future<Output = ()>;
 
-                static mut THREAD: $crate::thread::Thread<RetType> = {
-                    $crate::thread::Thread::new()
-                };
+            static mut THREAD: $crate::thread::Thread<RetType> = {
+                $crate::thread::Thread::new()
+            };
 
-                fn start() {
-                    unsafe { THREAD.start(handler_wrap) };
+            impl $name {
+                fn start($($arg: $t,)*) {
+                    unsafe { THREAD.start(move || -> RetType { $handler($($arg,)*) }) };
                 }
 
                 fn stop() {
                     unsafe { THREAD.stop() };
                 }
-
-                (start, stop)
             }
-
-            #[inline(always)]
-            pub fn start() {
-                (Self::ptr().0)();
-            }
-
-            // TODO: If a thread is stopped while one thread is running, we may want to intentionally run an extra cycle to ensure that we re-process them.
-
-            // TODO: Ensure that this doesn't first restart the thread.
-            pub fn stop() {
-                (Self::ptr().1)();
-            }
-        }
+        };
     };
 }
-
-use core::task::{Context, RawWaker, RawWakerVTable, Waker};
-
-unsafe fn raw_waker_clone(data: *const ()) -> RawWaker {
-    RAW_WAKER
-}
-
-unsafe fn raw_waker_wake(data: *const ()) {}
-
-unsafe fn raw_waker_wake_by_ref(data: *const ()) {}
-
-unsafe fn raw_waker_drop(data: *const ()) {}
-
-const RAW_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
-    raw_waker_clone,
-    raw_waker_wake,
-    raw_waker_wake_by_ref,
-    raw_waker_drop,
-);
-
-const RAW_WAKER: RawWaker = RawWaker::new(0 as *const (), &RAW_WAKER_VTABLE);

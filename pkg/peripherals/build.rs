@@ -104,5 +104,8 @@ fn main() -> Result<()> {
         }
     }
 
+    // let output_path2 = project_path!("pkg/peripherals/src/nrf52840.rs");
+    // std::fs::write(&output_path2, std::fs::read(&output_path)?)?;
+
     Ok(())
 }
