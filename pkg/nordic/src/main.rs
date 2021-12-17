@@ -5,12 +5,17 @@
 #[macro_use]
 extern crate executor;
 extern crate peripherals;
+#[macro_use]
+extern crate arrayref;
+extern crate crypto;
 
 /*
 Old binary uses 2763 flash bytes.
 Currently we use 3078 flash bytes if we don't count offsets
 */
 
+mod ccm;
+mod ecb;
 mod interrupts;
 mod registers;
 mod rng;

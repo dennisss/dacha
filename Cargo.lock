@@ -1488,6 +1488,8 @@ dependencies = [
 name = "nordic"
 version = "0.1.0"
 dependencies = [
+ "arrayref",
+ "crypto",
  "executor",
  "peripherals",
 ]

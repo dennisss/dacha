@@ -229,6 +229,7 @@ pub mod aead;
 pub mod aes;
 #[cfg(feature = "std")]
 mod aes_generic;
+pub mod ccm;
 #[cfg(feature = "std")]
 pub mod chacha20;
 #[cfg(feature = "std")]
