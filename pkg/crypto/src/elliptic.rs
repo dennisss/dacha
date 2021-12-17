@@ -1,4 +1,7 @@
+use alloc::boxed::Box;
 use std::marker::PhantomData;
+use std::string::ToString;
+use std::vec::Vec;
 
 use asn::encoding::DERWriteable;
 use common::ceil_div;

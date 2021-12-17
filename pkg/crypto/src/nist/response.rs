@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::string::String;
+use std::string::ToString;
+use std::vec::Vec;
 
 use common::errors::*;
 use common::{async_std::fs::File, futures::AsyncReadExt};

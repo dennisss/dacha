@@ -384,16 +384,16 @@ macro_rules! alt {
 	( $first:expr, $( $next:expr ),* ) => {
 		move |input| {
 			let mut errs = vec![];
-            let mut max_remaining = std::usize::MAX;
+            let mut max_remaining = ::std::usize::MAX;
 
 			match ($first)(::std::clone::Clone::clone(&input)) {
 				Ok(v) => { return Ok(v); },
 				Err(e) => {
                     if let Some(ParserError { remaining_bytes, .. }) = e.downcast_ref() {
-                        max_remaining = std::cmp::min(max_remaining, *remaining_bytes);
+                        max_remaining = ::std::cmp::min(max_remaining, *remaining_bytes);
                     }
 
-                    errs.push(e.to_string());
+                    errs.push(::std::string::ToString::to_string(&e));
                 }
 			};
 
@@ -405,7 +405,7 @@ macro_rules! alt {
                         max_remaining = std::cmp::min(max_remaining, *remaining_bytes);
                     }
 
-                    errs.push(e.to_string());
+                    errs.push(::std::string::ToString::to_string(&e));
                 }
 			};
 			)*
@@ -429,7 +429,7 @@ macro_rules! seq {
             let mut $c = ParseCursor::new(input);
             // Wrapped in a function so that the expression can have return statements.
             let mut f = || $e;
-            let out: std::result::Result<_, ParseError> = { f() };
+            let out: ::std::result::Result<_, ParseError> = { f() };
             $c.unwrap_with(out?)
         }
     };

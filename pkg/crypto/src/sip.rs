@@ -1,4 +1,6 @@
+use alloc::boxed::Box;
 use std::num::Wrapping;
+use std::vec::Vec;
 
 use crate::hasher::Hasher;
 

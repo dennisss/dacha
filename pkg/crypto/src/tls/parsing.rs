@@ -1,5 +1,7 @@
 // TLS specific helpers for parsing binary packets.
 
+use std::vec::Vec;
+
 use common::bytes::Bytes;
 use common::errors::*;
 use parsing::binary::*;

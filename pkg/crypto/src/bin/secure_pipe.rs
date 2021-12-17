@@ -3,6 +3,10 @@ extern crate common;
 extern crate crypto;
 #[macro_use]
 extern crate macros;
+extern crate alloc;
+
+use alloc::boxed::Box;
+use std::string::String;
 
 use common::async_std::fs;
 use common::async_std::net::TcpStream;

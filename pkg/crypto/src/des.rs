@@ -10,6 +10,8 @@ When using a u64, we assume that it was created from big endian bytes
 
 // TODO: Check for weak keys and check for parity
 
+use std::vec::Vec;
+
 use crate::cipher::BlockCipher;
 use common::bits::BitVector;
 

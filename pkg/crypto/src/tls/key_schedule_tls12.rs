@@ -1,5 +1,7 @@
 // Helpers for deriving the traffic keys used in TLS 1.2.
 
+use std::vec::Vec;
+
 use common::bytes::Bytes;
 
 use crate::hasher::HasherFactory;

@@ -1,3 +1,5 @@
+use std::vec::Vec;
+
 use crate::tls::extensions::*;
 
 pub fn find_supported_versions_sh(

@@ -1,4 +1,6 @@
+use std::string::String;
 use std::sync::Arc;
+use std::vec::Vec;
 
 use common::bytes::Bytes;
 use common::errors::*;

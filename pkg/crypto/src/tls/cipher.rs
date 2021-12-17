@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use common::async_std::sync::Mutex;
 use common::bytes::Bytes;
 use common::errors::*;

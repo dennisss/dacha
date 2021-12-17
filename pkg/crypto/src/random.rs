@@ -1,6 +1,8 @@
+use alloc::boxed::Box;
 use std::f64::consts::PI;
 use std::num::Wrapping;
 use std::sync::Arc;
+use std::vec::Vec;
 
 use common::async_std::fs::File;
 use common::async_std::io::prelude::ReadExt;

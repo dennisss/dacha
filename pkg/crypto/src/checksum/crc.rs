@@ -1,5 +1,8 @@
 // TODO: Move crypto package.
 
+use alloc::boxed::Box;
+use std::vec::Vec;
+
 use crate::hasher::*;
 use std::convert::TryInto;
 

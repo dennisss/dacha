@@ -1,3 +1,5 @@
+use alloc::boxed::Box;
+
 use common::bytes::{Bytes, BytesMut};
 use common::errors::*;
 use common::io::{Readable, Writeable};

@@ -1,3 +1,5 @@
+use std::vec::Vec;
+
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Readable;

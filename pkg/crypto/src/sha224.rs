@@ -1,3 +1,6 @@
+use alloc::boxed::Box;
+use std::vec::Vec;
+
 use crate::hasher::Hasher;
 use crate::sha256::SHA256Hasher;
 

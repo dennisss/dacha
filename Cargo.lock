@@ -611,6 +611,7 @@ dependencies = [
 name = "crypto"
 version = "0.1.0"
 dependencies = [
+ "arrayref",
  "asn",
  "async-std",
  "byteorder",

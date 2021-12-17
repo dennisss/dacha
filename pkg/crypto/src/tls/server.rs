@@ -1,3 +1,5 @@
+use alloc::boxed::Box;
+
 use common::async_std::net::TcpListener;
 use common::bytes::Bytes;
 use common::errors::*;

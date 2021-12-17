@@ -430,7 +430,8 @@ macro_rules! map(
         {
             let mut m = ::std::collections::HashMap::new();
             $(
-                m.insert($key.to_owned(), $value.to_owned());
+                m.insert(::std::borrow::ToOwned::to_owned($key),
+                         ::std::borrow::ToOwned::to_owned($value));
             )+
             m
         }

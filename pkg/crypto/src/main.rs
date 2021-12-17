@@ -1,7 +1,9 @@
 #[macro_use]
 extern crate common;
-
+extern crate alloc;
 extern crate crypto;
+
+use alloc::boxed::Box;
 
 use common::errors::*;
 use std::num::Wrapping;
@@ -39,6 +41,7 @@ fn extended_gcd(a: isize, b: isize) -> isize {
 
 use math::big::BigUint;
 use std::str::FromStr;
+use std::string::String;
 use std::string::ToString;
 
 use asn::encoding::DERReadable;

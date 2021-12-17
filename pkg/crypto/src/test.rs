@@ -1,6 +1,7 @@
 // Utilities for creating test cases.
 
 use std::time::{Duration, Instant};
+use std::vec::Vec;
 
 use crate::random::Rng;
 

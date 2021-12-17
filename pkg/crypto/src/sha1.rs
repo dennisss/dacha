@@ -1,3 +1,6 @@
+use alloc::boxed::Box;
+use std::vec::Vec;
+
 use crate::hasher::*;
 use crate::md::*;
 use generic_array::GenericArray;

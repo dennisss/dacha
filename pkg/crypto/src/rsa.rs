@@ -1,3 +1,6 @@
+use alloc::boxed::Box;
+use std::vec::Vec;
+
 use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{Any, DERWriteable};
 use common::errors::*;

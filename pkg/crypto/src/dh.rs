@@ -1,3 +1,6 @@
+use alloc::boxed::Box;
+use std::vec::Vec;
+
 use common::errors::*;
 
 /// NOTE: This is not a public/private crypto system in itself.

@@ -1,5 +1,6 @@
 #[cfg(all(target_arch = "x86_64", target_feature = "aes"))]
 use core::arch::x86_64::*;
+use std::vec::Vec;
 
 use common::errors::*;
 

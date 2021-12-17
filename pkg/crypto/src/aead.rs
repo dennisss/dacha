@@ -1,3 +1,6 @@
+use alloc::boxed::Box;
+use std::vec::Vec;
+
 use common::errors::*;
 
 // TODO: For ciphers like AES-GCM, the size of the plaintext can't be decrypted.

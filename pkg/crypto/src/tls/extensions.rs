@@ -1,4 +1,6 @@
+use alloc::boxed::Box;
 use std::collections::HashMap;
+use std::vec::Vec;
 
 use common::bytes::{Buf, Bytes};
 use common::errors::*;

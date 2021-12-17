@@ -7,17 +7,34 @@
     wrapping_int_impl,
     asm
 )]
+#![no_std]
+
+#[cfg(feature = "std")]
+#[macro_use]
+extern crate std;
+
+#[cfg(feature = "std")]
+#[macro_use]
+extern crate alloc;
+
+#[cfg(feature = "std")]
 #[macro_use]
 extern crate common;
+#[cfg(feature = "std")]
 #[macro_use]
 extern crate macros;
+#[cfg(feature = "std")]
 #[macro_use]
 extern crate asn;
+#[cfg(feature = "std")]
 #[macro_use]
 extern crate lazy_static;
 extern crate generic_array;
+#[cfg(feature = "std")]
 extern crate pkix;
 extern crate typenum;
+#[macro_use]
+extern crate arrayref;
 
 // TODO: Implement mlock utility from preventing swapping.
 
@@ -39,7 +56,7 @@ pub fn constant_eq(a: &[u8], b: &[u8]) -> bool {
 
     let mut same: bool = true;
 
-    const CMP_SIZE: usize = std::mem::size_of::<usize>();
+    const CMP_SIZE: usize = core::mem::size_of::<usize>();
     let n = a.len() / CMP_SIZE;
 
     // Compare full integers at a time.
@@ -67,6 +84,10 @@ mod tests {
     use super::*;
 
     use crate::test::*;
+
+    use std::println;
+    use std::vec;
+    use std::vec::Vec;
 
     #[test]
     fn constant_eq_timing_test() {
@@ -202,34 +223,65 @@ mod tests {
     }
 }
 
+#[cfg(feature = "std")]
 pub mod aead;
+#[cfg(feature = "std")]
 pub mod aes;
+#[cfg(feature = "std")]
 mod aes_generic;
+#[cfg(feature = "std")]
 pub mod chacha20;
+#[cfg(feature = "std")]
 pub mod checksum;
+#[cfg(feature = "std")]
 pub mod cipher;
+#[cfg(feature = "std")]
 pub mod des;
+#[cfg(feature = "std")]
 pub mod dh;
+#[cfg(feature = "std")]
 pub mod elliptic;
+#[cfg(feature = "std")]
 pub mod gcm;
+#[cfg(feature = "std")]
 pub mod hasher;
+#[cfg(feature = "std")]
 pub mod hkdf;
+#[cfg(feature = "std")]
 pub mod hmac;
+#[cfg(feature = "std")]
 pub mod md;
+#[cfg(feature = "std")]
 pub mod md5;
+#[cfg(feature = "std")]
 pub mod nist;
+#[cfg(feature = "std")]
 pub mod pem;
+#[cfg(feature = "std")]
 pub mod prime;
+#[cfg(feature = "std")]
 pub mod random;
+#[cfg(feature = "std")]
 pub mod rsa;
+#[cfg(feature = "std")]
 pub mod sha1;
+#[cfg(feature = "std")]
 pub mod sha224;
+#[cfg(feature = "std")]
 pub mod sha256;
+#[cfg(feature = "std")]
 pub mod sha384;
+#[cfg(feature = "std")]
 pub mod sha512;
+#[cfg(feature = "std")]
 mod sha_test;
+#[cfg(feature = "std")]
 pub mod sip;
+#[cfg(feature = "std")]
 pub mod test;
+#[cfg(feature = "std")]
 pub mod tls;
+#[cfg(feature = "std")]
 pub mod utils;
+#[cfg(feature = "std")]
 pub mod x509;

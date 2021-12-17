@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 

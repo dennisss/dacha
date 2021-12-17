@@ -7,7 +7,9 @@ Useful resources:
 - https://loup-vaillant.fr/tutorials/poly1305-design
 */
 
+use alloc::boxed::Box;
 use std::ops::SubAssign;
+use std::vec::Vec;
 
 use common::errors::*;
 use math::big::*;

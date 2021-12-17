@@ -1,3 +1,7 @@
+use alloc::boxed::Box;
+use std::string::ToString;
+use std::vec::Vec;
+
 use crate::aead::*;
 use crate::aes::*;
 use crate::cipher::*;
@@ -179,10 +183,11 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
         hasher.finish(a.len(), c.len())
     }
 
-    pub fn encrypt(&mut self, mut plain: &[u8], additional_data: &[u8], mut output: &mut Vec<u8>) {
+    pub fn encrypt(&mut self, plain: &[u8], additional_data: &[u8], output: &mut Vec<u8>) {
         // TODO: Remove this restriction
         // And let's allocate all the bytes we need ahead of time.
-        assert_eq!(output.len(), 0);
+        // assert_eq!(output.len(), 0);
+        let initial_length = output.len();
 
         let mut hasher = GHasher::new(self.h.clone());
         map_blocks(additional_data, |block| hasher.update(block));
@@ -206,9 +211,9 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
             hasher.update(array_ref![output_block, 0, BLOCK_SIZE]);
         });
 
-        output.truncate(plain.len());
+        output.truncate(initial_length + plain.len());
 
-        let mut tag = hasher.finish(additional_data.len(), output.len());
+        let mut tag = hasher.finish(additional_data.len(), output.len() - initial_length);
         xor_inplace(&self.enc_counter_0, &mut tag);
 
         output.extend_from_slice(&tag);

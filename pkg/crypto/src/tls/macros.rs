@@ -32,7 +32,7 @@ macro_rules! tls_enum_u8 {
 				map(as_bytes(be_u8), |v| Self::from_u8(v))
 			});
 
-			pub fn serialize(&self, out: &mut Vec<u8>) {
+			pub fn serialize(&self, out: &mut ::std::vec::Vec<u8>) {
 				out.push(self.to_u8());
 			}
 		}
@@ -58,7 +58,7 @@ macro_rules! tls_struct {
 				Ok(Self { $( $field, )* })
 			}) });
 
-			pub fn serialize(&self, out: &mut Vec<u8>) {
+			pub fn serialize(&self, out: &mut ::std::vec::Vec<u8>) {
 				$(
 					self.$field.serialize(out);
 				)*

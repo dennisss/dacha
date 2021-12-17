@@ -1,3 +1,6 @@
+use alloc::boxed::Box;
+use std::vec::Vec;
+
 use common::errors::*;
 
 use parsing::binary::be_u16;

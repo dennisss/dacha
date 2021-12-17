@@ -1,3 +1,6 @@
+use alloc::boxed::Box;
+use std::vec::Vec;
+
 use crate::hasher::*;
 
 const ADLER32_PRIME_MOD: usize = 65521;

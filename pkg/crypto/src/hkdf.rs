@@ -1,3 +1,5 @@
+use std::vec::Vec;
+
 use crate::hasher::*;
 use crate::hmac::*;
 use common::ceil_div;
