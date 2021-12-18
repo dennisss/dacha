@@ -1,5 +1,7 @@
+#[cfg(feature = "alloc")]
 use alloc::boxed::Box;
-use std::vec::Vec;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 
 use crate::hasher::*;
 
@@ -45,10 +47,12 @@ impl Hasher for Adler32Hasher {
         }
     }
 
+    #[cfg(feature = "alloc")]
     fn finish(&self) -> Vec<u8> {
         self.finish_u32().to_be_bytes().to_vec()
     }
 
+    #[cfg(feature = "alloc")]
     fn box_clone(&self) -> Box<dyn Hasher> {
         Box::new(self.clone())
     }

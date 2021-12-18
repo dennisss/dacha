@@ -1,10 +1,11 @@
 use alloc::boxed::Box;
-use std::vec::Vec;
+use alloc::vec::Vec;
+
+use generic_array::GenericArray;
+use typenum::U64;
 
 use crate::hasher::*;
 use crate::md::*;
-use generic_array::GenericArray;
-use typenum::U64;
 
 /// Per-round shift amounts.
 const SHIFTS: [u8; 64] = [
@@ -101,6 +102,7 @@ impl Hasher for MD5Hasher {
         self.inner.update(data, Self::update_chunk);
     }
 
+    #[cfg(feature = "std")]
     fn finish(&self) -> Vec<u8> {
         let state = self.inner.finish(Self::update_chunk);
 
@@ -112,6 +114,7 @@ impl Hasher for MD5Hasher {
         hh.to_vec()
     }
 
+    #[cfg(feature = "std")]
     fn box_clone(&self) -> Box<dyn Hasher> {
         Box::new(self.clone())
     }

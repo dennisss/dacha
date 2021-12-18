@@ -1,5 +1,11 @@
 // Utilities for dealing for sets of bits and bit stream I/O.
 
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+use std::string::ToString;
+
 use crate::ceil_div;
 use crate::errors::*;
 use std::io::{Read, Write};

@@ -6,6 +6,11 @@
 /// common::args::init(&[&my_bool, &my_string])?;
 ///
 /// my_bool.value()
+
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use std::any::Any;
 use std::cell::Ref;
 use std::cell::RefCell;

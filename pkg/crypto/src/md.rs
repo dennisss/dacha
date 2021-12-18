@@ -1,5 +1,6 @@
+use core::ops::Add;
+
 use generic_array::{arr::AddLength, ArrayLength, GenericArray};
-use std::ops::Add;
 use typenum::Sum;
 use typenum::U17;
 

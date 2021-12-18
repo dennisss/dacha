@@ -1,3 +1,7 @@
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::hash::Hash;

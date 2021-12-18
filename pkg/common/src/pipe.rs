@@ -5,6 +5,11 @@
 // buffered up to a limit so the writer may block if the reader isn't reading
 // fast enough.
 
+use alloc::boxed::Box;
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use std::sync::Arc;
 
 use async_std::channel;

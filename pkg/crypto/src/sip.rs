@@ -1,6 +1,8 @@
+#[cfg(feature = "alloc")]
 use alloc::boxed::Box;
-use std::num::Wrapping;
-use std::vec::Vec;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+use core::num::Wrapping;
 
 use crate::hasher::Hasher;
 
@@ -134,7 +136,7 @@ impl Hasher for SipHasher {
     fn update(&mut self, mut data: &[u8]) {
         while !data.is_empty() {
             // Attempt to fill up the current word.
-            let n = std::cmp::min(data.len(), self.word.len() - self.word_size);
+            let n = core::cmp::min(data.len(), self.word.len() - self.word_size);
             self.word[self.word_size..(self.word_size + n)].copy_from_slice(&data[0..n]);
             self.word_size += n;
             data = &data[n..];
@@ -148,10 +150,12 @@ impl Hasher for SipHasher {
         }
     }
 
+    #[cfg(feature = "alloc")]
     fn finish(&self) -> Vec<u8> {
         self.clone().finish_u64().to_be_bytes().to_vec()
     }
 
+    #[cfg(feature = "alloc")]
     fn box_clone(&self) -> Box<dyn Hasher> {
         Box::new(self.clone())
     }

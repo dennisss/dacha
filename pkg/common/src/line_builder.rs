@@ -1,3 +1,7 @@
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use std::convert::Into;
 
 /// Helper for creating multi-line strings.

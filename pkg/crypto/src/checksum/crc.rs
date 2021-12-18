@@ -1,10 +1,12 @@
 // TODO: Move crypto package.
 
+#[cfg(feature = "alloc")]
 use alloc::boxed::Box;
-use std::vec::Vec;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+use core::convert::TryInto;
 
 use crate::hasher::*;
-use std::convert::TryInto;
 
 const CRC32_TABLE: [u32; 256] = [
     0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
@@ -150,10 +152,12 @@ impl Hasher for CRC32Hasher {
         self.update_lut(data);
     }
 
+    #[cfg(feature = "alloc")]
     fn finish(&self) -> Vec<u8> {
         self.finish_u32().to_be_bytes().to_vec()
     }
 
+    #[cfg(feature = "alloc")]
     fn box_clone(&self) -> Box<dyn Hasher> {
         Box::new(self.clone())
     }
@@ -255,10 +259,12 @@ impl Hasher for CRC32CHasher {
     }
 
     // TODO: Ideally find a way to directly return the inner.
+    #[cfg(feature = "alloc")]
     fn finish(&self) -> Vec<u8> {
         self.finish_u32().to_be_bytes().to_vec()
     }
 
+    #[cfg(feature = "alloc")]
     fn box_clone(&self) -> Box<dyn Hasher> {
         Box::new(self.clone())
     }

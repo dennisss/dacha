@@ -1,6 +1,7 @@
 // Utilities for creating temporary files.
 
 use std::path::{Path, PathBuf};
+use std::string::ToString;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::errors::*;

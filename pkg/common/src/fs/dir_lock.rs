@@ -1,3 +1,8 @@
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+use std::borrow::ToOwned;
 use std::os::unix::prelude::{FromRawFd, IntoRawFd};
 
 use async_std::fs::OpenOptions;

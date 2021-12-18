@@ -4,57 +4,111 @@
     specialization,
     const_fn_trait_bound
 )]
+#![no_std]
+
+#[cfg(feature = "std")]
+#[macro_use]
+extern crate std;
+
+#[cfg(feature = "alloc")]
+#[macro_use]
+extern crate alloc;
+
+#[cfg(feature = "std")]
 #[macro_use]
 extern crate async_trait;
+#[cfg(feature = "std")]
 #[macro_use]
 pub extern crate failure;
 #[macro_use]
 extern crate arrayref;
+#[cfg(feature = "std")]
 pub extern crate async_std;
+#[cfg(feature = "std")]
 pub extern crate base64;
+#[cfg(feature = "std")]
 pub extern crate bytes;
+#[cfg(feature = "std")]
 extern crate fs2;
+#[cfg(feature = "std")]
 pub extern crate futures;
+#[cfg(feature = "std")]
 pub extern crate hex;
+#[cfg(feature = "std")]
 pub extern crate libc;
+#[cfg(feature = "std")]
 #[macro_use]
 extern crate lazy_static;
+#[cfg(feature = "std")]
 pub extern crate chrono;
-extern crate generic_array;
-extern crate typenum;
+pub extern crate generic_array;
+pub extern crate typenum;
 
+#[cfg(feature = "std")]
 pub mod algorithms;
+#[cfg(feature = "std")]
 pub mod args;
+#[cfg(feature = "std")]
 pub mod async_fn;
+#[cfg(feature = "std")]
 pub mod bits;
+#[cfg(feature = "std")]
 pub mod borrowed;
+#[cfg(feature = "std")]
 pub mod bundle;
+#[cfg(feature = "std")]
 pub mod cancellation;
+pub mod collections;
+#[cfg(feature = "std")]
 pub mod condvar;
+#[cfg(feature = "std")]
 pub mod const_default;
+#[cfg(feature = "std")]
 pub mod eventually;
+#[cfg(feature = "std")]
 pub mod factory;
+#[cfg(feature = "std")]
 pub mod fs;
+#[cfg(feature = "std")]
 pub mod future;
+#[cfg(feature = "std")]
 pub mod io;
 pub mod iter;
+#[cfg(feature = "std")]
 pub mod line_builder;
+#[cfg(feature = "std")]
 pub mod pipe;
+#[cfg(feature = "std")]
 pub mod shutdown;
+#[cfg(feature = "std")]
 pub mod signals;
+#[cfg(feature = "std")]
 pub mod task;
+#[cfg(feature = "std")]
 pub mod temp;
+#[cfg(feature = "alloc")]
 pub mod vec;
+#[cfg(feature = "std")]
 pub mod vec_hash_set;
 
 pub use arrayref::{array_mut_ref, array_ref};
+#[cfg(feature = "std")]
 pub use async_trait::*;
+#[cfg(feature = "std")]
 pub use cancellation::CancellationToken;
+#[cfg(feature = "std")]
 pub use failure::Fail;
+#[cfg(feature = "std")]
 pub use lazy_static::*;
+
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 
 /// Gets the root directory of this project (the directory that contains the
 /// 'pkg' and '.git' directory).
+#[cfg(feature = "std")]
 pub fn project_dir() -> std::path::PathBuf {
     let mut dir = std::env::current_dir().unwrap();
 
@@ -84,6 +138,7 @@ pub fn project_dir() -> std::path::PathBuf {
     dir
 }
 
+#[cfg(feature = "std")]
 #[macro_export]
 macro_rules! project_path {
     // TODO: Assert that relpath is relative and not absolute.
@@ -92,6 +147,7 @@ macro_rules! project_path {
     };
 }
 
+#[cfg(feature = "std")]
 pub async fn wait_for(dur: std::time::Duration) {
     let never = async_std::future::pending::<()>();
     async_std::future::timeout(dur, never).await.unwrap_or(());
@@ -139,10 +195,12 @@ impl FlipSign<i64> for u64 {
     }
 }
 
+#[cfg(feature = "alloc")]
 pub trait LeftPad<T> {
     fn left_pad(self, size: usize, default_value: T) -> Vec<T>;
 }
 
+#[cfg(feature = "alloc")]
 impl<T: Copy> LeftPad<T> for Vec<T> {
     fn left_pad(mut self, size: usize, default_value: T) -> Vec<T> {
         if self.len() == size {
@@ -161,6 +219,7 @@ impl<T: Copy> LeftPad<T> for Vec<T> {
     }
 }
 
+#[cfg(feature = "std")]
 pub mod errors {
     pub use failure::err_msg;
     pub use failure::format_err;
@@ -200,7 +259,8 @@ pub mod errors {
 }
 */
 
-pub trait FutureResult<T> = std::future::Future<Output = errors::Result<T>>;
+#[cfg(feature = "std")]
+pub trait FutureResult<T> = core::future::Future<Output = errors::Result<T>>;
 
 pub const fn ceil_div(a: usize, b: usize) -> usize {
     let mut out = a / b;
@@ -222,6 +282,7 @@ pub fn block_size_remainder(block_size: u64, end_offset: u64) -> u64 {
     block_size - rem
 }
 
+#[cfg(feature = "alloc")]
 pub fn camel_to_snake_case(name: &str) -> String {
     let mut s = String::new();
     for c in name.chars() {
@@ -236,6 +297,7 @@ pub fn camel_to_snake_case(name: &str) -> String {
     s
 }
 
+#[cfg(feature = "alloc")]
 pub fn snake_to_camel_case(name: &str) -> String {
     let mut s = String::new();
 
@@ -327,7 +389,7 @@ macro_rules! enum_def {
 macro_rules! enum_def_with_unknown {
     // TODO: Derive a smarter hash
     ($(#[$meta:meta])* $name:ident $t:ty => $( $case:ident = $val:expr ),*) => {
-    	$(#[$meta])*
+        $(#[$meta])*
         #[derive(Clone, Copy, Debug)]
 		pub enum $name {
 			$(
@@ -358,16 +420,16 @@ macro_rules! enum_def_with_unknown {
 			}
 		}
 
-        impl std::cmp::PartialEq for $name {
+        impl ::core::cmp::PartialEq for $name {
             fn eq(&self, other: &Self) -> bool {
                 self.to_value() == other.to_value()
             }
         }
 
-        impl std::cmp::Eq for $name {}
+        impl ::core::cmp::Eq for $name {}
 
-        impl std::hash::Hash for $name {
-            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        impl ::core::hash::Hash for $name {
+            fn hash<H: ::core::hash::Hasher>(&self, state: &mut H) {
                 self.to_value().hash(state);
             }
         }

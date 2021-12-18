@@ -1,3 +1,8 @@
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 pub trait ConstDefault {
     const DEFAULT: Self;
 }
@@ -23,12 +28,14 @@ impl_const_default!(usize, 0);
 impl_const_default!(isize, 0);
 impl_const_default!(f32, 0.0);
 impl_const_default!(f64, 0.0);
+#[cfg(feature = "alloc")]
 impl_const_default!(String, String::new());
 
 impl<T> ConstDefault for Option<T> {
     const DEFAULT: Self = None;
 }
 
+#[cfg(feature = "alloc")]
 impl<T> ConstDefault for Vec<T> {
     const DEFAULT: Self = Vec::new();
 }

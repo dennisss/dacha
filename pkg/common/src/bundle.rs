@@ -1,7 +1,14 @@
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use std::cell::Cell;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
+use std::string::ToString;
 use std::sync::{Arc, RwLock};
 use std::task::{Context, Poll};
 

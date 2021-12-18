@@ -15,6 +15,8 @@ const NUM_EXTERNAL_INTERRUPTS: usize = 20; // TODO: Use Interrupt::MAX.
 const NUM_INTERRUPTS: usize = 35;
 static mut INTERRUPT_WAKER_LISTS: [WakerList; NUM_INTERRUPTS] = [WakerList::new(); NUM_INTERRUPTS];
 
+const PENDSV_EXCEPTION_NUM: usize = 14;
+
 type InterruptHandler = unsafe extern "C" fn() -> ();
 
 /// Waits for the given external interrupt to be triggered.
@@ -45,6 +47,24 @@ pub async fn wait_for_irq(num: Interrupt) {
     if waker_list.is_empty() {
         unsafe { write_volatile(NVIC_ICER0 as *mut u32, 1 << (num as usize)) };
     }
+}
+
+pub async fn trigger_pendsv() {
+    // Set the PENDSVSET bit.
+    unsafe { write_volatile(NVIC_ICSR, read_volatile(NVIC_ICSR) | (1 << 28)) };
+}
+
+// TODO: Verify that this interrupt is at the same priority as all others.
+pub async fn wait_for_pendsv() {
+    let mut waker =
+        executor::stack_pinned::stack_pinned(executor::thread::new_waker_for_current_thread());
+
+    let waker = waker.into_pin();
+
+    let waker_list = unsafe { &mut INTERRUPT_WAKER_LISTS[PENDSV_EXCEPTION_NUM] };
+
+    let waker = waker_list.insert(waker);
+    waker.await;
 }
 
 extern "C" {

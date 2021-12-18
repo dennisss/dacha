@@ -5,6 +5,8 @@
 
 use core::result::Result;
 
+use common::ceil_div;
+
 use crate::constant_eq;
 use crate::utils::xor_inplace;
 
@@ -254,15 +256,6 @@ impl<'a, B: BlockCipherBuffer> CCM<'a, B> {
             todo!();
         }
     }
-}
-
-const fn ceil_div(a: usize, b: usize) -> usize {
-    let mut out = a / b;
-    if a % b != 0 {
-        out += 1;
-    }
-
-    out
 }
 
 fn xor16_inplace(a: &[u8; BLOCK_SIZE], b: &mut [u8; BLOCK_SIZE]) {

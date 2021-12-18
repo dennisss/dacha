@@ -1,3 +1,5 @@
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
 use std::future::Future;
 
 use std::pin::Pin;

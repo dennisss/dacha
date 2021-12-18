@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
+
 pub trait Factory<T: ?Sized>: Send + Sync {
     fn create(&self) -> Box<T>;
 

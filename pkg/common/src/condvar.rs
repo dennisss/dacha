@@ -1,3 +1,7 @@
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use std::borrow::{Borrow, BorrowMut};
 use std::ops::{Deref, DerefMut};
 

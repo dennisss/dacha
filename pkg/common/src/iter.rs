@@ -1,5 +1,5 @@
-use std::convert::AsRef;
-use std::iter::Iterator;
+use core::convert::AsRef;
+use core::iter::Iterator;
 
 pub trait PairIter<T> {
     /// Creates an iterator which iterates over pairs of consecutive elements.

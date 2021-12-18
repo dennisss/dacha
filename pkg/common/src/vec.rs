@@ -1,3 +1,8 @@
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 #[derive(Clone)]
 pub enum VecPtr<T: 'static> {
     Static(&'static [T]),

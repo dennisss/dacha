@@ -1,3 +1,9 @@
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use core::task::Context;
 use std::future::Future;
 use std::ops::DerefMut;

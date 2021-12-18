@@ -1,4 +1,8 @@
-use std::cmp::Ordering;
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+use core::cmp::Ordering;
 
 /// TODO: Generalize output as an iterator or a stream.
 pub fn merge_by<T, F>(a_list: Vec<T>, b_list: Vec<T>, mut f: F) -> Vec<T>

@@ -11,7 +11,7 @@ doctest = false
 macros = { path = "../macros", optional = true }
 asn = { path = "../asn", optional = true }
 math = { path = "../math", optional = true }
-common = { path = "../common", optional = true }
+common = { path = "../common", default-features = false }
 parsing = { path = "../parsing", optional = true }
 pkix = { path = "../../third_party/pkix", optional = true }
 byteorder = { version = "1.3.2", optional = true }
@@ -27,4 +27,5 @@ openssl = { path = "../../third_party/openssl" }
 
 [features]
 default = ["std"]
-std = ["macros", "asn", "math", "common", "parsing", "pkix", "byteorder", "lazy_static", "chrono", "async-std"]
+alloc = ["common/alloc"]
+std = ["macros", "asn", "math", "parsing", "pkix", "byteorder", "lazy_static", "chrono", "async-std", "alloc", "common/std"]

@@ -7,6 +7,7 @@ extern crate executor;
 extern crate peripherals;
 #[macro_use]
 extern crate arrayref;
+extern crate common;
 extern crate crypto;
 
 /*
@@ -16,11 +17,15 @@ Currently we use 3078 flash bytes if we don't count offsets
 
 mod ccm;
 mod ecb;
+mod eeprom;
 mod interrupts;
+mod mutex;
 mod registers;
 mod rng;
+mod storage;
 mod temp;
 mod timer;
+mod twim;
 mod uarte;
 
 use core::panic::PanicInfo;

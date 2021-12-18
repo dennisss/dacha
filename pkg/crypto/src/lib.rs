@@ -13,11 +13,10 @@
 #[macro_use]
 extern crate std;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 #[macro_use]
 extern crate alloc;
 
-#[cfg(feature = "std")]
 #[macro_use]
 extern crate common;
 #[cfg(feature = "std")]
@@ -232,9 +231,7 @@ mod aes_generic;
 pub mod ccm;
 #[cfg(feature = "std")]
 pub mod chacha20;
-#[cfg(feature = "std")]
 pub mod checksum;
-#[cfg(feature = "std")]
 pub mod cipher;
 #[cfg(feature = "std")]
 pub mod des;
@@ -244,7 +241,6 @@ pub mod dh;
 pub mod elliptic;
 #[cfg(feature = "std")]
 pub mod gcm;
-#[cfg(feature = "std")]
 pub mod hasher;
 #[cfg(feature = "std")]
 pub mod hkdf;
@@ -276,13 +272,11 @@ pub mod sha384;
 pub mod sha512;
 #[cfg(feature = "std")]
 mod sha_test;
-#[cfg(feature = "std")]
 pub mod sip;
 #[cfg(feature = "std")]
 pub mod test;
 #[cfg(feature = "std")]
 pub mod tls;
-#[cfg(feature = "std")]
 pub mod utils;
 #[cfg(feature = "std")]
 pub mod x509;

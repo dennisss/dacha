@@ -1,8 +1,12 @@
+#[cfg(feature = "alloc")]
 use alloc::boxed::Box;
-use std::vec::Vec;
-
-use common::factory::*;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+#[cfg(feature = "std")]
 use std::io::Read;
+
+#[cfg(feature = "alloc")]
+use common::factory::*;
 
 /// Encapsulates an algorithm for creating hashes (i.e. MD5, SHA1, CRC32, etc.).
 /// TODO: Rename to Digest(er) to not conflict with the std::hash::Hasher
@@ -24,8 +28,10 @@ pub trait Hasher: Send {
     /// NOTE: If is valid to call update() after finish() is called (in which
     /// case all further calls to finish() will still be cumulative since the
     /// construction of this struct).
+    #[cfg(feature = "alloc")]
     fn finish(&self) -> Vec<u8>;
 
+    #[cfg(feature = "alloc")]
     fn finish_with(&mut self, data: &[u8]) -> Vec<u8> {
         self.update(data);
         self.finish()
@@ -33,15 +39,19 @@ pub trait Hasher: Send {
 
     /// Should create a cloned copy of this hasher such that the new and old
     /// hashers effectively have also data seen by update() applied already.
+    #[cfg(feature = "alloc")]
     fn box_clone(&self) -> Box<dyn Hasher>;
 }
 
+#[cfg(feature = "alloc")]
 pub type HasherFactory = Box<dyn Factory<dyn Hasher>>;
 
+#[cfg(feature = "alloc")]
 pub struct DefaultHasherFactory<T: Default + ?Sized> {
     t: std::marker::PhantomData<T>,
 }
 
+#[cfg(feature = "alloc")]
 impl<T: Default + ?Sized> DefaultHasherFactory<T> {
     pub fn new() -> Self {
         Self {
@@ -50,6 +60,7 @@ impl<T: Default + ?Sized> DefaultHasherFactory<T> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T: Hasher + Default + Sync + ?Sized + 'static> Factory<dyn Hasher>
     for DefaultHasherFactory<T>
 {
@@ -62,10 +73,12 @@ impl<T: Hasher + Default + Sync + ?Sized + 'static> Factory<dyn Hasher>
     }
 }
 
+#[cfg(feature = "alloc")]
 pub trait GetHasherFactory {
     fn factory() -> HasherFactory;
 }
 
+#[cfg(feature = "alloc")]
 impl<T: 'static + Default + Sync + Hasher> GetHasherFactory for T {
     fn factory() -> HasherFactory {
         Box::new(DefaultHasherFactory::<T>::new())
@@ -73,11 +86,13 @@ impl<T: 'static + Default + Sync + Hasher> GetHasherFactory for T {
 }
 
 /// Wrapper around a reader that calculates a checksum as you read.
+#[cfg(feature = "std")]
 pub struct HashReader<'a, H> {
     reader: &'a mut dyn Read,
     hasher: H,
 }
 
+#[cfg(feature = "std")]
 impl<H: Hasher> HashReader<'_, H> {
     pub fn new(reader: &mut dyn Read, hasher: H) -> HashReader<H> {
         HashReader { reader, hasher }
@@ -92,6 +107,7 @@ impl<H: Hasher> HashReader<'_, H> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<H: Hasher> Read for HashReader<'_, H> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let n = self.reader.read(buf)?;
@@ -105,7 +121,7 @@ impl<H: Hasher> Read for HashReader<'_, H> {
 #[derive(Default, Clone)]
 pub struct TruncatedHasher<H: Hasher, N: typenum::Unsigned + Send> {
     inner: H,
-    _output_size: std::marker::PhantomData<N>,
+    _output_size: core::marker::PhantomData<N>,
 }
 
 impl<H: 'static + Hasher + Clone, N: 'static + typenum::Unsigned + Send + Clone> Hasher
@@ -124,12 +140,14 @@ impl<H: 'static + Hasher + Clone, N: 'static + typenum::Unsigned + Send + Clone>
         self.inner.update(data);
     }
 
+    #[cfg(feature = "alloc")]
     fn finish(&self) -> Vec<u8> {
         let mut data = self.inner.finish();
         data.truncate(self.output_size());
         data
     }
 
+    #[cfg(feature = "alloc")]
     fn box_clone(&self) -> Box<dyn Hasher> {
         Box::new(self.clone())
     }

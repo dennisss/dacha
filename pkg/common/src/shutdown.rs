@@ -1,5 +1,7 @@
 // Utilities for
 
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
 use std::sync::Mutex;
 use std::sync::Once;
 
