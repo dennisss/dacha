@@ -1,5 +1,8 @@
 #![feature(proc_macro_hygiene, decl_macro, generators, async_closure)]
 
+extern crate alloc;
+extern crate core;
+
 #[macro_use]
 extern crate common;
 extern crate crypto;

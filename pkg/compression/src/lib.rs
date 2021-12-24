@@ -1,5 +1,8 @@
 #![feature(box_patterns, int_log, is_symlink)]
 
+extern crate alloc;
+extern crate core;
+
 #[macro_use]
 extern crate common;
 extern crate crypto;

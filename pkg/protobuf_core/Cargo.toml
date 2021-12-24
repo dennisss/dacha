@@ -5,7 +5,12 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-common = { path = "../common" }
-base64 = "0.11.0"
+common = { path = "../common", default-features = false }
 macros = { path = "../macros" }
-parsing = { path = "../parsing" }
+parsing = { path = "../parsing", optional = true }
+failure = { version = "0.1.8", optional = true }
+
+[features]
+default = ["std"]
+alloc = ["common/alloc"]
+std = ["alloc", "common/std", "failure", "parsing"]

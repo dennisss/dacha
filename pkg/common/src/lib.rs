@@ -2,7 +2,8 @@
     trait_alias,
     associated_type_defaults,
     specialization,
-    const_fn_trait_bound
+    const_fn_trait_bound,
+    try_trait_v2
 )]
 #![no_std]
 
@@ -61,7 +62,6 @@ pub mod cancellation;
 pub mod collections;
 #[cfg(feature = "std")]
 pub mod condvar;
-#[cfg(feature = "std")]
 pub mod const_default;
 #[cfg(feature = "std")]
 pub mod eventually;
@@ -76,6 +76,7 @@ pub mod io;
 pub mod iter;
 #[cfg(feature = "std")]
 pub mod line_builder;
+pub mod list;
 #[cfg(feature = "std")]
 pub mod pipe;
 #[cfg(feature = "std")]
@@ -90,6 +91,8 @@ pub mod temp;
 pub mod vec;
 #[cfg(feature = "std")]
 pub mod vec_hash_set;
+
+pub mod errors;
 
 pub use arrayref::{array_mut_ref, array_ref};
 #[cfg(feature = "std")]
@@ -218,46 +221,6 @@ impl<T: Copy> LeftPad<T> for Vec<T> {
         out
     }
 }
-
-#[cfg(feature = "std")]
-pub mod errors {
-    pub use failure::err_msg;
-    pub use failure::format_err;
-    pub use failure::Error;
-
-    pub type Result<T> = std::result::Result<T, Error>;
-}
-
-/*
-pub mod errors {
-    error_chain! {
-        foreign_links {
-            Io(::std::io::Error);
-            ParseInt(::std::num::ParseIntError);
-            CharTryFromError(::std::char::CharTryFromError);
-            FromUtf8Error(::std::str::Utf8Error);
-            FromUtf8ErrorString(::std::string::FromUtf8Error);
-            FromUtf16Error(::std::string::FromUtf16Error);
-            FromHexError(::hex::FromHexError);
-            FromBase64Error(::base64::DecodeError);
-            // Db(diesel::result::Error);
-            // HTTP(hyper::Error);
-        }
-
-        errors {
-            // A type of error returned while performing a request
-            // It is generally appropriate to respond with this text as a 400 error
-            // We will eventually standardize the codes such that higher layers can easily distinguish errors
-            // API(code: u16, message: &'static str) {
-            // 	display("API Error: {} '{}'", code, message)
-            // }
-            Parser(t: ParserErrorKind) {
-                display("Parser: {:?}", t)
-            }
-        }
-    }
-}
-*/
 
 #[cfg(feature = "std")]
 pub trait FutureResult<T> = core::future::Future<Output = errors::Result<T>>;
@@ -447,7 +410,7 @@ macro_rules! enum_def_with_unknown {
 #[macro_export]
 macro_rules! impl_deref {
     ($name:ident :: $field:ident as $t:ty) => {
-        impl ::std::ops::Deref for $name {
+        impl ::core::ops::Deref for $name {
             type Target = $t;
 
             fn deref(&self) -> &Self::Target {
@@ -455,7 +418,7 @@ macro_rules! impl_deref {
             }
         }
 
-        impl ::std::ops::DerefMut for $name {
+        impl ::core::ops::DerefMut for $name {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 &mut self.$field
             }
@@ -475,11 +438,11 @@ macro_rules! min_size {
 #[macro_export]
 macro_rules! enum_accessor {
     ($name:ident, $branch:ident, $t:ty) => {
-        fn $name(&self) -> Result<$t> {
+        fn $name(&self) -> $crate::errors::Result<$t> {
             if let Self::$branch(v) = self {
                 Ok(*v)
             } else {
-                Err(err_msg("Unexpected value type."))
+                Err($crate::errors::err_msg("Unexpected value type."))
             }
         }
     };

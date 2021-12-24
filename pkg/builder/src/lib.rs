@@ -7,6 +7,9 @@ How bundle will work:
 
 */
 
+extern crate alloc;
+extern crate core;
+
 extern crate common;
 #[macro_use]
 extern crate macros;

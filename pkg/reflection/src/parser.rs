@@ -23,6 +23,9 @@ pub trait ValueParser<'a> {
 
     /// Reads a single value from the underlying stream and advances forward the
     /// stream by one position.
+    ///
+    /// TODO: We want to support a value 'hint'
+    /// - For objects, may need to support a 'name'
     fn parse(self) -> Result<Value<'a, Self::ObjectParserType, Self::ListParserType>>;
 }
 

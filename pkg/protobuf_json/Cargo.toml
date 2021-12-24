@@ -12,3 +12,8 @@ json = { path = "../json" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

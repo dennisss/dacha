@@ -1,14 +1,18 @@
 // Implementation of the protobuf plaintext format.
 // aka what the C++ DebugString outputs and can re-parse as a proto.
 
-use std::convert::TryInto;
-use std::ops::Deref;
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::convert::TryInto;
+use core::ops::Deref;
 
-use crate::tokenizer::{float_lit, int_lit, serialize_str_lit, strLit};
 use common::errors::*;
 use parsing::*;
 
 use crate::reflection::{MessageReflection, Reflection, ReflectionMut};
+use crate::tokenizer::{float_lit, int_lit, serialize_str_lit, strLit};
 
 //
 const SYMBOLS: &'static str = "{}[]<>:,.";

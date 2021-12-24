@@ -1,3 +1,6 @@
+extern crate alloc;
+extern crate core;
+
 #[macro_use]
 extern crate automata;
 #[macro_use]

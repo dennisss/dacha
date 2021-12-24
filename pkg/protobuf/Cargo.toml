@@ -5,14 +5,18 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-common = { path = "../common" }
-parsing = { path = "../parsing" }
-base64 = "0.11.0"
-protobuf_core = { path = "../protobuf_core" }
-protobuf_descriptor = { path = "../../third_party/protobuf_descriptor" }
+common = { path = "../common", default-features = false }
+parsing = { path = "../parsing", optional = true }
+protobuf_core = { path = "../protobuf_core", default-features = false }
+protobuf_descriptor = { path = "../../third_party/protobuf_descriptor", optional = true }
 macros = { path = "../macros" }
-json = { path = "../json" }
-protobuf_compiler = { path = "../protobuf_compiler" }
+json = { path = "../json", optional = true }
+protobuf_compiler = { path = "../protobuf_compiler", optional = true }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }
+
+[features]
+default = ["std"]
+alloc = ["common/alloc", "protobuf_core/alloc"]
+std = ["alloc", "common/std", "parsing", "protobuf_core/std", "protobuf_descriptor", "json", "protobuf_compiler"]

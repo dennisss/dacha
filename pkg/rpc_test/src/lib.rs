@@ -1,3 +1,6 @@
+extern crate alloc;
+extern crate core;
+
 extern crate rpc;
 #[macro_use]
 extern crate common;

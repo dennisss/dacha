@@ -2,6 +2,7 @@
 // describing a set of messages/services.
 
 use protobuf_core::{EnumValue, FieldNumber};
+#[cfg(feature = "descriptors")]
 use protobuf_descriptor as pb;
 
 // Proto 2 and 3
@@ -48,6 +49,7 @@ pub enum Label {
 }
 
 impl Label {
+    #[cfg(feature = "descriptors")]
     fn to_proto(&self) -> pb::FieldDescriptorProto_Label {
         match self {
             Label::None => pb::FieldDescriptorProto_Label::LABEL_OPTIONAL,
@@ -125,6 +127,7 @@ pub struct Field {
 }
 
 impl Field {
+    #[cfg(feature = "descriptors")]
     fn to_proto(&self, oneof_index: Option<usize>) -> pb::FieldDescriptorProto {
         let mut proto = pb::FieldDescriptorProto::default();
         proto.set_name(&self.name);
@@ -216,6 +219,7 @@ pub struct Enum {
 }
 
 impl Enum {
+    #[cfg(feature = "descriptors")]
     fn to_proto(&self) -> pb::EnumDescriptorProto {
         let mut proto = pb::EnumDescriptorProto::default();
         proto.set_name(&self.name);
@@ -255,8 +259,9 @@ pub struct MessageDescriptor {
 }
 
 impl MessageDescriptor {
-    fn to_proto(&self) -> protobuf_descriptor::DescriptorProto {
-        let mut proto = protobuf_descriptor::DescriptorProto::default();
+    #[cfg(feature = "descriptors")]
+    fn to_proto(&self) -> pb::DescriptorProto {
+        let mut proto = pb::DescriptorProto::default();
         proto.set_name(&self.name);
         for item in &self.body {
             match item {
@@ -398,6 +403,7 @@ pub struct Service {
 }
 
 impl Service {
+    #[cfg(feature = "descriptors")]
     fn to_proto(&self) -> pb::ServiceDescriptorProto {
         let mut proto = pb::ServiceDescriptorProto::default();
         proto.set_name(&self.name);
@@ -437,6 +443,7 @@ pub struct RPC {
 }
 
 impl RPC {
+    #[cfg(feature = "descriptors")]
     fn to_proto(&self) -> pb::MethodDescriptorProto {
         let mut proto = pb::MethodDescriptorProto::default();
         proto.set_name(&self.name);
@@ -478,8 +485,9 @@ pub struct Proto {
 }
 
 impl Proto {
-    pub fn to_proto(&self) -> protobuf_descriptor::FileDescriptorProto {
-        let mut proto = protobuf_descriptor::FileDescriptorProto::default();
+    #[cfg(feature = "descriptors")]
+    pub fn to_proto(&self) -> pb::FileDescriptorProto {
+        let mut proto = pb::FileDescriptorProto::default();
         proto.set_syntax(match self.syntax {
             Syntax::Proto2 => "proto2",
             Syntax::Proto3 => "proto3",

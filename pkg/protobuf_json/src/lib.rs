@@ -1,3 +1,6 @@
+extern crate alloc;
+extern crate core;
+
 extern crate common;
 extern crate json;
 extern crate protobuf;

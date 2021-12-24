@@ -1,5 +1,8 @@
 #![feature(async_closure)]
 
+extern crate alloc;
+extern crate core;
+
 /*
 
 Namespace:

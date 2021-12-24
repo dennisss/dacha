@@ -127,3 +127,8 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
 pub fn derive_parseable(input: TokenStream) -> TokenStream {
     reflect::derive_parseable(input)
 }
+
+#[proc_macro_derive(Errable)]
+pub fn derive_errable(input: TokenStream) -> TokenStream {
+    reflect::derive_errable(input)
+}

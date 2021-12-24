@@ -6,27 +6,43 @@
     core_intrinsics,
     entry_insert
 )]
+#![no_std]
+
+#[cfg(feature = "std")]
+#[macro_use]
+extern crate std;
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 #[macro_use]
 extern crate common;
+#[cfg(feature = "std")]
 extern crate parsing; // < Mainly needed for f32/f64 conversions
 
 #[macro_use]
 extern crate macros;
 
+#[cfg(feature = "std")]
 extern crate json;
-extern crate protobuf_compiler;
+// #[cfg(feature = "std")]
+// extern crate protobuf_compiler;
+#[cfg(feature = "std")]
 extern crate protobuf_descriptor;
 
+#[cfg(feature = "std")]
 mod descriptor_pool;
+#[cfg(feature = "std")]
 pub mod dynamic;
 mod proto;
 
+// TODO: Remove this 'use' statement.
+#[cfg(feature = "std")]
 pub use common::bytes::{Bytes, BytesMut};
+#[cfg(feature = "std")]
 pub use descriptor_pool::*;
+#[cfg(feature = "std")]
 pub use dynamic::*;
-pub use protobuf_core::EnumValue;
-pub use protobuf_core::FieldNumber;
 pub use protobuf_core::*;
 
 #[cfg(test)]

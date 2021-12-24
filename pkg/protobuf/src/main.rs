@@ -1,4 +1,3 @@
-extern crate base64;
 extern crate protobuf;
 
 use common::errors::*;

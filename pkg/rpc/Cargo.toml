@@ -18,3 +18,8 @@ google = { path = "../../third_party/google" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

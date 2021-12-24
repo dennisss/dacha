@@ -159,7 +159,7 @@ impl Status {
         Ok(None)
     }
 
-    pub fn with_detail(mut self, value: &dyn protobuf::Message) -> Result<Self> {
+    pub fn with_detail<M: protobuf::Message>(mut self, value: &M) -> Result<Self> {
         let mut any = google::proto::any::Any::default();
         any.pack_from(value)?;
         self.details.push(any);

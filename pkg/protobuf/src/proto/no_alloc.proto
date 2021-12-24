@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package protobuf;
+
+/*
+TODO: There are two ways in which we can implement this:
+1. max_size creates fixed size arrays
+2. We could use Vec objects which are backed by a fixed size Arena
+    - This option is better if we don't expect all repeated fields to always hit their max_size.
+*/
+
+message ShoppingCart {
+    
+    float cost = 1;
+
+    message Item {
+        uint32 quantity = 1;
+        bytes data = 2 [max_size = 8];
+    }
+
+    repeated Item items = 2 [max_size = 10];
+
+}

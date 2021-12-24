@@ -10,6 +10,10 @@
 // proto2 and proto3 files which only differ in their higher level parser
 // implemented on top of tokens.
 
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use common::errors::*;
 use parsing::*;
 

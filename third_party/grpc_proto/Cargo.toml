@@ -11,3 +11,8 @@ rpc = { path = "../../pkg/rpc" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../../pkg/protobuf_compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

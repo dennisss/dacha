@@ -12,3 +12,8 @@ macros = { path = "../macros" }
 rpc = { path = "../rpc" }
 http = { path = "../http" }
 grpc_proto = { path = "../../third_party/grpc_proto" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

@@ -1,7 +1,10 @@
+use alloc::string::String;
+use alloc::vec::Vec;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 
 use common::errors::*;
+use common::list::Appendable;
 use protobuf_compiler::spec::Syntax;
 use protobuf_core::reflection::RepeatedFieldReflection;
 use protobuf_core::wire::{WireField, WireFieldIter};
@@ -204,7 +207,7 @@ impl protobuf_core::Message for DynamicMessage {
         Ok(())
     }
 
-    fn serialize(&self) -> Result<Vec<u8>> {
+    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         // TODO: Go in field number order.
         // TODO: Ignore fields with default values in proto3 (by using the sparse
         // serializers).
@@ -267,23 +270,23 @@ impl protobuf_core::Message for DynamicMessage {
                             DynamicPrimitiveValue::Bytes(v) => {
                                 WireField::serialize_bytes(*field_num, v.as_ref(), &mut out)
                             }
-                        }
+                        }?
                     }
                     DynamicValue::Enum(v) => {
                         if repeated {
-                            WireField::serialize_enum(*field_num, v, &mut out)
+                            WireField::serialize_enum(*field_num, v, &mut out)?
                         } else {
-                            WireField::serialize_sparse_enum(*field_num, v, &mut out)
+                            WireField::serialize_sparse_enum(*field_num, v, &mut out)?
                         }
                     }
                     DynamicValue::Message(v) => {
-                        WireField::serialize_message(*field_num, v, &mut out)
+                        WireField::serialize_message(*field_num, v, &mut out)?
                     }
-                }?;
+                };
             }
         }
 
-        Ok(out)
+        Ok(())
     }
 }
 

@@ -1,8 +1,11 @@
-use std::borrow::Borrow;
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::borrow::Borrow;
+use core::hash::Hash;
+use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut};
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
 
 use common::const_default::ConstDefault;
 

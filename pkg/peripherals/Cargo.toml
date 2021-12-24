@@ -5,6 +5,7 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+common = { path = "../common", default-features = false }
 
 [build-dependencies]
 common = { path = "../common" }

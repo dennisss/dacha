@@ -369,3 +369,30 @@ pub fn derive_const_default(input: TokenStream) -> TokenStream {
 
     proc_macro::TokenStream::from(out)
 }
+
+pub fn derive_errable(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = input.ident;
+
+    let out = quote! {
+        // impl ::common::errors::error_new::Errable for #name {
+        //     fn as_any<'a>(&'a self) -> &'a dyn ::core::any::Any {
+        //         self
+        //     }
+        // }
+
+        impl ::common::errors::error_new::ErrableCode for #name {
+            fn from_error_code(code: u32) -> Self {
+                // We assume that the enum has repr(u32)
+                // TODO: Eventually validate the above statement.
+                unsafe { ::core::mem::transmute(code) }
+            }
+
+            fn error_code(&self) -> u32 {
+                *self as u32
+            }
+        }
+    };
+
+    proc_macro::TokenStream::from(out)
+}

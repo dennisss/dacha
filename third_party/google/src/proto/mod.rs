@@ -43,7 +43,7 @@ pub mod any {
             Ok(Some(v))
         }
 
-        pub fn pack_from(&mut self, message: &dyn protobuf::Message) -> Result<()> {
+        pub fn pack_from<M: protobuf::Message>(&mut self, message: &M) -> Result<()> {
             self.set_type_url(message.type_url());
             self.set_value(message.serialize()?);
             Ok(())

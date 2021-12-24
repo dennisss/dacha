@@ -17,3 +17,8 @@ failure = "0.1.8"
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing_compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

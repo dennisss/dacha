@@ -1,5 +1,8 @@
 #![feature(core_intrinsics, trait_alias)]
 
+extern crate alloc;
+extern crate core;
+
 #[macro_use]
 extern crate common;
 extern crate parsing;

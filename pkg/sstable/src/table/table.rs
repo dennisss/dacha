@@ -191,7 +191,10 @@ impl SSTable {
             };
 
             match field.value {
-                ReflectValue::U64(v) => *v = complete(parse_varint)(&value)?.0 as u64,
+                ReflectValue::U64(v) => {
+                    *v = complete(|input| parse_varint(input).map_err(|e| Error::from(e)))(&value)?
+                        .0 as u64
+                }
                 ReflectValue::String(v) => {
                     // TODO: Ensure that this is always utf-8
                     *v = String::from_utf8(value.to_vec())?;

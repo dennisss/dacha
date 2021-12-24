@@ -1,3 +1,6 @@
+extern crate alloc;
+extern crate core;
+
 #[macro_use]
 extern crate parsing;
 #[macro_use]

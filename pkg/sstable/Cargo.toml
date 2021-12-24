@@ -15,3 +15,8 @@ protobuf = { path = "../protobuf" }
 parsing = { path = "../parsing" }
 fs2 = "0.4.3"
 async-std = "1.9.0"
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
