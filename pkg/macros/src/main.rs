@@ -18,6 +18,16 @@ extern crate macros;
 // 	}
 // }
 
+// fn hello() -> usize {
+//     i
+// }
+
+range_param!(i = 1..10, {
+    impl<T: ConstDefault> ConstDefault for [T; i] {
+        const DEFAULT: Self = [T::DEFAULT; i];
+    }
+});
+
 fn main() {
     println!("Hello");
 }

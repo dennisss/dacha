@@ -3,8 +3,7 @@
     decl_macro,
     generators,
     trait_alias,
-    core_intrinsics,
-    entry_insert
+    core_intrinsics
 )]
 #![no_std]
 

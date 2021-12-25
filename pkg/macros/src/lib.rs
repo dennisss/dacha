@@ -17,6 +17,7 @@ use syn::Result;
 use syn::{Item, ItemImpl};
 
 mod args;
+mod param;
 mod reflect;
 mod utils;
 
@@ -131,4 +132,9 @@ pub fn derive_parseable(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Errable)]
 pub fn derive_errable(input: TokenStream) -> TokenStream {
     reflect::derive_errable(input)
+}
+
+#[proc_macro]
+pub fn range_param(input: TokenStream) -> TokenStream {
+    param::range_param(input)
 }

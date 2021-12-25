@@ -12,7 +12,6 @@
 
 use alloc::borrow::ToOwned;
 use alloc::string::String;
-use alloc::vec::Vec;
 
 use common::errors::*;
 use parsing::*;

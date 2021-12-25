@@ -1,5 +1,7 @@
 use common::errors::*;
 
+use alloc::string::ToString;
+
 use crate::reflection::Reflection;
 use crate::reflection::ReflectionMut;
 use crate::MessageReflection;
@@ -73,7 +75,7 @@ fn assign_reflection(to: ReflectionMut, from: Reflection) -> Result<()> {
         }
         ReflectionMut::String(to) => {
             if let Reflection::String(from) = from {
-                *to = from.clone();
+                *to = from.to_string();
             }
         }
         ReflectionMut::Bytes(to) => {

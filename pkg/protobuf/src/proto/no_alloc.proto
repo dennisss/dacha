@@ -14,10 +14,13 @@ message ShoppingCart {
     float cost = 1;
 
     message Item {
-        uint32 quantity = 1;
-        bytes data = 2 [max_size = 8];
+        string name = 1 [max_length = 16];
+        uint32 quantity = 2;
+        bytes data = 3 [max_length = 8];
+
+        
     }
 
-    repeated Item items = 2 [max_size = 10];
+    repeated Item items = 2 [max_count = 10];
 
 }

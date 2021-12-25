@@ -1,14 +1,8 @@
 #[cfg(feature = "alloc")]
-use alloc::boxed::Box;
-#[cfg(feature = "alloc")]
-use alloc::string::String;
-#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use core::intrinsics::unlikely;
 use core::result::Result;
 
-#[cfg(feature = "alloc")]
-use common::bytes::{Bytes, BytesMut};
 use common::list::{Appendable, ByteCounter};
 
 use crate::types::FieldNumber;

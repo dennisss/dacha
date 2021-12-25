@@ -1,12 +1,12 @@
 {
   "files.watcherExclude": {
     "**/target/**": true,
+    "**/built/**": true,
     "**/built-rust/**": true,
     "**/built-config/**": true
   },
   "editor.scrollBeyondLastLine": false,
-  "rust-client.logToFile": true,
   "editor.wordWrap": "on",
   "editor.formatOnSave": true,
-  "rust-analyzer.checkOnSave.enable": true
+  "rust-analyzer.checkOnSave.enable": true,
 }

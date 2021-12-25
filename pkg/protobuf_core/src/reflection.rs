@@ -1,5 +1,9 @@
-use std::default::Default;
-use std::ops::{Deref, DerefMut};
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
+use common::collections::{FixedString, FixedVec};
+use core::default::Default;
+use core::ops::{Deref, DerefMut};
 
 use common::bytes::BytesMut;
 
@@ -14,7 +18,7 @@ pub enum Reflection<'a> {
     U32(&'a u32),
     U64(&'a u64),
     Bool(&'a bool),
-    String(&'a String),
+    String(&'a str),
     Bytes(&'a [u8]),
     Repeated(&'a dyn RepeatedFieldReflection),
     Message(&'a dyn MessageReflection),
@@ -94,11 +98,6 @@ pub trait MessageReflection {
     fn field_number_by_name(&self, name: &str) -> Option<FieldNumber>;
 }
 
-// pub trait OptionReflection {
-//     fn reflect_inner(&self) -> Option<Reflection>;
-//     fn reflect_inner_mut(&mut self) -> Option<ReflectionMut>
-// }
-
 pub trait Reflect {
     fn reflect(&self) -> Reflection;
     fn reflect_mut(&mut self) -> ReflectionMut;
@@ -154,6 +153,35 @@ impl<T: Reflect> Reflect for crate::MessagePtr<T> {
 }
 
 impl<T: Reflect + Default> Reflect for Vec<T> {
+    fn reflect(&self) -> Reflection {
+        Reflection::Repeated(self)
+    }
+    fn reflect_mut(&mut self) -> ReflectionMut {
+        ReflectionMut::Repeated(self)
+    }
+}
+
+impl<A: AsRef<[u8]> + AsMut<[u8]>> Reflect for FixedString<A> {
+    fn reflect(&self) -> Reflection {
+        Reflection::String(self.as_ref())
+    }
+
+    fn reflect_mut(&mut self) -> ReflectionMut {
+        todo!()
+    }
+}
+
+// Used for 'bytes' types with the fixed_length option specified.
+impl<A: AsMut<[u8]> + AsRef<[u8]>> Reflect for FixedVec<u8, A> {
+    fn reflect(&self) -> Reflection {
+        Reflection::Bytes(self.as_ref())
+    }
+    fn reflect_mut(&mut self) -> ReflectionMut {
+        todo!()
+    }
+}
+
+impl<T: Reflect + Default, A: AsMut<[T]> + AsRef<[T]>> Reflect for FixedVec<T, A> {
     fn reflect(&self) -> Reflection {
         Reflection::Repeated(self)
     }
@@ -245,6 +273,27 @@ impl<T: Reflect + Default> RepeatedFieldReflection for Vec<T> {
     }
     fn add(&mut self) -> ReflectionMut {
         Vec::push(self, T::default());
+        let idx = self.len() - 1;
+        self[idx].reflect_mut()
+    }
+}
+
+impl<T: Reflect + Default, A: AsMut<[T]> + AsRef<[T]>> RepeatedFieldReflection for FixedVec<T, A> {
+    fn len(&self) -> usize {
+        let s: &[T] = self.as_ref();
+        s.len()
+    }
+
+    fn get(&self, index: usize) -> Option<Reflection> {
+        self.deref().get(index).map(|v: &T| v.reflect())
+    }
+    fn get_mut(&mut self, index: usize) -> Option<ReflectionMut> {
+        self.deref_mut()
+            .get_mut(index)
+            .map(|v: &mut T| v.reflect_mut())
+    }
+    fn add(&mut self) -> ReflectionMut {
+        FixedVec::push(self, T::default());
         let idx = self.len() - 1;
         self[idx].reflect_mut()
     }

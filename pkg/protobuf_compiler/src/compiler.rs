@@ -242,7 +242,7 @@ impl Compiler<'_> {
         c.outer += "#[cfg(feature = \"alloc\")] use alloc::string::String;\n\n";
         c.outer += "use common::errors::*;\n";
         c.outer += "use common::list::Appendable;\n";
-        c.outer += "use common::collections::FixedVec;\n";
+        c.outer += "use common::collections::{FixedVec, FixedString};\n";
         c.outer += "use common::const_default::ConstDefault;\n";
         write!(c.outer, "use {}::*;\n", c.options.runtime_package).unwrap();
         write!(c.outer, "use {}::wire::*;\n", c.options.runtime_package).unwrap();
@@ -599,7 +599,34 @@ impl Compiler<'_> {
         lines.to_string()
     }
 
-    fn compile_field_type(&self, typ: &FieldType, path: TypePath) -> String {
+    fn compile_field_type(&self, typ: &FieldType, path: TypePath, options: &[Opt]) -> String {
+        let max_length = {
+            let mut size = None;
+            for opt in options {
+                if opt.name == "max_length" {
+                    if let Constant::Integer(v) = opt.value {
+                        size = Some(v as usize);
+                    } else {
+                        panic!("max_length option must be an integer");
+                    }
+
+                    break;
+                }
+            }
+
+            size
+        };
+
+        if let Some(max_length) = max_length.clone() {
+            if *typ == FieldType::Bytes {
+                return format!("FixedVec<u8, [u8; {size}]>", size = max_length);
+            } else if *typ == FieldType::String {
+                return format!("FixedString<[u8; {size}]>", size = max_length);
+            } else {
+                panic!("max_length not supported on type");
+            }
+        }
+
         String::from(match typ {
             FieldType::Double => "f64",
             FieldType::Float => "f32",
@@ -732,59 +759,14 @@ impl Compiler<'_> {
         false
     }
 
-    fn compile_fixed_vec(&mut self, name: &str, typ: &str, max_size: usize) {
-        let mut const_values = vec![];
-        for i in 0..max_size {
-            const_values.push(format!("{}::DEFAULT", typ));
-        }
-
-        self.outer.push_str(&format!(
-            "
-            #[derive(Clone, PartialEq, Default)]
-            pub struct {name} {{
-                value: FixedVec<{typ}, [{typ}; {size}]>
-            }}
-
-            impl_deref!({name}::value as FixedVec<{typ}, [{typ}; {size}]>);
-
-            impl ::common::const_default::ConstDefault for {name} {{
-                const DEFAULT: Self = Self {{
-                    value: FixedVec::new([{typ}::DEFAULT; {size}])
-                }};
-            }}
-            ",
-            // const_values = const_values.join(", "),
-            name = name,
-            typ = typ,
-            size = max_size
-        ));
-    }
-
     fn compile_field(&mut self, field: &Field, path: TypePath) -> String {
         let mut s = String::new();
         s += self.field_name(field);
         s += ": ";
 
-        let mut typ = self.compile_field_type(&field.typ, path);
+        let mut typ = self.compile_field_type(&field.typ, path, &field.unknown_options);
 
         let is_repeated = field.label == Label::Repeated;
-
-        let max_length = {
-            let mut size = None;
-            for opt in &field.unknown_options {
-                if opt.name == "max_length" {
-                    if let Constant::Integer(v) = opt.value {
-                        size = Some(v as usize);
-                    } else {
-                        panic!("max_length option must be an integer");
-                    }
-
-                    break;
-                }
-            }
-
-            size
-        };
 
         let max_count = {
             let mut size = None;
@@ -809,28 +791,15 @@ impl Compiler<'_> {
         - max_count: For repeated fields.
         */
 
-        // TODO: How to distinguish between "repeated bytes" and just "bytes"
-        // [max_elements -]
-        // if let Some(max_size) = max_size.clone() {
-        //     if field.typ == FieldType::Bytes {
-
-        //         //
-        //     }
-        // }
-
         if self.is_unordered_set(field) {
             s += &format!("{}::SetField<{}>", self.options.runtime_package, typ);
         } else if is_repeated {
             if let Some(max_count) = max_count {
-                let type_name = {
-                    let mut path = path.to_owned();
-                    path.push(&field.name);
-                    path.join("_")
-                };
-
-                self.compile_fixed_vec(&type_name, &typ, max_count);
-
-                s += type_name.as_str();
+                s += &format!(
+                    "FixedVec<{typ}, [{typ}; {size}]>",
+                    typ = typ,
+                    size = max_count
+                );
             } else {
                 s += &format!("Vec<{}>", &typ);
             }
@@ -865,7 +834,7 @@ impl Compiler<'_> {
         lines.add(format!("pub enum {} {{", typename));
         lines.add("\tUnknown,");
         for field in &oneof.fields {
-            let typ = self.compile_field_type(&field.typ, path);
+            let typ = self.compile_field_type(&field.typ, path, &field.unknown_options);
             lines.add(format!(
                 "\t{}({}),",
                 common::snake_to_camel_case(&field.name),
@@ -922,9 +891,9 @@ impl Compiler<'_> {
                 let mut s = String::new();
                 s += &f.name; // TODO: Handle 'type' -> 'typ'
                 s += &format!(": {}::MapField<", &self.options.runtime_package);
-                s += &self.compile_field_type(&f.key_type, path);
+                s += &self.compile_field_type(&f.key_type, path, &f.options);
                 s += ", ";
-                s += &self.compile_field_type(&f.value_type, path);
+                s += &self.compile_field_type(&f.value_type, path, &f.options);
                 s += ">,";
                 Some(s)
             }
@@ -948,7 +917,7 @@ impl Compiler<'_> {
     fn compile_constant(&self, typ: &FieldType, constant: &Constant, path: TypePath) -> String {
         match constant {
             Constant::Identifier(v) => {
-                let enum_name = self.compile_field_type(typ, path);
+                let enum_name = self.compile_field_type(typ, path, &[]);
                 format!("{}::{}", enum_name, v)
             }
             Constant::Integer(v) => v.to_string(),
@@ -978,7 +947,7 @@ impl Compiler<'_> {
         // TOOD: verify that the label is handled appropriately for oneof fields.
 
         let is_repeated = field.label == Label::Repeated;
-        let typ = self.compile_field_type(&field.typ, &path);
+        let typ = self.compile_field_type(&field.typ, &path, &field.unknown_options);
 
         let is_primitive = self.is_primitive(&field.typ, &path);
         let is_copyable = self.is_copyable(&field.typ, &path);
@@ -1346,7 +1315,7 @@ impl Compiler<'_> {
                 return Err(err_msg("typed_num message field must be a primitive type"));
             }
 
-            let field_type = self.compile_field_type(&field.typ, &[]);
+            let field_type = self.compile_field_type(&field.typ, &[], &field.unknown_options);
 
             lines.add(format!(
                 r#"
@@ -1896,7 +1865,11 @@ impl Compiler<'_> {
                                 ));
                                 lines.add("\t\telse {");
 
-                                let typ = self.compile_field_type(&field.typ, &inner_path);
+                                let typ = self.compile_field_type(
+                                    &field.typ,
+                                    &inner_path,
+                                    &field.unknown_options,
+                                );
 
                                 lines.add(format!(
                                     "\t\t\tself.{} = {}::{}({}::default());",

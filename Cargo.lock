@@ -1654,6 +1654,8 @@ dependencies = [
 name = "peripherals"
 version = "0.1.0"
 dependencies = [
+ "automata",
+ "cmsis_svd",
  "common",
 ]
 
