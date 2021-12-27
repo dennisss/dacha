@@ -1,5 +1,10 @@
 
 
+TPS61322 - 5V variant (also needs input inductor)
+
+MC34063
+
+
 Requirements:
 - Run on AC power
 - Dimmer (optional)

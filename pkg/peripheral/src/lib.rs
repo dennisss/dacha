@@ -7,6 +7,7 @@ extern crate nix;
 extern crate lazy_static;
 #[macro_use]
 extern crate parsing;
+extern crate crypto;
 
 pub mod ddc;
 pub mod i2c;

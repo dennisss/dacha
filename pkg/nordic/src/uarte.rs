@@ -1,5 +1,5 @@
-use peripherals::uarte0::UARTE0;
-use peripherals::{Interrupt, PinDirection, RegisterRead, RegisterWrite};
+use peripherals::raw::uarte0::UARTE0;
+use peripherals::raw::{Interrupt, PinDirection, RegisterRead, RegisterWrite};
 
 pub struct UARTE {
     periph: UARTE0,

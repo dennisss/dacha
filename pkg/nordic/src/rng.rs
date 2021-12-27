@@ -1,11 +1,11 @@
-use peripherals::{Interrupt, RegisterRead};
+use peripherals::raw::{Interrupt, RegisterRead};
 
 pub struct Rng {
-    periph: peripherals::rng::RNG,
+    periph: peripherals::raw::rng::RNG,
 }
 
 impl Rng {
-    pub fn new(mut periph: peripherals::rng::RNG) -> Self {
+    pub fn new(mut periph: peripherals::raw::rng::RNG) -> Self {
         periph
             .config
             .write_with(|v| v.set_dercen_with(|v| v.set_enabled()));

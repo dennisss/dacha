@@ -4,7 +4,7 @@ use core::{
 };
 
 use executor::waker::WakerList;
-use peripherals::Interrupt;
+use peripherals::raw::Interrupt;
 
 use crate::registers::{NVIC_ICER0, NVIC_ICSR, NVIC_ISER0};
 

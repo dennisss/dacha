@@ -1,9 +1,9 @@
 use core::result::Result;
 
-use peripherals::{Interrupt, RegisterRead, RegisterWrite};
+use peripherals::raw::{Interrupt, RegisterRead, RegisterWrite};
 
 pub struct ECB {
-    periph: peripherals::ecb::ECB,
+    periph: peripherals::raw::ecb::ECB,
 }
 
 #[repr(C)]
@@ -14,7 +14,7 @@ pub struct ECBData {
 }
 
 impl ECB {
-    pub fn new(mut periph: peripherals::ecb::ECB) -> Self {
+    pub fn new(mut periph: peripherals::raw::ecb::ECB) -> Self {
         periph.events_endecb.write_notgenerated();
         periph.events_errorecb.write_notgenerated();
         // periph

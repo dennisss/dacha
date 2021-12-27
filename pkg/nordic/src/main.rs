@@ -1,14 +1,23 @@
 #![no_std]
 #![no_main]
-#![feature(lang_items, asm, type_alias_impl_trait, inherent_associated_types)]
+#![feature(
+    lang_items,
+    asm,
+    type_alias_impl_trait,
+    inherent_associated_types,
+    alloc_error_handler
+)]
+
+extern crate alloc;
 
 #[macro_use]
 extern crate executor;
 extern crate peripherals;
 #[macro_use]
-extern crate arrayref;
 extern crate common;
 extern crate crypto;
+#[macro_use]
+extern crate macros;
 
 /*
 Old binary uses 2763 flash bytes.
@@ -32,12 +41,12 @@ use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
 // use crate::registers::*;
-use peripherals::clock::CLOCK;
-use peripherals::radio::RADIO;
-use peripherals::rtc0::RTC0;
-use peripherals::{EventState, Interrupt, PinDirection, RegisterRead, RegisterWrite};
+use peripherals::raw::clock::CLOCK;
+use peripherals::raw::radio::RADIO;
+use peripherals::raw::rtc0::RTC0;
+use peripherals::raw::{EventState, Interrupt, PinDirection, RegisterRead, RegisterWrite};
 // use crate::peripherals::
-use peripherals::uarte0::UARTE0;
+use peripherals::raw::uarte0::UARTE0;
 
 use crate::rng::Rng;
 use crate::temp::Temp;
@@ -358,7 +367,7 @@ async fn echo_thread_fn(uarte0: UARTE0, mut timer: Timer, mut temp: Temp, mut rn
 
 define_thread!(Blinker, blinker_thread_fn);
 async fn blinker_thread_fn() {
-    let mut peripherals = peripherals::Peripherals::new();
+    let mut peripherals = peripherals::raw::Peripherals::new();
 
     let mut timer = Timer::new(peripherals.rtc0);
 
@@ -423,7 +432,7 @@ fn main() -> () {
         init_data();
     }
 
-    let mut peripherals = peripherals::Peripherals::new();
+    let mut peripherals = peripherals::raw::Peripherals::new();
 
     init_high_freq_clk(&mut peripherals.clock);
     init_low_freq_clk(&mut peripherals.clock);

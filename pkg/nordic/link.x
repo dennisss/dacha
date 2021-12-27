@@ -47,6 +47,11 @@ SECTIONS
 
     _sidata = LOADADDR(.data);
 
+    .heap : ALIGN(4)
+    {
+        _sheap = .;
+    } > RAM
+
     /DISCARD/ :
     {
         *(.ARM.exidx .ARM.exidx.*);

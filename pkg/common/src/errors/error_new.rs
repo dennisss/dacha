@@ -88,7 +88,7 @@ pub trait ErrableCode: 'static {
     fn error_code(&self) -> u32;
 }
 
-pub type Result<T> = core::result::Result<T, Error>;
+pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 impl Errable for Infallible {
     fn as_any<'a>(&'a self) -> &'a dyn Any {

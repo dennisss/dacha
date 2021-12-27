@@ -9,4 +9,8 @@ common = { path = "../common", default-features = false }
 executor = { path = "../executor", default-features = false }
 peripherals = { path = "../peripherals", default-features = false }
 crypto = { path = "../crypto", default-features = false }
-arrayref = "0.3.5"
+protobuf = { path = "../protobuf", default-features = false }
+macros = { path = "../macros" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../protobuf_compiler" }

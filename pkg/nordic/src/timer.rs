@@ -1,5 +1,5 @@
-use peripherals::rtc0::RTC0;
-use peripherals::{Interrupt, RegisterRead, RegisterWrite};
+use peripherals::raw::rtc0::RTC0;
+use peripherals::raw::{Interrupt, RegisterRead, RegisterWrite};
 
 pub struct Timer {
     rtc0: RTC0,

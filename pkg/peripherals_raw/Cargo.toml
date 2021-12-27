@@ -1,9 +1,13 @@
 [package]
-name = "peripherals"
+name = "peripherals_raw"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 common = { path = "../common", default-features = false }
-peripherals_raw = { path = "../peripherals_raw", default-features = false }
+
+[build-dependencies]
+common = { path = "../common" }
+automata = { path = "../automata" }
+cmsis_svd = { path = "../cmsis_svd" }

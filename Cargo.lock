@@ -1488,11 +1488,13 @@ dependencies = [
 name = "nordic"
 version = "0.1.0"
 dependencies = [
- "arrayref",
  "common",
  "crypto",
  "executor",
+ "macros",
  "peripherals",
+ "protobuf",
+ "protobuf_compiler",
 ]
 
 [[package]]
@@ -1643,6 +1645,7 @@ name = "peripheral"
 version = "0.1.0"
 dependencies = [
  "common",
+ "crypto",
  "lazy_static",
  "libc",
  "nix 0.21.0",
@@ -1652,6 +1655,14 @@ dependencies = [
 
 [[package]]
 name = "peripherals"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "peripherals_raw",
+]
+
+[[package]]
+name = "peripherals_raw"
 version = "0.1.0"
 dependencies = [
  "automata",

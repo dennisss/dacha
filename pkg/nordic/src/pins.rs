@@ -13,11 +13,11 @@ macro_rules! define_pins {
         }
 
         $(
-            pub struct $name { hidden: () },
+            pub struct $name { hidden: () }
 
             impl Pin for $name {
-                fn port() -> Port { $port }
-                fn num() -> u8 { $num }
+                fn port() -> Port { Port::$port }
+                fn pin() -> u8 { $num }
             }
         )*
 

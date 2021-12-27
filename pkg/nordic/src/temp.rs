@@ -1,12 +1,12 @@
-use peripherals::Interrupt;
-use peripherals::{RegisterRead, RegisterWrite};
+use peripherals::raw::Interrupt;
+use peripherals::raw::RegisterRead;
 
 pub struct Temp {
-    periph: peripherals::temp::TEMP,
+    periph: peripherals::raw::temp::TEMP,
 }
 
 impl Temp {
-    pub fn new(mut periph: peripherals::temp::TEMP) -> Self {
+    pub fn new(mut periph: peripherals::raw::temp::TEMP) -> Self {
         periph.events_datardy.write_notgenerated();
         periph.intenset.write_with(|v| v.set_datardy());
 
