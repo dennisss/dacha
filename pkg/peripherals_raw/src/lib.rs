@@ -16,3 +16,5 @@ pub mod nrf52840 {
 }
 
 pub use nrf52840::*;
+
+pub mod nvic;

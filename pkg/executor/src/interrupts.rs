@@ -3,10 +3,10 @@ use core::{
     ptr::{read_volatile, write_volatile},
 };
 
-use executor::waker::WakerList;
-use peripherals::raw::Interrupt;
+use peripherals_raw::nvic::*;
+use peripherals_raw::Interrupt;
 
-use crate::registers::{NVIC_ICER0, NVIC_ICSR, NVIC_ISER0};
+use crate::waker::WakerList;
 
 /// Interrupt/exception number of the first external interrupt.
 const EXTERNAL_INTERRUPT_OFFSET: usize = 16;
@@ -29,7 +29,7 @@ type InterruptHandler = unsafe extern "C" fn() -> ();
 /// after the interrupt handler returns.
 pub async fn wait_for_irq(num: Interrupt) {
     let mut waker =
-        executor::stack_pinned::stack_pinned(executor::thread::new_waker_for_current_thread());
+        crate::stack_pinned::stack_pinned(crate::thread::new_waker_for_current_thread());
 
     let waker = waker.into_pin();
 
@@ -57,7 +57,7 @@ pub async fn trigger_pendsv() {
 // TODO: Verify that this interrupt is at the same priority as all others.
 pub async fn wait_for_pendsv() {
     let mut waker =
-        executor::stack_pinned::stack_pinned(executor::thread::new_waker_for_current_thread());
+        crate::stack_pinned::stack_pinned(crate::thread::new_waker_for_current_thread());
 
     let waker = waker.into_pin();
 

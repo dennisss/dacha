@@ -27,9 +27,9 @@ Currently we use 3078 flash bytes if we don't count offsets
 mod ccm;
 mod ecb;
 mod eeprom;
-mod interrupts;
-mod mutex;
-mod registers;
+mod gpio;
+mod pins;
+mod proto;
 mod rng;
 mod storage;
 mod temp;
@@ -40,7 +40,6 @@ mod uarte;
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
-// use crate::registers::*;
 use peripherals::raw::clock::CLOCK;
 use peripherals::raw::radio::RADIO;
 use peripherals::raw::rtc0::RTC0;
@@ -257,7 +256,7 @@ async fn send_packet(radio: &mut RADIO, message: &[u8], receiving: bool) {
     radio.tasks_txen.write_trigger();
 
     while !radio.state.read().is_txidle() && radio.events_ready.read().is_notgenerated() {
-        crate::interrupts::wait_for_irq(Interrupt::RADIO).await;
+        executor::interrupts::wait_for_irq(Interrupt::RADIO).await;
     }
     radio.events_ready.write_notgenerated();
 

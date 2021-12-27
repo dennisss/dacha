@@ -19,7 +19,7 @@ impl Temp {
         self.periph.tasks_start.write_trigger();
 
         while self.periph.events_datardy.read().is_notgenerated() {
-            crate::interrupts::wait_for_irq(Interrupt::TEMP).await;
+            executor::interrupts::wait_for_irq(Interrupt::TEMP).await;
         }
 
         self.periph.events_datardy.write_notgenerated();

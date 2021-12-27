@@ -32,7 +32,7 @@ impl UARTE {
             self.periph.intenset.write_with(|v| v.set_txstopped()); // TODO: Clear me
             self.periph.tasks_stoptx.write_trigger();
             while self.periph.events_txstopped.read().is_notgenerated() {
-                crate::interrupts::wait_for_irq(Interrupt::UARTE0_UART0).await;
+                executor::interrupts::wait_for_irq(Interrupt::UARTE0_UART0).await;
             }
             self.periph.intenclr.write_with(|v| v.set_txstopped());
             self.periph.events_txstopped.write_notgenerated();
@@ -57,7 +57,7 @@ impl UARTE {
             self.periph.intenset.write_with(|v| v.set_endtx()); // TODO: Clear me
             self.periph.tasks_starttx.write_trigger();
             while self.periph.events_endtx.read().is_notgenerated() {
-                crate::interrupts::wait_for_irq(Interrupt::UARTE0_UART0).await;
+                executor::interrupts::wait_for_irq(Interrupt::UARTE0_UART0).await;
             }
             self.periph.intenclr.write_with(|v| v.set_endtx());
             self.periph.events_endtx.write_notgenerated();
@@ -81,7 +81,7 @@ impl UARTE {
             self.periph.intenset.write_with(|v| v.set_endrx()); // TODO: Clear me
             self.periph.tasks_startrx.write_trigger();
             while self.periph.events_endrx.read().is_notgenerated() {
-                crate::interrupts::wait_for_irq(Interrupt::UARTE0_UART0).await;
+                executor::interrupts::wait_for_irq(Interrupt::UARTE0_UART0).await;
             }
             self.periph.events_endrx.write_notgenerated();
         }

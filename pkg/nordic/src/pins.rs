@@ -16,8 +16,8 @@ macro_rules! define_pins {
             pub struct $name { hidden: () }
 
             impl Pin for $name {
-                fn port() -> Port { Port::$port }
-                fn pin() -> u8 { $num }
+                fn port(&self) -> Port { Port::$port }
+                fn pin(&self) -> u8 { $num }
             }
         )*
 
@@ -81,6 +81,6 @@ pub enum Port {
 }
 
 pub trait Pin {
-    fn port() -> Port;
-    fn pin() -> u8;
+    fn port(&self) -> Port;
+    fn pin(&self) -> u8;
 }

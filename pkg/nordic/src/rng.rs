@@ -24,7 +24,7 @@ impl Rng {
 
         while !out.is_empty() {
             while self.periph.events_valrdy.read().is_notgenerated() {
-                crate::interrupts::wait_for_irq(Interrupt::RNG).await;
+                executor::interrupts::wait_for_irq(Interrupt::RNG).await;
             }
             self.periph.events_valrdy.write_notgenerated();
 

@@ -41,7 +41,7 @@ impl ECB {
             && self.periph.events_errorecb.read().is_notgenerated()
         {
             unsafe { asm!("nop") };
-            // crate::interrupts::wait_for_irq(Interrupt::ECB).await;
+            // executor::interrupts::wait_for_irq(Interrupt::ECB).await;
         }
 
         let failed = self.periph.events_errorecb.read().is_generated();

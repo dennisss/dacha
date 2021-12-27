@@ -1,10 +1,16 @@
-#![feature(const_fn_trait_bound, negative_impls, type_alias_impl_trait)]
+#![feature(const_fn_trait_bound, negative_impls, type_alias_impl_trait, asm)]
 #![no_std]
 
 #[cfg(feature = "std")]
 extern crate std;
 
+extern crate peripherals_raw;
+
 pub mod arena_stack;
+#[cfg(not(feature = "std"))]
+pub mod interrupts;
+#[cfg(not(feature = "std"))]
+pub mod mutex;
 mod raw_waker;
 pub mod stack_pinned;
 pub mod thread;

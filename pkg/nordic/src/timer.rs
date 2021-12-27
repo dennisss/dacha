@@ -73,7 +73,7 @@ impl Timer {
             // NOTE: We don't initially clear EVENTS_COMPARE0 as another waiter may still
             // need to be woken up.
 
-            crate::interrupts::wait_for_irq(Interrupt::RTC0).await;
+            executor::interrupts::wait_for_irq(Interrupt::RTC0).await;
 
             // Clear event so that the interrupt doesn't happen again.
             self.rtc0.events_compare[0].write_notgenerated();
