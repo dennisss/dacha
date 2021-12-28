@@ -27,6 +27,9 @@ impl<T> Mutex<T> {
     }
 }
 
+unsafe impl<T: Send> Send for Mutex<T> {}
+unsafe impl<T: Send> Sync for Mutex<T> {}
+
 pub struct MutexGuard<'a, T> {
     inst: &'a Mutex<T>,
 }

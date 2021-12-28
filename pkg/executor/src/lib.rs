@@ -7,6 +7,7 @@ extern crate std;
 extern crate peripherals_raw;
 
 pub mod arena_stack;
+pub mod futures;
 #[cfg(not(feature = "std"))]
 pub mod interrupts;
 #[cfg(not(feature = "std"))]

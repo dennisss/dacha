@@ -1498,6 +1498,7 @@ dependencies = [
  "peripherals",
  "protobuf",
  "protobuf_compiler",
+ "usb",
 ]
 
 [[package]]
@@ -2558,6 +2559,7 @@ dependencies = [
  "common",
  "failure",
  "libc",
+ "macros",
  "nix 0.21.0",
 ]
 

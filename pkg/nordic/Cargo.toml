@@ -11,6 +11,7 @@ peripherals = { path = "../peripherals", default-features = false }
 crypto = { path = "../crypto", default-features = false }
 protobuf = { path = "../protobuf", default-features = false }
 macros = { path = "../macros" }
+usb = { path = "../usb", default-features = false }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

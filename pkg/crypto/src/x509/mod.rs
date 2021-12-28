@@ -2,7 +2,10 @@
 
 use std::collections::HashMap;
 use std::convert::{AsRef, TryFrom, TryInto};
+use std::string::String;
+use std::string::ToString;
 use std::sync::Arc;
+use std::vec::Vec;
 
 use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{der_eq, Any, DERReadable, DERReader, DERWriteable};

@@ -10,14 +10,50 @@ use crate::waker::WakerList;
 
 /// Interrupt/exception number of the first external interrupt.
 const EXTERNAL_INTERRUPT_OFFSET: usize = 16;
-const NUM_EXTERNAL_INTERRUPTS: usize = 20; // TODO: Use Interrupt::MAX.
 
-const NUM_INTERRUPTS: usize = 35;
+// TODO: Verify we use he right offset for this.
+const NUM_EXTERNAL_INTERRUPTS: usize = 48; // TODO: Use Interrupt::MAX.
+
+const NUM_INTERRUPTS: usize = EXTERNAL_INTERRUPT_OFFSET + NUM_EXTERNAL_INTERRUPTS; // TODO: Check this
 static mut INTERRUPT_WAKER_LISTS: [WakerList; NUM_INTERRUPTS] = [WakerList::new(); NUM_INTERRUPTS];
 
 const PENDSV_EXCEPTION_NUM: usize = 14;
 
 type InterruptHandler = unsafe extern "C" fn() -> ();
+
+struct ExternalInterruptEnabledContext<'a> {
+    nvic: NVIC,
+    register_index: usize,
+    register_mask: u32,
+    waker_list: &'a mut WakerList,
+}
+
+impl<'a> ExternalInterruptEnabledContext<'a> {
+    pub fn new(
+        mut nvic: NVIC,
+        register_index: usize,
+        register_mask: u32,
+        waker_list: &'a mut WakerList,
+    ) -> Self {
+        nvic.iser[register_index].write(register_mask);
+
+        Self {
+            nvic,
+            register_index,
+            register_mask,
+            waker_list,
+        }
+    }
+}
+
+impl Drop for ExternalInterruptEnabledContext<'_> {
+    fn drop(&mut self) {
+        // Disable the interrupt if no one else is waiting for it.
+        if self.waker_list.is_empty() {
+            self.nvic.icer[self.register_index].write(self.register_mask);
+        }
+    }
+}
 
 /// Waits for the given external interrupt to be triggered.
 ///
@@ -28,25 +64,26 @@ type InterruptHandler = unsafe extern "C" fn() -> ();
 /// high by the interrupt to avoid marking the interrupt as pending immediately
 /// after the interrupt handler returns.
 pub async fn wait_for_irq(num: Interrupt) {
+    let num = num as usize;
+
     let mut waker =
         crate::stack_pinned::stack_pinned(crate::thread::new_waker_for_current_thread());
 
     let waker = waker.into_pin();
 
-    let waker_list =
-        unsafe { &mut INTERRUPT_WAKER_LISTS[num as usize + EXTERNAL_INTERRUPT_OFFSET] };
+    let waker_list = unsafe { &mut INTERRUPT_WAKER_LISTS[num + EXTERNAL_INTERRUPT_OFFSET] };
 
     let waker = waker_list.insert(waker);
 
-    unsafe { write_volatile(NVIC_ISER0 as *mut u32, 1 << num as usize) };
+    let nvic = unsafe { NVIC::new() };
+    let register_index = num / 32;
+    let register_mask = (1 << (num % 32)) as u32;
+
+    let ctx = ExternalInterruptEnabledContext::new(nvic, register_index, register_mask, waker_list);
 
     waker.await;
 
-    // Disable the interrupt if no one else is waiting for it.
-    // TODO: Ensure that the remove this even if the future stops being polled.
-    if waker_list.is_empty() {
-        unsafe { write_volatile(NVIC_ICER0 as *mut u32, 1 << (num as usize)) };
-    }
+    drop(ctx);
 }
 
 pub async fn trigger_pendsv() {
@@ -111,6 +148,34 @@ static RESET_VECTOR: [InterruptHandler; EXTERNAL_INTERRUPT_OFFSET - 1 + NUM_EXTE
     default_interrupt, // IRQ17
     default_interrupt, // IRQ18
     default_interrupt, // IRQ19
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
+    default_interrupt,
 ];
 
 #[no_mangle]

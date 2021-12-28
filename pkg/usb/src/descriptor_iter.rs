@@ -1,3 +1,6 @@
+use alloc::vec::Vec;
+use core::iter::Iterator;
+
 use common::errors::*;
 
 use crate::descriptors::*;
@@ -72,7 +75,7 @@ impl<'a> DescriptorIter<'a> {
             }
             Some(DescriptorType::INTERFACE) => {
                 let iface: InterfaceDescriptor = decode_fixed_len_desc(raw_desc)?;
-                self.in_hid_interface = iface.bInterfaceClass == InterfaceClass::HID as u8;
+                self.in_hid_interface = iface.bInterfaceClass == InterfaceClass::HID.to_value();
                 Descriptor::Interface(iface)
             }
             _ => {
@@ -91,7 +94,7 @@ impl<'a> DescriptorIter<'a> {
     }
 }
 
-impl<'a> std::iter::Iterator for DescriptorIter<'a> {
+impl<'a> Iterator for DescriptorIter<'a> {
     type Item = Result<Descriptor>;
 
     fn next(&mut self) -> Option<Self::Item> {

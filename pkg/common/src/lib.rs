@@ -3,7 +3,8 @@
     associated_type_defaults,
     specialization,
     const_fn_trait_bound,
-    try_trait_v2
+    try_trait_v2,
+    const_slice_from_raw_parts
 )]
 #![no_std]
 
@@ -63,6 +64,7 @@ pub mod collections;
 #[cfg(feature = "std")]
 pub mod condvar;
 pub mod const_default;
+pub mod errors;
 #[cfg(feature = "std")]
 pub mod eventually;
 #[cfg(feature = "std")]
@@ -83,6 +85,7 @@ pub mod pipe;
 pub mod shutdown;
 #[cfg(feature = "std")]
 pub mod signals;
+pub mod struct_bytes;
 #[cfg(feature = "std")]
 pub mod task;
 #[cfg(feature = "std")]
@@ -91,8 +94,6 @@ pub mod temp;
 pub mod vec;
 #[cfg(feature = "std")]
 pub mod vec_hash_set;
-
-pub mod errors;
 
 pub use arrayref::{array_mut_ref, array_ref};
 #[cfg(feature = "std")]

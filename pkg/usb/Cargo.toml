@@ -5,7 +5,13 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-common = { path = "../common" }
-libc = "0.2.97"
-nix = "0.21.0"
-failure = "0.1.8"
+macros = { path = "../macros" }
+common = { path = "../common", default-features = false }
+libc = { version = "0.2.97", optional = true }
+nix = { version = "0.21.0", optional = true }
+failure = { version = "0.1.8", optional = true }
+
+[features]
+default = ["std"]
+std = ["alloc", "nix", "libc", "common/std"]
+alloc = ["common/alloc", "failure"]

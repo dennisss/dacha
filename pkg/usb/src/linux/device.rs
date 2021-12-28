@@ -42,6 +42,8 @@ Other Assumptions that we make:
 
 */
 
+use alloc::string::String;
+use alloc::vec::Vec;
 use std::collections::HashMap;
 use std::sync::Arc;
 

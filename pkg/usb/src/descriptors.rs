@@ -1,7 +1,5 @@
 #![allow(non_camel_case_types, non_snake_case)]
 
-use common::errors::*;
-
 // NOTE: 0 means a null string reference.
 // NOTE: All fields are little endian
 
@@ -130,8 +128,8 @@ pub struct InterfaceDescriptor {
     pub iInterface: u8,
 }
 
-enum_def!(InterfaceClass u8 =>
-    Unknown = 0,
+enum_def_with_unknown!(InterfaceClass u8 =>
+    Unknown0 = 0,
     Communication = 2,
     HID = 3
 );
@@ -152,7 +150,7 @@ pub struct EndpointDescriptor {
 
 impl EndpointDescriptor {
     pub fn transfer_type(&self) -> TransferType {
-        TransferType::from_value(self.bmAttributes & 0b11).unwrap()
+        TransferType::from_value(self.bmAttributes & 0b11)
     }
 
     pub fn is_in(&self) -> bool {
@@ -160,7 +158,7 @@ impl EndpointDescriptor {
     }
 }
 
-enum_def!(TransferType u8 =>
+enum_def_with_unknown!(TransferType u8 =>
     Control = 0b00,
     Isochronous = 0b01,
     Bulk = 0b10,

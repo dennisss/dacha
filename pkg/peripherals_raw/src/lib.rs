@@ -14,7 +14,7 @@ pub mod nrf52840 {
 
     include!(concat!(env!("OUT_DIR"), "/nrf52840.rs"));
 }
+pub mod nvic;
+pub mod register;
 
 pub use nrf52840::*;
-
-pub mod nvic;

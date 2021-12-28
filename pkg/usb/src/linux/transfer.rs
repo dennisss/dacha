@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use std::sync::Arc;
 
 use common::async_std::channel;

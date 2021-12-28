@@ -3,11 +3,6 @@ use std::collections::{HashMap, HashSet};
 use common::async_std::task::current;
 use common::errors::*;
 
-use crate::descriptor_iter::Descriptor;
-use crate::descriptors::{SetupPacket, StandardRequestType};
-use crate::endpoint::is_in_endpoint;
-use crate::linux::Device;
-
 enum_def!(HIDDescriptorType u8 =>
     HID = 0x21,
     Report = 0x22,

@@ -25,8 +25,6 @@ impl Mutex {
     }
 }
 
-unsafe impl Sync for Mutex {}
-
 pub struct MutexLock<'a> {
     mutex: &'a Mutex,
 }

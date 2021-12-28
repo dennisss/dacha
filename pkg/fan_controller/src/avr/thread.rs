@@ -1,9 +1,9 @@
 use crate::avr::*;
+use crate::{avr_assert, avr_assert_ne};
 use core::future::Future;
 use core::iter::Iterator;
 use core::pin::Pin;
 use core::task::Poll;
-use crate::{avr_assert, avr_assert_ne};
 
 // 1398
 // 1454 - 687
@@ -54,7 +54,7 @@ impl ThreadVec {
         if let Some(value) = self.values.get(index as usize) {
             if let Some(thread) = value {
                 return thread;
-            }  
+            }
         }
 
         panic!();
@@ -322,36 +322,15 @@ pub unsafe fn poll_thread(thread_id: ThreadId) {
     CURRENT_THREAD_ID = None;
 
     if result.is_ready() {
-        // TODO: Also set the future to None in the thread instance to ensure that everything is dropped?
-        // TODO: Must also ensure that all events are cleaned up
-        // crate::USART1::send_blocking(b"THREAD READY!\n");
+        // TODO: Also set the future to None in the thread instance to ensure that
+        // everything is dropped? TODO: Must also ensure that all events are
+        // cleaned up crate::USART1::send_blocking(b"THREAD READY!\n");
         // panic!();
         RUNNING_THREADS.remove(thread_id);
-        
     }
 
     if RUNNING_THREADS.is_empty() {
         // TODO: Use AVR panic
         panic!();
-    }
-}
-
-struct Select2<T, A: Future<Output = T>, B: Future<Output = T>> {
-    a: A,
-    b: B,
-}
-
-impl<T, A: Future<Output = T> + Unpin, B: Future<Output = T> + Unpin> Future for Select2<T, A, B> {
-    type Output = T;
-
-    fn poll(mut self: Pin<&mut Self>, _cx: &mut core::task::Context<'_>) -> Poll<T> {
-        {
-            let pinned = Pin::new(&mut self.a);
-            if let Poll::Ready(v) = pinned.poll(_cx) {
-                return Poll::Ready(v);
-            }
-        }
-
-        return Poll::Pending;
     }
 }

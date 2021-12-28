@@ -1,4 +1,6 @@
-#[derive(Debug, PartialEq, Fail)]
+#[cfg_attr(feature = "std", derive(Fail))]
+#[derive(Clone, Copy, Debug, PartialEq, Errable)]
+#[repr(u32)]
 pub enum Error {
     /// A transfer stopped because the user closed the device associated with
     /// it.
@@ -26,8 +28,8 @@ pub enum Error {
     Overflow,
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::result::Result<(), core::fmt::Error> {
         write!(f, "usb::Error::{:?}", self)
     }
 }

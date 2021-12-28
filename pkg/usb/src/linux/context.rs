@@ -1,3 +1,5 @@
+use alloc::borrow::ToOwned;
+use alloc::vec::Vec;
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
