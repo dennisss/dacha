@@ -55,6 +55,7 @@ use crate::temp::Temp;
 use crate::timer::Timer;
 use crate::uarte::UARTE;
 use crate::usb::controller::USBDeviceController;
+use crate::usb::default_handler::USBDeviceDefaultHandler;
 
 extern "C" {
     static mut _sbss: u32;
@@ -438,7 +439,7 @@ async fn blinker_thread_fn() {
 
 define_thread!(USBThread, usb_thread_fn, usb: USBDeviceController);
 async fn usb_thread_fn(mut usb: USBDeviceController) {
-    usb.run().await;
+    usb.run(USBDeviceDefaultHandler::new()).await;
 }
 // TODO: Switch back to returning '!'
 fn main() -> () {

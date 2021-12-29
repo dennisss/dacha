@@ -51,6 +51,7 @@ use usb::descriptors::*;
 
 use crate::log;
 use crate::usb::descriptors::*;
+use crate::usb::handler::USBDeviceHandler;
 
 /*
 API for implementing custom handlers:
@@ -76,30 +77,6 @@ API for working with interrupt requests:
     - send(out: &mut [u8]) :
 
 USBReceiver
-*/
-
-/*
-pub trait USBDeviceHandler {
-    // handle_control() -> Future
-
-    // fn handle_control_read(&self, )
-
-    type ReceiveFuture: Future<()>;
-
-    fn on_receive(data: &[u8]) -> Self::ReceiveFuture;
-
-    type SendFuture: Future<usize>;
-
-    fn on_send(output: &mut [u8]) -> Self::SendFuture;
-}
-
-pub trait USBDeviceControlResponder {
-    type ControlRespondFuture<'a>: Future<Output = Result<()>> + 'a
-    where
-        Self: 'a;
-
-    fn control_respond(&mut self, data: &[u8], done: bool) -> Self::ControlRespondFuture;
-}
 */
 
 /// TODO: Rename to not
@@ -131,6 +108,7 @@ enum Event {
     EP0Setup,
     USBReset,
     EndEpIN0,
+    EndEpOUT0,
     EP0DataDone,
 }
 
@@ -149,6 +127,7 @@ impl USBDeviceController {
                 .set_ep0setup()
                 .set_usbevent()
                 .set_endepin0()
+                .set_endepout0()
                 .set_ep0datadone()
         });
 
@@ -163,7 +142,7 @@ impl USBDeviceController {
         }
     }
 
-    pub async fn run(&mut self) {
+    pub async fn run<H: USBDeviceHandler>(&mut self, mut handler: H) {
         loop {
             let event = self.wait_for_event().await;
 
@@ -248,7 +227,7 @@ impl USBDeviceController {
                         // log!(b"4\n");
 
                         let pkt = self.get_setup_packet();
-                        self.handle_setup_packet(pkt).await;
+                        self.handle_setup_packet(pkt, &mut handler).await;
                     }
                 }
             }
@@ -277,6 +256,9 @@ impl USBDeviceController {
             }
             if Self::take_event(&mut self.periph.events_endepin[0]) {
                 return Event::EndEpIN0;
+            }
+            if Self::take_event(&mut self.periph.events_endepout[0]) {
+                return Event::EndEpOUT0;
             }
             if Self::take_event(&mut self.periph.events_ep0datadone) {
                 return Event::EP0DataDone;
@@ -320,96 +302,27 @@ impl USBDeviceController {
         }
     }
 
-    async fn handle_setup_packet(&mut self, pkt: SetupPacket) {
+    async fn handle_setup_packet<H: USBDeviceHandler>(
+        &mut self,
+        pkt: SetupPacket,
+        handler: &mut H,
+    ) {
         // log!(b"==\n");
 
-        if pkt.bRequest == StandardRequestType::SET_ADDRESS as u8 {
-            // Don't need to do anything as this is implemented in hardware.
-            log!(b"A\n");
-            return;
-        } else if pkt.bRequest == StandardRequestType::SET_CONFIGURATION as u8 {
-            if pkt.bmRequestType != 0b00000000 {
-                self.stale();
-                return;
-            }
-
-            // TODO: upper byte of wValue is reserved.
-            // TODO: Value of 0 puts device in address state.
-
-            if pkt.wValue != 1 {
-                self.stale();
-                return;
-            }
-
-            // No data stage
-
-            // Status stage
-            // TODO: This is standard from any 'Host -> Device' request
-            self.periph.tasks_ep0status.write_trigger();
-        } else if pkt.bRequest == StandardRequestType::GET_CONFIGURATION as u8 {
-            if pkt.bmRequestType != 0b10000000
-                || pkt.wValue != 0
-                || pkt.wIndex != 0
-                || pkt.wLength != 1
-            {
-                self.stale();
-                return;
-            }
-
-            self.control_respond(&pkt, &[1]).await;
-
-            // EP.control_respond(&pkt, (&[1]).iter().cloned()).await;
-        } else if pkt.bRequest == StandardRequestType::GET_DESCRIPTOR as u8 {
-            if pkt.bmRequestType != 0b10000000 {
-                self.stale();
-                return;
-            }
-
-            let desc_type = (pkt.wValue >> 8) as u8;
-            let desc_index = (pkt.wValue & 0xff) as u8; // NOTE: Starts at 0
-
-            if desc_type == DescriptorType::DEVICE as u8 {
-                if desc_index != 0 {
-                    self.stale();
-                    return;
-                }
-                // TODO: Assert language code.
-
-                log!(b"DD\n");
-
-                self.control_respond(&pkt, DESCRIPTORS.device_bytes()).await;
-            } else if desc_type == DescriptorType::CONFIGURATION as u8 {
-                // TODO: Validate that the configuration exists.
-                // If it doesn't return an error.
-
-                log!(b"DC\n");
-
-                let data = DESCRIPTORS.config_bytes();
-
-                self.control_respond(&pkt, data).await;
-            } else if desc_type == DescriptorType::ENDPOINT as u8 {
-                self.stale();
-            } else if desc_type == DescriptorType::DEVICE_QUALIFIER as u8 {
-                // According to the USB 2.0 spec, a full-speed only device should respond to
-                // a DEVICE_QUALITY request with an error.
-                //
-                // TODO: Probably simpler to just us the USB V1 in the device descriptor?
-                self.stale();
-            } else if desc_type == DescriptorType::STRING as u8 {
-                log!(b"DS\n");
-
-                let data = if desc_index == 0 {
-                    STRING_DESC0
-                } else {
-                    STRING_DESC1
-                };
-
-                self.control_respond(&pkt, data).await;
-            } else {
-                self.stale();
-            }
+        if pkt.bmRequestType & (1 << 7) != 0 {
+            // Device -> Host
+            let res = USBDeviceControlResponse {
+                controller: self,
+                host_remaining: (pkt.wLength as usize),
+            };
+            handler.handle_control_response(pkt, res).await;
         } else {
-            self.stale();
+            // Host -> Device
+            let req = USBDeviceControlRequest {
+                controller: self,
+                host_remaining: (pkt.wLength as usize),
+            };
+            handler.handle_control_request(pkt, req).await;
         }
     }
 
@@ -428,93 +341,23 @@ impl USBDeviceController {
         // Remaining number of bytes the host will accept.
         let mut host_remaining = pkt.wLength as usize;
 
-        // log!(crate::num_to_slice(host_remaining as u32).as_ref());
-        // log!(b"\n");
-
-        // TODO: Check host_remaining > 0
-
-        let mut done = false;
-
-        // TODO: Move to the USBDevice instance?
-        let mut packet_buffer = [0u8; 64];
-
-        while host_remaining > 0 && !done {
-            log!(b">\n");
-
-            let mut packet_len = core::cmp::min(
-                core::cmp::min(host_remaining, data.len()),
-                packet_buffer.len(),
-            );
-            let mut packet = &mut packet_buffer[0..packet_len];
-            // Maybe copy flash to RAM.
-            packet.copy_from_slice(&data[0..packet_len]);
-            data = &data[packet_len..];
-
-            host_remaining -= packet_len;
-
-            // log!(crate::num_to_slice(packet_len as u32).as_ref());
-            // log!(b"\n");
-
-            if packet_len < 64 {
-                // In this case, we will end up sending the current packet as either incomplete
-                // or as a ZLP.
-                done = true;
-            }
-
-            // log!(b">1\n");
-
-            // Send the packet.
-            {
-                // TODO: Berify that this is 32-bit aligned and always a
-                self.periph.epin[0]
-                    .ptr
-                    .write(unsafe { core::mem::transmute(&packet[0]) });
-                self.periph.epin[0].maxcnt.write(packet_len as u32);
-
-                // log!(crate::num_to_slice(self.periph.epin[0].ptr.read() as u32).as_ref());
-                // log!(b"\n");
-
-                // Needed to avoid interactions with previous packets and to gurantee that the
-                // send ordering is consistent.
-                self.periph.events_ep0datadone.write_notgenerated();
-                self.periph.events_endepin[0].write_notgenerated();
-
-                // if done || host_remaining == 0 {
-                //     self.periph
-                //         .shorts
-                //         .write_with(|v| v.set_ep0datadone_ep0status_with(|v|
-                // v.set_enabled())); } else {
-                //     self.periph
-                //         .shorts
-                //         .write_with(|v| v.set_ep0datadone_ep0status_with(|v|
-                // v.set_disabled())); }
-
-                self.periph.tasks_startepin[0].write_trigger();
-
-                // log!(b">2\n");
-
-                // TODO: Record any USBRESET or PowerRemoved events we receive and act on them
-                // once the buffer is free'd
-                // while self.wait_for_event().await != Event::EndEpIN0 {}
-
-                // TODO: handle USBReset and PowerRemoved
-                // loop {
-                //     let e =
-
-                // }
-
-                // TODO: Start preparing the next packet while this one is beign sent.
-                while self.wait_for_event().await != Event::EP0DataDone {}
-            }
-        }
-
-        log!(b"-\n");
-
-        // Status stage
-        self.periph.tasks_ep0status.write_trigger();
+        let mut res = USBDeviceControlResponse {
+            controller: self,
+            host_remaining,
+        };
+        res.write(data).await;
     }
+}
 
-    async fn control_receive(&mut self, pkt: &SetupPacket) {
+pub struct USBDeviceControlRequest<'a> {
+    controller: &'a mut USBDeviceController,
+    host_remaining: usize,
+}
+
+impl<'a> USBDeviceControlRequest<'a> {
+    // TODO: This must support partially reading.
+    // TODO: Verify that the host doesn't send more than host_remaining.
+    pub async fn read(&mut self, mut output: &mut [u8]) -> usize {
         /*
         If no data, just call EP0STATUS immediately after receiving the SETUP packet.
 
@@ -533,5 +376,172 @@ impl USBDeviceController {
             5. Wait for EP0DATADONE
             6. Either go back to #1 or trigger EP0STATUS
         */
+
+        let mut total_read = 0;
+
+        if self.host_remaining == 0 {
+            self.controller.periph.tasks_ep0status.write_trigger();
+            return 0;
+        }
+
+        let mut packet_buffer = [0u8; 64];
+
+        self.controller.periph.epout[0]
+            .ptr
+            .write(unsafe { core::mem::transmute(&packet_buffer[0]) });
+        self.controller.periph.epout[0]
+            .maxcnt
+            .write(packet_buffer.len() as u32);
+
+        self.controller.periph.tasks_ep0rcvout.write_trigger();
+
+        while self.controller.wait_for_event().await != Event::EP0DataDone {}
+
+        let packet_len = self.controller.periph.epout[0].maxcnt.read() as usize;
+        if packet_len > output.len() {
+            // Overflow.
+        }
+
+        output[0..packet_len].copy_from_slice(&packet_buffer[0..packet_len]);
+        output = &mut output[packet_len..];
+        total_read += packet_len;
+
+        if packet_len < packet_buffer.len() {
+            self.controller.periph.tasks_ep0status.write_trigger();
+            return total_read;
+        }
+
+        loop {
+            self.controller.periph.tasks_startepout[0].write_trigger();
+
+            while self.controller.wait_for_event().await != Event::EndEpOUT0 {}
+            self.controller.periph.tasks_ep0rcvout.write_trigger();
+
+            let packet_len = self.controller.periph.epout[0].maxcnt.read() as usize;
+            if packet_len > output.len() {
+                // Overflow. Panic!
+            }
+
+            output[0..packet_len].copy_from_slice(&packet_buffer[0..packet_len]);
+            output = &mut output[packet_len..];
+            total_read += packet_len;
+
+            while self.controller.wait_for_event().await != Event::EP0DataDone {}
+
+            // TODO: Also stop if host_remaining == 0
+            if packet_len < packet_buffer.len() {
+                break;
+            }
+        }
+
+        self.controller.periph.tasks_ep0status.write_trigger();
+
+        total_read
+    }
+
+    pub fn stale(mut self) {
+        self.controller.stale();
+    }
+}
+
+pub struct USBDeviceControlResponse<'a> {
+    controller: &'a mut USBDeviceController,
+    host_remaining: usize,
+}
+
+impl<'a> USBDeviceControlResponse<'a> {
+    // TODO: This must support partially writing.
+    pub async fn write(&mut self, mut data: &[u8]) {
+        // log!(crate::num_to_slice(host_remaining as u32).as_ref());
+        // log!(b"\n");
+
+        let mut done = false;
+
+        // TODO: Move to the USBDeviceController instance?
+        let mut packet_buffer = [0u8; 64];
+
+        while self.host_remaining > 0 && !done {
+            log!(b">\n");
+
+            let mut packet_len = core::cmp::min(
+                core::cmp::min(self.host_remaining, data.len()),
+                packet_buffer.len(),
+            );
+            let mut packet = &mut packet_buffer[0..packet_len];
+            // Maybe copy flash to RAM.
+            packet.copy_from_slice(&data[0..packet_len]);
+            data = &data[packet_len..];
+
+            self.host_remaining -= packet_len;
+
+            // log!(crate::num_to_slice(packet_len as u32).as_ref());
+            // log!(b"\n");
+
+            if packet_len < 64 {
+                // In this case, we will end up sending the current packet as either incomplete
+                // or as a ZLP.
+                done = true;
+            }
+
+            // log!(b">1\n");
+
+            // Send the packet.
+            {
+                // TODO: Berify that this is 32-bit aligned and always a
+                self.controller.periph.epin[0]
+                    .ptr
+                    .write(unsafe { core::mem::transmute(&packet[0]) });
+                self.controller.periph.epin[0]
+                    .maxcnt
+                    .write(packet_len as u32);
+
+                // log!(crate::num_to_slice(self.periph.epin[0].ptr.read() as u32).as_ref());
+                // log!(b"\n");
+
+                // Needed to avoid interactions with previous packets and to gurantee that the
+                // send ordering is consistent.
+                self.controller
+                    .periph
+                    .events_ep0datadone
+                    .write_notgenerated();
+                self.controller.periph.events_endepin[0].write_notgenerated();
+
+                // if done || host_remaining == 0 {
+                //     self.periph
+                //         .shorts
+                //         .write_with(|v| v.set_ep0datadone_ep0status_with(|v|
+                // v.set_enabled())); } else {
+                //     self.periph
+                //         .shorts
+                //         .write_with(|v| v.set_ep0datadone_ep0status_with(|v|
+                // v.set_disabled())); }
+
+                self.controller.periph.tasks_startepin[0].write_trigger();
+
+                // log!(b">2\n");
+
+                // TODO: Record any USBRESET or PowerRemoved events we receive and act on them
+                // once the buffer is free'd
+                // while self.wait_for_event().await != Event::EndEpIN0 {}
+
+                // TODO: handle USBReset and PowerRemoved
+                // loop {
+                //     let e =
+
+                // }
+
+                // TODO: Start preparing the next packet while this one is beign sent.
+                while self.controller.wait_for_event().await != Event::EP0DataDone {}
+            }
+        }
+
+        log!(b"-\n");
+
+        // Status stage
+        self.controller.periph.tasks_ep0status.write_trigger();
+    }
+
+    pub fn stale(mut self) {
+        self.controller.stale();
     }
 }
