@@ -12,6 +12,12 @@ pub struct SetupPacket {
     pub bRequest: u8,
     pub wValue: u16,
     pub wIndex: u16,
+
+    /// Maximum number of bytes that will be transfered in the data stage
+    /// (doesn't include the setup packet).
+    ///
+    /// If this is zero, then there is no data stage (the setup stage is
+    /// immediately followed by a status stage).
     pub wLength: u16,
 }
 

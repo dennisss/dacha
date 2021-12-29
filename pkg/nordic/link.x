@@ -54,6 +54,6 @@ SECTIONS
 
     /DISCARD/ :
     {
-        *(.ARM.exidx .ARM.exidx.*);
+        *(.ARM.exidx .ARM.exidx.* .ARM.extab.*);
     }
 }

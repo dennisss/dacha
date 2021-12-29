@@ -6,8 +6,7 @@ pub struct Descriptors {
     pub device: DeviceDescriptor,
     pub config: ConfigurationDescriptor,
     pub iface: InterfaceDescriptor,
-    pub ep1: EndpointDescriptor,
-    pub ep2: EndpointDescriptor,
+    pub endpoints: [EndpointDescriptor; 2],
 }
 
 impl Descriptors {
@@ -24,11 +23,8 @@ impl Descriptors {
         }
     }
 
-    // TODO: Implement reading by a given index
-    pub fn endpoint_bytes(&self, index: usize) -> &[u8] {
-        unsafe {
-            core::slice::from_raw_parts(core::mem::transmute(&self.ep1), self.ep1.bLength as usize)
-        }
+    pub fn endpoints(&self) -> &[EndpointDescriptor] {
+        &self.endpoints
     }
 }
 
@@ -74,22 +70,24 @@ pub static DESCRIPTORS: Descriptors = Descriptors {
         bInterfaceProtocol: 0,
         iInterface: 0,
     },
-    ep1: EndpointDescriptor {
-        bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
-        bDescriptorType: DescriptorType::ENDPOINT as u8,
-        bEndpointAddress: 0x81, // EP IN 1
-        bmAttributes: 0b11,     // Interrupt
-        wMaxPacketSize: 64,
-        bInterval: 64, // TODO: Check me.
-    },
-    ep2: EndpointDescriptor {
-        bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
-        bDescriptorType: DescriptorType::ENDPOINT as u8,
-        bEndpointAddress: 0x02, // EP OUT 2
-        bmAttributes: 0b11,     // Interrupt
-        wMaxPacketSize: 64,
-        bInterval: 64, // TODO: Check me.
-    },
+    endpoints: [
+        EndpointDescriptor {
+            bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
+            bDescriptorType: DescriptorType::ENDPOINT as u8,
+            bEndpointAddress: 0x81, // EP IN 1
+            bmAttributes: 0b11,     // Interrupt
+            wMaxPacketSize: 64,
+            bInterval: 64, // TODO: Check me.
+        },
+        EndpointDescriptor {
+            bLength: core::mem::size_of::<EndpointDescriptor>() as u8,
+            bDescriptorType: DescriptorType::ENDPOINT as u8,
+            bEndpointAddress: 0x02, // EP OUT 2
+            bmAttributes: 0b11,     // Interrupt
+            wMaxPacketSize: 64,
+            bInterval: 64, // TODO: Check me.
+        },
+    ],
 };
 
 pub static STRING_DESC0: &'static [u8] = &[

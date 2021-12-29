@@ -517,13 +517,13 @@ impl Device {
             .await
     }
 
-    pub async fn read_interrupt(&self, endpoint: u8, buffer: &mut [u8]) -> Result<usize> {
+    async fn read_impl(&self, typ: u8, endpoint: u8, buffer: &mut [u8]) -> Result<usize> {
         check_can_read_endpoint(endpoint)?;
 
         // TODO: Verify that the endpoint has a descriptor?
 
         let buf = vec![0u8; buffer.len()];
-        let transfer = self.start_transfer(USBDEVFS_URB_TYPE_INTERRUPT, endpoint, 0, buf)?;
+        let transfer = self.start_transfer(typ, endpoint, 0, buf)?;
 
         transfer.wait().await?;
 
@@ -538,7 +538,19 @@ impl Device {
         Ok(n)
     }
 
+    pub async fn read_interrupt(&self, endpoint: u8, buffer: &mut [u8]) -> Result<usize> {
+        self.read_impl(USBDEVFS_URB_TYPE_INTERRUPT, endpoint, buffer)
+            .await
+    }
+
+    pub async fn read_bulk(&self, endpoint: u8, buffer: &mut [u8]) -> Result<usize> {
+        self.read_impl(USBDEVFS_URB_TYPE_BULK, endpoint, buffer)
+            .await
+    }
+
     pub async fn write_interrupt(&self, endpoint: u8, buffer: &[u8]) -> Result<()> {
+        // TODO: Verify that this is an interrupt endpoint type.
+
         check_can_write_endpoint(endpoint)?;
 
         let endpoint_desc = self
@@ -557,6 +569,26 @@ impl Device {
 
         let buf = buffer.to_vec();
         let transfer = self.start_transfer(USBDEVFS_URB_TYPE_INTERRUPT, endpoint, 0, buf)?;
+
+        transfer.wait().await?;
+
+        if transfer.state.urb.actual_length as usize != buffer.len() {
+            return Err(err_msg("Not all bytes were written"));
+        }
+
+        Ok(())
+    }
+
+    /// NOTE: This assumes that the device protocol has some alternative way of
+    /// determining the full length of the transfer as this function will not
+    /// send Zero Length Packets until buffer.len() == 0.
+    pub async fn write_bulk(&self, endpoint: u8, buffer: &[u8]) -> Result<()> {
+        // TODO: Verify that this is an bulk endpoint type.
+
+        check_can_write_endpoint(endpoint)?;
+
+        let buf = buffer.to_vec();
+        let transfer = self.start_transfer(USBDEVFS_URB_TYPE_BULK, endpoint, 0, buf)?;
 
         transfer.wait().await?;
 

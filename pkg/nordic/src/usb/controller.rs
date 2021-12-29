@@ -50,9 +50,26 @@ use peripherals::raw::RegisterWrite;
 use usb::descriptors::*;
 
 use crate::log;
-use crate::usb_descriptor::*;
+use crate::usb::descriptors::*;
 
 /*
+API for implementing custom handlers:
+- For control packets:
+    - If bmRequestType::recipient is not the device, we will forward it to the handler
+    - We know based on the bmRequestType direction whether we will be sending or receiving data.
+    - Receiving Data:
+        // Should return whether or not we are ok to proceed (false will stale the request)
+        - start_control_recieve(pkt: SetupPacket) -> bool;
+        // Called after 'start_control_recieve' with each packet that occurs
+        - perform_control_recieve(data: &[u8], done; bool);
+        //
+        - end_control_receive(complete: bool)
+
+        - control_receive(pkt: SetupPacket) -> Option<&mut >
+
+- For bulk transfers
+    -
+
 API for working with interrupt requests:
 - Two operations (both async)
     - receive(data: &[u8]) : Called when we get an interrupt OUT
@@ -61,21 +78,12 @@ API for working with interrupt requests:
 USBReceiver
 */
 
-// USBHostController
-// USBHostDevice
+/*
+pub trait USBDeviceHandler {
+    // handle_control() -> Future
 
-// I2CHost implements I2CHostController
-// I2CHostDevice implements I2CHostEndpoint
+    // fn handle_control_read(&self, )
 
-// SPIHost implements SPIHostController
-// sPIHostDevice implements SPIHostEndpoint
-
-// USBDeviceController
-// USBDeviceInterruptHandler
-
-// USBDeviceController
-
-pub trait USBDeviceInterruptHandler {
     type ReceiveFuture: Future<()>;
 
     fn on_receive(data: &[u8]) -> Self::ReceiveFuture;
@@ -84,6 +92,15 @@ pub trait USBDeviceInterruptHandler {
 
     fn on_send(output: &mut [u8]) -> Self::SendFuture;
 }
+
+pub trait USBDeviceControlResponder {
+    type ControlRespondFuture<'a>: Future<Output = Result<()>> + 'a
+    where
+        Self: 'a;
+
+    fn control_respond(&mut self, data: &[u8], done: bool) -> Self::ControlRespondFuture;
+}
+*/
 
 /// TODO: Rename to not
 pub struct USBDeviceController {
@@ -101,7 +118,7 @@ enum State {
 
     PendingReset,
 
-    Idle,
+    Active,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -216,10 +233,10 @@ impl USBDeviceController {
                         log!(b"3\n");
 
                         self.configure_endpoints();
-                        self.state = State::Idle;
+                        self.state = State::Active;
                     }
                 }
-                State::Idle => {
+                State::Active => {
                     if self.power.usbregstatus.read().vbusdetect().is_novbus() {
                         log!(b"R\n");
                         self.state = State::Disconnected;
@@ -241,35 +258,27 @@ impl USBDeviceController {
     async fn wait_for_event(&mut self) -> Event {
         loop {
             if Self::take_event(&mut self.power.events_usbdetected) {
-                // log!(b"E1\n");
                 return Event::PowerDetected;
             }
             if Self::take_event(&mut self.power.events_usbpwrrdy) {
-                // log!(b"E2\n");
                 return Event::PowerReady;
             }
             if Self::take_event(&mut self.power.events_usbremoved) {
-                // log!(b"E3\n");
                 return Event::PowerRemoved;
             }
             if Self::take_event(&mut self.periph.events_usbevent) {
-                // log!(b"E4\n");
                 return Event::USBEvent;
             }
             if Self::take_event(&mut self.periph.events_ep0setup) {
-                // log!(b"E5\n");
                 return Event::EP0Setup;
             }
             if Self::take_event(&mut self.periph.events_usbreset) {
-                // log!(b"E6\n");
                 return Event::USBReset;
             }
             if Self::take_event(&mut self.periph.events_endepin[0]) {
-                // log!(b"E7\n");
                 return Event::EndEpIN0;
             }
             if Self::take_event(&mut self.periph.events_ep0datadone) {
-                // log!(b"E8\n");
                 return Event::EP0DataDone;
             }
 
@@ -347,8 +356,6 @@ impl USBDeviceController {
                 return;
             }
 
-            //            transfer_state.remaining =
-
             self.control_respond(&pkt, &[1]).await;
 
             // EP.control_respond(&pkt, (&[1]).iter().cloned()).await;
@@ -378,20 +385,10 @@ impl USBDeviceController {
                 log!(b"DC\n");
 
                 let data = DESCRIPTORS.config_bytes();
-                // assert_eq!(data.len(), 18);
 
                 self.control_respond(&pkt, data).await;
             } else if desc_type == DescriptorType::ENDPOINT as u8 {
-                log!(b"DE\n");
-
-                self.control_respond(&pkt, DESCRIPTORS.endpoint_bytes(desc_index as usize))
-                    .await;
-
-                // let inst = FanControllerUSBDesc {};
-                // // TODO: Support different intervales.
-                // let iter = inst.endpoint(0, 0, desc_index as usize).unwrap();
-                // self.control_respond(&pkt, unsafe { struct_bytes(iter)
-                // }.iter().cloned())     .await;
+                self.stale();
             } else if desc_type == DescriptorType::DEVICE_QUALIFIER as u8 {
                 // According to the USB 2.0 spec, a full-speed only device should respond to
                 // a DEVICE_QUALITY request with an error.
@@ -515,5 +512,26 @@ impl USBDeviceController {
 
         // Status stage
         self.periph.tasks_ep0status.write_trigger();
+    }
+
+    async fn control_receive(&mut self, pkt: &SetupPacket) {
+        /*
+        If no data, just call EP0STATUS immediately after receiving the SETUP packet.
+
+        Otherwise,
+        - For just the first packet:
+            1. Configure the EasyDMA buffer
+            2. Trigger EP0RCVOUT to allow acknowleding
+            3. Wait for EP0DATADONE
+            - At this point, process data for first packet
+        - For future packets:
+            1. Configure the EasyDMA buffer
+            2. Trigger STARTEPOUT to allow receiving into the buffer.
+            3. Wait for ENDEPOUT[0]
+            - At this point process data in N'th data packet.
+            4. Trigger EP0RCVOUT to allow ACK'ing it
+            5. Wait for EP0DATADONE
+            6. Either go back to #1 or trigger EP0STATUS
+        */
     }
 }

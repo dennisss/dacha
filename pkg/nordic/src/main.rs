@@ -5,7 +5,8 @@
     asm,
     type_alias_impl_trait,
     inherent_associated_types,
-    alloc_error_handler
+    alloc_error_handler,
+    generic_associated_types
 )]
 
 extern crate alloc;
@@ -38,7 +39,6 @@ mod timer;
 mod twim;
 mod uarte;
 mod usb;
-mod usb_descriptor;
 
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
@@ -54,7 +54,7 @@ use crate::rng::Rng;
 use crate::temp::Temp;
 use crate::timer::Timer;
 use crate::uarte::UARTE;
-use crate::usb::USBDevice;
+use crate::usb::controller::USBDeviceController;
 
 extern "C" {
     static mut _sbss: u32;
@@ -391,7 +391,10 @@ async fn blinker_thread_fn() {
     //     Rng::new(peripherals.rng),
     // );
 
-    USBThread::start(USBDevice::new(peripherals.usbd, peripherals.power));
+    USBThread::start(USBDeviceController::new(
+        peripherals.usbd,
+        peripherals.power,
+    ));
 
     // peripherals.p0.dirset.write_with(|v| v.set_pin30());
     // peripherals.p0.outset.write_with(|v| v.set_pin30());
@@ -433,8 +436,8 @@ async fn blinker_thread_fn() {
     }
 }
 
-define_thread!(USBThread, usb_thread_fn, usb: USBDevice);
-async fn usb_thread_fn(mut usb: USBDevice) {
+define_thread!(USBThread, usb_thread_fn, usb: USBDeviceController);
+async fn usb_thread_fn(mut usb: USBDeviceController) {
     usb.run().await;
 }
 // TODO: Switch back to returning '!'

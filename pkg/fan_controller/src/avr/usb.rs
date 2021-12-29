@@ -1,7 +1,7 @@
 use crate::avr::interrupts::*;
 use crate::avr::registers::*;
-use crate::usb::SetupPacket;
 use crate::avr_assert;
+use crate::usb::SetupPacket;
 
 // From the INTERNET:
 // "Thank you for the reply. The USB interface is now receiving the setup
@@ -53,7 +53,6 @@ Control Read
 
 
 */
-
 
 pub fn init_endpoints() {
     avr_assert!(USB_EP0.configure(
