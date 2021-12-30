@@ -61,7 +61,7 @@ static TRANSMIT_PENDING: Channel<()> = Channel::new();
 
 /// Size to use for all buffers. This is also the maximum size that we will
 /// transmit or receive in one transaction.
-const BUFFER_SIZE: usize = 64;
+const BUFFER_SIZE: usize = 128;
 
 static TRANSMIT_BUFFER: Mutex<FixedVec<u8, [u8; BUFFER_SIZE]>> =
     Mutex::new(FixedVec::new([0u8; BUFFER_SIZE]));
@@ -114,7 +114,7 @@ impl ProtocolUSBHandler {
     ) {
         if setup.bmRequestType == 0b01000000 {
             if setup.bRequest == ProtocolUSBRequestType::Send.to_value() {
-                log!(b"USB TX");
+                log!(b"\n");
 
                 let mut buffer = TRANSMIT_BUFFER.lock().await;
                 buffer.resize(BUFFER_SIZE, 0);
@@ -122,7 +122,9 @@ impl ProtocolUSBHandler {
                 let n = req.read(buffer.as_mut()).await;
                 buffer.truncate(n);
 
-                log!(b"- READ!");
+                log!(b"- READ ");
+                log!(crate::num_to_slice(n as u32).as_ref());
+                log!(b"\n");
 
                 drop(buffer);
 
@@ -174,7 +176,7 @@ impl ProtocolRadioThread {
             TransmitPending,
         }
 
-        let mut temp_buffer = [0u8; 64];
+        let mut temp_buffer = [0u8; BUFFER_SIZE];
 
         loop {
             // TODO: Implement a more efficient way to cancel the receive future.
@@ -186,7 +188,9 @@ impl ProtocolRadioThread {
 
             match event {
                 Event::Received(n) => {
-                    log!(b"RADIO RX\n");
+                    log!(b"RADIO RX: ");
+                    log!(&temp_buffer[0..n]);
+                    log!(b"\n");
 
                     let mut rx_buffer = RECEIVE_BUFFER.lock().await;
                     rx_buffer.clear();

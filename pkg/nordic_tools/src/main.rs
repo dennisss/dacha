@@ -28,6 +28,12 @@ async fn run() -> Result<()> {
     let ctx = usb::Context::create()?;
     let mut device = ctx.open_device(0x8888, 0x0001).await?;
 
+    println!("Device opened!");
+
+    device.reset()?;
+
+    println!("Device reset!");
+
     let (sender, receiver) = channel::bounded(1);
 
     let reader_task = task::spawn(async move {
@@ -37,6 +43,7 @@ async fn run() -> Result<()> {
     loop {
         let mut buf = [0u8; 64];
 
+        println!("R>");
         let n = device
             .read_control(
                 SetupPacket {
@@ -49,6 +56,8 @@ async fn run() -> Result<()> {
                 &mut buf,
             )
             .await?;
+
+        println!("R<");
 
         if n > 0 {
             println!("Got {}", n);
@@ -69,6 +78,8 @@ async fn run() -> Result<()> {
                     v.as_bytes(),
                 )
                 .await;
+
+            println!("<");
         }
 
         // Try receiving

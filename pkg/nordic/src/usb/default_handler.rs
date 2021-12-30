@@ -45,7 +45,6 @@ impl USBDeviceDefaultHandler {
     ) {
         if setup.bRequest == StandardRequestType::SET_ADDRESS as u8 {
             // Don't need to do anything as this is implemented in hardware.
-            log!(b"A\n");
             return;
         } else if setup.bRequest == StandardRequestType::SET_CONFIGURATION as u8 {
             if setup.bmRequestType != 0b00000000 {
@@ -104,14 +103,10 @@ impl USBDeviceDefaultHandler {
                 }
                 // TODO: Assert language code.
 
-                log!(b"DD\n");
-
                 res.write(DESCRIPTORS.device_bytes()).await;
             } else if desc_type == DescriptorType::CONFIGURATION as u8 {
                 // TODO: Validate that the configuration exists.
                 // If it doesn't return an error.
-
-                log!(b"DC\n");
 
                 let data = DESCRIPTORS.config_bytes();
 
@@ -125,8 +120,6 @@ impl USBDeviceDefaultHandler {
                 // TODO: Probably simpler to just us the USB V1 in the device descriptor?
                 res.stale();
             } else if desc_type == DescriptorType::STRING as u8 {
-                log!(b"DS\n");
-
                 let data = if desc_index == 0 {
                     STRING_DESC0
                 } else {

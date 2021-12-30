@@ -183,9 +183,6 @@ Waiting for an interrupt:
 */
 
 const USING_DEV_KIT: bool = true;
-const RECEIVING: bool = false;
-
-static mut HELLO: [u8; 5] = [4, 1, 2, 3, 4];
 
 pub struct NumberSlice {
     buf: [u8; 10],
@@ -252,11 +249,6 @@ async fn echo_thread_fn(uarte0: UARTE0, mut timer: Timer, mut temp: Temp, mut rn
         serial.write(b" | ").await;
         serial.write(num_to_slice(rand[1]).as_ref()).await;
         serial.write(b"\n").await;
-
-        // b"hello world this is long\n"
-        // serial.write(b"Hi there\n").await;
-
-        // serial.read_exact(&mut buf[0..8]).await;
     }
 }
 
@@ -312,10 +304,7 @@ async fn blinker_thread_fn() {
             peripherals.p0.outclr.write_with(|v| v.set_pin6());
         }
 
-        // send_packet(&mut peripherals.radio, b"hello", RECEIVING).await;
-        // if !RECEIVING {
         timer.wait_ms(100).await;
-        // }
 
         if USING_DEV_KIT {
             peripherals.p0.outset.write_with(|v| v.set_pin14());
@@ -323,10 +312,7 @@ async fn blinker_thread_fn() {
             peripherals.p0.outset.write_with(|v| v.set_pin6());
         }
 
-        // send_packet(&mut peripherals.radio, b"world", RECEIVING).await;
-        // if !RECEIVING {
         timer.wait_ms(100).await;
-        // }
     }
 }
 
