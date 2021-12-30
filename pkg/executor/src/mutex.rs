@@ -7,19 +7,37 @@ use crate::interrupts::{trigger_pendsv, wait_for_pendsv};
 
 pub struct Mutex<T> {
     value: UnsafeCell<T>,
-    locked: Cell<bool>,
+    locked: Cell<MutexLockState>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum MutexLockState {
+    Unlocked,
+    Locked,
+    LockedWithWaiters,
 }
 
 impl<T> Mutex<T> {
     pub const fn new(value: T) -> Self {
         Self {
             value: UnsafeCell::new(value),
-            locked: Cell::new(false),
+            locked: Cell::new(MutexLockState::Unlocked),
         }
     }
 
     pub async fn lock<'a>(&'a self) -> MutexGuard<'a, T> {
-        while self.locked.get() {
+        loop {
+            match self.locked.get() {
+                MutexLockState::Unlocked => {
+                    self.locked.set(MutexLockState::Locked);
+                    break;
+                }
+                MutexLockState::Locked => {
+                    self.locked.set(MutexLockState::LockedWithWaiters);
+                }
+                MutexLockState::LockedWithWaiters => {}
+            }
+
             wait_for_pendsv().await;
         }
 
@@ -36,8 +54,11 @@ pub struct MutexGuard<'a, T> {
 
 impl<'a, T> Drop for MutexGuard<'a, T> {
     fn drop(&mut self) {
-        self.inst.locked.set(false);
-        trigger_pendsv();
+        let old_state = self.inst.locked.get();
+        self.inst.locked.set(MutexLockState::Unlocked);
+        if old_state == MutexLockState::LockedWithWaiters {
+            trigger_pendsv();
+        }
     }
 }
 

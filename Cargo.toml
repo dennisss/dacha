@@ -65,7 +65,8 @@ members = [
 	"pkg/ubiquiti",
 	"pkg/cmsis_svd",
 	"pkg/peripherals",
-	"pkg/peripherals_raw"
+	"pkg/peripherals_raw",
+	"pkg/nordic_tools"
 ]
 
 [profile.dev]

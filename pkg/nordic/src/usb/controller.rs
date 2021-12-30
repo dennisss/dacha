@@ -165,6 +165,14 @@ impl USBDeviceController {
                     if let Event::PowerDetected = event {
                         log!(b"1\n");
 
+                        // Errata #187: Part 1
+                        // https://infocenter.nordicsemi.com/topic/errata_nRF52840_Rev3/ERR/nRF52840/Rev3/latest/anomaly_840_187.html
+                        unsafe {
+                            core::ptr::write_volatile(0x4006EC00 as *mut u32, 0x00009375);
+                            core::ptr::write_volatile(0x4006ED14 as *mut u32, 0x00000003);
+                            core::ptr::write_volatile(0x4006EC00 as *mut u32, 0x00009375);
+                        }
+
                         self.periph.enable.write_enabled();
                         self.state = State::Starting;
                     }
@@ -196,6 +204,14 @@ impl USBDeviceController {
                         self.periph
                             .eventcause
                             .write_with(|v| v.set_ready_with(|v| v.set_ready()));
+
+                        // Errata #187: Part 2
+                        // https://infocenter.nordicsemi.com/topic/errata_nRF52840_Rev3/ERR/nRF52840/Rev3/latest/anomaly_840_187.html
+                        unsafe {
+                            core::ptr::write_volatile(0x4006EC00 as *mut u32, 0x00009375);
+                            core::ptr::write_volatile(0x4006ED14 as *mut u32, 0x00000000);
+                            core::ptr::write_volatile(0x4006EC00 as *mut u32, 0x00009375);
+                        }
 
                         self.state = State::PendingReset;
                     }
@@ -236,32 +252,8 @@ impl USBDeviceController {
 
     async fn wait_for_event(&mut self) -> Event {
         loop {
-            if Self::take_event(&mut self.power.events_usbdetected) {
-                return Event::PowerDetected;
-            }
-            if Self::take_event(&mut self.power.events_usbpwrrdy) {
-                return Event::PowerReady;
-            }
-            if Self::take_event(&mut self.power.events_usbremoved) {
-                return Event::PowerRemoved;
-            }
-            if Self::take_event(&mut self.periph.events_usbevent) {
-                return Event::USBEvent;
-            }
-            if Self::take_event(&mut self.periph.events_ep0setup) {
-                return Event::EP0Setup;
-            }
-            if Self::take_event(&mut self.periph.events_usbreset) {
-                return Event::USBReset;
-            }
-            if Self::take_event(&mut self.periph.events_endepin[0]) {
-                return Event::EndEpIN0;
-            }
-            if Self::take_event(&mut self.periph.events_endepout[0]) {
-                return Event::EndEpOUT0;
-            }
-            if Self::take_event(&mut self.periph.events_ep0datadone) {
-                return Event::EP0DataDone;
+            if let Some(event) = self.pending_event().await {
+                return event;
             }
 
             futures::race2(
@@ -270,6 +262,38 @@ impl USBDeviceController {
             )
             .await;
         }
+    }
+
+    async fn pending_event(&mut self) -> Option<Event> {
+        if Self::take_event(&mut self.power.events_usbdetected) {
+            return Some(Event::PowerDetected);
+        }
+        if Self::take_event(&mut self.power.events_usbpwrrdy) {
+            return Some(Event::PowerReady);
+        }
+        if Self::take_event(&mut self.power.events_usbremoved) {
+            return Some(Event::PowerRemoved);
+        }
+        if Self::take_event(&mut self.periph.events_usbevent) {
+            return Some(Event::USBEvent);
+        }
+        if Self::take_event(&mut self.periph.events_ep0setup) {
+            return Some(Event::EP0Setup);
+        }
+        if Self::take_event(&mut self.periph.events_usbreset) {
+            return Some(Event::USBReset);
+        }
+        if Self::take_event(&mut self.periph.events_endepin[0]) {
+            return Some(Event::EndEpIN0);
+        }
+        if Self::take_event(&mut self.periph.events_endepout[0]) {
+            return Some(Event::EndEpOUT0);
+        }
+        if Self::take_event(&mut self.periph.events_ep0datadone) {
+            return Some(Event::EP0DataDone);
+        }
+
+        None
     }
 
     fn take_event<R: RegisterRead<Value = EventState> + RegisterWrite<Value = EventState>>(
@@ -388,7 +412,7 @@ impl<'a> USBDeviceControlRequest<'a> {
 
         self.controller.periph.epout[0]
             .ptr
-            .write(unsafe { core::mem::transmute(&packet_buffer[0]) });
+            .write(unsafe { core::mem::transmute(packet_buffer.as_ptr()) });
         self.controller.periph.epout[0]
             .maxcnt
             .write(packet_buffer.len() as u32);
@@ -397,7 +421,7 @@ impl<'a> USBDeviceControlRequest<'a> {
 
         while self.controller.wait_for_event().await != Event::EP0DataDone {}
 
-        let packet_len = self.controller.periph.epout[0].maxcnt.read() as usize;
+        let packet_len = self.controller.periph.epout[0].amount.read() as usize;
         if packet_len > output.len() {
             // Overflow.
         }
@@ -405,8 +429,9 @@ impl<'a> USBDeviceControlRequest<'a> {
         output[0..packet_len].copy_from_slice(&packet_buffer[0..packet_len]);
         output = &mut output[packet_len..];
         total_read += packet_len;
+        self.host_remaining -= packet_len;
 
-        if packet_len < packet_buffer.len() {
+        if packet_len < packet_buffer.len() || self.host_remaining == 0 {
             self.controller.periph.tasks_ep0status.write_trigger();
             return total_read;
         }
@@ -417,7 +442,7 @@ impl<'a> USBDeviceControlRequest<'a> {
             while self.controller.wait_for_event().await != Event::EndEpOUT0 {}
             self.controller.periph.tasks_ep0rcvout.write_trigger();
 
-            let packet_len = self.controller.periph.epout[0].maxcnt.read() as usize;
+            let packet_len = self.controller.periph.epout[0].amount.read() as usize;
             if packet_len > output.len() {
                 // Overflow. Panic!
             }
@@ -425,11 +450,11 @@ impl<'a> USBDeviceControlRequest<'a> {
             output[0..packet_len].copy_from_slice(&packet_buffer[0..packet_len]);
             output = &mut output[packet_len..];
             total_read += packet_len;
+            self.host_remaining -= packet_len;
 
             while self.controller.wait_for_event().await != Event::EP0DataDone {}
 
-            // TODO: Also stop if host_remaining == 0
-            if packet_len < packet_buffer.len() {
+            if packet_len < packet_buffer.len() || self.host_remaining == 0 {
                 break;
             }
         }
@@ -490,7 +515,7 @@ impl<'a> USBDeviceControlResponse<'a> {
                 // TODO: Berify that this is 32-bit aligned and always a
                 self.controller.periph.epin[0]
                     .ptr
-                    .write(unsafe { core::mem::transmute(&packet[0]) });
+                    .write(unsafe { core::mem::transmute(packet.as_ptr()) });
                 self.controller.periph.epin[0]
                     .maxcnt
                     .write(packet_len as u32);

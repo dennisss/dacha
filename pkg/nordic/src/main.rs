@@ -32,6 +32,8 @@ mod gpio;
 mod log;
 mod pins;
 mod proto;
+mod protocol;
+mod radio;
 mod rng;
 mod storage;
 mod temp;
@@ -44,12 +46,12 @@ use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
 use peripherals::raw::clock::CLOCK;
-use peripherals::raw::radio::RADIO;
 use peripherals::raw::rtc0::RTC0;
 use peripherals::raw::{EventState, Interrupt, PinDirection, RegisterRead, RegisterWrite};
 // use crate::peripherals::
 use peripherals::raw::uarte0::UARTE0;
 
+use crate::radio::Radio;
 use crate::rng::Rng;
 use crate::temp::Temp;
 use crate::timer::Timer;
@@ -180,117 +182,6 @@ Waiting for an interrupt:
     - Need the interrupt number (for NVIC)
 */
 
-async fn send_packet(radio: &mut RADIO, message: &[u8], receiving: bool) {
-    // TODO: Just have a global buffer given that only one that can be copied at a
-    // time anyway.
-    let mut data = [0u8; 256];
-    data[0] = message.len() as u8;
-    data[1..(1 + message.len())].copy_from_slice(message);
-
-    // NOTE: THe POWER register is 1 at boot so we shouldn't need to turn on the
-    // peripheral.
-
-    radio
-        .packetptr
-        .write(unsafe { core::mem::transmute(&data) });
-
-    radio.frequency.write_with(|v| v.set_frequency(5)); // 0 // Exactly 2400 MHz
-    radio.txpower.write_0dbm(); // TODO: +8 dBm (max power)
-    radio.mode.write_nrf_1mbit();
-
-    // 1 LENGTH byte (8 bits). 0 S0, S1 bits. 8-bit preamble.
-    radio
-        .pcnf0
-        .write_with(|v| v.set_lflen(8).set_plen_with(|v| v.set_8bit()));
-    // write_volatile(RADIO_PCNF0, 8);
-
-    // MAXLEN=255. STATLEN=0, BALEN=2 (so we have 3 byte addresses), little endian
-    radio.pcnf1.write_with(|v| v.set_maxlen(255).set_balen(2));
-
-    radio.base0.write(0xAABBCCDD);
-    radio.prefix0.write_with(|v| v.set_ap0(0xEE));
-
-    radio.txaddress.write(0); // Transmit on address 0
-
-    // Receive from address 0
-    radio
-        .rxaddresses
-        .write_with(|v| v.set_addr0_with(|v| v.set_enabled()));
-
-    // Copies the 802.15.4 mode.
-    radio.crccnf.write_with(|v| {
-        v.set_len_with(|v| v.set_two())
-            .set_skipaddr_with(|v| v.set_ieee802154())
-    });
-    radio.crcpoly.write(0x11021);
-    radio.crcinit.write(0);
-
-    if receiving {
-        // data[0] = 0;
-
-        radio.tasks_rxen.write_trigger();
-        while !radio.state.read().is_rxidle() {
-            unsafe { asm!("nop") };
-        }
-
-        radio.events_end.write_notgenerated();
-
-        // Start receiving
-        radio.tasks_start.write_trigger();
-
-        while !radio.state.read().is_rx() {
-            unsafe { asm!("nop") };
-        }
-
-        // write_volatile(RADIO_TASKS_STOP, 1);
-
-        while radio.state.read().is_rx() && radio.events_end.read().is_notgenerated() {
-            unsafe { asm!("nop") };
-        }
-
-        return;
-    }
-
-    radio.events_ready.write_notgenerated();
-    radio.intenset.write_with(|v| v.set_ready());
-
-    // Ramp up the radio
-    // TODO: If currnetly in the middle of disabling, wait for that to finish before
-    // attempting to starramp up.
-    // TODO: Also support switching from rx to tx and vice versa.
-    radio.tasks_txen.write_trigger();
-
-    while !radio.state.read().is_txidle() && radio.events_ready.read().is_notgenerated() {
-        executor::interrupts::wait_for_irq(Interrupt::RADIO).await;
-    }
-    radio.events_ready.write_notgenerated();
-
-    assert!(radio.state.read().is_txidle());
-
-    radio.events_end.write_notgenerated();
-
-    // Start transmitting.
-    radio.tasks_start.write_trigger();
-
-    while radio.events_end.read().is_notgenerated() {
-        unsafe { asm!("nop") };
-    }
-
-    // Mode: Nrf_250Kbit
-
-    // Use STATE
-
-    // TASKS_TXEN = 1 to start transmit mode
-
-    // Wait for started
-
-    // TASKS_START
-
-    /*
-    If receiving check RXMATCH for address and CRCSTATUS for whether it was googd
-    */
-}
-
 const USING_DEV_KIT: bool = true;
 const RECEIVING: bool = false;
 
@@ -397,6 +288,8 @@ async fn blinker_thread_fn() {
         peripherals.power,
     ));
 
+    RadioThread::start(Radio::new(peripherals.radio));
+
     // peripherals.p0.dirset.write_with(|v| v.set_pin30());
     // peripherals.p0.outset.write_with(|v| v.set_pin30());
 
@@ -419,10 +312,10 @@ async fn blinker_thread_fn() {
             peripherals.p0.outclr.write_with(|v| v.set_pin6());
         }
 
-        send_packet(&mut peripherals.radio, b"hello", RECEIVING).await;
-        if !RECEIVING {
-            timer.wait_ms(100).await;
-        }
+        // send_packet(&mut peripherals.radio, b"hello", RECEIVING).await;
+        // if !RECEIVING {
+        timer.wait_ms(100).await;
+        // }
 
         if USING_DEV_KIT {
             peripherals.p0.outset.write_with(|v| v.set_pin14());
@@ -430,16 +323,22 @@ async fn blinker_thread_fn() {
             peripherals.p0.outset.write_with(|v| v.set_pin6());
         }
 
-        send_packet(&mut peripherals.radio, b"world", RECEIVING).await;
-        if !RECEIVING {
-            timer.wait_ms(100).await;
-        }
+        // send_packet(&mut peripherals.radio, b"world", RECEIVING).await;
+        // if !RECEIVING {
+        timer.wait_ms(100).await;
+        // }
     }
 }
 
 define_thread!(USBThread, usb_thread_fn, usb: USBDeviceController);
 async fn usb_thread_fn(mut usb: USBDeviceController) {
-    usb.run(USBDeviceDefaultHandler::new()).await;
+    usb.run(crate::protocol::ProtocolUSBHandler::new()).await;
+}
+
+define_thread!(RadioThread, radio_thread_fn, radio: Radio);
+async fn radio_thread_fn(radio: Radio) {
+    let mut inst = crate::protocol::ProtocolRadioThread::new(radio);
+    inst.run().await;
 }
 // TODO: Switch back to returning '!'
 fn main() -> () {

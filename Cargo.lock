@@ -1502,6 +1502,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nordic_tools"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
+ "usb",
+]
+
+[[package]]
 name = "num"
 version = "0.1.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"

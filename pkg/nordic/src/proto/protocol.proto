@@ -1,14 +1,14 @@
 syntax = "proto3";
 
-// All addresses are 3 bytes in length.
+// All addresses are 4 bytes in length.
 
 message NetworkConfig {
-    bytes address = 1 [max_length = 3];
+    bytes address = 1 [max_length = 4];
     Link links = 2 [max_count = 8];
 }
 
 message Link {
-    bytes address = 1 [max_length = 3];
+    bytes address = 1 [max_length = 4];
     bytes key = 2 [max_length = 16];
-    bytes iv = 3 [max_length = 6];
+    bytes iv = 3 [max_length = 5];
 }

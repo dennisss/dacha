@@ -48,7 +48,7 @@ impl UARTE {
         self.periph
             .txd
             .ptr
-            .write(unsafe { core::mem::transmute(&buf[0]) });
+            .write(unsafe { core::mem::transmute(buf.as_ptr()) });
         self.periph.txd.maxcnt.write(data.len() as u32);
 
         // Wait till done

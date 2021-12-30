@@ -41,6 +41,25 @@ impl<T: Default, A: AsRef<[T]> + AsMut<[T]>> FixedVec<T, A> {
             self.pop();
         }
     }
+
+    pub fn truncate(&mut self, new_size: usize) {
+        assert!(new_size <= self.length);
+        while self.length > new_size {
+            self.pop();
+        }
+    }
+}
+
+impl<T: Default + Clone, A: AsRef<[T]> + AsMut<[T]>> FixedVec<T, A> {
+    pub fn resize(&mut self, new_size: usize, value: T) {
+        if new_size < self.length {
+            return self.truncate(new_size);
+        }
+
+        while self.length < new_size {
+            self.push(value.clone());
+        }
+    }
 }
 
 impl<T: Default + Clone, A: AsRef<[T]> + AsMut<[T]> + Default> From<&[T]> for FixedVec<T, A> {
@@ -63,13 +82,13 @@ impl<T: Default, A: AsRef<[T]> + AsMut<[T]>> Deref for FixedVec<T, A> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        self.data.as_ref()
+        &self.data.as_ref()[0..self.length]
     }
 }
 
 impl<T: Default, A: AsRef<[T]> + AsMut<[T]>> DerefMut for FixedVec<T, A> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.data.as_mut()
+        &mut self.data.as_mut()[0..self.length]
     }
 }
 
@@ -106,7 +125,7 @@ impl<A: AsRef<[u8]> + AsMut<[u8]> + Default> From<&str> for FixedString<A> {
 
 impl<A: AsRef<[u8]> + AsMut<[u8]>> AsRef<[u8]> for FixedString<A> {
     fn as_ref(&self) -> &[u8] {
-        self.data.as_ref()
+        &self.data.as_ref()[0..self.length]
     }
 }
 

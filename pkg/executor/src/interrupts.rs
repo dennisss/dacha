@@ -86,9 +86,14 @@ pub async fn wait_for_irq(num: Interrupt) {
     drop(ctx);
 }
 
-pub async fn trigger_pendsv() {
+pub fn trigger_pendsv() {
+    let waker_list = unsafe { &mut INTERRUPT_WAKER_LISTS[PENDSV_EXCEPTION_NUM] };
+    if waker_list.is_empty() {
+        return;
+    }
+
     // Set the PENDSVSET bit.
-    unsafe { write_volatile(NVIC_ICSR, read_volatile(NVIC_ICSR) | (1 << 28)) };
+    unsafe { write_volatile(NVIC_ICSR, 1 << 28) };
 }
 
 // TODO: Verify that this interrupt is at the same priority as all others.
