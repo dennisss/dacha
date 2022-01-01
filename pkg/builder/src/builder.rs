@@ -329,6 +329,7 @@ impl Builder {
                             root_dir: path.clone(),
                             output_dir: Some(src.into()),
                             mask: FileMetadataMask {},
+                            anonymize: true,
                         };
                         out.append_file(path, &options).await?;
                     }

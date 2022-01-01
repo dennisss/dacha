@@ -35,8 +35,8 @@ use protobuf::Message;
 use rpc::ClientRequestContext;
 
 use container::{
-    meta::*, AllocateBlobsRequest, AllocateBlobsResponse, BlobMetadata, JobSpec, ManagerStub,
-    NodeMetadata, StartJobRequest,
+    meta::*, AllocateBlobsRequest, AllocateBlobsResponse, BlobMetadata, JobSpec, ListTasksRequest,
+    ManagerStub, NodeMetadata, StartJobRequest,
 };
 use container::{
     BlobStoreStub, ContainerNodeStub, JobMetadata, NodeMetadata_State, TaskMetadata,
@@ -58,6 +58,7 @@ enum Command {
     #[arg(name = "bootstrap")]
     Bootstrap(BootstrapCommand),
 
+    /// Enumerate objects (tasks, )
     #[arg(name = "list")]
     List(ListCommand),
 
@@ -69,17 +70,46 @@ enum Command {
     #[arg(name = "start_task")]
     StartTask(StartTaskCommand),
 
-    #[arg(name = "logs")]
-    Logs(LogsCommand),
+    #[arg(name = "events")]
+    Events(EventsCommand),
+
+    /// Retrieve the log (stdout/stderr) outputs of a task.
+    #[arg(name = "log")]
+    Log(LogCommand),
 }
 
 #[derive(Args)]
 struct BootstrapCommand {
-    node: String,
+    node_addr: String,
 }
 
 #[derive(Args)]
-struct ListCommand {}
+struct ListCommand {
+    /// What type of objects to enumerate. If not specified, we will enumerate
+    /// all objects.
+    #[arg(positional)]
+    kind: Option<ObjectKind>,
+
+    /// Address of the node from which to query the objects.
+    ///
+    /// NOTE: Note all object kinds will be supported in this mode.
+    node_addr: Option<String>,
+}
+
+#[derive(Args)]
+enum ObjectKind {
+    #[arg(name = "job")]
+    Job,
+
+    #[arg(name = "tasks")]
+    Task,
+
+    #[arg(name = "blobs")]
+    Blob,
+
+    #[arg(name = "nodes")]
+    Node,
+}
 
 #[derive(Args)]
 pub struct StartJobCommand {
@@ -92,13 +122,66 @@ struct StartTaskCommand {
     #[arg(positional)]
     task_spec_path: String,
 
-    node: String,
+    node_addr: String,
 }
 
 #[derive(Args)]
-struct LogsCommand {
+struct EventsCommand {
+    task_selector: TaskNodeSelector,
+}
+
+#[derive(Args)]
+struct LogCommand {
+    task_selector: TaskNodeSelector,
+
+    /// Id of the attempt from which to look up logs. If not specified, we will
+    /// retrieve the logs of the currently running task attempt.
+    attempt_id: Option<u64>,
+}
+
+#[derive(Args)]
+struct TaskNodeSelector {
+    /// Name of the task from which to
     task_name: String,
-    node: String,
+
+    node_addr: Option<String>,
+
+    node_id: Option<u64>,
+    /* TODO: Provide the attempt_id here as it may influence us to use a differnet node (one
+     * that was previously assigned the task)
+     * - Given the attempt_id as a timestamp, we can search the TaskMetadata in the metastore
+     *   for the version of that record that was active at the time of the attempt (but need to
+     *   be careful about checking ACLs for logs in this case) */
+}
+
+impl TaskNodeSelector {
+    async fn connect(&self) -> Result<NodeStubs> {
+        let node_addr = match &self.node_addr {
+            Some(addr) => addr.clone(),
+            None => {
+                // Must connect to the metastore, find the task, and then we can
+
+                let meta_client = Arc::new(MetastoreClient::create().await?);
+
+                let task_meta = meta_client
+                    .cluster_table::<TaskMetadata>()
+                    .get(&self.task_name)
+                    .await?
+                    .ok_or_else(|| format_err!("No task named: {}", self.task_name))?;
+
+                // TODO: assigned_node may eventually be allowed to be zero.
+                let node_meta = meta_client
+                    .cluster_table::<NodeMetadata>()
+                    .get(&task_meta.assigned_node())
+                    .await?
+                    .ok_or_else(|| err_msg("Failed to find node for task"))?;
+
+                node_meta.address().to_string()
+            }
+        };
+
+        connect_to_node(&node_addr).await
+    }
 }
 
 struct NodeStubs {
@@ -122,7 +205,7 @@ async fn connect_to_node(node_addr: &str) -> Result<NodeStubs> {
 /// TODO: Improve this so that we can continue running it if a previous run
 /// failed.
 async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
-    let node = connect_to_node(&cmd.node).await?;
+    let node = connect_to_node(&cmd.node_addr).await?;
 
     let request_context = rpc::ClientRequestContext::default();
 
@@ -149,7 +232,7 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     // that only one metastore group exists if we need to retry bootstrapping).
 
     {
-        let mut node_uri = http::uri::Uri::from_str(&format!("http://{}", cmd.node))?;
+        let mut node_uri = http::uri::Uri::from_str(&format!("http://{}", cmd.node_addr))?;
         node_uri.authority.as_mut().unwrap().port = Some(30001);
 
         let bootstrap_client = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
@@ -269,6 +352,43 @@ async fn run_manager() {
 }
 
 async fn run_list(cmd: ListCommand) -> Result<()> {
+    if let Some(node_addr) = &cmd.node_addr {
+        let node = connect_to_node(node_addr).await?;
+
+        let request_context = rpc::ClientRequestContext::default();
+
+        let identity = node
+            .service
+            .Identity(&request_context, &google::proto::empty::Empty::default())
+            .await
+            .result?;
+
+        println!("Nodes:");
+        println!("{:?}", identity);
+
+        println!("Tasks:");
+        let tasks = node
+            .service
+            .ListTasks(&request_context, &ListTasksRequest::default())
+            .await
+            .result?;
+        for task in tasks.tasks() {
+            println!("{:?}", task);
+        }
+
+        println!("Blobs:");
+        let blobs = node
+            .blobs
+            .List(&request_context, &google::proto::empty::Empty::default())
+            .await
+            .result?;
+        for blob in blobs.blob() {
+            println!("{:?}", blob);
+        }
+
+        return Ok(());
+    }
+
     let meta_client = datastore::meta::client::MetastoreClient::create().await?;
 
     println!("Nodes:");
@@ -310,7 +430,7 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
 }
 
 async fn run_start_task(cmd: StartTaskCommand) -> Result<()> {
-    let node = connect_to_node(&cmd.node).await?;
+    let node = connect_to_node(&cmd.node_addr).await?;
 
     let mut terminal_mode = false;
 
@@ -332,10 +452,14 @@ async fn run_start_task(cmd: StartTaskCommand) -> Result<()> {
 
     // Currently this is a hack to ensure that any previous iteration of this task
     // is stopped before we try getting the new logs.
+    //
+    // Instead we should look up the task
     common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
 
     let mut log_request = container::LogRequest::default();
     log_request.set_task_name(task_spec.name());
+
+    // TODO: Deduplicate with the log command code.
 
     let mut log_stream = node.service.GetLogs(&request_context, &log_request).await;
 
@@ -653,12 +777,17 @@ async fn start_terminal_input_task(
     }))
 }
 
-async fn run_logs(cmd: LogsCommand) -> Result<()> {
-    let node = connect_to_node(&cmd.node).await?;
+async fn run_log(cmd: LogCommand) -> Result<()> {
+    let node = cmd.task_selector.connect().await?;
+
     let request_context = rpc::ClientRequestContext::default();
 
     let mut log_request = container::LogRequest::default();
-    log_request.set_task_name(&cmd.task_name);
+    log_request.set_task_name(&cmd.task_selector.task_name);
+
+    if let Some(num) = cmd.attempt_id {
+        log_request.set_attempt_id(num);
+    }
 
     let mut log_stream = node.service.GetLogs(&request_context, &log_request).await;
 
@@ -673,14 +802,34 @@ async fn run_logs(cmd: LogsCommand) -> Result<()> {
     Ok(())
 }
 
+async fn run_events(cmd: EventsCommand) -> Result<()> {
+    let node = cmd.task_selector.connect().await?;
+    let request_context = rpc::ClientRequestContext::default();
+
+    let mut request = container::GetEventsRequest::default();
+    request.set_task_name(&cmd.task_selector.task_name);
+
+    let resp = node
+        .service
+        .GetEvents(&request_context, &request)
+        .await
+        .result?;
+    for event in resp.events() {
+        println!("{:?}", event);
+    }
+
+    Ok(())
+}
+
 async fn run() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
     match args.command {
         Command::Bootstrap(cmd) => run_bootstrap(cmd).await,
         Command::List(cmd) => run_list(cmd).await,
         Command::StartTask(cmd) => run_start_task(cmd).await,
-        Command::Logs(cmd) => run_logs(cmd).await,
+        Command::Log(cmd) => run_log(cmd).await,
         Command::StartJob(cmd) => run_start_job(cmd).await,
+        Command::Events(cmd) => run_events(cmd).await,
     }
 }
 

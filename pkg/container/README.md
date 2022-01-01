@@ -13,7 +13,7 @@ This is a system for managing a fleet of machines and assigning work to run on t
 - `Node`: A single machine in a `Cluster` which has a fixed resource ceiling for running `Tasks`
   locally.
 
-- `Zone`: An isolated collection of `Node`s. One should typically have one or more `Zone`s per data center or geographic region. All machines in a zone as expected to be well connected in the network and each zone should be completely self sufficient in terms of workload management capabilities.
+- `Zone`: An isolated collection of `Node`s. One should typically have one or more `Zone`s per data center or geographic region. All machines in a zone are expected to be well connected in the network and each zone should be completely self sufficient in terms of workload management capabilities.
 
 - `Task`: A set of `Container`s running in a shared resource envelope on a single `Node`. Usually
   this will only be running a single `Container`.
@@ -32,6 +32,8 @@ This is a system for managing a fleet of machines and assigning work to run on t
 - `Bundle`: Collection of files typically containing a binary + static assets and distributed as one or more `Blob` archives.
 
 - `Volume`: Mounted path in a `Container`. Typically the source will be a `Blob` or a persistent directory on the `Node`.
+
+- `Attempt`: A single try at running a `Task`. Typically this makes to one or more `Container`. Each `Attempt` is identified by a the start time of the first container in the `Attempt`.
 
 ## User Guide
 
@@ -151,7 +153,7 @@ You are now done setting up your Pi!
 Now that you have at least one node running the `cluster_node` binary, we want to not initialize the cluster by starting up the control plane (metastore and manager jobs) on the cluster. To do this you need to know the ip address of one node in the cluster. For example to initialize a node running locally run:
 
 ```
-cargo run --bin cluster -- bootstrap --node=127.0.0.1:10400
+cargo run --bin cluster -- bootstrap --node_addr=127.0.0.1:10400
 ```
 
 The above command should only be run ONCE on a single node in your LAN. All other running nodes in the same LAN should automatically discover the initialized control plane and register with it via multi-cast.
@@ -180,29 +182,24 @@ TODO: How to view registered nodes, running jobs/tasks, etc.
 
 Each node is effectively just a service for running individual tasks.
 
-The node runtime itself should generally not be making any outgoing RPCs to other services as the management of the cluster is managed top down by the `Manager` jobs which call individual nodes.
+The node runtime itself should be able to operate independently with all external dependencies missing. This is required as we will typically run those external dependencies as tasks on nodes.
 
-The main outgoing RPCs that do occur in the node runtime are:
-- When running in a LAN, on startup each Node discovers the metastore via multi-cast and registers itself in the metastore (updates the ip address and port at which it is reachable).
-  - This is mainly needed to support potential re-assignment of IPs in LANs over time if nodes restart.
-  - This could be replaced by requiring static ips for nodes or in the cloud this could be replaced with a lookup by the manager in the VM API (or using static hostnames with lookups over regular DNS).
-- When a node is missing a blob, it may fetch it from another node.
+But, the `Node`s don't do any cluster management. Instead assignment of tasks to nodes is managed by the `Manager` jobs. The main outgoing RPCs from the node runtime are:
+- `Metastore`
+  - **Self Registration**: When running in a LAN, on startup each Node discovers the metastore via multi-cast and registers itself in the NodeMetadata (updates the ip address and port at which it is reachable).
+    - This is mainly needed to support potential re-assignment of IPs in LANs over time if nodes restart.
+    - This could be replaced by requiring static ips for nodes or in the cloud this could be replaced with a lookup by the manager in the VM API (or using static hostnames with lookups over regular DNS).
+  - **Task Reconciliation**: Each Node will watch the TaskMetadata table to see if any tasks are assigned/un-assigned to the node and then apply these changes localyl.
+  - **Health Checking**: When a task running on the node transitions to being healthy/unhealthy, the node updates the Metastore so that clients of the task know that they can/can't send requests to it.
+- When a node is missing a blob, it may look up a known replica list from the metastore and fetch it from another node.
 
 #### Local Storage
 
-Each node has a local EmbeddedDB instance it uses to store information about tasks that have been added to it.
-
-- For each task, we want to store the following information:
-  - creation_time: When was the latest TaskSpec configured for the task
-  - updated_time: When did the last state transition occur for this task
-  - num_attempts: Number of times the job was restarted since the last TaskSpec was updated.
-
-TODO: What about logs?
-
-Types of tasks:
-- 
-
-
+Each node has a local EmbeddedDB instance it uses to store information such as:
+- Which tasks are running on it.
+  - So that they can be automatically restarted (if enabled) on node reboot
+- Record of state transitions for current/past tasks.
+- Stdout/stderr output of containers.
 
 #### Node Permissions
 
@@ -221,12 +218,8 @@ When the binary starts, it will:
 4. Else, the parent will send a single byte through the pipe with value 0 to indicate that the child is fully setup.
 5. For the remainder of the parent's lifetime, it will simply be running `waitpid` until the child exits and will then return the child's exit code.
 6. When the child starts running, it will call `setsid()` and then block on getting a 0 through the pipe shared with the parent.
-
-TODO: Set kill on parent death hook in child
-
 7. At this point, we are all setup!
   - TODO: Set the secure bits to prevent capability escalation
-
 8. When we want to start a new container
   - We will pick a new never before used userid and groupid
   - Call clone() with CLONE_NEWUSER, etc.
@@ -307,6 +300,54 @@ Protocol:
     - TODO: Periodically check that no nodes have corrupted data.
   - For all blobs that haven't been used in 1 week, delete the blobs from all nodes. 
 
+### Monitoring/Logging
+
+In this section, we'll describe how we track the history of state changes that occur in the cluster. 
+
+For recording a change, the following identifiers should be kept in mind:
+
+- Task `name`
+  - Note: We use indexes from 0-N where N is the number of replicas in a Job to create task names so task names will persist across many changes to a job. 
+- Task `revision`
+  - Monotonically increases when the task spec changes
+  - Note: In the steady state all tasks in a job will have the same `revision`.
+- Task `assigned_node`
+  - Id of the node to which this task is currently assigned.
+  - Note: A task may move between nodes (even while retaining the same `revision`) in scenarios such as node drains.
+- Task attempt `container_id`
+  - A unique value is generated each time the task stops and needs to be restarted.
+
+High level cluster placement events such as tasks being switched to a new revision, or moved to a new node are stored in the `Metastore` by the `Manager` job. In particular,
+
+- `JobMetadata` entries get updated in place when new task revisions are being added.
+- `TaskMetadata` entries get updated in place when updating to new task revisions or when assigned to a new node.
+  - For both of these, you can get the history of changes by looking through past `Metastore` version of each row.
+
+Low level events that occur more frequently for each task are stored by the `Node` runtime in its local storage:
+
+- Local Node EmbeddedDB instance contains an `Events` table of the following form:
+  - Row key: (`task_name`, `timestamp`, `container_id`)
+  - Row value is an `Event` object. We support the following types:
+    - `TaskStarted { task_revision }`
+    - `TaskStopping { signal }`
+    - `TaskStopped { exit_code }`
+    - `TaskHeartbeat { passed: bool }`
+  - The `Started` events can be used to delimit `Attempt`s of each task.
+- Log storage (stdout/stderr)
+  - Stored in append only logs keyed by `container_id`.
+
+Typical user journey:
+
+- Lists all available running tasks using `cluster list tasks`
+  - This can be fulfilled using the Metastore data
+  - Optionally, we may want to show past revisions of tasks or past assignments to specific nodes.
+- User picks a task they are interested in investigating.
+- User runs `cluster events --task=NAME` to retrieve recent changes
+  - The CLI will find the current node on which a task is running and retrieve the list of events from it directly.
+- User wants to see the log output from a recent attempt of a task
+  - `cluster log --task=NAME [--container_id=ID]`
+  - Id a container_id is not specified, we will use the latest one (from the currently running task). If a task isn't currently running we will wait for one to start running.
+  - This would be implemented by first finding the node to which the task is assigned in the `Metastore` and then the logs themselves are retrieved directly from the node.
 
 
 ## Old
@@ -467,46 +508,11 @@ We will support the following forms of addresses:
 - `task_index.job_name.task.cluster.local:port_name`
 
 
-
-
-
-
-
-Metadata Tables
----------------
-
-
-- The 
-
-
 A job name must match /[A-z0-9_\-]{1,63}/
-
-
 
 How to start a new job:
 - Contact the metastore to find the manager
 - Send a JobSpec to the manager (which will have all the state in RAM so should be )
-
-- Making the manager atomic
-  - The leader will 
-
-
-/*
-
-Bootstraping a cluster:
-- Start one node
-    - Bootstrap the id to be 1.
-- When a task is started, the node will provide the following variables:
-    -
-- Manually create a metadata store task
-    - This will require making an adhoc selection of a port
-- Populate the metadata store with:
-    - 1 node entry.
-    - 1 job entry for the metadata-store
-    - 1 task entry for the metadata-store
-- When
-    -
-    -
 
 
 What does the manager need to know:
@@ -529,52 +535,15 @@ Port range to use:
     - Same as kubernetes: 30000-32767 per node
 */
 
-
-
-
 Examples of USB cgroup propagation:
 
 - https://www.zigbee2mqtt.io/information/docker.html
 - https://git.lavasoftware.org/lava/pkg/docker-compose/-/merge_requests/7/diffs#386915d504f62f40813228b183d8b9bb1fff7433_0_39
 
-
-/*
-How to enumerate all tasks in a job?
-- Some general rules: If 'system.meta.' exists, then we shouldn't be able to create 'system.meta.x'
-    - Alternative solution is to 
-
 'system.meta.0'
 'system.meta.repo.0'
 
 /cluster/jobs/{,,,}
-/
-
-*/
-
-
-```
-Start a node:
-  cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
-
-  cargo run --bin cluster -- bootstrap --node=127.0.0.1:10400
-
-Start a metastore instance on that node:
-  cargo run --bin container_ctl -- start_task pkg/datastore/config/metastore.task --node=127.0.0.1:10400
-
-Bootstrap the metastore:
-  cargo run --package rpc_util -- call 127.0.0.1:30001 ServerInit.Bootstrap ''
-
-Populate the metastore task and job into the store:
-  (adds keys into '/cluster/task/system.meta.0' and '/cluster/job/system.meta')
-
-
-Done!
-
-cargo run --package rpc_util -- ls 127.0.0.1:30001
-
-cargo run --bin container_ctl -- list --node=abc
-```
-
 
 
 Debugability Requirements

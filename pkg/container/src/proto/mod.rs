@@ -14,6 +14,10 @@ pub mod task {
     include!(concat!(env!("OUT_DIR"), "/src/proto/task.rs"));
 }
 
+pub mod task_event {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/task_event.rs"));
+}
+
 pub mod job {
     include!(concat!(env!("OUT_DIR"), "/src/proto/job.rs"));
 }

@@ -68,6 +68,10 @@ openocd -f nrf52_pi.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c 
 
 ## Design
 
+### Development Gotchas
+
+- If clearing an event register immediately before triggering a task that may generate that event, if the task finishes too soon, then the event may not be generated again (must wait at least 4 cycles before starting the task)
+
 ### Radio Protocol
 
 Network protocol requirements:

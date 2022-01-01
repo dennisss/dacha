@@ -55,6 +55,10 @@ pub mod rpc {
     include!(concat!(env!("OUT_DIR"), "/src/proto/rpc.rs"));
 }
 
+pub mod code {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/code.rs"));
+}
+
 pub mod wrappers {
     include!(concat!(env!("OUT_DIR"), "/src/proto/wrappers.rs"));
 }

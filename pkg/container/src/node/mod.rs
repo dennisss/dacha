@@ -36,6 +36,7 @@ use crate::proto::meta::*;
 use crate::proto::node::*;
 use crate::proto::node_service::*;
 use crate::proto::task::*;
+use crate::proto::task_event::*;
 use crate::runtime::ContainerRuntime;
 
 struct Task {
@@ -55,7 +56,7 @@ struct Task {
     /// to be started using the latest TaskSpec.
     ///
     /// Will be reset to false once we have entired the Starting|Running state.
-    pending_update: bool,
+    pending_update: Option<StartTaskRequest>,
 
     permanent_stop: bool,
 
@@ -277,6 +278,13 @@ struct NodeShared {
     /// Available once we have connected and registered our node in the meta
     /// store.
     meta_client: Eventually<MetastoreClient>,
+
+    /// Timestamp (in unix micros) of the last event we've recorded. This is
+    /// used to ensure that all recorded events use a monotonic timestamp (at
+    /// least since the last node reboot).
+    ///
+    /// TODO: Ensure monotonic timestamps even between node restarts.
+    last_event_timestamp: Mutex<u64>,
 }
 
 struct NodeState {
@@ -351,6 +359,12 @@ impl Node {
         let blobs =
             BlobStore::create(Path::new(config.data_dir()).join("blob"), db.clone()).await?;
 
+        let last_event_timestamp = {
+            let last_db_time = tasks_table::get_events_timestamp(&db).await?.unwrap_or(0);
+            let current_time = NodeInner::current_system_timestamp();
+            core::cmp::max(last_db_time, current_time)
+        };
+
         let runtime = ContainerRuntime::create(Path::new(config.data_dir()).join("run")).await?;
         let inst = NodeInner {
             shared: Arc::new(NodeShared {
@@ -368,6 +382,7 @@ impl Node {
                 last_timer_id: AtomicUsize::new(0),
                 usb_context,
                 meta_client: Eventually::new(),
+                last_event_timestamp: Mutex::new(last_event_timestamp),
             }),
         };
 
@@ -389,10 +404,13 @@ impl Node {
             // We don't want the
             // TODO: Provide more gurantees that any tasks that are persisted will actually
             // be start-able.
-            if let Err(e) = inst
-                .start_task(task_meta.spec(), task_meta.revision())
-                .await
-            {
+            let mut req = StartTaskRequest::default();
+            req.set_spec(task_meta.spec().clone());
+            req.set_revision(task_meta.revision());
+
+            if let Err(e) = inst.start_task(&req).await {
+                // TOOD: This should probably trigger a real error now that we isolate the start
+                // request.
                 eprintln!("Persistent task failed to start: {}", e);
             }
         }
@@ -547,7 +565,10 @@ impl NodeInner {
             }
 
             // TODO: If this fails, record it in the TaskMetadata.
-            self.start_task(task.spec(), task.revision()).await?;
+            let mut req = StartTaskRequest::default();
+            req.set_spec(task.spec().clone());
+            req.set_revision(task.revision());
+            self.start_task(&req).await?;
         }
 
         for (_, task) in existing_tasks {
@@ -565,8 +586,6 @@ impl NodeInner {
             let event = self.shared.event_channel.1.recv().await?;
             match event {
                 NodeEvent::ContainerStateChange { container_id } => {
-                    // Currently this always occurs when the container had been killed
-
                     let mut state_guard = self.shared.state.lock().await;
                     let state = &mut *state_guard;
 
@@ -587,9 +606,35 @@ impl NodeInner {
                         .find(|t| t.spec.name() == task_name)
                         .unwrap();
 
-                    if task.pending_update {
+                    let container_meta = self
+                        .shared
+                        .runtime
+                        .get_container(&container_id)
+                        .await
+                        .ok_or_else(|| err_msg("Faield to find container"))?;
+
+                    // Currently this is the only state change type implemented in the runtime.
+                    if container_meta.state() != ContainerState::Stopped {
+                        return Err(err_msg(
+                            "Expected state changes only with stopped containers",
+                        ));
+                    }
+
+                    let mut event = TaskEvent::default();
+                    event.set_task_name(task.spec.name());
+                    event.set_task_revision(task.revision);
+                    event.set_container_id(&container_id);
+                    event
+                        .stopped_mut()
+                        .set_status(container_meta.status().clone());
+                    self.record_event(event).await?;
+
+                    // No longer running, so clear the container id
+                    task.container_id = None;
+
+                    if task.pending_update.is_some() {
                         self.transition_task_to_running(&mut state.inner, task)
-                            .await;
+                            .await?;
                     } else {
                         self.transition_task_to_backoff(task).await;
                     }
@@ -621,6 +666,14 @@ impl NodeInner {
 
                     if should_force_stop {
                         let container_id = task.container_id.as_ref().unwrap();
+
+                        let mut event = TaskEvent::default();
+                        event.set_task_name(task.spec.name());
+                        event.set_task_revision(task.revision);
+                        event.set_container_id(container_id);
+                        event.stopping_mut().set_force(true);
+                        self.record_event(event).await?;
+
                         self.shared
                             .runtime
                             .kill_container(container_id, nix::sys::signal::Signal::SIGKILL)
@@ -703,7 +756,9 @@ impl NodeInner {
             let mut proto = TaskProto::default();
             proto.set_spec(task.spec.clone());
             proto.set_revision(task.revision);
-            proto.set_pending_update(task.pending_update);
+            if let Some(pending_update) = &task.pending_update {
+                proto.set_pending_update(pending_update.clone());
+            }
             if let Some(id) = &task.container_id {
                 if let Some(meta) = self.shared.runtime.get_container(id.as_str()).await {
                     proto.set_container(meta);
@@ -734,21 +789,54 @@ impl NodeInner {
     }
 
     /// Tries to transition the task to the Running state.
-    /// When this is called, we assume that if any backoff was required, it has
-    /// already been waited.
-    async fn transition_task_to_running(&self, state_inner: &mut NodeStateInner, task: &mut Task) {
-        task.pending_update = false;
+    /// When this is called, we assume that we are currently not running any
+    /// containers and if any backoff was required, it has already been
+    /// waited.
+    ///
+    /// NOTE: If this function returns an Error, it should be considered fatal.
+    /// Most partial task specific failures should be done in
+    /// transition_task_to_running_impl.
+    async fn transition_task_to_running(
+        &self,
+        state_inner: &mut NodeStateInner,
+        task: &mut Task,
+    ) -> Result<()> {
+        if let Some(req) = task.pending_update.take() {
+            task.revision = req.revision();
+            task.spec = req.spec().clone();
+        }
+
+        if task.container_id.is_some() {
+            return Err(err_msg("Task still has an old container_id while starting"));
+        }
 
         if let Err(e) = self
             .transition_task_to_running_impl(state_inner, task)
             .await
         {
-            // TODO: Report this back to the client.
             // TODO: Can we differentiate between failures caused by the node and failures
-            // caused by the task's specification?
-            eprintln!("Failed to start task {}", e);
+            // caused by the task's specification? (to know which ones should and shouldn't
+            // be retried)
+
+            let status = {
+                if let Some(e) = e.downcast_ref::<rpc::Status>() {
+                    e.to_proto()
+                } else {
+                    rpc::Status::unknown(format!("{}", e)).to_proto()
+                }
+            };
+
+            let mut event = TaskEvent::default();
+            event.set_task_name(task.spec.name());
+            event.set_task_revision(task.revision);
+            event.start_failure_mut().set_status(status);
+
+            self.record_event(event).await?;
+
             self.transition_task_to_backoff(task).await;
         }
+
+        Ok(())
     }
 
     async fn transition_task_to_running_impl(
@@ -756,7 +844,6 @@ impl NodeInner {
         state_inner: &mut NodeStateInner,
         task: &mut Task,
     ) -> Result<()> {
-        // TODO: Parse this at startup time.
         let mut container_config = self.shared.config.container_template().clone();
 
         // TODO: Check for overflows of the count in the range.
@@ -1006,6 +1093,8 @@ impl NodeInner {
         }
 
         if !missing_requirements.is_empty() {
+            // TODO: Log this as an event.
+
             task.state = TaskState::Pending {
                 missing_requirements,
             };
@@ -1030,6 +1119,13 @@ impl NodeInner {
         task.blob_leases = blob_leases;
         task.container_id = Some(container_id.clone());
         task.state = TaskState::Running;
+
+        let mut event = TaskEvent::default();
+        event.set_task_name(task.spec.name());
+        event.set_task_revision(task.revision);
+        event.set_container_id(&container_id);
+        event.started_mut();
+        self.record_event(event).await?;
 
         Ok(())
     }
@@ -1249,6 +1345,14 @@ impl NodeInner {
 
     async fn transition_task_to_stopping(&self, task: &mut Task) -> Result<()> {
         let container_id = task.container_id.as_ref().unwrap();
+
+        let mut event = TaskEvent::default();
+        event.set_task_name(task.spec.name());
+        event.set_task_revision(task.revision);
+        event.set_container_id(container_id);
+        event.stopping_mut().set_force(false);
+        self.record_event(event).await?;
+
         self.shared
             .runtime
             .kill_container(container_id, nix::sys::signal::Signal::SIGINT)
@@ -1282,38 +1386,39 @@ impl NodeInner {
         Ok(())
     }
 
-    pub async fn start_task(&self, task_spec: &TaskSpec, task_revision: u64) -> Result<()> {
+    pub async fn start_task(&self, request: &StartTaskRequest) -> Result<()> {
         let mut state_guard = self.shared.state.lock().await;
         let state = &mut *state_guard;
 
+        // TODO: Consider only storing this once the task successfully starts up.
         // TODO: Eventually delete non-persistent tasks.
         // TODO: Once a task has failed, don't restart it on node re-boots.
         let mut meta = TaskMetadata::default();
-        meta.set_spec(task_spec.clone());
+        meta.set_spec(request.spec().clone());
         meta.set_state(TaskMetadata_State::STARTING);
-        meta.set_revision(task_revision);
+        meta.set_revision(request.revision());
         tasks_table::put_task(&self.shared.db, &meta).await?;
 
         let existing_task = state
             .tasks
             .iter_mut()
-            .find(|t| t.spec.name() == task_spec.name());
+            .find(|t| t.spec.name() == request.spec().name());
 
         let task = {
             if let Some(task) = existing_task {
-                // TODO: Consider preserving the previous task_spec until the new one is added.
-                task.spec = task_spec.clone();
-                task.revision = task_revision;
+                task.permanent_stop = false;
+                task.start_backoff.reset();
+                task.pending_update = Some(request.clone());
                 task
             } else {
                 state.tasks.push(Task {
-                    spec: task_spec.clone(),
-                    revision: task_revision,
+                    spec: request.spec().clone(),
+                    revision: request.revision(),
                     container_id: None,
                     state: TaskState::Pending {
                         missing_requirements: ResourceSet::default(),
                     },
-                    pending_update: false,
+                    pending_update: None,
                     permanent_stop: false,
                     blob_leases: vec![],
                     start_backoff: ExponentialBackoff::new(ExponentialBackoffOptions {
@@ -1328,14 +1433,10 @@ impl NodeInner {
             }
         };
 
-        task.pending_update = true;
-        task.permanent_stop = false;
-        task.start_backoff.reset();
-
         match &task.state {
             TaskState::Pending { .. } | TaskState::RestartBackoff { .. } | TaskState::Terminal => {
                 self.transition_task_to_running(&mut state.inner, task)
-                    .await;
+                    .await?;
             }
             TaskState::Running => {
                 self.transition_task_to_stopping(task).await?;
@@ -1361,7 +1462,7 @@ impl NodeInner {
             .find(|t| t.spec.name() == name)
             .ok_or_else(|| rpc::Status::not_found("Task not found"))?;
 
-        task.pending_update = false;
+        task.pending_update = None;
         task.permanent_stop = true;
 
         let mut meta = TaskMetadata::default();
@@ -1378,6 +1479,24 @@ impl NodeInner {
         }
 
         Ok(())
+    }
+
+    fn current_system_timestamp() -> u64 {
+        SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_micros() as u64
+    }
+
+    async fn record_event(&self, mut event: TaskEvent) -> Result<()> {
+        eprintln!("Event: {:?}", event);
+
+        let mut time = self.shared.last_event_timestamp.lock().await;
+        *time = core::cmp::max(*time + 1, Self::current_system_timestamp());
+        event.set_timestamp(*time);
+        drop(time);
+
+        tasks_table::put_task_event(self.shared.db.as_ref(), &event).await
     }
 }
 
@@ -1426,7 +1545,7 @@ impl ContainerNodeService for NodeInner {
         request: rpc::ServerRequest<StartTaskRequest>,
         response: &mut rpc::ServerResponse<StartTaskResponse>,
     ) -> Result<()> {
-        self.start_task(request.spec(), request.revision()).await
+        self.start_task(&request.value).await
     }
 
     // TODO: When the Node closes, we should kill all tasks that it has
@@ -1437,19 +1556,43 @@ impl ContainerNodeService for NodeInner {
         response: &mut rpc::ServerStreamResponse<LogEntry>,
     ) -> Result<()> {
         let container_id = {
-            let state = self.shared.state.lock().await;
-            let task = state
-                .tasks
-                .iter()
-                .find(|t| t.spec.name() == request.task_name())
-                .ok_or_else(|| {
-                    Error::from(rpc::Status::not_found(format!(
-                        "No task found with name: {}",
-                        request.task_name()
-                    )))
-                })?;
+            if request.attempt_id() != 0 {
+                let attempt_event =
+                    tasks_table::get_task_events(&self.shared.db, request.task_name())
+                        .await?
+                        .into_iter()
+                        .find(|e| e.timestamp() == request.attempt_id())
+                        .ok_or_else(|| {
+                            rpc::Status::not_found("Failed to find attempt with given id")
+                        })?;
 
-            task.container_id.clone().unwrap()
+                if !attempt_event.has_started() {
+                    return Err(rpc::Status::invalid_argument(
+                        "Attempt event is not a start event",
+                    )
+                    .into());
+                }
+
+                attempt_event.container_id().to_string()
+            } else {
+                // Default behavior is to look up the currently running container.
+
+                let state = self.shared.state.lock().await;
+                let task = state
+                    .tasks
+                    .iter()
+                    .find(|t| t.spec.name() == request.task_name())
+                    .ok_or_else(|| {
+                        Error::from(rpc::Status::not_found(format!(
+                            "No task found with name: {}",
+                            request.task_name()
+                        )))
+                    })?;
+
+                task.container_id.clone().ok_or_else(|| {
+                    rpc::Status::invalid_argument("Container not currently running")
+                })?
+            }
         };
 
         // TODO: If the container is being shutdown then we may temporarily get the
@@ -1526,6 +1669,19 @@ impl ContainerNodeService for NodeInner {
                 .runtime
                 .write_to_stdin(&container_id, input.data())
                 .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn GetEvents(
+        &self,
+        request: rpc::ServerRequest<GetEventsRequest>,
+        response: &mut rpc::ServerResponse<GetEventsResponse>,
+    ) -> Result<()> {
+        let events = tasks_table::get_task_events(&self.shared.db, request.task_name()).await?;
+        for event in events {
+            response.value.add_events(event);
         }
 
         Ok(())

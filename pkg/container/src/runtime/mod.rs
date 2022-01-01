@@ -203,6 +203,29 @@ impl ContainerRuntime {
         output
     }
 
+    /// Clears a container from in memory state.
+    /// This is only allowed for containers which are currently stopped.
+    ///
+    /// NOTE: Artifacts such as logs in the file system will
+    pub async fn remove_container(&self, container_id: &str) -> Result<()> {
+        let mut containers = self.containers.lock().await;
+
+        let container_index = containers
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c.metadata.id() == container_id)
+            .ok_or_else(|| err_msg("Container being removed was not found"))?
+            .0;
+
+        if containers[container_index].metadata.state() != ContainerState::Stopped {
+            return Err(err_msg("Not allowed to remove a running container"));
+        }
+
+        containers.swap_remove(container_index);
+
+        Ok(())
+    }
+
     /*
     There are OCI runtime tests in:
     - https://github.com/opencontainers/runtime-tools
@@ -439,14 +462,29 @@ impl ContainerRuntime {
     }
 
     pub async fn open_log(&self, container_id: &str) -> Result<FileLogReader> {
-        let containers = self.containers.lock().await;
-        let container = containers
-            .iter()
-            .find(|c| c.metadata.id() == container_id)
-            .ok_or_else(|| err_msg("Container not found"))?;
+        let container_dir = self.run_dir.join(container_id);
 
-        let log_path = container.directory.join("log");
-        drop(containers);
+        // TODO: If the container isn't currently running, the FileLogReader should
+        // indicate that to the user (e.g. if no end of stream entries are present in
+        // the log file, it should return an end of stream indicator anyway).
+        let is_running = {
+            let containers = self.containers.lock().await;
+            containers
+                .iter()
+                .find(|c| c.metadata.id() == container_id)
+                .map(|c| c.metadata.state() != ContainerState::Stopped)
+                .unwrap_or(false)
+        };
+
+        if !container_dir.exists().await {
+            return Err(rpc::Status::not_found(format!(
+                "No data for container with id: {}",
+                container_id
+            ))
+            .into());
+        }
+
+        let log_path = container_dir.join("log");
 
         // TODO: For this to work we need to ensure that the log file is synchronously
         // created before we return the container id to the person that

@@ -107,6 +107,8 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
         Data::Enum(e) => {
             let mut commands = vec![];
 
+            let mut all_unit_variants = true;
+
             for var in &e.variants {
                 let var_name = &var.ident;
                 let mut command_name =
@@ -120,19 +122,23 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                 }
 
                 let fields = match &var.fields {
+                    // e.g. 'Enum::Variant(T)'
                     syn::Fields::Unnamed(f) => &f.unnamed,
+                    // e.g. 'Enum::Variant' (with no data)
                     syn::Fields::Unit => {
                         commands.push(quote! {
                             #command_name => { #name::#var_name }
                         });
                         continue;
                     }
-                    _ => panic!("Only unnamed enum fields are supported"),
+                    _ => panic!("Only unnamed or unit enum fields are supported"),
                 };
 
                 if fields.len() != 1 {
                     panic!("Only one unnamed enum field is supported");
                 }
+
+                all_unit_variants = false;
 
                 let field = &fields[0];
 
@@ -143,6 +149,30 @@ pub fn derive_args(input: TokenStream) -> TokenStream {
                         #name::#var_name(<#field_type as ::common::args::ArgsType>::parse_raw_args(raw_args)?)
                     }
                 });
+            }
+
+            // When all of the variants have no data, we can always represent it as just a
+            // single argument.
+            if all_unit_variants {
+                let out = quote! {
+                    impl ::common::args::ArgType for #name {
+                        fn parse_raw_arg(raw_arg: ::common::args::RawArgValue) -> ::common::errors::Result<Self> {
+                            let command_name = match raw_arg {
+                                ::common::args::RawArgValue::String(s) => s,
+                                _ => { return Err(::common::errors::err_msg("Expected string argument")); },
+                            };
+
+                            Ok(match command_name.as_str() {
+                                #(#commands)*
+                                _ => {
+                                    return Err(::common::errors::err_msg("Unknown command"));
+                                }
+                            })
+                        }
+                    }
+                };
+
+                return proc_macro::TokenStream::from(out);
             }
 
             quote! {

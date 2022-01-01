@@ -574,9 +574,10 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
 
             if initial_len == out.len() {
                 out.pop();
+                out.push('}');
+            } else {
+                out.push_str(&format!("{}}}", indent));
             }
-
-            out.push_str(&format!("{}}}", indent));
         }
         Reflection::Enum(v) => {
             if v.value() == 0 {

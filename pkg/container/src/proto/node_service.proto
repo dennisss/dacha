@@ -6,6 +6,7 @@ import "pkg/container/src/proto/config.proto";
 import "pkg/container/src/proto/log.proto";
 import "pkg/container/src/proto/task.proto";
 import "pkg/container/src/proto/meta.proto";
+import "pkg/container/src/proto/task_event.proto";
 import "third_party/google/src/proto/empty.proto";
 
 message ListTasksRequest {
@@ -22,8 +23,8 @@ message TaskProto {
     TaskSpec spec = 1;
     TaskStateProto state = 2;
     ContainerMetadata container = 3;
-    bool pending_update = 4;
-    uint64 revision = 5;
+    uint64 revision = 4;
+    StartTaskRequest pending_update = 5;
 }
 
 enum TaskStateProto {
@@ -56,7 +57,10 @@ message RestartTaskResponse {
 
 message LogRequest {
     string task_name = 1;
-    uint64 start_offset = 2;
+
+    uint64 attempt_id = 2;
+
+    uint64 start_offset = 3;
 
     // TODO: Consider supporting things like time/text filters?
 }
@@ -70,6 +74,14 @@ message WriteInputRequest {
 
 message ReplicateBlobRequest {
     string blob_id = 1;
+}
+
+message GetEventsRequest {
+    string task_name = 1;
+}
+
+message GetEventsResponse {
+    repeated TaskEvent events = 1;
 }
 
 service ContainerNode {
@@ -127,5 +139,8 @@ service ContainerNode {
     // rpc ExecProcess (ExecProcess)
 
     // Streams back log entries for a single task.
+    // Rename to GetLog
     rpc GetLogs(LogRequest) returns (stream LogEntry);
+
+    rpc GetEvents(GetEventsRequest) returns (GetEventsResponse);
 }

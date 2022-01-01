@@ -108,6 +108,8 @@ pub struct AppendFileOptions {
     pub output_dir: Option<PathBuf>,
 
     pub mask: FileMetadataMask,
+
+    pub anonymize: bool,
 }
 
 /// When writing files originally from the local file system to
@@ -698,7 +700,7 @@ impl Writer {
             );
         }
 
-        let archive_metadata = FileMetadata {
+        let mut archive_metadata = FileMetadata {
             header: Header {
                 file_name,
                 file_mode: Some(metadata.st_mode() & 0o777),
@@ -718,6 +720,12 @@ impl Writer {
                 file_name_prefix: String::new(),
             }),
         };
+
+        if options.anonymize {
+            archive_metadata.header.last_modified_time = None;
+            archive_metadata.header.owner_id = None;
+            archive_metadata.header.group_id = None;
+        }
 
         self.append(&archive_metadata, reader.as_mut()).await?;
 

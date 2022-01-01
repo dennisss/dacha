@@ -165,6 +165,17 @@ impl Status {
         self.details.push(any);
         Ok(self)
     }
+
+    pub fn to_proto(&self) -> google::proto::rpc::Status {
+        let mut out = google::proto::rpc::Status::default();
+        out.set_code(self.code().to_value() as i32);
+        out.set_message(self.message());
+        for any in &self.details {
+            out.add_details(any.clone());
+        }
+
+        out
+    }
 }
 
 impl std::fmt::Display for Status {
