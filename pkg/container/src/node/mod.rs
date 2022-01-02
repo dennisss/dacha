@@ -25,7 +25,8 @@ use nix::unistd::Gid;
 use protobuf::Message;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
-use crate::meta::constants::NODE_HEARTBEAT_INTERVAL;
+use crate::meta::client::ClusterMetaClient;
+use crate::meta::constants::*;
 use crate::meta::GetClusterMetaTable;
 use crate::node::blob_store::*;
 use crate::node::shadow::*;
@@ -277,7 +278,7 @@ struct NodeShared {
 
     /// Available once we have connected and registered our node in the meta
     /// store.
-    meta_client: Eventually<MetastoreClient>,
+    meta_client: Eventually<ClusterMetaClient>,
 
     /// Timestamp (in unix micros) of the last event we've recorded. This is
     /// used to ensure that all recorded events use a monotonic timestamp (at
@@ -486,9 +487,15 @@ impl NodeInner {
     ///
     /// TODO: Make this run after the RPC server has started.
     async fn run_node_registration(self) -> Result<()> {
+        let zone = self.shared.config.zone();
+        if zone.is_empty() {
+            println!("Node running outside of cluster zone");
+            return Ok(());
+        }
+
         let start_time = SystemTime::now();
 
-        let meta_client = datastore::meta::client::MetastoreClient::create().await?;
+        let meta_client = ClusterMetaClient::create(zone).await?;
 
         // Perform initial update of our node entry.
         run_transaction!(&meta_client, txn, {
@@ -498,6 +505,7 @@ impl NodeInner {
             node_meta.set_address(&self.shared.context.local_address);
             node_meta.set_start_time(start_time);
             node_meta.set_last_seen(SystemTime::now());
+            node_meta.set_zone(zone);
             if node_meta.state() == NodeMetadata_State::UNKNOWN {
                 node_meta.set_state(NodeMetadata_State::NEW);
             }
@@ -913,6 +921,22 @@ impl NodeInner {
         }
         for val in task.spec.env() {
             container_config.process_mut().add_env(val.clone());
+        }
+
+        {
+            container_config
+                .process_mut()
+                .add_env(format!("{}={}", NODE_ID_ENV_VAR, self.shared.id));
+            container_config.process_mut().add_env(format!(
+                "{}={}",
+                TASK_NAME_ENV_VAR,
+                task.spec.name()
+            ));
+            container_config.process_mut().add_env(format!(
+                "{}={}",
+                ZONE_ENV_VAR,
+                self.shared.config.zone()
+            ));
         }
 
         container_config.process_mut().set_cwd(task.spec.cwd());
@@ -1508,6 +1532,7 @@ impl ContainerNodeService for NodeInner {
         response: &mut rpc::ServerResponse<NodeMetadata>,
     ) -> Result<()> {
         response.value.set_id(self.shared.id);
+        response.value.set_zone(self.shared.config.zone());
         Ok(())
     }
 

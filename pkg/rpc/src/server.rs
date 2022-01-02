@@ -20,6 +20,7 @@ use crate::metadata::Metadata;
 use crate::server_types::*;
 use crate::service::Service;
 use crate::status::*;
+use crate::Channel;
 
 pub struct Http2Server {
     handler: Http2RequestHandler,
@@ -96,13 +97,25 @@ impl Http2Server {
     }
 }
 
-struct Http2RequestHandler {
+/// NOTE: This is mainly pub(crate) to support the LocalChannel implementation.
+/// TODO: Eventually make this private again.
+pub(crate) struct Http2RequestHandler {
     request_handlers: HashMap<String, Box<dyn http::ServerHandler>>,
 
     services: HashMap<String, Arc<dyn Service>>,
 }
 
 impl Http2RequestHandler {
+    pub(crate) fn new(service: Arc<dyn Service>) -> Self {
+        let mut services = HashMap::new();
+        services.insert(service.service_name().to_string(), service);
+
+        Self {
+            request_handlers: HashMap::new(),
+            services,
+        }
+    }
+
     async fn handle_request_impl<'a>(
         &self,
         request: http::Request,
@@ -115,11 +128,32 @@ impl Http2RequestHandler {
             return Ok(request_handler.handle_request(request, context).await);
         }
 
+        // Exit early if we detect a non-gRPC client
+        // NOTE: According to the spec, this is the only time at whih we should ever
+        // return a non-OK HTTP status. TODO: Technically anything starting with
+        // "application/grpc" should be supported.
+        if !request
+            .head
+            .headers
+            .find_one(CONTENT_TYPE)
+            .map(|v| v.value.as_bytes() == GRPC_PROTO_TYPE.as_bytes())
+            .unwrap_or(false)
+        {
+            return Ok(http::ResponseBuilder::new()
+                .status(http::status_code::UNSUPPORTED_MEDIA_TYPE)
+                .build()
+                .unwrap());
+        }
+
+        // NOTE: Returning an Err is not allowed before this point (to ensure that the
+        // content type check goes through).
+
         // TODO: Should support different methods
-        if request.head.method != http::Method::POST {
-            return http::ResponseBuilder::new()
+        if request.head.method != http::Method::POST && request.head.method != http::Method::GET {
+            return Ok(http::ResponseBuilder::new()
                 .status(http::status_code::METHOD_NOT_ALLOWED)
-                .build();
+                .build()
+                .unwrap());
         }
 
         let request_context = ServerRequestContext {
@@ -132,27 +166,56 @@ impl Http2RequestHandler {
             .path
             .as_ref()
             .split('/')
-            .map(|v| v.to_string())
             .collect::<Vec<_>>();
         if path_parts.len() != 3 || path_parts[0].len() != 0 {
             return Err(err_msg("Invalid path"));
         }
 
+        let service_name = path_parts[1];
+        let method_name = path_parts[2];
+        let request = ServerStreamRequest::new(request.body, request_context);
+
+        let response = self
+            .handle_parsed_request(service_name, method_name, request)
+            .await;
+
+        Ok(response)
+    }
+
+    pub(crate) async fn handle_parsed_request(
+        &self,
+        service_name: &str,
+        method_name: &str,
+        request: ServerStreamRequest<()>,
+    ) -> http::Response {
+        match self
+            .handle_parsed_request_impl(service_name, method_name, request)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => Self::error_response(e),
+        }
+    }
+
+    async fn handle_parsed_request_impl(
+        &self,
+        service_name: &str,
+        method_name: &str,
+        request: ServerStreamRequest<()>,
+    ) -> Result<http::Response> {
         let service = self
             .services
-            .get(&path_parts[1])
-            // TODO: Return an rpc::Status
-            .ok_or(format_err!("Unknown service named: {}", path_parts[1]))?;
-
-        let request = ServerStreamRequest::new(request.body, request_context);
+            .get(service_name)
+            .ok_or(crate::Status::unimplemented(format!(
+                "Unknown service named: {}",
+                service_name
+            )))?;
 
         let (response_sender, response_receiver) = channel::bounded(2);
 
-        let method_name = path_parts[2].clone();
-
         let child_task = ChildTask::spawn(Self::service_caller(
             service.clone(),
-            method_name,
+            method_name.to_string(),
             request,
             response_sender,
         ));
@@ -171,7 +234,7 @@ impl Http2RequestHandler {
             .header(CONTENT_TYPE, GRPC_PROTO_TYPE);
 
         let body = Box::new(ResponseBody {
-            child_task,
+            child_task: Some(child_task),
             response_receiver,
             remaining_bytes: Bytes::new(),
             done_data: false,
@@ -184,8 +247,8 @@ impl Http2RequestHandler {
         Ok(response)
     }
 
-    // Wrapper which calls the Service method for a single request and ensures that
-    // a trailer is eventually sent.
+    /// Wrapper which calls the Service method for a single request and ensures
+    /// that a trailer is eventually sent.
     async fn service_caller(
         service: Arc<dyn Service>,
         method_name: String,
@@ -226,6 +289,37 @@ impl Http2RequestHandler {
             ))
             .await;
     }
+
+    /// Creates a simple http response from an Error
+    ///
+    /// NOTE: When failures occur before the service is called, the server won't
+    /// return any head or trailer metadata.
+    ///
+    /// TODO: Consider eventually supporting the passing of metadata to enable
+    /// tracing of RPCs.
+    fn error_response(error: Error) -> http::Response {
+        let (sender, receiver) = channel::bounded(1);
+        sender
+            .try_send(ServerStreamResponseEvent::Trailers(
+                Err(error),
+                Metadata::new(),
+            ))
+            .unwrap();
+
+        // NOTE: GRPC servers are supported to always return 200 statuses.
+        http::ResponseBuilder::new()
+            .status(OK)
+            .header(CONTENT_TYPE, GRPC_PROTO_TYPE)
+            .body(Box::new(ResponseBody {
+                child_task: None,
+                response_receiver: receiver,
+                remaining_bytes: Bytes::new(),
+                done_data: false,
+                trailers: None,
+            }))
+            .build()
+            .unwrap()
+    }
 }
 
 #[async_trait]
@@ -237,22 +331,13 @@ impl http::ServerHandler for Http2RequestHandler {
     ) -> http::Response {
         match self.handle_request_impl(request, context).await {
             Ok(r) => r,
-            // TODO: Instead always use the trailers?
-            // TODO: Don't share the raw error.
-            Err(e) => http::ResponseBuilder::new()
-                .status(INTERNAL_SERVER_ERROR)
-                .header(CONTENT_TYPE, "text/plain")
-                .body(http::BodyFromData(
-                    e.to_string().bytes().collect::<Vec<u8>>(),
-                ))
-                .build()
-                .unwrap(),
+            Err(e) => Self::error_response(e),
         }
     }
 }
 
 struct ResponseBody {
-    child_task: ChildTask,
+    child_task: Option<ChildTask>,
 
     response_receiver: channel::Receiver<ServerStreamResponseEvent>,
 

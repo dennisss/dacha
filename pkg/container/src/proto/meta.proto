@@ -61,6 +61,8 @@ message NodeMetadata {
 
     repeated uint32 allocated_ports = 7 [unordered_set = true];
 
+    string zone = 8;
+
     // TODO: Enumerate capabilities, platform, etc.
 
     // TODO: When was the node added

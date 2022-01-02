@@ -9,6 +9,7 @@ use common::task::ChildTask;
 use datastore::meta::client::MetastoreClient;
 use http::ResolvedEndpoint;
 
+use crate::meta::client::ClusterMetaClient;
 use crate::meta::GetClusterMetaTable;
 use crate::proto::meta::*;
 use crate::service::address::*;
@@ -42,7 +43,7 @@ pub struct ServiceResolver {
 }
 
 struct Shared {
-    meta_client: Arc<MetastoreClient>,
+    meta_client: Arc<ClusterMetaClient>,
     service_address: ServiceAddress,
     state: Mutex<State>,
 }
@@ -55,7 +56,7 @@ struct State {
 impl ServiceResolver {
     /// TODO: Support having a fallback to a regular public DNS name if this
     /// resolver doesn't support it.
-    pub async fn create(address: &str, meta_client: Arc<MetastoreClient>) -> Result<Self> {
+    pub async fn create(address: &str, meta_client: Arc<ClusterMetaClient>) -> Result<Self> {
         let zone = meta_client
             .cluster_table::<ZoneMetadata>()
             .get(&())

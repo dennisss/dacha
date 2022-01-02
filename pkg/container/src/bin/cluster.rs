@@ -1,4 +1,18 @@
+// Cluster management CLI
 // TODO: Combine all of the CLI utilities into this one.
+/*
+Aside from the 'bootstrap' command, all commands require
+
+Testing:
+    cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
+
+    cargo run --bin cluster -- start_task --node_addr=127.0.0.1:10400 pkg/rpc_test/config/adder_server.task
+
+Next steps:
+-
+
+
+*/
 
 #[macro_use]
 extern crate common;
@@ -22,9 +36,10 @@ use common::errors::*;
 use common::failure::ResultExt;
 use common::futures::AsyncWriteExt;
 use common::task::ChildTask;
+use container::manager::Manager;
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
-use datastore::meta::client::{MetastoreClient, MetastoreClientInterface};
+use datastore::meta::client::MetastoreClientInterface;
 use nix::{
     sys::termios::{tcgetattr, tcsetattr, ControlFlags, InputFlags, LocalFlags, OutputFlags},
     unistd::isatty,
@@ -34,9 +49,10 @@ use protobuf::text::ParseTextProto;
 use protobuf::Message;
 use rpc::ClientRequestContext;
 
+use container::meta::client::ClusterMetaClient;
 use container::{
     meta::*, AllocateBlobsRequest, AllocateBlobsResponse, BlobMetadata, JobSpec, ListTasksRequest,
-    ManagerStub, NodeMetadata, StartJobRequest,
+    ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest,
 };
 use container::{
     BlobStoreStub, ContainerNodeStub, JobMetadata, NodeMetadata_State, TaskMetadata,
@@ -161,7 +177,7 @@ impl TaskNodeSelector {
             None => {
                 // Must connect to the metastore, find the task, and then we can
 
-                let meta_client = Arc::new(MetastoreClient::create().await?);
+                let meta_client = Arc::new(ClusterMetaClient::create_from_environment().await?);
 
                 let task_meta = meta_client
                     .cluster_table::<TaskMetadata>()
@@ -217,11 +233,17 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     let node_id = node_meta.id();
 
     println!("Bootstrapping cluster with node {:08x}", node_id);
+    println!("Zone: {}", node_meta.zone());
 
     // TODO: Need to build any build volumes to blobs.
     let mut meta_task_spec = TaskSpec::parse_text(
         &fs::read_to_string(project_path!("pkg/datastore/config/metastore.task")).await?,
     )?;
+    meta_task_spec.add_args(format!(
+        "--labels={}={}",
+        container::meta::constants::ZONE_ENV_VAR,
+        node_meta.zone()
+    ));
 
     // TODO: Assign a port to the spec.
 
@@ -248,7 +270,7 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
             .result?;
     }
 
-    let meta_client = Arc::new(MetastoreClient::create().await?);
+    let meta_client = Arc::new(ClusterMetaClient::create(node_meta.zone()).await?);
 
     // Wait for the node to register itself
 
@@ -320,15 +342,12 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     // TOOD: Now bring up a local manager instance and use it to start a manager job
     // on the cluster.
 
-    let manager_thread = ChildTask::spawn(run_manager());
+    let manager = Manager::new(meta_client.clone()).into_service();
+    let manager_channel = Arc::new(rpc::LocalChannel::new(manager));
 
     let mut manager_job_spec = JobSpec::parse_text(
         &fs::read_to_string(project_path!("pkg/container/config/manager.job")).await?,
     )?;
-
-    let manager_channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
-        &format!("http://127.0.0.1:{}", 10500).parse()?,
-    )?)?);
 
     let manager_stub = container::ManagerStub::new(manager_channel);
 
@@ -340,15 +359,7 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     )
     .await?;
 
-    drop(manager_thread);
-
     Ok(())
-}
-
-async fn run_manager() {
-    if let Err(e) = container::manager_main_with_port(10500).await {
-        eprintln!("Manager failed: {}", e);
-    }
 }
 
 async fn run_list(cmd: ListCommand) -> Result<()> {
@@ -389,7 +400,7 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
         return Ok(());
     }
 
-    let meta_client = datastore::meta::client::MetastoreClient::create().await?;
+    let meta_client = ClusterMetaClient::create_from_environment().await?;
 
     println!("Nodes:");
     let nodes = meta_client.cluster_table::<NodeMetadata>().list().await?;
@@ -499,7 +510,7 @@ async fn run_start_task(cmd: StartTaskCommand) -> Result<()> {
 }
 
 async fn run_start_job(cmd: StartJobCommand) -> Result<()> {
-    let meta_client = Arc::new(MetastoreClient::create().await?);
+    let meta_client = Arc::new(ClusterMetaClient::create_from_environment().await?);
 
     let resolver = Arc::new(
         container::ServiceResolver::create(
@@ -521,7 +532,7 @@ async fn run_start_job(cmd: StartJobCommand) -> Result<()> {
 }
 
 async fn start_job_impl(
-    meta_client: Arc<MetastoreClient>,
+    meta_client: Arc<ClusterMetaClient>,
     manager: &ManagerStub,
     job_spec: &JobSpec,
     request_context: &rpc::ClientRequestContext,

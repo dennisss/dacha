@@ -19,6 +19,7 @@ Metastore schema:
 
 */
 
+pub mod client;
 pub mod constants;
 
 use std::collections::HashSet;

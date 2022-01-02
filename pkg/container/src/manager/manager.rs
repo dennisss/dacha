@@ -11,6 +11,7 @@ use datastore::meta::client::MetastoreTransaction;
 use protobuf::Message;
 use rpc_util::{AddReflection, NamedPortArg};
 
+use crate::meta::client::ClusterMetaClient;
 use crate::meta::GetClusterMetaTable;
 use crate::proto::blob::*;
 use crate::proto::job::*;
@@ -72,13 +73,12 @@ const JOB_NAME_MAX_SIZE: usize = 180;
 const JOB_NAME_MAX_LABEL_LENGTH: usize = 63;
 
 pub struct Manager {
-    meta_client: MetastoreClient,
+    meta_client: Arc<ClusterMetaClient>,
 }
 
 impl Manager {
-    pub async fn create() -> Result<Self> {
-        let meta_client = MetastoreClient::create().await?;
-        Ok(Self { meta_client })
+    pub fn new(meta_client: Arc<ClusterMetaClient>) -> Self {
+        Self { meta_client }
     }
 
     fn is_valid_job_name(name: &str) -> bool {

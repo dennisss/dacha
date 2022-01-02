@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use common::errors::*;
 use rpc_util::{AddReflection, NamedPortArg};
 
 use crate::manager::manager::Manager;
+use crate::meta::client::ClusterMetaClient;
 use crate::proto::manager::*;
 use crate::proto::task::*;
 
@@ -15,10 +18,12 @@ pub fn main() -> Result<()> {
     common::async_std::task::block_on(main_with_port(args.port.value()))
 }
 
-pub async fn main_with_port(port: u16) -> Result<()> {
+async fn main_with_port(port: u16) -> Result<()> {
     // TODO: In order to shut down, the manager should release any locks it has.
 
-    let manager = Manager::create().await?;
+    let client = Arc::new(ClusterMetaClient::create_from_environment().await?);
+
+    let manager = Manager::new(client);
     let mut server = rpc::Http2Server::new();
     server.add_service(manager.into_service())?;
     server.add_reflection()?;

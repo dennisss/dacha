@@ -236,6 +236,7 @@ async fn main_task() -> Result<()> {
         seed_list,
         state_machine: state_machine.clone(),
         last_applied,
+        route_labels: vec![],
     })
     .await?;
 

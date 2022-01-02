@@ -14,6 +14,7 @@ use common::fs::DirLock;
 use common::task::ChildTask;
 use protobuf::Message;
 use raft::atomic::{BlobFile, BlobFileBuilder};
+use raft::proto::routing::RouteLabel;
 use raft::StateMachine;
 use rpc_util::AddReflection;
 use sstable::db::{SnapshotIteratorOptions, WriteBatch};
@@ -65,6 +66,8 @@ pub struct MetastoreConfig {
     /// Server port of the RPC service exposed to users of the store.
     /// This will also be used for internal communication between servers.
     pub service_port: u16,
+
+    pub route_labels: Vec<RouteLabel>,
 }
 
 #[derive(Clone)]
@@ -330,6 +333,7 @@ pub async fn run(config: &MetastoreConfig) -> Result<()> {
         seed_list: vec![], // Will just find everyone via multi-cast
         state_machine: state_machine.clone(),
         last_applied: state_machine.last_flushed().await,
+        route_labels: config.route_labels.clone(),
     })
     .await?;
 

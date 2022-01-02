@@ -3,6 +3,7 @@
 Provides a standard interface for calling methods on a server. This is currently built to be
 compatible with the gRPC over HTTP2 protocol.
 
+Error codes returned are compatible with: https://grpc.github.io/grpc/core/md_doc_statuscodes.html
 
 
 ## TODOs

@@ -16,6 +16,7 @@ cross build --target=armv7-unknown-linux-gnueabihf --bin cluster_node --release
 
 */
 
+#[macro_use]
 extern crate common;
 #[macro_use]
 extern crate macros;
@@ -25,12 +26,17 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-use common::async_std::task;
+use common::async_std::{fs, task};
 use common::{errors::*, project_dir};
+use protobuf::text::{parse_text_proto, ParseTextProto};
+
+use container::NodeConfig;
 
 #[derive(Args)]
 struct Args {
     addr: String,
+
+    zone: String,
 }
 
 fn run_ssh(addr: &str, command: &str) -> Result<String> {
@@ -77,12 +83,19 @@ fn run_scp(source: &str, destination: &str) -> Result<()> {
     Ok(())
 }
 
-fn copy_repo_file(addr: &str, relative_path: &str) -> Result<()> {
-    println!("Copying //{}", relative_path);
+fn copy_repo_file<P: AsRef<Path>>(addr: &str, relative_path: P) -> Result<()> {
+    let source_path = {
+        let p = relative_path.as_ref();
+        if p.is_absolute() {
+            p.to_owned()
+        } else {
+            project_dir().join(p)
+        }
+    };
+
+    println!("Copying {:?}", source_path);
 
     let repo_dir = "/opt/dacha/bundle";
-
-    let source_path = project_dir().join(relative_path);
 
     let target_path = Path::new(repo_dir).join(relative_path);
 
@@ -108,6 +121,8 @@ fn download_file(addr: &str, path: &str, output_path: &str) -> Result<()> {
 
 async fn run() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
+
+    println!("Bootstrapping node at {} in zone {}", args.addr, args.zone);
 
     println!("Stopping old node");
     // This is currently a required step in order to be able to overwrite the in-use
@@ -138,7 +153,24 @@ async fn run() -> Result<()> {
 
     // TODO: Need to re-build this (and use a platform independent name).
     copy_repo_file(&args.addr, "built/pkg/container/cluster_node.armv7")?;
-    copy_repo_file(&args.addr, "pkg/container/config/node.textproto")?;
+
+    let mut node_config = {
+        let s = fs::read_to_string(project_path!("pkg/container/config/node.textproto")).await?;
+        NodeConfig::parse_text(&s)?
+    };
+
+    node_config.set_zone(args.zone);
+
+    let temp_dir = common::temp::TempDir::create()?;
+    let node_config_path = temp_dir.path().join("node.textproto");
+    fs::write(
+        &node_config_path,
+        protobuf::text::serialize_text_proto(&node_config),
+    )
+    .await?;
+
+    // TODO: Generate this with the correct zone.
+    copy_repo_file(&args.addr, &node_config_path)?;
 
     copy_repo_file(&args.addr, "pkg/container/config/node.service")?;
 

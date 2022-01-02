@@ -25,6 +25,9 @@ message NodeConfig {
     // Range of network ports which may be used by tasks running on this node.
     // TODO: Have the node runtime validate that we only receive tasks with ports in this range. 
     PortRange allocatable_port_range = 6;
+
+    // When running in a managed cluster this field is required.
+    string zone = 7;
 }
 
 // Represents all port numbers in the range [start, end).

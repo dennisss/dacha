@@ -26,7 +26,7 @@ async fn increment_counter(txn: &dyn MetastoreClientInterface) -> Result<()> {
 }
 
 async fn run() -> Result<()> {
-    let client = MetastoreClient::create().await?;
+    let client = MetastoreClient::create(&[]).await?;
 
     {
         let txn1 = client.new_transaction().await?;

@@ -7,6 +7,7 @@ use common::async_fn::AsyncFn1;
 use common::async_std::sync::{Mutex, MutexGuard};
 use common::bytes::Bytes;
 use common::{errors::*, task::ChildTask};
+use raft::proto::routing::RouteLabel;
 use sstable::table::KeyComparator;
 
 use crate::meta::key_utils::*;
@@ -30,8 +31,8 @@ impl MetastoreClient {
     /// Creates a new client instance.
     ///
     /// The store servers will automatically be discovered.
-    pub async fn create() -> Result<Self> {
-        let route_store = raft::RouteStore::new();
+    pub async fn create(labels: &[RouteLabel]) -> Result<Self> {
+        let route_store = raft::RouteStore::new(labels);
 
         let discovery = raft::DiscoveryMulticast::create(route_store.clone()).await?;
 

@@ -33,6 +33,21 @@ message Route {
     //
     // REQUIRED
     google.protobuf.Timestamp last_used = 5;
+
+    // Application specific labels that describe the server pointed to by this route.
+    // These can be used as selectors for finding specific servers in a network.
+    //
+    // NOTE: Regardless of the labels associated with a route, all distinct servers in a network
+    // MUST have unique (group_id, server_id) pairs.
+    repeated RouteLabel labels = 6;
+}
+
+message RouteLabel {
+    string value = 1;
+
+    // By default, if a label is present on a route, then the client MUST explicitly select it in order to use a route.
+    // If this is true, then the client doesn't need to understand this label to use this route.
+    bool optional = 2;
 }
 
 // Thin-serializable state of the server

@@ -17,6 +17,7 @@ extern crate google;
 mod channel;
 mod client_types;
 mod constants;
+mod local_channel;
 mod message;
 mod metadata;
 mod pipe;
@@ -26,11 +27,11 @@ mod service;
 mod status;
 
 pub use channel::{Channel, Http2Channel};
-pub use server::Http2Server;
-pub use service::Service;
-
 pub use client_types::*;
+pub use local_channel::LocalChannel;
 pub use metadata::Metadata;
 pub use pipe::pipe;
+pub use server::Http2Server;
 pub use server_types::*;
+pub use service::Service;
 pub use status::*;

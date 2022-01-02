@@ -51,6 +51,8 @@ pub struct NodeOptions<R> {
     /// Index of the last log entry applied to the state machine. For a newly
     /// created state machine, this would be zero.
     pub last_applied: LogIndex,
+
+    pub route_labels: Vec<RouteLabel>,
     /* pub task_bundle: &'a mut TaskResultBundle, */
 
     /* /// NOTE: A single RPC server can only have one Node instance attached to
@@ -129,7 +131,7 @@ impl<R: 'static + Send> Node<R> {
     // Creates a new Node instance, attachs it to the server, and starts up
     // background tasks.
     pub async fn create(options: NodeOptions<R>) -> Result<Node<R>> {
-        let route_store = RouteStore::new();
+        let route_store = RouteStore::new(&options.route_labels);
 
         let mut task_bundle = TaskResultBundle::new();
 

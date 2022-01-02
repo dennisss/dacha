@@ -24,14 +24,18 @@ struct State {
     /// from this list.
     routes: HashMap<(GroupId, ServerId), Route>,
     local_route: Option<Route>,
+
+    /// NOTE: These never change after the constructor.
+    labels: Vec<RouteLabel>,
 }
 
 impl RouteStore {
-    pub fn new() -> Self {
+    pub fn new(labels: &[RouteLabel]) -> Self {
         Self {
             state: Arc::new(Condvar::new(State {
                 routes: HashMap::new(),
                 local_route: None,
+                labels: labels.to_vec(),
             })),
         }
     }
@@ -48,11 +52,46 @@ pub struct RouteStoreGuard<'a> {
 }
 
 impl<'a> RouteStoreGuard<'a> {
-    pub fn set_local_route(&mut self, route: Route) {
+    pub fn set_local_route(&mut self, mut route: Route) {
         self.state
             .routes
             .remove(&(route.group_id(), route.server_id()));
+
+        for label in self.state.labels.iter().cloned() {
+            route.add_labels(label);
+        }
+
         self.state.local_route = Some(route);
+    }
+
+    fn should_select_route(&self, route: &Route) -> bool {
+        for remote_label in route.labels() {
+            if remote_label.optional() {
+                continue;
+            }
+
+            let mut found = false;
+            for local_label in &self.state.labels {
+                if local_label.value() == remote_label.value() {
+                    found = true;
+                    break;
+                }
+            }
+
+            if !found {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn selected_routes(&self) -> impl Iterator<Item = &Route> {
+        // let this = &*self;
+        self.state
+            .routes
+            .values()
+            .filter(move |r| self.should_select_route(*r))
     }
 
     /// Looks up routing information for connecting to another server in the
@@ -63,13 +102,16 @@ impl<'a> RouteStoreGuard<'a> {
 
         // TODO: Mark the route as recently used.
 
-        self.state.routes.get(&(group_id, server_id))
+        self.state
+            .routes
+            .get(&(group_id, server_id))
+            .filter(|r| self.should_select_route(*r))
     }
 
     pub fn remote_groups(&self) -> HashSet<GroupId> {
         let mut groups = HashSet::new();
-        for (group_id, _) in self.state.routes.keys().cloned() {
-            groups.insert(group_id);
+        for route in self.selected_routes() {
+            groups.insert(route.group_id());
         }
 
         groups
@@ -77,12 +119,12 @@ impl<'a> RouteStoreGuard<'a> {
 
     pub fn remote_servers(&self, group_id: GroupId) -> HashSet<ServerId> {
         let mut servers = HashSet::new();
-        for (cur_group_id, server_id) in self.state.routes.keys().cloned() {
-            if cur_group_id != group_id {
+        for route in self.selected_routes() {
+            if route.group_id() != group_id {
                 continue;
             }
 
-            servers.insert(server_id);
+            servers.insert(route.server_id());
         }
 
         servers

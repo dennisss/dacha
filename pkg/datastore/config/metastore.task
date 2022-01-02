@@ -7,6 +7,7 @@ args: [
     "--port=rpc",
     "--init_port=rpc",
     "--dir=/volumes/data"
+    # NOTE: An additional --labels flag is added dynamically by the bootstrapping script.
 ]
 
 ports {

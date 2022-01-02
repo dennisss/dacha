@@ -6,6 +6,7 @@
 /// common::args::init(&[&my_bool, &my_string])?;
 ///
 /// my_bool.value()
+pub mod list;
 
 #[cfg(feature = "alloc")]
 use alloc::string::String;

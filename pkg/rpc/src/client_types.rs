@@ -58,7 +58,7 @@ ClientStreaming
 
 /// Used by an RPC client to specify how a single RPC should be sent and what
 /// metadata should be sent along with the RPC.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ClientRequestContext {
     pub metadata: Metadata,
     pub idempotent: bool,

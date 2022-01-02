@@ -49,7 +49,6 @@ mod runtime;
 pub mod service;
 
 pub use manager::main::main as manager_main;
-pub use manager::main::main_with_port as manager_main_with_port;
 pub use node::main::main as node_main;
 pub use proto::blob::*;
 pub use proto::config::*;
@@ -57,6 +56,7 @@ pub use proto::job::*;
 pub use proto::log::*;
 pub use proto::manager::*;
 pub use proto::meta::*;
+pub use proto::node::*;
 pub use proto::node_service::*;
 pub use proto::task::*;
 pub use runtime::ContainerRuntime;

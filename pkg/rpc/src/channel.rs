@@ -159,10 +159,7 @@ impl Http2Channel {
         request_context: &ClientRequestContext,
         request_receiver: channel::Receiver<Result<Option<Bytes>>>,
     ) -> Result<ClientStreamingResponse<()>> {
-        let body = Box::new(RequestBody {
-            request_receiver,
-            remaining_bytes: Bytes::new(),
-        });
+        let body = Box::new(MessageRequestBody::new(request_receiver));
 
         // TODO: Use GET for methods known to be idempotnet.
         let mut request = http::RequestBuilder::new()
@@ -212,14 +209,25 @@ impl Channel for Http2Channel {
     }
 }
 
-// TODO: For the case of a unary RPC, this should be optimized to be retryable.
-struct RequestBody {
+/// http::Body for serializing client requests are separate message frames.
+///
+/// TODO: For the case of a unary RPC, this should be optimized to be retryable.
+pub(crate) struct MessageRequestBody {
     request_receiver: channel::Receiver<Result<Option<Bytes>>>,
     remaining_bytes: Bytes,
 }
 
+impl MessageRequestBody {
+    pub fn new(request_receiver: channel::Receiver<Result<Option<Bytes>>>) -> Self {
+        Self {
+            request_receiver,
+            remaining_bytes: Bytes::new(),
+        }
+    }
+}
+
 #[async_trait]
-impl http::Body for RequestBody {
+impl http::Body for MessageRequestBody {
     fn len(&self) -> Option<usize> {
         None
     }
@@ -229,7 +237,7 @@ impl http::Body for RequestBody {
 }
 
 #[async_trait]
-impl Readable for RequestBody {
+impl Readable for MessageRequestBody {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         loop {
             if !self.remaining_bytes.is_empty() {
