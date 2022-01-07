@@ -176,6 +176,8 @@ impl Metastore {
                 res.entry_mut().set_deleted(true);
             }
 
+            res.entry_mut().set_sequence(entry.sequence);
+
             response.send(res).await?;
         }
 
@@ -229,7 +231,7 @@ impl Metastore {
     async fn watch_impl<'a>(
         &self,
         request: rpc::ServerRequest<WatchRequest>,
-        response: &mut rpc::ServerStreamResponse<'a, KeyValueEntry>,
+        response: &mut rpc::ServerStreamResponse<'a, WatchResponse>,
     ) -> Result<()> {
         let client_id = Self::get_client_id(&request)?;
 
@@ -245,10 +247,11 @@ impl Metastore {
         response.send_head().await?;
 
         // TODO: Must translate back to user keys.
+        // XXX: ^ Yes.
 
         loop {
-            let kv = registration.recv().await?;
-            response.send(kv).await?;
+            let res = registration.recv().await?;
+            response.send(res).await?;
         }
     }
 
@@ -308,7 +311,7 @@ impl KeyValueStoreService for Metastore {
     async fn Watch(
         &self,
         request: rpc::ServerRequest<WatchRequest>,
-        response: &mut rpc::ServerStreamResponse<KeyValueEntry>,
+        response: &mut rpc::ServerStreamResponse<WatchResponse>,
     ) -> Result<()> {
         self.watch_impl(request, response).await
     }

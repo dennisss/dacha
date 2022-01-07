@@ -6,7 +6,7 @@ use common::async_std::task;
 use common::bytes::Bytes;
 use common::errors::*;
 
-use crate::proto::key_value::KeyValueEntry;
+use crate::proto::key_value::WatchResponse;
 
 pub struct Watchers {
     state: Arc<Mutex<WatchersState>>,
@@ -23,7 +23,7 @@ struct WatcherEntry {
     key_prefix: Bytes,
     id: usize,
     // client_id: String,
-    sender: channel::Sender<KeyValueEntry>,
+    sender: channel::Sender<WatchResponse>,
 }
 
 impl Watchers {
@@ -60,16 +60,20 @@ impl Watchers {
         }
     }
 
-    pub async fn broadcast(&self, entry: &KeyValueEntry) {
+    // TODO: Call this.
+    pub async fn broadcast(&self, change: &WatchResponse) {
         let state = self.state.lock().await;
         for watcher in &state.prefix_watchers {
-            // if &watcher.client_id == client_id {
-            //     continue;
-            // }
+            let mut filtered_response = WatchResponse::default();
+            for entry in change.entries() {
+                if entry.key().starts_with(watcher.key_prefix.as_ref()) {
+                    filtered_response.add_entries(entry.clone());
+                }
+            }
 
-            if entry.key().starts_with(watcher.key_prefix.as_ref()) {
+            if !filtered_response.entries().is_empty() {
                 // NOTE: To prevent blocking the write path, this must use an unbounded channel.
-                let _ = watcher.sender.send(entry.clone()).await;
+                let _ = watcher.sender.send(filtered_response).await;
             }
         }
     }
@@ -78,7 +82,7 @@ impl Watchers {
 pub struct WatcherRegistration {
     state: Arc<Mutex<WatchersState>>,
     id: usize,
-    receiver: channel::Receiver<KeyValueEntry>,
+    receiver: channel::Receiver<WatchResponse>,
 }
 
 impl Drop for WatcherRegistration {
@@ -98,7 +102,7 @@ impl Drop for WatcherRegistration {
 }
 
 impl WatcherRegistration {
-    pub async fn recv(&self) -> Result<KeyValueEntry> {
+    pub async fn recv(&self) -> Result<WatchResponse> {
         let v = self.receiver.recv().await?;
         Ok(v)
     }

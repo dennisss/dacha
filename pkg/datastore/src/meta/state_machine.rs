@@ -10,6 +10,7 @@ use sstable::iterable::Iterable;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
 
 use crate::meta::watchers::*;
+use crate::proto::key_value::{KeyValueEntry, WatchResponse};
 use crate::proto::meta::*;
 
 /*
@@ -110,17 +111,27 @@ impl raft::StateMachine<()> for EmbeddedDBStateMachine {
         write.set_sequence(index.value());
         self.db.write(&mut write).await?;
 
-        // TODO: Emit the entire transaction to the watcher at once.
-        // This would help with maintaining consistencyon the reader side.
+        // Send the change to watchers.
+        // TODO: This can be parrallelized with future writes.
+        let mut change = WatchResponse::default();
         for res in write.iter()? {
             let write = res?;
+            let mut entry = KeyValueEntry::default();
+            entry.set_sequence(index.value());
             match write {
-                Write::Deletion { key } => {}
-                Write::Value { key, value } => {}
+                Write::Deletion { key } => {
+                    entry.set_key(key);
+                    entry.set_deleted(true);
+                }
+                Write::Value { key, value } => {
+                    entry.set_key(key);
+                    entry.set_value(value);
+                }
             }
-        }
 
-        // TODO:
+            change.add_entries(entry);
+        }
+        self.watchers.broadcast(&change).await;
 
         Ok(())
     }

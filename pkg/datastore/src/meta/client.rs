@@ -459,7 +459,7 @@ impl<'a> MetastoreTransaction<'a> {
 }
 
 pub struct WatchStream {
-    response: rpc::ClientStreamingResponse<KeyValueEntry>,
+    response: rpc::ClientStreamingResponse<WatchResponse>,
 }
 
 //

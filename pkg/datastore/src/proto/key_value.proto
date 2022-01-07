@@ -19,12 +19,15 @@ service KeyValueStore {
     rpc Execute (ExecuteRequest) returns (ExecuteResponse);
 
     // Monitors a key prefix for changes returning all changes that occured since the server
-    // received this request. 
+    // received this request.
     //
-    // Notes:
-    // - A client should wait for the initial response head metadata to be returned to ensure
-    //   that the 
-    rpc Watch (WatchRequest) returns (stream KeyValueEntry);
+    // NOTE: A client should wait for the initial response head metadata to know that the server
+    // received the request.
+    //
+    // Each returned WatchResponse proto will represent a whole number of transactions (a
+    // transaction will not be split across multiple WatchResponse responses), but for each
+    // transaction, only changes matching the key criteria in the WatchRequest will be returned.
+    rpc Watch (WatchRequest) returns (stream WatchResponse);
 }
 
 message SnapshotRequest {
@@ -64,6 +67,10 @@ message KeyValueEntry {
 
     // When returned by the Watch() method, this is true to indicate that this key was deleted.
     bool deleted = 3;
+
+    // Read only sequence number associated with the current value of this key.
+    // This monotonically increases whenever the key is modified but is NOT guranteed to be sequential.
+    uint64 sequence = 4;
 
     // TODO: Also include metadata about the key.
 }
@@ -113,4 +120,8 @@ enum TransactionErrorCode {
 
 message WatchRequest {
     bytes key_prefix = 1;
+}
+
+message WatchResponse {
+    repeated KeyValueEntry entries = 1;
 }
