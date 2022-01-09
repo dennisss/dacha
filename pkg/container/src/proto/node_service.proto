@@ -28,13 +28,13 @@ message TaskProto {
 }
 
 enum TaskStateProto {
-    UNKOWN = 0;
+    UNKNOWN = 0;
     PENDING = 1;
     RUNNING = 2;
     STOPPING = 3;
     FORCE_STOPPING = 4;
     RESTART_BACKOFF = 5;
-    TERMINAL = 6;
+    DONE = 6;
 }
 
 message StartTaskRequest {

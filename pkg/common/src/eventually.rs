@@ -40,4 +40,8 @@ impl<T> Eventually<T> {
             value.wait(()).await;
         }
     }
+
+    pub async fn has_value(&self) -> bool {
+        self.value.lock().await.is_some()
+    }
 }

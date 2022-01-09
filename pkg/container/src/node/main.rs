@@ -87,6 +87,8 @@ fn find_container_ids_range(id_map: &[IdMapping]) -> Result<IdRange> {
     Ok(range)
 }
 
+// TODO: NEed to forward ctrl-c and have graceful shutdown.
+
 pub fn main() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 

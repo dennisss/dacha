@@ -329,6 +329,8 @@ pub async fn run(config: &MetastoreConfig) -> Result<()> {
 
     let mut rpc_server = rpc::Http2Server::new();
 
+    rpc_server.set_shutdown_token(common::shutdown::new_shutdown_token());
+
     let mut node = raft::Node::create(raft::NodeOptions {
         dir,
         init_port: config.init_port,

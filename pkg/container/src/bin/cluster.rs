@@ -27,11 +27,11 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::{collections::HashSet, sync::Arc};
 
-use async_std::task::JoinHandle;
 use builder::proto::bundle::{BlobFormat, BundleSpec};
 use common::async_std::fs;
 use common::async_std::io::ReadExt;
 use common::async_std::task;
+use common::async_std::task::JoinHandle;
 use common::errors::*;
 use common::failure::ResultExt;
 use common::futures::AsyncWriteExt;
@@ -39,6 +39,7 @@ use common::task::ChildTask;
 use container::manager::Manager;
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
+use crypto::sip::SipHasher;
 use datastore::meta::client::MetastoreClientInterface;
 use nix::{
     sys::termios::{tcgetattr, tcsetattr, ControlFlags, InputFlags, LocalFlags, OutputFlags},
@@ -55,8 +56,8 @@ use container::{
     ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest,
 };
 use container::{
-    BlobStoreStub, ContainerNodeStub, JobMetadata, NodeMetadata_State, TaskMetadata,
-    TaskMetadata_State, TaskSpec, TaskSpec_Port, TaskSpec_Volume, WriteInputRequest, ZoneMetadata,
+    BlobStoreStub, ContainerNodeStub, JobMetadata, NodeMetadata_State, TaskMetadata, TaskSpec,
+    TaskSpec_Port, TaskSpec_Volume, WriteInputRequest, ZoneMetadata,
 };
 
 #[derive(Args)]
@@ -235,27 +236,60 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     println!("Bootstrapping cluster with node {:08x}", node_id);
     println!("Zone: {}", node_meta.zone());
 
+    // TODO: We also need to bootstrap the BlobMetadata that is used the metastore.
+
     // TODO: Need to build any build volumes to blobs.
-    let mut meta_task_spec = TaskSpec::parse_text(
-        &fs::read_to_string(project_path!("pkg/datastore/config/metastore.task")).await?,
+    let mut meta_job_spec = JobSpec::parse_text(
+        &fs::read_to_string(project_path!("pkg/container/config/metastore.job")).await?,
     )?;
-    meta_task_spec.add_args(format!(
+
+    meta_job_spec.task_mut().add_args(format!(
         "--labels={}={}",
         container::meta::constants::ZONE_ENV_VAR,
         node_meta.zone()
     ));
 
-    // TODO: Assign a port to the spec.
+    const METASTORE_INITIAL_PORT: usize = 30001;
 
-    // Will build the binary bundle and start the single task on the node.
-    start_task_impl(&node, &mut meta_task_spec, &request_context).await?;
+    // NOTE: The assumption is that if the metastore job is later updated, it is
+    // never assigned a new revision <= 1 by the manager.
+    const METASTORE_INITIAL_REVISION: u64 = 1;
 
-    // TODO: Call bootstrap on the metastore instance (main challenge is to ensure
-    // that only one metastore group exists if we need to retry bootstrapping).
+    // NOTE: This is kind of hacky as typically the JobSpec should not contain a
+    // TaskSpec for ports assigned, or task names asssigned, but it's simpler to
+    // assign these for the first metastore instance. This will all be cleaned up
+    // later if the meta store is scaled up.
+    //
+    // TODO: Try to re-use the manager code for doing this stuff.
+    meta_job_spec.task_mut().ports_mut()[0].set_number(METASTORE_INITIAL_PORT as u32);
+    // While we usually generate a random id, the first replica will have a
+    // deterministic id so that it's easier to retry the bootstrap command if it
+    // partially fails.
+    let meta_job_name = meta_job_spec.name().to_string();
+    meta_job_spec
+        .task_mut()
+        .set_name(format!("{}.{:08x}", meta_job_name, {
+            let mut hasher = SipHasher::default_rounds_with_key_halves(0, 0);
+            hasher.update(node_meta.zone().as_bytes());
+            hasher.finish_u64()
+        }));
+
+    // NOTE: This will re-write any build_target references in the
+    // meta_job_spec.task_mut() to blob references so that we can store it in
+    // the meta store later.
+    start_task_impl(
+        &node,
+        meta_job_spec.task_mut(),
+        Some(METASTORE_INITIAL_REVISION),
+        &request_context,
+    )
+    .await?;
 
     {
+        println!("Bootstrapping metastore");
+
         let mut node_uri = http::uri::Uri::from_str(&format!("http://{}", cmd.node_addr))?;
-        node_uri.authority.as_mut().unwrap().port = Some(30001);
+        node_uri.authority.as_mut().unwrap().port = Some(METASTORE_INITIAL_PORT as u16);
 
         let bootstrap_client = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
             &node_uri,
@@ -265,14 +299,28 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
 
         // TODO: Ignore method not found errors (which would imply that we are already
         // bootstrapped).
-        stub.Bootstrap(&request_context, &raft::BootstrapRequest::default())
+        if let Err(e) = stub
+            .Bootstrap(&request_context, &raft::BootstrapRequest::default())
             .await
-            .result?;
+            .result
+        {
+            if let Some(status) = e.downcast_ref::<rpc::Status>() {
+                if status.code() == rpc::StatusCode::Unimplemented {
+                    // Likely the method doesn't exist so the metastore is probably already
+                    // bootstrapped.
+                    println!("=> Already bootstrapped");
+                } else {
+                    return Err(e);
+                }
+            } else {
+                return Err(e);
+            }
+        } else {
+            println!("=> Done!");
+        }
     }
 
     let meta_client = Arc::new(ClusterMetaClient::create(node_meta.zone()).await?);
-
-    // Wait for the node to register itself
 
     println!("Waiting for node to register itself:");
     loop {
@@ -290,17 +338,15 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
 
     // TODO: We should instead infer the zone from some flag on the node.
     let mut zone_record = ZoneMetadata::default();
-    zone_record.set_name("home");
+    zone_record.set_name(node_meta.zone());
     meta_client
         .cluster_table::<ZoneMetadata>()
         .put(&zone_record)
         .await?;
 
     let mut meta_job_record = JobMetadata::default();
-    meta_job_record.spec_mut().set_name("system.meta");
-    meta_job_record.spec_mut().set_replicas(1u32);
-    meta_job_record.spec_mut().set_task(meta_task_spec.clone());
-    meta_job_record.set_task_revision(0u64);
+    meta_job_record.set_spec(meta_job_spec);
+    meta_job_record.set_task_revision(METASTORE_INITIAL_REVISION);
 
     meta_client
         .cluster_table::<JobMetadata>()
@@ -308,10 +354,9 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
         .await?;
 
     let mut meta_task_record = TaskMetadata::default();
-    meta_task_record.set_spec(meta_task_spec.clone());
+    meta_task_record.set_spec(meta_job_record.spec().task().clone());
     meta_task_record.set_assigned_node(node_id);
-    meta_task_record.set_revision(0u64);
-    meta_task_record.set_state(TaskMetadata_State::STARTING);
+    meta_task_record.set_revision(meta_job_record.task_revision());
     meta_client
         .cluster_table::<TaskMetadata>()
         .put(&meta_task_record)
@@ -330,7 +375,7 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
 
         node_meta.set_state(NodeMetadata_State::ACTIVE);
 
-        for port in meta_task_spec.ports() {
+        for port in meta_task_record.spec().ports() {
             node_meta.allocated_ports_mut().insert(port.number());
         }
 
@@ -450,10 +495,11 @@ async fn run_start_task(cmd: StartTaskCommand) -> Result<()> {
     let mut task_spec = TaskSpec::default();
     {
         let data = fs::read_to_string(&cmd.task_spec_path).await?;
-        protobuf::text::parse_text_proto(&data, &mut task_spec)?;
+        protobuf::text::parse_text_proto(&data, &mut task_spec)
+            .with_context(|e| format!("While reading {}: {}", cmd.task_spec_path, e))?;
     }
 
-    start_task_impl(&node, &mut task_spec, &request_context).await?;
+    start_task_impl(&node, &mut task_spec, None, &request_context).await?;
 
     // TODO: Now wait for the task to enter the Running state.
     // ^ this is required to ensure that we don't fetch logs for a past iteration of
@@ -614,6 +660,7 @@ async fn start_job_impl(
 async fn start_task_impl(
     node: &NodeStubs,
     task_spec: &mut TaskSpec,
+    task_revision: Option<u64>,
     request_context: &rpc::ClientRequestContext,
 ) -> Result<()> {
     // Look up all existing blobs on the node so that we can skip uploading them.
@@ -664,6 +711,9 @@ async fn start_task_impl(
 
     let mut start_request = container::StartTaskRequest::default();
     start_request.set_spec(task_spec.clone());
+    if let Some(rev) = task_revision {
+        start_request.set_revision(rev);
+    }
 
     // start_request.task_spec_mut().set_name("shell");
     // start_request.task_spec_mut().add_args("/bin/bash".into());

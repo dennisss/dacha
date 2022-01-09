@@ -40,9 +40,11 @@ message NodeMetadata {
         UNKNOWN = 0;
         
         // This is a brand new node this has just joined the cluster.
-        // This node won't be used for anything until it's state is transitioned externally to active.
+        // In this state, the node won't start/stop any tasks assigned to it.
         NEW = 1;
-        
+
+        // This is a regular node and will start any tasks newly assigned to it and stop any tasks
+        // which aren't assigned to it in the metastore.
         ACTIVE = 2;
         
         DRAINING = 3;
@@ -77,7 +79,7 @@ message JobMetadata {
     uint64 task_revision = 2;
 }
 
-// 
+// Defines the intent for a single instance of a Task which we want to run on some specific node.
 message TaskMetadata {
     // Spec used to run this task.
     // This should be mostly the same as the spec in the JobSpec but also includes a resolved
@@ -88,51 +90,65 @@ message TaskMetadata {
 
     // Id of the node which this task is running on.
     //
+    // NOTE: This field is immutable. Moving a task to another node requires creating a new name.
+    //
     // REQUIRED
     uint64 assigned_node = 2;
 
-    // Current intended state of the task.
+    // If true, this task should be stopped by the node and not started again.
     //
-    // REQUIRED
-    enum State {
-        UNKNOWN = 0;
-
-        // This task is actively being started on the assigned node.
-        STARTING = 1;
-        
-        // This task is running on the assigned node and has passed readiness checks.
-        // This is the only state in which it is ok for users to send traffic to this task.
-        READY = 2;
-        
-        // This task may still be running but should be stopped soon by by node.
-        STOPPING = 3;
-
-        // 
-        STOPPED = 4;
-    }
-    State state = 3;
+    // Once drain == true, this TaskMetadata proto is guranteed to not change again and will be
+    // deleted once the node markes the task is DONE in the TaskStateMetadata.
+    //
+    // OPTIONAL
+    bool drain = 3;
 
     // Revision of this task.
     // When this is equal to the corresponding JobMetadata::task_revision, this task doesn't need
     // to be updated.
     uint64 revision = 4;
+}
 
+// Current high level progress of running a task specified in a corresponding TaskMetadata entry.
+//
+// While the TaskMetadata entries are updated by Manager jobs, this proto is updated by the Nodes.
+// A Node must ONLY update the TaskStateMetadata when a TaskMetadata entry exists. 
+//
+// This is meant to be a TLDR of the current state of the task and very concise. Lower level
+// details such as the # of restarts, etc. will be stored in local node storage.
+//
+// This has the following main use-cases:
+// 1. Used by the Manager job to know when a task has been fully brought up or turned down in order
+//    to allow more tasks to be added/deleted/updated.
+// 2. Used by RPC clients to know if a task can be reached.
+//
+// TODO: Connections to the metastore should not depend on observing the readiness of the tasks.
+message TaskStateMetadata {
+    string task_name = 1;
 
-    // If true, this task has been observed to be fully started up and ready to serve client
-    // requests.
+    // Current state which the node 
     //
-    // TODO: Connections to the metastore should ideally not be dependent on this flag 
+    // NOTE: This value can only be trusted if the NodeMetadata of the assigned node has a recent
+    // last_seen time (indicating that the node hasn't died).
+    enum ReportedState {
+        UNKNOWN = 0;
+
+        // The node is currently starting or stopping this task. It can't be reliably queried.
+        UPDATING = 1;
+
+        // This task is running on the assigned node and has passed readiness checks.
+        // This is the only state in which it is ok for users to send traffic to this task.
+        READY = 2;
+
+        // The task isn't running and won't be re-started unless a new task revision is available.
+        DONE = 3;
+    }
+    ReportedState state = 2;
+
+    // The task revision at which the 'state' field is valid.
     //
-    // Transitions:
-    // - The manager will open a server streaming RPC to all nodes.
-    // - Nodes should respond whenver there is a readiness transition.
-    // - Based on HTTP2 keep alive pings, if the connection becomes unhealthy, the manager will
-    //   mark all tasks on that node as not ready.
-    //
-    // Usage:
-    // - A client may use this establish a load balanced connection to any job.
-    // - Basically, watch for task updates
-    // bool ready = 3;
+    // NOTE: If a client notices that the TaskMetadata includes a new revision, but the TaskStateMetadata shows that the task is READY at an old revision, it should stop ending traffic under the expectation that it will be updated soon.
+    uint64 task_revision = 3;
 }
 
 message BlobMetadata {

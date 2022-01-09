@@ -245,6 +245,22 @@ impl<'a> ClusterMetaTable<'a, TaskMetadata> {
     }
 }
 
+impl ClusterMetaTableValue for TaskStateMetadata {
+    type Id = str;
+
+    fn primary_key(&self) -> String {
+        Self::primary_key_from_id(self.task_name())
+    }
+
+    fn primary_key_prefix() -> &'static str {
+        "/cluster/task_state"
+    }
+
+    fn primary_key_from_id(id: &Self::Id) -> String {
+        format!("{}/{}", Self::primary_key_prefix(), id)
+    }
+}
+
 impl ClusterMetaTableValue for BlobMetadata {
     type Id = str;
 

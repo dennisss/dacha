@@ -6,6 +6,7 @@ use std::process::{Command, Stdio};
 use common::async_std::fs;
 use common::async_std::os::unix::fs::symlink;
 use common::async_std::path::{Path, PathBuf};
+use common::failure::ResultExt;
 use common::{errors::*, project_dir};
 use compression::tar::{AppendFileOptions, FileMetadataMask};
 use crypto::hasher::Hasher;
@@ -143,11 +144,12 @@ impl Builder {
             return Err(format_err!("Missing build file at: {:?}", build_file_path));
         }
 
-        let build_file_data = fs::read_to_string(build_file_path).await?;
+        let build_file_data = fs::read_to_string(&build_file_path).await?;
 
         // TODO: Cache these in the builder instance.
         let mut build_file = BuildFile::default();
-        protobuf::text::parse_text_proto(&build_file_data, &mut build_file)?;
+        protobuf::text::parse_text_proto(&build_file_data, &mut build_file)
+            .with_context(|e| format!("While parsing {:?}: {}", build_file_path, e))?;
 
         let mut targets = HashMap::new();
         for target in BuildTarget::list_all(&build_file).into_iter() {

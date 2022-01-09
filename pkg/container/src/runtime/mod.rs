@@ -444,6 +444,8 @@ impl ContainerRuntime {
         Ok(container_id)
     }
 
+    // TODO: Verify that this doesn't fail if the container has already been stopped
+    // as this may be a race condition.
     pub async fn kill_container(&self, container_id: &str, signal: Signal) -> Result<()> {
         let containers = self.containers.lock().await;
         let container = match containers.iter().find(|c| c.metadata.id() == container_id) {

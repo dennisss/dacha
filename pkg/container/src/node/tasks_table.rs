@@ -42,10 +42,10 @@ pub async fn list_tasks(db: &EmbeddedDB) -> Result<Vec<TaskMetadata>> {
     Ok(tasks)
 }
 
-pub async fn delete_task(db: &EmbeddedDB, task: &TaskMetadata) -> Result<()> {
+pub async fn delete_task(db: &EmbeddedDB, task_name: &str) -> Result<()> {
     let mut key = vec![];
     KeyEncoder::encode_varuint(TASKS_TABLE_ID, false, &mut key);
-    KeyEncoder::encode_bytes(task.spec().name().as_bytes(), &mut key);
+    KeyEncoder::encode_bytes(task_name.as_bytes(), &mut key);
 
     db.delete(&key).await
 }

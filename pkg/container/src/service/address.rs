@@ -13,16 +13,9 @@ pub struct ServiceName {
 }
 
 pub enum ServiceEntity {
-    Node {
-        id: u64,
-    },
-    Job {
-        job_name: String,
-    },
-    Task {
-        job_name: String,
-        task_index: usize, // TODO: Use a consistent integer type.
-    },
+    Node { id: u64 },
+    Job { job_name: String },
+    Task { job_name: String, task_id: String },
 }
 
 #[derive(Debug, Fail)]
@@ -30,7 +23,6 @@ pub enum ServiceParseError {
     NotClusterAddress,
     NameTooShort,
     InvalidNodeId,
-    InvalidTaskIndex,
     UnknownEntity,
 }
 
@@ -41,10 +33,7 @@ impl std::fmt::Display for ServiceParseError {
 }
 
 impl ServiceAddress {
-    pub fn parse(
-        address: &str,
-        current_zone: &str,
-    ) -> std::result::Result<Self, ServiceParseError> {
+    pub fn parse(address: &str, current_zone: &str) -> Result<Self, ServiceParseError> {
         let (raw_name, port) = address.split_once(":").unwrap_or((address, ""));
 
         let raw_name = raw_name
@@ -86,9 +75,7 @@ impl ServiceAddress {
                     return Err(ServiceParseError::NameTooShort);
                 }
 
-                let task_index = name_parts[0]
-                    .parse::<usize>()
-                    .map_err(|_| ServiceParseError::InvalidTaskIndex)?;
+                let task_id = name_parts[0].to_string();
 
                 let job_name = (&name_parts[1..])
                     .iter()
@@ -97,10 +84,7 @@ impl ServiceAddress {
                     .collect::<Vec<_>>()
                     .join(".");
 
-                ServiceEntity::Task {
-                    job_name,
-                    task_index,
-                }
+                ServiceEntity::Task { job_name, task_id }
             }
             _ => {
                 return Err(ServiceParseError::UnknownEntity);
@@ -122,6 +106,20 @@ impl ServiceAddress {
 }
 
 impl ServiceName {
+    pub fn for_task(zone: &str, task_name: &str) -> Result<Self, ServiceParseError> {
+        let (task_id, job_name) = task_name
+            .split_once(".")
+            .ok_or(ServiceParseError::NameTooShort)?;
+
+        Ok(Self {
+            zone: zone.to_string(),
+            entity: ServiceEntity::Task {
+                task_id: task_id.to_string(),
+                job_name: job_name.to_string(),
+            },
+        })
+    }
+
     pub fn to_string(&self) -> String {
         match &self.entity {
             ServiceEntity::Node { id } => {
@@ -141,13 +139,10 @@ impl ServiceName {
                     NAME_SUFFIX
                 )
             }
-            ServiceEntity::Task {
-                job_name,
-                task_index,
-            } => {
+            ServiceEntity::Task { job_name, task_id } => {
                 format!(
                     "{}.{}.task{}{}",
-                    task_index,
+                    task_id,
                     job_name
                         .split('.')
                         .collect::<Vec<_>>()

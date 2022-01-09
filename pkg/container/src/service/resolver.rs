@@ -20,9 +20,9 @@ use crate::service::address::*;
 /// cluster.
 ///
 /// We accept the following formats of addresses:
-///               "[node_id].node.[zone].cluster.internal"
-/// "[task_index].[job_name].task.[zone].cluster.internal:[port_name]"
-///              "[job_name] .job.[zone].cluster.internal:[port_name]"
+///           "[node_id].node.[zone].cluster.internal"
+/// "[task_id].[job_name].task.[zone].cluster.internal:[port_name]"
+///           "[job_name] .job.[zone].cluster.internal:[port_name]"
 ///
 /// With the following definitions for the above parameters:
 /// - "[zone]" : Name of the cluster from which to look up objects or a special
@@ -124,27 +124,20 @@ impl ServiceResolver {
                     .await?;
 
                 for task in tasks {
-                    if let Some(endpoint) =
-                        Self::get_task_endpoint(&shared, job_name.as_str(), &task).await?
-                    {
+                    if let Some(endpoint) = Self::get_task_endpoint(&shared, &task).await? {
                         endpoints.push(endpoint);
                     }
                 }
             }
-            ServiceEntity::Task {
-                job_name,
-                task_index,
-            } => {
+            ServiceEntity::Task { job_name, task_id } => {
                 let task = shared
                     .meta_client
                     .cluster_table::<TaskMetadata>()
-                    .get(&format!("{}.{}", job_name, task_index))
+                    .get(&format!("{}.{}", job_name, task_id))
                     .await?
                     .ok_or_else(|| err_msg("Failed to find task"))?;
 
-                if let Some(endpoint) =
-                    Self::get_task_endpoint(&shared, job_name.as_str(), &task).await?
-                {
+                if let Some(endpoint) = Self::get_task_endpoint(&shared, &task).await? {
                     endpoints.push(endpoint);
                 }
             }
@@ -171,16 +164,15 @@ impl ServiceResolver {
 
     async fn get_task_endpoint(
         shared: &Shared,
-        job_name: &str,
         task: &TaskMetadata,
     ) -> Result<Option<http::ResolvedEndpoint>> {
-        let task_index = {
+        let task_id = {
             task.spec()
                 .name()
                 .split('.')
                 .last()
                 .ok_or_else(|| err_msg("Missing last label in task name"))?
-                .parse::<usize>()?
+                .to_string()
         };
 
         let node_address = Self::get_node_addr(shared, task.assigned_node()).await?;
@@ -206,14 +198,9 @@ impl ServiceResolver {
 
         let address = SocketAddr::new(node_address.ip(), port as u16);
 
-        let host_name = ServiceName {
-            zone: shared.service_address.name.zone.clone(),
-            entity: ServiceEntity::Task {
-                job_name: job_name.to_string(),
-                task_index,
-            },
-        }
-        .to_string();
+        let host_name =
+            ServiceName::for_task(&shared.service_address.name.zone, task.spec().name())?
+                .to_string();
 
         Ok(Some(ResolvedEndpoint {
             address,

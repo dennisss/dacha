@@ -1,0 +1,28 @@
+name: "system.meta"
+replicas: 1
+task {
+    persistent: true
+
+    args: [
+        "/volumes/bundle/built/pkg/datastore/metastore",
+        "--port=rpc",
+        "--init_port=rpc",
+        "--dir=/volumes/data"
+        # NOTE: An additional --labels flag is added dynamically by the bootstrapping script.
+    ]
+
+    ports {
+        name: "rpc"
+    }
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/datastore:metastore_bundle"
+        },
+        {
+            name: "data"
+            persistent_name: "metastore_data"
+        }
+    ]
+}

@@ -240,25 +240,16 @@ impl Manager {
             nodes_by_id.insert(node.id(), i);
         }
 
-        let mut tasks_by_index = HashMap::new();
-        let task_prefix = format!("{}.", job_name);
-        for task in tasks_table.get_prefix(&task_prefix).await? {
-            let index = task
-                .spec()
-                .name()
-                .strip_prefix(&task_prefix)
-                .unwrap()
-                .parse::<usize>()?;
-            tasks_by_index.insert(index, task);
-        }
+        let mut existing_tasks = {
+            let task_prefix = format!("{}.", job_name);
+            tasks_table.get_prefix(&task_prefix).await?
+        };
 
         // TODO: Need to increment ref counts to blobs.
 
         // TODO: Implement each replica as a separate transaction.
-        for i in 0..(job.spec().replicas() as usize) {
-            let task_name = format!("{}.{}", job.spec().name(), i);
-
-            let existing_task = tasks_by_index.remove(&i);
+        for _ in 0..(job.spec().replicas() as usize) {
+            let existing_task = existing_tasks.pop();
 
             let assigned_node_index = {
                 if let Some(existing_task) = &existing_task {
@@ -283,14 +274,13 @@ impl Manager {
             new_task.set_assigned_node(assigned_node.id());
 
             let new_spec = self.create_allocated_task_spec(
-                &task_name,
+                job.spec().name(),
                 &job.spec().task(),
                 existing_task.as_ref().map(|t| t.spec()),
                 assigned_node,
             )?;
             new_task.set_spec(new_spec);
             new_task.set_revision(job.task_revision());
-            new_task.set_state(TaskMetadata_State::STARTING);
 
             // Update the task
             tasks_table.put(&new_task).await?;
@@ -336,7 +326,7 @@ impl Manager {
 
         // Stop all extra instances.
         // TODO: Consider just marking as stopped instead of deleting them?
-        for (_, mut existing_task) in tasks_by_index {
+        for mut existing_task in existing_tasks {
             tasks_table.delete(&existing_task).await?;
 
             let node = &mut nodes[*nodes_by_id
@@ -397,13 +387,20 @@ impl Manager {
     /// obtaining the same port for multiple separate ports.
     fn create_allocated_task_spec(
         &self,
-        task_name: &str,
+        job_name: &str,
         job_task_spec: &TaskSpec,
         old_spec: Option<&TaskSpec>,
         node: &NodeMetadata,
     ) -> Result<TaskSpec> {
         let mut spec = job_task_spec.clone();
-        spec.set_name(task_name);
+
+        let task_name = if let Some(spec) = &old_spec {
+            spec.name().to_string()
+        } else {
+            format!("{}.{}", job_name, crate::manager::new_task_id())
+        };
+
+        spec.set_name(task_name.as_str());
 
         for port in spec.ports_mut() {
             // If updating an existing task, attempt to re-use existing port assignments.

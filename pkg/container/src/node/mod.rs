@@ -40,6 +40,28 @@ use crate::proto::task::*;
 use crate::proto::task_event::*;
 use crate::runtime::ContainerRuntime;
 
+/*
+Important invariants to test:
+- Must not set NodeMetadata::last_seen before we update the TaskStateMetadata for all tasks on this node.
+- If a task reaches the DONE state, save that into our local metadata and ensure we continue to update the TaskStateMetadata with that on future restarts (rather than re-starting the task).
+
+How to have a client connect to a job:
+- Initially query all the tasks and NodeMetadata
+- If a connection to a node fails, then double check the NodeMetadata.
+- Otherwise just keep on going.
+- So, we don't really on
+    ^ Does not require watching the NodeMetadata
+
+TODO: Verify that sending a kill to the runtime doesn't cause an error if the container just recently died and we didn't process the event notification yet.
+
+Usage of the TaskMetadata in the local node db:
+- When a task is started, we record it as STARTED
+    - This has the main purpose of
+
+TODO: Because tasks can reach TaskStateMetadata::STOPPED on old revisions, we can't reliably tell when a new task revision reaches that state the second time.
+
+*/
+
 struct Task {
     /// Spec that was used to start this task.
     spec: TaskSpec,
@@ -87,6 +109,9 @@ enum TaskState {
 
     /// In this state, we already sent a SIGINT to the task and are waiting for
     /// it to stop on its own.
+    ///
+    /// If the task doesn't stop by itself after a timeout, we will transition
+    /// to ForceStopping.
     Stopping {
         timer_id: usize,
         timeout_task: ChildTask,
@@ -108,12 +133,12 @@ enum TaskState {
     /// The container has exited and there is no plan to restart it.
     ///
     /// TODO: How do we determine if the
-    Terminal, /*  {
-               *     state: TaskTerminalState
-               * } */
+    Done, /*  {
+           *     state: TaskTerminalState
+           * } */
 }
 
-enum TaskTerminalState {
+enum TaskDoneState {
     /// This was a one-off task (with restart_policy set to something other than
     /// ALWAYS|UNKNOWN) and it completed with a successful exit code (of 0).
     Successful,
@@ -141,55 +166,6 @@ impl ResourceSet {
         self.blobs.is_empty()
     }
 }
-
-/*
-State of a container:
-    Creating|Running or Stopped
-
-State of a task:
-
-- Running
-    - We've created a container for it is
-
-- Stopping(start_time)
-    - When entered, we will send a SIGINT to the task
-    - If still in this state for N seconds, we will send a SIGKILL
-    - Just wait for the container to enter a Stopped state.
-
-- Killed
-
-- Restarting
-    - We must wait until the container has been killed
-    - Once it has killed,
-
-Creating a task:
-
-
-TODO: Verify that sending a kill to the runtime doesn't cause an error if the container just recently died and we didn't process the event notification yet.
-
-- Deleting
-*/
-
-/*
-Node start up procedure:
-- Generate the id
-- Start any persistent containers that don't require metastore knowledge
-- Connect to the meta store and update our own ip address
-- Start normal containers with:
-    - CLUSTER_NODE_ID=1234
-    - CLUSTER_META_GROUP_ID=
-    - CLUSTER
--
-
-Have all persistent nodes marked as pending:
-- Until we know the
-
-Start up immediately.
-=> Have dependencies
-    =>
-
-TODO: Should support one-off tasks which only run once without re-starting on failures (if they were successful?)
-*/
 
 enum NodeEvent {
     /// Triggered by the internal container runtime whenever the container
@@ -286,6 +262,15 @@ struct NodeShared {
     ///
     /// TODO: Ensure monotonic timestamps even between node restarts.
     last_event_timestamp: Mutex<u64>,
+
+    /// Channel used to communicate that a state change has occured in a task.
+    /// This will trigger a potential update to the TaskStateMetadata.
+    ///
+    /// This channel is bounded to 1 message.
+    ///
+    /// TODO: Consider sending the name of the changed task so that we don't
+    /// need to re-check all of them.
+    state_change_channel: (channel::Sender<()>, channel::Receiver<()>),
 }
 
 struct NodeState {
@@ -384,21 +369,17 @@ impl Node {
                 usb_context,
                 meta_client: Eventually::new(),
                 last_event_timestamp: Mutex::new(last_event_timestamp),
+                state_change_channel: channel::bounded(1),
             }),
         };
 
         let all_tasks = tasks_table::list_tasks(&inst.shared.db).await?;
         for task_meta in all_tasks {
             if !task_meta.spec().persistent() {
-                // TODO: Also add non-persistent tasks in a terminal state.
+                // TODO: Also add non-persistent tasks which are in a done state (this is mainly
+                // needed for tasks which have a non-ALWAYS restart policy so we know that we
+                // shouldn't start them again).
                 continue;
-            }
-
-            match task_meta.state() {
-                TaskMetadata_State::STARTING | TaskMetadata_State::READY => {
-                    // Should work
-                }
-                _ => continue,
             }
 
             // TODO: Don't allow the failure of this to block node startup.
@@ -479,6 +460,40 @@ impl NodeInner {
         task_bundle.join().await
     }
 
+    async fn run_node_registration(mut self) -> Result<()> {
+        if self.shared.config.zone().is_empty() {
+            println!("Node running outside of cluster zone");
+            return Ok(());
+        }
+
+        // TODO: Move this into the node instance.
+        let start_time = SystemTime::now();
+
+        let mut backoff = ExponentialBackoff::new(ExponentialBackoffOptions {
+            base_duration: Duration::from_secs(10),
+            jitter_duration: Duration::from_secs(10),
+            max_duration: Duration::from_secs(2 * 60),
+            cooldown_duration: Duration::from_secs(4 * 60),
+            max_num_attempts: 0,
+        });
+
+        loop {
+            match backoff.start_attempt() {
+                ExponentialBackoffResult::Start => {}
+                ExponentialBackoffResult::StartAfter(wait_time) => {
+                    common::async_std::task::sleep(wait_time).await
+                }
+                ExponentialBackoffResult::Stop => {
+                    return Err(err_msg("Too many retries"));
+                }
+            }
+
+            let e = self.run_node_registration_inner(&start_time).await;
+            eprintln!("Failure while running node registration: {:?}", e);
+            backoff.end_attempt(false);
+        }
+    }
+
     /// Registers the node in the cluster.
     ///
     /// Internally this tries to contact the metastore instance and update our
@@ -486,19 +501,28 @@ impl NodeInner {
     /// aggresively retry and backoff until the metastore is found.
     ///
     /// TODO: Make this run after the RPC server has started.
-    async fn run_node_registration(self) -> Result<()> {
+    ///
+    /// TODO: Everything in here needs to be resilient to metastore failures to
+    /// avoid the entire node crashing. (simplest solution is to run this entire
+    /// thread using failure backoff).
+    async fn run_node_registration_inner(&mut self, start_time: &SystemTime) -> Result<()> {
+        println!("Starting node registration");
+
         let zone = self.shared.config.zone();
-        if zone.is_empty() {
-            println!("Node running outside of cluster zone");
-            return Ok(());
-        }
 
-        let start_time = SystemTime::now();
+        let meta_client = {
+            if !self.shared.meta_client.has_value().await {
+                let meta_client = ClusterMetaClient::create(zone).await?;
+                self.shared.meta_client.set(meta_client).await?;
+            }
 
-        let meta_client = ClusterMetaClient::create(zone).await?;
+            self.shared.meta_client.get().await
+        };
 
         // Perform initial update of our node entry.
-        run_transaction!(&meta_client, txn, {
+        // NOTE: We don't set last_seen yet as we haven't yet written the initial task
+        // states.
+        let mut node_state = run_transaction!(&meta_client, txn, {
             let node_table = txn.cluster_table::<NodeMetadata>();
             let mut node_meta = node_table.get(&self.shared.id).await?.unwrap_or_default();
             node_meta.set_id(self.shared.id);
@@ -512,37 +536,104 @@ impl NodeInner {
             node_meta
                 .set_allocatable_port_range(self.shared.config.allocatable_port_range().clone());
             node_table.put(&node_meta).await?;
+
+            node_meta.state()
         });
 
         println!("Node registered in metastore!");
 
-        self.shared.meta_client.set(meta_client).await?;
+        // Wait for the node to not be NEW
+        while node_state == NodeMetadata_State::NEW {
+            // TODO: Use a watcher.
+            common::async_std::task::sleep(NODE_HEARTBEAT_INTERVAL).await;
+
+            node_state = {
+                let node_meta = meta_client
+                    .cluster_table::<NodeMetadata>()
+                    .get(&self.shared.id)
+                    .await?
+                    .ok_or_else(|| err_msg("NodeMetadata disappeared"))?;
+                node_meta.state()
+            };
+        }
+
+        println!("Node starting reconcile");
+
+        // Perform first reconcile round.
+        // NOTE: This MUST be done before the first last_seen heartbeat update so that
+        // we don't appear to be healthy while the TaskStateMetadata entries have stale
+        // values.
+        self.reconcile_tasks().await?;
+
+        let mut task_bundle = common::bundle::TaskResultBundle::new();
+        task_bundle.add("run_heartbeat_loop", self.clone().run_heartbeat_loop());
+
+        task_bundle.add("run_reconcile_loop", self.clone().run_reconcile_loop());
+
+        task_bundle.join().await
+    }
+
+    async fn run_heartbeat_loop(self) -> Result<()> {
+        let meta_client = self.shared.meta_client.get().await;
 
         // Periodically mark this node as still active.
         // TODO: Allow this is fail and continue to retry.
         loop {
-            let meta_client = self.shared.meta_client.get().await;
-
-            let node_meta = run_transaction!(meta_client, txn, {
+            run_transaction!(meta_client, txn, {
                 let node_table = txn.cluster_table::<NodeMetadata>();
-                let mut node_meta = node_table.get(&self.shared.id).await?.unwrap();
+                let mut node_meta = node_table
+                    .get(&self.shared.id)
+                    .await?
+                    .ok_or_else(|| err_msg("NodeMetadata disappeared"))?;
                 node_meta.set_last_seen(SystemTime::now());
                 node_table.put(&node_meta).await?;
-                node_meta
             });
 
-            if node_meta.state() != NodeMetadata_State::NEW {
-                self.reconcile_tasks().await?;
-            }
+            // Trigger a reconcile after the timeout as we don't currently watch the
+            // metastore for changes yet.
+            let _ = self.shared.state_change_channel.0.try_send(());
 
             common::async_std::task::sleep(NODE_HEARTBEAT_INTERVAL).await;
         }
+    }
 
-        Ok(())
+    // TODO: We need to refactor this to watch the metastore for changes.
+    async fn run_reconcile_loop(self) -> Result<()> {
+        let meta_client = self.shared.meta_client.get().await;
+
+        loop {
+            self.reconcile_tasks().await?;
+            self.shared.state_change_channel.1.recv().await?;
+        }
+    }
+
+    async fn read_reported_task_states(&self) -> Result<HashMap<String, TaskStateMetadata>> {
+        let meta_client = self.shared.meta_client.get().await;
+
+        let intended_tasks = meta_client
+            .cluster_table::<TaskMetadata>()
+            .list_by_node(self.shared.id)
+            .await?;
+
+        let mut out = HashMap::new();
+
+        for task in intended_tasks {
+            let reported_state = meta_client
+                .cluster_table::<TaskStateMetadata>()
+                .get(task.spec().name())
+                .await?
+                .unwrap_or_default();
+
+            out.insert(task.spec().name().to_string(), reported_state);
+        }
+
+        Ok(out)
     }
 
     /// Diffs the set of tasks on the current node with these specified for this
-    /// node in the metastore (and applied the differences to this node).
+    /// node in the metastore (and applies the differences to this node).
+    ///
+    /// Additionally this updates the TaskStateMetadata for all tasks.
     ///
     /// TODO: Run this with it's own backoff loop.
     /// TODO: Make sure that all external requests have deadlines.
@@ -554,6 +645,9 @@ impl NodeInner {
             .list_by_node(self.shared.id)
             .await?;
 
+        // TODO: Cache this across multiple reconcile_tasks() calls.
+        let reported_task_states = self.read_reported_task_states().await?;
+
         let existing_tasks = self.list_tasks_impl().await?;
 
         let existing_tasks_list = self.list_tasks_impl().await?;
@@ -564,27 +658,70 @@ impl NodeInner {
         }
 
         for task in intended_tasks {
-            // TODO: Split any tasks which are in the STOPPED | STOP state.
+            let (current_revision, current_state) =
+                if let Some(existing_task) = existing_tasks.remove(task.spec().name()) {
+                    (
+                        existing_task.revision(),
+                        match existing_task.state() {
+                            TaskStateProto::UNKNOWN
+                            | TaskStateProto::PENDING
+                            | TaskStateProto::STOPPING
+                            | TaskStateProto::FORCE_STOPPING
+                            | TaskStateProto::RESTART_BACKOFF => {
+                                TaskStateMetadata_ReportedState::UPDATING
+                            }
+                            TaskStateProto::RUNNING => TaskStateMetadata_ReportedState::READY,
+                            TaskStateProto::DONE => TaskStateMetadata_ReportedState::DONE,
+                        },
+                    )
+                } else {
+                    (0, TaskStateMetadata_ReportedState::DONE)
+                };
 
-            if let Some(existing_task) = existing_tasks.remove(task.spec().name()) {
-                if existing_task.revision() == task.revision() {
-                    continue;
-                }
+            // If the current task state is different than the last reported one, update the
+            // metastore.
+            let should_report_state = if let Some(old_state) =
+                reported_task_states.get(task.spec().name())
+            {
+                old_state.task_revision() != current_revision || old_state.state() != current_state
+            } else {
+                true
+            };
+            if should_report_state {
+                let mut state_meta = TaskStateMetadata::default();
+                state_meta.set_task_name(task.spec().name());
+                state_meta.set_state(current_state);
+                state_meta.set_task_revision(current_revision);
+                meta_client.cluster_table().put(&state_meta).await?;
             }
 
-            // TODO: If this fails, record it in the TaskMetadata.
-            let mut req = StartTaskRequest::default();
-            req.set_spec(task.spec().clone());
-            req.set_revision(task.revision());
-            self.start_task(&req).await?;
+            if !task.drain() {
+                // TODO: If the task is already running at an old revision, we may want to
+                // implement a short delay before we stop the current instance (to allow clients
+                // to backoff).
+
+                let mut req = StartTaskRequest::default();
+                req.set_spec(task.spec().clone());
+                req.set_revision(task.revision());
+                self.start_task(&req).await?;
+            } else {
+                // TODO: Consider having a delay between a task being marked as
+                // drained and it being stopped (so that clients have time to
+                // notice that it is stopping).
+
+                self.stop_task(task.spec().name(), false).await?;
+            }
         }
 
+        // All tasks present locally but not in the metastore should be stopped and
+        // eventually cleaned up.
         for (_, task) in existing_tasks {
-            // TODO: Stop task.
-            self.stop_task(task.spec().name()).await?;
+            if task.state() == TaskStateProto::DONE {
+                // TODO: Remove the task from our self.shared.state.tasks
+            } else {
+                self.stop_task(task.spec().name(), false).await?;
+            }
         }
-
-        // TODO: When tasks reach their terminal state, record that in the metastore?
 
         Ok(())
     }
@@ -627,6 +764,8 @@ impl NodeInner {
                             "Expected state changes only with stopped containers",
                         ));
                     }
+
+                    self.shared.runtime.remove_container(&container_id).await?;
 
                     let mut event = TaskEvent::default();
                     event.set_task_name(task.spec.name());
@@ -673,21 +812,7 @@ impl NodeInner {
                     }
 
                     if should_force_stop {
-                        let container_id = task.container_id.as_ref().unwrap();
-
-                        let mut event = TaskEvent::default();
-                        event.set_task_name(task.spec.name());
-                        event.set_task_revision(task.revision);
-                        event.set_container_id(container_id);
-                        event.stopping_mut().set_force(true);
-                        self.record_event(event).await?;
-
-                        self.shared
-                            .runtime
-                            .kill_container(container_id, nix::sys::signal::Signal::SIGKILL)
-                            .await?;
-
-                        task.state = TaskState::ForceStopping;
+                        self.transition_task_to_force_stopping(task).await?;
                     }
                 }
                 NodeEvent::BlobAvailable { blob_id } => {
@@ -787,7 +912,7 @@ impl NodeInner {
                     timer_id,
                     timeout_task,
                 } => TaskStateProto::RESTART_BACKOFF,
-                TaskState::Terminal => TaskStateProto::TERMINAL,
+                TaskState::Done => TaskStateProto::DONE,
             });
 
             out.add_tasks(proto);
@@ -1122,6 +1247,7 @@ impl NodeInner {
             task.state = TaskState::Pending {
                 missing_requirements,
             };
+            let _ = self.shared.state_change_channel.0.try_send(());
             return Ok(());
         }
 
@@ -1143,6 +1269,7 @@ impl NodeInner {
         task.blob_leases = blob_leases;
         task.container_id = Some(container_id.clone());
         task.state = TaskState::Running;
+        let _ = self.shared.state_change_channel.0.try_send(());
 
         let mut event = TaskEvent::default();
         event.set_task_name(task.spec.name());
@@ -1200,7 +1327,7 @@ impl NodeInner {
         // TODO: Check the restart policy to see if we should
 
         if task.permanent_stop {
-            self.transition_task_to_terminal(task);
+            self.transition_task_to_done(task);
             return;
         }
 
@@ -1237,16 +1364,18 @@ impl NodeInner {
                     timer_id,
                     timeout_task,
                 };
+                let _ = self.shared.state_change_channel.0.try_send(());
             }
             ExponentialBackoffResult::Stop => {
-                self.transition_task_to_terminal(task);
+                self.transition_task_to_done(task);
             }
         }
     }
 
-    fn transition_task_to_terminal(&self, task: &mut Task) {
-        task.state = TaskState::Terminal;
+    fn transition_task_to_done(&self, task: &mut Task) {
+        task.state = TaskState::Done;
         task.blob_leases.clear();
+        let _ = self.shared.state_change_channel.0.try_send(());
     }
 
     async fn fetch_blob(self, blob_id: String) {
@@ -1298,6 +1427,8 @@ impl NodeInner {
 
         let meta_client = self.shared.meta_client.get().await;
 
+        // TODO: Once a node fetches a blob it becomes a replica of that blob. When
+        // should we update the BlobMetadata entry?
         let blob_meta = meta_client
             .cluster_table::<BlobMetadata>()
             .get(blob_id)
@@ -1406,6 +1537,28 @@ impl NodeInner {
             timer_id,
             timeout_task,
         };
+        let _ = self.shared.state_change_channel.0.try_send(());
+
+        Ok(())
+    }
+
+    async fn transition_task_to_force_stopping(&self, task: &mut Task) -> Result<()> {
+        let container_id = task.container_id.as_ref().unwrap();
+
+        let mut event = TaskEvent::default();
+        event.set_task_name(task.spec.name());
+        event.set_task_revision(task.revision);
+        event.set_container_id(container_id);
+        event.stopping_mut().set_force(true);
+        self.record_event(event).await?;
+
+        self.shared
+            .runtime
+            .kill_container(container_id, nix::sys::signal::Signal::SIGKILL)
+            .await?;
+
+        task.state = TaskState::ForceStopping;
+        let _ = self.shared.state_change_channel.0.try_send(());
 
         Ok(())
     }
@@ -1414,19 +1567,33 @@ impl NodeInner {
         let mut state_guard = self.shared.state.lock().await;
         let state = &mut *state_guard;
 
+        let existing_task = state
+            .tasks
+            .iter_mut()
+            .find(|t| t.spec.name() == request.spec().name());
+
+        // If we were given a revision, we will skip the update if it hasn't changed.
+        if request.revision() != 0 {
+            if let Some(task) = &existing_task {
+                if task.revision == request.revision() {
+                    return Ok(());
+                }
+
+                if let Some(pending_update) = &task.pending_update {
+                    if pending_update.revision() == request.revision() {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
         // TODO: Consider only storing this once the task successfully starts up.
         // TODO: Eventually delete non-persistent tasks.
         // TODO: Once a task has failed, don't restart it on node re-boots.
         let mut meta = TaskMetadata::default();
         meta.set_spec(request.spec().clone());
-        meta.set_state(TaskMetadata_State::STARTING);
         meta.set_revision(request.revision());
         tasks_table::put_task(&self.shared.db, &meta).await?;
-
-        let existing_task = state
-            .tasks
-            .iter_mut()
-            .find(|t| t.spec.name() == request.spec().name());
 
         let task = {
             if let Some(task) = existing_task {
@@ -1458,7 +1625,7 @@ impl NodeInner {
         };
 
         match &task.state {
-            TaskState::Pending { .. } | TaskState::RestartBackoff { .. } | TaskState::Terminal => {
+            TaskState::Pending { .. } | TaskState::RestartBackoff { .. } | TaskState::Done => {
                 self.transition_task_to_running(&mut state.inner, task)
                     .await?;
             }
@@ -1476,7 +1643,7 @@ impl NodeInner {
     }
 
     /// TODO: Should we have this compare to the revision of the task?
-    pub async fn stop_task(&self, name: &str) -> Result<()> {
+    pub async fn stop_task(&self, name: &str, force_stop: bool) -> Result<()> {
         let mut state_guard = self.shared.state.lock().await;
         let state = &mut *state_guard;
 
@@ -1486,20 +1653,45 @@ impl NodeInner {
             .find(|t| t.spec.name() == name)
             .ok_or_else(|| rpc::Status::not_found("Task not found"))?;
 
+        // Exit earlier if we are stopped and already stopping.
+        if let TaskState::Done = &task.state {
+            return Ok(());
+        } else if task.permanent_stop {
+            let is_force_stopping = match &task.state {
+                TaskState::ForceStopping => true,
+                _ => false,
+            };
+
+            if !force_stop || is_force_stopping {
+                return Ok(());
+            }
+        }
+
+        // Delete the task from our local db so we don't restart it on node restarts.
+        tasks_table::delete_task(&self.shared.db, task.spec.name()).await?;
+
         task.pending_update = None;
         task.permanent_stop = true;
 
-        let mut meta = TaskMetadata::default();
-        meta.set_state(TaskMetadata_State::STOPPING);
-        tasks_table::put_task(&self.shared.db, &meta).await?;
-
         match &task.state {
             TaskState::Pending { .. } | TaskState::RestartBackoff { .. } | TaskState::Running => {
-                self.transition_task_to_stopping(task).await?;
+                // Should stop
             }
-            TaskState::Stopping { .. } | TaskState::ForceStopping | TaskState::Terminal => {
+            TaskState::Stopping { .. } => {
+                if !force_stop {
+                    return Ok(());
+                }
+            }
+            TaskState::ForceStopping | TaskState::Done => {
                 // Nothing to do.
+                return Ok(());
             }
+        }
+
+        if force_stop {
+            self.transition_task_to_force_stopping(task).await?;
+        } else {
+            self.transition_task_to_stopping(task).await?;
         }
 
         Ok(())
@@ -1513,7 +1705,7 @@ impl NodeInner {
     }
 
     async fn record_event(&self, mut event: TaskEvent) -> Result<()> {
-        eprintln!("Event: {:?}", event);
+        // eprintln!("Event: {:?}", event);
 
         let mut time = self.shared.last_event_timestamp.lock().await;
         *time = core::cmp::max(*time + 1, Self::current_system_timestamp());
