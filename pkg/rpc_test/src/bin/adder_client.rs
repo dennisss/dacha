@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use common::async_std::task;
 use common::errors::*;
+use container::meta::client::ClusterMetaClient;
 use datastore::meta::client::MetastoreClient;
 use rpc_test::proto::adder::*;
 
@@ -36,7 +37,7 @@ async fn run_client() -> Result<()> {
     // )?)?);
 
     let channel = {
-        let meta_client = Arc::new(MetastoreClient::create().await?);
+        let meta_client = Arc::new(ClusterMetaClient::create_from_environment().await?);
         let resolver =
             Arc::new(container::ServiceResolver::create(&args.target, meta_client).await?);
 

@@ -24,7 +24,13 @@ const MAGIC_STARTUP_BYTE: u8 = 0x88;
 
 #[derive(Args)]
 struct Args {
+    /// Path to a NodeConfig textproto configuring this node.
     config: String,
+
+    /// Override of the 'zone' field specified in the NodeConfig.
+    /// NOTE: This is mainly for use in local testing and should generally not
+    /// be used.
+    zone: Option<String>,
 }
 
 /*
@@ -96,6 +102,10 @@ pub fn main() -> Result<()> {
     {
         let config_data = std::fs::read_to_string(args.config)?;
         protobuf::text::parse_text_proto(&config_data, &mut config)?;
+    }
+
+    if let Some(zone) = args.zone {
+        config.set_zone(zone);
     }
 
     let uid = nix::unistd::getresuid()?;

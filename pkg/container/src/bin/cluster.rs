@@ -11,6 +11,23 @@ Testing:
 Next steps:
 -
 
+Testing with a single node cluster:
+    cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto --zone=dev
+
+    cargo run --bin cluster -- bootstrap --node_addr=127.0.0.1:10400
+
+    CLUSTER_ZONE=dev cargo run --bin cluster -- list jobs
+
+    CLUSTER_ZONE=dev cargo run --bin cluster -- start_job pkg/rpc_test/config/adder_server.job
+
+    CLUSTER_ZONE=dev cargo run --bin adder_client -- --target=adder_server.job.local.cluster.internal
+
+    CLUSTER_ZONE=dev cargo run --bin cluster -- log --task_name=adder_server.256326fbfc425883
+
+    <try modifying the adder_server job and rerunning the start_job / adder_client code to verify that we can update to the new revision>
+
+    <try stopping and restarting the node. everything should still work>
+
 
 */
 
@@ -57,7 +74,7 @@ use container::{
 };
 use container::{
     BlobStoreStub, ContainerNodeStub, JobMetadata, NodeMetadata_State, TaskMetadata, TaskSpec,
-    TaskSpec_Port, TaskSpec_Volume, WriteInputRequest, ZoneMetadata,
+    TaskSpec_Port, TaskSpec_Volume, TaskStateMetadata, WriteInputRequest, ZoneMetadata,
 };
 
 #[derive(Args)]
@@ -115,7 +132,7 @@ struct ListCommand {
 
 #[derive(Args)]
 enum ObjectKind {
-    #[arg(name = "job")]
+    #[arg(name = "jobs")]
     Job,
 
     #[arg(name = "tasks")]
@@ -447,28 +464,53 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
 
     let meta_client = ClusterMetaClient::create_from_environment().await?;
 
-    println!("Nodes:");
-    let nodes = meta_client.cluster_table::<NodeMetadata>().list().await?;
-    for node in nodes {
-        println!("{:?}", node);
-    }
+    let kind = cmd.kind.unwrap();
 
-    println!("Jobs:");
-    let nodes = meta_client.cluster_table::<JobMetadata>().list().await?;
-    for node in nodes {
-        println!("{:?}", node);
-    }
+    match kind {
+        ObjectKind::Node => {
+            println!("Nodes:");
+            let nodes = meta_client.cluster_table::<NodeMetadata>().list().await?;
+            for node in nodes {
+                println!("{:?}", node);
+            }
+        }
+        ObjectKind::Job => {
+            println!("Jobs:");
+            let jobs = meta_client.cluster_table::<JobMetadata>().list().await?;
+            for job in jobs {
+                println!("{:?}", job);
+            }
+        }
+        ObjectKind::Task => {
+            println!("Tasks:");
+            let tasks = meta_client.cluster_table::<TaskMetadata>().list().await?;
 
-    println!("Tasks:");
-    let nodes = meta_client.cluster_table::<TaskMetadata>().list().await?;
-    for node in nodes {
-        println!("{:?}", node);
-    }
+            let task_states = meta_client
+                .cluster_table::<TaskStateMetadata>()
+                .list()
+                .await?
+                .into_iter()
+                .map(|s| (s.task_name().to_string(), s))
+                .collect::<HashMap<_, _>>();
 
-    println!("Blobs:");
-    let nodes = meta_client.cluster_table::<BlobMetadata>().list().await?;
-    for node in nodes {
-        println!("{:?}", node);
+            for task in tasks {
+                let task_state = task_states
+                    .get(task.spec().name())
+                    .cloned()
+                    .unwrap_or_default();
+
+                println!("{}\t{:?}", task.spec().name(), task_state.state());
+
+                // println!("{:?}", task);
+            }
+        }
+        ObjectKind::Blob => {
+            println!("Blobs:");
+            let nodes = meta_client.cluster_table::<BlobMetadata>().list().await?;
+            for node in nodes {
+                println!("{:?}", node);
+            }
+        }
     }
 
     // let nodes = meta_client.list(b"/").await?;

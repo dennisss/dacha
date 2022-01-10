@@ -14,4 +14,16 @@ message JobSpec {
 
     // How many tasks should be brought up.
     uint32 replicas = 3;
+
+    JobSchedulingSpec scheduling = 4;
+}
+
+message JobSchedulingSpec {
+    // Ids of specific nodes which should be used when placing replicas of this job.
+    repeated uint64 specific_nodes = 1;
+
+    // If true, all replicas of this job MUST be assigned to different nodes.
+    // If there are more replicas than nodes, then excess replicas won't be scheduled until more
+    // nodes are available.
+    bool distinct_nodes = 2;
 }

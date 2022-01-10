@@ -1,3 +1,14 @@
+/*
+Testing:
+    cargo run --bin adder_server -- --port=8000
+
+    curl --http2-prior-knowledge -v 127.0.0.1:8000
+        => Should return HTTP 415
+
+    curl --http2-prior-knowledge -v 127.0.0.1:8000 --header "Content-Type: application/grpc+proto"
+
+*/
+
 #![feature(async_closure)]
 #![feature(fn_traits)]
 #[macro_use]

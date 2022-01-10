@@ -228,13 +228,14 @@ impl Manager {
             .await?
             .ok_or_else(|| err_msg("Job doesn't exist"))?;
 
+        // TODO: This read operation will cause a lot of contention.
         let mut nodes = nodes_table.list().await?;
         if nodes.is_empty() {
             // TODO: This may be problematic during initial bootstrapping of the cluster.
             return Err(err_msg("No nodes present"));
         }
 
-        // TODO: This read operation will cause a lot of contention.
+        // Mapping from node id to the index of the NodeMetadata in 'nodes'.
         let mut nodes_by_id = HashMap::new();
         for (i, node) in nodes.iter().enumerate() {
             nodes_by_id.insert(node.id(), i);
@@ -245,11 +246,58 @@ impl Manager {
             tasks_table.get_prefix(&task_prefix).await?
         };
 
+        existing_tasks.retain(|task| !task.drain());
+
+        // Indexes of all nodes which we will consider for running tasks in this job.
+        let mut remaining_nodes = vec![];
+        for i in 0..nodes.len() {
+            remaining_nodes.push(i);
+        }
+
+        if job.spec().scheduling().specific_nodes_len() > 0 {
+            remaining_nodes.retain(|i| {
+                let current_id = nodes[*i].id();
+                job.spec()
+                    .scheduling()
+                    .specific_nodes()
+                    .iter()
+                    .find(|id| **id == current_id)
+                    .is_some()
+            });
+
+            if remaining_nodes.len() != job.spec().scheduling().specific_nodes_len() {
+                return Err(err_msg("Some nodes in specific_nodes weren't found"));
+            }
+        }
+
         // TODO: Need to increment ref counts to blobs.
+
+        // Old tasks associated with this job which we ended up not being able to
+        // re-use.
+        let mut old_tasks = vec![];
 
         // TODO: Implement each replica as a separate transaction.
         for _ in 0..(job.spec().replicas() as usize) {
-            let existing_task = existing_tasks.pop();
+            // Attempt to select an existing task that we want to re-use.
+            let existing_task = {
+                let mut picked_task = None;
+                while let Some(task) = existing_tasks.pop() {
+                    // The existing task must still be in our selected task subset to be re-used.
+                    if !remaining_nodes
+                        .iter()
+                        .find(|idx| nodes[**idx].id() == task.assigned_node())
+                        .is_some()
+                    {
+                        old_tasks.push(task);
+                        continue;
+                    }
+
+                    picked_task = Some(task);
+                    break;
+                }
+
+                picked_task
+            };
 
             let assigned_node_index = {
                 if let Some(existing_task) = &existing_task {
@@ -264,9 +312,23 @@ impl Manager {
                         .get(&existing_task.assigned_node())
                         .ok_or_else(|| err_msg("Failed to find assigned node"))?
                 } else {
-                    crypto::random::clocked_rng().between::<usize>(0, nodes.len())
+                    // TODO: Don't make this a permanent failure. Instead come back to this job
+                    // later once we have more nodes.
+                    if remaining_nodes.is_empty() {
+                        return Err(err_msg("Not enough nodes to bring up the job."));
+                    }
+
+                    let selected_idx =
+                        crypto::random::clocked_rng().between::<usize>(0, remaining_nodes.len());
+                    remaining_nodes[selected_idx]
                 }
             };
+
+            // If we are only allowed to assign to distinct nodes, remove the selected node
+            // for the node set for future decisions.
+            if job.spec().scheduling().distinct_nodes() {
+                remaining_nodes.retain(|idx| *idx != assigned_node_index);
+            }
 
             let assigned_node = &mut nodes[assigned_node_index];
 
@@ -325,9 +387,12 @@ impl Manager {
         //   users are querying the right task.
 
         // Stop all extra instances.
-        // TODO: Consider just marking as stopped instead of deleting them?
+        existing_tasks.extend(old_tasks.into_iter());
         for mut existing_task in existing_tasks {
-            tasks_table.delete(&existing_task).await?;
+            // TODO: Eventually once the node has stopped the task, we should delete the
+            // TaskMetadata entry for this.
+            existing_task.set_drain(true);
+            tasks_table.put(&existing_task).await?;
 
             let node = &mut nodes[*nodes_by_id
                 .get(&existing_task.assigned_node())
@@ -397,6 +462,8 @@ impl Manager {
         let task_name = if let Some(spec) = &old_spec {
             spec.name().to_string()
         } else {
+            // NOTE: We assume that this will generate a unique task id which has never been
+            // seen before but we don't currently validate that the task doesn't exist yet.
             format!("{}.{}", job_name, crate::manager::new_task_id())
         };
 

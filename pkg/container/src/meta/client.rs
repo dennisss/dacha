@@ -20,7 +20,12 @@ impl ClusterMetaClient {
     }
 
     pub async fn create_from_environment() -> Result<Self> {
-        let zone = std::env::var(ZONE_ENV_VAR)?;
+        let zone = std::env::var(ZONE_ENV_VAR).map_err(|_| {
+            format_err!(
+                "Expected the {} environment variable to be set",
+                ZONE_ENV_VAR,
+            )
+        })?;
         Self::create(&zone).await
     }
 }
