@@ -35,7 +35,7 @@ fn message_to_json_value(message: &dyn MessageReflection, mut output: json::Obje
             None => continue,
         };
 
-        let value = output.key(field_desc.name);
+        let value = output.key(&*field_desc.name);
         reflection_to_json_value(field, value);
     }
 }
@@ -57,7 +57,7 @@ fn reflection_to_json_value(r: Reflection, output: json::ValueStringifier) {
             output.bool(*v);
         }
         Reflection::String(v) => {
-            output.string(v.as_str());
+            output.string(v);
         }
         Reflection::Bytes(v) => {
             // TODO: Perform simultaneous serialization and base64 encoding directly into

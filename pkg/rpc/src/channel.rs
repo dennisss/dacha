@@ -8,10 +8,11 @@ use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Readable;
 use http::header::*;
+use http::headers::content_type::MediaType;
 use http::ClientInterface;
 
 use crate::client_types::*;
-use crate::constants::GRPC_PROTO_TYPE;
+use crate::media_type::*;
 use crate::message::MessageSerializer;
 use crate::metadata::*;
 use crate::status::*;
@@ -167,7 +168,14 @@ impl Http2Channel {
             // TODO: Add the full package path.
             .path(format!("/{}/{}", service_name, method_name))
             // TODO: No gurantee that we were given proto data.
-            .header(CONTENT_TYPE, GRPC_PROTO_TYPE)
+            .header(
+                CONTENT_TYPE,
+                RPCMediaType {
+                    protocol: RPCMediaProtocol::Default,
+                    serialization: RPCMediaSerialization::Proto,
+                }
+                .to_string(),
+            )
             .body(body)
             .build()?;
 
@@ -254,7 +262,7 @@ impl Readable for MessageRequestBody {
             let data = self.request_receiver.recv().await;
             match data {
                 Ok(Ok(Some(data))) => {
-                    self.remaining_bytes = Bytes::from(MessageSerializer::serialize(&data));
+                    self.remaining_bytes = Bytes::from(MessageSerializer::serialize(&data, false));
                 }
                 Ok(Ok(None)) => {
                     return Ok(0);

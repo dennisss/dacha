@@ -2122,6 +2122,7 @@ dependencies = [
  "parsing",
  "protobuf",
  "protobuf_compiler",
+ "protobuf_json",
  "regexp_macros",
 ]
 
@@ -2160,7 +2161,11 @@ dependencies = [
  "common",
  "lazy_static",
  "libc",
+ "macros",
  "nix 0.21.0",
+ "protobuf",
+ "protobuf_compiler",
+ "protobuf_json",
 ]
 
 [[package]]
@@ -2767,6 +2772,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2907bd297eef464a95ba9349ea771611771aa285b932526c633dc94d5400a8e2"
 dependencies = [
  "pkg-config",
+]
+
+[[package]]
+name = "web"
+version = "0.1.0"
+dependencies = [
+ "automata",
+ "common",
+ "http",
+ "macros",
+ "parsing",
+ "protobuf",
+ "protobuf_compiler",
+ "protobuf_json",
+ "regexp_macros",
+ "rpc",
+ "rpc_test",
 ]
 
 [[package]]

@@ -4,7 +4,9 @@ use common::async_std::channel;
 use common::bytes::Bytes;
 use common::errors::*;
 use http::Body;
+use protobuf_json::{MessageJsonParser, MessageJsonSerialize};
 
+use crate::media_type::{RPCMediaSerialization, RPCMediaType};
 use crate::message::MessageReader;
 use crate::metadata::*;
 
@@ -42,14 +44,20 @@ impl<T: protobuf::Message> std::ops::Deref for ServerRequest<T> {
 /// Internally this is implemented by reading from an http::Body.
 pub struct ServerStreamRequest<T> {
     request_body: Box<dyn Body>,
+    request_type: RPCMediaType,
     context: ServerRequestContext,
     phantom_t: PhantomData<T>,
 }
 
 impl ServerStreamRequest<()> {
-    pub(crate) fn new(request_body: Box<dyn Body>, context: ServerRequestContext) -> Self {
+    pub(crate) fn new(
+        request_body: Box<dyn Body>,
+        request_type: RPCMediaType,
+        context: ServerRequestContext,
+    ) -> Self {
         Self {
             request_body,
+            request_type,
             context,
             phantom_t: PhantomData,
         }
@@ -58,13 +66,14 @@ impl ServerStreamRequest<()> {
     pub fn into<T: protobuf::Message>(self) -> ServerStreamRequest<T> {
         ServerStreamRequest {
             request_body: self.request_body,
+            request_type: self.request_type,
             context: self.context,
             phantom_t: PhantomData,
         }
     }
 
     /// NOTE: It's only valid to call this before using recv().
-    pub async fn into_unary<T: protobuf::Message>(self) -> Result<ServerRequest<T>> {
+    pub async fn into_unary<T: protobuf::Message + Default>(self) -> Result<ServerRequest<T>> {
         let mut stream = self.into::<T>();
 
         let message = stream
@@ -95,20 +104,42 @@ impl<T> ServerStreamRequest<T> {
 
     pub async fn recv_bytes(&mut self) -> Result<Option<Bytes>> {
         let mut message_reader = MessageReader::new(self.request_body.as_mut());
-        message_reader.read().await
+        let message = match message_reader.read().await? {
+            Some(m) => m,
+            None => {
+                return Ok(None);
+            }
+        };
+
+        if message.is_trailers {
+            return Err(err_msg("Unexpected trailers received from client"));
+        }
+
+        Ok(Some(message.data))
     }
 }
 
-impl<T: protobuf::Message> ServerStreamRequest<T> {
+impl<T: protobuf::Message + Default> ServerStreamRequest<T> {
     pub async fn recv(&mut self) -> Result<Option<T>> {
         let data = self.recv_bytes().await?;
 
         let message = {
             if let Some(data) = data {
-                Some(
-                    T::parse(&data)
-                        .map_err(|_| crate::Status::internal("Failed to parse request proto."))?,
-                )
+                let value = match self.request_type.serialization {
+                    RPCMediaSerialization::Proto => T::parse(&data),
+                    RPCMediaSerialization::JSON => {
+                        let options = protobuf_json::ParserOptions {
+                            ignore_unknown_fields: true,
+                        };
+
+                        std::str::from_utf8(data.as_ref())
+                            .map_err(|e| Error::from(e))
+                            .and_then(|s| T::parse_json(s, &options))
+                    }
+                }
+                .map_err(|_| crate::Status::internal("Failed to parse request proto."))?;
+
+                Some(value)
             } else {
                 None
             }
@@ -146,6 +177,8 @@ impl<'a, T: protobuf::Message> std::ops::DerefMut for ServerResponse<'a, T> {
 pub struct ServerStreamResponse<'a, T> {
     pub context: &'a mut ServerResponseContext,
 
+    pub(crate) response_type: RPCMediaType,
+
     /// Whether or not we have sent the head of the request yet.
     pub(crate) head_sent: &'a mut bool,
 
@@ -157,6 +190,7 @@ impl<'a> ServerStreamResponse<'a, ()> {
     pub fn into<T: protobuf::Message>(self) -> ServerStreamResponse<'a, T> {
         ServerStreamResponse {
             context: self.context,
+            response_type: self.response_type,
             head_sent: self.head_sent,
             sender: self.sender,
             phantom_t: PhantomData,
@@ -204,7 +238,10 @@ impl<'a, T: protobuf::Message> ServerStreamResponse<'a, T> {
     /// metadata. NOTE: This will block based on connection level flow
     /// control.
     pub async fn send(&mut self, message: T) -> Result<()> {
-        let data = message.serialize()?;
+        let data = match self.response_type.serialization {
+            RPCMediaSerialization::Proto => message.serialize()?,
+            RPCMediaSerialization::JSON => Vec::from(message.serialize_json()),
+        };
         self.send_bytes(data.into()).await
     }
 }

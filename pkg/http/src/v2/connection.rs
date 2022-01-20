@@ -653,19 +653,26 @@ mod tests {
     use super::*;
 
     use common::pipe::pipe;
+    use net::ip::IPAddress;
 
     use crate::body::{BodyFromData, EmptyBody};
     use crate::method::Method;
     use crate::request::{Request, RequestBuilder};
     use crate::response::{Response, ResponseBuilder};
+    use crate::server_handler::ServerConnectionContext;
+    use crate::server_handler::ServerRequestContext;
     use crate::status_code;
 
     /// Simple request handler which performs various numerical calculations.
-    struct CalculatorRequestHandler {}
+    struct CalculatorServerHandler {}
 
     #[async_trait]
-    impl RequestHandler for CalculatorRequestHandler {
-        async fn handle_request(&self, request: Request) -> Response {
+    impl ServerHandler for CalculatorServerHandler {
+        async fn handle_request<'a>(
+            &self,
+            request: Request,
+            context: ServerRequestContext<'a>,
+        ) -> Response {
             println!("GOT REQUEST: {:?}", request.head);
 
             ResponseBuilder::new()
@@ -683,8 +690,17 @@ mod tests {
 
         let options = ConnectionOptions::default();
 
-        let server_conn =
-            Connection::new(options.clone(), Some(Box::new(CalculatorRequestHandler {})));
+        let server_options = ServerConnectionOptions {
+            connection_context: ServerConnectionContext {
+                id: 0,
+                peer_addr: IPAddress::V4(vec![0, 0, 0, 0]),
+                peer_port: 0,
+                tls: None,
+            },
+            request_handler: Box::new(CalculatorServerHandler {}),
+        };
+
+        let server_conn = Connection::new(options.clone(), Some(server_options));
         let server_task = task::spawn(server_conn.run(
             ConnectionInitialState::raw(),
             Box::new(reader1),
@@ -721,7 +737,7 @@ mod tests {
         let options = ConnectionOptions::default();
 
         // let server_conn = Connection::new(
-        //     options.clone(), Some(Box::new(CalculatorRequestHandler {})));
+        //     options.clone(), Some(Box::new(CalculatorServerHandler {})));
         // let server_task = task::spawn(server_conn.run(
         //     ConnectionInitialState::raw(), Box::new(reader1), Box::new(writer2)));
 

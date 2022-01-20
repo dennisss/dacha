@@ -8,17 +8,26 @@ use common::io::Readable;
 
 const MESSAGE_HEADER_SIZE: usize = 5;
 
+pub struct Message {
+    pub data: Bytes,
+
+    /// Whether or not this message contains trailer headers data.
+    /// This should only be true for a server sending a client data using a GRPC
+    /// web protocol.
+    pub is_trailers: bool,
+}
+
 pub struct MessageReader<'a> {
     // TODO: Eventually change to use Readable instead of http::Body.
     reader: &'a mut dyn http::Body,
 }
 
 impl<'a> MessageReader<'a> {
-    pub fn new(reader: &mut dyn http::Body) -> MessageReader {
-        MessageReader { reader }
+    pub fn new(reader: &'a mut dyn http::Body) -> Self {
+        Self { reader }
     }
 
-    pub async fn read(&mut self) -> Result<Option<Bytes>> {
+    pub async fn read(&mut self) -> Result<Option<Message>> {
         let mut header = [0u8; MESSAGE_HEADER_SIZE]; // Compressed flag + size.
         if let Err(e) = self.reader.read_exact(&mut header).await {
             if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
@@ -30,7 +39,10 @@ impl<'a> MessageReader<'a> {
             return Err(e);
         }
 
-        if header[0] != 0 {
+        let is_trailers = header[0] & (1 << 7) != 0;
+        let compression_flags = header[0] & ((1 << 7) - 1);
+
+        if compression_flags != 0 {
             return Err(err_msg("Decoding compressed messages not supported"));
         }
 
@@ -42,18 +54,26 @@ impl<'a> MessageReader<'a> {
         data.resize(size, 0);
         self.reader.read_exact(&mut data).await?;
 
-        Ok(Some(data.into()))
+        Ok(Some(Message {
+            data: data.into(),
+            is_trailers,
+        }))
     }
 }
 
 pub struct MessageSerializer {}
 
 impl MessageSerializer {
-    pub fn serialize(data: &[u8]) -> Vec<u8> {
+    pub fn serialize(data: &[u8], is_trailers: bool) -> Vec<u8> {
         // TODO: Optimize this for the uncompressed case.
 
         let mut full_body = vec![];
         full_body.resize(MESSAGE_HEADER_SIZE, 0);
+
+        if is_trailers {
+            full_body[0] = 1 << 7;
+        }
+
         *array_mut_ref![&mut full_body, 1, 4] = (data.len() as u32).to_be_bytes();
 
         full_body.extend_from_slice(&data);

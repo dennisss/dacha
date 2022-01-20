@@ -9,7 +9,8 @@ const GPIOMEM_FILE_PATH: &'static [u8] = b"/dev/gpiomem\0";
 pub const GPIO_PERIPHERAL_OFFSET: u32 = 0x00200000;
 pub const GPIO_PERIPHERAL_SIZE: usize = 244;
 
-pub const PWM_PERIPHERAL_OFFSET: u32 = 0x0020c000;
+pub const PWM0_PERIPHERAL_OFFSET: u32 = 0x0020c000;
+pub const PWM1_PERIPHERAL_OFFSET: u32 = 0x0020c800;
 
 /*
     Should I require a lock to write memory?

@@ -13,11 +13,13 @@ extern crate automata;
 #[macro_use]
 extern crate failure;
 extern crate google;
+extern crate protobuf_json;
 
 mod channel;
 mod client_types;
 mod constants;
 mod local_channel;
+mod media_type;
 mod message;
 mod metadata;
 mod pipe;

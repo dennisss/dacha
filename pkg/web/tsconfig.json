@@ -1,5 +1,13 @@
 {
     "compilerOptions": {
+        "baseUrl": "../../",
+        "rootDir": "../../",
+        "paths": {
+            "*": [
+                "*",
+                "node_modules/*"
+            ]
+        },
         "jsx": "react",
         "module": "es6",
         "target": "es5",
@@ -7,7 +15,6 @@
         "esModuleInterop": true,
     },
     "include": [
-        "web/**/*.ts",
-        "web/**/*.tsx"
+        "../**/*"
     ]
 }

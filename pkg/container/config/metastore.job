@@ -1,5 +1,8 @@
 name: "system.meta"
 replicas: 1
+scheduling {
+    distinct_nodes: true
+}
 task {
     persistent: true
 

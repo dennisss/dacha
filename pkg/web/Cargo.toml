@@ -1,0 +1,20 @@
+[package]
+name = "web"
+version = "0.1.0"
+authors = ["Dennis Shtatnov <densht@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+http = { path = "../http" }
+rpc = { path = "../rpc" }
+automata = { path = "../automata" }
+parsing = { path = "../parsing" }
+regexp_macros = { path = "../regexp_macros" }
+protobuf = { path = "../protobuf" }
+protobuf_json = { path = "../protobuf_json" }
+macros = { path = "../macros" }
+rpc_test = { path = "../rpc_test" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../protobuf_compiler" }

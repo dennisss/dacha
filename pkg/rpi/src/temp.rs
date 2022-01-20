@@ -18,7 +18,7 @@ pub struct CPUTemperatureReader {
 impl CPUTemperatureReader {
     pub async fn create() -> Result<Self> {
         let file = File::open("/sys/class/thermal/thermal_zone0/temp").await?;
-        Ok(CPUTemperatureReader { file })
+        Ok(Self { file })
     }
 
     /// Returns the temperature in degrees Celsius

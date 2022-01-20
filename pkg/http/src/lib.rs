@@ -20,12 +20,13 @@ mod chunked;
 mod chunked_syntax;
 mod client;
 mod common_syntax;
+pub mod cors;
 mod dns;
 pub mod encoding;
 mod encoding_syntax;
 pub mod header;
 mod header_syntax;
-mod headers;
+pub mod headers; // TODO: Make this private?
 mod hpack;
 pub mod message;
 mod message_body;

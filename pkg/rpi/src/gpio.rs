@@ -48,7 +48,11 @@ pub struct GPIOPin {
 }
 
 impl GPIOPin {
-    pub fn set_mode(&self, mode: Mode) -> &Self {
+    pub fn number(&self) -> usize {
+        self.number
+    }
+
+    pub fn set_mode(&mut self, mode: Mode) -> &mut Self {
         // Byte offset of the GPFSELn register.
         // GPFSEL0 is at offset 0 and there are 10 pins per register.
         let offset = (self.number / 10) * REGISTER_SIZE;
@@ -73,7 +77,7 @@ impl GPIOPin {
         Mode::from_value(bits).unwrap()
     }
 
-    pub fn write(&self, high: bool) -> &Self {
+    pub fn write(&mut self, high: bool) -> &mut Self {
         // Offset to GPSET0|1 or GPCLR0|1
         let mut offset = if high { 0x1c } else { 0x28 };
         offset += (self.number / 32) * REGISTER_SIZE;
@@ -98,7 +102,7 @@ impl GPIOPin {
         ((reg >> bit_offset) & 1) != 0
     }
 
-    pub fn set_resistor(&self, resistor: Resistor) -> &Self {
+    pub fn set_resistor(&mut self, resistor: Resistor) -> &mut Self {
         // GPIO_PUP_PDN_CNTRL_REG0....
         // 2-bits per pin.
         let mut offset = 0xe4;
@@ -136,7 +140,7 @@ enum_def!(Mode u32 =>
     AltFn2 = 0b110,
     AltFn3 = 0b111,
     AltFn4 = 0b011,
-    AltFn6 = 0b010
+    AltFn5 = 0b010
 );
 
 enum_def!(Resistor u32 =>

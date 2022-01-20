@@ -1,4 +1,4 @@
-use common::errors::*;
+use common::{errors::*, project_path};
 
 use crate::builder::Builder;
 use crate::context::BuildContext;
@@ -40,6 +40,16 @@ pub fn run() -> Result<()> {
                 let result = builder
                     .build_target_cwd(&build.label, &build_context)
                     .await?;
+
+                let built_link_out = project_path!("built");
+                if let Ok(_) = built_link_out.symlink_metadata() {
+                    std::fs::remove_file(&built_link_out)?;
+                }
+
+                std::os::unix::fs::symlink(
+                    format!("built-config/{}", result.key.config_key),
+                    built_link_out,
+                )?;
 
                 println!("BuildResult:\n{:#?}", result);
             }

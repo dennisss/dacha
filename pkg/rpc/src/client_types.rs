@@ -9,7 +9,9 @@ use common::io::Readable;
 use common::task::ChildTask;
 use http::header::CONTENT_TYPE;
 
-use crate::constants::GRPC_PROTO_TYPE;
+use crate::media_type::RPCMediaProtocol;
+use crate::media_type::RPCMediaSerialization;
+use crate::media_type::RPCMediaType;
 use crate::message::*;
 use crate::metadata::*;
 use crate::status::*;
@@ -321,17 +323,12 @@ impl<T> ClientStreamingResponse<T> {
             return Err(crate::Status::unknown("Server responded with non-OK status").into());
         }
 
-        let response_type = response
-            .head
-            .headers
-            .find_one(CONTENT_TYPE)?
-            .value
-            .to_ascii_str()?;
-        if response_type != GRPC_PROTO_TYPE {
-            return Err(format_err!(
-                "Received RPC response with unknown Content-Type: {}",
-                response_type
-            ));
+        let response_type = RPCMediaType::parse(&response.head.headers)
+            .ok_or_else(|| err_msg("Response received without valid content type"))?;
+        if response_type.protocol != RPCMediaProtocol::Default
+            || response_type.serialization != RPCMediaSerialization::Proto
+        {
+            return Err(err_msg("Received unsupported media type"));
         }
 
         self.context.metadata.head_metadata = Metadata::from_headers(&response.head.headers)?;
@@ -352,10 +349,14 @@ impl<T> ClientStreamingResponse<T> {
 
         let message_bytes = reader.read().await?;
 
-        if let Some(data) = message_bytes {
+        if let Some(message) = message_bytes {
+            if message.is_trailers {
+                return Err(err_msg("Did not expect a trailers message"));
+            }
+
             // Keep trying to read more messages.
             self.state = Some(ClientStreamingResponseState::Body(body));
-            Ok(Some(data))
+            Ok(Some(message.data))
         } else {
             self.state = Some(ClientStreamingResponseState::Trailers(body));
             Ok(None)

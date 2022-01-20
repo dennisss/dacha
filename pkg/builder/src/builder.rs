@@ -391,11 +391,29 @@ impl Builder {
             BuildTargetRaw::Webpack(spec) => {
                 // TODO: Verify at most one webpack target is present per build directory.
 
+                let output_mount_path = Path::new("built")
+                    .join(&key.label.directory)
+                    .join(format!("{}.js", key.label.target_name));
+
+                let output_path = self
+                    .workspace_dir
+                    .join("built-config")
+                    .join(&context.config_key)
+                    .join(&key.label.directory)
+                    .join(format!("{}.js", key.label.target_name));
+
                 let bin = self.workspace_dir.join("node_modules/.bin/webpack");
 
                 let mut child = Command::new(bin)
-                    .arg("-c")
-                    .arg(target_dir.join("webpack.config.js"))
+                    .arg("--config")
+                    .arg(self.workspace_dir.join("pkg/web/webpack.config.js"))
+                    .arg("--env")
+                    .arg(&format!(
+                        "entry={}",
+                        target_dir.join(spec.entry()).to_str().unwrap()
+                    ))
+                    .arg("--env")
+                    .arg(&format!("output={}", output_path.to_str().unwrap()))
                     .stdout(Stdio::inherit())
                     .stderr(Stdio::inherit())
                     .spawn()?;
@@ -404,6 +422,10 @@ impl Builder {
                 if !status.success() {
                     return Err(format_err!("Webpack failed: {:?}", status));
                 }
+
+                result
+                    .output_files
+                    .insert(output_mount_path.to_str().unwrap().to_string(), output_path);
             }
             BuildTargetRaw::BuildConfig(_) => {
                 // Just used as metadata.

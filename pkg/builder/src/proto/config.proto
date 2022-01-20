@@ -38,8 +38,13 @@ message Bundle {
 }
 
 message Webpack {
+    // This create a javascript bundle named '[name].js'
     string name = 1;
+
     repeated string deps = 2;
+
+    // Relative path to the entry point js file.
+    string entry = 3;
 }
 
 message BuildConfig {

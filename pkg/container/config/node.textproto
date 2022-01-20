@@ -109,16 +109,5 @@ container_template {
             source: "/opt/vc"
             options: ["bind", "ro"]
         }
-
-        #{
-        #    destination: "/dev/bus/usb",
-        #    source: "/dev/bus/usb",
-        #    options: ["bind"]
-        #},
-        #{
-        #    destination: "/sys/bus/usb/devices/3-3.4",
-        #    source: "/sys/bus/usb/devices/3-3.4",
-        #    options: ["bind", "noexec", "nosuid", "nodev", "ro"]
-        #}
     ]
 }

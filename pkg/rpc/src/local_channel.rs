@@ -7,6 +7,7 @@ use common::task::ChildTask;
 
 use crate::channel::{Channel, MessageRequestBody};
 use crate::client_types::{ClientRequestContext, ClientStreamingRequest, ClientStreamingResponse};
+use crate::media_type::{RPCMediaProtocol, RPCMediaSerialization, RPCMediaType};
 use crate::server::Http2RequestHandler;
 use crate::server_types::{ServerRequestContext, ServerStreamRequest, ServerStreamResponse};
 use crate::service::Service;
@@ -20,7 +21,7 @@ pub struct LocalChannel {
 impl LocalChannel {
     pub fn new(service: Arc<dyn Service>) -> Self {
         Self {
-            handler: Arc::new(Http2RequestHandler::new(service)),
+            handler: Arc::new(Http2RequestHandler::new(service, false)),
         }
     }
 
@@ -35,10 +36,25 @@ impl LocalChannel {
             metadata: request_context.metadata,
         };
         let server_request_body = Box::new(MessageRequestBody::new(request_receiver));
-        let server_request = ServerStreamRequest::new(server_request_body, server_request_context);
+        let server_request = ServerStreamRequest::new(
+            server_request_body,
+            RPCMediaType {
+                protocol: RPCMediaProtocol::Default,
+                serialization: RPCMediaSerialization::Proto,
+            },
+            server_request_context,
+        );
 
         Ok(handler
-            .handle_parsed_request(&service_name, &method_name, server_request)
+            .handle_parsed_request(
+                &service_name,
+                &method_name,
+                server_request,
+                RPCMediaType {
+                    protocol: RPCMediaProtocol::Default,
+                    serialization: RPCMediaSerialization::Proto,
+                },
+            )
             .await)
     }
 }

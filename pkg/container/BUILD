@@ -1,17 +1,11 @@
 
 
 rust_binary {
-    name: "cluster_node.armv7"
-    bin: "cluster_node"
-    
-    compiler: CROSS
-    profile: "release"
-    target: "armv7-unknown-linux-gnueabihf"
+    name: "cluster_node"
 }
 
 rust_binary {
     name: "cluster_manager"
-    profile: "release"
 }
 
 bundle {

@@ -15,6 +15,7 @@ protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 failure = "0.1.8"
 google = { path = "../../third_party/google" }
+protobuf_json = { path = "../protobuf_json" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

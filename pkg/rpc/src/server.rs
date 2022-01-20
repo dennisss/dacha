@@ -14,7 +14,8 @@ use http::header::*;
 use http::status_code::*;
 use http::Body;
 
-use crate::constants::GRPC_PROTO_TYPE;
+use crate::media_type::RPCMediaProtocol;
+use crate::media_type::RPCMediaType;
 use crate::message::*;
 use crate::metadata::Metadata;
 use crate::server_types::*;
@@ -26,6 +27,7 @@ pub struct Http2Server {
     handler: Http2RequestHandler,
     shutdown_token: Option<Box<dyn CancellationToken>>,
     start_callbacks: Vec<Box<dyn Fn() + Send + Sync + 'static>>,
+    allow_http1: bool,
 }
 
 impl Http2Server {
@@ -34,9 +36,11 @@ impl Http2Server {
             handler: Http2RequestHandler {
                 request_handlers: HashMap::new(),
                 services: HashMap::new(),
+                enable_cors: false,
             },
             shutdown_token: None,
             start_callbacks: vec![],
+            allow_http1: false,
         }
     }
 
@@ -76,13 +80,21 @@ impl Http2Server {
         self.shutdown_token = Some(token);
     }
 
+    pub fn enable_cors(&mut self) {
+        self.handler.enable_cors = true;
+    }
+
+    pub fn allow_http1(&mut self) {
+        self.allow_http1 = true;
+    }
+
     pub fn services(&self) -> impl Iterator<Item = &dyn Service> {
         self.handler.services.iter().map(|(_, v)| v.as_ref())
     }
 
     pub fn run(mut self, port: u16) -> impl Future<Output = Result<()>> + 'static {
         let mut options = http::ServerOptions::default();
-        options.force_http2 = true;
+        options.force_http2 = !self.allow_http1;
 
         let mut server = http::Server::new(self.handler, options);
         if let Some(token) = self.shutdown_token.take() {
@@ -103,15 +115,18 @@ pub(crate) struct Http2RequestHandler {
     request_handlers: HashMap<String, Box<dyn http::ServerHandler>>,
 
     services: HashMap<String, Arc<dyn Service>>,
+
+    enable_cors: bool,
 }
 
 impl Http2RequestHandler {
-    pub(crate) fn new(service: Arc<dyn Service>) -> Self {
+    pub(crate) fn new(service: Arc<dyn Service>, enable_cors: bool) -> Self {
         let mut services = HashMap::new();
         services.insert(service.service_name().to_string(), service);
 
         Self {
             request_handlers: HashMap::new(),
+            enable_cors,
             services,
         }
     }
@@ -120,30 +135,56 @@ impl Http2RequestHandler {
         &self,
         request: http::Request,
         context: http::ServerRequestContext<'a>,
-    ) -> Result<http::Response> {
-        // TODO: Convert as many of the errors in this function as possible to gRPC
-        // trailing status codes.
-
+    ) -> http::Response {
+        // TODO: Need to start thinking of this multi-dimensionally (Host, Path, Method)
         if let Some(request_handler) = self.request_handlers.get(request.head.uri.path.as_str()) {
-            return Ok(request_handler.handle_request(request, context).await);
+            return request_handler.handle_request(request, context).await;
+        }
+
+        if self.enable_cors && request.head.method == http::Method::OPTIONS {
+            return http::ResponseBuilder::new()
+                .status(http::status_code::NO_CONTENT)
+                .build()
+                .unwrap();
         }
 
         // Exit early if we detect a non-gRPC client
         // NOTE: According to the spec, this is the only time at whih we should ever
         // return a non-OK HTTP status. TODO: Technically anything starting with
         // "application/grpc" should be supported.
-        if !request
-            .head
-            .headers
-            .find_one(CONTENT_TYPE)
-            .map(|v| v.value.as_bytes() == GRPC_PROTO_TYPE.as_bytes())
-            .unwrap_or(false)
+        let request_type = match RPCMediaType::parse(&request.head.headers) {
+            Some(v) => v,
+            None => {
+                return http::ResponseBuilder::new()
+                    .status(http::status_code::UNSUPPORTED_MEDIA_TYPE)
+                    .build()
+                    .unwrap();
+            }
+        };
+
+        match self
+            .handle_request_impl_result(request, request_type.clone(), context)
+            .await
         {
-            return Ok(http::ResponseBuilder::new()
-                .status(http::status_code::UNSUPPORTED_MEDIA_TYPE)
-                .build()
-                .unwrap());
+            Ok(r) => r,
+            // Use same response type as request type.
+            Err(e) => Self::error_response(e, request_type),
         }
+    }
+
+    async fn handle_request_impl_result<'a>(
+        &self,
+        request: http::Request,
+        request_type: RPCMediaType,
+        context: http::ServerRequestContext<'a>,
+    ) -> Result<http::Response> {
+        // TODO: Convert as many of the errors in this function as possible to gRPC
+        // trailing status codes.
+
+        // Use the same type to respond to the request as the request type.
+        // TODO: Examine the "Accept" request header to tell which type the client
+        // wants.
+        let response_type = request_type.clone();
 
         // NOTE: Returning an Err is not allowed before this point (to ensure that the
         // content type check goes through).
@@ -168,15 +209,16 @@ impl Http2RequestHandler {
             .split('/')
             .collect::<Vec<_>>();
         if path_parts.len() != 3 || path_parts[0].len() != 0 {
+            // TODO: Convert to a grpc error.
             return Err(err_msg("Invalid path"));
         }
 
         let service_name = path_parts[1];
         let method_name = path_parts[2];
-        let request = ServerStreamRequest::new(request.body, request_context);
+        let request = ServerStreamRequest::new(request.body, request_type, request_context);
 
         let response = self
-            .handle_parsed_request(service_name, method_name, request)
+            .handle_parsed_request(service_name, method_name, request, response_type)
             .await;
 
         Ok(response)
@@ -187,13 +229,14 @@ impl Http2RequestHandler {
         service_name: &str,
         method_name: &str,
         request: ServerStreamRequest<()>,
+        response_type: RPCMediaType,
     ) -> http::Response {
         match self
-            .handle_parsed_request_impl(service_name, method_name, request)
+            .handle_parsed_request_impl(service_name, method_name, request, response_type.clone())
             .await
         {
             Ok(r) => r,
-            Err(e) => Self::error_response(e),
+            Err(e) => Self::error_response(e, response_type),
         }
     }
 
@@ -202,6 +245,7 @@ impl Http2RequestHandler {
         service_name: &str,
         method_name: &str,
         request: ServerStreamRequest<()>,
+        response_type: RPCMediaType,
     ) -> Result<http::Response> {
         let service = self
             .services
@@ -218,6 +262,7 @@ impl Http2RequestHandler {
             method_name.to_string(),
             request,
             response_sender,
+            response_type.clone(),
         ));
 
         let head_metadata = match response_receiver.recv().await? {
@@ -231,11 +276,12 @@ impl Http2RequestHandler {
 
         let response_builder = http::ResponseBuilder::new()
             .status(OK)
-            .header(CONTENT_TYPE, GRPC_PROTO_TYPE);
+            .header(CONTENT_TYPE, response_type.to_string());
 
         let body = Box::new(ResponseBody {
             child_task: Some(child_task),
             response_receiver,
+            response_type,
             remaining_bytes: Bytes::new(),
             done_data: false,
             trailers: None,
@@ -254,6 +300,7 @@ impl Http2RequestHandler {
         method_name: String,
         request: ServerStreamRequest<()>,
         response_sender: channel::Sender<ServerStreamResponseEvent>,
+        response_type: RPCMediaType,
     ) {
         let mut response_context = ServerResponseContext::default();
 
@@ -262,6 +309,7 @@ impl Http2RequestHandler {
         let response = ServerStreamResponse {
             phantom_t: PhantomData,
             context: &mut response_context,
+            response_type,
             head_sent: &mut head_sent,
             sender: response_sender.clone(),
         };
@@ -275,6 +323,8 @@ impl Http2RequestHandler {
         let response_result = service.call(&method_name, request, response).await;
 
         if !head_sent {
+            // TODO: If we are here, send both the head and trailers at the same time
+            // (useful for web mode).
             let _ = response_sender
                 .send(ServerStreamResponseEvent::Head(
                     response_context.metadata.head_metadata,
@@ -297,7 +347,7 @@ impl Http2RequestHandler {
     ///
     /// TODO: Consider eventually supporting the passing of metadata to enable
     /// tracing of RPCs.
-    fn error_response(error: Error) -> http::Response {
+    fn error_response(error: Error, response_type: RPCMediaType) -> http::Response {
         let (sender, receiver) = channel::bounded(1);
         sender
             .try_send(ServerStreamResponseEvent::Trailers(
@@ -309,10 +359,11 @@ impl Http2RequestHandler {
         // NOTE: GRPC servers are supported to always return 200 statuses.
         http::ResponseBuilder::new()
             .status(OK)
-            .header(CONTENT_TYPE, GRPC_PROTO_TYPE)
+            .header(CONTENT_TYPE, response_type.to_string())
             .body(Box::new(ResponseBody {
                 child_task: None,
                 response_receiver: receiver,
+                response_type,
                 remaining_bytes: Bytes::new(),
                 done_data: false,
                 trailers: None,
@@ -329,10 +380,11 @@ impl http::ServerHandler for Http2RequestHandler {
         request: http::Request,
         context: http::ServerRequestContext<'a>,
     ) -> http::Response {
-        match self.handle_request_impl(request, context).await {
-            Ok(r) => r,
-            Err(e) => Self::error_response(e),
+        let mut res = self.handle_request_impl(request, context).await;
+        if self.enable_cors {
+            http::cors::allow_all_requests(&mut res);
         }
+        res
     }
 }
 
@@ -340,6 +392,8 @@ struct ResponseBody {
     child_task: Option<ChildTask>,
 
     response_receiver: channel::Receiver<ServerStreamResponseEvent>,
+
+    response_type: RPCMediaType,
 
     /// TODO: Re-use this buffer across multiple messages
     remaining_bytes: Bytes,
@@ -377,7 +431,7 @@ impl Readable for ResponseBody {
                 ServerStreamResponseEvent::Message(data) => {
                     // NOTE: This supports zero length packets are the message serializer will
                     // always prepend a fixed length prefix.
-                    self.remaining_bytes = Bytes::from(MessageSerializer::serialize(&data));
+                    self.remaining_bytes = Bytes::from(MessageSerializer::serialize(&data, false));
                 }
                 ServerStreamResponseEvent::Trailers(result, trailer_meta) => {
                     let mut trailers = Headers::new();
@@ -402,8 +456,22 @@ impl Readable for ResponseBody {
                         }
                     }
 
+                    match self.response_type.protocol {
+                        RPCMediaProtocol::Default => {
+                            self.trailers = Some(trailers);
+                        }
+                        RPCMediaProtocol::Web => {
+                            // TODO: Implement body-less responses with the error code in the
+                            // header headers.
+                            let mut data = vec![];
+                            trailers.serialize(&mut data)?;
+
+                            self.remaining_bytes =
+                                Bytes::from(MessageSerializer::serialize(&data, true));
+                        }
+                    }
+
                     self.done_data = true;
-                    self.trailers = Some(trailers);
                 }
             }
         }
@@ -421,7 +489,7 @@ impl Body for ResponseBody {
     }
 
     async fn trailers(&mut self) -> Result<Option<Headers>> {
-        if !(self.done_data && self.remaining_bytes.is_empty() && self.trailers.is_some()) {
+        if !(self.done_data && self.remaining_bytes.is_empty()) {
             return Err(err_msg("Trailers read at the wrong time"));
         }
 

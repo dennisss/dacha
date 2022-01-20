@@ -13,3 +13,12 @@ Error codes returned are compatible with: https://grpc.github.io/grpc/core/md_do
 
 
 TODO: Force usage of HTTP2
+
+/*
+Web protocol described in https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-WEB.md :
+- If just returning an error with no messages, can return trailers in the response headers?
+
+application/grpc-web+json or application/grpc-web+proto
+- 8th bit of the message start bit indicates if we are looking at trailers
+- used to implement response trailers.
+*/
