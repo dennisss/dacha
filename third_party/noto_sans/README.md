@@ -1,0 +1,1 @@
+Downloaded from https://fonts.google.com/noto/specimen/Noto%20Sans
