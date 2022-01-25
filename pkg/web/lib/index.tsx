@@ -2,17 +2,19 @@ import React from "react";
 import ReactDOM from "react-dom";
 import { Channel } from "pkg/web/lib/rpc";
 
-class App extends React.Component<{}, { _result?: number }> {
+class App extends React.Component<{}, { _a: number, _b: number, _result?: number }> {
     constructor(props: {}) {
         super(props);
         this.state = {
+            _a: 0,
+            _b: 0,
             _result: null
         };
     }
 
     _on_submit = () => {
         let channel = new Channel("http://localhost:8001");
-        channel.call("Adder", "Add", { "x": 4, "y": 5 })
+        channel.call("Adder", "Add", { "x": this.state._a, "y": this.state._b })
             .then((res) => {
                 let z = res.responses[0].z;
                 this.setState({
@@ -24,9 +26,9 @@ class App extends React.Component<{}, { _result?: number }> {
     render() {
         return (
             <div style={{ padding: 20 }}>
-                <input type="text" className="form-control" style={{ display: "inline-block", width: 100 }} />
+                <input type="number" value={this.state._a} onChange={(e) => this.setState({ _a: parseInt(e.target.value) })} className="form-control" style={{ display: "inline-block", width: 100 }} />
                 <span style={{ fontSize: 22, padding: "0 10px" }}>+</span>
-                <input type="text" className="form-control" style={{ display: "inline-block", width: 100 }} />
+                <input type="number" value={this.state._b} onChange={(e) => this.setState({ _b: parseInt(e.target.value) })} className="form-control" style={{ display: "inline-block", width: 100 }} />
                 <span style={{ fontSize: 22, padding: "0 10px" }}>=</span>
                 {this.state._result !== null ? (
                     <span style={{ fontSize: 22, padding: "0 10px" }}>{this.state._result}</span>

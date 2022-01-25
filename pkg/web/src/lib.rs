@@ -7,6 +7,7 @@ extern crate automata;
 extern crate parsing;
 #[macro_use]
 extern crate macros;
+extern crate json;
 
 use std::fmt::Write;
 
@@ -34,7 +35,7 @@ Specifying files:
     - Generate a proto file that contains an allowlist from this.
 */
 
-regexp!(HTML_TEMPLATE => "{{(\\s*[a-zA-Z0-9_.-]+)\\s*}}");
+regexp!(HTML_TEMPLATE => "{{\\s*([a-zA-Z0-9_.-]+)\\s*}}");
 
 const ASSETS_PATH_SUFFIX: &'static str = "/assets";
 
@@ -53,7 +54,9 @@ pub struct WebPageOptions {
 
     /// Relative path to the JavaScript file that should be executed on this
     /// page.
-    pub js_path: String,
+    pub script_path: String,
+
+    pub vars: Option<json::Value>,
 }
 
 pub struct WebServerHandler {
@@ -118,6 +121,8 @@ impl WebServerHandler {
             }
         };
 
+        let vars = json::stringify(page.vars.as_ref().unwrap_or(&json::Value::Null))?;
+
         let contents =
             common::async_std::fs::read_to_string(&project_path!("pkg/web/index.html")).await?;
 
@@ -133,7 +138,9 @@ impl WebServerHandler {
             if name == "title" {
                 write!(&mut new_page, "{}", page.title)?;
             } else if name == "bundle_path" {
-                write!(&mut new_page, "{}/{}", ASSETS_PATH_SUFFIX, page.js_path)?;
+                write!(&mut new_page, "{}/{}", ASSETS_PATH_SUFFIX, page.script_path)?;
+            } else if name == "vars" {
+                write!(&mut new_page, "{}", vars)?;
             } else {
                 return Err(err_msg("Unknown template string"));
             }

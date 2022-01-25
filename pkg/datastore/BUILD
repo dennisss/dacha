@@ -6,9 +6,6 @@ rust_binary {
 
 bundle {
     name: "metastore_bundle"
-    absolute_srcs: [
-        "built/pkg/datastore/metastore"
-    ]
     deps: [
         ":metastore"
     ]

@@ -272,8 +272,25 @@ impl Builder {
 
                 result.output_files.insert(mount_path, binary_path);
             }
-            BuildTargetRaw::FileGroup(_) => {
-                // Nothing to do. Maybe just verify that all the files exist?
+            BuildTargetRaw::FileGroup(spec) => {
+                for src in spec.srcs() {
+                    let (output_path, source_path) = {
+                        if let Some(abs_path) = src.strip_prefix("//") {
+                            (abs_path.to_string(), self.workspace_dir.join(abs_path))
+                        } else {
+                            (
+                                format!("{}/{}", key.label.directory, src),
+                                target_dir.join(src),
+                            )
+                        }
+                    };
+
+                    if !source_path.exists().await {
+                        return Err(format_err!("Source file does not exist: {}", src));
+                    }
+
+                    result.output_files.insert(output_path, source_path);
+                }
             }
             BuildTargetRaw::Bundle(target) => {
                 let bundle_mount_dir = Path::new("built")
@@ -303,37 +320,30 @@ impl Builder {
                     let sub_context =
                         BuildContext::from(self.lookup_config(config, Some(target_dir)).await?)?;
 
-                    let mut combined_outputs = HashMap::new();
-
-                    for dep in target.deps() {
-                        let res = self
-                            .build_target_recurse(dep, Some(target_dir), &sub_context)
-                            .await?;
-                        combined_outputs.extend(res.output_files);
-                    }
-
                     // Temporary path to which we'll write the archive before we know the hash of
                     // the file.
                     let archive_path = bundle_dir.join("archive.tar");
                     let mut out = compression::tar::Writer::open(&archive_path).await?;
 
-                    // Add all files to the archive.
-                    // NOTE: A current limitation is that because BuildResult only lists files, we
-                    // don't preserve any directory metadata.
-                    for src in target.absolute_srcs() {
-                        // TODO: Verify that all of the 'absolute_srcs' are relative paths.
+                    // let mut combined_outputs = HashMap::new();
 
-                        let path = combined_outputs
-                            .get(src)
-                            .ok_or_else(|| format_err!("Missing build output for: {}", src))?;
+                    for dep in target.deps() {
+                        let res = self
+                            .build_target_recurse(dep, Some(target_dir), &sub_context)
+                            .await?;
 
-                        let options = AppendFileOptions {
-                            root_dir: path.clone(),
-                            output_dir: Some(src.into()),
-                            mask: FileMetadataMask {},
-                            anonymize: true,
-                        };
-                        out.append_file(path, &options).await?;
+                        // Add all files to the archive.
+                        // NOTE: A current limitation is that because BuildResult only lists files,
+                        // we don't preserve any directory metadata.
+                        for (src, path) in res.output_files {
+                            let options = AppendFileOptions {
+                                root_dir: path.clone(),
+                                output_dir: Some(src.into()),
+                                mask: FileMetadataMask {},
+                                anonymize: true,
+                            };
+                            out.append_file(&path, &options).await?;
+                        }
                     }
 
                     // TODO: Given the entire archive will be passing through memory, can we hash it

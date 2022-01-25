@@ -1,21 +1,25 @@
 
 
 rust_binary {
-    name: "main.armv7"
+    name: "main"
     bin: "home_hub"
-
-    compiler: CROSS
-    profile: "release"
-    target: "armv7-unknown-linux-gnueabihf"
 }
 
 bundle {
     name: "bundle"
-    absolute_srcs: [
-        "built/pkg/home_hub/main.armv7",
-        "pkg/home_hub/icons"
-    ]
     deps: [
-        ":main.armv7"
+        ":main",
+        ":icons"
+    ]
+    configs: [
+        # "//pkg/builder/config:rpi",
+        "//pkg/builder/config:x64"
+    ]
+}
+
+filegroup {
+    name: "icons",
+    srcs: [
+        "icons"
     ]
 }

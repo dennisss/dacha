@@ -8,7 +8,7 @@ Type=simple
 Restart=always
 RestartSec=5
 User=cluster-node
-ExecStart=/opt/dacha/bundle/built/pkg/container/cluster_node.armv7 --config=/opt/dacha/bundle/pkg/container/config/node.textproto
+ExecStart=/opt/dacha/bundle/built/pkg/container/cluster_node --config=/opt/dacha/bundle/pkg/container/config/node.textproto
 TimeoutStopSec=30
 
 [Install]

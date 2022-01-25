@@ -1,19 +1,16 @@
 
 rust_binary {
-    name: "main.armv7"
+    name: "main"
     bin: "blinkstick"
-
-    compiler: CROSS
-    profile: "release"
-    target: "armv7-unknown-linux-gnueabihf"
 }
 
 bundle {
     name: "bundle"
-    absolute_srcs: [
-        "built/pkg/blinkstick/main.armv7"
-    ]
     deps: [
-        ":main.armv7"
+        ":main"
+    ]
+    configs: [
+        # "//pkg/builder/config:rpi",
+        "//pkg/builder/config:x64"
     ]
 }

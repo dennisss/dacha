@@ -1,5 +1,5 @@
 name: "sensor_monitor"
-args: ["/volumes/dacha/pkg/sensor_monitor/main.armv7"]
+args: ["/volumes/dacha/pkg/sensor_monitor/main"]
 volumes {
     name: "dacha"
     build_target: "//pkg/sensor_monitor:bundle"

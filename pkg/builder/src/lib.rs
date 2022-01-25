@@ -1,12 +1,3 @@
-/*
-How bundle will work:
-- Compile all dependencies.
-- Take all absolute_srcs and
-- Will be moved into build/pkg/sensor_monitor/bundle.tar
-    - Mapped to 'pkg/sensor_monitor/bundle.tar' if used in the future
-
-*/
-
 extern crate alloc;
 extern crate core;
 

@@ -12,10 +12,6 @@ pub const GPIO_PERIPHERAL_SIZE: usize = 244;
 pub const PWM0_PERIPHERAL_OFFSET: u32 = 0x0020c000;
 pub const PWM1_PERIPHERAL_OFFSET: u32 = 0x0020c800;
 
-/*
-    Should I require a lock to write memory?
-*/
-
 pub struct MemoryBlock {
     memory: *mut c_void,
     size: usize,
@@ -72,6 +68,7 @@ impl MemoryBlock {
         }
     }
 
+    // TODO: Require &mut
     pub fn modify_register<F: Fn(u32) -> u32>(&self, offset: usize, f: F) {
         unsafe {
             let addr = std::mem::transmute::<_, usize>(self.memory) + offset;
@@ -82,6 +79,7 @@ impl MemoryBlock {
         }
     }
 
+    // TODO: Require &mut
     pub fn write_register(&self, offset: usize, value: u32) {
         unsafe {
             let addr = std::mem::transmute::<_, usize>(self.memory) + offset;
@@ -106,6 +104,9 @@ impl MemoryBlock {
         Ok(addr)
     }
 }
+
+unsafe impl Send for MemoryBlock {}
+unsafe impl Sync for MemoryBlock {}
 
 impl Drop for MemoryBlock {
     fn drop(&mut self) {

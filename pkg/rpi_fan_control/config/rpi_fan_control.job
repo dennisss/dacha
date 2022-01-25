@@ -1,0 +1,33 @@
+name: "rpi_fan_control"
+
+replicas: 1
+
+task {
+    cwd: "/volumes/bundle"
+    args: [
+        "/volumes/bundle/built/pkg/rpi/rpi_fan_control_bundle"
+    ]
+
+    volumes: [
+        {
+            name: "bundle"
+            build_target: "//pkg/rpi:rpi_fan_control_bundle"
+        }
+    ]
+
+    additional_groups: ["gpio"]
+    devices: [
+        {
+            source {
+                raw: "/sys/class/pwm/pwmchip0"
+                limit: 1
+            }
+        },
+        {
+            source {
+                raw: "/sys/class/thermal/thermal_zone0/temp"
+                limit: 1
+            }
+        }
+    ]
+}

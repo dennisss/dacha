@@ -15,6 +15,7 @@ protobuf = { path = "../protobuf" }
 protobuf_json = { path = "../protobuf_json" }
 macros = { path = "../macros" }
 rpc_test = { path = "../rpc_test" }
+json = { path = "../json" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

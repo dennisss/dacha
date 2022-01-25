@@ -22,7 +22,7 @@ impl BuildTarget {
     pub fn list_all(file: &BuildFile) -> Vec<BuildTarget> {
         let mut out = vec![];
 
-        for raw in file.file_group() {
+        for raw in file.filegroup() {
             out.push(BuildTarget {
                 raw: BuildTargetRaw::FileGroup(raw.clone()),
             });

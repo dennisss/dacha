@@ -40,3 +40,16 @@ Leverage BUILD files.
 
     - So yes, we can build a single rule with many different settings
 */
+
+
+Specifying the sources for a bundle:
+- All targets can emit some files that it produces.
+    - e.g. binary, intermediate files like compiled proto code, static files, etc.
+- Only some should be added to bundles 
+    - (imtermediate files should normally not be added)
+- But, we also want to support nested dependencies.
+    - E.g. 
+
+- To build a bundle,
+    - User specified 'deps'
+    - Can be either direct dependencies or 

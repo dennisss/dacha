@@ -10,10 +10,11 @@ rust_binary {
 
 bundle {
     name: "cluster_manager_bundle"
-    absolute_srcs: [
-        "built/pkg/container/cluster_manager"
-    ]
     deps: [
         ":cluster_manager"
+    ]
+    configs: [
+        "//pkg/builder/config:x64"
+        # "//pkg/builder/config:rpi"
     ]
 }

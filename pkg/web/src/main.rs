@@ -17,7 +17,8 @@ async fn run() -> Result<()> {
             pages: vec![web::WebPageOptions {
                 title: "Adder".into(),
                 path: "/".into(),
-                js_path: "built/pkg/web/app.js".into(),
+                script_path: "built/pkg/web/app.js".into(),
+                vars: None,
             }],
         });
 

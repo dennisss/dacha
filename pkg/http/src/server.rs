@@ -652,6 +652,8 @@ impl Server {
 
             res = Self::transform_response(res);
 
+            // NOTE: We assume that this uses well defined framing (otherwise we can't
+            // persist the connection).
             let res_body = encode_response_body_v1(req_method, &mut res.head, res.body);
 
             if shared.shutting_down.load(Ordering::Relaxed) {

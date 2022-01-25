@@ -5,9 +5,6 @@ rust_binary {
 
 bundle {
     name: "adder_server_bundle"
-    absolute_srcs: [
-        "built/pkg/rpc_test/adder_server"
-    ]
     deps: [
         ":adder_server"
     ]

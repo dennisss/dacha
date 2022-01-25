@@ -2161,11 +2161,28 @@ dependencies = [
  "common",
  "lazy_static",
  "libc",
+ "nix 0.21.0",
+]
+
+[[package]]
+name = "rpi_fan_control"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "google",
+ "http",
+ "json",
+ "lazy_static",
+ "libc",
  "macros",
  "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
  "protobuf_json",
+ "rpc",
+ "rpc_util",
+ "rpi",
+ "web",
 ]
 
 [[package]]
@@ -2781,6 +2798,7 @@ dependencies = [
  "automata",
  "common",
  "http",
+ "json",
  "macros",
  "parsing",
  "protobuf",

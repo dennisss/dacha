@@ -32,9 +32,9 @@ message Bundle {
 
     repeated string deps = 2;
 
-    repeated string absolute_srcs = 3;
-
     repeated string configs = 4;
+
+    reserved 3;
 }
 
 message Webpack {
@@ -61,7 +61,7 @@ message BuildConfig {
 
 message BuildFile {
     repeated RustBinary rust_binary = 1;
-    repeated FileGroup file_group = 2;
+    repeated FileGroup filegroup = 2;
     repeated Bundle bundle = 3;
     repeated Webpack webpack = 4;
     repeated BuildConfig build_config = 5;

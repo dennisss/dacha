@@ -152,7 +152,7 @@ async fn run() -> Result<()> {
     run_ssh(&args.addr, "sudo chmod 700 /opt/dacha/data")?;
 
     // TODO: Need to re-build this (and use a platform independent name).
-    copy_repo_file(&args.addr, "built/pkg/container/cluster_node.armv7")?;
+    copy_repo_file(&args.addr, "built/pkg/container/cluster_node")?;
 
     let mut node_config = {
         let s = fs::read_to_string(project_path!("pkg/container/config/node.textproto")).await?;
