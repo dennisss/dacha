@@ -4,9 +4,10 @@ rust_binary {
 }
 
 bundle {
-    name: "rpi_fan_control_bundle"
+    name: "bundle"
     deps: [
         ":rpi_fan_control",
+        ":app",
         "//pkg/web:web_data"
     ]
     configs: [

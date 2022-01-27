@@ -14,6 +14,23 @@ Fan curve:
 - 70C: 70%
 - 80C: 100%
 
+Testing using an independent Pi:
+
+ssh -i ~/.ssh/id_cluster pi@10.1.0.73
+
+scp -i ~/.ssh/id_cluster built/pkg/rpi_fan_control/bundle/sha256:1472d87b195a0c9df6922badf7e2929980af814aa4e389c5197ef0f01d6144a7 pi@10.1.0.73:~/rpi_fan_control.tar
+
+rm -r dacha
+
+mkdir dacha
+
+tar -xf rpi_fan_control.tar -C dacha
+
+cd dacha
+
+./built/pkg/rpi_fan_control/rpi_fan_control --rpc_port=8001 --web_port=8000 --fan_pwm_pin=18 --fan_inverted
+
+
 */
 
 extern crate rpi;
@@ -78,7 +95,7 @@ impl FanControlServiceImpl {
         })
     }
 
-    pub async fn run(self, pin: GPIOPin) -> Result<()> {
+    pub async fn run(self, pin: GPIOPin, inverted: bool) -> Result<()> {
         let mut last_temperature = None;
 
         let mut temp_reader = CPUTemperatureReader::create().await?;
@@ -104,7 +121,13 @@ impl FanControlServiceImpl {
                     ));
                 }
 
-                fan_pwm.write(FAN_PWM_FREQUENCY, state.proto.current_speed());
+                let duty_cycle = if inverted {
+                    1.0 - state.proto.current_speed()
+                } else {
+                    state.proto.current_speed()
+                };
+
+                fan_pwm.write(FAN_PWM_FREQUENCY, duty_cycle).await;
 
                 task::sleep(UPDATE_INTERVAL).await;
             }
@@ -164,9 +187,19 @@ impl FanControlService for FanControlServiceImpl {
 
 #[derive(Args)]
 struct Args {
+    /// Port on which to start the RPC server.
     rpc_port: NamedPortArg,
+
+    /// Port on which to start the web server.
     web_port: NamedPortArg,
+
+    /// Raspberry Pi BCM pin number on which the fan's PWM is connected.
     fan_pwm_pin: Option<usize>,
+
+    /// Whether or not the PWM signal should be inverted (100% duty cycle
+    /// actually means 0% fan speed).
+    #[arg(default = false)]
+    fan_inverted: bool,
 }
 
 async fn run() -> Result<()> {
@@ -178,7 +211,7 @@ async fn run() -> Result<()> {
 
     task_bundle.add("WebServer", {
         let vars = json::Value::Object(map!(
-            "rpc_address" => &json::Value::String(format!("http://localhost:{}", args.rpc_port.value()))
+            "rpc_port" => &json::Value::String(args.rpc_port.value().to_string())
         ));
 
         let web_handler = web::WebServerHandler::new(web::WebServerOptions {
@@ -206,7 +239,10 @@ async fn run() -> Result<()> {
     if let Some(pin) = args.fan_pwm_pin {
         let gpio = rpi::gpio::GPIO::open()?;
         let pin = gpio.pin(pin);
-        task_bundle.add("FanControlService::run()", service.run(pin));
+        task_bundle.add(
+            "FanControlService::run()",
+            service.run(pin, args.fan_inverted),
+        );
     }
 
     task_bundle.join().await?;

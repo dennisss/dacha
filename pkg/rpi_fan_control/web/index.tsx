@@ -14,7 +14,7 @@ class App extends React.Component<{}, { _proto?: any }> {
             _proto: null
         };
 
-        this._channel = new Channel(global.vars.rpc_address);
+        this._channel = new Channel(`${window.location.protocol}//${window.location.hostname}:${global.vars.rpc_port}`);
     }
 
     componentDidMount() {

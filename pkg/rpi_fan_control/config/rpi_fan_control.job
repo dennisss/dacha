@@ -1,11 +1,21 @@
 name: "rpi_fan_control"
 
-replicas: 1
+# Add to as many nodes as possible.
+replicas: 10000
+
+# TODO: Have a label to nodes so that we can tell if it has an attached fan.
+scheduling {
+    distinct_nodes: true
+}
 
 task {
     cwd: "/volumes/bundle"
     args: [
-        "/volumes/bundle/built/pkg/rpi/rpi_fan_control_bundle"
+        "/volumes/bundle/built/pkg/rpi/rpi_fan_control_bundle",
+        "--rpc_port=rpc",
+        "--web_port=web",
+        "--fan_pwm_pin=18",
+        "--fan_inverted"
     ]
 
     volumes: [
@@ -15,13 +25,19 @@ task {
         }
     ]
 
+    ports: [
+        { name: "rpc" },
+        { name: "web" }
+    ]
+
     additional_groups: ["gpio"]
     devices: [
         {
             source {
                 raw: "/sys/class/pwm/pwmchip0"
                 limit: 1
-            }
+            },
+            exclusive: true
         },
         {
             source {

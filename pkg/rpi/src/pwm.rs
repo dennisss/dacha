@@ -151,9 +151,14 @@ impl SysPWM {
             return Err(err_msg("PWM sys fs driver not detected."));
         }
 
-        // Export channel 0.
+        // Export the channel.
+        // When already exported this will fail with an Os::ResourceBusy error. Instead
+        // of checking the error code, we just verify later that the channel
+        // sub-directory exists.
         let export_path = Path::new(SYS_PWM_DIR).join("export");
-        fs::write(export_path, format!("{}\n", pin_spec.channel)).await?;
+        fs::write(export_path, format!("{}\n", pin_spec.channel))
+            .await
+            .ok();
 
         let channel_dir = Path::new(SYS_PWM_DIR).join(format!("pwm{}", pin_spec.channel));
         if !channel_dir.exists().await {
