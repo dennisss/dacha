@@ -30,16 +30,13 @@ async fn run_client() -> Result<()> {
     // TODO: Must verify that in HTTP if we get a Content-Length, but we don't
     // read the full length, then we should error out the request.
 
-    // TODO: Specify the gRPC protocal in uri?
-    // let channel =
-    // Arc::new(rpc::Http2Channel::create(http::ClientOptions::try_from(
-    //     args.target.as_str(),
-    // )?)?);
-
     let channel = {
-        let meta_client = Arc::new(ClusterMetaClient::create_from_environment().await?);
-        let resolver =
-            Arc::new(container::ServiceResolver::create(&args.target, meta_client).await?);
+        let resolver = container::ServiceResolver::create_with_fallback(&args.target, async move {
+            Ok(Arc::new(
+                ClusterMetaClient::create_from_environment().await?,
+            ))
+        })
+        .await?;
 
         Arc::new(rpc::Http2Channel::create(
             http::ClientOptions::from_resolver(resolver),

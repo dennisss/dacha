@@ -51,6 +51,7 @@ mod v2;
 pub use crate::body::{Body, BodyFromData, BodyFromParts, EmptyBody, WithTrailers};
 pub use crate::client::{
     Client, ClientInterface, ClientOptions, ResolvedEndpoint, Resolver, ResolverChangeListener,
+    SystemDNSResolver,
 };
 pub use crate::header::{Header, Headers};
 pub use crate::method::Method;

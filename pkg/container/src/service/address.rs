@@ -33,14 +33,24 @@ impl std::fmt::Display for ServiceParseError {
 }
 
 impl ServiceAddress {
-    pub fn parse(address: &str, current_zone: &str) -> Result<Self, ServiceParseError> {
-        let (raw_name, port) = address.split_once(":").unwrap_or((address, ""));
+    pub fn is_service_address(address: &str) -> bool {
+        address.ends_with(NAME_SUFFIX)
+    }
 
-        let raw_name = raw_name
+    pub fn parse(address: &str, current_zone: &str) -> Result<Self, ServiceParseError> {
+        let raw_name = address
             .strip_suffix(NAME_SUFFIX)
             .ok_or(ServiceParseError::NotClusterAddress)?;
 
         let mut name_parts = raw_name.split(".").collect::<Vec<_>>();
+
+        let mut port = None;
+        if let Some(first_part) = name_parts.get(0) {
+            if let Some(port_name) = first_part.strip_prefix("_") {
+                port = Some(port_name.to_string());
+                name_parts.remove(0);
+            }
+        }
 
         // Name must contain at least a zone, an entity type and an entity name.
         if name_parts.len() < 3 {
@@ -53,6 +63,8 @@ impl ServiceAddress {
         }
 
         let entity_type = name_parts.pop().unwrap();
+
+        let mut port = None;
 
         // TODO: Also validate job name patterns?
         let entity = match entity_type {
@@ -96,11 +108,7 @@ impl ServiceAddress {
                 zone: zone.to_string(),
                 entity,
             },
-            port: if port.is_empty() {
-                None
-            } else {
-                Some(port.to_string())
-            },
+            port,
         })
     }
 }

@@ -1,4 +1,5 @@
 use std::convert::TryInto;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,20 +21,28 @@ use crate::service::address::*;
 /// cluster.
 ///
 /// We accept the following formats of addresses:
-///           "[node_id].node.[zone].cluster.internal"
-/// "[task_id].[job_name].task.[zone].cluster.internal:[port_name]"
-///           "[job_name] .job.[zone].cluster.internal:[port_name]"
+///                         "[node_id].node.[zone].cluster.internal"
+/// "_[port_name].[task_id].[job_name].task.[zone].cluster.internal"
+/// "_[port_name].          [job_name] .job.[zone].cluster.internal"
+///
+/// TODO: Consider restricting job_names to only be a 2 dot delimited labels so
+/// that we can specify a job/task address without a port.
 ///
 /// With the following definitions for the above parameters:
 /// - "[zone]" : Name of the cluster from which to look up objects or a special
 ///   value of "local" to retrieve from the current cluster.
 /// - "[node_id]" : Id of the node to access or a special value of "self"
+/// - "_[port_name[": Name of the port which should be requested. This is
+///   optional and if not present we will use the first port defined for the
+///   job/task.
+///
+/// TODO: Verify that job_name doesn't start with '_'.
 ///
 /// NOTE: Currently only a zone of "local" or equivalent is supported.
 ///
 /// NOTE: The host names have name segments reversed so to access task 2 of job
 /// "adder.server", the address will be
-/// "2.server.adder.task.[zone].cluster.internal"
+/// "_[port].2.server.adder.task.[zone].cluster.internal"
 ///
 /// TODO: Consider changing this to avoid name labels which consist only of
 /// numbers.
@@ -54,6 +63,31 @@ struct State {
 }
 
 impl ServiceResolver {
+    /// Creates a service resolver which will fallback to using a regular system
+    /// DNS based resolver if the address is not a cluster managed address.
+    pub async fn create_with_fallback<F: Future<Output = Result<Arc<ClusterMetaClient>>>>(
+        address: &str,
+        meta_client_factory: F,
+    ) -> Result<Arc<dyn http::Resolver>> {
+        let authority: http::uri::Authority = address.try_into()?;
+
+        if let http::uri::Host::Name(name) = &authority.host {
+            if ServiceAddress::is_service_address(name) {
+                return Ok(Arc::new(
+                    // NOTE: We pass in the original 'address' so that it rejects addresses with
+                    // ports specified.
+                    Self::create(address, meta_client_factory.await?).await?,
+                ));
+            }
+        }
+
+        let port = authority
+            .port
+            .ok_or_else(|| err_msg("Address does not contain a port"))?;
+
+        Ok(Arc::new(http::SystemDNSResolver::new(authority.host, port)))
+    }
+
     /// TODO: Support having a fallback to a regular public DNS name if this
     /// resolver doesn't support it.
     pub async fn create(address: &str, meta_client: Arc<ClusterMetaClient>) -> Result<Self> {

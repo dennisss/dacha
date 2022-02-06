@@ -7,6 +7,7 @@ use raft::proto::routing::RouteLabel;
 use crate::meta::constants::ZONE_ENV_VAR;
 
 pub struct ClusterMetaClient {
+    zone: String,
     inner: MetastoreClient,
 }
 
@@ -16,7 +17,10 @@ impl ClusterMetaClient {
         label.set_value(format!("{}={}", ZONE_ENV_VAR, zone));
 
         let inner = MetastoreClient::create(std::slice::from_ref(&label)).await?;
-        Ok(Self { inner })
+        Ok(Self {
+            zone: zone.to_string(),
+            inner,
+        })
     }
 
     pub async fn create_from_environment() -> Result<Self> {
@@ -27,6 +31,10 @@ impl ClusterMetaClient {
             )
         })?;
         Self::create(&zone).await
+    }
+
+    pub fn zone(&self) -> &str {
+        &self.zone
     }
 }
 
