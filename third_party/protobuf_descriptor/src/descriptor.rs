@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::sync::Arc;
 
-use common::collections::FixedVec;
+use common::collections::{FixedString, FixedVec};
 use common::const_default::ConstDefault;
 use common::errors::*;
 use common::list::Appendable;
@@ -33,6 +33,8 @@ impl ::core::fmt::Debug for FileDescriptorSet {
 }
 
 impl FileDescriptorSet {
+    pub const FILE_FIELD_NUM: protobuf_core::FieldNumber = 1;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: FileDescriptorSet = FileDescriptorSet::DEFAULT;
         &VALUE
@@ -152,6 +154,19 @@ impl ::core::fmt::Debug for FileDescriptorProto {
 }
 
 impl FileDescriptorProto {
+    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const PACKAGE_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const DEPENDENCY_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const PUBLIC_DEPENDENCY_FIELD_NUM: protobuf_core::FieldNumber = 10;
+    pub const WEAK_DEPENDENCY_FIELD_NUM: protobuf_core::FieldNumber = 11;
+    pub const MESSAGE_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 4;
+    pub const ENUM_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 5;
+    pub const SERVICE_FIELD_NUM: protobuf_core::FieldNumber = 6;
+    pub const EXTENSION_FIELD_NUM: protobuf_core::FieldNumber = 7;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 8;
+    pub const SOURCE_CODE_INFO_FIELD_NUM: protobuf_core::FieldNumber = 9;
+    pub const SYNTAX_FIELD_NUM: protobuf_core::FieldNumber = 12;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: FileDescriptorProto = FileDescriptorProto::DEFAULT;
         &VALUE
@@ -606,6 +621,10 @@ impl ::core::fmt::Debug for DescriptorProto_ExtensionRange {
 }
 
 impl DescriptorProto_ExtensionRange {
+    pub const START_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: DescriptorProto_ExtensionRange = DescriptorProto_ExtensionRange::DEFAULT;
         &VALUE
@@ -773,6 +792,9 @@ impl ::core::fmt::Debug for DescriptorProto_ReservedRange {
 }
 
 impl DescriptorProto_ReservedRange {
+    pub const START_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 2;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: DescriptorProto_ReservedRange = DescriptorProto_ReservedRange::DEFAULT;
         &VALUE
@@ -915,6 +937,17 @@ impl ::core::fmt::Debug for DescriptorProto {
 }
 
 impl DescriptorProto {
+    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const FIELD_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const EXTENSION_FIELD_NUM: protobuf_core::FieldNumber = 6;
+    pub const NESTED_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const ENUM_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 4;
+    pub const EXTENSION_RANGE_FIELD_NUM: protobuf_core::FieldNumber = 5;
+    pub const ONEOF_DECL_FIELD_NUM: protobuf_core::FieldNumber = 8;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 7;
+    pub const RESERVED_RANGE_FIELD_NUM: protobuf_core::FieldNumber = 9;
+    pub const RESERVED_NAME_FIELD_NUM: protobuf_core::FieldNumber = 10;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: DescriptorProto = DescriptorProto::DEFAULT;
         &VALUE
@@ -1316,6 +1349,8 @@ impl ::core::fmt::Debug for ExtensionRangeOptions {
 }
 
 impl ExtensionRangeOptions {
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: ExtensionRangeOptions = ExtensionRangeOptions::DEFAULT;
         &VALUE
@@ -1633,6 +1668,17 @@ impl ::core::fmt::Debug for FieldDescriptorProto {
 }
 
 impl FieldDescriptorProto {
+    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const NUMBER_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const LABEL_FIELD_NUM: protobuf_core::FieldNumber = 4;
+    pub const TYPE_FIELD_NUM: protobuf_core::FieldNumber = 5;
+    pub const TYPE_NAME_FIELD_NUM: protobuf_core::FieldNumber = 6;
+    pub const EXTENDEE_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const DEFAULT_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 7;
+    pub const ONEOF_INDEX_FIELD_NUM: protobuf_core::FieldNumber = 9;
+    pub const JSON_NAME_FIELD_NUM: protobuf_core::FieldNumber = 10;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 8;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: FieldDescriptorProto = FieldDescriptorProto::DEFAULT;
         &VALUE
@@ -2002,6 +2048,9 @@ impl ::core::fmt::Debug for OneofDescriptorProto {
 }
 
 impl OneofDescriptorProto {
+    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 2;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: OneofDescriptorProto = OneofDescriptorProto::DEFAULT;
         &VALUE
@@ -2142,6 +2191,9 @@ impl ::core::fmt::Debug for EnumDescriptorProto_EnumReservedRange {
 }
 
 impl EnumDescriptorProto_EnumReservedRange {
+    pub const START_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 2;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: EnumDescriptorProto_EnumReservedRange =
             EnumDescriptorProto_EnumReservedRange::DEFAULT;
@@ -2280,6 +2332,12 @@ impl ::core::fmt::Debug for EnumDescriptorProto {
 }
 
 impl EnumDescriptorProto {
+    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const VALUE_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const RESERVED_RANGE_FIELD_NUM: protobuf_core::FieldNumber = 4;
+    pub const RESERVED_NAME_FIELD_NUM: protobuf_core::FieldNumber = 5;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: EnumDescriptorProto = EnumDescriptorProto::DEFAULT;
         &VALUE
@@ -2520,6 +2578,10 @@ impl ::core::fmt::Debug for EnumValueDescriptorProto {
 }
 
 impl EnumValueDescriptorProto {
+    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const NUMBER_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: EnumValueDescriptorProto = EnumValueDescriptorProto::DEFAULT;
         &VALUE
@@ -2689,6 +2751,10 @@ impl ::core::fmt::Debug for ServiceDescriptorProto {
 }
 
 impl ServiceDescriptorProto {
+    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const METHOD_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 3;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: ServiceDescriptorProto = ServiceDescriptorProto::DEFAULT;
         &VALUE
@@ -2865,6 +2931,13 @@ impl ::core::fmt::Debug for MethodDescriptorProto {
 }
 
 impl MethodDescriptorProto {
+    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const INPUT_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const OUTPUT_TYPE_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const OPTIONS_FIELD_NUM: protobuf_core::FieldNumber = 4;
+    pub const CLIENT_STREAMING_FIELD_NUM: protobuf_core::FieldNumber = 5;
+    pub const SERVER_STREAMING_FIELD_NUM: protobuf_core::FieldNumber = 6;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: MethodDescriptorProto = MethodDescriptorProto::DEFAULT;
         &VALUE
@@ -3206,6 +3279,28 @@ impl ::core::fmt::Debug for FileOptions {
 }
 
 impl FileOptions {
+    pub const JAVA_PACKAGE_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const JAVA_OUTER_CLASSNAME_FIELD_NUM: protobuf_core::FieldNumber = 8;
+    pub const JAVA_MULTIPLE_FILES_FIELD_NUM: protobuf_core::FieldNumber = 10;
+    pub const JAVA_GENERATE_EQUALS_AND_HASH_FIELD_NUM: protobuf_core::FieldNumber = 20;
+    pub const JAVA_STRING_CHECK_UTF8_FIELD_NUM: protobuf_core::FieldNumber = 27;
+    pub const OPTIMIZE_FOR_FIELD_NUM: protobuf_core::FieldNumber = 9;
+    pub const GO_PACKAGE_FIELD_NUM: protobuf_core::FieldNumber = 11;
+    pub const CC_GENERIC_SERVICES_FIELD_NUM: protobuf_core::FieldNumber = 16;
+    pub const JAVA_GENERIC_SERVICES_FIELD_NUM: protobuf_core::FieldNumber = 17;
+    pub const PY_GENERIC_SERVICES_FIELD_NUM: protobuf_core::FieldNumber = 18;
+    pub const PHP_GENERIC_SERVICES_FIELD_NUM: protobuf_core::FieldNumber = 42;
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 23;
+    pub const CC_ENABLE_ARENAS_FIELD_NUM: protobuf_core::FieldNumber = 31;
+    pub const OBJC_CLASS_PREFIX_FIELD_NUM: protobuf_core::FieldNumber = 36;
+    pub const CSHARP_NAMESPACE_FIELD_NUM: protobuf_core::FieldNumber = 37;
+    pub const SWIFT_PREFIX_FIELD_NUM: protobuf_core::FieldNumber = 39;
+    pub const PHP_CLASS_PREFIX_FIELD_NUM: protobuf_core::FieldNumber = 40;
+    pub const PHP_NAMESPACE_FIELD_NUM: protobuf_core::FieldNumber = 41;
+    pub const PHP_METADATA_NAMESPACE_FIELD_NUM: protobuf_core::FieldNumber = 44;
+    pub const RUBY_PACKAGE_FIELD_NUM: protobuf_core::FieldNumber = 45;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: FileOptions = FileOptions::DEFAULT;
         &VALUE
@@ -3913,6 +4008,12 @@ impl ::core::fmt::Debug for MessageOptions {
 }
 
 impl MessageOptions {
+    pub const MESSAGE_SET_WIRE_FORMAT_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const NO_STANDARD_DESCRIPTOR_ACCESSOR_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const MAP_ENTRY_FIELD_NUM: protobuf_core::FieldNumber = 7;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: MessageOptions = MessageOptions::DEFAULT;
         &VALUE
@@ -4285,6 +4386,14 @@ impl ::core::fmt::Debug for FieldOptions {
 }
 
 impl FieldOptions {
+    pub const CTYPE_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const PACKED_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const JSTYPE_FIELD_NUM: protobuf_core::FieldNumber = 6;
+    pub const LAZY_FIELD_NUM: protobuf_core::FieldNumber = 5;
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const WEAK_FIELD_NUM: protobuf_core::FieldNumber = 10;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: FieldOptions = FieldOptions::DEFAULT;
         &VALUE
@@ -4565,6 +4674,8 @@ impl ::core::fmt::Debug for OneofOptions {
 }
 
 impl OneofOptions {
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: OneofOptions = OneofOptions::DEFAULT;
         &VALUE
@@ -4675,6 +4786,10 @@ impl ::core::fmt::Debug for EnumOptions {
 }
 
 impl EnumOptions {
+    pub const ALLOW_ALIAS_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: EnumOptions = EnumOptions::DEFAULT;
         &VALUE
@@ -4842,6 +4957,9 @@ impl ::core::fmt::Debug for EnumValueOptions {
 }
 
 impl EnumValueOptions {
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: EnumValueOptions = EnumValueOptions::DEFAULT;
         &VALUE
@@ -4981,6 +5099,9 @@ impl ::core::fmt::Debug for ServiceOptions {
 }
 
 impl ServiceOptions {
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 33;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: ServiceOptions = ServiceOptions::DEFAULT;
         &VALUE
@@ -5191,6 +5312,10 @@ impl ::core::fmt::Debug for MethodOptions {
 }
 
 impl MethodOptions {
+    pub const DEPRECATED_FIELD_NUM: protobuf_core::FieldNumber = 33;
+    pub const IDEMPOTENCY_LEVEL_FIELD_NUM: protobuf_core::FieldNumber = 34;
+    pub const UNINTERPRETED_OPTION_FIELD_NUM: protobuf_core::FieldNumber = 999;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: MethodOptions = MethodOptions::DEFAULT;
         &VALUE
@@ -5363,6 +5488,9 @@ impl ::core::fmt::Debug for UninterpretedOption_NamePart {
 }
 
 impl UninterpretedOption_NamePart {
+    pub const NAME_PART_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const IS_EXTENSION_FIELD_NUM: protobuf_core::FieldNumber = 2;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: UninterpretedOption_NamePart = UninterpretedOption_NamePart::DEFAULT;
         &VALUE
@@ -5506,6 +5634,14 @@ impl ::core::fmt::Debug for UninterpretedOption {
 }
 
 impl UninterpretedOption {
+    pub const NAME_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const IDENTIFIER_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const POSITIVE_INT_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 4;
+    pub const NEGATIVE_INT_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 5;
+    pub const DOUBLE_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 6;
+    pub const STRING_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 7;
+    pub const AGGREGATE_VALUE_FIELD_NUM: protobuf_core::FieldNumber = 8;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: UninterpretedOption = UninterpretedOption::DEFAULT;
         &VALUE
@@ -5805,6 +5941,12 @@ impl ::core::fmt::Debug for SourceCodeInfo_Location {
 }
 
 impl SourceCodeInfo_Location {
+    pub const PATH_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const SPAN_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const LEADING_COMMENTS_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const TRAILING_COMMENTS_FIELD_NUM: protobuf_core::FieldNumber = 4;
+    pub const LEADING_DETACHED_COMMENTS_FIELD_NUM: protobuf_core::FieldNumber = 6;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: SourceCodeInfo_Location = SourceCodeInfo_Location::DEFAULT;
         &VALUE
@@ -6042,6 +6184,8 @@ impl ::core::fmt::Debug for SourceCodeInfo {
 }
 
 impl SourceCodeInfo {
+    pub const LOCATION_FIELD_NUM: protobuf_core::FieldNumber = 1;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: SourceCodeInfo = SourceCodeInfo::DEFAULT;
         &VALUE
@@ -6153,6 +6297,11 @@ impl ::core::fmt::Debug for GeneratedCodeInfo_Annotation {
 }
 
 impl GeneratedCodeInfo_Annotation {
+    pub const PATH_FIELD_NUM: protobuf_core::FieldNumber = 1;
+    pub const SOURCE_FILE_FIELD_NUM: protobuf_core::FieldNumber = 2;
+    pub const BEGIN_FIELD_NUM: protobuf_core::FieldNumber = 3;
+    pub const END_FIELD_NUM: protobuf_core::FieldNumber = 4;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: GeneratedCodeInfo_Annotation = GeneratedCodeInfo_Annotation::DEFAULT;
         &VALUE
@@ -6346,6 +6495,8 @@ impl ::core::fmt::Debug for GeneratedCodeInfo {
 }
 
 impl GeneratedCodeInfo {
+    pub const ANNOTATION_FIELD_NUM: protobuf_core::FieldNumber = 1;
+
     pub fn static_default_value() -> &'static Self {
         static VALUE: GeneratedCodeInfo = GeneratedCodeInfo::DEFAULT;
         &VALUE

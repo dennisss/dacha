@@ -1388,6 +1388,35 @@ impl Compiler<'_> {
 
         lines.add(format!("impl {} {{", fullname));
 
+        {
+            let mut field_num_names = vec![];
+            for item in &msg.body {
+                match item {
+                    MessageItem::OneOf(oneof) => {
+                        for field in &oneof.fields {
+                            field_num_names.push((field.name.clone(), field.num));
+                        }
+                    }
+                    MessageItem::Field(field) => {
+                        field_num_names.push((field.name.clone(), field.num));
+                    }
+                    // TODO: Add map field accessors.
+                    _ => {}
+                }
+            }
+
+            for (field_name, field_num) in field_num_names {
+                lines.add(format!(
+                    "pub const {field_name}_FIELD_NUM: {pkg}::FieldNumber = {num};",
+                    field_name = field_name.to_uppercase(),
+                    pkg = self.options.runtime_package,
+                    num = field_num
+                ));
+            }
+
+            lines.nl();
+        }
+
         lines.add("\tpub fn static_default_value() -> &'static Self {");
         lines.add(format!(
             "\t\tstatic VALUE: {} = {}::DEFAULT;",
