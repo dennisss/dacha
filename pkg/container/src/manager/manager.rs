@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use common::errors::*;
 use common::errors::*;
@@ -72,13 +73,36 @@ const JOB_NAME_MAX_SIZE: usize = 180;
 
 const JOB_NAME_MAX_LABEL_LENGTH: usize = 63;
 
+const JOB_RECONCILE_RETRY_INTERVAL: Duration = Duration::from_secs(60);
+
+#[derive(Clone)]
 pub struct Manager {
-    meta_client: Arc<ClusterMetaClient>,
+    meta_client: Arc<dyn MetastoreClientInterface>,
 }
 
 impl Manager {
-    pub fn new(meta_client: Arc<ClusterMetaClient>) -> Self {
+    pub fn new(meta_client: Arc<dyn MetastoreClientInterface>) -> Self {
         Self { meta_client }
+    }
+
+    pub async fn run(self) -> Result<()> {
+        // Periodically retry reconciling all jobs. Sometimes we
+        loop {
+            let mut jobs = self
+                .meta_client
+                .cluster_table::<JobMetadata>()
+                .list()
+                .await?;
+            for job in jobs {
+                if let Err(e) = self.reconcile_job(job.spec().name()).await {
+                    eprintln!("Failed to reconcile job {}: {}", job.spec().name(), e);
+                }
+            }
+
+            common::async_std::task::sleep(JOB_RECONCILE_RETRY_INTERVAL).await;
+        }
+
+        Ok(())
     }
 
     fn is_valid_job_name(name: &str) -> bool {
@@ -241,10 +265,7 @@ impl Manager {
             nodes_by_id.insert(node.id(), i);
         }
 
-        let mut existing_tasks = {
-            let task_prefix = format!("{}.", job_name);
-            tasks_table.get_prefix(&task_prefix).await?
-        };
+        let mut existing_tasks = tasks_table.list_by_job(job_name).await?;
 
         existing_tasks.retain(|task| !task.drain());
 
@@ -272,12 +293,14 @@ impl Manager {
 
         // TODO: Need to increment ref counts to blobs.
 
+        let mut update_incomplete = false;
+
         // Old tasks associated with this job which we ended up not being able to
         // re-use.
         let mut old_tasks = vec![];
 
         // TODO: Implement each replica as a separate transaction.
-        for _ in 0..(job.spec().replicas() as usize) {
+        for i in 0..(job.spec().replicas() as usize) {
             // Attempt to select an existing task that we want to re-use.
             let existing_task = {
                 let mut picked_task = None;
@@ -315,7 +338,8 @@ impl Manager {
                     // TODO: Don't make this a permanent failure. Instead come back to this job
                     // later once we have more nodes.
                     if remaining_nodes.is_empty() {
-                        return Err(err_msg("Not enough nodes to bring up the job."));
+                        update_incomplete = true;
+                        break;
                     }
 
                     let selected_idx =
@@ -345,6 +369,7 @@ impl Manager {
             new_task.set_revision(job.task_revision());
 
             // Update the task
+            // TODO: Skip this if the task hasn't changed at all.
             tasks_table.put(&new_task).await?;
 
             // Update the node
@@ -410,38 +435,6 @@ impl Manager {
         }
 
         txn.commit().await?;
-
-        // run_transaction!(&self.meta_client, txn, {
-
-        // });
-
-        /*
-        TODO: We must support implementing constraints/preferences for tasks
-
-        For now, we want to support the following constraints:
-        - Unique nodes for each task
-        -
-        - Have different Node constraint
-        - Have a
-
-        Need to maintain how many
-        */
-
-        // Begin Transaction
-
-        // Lookup the job
-
-        // Lookup tasks associated with the job.
-
-        // Check all N new ones.
-
-        // If we need more, randomly pick more nodes
-
-        // If we need less, delete some
-
-        // Commit Transaction
-
-        // Notify all effected nodes that their task set has changed.
 
         Ok(())
     }
@@ -570,6 +563,7 @@ impl Manager {
 
                 let mut replica = BlobReplica::default();
                 replica.set_node_id(new_node_id);
+                replica.set_timestamp(std::time::SystemTime::now());
                 blob.add_replicas(replica);
             }
 

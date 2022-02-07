@@ -38,16 +38,31 @@ impl ClusterMetaClient {
     }
 }
 
-impl Deref for ClusterMetaClient {
-    type Target = MetastoreClient;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+#[async_trait]
+impl datastore::meta::client::MetastoreClientInterface for ClusterMetaClient {
+    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        self.inner.get(key).await
     }
-}
 
-impl DerefMut for ClusterMetaClient {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
+    async fn get_range(
+        &self,
+        start_key: &[u8],
+        end_key: &[u8],
+    ) -> Result<Vec<datastore::proto::key_value::KeyValueEntry>> {
+        self.inner.get_range(start_key, end_key).await
+    }
+
+    async fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        self.inner.put(key, value).await
+    }
+
+    async fn delete(&self, key: &[u8]) -> Result<()> {
+        self.inner.delete(key).await
+    }
+
+    async fn new_transaction<'a>(
+        &'a self,
+    ) -> Result<datastore::meta::client::MetastoreTransaction<'a>> {
+        self.inner.new_transaction().await
     }
 }

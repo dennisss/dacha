@@ -8,5 +8,5 @@ pub fn new_task_id() -> String {
     use crypto::random::RngExt;
 
     let id = crypto::random::clocked_rng().uniform::<u64>();
-    format!("{:08x}", id)
+    common::base32::base32_encode_cl64(id)
 }

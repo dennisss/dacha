@@ -3,6 +3,7 @@ use common::errors::*;
 pub struct KeyEncoder {}
 
 impl KeyEncoder {
+    // NOTE: encode_bytes(A) is NOT a prefix of encode_bytes(A + B)
     pub fn encode_bytes(input: &[u8], out: &mut Vec<u8>) {
         // 'ab\x0\x0'
         // 'ab\x0\xff\x0\x0'
@@ -48,6 +49,14 @@ impl KeyEncoder {
         }
 
         Err(err_msg("Value not terminated"))
+    }
+
+    pub fn encode_end_bytes(input: &[u8], out: &mut Vec<u8>) {
+        out.extend_from_slice(input);
+    }
+
+    pub fn decode_end_bytes<'a>(input: &'a [u8]) -> Result<(&'a [u8], &'a [u8])> {
+        Ok((input, &[]))
     }
 
     pub fn encode_varuint(mut value: u64, inverted: bool, out: &mut Vec<u8>) {

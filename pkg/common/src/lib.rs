@@ -53,6 +53,8 @@ pub mod args;
 #[cfg(feature = "std")]
 pub mod async_fn;
 #[cfg(feature = "std")]
+pub mod base32;
+#[cfg(feature = "std")]
 pub mod bits;
 #[cfg(feature = "std")]
 pub mod borrowed;

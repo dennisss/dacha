@@ -92,6 +92,11 @@ enum Command {
     #[arg(name = "bootstrap")]
     Bootstrap(BootstrapCommand),
 
+    /// Re-builds all system cluster components (metastore, manager) and updates
+    /// them in a running cluster.
+    #[arg(name = "upgrade")]
+    Upgrade(UpgradeCommand),
+
     /// Enumerate objects (tasks, )
     #[arg(name = "list")]
     List(ListCommand),
@@ -116,6 +121,9 @@ enum Command {
 struct BootstrapCommand {
     node_addr: String,
 }
+
+#[derive(Args)]
+struct UpgradeCommand {}
 
 #[derive(Args)]
 struct ListCommand {
@@ -250,21 +258,20 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
         .result?;
     let node_id = node_meta.id();
 
-    println!("Bootstrapping cluster with node {:08x}", node_id);
+    println!(
+        "Bootstrapping cluster with node {}",
+        common::base32::base32_encode_cl64(node_id)
+    );
     println!("Zone: {}", node_meta.zone());
 
-    // TODO: We also need to bootstrap the BlobMetadata that is used the metastore.
+    // TODO: Must add the built blob metadata to the TaskSpec so that it is stored
+    // in the metastore (otherwise we can't scale up the metastore without
+    // upgrading).
 
-    // TODO: Need to build any build volumes to blobs.
-    let mut meta_job_spec = JobSpec::parse_text(
-        &fs::read_to_string(project_path!("pkg/container/config/metastore.job")).await?,
-    )?;
+    // TODO: We also need to bootstrap the BlobMetadata that is used the metastore
+    // (also the NodeMetadata to record the used port).
 
-    meta_job_spec.task_mut().add_args(format!(
-        "--labels={}={}",
-        container::meta::constants::ZONE_ENV_VAR,
-        node_meta.zone()
-    ));
+    let mut meta_job_spec = get_metastore_job(node_meta.zone()).await?;
 
     const METASTORE_INITIAL_PORT: usize = 30001;
 
@@ -285,10 +292,10 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     let meta_job_name = meta_job_spec.name().to_string();
     meta_job_spec
         .task_mut()
-        .set_name(format!("{}.{:08x}", meta_job_name, {
+        .set_name(format!("{}.{}", meta_job_name, {
             let mut hasher = SipHasher::default_rounds_with_key_halves(0, 0);
             hasher.update(node_meta.zone().as_bytes());
-            hasher.finish_u64()
+            common::base32::base32_encode_cl64(hasher.finish_u64())
         }));
 
     // NOTE: This will re-write any build_target references in the
@@ -407,9 +414,7 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     let manager = Manager::new(meta_client.clone()).into_service();
     let manager_channel = Arc::new(rpc::LocalChannel::new(manager));
 
-    let mut manager_job_spec = JobSpec::parse_text(
-        &fs::read_to_string(project_path!("pkg/container/config/manager.job")).await?,
-    )?;
+    let mut manager_job_spec = get_manager_job().await?;
 
     let manager_stub = container::ManagerStub::new(manager_channel);
 
@@ -422,6 +427,55 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     .await?;
 
     Ok(())
+}
+
+async fn run_upgrade(cmd: UpgradeCommand) -> Result<()> {
+    let meta_client = Arc::new(ClusterMetaClient::create_from_environment().await?);
+    let manager_stub = connect_to_manager(meta_client.clone()).await?;
+    let request_context = rpc::ClientRequestContext::default();
+
+    let meta_job_spec = get_metastore_job(meta_client.zone()).await?;
+    start_job_impl(
+        meta_client.clone(),
+        &manager_stub,
+        &meta_job_spec,
+        &request_context,
+    )
+    .await?;
+
+    let manager_job_spec = get_manager_job().await?;
+    start_job_impl(
+        meta_client.clone(),
+        &manager_stub,
+        &manager_job_spec,
+        &request_context,
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn get_metastore_job(zone: &str) -> Result<JobSpec> {
+    let mut meta_job_spec = JobSpec::parse_text(
+        &fs::read_to_string(project_path!("pkg/container/config/metastore.job")).await?,
+    )?;
+
+    meta_job_spec.task_mut().add_args(format!(
+        "--labels={}={}",
+        container::meta::constants::ZONE_ENV_VAR,
+        zone
+    ));
+
+    Ok(meta_job_spec)
+}
+
+// c827b189377a40b4
+// GEZDGNBVGY3TQ
+
+async fn get_manager_job() -> Result<JobSpec> {
+    JobSpec::parse_text(
+        &fs::read_to_string(project_path!("pkg/container/config/manager.job")).await?,
+    )
 }
 
 async fn run_list(cmd: ListCommand) -> Result<()> {
@@ -600,10 +654,20 @@ async fn run_start_task(cmd: StartTaskCommand) -> Result<()> {
 async fn run_start_job(cmd: StartJobCommand) -> Result<()> {
     let meta_client = Arc::new(ClusterMetaClient::create_from_environment().await?);
 
+    let manager_stub = connect_to_manager(meta_client.clone()).await?;
+
+    let job_spec = JobSpec::parse_text(&fs::read_to_string(cmd.job_spec_path).await?)?;
+
+    let request_context = rpc::ClientRequestContext::default();
+
+    start_job_impl(meta_client, &manager_stub, &job_spec, &request_context).await
+}
+
+async fn connect_to_manager(meta_client: Arc<ClusterMetaClient>) -> Result<ManagerStub> {
     let resolver = Arc::new(
         container::ServiceResolver::create(
             "manager.system.job.local.cluster.internal",
-            meta_client.clone(),
+            meta_client,
         )
         .await?,
     );
@@ -612,11 +676,7 @@ async fn run_start_job(cmd: StartJobCommand) -> Result<()> {
 
     let manager_stub = ManagerStub::new(Arc::new(manager_channel));
 
-    let job_spec = JobSpec::parse_text(&fs::read_to_string(cmd.job_spec_path).await?)?;
-
-    let request_context = rpc::ClientRequestContext::default();
-
-    start_job_impl(meta_client, &manager_stub, &job_spec, &request_context).await
+    Ok(manager_stub)
 }
 
 async fn start_job_impl(
@@ -650,7 +710,10 @@ async fn start_job_impl(
         let node = {
             let resolver = Arc::new(
                 container::ServiceResolver::create(
-                    &format!("{:08x}.node.local.cluster.internal", assignment.node_id()),
+                    &format!(
+                        "{}.node.local.cluster.internal",
+                        common::base32::base32_encode_cl64(assignment.node_id())
+                    ),
                     meta_client.clone(),
                 )
                 .await?,
@@ -928,6 +991,7 @@ async fn run() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
     match args.command {
         Command::Bootstrap(cmd) => run_bootstrap(cmd).await,
+        Command::Upgrade(cmd) => run_upgrade(cmd).await,
         Command::List(cmd) => run_list(cmd).await,
         Command::StartTask(cmd) => run_start_task(cmd).await,
         Command::Log(cmd) => run_log(cmd).await,

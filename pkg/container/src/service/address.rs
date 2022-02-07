@@ -64,8 +64,6 @@ impl ServiceAddress {
 
         let entity_type = name_parts.pop().unwrap();
 
-        let mut port = None;
-
         // TODO: Also validate job name patterns?
         let entity = match entity_type {
             "node" => {
@@ -73,8 +71,8 @@ impl ServiceAddress {
                     return Err(ServiceParseError::InvalidNodeId);
                 }
 
-                let id = u64::from_str_radix(name_parts[0], 16)
-                    .map_err(|_| ServiceParseError::InvalidNodeId)?;
+                let id = common::base32::base32_decode_cl64(name_parts[0])
+                    .ok_or(ServiceParseError::InvalidNodeId)?;
                 ServiceEntity::Node { id }
             }
             "job" => {
@@ -131,7 +129,12 @@ impl ServiceName {
     pub fn to_string(&self) -> String {
         match &self.entity {
             ServiceEntity::Node { id } => {
-                format!("{:08x}.node.{}{}", *id, self.zone, NAME_SUFFIX)
+                format!(
+                    "{}.node.{}{}",
+                    common::base32::base32_encode_cl64(*id),
+                    self.zone,
+                    NAME_SUFFIX
+                )
             }
             ServiceEntity::Job { job_name } => {
                 format!(
@@ -163,5 +166,21 @@ impl ServiceName {
                 )
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // TODO: Why is 'async' needed here.
+    #[test]
+    async fn parse_address_with_port() {
+        let addr = ServiceAddress::parse(
+            "_service.adder_server.job.local.cluster.internal",
+            "testing",
+        )
+        .unwrap();
+        assert_eq!(addr.port, Some("service".into()));
     }
 }

@@ -154,7 +154,7 @@ impl ServiceResolver {
                 let tasks = shared
                     .meta_client
                     .cluster_table::<TaskMetadata>()
-                    .get_prefix(&format!("{}.", job_name))
+                    .list_by_job(job_name)
                     .await?;
 
                 for task in tasks {
@@ -200,15 +200,6 @@ impl ServiceResolver {
         shared: &Shared,
         task: &TaskMetadata,
     ) -> Result<Option<http::ResolvedEndpoint>> {
-        let task_id = {
-            task.spec()
-                .name()
-                .split('.')
-                .last()
-                .ok_or_else(|| err_msg("Missing last label in task name"))?
-                .to_string()
-        };
-
         let node_address = Self::get_node_addr(shared, task.assigned_node()).await?;
 
         let mut port = None;

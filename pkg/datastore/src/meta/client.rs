@@ -226,13 +226,6 @@ pub trait MetastoreClientInterface: Send + Sync {
         self.get_range(&start_key, &end_key).await
     }
 
-    /// Lists all key-value pairs in a directory.
-    /// ('/' is used the path segmenter)
-    async fn list(&self, dir: &[u8]) -> Result<Vec<KeyValueEntry>> {
-        let (start_key, end_key) = directory_key_range(dir);
-        self.get_range(&start_key, &end_key).await
-    }
-
     async fn put(&self, key: &[u8], value: &[u8]) -> Result<()>;
 
     async fn delete(&self, key: &[u8]) -> Result<()>;
@@ -438,9 +431,6 @@ impl<'a> MetastoreTransaction<'a> {
             return Ok(());
         }
 
-        let stub = KeyValueStoreStub::new(client.channel.clone());
-        let request_context = client.default_request_context()?;
-
         let mut request = ExecuteRequest::default();
         request.transaction_mut().set_read_index(state.read_index);
 
@@ -453,6 +443,8 @@ impl<'a> MetastoreTransaction<'a> {
             request.transaction_mut().add_writes(op.clone());
         }
 
+        let stub = KeyValueStoreStub::new(client.channel.clone());
+        let request_context = client.default_request_context()?;
         stub.Execute(&request_context, &request).await.result?;
         Ok(())
     }

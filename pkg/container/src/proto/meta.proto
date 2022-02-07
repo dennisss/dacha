@@ -12,6 +12,17 @@ import "pkg/container/src/proto/node.proto";
 import "third_party/google/src/proto/timestamp.proto";
 import "pkg/builder/src/proto/bundle.proto";
 
+enum ClusterTableId {
+    UNKNOWN = 0;
+    Zone = 1;
+    Node = 2;
+    Job = 3;
+    Task = 4;
+    TaskByNode = 5;
+    TaskState = 6;
+    Blob = 7;
+}
+
 // Stored at a singleton at the metastore key '/cluster/zone'
 message ZoneMetadata {
     string name = 1;
@@ -164,6 +175,9 @@ message BlobMetadata {
 
 message BlobReplica {
     uint64 node_id = 1;
+
     bool uploaded = 2;
+
+    google.protobuf.Timestamp timestamp = 3;
 }
 

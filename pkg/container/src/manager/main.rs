@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common::bundle::TaskResultBundle;
 use common::errors::*;
 use rpc_util::{AddReflection, NamedPortArg};
 
@@ -23,12 +24,19 @@ async fn main_with_port(port: u16) -> Result<()> {
 
     let client = Arc::new(ClusterMetaClient::create_from_environment().await?);
 
+    let mut bundle = TaskResultBundle::new();
+
     let manager = Manager::new(client);
+
+    bundle.add("Manager::run()", manager.clone().run());
+
     let mut server = rpc::Http2Server::new();
     server.add_service(manager.into_service())?;
     server.add_reflection()?;
     server.set_shutdown_token(common::shutdown::new_shutdown_token());
-    server.run(port).await?;
+    bundle.add("Manager::serve", server.run(port));
+
+    bundle.join().await?;
 
     Ok(())
 }
