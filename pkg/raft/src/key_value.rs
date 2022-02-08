@@ -8,7 +8,7 @@ use common::bytes::Bytes;
 use common::errors::*;
 use protobuf::Message;
 use raft::atomic::*;
-use raft::proto::consensus::LogIndex;
+use raft::proto::ident::LogIndex;
 use raft::proto::key_value::*;
 use raft::server::state_machine::*;
 

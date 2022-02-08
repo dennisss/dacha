@@ -7,7 +7,7 @@ use common::errors::*;
 use common::task::ChildTask;
 use http::uri::Authority;
 
-use crate::proto::consensus::ServerId;
+use crate::proto::ident::*;
 use crate::proto::server_metadata::GroupId;
 use crate::routing::route_store::RouteStore;
 

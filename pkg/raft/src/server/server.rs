@@ -14,6 +14,7 @@ use crate::consensus::tick::*;
 use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
+use crate::proto::ident::*;
 use crate::proto::server_metadata::*;
 use crate::server::channel_factory::*;
 use crate::server::server_identity::ServerIdentity;
@@ -626,5 +627,15 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
                 Err(err_msg("Proposal indeterminant"))
             }
         }
+    }
+
+    async fn CurrentStatus(
+        &self,
+        req: rpc::ServerRequest<google::proto::empty::Empty>,
+        res: &mut rpc::ServerResponse<Status>,
+    ) -> Result<()> {
+        let state = self.shared.state.lock().await;
+        res.value = state.inst.current_status();
+        Ok(())
     }
 }

@@ -13,6 +13,7 @@ use crate::log::log::*;
 use crate::log::log_metadata::*;
 use crate::proto::consensus::*;
 use crate::proto::consensus_state::*;
+use crate::proto::ident::*;
 
 // TODO: Suppose the leader is waiting on an earlier truncation that is
 // preventing the pending_conflict from resolving. Should we allow it to still
@@ -404,6 +405,31 @@ impl ConsensusModule {
             ConsensusState::Leader(s) => Some(s.lease_start),
             _ => None,
         }
+    }
+
+    pub fn current_status(&self) -> Status {
+        let mut status = Status::default();
+        status.set_id(self.id);
+        status.set_metadata(self.meta.clone());
+        status.set_configuration(self.config.snapshot().data.clone());
+        match &self.state {
+            ConsensusState::Leader(s) => {
+                status.set_role(Status_Role::LEADER);
+                for (id, s) in s.followers.iter() {
+                    let mut f = Status_FollowerProgress::default();
+                    f.set_id(id.clone());
+                    f.set_match_index(s.match_index);
+                }
+            }
+            ConsensusState::Follower(_) => {
+                status.set_role(Status_Role::FOLLOWER);
+            }
+            ConsensusState::Candidate(_) => {
+                status.set_role(Status_Role::CANDIDATE);
+            }
+        }
+
+        status
     }
 
     /// Gets what we believe is the highest log index that has been comitted

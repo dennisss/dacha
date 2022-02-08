@@ -7,6 +7,7 @@ use common::errors::*;
 use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
+use crate::proto::ident::*;
 
 pub struct MemoryLog {
     state: Mutex<State>,

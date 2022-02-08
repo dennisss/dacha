@@ -26,7 +26,7 @@ use common::futures::future::*;
 use common::futures::prelude::*;
 use protobuf::Message;
 use raft::node::*;
-use raft::proto::consensus::LogIndex;
+use raft::proto::ident::LogIndex;
 use raft::proto::key_value::*;
 use raft::server::server::{Server, ServerInitialState};
 
@@ -141,10 +141,12 @@ impl redis::server::Service for RaftRedisServer {
             .await
             .map_err(|e| format_err!("DEL failed with error: {:?}", e))?;
 
-        let (res, _) = pending_exec
-            .wait()
-            .await
-            .map_err(|_| format_err!("Failed to commit DEL entry"))?;
+        let res = match pending_exec.wait().await {
+            raft::PendingExecutionResult::Committed { value, .. } => value,
+            raft::PendingExecutionResult::Cancelled => {
+                return Err(format_err!("Failed to commit DEL entry"));
+            }
+        };
 
         Ok(RESPObject::Integer(if res.success { 1 } else { 0 }))
     }

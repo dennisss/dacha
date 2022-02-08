@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 
-use crate::proto::consensus::ServerId;
+use crate::proto::ident::*;
 use crate::proto::server_metadata::GroupId;
 use crate::routing::route_resolver::RouteResolver;
 use crate::routing::route_store::RouteStore;

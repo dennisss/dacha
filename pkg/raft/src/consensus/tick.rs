@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
+use crate::proto::ident::*;
 
 /// Set of side effects requested by a single ConsensusModule operation.
 ///

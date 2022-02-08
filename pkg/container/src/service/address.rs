@@ -1,5 +1,6 @@
 const NAME_SUFFIX: &'static str = ".cluster.internal";
 
+#[derive(Debug, PartialEq)]
 pub struct ServiceAddress {
     pub name: ServiceName,
 
@@ -7,11 +8,13 @@ pub struct ServiceAddress {
     pub port: Option<String>,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct ServiceName {
     pub zone: String,
     pub entity: ServiceEntity,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum ServiceEntity {
     Node { id: u64 },
     Job { job_name: String },
@@ -113,8 +116,8 @@ impl ServiceAddress {
 
 impl ServiceName {
     pub fn for_task(zone: &str, task_name: &str) -> Result<Self, ServiceParseError> {
-        let (task_id, job_name) = task_name
-            .split_once(".")
+        let (job_name, task_id) = task_name
+            .rsplit_once(".")
             .ok_or(ServiceParseError::NameTooShort)?;
 
         Ok(Self {
@@ -138,7 +141,7 @@ impl ServiceName {
             }
             ServiceEntity::Job { job_name } => {
                 format!(
-                    "{}.job{}{}",
+                    "{}.job.{}{}",
                     job_name
                         .split('.')
                         .collect::<Vec<_>>()
@@ -152,7 +155,7 @@ impl ServiceName {
             }
             ServiceEntity::Task { job_name, task_id } => {
                 format!(
-                    "{}.{}.task{}{}",
+                    "{}.{}.task.{}{}",
                     task_id,
                     job_name
                         .split('.')
@@ -171,16 +174,63 @@ impl ServiceName {
 
 #[cfg(test)]
 mod tests {
+    use common::errors::*;
+
     use super::*;
 
     // TODO: Why is 'async' needed here.
     #[test]
-    async fn parse_address_with_port() {
+    async fn parse_job_address_with_port() -> Result<()> {
         let addr = ServiceAddress::parse(
-            "_service.adder_server.job.local.cluster.internal",
+            "_my_port.adder_server.user.job.local.cluster.internal",
             "testing",
-        )
-        .unwrap();
-        assert_eq!(addr.port, Some("service".into()));
+        )?;
+        assert_eq!(
+            addr,
+            ServiceAddress {
+                port: Some("my_port".into()),
+                name: ServiceName {
+                    zone: "testing".into(),
+                    entity: ServiceEntity::Job {
+                        job_name: "user.adder_server".into()
+                    }
+                }
+            }
+        );
+
+        assert_eq!(
+            addr.name.to_string(),
+            "adder_server.user.job.testing.cluster.internal"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    async fn parse_task_address_with_port() -> Result<()> {
+        let addr = ServiceAddress::parse(
+            "a12345.adder_client.user.task.local.cluster.internal",
+            "testing",
+        )?;
+        assert_eq!(
+            addr,
+            ServiceAddress {
+                port: None,
+                name: ServiceName {
+                    zone: "testing".into(),
+                    entity: ServiceEntity::Task {
+                        job_name: "user.adder_client".into(),
+                        task_id: "a12345".into()
+                    }
+                }
+            }
+        );
+
+        assert_eq!(
+            addr.name.to_string(),
+            "a12345.adder_client.user.task.testing.cluster.internal"
+        );
+
+        Ok(())
     }
 }

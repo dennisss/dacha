@@ -4,6 +4,7 @@ package raft;
 
 import "pkg/raft/src/proto/consensus.proto";
 import "pkg/raft/src/proto/consensus_state.proto";
+import "pkg/raft/src/proto/ident.proto";
 
 // Identifier used to define a single set of machines running an instance of the Raft
 // protocol. ServerIds are only comparable within the same cluster.

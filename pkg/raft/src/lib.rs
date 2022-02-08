@@ -34,7 +34,7 @@ pub use leader_service::LeaderServiceWrapper;
 pub use log::log::Log;
 pub use log::segmented_log::SegmentedLog;
 pub use node::{Node, NodeOptions};
-pub use proto::consensus::LogIndex;
+pub use proto::ident::LogIndex;
 pub use proto::init::{BootstrapRequest, BootstrapResponse, ServerInitStub};
 pub use routing::discovery_client::DiscoveryClient;
 pub use routing::discovery_server::DiscoveryServer;

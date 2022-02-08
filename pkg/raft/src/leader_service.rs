@@ -7,7 +7,7 @@ use common::errors::*;
 use crate::consensus::module::NotLeaderError;
 use crate::node::Node;
 use crate::proto::consensus::NotLeaderErrorProto;
-use crate::proto::consensus::Term;
+use crate::proto::ident::Term;
 use crate::server::channel_factory::ChannelFactory;
 
 const PROXY_KEY: &'static str = "raft-proxy";

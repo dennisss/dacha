@@ -3,31 +3,8 @@ syntax = "proto3";
 package raft;
 
 import "third_party/google/src/proto/empty.proto";
-
-// Type used to uniquely identify each server. These are assigned automatically
-// and increment monotonically starting with the first server having an id of
-// 1 and will never repeat with new servers
-//
-// NOTE: A value of 0 is used to specify the 'NULL' server id.
-message ServerId {
-	option typed_num = true;
-	uint64 value = 1;
-}
-
-message Term {
-	option typed_num = true;
-	uint64 value = 2;
-}
-
-message LogIndex {
-	option typed_num = true;
-	uint64 value = 3;
-}
-
-message RequestId {
-	option typed_num = true;
-	uint64 value = 4;
-}
+import "pkg/raft/src/proto/ident.proto";
+import "pkg/raft/src/proto/consensus_state.proto";
 
 // Internal RPC Server between servers participating in the consensus protocol
 service Consensus {
@@ -48,6 +25,9 @@ service Consensus {
     // NOTE: 'AddServer' and 'RemoveServer' will be implemented by clients in
     // terms of this method
 	rpc Propose (ProposeRequest) returns (ProposeResponse);
+
+	// Lookups up the current status of this server.
+	rpc CurrentStatus (google.protobuf.Empty) returns (Status);
 }
 
 message RequestVoteRequest {
@@ -358,4 +338,28 @@ message InstallSnapshotResponse {
 	// Current term of the server receiving the snapshot.
 	// REQUIRED
 	Term term = 1;
+}
+
+message Status {
+	ServerId id = 1;
+
+	enum Role {
+		UNKNOWN = 0;
+		CANDIDATE = 1;
+		FOLLOWER = 2;
+		LEADER = 3;
+	}
+	Role role = 2;
+
+	Metadata metadata = 3;
+
+	Configuration configuration = 4;
+
+	message FollowerProgress {
+		ServerId id = 1;
+		LogIndex match_index = 2;
+	}
+
+	// Only present if this is the leader.
+	repeated FollowerProgress followers = 5;
 }

@@ -5,6 +5,7 @@ use std::time::SystemTime;
 use common::condvar::{Condvar, CondvarGuard};
 
 use crate::proto::consensus::*;
+use crate::proto::ident::*;
 use crate::proto::routing::*;
 use crate::proto::server_metadata::GroupId;
 

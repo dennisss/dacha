@@ -10,6 +10,7 @@ use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;
 use crate::log::memory_log::*;
 use crate::proto::consensus::*;
+use crate::proto::ident::*;
 use crate::proto::log::SimpleLogValue;
 
 /// A simple log implementation backed be a single file that is rewritten

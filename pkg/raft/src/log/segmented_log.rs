@@ -11,7 +11,8 @@ use sstable::record_log::{RecordReader, RecordWriter};
 use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;
 use crate::log::memory_log::MemoryLog;
-use crate::proto::consensus::{LogEntry, LogIndex, LogPosition, Term};
+use crate::proto::consensus::{LogEntry, LogPosition};
+use crate::proto::ident::*;
 use crate::proto::log::SegmentedLogRecord;
 
 /*

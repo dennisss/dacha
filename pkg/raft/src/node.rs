@@ -16,6 +16,7 @@ use rpc_util::AddReflection;
 use crate::atomic::*;
 use crate::log::segmented_log::SegmentedLog;
 use crate::proto::consensus::*;
+use crate::proto::ident::*;
 use crate::proto::init::*;
 use crate::proto::routing::*;
 use crate::proto::server_metadata::*;

@@ -24,6 +24,7 @@ use crate::consensus::tick::*;
 use crate::log::log::Log;
 use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
+use crate::proto::ident::*;
 use crate::proto::server_metadata::*;
 use crate::server::channel_factory::ChannelFactory;
 use crate::server::server_identity::ServerIdentity;

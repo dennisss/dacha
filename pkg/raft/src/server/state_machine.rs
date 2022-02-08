@@ -2,6 +2,7 @@ use common::errors::*;
 use common::io::Readable;
 
 use crate::proto::consensus::*;
+use crate::proto::ident::*;
 
 /// A state machine which evolves through a series by having operations applied
 /// to it. Applying operations to the state machine should be deterministic for

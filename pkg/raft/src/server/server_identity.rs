@@ -1,6 +1,6 @@
 use common::errors::*;
 
-use crate::proto::consensus::ServerId;
+use crate::proto::ident::ServerId;
 use crate::proto::server_metadata::GroupId;
 
 const FROM_KEY: &str = "raft-from";

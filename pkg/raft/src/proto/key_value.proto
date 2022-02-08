@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package raft;
 
-import "pkg/raft/src/proto/consensus.proto";
+import "pkg/raft/src/proto/ident.proto";
 import "third_party/google/src/proto/timestamp.proto";
 
 // A basic store for storing in-memory data

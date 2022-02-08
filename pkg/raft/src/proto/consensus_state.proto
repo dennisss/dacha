@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package raft;
 
-import "pkg/raft/src/proto/consensus.proto";
+import "pkg/raft/src/proto/ident.proto";
 
 // Persistent information describing the state of the current server
 // TODO: Rename this to PersistentState.

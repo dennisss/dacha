@@ -3,6 +3,8 @@
 pub mod consensus {
     include!(concat!(env!("OUT_DIR"), "/src/proto/consensus.rs"));
 
+    use super::ident::*;
+
     impl LogPosition {
         pub fn new<T: Into<Term>, I: Into<LogIndex>>(term: T, index: I) -> Self {
             let mut inst = Self::default();
@@ -80,6 +82,10 @@ pub mod server_metadata {
             Ok(id)
         }
     }
+}
+
+pub mod ident {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/ident.rs"));
 }
 
 pub mod routing {

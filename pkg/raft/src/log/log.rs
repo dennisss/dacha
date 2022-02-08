@@ -4,6 +4,7 @@ use common::errors::*;
 
 use crate::log::log_metadata::LogSequence;
 use crate::proto::consensus::*;
+use crate::proto::ident::*;
 
 // XXX: Also useful to have a fast estimate of the total size of the log up to
 // now to decide on snapshotting policies
