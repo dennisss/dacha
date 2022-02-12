@@ -10,7 +10,7 @@ use std::convert::TryFrom;
 use common::async_std::fs;
 use common::async_std::task;
 use common::errors::*;
-use http::ClientInterface;
+use http::{ClientInterface, ClientRequestContext};
 use parsing::iso::*;
 
 // TODO: THe Google TLS server will timeout the connection if the SETTINGs
@@ -45,7 +45,7 @@ async fn run_client() -> Result<()> {
         .header("Accept-Encoding", "gzip")
         .build()?;
 
-    let mut res = client.request(req).await?;
+    let mut res = client.request(req, ClientRequestContext::default()).await?;
     println!("{:?}", res.head);
 
     let mut body = http::encoding::decode_content_encoding_body(&res.head.headers, res.body)?;

@@ -15,6 +15,7 @@ use common::task::ChildTask;
 use protobuf::Message;
 use raft::atomic::{BlobFile, BlobFileBuilder};
 use raft::proto::routing::RouteLabel;
+use raft::PendingExecutionResult;
 use raft::StateMachine;
 use rpc_util::AddReflection;
 use sstable::db::{SnapshotIteratorOptions, WriteBatch};
@@ -27,6 +28,7 @@ use crate::meta::transaction::*;
 use crate::proto::client::*;
 use crate::proto::key_value::*;
 use crate::proto::meta::UserDataSubKey;
+use crate::proto::server::*;
 
 /*
 
@@ -57,11 +59,14 @@ pub struct MetastoreConfig {
     /// this machine's copy).
     pub dir: PathBuf,
 
+    // TODO: Validate that exactly one of init_port and bootstrap are provided.
     /// Port used for listening for RPC signals for bootstrapping this server in
     /// a new cluster.
     ///
     /// Not used for already setup clusters.
     pub init_port: u16,
+
+    pub bootstrap: bool,
 
     /// Server port of the RPC service exposed to users of the store.
     /// This will also be used for internal communication between servers.
@@ -268,6 +273,29 @@ impl Metastore {
 
         Ok(format!("{}:{}", term.value(), index))
     }
+
+    async fn config_change(&self, request: &ConfigChangeRequest) -> Result<()> {
+        let mut entry = raft::proto::consensus::LogEntryData::default();
+        match request.change_case() {
+            ConfigChangeRequestChangeCase::RemoveServer(id) => {
+                entry.config_mut().set_RemoveServer(id.clone());
+            }
+            ConfigChangeRequestChangeCase::Unknown => {
+                return Err(rpc::Status::invalid_argument("Invalid config change").into());
+            }
+        }
+
+        let pending_execution = self.shared.node.server().execute(entry).await?;
+
+        let commited_index = match pending_execution.wait().await {
+            PendingExecutionResult::Committed { log_index, .. } => log_index,
+            PendingExecutionResult::Cancelled => {
+                return Err(err_msg("Cancelled"));
+            }
+        };
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -278,6 +306,26 @@ impl ClientManagementService for Metastore {
         response: &mut rpc::ServerResponse<NewClientResponse>,
     ) -> Result<()> {
         response.value.set_client_id(self.new_unique_id().await?);
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl ServerManagementService for Metastore {
+    async fn ConfigChange(
+        &self,
+        request: rpc::ServerRequest<ConfigChangeRequest>,
+        resposne: &mut rpc::ServerResponse<google::proto::empty::Empty>,
+    ) -> Result<()> {
+        self.config_change(&request.value).await
+    }
+
+    async fn CurrentStatus(
+        &self,
+        req: rpc::ServerRequest<google::proto::empty::Empty>,
+        res: &mut rpc::ServerResponse<raft::proto::consensus::Status>,
+    ) -> Result<()> {
+        res.value = self.shared.node.server().current_status().await;
         Ok(())
     }
 }
@@ -334,7 +382,7 @@ pub async fn run(config: &MetastoreConfig) -> Result<()> {
     let mut node = raft::Node::create(raft::NodeOptions {
         dir,
         init_port: config.init_port,
-        bootstrap: false,
+        bootstrap: config.bootstrap,
         seed_list: vec![], // Will just find everyone via multi-cast
         state_machine: state_machine.clone(),
         last_applied: state_machine.last_flushed().await,
@@ -370,6 +418,11 @@ pub async fn run(config: &MetastoreConfig) -> Result<()> {
     rpc_server.add_service(Arc::new(raft::LeaderServiceWrapper::new(
         node.clone(),
         KeyValueStoreIntoService::into_service(instance.clone()),
+    )))?;
+
+    rpc_server.add_service(Arc::new(raft::LeaderServiceWrapper::new(
+        node.clone(),
+        ServerManagementIntoService::into_service(instance.clone()),
     )))?;
 
     rpc_server.add_reflection()?;

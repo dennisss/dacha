@@ -36,6 +36,10 @@ impl ClusterMetaClient {
     pub fn zone(&self) -> &str {
         &self.zone
     }
+
+    pub fn inner(&self) -> &MetastoreClient {
+        &self.inner
+    }
 }
 
 #[async_trait]

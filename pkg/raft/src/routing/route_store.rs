@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::SystemTime;
 
 use common::condvar::{Condvar, CondvarGuard};
@@ -9,9 +10,7 @@ use crate::proto::ident::*;
 use crate::proto::routing::*;
 use crate::proto::server_metadata::GroupId;
 
-/*
-A RouteResolver can have a child task which waits for changes and notifies all
-*/
+const ROUTE_EXPIRATION_DURATION: Duration = Duration::from_secs(10);
 
 /// Container of all server-to-server routing information known by the local
 /// server.
@@ -156,6 +155,8 @@ impl<'a> RouteStoreGuard<'a> {
     pub fn apply(&mut self, an: &Announcement) {
         let mut changed = false;
 
+        let time_horizon = SystemTime::now() - ROUTE_EXPIRATION_DURATION;
+
         for new_route in an.routes().iter() {
             let new_route_key = (new_route.group_id(), new_route.server_id());
 
@@ -179,7 +180,7 @@ impl<'a> RouteStoreGuard<'a> {
                 None => true,
             };
 
-            if should_insert {
+            if should_insert && SystemTime::from(new_route.last_seen()) >= time_horizon {
                 self.state.routes.insert(
                     (new_route.group_id(), new_route.server_id()),
                     new_route.clone(),
@@ -188,6 +189,16 @@ impl<'a> RouteStoreGuard<'a> {
                 changed = true;
             }
         }
+
+        self.state.routes.retain(|_, route| {
+            if SystemTime::from(route.last_seen()) >= time_horizon {
+                true
+            } else {
+                // println!("Route expired: {:?}", route);
+                changed = true;
+                false
+            }
+        });
 
         if changed {
             self.state.notify_all();

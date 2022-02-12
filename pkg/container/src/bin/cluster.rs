@@ -41,7 +41,9 @@ extern crate macros;
 extern crate raft;
 
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::str::FromStr;
+use std::time::Duration;
 use std::{collections::HashSet, sync::Arc};
 
 use builder::proto::bundle::{BlobFormat, BundleSpec};
@@ -120,6 +122,14 @@ enum Command {
 #[derive(Args)]
 struct BootstrapCommand {
     node_addr: String,
+
+    /// For the purposes of initializing the cluster, a local metastore instance
+    /// will be brought up before one is running in the cluster.
+    ///
+    /// This will be the port used on the local machine to server requests to
+    /// this instance.
+    #[arg(default = 4000)]
+    local_metastore_port: u16,
 }
 
 #[derive(Args)]
@@ -264,88 +274,77 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     );
     println!("Zone: {}", node_meta.zone());
 
-    // TODO: Must add the built blob metadata to the TaskSpec so that it is stored
-    // in the metastore (otherwise we can't scale up the metastore without
-    // upgrading).
+    // TODO: Much simpler to just have a top-level one
+    let mut task_bundle = common::bundle::TaskResultBundle::new();
 
-    // TODO: We also need to bootstrap the BlobMetadata that is used the metastore
-    // (also the NodeMetadata to record the used port).
+    let (metastore_sender, metastore_receiver) = common::async_std::channel::bounded(1);
 
-    let mut meta_job_spec = get_metastore_job(node_meta.zone()).await?;
+    let zone = node_meta.zone().to_string();
+    let metastore_task = ChildTask::spawn(async move {
+        let res = run_local_metastore(cmd.local_metastore_port, zone).await;
+        let _ = metastore_sender.send(res).await;
+    });
 
-    const METASTORE_INITIAL_PORT: usize = 30001;
+    task_bundle.add("Metastore", async move {
+        metastore_receiver.recv().await.unwrap_or(Ok(()))
+    });
 
-    // NOTE: The assumption is that if the metastore job is later updated, it is
-    // never assigned a new revision <= 1 by the manager.
-    const METASTORE_INITIAL_REVISION: u64 = 1;
+    task_bundle.add(
+        "Bootstrap",
+        run_bootstrap_inner(node, request_context, node_meta, node_id, metastore_task),
+    );
 
-    // NOTE: This is kind of hacky as typically the JobSpec should not contain a
-    // TaskSpec for ports assigned, or task names asssigned, but it's simpler to
-    // assign these for the first metastore instance. This will all be cleaned up
-    // later if the meta store is scaled up.
-    //
-    // TODO: Try to re-use the manager code for doing this stuff.
-    meta_job_spec.task_mut().ports_mut()[0].set_number(METASTORE_INITIAL_PORT as u32);
-    // While we usually generate a random id, the first replica will have a
-    // deterministic id so that it's easier to retry the bootstrap command if it
-    // partially fails.
-    let meta_job_name = meta_job_spec.name().to_string();
-    meta_job_spec
-        .task_mut()
-        .set_name(format!("{}.{}", meta_job_name, {
-            let mut hasher = SipHasher::default_rounds_with_key_halves(0, 0);
-            hasher.update(node_meta.zone().as_bytes());
-            common::base32::base32_encode_cl64(hasher.finish_u64())
-        }));
+    task_bundle.join().await
+}
 
-    // NOTE: This will re-write any build_target references in the
-    // meta_job_spec.task_mut() to blob references so that we can store it in
-    // the meta store later.
-    start_task_impl(
-        &node,
-        meta_job_spec.task_mut(),
-        Some(METASTORE_INITIAL_REVISION),
-        &request_context,
-    )
-    .await?;
+async fn run_local_metastore(port: u16, zone: String) -> Result<()> {
+    // TODO: Implement completely in memory.
+    let local_metastore_dir = common::temp::TempDir::create()?;
 
-    {
-        println!("Bootstrapping metastore");
+    // TODO: Debuplicate with the job creation code.
+    let mut route_label = raft::proto::routing::RouteLabel::default();
+    route_label.set_value(format!(
+        "{}={}",
+        container::meta::constants::ZONE_ENV_VAR,
+        zone
+    ));
 
-        let mut node_uri = http::uri::Uri::from_str(&format!("http://{}", cmd.node_addr))?;
-        node_uri.authority.as_mut().unwrap().port = Some(METASTORE_INITIAL_PORT as u16);
+    datastore::meta::store::run(&datastore::meta::store::MetastoreConfig {
+        dir: local_metastore_dir.path().into(),
+        init_port: 0,
+        bootstrap: true,
+        service_port: port,
+        route_labels: vec![route_label],
+    })
+    .await
+}
 
-        let bootstrap_client = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
-            &node_uri,
-        )?)?);
-
-        let stub = raft::ServerInitStub::new(bootstrap_client);
-
-        // TODO: Ignore method not found errors (which would imply that we are already
-        // bootstrapped).
-        if let Err(e) = stub
-            .Bootstrap(&request_context, &raft::BootstrapRequest::default())
-            .await
-            .result
-        {
-            if let Some(status) = e.downcast_ref::<rpc::Status>() {
-                if status.code() == rpc::StatusCode::Unimplemented {
-                    // Likely the method doesn't exist so the metastore is probably already
-                    // bootstrapped.
-                    println!("=> Already bootstrapped");
-                } else {
-                    return Err(e);
-                }
-            } else {
-                return Err(e);
-            }
-        } else {
-            println!("=> Done!");
-        }
-    }
-
+async fn run_bootstrap_inner(
+    node: NodeStubs,
+    request_context: ClientRequestContext,
+    node_meta: NodeMetadata,
+    node_id: u64,
+    local_metastore_task: ChildTask,
+) -> Result<()> {
+    // TODO: Given that we know the port of the local metastore, we can use that to
+    // help find it.
     let meta_client = Arc::new(ClusterMetaClient::create(node_meta.zone()).await?);
 
+    // Id of the local metastore server which is being used just for bootstrapping
+    // the server.
+    let local_server_id = {
+        let status = meta_client.inner().current_status().await?;
+        if status.configuration().members().len() != 1 {
+            return Err(err_msg("Expected exactly one metastore replica initially"));
+        }
+
+        // TODO: Find a better way of ensuring that this is definately the server that
+        // is running in the local task.
+        *status.configuration().members().iter().next().unwrap()
+    };
+
+    // This is required so that the manager can schedule the metastore task
+    // immediately without retrying.
     println!("Waiting for node to register itself:");
     loop {
         if let Some(_) = meta_client
@@ -360,7 +359,6 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     }
     println!("=> Done!");
 
-    // TODO: We should instead infer the zone from some flag on the node.
     let mut zone_record = ZoneMetadata::default();
     zone_record.set_name(node_meta.zone());
     meta_client
@@ -368,55 +366,77 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
         .put(&zone_record)
         .await?;
 
-    let mut meta_job_record = JobMetadata::default();
-    meta_job_record.set_spec(meta_job_spec);
-    meta_job_record.set_task_revision(METASTORE_INITIAL_REVISION);
-
-    meta_client
-        .cluster_table::<JobMetadata>()
-        .put(&meta_job_record)
-        .await?;
-
-    let mut meta_task_record = TaskMetadata::default();
-    meta_task_record.set_spec(meta_job_record.spec().task().clone());
-    meta_task_record.set_assigned_node(node_id);
-    meta_task_record.set_revision(meta_job_record.task_revision());
-    meta_client
-        .cluster_table::<TaskMetadata>()
-        .put(&meta_task_record)
-        .await?;
-
-    // Mark the node as active.
-    // This can't be done until the TaskMetadata is added to the metastore to
-    // prevent the node deleting the unknown metastore task.
-    {
-        let txn = meta_client.new_transaction().await?;
-        let mut node_meta = meta_client
-            .cluster_table::<NodeMetadata>()
-            .get(&node_id)
-            .await?
-            .ok_or_else(|| err_msg("Node metadata disappeared?"))?;
-
-        node_meta.set_state(NodeMetadata_State::ACTIVE);
-
-        for port in meta_task_record.spec().ports() {
-            node_meta.allocated_ports_mut().insert(port.number());
-        }
-
-        txn.cluster_table::<NodeMetadata>().put(&node_meta).await?;
-
-        txn.commit().await?;
-    }
-
-    // TOOD: Now bring up a local manager instance and use it to start a manager job
-    // on the cluster.
-
     let manager = Manager::new(meta_client.clone()).into_service();
     let manager_channel = Arc::new(rpc::LocalChannel::new(manager));
+    let manager_stub = container::ManagerStub::new(manager_channel);
+
+    // TODO: Verify that this actually has created the task
+    println!("Starting metastore job");
+    let mut meta_job_spec = get_metastore_job(node_meta.zone()).await?;
+    start_job_impl(
+        meta_client.clone(),
+        &manager_stub,
+        &meta_job_spec,
+        &request_context,
+    )
+    .await?;
+
+    // Wait for the metastore to become part of the group.
+    println!("Waiting for metastore replica to join group");
+    loop {
+        let status = meta_client.inner().current_status().await?;
+
+        if status.configuration().members().len() >= 2 {
+            break;
+        }
+
+        common::async_std::task::sleep(Duration::from_secs(4)).await;
+    }
+    println!("=> Done");
+
+    println!("Removing local metastore replica");
+    meta_client.inner().remove_server(local_server_id).await?;
+    drop(local_metastore_task);
+    loop {
+        // Wait for the local server to no longer be the leader.
+        let status = match meta_client.inner().current_status().await {
+            Ok(v) => v,
+            Err(e) => {
+                /*
+                This may have one of two errors:
+                - Failing because we tried directly connecting to the local metastore
+                - Failing indirectly because we connected to the second replica and it piped our request to the remote server.
+                */
+                // if let Some(status) = e.downcast_ref::<rpc::Status>() {
+                //     // Requests may fail if trying to contact the currently stopping server.
+                //     if status.code() == rpc::StatusCode::Unavailable {
+                //         common::async_std::task::sleep(Duration::from_secs(4)).await;
+                //         continue;
+                //     }
+                // }
+
+                eprintln!("- Failure connecting to metastore: {}", e);
+                common::async_std::task::sleep(Duration::from_secs(4)).await;
+                continue;
+            }
+        };
+        if status.id() == local_server_id
+            || status
+                .configuration()
+                .members()
+                .iter()
+                .find(|id| **id == local_server_id)
+                .is_some()
+        {
+            common::async_std::task::sleep(Duration::from_secs(4)).await;
+            continue;
+        } else {
+            break;
+        }
+    }
+    println!("=> Done");
 
     let mut manager_job_spec = get_manager_job().await?;
-
-    let manager_stub = container::ManagerStub::new(manager_channel);
 
     start_job_impl(
         meta_client,
@@ -468,9 +488,6 @@ async fn get_metastore_job(zone: &str) -> Result<JobSpec> {
 
     Ok(meta_job_spec)
 }
-
-// c827b189377a40b4
-// GEZDGNBVGY3TQ
 
 async fn get_manager_job() -> Result<JobSpec> {
     JobSpec::parse_text(

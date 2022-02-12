@@ -41,14 +41,14 @@ async fn run() -> Result<()> {
         txn2.commit().await?; // < This must fail
     }
 
-    let txn = client.new_transaction().await?;
+    let mut txn = client.new_transaction().await?;
     txn.get(b"/hello").await?;
     txn.put(b"/first", b"hello").await?;
     txn.put(b"/second", b"melon").await?;
 
     txn.commit().await?;
 
-    let items = client.list(b"/").await?;
+    let items = client.get_prefix(b"/").await?;
     for item in items {
         println!("{:?}", item);
     }

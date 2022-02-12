@@ -185,9 +185,12 @@ impl Http2Channel {
 
         let client = self.client.clone();
 
+        let mut http_request_context = http::ClientRequestContext::default();
+        http_request_context.wait_for_ready = request_context.wait_for_ready;
+
         // TODO: Need to implement custom logic for retrying service RPC errors (some
         // GRPC statuses should only be returned by the service exclusively).
-        let response = async move { client.request(request).await };
+        let response = async move { client.request(request, http_request_context).await };
         Ok(ClientStreamingResponse::from_response(response))
     }
 }

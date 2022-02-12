@@ -78,6 +78,9 @@ pub struct DirectClientOptions {
 /// - Re-establishing a connection will be done using a timing based backoff
 ///   mechanism.
 ///
+/// NOTE: After a DirectClient is created with ::new(), a copy of it should be
+/// scheduled to run in the background with ::run().
+///
 /// TODO: When the client is dropped, shut down all connections as it will no
 /// longer be possible to start new connections but existing connections may
 /// still be running.
@@ -352,12 +355,29 @@ impl DirectClient {
         }
     }
 
-    async fn get_connection(&self) -> Result<Arc<ConnectionEntry>> {
+    async fn get_connection(&self, wait_for_ready: bool) -> Result<Arc<ConnectionEntry>> {
         loop {
             let state = self.shared.state.lock().await;
-            if *state != ClientState::Connected {
-                state.wait(()).await;
-                continue;
+            match *state {
+                ClientState::NotConnected | ClientState::Connecting => {
+                    state.wait(()).await;
+                }
+                ClientState::Failure => {
+                    if !wait_for_ready {
+                        return Err(crate::v2::ProtocolErrorV2 {
+                            code: crate::proto::v2::ErrorCode::REFUSED_STREAM,
+                            local: true,
+                            message: "Failure while establishing remote connection.".into(),
+                        }
+                        .into());
+                    }
+
+                    state.wait(()).await;
+                    continue;
+                }
+                ClientState::Connected => {
+                    // Good.
+                }
             }
 
             let pool = self.shared.connection_pool.lock().await;
@@ -379,7 +399,11 @@ impl ClientInterface for DirectClient {
     // - TODO: Response may be available before the request is sent (in the case of
     //   bodies)
     // If not using a content length, then we should close the connection
-    async fn request(&self, mut request: Request) -> Result<Response> {
+    async fn request(
+        &self,
+        mut request: Request,
+        request_context: ClientRequestContext,
+    ) -> Result<Response> {
         // TODO: We should allow the Connection header, but we shouldn't allow any
         // options which are used internally (keep-alive and close)
         for header in &request.head.headers.raw_headers {
@@ -394,7 +418,7 @@ impl ClientInterface for DirectClient {
         // TODO: We should just disallow using an authority in requests as it goes
         // against TLS and load balancing assumptions.
 
-        let conn_entry = self.get_connection().await?;
+        let conn_entry = self.get_connection(request_context.wait_for_ready).await?;
 
         let authority = request
             .head
@@ -449,5 +473,9 @@ impl ClientInterface for DirectClient {
                 Ok(res)
             }
         }
+    }
+
+    async fn current_state(&self) -> ClientState {
+        *self.shared.state.lock().await
     }
 }

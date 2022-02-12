@@ -46,6 +46,7 @@ fn main() -> Result<()> {
     block_on(run(&MetastoreConfig {
         dir: args.dir,
         init_port: args.init_port.value(),
+        bootstrap: false,
         service_port: args.port.value(),
         route_labels,
     }))

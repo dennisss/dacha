@@ -76,7 +76,7 @@ message ConfigChange {
 
 		// Adds a server as a learner: meaning that entries will be replicated to
 		// this server but it will not be considered for the purposes of elections
-		// and counting votes
+		// and counting votes.
 		ServerId AddLearner = 2;
 
 		// Removes a server completely from either the learners or members pools

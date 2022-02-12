@@ -115,3 +115,39 @@ pub(super) async fn propose_entry(
         return Ok(value.proposal().clone());
     }
 }
+
+/*
+async fn init_server() {
+    let mut node_uri = http::uri::Uri::from_str(&format!("http://{}", cmd.node_addr))?;
+    node_uri.authority.as_mut().unwrap().port = Some(METASTORE_INITIAL_PORT as u16);
+
+    let bootstrap_client = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
+        &node_uri,
+    )?)?);
+
+    let stub = raft::ServerInitStub::new(bootstrap_client);
+
+    // TODO: Ignore method not found errors (which would imply that we are already
+    // bootstrapped).
+    if let Err(e) = stub
+        .Bootstrap(&request_context, &raft::BootstrapRequest::default())
+        .await
+        .result
+    {
+        if let Some(status) = e.downcast_ref::<rpc::Status>() {
+            if status.code() == rpc::StatusCode::Unimplemented {
+                // Likely the method doesn't exist so the metastore is probably already
+                // bootstrapped.
+                println!("=> Already bootstrapped");
+            } else {
+                return Err(e);
+            }
+        } else {
+            return Err(e);
+        }
+    } else {
+        println!("=> Done!");
+    }
+
+}
+*/

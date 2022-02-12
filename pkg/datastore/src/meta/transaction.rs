@@ -5,11 +5,9 @@ use common::async_std::channel;
 use common::async_std::sync::Mutex;
 use common::bytes::Bytes;
 use common::errors::*;
+use raft::proto::consensus::LogEntryData;
 use raft::ReadIndex;
-use raft::{
-    proto::consensus::{LogPosition, Term},
-    LogIndex, PendingExecutionResult,
-};
+use raft::{proto::consensus::LogPosition, proto::ident::Term, LogIndex, PendingExecutionResult};
 use sstable::db::{Snapshot, SnapshotIteratorOptions, WriteBatch};
 use sstable::iterable::Iterable;
 
@@ -209,9 +207,12 @@ impl TransactionManager {
             .as_micros() as u64;
         write_batch.put(&TableKey::transaction_time(), &time.to_le_bytes());
 
+        let mut entry = LogEntryData::default();
+        entry.set_command(write_batch.as_bytes());
+
         let pending_execution = match node
             .server()
-            .execute_after_read(write_batch.as_bytes().to_vec(), Some(read_index))
+            .execute_after_read(entry, Some(read_index))
             .await
         {
             Ok(v) => v,

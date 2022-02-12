@@ -3,9 +3,20 @@ use common::errors::*;
 use crate::request::Request;
 use crate::response::Response;
 
+#[derive(Default)]
+pub struct ClientRequestContext {
+    pub wait_for_ready: bool,
+}
+
 #[async_trait]
 pub trait ClientInterface {
-    async fn request(&self, mut request: Request) -> Result<Response>;
+    async fn request(
+        &self,
+        request: Request,
+        request_context: ClientRequestContext,
+    ) -> Result<Response>;
+
+    async fn current_state(&self) -> ClientState;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

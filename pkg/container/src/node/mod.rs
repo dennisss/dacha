@@ -531,7 +531,7 @@ impl NodeInner {
             node_meta.set_last_seen(SystemTime::now());
             node_meta.set_zone(zone);
             if node_meta.state() == NodeMetadata_State::UNKNOWN {
-                node_meta.set_state(NodeMetadata_State::NEW);
+                node_meta.set_state(NodeMetadata_State::ACTIVE);
             }
             node_meta
                 .set_allocatable_port_range(self.shared.config.allocatable_port_range().clone());
@@ -879,7 +879,7 @@ impl NodeInner {
     }
 
     fn persistent_data_dir(&self) -> PathBuf {
-        Path::new(self.shared.config.data_dir()).join("persistent")
+        Path::new(self.shared.config.data_dir()).join("volume/per-task")
     }
 
     async fn list_tasks_impl(&self) -> Result<ListTasksResponse> {

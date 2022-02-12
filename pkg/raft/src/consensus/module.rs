@@ -805,14 +805,22 @@ impl ConsensusModule {
 
         // Transitioning between states is ok, but
 
+        let is_leader = match &self.state {
+            ConsensusState::Leader(_) => true,
+            _ => false,
+        };
+
         // If there are no members in the cluster, there is trivially nothing to
         // do, so we might as well wait indefinitely
         // If we didn't have this line, then the follower code would go wild
         // trying to propose an election
+        //
         // Additionally there is no work to be done if we are not in the voting members
-        // TODO: We should assert that a non-voting member never starts an
-        // election and other servers should never note for a non-voting member
-        if self.config.value.members_len() == 0 || !self.config.value.members().contains(&self.id) {
+        // set (unless we are currently the leader: this may happen if we recently
+        // removed ourselves from the cluster).
+        if self.config.value.members_len() == 0
+            || (!self.config.value.members().contains(&self.id) && !is_leader)
+        {
             tick.next_tick = Some(Duration::from_secs(1));
             return;
         }
@@ -871,7 +879,8 @@ impl ConsensusModule {
 
                     let have_self_voted = self.persisted_meta.current_term()
                         == self.meta.current_term()
-                        && self.persisted_meta.voted_for() != 0.into();
+                        && self.persisted_meta.voted_for() != 0.into()
+                        && self.config.value.members().contains(&self.id);
 
                     if have_self_voted {
                         num += 1;
@@ -1660,7 +1669,8 @@ impl ConsensusModule {
         // NOTE: Accordingly with the last part of Section 4.1 in the Raft
         // thesis, a server should grant votes to servers not currently in
         // their configuration in order to gurantee availability during
-        // member additions
+        // member additions (additionally we should grant votes even if we aren't in the
+        // member set as we may not know yet that we have been recently added).
 
         if req.term() < self.meta.current_term() {
             return false;

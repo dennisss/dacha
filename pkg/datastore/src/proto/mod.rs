@@ -13,3 +13,7 @@ pub mod client {
 pub mod lock {
     include!(concat!(env!("OUT_DIR"), "/src/proto/lock.rs"));
 }
+
+pub mod server {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/server.rs"));
+}

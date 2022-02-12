@@ -8,11 +8,12 @@ use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::condvar::Condvar;
 use common::errors::*;
+use common::task::ChildTask;
 use common::vec_hash_set::VecHashSet;
 use crypto::random::RngExt;
 
 use crate::backoff::*;
-use crate::client::client_interface::ClientInterface;
+use crate::client::client_interface::*;
 use crate::client::direct_client::DirectClient;
 use crate::client::direct_client::DirectClientOptions;
 use crate::client::resolver::{ResolvedEndpoint, Resolver};
@@ -46,7 +47,12 @@ struct Shared {
 }
 
 struct State {
-    backends: VecHashSet<ResolvedEndpoint, DirectClient>,
+    backends: VecHashSet<ResolvedEndpoint, Backend>,
+}
+
+struct Backend {
+    client: DirectClient,
+    task: ChildTask,
 }
 
 impl LoadBalancedClient {
@@ -116,6 +122,7 @@ impl LoadBalancedClient {
 
                 // TODO: Gracefully shut down all of these.
                 for endpoint in remove_endpoints {
+                    // println!("Remove client: {:?}", endpoint);
                     state.backends.remove(&endpoint);
                 }
 
@@ -126,19 +133,21 @@ impl LoadBalancedClient {
                 }
             }
 
-            let mut created_clients = vec![];
+            let mut created_backends = vec![];
             for endpoint in add_endpoints {
+                // println!("Create client: {:?}", endpoint);
                 let client =
                     DirectClient::new(endpoint.clone(), self.shared.options.backend.clone());
-                task::spawn(client.clone().run());
-                created_clients.push((endpoint, client));
+                let task = ChildTask::spawn(client.clone().run());
+
+                created_backends.push((endpoint, Backend { client, task }));
             }
 
             {
                 let mut state = self.shared.state.lock().await;
 
-                for (endpoint, client) in created_clients {
-                    state.backends.insert(endpoint, client);
+                for (endpoint, backend) in created_backends {
+                    state.backends.insert(endpoint, backend);
                 }
 
                 state.notify_all();
@@ -153,7 +162,11 @@ impl LoadBalancedClient {
 
 #[async_trait]
 impl ClientInterface for LoadBalancedClient {
-    async fn request(&self, request: Request) -> Result<Response> {
+    async fn request(
+        &self,
+        request: Request,
+        request_context: ClientRequestContext,
+    ) -> Result<Response> {
         let client;
         loop {
             let state = self.shared.state.lock().await;
@@ -167,10 +180,39 @@ impl ClientInterface for LoadBalancedClient {
 
             // TODO: Increment the index if we encounter a failing client.
             let mut rng = crypto::random::clocked_rng();
-            client = rng.choose(state.backends.values()).clone();
+
+            if request_context.wait_for_ready {
+                client = rng.choose(state.backends.values()).client.clone();
+            } else {
+                // TODO: We should use the healthy subset for wait_for_ready as well but we need
+                // to ensure that we limit the max enqueued requests per backend.
+                let mut healthy_subset = vec![];
+                for backend in state.backends.values() {
+                    if backend.client.current_state().await != ClientState::Failure {
+                        healthy_subset.push(&backend.client);
+                    }
+                }
+
+                if healthy_subset.is_empty() {
+                    return Err(crate::v2::ProtocolErrorV2 {
+                        code: crate::v2::ErrorCode::STREAM_CLOSED,
+                        message: "All backends currently failing".into(),
+                        local: false,
+                    }
+                    .into());
+                }
+
+                client = (*rng.choose(&healthy_subset)).clone();
+            }
+
             break;
         }
 
-        client.request(request).await
+        client.request(request, request_context).await
+    }
+
+    async fn current_state(&self) -> ClientState {
+        // TODO: Implement me
+        ClientState::NotConnected
     }
 }

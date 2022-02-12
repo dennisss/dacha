@@ -97,7 +97,9 @@ pub struct PendingExecution<R> {
 
 pub enum PendingExecutionResult<R> {
     Committed {
-        value: R,
+        /// Should always have a value except for config changes.
+        value: Option<R>,
+
         log_index: LogIndex,
     },
     /// The command requested to be executed was superseded by another execution
@@ -109,7 +111,7 @@ impl<R> PendingExecution<R> {
     pub async fn wait(self) -> PendingExecutionResult<R> {
         let v = self.receiver.await;
         match v {
-            Ok(Some(v)) => PendingExecutionResult::Committed {
+            Ok(v) => PendingExecutionResult::Committed {
                 value: v,
                 log_index: self.proposal.index(),
             },
@@ -421,9 +423,9 @@ impl<R: Send + 'static> Server<R> {
     /// should trigger all pending callbacks to fail because of timeout
     pub async fn execute(
         &self,
-        cmd: Vec<u8>,
+        entry: LogEntryData,
     ) -> std::result::Result<PendingExecution<R>, NotLeaderError> {
-        self.execute_after_read(cmd, None).await
+        self.execute_after_read(entry, None).await
     }
 
     // NOTE: We assume that this read has come from Self::begin_read() so it has
@@ -431,12 +433,12 @@ impl<R: Send + 'static> Server<R> {
     // hasn't changed since the read started should be good enough.
     pub async fn execute_after_read(
         &self,
-        cmd: Vec<u8>,
+        entry: LogEntryData,
         read_index: Option<ReadIndex>,
     ) -> std::result::Result<PendingExecution<R>, NotLeaderError> {
         let res = ServerShared::run_tick(
             &self.shared,
-            move |s, t, _| Self::execute_tick(s, t, cmd, read_index),
+            move |s, t, _| Self::execute_tick(s, t, entry, read_index),
             (),
         )
         .await;
@@ -458,18 +460,22 @@ impl<R: Send + 'static> Server<R> {
     fn execute_tick(
         state: &mut ServerState<R>,
         tick: &mut Tick,
-        cmd: Vec<u8>,
+        entry: LogEntryData,
         read_index: Option<ReadIndex>,
     ) -> std::result::Result<(LogPosition, oneshot::Receiver<Option<R>>), ProposeError> {
-        let mut entry = LogEntryData::default();
-        entry.command_mut().0 = cmd;
-
         let proposal = state.inst.propose_entry(&entry, read_index, tick)?;
 
         // If we were successful, add a callback.
+        // TODO: Optimize away the callbacks in the case that R=() or we are performing
+        // a config change.
         let (tx, rx) = oneshot::channel();
         state.callbacks.push_back((proposal.clone(), tx));
         Ok((proposal, rx))
+    }
+
+    pub async fn current_status(&self) -> Status {
+        let state = self.shared.state.lock().await;
+        state.inst.current_status()
     }
 }
 
@@ -634,8 +640,7 @@ impl<R: Send + 'static> ConsensusService for Server<R> {
         req: rpc::ServerRequest<google::proto::empty::Empty>,
         res: &mut rpc::ServerResponse<Status>,
     ) -> Result<()> {
-        let state = self.shared.state.lock().await;
-        res.value = state.inst.current_status();
+        res.value = self.current_status().await;
         Ok(())
     }
 }

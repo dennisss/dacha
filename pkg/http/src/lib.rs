@@ -45,13 +45,13 @@ pub mod status_code;
 pub mod uri;
 pub mod uri_syntax;
 mod v1;
-mod v2;
+pub mod v2;
 
 // Public exports.
 pub use crate::body::{Body, BodyFromData, BodyFromParts, EmptyBody, WithTrailers};
 pub use crate::client::{
-    Client, ClientInterface, ClientOptions, ResolvedEndpoint, Resolver, ResolverChangeListener,
-    SystemDNSResolver,
+    Client, ClientInterface, ClientOptions, ClientRequestContext, ResolvedEndpoint, Resolver,
+    ResolverChangeListener, SystemDNSResolver,
 };
 pub use crate::header::{Header, Headers};
 pub use crate::method::Method;

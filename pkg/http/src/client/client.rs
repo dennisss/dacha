@@ -12,7 +12,7 @@ use common::io::{Readable, Writeable};
 use parsing::ascii::AsciiString;
 
 use crate::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
-use crate::client::client_interface::ClientInterface;
+use crate::client::client_interface::*;
 use crate::client::direct_client::DirectClientOptions;
 use crate::client::load_balanced_client::{LoadBalancedClient, LoadBalancedClientOptions};
 use crate::client::resolver::{Resolver, SystemDNSResolver};
@@ -195,10 +195,18 @@ impl Client {
 
 #[async_trait]
 impl ClientInterface for Client {
-    async fn request(&self, request: Request) -> Result<Response> {
+    async fn request(
+        &self,
+        request: Request,
+        request_context: ClientRequestContext,
+    ) -> Result<Response> {
         // TODO: Retrying requires that we can reset the HTTP body.
 
-        return self.shared.lb_client.request(request).await;
+        return self
+            .shared
+            .lb_client
+            .request(request, request_context)
+            .await;
 
         /*
         let mut retry_backoff = ExponentialBackoff::new(self.shared.options.retry_backoff.clone());
@@ -232,5 +240,9 @@ impl ClientInterface for Client {
 
         Err(err_msg("Exceeded max num request retries"))
         */
+    }
+
+    async fn current_state(&self) -> ClientState {
+        self.shared.lb_client.current_state().await
     }
 }

@@ -26,6 +26,7 @@ use common::futures::future::*;
 use common::futures::prelude::*;
 use protobuf::Message;
 use raft::node::*;
+use raft::proto::consensus::LogEntryData;
 use raft::proto::ident::LogIndex;
 use raft::proto::key_value::*;
 use raft::server::server::{Server, ServerInitialState};
@@ -114,11 +115,12 @@ impl redis::server::Service for RaftRedisServer {
         op.set_mut().set_key(key.as_ref().to_vec());
         op.set_mut().set_value(value.as_ref().to_vec());
 
-        let op_data = op.serialize()?;
+        let mut entry = LogEntryData::default();
+        entry.set_command(op.serialize()?);
 
         self.node
             .server()
-            .execute(op_data)
+            .execute(entry)
             .await
             .map_err(|e| format_err!("SET failed with error: {:?}", e))?;
 
@@ -132,17 +134,20 @@ impl redis::server::Service for RaftRedisServer {
         let mut op = KeyValueOperation::default();
         op.delete_mut().set_key(key.as_ref().to_vec());
 
-        let op_data = op.serialize()?;
+        let mut entry = LogEntryData::default();
+        entry.set_command(op.serialize()?);
 
         let pending_exec = self
             .node
             .server()
-            .execute(op_data)
+            .execute(entry)
             .await
             .map_err(|e| format_err!("DEL failed with error: {:?}", e))?;
 
         let res = match pending_exec.wait().await {
-            raft::PendingExecutionResult::Committed { value, .. } => value,
+            raft::PendingExecutionResult::Committed { value, .. } => {
+                value.ok_or_else(|| err_msg("No result"))?
+            }
             raft::PendingExecutionResult::Cancelled => {
                 return Err(format_err!("Failed to commit DEL entry"));
             }

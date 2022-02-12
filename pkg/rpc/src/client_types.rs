@@ -64,7 +64,7 @@ ClientStreaming
 pub struct ClientRequestContext {
     pub metadata: Metadata,
     pub idempotent: bool,
-    pub fail_fast: bool, // TODO: Deadline
+    pub wait_for_ready: bool, // TODO: Deadline
 }
 
 #[derive(Default)]

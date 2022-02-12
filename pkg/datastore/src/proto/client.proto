@@ -16,3 +16,4 @@ service ClientManagement {
 message NewClientResponse {
     string client_id = 1;
 }
+

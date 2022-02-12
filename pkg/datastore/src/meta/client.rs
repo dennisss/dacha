@@ -13,13 +13,12 @@ use sstable::table::KeyComparator;
 use crate::meta::key_utils::*;
 use crate::proto::client::*;
 use crate::proto::key_value::*;
+use crate::proto::server::*;
 
 pub const MAX_TRANSACTION_RETRIES: usize = 5;
 
 pub struct MetastoreClient {
     client_id: String,
-
-    route_store: raft::RouteStore,
 
     channel: Arc<dyn rpc::Channel>,
 
@@ -40,8 +39,9 @@ impl MetastoreClient {
             eprintln!("DiscoveryClient exited: {:?}", discovery.run().await);
         });
 
-        // TODO: When running in a cluster, we should use something like environment
-        // variables from the node to ensure that this uses the right store.
+        // TODO: In the resolver, also subscribe to one of the server's CurrentStatus.
+        // Whenever the set of members changes, use that info to prune the routes we
+        // have on the client side.
         let channel_factory = raft::RouteChannelFactory::find_group(route_store.clone()).await;
 
         let channel = channel_factory.create_any()?;
@@ -58,7 +58,6 @@ impl MetastoreClient {
 
         Ok(Self {
             client_id,
-            route_store,
             channel,
             background_thread,
         })
@@ -210,6 +209,24 @@ impl MetastoreClient {
         response.recv_head().await;
 
         Ok(WatchStream { response })
+    }
+
+    pub async fn current_status(&self) -> Result<raft::proto::consensus::Status> {
+        let stub = ServerManagementStub::new(self.channel.clone());
+        let request_context = self.default_request_context()?;
+
+        let request = google::proto::empty::Empty::default();
+        stub.CurrentStatus(&request_context, &request).await.result
+    }
+
+    pub async fn remove_server(&self, id: raft::proto::ident::ServerId) -> Result<()> {
+        let stub = ServerManagementStub::new(self.channel.clone());
+        let request_context = self.default_request_context()?;
+
+        let mut request = ConfigChangeRequest::default();
+        request.set_remove_server(id);
+        stub.ConfigChange(&request_context, &request).await.result?;
+        Ok(())
     }
 }
 
