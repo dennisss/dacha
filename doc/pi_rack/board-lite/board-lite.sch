@@ -1,0 +1,356 @@
+EESchema Schematic File Version 4
+EELAYER 30 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title ""
+Date ""
+Rev ""
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L Connector_Generic:Conn_01x06 J5
+U 1 1 62086283
+P 3550 2550
+F 0 "J5" H 3500 2850 50  0000 L CNN
+F 1 "SHIFTER_L" H 3250 2950 50  0000 L CNN
+F 2 "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical" H 3550 2550 50  0001 C CNN
+F 3 "~" H 3550 2550 50  0001 C CNN
+	1    3550 2550
+	1    0    0    -1  
+$EndComp
+$Comp
+L Connector_Generic:Conn_01x06 J6
+U 1 1 620867DD
+P 3850 2550
+F 0 "J6" H 3768 2967 50  0000 C CNN
+F 1 "SHIFTER_H" H 3768 2876 50  0000 C CNN
+F 2 "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical" H 3850 2550 50  0001 C CNN
+F 3 "~" H 3850 2550 50  0001 C CNN
+	1    3850 2550
+	-1   0    0    -1  
+$EndComp
+$Comp
+L power:+3.3V #PWR0103
+U 1 1 620887AB
+P 3100 2550
+F 0 "#PWR0103" H 3100 2400 50  0001 C CNN
+F 1 "+3.3V" V 3115 2678 50  0000 L CNN
+F 2 "" H 3100 2550 50  0001 C CNN
+F 3 "" H 3100 2550 50  0001 C CNN
+	1    3100 2550
+	0    -1   -1   0   
+$EndComp
+$Comp
+L power:GND #PWR0104
+U 1 1 6208933D
+P 3100 2650
+F 0 "#PWR0104" H 3100 2400 50  0001 C CNN
+F 1 "GND" V 3105 2522 50  0000 R CNN
+F 2 "" H 3100 2650 50  0001 C CNN
+F 3 "" H 3100 2650 50  0001 C CNN
+	1    3100 2650
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	3100 2550 3350 2550
+Wire Wire Line
+	3100 2650 3350 2650
+$Comp
+L power:+5V #PWR0105
+U 1 1 6208AE92
+P 4700 2550
+F 0 "#PWR0105" H 4700 2400 50  0001 C CNN
+F 1 "+5V" V 4715 2678 50  0000 L CNN
+F 2 "" H 4700 2550 50  0001 C CNN
+F 3 "" H 4700 2550 50  0001 C CNN
+	1    4700 2550
+	0    1    1    0   
+$EndComp
+$Comp
+L power:GND #PWR0106
+U 1 1 6208BE98
+P 4500 2650
+F 0 "#PWR0106" H 4500 2400 50  0001 C CNN
+F 1 "GND" V 4505 2522 50  0000 R CNN
+F 2 "" H 4500 2650 50  0001 C CNN
+F 3 "" H 4500 2650 50  0001 C CNN
+	1    4500 2650
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Connector_Generic:Conn_01x03 J3
+U 1 1 6208D687
+P 1650 3550
+F 0 "J3" H 1568 3225 50  0000 C CNN
+F 1 "HDMI" H 1568 3316 50  0000 C CNN
+F 2 "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Horizontal" H 1650 3550 50  0001 C CNN
+F 3 "~" H 1650 3550 50  0001 C CNN
+	1    1650 3550
+	-1   0    0    1   
+$EndComp
+$Comp
+L power:GND #PWR0107
+U 1 1 6208E035
+P 2550 3650
+F 0 "#PWR0107" H 2550 3400 50  0001 C CNN
+F 1 "GND" V 2555 3522 50  0000 R CNN
+F 2 "" H 2550 3650 50  0001 C CNN
+F 3 "" H 2550 3650 50  0001 C CNN
+	1    2550 3650
+	0    -1   -1   0   
+$EndComp
+Text GLabel 1850 3450 2    50   Input ~ 0
+HDMI_SDA_RAW
+Text GLabel 1850 3550 2    50   Input ~ 0
+HDMI_SCL_RAW
+Wire Wire Line
+	1850 3650 2550 3650
+Text GLabel 4050 2750 2    50   Input ~ 0
+HDMI_SCL_RAW
+Text GLabel 4050 2850 2    50   Input ~ 0
+HDMI_SDA_RAW
+Wire Wire Line
+	4050 2550 4700 2550
+Wire Wire Line
+	4050 2650 4500 2650
+$Comp
+L Connector_Generic:Conn_01x02 J1
+U 1 1 62098B49
+P 1200 1700
+F 0 "J1" H 1118 1375 50  0000 C CNN
+F 1 "RACK" H 1118 1466 50  0000 C CNN
+F 2 "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Horizontal" H 1200 1700 50  0001 C CNN
+F 3 "~" H 1200 1700 50  0001 C CNN
+	1    1200 1700
+	-1   0    0    1   
+$EndComp
+$Comp
+L Device:R_Small R1
+U 1 1 6209F3C9
+P 4200 3750
+F 0 "R1" V 4004 3750 50  0000 C CNN
+F 1 "100" V 4095 3750 50  0000 C CNN
+F 2 "Resistor_SMD:R_0805_2012Metric_Pad1.15x1.40mm_HandSolder" H 4200 3750 50  0001 C CNN
+F 3 "~" H 4200 3750 50  0001 C CNN
+	1    4200 3750
+	0    1    1    0   
+$EndComp
+Text GLabel 4000 3750 0    50   Input ~ 0
+LED_ENABLE
+$Comp
+L Connector_Generic:Conn_01x02 J7
+U 1 1 620A162A
+P 4750 3750
+F 0 "J7" H 4830 3742 50  0000 L CNN
+F 1 "LED" H 4830 3651 50  0000 L CNN
+F 2 "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Horizontal" H 4750 3750 50  0001 C CNN
+F 3 "~" H 4750 3750 50  0001 C CNN
+	1    4750 3750
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	4300 3750 4550 3750
+Wire Wire Line
+	4100 3750 4000 3750
+$Comp
+L power:GND #PWR0108
+U 1 1 620A207F
+P 4350 3950
+F 0 "#PWR0108" H 4350 3700 50  0001 C CNN
+F 1 "GND" H 4355 3777 50  0000 C CNN
+F 2 "" H 4350 3950 50  0001 C CNN
+F 3 "" H 4350 3950 50  0001 C CNN
+	1    4350 3950
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	4550 3850 4350 3850
+Wire Wire Line
+	4350 3850 4350 3950
+$Comp
+L power:+5V #PWR0109
+U 1 1 620A4511
+P 1550 1600
+F 0 "#PWR0109" H 1550 1450 50  0001 C CNN
+F 1 "+5V" V 1565 1728 50  0000 L CNN
+F 2 "" H 1550 1600 50  0001 C CNN
+F 3 "" H 1550 1600 50  0001 C CNN
+	1    1550 1600
+	0    1    1    0   
+$EndComp
+$Comp
+L power:GND #PWR0110
+U 1 1 620A48BE
+P 1550 1700
+F 0 "#PWR0110" H 1550 1450 50  0001 C CNN
+F 1 "GND" V 1555 1572 50  0000 R CNN
+F 2 "" H 1550 1700 50  0001 C CNN
+F 3 "" H 1550 1700 50  0001 C CNN
+	1    1550 1700
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	1550 1600 1400 1600
+Wire Wire Line
+	1550 1700 1400 1700
+$Comp
+L Connector_Generic:Conn_01x04 J4
+U 1 1 620A6B1F
+P 3250 1200
+F 0 "J4" H 3168 1517 50  0000 C CNN
+F 1 "FAN" H 3168 1426 50  0000 C CNN
+F 2 "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Horizontal" H 3250 1200 50  0001 C CNN
+F 3 "~" H 3250 1200 50  0001 C CNN
+	1    3250 1200
+	-1   0    0    -1  
+$EndComp
+$Comp
+L power:+5V #PWR0111
+U 1 1 620A81BE
+P 3600 1100
+F 0 "#PWR0111" H 3600 950 50  0001 C CNN
+F 1 "+5V" V 3615 1228 50  0000 L CNN
+F 2 "" H 3600 1100 50  0001 C CNN
+F 3 "" H 3600 1100 50  0001 C CNN
+	1    3600 1100
+	0    1    1    0   
+$EndComp
+$Comp
+L power:GND #PWR0112
+U 1 1 620A9E2F
+P 3600 1200
+F 0 "#PWR0112" H 3600 950 50  0001 C CNN
+F 1 "GND" V 3605 1072 50  0000 R CNN
+F 2 "" H 3600 1200 50  0001 C CNN
+F 3 "" H 3600 1200 50  0001 C CNN
+	1    3600 1200
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	3600 1400 3450 1400
+Text GLabel 3600 1400 2    50   Input ~ 0
+FAN_PWM_RAW
+Text GLabel 4050 2450 2    50   Input ~ 0
+FAN_PWM_RAW
+Text GLabel 3350 2750 0    50   Input ~ 0
+HDMI_SCL
+Text GLabel 3350 2850 0    50   Input ~ 0
+HDMI_SDA
+Text GLabel 3350 2450 0    50   Input ~ 0
+FAN_PWM
+$Comp
+L Connector:Raspberry_Pi_2_3 J8
+U 1 1 620B410F
+P 7550 2700
+F 0 "J8" H 7550 4181 50  0000 C CNN
+F 1 "Raspberry_Pi_2_3" H 7550 4090 50  0000 C CNN
+F 2 "Connector_PinHeader_2.54mm:PinHeader_2x20_P2.54mm_Vertical" H 7550 2700 50  0001 C CNN
+F 3 "https://www.raspberrypi.org/documentation/hardware/raspberrypi/schematics/rpi_SCH_3bplus_1p0_reduced.pdf" H 7550 2700 50  0001 C CNN
+	1    7550 2700
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:+3.3V #PWR0113
+U 1 1 620BE8D9
+P 7750 1050
+F 0 "#PWR0113" H 7750 900 50  0001 C CNN
+F 1 "+3.3V" H 7765 1223 50  0000 C CNN
+F 2 "" H 7750 1050 50  0001 C CNN
+F 3 "" H 7750 1050 50  0001 C CNN
+	1    7750 1050
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	7750 1050 7750 1250
+Wire Wire Line
+	7750 1250 7650 1250
+Wire Wire Line
+	7650 1250 7650 1400
+Connection ~ 7750 1250
+Wire Wire Line
+	7750 1250 7750 1400
+$Comp
+L power:+5V #PWR0114
+U 1 1 620C0943
+P 7350 1050
+F 0 "#PWR0114" H 7350 900 50  0001 C CNN
+F 1 "+5V" H 7365 1223 50  0000 C CNN
+F 2 "" H 7350 1050 50  0001 C CNN
+F 3 "" H 7350 1050 50  0001 C CNN
+	1    7350 1050
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	7350 1400 7350 1250
+Wire Wire Line
+	7450 1400 7450 1250
+Wire Wire Line
+	7450 1250 7350 1250
+Connection ~ 7350 1250
+Wire Wire Line
+	7350 1250 7350 1050
+$Comp
+L power:GND #PWR0115
+U 1 1 620C3132
+P 7550 4250
+F 0 "#PWR0115" H 7550 4000 50  0001 C CNN
+F 1 "GND" H 7555 4077 50  0000 C CNN
+F 2 "" H 7550 4250 50  0001 C CNN
+F 3 "" H 7550 4250 50  0001 C CNN
+	1    7550 4250
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	7150 4000 7250 4000
+Wire Wire Line
+	7250 4000 7350 4000
+Connection ~ 7250 4000
+Wire Wire Line
+	7350 4000 7450 4000
+Connection ~ 7350 4000
+Wire Wire Line
+	7450 4000 7550 4000
+Connection ~ 7450 4000
+Wire Wire Line
+	7550 4000 7650 4000
+Connection ~ 7550 4000
+Wire Wire Line
+	7650 4000 7750 4000
+Connection ~ 7650 4000
+Wire Wire Line
+	7750 4000 7850 4000
+Connection ~ 7750 4000
+Wire Wire Line
+	7550 4250 7550 4000
+Text GLabel 6750 3400 0    50   Input ~ 0
+LED_ENABLE
+Text GLabel 8350 2100 2    50   Input ~ 0
+HDMI_SDA
+Text GLabel 8350 2200 2    50   Input ~ 0
+HDMI_SCL
+Text GLabel 6750 2900 0    50   Input ~ 0
+RTC_SDA
+Text GLabel 6750 3000 0    50   Input ~ 0
+RTC_SCL
+Text GLabel 6550 2300 0    50   Input ~ 0
+FAN_PWM
+Wire Wire Line
+	3600 1200 3450 1200
+Wire Wire Line
+	3600 1100 3450 1100
+Wire Wire Line
+	6550 2300 6650 2300
+Wire Wire Line
+	6650 2300 6650 2200
+Wire Wire Line
+	6650 2200 6750 2200
+Connection ~ 6650 2300
+Wire Wire Line
+	6650 2300 6750 2300
+$EndSCHEMATC

@@ -1,4 +1,5 @@
 use alloc::borrow::ToOwned;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use std::collections::HashMap;
 use std::ffi::CString;
@@ -408,6 +409,39 @@ impl DeviceEntry {
     // NOTE: This is mainly exposed for the purpose of mounting into containers.
     pub fn devfs_path(&self) -> &Path {
         &self.usbdevfs_path
+    }
+
+    pub fn bus_num(&self) -> usize {
+        self.busnum
+    }
+
+    pub fn dev_num(&self) -> usize {
+        self.devnum
+    }
+
+    async fn get_sysfs_value(&self, key: &str) -> Result<Option<String>> {
+        match fs::read_to_string(self.sysfs_dir.join(key)).await {
+            Ok(s) => Ok(Some(s.trim_end().to_string())),
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    Ok(None)
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
+    pub async fn manufacturer(&self) -> Result<Option<String>> {
+        self.get_sysfs_value("manufacturer").await
+    }
+
+    pub async fn product(&self) -> Result<Option<String>> {
+        self.get_sysfs_value("product").await
+    }
+
+    pub async fn serial(&self) -> Result<Option<String>> {
+        self.get_sysfs_value("serial").await
     }
 
     pub async fn open(&self) -> Result<Device> {

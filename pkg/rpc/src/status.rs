@@ -178,6 +178,39 @@ impl Status {
     }
 }
 
+// TODO: Also implement from HTTP codes:
+// https://github.com/grpc/grpc/blob/master/doc/http-grpc-status-mapping.md
+
+// TODO: Implement error translation and pass through in client and server:
+// https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md
+impl std::convert::From<http::v2::ProtocolErrorV2> for Status {
+    fn from(e: http::v2::ProtocolErrorV2) -> Self {
+        Self {
+            code: match e.code {
+                http::v2::ErrorCode::NO_ERROR
+                | http::v2::ErrorCode::PROTOCOL_ERROR
+                | http::v2::ErrorCode::INTERNAL_ERROR
+                | http::v2::ErrorCode::FLOW_CONTROL_ERROR
+                | http::v2::ErrorCode::SETTINGS_TIMEOUT
+                | http::v2::ErrorCode::STREAM_CLOSED
+                | http::v2::ErrorCode::FRAME_SIZE_ERROR
+                | http::v2::ErrorCode::COMPRESSION_ERROR
+                | http::v2::ErrorCode::CONNECT_ERROR => StatusCode::Internal,
+                http::v2::ErrorCode::REFUSED_STREAM => StatusCode::Unavailable,
+                http::v2::ErrorCode::CANCEL => StatusCode::Cancelled,
+                http::v2::ErrorCode::ENHANCE_YOUR_CALM => StatusCode::ResourceExhausted,
+                http::v2::ErrorCode::INADEQUATE_SECURITY => StatusCode::PermissionDenied,
+                http::v2::ErrorCode::HTTP_1_1_REQUIRED | http::v2::ErrorCode::Unknown(_) => {
+                    StatusCode::Unknown
+                }
+            },
+            message: format!("[{:?}] {}", e.code, e.message),
+            // TODO: Store the original error.
+            details: vec![],
+        }
+    }
+}
+
 impl std::fmt::Display for Status {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{:?}] {}", self.code, self.message)
@@ -201,6 +234,7 @@ enum_def!(StatusCode usize =>
     OutOfRange = 11,
     Unimplemented = 12,
     Internal = 13,
+    Unavailable = 14,
     DataLoss = 15,
     Unauthenticated = 16
 );

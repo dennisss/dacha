@@ -106,7 +106,7 @@ impl Builder {
         label: &'a str,
         current_dir: Option<&'a Path>,
         context: &'a BuildContext,
-    ) -> Pin<Box<dyn Future<Output = Result<BuildResult>> + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<BuildResult>> + Send + 'a>> {
         Box::pin(self.build_target(label, current_dir, context))
     }
 
@@ -388,11 +388,9 @@ impl Builder {
                 let spec_path = bundle_dir.join("spec.textproto");
                 let spec_mount_path = bundle_mount_dir.join("spec.textproto");
 
-                fs::write(
-                    &spec_path,
-                    protobuf::text::serialize_text_proto(&bundle_spec),
-                )
-                .await?;
+                let data = protobuf::text::serialize_text_proto(&bundle_spec);
+
+                fs::write(&spec_path, data).await?;
 
                 result
                     .output_files
