@@ -51,4 +51,5 @@ enum Architecture {
     UNKNOWN = 0;
     AMD64 = 1;
     ARM32v7 = 2;
+    AArch64 = 3;
 }

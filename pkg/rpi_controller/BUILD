@@ -1,17 +1,17 @@
 
 rust_binary {
-    name: "rpi_fan_control"
+    name: "rpi_controller"
 }
 
 bundle {
     name: "bundle"
     deps: [
-        ":rpi_fan_control",
+        ":rpi_controller",
         ":app",
         "//pkg/web:web_data"
     ]
     configs: [
-        "//pkg/builder/config:rpi"
+        "//pkg/builder/config:rpi64"
     ]
 }
 

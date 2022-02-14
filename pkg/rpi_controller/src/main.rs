@@ -28,8 +28,7 @@ tar -xf rpi_fan_control.tar -C dacha
 
 cd dacha
 
-./built/pkg/rpi_fan_control/rpi_fan_control --rpc_port=8001 --web_port=8000 --fan_pwm_pin=18 --fan_inverted
-
+./built/pkg/rpi_controller/rpi_controller --rpc_port=8001 --web_port=8000 --fan_pwm_pin=18 --fan_inverted
 
 */
 
@@ -40,7 +39,7 @@ extern crate http;
 #[macro_use]
 extern crate macros;
 extern crate rpc_util;
-extern crate rpi_fan_control;
+extern crate rpi_controller;
 
 use std::ops::Add;
 use std::sync::Arc;
@@ -55,7 +54,7 @@ use rpc_util::NamedPortArg;
 use rpi::gpio::*;
 use rpi::pwm::SysPWM;
 use rpi::temp::*;
-use rpi_fan_control::proto::rpi_fan_control::*;
+use rpi_controller::proto::rpi_fan_control::*;
 
 const UPDATE_INTERVAL: Duration = Duration::from_millis(250);
 
@@ -70,6 +69,7 @@ struct FanControlServiceImpl {
 
 struct State {
     proto: FanControlState,
+    led_pin: Option<GPIOPin>,
 }
 
 impl FanControlServiceImpl {
@@ -91,7 +91,10 @@ impl FanControlServiceImpl {
         )?;
 
         Ok(Self {
-            state: Arc::new(Mutex::new(State { proto })),
+            state: Arc::new(Mutex::new(State {
+                proto,
+                led_pin: None,
+            })),
         })
     }
 
@@ -159,6 +162,25 @@ impl FanControlServiceImpl {
 
         1.0
     }
+
+    async fn identify(&self) -> Result<()> {
+        let mut led_pin = self
+            .state
+            .lock()
+            .await
+            .led_pin
+            .clone()
+            .ok_or_else(|| rpc::Status::invalid_argument(format!("No LED pin configured.")))?;
+
+        for i in 0..4 {
+            led_pin.write(true);
+            common::async_std::task::sleep(Duration::from_millis(250)).await;
+            led_pin.write(false);
+            common::async_std::task::sleep(Duration::from_millis(250)).await;
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -183,6 +205,14 @@ impl FanControlService for FanControlServiceImpl {
         state.proto.set_current_speed(request.value.current_speed());
         Ok(())
     }
+
+    async fn Identify(
+        &self,
+        request: rpc::ServerRequest<Empty>,
+        response: &mut rpc::ServerResponse<Empty>,
+    ) -> Result<()> {
+        self.identify().await
+    }
 }
 
 #[derive(Args)]
@@ -200,9 +230,13 @@ struct Args {
     /// actually means 0% fan speed).
     #[arg(default = false)]
     fan_inverted: bool,
+
+    led_pin: Option<usize>,
 }
 
 async fn run() -> Result<()> {
+    println!("Starting rpi controller");
+
     let args = common::args::parse_args::<Args>()?;
 
     let mut task_bundle = TaskResultBundle::new();
@@ -218,7 +252,7 @@ async fn run() -> Result<()> {
             pages: vec![web::WebPageOptions {
                 title: "Fan Control".into(),
                 path: "/".into(),
-                script_path: "built/pkg/rpi_fan_control/app.js".into(),
+                script_path: "built/pkg/rpi_controller/app.js".into(),
                 vars: Some(vars),
             }],
         });
@@ -236,13 +270,23 @@ async fn run() -> Result<()> {
         rpc_server.run(args.rpc_port.value())
     });
 
-    if let Some(pin) = args.fan_pwm_pin {
+    if args.fan_pwm_pin.is_some() || args.led_pin.is_some() {
         let gpio = rpi::gpio::GPIO::open()?;
-        let pin = gpio.pin(pin);
-        task_bundle.add(
-            "FanControlService::run()",
-            service.run(pin, args.fan_inverted),
-        );
+
+        if let Some(pin) = args.led_pin {
+            let mut pin = gpio.pin(pin);
+            pin.set_mode(rpi::gpio::Mode::Output);
+            pin.write(false);
+            service.state.lock().await.led_pin = Some(pin);
+        }
+
+        if let Some(pin) = args.fan_pwm_pin {
+            let pin = gpio.pin(pin);
+            task_bundle.add(
+                "FanControlService::run()",
+                service.run(pin, args.fan_inverted),
+            );
+        }
     }
 
     task_bundle.join().await?;

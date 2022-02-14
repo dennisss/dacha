@@ -2,8 +2,7 @@
 // new linux environment.
 //
 // We will do the following:
-// - Configure a unique number hostname of the form
-//   'cluster-node-516fc8d828da45ba'
+// - Configure a unique number hostname of the form 'cluster-node-e77h92tfgzdvf'
 //   - This will use part of the machine id located at /etc/machine-id
 // -
 
@@ -14,6 +13,12 @@ cross build --target=armv7-unknown-linux-gnueabihf --bin cluster_node --release
 /opt/dacha/bundle/...
 /opt/dacha/data/cluster/...
 
+Safety mesaures needed:
+- Must have a well defined local system time before the node can start running.
+- Need automatic detection on each RPC of clock syncronization
+
+Detecting
+
 */
 
 #[macro_use]
@@ -21,16 +26,29 @@ extern crate common;
 #[macro_use]
 extern crate macros;
 extern crate container;
+#[macro_use]
+extern crate regexp_macros;
+extern crate automata;
+extern crate builder;
 
+use std::fmt::Debug;
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
+use builder::{BuildContext, Builder};
 use common::async_std::{fs, task};
 use common::{errors::*, project_dir};
 use protobuf::text::{parse_text_proto, ParseTextProto};
 
 use container::NodeConfig;
+
+// TODO: Support parsing "\\n" in a regexp?
+// TODO: Support specifying that the pattern must start at the beginning of the
+// line
+// TODO: Make case insensitive.
+regexp!(LSCPU_ARCHITECTURE => "(?:^|\n)Architecture:\\s+([^\n]+)\n");
+regexp!(CPUINFO_MODEL => "(?:^|\n)Model\\s+:\\s+([^\n]+)\n");
 
 #[derive(Args)]
 struct Args {
@@ -83,21 +101,15 @@ fn run_scp(source: &str, destination: &str) -> Result<()> {
     Ok(())
 }
 
-fn copy_repo_file<P: AsRef<Path>>(addr: &str, relative_path: P) -> Result<()> {
-    let source_path = {
-        let p = relative_path.as_ref();
-        if p.is_absolute() {
-            p.to_owned()
-        } else {
-            project_dir().join(p)
-        }
-    };
-
-    println!("Copying {:?}", source_path);
-
+fn copy_file<P: AsRef<Path> + Debug, Q: AsRef<Path> + Debug>(
+    addr: &str,
+    source_path: P,
+    target_repo_path: Q,
+) -> Result<()> {
     let repo_dir = "/opt/dacha/bundle";
+    let target_path = Path::new(repo_dir).join(target_repo_path.as_ref());
 
-    let target_path = Path::new(repo_dir).join(relative_path);
+    println!("{:?} => {:?}", source_path, target_path);
 
     run_ssh(
         addr,
@@ -108,11 +120,24 @@ fn copy_repo_file<P: AsRef<Path>>(addr: &str, relative_path: P) -> Result<()> {
     )?;
 
     run_scp(
-        source_path.to_str().unwrap(),
+        source_path.as_ref().to_str().unwrap(),
         &format!("pi@{}:{}", addr, target_path.to_str().unwrap()),
     )?;
 
     Ok(())
+}
+
+fn copy_repo_file<P: AsRef<Path> + Debug>(addr: &str, relative_path: P) -> Result<()> {
+    let source_path = {
+        let p = relative_path.as_ref();
+        if p.is_absolute() {
+            p.to_owned()
+        } else {
+            project_dir().join(p)
+        }
+    };
+
+    copy_file(addr, source_path, relative_path)
 }
 
 fn download_file(addr: &str, path: &str, output_path: &str) -> Result<()> {
@@ -122,17 +147,77 @@ fn download_file(addr: &str, path: &str, output_path: &str) -> Result<()> {
 async fn run() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
-    println!("Bootstrapping node at {} in zone {}", args.addr, args.zone);
+    println!(
+        "Bootstrapping node at \"{}\" in zone \"{}\"",
+        args.addr, args.zone
+    );
 
     println!("Stopping old node");
     // This is currently a required step in order to be able to overwrite the in-use
     // files.
     //
     // NOTE: If the service doesn't exist yet, we'll ignore the error.
-    run_ssh(&args.addr, "sudo systemctl stop cluster_node | true")?;
+    run_ssh(&args.addr, "sudo systemctl stop cluster-node | true")?;
 
-    let machine_id = run_ssh(&args.addr, "cat /etc/machine-id")?;
-    let hostname = format!("cluster-node-{}", &machine_id[0..16]);
+    let machine_id = {
+        let hex = run_ssh(&args.addr, "cat /etc/machine-id")?;
+        let data = common::hex::decode(hex.trim())?;
+        u64::from_be_bytes(*array_ref![data, 0, 8])
+    };
+    let hostname = format!(
+        "cluster-node-{}",
+        common::base32::base32_encode_cl64(machine_id)
+    );
+
+    let build_config_target = {
+        let lscpu_output = run_ssh(&args.addr, "lscpu")?;
+        let cpuinfo_output = run_ssh(&args.addr, "cat /proc/cpuinfo")?;
+
+        let architecture = LSCPU_ARCHITECTURE
+            .exec(&lscpu_output)
+            .unwrap()
+            .group_str(1)
+            .unwrap()?
+            .to_string();
+        println!("Architecture: {}", architecture);
+
+        let model = CPUINFO_MODEL
+            .exec(&cpuinfo_output)
+            .unwrap()
+            .group_str(1)
+            .unwrap()?
+            .to_string();
+
+        if architecture == "aarch64" && model.contains("Raspberry Pi") {
+            "//pkg/builder/config:rpi64"
+        } else if architecture == "x86_64" {
+            "//pkg/builder/config:x64"
+        } else {
+            return Err(format_err!(
+                "Unsupported CPU type: {} | {}",
+                architecture,
+                model
+            ));
+        }
+    };
+
+    println!("Building node runtime with {}", build_config_target);
+
+    let node_built_result = {
+        let mut builder = Builder::default();
+        let build_context =
+            BuildContext::from(builder.lookup_config(build_config_target, None).await?)?;
+        let result = builder
+            .build_target("//pkg/container:cluster_node", None, &build_context)
+            .await?;
+        if result.output_files.len() != 1 {
+            return Err(err_msg(
+                "Expected exactly one output file from building :cluster_node",
+            ));
+        }
+
+        result
+    };
 
     println!("Setting hostname to: {}", hostname);
     run_ssh(
@@ -151,8 +236,10 @@ async fn run() -> Result<()> {
     )?;
     run_ssh(&args.addr, "sudo chmod 700 /opt/dacha/data")?;
 
-    // TODO: Need to re-build this (and use a platform independent name).
-    copy_repo_file(&args.addr, "built/pkg/container/cluster_node")?;
+    // TODO: Also need to
+    for (key, value) in node_built_result.output_files {
+        copy_file(&args.addr, value, key)?;
+    }
 
     let mut node_config = {
         let s = fs::read_to_string(project_path!("pkg/container/config/node.textproto")).await?;
@@ -170,7 +257,11 @@ async fn run() -> Result<()> {
     .await?;
 
     // TODO: Generate this with the correct zone.
-    copy_repo_file(&args.addr, &node_config_path)?;
+    copy_file(
+        &args.addr,
+        &node_config_path,
+        "pkg/container/config/node.textproto",
+    )?;
 
     copy_repo_file(&args.addr, "pkg/container/config/node.service")?;
 
@@ -213,8 +304,11 @@ async fn run() -> Result<()> {
 
     // TODO: Also keep other files like /boot/config.txt in sync
 
-    run_ssh(&args.addr, "sudo systemctl enable cluster_node")?;
-    run_ssh(&args.addr, "sudo systemctl start cluster_node")?;
+    run_ssh(
+        &args.addr,
+        "sudo systemctl enable /opt/dacha/bundle/pkg/container/config/node.service",
+    )?;
+    run_ssh(&args.addr, "sudo systemctl start cluster-node")?;
 
     Ok(())
 }

@@ -10,6 +10,7 @@ pub fn current_platform() -> Result<Platform> {
 
     platform.set_architecture(match name.machine() {
         "x86_64" => Architecture::AMD64,
+        "aarch64" => Architecture::AArch64,
         v @ _ => {
             return Err(format_err!("Unknown machine type: {}", v));
         }

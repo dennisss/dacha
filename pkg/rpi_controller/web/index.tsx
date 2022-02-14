@@ -23,7 +23,7 @@ class App extends React.Component<{}, { _proto?: any }> {
     }
 
     _refresh() {
-        this._channel.call("FanControl", "Read", {})
+        this._channel.call("rpi.controller.FanControl", "Read", {})
             .then((res) => {
                 if (!this._updating) {
                     this.setState({ _proto: res.responses[0] })
@@ -51,13 +51,20 @@ class App extends React.Component<{}, { _proto?: any }> {
         }
 
         this._updating = true;
-        this._channel.call("FanControl", "Write", this.state._proto)
+        this._channel.call("rpi.controller.FanControl", "Write", this.state._proto)
             .finally(() => {
                 this._updating = false;
                 if (this._pending_update) {
                     this._pending_update = false;
                     this._write_proto();
                 }
+            });
+    }
+
+    _on_identify = () => {
+        this._channel.call("rpi.controller.FanControl", "Identify", {})
+            .finally(() => {
+                console.warn('Done identify!');
             });
     }
 
@@ -98,6 +105,11 @@ class App extends React.Component<{}, { _proto?: any }> {
                                     onChange={(e) => this._update((proto) => {
                                         proto.auto = e.target.checked;
                                     })} />
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <button className="btn btn-primary" onClick={this._on_identify}>Identify</button>
                             </td>
                         </tr>
                     </tbody>

@@ -14,7 +14,7 @@ bundle {
         ":cluster_manager"
     ]
     configs: [
-        "//pkg/builder/config:x64"
-        # "//pkg/builder/config:rpi"
+        "//pkg/builder/config:x64",
+	    "//pkg/builder/config:rpi64"
     ]
 }

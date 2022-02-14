@@ -68,7 +68,7 @@ members = [
 	"pkg/peripherals_raw",
 	"pkg/nordic_tools",
 	"pkg/web",
-	"pkg/rpi_fan_control",
+	"pkg/rpi_controller",
 ]
 
 [profile.dev]

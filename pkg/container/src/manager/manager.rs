@@ -457,10 +457,17 @@ impl Manager {
         } else {
             // NOTE: We assume that this will generate a unique task id which has never been
             // seen before but we don't currently validate that the task doesn't exist yet.
-            format!("{}.{}", job_name, crate::manager::new_task_id())
+            let mut name = job_name.to_string();
+            name.push('.');
+            name.push_str(&crate::manager::new_task_id());
+            name
         };
 
         spec.set_name(task_name.as_str());
+
+        // Newly allocated ports. Used to ensure we don't double allocate ports not yet
+        // accounted for in the NodeMetadata.
+        let mut new_ports = HashSet::new();
 
         for port in spec.ports_mut() {
             // If updating an existing task, attempt to re-use existing port assignments.
@@ -477,11 +484,12 @@ impl Manager {
             for port_num in
                 node.allocatable_port_range().start()..node.allocatable_port_range().end()
             {
-                if node.allocated_ports().contains(&port_num) {
+                if node.allocated_ports().contains(&port_num) || new_ports.contains(&port_num) {
                     continue;
                 }
 
                 port.set_number(port_num);
+                new_ports.insert(port_num);
                 found_port_num = true;
                 break;
             }
@@ -499,7 +507,11 @@ impl Manager {
                     // Persistent volumes should be specific to individual tasks.
                     // TODO: Consider moving this local to the node?
                     // (or have a system for making persistent volume claims?)
-                    volume.set_persistent_name(format!("{}/{}", task_name, name));
+                    let mut n = task_name.to_string();
+                    n.push('/');
+                    n.push_str(name.as_str());
+
+                    volume.set_persistent_name(n);
                 }
                 TaskSpec_VolumeSourceCase::BuildTarget(_) => {}
             }

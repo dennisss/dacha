@@ -28,3 +28,13 @@ fp-info-cache
 _autosave*.kicad_pcb
 *_pcb-bak
 *.sch-bak
+# Netlists are derived purely from the schematic
+*.net
+
+# Exported KiCad/CAM stuff
+*.nc
+*.gcode
+*.gbr
+*.drl
+*.FlatPrj
+

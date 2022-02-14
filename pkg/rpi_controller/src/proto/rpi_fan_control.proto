@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package rpi.controller;
+
 import "third_party/google/src/proto/empty.proto";
 
 message FanControlState {
@@ -39,4 +41,6 @@ service FanControl {
     rpc Read (google.protobuf.Empty) returns (FanControlState);
 
     rpc Write (FanControlState) returns (google.protobuf.Empty);
+
+    rpc Identify (google.protobuf.Empty) returns (google.protobuf.Empty);
 }

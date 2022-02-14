@@ -42,6 +42,7 @@ impl GPIO {
     }
 }
 
+#[derive(Clone)]
 pub struct GPIOPin {
     mem: Arc<MemoryBlock>,
     number: usize,

@@ -572,7 +572,7 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
 
                 println!("{}\t{:?}", task.spec().name(), task_state.state());
 
-                // println!("{:?}", task);
+                println!("{:?}", task);
             }
         }
         ObjectKind::Blob => {
@@ -981,6 +981,8 @@ async fn run_log(cmd: LogCommand) -> Result<()> {
     }
 
     log_stream.finish().await?;
+
+    println!("<End of log>");
 
     Ok(())
 }

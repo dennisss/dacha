@@ -9,6 +9,7 @@ use common::async_std::fs::File;
 use common::async_std::io::prelude::SeekExt;
 use common::async_std::io::SeekFrom;
 use common::errors::*;
+use common::failure::ResultExt;
 use common::futures::AsyncReadExt;
 
 pub struct CPUTemperatureReader {
@@ -17,7 +18,11 @@ pub struct CPUTemperatureReader {
 
 impl CPUTemperatureReader {
     pub async fn create() -> Result<Self> {
-        let file = File::open("/sys/class/thermal/thermal_zone0/temp").await?;
+        let file = File::open("/sys/class/thermal/thermal_zone0/temp")
+            .await
+            .with_context(|e| {
+                format!("While opening /sys/class/thermal/thermal_zone0/temp: {}", e)
+            })?;
         Ok(Self { file })
     }
 

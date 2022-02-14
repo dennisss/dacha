@@ -13,6 +13,19 @@ build_config {
 }
 
 build_config {
+    name: "rpi64"
+    platform {
+        os: LINUX
+        architecture: AArch64
+    }
+    rust_binary {
+        compiler: CROSS
+        profile: "release"
+        target: "aarch64-unknown-linux-gnu"
+    }
+}
+
+build_config {
     name: "x64"
     platform {
         os: LINUX
