@@ -1,11 +1,10 @@
+#[macro_use]
 extern crate common;
-extern crate ctrlc;
 extern crate peripheral;
 extern crate rpi;
 extern crate stream_deck;
-
-//  cross build --target=armv7-unknown-linux-gnueabihf --package home_hub
-// scp target/armv7-unknown-linux-gnueabihf/debug/home_hub pi@10.1.0.44:~/
+#[macro_use]
+extern crate macros;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -22,13 +21,43 @@ use stream_deck::StreamDeckDevice;
 NOTE: Must use 72 x 72 non-progressive JPEGs
 */
 
+#[derive(Args)]
+struct Args {
+    hdmi_ddc_device: String,
+}
+
 #[derive(Debug)]
 pub enum Event {
     KeyUp(usize),
     KeyDown(usize),
 }
 
-async fn run_stream_deck() -> Result<()> {
+const INPUT_SELECT_VCP_CODE: u8 = 0x60;
+
+enum_def_with_unknown!(InputSelectValue u8 =>
+    AnalogVideo1 = 0x01, // RGB 1
+    AnalogVideo2 = 0x02, // RGB 2
+    DigitalVideo1 = 0x03, // DVI 1
+    DigitalVideo2 = 0x04, // DVI 2
+    CompositeVideo1 = 0x05,
+    CompositeVideo2 = 0x06,
+    SVideo1 = 0x07,
+    SVideo2 = 0x08,
+    Tuner1 = 0x09,
+    Tuner2 = 0x0A,
+    Tuner3 = 0x0B,
+    ComponentVideo1 = 0x0C,
+    ComponentVideo2 = 0x0D,
+    ComponentVideo3 = 0x0E,
+    DisplayPort1 = 0x0F,
+    DisplayPort2 = 0x10,
+    HDMI1 = 0x11, // Digital Video 3
+    HDMI2 = 0x12 // Digital Video 4
+);
+
+async fn run() -> Result<()> {
+    let args = common::args::parse_args::<Args>()?;
+
     let deck = StreamDeckDevice::open().await?;
 
     deck.set_display_timeout(60).await?;
@@ -44,7 +73,7 @@ async fn run_stream_deck() -> Result<()> {
     let laptop_default =
         common::async_std::fs::read(project_path!("pkg/home_hub/icons/laptop.jpg")).await?;
 
-    let mut ddc = DDCDevice::open("/dev/i2c-20")?;
+    let mut ddc = DDCDevice::open(&args.hdmi_ddc_device)?;
 
     // ddc.read_edid()?;
 
@@ -57,18 +86,18 @@ async fn run_stream_deck() -> Result<()> {
 
         let feature;
         loop {
-            match ddc.get_vcp_feature(0x60) {
+            match ddc.get_vcp_feature(INPUT_SELECT_VCP_CODE) {
                 Ok(f) => {
                     feature = f;
                     break;
                 }
                 Err(e) => {
                     num_attempts += 1;
-                    if num_attempts == 10 {
+                    if num_attempts == 60 {
                         return Err(e);
                     }
 
-                    eprintln!("Failure getting feature: {}", e);
+                    eprintln!("Failure getting feature (attempt {}): {}", num_attempts, e);
 
                     // TODO: Exponential backoff.
                     common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
@@ -76,11 +105,11 @@ async fn run_stream_deck() -> Result<()> {
             }
         }
 
-        let current_value = feature.current_value & 0xff;
+        let current_value = InputSelectValue::from_value((feature.current_value & 0xff) as u8);
 
         deck.set_key_image(
             0,
-            if current_value == 0x0f {
+            if current_value == InputSelectValue::DisplayPort1 {
                 &computer_active
             } else {
                 &computer_default
@@ -89,7 +118,7 @@ async fn run_stream_deck() -> Result<()> {
         .await?;
         deck.set_key_image(
             1,
-            if current_value == 0x12 {
+            if current_value == InputSelectValue::HDMI2 {
                 &laptop_active
             } else {
                 &laptop_default
@@ -120,10 +149,16 @@ async fn run_stream_deck() -> Result<()> {
             println!("{:?}", event);
             match event {
                 Event::KeyDown(0) => {
-                    ddc.set_vcp_feature(0x60, 0x0F)?;
+                    ddc.set_vcp_feature(
+                        INPUT_SELECT_VCP_CODE,
+                        InputSelectValue::DisplayPort1.to_value() as u16,
+                    )?;
                 }
                 Event::KeyDown(1) => {
-                    ddc.set_vcp_feature(0x60, 0x12)?;
+                    ddc.set_vcp_feature(
+                        INPUT_SELECT_VCP_CODE,
+                        InputSelectValue::HDMI2.to_value() as u16,
+                    )?;
                 }
                 _ => {}
             }
@@ -150,46 +185,6 @@ async fn run_stream_deck() -> Result<()> {
 
     ddc.set_vcp_feature(0x60, 0x0f)?;
     */
-
-    Ok(())
-}
-
-async fn run() -> Result<()> {
-    run_stream_deck().await?;
-    return Ok(());
-
-    // let gpio = GPIO::open()?;
-
-    // let pin = gpio.pin(12);
-
-    // pin.set_mode(Mode::Input).set_mode(Mode::Output).write(false);
-
-    let mut pwm = PWM::open()?;
-
-    let mut cpu_temp_reader = rpi::temp::CPUTemperatureReader::create().await?;
-
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-
-    ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
-    })
-    .expect("Error setting Ctrl-C handler");
-
-    println!("Waiting for Ctrl-C...");
-    while running.load(Ordering::SeqCst) {
-        std::thread::sleep(std::time::Duration::from_secs(1));
-
-        let temp = cpu_temp_reader.read().await?;
-
-        println!("CPU Temp: {:.2}", temp);
-    }
-
-    println!("Exiting...");
-
-    drop(pwm);
-
-    // drop(pwm);
 
     Ok(())
 }

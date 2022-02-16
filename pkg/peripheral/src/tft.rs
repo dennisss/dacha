@@ -50,10 +50,10 @@ impl SparkFun18TFT {
 
         let gpio = GPIO::open()?;
 
-        let backlight = gpio.pin(backlight_pin);
+        let mut backlight = gpio.pin(backlight_pin);
         backlight.set_mode(Mode::Output).write(true);
 
-        let dc = gpio.pin(dc_pin);
+        let mut dc = gpio.pin(dc_pin);
         dc.set_mode(Mode::Output)
             .set_resistor(Resistor::None)
             .write(false);

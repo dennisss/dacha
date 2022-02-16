@@ -40,6 +40,8 @@ Start up (based on figure 3 on the USBD section):
 
 */
 
+use core::arch::asm;
+
 use common::struct_bytes::struct_bytes;
 use executor::futures;
 use executor::interrupts::wait_for_irq;

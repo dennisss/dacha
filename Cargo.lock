@@ -1085,7 +1085,7 @@ name = "home_hub"
 version = "0.1.0"
 dependencies = [
  "common",
- "ctrlc",
+ "macros",
  "peripheral",
  "rpi",
  "stream_deck",

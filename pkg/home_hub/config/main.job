@@ -5,7 +5,8 @@ replicas: 1
 task {
     cwd: "/volumes/dacha"
     args: [
-        "/volumes/dacha/built/pkg/home_hub/main"
+        "/volumes/dacha/built/pkg/home_hub/main",
+        "--hdmi_ddc_device=/dev/i2c-1"
     ]
 
     # TODO: Use relative build targets
@@ -30,7 +31,7 @@ task {
         },
         {
             source {
-                raw: "/dev/i2c-20"
+                raw: "/dev/i2c-1"
                 limit: 1
             }
             exclusive: true

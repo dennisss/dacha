@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use peripherals::raw::rtc0::RTC0;
 use peripherals::raw::{Interrupt, RegisterRead, RegisterWrite};
 

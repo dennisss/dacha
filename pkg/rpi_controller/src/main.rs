@@ -131,9 +131,9 @@ impl FanControlServiceImpl {
                 };
 
                 fan_pwm.write(FAN_PWM_FREQUENCY, duty_cycle).await;
-
-                task::sleep(UPDATE_INTERVAL).await;
             }
+
+            task::sleep(UPDATE_INTERVAL).await;
         }
     }
 

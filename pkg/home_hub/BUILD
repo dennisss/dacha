@@ -12,8 +12,8 @@ bundle {
         ":icons"
     ]
     configs: [
-        # "//pkg/builder/config:rpi",
-        "//pkg/builder/config:x64"
+        "//pkg/builder/config:rpi64"
+        # "//pkg/builder/config:x64"
     ]
 }
 

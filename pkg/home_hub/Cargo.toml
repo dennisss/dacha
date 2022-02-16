@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
+macros = { path = "../macros" }
 peripheral = { path = "../peripheral" }
 rpi = { path = "../rpi" }
 stream_deck = { path = "../stream_deck" }
-ctrlc = "3.1.1"
