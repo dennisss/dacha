@@ -17,6 +17,17 @@ impl<T> Channel<T> {
         }
     }
 
+    pub async fn try_send(&self, value: T) -> bool {
+        let mut value_guard = self.value.lock().await;
+        if !value_guard.is_some() {
+            *value_guard = Some(value);
+            trigger_pendsv();
+            true
+        } else {
+            false
+        }
+    }
+
     pub async fn send(&self, value: T) {
         loop {
             let mut value_guard = self.value.lock().await;

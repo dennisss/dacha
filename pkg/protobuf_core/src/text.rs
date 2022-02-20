@@ -23,7 +23,7 @@ enum TextToken {
     Comment,
     Symbol(char),
     /// Quotation mark delimited sequence of possibly encoded bytes.
-    String(String),
+    String(Vec<u8>),
     Identifier(String),
     // TODO: Support up to u64::MAX
     Integer(isize),
@@ -60,7 +60,7 @@ impl TextToken {
         Ok(inner)
     }));
     parser!(symbol<&str, char> => one_of(SYMBOLS));
-    parser!(string<&str, String> => strLit);
+    parser!(string<&str, Vec<u8>> => strLit);
 
     // TODO: Use the 'full_ident' token type from the protobuf spec?
     // TODO: Should not allow two sequential dots?
@@ -94,7 +94,7 @@ macro_rules! token_atom {
 }
 
 token_atom!(symbol, Symbol, char);
-token_atom!(string, String, String);
+token_atom!(string, String, Vec<u8>);
 token_atom!(ident, Identifier, String);
 token_atom!(integer, Integer, isize);
 token_atom!(float, Float, f64);
@@ -197,7 +197,7 @@ enum TextValue {
     // TODO: Verify if things like null bytes can appear in protobuf 'string'
     // types or just in 'bytes'
     /// String of bytes. Not necessarily UTF-8
-    String(String),
+    String(Vec<u8>),
 
     Identifier(String),
 
@@ -346,7 +346,7 @@ impl TextValue {
             },
             ReflectionMut::String(s) => match self {
                 Self::String(s_value) => {
-                    *s = s_value.clone();
+                    *s = std::str::from_utf8(&s_value[..])?.to_string();
                 }
                 _ => {
                     println!("Problematic: {:?}", self);
@@ -356,8 +356,7 @@ impl TextValue {
             ReflectionMut::Bytes(bytes) => match self {
                 Self::String(v) => {
                     bytes.clear();
-                    // TODO: Need to preserve the original binary meaning
-                    bytes.extend_from_slice(v.as_bytes());
+                    bytes.extend_from_slice(&v[..]);
                 }
                 _ => {
                     return Err(err_msg("Can't cast to bytes"));

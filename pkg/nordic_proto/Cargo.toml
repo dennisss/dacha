@@ -1,0 +1,18 @@
+[package]
+name = "nordic_proto"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../common", default-features = false }
+protobuf = { path = "../protobuf", default-features = false }
+crypto = { path = "../crypto", default-features = false }
+macros = { path = "../macros" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../protobuf_compiler" }
+
+[features]
+default = ["std", "alloc"]
+alloc = ["common/alloc", "crypto/alloc", "protobuf/alloc"]
+std = ["common/std", "crypto/std", "protobuf/std"]

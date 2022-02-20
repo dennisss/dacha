@@ -1,8 +1,21 @@
 # Nordic
 
+Next steps:
+- Implement 2.4Ghz hub
+  - Needs a DB to store:
+    - Local network address and counter
+    - Remote network addresses and key pairs
+    - For each remote address, a canonical name of that device
+    - Will for now use a single EmbeddedDB replica
+  - Implement pub/sub based service for sending/receiving data
+  - Need an NRF binary that can be used as a hub:
+    - First USB NRF must be bootstrapped with keys and addresses
+- Name of the radio protocol
+  - radio-frame
+
 ## Building
 
-`cargo build --package nordic --target thumbv7em-none-eabihf --release`
+`cargo build --package nordic --target thumbv7em-none-eabihf --release --no-default-features`
 
 ## Flashing
 
@@ -41,15 +54,25 @@ To debug, omit the `-c exit` and run:
 
 Make sure openocd is installed similar to above.
 
+```
+sudo apt install libtool git pkg-config libftdi-dev libusb-1.0-0-dev build-essential
+git clone https://github.com/openocd-org/openocd.git
+cd openocd
+
+./bootstrap
+./configure --enable-sysfsgpio --enable-bcm2835gpio
+make
+```
+
 - Follow Adafruit guide for adding Open OCD
   - https://learn.adafruit.com/programming-microcontrollers-using-openocd-on-raspberry-pi/overview
-  - Pins 24 and 25 for SWD
+  - Pins 24 (SWDIO) and 25 (SWDCLK) for SWD
 
 Create board file:
 
 ```
 source [find interface/raspberrypi-native.cfg]
-bcm2835gpio_swd_nums 25 24
+bcm2835gpio swd_nums 25 24
 transport select swd
 source [find target/nrf52.cfg]
 ```
@@ -58,8 +81,8 @@ source [find target/nrf52.cfg]
 
 
 ```
-cargo build --package nordic --target thumbv7em-none-eabihf --release
-scp -i ~/.ssh/id_cluster target/thumbv7em-none-eabihf/release/nordic pi@10.1.0.67:~/binary
+cargo build --package nordic --target thumbv7em-none-eabihf --release --no-default-features
+scp -i ~/.ssh/id_cluster target/thumbv7em-none-eabihf/release/nordic pi@10.1.0.88:~/binary
 openocd -f nrf52_pi.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program /home/pi/binary verify" -c reset -c exit
 ```
 
@@ -87,18 +110,26 @@ Network protocol requirements:
 - Use cases:
   - Supporting streaming of log data back (needs to be distinguished from other types of data)
   - Lazy streams: Only send data on a stream if the other endpoint 
+  - Send back a 'serial channel'
+
+High level design:
+- We assume that all pairs of communicating devices have shared their addresses/keys with each out of band.
+- We will provide a network 'frame' abstraction which allows a use to send up to 1 KB (1024 bytes) as one atomic unit.
+- Each frame can be optionally acknowledged by the recipient.
+- No ordering information between frames is communicated by the protocol.
+- To support multiple applications running on the same device, each frame will be sent with a 'channel'
 
 Packet format (what is sent over the wire):
 - `[PREAMBLE]`: 1 byte. Standard for NRF 2Mbit protocol
 - `[TO_ADDRESS]`: 4 bytes. Who we are sending the packet to.
 - `[LENGTH: 1 byte]`
 - `[FROM_ADDRESS]`: 4 bytes. Who is sending this packet.
-- `[COUNTER]`: 4 bytes. Monotonically incremented on every 
+- `[COUNTER]`: 4 bytes. Monotonically incremented by one for each
 - `[CIPHERTEXT: Up to 245 bytes]`
     - Encrypted using AES-CCM
       - Length size is 2 bytes
       - MIC length is 4 bytes
-    - Every unique (TO_ADDRESS, FROM_ADDRESS) pair has as pre-shared 16-byte AES key and 6-byte IV.
+    - Every unique (TO_ADDRESS, FROM_ADDRESS) pair has as pre-shared 16-byte AES key and 5-byte IV.
     - We form the 13 byte AES-CCM Nonce as:
       - `[PACKET_COUNTER]`: 4 bytes
       - `[FROM_ADDRESS]`: 4 bytes
@@ -109,11 +140,35 @@ Packet format (what is sent over the wire):
 
 Plaintext payload format:
 - `[FLAGS]`: 1 byte
-  - Bit 7: END: Whether or not this is the final packet in a frame.
-  - Bit 6: ACK: Whether or not we want the recipient to 
-    - When both ACK and END are set, the packet is a response to an ACK (the payload is a 4 bytes packet counter)
-  - Bits 0-3: SEQUENCE_NUM: Starting at 0, the sequence number of the current packet in a frame.
+  - Bit 7: REPLY: Whether or not this packet contains a reply (either ACK or NACK) to a previously sent 
+  - Bit 6: ACK: Whether or not we want the recipient to ACK this frame.
+  - Bit 5: END: Whether or not this is the final packet in a frame.
+  - Bits 0-2: SEQUENCE_NUM: Starting at 0, the sequence number of the current packet in a frame.
     - NOTE: All packets in a single frame will have sequential SEQUENCE_NUMs and sequential COUNTER values.
+- If `REPLY` == false:
+  - `[CHANNEL]`: 1 byte
+  - `[DATA]`: N bytes (channel specific data).
+- If `REPLY` == true:
+  - The following data structure is repeated 1+ times:
+    - `[CHANNEL]`: 1 byte
+    - `[COUNTER]`: 4 bytes: COUNTER number of the first packet in the frame being (N)ACK'ed
+      - NACK is useful in the case that a receiver gets a partial 
+
+
+Serial Abstraction:
+- The first 4 bytes of the payload will be a U32 offset of the data.
+- The data in each packet will be of the form:
+  - 4KB serial send buffer cyclic.
+  - If we enqueue too many things to send, we will stop trying to send old data.
+- Similarly we will have a receive buffer.
+  - It will 
+
+
+
+- NOTE: Each packet must be ACK'ed separately.
+
+- Want some type of flow control
+  - 
 
 Address constraints:
 - 4-byte addresses will be randomly generated on the host machine with the following constraints:

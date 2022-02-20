@@ -12,6 +12,7 @@
 
 use alloc::borrow::ToOwned;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use common::errors::*;
 use parsing::*;
@@ -25,7 +26,7 @@ pub enum Token {
     Identifier(String),
     Integer(usize),
     Float(f64),
-    String(String),
+    String(Vec<u8>),
     Symbol(char),
 }
 
@@ -155,17 +156,30 @@ parser!(exponent<&str, String> => seq!(c => {
 }));
 
 // strLit = ( "'" { charValue } "'" ) | ( '"' { charValue } '"' )
-parser!(pub strLit<&str, String> => seq!(c => {
-    let q = c.next(quote)?;
-    let val = c.next(many(char_value(q)))?;
-    c.next(atom(q))?;
+// charValue = hexEscape | octEscape | charEscape | /[^\0\n\\]/
+//
+// TODO: Also support "\uXXXX" which is used in the text format to represent a
+// unicode code point rather than just one byte.
+parser!(pub strLit<&str, Vec<u8>> => seq!(c => {
+    let mut out = vec![];
 
-    let mut s = String::new();
-    for c in val {
-        s.push(c);
+    let q = c.next(quote)?;
+
+    loop {
+        if let Some(byte) = c.next(opt(alt!(hex_escape, oct_escape, char_escape)))? {
+            out.push(byte);
+        } else if let Some(c) = c.next(opt(like(|c| c != q && c != '\0' && c != '\n' && c != '\\')))? {
+            let mut buf = [0u8; 4];
+            let s = c.encode_utf8(&mut buf);
+            out.extend_from_slice(s.as_bytes());
+        } else {
+            break;
+        }
     }
 
-    Ok(s)
+    c.next(atom(q))?;
+
+    Ok(out)
 }));
 
 pub fn serialize_str_lit(value: &[u8], out: &mut String) {
@@ -183,19 +197,8 @@ pub fn serialize_str_lit(value: &[u8], out: &mut String) {
     out.push('"');
 }
 
-// charValue = hexEscape | octEscape | charEscape | /[^\0\n\\]/
-fn char_value(quote: char) -> impl Fn(&str) -> Result<(char, &str)> {
-    alt!(
-        hex_escape,
-        oct_escape,
-        char_escape,
-        // NOTE: Can't be a quote because of strLit
-        like(|c| c != quote && c != '\0' && c != '\n' && c != '\\')
-    )
-}
-
 // hexEscape = '\' ( "x" | "X" ) hexDigit hexDigit
-parser!(hex_escape<&str, char> => seq!(c => {
+parser!(hex_escape<&str, u8> => seq!(c => {
     c.next(tag("\\"))?;
     c.next(one_of("xX"))?;
     let digits = c.next(take_exact::<&str>(2))?;
@@ -205,7 +208,7 @@ parser!(hex_escape<&str, char> => seq!(c => {
         }
     }
 
-    Ok(u8::from_str_radix(digits, 16).unwrap() as char)
+    Ok(u8::from_str_radix(digits, 16).unwrap())
 }));
 //do_parse!(
 //	char!('\\') >> one_of!("xX") >> digits: take_while_m_n!(2, 2, hexDigit) >>
@@ -214,7 +217,7 @@ parser!(hex_escape<&str, char> => seq!(c => {
 
 // TODO: It is possible for this to go out of bounds.
 // octEscape = '\' octalDigit octalDigit octalDigit
-parser!(oct_escape<&str, char> => seq!(c => {
+parser!(oct_escape<&str, u8> => seq!(c => {
     c.next(tag("\\"))?;
     let digits = c.next(take_exact::<&str>(3))?; // TODO: Use 'n_like'
     for c in digits.chars() {
@@ -223,22 +226,22 @@ parser!(oct_escape<&str, char> => seq!(c => {
         }
     }
 
-    Ok(u8::from_str_radix(digits, 8).unwrap() as char)
+    Ok(u8::from_str_radix(digits, 8).unwrap())
 }));
 
 // charEscape = '\' ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | '\' | "'" | '"'
 // )
-parser!(char_escape<&str, char> => seq!(c => {
+parser!(char_escape<&str, u8> => seq!(c => {
     c.next(tag("\\"))?;
     let c = c.next(one_of("abfnrtv\\'\""))?;
     Ok(match c {
-        'a' => '\x07',
-        'b' => '\x08',
-        'f' => '\x0c',
-        'n' => '\n',
-        'r' => '\r',
-        't' => '\t',
-        c => c
+        'a' => b'\x07',
+        'b' => b'\x08',
+        'f' => b'\x0c',
+        'n' => b'\n',
+        'r' => b'\r',
+        't' => b'\t',
+        c => c as u8
     })
 }));
 

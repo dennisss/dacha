@@ -26,6 +26,6 @@ arrayref = "0.3.5"
 openssl = { path = "../../third_party/openssl" }
 
 [features]
-default = ["std"]
+default = ["std", "alloc"]
 alloc = ["common/alloc"]
 std = ["macros", "asn", "math", "parsing", "pkix", "byteorder", "lazy_static", "chrono", "async-std", "alloc", "common/std"]

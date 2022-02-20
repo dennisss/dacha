@@ -8,5 +8,6 @@ edition = "2021"
 peripherals_raw = { path = "../peripherals_raw" }
 
 [features]
-default = ["std"]
+default = ["std", "alloc"]
+alloc = []
 std = []

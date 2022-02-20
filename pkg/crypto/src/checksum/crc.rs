@@ -193,7 +193,7 @@ impl CRC32CHasher {
     #[cfg(target_feature = "sse4.2")]
     fn update_sse42(&mut self, data: &[u8]) {
         // Calculate in 64bit chunks.
-        let inc = std::mem::size_of::<u64>();
+        let inc = core::mem::size_of::<u64>();
         let n = data.len() / inc;
         for i in 0..n {
             let pos = i * inc;
@@ -214,7 +214,7 @@ impl CRC32CHasher {
     #[cfg(all(target_arch = "arm", target_feature = "crc32"))]
     fn update_arm_crc32(&mut self, data: &[u8]) {
         // Calculate 32-bit chunks.
-        let inc = std::mem::size_of::<u32>();
+        let inc = core::mem::size_of::<u32>();
         let n = data.len() / inc;
         for i in 0..n {
             let pos = i * inc;

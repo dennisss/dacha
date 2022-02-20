@@ -12,6 +12,9 @@ crypto = { path = "../crypto", default-features = false }
 protobuf = { path = "../protobuf", default-features = false }
 macros = { path = "../macros" }
 usb = { path = "../usb", default-features = false }
+nordic_proto = { path = "../nordic_proto", default-features = false }
 
-[build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+[features]
+default = ["std", "alloc"]
+alloc = ["common/alloc", "nordic_proto/alloc", "executor/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc"]
+std = ["common/std", "nordic_proto/alloc", "nordic_proto/std", "executor/alloc", "crypto/std", "protobuf/std", "usb/std"]

@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+// All addresses are 4 bytes in length.
+
+message NetworkConfig {
+    // Address of the local device assigned this config.
+    bytes address = 1 [max_length = 4];
+
+    // Remote devices with which we can communicate.
+    repeated Link links = 2 [max_count = 8];
+
+    // Last packet counter which the local device has sent to a remote device.
+    uint32 last_packet_counter = 3;
+
+    // TODO: Also configure things like radio channel.
+}
+
+message Link {
+    bytes address = 1 [max_length = 4];
+    bytes key = 2 [max_length = 16];
+    bytes iv = 3 [max_length = 5];
+
+    // Last packet counter received from this remote device.
+    uint32 last_packet_counter = 4;
+}

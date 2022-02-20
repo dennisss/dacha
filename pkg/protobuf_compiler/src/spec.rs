@@ -11,7 +11,7 @@ pub enum Constant {
     Identifier(String),
     Integer(isize),
     Float(f64),
-    String(String),
+    String(Vec<u8>),
     Bool(bool),
 }
 

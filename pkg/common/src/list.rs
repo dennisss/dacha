@@ -7,6 +7,13 @@ use generic_array::ArrayLength;
 use crate::collections::FixedVec;
 use crate::errors::error_new::IntoError;
 
+pub trait List<T>: Appendable<Item = T> + Clearable {}
+
+#[cfg(feature = "alloc")]
+impl<T: Clone> List<T> for alloc::vec::Vec<T> {}
+
+impl<T: Default + Clone, A: AsRef<[T]> + AsMut<[T]>> List<T> for FixedVec<T, A> {}
+
 pub trait Appendable {
     type Item;
     type Error: IntoError + Send + Sync + 'static;
@@ -48,6 +55,23 @@ impl<T: Default + Clone, A: AsRef<[T]> + AsMut<[T]>> Appendable for FixedVec<T, 
         }
 
         Ok(())
+    }
+}
+
+pub trait Clearable {
+    fn clear(&mut self);
+}
+
+#[cfg(feature = "alloc")]
+impl<T> Clearable for alloc::vec::Vec<T> {
+    fn clear(&mut self) {
+        alloc::vec::Vec::clear(self);
+    }
+}
+
+impl<T: Default, A: AsRef<[T]> + AsMut<[T]>> Clearable for FixedVec<T, A> {
+    fn clear(&mut self) {
+        FixedVec::clear(self);
     }
 }
 

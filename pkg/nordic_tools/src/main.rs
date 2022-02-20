@@ -2,6 +2,8 @@
 extern crate common;
 #[macro_use]
 extern crate macros;
+extern crate nordic_proto;
+extern crate protobuf;
 extern crate usb;
 
 use std::sync::Arc;
@@ -9,12 +11,12 @@ use std::time::Duration;
 
 use common::async_std::{channel, task};
 use common::errors::*;
+use nordic_proto::packet::PacketBuffer;
+use nordic_proto::proto::net::*;
+use nordic_proto::usb::ProtocolUSBRequestType;
+use protobuf::text::ParseTextProto;
+use protobuf::Message;
 use usb::descriptors::SetupPacket;
-
-enum_def_with_unknown!(ProtocolUSBRequestType u8 =>
-    Send = 1,
-    Receive = 2
-);
 
 async fn line_reader(sender: channel::Sender<String>) -> Result<()> {
     loop {
@@ -25,6 +27,21 @@ async fn line_reader(sender: channel::Sender<String>) -> Result<()> {
 }
 
 async fn run() -> Result<()> {
+    let network_config = NetworkConfig::parse_text(
+        r#"
+        address: "\xE7\xE7\xE7\xE7"
+        last_packet_counter: 1
+
+        links {
+            address: "\xE8\xE8\xE8\xE8"
+            key: "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            iv: "\x00\x00\x00\x00\x00"
+        }
+        "#,
+    )?;
+
+    let network_config_proto = network_config.serialize()?;
+
     let ctx = usb::Context::create()?;
     let mut device = ctx.open_device(0x8888, 0x0001).await?;
 
@@ -33,6 +50,42 @@ async fn run() -> Result<()> {
     device.reset()?;
 
     println!("Device reset!");
+
+    println!("WRITING PROTO: {}", network_config_proto.len());
+    println!("{:?}", network_config_proto);
+
+    device
+        .write_control(
+            SetupPacket {
+                bmRequestType: 0b01000000,
+                bRequest: ProtocolUSBRequestType::SetNetworkConfig.to_value(),
+                wValue: 0,
+                wIndex: 0,
+                wLength: network_config_proto.len() as u16,
+            },
+            &network_config_proto,
+        )
+        .await?;
+
+    {
+        let mut read_buffer = [0u8; 256];
+        let n = device
+            .read_control(
+                SetupPacket {
+                    bmRequestType: 0b11000000,
+                    bRequest: ProtocolUSBRequestType::GetNetworkConfig.to_value(),
+                    wValue: 0,
+                    wIndex: 0,
+                    wLength: read_buffer.len() as u16,
+                },
+                &mut read_buffer,
+            )
+            .await?;
+
+        println!("Got Proto of size: {}", n);
+    }
+
+    // let n =
 
     let (sender, receiver) = channel::bounded(1);
 
@@ -77,7 +130,7 @@ async fn run() -> Result<()> {
                     },
                     v.as_bytes(),
                 )
-                .await;
+                .await?;
 
             println!("<");
         }

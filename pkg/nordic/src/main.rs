@@ -1,5 +1,3 @@
-#![no_std]
-#![no_main]
 #![feature(
     lang_items,
     asm,
@@ -8,7 +6,15 @@
     alloc_error_handler,
     generic_associated_types
 )]
+#![no_std]
+#![no_main]
 
+// extern crate alloc;
+
+#[cfg(feature = "std")]
+extern crate std;
+
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 #[macro_use]
@@ -19,39 +25,85 @@ extern crate common;
 extern crate crypto;
 #[macro_use]
 extern crate macros;
+extern crate nordic_proto;
+
+#[cfg(feature = "alloc")]
+pub mod allocator;
+pub mod ecb;
+pub mod eeprom;
+pub mod gpio;
+pub mod log;
+pub mod pins;
+pub mod protocol;
+pub mod radio;
+pub mod radio_socket;
+pub mod rng;
+#[cfg(feature = "alloc")]
+pub mod storage;
+pub mod temp;
+pub mod timer;
+pub mod twim;
+pub mod uarte;
+pub mod usb;
 
 /*
 Old binary uses 2763 flash bytes.
 Currently we use 3078 flash bytes if we don't count offsets
 */
 
-mod ccm;
-mod ecb;
-mod eeprom;
-mod gpio;
-mod log;
-mod pins;
-mod proto;
-mod protocol;
-mod radio;
-mod rng;
-mod storage;
-mod temp;
-mod timer;
-mod twim;
-mod uarte;
-mod usb;
+/*
+General workflow:
+- Start up
+- Read from EEPROM to see if there are initial values of the
+    - Increment counter by 100
+- Over USB we can do SetNetworkConfig to reconfigure it and set the counter to 0
+    - The host should use GetNetworkConfig to not accidentally reset a counter if the keys han't changed.
+    - NOTE: Before this happens, we can't run the RadioSocket thread with a bad config.
+- Every 100 packets, save the counter to EEPROM before sending it.
+- Eventually, every 10 seconds, save to EEPROM the last packet counter received from each remote link
 
+
+
+
+
+Threads for the serial implementation:
+1. The serial reader:
+    - Reads data from
+    - Buffers data until we see the first 32 bytes or 1ms has passed since the first byte in a batch.
+    - Once done, it enqueues a packet to be sent.
+    - For now, no ack is really needed.
+    -
+2. The radio thread waits for new entries in the packet list
+    - Technically for doing receiving, it could just pull an arbitrary number of bytes from the buffer.
+    - To implement ACK
+        - If a response is needed, what's the point of having an ACK in the protocol?
+
+3. The radio thread also sometimes receives packets.
+    - These get pushed into th
+
+Alternative strategy:
+- Poll for
+
+Scenarios for which we want to optimize:
+- Using just
+
+*/
+
+use core::arch::asm;
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
+use executor::singleton::Singleton;
 use peripherals::raw::clock::CLOCK;
 use peripherals::raw::rtc0::RTC0;
-use peripherals::raw::{EventState, Interrupt, PinDirection, RegisterRead, RegisterWrite};
-// use crate::peripherals::
 use peripherals::raw::uarte0::UARTE0;
+use peripherals::raw::{EventState, Interrupt, PinDirection, RegisterRead, RegisterWrite};
 
+use crate::ecb::ECB;
+// use crate::log;
+// use crate::num_to_slice;
 use crate::radio::Radio;
+use crate::radio_socket::{RadioController, RadioSocket};
 use crate::rng::Rng;
 use crate::temp::Temp;
 use crate::timer::Timer;
@@ -94,6 +146,14 @@ unsafe fn init_data() {
     }
 }
 
+/*
+Allocator design:
+- Current horizon pointer (initialized at end of static RAM)
+    - Increment horizon pointer when we want to allocate more memory
+    -> do need to
+
+*/
+
 #[panic_handler]
 fn panic(_panic: &PanicInfo<'_>) -> ! {
     loop {}
@@ -102,6 +162,7 @@ fn panic(_panic: &PanicInfo<'_>) -> ! {
 #[lang = "eh_personality"]
 extern "C" fn eh_personality() {}
 
+// TODO: Split into a separate file (e.g. entry.rs)
 #[no_mangle]
 pub extern "C" fn entry() -> () {
     main()
@@ -218,9 +279,9 @@ pub fn num_to_slice(mut num: u32) -> NumberSlice {
         buf,
         len: num_digits,
     }
-
-    // f(&buf[(buf.len() - num_digits)..]);
 }
+
+static RADIO_SOCKET: Singleton<RadioSocket> = Singleton::uninit();
 
 define_thread!(
     Echo,
@@ -275,12 +336,20 @@ async fn blinker_thread_fn() {
     //     Rng::new(peripherals.rng),
     // );
 
-    USBThread::start(USBDeviceController::new(
-        peripherals.usbd,
-        peripherals.power,
-    ));
+    let radio_socket = RADIO_SOCKET.set(RadioSocket::new()).await;
 
-    RadioThread::start(Radio::new(peripherals.radio));
+    // let radio_controller = RadioController::new(
+    //     radio_socket,
+    //     Radio::new(peripherals.radio),
+    //     ECB::new(peripherals.ecb),
+    // );
+
+    // RadioThread::start(radio_controller);
+
+    USBThread::start(
+        USBDeviceController::new(peripherals.usbd, peripherals.power),
+        radio_socket,
+    );
 
     // peripherals.p0.dirset.write_with(|v| v.set_pin30());
     // peripherals.p0.outset.write_with(|v| v.set_pin30());
@@ -304,7 +373,7 @@ async fn blinker_thread_fn() {
             peripherals.p0.outclr.write_with(|v| v.set_pin6());
         }
 
-        timer.wait_ms(100).await;
+        timer.wait_ms(500).await;
 
         if USING_DEV_KIT {
             peripherals.p0.outset.write_with(|v| v.set_pin14());
@@ -312,20 +381,54 @@ async fn blinker_thread_fn() {
             peripherals.p0.outset.write_with(|v| v.set_pin6());
         }
 
-        timer.wait_ms(100).await;
+        timer.wait_ms(500).await;
     }
 }
 
-define_thread!(USBThread, usb_thread_fn, usb: USBDeviceController);
-async fn usb_thread_fn(mut usb: USBDeviceController) {
-    usb.run(crate::protocol::ProtocolUSBHandler::new()).await;
+define_thread!(
+    USBThread,
+    usb_thread_fn,
+    usb: USBDeviceController,
+    radio_socket: &'static RadioSocket
+);
+async fn usb_thread_fn(mut usb: USBDeviceController, radio_socket: &'static RadioSocket) {
+    usb.run(crate::protocol::ProtocolUSBHandler::new(radio_socket))
+        .await;
 }
 
-define_thread!(RadioThread, radio_thread_fn, radio: Radio);
-async fn radio_thread_fn(radio: Radio) {
-    let mut inst = crate::protocol::ProtocolRadioThread::new(radio);
-    inst.run().await;
+define_thread!(
+    RadioThread,
+    radio_thread_fn,
+    radio_controller: RadioController
+);
+async fn radio_thread_fn(radio_controller: RadioController) {
+    radio_controller.run().await;
 }
+
+/*
+Next steps:
+- Nordic things to improve
+    - Improve USB handler to return error results in order to handle the Disconnected/Reset events.
+    - Implement GPIO (will enable using with EEPROM)
+    - Implement global timeouts.
+    - Fix interrupt
+
+- We now have the basic 'texting' app.
+
+
+- Want to extend with encryption.
+    - Need
+- So want to
+
+- Implement commands:
+    - RadioSend
+    - RadioReceive
+- Us these to implement a remote 'texting' app.
+    - though bot
+*/
+
+// TODO: Configure the voltage supervisor.
+
 // TODO: Switch back to returning '!'
 fn main() -> () {
     // Disable interrupts.

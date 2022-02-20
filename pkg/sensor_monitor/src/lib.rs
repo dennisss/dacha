@@ -163,6 +163,7 @@ impl MetricValueIterator {
     }
 }
 
+// TODO: Move to the web lib.
 pub fn json_response<M>(code: http::status_code::StatusCode, obj: &M) -> http::Response
 where
     M: protobuf::MessageReflection,

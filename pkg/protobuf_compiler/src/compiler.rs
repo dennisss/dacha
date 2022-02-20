@@ -924,7 +924,7 @@ impl Compiler<'_> {
             Constant::Float(v) => v.to_string(),
             Constant::String(v) => {
                 let mut out = String::new();
-                serialize_str_lit(v.as_bytes(), &mut out);
+                serialize_str_lit(&v[..], &mut out);
                 out
             }
             Constant::Bool(v) => if *v { "true" } else { "false" }.to_string(),

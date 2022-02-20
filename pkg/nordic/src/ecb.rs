@@ -1,6 +1,10 @@
+use core::arch::asm;
 use core::result::Result;
 
+use crypto::ccm::BlockCipherBuffer;
 use peripherals::raw::{Interrupt, RegisterRead, RegisterWrite};
+
+const BLOCK_SIZE: usize = 16; // 128-bit blocks
 
 pub struct ECB {
     periph: peripherals::raw::ecb::ECB,
@@ -8,9 +12,9 @@ pub struct ECB {
 
 #[repr(C)]
 pub struct ECBData {
-    pub key: [u8; 16],
-    pub plaintext: [u8; 16],
-    pub ciphertext: [u8; 16],
+    pub key: [u8; BLOCK_SIZE],
+    pub plaintext: [u8; BLOCK_SIZE],
+    pub ciphertext: [u8; BLOCK_SIZE],
 }
 
 impl ECB {
@@ -52,5 +56,50 @@ impl ECB {
         // interrupt still be pending?
         // self.periph.events_endecb.write_notgenerated();
         // self.periph.events_errorecb.write_notgenerated();
+    }
+}
+
+// Software implementation of AES-CCM built on top of the ECB peripheral on the
+// NRF chips.
+//
+// See https://datatracker.ietf.org/doc/html/rfc3610
+pub struct AES128BlockBuffer<'a> {
+    ecb: &'a mut ECB,
+    data: ECBData,
+}
+
+impl<'a> AES128BlockBuffer<'a> {
+    pub fn new(key: &[u8; BLOCK_SIZE], ecb: &'a mut ECB) -> Self {
+        Self {
+            ecb,
+            data: ECBData {
+                key: key.clone(),
+                // TODO: Only need to append the nonce in the middle.
+                plaintext: [0u8; BLOCK_SIZE],
+                ciphertext: [0u8; BLOCK_SIZE],
+            },
+        }
+    }
+}
+
+impl<'a> BlockCipherBuffer for AES128BlockBuffer<'a> {
+    fn plaintext(&self) -> &[u8; BLOCK_SIZE] {
+        &self.data.plaintext
+    }
+
+    fn plaintext_mut(&mut self) -> &mut [u8; BLOCK_SIZE] {
+        &mut self.data.plaintext
+    }
+
+    fn plaintext_mut_ciphertext(&mut self) -> (&mut [u8; BLOCK_SIZE], &[u8; BLOCK_SIZE]) {
+        (&mut self.data.plaintext, &self.data.ciphertext)
+    }
+
+    fn encrypt(&mut self) {
+        self.ecb.encrypt(&mut self.data);
+    }
+
+    fn ciphertext(&self) -> &[u8; BLOCK_SIZE] {
+        &self.data.ciphertext
     }
 }

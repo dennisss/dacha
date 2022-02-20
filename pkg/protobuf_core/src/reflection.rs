@@ -1,11 +1,13 @@
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
-use common::collections::{FixedString, FixedVec};
+use core::convert::Infallible;
 use core::default::Default;
 use core::ops::{Deref, DerefMut};
 
 use common::bytes::BytesMut;
+use common::collections::{FixedString, FixedVec};
+use common::list::List;
 
 use crate::message::Enum;
 use crate::types::FieldNumber;
@@ -35,7 +37,7 @@ pub enum ReflectionMut<'a> {
     U64(&'a mut u64),
     Bool(&'a mut bool),
     String(&'a mut String),
-    Bytes(&'a mut Vec<u8>),
+    Bytes(&'a mut dyn List<u8, Error = Infallible>),
     Repeated(&'a mut dyn RepeatedFieldReflection),
     Message(&'a mut dyn MessageReflection),
     Enum(&'a mut dyn Enum),
@@ -177,7 +179,7 @@ impl<A: AsMut<[u8]> + AsRef<[u8]>> Reflect for FixedVec<u8, A> {
         Reflection::Bytes(self.as_ref())
     }
     fn reflect_mut(&mut self) -> ReflectionMut {
-        todo!()
+        ReflectionMut::Bytes(self)
     }
 }
 

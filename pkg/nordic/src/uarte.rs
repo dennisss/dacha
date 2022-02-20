@@ -1,6 +1,8 @@
 use peripherals::raw::uarte0::UARTE0;
 use peripherals::raw::{Interrupt, PinDirection, RegisterRead, RegisterWrite};
 
+// TODO: Support splitting this into separate reader and writer halves.
+
 pub struct UARTE {
     periph: UARTE0,
 }

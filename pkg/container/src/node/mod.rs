@@ -1219,6 +1219,9 @@ impl NodeInner {
                     }
                 }
                 DeviceSourceSourceCase::Raw(path) => {
+                    // NOTE: We don't mount /sys/ so we use device mounts to support that instead.
+                    // TODO: Improve this check.
+                    /*
                     if !path.starts_with("/dev/") {
                         return Err(rpc::Status::invalid_argument(format!(
                             "Path does not reference a device: {}",
@@ -1226,6 +1229,7 @@ impl NodeInner {
                         ))
                         .into());
                     }
+                    */
 
                     let mut mount = ContainerMount::default();
                     mount.set_source(path.as_str());
@@ -1647,11 +1651,14 @@ impl NodeInner {
         let mut state_guard = self.shared.state.lock().await;
         let state = &mut *state_guard;
 
-        let task = state
-            .tasks
-            .iter_mut()
-            .find(|t| t.spec.name() == name)
-            .ok_or_else(|| rpc::Status::not_found("Task not found"))?;
+        // NOTE: We can't return a not found error right now as this is used in the
+        // node_registration code even when we don't know if the task is present.
+        let task = match state.tasks.iter_mut().find(|t| t.spec.name() == name) {
+            Some(task) => task,
+            None => {
+                return Ok(());
+            }
+        };
 
         // Exit earlier if we are stopped and already stopping.
         if let TaskState::Done = &task.state {

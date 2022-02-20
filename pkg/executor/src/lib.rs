@@ -15,6 +15,7 @@ pub mod interrupts;
 #[cfg(not(feature = "std"))]
 pub mod mutex;
 mod raw_waker;
+pub mod singleton;
 pub mod stack_pinned;
 pub mod thread;
 pub mod waker;

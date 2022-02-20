@@ -34,7 +34,7 @@ message FanCurve {
 
 message FanCurvePoint {
     float temp = 1;
-    float speed = 2;
+    float speed = 2; // TODO: This gets serialized as 0.20000000298023224
 }
 
 service FanControl {

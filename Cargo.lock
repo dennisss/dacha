@@ -1495,10 +1495,21 @@ dependencies = [
  "crypto",
  "executor",
  "macros",
+ "nordic_proto",
  "peripherals",
  "protobuf",
- "protobuf_compiler",
  "usb",
+]
+
+[[package]]
+name = "nordic_proto"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "crypto",
+ "macros",
+ "protobuf",
+ "protobuf_compiler",
 ]
 
 [[package]]
@@ -1507,6 +1518,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "macros",
+ "nordic_proto",
  "protobuf",
  "protobuf_compiler",
  "usb",
@@ -2366,6 +2378,14 @@ name = "strsim"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ea5119cdb4c55b55d432abb513a0429384878c15dde60cc77b1c99de1a95a6a"
+
+[[package]]
+name = "swd_prog"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "rpi",
+]
 
 [[package]]
 name = "syn"

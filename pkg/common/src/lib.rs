@@ -83,6 +83,7 @@ pub mod line_builder;
 pub mod list;
 #[cfg(feature = "std")]
 pub mod pipe;
+pub mod segmented_buffer;
 #[cfg(feature = "std")]
 pub mod shutdown;
 #[cfg(feature = "std")]

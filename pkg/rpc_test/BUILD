@@ -9,7 +9,7 @@ bundle {
         ":adder_server"
     ]
     configs: [
-        "//pkg/builder/config:rpi",
+        # "//pkg/builder/config:rpi",
         "//pkg/builder/config:x64"
     ]
 }

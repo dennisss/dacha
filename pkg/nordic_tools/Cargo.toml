@@ -8,6 +8,7 @@ common = { path = "../common" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 usb = { path = "../usb" }
+nordic_proto = { path = "../nordic_proto" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

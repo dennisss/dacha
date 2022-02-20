@@ -5,24 +5,19 @@ Commands to support:
 - SetRadioConfig : Payload is a RadioConfig proto.
     - Takes as input a NetworkConfig proto
     - For now, we'll just store it in RAM
-
 - Send
 - Receive
-
 
 Over USB:
     - bmRequestType:
         0bX10 00000 (Vendor request to/from Device)
-
     - bRequest:
         - 1: Send : Payload is just bytes to send
         - 2: Receive : Payload is the data recieved.
 
-
 Device mode:
     - If not transmitting, we will be receiving.
     - Received data will go into a circular buffer from which the USB reads.
-
 
 Threads:
 1. Handling radio state
@@ -32,12 +27,7 @@ Syncronization
 - Radio thread is always waiting on either:
     - Receiving new packet over air
     - Waiting for something to be available to transfer
-
 - We have two channels
-
-
-
-
 */
 
 use core::future::Future;
@@ -47,37 +37,26 @@ use common::list::Appendable;
 use executor::channel::Channel;
 use executor::futures::*;
 use executor::mutex::Mutex;
+use nordic_proto::packet::PacketBuffer;
+use nordic_proto::proto::net::NetworkConfig;
+use nordic_proto::usb::ProtocolUSBRequestType;
+use protobuf::Message;
 use usb::descriptors::{DescriptorType, SetupPacket, StandardRequestType};
 
 use crate::log;
 use crate::radio::Radio;
+use crate::radio_socket::RadioSocket;
 use crate::usb::controller::{USBDeviceControlRequest, USBDeviceControlResponse};
 use crate::usb::default_handler::USBDeviceDefaultHandler;
 use crate::usb::handler::USBDeviceHandler;
 
-/// Messages are sent on this channel from the USB thread to the Radio thread
-/// when there is data present in the transmit buffer to be sent.
-static TRANSMIT_PENDING: Channel<()> = Channel::new();
-
-/// Size to use for all buffers. This is also the maximum size that we will
-/// transmit or receive in one transaction.
-const BUFFER_SIZE: usize = 128;
-
-static TRANSMIT_BUFFER: Mutex<FixedVec<u8, [u8; BUFFER_SIZE]>> =
-    Mutex::new(FixedVec::new([0u8; BUFFER_SIZE]));
-// TODO: Change this is a cyclic buffer.
-static RECEIVE_BUFFER: Mutex<FixedVec<u8, [u8; BUFFER_SIZE]>> =
-    Mutex::new(FixedVec::new([0u8; BUFFER_SIZE]));
-
 // /// Messages are sent on this channel from the Radio to USB threads
 // static RECEIVE_BUFFER_READY: Channel<()> = Channel::new();
 
-enum_def_with_unknown!(ProtocolUSBRequestType u8 =>
-    Send = 1,
-    Receive = 2
-);
-
-pub struct ProtocolUSBHandler {}
+pub struct ProtocolUSBHandler {
+    radio_socket: &'static RadioSocket,
+    packet_buf: PacketBuffer,
+}
 
 // TODO: Have a macro to auto-generate this.
 impl USBDeviceHandler for ProtocolUSBHandler {
@@ -103,8 +82,11 @@ impl USBDeviceHandler for ProtocolUSBHandler {
 }
 
 impl ProtocolUSBHandler {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(radio_socket: &'static RadioSocket) -> Self {
+        Self {
+            radio_socket,
+            packet_buf: PacketBuffer::new(),
+        }
     }
 
     async fn handle_control_request_impl<'a>(
@@ -116,19 +98,43 @@ impl ProtocolUSBHandler {
             if setup.bRequest == ProtocolUSBRequestType::Send.to_value() {
                 log!(b"\n");
 
-                let mut buffer = TRANSMIT_BUFFER.lock().await;
-                buffer.resize(BUFFER_SIZE, 0);
+                let n = req.read(self.packet_buf.raw_mut()).await;
+                // TODO: Verify this doesn't crash due to the first byte being invalid causing
+                // an out of bounds error.
+                if n != self.packet_buf.as_bytes().len() {
+                    return;
+                }
 
-                let n = req.read(buffer.as_mut()).await;
-                buffer.truncate(n);
+                self.radio_socket.enqueue_tx(&mut self.packet_buf).await;
 
-                log!(b"- READ ");
-                log!(crate::num_to_slice(n as u32).as_ref());
+                return;
+            } else if setup.bRequest == ProtocolUSBRequestType::SetNetworkConfig.to_value() {
+                // TODO: Just re-use the same buffer as used for the packet?
+                let mut raw_proto = [0u8; 256];
+                let n = req.read(&mut raw_proto).await;
+
+                log!(b"USB SET CFG\n");
+
+                // log!(crate::num_to_slice(n as u32).as_ref());
+                for i in 0..n {
+                    log!(crate::num_to_slice(raw_proto[i] as u32).as_ref());
+                    log!(b", ");
+                }
+
                 log!(b"\n");
 
-                drop(buffer);
+                let proto = match NetworkConfig::parse(&raw_proto[0..n]) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log!(b"PARSE FAIL\n");
 
-                TRANSMIT_PENDING.send(()).await;
+                        return;
+                    }
+                };
+
+                self.radio_socket.set_network_config(proto).await;
+
+                log!(b"=> DONE\n");
 
                 return;
             }
@@ -147,10 +153,30 @@ impl ProtocolUSBHandler {
         if setup.bmRequestType == 0b11000000 {
             if setup.bRequest == ProtocolUSBRequestType::Receive.to_value() {
                 log!(b"USB RX\n");
+                let has_data = self.radio_socket.dequeue_rx(&mut self.packet_buf).await;
+                res.write(if has_data {
+                    self.packet_buf.as_bytes()
+                } else {
+                    &[]
+                })
+                .await;
+                return;
+            } else if setup.bRequest == ProtocolUSBRequestType::GetNetworkConfig.to_value() {
+                log!(b"USB GETCFG\n");
 
-                let mut buffer = RECEIVE_BUFFER.lock().await;
-                res.write(buffer.as_ref()).await;
-                buffer.clear();
+                let mut raw_proto = common::collections::FixedVec::new([0u8; 256]);
+
+                let network_config = self.radio_socket.lock_network_config().await;
+                if let Err(_) = network_config.get().serialize_to(&mut raw_proto) {
+                    // TODO: Make sure this returns an error over USB?
+                    log!(b"USB SER FAIL\n");
+                    return;
+                }
+
+                drop(network_config);
+
+                res.write(raw_proto.as_ref()).await;
+
                 return;
             }
         }
@@ -158,51 +184,5 @@ impl ProtocolUSBHandler {
         USBDeviceDefaultHandler::new()
             .handle_control_response(setup, res)
             .await
-    }
-}
-
-pub struct ProtocolRadioThread {
-    radio: Radio,
-}
-
-impl ProtocolRadioThread {
-    pub fn new(radio: Radio) -> Self {
-        Self { radio }
-    }
-
-    pub async fn run(mut self) {
-        enum Event {
-            Received(usize),
-            TransmitPending,
-        }
-
-        let mut temp_buffer = [0u8; BUFFER_SIZE];
-
-        loop {
-            // TODO: Implement a more efficient way to cancel the receive future.
-            let event = race2(
-                map(self.radio.receive(&mut temp_buffer), |n| Event::Received(n)),
-                map(TRANSMIT_PENDING.recv(), |_| Event::TransmitPending),
-            )
-            .await;
-
-            match event {
-                Event::Received(n) => {
-                    log!(b"RADIO RX: ");
-                    log!(&temp_buffer[0..n]);
-                    log!(b"\n");
-
-                    let mut rx_buffer = RECEIVE_BUFFER.lock().await;
-                    rx_buffer.clear();
-                    rx_buffer.extend_from_slice(&temp_buffer[0..n]);
-                }
-                Event::TransmitPending => {
-                    log!(b"RADIO TX\n");
-
-                    let mut tx_buffer = TRANSMIT_BUFFER.lock().await;
-                    self.radio.send(&tx_buffer).await;
-                }
-            }
-        }
     }
 }

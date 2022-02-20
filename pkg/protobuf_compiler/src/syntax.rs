@@ -8,6 +8,8 @@
 // []  option (zero or one time)
 // {}  repetition (any number of times)
 
+use std::string::String;
+
 use common::errors::*;
 use parsing::*;
 use protobuf_core::tokenizer::{capital_letter, decimal_digit, letter, Token};
@@ -32,7 +34,12 @@ token_atom!(ident, Identifier, String);
 token_atom!(float_lit, Float, f64);
 token_atom!(int_lit, Integer, usize);
 token_atom!(symbol, Symbol, char);
-token_atom!(str_lit, String, String);
+token_atom!(str_lit, String, Vec<u8>);
+
+parser!(utf8_str_lit<&str, String> => seq!(c => {
+    let mut lit = c.next(str_lit)?;
+    Ok(String::from_utf8(lit)?)
+}));
 
 // Proto 2 and 3
 // fullIdent = ident { "." ident }
@@ -174,8 +181,8 @@ parser!(constant<&str, Constant> => seq!(c => {
 parser!(pub syntax<&str, Syntax> => seq!(c => {
     c.next(is(ident, "syntax"))?;
     c.next(is(symbol, '='))?;
-    let s = c.next(is(str_lit, "proto2")).map(|_| Syntax::Proto2)
-        .or_else(|_| c.next(is(str_lit, "proto3")).map(|_| Syntax::Proto3))?;
+    let s = c.next(is(utf8_str_lit, "proto2")).map(|_| Syntax::Proto2)
+        .or_else(|_| c.next(is(utf8_str_lit, "proto3")).map(|_| Syntax::Proto3))?;
     c.next(is(symbol, ';'))?;
     Ok(s)
 }));
@@ -188,7 +195,7 @@ parser!(import<&str, Import> => seq!(c => {
     let mut typ = c.next(is(ident, "weak")).map(|_| ImportType::Weak)
         .or_else(|_| c.next(is(ident, "public")).map(|_| ImportType::Public))
         .unwrap_or(ImportType::Default);
-    let path = c.next(str_lit)?;
+    let path = c.next(utf8_str_lit)?;
     c.next(is(symbol, ';'))?;
     Ok(Import { typ, path })
 }));

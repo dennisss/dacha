@@ -69,6 +69,8 @@ members = [
 	"pkg/nordic_tools",
 	"pkg/web",
 	"pkg/rpi_controller",
+	"pkg/nordic_proto",
+	"pkg/swd_prog"
 ]
 
 [profile.dev]

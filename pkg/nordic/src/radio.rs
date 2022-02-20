@@ -3,6 +3,8 @@ use peripherals::raw::{Interrupt, RegisterRead, RegisterWrite};
 
 use crate::log;
 
+type RadioAddress = [u8; 4];
+
 /// NOTE: This requires that the HFXO is started already before using.
 ///
 /// While send() or receive() isn't being actively called, the radio is held in
@@ -10,6 +12,9 @@ use crate::log;
 ///
 /// TODO: We should support keeping the radio in TXIDLE or
 /// RXIDLE if we anticipate doing many TX/RX operations in a row.
+///
+/// NOTE: This currently only supports sending/receiving from a single address
+/// at a time. We re-use the BASE0/PREFIX0 registers to store it.
 pub struct Radio {
     periph: peripherals::raw::radio::RADIO,
 }
@@ -31,8 +36,8 @@ impl Radio {
         // MAXLEN=255. STATLEN=0, BALEN=3 (so we have 4 byte addresses), little endian
         periph.pcnf1.write_with(|v| v.set_maxlen(255).set_balen(3));
 
-        periph.base0.write(0xAABBCCDD);
-        periph.prefix0.write_with(|v| v.set_ap0(0xEE));
+        periph.base0.write(0);
+        periph.prefix0.write_with(|v| v.set_ap0(0));
 
         periph.txaddress.write(0); // Transmit on address 0
 
@@ -61,12 +66,22 @@ impl Radio {
         Self { periph }
     }
 
+    pub fn set_address(&mut self, addr: &RadioAddress) {
+        self.periph.base0.write({
+            let mut data = [0u8; 4];
+            data[0..(addr.len() - 1)].copy_from_slice(&addr[0..(addr.len() - 1)]);
+            u32::from_le_bytes(data)
+        });
+        self.periph
+            .prefix0
+            .write_with(|v| v.set_ap0(addr[addr.len() - 1] as u32));
+    }
+
     /// Blocks until a packet is received. Returns the number of bytes received.
     ///
     /// TODO: Figure out if I should use CRCSTATUS.
     pub async fn receive(&mut self, out: &mut [u8]) -> usize {
         let mut packet = [0u8; 256];
-
         self.periph
             .packetptr
             .write(unsafe { core::mem::transmute(&packet) });
@@ -93,17 +108,23 @@ impl Radio {
 
         let len = packet[0] as usize;
 
+        // TODO: Have a good behavior if we are given a buffer that is too small.
         out[0..len].copy_from_slice(&packet[1..(1 + len)]);
         len
     }
 
+    // Depending on the mood, should support sending on different
     pub async fn send(&mut self, message: &[u8]) {
         // TODO: Just have a global buffer given that only one that can be copied at a
         // time anyway.
         let mut packet = [0u8; 256];
         packet[0] = message.len() as u8;
         packet[1..(1 + message.len())].copy_from_slice(message);
+        self.send_packet(&packet).await;
+    }
 
+    // TODO: Use a data structure to ensure that the length field is well formed.
+    pub async fn send_packet(&mut self, packet: &[u8]) {
         self.periph
             .packetptr
             .write(unsafe { core::mem::transmute(&packet) });
