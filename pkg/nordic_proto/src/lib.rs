@@ -20,6 +20,7 @@ extern crate macros;
 extern crate common;
 extern crate protobuf;
 
+pub mod constants;
 pub mod packet;
 pub mod proto;
 pub mod usb;

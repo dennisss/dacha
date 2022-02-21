@@ -1,11 +1,14 @@
 use common::segmented_buffer::SegmentedBuffer;
 
+use crate::constants::{RadioAddress, RADIO_ADDRESS_SIZE};
+
 const BUFFER_SIZE: usize = 128;
 
 const LENGTH_OFFSET: usize = 0;
 
+const START_OF_PAYLOAD: usize = 1;
+
 const REMOTE_ADDRESS_OFFSET: usize = 1;
-const REMOTE_ADDRESS_SIZE: usize = 4;
 
 const COUNTER_OFFSET: usize = 5;
 const COUNTER_SIZE: usize = 4;
@@ -14,33 +17,45 @@ const DATA_OFFSET: usize = 9;
 
 const TAG_SIZE: usize = 4;
 
+/// Maximum number of bytes needed to store a packet in memory.
+///
+/// This is constrained by the NRF52 radio which limits the [S0, LENGTH, S1,
+/// PAYLOAD] size to 258. Because we use a 1-byte length, the payload can only
+/// be up to 255 bytes.
+pub const MAX_PACKET_BUFFER_SIZE: usize = 256;
+
+/// Inside a single packet, this is the maximum size of the data portion of that
+/// packet (excluding routing and encryption overhead).
+pub const MAX_PACKET_DATA_SIZE: usize = MAX_PACKET_BUFFER_SIZE - DATA_OFFSET - TAG_SIZE;
+
 /// Buffer for storing packets that will be sent over the air.
 ///
 /// In memory a packet is structured as:
-/// - Byte 0:   LENGTH: Length of all future bytes
-/// - Byte [1, 5): ADDRESS
-/// - Byte [5, 9): COUNTER
-/// - Byte [9..(9+N)): DATA:
-/// - Byte [(9+N)..(9+N+4)): MIC
+/// - Byte 0:   LENGTH: Number of additional bytes used in this buffer.
+/// - Payload:
+///   - Byte [1, 5): REMOTE_ADDRESS
+///   - Byte [5, 9): COUNTER
+///   - Byte [9..(9+N)): DATA:
+///   - Byte [(9+N)..(9+N+4)): MIC
 pub struct PacketBuffer {
-    buf: [u8; BUFFER_SIZE],
+    buf: [u8; MAX_PACKET_BUFFER_SIZE],
 }
 
 impl PacketBuffer {
     pub fn new() -> Self {
-        let mut buf = [0u8; BUFFER_SIZE];
+        let mut buf = [0u8; MAX_PACKET_BUFFER_SIZE];
         // Minimum packet length with zero data.
-        buf[0] = ((DATA_OFFSET - LENGTH_OFFSET) + TAG_SIZE) as u8;
+        buf[0] = ((DATA_OFFSET - START_OF_PAYLOAD) + TAG_SIZE) as u8;
 
         Self { buf }
     }
 
-    pub fn remote_address(&self) -> &[u8; REMOTE_ADDRESS_SIZE] {
-        array_ref![self.buf, REMOTE_ADDRESS_OFFSET, REMOTE_ADDRESS_SIZE]
+    pub fn remote_address(&self) -> &RadioAddress {
+        array_ref![self.buf, REMOTE_ADDRESS_OFFSET, RADIO_ADDRESS_SIZE]
     }
 
-    pub fn remote_address_mut(&mut self) -> &mut [u8] {
-        array_mut_ref![self.buf, REMOTE_ADDRESS_OFFSET, REMOTE_ADDRESS_SIZE]
+    pub fn remote_address_mut(&mut self) -> &mut RadioAddress {
+        array_mut_ref![self.buf, REMOTE_ADDRESS_OFFSET, RADIO_ADDRESS_SIZE]
     }
 
     pub fn counter(&self) -> u32 {
@@ -52,15 +67,15 @@ impl PacketBuffer {
     }
 
     pub fn data_len(&self) -> usize {
-        (self.buf[0] as usize) - (DATA_OFFSET - LENGTH_OFFSET) - TAG_SIZE
+        (self.buf[0] as usize) - (DATA_OFFSET - START_OF_PAYLOAD) - TAG_SIZE
     }
 
     pub fn resize_data(&mut self, new_length: usize) {
-        self.buf[0] = (new_length + (DATA_OFFSET - LENGTH_OFFSET) + TAG_SIZE) as u8;
+        self.buf[0] = (new_length + (DATA_OFFSET - START_OF_PAYLOAD) + TAG_SIZE) as u8;
     }
 
     pub fn max_data_len(&self) -> usize {
-        self.buf.len() - DATA_OFFSET - TAG_SIZE
+        MAX_PACKET_DATA_SIZE
     }
 
     pub fn data(&self) -> &[u8] {
@@ -100,7 +115,7 @@ impl PacketBuffer {
     }
 
     pub fn as_bytes(&self) -> &[u8] {
-        &self.buf[0..(1 + self.buf[0] as usize)]
+        &self.buf[0..(START_OF_PAYLOAD + self.buf[0] as usize)]
     }
 
     /// Gets the under internal un-truncated packet buffer.

@@ -17,31 +17,19 @@ use crate::radio::Radio;
 /// transmit or receive in one transaction.
 const BUFFER_SIZE: usize = 256;
 
-// /// Messages are sent on this channel from the USB thread to the Radio thread
-// /// when there is data present in the transmit buffer to be sent.
-// static TRANSMIT_PENDING: Channel<()> = Channel::new();
-
-// struct TransmitBuffer {
-//     last_packet_counter: u32,
-//     buffer: SegmentedBuffer<[u8; BUFFER_SIZE]>,
-// }
-
-// impl TransmitBuffer {
-//     pub const fn new() -> Self {
-//         Self {
-//             /// Value of the last packet counter which we've sent.
-//             last_packet_counter: 0,
-//             buffer: SegmentedBuffer::new([0u8; BUFFER_SIZE]),
-//         }
-//     }
-// }
-
 const CCM_LENGTH_SIZE: usize = 2;
 const CCM_NONCE_SIZE: usize = 13; // 15 - CCM_LENGTH_SIZE
 const CCM_TAG_SIZE: usize = 4;
 
 pub struct RadioSocket {
+    /// The presence of a value in this channel signals to the radio controller
+    /// thread that there is data present in the state.transmit_buffer that
+    /// should be sent.
+    ///
+    /// This is also re-used to wake up the radio thread when a network config
+    /// change has occured.
     transmit_pending: Channel<()>,
+
     state: Mutex<RadioSocketState>,
 }
 
@@ -201,7 +189,7 @@ impl RadioController {
 
             match event {
                 Event::Received => {
-                    log!(b"RADIO RX ");
+                    log!(b"RADIO RX\n");
 
                     // TODO: We need to check for the case that the radio packet gets truncated (the
                     // first length byte indicates a length that is larger than the buffer size).
@@ -210,9 +198,6 @@ impl RadioController {
                     //     log!(crate::num_to_slice(packet_buf.raw()[i] as u32).as_ref());
                     //     log!(b", ");
                     // }
-
-                    // log!(&temp_buffer[0..n]);
-                    log!(b"\n");
 
                     let from_address = packet_buf.remote_address();
 
@@ -245,8 +230,6 @@ impl RadioController {
                     drop(socket_state);
                 }
                 Event::TransmitPending => {
-                    // Assuming we have a packet buffer,
-
                     log!(b"RADIO TX\n");
 
                     // NOTE: The packet will contain the TO_ADDRESS.
@@ -276,8 +259,6 @@ impl RadioController {
                         log!(b"Unknown peer\n");
                         continue;
                     }
-
-                    // .await;
 
                     drop(socket_state);
 

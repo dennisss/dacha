@@ -68,6 +68,7 @@ impl Radio {
 
     pub fn set_address(&mut self, addr: &RadioAddress) {
         self.periph.base0.write({
+            // Copy everything but the prefix byte into the register.
             let mut data = [0u8; 4];
             data[0..(addr.len() - 1)].copy_from_slice(&addr[0..(addr.len() - 1)]);
             u32::from_le_bytes(data)

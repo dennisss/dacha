@@ -266,10 +266,9 @@ fn xor16_inplace(a: &[u8; BLOCK_SIZE], b: &mut [u8; BLOCK_SIZE]) {
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(feature = "std")]
+pub mod aes {
     use super::*;
-
     use crate::{aes::AESBlockCipher, cipher::BlockCipher};
 
     pub struct AES128BlockEncryptor {
@@ -312,6 +311,12 @@ mod tests {
             &self.ciphertext
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::aes::*;
+    use super::*;
 
     // Test vectors from the RFC
     #[test]
