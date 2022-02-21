@@ -284,14 +284,14 @@ pub fn num_to_slice(mut num: u32) -> NumberSlice {
 static RADIO_SOCKET: Singleton<RadioSocket> = Singleton::uninit();
 
 define_thread!(
-    Echo,
-    echo_thread_fn,
+    Monitor,
+    monitor_thread_fn,
     uarte0: UARTE0,
     timer: Timer,
     temp: Temp,
     rng: Rng
 );
-async fn echo_thread_fn(uarte0: UARTE0, mut timer: Timer, mut temp: Temp, mut rng: Rng) {
+async fn monitor_thread_fn(uarte0: UARTE0, mut timer: Timer, mut temp: Temp, mut rng: Rng) {
     let mut serial = UARTE::new(uarte0);
 
     let mut buf = [0u8; 256];
@@ -313,6 +313,15 @@ async fn echo_thread_fn(uarte0: UARTE0, mut timer: Timer, mut temp: Temp, mut rn
     }
 }
 
+// use executor::interrupts::{trigger_pendsv, wait_for_pendsv};
+
+// define_thread!(Helper, helper_fn, timer: Timer);
+// async fn helper_fn(mut timer: Timer) {
+//     timer.wait_ms(100).await;
+//     trigger_pendsv();
+//     log!(b"Triggered!\n");
+// }
+
 define_thread!(Blinker, blinker_thread_fn);
 async fn blinker_thread_fn() {
     let mut peripherals = peripherals::raw::Peripherals::new();
@@ -328,6 +337,12 @@ async fn blinker_thread_fn() {
 
     log!(b"Started up!\n");
 
+    // Helper::start(timer.clone());
+
+    // wait_for_pendsv().await;
+
+    // log!(b"Done!\n");
+
     // TODO: Which Send/Sync requirements are needed of these arguments?
     // Echo::start(
     //     peripherals.uarte0,
@@ -338,18 +353,22 @@ async fn blinker_thread_fn() {
 
     let radio_socket = RADIO_SOCKET.set(RadioSocket::new()).await;
 
-    // let radio_controller = RadioController::new(
-    //     radio_socket,
-    //     Radio::new(peripherals.radio),
-    //     ECB::new(peripherals.ecb),
-    // );
+    let radio_controller = RadioController::new(
+        radio_socket,
+        Radio::new(peripherals.radio),
+        ECB::new(peripherals.ecb),
+    );
 
-    // RadioThread::start(radio_controller);
+    RadioThread::start(radio_controller);
 
     USBThread::start(
         USBDeviceController::new(peripherals.usbd, peripherals.power),
         radio_socket,
     );
+
+    // if !USING_DEV_KIT {
+    //     EchoRadioThread::start(radio_socket, timer.clone());
+    // }
 
     // peripherals.p0.dirset.write_with(|v| v.set_pin30());
     // peripherals.p0.outset.write_with(|v| v.set_pin30());
@@ -404,6 +423,30 @@ define_thread!(
 async fn radio_thread_fn(radio_controller: RadioController) {
     radio_controller.run().await;
 }
+
+// define_thread!(
+//     EchoRadioThread,
+//     echo_radio_thread_fn,
+//     radio_socket: &'static RadioSocket,
+//     timer: Timer
+// );
+// async fn echo_radio_thread_fn(radio_socket: &'static RadioSocket, timer:
+// Timer) {     let mut packet_buffer = PacketBuffer::new();
+
+//     loop {
+//         if radio_socket.dequeue_rx(&mut packet_buffer).await {
+//             log!(b"Echo packet\n");
+//             radio_socket.enqueue_tx(&mut packet_buffer).await;
+//         }
+
+//         timer.wait_ms(2).await;
+//     }
+// }
+
+/*
+Echo thread:
+- Receive
+*/
 
 /*
 Next steps:

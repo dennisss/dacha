@@ -82,9 +82,22 @@ impl Radio {
     /// TODO: Figure out if I should use CRCSTATUS.
     pub async fn receive(&mut self, out: &mut [u8]) -> usize {
         let mut packet = [0u8; 256];
+        self.receive_packet(&mut packet[..]).await;
+
+        let len = packet[0] as usize;
+
+        // TODO: Have a good behavior if we are given a buffer that is too small.
+        out[0..len].copy_from_slice(&packet[1..(1 + len)]);
+        len
+    }
+
+    pub async fn receive_packet(&mut self, packet: &mut [u8]) {
         self.periph
             .packetptr
-            .write(unsafe { core::mem::transmute(&packet) });
+            .write(unsafe { core::mem::transmute(packet.as_ptr()) });
+
+        // TODO: Set the MAXLEN value and make sure all clients correctly handle
+        // overflows (or return it as an error.).
 
         loop {
             let mut guard = RadioStateGuard::new(&mut self.periph);
@@ -92,6 +105,7 @@ impl Radio {
             guard.wait_for_end().await;
             guard.disable().await;
 
+            // Retry if the CRC on the last received packet is invalid.
             if !self.periph.crcstatus.read().is_crcok() {
                 log!(b"!\n");
                 continue;
@@ -101,19 +115,11 @@ impl Radio {
             log!(crate::num_to_slice(packet[0] as u32).as_ref());
             log!(b"\n");
 
-            if packet[0] <= 64 {
-                break;
-            }
+            break;
         }
-
-        let len = packet[0] as usize;
-
-        // TODO: Have a good behavior if we are given a buffer that is too small.
-        out[0..len].copy_from_slice(&packet[1..(1 + len)]);
-        len
     }
 
-    // Depending on the mood, should support sending on different
+    // Depending on the mode, should support sending on different
     pub async fn send(&mut self, message: &[u8]) {
         // TODO: Just have a global buffer given that only one that can be copied at a
         // time anyway.
@@ -127,7 +133,7 @@ impl Radio {
     pub async fn send_packet(&mut self, packet: &[u8]) {
         self.periph
             .packetptr
-            .write(unsafe { core::mem::transmute(&packet) });
+            .write(unsafe { core::mem::transmute(packet.as_ptr()) });
 
         let mut guard = RadioStateGuard::new(&mut self.periph);
         guard.periph.tasks_txen.write_trigger();

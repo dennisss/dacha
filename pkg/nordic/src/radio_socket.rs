@@ -15,7 +15,7 @@ use crate::radio::Radio;
 
 /// Size to use for all buffers. This is also the maximum size that we will
 /// transmit or receive in one transaction.
-const BUFFER_SIZE: usize = 128;
+const BUFFER_SIZE: usize = 256;
 
 // /// Messages are sent on this channel from the USB thread to the Radio thread
 // /// when there is data present in the transmit buffer to be sent.
@@ -168,7 +168,7 @@ impl RadioController {
 
     pub async fn run(mut self) {
         enum Event {
-            Received(usize),
+            Received,
             TransmitPending,
         }
 
@@ -188,8 +188,8 @@ impl RadioController {
 
             // TODO: Implement a more efficient way to cancel the receive future.
             let event = race2(
-                map(self.radio.receive(packet_buf.raw_mut()), |n| {
-                    Event::Received(n)
+                map(self.radio.receive_packet(packet_buf.raw_mut()), |_| {
+                    Event::Received
                 }),
                 map(self.socket.transmit_pending.recv(), |_| {
                     Event::TransmitPending
@@ -200,10 +200,19 @@ impl RadioController {
             let mut socket_state = self.socket.get_valid_state().await;
 
             match event {
-                Event::Received(n) => {
-                    // log!(b"RADIO RX: ");
+                Event::Received => {
+                    log!(b"RADIO RX ");
+
+                    // TODO: We need to check for the case that the radio packet gets truncated (the
+                    // first length byte indicates a length that is larger than the buffer size).
+
+                    for i in 0..packet_buf.as_bytes().len() {
+                        log!(crate::num_to_slice(packet_buf.raw()[i] as u32).as_ref());
+                        log!(b", ");
+                    }
+
                     // log!(&temp_buffer[0..n]);
-                    // log!(b"\n");
+                    log!(b"\n");
 
                     let from_address = packet_buf.remote_address();
 
@@ -222,11 +231,17 @@ impl RadioController {
                     );
 
                     if let Err(_) = ccm.decrypt_inplace(packet_buf.ciphertext_mut(), &[]) {
-                        log!(b"RADIO ENCRYPTION FAILED");
+                        log!(b"EFAIL\n");
                         continue;
                     }
 
+                    log!(b"#\n");
+
                     packet_buf.write_to(&mut socket_state.receive_buffer);
+
+                    log!(b"$\n");
+
+                    drop(socket_state);
                 }
                 Event::TransmitPending => {
                     // Assuming we have a packet buffer,
@@ -255,6 +270,7 @@ impl RadioController {
                         &to_address,
                         from_address,
                     );
+                    // .await;
 
                     drop(socket_state);
 
@@ -267,7 +283,12 @@ impl RadioController {
                     ccm.encrypt_inplace(packet_buf.ciphertext_mut(), &[]);
 
                     self.radio.set_address(&to_address);
-                    self.radio.send_packet(packet_buf.raw()).await;
+
+                    log!(b"T ");
+                    log!(crate::num_to_slice(packet_buf.as_bytes().len() as u32).as_ref());
+                    log!(b"\n");
+
+                    self.radio.send_packet(packet_buf.as_bytes()).await;
                 }
             }
         }
@@ -281,11 +302,17 @@ impl RadioController {
         from_address: &[u8; 4],
     ) -> ([u8; 16], [u8; CCM_NONCE_SIZE]) {
         // TODO: Remove the unwrap.
-        let link = network
+        let link = match network
             .links()
             .iter()
             .find(|l| l.address() == &remote_address[..])
-            .unwrap();
+        {
+            Some(l) => l,
+            None => {
+                // TODO: Return an error.
+                return ([0u8; 16], [0u8; CCM_NONCE_SIZE]);
+            }
+        };
 
         let mut nonce = [0u8; CCM_NONCE_SIZE];
         nonce[0..4].copy_from_slice(&packet_buf.counter().to_le_bytes());

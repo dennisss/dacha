@@ -50,9 +50,6 @@ use crate::usb::controller::{USBDeviceControlRequest, USBDeviceControlResponse};
 use crate::usb::default_handler::USBDeviceDefaultHandler;
 use crate::usb::handler::USBDeviceHandler;
 
-// /// Messages are sent on this channel from the Radio to USB threads
-// static RECEIVE_BUFFER_READY: Channel<()> = Channel::new();
-
 pub struct ProtocolUSBHandler {
     radio_socket: &'static RadioSocket,
     packet_buf: PacketBuffer,
@@ -170,6 +167,7 @@ impl ProtocolUSBHandler {
                 if let Err(_) = network_config.get().serialize_to(&mut raw_proto) {
                     // TODO: Make sure this returns an error over USB?
                     log!(b"USB SER FAIL\n");
+                    res.stale();
                     return;
                 }
 

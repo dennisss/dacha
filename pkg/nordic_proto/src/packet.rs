@@ -28,9 +28,11 @@ pub struct PacketBuffer {
 
 impl PacketBuffer {
     pub fn new() -> Self {
-        Self {
-            buf: [0u8; BUFFER_SIZE],
-        }
+        let mut buf = [0u8; BUFFER_SIZE];
+        // Minimum packet length with zero data.
+        buf[0] = ((DATA_OFFSET - LENGTH_OFFSET) + TAG_SIZE) as u8;
+
+        Self { buf }
     }
 
     pub fn remote_address(&self) -> &[u8; REMOTE_ADDRESS_SIZE] {
