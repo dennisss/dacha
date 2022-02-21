@@ -7,6 +7,7 @@ use executor::channel::Channel;
 use executor::futures::*;
 use executor::mutex::{Mutex, MutexGuard};
 use nordic_proto::packet::PacketBuffer;
+use nordic_proto::packet_cipher::PacketCipher;
 use nordic_proto::proto::net::NetworkConfig;
 
 use crate::ecb::*;
@@ -164,8 +165,6 @@ impl RadioController {
         let mut packet_buf = PacketBuffer::new();
 
         loop {
-            // Step 1: Lock the state and verify that it is ok.
-
             let socket_state = self.socket.get_valid_state().await;
 
             // Prepare for receiving packets addressed to us.
@@ -199,28 +198,26 @@ impl RadioController {
                     //     log!(b", ");
                     // }
 
-                    let from_address = packet_buf.remote_address();
+                    let from_address = *packet_buf.remote_address();
 
-                    let (valid_keys, key, nonce) = self.generate_ccm_key_pair(
+                    let ecb = &mut self.ecb;
+                    let packet_encryptor = match PacketCipher::create(
+                        &mut packet_buf,
                         &socket_state.network,
-                        &packet_buf,
-                        from_address,
-                        from_address,
-                    );
+                        |key| AES128BlockBuffer::new(key, &mut self.ecb),
+                        &from_address,
+                        &from_address,
+                    ) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            continue;
+                        }
+                    };
 
-                    if !valid_keys {
-                        log!(b"Unknown peer\n");
-                        continue;
-                    }
+                    // TODO: Considering dropping the socket_state lock here if decrypt() is ever
+                    // implemented with async.
 
-                    let mut ccm = CCM::new(
-                        AES128BlockBuffer::new(&key, &mut self.ecb),
-                        CCM_TAG_SIZE,
-                        CCM_LENGTH_SIZE,
-                        &nonce,
-                    );
-
-                    if let Err(_) = ccm.decrypt_inplace(packet_buf.ciphertext_mut(), &[]) {
+                    if let Err(_) = packet_encryptor.decrypt() {
                         log!(b"EFAIL\n");
                         continue;
                     }
@@ -248,66 +245,29 @@ impl RadioController {
                         .remote_address_mut()
                         .copy_from_slice(from_address);
 
-                    let (valid_keys, key, nonce) = self.generate_ccm_key_pair(
+                    let packet_encryptor = match PacketCipher::create(
+                        &mut packet_buf,
                         &socket_state.network,
-                        &packet_buf,
+                        |key| AES128BlockBuffer::new(key, &mut self.ecb),
                         &to_address,
                         from_address,
-                    );
-
-                    if !valid_keys {
-                        log!(b"Unknown peer\n");
-                        continue;
-                    }
+                    ) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            continue;
+                        }
+                    };
 
                     drop(socket_state);
 
-                    let mut ccm = CCM::new(
-                        AES128BlockBuffer::new(&key, &mut self.ecb),
-                        CCM_TAG_SIZE,
-                        CCM_LENGTH_SIZE,
-                        &nonce,
-                    );
-                    ccm.encrypt_inplace(packet_buf.ciphertext_mut(), &[]);
+                    if let Err(_) = packet_encryptor.encrypt() {
+                        continue;
+                    }
 
                     self.radio.set_address(&to_address);
-
-                    log!(b"T ");
-                    log!(crate::num_to_slice(packet_buf.as_bytes().len() as u32).as_ref());
-                    log!(b"\n");
-
                     self.radio.send_packet(packet_buf.as_bytes()).await;
                 }
             }
         }
-    }
-
-    fn generate_ccm_key_pair(
-        &self,
-        network: &NetworkConfig,
-        packet_buf: &PacketBuffer,
-        remote_address: &[u8; 4],
-        from_address: &[u8; 4],
-    ) -> (bool, [u8; 16], [u8; CCM_NONCE_SIZE]) {
-        // TODO: Remove the unwrap.
-        let link = match network
-            .links()
-            .iter()
-            .find(|l| l.address() == &remote_address[..])
-        {
-            Some(l) => l,
-            None => {
-                // TODO: Return an error.
-                return (false, [0u8; 16], [0u8; CCM_NONCE_SIZE]);
-            }
-        };
-
-        let mut nonce = [0u8; CCM_NONCE_SIZE];
-        nonce[0..4].copy_from_slice(&packet_buf.counter().to_le_bytes());
-        // TODO: Check the sizes of these?
-        nonce[4..8].copy_from_slice(from_address);
-        nonce[8..].copy_from_slice(link.iv());
-
-        (true, *array_ref![link.key(), 0, 16], nonce)
     }
 }

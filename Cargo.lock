@@ -1517,7 +1517,6 @@ name = "nordic_tools"
 version = "0.1.0"
 dependencies = [
  "common",
- "crypto",
  "macros",
  "nordic_proto",
  "protobuf",

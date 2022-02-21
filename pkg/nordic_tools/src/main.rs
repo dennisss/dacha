@@ -19,13 +19,6 @@ use protobuf::text::ParseTextProto;
 use protobuf::Message;
 use usb_radio::USBRadio;
 
-/*
-Example packet:
-20, 232, 232, 232, 232, 3, 0, 0, 0, 64, 72, 89, 33, 13, 87, 94, 124, 249, 158, 53, 0,
-
-^ Why is the last byte of the tag usually 0?
-*/
-
 #[derive(Args)]
 struct Args {
     num: usize,

@@ -37,14 +37,14 @@ pub trait BlockCipherBuffer {
     fn encrypt(&mut self);
 }
 
-pub struct CCM<'a, B> {
-    block: B,
+pub struct CCM<Block, Nonce> {
+    block: Block,
     tag_size: usize,
     length_size: usize,
-    nonce: &'a [u8],
+    nonce: Nonce,
 }
 
-impl<'a, B: BlockCipherBuffer> CCM<'a, B> {
+impl<Block: BlockCipherBuffer, Nonce: AsRef<[u8]>> CCM<Block, Nonce> {
     ///
     /// Arguments:
     /// - block:
@@ -52,9 +52,9 @@ impl<'a, B: BlockCipherBuffer> CCM<'a, B> {
     ///   tag.
     /// - length_size: Number of bytes used to represent the message length.
     /// - nonce:
-    pub fn new(block: B, tag_size: usize, length_size: usize, nonce: &'a [u8]) -> Self {
+    pub fn new(block: Block, tag_size: usize, length_size: usize, nonce: Nonce) -> Self {
         let nonce_size = 15 - length_size;
-        assert_eq!(nonce_size, nonce.len());
+        assert_eq!(nonce_size, nonce.as_ref().len());
 
         Self {
             block,
@@ -91,9 +91,9 @@ impl<'a, B: BlockCipherBuffer> CCM<'a, B> {
     /// the buffer else returns an error.
     pub fn decrypt_inplace<'b>(
         &mut self,
-        message: &'a mut [u8],
+        message: &'b mut [u8],
         additional_data: &[u8],
-    ) -> Result<&'a [u8], ()> {
+    ) -> Result<&'b [u8], ()> {
         if message.len() < self.tag_size {
             return Err(());
         }
@@ -228,7 +228,8 @@ impl<'a, B: BlockCipherBuffer> CCM<'a, B> {
     }
 
     fn copy_nonce_to_block(&mut self) {
-        self.block.plaintext_mut()[1..(1 + self.nonce.len())].copy_from_slice(&self.nonce[..]);
+        self.block.plaintext_mut()[1..(1 + self.nonce.as_ref().len())]
+            .copy_from_slice(&self.nonce.as_ref()[..]);
     }
 
     fn setup_for_cbc_mac(&mut self, has_additional_data: bool, length: usize) {
