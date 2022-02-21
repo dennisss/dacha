@@ -33,6 +33,7 @@ Syncronization
 use core::future::Future;
 
 use common::collections::FixedVec;
+use common::errors::*;
 use common::list::Appendable;
 use executor::channel::Channel;
 use executor::futures::*;
@@ -48,7 +49,7 @@ use crate::radio::Radio;
 use crate::radio_socket::RadioSocket;
 use crate::usb::controller::{USBDeviceControlRequest, USBDeviceControlResponse};
 use crate::usb::default_handler::USBDeviceDefaultHandler;
-use crate::usb::handler::USBDeviceHandler;
+use crate::usb::handler::{USBDeviceHandler, USBError};
 
 pub struct ProtocolUSBHandler {
     radio_socket: &'static RadioSocket,
@@ -57,9 +58,9 @@ pub struct ProtocolUSBHandler {
 
 // TODO: Have a macro to auto-generate this.
 impl USBDeviceHandler for ProtocolUSBHandler {
-    type HandleControlRequestFuture<'a> = impl Future<Output = ()> + 'a;
+    type HandleControlRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
-    type HandleControlResponseFuture<'a> = impl Future<Output = ()> + 'a;
+    type HandleControlResponseFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
     fn handle_control_request<'a>(
         &'a mut self,
@@ -90,33 +91,35 @@ impl ProtocolUSBHandler {
         &'a mut self,
         setup: SetupPacket,
         mut req: USBDeviceControlRequest<'a>,
-    ) {
+    ) -> Result<(), USBError> {
         if setup.bmRequestType == 0b01000000 {
             if setup.bRequest == ProtocolUSBRequestType::Send.to_value() {
-                log!(b"\n");
+                log!(b"USB TX\n");
 
-                let n = req.read(self.packet_buf.raw_mut()).await;
+                let n = req.read(self.packet_buf.raw_mut()).await?;
                 // TODO: Verify this doesn't crash due to the first byte being invalid causing
                 // an out of bounds error.
+                // Must be at least large enough to fit all auxiliary fields.
+                // Must be
                 if n != self.packet_buf.as_bytes().len() {
-                    return;
+                    return Ok(());
                 }
 
                 self.radio_socket.enqueue_tx(&mut self.packet_buf).await;
 
-                return;
+                return Ok(());
             } else if setup.bRequest == ProtocolUSBRequestType::SetNetworkConfig.to_value() {
                 // TODO: Just re-use the same buffer as used for the packet?
                 let mut raw_proto = [0u8; 256];
-                let n = req.read(&mut raw_proto).await;
+                let n = req.read(&mut raw_proto).await?;
 
                 log!(b"USB SET CFG\n");
 
                 // log!(crate::num_to_slice(n as u32).as_ref());
-                for i in 0..n {
-                    log!(crate::num_to_slice(raw_proto[i] as u32).as_ref());
-                    log!(b", ");
-                }
+                // for i in 0..n {
+                //     log!(crate::num_to_slice(raw_proto[i] as u32).as_ref());
+                //     log!(b", ");
+                // }
 
                 log!(b"\n");
 
@@ -125,7 +128,7 @@ impl ProtocolUSBHandler {
                     Err(e) => {
                         log!(b"PARSE FAIL\n");
 
-                        return;
+                        return Ok(());
                     }
                 };
 
@@ -133,7 +136,7 @@ impl ProtocolUSBHandler {
 
                 log!(b"=> DONE\n");
 
-                return;
+                return Ok(());
             }
         }
 
@@ -146,18 +149,18 @@ impl ProtocolUSBHandler {
         &'a mut self,
         setup: SetupPacket,
         mut res: USBDeviceControlResponse<'a>,
-    ) {
+    ) -> Result<(), USBError> {
         if setup.bmRequestType == 0b11000000 {
             if setup.bRequest == ProtocolUSBRequestType::Receive.to_value() {
-                log!(b"USB RX\n");
+                // log!(b"USB RX\n");
                 let has_data = self.radio_socket.dequeue_rx(&mut self.packet_buf).await;
                 res.write(if has_data {
                     self.packet_buf.as_bytes()
                 } else {
                     &[]
                 })
-                .await;
-                return;
+                .await?;
+                return Ok(());
             } else if setup.bRequest == ProtocolUSBRequestType::GetNetworkConfig.to_value() {
                 log!(b"USB GETCFG\n");
 
@@ -168,14 +171,14 @@ impl ProtocolUSBHandler {
                     // TODO: Make sure this returns an error over USB?
                     log!(b"USB SER FAIL\n");
                     res.stale();
-                    return;
+                    return Ok(());
                 }
 
                 drop(network_config);
 
-                res.write(raw_proto.as_ref()).await;
+                res.write(raw_proto.as_ref()).await?;
 
-                return;
+                return Ok(());
             }
         }
 

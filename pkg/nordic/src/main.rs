@@ -339,8 +339,6 @@ async fn blinker_thread_fn() {
 
     // Helper::start(timer.clone());
 
-    // wait_for_pendsv().await;
-
     // log!(b"Done!\n");
 
     // TODO: Which Send/Sync requirements are needed of these arguments?

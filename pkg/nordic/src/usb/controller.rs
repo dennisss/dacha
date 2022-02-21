@@ -53,7 +53,7 @@ use usb::descriptors::*;
 
 use crate::log;
 use crate::usb::descriptors::*;
-use crate::usb::handler::USBDeviceHandler;
+use crate::usb::handler::{USBDeviceHandler, USBError};
 
 // TODO: Implement more errata like:
 // https://infocenter.nordicsemi.com/topic/errata_nRF52840_Rev3/ERR/nRF52840/Rev3/latest/anomaly_840_199.html
@@ -81,16 +81,16 @@ enum State {
 
 #[derive(PartialEq, Clone, Copy)]
 enum Event {
-    PowerDetected,
-    PowerReady,
-    PowerRemoved,
+    PowerDetected = 1,
+    PowerReady = 2,
+    PowerRemoved = 3,
 
-    USBEvent,
-    EP0Setup,
-    USBReset,
-    EndEpIN0,
-    EndEpOUT0,
-    EP0DataDone,
+    USBEvent = 4,
+    EP0Setup = 5,
+    USBReset = 6,
+    EndEpIN0 = 7,
+    EndEpOUT0 = 8,
+    EP0DataDone = 9,
 }
 
 impl USBDeviceController {
@@ -211,9 +211,32 @@ impl USBDeviceController {
                         continue;
                     }
 
+                    // TODO: Are we able to get a setup packet while a previous setup packet is
+                    // being processed?
+
                     if let Event::EP0Setup = event {
-                        let pkt = self.get_setup_packet();
-                        self.handle_setup_packet(pkt, &mut handler).await;
+                        // TODO: Improve the error handling by enqueuing pending events in the outer
+                        // loop.
+                        loop {
+                            let pkt = self.get_setup_packet();
+                            match self.handle_setup_packet(pkt, &mut handler).await {
+                                Ok(()) => {}
+                                Err(e) => {
+                                    if e == USBError::Reset {
+                                        log!(b"RESET\n");
+                                        self.configure_endpoints();
+                                    } else if e == USBError::NewSetupPacket {
+                                        log!(b"RE-SETUP\n");
+                                        continue;
+                                    }
+                                }
+                            }
+
+                            break;
+                        }
+                    } else if let Event::USBReset = event {
+                        log!(b"RESET\n");
+                        self.configure_endpoints();
                     }
                 }
             }
@@ -231,6 +254,36 @@ impl USBDeviceController {
                 wait_for_irq(Interrupt::POWER_CLOCK),
             )
             .await;
+        }
+    }
+
+    async fn wait_for_specific_event(
+        &mut self,
+        event: Event,
+        defer_error: bool,
+    ) -> Result<(), USBError> {
+        let mut result = Ok(());
+        loop {
+            match self.wait_for_event().await {
+                Event::PowerRemoved => {
+                    result = Err(USBError::Disconnected);
+                }
+                Event::USBReset => {
+                    result = Err(USBError::Reset);
+                }
+                Event::EP0Setup => {
+                    result = Err(USBError::NewSetupPacket);
+                }
+                e => {
+                    if e == event {
+                        return result;
+                    }
+                }
+            }
+
+            if !defer_error && !result.is_ok() {
+                return result;
+            }
         }
     }
 
@@ -300,7 +353,7 @@ impl USBDeviceController {
         &mut self,
         pkt: SetupPacket,
         handler: &mut H,
-    ) {
+    ) -> Result<(), USBError> {
         // log!(b"==\n");
 
         if pkt.bmRequestType & (1 << 7) != 0 {
@@ -309,14 +362,14 @@ impl USBDeviceController {
                 controller: self,
                 host_remaining: (pkt.wLength as usize),
             };
-            handler.handle_control_response(pkt, res).await;
+            handler.handle_control_response(pkt, res).await
         } else {
             // Host -> Device
             let req = USBDeviceControlRequest {
                 controller: self,
                 host_remaining: (pkt.wLength as usize),
             };
-            handler.handle_control_request(pkt, req).await;
+            handler.handle_control_request(pkt, req).await
         }
     }
 
@@ -328,6 +381,11 @@ impl USBDeviceController {
     TODO: Bulk/interrupt transactions must be up to 64 bytes
     - Also 32-bit aligned and a multiple of 4 bytes
     */
+}
+
+pub struct Aligned<Data, Alignment> {
+    aligner: [Alignment; 0],
+    data: Data,
 }
 
 pub struct USBDeviceControlRequest<'a> {
@@ -344,9 +402,10 @@ impl<'a> USBDeviceControlRequest<'a> {
     /// - STARTEPOUT[0] seems to be useless.
     /// - TASKS_EP0RCVOUT appears to be required BEFORE any DMA transfers will
     ///   occur.
-    pub async fn read(&mut self, mut output: &mut [u8]) -> usize {
+    pub async fn read(&mut self, mut output: &mut [u8]) -> Result<usize, USBError> {
         let mut total_read = 0;
 
+        // TODO: Re-use a more global buffer.
         let mut packet_buffer = [0u8; 64];
 
         self.controller.periph.epout[0]
@@ -356,12 +415,22 @@ impl<'a> USBDeviceControlRequest<'a> {
             .maxcnt
             .write(packet_buffer.len() as u32);
 
+        // TODO: Make sure that we clear events at the right times in this function.
+
         while self.host_remaining > 0 {
             self.controller.periph.tasks_ep0rcvout.write_trigger();
+            self.controller
+                .wait_for_specific_event(Event::EP0DataDone, false)
+                .await?;
 
-            while self.controller.wait_for_event().await != Event::EP0DataDone {}
+            // XXX: Critical DMA section
+            self.controller.periph.tasks_startepout[0].write_trigger();
+            self.controller
+                .wait_for_specific_event(Event::EndEpOUT0, true)
+                .await?;
 
-            let packet_len = self.controller.periph.size.epout[0].read().size() as usize;
+            let packet_len = self.controller.periph.epout[0].amount.read() as usize;
+            // let packet_len = self.controller.periph.size.epout[0].read().size() as usize;
             if packet_len > output.len() {
                 // Overflow. Panic!
             }
@@ -378,7 +447,7 @@ impl<'a> USBDeviceControlRequest<'a> {
 
         self.controller.periph.tasks_ep0status.write_trigger();
 
-        total_read
+        Ok(total_read)
     }
 
     pub fn stale(mut self) {
@@ -393,9 +462,8 @@ pub struct USBDeviceControlResponse<'a> {
 
 impl<'a> USBDeviceControlResponse<'a> {
     // TODO: This must support partially writing.
-    pub async fn write(&mut self, mut data: &[u8]) {
-        // log!(crate::num_to_slice(host_remaining as u32).as_ref());
-        // log!(b"\n");
+    pub async fn write(&mut self, mut data: &[u8]) -> Result<(), USBError> {
+        // log!(b">\n");
 
         let mut done = false;
 
@@ -408,7 +476,7 @@ impl<'a> USBDeviceControlResponse<'a> {
                 packet_buffer.len(),
             );
             let mut packet = &mut packet_buffer[0..packet_len];
-            // Maybe copy flash to RAM.
+            // Maybe copy flash to RAM (if already in ram, no copying should be needed.)
             packet.copy_from_slice(&data[0..packet_len]);
             data = &data[packet_len..];
 
@@ -458,25 +526,86 @@ impl<'a> USBDeviceControlResponse<'a> {
 
                 self.controller.periph.tasks_startepin[0].write_trigger();
 
-                // log!(b">2\n");
-
-                // TODO: Record any USBRESET or PowerRemoved events we receive and act on them
-                // once the buffer is free'd
-                // while self.wait_for_event().await != Event::EndEpIN0 {}
-
                 // TODO: handle USBReset and PowerRemoved
                 // loop {
                 //     let e =
 
                 // }
 
-                // TODO: Start preparing the next packet while this one is beign sent.
-                while self.controller.wait_for_event().await != Event::EP0DataDone {}
+                // while self.controller.wait_for_event().await != Event::EndEpIN0 {}
+
+                // TODO: Must not return any errors until we get to the EndEpIN0
+
+                // self.controller
+                //     .wait_for_specific_event(Event::EndEpIN0, true)
+                //     .await?;
+
+                // We MUST always wait for EndEpIN0 to happen first to ensure that the DMA
+                // transfer is done. Then we should wait for EP0DataDone but we
+                // may exist early on a reset/disconnect event.
+                {
+                    let mut result = Ok(());
+                    let mut dma_done = false;
+
+                    loop {
+                        match self.controller.wait_for_event().await {
+                            Event::EP0DataDone => break,
+                            Event::PowerRemoved => {
+                                result = Err(USBError::Disconnected);
+                                if dma_done {
+                                    break;
+                                }
+                            }
+                            Event::USBReset => {
+                                result = Err(USBError::Reset);
+                                if dma_done {
+                                    break;
+                                }
+                            }
+                            Event::EP0Setup => {
+                                result = Err(USBError::NewSetupPacket);
+                                if dma_done {
+                                    break;
+                                }
+                            }
+                            // TODO: Must not return errors until the DMA is done.
+                            Event::EndEpIN0 => {
+                                dma_done = true;
+                                if !result.is_ok() {
+                                    break;
+                                }
+                            }
+                            e => {
+                                log!(b"E");
+                                log!(crate::num_to_slice(e as u32).as_ref());
+                                log!(b"\n");
+                            }
+                        }
+                    }
+
+                    result?;
+                }
+
+                // TODO: Start preparing the next packet while this one is beign
+                // sent. self.controller
+                //     .wait_for_specific_event(Event::EP0DataDone, false)
+                //     .await?;
             }
         }
 
+        unsafe {
+            asm!("nop");
+            asm!("nop");
+            asm!("nop");
+            asm!("nop");
+        }
+
+        // log!(b"<\n");
+
         // Status stage
         self.controller.periph.tasks_ep0status.write_trigger();
+
+        Ok(())
     }
 
     pub fn stale(mut self) {

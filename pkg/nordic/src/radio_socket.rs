@@ -206,22 +206,27 @@ impl RadioController {
                     // TODO: We need to check for the case that the radio packet gets truncated (the
                     // first length byte indicates a length that is larger than the buffer size).
 
-                    for i in 0..packet_buf.as_bytes().len() {
-                        log!(crate::num_to_slice(packet_buf.raw()[i] as u32).as_ref());
-                        log!(b", ");
-                    }
+                    // for i in 0..packet_buf.as_bytes().len() {
+                    //     log!(crate::num_to_slice(packet_buf.raw()[i] as u32).as_ref());
+                    //     log!(b", ");
+                    // }
 
                     // log!(&temp_buffer[0..n]);
                     log!(b"\n");
 
                     let from_address = packet_buf.remote_address();
 
-                    let (key, nonce) = self.generate_ccm_key_pair(
+                    let (valid_keys, key, nonce) = self.generate_ccm_key_pair(
                         &socket_state.network,
                         &packet_buf,
                         from_address,
                         from_address,
                     );
+
+                    if !valid_keys {
+                        log!(b"Unknown peer\n");
+                        continue;
+                    }
 
                     let mut ccm = CCM::new(
                         AES128BlockBuffer::new(&key, &mut self.ecb),
@@ -235,11 +240,7 @@ impl RadioController {
                         continue;
                     }
 
-                    log!(b"#\n");
-
                     packet_buf.write_to(&mut socket_state.receive_buffer);
-
-                    log!(b"$\n");
 
                     drop(socket_state);
                 }
@@ -264,12 +265,18 @@ impl RadioController {
                         .remote_address_mut()
                         .copy_from_slice(from_address);
 
-                    let (key, nonce) = self.generate_ccm_key_pair(
+                    let (valid_keys, key, nonce) = self.generate_ccm_key_pair(
                         &socket_state.network,
                         &packet_buf,
                         &to_address,
                         from_address,
                     );
+
+                    if !valid_keys {
+                        log!(b"Unknown peer\n");
+                        continue;
+                    }
+
                     // .await;
 
                     drop(socket_state);
@@ -300,7 +307,7 @@ impl RadioController {
         packet_buf: &PacketBuffer,
         remote_address: &[u8; 4],
         from_address: &[u8; 4],
-    ) -> ([u8; 16], [u8; CCM_NONCE_SIZE]) {
+    ) -> (bool, [u8; 16], [u8; CCM_NONCE_SIZE]) {
         // TODO: Remove the unwrap.
         let link = match network
             .links()
@@ -310,7 +317,7 @@ impl RadioController {
             Some(l) => l,
             None => {
                 // TODO: Return an error.
-                return ([0u8; 16], [0u8; CCM_NONCE_SIZE]);
+                return (false, [0u8; 16], [0u8; CCM_NONCE_SIZE]);
             }
         };
 
@@ -320,6 +327,6 @@ impl RadioController {
         nonce[4..8].copy_from_slice(from_address);
         nonce[8..].copy_from_slice(link.iv());
 
-        (*array_ref![link.key(), 0, 16], nonce)
+        (true, *array_ref![link.key(), 0, 16], nonce)
     }
 }

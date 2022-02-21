@@ -6,6 +6,8 @@ extern crate nordic_proto;
 extern crate protobuf;
 extern crate usb;
 
+mod usb_radio;
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,10 +15,16 @@ use common::async_std::{channel, task};
 use common::errors::*;
 use nordic_proto::packet::PacketBuffer;
 use nordic_proto::proto::net::*;
-use nordic_proto::usb::ProtocolUSBRequestType;
 use protobuf::text::ParseTextProto;
 use protobuf::Message;
-use usb::descriptors::SetupPacket;
+use usb_radio::USBRadio;
+
+/*
+Example packet:
+20, 232, 232, 232, 232, 3, 0, 0, 0, 64, 72, 89, 33, 13, 87, 94, 124, 249, 158, 53, 0,
+
+^ Why is the last byte of the tag usually 0?
+*/
 
 #[derive(Args)]
 struct Args {
@@ -57,6 +65,13 @@ async fn run() -> Result<()> {
         found_device.ok_or_else(|| err_msg("No device selected"))?
     };
 
+    println!("Device opened!");
+
+    device.reset()?;
+    println!("Device reset!");
+
+    let mut radio = USBRadio::new(device);
+
     // let mut device = ctx.open_device(0x8888, 0x0001).await?;
 
     let network_config = {
@@ -68,8 +83,8 @@ async fn run() -> Result<()> {
         
                 links {
                     address: "\xE8\xE8\xE8\xE8"
-                    key: "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-                    iv: "\x00\x00\x00\x00\x00"
+                    key: "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10"
+                    iv: "\x11\x12\x13\x14\x15"
                 }
                 "#,
             )?
@@ -81,8 +96,8 @@ async fn run() -> Result<()> {
         
                 links {
                     address: "\xE7\xE7\xE7\xE7"
-                    key: "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-                    iv: "\x00\x00\x00\x00\x00"
+                    key: "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10"
+                    iv: "\x11\x12\x13\x14\x15"
                 }
                 "#,
             )?
@@ -91,52 +106,9 @@ async fn run() -> Result<()> {
         }
     };
 
-    let network_config_proto = network_config.serialize()?;
+    radio.set_config(&network_config).await?;
 
-    println!("Device opened!");
-
-    device.reset()?;
-
-    println!("Device reset!");
-
-    println!("WRITING PROTO: {}", network_config_proto.len());
-    println!("{:?}", network_config_proto);
-
-    device
-        .write_control(
-            SetupPacket {
-                bmRequestType: 0b01000000,
-                bRequest: ProtocolUSBRequestType::SetNetworkConfig.to_value(),
-                wValue: 0,
-                wIndex: 0,
-                wLength: network_config_proto.len() as u16,
-            },
-            &network_config_proto,
-        )
-        .await?;
-
-    {
-        let mut read_buffer = [0u8; 256];
-        let n = device
-            .read_control(
-                SetupPacket {
-                    bmRequestType: 0b11000000,
-                    bRequest: ProtocolUSBRequestType::GetNetworkConfig.to_value(),
-                    wValue: 0,
-                    wIndex: 0,
-                    wLength: read_buffer.len() as u16,
-                },
-                &mut read_buffer,
-            )
-            .await?;
-
-        println!("Got Proto of size: {}", n);
-
-        let mut proto_new = NetworkConfig::parse(&read_buffer[0..n])?;
-        println!("{:?}", proto_new);
-    }
-
-    // let n =
+    println!("get_config: {:?}", radio.get_config().await?);
 
     let (sender, receiver) = channel::bounded(1);
 
@@ -145,28 +117,23 @@ async fn run() -> Result<()> {
     });
 
     loop {
+        // TODO: If we get a packet, continue reading up to some number of frames until
+        // the device's buffer is empty.
+
         {
             let mut packet_buffer = PacketBuffer::new();
 
-            println!("R>");
-            let n = device
-                .read_control(
-                    SetupPacket {
-                        bmRequestType: 0b11000000,
-                        bRequest: ProtocolUSBRequestType::Receive.to_value(),
-                        wValue: 0,
-                        wIndex: 0,
-                        wLength: packet_buffer.raw_mut().len() as u16,
-                    },
-                    packet_buffer.raw_mut(),
-                )
-                .await?;
+            let start_time = std::time::Instant::now();
 
-            println!("R<");
+            let maybe_packet = radio.recv_packet().await?;
 
-            if n > 0 {
-                println!("Got {}", n);
-                println!("{:?}", packet_buffer.data());
+            let end_time = std::time::Instant::now();
+
+            println!("{:?}", end_time.duration_since(start_time));
+
+            if let Some(packet) = maybe_packet {
+                println!("From: {:02x?}", packet.remote_address());
+                println!("{:?}", common::bytes::Bytes::from(packet.data()));
             }
         }
 
@@ -180,23 +147,10 @@ async fn run() -> Result<()> {
             packet_buffer.resize_data(v.len());
             packet_buffer.data_mut().copy_from_slice(v.as_bytes());
 
-            device
-                .write_control(
-                    SetupPacket {
-                        bmRequestType: 0b01000000,
-                        bRequest: ProtocolUSBRequestType::Send.to_value(),
-                        wValue: 0,
-                        wIndex: 0,
-                        wLength: packet_buffer.as_bytes().len() as u16,
-                    },
-                    packet_buffer.as_bytes(),
-                )
-                .await?;
+            radio.send_packet(&packet_buffer).await?;
 
             println!("<");
         }
-
-        // Try receiving
 
         task::sleep(Duration::from_millis(1000)).await;
     }
