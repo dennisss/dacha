@@ -1,0 +1,13 @@
+[package]
+name = "hue"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+http = { path = "../http" }
+json = { path = "../json" }
+net = { path = "../net" }
+parsing = { path = "../parsing" }
+macros = { path = "../macros" }
+reflection = { path = "../reflection" }

@@ -169,7 +169,14 @@ structs {
         type { named: "RecordType" }
     }
     field {
+        name: "unicast_response"
+        comment: "Ask the server to send a unicast response instead of a multicast one. Only used in mDNS"
+        bit_width: 1
+        type { primitive: BOOL }
+    }
+    field {
         name: "class"
+        bit_width: 15
         type { named: "Class" }
     }
 }
@@ -201,6 +208,10 @@ enums {
     values {
         name: "SOA"
         value: 6
+    }
+    values {
+        name: "PTR"
+        value: 12
     }
     values {
         name: "SRV"
@@ -248,7 +259,14 @@ structs {
         type { named: "RecordType" }
     }
     field {
+        name: "cache_flush"
+        comment: "Only used in mDNS"
+        bit_width: 1
+        type { primitive: U8 }
+    }
+    field {
         name: "class"
+        bit_width: 15
         type { named: "Class" }
     }
     field {
@@ -286,7 +304,7 @@ structs {
         type { primitive: U16 }
     }
     # field {
-    #    name: "name"
+    #    name: "target"
     #    type { named: "Name" }
     # }
 }

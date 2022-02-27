@@ -78,16 +78,33 @@ impl<'a> Question<'a> {
 
 #[derive(PartialEq, Debug)]
 pub struct ResourceRecord<'a> {
-    pub name: Name<'a>,
+    name: Name<'a>,
     // TODO: Use a reference for the data in this.
     trailer: proto::ResourceRecordTrailer,
+
+    message: &'a [u8],
 }
 
 impl<'a> ResourceRecord<'a> {
     pub fn parse(mut input: &'a [u8], message: &'a [u8]) -> Result<(Self, &'a [u8])> {
         let name = parse_next!(input, Name::parse, message);
         let trailer = parse_next!(input, proto::ResourceRecordTrailer::parse);
-        Ok((Self { name, trailer }, input))
+        Ok((
+            Self {
+                name,
+                trailer,
+                message,
+            },
+            input,
+        ))
+    }
+
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn typ(&self) -> RecordType {
+        self.trailer.typ
     }
 
     pub fn data(&self) -> Result<ResourceRecordData> {
@@ -110,6 +127,47 @@ impl<'a> ResourceRecord<'a> {
                     self.trailer.data.to_vec(),
                 )))
             }
+            // _Service._Proto.Name TTL Class SRV Priority Weight Port Target
+            // Defined in https://datatracker.ietf.org/doc/html/rfc2782
+            RecordType::SRV => {
+                let mut input = &self.trailer.data[..];
+                let header = parse_next!(input, proto::SRVDataHeader::parse);
+                let target = parse_next!(input, Name::parse, self.message);
+                Ok(ResourceRecordData::Service(SRVRecordData {
+                    header,
+                    target,
+                }))
+            }
+            RecordType::PTR => {
+                let mut input = &self.trailer.data[..];
+                let name = parse_next!(input, Name::parse, self.message);
+                if input.len() != 0 {
+                    return Err(err_msg("Extra bytes in PTR record"));
+                }
+
+                Ok(ResourceRecordData::Pointer(name))
+            }
+            RecordType::TXT => {
+                let mut input = &self.trailer.data[..];
+
+                let mut items = vec![];
+
+                while !input.is_empty() {
+                    let len = input[0] as usize;
+                    input = &input[1..];
+
+                    if input.len() < len {
+                        return Err(err_msg("Invalid TXT record"));
+                    }
+
+                    items.push(&input[0..len]);
+                    input = &input[len..];
+                }
+
+                Ok(ResourceRecordData::Text(items))
+            }
+
+            // Want something for
             _ => Ok(ResourceRecordData::Unknown(&self.trailer.data)),
         }
     }
@@ -120,12 +178,20 @@ pub enum ResourceRecordData<'a> {
     /// On A and AAAA records
     Address(IPAddress),
 
+    Pointer(Name<'a>),
+
+    Service(SRVRecordData<'a>),
+
+    Text(Vec<&'a [u8]>),
+
     Unknown(&'a [u8]),
 }
 
 #[derive(Debug)]
 pub struct SRVRecordData<'a> {
-    header: proto::SRVDataHeader,
+    // TODO: Make this private?
+    pub header: proto::SRVDataHeader,
+
     pub target: Name<'a>,
 }
 

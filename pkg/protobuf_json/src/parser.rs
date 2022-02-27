@@ -86,11 +86,13 @@ fn apply_json_value_to_reflection(r: ReflectionMut, value: &json::Value) -> Resu
             match value {
                 json::Value::String(v) => {
                     // TODO: Verify that this can handle multiple different character sets.
+                    let mut buf = vec![];
                     common::base64::decode_config_buf(
                         v.as_str(),
                         common::base64::URL_SAFE_NO_PAD,
-                        r,
+                        &mut buf,
                     )?;
+                    r.extend_from_slice(buf.as_ref());
                 }
                 _ => {
                     return Err(err_msg("Unsupported json value for bytes"));

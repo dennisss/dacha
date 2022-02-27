@@ -26,14 +26,10 @@ extern crate macros;
 #[macro_use]
 extern crate asn;
 #[cfg(feature = "std")]
-#[macro_use]
-extern crate lazy_static;
 extern crate generic_array;
 #[cfg(feature = "std")]
 extern crate pkix;
 extern crate typenum;
-#[macro_use]
-extern crate arrayref;
 
 // TODO: Implement mlock utility from preventing swapping.
 

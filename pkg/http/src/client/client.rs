@@ -9,9 +9,9 @@ use common::async_std::sync::Mutex;
 use common::async_std::task;
 use common::errors::*;
 use common::io::{Readable, Writeable};
+use net::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
 use parsing::ascii::AsciiString;
 
-use crate::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
 use crate::client::client_interface::*;
 use crate::client::direct_client::DirectClientOptions;
 use crate::client::load_balanced_client::{LoadBalancedClient, LoadBalancedClientOptions};

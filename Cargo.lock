@@ -61,14 +61,10 @@ checksum = "a4c527152e37cf757a3f78aae5a06fbeefdb07ccc535c980a3208ee3060dd544"
 name = "asn"
 version = "0.1.0"
 dependencies = [
- "byteorder",
  "common",
- "impl_ops",
- "lazy_static",
  "macros",
  "math",
  "parsing",
- "typenum",
 ]
 
 [[package]]
@@ -611,14 +607,11 @@ dependencies = [
 name = "crypto"
 version = "0.1.0"
 dependencies = [
- "arrayref",
  "asn",
  "async-std",
- "byteorder",
  "chrono",
  "common",
  "generic-array",
- "lazy_static",
  "macros",
  "math",
  "openssl",
@@ -1085,8 +1078,12 @@ name = "home_hub"
 version = "0.1.0"
 dependencies = [
  "common",
+ "container",
+ "hue",
  "macros",
  "peripheral",
+ "protobuf",
+ "protobuf_compiler",
  "rpi",
  "stream_deck",
 ]
@@ -1105,6 +1102,19 @@ dependencies = [
  "parsing",
  "parsing_compiler",
  "regexp_macros",
+]
+
+[[package]]
+name = "hue"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "http",
+ "json",
+ "macros",
+ "net",
+ "parsing",
+ "reflection",
 ]
 
 [[package]]
@@ -1389,6 +1399,7 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "common",
+ "crypto",
  "libc",
  "nix 0.21.0",
  "parsing",

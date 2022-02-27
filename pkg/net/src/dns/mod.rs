@@ -1,5 +1,7 @@
 // Basic binary format defined in https://datatracker.ietf.org/doc/html/rfc1035.
 // EDNS defined in https://datatracker.ietf.org/doc/html/rfc6891
+// mDNS defined in https://datatracker.ietf.org/doc/html/rfc6762
+// DNS-SD defined in https://datatracker.ietf.org/doc/html/rfc6763
 
 mod proto {
     include!(concat!(env!("OUT_DIR"), "/src/dns/proto.rs"));

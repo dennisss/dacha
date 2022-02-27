@@ -19,7 +19,7 @@ use common::eventually::Eventually;
 use common::task::ChildTask;
 use crypto::random::RngExt;
 use datastore::meta::client::{MetastoreClient, MetastoreClientInterface, MetastoreTransaction};
-use http::backoff::*;
+use net::backoff::*;
 use nix::unistd::chown;
 use nix::unistd::Gid;
 use protobuf::Message;

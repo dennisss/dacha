@@ -5,6 +5,8 @@ use datastore::meta::client::MetastoreClient;
 use raft::proto::routing::RouteLabel;
 
 use crate::meta::constants::ZONE_ENV_VAR;
+use crate::meta::{ClusterMetaTable, GetClusterMetaTable};
+use crate::proto::meta::ObjectMetadata;
 
 pub struct ClusterMetaClient {
     zone: String,
@@ -39,6 +41,38 @@ impl ClusterMetaClient {
 
     pub fn inner(&self) -> &MetastoreClient {
         &self.inner
+    }
+
+    pub async fn get_object<M: protobuf::Message + Default>(
+        &self,
+        name: &str,
+    ) -> Result<Option<M>> {
+        let obj = self
+            .inner
+            .cluster_table::<ObjectMetadata>()
+            .get(name)
+            .await?;
+        if let Some(obj) = obj {
+            Ok(Some(
+                obj.value()
+                    .unpack()?
+                    .ok_or_else(|| err_msg("Object configs different type"))?,
+            ))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn set_object<M: protobuf::Message>(&self, name: &str, value: &M) -> Result<()> {
+        let mut obj = ObjectMetadata::default();
+        obj.set_name(name);
+        obj.value_mut().pack_from(value)?;
+
+        self.inner
+            .cluster_table::<ObjectMetadata>()
+            .put(&obj)
+            .await?;
+        Ok(())
     }
 }
 

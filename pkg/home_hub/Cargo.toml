@@ -10,3 +10,14 @@ macros = { path = "../macros" }
 peripheral = { path = "../peripheral" }
 rpi = { path = "../rpi" }
 stream_deck = { path = "../stream_deck" }
+hue = { path = "../hue" }
+protobuf = { path = "../protobuf" }
+container = { path = "../container" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../protobuf_compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

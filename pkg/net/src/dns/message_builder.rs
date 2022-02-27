@@ -36,8 +36,6 @@ impl MessageBuilder {
     }
 }
 
-// _Service._Proto.Name TTL Class SRV Priority Weight Port Target
-
 pub struct QueryBuilder {
     message_builder: MessageBuilder,
 }
@@ -66,10 +64,22 @@ impl QueryBuilder {
     }
 
     /// NOTE: Generally you should only have 1 question per query message.
-    pub fn add_question(&mut self, name: Name, typ: proto::RecordType, class: proto::Class) {
+    pub fn add_question(
+        &mut self,
+        name: Name,
+        typ: proto::RecordType,
+        class: proto::Class,
+        unicast_response: bool,
+    ) {
         self.message_builder.header.num_questions += 1;
-        self.message_builder
-            .append_question(name, proto::QuestionTrailer { typ, class });
+        self.message_builder.append_question(
+            name,
+            proto::QuestionTrailer {
+                typ,
+                unicast_response,
+                class,
+            },
+        );
     }
 
     pub fn build(self) -> Vec<u8> {

@@ -142,7 +142,7 @@ impl ClientConnectionShared {
         writer: Box<dyn Writeable>,
     ) -> Result<()> {
         let r = self.run_inner(reader, writer).await;
-        println!("ClientConnection: {:?}", r);
+        println!("HTTPv1 client connection closing with: {:?}", r);
 
         // TODO: Notify all requests
 

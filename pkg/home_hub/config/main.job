@@ -6,7 +6,8 @@ task {
     cwd: "/volumes/dacha"
     args: [
         "/volumes/dacha/built/pkg/home_hub/main",
-        "--hdmi_ddc_device=/dev/i2c-1"
+        "--hdmi_ddc_device=/dev/i2c-1",
+        "--config_object=home_hub_config"
     ]
 
     # TODO: Use relative build targets

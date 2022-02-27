@@ -10,10 +10,10 @@ use common::async_std::task;
 use common::condvar::Condvar;
 use common::errors::*;
 use common::io::{Readable, Writeable};
+use net::backoff::*;
 use parsing::ascii::AsciiString;
 
 use crate::alpn::*;
-use crate::backoff::*;
 use crate::client::client_interface::*;
 use crate::client::resolver::ResolvedEndpoint;
 use crate::header::*;

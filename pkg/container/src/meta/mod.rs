@@ -326,6 +326,22 @@ impl ClusterMetaTableValue for ZoneMetadata {
     }
 }
 
+impl ClusterMetaTableValue for ObjectMetadata {
+    type Id = str;
+
+    fn primary_key(&self) -> Vec<u8> {
+        Self::primary_key_from_id(self.name())
+    }
+
+    fn primary_table_id() -> ClusterTableId {
+        ClusterTableId::Object
+    }
+
+    fn primary_key_from_id(id: &Self::Id) -> Vec<u8> {
+        (Self::primary_table_id(), id).to_table_key()
+    }
+}
+
 trait ToTableKey {
     fn to_table_key(&self) -> Vec<u8>;
 }

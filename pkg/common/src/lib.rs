@@ -40,7 +40,7 @@ pub extern crate hex;
 pub extern crate libc;
 #[cfg(feature = "std")]
 #[macro_use]
-extern crate lazy_static;
+pub extern crate lazy_static;
 #[cfg(feature = "std")]
 pub extern crate chrono;
 pub extern crate generic_array;

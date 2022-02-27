@@ -11,8 +11,8 @@ use common::errors::*;
 use common::task::ChildTask;
 use common::vec_hash_set::VecHashSet;
 use crypto::random::RngExt;
+use net::backoff::*;
 
-use crate::backoff::*;
 use crate::client::client_interface::*;
 use crate::client::direct_client::DirectClient;
 use crate::client::direct_client::DirectClientOptions;

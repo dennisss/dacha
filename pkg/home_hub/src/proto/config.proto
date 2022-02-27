@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package home_hub;
+
+message Config {
+    string hue_user_name = 1;
+}

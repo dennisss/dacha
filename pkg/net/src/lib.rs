@@ -7,9 +7,11 @@ extern crate automata;
 extern crate regexp_macros;
 extern crate libc;
 extern crate nix;
+extern crate crypto;
 
 pub mod dns;
 pub mod ip;
 pub mod netlink;
+pub mod backoff;
 
 pub use netlink::local_ip;

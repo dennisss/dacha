@@ -55,6 +55,13 @@ impl Value {
             _ => None,
         }
     }
+
+    pub fn get_bool(&self) -> Option<bool> {
+        match self {
+            Self::Bool(v) => Some(*v),
+            _ => None,
+        }
+    }
 }
 
 impl std::ops::Index<usize> for Value {

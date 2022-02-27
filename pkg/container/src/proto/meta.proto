@@ -11,6 +11,7 @@ import "pkg/container/src/proto/blob.proto";
 import "pkg/container/src/proto/node.proto";
 import "third_party/google/src/proto/timestamp.proto";
 import "pkg/builder/src/proto/bundle.proto";
+import "third_party/google/src/proto/any.proto";
 
 enum ClusterTableId {
     UNKNOWN = 0;
@@ -21,6 +22,7 @@ enum ClusterTableId {
     TaskByNode = 5;
     TaskState = 6;
     Blob = 7;
+    Object = 8;
 }
 
 // Stored at a singleton at the metastore key '/cluster/zone'
@@ -181,3 +183,8 @@ message BlobReplica {
     google.protobuf.Timestamp timestamp = 3;
 }
 
+
+message ObjectMetadata {
+    string name = 1;
+    google.protobuf.Any value = 2;
+}

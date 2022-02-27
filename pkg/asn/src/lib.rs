@@ -1,5 +1,5 @@
 #[macro_use]
-extern crate lazy_static;
+extern crate common;
 
 mod build;
 pub mod builtin;

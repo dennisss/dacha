@@ -70,7 +70,8 @@ members = [
 	"pkg/web",
 	"pkg/rpi_controller",
 	"pkg/nordic_proto",
-	"pkg/swd_prog"
+	"pkg/swd_prog",
+	"pkg/hue",
 ]
 
 [profile.dev]
