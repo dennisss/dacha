@@ -13,6 +13,37 @@ pub struct USBRadio {
 }
 
 impl USBRadio {
+    pub async fn find(selected_id: Option<&str>) -> Result<Self> {
+        let ctx = usb::Context::create()?;
+
+        let mut device = {
+            let mut found_device = None;
+
+            for dev in ctx.enumerate_devices().await? {
+                let desc = dev.device_descriptor()?;
+                if desc.idVendor != 0x8888 || desc.idProduct != 0x0001 {
+                    continue;
+                }
+
+                let id = format!("{}:{}", dev.bus_num(), dev.dev_num());
+                println!("Device: {}", id);
+
+                if selected_id.is_none() || selected_id.unwrap() == id {
+                    found_device = Some(dev.open().await?);
+                }
+            }
+
+            found_device.ok_or_else(|| err_msg("No device selected"))?
+        };
+
+        println!("Device opened!");
+
+        device.reset()?;
+        println!("Device reset!");
+
+        Ok(Self::new(device))
+    }
+
     pub fn new(device: usb::Device) -> Self {
         Self { device }
     }

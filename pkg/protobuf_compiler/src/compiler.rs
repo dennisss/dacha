@@ -974,18 +974,48 @@ impl Compiler<'_> {
                 pkg = self.options.runtime_package
             ));
         } else if is_repeated {
+            let max_count = {
+                let mut size = None;
+                for opt in &field.unknown_options {
+                    if opt.name == "max_count" {
+                        if let Constant::Integer(v) = opt.value {
+                            size = Some(v as usize);
+                        } else {
+                            panic!("max_count option must be an integer");
+                        }
+
+                        break;
+                    }
+                }
+
+                size
+            };
+
+            let vec_type = {
+                if let Some(max_count) = max_count {
+                    format!(
+                        "FixedVec<{typ}, [{typ}; {size}]>",
+                        typ = typ,
+                        size = max_count
+                    )
+                } else {
+                    format!("Vec<{}>", typ)
+                }
+            };
+
             lines.add(format!(
                 r#"
                 pub fn {name}(&self) -> &[{typ}] {{
                     &self.{name}
                 }}
             
-                pub fn {name}_mut(&mut self) -> &mut [{typ}] {{
+                pub fn {name}_mut(&mut self) -> &mut {vec_type} {{
                     &mut self.{name}
                 }}
             "#,
                 name = name,
-                typ = typ
+                typ = typ,
+                vec_type = vec_type
             ));
         } else {
             let modifier = if is_copyable { "" } else { "&" };

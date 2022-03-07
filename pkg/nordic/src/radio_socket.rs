@@ -222,7 +222,7 @@ impl RadioController {
                         continue;
                     }
 
-                    packet_buf.write_to(&mut socket_state.receive_buffer);
+                    socket_state.receive_buffer.write(packet_buf.as_bytes());
 
                     drop(socket_state);
                 }

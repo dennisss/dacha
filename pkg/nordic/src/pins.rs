@@ -1,10 +1,10 @@
 macro_rules! define_pins {
     ($($name:ident = $port:ident $num:expr),*) => {
-        pub struct Pins {
+        pub struct PeripheralPins {
             $(pub $name: $name),*
         }
 
-        impl Pins {
+        impl PeripheralPins {
             pub unsafe fn new() -> Self {
                 Self {
                     $($name: $name { hidden: () }),*
@@ -15,7 +15,7 @@ macro_rules! define_pins {
         $(
             pub struct $name { hidden: () }
 
-            impl Pin for $name {
+            impl PeripheralPin for $name {
                 fn port(&self) -> Port { Port::$port }
                 fn pin(&self) -> u8 { $num }
             }
@@ -80,7 +80,7 @@ pub enum Port {
     P1 = 1,
 }
 
-pub trait Pin {
+pub trait PeripheralPin {
     fn port(&self) -> Port;
     fn pin(&self) -> u8;
 }

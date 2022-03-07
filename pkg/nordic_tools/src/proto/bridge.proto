@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package nordic;
+
+import "third_party/google/src/proto/empty.proto";
+import "pkg/nordic_proto/src/proto/net.proto";
+
+service RadioBridge {
+    // Lsits all devices 
+    rpc ListDevices (google.protobuf.Empty) returns (RadioBridgeListDevicesResponse);
+
+    // NOTE: The encryption parameters of the device are only returned in this RPC. 
+    rpc NewDevice (RadioBridgeNewDeviceRequest) returns (RadioBridgeNewDeviceResponse);
+
+    // Applies updates to the metadata (e.g. name) of an existing device.
+    //
+    // The name field in the request must match that of an existing device.
+    // rpc UpdateDevice (RadioBridgeNewDeviceRequest) returns (google.protobuf.Empty);
+
+    rpc RemoveDevice (RadioBridgeRemoveDeviceRequest) returns (google.protobuf.Empty);
+
+    // Send a single packet to a remote device.
+    // NOTE: This returns as soon as the packet is enqueued and not after the packet is actually sent over the air.
+    rpc Send (RadioBridgePacket) returns (google.protobuf.Empty);
+
+    // Receive one or more packets from a remote device.
+    rpc Receive (RadioReceiveRequest) returns (stream RadioBridgePacket);
+}
+
+message RadioBridgeListDevicesResponse {
+    repeated RadioBridgeDevice devices = 1;
+
+    bytes bridge_address = 2;
+}
+
+message RadioBridgeNewDeviceRequest {
+    // NOTE: The 'address' is not settable.
+    RadioBridgeDevice device = 1;
+}
+
+message RadioBridgeNewDeviceResponse {
+    // Complete device descriptor with address, etc. populated. 
+    RadioBridgeDevice device = 1;
+
+    // Configuration to use for configuring this device. This will contain a new set of encryption
+    // keys already saved in the database.
+    NetworkConfig network_config = 2;
+}
+
+message RadioBridgeRemoveDeviceRequest {
+    string device_name = 1;
+}
+
+message RadioBridgePacket {
+    // Name of the remote device to which to send this packet or the name of the packet from which
+    // this packet was received.
+    string device_name = 1;
+
+    bytes data = 2;
+}
+
+message RadioReceiveRequest {
+    // Name of the device 
+    // Address from which to listen for packets.
+    string device_name = 1;
+}
+
+// Serializable state of the radio bridge containing all registered devices and encrpytion information.
+message RadioBridgeStateData {
+    // Complete network configuration to be used by the bridge USB radio dongle. This continues
+    // links to all registered devices.
+    NetworkConfig network = 1;
+
+    repeated RadioBridgeDevice devices = 2;
+}
+
+message RadioBridgeDevice {
+    string name = 1;
+    bytes address = 2;
+}

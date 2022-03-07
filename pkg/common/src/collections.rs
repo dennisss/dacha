@@ -36,6 +36,18 @@ impl<T: Default, A: AsRef<[T]> + AsMut<[T]>> FixedVec<T, A> {
         Some(value)
     }
 
+    pub fn remove(&mut self, mut index: usize) {
+        assert!(index < self.length);
+
+        // Bubble the element to be removed to the end of the list.
+        while index < self.length - 1 {
+            self.data.as_mut().swap(index, index + 1);
+            index += 1;
+        }
+
+        self.pop();
+    }
+
     pub fn clear(&mut self) {
         while self.length > 0 {
             self.pop();

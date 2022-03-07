@@ -160,18 +160,25 @@ impl App {
         }
 
         loop {
-            let event = common::future::race(
-                common::future::map(self.state_event.1.recv(), |_| FutureEvent::StateChange),
-                // TODO: Need a better way to cancel this if the state change happens first (such
-                // that we don't miss events if they are received during future cancellation).
-                common::future::map(Box::pin(deck.poll_key_state()), |e| {
-                    FutureEvent::KeyState(e)
-                }),
+            let event = common::async_std::future::timeout(
+                Duration::from_secs(10),
+                common::future::race(
+                    common::future::map(self.state_event.1.recv(), |_| FutureEvent::StateChange),
+                    // TODO: Need a better way to cancel this if the state change happens first
+                    // (such that we don't miss events if they are received
+                    // during future cancellation).
+                    common::future::map(Box::pin(deck.poll_key_state()), |e| {
+                        FutureEvent::KeyState(e)
+                    }),
+                ),
             )
             .await;
 
             match event {
-                FutureEvent::StateChange => {
+                Err(_) => {
+                    // Timeout. Mainly to keep things alive in case of bugs.
+                }
+                Ok(FutureEvent::StateChange) => {
                     // Get the current state and exit early if the value hasn't actually changed.
                     let mut current_state = self.state.lock().await.clone();
                     if !first_render && current_state == last_view_state {
@@ -220,7 +227,7 @@ impl App {
                     )
                     .await?;
                 }
-                FutureEvent::KeyState(key_state) => {
+                Ok(FutureEvent::KeyState(key_state)) => {
                     let key_state = key_state?;
 
                     println!("GOT EVENTS");
@@ -248,21 +255,21 @@ impl App {
                         match event {
                             Event::KeyDown(DISPLAY_COMPUTER_BUTTON) => {
                                 state.pending_display_input = Some(InputSelectValue::DisplayPort1);
-                                self.ddc_event.0.send(()).await?;
+                                let _ = self.ddc_event.0.try_send(());
                             }
                             Event::KeyDown(DISPLAY_LAPTOP_BUTTON) => {
                                 state.pending_display_input = Some(InputSelectValue::HDMI2);
-                                self.ddc_event.0.send(()).await?;
+                                let _ = self.ddc_event.0.try_send(());
                             }
                             Event::KeyDown(LIGHT_ENTRY_BUTTON) => {
                                 state.pending_entry_light_on =
                                     Some(!state.entry_light_on.unwrap_or(false));
-                                self.light_event.0.send(()).await?;
+                                let _ = self.light_event.0.try_send(());
                             }
                             Event::KeyDown(LIGHT_STUDY_BUTTON) => {
                                 state.pending_study_light_on =
                                     Some(!state.study_light_on.unwrap_or(false));
-                                self.light_event.0.send(()).await?;
+                                let _ = self.light_event.0.try_send(());
                             }
                             _ => {}
                         }

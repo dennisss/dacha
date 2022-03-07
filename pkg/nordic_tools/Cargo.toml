@@ -8,7 +8,17 @@ common = { path = "../common" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 usb = { path = "../usb" }
+crypto = { path = "../crypto" }
+container = { path = "../container" }
 nordic_proto = { path = "../nordic_proto" }
+rpc = { path = "../rpc" }
+rpc_util = { path = "../rpc_util" }
+google = { path = "../../third_party/google" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }
+
+[features]
+default = ["std", "alloc"]
+alloc = ["common/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc", "nordic_proto/alloc", "rpc/alloc", "google/alloc"]
+std = ["common/std", "crypto/std", "protobuf/std", "usb/std", "nordic_proto/std", "rpc/std", "google/std"]

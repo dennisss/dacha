@@ -1,7 +1,7 @@
 use common::errors::*;
 use peripherals::raw::{Interrupt, InterruptState, RegisterRead, RegisterWrite};
 
-use crate::pins::Pin;
+use crate::pins::PeripheralPin;
 
 /// NOTE: Requires a HFCLK.
 pub struct TWIM {
@@ -14,12 +14,13 @@ pub enum TWIMError {
     Overrun,
     AddressNotAcknowledged,
     DataNotAcnkowledged,
+    UnsupportedBaudrate,
 }
 
 // Default to P0_10 and P0_11
 
 impl TWIM {
-    pub fn new<SCLPin: Pin, SDAPin: Pin>(
+    pub fn new<SCLPin: PeripheralPin, SDAPin: PeripheralPin>(
         mut periph: peripherals::raw::twim0::TWIM0,
         scl: SCLPin,
         sda: SDAPin,

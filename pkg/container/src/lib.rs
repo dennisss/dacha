@@ -59,5 +59,6 @@ pub use proto::meta::*;
 pub use proto::node::*;
 pub use proto::node_service::*;
 pub use proto::task::*;
+pub use proto::task_event::*;
 pub use runtime::ContainerRuntime;
 pub use service::resolver::ServiceResolver;

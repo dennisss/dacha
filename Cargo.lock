@@ -1528,10 +1528,15 @@ name = "nordic_tools"
 version = "0.1.0"
 dependencies = [
  "common",
+ "container",
+ "crypto",
+ "google",
  "macros",
  "nordic_proto",
  "protobuf",
  "protobuf_compiler",
+ "rpc",
+ "rpc_util",
  "usb",
 ]
 

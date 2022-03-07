@@ -3,6 +3,18 @@ use core::arch::asm;
 use peripherals::raw::rtc0::RTC0;
 use peripherals::raw::{Interrupt, RegisterRead, RegisterWrite};
 
+/// If we are waiting for some target time to be reached, this is the minimum
+/// number of RTC clock ticks between now and that time for us to use a COMPARE
+/// interrupt. If fewer than this many ticks are left in the wait time we will
+/// assume that we have already reached the target time.
+///
+/// This minimum is required as we don't want to accidentally run over the
+/// target time while we are setting up the COMPARE registers. If we do run
+/// over, we'd need to wait for a clock overflow.
+///
+/// Assuming we are running at 32KHz, this value is ~0.5ms.
+const MIN_WAIT_TICKS: u32 = 16;
+
 pub struct Timer {
     rtc0: RTC0,
 }
@@ -59,7 +71,7 @@ impl Timer {
         loop {
             let current_ticks = self.rtc0.counter.read();
             let elapsed_ticks = Self::duration(start_ticks, current_ticks);
-            if elapsed_ticks >= ticks {
+            if elapsed_ticks + MIN_WAIT_TICKS >= ticks {
                 break;
             }
 
@@ -68,7 +80,7 @@ impl Timer {
 
             // Override the compare register if our compare value is earlier that the
             // current one or the current one has already elapsed.
-            if old_target_duration > ticks || old_target_duration <= elapsed_ticks {
+            if old_target_duration >= ticks || old_target_duration <= elapsed_ticks {
                 self.rtc0.cc[0].write_with(|v| v.set_compare(end_ticks));
             }
 

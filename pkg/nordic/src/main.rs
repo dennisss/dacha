@@ -31,6 +31,7 @@ extern crate nordic_proto;
 pub mod allocator;
 pub mod ecb;
 pub mod eeprom;
+mod events;
 pub mod gpio;
 pub mod log;
 pub mod pins;
@@ -228,14 +229,6 @@ fn init_low_freq_clk(clock: &mut CLOCK) {
 }
 
 /*
-Implementing a global sleeper:
-- Take as input RTC0
-- Each timeout knows it's start and count.
-- Each one will simply set CC[0]
-- Just have INTEN always enabled given that no one cares.
-*/
-
-/*
 Waiting for an interrupt:
 - Need:
     - EVENTS_* register
@@ -283,6 +276,7 @@ pub fn num_to_slice(mut num: u32) -> NumberSlice {
 
 static RADIO_SOCKET: Singleton<RadioSocket> = Singleton::uninit();
 
+/*
 define_thread!(
     Monitor,
     monitor_thread_fn,
@@ -312,6 +306,7 @@ async fn monitor_thread_fn(uarte0: UARTE0, mut timer: Timer, mut temp: Temp, mut
         serial.write(b"\n").await;
     }
 }
+*/
 
 // use executor::interrupts::{trigger_pendsv, wait_for_pendsv};
 
@@ -322,16 +317,80 @@ async fn monitor_thread_fn(uarte0: UARTE0, mut timer: Timer, mut temp: Temp, mut
 //     log!(b"Triggered!\n");
 // }
 
+// Thread that reads bytes from a UART and then writes them back out to the
+// other device.
+define_thread!(
+    SerialEcho,
+    serial_echo_thread_fn,
+    serial: UARTE,
+    timer: Timer
+);
+async fn serial_echo_thread_fn(serial: UARTE, mut timer: Timer) {
+    let mut buf = [0u8; 64];
+
+    let (mut reader, mut writer) = serial.split();
+
+    let mut timer2 = timer.clone();
+
+    loop {
+        let mut read = reader.begin_read(&mut buf);
+
+        enum Event {
+            DoneRead,
+            Timeout,
+        }
+
+        loop {
+            let e = executor::futures::race2(
+                executor::futures::map(read.wait(), |_| Event::DoneRead),
+                executor::futures::map(timer2.wait_ms(10), |_| Event::Timeout),
+            )
+            .await;
+
+            match e {
+                Event::DoneRead => {
+                    drop(read);
+
+                    writer.write(&buf).await;
+
+                    // Restart the read.
+                    break;
+                }
+                Event::Timeout => {
+                    if !read.is_empty() {
+                        let n = read.cancel().await;
+
+                        writer.write(b"Read: ").await;
+                        writer.write(num_to_slice(n as u32).as_ref()).await;
+                        writer.write(b"\n").await;
+
+                        writer.write(&buf[0..n]).await;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 define_thread!(Blinker, blinker_thread_fn);
 async fn blinker_thread_fn() {
     let mut peripherals = peripherals::raw::Peripherals::new();
+    let mut pins = unsafe { crate::pins::PeripheralPins::new() };
 
     let mut timer = Timer::new(peripherals.rtc0);
 
     let temp = Temp::new(peripherals.temp);
 
     {
-        let mut serial = UARTE::new(peripherals.uarte0);
+        let mut serial = UARTE::new(peripherals.uarte0, pins.P0_30, pins.P0_31, 115200);
+        SerialEcho::start(serial, timer.clone());
+    }
+
+    /*
+
+    {
+        let mut serial = UARTE::new(peripherals.uarte0, pins.P0_30, pins.P0_31, 115200);
         log::setup(serial).await;
     }
 
@@ -367,6 +426,8 @@ async fn blinker_thread_fn() {
     // if !USING_DEV_KIT {
     //     EchoRadioThread::start(radio_socket, timer.clone());
     // }
+
+    */
 
     // peripherals.p0.dirset.write_with(|v| v.set_pin30());
     // peripherals.p0.outset.write_with(|v| v.set_pin30());
@@ -432,6 +493,7 @@ async fn radio_thread_fn(radio_controller: RadioController) {
 // Timer) {     let mut packet_buffer = PacketBuffer::new();
 
 //     loop {
+//         XXX: Must set the
 //         if radio_socket.dequeue_rx(&mut packet_buffer).await {
 //             log!(b"Echo packet\n");
 //             radio_socket.enqueue_tx(&mut packet_buffer).await;
@@ -440,11 +502,6 @@ async fn radio_thread_fn(radio_controller: RadioController) {
 //         timer.wait_ms(2).await;
 //     }
 // }
-
-/*
-Echo thread:
-- Receive
-*/
 
 /*
 Next steps:

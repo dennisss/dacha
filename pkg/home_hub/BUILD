@@ -17,6 +17,7 @@ bundle {
     ]
 }
 
+# TODO: Only include the JPEG files
 filegroup {
     name: "icons",
     srcs: [

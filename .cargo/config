@@ -5,10 +5,10 @@
 #rustflags = "-C target-cpu=native -A warnings" # -C prefer-dynamic
 
 [target.x86_64-unknown-linux-gnu]
-rustflags="-C target-cpu=native -A dead_code"
+rustflags="-C target-cpu=native -A warnings"
 
 [target.thumbv6m-none-eabi]
 rustflags="-C link-arg=-Tpkg/rp2040/link.x -C link-arg=--nmagic"
 
 [target.thumbv7em-none-eabihf]
-rustflags="-C link-arg=-Tpkg/nordic/link.x"
+rustflags="-C link-arg=-Tpkg/nordic/link.x --cfg label=\"nrf52840\" --cfg label=\"cortex_m\""

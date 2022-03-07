@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package nordic;
+
 // All addresses are 4 bytes in length.
 
 message NetworkConfig {
@@ -10,6 +12,8 @@ message NetworkConfig {
     repeated Link links = 2 [max_count = 8];
 
     // Last packet counter which the local device has sent to a remote device.
+    //
+    // When saving to the config to durable storage, this will continue at least the value of the last packet sent but will typically be set much larger to avoid saving the config before each packet is sent.
     uint32 last_packet_counter = 3;
 
     // TODO: Also configure things like radio channel.

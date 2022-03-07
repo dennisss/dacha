@@ -43,7 +43,7 @@ extern crate raft;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use std::{collections::HashSet, sync::Arc};
 
 use builder::proto::bundle::{BlobFormat, BundleSpec};
@@ -189,6 +189,10 @@ struct LogCommand {
     /// Id of the attempt from which to look up logs. If not specified, we will
     /// retrieve the logs of the currently running task attempt.
     attempt_id: Option<u64>,
+
+    /// If true, we will look up the previous attempt (or the currently running
+    /// one).
+    latest_attempt: Option<bool>,
 }
 
 #[derive(Args)]
@@ -553,6 +557,24 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
             }
         }
         ObjectKind::Task => {
+            let mut node_tasks = HashMap::new();
+            {
+                let request_context = rpc::ClientRequestContext::default();
+                let nodes = meta_client.cluster_table::<NodeMetadata>().list().await?;
+                for node in nodes {
+                    let node_stubs = connect_to_node(node.address()).await?;
+                    let res = node_stubs
+                        .service
+                        .ListTasks(&request_context, &ListTasksRequest::default())
+                        .await
+                        .result?;
+
+                    for task in res.tasks() {
+                        node_tasks.insert(task.spec().name().to_string(), task.clone());
+                    }
+                }
+            }
+
             println!("Tasks:");
             let tasks = meta_client.cluster_table::<TaskMetadata>().list().await?;
 
@@ -570,9 +592,17 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
                     .cloned()
                     .unwrap_or_default();
 
-                println!("{}\t{:?}", task.spec().name(), task_state.state());
+                let mut node_state = String::new();
+                if let Some(node_task) = node_tasks.get(task.spec().name()) {
+                    node_state = format!("\t({:?})", node_task.state());
+                }
 
-                println!("{:?}", task);
+                println!(
+                    "{}\t{:?}{}",
+                    task.spec().name(),
+                    task_state.state(),
+                    node_state
+                );
             }
         }
         ObjectKind::Blob => {
@@ -972,6 +1002,23 @@ async fn run_log(cmd: LogCommand) -> Result<()> {
         log_request.set_attempt_id(num);
     }
 
+    if cmd.latest_attempt == Some(true) {
+        let mut request = container::GetEventsRequest::default();
+        request.set_task_name(&cmd.task_selector.task_name);
+
+        let mut resp = node
+            .service
+            .GetEvents(&request_context, &request)
+            .await
+            .result?;
+
+        for event in resp.events() {
+            if event.has_started() && event.timestamp() > log_request.attempt_id() {
+                log_request.set_attempt_id(event.timestamp());
+            }
+        }
+    }
+
     let mut log_stream = node.service.GetLogs(&request_context, &log_request).await;
 
     while let Some(entry) = log_stream.recv().await {
@@ -994,16 +1041,73 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
     let mut request = container::GetEventsRequest::default();
     request.set_task_name(&cmd.task_selector.task_name);
 
-    let resp = node
+    let mut resp = node
         .service
         .GetEvents(&request_context, &request)
         .await
         .result?;
+
+    struct Attempt<'a> {
+        id: u64,
+        start_time: SystemTime,
+        end_time: Option<SystemTime>,
+        exit_status: Option<container::ContainerStatus>,
+        events: Vec<&'a container::TaskEvent>,
+    }
+
+    resp.events_mut()
+        .sort_by(|a, b| a.timestamp().cmp(&b.timestamp()));
+
+    let mut attempts = vec![];
+
+    // TODO: If the final attempt (or any event) doesn't have a Stopped event, it
+    // may still not be running if the event failed to be saved. Need to cross
+    // reference with the current state of the task on the node.
     for event in resp.events() {
-        println!("{:?}", event);
+        let time = std::time::UNIX_EPOCH + Duration::from_micros(event.timestamp());
+
+        // TODO: Will eventually need to handle StartFailure
+        match event.type_case() {
+            container::TaskEventTypeCase::Started(_) => attempts.push(Attempt {
+                id: event.timestamp(),
+                start_time: time,
+                end_time: None,
+                exit_status: None,
+                events: vec![],
+            }),
+            container::TaskEventTypeCase::StartFailure(v) => attempts.push(Attempt {
+                id: event.timestamp(),
+                start_time: time,
+                end_time: Some(time.clone()),
+                exit_status: None,
+                events: vec![],
+            }),
+            container::TaskEventTypeCase::Stopped(e) => {
+                let last_attempt = attempts.last_mut().unwrap();
+                last_attempt.exit_status = Some(e.status().clone());
+                last_attempt.end_time = Some(time);
+            }
+            _ => {}
+        }
+
+        let last_attempt = attempts.last_mut().unwrap();
+        last_attempt.events.push(&event);
+
+        // println!("{:?}", event);
+    }
+
+    for attempt in attempts {
+        println!("{}: {}", attempt.id, time_to_string(&attempt.start_time));
+        if let Some(end_time) = attempt.end_time {
+            println!("=> {:?}", attempt.exit_status.unwrap());
+        }
     }
 
     Ok(())
+}
+
+fn time_to_string(time: &SystemTime) -> String {
+    common::chrono::DateTime::<common::chrono::Local>::from(*time).to_rfc2822()
 }
 
 async fn run() -> Result<()> {
