@@ -1,5 +1,6 @@
 use executor::interrupts::wait_for_irq;
-use peripherals::raw::{Interrupt, RegisterRead, RegisterWrite};
+use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use peripherals::raw::Interrupt;
 
 use crate::log;
 

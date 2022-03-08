@@ -2,8 +2,9 @@ use core::arch::asm;
 use core::ops::Drop;
 use core::pin::Pin;
 
+use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::uarte0::UARTE0;
-use peripherals::raw::{Interrupt, InterruptState, PinDirection, RegisterRead, RegisterWrite};
+use peripherals::raw::{Interrupt, InterruptState, PinDirection};
 
 use crate::pins::PeripheralPin;
 

@@ -1,7 +1,8 @@
 use core::arch::asm;
 
+use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::rtc0::RTC0;
-use peripherals::raw::{Interrupt, RegisterRead, RegisterWrite};
+use peripherals::raw::Interrupt;
 
 /// If we are waiting for some target time to be reached, this is the minimum
 /// number of RTC clock ticks between now and that time for us to use a COMPARE

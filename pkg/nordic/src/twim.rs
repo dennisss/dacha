@@ -1,5 +1,6 @@
 use common::errors::*;
-use peripherals::raw::{Interrupt, InterruptState, RegisterRead, RegisterWrite};
+use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use peripherals::raw::{Interrupt, InterruptState};
 
 use crate::pins::PeripheralPin;
 

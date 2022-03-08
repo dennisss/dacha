@@ -1,5 +1,5 @@
+use peripherals::raw::register::RegisterRead;
 use peripherals::raw::Interrupt;
-use peripherals::raw::RegisterRead;
 
 pub struct Temp {
     periph: peripherals::raw::temp::TEMP,

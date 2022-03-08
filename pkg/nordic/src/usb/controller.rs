@@ -45,10 +45,9 @@ use core::arch::asm;
 use common::struct_bytes::struct_bytes;
 use executor::futures;
 use executor::interrupts::wait_for_irq;
+use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::EventState;
 use peripherals::raw::Interrupt;
-use peripherals::raw::RegisterRead;
-use peripherals::raw::RegisterWrite;
 use usb::descriptors::*;
 
 use crate::log;

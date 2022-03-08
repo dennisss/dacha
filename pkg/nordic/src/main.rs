@@ -96,9 +96,10 @@ use core::ptr::{read_volatile, write_volatile};
 
 use executor::singleton::Singleton;
 use peripherals::raw::clock::CLOCK;
+use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::rtc0::RTC0;
 use peripherals::raw::uarte0::UARTE0;
-use peripherals::raw::{EventState, Interrupt, PinDirection, RegisterRead, RegisterWrite};
+use peripherals::raw::{EventState, Interrupt, PinDirection};
 
 use crate::ecb::ECB;
 // use crate::log;
@@ -428,9 +429,6 @@ async fn blinker_thread_fn() {
     // }
 
     */
-
-    // peripherals.p0.dirset.write_with(|v| v.set_pin30());
-    // peripherals.p0.outset.write_with(|v| v.set_pin30());
 
     if USING_DEV_KIT {
         peripherals.p0.dir.write_with(|v| {
