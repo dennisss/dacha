@@ -25,6 +25,40 @@ Representing a field:
 - register.field_mut() can return a struct of type FIELD_NAME_MUT {{ register: &'a mut REGISTER_NAME }}
 */
 
+struct RegistersStruct {
+    fields: LineBuilder,
+    last_offset: u32,
+}
+
+impl RegistersStruct {
+    fn new() -> Self {
+        Self {
+            fields: LineBuilder::new(),
+            last_offset: 0
+        }
+    }
+
+    fn pad_to_offset(&mut self, next_offset: u32) -> Result<()> {
+        if self.last_offset < next_offset {
+            let diff = next_offset - self.last_offset;
+            if diff % 4 != 0 {
+                return Err(err_msg("Can not pad in non-multiples of usize"));
+            }
+            
+            self.fields.add(
+                format!("padding_{}: [u8; {}],", self.last_offset, diff)
+            );
+
+            self.last_offset = next_offset;
+
+        } else if self.last_offset > next_offset {
+            return Err(format_err!("Struct already beyond offset: {} > {}", self.last_offset, next_offset));
+        }
+
+        Ok(())
+    }
+}
+
 
 pub struct Compiler<'a> {
     options: &'a CompilerOptions,
@@ -82,6 +116,8 @@ impl<'a> Compiler<'a> {
         let mut lines = LineBuilder::new();
         lines.add(format!(
             "
+        use core::ops::{{Deref, DerefMut}};
+
         use crate::register::*;
         
         pub struct Peripherals {{
@@ -157,8 +193,6 @@ impl<'a> Compiler<'a> {
         lines.add("#[allow(unused_imports)] use super::*;");
 
         lines.indented(|lines| -> Result<()> {
-            let mut peripheral_fields = LineBuilder::new();
-            let mut peripheral_new = LineBuilder::new();
             let mut outer_lines = LineBuilder::new();
 
             let inherited_props = peripheral
@@ -167,7 +201,7 @@ impl<'a> Compiler<'a> {
                 .inherit(&peripheral.register_properties_group)
                 .inherit(inherited_register_properties);
 
-            let address_block_type = format!("{}_ADDRESS", peripheral.name);
+            let mut registers_struct = RegistersStruct::new();
 
             for register in &peripheral.registers {
                 match register {
@@ -175,9 +209,7 @@ impl<'a> Compiler<'a> {
                         self.compile_cluster(
                             cluster,
                             &inherited_props,
-                            &address_block_type,
-                            &mut peripheral_new,
-                            &mut peripheral_fields,
+                            &mut registers_struct,
                             &mut outer_lines,
                         )?;
                     }
@@ -185,48 +217,51 @@ impl<'a> Compiler<'a> {
                         self.compile_register(
                             register,
                             &inherited_props,
-                            &address_block_type,
-                            &mut peripheral_new,
-                            &mut peripheral_fields,
+                            &mut registers_struct,
                             &mut outer_lines,
                         )?;
                     }
                 }
             }
 
+            let registers_type = format!("{}_REGISTERS", peripheral.name);
+
             lines.add(format!(
                 "
                 #[allow(non_camel_case_types)]
-                pub struct {name} {{
-                    hidden: (),
-                    {peripheral_fields}    
-                }}
+                pub struct {name} {{ hidden: () }}
         
                 impl {name} {{
-                    pub unsafe fn new() -> Self {{
-                        let address_block = {address_block_type} {{ }};
+                    const BASE_ADDRESS: u32 = 0x{base_address:08x};
 
-                        Self {{
-                            hidden: (),
-                            {peripheral_new}
-                        }}
+                    pub unsafe fn new() -> Self {{
+                        Self {{ hidden: () }}
                     }}
                 }}
 
-                #[derive(Clone, Copy)]
-                pub struct {address_block_type} {{ }}
+                impl Deref for {name} {{
+                    type Target = {registers_type};
 
-                impl AddressBlock for {address_block_type} {{
-                    #[inline(always)]
-                    fn base_address(&self) -> u32 {{ 0x{base_address:08x} }}
+                    fn deref(&self) -> &Self::Target {{
+                        unsafe {{ ::core::mem::transmute(Self::BASE_ADDRESS) }}
+                    }}
                 }}
 
+                impl DerefMut for {name} {{
+                    fn deref_mut(&mut self) -> &mut Self::Target {{
+                        unsafe {{ ::core::mem::transmute(Self::BASE_ADDRESS) }}
+                    }}
+                }}
+
+                #[repr(C)]
+                pub struct {registers_type} {{
+                    {registers_fields}
+                }}
                 ",
                 name = peripheral.name,
-                address_block_type = address_block_type,
+                registers_type = registers_type,
                 base_address = peripheral.base_address,
-                peripheral_new = peripheral_new.to_string(),
-                peripheral_fields = peripheral_fields.to_string()
+                registers_fields = registers_struct.fields.to_string()
             ));
 
             lines.nl();
@@ -245,14 +280,32 @@ impl<'a> Compiler<'a> {
         &mut self,
         cluster: &Cluster<'a>,
         inherited_register_properties: &RegisterPropertiesGroup,
-        upper_address_block_type: &str,
-        peripheral_new: &mut LineBuilder,
-        peripheral_fields: &mut LineBuilder,
+        registers_struct: &mut RegistersStruct,
         lines: &mut LineBuilder,
     ) -> Result<()> {
-        let mut cluster_fields = LineBuilder::new();
-        let mut cluster_new = LineBuilder::new();
+        let mut cluster_struct = RegistersStruct::new();
         let mut outer_lines = LineBuilder::new();
+
+        for register in &cluster.children {
+            match register {
+                ClusterOrRegister::Cluster(cluster) => {
+                    self.compile_cluster(
+                        cluster,
+                        inherited_register_properties,
+                        &mut cluster_struct,
+                        &mut outer_lines,
+                    )?;
+                }
+                ClusterOrRegister::Register(register) => {
+                    self.compile_register(
+                        register,
+                        inherited_register_properties,
+                        &mut cluster_struct,
+                        &mut outer_lines,
+                    )?;
+                }
+            }
+        }
 
         let cluster_name = {
             if cluster.dim_element_group.is_some() {
@@ -262,19 +315,13 @@ impl<'a> Compiler<'a> {
             }
         };
 
-        let upper_address_block_type = {
-            if cluster.dim_element_group.is_some() {
-                format!("OffsetAddressBlock<super::{}>", upper_address_block_type)
-            } else {
-                format!("super::{}", upper_address_block_type)
-            }
-        };
-
         let field_name = cluster_name.to_ascii_lowercase();
         let mod_name = cluster_name.to_ascii_lowercase();
 
+        registers_struct.pad_to_offset(cluster.address_offset as u32)?;
+
         if let Some(dim_element_group) = &cluster.dim_element_group {
-            peripheral_fields.add(format!(
+            registers_struct.fields.add(format!(
                 "/// {desc}
                 pub {field_name}: [{mod_name}::{name}; {dim}],",
                 field_name = field_name,
@@ -283,64 +330,16 @@ impl<'a> Compiler<'a> {
                 desc = cluster.description.replace("\n", " "),
                 mod_name = mod_name
             ));
-            
-            let mut instances = LineBuilder::new();
-            for i in 0..dim_element_group.dim {
-                instances.add(format!("{mod_name}::{name}::new(address_block.offset({increment} * {i})),",
-                    mod_name = mod_name,
-                    name = cluster_name,
-                    increment = dim_element_group.dim_increment,
-                    i = i
-                ));
-            }
-
-            peripheral_new.add(format!(
-                "{field_name}: [{instances}],",
-                instances = instances.to_string(),
-                field_name = field_name
-            ));
-
+            registers_struct.last_offset += dim_element_group.dim_increment as u32;
+            cluster_struct.pad_to_offset(dim_element_group.dim_increment as u32)?;
         } else {
-            peripheral_fields.add(format!(
+            registers_struct.fields.add(format!(
                 "pub {field_name}: {mod_name}::{name},",
                 field_name = field_name,
                 name = cluster.name,
                 mod_name = mod_name
             ));
-    
-            peripheral_new.add(format!(
-                "{field_name}: {mod_name}::{name}::new(address_block),",
-                field_name = field_name,
-                name = cluster.name,
-                mod_name = mod_name
-            ));
-        }
-
-        let address_block_type = format!("{}_ADDRESS", cluster_name);
-
-        for register in &cluster.children {
-            match register {
-                ClusterOrRegister::Cluster(cluster) => {
-                    self.compile_cluster(
-                        cluster,
-                        inherited_register_properties,
-                        &address_block_type,
-                        &mut cluster_new,
-                        &mut cluster_fields,
-                        &mut outer_lines,
-                    )?;
-                }
-                ClusterOrRegister::Register(register) => {
-                    self.compile_register(
-                        register,
-                        inherited_register_properties,
-                        &address_block_type,
-                        &mut cluster_new,
-                        &mut cluster_fields,
-                        &mut outer_lines,
-                    )?;
-                }
-            }
+            registers_struct.last_offset += cluster_struct.last_offset;
         }
 
         // TODO: Gurantee that no registers are named 'address_block'. Otherwise this
@@ -350,34 +349,10 @@ impl<'a> Compiler<'a> {
                 #[allow(unused_imports)] use super::*;
 
                 /// {desc}
+                #[repr(C)]
                 pub struct {name} {{
                     hidden: (),
                     {cluster_fields}
-                }}
-
-                impl {name} {{
-                    pub unsafe fn new(address_block: {upper_address_block_type}) -> Self {{
-                        let address_block = {address_block_type} {{
-                            parent: address_block
-                        }};
-
-                        Self {{
-                            hidden: (),
-                            {cluster_new}
-                        }}
-                    }}
-                }}
-
-                #[derive(Clone, Copy)]
-                pub struct {address_block_type} {{
-                    parent: {upper_address_block_type}
-                }}
-
-                impl AddressBlock for {address_block_type} {{
-                    #[inline(always)]
-                    fn base_address(&self) -> u32 {{
-                        self.parent.base_address() + {address_off}
-                    }}
                 }}
 
                 {outer_lines}
@@ -385,12 +360,8 @@ impl<'a> Compiler<'a> {
             ",
             mod_name = mod_name,
             name = cluster_name,
-            address_block_type = address_block_type,
             desc = cluster.description.replace("\n", " "),
-            cluster_fields = cluster_fields.to_string(),
-            cluster_new = cluster_new.to_string(),
-            upper_address_block_type = upper_address_block_type,
-            address_off = cluster.address_offset,
+            cluster_fields = cluster_struct.fields.to_string(),
             outer_lines = outer_lines.to_string()
         ));
 
@@ -403,9 +374,7 @@ impl<'a> Compiler<'a> {
         &mut self,
         register: &Register<'a>,
         inherited_register_properties: &RegisterPropertiesGroup,
-        address_block_type: &str,
-        peripheral_new: &mut LineBuilder,
-        peripheral_fields: &mut LineBuilder,
+        registers_struct: &mut RegistersStruct,
         lines: &mut LineBuilder,
     ) -> Result<()> {
         let properties = register
@@ -420,6 +389,11 @@ impl<'a> Compiler<'a> {
             return Err(err_msg("Register is not 32 bits in size"));
         }
 
+        // TODO: Validate that the alternative one exists at the same offset and has the same size?
+        if register.alternative_register.is_some() {
+            return Ok(());
+        }
+
         // TODO: Support registers with <readAction>modifyExternal</readAction>
         // ^ This means that reading should require a mutable lock.
         // If we use the same register type for each pin, then that means we can't use 
@@ -432,22 +406,18 @@ impl<'a> Compiler<'a> {
             }
         };
 
-        let address_block_type = {
-            if register.dim_element_group.is_some() {
-                format!("OffsetAddressBlock<super::{}>", address_block_type)
-            } else {
-                format!("super::{}", address_block_type)
-            }
-        };
-
         println!("  - {}", register_name);
 
         // Must check "resetValue" and "resetMask".
 
         let register_mod = escape_keyword(&register_name.to_ascii_lowercase());
 
+        // Add this register.
+        registers_struct.pad_to_offset(register.address_off as u32)?;
+
+        // TODO: Need special sizing logic for this.
         if let Some(dim_element_group) = &register.dim_element_group {
-            peripheral_fields.add(format!(
+            registers_struct.fields.add(format!(
                 "/// {desc}
                     pub {mod_name}: [{mod_name}::{name}; {dim}],",
                 name = register_name,
@@ -455,25 +425,13 @@ impl<'a> Compiler<'a> {
                 desc = register.description.replace("\n", " "),
                 mod_name = register_mod
             ));
-            
-            let mut instances = LineBuilder::new();
-            for i in 0..dim_element_group.dim {
-                instances.add(format!("{mod_name}::{name}::new(address_block.offset({increment} * {i})),",
-                    mod_name = register_mod,
-                    name = register_name,
-                    increment = dim_element_group.dim_increment,
-                    i = i
-                ));
+
+            if dim_element_group.dim_increment != 4 {
+                return Err(err_msg("Incremented registers of non-usize size"));
             }
-
-            peripheral_new.add(format!(
-                "{mod_name}: [{instances}],",
-                instances = instances.to_string(),
-                mod_name = register_mod
-            ));
-
+            registers_struct.last_offset += (dim_element_group.dim_increment as u32)*(dim_element_group.dim as u32);
         } else {
-            peripheral_fields.add(format!(
+            registers_struct.fields.add(format!(
                 "/// {desc}
                     pub {mod_name}: {mod_name}::{name},",
                 name = register_name,
@@ -481,11 +439,8 @@ impl<'a> Compiler<'a> {
                 mod_name = register_mod
             ));
     
-            peripheral_new.add(format!(
-                "{mod_name}: {mod_name}::{name}::new(address_block),",
-                name = register_name,
-                mod_name = register_mod
-            ));
+
+            registers_struct.last_offset += 4;
         }
 
         lines.add(format!("pub mod {} {{", register_mod));
@@ -553,7 +508,7 @@ impl<'a> Compiler<'a> {
 
                         #[inline(always)]
                         fn read(&self) -> Self::Value {{
-                            let raw = unsafe {{ ::core::ptr::read_volatile(self.ptr()) }};
+                            let raw = self.raw.read();
                             {reader}
                         }}
                     }}
@@ -572,7 +527,7 @@ impl<'a> Compiler<'a> {
 
                         #[inline(always)]
                         fn read(&self) -> Self::Value {{
-                            let v = unsafe {{ ::core::ptr::read_volatile(self.ptr()) }};
+                            let v = self.raw.read();
                             {read_value_type}::from_raw(v)
                         }}
                     }}
@@ -618,7 +573,7 @@ impl<'a> Compiler<'a> {
                         fn write(&mut self, value: Self::Value) {{
                             let old_raw = 0;
                             let raw = {writer};
-                            unsafe {{ ::core::ptr::write_volatile(self.ptr(), raw) }};
+                            self.raw.write(raw);
                         }}
                     }}
                     ",
@@ -661,7 +616,7 @@ impl<'a> Compiler<'a> {
 
                         #[inline(always)]
                         fn write(&mut self, value: Self::Value) {{
-                            unsafe {{ ::core::ptr::write_volatile(self.ptr(), value.to_raw()) }}
+                            self.raw.write(value.to_raw());
                         }}
                     }}
                     ",
@@ -709,18 +664,10 @@ impl<'a> Compiler<'a> {
             lines.add(format!(
                 "
             #[allow(non_camel_case_types)]
-            pub struct {name} {{ address_block: {address_block_type} }}
+            #[repr(transparent)]
+            pub struct {name} {{ raw: RawRegister<u32> }}
             
             impl {name} {{
-                pub unsafe fn new(address_block: {address_block_type}) -> Self {{
-                    Self {{ address_block }}
-                }}
-
-                #[inline(always)]
-                fn ptr(&self) -> *mut u32 {{
-                    (self.address_block.base_address() + 0x{address_off:08x}) as *mut u32
-                }}
-
                 {register_impl}
             }}
             
@@ -728,8 +675,6 @@ impl<'a> Compiler<'a> {
 
             ",
                 name = register_name,
-                address_block_type = address_block_type,
-                address_off = register.address_off,
                 register_impl = register_impl.to_string(),
                 register_extra_impls = register_extra_impls.to_string()
             ));
@@ -744,12 +689,6 @@ impl<'a> Compiler<'a> {
 
         lines.add("}");
         lines.nl();
-
-        // "name"
-        // "addressOffset"
-
-        // Need to look up the "size" to get the number of bits in the
-        // register ^ For now shoudl always be 32
 
         // Maybe has a derivedFrom
 

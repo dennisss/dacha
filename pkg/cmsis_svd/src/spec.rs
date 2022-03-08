@@ -209,6 +209,8 @@ pub struct Register<'a> {
     pub properties: RegisterPropertiesGroup,
     pub dim_element_group: Option<DimElementGroup<'a>>,
 
+    pub alternative_register: Option<&'a str>,
+
     // NOTE: We don't distinguish between a missing <fields> element and an empty <fields> element.
     pub fields: Vec<Field<'a>>,
 }
@@ -235,12 +237,18 @@ impl<'a> Register<'a> {
             }
         }
 
+        let mut alternative_register = None;
+        if let Some(element) = get_optional_child_named(element, "alternateRegister")? {
+            alternative_register = Some(inner_text(element)?);
+        }
+
         Ok(Self {
             name,
             description,
             address_off,
             properties,
             dim_element_group,
+            alternative_register,
             fields,
         })
     }
