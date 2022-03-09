@@ -16,11 +16,17 @@ fn main() -> Result<()> {
         std::fs::read_to_string(common::project_dir().join("third_party/cmsis_svd/nrf52840.svd"))?;
 
     let mut options = CompilerOptions::default();
+
     options.field_rewrites.push(FieldRewriteRule {
         register_name: RegExp::new("^EVENTS_.*$")?,
         register_access: cmsis_svd::spec::RegisterAccess::ReadWrite,
         field_name: RegExp::new(".*")?,
         new_name: "EventState".to_string(),
+    });
+
+    options.register_rewrites.push(RegisterRewriteRule {
+        register_name: RegExp::new("^EVENTS_.*")?,
+        new_name: "EventRegister".to_string(),
     });
 
     options.field_rewrites.push(FieldRewriteRule {
@@ -42,6 +48,11 @@ fn main() -> Result<()> {
         register_access: cmsis_svd::spec::RegisterAccess::WriteOnly,
         field_name: RegExp::new(".*")?,
         new_name: "TaskTrigger".to_string(),
+    });
+
+    options.register_rewrites.push(RegisterRewriteRule {
+        register_name: RegExp::new("^TASKS_.*")?,
+        new_name: "TaskRegister".to_string(),
     });
 
     options.field_rewrites.push(FieldRewriteRule {

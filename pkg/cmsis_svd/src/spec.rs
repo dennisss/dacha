@@ -29,7 +29,7 @@ impl<'a> Device<'a> {
                     let parent_index = *seen_peripherals
                         .get(name)
                         .ok_or_else(|| err_msg("Unknown parent peripheral"))?;
-                    inst = inst.inherit(&out[parent_index]);
+                    // inst = inst.inherit(&out[parent_index]);
                 }
 
                 seen_peripherals.insert(inst.name, out.len());

@@ -10,7 +10,13 @@ use crate::spec::*;
 
 #[derive(Default)]
 pub struct CompilerOptions {
+    pub register_rewrites: Vec<RegisterRewriteRule>,
     pub field_rewrites: Vec<FieldRewriteRule>,
+}
+
+pub struct RegisterRewriteRule {
+    pub register_name: RegExp,
+    pub new_name: String,
 }
 
 pub struct FieldRewriteRule {
@@ -34,7 +40,7 @@ impl RegistersStruct {
     fn new() -> Self {
         Self {
             fields: LineBuilder::new(),
-            last_offset: 0
+            last_offset: 0,
         }
     }
 
@@ -44,27 +50,29 @@ impl RegistersStruct {
             if diff % 4 != 0 {
                 return Err(err_msg("Can not pad in non-multiples of usize"));
             }
-            
-            self.fields.add(
-                format!("padding_{}: [u8; {}],", self.last_offset, diff)
-            );
+
+            self.fields
+                .add(format!("padding_{}: [u8; {}],", self.last_offset, diff));
 
             self.last_offset = next_offset;
-
         } else if self.last_offset > next_offset {
-            return Err(format_err!("Struct already beyond offset: {} > {}", self.last_offset, next_offset));
+            return Err(format_err!(
+                "Struct already beyond offset: {} > {}",
+                self.last_offset,
+                next_offset
+            ));
         }
 
         Ok(())
     }
 }
 
-
 pub struct Compiler<'a> {
     options: &'a CompilerOptions,
 
     top_level_lines: LineBuilder,
 
+    rewritten_registers: HashMap<String, String>,
     rewritten_fields: HashMap<&'a str, Field<'a>>,
 }
 
@@ -75,6 +83,7 @@ impl<'a> Compiler<'a> {
         let mut inst = Compiler {
             options,
             top_level_lines: LineBuilder::new(),
+            rewritten_registers: HashMap::new(),
             rewritten_fields: HashMap::new(),
         };
 
@@ -166,65 +175,96 @@ impl<'a> Compiler<'a> {
         lines: &mut LineBuilder,
     ) -> Result<()> {
         println!("{:?}", peripheral.name);
-
-        if let Some(name) = peripheral.derived_from {
-            println!("- Derived From: {}", name);
-        }
-
         println!("- Base: {:08x}", peripheral.base_address);
+
+        // TODO: Do something with the memory size specified in the <addressBlock> of
+        // the peripheral?
 
         // TOOD: If the registers is not present, then we should have a 'derivedFrom'
         // attribute.
 
         let peripheral_module = peripheral.name.to_ascii_lowercase();
 
+        let peripheral_type = format!("{}::{}", peripheral_module, peripheral.name);
+
         peripherals_fields.add(format!(
-            "pub {mod_name}: {mod_name}::{name},",
+            "pub {mod_name}: {peripheral_type},",
             mod_name = peripheral_module,
-            name = peripheral.name
+            peripheral_type = peripheral_type,
         ));
         peripherals_new.add(format!(
-            "{mod_name}: {mod_name}::{name}::new(),",
+            "{mod_name}: {peripheral_type}::new(),",
             mod_name = peripheral_module,
-            name = peripheral.name
+            peripheral_type = peripheral_type
         ));
 
         lines.add(format!("pub mod {} {{", peripheral_module));
         lines.add("#[allow(unused_imports)] use super::*;");
 
         lines.indented(|lines| -> Result<()> {
+            let mut registers_struct_lines = LineBuilder::new();
             let mut outer_lines = LineBuilder::new();
 
-            let inherited_props = peripheral
-                .register_properties_group
-                .clone()
-                .inherit(&peripheral.register_properties_group)
-                .inherit(inherited_register_properties);
+            let registers_type = {
+                if let Some(derived_name) = peripheral.derived_from {
+                    println!("- Derived From: {}", derived_name);
 
-            let mut registers_struct = RegistersStruct::new();
+                    if peripheral.registers.len() != 0 {
+                        return Err(err_msg("Derived peripheral contains registers"));
+                    }
 
-            for register in &peripheral.registers {
-                match register {
-                    ClusterOrRegister::Cluster(cluster) => {
-                        self.compile_cluster(
-                            cluster,
-                            &inherited_props,
-                            &mut registers_struct,
-                            &mut outer_lines,
-                        )?;
+                    format!(
+                        "{}::{}_REGISTERS",
+                        derived_name.to_ascii_lowercase(),
+                        derived_name
+                    )
+                } else {
+                    let inherited_props = peripheral
+                        .register_properties_group
+                        .clone()
+                        .inherit(&peripheral.register_properties_group)
+                        .inherit(inherited_register_properties);
+
+                    let mut registers_struct = RegistersStruct::new();
+
+                    for register in &peripheral.registers {
+                        match register {
+                            ClusterOrRegister::Cluster(cluster) => {
+                                self.compile_cluster(
+                                    cluster,
+                                    &inherited_props,
+                                    &mut registers_struct,
+                                    &mut outer_lines,
+                                )?;
+                            }
+                            ClusterOrRegister::Register(register) => {
+                                self.compile_register(
+                                    register,
+                                    &inherited_props,
+                                    &mut registers_struct,
+                                    &mut outer_lines,
+                                )?;
+                            }
+                        }
                     }
-                    ClusterOrRegister::Register(register) => {
-                        self.compile_register(
-                            register,
-                            &inherited_props,
-                            &mut registers_struct,
-                            &mut outer_lines,
-                        )?;
-                    }
+
+                    let registers_type = format!("{}_REGISTERS", peripheral.name);
+
+                    registers_struct_lines.add(format!(
+                        "
+                        #[repr(C)]
+                        pub struct {registers_type} {{
+                            hidden: (),
+                            {registers_fields}
+                        }}
+                        ",
+                        registers_type = registers_type,
+                        registers_fields = registers_struct.fields.to_string(),
+                    ));
+
+                    registers_type
                 }
-            }
-
-            let registers_type = format!("{}_REGISTERS", peripheral.name);
+            };
 
             lines.add(format!(
                 "
@@ -252,20 +292,15 @@ impl<'a> Compiler<'a> {
                         unsafe {{ ::core::mem::transmute(Self::BASE_ADDRESS) }}
                     }}
                 }}
-
-                #[repr(C)]
-                pub struct {registers_type} {{
-                    {registers_fields}
-                }}
                 ",
                 name = peripheral.name,
                 registers_type = registers_type,
                 base_address = peripheral.base_address,
-                registers_fields = registers_struct.fields.to_string()
             ));
 
             lines.nl();
 
+            lines.append(registers_struct_lines);
             lines.append(outer_lines);
 
             Ok(())
@@ -309,7 +344,10 @@ impl<'a> Compiler<'a> {
 
         let cluster_name = {
             if cluster.dim_element_group.is_some() {
-                cluster.name.strip_suffix("[%s]").ok_or_else(|| err_msg("Only array style dim groups are supported"))?
+                cluster
+                    .name
+                    .strip_suffix("[%s]")
+                    .ok_or_else(|| err_msg("Only array style dim groups are supported"))?
             } else {
                 cluster.name
             }
@@ -351,6 +389,7 @@ impl<'a> Compiler<'a> {
                 /// {desc}
                 #[repr(C)]
                 pub struct {name} {{
+                    // TODO: Add this to the peripherals register block as well.
                     hidden: (),
                     {cluster_fields}
                 }}
@@ -389,18 +428,22 @@ impl<'a> Compiler<'a> {
             return Err(err_msg("Register is not 32 bits in size"));
         }
 
-        // TODO: Validate that the alternative one exists at the same offset and has the same size?
+        // TODO: Validate that the alternative one exists at the same offset and has the
+        // same size?
         if register.alternative_register.is_some() {
             return Ok(());
         }
 
         // TODO: Support registers with <readAction>modifyExternal</readAction>
         // ^ This means that reading should require a mutable lock.
-        // If we use the same register type for each pin, then that means we can't use 
+        // If we use the same register type for each pin, then that means we can't use
 
         let register_name = {
             if register.dim_element_group.is_some() {
-                register.name.strip_suffix("[%s]").ok_or_else(|| err_msg("Only array style dim groups are supported"))?
+                register
+                    .name
+                    .strip_suffix("[%s]")
+                    .ok_or_else(|| err_msg("Only array style dim groups are supported"))?
             } else {
                 register.name
             }
@@ -408,287 +451,112 @@ impl<'a> Compiler<'a> {
 
         println!("  - {}", register_name);
 
-        // Must check "resetValue" and "resetMask".
+        // Name of the field in the registers struct that will contain this register.
+        let register_field_name = escape_keyword(&register_name.to_ascii_lowercase());
 
-        let register_mod = escape_keyword(&register_name.to_ascii_lowercase());
+        // Name of the sub module in which we will define this register's struct.
+        let register_mod = register_field_name.clone();
 
-        // Add this register.
+        // Type for this register.
+        let mut register_type = format!(
+            "{mod_name}::{name}",
+            mod_name = register_mod,
+            name = register_name
+        );
+
+        let mut using_name_override = false;
+        for rule in &self.options.register_rewrites {
+            if rule.register_name.test(register_name) {
+                using_name_override = true;
+                register_type = rule.new_name.clone();
+                break;
+            }
+        }
+
+        /*
+        Need to decide if we match a register override then
+
+        */
+
+        // TODO: Must check "resetValue" and "resetMask".
+
         registers_struct.pad_to_offset(register.address_off as u32)?;
-
-        // TODO: Need special sizing logic for this.
         if let Some(dim_element_group) = &register.dim_element_group {
             registers_struct.fields.add(format!(
                 "/// {desc}
-                    pub {mod_name}: [{mod_name}::{name}; {dim}],",
-                name = register_name,
-                dim = dim_element_group.dim,
+                    pub {register_field_name}: [{register_type}; {dim}],",
                 desc = register.description.replace("\n", " "),
-                mod_name = register_mod
+                register_field_name = register_field_name,
+                register_type = register_type,
+                dim = dim_element_group.dim,
             ));
 
             if dim_element_group.dim_increment != 4 {
                 return Err(err_msg("Incremented registers of non-usize size"));
             }
-            registers_struct.last_offset += (dim_element_group.dim_increment as u32)*(dim_element_group.dim as u32);
+            registers_struct.last_offset +=
+                (dim_element_group.dim_increment as u32) * (dim_element_group.dim as u32);
         } else {
             registers_struct.fields.add(format!(
                 "/// {desc}
-                    pub {mod_name}: {mod_name}::{name},",
-                name = register_name,
+                    pub {register_field_name}: {register_type},",
                 desc = register.description.replace("\n", " "),
-                mod_name = register_mod
+                register_field_name = register_field_name,
+                register_type = register_type,
             ));
-    
 
             registers_struct.last_offset += 4;
         }
 
-        lines.add(format!("pub mod {} {{", register_mod));
-        lines.add("#[allow(unused_imports)] use super::*;");
+        // Now we must conditionally figure out if we need this.
 
-        lines.indented(|lines| -> Result<()> {
-            let mut read_value_impl = LineBuilder::new();
-            let mut write_value_impl = LineBuilder::new();
-            let mut outer_lines = LineBuilder::new();
-
-            let mut collapse_field = false;
-            let mut last_field = None;
-
-            let mut same_read_write_values = properties.access == RegisterAccess::ReadWrite;
-
-            for field in &register.fields {
-                let compiled = self.compile_field(
-                    field,
-                    &register,
+        if using_name_override {
+            let struct_code = {
+                let mut lines = LineBuilder::new();
+                self.compile_register_struct(
+                    &register_type,
+                    register_name,
+                    register,
                     &properties,
-                    &mut read_value_impl,
-                    &mut write_value_impl,
-                    &mut outer_lines,
+                    &mut lines,
                 )?;
-
-                if field.read_enumerated_values != field.write_enumerated_values {
-                    same_read_write_values = false;
-                }
-
-                if register.fields.len() == 1 && &compiled.name == register_name {
-                    last_field = Some(compiled);
-                    collapse_field = true;
-                }
-            }
-
-            let mut value_created = false;
-
-            let read_value_type = if same_read_write_values {
-                format!("{}_VALUE", register_name)
-            } else {
-                format!("{}_READ_VALUE", register_name)
+                lines.to_string()
             };
 
-            let write_value_type = if same_read_write_values {
-                format!("{}_VALUE", register_name)
-            } else {
-                format!("{}_WRITE_VALUE", register_name)
-            };
+            if let Some(old_code) = self.rewritten_registers.get(&register_type) {
+                if *old_code != struct_code {
+                    println!("OLD\n=========================");
+                    println!("{}", old_code);
+                    println!("NEW\n=========================");
+                    println!("{}", struct_code);
 
-
-            // TODO: When read and write segments are the same, 
-
-            let mut associated_types = LineBuilder::new();
-            let mut value_lines = LineBuilder::new();
-            let mut register_impl = LineBuilder::new();
-            let mut register_extra_impls = LineBuilder::new();
-
-            if properties.access.can_read() && collapse_field {
-                let compiled_field = last_field.as_ref().unwrap();
-                
-                register_extra_impls.add(format!(
-                    "
-                    impl RegisterRead for {name} {{
-                        type Value = {typ};
-
-                        #[inline(always)]
-                        fn read(&self) -> Self::Value {{
-                            let raw = self.raw.read();
-                            {reader}
-                        }}
-                    }}
-                    ",
-                    name = register_name,
-                    typ = compiled_field.read_inner_type,
-                    reader = compiled_field.reader
-                ));
-            } else if properties.access.can_read() {
-                // associated_types.add("pub type Read = ReadValue;");
-
-                register_extra_impls.add(format!(
-                    "
-                    impl RegisterRead for {name} {{
-                        type Value = {read_value_type};
-
-                        #[inline(always)]
-                        fn read(&self) -> Self::Value {{
-                            let v = self.raw.read();
-                            {read_value_type}::from_raw(v)
-                        }}
-                    }}
-                    ",
-                    name = register_name,
-                    read_value_type = read_value_type
-                ));
-
-                value_lines.add(format!(
-                    "
-                    #[derive(Clone, Copy, PartialEq)]
-                    pub struct {read_value_type} {{ raw: u32 }}
-        
-                    impl {read_value_type} {{
-                        pub fn new() -> Self {{ Self {{ raw: 0 }} }}
-    
-                        #[inline(always)]
-                        pub fn from_raw(raw: u32) -> Self {{ Self {{ raw }} }}
-        
-                        #[inline(always)]
-                        pub fn to_raw(&self) -> u32 {{ self.raw }}
-        
-                        {read_value_impl}
-                    }}    
-                    ",
-                    read_value_type = read_value_type,
-                    read_value_impl = read_value_impl.to_string(),
-                ));
-                value_created = true;
-            } else {
-                // TODO: Verify no readable fields?
-            }
-
-            if collapse_field && properties.access.can_write() {
-                let compiled_field = last_field.as_ref().unwrap();
-
-                register_extra_impls.add(format!(
-                    "
-                    impl RegisterWrite for {name} {{
-                        type Value = {typ};
-
-                        #[inline(always)]
-                        fn write(&mut self, value: Self::Value) {{
-                            let old_raw = 0;
-                            let raw = {writer};
-                            self.raw.write(raw);
-                        }}
-                    }}
-                    ",
-                    name = register_name,
-                    typ = compiled_field.write_inner_type,
-                    writer = compiled_field.writer
-                ));
-
-                // If we just have a single field which uses enumerated values, add accessors to directly set each value.
-                if register.fields[0].write_enumerated_values.is_some() {
-                    let compiled_field = last_field.as_ref().unwrap();
-
-                    for value in register.fields[0].write_enumerated_values.as_ref().unwrap() {
-                        register_impl.add(format!(
-                            "
-                            pub fn write_{value_name}(&mut self) {{
-                                self.write({enum_type}::{value_variant})
-                            }}
-                            ",
-                            value_name = value.name.to_ascii_lowercase(),
-                            enum_type = compiled_field.write_inner_type,
-                            value_variant = escape_keyword(value.name),
-                        ));                               
-                    }
-                }
-
-
-            } else if properties.access.can_write() {
-                // associated_types.add("pub type Write = WriteValue;");
-
-                /*
-                Register generates struct named: REGISTER
-                Which can read a value named REGISTER_W_VALUE
-                */
-
-                register_extra_impls.add(format!(
-                    "
-                    impl RegisterWrite for {name} {{
-                        type Value = {write_value_type};
-
-                        #[inline(always)]
-                        fn write(&mut self, value: Self::Value) {{
-                            self.raw.write(value.to_raw());
-                        }}
-                    }}
-                    ",
-                    name = register_name,
-                    write_value_type = write_value_type,
-                ));
-
-                // NOTE: The return value of write_with is mainly for convenience.
-                register_impl.add(format!(
-                    "
-                    pub fn write_with<F: Fn(&mut {write_value_type}) -> &mut {write_value_type}>(&mut self, f: F) {{
-                        let mut v = {write_value_type}::new();
-                        f(&mut v);
-                        self.write(v);
-                    }}
-                    ",
-                    write_value_type = write_value_type,
-                ));
-
-                if !same_read_write_values || !value_created {
-                    value_lines.add(format!(
-                        "
-                        #[derive(Clone, Copy, PartialEq)]
-                        pub struct {write_value_type} {{ raw: u32 }}
-            
-                        impl {write_value_type} {{
-                            pub fn new() -> Self {{ Self {{ raw: 0 }} }}
-    
-                            #[inline(always)]
-                            pub fn from_raw(raw: u32) -> Self {{ Self {{ raw }} }}
-            
-                            #[inline(always)]
-                            pub fn to_raw(&self) -> u32 {{ self.raw }}
-    
-                            {write_value_impl}
-                        }}  
-                        ",
-                        write_value_type = write_value_type,
-                        write_value_impl = write_value_impl.to_string(),
+                    return Err(format_err!(
+                        "Generated different code for: {}",
+                        register_type
                     ));
                 }
+            } else {
+                self.top_level_lines.add(struct_code.clone());
+
+                self.rewritten_registers.insert(register_type, struct_code);
             }
+        } else {
+            lines.add(format!("pub mod {} {{", register_mod));
+            lines.add("#[allow(unused_imports)] use super::*;");
 
-            // TODO: Make to_raw/from_raw unsafe?
-            lines.add(format!(
-                "
-            #[allow(non_camel_case_types)]
-            #[repr(transparent)]
-            pub struct {name} {{ raw: RawRegister<u32> }}
-            
-            impl {name} {{
-                {register_impl}
-            }}
-            
-            {register_extra_impls}
+            lines.indented(|lines| -> Result<()> {
+                self.compile_register_struct(
+                    register_name,
+                    register_name,
+                    register,
+                    &properties,
+                    lines,
+                )
+            })?;
 
-            ",
-                name = register_name,
-                register_impl = register_impl.to_string(),
-                register_extra_impls = register_extra_impls.to_string()
-            ));
-
+            lines.add("}");
             lines.nl();
-            lines.append(value_lines);
-            lines.append(outer_lines);
-            lines.nl();
-
-            Ok(())
-        })?;
-
-        lines.add("}");
-        lines.nl();
+        }
 
         // Maybe has a derivedFrom
 
@@ -697,6 +565,252 @@ impl<'a> Compiler<'a> {
         <dim>0x4</dim>
         <dimIncrement>0x4</dimIncrement>
         */
+
+        Ok(())
+    }
+
+    fn compile_register_struct(
+        &mut self,
+        struct_name: &str,
+        register_name: &str,
+        register: &Register<'a>,
+        properties: &ResolvedRegisterPropertiesGroup,
+        lines: &mut LineBuilder,
+    ) -> Result<()> {
+        let mut read_value_impl = LineBuilder::new();
+        let mut write_value_impl = LineBuilder::new();
+        let mut outer_lines = LineBuilder::new();
+
+        let mut collapse_field = false;
+        let mut last_field = None;
+
+        let mut same_read_write_values = properties.access == RegisterAccess::ReadWrite;
+
+        for field in &register.fields {
+            let compiled = self.compile_field(
+                field,
+                &register,
+                properties,
+                &mut read_value_impl,
+                &mut write_value_impl,
+                &mut outer_lines,
+            )?;
+
+            if field.read_enumerated_values != field.write_enumerated_values {
+                same_read_write_values = false;
+            }
+
+            if register.fields.len() == 1 && &compiled.name == register_name {
+                last_field = Some(compiled);
+                collapse_field = true;
+            }
+        }
+
+        let mut value_created = false;
+
+        let read_value_type = if same_read_write_values {
+            format!("{}_VALUE", struct_name)
+        } else {
+            format!("{}_READ_VALUE", struct_name)
+        };
+
+        let write_value_type = if same_read_write_values {
+            format!("{}_VALUE", struct_name)
+        } else {
+            format!("{}_WRITE_VALUE", struct_name)
+        };
+
+        // TODO: When read and write segments are the same,
+
+        let mut associated_types = LineBuilder::new();
+        let mut value_lines = LineBuilder::new();
+        let mut register_impl = LineBuilder::new();
+        let mut register_extra_impls = LineBuilder::new();
+
+        if properties.access.can_read() && collapse_field {
+            let compiled_field = last_field.as_ref().unwrap();
+
+            register_extra_impls.add(format!(
+                "
+                impl RegisterRead for {name} {{
+                    type Value = {typ};
+
+                    #[inline(always)]
+                    fn read(&self) -> Self::Value {{
+                        let raw = self.raw.read();
+                        {reader}
+                    }}
+                }}
+                ",
+                name = struct_name,
+                typ = compiled_field.read_inner_type,
+                reader = compiled_field.reader
+            ));
+        } else if properties.access.can_read() {
+            // associated_types.add("pub type Read = ReadValue;");
+
+            register_extra_impls.add(format!(
+                "
+                impl RegisterRead for {name} {{
+                    type Value = {read_value_type};
+
+                    #[inline(always)]
+                    fn read(&self) -> Self::Value {{
+                        let v = self.raw.read();
+                        {read_value_type}::from_raw(v)
+                    }}
+                }}
+                ",
+                name = struct_name,
+                read_value_type = read_value_type
+            ));
+
+            value_lines.add(format!(
+                "
+                #[derive(Clone, Copy, PartialEq)]
+                pub struct {read_value_type} {{ raw: u32 }}
+    
+                impl {read_value_type} {{
+                    pub fn new() -> Self {{ Self {{ raw: 0 }} }}
+
+                    #[inline(always)]
+                    pub fn from_raw(raw: u32) -> Self {{ Self {{ raw }} }}
+    
+                    #[inline(always)]
+                    pub fn to_raw(&self) -> u32 {{ self.raw }}
+    
+                    {read_value_impl}
+                }}    
+                ",
+                read_value_type = read_value_type,
+                read_value_impl = read_value_impl.to_string(),
+            ));
+            value_created = true;
+        } else {
+            // TODO: Verify no readable fields?
+        }
+
+        if collapse_field && properties.access.can_write() {
+            let compiled_field = last_field.as_ref().unwrap();
+
+            register_extra_impls.add(format!(
+                "
+                impl RegisterWrite for {name} {{
+                    type Value = {typ};
+
+                    #[inline(always)]
+                    fn write(&mut self, value: Self::Value) {{
+                        let old_raw = 0;
+                        let raw = {writer};
+                        self.raw.write(raw);
+                    }}
+                }}
+                ",
+                name = struct_name,
+                typ = compiled_field.write_inner_type,
+                writer = compiled_field.writer
+            ));
+
+            // If we just have a single field which uses enumerated values, add accessors to
+            // directly set each value.
+            if register.fields[0].write_enumerated_values.is_some() {
+                let compiled_field = last_field.as_ref().unwrap();
+
+                for value in register.fields[0].write_enumerated_values.as_ref().unwrap() {
+                    register_impl.add(format!(
+                        "
+                        pub fn write_{value_name}(&mut self) {{
+                            self.write({enum_type}::{value_variant})
+                        }}
+                        ",
+                        value_name = value.name.to_ascii_lowercase(),
+                        enum_type = compiled_field.write_inner_type,
+                        value_variant = escape_keyword(value.name),
+                    ));
+                }
+            }
+        } else if properties.access.can_write() {
+            // associated_types.add("pub type Write = WriteValue;");
+
+            /*
+            Register generates struct named: REGISTER
+            Which can read a value named REGISTER_W_VALUE
+            */
+
+            register_extra_impls.add(format!(
+                "
+                impl RegisterWrite for {name} {{
+                    type Value = {write_value_type};
+
+                    #[inline(always)]
+                    fn write(&mut self, value: Self::Value) {{
+                        self.raw.write(value.to_raw());
+                    }}
+                }}
+                ",
+                name = struct_name,
+                write_value_type = write_value_type,
+            ));
+
+            // NOTE: The return value of write_with is mainly for convenience.
+            register_impl.add(format!(
+                "
+                pub fn write_with<F: Fn(&mut {write_value_type}) -> &mut {write_value_type}>(&mut self, f: F) {{
+                    let mut v = {write_value_type}::new();
+                    f(&mut v);
+                    self.write(v);
+                }}
+                ",
+                write_value_type = write_value_type,
+            ));
+
+            if !same_read_write_values || !value_created {
+                value_lines.add(format!(
+                    "
+                    #[derive(Clone, Copy, PartialEq)]
+                    pub struct {write_value_type} {{ raw: u32 }}
+        
+                    impl {write_value_type} {{
+                        pub fn new() -> Self {{ Self {{ raw: 0 }} }}
+
+                        #[inline(always)]
+                        pub fn from_raw(raw: u32) -> Self {{ Self {{ raw }} }}
+        
+                        #[inline(always)]
+                        pub fn to_raw(&self) -> u32 {{ self.raw }}
+
+                        {write_value_impl}
+                    }}  
+                    ",
+                    write_value_type = write_value_type,
+                    write_value_impl = write_value_impl.to_string(),
+                ));
+            }
+        }
+
+        // TODO: Make to_raw/from_raw unsafe?
+        lines.add(format!(
+            "
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        pub struct {name} {{ raw: RawRegister<u32> }}
+        
+        impl {name} {{
+            {register_impl}
+        }}
+        
+        {register_extra_impls}
+
+        ",
+            name = struct_name,
+            register_impl = register_impl.to_string(),
+            register_extra_impls = register_extra_impls.to_string()
+        ));
+
+        lines.nl();
+        lines.append(value_lines);
+        lines.append(outer_lines);
+        lines.nl();
 
         Ok(())
     }
@@ -817,7 +931,7 @@ impl<'a> Compiler<'a> {
                     variant_name = escape_keyword(values[0].name)
                 );
             }
-            
+
             format!(
                 "pub fn {escaped_accessor_name}(&self) -> {enum_name} {{
                     let raw = self.raw;
@@ -845,8 +959,6 @@ impl<'a> Compiler<'a> {
                 write_value = write_raw_value
             )
         };
-
-        
 
         let mut struct_added = false;
 
