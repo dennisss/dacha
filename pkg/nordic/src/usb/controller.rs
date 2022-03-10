@@ -497,8 +497,8 @@ impl<'a> USBDeviceControlResponse<'a> {
                     .maxcnt
                     .write(packet_len as u32);
 
-                // log!(crate::num_to_slice(self.periph.epin[0].ptr.read() as u32).as_ref());
-                // log!(b"\n");
+                // log!(crate::log::num_to_slice(self.periph.epin[0].ptr.read() as
+                // u32).as_ref()); log!(b"\n");
 
                 // Needed to avoid interactions with previous packets and to gurantee that the
                 // send ordering is consistent.
@@ -576,7 +576,7 @@ impl<'a> USBDeviceControlResponse<'a> {
                             }
                             e => {
                                 log!(b"E");
-                                log!(crate::num_to_slice(e as u32).as_ref());
+                                log!(crate::log::num_to_slice(e as u32).as_ref());
                                 log!(b"\n");
                             }
                         }

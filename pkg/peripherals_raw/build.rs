@@ -95,6 +95,7 @@ fn main() -> Result<()> {
     TODO: INTENSET|INTENCLR reading should re-use the same value struct as the corresponding INTEN
 
     TODO: Also for OUT and IN registers the "PIN[0-9]+" fields
+    ^ We should support bit vector where a regexp can extract the
     */
 
     let compiled = Compiler::compile(&input, &options)?;
@@ -115,7 +116,7 @@ fn main() -> Result<()> {
         }
     }
 
-    // let output_path2 = project_path!("pkg/peripherals/src/nrf52840.rs");
+    // let output_path2 = project_path!("pkg/peripherals_raw/src/nrf52840.rs");
     // std::fs::write(&output_path2, std::fs::read(&output_path)?)?;
 
     Ok(())

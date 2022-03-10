@@ -1,9 +1,9 @@
 use core::arch::asm;
-use core::ops::Drop;
+use core::ops::{DerefMut, Drop};
 use core::pin::Pin;
 
 use peripherals::raw::register::{RegisterRead, RegisterWrite};
-use peripherals::raw::uarte0::UARTE0;
+use peripherals::raw::uarte0::UARTE0_REGISTERS;
 use peripherals::raw::{Interrupt, InterruptState, PinDirection};
 
 use crate::pins::PeripheralPin;
@@ -24,8 +24,12 @@ pub struct UARTE {
 }
 
 impl UARTE {
-    pub fn new<TXPin: PeripheralPin, RXPin: PeripheralPin>(
-        mut periph: UARTE0,
+    pub fn new<
+        P: DerefMut<Target = UARTE0_REGISTERS>,
+        TXPin: PeripheralPin,
+        RXPin: PeripheralPin,
+    >(
+        mut periph: P,
         txd: TXPin,
         rxd: RXPin,
         baudrate: usize,
@@ -79,9 +83,11 @@ impl UARTE {
 
         Self {
             reader: UARTEReader {
-                periph: unsafe { UARTE0::new() },
+                periph: unsafe { core::mem::transmute(&mut periph) },
             },
-            writer: UARTEWriter { periph: periph },
+            writer: UARTEWriter {
+                periph: unsafe { core::mem::transmute(&mut periph) },
+            },
         }
     }
 
@@ -99,7 +105,7 @@ impl UARTE {
 }
 
 pub struct UARTEWriter {
-    periph: UARTE0,
+    periph: &'static mut UARTE0_REGISTERS,
 }
 
 impl UARTEWriter {
@@ -210,7 +216,7 @@ impl<'a> UARTEWrite<'a> {
 }
 
 pub struct UARTEReader {
-    periph: UARTE0,
+    periph: &'static mut UARTE0_REGISTERS,
 }
 
 impl UARTEReader {

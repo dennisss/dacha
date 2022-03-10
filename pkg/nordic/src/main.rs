@@ -22,30 +22,10 @@ extern crate executor;
 extern crate peripherals;
 #[macro_use]
 extern crate common;
-extern crate crypto;
 #[macro_use]
 extern crate macros;
-extern crate nordic_proto;
-
-#[cfg(feature = "alloc")]
-pub mod allocator;
-pub mod ecb;
-pub mod eeprom;
-mod events;
-pub mod gpio;
-pub mod log;
-pub mod pins;
-pub mod protocol;
-pub mod radio;
-pub mod radio_socket;
-pub mod rng;
-#[cfg(feature = "alloc")]
-pub mod storage;
-pub mod temp;
-pub mod timer;
-pub mod twim;
-pub mod uarte;
-pub mod usb;
+#[macro_use]
+extern crate nordic;
 
 /*
 Old binary uses 2763 flash bytes.
@@ -91,62 +71,23 @@ Scenarios for which we want to optimize:
 */
 
 use core::arch::asm;
-use core::panic::PanicInfo;
-use core::ptr::{read_volatile, write_volatile};
 
 use executor::singleton::Singleton;
-use peripherals::raw::clock::CLOCK;
 use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::rtc0::RTC0;
-use peripherals::raw::uarte0::UARTE0;
-use peripherals::raw::{EventState, Interrupt, PinDirection};
 
-use crate::ecb::ECB;
-// use crate::log;
-// use crate::num_to_slice;
-use crate::radio::Radio;
-use crate::radio_socket::{RadioController, RadioSocket};
-use crate::rng::Rng;
-use crate::temp::Temp;
-use crate::timer::Timer;
-use crate::uarte::UARTE;
-use crate::usb::controller::USBDeviceController;
-use crate::usb::default_handler::USBDeviceDefaultHandler;
-
-extern "C" {
-    static mut _sbss: u32;
-    static mut _ebss: u32;
-
-    static mut _sdata: u32;
-    static mut _edata: u32;
-
-    static _sidata: u32;
-}
-
-#[inline(never)]
-unsafe fn zero_bss() {
-    let start = core::mem::transmute::<_, u32>(&_sbss);
-    let end = core::mem::transmute::<_, u32>(&_ebss);
-
-    let z: u32 = 0;
-    for addr in start..end {
-        asm!("strb {}, [{}]", in(reg) z, in(reg) addr);
-    }
-}
-
-#[inline(never)]
-unsafe fn init_data() {
-    let in_start = core::mem::transmute::<_, u32>(&_sidata);
-    let out_start = core::mem::transmute::<_, u32>(&_sdata);
-    let out_end = core::mem::transmute::<_, u32>(&_edata);
-
-    for i in 0..(out_end - out_start) {
-        let z = read_volatile((in_start + i) as *mut u8);
-        let addr = out_start + i;
-
-        asm!("strb {}, [{}]", in(reg) z, in(reg) addr);
-    }
-}
+use nordic::ecb::ECB;
+use nordic::gpio::*;
+use nordic::log;
+use nordic::log::num_to_slice;
+use nordic::radio::Radio;
+use nordic::radio_socket::{RadioController, RadioSocket};
+use nordic::rng::Rng;
+use nordic::temp::Temp;
+use nordic::timer::Timer;
+use nordic::uarte::UARTE;
+use nordic::usb::controller::USBDeviceController;
+use nordic::usb::default_handler::USBDeviceDefaultHandler;
 
 /*
 Allocator design:
@@ -156,19 +97,7 @@ Allocator design:
 
 */
 
-#[panic_handler]
-fn panic(_panic: &PanicInfo<'_>) -> ! {
-    loop {}
-}
-
-#[lang = "eh_personality"]
-extern "C" fn eh_personality() {}
-
 // TODO: Split into a separate file (e.g. entry.rs)
-#[no_mangle]
-pub extern "C" fn entry() -> () {
-    main()
-}
 
 /*
 Dev kit LEDs
@@ -200,35 +129,6 @@ Notes:
 Example in ext/nRF5_SDK_17.0.2_d674dde/examples/peripheral/radio/receiver/main.c
 */
 
-fn init_high_freq_clk(clock: &mut CLOCK) {
-    // Init HFXO (must be started to use RADIO)
-    clock.events_hfclkstarted.write_notgenerated();
-    clock.tasks_hfclkstart.write_trigger();
-
-    while clock.events_hfclkstarted.read().is_notgenerated() {
-        unsafe { asm!("nop") };
-    }
-}
-
-fn init_low_freq_clk(clock: &mut CLOCK) {
-    // NOTE: This must be initialized to use the RTCs.
-
-    // TODO: Must unsure the clock is stopped before changing the source.
-    // ^ But clock can only be stopped if clock is running.
-
-    // Use XTAL
-    clock
-        .lfclksrc
-        .write_with(|v| v.set_src_with(|v| v.set_xtal()));
-
-    // Start the clock.
-    clock.tasks_lfclkstart.write_trigger();
-
-    while clock.lfclkstat.read().state().is_notrunning() {
-        unsafe { asm!("nop") };
-    }
-}
-
 /*
 Waiting for an interrupt:
 - Need:
@@ -238,42 +138,6 @@ Waiting for an interrupt:
 */
 
 const USING_DEV_KIT: bool = true;
-
-pub struct NumberSlice {
-    buf: [u8; 10],
-    len: usize,
-}
-
-impl AsRef<[u8]> for NumberSlice {
-    fn as_ref(&self) -> &[u8] {
-        &self.buf[(self.buf.len() - self.len)..]
-    }
-}
-
-pub fn num_to_slice(mut num: u32) -> NumberSlice {
-    // A u32 has a maximum length of 10 base-10 digits
-    let mut buf: [u8; 10] = [0; 10];
-    let mut num_digits = 0;
-    while num > 0 {
-        // TODO: perform this as one operation?
-        let r = (num % 10) as u8;
-        num /= 10;
-
-        num_digits += 1;
-
-        buf[buf.len() - num_digits] = ('0' as u8) + r;
-    }
-
-    if num_digits == 0 {
-        num_digits = 1;
-        buf[buf.len() - 1] = '0' as u8;
-    }
-
-    NumberSlice {
-        buf,
-        len: num_digits,
-    }
-}
 
 static RADIO_SOCKET: Singleton<RadioSocket> = Singleton::uninit();
 
@@ -309,86 +173,23 @@ async fn monitor_thread_fn(uarte0: UARTE0, mut timer: Timer, mut temp: Temp, mut
 }
 */
 
-// use executor::interrupts::{trigger_pendsv, wait_for_pendsv};
-
-// define_thread!(Helper, helper_fn, timer: Timer);
-// async fn helper_fn(mut timer: Timer) {
-//     timer.wait_ms(100).await;
-//     trigger_pendsv();
-//     log!(b"Triggered!\n");
-// }
-
-// Thread that reads bytes from a UART and then writes them back out to the
-// other device.
-define_thread!(
-    SerialEcho,
-    serial_echo_thread_fn,
-    serial: UARTE,
-    timer: Timer
-);
-async fn serial_echo_thread_fn(serial: UARTE, mut timer: Timer) {
-    let mut buf = [0u8; 64];
-
-    let (mut reader, mut writer) = serial.split();
-
-    let mut timer2 = timer.clone();
-
-    loop {
-        let mut read = reader.begin_read(&mut buf);
-
-        enum Event {
-            DoneRead,
-            Timeout,
-        }
-
-        loop {
-            let e = executor::futures::race2(
-                executor::futures::map(read.wait(), |_| Event::DoneRead),
-                executor::futures::map(timer2.wait_ms(10), |_| Event::Timeout),
-            )
-            .await;
-
-            match e {
-                Event::DoneRead => {
-                    drop(read);
-
-                    writer.write(&buf).await;
-
-                    // Restart the read.
-                    break;
-                }
-                Event::Timeout => {
-                    if !read.is_empty() {
-                        let n = read.cancel().await;
-
-                        writer.write(b"Read: ").await;
-                        writer.write(num_to_slice(n as u32).as_ref()).await;
-                        writer.write(b"\n").await;
-
-                        writer.write(&buf[0..n]).await;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-}
-
 define_thread!(Blinker, blinker_thread_fn);
 async fn blinker_thread_fn() {
     let mut peripherals = peripherals::raw::Peripherals::new();
-    let mut pins = unsafe { crate::pins::PeripheralPins::new() };
+    let mut pins = unsafe { nordic::pins::PeripheralPins::new() };
 
     let mut timer = Timer::new(peripherals.rtc0);
 
     let temp = Temp::new(peripherals.temp);
 
+    let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
+
+    /*
     {
         let mut serial = UARTE::new(peripherals.uarte0, pins.P0_30, pins.P0_31, 115200);
         SerialEcho::start(serial, timer.clone());
     }
-
-    /*
+    */
 
     {
         let mut serial = UARTE::new(peripherals.uarte0, pins.P0_30, pins.P0_31, 115200);
@@ -428,35 +229,25 @@ async fn blinker_thread_fn() {
     //     EchoRadioThread::start(radio_socket, timer.clone());
     // }
 
-    */
+    let mut blink_pin = {
+        if USING_DEV_KIT {
+            gpio.pin(pins.P0_15)
+                .set_direction(PinDirection::Output)
+                .write(PinLevel::Low);
 
-    if USING_DEV_KIT {
-        peripherals.p0.dir.write_with(|v| {
-            v.set_pin14(PinDirection::Output)
-                .set_pin15(PinDirection::Output)
-        });
-    } else {
-        peripherals
-            .p0
-            .dir
-            .write_with(|v| v.set_pin6(PinDirection::Output));
-    }
+            gpio.pin(pins.P0_14)
+        } else {
+            gpio.pin(pins.P0_06)
+        }
+    };
+
+    blink_pin.set_direction(PinDirection::Output);
 
     loop {
-        if USING_DEV_KIT {
-            peripherals.p0.outclr.write_with(|v| v.set_pin14());
-        } else {
-            peripherals.p0.outclr.write_with(|v| v.set_pin6());
-        }
-
+        blink_pin.write(PinLevel::Low);
         timer.wait_ms(500).await;
 
-        if USING_DEV_KIT {
-            peripherals.p0.outset.write_with(|v| v.set_pin14());
-        } else {
-            peripherals.p0.outset.write_with(|v| v.set_pin6());
-        }
-
+        blink_pin.write(PinLevel::High);
         timer.wait_ms(500).await;
     }
 }
@@ -468,7 +259,7 @@ define_thread!(
     radio_socket: &'static RadioSocket
 );
 async fn usb_thread_fn(mut usb: USBDeviceController, radio_socket: &'static RadioSocket) {
-    usb.run(crate::protocol::ProtocolUSBHandler::new(radio_socket))
+    usb.run(nordic::protocol::ProtocolUSBHandler::new(radio_socket))
         .await;
 }
 
@@ -509,9 +300,6 @@ Next steps:
     - Implement global timeouts.
     - Fix interrupt
 
-- We now have the basic 'texting' app.
-
-
 - Want to extend with encryption.
     - Need
 - So want to
@@ -526,20 +314,17 @@ Next steps:
 // TODO: Configure the voltage supervisor.
 
 // TODO: Switch back to returning '!'
+
+entry!(main);
 fn main() -> () {
     // Disable interrupts.
     // TODO: Disable FIQ interrupts?
     unsafe { asm!("cpsid i") }
 
-    unsafe {
-        zero_bss();
-        init_data();
-    }
-
     let mut peripherals = peripherals::raw::Peripherals::new();
 
-    init_high_freq_clk(&mut peripherals.clock);
-    init_low_freq_clk(&mut peripherals.clock);
+    nordic::clock::init_high_freq_clk(&mut peripherals.clock);
+    nordic::clock::init_low_freq_clk(&mut peripherals.clock);
 
     Blinker::start();
 

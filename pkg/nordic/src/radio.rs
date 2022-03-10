@@ -114,7 +114,7 @@ impl Radio {
             }
 
             log!(b"RX ");
-            log!(crate::num_to_slice(packet[0] as u32).as_ref());
+            log!(crate::log::num_to_slice(packet[0] as u32).as_ref());
             log!(b"\n");
 
             break;

@@ -19,8 +19,10 @@
 
 */
 
+use core::arch::asm;
 use core::result::Result;
 
+use crate::gpio::{GPIOPin, PinDirection, PinLevel};
 use crate::twim::{TWIMError, TWIM};
 
 const PAGE_SIZE: usize = 64;
@@ -28,9 +30,22 @@ const PAGE_SIZE: usize = 64;
 pub struct EEPROM {
     periph: TWIM,
     address: u8,
+    write_protect: GPIOPin,
 }
 
 impl EEPROM {
+    pub fn new(periph: TWIM, address: u8, mut write_protect: GPIOPin) -> Self {
+        write_protect
+            .set_direction(PinDirection::Output)
+            .write(PinLevel::High);
+
+        Self {
+            periph,
+            address,
+            write_protect,
+        }
+    }
+
     // Returns the total number of bytes that can be stored in this EEPROM.
     pub fn total_size(&self) -> usize {
         0x8000
@@ -52,11 +67,11 @@ impl EEPROM {
 
     /// TODO: Support doing other things on the port while we wait for an ACK
     pub async fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), TWIMError> {
+        let write_guard = WriteEnabledGuard::new(&mut self.write_protect);
+
         let mut buf = [0u8; 2 + PAGE_SIZE];
         *array_mut_ref![buf, 0, 2] = (offset as u16).to_be_bytes();
         buf[2..(2 + data.len())].copy_from_slice(data);
-
-        // TODO: Also need to change the WRITE PROTECT pin.
 
         self.periph.write(self.address, &buf).await?;
 
@@ -67,10 +82,31 @@ impl EEPROM {
             continue;
         }
 
-        // TODO: wait for
-
-        // TODO: Re-enable WRITE PROTECT.
+        drop(write_guard);
 
         Ok(())
+    }
+}
+
+struct WriteEnabledGuard<'a> {
+    write_protect: &'a mut GPIOPin,
+}
+
+impl<'a> Drop for WriteEnabledGuard<'a> {
+    fn drop(&mut self) {
+        // Re-enable write protect.
+        self.write_protect.write(PinLevel::High);
+    }
+}
+
+impl<'a> WriteEnabledGuard<'a> {
+    pub fn new(write_protect: &'a mut GPIOPin) -> Self {
+        write_protect.write(PinLevel::Low);
+        // Must wait for propagation.
+        for i in 0..200 {
+            unsafe { asm!("nop") };
+        }
+
+        Self { write_protect }
     }
 }
