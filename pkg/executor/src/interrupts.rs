@@ -1,3 +1,4 @@
+use core::arch::asm;
 use core::{
     pin::Pin,
     ptr::{read_volatile, write_volatile},
@@ -196,7 +197,26 @@ unsafe extern "C" fn default_interrupt() -> () {
     // unsafe { asm!("cpsid i") }
 
     // TODO: Subtract 1 from this?
-    INTERRUPT_WAKER_LISTS[interrupt_num].wake_all();
+    let waker_list = &mut INTERRUPT_WAKER_LISTS[interrupt_num];
+    waker_list.wake_all();
+
+    // Check if we need to disable the interrupt.
+    // Because wake_all() adds an extra entry to the waker list, it will never
+    // appear as empty while wake_all is empty so may not be cleared.
+    if waker_list.is_empty() && interrupt_num >= EXTERNAL_INTERRUPT_OFFSET {
+        let num = interrupt_num - EXTERNAL_INTERRUPT_OFFSET;
+
+        let nvic = unsafe { NVIC::new() };
+        let register_index = num / 32;
+        let register_mask = (1 << (num % 32)) as u32;
+
+        drop(ExternalInterruptEnabledContext::new(
+            nvic,
+            register_index,
+            register_mask,
+            waker_list,
+        ));
+    }
 
     // Enable interrupts.
     // unsafe { asm!("cpsie i") };
