@@ -3,7 +3,7 @@ use core::ops::{DerefMut, Drop};
 use core::pin::Pin;
 
 use peripherals::raw::register::{RegisterRead, RegisterWrite};
-use peripherals::raw::uarte0::UARTE0_REGISTERS;
+use peripherals::raw::uarte0::UARTE0;
 use peripherals::raw::{Interrupt, InterruptState, PinDirection};
 
 use crate::pins::PeripheralPin;
@@ -24,12 +24,8 @@ pub struct UARTE {
 }
 
 impl UARTE {
-    pub fn new<
-        P: DerefMut<Target = UARTE0_REGISTERS>,
-        TXPin: PeripheralPin,
-        RXPin: PeripheralPin,
-    >(
-        mut periph: P,
+    pub fn new<TXPin: PeripheralPin, RXPin: PeripheralPin>(
+        mut periph: UARTE0,
         txd: TXPin,
         rxd: RXPin,
         baudrate: usize,
@@ -83,11 +79,9 @@ impl UARTE {
 
         Self {
             reader: UARTEReader {
-                periph: unsafe { core::mem::transmute(&mut periph) },
+                periph: unsafe { UARTE0::new() },
             },
-            writer: UARTEWriter {
-                periph: unsafe { core::mem::transmute(&mut periph) },
-            },
+            writer: UARTEWriter { periph },
         }
     }
 
@@ -105,7 +99,7 @@ impl UARTE {
 }
 
 pub struct UARTEWriter {
-    periph: &'static mut UARTE0_REGISTERS,
+    periph: UARTE0,
 }
 
 impl UARTEWriter {
@@ -216,7 +210,7 @@ impl<'a> UARTEWrite<'a> {
 }
 
 pub struct UARTEReader {
-    periph: &'static mut UARTE0_REGISTERS,
+    periph: UARTE0,
 }
 
 impl UARTEReader {
@@ -309,6 +303,7 @@ impl<'a> UARTERead<'a> {
             // Clearing any other events that would immediately re-trigger an interrupt.
             self.reader.periph.events_endrx.write_notgenerated();
 
+            // TODO: Need a unique interrupt per peripheral type.
             executor::interrupts::wait_for_irq(Interrupt::UARTE0_UART0).await;
         }
 

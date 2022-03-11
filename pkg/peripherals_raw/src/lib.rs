@@ -5,7 +5,7 @@ extern crate common;
 
 pub mod register;
 
-#[cfg(label = "cortex_m")]
+#[cfg(target_label = "nrf52840")]
 pub mod nrf52840 {
     #![allow(
         dead_code,
@@ -18,8 +18,8 @@ pub mod nrf52840 {
     include!(concat!(env!("OUT_DIR"), "/nrf52840.rs"));
 }
 
-#[cfg(label = "cortex_m")]
+#[cfg(target_label = "nrf52840")]
 pub use nrf52840::*;
 
-#[cfg(label = "cortex_m")]
+#[cfg(target_label = "cortex_m")]
 pub mod nvic;

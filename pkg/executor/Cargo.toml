@@ -5,9 +5,10 @@ authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2021"
 
 [dependencies]
+common = { path = "../common", default-features = false }
 peripherals_raw = { path = "../peripherals_raw" }
 
 [features]
 default = ["std", "alloc"]
-alloc = []
-std = []
+alloc = ["common/alloc"]
+std = ["common/std"]

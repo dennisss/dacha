@@ -2,23 +2,30 @@
 #![no_std]
 
 #[cfg(feature = "std")]
+extern crate common;
+#[cfg(feature = "std")]
 extern crate std;
 
 extern crate peripherals_raw;
 
 pub mod arena_stack;
-#[cfg(not(feature = "std"))]
-pub mod channel;
 pub mod futures;
-#[cfg(not(feature = "std"))]
-pub mod interrupts;
-#[cfg(not(feature = "std"))]
-pub mod mutex;
 mod raw_waker;
 pub mod singleton;
 pub mod stack_pinned;
 pub mod thread;
 pub mod waker;
+
+#[cfg(target_label = "cortex_m")]
+mod cortex_m;
+
+#[cfg(target_label = "cortex_m")]
+pub use cortex_m::*;
+
+#[cfg(feature = "std")]
+pub mod mutex {
+    pub use common::async_std::sync::Mutex;
+}
 
 #[cfg(test)]
 mod tests {

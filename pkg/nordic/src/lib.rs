@@ -39,8 +39,6 @@ pub mod protocol;
 pub mod radio;
 pub mod radio_socket;
 pub mod rng;
-#[cfg(feature = "alloc")]
-pub mod storage;
 pub mod temp;
 pub mod timer;
 pub mod twim;

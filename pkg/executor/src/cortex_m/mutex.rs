@@ -5,6 +5,7 @@ use core::sync::atomic::AtomicBool;
 
 use crate::interrupts::{trigger_pendsv, wait_for_pendsv};
 
+// TODO: This only works on single-threaded devices.
 pub struct Mutex<T> {
     value: UnsafeCell<T>,
     locked: Cell<MutexLockState>,

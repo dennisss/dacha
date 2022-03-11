@@ -1,42 +1,63 @@
-use alloc::vec::Vec;
+use core::cmp::Ordering;
 use core::ops::Deref;
-use crypto::checksum::crc16::crc16_incremental_lut;
 
 use common::collections::FixedVec;
 use common::errors::*;
+use crypto::checksum::crc16::crc16_incremental_lut;
 use crypto::hasher::Hasher;
 use executor::mutex::Mutex;
 
 use crate::eeprom::EEPROM;
 
+// TODO: Support making this dynamic.
+const PAGE_SIZE: usize = 64;
+
 // 4 bytes for write_count
 // 2 bytes for length
 // 2 bytes for CRC-16
-const BLOCK_OVERHEAD: usize = 4 + 2 + 2;
+const BLOCK_OVERHEAD: usize = BLOCK_HEADER_SIZE + 2;
 
-#[derive(Clone, Copy, Debug, Errable)]
+const BLOCK_HEADER_SIZE: usize = 2 + 4;
+
+// CRC-16 AUG-CCITT
+// We choose an algorithm with an init value so that empty data with all zeros
+// or ones doesn't appear to be valid data.
+const CRC_INITIAL_STATE: u16 = 0x1d0f;
+
+#[derive(Clone, Copy, Debug, Errable, PartialEq)]
+#[cfg_attr(feature = "std", derive(Fail))]
 #[repr(u32)]
-pub enum BlockOpenError {
+pub enum BlockStorageError {
     OutOfSpace,
     ExistingFileTooSmall,
+    NoValidData,
+    Overflow,
+
+    /// The user attempted to read
+    WriteBeforeRead,
 }
 
-pub struct BlockStorage {
-    state: Mutex<BlockStorageState>,
+impl core::fmt::Display for BlockStorageError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
-struct BlockStorageState {
-    eeprom: EEPROM,
+pub struct BlockStorage<E> {
+    state: Mutex<BlockStorageState<E>>,
+}
+
+struct BlockStorageState<E> {
+    eeprom: E,
 
     /// EEPROM page sized buffer which is used for temporarily storing
     /// read/written.
-    page_buffer: Vec<u8>,
+    page_buffer: [u8; PAGE_SIZE],
 }
 
-impl BlockStorage {
-    pub fn new(eeprom: EEPROM) -> Self {
-        let mut page_buffer = Vec::new();
-        page_buffer.reserve_exact(eeprom.page_size());
+impl<E: EEPROM> BlockStorage<E> {
+    pub fn new(eeprom: E) -> Self {
+        let mut page_buffer = [0u8; PAGE_SIZE];
 
         Self {
             state: Mutex::new(BlockStorageState {
@@ -52,7 +73,7 @@ impl BlockStorage {
 
     /// TODO: Disallow opening the same file twice as the BlockHandles store
     /// state.
-    pub async fn open<'a>(&'a self, id: u32, max_length: usize) -> Result<BlockHandle<'a>> {
+    pub async fn open<'a>(&'a self, id: u32, max_length: usize) -> Result<BlockHandle<'a, E>> {
         const NUM_BUFFERS_PER_BLOCK: usize = 2;
 
         let mut state_guard = self.state.lock().await;
@@ -65,9 +86,9 @@ impl BlockStorage {
         // Number of pages we will allocate for one buffer of the block.
         let num_pages = common::ceil_div(max_length + BLOCK_OVERHEAD, state.eeprom.page_size());
 
-        // let allocated_bytes = 2 * state.eeprom.page_size() * num_pages;
+        // The first file starts after the directory page.
+        let mut next_offset = state.eeprom.page_size();
 
-        let mut next_offset = 0;
         for entry in dir.entries() {
             if entry.id == id {
                 if entry.num_pages as usize >= num_pages {
@@ -79,7 +100,7 @@ impl BlockStorage {
                         last_counter: None,
                     });
                 } else {
-                    return Err(BlockOpenError::ExistingFileTooSmall.into());
+                    return Err(BlockStorageError::ExistingFileTooSmall.into());
                 }
             }
 
@@ -93,7 +114,7 @@ impl BlockStorage {
 
         let allocated_length = NUM_BUFFERS_PER_BLOCK * buffer_length;
         if next_offset + allocated_length > state.eeprom.total_size() {
-            return Err(BlockOpenError::OutOfSpace.into());
+            return Err(BlockStorageError::OutOfSpace.into());
         }
 
         let entry = DirectoryEntry {
@@ -190,7 +211,7 @@ impl<'a> Directory<'a> {
     }
 
     fn calculate_crc(&self) -> u16 {
-        crypto::checksum::crc16::crc16_lut(&self.data[0..self.stored_crc_offset()])
+        crc16_incremental_lut(CRC_INITIAL_STATE, &self.data[0..self.stored_crc_offset()])
     }
 
     fn is_valid(&self) -> bool {
@@ -224,8 +245,8 @@ struct BlockHeader {
     length: u16,
 }
 
-pub struct BlockHandle<'a> {
-    storage: &'a BlockStorage,
+pub struct BlockHandle<'a, E> {
+    storage: &'a BlockStorage<E>,
 
     offset: usize,
 
@@ -239,50 +260,46 @@ pub struct BlockHandle<'a> {
     last_counter: Option<u32>,
 }
 
-#[derive(Clone, Copy, Debug, Errable)]
-#[repr(u32)]
-pub enum BlockReadError {
-    NoValidData,
-    Overflow,
-}
-
-#[derive(Clone, Copy, Debug, Errable)]
-#[repr(u32)]
-pub enum BlockWriteError {
-    Overflow,
-    WriteBeforeRead,
-}
-
-impl<'a> BlockHandle<'a> {
+impl<'a, E: EEPROM> BlockHandle<'a, E> {
+    /// Reads the current value of the block into the given buffer.
+    ///
     /// NOTE: 'data' MUST be large enough to store the max_length of the
     pub async fn read(&mut self, data: &mut [u8]) -> Result<usize> {
         let mut state = self.storage.state.lock().await;
 
-        let mut blocks = FixedVec::<(BlockHeader, usize), _>::new([(BlockHeader::default(), 0); 2]);
+        let mut blocks =
+            FixedVec::<(BlockHeader, u16, usize), _>::new([(BlockHeader::default(), 0, 0); 2]);
 
         let mut next_offset = self.offset;
         for _ in 0..self.num_buffers {
+            let mut header_data = [0u8; BLOCK_HEADER_SIZE];
+            state.eeprom.read(next_offset, &mut header_data).await?;
+
             let header = {
-                let mut data = [0u8; 6];
-                state.eeprom.read(next_offset, &mut data).await?;
                 BlockHeader {
-                    write_count: u32::from_le_bytes(*array_ref![data, 0, 4]),
-                    length: u16::from_le_bytes(*array_ref![data, 4, 2]),
+                    write_count: u32::from_le_bytes(*array_ref![header_data, 0, 4]),
+                    length: u16::from_le_bytes(*array_ref![header_data, 4, 2]),
                 }
             };
 
-            blocks.push((header, next_offset));
+            if header.write_count != 0 {
+                let header_crc = crc16_incremental_lut(CRC_INITIAL_STATE, &header_data);
+
+                blocks.push((header, header_crc, next_offset));
+            }
 
             next_offset += self.buffer_length;
         }
 
         // Sort in descending order.
         // TODO: Use a more code size efficient sort like bubble sort.
-        blocks.sort_by(|a, b| b.0.write_count.cmp(&a.0.write_count));
+        bubble_sort_by(blocks.as_mut(), |a, b| {
+            b.0.write_count.cmp(&a.0.write_count)
+        });
 
         let max_data_length = self.buffer_length - BLOCK_OVERHEAD;
 
-        for (header, offset) in blocks.deref() {
+        for (header, header_crc, offset) in blocks.deref() {
             let data_length = header.length as usize;
             if data_length > max_data_length {
                 continue;
@@ -294,21 +311,21 @@ impl<'a> BlockHandle<'a> {
 
             // TODO: Only return this if the data actually ends up being valid (CRC-wise).
             if data.len() < data_length {
-                return Err(BlockReadError::Overflow.into());
+                return Err(BlockStorageError::Overflow.into());
             }
 
             state
                 .eeprom
-                .read(*offset + 6, &mut data[0..data_length])
+                .read(*offset + BLOCK_HEADER_SIZE, &mut data[0..data_length])
                 .await?;
 
-            let expected_hash = crypto::checksum::crc16::crc16_lut(&data[0..data_length]);
+            let expected_hash = crc16_incremental_lut(*header_crc, &data[0..data_length]);
 
             let hash = {
                 let mut buf = [0u8; 2];
                 state
                     .eeprom
-                    .read(*offset + self.buffer_length - 2, &mut buf)
+                    .read(*offset + BLOCK_HEADER_SIZE + data_length, &mut buf)
                     .await?;
                 u16::from_le_bytes(buf)
             };
@@ -323,21 +340,21 @@ impl<'a> BlockHandle<'a> {
 
         self.last_counter = Some(0);
 
-        Err(BlockReadError::NoValidData.into())
+        Err(BlockStorageError::NoValidData.into())
     }
 
     /// NOTE: Before reading, a user must have already read
     pub async fn write(&mut self, mut data: &[u8]) -> Result<()> {
         let last_counter = self
             .last_counter
-            .ok_or_else(|| Error::from(BlockWriteError::WriteBeforeRead))?;
+            .ok_or_else(|| Error::from(BlockStorageError::WriteBeforeRead))?;
 
         let mut offset =
             self.offset + self.buffer_length * (last_counter as usize % self.num_buffers);
         let counter = last_counter + 1;
 
         let mut first = true;
-        let mut crc_state = 0;
+        let mut crc_state = CRC_INITIAL_STATE;
         let mut crc_written = false;
 
         let mut state_guard = self.storage.state.lock().await;
@@ -371,6 +388,7 @@ impl<'a> BlockHandle<'a> {
             // Pad with zeros.
             while page_i < state.page_buffer.len() {
                 state.page_buffer[page_i] = 0;
+                page_i += 1;
             }
 
             // Write page
@@ -383,4 +401,103 @@ impl<'a> BlockHandle<'a> {
 
         Ok(())
     }
+}
+
+pub fn bubble_sort_by<T, F: FnMut(&T, &T) -> Ordering>(items: &mut [T], mut f: F) {
+    // Largest index at which a swap occured in the last index.
+    // All items after this index are sorted.
+    let mut n = items.len();
+
+    for _ in 0..items.len() {
+        for i in 0..(n - 1) {
+            if f(&items[i], &items[i + 1]).is_gt() {
+                items.swap(i, i + 1);
+                n = i;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use alloc::vec;
+    use alloc::vec::Vec;
+    use core::future::Future;
+
+    struct FakeEEPROM {
+        data: Vec<u8>,
+    }
+
+    impl EEPROM for FakeEEPROM {
+        type ReadFuture<'a> = impl Future<Output = Result<()>> + 'a;
+        type WriteFuture<'a> = impl Future<Output = Result<()>> + 'a;
+
+        fn total_size(&self) -> usize {
+            self.data.len()
+        }
+
+        fn page_size(&self) -> usize {
+            64
+        }
+
+        fn read<'a>(&'a mut self, offset: usize, data: &'a mut [u8]) -> Self::ReadFuture<'a> {
+            async move {
+                data.copy_from_slice(&self.data[offset..(offset + data.len())]);
+                Ok(())
+            }
+        }
+
+        fn write<'a>(&'a mut self, offset: usize, data: &'a [u8]) -> Self::WriteFuture<'a> {
+            async move {
+                self.data[offset..(offset + data.len())].copy_from_slice(data);
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn works() -> Result<()> {
+        common::async_std::task::block_on(works_inner())
+    }
+
+    async fn works_inner() -> Result<()> {
+        let eeprom = FakeEEPROM {
+            data: vec![0u8; 4096],
+        };
+        let store = BlockStorage::new(eeprom);
+
+        let mut handle1 = store.open(1, 96).await?;
+        // let mut handle2 = store.open(2, 4).await?;
+
+        let mut buf = vec![0u8; 100];
+
+        assert_eq!(
+            handle1
+                .read(&mut buf)
+                .await
+                .expect_err("Read should fail")
+                .downcast_ref::<BlockStorageError>()
+                .unwrap(),
+            &BlockStorageError::NoValidData
+        );
+
+        handle1.write(b"Apple").await?;
+        // handle2.write(b"Orange").await?;
+
+        let n = handle1.read(&mut buf).await?;
+        assert_eq!(n, b"Apple".len());
+        assert_eq!(&buf[0..n], b"Apple");
+
+        Ok(())
+    }
+
+    /*
+    Things to test.
+    - Write to a few files and then close the handles and re-open the files
+        - After this we should still have the old data.
+    - writing an even and odd number of times.
+
+    */
 }

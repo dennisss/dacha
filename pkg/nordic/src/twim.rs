@@ -1,12 +1,14 @@
 use common::errors::*;
 use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use peripherals::raw::twim0::TWIM0;
 use peripherals::raw::{Interrupt, InterruptState};
 
+use crate::log;
 use crate::pins::PeripheralPin;
 
 /// NOTE: Requires a HFCLK.
 pub struct TWIM {
-    periph: peripherals::raw::twim0::TWIM0,
+    periph: TWIM0,
 }
 
 #[derive(Clone, Copy, Debug, Errable)]
@@ -18,11 +20,9 @@ pub enum TWIMError {
     UnsupportedBaudrate,
 }
 
-// Default to P0_10 and P0_11
-
 impl TWIM {
     pub fn new<SCLPin: PeripheralPin, SDAPin: PeripheralPin>(
-        mut periph: peripherals::raw::twim0::TWIM0,
+        mut periph: TWIM0,
         scl: SCLPin,
         sda: SDAPin,
         frequency: usize,
@@ -34,15 +34,15 @@ impl TWIM {
         });
         periph.psel.sda.write_with(|v| {
             v.set_connect_with(|v| v.set_connected())
-                .set_port(scl.port() as u32)
-                .set_pin(scl.pin() as u32)
+                .set_port(sda.port() as u32)
+                .set_pin(sda.pin() as u32)
         });
 
         match frequency {
             100_000 => periph.frequency.write_k100(),
             250_000 => periph.frequency.write_k250(),
             400_000 => periph.frequency.write_k400(),
-            _ => {} // TODO: Return an error
+            _ => panic!(), // TODO: Return an error
         };
 
         periph.inten.write_with(|v| {
@@ -95,11 +95,18 @@ impl TWIM {
 
         self.periph.address.write(address as u32);
 
+        let mut buf = [0u8; 1];
+
+        // TODO: Verify that write_data and read_data is in ram.
+
         if let Some(write_data) = write_data.as_ref() {
-            self.periph
-                .txd
-                .ptr
-                .write(unsafe { core::mem::transmute(write_data) });
+            self.periph.txd.ptr.write(unsafe {
+                core::mem::transmute::<*const u8, u32>(if write_data.len() == 0 {
+                    buf.as_ptr()
+                } else {
+                    write_data.as_ptr()
+                })
+            });
             self.periph.txd.maxcnt.write(write_data.len() as u32);
         }
 
@@ -107,30 +114,46 @@ impl TWIM {
             self.periph
                 .rxd
                 .ptr
-                .write(unsafe { core::mem::transmute(read_data) });
+                .write(unsafe { core::mem::transmute::<*const u8, u32>(read_data.as_ptr()) });
             self.periph.rxd.maxcnt.write(read_data.len() as u32);
         }
 
-        if write_data.is_some() {
+        crate::events::flush_events_clear();
+
+        if let Some(write_data) = write_data.as_ref() {
             self.periph.tasks_starttx.write_trigger();
+
+            // The LASTTX event is nopt triggered with zero length inputs.
+            // See https://devzone.nordicsemi.com/f/nordic-q-a/37665/twim-clock-pin-is-pull-low-after-sending-zero-bytes-data
+            if write_data.is_empty() {
+                self.periph.tasks_stop.write_trigger();
+            }
         } else if read_data.is_some() {
             self.periph.tasks_startrx.write_trigger();
         } else {
             return Ok(());
         }
 
+        let mut transfer = TWIMTransfer {
+            periph: &mut self.periph,
+            running: true,
+        };
+
         // Wait until we've stopped.
-        while self.periph.events_stopped.read().is_notgenerated() {
+        while transfer.periph.events_stopped.read().is_notgenerated() {
             // If we see an error, trigger a stop
-            if self.periph.events_error.read().is_generated() {
-                self.periph.events_error.write_notgenerated();
-                self.periph.tasks_stop.write_trigger();
+            if transfer.periph.events_error.read().is_generated() {
+                transfer.periph.events_error.write_notgenerated();
+                transfer.periph.tasks_stop.write_trigger();
             }
 
             executor::interrupts::wait_for_irq(Interrupt::SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0).await;
         }
 
-        let errorsrc = self.periph.errorsrc.read();
+        transfer.periph.events_stopped.write_notgenerated();
+        transfer.running = false;
+
+        let errorsrc = transfer.periph.errorsrc.read();
         if errorsrc.anack().is_received() {
             return Err(TWIMError::AddressNotAcknowledged);
         }
@@ -144,5 +167,28 @@ impl TWIM {
         // TODO: Verify TXD.AMoUNT and RXD.AMOUNT
 
         Ok(())
+    }
+}
+
+struct TWIMTransfer<'a> {
+    periph: &'a mut TWIM0,
+    running: bool,
+}
+
+impl<'a> Drop for TWIMTransfer<'a> {
+    fn drop(&mut self) {
+        self.cancel_blocking();
+    }
+}
+
+impl<'a> TWIMTransfer<'a> {
+    fn cancel_blocking(&mut self) {
+        if !self.running {
+            return;
+        }
+
+        self.periph.tasks_stop.write_trigger();
+        while self.periph.events_stopped.read().is_notgenerated() {}
+        self.periph.events_stopped.write_notgenerated();
     }
 }

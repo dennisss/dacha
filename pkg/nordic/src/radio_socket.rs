@@ -194,7 +194,7 @@ impl RadioController {
                     // first length byte indicates a length that is larger than the buffer size).
 
                     // for i in 0..packet_buf.as_bytes().len() {
-                    //     log!(crate::num_to_slice(packet_buf.raw()[i] as u32).as_ref());
+                    //     log!(crate::log::num_to_slice(packet_buf.raw()[i] as u32).as_ref());
                     //     log!(b", ");
                     // }
 

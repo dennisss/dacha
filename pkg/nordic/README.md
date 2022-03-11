@@ -226,7 +226,7 @@ On the EEPROM, data is stored as follows:
   - The file data blocks immediately follow the page used by the root directory table.
   - Each file starts on a page aligned offset on the EEPROM immediately after the previous file as listed in the root directory table.
   - All files are double buffered meaning that are actually implemented as two contiguous files spanning 2x the LENGTH.
-  - The foamt of each span of pages for one copy of a file is:
+  - The format of each span of pages for one copy of a file is:
     - `[WRITE_COUNT]`: 4 byte (uint32 little endian): Number of times the `[ID]` has been written to the EEPROM.
     - `[LENGTH]`: 2 bytes: (uint16 little endian): Actual number of bytes stored in the `[DATA]` field
     - `[DATA]`: Var length data of the file
