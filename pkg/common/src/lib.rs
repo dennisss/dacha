@@ -88,6 +88,7 @@ pub mod segmented_buffer;
 pub mod shutdown;
 #[cfg(feature = "std")]
 pub mod signals;
+pub mod sort;
 pub mod struct_bytes;
 #[cfg(feature = "std")]
 pub mod task;

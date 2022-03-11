@@ -11,6 +11,7 @@ pub trait EEPROM {
     where
         Self: 'a;
 
+    /// Returns the total number of bytes that can be stored in this EEPROM.
     fn total_size(&self) -> usize;
 
     /// Returns the size of a single page in the EEPROM. This would be the

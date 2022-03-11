@@ -20,19 +20,22 @@
 */
 
 use core::arch::asm;
-use core::result::Result;
+use core::future::Future;
+
+use common::errors::*;
+use peripherals::eeprom::EEPROM;
 
 use crate::gpio::{GPIOPin, PinDirection, PinLevel};
 use crate::log;
 use crate::twim::{TWIMError, TWIM};
 
-pub struct EEPROM {
+pub struct Microchip24XX256 {
     periph: TWIM,
     address: u8,
     write_protect: GPIOPin,
 }
 
-impl EEPROM {
+impl Microchip24XX256 {
     pub const PAGE_SIZE: usize = 64;
 
     pub fn new(periph: TWIM, address: u8, mut write_protect: GPIOPin) -> Self {
@@ -47,29 +50,19 @@ impl EEPROM {
         }
     }
 
-    // Returns the total number of bytes that can be stored in this EEPROM.
-    pub fn total_size(&self) -> usize {
-        0x8000
-    }
-
-    /// Returns the size of a single page in the EEPROM. This would be the
-    /// largest/smallest amount of data that can be written in one operation.
-    pub fn page_size(&self) -> usize {
-        Self::PAGE_SIZE
-    }
-
     // TODO: Return an error if reading or writing beyond end of EEPROM
 
-    pub async fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<(), TWIMError> {
+    async fn read_impl(&mut self, offset: usize, data: &mut [u8]) -> Result<()> {
         // TODO: Check that the offset + data.len() < total_size
         let offset = (offset as u16).to_be_bytes();
         self.periph
             .write_then_read(self.address, Some(&offset[..]), Some(data))
-            .await
+            .await?;
+        Ok(())
     }
 
     /// TODO: Support doing other things on the port while we wait for an ACK
-    pub async fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), TWIMError> {
+    async fn write_impl(&mut self, offset: usize, data: &[u8]) -> Result<()> {
         let write_guard = WriteEnabledGuard::new(&mut self.write_protect);
 
         let mut buf = [0u8; 2 + Self::PAGE_SIZE];
@@ -91,6 +84,27 @@ impl EEPROM {
         drop(write_guard);
 
         Ok(())
+    }
+}
+
+impl EEPROM for Microchip24XX256 {
+    type ReadFuture<'a> = impl Future<Output = Result<()>> + 'a;
+    type WriteFuture<'a> = impl Future<Output = Result<()>> + 'a;
+
+    fn total_size(&self) -> usize {
+        0x8000
+    }
+
+    fn page_size(&self) -> usize {
+        Self::PAGE_SIZE
+    }
+
+    fn read<'a>(&'a mut self, offset: usize, data: &'a mut [u8]) -> Self::ReadFuture<'a> {
+        self.read_impl(offset, data)
+    }
+
+    fn write<'a>(&'a mut self, offset: usize, data: &'a [u8]) -> Self::WriteFuture<'a> {
+        self.write_impl(offset, data)
     }
 }
 

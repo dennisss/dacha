@@ -115,9 +115,9 @@ impl ProtocolUSBHandler {
 
                 log!(b"USB SET CFG\n");
 
-                // log!(crate::num_to_slice(n as u32).as_ref());
+                // log!(crate::log::num_to_slice(n as u32).as_ref());
                 // for i in 0..n {
-                //     log!(crate::num_to_slice(raw_proto[i] as u32).as_ref());
+                //     log!(crate::log::num_to_slice(raw_proto[i] as u32).as_ref());
                 //     log!(b", ");
                 // }
 

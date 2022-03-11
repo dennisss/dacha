@@ -293,7 +293,7 @@ impl<'a, E: EEPROM> BlockHandle<'a, E> {
 
         // Sort in descending order.
         // TODO: Use a more code size efficient sort like bubble sort.
-        bubble_sort_by(blocks.as_mut(), |a, b| {
+        common::sort::bubble_sort_by(blocks.as_mut(), |a, b| {
             b.0.write_count.cmp(&a.0.write_count)
         });
 
@@ -403,39 +403,37 @@ impl<'a, E: EEPROM> BlockHandle<'a, E> {
     }
 }
 
-pub fn bubble_sort_by<T, F: FnMut(&T, &T) -> Ordering>(items: &mut [T], mut f: F) {
-    // Largest index at which a swap occured in the last index.
-    // All items after this index are sorted.
-    let mut n = items.len();
-
-    for _ in 0..items.len() {
-        for i in 0..(n - 1) {
-            if f(&items[i], &items[i + 1]).is_gt() {
-                items.swap(i, i + 1);
-                n = i;
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
 
     use alloc::vec;
     use alloc::vec::Vec;
+    use core::convert::{AsMut, AsRef};
     use core::future::Future;
 
-    struct FakeEEPROM {
-        data: Vec<u8>,
+    struct FakeEEPROM<D> {
+        data: D,
     }
 
-    impl EEPROM for FakeEEPROM {
-        type ReadFuture<'a> = impl Future<Output = Result<()>> + 'a;
-        type WriteFuture<'a> = impl Future<Output = Result<()>> + 'a;
+    impl<D> FakeEEPROM<D> {
+        pub fn new(data: D) -> Self {
+            Self { data }
+        }
+    }
+
+    impl<D: AsRef<[u8]> + AsMut<[u8]>> EEPROM for FakeEEPROM<D> {
+        type ReadFuture<'a>
+        where
+            D: 'a,
+        = impl Future<Output = Result<()>> + 'a;
+        type WriteFuture<'a>
+        where
+            D: 'a,
+        = impl Future<Output = Result<()>> + 'a;
 
         fn total_size(&self) -> usize {
-            self.data.len()
+            self.data.as_ref().len()
         }
 
         fn page_size(&self) -> usize {
@@ -444,51 +442,132 @@ mod test {
 
         fn read<'a>(&'a mut self, offset: usize, data: &'a mut [u8]) -> Self::ReadFuture<'a> {
             async move {
-                data.copy_from_slice(&self.data[offset..(offset + data.len())]);
+                data.copy_from_slice(&self.data.as_mut()[offset..(offset + data.len())]);
                 Ok(())
             }
         }
 
         fn write<'a>(&'a mut self, offset: usize, data: &'a [u8]) -> Self::WriteFuture<'a> {
             async move {
-                self.data[offset..(offset + data.len())].copy_from_slice(data);
+                self.data.as_mut()[offset..(offset + data.len())].copy_from_slice(data);
                 Ok(())
             }
         }
     }
 
     #[test]
-    fn works() -> Result<()> {
-        common::async_std::task::block_on(works_inner())
+    fn single_block() -> Result<()> {
+        common::async_std::task::block_on(single_block_inner())
     }
 
-    async fn works_inner() -> Result<()> {
-        let eeprom = FakeEEPROM {
-            data: vec![0u8; 4096],
-        };
-        let store = BlockStorage::new(eeprom);
+    async fn single_block_inner() -> Result<()> {
+        let mut eeprom_data = vec![0u8; 4096];
 
-        let mut handle1 = store.open(1, 96).await?;
-        // let mut handle2 = store.open(2, 4).await?;
+        // Start with empty eeprom. Verify file doesn't exist yet and create first write
+        // for it.
+        {
+            let eeprom = FakeEEPROM::new(&mut eeprom_data);
+            let store = BlockStorage::new(eeprom);
 
-        let mut buf = vec![0u8; 100];
+            let mut handle1 = store.open(1, 96).await?;
 
-        assert_eq!(
-            handle1
-                .read(&mut buf)
-                .await
-                .expect_err("Read should fail")
-                .downcast_ref::<BlockStorageError>()
-                .unwrap(),
-            &BlockStorageError::NoValidData
-        );
+            let mut buf = vec![0u8; 100];
 
-        handle1.write(b"Apple").await?;
-        // handle2.write(b"Orange").await?;
+            assert_eq!(
+                handle1
+                    .read(&mut buf)
+                    .await
+                    .expect_err("Read should fail")
+                    .downcast_ref::<BlockStorageError>()
+                    .unwrap(),
+                &BlockStorageError::NoValidData
+            );
 
-        let n = handle1.read(&mut buf).await?;
-        assert_eq!(n, b"Apple".len());
-        assert_eq!(&buf[0..n], b"Apple");
+            handle1.write(b"Apple").await?;
+
+            let n = handle1.read(&mut buf).await?;
+            assert_eq!(n, b"Apple".len());
+            assert_eq!(&buf[0..n], b"Apple");
+        }
+
+        // Re-open eeprom to verify that data was persisted.
+        // Also performing a second
+        {
+            let eeprom = FakeEEPROM::new(&mut eeprom_data);
+            let store = BlockStorage::new(eeprom);
+
+            let mut handle1 = store.open(1, 96).await?;
+
+            let mut buf = vec![0u8; 100];
+            let n = handle1.read(&mut buf).await?;
+            assert_eq!(n, b"Apple".len());
+            assert_eq!(&buf[0..n], b"Apple");
+
+            handle1.write(b"Watermelon").await?;
+
+            let mut buf = vec![0u8; 100];
+            let n = handle1.read(&mut buf).await?;
+            assert_eq!(n, b"Watermelon".len());
+            assert_eq!(&buf[0..n], b"Watermelon");
+        }
+
+        // Re-open and verify we can still read the file's value.
+        // Then create a second file that is very big.
+        {
+            let eeprom = FakeEEPROM::new(&mut eeprom_data);
+            let store = BlockStorage::new(eeprom);
+
+            let mut handle1 = store.open(1, 96).await?;
+
+            let mut buf = vec![0u8; 100];
+            let n = handle1.read(&mut buf).await?;
+            assert_eq!(n, b"Watermelon".len());
+            assert_eq!(&buf[0..n], b"Watermelon");
+
+            let mut handle2 = store.open(2, 256).await?;
+            let mut buf = vec![0u8; 256];
+            assert_eq!(
+                handle2
+                    .read(&mut buf)
+                    .await
+                    .expect_err("Read should fail")
+                    .downcast_ref::<BlockStorageError>()
+                    .unwrap(),
+                &BlockStorageError::NoValidData
+            );
+
+            handle2.write(&[0xBF; 200]).await?;
+
+            let mut buf = vec![0u8; 100];
+            let n = handle1.read(&mut buf).await?;
+            assert_eq!(n, b"Watermelon".len());
+            assert_eq!(&buf[0..n], b"Watermelon");
+
+            let mut buf = vec![0u8; 256];
+            let n = handle2.read(&mut buf).await?;
+            assert_eq!(n, 200);
+            assert_eq!(&buf[0..n], &[0xBF; 200]);
+        }
+
+        // Close and verify both files still exist.
+        // Open in opposite order to verify it's still ok.
+        {
+            let eeprom = FakeEEPROM::new(&mut eeprom_data);
+            let store = BlockStorage::new(eeprom);
+
+            let mut handle2 = store.open(2, 256).await?;
+            let mut handle1 = store.open(1, 96).await?;
+
+            let mut buf = vec![0u8; 256];
+            let n = handle2.read(&mut buf).await?;
+            assert_eq!(n, 200);
+            assert_eq!(&buf[0..n], &[0xBF; 200]);
+
+            let mut buf = vec![0u8; 100];
+            let n = handle1.read(&mut buf).await?;
+            assert_eq!(n, b"Watermelon".len());
+            assert_eq!(&buf[0..n], b"Watermelon");
+        }
 
         Ok(())
     }
@@ -498,6 +577,8 @@ mod test {
     - Write to a few files and then close the handles and re-open the files
         - After this we should still have the old data.
     - writing an even and odd number of times.
+
+    - Test that if a write fails, we still can read back the old value.
 
     */
 }
