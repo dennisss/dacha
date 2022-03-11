@@ -1,6 +1,7 @@
 use core::sync::atomic::AtomicUsize;
 
 use common::const_default::ConstDefault;
+use common::errors::*;
 use common::segmented_buffer::SegmentedBuffer;
 use crypto::ccm::CCM;
 use executor::channel::Channel;
@@ -10,6 +11,7 @@ use nordic_proto::packet::PacketBuffer;
 use nordic_proto::packet_cipher::PacketCipher;
 use nordic_proto::proto::net::NetworkConfig;
 
+use crate::config_storage::NetworkConfigStorage;
 use crate::ecb::*;
 use crate::log;
 use crate::radio::Radio;
@@ -21,6 +23,14 @@ const BUFFER_SIZE: usize = 256;
 const CCM_LENGTH_SIZE: usize = 2;
 const CCM_NONCE_SIZE: usize = 13; // 15 - CCM_LENGTH_SIZE
 const CCM_TAG_SIZE: usize = 4;
+
+const PACKET_COUNTER_SAVE_INTERVAL: u32 = 100;
+
+#[derive(Clone, Copy, Debug, Errable)]
+#[repr(u32)]
+pub enum RadioSocketError {
+    SendingInvalidCounter,
+}
 
 pub struct RadioSocket {
     /// The presence of a value in this channel signals to the radio controller
@@ -41,6 +51,11 @@ struct RadioSocketState {
     /// packets.
     network_valid: bool,
 
+    /// Last packet counter sent to the remote device.
+    last_packet_counter: u32,
+
+    network_storage: Option<NetworkConfigStorage>,
+
     transmit_buffer: SegmentedBuffer<[u8; BUFFER_SIZE]>,
 
     receive_buffer: SegmentedBuffer<[u8; BUFFER_SIZE]>,
@@ -53,10 +68,36 @@ impl RadioSocket {
             state: Mutex::new(RadioSocketState {
                 network: NetworkConfig::DEFAULT,
                 network_valid: false,
+                last_packet_counter: 0,
+                network_storage: None,
                 transmit_buffer: SegmentedBuffer::new([0u8; BUFFER_SIZE]),
                 receive_buffer: SegmentedBuffer::new([0u8; BUFFER_SIZE]),
             }),
         }
+    }
+
+    /// Configures a storage implementation for reading/writing NetworkConfigs
+    /// durably.
+    ///
+    /// This will initialize the socket's config with any value present in the
+    /// given storage and will write any network configs to it in the future.
+    ///
+    /// NOTE: This must be done before the socket is used.
+    pub async fn configure_storage(&self, mut network_storage: NetworkConfigStorage) -> Result<()> {
+        let mut state_guard = self.state.lock().await;
+        let state = &mut *state_guard;
+
+        assert!(state.network_storage.is_none() && !state.network_valid);
+
+        // TODO: Re-use the set_network_config code.
+        if network_storage.read(&mut state.network).await? {
+            // TODO: Check that all fields are set, etc.
+            state.network_valid = true;
+        }
+
+        state.network_storage = Some(network_storage);
+
+        Ok(())
     }
 
     pub async fn lock_network_config<'a>(&'a self) -> RadioNetworkConfigGuard<'a> {
@@ -64,16 +105,34 @@ impl RadioSocket {
         RadioNetworkConfigGuard { state_guard }
     }
 
-    pub async fn set_network_config(&self, config: NetworkConfig) {
-        let mut state = self.state.lock().await;
+    pub async fn set_network_config(&self, config: NetworkConfig) -> Result<()> {
+        let mut state_guard = self.state.lock().await;
+        let state = &mut *state_guard;
+
+        state.network_valid = false;
+        state.last_packet_counter = config.last_packet_counter();
         state.network = config;
-        // TODO: Validate the config.
+
+        // Must clear these as these weren't generated using the latest config (so
+        // things like packet counters may be stale).
+        state.transmit_buffer.clear();
+        state.receive_buffer.clear();
+
+        if let Some(storage) = &mut state.network_storage {
+            storage.write(&state.network).await?;
+        }
+
+        // NOTE: We only consider the network to be valid if it was successfully written
+        // to storage.
         state.network_valid = true;
+
         drop(state);
 
         // Notify the RadioController that a change has occured in case it is waiting
         // for one.
         self.transmit_pending.try_send(()).await;
+
+        Ok(())
     }
 
     /// Enqueues data to be transmitted over the radio via a global queue.
@@ -84,25 +143,71 @@ impl RadioSocket {
     ///
     /// - packet.address() must be set to the address of the remote device to
     ///   which we should send this packet.
+    /// - packet.counter() should be set to 0 if this device manages its own
+    ///   network storage. Otherwise it must be explicitly set to a non-zero
+    ///   value.
     /// - After returning packet.counter() will be set by this function to the
     ///   value of the counter that will be used to send this packet.
-    pub async fn enqueue_tx(&self, packet: &mut PacketBuffer) {
-        // In the packet, the from address will be used as a 'to address'
+    pub async fn enqueue_tx(&self, packet: &mut PacketBuffer) -> Result<()> {
+        let mut state_guard = self.state.lock().await;
+        let state = &mut *state_guard;
 
-        let mut state = self.state.lock().await;
+        if !state.network_valid {
+            return Err(RadioSocketError::SendingInvalidCounter.into());
+        }
+
+        if packet.counter() == 0 {
+            // Generate a new counter.
+            // Requires us to do our own persistence of it.
+
+            let storage = state
+                .network_storage
+                .as_mut()
+                .ok_or_else(|| Error::from(RadioSocketError::SendingInvalidCounter))?;
+
+            // If we have hit the value in the config proto, then we must advance the config
+            // proto and store it in EEPROM. NOTE: This must be atomic to avoid
+            // using un-persisted counters if the write() fails.
+            if state.last_packet_counter >= state.network.last_packet_counter() {
+                // TODO: Implment this without the copy. e.g. instead we could have a
+                // 'pending_persistance' flag or somethimg.
+                let mut next_config = state.network.clone();
+                next_config.set_last_packet_counter(
+                    state.last_packet_counter + PACKET_COUNTER_SAVE_INTERVAL,
+                );
+
+                storage.write(&next_config).await?;
+
+                state.network = next_config;
+            }
+
+            state.last_packet_counter += 1;
+            packet.set_counter(state.last_packet_counter);
+        } else {
+            // We were provided an externally generated counter.
+
+            if state.network_storage.is_some() {
+                return Err(RadioSocketError::SendingInvalidCounter.into());
+            }
+
+            if state.last_packet_counter >= packet.counter() {
+                return Err(RadioSocketError::SendingInvalidCounter.into());
+            }
+
+            state.last_packet_counter = packet.counter();
+            state.network.set_last_packet_counter(packet.counter());
+        }
 
         let counter = state.network.last_packet_counter() + 1;
         state.network.set_last_packet_counter(counter);
-
-        // TODO: If enough counter increments have occured, save to EEPROM.
-
-        packet.set_counter(counter);
 
         packet.write_to(&mut state.transmit_buffer);
         drop(state);
 
         // TODO: Make sure that this doesn't block if the channel is full.
         self.transmit_pending.try_send(()).await;
+
+        Ok(())
     }
 
     /// Retrieves the next already received remote packet.
@@ -221,6 +326,8 @@ impl RadioController {
                         log!(b"EFAIL\n");
                         continue;
                     }
+
+                    // TODO: Record the newly received packet counter.
 
                     socket_state.receive_buffer.write(packet_buf.as_bytes());
 

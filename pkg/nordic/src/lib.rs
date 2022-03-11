@@ -27,6 +27,7 @@ extern crate nordic_proto;
 #[cfg(feature = "alloc")]
 pub mod allocator;
 pub mod clock;
+pub mod config_storage;
 pub mod ecb;
 pub mod eeprom;
 pub mod entry;

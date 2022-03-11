@@ -105,7 +105,7 @@ impl ProtocolUSBHandler {
                     return Ok(());
                 }
 
-                self.radio_socket.enqueue_tx(&mut self.packet_buf).await;
+                let _ = self.radio_socket.enqueue_tx(&mut self.packet_buf).await;
 
                 return Ok(());
             } else if setup.bRequest == ProtocolUSBRequestType::SetNetworkConfig.to_value() {
@@ -132,7 +132,8 @@ impl ProtocolUSBHandler {
                     }
                 };
 
-                self.radio_socket.set_network_config(proto).await;
+                // Ignore errors.
+                let _ = self.radio_socket.set_network_config(proto).await;
 
                 log!(b"=> DONE\n");
 
@@ -166,6 +167,8 @@ impl ProtocolUSBHandler {
 
                 let mut raw_proto = common::collections::FixedVec::new([0u8; 256]);
 
+                // TODO: If the config isn't in a valid state (like due to a failure to save to
+                // EEPROM), don't sent back anything?
                 let network_config = self.radio_socket.lock_network_config().await;
                 if let Err(_) = network_config.get().serialize_to(&mut raw_proto) {
                     // TODO: Make sure this returns an error over USB?

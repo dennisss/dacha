@@ -23,6 +23,11 @@ impl<Array: AsRef<[u8]> + AsMut<[u8]>> SegmentedBuffer<Array> {
         self.length == 0
     }
 
+    pub fn clear(&mut self) {
+        self.start = 0;
+        self.length = 0;
+    }
+
     pub fn write(&mut self, mut segment: &[u8]) {
         assert!(segment.len() + 1 <= self.buf.as_ref().len());
 
