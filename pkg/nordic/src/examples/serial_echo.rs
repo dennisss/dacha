@@ -28,7 +28,7 @@ async fn serial_echo_thread_fn(serial: UARTE, mut timer: Timer) {
         }
 
         loop {
-            let e = executor::futures::race2(
+            let e = race!(
                 executor::futures::map(read.wait(), |_| Event::DoneRead),
                 executor::futures::map(timer2.wait_ms(10), |_| Event::Timeout),
             )

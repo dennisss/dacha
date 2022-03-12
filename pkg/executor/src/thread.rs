@@ -107,7 +107,7 @@ pub fn new_waker_for_current_thread() -> crate::waker::Waker {
 macro_rules! define_thread {
     ($(#[$meta:meta])* $name: ident, $handler: ident $(, $arg:ident : $t:ty )*) => {
         $(#[$meta])*
-        struct $name {}
+        pub struct $name {}
 
         const _: () = {
             type RetType = impl ::core::future::Future<Output = ()>;
@@ -117,11 +117,11 @@ macro_rules! define_thread {
             };
 
             impl $name {
-                fn start($($arg: $t,)*) {
+                pub fn start($($arg: $t,)*) {
                     unsafe { THREAD.start(move || -> RetType { $handler($($arg,)*) }) };
                 }
 
-                fn stop() {
+                pub fn stop() {
                     unsafe { THREAD.stop() };
                 }
             }

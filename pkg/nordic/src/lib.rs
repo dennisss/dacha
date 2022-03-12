@@ -38,6 +38,7 @@ pub mod log;
 pub mod pins;
 pub mod protocol;
 pub mod radio;
+pub mod radio_activity_led;
 pub mod radio_socket;
 pub mod rng;
 pub mod temp;

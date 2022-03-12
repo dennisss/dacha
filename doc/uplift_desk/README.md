@@ -16,6 +16,12 @@ This protocol is transmitted over the 4 middle pins of the RJ11 cable. On the do
 - MT: Sends bits from the desk to the dongle.
 - GND
 
+RJ11 Cable colors:
+- GND: Yellow
+- 5V: Red
+- MT: Green
+- MR: Black
+
 Serial config:
 - 5V Logic
     - TODO: Check if pulled up 

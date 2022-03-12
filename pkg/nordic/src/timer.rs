@@ -61,6 +61,14 @@ impl Timer {
         Self { rtc0 }
     }
 
+    /// NOTE: This is only valid for 512 seconds after which point it will
+    /// overflow.
+    pub fn now(&self) -> TimerInstant {
+        TimerInstant {
+            ticks: self.rtc0.counter.read(),
+        }
+    }
+
     pub async fn wait_ms(&mut self, millis: u32) {
         self.wait_ticks((millis * 32768) / 1000).await
     }
@@ -101,5 +109,20 @@ impl Timer {
         }
 
         end_ticks - start_ticks
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct TimerInstant {
+    ticks: u32,
+}
+
+impl TimerInstant {
+    pub fn millis_since(&self, other: &TimerInstant) -> usize {
+        (Timer::duration(other.ticks, self.ticks) as usize * 1000) / 32768
+    }
+
+    pub fn zero() -> Self {
+        Self { ticks: 0 }
     }
 }

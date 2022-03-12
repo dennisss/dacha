@@ -52,7 +52,7 @@ impl RegistersStruct {
             }
 
             self.fields
-                .add(format!("padding_{}: [u8; {}],", self.last_offset, diff));
+                .add(format!("_padding_{}: [u8; {}],", self.last_offset, diff));
 
             self.last_offset = next_offset;
         } else if self.last_offset > next_offset {
@@ -130,14 +130,14 @@ impl<'a> Compiler<'a> {
         use crate::register::*;
         
         pub struct Peripherals {{
-            hidden: (),
+            _hidden: (),
             {fields}
         }}
 
         impl Peripherals {{
             pub fn new() -> Self {{
                 unsafe {{ Self {{
-                    hidden: (),
+                    _hidden: (),
                     {ctor}
                 }} }}
             }}
@@ -254,7 +254,7 @@ impl<'a> Compiler<'a> {
                         "
                         #[repr(C)]
                         pub struct {registers_type} {{
-                            hidden: (),
+                            _hidden: (),
                             {registers_fields}
                         }}
                         ",
@@ -269,13 +269,13 @@ impl<'a> Compiler<'a> {
             lines.add(format!(
                 "
                 #[allow(non_camel_case_types)]
-                pub struct {name} {{ hidden: () }}
+                pub struct {name} {{ _hidden: () }}
         
                 impl {name} {{
                     const BASE_ADDRESS: u32 = 0x{base_address:08x};
 
                     pub unsafe fn new() -> Self {{
-                        Self {{ hidden: () }}
+                        Self {{ _hidden: () }}
                     }}
                 }}
 
@@ -368,7 +368,8 @@ impl<'a> Compiler<'a> {
                 desc = cluster.description.replace("\n", " "),
                 mod_name = mod_name
             ));
-            registers_struct.last_offset += dim_element_group.dim_increment as u32;
+            registers_struct.last_offset +=
+                (dim_element_group.dim_increment as u32) * (dim_element_group.dim as u32);
             cluster_struct.pad_to_offset(dim_element_group.dim_increment as u32)?;
         } else {
             registers_struct.fields.add(format!(
@@ -390,7 +391,7 @@ impl<'a> Compiler<'a> {
                 #[repr(C)]
                 pub struct {name} {{
                     // TODO: Add this to the peripherals register block as well.
-                    hidden: (),
+                    _hidden: (),
                     {cluster_fields}
                 }}
 

@@ -47,7 +47,9 @@ use usb::descriptors::{DescriptorType, SetupPacket, StandardRequestType};
 use crate::log;
 use crate::radio::Radio;
 use crate::radio_socket::RadioSocket;
-use crate::usb::controller::{USBDeviceControlRequest, USBDeviceControlResponse};
+use crate::usb::controller::{
+    USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceController,
+};
 use crate::usb::default_handler::USBDeviceDefaultHandler;
 use crate::usb::handler::{USBDeviceHandler, USBError};
 
@@ -121,7 +123,7 @@ impl ProtocolUSBHandler {
                 //     log!(b", ");
                 // }
 
-                log!(b"\n");
+                // log!(b"\n");
 
                 let proto = match NetworkConfig::parse(&raw_proto[0..n]) {
                     Ok(v) => v,
@@ -189,4 +191,14 @@ impl ProtocolUSBHandler {
             .handle_control_response(setup, res)
             .await
     }
+}
+
+define_thread!(
+    ProtocolUSBThread,
+    protocol_usb_thread_fn,
+    usb: USBDeviceController,
+    radio_socket: &'static RadioSocket
+);
+async fn protocol_usb_thread_fn(mut usb: USBDeviceController, radio_socket: &'static RadioSocket) {
+    usb.run(ProtocolUSBHandler::new(radio_socket)).await;
 }

@@ -248,7 +248,7 @@ impl USBDeviceController {
                 return event;
             }
 
-            futures::race2(
+            race!(
                 wait_for_irq(Interrupt::USBD),
                 wait_for_irq(Interrupt::POWER_CLOCK),
             )
@@ -314,6 +314,8 @@ impl USBDeviceController {
         if Self::take_event(&mut self.periph.events_ep0datadone) {
             return Some(Event::EP0DataDone);
         }
+
+        crate::events::flush_events_clear();
 
         None
     }
@@ -413,8 +415,6 @@ impl<'a> USBDeviceControlRequest<'a> {
         self.controller.periph.epout[0]
             .maxcnt
             .write(packet_buffer.len() as u32);
-
-        // TODO: Make sure that we clear events at the right times in this function.
 
         while self.host_remaining > 0 {
             self.controller.periph.tasks_ep0rcvout.write_trigger();

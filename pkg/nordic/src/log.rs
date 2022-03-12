@@ -11,7 +11,9 @@ pub async fn setup(uarte: UARTE) {
 
 pub async fn log_write(data: &[u8]) {
     let mut inst = LOGGER_INSTANCE.lock().await;
-    inst.as_mut().unwrap().write(data).await;
+    if let Some(inst) = inst.as_mut() {
+        inst.write(data).await;
+    }
 }
 
 #[macro_export]

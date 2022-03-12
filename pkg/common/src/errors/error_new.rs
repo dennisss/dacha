@@ -30,6 +30,7 @@ pub struct Error {
 }
 
 #[cfg(not(feature = "alloc"))]
+#[derive(Debug)]
 pub struct Error {
     type_id: TypeId,
     code: u32,

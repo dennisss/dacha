@@ -43,6 +43,16 @@ impl<T> Channel<T> {
         }
     }
 
+    pub async fn try_recv(&self) -> Option<T> {
+        let mut value_guard = self.value.lock().await;
+        let value = value_guard.take();
+        if value.is_some() {
+            trigger_pendsv();
+        }
+
+        value
+    }
+
     pub async fn recv(&self) -> T {
         loop {
             let mut value_guard = self.value.lock().await;
