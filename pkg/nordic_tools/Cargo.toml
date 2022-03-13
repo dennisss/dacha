@@ -12,6 +12,7 @@ crypto = { path = "../crypto" }
 container = { path = "../container" }
 nordic_proto = { path = "../nordic_proto" }
 rpc = { path = "../rpc" }
+http = { path = "../http" }
 rpc_util = { path = "../rpc_util" }
 google = { path = "../../third_party/google" }
 

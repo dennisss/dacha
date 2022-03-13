@@ -2021,6 +2021,7 @@ impl Compiler<'_> {
 
         lines.add(format!(
             r#"
+            #[derive(Clone)]
             pub struct {service_name}Stub {{
                 channel: Arc<dyn {rpc_package}::Channel>
 

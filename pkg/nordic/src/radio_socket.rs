@@ -232,9 +232,6 @@ impl RadioSocket {
             state.network.set_last_packet_counter(packet.counter());
         }
 
-        let counter = state.network.last_packet_counter() + 1;
-        state.network.set_last_packet_counter(counter);
-
         packet.write_to(&mut state.transmit_buffer);
         drop(state);
 
@@ -252,7 +249,7 @@ impl RadioSocket {
     #[must_use]
     pub async fn dequeue_rx(&self, packet: &mut PacketBuffer) -> bool {
         let mut state = self.state.lock().await;
-        packet.read_from(&mut state.receive_buffer)
+        state.receive_buffer.read(packet.raw_mut()).is_some()
     }
 
     /// Waits until a packet can be read with dequeue_rx.
@@ -289,8 +286,12 @@ pub struct RadioNetworkConfigGuard<'a> {
 }
 
 impl<'a> RadioNetworkConfigGuard<'a> {
-    pub fn get(&self) -> &NetworkConfig {
-        &self.state_guard.network
+    pub fn get(&self) -> Option<&NetworkConfig> {
+        if !self.state_guard.network_valid {
+            return None;
+        }
+
+        Some(&self.state_guard.network)
     }
 
     // NOTE: This doesn't provide any mutation handlers as mutating the config
@@ -389,6 +390,7 @@ impl RadioController {
                     ) {
                         Ok(v) => v,
                         Err(_) => {
+                            log!(b"EFAIL1\n");
                             continue;
                         }
                     };
@@ -397,7 +399,7 @@ impl RadioController {
                     // implemented with async.
 
                     if let Err(_) = packet_encryptor.decrypt() {
-                        log!(b"EFAIL\n");
+                        log!(b"EFAIL2\n");
                         continue;
                     }
 

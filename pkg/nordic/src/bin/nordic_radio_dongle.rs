@@ -76,7 +76,7 @@ async fn main_thread_fn() {
     let tx_pin = if USING_DEV_KIT {
         gpio.pin(pins.P0_13)
     } else {
-        gpio.pin(pins.P0_06)
+        gpio.pin(pins.P0_12)
     };
     let rx_pin = if USING_DEV_KIT {
         gpio.pin(pins.P0_14)

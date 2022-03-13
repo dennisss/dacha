@@ -169,14 +169,14 @@ impl ProtocolUSBHandler {
 
                 let mut raw_proto = common::collections::FixedVec::new([0u8; 256]);
 
-                // TODO: If the config isn't in a valid state (like due to a failure to save to
-                // EEPROM), don't sent back anything?
                 let network_config = self.radio_socket.lock_network_config().await;
-                if let Err(_) = network_config.get().serialize_to(&mut raw_proto) {
-                    // TODO: Make sure this returns an error over USB?
-                    log!(b"USB SER FAIL\n");
-                    res.stale();
-                    return Ok(());
+                if let Some(network_config) = network_config.get() {
+                    if let Err(_) = network_config.serialize_to(&mut raw_proto) {
+                        // TODO: Make sure this returns an error over USB?
+                        log!(b"USB SER FAIL\n");
+                        res.stale();
+                        return Ok(());
+                    }
                 }
 
                 drop(network_config);

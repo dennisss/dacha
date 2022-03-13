@@ -60,8 +60,8 @@ struct State {
 }
 
 impl RadioBridge {
-    pub async fn create(state_object_name: &str) -> Result<Self> {
-        let mut radio = USBRadio::find(None).await?;
+    pub async fn create(state_object_name: &str, usb: Option<String>) -> Result<Self> {
+        let mut radio = USBRadio::find(usb.as_ref().map(|s| s.as_str())).await?;
 
         let mut meta_client = ClusterMetaClient::create_from_environment().await?;
 
@@ -88,6 +88,8 @@ impl RadioBridge {
                 state_data
             }
         };
+
+        println!("Local address: {:02x?}", state_data.network().address());
 
         let (radio_event_sender, radio_event_receiver) = channel::bounded(1);
 
@@ -133,7 +135,7 @@ impl RadioBridgeInner {
             let mut state = self.shared.state.lock().await;
 
             if state.config_changed {
-                radio.set_config(state.state_data.network()).await?;
+                radio.set_network_config(state.state_data.network()).await?;
                 state.config_changed = false;
             }
 
@@ -380,6 +382,8 @@ impl RadioBridgeService for RadioBridgeInner {
                 bridge: self,
             }
         };
+
+        drop(state);
 
         loop {
             match reg.receiver.recv().await {

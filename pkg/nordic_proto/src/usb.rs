@@ -1,5 +1,5 @@
 enum_def_with_unknown!(ProtocolUSBRequestType u8 =>
-    // [Host -> Device] Send a packet.
+    // Send a packet.
     // The payload is interprated as a PacketBuffer.
     //
     // Encryption of the packet is handled by the device.
@@ -9,15 +9,23 @@ enum_def_with_unknown!(ProtocolUSBRequestType u8 =>
     // assigned by the device. If the device doesn't support persistent storage, this will fail.
     // If the packet counter is non-zero, it will be used when sending to the remote host. If the
     // device does have its own persistent storage set up, this will fail.
+    //
+    // [Host -> Device]
     Send = 1,
 
     // [Device -> Host]
     Receive = 2,
 
-    // [Device -> Host] Reads the value of the last packet counter sent by this device.
+    // Reads the value of the last packet counter sent by this device.
+    //
+    // [Device -> Host]
     LastPacketCounter = 3,
 
     SetNetworkConfig = 4,
 
+    // Retrieves the current NetworkConfig proto used by this device.
+    // Will return empty data if no valid config is present.
+    //
+    // [Device -> Host]
     GetNetworkConfig = 5
 );

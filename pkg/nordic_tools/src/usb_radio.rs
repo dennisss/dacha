@@ -28,7 +28,10 @@ impl USBRadio {
                 let id = format!("{}:{}", dev.bus_num(), dev.dev_num());
                 println!("Device: {}", id);
 
-                if selected_id.is_none() || selected_id.unwrap() == id {
+                if selected_id.is_none()
+                    || selected_id.unwrap() == id
+                    || selected_id.unwrap() == "any"
+                {
                     found_device = Some(dev.open().await?);
                 }
             }
@@ -48,7 +51,7 @@ impl USBRadio {
         Self { device }
     }
 
-    pub async fn set_config(&mut self, config: &NetworkConfig) -> Result<()> {
+    pub async fn set_network_config(&mut self, config: &NetworkConfig) -> Result<()> {
         let proto = config.serialize()?;
         self.device
             .write_control(
@@ -65,7 +68,7 @@ impl USBRadio {
         Ok(())
     }
 
-    pub async fn get_config(&mut self) -> Result<NetworkConfig> {
+    pub async fn get_network_config(&mut self) -> Result<Option<NetworkConfig>> {
         let mut read_buffer = [0u8; 256];
         // TODO: Set a timeout on this and reset the device on failure.
         let n = self
@@ -82,7 +85,11 @@ impl USBRadio {
             )
             .await?;
 
-        NetworkConfig::parse(&read_buffer[0..n])
+        if n == 0 {
+            return Ok(None);
+        }
+
+        Ok(Some(NetworkConfig::parse(&read_buffer[0..n])?))
     }
 
     pub async fn send_packet(&mut self, packet: &PacketBuffer) -> Result<()> {

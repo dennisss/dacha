@@ -9,8 +9,6 @@
 #![no_std]
 #![no_main]
 
-// extern crate alloc;
-
 #[cfg(feature = "std")]
 extern crate std;
 
@@ -44,9 +42,6 @@ General workflow:
 - Eventually, every 10 seconds, save to EEPROM the last packet counter received from each remote link
 
 
-
-
-
 Threads for the serial implementation:
 1. The serial reader:
     - Reads data from
@@ -73,18 +68,24 @@ Scenarios for which we want to optimize:
 use core::arch::asm;
 
 use executor::singleton::Singleton;
+use peripherals::eeprom::EEPROM;
 use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::rtc0::RTC0;
+use peripherals::storage::BlockStorage;
 
+use nordic::config_storage::NetworkConfigStorage;
 use nordic::ecb::ECB;
+use nordic::eeprom::Microchip24XX256;
 use nordic::gpio::*;
 use nordic::log;
 use nordic::log::num_to_slice;
+use nordic::protocol::ProtocolUSBThread;
 use nordic::radio::Radio;
-use nordic::radio_socket::{RadioController, RadioSocket};
+use nordic::radio_socket::{RadioController, RadioControllerThread, RadioSocket};
 use nordic::rng::Rng;
 use nordic::temp::Temp;
 use nordic::timer::Timer;
+use nordic::twim::TWIM;
 use nordic::uarte::UARTE;
 use nordic::usb::controller::USBDeviceController;
 use nordic::usb::default_handler::USBDeviceDefaultHandler;
@@ -96,8 +97,6 @@ Allocator design:
     -> do need to
 
 */
-
-// TODO: Split into a separate file (e.g. entry.rs)
 
 /*
 Dev kit LEDs
@@ -120,58 +119,10 @@ Dongle LEDS
     active low
 */
 
-/*
-Notes:
-- Interrupt handlers must be at least 4 clock cycles long to ensure that the interrupt flags are cleared and it doesn't immediately reoccur
-*/
-
-/*
-Example in ext/nRF5_SDK_17.0.2_d674dde/examples/peripheral/radio/receiver/main.c
-*/
-
-/*
-Waiting for an interrupt:
-- Need:
-    - EVENTS_* register
-    - Need INTEN register / field.
-    - Need the interrupt number (for NVIC)
-*/
-
 const USING_DEV_KIT: bool = true;
 
-static RADIO_SOCKET: Singleton<RadioSocket> = Singleton::uninit();
-
-/*
-define_thread!(
-    Monitor,
-    monitor_thread_fn,
-    uarte0: UARTE0,
-    timer: Timer,
-    temp: Temp,
-    rng: Rng
-);
-async fn monitor_thread_fn(uarte0: UARTE0, mut timer: Timer, mut temp: Temp, mut rng: Rng) {
-    let mut serial = UARTE::new(uarte0);
-
-    let mut buf = [0u8; 256];
-    loop {
-        timer.wait_ms(2000).await;
-
-        let t = temp.measure().await;
-
-        let mut rand = [0u32; 2];
-        rng.generate(&mut rand).await;
-
-        serial.write(b"Temperature is: ").await;
-        serial.write(num_to_slice(t).as_ref()).await;
-        serial.write(b" | ").await;
-        serial.write(num_to_slice(rand[0]).as_ref()).await;
-        serial.write(b" | ").await;
-        serial.write(num_to_slice(rand[1]).as_ref()).await;
-        serial.write(b"\n").await;
-    }
-}
-*/
+static RADIO_SOCKET: RadioSocket = RadioSocket::new();
+static BLOCK_STORAGE: Singleton<BlockStorage<Microchip24XX256>> = Singleton::uninit();
 
 define_thread!(Blinker, blinker_thread_fn);
 async fn blinker_thread_fn() {
@@ -184,13 +135,6 @@ async fn blinker_thread_fn() {
 
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
 
-    /*
-    {
-        let mut serial = UARTE::new(peripherals.uarte0, pins.P0_30, pins.P0_31, 115200);
-        SerialEcho::start(serial, timer.clone());
-    }
-    */
-
     {
         let mut serial = UARTE::new(peripherals.uarte0, pins.P0_30, pins.P0_31, 115200);
         log::setup(serial).await;
@@ -198,9 +142,48 @@ async fn blinker_thread_fn() {
 
     log!(b"Started up!\n");
 
+    // WP 3, SCL 4, SDA 28
+
+    {
+        // TODO: Set these pins as Input with S0D1 drive strength,
+
+        // addr = 80
+
+        /*
+        for i in 0..127 {
+            log!(nordic::log::num_to_slice(i as u32).as_ref());
+            log!(b"\n");
+
+            match twim.read(i, &mut []).await {
+                Ok(_) => {
+                    // log!(b"GOOD: ");
+                }
+                Err(_) => {}
+            }
+        }
+        */
+
+        /*
+        if let Err(e) = eeprom.write(0, b"ABCDE").await {
+            log!(b"WRITE FAIL\n");
+        }
+
+        let mut buf = [0u8; 5];
+        if let Err(e) = eeprom.read(0, &mut buf).await {
+            log!(b"READ FAIL\n");
+        }
+
+        // TODO: Also verify read and write from arbitrary non-zero locations.
+
+        log!(b"READ:\n");
+        log!(&buf);
+        log!(b"\n");
+        */
+    }
+
     // Helper::start(timer.clone());
 
-    // log!(b"Done!\n");
+    //
 
     // TODO: Which Send/Sync requirements are needed of these arguments?
     // Echo::start(
@@ -210,7 +193,8 @@ async fn blinker_thread_fn() {
     //     Rng::new(peripherals.rng),
     // );
 
-    let radio_socket = RADIO_SOCKET.set(RadioSocket::new()).await;
+    // /*
+    let radio_socket = &RADIO_SOCKET;
 
     let radio_controller = RadioController::new(
         radio_socket,
@@ -218,16 +202,25 @@ async fn blinker_thread_fn() {
         ECB::new(peripherals.ecb),
     );
 
-    RadioThread::start(radio_controller);
+    let block_storage = {
+        let mut twim = TWIM::new(peripherals.twim0, pins.P0_04, pins.P0_28, 100_000);
+        let mut eeprom = Microchip24XX256::new(twim, 0b1010000, gpio.pin(pins.P0_03));
+        BLOCK_STORAGE.set(BlockStorage::new(eeprom)).await
+    };
 
-    USBThread::start(
+    RADIO_SOCKET
+        .configure_storage(NetworkConfigStorage::open(block_storage).await.unwrap())
+        .await
+        .unwrap();
+
+    RadioControllerThread::start(radio_controller);
+
+    ProtocolUSBThread::start(
         USBDeviceController::new(peripherals.usbd, peripherals.power),
         radio_socket,
     );
 
-    // if !USING_DEV_KIT {
-    //     EchoRadioThread::start(radio_socket, timer.clone());
-    // }
+    log!(b"Ready!\n");
 
     let mut blink_pin = {
         if USING_DEV_KIT {
@@ -251,65 +244,6 @@ async fn blinker_thread_fn() {
         timer.wait_ms(500).await;
     }
 }
-
-define_thread!(
-    USBThread,
-    usb_thread_fn,
-    usb: USBDeviceController,
-    radio_socket: &'static RadioSocket
-);
-async fn usb_thread_fn(mut usb: USBDeviceController, radio_socket: &'static RadioSocket) {
-    usb.run(nordic::protocol::ProtocolUSBHandler::new(radio_socket))
-        .await;
-}
-
-define_thread!(
-    RadioThread,
-    radio_thread_fn,
-    radio_controller: RadioController
-);
-async fn radio_thread_fn(radio_controller: RadioController) {
-    radio_controller.run().await;
-}
-
-// define_thread!(
-//     EchoRadioThread,
-//     echo_radio_thread_fn,
-//     radio_socket: &'static RadioSocket,
-//     timer: Timer
-// );
-// async fn echo_radio_thread_fn(radio_socket: &'static RadioSocket, timer:
-// Timer) {     let mut packet_buffer = PacketBuffer::new();
-
-//     loop {
-//         XXX: Must set the
-//         if radio_socket.dequeue_rx(&mut packet_buffer).await {
-//             log!(b"Echo packet\n");
-//             radio_socket.enqueue_tx(&mut packet_buffer).await;
-//         }
-
-//         timer.wait_ms(2).await;
-//     }
-// }
-
-/*
-Next steps:
-- Nordic things to improve
-    - Improve USB handler to return error results in order to handle the Disconnected/Reset events.
-    - Implement GPIO (will enable using with EEPROM)
-    - Implement global timeouts.
-    - Fix interrupt
-
-- Want to extend with encryption.
-    - Need
-- So want to
-
-- Implement commands:
-    - RadioSend
-    - RadioReceive
-- Us these to implement a remote 'texting' app.
-    - though bot
-*/
 
 // TODO: Configure the voltage supervisor.
 
