@@ -24,6 +24,9 @@ RJ11 Cable colors:
 
 Serial config:
 - 5V Logic
+    - More specifically 4.8V high and 0.5V low
+    - NOTE that the above low voltage is pretty high and may break 1.8V systems. Most likely you want to use at least a 3.3V VDD for interpreting these values (after level shifting).
+
     - TODO: Check if pulled up 
 - Baudrate: 9600
 - 8N1

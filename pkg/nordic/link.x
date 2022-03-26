@@ -4,6 +4,7 @@ MEMORY
 {
   FLASH : ORIGIN = 0, LENGTH = 1M
   RAM : ORIGIN = 0x20000000, LENGTH = 256K
+  REGOUT0: ORIGIN = 0x10001304, LENGTH = 4
 }
 
 ENTRY(entry);
@@ -30,6 +31,11 @@ SECTIONS
     {
         *(.rodata .rodata.*);
     } > FLASH
+
+    .regout0 :
+    {
+        LONG(5) /* Set to 3.3V VDD */
+    } > REGOUT0
 
     .bss : ALIGN(4)
     {

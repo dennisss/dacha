@@ -94,7 +94,8 @@ async fn forwarding_thread_fn(serial: UARTE, mut timer: Timer) {
             let e = race!(
                 executor::futures::map(RADIO_SOCKET.wait_for_rx(), |_| Event::RadioPacketAvailable),
                 executor::futures::map(serial_read.wait(), |_| Event::SerialReceiveBufferFull),
-                executor::futures::map(timer.wait_ms(10), |_| Event::Timeout),
+                // NOTE: It takes ~60ms at 9600 baud to fill up 64 bytes.
+                executor::futures::map(timer.wait_ms(200), |_| Event::Timeout),
             )
             .await;
 

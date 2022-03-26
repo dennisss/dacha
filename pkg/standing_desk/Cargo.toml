@@ -1,0 +1,16 @@
+[package]
+name = "standing_desk"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+protobuf = { path = "../protobuf" }
+macros = { path = "../macros" }
+crypto = { path = "../crypto" }
+container = { path = "../container" }
+rpc = { path = "../rpc" }
+http = { path = "../http" }
+nordic_tools = { path = "../nordic_tools" }
+rpc_util = { path = "../rpc_util" }
+google = { path = "../../third_party/google" }
