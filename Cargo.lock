@@ -477,6 +477,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cnc"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "macros",
+ "math",
+]
+
+[[package]]
 name = "common"
 version = "0.1.0"
 dependencies = [

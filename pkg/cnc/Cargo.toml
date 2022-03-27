@@ -1,0 +1,17 @@
+[package]
+name = "cnc"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+doctest = false
+
+[dependencies]
+macros = { path = "../macros" }
+math = { path = "../math" }
+common = { path = "../common", default-features = false }
+
+[features]
+default = ["std", "alloc"]
+alloc = ["common/alloc"]
+std = ["common/std"]

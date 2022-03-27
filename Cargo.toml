@@ -73,6 +73,7 @@ members = [
 	"pkg/swd_prog",
 	"pkg/hue",
 	"pkg/standing_desk",
+	"pkg/cnc",
 ]
 
 [profile.dev]
