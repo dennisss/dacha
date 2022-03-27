@@ -13,6 +13,7 @@ extern crate common;
 #[macro_use]
 extern crate approx;
 
+pub mod argmax;
 pub mod array;
 pub mod assignment_solver;
 pub mod big;

@@ -1,15 +1,17 @@
-use crate::matrix::base::{CwiseDivAssign, CwiseMulAssign, MatrixBase, MatrixNew};
+use matrix::element::ErrorEpsilon;
+use matrix::storage::MatrixNewStorage;
+use matrix::MatrixXd;
+use num_traits::real::Real;
+use typenum::U1;
+
+use crate::matrix::base::{MatrixBase, MatrixNew};
+use crate::matrix::cwise_binary_ops::{CwiseDivAssign, CwiseMulAssign};
 use crate::matrix::dimension::Dimension;
 use crate::matrix::dimension::Dynamic;
 use crate::matrix::eigen::EigenStructure;
 use crate::matrix::element::ScalarElementType;
 use crate::matrix::storage::NewStorage;
 use crate::matrix::storage::StorageType;
-use matrix::element::ErrorEpsilon;
-use matrix::storage::MatrixNewStorage;
-use matrix::MatrixXd;
-use num_traits::real::Real;
-use typenum::U1;
 
 pub struct SVD<T: ScalarElementType, M: Dimension, N: Dimension>
 where

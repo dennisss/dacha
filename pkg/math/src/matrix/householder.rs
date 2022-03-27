@@ -1,10 +1,13 @@
+use std::convert::From;
+
+use num_traits::real::Real;
+use typenum::U1;
+
 use crate::matrix::base::*;
+use crate::matrix::cwise_binary_ops::*;
 use crate::matrix::dimension::*;
 use crate::matrix::element::*;
 use crate::matrix::storage::*;
-use num_traits::real::Real;
-use std::convert::From;
-use typenum::U1;
 
 /// Given a unit vector orthogonal to a hyperplane, constructs a transformation
 /// matrix that maps any point to its reflection over that plane.

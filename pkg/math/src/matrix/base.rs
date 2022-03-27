@@ -8,6 +8,9 @@ use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 use typenum::{Prod, Unsigned, U1, U2, U3, U4, U5, U8};
 
+use crate::argmax::argmax;
+use crate::matrix::cwise_binary_ops::CwiseDivAssign;
+
 /*
     TODO: Needed operations:
     - AddAssign/SubAssign
@@ -20,9 +23,8 @@ use typenum::{Prod, Unsigned, U1, U2, U3, U4, U5, U8};
 */
 
 #[derive(Clone)]
-// #[repr(packed)]
 pub struct MatrixBase<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>> {
-    data: D,
+    pub(super) data: D,
     t: PhantomData<T>,
     r: PhantomData<R>,
     c: PhantomData<C>,
@@ -71,7 +73,7 @@ impl<T: ElementType, R: Dimension, C: Dimension, Data: StorageTypeMut<T, R, C>>
     MatrixBase<T, R, C, Data>
 {
     // Creates an empty matrix with a dynamic size.
-    fn new_with_shape(rows: usize, cols: usize) -> Self {
+    pub(super) fn new_with_shape(rows: usize, cols: usize) -> Self {
         // Any static dimensions must match the given dimension.
         // if let Some(r) = R::dim() {
         //     assert_eq!(rows, r);
@@ -323,54 +325,6 @@ impl<T: ElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C> + AsRef
     }
 }
 
-impl<T: ElementType + ToString, R: Dimension, C: Dimension, D: StorageType<T, R, C>> std::fmt::Debug
-    for MatrixBase<T, R, C, D>
-{
-    default fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let mut out: String = "".to_string();
-        for i in 0..self.rows() {
-            for j in 0..self.cols() {
-                out += &self.data[i * self.cols() + j].to_string();
-                out += "\t";
-            }
-            out += "\n";
-        }
-
-        write!(f, "{}", out)
-    }
-}
-
-// TODO: Also do this for f32
-impl<R: Dimension, C: Dimension, D: StorageType<f64, R, C>> std::fmt::Debug
-    for MatrixBase<f64, R, C, D>
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let mut out: String = "".to_string();
-        for i in 0..self.rows() {
-            for j in 0..self.cols() {
-                // TODO: If all numbers are very small, then don't truncate zeros.
-                // TODO: Only format as exponential if the value is very small or
-                // very large.
-
-                let v = self.data[i * self.cols() + j];
-
-                let va = Real::abs(v);
-                if va < 1e-12 {
-                    out += "0\t";
-                } else if va > 1e9 || va < 1e-6 {
-                    out += &format!("{:+.4e}\t", v);
-                } else {
-                    out += &format!("{:.4}\t", v); // TODO: Truncate zeros and
-                                                   // decimal point.
-                }
-            }
-            out += "\n";
-        }
-
-        write!(f, "{}", out)
-    }
-}
-
 impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>> MatrixBase<T, R, C, D> {
     pub fn len(&self) -> usize {
         self.rows() * self.cols()
@@ -518,421 +472,6 @@ impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C> + AsMut<[T]>> AsM
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Component-wise Addition/Subtraction/Multiplication/Division
-////////////////////////////////////////////////////////////////////////////////
-
-pub trait CwiseMul<Rhs> {
-    type Output;
-    fn cwise_mul(self, rhs: Rhs) -> Self::Output;
-}
-
-pub trait CwiseMulAssign<Rhs> {
-    fn cwise_mul_assign(&mut self, rhs: Rhs);
-}
-
-pub trait CwiseDiv<Rhs> {
-    type Output;
-    fn cwise_div(self, rhs: Rhs) -> Self::Output;
-}
-
-pub trait CwiseDivAssign<Rhs> {
-    fn cwise_div_assign(&mut self, rhs: Rhs);
-}
-
-// TODO: When either the RHS or LHS is mutable and passed with ownership, we
-// should re-use that buffer rather than creating a new buffer.
-
-macro_rules! cwise_binary_op {
-    ($OpAssign:ident, $op_assign:ident, $op_assign_inner:ident,
-	 $Op:ident, $op:ident, $op_inner:ident, $op_to:ident) => {
-        // += &Matrix
-        impl<
-                T: ScalarElementType,
-                R: Dimension,
-                C: Dimension,
-                D: StorageTypeMut<T, R, C>,
-                D2: StorageType<T, R, C>,
-            > $OpAssign<&MatrixBase<T, R, C, D2>> for MatrixBase<T, R, C, D>
-        {
-            fn $op_assign(&mut self, rhs: &MatrixBase<T, R, C, D2>) {
-                assert_eq!(self.rows(), rhs.rows());
-                assert_eq!(self.cols(), rhs.cols());
-                for i in 0..(self.rows() * self.cols()) {
-                    self.data[i].$op_assign_inner(rhs.data[i]);
-                }
-            }
-        }
-
-        // += Matrix
-        impl<
-                T: ScalarElementType,
-                R: Dimension,
-                C: Dimension,
-                D: StorageTypeMut<T, R, C>,
-                D2: StorageType<T, R, C>,
-            > $OpAssign<MatrixBase<T, R, C, D2>> for MatrixBase<T, R, C, D>
-        {
-            fn $op_assign(&mut self, rhs: MatrixBase<T, R, C, D2>) {
-                self.$op_assign(&rhs);
-            }
-        }
-
-        // += Scalar
-        impl<
-                T: ScalarElementType,
-                R: Dimension,
-                C: Dimension,
-                D: StorageTypeMut<T, R, C>,
-                V: num_traits::Num + Copy + Into<T>,
-            > $OpAssign<V> for MatrixBase<T, R, C, D>
-        {
-            fn $op_assign(&mut self, rhs: V) {
-                for i in 0..(self.rows() * self.cols()) {
-                    self.data[i].$op_assign_inner(rhs.into());
-                }
-            }
-        }
-
-        // *out = &Matrix + &Matrix
-        impl<T: ScalarElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
-            MatrixBase<T, R, C, D>
-        {
-            /// Performs 'out = self + rhs' overriding any old values in 'out'
-            #[inline]
-            fn $op_to<D2: StorageType<T, R, C>, D3: StorageTypeMut<T, R, C>>(
-                &self,
-                rhs: &MatrixBase<T, R, C, D2>,
-                out: &mut MatrixBase<T, R, C, D3>,
-            ) {
-                // TODO: Simplify this to a shape comparison.
-                assert_eq!(self.rows(), rhs.rows());
-                assert_eq!(self.cols(), rhs.cols());
-                assert_eq!(self.rows(), out.rows());
-                assert_eq!(self.cols(), out.cols());
-
-                for i in 0..self.len() {
-                    out.data[i] = self.data[i].$op_inner(rhs.data[i]);
-                }
-            }
-        }
-
-        // &Matrix + &Matrix
-        impl<
-                T: ScalarElementType,
-                R: Dimension,
-                C: Dimension,
-                D: StorageType<T, R, C>,
-                D2: StorageType<T, R, C>,
-            > $Op<&MatrixBase<T, R, C, D2>> for &MatrixBase<T, R, C, D>
-        where
-            MatrixNewStorage: NewStorage<T, R, C>,
-        {
-            type Output = MatrixNew<T, R, C>;
-
-            #[inline]
-            fn $op(self, rhs: &MatrixBase<T, R, C, D2>) -> Self::Output {
-                let mut out = Self::Output::zero_with_shape(self.rows(), self.cols());
-                self.$op_to(rhs, &mut out);
-                out
-            }
-        }
-
-        // &Matrix + Matrix
-        impl<
-                T: ScalarElementType,
-                R: Dimension,
-                C: Dimension,
-                D: StorageType<T, R, C>,
-                D2: StorageType<T, R, C>,
-            > $Op<MatrixBase<T, R, C, D2>> for &MatrixBase<T, R, C, D>
-        where
-            MatrixNewStorage: NewStorage<T, R, C>,
-        {
-            type Output = MatrixNew<T, R, C>;
-
-            #[inline]
-            fn $op(self, rhs: MatrixBase<T, R, C, D2>) -> Self::Output {
-                self.$op(&rhs)
-            }
-        }
-
-        // Matrix + &Matrix
-        impl<
-                T: ScalarElementType,
-                R: Dimension,
-                C: Dimension,
-                D: StorageType<T, R, C>,
-                D2: StorageType<T, R, C>,
-            > $Op<&MatrixBase<T, R, C, D2>> for MatrixBase<T, R, C, D>
-        where
-            MatrixNewStorage: NewStorage<T, R, C>,
-        {
-            type Output = MatrixNew<T, R, C>;
-
-            #[inline]
-            fn $op(mut self, rhs: &MatrixBase<T, R, C, D2>) -> Self::Output {
-                (&self).$op(rhs)
-            }
-        }
-
-        // Matrix + Matrix
-        impl<
-                T: ScalarElementType,
-                R: Dimension,
-                C: Dimension,
-                D: StorageType<T, R, C>,
-                D2: StorageType<T, R, C>,
-            > $Op<MatrixBase<T, R, C, D2>> for MatrixBase<T, R, C, D>
-        where
-            MatrixNewStorage: NewStorage<T, R, C>,
-        {
-            type Output = MatrixNew<T, R, C>;
-
-            #[inline]
-            fn $op(self, rhs: MatrixBase<T, R, C, D2>) -> Self::Output {
-                (&self).$op(&rhs)
-            }
-        }
-
-        // &Matrix + Scalar
-        impl<
-                T: ScalarElementType,
-                R: Dimension,
-                C: Dimension,
-                D: StorageType<T, R, C>,
-                V: num_traits::Num + Copy + Into<T>,
-            > $Op<V> for &MatrixBase<T, R, C, D>
-        where
-            MatrixNewStorage: NewStorage<T, R, C>,
-        {
-            type Output = MatrixNew<T, R, C>;
-
-            #[inline]
-            fn $op(self, rhs: V) -> Self::Output {
-                let mut out = Self::Output::zero_with_shape(self.rows(), self.cols());
-                for i in 0..(self.rows() * self.cols()) {
-                    out.data[i] = self.data[i].$op_inner(rhs.into());
-                }
-
-                out
-            }
-        }
-
-        // Matrix + Scalar
-        impl<
-                T: ScalarElementType,
-                R: Dimension,
-                C: Dimension,
-                D: StorageType<T, R, C>,
-                V: num_traits::Num + Copy + Into<T>,
-            > $Op<V> for MatrixBase<T, R, C, D>
-        where
-            MatrixNewStorage: NewStorage<T, R, C>,
-        {
-            type Output = MatrixNew<T, R, C>;
-
-            #[inline]
-            fn $op(self, rhs: V) -> Self::Output {
-                (&self).$op(rhs)
-            }
-        }
-    };
-}
-
-cwise_binary_op!(AddAssign, add_assign, add_assign, Add, add, add, add_to);
-cwise_binary_op!(SubAssign, sub_assign, sub_assign, Sub, sub, sub, sub_to);
-cwise_binary_op!(
-    CwiseMulAssign,
-    cwise_mul_assign,
-    mul_assign,
-    CwiseMul,
-    cwise_mul,
-    mul,
-    cwise_mul_to
-);
-cwise_binary_op!(
-    CwiseDivAssign,
-    cwise_div_assign,
-    div_assign,
-    CwiseDiv,
-    cwise_div,
-    div,
-    cwise_div_to
-);
-
-// Matrix *= Scalar
-impl<
-        T: ScalarElementType,
-        R: Dimension,
-        C: Dimension,
-        D: StorageTypeMut<T, R, C>,
-        V: num_traits::Num + Copy + Into<T>,
-    > MulAssign<V> for MatrixBase<T, R, C, D>
-{
-    #[inline]
-    fn mul_assign(&mut self, rhs: V) {
-        for i in 0..(self.rows() * self.cols()) {
-            self.data[i] *= rhs.into();
-        }
-    }
-}
-
-// Matrix * Scalar
-impl<
-        T: ScalarElementType,
-        R: Dimension,
-        C: Dimension,
-        D: StorageTypeMut<T, R, C>,
-        V: num_traits::Num + Copy + Into<T>,
-    > Mul<V> for MatrixBase<T, R, C, D>
-{
-    type Output = Self;
-
-    #[inline]
-    fn mul(mut self, rhs: V) -> Self::Output {
-        self.mul_assign(rhs);
-        self
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Matrix Multiplication
-////////////////////////////////////////////////////////////////////////////////
-
-impl<T: ScalarElementType, R: Dimension, S: Dimension, D: StorageType<T, R, S>>
-    MatrixBase<T, R, S, D>
-{
-    #[inline]
-    pub fn mul_to<
-        S2: Dimension,
-        C: Dimension,
-        D2: StorageType<T, S2, C>,
-        D3: StorageTypeMut<T, R, C>,
-    >(
-        &self,
-        rhs: &MatrixBase<T, S2, C, D2>,
-        out: &mut MatrixBase<T, R, C, D3>,
-    ) where
-        (S, S2): MaybeEqualDims,
-    {
-        assert_eq!(self.cols(), rhs.rows());
-        for i in 0..self.rows() {
-            for j in 0..rhs.cols() {
-                let val = &mut out[(i, j)];
-                *val = T::zero();
-                for k in 0..self.cols() {
-                    *val += self[(i, k)] * rhs[(k, j)];
-                }
-            }
-        }
-    }
-}
-
-// &Matrix * &Matrix
-impl<
-        T: ScalarElementType,
-        R: Dimension,
-        S: Dimension,
-        S2: Dimension,
-        C: Dimension,
-        D: StorageType<T, R, S>,
-        D2: StorageType<T, S2, C>,
-    > Mul<&MatrixBase<T, S2, C, D2>> for &MatrixBase<T, R, S, D>
-where
-    MatrixNewStorage: NewStorage<T, R, C>,
-    (S, S2): MaybeEqualDims,
-{
-    type Output = MatrixNew<T, R, C>;
-
-    #[inline]
-    fn mul(self, rhs: &MatrixBase<T, S2, C, D2>) -> Self::Output {
-        let mut out = Self::Output::new_with_shape(self.rows(), rhs.cols());
-        self.mul_to(rhs, &mut out);
-        out
-    }
-}
-
-// Matrix * &Matrix
-impl<
-        T: ScalarElementType,
-        R: Dimension,
-        S: Dimension,
-        S2: Dimension,
-        C: Dimension,
-        D: StorageType<T, R, S>,
-        D2: StorageType<T, S2, C>,
-    > Mul<&MatrixBase<T, S2, C, D2>> for MatrixBase<T, R, S, D>
-where
-    MatrixNewStorage: NewStorage<T, R, C>,
-    (S, S2): MaybeEqualDims,
-{
-    type Output = MatrixNew<T, R, C>;
-
-    #[inline]
-    fn mul(self, rhs: &MatrixBase<T, S2, C, D2>) -> Self::Output {
-        &self * rhs
-    }
-}
-
-// &Matrix * Matrix
-impl<
-        T: ScalarElementType,
-        R: Dimension,
-        S: Dimension,
-        S2: Dimension,
-        C: Dimension,
-        D: StorageType<T, R, S>,
-        D2: StorageType<T, S2, C>,
-    > Mul<MatrixBase<T, S2, C, D2>> for &MatrixBase<T, R, S, D>
-where
-    MatrixNewStorage: NewStorage<T, R, C>,
-    (S, S2): MaybeEqualDims,
-{
-    type Output = MatrixNew<T, R, C>;
-
-    #[inline]
-    fn mul(self, rhs: MatrixBase<T, S2, C, D2>) -> Self::Output {
-        self * &rhs
-    }
-}
-
-// Matrix * Matrix
-impl<
-        T: ScalarElementType,
-        R: Dimension,
-        S: Dimension,
-        S2: Dimension,
-        C: Dimension,
-        D: StorageType<T, R, S>,
-        D2: StorageType<T, S2, C>,
-    > Mul<MatrixBase<T, S2, C, D2>> for MatrixBase<T, R, S, D>
-where
-    MatrixNewStorage: NewStorage<T, R, C>,
-    (S, S2): MaybeEqualDims,
-{
-    type Output = MatrixNew<T, R, C>;
-
-    #[inline]
-    fn mul(self, rhs: MatrixBase<T, S2, C, D2>) -> Self::Output {
-        &self * &rhs
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-fn argmax<T: std::cmp::PartialOrd, I: Iterator<Item = usize>, F: Fn(usize) -> T>(
-    arg: I,
-    func: F,
-) -> Option<usize> {
-    let mut max = None;
-    for i in arg {
-        if max.is_none() || func(i) > func(max.unwrap()) {
-            max = Some(i)
-        }
-    }
-
-    max
-}
 
 impl<T: ScalarElementType, D: StorageType<T, U3, U1>> MatrixBase<T, U3, U1, D> {
     /// TODO: Also have an inplace version and a version that assigns into an
@@ -1194,6 +733,13 @@ impl<T: ScalarElementType, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C
 
     pub fn normalized(mut self) -> Self {
         self.normalize();
+        self
+    }
+
+    pub fn sqrt(mut self) -> Self {
+        for i in 0..(self.rows() * self.cols()) {
+            self[i] = self[i].sqrt();
+        }
         self
     }
 

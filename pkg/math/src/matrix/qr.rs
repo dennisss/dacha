@@ -1,9 +1,12 @@
+use core::convert::From;
+
 use crate::matrix::base::*;
+use crate::matrix::cwise_binary_ops::*;
 use crate::matrix::dimension::*;
 use crate::matrix::element::*;
 use crate::matrix::householder::*;
 use crate::matrix::storage::*;
-use std::convert::From;
+
 use typenum::U1;
 
 /// QR Decomposition of a square real matrix into an orthogonal matrix and an
