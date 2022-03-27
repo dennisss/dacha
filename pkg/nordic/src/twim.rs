@@ -4,7 +4,7 @@ use peripherals::raw::twim0::TWIM0;
 use peripherals::raw::{Interrupt, InterruptState};
 
 use crate::log;
-use crate::pins::PeripheralPin;
+use crate::pins::{connect_pin, PeripheralPin};
 
 /// NOTE: Requires a HFCLK.
 pub struct TWIM {
@@ -27,16 +27,8 @@ impl TWIM {
         sda: SDAPin,
         frequency: usize,
     ) -> Self {
-        periph.psel.scl.write_with(|v| {
-            v.set_connect_with(|v| v.set_connected())
-                .set_port(scl.port() as u32)
-                .set_pin(scl.pin() as u32)
-        });
-        periph.psel.sda.write_with(|v| {
-            v.set_connect_with(|v| v.set_connected())
-                .set_port(sda.port() as u32)
-                .set_pin(sda.pin() as u32)
-        });
+        connect_pin(scl, &mut periph.psel.scl);
+        connect_pin(sda, &mut periph.psel.sda);
 
         match frequency {
             100_000 => periph.frequency.write_k100(),

@@ -91,6 +91,11 @@ fn main() -> Result<()> {
         new_name: "InterruptClear".to_string(),
     });
 
+    options.register_rewrites.push(RegisterRewriteRule {
+        register_name: RegExp::new("^PSEL\\..*")?,
+        new_name: "PinSelectRegister".to_string(),
+    });
+
     /*
     TODO: INTENSET|INTENCLR reading should re-use the same value struct as the corresponding INTEN
 

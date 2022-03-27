@@ -1,3 +1,5 @@
+use peripherals::raw::PinSelectRegister;
+
 macro_rules! define_pins {
     ($($name:ident = $port:ident $num:expr),*) => {
         pub struct PeripheralPins {
@@ -83,4 +85,12 @@ pub enum Port {
 pub trait PeripheralPin {
     fn port(&self) -> Port;
     fn pin(&self) -> u8;
+}
+
+pub fn connect_pin<P: PeripheralPin>(pin: P, pin_select: &mut PinSelectRegister) {
+    pin_select.write_with(|v| {
+        v.set_connect_with(|v| v.set_connected())
+            .set_port(pin.port() as u32)
+            .set_pin(pin.pin() as u32)
+    });
 }

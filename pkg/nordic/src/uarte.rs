@@ -6,7 +6,7 @@ use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::uarte0::UARTE0;
 use peripherals::raw::{Interrupt, InterruptState, PinDirection};
 
-use crate::pins::PeripheralPin;
+use crate::pins::{connect_pin, PeripheralPin};
 
 /// Internal implementation details:
 /// - After new() is called, the peripheral is in the 'idle' state where:
@@ -57,16 +57,9 @@ impl UARTE {
         }
 
         periph.config.write_with(|v| v); // Defaults to 8N1
-        periph.psel.txd.write_with(|v| {
-            v.set_connect_with(|v| v.set_connected())
-                .set_port(txd.port() as u32)
-                .set_pin(txd.pin() as u32)
-        });
-        periph.psel.rxd.write_with(|v| {
-            v.set_connect_with(|v| v.set_connected())
-                .set_port(rxd.port() as u32)
-                .set_pin(rxd.pin() as u32)
-        });
+
+        connect_pin(txd, &mut periph.psel.txd);
+        connect_pin(rxd, &mut periph.psel.rxd);
 
         periph.inten.write_with(|v| {
             v.set_txstopped(InterruptState::Enabled)
