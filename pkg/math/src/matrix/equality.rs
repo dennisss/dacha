@@ -1,8 +1,9 @@
+use approx::{AbsDiffEq, RelativeEq, UlpsEq};
+
 use crate::matrix::base::MatrixBase;
 use crate::matrix::dimension::Dimension;
 use crate::matrix::element::ElementType;
 use crate::matrix::storage::StorageType;
-use approx::{AbsDiffEq, RelativeEq, UlpsEq};
 
 impl<T: PartialEq + ElementType, R: Dimension, C: Dimension, S: StorageType<T, R, C>> PartialEq
     for MatrixBase<T, R, C, S>

@@ -1,7 +1,8 @@
-use std::cmp::Ord;
-use std::cmp::Ordering;
-use std::ops;
-use std::ops::Div;
+use alloc::vec::Vec;
+use core::cmp::Ord;
+use core::cmp::Ordering;
+use core::ops;
+use core::ops::Div;
 
 use generic_array::{arr::AddLength, ArrayLength, GenericArray};
 use typenum::Quot;
@@ -351,7 +352,7 @@ impl_op!(-|lhs: &SecureBigUint, rhs: &SecureBigUint| -> SecureBigUint { lhs.clon
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
+    use core::str::FromStr;
 
     #[test]
     fn secure_biguint_test() {
@@ -378,7 +379,7 @@ mod tests {
 
         assert_eq!(
             &temp.to_le_bytes(),
-            &(std::u32::MAX as u64).pow(2).to_le_bytes()
+            &(core::u32::MAX as u64).pow(2).to_le_bytes()
         );
 
         let (q, r) = temp.quorem(&x);

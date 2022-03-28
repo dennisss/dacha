@@ -1,7 +1,8 @@
+use typenum::U1;
+
 use crate::matrix::base::VectorNew;
 use crate::matrix::dimension::Dimension;
 use crate::matrix::storage::{MatrixNewStorage, NewStorage};
-use typenum::U1;
 
 /// Axis aligned bounding box.
 pub struct BoundingBox<D: Dimension>

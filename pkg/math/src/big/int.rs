@@ -1,6 +1,9 @@
-use super::BigUint;
+use alloc::vec::Vec;
+
 use common::errors::*;
 use common::vec::VecPtr;
+
+use super::BigUint;
 
 /// Signed arbitrary length integer.
 #[derive(Clone, PartialEq)]
@@ -179,7 +182,7 @@ impl BigInt {
     }
 }
 
-impl std::convert::From<BigUint> for BigInt {
+impl core::convert::From<BigUint> for BigInt {
     fn from(other: BigUint) -> Self {
         // TODO: We should be able to do this even more efficiently without a
         // conversion as the internal representations are the same.
@@ -191,8 +194,8 @@ impl std::convert::From<BigUint> for BigInt {
     }
 }
 
-impl std::fmt::Debug for BigInt {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for BigInt {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if let Ok(v) = self.to_isize() {
             write!(f, "{}", v)
         } else if self.is_positive() {

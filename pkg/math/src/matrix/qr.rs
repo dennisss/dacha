@@ -21,11 +21,8 @@ where
     pub r: MatrixNew<T, M, N>,
 }
 
-impl<
-        T: ScalarElementType + ToString + From<f32> + From<u32> + From<i32>,
-        M: Dimension,
-        N: Dimension,
-    > QR<T, M, N>
+impl<T: ScalarElementType + From<f32> + From<u32> + From<i32>, M: Dimension, N: Dimension>
+    QR<T, M, N>
 where
     MatrixNewStorage: NewStorage<T, M, M>
         + NewStorage<T, M, N>
@@ -77,7 +74,7 @@ where
     /// See:
     /// https://en.wikipedia.org/wiki/QR_decomposition#Using_Householder_reflections
     pub fn householder<D: StorageType<T, M, N> + AsRef<[T]>>(a: &MatrixBase<T, M, N, D>) -> Self {
-        let t = std::cmp::min(a.rows() - 1, a.cols());
+        let t = core::cmp::min(a.rows() - 1, a.cols());
 
         let mut q = MatrixNew::<T, M, M>::identity_with_shape(a.rows(), a.rows());
         let mut r = a.to_owned();

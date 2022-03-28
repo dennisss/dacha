@@ -4,14 +4,14 @@ version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
 
 [dependencies]
-common = { path = "../common" }
-num-traits = "0.2"
+common = { path = "../common", default-features = false }
+num-traits = { version = "0.2", default-features = false, features = ["libm"] }
 typenum = "1.10.0"
-impl_ops = "0.1.1"
+auto_ops = "0.3.0"
 generic-array = "0.13.2"
-approx = "0.3.2"
+approx = { version = "0.5.1", default-features = false }
 
 [features]
-default = ["std"]
-std = ["alloc"]
-alloc = []
+default = ["std", "alloc"]
+std = ["common/std", "num-traits/std", "approx/std"]
+alloc = ["common/alloc"]

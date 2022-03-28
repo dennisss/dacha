@@ -1,3 +1,4 @@
+use core::fmt::{Debug, Display};
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 use num_traits::real::Real;
@@ -51,7 +52,9 @@ pub trait ScalarElementType = ElementType
     + MulAssign
     + Div
     + DivAssign
-    + ErrorEpsilon;
+    + ErrorEpsilon
+    + Debug
+    + Display;
 
 // TODO: This will require floating point comparisons be possible with every
 // type of scalar?

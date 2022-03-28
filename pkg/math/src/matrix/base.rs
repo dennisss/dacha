@@ -1,15 +1,16 @@
-use crate::matrix::dimension::*;
-use crate::matrix::element::*;
-use crate::matrix::storage::*;
+use core::marker::PhantomData;
+use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+
 use generic_array::{ArrayLength, GenericArray};
 use num_traits::real::Real;
 use num_traits::{AsPrimitive, One, Zero};
-use std::marker::PhantomData;
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 use typenum::{Prod, Unsigned, U1, U2, U3, U4, U5, U8};
 
 use crate::argmax::argmax;
 use crate::matrix::cwise_binary_ops::CwiseDivAssign;
+use crate::matrix::dimension::*;
+use crate::matrix::element::*;
+use crate::matrix::storage::*;
 
 /*
     TODO: Needed operations:
@@ -45,7 +46,9 @@ pub type VectorStatic<T, R> = MatrixBase<T, R, U1, MatrixInlineStorage<T, R, U1,
 
 pub type VectorBase<T, R, D> = MatrixBase<T, R, U1, D>;
 
+#[cfg(feature = "alloc")]
 pub type Matrix<T, R, C> = MatrixBase<T, R, C, MatrixDynamicStorage<T, R, C>>;
+
 pub type Matrix2i = MatrixStatic<isize, U2, U2>;
 pub type Matrix2f = MatrixStatic<f32, U2, U2>;
 pub type Matrix3f = MatrixStatic<f32, U3, U3>;
@@ -53,8 +56,12 @@ pub type Matrix3d = MatrixStatic<f64, U3, U3>;
 pub type Matrix4f = MatrixStatic<f32, U4, U4>;
 pub type Matrix4d = MatrixStatic<f64, U4, U4>;
 pub type Matrix8f = MatrixStatic<f32, U8, U8>;
+#[cfg(feature = "alloc")]
 pub type MatrixXd = Matrix<f64, Dynamic, Dynamic>;
+
+#[cfg(feature = "alloc")]
 pub type Vector<T, R> = Matrix<T, R, U1>;
+
 pub type Vector2i = VectorStatic<isize, U2>;
 pub type Vector2u = VectorStatic<usize, U2>;
 pub type Vector2f = VectorStatic<f32, U2>;
@@ -264,7 +271,7 @@ impl<
         }
 
         //		unsafe {
-        //			std::mem::transmute(self.block_with_shape::<RB, CB>(
+        //			core::mem::transmute(self.block_with_shape::<RB, CB>(
         //				row, col, row_height, col_width))
         //		}
     }
@@ -391,7 +398,7 @@ impl<T: ElementType, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>>
     }
 
     pub fn diag_with_shape(rows: usize, cols: usize, data: &[T]) -> Self {
-        assert_eq!(data.len(), std::cmp::min(rows, cols));
+        assert_eq!(data.len(), core::cmp::min(rows, cols));
         let mut m = Self::zero_with_shape(rows, cols);
         for i in 0..data.len() {
             m[(i, i)] = data[i];
@@ -412,7 +419,7 @@ impl<T: ElementType, R: StaticDim, C: StaticDim, D: StorageTypeMut<T, R, C>>
     }
 }
 
-impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>> std::ops::Index<usize>
+impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>> core::ops::Index<usize>
     for MatrixBase<T, R, C, D>
 {
     type Output = T;
@@ -423,7 +430,7 @@ impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>> std::ops::Index<usi
     }
 }
 
-impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>> std::ops::IndexMut<usize>
+impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>> core::ops::IndexMut<usize>
     for MatrixBase<T, R, C, D>
 {
     #[inline]
@@ -432,7 +439,7 @@ impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>> std::ops::IndexM
     }
 }
 
-impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>> std::ops::Index<(usize, usize)>
+impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>> core::ops::Index<(usize, usize)>
     for MatrixBase<T, R, C, D>
 {
     type Output = T;
@@ -444,7 +451,7 @@ impl<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>> std::ops::Index<(us
     }
 }
 
-impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>> std::ops::IndexMut<(usize, usize)>
+impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>> core::ops::IndexMut<(usize, usize)>
     for MatrixBase<T, R, C, D>
 {
     #[inline]
@@ -860,9 +867,9 @@ mod tests {
 
     #[test]
     fn matrix_static_size() {
-        assert_eq!(std::mem::size_of::<Vector2i>(), 16);
-        assert_eq!(std::mem::size_of::<Vector3f>(), 12);
-        assert_eq!(std::mem::size_of::<Vector4f>(), 16);
-        assert_eq!(std::mem::size_of::<Vector4d>(), 32);
+        assert_eq!(core::mem::size_of::<Vector2i>(), 16);
+        assert_eq!(core::mem::size_of::<Vector3f>(), 12);
+        assert_eq!(core::mem::size_of::<Vector4f>(), 16);
+        assert_eq!(core::mem::size_of::<Vector4d>(), 32);
     }
 }

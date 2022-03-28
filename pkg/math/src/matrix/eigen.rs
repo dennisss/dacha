@@ -1,12 +1,14 @@
+use core::convert::From;
+
+use num_traits::real::Real;
+use typenum::U1;
+
 use crate::matrix::base::*;
 use crate::matrix::dimension::*;
 use crate::matrix::element::*;
 use crate::matrix::householder::*;
 use crate::matrix::qr::*;
 use crate::matrix::storage::*;
-use num_traits::real::Real;
-use std::convert::From;
-use typenum::U1;
 
 // For a single row, sum up all non-diagonal entry absolute values
 // - this will be the radius of the disc centered at the diagonal entry for
@@ -16,7 +18,7 @@ use typenum::U1;
 /// TODO: Allow one dimension to be dynamic as long as the dimensions are
 /// MaybeEqual.
 #[derive(Debug)]
-pub struct EigenStructure<T: ScalarElementType + ToString, N: Dimension>
+pub struct EigenStructure<T: ScalarElementType, N: Dimension>
 where
     MatrixNewStorage: NewStorage<T, N, N> + NewStorage<T, N, U1>,
 {
@@ -29,8 +31,7 @@ where
     pub values: MatrixNew<T, N, N>,
 }
 
-impl<T: ScalarElementType + ToString + From<u32> + From<f32> + From<i32>, N: Dimension>
-    EigenStructure<T, N>
+impl<T: ScalarElementType + From<u32> + From<f32> + From<i32>, N: Dimension> EigenStructure<T, N>
 where
     MatrixNewStorage: NewStorage<T, N, N> + NewStorage<T, N, U1> + NewStorage<T, U1, N>,
 {
@@ -48,6 +49,7 @@ where
         let mut a_i = a.to_owned();
         let mut u_i = MatrixNew::<T, N, N>::identity_with_shape(a.rows(), a.cols());
 
+        #[cfg(feature = "std")]
         println!("INPUT MATRIX: {:?}", a);
 
         // TODO: Check for error bound convergence.
@@ -72,6 +74,7 @@ where
             };
 
             if max_radius < (1e-14).into() {
+                #[cfg(feature = "std")]
                 println!("Eigenvalues converged early after: {} iterations", i + 1);
                 break;
             }
@@ -126,6 +129,7 @@ where
 
         // TODO: Sort eigenvalues in descending order. (also sorting the cols)
 
+        #[cfg(feature = "std")]
         println!("{:?}", u_i);
 
         Self {

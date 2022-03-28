@@ -1,4 +1,5 @@
-use std::ops::Mul;
+use core::ops::Mul;
+
 use typenum::Unsigned;
 
 /// A dimension cardinality (i.e. # of rows or columns).

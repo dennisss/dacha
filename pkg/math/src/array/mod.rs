@@ -1,5 +1,7 @@
+use alloc::vec::Vec;
+use core::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+
 use num_traits::{AsPrimitive, Num, NumCast};
-use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
 // TODO: First implement an ArrayMut which has operations that are allowed to
 // mutate the vector in it.
@@ -188,7 +190,7 @@ impl<T: Copy + Mul<T, Output = T>> Mul<T> for Array<T> {
     }
 }
 
-impl<T: Clone> std::convert::From<Vec<T>> for Array<T> {
+impl<T: Clone> core::convert::From<Vec<T>> for Array<T> {
     fn from(data: Vec<T>) -> Array<T> {
         let shape = vec![data.len()];
         Array { data, shape }
@@ -239,7 +241,7 @@ impl<T: Clone> Array<T> {
         idx
     }
 
-    pub fn contains_pos<S: std::cmp::PartialOrd<isize>>(&self, pos: &[S]) -> bool {
+    pub fn contains_pos<S: core::cmp::PartialOrd<isize>>(&self, pos: &[S]) -> bool {
         for (i, p) in pos.iter().enumerate() {
             if *p < 0 || *p >= (self.shape[i] as isize) {
                 return false;
@@ -314,12 +316,12 @@ pub enum KernelEdgeMode {
 }
 
 impl<
-        T: std::cmp::PartialOrd<T>
-            + std::fmt::Display
+        T: core::cmp::PartialOrd<T>
+            + core::fmt::Display
             + Copy
             + Clone
-            + std::ops::Mul<T, Output = T>
-            + std::ops::AddAssign<T>
+            + core::ops::Mul<T, Output = T>
+            + core::ops::AddAssign<T>
             + num_traits::Zero,
     > Array<T>
 {
@@ -489,7 +491,7 @@ impl<T> Array<T> {
     }
 }
 
-impl<T: Clone> std::ops::Index<usize> for Array<T> {
+impl<T: Clone> core::ops::Index<usize> for Array<T> {
     type Output = T;
     fn index(&self, index: usize) -> &Self::Output {
         &self.data[index]
@@ -497,19 +499,19 @@ impl<T: Clone> std::ops::Index<usize> for Array<T> {
 }
 
 // Index single entry in array by position tuple.
-impl<T: Clone, Y: AsPrimitive<usize>> std::ops::Index<&[Y]> for Array<T> {
+impl<T: Clone, Y: AsPrimitive<usize>> core::ops::Index<&[Y]> for Array<T> {
     type Output = T;
     fn index(&self, index: &[Y]) -> &Self::Output {
         &self.data[self.from_pos(index)]
     }
 }
 
-impl<T: Clone> std::ops::IndexMut<usize> for Array<T> {
+impl<T: Clone> core::ops::IndexMut<usize> for Array<T> {
     fn index_mut(&mut self, index: usize) -> &mut T {
         &mut self.data[index]
     }
 }
-impl<T: Clone, Y: AsPrimitive<usize>> std::ops::IndexMut<&[Y]> for Array<T> {
+impl<T: Clone, Y: AsPrimitive<usize>> core::ops::IndexMut<&[Y]> for Array<T> {
     fn index_mut(&mut self, index: &[Y]) -> &mut T {
         let idx = self.from_pos(index);
         &mut self.data[idx]

@@ -1,5 +1,8 @@
-use crate::matrix::*;
+use alloc::vec::Vec;
+
 use typenum::U2;
+
+use crate::matrix::*;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Entry {
@@ -22,7 +25,7 @@ impl num_traits::Zero for Entry {
         *self == Entry::Empty
     }
 }
-impl std::ops::Add for Entry {
+impl core::ops::Add for Entry {
     type Output = Entry;
     fn add(self, _: Self) -> Self {
         panic!("This is only to satisft num_traits::Zero constraints.")
@@ -83,7 +86,7 @@ impl AssignmentSolver {
     // not be assigned @return the total cost of the found assignment
     pub fn solve(&mut self, w: &MatrixXd, c: &mut Vec<Option<usize>>) -> f64 {
         // Padding with zeros to be a square matrix with the same optimal assignments
-        let N = std::cmp::max(w.rows(), w.cols());
+        let N = core::cmp::max(w.rows(), w.cols());
         self.W = MatrixXd::zero_with_shape(N, N); // < TODO: Instead resize and clear?
         self.W
             .block_with_shape_mut(0, 0, w.rows(), w.cols())
@@ -144,7 +147,7 @@ impl AssignmentSolver {
         // Subtract row mins
         for i in 0..self.W.rows() {
             // Find min
-            let mut min = std::f64::MAX;
+            let mut min = core::f64::MAX;
             for j in 0..self.W.cols() {
                 if self.W[(i, j)] < min {
                     min = self.W[(i, j)];
@@ -247,7 +250,7 @@ impl AssignmentSolver {
 
     fn solve_step6(&mut self) -> Step {
         // Find smallest uncovered value.
-        let mut min = std::f64::MAX;
+        let mut min = core::f64::MAX;
 
         for i in 0..self.W.rows() {
             for j in 0..self.W.cols() {

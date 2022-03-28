@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use crate::matrix::{Matrix2f, Vector2f};
 
 /// Representation of a 2d line where a point is defined as:

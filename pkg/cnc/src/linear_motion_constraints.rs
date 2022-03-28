@@ -141,7 +141,15 @@ impl LinearMotionConstraints {
 
             let (t1, t2) = math::find_quadratic_roots(a, b, c);
             // TODO: Check this.
-            let rampup_time = if t2 >= 0.0 { t2 } else { t1 };
+            let rampup_time = {
+                if t2 >= 0.0 && t1 >= 0.0 {
+                    t2.min(t1)
+                } else if t2 >= 0.0 {
+                    t2
+                } else {
+                    t1
+                }
+            };
 
             let absolute_peak_speed = rampup_time * self.max_acceleration + start_speed;
 

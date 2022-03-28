@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package cnc;
+
+message VectorXfProto {
+    repeated float values = 1 [max_count = 6];
+}
+
+message LinearMotionProto {
+    VectorXfProto start_position = 1;
+    VectorXfProto start_velocity = 2;
+
+    VectorXfProto end_position = 3;
+    VectorXfProto end_velocity = 4;
+
+    VectorXfProto acceleration = 5;
+    
+    float duration = 6;
+}

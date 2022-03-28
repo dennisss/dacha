@@ -1,10 +1,13 @@
-use common::ceil_div;
-use common::errors::*;
-use std::cmp::Ordering;
-use std::ops::{
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::cmp::Ordering;
+use core::ops::{
     Add, AddAssign, BitAndAssign, BitOrAssign, BitXorAssign, Div, DivAssign, Mul, Rem, RemAssign,
     Sub, SubAssign,
 };
+
+use common::ceil_div;
+use common::errors::*;
 
 // 64bit max value:
 // 9223372036854775807
@@ -194,7 +197,7 @@ impl BigUint {
 
     // TODO: We can avoid some temporaries by using references to split the BigUint
     // into two slices pub fn mul_karatsuba(&self, rhs: &BigUint, out: &mut
-    // BigUint) { 	let m = ceil_div(std::cmp::max(self.value.len(),
+    // BigUint) { 	let m = ceil_div(core::cmp::max(self.value.len(),
     // rhs.value.len()), 2); 	let x_1 = BigUint { value:  }
     // }
 
@@ -280,7 +283,7 @@ impl BigUint {
             // TODO: Very inefficient
             s.insert(
                 0,
-                std::char::from_digit(r.value.first().cloned().unwrap_or(0), radix).unwrap(),
+                core::char::from_digit(r.value.first().cloned().unwrap_or(0), radix).unwrap(),
             );
         }
 
@@ -320,15 +323,15 @@ impl BigUint {
     }
 }
 
-impl std::fmt::Display for BigUint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for BigUint {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.to_string_radix(10))
     }
 }
 
-impl std::fmt::Debug for BigUint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(self, f)
+impl core::fmt::Debug for BigUint {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(self, f)
     }
 }
 
@@ -391,7 +394,7 @@ impl From<usize> for BigUint {
 
 // TODO: Implement generic radix form. (it should be especially efficient for
 // power of 2 radixes)
-impl std::str::FromStr for BigUint {
+impl core::str::FromStr for BigUint {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
         let ten = BigUint::from(10);
@@ -406,11 +409,11 @@ impl std::str::FromStr for BigUint {
     }
 }
 
-use std::ops;
+use core::ops;
 
 impl_op_ex!(+= |lhs: &mut BigUint, rhs: &BigUint| {
     let mut carry = 0;
-    let n = std::cmp::max(lhs.value.len(), rhs.value.len());
+    let n = core::cmp::max(lhs.value.len(), rhs.value.len());
     for i in 0..n {
         let v = (lhs.index(i) as u64) + (rhs.index(i) as u64) + carry;
 
@@ -437,7 +440,7 @@ impl_op!(+ |lhs: &BigUint, rhs: &BigUint| -> BigUint {
 
 impl_op_ex!(-= |lhs: &mut BigUint, rhs: &BigUint| {
     let mut carry = 0;
-    let n = std::cmp::max(lhs.value.len(), rhs.value.len());
+    let n = core::cmp::max(lhs.value.len(), rhs.value.len());
     for i in 0..n {
         // TODO: Try to use overflowing_sub instead (that way we don't need to go to 64bits)
         let v = (lhs.index(i) as i64) - (rhs.index(i) as i64) + carry;
@@ -500,7 +503,7 @@ impl_op!(% |lhs: &BigUint, rhs: &BigUint| -> BigUint {
 impl BitAndAssign<&BigUint> for BigUint {
     fn bitand_assign(&mut self, rhs: &BigUint) {
         self.value
-            .resize(std::cmp::max(self.value.len(), rhs.value.len()), 0);
+            .resize(core::cmp::max(self.value.len(), rhs.value.len()), 0);
         for i in 0..self.value.len() {
             self.value[i] &= rhs.index(i);
         }
@@ -511,7 +514,7 @@ impl BitAndAssign<&BigUint> for BigUint {
 impl_op_ex!(&|lhs: &BigUint, rhs: &BigUint| -> BigUint {
     let mut out = BigUint::zero();
     out.value
-        .resize(std::cmp::max(lhs.value.len(), rhs.value.len()), 0);
+        .resize(core::cmp::max(lhs.value.len(), rhs.value.len()), 0);
     for i in 0..out.value.len() {
         out.value[i] = lhs.index(i) & rhs.index(i);
     }
@@ -522,7 +525,7 @@ impl_op_ex!(&|lhs: &BigUint, rhs: &BigUint| -> BigUint {
 impl BitOrAssign<&BigUint> for BigUint {
     fn bitor_assign(&mut self, rhs: &BigUint) {
         self.value
-            .resize(std::cmp::max(self.value.len(), rhs.value.len()), 0);
+            .resize(core::cmp::max(self.value.len(), rhs.value.len()), 0);
         for i in 0..self.value.len() {
             self.value[i] |= rhs.index(i);
         }
@@ -532,7 +535,7 @@ impl BitOrAssign<&BigUint> for BigUint {
 
 impl_op_ex!(^= |lhs: &mut BigUint, rhs: &BigUint| {
     lhs.value.resize(
-        std::cmp::max(lhs.value.len(), rhs.value.len()), 0);
+        core::cmp::max(lhs.value.len(), rhs.value.len()), 0);
     for i in 0..lhs.value.len() {
         lhs.value[i] ^= rhs.index(i);
     }
@@ -542,7 +545,7 @@ impl_op_ex!(^= |lhs: &mut BigUint, rhs: &BigUint| {
 impl_op_ex!(^ |lhs: &BigUint, rhs: &BigUint| -> BigUint {
     let mut out = BigUint::zero();
     out.value.resize(
-        std::cmp::max(lhs.value.len(), rhs.value.len()), 0);
+        core::cmp::max(lhs.value.len(), rhs.value.len()), 0);
     for i in 0..out.value.len() {
         out.value[i] = lhs.index(i) ^ rhs.index(i);
     }
@@ -670,7 +673,7 @@ impl<'a> Modulo<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
+    use core::str::FromStr;
 
     #[test]
     fn biguint_test() {

@@ -163,6 +163,18 @@ mod test {
         println!("{:#?}", out);
     }
 
+    #[test]
+    fn works() {
+        // 20 revolutions
+
+        let mut planner = LinearMotionPlanner::new(Vector3f::zero());
+        planner.move_to(Vector3f::from_slice(&[64000.0, 0.0, 0.0]), 3200.0, 500.0);
+
+        let mut out = vec![];
+        planner.next(&mut out);
+        println!("{:#?}", out);
+    }
+
     /*
     #[test]
     fn works() {

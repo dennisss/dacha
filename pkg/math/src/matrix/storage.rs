@@ -1,9 +1,13 @@
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut, Index, IndexMut, Mul};
+
+use generic_array::{ArrayLength, GenericArray};
+use typenum::Prod; // TODO: Refactor out this circular reference.
+
 use crate::matrix::dimension::*;
 use crate::matrix::element::ElementType;
-use generic_array::{ArrayLength, GenericArray};
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut, Index, IndexMut, Mul};
-use typenum::Prod; // TODO: Refactor out this circular reference.
 
 /// A container of elements. Must be indexable in natural contiguous order. Row
 /// and column semantics will be defined at a higher level, so the storage type
@@ -28,6 +32,7 @@ pub trait StorageTypeMut<T, R, C> =
     StorageType<T, R, C> + IndexMut<(usize, usize)> + IndexMut<usize>;
 
 /// Storage for a matrix on the heap.
+#[cfg(feature = "alloc")]
 #[derive(Clone)]
 pub struct MatrixDynamicStorage<T, R: Dimension, C: Dimension> {
     data: Vec<T>,
@@ -35,6 +40,7 @@ pub struct MatrixDynamicStorage<T, R: Dimension, C: Dimension> {
     cols: C,
 }
 
+#[cfg(feature = "alloc")]
 impl<T: ElementType, R: Dimension, C: Dimension> StorageType<T, R, C>
     for MatrixDynamicStorage<T, R, C>
 {
@@ -57,18 +63,21 @@ impl<T: ElementType, R: Dimension, C: Dimension> StorageType<T, R, C>
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T, R: Dimension, C: Dimension> AsRef<[T]> for MatrixDynamicStorage<T, R, C> {
     fn as_ref(&self) -> &[T] {
         self.data.as_ref()
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T, R: Dimension, C: Dimension> AsMut<[T]> for MatrixDynamicStorage<T, R, C> {
     fn as_mut(&mut self) -> &mut [T] {
         self.data.as_mut()
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T, R: Dimension, C: Dimension> Index<usize> for MatrixDynamicStorage<T, R, C> {
     type Output = T;
 
@@ -77,6 +86,7 @@ impl<T, R: Dimension, C: Dimension> Index<usize> for MatrixDynamicStorage<T, R, 
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T, R: Dimension, C: Dimension> Index<(usize, usize)> for MatrixDynamicStorage<T, R, C> {
     type Output = T;
 
@@ -85,12 +95,14 @@ impl<T, R: Dimension, C: Dimension> Index<(usize, usize)> for MatrixDynamicStora
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T, R: Dimension, C: Dimension> IndexMut<usize> for MatrixDynamicStorage<T, R, C> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.data[index]
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T, R: Dimension, C: Dimension> IndexMut<(usize, usize)> for MatrixDynamicStorage<T, R, C> {
     fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
         &mut self.data[index.0 * self.cols.value() + index.1]
@@ -123,7 +135,7 @@ impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> AsMut<[T]>
     }
 }
 
-impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> std::ops::Index<usize>
+impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> core::ops::Index<usize>
     for MatrixInlineStorage<T, R, C, S>
 {
     type Output = T;
@@ -134,7 +146,7 @@ impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> std::ops::Index<usize>
     }
 }
 
-impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> std::ops::Index<(usize, usize)>
+impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> core::ops::Index<(usize, usize)>
     for MatrixInlineStorage<T, R, C, S>
 {
     type Output = T;
@@ -145,7 +157,7 @@ impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> std::ops::Index<(usize, u
     }
 }
 
-impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> std::ops::IndexMut<usize>
+impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> core::ops::IndexMut<usize>
     for MatrixInlineStorage<T, R, C, S>
 {
     fn index_mut(&mut self, idx: usize) -> &mut T {
@@ -153,7 +165,7 @@ impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> std::ops::IndexMut<usize>
     }
 }
 
-impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> std::ops::IndexMut<(usize, usize)>
+impl<T, R: StaticDim, C: StaticDim, S: ArrayLength<T>> core::ops::IndexMut<(usize, usize)>
     for MatrixInlineStorage<T, R, C, S>
 {
     fn index_mut(&mut self, idx: (usize, usize)) -> &mut T {
@@ -362,12 +374,15 @@ pub trait NewStorage<T, R, C> {
     type Type: StorageTypeMut<T, R, C> + AsMut<[T]> + AsRef<[T]> + Clone;
 }
 
+#[cfg(feature = "alloc")]
 impl<T: ElementType> NewStorage<T, Dynamic, Dynamic> for MatrixNewStorage {
     type Type = MatrixDynamicStorage<T, Dynamic, Dynamic>;
 }
+#[cfg(feature = "alloc")]
 impl<T: ElementType, C: StaticDim> NewStorage<T, Dynamic, C> for MatrixNewStorage {
     type Type = MatrixDynamicStorage<T, Dynamic, C>;
 }
+#[cfg(feature = "alloc")]
 impl<T: ElementType, R: StaticDim> NewStorage<T, R, Dynamic> for MatrixNewStorage {
     type Type = MatrixDynamicStorage<T, R, Dynamic>;
 }

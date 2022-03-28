@@ -44,6 +44,7 @@ pub mod rng;
 pub mod spi;
 pub mod temp;
 pub mod timer;
+pub mod tmc2130;
 pub mod twim;
 pub mod uarte;
 pub mod usb;

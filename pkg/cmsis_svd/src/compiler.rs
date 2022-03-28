@@ -232,6 +232,7 @@ impl<'a> Compiler<'a> {
                             ClusterOrRegister::Cluster(cluster) => {
                                 self.compile_cluster(
                                     cluster,
+                                    "",
                                     &inherited_props,
                                     &mut registers_struct,
                                     &mut outer_lines,
@@ -240,6 +241,7 @@ impl<'a> Compiler<'a> {
                             ClusterOrRegister::Register(register) => {
                                 self.compile_register(
                                     register,
+                                    "",
                                     &inherited_props,
                                     &mut registers_struct,
                                     &mut outer_lines,
@@ -314,6 +316,7 @@ impl<'a> Compiler<'a> {
     fn compile_cluster(
         &mut self,
         cluster: &Cluster<'a>,
+        field_path: &str,
         inherited_register_properties: &RegisterPropertiesGroup,
         registers_struct: &mut RegistersStruct,
         lines: &mut LineBuilder,
@@ -321,11 +324,14 @@ impl<'a> Compiler<'a> {
         let mut cluster_struct = RegistersStruct::new();
         let mut outer_lines = LineBuilder::new();
 
+        let inner_field_path = format!("{}{}.", field_path, cluster.name);
+
         for register in &cluster.children {
             match register {
                 ClusterOrRegister::Cluster(cluster) => {
                     self.compile_cluster(
                         cluster,
+                        &inner_field_path,
                         inherited_register_properties,
                         &mut cluster_struct,
                         &mut outer_lines,
@@ -334,6 +340,7 @@ impl<'a> Compiler<'a> {
                 ClusterOrRegister::Register(register) => {
                     self.compile_register(
                         register,
+                        &inner_field_path,
                         inherited_register_properties,
                         &mut cluster_struct,
                         &mut outer_lines,
@@ -413,6 +420,7 @@ impl<'a> Compiler<'a> {
     fn compile_register(
         &mut self,
         register: &Register<'a>,
+        field_path: &str,
         inherited_register_properties: &RegisterPropertiesGroup,
         registers_struct: &mut RegistersStruct,
         lines: &mut LineBuilder,
@@ -446,6 +454,8 @@ impl<'a> Compiler<'a> {
                     .strip_suffix("[%s]")
                     .ok_or_else(|| err_msg("Only array style dim groups are supported"))?
             } else {
+                // TODO: Verify doesn't contain '%s'
+
                 register.name
             }
         };
@@ -466,8 +476,9 @@ impl<'a> Compiler<'a> {
         );
 
         let mut using_name_override = false;
+        let full_register_path = format!("{}{}", field_path, register_name);
         for rule in &self.options.register_rewrites {
-            if rule.register_name.test(register_name) {
+            if rule.register_name.test(&full_register_path) {
                 using_name_override = true;
                 register_type = rule.new_name.clone();
                 break;
@@ -517,6 +528,7 @@ impl<'a> Compiler<'a> {
                 self.compile_register_struct(
                     &register_type,
                     register_name,
+                    &full_register_path,
                     register,
                     &properties,
                     &mut lines,
@@ -549,6 +561,7 @@ impl<'a> Compiler<'a> {
                 self.compile_register_struct(
                     register_name,
                     register_name,
+                    &full_register_path,
                     register,
                     &properties,
                     lines,
@@ -574,6 +587,7 @@ impl<'a> Compiler<'a> {
         &mut self,
         struct_name: &str,
         register_name: &str,
+        full_register_path: &str,
         register: &Register<'a>,
         properties: &ResolvedRegisterPropertiesGroup,
         lines: &mut LineBuilder,
@@ -590,7 +604,7 @@ impl<'a> Compiler<'a> {
         for field in &register.fields {
             let compiled = self.compile_field(
                 field,
-                &register,
+                &full_register_path,
                 properties,
                 &mut read_value_impl,
                 &mut write_value_impl,
@@ -819,7 +833,7 @@ impl<'a> Compiler<'a> {
     fn compile_field(
         &mut self,
         field: &Field<'a>,
-        register: &Register,
+        full_register_path: &str,
         register_props: &ResolvedRegisterPropertiesGroup,
         read_value_impl: &mut LineBuilder,
         write_value_impl: &mut LineBuilder,
@@ -857,7 +871,7 @@ impl<'a> Compiler<'a> {
         let mut read_name_override = None;
         let mut write_name_override = None;
         for rule in &self.options.field_rewrites {
-            if rule.register_name.test(register.name) && rule.field_name.test(field.name) {
+            if rule.register_name.test(full_register_path) && rule.field_name.test(field.name) {
                 println!("     MATCH!!");
                 if rule.register_access.can_read() {
                     read_name_override = Some(rule.new_name.as_str());

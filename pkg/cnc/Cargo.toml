@@ -8,10 +8,14 @@ doctest = false
 
 [dependencies]
 macros = { path = "../macros" }
-math = { path = "../math" }
+protobuf = { path = "../protobuf", default-features = false }
+math = { path = "../math", default-features = false }
 common = { path = "../common", default-features = false }
+
+[build-dependencies]
+protobuf_compiler = { path = "../protobuf_compiler" }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc"]
-std = ["common/std"]
+alloc = ["common/alloc", "math/alloc", "protobuf/alloc"]
+std = ["common/std", "math/std", "protobuf/std"]
