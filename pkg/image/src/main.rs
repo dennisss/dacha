@@ -8,8 +8,22 @@ use common::errors::*;
 use image::format::bitmap::Bitmap;
 use image::format::jpeg::encoder::JPEGEncoder;
 use image::format::jpeg::JPEG;
+use image::format::qoi::{QOIDecoder, QOIEncoder};
 
 fn main() -> Result<()> {
+    let data = fs::read(project_path!("testdata/nyhavn.qoi"))?;
+
+    let mut image = QOIDecoder::new().decode(&data)?;
+
+    let mut encoded = vec![];
+    QOIEncoder::new().encode(&image, &mut encoded)?;
+    fs::write(project_path!("encoded.qoi"), &data)?;
+
+    image = image.resize(image.height() / 2, image.width() / 2);
+    image.show()?;
+
+    return Ok(());
+
     // let jpg1 = JPEG::open(project_path!("data/picsum/15.jpeg"))?;
     // let jpg2 = JPEG::open(project_path!("encoded.jpeg"))?;
 
