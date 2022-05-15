@@ -48,8 +48,9 @@ pub fn find_quadratic_roots(a: f32, b: f32, c: f32) -> (f32, f32) {
     }
 
     let det = b * b - 4.0 * a * c;
+    let det_root = det.sqrt();
 
-    let root1 = (-b + det.sqrt()) / (2.0 * a);
-    let root2 = (-b - det.sqrt()) / (2.0 * a);
+    let root1 = (-b + det_root) / (2.0 * a);
+    let root2 = (-b - det_root) / (2.0 * a);
     (root1, root2)
 }

@@ -154,6 +154,8 @@ impl HuffmanTree {
     // It is still more useful to have the raw lens
     // TODO: Rename as we aren't actually building a tree?
     //
+    // TODO: Support taking as input directly the set of frequencies of each symbol.
+    //
     // Output is pairs of Symbol, Codelength
     pub fn build_length_limited_tree(
         symbols: &[usize],

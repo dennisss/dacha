@@ -5,6 +5,8 @@ use compression::huffman::HuffmanTree;
 use parsing::binary::{be_u16, be_u8};
 use parsing::take_exact;
 
+use crate::format::jpeg::markers::*;
+
 #[derive(Debug, PartialEq)]
 pub enum DCTMode {
     Baseline,
@@ -114,13 +116,39 @@ impl StartOfFrameSegment {
             components,
         })
     }
+
+    pub fn serialize(&self, out: &mut Vec<u8>) {
+        let marker = match self.mode {
+            DCTMode::Baseline => SOF0,
+            DCTMode::Extended => SOF1,
+            DCTMode::Progressive => SOF2,
+            DCTMode::Lossless => SOF3,
+        };
+
+        serialize_segment(marker, out, |out| {
+            out.push(self.precision);
+            out.extend_from_slice(&(self.y as u16).to_be_bytes());
+            out.extend_from_slice(&(self.x as u16).to_be_bytes());
+            out.push(self.components.len() as u8);
+
+            for component in &self.components {
+                out.push(component.id);
+                out.push(((component.h_factor as u8) << 4) | (component.v_factor as u8));
+                out.push(component.quantization_table_selector);
+            }
+        });
+    }
 }
 
 #[derive(Debug)]
 pub struct StartOfScanSegment {
     pub components: Vec<ScanComponent>,
+
+    /// Index of the first coefficient stored in this scan. (min is 0).
     pub selection_start: u8,
-    // NOTE: Will be 63 in sequential (non-progressive mode)
+
+    /// Index of the last coefficient stored in this scan.
+    /// NOTE: Will be 63 in sequential (non-progressive mode)
     pub selection_end: u8,
 
     pub approximation_last_bit: u8,
@@ -136,9 +164,6 @@ pub struct ScanComponent {
     pub dc_table_selector: u8,
     pub ac_table_selector: u8,
 }
-
-// So, I have huffman tables:
-// - number of codes of length 1-16.
 
 impl StartOfScanSegment {
     pub fn parse(frame_header: &StartOfFrameSegment, mut data: &[u8]) -> Result<Self> {
@@ -205,6 +230,21 @@ impl StartOfScanSegment {
             approximation_cur_bit: (a & 0b1111),
         })
     }
+
+    pub fn serialize(&self, start_of_frame: &StartOfFrameSegment, out: &mut Vec<u8>) {
+        serialize_segment(START_OF_SCAN, out, |out| {
+            out.push(self.components.len() as u8);
+
+            for component in &self.components {
+                out.push(start_of_frame.components[component.component_index].id);
+                out.push((component.dc_table_selector << 4) | component.ac_table_selector);
+            }
+
+            out.push(self.selection_start);
+            out.push(self.selection_end);
+            out.push((self.approximation_last_bit << 4) | self.approximation_cur_bit);
+        });
+    }
 }
 
 #[derive(Debug)]
@@ -215,7 +255,7 @@ pub struct DefineQuantizationTable<'a> {
 
 #[derive(Debug)]
 pub enum DefineQuantizationTableElements<'a> {
-    U8(&'a [u8]),
+    U8(&'a [u8]), // TODO: Verify always has 64 elements.
     U16(Vec<u16>),
 }
 
@@ -247,9 +287,28 @@ impl<'a> DefineQuantizationTable<'a> {
             data,
         ))
     }
+
+    pub fn serialize(&self, out: &mut Vec<u8>) {
+        serialize_segment(DQT, out, |out| {
+            let precision = match &self.elements {
+                DefineQuantizationTableElements::U8(_) => 0,
+                DefineQuantizationTableElements::U16(_) => 1,
+            };
+
+            out.push(((precision as u8) << 4) | (self.table_dest_id as u8));
+            match &self.elements {
+                DefineQuantizationTableElements::U8(vals) => out.extend_from_slice(vals),
+                DefineQuantizationTableElements::U16(vals) => {
+                    for v in vals {
+                        out.extend_from_slice(&v.to_be_bytes());
+                    }
+                }
+            }
+        });
+    }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TableClass {
     DC,
     AC,
@@ -260,9 +319,11 @@ pub struct DefineHuffmanTableSegment<'a> {
     pub table_class: TableClass,
     pub table_dest_id: usize, // values 0-3 (in baseline, can only by 0-1)
 
-    /// Number of codes which have length 'i' bits where 'i-1' is the index into
+    /// Number of codes which have length 'i+1' bits where 'i' is the index into
     /// this array from 0-15. Thus all codes have <= 16 bits.
     /// (BITS)
+    ///
+    /// NOTE: There is always exactly 16 elements in this array.
     pub length_counts: &'a [u8],
 
     /// Values encoded by the huffman tree in order of increasing code length.
@@ -273,6 +334,12 @@ pub struct DefineHuffmanTableSegment<'a> {
 impl<'a> DefineHuffmanTableSegment<'a> {
     // TODO: Make sure that all segments allow multiple in one?
     pub fn parse(mut data: &'a [u8]) -> Result<(Self, &'a [u8])> {
+        /*
+        TODO: Things to validate:
+        - For DC, values must be <= 15
+        - No code should be all 1's
+        */
+
         let t = parse_next!(data, be_u8);
 
         let table_class = {
@@ -304,10 +371,25 @@ impl<'a> DefineHuffmanTableSegment<'a> {
         ))
     }
 
-    // TODO: We need to aggresively limit the max number of nodes required to store
-    // the huffman table (ideally by storing long sequences of bits in a single
-    // node?)
-    pub fn to_tree(&self) -> HuffmanTree {
+    pub fn serialize(&self, out: &mut Vec<u8>) {
+        // TODO: Support serializing multiple tables into one segment.
+
+        serialize_segment(DHT, out, |out| {
+            out.push(
+                (match self.table_class {
+                    TableClass::DC => 0,
+                    TableClass::AC => 1,
+                } << 4)
+                    | (self.table_dest_id as u8),
+            );
+
+            assert_eq!(self.length_counts.len(), 16);
+            out.extend_from_slice(self.length_counts);
+            out.extend_from_slice(self.values);
+        });
+    }
+
+    pub fn create_codes(&self) -> Vec<BitVector> {
         // Based on Annex C of T.81
 
         // Expanded list of the size of each code (HUFFSIZES)
@@ -352,6 +434,15 @@ impl<'a> DefineHuffmanTableSegment<'a> {
             }
         }
 
+        codes
+    }
+
+    // TODO: We need to aggresively limit the max number of nodes required to store
+    // the huffman table (ideally by storing long sequences of bits in a single
+    // node?)
+    pub fn to_tree(&self) -> HuffmanTree {
+        let codes = self.create_codes();
+
         let mut tree = HuffmanTree::new();
         for i in 0..self.values.len() {
             // TODO: Optimize the tree to use u8 symbols.
@@ -362,4 +453,17 @@ impl<'a> DefineHuffmanTableSegment<'a> {
 
         tree
     }
+}
+
+fn serialize_segment<F: Fn(&mut Vec<u8>)>(marker: u8, out: &mut Vec<u8>, f: F) {
+    out.push(0xFF);
+    out.push(marker);
+
+    let size_offset = out.len();
+    out.push(0);
+    out.push(0);
+
+    f(out);
+
+    *array_mut_ref![out, size_offset, 2] = ((out.len() - size_offset) as u16).to_be_bytes();
 }

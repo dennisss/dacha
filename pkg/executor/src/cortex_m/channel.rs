@@ -1,7 +1,7 @@
 use crate::interrupts::{trigger_pendsv, wait_for_pendsv};
 use crate::mutex::*;
 
-/// Container for relying a value from some producer(s) to some consumer(s).
+/// Container for relaying a value from some producer(s) to some consumer(s).
 ///
 /// NOTE: This is currently limited to only being able to queue one value at a
 /// time. Senders must wait until a consumer takes the value before being able

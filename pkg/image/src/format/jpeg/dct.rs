@@ -68,6 +68,7 @@ fn matmul(a: &Matrix8f, b: &Matrix8f, c: &mut Matrix8f) {
     }
 }
 
+// TODO: Convert this to a constant.
 lazy_static! {
     static ref DCT2_MAT_8X8: Matrix8f = {
         let mut out = Matrix8f::zero(); // [[0.0_f32; BLOCK_DIM]; BLOCK_DIM];
@@ -95,7 +96,7 @@ fn to_m256(v: &[f32; 8]) -> __m256 {
     unsafe { _mm256_loadu_ps(v.as_ptr()) }
 }
 
-// TODO: This can't do transpose!
+/// Computes c_mat = a_mat * b_mat
 fn matmul_sse(a_mat: &Matrix8f, b_mat: &Matrix8f, c_mat: &mut Matrix8f) {
     let a = unsafe {
         std::mem::transmute::<_, &[[f32; BLOCK_DIM]; BLOCK_DIM]>(array_ref![a_mat.as_ref(), 0, 64])
@@ -127,22 +128,28 @@ fn matmul_sse(a_mat: &Matrix8f, b_mat: &Matrix8f, c_mat: &mut Matrix8f) {
     }
 }
 
-/*
+// TODO: Make an AARCH64 version of thi.
+// vdupq_n_f32
+// vfmaq_f32
+
 pub fn forward_dct_2d(input: &[i16; BLOCK_SIZE], output: &mut [i16; BLOCK_SIZE]) {
-    let mut temp1 = Matrix8f::default();
+    let mut temp1 = Matrix8f::zero();
     for (i, v) in input.iter().enumerate() {
-        temp1[i / 8][i % 8] = *v as f32;
+        temp1[i] = *v as f32;
     }
 
-    let mut temp2 = Matrix8f::default();
+    let mut temp2 = Matrix8f::zero();
 
-    // = M' * X * M
+    // = M * X * M'
     let dct_mat = &*DCT2_MAT_8X8;
-    matmul(dct_mat, &temp1, &mut temp2);
-    matmul_tb(&temp2, dct_mat, &mut temp1);
-}
+    matmul_sse(dct_mat, &temp1, &mut temp2);
 
- */
+    temp1 = &temp2 * dct_mat.as_transpose();
+
+    for (i, v) in temp1.as_ref().iter().enumerate() {
+        output[i] = v.round() as i16;
+    }
+}
 
 // Baseline is 0.33 seconds
 // Currently this runs in 0.40 seconds, so is really SLOW even for matmul
@@ -157,16 +164,6 @@ pub fn inverse_dct_2d(input: &[i16; BLOCK_SIZE], output: &mut [i16; BLOCK_SIZE])
     let dct_mat = &*DCT2_MAT_8X8;
     let mut temp2 = dct_mat.as_transpose() * &temp1;
     matmul_sse(&temp2, dct_mat, &mut temp1);
-    // temp2.mul_to(dct_mat, &mut temp1);
-
-    // Wrong because it doesn't support transpose.
-    // matmul_sse(&dct_mat.transpose(), &temp1, &mut temp2);
-    // matmul_sse(&temp2, &dct_mat, &mut temp1);
-
-    // temp1 = dct_mat.transpose() * temp1 * dct_mat;
-
-    // matmul(dct_mat, &temp1, &mut temp2);
-    // matmul_tb(&temp2, dct_mat, &mut temp1);
 
     for (i, v) in temp1.as_ref().iter().enumerate() {
         output[i] = v.round() as i16;
@@ -201,5 +198,26 @@ pub fn inverse_dct_2d(input: &[i16; BLOCK_SIZE], output: &mut [i16; BLOCK_SIZE])
 
         // TODO: The 1/4 could be a >> 2 in integer space done at the very end?
         output[i as usize] = (((1.0 / 4.0) * sum) as f32).round() as i16;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dct() {
+        let mut block = [0i16; 64];
+        for i in 0..64 {
+            block[i] = i as i16;
+        }
+
+        let mut out = [0i16; 64];
+        forward_dct_2d(&block, &mut out);
+
+        let mut out2 = [0i16; 64];
+        inverse_dct_2d(&out, &mut out2);
+
+        assert_eq!(out2, block);
     }
 }

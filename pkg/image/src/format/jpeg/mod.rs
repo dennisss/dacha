@@ -1,9 +1,19 @@
+mod coefficient;
+mod color;
 mod constants;
 mod dct;
-mod encoder;
+pub mod encoder;
+mod markers;
+mod quantization;
 mod segments;
+mod stuffed;
+mod zigzag;
 
-use crate::{Colorspace, Image};
+use std::f32::consts::PI;
+use std::fs::File;
+use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::path::Path;
+
 use common::bits::{BitOrder, BitReader, BitVector};
 use common::ceil_div;
 use common::errors::*;
@@ -16,35 +26,13 @@ use math::matrix::Dimension;
 use parsing::binary::{be_u16, be_u8};
 use parsing::take_exact;
 use segments::*;
-use std::f32::consts::PI;
-use std::fs::File;
-use std::io::{Cursor, Read, Seek, SeekFrom};
-use std::path::Path;
 
-const START_OF_IMAGE: &[u8] = &[0xff, 0xd8]; // SOI
-const END_OF_IMAGE: u8 = 0xd9; // EOI
-
-const APP0: u8 = 0xe0;
-
-// Start Of Frame markers, non-differential, Huffman coding
-const SOF0: u8 = 0xC0; // Baseline DCT
-const SOF1: u8 = 0xC1; // Extended sequential DCT
-const SOF2: u8 = 0xC2; // Progressive DCT
-const SOF3: u8 = 0xC3; // Lossless (sequential)
-
-// Define Arithmetic Coding Conditioning Table(s)
-const DAC: u8 = 0xCC;
-
-// Define Huffman Table
-const DHT: u8 = 0xC4;
-
-// Define Quantization Table
-const DQT: u8 = 0xDB;
-
-/// Define Restart Interval
-const DRI: u8 = 0xDD;
-
-const START_OF_SCAN: u8 = 0xda; // SOS
+use crate::format::jpeg::coefficient::*;
+use crate::format::jpeg::color::*;
+use crate::format::jpeg::markers::*;
+use crate::format::jpeg::stuffed::*;
+use crate::format::jpeg::zigzag::*;
+use crate::{Colorspace, Image};
 
 /*
 References:
@@ -56,45 +44,8 @@ See here for more test images:
 https://www.w3.org/MarkUp/Test/xhtml-print/20050519/tests/A_2_1-BF-01.htm
 */
 
-const ZIG_ZAG_SEQUENCE: &[u8; BLOCK_SIZE] = &[
-    0, 1, 5, 6, 14, 15, 27, 28, //
-    2, 4, 7, 13, 16, 26, 29, 42, //
-    3, 8, 12, 17, 25, 30, 41, 43, //
-    9, 11, 18, 24, 31, 40, 44, 53, //
-    10, 19, 23, 32, 39, 45, 52, 54, //
-    20, 22, 33, 38, 46, 51, 55, 60, //
-    21, 34, 37, 47, 50, 56, 59, 61, //
-    35, 36, 48, 49, 57, 58, 62, 63, //
-];
-
-fn apply_zigzag<T: Copy>(inputs: &[T], outputs: &mut [T]) {
-    for i in 0..inputs.len() {
-        outputs[ZIG_ZAG_SEQUENCE[i] as usize] = inputs[i];
-    }
-}
-
-fn reverse_zigzag<T: Copy>(inputs: &[T], outputs: &mut [T]) {
-    for i in 0..inputs.len() {
-        outputs[i] = inputs[ZIG_ZAG_SEQUENCE[i] as usize];
-    }
-}
-
-// TODO: These can be very large. Check that they don't cause out of range
-// multiplications. NOTE: Only works if size < 16.
-// TODO: Rename decode_amplitude?
-fn decode_zz(size: usize, amplitude: u16) -> i16 {
-    let sign = (amplitude >> ((size as u16) - 1)) & 0b11;
-    if sign == 1 {
-        // It is positive
-        return amplitude as i16;
-    }
-
-    let extended = (0xffff_u16).overflowing_shl(size as u32).0 | amplitude;
-
-    (extended as i16) + 1
-}
-
-// TODO: Verify that it matches the precision of the frame.
+// TODO: Verify that it matches the precision of the frame (8-bit images should
+// use the 8-bit tables).
 fn dequantize(inputs: &mut [i16], table: &DefineQuantizationTable) {
     match &table.elements {
         DefineQuantizationTableElements::U8(vals) => {
@@ -110,42 +61,6 @@ fn dequantize(inputs: &mut [i16], table: &DefineQuantizationTable) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn decode_zz_works() {
-        assert_eq!(decode_zz(2, 0b00), -3);
-        assert_eq!(decode_zz(2, 0b01), -2);
-        assert_eq!(decode_zz(2, 0b10), 2);
-        assert_eq!(decode_zz(2, 0b11), 3);
-    }
-}
-
-// Based on T.871
-// TODO: This is highly parallelizable (ideally do in CPU cache when decoding
-// MCUs)
-fn jpeg_ycbcr_to_rgb(inputs: &mut [u8]) {
-    let clamp = |v: f32| -> u8 { v.round().max(0.0).min(255.0) as u8 };
-
-    for tuple in inputs.chunks_mut(3) {
-        let y = tuple[0] as f32;
-        let cb = tuple[1] as f32;
-        let cr = tuple[2] as f32;
-
-        // TODO: Pre-subtract 128
-
-        let r = y + 1.402 * (cr - 128.0);
-        let g = y - 0.3441 * (cb - 128.0) - 0.7141 * (cr - 128.0);
-        let b = y + 1.772 * (cb - 128.0);
-
-        tuple[0] = clamp(r);
-        tuple[1] = clamp(g);
-        tuple[2] = clamp(b);
-    }
-}
-
 pub struct JPEG {
     // TODO: May also be up to 12 bits of precision.
     pub image: Image<u8>,
@@ -156,19 +71,25 @@ struct FrameComponentData {
     /// Index of this component in the pixel data ordering.
     index: usize,
 
-    /// Width of this component's data.
+    /// Width of this component's data (in pixel units).
     /// (includes padding and sub-sampling of the full image's width)
     x_i: usize,
 
-    /// Height of this component's data.
+    /// Height of this component's data (in pixel units).
     /// (includes padding and sub-sampling of the full image's height)
     y_i: usize,
+
+    x_i_interleaved: usize,
+
+    y_i_interleaved: usize,
 
     /// Total number of blocks required to represent this component.
     ///
     /// NOTE: While this may seem redundant with raw_coeffs.len(), it is
     /// possible that raw_coeffs is empty if we are in sequential model.
     num_blocks: usize,
+
+    num_blocks_interleaved: usize,
 
     /// Values of the DCT coefficients for all blocks in the image as of now.
     /// These are the raw values found after entropy decoding. They are in
@@ -188,48 +109,6 @@ fn parse_restart_marker(byte: u8) -> Option<u8> {
         Some(byte - 0xd0)
     } else {
         None
-    }
-}
-
-struct StuffedReader<'a, T: Read> {
-    inner: &'a mut T,
-}
-
-impl<'a, T: Read> StuffedReader<'a, T> {
-    fn new(inner: &'a mut T) -> Self {
-        Self { inner }
-    }
-}
-
-impl<'a, T: Read> Read for StuffedReader<'a, T> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if buf.len() != 1 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Only reading one byte at a time is currently supported",
-            ));
-        }
-
-        {
-            let n = self.inner.read(buf)?;
-            if n == 0 {
-                return Ok(0);
-            }
-        }
-
-        if buf[0] == 0xff {
-            let mut temp = [0u8; 1];
-            let n = self.inner.read(&mut temp)?;
-
-            if n != 1 || temp[0] != 0x00 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Expected 0xFF to be stuffed by 0x00",
-                ));
-            }
-        }
-
-        Ok((1))
     }
 }
 
@@ -372,6 +251,11 @@ impl JPEG {
                             ));
                         }
 
+                        /*
+                                                NOTE – It is recommended that any incomplete MCUs be completed by replication of the right-most column and the bottom
+                        line of each component.
+                                                */
+
                         let x = seg.x as usize;
                         let y = seg.y as usize;
 
@@ -382,18 +266,30 @@ impl JPEG {
 
                         // A.2.4
                         // First extend x_i and y_i to full block intervals.
-                        // Then extend to an integer multiple of H_i / V_i
-                        x_i = (BLOCK_DIM * h_i) * ceil_div(x_i, BLOCK_DIM * h_i);
-                        y_i = (BLOCK_DIM * v_i) * ceil_div(y_i, BLOCK_DIM * v_i);
+                        x_i = BLOCK_DIM * ceil_div(x_i, BLOCK_DIM);
+                        y_i = BLOCK_DIM * ceil_div(y_i, BLOCK_DIM);
+
+                        // A.2.4
+                        // When interleaving with other components, we must extend the frame to an
+                        // integer multiple of H_i and V_i.
+                        let x_i_interleaved = (BLOCK_DIM * h_i) * ceil_div(x_i, BLOCK_DIM * h_i);
+                        let y_i_interleaved = (BLOCK_DIM * v_i) * ceil_div(y_i, BLOCK_DIM * v_i);
 
                         let num_blocks = (x_i / BLOCK_DIM) * (y_i / BLOCK_DIM);
+
+                        //
+                        let num_blocks_interleaved =
+                            (x_i_interleaved / BLOCK_DIM) * (y_i_interleaved / BLOCK_DIM);
 
                         frame_component_data.push(FrameComponentData {
                             index: i,
                             num_blocks,
+                            num_blocks_interleaved,
                             x_i,
+                            x_i_interleaved,
                             y_i,
-                            raw_coeffs: vec![[0i16; 64]; num_blocks],
+                            y_i_interleaved,
+                            raw_coeffs: vec![[0i16; 64]; num_blocks_interleaved],
                             seen_coeffs: [false; BLOCK_SIZE],
                         });
                     }
@@ -433,7 +329,6 @@ impl JPEG {
                         .ok_or_else(|| err_msg("Expected SOF before SOS"))?;
 
                     let seg = StartOfScanSegment::parse(frame_segment, inner)?;
-                    // println!("{:?}", seg);
 
                     // TODO: Make all of the error cases 'unlikely'
                     if seg.selection_end < seg.selection_start {
@@ -443,11 +338,14 @@ impl JPEG {
                         return Err(err_msg("Selection out of range"));
                     }
 
-                    if frame_segment.mode == DCTMode::Baseline {
-                        if seg.selection_start != 0 || seg.selection_end != 63 {
-                            return Err(err_msg("Invalid selection indices for Baseline mode"));
-                        }
-                    }
+                    // NOTE: We don't enforce this as sometimes images lie about their mode.
+                    // if frame_segment.mode == DCTMode::Baseline {
+                    //     if seg.selection_start != 0 || seg.selection_end != 63 {
+                    //         println!("{:?}", seg);
+
+                    //         return Err(err_msg("Invalid selection indices for Baseline mode"));
+                    //     }
+                    // }
 
                     // TODO: Verify next is not empty?
                     // I guess it is valid for an empty image?
@@ -466,6 +364,14 @@ impl JPEG {
                         }
                     }
 
+                    // Hit the end of the file before the next marker (likely this file is truncated
+                    // or missing an END_OF_IMAGE marker). Assume that all the
+                    // remaining data is scan data.
+                    if encoded.is_none() {
+                        encoded = Some(next);
+                        next = &[];
+                    }
+
                     // TODO: Support restarts
 
                     if seg.components.is_empty() {
@@ -480,7 +386,7 @@ impl JPEG {
                         let fdata = &frame_component_data[seg.components[0].component_index];
                         // TODO: Verify that this value is the same regardless of which component is
                         // used for the calcualation.
-                        fdata.num_blocks / (comp.h_factor * comp.v_factor)
+                        fdata.num_blocks_interleaved / (comp.h_factor * comp.v_factor)
                     };
 
                     let mut next_restart_i = 0;
@@ -630,25 +536,35 @@ impl JPEG {
 
                 for unit_i in 0..num_units {
                     // The index of the block in the component's sub-frame
-                    let block = if seg.components.len() == 1
-                        || (frame_component.h_factor == 1 && frame_component.v_factor == 1)
-                    {
-                        mcu_i
-                    } else {
-                        // TODO: We need to improve this calculation.
+                    let block = {
+                        if frame_component.h_factor == 1 && frame_component.v_factor == 1 {
+                            mcu_i
+                        } else if seg.components.len() == 1 {
+                            let blocks_per_x = (frame_component_data.x_i / BLOCK_DIM);
 
-                        let blocks_per_x = (frame_component_data.x_i / BLOCK_DIM);
+                            let block_x = mcu_i % blocks_per_x;
+                            let block_y = mcu_i / blocks_per_x;
 
-                        let block_x = (mcu_i * frame_component.h_factor) % blocks_per_x;
-                        let block_y = frame_component.v_factor
-                            * ((mcu_i * frame_component.h_factor) / blocks_per_x);
+                            let blocks_per_x_interleaved =
+                                (frame_component_data.x_i_interleaved / BLOCK_DIM);
 
-                        let mut block = block_y * blocks_per_x + block_x;
+                            block_y * blocks_per_x_interleaved + block_x
+                        } else {
+                            // TODO: We need to improve this calculation.
 
-                        block += blocks_per_x * (unit_i / frame_component.h_factor);
-                        block += (unit_i % frame_component.h_factor);
+                            let blocks_per_x = (frame_component_data.x_i_interleaved / BLOCK_DIM);
 
-                        block
+                            let block_x = (mcu_i * frame_component.h_factor) % blocks_per_x;
+                            let block_y = frame_component.v_factor
+                                * ((mcu_i * frame_component.h_factor) / blocks_per_x);
+
+                            let mut block = block_y * blocks_per_x + block_x;
+
+                            block += blocks_per_x * (unit_i / frame_component.h_factor);
+                            block += (unit_i % frame_component.h_factor);
+
+                            block
+                        }
                     };
 
                     let buffer = &mut frame_component_data.raw_coeffs[block];
@@ -668,6 +584,8 @@ impl JPEG {
 
                     // After every scan, we re-update the pixels with any new
                     // information.
+                    //
+                    // TODO: Only do this at the very end after all scans are seen.
                     Self::decode_block(
                         block,
                         qtable,
@@ -690,11 +608,13 @@ impl JPEG {
 
         assert_eq!(eobrun, 0);
 
-        // TODO: Verify that all remaining bits are 1's
+        // TODO: Verify that all remaining bits are 1's (and not too many extra bytes
+        // are present)
 
         Ok(())
     }
 
+    // eobrun is the number of blocks filled with nothing but zero coefficients.
     fn read_block(
         block: usize,
         buffer: &mut [i16; BLOCK_SIZE],
@@ -757,7 +677,15 @@ impl JPEG {
             while coeff_i <= seg.selection_end as usize {
                 let sym = ac_tree.read_code(reader)?;
 
+                /*
+                TODO for when making the encoder: The Huffman codes for the 8-bit composite values are generated in such a way that no code
+                consists entirely of 1-bits
+                */
+
+                // Number of zero coefficients between the last coefficient and the current one.
                 let mut r = sym >> 4;
+
+                // Basically this is the number of
                 let s = sym & 0b1111;
 
                 if s == 0 {
@@ -768,9 +696,8 @@ impl JPEG {
                         // When R == 0 and S == 0, then we are in the regular
                         // EOB mode.
                         if r != 0
-                            && (frame_seg.mode != DCTMode::Progressive
-                                || seg.selection_start == 0
-                                || seg.components.len() > 1)
+                            && (/*frame_seg.mode != DCTMode::Progressive
+                            || */seg.selection_start == 0 || seg.components.len() > 1)
                         {
                             return Err(err_msg(
                                 "EOBn modes only defined in progressive mode when single component AC coefficients are being encoded."));
@@ -791,6 +718,21 @@ impl JPEG {
                 } else {
                     0
                 };
+
+                /*
+                Quote from spec: "
+                In addition whenever zero runs are coded with ZRL or EOBn codes, correction bits for those coefficients with non-zero
+                history contained within the zero run are appended according to rule b above
+                "
+                */
+
+                /*
+                See G.1.2.3
+
+                The four most significant bits, RRRR, give the number of zero coefficients that are between the current coefficient and the
+                previously coded coefficient (or the start of band). Coefficients with non-zero history (a non-zero value coded in a
+                previous scan) are skipped over when counting the zero coefficients.
+                */
 
                 // Zero Run Length
                 // In sequential mode (or the first pass of a component)
@@ -880,8 +822,6 @@ impl JPEG {
         let mut buffer_out = [0; BLOCK_SIZE];
         inverse_dct_2d(&buffer_dezig, &mut buffer_out);
 
-        //        println!("{:?}", &buffer_out[..]);
-
         for v in buffer_out.iter_mut() {
             *v += 128;
 
@@ -897,7 +837,7 @@ impl JPEG {
         let y_limit = frame_segment.y as usize;
         let x_limit = frame_segment.x as usize;
 
-        let blocks_per_line = frame_component_data.x_i / BLOCK_DIM;
+        let blocks_per_line = frame_component_data.x_i_interleaved / BLOCK_DIM;
 
         // TODO: Need to know h_max and v_max to know how many times to replicate stuff.
 

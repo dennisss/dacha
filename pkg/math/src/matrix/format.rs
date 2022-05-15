@@ -13,9 +13,9 @@ impl<T: ElementType + Debug, R: Dimension, C: Dimension, D: StorageType<T, R, C>
     default fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         for i in 0..self.rows() {
             for j in 0..self.cols() {
-                write!(f, "{:?}\t", self.data[i * self.cols() + j])?;
+                write!(f, "{:?}, ", self.data[i * self.cols() + j])?;
             }
-            write!(f, "\n")?;
+            // write!(f, ", ")?;
         }
 
         Ok(())
