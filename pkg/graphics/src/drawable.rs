@@ -1,16 +1,19 @@
+use std::sync::{Arc, Mutex, Weak};
+
+use gl::types::{GLint, GLuint};
+use math::matrix::{Matrix4f, Vector3f};
+
 use crate::lighting::Material;
 use crate::shader::Shader;
 use crate::transform::{AsMatrix, Camera, Transform};
 use crate::util::*;
-use gl::types::{GLint, GLuint};
-use math::matrix::{Matrix4f, Vector3f};
-use std::sync::Arc;
+use crate::window::Window;
 
-// An object than can be drawn. This class handles configuring transforms,
-// viewports, and projection
+/// An object than can be drawn. This class handles configuring transforms,
+/// viewports, and projection
 pub trait Drawable {
-    // Draw the object. 'proj' contains all transformations that should be applied
-    // to it
+    /// Draw this object. 'proj' contains all transformations that should be
+    /// applied to it
     fn draw(&self, cam: &Camera, model_view: &Transform);
 }
 
@@ -71,6 +74,10 @@ impl Object {
             material: None,
             vao,
         }
+    }
+
+    pub fn shader(&self) -> &Shader {
+        self.shader.as_ref()
     }
 
     // Works for shaders when the current shader shares the exact same

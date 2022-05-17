@@ -63,6 +63,34 @@ impl Camera {
     }
 }
 
+pub fn orthogonal_projection(
+    left: f32,
+    right: f32,
+    bottom: f32,
+    top: f32,
+    z_near: f32,
+    z_far: f32,
+) -> Matrix4f {
+    Matrix4f::from_slice(&[
+        2.0 / (right - left),
+        0.0,
+        0.0,
+        -(right + left) / (right - left), //
+        0.0,
+        2.0 / (top - bottom),
+        0.0,
+        -(top + bottom) / (top - bottom), //
+        0.0,
+        0.0,
+        -2.0 / (z_far - z_near),
+        -(z_far + z_near) / (z_far - z_near), //
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ])
+}
+
 //impl AsMatrix for Camera {
 
 //}

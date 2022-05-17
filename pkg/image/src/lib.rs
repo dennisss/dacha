@@ -4,7 +4,6 @@ extern crate common;
 extern crate macros;
 extern crate byteorder;
 extern crate math;
-extern crate minifb;
 extern crate num_traits;
 #[macro_use]
 extern crate parsing;
@@ -21,7 +20,6 @@ use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
 pub mod format;
 pub mod resize;
-pub mod show;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Colorspace {
@@ -48,6 +46,7 @@ impl Colorspace {
 /// An image is a pixel buffer containing color values.
 /// It is implemented as an Array with generic type, but with known rank of 3.
 /// The shape is of the form: (height, width, num_channels)
+#[derive(Clone)]
 pub struct Image<T> {
     /// This will always have the shape: height x width x channels
     pub array: Array<T>, // TODO: Will need to separate images in different formats?

@@ -1,9 +1,10 @@
-use crate::raster::FillRule;
 use common::errors::*;
 use common::iter::PairIter;
 use image::{Color, Colorspace, Image};
 use math::combin::bin_coeff;
 use math::matrix::{Matrix3f, Vector2f, Vector2i, Vector3f};
+
+use crate::raster::FillRule;
 
 pub struct Canvas {
     // TODO: Make private.

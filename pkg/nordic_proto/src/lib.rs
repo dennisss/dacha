@@ -1,6 +1,5 @@
 #![feature(
     lang_items,
-    asm,
     type_alias_impl_trait,
     inherent_associated_types,
     alloc_error_handler,

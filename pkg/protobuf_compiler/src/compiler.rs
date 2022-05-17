@@ -242,7 +242,8 @@ impl Compiler<'_> {
         c.outer += "#[cfg(feature = \"alloc\")] use alloc::string::String;\n\n";
         c.outer += "use common::errors::*;\n";
         c.outer += "use common::list::Appendable;\n";
-        c.outer += "use common::collections::{FixedVec, FixedString};\n";
+        c.outer += "use common::collections::FixedString;\n";
+        c.outer += "use common::fixed::vec::FixedVec;\n";
         c.outer += "use common::const_default::ConstDefault;\n";
         write!(c.outer, "use {}::*;\n", c.options.runtime_package).unwrap();
         write!(c.outer, "use {}::wire::*;\n", c.options.runtime_package).unwrap();
@@ -619,7 +620,7 @@ impl Compiler<'_> {
 
         if let Some(max_length) = max_length.clone() {
             if *typ == FieldType::Bytes {
-                return format!("FixedVec<u8, [u8; {size}]>", size = max_length);
+                return format!("FixedVec<u8, {size}>", size = max_length);
             } else if *typ == FieldType::String {
                 return format!("FixedString<[u8; {size}]>", size = max_length);
             } else {
@@ -795,11 +796,7 @@ impl Compiler<'_> {
             s += &format!("{}::SetField<{}>", self.options.runtime_package, typ);
         } else if is_repeated {
             if let Some(max_count) = max_count {
-                s += &format!(
-                    "FixedVec<{typ}, [{typ}; {size}]>",
-                    typ = typ,
-                    size = max_count
-                );
+                s += &format!("FixedVec<{typ}, {size}>", typ = typ, size = max_count);
             } else {
                 s += &format!("Vec<{}>", &typ);
             }
@@ -993,11 +990,7 @@ impl Compiler<'_> {
 
             let vec_type = {
                 if let Some(max_count) = max_count {
-                    format!(
-                        "FixedVec<{typ}, [{typ}; {size}]>",
-                        typ = typ,
-                        size = max_count
-                    )
+                    format!("FixedVec<{typ}, {size}>", typ = typ, size = max_count)
                 } else {
                     format!("Vec<{}>", typ)
                 }

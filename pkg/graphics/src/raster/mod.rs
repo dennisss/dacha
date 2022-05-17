@@ -1,3 +1,6 @@
+use std::cmp::Ordering::Equal;
+use std::ops::IndexMut;
+
 use common::errors::*;
 use image::{Color, Colorspace, Image};
 use math::geometry::bounding_box::BoundingBox;
@@ -5,8 +8,8 @@ use math::matrix::storage::{NewStorage, StorageType};
 use math::matrix::{
     Dimension, Matrix3f, MatrixBase, Vector, Vector2f, Vector2i, Vector2u, Vector3f, VectorNew,
 };
-use std::cmp::Ordering::Equal;
-use std::ops::IndexMut;
+
+use crate::image_show::ImageShow;
 
 pub mod canvas;
 pub mod plot;
@@ -370,7 +373,7 @@ pub fn bresenham_line(image: &mut Image<u8>, start: Vector2i, end: Vector2i, col
     }
 }
 
-pub fn run() -> Result<()> {
+pub async fn run() -> Result<()> {
     let mut img = Image::zero(300, 400, Colorspace::RGBA);
 
     // TODO: By default, what is the opacity?
@@ -401,7 +404,7 @@ pub fn run() -> Result<()> {
 
     fill_triangle(&mut img, verts, colors)?;
 
-    img.show()?;
+    img.show().await?;
 
     Ok(())
 }

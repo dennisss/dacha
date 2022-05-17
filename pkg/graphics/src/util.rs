@@ -1,6 +1,7 @@
+use std::ptr::null;
+
 use gl::types::{GLint, GLuint};
 use math::matrix::*;
-use std::ptr::null;
 
 // Safer wrappers around storing matrices in OpenGL.
 
@@ -16,6 +17,7 @@ pub fn gl_uniform_vec4(location: GLuint, value: &Vector4f) {
     }
 }
 
+/// Provides the value of a 4x4 matrix as a uniform global variable to shaders.
 pub fn gl_uniform_mat4(location: GLuint, value: &Matrix4f) {
     unsafe {
         gl::UniformMatrix4fv(location as GLint, 1, gl::TRUE, value.as_ptr());
@@ -48,6 +50,25 @@ pub fn gl_vertex_buffer_vec3(attr: GLuint, data: &[Vector3f]) -> GLBuffer {
             gl::STATIC_DRAW,
         );
         gl::VertexAttribPointer(attr, 3, gl::FLOAT, gl::FALSE, 0, null());
+    }
+
+    GLBuffer { id: buf }
+}
+
+pub fn gl_vertex_buffer_vec2(attr: GLuint, data: &[Vector2f]) -> GLBuffer {
+    assert_eq!(std::mem::size_of::<Vector2f>(), 8);
+
+    let mut buf = 0;
+    unsafe {
+        gl::GenBuffers(1, &mut buf);
+        gl::BindBuffer(gl::ARRAY_BUFFER, buf);
+        gl::BufferData(
+            gl::ARRAY_BUFFER,
+            (std::mem::size_of::<Vector2f>() * data.len()) as isize,
+            std::mem::transmute(data.as_ptr()),
+            gl::STATIC_DRAW,
+        );
+        gl::VertexAttribPointer(attr, 2, gl::FLOAT, gl::FALSE, 0, null());
     }
 
     GLBuffer { id: buf }

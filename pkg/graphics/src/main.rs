@@ -1,44 +1,49 @@
+#[macro_use]
 extern crate common;
 extern crate graphics;
+extern crate image;
 extern crate math;
+
+use std::sync::Arc;
 
 use common::errors::*;
 use graphics::app::*;
+use graphics::image_show::ImageShow;
 use graphics::polygon::Polygon;
-use graphics::shader::Shader;
-use math::matrix::{Vector2i, Vector3f};
-use std::sync::Arc;
+use graphics::shader::{Shader, ShaderSource};
+use graphics::transform::orthogonal_projection;
+use image::format::qoi::QOIDecoder;
+use math::matrix::{Vector2f, Vector2i, Vector3f};
+
+/*
+Application:
+- Maintains a render thread.
+- Windows are only identified by an id and a shared pointer to all of the state for that window.
+
+*/
 
 async fn run() -> Result<()> {
-    let mut app = Application::new();
-    let window = app.create_window("My Window", &Vector2i::from_slice(&[300, 300]), true);
+    let image_data = common::async_std::fs::read(project_path!("testdata/nyhavn.qoi")).await?;
+    let mut image = QOIDecoder::new().decode(&image_data)?;
 
-    let shader = Arc::new(Shader::Default().await?);
-    let poly = Polygon::regular_mono(3, &Vector3f::from_slice(&[1.0, 0.0, 0.0]), shader.clone());
-
-    //	let poly = Polygon::from(&[
-    //		Vector3f::from_slice(&[0.0, 0.5, 0.0]),
-    //		Vector3f::from_slice(&[0.5, -0.5, 0.0]),
-    //		Vector3f::from_slice(&[-0.5, -0.5, 0.0]),
-    //	], &[
-    //		Vector3f::from_slice(&[0.0, 1.0, 1.0]),
-    //		Vector3f::from_slice(&[1.0, 0.0, 1.0]),
-    //		Vector3f::from_slice(&[1.0, 1.0, 0.0]),
-    //	], shader.clone());
-
-    window.lock().unwrap().scene.add_object(Box::new(poly));
-
-    app.run();
+    image.show().await?;
 
     Ok(())
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(graphics::font::open_font())
+    // let f = run();
+    let f = graphics::font::open_font();
 
-    //    graphics::raster::run()
+    return common::async_std::task::block_on(f);
 
-    //	async_std::task::block_on(run())
+    // common::async_std::task::block_on(graphics::font::open_font())
+
+    // let task = graphics::font::open_font();
+
+    // let task = graphics::raster::run();
+
+    // common::async_std::task::block_on(task)
 
     /*
         Default opengl mode:

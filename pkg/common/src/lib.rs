@@ -4,7 +4,9 @@
     specialization,
     const_fn_trait_bound,
     try_trait_v2,
-    const_slice_from_raw_parts
+    const_slice_from_raw_parts,
+    maybe_uninit_uninit_array,
+    maybe_uninit_slice
 )]
 #![no_std]
 
@@ -71,6 +73,7 @@ pub mod errors;
 pub mod eventually;
 #[cfg(feature = "std")]
 pub mod factory;
+pub mod fixed;
 #[cfg(feature = "std")]
 pub mod fs;
 #[cfg(feature = "std")]

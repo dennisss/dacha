@@ -7,7 +7,8 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::sync::Arc;
 
-use common::collections::{FixedString, FixedVec};
+use common::collections::{FixedString};
+use common::fixed::vec::FixedVec;
 use common::const_default::ConstDefault;
 use common::errors::*;
 use common::list::Appendable;

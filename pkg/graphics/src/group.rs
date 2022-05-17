@@ -23,6 +23,10 @@ impl Group {
     pub fn add_object(&mut self, object: Box<dyn Drawable>) {
         self.objects.push(object);
     }
+
+    pub fn clear(&mut self) {
+        self.objects.clear();
+    }
 }
 
 /*

@@ -1,13 +1,19 @@
-use crate::window::Window;
-use glfw::{Action, Context, Key};
-use math::matrix::Vector2i;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::thread;
+
+use common::async_std::channel;
+use glfw::{Action, Context, Key};
+use math::matrix::{Vector2i, Vector4f};
+
+use crate::drawable::Drawable;
+use crate::window::Window;
 
 /// Top-level context for a graphical application. Manages all open windows.
+///
+/// NOTE: This may only live on one thread.
 pub struct Application {
     glfw_inst: glfw::Glfw,
-    windows: Vec<Arc<Mutex<Window>>>,
 }
 
 impl Application {
@@ -22,18 +28,10 @@ impl Application {
 
         // TODO: Ensure RGBA with depth buffer
 
-        Self {
-            glfw_inst,
-            windows: vec![],
-        }
+        Self { glfw_inst }
     }
 
-    pub fn create_window(
-        &mut self,
-        name: &str,
-        size: &Vector2i,
-        visible: bool,
-    ) -> Arc<Mutex<Window>> {
+    pub fn create_window(&mut self, name: &str, size: Vector2i, visible: bool) -> Window {
         self.glfw_inst
             .window_hint(glfw::WindowHint::Visible(visible));
 
@@ -61,11 +59,35 @@ impl Application {
             gl::DepthFunc(gl::LEQUAL);
         }
 
-        let w = Arc::new(Mutex::new(Window::from(window, events)));
-        self.windows.push(w.clone());
-        w
+        Window::from(window, events)
     }
 
+    pub fn render_loop<F: FnMut() -> bool>(&mut self, mut f: F) {
+        let start_time = std::time::Instant::now();
+        let frame_time = std::time::Duration::from_secs_f32(1.0 / 30.0);
+
+        loop {
+            self.glfw_inst.poll_events();
+
+            if !f() {
+                break;
+            }
+            // TODO: Ideally if any events weren't read, we would clear the
+            // receivers?
+
+            // TODO: Make this account for the amount of time spent.
+
+            std::thread::sleep(frame_time);
+        }
+    }
+
+    /*
+    pub fn poll_events(&mut self) {
+        self.glfw_inst.poll_events();
+    }
+    */
+
+    /*
     pub fn run(&mut self) {
         loop {
             let mut some_open = false;
@@ -89,4 +111,5 @@ impl Application {
             }
         }
     }
+    */
 }

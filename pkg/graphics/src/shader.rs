@@ -1,20 +1,76 @@
-use crate::lighting::{LightSource, Material, MAX_LIGHTS};
-use crate::util::*;
+use std::ffi::CStr;
+use std::ptr::null;
+
 use common::async_std::fs::{read_to_string, File};
 use common::async_std::io::Read;
 use common::errors::*;
 use gl::types::{GLchar, GLenum, GLint, GLsizei, GLuint};
 use math::matrix::Matrix4f;
-use std::ffi::CStr;
-use std::ptr::null;
+
+use crate::lighting::{LightSource, Material, MAX_LIGHTS};
+use crate::util::*;
 
 const MAX_ERROR_LENGTH: GLsizei = 2048;
+
+pub struct ShaderSource {
+    vertex_src: String,
+    fragment_src: String,
+}
+
+impl ShaderSource {
+    pub async fn flat() -> Result<Self> {
+        Self::load_files(
+            "pkg/graphics/shaders/flat.vertex.glsl",
+            "pkg/graphics/shaders/flat.fragment.glsl",
+        )
+        .await
+    }
+
+    pub async fn flat_texture() -> Result<Self> {
+        Self::load_files(
+            "pkg/graphics/shaders/flat_texture.vertex.glsl",
+            "pkg/graphics/shaders/flat_texture.fragment.glsl",
+        )
+        .await
+    }
+
+    pub async fn gouraud() -> Result<Self> {
+        Self::load_files(
+            "pkg/graphics/shaders/gouraud.vertex.glsl",
+            "pkg/graphics/shaders/gouraud.fragment.glsl",
+        )
+        .await
+    }
+
+    pub async fn phong() -> Result<Self> {
+        Self::load_files(
+            "pkg/graphics/shaders/phong.vertex.glsl",
+            "pkg/graphics/shaders/phong.fragment.glsl",
+        )
+        .await
+    }
+
+    async fn load_files(vertex_path: &str, fragment_path: &str) -> Result<Self> {
+        let vertex_src = read_to_string(vertex_path).await?;
+        let fragment_src = read_to_string(fragment_path).await?;
+
+        Ok(Self {
+            vertex_src,
+            fragment_src,
+        })
+    }
+
+    pub fn compile(&self) -> Result<Shader> {
+        Shader::load(&self.vertex_src, &self.fragment_src)
+    }
+}
 
 pub struct Shader {
     pub program: GLuint,
     pub pos_attrib: GLuint,
     pub normal_attrib: Option<GLuint>,
-    pub color_attrib: GLuint,
+    pub color_attrib: Option<GLuint>,
+    pub tex_coord_attrib: Option<GLuint>,
 
     // TODO: These are not attributes, they are uniform locations?
     pub uni_proj_attrib: GLuint,
@@ -24,36 +80,6 @@ pub struct Shader {
 }
 
 impl Shader {
-    pub async fn Default() -> Result<Self> {
-        Self::load_files(
-            "pkg/graphics/shaders/flat.vertex.glsl",
-            "pkg/graphics/shaders/flat.fragment.glsl",
-        )
-        .await
-    }
-
-    pub async fn Gouraud() -> Result<Self> {
-        Self::load_files(
-            "pkg/graphics/shaders/gouraud.vertex.glsl",
-            "pkg/graphics/shaders/gouraud.fragment.glsl",
-        )
-        .await
-    }
-
-    pub async fn Phong() -> Result<Self> {
-        Self::load_files(
-            "pkg/graphics/shaders/phong.vertex.glsl",
-            "pkg/graphics/shaders/phong.fragment.glsl",
-        )
-        .await
-    }
-
-    pub async fn load_files(vertex_path: &str, fragment_path: &str) -> Result<Self> {
-        let vertex_src = read_to_string(vertex_path).await?;
-        let fragment_src = read_to_string(fragment_path).await?;
-        Self::load(vertex_src.as_ref(), fragment_src.as_ref())
-    }
-
     // TODO: Clean up on Drop (also if only part of it succeeds, we should clean
     // up just that part).
     pub fn load(vertex_src: &str, fragment_str: &str) -> Result<Self> {
@@ -98,7 +124,9 @@ impl Shader {
 
             let pos_attrib = gl_get_attrib(program, b"position\0").unwrap();
             let normal_attrib = gl_get_attrib(program, b"normal\0");
-            let color_attrib = gl_get_attrib(program, b"color\0").expect("Missing color");
+            let color_attrib = gl_get_attrib(program, b"color\0");
+            let tex_coord_attrib = gl_get_attrib(program, b"tex_coord\0");
+
             // TODO: These are no longer uniform variables.
             let uni_modelview_attrib =
                 gl_get_location(program, b"modelview\0").expect("Missing modelview");
@@ -110,6 +138,7 @@ impl Shader {
                 pos_attrib,
                 normal_attrib,
                 color_attrib,
+                tex_coord_attrib,
                 uni_proj_attrib,
                 uni_modelview_attrib,
                 eyepos_attrib,
@@ -123,7 +152,12 @@ impl Shader {
     pub fn init(&self) {
         unsafe {
             gl::EnableVertexAttribArray(self.pos_attrib);
-            gl::EnableVertexAttribArray(self.color_attrib);
+            if let Some(attr) = self.color_attrib {
+                gl::EnableVertexAttribArray(attr);
+            }
+            if let Some(attr) = self.tex_coord_attrib {
+                gl::EnableVertexAttribArray(attr);
+            }
             if let Some(attr) = self.normal_attrib {
                 gl::EnableVertexAttribArray(attr);
             }
@@ -226,7 +260,7 @@ fn gl_get_attrib(program: GLuint, name: &[u8]) -> Option<GLuint> {
     let attr = unsafe {
         gl::GetAttribLocation(
             program,
-            std::mem::transmute::<*const u8, *const i8>(name.as_ptr()),
+            core::mem::transmute::<*const u8, *const i8>(name.as_ptr()),
         )
     };
 

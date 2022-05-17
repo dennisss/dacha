@@ -1,13 +1,16 @@
-use crate::drawable::{Drawable, Object};
-use crate::shader::Shader;
-use crate::transform::{Camera, Transform};
-use crate::util::{gl_face_buffer, gl_vertex_buffer_vec3, GLBuffer};
+use std::ptr::null;
+use std::sync::{Arc, Mutex};
+
 use common::async_std::path::Path;
 use common::errors::*;
 use gl::types::{GLint, GLuint};
 use math::matrix::Vector3f;
-use std::ptr::null;
-use std::sync::Arc;
+
+use crate::drawable::{Drawable, Object};
+use crate::shader::Shader;
+use crate::transform::{Camera, Transform};
+use crate::util::{gl_face_buffer, gl_vertex_buffer_vec3, GLBuffer};
+use crate::window::Window;
 
 pub type Face = [GLuint; 3];
 
@@ -58,6 +61,7 @@ impl Mesh {
     }
 
     pub fn from(
+        window: &Arc<Mutex<Window>>,
         vertices: &[Vector3f],
         colors: &[Vector3f],
         faces: &[Face],
@@ -80,7 +84,7 @@ impl Mesh {
 			if colors.len() == 0 { None }
 			else {
 				assert_eq!(colors.len(), vertices.len());
-				Some(gl_vertex_buffer_vec3(shader.color_attrib, colors))
+				Some(gl_vertex_buffer_vec3(shader.color_attrib.unwrap(), colors))
 			};
 
         // TODO: Verify that all faces have in-range indices

@@ -1,8 +1,8 @@
 use core::cmp::Ordering;
 use core::ops::Deref;
 
-use common::collections::FixedVec;
 use common::errors::*;
+use common::fixed::vec::FixedVec;
 use crypto::checksum::crc16::crc16_incremental_lut;
 use crypto::hasher::Hasher;
 use executor::mutex::Mutex;
@@ -267,8 +267,7 @@ impl<'a, E: EEPROM> BlockHandle<'a, E> {
     pub async fn read(&mut self, data: &mut [u8]) -> Result<usize> {
         let mut state = self.storage.state.lock().await;
 
-        let mut blocks =
-            FixedVec::<(BlockHeader, u16, usize), _>::new([(BlockHeader::default(), 0, 0); 2]);
+        let mut blocks = FixedVec::<(BlockHeader, u16, usize), 2>::new();
 
         let mut next_offset = self.offset;
         for _ in 0..self.num_buffers {

@@ -1,19 +1,23 @@
+use std::sync::mpsc::Receiver;
+
+use glfw::Context;
+use math::matrix::{Vector2i, Vector4f};
+
 use crate::drawable::Drawable;
 use crate::group::Group;
 use crate::transform::Camera;
 use crate::transform::Transform;
-use glfw::Context;
-use math::matrix::{Vector2i, Vector4f};
-use std::sync::mpsc::Receiver;
 
 /// Represents a drawing space either linked to a whole window or a viewport
+///
+/// TODO: Make all the fields private?
 pub struct Window {
     pub scene: Group,
     pub camera: Camera,
     //	pub size: Vector2i, // TODO: Use unsigned
     background_color: Vector4f,
 
-    pub window: glfw::Window,
+    window: glfw::Window,
     events: Receiver<(f64, glfw::WindowEvent)>,
 }
 
@@ -28,6 +32,10 @@ impl Window {
             window,
             events,
         }
+    }
+
+    pub fn raw(&mut self) -> &mut glfw::Window {
+        &mut self.window
     }
 
     /// Size is width x height
@@ -77,8 +85,6 @@ public:
     void draw();
     void setSize(glm::vec2 size);
 
-    inline void setBackgroundColor(glm::vec4 color){ this->backgroundColor = color; };
-
 };
 
 // All defined windows; The index corresponds to the id
@@ -94,15 +100,6 @@ void window_reshape(int w, int h){
     glViewport((w - dim) / 2.0, (h - dim) / 2.0, dim, dim);
 }
 */
-
-
-
-
-Window::Window(GLFWwindow *window) {
-    this->window = window;
-
-    this->backgroundColor = vec4(0.0f, 0.0f, 0.0f, 1.0f); // Default color of black
-}
 
 Window::~Window(){
     glfwDestroyWindow(this->window);

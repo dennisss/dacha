@@ -6,7 +6,8 @@ use core::default::Default;
 use core::ops::{Deref, DerefMut};
 
 use common::bytes::BytesMut;
-use common::collections::{FixedString, FixedVec};
+use common::collections::FixedString;
+use common::fixed::vec::FixedVec;
 use common::list::List;
 
 use crate::message::Enum;
@@ -174,7 +175,7 @@ impl<A: AsRef<[u8]> + AsMut<[u8]>> Reflect for FixedString<A> {
 }
 
 // Used for 'bytes' types with the fixed_length option specified.
-impl<A: AsMut<[u8]> + AsRef<[u8]>> Reflect for FixedVec<u8, A> {
+impl<const LEN: usize> Reflect for FixedVec<u8, LEN> {
     fn reflect(&self) -> Reflection {
         Reflection::Bytes(self.as_ref())
     }
@@ -183,7 +184,7 @@ impl<A: AsMut<[u8]> + AsRef<[u8]>> Reflect for FixedVec<u8, A> {
     }
 }
 
-impl<T: Reflect + Default, A: AsMut<[T]> + AsRef<[T]>> Reflect for FixedVec<T, A> {
+impl<T: Reflect + Default, const LEN: usize> Reflect for FixedVec<T, LEN> {
     fn reflect(&self) -> Reflection {
         Reflection::Repeated(self)
     }
@@ -280,7 +281,7 @@ impl<T: Reflect + Default> RepeatedFieldReflection for Vec<T> {
     }
 }
 
-impl<T: Reflect + Default, A: AsMut<[T]> + AsRef<[T]>> RepeatedFieldReflection for FixedVec<T, A> {
+impl<T: Reflect + Default, const LEN: usize> RepeatedFieldReflection for FixedVec<T, LEN> {
     fn len(&self) -> usize {
         let s: &[T] = self.as_ref();
         s.len()

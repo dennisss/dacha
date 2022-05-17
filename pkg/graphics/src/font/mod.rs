@@ -1,16 +1,22 @@
+use std::f32::consts::PI;
+use std::sync::Arc;
+
 use common::async_std::fs::File;
 use common::async_std::io::ReadExt;
 use common::bytes::Bytes;
 use common::errors::*;
-use parsing::cstruct::parse_cstruct_be;
-use parsing::*;
-
-use crate::raster::canvas::{Canvas, Path, PathBuilder, SubPath};
 use common::io::StreamableExt;
 use image::{Color, Colorspace, Image};
 use math::matrix::{Matrix3f, Vector2f, Vector2i, Vector3f, Vector3u};
-use minifb::MouseMode;
-use std::f32::consts::PI;
+use parsing::cstruct::parse_cstruct_be;
+use parsing::*;
+
+use crate::polygon::Polygon;
+use crate::raster::canvas::{Canvas, Path, PathBuilder, SubPath};
+use crate::shader::ShaderSource;
+use crate::texture::Texture;
+use crate::transform::orthogonal_projection;
+use crate::window::Window;
 
 pub mod vm;
 
@@ -1041,17 +1047,19 @@ pub async fn open_font() -> Result<()> {
             canvas.stroke_path(&pb.build(), 5.0, &red)?;
         }
 
-        if let Some((mx, my)) = window.get_mouse_pos(MouseMode::Discard) {
-            let mut builder = PathBuilder::new();
-            builder.ellipse(
-                Vector2f::from_slice(&[mx, my]),
-                Vector2f::from_slice(&[10.0, 10.0]),
-                0.0,
-                2.0 * PI,
-            );
+        let (mx, my) = window.raw().get_cursor_pos();
 
-            canvas.fill_path(&builder.build(), &color)?;
-        }
+        // if let Some((mx, my)) = window.get_mouse_pos(MouseMode::Discard) {
+        let mut builder = PathBuilder::new();
+        builder.ellipse(
+            Vector2f::from_slice(&[mx as f32, my as f32]),
+            Vector2f::from_slice(&[10.0, 10.0]),
+            0.0,
+            2.0 * PI,
+        );
+
+        canvas.fill_path(&builder.build(), &color)?;
+        // }
 
         Ok(())
     })
@@ -1074,60 +1082,110 @@ pub async fn open_font() -> Result<()> {
     Ok(())
 }
 
-async fn draw_loop<F: FnMut(&mut Canvas, &minifb::Window) -> Result<()>>(
+async fn draw_loop<F: FnMut(&mut Canvas, &mut Window) -> Result<()>>(
     mut canvas: Canvas,
     mut f: F,
 ) -> Result<()> {
-    let window_options = minifb::WindowOptions::default();
+    let shader_src = ShaderSource::flat_texture().await?;
 
-    let mut window = minifb::Window::new(
+    let mut app = crate::app::Application::new();
+
+    let window_width = canvas.display_buffer.width();
+    let window_height = canvas.display_buffer.height();
+
+    let mut window = app.create_window(
         "Image",
-        canvas.display_buffer.width(),
-        canvas.display_buffer.height(),
-        window_options,
-    )
-    .unwrap();
+        Vector2i::from_slice(&[window_width as isize, window_height as isize]),
+        true,
+    );
 
-    // 30 FPS
-    window.limit_update_rate(Some(std::time::Duration::from_micros(33333)));
+    let shader = Arc::new(shader_src.compile().unwrap());
+
+    window.camera.proj = orthogonal_projection(
+        0.0,
+        window_width as f32,
+        window_height as f32,
+        0.0,
+        -1.0,
+        1.0,
+    );
 
     let mut data = vec![0u32; canvas.display_buffer.array.data.len()];
 
-    while window.is_open() {
-        if window.is_key_pressed(minifb::Key::Escape, minifb::KeyRepeat::No) {
-            break;
-        }
+    app.render_loop(|| {
+        f(&mut canvas, &mut window).unwrap();
 
-        let start_time = std::time::Instant::now();
+        window.scene.clear();
 
-        f(&mut canvas, &window)?;
+        let texture = Arc::new(Texture::new(&canvas.drawing_buffer));
+        let mut rect = Polygon::rectangle(
+            Vector2f::from_slice(&[0.0, 0.0]),
+            window_width as f32,
+            window_height as f32,
+            Vector3f::from_slice(&[1.0, 1.0, 0.0]),
+            shader.clone(),
+        );
 
-        canvas
-            .drawing_buffer
-            .downsample(&mut canvas.display_buffer)
-            .await;
+        rect.set_texture(
+            texture,
+            &[
+                Vector2f::from_slice(&[0.0, -1.0]),
+                Vector2f::from_slice(&[1.0, -1.0]),
+                Vector2f::from_slice(&[1.0, 0.0]),
+                Vector2f::from_slice(&[0.0, 0.0]),
+            ],
+        );
 
-        for (i, color) in canvas
-            .display_buffer
-            .array
-            .flat()
-            .chunks_exact(canvas.display_buffer.channels())
-            .enumerate()
-        {
-            data[i] = ((color[0] as u32) << 16) | ((color[1] as u32) << 8) | (color[2] as u32);
-        }
+        window.scene.add_object(Box::new(rect));
 
-        let end_time = std::time::Instant::now();
+        window.tick();
+        window.draw();
 
-        println!("frame: {}ms", (end_time - start_time).as_millis());
+        !window.raw().should_close()
+    });
 
-        // TODO: Only update once as the image will be static.
-        window.update_with_buffer(
-            &data,
-            canvas.display_buffer.width(),
-            canvas.display_buffer.height(),
-        )?;
-    }
+    // while window.is_open() {
+    //     // if window.is_key_pressed(minifb::Key::Escape, minifb::KeyRepeat::No) {
+    //     //     break;
+    //     // }
+
+    //     let start_time = std::time::Instant::now();
+
+    //     f(&mut canvas, &mut window)?;
+
+    //     /*
+    //     canvas
+    //         .drawing_buffer
+    //         .downsample(&mut canvas.display_buffer)
+    //         .await;
+
+    //     for (i, color) in canvas
+    //         .display_buffer
+    //         .array
+    //         .flat()
+    //         .chunks_exact(canvas.display_buffer.channels())
+    //         .enumerate()
+    //     {
+    //         data[i] = ((color[0] as u32) << 16) | ((color[1] as u32) << 8) |
+    // (color[2] as u32);     }
+    //     */
+    //     let image2 = canvas.drawing_buffer.clone();
+
+    //     let end_time = std::time::Instant::now();
+
+    //     println!("frame: {}ms", (end_time - start_time).as_millis());
+
+    //     // app.run_in_window(|| {
+    //     //     // Basically must render a new scene
+    //     // });
+
+    //     // TODO: Only update once as the image will be static.
+    //     window.update_with_buffer(
+    //         &data,
+    //         canvas.display_buffer.width(),
+    //         canvas.display_buffer.height(),
+    //     )?;
+    // }
 
     Ok(())
 }

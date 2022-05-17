@@ -4,15 +4,15 @@ use core::result::Result;
 
 use generic_array::ArrayLength;
 
-use crate::collections::FixedVec;
 use crate::errors::error_new::IntoError;
+use crate::fixed::vec::FixedVec;
 
 pub trait List<T>: Appendable<Item = T> + Clearable {}
 
 #[cfg(feature = "alloc")]
 impl<T: Clone> List<T> for alloc::vec::Vec<T> {}
 
-impl<T: Default + Clone, A: AsRef<[T]> + AsMut<[T]>> List<T> for FixedVec<T, A> {}
+impl<T: Clone, const LEN: usize> List<T> for FixedVec<T, LEN> {}
 
 pub trait Appendable {
     type Item;
@@ -39,7 +39,7 @@ impl<T: Clone> Appendable for alloc::vec::Vec<T> {
     }
 }
 
-impl<T: Default + Clone, A: AsRef<[T]> + AsMut<[T]>> Appendable for FixedVec<T, A> {
+impl<T: Clone, const LEN: usize> Appendable for FixedVec<T, LEN> {
     type Item = T;
     // TODO: Return an error instead of panicking when there is overflow
     type Error = Infallible;
@@ -69,7 +69,7 @@ impl<T> Clearable for alloc::vec::Vec<T> {
     }
 }
 
-impl<T: Default, A: AsRef<[T]> + AsMut<[T]>> Clearable for FixedVec<T, A> {
+impl<T, const LEN: usize> Clearable for FixedVec<T, LEN> {
     fn clear(&mut self) {
         FixedVec::clear(self);
     }
