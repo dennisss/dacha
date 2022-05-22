@@ -225,6 +225,9 @@ pub fn fill_polygon(
         let mut current_num = 0;
         let mut xs_idx = 0;
 
+        // TODO: Get a scan line iterator on the Image object with pre-checked bounds to
+        // optimize this.
+        //
         // TODO: Only need to go from the min to the max in current x array.
         for x in (bbox.min.x().floor() as usize)..((bbox.max.x() + 1.0).floor() as usize) {
             let x = x as f32;
@@ -311,7 +314,8 @@ pub fn fill_triangle(
             let color = (colors[0].cast::<f32>() * b[0]
                 + colors[1].cast::<f32>() * b[1]
                 + colors[2].cast::<f32>() * b[2])
-                .cast::<u8>();
+                .cast::<u8>()
+                .into();
 
             image.set(y, x, &color);
         }
@@ -332,7 +336,7 @@ pub async fn run() -> Result<()> {
         &mut img,
         Vector2i::from_slice(&[350, 50]),
         Vector2i::from_slice(&[10, 10]),
-        &Color::from_slice_with_shape(4, 1, &[0, 0, 0, 1]),
+        &Color::rgba(0, 0, 0, 1),
     );
     let verts = &[
         Vector2f::from_slice(&[150., 100.]),
@@ -344,9 +348,9 @@ pub async fn run() -> Result<()> {
     //				 &Color::from_slice_with_shape(4, 1, &[255, 0, 0, 1]))?;
 
     let colors = &[
-        Color::from_slice_with_shape(4, 1, &[255, 0, 0, 1]),
-        Color::from_slice_with_shape(4, 1, &[0, 255, 0, 1]),
-        Color::from_slice_with_shape(4, 1, &[0, 0, 255, 1]),
+        Color::rgba(255, 0, 0, 1),
+        Color::rgba(0, 255, 0, 1),
+        Color::rgba(0, 0, 255, 1),
     ];
 
     fill_triangle(&mut img, verts, colors)?;

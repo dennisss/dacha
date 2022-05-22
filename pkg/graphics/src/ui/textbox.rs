@@ -101,9 +101,9 @@ impl View for Textbox {
     }
 
     fn render(&mut self, parent_box: &RenderBox, canvas: &mut Canvas) -> Result<()> {
-        let background_color = Color::from_slice_with_shape(3, 1, &[0xff, 0xff, 0xff]);
-        let border_color = Color::from_slice_with_shape(3, 1, &[0xcc, 0xcc, 0xcc]);
-        let font_color = Color::from_slice_with_shape(3, 1, &[0, 0, 0]);
+        let background_color = Color::rgb(0xff, 0xff, 0xff);
+        let border_color = Color::rgb(0xcc, 0xcc, 0xcc);
+        let font_color = Color::rgb(0, 0, 0);
 
         let measurements = measure_text(
             &self.params.font,

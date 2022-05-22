@@ -8,6 +8,7 @@ use common::bits::BitVector;
 use common::errors::*;
 use graphics::font::CanvasFontExt;
 use graphics::font::OpenTypeFont;
+use graphics::image_show::ImageShow;
 use graphics::raster::canvas::Canvas;
 
 /*
@@ -39,16 +40,16 @@ Output: 8
 */
 
 async fn run() -> Result<()> {
-    let mut canvas = graphics::raster::canvas::Canvas::create(64, 320, 1);
+    let mut canvas = Canvas::create(64, 320);
 
     let font = OpenTypeFont::open(project_path!("testdata/noto-sans.ttf")).await?;
 
     canvas.drawing_buffer.clear_white();
 
-    let color = image::Color::from_slice_with_shape(3, 1, &[0, 0, 0]);
+    let color = image::Color::zero(3);
     canvas.fill_text(50.0, 57.0, &font, "4B 4G", 50.0, &color)?;
 
-    canvas.drawing_buffer.show()?;
+    canvas.drawing_buffer.show().await?;
 
     let mut lines = vec![];
     for x in 0..canvas.drawing_buffer.width() {

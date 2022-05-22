@@ -1110,8 +1110,8 @@ pub async fn open_font() -> Result<()> {
 
             let font_size = 60.0; // 14px font.
 
-            let black = Color::from_slice_with_shape(3, 1, &[0, 0, 0]);
-            let red = Color::from_slice_with_shape(3, 1, &[255, 0, 0]);
+            let black = Color::rgb(0, 0, 0);
+            let red = Color::rgb(255, 0, 0);
 
             canvas.fill_text(x, y, &font, text, font_size, &black)?;
 

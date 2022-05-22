@@ -95,10 +95,10 @@ impl View for CheckboxView {
 
     fn render(&mut self, parent_box: &RenderBox, canvas: &mut Canvas) -> Result<()> {
         // #2196F3
-        let bg_color = Color::from_slice_with_shape(3, 1, &[0x21, 0x96, 0xF3]);
+        let bg_color = Color::rgb(0x21, 0x96, 0xF3);
 
-        let border_color = Color::from_slice_with_shape(3, 1, &[0x77, 0x77, 0x77]);
-        let white = Color::from_slice_with_shape(3, 1, &[0xff, 0xff, 0xff]);
+        let border_color = Color::rgb(0x77, 0x77, 0x77);
+        let white = Color::rgb(0xff, 0xff, 0xff);
 
         let dim = 54.;
         let border_width = 6.;

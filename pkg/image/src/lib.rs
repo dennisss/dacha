@@ -14,7 +14,7 @@ extern crate lazy_static;
 
 use math::array::Array;
 use math::geometry::bounding_box::BoundingBox;
-use math::matrix::Vector2f;
+use math::matrix::{Vector2f, VectorStatic};
 use num_traits::{AsPrimitive, Num, NumCast, Zero};
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
@@ -65,7 +65,51 @@ impl<T: Zero + Clone> Image<T> {
     }
 }
 
-pub type Color = math::matrix::Vector<u8, math::matrix::Dynamic>;
+#[derive(Clone)]
+pub struct Color {
+    data: VectorStatic<u8, typenum::U4>,
+}
+
+impl Color {
+    pub fn zero() -> Self {
+        Self {
+            data: VectorStatic::zero(),
+        }
+    }
+
+    pub fn rgb(r: u8, g: u8, b: u8) -> Self {
+        Self {
+            data: VectorStatic::from_slice(&[r, g, b, 255]),
+        }
+    }
+
+    pub fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self {
+            data: VectorStatic::from_slice(&[r, g, b, a]),
+        }
+    }
+}
+
+impl core::ops::Deref for Color {
+    type Target = VectorStatic<u8, typenum::U4>;
+
+    fn deref(&self) -> &Self::Target {
+        // TODO: Limit to only the supported channels?
+        &self.data
+    }
+}
+
+impl core::ops::DerefMut for Color {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+impl core::convert::From<VectorStatic<u8, typenum::U4>> for Color {
+    fn from(data: VectorStatic<u8, typenum::U4>) -> Self {
+        Self { data }
+    }
+}
 
 impl Image<u8> {
     pub fn clear_white(&mut self) {
@@ -75,14 +119,15 @@ impl Image<u8> {
     }
 
     pub fn set(&mut self, y: usize, x: usize, color: &Color) {
-        assert_eq!(color.len(), self.channels());
+        let start = self.channels() * (y * self.width() + x);
+
         for i in 0..self.channels() {
-            self[(y, x, i)] = color[i];
+            self.array[start + i] = color[i];
         }
     }
 
     pub fn get(&self, y: usize, x: usize) -> Color {
-        let mut color = Color::zero_with_shape(self.channels(), 1);
+        let mut color = Color::zero();
         for i in 0..self.channels() {
             color[i] = self[(y, x, i)];
         }
