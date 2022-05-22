@@ -4,7 +4,7 @@ extern crate core;
 #[macro_use]
 extern crate common;
 extern crate gl;
-extern crate glfw;
+pub extern crate glfw;
 extern crate image;
 extern crate math;
 extern crate parsing;

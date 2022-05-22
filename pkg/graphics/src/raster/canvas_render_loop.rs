@@ -12,21 +12,28 @@ use crate::texture::Texture;
 use crate::transform::orthogonal_projection;
 use crate::window::Window;
 
+pub struct WindowOptions {
+    pub name: String,
+    pub width: usize,
+    pub height: usize,
+}
+
 impl Canvas {
     pub async fn render_loop<F: FnMut(&mut Canvas, &mut Window, &[WindowEvent]) -> Result<()>>(
         &mut self,
+        window_options: WindowOptions,
         mut f: F,
     ) -> Result<()> {
         let shader_src = ShaderSource::flat_texture().await?;
 
         let mut app = Application::new();
 
-        let window_width = self.display_buffer.width();
-        let window_height = self.display_buffer.height();
-
         let mut window = app.create_window(
-            "Canvas",
-            Vector2i::from_slice(&[window_width as isize, window_height as isize]),
+            &window_options.name,
+            Vector2i::from_slice(&[
+                window_options.width as isize,
+                window_options.height as isize,
+            ]),
             true,
         );
 
@@ -36,8 +43,8 @@ impl Canvas {
 
         window.camera.proj = orthogonal_projection(
             0.0,
-            window_width as f32,
-            window_height as f32,
+            window_options.width as f32,
+            window_options.height as f32,
             0.0,
             -1.0,
             1.0,
@@ -60,8 +67,8 @@ impl Canvas {
             let texture = Arc::new(Texture::new(&self.drawing_buffer));
             let mut rect = Polygon::rectangle(
                 Vector2f::from_slice(&[0.0, 0.0]),
-                window_width as f32,
-                window_height as f32,
+                window_options.width as f32,
+                window_options.height as f32,
                 Vector3f::from_slice(&[1.0, 1.0, 0.0]),
                 shader.clone(),
             );

@@ -12,7 +12,6 @@ reflection = { path = "../reflection" }
 macros = { path = "../macros" }
 parsing = { path = "../parsing" }
 fs2 = "0.4.3"
-ctrlc = "3.1.1"
 libc = "0.2"
 num-traits = "0.2"
 typenum = "1.10.0"

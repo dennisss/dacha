@@ -32,8 +32,8 @@ Syncronization
 
 use core::future::Future;
 
-use common::collections::FixedVec;
 use common::errors::*;
+use common::fixed::vec::FixedVec;
 use common::list::Appendable;
 use executor::channel::Channel;
 use executor::futures::*;
@@ -167,7 +167,7 @@ impl ProtocolUSBHandler {
             } else if setup.bRequest == ProtocolUSBRequestType::GetNetworkConfig.to_value() {
                 log!(b"USB GETCFG\n");
 
-                let mut raw_proto = common::collections::FixedVec::new([0u8; 256]);
+                let mut raw_proto = common::fixed::vec::FixedVec::<u8, 256>::new();
 
                 let network_config = self.radio_socket.lock_network_config().await;
                 if let Some(network_config) = network_config.get() {

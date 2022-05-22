@@ -82,7 +82,7 @@ pub struct VideoController {
 
     /// The actual pixels currently drawn to the screen (assuming the screen is
     /// on).
-    pub screen_buffer: [u32; (SCREEN_HEIGHT * SCREEN_WIDTH) as usize],
+    pub screen_buffer: [MonochromeColor; (SCREEN_HEIGHT * SCREEN_WIDTH) as usize],
 
     /// Each tile is 16 bytes to represent 8x8 pixels
     /// 8000-8FFF : Sprite/background tiles (numbered 0 to 255)
@@ -106,7 +106,7 @@ impl VideoController {
         Self {
             clock,
             interrupts,
-            screen_buffer: [0u32; (SCREEN_HEIGHT * SCREEN_WIDTH) as usize],
+            screen_buffer: [MonochromeColor::Black; (SCREEN_HEIGHT * SCREEN_WIDTH) as usize],
             vram: VideoRAM::default(),
             oam: [0u8; 160],
             registers: VideoRegisters::default(),
@@ -146,7 +146,7 @@ impl VideoController {
 
                 let pixel = &mut self.screen_buffer
                     [(screen_y as usize) * SCREEN_WIDTH + (screen_x as usize)];
-                *pixel = color.to_rgb();
+                *pixel = color;
             }
         }
 
@@ -187,7 +187,7 @@ impl VideoController {
 
                 let pixel = &mut self.screen_buffer
                     [(screen_y as usize) * SCREEN_WIDTH + (screen_x as usize)];
-                *pixel = color.to_rgb();
+                *pixel = color;
             }
         }
 
@@ -199,67 +199,68 @@ impl VideoController {
             // Always uses the tile data at 0x8000.
             let tile_data = self.vram.tile_data(true);
 
-            let draw_sprite_tile = |obj: &ObjectAttributes,
-                                    tile: &Tile,
-                                    position_y: u8,
-                                    pallete: &MonochromePallete,
-                                    screen_buffer: &mut [u32]| {
-                // Make sure the subtraction after this doesn't go negative.
-                if screen_y + 16 < position_y {
-                    return;
-                }
-
-                // Will be the y position from 0-7 relative to the current tile
-                // to draw at the current line.
-                let tile_y = screen_y + 16 - position_y;
-                if tile_y >= 8 {
-                    return;
-                }
-
-                // Ensuring the below screen_x calculations don't overflow
-                if obj.position_x >= (SCREEN_WIDTH as u8) + 8 {
-                    return;
-                }
-
-                for tile_x in 0..8 {
-                    let screen_x = match (obj.position_x + tile_x).checked_sub(8) {
-                        Some(x) => x,
-                        None => {
-                            continue;
-                        }
-                    };
-
-                    if screen_x as usize >= SCREEN_WIDTH {
-                        break;
+            let draw_sprite_tile =
+                |obj: &ObjectAttributes,
+                 tile: &Tile,
+                 position_y: u8,
+                 pallete: &MonochromePallete,
+                 screen_buffer: &mut [MonochromeColor]| {
+                    // Make sure the subtraction after this doesn't go negative.
+                    if screen_y + 16 < position_y {
+                        return;
                     }
 
-                    let color_num = tile.get(
-                        if obj.x_flip() { 7 - tile_x } else { tile_x },
-                        if obj.y_flip() { 7 - tile_y } else { tile_y },
-                    );
-                    // Transparent
-                    if color_num.0 == 0 {
-                        continue;
+                    // Will be the y position from 0-7 relative to the current tile
+                    // to draw at the current line.
+                    let tile_y = screen_y + 16 - position_y;
+                    if tile_y >= 8 {
+                        return;
                     }
 
-                    if line_color_nums[screen_x as usize].0 == 0 {
-                        // always in front of bg/window color 0
-                    } else {
-                        match obj.priority() {
-                            ObjectPriority::AboveBackground => {}
-                            ObjectPriority::BehindNonZero => {
+                    // Ensuring the below screen_x calculations don't overflow
+                    if obj.position_x >= (SCREEN_WIDTH as u8) + 8 {
+                        return;
+                    }
+
+                    for tile_x in 0..8 {
+                        let screen_x = match (obj.position_x + tile_x).checked_sub(8) {
+                            Some(x) => x,
+                            None => {
                                 continue;
                             }
+                        };
+
+                        if screen_x as usize >= SCREEN_WIDTH {
+                            break;
                         }
+
+                        let color_num = tile.get(
+                            if obj.x_flip() { 7 - tile_x } else { tile_x },
+                            if obj.y_flip() { 7 - tile_y } else { tile_y },
+                        );
+                        // Transparent
+                        if color_num.0 == 0 {
+                            continue;
+                        }
+
+                        if line_color_nums[screen_x as usize].0 == 0 {
+                            // always in front of bg/window color 0
+                        } else {
+                            match obj.priority() {
+                                ObjectPriority::AboveBackground => {}
+                                ObjectPriority::BehindNonZero => {
+                                    continue;
+                                }
+                            }
+                        }
+
+                        let color = pallete.color(color_num);
+
+                        let pixel = &mut screen_buffer
+                            [(screen_y as usize) * SCREEN_WIDTH + (screen_x as usize)];
+                        *pixel = color;
                     }
-
-                    let color = pallete.color(color_num);
-
-                    let pixel = &mut screen_buffer
-                        [(screen_y as usize) * SCREEN_WIDTH + (screen_x as usize)];
-                    *pixel = color.to_rgb();
-                }
-            };
+                };
 
             let mut rest = &self.oam[..];
             loop {
@@ -338,7 +339,7 @@ impl VideoController {
         // TODO: Only do this if not already cleared
         if !self.registers.control.display_enabled() {
             for pixel in self.screen_buffer.iter_mut() {
-                *pixel = 0xffffff;
+                *pixel = MonochromeColor::Black;
             }
 
             return Ok(());
@@ -662,8 +663,9 @@ enum ObjectPriority {
     BehindNonZero,
 }
 
-//enum_def!(MonochromeColor u8 =>
-enum MonochromeColor {
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum MonochromeColor {
     White = 0,
     LightGray = 1,
     DarkGray = 2,
@@ -681,7 +683,7 @@ impl MonochromeColor {
         }
     }
 
-    fn to_rgb(&self) -> u32 {
+    pub fn to_rgb(&self) -> u32 {
         match self {
             MonochromeColor::White => 0xffffff,
             MonochromeColor::LightGray => 0xaaaaaa,

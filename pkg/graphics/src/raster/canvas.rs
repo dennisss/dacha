@@ -9,26 +9,15 @@ use crate::raster::FillRule;
 pub struct Canvas {
     // TODO: Make private.
     pub drawing_buffer: Image<u8>,
-
-    // TODO: Decouple the display buffer as its not very related to the canvas.
-    pub display_buffer: Image<u8>,
-    viewport_transform: Matrix3f,
     transform: Matrix3f,
     transform_stack: Vec<Matrix3f>,
 }
 
 impl Canvas {
-    pub fn create(height: usize, width: usize, sampling: usize) -> Self {
-        assert!(sampling >= 1);
-
+    pub fn create(height: usize, width: usize) -> Self {
         Self {
-            drawing_buffer: Image::zero(height * sampling, width * sampling, Colorspace::RGB),
-            display_buffer: Image::zero(height, width, Colorspace::RGB),
+            drawing_buffer: Image::zero(height, width, Colorspace::RGB),
             transform: Matrix3f::identity(),
-            viewport_transform: crate::transforms::scale2f(&Vector2f::from_slice(&[
-                sampling as f32,
-                sampling as f32,
-            ])),
             transform_stack: vec![],
         }
     }
@@ -57,8 +46,6 @@ impl Canvas {
 
     /// NOTE: The result of this is only valid under the current transform.
     fn linearize_path(&self, path: &Path) -> (Vec<Vector2f>, Vec<usize>) {
-        let transform = &self.viewport_transform * &self.transform;
-
         let mut verts = vec![];
         let mut path_starts = vec![];
 
@@ -67,14 +54,14 @@ impl Canvas {
             for segment in &sub_path.segments {
                 match segment {
                     PathSegment::Line(line) => {
-                        verts.push(transform2f(&transform, &line.start));
-                        verts.push(transform2f(&transform, &line.end))
+                        verts.push(transform2f(&self.transform, &line.start));
+                        verts.push(transform2f(&self.transform, &line.end))
                     }
                     PathSegment::BezierCurve(curve) => {
-                        linearize(curve, &transform, &mut verts);
+                        linearize(curve, &self.transform, &mut verts);
                     }
                     PathSegment::Arc(curve) => {
-                        linearize(curve, &transform, &mut verts);
+                        linearize(curve, &self.transform, &mut verts);
                     }
                 }
             }
@@ -106,7 +93,7 @@ impl Canvas {
     pub fn stroke_path(&mut self, path: &Path, width: f32, color: &Color) -> Result<()> {
         let (verts, path_starts) = self.linearize_path(path);
 
-        let scale = self.viewport_transform[(0, 0)];
+        let scale = self.transform[(0, 0)];
         let width_scaled = width * scale;
 
         let dash_array = &[]; // &[5.0 * scale, 5.0 * scale];

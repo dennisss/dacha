@@ -18,7 +18,6 @@ extern crate common;
 extern crate byteorder;
 extern crate chrono;
 extern crate crypto;
-extern crate ctrlc;
 extern crate dotenv;
 extern crate fs2;
 extern crate http;

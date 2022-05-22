@@ -1,12 +1,15 @@
-use crate::gameboy::clock::CYCLES_PER_SECOND;
-use crate::gameboy::joypad::Joypad;
-use crate::gameboy::memory::MemoryInterface;
-use common::errors::*;
-use minifb::Scale;
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::rc::Rc;
+
+use common::errors::*;
+use graphics::raster::canvas::Canvas;
+use graphics::raster::canvas_render_loop::WindowOptions;
+
+use crate::gameboy::clock::CYCLES_PER_SECOND;
+use crate::gameboy::joypad::Joypad;
+use crate::gameboy::memory::MemoryInterface;
 
 pub mod clock;
 pub mod cpu;
@@ -68,7 +71,7 @@ pub fn diff_logs() -> Result<()> {
 
 const CARTRIDGE_FILE: &'static str = "ext/gameboy/pokemon_blue.gbc";
 
-pub fn run() -> Result<()> {
+pub async fn run() -> Result<()> {
     //	diff_logs()?;
 
     let mut boot_rom = vec![];
@@ -152,118 +155,135 @@ pub fn run() -> Result<()> {
         mem.store8(0xFFFF, 0x00).unwrap();
         */
 
-    let mut window_options = minifb::WindowOptions::default();
-    window_options.scale = Scale::X4;
+    let mut canvas = Canvas::create(video::SCREEN_HEIGHT, video::SCREEN_WIDTH);
 
-    let mut window = minifb::Window::new(
-        "Gameboy",
-        video::SCREEN_WIDTH,
-        video::SCREEN_HEIGHT,
-        window_options,
-    )
-    .unwrap();
-
-    // 60 FPS
-    window.limit_update_rate(Some(std::time::Duration::from_micros(16666)));
+    let window_options = WindowOptions {
+        name: "Gameboy".to_string(),
+        width: video::SCREEN_WIDTH * 4,
+        height: video::SCREEN_HEIGHT * 4,
+    };
 
     let mut paused = false;
     let mut unpaused = false;
 
     const BREAK_POINT: u16 = 0xffff; // 0x0100;
 
-    while window.is_open() {
-        {
-            let mut jp = joypad.borrow_mut();
-            jp.select_pressed = window.is_key_down(minifb::Key::Q);
-            jp.start_pressed = window.is_key_down(minifb::Key::W);
-            jp.b_pressed = window.is_key_down(minifb::Key::E);
-            jp.a_pressed = window.is_key_down(minifb::Key::R);
+    canvas
+        .render_loop(window_options, |canvas, window, _| {
+            {
+                let mut jp = joypad.borrow_mut();
+                jp.select_pressed =
+                    window.raw().get_key(graphics::glfw::Key::Q) == graphics::glfw::Action::Press;
+                jp.start_pressed =
+                    window.raw().get_key(graphics::glfw::Key::W) == graphics::glfw::Action::Press;
+                jp.b_pressed =
+                    window.raw().get_key(graphics::glfw::Key::E) == graphics::glfw::Action::Press;
+                jp.a_pressed =
+                    window.raw().get_key(graphics::glfw::Key::R) == graphics::glfw::Action::Press;
 
-            jp.up_pressed = window.is_key_down(minifb::Key::Up);
-            jp.down_pressed = window.is_key_down(minifb::Key::Down);
-            jp.left_pressed = window.is_key_down(minifb::Key::Left);
-            jp.right_pressed = window.is_key_down(minifb::Key::Right);
+                jp.up_pressed =
+                    window.raw().get_key(graphics::glfw::Key::Up) == graphics::glfw::Action::Press;
+                jp.down_pressed = window.raw().get_key(graphics::glfw::Key::Down)
+                    == graphics::glfw::Action::Press;
+                jp.left_pressed = window.raw().get_key(graphics::glfw::Key::Left)
+                    == graphics::glfw::Action::Press;
+                jp.right_pressed = window.raw().get_key(graphics::glfw::Key::Right)
+                    == graphics::glfw::Action::Press;
 
-            // TODO: Trigger joypad interrupt if needed.
-        }
-
-        let mut speed_up = 1;
-
-        if paused {
-            if window.is_key_pressed(minifb::Key::C, minifb::KeyRepeat::No) {
-                clock.borrow_mut().reset_start();
-                paused = false;
-                unpaused = true;
-
-                speed_up = 1;
+                // TODO: Trigger joypad interrupt if needed.
             }
-        } else {
-            let target_cycles = clock.borrow().target() / SLOW_DOWN * speed_up;
 
-            loop {
-                // TODO: Should wait until the previous instruction is complete?
-                if cpu.registers.PC == BREAK_POINT && cpu.remaining_cycles == 0 && !paused {
-                    if unpaused {
-                        unpaused = false;
-                    } else {
-                        println!("BREAKING");
-                        println!("{:?}", cpu.registers);
-                        paused = true;
-                        break;
+            let mut speed_up = 1;
+
+            if paused {
+                // TODO: This should only be triggered if we just pressed 'C' once (check
+                // events).
+                if window.raw().get_key(graphics::glfw::Key::C) == graphics::glfw::Action::Press {
+                    clock.borrow_mut().reset_start();
+                    paused = false;
+                    unpaused = true;
+
+                    speed_up = 1;
+                }
+            } else {
+                let target_cycles = clock.borrow().target() / SLOW_DOWN * speed_up;
+
+                loop {
+                    // TODO: Should wait until the previous instruction is complete?
+                    if cpu.registers.PC == BREAK_POINT && cpu.remaining_cycles == 0 && !paused {
+                        if unpaused {
+                            unpaused = false;
+                        } else {
+                            println!("BREAKING");
+                            println!("{:?}", cpu.registers);
+                            paused = true;
+                            break;
+                        }
+                    }
+
+                    let mut cycles = {
+                        let c = clock.borrow_mut();
+                        if c.cycles >= target_cycles {
+                            break;
+                        } else {
+                            c.cycles
+                        }
+                    };
+
+                    //				if cycles >= 23454500 {
+                    //					cycles -= 23454500;
+                    //				}
+
+                    if cycles % CYCLES_PER_SECOND == 0 {
+                        //					println!("TICK {}", cycles);
+                    }
+
+                    // Only call at 1MHz.
+                    if cycles % 4 == 0 {
+                        video.borrow_mut().step()?;
+                    }
+
+                    // TODO: Move this timing logic into the sound controller?
+                    if cycles % 8192 == 0 {
+                        sound.step(&clock.borrow())?;
+                    }
+
+                    // TODO: Sort by dependencies.
+                    // Always run the highest up components first.
+
+                    cpu.step(&mut mem, &interrupts, cycles)?;
+
+                    timer.borrow_mut().step()?;
+
+                    mem.step()?;
+
+                    // TODO: Eventually we will need to cycle the memory too to support
+                    // DMAs
+
+                    clock.borrow_mut().cycles += 1;
+                }
+            }
+
+            {
+                let screen_buffer = &video.borrow().screen_buffer;
+
+                for y in 0..video::SCREEN_HEIGHT {
+                    for x in 0..video::SCREEN_WIDTH {
+                        let c = screen_buffer[y * video::SCREEN_WIDTH + x].to_rgb() as u8;
+                        canvas.drawing_buffer[(y, x, 0)] = c;
+                        canvas.drawing_buffer[(y, x, 1)] = c;
+                        canvas.drawing_buffer[(y, x, 2)] = c;
                     }
                 }
-
-                let mut cycles = {
-                    let c = clock.borrow_mut();
-                    if c.cycles >= target_cycles {
-                        break;
-                    } else {
-                        c.cycles
-                    }
-                };
-
-                //				if cycles >= 23454500 {
-                //					cycles -= 23454500;
-                //				}
-
-                if cycles % CYCLES_PER_SECOND == 0 {
-                    //					println!("TICK {}", cycles);
-                }
-
-                // Only call at 1MHz.
-                if cycles % 4 == 0 {
-                    video.borrow_mut().step()?;
-                }
-
-                // TODO: Move this timing logic into the sound controller?
-                if cycles % 8192 == 0 {
-                    sound.step(&clock.borrow())?;
-                }
-
-                // TODO: Sort by dependencies.
-                // Always run the highest up components first.
-
-                cpu.step(&mut mem, &interrupts, cycles)?;
-
-                timer.borrow_mut().step()?;
-
-                mem.step()?;
-
-                // TODO: Eventually we will need to cycle the memory too to support
-                // DMAs
-
-                clock.borrow_mut().cycles += 1;
             }
-        }
 
-        window.update_with_buffer(
-            &video.borrow().screen_buffer,
-            video::SCREEN_WIDTH,
-            video::SCREEN_HEIGHT,
-        )?;
+            Ok(())
+        })
+        .await?;
 
-        // TODO: Update the screen.
-    }
+    // while window.is_open() {
+
+    // }
 
     Ok(())
 }

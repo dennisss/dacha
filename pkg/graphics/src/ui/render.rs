@@ -1,6 +1,7 @@
 use common::errors::*;
 
 use crate::raster::canvas::*;
+use crate::raster::canvas_render_loop::WindowOptions;
 use crate::ui::element::Element;
 use crate::ui::event::*;
 use crate::ui::view::*;
@@ -13,10 +14,19 @@ pub async fn render_element(root_element: Element, height: usize, width: usize) 
 
     let mut view = root_element.inner.instantiate()?;
 
-    let mut canvas = Canvas::create(height, width, 4);
+    const SCALING: usize = 4;
+
+    let mut canvas = Canvas::create(height * SCALING, width * SCALING);
+    canvas.scale(SCALING as f32, SCALING as f32);
+
+    let window_options = WindowOptions {
+        name: "Canvas".to_string(),
+        width,
+        height,
+    };
 
     canvas
-        .render_loop(|canvas, window, events| {
+        .render_loop(window_options, |canvas, window, events| {
             canvas.drawing_buffer.clear_white();
 
             for e in events {

@@ -2,11 +2,9 @@
 name = "emulator"
 version = "0.1.0"
 authors = ["Dennis Shtatnov <densht@gmail.com>"]
-
+edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
 cpal = { git = "https://github.com/RustAudio/cpal" }
-ctrlc = "3.1.1"
-libc = "0.2"
-minifb = "0.19.3"
+graphics = { path = "../graphics" }

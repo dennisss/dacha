@@ -12,5 +12,5 @@ macro_rules! sss {
 fn main() -> Result<()> {
     //	println!("{}", sss!(hello));
 
-    emulator::gameboy::run()
+    common::async_std::task::block_on(emulator::gameboy::run())
 }

@@ -13,6 +13,7 @@ use parsing::*;
 
 use crate::polygon::Polygon;
 use crate::raster::canvas::{Canvas, Path, PathBuilder, SubPath};
+use crate::raster::canvas_render_loop::WindowOptions;
 use crate::shader::ShaderSource;
 use crate::texture::Texture;
 use crate::transform::orthogonal_projection;
@@ -1084,10 +1085,17 @@ pub async fn open_font() -> Result<()> {
     const WIDTH: usize = 800;
     const SCALE: usize = 4;
 
-    let mut canvas = Canvas::create(HEIGHT, WIDTH, SCALE);
+    let mut canvas = Canvas::create(HEIGHT * SCALE, WIDTH * SCALE);
+    canvas.scale(SCALE as f32, SCALE as f32);
+
+    let window_options = WindowOptions {
+        name: "Font".to_string(),
+        width: WIDTH,
+        height: HEIGHT,
+    };
 
     canvas
-        .render_loop(|canvas, window, _| {
+        .render_loop(window_options, |canvas, window, _| {
             canvas.drawing_buffer.clear_white();
 
             // Key font actions:
