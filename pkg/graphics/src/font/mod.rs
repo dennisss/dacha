@@ -904,13 +904,13 @@ fn draw_glyph(canvas: &mut Canvas, g: &SimpleGlyph, color: &Color) -> Result<()>
     Ok(())
 }
 
-enum TextAlign {
+pub enum TextAlign {
     Left,
     Center,
     Right,
 }
 
-enum VerticalAlign {
+pub enum VerticalAlign {
     Top,
     Baseline,
     Bottom,
@@ -951,7 +951,72 @@ pub enum Paint {
     Solid(Color),
 }
 
+#[derive(Debug)]
+pub struct TextMeasurements {
+    pub width: f32,
+    pub height: f32,
+    pub descent: f32,
+}
+
+pub fn measure_text(font: &OpenTypeFont, text: &str, font_size: f32) -> Result<TextMeasurements> {
+    let scale = font_size / (font.head.units_per_em as f32);
+
+    let mut width = 0.0;
+
+    for c in text.chars() {
+        let char_code = c as u32;
+        if char_code > u16::MAX as u32 {
+            return Err(err_msg("Character overflowed supported range"));
+        }
+
+        let (g, metrics) = font.char_glyph(char_code as u16)?;
+
+        width += (metrics.advance_width as f32) * scale;
+    }
+
+    Ok(TextMeasurements {
+        width,
+        // TODO: Incorporate the line gap?
+        height: ((font.hhea.ascender - font.hhea.descender) as f32) * scale,
+        descent: (font.hhea.descender as f32) * scale,
+    })
+}
+
+pub fn find_closest_text_index(
+    font: &OpenTypeFont,
+    text: &str,
+    font_size: f32,
+    x: f32,
+) -> Result<usize> {
+    if x < 0. {
+        return Ok(0);
+    }
+
+    let scale = font_size / (font.head.units_per_em as f32);
+
+    let mut width = 0.0;
+
+    for (idx, c) in text.char_indices() {
+        let char_code = c as u32;
+        if char_code > u16::MAX as u32 {
+            return Err(err_msg("Character overflowed supported range"));
+        }
+
+        let (g, metrics) = font.char_glyph(char_code as u16)?;
+
+        let next_width = width + ((metrics.advance_width as f32) * scale);
+        if next_width > x {
+            return Ok(idx);
+        }
+
+        width = next_width;
+    }
+
+    Ok(text.len())
+}
+
 pub trait CanvasFontExt {
+    /// NOTE: This always renders the text left aligned at the baseline.
     fn fill_text(
         &mut self,
         x: f32,
@@ -973,6 +1038,8 @@ impl CanvasFontExt for Canvas {
         font_size: f32,
         color: &Color,
     ) -> Result<()> {
+        let scale = font_size / (font.head.units_per_em as f32);
+
         for c in text.chars() {
             let char_code = c as u32;
             if char_code > u16::MAX as u32 {
@@ -983,11 +1050,12 @@ impl CanvasFontExt for Canvas {
 
             self.save();
 
-            let scale = font_size / (font.head.units_per_em as f32);
-
-            self.translate(-1.0 * (metrics.left_side_bearing as f32), 0.0);
-            self.scale(scale, -1.0 * scale);
             self.translate(x, y);
+
+            self.scale(scale, -1.0 * scale);
+
+            // NOTE: We assume that x_min == left_side_bearing so no translation is needed.
+            // self.translate(-1.0 * ((x_min - metrics.left_side_bearing) as f32), 0.0);
 
             draw_glyph(self, &g, &color)?;
 
@@ -1016,54 +1084,62 @@ pub async fn open_font() -> Result<()> {
     const WIDTH: usize = 800;
     const SCALE: usize = 4;
 
-    let canvas = Canvas::create(HEIGHT, WIDTH, SCALE);
+    let mut canvas = Canvas::create(HEIGHT, WIDTH, SCALE);
 
-    draw_loop(canvas, |canvas, window| {
-        canvas.drawing_buffer.clear_white();
+    canvas
+        .render_loop(|canvas, window, _| {
+            canvas.drawing_buffer.clear_white();
 
-        // Key font actions:
-        // - Distance above/below baseline of one line (does not change based on text)
-        // - given some text, the width of that text.
-        // -
+            // Key font actions:
+            // - Distance above/below baseline of one line (does not change based on text)
+            // - given some text, the width of that text.
+            // -
 
-        let text = "Hello world $_%!";
+            let text = "Hello world, you are cool $_%!";
 
-        let x = 10.0;
-        let y = 300.0;
+            let x = 10.0;
+            let y = 300.0;
 
-        let font_size = 30.0; // 14px font.
+            let font_size = 60.0; // 14px font.
 
-        let color = Color::from_slice_with_shape(3, 1, &[0, 0, 0]);
-
-        canvas.fill_text(x, y, &font, text, font_size, &color)?;
-
-        {
+            let black = Color::from_slice_with_shape(3, 1, &[0, 0, 0]);
             let red = Color::from_slice_with_shape(3, 1, &[255, 0, 0]);
-            let mut pb = PathBuilder::new();
-            pb.move_to(Vector2f::from_slice(&[100.0, 400.0]));
-            pb.line_to(Vector2f::from_slice(&[400.0, 100.0]));
-            pb.line_to(Vector2f::from_slice(&[550.0, 300.0]));
-            pb.line_to(Vector2f::from_slice(&[100.0, 400.0]));
-            canvas.stroke_path(&pb.build(), 5.0, &red)?;
-        }
 
-        let (mx, my) = window.raw().get_cursor_pos();
+            canvas.fill_text(x, y, &font, text, font_size, &black)?;
 
-        // if let Some((mx, my)) = window.get_mouse_pos(MouseMode::Discard) {
-        let mut builder = PathBuilder::new();
-        builder.ellipse(
-            Vector2f::from_slice(&[mx as f32, my as f32]),
-            Vector2f::from_slice(&[10.0, 10.0]),
-            0.0,
-            2.0 * PI,
-        );
+            {
+                let mut builder = PathBuilder::new();
+                builder.move_to(Vector2f::from_slice(&[10.0, 300.0]));
+                builder.line_to(Vector2f::from_slice(&[300.0, 300.0]));
+                canvas.stroke_path(&builder.build(), 1.0, &black)?;
+            }
 
-        canvas.fill_path(&builder.build(), &color)?;
-        // }
+            {
+                let mut pb = PathBuilder::new();
+                pb.move_to(Vector2f::from_slice(&[100.0, 400.0]));
+                pb.line_to(Vector2f::from_slice(&[400.0, 100.0]));
+                pb.line_to(Vector2f::from_slice(&[550.0, 300.0]));
+                pb.line_to(Vector2f::from_slice(&[100.0, 400.0]));
+                canvas.stroke_path(&pb.build(), 5.0, &red)?;
+            }
 
-        Ok(())
-    })
-    .await?;
+            let (mx, my) = window.raw().get_cursor_pos();
+
+            // if let Some((mx, my)) = window.get_mouse_pos(MouseMode::Discard) {
+            let mut builder = PathBuilder::new();
+            builder.ellipse(
+                Vector2f::from_slice(&[mx as f32, my as f32]),
+                Vector2f::from_slice(&[10.0, 10.0]),
+                0.0,
+                2.0 * PI,
+            );
+
+            canvas.fill_path(&builder.build(), &black)?;
+            // }
+
+            Ok(())
+        })
+        .await?;
 
     //    crate::raster::bresenham_line(
     //        &mut img,
@@ -1078,114 +1154,6 @@ pub async fn open_font() -> Result<()> {
     //        Vector2i::from_slice(&[400, 200]),
     //        &Color::from_slice_with_shape(4, 1, &[255, 0, 0, 1]),
     //    );
-
-    Ok(())
-}
-
-async fn draw_loop<F: FnMut(&mut Canvas, &mut Window) -> Result<()>>(
-    mut canvas: Canvas,
-    mut f: F,
-) -> Result<()> {
-    let shader_src = ShaderSource::flat_texture().await?;
-
-    let mut app = crate::app::Application::new();
-
-    let window_width = canvas.display_buffer.width();
-    let window_height = canvas.display_buffer.height();
-
-    let mut window = app.create_window(
-        "Image",
-        Vector2i::from_slice(&[window_width as isize, window_height as isize]),
-        true,
-    );
-
-    let shader = Arc::new(shader_src.compile().unwrap());
-
-    window.camera.proj = orthogonal_projection(
-        0.0,
-        window_width as f32,
-        window_height as f32,
-        0.0,
-        -1.0,
-        1.0,
-    );
-
-    let mut data = vec![0u32; canvas.display_buffer.array.data.len()];
-
-    app.render_loop(|| {
-        f(&mut canvas, &mut window).unwrap();
-
-        window.scene.clear();
-
-        let texture = Arc::new(Texture::new(&canvas.drawing_buffer));
-        let mut rect = Polygon::rectangle(
-            Vector2f::from_slice(&[0.0, 0.0]),
-            window_width as f32,
-            window_height as f32,
-            Vector3f::from_slice(&[1.0, 1.0, 0.0]),
-            shader.clone(),
-        );
-
-        rect.set_texture(
-            texture,
-            &[
-                Vector2f::from_slice(&[0.0, -1.0]),
-                Vector2f::from_slice(&[1.0, -1.0]),
-                Vector2f::from_slice(&[1.0, 0.0]),
-                Vector2f::from_slice(&[0.0, 0.0]),
-            ],
-        );
-
-        window.scene.add_object(Box::new(rect));
-
-        window.tick();
-        window.draw();
-
-        !window.raw().should_close()
-    });
-
-    // while window.is_open() {
-    //     // if window.is_key_pressed(minifb::Key::Escape, minifb::KeyRepeat::No) {
-    //     //     break;
-    //     // }
-
-    //     let start_time = std::time::Instant::now();
-
-    //     f(&mut canvas, &mut window)?;
-
-    //     /*
-    //     canvas
-    //         .drawing_buffer
-    //         .downsample(&mut canvas.display_buffer)
-    //         .await;
-
-    //     for (i, color) in canvas
-    //         .display_buffer
-    //         .array
-    //         .flat()
-    //         .chunks_exact(canvas.display_buffer.channels())
-    //         .enumerate()
-    //     {
-    //         data[i] = ((color[0] as u32) << 16) | ((color[1] as u32) << 8) |
-    // (color[2] as u32);     }
-    //     */
-    //     let image2 = canvas.drawing_buffer.clone();
-
-    //     let end_time = std::time::Instant::now();
-
-    //     println!("frame: {}ms", (end_time - start_time).as_millis());
-
-    //     // app.run_in_window(|| {
-    //     //     // Basically must render a new scene
-    //     // });
-
-    //     // TODO: Only update once as the image will be static.
-    //     window.update_with_buffer(
-    //         &data,
-    //         canvas.display_buffer.width(),
-    //         canvas.display_buffer.height(),
-    //     )?;
-    // }
 
     Ok(())
 }

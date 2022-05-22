@@ -17,6 +17,16 @@ macro_rules! define_pins {
         $(
             pub struct $name { hidden: () }
 
+            impl $name {
+                pub fn to_handle(self) -> PeripheralPinHandle {
+                    PeripheralPinHandle {
+                        port: self.port(),
+                        pin: self.pin(),
+                    }
+                }
+
+            }
+
             impl PeripheralPin for $name {
                 fn port(&self) -> Port { Port::$port }
                 fn pin(&self) -> u8 { $num }
@@ -77,6 +87,7 @@ define_pins!(
     P1_15 = P1 15
 );
 
+#[derive(Clone, Copy)]
 pub enum Port {
     P0 = 0,
     P1 = 1,
@@ -93,4 +104,18 @@ pub fn connect_pin<P: PeripheralPin>(pin: P, pin_select: &mut PinSelectRegister)
             .set_port(pin.port() as u32)
             .set_pin(pin.pin() as u32)
     });
+}
+
+pub struct PeripheralPinHandle {
+    port: Port,
+    pin: u8,
+}
+
+impl PeripheralPin for PeripheralPinHandle {
+    fn port(&self) -> Port {
+        self.port
+    }
+    fn pin(&self) -> u8 {
+        self.pin
+    }
 }

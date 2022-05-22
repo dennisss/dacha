@@ -45,7 +45,7 @@ pub fn scale(v: &Vector3f) -> Matrix4f {
 }
 
 #[inline]
-pub fn translate2f(v: &Vector2f) -> Matrix3f {
+pub fn translate2f(v: Vector2f) -> Matrix3f {
     Matrix3f::from_slice(&[1., 0., v.x(), 0., 1., v.y(), 0., 0., 1.])
 }
 

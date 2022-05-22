@@ -47,6 +47,10 @@ impl Application {
             .expect("Failed to create GLFW window.");
 
         window.set_key_polling(true);
+        window.set_cursor_pos_polling(true);
+        window.set_cursor_enter_polling(true);
+        window.set_mouse_button_polling(true);
+        window.set_char_mods_polling(true);
 
         gl::load_with(|s| window.get_proc_address(s) as *const _);
 
@@ -64,7 +68,7 @@ impl Application {
 
     pub fn render_loop<F: FnMut() -> bool>(&mut self, mut f: F) {
         let start_time = std::time::Instant::now();
-        let frame_time = std::time::Duration::from_secs_f32(1.0 / 30.0);
+        let frame_time = std::time::Duration::from_secs_f32(1. / 30.);
 
         loop {
             self.glfw_inst.poll_events();

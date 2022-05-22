@@ -47,12 +47,12 @@ impl Canvas {
 
     pub fn scale(&mut self, x: f32, y: f32) {
         self.transform =
-            crate::transforms::scale2f(&Vector2f::from_slice(&[x, y])) * &self.transform;
+            &self.transform * crate::transforms::scale2f(&Vector2f::from_slice(&[x, y]));
     }
 
     pub fn translate(&mut self, x: f32, y: f32) {
         self.transform =
-            crate::transforms::translate2f(&Vector2f::from_slice(&[x, y])) * &self.transform;
+            &self.transform * crate::transforms::translate2f(Vector2f::from_slice(&[x, y]));
     }
 
     /// NOTE: The result of this is only valid under the current transform.
@@ -129,6 +129,41 @@ impl Canvas {
         }
 
         Ok(())
+    }
+
+    pub fn fill_rectangle(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: &Color,
+    ) -> Result<()> {
+        let mut rect = PathBuilder::new();
+        rect.move_to(Vector2f::from_slice(&[x, y]));
+        rect.line_to(Vector2f::from_slice(&[x + width, y]));
+        rect.line_to(Vector2f::from_slice(&[x + width, y + height]));
+        rect.line_to(Vector2f::from_slice(&[x, y + height]));
+        rect.close();
+        self.fill_path(&rect.build(), color)
+    }
+
+    pub fn stroke_rectangle(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        line_width: f32,
+        color: &Color,
+    ) -> Result<()> {
+        let mut rect = PathBuilder::new();
+        rect.move_to(Vector2f::from_slice(&[x, y]));
+        rect.line_to(Vector2f::from_slice(&[x + width, y]));
+        rect.line_to(Vector2f::from_slice(&[x + width, y + height]));
+        rect.line_to(Vector2f::from_slice(&[x, y + height]));
+        rect.close();
+        self.stroke_path(&rect.build(), line_width, color)
     }
 
     pub fn clear() {}

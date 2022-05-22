@@ -14,7 +14,6 @@ use crate::transform::Transform;
 pub struct Window {
     pub scene: Group,
     pub camera: Camera,
-    //	pub size: Vector2i, // TODO: Use unsigned
     background_color: Vector4f,
 
     window: glfw::Window,
@@ -40,11 +39,14 @@ impl Window {
 
     /// Size is width x height
     pub fn set_size(&mut self, size: Vector2i) {
-        // glfwSetWindowSize(this->window, size.x, size.y);
         self.window.set_size(size[0] as i32, size[1] as i32);
     }
 
-    fn handle_window_event(window: &mut glfw::Window, event: glfw::WindowEvent) {}
+    pub fn received_events<'a>(
+        &'a mut self,
+    ) -> impl Iterator<Item = (f64, glfw::WindowEvent)> + 'a {
+        glfw::flush_messages(&self.events)
+    }
 
     pub fn tick(&mut self) {
         for (_, event) in glfw::flush_messages(&self.events) {

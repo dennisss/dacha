@@ -12,28 +12,11 @@ use math::matrix::{
 use crate::image_show::ImageShow;
 
 pub mod canvas;
+pub mod canvas_render_loop;
+pub mod line;
 pub mod plot;
 pub mod stroke;
-
-fn closed_range(mut s: isize, mut e: isize) -> Box<dyn Iterator<Item = isize>> {
-    let iter = (s..(e + 1));
-    if e > s {
-        Box::new((s..=e))
-    } else {
-        Box::new((e..=s).rev())
-    }
-}
-
-fn add_color(image: &mut Image<u8>, y: usize, x: usize, color: &Color) {
-    let mut color_old = image.get(y, x);
-
-    let alpha = (color[3] as f32) / 255.0;
-    image.set(
-        y,
-        x,
-        &(color_old.cast::<f32>() * (1.0 - alpha) + color.cast::<f32>() * alpha).cast::<u8>(),
-    );
-}
+mod utils;
 
 // Representing a polygon.
 // vec<Vector2f>
@@ -337,42 +320,6 @@ pub fn fill_triangle(
     Ok(())
 }
 
-/// Draws a line between two integer points.
-/// TODO: Should appropriately mix alphas
-pub fn bresenham_line(image: &mut Image<u8>, start: Vector2i, end: Vector2i, color: &Color) {
-    let dx = end.x() - start.x();
-    let dy = end.y() - start.y();
-
-    if dx.abs() >= dy.abs() {
-        let derror = ((dy as f32) / (dx as f32)).abs();
-        let mut error = 0.0;
-
-        let mut y = start.y();
-        for x in closed_range(start.x(), end.x()) {
-            image.set(y as usize, x as usize, color);
-
-            error += derror;
-            if error >= 0.5 {
-                y += dy.signum();
-                error -= 1.0;
-            }
-        }
-    } else {
-        let derror = ((dx as f32) / (dy as f32)).abs();
-        let mut error = 0.0;
-        let mut x = start.x();
-        for y in closed_range(start.y(), end.y()) {
-            image.set(y as usize, x as usize, color);
-
-            error += derror;
-            if error >= 0.5 {
-                x += dx.signum();
-                error -= 1.0;
-            }
-        }
-    }
-}
-
 pub async fn run() -> Result<()> {
     let mut img = Image::zero(300, 400, Colorspace::RGBA);
 
@@ -381,7 +328,7 @@ pub async fn run() -> Result<()> {
         *i = 0xff;
     }
 
-    bresenham_line(
+    crate::raster::line::bresenham_line(
         &mut img,
         Vector2i::from_slice(&[350, 50]),
         Vector2i::from_slice(&[10, 10]),

@@ -23,6 +23,8 @@ impl Texture {
     pub fn new(image: &Image<u8>) -> Self {
         let mut object = 0;
 
+        // TODO: Check the colorspace.
+
         unsafe {
             gl::GenTextures(1, &mut object);
             gl::BindTexture(gl::TEXTURE_2D, object);

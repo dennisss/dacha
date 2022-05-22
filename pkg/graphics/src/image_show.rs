@@ -37,7 +37,7 @@ impl ImageShow for Image<u8> {
             }
         };
 
-        let shader_Src = ShaderSource::flat_texture().await?;
+        let shader_src = ShaderSource::flat_texture().await?;
 
         let mut app = Application::new();
         let mut window = app.create_window(
@@ -46,7 +46,7 @@ impl ImageShow for Image<u8> {
             true,
         );
 
-        let shader = Arc::new(shader_Src.compile().unwrap());
+        let shader = Arc::new(shader_src.compile().unwrap());
 
         let texture = Arc::new(Texture::new(self));
         let mut rect = Polygon::rectangle(

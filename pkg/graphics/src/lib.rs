@@ -27,5 +27,6 @@ pub mod shader;
 pub mod texture;
 pub mod transform;
 pub mod transforms;
+pub mod ui;
 pub mod util;
 pub mod window;
