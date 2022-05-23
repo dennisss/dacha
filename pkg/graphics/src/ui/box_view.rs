@@ -1,3 +1,6 @@
+// TODO: Rename to something other than 'Box' to avoid naming (maybe
+// 'Container')
+
 use std::sync::Arc;
 
 use common::errors::*;
@@ -13,9 +16,11 @@ use crate::ui::view::*;
 pub struct BoxViewParams {
     pub inner: Element,
     pub padding: f32,
-    pub background_color: Color,
+    pub background_color: Option<Color>,
     pub border: Option<Border>,
-    pub on_mouse_event: Option<Arc<dyn Fn(&MouseEvent)>>,
+
+    /// If set, this overrides the cursor of any internal child.
+    pub cursor: Option<MouseCursor>,
 }
 
 impl ViewParams for BoxViewParams {
@@ -83,7 +88,12 @@ impl ViewWithParams for BoxView {
 
 impl View for BoxView {
     fn build(&mut self) -> Result<ViewStatus> {
-        self.children[0].build()
+        let mut status = self.children[0].build()?;
+        if let Some(cursor) = &self.params.cursor {
+            status.cursor = *cursor;
+        }
+
+        Ok(status)
     }
 
     fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
@@ -94,13 +104,15 @@ impl View for BoxView {
         let layout = self.layout_impl(parent_box)?;
         let inner = &mut self.children[0];
 
-        canvas.fill_rectangle(
-            0.,
-            0.,
-            layout.outer_box.width,
-            layout.outer_box.height,
-            &self.params.background_color,
-        )?;
+        if let Some(color) = &self.params.background_color {
+            canvas.fill_rectangle(
+                0.,
+                0.,
+                layout.outer_box.width,
+                layout.outer_box.height,
+                color,
+            )?;
+        }
 
         let border_width = self.params.border.as_ref().map(|b| b.width).unwrap_or(0.);
 
@@ -127,9 +139,13 @@ impl View for BoxView {
     fn handle_event(&mut self, event: &Event) -> Result<()> {
         match event {
             Event::Mouse(e) => {
-                if let Some(listener) = &self.params.on_mouse_event {
-                    listener(e);
-                }
+                let border_width = self.params.border.as_ref().map(|b| b.width).unwrap_or(0.);
+
+                let mut inner_event = e.clone();
+                inner_event.relative_x -= border_width + self.params.padding;
+                inner_event.relative_y -= border_width + self.params.padding;
+
+                return self.children[0].handle_event(&Event::Mouse(inner_event));
             }
             _ => {}
         }

@@ -10,11 +10,13 @@ use math::matrix::{
 };
 
 use crate::image_show::ImageShow;
+use crate::raster::scanline::ScanLineIterator;
 
 pub mod canvas;
 pub mod canvas_render_loop;
 pub mod line;
 pub mod plot;
+pub mod scanline;
 pub mod stroke;
 mod utils;
 
@@ -40,20 +42,6 @@ struct Apple<T> {
 
 */
 
-// MatrixNew<>
-
-// TODO: Replace with .in_range()
-fn is_between<T: Copy + std::cmp::PartialOrd>(value: T, range: (T, T)) -> bool {
-    let mut min = range.0;
-    let mut max = range.1;
-    if max < min {
-        min = range.1;
-        max = range.0;
-    }
-
-    value >= min && value <= max
-}
-
 // TODO: Will polygon filling assume that coordinates are centered at points?
 // - And will this be consistent with basic line filling algorithms?
 
@@ -63,123 +51,50 @@ pub enum FillRule {
     NonZero,
 }
 
+/// Definition of a multi-path polygon with data stored separately.
 pub struct PolygonRef<'a> {
+    /// Vertices used to represent sub-paths of the polygon.
+    /// See path_starts for how they are connected.
     pub vertices: &'a [Vector2f],
+
+    /// Start index of each sub-path in vertices.
+    ///
+    /// - Sub-path i contains vertices 'vertices[path_starts[i]]' to
+    ///   'vertices[path_starts[i + 1] - 1]'
+    ///   - The final entry in this list is always an empty path with start
+    ///     value vertices.len()
+    /// - Each vertex in a sub-path is connected via a line to the next in the
+    ///   sub-path's sub-list.
     pub path_starts: &'a [usize],
+
     pub fill_rule: FillRule,
 }
 
 impl<'a> PolygonRef<'a> {
-    pub fn scan_line(&self, y: f32, xs: &mut Vec<(f32, isize)>) {
-        xs.clear();
+    // pub fn contains_point(&self, point: &Vector2f) -> bool {
+    //     // TODO: Run fast bbox test.
 
-        let mut path_i = 0;
-        for i in 0..self.vertices.len() {
-            while i >= self.path_starts[path_i + 1] {
-                path_i += 1;
-            }
+    //     let mut xs = vec![];
+    //     self.scan_line(point.y(), &mut xs);
 
-            let start = &self.vertices[i];
+    //     let mut num = 0;
+    //     for (x, n) in &xs {
+    //         if *x > point.x() {
+    //             break;
+    //         }
 
-            let next_i = if i + 1 == self.path_starts[path_i + 1] {
-                self.path_starts[path_i]
-            } else {
-                i + 1
-            };
+    //         num += *n;
+    //     }
 
-            let end = &self.vertices[next_i];
-
-            if !is_between(y, (start.y(), end.y())) {
-                continue;
-            }
-
-            let del = end - start;
-
-            // Skip horizontal lines (or empty lines).
-            if del.y().abs() < 1e-5 {
-                continue;
-            }
-
-            // Compute the 'x' coordinate at the current 'y' coordinate for this
-            // edge.
-            let x = (del.x() / del.y()) * (y - start.y()) + start.x();
-
-            if !is_between(x, (start.x(), end.x())) {
-                continue;
-            }
-
-            //            println!("|{} {} -> {} {}|", start.x(), start.y(), end.x(),
-            // end.y());
-
-            let num = match self.fill_rule {
-                FillRule::NonZero => {
-                    if del.y() > 0.0 {
-                        1
-                    } else {
-                        -1
-                    }
-                }
-                FillRule::EvenOdd => 0,
-            };
-
-            // Possibly also store (i, next_i)
-            xs.push((x, num));
-        }
-
-        if xs.len() == 0 {
-            //            println!("NONE AT {}", y);
-            return;
-        }
-
-        xs.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Equal));
-
-        if self.fill_rule == FillRule::EvenOdd {
-            for i in 0..xs.len() {
-                xs[i].1 = if i % 2 == 0 { 1 } else { -1 };
-            }
-        }
-
-        // Dedup x values (and sum up the numbers associated with each duplicate)
-        {
-            // NOTE: This assumes that there is at least one element in the list.
-            let mut last_i = 0;
-            for i in 1..xs.len() {
-                let equal = (xs[i].0 - xs[last_i].0).abs() < 1e-6;
-                if equal {
-                    xs[last_i].1 += xs[i].1;
-                } else {
-                    last_i += 1;
-                    if last_i != i {
-                        xs[last_i] = xs[i];
-                    }
-                }
-            }
-
-            xs.truncate(last_i + 1);
-        }
-    }
-
-    pub fn contains_point(&self, point: &Vector2f) -> bool {
-        // TODO: Run fast bbox test.
-
-        let mut xs = vec![];
-        self.scan_line(point.y(), &mut xs);
-
-        let mut num = 0;
-        for (x, n) in &xs {
-            if *x > point.x() {
-                break;
-            }
-
-            num += *n;
-        }
-
-        num != 0
-    }
+    //     num != 0
+    // }
 }
 
 /// Scan-line polygon filling algorithm.
 /// NOTE: This uses the even-odd rule.
+///
+/// TODO: Before this is called for a path, verify that it has closed the
+/// sub-paths.
 pub fn fill_polygon(
     image: &mut Image<u8>,
     vertices: &[Vector2f],
@@ -187,43 +102,20 @@ pub fn fill_polygon(
     path_starts: &[usize],
     fill_rule: FillRule,
 ) -> Result<()> {
-    if vertices.len() < 3 {
-        return Err(err_msg("Polygon has too few vertices"));
-    }
-
-    // TODO: Must verify path_starts.
-
     let bbox = BoundingBox::compute(vertices).clip(&image.bbox());
 
-    // List of (x, num) values at each scan line.
-    // We will have at least one x value per edge.
-    let mut xs: Vec<(f32, isize)> = vec![];
-    xs.reserve(vertices.len() - 1);
+    let y_values = ((bbox.min.y().floor() as usize)..((bbox.max.y() + 1.0).floor() as usize))
+        .map(|y| (y as f32) + 0.5);
 
-    for y in (bbox.min.y().floor() as usize)..((bbox.max.y() + 1.0).floor() as usize) {
-        // Fraction from [0,1] of the current pixel which is occupied by the
-        // polygon in the y direction.
-        let y = (y as f32) + 0.5; // TODO: Without this +0.5, things don't work well.
+    let mut scan_line_iter = ScanLineIterator::create(vertices, path_starts, fill_rule, y_values)?;
 
-        PolygonRef {
-            vertices,
-            path_starts,
-            fill_rule,
-        }
-        .scan_line(y, &mut xs);
-
-        if xs.is_empty() {
+    while let Some((y, x_intercepts)) = scan_line_iter.next() {
+        if x_intercepts.is_empty() {
             continue;
         }
 
-        if xs.len() % 2 != 0 {
-            println!("{}", y);
-            println!("{:?}", xs);
-            return Err(err_msg("Odd number of intersections in polygon line."));
-        }
-
-        let mut current_num = 0;
-        let mut xs_idx = 0;
+        let mut current_winding = 0;
+        let mut x_intercepts_idx = 0;
 
         // TODO: Get a scan line iterator on the Image object with pre-checked bounds to
         // optimize this.
@@ -232,22 +124,31 @@ pub fn fill_polygon(
         for x in (bbox.min.x().floor() as usize)..((bbox.max.x() + 1.0).floor() as usize) {
             let x = x as f32;
 
-            while xs_idx < xs.len() && xs[xs_idx].0 <= x + 0.5 {
-                current_num += xs[xs_idx].1;
-                xs_idx += 1;
+            while x_intercepts_idx < x_intercepts.len()
+                && x_intercepts[x_intercepts_idx].x <= x + 0.5
+            {
+                current_winding += x_intercepts[x_intercepts_idx].increment;
+                x_intercepts_idx += 1;
             }
 
-            if current_num != 0 {
+            if current_winding != 0 {
                 image.set(y as usize, x as usize, &color);
                 //				add_color(image, y as usize, x as usize, &c);
             }
+        }
+
+        while x_intercepts_idx < x_intercepts.len() {
+            current_winding += x_intercepts[x_intercepts_idx].increment;
+            x_intercepts_idx += 1;
+        }
+
+        if current_winding != 0 {
+            return Err(err_msg("Scan line ends inside of the polygon"));
         }
     }
 
     Ok(())
 }
-
-// Go
 
 pub fn fill_triangle(
     image: &mut Image<u8>,

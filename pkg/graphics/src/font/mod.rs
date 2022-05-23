@@ -1007,7 +1007,14 @@ pub fn find_closest_text_index(
 
         let next_width = width + ((metrics.advance_width as f32) * scale);
         if next_width > x {
-            return Ok(idx);
+            let distance_before = (width - x).abs();
+            let distance_after = (next_width - x).abs();
+
+            if distance_before < distance_after {
+                return Ok(idx);
+            } else {
+                return Ok(idx + c.len_utf8());
+            }
         }
 
         width = next_width;

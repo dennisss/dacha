@@ -1,8 +1,10 @@
 pub mod box_view;
+pub mod button;
 pub mod checkbox;
 mod children;
 pub mod element;
 pub mod event;
+pub mod examples;
 pub mod grid_view;
 pub mod render;
 pub mod text_view;

@@ -9,6 +9,7 @@ pub struct RenderBox {
     pub height: f32,
 }
 
+#[derive(Clone, Copy)]
 pub struct MouseCursor(pub glfw::StandardCursor);
 
 pub struct ViewStatus {

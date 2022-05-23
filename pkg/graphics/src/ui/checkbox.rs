@@ -9,43 +9,6 @@ use crate::raster::canvas::PathBuilder;
 use crate::ui::event::*;
 use crate::ui::view::*;
 
-struct ClickFilter {
-    down: bool,
-}
-
-impl ClickFilter {
-    pub fn new() -> Self {
-        Self { down: false }
-    }
-
-    /// NOTE: Should be called with every single event received by the view.
-    fn process(&mut self, next_event: &Event) -> bool {
-        let mouse = match next_event {
-            Event::Mouse(v) => v,
-            _ => {
-                return false;
-            }
-        };
-
-        match mouse.kind {
-            MouseEventKind::Move => {}
-            MouseEventKind::ButtonDown(MouseButton::Left) => {
-                self.down = true;
-            }
-            MouseEventKind::ButtonUp(MouseButton::Left) => {
-                let v = self.down;
-                self.down = false;
-                return v;
-            }
-            _ => {
-                self.down = false;
-            }
-        }
-
-        false
-    }
-}
-
 #[derive(Clone)]
 pub struct CheckboxParams {
     pub value: bool,
@@ -58,7 +21,7 @@ impl ViewParams for CheckboxParams {
 
 pub struct CheckboxView {
     params: CheckboxParams,
-    click_filter: ClickFilter,
+    click_filter: MouseClickFilter,
 }
 
 impl ViewWithParams for CheckboxView {
@@ -67,7 +30,7 @@ impl ViewWithParams for CheckboxView {
     fn create_with_params(params: &Self::Params) -> Result<Box<dyn View>> {
         Ok(Box::new(Self {
             params: params.clone(),
-            click_filter: ClickFilter::new(),
+            click_filter: MouseClickFilter::new(),
         }))
     }
 
@@ -88,8 +51,8 @@ impl View for CheckboxView {
 
     fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
         Ok(RenderBox {
-            width: 54.,
-            height: 54.,
+            width: 16.,
+            height: 16.,
         })
     }
 
@@ -100,18 +63,22 @@ impl View for CheckboxView {
         let border_color = Color::rgb(0x77, 0x77, 0x77);
         let white = Color::rgb(0xff, 0xff, 0xff);
 
-        let dim = 54.;
-        let border_width = 6.;
+        let font_size = 16.;
+
+        let dim = font_size;
+        let border_width = 0.125 * font_size;
+
+        let scale = (font_size / 54.);
 
         if self.params.value {
             canvas.fill_rectangle(0., 0., dim, dim, &bg_color)?;
 
             let mut path = PathBuilder::new();
-            path.move_to(Vector2f::from_slice(&[7.5, 23.5]));
-            path.line_to(Vector2f::from_slice(&[20.5, 36.5]));
-            path.line_to(Vector2f::from_slice(&[44.5, 13.5]));
+            path.move_to(Vector2f::from_slice(&[scale * 7.5, scale * 23.5]));
+            path.line_to(Vector2f::from_slice(&[scale * 20.5, scale * 36.5]));
+            path.line_to(Vector2f::from_slice(&[scale * 44.5, scale * 13.5]));
 
-            canvas.stroke_path(&path.build(), 5., &white)?;
+            canvas.stroke_path(&path.build(), scale * 5., &white)?;
         } else {
             let offset = border_width / 2.;
             // TODO: Fill white behind it.
