@@ -1,4 +1,4 @@
-use std::ptr::null;
+use core::ptr::null;
 
 use gl::types::{GLint, GLuint};
 use math::matrix::*;
@@ -94,5 +94,5 @@ pub fn gl_indices_buffer(data: &[GLuint]) -> GLBuffer {
 pub fn gl_face_buffer(data: &[[GLuint; 3]]) -> GLBuffer {
     // TODO: Will this have the correct size
     // std::slice::from_raw_parts(data.as_ptr(), 3*data.len())
-    unsafe { gl_indices_buffer(std::mem::transmute(data)) }
+    unsafe { gl_indices_buffer(core::mem::transmute(data)) }
 }

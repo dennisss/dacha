@@ -4,10 +4,10 @@ use common::errors::*;
 use image::Image;
 use math::matrix::{Vector2f, Vector2i, Vector3f};
 
-use crate::app::Application;
-use crate::polygon::Polygon;
-use crate::shader::{Shader, ShaderSource};
-use crate::texture::Texture;
+use crate::opengl::app::Application;
+use crate::opengl::polygon::Polygon;
+use crate::opengl::shader::{Shader, ShaderSource};
+use crate::opengl::texture::Texture;
 use crate::transform::orthogonal_projection;
 
 const MAX_DIMENSION: f32 = 1000.0;

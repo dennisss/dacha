@@ -6,8 +6,8 @@ use common::async_std::channel;
 use glfw::{Action, Context, Key};
 use math::matrix::{Vector2i, Vector4f};
 
-use crate::drawable::Drawable;
-use crate::window::Window;
+use crate::opengl::drawable::Drawable;
+use crate::opengl::window::Window;
 
 /// Top-level context for a graphical application. Manages all open windows.
 ///

@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use core::f32::consts::PI;
 use std::sync::Arc;
 
 use common::async_std::fs::File;
@@ -11,13 +11,13 @@ use math::matrix::{Matrix3f, Vector2f, Vector2i, Vector3f, Vector3u};
 use parsing::cstruct::parse_cstruct_be;
 use parsing::*;
 
-use crate::polygon::Polygon;
+use crate::opengl::polygon::Polygon;
+use crate::opengl::shader::ShaderSource;
+use crate::opengl::texture::Texture;
+use crate::opengl::window::Window;
 use crate::raster::canvas::{Canvas, Path, PathBuilder, SubPath};
 use crate::raster::canvas_render_loop::WindowOptions;
-use crate::shader::ShaderSource;
-use crate::texture::Texture;
 use crate::transform::orthogonal_projection;
-use crate::window::Window;
 
 pub mod vm;
 

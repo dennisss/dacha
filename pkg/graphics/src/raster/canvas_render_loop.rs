@@ -4,13 +4,13 @@ use common::errors::*;
 use glfw::WindowEvent;
 use math::matrix::{Vector2f, Vector2i, Vector3f};
 
-use crate::app::Application;
-use crate::polygon::Polygon;
+use crate::opengl::app::Application;
+use crate::opengl::polygon::Polygon;
+use crate::opengl::shader::ShaderSource;
+use crate::opengl::texture::Texture;
+use crate::opengl::window::Window;
 use crate::raster::canvas::Canvas;
-use crate::shader::ShaderSource;
-use crate::texture::Texture;
 use crate::transform::orthogonal_projection;
-use crate::window::Window;
 
 pub struct WindowOptions {
     pub name: String,

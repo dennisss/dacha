@@ -1,4 +1,4 @@
-use crate::drawable::{Drawable, Primitive};
+use crate::opengl::drawable::{Drawable, Primitive};
 use crate::transform::{AsMatrix, Camera, Transform};
 
 /// Many shapes grouped together and drawn/transformed together

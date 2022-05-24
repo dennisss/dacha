@@ -1,17 +1,16 @@
-use std::ops::{Deref, DerefMut};
+use core::f32::consts::PI;
+use core::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex};
 
 use gl::types::{GLint, GLuint};
 use math::matrix::{Vector2f, Vector3f};
 
-use crate::drawable::{Drawable, Object};
-use crate::shader::Shader;
-use crate::texture::Texture;
+use crate::opengl::drawable::{Drawable, Object};
+use crate::opengl::shader::Shader;
+use crate::opengl::texture::Texture;
+use crate::opengl::util::{gl_vertex_buffer_vec2, gl_vertex_buffer_vec3, GLBuffer};
+use crate::opengl::window::Window;
 use crate::transform::{Camera, Transform};
-use crate::util::{gl_vertex_buffer_vec2, gl_vertex_buffer_vec3, GLBuffer};
-use crate::window::Window;
-
-pub const PI: f32 = 3.14159265359;
 
 /// Convex polygon drawing
 pub struct Polygon {

@@ -8,7 +8,7 @@ use gl::types::{GLchar, GLenum, GLint, GLsizei, GLuint};
 use math::matrix::Matrix4f;
 
 use crate::lighting::{LightSource, Material, MAX_LIGHTS};
-use crate::util::*;
+use crate::opengl::util::*;
 
 const MAX_ERROR_LENGTH: GLsizei = 2048;
 

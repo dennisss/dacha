@@ -1,5 +1,6 @@
-use crate::lighting::LightSource;
 use math::matrix::{Matrix4f, Vector3f};
+
+use crate::lighting::LightSource;
 
 pub trait AsMatrix {
     fn matrix(&self) -> &Matrix4f;

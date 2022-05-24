@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, Weak};
 use gl::types::{GLenum, GLint, GLsizei, GLuint};
 use image::Image;
 
-use crate::window::Window;
+use crate::opengl::window::Window;
 
 pub struct Texture {
     object: GLuint,
@@ -14,6 +14,9 @@ impl Drop for Texture {
         unsafe { gl::DeleteTextures(1, &self.object) };
     }
 }
+
+// TODO: Possibly consider allowing usage of PBOs to asynchronously start
+// uploading data to OpenGL.
 
 impl Texture {
     /// Creates a new texture and stores an image into it.

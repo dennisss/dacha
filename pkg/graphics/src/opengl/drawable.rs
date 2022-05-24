@@ -4,10 +4,10 @@ use gl::types::{GLint, GLuint};
 use math::matrix::{Matrix4f, Vector3f};
 
 use crate::lighting::Material;
-use crate::shader::Shader;
+use crate::opengl::shader::Shader;
+use crate::opengl::util::*;
+use crate::opengl::window::Window;
 use crate::transform::{AsMatrix, Camera, Transform};
-use crate::util::*;
-use crate::window::Window;
 
 /// An object than can be drawn. This class handles configuring transforms,
 /// viewports, and projection

@@ -31,9 +31,6 @@ pub struct ButtonView {
     click_filter: MouseClickFilter,
 }
 
-// #0d6efd
-// #0b5ed7
-
 impl VirtualView for ButtonView {
     type Params = ButtonParams;
 

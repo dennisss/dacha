@@ -64,15 +64,3 @@ inline mat4 rotate(GLfloat t, vec3 u){
     );
 }
 */
-
-/*
-    June 8: Cali -> London
-    9-10-11: In London
-    12: Fly to Moscow
-    13-14-15: in Moscow
-
-    16: Fly back to London (back to back flights)
-    June 16: London -> Cali
-
-
-*/

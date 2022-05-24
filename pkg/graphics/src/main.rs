@@ -7,10 +7,7 @@ extern crate math;
 use std::sync::Arc;
 
 use common::errors::*;
-use graphics::app::*;
 use graphics::image_show::ImageShow;
-use graphics::polygon::Polygon;
-use graphics::shader::{Shader, ShaderSource};
 use graphics::transform::orthogonal_projection;
 use image::format::qoi::QOIDecoder;
 use math::matrix::{Vector2f, Vector2i, Vector3f};

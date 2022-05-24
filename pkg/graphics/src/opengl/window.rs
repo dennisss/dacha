@@ -3,8 +3,8 @@ use std::sync::mpsc::Receiver;
 use glfw::Context;
 use math::matrix::{Vector2i, Vector4f};
 
-use crate::drawable::Drawable;
-use crate::group::Group;
+use crate::opengl::drawable::Drawable;
+use crate::opengl::group::Group;
 use crate::transform::Camera;
 use crate::transform::Transform;
 
@@ -89,8 +89,6 @@ public:
 
 };
 
-// All defined windows; The index corresponds to the id
-static int nWindows = 0;
 /*
 void window_reshape(int w, int h){
     int wid = glutGetWindow();
@@ -102,25 +100,6 @@ void window_reshape(int w, int h){
     glViewport((w - dim) / 2.0, (h - dim) / 2.0, dim, dim);
 }
 */
-
-Window::~Window(){
-    glfwDestroyWindow(this->window);
-
-    nWindows--;
-    if(nWindows == 0) {
-        glfwTerminate();
-    }
-}
-
-
-void Window::run() {
-    while(!glfwWindowShouldClose(this->window)) {
-
-        this->draw();
-
-        glfwPollEvents(); // NOTE: This applies to all open windows
-    }
-}
 
 static void error_callback(int error, const char* description) {
     printf("%s\n", description);

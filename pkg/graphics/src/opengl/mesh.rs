@@ -1,4 +1,4 @@
-use std::ptr::null;
+use core::ptr::null;
 use std::sync::{Arc, Mutex};
 
 use common::async_std::path::Path;
@@ -6,11 +6,11 @@ use common::errors::*;
 use gl::types::{GLint, GLuint};
 use math::matrix::Vector3f;
 
-use crate::drawable::{Drawable, Object};
-use crate::shader::Shader;
+use crate::opengl::drawable::{Drawable, Object};
+use crate::opengl::shader::Shader;
+use crate::opengl::util::{gl_face_buffer, gl_vertex_buffer_vec3, GLBuffer};
+use crate::opengl::window::Window;
 use crate::transform::{Camera, Transform};
-use crate::util::{gl_face_buffer, gl_vertex_buffer_vec3, GLBuffer};
-use crate::window::Window;
 
 pub type Face = [GLuint; 3];
 

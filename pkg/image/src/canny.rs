@@ -4,7 +4,7 @@
 
 // Support taking absolute value of an entire Array
 
-const PI: f32 = 3.14159;
+use core::f32::consts::PI;
 
 enum Direction {
     Horizonal = 0,
