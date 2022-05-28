@@ -673,6 +673,8 @@ impl<'a> Modulo<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use alloc::string::ToString;
     use core::str::FromStr;
 
     #[test]

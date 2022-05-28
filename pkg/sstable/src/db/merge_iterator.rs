@@ -2,16 +2,16 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 
 use common::errors::*;
+use common::tree::binary_heap::{BinaryHeap, Comparator};
 
 use crate::iterable::{Iterable, KeyValueEntry};
-use crate::priority_queue::{Comparator, PriorityQueue};
 use crate::table::comparator::KeyComparator;
 
 /// Iterable wrapper around multiple Iterable objects created by iterating
 /// through them in sorted order.
 pub struct MergeIterator {
     pending_iters: Vec<Box<dyn Iterable<KeyValueEntry>>>,
-    next_queue: PriorityQueue<MergeIteratorEntry>,
+    next_queue: BinaryHeap<MergeIteratorEntry, MergeKeysComparator>,
     exhausted_iters: Vec<Box<dyn Iterable<KeyValueEntry>>>,
 }
 
@@ -37,7 +37,7 @@ impl MergeIterator {
         key_comparator: Arc<dyn KeyComparator>,
         iterators: Vec<Box<dyn Iterable<KeyValueEntry>>>,
     ) -> Self {
-        let next_queue = PriorityQueue::new(Box::new(MergeKeysComparator { key_comparator }));
+        let next_queue = BinaryHeap::new(MergeKeysComparator { key_comparator });
         let exhausted_iters = vec![];
 
         // NOTE: We don't add the iterators to the queue until the user requests

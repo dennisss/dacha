@@ -1,22 +1,32 @@
-use std::cmp::Ordering;
+use core::cmp::Ordering;
 
-pub trait Comparator<T>: Send + 'static {
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+
+pub trait Comparator<T> {
     fn compare(&self, a: &T, b: &T) -> Ordering;
 }
 
-/// TODO: Switch to using a Fibonacci heap.
-pub struct PriorityQueue<T> {
+pub struct BinaryHeap<T, C> {
     items: Vec<T>,
-    comparator: Box<dyn Comparator<T>>,
+    comparator: C,
 }
 
-impl<T: 'static> PriorityQueue<T> {
+impl<T, C: Comparator<T>> BinaryHeap<T, C> {
     // TODO: Implement O(n) creation of a new heap.
-    pub fn new(comparator: Box<dyn Comparator<T>>) -> Self {
+    pub fn new(comparator: C) -> Self {
         Self {
             items: vec![],
             comparator,
         }
+    }
+
+    pub fn reserve(&mut self, additional: usize) {
+        self.items.reserve(additional)
+    }
+
+    pub fn reserve_exact(&mut self, additional: usize) {
+        self.items.reserve_exact(additional)
     }
 
     fn compare(&self, a: &T, b: &T) -> Ordering {
@@ -36,6 +46,10 @@ impl<T: 'static> PriorityQueue<T> {
             self.items.swap(i, parent_i);
             i = parent_i;
         }
+    }
+
+    pub fn peek_min(&self) -> Option<&T> {
+        self.items.get(0)
     }
 
     pub fn extract_min(&mut self) -> Option<T> {
@@ -99,7 +113,7 @@ mod tests {
 
     #[test]
     fn priority_queue_test() {
-        let mut queue = PriorityQueue::new(Box::new(UsizeComparator {}));
+        let mut queue = BinaryHeap::new(Box::new(UsizeComparator {}));
 
         queue.insert(1);
         assert_eq!(queue.extract_min(), Some(1));
@@ -123,7 +137,7 @@ mod tests {
 
     #[test]
     fn priority_queue_reinsert_test() {
-        let mut queue = PriorityQueue::new(Box::new(UsizeComparator {}));
+        let mut queue = BinaryHeap::new(Box::new(UsizeComparator {}));
 
         queue.insert(1);
         queue.insert(10);

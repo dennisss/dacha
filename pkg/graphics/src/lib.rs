@@ -14,11 +14,11 @@ extern crate macros;
 extern crate reflection;
 
 pub mod font;
-pub mod geometry;
 pub mod image_show;
 pub mod lighting;
 pub mod opengl;
 pub mod patch;
+pub mod point_picker;
 pub mod raster;
 pub mod transform;
 pub mod transforms;

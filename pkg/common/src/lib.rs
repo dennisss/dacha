@@ -98,6 +98,8 @@ pub mod task;
 #[cfg(feature = "std")]
 pub mod temp;
 #[cfg(feature = "alloc")]
+pub mod tree;
+#[cfg(feature = "alloc")]
 pub mod vec;
 #[cfg(feature = "std")]
 pub mod vec_hash_set;

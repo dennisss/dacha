@@ -20,7 +20,6 @@ pub mod memtable;
 pub mod record_log;
 // mod skip_list;
 pub mod iterable;
-pub mod priority_queue;
 pub mod table;
 
 /*

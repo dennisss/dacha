@@ -30,7 +30,9 @@ async fn run() -> Result<()> {
 
 fn main() -> Result<()> {
     // let f = run();
-    let f = graphics::font::open_font();
+    // let f = graphics::font::open_font();
+    // let f = graphics::ui::examples::run();
+    let f = graphics::point_picker::run();
 
     return common::async_std::task::block_on(f);
 
