@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn priority_queue_test() {
-        let mut queue = BinaryHeap::new(Box::new(UsizeComparator {}));
+        let mut queue = BinaryHeap::new(UsizeComparator {});
 
         queue.insert(1);
         assert_eq!(queue.extract_min(), Some(1));
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn priority_queue_reinsert_test() {
-        let mut queue = BinaryHeap::new(Box::new(UsizeComparator {}));
+        let mut queue = BinaryHeap::new(UsizeComparator {});
 
         queue.insert(1);
         queue.insert(10);

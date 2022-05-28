@@ -1,11 +1,12 @@
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-use common::tree::avl::AVLTree;
+use common::tree::avl::{AVLTree, Comparator};
 use common::tree::binary_heap::BinaryHeap;
 use common::InRange;
 
 use crate::geometry::line::Line2f;
+use crate::matrix::cwise_binary_ops::{CwiseMax, CwiseMin};
 use crate::matrix::{Matrix2f, Vector2f};
 
 /// Bounded line segment defined by two endpoints which are connected.
@@ -17,6 +18,11 @@ pub struct LineSegment2f {
 }
 
 impl LineSegment2f {
+    /// Computes the intersection point of the current line segment with
+    /// another.
+    ///
+    /// Unlike a general line intersection, the intersection point must be
+    /// inside of each segment to be returned.
     pub fn intersect(&self, other: &Self) -> Option<Vector2f> {
         // TODO: If either endpoint of either line is on the other line, return exactly
         // that point rather than the calculated intersection.
@@ -31,19 +37,20 @@ impl LineSegment2f {
             }
         };
 
-        let on_segment = |segment: &LineSegment2f, line: &Line2f, point: &Vector2f| -> bool {
-            if intersections::compare_points(point, &segment.start).is_eq()
-                || intersections::compare_points(point, &segment.end).is_eq()
-            {
-                return true;
-            }
+        // Checks that the point is in the bounding box of the segment.
+        // We already know that the point is on the line of the segment.
+        let on_segment = |segment: &LineSegment2f, point: &Vector2f| -> bool {
+            let min = (&segment.start).cwise_min(&segment.end) - (intersections::THRESHOLD / 2.);
+            let max = (&segment.start).cwise_max(&segment.end) + (intersections::THRESHOLD / 2.);
 
-            let t = (point - &current_line.base).norm() / line.dir.norm();
-
-            t.in_range(0., 1.)
+            // TODO: Appreviate as: 'point >= min && point <= max'
+            point.x() >= min.x()
+                && point.y() >= min.y()
+                && point.x() <= max.x()
+                && point.y() <= max.y()
         };
 
-        if !on_segment(self, &current_line, &point) || !on_segment(other, &other_line, &point) {
+        if !on_segment(self, &point) || !on_segment(other, &point) {
             return None;
         }
 
@@ -58,6 +65,9 @@ impl LineSegment2f {
     ///
     /// TODO: For each intersection, we also want to know which segments where
     /// involved (one or more segment indices)
+    ///
+    /// Returns all intersection points between the segments in order of
+    /// increasing y then increasing x.
     pub fn intersections<'a>(segments: &'a [Self]) -> Vec<Intersection2f<'a>> {
         use self::intersections::*;
 
@@ -65,13 +75,13 @@ impl LineSegment2f {
 
         // Ordered set of points which we want to visit next. We sweep a line from low
         // to high y values.
+        //
+        // TODO: Switch to an AVL tree and de-duplicate insertions ahead of time
+        // (otherwise this may grow excessively large due to lines becoming adjacent and
+        // then not-adjacent and then adjacent again due to interleaved lines).
         let mut event_queue = BinaryHeap::<Event>::default();
         for segment in segments {
             let (upper, lower) = upper_lower_endpoints(segment);
-
-            // TODO: What should we do if the segment is a point (upper ~= lower) as that
-            // will mean that the upper and lower segments will be processed in the same
-            // event.
 
             event_queue.insert(Event {
                 point: upper,
@@ -89,13 +99,12 @@ impl LineSegment2f {
 
         // Ordered list of line segments which intersect with the last sweep line (at
         // the last event).
-        let mut sweep_status = AVLTree::<&LineSegment2f>::new();
-
-        // Last point which was used for inserting things into sweep_status.
-        let mut last_sweep_point = Vector2f::zero();
+        let mut sweep_status = AVLTree::<&LineSegment2f, _>::new(LineSweepComparator {
+            event_point: Vector2f::zero(),
+        });
 
         while let Some(first_event) = event_queue.extract_min() {
-            let point = first_event.point;
+            let event_point = first_event.point;
 
             // List of all segments whose upper endpoint is at this event point (this are
             // all not yet in the sweep_status and just in consecutive equal event points).
@@ -105,7 +114,10 @@ impl LineSegment2f {
                     upper_segments.push(segment);
                 }
                 while let Some(event) = event_queue.peek_min() {
-                    if compare_points(&point, &event.point).is_eq() {
+                    // TODO: Consider comparing to latest event point with the larger y value that
+                    // also matches as there is a change that we extract a lower line segment
+                    // endpoint before an upper line segment endpoint.
+                    if compare_points(&event_point, &event.point).is_eq() {
                         if let Some(segment) = event.segment.clone() {
                             upper_segments.push(segment);
                         }
@@ -117,20 +129,20 @@ impl LineSegment2f {
                 }
             }
 
+            let new_comparator = LineSweepComparator {
+                event_point: event_point.clone(),
+            };
+
             let mut existing_segments = vec![];
             {
-                let mut iter = sweep_status.lower_bound_by(&point, &|segment, point| {
-                    sweep_line_x(segment, point)
-                        .partial_cmp(&point.x())
-                        .unwrap_or(Ordering::Equal)
-                });
+                let mut iter = sweep_status.lower_bound_by(&event_point, &new_comparator);
 
                 while let Some(segment) = iter.next().cloned() {
-                    if (sweep_line_x(segment, &point) - point.x()).abs() < THRESHOLD {
-                        existing_segments.push(segment);
-                    } else {
+                    if new_comparator.compare(&segment, &event_point).is_ne() {
                         break;
                     }
+
+                    existing_segments.push(segment);
                 }
             }
 
@@ -141,7 +153,7 @@ impl LineSegment2f {
                 segments.extend_from_slice(&existing_segments);
 
                 output.push(Intersection2f {
-                    point: point.clone(),
+                    point: event_point.clone(),
                     segments,
                 });
             }
@@ -151,11 +163,17 @@ impl LineSegment2f {
             // NOTE: We use the last sweep point in the comparator to ensure search
             // stability.
             for segment in existing_segments.iter().cloned() {
-                sweep_status.remove_by(&segment, &|a, b| {
-                    compare_segments_at_sweep_line(a, b, &last_sweep_point)
-                });
+                let v = sweep_status.remove(&segment).unwrap();
+                assert_eq!(v.start, segment.start);
+                assert_eq!(v.end, segment.end);
             }
 
+            // We should have removed all discrepancies between the new and old sweep lines
+            // in the above loop so we can now completely switch to comparing using the new
+            // one.
+            sweep_status.change_comparator(new_comparator);
+
+            /// XXX: At this point, we can change the comparator.
             // Of the segments we are about to insert, this tracks the left most and right
             // most ones.
             let mut first_last_segment = None;
@@ -170,20 +188,18 @@ impl LineSegment2f {
                 // Don't insert any segments with the lower endpoint equal to the current event
                 // point (this is how segments eventually get removed from the status).
                 let (_, lower) = upper_lower_endpoints(segment);
-                if compare_points(&point, &lower).is_eq() {
+                if compare_points(&event_point, &lower).is_eq() {
                     continue;
                 }
 
-                sweep_status.insert_by(segment, &|a, b| {
-                    compare_segments_at_sweep_line(a, b, &point)
-                });
+                sweep_status.insert(segment);
 
                 first_last_segment = Some(match first_last_segment.take() {
                     Some((mut first, mut last)) => {
-                        if compare_segments_at_sweep_line(segment, first, &point).is_lt() {
+                        if compare_segments_at_sweep_line(segment, first, &event_point).is_lt() {
                             first = segment;
                         }
-                        if compare_segments_at_sweep_line(segment, last, &point).is_gt() {
+                        if compare_segments_at_sweep_line(segment, last, &event_point).is_gt() {
                             last = segment;
                         }
 
@@ -193,15 +209,14 @@ impl LineSegment2f {
                 });
             }
 
+            // TODO: If the above insertions and removals cause any line segments to stop
+            // being adjacent to each other, remove their intersection points.
+
             if let Some((first, last)) = first_last_segment {
                 // NOTE: unwrap() should never fail if all the logic is correct as we just
                 // inserted these
-                let mut first_iter = sweep_status
-                    .find(first, &|a, b| compare_segments_at_sweep_line(a, b, &point))
-                    .unwrap();
-                let mut last_iter = sweep_status
-                    .find(last, &|a, b| compare_segments_at_sweep_line(a, b, &point))
-                    .unwrap();
+                let mut first_iter = sweep_status.find(&first).unwrap();
+                let mut last_iter = sweep_status.find(&last).unwrap();
 
                 // TODO: Verify that compare_segments_at_sweep_line is
                 // sufficienctly robust that segments that aren't exactly equal
@@ -209,14 +224,15 @@ impl LineSegment2f {
                 // to continue advancing the iterators forward/reverse to skip
                 // over any other equal segments.
 
-                first_iter.prev(); // Skip the 'first'
+                assert_eq!(first_iter.prev(), Some(&first)); // Skip the 'first'
                 let first2 = first_iter.peek().cloned();
 
-                last_iter.next(); // Skip over 'last'
+                assert_eq!(last_iter.next(), Some(&last)); // Skip over 'last'
                 let last2 = last_iter.peek().cloned();
 
                 if let Some(first_neighbor) = first2 {
-                    if let Some(next_point) = find_intersection_event(first, first_neighbor, &point)
+                    if let Some(next_point) =
+                        find_intersection_event(first, first_neighbor, &event_point)
                     {
                         event_queue.insert(Event {
                             point: next_point,
@@ -226,28 +242,24 @@ impl LineSegment2f {
                 }
 
                 if let Some(last_neighbor) = last2 {
-                    if let Some(next_point) = find_intersection_event(last, last_neighbor, &point) {
+                    if let Some(next_point) =
+                        find_intersection_event(last, last_neighbor, &event_point)
+                    {
                         event_queue.insert(Event {
                             point: next_point,
                             segment: None,
                         });
                     }
                 }
-
-                //
             } else {
-                let mut iter = sweep_status.lower_bound_by(&point, &|segment, point| {
-                    sweep_line_x(segment, point)
-                        .partial_cmp(&point.x())
-                        .unwrap_or(Ordering::Equal)
-                });
+                let mut iter = sweep_status.lower_bound(&event_point);
 
                 let p1 = iter.prev().cloned();
                 let p2 = iter.peek().cloned();
 
                 if p1.is_some() && p2.is_some() {
                     if let Some(next_point) =
-                        find_intersection_event(p1.unwrap(), p2.unwrap(), &point)
+                        find_intersection_event(p1.unwrap(), p2.unwrap(), &event_point)
                     {
                         event_queue.insert(Event {
                             point: next_point,
@@ -256,39 +268,25 @@ impl LineSegment2f {
                     }
                 }
             }
-
-            last_sweep_point = point;
         }
 
-        /*
-        Event queue:
+        output
+    }
 
-        // This could be a heap given
-        BTreeSet<Vector2f, Vec<usize>>
-        - Key: Event Point: Sort by y. If y is same, sort by x.
-        - Value: List of segments with upper endpoint each to 'p'
+    /// Slower version of Self::intersections() of time complexity O(n^2) for
+    /// 'n' segments. This implementation is simpler though and less likely to
+    /// be buggy.
+    pub fn intersections_slow(segments: &[Self]) -> Vec<Vector2f> {
+        // TODO: Use an AVL tree to store intersections and later dedup them.
+        let mut output = vec![];
 
-        Status Queue (T)
-        - Stores line segments basically keyed by their intersection point with the sweep line.
-            - Line segments will only swap places if they intersect.
-
-        - I don't want to store the intersection points in the status queue (rather store LineSegment2f)
-
-        - Challenge is that the sorting function will change over time.
-
-        - We could use a BTreeMap but need to store a RefCell<> reference containing the current sweep line (lot's of memory?)
-
-        - Issue is that BTreeMap doesn't define a good behavior for what happens if the comparison method changes in an unexpected way.
-
-        - Main question is: What happens if two elements go from being < to be == (at the intersection).
-            - Can't use exact comparison to determine if a segment intersects it (equally challenging for comparing to something that is an endpoint of one line)
-        */
-
-        /*
-        Sorting two lines at a sweep line p:
-        - If both
-
-        */
+        for i in 0..segments.len() {
+            for j in (i + 1)..segments.len() {
+                if let Some(point) = segments[i].intersect(&segments[j]) {
+                    output.push(point);
+                }
+            }
+        }
 
         output
     }
@@ -300,7 +298,7 @@ mod intersections {
 
     use super::*;
 
-    pub const THRESHOLD: f32 = 1e-6;
+    pub const THRESHOLD: f32 = 1e-3;
 
     pub fn upper_lower_endpoints(segment: &LineSegment2f) -> (Vector2f, Vector2f) {
         let mut upper_point = segment.start.clone();
@@ -313,7 +311,36 @@ mod intersections {
         (upper_point, lower_point)
     }
 
-    // TODO: Verify never called with an empty or horizontal point.
+    #[derive(Debug)]
+    pub struct LineSweepComparator {
+        pub event_point: Vector2f,
+    }
+
+    impl common::tree::avl::Comparator<&LineSegment2f, &LineSegment2f> for LineSweepComparator {
+        fn compare(&self, a: &&LineSegment2f, b: &&LineSegment2f) -> Ordering {
+            compare_segments_at_sweep_line(a, b, &self.event_point)
+        }
+    }
+
+    impl common::tree::avl::Comparator<&LineSegment2f, Vector2f> for LineSweepComparator {
+        fn compare(&self, segment: &&LineSegment2f, point: &Vector2f) -> Ordering {
+            let x = sweep_line_x(segment, &self.event_point);
+
+            if (point.x() - x).abs() <= THRESHOLD {
+                return Ordering::Equal;
+            }
+
+            x.partial_cmp(&point.x()).unwrap_or(Ordering::Equal)
+        }
+    }
+
+    /// Computes the 'x' coordinate of the given 'segment' when we intersect a
+    /// horizontal line at 'point.y()'.
+    ///
+    /// In the case that 'segment' is horizontal, we return the closest point on
+    /// the segment to 'point.x()'.
+    ///
+    /// TODO: Verify never called with an empty or horizontal point.
     pub fn sweep_line_x(segment: &LineSegment2f, point: &Vector2f) -> f32 {
         if (segment.end.y() - segment.start.y()).abs() < THRESHOLD {
             let min_x = segment.start.x().min(segment.end.x());
@@ -341,33 +368,44 @@ mod intersections {
     pub fn find_intersection_event(
         a: &LineSegment2f,
         b: &LineSegment2f,
-        point: &Vector2f,
+        event_point: &Vector2f,
     ) -> Option<Vector2f> {
         let intersection = match a.intersect(b) {
             Some(p) => p,
             None => return None,
         };
 
-        if (intersection.y() - point.y()).abs() < THRESHOLD {
+        if (intersection.y() - event_point.y()).abs() < THRESHOLD {
             // On sweep line.
 
             // TODO: Use threshold comparison?
-            if intersection.x() <= point.x() {
+            if intersection.x() <= event_point.x() {
                 return None;
             }
-        } else if intersection.y() < point.y() {
+        } else if intersection.y() < event_point.y() {
             return None;
         }
 
         Some(intersection)
     }
 
-    // TODO: Ideally this would only return
+    // TODO: Ideally this would only return Equal if the line segments are exactly
+    // equal
+    //
+    // TODO: Verify passing 2 horizontal lines that are equal always
+    // returns an equal return.
+    //
+    // TODO: If two distinct horizontal lines are passed, ensure that we have a
+    // commutative behavior.
     pub fn compare_segments_at_sweep_line(
         a: &LineSegment2f,
         b: &LineSegment2f,
         point: &Vector2f,
     ) -> Ordering {
+        if a.start == b.start && a.end == b.end {
+            return Ordering::Equal;
+        }
+
         let a_x = sweep_line_x(a, point);
         let b_x = sweep_line_x(b, point);
 
@@ -378,20 +416,32 @@ mod intersections {
         // will move left or right after crossing the intersection (heading towards
         // increasing y values).
         if (a_x - b_x).abs() <= THRESHOLD {
-            let mut dir_a = &a.start - &a.start;
+            // TODO: If both lines are horizontal, compare based on their min x
+
+            let mut dir_a = &a.start - &a.end;
+            if dir_a.y().abs() <= THRESHOLD {
+                // Horizontal line.
+                return Ordering::Greater;
+            }
             if dir_a.y() < 0. {
                 dir_a *= -1.;
             }
 
-            let mut dir_b = &b.start - &b.start;
+            let mut dir_b = &b.start - &b.end;
+            if dir_b.y().abs() <= THRESHOLD {
+                // Horizontal line.
+                return Ordering::Less;
+            }
             if dir_b.y() < 0. {
                 dir_b *= -1.;
             }
 
-            return dir_a.x().partial_cmp(&dir_b.x()).unwrap_or(Ordering::Equal);
+            // NOTE: This is always going to be equivalent to a sign comparison, so it's not
+            // necessary to normalize the magnitudes.
+            return dir_a.x().partial_cmp(&dir_b.x()).unwrap();
         }
 
-        a_x.partial_cmp(&b_x).unwrap_or(Ordering::Equal)
+        a_x.partial_cmp(&b_x).unwrap()
     }
 
     #[derive(Debug)]
@@ -444,6 +494,91 @@ mod tests {
 
     use super::*;
 
+    // TODO: Test a single horizontal line intersecting with 4 vertical lines (1 at
+    // each endpoint and 2 in the middle)
+
+    #[test]
+    fn sort_below_sweep_line() {
+        let a = LineSegment2f {
+            start: vec2f(0., 0.),
+            end: vec2f(10., 10.),
+        };
+        let b = LineSegment2f {
+            start: vec2f(10., 0.),
+            end: vec2f(0., 10.),
+        };
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&a, &b, &vec2f(-1., -1.)),
+            Ordering::Less
+        );
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&a, &b, &vec2f(4.9, 4.9)),
+            Ordering::Less
+        );
+
+        // As seen as get near the sweep line, the ordering flips because the lines have
+        // intersected are now going in different directions.
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&a, &b, &vec2f(5., 5.)),
+            Ordering::Greater
+        );
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&a, &b, &vec2f(5.1, 5.1)),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn horizontal_comparison() {
+        let a = LineSegment2f {
+            start: vec2f(10., 0.),
+            end: vec2f(0., 10.),
+        };
+
+        let b = LineSegment2f {
+            start: vec2f(0., 7.),
+            end: vec2f(10., 7.),
+        };
+
+        let point = vec2f(10., 7.);
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&a, &b, &point),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn horizontal_comparison2() {
+        let a = LineSegment2f {
+            start: vec2f(0., 0.),
+            end: vec2f(10., 10.),
+        };
+
+        let b = LineSegment2f {
+            start: vec2f(0., 7.),
+            end: vec2f(10., 7.),
+        };
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&a, &b, &vec2f(0., 7.)),
+            Ordering::Greater
+        );
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&a, &b, &vec2f(7., 7.)),
+            Ordering::Less
+        );
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&a, &b, &vec2f(10., 7.)),
+            Ordering::Less
+        );
+    }
+
     #[test]
     fn intersections_test() {
         let segments = vec![
@@ -459,18 +594,127 @@ mod tests {
                 start: vec2f(0., 7.),
                 end: vec2f(10., 7.),
             },
+            LineSegment2f {
+                start: vec2f(7., 6.),
+                end: vec2f(7., 10.),
+            },
         ];
 
-        let ints = LineSegment2f::intersections(&segments);
-
-        println!("{:#?}", ints);
-
         assert_eq!(
-            &ints,
+            &LineSegment2f::intersections(&segments[0..2]),
             &[Intersection2f {
                 point: vec2f(5., 5.),
                 segments: vec![&segments[0], &segments[1]]
+            },]
+        );
+
+        assert_eq!(
+            &LineSegment2f::intersections(&segments[0..3]),
+            &[
+                Intersection2f {
+                    point: vec2f(5., 5.),
+                    segments: vec![&segments[0], &segments[1]]
+                },
+                Intersection2f {
+                    point: vec2f(3., 7.),
+                    segments: vec![&segments[2], &segments[1]]
+                },
+                Intersection2f {
+                    point: vec2f(7., 7.),
+                    segments: vec![&segments[2], &segments[0]]
+                }
+            ]
+        );
+
+        assert_eq!(
+            &LineSegment2f::intersections(&segments),
+            &[
+                Intersection2f {
+                    point: vec2f(5., 5.),
+                    segments: vec![&segments[0], &segments[1]]
+                },
+                Intersection2f {
+                    point: vec2f(3., 7.),
+                    segments: vec![&segments[2], &segments[1]]
+                },
+                Intersection2f {
+                    point: vec2f(7., 7.),
+                    segments: vec![&segments[2], &segments[0], &segments[3]]
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn inexact_intersection() {
+        let segments = vec![
+            LineSegment2f {
+                start: vec2f(294., 199.),
+                end: vec2f(493., 343.),
+            },
+            LineSegment2f {
+                start: vec2f(481., 183.),
+                end: vec2f(300., 354.),
+            },
+        ];
+
+        assert_eq!(
+            &LineSegment2f::intersections(&segments),
+            &[Intersection2f {
+                point: vec2f(390.3027, 268.6864),
+                segments: vec![&segments[0], &segments[1]]
             }]
+        );
+    }
+
+    #[test]
+    fn quad_intersections() {
+        let segments = vec![
+            LineSegment2f {
+                // Right-ish
+                start: vec2f(209.0, 247.0),
+                end: vec2f(433.0, 441.0),
+            },
+            LineSegment2f {
+                // Left-most
+                start: vec2f(427.0, 229.0),
+                end: vec2f(186.0, 461.0),
+            },
+            LineSegment2f {
+                // Left-ish
+                start: vec2f(434.0, 340.0),
+                end: vec2f(321.0, 457.0),
+            },
+            LineSegment2f {
+                // Right-most
+                start: vec2f(335.0, 266.0),
+                end: vec2f(449.0, 420.0),
+            },
+        ];
+
+        // let expected = LineSegment2f::intersections_slow(&segments);
+        let ints = LineSegment2f::intersections(&segments);
+
+        assert_eq!(
+            &ints,
+            &[
+                Intersection2f {
+                    point: vec2f(357.28815, 296.10852,),
+                    segments: vec![&segments[3], &segments[1],],
+                },
+                Intersection2f {
+                    point: vec2f(313.9139, 337.8629,),
+                    segments: vec![&segments[0], &segments[1],],
+                },
+                Intersection2f {
+                    point: vec2f(408.9665, 365.91965,),
+                    segments: vec![&segments[3], &segments[2],],
+                },
+                Intersection2f {
+                    point: vec2f(380.42773, 395.46866,),
+                    segments: vec![&segments[0], &segments[2],],
+                },
+            ]
         );
     }
 }

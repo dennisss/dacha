@@ -4,9 +4,17 @@ use core::cmp::Ordering;
 
 use crate::tree::avl_node::AVLNode;
 
-pub trait InsertComparator<T> = Fn(&T, &T) -> Ordering;
+pub trait Comparator<A, B> {
+    fn compare(&self, a: &A, b: &B) -> Ordering;
+}
 
-pub trait QueryComparator<T, Q> = Fn(&T, &Q) -> Ordering;
+pub struct OrdComparator {}
+
+impl<T: Ord> Comparator<T, T> for OrdComparator {
+    fn compare(&self, a: &T, b: &T) -> Ordering {
+        a.cmp(b)
+    }
+}
 
 /// Self-balancing binary search tree where the left and right sub-trees of any
 /// node always have an absolute height difference of <= 1.
@@ -18,27 +26,42 @@ pub trait QueryComparator<T, Q> = Fn(&T, &Q) -> Ordering;
 ///   repair each node on the way back up the call stack. We should skip
 ///   balancing a node if no height changes occured in its children.
 #[derive(Clone, Debug)]
-pub struct AVLTree<T> {
+pub struct AVLTree<T, C = OrdComparator> {
     root: Option<Box<AVLNode<T>>>,
+    comparator: C,
 }
 
-impl<T> AVLTree<T> {
-    pub fn new() -> Self {
-        Self { root: None }
+impl<T: Ord> AVLTree<T, OrdComparator> {
+    pub fn default() -> Self {
+        Self::new(OrdComparator {})
+    }
+}
+
+impl<T, C: Comparator<T, T>> AVLTree<T, C> {
+    pub fn new(comparator: C) -> Self {
+        Self {
+            root: None,
+            comparator,
+        }
     }
 
-    pub fn find<'a, Q>(
-        &'a self,
-        query: &Q,
-        comparator: &dyn QueryComparator<T, Q>,
-    ) -> Option<Iter<'a, T>> {
+    /// NOTE: This is a dangerous function as it doesn't re-sort the contents of
+    /// the tree and assumes that the user knows what they are doing.
+    pub fn change_comparator(&mut self, comparator: C) {
+        self.comparator = comparator;
+    }
+
+    pub fn find<'a, Q>(&'a self, query: &Q) -> Option<Iter<'a, T>>
+    where
+        C: Comparator<T, Q>,
+    {
         let mut path = vec![];
 
         let mut next_pointer = self.root.as_ref();
         while let Some(node) = next_pointer {
             path.push(node.as_ref());
 
-            match comparator(node.value(), query) {
+            match self.comparator.compare(node.value(), query) {
                 Ordering::Equal => return Some(Iter { path }),
                 Ordering::Greater => {
                     next_pointer = node.left();
@@ -58,11 +81,17 @@ impl<T> AVLTree<T> {
     /// The comparator must preserve the ordering of adjacent values as was used
     /// during insertion. But, this function will still return the correct
     /// result if previously non-equal adjacent values become equal.
-    pub fn lower_bound_by<'a, Q>(
-        &'a self,
-        query: &Q,
-        comparator: &dyn QueryComparator<T, Q>,
-    ) -> Iter<'a, T> {
+    pub fn lower_bound<'a, Q>(&'a self, query: &Q) -> Iter<'a, T>
+    where
+        C: Comparator<T, Q>,
+    {
+        self.lower_bound_by(query, &self.comparator)
+    }
+
+    pub fn lower_bound_by<'a, Q, D>(&'a self, query: &Q, comparator: &D) -> Iter<'a, T>
+    where
+        D: Comparator<T, Q>,
+    {
         let mut path = vec![];
         let mut best_depth = 0;
 
@@ -71,7 +100,7 @@ impl<T> AVLTree<T> {
         while let Some(node) = next_pointer {
             path.push(node.as_ref());
 
-            match comparator(node.value(), query) {
+            match comparator.compare(node.value(), query) {
                 // NOTE: In the Equal case, we could stop early if the comparator is equivalent to
                 // the one used for insertion as we only ever insert equal elements into the right
                 // subtree. We don't stop early though to allow for slight changes to the
@@ -91,11 +120,12 @@ impl<T> AVLTree<T> {
         Iter { path }
     }
 
-    /// NOTE: Doesn't support insertion of multiple equal values.
-    pub fn insert_by(&mut self, value: T, comparator: &dyn InsertComparator<T>) {
+    /// NOTE: Doesn't support insertion of multiple equal values. < TODO: Check
+    /// this
+    pub fn insert(&mut self, value: T) {
         let new_node = Box::new(AVLNode::new(value, None, None));
 
-        Self::insert_inner(new_node, &mut self.root, comparator);
+        Self::insert_inner(new_node, &mut self.root, &self.comparator);
     }
 
     /// Inserts a given new_node into the node pointed to be current_pointer.
@@ -105,7 +135,7 @@ impl<T> AVLTree<T> {
     fn insert_inner(
         new_node: Box<AVLNode<T>>,
         current_pointer: &mut Option<Box<AVLNode<T>>>,
-        comparator: &dyn InsertComparator<T>,
+        comparator: &C,
     ) {
         let current_node = match current_pointer.as_mut() {
             Some(n) => n,
@@ -117,7 +147,7 @@ impl<T> AVLTree<T> {
         };
 
         let changed = {
-            if comparator(current_node.value(), new_node.value()) == Ordering::Greater {
+            if comparator.compare(current_node.value(), new_node.value()) == Ordering::Greater {
                 Self::insert_inner(new_node, current_node.left_mut(), comparator)
             } else {
                 Self::insert_inner(new_node, current_node.right_mut(), comparator)
@@ -127,8 +157,8 @@ impl<T> AVLTree<T> {
         Self::repair_subtree(current_node);
     }
 
-    pub fn remove_by(&mut self, value: &T, comparator: &dyn InsertComparator<T>) -> Option<T> {
-        Self::remove_search(value, &mut self.root, comparator)
+    pub fn remove(&mut self, value: &T) -> Option<T> {
+        Self::remove_search(value, &mut self.root, &self.comparator)
     }
 
     /// Attempts to find a node equal to 'value' in the subtree pointed to by
@@ -139,7 +169,7 @@ impl<T> AVLTree<T> {
     fn remove_search(
         value: &T,
         current_pointer: &mut Option<Box<AVLNode<T>>>,
-        comparator: &dyn InsertComparator<T>,
+        comparator: &C,
     ) -> Option<T> {
         let current_node = match current_pointer.as_mut() {
             Some(n) => n,
@@ -149,7 +179,7 @@ impl<T> AVLTree<T> {
             }
         };
 
-        let ord = comparator(current_node.value(), value);
+        let ord = comparator.compare(current_node.value(), value);
 
         // Found the queried value. Delete it.
         if ord == Ordering::Equal {
@@ -260,20 +290,6 @@ impl<T> AVLTree<T> {
     }
 }
 
-impl<T: Ord> AVLTree<T> {
-    pub fn lower_bound<'a>(&'a self, query: &T) -> Iter<'a, T> {
-        self.lower_bound_by(query, &|a, b| a.cmp(b))
-    }
-
-    pub fn insert(&mut self, value: T) {
-        self.insert_by(value, &|a, b| a.cmp(b))
-    }
-
-    pub fn remove(&mut self, value: &T) -> Option<T> {
-        self.remove_by(value, &|a, b| a.cmp(b))
-    }
-}
-
 #[derive(Clone)]
 pub struct Iter<'a, T> {
     path: Vec<&'a AVLNode<T>>,
@@ -325,6 +341,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
 
                 // Otherwise, we just finished visiting the right subtree of
                 // parent_node so we need to keep going up.
+                current_node = *parent_node;
                 self.path.pop();
             }
         }
@@ -386,6 +403,7 @@ impl<'a, T> Iter<'a, T> {
                     break;
                 }
 
+                current_node = *parent_node;
                 self.path.pop();
             }
         }
@@ -406,7 +424,7 @@ mod tests {
 
     #[test]
     fn insert_right_balancing_tests() {
-        let mut tree = AVLTree::new();
+        let mut tree = AVLTree::default();
 
         tree.insert(10);
         assert_eq!(tree.root, Some(AVLNode::new(10, None, None).into()));
@@ -456,14 +474,33 @@ mod tests {
 
     #[test]
     fn avl_works() {
-        let mut tree = AVLTree::new();
+        let mut tree = AVLTree::default();
 
-        for i in 0..10 {
+        for i in 0..100 {
             tree.insert(i);
         }
 
-        println!("{:#?}", tree);
+        {
+            let mut iter = tree.find(&0).unwrap();
+            for i in 0..100 {
+                assert_eq!(iter.next(), Some(&i));
+            }
 
+            assert_eq!(iter.next(), None);
+        }
+
+        {
+            let mut iter = tree.find(&99).unwrap();
+            for i in (0..100).rev() {
+                assert_eq!(iter.prev(), Some(&i));
+            }
+
+            assert_eq!(iter.prev(), None);
+        }
+
+        // println!("{:#?}", tree);
+
+        /*
         {
             let mut iter = tree.lower_bound(&3);
             while let Some(value) = iter.next() {
@@ -479,5 +516,6 @@ mod tests {
                 println!("Iter: {}", value);
             }
         }
+         */
     }
 }
