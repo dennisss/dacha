@@ -27,6 +27,31 @@ impl<T> AVLTree<T> {
         Self { root: None }
     }
 
+    pub fn find<'a, Q>(
+        &'a self,
+        query: &Q,
+        comparator: &dyn QueryComparator<T, Q>,
+    ) -> Option<Iter<'a, T>> {
+        let mut path = vec![];
+
+        let mut next_pointer = self.root.as_ref();
+        while let Some(node) = next_pointer {
+            path.push(node.as_ref());
+
+            match comparator(node.value(), query) {
+                Ordering::Equal => return Some(Iter { path }),
+                Ordering::Greater => {
+                    next_pointer = node.left();
+                }
+                Ordering::Less => {
+                    next_pointer = node.right();
+                }
+            }
+        }
+
+        None
+    }
+
     /// Creates an iterator which starts at the first value in the tree with
     /// 'value >= query'.
     ///
@@ -249,6 +274,7 @@ impl<T: Ord> AVLTree<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct Iter<'a, T> {
     path: Vec<&'a AVLNode<T>>,
 }
@@ -299,6 +325,67 @@ impl<'a, T> Iterator for Iter<'a, T> {
 
                 // Otherwise, we just finished visiting the right subtree of
                 // parent_node so we need to keep going up.
+                self.path.pop();
+            }
+        }
+
+        Some(value)
+    }
+}
+
+impl<'a, T> Iter<'a, T> {
+    pub fn peek(&self) -> Option<&'a T> {
+        let last_node = match self.path.last() {
+            Some(n) => *n,
+            None => {
+                return None;
+            }
+        };
+
+        let value = last_node.value();
+        Some(value)
+    }
+
+    pub fn prev(&mut self) -> Option<&'a T> {
+        // TODO: Support getting the previous node when at the end of the tree.
+
+        let last_node = match self.path.last() {
+            Some(n) => *n,
+            None => {
+                return None;
+            }
+        };
+
+        let value = last_node.value();
+
+        // Update path to point to the current node's predecessor
+
+        if let Some(left_child) = last_node.left() {
+            // Pick the largest value in the node's left child.
+
+            let mut next_child = left_child.as_ref();
+            self.path.push(next_child);
+
+            while let Some(right_child) = next_child.right() {
+                next_child = right_child.as_ref();
+                self.path.push(next_child);
+            }
+        } else {
+            // Otherwise find predecessor in the parent.
+
+            let mut current_node = last_node;
+            self.path.pop(); // Remove current_node from the path.
+
+            while let Some(parent_node) = self.path.last() {
+                let is_right_child = parent_node
+                    .right()
+                    .map(|node| core::ptr::eq(node.as_ref(), current_node))
+                    .unwrap_or(false);
+
+                if is_right_child {
+                    break;
+                }
+
                 self.path.pop();
             }
         }

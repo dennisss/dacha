@@ -7,9 +7,23 @@ pub trait Comparator<T> {
     fn compare(&self, a: &T, b: &T) -> Ordering;
 }
 
-pub struct BinaryHeap<T, C> {
+pub struct OrdComparator {}
+
+impl<T: Ord> Comparator<T> for OrdComparator {
+    fn compare(&self, a: &T, b: &T) -> Ordering {
+        a.cmp(b)
+    }
+}
+
+pub struct BinaryHeap<T, C = OrdComparator> {
     items: Vec<T>,
     comparator: C,
+}
+
+impl<T: Ord> BinaryHeap<T, OrdComparator> {
+    pub fn default() -> Self {
+        Self::new(OrdComparator {})
+    }
 }
 
 impl<T, C: Comparator<T>> BinaryHeap<T, C> {

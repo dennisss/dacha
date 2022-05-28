@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use crate::matrix::{Matrix2f, Vector2f};
 
-/// Representation of a 2d line where a point is defined as:
+/// Representation of an unbounded 2d line where a point is defined as:
 /// p = base + (lambda * dir)
 pub struct Line2f {
     pub base: Vector2f,
@@ -13,7 +13,7 @@ impl Line2f {
     /// NOTE: When using this formulation, it is guaranteed that base will equal
     /// x1 and (base + dir) will equal x2. So this can be used to recover the
     /// original line segment. But all other operations still assume that the
-    /// line is continous.
+    /// line is continuous.
     pub fn from_points(x1: &Vector2f, x2: &Vector2f) -> Self {
         Self {
             base: (*x1).clone(),
@@ -47,31 +47,6 @@ impl Line2f {
     }
 }
 
-pub struct LineSegment2f {
-    pub start: Vector2f,
-    pub end: Vector2f,
-}
-
-impl LineSegment2f {
-    /// TODO: For each intersection, we also want to know which segments where
-    /// involved (one or more segment indices)
-    pub fn intersections(segments: &[Self]) -> Vec<Intersection2f> {
-        // Detecting
-
-        vec![]
-    }
-}
-
-/*
-    Find intersections.
-    - Then, find
-*/
-
-pub struct Intersection2f {
-    pub point: Vector2f,
-    pub components: Vec<usize>,
-}
-
 pub struct HalfEdgeDataStruct {
     faces: Vec<Face>,
     half_edges: Vec<HalfEdge>,
@@ -90,6 +65,7 @@ struct HalfEdge {
     prev: usize,
 }
 
+/*
 pub fn overlap_polys(segments: &[LineSegment2f]) {
     // Compute all intersection points
 
@@ -105,3 +81,4 @@ pub fn overlap_polys(segments: &[LineSegment2f]) {
 
     //
 }
+*/
