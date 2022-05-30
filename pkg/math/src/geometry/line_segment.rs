@@ -173,18 +173,6 @@ impl LineSegment2f {
                 }
             }
 
-            // Report an intersection
-            if upper_segments.len() + existing_segments.len() > 1 {
-                let mut segments = vec![];
-                segments.extend_from_slice(&upper_segments);
-                segments.extend_from_slice(&existing_segments);
-
-                output.push(Intersection2f {
-                    point: event_point.clone(),
-                    segments,
-                });
-            }
-
             // Remove all segments that we touched (will be re-inserted in the
             // next step).
             // NOTE: We use the last sweep point in the comparator to ensure search
@@ -246,6 +234,9 @@ impl LineSegment2f {
             // being adjacent to each other, remove their intersection points from the event
             // queue.
 
+            let mut intersection_left_neighbor = None;
+            let mut intersection_right_neighbor = None;
+
             if let Some((first, last)) = first_last_segment {
                 // NOTE: unwrap() should never fail if all the logic is correct as we just
                 // inserted these
@@ -259,12 +250,12 @@ impl LineSegment2f {
                 // over any other equal segments.
 
                 assert_eq!(first_iter.prev(), Some(&first)); // Skip the 'first'
-                let first2 = first_iter.peek().cloned();
+                intersection_left_neighbor = first_iter.peek().cloned();
 
                 assert_eq!(last_iter.next(), Some(&last)); // Skip over 'last'
-                let last2 = last_iter.peek().cloned();
+                let intersection_right_neighbor = last_iter.peek().cloned();
 
-                if let Some(first_neighbor) = first2 {
+                if let Some(first_neighbor) = intersection_left_neighbor.clone() {
                     if let Some(next_point) = find_intersection_event(
                         &segments[first],
                         &segments[first_neighbor],
@@ -277,7 +268,7 @@ impl LineSegment2f {
                     }
                 }
 
-                if let Some(last_neighbor) = last2 {
+                if let Some(last_neighbor) = intersection_right_neighbor.clone() {
                     if let Some(next_point) = find_intersection_event(
                         &segments[last],
                         &segments[last_neighbor],
@@ -307,6 +298,20 @@ impl LineSegment2f {
                         });
                     }
                 }
+            }
+
+            // Report an intersection
+            if upper_segments.len() + existing_segments.len() > 1 {
+                let mut segments = vec![];
+                segments.extend_from_slice(&upper_segments);
+                segments.extend_from_slice(&existing_segments);
+
+                output.push(Intersection2f {
+                    point: event_point.clone(),
+                    segments,
+                    left_neighbor: intersection_left_neighbor,
+                    right_neighbor: intersection_right_neighbor,
+                });
             }
         }
 
@@ -527,11 +532,31 @@ pub fn compare_points(a: &Vector2f, b: &Vector2f) -> Ordering {
     }
 }
 
+/// The smallest point will be the left-most point. If multiple points share the
+/// same x, then the one with lowest y will be selected.
+pub fn compare_points_x_then_y(a: &Vector2f, b: &Vector2f) -> Ordering {
+    if (a.x() - b.x()).abs() <= intersections::THRESHOLD {
+        if (a.y() - b.y()).abs() <= intersections::THRESHOLD {
+            Ordering::Equal
+        } else {
+            a.y().partial_cmp(&b.y()).unwrap()
+        }
+    } else {
+        a.x().partial_cmp(&b.x()).unwrap()
+    }
+}
+
 /// A point intersection between two or more line segments.
 #[derive(Debug, PartialEq)]
 pub struct Intersection2f {
     pub point: Vector2f,
     pub segments: Vec<usize>,
+
+    /// Index of the line segment immediately to the left of this intersection.
+    pub left_neighbor: Option<usize>,
+
+    /// Index of the line segment immediately to the right of this intersection.
+    pub right_neighbor: Option<usize>,
 }
 
 fn vec2f(x: f32, y: f32) -> Vector2f {
@@ -653,7 +678,9 @@ mod tests {
             &LineSegment2f::intersections(&segments[0..2]),
             &[Intersection2f {
                 point: vec2f(5., 5.),
-                segments: vec![0, 1]
+                segments: vec![0, 1],
+                left_neighbor: None,
+                right_neighbor: None,
             },]
         );
 
@@ -662,15 +689,21 @@ mod tests {
             &[
                 Intersection2f {
                     point: vec2f(5., 5.),
-                    segments: vec![0, 1]
+                    segments: vec![0, 1],
+                    left_neighbor: None,
+                    right_neighbor: None,
                 },
                 Intersection2f {
                     point: vec2f(3., 7.),
-                    segments: vec![2, 1]
+                    segments: vec![2, 1],
+                    left_neighbor: None,
+                    right_neighbor: None,
                 },
                 Intersection2f {
                     point: vec2f(7., 7.),
-                    segments: vec![2, 0]
+                    segments: vec![2, 0],
+                    left_neighbor: None,
+                    right_neighbor: None,
                 }
             ]
         );
@@ -680,15 +713,21 @@ mod tests {
             &[
                 Intersection2f {
                     point: vec2f(5., 5.),
-                    segments: vec![0, 1]
+                    segments: vec![0, 1],
+                    left_neighbor: None,
+                    right_neighbor: None,
                 },
                 Intersection2f {
                     point: vec2f(3., 7.),
-                    segments: vec![2, 1]
+                    segments: vec![2, 1],
+                    left_neighbor: None,
+                    right_neighbor: None,
                 },
                 Intersection2f {
                     point: vec2f(7., 7.),
-                    segments: vec![2, 0, 3]
+                    segments: vec![2, 0, 3],
+                    left_neighbor: None,
+                    right_neighbor: None,
                 }
             ]
         );
@@ -711,7 +750,9 @@ mod tests {
             &LineSegment2f::intersections(&segments),
             &[Intersection2f {
                 point: vec2f(390.3027, 268.6864),
-                segments: vec![0, 1]
+                segments: vec![0, 1],
+                left_neighbor: None,
+                right_neighbor: None,
             }]
         );
     }
@@ -750,18 +791,26 @@ mod tests {
                 Intersection2f {
                     point: vec2f(357.28815, 296.10852,),
                     segments: vec![3, 1,],
+                    left_neighbor: None,
+                    right_neighbor: None,
                 },
                 Intersection2f {
                     point: vec2f(313.9139, 337.8629,),
                     segments: vec![0, 1,],
+                    left_neighbor: None,
+                    right_neighbor: None,
                 },
                 Intersection2f {
                     point: vec2f(408.9665, 365.91965,),
                     segments: vec![3, 2,],
+                    left_neighbor: None,
+                    right_neighbor: None,
                 },
                 Intersection2f {
                     point: vec2f(380.42773, 395.46866,),
                     segments: vec![0, 2,],
+                    left_neighbor: None,
+                    right_neighbor: None,
                 },
             ]
         );

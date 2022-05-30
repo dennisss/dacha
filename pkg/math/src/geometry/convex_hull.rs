@@ -74,7 +74,7 @@ fn remove_ending_left_turns(hull: &mut Vec<Vector2f>) {
 
 /// Returns true if we are only making a right (or straight) turn when
 /// connecting the ray AB to BC.
-fn turns_right(a: &Vector2f, b: &Vector2f, c: &Vector2f) -> bool {
+pub fn turns_right(a: &Vector2f, b: &Vector2f, c: &Vector2f) -> bool {
     let ab = b - a;
     let ac = c - a;
 
