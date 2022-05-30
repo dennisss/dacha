@@ -1,5 +1,7 @@
 use alloc::vec::Vec;
 use core::f32::consts::PI;
+use core::fmt::Debug;
+use core::hash::Hash;
 use core::ops::Add;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -20,16 +22,35 @@ TODOs:
 
 */
 
+pub trait FaceLabel: Clone + Default + Debug {
+    // TODO: Maybe use BitOr instead?
+    fn union(&self, other: &Self) -> Self;
+}
+
+impl FaceLabel for () {
+    fn union(&self, other: &Self) -> Self {
+        ()
+    }
+}
+
+impl<T: Clone + Debug + Hash + PartialEq + Eq> FaceLabel for HashSet<T> {
+    fn union(&self, other: &Self) -> Self {
+        self | other
+    }
+}
+
 #[derive(Debug)]
-pub struct HalfEdgeStruct {
+pub struct HalfEdgeStruct<F: FaceLabel> {
     half_edges: HashMap<EdgeId, HalfEdge>,
     next_edge_id: EdgeId,
-    faces: HashMap<FaceId, Face>,
+    faces: HashMap<FaceId, Face<F>>,
     next_face_id: FaceId,
 }
 
 #[derive(Debug, Clone)]
-struct Face {
+struct Face<Label> {
+    label: Label,
+
     /// Some edge on the outer most boundary of this face.
     /// If none, then this is the unbounded face surrounding all polygons.
     outer_component: Option<EdgeId>,
@@ -38,6 +59,7 @@ struct Face {
     inner_components: Vec<EdgeId>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum BoundaryType {
     Inner,
     Outer,
@@ -48,21 +70,29 @@ struct HalfEdge {
     origin: Vector2f,
     twin: EdgeId,
 
-    incident_face: FaceId,
+    incident_face: (FaceId, BoundaryType),
     // incident_face_component: BoundaryType,
     next: EdgeId,
     prev: EdgeId,
 }
 
-impl HalfEdgeStruct {
+impl<F: FaceLabel> HalfEdgeStruct<F> {
     pub fn new() -> Self {
-        // let mut faces =
+        let mut faces = HashMap::new();
+        faces.insert(
+            FaceId(0),
+            Face {
+                label: F::default(),
+                outer_component: None,
+                inner_components: vec![],
+            },
+        );
 
         Self {
             half_edges: HashMap::new(),
             next_edge_id: EdgeId(0),
-            faces: HashMap::new(),
-            next_face_id: FaceId(0),
+            faces,
+            next_face_id: FaceId(1),
         }
     }
 
@@ -72,16 +102,33 @@ impl HalfEdgeStruct {
         id
     }
 
-    fn add_first_edge(&mut self, start: Vector2f, end: Vector2f) -> EdgeId {
+    // NOTE: Label will be the inner face if the polygon is built with
+    // counter-clockwise vertices.
+    fn add_first_edge(&mut self, start: Vector2f, end: Vector2f, label: F) -> EdgeId {
         let id = self.new_edge_id();
         let twin = self.new_edge_id();
 
+        let face_id = self.next_face_id;
+        self.next_face_id = self.next_face_id + FaceId(1);
+
+        self.faces.insert(
+            face_id,
+            Face {
+                label,
+                outer_component: Some(id),
+                inner_components: vec![],
+            },
+        );
+
+        // TODO: I need to check if the vertices are going clockwise or
+        // counter-clockwise after the polygon is constructed to tell if we are
+        // assigning the right face to the right edge.
         self.half_edges.insert(
             id,
             HalfEdge {
                 origin: start,
                 twin,
-                incident_face: FaceId(0), // TODO
+                incident_face: (face_id, BoundaryType::Outer),
                 next: twin,
                 prev: twin,
             },
@@ -91,7 +138,7 @@ impl HalfEdgeStruct {
             HalfEdge {
                 origin: end,
                 twin: id,
-                incident_face: FaceId(0), // TODO
+                incident_face: (FaceId(0), BoundaryType::Inner),
                 next: id,
                 prev: id,
             },
@@ -113,7 +160,7 @@ impl HalfEdgeStruct {
             HalfEdge {
                 origin: last_point,
                 twin,
-                incident_face: FaceId(0), // TODO
+                incident_face: self.half_edges[&prev].incident_face,
                 next: twin,
                 prev,
             },
@@ -125,7 +172,7 @@ impl HalfEdgeStruct {
             HalfEdge {
                 origin: next_point,
                 twin: id,
-                incident_face: FaceId(0), // TODO
+                incident_face: (FaceId(0), BoundaryType::Inner), // TODO
                 next: prev_twin,
                 prev: id,
             },
@@ -151,7 +198,7 @@ impl HalfEdgeStruct {
             HalfEdge {
                 origin: last_dest,
                 twin: twin,
-                incident_face: FaceId(0), // TODO
+                incident_face: self.half_edges[&last_edge].incident_face,
                 next: first_edge,
                 prev: last_edge,
             },
@@ -164,7 +211,7 @@ impl HalfEdgeStruct {
             HalfEdge {
                 origin: first_origin,
                 twin: id,
-                incident_face: FaceId(0), // TODO
+                incident_face: (FaceId(0), BoundaryType::Inner),
                 next: last_twin,
                 prev: first_twin,
             },
@@ -179,7 +226,7 @@ impl HalfEdgeStruct {
 
     // TODO: How to deal with overlapping line segments (overlapping segments should
     // intersect that their ).
-    pub fn overlap(&self, other: &HalfEdgeStruct) -> Self {
+    pub fn overlap(&self, other: &Self) -> Self {
         // First concatenate the edge sets.
         // Ids of the second set at shifted to avoid overlaps.
         let mut output = {
@@ -189,7 +236,10 @@ impl HalfEdgeStruct {
                     *id + self.next_edge_id,
                     HalfEdge {
                         origin: edge.origin.clone(),
-                        incident_face: edge.incident_face + self.next_face_id,
+                        incident_face: (
+                            edge.incident_face.0 + self.next_face_id,
+                            edge.incident_face.1,
+                        ),
                         twin: edge.twin + self.next_edge_id,
                         next: edge.next + self.next_edge_id,
                         prev: edge.prev + self.next_edge_id,
@@ -204,6 +254,7 @@ impl HalfEdgeStruct {
                 faces.insert(
                     *id + self.next_face_id,
                     Face {
+                        label: face.label.clone(),
                         outer_component: face
                             .outer_component
                             .clone()
@@ -280,14 +331,14 @@ impl HalfEdgeStruct {
                 // later.
                 inward_prev: EdgeId,
 
-                inward_face: FaceId,
+                inward_face: (FaceId, BoundaryType),
 
                 // Id of the edge directed away
                 outward_id: EdgeId,
 
                 outward_next: EdgeId,
 
-                outward_face: FaceId,
+                outward_face: (FaceId, BoundaryType),
 
                 // Other endpoint of this edge aside of the intersection.point.
                 point: Vector2f,
@@ -402,7 +453,6 @@ impl HalfEdgeStruct {
                 let next_edge = &intersecting_edges[(i + 1) % intersecting_edges.len()];
 
                 // Connect this inward edge to the next outward edge in clockwise order.
-                self.half_edges.remove(&edge.inward_id);
                 self.half_edges.insert(
                     edge.inward_id,
                     HalfEdge {
@@ -414,7 +464,6 @@ impl HalfEdgeStruct {
                     },
                 );
 
-                self.half_edges.remove(&edge.outward_id);
                 self.half_edges.insert(
                     edge.outward_id,
                     HalfEdge {
@@ -437,6 +486,8 @@ impl HalfEdgeStruct {
             edges: Vec<EdgeId>,
             is_inner: bool,
             leftmost_vertex: EdgeId,
+
+            self_faces: HashSet<FaceId>,
 
             // vertices: Vec<Vector2f>,
             parent: Option<usize>,
@@ -471,6 +522,7 @@ impl HalfEdgeStruct {
 
             let mut edges = vec![];
             let mut vertices = vec![];
+            let mut self_faces = HashSet::new();
 
             let mut leftmost_vertex = *edge_id;
 
@@ -483,6 +535,7 @@ impl HalfEdgeStruct {
                     let edge = &self.half_edges[&current_id];
                     current_id = edge.next;
 
+                    self_faces.insert(edge.incident_face.0);
                     vertices.push(edge.origin.clone());
 
                     let current_leftmost = &self.half_edges[&leftmost_vertex];
@@ -506,13 +559,14 @@ impl HalfEdgeStruct {
                 // vertices,
                 is_inner,
                 leftmost_vertex,
+                self_faces,
                 // To be populated in the next loop.
+                /// If this edge is an inner
                 parent: None,
+
                 children: vec![],
             });
         }
-
-        // println!("{:#?}", boundaries);
 
         // Link all inner boundaries to the boundary immediately to the link of them.
         for i in 0..boundaries.len() {
@@ -583,6 +637,7 @@ impl HalfEdgeStruct {
         // Construct all faces.
 
         let mut unbounded_face = Face {
+            label: F::default(),
             outer_component: None,
             inner_components: vec![],
         };
@@ -609,15 +664,73 @@ impl HalfEdgeStruct {
                 unbounded_face
                     .inner_components
                     .extend(inner_boundary_components(&boundaries, boundary).into_iter());
+
+                // TODO: Loop over the edges to associate faces.
             } else {
                 // Form a new face.
 
                 let face_id = next_face_id;
                 next_face_id = next_face_id + FaceId(1);
 
+                let mut included_faces = HashSet::new();
+                let mut excluded_faces = HashSet::new();
+
+                // TODO: Cache some of this computation so that each inner boundary doesn't need
+                // to traverse up every single time.
+                let mut current_edge = boundary.leftmost_vertex;
+                loop {
+                    let mut boundary = &boundaries[edge_to_boundary_index[&current_edge]];
+
+                    if !boundary.is_inner {
+                        // When we encounter an outer boundary surrounding our boundary, we will
+                        // inherit its labels. But,
+
+                        included_faces.extend(boundary.self_faces.clone());
+                        // println!("INCLUDE {:?}", boundary.self_faces);
+
+                        // Find the inner boundary surrounding the current bounary.
+                        // TODO: Validate that this will at some point stop and doesn't go in loops.
+                        // TODO: Should we be using is_inner of the new boundary or of the original
+                        // boundary before we did the repairs?
+                        while !boundary.is_inner {
+                            current_edge = self.half_edges[&boundary.leftmost_vertex].twin;
+                            boundary = &boundaries[edge_to_boundary_index[&current_edge]];
+                        }
+
+                        // Inner boundaries are hole components of faces, but because we know we are
+                        // inside of the hole, we don't want to include any faces associated with
+                        // the hole.
+                        //
+                        // NOTE: included_faces set should NOT yet have any of these newly excluded
+                        // faces in it.
+                        excluded_faces.extend(boundary.self_faces.clone());
+                        // println!("EXCLUDE {:?}", boundary.self_faces);
+                    } else {
+                        // We encountered an inner (hole) component, jump up to the outer boundary.
+
+                        let parent_idx = match boundary.parent.clone() {
+                            Some(v) => v,
+                            None => break,
+                        };
+
+                        let parent_boundary = &boundaries[parent_idx];
+                        current_edge = parent_boundary.leftmost_vertex;
+                    }
+                }
+
+                let mut label = F::default();
+                for id in included_faces {
+                    if excluded_faces.contains(&id) {
+                        continue;
+                    }
+
+                    label = label.union(&self.faces[&id].label);
+                }
+
                 faces.insert(
                     face_id,
                     Face {
+                        label,
                         outer_component: Some(boundary.leftmost_vertex),
                         inner_components: inner_boundary_components(&boundaries, boundary),
                     },
@@ -631,50 +744,6 @@ impl HalfEdgeStruct {
         self.next_face_id = next_face_id;
 
         println!("{:#?}", self.faces);
-
-        /*
-        Labeling new faces with values of old faces:
-
-        - At a single scanline,
-            - If our left neighbor if on a hole boundary of the original face,
-
-        - Simple solution:
-            - For each new face,
-                - Check one point and see if it is inside
-
-
-        For each  outer boundary:
-        - Look with boundary immediately to the left
-        - If it's an inner boundary, recursively look with it's left boundary
-        - Else, we found a face containing our face
-            - Look for it's twin
-
-
-
-
-
-        Linking new faces to old faces:
-        - For each edge in the face's outer component, if it also exists in the original data structure (has same edge id), copy the origin edge's incident face data.
-            - The newly creates edges can also be remapped back to their original faces.
-
-        More complicated question is how to determine the composition of the nested polygons:
-        - Iterate outwards
-
-        If I'm an outer boundary.
-        - Check if I can reach an outer boundary before hitting an inner boundary?
-
-        */
-
-        // Find
-
-        // for
-
-        // List all boundary cycles
-        // - Determine the left most (or bottom most) vertex of each
-        // - Determine if it an outer or inner (hole) boundary
-
-        // Link all hole boundaries in a graph to the face immediately to the
-        // left of it (or the unbounded face)
     }
 }
 
@@ -731,14 +800,14 @@ fn vec2f(x: f32, y: f32) -> Vector2f {
 
 // Validates the correctness of the HalfEdgeStruct and extracts all boundary
 // cycles starting at any edges.
-fn get_all_boundaries(data: &HalfEdgeStruct) -> Vec<Vec<Vector2f>> {
+fn get_all_boundaries<F: FaceLabel>(data: &HalfEdgeStruct<F>) -> Vec<(F, Vec<Vector2f>)> {
     let mut output = vec![];
 
     let mut seen_ids = HashSet::new();
 
     for (edge_id, edge) in &data.half_edges {
         assert_eq!(data.half_edges[&edge.next].prev, *edge_id);
-        assert_eq!(data.half_edges[&edge.prev].next, *edge_id); //
+        assert_eq!(data.half_edges[&edge.prev].next, *edge_id);
         assert_eq!(data.half_edges[&edge.twin].twin, *edge_id);
 
         if seen_ids.contains(edge_id) {
@@ -758,7 +827,9 @@ fn get_all_boundaries(data: &HalfEdgeStruct) -> Vec<Vec<Vector2f>> {
             current_id = current_edge.next;
         }
 
-        output.push(boundary);
+        let label = data.faces[&edge.incident_face.0].label.clone();
+
+        output.push((label, boundary));
     }
 
     output
@@ -770,7 +841,7 @@ mod tests {
 
     #[test]
     fn two_lines_intersect() {
-        let mut data = HalfEdgeStruct::new();
+        let mut data = HalfEdgeStruct::<()>::new();
 
         let e1 = data.new_edge_id();
         let e2 = data.new_edge_id();
@@ -784,7 +855,7 @@ mod tests {
                 twin: e2,
                 next: e2,
                 prev: e2,
-                incident_face: FaceId(0), // TODO
+                incident_face: (FaceId(0), BoundaryType::Inner), // TODO
             },
         );
         data.half_edges.insert(
@@ -794,7 +865,7 @@ mod tests {
                 twin: e1,
                 next: e1,
                 prev: e1,
-                incident_face: FaceId(0), // TODO
+                incident_face: (FaceId(0), BoundaryType::Inner), // TODO
             },
         );
         data.half_edges.insert(
@@ -804,7 +875,7 @@ mod tests {
                 twin: e4,
                 next: e4,
                 prev: e4,
-                incident_face: FaceId(0), // TODO
+                incident_face: (FaceId(0), BoundaryType::Inner), // TODO
             },
         );
         data.half_edges.insert(
@@ -814,7 +885,7 @@ mod tests {
                 twin: e3,
                 next: e3,
                 prev: e3,
-                incident_face: FaceId(0), // TODO
+                incident_face: (FaceId(0), BoundaryType::Inner), // TODO
             },
         );
 
@@ -847,11 +918,17 @@ mod tests {
         */
     }
 
+    fn label(s: &'static str) -> HashSet<&'static str> {
+        let mut l = HashSet::new();
+        l.insert(s);
+        l
+    }
+
     #[test]
     fn noop_for_two_lines() {
         let mut data = HalfEdgeStruct::new();
 
-        let a0 = data.add_first_edge(vec2f(0., 0.), vec2f(10., 0.));
+        let a0 = data.add_first_edge(vec2f(0., 0.), vec2f(10., 0.), label("A"));
         let a1 = data.add_next_edge(a0, vec2f(10., 10.));
 
         data.repair();
@@ -874,12 +951,12 @@ mod tests {
 
         let mut data = HalfEdgeStruct::new();
 
-        let a0 = data.add_first_edge(vec2f(0., 0.), vec2f(10., 0.));
+        let a0 = data.add_first_edge(vec2f(0., 0.), vec2f(10., 0.), label("A"));
         let a1 = data.add_next_edge(a0, vec2f(10., 10.));
         let a2 = data.add_next_edge(a1, vec2f(0., 10.));
         data.add_close_edge(a2, a0);
 
-        let b0 = data.add_first_edge(vec2f(5., 5.), vec2f(15., 5.));
+        let b0 = data.add_first_edge(vec2f(5., 5.), vec2f(15., 5.), label("B"));
         let b1 = data.add_next_edge(b0, vec2f(15., 15.));
         let b2 = data.add_next_edge(b1, vec2f(5., 15.));
         data.add_close_edge(b2, b0);
@@ -908,33 +985,51 @@ mod tests {
 
         let mut data = HalfEdgeStruct::new();
 
-        let a0 = data.add_first_edge(vec2f(0., 0.), vec2f(20., 0.));
+        let a0 = data.add_first_edge(vec2f(0., 0.), vec2f(20., 0.), label("A"));
         let a1 = data.add_next_edge(a0, vec2f(20., 20.));
         let a2 = data.add_next_edge(a1, vec2f(0., 20.));
         data.add_close_edge(a2, a0);
 
-        let b0 = data.add_first_edge(vec2f(5., 5.), vec2f(15., 5.));
+        let b0 = data.add_first_edge(vec2f(5., 5.), vec2f(15., 5.), label("B"));
         let b1 = data.add_next_edge(b0, vec2f(15., 15.));
         let b2 = data.add_next_edge(b1, vec2f(5., 15.));
         data.add_close_edge(b2, b0);
 
         data.repair();
+
+        let boundaries = get_all_boundaries(&data);
+        println!("{:#?}", boundaries);
     }
 
     #[test]
-    fn adjacent_squares() {
+    fn square_inside_square_stable() {
+        // If the inner square and outer square have different labels, they
+        // should not change after a repeair.
+    }
+
+    #[test]
+    fn adjacent_shifted_squares() {
+        //          ------
+        //          |    |
+        // ------   |    |
+        // |    |   ------
+        // |    |
+        // ------
+
         let mut data = HalfEdgeStruct::new();
 
-        let a0 = data.add_first_edge(vec2f(0., 0.), vec2f(10., 0.));
+        let a0 = data.add_first_edge(vec2f(0., 0.), vec2f(10., 0.), label("A"));
         let a1 = data.add_next_edge(a0, vec2f(10., 10.));
         let a2 = data.add_next_edge(a1, vec2f(0., 10.));
         data.add_close_edge(a2, a0);
 
-        let b0 = data.add_first_edge(vec2f(15., 5.), vec2f(25., 5.));
+        let b0 = data.add_first_edge(vec2f(15., 5.), vec2f(25., 5.), label("B"));
         let b1 = data.add_next_edge(b0, vec2f(25., 15.));
         let b2 = data.add_next_edge(b1, vec2f(15., 15.));
         data.add_close_edge(b2, b0);
 
         data.repair();
+
+        println!("{:#?}", get_all_boundaries(&data));
     }
 }
