@@ -46,39 +46,3 @@ impl Line2f {
         &self.base + (self.dir.to_owned() * t)
     }
 }
-
-pub struct HalfEdgeDataStruct {
-    faces: Vec<Face>,
-    half_edges: Vec<HalfEdge>,
-}
-
-struct Face {
-    outer_component: Option<usize>,
-    inner_components: Vec<usize>,
-}
-
-struct HalfEdge {
-    origin: Vector2f,
-    twin: usize,
-    incident_face: usize,
-    next: usize,
-    prev: usize,
-}
-
-/*
-pub fn overlap_polys(segments: &[LineSegment2f]) {
-    // Compute all intersection points
-
-    // Dedup points and form edge list
-    // - Need to lookup point in
-
-    // Traverse edges clockwise to form polygons
-
-    // Keep going until we have all half-edges.
-    // - Don't need to make a polygon if we can't go clockwise.
-
-    // Map back data from original faces?
-
-    //
-}
-*/
