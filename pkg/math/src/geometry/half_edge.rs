@@ -2,11 +2,11 @@ use alloc::vec::Vec;
 use core::f32::consts::PI;
 use core::fmt::Debug;
 use core::hash::Hash;
-use core::ops::Add;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
 use crate::geometry::convex_hull::turns_right;
+use crate::geometry::entity_storage::*;
 use crate::geometry::line_segment::{compare_points, compare_points_x_then_y, LineSegment2f};
 use crate::matrix::Vector2f;
 
@@ -40,11 +40,10 @@ impl<T: Clone + Debug + Hash + PartialEq + Eq> FaceLabel for HashSet<T> {
 }
 
 #[derive(Debug)]
-pub struct HalfEdgeStruct<F: FaceLabel> {
-    half_edges: HashMap<EdgeId, HalfEdge>,
-    next_edge_id: EdgeId,
-    faces: HashMap<FaceId, Face<F>>,
-    next_face_id: FaceId,
+pub struct HalfEdgeStruct<F> {
+    half_edges: EntityStorage<EdgeTag, HalfEdge>,
+    faces: EntityStorage<FaceTag, Face<F>>,
+    unbounded_face_id: FaceId,
 }
 
 #[derive(Debug, Clone)]
@@ -70,17 +69,21 @@ struct HalfEdge {
     origin: Vector2f,
     twin: EdgeId,
 
-    incident_face: (FaceId, BoundaryType),
-    // incident_face_component: BoundaryType,
+    incident_face: FaceId,
     next: EdgeId,
     prev: EdgeId,
 }
 
 impl<F: FaceLabel> HalfEdgeStruct<F> {
     pub fn new() -> Self {
-        let mut faces = HashMap::new();
+        let half_edges = EntityStorage::new();
+
+        let mut faces = EntityStorage::new();
+
+        let unbounded_face_id = faces.unique_id();
+
         faces.insert(
-            FaceId(0),
+            unbounded_face_id,
             Face {
                 label: F::default(),
                 outer_component: None,
@@ -89,27 +92,18 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         );
 
         Self {
-            half_edges: HashMap::new(),
-            next_edge_id: EdgeId(0),
+            half_edges,
             faces,
-            next_face_id: FaceId(1),
+            unbounded_face_id,
         }
-    }
-
-    fn new_edge_id(&mut self) -> EdgeId {
-        let id = self.next_edge_id;
-        self.next_edge_id = id + EdgeId(1);
-        id
     }
 
     // NOTE: Label will be the inner face if the polygon is built with
     // counter-clockwise vertices.
     fn add_first_edge(&mut self, start: Vector2f, end: Vector2f, label: F) -> EdgeId {
-        let id = self.new_edge_id();
-        let twin = self.new_edge_id();
-
-        let face_id = self.next_face_id;
-        self.next_face_id = self.next_face_id + FaceId(1);
+        let id = self.half_edges.unique_id();
+        let twin = self.half_edges.unique_id();
+        let face_id = self.faces.unique_id();
 
         self.faces.insert(
             face_id,
@@ -128,7 +122,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             HalfEdge {
                 origin: start,
                 twin,
-                incident_face: (face_id, BoundaryType::Outer),
+                incident_face: face_id,
                 next: twin,
                 prev: twin,
             },
@@ -138,7 +132,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             HalfEdge {
                 origin: end,
                 twin: id,
-                incident_face: (FaceId(0), BoundaryType::Inner),
+                incident_face: self.unbounded_face_id,
                 next: id,
                 prev: id,
             },
@@ -149,79 +143,83 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
     // Helper for adding a line to a chain
     fn add_next_edge(&mut self, prev: EdgeId, next_point: Vector2f) -> EdgeId {
-        let id = self.new_edge_id();
-        let twin = self.new_edge_id();
+        let id = self.half_edges.unique_id();
+        let twin = self.half_edges.unique_id();
 
-        let prev_twin = self.half_edges[&prev].twin;
-        let last_point = self.destination(&self.half_edges[&prev]);
+        let prev_twin = self.half_edges[prev].twin;
+        let last_point = self.destination(&self.half_edges[prev]);
+
+        let incident_face = self.half_edges[prev].incident_face;
 
         self.half_edges.insert(
             id,
             HalfEdge {
                 origin: last_point,
                 twin,
-                incident_face: self.half_edges[&prev].incident_face,
+                incident_face,
                 next: twin,
                 prev,
             },
         );
-        self.half_edges.get_mut(&prev).unwrap().next = id;
+        self.half_edges[prev].next = id;
 
         self.half_edges.insert(
             twin,
             HalfEdge {
                 origin: next_point,
                 twin: id,
-                incident_face: (FaceId(0), BoundaryType::Inner), // TODO
+                incident_face: self.unbounded_face_id,
                 next: prev_twin,
                 prev: id,
             },
         );
-        self.half_edges.get_mut(&prev_twin).unwrap().prev = twin;
+        self.half_edges[prev_twin].prev = twin;
 
         id
     }
 
     fn add_close_edge(&mut self, last_edge: EdgeId, first_edge: EdgeId) {
-        let id = self.new_edge_id();
-        let twin = self.new_edge_id();
+        let id = self.half_edges.unique_id();
+        let twin = self.half_edges.unique_id();
 
-        let last_origin = self.half_edges[&last_edge].origin.clone();
-        let last_dest = self.destination(&self.half_edges[&last_edge]);
-        let last_twin = self.half_edges[&last_edge].twin;
+        let last_origin = self.half_edges[last_edge].origin.clone();
+        let last_dest = self.destination(&self.half_edges[last_edge]);
+        let last_twin = self.half_edges[last_edge].twin;
 
-        let first_origin = self.half_edges[&first_edge].origin.clone();
-        let first_twin = self.half_edges[&first_edge].twin;
+        let first_origin = self.half_edges[first_edge].origin.clone();
+        let first_twin = self.half_edges[first_edge].twin;
+
+        let incident_face = self.half_edges[last_edge].incident_face;
 
         self.half_edges.insert(
             id,
             HalfEdge {
                 origin: last_dest,
                 twin: twin,
-                incident_face: self.half_edges[&last_edge].incident_face,
+                incident_face,
                 next: first_edge,
                 prev: last_edge,
             },
         );
-        self.half_edges.get_mut(&last_edge).unwrap().next = id;
-        self.half_edges.get_mut(&first_edge).unwrap().prev = id;
+        self.half_edges[last_edge].next = id;
+        self.half_edges[first_edge].prev = id;
 
         self.half_edges.insert(
             twin,
             HalfEdge {
                 origin: first_origin,
                 twin: id,
-                incident_face: (FaceId(0), BoundaryType::Inner),
+                incident_face: self.unbounded_face_id,
                 next: last_twin,
                 prev: first_twin,
             },
         );
-        self.half_edges.get_mut(&first_twin).unwrap().next = twin;
-        self.half_edges.get_mut(&last_twin).unwrap().prev = twin;
+        self.half_edges[first_twin].next = twin;
+        self.half_edges[last_twin].prev = twin;
     }
 
     fn destination(&self, edge: &HalfEdge) -> Vector2f {
-        self.half_edges[&edge.twin].origin.clone()
+        self.half_edges[edge.twin].origin.clone()
     }
 
     // TODO: How to deal with overlapping line segments (overlapping segments should
@@ -231,51 +229,51 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         // Ids of the second set at shifted to avoid overlaps.
         let mut output = {
             let mut half_edges = self.half_edges.clone();
+            let edge_id_offset = half_edges.next_id;
+            half_edges.next_id = half_edges.next_id + other.half_edges.next_id;
+
+            let mut faces = self.faces.clone();
+            let face_id_offset = faces.next_id;
+            faces.next_id = faces.next_id + other.faces.next_id;
+
+            // TODO: Merge the other's unbounded face components into this one.
+            let unbounded_face_id = self.unbounded_face_id;
+
             for (id, edge) in other.half_edges.iter() {
                 half_edges.insert(
-                    *id + self.next_edge_id,
+                    *id + edge_id_offset,
                     HalfEdge {
                         origin: edge.origin.clone(),
-                        incident_face: (
-                            edge.incident_face.0 + self.next_face_id,
-                            edge.incident_face.1,
-                        ),
-                        twin: edge.twin + self.next_edge_id,
-                        next: edge.next + self.next_edge_id,
-                        prev: edge.prev + self.next_edge_id,
+                        incident_face: edge.incident_face + face_id_offset,
+                        twin: edge.twin + edge_id_offset,
+                        next: edge.next + edge_id_offset,
+                        prev: edge.prev + edge_id_offset,
                     },
                 );
             }
-
-            let next_edge_id = self.next_edge_id + other.next_edge_id;
-
-            let mut faces = self.faces.clone();
             for (id, face) in other.faces.iter() {
                 faces.insert(
-                    *id + self.next_face_id,
+                    *id + face_id_offset,
                     Face {
                         label: face.label.clone(),
                         outer_component: face
                             .outer_component
                             .clone()
-                            .map(|edge_id| edge_id + self.next_edge_id),
+                            .map(|edge_id| edge_id + edge_id_offset),
                         inner_components: face
                             .inner_components
                             .iter()
                             .cloned()
-                            .map(|edge_id| edge_id + self.next_edge_id)
+                            .map(|edge_id| edge_id + edge_id_offset)
                             .collect(),
                     },
                 );
             }
 
-            let next_face_id = self.next_face_id + other.next_face_id;
-
             Self {
                 half_edges,
-                next_edge_id,
                 faces,
-                next_face_id,
+                unbounded_face_id,
             }
         };
 
@@ -296,7 +294,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         {
             for (id, half_edge) in self.half_edges.iter() {
                 // Only index one half-edge per edge as they correct to the same line segment.
-                if id.0 > half_edge.twin.0 {
+                if *id > half_edge.twin {
                     continue;
                 }
 
@@ -331,14 +329,14 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 // later.
                 inward_prev: EdgeId,
 
-                inward_face: (FaceId, BoundaryType),
+                inward_face: FaceId,
 
                 // Id of the edge directed away
                 outward_id: EdgeId,
 
                 outward_next: EdgeId,
 
-                outward_face: (FaceId, BoundaryType),
+                outward_face: FaceId,
 
                 // Other endpoint of this edge aside of the intersection.point.
                 point: Vector2f,
@@ -349,8 +347,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
             for segment_idx in intersection.segments.iter().cloned() {
                 let edge_id = segment_edge_ids[segment_idx];
-                let edge = &self.half_edges[&edge_id];
-                let edge_dest = self.destination(edge);
+                let edge = self.half_edges[edge_id].clone();
+                let edge_dest = self.destination(&edge);
 
                 {
                     let segment = LineSegment2f {
@@ -368,11 +366,11 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     assert!(!dest_equal);
 
                     // The current edge is outward.
-                    // self.half_edges[&edge.twin].next MUST also be in the current intersection.
+                    // self.half_edges[edge.twin].next MUST also be in the current intersection.
                     intersecting_edges.push(PartialEdge {
                         inward_id: edge.twin,
-                        inward_prev: self.half_edges[&edge.twin].prev,
-                        inward_face: self.half_edges[&edge.twin].incident_face,
+                        inward_prev: self.half_edges[edge.twin].prev,
+                        inward_face: self.half_edges[edge.twin].incident_face,
                         outward_id: edge_id,
                         outward_next: edge.next,
                         outward_face: edge.incident_face,
@@ -388,29 +386,28 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         inward_prev: edge.prev,
                         inward_face: edge.incident_face,
                         outward_id: edge.twin,
-                        outward_next: self.half_edges[&edge.twin].next,
-                        outward_face: self.half_edges[&edge.twin].incident_face,
+                        outward_next: self.half_edges[edge.twin].next,
+                        outward_face: self.half_edges[edge.twin].incident_face,
                         point: edge.origin.clone(),
                     });
                 } else {
-                    let id1 = self.next_edge_id;
-                    let id2 = self.next_edge_id + EdgeId(1);
-                    self.next_edge_id = self.next_edge_id + EdgeId(2);
+                    let id1 = self.half_edges.unique_id();
+                    let id2 = self.half_edges.unique_id();
 
                     let e1 = PartialEdge {
                         inward_id: edge_id,
                         inward_prev: edge.prev,
                         inward_face: edge.incident_face,
                         outward_id: id1,
-                        outward_next: self.half_edges[&edge.twin].next,
-                        outward_face: self.half_edges[&edge.twin].incident_face,
+                        outward_next: self.half_edges[edge.twin].next,
+                        outward_face: self.half_edges[edge.twin].incident_face,
                         point: edge.origin.clone(),
                     };
 
                     let e2 = PartialEdge {
                         inward_id: edge.twin,
-                        inward_prev: self.half_edges[&edge.twin].prev,
-                        inward_face: self.half_edges[&edge.twin].incident_face,
+                        inward_prev: self.half_edges[edge.twin].prev,
+                        inward_face: self.half_edges[edge.twin].incident_face,
                         outward_id: id2,
                         outward_next: edge.next,
                         outward_face: edge.incident_face,
@@ -532,13 +529,13 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     edges.push(current_id);
                     edge_to_boundary_index.insert(current_id, boundaries.len());
 
-                    let edge = &self.half_edges[&current_id];
+                    let edge = &self.half_edges[current_id];
                     current_id = edge.next;
 
-                    self_faces.insert(edge.incident_face.0);
+                    self_faces.insert(edge.incident_face);
                     vertices.push(edge.origin.clone());
 
-                    let current_leftmost = &self.half_edges[&leftmost_vertex];
+                    let current_leftmost = &self.half_edges[leftmost_vertex];
 
                     if compare_points_x_then_y(&edge.origin, &current_leftmost.origin).is_lt() {
                         leftmost_vertex = current_id;
@@ -547,9 +544,9 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             }
 
             let is_inner = {
-                let edge = &self.half_edges[&leftmost_vertex];
-                let next_edge = &self.half_edges[&edge.next];
-                let prev_edge = &self.half_edges[&edge.prev];
+                let edge = &self.half_edges[leftmost_vertex];
+                let next_edge = &self.half_edges[edge.next];
+                let prev_edge = &self.half_edges[edge.prev];
 
                 turns_right(&prev_edge.origin, &edge.origin, &next_edge.origin)
             };
@@ -575,7 +572,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 continue;
             }
 
-            let leftmost_edge = &self.half_edges[&boundary.leftmost_vertex];
+            let leftmost_edge = &self.half_edges[boundary.leftmost_vertex];
 
             let mut left_edge_id = *match edge_left_neighbors.get(&boundary.leftmost_vertex) {
                 Some(v) => v,
@@ -593,7 +590,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 let candidate_parent_index = edge_to_boundary_index[&left_edge_id];
                 assert_ne!(candidate_parent_index, i);
 
-                let mut left_edge = &self.half_edges[&left_edge_id];
+                let mut left_edge = &self.half_edges[left_edge_id];
                 let mut left_edge_dest = self.destination(left_edge);
 
                 // If the left edge is horizontal, instead pick a non-horizontal one with the
@@ -610,7 +607,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         left_edge_id = left_edge.next;
                     }
 
-                    left_edge = &self.half_edges[&left_edge_id];
+                    left_edge = &self.half_edges[left_edge_id];
                     left_edge_dest = self.destination(left_edge);
                 }
 
@@ -636,15 +633,14 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
         // Construct all faces.
 
+        let mut faces = EntityStorage::new();
+
+        let mut unbounded_face_id = faces.unique_id();
         let mut unbounded_face = Face {
             label: F::default(),
             outer_component: None,
             inner_components: vec![],
         };
-        let mut unbounded_face_id = FaceId(0);
-        let mut next_face_id = FaceId(1);
-
-        let mut faces = HashMap::new();
 
         // TODO: Also implement transferring of data from the original faces.
         for boundary in &boundaries {
@@ -669,8 +665,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             } else {
                 // Form a new face.
 
-                let face_id = next_face_id;
-                next_face_id = next_face_id + FaceId(1);
+                let face_id = faces.unique_id();
 
                 let mut included_faces = HashSet::new();
                 let mut excluded_faces = HashSet::new();
@@ -693,7 +688,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         // TODO: Should we be using is_inner of the new boundary or of the original
                         // boundary before we did the repairs?
                         while !boundary.is_inner {
-                            current_edge = self.half_edges[&boundary.leftmost_vertex].twin;
+                            current_edge = self.half_edges[boundary.leftmost_vertex].twin;
                             boundary = &boundaries[edge_to_boundary_index[&current_edge]];
                         }
 
@@ -724,7 +719,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         continue;
                     }
 
-                    label = label.union(&self.faces[&id].label);
+                    label = label.union(&self.faces[id].label);
                 }
 
                 faces.insert(
@@ -741,31 +736,72 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         faces.insert(unbounded_face_id, unbounded_face);
 
         self.faces = faces;
-        self.next_face_id = next_face_id;
+        self.unbounded_face_id = unbounded_face_id;
 
         println!("{:#?}", self.faces);
     }
-}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct EdgeId(usize);
+    /// Assuming this data structure is valid accounting to repair(), then this
+    /// will further rewrite this data structure to consist of only y-monotone
+    /// faces (splitting existing faces as appropriate).
+    pub fn make_y_monotone(&mut self) {
 
-impl Add for EdgeId {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
+        // Should we just do everything in one pass?
     }
-}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct FaceId(usize);
+    /// Connects two vertices of a single face with a new line segment.
+    ///
+    /// In particular, each of the given edge ids defines a point at each edge's
+    /// origin that will be used
+    ///
+    /// Assumptions:
+    /// - vertex_a and vertex_b belong to the same face.
+    /// - A line can be drawn from vertex_a to vertex
+    ///
+    /// NOTE: If both edges aren't on the same boundary component, then the face
+    /// boundary records will be invalid after this operation.
+    fn connect_face_vertices(&mut self, vertex_a: EdgeId, vertex_b: EdgeId) {
+        // TODO: Assert vertex edges are from the face same.
 
-impl Add for FaceId {
-    type Output = Self;
+        let id1 = self.half_edges.unique_id();
+        let id2 = self.half_edges.unique_id();
 
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
+        let edge_a = &mut self.half_edges[vertex_a];
+        let edge_a_old_prev = edge_a.prev;
+        let edge_a_origin = edge_a.origin.clone();
+        let edge_a_face = edge_a.incident_face;
+        edge_a.prev = id1;
+        self.half_edges[edge_a_old_prev].next = id2;
+
+        // TODO: Deduplicate with above.
+        let edge_b = &mut self.half_edges[vertex_b];
+        let edge_b_old_prev = edge_b.prev;
+        let edge_b_origin = edge_b.origin.clone();
+        assert_eq!(edge_a_face, edge_b.incident_face);
+        edge_b.prev = id2;
+        self.half_edges[edge_b_old_prev].next = id1;
+
+        self.half_edges.insert(
+            id1,
+            HalfEdge {
+                origin: edge_b_origin,
+                twin: id2,
+                incident_face: edge_a_face,
+                next: vertex_a,
+                prev: edge_b_old_prev,
+            },
+        );
+
+        self.half_edges.insert(
+            id2,
+            HalfEdge {
+                origin: edge_a_origin,
+                twin: id1,
+                incident_face: edge_a_face,
+                next: vertex_b,
+                prev: edge_a_old_prev,
+            },
+        );
     }
 }
 
@@ -805,10 +841,10 @@ fn get_all_boundaries<F: FaceLabel>(data: &HalfEdgeStruct<F>) -> Vec<(F, Vec<Vec
 
     let mut seen_ids = HashSet::new();
 
-    for (edge_id, edge) in &data.half_edges {
-        assert_eq!(data.half_edges[&edge.next].prev, *edge_id);
-        assert_eq!(data.half_edges[&edge.prev].next, *edge_id);
-        assert_eq!(data.half_edges[&edge.twin].twin, *edge_id);
+    for (edge_id, edge) in data.half_edges.iter() {
+        assert_eq!(data.half_edges[edge.next].prev, *edge_id);
+        assert_eq!(data.half_edges[edge.prev].next, *edge_id);
+        assert_eq!(data.half_edges[edge.twin].twin, *edge_id);
 
         if seen_ids.contains(edge_id) {
             continue;
@@ -817,23 +853,35 @@ fn get_all_boundaries<F: FaceLabel>(data: &HalfEdgeStruct<F>) -> Vec<(F, Vec<Vec
         let mut boundary = vec![];
         let mut current_id = *edge_id;
         while seen_ids.insert(current_id) {
-            let current_edge = &data.half_edges[&current_id];
+            let current_edge = &data.half_edges[current_id];
 
             // Edges along a boundary should all be pointing in the same direction.
-            let prev_dest = data.destination(&data.half_edges[&current_edge.prev]);
+            let prev_dest = data.destination(&data.half_edges[current_edge.prev]);
             assert_eq!(prev_dest, current_edge.origin);
 
             boundary.push(current_edge.origin.clone());
             current_id = current_edge.next;
         }
 
-        let label = data.faces[&edge.incident_face.0].label.clone();
+        let label = data.faces[edge.incident_face].label.clone();
 
         output.push((label, boundary));
     }
 
     output
 }
+
+/*
+Things we should do first:
+- Eliminate any edges of length 0
+- Merge connected line segments which are co-linear within some threshold.
+
+Making only y-monotone surfaces.
+
+1. Generate list of all event points (vertices)
+    - Sort by priority (lowest y, then leftmost)
+
+*/
 
 #[cfg(test)]
 mod tests {
@@ -843,10 +891,10 @@ mod tests {
     fn two_lines_intersect() {
         let mut data = HalfEdgeStruct::<()>::new();
 
-        let e1 = data.new_edge_id();
-        let e2 = data.new_edge_id();
-        let e3 = data.new_edge_id();
-        let e4 = data.new_edge_id();
+        let e1 = data.half_edges.unique_id();
+        let e2 = data.half_edges.unique_id();
+        let e3 = data.half_edges.unique_id();
+        let e4 = data.half_edges.unique_id();
 
         data.half_edges.insert(
             e1,
@@ -855,7 +903,7 @@ mod tests {
                 twin: e2,
                 next: e2,
                 prev: e2,
-                incident_face: (FaceId(0), BoundaryType::Inner), // TODO
+                incident_face: data.unbounded_face_id,
             },
         );
         data.half_edges.insert(
@@ -865,7 +913,7 @@ mod tests {
                 twin: e1,
                 next: e1,
                 prev: e1,
-                incident_face: (FaceId(0), BoundaryType::Inner), // TODO
+                incident_face: data.unbounded_face_id,
             },
         );
         data.half_edges.insert(
@@ -875,7 +923,7 @@ mod tests {
                 twin: e4,
                 next: e4,
                 prev: e4,
-                incident_face: (FaceId(0), BoundaryType::Inner), // TODO
+                incident_face: data.unbounded_face_id,
             },
         );
         data.half_edges.insert(
@@ -885,7 +933,7 @@ mod tests {
                 twin: e3,
                 next: e3,
                 prev: e3,
-                incident_face: (FaceId(0), BoundaryType::Inner), // TODO
+                incident_face: data.unbounded_face_id,
             },
         );
 
@@ -899,7 +947,7 @@ mod tests {
 
         let mut current_id = *data.half_edges.iter().next().unwrap().0;
         while seen_ids.insert(current_id) {
-            let edge = &data.half_edges[&current_id];
+            let edge = &data.half_edges[current_id];
 
             // println!("{:?}", edge.origin);
             current_id = edge.next;
@@ -933,9 +981,9 @@ mod tests {
 
         data.repair();
 
-        for i in 0..4 {
-            println!("{} => {:#?}", i, &data.half_edges[&EdgeId(i)]);
-        }
+        // for i in 0..4 {
+        //     println!("{} => {:#?}", i, &data.half_edges[&EdgeId(i)]);
+        // }
 
         // println!("{:#?}", data);
     }
