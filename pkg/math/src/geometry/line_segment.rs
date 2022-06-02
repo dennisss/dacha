@@ -283,13 +283,15 @@ impl LineSegment2f {
             } else {
                 let mut iter = sweep_status.lower_bound(&event_point);
 
-                let p1 = iter.prev().cloned();
-                let p2 = iter.peek().cloned();
+                // TODO: If we hit the end of the tree, this needs to be sufficiently robust to
+                // be able to seek backwards from there.
+                intersection_right_neighbor = iter.prev().cloned();
+                intersection_left_neighbor = iter.peek().cloned();
 
-                if p1.is_some() && p2.is_some() {
+                if intersection_right_neighbor.is_some() && intersection_left_neighbor.is_some() {
                     if let Some(next_point) = find_intersection_event(
-                        &segments[p1.unwrap()],
-                        &segments[p2.unwrap()],
+                        &segments[intersection_right_neighbor.unwrap()],
+                        &segments[intersection_left_neighbor.unwrap()],
                         &event_point,
                     ) {
                         event_queue.insert(Event {

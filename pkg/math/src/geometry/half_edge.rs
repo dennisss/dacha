@@ -493,20 +493,22 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             children: Vec<usize>,
         }
 
-        let inner_boundary_components =
-            |all_boundaries: &[Boundary], boundary: &Boundary| -> Vec<EdgeId> {
-                let mut out = vec![];
+        fn inner_boundary_components<'a>(
+            all_boundaries: &'a [Boundary],
+            boundary: &Boundary,
+        ) -> Vec<&'a Boundary> {
+            let mut out = vec![];
 
-                // TODO: Iterate over a vec of child index slices to avoid copies.
-                let mut pending = boundary.children.clone();
-                while let Some(id) = pending.pop() {
-                    let b = &all_boundaries[id];
-                    out.push(b.leftmost_vertex);
-                    pending.extend_from_slice(&b.children);
-                }
+            // TODO: Iterate over a vec of child index slices to avoid copies.
+            let mut pending = boundary.children.clone();
+            while let Some(id) = pending.pop() {
+                let b = &all_boundaries[id];
+                out.push(b);
+                pending.extend_from_slice(&b.children);
+            }
 
-                out
-            };
+            out
+        }
 
         let mut boundaries = vec![];
         let mut edge_to_boundary_index = HashMap::new();
@@ -657,9 +659,21 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
                 // TODO: When will this be non-zero? (two squares next to each other?)
                 // assert_eq!(boundary.children.len(), 0);
-                unbounded_face
-                    .inner_components
-                    .extend(inner_boundary_components(&boundaries, boundary).into_iter());
+                unbounded_face.inner_components.extend(
+                    inner_boundary_components(&boundaries, boundary)
+                        .into_iter()
+                        .map(|b| {
+                            for edge_id in &b.edges {
+                                self.half_edges[*edge_id].incident_face = unbounded_face_id;
+                            }
+
+                            b.leftmost_vertex
+                        }),
+                );
+
+                for edge_id in &boundary.edges {
+                    self.half_edges[*edge_id].incident_face = unbounded_face_id;
+                }
 
                 // TODO: Loop over the edges to associate faces.
             } else {
@@ -722,18 +736,33 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     label = label.union(&self.faces[id].label);
                 }
 
+                for edge_id in &boundary.edges {
+                    self.half_edges[*edge_id].incident_face = face_id;
+                }
+
                 faces.insert(
                     face_id,
                     Face {
                         label,
                         outer_component: Some(boundary.leftmost_vertex),
-                        inner_components: inner_boundary_components(&boundaries, boundary),
+                        inner_components: inner_boundary_components(&boundaries, boundary)
+                            .into_iter()
+                            .map(|b| {
+                                for edge_id in &b.edges {
+                                    self.half_edges[*edge_id].incident_face = face_id;
+                                }
+
+                                b.leftmost_vertex
+                            })
+                            .collect(),
                     },
                 );
             }
         }
 
         faces.insert(unbounded_face_id, unbounded_face);
+
+        // TODO: Now we need to fix the incident_face on each boundary.
 
         self.faces = faces;
         self.unbounded_face_id = unbounded_face_id;
@@ -745,8 +774,187 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
     /// will further rewrite this data structure to consist of only y-monotone
     /// faces (splitting existing faces as appropriate).
     pub fn make_y_monotone(&mut self) {
+        let mut face_ids = self.faces.keys().cloned().collect::<Vec<_>>();
 
         // Should we just do everything in one pass?
+        for face_id in face_ids {
+            if face_id == self.unbounded_face_id {
+                continue;
+            }
+
+            self.make_y_monotone_face(face_id);
+        }
+    }
+
+    fn make_y_monotone_face(&mut self, face_id: FaceId) {
+        let face = &self.faces[face_id];
+
+        let mut line_segments = vec![];
+        let mut line_segments_to_edge = vec![];
+
+        for component_id in face
+            .outer_component
+            .iter()
+            .chain(face.inner_components.iter())
+        {
+            // TODO: Consider always storing the min id edge in the face components so we
+            // can gurantee that this will halt (or strictly reach higher edge ids).
+            let mut current_id = *component_id;
+            loop {
+                let edge = &self.half_edges[current_id];
+
+                line_segments.push(LineSegment2f {
+                    start: edge.origin.clone(),
+                    end: self.destination(edge),
+                });
+                line_segments_to_edge.push(current_id);
+
+                if edge.next == *component_id {
+                    break;
+                }
+
+                current_id = edge.next;
+            }
+        }
+
+        if line_segments.len() != 8 {
+            return;
+        }
+
+        for (i, line) in line_segments.iter().enumerate() {
+            println!("{:?} => {:#?}", line_segments_to_edge[i], line);
+        }
+
+        #[derive(Debug)]
+        enum VertexType {
+            Start,
+            Split,
+            Merge,
+            End,
+            Regular,
+        }
+
+        let mut lowest_interior_points = HashMap::new();
+
+        // Iterate over vertices in the face (as all our faces should be closed, this
+        // corresponds to each intersection point too).
+        //
+        // TODO: Execute that at the same time as the repair() process.
+        for intersection in LineSegment2f::intersections(&line_segments) {
+            // Always true as we are only considering a single face at a time.
+            assert_eq!(intersection.segments.len(), 2);
+
+            // Id of the edge originating at the intersection point and the one before it.
+            let (edge_id, prev_edge_id) = {
+                let a = line_segments_to_edge[intersection.segments[0]];
+                let b = line_segments_to_edge[intersection.segments[1]];
+
+                if self.half_edges[a].prev == b {
+                    (a, b)
+                } else {
+                    (b, a)
+                }
+            };
+
+            let edge = &self.half_edges[edge_id];
+            let neighbor1 = self.half_edges[prev_edge_id].origin.clone();
+            let neighbor2 = self.destination(&edge);
+
+            // We saw that our neighbor is 'below' the current vertex if we haven't yet seen
+            // it while scanning for intersections.
+            let neighbor1_below = compare_points(&edge.origin, &neighbor1).is_lt();
+            let neighbor2_below = compare_points(&edge.origin, &neighbor2).is_lt();
+
+            // If true, then the interior angle at this vertex is > PI
+            let big_interior_angle = turns_right(&neighbor1, &edge.origin, &neighbor2);
+
+            println!("{:?}", intersection);
+
+            if neighbor1_below && neighbor2_below {
+                if !big_interior_angle {
+                    println!("START");
+
+                    // Start vertex
+                    lowest_interior_points.insert(edge_id, (edge_id, VertexType::Start));
+                } else {
+                    // Split vertex
+
+                    println!("SPLIT!");
+
+                    let left_edge = line_segments_to_edge[intersection.left_neighbor.unwrap()];
+                    self.connect_face_vertices(edge_id, lowest_interior_points[&left_edge].0);
+                    lowest_interior_points.insert(left_edge, (edge_id, VertexType::Split));
+                }
+            } else if !neighbor1_below && !neighbor2_below {
+                if !big_interior_angle {
+                    println!("END");
+
+                    println!("CUR: {:?}", edge_id);
+                    println!("PREV: {:?}", prev_edge_id);
+
+                    println!("{:#?}", lowest_interior_points);
+
+                    // End vertex
+                    if let Some((merge_edge_id, VertexType::Merge)) =
+                        lowest_interior_points.get(&prev_edge_id)
+                    {
+                        self.connect_face_vertices(edge_id, *merge_edge_id);
+                    }
+                } else {
+                    println!("MERGE");
+
+                    // Merge vertex
+
+                    if let Some((merge_edge_id, VertexType::Merge)) =
+                        lowest_interior_points.get(&prev_edge_id)
+                    {
+                        self.connect_face_vertices(edge_id, *merge_edge_id);
+                    }
+
+                    let left_edge = line_segments_to_edge[intersection.left_neighbor.unwrap()];
+                    if let Some((merge_edge_id, VertexType::Merge)) =
+                        lowest_interior_points.get(&left_edge)
+                    {
+                        self.connect_face_vertices(edge_id, *merge_edge_id);
+                    }
+                    println!("INSERT TO {:?}", left_edge);
+                    lowest_interior_points.insert(left_edge, (edge_id, VertexType::Merge));
+                }
+            } else {
+                println!("REGULAR");
+
+                // Regular vertex
+
+                // TODO: Will be ever encounter horizontal lines as regular vertices?
+                // If so we should improve this.
+                let interior_on_right = {
+                    let dir = &neighbor2 - &edge.origin;
+                    dir.y() < 0.
+                };
+
+                // println!("INTERIOR RIGHT: {}", interior_on_right);
+                // println!("=> {:?}", neighbor2);
+                // println!("=> {:?}", edge.origin);
+
+                if interior_on_right {
+                    if let Some((merge_edge_id, VertexType::Merge)) =
+                        lowest_interior_points.get(&prev_edge_id)
+                    {
+                        self.connect_face_vertices(edge_id, *merge_edge_id);
+                    }
+                } else {
+                    // TODO: Check this
+
+                    let left_edge = line_segments_to_edge[intersection.left_neighbor.unwrap()];
+                    if let Some((merge_edge_id, VertexType::Merge)) =
+                        lowest_interior_points.get(&left_edge)
+                    {
+                        self.connect_face_vertices(edge_id, *merge_edge_id);
+                    }
+                    lowest_interior_points.insert(left_edge, (edge_id, VertexType::Regular));
+                }
+            }
+        }
     }
 
     /// Connects two vertices of a single face with a new line segment.
@@ -780,6 +988,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         assert_eq!(edge_a_face, edge_b.incident_face);
         edge_b.prev = id2;
         self.half_edges[edge_b_old_prev].next = id1;
+
+        println!("CONNECT {:?} => {:?}", edge_a_origin, edge_b_origin);
 
         self.half_edges.insert(
             id1,
@@ -854,6 +1064,9 @@ fn get_all_boundaries<F: FaceLabel>(data: &HalfEdgeStruct<F>) -> Vec<(F, Vec<Vec
         let mut current_id = *edge_id;
         while seen_ids.insert(current_id) {
             let current_edge = &data.half_edges[current_id];
+
+            // TODO: Validate that the incident face actually matches one of the cycles in
+            // the face.
 
             // Edges along a boundary should all be pointing in the same direction.
             let prev_dest = data.destination(&data.half_edges[current_edge.prev]);
@@ -1044,6 +1257,9 @@ mod tests {
         data.add_close_edge(b2, b0);
 
         data.repair();
+
+        // data.make_y_monotone();
+        // data.repair();
 
         let boundaries = get_all_boundaries(&data);
         println!("{:#?}", boundaries);
