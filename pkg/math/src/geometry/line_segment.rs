@@ -1,8 +1,9 @@
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-use common::tree::avl::{AVLTree, Comparator};
+use common::tree::avl::AVLTree;
 use common::tree::binary_heap::BinaryHeap;
+use common::tree::comparator::Comparator;
 use common::InRange;
 
 use crate::geometry::line::Line2f;
@@ -366,7 +367,7 @@ mod intersections {
         pub event_point: Vector2f,
     }
 
-    impl<'a> common::tree::avl::Comparator<LineSegmentIndex, LineSegmentIndex>
+    impl<'a> common::tree::comparator::Comparator<LineSegmentIndex, LineSegmentIndex>
         for LineSweepComparator<'a>
     {
         fn compare(&self, a: &LineSegmentIndex, b: &LineSegmentIndex) -> Ordering {
@@ -378,7 +379,9 @@ mod intersections {
         }
     }
 
-    impl<'a> common::tree::avl::Comparator<LineSegmentIndex, Vector2f> for LineSweepComparator<'a> {
+    impl<'a> common::tree::comparator::Comparator<LineSegmentIndex, Vector2f>
+        for LineSweepComparator<'a>
+    {
         fn compare(&self, segment: &LineSegmentIndex, point: &Vector2f) -> Ordering {
             let x = sweep_line_x(&self.segments[*segment], &self.event_point);
 

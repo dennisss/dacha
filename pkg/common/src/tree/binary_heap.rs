@@ -1,19 +1,8 @@
-use core::cmp::Ordering;
-
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::cmp::Ordering;
 
-pub trait Comparator<T> {
-    fn compare(&self, a: &T, b: &T) -> Ordering;
-}
-
-pub struct OrdComparator {}
-
-impl<T: Ord> Comparator<T> for OrdComparator {
-    fn compare(&self, a: &T, b: &T) -> Ordering {
-        a.cmp(b)
-    }
-}
+use crate::tree::comparator::*;
 
 pub struct BinaryHeap<T, C = OrdComparator> {
     items: Vec<T>,
@@ -117,17 +106,9 @@ impl<T, C: Comparator<T>> BinaryHeap<T, C> {
 mod tests {
     use super::*;
 
-    struct UsizeComparator {}
-
-    impl Comparator<usize> for UsizeComparator {
-        fn compare(&self, a: &usize, b: &usize) -> Ordering {
-            a.cmp(b)
-        }
-    }
-
     #[test]
     fn priority_queue_test() {
-        let mut queue = BinaryHeap::new(UsizeComparator {});
+        let mut queue = BinaryHeap::default();
 
         queue.insert(1);
         assert_eq!(queue.extract_min(), Some(1));
@@ -151,7 +132,7 @@ mod tests {
 
     #[test]
     fn priority_queue_reinsert_test() {
-        let mut queue = BinaryHeap::new(UsizeComparator {});
+        let mut queue = BinaryHeap::default();
 
         queue.insert(1);
         queue.insert(10);

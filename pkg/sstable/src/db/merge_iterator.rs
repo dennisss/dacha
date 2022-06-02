@@ -2,7 +2,8 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 
 use common::errors::*;
-use common::tree::binary_heap::{BinaryHeap, Comparator};
+use common::tree::binary_heap::BinaryHeap;
+use common::tree::comparator::Comparator;
 
 use crate::iterable::{Iterable, KeyValueEntry};
 use crate::table::comparator::KeyComparator;

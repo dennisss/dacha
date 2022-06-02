@@ -328,7 +328,7 @@ async fn embedded_db_large_range_test() -> Result<()> {
 
         let mut batch = WriteBatch::new();
 
-        for i in 1000..10000 {
+        for i in 1000..10000usize {
             let key = i.to_string();
 
             batch.put(key.as_bytes(), if i % 2 == 0 { b"even" } else { b"odd" });
@@ -354,7 +354,7 @@ async fn embedded_db_large_range_test() -> Result<()> {
 
         let snapshot = db.snapshot().await;
 
-        for i in 1000..10000 {
+        for i in 1000..10000usize {
             let key = i.to_string();
 
             let mut iter = snapshot.iter().await?;
@@ -373,7 +373,7 @@ async fn embedded_db_large_range_test() -> Result<()> {
         }
 
         {
-            let mut before_iter = snapshot.iter().await;
+            let mut before_iter = snapshot.iter().await?;
             before_iter.seek(b"0").await?;
             let entry = before_iter.next().await?.unwrap();
             assert_eq!(&entry.key[..], &b"1000"[..]);
@@ -390,7 +390,7 @@ async fn embedded_db_large_range_test() -> Result<()> {
         {
             let mut iter = db.snapshot().await.iter().await?;
 
-            let mut i = 1000;
+            let mut i = 1000usize;
             while let Some(entry) = iter.next().await? {
                 let key = i.to_string();
                 assert_eq!(key.as_bytes(), &entry.key);
@@ -427,8 +427,13 @@ async fn read_to_vec(path: &str) -> Result<Vec<Bytes>> {
     let mut iter = snapshot.iter().await?;
 
     while let Some(entry) = iter.next().await? {
+        let value = match &entry.value {
+            Some(v) => v,
+            None => continue,
+        };
+
         out.push(entry.key);
-        out.push(entry.value);
+        out.push(value.clone());
     }
 
     Ok(out)

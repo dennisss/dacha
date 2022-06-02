@@ -3,18 +3,7 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 use crate::tree::avl_node::AVLNode;
-
-pub trait Comparator<A, B> {
-    fn compare(&self, a: &A, b: &B) -> Ordering;
-}
-
-pub struct OrdComparator {}
-
-impl<T: Ord> Comparator<T, T> for OrdComparator {
-    fn compare(&self, a: &T, b: &T) -> Ordering {
-        a.cmp(b)
-    }
-}
+use crate::tree::comparator::*;
 
 /// Self-balancing binary search tree where the left and right sub-trees of any
 /// node always have an absolute height difference of <= 1.
@@ -45,12 +34,21 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
         }
     }
 
+    /// Changes the comparator used for future tree operations.
+    ///
+    /// The new comparator should perform an equivalent ordering of all elements
+    /// in the tree as the old comparator.
+    ///
     /// NOTE: This is a dangerous function as it doesn't re-sort the contents of
     /// the tree and assumes that the user knows what they are doing.
     pub fn change_comparator(&mut self, comparator: C) {
         self.comparator = comparator;
     }
 
+    /// Lookups up a value in the tree which equals the query.
+    ///
+    /// If such a value exists, then an iterator will be returned pointing to
+    /// that value will be returned. Else, None will be returned.
     pub fn find<'a, Q>(&'a self, query: &Q) -> Option<Iter<'a, T>>
     where
         C: Comparator<T, Q>,
@@ -62,7 +60,13 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
             path.push(node.as_ref());
 
             match self.comparator.compare(node.value(), query) {
-                Ordering::Equal => return Some(Iter { path }),
+                Ordering::Equal => {
+                    return Some(Iter {
+                        root: self.root.as_ref().map(|n| n.as_ref()),
+                        path,
+                        end: Direction::Right,
+                    })
+                }
                 Ordering::Greater => {
                     next_pointer = node.left();
                 }
@@ -73,6 +77,18 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
         }
 
         None
+    }
+
+    /// Gets an iterator over all values in the tree in ascending order.
+    pub fn iter<'a>(&'a self) -> Iter<'a, T> {
+        let mut iter = Iter {
+            root: self.root.as_ref().map(|n| n.as_ref()),
+            path: vec![],
+            end: Direction::Left,
+        };
+
+        iter.next();
+        iter
     }
 
     /// Creates an iterator which starts at the first value in the tree with
@@ -117,7 +133,11 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
 
         path.truncate(best_depth);
 
-        Iter { path }
+        Iter {
+            root: self.root.as_ref().map(|n| n.as_ref()),
+            path,
+            end: Direction::Right,
+        }
     }
 
     /// NOTE: Doesn't support insertion of multiple equal values. < TODO: Check
@@ -292,7 +312,12 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
 
 #[derive(Clone)]
 pub struct Iter<'a, T> {
+    root: Option<&'a AVLNode<T>>,
+
     path: Vec<&'a AVLNode<T>>,
+
+    /// When the path is empty, this is which side of the tree we are on.
+    end: Direction,
 }
 
 impl<'a, T> Iterator for Iter<'a, T> {
@@ -302,6 +327,15 @@ impl<'a, T> Iterator for Iter<'a, T> {
         let last_node = match self.path.last() {
             Some(n) => *n,
             None => {
+                if self.end == Direction::Left {
+                    // Find leftmost child
+                    let mut current_pointer = self.root.clone();
+                    while let Some(node) = current_pointer {
+                        self.path.push(node);
+                        current_pointer = node.left().map(|n| n.as_ref());
+                    }
+                }
+
                 return None;
             }
         };
@@ -351,6 +385,10 @@ impl<'a, T> Iterator for Iter<'a, T> {
 }
 
 impl<'a, T> Iter<'a, T> {
+    /// Views the value at the current position in the tree.
+    ///
+    /// This returns the same as prev() or next() except doesn't change the
+    /// position afterwards.
     pub fn peek(&self) -> Option<&'a T> {
         let last_node = match self.path.last() {
             Some(n) => *n,
@@ -369,6 +407,15 @@ impl<'a, T> Iter<'a, T> {
         let last_node = match self.path.last() {
             Some(n) => *n,
             None => {
+                if self.end == Direction::Right {
+                    // Find rightmost child
+                    let mut current_pointer = self.root.clone();
+                    while let Some(node) = current_pointer {
+                        self.path.push(node);
+                        current_pointer = node.right().map(|n| n.as_ref());
+                    }
+                }
+
                 return None;
             }
         };
@@ -473,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn avl_works() {
+    fn works() {
         let mut tree = AVLTree::default();
 
         for i in 0..100 {
@@ -497,25 +544,60 @@ mod tests {
 
             assert_eq!(iter.prev(), None);
         }
+    }
 
-        // println!("{:#?}", tree);
-
-        /*
-        {
-            let mut iter = tree.lower_bound(&3);
-            while let Some(value) = iter.next() {
-                println!("Iter: {}", value);
-            }
-        }
-
-        assert_eq!(tree.remove(&5), Some(5));
+    #[test]
+    fn lower_bound() {
+        let mut tree = AVLTree::default();
+        tree.insert(10);
+        tree.insert(50);
+        tree.insert(25);
+        tree.insert(30);
+        tree.insert(5);
 
         {
-            let mut iter = tree.lower_bound(&3);
-            while let Some(value) = iter.next() {
-                println!("Iter: {}", value);
-            }
+            let mut iter = tree.lower_bound(&20);
+            assert_eq!(iter.next(), Some(&25));
+            assert_eq!(iter.next(), Some(&30));
+            assert_eq!(iter.next(), Some(&50));
+            assert_eq!(iter.next(), None);
         }
-         */
+
+        {
+            let mut iter = tree.lower_bound(&51);
+            assert_eq!(iter.next(), None);
+            assert_eq!(iter.prev(), None);
+            assert_eq!(iter.prev(), Some(&50));
+            assert_eq!(iter.peek(), Some(&30));
+        }
+
+        {
+            let mut iter = tree.lower_bound(&5);
+            assert_eq!(iter.next(), Some(&5));
+            assert_eq!(iter.next(), Some(&10));
+            assert_eq!(iter.next(), Some(&25));
+            assert_eq!(iter.next(), Some(&30));
+        }
+    }
+
+    #[test]
+    fn remove_from_start() {
+        let mut tree = AVLTree::default();
+
+        for i in 0..100 {
+            tree.insert(i);
+        }
+
+        for i in 0..100 {
+            assert!(tree.find(&i).is_some());
+            tree.remove(&i);
+            assert!(tree.find(&i).is_none());
+
+            let mut iter = tree.iter();
+            for j in (i + 1)..100 {
+                assert_eq!(iter.next(), Some(&j));
+            }
+            assert_eq!(iter.next(), None);
+        }
     }
 }
