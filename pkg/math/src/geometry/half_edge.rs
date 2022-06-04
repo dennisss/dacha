@@ -868,6 +868,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             };
 
             let edge = &self.half_edges[edge_id];
+            assert!(compare_points(&edge.origin, &intersection.point).is_eq());
+
             let neighbor1 = self.half_edges[prev_edge_id].origin.clone();
             let neighbor2 = self.destination(&edge);
 
@@ -883,21 +885,20 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
             if neighbor1_below && neighbor2_below {
                 if !big_interior_angle {
-                    println!("START");
-
                     // Start vertex
+                    println!("START");
                     lowest_interior_points.insert(edge_id, (edge_id, VertexType::Start));
                 } else {
                     // Split vertex
-
+                    // A left neighbor should always exist for this. Otherwise we would be a 'start' vertex
                     println!("SPLIT!");
-
                     let left_edge = line_segments_to_edge[intersection.left_neighbor.unwrap()];
                     self.connect_face_vertices(edge_id, lowest_interior_points[&left_edge].0);
                     lowest_interior_points.insert(left_edge, (edge_id, VertexType::Split));
                 }
             } else if !neighbor1_below && !neighbor2_below {
                 if !big_interior_angle {
+                    // End vertex
                     println!("END");
 
                     println!("CUR: {:?}", edge_id);
@@ -905,16 +906,16 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
                     println!("{:#?}", lowest_interior_points);
 
-                    // End vertex
                     if let Some((merge_edge_id, VertexType::Merge)) =
                         lowest_interior_points.get(&prev_edge_id)
                     {
                         self.connect_face_vertices(edge_id, *merge_edge_id);
                     }
                 } else {
-                    println!("MERGE");
-
                     // Merge vertex
+                    // A left neighbor should always exist. Otherwise we would be an 'end' vertex.
+
+                    println!("MERGE");
 
                     if let Some((merge_edge_id, VertexType::Merge)) =
                         lowest_interior_points.get(&prev_edge_id)
@@ -932,20 +933,15 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     lowest_interior_points.insert(left_edge, (edge_id, VertexType::Merge));
                 }
             } else {
-                println!("REGULAR");
-
                 // Regular vertex
 
-                // TODO: Will be ever encounter horizontal lines as regular vertices?
-                // If so we should improve this.
+                println!("REGULAR");
+
+                // TODO: For horizontal lines in holes, the x comparison should be inverted (from > to <). 
                 let interior_on_right = {
                     let dir = &neighbor2 - &edge.origin;
-                    dir.y() < 0.
+                    dir.y() < 0. || (dir.y().abs() < 1e-3 && dir.x() > 0.)
                 };
-
-                // println!("INTERIOR RIGHT: {}", interior_on_right);
-                // println!("=> {:?}", neighbor2);
-                // println!("=> {:?}", edge.origin);
 
                 if interior_on_right {
                     if let Some((merge_edge_id, VertexType::Merge)) =
@@ -953,6 +949,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     {
                         self.connect_face_vertices(edge_id, *merge_edge_id);
                     }
+
+                    lowest_interior_points.insert(edge_id, (edge_id, VertexType::Regular));
                 } else {
                     // TODO: Check this
 
@@ -1055,11 +1053,6 @@ fn vec2f(x: f32, y: f32) -> Vector2f {
     Vector2f::from_slice(&[x, y])
 }
 
-/*
-A good representation of everything:
-- List of faces:
-    - Ordered start vertices.
-*/
 
 #[derive(Clone, Debug, PartialEq)]
 struct FaceDebug<F> {
@@ -1496,11 +1489,7 @@ mod tests {
 
         data.repair();
 
-        // data.make_y_monotone();
-        // data.repair();
-
         let boundaries = FaceDebug::get_all(&data);
-        println!("{:#?}", boundaries);
 
         assert_that(&boundaries, unordered_elements_are(&[
             eq(FaceDebug {
