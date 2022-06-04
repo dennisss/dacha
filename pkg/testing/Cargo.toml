@@ -1,0 +1,11 @@
+[package]
+name = "testing"
+version = "0.1.0"
+
+[dependencies]
+common = { path = "../common", default-features = false }
+
+[features]
+default = ["std", "alloc"]
+std = ["common/std"]
+alloc = ["common/alloc"]

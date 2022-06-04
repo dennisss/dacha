@@ -19,6 +19,9 @@ extern crate common;
 #[macro_use]
 extern crate approx;
 
+#[cfg(test)]
+extern crate testing;
+
 pub mod argmax;
 #[cfg(feature = "alloc")]
 pub mod array;

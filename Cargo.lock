@@ -1256,6 +1256,7 @@ dependencies = [
  "common",
  "generic-array",
  "num-traits",
+ "testing",
  "typenum",
 ]
 
@@ -2085,6 +2086,13 @@ dependencies = [
  "quote 1.0.6",
  "syn 1.0.72",
  "unicode-xid 0.2.0",
+]
+
+[[package]]
+name = "testing"
+version = "0.1.0"
+dependencies = [
+ "common",
 ]
 
 [[package]]

@@ -28,6 +28,7 @@ where
         let mut min = points[0].clone();
         let mut max = points[0].clone();
 
+        // TODO: Use cwise_min_assign and cwise_max_assign
         for p in &points[1..] {
             for i in 0..p.len() {
                 min[i] = f32::min(min[i], p[i]);

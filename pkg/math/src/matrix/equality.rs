@@ -1,3 +1,5 @@
+use core::cmp::{Ordering, PartialOrd};
+
 use approx::{AbsDiffEq, RelativeEq, UlpsEq};
 
 use crate::matrix::base::MatrixBase;
@@ -24,6 +26,30 @@ impl<T: PartialEq + ElementType, R: Dimension, C: Dimension, S: StorageType<T, R
 impl<T: PartialEq + ElementType, R: Dimension, C: Dimension, S: StorageType<T, R, C>> Eq
     for MatrixBase<T, R, C, S>
 {
+}
+
+impl<T: PartialOrd + ElementType, R: Dimension, C: Dimension, S: StorageType<T, R, C>> PartialOrd
+    for MatrixBase<T, R, C, S>
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let mut last_ordering = None;
+        for i in 0..self.rows() {
+            for j in 0..self.cols() {
+                let o = match self[(i, j)].partial_cmp(&other[(i, j)]) {
+                    Some(o) => o,
+                    None => return None,
+                };
+
+                if last_ordering.is_none() {
+                    last_ordering = Some(o);
+                } else if last_ordering != Some(o) {
+                    return None;
+                }
+            }
+        }
+
+        last_ordering
+    }
 }
 
 impl<T: AbsDiffEq + ElementType, R: Dimension, C: Dimension, S: StorageType<T, R, C>> AbsDiffEq

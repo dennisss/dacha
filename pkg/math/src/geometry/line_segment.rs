@@ -12,7 +12,7 @@ use crate::matrix::{Matrix2f, Vector2f};
 
 /// Bounded line segment defined by two endpoints which are connected.
 /// The two endpoints are inclusive (considered to be part of the segment).
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct LineSegment2f {
     pub start: Vector2f,
     pub end: Vector2f,
@@ -37,9 +37,7 @@ impl LineSegment2f {
 
         let min = (&self.start).cwise_min(&self.end) - (intersections::THRESHOLD / 2.);
         let max = (&self.start).cwise_max(&self.end) + (intersections::THRESHOLD / 2.);
-
-        // TODO: Appreviate as: 'point >= min && point <= max'
-        point.x() >= min.x() && point.y() >= min.y() && point.x() <= max.x() && point.y() <= max.y()
+        point >= &min && point <= &max
     }
 
     /// Computes the intersection point of the current line segment with
@@ -66,12 +64,7 @@ impl LineSegment2f {
         let on_segment = |segment: &LineSegment2f, point: &Vector2f| -> bool {
             let min = (&segment.start).cwise_min(&segment.end) - (intersections::THRESHOLD / 2.);
             let max = (&segment.start).cwise_max(&segment.end) + (intersections::THRESHOLD / 2.);
-
-            // TODO: Appreviate as: 'point >= min && point <= max'
-            point.x() >= min.x()
-                && point.y() >= min.y()
-                && point.x() <= max.x()
-                && point.y() <= max.y()
+            point >= &min && point <= &max
         };
 
         if !on_segment(self, &point) || !on_segment(other, &point) {
@@ -254,7 +247,7 @@ impl LineSegment2f {
                 intersection_left_neighbor = first_iter.peek().cloned();
 
                 assert_eq!(last_iter.next(), Some(&last)); // Skip over 'last'
-                let intersection_right_neighbor = last_iter.peek().cloned();
+                intersection_right_neighbor = last_iter.peek().cloned();
 
                 if let Some(first_neighbor) = intersection_left_neighbor.clone() {
                     if let Some(next_point) = find_intersection_event(
@@ -422,14 +415,7 @@ mod intersections {
             None => return None,
         };
 
-        if (intersection.y() - event_point.y()).abs() < THRESHOLD {
-            // On sweep line.
-
-            // TODO: Use threshold comparison?
-            if intersection.x() <= event_point.x() {
-                return None;
-            }
-        } else if intersection.y() < event_point.y() {
+        if compare_points(&intersection, &event_point).is_le() {
             return None;
         }
 
@@ -470,7 +456,7 @@ mod intersections {
                 // Horizontal line.
                 return Ordering::Greater;
             }
-            if dir_a.y() < 0. {
+            if dir_a.y() > 0. {
                 dir_a *= -1.;
             }
 
@@ -479,7 +465,7 @@ mod intersections {
                 // Horizontal line.
                 return Ordering::Less;
             }
-            if dir_b.y() < 0. {
+            if dir_b.y() > 0. {
                 dir_b *= -1.;
             }
 
@@ -500,7 +486,7 @@ mod intersections {
         pub segment: Option<LineSegmentIndex>,
     }
 
-    // Ascending y coordinate. If same y, order by ascending x.
+    // Descending y coordinate. If same y, order by ascending x.
     // TODO: Given that only store there are no issues with using threshold
     // comparison here while only storing one segment per event (if a == b and b ==
     // c, then that doesn't imply that a == c).
@@ -525,6 +511,10 @@ mod intersections {
     impl Eq for Event {}
 }
 
+/// Line sweep ordering relationship for two points.
+///
+/// The 'smallest' points have the highest y values. At the same y value, the
+/// smaller x value is first.
 pub fn compare_points(a: &Vector2f, b: &Vector2f) -> Ordering {
     if (a.y() - b.y()).abs() <= intersections::THRESHOLD {
         if (a.x() - b.x()).abs() <= intersections::THRESHOLD {
@@ -533,7 +523,7 @@ pub fn compare_points(a: &Vector2f, b: &Vector2f) -> Ordering {
             a.x().partial_cmp(&b.x()).unwrap_or(Ordering::Equal)
         }
     } else {
-        a.y().partial_cmp(&b.y()).unwrap_or(Ordering::Equal)
+        b.y().partial_cmp(&a.y()).unwrap_or(Ordering::Equal)
     }
 }
 
@@ -552,15 +542,24 @@ pub fn compare_points_x_then_y(a: &Vector2f, b: &Vector2f) -> Ordering {
 }
 
 /// A point intersection between two or more line segments.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Intersection2f {
     pub point: Vector2f,
+
+    /// Index of each segment which contains the intersection point. Will
+    /// contain at least 2 elements. These will not be in any particular order.
     pub segments: Vec<usize>,
 
     /// Index of the line segment immediately to the left of this intersection.
+    ///
+    /// If the LOWER endpoint of a line segment is at the y position of this
+    /// intersection, it will not be counted when searching for this neighbor.
     pub left_neighbor: Option<usize>,
 
     /// Index of the line segment immediately to the right of this intersection.
+    ///
+    /// If the UPPER endpoint of a line segment is at the y position of this
+    /// intersection, it will not be counted when searching for this neighbor.
     pub right_neighbor: Option<usize>,
 }
 
@@ -578,6 +577,16 @@ mod tests {
 
     #[test]
     fn sort_below_sweep_line() {
+        // ------- Sweep line starts here.
+        //
+        // \     /
+        //  \   /
+        //   \ /
+        //    /
+        //   / \
+        //  /   \
+        // /a    \b
+
         let a = LineSegment2f {
             start: vec2f(0., 0.),
             end: vec2f(10., 10.),
@@ -586,6 +595,11 @@ mod tests {
             start: vec2f(10., 0.),
             end: vec2f(0., 10.),
         };
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&a, &b, &vec2f(11., 11.)),
+            Ordering::Greater
+        );
 
         assert_eq!(
             intersections::compare_segments_at_sweep_line(&a, &b, &vec2f(-1., -1.)),
@@ -601,7 +615,7 @@ mod tests {
         // intersected are now going in different directions.
         assert_eq!(
             intersections::compare_segments_at_sweep_line(&a, &b, &vec2f(5., 5.)),
-            Ordering::Greater
+            Ordering::Less
         );
 
         assert_eq!(
@@ -683,7 +697,7 @@ mod tests {
             &LineSegment2f::intersections(&segments[0..2]),
             &[Intersection2f {
                 point: vec2f(5., 5.),
-                segments: vec![0, 1],
+                segments: vec![1, 0],
                 left_neighbor: None,
                 right_neighbor: None,
             },]
@@ -693,23 +707,23 @@ mod tests {
             &LineSegment2f::intersections(&segments[0..3]),
             &[
                 Intersection2f {
-                    point: vec2f(5., 5.),
-                    segments: vec![0, 1],
-                    left_neighbor: None,
-                    right_neighbor: None,
-                },
-                Intersection2f {
                     point: vec2f(3., 7.),
                     segments: vec![2, 1],
                     left_neighbor: None,
-                    right_neighbor: None,
+                    right_neighbor: Some(0),
                 },
                 Intersection2f {
                     point: vec2f(7., 7.),
                     segments: vec![2, 0],
+                    left_neighbor: Some(1),
+                    right_neighbor: None,
+                },
+                Intersection2f {
+                    point: vec2f(5., 5.),
+                    segments: vec![1, 0],
                     left_neighbor: None,
                     right_neighbor: None,
-                }
+                },
             ]
         );
 
@@ -717,23 +731,23 @@ mod tests {
             &LineSegment2f::intersections(&segments),
             &[
                 Intersection2f {
-                    point: vec2f(5., 5.),
-                    segments: vec![0, 1],
-                    left_neighbor: None,
-                    right_neighbor: None,
-                },
-                Intersection2f {
                     point: vec2f(3., 7.),
                     segments: vec![2, 1],
                     left_neighbor: None,
-                    right_neighbor: None,
+                    right_neighbor: Some(3),
                 },
                 Intersection2f {
                     point: vec2f(7., 7.),
-                    segments: vec![2, 0, 3],
+                    segments: vec![2, 3, 0],
+                    left_neighbor: Some(1),
+                    right_neighbor: None,
+                },
+                Intersection2f {
+                    point: vec2f(5., 5.),
+                    segments: vec![1, 0],
                     left_neighbor: None,
                     right_neighbor: None,
-                }
+                },
             ]
         );
     }
@@ -755,7 +769,7 @@ mod tests {
             &LineSegment2f::intersections(&segments),
             &[Intersection2f {
                 point: vec2f(390.3027, 268.6864),
-                segments: vec![0, 1],
+                segments: vec![1, 0],
                 left_neighbor: None,
                 right_neighbor: None,
             }]
@@ -794,30 +808,240 @@ mod tests {
             &ints,
             &[
                 Intersection2f {
-                    point: vec2f(357.28815, 296.10852,),
-                    segments: vec![3, 1,],
-                    left_neighbor: None,
+                    point: vec2f(380.42773, 395.4687,),
+                    segments: vec![2, 0],
+                    left_neighbor: Some(1),
+                    right_neighbor: Some(3),
+                },
+                Intersection2f {
+                    point: vec2f(408.9665, 365.91965,),
+                    segments: vec![2, 3,],
+                    left_neighbor: Some(0),
                     right_neighbor: None,
                 },
                 Intersection2f {
                     point: vec2f(313.9139, 337.8629,),
-                    segments: vec![0, 1,],
+                    segments: vec![1, 0],
+                    left_neighbor: None,
+                    right_neighbor: Some(3),
+                },
+                Intersection2f {
+                    point: vec2f(357.28812, 296.10852,),
+                    segments: vec![1, 3,],
+                    left_neighbor: Some(0),
+                    right_neighbor: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn intersect_at_lower_endpoint() {
+        // This stresses the left/right neighbor code as the intersection point
+        // min/max segment no longer exist in the sweep status tree.
+
+        //       0      1
+        //        \    /
+        //    2 \  \  /  / 3
+        //       \  \/  /
+        //        \    /
+        //         \  /
+        //          \/
+
+        let segments = vec![
+            LineSegment2f {
+                start: vec2f(0., 2.),
+                end: vec2f(-2., 5.),
+            },
+            LineSegment2f {
+                start: vec2f(0., 2.),
+                end: vec2f(2., 5.),
+            },
+            LineSegment2f {
+                start: vec2f(0., 0.),
+                end: vec2f(-2., 3.),
+            },
+            LineSegment2f {
+                start: vec2f(0., 0.),
+                end: vec2f(2., 3.),
+            },
+        ];
+
+        assert_eq!(
+            &LineSegment2f::intersections(&segments),
+            &[
+                Intersection2f {
+                    point: vec2f(0., 2.),
+                    segments: vec![0, 1],
+                    left_neighbor: Some(2),
+                    right_neighbor: Some(3),
+                },
+                Intersection2f {
+                    point: vec2f(0., 0.),
+                    segments: vec![2, 3],
                     left_neighbor: None,
                     right_neighbor: None,
                 },
+            ]
+        );
+
+        assert_eq!(
+            &LineSegment2f::intersections(&segments[0..2]),
+            &[Intersection2f {
+                point: vec2f(0., 2.),
+                segments: vec![0, 1],
+                left_neighbor: None,
+                right_neighbor: None,
+            },]
+        );
+
+        assert_eq!(
+            &LineSegment2f::intersections(&segments[0..3]),
+            &[Intersection2f {
+                point: vec2f(0., 2.),
+                segments: vec![0, 1],
+                left_neighbor: Some(2),
+                right_neighbor: None,
+            },]
+        );
+
+        assert_eq!(
+            &LineSegment2f::intersections(&vec![
+                segments[0].clone(),
+                segments[1].clone(),
+                segments[3].clone()
+            ]),
+            &[Intersection2f {
+                point: vec2f(0., 2.),
+                segments: vec![0, 1],
+                left_neighbor: None,
+                right_neighbor: Some(2),
+            },]
+        );
+    }
+
+    #[test]
+    fn overlapping_horizontal_lines() {
+        let segments = vec![
+            LineSegment2f {
+                start: vec2f(10., 0.),
+                end: vec2f(20., 0.),
+            },
+            LineSegment2f {
+                start: vec2f(15., 0.),
+                end: vec2f(25., 0.),
+            },
+        ];
+
+        assert_eq!(
+            &LineSegment2f::intersections(&segments),
+            &[
                 Intersection2f {
-                    point: vec2f(408.9665, 365.91965,),
-                    segments: vec![3, 2,],
+                    point: vec2f(15., 0.),
+                    segments: vec![1, 0],
+                    left_neighbor: Some(0),  // TODO: Make this None?
+                    right_neighbor: Some(1), // TODO: Make this None?
+                },
+                Intersection2f {
+                    point: vec2f(20., 0.),
+                    segments: vec![0, 1],
                     left_neighbor: None,
                     right_neighbor: None,
                 },
+            ]
+        );
+
+        let segments = vec![
+            LineSegment2f {
+                start: vec2f(10., 0.),
+                end: vec2f(20., 0.),
+            },
+            LineSegment2f {
+                start: vec2f(10., 0.),
+                end: vec2f(25., 0.),
+            },
+        ];
+
+        assert_eq!(
+            &LineSegment2f::intersections(&segments),
+            &[
                 Intersection2f {
-                    point: vec2f(380.42773, 395.46866,),
-                    segments: vec![0, 2,],
+                    point: vec2f(10., 0.),
+                    segments: vec![0, 1],
+                    left_neighbor: Some(1),  // TODO: Make this None?
+                    right_neighbor: Some(0), // TODO: Make this None?
+                },
+                Intersection2f {
+                    point: vec2f(20., 0.),
+                    segments: vec![1, 0],
+                    left_neighbor: None,
+                    right_neighbor: None,
+                },
+            ]
+        );
+
+        let segments = vec![
+            LineSegment2f {
+                start: vec2f(10., 0.),
+                end: vec2f(20., 0.),
+            },
+            LineSegment2f {
+                start: vec2f(0., 0.),
+                end: vec2f(20., 0.),
+            },
+        ];
+
+        assert_eq!(
+            &LineSegment2f::intersections(&segments),
+            &[
+                Intersection2f {
+                    point: vec2f(10., 0.),
+                    segments: vec![0, 1],
+                    left_neighbor: Some(1),  // TODO: Make this None?
+                    right_neighbor: Some(0), // TODO: Make this None?
+                },
+                Intersection2f {
+                    point: vec2f(20., 0.),
+                    segments: vec![1, 0],
                     left_neighbor: None,
                     right_neighbor: None,
                 },
             ]
         );
     }
+
+    #[test]
+    fn overlapping_colinear_lines() {
+        let segments = vec![
+            LineSegment2f {
+                start: vec2f(0., 0.),
+                end: vec2f(5., 5.),
+            },
+            LineSegment2f {
+                start: vec2f(3., 3.),
+                end: vec2f(8., 8.),
+            },
+        ];
+
+        assert_eq!(
+            &LineSegment2f::intersections(&segments),
+            &[
+                Intersection2f {
+                    point: vec2f(5., 5.),
+                    segments: vec![0, 1],
+                    left_neighbor: None,
+                    right_neighbor: Some(1), // TODO: Make None?
+                },
+                Intersection2f {
+                    point: vec2f(3., 3.),
+                    segments: vec![0, 1],
+                    left_neighbor: None,
+                    right_neighbor: None,
+                },
+            ]
+        );
+    }
+
+    // TODO: Also test that colinear lines that don't overlap don't trigger
+    // intersections
 }

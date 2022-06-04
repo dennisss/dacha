@@ -11,6 +11,9 @@ auto_ops = "0.3.0"
 generic-array = "0.13.2"
 approx = { version = "0.5.1", default-features = false }
 
+[dev-dependencies]
+testing = { path = "../testing" }
+
 [features]
 default = ["std", "alloc"]
 std = ["common/std", "num-traits/std", "approx/std"]
