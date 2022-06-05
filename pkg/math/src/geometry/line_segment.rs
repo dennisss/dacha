@@ -364,11 +364,19 @@ mod intersections {
         for LineSweepComparator<'a>
     {
         fn compare(&self, a: &LineSegmentIndex, b: &LineSegmentIndex) -> Ordering {
-            compare_segments_at_sweep_line(
+            let ord = compare_segments_at_sweep_line(
                 &self.segments[*a],
                 &self.segments[*b],
                 &self.event_point,
-            )
+            );
+
+            // To ensure that we can retrieve any segment after it is inserted, only a
+            // segment i should be equal to itself and non others.
+            if ord.is_eq() {
+                return a.cmp(b);
+            }
+
+            ord
         }
     }
 
@@ -451,7 +459,16 @@ mod intersections {
         if (a_x - b_x).abs() <= THRESHOLD {
             // TODO: If both lines are horizontal, compare based on their min x
 
-            let mut dir_a = &a.start - &a.end;
+            let event_before_intersection =
+                compare_points(&vec2f(point.x(), 0.), &vec2f(a_x, 0.)).is_lt();
+
+            let mut dir_a = (&a.start - &a.end).normalized();
+            let mut dir_b = (&b.start - &b.end).normalized();
+
+            // TODO: If the directions are approximately equal, perform comparison of the
+            // upper endpoints (this is an issue not only for horizontal lines but anything
+            // co-linear).
+
             if dir_a.y().abs() <= THRESHOLD {
                 // Horizontal line.
                 return Ordering::Greater;
@@ -460,7 +477,6 @@ mod intersections {
                 dir_a *= -1.;
             }
 
-            let mut dir_b = &b.start - &b.end;
             if dir_b.y().abs() <= THRESHOLD {
                 // Horizontal line.
                 return Ordering::Less;
@@ -469,9 +485,15 @@ mod intersections {
                 dir_b *= -1.;
             }
 
-            // NOTE: This is always going to be equivalent to a sign comparison, so it's not
-            // necessary to normalize the magnitudes.
-            return dir_a.x().partial_cmp(&dir_b.x()).unwrap();
+            let mut ordering = dir_a.x().partial_cmp(&dir_b.x()).unwrap();
+
+            // If the event point hasn't yet reached the intersection point, then we
+            // actually want to use the ordering above the intersection point.
+            if event_before_intersection {
+                ordering = ordering.reverse();
+            }
+
+            return ordering;
         }
 
         a_x.partial_cmp(&b_x).unwrap()
@@ -621,6 +643,55 @@ mod tests {
         assert_eq!(
             intersections::compare_segments_at_sweep_line(&a, &b, &vec2f(5.1, 5.1)),
             Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn compare_lines_diverging_in_same_direction() {
+        let a = LineSegment2f {
+            start: vec2f(0.0, 20.0),
+            end: vec2f(5.0, 15.0),
+        };
+
+        let b = LineSegment2f {
+            start: vec2f(0.0, 20.0),
+            end: vec2f(5.0, 5.0),
+        };
+
+        let point = vec2f(0.0, 20.0);
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&a, &b, &point),
+            Ordering::Greater
+        );
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&b, &a, &point),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn comparing_before_the_intersection_point() {
+        let a = LineSegment2f {
+            start: vec2f(276.0, 657.0),
+            end: vec2f(209.0, 655.0),
+        };
+        let b = LineSegment2f {
+            start: vec2f(209.0, 655.0),
+            end: vec2f(145.0, 666.0),
+        };
+
+        let before_intersection = vec2f(100., 655.);
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&a, &b, &before_intersection),
+            Ordering::Greater
+        );
+
+        assert_eq!(
+            intersections::compare_segments_at_sweep_line(&b, &a, &before_intersection),
+            Ordering::Less
         );
     }
 

@@ -100,7 +100,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
     // NOTE: Label will be the inner face if the polygon is built with
     // counter-clockwise vertices.
-    fn add_first_edge(&mut self, start: Vector2f, end: Vector2f, label: F) -> EdgeId {
+    pub fn add_first_edge(&mut self, start: Vector2f, end: Vector2f, label: F) -> EdgeId {
         let id = self.half_edges.unique_id();
         let twin = self.half_edges.unique_id();
         let face_id = self.faces.unique_id();
@@ -142,7 +142,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
     }
 
     // Helper for adding a line to a chain
-    fn add_next_edge(&mut self, prev: EdgeId, next_point: Vector2f) -> EdgeId {
+    pub fn add_next_edge(&mut self, prev: EdgeId, next_point: Vector2f) -> EdgeId {
         let id = self.half_edges.unique_id();
         let twin = self.half_edges.unique_id();
 
@@ -178,7 +178,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         id
     }
 
-    fn add_close_edge(&mut self, last_edge: EdgeId, first_edge: EdgeId) {
+    pub fn add_close_edge(&mut self, last_edge: EdgeId, first_edge: EdgeId) {
         let id = self.half_edges.unique_id();
         let twin = self.half_edges.unique_id();
 
@@ -828,14 +828,6 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             }
         }
 
-        if line_segments.len() != 8 {
-            return;
-        }
-
-        for (i, line) in line_segments.iter().enumerate() {
-            println!("{:?} => {:#?}", line_segments_to_edge[i], line);
-        }
-
         #[derive(Debug)]
         enum VertexType {
             Start,
@@ -886,12 +878,11 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             if neighbor1_below && neighbor2_below {
                 if !big_interior_angle {
                     // Start vertex
-                    println!("START");
                     lowest_interior_points.insert(edge_id, (edge_id, VertexType::Start));
                 } else {
                     // Split vertex
-                    // A left neighbor should always exist for this. Otherwise we would be a 'start' vertex
-                    println!("SPLIT!");
+                    // A left neighbor should always exist for this. Otherwise we would be a 'start'
+                    // vertex
                     let left_edge = line_segments_to_edge[intersection.left_neighbor.unwrap()];
                     self.connect_face_vertices(edge_id, lowest_interior_points[&left_edge].0);
                     lowest_interior_points.insert(left_edge, (edge_id, VertexType::Split));
@@ -899,13 +890,6 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             } else if !neighbor1_below && !neighbor2_below {
                 if !big_interior_angle {
                     // End vertex
-                    println!("END");
-
-                    println!("CUR: {:?}", edge_id);
-                    println!("PREV: {:?}", prev_edge_id);
-
-                    println!("{:#?}", lowest_interior_points);
-
                     if let Some((merge_edge_id, VertexType::Merge)) =
                         lowest_interior_points.get(&prev_edge_id)
                     {
@@ -914,8 +898,6 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 } else {
                     // Merge vertex
                     // A left neighbor should always exist. Otherwise we would be an 'end' vertex.
-
-                    println!("MERGE");
 
                     if let Some((merge_edge_id, VertexType::Merge)) =
                         lowest_interior_points.get(&prev_edge_id)
@@ -929,15 +911,13 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     {
                         self.connect_face_vertices(edge_id, *merge_edge_id);
                     }
-                    println!("INSERT TO {:?}", left_edge);
                     lowest_interior_points.insert(left_edge, (edge_id, VertexType::Merge));
                 }
             } else {
                 // Regular vertex
 
-                println!("REGULAR");
-
-                // TODO: For horizontal lines in holes, the x comparison should be inverted (from > to <). 
+                // TODO: For horizontal lines in holes, the x comparison should be inverted
+                // (from > to <).
                 let interior_on_right = {
                     let dir = &neighbor2 - &edge.origin;
                     dir.y() < 0. || (dir.y().abs() < 1e-3 && dir.x() > 0.)
@@ -969,7 +949,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
     /// Connects two vertices of a single face with a new line segment.
     ///
     /// In particular, each of the given edge ids defines a point at each edge's
-    /// origin that will be used
+    /// origin that will be used. Only the prev pointers of the given edges will
+    /// be modified (the next edges will stay the same).
     ///
     /// Assumptions:
     /// - vertex_a and vertex_b belong to the same face.
@@ -998,7 +979,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         edge_b.prev = id2;
         self.half_edges[edge_b_old_prev].next = id1;
 
-        println!("CONNECT {:?} => {:?}", edge_a_origin, edge_b_origin);
+        // println!("CONNECT {:?} => {:?}", edge_a_origin, edge_b_origin);
 
         self.half_edges.insert(
             id1,
@@ -1021,6 +1002,133 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 prev: edge_a_old_prev,
             },
         );
+    }
+
+    pub fn triangulate_monotone(&mut self) {
+        let mut face_ids = self.faces.keys().cloned().collect::<Vec<_>>();
+
+        // Should we just do everything in one pass?
+        for face_id in face_ids {
+            if face_id == self.unbounded_face_id {
+                continue;
+            }
+
+            self.triangulate_monotone_face(face_id);
+        }
+
+        // TODO: Now all faces should be triangles. We should try to optimize
+        // the angles If we two adjacent triangles, consider them to be
+        // a quadrilateral and try to swap the diagonals to see if that makes
+        // angles less extreme.
+    }
+
+    fn triangulate_monotone_face(&mut self, face_id: FaceId) {
+        let edges = {
+            let face = &self.faces[face_id];
+            // Faces with holes are not monotone.
+            assert!(face.inner_components.is_empty());
+
+            let mut edges = vec![];
+
+            let first_id = face.outer_component.unwrap();
+            let mut current_id = first_id;
+            loop {
+                edges.push(current_id);
+                current_id = self.half_edges[current_id].next;
+                if current_id == first_id {
+                    break;
+                }
+            }
+
+            edges.sort_by(|a, b| {
+                compare_points(&self.half_edges[*a].origin, &self.half_edges[*b].origin)
+            });
+
+            edges
+        };
+
+        let mut stack = vec![];
+        // TODO: Assert these are on the same side.
+        stack.push(edges[0]);
+        stack.push(edges[1]);
+
+        for i in 2..(edges.len() - 1) {
+            let v_i = edges[i];
+
+            /*
+            For two vertices to be on different sides,
+            */
+
+            // NOTE: We don't compare edge ids as the connect_face_vertices() function will
+            // have messed up the connectivity of any vertices on the right boundary.
+            let (on_same_side, on_left) = {
+                let a = &self.half_edges[v_i];
+                let b = &self.half_edges[*stack.last().unwrap()];
+
+                // Will be true if both vertices are on the left side of the face.
+                let left = compare_points(&self.destination(b), &a.origin).is_eq();
+
+                // Will be true if both vertices are on the right side of the face.
+                let right = compare_points(&self.destination(a), &b.origin).is_eq();
+
+                (left || right, left)
+            };
+
+            // TODO: adding diagonals will probably mess up this direction.
+            if !on_same_side {
+                // assert stack[0] is connected to v_i
+
+                // assert!(self.half_edges[stack[0]].next == v_i);
+
+                for v_j in &stack[1..] {
+                    self.connect_face_vertices(v_i, *v_j);
+                }
+
+                assert_eq!(edges[i - 1], *stack.last().unwrap());
+
+                stack.clear();
+                stack.push(edges[i - 1]);
+                stack.push(v_i);
+            } else {
+                // The current vertex should be connected to this one.
+                let mut last_vertex = stack.pop().unwrap();
+
+                while let Some(next_vertex) = stack.last().cloned() {
+                    // TODO: Ensure that we do not connect three points that are all co-linear.
+
+                    // We can only insert a diagonal if the line would be inside of the face.
+                    // Note that the face on the left side of edges.
+                    //
+                    // Also note that last_vertex should be connected to next_vertext.
+                    if turns_right(
+                        &self.half_edges[v_i].origin,
+                        &self.half_edges[last_vertex].origin,
+                        &self.half_edges[next_vertex].origin,
+                    ) == !on_left
+                    {
+                        break;
+                    }
+
+                    self.connect_face_vertices(v_i, next_vertex);
+
+                    last_vertex = next_vertex;
+                    stack.pop();
+                }
+
+                stack.push(last_vertex);
+                stack.push(v_i);
+            }
+        }
+
+        for edge in &stack[1..(stack.len() - 1)] {
+            self.connect_face_vertices(edges[edges.len() - 1], *edge);
+        }
+    }
+
+    fn vertex_direction(&self, edge_id: EdgeId) -> bool {
+        let edge = &self.half_edges[edge_id];
+        let edge_dst = self.destination(edge);
+        compare_points(&edge.origin, &edge_dst).is_lt()
     }
 }
 
@@ -1053,18 +1161,17 @@ fn vec2f(x: f32, y: f32) -> Vector2f {
     Vector2f::from_slice(&[x, y])
 }
 
-
 #[derive(Clone, Debug, PartialEq)]
-struct FaceDebug<F> {
-    label: F,
-    outer_component: Option<Vec<Vector2f>>,
-    inner_components: Vec<Vec<Vector2f>>,
+pub struct FaceDebug<F> {
+    pub label: F,
+    pub outer_component: Option<Vec<Vector2f>>,
+    pub inner_components: Vec<Vec<Vector2f>>,
 }
 
 impl<F: FaceLabel> FaceDebug<F> {
     // Validates the correctness of the HalfEdgeStruct and extracts all boundary
     // cycles starting at any edges.
-    fn get_all(data: &HalfEdgeStruct<F>) -> Vec<Self> {
+    pub fn get_all(data: &HalfEdgeStruct<F>) -> Vec<Self> {
         let mut output = vec![];
 
         let mut seen_ids = HashSet::new();
@@ -1201,8 +1308,6 @@ mod tests {
 
         data.repair();
 
-        println!("{:#?}", data);
-
         // Should be an inner boundary with 8 edges going clockwise around the surface
         // of the two lines.
         assert_eq!(
@@ -1299,15 +1404,14 @@ mod tests {
 
         assert_that(
             &FaceDebug::get_all(&data),
-            unordered_elements_are(
-            &[
+            unordered_elements_are(&[
                 eq(FaceDebug {
                     label: HashSet::default(),
                     outer_component: Some(vec![
                         vec2f(10.0, 7.5),
                         vec2f(20.0, 15.0),
-                        vec2f(10.0, 20.0,),
-                    ],),
+                        vec2f(10.0, 20.0),
+                    ]),
                     inner_components: vec![],
                 }),
                 // NOTE: The face is actually to the right of this shape, so the label is not
@@ -1316,31 +1420,31 @@ mod tests {
                     label: HashSet::default(),
                     outer_component: None,
                     inner_components: vec![vec![
-                        vec2f(0.0, 0.0,),
-                        vec2f(10.0, 7.5,),
-                        vec2f(10.0, 20.0,),
-                        vec2f(20.0, 15.0,),
-                        vec2f(10.0, 7.5,),
-                        vec2f(10.0, 0.0,),
-                    ],],
+                        vec2f(0.0, 0.0),
+                        vec2f(10.0, 7.5),
+                        vec2f(10.0, 20.0),
+                        vec2f(20.0, 15.0),
+                        vec2f(10.0, 7.5),
+                        vec2f(10.0, 0.0),
+                    ]],
                 }),
                 eq(FaceDebug {
                     label: label("A"),
                     outer_component: Some(vec![
-                        vec2f(0.0, 0.0,),
-                        vec2f(10.0, 0.0,),
-                        vec2f(10.0, 7.5,),
-                    ],),
+                        vec2f(0.0, 0.0),
+                        vec2f(10.0, 0.0),
+                        vec2f(10.0, 7.5),
+                    ]),
                     inner_components: vec![],
                 }),
-            ])
+            ]),
         );
     }
 
     #[test]
     fn repair_noop_for_closed_triangle() {
         let mut data = HalfEdgeStruct::new();
-        
+
         let a0 = data.add_first_edge(vec2f(0., 0.), vec2f(10., 0.), label("T"));
         let a1 = data.add_next_edge(a0, vec2f(5., 5.));
         data.add_close_edge(a1, a0);
@@ -1349,29 +1453,18 @@ mod tests {
 
         assert_that(
             &FaceDebug::get_all(&data),
-            unordered_elements_are(
-            &[
+            unordered_elements_are(&[
                 eq(FaceDebug {
                     label: HashSet::default(),
                     outer_component: None,
-                    inner_components: vec![
-                        vec![
-                            vec2f(0.0, 0.),
-                            vec2f(5.0, 5.0),
-                            vec2f(10.0, 0.0,),
-                        ],
-                    ],
+                    inner_components: vec![vec![vec2f(0.0, 0.), vec2f(5.0, 5.0), vec2f(10.0, 0.0)]],
                 }),
                 eq(FaceDebug {
                     label: label("T"),
-                    outer_component: Some(vec![
-                        vec2f(0.0, 0.),
-                        vec2f(10.0, 0.0,),
-                        vec2f(5.0, 5.0),
-                    ]),
-                    inner_components: vec![]
+                    outer_component: Some(vec![vec2f(0.0, 0.), vec2f(10.0, 0.0), vec2f(5.0, 5.0)]),
+                    inner_components: vec![],
                 }),
-            ])
+            ]),
         );
     }
 
@@ -1400,12 +1493,13 @@ mod tests {
 
         assert_eq!(data.half_edges.len(), 24);
 
-        assert_that(&FaceDebug::get_all(&data), unordered_elements_are(&[
-            eq(FaceDebug {
-                label: HashSet::new(),
-                outer_component: None,
-                inner_components: vec![
-                    vec![
+        assert_that(
+            &FaceDebug::get_all(&data),
+            unordered_elements_are(&[
+                eq(FaceDebug {
+                    label: HashSet::new(),
+                    outer_component: None,
+                    inner_components: vec![vec![
                         vec2f(0.0, 0.0),
                         vec2f(0.0, 10.0),
                         vec2f(5.0, 10.0),
@@ -1414,53 +1508,47 @@ mod tests {
                         vec2f(15.0, 5.0),
                         vec2f(10.0, 5.0),
                         vec2f(10.0, 0.0),
-                    ],
-                ],
-            }),
-            // Lower square with overlap carved out
-            eq(FaceDebug {
-                label: label("A"),
-                outer_component: Some(
-                    vec![
+                    ]],
+                }),
+                // Lower square with overlap carved out
+                eq(FaceDebug {
+                    label: label("A"),
+                    outer_component: Some(vec![
                         vec2f(0.0, 0.0),
                         vec2f(10.0, 0.0),
                         vec2f(10.0, 5.0),
                         vec2f(5.0, 5.0),
                         vec2f(5.0, 10.0),
                         vec2f(0.0, 10.0),
-                    ],
-                ),
-                inner_components: vec![],
-            }),
-            // Upper square with overlap carved out
-            eq(FaceDebug {
-                label: label("B"),
-                outer_component: Some(
-                    vec![
+                    ]),
+                    inner_components: vec![],
+                }),
+                // Upper square with overlap carved out
+                eq(FaceDebug {
+                    label: label("B"),
+                    outer_component: Some(vec![
                         vec2f(5.0, 10.0),
                         vec2f(10.0, 10.0),
                         vec2f(10.0, 5.0),
                         vec2f(15.0, 5.0),
                         vec2f(15.0, 15.0),
                         vec2f(5.0, 15.0),
-                    ],
-                ),
-                inner_components: vec![],
-            }),
-            // Middle overlap
-            eq(FaceDebug {
-                label: labels(&["A", "B"]),
-                outer_component: Some(
-                    vec![
+                    ]),
+                    inner_components: vec![],
+                }),
+                // Middle overlap
+                eq(FaceDebug {
+                    label: labels(&["A", "B"]),
+                    outer_component: Some(vec![
                         vec2f(5.0, 5.0),
                         vec2f(10.0, 5.0),
                         vec2f(10.0, 10.0),
                         vec2f(5.0, 10.0),
-                    ],
-                ),
-                inner_components: vec![],
-            }),
-        ]));
+                    ]),
+                    inner_components: vec![],
+                }),
+            ]),
+        );
     }
 
     #[test]
@@ -1491,51 +1579,112 @@ mod tests {
 
         let boundaries = FaceDebug::get_all(&data);
 
-        assert_that(&boundaries, unordered_elements_are(&[
-            eq(FaceDebug {
-                label: HashSet::new(),
-                outer_component: None,
-                inner_components: vec![
-                    vec![
+        assert_that(
+            &boundaries,
+            unordered_elements_are(&[
+                eq(FaceDebug {
+                    label: HashSet::new(),
+                    outer_component: None,
+                    inner_components: vec![vec![
                         vec2f(0.0, 0.0),
                         vec2f(0.0, 20.0),
                         vec2f(20.0, 20.0),
                         vec2f(20.0, 0.0),
-                    ],
-                ],
-            }),
-            eq(FaceDebug {
-                label: label("A"),
-                outer_component: Some(
-                    vec![
+                    ]],
+                }),
+                eq(FaceDebug {
+                    label: label("A"),
+                    outer_component: Some(vec![
                         vec2f(0.0, 0.0),
                         vec2f(20.0, 0.0),
                         vec2f(20.0, 20.0),
                         vec2f(0.0, 20.0),
-                    ],
-                ),
-                inner_components: vec![
-                    vec![
+                    ]),
+                    inner_components: vec![vec![
                         vec2f(5.0, 5.0),
                         vec2f(5.0, 15.0),
                         vec2f(15.0, 15.0),
                         vec2f(15.0, 5.0),
-                    ],
-                ],
-            }),
-            eq(FaceDebug {
-                label: labels(&["A", "B"]),
-                outer_component: Some(
-                    vec![
+                    ]],
+                }),
+                eq(FaceDebug {
+                    label: labels(&["A", "B"]),
+                    outer_component: Some(vec![
                         vec2f(5.0, 5.0),
                         vec2f(15.0, 5.0),
                         vec2f(15.0, 15.0),
                         vec2f(5.0, 15.0),
-                    ],
-                ),
-                inner_components: vec![],
-            }),
-        ]));
+                    ]),
+                    inner_components: vec![],
+                }),
+            ]),
+        );
+
+        ////////////////
+
+        data.make_y_monotone();
+        data.repair();
+
+        let boundaries = FaceDebug::get_all(&data);
+        assert_that(
+            &boundaries,
+            unordered_elements_are(&[
+                eq(FaceDebug {
+                    label: HashSet::new(),
+                    outer_component: None,
+                    inner_components: vec![vec![
+                        vec2f(0.0, 0.0),
+                        vec2f(0.0, 20.0),
+                        vec2f(20.0, 20.0),
+                        vec2f(20.0, 0.0),
+                    ]],
+                }),
+                eq(FaceDebug {
+                    label: label("A"),
+                    outer_component: Some(vec![
+                        vec2f(0.0, 0.0),
+                        vec2f(15.0, 5.0),
+                        vec2f(5.0, 5.0),
+                        vec2f(5.0, 15.0),
+                        vec2f(20.0, 20.0),
+                        vec2f(0.0, 20.0),
+                    ]),
+                    inner_components: vec![],
+                }),
+                eq(FaceDebug {
+                    label: label("A"),
+                    outer_component: Some(vec![
+                        vec2f(0.0, 0.0),
+                        vec2f(20.0, 0.0),
+                        vec2f(20.0, 20.0),
+                        vec2f(5.0, 15.0),
+                        vec2f(15.0, 15.0),
+                        vec2f(15.0, 5.0),
+                    ]),
+                    inner_components: vec![],
+                }),
+                eq(FaceDebug {
+                    label: labels(&["A", "B"]),
+                    outer_component: Some(vec![
+                        vec2f(5.0, 5.0),
+                        vec2f(15.0, 5.0),
+                        vec2f(15.0, 15.0),
+                        vec2f(5.0, 15.0),
+                    ]),
+                    inner_components: vec![],
+                }),
+            ]),
+        );
+
+        println!("Triangulate!");
+        data.triangulate_monotone();
+        println!("Done");
+
+        data.repair();
+        println!("Repairing done!");
+
+        let boundaries = FaceDebug::get_all(&data);
+        println!("{:#?}", boundaries);
     }
 
     #[test]
@@ -1543,6 +1692,34 @@ mod tests {
         // If the inner square and outer square have different labels, they
         // should not change after a repeair.
         // TODO
+    }
+
+    #[test]
+    fn square_above_square() {
+        let mut data = HalfEdgeStruct::new();
+
+        let a0 = data.add_first_edge(vec2f(0., 0.), vec2f(20., 0.), label("A"));
+        let a1 = data.add_next_edge(a0, vec2f(20., 40.));
+        let a2 = data.add_next_edge(a1, vec2f(0., 40.));
+        data.add_close_edge(a2, a0);
+
+        let b0 = data.add_first_edge(vec2f(5., 5.), vec2f(15., 5.), label("B"));
+        let b1 = data.add_next_edge(b0, vec2f(15., 15.));
+        let b2 = data.add_next_edge(b1, vec2f(5., 15.));
+        data.add_close_edge(b2, b0);
+
+        let c0 = data.add_first_edge(vec2f(5., 25.), vec2f(15., 25.), label("C"));
+        let c1 = data.add_next_edge(c0, vec2f(15., 35.));
+        let c2 = data.add_next_edge(c1, vec2f(5., 35.));
+        data.add_close_edge(c2, c0);
+
+        data.repair();
+
+        println!("MAKE MONOTONE!");
+
+        data.make_y_monotone();
+
+        //
     }
 
     #[test]
@@ -1570,52 +1747,54 @@ mod tests {
 
         let boundaries = FaceDebug::get_all(&data);
         // println!("{:#?}", boundaries);
-        assert_that(&boundaries, unordered_elements_are(&[
-            eq(FaceDebug {
-                label: labels(&[]),
-                outer_component: None,
-                inner_components: vec![
-                    vec![
+        assert_that(
+            &boundaries,
+            unordered_elements_are(&[
+                eq(FaceDebug {
+                    label: labels(&[]),
+                    outer_component: None,
+                    inner_components: vec![
+                        vec![
+                            vec2f(0.0, 0.0),
+                            vec2f(0.0, 10.0),
+                            vec2f(10.0, 10.0),
+                            vec2f(10.0, 0.0),
+                        ],
+                        vec![
+                            vec2f(15.0, 5.0),
+                            vec2f(15.0, 15.0),
+                            vec2f(25.0, 15.0),
+                            vec2f(25.0, 5.0),
+                        ],
+                    ],
+                }),
+                eq(FaceDebug {
+                    label: label("A"),
+                    outer_component: Some(vec![
                         vec2f(0.0, 0.0),
-                        vec2f(0.0, 10.0),
-                        vec2f(10.0, 10.0),
-                        vec2f(10.0, 0.0),
-                    ],
-                    vec![
-                        vec2f(15.0, 5.0),
-                        vec2f(15.0, 15.0),
-                        vec2f(25.0, 15.0),
-                        vec2f(25.0, 5.0),
-                    ],
-                ],
-            }),
-            eq(FaceDebug {
-                label: label("A"),
-                outer_component: Some(
-                    vec![
-                        vec2f(0.0, 0.0),
                         vec2f(10.0, 0.0),
                         vec2f(10.0, 10.0),
                         vec2f(0.0, 10.0),
-                    ],
-                ),
-                inner_components: vec![],
-            }),
-            eq(FaceDebug {
-                label: label("B"),
-                outer_component: Some(
-                    vec![
+                    ]),
+                    inner_components: vec![],
+                }),
+                eq(FaceDebug {
+                    label: label("B"),
+                    outer_component: Some(vec![
                         vec2f(15.0, 5.0),
                         vec2f(25.0, 5.0),
                         vec2f(25.0, 15.0),
                         vec2f(15.0, 15.0),
-                    ],
-                ),
-                inner_components: vec![],
-            }),
-        ]));
+                    ]),
+                    inner_components: vec![],
+                }),
+            ]),
+        );
     }
 
     // TODO: Test for ignoring line segments with length 0 (and pruning them
     // from the structure).
+
+    // TODO: Test making a square with two square holes stacked vertically with
+    // some gap into a monotone shape.
 }

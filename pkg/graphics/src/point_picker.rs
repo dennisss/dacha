@@ -20,6 +20,7 @@ use common::async_std::fs;
 use common::errors::*;
 use image::Color;
 use image::Image;
+use math::geometry::half_edge::*;
 use math::geometry::line_segment::LineSegment2f;
 use math::matrix::Vector2f;
 
@@ -127,7 +128,13 @@ impl Default for PolygonsState {
 }
 
 enum PolygonViewMode {
-    Raw { focus_index: Option<usize> },
+    Raw {
+        focus_index: Option<usize>,
+    },
+    Faces {
+        focus_index: Option<usize>,
+        faces: Vec<FaceDebug<()>>,
+    },
 }
 
 impl PointPicker {
@@ -268,6 +275,61 @@ impl PointPicker {
 
                             next_idx += 1;
                         }
+                    }
+                    glfw::Key::Num2 | glfw::Key::Num3 | glfw::Key::Num4 => {
+                        if let PolygonViewMode::Faces { focus_index, faces } = &mut state.view_mode
+                        {
+                            let next_index = focus_index.clone().map(|v| v + 1).unwrap_or(0);
+                            if next_index < faces.len() {
+                                *focus_index = Some(next_index);
+                            } else {
+                                *focus_index = None;
+                            }
+
+                            return Ok(());
+                        }
+
+                        let mut data = HalfEdgeStruct::<()>::new();
+
+                        for poly_i in 0..state.start_indices.len() {
+                            let poly = Self::get_polygon(&self.points, state, poly_i);
+                            if !poly.closed || poly.points.len() < 3 {
+                                continue;
+                            }
+
+                            let first_edge = data.add_first_edge(
+                                poly.points[0].clone(),
+                                poly.points[1].clone(),
+                                (),
+                            );
+                            let mut next_edge =
+                                data.add_next_edge(first_edge, poly.points[2].clone());
+                            for point in &poly.points[3..] {
+                                next_edge = data.add_next_edge(next_edge, point.clone());
+                            }
+                            data.add_close_edge(next_edge, first_edge);
+                        }
+
+                        data.repair();
+
+                        if key == glfw::Key::Num3 || key == glfw::Key::Num4 {
+                            println!("Make monotone!");
+                            data.make_y_monotone();
+                            data.repair();
+                        }
+
+                        if key == glfw::Key::Num4 {
+                            println!("Triangulate!");
+                            data.triangulate_monotone();
+                            data.repair();
+                        }
+
+                        let faces = FaceDebug::get_all(&data);
+
+                        state.view_mode = PolygonViewMode::Faces {
+                            focus_index: None,
+                            faces,
+                        };
                     }
                     _ => {}
                 }
@@ -443,6 +505,38 @@ impl PointPicker {
                     self.draw_polygon_edge(poly.points, poly.closed, Tone::Neutral, canvas)?;
                 }
             }
+            PolygonViewMode::Faces { faces, focus_index } => {
+                for face in faces {
+                    for points in face
+                        .outer_component
+                        .iter()
+                        .chain(face.inner_components.iter())
+                    {
+                        self.draw_polygon_edge(
+                            &points,
+                            true,
+                            if focus_index.is_some() {
+                                Tone::Background
+                            } else {
+                                Tone::Neutral
+                            },
+                            canvas,
+                        )?;
+                    }
+                }
+
+                if let Some(idx) = focus_index.clone() {
+                    let face = &faces[idx];
+
+                    if let Some(points) = &face.outer_component {
+                        self.draw_polygon_edge(&points, true, Tone::Primary, canvas)?;
+                    }
+
+                    for points in face.inner_components.iter() {
+                        self.draw_polygon_edge(&points, true, Tone::Secondary, canvas)?;
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -571,7 +665,7 @@ pub async fn run() -> Result<()> {
     ];
 
     let background_image_bytes =
-        fs::read(project_path!("third_party/comp_geom/triangulate_a.qoi")).await?;
+        fs::read(project_path!("third_party/comp_geom/triangulate_d.qoi")).await?;
 
     let background_image = image::format::qoi::QOIDecoder::new().decode(&background_image_bytes)?;
 
