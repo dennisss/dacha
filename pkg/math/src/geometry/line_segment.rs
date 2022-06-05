@@ -8,7 +8,7 @@ use common::InRange;
 
 use crate::geometry::line::Line2f;
 use crate::matrix::cwise_binary_ops::{CwiseMax, CwiseMin};
-use crate::matrix::{Matrix2f, Vector2f};
+use crate::matrix::{vec2f, Matrix2f, Vector2f};
 
 /// Bounded line segment defined by two endpoints which are connected.
 /// The two endpoints are inclusive (considered to be part of the segment).
@@ -583,10 +583,6 @@ pub struct Intersection2f {
     /// If the UPPER endpoint of a line segment is at the y position of this
     /// intersection, it will not be counted when searching for this neighbor.
     pub right_neighbor: Option<usize>,
-}
-
-fn vec2f(x: f32, y: f32) -> Vector2f {
-    Vector2f::from_slice(&[x, y])
 }
 
 #[cfg(test)]

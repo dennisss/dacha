@@ -4,8 +4,8 @@ use common::errors::*;
 use image::Color;
 use math::matrix::Vector2f;
 
+use crate::canvas::PathBuilder;
 use crate::raster::canvas::Canvas;
-use crate::raster::canvas::PathBuilder;
 use crate::ui::event::*;
 use crate::ui::view::*;
 

@@ -12,6 +12,7 @@ use crate::transform::orthogonal_projection;
 
 const MAX_DIMENSION: f32 = 1000.0;
 
+/// Helper for displaying a single image from a command line program.
 #[async_trait]
 pub trait ImageShow {
     // TODO: Spawn this on a separate thread so that it doesn't block.
@@ -38,6 +39,9 @@ impl ImageShow for Image<u8> {
         };
 
         let shader_src = ShaderSource::flat_texture().await?;
+
+        // TODO: Implement this in terms of the UI/Canvas framework so that it can
+        // handle threading, etc.
 
         let mut app = Application::new();
         let mut window = app.create_window(

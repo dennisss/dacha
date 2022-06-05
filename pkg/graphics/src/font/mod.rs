@@ -11,11 +11,12 @@ use math::matrix::{Matrix3f, Vector2f, Vector2i, Vector3f, Vector3u};
 use parsing::cstruct::parse_cstruct_be;
 use parsing::*;
 
+use crate::canvas::PathBuilder;
 use crate::opengl::polygon::Polygon;
 use crate::opengl::shader::ShaderSource;
 use crate::opengl::texture::Texture;
 use crate::opengl::window::Window;
-use crate::raster::canvas::{Canvas, Path, PathBuilder, SubPath};
+use crate::raster::canvas::Canvas;
 use crate::raster::canvas_render_loop::WindowOptions;
 use crate::transform::orthogonal_projection;
 

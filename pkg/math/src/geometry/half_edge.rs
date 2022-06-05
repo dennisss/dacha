@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use crate::geometry::convex_hull::turns_right;
 use crate::geometry::entity_storage::*;
 use crate::geometry::line_segment::{compare_points, compare_points_x_then_y, LineSegment2f};
-use crate::matrix::Vector2f;
+use crate::matrix::{vec2f, Vector2f};
 
 /*
 The face associated with each edge lies to the left of the ddge.
@@ -1156,10 +1156,6 @@ pub fn overlap_polys(segments: &[LineSegment2f]) {
     //
 }
 */
-
-fn vec2f(x: f32, y: f32) -> Vector2f {
-    Vector2f::from_slice(&[x, y])
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FaceDebug<F> {

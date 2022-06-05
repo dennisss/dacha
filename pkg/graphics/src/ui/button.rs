@@ -5,7 +5,8 @@ use common::errors::*;
 use image::Color;
 use math::matrix::Vector2f;
 
-use crate::raster::canvas::{Canvas, PathBuilder};
+use crate::canvas::PathBuilder;
+use crate::raster::canvas::Canvas;
 use crate::ui::box_view::*;
 use crate::ui::children::Children;
 use crate::ui::element::*;

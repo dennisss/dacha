@@ -125,6 +125,12 @@ impl<T: ElementType, R: Dimension, C: Dimension, Data: StorageTypeMut<T, R, C>>
     }
 }
 
+impl core::convert::From<(Vector2f, f32)> for Vector3f {
+    fn from((a, b): (Vector2f, f32)) -> Self {
+        Self::from_slice(&[a.x(), a.y(), b])
+    }
+}
+
 // Matrix3d::zero().inverse()
 
 impl<T: ElementType, R: StaticDim, C: StaticDim, D: StorageTypeMut<T, R, C>>

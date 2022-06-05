@@ -1,3 +1,5 @@
+#![feature(trait_alias)]
+
 extern crate alloc;
 extern crate core;
 
@@ -13,6 +15,7 @@ extern crate typenum;
 extern crate macros;
 extern crate reflection;
 
+pub mod canvas;
 pub mod font;
 pub mod image_show;
 pub mod lighting;

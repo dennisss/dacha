@@ -22,17 +22,14 @@ use image::Color;
 use image::Image;
 use math::geometry::half_edge::*;
 use math::geometry::line_segment::LineSegment2f;
-use math::matrix::Vector2f;
+use math::matrix::{vec2f, Vector2f};
 
+use crate::canvas::PathBuilder;
 use crate::opengl::window::Window;
-use crate::raster::canvas::{Canvas, PathBuilder};
+use crate::raster::canvas::Canvas;
 use crate::raster::canvas_render_loop::WindowOptions;
 
-const POINT_SIZE: usize = 4;
-
-fn vec2f(x: f32, y: f32) -> Vector2f {
-    Vector2f::from_slice(&[x, y])
-}
+const POINT_SIZE: usize = 20;
 
 fn format_points(points: &[Vector2f]) -> String {
     let mut s = String::new();
@@ -418,7 +415,8 @@ impl PointPicker {
         }
 
         canvas.save();
-        canvas.translate(0., canvas.drawing_buffer.height() as f32);
+        let height = canvas.drawing_buffer.height() as f32;
+        canvas.translate(0., height);
         canvas.scale(1., -1.);
 
         match &self.mode {

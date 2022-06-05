@@ -3,7 +3,7 @@ use core::cmp::Ordering;
 
 use common::errors::*;
 
-use crate::matrix::{Vector2f, Vector3f};
+use crate::matrix::{vec2f, Vector2f, Vector3f};
 
 /// Given a set of points, returns the points which represent the convex full of
 /// that set. The returned points are ordered in clockwise order.
@@ -84,10 +84,6 @@ pub fn turns_right(a: &Vector2f, b: &Vector2f, c: &Vector2f) -> bool {
     let n = ab3.cross(&ac3);
 
     n.z() <= 0.
-}
-
-fn vec2f(x: f32, y: f32) -> Vector2f {
-    Vector2f::from_slice(&[x, y])
 }
 
 #[cfg(test)]

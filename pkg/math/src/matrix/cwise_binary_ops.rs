@@ -347,3 +347,36 @@ impl<
         self
     }
 }
+
+// Matrix /= Scalar.
+impl<
+        T: ScalarElementType,
+        R: Dimension,
+        C: Dimension,
+        D: StorageTypeMut<T, R, C>,
+        V: num_traits::Num + Copy + Into<T>,
+    > DivAssign<V> for MatrixBase<T, R, C, D>
+{
+    #[inline]
+    fn div_assign(&mut self, rhs: V) {
+        self.cwise_div_assign(rhs);
+    }
+}
+
+// Matrix / Scalar
+impl<
+        T: ScalarElementType,
+        R: Dimension,
+        C: Dimension,
+        D: StorageTypeMut<T, R, C>,
+        V: num_traits::Num + Copy + Into<T>,
+    > Div<V> for MatrixBase<T, R, C, D>
+{
+    type Output = Self;
+
+    #[inline]
+    fn div(mut self, rhs: V) -> Self::Output {
+        self.div_assign(rhs);
+        self
+    }
+}

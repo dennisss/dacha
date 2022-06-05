@@ -1,8 +1,9 @@
-use crate::raster::PolygonRef;
 use common::iter::{PairIter, PairIterator};
 use image::Color;
 use math::geometry::line::Line2f;
 use math::matrix::{Matrix2f, Vector2f, Vector3f};
+
+use crate::raster::PolygonRef;
 
 // Any edge shared by two triangles can be trivially discarded from future
 // testing.

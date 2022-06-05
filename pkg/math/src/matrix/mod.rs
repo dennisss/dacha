@@ -6,6 +6,7 @@ pub mod eigen;
 pub mod element;
 pub mod equality;
 pub mod format;
+mod helpers;
 #[cfg(feature = "alloc")]
 pub mod householder;
 pub mod multiplication;
@@ -17,3 +18,4 @@ pub mod svd;
 
 pub use self::base::*;
 pub use self::dimension::*;
+pub use self::helpers::*;
