@@ -16,9 +16,8 @@ use common::errors::*;
 use image::Color;
 use math::matrix::Vector2f;
 
-use crate::canvas::PathBuilder;
+use crate::canvas::{Canvas, PathBuilder};
 use crate::font::{find_closest_text_index, measure_text, CanvasFontExt, OpenTypeFont};
-use crate::raster::canvas::Canvas;
 use crate::ui::event::*;
 use crate::ui::view::*;
 
@@ -114,7 +113,7 @@ impl View for Textbox {
         })
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut Canvas) -> Result<()> {
+    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
         let background_color = Color::rgb(0xff, 0xff, 0xff);
         let border_color = Color::rgb(0xcc, 0xcc, 0xcc);
         let font_color = Color::rgb(0, 0, 0);

@@ -11,12 +11,13 @@ use math::matrix::{Matrix3f, Vector2f, Vector2i, Vector3f, Vector3u};
 use parsing::cstruct::parse_cstruct_be;
 use parsing::*;
 
+use crate::canvas::Canvas;
 use crate::canvas::PathBuilder;
 use crate::opengl::polygon::Polygon;
 use crate::opengl::shader::ShaderSource;
 use crate::opengl::texture::Texture;
 use crate::opengl::window::Window;
-use crate::raster::canvas::Canvas;
+use crate::raster::canvas::RasterCanvas;
 use crate::raster::canvas_render_loop::WindowOptions;
 use crate::transform::orthogonal_projection;
 
@@ -851,7 +852,7 @@ impl OpenTypeFont {
     }
 }
 
-fn draw_glyph(canvas: &mut Canvas, g: &SimpleGlyph, color: &Color) -> Result<()> {
+fn draw_glyph(canvas: &mut dyn Canvas, g: &SimpleGlyph, color: &Color) -> Result<()> {
     if g.contours.is_empty() {
         return Ok(());
     }
@@ -1037,7 +1038,7 @@ pub trait CanvasFontExt {
     ) -> Result<()>;
 }
 
-impl CanvasFontExt for Canvas {
+impl CanvasFontExt for dyn Canvas + '_ {
     fn fill_text(
         &mut self,
         mut x: f32,
@@ -1077,6 +1078,26 @@ impl CanvasFontExt for Canvas {
     }
 }
 
+// This is separate from the 'dyn Canvas' impl as you need to be Sized in order
+// to do the cast to '&mut dyn Canvas'.
+//
+// TODO: Have a macro for automatically
+// deriving this from the dyn impl.
+impl<C: Canvas> CanvasFontExt for C {
+    fn fill_text(
+        &mut self,
+        x: f32,
+        y: f32,
+        font: &OpenTypeFont,
+        text: &str,
+        font_size: f32,
+        color: &Color,
+    ) -> Result<()> {
+        let dyn_self = self as &mut dyn Canvas;
+        dyn_self.fill_text(x, y, font, text, font_size, color)
+    }
+}
+
 pub async fn open_font() -> Result<()> {
     // TODO: Verify the encoding/platform and that there is exactly one subtable.
     //    println!(
@@ -1093,7 +1114,7 @@ pub async fn open_font() -> Result<()> {
     const WIDTH: usize = 800;
     const SCALE: usize = 4;
 
-    let mut canvas = Canvas::create(HEIGHT * SCALE, WIDTH * SCALE);
+    let mut canvas = RasterCanvas::create(HEIGHT * SCALE, WIDTH * SCALE);
     canvas.scale(SCALE as f32, SCALE as f32);
 
     let window_options = WindowOptions {
@@ -1103,8 +1124,14 @@ pub async fn open_font() -> Result<()> {
     };
 
     canvas
-        .render_loop(window_options, |canvas, window, _| {
-            canvas.drawing_buffer.clear_white();
+        .render_loop(window_options, |mut canvas, window, _| {
+            canvas.clear_rect(
+                0.,
+                0.,
+                window.width() as f32,
+                window.height() as f32,
+                &Color::rgb(255, 255, 255),
+            )?;
 
             // Key font actions:
             // - Distance above/below baseline of one line (does not change based on text)

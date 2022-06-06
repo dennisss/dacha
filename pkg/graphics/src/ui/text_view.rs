@@ -3,8 +3,8 @@ use std::sync::Arc;
 use common::errors::*;
 use image::Color;
 
+use crate::canvas::Canvas;
 use crate::font::{measure_text, CanvasFontExt, OpenTypeFont};
-use crate::raster::canvas::Canvas;
 use crate::ui::event::*;
 use crate::ui::view::*;
 
@@ -56,7 +56,7 @@ impl View for TextView {
         })
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut Canvas) -> Result<()> {
+    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
         let measurements =
             measure_text(&self.params.font, &self.params.text, self.params.font_size)?;
 

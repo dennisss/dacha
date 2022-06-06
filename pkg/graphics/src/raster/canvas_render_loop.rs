@@ -4,12 +4,13 @@ use common::errors::*;
 use glfw::WindowEvent;
 use math::matrix::{Vector2f, Vector2i, Vector3f};
 
+use crate::canvas::Canvas;
 use crate::opengl::app::Application;
 use crate::opengl::polygon::Polygon;
 use crate::opengl::shader::ShaderSource;
 use crate::opengl::texture::Texture;
 use crate::opengl::window::Window;
-use crate::raster::canvas::Canvas;
+use crate::raster::canvas::RasterCanvas;
 use crate::transform::orthogonal_projection;
 
 pub struct WindowOptions {
@@ -18,8 +19,10 @@ pub struct WindowOptions {
     pub height: usize,
 }
 
-impl Canvas {
-    pub async fn render_loop<F: FnMut(&mut Canvas, &mut Window, &[WindowEvent]) -> Result<()>>(
+impl RasterCanvas {
+    pub async fn render_loop<
+        F: FnMut(&mut dyn Canvas, &mut Window, &[WindowEvent]) -> Result<()>,
+    >(
         &mut self,
         window_options: WindowOptions,
         mut f: F,

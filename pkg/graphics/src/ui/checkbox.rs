@@ -4,8 +4,8 @@ use common::errors::*;
 use image::Color;
 use math::matrix::Vector2f;
 
+use crate::canvas::Canvas;
 use crate::canvas::PathBuilder;
-use crate::raster::canvas::Canvas;
 use crate::ui::event::*;
 use crate::ui::view::*;
 
@@ -56,7 +56,7 @@ impl View for CheckboxView {
         })
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut Canvas) -> Result<()> {
+    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
         // #2196F3
         let bg_color = Color::rgb(0x21, 0x96, 0xF3);
 

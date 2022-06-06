@@ -2,7 +2,7 @@ use common::errors::*;
 use core::any::TypeId;
 use std::sync::Arc;
 
-use crate::raster::canvas::Canvas;
+use crate::canvas::Canvas;
 use crate::ui::children::*;
 use crate::ui::element::*;
 use crate::ui::event::*;
@@ -80,7 +80,7 @@ impl<V: VirtualView + 'static> View for VirtualViewContainer<V> {
         self.children[0].layout(parent_box)
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut Canvas) -> Result<()> {
+    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
         self.children[0].render(parent_box, canvas)
     }
 

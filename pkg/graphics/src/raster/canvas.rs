@@ -4,30 +4,32 @@ use image::{Color, Colorspace, Image};
 use math::matrix::{vec2f, Matrix3f, Vector2f, Vector2i, Vector3f};
 
 use crate::canvas::base::CanvasBase;
-use crate::canvas::bezier::BezierCurve;
 use crate::canvas::curve::Curve;
-use crate::canvas::ellipse::Ellipse;
 use crate::canvas::path::*;
+use crate::canvas::Canvas;
 use crate::raster::FillRule;
 use crate::transforms::transform2f;
 
-pub struct Canvas {
+/// 2D Canvas implementation which performs all pixel rasterization on CPU.
+pub struct RasterCanvas {
     // TODO: Make private.
     pub drawing_buffer: Image<u8>,
     base: CanvasBase,
 }
 
-impl_deref!(Canvas::base as CanvasBase);
+impl_deref!(RasterCanvas::base as CanvasBase);
 
-impl Canvas {
+impl RasterCanvas {
     pub fn create(height: usize, width: usize) -> Self {
         Self {
             drawing_buffer: Image::zero(height, width, Colorspace::RGB),
             base: CanvasBase::new(),
         }
     }
+}
 
-    pub fn fill_path(&mut self, path: &Path, color: &Color) -> Result<()> {
+impl Canvas for RasterCanvas {
+    fn fill_path(&mut self, path: &Path, color: &Color) -> Result<()> {
         let (verts, path_starts) = path.linearize(self.base.current_transform());
 
         // TODO: Currently this assumes that all subpaths are closed. Possibly we should
@@ -46,7 +48,7 @@ impl Canvas {
     /// TODO: Must use the non-zero winding rule for this always.
     /// TODO: This has a lot of redundant computation with fill_path if we ever
     /// want to do both.
-    pub fn stroke_path(&mut self, path: &Path, width: f32, color: &Color) -> Result<()> {
+    fn stroke_path(&mut self, path: &Path, width: f32, color: &Color) -> Result<()> {
         let (verts, path_starts) = path.linearize(self.base.current_transform());
 
         let scale = self.base.current_transform()[(0, 0)];
@@ -74,42 +76,24 @@ impl Canvas {
         Ok(())
     }
 
-    pub fn fill_rectangle(
-        &mut self,
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-        color: &Color,
-    ) -> Result<()> {
-        let mut rect = PathBuilder::new();
-        rect.move_to(Vector2f::from_slice(&[x, y]));
-        rect.line_to(Vector2f::from_slice(&[x + width, y]));
-        rect.line_to(Vector2f::from_slice(&[x + width, y + height]));
-        rect.line_to(Vector2f::from_slice(&[x, y + height]));
-        rect.close();
-        self.fill_path(&rect.build(), color)
+    fn draw_image(&mut self, image: &Image<u8>) -> Result<()> {
+        let white = Color::rgb(255, 255, 255);
+
+        for y in 0..image.height() {
+            for x in 0..image.width() {
+                let c = image.get(y, x);
+
+                // TODO: The second cast should be a round!
+                let c = (c.cast::<f32>() * 0.2 + white.cast::<f32>() * 0.8).cast::<u8>();
+
+                self.drawing_buffer.set(y, x, &Color::from(c));
+            }
+        }
+
+        Ok(())
     }
 
-    pub fn stroke_rectangle(
-        &mut self,
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-        line_width: f32,
-        color: &Color,
-    ) -> Result<()> {
-        let mut rect = PathBuilder::new();
-        rect.move_to(Vector2f::from_slice(&[x, y]));
-        rect.line_to(Vector2f::from_slice(&[x + width, y]));
-        rect.line_to(Vector2f::from_slice(&[x + width, y + height]));
-        rect.line_to(Vector2f::from_slice(&[x, y + height]));
-        rect.close();
-        self.stroke_path(&rect.build(), line_width, color)
-    }
-
-    pub fn clear() {}
+    // pub fn clear() {}
 }
 
 // Implementing

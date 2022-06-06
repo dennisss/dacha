@@ -24,12 +24,13 @@ use math::geometry::half_edge::*;
 use math::geometry::line_segment::LineSegment2f;
 use math::matrix::{vec2f, Vector2f};
 
+use crate::canvas::Canvas;
 use crate::canvas::PathBuilder;
 use crate::opengl::window::Window;
-use crate::raster::canvas::Canvas;
+use crate::raster::canvas::RasterCanvas;
 use crate::raster::canvas_render_loop::WindowOptions;
 
-const POINT_SIZE: usize = 20;
+const POINT_SIZE: usize = 4;
 
 fn format_points(points: &[Vector2f]) -> String {
     let mut s = String::new();
@@ -137,9 +138,9 @@ enum PolygonViewMode {
 impl PointPicker {
     pub fn handle_events(
         &mut self,
+        canvas: &dyn Canvas,
         window: &mut Window,
         events: &[glfw::WindowEvent],
-        canvas: &Canvas,
     ) -> Result<()> {
         if let Mode::None = &self.mode {
             self.mode = Mode::Points(PointsState::default());
@@ -152,7 +153,7 @@ impl PointPicker {
                 let (x, y) = window.raw().get_cursor_pos();
 
                 // Transform to canvas dimensions.
-                let (x, y) = (x as f32, canvas.drawing_buffer.height() as f32 - y as f32);
+                let (x, y) = (x as f32, window.height() as f32 - y as f32);
 
                 println!("X: {},  Y: {}", x, y);
 
@@ -395,27 +396,22 @@ impl PointPicker {
         }
     }
 
-    pub fn draw(&self, canvas: &mut Canvas) -> Result<()> {
-        canvas.drawing_buffer.clear_white();
-
-        let white = Color::rgb(255, 255, 255);
+    pub fn draw(&self, canvas: &mut dyn Canvas, window: &Window) -> Result<()> {
+        canvas.clear_rect(
+            0.,
+            0.,
+            window.width() as f32,
+            window.height() as f32,
+            &Color::rgb(255, 255, 255),
+        )?;
 
         // Draw the background image.
         if let (Some(image), true) = (&self.background_image, self.background_image_visible) {
-            for y in 0..image.height() {
-                for x in 0..image.width() {
-                    let c = image.get(y, x);
-
-                    // TODO: The second cast should be a round!
-                    let c = (c.cast::<f32>() * 0.2 + white.cast::<f32>() * 0.8).cast::<u8>();
-
-                    canvas.drawing_buffer.set(y, x, &Color::from(c));
-                }
-            }
+            canvas.draw_image(image)?;
         }
 
         canvas.save();
-        let height = canvas.drawing_buffer.height() as f32;
+        let height = window.height() as f32;
         canvas.translate(0., height);
         canvas.scale(1., -1.);
 
@@ -431,7 +427,7 @@ impl PointPicker {
         Ok(())
     }
 
-    fn draw_points_mode(&self, state: &PointsState, canvas: &mut Canvas) -> Result<()> {
+    fn draw_points_mode(&self, state: &PointsState, canvas: &mut dyn Canvas) -> Result<()> {
         for point in &self.points {
             self.draw_point(point.clone(), Tone::Neutral, canvas)?;
         }
@@ -443,7 +439,7 @@ impl PointPicker {
         Ok(())
     }
 
-    fn draw_lines_mode(&self, state: &LinesState, canvas: &mut Canvas) -> Result<()> {
+    fn draw_lines_mode(&self, state: &LinesState, canvas: &mut dyn Canvas) -> Result<()> {
         for pair in self.points.chunks_exact(2) {
             let mut path = PathBuilder::new();
             path.move_to(pair[0].clone());
@@ -465,7 +461,7 @@ impl PointPicker {
         Ok(())
     }
 
-    fn draw_polygons_mode(&self, state: &PolygonsState, canvas: &mut Canvas) -> Result<()> {
+    fn draw_polygons_mode(&self, state: &PolygonsState, canvas: &mut dyn Canvas) -> Result<()> {
         if self.points.len() == 0 {
             return Ok(());
         }
@@ -558,7 +554,7 @@ impl PointPicker {
         }
     }
 
-    fn draw_point(&self, point: Vector2f, tone: Tone, canvas: &mut Canvas) -> Result<()> {
+    fn draw_point(&self, point: Vector2f, tone: Tone, canvas: &mut dyn Canvas) -> Result<()> {
         // TODO: Ideally re-use the same path object (with any linearization or
         // triangulation applied) per scale.
 
@@ -586,7 +582,7 @@ impl PointPicker {
         points: &[Vector2f],
         closed: bool,
         tone: Tone,
-        canvas: &mut Canvas,
+        canvas: &mut dyn Canvas,
     ) -> Result<()> {
         if points.len() < 2 {
             return Ok(());
@@ -625,7 +621,7 @@ pub async fn run() -> Result<()> {
         height: HEIGHT,
     };
 
-    let mut canvas = Canvas::create(HEIGHT, WIDTH);
+    let mut canvas = RasterCanvas::create(HEIGHT, WIDTH);
 
     let mut mode = Mode::Lines;
 
@@ -685,8 +681,8 @@ pub async fn run() -> Result<()> {
 
     canvas
         .render_loop(window_options, |canvas, window, events| {
-            picker.handle_events(window, events, canvas)?;
-            picker.draw(canvas)?;
+            picker.handle_events(canvas, window, events)?;
+            picker.draw(canvas, window)?;
             Ok(())
         })
         .await?;

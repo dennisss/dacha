@@ -1,6 +1,6 @@
 use common::errors::*;
 
-use crate::raster::canvas::Canvas;
+use crate::canvas::Canvas;
 use crate::ui::element::{Element, ViewWithParamsElement};
 use crate::ui::event::Event;
 
@@ -61,7 +61,7 @@ pub trait View: ViewUpdate {
     /// how the view was rendered (e.g. boxes of children for handling events).
     /// If no events occur, then multiple sequential calls to render() should
     /// draw the same image.
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut Canvas) -> Result<()>;
+    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()>;
 
     fn handle_event(&mut self, event: &Event) -> Result<()>;
 }

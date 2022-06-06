@@ -9,7 +9,7 @@ use common::errors::*;
 use graphics::font::CanvasFontExt;
 use graphics::font::OpenTypeFont;
 use graphics::image_show::ImageShow;
-use graphics::raster::canvas::Canvas;
+use graphics::raster::canvas::RasterCanvas;
 
 /*
 NOTE: Max packet size is 64
@@ -40,11 +40,17 @@ Output: 8
 */
 
 async fn run() -> Result<()> {
-    let mut canvas = Canvas::create(64, 320);
+    let mut canvas = RasterCanvas::create(64, 320);
 
     let font = OpenTypeFont::open(project_path!("testdata/noto-sans.ttf")).await?;
 
-    canvas.drawing_buffer.clear_white();
+    canvas.clear_rect(
+        0.,
+        0.,
+        window.width() as f32,
+        window.height() as f32,
+        &Color::rgb(255, 255, 255),
+    )?;
 
     let color = image::Color::zero(3);
     canvas.fill_text(50.0, 57.0, &font, "4B 4G", 50.0, &color)?;

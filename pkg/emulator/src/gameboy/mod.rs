@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::rc::Rc;
 
 use common::errors::*;
-use graphics::raster::canvas::Canvas;
+use graphics::raster::canvas::RasterCanvas;
 use graphics::raster::canvas_render_loop::WindowOptions;
 
 use crate::gameboy::clock::CYCLES_PER_SECOND;
@@ -155,7 +155,7 @@ pub async fn run() -> Result<()> {
         mem.store8(0xFFFF, 0x00).unwrap();
         */
 
-    let mut canvas = Canvas::create(video::SCREEN_HEIGHT, video::SCREEN_WIDTH);
+    let mut canvas = RasterCanvas::create(video::SCREEN_HEIGHT, video::SCREEN_WIDTH);
 
     let window_options = WindowOptions {
         name: "Gameboy".to_string(),

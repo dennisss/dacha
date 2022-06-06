@@ -42,6 +42,14 @@ impl Window {
         self.window.set_size(size[0] as i32, size[1] as i32);
     }
 
+    pub fn width(&self) -> usize {
+        self.window.get_size().0 as usize
+    }
+
+    pub fn height(&self) -> usize {
+        self.window.get_size().1 as usize
+    }
+
     pub fn received_events<'a>(
         &'a mut self,
     ) -> impl Iterator<Item = (f64, glfw::WindowEvent)> + 'a {

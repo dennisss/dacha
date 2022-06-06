@@ -6,7 +6,7 @@ use std::sync::Arc;
 use common::errors::*;
 use image::Color;
 
-use crate::raster::canvas::Canvas;
+use crate::canvas::Canvas;
 use crate::ui::children::Children;
 use crate::ui::element::Element;
 use crate::ui::event::*;
@@ -100,7 +100,7 @@ impl View for BoxView {
         self.layout_impl(parent_box).map(|v| v.outer_box)
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut Canvas) -> Result<()> {
+    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
         let layout = self.layout_impl(parent_box)?;
         let inner = &mut self.children[0];
 
