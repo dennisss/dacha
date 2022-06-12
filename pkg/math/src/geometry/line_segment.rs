@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use common::tree::attribute::EmptyAttribute;
 use core::cmp::Ordering;
 
 use common::tree::avl::AVLTree;
@@ -118,10 +119,13 @@ impl LineSegment2f {
 
         // Ordered list of line segments which intersect with the last sweep line (at
         // the last event).
-        let mut sweep_status = AVLTree::<LineSegmentIndex, _>::new(LineSweepComparator {
-            segments,
-            event_point: Vector2f::zero(),
-        });
+        let mut sweep_status =
+            AVLTree::<LineSegmentIndex, EmptyAttribute, LineSweepComparator>::new(
+                LineSweepComparator {
+                    segments,
+                    event_point: Vector2f::zero(),
+                },
+            );
 
         while let Some(first_event) = event_queue.extract_min() {
             let event_point = first_event.point;

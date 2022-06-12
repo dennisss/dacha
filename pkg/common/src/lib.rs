@@ -311,7 +311,55 @@ macro_rules! tup {
 
 #[macro_export]
 macro_rules! enum_def {
-    ($name:ident $t:ty => $( $case:ident = $val:expr ),*) => {
+    // Special case for enums which represent string values.
+    // These can't be cast to ordinal values.
+    ($(#[$meta:meta])* $name:ident str => $( $case:ident = $val:expr ),*) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Debug)]
+		pub enum $name {
+			$(
+				$case
+			),*
+		}
+
+		impl $name {
+			pub fn from_value(v: &str) -> Result<Self> {
+				Ok(match v {
+					$(
+						$val => $name::$case,
+					)*
+					_ => {
+						return Err(
+							format_err!("Unknown value for '$name': {}", v));
+					}
+				})
+			}
+
+			pub fn to_value(&self) -> &'static str {
+				match self {
+					$(
+						$name::$case => $val,
+					)*
+				}
+			}
+		}
+
+        impl std::cmp::PartialEq for $name {
+            fn eq(&self, other: &Self) -> bool {
+                self.to_value() == other.to_value()
+            }
+        }
+
+        impl std::cmp::Eq for $name {}
+
+        impl std::hash::Hash for $name {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                self.to_value().hash(state);
+            }
+        }
+    };
+    ($(#[$meta:meta])* $name:ident $t:ty => $( $case:ident = $val:expr ),*) => {
+        $(#[$meta])*
     	#[derive(Clone, Copy, Debug)]
 		pub enum $name {
 			$(

@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
+use crate::tree::attribute::{EmptyAttribute, TreeAttribute};
 use crate::tree::avl_node::AVLNode;
 use crate::tree::comparator::*;
 
@@ -15,18 +16,18 @@ use crate::tree::comparator::*;
 ///   repair each node on the way back up the call stack. We should skip
 ///   balancing a node if no height changes occured in its children.
 #[derive(Clone, Debug)]
-pub struct AVLTree<T, C = OrdComparator> {
-    root: Option<Box<AVLNode<T>>>,
+pub struct AVLTree<T, A = EmptyAttribute, C = OrdComparator> {
+    root: Option<Box<AVLNode<T, A>>>,
     comparator: C,
 }
 
-impl<T: Ord> AVLTree<T, OrdComparator> {
+impl<T: Ord> AVLTree<T, EmptyAttribute, OrdComparator> {
     pub fn default() -> Self {
         Self::new(OrdComparator {})
     }
 }
 
-impl<T, C: Comparator<T, T>> AVLTree<T, C> {
+impl<T, A: TreeAttribute, C: Comparator<T, T>> AVLTree<T, A, C> {
     pub fn new(comparator: C) -> Self {
         Self {
             root: None,
@@ -45,15 +46,28 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
         self.comparator = comparator;
     }
 
+    /// Helper for allocating a new buffer for storing a chain of node pointers
+    /// from the root to a leaf.
+    ///
+    /// Because we know the height of the tree precisely, we can allocate a
+    /// buffer right away of the current size which will never be re-allocated.
+    fn allocate_path_buf<'a>(&'a self) -> Vec<&'a AVLNode<T, A>> {
+        let mut path = vec![];
+        if let Some(node) = self.root.as_ref() {
+            path.reserve_exact((1 + node.height()) as usize);
+        }
+        path
+    }
+
     /// Lookups up a value in the tree which equals the query.
     ///
     /// If such a value exists, then an iterator will be returned pointing to
     /// that value will be returned. Else, None will be returned.
-    pub fn find<'a, Q>(&'a self, query: &Q) -> Option<Iter<'a, T>>
+    pub fn find<'a, Q>(&'a self, query: &Q) -> Option<Iter<'a, T, A>>
     where
         C: Comparator<T, Q>,
     {
-        let mut path = vec![];
+        let mut path = self.allocate_path_buf();
 
         let mut next_pointer = self.root.as_ref();
         while let Some(node) = next_pointer {
@@ -80,7 +94,7 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
     }
 
     /// Gets an iterator over all values in the tree in ascending order.
-    pub fn iter<'a>(&'a self) -> Iter<'a, T> {
+    pub fn iter<'a>(&'a self) -> Iter<'a, T, A> {
         let mut iter = Iter {
             root: self.root.as_ref().map(|n| n.as_ref()),
             path: vec![],
@@ -97,18 +111,18 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
     /// The comparator must preserve the ordering of adjacent values as was used
     /// during insertion. But, this function will still return the correct
     /// result if previously non-equal adjacent values become equal.
-    pub fn lower_bound<'a, Q>(&'a self, query: &Q) -> Iter<'a, T>
+    pub fn lower_bound<'a, Q>(&'a self, query: &Q) -> Iter<'a, T, A>
     where
         C: Comparator<T, Q>,
     {
         self.lower_bound_by(query, &self.comparator)
     }
 
-    pub fn lower_bound_by<'a, Q, D>(&'a self, query: &Q, comparator: &D) -> Iter<'a, T>
+    pub fn lower_bound_by<'a, Q, D>(&'a self, query: &Q, comparator: &D) -> Iter<'a, T, A>
     where
         D: Comparator<T, Q>,
     {
-        let mut path = vec![];
+        let mut path = self.allocate_path_buf();
         let mut best_depth = 0;
 
         let mut next_pointer = self.root.as_ref();
@@ -140,11 +154,14 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
         }
     }
 
+    pub fn insert(&mut self, value: T) {
+        self.insert_with_attribute(value, A::default())
+    }
+
     /// NOTE: Doesn't support insertion of multiple equal values. < TODO: Check
     /// this
-    pub fn insert(&mut self, value: T) {
-        let new_node = Box::new(AVLNode::new(value, None, None));
-
+    pub fn insert_with_attribute(&mut self, value: T, value_attribute: A) {
+        let new_node = Box::new(AVLNode::new(value, value_attribute, None, None));
         Self::insert_inner(new_node, &mut self.root, &self.comparator);
     }
 
@@ -153,8 +170,8 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
     /// Returns whether or not the height of the node pointed to by
     /// current_pointer has changed.
     fn insert_inner(
-        new_node: Box<AVLNode<T>>,
-        current_pointer: &mut Option<Box<AVLNode<T>>>,
+        new_node: Box<AVLNode<T, A>>,
+        current_pointer: &mut Option<Box<AVLNode<T, A>>>,
         comparator: &C,
     ) {
         let current_node = match current_pointer.as_mut() {
@@ -168,9 +185,9 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
 
         let changed = {
             if comparator.compare(current_node.value(), new_node.value()) == Ordering::Greater {
-                Self::insert_inner(new_node, current_node.left_mut(), comparator)
+                Self::insert_inner(new_node, current_node.get_mut().left_mut(), comparator)
             } else {
-                Self::insert_inner(new_node, current_node.right_mut(), comparator)
+                Self::insert_inner(new_node, current_node.get_mut().right_mut(), comparator)
             }
         };
 
@@ -188,7 +205,7 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
     /// subtree).
     fn remove_search(
         value: &T,
-        current_pointer: &mut Option<Box<AVLNode<T>>>,
+        current_pointer: &mut Option<Box<AVLNode<T, A>>>,
         comparator: &C,
     ) -> Option<T> {
         let current_node = match current_pointer.as_mut() {
@@ -208,9 +225,9 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
 
         // Otherwise, keep (binary) searching for the value.
         let ret = if ord == Ordering::Greater {
-            Self::remove_search(value, current_node.left_mut(), comparator)
+            Self::remove_search(value, current_node.get_mut().left_mut(), comparator)
         } else {
-            Self::remove_search(value, current_node.right_mut(), comparator)
+            Self::remove_search(value, current_node.get_mut().right_mut(), comparator)
         };
 
         Self::repair_subtree(current_node);
@@ -219,7 +236,7 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
 
     /// Deletes the node pointed to by 'current_pointer'.
     /// current_pointer MUST be Some(_).
-    fn remove_node(current_pointer: &mut Option<Box<AVLNode<T>>>) -> Option<T> {
+    fn remove_node(current_pointer: &mut Option<Box<AVLNode<T, A>>>) -> Option<T> {
         let current_node = current_pointer.as_mut().unwrap();
 
         if current_node.left().is_none() && current_node.right().is_none() {
@@ -239,8 +256,12 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
         } else {
             // Both the left and right child are occupied.
             // Replace the current node with the successor.
-            let (current_value, current_right) = current_node.value_right_mut();
-            let ret = Self::remove_swap_successor(current_value, current_right);
+            let ret = {
+                let mut current_node_guard = current_node.get_mut();
+                let (current_value, current_attribute, current_right) =
+                    current_node_guard.value_right_mut();
+                Self::remove_swap_successor(current_value, current_attribute, current_right)
+            };
             Self::repair_subtree(current_node);
             ret
         }
@@ -251,39 +272,56 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
     /// smallest value's original node).
     fn remove_swap_successor(
         value: &mut T,
-        current_pointer: &mut Option<Box<AVLNode<T>>>,
+        value_attribute: &mut A,
+        current_pointer: &mut Option<Box<AVLNode<T, A>>>,
     ) -> Option<T> {
         let current_node = current_pointer.as_mut().unwrap();
 
         if current_node.left().is_some() {
-            let ret = Self::remove_swap_successor(value, current_node.left_mut());
+            let ret = Self::remove_swap_successor(
+                value,
+                value_attribute,
+                current_node.get_mut().left_mut(),
+            );
             Self::repair_subtree(current_node);
             ret
         } else {
             core::mem::swap(value, current_node.value_mut());
+
+            // TODO: If the attribute is trivial then we don't need to perform sub-tree
+            // recalculations with it.
+            core::mem::swap(
+                value_attribute,
+                current_node.get_mut().value_attribute_mut(),
+            );
+
             Self::remove_node(current_pointer)
         }
     }
 
     /// Returns whether or not a height change has occured.
-    fn repair_subtree(node: &mut Box<AVLNode<T>>) {
+    fn repair_subtree(node: &mut Box<AVLNode<T, A>>) {
         let balance_factor = node.balance_factor();
 
         if balance_factor == 2 {
-            let right_child = node.right_mut().as_mut().unwrap();
+            {
+                let mut node_guard = node.get_mut();
+                let right_child = node_guard.right_mut().as_mut().unwrap();
 
-            if right_child.balance_factor() < 0 {
-                Self::rotate(right_child, Direction::Right);
+                if right_child.balance_factor() < 0 {
+                    Self::rotate(right_child, Direction::Right);
+                }
             }
-
             Self::rotate(node, Direction::Left);
         } else if balance_factor == -2 {
-            let left_child = node.left_mut().as_mut().unwrap();
+            {
+                let mut node_guard = node.get_mut();
+                let left_child = node_guard.left_mut().as_mut().unwrap();
 
-            if left_child.balance_factor() > 0 {
-                Self::rotate(left_child, Direction::Left);
+                if left_child.balance_factor() > 0 {
+                    Self::rotate(left_child, Direction::Left);
+                }
             }
-
             Self::rotate(node, Direction::Right);
         }
     }
@@ -293,7 +331,7 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
     ///
     /// If we rotate Left, then the Right child of the given node will become
     /// the root of the sub-tree.
-    fn rotate(node: &mut Box<AVLNode<T>>, direction: Direction) {
+    fn rotate(node: &mut Box<AVLNode<T, A>>, direction: Direction) {
         if direction == Direction::Left {
             let mut node2 = node.take_right().unwrap();
             core::mem::swap(&mut node2, node);
@@ -311,16 +349,16 @@ impl<T, C: Comparator<T, T>> AVLTree<T, C> {
 }
 
 #[derive(Clone)]
-pub struct Iter<'a, T> {
-    root: Option<&'a AVLNode<T>>,
+pub struct Iter<'a, T, A> {
+    root: Option<&'a AVLNode<T, A>>,
 
-    path: Vec<&'a AVLNode<T>>,
+    path: Vec<&'a AVLNode<T, A>>,
 
     /// When the path is empty, this is which side of the tree we are on.
     end: Direction,
 }
 
-impl<'a, T> Iterator for Iter<'a, T> {
+impl<'a, T, A: TreeAttribute> Iterator for Iter<'a, T, A> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -384,7 +422,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
     }
 }
 
-impl<'a, T> Iter<'a, T> {
+impl<'a, T, A: TreeAttribute> Iter<'a, T, A> {
     /// Views the value at the current position in the tree.
     ///
     /// This returns the same as prev() or next() except doesn't change the
@@ -441,12 +479,7 @@ impl<'a, T> Iter<'a, T> {
             self.path.pop(); // Remove current_node from the path.
 
             while let Some(parent_node) = self.path.last() {
-                let is_right_child = parent_node
-                    .right()
-                    .map(|node| core::ptr::eq(node.as_ref(), current_node))
-                    .unwrap_or(false);
-
-                if is_right_child {
+                if parent_node.right_child_is(current_node) {
                     break;
                 }
 
@@ -456,6 +489,33 @@ impl<'a, T> Iter<'a, T> {
         }
 
         Some(value)
+    }
+
+    /// Returns the sum of all attributes left of the current node pointed to by
+    /// this iterator. This is a log(N) operator for N nodes in the tree.
+    pub fn left_attributes(&self) -> A {
+        let mut total = A::default();
+
+        for i in 0..self.path.len() {
+            let node = self.path[i];
+
+            if i + 1 < self.path.len() {
+                let child_node = self.path[i + 1];
+                if node.right_child_is(child_node) {
+                    if let Some(left) = node.left() {
+                        total += left.subtree_attributes();
+                    }
+
+                    total += node.value_attribute();
+                }
+            } else {
+                if let Some(left) = node.left() {
+                    total += left.subtree_attributes();
+                }
+            }
+        }
+
+        total
     }
 }
 
@@ -474,12 +534,23 @@ mod tests {
         let mut tree = AVLTree::default();
 
         tree.insert(10);
-        assert_eq!(tree.root, Some(AVLNode::new(10, None, None).into()));
+        assert_eq!(
+            tree.root,
+            Some(AVLNode::new(10, EmptyAttribute::default(), None, None).into())
+        );
 
         tree.insert(20);
         assert_eq!(
             tree.root,
-            Some(AVLNode::new(10, None, Some(AVLNode::new(20, None, None).into())).into())
+            Some(
+                AVLNode::new(
+                    10,
+                    EmptyAttribute::default(),
+                    None,
+                    Some(AVLNode::new(20, EmptyAttribute::default(), None, None).into())
+                )
+                .into()
+            )
         );
 
         // Must perform a left rotation at the root.
@@ -489,8 +560,9 @@ mod tests {
             Some(
                 AVLNode::new(
                     20,
-                    Some(AVLNode::new(10, None, None).into()),
-                    Some(AVLNode::new(30, None, None).into())
+                    EmptyAttribute::default(),
+                    Some(AVLNode::new(10, EmptyAttribute::default(), None, None).into()),
+                    Some(AVLNode::new(30, EmptyAttribute::default(), None, None).into())
                 )
                 .into()
             )
@@ -504,12 +576,14 @@ mod tests {
             Some(
                 AVLNode::new(
                     20,
-                    Some(AVLNode::new(10, None, None).into()),
+                    EmptyAttribute::default(),
+                    Some(AVLNode::new(10, EmptyAttribute::default(), None, None).into()),
                     Some(
                         AVLNode::new(
                             27,
-                            Some(AVLNode::new(25, None, None).into()),
-                            Some(AVLNode::new(30, None, None).into())
+                            EmptyAttribute::default(),
+                            Some(AVLNode::new(25, EmptyAttribute::default(), None, None).into()),
+                            Some(AVLNode::new(30, EmptyAttribute::default(), None, None).into())
                         )
                         .into()
                     )
@@ -599,5 +673,26 @@ mod tests {
             }
             assert_eq!(iter.next(), None);
         }
+    }
+
+    #[test]
+    fn tree_attribute() {
+        // Testing the tree attribute feature by using it to store a counter of how many
+        // nodes there are in the subtree. So we can query how many nodes are to the
+        // left or right of any node.
+
+        let mut tree = AVLTree::<usize, usize, OrdComparator>::new(OrdComparator {});
+
+        tree.insert_with_attribute(10, 1);
+        tree.insert_with_attribute(20, 1);
+        tree.insert_with_attribute(30, 1);
+        tree.insert_with_attribute(15, 1);
+        tree.insert_with_attribute(25, 1);
+
+        let iter = tree.find(&30).unwrap();
+        assert_eq!(iter.left_attributes(), 4);
+
+        let iter = tree.find(&20).unwrap();
+        assert_eq!(iter.left_attributes(), 2);
     }
 }
