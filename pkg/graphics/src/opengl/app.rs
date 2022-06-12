@@ -59,6 +59,9 @@ impl Application {
             .set_swap_interval(glfw::SwapInterval::Sync(1));
 
         unsafe {
+            gl::Enable(gl::BLEND);
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+
             gl::Enable(gl::DEPTH_TEST);
             gl::DepthFunc(gl::LEQUAL);
         }

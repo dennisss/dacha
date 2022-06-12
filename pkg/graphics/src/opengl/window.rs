@@ -1,3 +1,5 @@
+use alloc::rc::Rc;
+use core::cell::RefCell;
 use std::sync::mpsc::Receiver;
 
 use glfw::Context;
@@ -8,6 +10,19 @@ use crate::opengl::group::Group;
 use crate::transform::Camera;
 use crate::transform::Transform;
 
+#[derive(Clone)]
+pub struct WindowContext {
+    render_context: Rc<RefCell<glfw::RenderContext>>,
+}
+
+impl WindowContext {
+    pub fn make_current(&mut self) {
+        // TODO: Make this require a mutex lock as only one thread can have a window
+        // active at a given time.
+        self.render_context.borrow_mut().make_current();
+    }
+}
+
 /// Represents a drawing space either linked to a whole window or a viewport
 ///
 /// TODO: Make all the fields private?
@@ -17,11 +32,17 @@ pub struct Window {
     background_color: Vector4f,
 
     window: glfw::Window,
+    context: WindowContext,
+
     events: Receiver<(f64, glfw::WindowEvent)>,
 }
 
 impl Window {
-    pub fn from(window: glfw::Window, events: Receiver<(f64, glfw::WindowEvent)>) -> Self {
+    pub fn from(mut window: glfw::Window, events: Receiver<(f64, glfw::WindowEvent)>) -> Self {
+        let context = WindowContext {
+            render_context: Rc::new(RefCell::new(window.render_context())),
+        };
+
         Self {
             scene: Group::default(),
             camera: Camera::default(),
@@ -29,6 +50,7 @@ impl Window {
             // Default color is black.
             background_color: Vector4f::from_slice(&[0.0, 0.0, 0.0, 1.0]),
             window,
+            context,
             events,
         }
     }
@@ -67,6 +89,18 @@ impl Window {
         }
     }
 
+    pub fn context(&mut self) -> WindowContext {
+        self.context.clone()
+    }
+
+    pub fn begin_draw(&mut self) {
+        self.window.make_current();
+    }
+
+    pub fn end_draw(&mut self) {
+        self.window.swap_buffers();
+    }
+
     pub fn draw(&mut self) {
         self.window.make_current();
 
@@ -78,6 +112,12 @@ impl Window {
 
         let base = Transform::from(self.camera.view.clone());
         self.scene.draw(&self.camera, &base);
+
+        /*
+        TODO: Use glCopyPixels to support copying from an intermediate source before swapping in the buffer (so we preserve the old buffer for incremental rendering).
+
+        - In canvas rendering, typically we would use clear_rect() to do full or partial screen re-draws.
+        */
 
         self.window.swap_buffers();
     }

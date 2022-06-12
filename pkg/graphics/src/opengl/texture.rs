@@ -1,16 +1,16 @@
-use std::sync::{Arc, Mutex, Weak};
-
 use gl::types::{GLenum, GLint, GLsizei, GLuint};
 use image::Image;
 
-use crate::opengl::window::Window;
+use crate::opengl::window::*;
 
 pub struct Texture {
+    context: WindowContext,
     object: GLuint,
 }
 
 impl Drop for Texture {
     fn drop(&mut self) {
+        self.context.make_current();
         unsafe { gl::DeleteTextures(1, &self.object) };
     }
 }
@@ -23,7 +23,11 @@ impl Texture {
     ///
     /// The bottom-left corner will be at (0,0) in texture coordinates and the
     /// top-right will be at (1,1).
-    pub fn new(image: &Image<u8>) -> Self {
+    pub fn new(mut context: WindowContext, image: &Image<u8>) -> Self {
+        // Challenge: Won't have
+
+        context.make_current();
+
         let mut object = 0;
 
         // TODO: Check the colorspace.
@@ -68,7 +72,7 @@ impl Texture {
             gl::GenerateMipmap(gl::TEXTURE_2D);
         }
 
-        Self { object }
+        Self { context, object }
     }
 
     /// Binds this texture as the active 2D texture so that it can be used in

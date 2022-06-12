@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use alloc::rc::Rc;
 
 use common::errors::*;
 use image::Image;
@@ -6,7 +6,7 @@ use math::matrix::{Vector2f, Vector2i, Vector3f};
 
 use crate::opengl::app::Application;
 use crate::opengl::polygon::Polygon;
-use crate::opengl::shader::{Shader, ShaderSource};
+use crate::opengl::shader::*;
 use crate::opengl::texture::Texture;
 use crate::transform::orthogonal_projection;
 
@@ -38,7 +38,7 @@ impl ImageShow for Image<u8> {
             }
         };
 
-        let shader_src = ShaderSource::flat_texture().await?;
+        let shader_src = ShaderSource::simple().await?;
 
         // TODO: Implement this in terms of the UI/Canvas framework so that it can
         // handle threading, etc.
@@ -50,28 +50,29 @@ impl ImageShow for Image<u8> {
             true,
         );
 
-        let shader = Arc::new(shader_src.compile().unwrap());
+        let shader = Rc::new(shader_src.compile(&mut window).unwrap());
 
-        let texture = Arc::new(Texture::new(self));
+        let texture = Rc::new(Texture::new(window.context(), self));
         let mut rect = Polygon::rectangle(
             Vector2f::from_slice(&[0.0, 0.0]),
             window_width as f32,
             window_height as f32,
-            Vector3f::from_slice(&[1.0, 1.0, 0.0]),
+            // Vector3f::from_slice(&[1.0, 1.0, 0.0]),
             shader,
         );
 
         // y coordinates are multiplied by -1 because our projection matrix flips along
         // y.
-        rect.set_texture(
-            texture,
-            &[
-                Vector2f::from_slice(&[0.0, -1.0]),
-                Vector2f::from_slice(&[1.0, -1.0]),
-                Vector2f::from_slice(&[1.0, 0.0]),
-                Vector2f::from_slice(&[0.0, 0.0]),
-            ],
-        );
+        rect.set_texture(texture);
+
+        rect.set_vertex_texture_coordinates(&[
+            Vector2f::from_slice(&[0.0, -1.0]),
+            Vector2f::from_slice(&[1.0, -1.0]),
+            Vector2f::from_slice(&[1.0, 0.0]),
+            Vector2f::from_slice(&[0.0, 0.0]),
+        ])
+        .set_vertex_colors(Vector3f::from_slice(&[1.0, 1.0, 0.0]))
+        .set_vertex_alphas(1.);
 
         window.camera.proj = orthogonal_projection(
             0.0,

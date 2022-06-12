@@ -4,6 +4,7 @@ use crate::matrix::{Matrix2f, Vector2f};
 
 /// Representation of an unbounded 2d line where a point is defined as:
 /// p = base + (lambda * dir)
+#[derive(Clone)]
 pub struct Line2f {
     pub base: Vector2f,
     pub dir: Vector2f,

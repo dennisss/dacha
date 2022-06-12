@@ -873,8 +873,6 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             // If true, then the interior angle at this vertex is > PI
             let big_interior_angle = turns_right(&neighbor1, &edge.origin, &neighbor2);
 
-            println!("{:?}", intersection);
-
             if neighbor1_below && neighbor2_below {
                 if !big_interior_angle {
                     // Start vertex

@@ -1,16 +1,73 @@
+use core::ptr::null;
+use std::collections::HashMap;
 use std::ffi::CStr;
-use std::ptr::null;
 
 use common::async_std::fs::{read_to_string, File};
 use common::async_std::io::Read;
 use common::errors::*;
+use common::failure::ResultExt;
 use gl::types::{GLchar, GLenum, GLint, GLsizei, GLuint};
 use math::matrix::Matrix4f;
 
 use crate::lighting::{LightSource, Material, MAX_LIGHTS};
 use crate::opengl::util::*;
+use crate::opengl::window::*;
 
 const MAX_ERROR_LENGTH: GLsizei = 2048;
+
+const SIMPLE_VERTEX_SHADER: &'static str = r#"
+#version 330
+
+uniform mat4 u_proj;
+uniform mat4 u_modelview;
+
+in vec3 v_position;
+in vec3 v_color;
+in float v_alpha;
+in vec2 v_tex_coord;
+
+out vec2 f_tex_coord;
+out vec4 f_color;
+
+void main() {
+    f_color = vec4(v_color, v_alpha);
+    f_tex_coord = v_tex_coord;
+	gl_Position = u_proj * u_modelview * vec4(v_position, 1.0);
+}
+"#;
+
+const SIMPLE_FRAGMENT_SHADER: &'static str = r#"
+#version 330
+
+in vec2 f_tex_coord;
+in vec4 f_color;
+
+uniform sampler2D u_texture;
+
+out vec4 frag_color;
+
+void main() {
+	frag_color = texture(u_texture, f_tex_coord) * f_color;
+}
+"#;
+
+enum_def!(
+    /// All known per-vertex attributes used by any shader.
+    /// The string value of each case should match the name of the 'in' variable in the shader.
+    ShaderAttributeId str =>
+        VertexPosition = "v_position",
+        VertexColor = "v_color",
+        VertexAlpha = "v_alpha",
+        VertexTextureCoordinate = "v_tex_coord",
+        VertexNormal = "v_normal"
+);
+
+enum_def!(ShaderUniformId str =>
+    ProjectionMatrix = "u_proj",
+    ModelViewMatrix = "u_modelview",
+    CameraPosition = "u_camera_position",
+    Texture = "u_texture"
+);
 
 pub struct ShaderSource {
     vertex_src: String,
@@ -18,6 +75,13 @@ pub struct ShaderSource {
 }
 
 impl ShaderSource {
+    pub async fn simple() -> Result<Self> {
+        Ok(Self {
+            vertex_src: SIMPLE_VERTEX_SHADER.to_string(),
+            fragment_src: SIMPLE_FRAGMENT_SHADER.to_string(),
+        })
+    }
+
     pub async fn flat() -> Result<Self> {
         Self::load_files(
             "pkg/graphics/shaders/flat.vertex.glsl",
@@ -60,29 +124,28 @@ impl ShaderSource {
         })
     }
 
-    pub fn compile(&self) -> Result<Shader> {
-        Shader::load(&self.vertex_src, &self.fragment_src)
+    pub fn compile(&self, window: &mut Window) -> Result<Shader> {
+        Shader::load(&self.vertex_src, &self.fragment_src, window)
     }
 }
 
 pub struct Shader {
+    context: WindowContext,
+    /// TODO: Delete this on drop as well as the inner shader objects.
+    /// ^ Also need to stop using the shader if it is currently in use.
     pub program: GLuint,
-    pub pos_attrib: GLuint,
-    pub normal_attrib: Option<GLuint>,
-    pub color_attrib: Option<GLuint>,
-    pub tex_coord_attrib: Option<GLuint>,
 
-    // TODO: These are not attributes, they are uniform locations?
-    pub uni_proj_attrib: GLuint,
-    pub uni_modelview_attrib: GLuint,
-
-    pub eyepos_attrib: Option<GLuint>,
+    pub attrs: HashMap<ShaderAttributeId, GLuint>,
+    pub uniforms: HashMap<ShaderUniformId, GLuint>,
 }
 
 impl Shader {
     // TODO: Clean up on Drop (also if only part of it succeeds, we should clean
     // up just that part).
-    pub fn load(vertex_src: &str, fragment_str: &str) -> Result<Self> {
+    pub fn load(vertex_src: &str, fragment_str: &str, window: &mut Window) -> Result<Self> {
+        let mut context = window.context();
+        context.make_current();
+
         unsafe {
             let vertex_shader = gl_create_shader(gl::VERTEX_SHADER, vertex_src)?;
             let fragment_shader = gl_create_shader(gl::FRAGMENT_SHADER, fragment_str)?;
@@ -96,7 +159,8 @@ impl Shader {
 
             gl::LinkProgram(program);
 
-            // TODO: Copied from  https://github.com/brendanzab/gl-rs/blob/master/gl/examples/triangle.rs
+            // Verify that the programs have compiled successfully. If not we will print the
+            // error. TODO: Copied from  https://github.com/brendanzab/gl-rs/blob/master/gl/examples/triangle.rs
             {
                 let mut status = gl::FALSE as GLint;
                 gl::GetProgramiv(program, gl::LINK_STATUS, &mut status);
@@ -113,54 +177,94 @@ impl Shader {
                         std::ptr::null_mut(),
                         buf.as_mut_ptr() as *mut GLchar,
                     );
-                    panic!(
-                        "{}",
-                        std::str::from_utf8(&buf)
-                            .ok()
-                            .expect("ProgramInfoLog not valid utf8")
-                    );
+
+                    return Err(format_err!(
+                        "Shader compilation failed: {}",
+                        std::str::from_utf8(&buf).with_context(|e| format_err!(
+                            "Shader ProgramInfoLog not valid utf8: {:?}",
+                            e
+                        ))?
+                    ));
                 }
             }
 
-            let pos_attrib = gl_get_attrib(program, b"position\0").unwrap();
-            let normal_attrib = gl_get_attrib(program, b"normal\0");
-            let color_attrib = gl_get_attrib(program, b"color\0");
-            let tex_coord_attrib = gl_get_attrib(program, b"tex_coord\0");
+            let mut attrs = HashMap::new();
+            let mut uniforms = HashMap::new();
 
-            // TODO: These are no longer uniform variables.
-            let uni_modelview_attrib =
-                gl_get_location(program, b"modelview\0").expect("Missing modelview");
-            let uni_proj_attrib = gl_get_location(program, b"proj\0").expect("Missing proj");
-            let eyepos_attrib = gl_get_location(program, b"eyePosition\0");
+            let mut num_attrs = 0;
+            gl::GetProgramiv(program, gl::ACTIVE_ATTRIBUTES, &mut num_attrs);
+
+            for i in 0..num_attrs {
+                let mut name_buf = [0u8; 256];
+                let mut name_length = 0;
+                let mut size = 0;
+                let mut typ = 0;
+
+                gl::GetActiveAttrib(
+                    program,
+                    i as GLuint,
+                    name_buf.len() as GLsizei,
+                    &mut name_length,
+                    &mut size,
+                    &mut typ,
+                    name_buf.as_mut_ptr() as *mut GLchar,
+                );
+
+                if name_length <= 0 || ((name_length as usize) + 1) >= name_buf.len() {
+                    return Err(err_msg("Attribute name overflowed buffer"));
+                }
+
+                let name = core::str::from_utf8(&name_buf[0..(name_length as usize)])?;
+
+                let id = ShaderAttributeId::from_value(name)
+                    .map_err(|_| format_err!("Unknown shader attribute named: {}", name))?;
+
+                let location =
+                    gl_get_attrib(program, &name_buf[0..(name_length as usize + 1)]).unwrap();
+
+                attrs.insert(id, location);
+            }
+
+            let mut num_uniforms = 0;
+            gl::GetProgramiv(program, gl::ACTIVE_UNIFORMS, &mut num_uniforms);
+
+            for i in 0..num_uniforms {
+                let mut name_buf = [0u8; 256];
+                let mut name_length = 0;
+                let mut size = 0;
+                let mut typ = 0;
+
+                gl::GetActiveUniform(
+                    program,
+                    i as GLuint,
+                    name_buf.len() as GLsizei,
+                    &mut name_length,
+                    &mut size,
+                    &mut typ,
+                    name_buf.as_mut_ptr() as *mut GLchar,
+                );
+
+                if name_length <= 0 || ((name_length as usize) + 1) >= name_buf.len() {
+                    return Err(err_msg("Uniform name overflowed buffer"));
+                }
+
+                let name = core::str::from_utf8(&name_buf[0..(name_length as usize)])?;
+
+                let id = ShaderUniformId::from_value(name)
+                    .map_err(|_| format_err!("Unknown shader uniform named: {}", name))?;
+
+                let location =
+                    gl_get_location(program, &name_buf[0..(name_length as usize + 1)]).unwrap();
+
+                uniforms.insert(id, location);
+            }
 
             Ok(Self {
+                context,
                 program,
-                pos_attrib,
-                normal_attrib,
-                color_attrib,
-                tex_coord_attrib,
-                uni_proj_attrib,
-                uni_modelview_attrib,
-                eyepos_attrib,
+                attrs,
+                uniforms,
             })
-        }
-    }
-
-    /// Initialize the shader for the current vertex array object
-    /// TODO: We must assert that all of these are specified for each object. It
-    /// will crash if not?
-    pub fn init(&self) {
-        unsafe {
-            gl::EnableVertexAttribArray(self.pos_attrib);
-            if let Some(attr) = self.color_attrib {
-                gl::EnableVertexAttribArray(attr);
-            }
-            if let Some(attr) = self.tex_coord_attrib {
-                gl::EnableVertexAttribArray(attr);
-            }
-            if let Some(attr) = self.normal_attrib {
-                gl::EnableVertexAttribArray(attr);
-            }
         }
     }
 

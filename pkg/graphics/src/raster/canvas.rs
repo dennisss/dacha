@@ -1,3 +1,5 @@
+use core::any::Any;
+
 use common::errors::*;
 use common::iter::PairIter;
 use image::{Color, Colorspace, Image};
@@ -60,14 +62,13 @@ impl Canvas for RasterCanvas {
             let dashes = crate::raster::stroke::stroke_split_dashes(&verts[*i..*j], dash_array);
 
             for dash in dashes {
-                let points = crate::raster::stroke::stroke_poly(&dash, width_scaled);
-                let starts = &[0, points.len()];
+                let (points, starts) = crate::raster::stroke::stroke_poly(&dash, width_scaled);
 
                 crate::raster::fill_polygon(
                     &mut self.drawing_buffer,
                     &points,
                     color,
-                    starts,
+                    &starts,
                     FillRule::NonZero,
                 )?;
             }
@@ -76,15 +77,24 @@ impl Canvas for RasterCanvas {
         Ok(())
     }
 
-    fn draw_image(&mut self, image: &Image<u8>) -> Result<()> {
+    fn load_image(&mut self, image: &Image<u8>) -> Result<Box<dyn Any>> {
+        Ok(Box::new(RasterCanvasImage {
+            image: image.clone(),
+        }))
+    }
+
+    fn draw_image(&mut self, image: &dyn Any, alpha: f32) -> Result<()> {
+        let image = image.downcast_ref::<RasterCanvasImage>().unwrap();
+
         let white = Color::rgb(255, 255, 255);
 
-        for y in 0..image.height() {
-            for x in 0..image.width() {
-                let c = image.get(y, x);
+        for y in 0..image.image.height() {
+            for x in 0..image.image.width() {
+                let old_c = self.drawing_buffer.get(y, x);
+                let c = image.image.get(y, x);
 
                 // TODO: The second cast should be a round!
-                let c = (c.cast::<f32>() * 0.2 + white.cast::<f32>() * 0.8).cast::<u8>();
+                let c = (c.cast::<f32>() * alpha + old_c.cast::<f32>() * (1. - alpha)).cast::<u8>();
 
                 self.drawing_buffer.set(y, x, &Color::from(c));
             }
@@ -96,7 +106,9 @@ impl Canvas for RasterCanvas {
     // pub fn clear() {}
 }
 
-// Implementing
+pub struct RasterCanvasImage {
+    image: Image<u8>,
+}
 
 pub struct Rect {
     pub x: f32,

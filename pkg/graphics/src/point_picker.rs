@@ -26,6 +26,7 @@ use math::matrix::{vec2f, Vector2f};
 
 use crate::canvas::Canvas;
 use crate::canvas::PathBuilder;
+use crate::opengl::canvas::OpenGLCanvas;
 use crate::opengl::window::Window;
 use crate::raster::canvas::RasterCanvas;
 use crate::raster::canvas_render_loop::WindowOptions;
@@ -406,8 +407,10 @@ impl PointPicker {
         )?;
 
         // Draw the background image.
+
         if let (Some(image), true) = (&self.background_image, self.background_image_visible) {
-            canvas.draw_image(image)?;
+            let img = canvas.load_image(image)?;
+            canvas.draw_image(img.as_ref(), 0.2)?;
         }
 
         canvas.save();
@@ -679,13 +682,14 @@ pub async fn run() -> Result<()> {
         background_image_visible: true,
     };
 
-    canvas
-        .render_loop(window_options, |canvas, window, events| {
-            picker.handle_events(canvas, window, events)?;
-            picker.draw(canvas, window)?;
-            Ok(())
-        })
-        .await?;
+    // let mut canvas = RasterCanvas::create(HEIGHT, WIDTH);
+
+    OpenGLCanvas::render_loop(window_options, |canvas, window, events| {
+        picker.handle_events(canvas, window, events)?;
+        picker.draw(canvas, window)?;
+        Ok(())
+    })
+    .await?;
 
     Ok(())
 }

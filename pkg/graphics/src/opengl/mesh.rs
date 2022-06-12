@@ -1,4 +1,5 @@
 use core::ptr::null;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use common::async_std::path::Path;
@@ -6,7 +7,8 @@ use common::errors::*;
 use gl::types::{GLint, GLuint};
 use math::matrix::Vector3f;
 
-use crate::opengl::drawable::{Drawable, Object};
+use crate::opengl::drawable::Drawable;
+use crate::opengl::object::Object;
 use crate::opengl::shader::Shader;
 use crate::opengl::util::{gl_face_buffer, gl_vertex_buffer_vec3, GLBuffer};
 use crate::opengl::window::Window;
@@ -17,19 +19,16 @@ pub type Face = [GLuint; 3];
 /// Drawing of generic triangle based meshes.
 pub struct Mesh {
     object: Object,
-
-    pos_vbo: GLBuffer,
-    normal_vbo: Option<GLBuffer>,
-    color_vbo: Option<GLBuffer>,
     index_vbo: GLBuffer,
     nindices: usize,
 }
 
+// TODO: We don't want to expose all methods like set_vertex_positions?
 impl_deref!(Mesh::object as Object);
 
 // TODO: Do we need to use glUseProgram before using the
 impl Mesh {
-    pub async fn read(path: &str, shader: Arc<Shader>) -> Result<Self> {
+    pub async fn read(path: &str, shader: Rc<Shader>) -> Result<Self> {
         let path = Path::new(path);
         let ext = path
             .extension()
@@ -61,31 +60,14 @@ impl Mesh {
     }
 
     pub fn from(
-        window: &Arc<Mutex<Window>>,
         vertices: &[Vector3f],
-        colors: &[Vector3f],
         faces: &[Face],
         normals: &[Vector3f],
-        shader: Arc<Shader>,
+        shader: Rc<Shader>,
     ) -> Self {
-        // Setup shader
-        // TODO: Do I need to reset the program in the draw?
-        unsafe {
-            gl::UseProgram(shader.program);
-        }
-        // TODO: Setup uniforms
+        let mut object = Object::new(shader); // < Will bind the VAO
 
-        let pos_vbo = gl_vertex_buffer_vec3(shader.pos_attrib, vertices);
-
-        let color_vbo =
-			// If no colors are provided, we will not bind any value to the
-			// attribute and will instead assume that the material is handling
-			// all of the coloring
-			if colors.len() == 0 { None }
-			else {
-				assert_eq!(colors.len(), vertices.len());
-				Some(gl_vertex_buffer_vec3(shader.color_attrib.unwrap(), colors))
-			};
+        object.set_vertex_positions(vertices);
 
         // TODO: Verify that all faces have in-range indices
 
@@ -109,17 +91,12 @@ impl Mesh {
             normals = &normal_buffer;
         }
 
-        let normal_vbo = shader
-            .normal_attrib
-            .map(|attr| gl_vertex_buffer_vec3(attr, normals));
+        object.set_vertex_normals(normals);
 
         let index_vbo = gl_face_buffer(faces);
 
         Self {
-            object: Object::new(shader),
-            pos_vbo,
-            normal_vbo,
-            color_vbo,
+            object,
             index_vbo,
             nindices: 3 * faces.len(),
         }
@@ -139,34 +116,3 @@ impl Drawable for Mesh {
         }
     }
 }
-
-/*
-
-class Mesh : public Object {
-public:
-    // TODO: Also accept an array of normals
-
-    Mesh(const std::vector<glm::vec3> &vertices, const std::vector<glm::vec3> &colors, std::vector<std::vector<unsigned int> > faces, Shader *shader);
-
-    // For colorless meshes using a material
-    Mesh(const std::vector<glm::vec3> &vertices, std::vector<std::vector<unsigned int> > faces, Shader *shader);
-
-    ~Mesh();
-
-    // TODO: Generalize this
-    static Mesh *read(const char *filename, Shader *shader);
-
-    std::vector<glm::vec3> vertices;
-
-private:
-    static Mesh *read_smf(const char *filename, Shader *shader);
-    static Mesh *read_stl(const char *filename, Shader *shader);
-};
-
-Mesh::~Mesh() {
-    // Destroy VBOs
-}
-
-
-
-*/

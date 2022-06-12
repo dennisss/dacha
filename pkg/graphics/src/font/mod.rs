@@ -19,7 +19,6 @@ use crate::opengl::texture::Texture;
 use crate::opengl::window::Window;
 use crate::raster::canvas::RasterCanvas;
 use crate::raster::canvas_render_loop::WindowOptions;
-use crate::transform::orthogonal_projection;
 
 pub mod vm;
 

@@ -92,7 +92,10 @@ pub fn gl_indices_buffer(data: &[GLuint]) -> GLBuffer {
 
 /// Special case of above for triangle faces
 pub fn gl_face_buffer(data: &[[GLuint; 3]]) -> GLBuffer {
-    // TODO: Will this have the correct size
-    // std::slice::from_raw_parts(data.as_ptr(), 3*data.len())
-    unsafe { gl_indices_buffer(core::mem::transmute(data)) }
+    unsafe {
+        gl_indices_buffer(core::slice::from_raw_parts(
+            core::mem::transmute(data.as_ptr()),
+            data.len() * 3,
+        ))
+    }
 }

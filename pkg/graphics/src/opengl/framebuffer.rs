@@ -88,10 +88,11 @@ impl FrameBuffer {
         })
     }
 
-    pub fn draw_context<F: FnOnce()>(&self, f: F) {
+    pub fn draw_context<T, F: FnOnce() -> T>(&self, f: F) -> T {
         unsafe { gl::BindFramebuffer(gl::FRAMEBUFFER, self.frame_buffer_object) };
-        f();
+        let ret = f();
         unsafe { gl::BindFramebuffer(gl::FRAMEBUFFER, 0) };
+        ret
     }
 
     pub fn bind(&self) {
