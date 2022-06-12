@@ -285,6 +285,28 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
     /// want the structure to contain no intersecting/overlapping half edges or
     /// faces.
     pub fn repair(&mut self) {
+        // Eliminate any edges with zero length.
+        {
+            let mut skip_ids = vec![];
+            for (id, half_edge) in self.half_edges.iter() {
+                if compare_points(&half_edge.origin, &self.destination(half_edge)).is_eq() {
+                    skip_ids.push(*id);
+                }
+            }
+
+            for id in skip_ids {
+                let edge = self.half_edges.remove(&id).unwrap();
+
+                if let Some(prev) = self.half_edges.get_mut(&edge.prev) {
+                    prev.next = edge.next;
+                }
+
+                if let Some(next) = self.half_edges.get_mut(&edge.next) {
+                    next.prev = edge.prev;
+                }
+            }
+        }
+
         let mut segments = vec![];
 
         // For each segment in 'segments' this is the id of the edge from which it was
@@ -340,6 +362,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
                 // Other endpoint of this edge aside of the intersection.point.
                 point: Vector2f,
+
+                angle: f32,
             }
 
             // List of all edges converging at the intersection point.
@@ -375,6 +399,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         outward_next: edge.next,
                         outward_face: edge.incident_face,
                         point: edge_dest,
+                        angle: 0., // Computed later.
                     });
                 } else if compare_points(&edge_dest, &intersection.point).is_eq() {
                     assert!(!origin_equal);
@@ -389,6 +414,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         outward_next: self.half_edges[edge.twin].next,
                         outward_face: self.half_edges[edge.twin].incident_face,
                         point: edge.origin.clone(),
+                        angle: 0., // Computed later.
                     });
                 } else {
                     let id1 = self.half_edges.unique_id();
@@ -402,6 +428,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         outward_next: self.half_edges[edge.twin].next,
                         outward_face: self.half_edges[edge.twin].incident_face,
                         point: edge.origin.clone(),
+                        angle: 0., // Computed later.
                     };
 
                     let mut e2 = PartialEdge {
@@ -412,6 +439,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         outward_next: edge.next,
                         outward_face: edge.incident_face,
                         point: edge_dest.clone(),
+                        angle: 0., // Computed later.
                     };
 
                     // Compensation in the case that the line wraps around itself.
@@ -440,14 +468,18 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             }
 
             // Sort edges by ascending clockwise angle
-            intersecting_edges.sort_by(|a, b| {
-                let a_dir = &a.point - &intersection.point;
-                let b_dir = &b.point - &intersection.point;
+            for edge in &mut intersecting_edges {
+                let dir = &edge.point - &intersection.point;
+                edge.angle = 2. * PI - dir.y().atan2(dir.x());
+            }
+            intersecting_edges.sort_by(|a, b| a.angle.partial_cmp(&b.angle).unwrap());
 
-                let a_angle = 2. * PI - a_dir.y().atan2(a_dir.x());
-                let b_angle = 2. * PI - b_dir.y().atan2(b_dir.x());
-                a_angle.partial_cmp(&b_angle).unwrap()
-            });
+            /*
+            TODO:
+            If there are two or more overlapping edges, consolidate them by just deleting all but the one with smallest id (judged by min of inward and outward).
+
+            This should be ok as long as the consolidation is consistent when we hit the other intersection at which they overlap.
+            */
 
             for (i, edge) in intersecting_edges.iter().enumerate() {
                 let last_edge = &intersecting_edges[if i > 0 {
@@ -456,6 +488,11 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     intersecting_edges.len() - 1
                 }];
                 let next_edge = &intersecting_edges[(i + 1) % intersecting_edges.len()];
+
+                // TODO: This will always overlap if there is just one line segment.
+                // if (edge.angle - next_edge.angle).abs() < 0.1 {
+                //     println!("OVERLAPPING");
+                // }
 
                 // Connect this inward edge to the next outward edge in clockwise order.
                 self.half_edges.insert(
@@ -838,6 +875,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         }
 
         let mut lowest_interior_points = HashMap::new();
+
+        // TODO: For this we should use exact matching of intersections.
 
         // Iterate over vertices in the face (as all our faces should be closed, this
         // corresponds to each intersection point too).
