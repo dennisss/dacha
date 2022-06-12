@@ -62,9 +62,11 @@ pub type MatrixXd = Matrix<f64, Dynamic, Dynamic>;
 #[cfg(feature = "alloc")]
 pub type Vector<T, R> = Matrix<T, R, U1>;
 
+pub type Vector2<T> = VectorStatic<T, U2>;
 pub type Vector2i = VectorStatic<isize, U2>;
 pub type Vector2u = VectorStatic<usize, U2>;
 pub type Vector2f = VectorStatic<f32, U2>;
+pub type Vector3<T> = VectorStatic<T, U3>;
 pub type Vector3u = VectorStatic<usize, U3>;
 pub type Vector3f = VectorStatic<f32, U3>;
 pub type Vector4f = VectorStatic<f32, U4>;
@@ -486,7 +488,9 @@ impl<T, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C> + AsMut<[T]>> AsM
 
 ////////////////////////////////////////////////////////////////////////////////
 
-impl<T: ScalarElementType, D: StorageType<T, U3, U1>> MatrixBase<T, U3, U1, D> {
+impl<T: ElementType + Mul<T, Output = T> + Sub<T, Output = T>, D: StorageType<T, U3, U1>>
+    MatrixBase<T, U3, U1, D>
+{
     /// TODO: Also have an inplace version and a version that assigns into an
     /// existing buffer.
     pub fn cross<D2: StorageType<T, U3, U1>>(

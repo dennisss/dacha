@@ -4,7 +4,7 @@ use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 use crate::matrix::base::{MatrixBase, MatrixNew};
 use crate::matrix::dimension::Dimension;
-use crate::matrix::element::ScalarElementType;
+use crate::matrix::element::*;
 use crate::matrix::storage::{MatrixNewStorage, NewStorage, StorageType, StorageTypeMut};
 
 pub trait CwiseMul<Rhs> {
@@ -53,12 +53,13 @@ pub trait CwiseMaxAssign<Rhs> {
 // Op              : Second trait to implement for MatrixBase.
 // op
 // op_inner        : Function with signature f(self: T, other: &T)
+// ElType
 macro_rules! cwise_binary_op {
     ($OpAssign:ident, $op_assign:ident, $op_assign_inner:expr,
-	 $Op:ident, $op:ident, $op_inner:expr, $op_to:ident) => {
+	 $Op:ident, $op:ident, $op_inner:expr, $op_to:ident, $ElType:path) => {
         // += &Matrix
         impl<
-                T: ScalarElementType,
+                T: $ElType,
                 R: Dimension,
                 C: Dimension,
                 D: StorageTypeMut<T, R, C>,
@@ -76,7 +77,7 @@ macro_rules! cwise_binary_op {
 
         // += Matrix
         impl<
-                T: ScalarElementType,
+                T: $ElType,
                 R: Dimension,
                 C: Dimension,
                 D: StorageTypeMut<T, R, C>,
@@ -90,7 +91,7 @@ macro_rules! cwise_binary_op {
 
         // += Scalar
         impl<
-                T: ScalarElementType,
+                T: $ElType,
                 R: Dimension,
                 C: Dimension,
                 D: StorageTypeMut<T, R, C>,
@@ -105,7 +106,7 @@ macro_rules! cwise_binary_op {
         }
 
         // *out = &Matrix + &Matrix
-        impl<T: ScalarElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
+        impl<T: $ElType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
             MatrixBase<T, R, C, D>
         {
             /// Performs 'out = self + rhs' overriding any old values in 'out'
@@ -129,7 +130,7 @@ macro_rules! cwise_binary_op {
 
         // &Matrix + &Matrix
         impl<
-                T: ScalarElementType,
+                T: $ElType,
                 R: Dimension,
                 C: Dimension,
                 D: StorageType<T, R, C>,
@@ -150,7 +151,7 @@ macro_rules! cwise_binary_op {
 
         // &Matrix + Matrix
         impl<
-                T: ScalarElementType,
+                T: $ElType,
                 R: Dimension,
                 C: Dimension,
                 D: StorageType<T, R, C>,
@@ -169,7 +170,7 @@ macro_rules! cwise_binary_op {
 
         // Matrix + &Matrix
         impl<
-                T: ScalarElementType,
+                T: $ElType,
                 R: Dimension,
                 C: Dimension,
                 D: StorageType<T, R, C>,
@@ -188,7 +189,7 @@ macro_rules! cwise_binary_op {
 
         // Matrix + Matrix
         impl<
-                T: ScalarElementType,
+                T: $ElType,
                 R: Dimension,
                 C: Dimension,
                 D: StorageType<T, R, C>,
@@ -207,7 +208,7 @@ macro_rules! cwise_binary_op {
 
         // &Matrix + Scalar
         impl<
-                T: ScalarElementType,
+                T: $ElType,
                 R: Dimension,
                 C: Dimension,
                 D: StorageType<T, R, C>,
@@ -231,7 +232,7 @@ macro_rules! cwise_binary_op {
 
         // Matrix + Scalar
         impl<
-                T: ScalarElementType,
+                T: $ElType,
                 R: Dimension,
                 C: Dimension,
                 D: StorageType<T, R, C>,
@@ -250,6 +251,7 @@ macro_rules! cwise_binary_op {
     };
 }
 
+pub trait AddableElement = ElementType + AddAssign + Add<Output = Self>;
 cwise_binary_op!(
     AddAssign,
     add_assign,
@@ -257,8 +259,11 @@ cwise_binary_op!(
     Add,
     add,
     Add::add,
-    add_to
+    add_to,
+    AddableElement
 );
+
+pub trait SubableElement = ElementType + SubAssign + Sub<Output = Self>;
 cwise_binary_op!(
     SubAssign,
     sub_assign,
@@ -266,7 +271,8 @@ cwise_binary_op!(
     Sub,
     sub,
     Sub::sub,
-    sub_to
+    sub_to,
+    SubableElement
 );
 cwise_binary_op!(
     CwiseMulAssign,
@@ -275,7 +281,8 @@ cwise_binary_op!(
     CwiseMul,
     cwise_mul,
     Mul::mul,
-    cwise_mul_to
+    cwise_mul_to,
+    ScalarElementType
 );
 cwise_binary_op!(
     CwiseDivAssign,
@@ -284,7 +291,8 @@ cwise_binary_op!(
     CwiseDiv,
     cwise_div,
     Div::div,
-    cwise_div_to
+    cwise_div_to,
+    ScalarElementType
 );
 
 cwise_binary_op!(
@@ -294,7 +302,8 @@ cwise_binary_op!(
     CwiseMin,
     cwise_min,
     num_traits::real::Real::min,
-    cwise_min_to
+    cwise_min_to,
+    ScalarElementType
 );
 
 cwise_binary_op!(
@@ -304,7 +313,8 @@ cwise_binary_op!(
     CwiseMax,
     cwise_max,
     num_traits::real::Real::max,
-    cwise_max_to
+    cwise_max_to,
+    ScalarElementType
 );
 
 fn min_assign_impl<T: num_traits::real::Real>(value: &mut T, other: T) {

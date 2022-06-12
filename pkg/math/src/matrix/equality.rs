@@ -7,6 +7,7 @@ use crate::matrix::dimension::Dimension;
 use crate::matrix::element::ElementType;
 use crate::matrix::storage::StorageType;
 
+/// Equality of matrices is defined with exact matching of each element.
 impl<T: PartialEq + ElementType, R: Dimension, C: Dimension, S: StorageType<T, R, C>> PartialEq
     for MatrixBase<T, R, C, S>
 {

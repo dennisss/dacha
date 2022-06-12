@@ -1,9 +1,11 @@
 use alloc::vec::Vec;
 use core::cmp::Ordering;
+use core::ops::{Mul, Sub, SubAssign};
 
 use common::errors::*;
 
-use crate::matrix::{vec2f, Vector2f, Vector3f};
+use crate::matrix::element::{ElementType, ScalarElementType};
+use crate::matrix::{vec2f, Vector2, Vector2f, Vector3, Vector3f};
 
 /// Given a set of points, returns the points which represent the convex full of
 /// that set. The returned points are ordered in clockwise order.
@@ -74,16 +76,22 @@ fn remove_ending_left_turns(hull: &mut Vec<Vector2f>) {
 
 /// Returns true if we are only making a right (or straight) turn when
 /// connecting the ray AB to BC.
-pub fn turns_right(a: &Vector2f, b: &Vector2f, c: &Vector2f) -> bool {
+pub fn turns_right<
+    T: ElementType + Mul<T, Output = T> + Sub<Output = T> + SubAssign + PartialOrd,
+>(
+    a: &Vector2<T>,
+    b: &Vector2<T>,
+    c: &Vector2<T>,
+) -> bool {
     let ab = b - a;
     let ac = c - a;
 
-    let ab3 = Vector3f::from_slice(&[ab.x(), ab.y(), 0.]);
-    let ac3 = Vector3f::from_slice(&[ac.x(), ac.y(), 0.]);
+    let ab3 = Vector3::from_slice(&[ab.x(), ab.y(), T::zero()]);
+    let ac3 = Vector3::from_slice(&[ac.x(), ac.y(), T::zero()]);
 
     let n = ab3.cross(&ac3);
 
-    n.z() <= 0.
+    n.z() <= T::zero()
 }
 
 #[cfg(test)]

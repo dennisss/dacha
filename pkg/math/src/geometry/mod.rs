@@ -5,3 +5,4 @@ pub mod half_edge;
 pub mod line;
 pub mod line_segment;
 pub mod make_monotone;
+pub mod quantized;

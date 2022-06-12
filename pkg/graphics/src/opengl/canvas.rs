@@ -64,7 +64,6 @@ impl OpenGLCanvas {
         vertices: &[Vector2f],
         path_starts: &[usize],
         color: &Color,
-        debug: bool,
     ) -> Result<()> {
         let mut half_edges = HalfEdgeStruct::<()>::new();
         for i in 0..(path_starts.len() - 1) {
@@ -89,10 +88,6 @@ impl OpenGLCanvas {
         half_edges.repair();
         half_edges.triangulate_monotone();
         half_edges.repair();
-
-        if debug {
-            println!("- 0.5");
-        }
 
         let mut new_vertices: Vec<Vector3f> = vec![];
         let mut faces = vec![];
@@ -157,10 +152,6 @@ impl OpenGLCanvas {
         //     }
         // }
 
-        if debug {
-            println!("- 1");
-        }
-
         // TODO: Make sure that this doesn't try computing any normals.
         let mut mesh = Mesh::from(&new_vertices, &faces, &[], self.shader.clone());
 
@@ -184,7 +175,7 @@ impl Canvas for OpenGLCanvas {
 
     fn fill_path(&mut self, path: &Path, color: &Color) -> Result<()> {
         let (vertices, path_starts) = path.linearize(self.base.current_transform());
-        self.fill_path_inner(&vertices, &path_starts, color, false)
+        self.fill_path_inner(&vertices, &path_starts, color)
     }
 
     fn stroke_path(&mut self, path: &Path, width: f32, color: &Color) -> Result<()> {
@@ -195,8 +186,6 @@ impl Canvas for OpenGLCanvas {
 
         let dash_array = &[]; // &[5.0 * scale, 5.0 * scale];
 
-        println!("A");
-
         for (i, j) in path_starts.pair_iter() {
             let dashes = crate::raster::stroke::stroke_split_dashes(&verts[*i..*j], dash_array);
 
@@ -204,11 +193,9 @@ impl Canvas for OpenGLCanvas {
                 let (points, starts) = crate::raster::stroke::stroke_poly(&dash, width_scaled);
 
                 // TODO: Use non-zero winding
-                self.fill_path_inner(&points, &starts, color, true)?;
+                self.fill_path_inner(&points, &starts, color)?;
             }
         }
-
-        println!("B");
 
         Ok(())
     }

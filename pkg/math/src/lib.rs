@@ -30,9 +30,11 @@ pub mod assignment_solver;
 #[cfg(feature = "alloc")]
 pub mod big;
 pub mod combin;
+pub mod gcd;
 #[cfg(feature = "alloc")]
 pub mod geometry;
 pub mod matrix;
+pub mod rational;
 
 use num_traits::real::Real;
 
