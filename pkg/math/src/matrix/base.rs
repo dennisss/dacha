@@ -2,8 +2,6 @@ use core::marker::PhantomData;
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 use generic_array::{ArrayLength, GenericArray};
-use num_traits::real::Real;
-use num_traits::{AsPrimitive, One, Zero};
 use typenum::{Prod, Unsigned, U1, U2, U3, U4, U5, U8};
 
 use crate::argmax::argmax;
@@ -11,6 +9,8 @@ use crate::matrix::cwise_binary_ops::CwiseDivAssign;
 use crate::matrix::dimension::*;
 use crate::matrix::element::*;
 use crate::matrix::storage::*;
+use crate::number::Cast;
+use crate::number::{Min, One, Zero};
 
 /*
     TODO: Needed operations:
@@ -64,6 +64,7 @@ pub type Vector<T, R> = Matrix<T, R, U1>;
 
 pub type Vector2<T> = VectorStatic<T, U2>;
 pub type Vector2i = VectorStatic<isize, U2>;
+pub type Vector2i64 = VectorStatic<i64, U2>;
 pub type Vector2u = VectorStatic<usize, U2>;
 pub type Vector2f = VectorStatic<f32, U2>;
 pub type Vector3<T> = VectorStatic<T, U3>;
@@ -148,19 +149,19 @@ impl<T: ElementType, R: StaticDim, C: StaticDim, D: StorageTypeMut<T, R, C>>
     }
 }
 
-impl<T: ElementType + Real, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>>
+impl<T: ElementType + One, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>>
     MatrixBase<T, R, C, D>
 {
     pub fn identity_with_shape(rows: usize, cols: usize) -> Self {
         let mut m = Self::zero_with_shape(rows, cols);
-        for i in 0..rows.min(cols) {
+        for i in 0..Min::min(rows, cols) {
             m[(i, i)] = T::one();
         }
         m
     }
 }
 
-impl<T: ElementType + Real, R: StaticDim, C: StaticDim, D: StorageTypeMut<T, R, C>>
+impl<T: ElementType + One, R: StaticDim, C: StaticDim, D: StorageTypeMut<T, R, C>>
     MatrixBase<T, R, C, D>
 {
     pub fn identity() -> Self {
@@ -172,12 +173,12 @@ impl<T: ElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>> Matrix
     /// Create a new matrix with elements casted to another type.
     pub fn cast<Y: 'static + ElementType>(&self) -> MatrixNew<Y, R, C>
     where
-        T: AsPrimitive<Y>,
+        T: Cast<Y>,
         MatrixNewStorage: NewStorage<Y, R, C>,
     {
         let mut out = MatrixNew::<Y, R, C>::new_with_shape(self.rows(), self.cols());
         for i in 0..self.len() {
-            out[i] = self[i].as_();
+            out[i] = self[i].cast();
         }
         out
     }
@@ -508,20 +509,6 @@ impl<T: ElementType + Mul<T, Output = T> + Sub<T, Output = T>, D: StorageType<T,
 impl<T: ScalarElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
     MatrixBase<T, R, C, D>
 {
-    pub fn norm_squared(&self) -> T {
-        let mut out = T::zero();
-        for i in 0..(self.rows() * self.cols()) {
-            let v = self[i];
-            out += v * v;
-        }
-
-        out
-    }
-
-    pub fn norm(&self) -> T {
-        self.norm_squared().sqrt()
-    }
-
     pub fn max_value(&self) -> T {
         let mut max = self[0];
         for i in 1..(self.rows() * self.cols()) {
@@ -568,38 +555,6 @@ impl<T: ScalarElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
         out
     }
 
-    // TODO: Implement determinant
-
-    // TODO: Must optionally return if it doesn't have an inverse
-    pub fn inverse(&self) -> MatrixNew<T, R, C>
-    where
-        C: MulDims<U2>,
-        MatrixNewStorage: NewStorage<T, R, C>,
-        MatrixNewStorage: NewStorage<T, R, ProdDims<C, U2>>,
-    {
-        assert_eq!(self.rows(), self.cols());
-
-        // Form matrix [ self, Identity ].
-        let mut m =
-            MatrixNew::<T, R, ProdDims<C, U2>>::new_with_shape(self.rows(), 2 * self.cols());
-        m.block_with_shape_mut::<R, C>(0, 0, self.rows(), self.cols())
-            .copy_from(self);
-        m.block_with_shape_mut::<R, C>(0, self.cols(), self.rows(), self.cols())
-            .copy_from(&MatrixNew::<T, R, C>::identity_with_shape(
-                self.rows(),
-                self.cols(),
-            ));
-
-        m.gaussian_elimination();
-
-        // Return right half of the matrix.
-        // TODO: Support inverting in-place by copying back from the temp matrix
-        // above.
-        let mut inv = MatrixBase::new_with_shape(self.rows(), self.cols());
-        inv.copy_from(&m.block_with_shape(0, self.cols(), self.rows(), self.cols()));
-        inv
-    }
-
     /// Computes the product of all entries on the diagonal
     /// NOTE: Assumes that the matrix is square.
     fn diagonal_product(&self) -> T {
@@ -611,38 +566,41 @@ impl<T: ScalarElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
         v
     }
 
-    pub fn determinant(&self) -> T
-    where
-        MatrixNewStorage: NewStorage<T, R, C>,
-    {
-        assert!(self.is_square());
-
-        if self.rows() == 1 {
-            return self.data[0].clone();
-        } else if self.rows() == 2 {
-            return self[(0, 0)] * self[(1, 1)] - self[(0, 1)] * self[(1, 0)];
-        }
-        // TODO: Add special 3x3 case
-        else if self.is_triangular() {
-            // The determinant of an upper or lower triangular matrix is the
-            // product of the diagonal entries.
-            self.diagonal_product()
-        } else {
-            // Reduce matrix to upper triangular.
-            let mut m = self.to_owned();
-            m.gaussian_elimination();
-            m.diagonal_product()
-        }
-    }
-
-    pub fn is_normalized(&self) -> bool {
-        (T::one() - self.norm_squared()).approx_zero()
-    }
-
     pub fn is_square(&self) -> bool {
         self.rows() == self.cols()
     }
 
+    /*
+    pub fn is_zero(&self) -> bool {
+
+    }
+
+    pub fn is_identity(&self) -> bool {
+
+    }
+
+
+
+    // TODO: Should be able to make random matrices and random matrics with
+    // symmetry, etc.
+
+    pub fn is_triangular(&self, upper: bool) -> bool {
+
+    }
+
+    pub fn is_bitriangular(&self) -> bool {
+
+    }
+
+    pub fn is_orthogonal(&self) -> bool {
+        (self * self.transpose()).is_identity()
+    }
+    */
+}
+
+impl<T: FloatElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
+    MatrixBase<T, R, C, D>
+{
     pub fn is_symmetric(&self) -> bool {
         if !self.is_square() {
             // TODO: Can it be symmetric when not square?
@@ -651,6 +609,7 @@ impl<T: ScalarElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
 
         for i in 0..self.rows() {
             for j in 0..i {
+                // TODO: Use aprpoximate equality here.
                 if self[(i, j)] != self[(j, i)] {
                     return false;
                 }
@@ -707,35 +666,80 @@ impl<T: ScalarElementType, R: Dimension, C: Dimension, D: StorageType<T, R, C>>
         u || l
     }
 
-    /*
-    pub fn is_zero(&self) -> bool {
+    pub fn norm_squared(&self) -> T {
+        let mut out = T::zero();
+        for i in 0..(self.rows() * self.cols()) {
+            let v = self[i];
+            out += v * v;
+        }
 
+        out
     }
 
-    pub fn is_identity(&self) -> bool {
-
+    pub fn norm(&self) -> T {
+        self.norm_squared().sqrt()
     }
 
+    // TODO: Must optionally return if it doesn't have an inverse
+    pub fn inverse(&self) -> MatrixNew<T, R, C>
+    where
+        C: MulDims<U2>,
+        MatrixNewStorage: NewStorage<T, R, C>,
+        MatrixNewStorage: NewStorage<T, R, ProdDims<C, U2>>,
+    {
+        assert_eq!(self.rows(), self.cols());
 
+        // Form matrix [ self, Identity ].
+        let mut m =
+            MatrixNew::<T, R, ProdDims<C, U2>>::new_with_shape(self.rows(), 2 * self.cols());
+        m.block_with_shape_mut::<R, C>(0, 0, self.rows(), self.cols())
+            .copy_from(self);
+        m.block_with_shape_mut::<R, C>(0, self.cols(), self.rows(), self.cols())
+            .copy_from(&MatrixNew::<T, R, C>::identity_with_shape(
+                self.rows(),
+                self.cols(),
+            ));
 
-    // TODO: Should be able to make random matrices and random matrics with
-    // symmetry, etc.
+        m.gaussian_elimination();
 
-    pub fn is_triangular(&self, upper: bool) -> bool {
-
+        // Return right half of the matrix.
+        // TODO: Support inverting in-place by copying back from the temp matrix
+        // above.
+        let mut inv = MatrixBase::new_with_shape(self.rows(), self.cols());
+        inv.copy_from(&m.block_with_shape(0, self.cols(), self.rows(), self.cols()));
+        inv
     }
 
-    pub fn is_bitriangular(&self) -> bool {
+    pub fn determinant(&self) -> T
+    where
+        MatrixNewStorage: NewStorage<T, R, C>,
+    {
+        assert!(self.is_square());
 
+        if self.rows() == 1 {
+            return self.data[0].clone();
+        } else if self.rows() == 2 {
+            return self[(0, 0)] * self[(1, 1)] - self[(0, 1)] * self[(1, 0)];
+        }
+        // TODO: Add special 3x3 case
+        else if self.is_triangular() {
+            // The determinant of an upper or lower triangular matrix is the
+            // product of the diagonal entries.
+            self.diagonal_product()
+        } else {
+            // Reduce matrix to upper triangular.
+            let mut m = self.to_owned();
+            m.gaussian_elimination();
+            m.diagonal_product()
+        }
     }
 
-    pub fn is_orthogonal(&self) -> bool {
-        (self * self.transpose()).is_identity()
+    pub fn is_normalized(&self) -> bool {
+        (T::one() - self.norm_squared()).approx_zero()
     }
-    */
 }
 
-impl<T: ScalarElementType, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>>
+impl<T: FloatElementType, R: Dimension, C: Dimension, D: StorageTypeMut<T, R, C>>
     MatrixBase<T, R, C, D>
 {
     /// Normalizes the matrix in place. Does nothing if the norm is near zero.

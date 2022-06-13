@@ -13,7 +13,6 @@ macros = { path = "../macros" }
 parsing = { path = "../parsing" }
 fs2 = "0.4.3"
 libc = "0.2"
-num-traits = "0.2"
 typenum = "1.10.0"
 glfw = "0.44.0"
 gl = "0.14.0"

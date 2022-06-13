@@ -949,7 +949,6 @@ dependencies = [
  "libc",
  "macros",
  "math",
- "num-traits",
  "parsing",
  "reflection",
  "typenum",
@@ -1069,7 +1068,6 @@ dependencies = [
  "lazy_static",
  "macros",
  "math",
- "num-traits",
  "parsing",
  "reflection",
  "typenum",
@@ -1170,12 +1168,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libm"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33a33a362ce288760ec6a508b94caaec573ae7d3bbbd91b87aa0bad4456839db"
-
-[[package]]
 name = "libudev"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1255,7 +1247,6 @@ dependencies = [
  "auto_ops",
  "common",
  "generic-array",
- "num-traits",
  "testing",
  "typenum",
 ]
@@ -1437,7 +1428,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac267bcc07f48ee5f8935ab0d24f316fb722d7a1292e2913f0cc196b29ffd611"
 dependencies = [
  "autocfg",
- "libm",
 ]
 
 [[package]]

@@ -4,7 +4,6 @@ extern crate common;
 extern crate macros;
 extern crate byteorder;
 extern crate math;
-extern crate num_traits;
 #[macro_use]
 extern crate parsing;
 extern crate reflection;
@@ -12,11 +11,12 @@ extern crate reflection;
 #[macro_use]
 extern crate lazy_static;
 
+use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+
 use math::array::Array;
 use math::geometry::bounding_box::BoundingBox;
 use math::matrix::{Vector2f, VectorStatic};
-use num_traits::{AsPrimitive, Num, NumCast, Zero};
-use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+use math::number::Zero;
 
 pub mod format;
 pub mod resize;

@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use core::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
-use num_traits::{AsPrimitive, Num, NumCast};
+use crate::number::Cast;
 
 // TODO: First implement an ArrayMut which has operations that are allowed to
 // mutate the vector in it.
@@ -95,6 +95,7 @@ impl<T: SubAssign<T> + Copy> Sub<&Array<T>> for Array<T> {
     }
 }
 
+/*
 impl<T: num_traits::CheckedSub> Array<T> {
     fn checked_sub(self, other: &Self) -> Option<Self> {
         assert!(self.shape == other.shape);
@@ -112,6 +113,7 @@ impl<T: num_traits::CheckedSub> Array<T> {
         })
     }
 }
+*/
 
 impl<A: Copy> Array<A> {
     #[inline]
@@ -217,11 +219,14 @@ impl<T: Clone + Default> Array<T> {
 
 impl<T: Clone> Array<T> {
     // Converts an index into a position tuple.
-    fn to_pos<Y: NumCast>(&self, mut idx: usize) -> Vec<Y> {
+    fn to_pos<Y>(&self, mut idx: usize) -> Vec<Y>
+    where
+        usize: Cast<Y>,
+    {
         let mut pos = Vec::<Y>::new();
         pos.reserve(self.shape.len());
         for i in (0..self.shape.len()).rev() {
-            pos.push(Y::from(idx % self.shape[i]).unwrap());
+            pos.push((idx % self.shape[i]).cast());
             idx /= self.shape[i];
         }
 
@@ -229,13 +234,13 @@ impl<T: Clone> Array<T> {
         pos
     }
 
-    fn from_pos<Y: AsPrimitive<usize>>(&self, pos: &[Y]) -> usize {
+    fn from_pos<Y: Cast<usize> + Copy>(&self, pos: &[Y]) -> usize {
         assert_eq!(pos.len(), self.shape.len());
         let mut idx = 0;
         let mut inner_size: usize = self.shape.iter().product();
         for i in 0..pos.len() {
             inner_size /= self.shape[i];
-            idx += pos[i].as_() * inner_size;
+            idx += pos[i].cast() * inner_size;
         }
 
         idx
@@ -322,7 +327,7 @@ impl<
             + Clone
             + core::ops::Mul<T, Output = T>
             + core::ops::AddAssign<T>
-            + num_traits::Zero,
+            + crate::number::Zero,
     > Array<T>
 {
     // Cross correlation. Currently just assumes that out of bound entries are zeros
@@ -482,11 +487,11 @@ impl<T> Array<T> {
     pub fn cast<Y: Copy>(&self) -> Array<Y>
     where
         Y: 'static,
-        T: AsPrimitive<Y>,
+        T: Cast<Y> + Copy,
     {
         Array::<Y> {
             shape: self.shape.clone(),
-            data: self.data.iter().map(|x| (*x).as_()).collect::<Vec<Y>>(),
+            data: self.data.iter().map(|x| (*x).cast()).collect::<Vec<Y>>(),
         }
     }
 }
@@ -499,7 +504,7 @@ impl<T: Clone> core::ops::Index<usize> for Array<T> {
 }
 
 // Index single entry in array by position tuple.
-impl<T: Clone, Y: AsPrimitive<usize>> core::ops::Index<&[Y]> for Array<T> {
+impl<T: Clone, Y: Cast<usize> + Copy> core::ops::Index<&[Y]> for Array<T> {
     type Output = T;
     fn index(&self, index: &[Y]) -> &Self::Output {
         &self.data[self.from_pos(index)]
@@ -511,7 +516,7 @@ impl<T: Clone> core::ops::IndexMut<usize> for Array<T> {
         &mut self.data[index]
     }
 }
-impl<T: Clone, Y: AsPrimitive<usize>> core::ops::IndexMut<&[Y]> for Array<T> {
+impl<T: Clone, Y: Cast<usize> + Copy> core::ops::IndexMut<&[Y]> for Array<T> {
     fn index_mut(&mut self, index: &[Y]) -> &mut T {
         let idx = self.from_pos(index);
         &mut self.data[idx]

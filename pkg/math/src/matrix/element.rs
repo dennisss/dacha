@@ -1,15 +1,17 @@
 use core::fmt::{Debug, Display};
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
-use num_traits::real::Real;
-use num_traits::{One, Zero};
+use crate::number::{AbsoluteValue, Float, Max, Min, Number, One, Zero};
 
 /// TODO: Eventually we should be using a relative percentage + absolute margin
 /// based comparison.
-pub trait ErrorEpsilon: Real {
+pub trait ErrorEpsilon: AbsoluteValue + PartialOrd + Copy {
     fn error_epsilon() -> Self;
 
-    fn approx_zero(&self) -> bool {
+    fn approx_zero(&self) -> bool
+    where
+        Self: Sized,
+    {
         self.abs() < Self::error_epsilon()
     }
 }
@@ -42,19 +44,24 @@ pub trait ElementType = Copy + Default + Zero;
 /// To simplify trait implementations, most trait implementations for numeric
 /// calculations require these traits.
 pub trait ScalarElementType = ElementType
-    + Real
+    + Number
+    + AbsoluteValue
+    + PartialOrd
+    + Min
+    + Max
     + One
-    + Add
+    + Add<Output = Self>
     + AddAssign
-    + Sub
+    + Sub<Output = Self>
     + SubAssign
-    + Mul
+    + Mul<Output = Self>
     + MulAssign
-    + Div
+    + Div<Output = Self>
     + DivAssign
-    + ErrorEpsilon
     + Debug
     + Display;
+
+pub trait FloatElementType = ScalarElementType + Float + ErrorEpsilon;
 
 // TODO: This will require floating point comparisons be possible with every
 // type of scalar?

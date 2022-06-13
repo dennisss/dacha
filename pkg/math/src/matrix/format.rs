@@ -1,11 +1,10 @@
 use core::fmt::Debug;
 
-use num_traits::real::Real;
-
 use crate::matrix::base::MatrixBase;
 use crate::matrix::dimension::Dimension;
 use crate::matrix::element::ElementType;
 use crate::matrix::storage::StorageType;
+use crate::number::AbsoluteValue;
 
 impl<T: ElementType + Debug, R: Dimension, C: Dimension, D: StorageType<T, R, C>> Debug
     for MatrixBase<T, R, C, D>
@@ -33,7 +32,7 @@ impl<R: Dimension, C: Dimension, D: StorageType<f64, R, C>> Debug for MatrixBase
 
                 let v = self.data[i * self.cols() + j];
 
-                let va = Real::abs(v);
+                let va = AbsoluteValue::abs(v);
                 if va < 1e-12 {
                     write!(f, "0\t")?;
                 } else if va > 1e9 || va < 1e-6 {

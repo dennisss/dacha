@@ -1,5 +1,5 @@
-use core::cmp::Ordering;
 use core::ops::Deref;
+use core::{cmp::Ordering, ops::Sub};
 
 use crate::{
     matrix::{vec2f, Vector2, Vector2f},

@@ -13,7 +13,7 @@ use typenum::U1;
 /// upper triangular matrix
 ///
 /// NOTE: The decomposition is only valid when M >= N
-pub struct QR<T: ScalarElementType, M: Dimension, N: Dimension>
+pub struct QR<T: FloatElementType, M: Dimension, N: Dimension>
 where
     MatrixNewStorage: NewStorage<T, M, M> + NewStorage<T, M, N>,
 {
@@ -21,7 +21,7 @@ where
     pub r: MatrixNew<T, M, N>,
 }
 
-impl<T: ScalarElementType + From<f32> + From<u32> + From<i32>, M: Dimension, N: Dimension>
+impl<T: FloatElementType + From<f32> + From<u32> + From<i32>, M: Dimension, N: Dimension>
     QR<T, M, N>
 where
     MatrixNewStorage: NewStorage<T, M, M>
@@ -108,7 +108,7 @@ where
     }
 }
 
-fn proj<T: ScalarElementType, N: Dimension, D: StorageType<T, N, U1>, D2: StorageType<T, N, U1>>(
+fn proj<T: FloatElementType, N: Dimension, D: StorageType<T, N, U1>, D2: StorageType<T, N, U1>>(
     u: &VectorBase<T, N, D>,
     a: &VectorBase<T, N, D2>,
 ) -> VectorNew<T, N>

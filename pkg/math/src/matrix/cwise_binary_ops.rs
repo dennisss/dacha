@@ -6,6 +6,7 @@ use crate::matrix::base::{MatrixBase, MatrixNew};
 use crate::matrix::dimension::Dimension;
 use crate::matrix::element::*;
 use crate::matrix::storage::{MatrixNewStorage, NewStorage, StorageType, StorageTypeMut};
+use crate::number::{Max, Min, Number};
 
 pub trait CwiseMul<Rhs> {
     type Output;
@@ -95,7 +96,7 @@ macro_rules! cwise_binary_op {
                 R: Dimension,
                 C: Dimension,
                 D: StorageTypeMut<T, R, C>,
-                V: num_traits::Num + Copy + Into<T>,
+                V: Number + Copy + Into<T>,
             > $OpAssign<V> for MatrixBase<T, R, C, D>
         {
             fn $op_assign(&mut self, rhs: V) {
@@ -212,7 +213,7 @@ macro_rules! cwise_binary_op {
                 R: Dimension,
                 C: Dimension,
                 D: StorageType<T, R, C>,
-                V: num_traits::Num + Copy + Into<T>,
+                V: Number + Copy + Into<T>,
             > $Op<V> for &MatrixBase<T, R, C, D>
         where
             MatrixNewStorage: NewStorage<T, R, C>,
@@ -236,7 +237,7 @@ macro_rules! cwise_binary_op {
                 R: Dimension,
                 C: Dimension,
                 D: StorageType<T, R, C>,
-                V: num_traits::Num + Copy + Into<T>,
+                V: Number + Copy + Into<T>,
             > $Op<V> for MatrixBase<T, R, C, D>
         where
             MatrixNewStorage: NewStorage<T, R, C>,
@@ -301,7 +302,7 @@ cwise_binary_op!(
     min_assign_impl,
     CwiseMin,
     cwise_min,
-    num_traits::real::Real::min,
+    Min::min,
     cwise_min_to,
     ScalarElementType
 );
@@ -312,16 +313,16 @@ cwise_binary_op!(
     max_assign_impl,
     CwiseMax,
     cwise_max,
-    num_traits::real::Real::max,
+    Max::max,
     cwise_max_to,
     ScalarElementType
 );
 
-fn min_assign_impl<T: num_traits::real::Real>(value: &mut T, other: T) {
+fn min_assign_impl<T: Min + Copy>(value: &mut T, other: T) {
     *value = value.min(other);
 }
 
-fn max_assign_impl<T: num_traits::real::Real>(value: &mut T, other: T) {
+fn max_assign_impl<T: Max + Copy>(value: &mut T, other: T) {
     *value = value.max(other);
 }
 
@@ -331,7 +332,7 @@ impl<
         R: Dimension,
         C: Dimension,
         D: StorageTypeMut<T, R, C>,
-        V: num_traits::Num + Copy + Into<T>,
+        V: Number + Copy + Into<T>,
     > MulAssign<V> for MatrixBase<T, R, C, D>
 {
     #[inline]
@@ -346,7 +347,7 @@ impl<
         R: Dimension,
         C: Dimension,
         D: StorageTypeMut<T, R, C>,
-        V: num_traits::Num + Copy + Into<T>,
+        V: Number + Copy + Into<T>,
     > Mul<V> for MatrixBase<T, R, C, D>
 {
     type Output = Self;
@@ -364,7 +365,7 @@ impl<
         R: Dimension,
         C: Dimension,
         D: StorageTypeMut<T, R, C>,
-        V: num_traits::Num + Copy + Into<T>,
+        V: Number + Copy + Into<T>,
     > DivAssign<V> for MatrixBase<T, R, C, D>
 {
     #[inline]
@@ -379,7 +380,7 @@ impl<
         R: Dimension,
         C: Dimension,
         D: StorageTypeMut<T, R, C>,
-        V: num_traits::Num + Copy + Into<T>,
+        V: Number + Copy + Into<T>,
     > Div<V> for MatrixBase<T, R, C, D>
 {
     type Output = Self;

@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use typenum::U2;
 
 use crate::matrix::*;
+use crate::number::Zero;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Entry {
@@ -17,18 +18,9 @@ impl Default for Entry {
     }
 }
 
-impl num_traits::Zero for Entry {
+impl Zero for Entry {
     fn zero() -> Self {
         Entry::Empty
-    }
-    fn is_zero(&self) -> bool {
-        *self == Entry::Empty
-    }
-}
-impl core::ops::Add for Entry {
-    type Output = Entry;
-    fn add(self, _: Self) -> Self {
-        panic!("This is only to satisft num_traits::Zero constraints.")
     }
 }
 

@@ -1,6 +1,5 @@
 use core::convert::From;
 
-use num_traits::real::Real;
 use typenum::U1;
 
 use crate::matrix::base::*;
@@ -18,7 +17,7 @@ use crate::matrix::storage::*;
 /// TODO: Allow one dimension to be dynamic as long as the dimensions are
 /// MaybeEqual.
 #[derive(Debug)]
-pub struct EigenStructure<T: ScalarElementType, N: Dimension>
+pub struct EigenStructure<T: FloatElementType, N: Dimension>
 where
     MatrixNewStorage: NewStorage<T, N, N> + NewStorage<T, N, U1>,
 {
@@ -31,7 +30,7 @@ where
     pub values: MatrixNew<T, N, N>,
 }
 
-impl<T: ScalarElementType + From<u32> + From<f32> + From<i32>, N: Dimension> EigenStructure<T, N>
+impl<T: FloatElementType + From<u32> + From<f32> + From<i32>, N: Dimension> EigenStructure<T, N>
 where
     MatrixNewStorage: NewStorage<T, N, N> + NewStorage<T, N, U1> + NewStorage<T, U1, N>,
 {

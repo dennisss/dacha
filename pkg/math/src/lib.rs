@@ -12,7 +12,6 @@ extern crate std;
 #[macro_use]
 extern crate auto_ops;
 extern crate generic_array;
-extern crate num_traits;
 extern crate typenum;
 #[macro_use]
 extern crate common;
@@ -34,9 +33,8 @@ pub mod gcd;
 #[cfg(feature = "alloc")]
 pub mod geometry;
 pub mod matrix;
+pub mod number;
 pub mod rational;
-
-use num_traits::real::Real;
 
 /// Given parameters of an equation of the form 'Ax^2 + Bx + C = 0' finds values
 /// of 'x' that satisfy the equation using the quadratic equation.

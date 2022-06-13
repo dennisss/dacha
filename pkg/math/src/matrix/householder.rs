@@ -1,6 +1,5 @@
 use core::convert::From;
 
-use num_traits::real::Real;
 use typenum::U1;
 
 use crate::matrix::base::*;
@@ -18,7 +17,7 @@ use crate::matrix::storage::*;
 /// See: https://en.wikipedia.org/wiki/Householder_transformation
 /// TODO: Allow any matrix width which could could be of size
 pub fn householder_reflect<
-    T: ScalarElementType + From<f32> + From<u32>,
+    T: FloatElementType + From<f32> + From<u32>,
     N: Dimension,
     D: StorageType<T, N, U1>,
 >(
