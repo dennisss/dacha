@@ -1,4 +1,4 @@
-use math::geometry::line_segment::LineSegment2f;
+use math::geometry::line_segment::LineSegment2;
 use math::matrix::{vec2f, Matrix3f, Vector2f};
 
 use crate::canvas::bezier::BezierCurve;
@@ -83,7 +83,7 @@ impl SubPath {
 #[derive(Debug)]
 pub enum PathSegment {
     /// NOTE: Could also be implemented as a two point bezier curve.
-    Line(LineSegment2f),
+    Line(LineSegment2<f32>),
     Ellipse(Ellipse),
     BezierCurve(BezierCurve),
 }
@@ -122,7 +122,7 @@ impl PathBuilder {
         let start = self.position.clone();
         self.get_sub_path()
             .segments
-            .push(PathSegment::Line(LineSegment2f {
+            .push(PathSegment::Line(LineSegment2 {
                 start,
                 end: pos.clone(),
             }));
@@ -151,7 +151,7 @@ impl PathBuilder {
 
     pub fn close(&mut self) {
         if let Some((start_pt, mut sub_path)) = self.current_sub_path.take() {
-            sub_path.segments.push(PathSegment::Line(LineSegment2f {
+            sub_path.segments.push(PathSegment::Line(LineSegment2 {
                 start: self.position.clone(),
                 end: start_pt,
             }));

@@ -3,7 +3,7 @@
 use core::convert::{AsMut, AsRef};
 
 use math::combin::bin_coeff;
-use math::geometry::line_segment::LineSegment2f;
+use math::geometry::line_segment::LineSegment2;
 use math::matrix::{Matrix3f, Vector2f, Vector3f};
 
 use crate::canvas::curve::Curve;

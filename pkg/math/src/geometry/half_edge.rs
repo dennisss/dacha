@@ -1,16 +1,36 @@
 use alloc::vec::Vec;
+use core::cmp::Ordering;
 use core::f32::consts::PI;
 use core::fmt::Debug;
 use core::hash::Hash;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use common::loops::*;
+
 use crate::geometry::convex_hull::turns_right;
 use crate::geometry::entity_storage::*;
-use crate::geometry::line_segment::{compare_points, compare_points_x_then_y, LineSegment2f};
+use crate::geometry::line_segment::{
+    compare_points, compare_points_i64, compare_points_x_then_y, LineSegment2,
+};
+use crate::geometry::quantized::*;
+use crate::matrix::Vector2i64;
 use crate::matrix::{vec2f, Vector2f};
+use crate::rational::Rational;
 
 /*
+Design details:
+- Uses quantized vectors internally. (1000x the size of the float points)
+- But intersections are computed in floating point
+- In floating point, we use a THRESHOLD to compare points, but in the quantized space, we compare points exactly.
+    - The assumption here is that THRESHOLD << 1000 so we can assume that two quantized points that are off by one are not equal.
+
+Why this needs to use quantization?
+- Speed
+- When intersections as removed, we want to ensure that splitting a line doesn't make it an empty size line
+- When we check for overlapping segments, we want a consistent calculation at both endpoints of the overlap.
+
+
 The face associated with each edge lies to the left of the ddge.
 
 Half edges stored in counterclockwise order
@@ -66,7 +86,7 @@ enum BoundaryType {
 
 #[derive(Clone, Debug)]
 struct HalfEdge {
-    origin: Vector2f,
+    origin: Vector2i64,
     twin: EdgeId,
 
     incident_face: FaceId,
@@ -120,7 +140,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         self.half_edges.insert(
             id,
             HalfEdge {
-                origin: start,
+                origin: quantize2f(start),
                 twin,
                 incident_face: face_id,
                 next: twin,
@@ -130,7 +150,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         self.half_edges.insert(
             twin,
             HalfEdge {
-                origin: end,
+                origin: quantize2f(end),
                 twin: id,
                 incident_face: self.unbounded_face_id,
                 next: id,
@@ -166,7 +186,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         self.half_edges.insert(
             twin,
             HalfEdge {
-                origin: next_point,
+                origin: quantize2f(next_point),
                 twin: id,
                 incident_face: self.unbounded_face_id,
                 next: prev_twin,
@@ -218,7 +238,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         self.half_edges[last_twin].prev = twin;
     }
 
-    fn destination(&self, edge: &HalfEdge) -> Vector2f {
+    fn destination(&self, edge: &HalfEdge) -> Vector2i64 {
         self.half_edges[edge.twin].origin.clone()
     }
 
@@ -289,7 +309,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         {
             let mut skip_ids = vec![];
             for (id, half_edge) in self.half_edges.iter() {
-                if compare_points(&half_edge.origin, &self.destination(half_edge)).is_eq() {
+                if half_edge.origin == self.destination(half_edge) {
                     skip_ids.push(*id);
                 }
             }
@@ -320,9 +340,9 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     continue;
                 }
 
-                segments.push(LineSegment2f {
-                    start: half_edge.origin.clone(),
-                    end: self.destination(half_edge),
+                segments.push(LineSegment2 {
+                    start: dequantize2f(half_edge.origin.clone()),
+                    end: dequantize2f(self.destination(half_edge)),
                 });
                 segment_edge_ids.push(*id);
             }
@@ -332,11 +352,14 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         // any).
         let mut edge_left_neighbors = HashMap::new();
 
-        let intersections = LineSegment2f::intersections(&segments);
+        let intersections = LineSegment2::intersections(&segments);
 
         for intersection in intersections {
             // TODO: Stop early if the intersection point is strictly on endpoints of
             // existing edges.
+
+            // TODO: This MUST be an exact opposite operation to the
+            let intersection_point = quantize2f(intersection.point.clone());
 
             // Record of a pair of half-edges (twins) with one endpoint at the intersection
             // point and another somewhere else.
@@ -361,9 +384,9 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 outward_face: FaceId,
 
                 // Other endpoint of this edge aside of the intersection.point.
-                point: Vector2f,
+                point: Vector2i64,
 
-                angle: f32,
+                angle: Rational,
             }
 
             // List of all edges converging at the intersection point.
@@ -374,19 +397,23 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 let edge = self.half_edges[edge_id].clone();
                 let edge_dest = self.destination(&edge);
 
+                /*
                 {
-                    let segment = LineSegment2f {
+                    let segment = LineSegment2 {
                         start: edge.origin.clone(),
                         end: edge_dest.clone(),
                     };
 
                     assert!(segment.contains(&intersection.point));
                 }
+                */
 
-                let origin_equal = compare_points(&edge.origin, &intersection.point).is_eq();
-                let dest_equal = compare_points(&edge_dest, &intersection.point).is_eq();
+                // TODO: If our threshold is larger than one quantized unit, this must use
+                // in-exact comparison.
+                let origin_equal = edge.origin == intersection_point;
+                let dest_equal = edge_dest == intersection_point;
 
-                if compare_points(&edge.origin, &intersection.point).is_eq() {
+                if origin_equal {
                     assert!(!dest_equal);
 
                     // The current edge is outward.
@@ -399,9 +426,9 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         outward_next: edge.next,
                         outward_face: edge.incident_face,
                         point: edge_dest,
-                        angle: 0., // Computed later.
+                        angle: 0.into(), // Computed later.
                     });
-                } else if compare_points(&edge_dest, &intersection.point).is_eq() {
+                } else if dest_equal {
                     assert!(!origin_equal);
 
                     // The current edge is inward (opposite of first case).
@@ -414,7 +441,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         outward_next: self.half_edges[edge.twin].next,
                         outward_face: self.half_edges[edge.twin].incident_face,
                         point: edge.origin.clone(),
-                        angle: 0., // Computed later.
+                        angle: 0.into(), // Computed later.
                     });
                 } else {
                     let id1 = self.half_edges.unique_id();
@@ -428,7 +455,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         outward_next: self.half_edges[edge.twin].next,
                         outward_face: self.half_edges[edge.twin].incident_face,
                         point: edge.origin.clone(),
-                        angle: 0., // Computed later.
+                        angle: 0.into(), // Computed later.
                     };
 
                     let mut e2 = PartialEdge {
@@ -439,7 +466,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         outward_next: edge.next,
                         outward_face: edge.incident_face,
                         point: edge_dest.clone(),
-                        angle: 0., // Computed later.
+                        angle: 0.into(), // Computed later.
                     };
 
                     // Compensation in the case that the line wraps around itself.
@@ -453,7 +480,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                     // Update the segment to correct to the portion of the original segment which
                     // still remains to be matched below (/ to the right of) the sweep line.
                     segment_edge_ids[segment_idx] =
-                        if compare_points(&edge.origin, &edge_dest).is_gt() {
+                        if compare_points_i64(&edge.origin, &edge_dest).is_gt() {
                             edge_id
                         } else {
                             edge.twin
@@ -469,10 +496,11 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
             // Sort edges by ascending clockwise angle
             for edge in &mut intersecting_edges {
-                let dir = &edge.point - &intersection.point;
-                edge.angle = 2. * PI - dir.y().atan2(dir.x());
+                let dir = &edge.point - &intersection_point;
+                // edge.angle = 2. * PI - dir.y().atan2(dir.x());
+                edge.angle = dir.pseudo_angle();
             }
-            intersecting_edges.sort_by(|a, b| a.angle.partial_cmp(&b.angle).unwrap());
+            intersecting_edges.sort_by(|a, b| b.angle.partial_cmp(&a.angle).unwrap());
 
             /*
             TODO:
@@ -509,7 +537,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 self.half_edges.insert(
                     edge.outward_id,
                     HalfEdge {
-                        origin: intersection.point.clone(),
+                        origin: intersection_point.clone(),
                         twin: edge.inward_id,
                         incident_face: edge.outward_face,
                         next: edge.outward_next,
@@ -644,7 +672,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 // If the left edge is horizontal, instead pick a non-horizontal one with the
                 // same edge point as the right side of the horizontal line.
                 // TODO: Use a standard constant
-                if (left_edge.origin.y() - left_edge_dest.y()).abs() <= 1e-3 {
+                if left_edge.origin.y() == left_edge_dest.y() {
                     // TODO: Implement a test case which hits thi logic.
 
                     println!("SKIP HORIZONTAL EDGE");
@@ -738,7 +766,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 // TODO: Cache some of this computation so that each inner boundary doesn't need
                 // to traverse up every single time.
                 let mut current_edge = boundary.leftmost_vertex;
-                loop {
+
+                bounded_loop(boundaries.len() + 1, || {
                     let mut boundary = &boundaries[edge_to_boundary_index[&current_edge]];
 
                     if !boundary.is_inner {
@@ -757,10 +786,16 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                         // TODO: Should we be using is_inner of the new boundary or of the original
                         // boundary before we did the repairs?
                         // ^ Yes
-                        while !boundary.is_inner {
+                        bounded_loop(boundaries.len() + 1, || {
+                            if boundary.is_inner {
+                                return Ok(Loop::Break);
+                            }
+
                             current_edge = self.half_edges[boundary.leftmost_vertex].twin;
                             boundary = &boundaries[edge_to_boundary_index[&current_edge]];
-                        }
+                            Ok(Loop::Continue)
+                        })
+                        .unwrap();
 
                         // Inner boundaries are hole components of faces, but because we know we are
                         // inside of the hole, we don't want to include any faces associated with
@@ -775,13 +810,16 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
                         let parent_idx = match boundary.parent.clone() {
                             Some(v) => v,
-                            None => break,
+                            None => return Ok(Loop::Break),
                         };
 
                         let parent_boundary = &boundaries[parent_idx];
                         current_edge = parent_boundary.leftmost_vertex;
                     }
-                }
+
+                    Ok(Loop::Continue)
+                })
+                .unwrap();
 
                 let mut label = F::default();
                 for id in included_faces {
@@ -840,6 +878,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         let mut line_segments = vec![];
         let mut line_segments_to_edge = vec![];
 
+        // Extract line segments from all edges.
         for component_id in face
             .outer_component
             .iter()
@@ -848,21 +887,24 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             // TODO: Consider always storing the min id edge in the face components so we
             // can gurantee that this will halt (or strictly reach higher edge ids).
             let mut current_id = *component_id;
-            loop {
+            bounded_loop(self.half_edges.len() + 1, || {
                 let edge = &self.half_edges[current_id];
 
-                line_segments.push(LineSegment2f {
-                    start: edge.origin.clone(),
-                    end: self.destination(edge),
+                line_segments.push(LineSegment2 {
+                    start: dequantize2f(edge.origin.clone()),
+                    end: dequantize2f(self.destination(edge)),
                 });
                 line_segments_to_edge.push(current_id);
 
                 if edge.next == *component_id {
-                    break;
+                    return Ok(Loop::Break);
                 }
 
                 current_id = edge.next;
-            }
+
+                Ok(Loop::Continue)
+            })
+            .unwrap();
         }
 
         #[derive(Debug)]
@@ -882,7 +924,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         // corresponds to each intersection point too).
         //
         // TODO: Execute that at the same time as the repair() process.
-        for intersection in LineSegment2f::intersections(&line_segments) {
+        for intersection in LineSegment2::intersections(&line_segments) {
             // Always true as we are only considering a single face at a time.
             assert_eq!(intersection.segments.len(), 2);
 
@@ -899,15 +941,15 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             };
 
             let edge = &self.half_edges[edge_id];
-            assert!(compare_points(&edge.origin, &intersection.point).is_eq());
+            assert!(edge.origin == quantize2f(intersection.point));
 
             let neighbor1 = self.half_edges[prev_edge_id].origin.clone();
             let neighbor2 = self.destination(&edge);
 
             // We saw that our neighbor is 'below' the current vertex if we haven't yet seen
             // it while scanning for intersections.
-            let neighbor1_below = compare_points(&edge.origin, &neighbor1).is_lt();
-            let neighbor2_below = compare_points(&edge.origin, &neighbor2).is_lt();
+            let neighbor1_below = compare_points_i64(&edge.origin, &neighbor1).is_lt();
+            let neighbor2_below = compare_points_i64(&edge.origin, &neighbor2).is_lt();
 
             // If true, then the interior angle at this vertex is > PI
             let big_interior_angle = turns_right(&neighbor1, &edge.origin, &neighbor2);
@@ -957,7 +999,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 // (from > to <).
                 let interior_on_right = {
                     let dir = &neighbor2 - &edge.origin;
-                    dir.y() < 0. || (dir.y().abs() < 1e-3 && dir.x() > 0.)
+                    dir.y() < 0 || (dir.y() == 0 && dir.x() > 0)
                 };
 
                 if interior_on_right {
@@ -1078,7 +1120,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             }
 
             edges.sort_by(|a, b| {
-                compare_points(&self.half_edges[*a].origin, &self.half_edges[*b].origin)
+                compare_points_i64(&self.half_edges[*a].origin, &self.half_edges[*b].origin)
             });
 
             edges
@@ -1103,10 +1145,10 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 let b = &self.half_edges[*stack.last().unwrap()];
 
                 // Will be true if both vertices are on the left side of the face.
-                let left = compare_points(&self.destination(b), &a.origin).is_eq();
+                let left = self.destination(b) == a.origin;
 
                 // Will be true if both vertices are on the right side of the face.
-                let right = compare_points(&self.destination(a), &b.origin).is_eq();
+                let right = self.destination(a) == b.origin;
 
                 (left || right, left)
             };
@@ -1161,12 +1203,6 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             self.connect_face_vertices(edges[edges.len() - 1], *edge);
         }
     }
-
-    fn vertex_direction(&self, edge_id: EdgeId) -> bool {
-        let edge = &self.half_edges[edge_id];
-        let edge_dst = self.destination(edge);
-        compare_points(&edge.origin, &edge_dst).is_lt()
-    }
 }
 
 /*
@@ -1177,7 +1213,7 @@ For each intersection point, it is useful to know which original segment it come
 */
 
 /*
-pub fn overlap_polys(segments: &[LineSegment2f]) {
+pub fn overlap_polys(segments: &[LineSegment2]) {
     // Compute all intersection points
 
     // Dedup points and form edge list
@@ -1263,7 +1299,7 @@ impl<F: FaceLabel> FaceDebug<F> {
         while seen_ids.insert(current_id) {
             let current_edge = &data.half_edges[current_id];
             assert_eq!(current_edge.incident_face, face_id);
-            boundary.push(current_edge.origin.clone());
+            boundary.push(dequantize2f(current_edge.origin.clone()));
             current_id = current_edge.next;
         }
 
@@ -1301,7 +1337,7 @@ mod tests {
         data.half_edges.insert(
             e1,
             HalfEdge {
-                origin: vec2f(0., 0.),
+                origin: quantize2f(vec2f(0., 0.)),
                 twin: e2,
                 next: e2,
                 prev: e2,
@@ -1311,7 +1347,7 @@ mod tests {
         data.half_edges.insert(
             e2,
             HalfEdge {
-                origin: vec2f(10., 10.),
+                origin: quantize2f(vec2f(10., 10.)),
                 twin: e1,
                 next: e1,
                 prev: e1,
@@ -1321,7 +1357,7 @@ mod tests {
         data.half_edges.insert(
             e3,
             HalfEdge {
-                origin: vec2f(10., 0.),
+                origin: quantize2f(vec2f(10., 0.)),
                 twin: e4,
                 next: e4,
                 prev: e4,
@@ -1331,7 +1367,7 @@ mod tests {
         data.half_edges.insert(
             e4,
             HalfEdge {
-                origin: vec2f(0., 10.),
+                origin: quantize2f(vec2f(0., 10.)),
                 twin: e3,
                 next: e3,
                 prev: e3,
@@ -1585,7 +1621,7 @@ mod tests {
     }
 
     #[test]
-    fn square_inside_square() {
+    fn square_inside_square_test() {
         // ------------------|
         // |                 |
         // |  ------------   |
@@ -1717,7 +1753,7 @@ mod tests {
         println!("Repairing done!");
 
         let boundaries = FaceDebug::get_all(&data);
-        println!("{:#?}", boundaries);
+        // println!("{:#?}", boundaries);
     }
 
     #[test]

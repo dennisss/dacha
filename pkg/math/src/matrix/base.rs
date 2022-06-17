@@ -49,6 +49,7 @@ pub type VectorBase<T, R, D> = MatrixBase<T, R, U1, D>;
 #[cfg(feature = "alloc")]
 pub type Matrix<T, R, C> = MatrixBase<T, R, C, MatrixDynamicStorage<T, R, C>>;
 
+pub type Matrix2<T> = MatrixStatic<T, U2, U2>;
 pub type Matrix2i = MatrixStatic<isize, U2, U2>;
 pub type Matrix2f = MatrixStatic<f32, U2, U2>;
 pub type Matrix3f = MatrixStatic<f32, U3, U3>;

@@ -40,5 +40,5 @@ where
 
     // TODO: Transpose should be able to do this without any copies by taking
     // a reference and flipping dims.
-    I - ((&v) * v.transpose()).cwise_mul(2)
+    I - ((&v) * v.transpose()).cwise_mul(2.)
 }

@@ -16,7 +16,7 @@ use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use math::array::Array;
 use math::geometry::bounding_box::BoundingBox;
 use math::matrix::{Vector2f, VectorStatic};
-use math::number::Zero;
+use math::number::{Cast, Zero};
 
 pub mod format;
 pub mod resize;
@@ -135,7 +135,7 @@ impl Image<u8> {
     }
 }
 
-impl<T: AsPrimitive<f32> + NumCast + Default + Copy> Image<T> {
+impl<T: Cast<f32> + Default + Copy> Image<T> {
     // TODO: Need image to always be 3d to avoid this having to do a bounds check.
 
     pub fn wrap(array: Array<T>, colorspace: Colorspace) -> Image<T> {
@@ -177,7 +177,8 @@ impl<T: AsPrimitive<f32> + NumCast + Default + Copy> Image<T> {
     // Equivalent to a YUV taking only the Y channel.
     pub fn to_grayscale(&self) -> Image<T>
     where
-        f32: AsPrimitive<T>,
+        T: Cast<f32>,
+        f32: Cast<T>,
     {
         assert_eq!(self.colorspace, Colorspace::RGB);
 
@@ -186,10 +187,10 @@ impl<T: AsPrimitive<f32> + NumCast + Default + Copy> Image<T> {
 
         for i in 0..self.height() {
             for j in 0..self.width() {
-                let r: f32 = self.array[&[i, j, 0][..]].as_();
-                let g: f32 = self.array[&[i, j, 1][..]].as_();
-                let b: f32 = self.array[&[i, j, 2][..]].as_();
-                data.push((0.299 * r + 0.587 * g + 0.114 * b).as_());
+                let r: f32 = self.array[&[i, j, 0][..]].cast();
+                let g: f32 = self.array[&[i, j, 1][..]].cast();
+                let b: f32 = self.array[&[i, j, 2][..]].cast();
+                data.push((0.299 * r + 0.587 * g + 0.114 * b).cast());
             }
         }
 
@@ -212,14 +213,14 @@ impl<T: AsPrimitive<f32> + NumCast + Default + Copy> Image<T> {
     // For images, we can perform nice resizing of stuff
 }
 
-impl<T: Clone, Y: AsPrimitive<usize>> std::ops::Index<(Y, Y, Y)> for Image<T> {
+impl<T: Clone, Y: Copy + Cast<usize>> std::ops::Index<(Y, Y, Y)> for Image<T> {
     type Output = T;
     fn index(&self, index: (Y, Y, Y)) -> &T {
         self.array.index(&[index.0, index.1, index.2] as &[Y])
     }
 }
 
-impl<T: Clone, Y: AsPrimitive<usize>> std::ops::IndexMut<(Y, Y, Y)> for Image<T> {
+impl<T: Clone, Y: Copy + Cast<usize>> std::ops::IndexMut<(Y, Y, Y)> for Image<T> {
     fn index_mut(&mut self, index: (Y, Y, Y)) -> &mut T {
         self.array.index_mut(&[index.0, index.1, index.2] as &[Y])
     }

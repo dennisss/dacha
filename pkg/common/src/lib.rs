@@ -84,6 +84,7 @@ pub mod iter;
 #[cfg(feature = "std")]
 pub mod line_builder;
 pub mod list;
+pub mod loops;
 #[cfg(feature = "std")]
 pub mod pipe;
 pub mod segmented_buffer;

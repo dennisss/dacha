@@ -21,7 +21,7 @@ use common::errors::*;
 use image::Color;
 use image::Image;
 use math::geometry::half_edge::*;
-use math::geometry::line_segment::LineSegment2f;
+use math::geometry::line_segment::LineSegment2;
 use math::matrix::{vec2f, Vector2f};
 
 use crate::canvas::Canvas;
@@ -222,7 +222,7 @@ impl PointPicker {
 
                     let mut segments = vec![];
                     for pair in self.points.chunks_exact(2) {
-                        segments.push(LineSegment2f {
+                        segments.push(LineSegment2 {
                             start: pair[0].clone(),
                             end: pair[1].clone(),
                         });
@@ -230,7 +230,7 @@ impl PointPicker {
 
                     println!("Segments: {:?}", segments);
 
-                    let ints = LineSegment2f::intersections(&segments)
+                    let ints = LineSegment2::intersections(&segments)
                         .into_iter()
                         .map(|i| i.point)
                         .collect::<Vec<_>>();

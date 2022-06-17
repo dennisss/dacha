@@ -1,6 +1,9 @@
 use core::ops::Deref;
 use core::{cmp::Ordering, ops::Sub};
 
+use crate::matrix::element::FloatElementType;
+use crate::matrix::Vector2i64;
+use crate::number::Float;
 use crate::{
     matrix::{vec2f, Vector2, Vector2f},
     rational::Rational,
@@ -8,34 +11,44 @@ use crate::{
 
 const SCALE: f32 = 1000.0;
 
-/// Quantized vector which stores floating point values as integers 1000x the
-/// size.
-///
-/// - PartialEq/Eq use exact comparison of the integer values.
-/// - PartialOrd/Ord sort in standard line-sweep direction (y descending, then x
-///   ascending).
-///
-/// TODO: Make the quantization scale configurable.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct QVector2f {
-    inner: Vector2<i64>,
-}
+// /// Quantized vector which stores floating point values as integers 1000x the
+// /// size.
+// ///
+// /// - PartialEq/Eq use exact comparison of the integer values.
+// /// - PartialOrd/Ord sort in standard line-sweep direction (y descending,
+// then x ///   ascending).
+// ///
+// /// TODO: Make the quantization scale configurable.
+// #[derive(Clone, Debug, PartialEq, Eq)]
+// #[repr(transparent)]
+// pub struct QVector2f {
+//     inner: Vector2<i64>,
+// }
 
-impl QVector2f {
+pub trait PseudoAngle {
+    type Output;
+
     /// Returns a value in the range [0, 4] which increases monotonically with
     /// the clockwise angle of this vector from the +x axis.
     ///
+    /// The [0, 4] range roughly corresponds to the range [0, 2*pi] radians.
+    ///
     /// See https://stackoverflow.com/questions/16542042/fastest-way-to-sort-vectors-by-angle-without-actually-computing-that-angle
-    pub fn pseudo_angle(&self) -> Rational {
-        let dx = Rational::from(self.inner.x());
-        let dy = Rational::from(self.inner.y());
+    fn pseudo_angle(&self) -> Self::Output;
+}
+
+impl PseudoAngle for Vector2i64 {
+    type Output = Rational;
+
+    fn pseudo_angle(&self) -> Rational {
+        let dx = Rational::from(self.x());
+        let dy = Rational::from(self.y());
         let one = Rational::from(1);
         let three = Rational::from(3);
 
         let p = dx / (dx.abs() + dy.abs());
 
-        if self.inner.y() < 0 {
+        if self.y() < 0 {
             three + p
         } else {
             one - p
@@ -43,58 +56,31 @@ impl QVector2f {
     }
 }
 
-/// TODO: Restrict usage of this?
-impl Deref for QVector2f {
-    type Target = Vector2<i64>;
+impl<T: FloatElementType> PseudoAngle for Vector2<T> {
+    type Output = T;
 
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-/// TODO: Restrict usage of this.
-impl From<Vector2<i64>> for QVector2f {
-    fn from(inner: Vector2<i64>) -> Self {
-        Self { inner }
-    }
-}
-
-impl From<Vector2f> for QVector2f {
-    fn from(v: Vector2f) -> Self {
-        Self {
-            inner: Vector2::from_slice(&[
-                (v.x() * SCALE).round() as i64,
-                (v.y() * SCALE).round() as i64,
-            ]),
+    fn pseudo_angle(&self) -> Self::Output {
+        let p = self.x() / (self.x().abs() + self.y().abs());
+        if self.y() < T::zero() {
+            T::from(3i8) + p
+        } else {
+            T::from(1i8) - p
         }
     }
 }
 
-impl Into<Vector2f> for QVector2f {
-    fn into(self) -> Vector2f {
-        vec2f(
-            (self.inner.x() as f32) / SCALE,
-            (self.inner.y() as f32) / SCALE,
-        )
-    }
+pub fn quantize2f(v: Vector2f) -> Vector2i64 {
+    Vector2::from_slice(&[
+        (v.x() * SCALE).round() as i64,
+        (v.y() * SCALE).round() as i64,
+    ])
 }
 
-impl Ord for QVector2f {
-    fn cmp(&self, other: &Self) -> Ordering {
-        if self.inner.y() == other.inner.y() {
-            return self.inner.x().cmp(&other.inner.x());
-        }
-
-        other.inner.y().cmp(&self.inner.y())
-    }
+pub fn dequantize2f(v: Vector2i64) -> Vector2f {
+    vec2f((v.x() as f32) / SCALE, (v.y() as f32) / SCALE)
 }
 
-impl PartialOrd for QVector2f {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,3 +110,4 @@ mod tests {
         }
     }
 }
+*/
