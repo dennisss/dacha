@@ -3,6 +3,7 @@ use core::{cmp::Ordering, ops::Sub};
 
 use crate::matrix::element::FloatElementType;
 use crate::matrix::Vector2i64;
+use crate::number::Cast;
 use crate::number::Float;
 use crate::{
     matrix::{vec2f, Vector2, Vector2f},
@@ -69,15 +70,18 @@ impl<T: FloatElementType> PseudoAngle for Vector2<T> {
     }
 }
 
-pub fn quantize2f(v: Vector2f) -> Vector2i64 {
+pub fn quantize2<T: FloatElementType>(v: Vector2<T>) -> Vector2i64 {
     Vector2::from_slice(&[
-        (v.x() * SCALE).round() as i64,
-        (v.y() * SCALE).round() as i64,
+        (v.x() * T::from(SCALE)).round().cast(),
+        (v.y() * T::from(SCALE)).round().cast(),
     ])
 }
 
-pub fn dequantize2f(v: Vector2i64) -> Vector2f {
-    vec2f((v.x() as f32) / SCALE, (v.y() as f32) / SCALE)
+pub fn dequantize2<T: FloatElementType>(v: Vector2i64) -> Vector2<T> {
+    Vector2::from_slice(&[
+        Cast::<T>::cast(v.x()) / T::from(SCALE),
+        Cast::<T>::cast(v.y()) / T::from(SCALE),
+    ])
 }
 
 /*

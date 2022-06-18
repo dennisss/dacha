@@ -5,7 +5,7 @@ use crate::matrix::{Matrix2, Vector2};
 
 /// Representation of an unbounded 2d line where a point is defined as:
 /// p = base + (lambda * dir)
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Line2<T: FloatElementType> {
     pub base: Vector2<T>,
     pub dir: Vector2<T>,
@@ -23,9 +23,14 @@ impl<T: FloatElementType> Line2<T> {
         }
     }
 
+    /// Returns a vector which is pointing in a perpendicular direction to this
+    /// line (when starting at the same base point).
+    pub fn perp(&self) -> Vector2<T> {
+        Vector2::from_slice(&[T::from(-1.) * self.dir.y(), self.dir.x()])
+    }
+
     pub fn distance_to_point(&self, point: &Vector2<T>) -> T {
-        let dir_perp =
-            Vector2::from_slice(&[T::from(-1.) * self.dir.y(), self.dir.x()]).normalized();
+        let dir_perp = self.perp().normalized();
         let offset = point - &self.base;
         dir_perp.dot(&offset)
     }

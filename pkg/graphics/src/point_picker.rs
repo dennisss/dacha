@@ -230,7 +230,7 @@ impl PointPicker {
 
                     println!("Segments: {:?}", segments);
 
-                    let ints = LineSegment2::intersections(&segments)
+                    let ints = LineSegment2::intersections(&segments, 1e-3)
                         .into_iter()
                         .map(|i| i.point)
                         .collect::<Vec<_>>();

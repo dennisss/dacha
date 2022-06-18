@@ -1,6 +1,6 @@
 use common::iter::{PairIter, PairIterator};
 use image::Color;
-use math::geometry::line::Line2f;
+use math::geometry::line::Line2;
 use math::matrix::{Matrix2f, Vector2f, Vector3f};
 
 use crate::raster::PolygonRef;
@@ -96,26 +96,29 @@ pub fn stroke_split_dashes(points: &[Vector2f], dash_array: &[f32]) -> Vec<Vec<V
 ///
 /// TODO: Need a special case for closed paths where interpolate the last
 /// point based on intersection with the first line.
-pub fn stroke_poly(points: &[Vector2f], width: f32) -> Vec<Vector2f> {
+pub fn stroke_poly(points: &[Vector2f], width: f32) -> (Vec<Vector2f>, Vec<usize>) {
     let mut out = vec![];
+    let mut path_starts = vec![];
 
-    let mut offset_segments = |iter: PairIterator<Vector2f>| {
+    let mut closed = points.len() > 0 && points[0] == points[points.len() - 1];
+
+    path_starts.push(0);
+
+    let mut offset_segments = |iter: PairIterator<Vector2f>, out: &mut Vec<Vector2f>| {
+        let mut start_index = out.len();
+
+        let mut first_line = None;
         let mut last_line = None;
 
         for (p_i, p_j) in iter {
-            let mut l = Line2f::from_points(p_i, p_j);
+            let mut l = Line2::from_points(p_i, p_j);
             if l.dir.norm() < 1e-6 {
                 // Skip empty lines.
                 continue;
             }
 
             // Normal vector to the line.
-            let n: Vector2f = {
-                let a = Vector3f::from_slice(&[l.dir.x(), l.dir.y(), 0.0]);
-                let b = Vector3f::from_slice(&[0.0, 0.0, 1.0]);
-                let c = a.cross(&b);
-                c.block(0, 0).to_owned().normalized()
-            };
+            let n: Vector2f = l.perp().normalized();
 
             let offset = n * (width / 2.0);
 
@@ -133,18 +136,57 @@ pub fn stroke_poly(points: &[Vector2f], width: f32) -> Vec<Vector2f> {
                 out.push(l.base.clone());
             }
 
+            if first_line.is_none() {
+                first_line = Some(l.clone());
+            }
             last_line = Some(l);
         }
 
-        // For the last line, we just take the offset endpoint of the original segment
-        // as the stroke point.
-        if let Some(line) = last_line.take() {
+        if closed && first_line.is_some() && last_line.is_some() {
+            let first = first_line.unwrap();
+            let last = last_line.unwrap();
+
+            if let Some(inter) = first.intersect(&last) {
+                out[start_index] = inter;
+            }
+
+            out.push(out[start_index].clone());
+        } else if let Some(line) = last_line.take() {
+            // For the last line, we just take the offset endpoint of the original segment
+            // as the stroke point.
             out.push(line.base + line.dir);
         }
     };
 
-    offset_segments(points.pair_iter());
-    offset_segments(points.pair_iter().rev());
+    offset_segments(points.pair_iter(), &mut out);
 
-    out
+    if closed {
+        path_starts.push(out.len());
+    }
+
+    offset_segments(points.pair_iter().rev(), &mut out);
+
+    path_starts.push(out.len());
+
+    (out, path_starts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use math::matrix::vec2f;
+
+    #[test]
+    fn single_line() {
+        let points = &[
+            vec2f(0., 0.),
+            vec2f(10., 0.),
+            vec2f(10., 10.),
+            vec2f(0., 10.),
+            vec2f(0., 0.),
+        ];
+
+        println!("{:#?}", stroke_poly(points, 2.));
+    }
 }

@@ -140,7 +140,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         self.half_edges.insert(
             id,
             HalfEdge {
-                origin: quantize2f(start),
+                origin: quantize2(start),
                 twin,
                 incident_face: face_id,
                 next: twin,
@@ -150,7 +150,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         self.half_edges.insert(
             twin,
             HalfEdge {
-                origin: quantize2f(end),
+                origin: quantize2(end),
                 twin: id,
                 incident_face: self.unbounded_face_id,
                 next: id,
@@ -186,7 +186,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         self.half_edges.insert(
             twin,
             HalfEdge {
-                origin: quantize2f(next_point),
+                origin: quantize2(next_point),
                 twin: id,
                 incident_face: self.unbounded_face_id,
                 next: prev_twin,
@@ -341,8 +341,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 }
 
                 segments.push(LineSegment2 {
-                    start: dequantize2f(half_edge.origin.clone()),
-                    end: dequantize2f(self.destination(half_edge)),
+                    start: dequantize2::<f64>(half_edge.origin.clone()),
+                    end: dequantize2::<f64>(self.destination(half_edge)),
                 });
                 segment_edge_ids.push(*id);
             }
@@ -363,14 +363,14 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
         // in half.
         let mut deleted_outward_ids = HashSet::new();
 
-        let intersections = LineSegment2::intersections(&segments);
+        let intersections = LineSegment2::intersections(&segments, 1e-6);
 
         for intersection in intersections {
             // TODO: Stop early if the intersection point is strictly on endpoints of
             // existing edges.
 
             // TODO: This MUST be an exact opposite operation to the
-            let intersection_point = quantize2f(intersection.point.clone());
+            let intersection_point = quantize2(intersection.point.clone());
 
             // println!("I {:?}", intersection_point);
 
@@ -413,11 +413,11 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
                 {
                     let segment = LineSegment2 {
-                        start: dequantize2f(edge.origin.clone()),
-                        end: dequantize2f(edge_dest.clone()),
+                        start: dequantize2(edge.origin.clone()),
+                        end: dequantize2(edge_dest.clone()),
                     };
 
-                    assert!(segment.contains(&intersection.point));
+                    assert!(segment.contains(&intersection.point, 1e-3));
                 }
 
                 // TODO: If our threshold is larger than one quantized unit, this must use
@@ -588,6 +588,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
                     // NOTE: To avoid deleting an edge twice, we only insert one of its ids.
                     if !deleted_outward_ids.contains(&next_edge.inward_id) {
+                        // println!("^ PAIR");
                         deleted_outward_ids.insert(next_edge.outward_id);
                     }
 
@@ -844,8 +845,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
                 let face_id = faces.unique_id();
 
-                let mut included_faces = HashSet::new();
-                let mut excluded_faces = HashSet::new();
+                let mut included_faces = HashSet::<FaceId>::new();
+                let mut excluded_faces = HashSet::<FaceId>::new();
 
                 // TODO: Cache some of this computation so that each inner boundary doesn't need
                 // to traverse up every single time.
@@ -975,8 +976,8 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
                 let edge = &self.half_edges[current_id];
 
                 line_segments.push(LineSegment2 {
-                    start: dequantize2f(edge.origin.clone()),
-                    end: dequantize2f(self.destination(edge)),
+                    start: dequantize2(edge.origin.clone()),
+                    end: dequantize2(self.destination(edge)),
                 });
                 line_segments_to_edge.push(current_id);
 
@@ -1004,13 +1005,34 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
 
         // TODO: For this we should use exact matching of intersections.
 
+        let intersections = LineSegment2::intersections(&line_segments, 1e-3);
+
+        // let mut intersection_starts = vec![];
+        // for intersection in &intersections {
+        //     for segment in intersection.segments.iter().cloned() {
+        //         let edge_id = line_segments_to_edge[intersection.segments[0]];
+        //         let edge = &self.half_edges[edge_id];
+        //         if edge.origin == quantize2(intersection.point.clone()) {
+        //             intersection_starts.push((edge_id, intersection));
+        //         }
+
+        //         // assert!(edge.origin == quantize2(intersection.point));
+        //     }
+        // }
+
         // Iterate over vertices in the face (as all our faces should be closed, this
         // corresponds to each intersection point too).
         //
         // TODO: Execute that at the same time as the repair() process.
-        for intersection in LineSegment2::intersections(&line_segments) {
+        for intersection in intersections {
+            if intersection.segments.len() != 2 {
+                println!("{:#?}", intersection);
+            }
+
             // Always true as we are only considering a single face at a time.
             assert_eq!(intersection.segments.len(), 2);
+
+            // let prev_edge_id = self.half_edges[edge_id].prev;
 
             // Id of the edge originating at the intersection point and the one before it.
             let (edge_id, prev_edge_id) = {
@@ -1025,7 +1047,7 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
             };
 
             let edge = &self.half_edges[edge_id];
-            assert!(edge.origin == quantize2f(intersection.point));
+            assert!(edge.origin == quantize2(intersection.point));
 
             let neighbor1 = self.half_edges[prev_edge_id].origin.clone();
             let neighbor2 = self.destination(&edge);
@@ -1123,6 +1145,10 @@ impl<F: FaceLabel> HalfEdgeStruct<F> {
     /// boundary records will be invalid after this operation.
     fn connect_face_vertices(&mut self, vertex_a: EdgeId, vertex_b: EdgeId) {
         // TODO: Assert vertex edges are from the face same.
+
+        assert_ne!(vertex_a, vertex_b);
+
+        // println!("Connect {:?} {:?}", vertex_a, vertex_b);
 
         let id1 = self.half_edges.unique_id();
         let id2 = self.half_edges.unique_id();
@@ -1358,7 +1384,7 @@ impl<F: FaceLabel> FaceDebug<F> {
         while seen_ids.insert(current_id) {
             let current_edge = &data.half_edges[current_id];
             assert_eq!(current_edge.incident_face, face_id);
-            boundary.push(dequantize2f(current_edge.origin.clone()));
+            boundary.push(dequantize2(current_edge.origin.clone()));
             current_id = current_edge.next;
         }
 
@@ -1396,7 +1422,7 @@ mod tests {
         data.half_edges.insert(
             e1,
             HalfEdge {
-                origin: quantize2f(vec2f(0., 0.)),
+                origin: quantize2(vec2f(0., 0.)),
                 twin: e2,
                 next: e2,
                 prev: e2,
@@ -1406,7 +1432,7 @@ mod tests {
         data.half_edges.insert(
             e2,
             HalfEdge {
-                origin: quantize2f(vec2f(10., 10.)),
+                origin: quantize2(vec2f(10., 10.)),
                 twin: e1,
                 next: e1,
                 prev: e1,
@@ -1416,7 +1442,7 @@ mod tests {
         data.half_edges.insert(
             e3,
             HalfEdge {
-                origin: quantize2f(vec2f(10., 0.)),
+                origin: quantize2(vec2f(10., 0.)),
                 twin: e4,
                 next: e4,
                 prev: e4,
@@ -1426,7 +1452,7 @@ mod tests {
         data.half_edges.insert(
             e4,
             HalfEdge {
-                origin: quantize2f(vec2f(0., 10.)),
+                origin: quantize2(vec2f(0., 10.)),
                 twin: e3,
                 next: e3,
                 prev: e3,
@@ -2184,6 +2210,64 @@ mod tests {
                 })]),
             );
         }
+    }
+
+    #[test]
+    fn complex_merge() {
+        // There's an overlap at (0,0) and (1,1)
+
+        let points = &[
+            vec2f(0., 0.),
+            vec2f(10., 0.),
+            vec2f(10., 10.),
+            vec2f(0., 10.),
+            vec2f(0., 0.),
+            vec2f(1., 1.),
+            vec2f(9., 1.),
+            vec2f(9., 9.),
+            vec2f(1., 9.),
+            vec2f(1., 1.),
+            // vec2f(187.11684, 340.03354),
+            // vec2f(320.91425, 343.99792),
+            // vec2f(432.4529, 359.932),
+            // vec2f(447.96048, 380.28568),
+            // vec2f(426.11734, 569.92377),
+            // vec2f(209.90596, 552.0714),
+            // vec2f(187.11684, 340.03354),
+            // vec2f(184.88315, 337.96646),
+            // vec2f(208.09404, 553.9286),
+            // vec2f(427.88266, 572.07623),
+            // vec2f(450.03952, 379.71432),
+            // vec2f(433.5471, 358.068),
+            // vec2f(321.08575, 342.0021),
+            // vec2f(184.88315, 337.96646),
+        ];
+
+        let mut data = HalfEdgeStruct::new();
+
+        let first = data.add_first_edge(points[0].clone(), points[1].clone(), labels(&[]));
+        let mut next = data.add_next_edge(first, points[2].clone());
+        for p in &points[3..] {
+            next = data.add_next_edge(next, p.clone());
+        }
+        data.add_close_edge(next, first);
+
+        data.repair();
+
+        for (_, e) in data.half_edges.iter() {
+            println!("{:?}", e.origin);
+        }
+
+        let boundaries = FaceDebug::get_all(&data);
+        println!("{:#?}", boundaries);
+
+        /*
+        For every vertex, st
+
+        */
+
+        // data.repair();
+        data.make_y_monotone();
     }
 
     // TODO: Test for ignoring line segments with length 0 (and pruning them
