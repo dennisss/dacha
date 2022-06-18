@@ -53,12 +53,12 @@ impl<IdT, T> DerefMut for EntityStorage<IdT, T> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FaceTag {
     hidden: (),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EdgeTag {
     hidden: (),
 }
@@ -66,7 +66,7 @@ pub struct EdgeTag {
 pub type FaceId = Id<FaceTag>;
 pub type EdgeId = Id<EdgeTag>;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id<T>(usize, PhantomData<T>);
 
 impl<T> Id<T> {
