@@ -1,27 +1,36 @@
+use std::rc::Rc;
+
 use common::errors::*;
 use gl::types::{GLenum, GLint, GLsizei, GLuint};
 
+use crate::opengl::texture::Texture;
+use crate::opengl::window::WindowContext;
+
+// TODO: Support creating multi-sampled frame buffers: https://stackoverflow.com/questions/42878216/opengl-how-to-draw-to-a-multisample-framebuffer-and-then-use-the-result-as-a-n
+
 pub struct FrameBuffer {
     frame_buffer_object: GLuint,
-    color_texture_object: GLuint,
+    color_texture: Rc<Texture>,
     depth_render_buffer_object: GLuint,
 }
 
 impl Drop for FrameBuffer {
     fn drop(&mut self) {
+        // TODO: Ensure these are dropped in a WindowContext.
         unsafe {
             gl::DeleteFramebuffers(1, &self.frame_buffer_object);
-            gl::DeleteTextures(1, &self.color_texture_object);
             gl::DeleteRenderbuffers(1, &self.depth_render_buffer_object);
         }
     }
 }
 
 impl FrameBuffer {
-    pub fn new(width: usize, height: usize) -> Result<Self> {
+    pub fn new(mut context: WindowContext, width: usize, height: usize) -> Result<Self> {
         let mut frame_buffer_object = 0;
         let mut color_texture_object = 0;
         let mut depth_render_buffer_object = 0;
+
+        context.make_current();
 
         unsafe {
             gl::GenFramebuffers(1, &mut frame_buffer_object);
@@ -83,19 +92,22 @@ impl FrameBuffer {
 
         Ok(Self {
             frame_buffer_object,
-            color_texture_object,
+            color_texture: Rc::new(Texture {
+                context,
+                object: color_texture_object,
+            }),
             depth_render_buffer_object,
         })
     }
 
-    pub fn draw_context<T, F: FnOnce() -> T>(&self, f: F) -> T {
+    pub fn draw_context<T, F: FnOnce() -> T>(&mut self, f: F) -> T {
         unsafe { gl::BindFramebuffer(gl::FRAMEBUFFER, self.frame_buffer_object) };
         let ret = f();
         unsafe { gl::BindFramebuffer(gl::FRAMEBUFFER, 0) };
         ret
     }
 
-    pub fn bind(&self) {
-        unsafe { gl::BindTexture(gl::TEXTURE_2D, self.color_texture_object) };
+    pub fn texture(&self) -> Rc<Texture> {
+        self.color_texture.clone()
     }
 }

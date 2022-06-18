@@ -161,6 +161,7 @@ pub async fn run() -> Result<()> {
         name: "Gameboy".to_string(),
         width: video::SCREEN_WIDTH * 4,
         height: video::SCREEN_HEIGHT * 4,
+        samples: 1,
     };
 
     let mut paused = false;

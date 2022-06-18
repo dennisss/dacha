@@ -26,6 +26,7 @@ pub async fn run() -> Result<()> {
         name: "OpenGL Canvas!".into(),
         width: 800,
         height: 600,
+        samples: 4,
     };
 
     OpenGLCanvas::render_loop(window_options, |canvas, window, events| {

@@ -4,19 +4,28 @@ use common::errors::*;
 use glfw::WindowEvent;
 use image::{Colorspace, Image};
 use math::array::Array;
-use math::matrix::{Vector2f, Vector2i, Vector3f};
+use math::matrix::{vec2f, Vector2f, Vector2i, Vector3f};
 
 use crate::canvas::base::CanvasBase;
 use crate::canvas::Canvas;
 use crate::opengl::app::Application;
 use crate::opengl::canvas::OpenGLCanvas;
+use crate::opengl::drawable::Drawable;
+use crate::opengl::framebuffer::FrameBuffer;
 use crate::opengl::polygon::Polygon;
 use crate::opengl::shader::ShaderSource;
 use crate::opengl::texture::Texture;
 use crate::opengl::window::Window;
-use crate::transform::{orthogonal_projection, Camera};
+use crate::transform::{orthogonal_projection, Camera, Transform};
 
 pub use crate::raster::canvas_render_loop::WindowOptions;
+
+/*
+Why draw to a framebuffer instead of directly to the window?
+- Doesn't require the screen to be configured with depth/render buffers.
+- More generic solution to implement MSAA
+- We can make incremental updates to the draw buffer while still supporting swap_buffer of the main window.
+*/
 
 impl OpenGLCanvas {
     /// TODO: The callback function must not store any opengl objects outside of
@@ -44,6 +53,12 @@ impl OpenGLCanvas {
         let mut events = vec![];
 
         let shader = Rc::new(shader_src.compile(&mut window).unwrap());
+
+        let mut frame_buffer = FrameBuffer::new(
+            window.context(),
+            window_options.width * 2,
+            window_options.height * 2,
+        )?;
 
         let mut camera = Camera::default();
         camera.proj = orthogonal_projection(
@@ -85,7 +100,37 @@ impl OpenGLCanvas {
             // TODO: Return this error from the outer function.
 
             window.begin_draw();
-            f(&mut canvas, &mut window, &events).unwrap();
+
+            frame_buffer.draw_context(|| {
+                unsafe {
+                    gl::Viewport(
+                        0,
+                        0,
+                        (window_options.width * 2) as i32,
+                        (window_options.height * 2) as i32,
+                    )
+                };
+
+                f(&mut canvas, &mut window, &events).unwrap();
+            });
+
+            unsafe {
+                gl::Viewport(
+                    0,
+                    0,
+                    window_options.width as i32,
+                    window_options.height as i32,
+                )
+            };
+
+            // TODO: Cache this rectangle across draws.
+            let mut rect = Polygon::rectangle(vec2f(-1., -1.), 2., 2., canvas.shader.clone());
+            rect.set_texture(frame_buffer.texture())
+                .set_vertex_colors(Vector3f::from_slice(&[1., 1., 1.]))
+                .set_vertex_alphas(1.);
+
+            rect.draw(&Camera::default(), &Transform::default());
+
             window.end_draw();
 
             !window.raw().should_close()

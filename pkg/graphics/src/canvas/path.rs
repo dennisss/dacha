@@ -7,7 +7,7 @@ use crate::canvas::ellipse::Ellipse;
 use crate::transforms::transform2f;
 
 // TODO: Increase if we can use more anti-aliasing.
-const LINEARIZATION_ERROR_THRESHOLD: f32 = 1.;
+const LINEARIZATION_ERROR_THRESHOLD: f32 = 0.5;
 
 #[derive(Debug)]
 pub struct Path {

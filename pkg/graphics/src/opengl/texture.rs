@@ -3,9 +3,10 @@ use image::Image;
 
 use crate::opengl::window::*;
 
+// The internal fields of this are also re-used by the FrameBuffer struct.
 pub struct Texture {
-    context: WindowContext,
-    object: GLuint,
+    pub(super) context: WindowContext,
+    pub(super) object: GLuint,
 }
 
 impl Drop for Texture {
@@ -37,7 +38,6 @@ impl Texture {
             gl::BindTexture(gl::TEXTURE_2D, object);
 
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as GLint);
-
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as GLint);
 
             gl::TexParameteri(

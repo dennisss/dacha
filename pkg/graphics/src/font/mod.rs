@@ -1120,6 +1120,7 @@ pub async fn open_font() -> Result<()> {
         name: "Font".to_string(),
         width: WIDTH,
         height: HEIGHT,
+        samples: 4,
     };
 
     canvas

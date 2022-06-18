@@ -63,16 +63,9 @@ impl ImageShow for Image<u8> {
 
         // y coordinates are multiplied by -1 because our projection matrix flips along
         // y.
-        rect.set_texture(texture);
-
-        rect.set_vertex_texture_coordinates(&[
-            Vector2f::from_slice(&[0.0, -1.0]),
-            Vector2f::from_slice(&[1.0, -1.0]),
-            Vector2f::from_slice(&[1.0, 0.0]),
-            Vector2f::from_slice(&[0.0, 0.0]),
-        ])
-        .set_vertex_colors(Vector3f::from_slice(&[1.0, 1.0, 0.0]))
-        .set_vertex_alphas(1.);
+        rect.set_texture(texture)
+            .set_vertex_colors(Vector3f::from_slice(&[1.0, 1.0, 1.0]))
+            .set_vertex_alphas(1.);
 
         window.camera.proj = orthogonal_projection(
             0.0,

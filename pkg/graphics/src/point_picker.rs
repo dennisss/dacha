@@ -489,7 +489,8 @@ impl PointPicker {
                         canvas,
                     )?;
 
-                    // Draw the final point of the final polygon as an indication to the user of the
+                    // Draw the final point of the final polygon as an
+                    // indication to the user of the
                     // last clicked position.
                     if !poly.closed {
                         let last_point = poly.points.last().unwrap().clone();
@@ -622,6 +623,7 @@ pub async fn run() -> Result<()> {
         name: "Point Picker".into(),
         width: WIDTH,
         height: HEIGHT,
+        samples: 4,
     };
 
     let mut canvas = RasterCanvas::create(HEIGHT, WIDTH);

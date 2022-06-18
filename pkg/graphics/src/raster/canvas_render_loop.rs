@@ -17,6 +17,7 @@ pub struct WindowOptions {
     pub name: String,
     pub width: usize,
     pub height: usize,
+    pub samples: usize,
 }
 
 impl RasterCanvas {

@@ -4,7 +4,7 @@ use core::ops::{Deref, DerefMut};
 use std::sync::Mutex;
 
 use gl::types::{GLint, GLuint};
-use math::matrix::{Vector2f, Vector3f};
+use math::matrix::{vec2f, Vector2f, Vector3f};
 
 use crate::opengl::drawable::Drawable;
 use crate::opengl::object::Object;
@@ -53,7 +53,15 @@ impl Polygon {
             0.0,
         ]));
 
-        Self::from(&vertices, shader)
+        let mut obj = Self::from(&vertices, shader);
+        obj.set_vertex_texture_coordinates(&[
+            vec2f(0., 0.),
+            vec2f(1., 0.),
+            vec2f(1., 1.),
+            vec2f(0., 1.),
+        ]);
+
+        obj
     }
 
     pub fn from(vertices: &[Vector3f], shader: Rc<Shader>) -> Self {

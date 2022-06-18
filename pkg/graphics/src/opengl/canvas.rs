@@ -77,9 +77,12 @@ impl OpenGLCanvas {
                 (),
             );
             let mut next_edge = half_edges.add_next_edge(first_edge, vertices[start_i + 2].clone());
-            for v in &vertices[(start_i + 3)..end_i] {
-                next_edge = half_edges.add_next_edge(next_edge, v.clone());
+            if start_i + 3 < end_i {
+                for v in &vertices[(start_i + 3)..end_i] {
+                    next_edge = half_edges.add_next_edge(next_edge, v.clone());
+                }
             }
+
             half_edges.add_close_edge(next_edge, first_edge);
         }
 
@@ -221,12 +224,6 @@ impl Canvas for OpenGLCanvas {
 
         rect.set_vertex_colors(Vector3f::from_slice(&[1., 1., 1.]))
             .set_texture(image.texture.clone())
-            .set_vertex_texture_coordinates(&[
-                vec2f(0.0, -1.),
-                vec2f(1.0, -1.),
-                vec2f(1.0, 0.0),
-                vec2f(0.0, 0.0),
-            ])
             .set_vertex_alphas(alpha);
 
         rect.draw(&self.camera, &Transform::default());
