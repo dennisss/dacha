@@ -9,6 +9,7 @@ TODO: Things to support:
 - Selection
 */
 
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -17,7 +18,7 @@ use image::Color;
 use math::matrix::Vector2f;
 
 use crate::canvas::*;
-use crate::font::{find_closest_text_index, measure_text, CanvasFontExt, OpenTypeFont};
+use crate::font::CanvasFontRenderer;
 use crate::ui::event::*;
 use crate::ui::view::*;
 
@@ -29,7 +30,7 @@ const CURSOR_ON_OFF_TIME_MILLIS: usize = 500;
 #[derive(Clone)]
 pub struct TextboxParams {
     pub value: String,
-    pub font: Arc<OpenTypeFont>,
+    pub font: Rc<CanvasFontRenderer>,
     pub font_size: f32,
     pub on_change: Option<Arc<dyn Fn(String)>>,
 }
@@ -103,7 +104,7 @@ impl View for Textbox {
     }
 
     fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
-        let measurements = measure_text(&self.params.font, "", self.params.font_size)?;
+        let measurements = self.params.font.measure_text("", self.params.font_size)?;
         let line_height = measurements.height;
 
         // TODO: Must add text ascent and descent to this.
@@ -118,11 +119,10 @@ impl View for Textbox {
         let border_color = Color::rgb(0xcc, 0xcc, 0xcc);
         let font_color = Color::rgb(0, 0, 0);
 
-        let measurements = measure_text(
-            &self.params.font,
-            &self.current_value,
-            self.params.font_size,
-        )?;
+        let measurements = self
+            .params
+            .font
+            .measure_text(&self.current_value, self.params.font_size)?;
 
         let full_width = parent_box.width;
         let full_height = measurements.height + PADDING_SIZE * 2. + BORDER_SIZE * 2.;
@@ -153,8 +153,7 @@ impl View for Textbox {
                 };
 
                 if cursor_visible {
-                    let measurements = measure_text(
-                        &self.params.font,
+                    let measurements = self.params.font.measure_text(
                         self.current_value.split_at(cursor.start).0,
                         self.params.font_size,
                     )?;
@@ -177,17 +176,15 @@ impl View for Textbox {
 
                 // TODO: Optimize these to compute both measurements in one pass.
 
-                let measurements_start = measure_text(
-                    &self.params.font,
-                    self.current_value.split_at(start).0,
-                    self.params.font_size,
-                )?;
+                let measurements_start = self
+                    .params
+                    .font
+                    .measure_text(self.current_value.split_at(start).0, self.params.font_size)?;
 
-                let measurements_end = measure_text(
-                    &self.params.font,
-                    self.current_value.split_at(end).0,
-                    self.params.font_size,
-                )?;
+                let measurements_end = self
+                    .params
+                    .font
+                    .measure_text(self.current_value.split_at(end).0, self.params.font_size)?;
 
                 // TODO: Implement a 40% opacity mixing for this fill
                 // (we may also want to invert the font to be a different color).
@@ -201,13 +198,13 @@ impl View for Textbox {
             }
         }
 
-        canvas.fill_text(
+        self.params.font.fill_text(
             0.0,
             measurements.height + measurements.descent,
-            &self.params.font,
             &self.params.value,
             self.params.font_size,
-            &font_color,
+            &Paint::color(font_color),
+            canvas,
         )?;
 
         canvas.restore();
@@ -227,8 +224,7 @@ impl View for Textbox {
 
                     // TODO: Are measurements accurate if the font has changed since we last
                     // rendered?
-                    let idx = find_closest_text_index(
-                        &self.params.font,
+                    let idx = self.params.font.find_closest_text_index(
                         &self.current_value,
                         self.params.font_size,
                         x,

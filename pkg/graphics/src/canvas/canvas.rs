@@ -136,6 +136,10 @@ pub struct Paint {
 }
 
 impl Paint {
+    pub fn color(color: Color) -> Self {
+        Self { color, alpha: 1. }
+    }
+
     pub fn alpha(value: f32) -> Self {
         Self {
             color: Color::rgb(255, 255, 255),

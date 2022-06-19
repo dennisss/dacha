@@ -1,9 +1,10 @@
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use common::errors::*;
 use image::Color;
 
-use crate::font::OpenTypeFont;
+use crate::font::CanvasFontRenderer;
 use crate::ui::box_view::BoxViewParams;
 use crate::ui::button::ButtonParams;
 use crate::ui::checkbox::CheckboxParams;
@@ -15,7 +16,7 @@ use crate::ui::virtual_view::*;
 
 #[derive(Clone)]
 pub struct ShoppingList {
-    pub font: Arc<OpenTypeFont>,
+    pub font: Rc<CanvasFontRenderer>,
 }
 
 pub struct ShoppingListView {

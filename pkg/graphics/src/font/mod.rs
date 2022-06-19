@@ -1,3 +1,6 @@
+mod renderer;
+pub mod vm;
+
 use core::f32::consts::PI;
 use std::sync::Arc;
 
@@ -19,7 +22,7 @@ use crate::opengl::window::Window;
 use crate::raster::canvas::RasterCanvas;
 use crate::raster::canvas_render_loop::WindowOptions;
 
-pub mod vm;
+pub use crate::font::renderer::*;
 
 #[derive(Debug)]
 pub struct FontFileHeader {
@@ -478,7 +481,7 @@ impl HorizontalMetricsTable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HorizontalMetricRecord {
     advance_width: u16,
 
@@ -850,61 +853,6 @@ impl OpenTypeFont {
     }
 }
 
-fn draw_glyph(canvas: &mut dyn Canvas, g: &SimpleGlyph, color: &Color) -> Result<()> {
-    if g.contours.is_empty() {
-        return Ok(());
-    }
-
-    let mut path_builder = PathBuilder::new();
-
-    for contour in &g.contours {
-        // TODO: Check that there are at least two points in the contour. Otherwise it
-        // is invalid.
-
-        if !contour.is_empty() {
-            if !contour[0].on_curve {
-                return Err(err_msg("Expected first point to be on curve"));
-            }
-
-            path_builder.move_to(contour[0].to_vector().cast());
-        }
-
-        let mut i = 1;
-        while i < contour.len() {
-            let p = contour[i].to_vector();
-            let p_on_curve = contour[i].on_curve;
-            i += 1;
-
-            if p_on_curve {
-                path_builder.line_to(p.cast());
-            } else {
-                let mut curve = vec![p.cast()];
-                while i < contour.len() && !contour[i].on_curve {
-                    curve.push(contour[i].to_vector().cast());
-                    i += 1;
-                }
-
-                // TODO: Check if this is correct.
-                if i == contour.len() {
-                    curve.push(contour[0].to_vector().cast());
-                } else {
-                    curve.push(contour[i].to_vector().cast());
-                    i += 1;
-                }
-
-                path_builder.curve_to(&curve);
-            }
-        }
-
-        path_builder.close();
-    }
-
-    let path = path_builder.build();
-    canvas.fill_path(&path, color)?;
-
-    Ok(())
-}
-
 pub enum TextAlign {
     Left,
     Center,
@@ -946,156 +894,6 @@ Simple algorithm:
     - Maintain line normal and
 */
 
-// need to support a paint
-
-pub enum Paint {
-    Solid(Color),
-}
-
-#[derive(Debug)]
-pub struct TextMeasurements {
-    pub width: f32,
-    pub height: f32,
-    pub descent: f32,
-}
-
-pub fn measure_text(font: &OpenTypeFont, text: &str, font_size: f32) -> Result<TextMeasurements> {
-    let scale = font_size / (font.head.units_per_em as f32);
-
-    let mut width = 0.0;
-
-    for c in text.chars() {
-        let char_code = c as u32;
-        if char_code > u16::MAX as u32 {
-            return Err(err_msg("Character overflowed supported range"));
-        }
-
-        let (g, metrics) = font.char_glyph(char_code as u16)?;
-
-        width += (metrics.advance_width as f32) * scale;
-    }
-
-    Ok(TextMeasurements {
-        width,
-        // TODO: Incorporate the line gap?
-        height: ((font.hhea.ascender - font.hhea.descender) as f32) * scale,
-        descent: (font.hhea.descender as f32) * scale,
-    })
-}
-
-pub fn find_closest_text_index(
-    font: &OpenTypeFont,
-    text: &str,
-    font_size: f32,
-    x: f32,
-) -> Result<usize> {
-    if x < 0. {
-        return Ok(0);
-    }
-
-    let scale = font_size / (font.head.units_per_em as f32);
-
-    let mut width = 0.0;
-
-    for (idx, c) in text.char_indices() {
-        let char_code = c as u32;
-        if char_code > u16::MAX as u32 {
-            return Err(err_msg("Character overflowed supported range"));
-        }
-
-        let (g, metrics) = font.char_glyph(char_code as u16)?;
-
-        let next_width = width + ((metrics.advance_width as f32) * scale);
-        if next_width > x {
-            let distance_before = (width - x).abs();
-            let distance_after = (next_width - x).abs();
-
-            if distance_before < distance_after {
-                return Ok(idx);
-            } else {
-                return Ok(idx + c.len_utf8());
-            }
-        }
-
-        width = next_width;
-    }
-
-    Ok(text.len())
-}
-
-pub trait CanvasFontExt {
-    /// NOTE: This always renders the text left aligned at the baseline.
-    fn fill_text(
-        &mut self,
-        x: f32,
-        y: f32,
-        font: &OpenTypeFont,
-        text: &str,
-        font_size: f32,
-        color: &Color,
-    ) -> Result<()>;
-}
-
-impl CanvasFontExt for dyn Canvas + '_ {
-    fn fill_text(
-        &mut self,
-        mut x: f32,
-        y: f32,
-        font: &OpenTypeFont,
-        text: &str,
-        font_size: f32,
-        color: &Color,
-    ) -> Result<()> {
-        let scale = font_size / (font.head.units_per_em as f32);
-
-        for c in text.chars() {
-            let char_code = c as u32;
-            if char_code > u16::MAX as u32 {
-                return Err(err_msg("Character overflowed supported range"));
-            }
-
-            let (g, metrics) = font.char_glyph(char_code as u16)?;
-
-            self.save();
-
-            self.translate(x, y);
-
-            self.scale(scale, -1.0 * scale);
-
-            // NOTE: We assume that x_min == left_side_bearing so no translation is needed.
-            // self.translate(-1.0 * ((x_min - metrics.left_side_bearing) as f32), 0.0);
-
-            draw_glyph(self, &g, &color)?;
-
-            self.restore()?;
-
-            x += (metrics.advance_width as f32) * scale;
-        }
-
-        Ok(())
-    }
-}
-
-// This is separate from the 'dyn Canvas' impl as you need to be Sized in order
-// to do the cast to '&mut dyn Canvas'.
-//
-// TODO: Have a macro for automatically
-// deriving this from the dyn impl.
-impl<C: Canvas> CanvasFontExt for C {
-    fn fill_text(
-        &mut self,
-        x: f32,
-        y: f32,
-        font: &OpenTypeFont,
-        text: &str,
-        font_size: f32,
-        color: &Color,
-    ) -> Result<()> {
-        let dyn_self = self as &mut dyn Canvas;
-        dyn_self.fill_text(x, y, font, text, font_size, color)
-    }
-}
-
 pub async fn open_font() -> Result<()> {
     // TODO: Verify the encoding/platform and that there is exactly one subtable.
     //    println!(
@@ -1106,7 +904,8 @@ pub async fn open_font() -> Result<()> {
     //
     //    return Ok(());
 
-    let font = OpenTypeFont::open(project_path!("testdata/noto-sans.ttf")).await?;
+    let font =
+        CanvasFontRenderer::new(OpenTypeFont::open(project_path!("testdata/noto-sans.ttf")).await?);
 
     const HEIGHT: usize = 650;
     const WIDTH: usize = 800;
@@ -1147,7 +946,7 @@ pub async fn open_font() -> Result<()> {
             let black = Color::rgb(0, 0, 0);
             let red = Color::rgb(255, 0, 0);
 
-            canvas.fill_text(x, y, &font, text, font_size, &black)?;
+            font.fill_text(x, y, text, font_size, &Paint::color(black.clone()), canvas)?;
 
             {
                 let mut builder = PathBuilder::new();

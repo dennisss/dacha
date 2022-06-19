@@ -35,10 +35,6 @@ impl<YIter: Iterator<Item = f32>> ScanLineIterator<YIter> {
         fill_rule: FillRule,
         y_values: YIter,
     ) -> Result<Self> {
-        if vertices.len() < 3 {
-            return Err(err_msg("Polygon has too few vertices"));
-        }
-
         // TODO: Must verify path_starts.
 
         // Extract paths from edges.

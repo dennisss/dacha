@@ -102,6 +102,10 @@ pub fn fill_polygon(
     path_starts: &[usize],
     fill_rule: FillRule,
 ) -> Result<()> {
+    if vertices.len() < 3 {
+        return Err(err_msg("Polygon has too few vertices"));
+    }
+
     let bbox = BoundingBox::compute(vertices).clip(&image.bbox());
 
     let y_values = ((bbox.min.y().floor() as usize)..((bbox.max.y() + 1.0).floor() as usize))

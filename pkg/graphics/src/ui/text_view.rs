@@ -1,17 +1,17 @@
-use std::sync::Arc;
+use std::rc::Rc;
 
 use common::errors::*;
 use image::Color;
 
-use crate::canvas::Canvas;
-use crate::font::{measure_text, CanvasFontExt, OpenTypeFont};
+use crate::canvas::{Canvas, Paint};
+use crate::font::CanvasFontRenderer;
 use crate::ui::event::*;
 use crate::ui::view::*;
 
 #[derive(Clone)]
 pub struct TextViewParams {
     pub text: String,
-    pub font: Arc<OpenTypeFont>,
+    pub font: Rc<CanvasFontRenderer>,
     pub font_size: f32,
     pub color: Color,
 }
@@ -48,8 +48,10 @@ impl View for TextView {
     }
 
     fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
-        let measurements =
-            measure_text(&self.params.font, &self.params.text, self.params.font_size)?;
+        let measurements = self
+            .params
+            .font
+            .measure_text(&self.params.text, self.params.font_size)?;
         Ok(RenderBox {
             width: measurements.width,
             height: measurements.height,
@@ -57,16 +59,18 @@ impl View for TextView {
     }
 
     fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
-        let measurements =
-            measure_text(&self.params.font, &self.params.text, self.params.font_size)?;
+        let measurements = self
+            .params
+            .font
+            .measure_text(&self.params.text, self.params.font_size)?;
 
-        canvas.fill_text(
+        self.params.font.fill_text(
             0.0,
             measurements.height + measurements.descent,
-            &self.params.font,
             &self.params.text,
             self.params.font_size,
-            &self.params.color,
+            &Paint::color(self.params.color.clone()),
+            canvas,
         )?;
 
         Ok(())
