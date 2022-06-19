@@ -25,6 +25,8 @@ impl Application {
             glfw::OpenGlProfileHint::Core,
         ));
         glfw_inst.window_hint(glfw::WindowHint::Resizable(false));
+        glfw_inst.window_hint(glfw::WindowHint::DepthBits(Some(0)));
+        glfw_inst.window_hint(glfw::WindowHint::AlphaBits(Some(0)));
         // glfw_inst.window_hint(glfw::WindowHint::Samples(Some(4)));
 
         // TODO: Ensure RGBA with depth buffer
@@ -63,8 +65,8 @@ impl Application {
             gl::Enable(gl::BLEND);
             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
 
-            gl::Enable(gl::DEPTH_TEST);
-            gl::DepthFunc(gl::LEQUAL);
+            // gl::Enable(gl::DEPTH_TEST);
+            // gl::DepthFunc(gl::LEQUAL);
 
             // gl::Enable(gl::MULTISAMPLE);
         }

@@ -1,4 +1,4 @@
-use math::matrix::{Matrix4f, Vector3f};
+use math::matrix::{Matrix3f, Matrix4f, Vector3f};
 
 use crate::lighting::LightSource;
 
@@ -27,6 +27,19 @@ impl AsMatrix for Transform {
 impl Transform {
     pub fn from(transform: Matrix4f) -> Self {
         Self { transform }
+    }
+
+    /// NOTE: We assume that all 2d points have z=1
+    pub fn from_3f(transform: Matrix3f) -> Self {
+        let mut extended = Matrix4f::identity();
+        extended.block_mut(0, 0).copy_from(&transform);
+
+        // extended[(0, 3)] = transform[(0, 2)];
+        // extended[(1, 3)] = transform[(1, 2)];
+
+        // TODO: Also transfer over skews.
+
+        Self::from(extended)
     }
 
     pub fn apply(&self, rhs: &Matrix4f) -> Self {
@@ -63,6 +76,19 @@ impl Camera {
         &self.proj * &self.transform
     }
 }
+
+/*
+Want (left, 0) to become (-1, 0)
+Want (right, 0) to become (1, 0)
+Want (0, top) to become (0, 1)
+Want (0, bottom) to become (0, -1)
+
+scale (right - left) to (1 - -1)
+scale (top - bottom) to (1 - -1)
+
+translate
+
+*/
 
 pub fn orthogonal_projection(
     left: f32,

@@ -1,7 +1,8 @@
-use crate::{Colorspace, Image};
 use common::bundle::TaskBundle;
 use math::array::Array;
 use math::matrix::Vector3u;
+
+use crate::{Colorspace, Image};
 
 impl Image<u8> {
     /// Performs a bilinear resize.

@@ -19,6 +19,7 @@ use math::matrix::{Vector2f, VectorStatic};
 use math::number::{Cast, Zero};
 
 pub mod format;
+pub mod open;
 pub mod resize;
 
 #[derive(Debug, PartialEq, Clone, Copy)]

@@ -7,11 +7,11 @@ use common::iter::PairIter;
 use image::{Color, Colorspace, Image};
 use math::array::Array;
 use math::geometry::half_edge::*;
-use math::matrix::{vec2f, Matrix4f, Vector2f, Vector3f};
+use math::matrix::{vec2f, Matrix3f, Matrix4f, Vector2f, Vector3f};
 use typenum::{U1, U2, U3};
 
 use crate::canvas::base::CanvasBase;
-use crate::canvas::{Canvas, Path};
+use crate::canvas::*;
 use crate::opengl::mesh::Mesh;
 use crate::opengl::polygon::Polygon;
 use crate::opengl::shader::Shader;
@@ -33,6 +33,10 @@ More efficient winding calculation:
         - If we go 'left', then the value is incremented by 0.
         - Accumulate this value recursively as we go down.
         - The main thing we need to handle to maintain this relationship is
+
+Caching paths:
+- The transform should always go to world coordinates.
+    - Ideally decouple into a scaling followed by a translation rotation
 
 */
 
@@ -59,12 +63,11 @@ pub struct OpenGLCanvas {
 impl_deref!(OpenGLCanvas::base as CanvasBase);
 
 impl OpenGLCanvas {
-    fn fill_path_inner(
+    fn create_path_object(
         &mut self,
         vertices: &[Vector2f],
         path_starts: &[usize],
-        color: &Color,
-    ) -> Result<()> {
+    ) -> Result<Box<dyn CanvasObject>> {
         let mut half_edges = HalfEdgeStruct::<()>::new();
         for i in 0..(path_starts.len() - 1) {
             let start_i = path_starts[i];
@@ -143,7 +146,7 @@ impl OpenGLCanvas {
                 ]);
 
                 for vert in face.outer_component.as_ref().unwrap() {
-                    new_vertices.push((vert.clone(), 0.).into());
+                    new_vertices.push((vert.clone(), 1.).into());
                 }
             }
         }
@@ -158,17 +161,12 @@ impl OpenGLCanvas {
         // TODO: Make sure that this doesn't try computing any normals.
         let mut mesh = Mesh::from(&new_vertices, &faces, &[], self.shader.clone());
 
-        // TODO: Have a custom variation of block() with just one dimension type for
-        // vectors.
-        mesh.set_vertex_colors(
-            color.block::<U3, U1>(0, 0).to_owned().cast::<f32>() / (u8::MAX as f32),
-        )
-        .set_vertex_texture_coordinates(vec2f(0., 0.))
-        .set_vertex_alphas(1.)
-        .set_texture(self.empty_texture.clone());
-
-        mesh.draw(&self.camera, &Transform::default());
-        Ok(())
+        mesh.set_vertex_texture_coordinates(vec2f(0., 0.))
+            .set_texture(self.empty_texture.clone());
+        Ok(Box::new(OpenGLCanvasPath {
+            mesh,
+            transform_inv: self.base.current_transform().inverse(),
+        }))
     }
 }
 
@@ -176,58 +174,23 @@ impl Canvas for OpenGLCanvas {
     // TODO: Implement a clear_rect which uses glClear if we want to remove the
     // entire screen.
 
-    fn fill_path(&mut self, path: &Path, color: &Color) -> Result<()> {
-        let (vertices, path_starts) = path.linearize(self.base.current_transform());
-        self.fill_path_inner(&vertices, &path_starts, color)
+    fn create_path_fill(&mut self, path: &Path) -> Result<Box<dyn CanvasObject>> {
+        let (vertices, path_starts) = path.linearize(self.current_transform());
+        self.create_path_object(&vertices, &path_starts)
     }
 
-    fn stroke_path(&mut self, path: &Path, width: f32, color: &Color) -> Result<()> {
-        let (verts, path_starts) = path.linearize(self.base.current_transform());
-
-        let scale = self.base.current_transform()[(0, 0)];
-        let width_scaled = width * scale;
-
-        let dash_array = &[]; // &[5.0 * scale, 5.0 * scale];
-
-        for (i, j) in path_starts.pair_iter() {
-            let dashes = crate::raster::stroke::stroke_split_dashes(&verts[*i..*j], dash_array);
-
-            for dash in dashes {
-                let (points, starts) = crate::raster::stroke::stroke_poly(&dash, width_scaled);
-
-                // TODO: Use non-zero winding
-                self.fill_path_inner(&points, &starts, color)?;
-            }
-        }
-
-        Ok(())
+    fn create_path_stroke(&mut self, path: &Path, width: f32) -> Result<Box<dyn CanvasObject>> {
+        let (vertices, path_starts) = path.stroke(width, self.current_transform());
+        self.create_path_object(&vertices, &path_starts)
     }
 
-    fn load_image(&mut self, image: &Image<u8>) -> Result<Box<dyn Any>> {
+    fn create_image(&mut self, image: &Image<u8>) -> Result<Box<dyn CanvasObject>> {
         let texture = Rc::new(Texture::new(self.context.clone(), image));
         Ok(Box::new(OpenGLCanvasImage {
             texture,
             width: image.width(),
             height: image.height(),
         }))
-    }
-
-    fn draw_image(&mut self, image: &dyn Any, alpha: f32) -> Result<()> {
-        let image = image.downcast_ref::<OpenGLCanvasImage>().unwrap();
-
-        let mut rect = Polygon::rectangle(
-            vec2f(0.0, 0.0),
-            image.width as f32,
-            image.height as f32,
-            self.shader.clone(),
-        );
-
-        rect.set_vertex_colors(Vector3f::from_slice(&[1., 1., 1.]))
-            .set_texture(image.texture.clone())
-            .set_vertex_alphas(alpha);
-
-        rect.draw(&self.camera, &Transform::default());
-        Ok(())
     }
 
     /*
@@ -277,8 +240,54 @@ impl Canvas for OpenGLCanvas {
     */
 }
 
+struct OpenGLCanvasPath {
+    mesh: Mesh,
+    transform_inv: Matrix3f,
+}
+
+impl CanvasObject for OpenGLCanvasPath {
+    fn draw(&mut self, paint: &Paint, canvas: &mut dyn Canvas) -> Result<()> {
+        // TODO: Verify that the same canvas was passed in.
+        let canvas = canvas.as_mut_any().downcast_mut::<OpenGLCanvas>().unwrap();
+
+        // TODO: Have a custom variation of block() with just one dimension type for
+        // vectors.
+        self.mesh
+            .set_vertex_colors(
+                paint.color.block::<U3, U1>(0, 0).to_owned().cast::<f32>() / (u8::MAX as f32),
+            )
+            .set_vertex_alphas(paint.alpha);
+
+        self.mesh.draw(
+            &canvas.camera,
+            &Transform::from_3f(canvas.base.current_transform() * &self.transform_inv),
+        );
+        Ok(())
+    }
+}
+
 struct OpenGLCanvasImage {
     width: usize,
     height: usize,
     texture: Rc<Texture>,
+}
+
+impl CanvasObject for OpenGLCanvasImage {
+    fn draw(&mut self, paint: &Paint, canvas: &mut dyn Canvas) -> Result<()> {
+        let canvas = canvas.as_mut_any().downcast_mut::<OpenGLCanvas>().unwrap();
+
+        let mut rect = Polygon::rectangle(
+            vec2f(0.0, 0.0),
+            self.width as f32,
+            self.height as f32,
+            canvas.shader.clone(),
+        );
+
+        rect.set_vertex_colors(Vector3f::from_slice(&[1., 1., 1.]))
+            .set_texture(self.texture.clone())
+            .set_vertex_alphas(paint.alpha);
+
+        rect.draw(&canvas.camera, &Transform::default());
+        Ok(())
+    }
 }

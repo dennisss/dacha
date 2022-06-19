@@ -1,3 +1,4 @@
+use common::iter::PairIter;
 use math::geometry::line_segment::LineSegment2;
 use math::matrix::{vec2f, Matrix3f, Vector2f};
 
@@ -64,6 +65,31 @@ impl Path {
 
         path_starts.push(verts.len());
         (verts, path_starts)
+    }
+
+    pub fn stroke(&self, width: f32, transform: &Matrix3f) -> (Vec<Vector2f>, Vec<usize>) {
+        let (verts, path_starts) = self.linearize(transform);
+
+        let scale = transform[(0, 0)];
+        let width_scaled = width * scale;
+
+        let dash_array = &[]; // &[5.0 * scale, 5.0 * scale];
+
+        let mut stroke_vertices = vec![];
+        let mut stroke_path_starts = vec![];
+
+        for (i, j) in path_starts.pair_iter() {
+            let dashes = crate::raster::stroke::stroke_split_dashes(&verts[*i..*j], dash_array);
+
+            for dash in dashes {
+                let (points, starts) = crate::raster::stroke::stroke_poly(&dash, width_scaled);
+
+                stroke_vertices.extend(points);
+                stroke_path_starts.extend(starts);
+            }
+        }
+
+        (stroke_vertices, stroke_path_starts)
     }
 }
 

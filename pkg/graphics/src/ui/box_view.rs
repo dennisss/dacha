@@ -6,7 +6,7 @@ use std::sync::Arc;
 use common::errors::*;
 use image::Color;
 
-use crate::canvas::Canvas;
+use crate::canvas::*;
 use crate::ui::children::Children;
 use crate::ui::element::Element;
 use crate::ui::event::*;

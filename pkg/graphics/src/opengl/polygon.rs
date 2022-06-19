@@ -36,21 +36,23 @@ impl Polygon {
     pub fn rectangle(top_left: Vector2f, width: f32, height: f32, shader: Rc<Shader>) -> Self {
         let mut vertices = vec![];
 
-        vertices.push(Vector3f::from_slice(&[top_left.x(), top_left.y(), 0.0]));
+        let z = 1.;
+
+        vertices.push(Vector3f::from_slice(&[top_left.x(), top_left.y(), z]));
         vertices.push(Vector3f::from_slice(&[
             top_left.x() + width,
             top_left.y(),
-            0.0,
+            z,
         ]));
         vertices.push(Vector3f::from_slice(&[
             top_left.x() + width,
             top_left.y() + height,
-            0.0,
+            z,
         ]));
         vertices.push(Vector3f::from_slice(&[
             top_left.x(),
             top_left.y() + height,
-            0.0,
+            z,
         ]));
 
         let mut obj = Self::from(&vertices, shader);

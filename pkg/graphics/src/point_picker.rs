@@ -24,8 +24,7 @@ use math::geometry::half_edge::*;
 use math::geometry::line_segment::LineSegment2;
 use math::matrix::{vec2f, Vector2f};
 
-use crate::canvas::Canvas;
-use crate::canvas::PathBuilder;
+use crate::canvas::*;
 use crate::opengl::canvas::OpenGLCanvas;
 use crate::opengl::window::Window;
 use crate::raster::canvas::RasterCanvas;
@@ -49,6 +48,7 @@ struct PointPicker {
     style: Style,
     points: Vec<Vector2f>,
     background_image: Option<Image<u8>>,
+    background_image_object: Option<Box<dyn CanvasObject>>,
     background_image_visible: bool,
 }
 
@@ -397,7 +397,8 @@ impl PointPicker {
         }
     }
 
-    pub fn draw(&self, canvas: &mut dyn Canvas, window: &Window) -> Result<()> {
+    /// NOTE: self is only mutable to support caching CanvasObjects.
+    pub fn draw(&mut self, canvas: &mut dyn Canvas, window: &Window) -> Result<()> {
         canvas.clear_rect(
             0.,
             0.,
@@ -409,14 +410,23 @@ impl PointPicker {
         // Draw the background image.
 
         if let (Some(image), true) = (&self.background_image, self.background_image_visible) {
-            let img = canvas.load_image(image)?;
-            canvas.draw_image(img.as_ref(), 0.2)?;
+            let mut img = match self.background_image_object.as_mut() {
+                Some(v) => v,
+                None => self
+                    .background_image_object
+                    .insert(canvas.create_image(image)?),
+            };
+
+            img.draw(&Paint::alpha(0.2), canvas)?;
         }
 
         canvas.save();
         let height = window.height() as f32;
         canvas.translate(0., height);
         canvas.scale(1., -1.);
+
+        // (0, height) first becomes (0, -height) and then we add (0, height) so it
+        // becomes (0, 0)
 
         match &self.mode {
             Mode::None => {}
@@ -562,6 +572,8 @@ impl PointPicker {
         // TODO: Ideally re-use the same path object (with any linearization or
         // triangulation applied) per scale.
 
+        // TODO: Cache these paths.
+
         let mut path = PathBuilder::new();
         path.ellipse(
             point,
@@ -615,6 +627,10 @@ impl PointPicker {
     }
 }
 
+/*
+Some thoughts on
+*/
+
 pub async fn run() -> Result<()> {
     const HEIGHT: usize = 800;
     const WIDTH: usize = 800;
@@ -626,7 +642,7 @@ pub async fn run() -> Result<()> {
         samples: 4,
     };
 
-    let mut canvas = RasterCanvas::create(HEIGHT, WIDTH);
+    // let mut canvas = RasterCanvas::create(HEIGHT, WIDTH);
 
     let mut mode = Mode::Lines;
 
@@ -661,12 +677,25 @@ pub async fn run() -> Result<()> {
         vec2f(434.0, 340.0),
         vec2f(335.0, 266.0),
         vec2f(449.0, 420.0),
+        ////
+        // vec2f(186.14809, 334.0022),
+        // vec2f(321.42886, 338.01053),
+        // vec2f(435.73544, 354.34003),
+        // vec2f(454.1976, 378.5716),
+        // vec2f(431.4132, 576.3814),
+        // vec2f(204.47021, 557.643),
+        // vec2f(181.02863, 339.5343),
+        // vec2f(190.97137, 338.4657),
+        // vec2f(213.52979, 548.357),
+        // vec2f(422.5868, 565.6186),
+        // vec2f(443.80243, 381.4284),
+        // vec2f(430.26456, 363.65997),
+        // vec2f(320.57114, 347.98947),
+        // vec2f(185.85193, 343.9978),
     ];
 
-    let background_image_bytes =
-        fs::read(project_path!("third_party/comp_geom/triangulate_d.qoi")).await?;
-
-    let background_image = image::format::qoi::QOIDecoder::new().decode(&background_image_bytes)?;
+    let background_image =
+        Image::read(project_path!("third_party/comp_geom/triangulate_d.qoi")).await?;
 
     let mut picker = PointPicker {
         mode: Mode::None,
@@ -681,6 +710,7 @@ pub async fn run() -> Result<()> {
         },
         points,
         background_image: Some(background_image),
+        background_image_object: None,
         background_image_visible: true,
     };
 

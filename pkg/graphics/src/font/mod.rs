@@ -11,8 +11,7 @@ use math::matrix::{Matrix3f, Vector2f, Vector2i, Vector3f, Vector3u};
 use parsing::cstruct::parse_cstruct_be;
 use parsing::*;
 
-use crate::canvas::Canvas;
-use crate::canvas::PathBuilder;
+use crate::canvas::*;
 use crate::opengl::polygon::Polygon;
 use crate::opengl::shader::ShaderSource;
 use crate::opengl::texture::Texture;

@@ -16,7 +16,7 @@ use common::errors::*;
 use image::Color;
 use math::matrix::Vector2f;
 
-use crate::canvas::{Canvas, PathBuilder};
+use crate::canvas::*;
 use crate::font::{find_closest_text_index, measure_text, CanvasFontExt, OpenTypeFont};
 use crate::ui::event::*;
 use crate::ui::view::*;
