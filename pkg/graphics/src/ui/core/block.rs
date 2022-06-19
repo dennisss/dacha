@@ -14,7 +14,7 @@ use crate::ui::event::*;
 use crate::ui::view::*;
 
 #[derive(Clone)]
-pub struct BoxViewParams {
+pub struct BlockViewParams {
     pub inner: Element,
     pub padding: f32,
     pub background_color: Option<Color>,
@@ -24,8 +24,8 @@ pub struct BoxViewParams {
     pub cursor: Option<MouseCursor>,
 }
 
-impl ViewParams for BoxViewParams {
-    type View = BoxView;
+impl ViewParams for BlockViewParams {
+    type View = BlockView;
 }
 
 #[derive(Clone)]
@@ -34,18 +34,18 @@ pub struct Border {
     pub color: Color,
 }
 
-pub struct BoxView {
-    params: BoxViewParams,
+pub struct BlockView {
+    params: BlockViewParams,
     children: Children,
 }
 
-struct BoxViewLayout {
+struct BlockViewLayout {
     outer_box: RenderBox,
     inner_box: RenderBox,
 }
 
-impl BoxView {
-    fn layout_impl(&self, parent_box: &RenderBox) -> Result<BoxViewLayout> {
+impl BlockView {
+    fn layout_impl(&self, parent_box: &RenderBox) -> Result<BlockViewLayout> {
         let inner = &self.children[0];
 
         let border_width = self.params.border.as_ref().map(|b| b.width).unwrap_or(0.);
@@ -62,15 +62,15 @@ impl BoxView {
             height: inner_box.height + 2.0 * self.params.padding + 2.0 * border_width,
         };
 
-        Ok(BoxViewLayout {
+        Ok(BlockViewLayout {
             inner_box,
             outer_box,
         })
     }
 }
 
-impl ViewWithParams for BoxView {
-    type Params = BoxViewParams;
+impl ViewWithParams for BlockView {
+    type Params = BlockViewParams;
 
     fn create_with_params(params: &Self::Params) -> Result<Box<dyn View>> {
         Ok(Box::new(Self {
@@ -87,7 +87,7 @@ impl ViewWithParams for BoxView {
     }
 }
 
-impl View for BoxView {
+impl View for BlockView {
     fn build(&mut self) -> Result<ViewStatus> {
         let mut status = self.children[0].build()?;
         if let Some(cursor) = &self.params.cursor {

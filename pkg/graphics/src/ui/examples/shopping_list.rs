@@ -5,13 +5,8 @@ use common::errors::*;
 use image::Color;
 
 use crate::font::CanvasFontRenderer;
-use crate::ui::box_view::BoxViewParams;
-use crate::ui::button::ButtonParams;
-use crate::ui::checkbox::CheckboxParams;
-use crate::ui::element::*;
-use crate::ui::grid_view::{GridDimensionSize, GridViewParams};
-use crate::ui::text_view::TextViewParams;
-use crate::ui::textbox::TextboxParams;
+use crate::ui;
+use crate::ui::grid::{GridDimensionSize, GridViewParams};
 use crate::ui::virtual_view::*;
 
 #[derive(Clone)]
@@ -75,15 +70,15 @@ impl VirtualView for ShoppingListView {
         Ok(())
     }
 
-    fn build_element(&mut self) -> Result<Element> {
+    fn build_element(&mut self) -> Result<ui::Element> {
         let state = self.state.lock().unwrap();
 
-        let mut els: Vec<Element> = vec![];
+        let mut els: Vec<ui::Element> = vec![];
 
         for (i, item) in state.items.iter().enumerate() {
             els.push(
-                BoxViewParams {
-                    inner: CheckboxParams {
+                ui::Block {
+                    inner: ui::Checkbox {
                         value: false,
                         on_change: None,
                     }
@@ -97,8 +92,8 @@ impl VirtualView for ShoppingListView {
                 .into(),
             );
             els.push(
-                BoxViewParams {
-                    inner: TextboxParams {
+                ui::Block {
+                    inner: ui::Textbox {
                         value: item.name.clone(),
                         font: self.params.font.clone(),
                         font_size: 16.,
@@ -124,8 +119,8 @@ impl VirtualView for ShoppingListView {
                     children: els,
                 }
                 .into(),
-                ButtonParams {
-                    inner: TextViewParams {
+                ui::Button {
+                    inner: ui::Text {
                         text: "Add Item".into(),
                         font: self.params.font.clone(),
                         font_size: 16.,

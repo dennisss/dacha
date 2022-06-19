@@ -5,8 +5,8 @@ use common::errors::*;
 use image::Color;
 use math::matrix::Vector2f;
 
-use crate::ui::box_view::*;
 use crate::ui::children::Children;
+use crate::ui::core::block::*;
 use crate::ui::element::*;
 use crate::ui::event::*;
 use crate::ui::view::*;
@@ -57,7 +57,7 @@ impl VirtualView for ButtonView {
             }
         };
 
-        Ok(BoxViewParams {
+        Ok(BlockViewParams {
             inner: self.params.inner.clone(),
             padding: PADDING_SIZE,
             background_color: Some(background_color),
