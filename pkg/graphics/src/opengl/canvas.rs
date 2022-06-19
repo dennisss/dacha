@@ -190,6 +190,9 @@ impl Canvas for OpenGLCanvas {
         self.create_path_object(&vertices, &path_starts)
     }
 
+    /// When drawn, an image is rendered with the top-left corner at position
+    /// (0,0). Any transforms applied to the canvas may move this to a different
+    /// position on the screen though.
     fn create_image(&mut self, image: &Image<u8>) -> Result<Box<dyn CanvasObject>> {
         let texture = Rc::new(Texture::new(self.context.clone(), image));
         Ok(Box::new(OpenGLCanvasImage {
@@ -223,25 +226,6 @@ impl Canvas for OpenGLCanvas {
         Some challenges:
         - Handling clipping
         - Can only use a path handle on the same canvas that twas used to create it (need globally unique ids or references).
-
-
-    - Segment into non-overlapping and non-intersecting paths
-
-        - Linearize
-        - To monotone polygons
-        - To triangles
-
-
-
-    stroke_path
-    -> Medium. linearize and then just
-
-    fill_rectangle
-    -> Easy. Optimize as two triangles.
-
-    stroke_
-
-
 
     */
 }
@@ -294,7 +278,10 @@ impl CanvasObject for OpenGLCanvasImage {
             .set_texture(self.texture.clone())
             .set_vertex_alphas(paint.alpha);
 
-        rect.draw(&canvas.camera, &Transform::default());
+        rect.draw(
+            &canvas.camera,
+            &Transform::from_3f(canvas.current_transform().clone()),
+        );
         Ok(())
     }
 }

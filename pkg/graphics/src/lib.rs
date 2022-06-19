@@ -1,4 +1,4 @@
-#![feature(trait_alias)]
+#![feature(trait_alias, type_alias_impl_trait)]
 
 extern crate alloc;
 extern crate core;

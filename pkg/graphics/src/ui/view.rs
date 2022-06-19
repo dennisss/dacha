@@ -13,7 +13,8 @@ pub struct RenderBox {
 pub struct MouseCursor(pub glfw::StandardCursor);
 
 pub struct ViewStatus {
-    /// When the user's
+    /// When the user's mouse position is hovering over the view, what should
+    /// the on screen cursor look like.
     pub cursor: MouseCursor,
 
     /// If true, the view from which this status was returned should gain or
@@ -70,7 +71,8 @@ pub trait ViewUpdate {
     /// Should update the view based on any changed parameters in the given
     /// element representing this view.
     ///
-    /// This is the first method caleld on each frame.
+    /// When called, it will precede calls to other View methods in the same
+    /// frame.
     fn update(&mut self, new_element: &Element) -> Result<()>;
 }
 

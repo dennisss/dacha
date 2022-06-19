@@ -109,6 +109,18 @@ impl CanvasFrameHandler for ViewFrameHandler {
                         ctrl: modifiers.contains(glfw::Modifiers::Control),
                     })
                 }
+                glfw::WindowEvent::Scroll(scroll_x, scroll_y) => {
+                    let (x, y) = window.raw().get_cursor_pos();
+
+                    Event::Mouse(MouseEvent {
+                        kind: MouseEventKind::Scroll {
+                            x: *scroll_x as f32,
+                            y: *scroll_y as f32,
+                        },
+                        relative_x: x as f32,
+                        relative_y: y as f32,
+                    })
+                }
                 _ => {
                     continue;
                 }

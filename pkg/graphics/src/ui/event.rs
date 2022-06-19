@@ -21,6 +21,7 @@ pub enum MouseEventKind {
     Exit,
     ButtonDown(MouseButton),
     ButtonUp(MouseButton),
+    Scroll { x: f32, y: f32 },
 }
 
 #[derive(Clone, Debug, PartialEq)]

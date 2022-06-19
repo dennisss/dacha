@@ -1,4 +1,5 @@
 use alloc::rc::Rc;
+use core::future::Future;
 
 use common::errors::*;
 use image::Image;
@@ -9,84 +10,46 @@ use crate::opengl::polygon::Polygon;
 use crate::opengl::shader::*;
 use crate::opengl::texture::Texture;
 use crate::transform::orthogonal_projection;
+use crate::ui::element::Element;
+use crate::ui::examples::image_viewer::ImageViewer;
+use crate::ui::render::render_element;
 
 const MAX_DIMENSION: f32 = 1000.0;
 
 /// Helper for displaying a single image from a command line program.
-#[async_trait]
 pub trait ImageShow {
+    type ShowFuture: Future<Output = Result<()>>;
+
     // TODO: Spawn this on a separate thread so that it doesn't block.
-    async fn show(&self) -> Result<()>;
+    fn show(&self) -> Self::ShowFuture;
 }
 
-#[async_trait]
 impl ImageShow for Image<u8> {
-    async fn show(&self) -> Result<()> {
+    type ShowFuture = impl Future<Output = Result<()>>;
+
+    fn show(&self) -> Self::ShowFuture {
         let (window_width, window_height) = {
             let aspect_ratio = (self.width() as f32) / (self.height() as f32);
 
             if self.width() < self.height() {
                 (
-                    (aspect_ratio * MAX_DIMENSION).round() as isize,
-                    MAX_DIMENSION as isize,
+                    (aspect_ratio * MAX_DIMENSION).round() as usize,
+                    MAX_DIMENSION as usize,
                 )
             } else {
                 (
-                    MAX_DIMENSION as isize,
-                    (MAX_DIMENSION / aspect_ratio).round() as isize,
+                    MAX_DIMENSION as usize,
+                    (MAX_DIMENSION / aspect_ratio).round() as usize,
                 )
             }
         };
 
-        let shader_src = ShaderSource::simple().await?;
-
-        // TODO: Implement this in terms of the UI/Canvas framework so that it can
-        // handle threading, etc.
-
-        let mut app = Application::new();
-        let mut window = app.create_window(
-            "Image",
-            Vector2i::from_slice(&[window_width, window_height]),
-            true,
-            false,
-        );
-
-        let shader = Rc::new(shader_src.compile(&mut window).unwrap());
-
-        let texture = Rc::new(Texture::new(window.context(), self));
-        let mut rect = Polygon::rectangle(
-            window.context(),
-            Vector2f::from_slice(&[0.0, 0.0]),
-            window_width as f32,
-            window_height as f32,
-            // Vector3f::from_slice(&[1.0, 1.0, 0.0]),
-            shader,
-        );
-
-        // y coordinates are multiplied by -1 because our projection matrix flips along
-        // y.
-        rect.set_texture(texture)
-            .set_vertex_colors(Vector3f::from_slice(&[1.0, 1.0, 1.0]))
-            .set_vertex_alphas(1.);
-
-        window.camera.proj = orthogonal_projection(
-            0.0,
-            window_width as f32,
-            window_height as f32,
-            0.0,
-            -1.0,
-            1.0,
-        );
-
-        window.scene.add_object(Box::new(rect));
-
-        app.render_loop(move || {
-            window.tick();
-            window.draw();
-
-            !window.raw().should_close()
+        let root_el = Element::from(ImageViewer {
+            source: Rc::new(self.clone()),
+            outer_height: window_height,
+            outer_width: window_width,
         });
 
-        Ok(())
+        render_element(root_el, window_height, window_width)
     }
 }

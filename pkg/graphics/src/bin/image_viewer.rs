@@ -14,7 +14,6 @@ async fn run() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
     let image = image::Image::read(&args.path).await?;
     image.show().await?;
-
     Ok(())
 }
 

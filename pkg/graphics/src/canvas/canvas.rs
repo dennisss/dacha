@@ -130,6 +130,7 @@ pub trait CanvasObject {
     fn draw(&mut self, paint: &Paint, canvas: &mut dyn Canvas) -> Result<()>;
 }
 
+#[derive(Clone, Debug)]
 pub struct Paint {
     pub color: Color,
     pub alpha: f32,

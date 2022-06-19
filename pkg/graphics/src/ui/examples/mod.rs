@@ -1,3 +1,4 @@
+pub mod image_viewer;
 pub mod shopping_list;
 
 use std::rc::Rc;

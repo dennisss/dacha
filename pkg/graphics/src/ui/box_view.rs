@@ -1,5 +1,6 @@
 // TODO: Rename to something other than 'Box' to avoid naming (maybe
-// 'Container')
+// 'Block'). We will refer that anything that holds one or more elements as a
+// 'Container'
 
 use std::sync::Arc;
 
