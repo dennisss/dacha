@@ -24,6 +24,7 @@ use crate::opengl::canvas_render_loop::WindowOptions;
 pub async fn run() -> Result<()> {
     let window_options = WindowOptions::new("OpenGL Canvas!", 800, 600);
 
+    /*
     OpenGLCanvas::render_loop(window_options, |canvas, window, events| {
         //
 
@@ -47,4 +48,7 @@ pub async fn run() -> Result<()> {
         Ok(())
     })
     .await
+    */
+
+    Ok(())
 }

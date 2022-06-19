@@ -97,6 +97,7 @@ impl RasterCanvas {
 
             let texture = Rc::new(Texture::new(window.context(), &self.drawing_buffer));
             let mut rect = Polygon::rectangle(
+                window.context(),
                 Vector2f::from_slice(&[0.0, 0.0]),
                 window_options.initial_width as f32,
                 window_options.initial_height as f32,

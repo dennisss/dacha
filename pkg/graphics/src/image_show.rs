@@ -55,6 +55,7 @@ impl ImageShow for Image<u8> {
 
         let texture = Rc::new(Texture::new(window.context(), self));
         let mut rect = Polygon::rectangle(
+            window.context(),
             Vector2f::from_slice(&[0.0, 0.0]),
             window_width as f32,
             window_height as f32,

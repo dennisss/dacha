@@ -15,7 +15,6 @@ use parsing::cstruct::parse_cstruct_be;
 use parsing::*;
 
 use crate::canvas::*;
-use crate::opengl::polygon::Polygon;
 use crate::opengl::shader::ShaderSource;
 use crate::opengl::texture::Texture;
 use crate::opengl::window::Window;

@@ -159,7 +159,13 @@ impl OpenGLCanvas {
         // }
 
         // TODO: Make sure that this doesn't try computing any normals.
-        let mut mesh = Mesh::from(&new_vertices, &faces, &[], self.shader.clone());
+        let mut mesh = Mesh::from(
+            self.context.clone(),
+            &new_vertices,
+            &faces,
+            &[],
+            self.shader.clone(),
+        );
 
         mesh.set_vertex_texture_coordinates(vec2f(0., 0.))
             .set_texture(self.empty_texture.clone());
@@ -277,6 +283,7 @@ impl CanvasObject for OpenGLCanvasImage {
         let canvas = canvas.as_mut_any().downcast_mut::<OpenGLCanvas>().unwrap();
 
         let mut rect = Polygon::rectangle(
+            canvas.context.clone(),
             vec2f(0.0, 0.0),
             self.width as f32,
             self.height as f32,

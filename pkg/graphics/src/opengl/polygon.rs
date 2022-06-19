@@ -10,7 +10,7 @@ use crate::opengl::drawable::Drawable;
 use crate::opengl::object::Object;
 use crate::opengl::shader::Shader;
 use crate::opengl::texture::Texture;
-use crate::opengl::window::Window;
+use crate::opengl::window::WindowContext;
 use crate::transform::{Camera, Transform};
 
 /// Convex polygon drawing
@@ -24,16 +24,22 @@ impl_deref!(Polygon::object as Object);
 impl Polygon {
     /// Creates a regular polygon centered at (0,0,0) with vertices sampled with
     /// the x-y unit circle.
-    pub fn regular(nsides: usize, shader: Rc<Shader>) -> Self {
+    pub fn regular(window_context: WindowContext, nsides: usize, shader: Rc<Shader>) -> Self {
         let vertices = regular_polygon(nsides);
-        Self::from(&vertices, shader)
+        Self::from(window_context, &vertices, shader)
     }
 
-    pub fn regular_mono(nsides: usize, shader: Rc<Shader>) -> Self {
-        Self::regular(nsides, shader)
+    pub fn regular_mono(window_context: WindowContext, nsides: usize, shader: Rc<Shader>) -> Self {
+        Self::regular(window_context, nsides, shader)
     }
 
-    pub fn rectangle(top_left: Vector2f, width: f32, height: f32, shader: Rc<Shader>) -> Self {
+    pub fn rectangle(
+        window_context: WindowContext,
+        top_left: Vector2f,
+        width: f32,
+        height: f32,
+        shader: Rc<Shader>,
+    ) -> Self {
         let mut vertices = vec![];
 
         let z = 1.;
@@ -55,7 +61,7 @@ impl Polygon {
             z,
         ]));
 
-        let mut obj = Self::from(&vertices, shader);
+        let mut obj = Self::from(window_context, &vertices, shader);
         obj.set_vertex_texture_coordinates(&[
             vec2f(0., 0.),
             vec2f(1., 0.),
@@ -66,8 +72,8 @@ impl Polygon {
         obj
     }
 
-    pub fn from(vertices: &[Vector3f], shader: Rc<Shader>) -> Self {
-        let mut object = Object::new(shader.clone());
+    pub fn from(window_context: WindowContext, vertices: &[Vector3f], shader: Rc<Shader>) -> Self {
+        let mut object = Object::new(window_context, shader.clone());
 
         object.set_vertex_positions(vertices);
 

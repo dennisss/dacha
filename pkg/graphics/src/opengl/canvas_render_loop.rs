@@ -27,15 +27,22 @@ Why draw to a framebuffer instead of directly to the window?
 - We can make incremental updates to the draw buffer while still supporting swap_buffer of the main window.
 */
 
+pub trait CanvasFrameHandler: 'static {
+    fn render(
+        &mut self,
+        canvas: &mut dyn Canvas,
+        window: &mut Window,
+        events: &[WindowEvent],
+    ) -> Result<()>;
+}
+
 impl OpenGLCanvas {
     /// TODO: The callback function must not store any opengl objects outside of
     /// the function. Otherwise we can't destroy the window until all objects
     /// are destroyed.
-    pub async fn render_loop<
-        F: FnMut(&mut dyn Canvas, &mut Window, &[WindowEvent]) -> Result<()>,
-    >(
+    pub async fn render_loop<H: CanvasFrameHandler>(
         window_options: WindowOptions,
-        mut f: F,
+        mut handler: H,
     ) -> Result<()> {
         let shader_src = ShaderSource::simple().await?;
 
@@ -116,23 +123,31 @@ impl OpenGLCanvas {
 
             window.begin_draw();
 
-            frame_buffer.draw_context(|| {
-                unsafe {
-                    gl::Viewport(
-                        0,
-                        0,
-                        (current_width * 2) as i32,
-                        (current_height * 2) as i32,
-                    )
-                };
+            frame_buffer
+                .draw_context(|| {
+                    unsafe {
+                        gl::Viewport(
+                            0,
+                            0,
+                            (current_width * 2) as i32,
+                            (current_height * 2) as i32,
+                        )
+                    };
 
-                f(&mut canvas, &mut window, &events).unwrap();
-            });
+                    handler.render(&mut canvas, &mut window, &events)
+                })
+                .unwrap();
 
             unsafe { gl::Viewport(0, 0, current_width as i32, current_height as i32) };
 
             // TODO: Cache this rectangle across draws.
-            let mut rect = Polygon::rectangle(vec2f(-1., -1.), 2., 2., canvas.shader.clone());
+            let mut rect = Polygon::rectangle(
+                window.context(),
+                vec2f(-1., -1.),
+                2.,
+                2.,
+                canvas.shader.clone(),
+            );
             rect.set_texture(frame_buffer.texture())
                 .set_vertex_colors(Vector3f::from_slice(&[1., 1., 1.]))
                 .set_vertex_alphas(1.);
@@ -143,6 +158,10 @@ impl OpenGLCanvas {
 
             !window.raw().should_close()
         });
+
+        // The handler may contain references to canvas objects (e.g. cached path
+        // objects) so must be dropped before the window.
+        drop(handler);
 
         Ok(())
     }

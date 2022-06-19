@@ -11,7 +11,7 @@ use crate::opengl::drawable::Drawable;
 use crate::opengl::object::Object;
 use crate::opengl::shader::Shader;
 use crate::opengl::util::{gl_face_buffer, gl_vertex_buffer_vec3, GLBuffer};
-use crate::opengl::window::Window;
+use crate::opengl::window::WindowContext;
 use crate::transform::{Camera, Transform};
 
 pub type Face = [GLuint; 3];
@@ -60,12 +60,13 @@ impl Mesh {
     }
 
     pub fn from(
+        window_context: WindowContext,
         vertices: &[Vector3f],
         faces: &[Face],
         normals: &[Vector3f],
         shader: Rc<Shader>,
     ) -> Self {
-        let mut object = Object::new(shader); // < Will bind the VAO
+        let mut object = Object::new(window_context, shader); // < Will bind the VAO
 
         object.set_vertex_positions(vertices);
 

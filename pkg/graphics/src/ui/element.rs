@@ -1,4 +1,5 @@
 use core::any::{Any, TypeId};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use common::errors::*;
@@ -9,7 +10,7 @@ use super::virtual_view::VirtualViewParams;
 
 #[derive(Clone)]
 pub struct Element {
-    pub inner: Arc<dyn ElementInterface>,
+    pub inner: Rc<dyn ElementInterface>,
 }
 
 pub trait ElementInterface: 'static {
@@ -51,7 +52,7 @@ impl<V: 'static + ViewWithParams> ElementInterface for ViewWithParamsElement<V> 
 impl<Params: ViewParams> From<Params> for Element {
     fn from(params: Params) -> Self {
         Self {
-            inner: Arc::new(ViewWithParamsElement::<Params::View>::new(params)),
+            inner: Rc::new(ViewWithParamsElement::<Params::View>::new(params)),
         }
     }
 }

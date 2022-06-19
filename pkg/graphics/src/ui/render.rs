@@ -3,24 +3,25 @@ use common::errors::*;
 use image::Color;
 
 use crate::canvas::*;
-use crate::opengl::canvas::OpenGLCanvas;
+use crate::opengl::canvas::*;
+use crate::opengl::canvas_render_loop::CanvasFrameHandler;
 use crate::raster::canvas::*;
 use crate::raster::canvas_render_loop::WindowOptions;
 use crate::ui::element::Element;
 use crate::ui::event::*;
 use crate::ui::view::*;
 
-pub async fn render_element(root_element: Element, height: usize, width: usize) -> Result<()> {
-    let mut view = root_element.inner.instantiate()?;
+struct ViewFrameHandler {
+    view: Box<dyn View>,
+}
 
-    // const SCALING: usize = 4;
-
-    // let mut canvas = RasterCanvas::create(height * SCALING, width * SCALING);
-    // canvas.scale(SCALING as f32, SCALING as f32);
-
-    let window_options = WindowOptions::new("Canvas", width, height);
-
-    OpenGLCanvas::render_loop(window_options, |canvas, window, events| {
+impl CanvasFrameHandler for ViewFrameHandler {
+    fn render(
+        &mut self,
+        canvas: &mut dyn Canvas,
+        window: &mut crate::opengl::window::Window,
+        events: &[glfw::WindowEvent],
+    ) -> Result<()> {
         let outer_box = RenderBox {
             width: window.width() as f32,
             height: window.height() as f32,
@@ -113,12 +114,12 @@ pub async fn render_element(root_element: Element, height: usize, width: usize) 
                 }
             };
 
-            view.handle_event(&view_event)?;
+            self.view.handle_event(&view_event)?;
         }
 
-        let status = view.build()?;
+        let status = self.view.build()?;
 
-        view.render(&outer_box, canvas)?;
+        self.view.render(&outer_box, canvas)?;
 
         // TODO: Cache the cursor instances if nothing has changed since last time.
         window
@@ -126,7 +127,24 @@ pub async fn render_element(root_element: Element, height: usize, width: usize) 
             .set_cursor(Some(glfw::Cursor::standard(status.cursor.0)));
 
         Ok(())
-    })
-    .await?;
+    }
+}
+
+pub async fn render_element(root_element: Element, height: usize, width: usize) -> Result<()> {
+    let mut view = root_element.inner.instantiate()?;
+
+    // NOTE: The element may store references to canvas objects (e.g. path object
+    // caches) so it can't outlike the window.
+    drop(root_element);
+
+    // const SCALING: usize = 4;
+
+    // let mut canvas = RasterCanvas::create(height * SCALING, width * SCALING);
+    // canvas.scale(SCALING as f32, SCALING as f32);
+
+    let window_options = WindowOptions::new("Canvas", width, height);
+
+    OpenGLCanvas::render_loop(window_options, ViewFrameHandler { view }).await?;
+
     Ok(())
 }

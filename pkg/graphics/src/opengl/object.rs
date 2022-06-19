@@ -12,6 +12,7 @@ use crate::opengl::shader_attributes::*;
 use crate::opengl::texture::Texture;
 use crate::opengl::util::*;
 use crate::opengl::window::Window;
+use crate::opengl::window::WindowContext;
 use crate::transform::{AsMatrix, Camera, Transform};
 
 // TODO: If we ever support adopting another buffer, we must support verifying
@@ -25,6 +26,7 @@ use crate::transform::{AsMatrix, Camera, Transform};
 /// Every object has its own vertex array object
 /// TODO: Inherits Drawable
 pub struct Object {
+    window_context: WindowContext,
     vao: GLuint,
     shader: Rc<Shader>,
     attr_values: ShaderAttributeValues,
@@ -49,7 +51,9 @@ macro_rules! set_attribute {
 }
 
 impl Object {
-    pub fn new(shader: Rc<Shader>) -> Self {
+    pub fn new(mut window_context: WindowContext, shader: Rc<Shader>) -> Self {
+        window_context.make_current();
+
         let mut vao = 0;
         unsafe {
             gl::GenVertexArrays(1, &mut vao);
@@ -57,6 +61,7 @@ impl Object {
         }
 
         Self {
+            window_context,
             vao,
             shader,
             attr_values: ShaderAttributeValues::default(),
@@ -66,18 +71,13 @@ impl Object {
     }
 
     fn bind(&mut self) {
+        self.window_context.make_current();
         unsafe { gl::BindVertexArray(self.vao) };
     }
 
     pub fn shader(&self) -> &Shader {
         self.shader.as_ref()
     }
-
-    // // Works for shaders when the current shader shares the exact same
-    // // attributes (and ordering of them) as the new shader
-    // pub fn set_shader(&mut self, shader: Rc<Shader>) {
-    //     self.shader = shader;
-    // }
 
     set_attribute!(set_vertex_positions, Vector3f, positions, VertexPosition);
     set_attribute!(set_vertex_colors, Vector3f, colors, VertexColor);
@@ -109,6 +109,7 @@ impl Object {
 
 impl Drop for Object {
     fn drop(&mut self) {
+        self.window_context.make_current();
         unsafe {
             gl::DeleteVertexArrays(1, &self.vao);
         }
@@ -117,6 +118,7 @@ impl Drop for Object {
 
 impl Drawable for Object {
     fn draw(&self, cam: &Camera, model_view: &Transform) {
+        // TODO: Must also ensure that the window context is current.
         unsafe {
             gl::BindVertexArray(self.vao);
             gl::UseProgram(self.shader.program);

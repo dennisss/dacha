@@ -19,6 +19,7 @@ impl WindowContext {
     pub fn make_current(&mut self) {
         // TODO: Make this require a mutex lock as only one thread can have a window
         // active at a given time.
+        // Although we do want to enable nested usage of it.
         self.render_context.borrow_mut().make_current();
     }
 }

@@ -49,6 +49,8 @@ pub fn gl_vertex_buffer_vec3(attr: GLuint, data: &[Vector3f]) -> GLBuffer {
             std::mem::transmute(data.as_ptr()),
             gl::STATIC_DRAW,
         );
+
+        // TODO: Move this code up the call stack.
         gl::VertexAttribPointer(attr, 3, gl::FLOAT, gl::FALSE, 0, null());
     }
 

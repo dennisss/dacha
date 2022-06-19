@@ -26,6 +26,7 @@ use math::matrix::{vec2f, Vector2f};
 
 use crate::canvas::*;
 use crate::opengl::canvas::OpenGLCanvas;
+use crate::opengl::canvas_render_loop::CanvasFrameHandler;
 use crate::opengl::window::Window;
 use crate::raster::canvas::RasterCanvas;
 use crate::raster::canvas_render_loop::WindowOptions;
@@ -627,6 +628,19 @@ impl PointPicker {
     }
 }
 
+impl CanvasFrameHandler for PointPicker {
+    fn render(
+        &mut self,
+        canvas: &mut dyn Canvas,
+        window: &mut Window,
+        events: &[glfw::WindowEvent],
+    ) -> Result<()> {
+        self.handle_events(canvas, window, events)?;
+        self.draw(canvas, window)?;
+        Ok(())
+    }
+}
+
 /*
 Some thoughts on
 */
@@ -692,7 +706,7 @@ pub async fn run() -> Result<()> {
     let background_image =
         Image::read(project_path!("third_party/comp_geom/triangulate_d.qoi")).await?;
 
-    let mut picker = PointPicker {
+    let picker = PointPicker {
         mode: Mode::None,
         style: Style {
             background_point_color: Color::rgb(0xcc, 0xcc, 0xcc),
@@ -711,12 +725,7 @@ pub async fn run() -> Result<()> {
 
     // let mut canvas = RasterCanvas::create(HEIGHT, WIDTH);
 
-    OpenGLCanvas::render_loop(window_options, |canvas, window, events| {
-        picker.handle_events(canvas, window, events)?;
-        picker.draw(canvas, window)?;
-        Ok(())
-    })
-    .await?;
+    OpenGLCanvas::render_loop(window_options, picker).await?;
 
     Ok(())
 }
