@@ -48,6 +48,7 @@ impl ImageShow for Image<u8> {
             "Image",
             Vector2i::from_slice(&[window_width, window_height]),
             true,
+            false,
         );
 
         let shader = Rc::new(shader_src.compile(&mut window).unwrap());

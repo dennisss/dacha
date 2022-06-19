@@ -18,17 +18,6 @@ pub trait ElementInterface: 'static {
     fn instantiate(&self) -> Result<Box<dyn View>>;
 
     fn as_any<'a>(&'a self) -> &'a dyn Any;
-
-    // fn as_any(&self) -> &dyn Any
-    // where
-    //     Self: Sized,
-    // {
-    //     self
-    // }
-
-    // fn downcast_ref<T: ElementInterface>(&self) -> Result<&T> {
-    //     Any::downcast_ref::<T>(self)
-    // }
 }
 
 pub struct ViewWithParamsElement<V: 'static + ViewWithParams> {

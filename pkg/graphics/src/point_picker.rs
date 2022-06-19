@@ -635,12 +635,7 @@ pub async fn run() -> Result<()> {
     const HEIGHT: usize = 800;
     const WIDTH: usize = 800;
 
-    let window_options = WindowOptions {
-        name: "Point Picker".into(),
-        width: WIDTH,
-        height: HEIGHT,
-        samples: 4,
-    };
+    let window_options = WindowOptions::new("Point Picker", WIDTH, HEIGHT);
 
     // let mut canvas = RasterCanvas::create(HEIGHT, WIDTH);
 

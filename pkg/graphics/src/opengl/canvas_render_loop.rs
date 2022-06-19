@@ -44,45 +44,36 @@ impl OpenGLCanvas {
         let mut window = app.create_window(
             &window_options.name,
             Vector2i::from_slice(&[
-                window_options.width as isize,
-                window_options.height as isize,
+                window_options.initial_width as isize,
+                window_options.initial_height as isize,
             ]),
             true,
+            window_options.resizable,
         );
 
         let mut events = vec![];
 
         let shader = Rc::new(shader_src.compile(&mut window).unwrap());
 
-        let mut frame_buffer = FrameBuffer::new(
-            window.context(),
-            window_options.width * 2,
-            window_options.height * 2,
-        )?;
+        let mut last_window_size = (0, 0);
 
-        let mut camera = Camera::default();
-        camera.proj = orthogonal_projection(
-            0.0,
-            window_options.width as f32,
-            window_options.height as f32,
-            0.0,
-            -1.0,
-            1.0,
-        );
+        let mut frame_buffer = None;
 
-        let image = Image::<u8> {
-            array: Array {
-                shape: vec![1, 1, 3],
-                data: vec![255, 255, 255],
-            },
-            colorspace: Colorspace::RGB,
+        let empty_texture = {
+            let image = Image::<u8> {
+                array: Array {
+                    shape: vec![1, 1, 3],
+                    data: vec![255, 255, 255],
+                },
+                colorspace: Colorspace::RGB,
+            };
+
+            Rc::new(Texture::new(window.context(), &image))
         };
-
-        let empty_texture = Rc::new(Texture::new(window.context(), &image));
 
         let mut canvas = OpenGLCanvas {
             base: CanvasBase::new(),
-            camera,
+            camera: Camera::default(),
             shader,
             empty_texture,
             context: window.context(),
@@ -97,6 +88,30 @@ impl OpenGLCanvas {
                 events.push(e);
             }
 
+            let current_width = window.width();
+            let current_height = window.height();
+
+            if last_window_size != (current_width, current_height) {
+                last_window_size = (current_width, current_height);
+                frame_buffer = None;
+                canvas.camera.proj = orthogonal_projection(
+                    0.0,
+                    current_width as f32,
+                    current_height as f32,
+                    0.0,
+                    -1.0,
+                    1.0,
+                );
+            }
+
+            let frame_buffer = match frame_buffer.as_mut() {
+                Some(v) => v,
+                None => frame_buffer.insert(
+                    FrameBuffer::new(window.context(), current_width * 2, current_height * 2)
+                        .unwrap(),
+                ),
+            };
+
             // TODO: Return this error from the outer function.
 
             window.begin_draw();
@@ -106,22 +121,15 @@ impl OpenGLCanvas {
                     gl::Viewport(
                         0,
                         0,
-                        (window_options.width * 2) as i32,
-                        (window_options.height * 2) as i32,
+                        (current_width * 2) as i32,
+                        (current_height * 2) as i32,
                     )
                 };
 
                 f(&mut canvas, &mut window, &events).unwrap();
             });
 
-            unsafe {
-                gl::Viewport(
-                    0,
-                    0,
-                    window_options.width as i32,
-                    window_options.height as i32,
-                )
-            };
+            unsafe { gl::Viewport(0, 0, current_width as i32, current_height as i32) };
 
             // TODO: Cache this rectangle across draws.
             let mut rect = Polygon::rectangle(vec2f(-1., -1.), 2., 2., canvas.shader.clone());

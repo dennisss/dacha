@@ -9,6 +9,7 @@ use crate::opengl::window::WindowContext;
 // TODO: Support creating multi-sampled frame buffers: https://stackoverflow.com/questions/42878216/opengl-how-to-draw-to-a-multisample-framebuffer-and-then-use-the-result-as-a-n
 
 pub struct FrameBuffer {
+    window_context: WindowContext,
     frame_buffer_object: GLuint,
     color_texture: Rc<Texture>,
     depth_render_buffer_object: GLuint,
@@ -16,7 +17,7 @@ pub struct FrameBuffer {
 
 impl Drop for FrameBuffer {
     fn drop(&mut self) {
-        // TODO: Ensure these are dropped in a WindowContext.
+        self.window_context.make_current();
         unsafe {
             gl::DeleteFramebuffers(1, &self.frame_buffer_object);
             gl::DeleteRenderbuffers(1, &self.depth_render_buffer_object);
@@ -91,9 +92,10 @@ impl FrameBuffer {
         }
 
         Ok(Self {
+            window_context: context.clone(),
             frame_buffer_object,
             color_texture: Rc::new(Texture {
-                context,
+                context: context.clone(),
                 object: color_texture_object,
             }),
             depth_render_buffer_object,

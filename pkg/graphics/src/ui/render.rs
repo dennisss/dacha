@@ -11,11 +11,6 @@ use crate::ui::event::*;
 use crate::ui::view::*;
 
 pub async fn render_element(root_element: Element, height: usize, width: usize) -> Result<()> {
-    let outer_box = RenderBox {
-        width: width as f32,
-        height: height as f32,
-    };
-
     let mut view = root_element.inner.instantiate()?;
 
     // const SCALING: usize = 4;
@@ -23,14 +18,14 @@ pub async fn render_element(root_element: Element, height: usize, width: usize) 
     // let mut canvas = RasterCanvas::create(height * SCALING, width * SCALING);
     // canvas.scale(SCALING as f32, SCALING as f32);
 
-    let window_options = WindowOptions {
-        name: "Canvas".to_string(),
-        width,
-        height,
-        samples: 4,
-    };
+    let window_options = WindowOptions::new("Canvas", width, height);
 
     OpenGLCanvas::render_loop(window_options, |canvas, window, events| {
+        let outer_box = RenderBox {
+            width: window.width() as f32,
+            height: window.height() as f32,
+        };
+
         canvas.clear_rect(
             0.,
             0.,

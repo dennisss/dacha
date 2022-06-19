@@ -157,12 +157,8 @@ pub async fn run() -> Result<()> {
 
     let mut canvas = RasterCanvas::create(video::SCREEN_HEIGHT, video::SCREEN_WIDTH);
 
-    let window_options = WindowOptions {
-        name: "Gameboy".to_string(),
-        width: video::SCREEN_WIDTH * 4,
-        height: video::SCREEN_HEIGHT * 4,
-        samples: 1,
-    };
+    let window_options =
+        WindowOptions::new("Gameboy", video::SCREEN_WIDTH * 4, video::SCREEN_HEIGHT * 4);
 
     let mut paused = false;
     let mut unpaused = false;

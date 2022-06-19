@@ -914,12 +914,7 @@ pub async fn open_font() -> Result<()> {
     let mut canvas = RasterCanvas::create(HEIGHT * SCALE, WIDTH * SCALE);
     canvas.scale(SCALE as f32, SCALE as f32);
 
-    let window_options = WindowOptions {
-        name: "Font".to_string(),
-        width: WIDTH,
-        height: HEIGHT,
-        samples: 4,
-    };
+    let window_options = WindowOptions::new("Font", WIDTH, HEIGHT);
 
     canvas
         .render_loop(window_options, |mut canvas, window, _| {

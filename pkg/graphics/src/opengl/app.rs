@@ -24,7 +24,7 @@ impl Application {
         glfw_inst.window_hint(glfw::WindowHint::OpenGlProfile(
             glfw::OpenGlProfileHint::Core,
         ));
-        glfw_inst.window_hint(glfw::WindowHint::Resizable(false));
+
         glfw_inst.window_hint(glfw::WindowHint::DepthBits(Some(0)));
         glfw_inst.window_hint(glfw::WindowHint::AlphaBits(Some(0)));
         // glfw_inst.window_hint(glfw::WindowHint::Samples(Some(4)));
@@ -34,9 +34,17 @@ impl Application {
         Self { glfw_inst }
     }
 
-    pub fn create_window(&mut self, name: &str, size: Vector2i, visible: bool) -> Window {
+    pub fn create_window(
+        &mut self,
+        name: &str,
+        size: Vector2i,
+        visible: bool,
+        resizable: bool,
+    ) -> Window {
         self.glfw_inst
             .window_hint(glfw::WindowHint::Visible(visible));
+        self.glfw_inst
+            .window_hint(glfw::WindowHint::Resizable(resizable));
 
         // TODO: http://www.glfw.org/docs/latest/context_guide.html is very useful with documenting how to do off screen windows and windows that share context with other windows
         let (mut window, events) = self
