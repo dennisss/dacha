@@ -1,3 +1,6 @@
+use std::convert::AsRef;
+use std::string::ToString;
+
 use super::tag::TagClass;
 use super::tokenizer::Token;
 use common::bits::BitVector;
@@ -5,8 +8,6 @@ use common::bytes::Bytes;
 use common::errors::*;
 use parsing::ascii::AsciiString;
 use parsing::*;
-use std::convert::AsRef;
-use std::string::ToString;
 
 parser!(number<usize> => Token::skip_to(Token::number));
 parser!(realnumber<f64> => Token::skip_to(Token::realnumber));
@@ -23,6 +24,11 @@ fn symbol(c: char) -> impl Parser<()> {
 }
 
 fn reserved(w: &'static str) -> impl Parser<()> {
+    Token::skip_to(tag(w))
+
+    // NOTE: Token::reserved is currenty very slow as currently does a linear
+    // search over all known reserved words.
+    /*
     // TODO: Finish this
     and_then(Token::skip_to(Token::reserved), move |s| {
         if s.as_ref() != w {
@@ -31,6 +37,7 @@ fn reserved(w: &'static str) -> impl Parser<()> {
 
         Ok(())
     })
+    */
 }
 
 fn sequence(w: &'static str) -> impl Parser<()> {
@@ -504,9 +511,6 @@ impl ExternalValueReference {
     });
 }
 
-// NOTE: Rc is mainly convenient for the compiler.
-use std::rc::Rc;
-
 /* TypeAssignment ::= typereference "::=" Type */
 #[derive(Debug)]
 pub struct TypeAssignment {
@@ -528,7 +532,7 @@ impl TypeAssignment {
 pub struct ValueAssignment {
     pub name: AsciiString,
     pub typ: Type,
-    pub value: Rc<Value>,
+    pub value: Value,
 }
 
 impl ValueAssignment {
@@ -536,7 +540,7 @@ impl ValueAssignment {
         let name = c.next(valuereference)?;
         let typ = c.next(Type::parse)?;
         c.next(sequence("::="))?;
-        let value = Rc::new(c.next(Value::parse)?);
+        let value = c.next(Value::parse)?;
         Ok(Self { name, typ, value })
     }));
 }
@@ -561,7 +565,7 @@ pub struct Type {
 
 #[derive(Debug)]
 pub enum TypeDesc {
-    Builtin(Rc<BuiltinType>),
+    Builtin(BuiltinType),
     Referenced(AsciiString),
 }
 
@@ -569,7 +573,7 @@ impl Type {
     parser!(parse<Self> => seq!(c => {
         let prefixes = c.next(many(TypePrefix::parse))?;
         let desc = c.next(alt!(
-            map(BuiltinType::parse, |v| TypeDesc::Builtin(Rc::new(v))),
+            map(BuiltinType::parse, |v| TypeDesc::Builtin(v)),
             map(ReferencedType::parse, |v| TypeDesc::Referenced(v.0))
         ))?;
         let constraints = c.next(many(Constraint::parse))?;
@@ -608,6 +612,8 @@ pub enum BuiltinType {
     TimeOfDay,
 }
 
+// TODO: This is really slow and needs to be improved with some look ahead
+// hinting.
 impl BuiltinType {
     parser!(parse<Self> => alt!(
         map(AnyType::parse, |v| Self::Any(v)),
@@ -672,7 +678,7 @@ impl NamedType {
 
 #[derive(Debug)]
 pub enum Value {
-    Builtin(Rc<BuiltinValue>),
+    Builtin(BuiltinValue),
     Referenced(ReferencedValue),
     // ObjectClassField(ObjectClassFieldValue)
 }
@@ -680,7 +686,7 @@ pub enum Value {
 impl Value {
     parser!(parse<Self> => alt!(
         // TODO
-        map(BuiltinValue::parse, |v| Self::Builtin(Rc::new(v))),
+        map(BuiltinValue::parse, |v| Self::Builtin(v)),
         map(ReferencedValue::parse, |v| Self::Referenced(v))
         // map(ObjectClassFieldValue::parse, |v| Self::ObjectClassField(v))
     ));

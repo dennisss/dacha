@@ -1,10 +1,35 @@
 // Helpers for using in a build.rs package.
 
-use crate::compiler::Compiler;
-use common::errors::*;
 use std::env;
 use std::fs::DirEntry;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::thread;
+use std::time::Instant;
+
+use common::errors::*;
+
+use crate::compiler::Compiler;
+
+pub struct Tracer {
+    last_time: Instant,
+}
+
+impl Tracer {
+    fn new() -> Self {
+        Self {
+            last_time: Instant::now(),
+        }
+    }
+
+    fn trace(&mut self, event_name: &str) {
+        let time = Instant::now();
+        let dur = time - self.last_time;
+
+        println!("[Trace] {} : {}ms", event_name, dur.as_millis() as u32);
+        self.last_time = time;
+    }
+}
 
 /// Call in the build.rs script of a package to compile all ASN files to Rust
 /// code.
@@ -15,7 +40,15 @@ pub fn build() -> Result<()> {
 
     let output_dir = PathBuf::from(env::var("OUT_DIR")?);
 
-    let mut compiler = Compiler::new();
+    build_in_directory(&input_dir, &output_dir)
+}
+
+pub fn build_in_directory(input_dir: &Path, output_dir: &Path) -> Result<()> {
+    let mut tracer = Tracer::new();
+
+    let mut compiler = Arc::new(Compiler::new());
+
+    let mut threads = vec![];
 
     // TODO: How do we indicate that the directory could change (adding new files).
 
@@ -32,6 +65,8 @@ pub fn build() -> Result<()> {
             return;
         }
 
+        let input_path = entry.path();
+
         let relative_path = entry.path().strip_prefix(&input_dir).unwrap().to_owned();
         println!("cargo:rerun-if-changed={}", relative_path.to_str().unwrap());
 
@@ -39,10 +74,29 @@ pub fn build() -> Result<()> {
         let mut output_path = output_dir.join(relative_path.to_str().unwrap().replace("-", "_"));
         output_path.set_extension("rs");
 
-        compiler.add(entry.path(), output_path).unwrap();
+        let compiler = compiler.clone();
+        threads.push(thread::spawn(move || {
+            let mut tracer = Tracer::new();
+
+            let r = compiler.add(input_path.clone(), output_path);
+
+            tracer.trace(input_path.to_str().unwrap());
+
+            r
+        }));
     })?;
 
+    tracer.trace("Files Listed");
+
+    for thread in threads {
+        thread.join().unwrap().unwrap();
+    }
+
+    tracer.trace("Parsing Done");
+
     compiler.compile_all()?;
+
+    tracer.trace("Compilation Done");
 
     Ok(())
 }

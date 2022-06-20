@@ -12,3 +12,4 @@ pub mod tag;
 pub mod tokenizer;
 
 pub use build::build;
+pub use build::build_in_directory;

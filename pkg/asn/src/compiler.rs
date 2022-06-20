@@ -1,13 +1,16 @@
-use crate::syntax::*;
-use crate::tag::TagClass;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
 use common::bytes::Bytes;
 use common::errors::*;
 use common::line_builder::*;
 use parsing::*;
-use std::cell::RefCell;
-use std::io::{Read, Write};
-use std::path::PathBuf;
-use std::rc::Rc;
+
+use crate::syntax::*;
+use crate::tag::TagClass;
 
 pub struct Context {
     names: Vec<String>,
@@ -100,33 +103,39 @@ enum EncodingMode {
 /// Multi-file compiler. Currently all files must be added before any individual
 /// files get compiled.
 pub struct Compiler {
-    inner: Rc<RefCell<CompilerInner>>,
+    inner: Mutex<CompilerInner>,
 }
 
 struct CompilerInner {
     // TODO: Eventually we wil need to store absolute file paths for each source
     // in order to know how to handle resolves.
-    files: std::collections::HashMap<String, CompilerFileEntry>,
+    files: HashMap<String, CompilerFileEntry>,
 }
 
 struct CompilerFileEntry {
     /// Path to the ASN file from which this entry originated.
     source_path: PathBuf,
-    /// Where th
+
+    /// Where th write this file's generated code once compiled.
     output_path: PathBuf,
-    compiler: Rc<FileCompiler>,
+
+    module: ModuleDefinition,
+
+    // output: String,
+    // TODO: Must also consider automatic tagging.
+    default_tagging: TagMode,
 }
 
 impl Compiler {
     pub fn new() -> Self {
         Self {
-            inner: Rc::new(RefCell::new(CompilerInner {
-                files: std::collections::HashMap::new(),
-            })),
+            inner: Mutex::new(CompilerInner {
+                files: HashMap::new(),
+            }),
         }
     }
 
-    pub fn add(&mut self, source_path: PathBuf, output_path: PathBuf) -> Result<()> {
+    pub fn add(&self, source_path: PathBuf, output_path: PathBuf) -> Result<()> {
         // TODO: Integrate extension check into this?
 
         let mut file = std::fs::File::open(&source_path)?;
@@ -134,16 +143,28 @@ impl Compiler {
         let mut data = vec![];
         file.read_to_end(&mut data)?;
 
-        let c = FileCompiler::create(data.into(), self.inner.clone())?;
-        let name = c.module.ident.name.to_string();
+        let (module, _) = complete(ModuleDefinition::parse)(data.into())?;
 
-        let mut inner = self.inner.borrow_mut();
+        // TODO: Is the default automatic?
+        let default_tagging = match module.default_mode.clone().unwrap_or(TagDefault::Explicit) {
+            TagDefault::Explicit => TagMode::Explicit,
+            TagDefault::Implicit => TagMode::Implicit,
+            TagDefault::Automatic => {
+                return Err(err_msg("Automatic tagging not supported"));
+            }
+        };
+
+        // let c = FileCompiler::create(data.into(), self.inner.clone())?;
+        let name = module.ident.name.to_string();
+
+        let mut inner = self.inner.lock().unwrap();
         inner.files.insert(
             name,
             CompilerFileEntry {
                 source_path,
                 output_path,
-                compiler: Rc::new(c),
+                module,
+                default_tagging,
             },
         );
 
@@ -151,9 +172,16 @@ impl Compiler {
     }
 
     /// Compiles all added files saving them back to disk.
-    pub fn compile_all(&mut self) -> Result<()> {
-        for (_name, entry) in self.inner.borrow().files.iter() {
-            let compiled = entry.compiler.compile()?;
+    pub fn compile_all(&self) -> Result<()> {
+        let inner = self.inner.lock().unwrap();
+
+        for (_name, entry) in inner.files.iter() {
+            let compiler = FileCompiler {
+                parent: &*inner,
+                current: entry,
+            };
+
+            let compiled = compiler.compile()?;
             std::fs::create_dir_all(entry.output_path.parent().unwrap())?;
             let mut outfile = std::fs::File::create(&entry.output_path)?;
             outfile.write_all(compiled.as_bytes())?;
@@ -164,16 +192,12 @@ impl Compiler {
 }
 
 /// Single file compiler
-pub struct FileCompiler {
-    module: ModuleDefinition,
-    // output: String,
-    // TODO: Must also consider automatic tagging.
-    default_tagging: TagMode,
-
-    parent: Rc<RefCell<CompilerInner>>,
+pub struct FileCompiler<'a> {
+    parent: &'a CompilerInner,
+    current: &'a CompilerFileEntry,
 }
 
-impl FileCompiler {
+impl<'a> FileCompiler<'a> {
     fn value_name(name: &str) -> String {
         name.replace("-", "_").to_ascii_uppercase()
     }
@@ -296,7 +320,7 @@ impl FileCompiler {
                         return Err(err_msg("Encoding reference in tag not supported"));
                     }
 
-                    let mode = t.mode.unwrap_or(self.default_tagging);
+                    let mode = t.mode.unwrap_or(self.current.default_tagging);
                     let num = match &t.tag.number {
                         ClassNumber::Immediate(n) => n.to_string(),
                         ClassNumber::Defined(d) => d.0.to_string(),
@@ -444,9 +468,7 @@ impl FileCompiler {
                         };
 
                         let mut valuec = self.compile_value(v, &typename, &f.typ).unwrap().0;
-                        if self.is_referenced_value(v, builtin_type.as_ref())
-                            && !valuec.contains("{")
-                        {
+                        if self.is_referenced_value(v, builtin_type) && !valuec.contains("{") {
                             valuec = format!("(*{})", valuec);
                         }
 
@@ -531,9 +553,7 @@ impl FileCompiler {
                         };
 
                         let mut valuec = self.compile_value(v, &typename, &f.typ).unwrap().0;
-                        if self.is_referenced_value(v, builtin_type.as_ref())
-                            && !valuec.contains("{")
-                        {
+                        if self.is_referenced_value(v, builtin_type) && !valuec.contains("{") {
                             valuec = format!("(*{})", valuec);
                         }
 
@@ -599,7 +619,7 @@ impl FileCompiler {
 
         // TODO: Must implement this for inline types as well
         if let TypeDesc::Builtin(t) = &typ.desc {
-            if let BuiltinType::BitString(t) = t.as_ref() {
+            if let BuiltinType::BitString(t) = t {
                 if t.named_bits.len() > 0 {
                     l.add(format!("impl {} {{", name));
                     for bit in &t.named_bits {
@@ -732,7 +752,7 @@ impl FileCompiler {
         // TODO: For referenced types, recursively look up if it can be
         // stringified (especially for CHOICE types).
         if let TypeDesc::Builtin(t) = desc {
-            match t.as_ref() {
+            match t {
                 BuiltinType::CharacterString(CharacterStringType::Restricted(_)) => {
                     return true;
                 }
@@ -760,7 +780,7 @@ impl FileCompiler {
         let mut lines = LineBuilder::new();
         let name = match &typ.desc {
             TypeDesc::Builtin(t) => {
-                String::from(match t.as_ref() {
+                String::from(match t {
                     BuiltinType::Boolean => "bool".to_string(),
                     BuiltinType::Integer(t) => {
                         if let Some(vals) = &t.values {
@@ -871,7 +891,7 @@ impl FileCompiler {
         match val {
             Value::Referenced(_) => true,
             Value::Builtin(v) => {
-                match v.as_ref() {
+                match v {
                     BuiltinValue::Integer(IntegerValue::Identifier(_)) => {
                         // TODO: This is only because we parse it wrong and even then it
                         // only applies if we aren't referencing a specific case.
@@ -907,12 +927,12 @@ impl FileCompiler {
 
             // TODO: Instead need a consistent function for checking if a type
             // will get wrapped.
-            match builtin_type.as_ref() {
+            match builtin_type {
                 BuiltinType::Sequence(_) | BuiltinType::Set(_) => value,
                 _ => {
                     let mut valuec = value;
 
-                    if self.is_referenced_value(&assign.value, builtin_type.as_ref()) {
+                    if self.is_referenced_value(&assign.value, builtin_type) {
                         valuec = format!("(*{}).clone()", valuec);
                     }
 
@@ -952,7 +972,7 @@ impl FileCompiler {
     // Must lookup
 
     fn lookup_value_type(&self, name: &str) -> Result<Option<String>> {
-        let body = self.module.body.as_ref().unwrap();
+        let body = self.current.module.body.as_ref().unwrap();
         for a in &body.assignments {
             if let Assignment::Value(v) = a {
                 if v.name.as_ref() == name {
@@ -969,9 +989,12 @@ impl FileCompiler {
         }
 
         for import in &body.imports {
-            let parent = self.parent.borrow();
-            let mc = &parent.files[&import.module.name.to_string()];
-            if let Ok(v) = mc.compiler.lookup_value_type(name) {
+            let mc = &self.parent.files[&import.module.name.to_string()];
+            let mc_compiler = Self {
+                parent: self.parent,
+                current: mc,
+            };
+            if let Ok(v) = mc_compiler.lookup_value_type(name) {
                 return Ok(v);
             }
         }
@@ -979,18 +1002,18 @@ impl FileCompiler {
         Err(format_err!("Unknown value named: {}", name))
     }
 
-    fn lookup_value(&self, name: &str) -> Result<Rc<BuiltinValue>> {
-        let body = self.module.body.as_ref().unwrap();
+    fn lookup_value(&self, name: &str) -> Result<&'a BuiltinValue> {
+        let body = self.current.module.body.as_ref().unwrap();
         for a in &body.assignments {
             if let Assignment::Value(v) = a {
                 if v.name.as_ref() == name {
-                    match v.value.as_ref() {
+                    match &v.value {
                         Value::Referenced(name) => {
                             // TODO: Prevent recursion.
                             return self.lookup_value((name.0).0.as_ref());
                         }
                         Value::Builtin(v) => {
-                            return Ok(v.clone());
+                            return Ok(v);
                         }
                     };
                 }
@@ -998,9 +1021,13 @@ impl FileCompiler {
         }
 
         for import in &body.imports {
-            let parent = self.parent.borrow();
-            let mc = &parent.files[&import.module.name.to_string()];
-            if let Ok(v) = mc.compiler.lookup_value(name) {
+            let mc = &self.parent.files[&import.module.name.to_string()];
+            let mc_compiler = Self {
+                parent: self.parent,
+                current: mc,
+            };
+
+            if let Ok(v) = mc_compiler.lookup_value(name) {
                 return Ok(v);
             }
         }
@@ -1010,14 +1037,14 @@ impl FileCompiler {
 
     // NOTE: This will look up the inner-most builtin type and will hide any
     // outer prefixes, constraints, etc. so should be used with caution.
-    fn lookup_type(&self, name: &str) -> Result<Rc<BuiltinType>> {
-        let body = self.module.body.as_ref().unwrap();
+    fn lookup_type(&self, name: &str) -> Result<&'a BuiltinType> {
+        let body = self.current.module.body.as_ref().unwrap();
         for a in &body.assignments {
             if let Assignment::Type(t) = a {
                 if t.name.as_ref() == name {
                     match &t.typ.desc {
                         TypeDesc::Builtin(t) => {
-                            return Ok(t.clone());
+                            return Ok(t);
                         }
                         TypeDesc::Referenced(name) => {
                             return self.lookup_type(name.as_ref());
@@ -1030,9 +1057,13 @@ impl FileCompiler {
         // TODO: Must validate in cyclic loops in
 
         for import in &body.imports {
-            let parent = self.parent.borrow();
-            let mc = &parent.files[&import.module.name.to_string()];
-            if let Ok(v) = mc.compiler.lookup_type(name) {
+            let mc = &self.parent.files[&import.module.name.to_string()];
+            let mc_compiler = Self {
+                parent: self.parent,
+                current: mc,
+            };
+
+            if let Ok(v) = mc_compiler.lookup_type(name) {
                 return Ok(v);
             }
         }
@@ -1048,7 +1079,7 @@ impl FileCompiler {
                 // component and refers to another absolute oid.
                 ObjectIdentifierComponent::Name(n) => {
                     let builtin_val = self.lookup_value(n.as_ref())?;
-                    let val = match builtin_val.as_ref() {
+                    let val = match builtin_val {
                         BuiltinValue::ObjectIdentifier(v) => v,
                         _ => {
                             return Err(err_msg("Type incompatible with oid"));
@@ -1093,7 +1124,7 @@ impl FileCompiler {
             TypeDesc::Referenced(v) => self.lookup_type(v.as_ref())?,
         };
 
-        let is_any = if let BuiltinType::Any(_) = builtin_type.as_ref() {
+        let is_any = if let BuiltinType::Any(_) = builtin_type {
             true
         } else {
             false
@@ -1110,7 +1141,7 @@ impl FileCompiler {
 
         let mut out = match value {
             Value::Builtin(v) => {
-                match v.as_ref() {
+                match v {
                     BuiltinValue::Boolean(v) => String::from(if *v { "true" } else { "false" }),
                     BuiltinValue::Integer(v) => {
                         match v {
@@ -1123,7 +1154,7 @@ impl FileCompiler {
                             // TODO: This depends on the type. If it has a named
                             // value list, then we should prioritize those
                             IntegerValue::Identifier(name) => {
-                                if let BuiltinType::Integer(t) = builtin_type.as_ref() {
+                                if let BuiltinType::Integer(t) = builtin_type {
                                     if t.values.is_some() {
                                         return Ok((
                                             format!("{}::{}", typename, name.to_string()),
@@ -1138,7 +1169,7 @@ impl FileCompiler {
 
                                 if let Some(tname) = value_type {
                                     if &tname != typename && !is_any {
-                                        if self.is_referenced_value(value, builtin_type.as_ref()) {
+                                        if self.is_referenced_value(value, builtin_type) {
                                             vname = format!("(*{}).clone()", vname)
                                         }
 
@@ -1177,7 +1208,7 @@ impl FileCompiler {
                     BuiltinValue::Sequence(SequenceValue(v)) => {
                         let mut out = format!("{} {{\n", typename);
 
-                        let body = match builtin_type.as_ref() {
+                        let body = match builtin_type {
                             BuiltinType::Set(v) | BuiltinType::Sequence(v) => v,
                             _ => {
                                 return Err(err_msg("Sequence value for non-sequence/set type."));
@@ -1238,7 +1269,7 @@ impl FileCompiler {
             }
         };
 
-        if let BuiltinType::Any(_) = builtin_type.as_ref() {
+        if let BuiltinType::Any(_) = builtin_type {
             out = format!("asn_any!({})", out);
         }
 
@@ -1403,9 +1434,9 @@ impl FileCompiler {
         // let ctx = Context::new().inner(&modname);
 
         if let TypeDesc::Builtin(t) = &a.typ.desc {
-            if let BuiltinType::Choice(c) = t.as_ref() {
+            if let BuiltinType::Choice(c) = t {
                 return self.compile_choice(&name, &a.typ.prefixes, &c, &Context::new());
-            } else if let BuiltinType::Sequence(t) = t.as_ref() {
+            } else if let BuiltinType::Sequence(t) = t {
                 return self.compile_struct(
                     &name,
                     &a.typ.prefixes,
@@ -1413,7 +1444,7 @@ impl FileCompiler {
                     &Context::new(),
                     false,
                 );
-            } else if let BuiltinType::Set(t) = t.as_ref() {
+            } else if let BuiltinType::Set(t) = t {
                 // TODO: Separate flag for SET and SEQUENCE
                 return self.compile_struct(
                     &name,
@@ -1422,12 +1453,12 @@ impl FileCompiler {
                     &Context::new(),
                     true,
                 );
-            } else if let BuiltinType::Integer(t) = t.as_ref() {
+            } else if let BuiltinType::Integer(t) = t {
                 // TODO: This doesn't support prefixed and constraints.
                 if let Some(vals) = &t.values {
                     return self.compile_int_enum(&name, vals, false);
                 }
-            } else if let BuiltinType::Enumerated(t) = t.as_ref() {
+            } else if let BuiltinType::Enumerated(t) = t {
                 return self.compile_enumerated(&name, t);
             }
 
@@ -1439,25 +1470,6 @@ impl FileCompiler {
         // 'pub type Name = Type' and instead wrap the value in a struct.
         // TODO: Pass in constraints and prefixes if any.
         self.compile_wrapped_type(&name, &a.typ)
-    }
-
-    fn create(file: Bytes, parent: Rc<RefCell<CompilerInner>>) -> Result<Self> {
-        let (module, _) = complete(ModuleDefinition::parse)(file)?;
-
-        // TODO: Is the default automatic?
-        let default_tagging = match module.default_mode.clone().unwrap_or(TagDefault::Explicit) {
-            TagDefault::Explicit => TagMode::Explicit,
-            TagDefault::Implicit => TagMode::Implicit,
-            TagDefault::Automatic => {
-                return Err(err_msg("Automatic tagging not supported"));
-            }
-        };
-
-        Ok(Self {
-            module,
-            parent,
-            default_tagging,
-        })
     }
 
     pub fn compile(&self) -> Result<String> {
@@ -1478,7 +1490,7 @@ impl FileCompiler {
         const SKIP_ASSIGNMENTS: &'static [&'static str] =
             &["UniversalString", "BMPString", "UTF8String"];
 
-        let body = match &self.module.body {
+        let body = match &self.current.module.body {
             Some(v) => v,
             _ => {
                 return Ok(String::new());
