@@ -16,6 +16,9 @@ rpc = { path = "../rpc" }
 datastore = { path = "../datastore" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
+graphics = { path = "../graphics" }
+image = { path = "../image" }
+math = { path = "../math" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

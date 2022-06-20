@@ -1,5 +1,6 @@
 mod renderer;
 pub mod vm;
+mod style;
 
 use core::f32::consts::PI;
 use std::sync::Arc;
@@ -22,6 +23,7 @@ use crate::raster::canvas::RasterCanvas;
 use crate::raster::canvas_render_loop::WindowOptions;
 
 pub use crate::font::renderer::*;
+pub use crate::font::style::*;
 
 #[derive(Debug)]
 pub struct FontFileHeader {
@@ -852,18 +854,6 @@ impl OpenTypeFont {
     }
 }
 
-pub enum TextAlign {
-    Left,
-    Center,
-    Right,
-}
-
-pub enum VerticalAlign {
-    Top,
-    Baseline,
-    Bottom,
-}
-
 // TODO: https://github.com/rust-lang/rust/issues/63033
 
 /*
@@ -940,7 +930,7 @@ pub async fn open_font() -> Result<()> {
             let black = Color::rgb(0, 0, 0);
             let red = Color::rgb(255, 0, 0);
 
-            font.fill_text(x, y, text, font_size, &Paint::color(black.clone()), canvas)?;
+            font.fill_text(x, y, text, &FontStyle::from_size(font_size), &Paint::color(black.clone()), canvas)?;
 
             {
                 let mut builder = PathBuilder::new();

@@ -67,7 +67,46 @@ impl OpenGLCanvas {
         &mut self,
         vertices: &[Vector2f],
         path_starts: &[usize],
+        fill_rule: FillRule,
     ) -> Result<Box<dyn CanvasObject>> {
+        // Fast path: When the path is formed of just triangles, triangulation is trivial. Assuming there isn't significant overlap, this should be more efficient than trying to re-triangulate it.
+        if fill_rule == FillRule::EvenOdd {
+            let all_triangles = path_starts.pair_iter().find(|(a, b)| *b - *a != 3).is_none();
+
+            if all_triangles {
+                let mut new_vertices: Vec<Vector3f> = vec![];
+                let mut faces = vec![];
+
+                for verts in vertices.chunks(3) {
+                    faces.push([
+                        new_vertices.len() as u32,
+                        new_vertices.len() as u32 + 1,
+                        new_vertices.len() as u32 + 2,
+                    ]);
+    
+                    for vert in verts {
+                        new_vertices.push((vert.clone(), 1.).into());
+                    }
+                }
+
+                let mut mesh = Mesh::from(
+                    self.context.clone(),
+                    &new_vertices,
+                    &faces,
+                    &[],
+                    self.shader.clone(),
+                );
+        
+                mesh.set_vertex_texture_coordinates(vec2f(0., 0.))
+                    .set_texture(self.empty_texture.clone());
+                return Ok(Box::new(OpenGLCanvasPath {
+                    mesh,
+                    transform_inv: self.base.current_transform().inverse(),
+                }));
+            }
+        }
+
+
         let mut half_edges = HalfEdgeStruct::<()>::new();
         for i in 0..(path_starts.len() - 1) {
             let start_i = path_starts[i];
@@ -122,7 +161,7 @@ impl OpenGLCanvas {
         let mut iter = ScanLineIterator::create(
             vertices,
             path_starts,
-            FillRule::NonZero,
+            fill_rule,
             face_centroids.iter().map(|(c, _)| c.y()),
         )?;
 
@@ -182,12 +221,12 @@ impl Canvas for OpenGLCanvas {
 
     fn create_path_fill(&mut self, path: &Path) -> Result<Box<dyn CanvasObject>> {
         let (vertices, path_starts) = path.linearize(self.current_transform());
-        self.create_path_object(&vertices, &path_starts)
+        self.create_path_object(&vertices, &path_starts, FillRule::NonZero)
     }
 
     fn create_path_stroke(&mut self, path: &Path, width: f32) -> Result<Box<dyn CanvasObject>> {
         let (vertices, path_starts) = path.stroke(width, self.current_transform());
-        self.create_path_object(&vertices, &path_starts)
+        self.create_path_object(&vertices, &path_starts, FillRule::EvenOdd)
     }
 
     /// When drawn, an image is rendered with the top-left corner at position

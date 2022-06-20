@@ -100,6 +100,7 @@ fn main() -> Result<()> {
 
     println!("hi!");
 
+    /* 
     let mut n = 0;
     for i in 0..35 {
         if extended_gcd(i, 35) == 1 {
@@ -138,6 +139,7 @@ fn main() -> Result<()> {
             println!("x = {}", x);
         }
     }
+    */
 
     Ok(())
 }

@@ -13,6 +13,7 @@ extern crate lazy_static;
 
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
+use common::errors::*;
 use math::array::Array;
 use math::geometry::bounding_box::BoundingBox;
 use math::matrix::{Vector2f, VectorStatic};
@@ -66,7 +67,9 @@ impl<T: Zero + Clone> Image<T> {
     }
 }
 
-#[derive(Clone)]
+// TODO: Move to a separate file given this is starting to become complicated.
+// TODO: Implement a custom debugger for this.
+#[derive(Clone, Debug)]
 pub struct Color {
     data: VectorStatic<u8, typenum::U4>,
 }
@@ -76,6 +79,11 @@ impl Color {
         Self {
             data: VectorStatic::zero(),
         }
+    }
+
+    pub fn hex(val: i32) -> Self {
+        let val = val as u32;
+        Self::rgb((val >> 16) as u8, (val >> 8) as u8, val as u8)
     }
 
     pub fn rgb(r: u8, g: u8, b: u8) -> Self {
@@ -88,6 +96,45 @@ impl Color {
         Self {
             data: VectorStatic::from_slice(&[r, g, b, a]),
         }
+    }
+}
+
+impl core::str::FromStr for Color {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        if s.is_empty() {
+            return Err(err_msg("Empty color string"));
+        }
+
+        let mut chars = s.chars();
+
+        if chars.next() == Some('#') {
+            let mut digits = vec![];
+            for c in chars {
+                digits.push(
+                    c.to_digit(16)
+                        .ok_or_else(|| err_msg("Not a valid hex digit"))?,
+                );
+            }
+
+            let mut rgb = vec![];
+            if digits.len() == 3 {
+                for d in digits {
+                    rgb.push(((d as u8) << 4) | (d as u8));
+                }
+            } else if digits.len() == 6 {
+                for d in digits.chunks_exact(2) {
+                    rgb.push(((d[0] as u8) << 4) | (d[1] as u8));
+                }
+            } else {
+                return Err(err_msg("Wrong number of hex digits"));
+            }
+
+            return Ok(Color::rgb(rgb[0], rgb[1], rgb[2]));
+        }
+
+        Err(err_msg("Unknown color string format"))
     }
 }
 

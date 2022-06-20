@@ -18,7 +18,7 @@ use image::Color;
 use math::matrix::Vector2f;
 
 use crate::canvas::*;
-use crate::font::CanvasFontRenderer;
+use crate::font::{CanvasFontRenderer, FontStyle, VerticalAlign};
 use crate::ui::event::*;
 use crate::ui::view::*;
 
@@ -199,10 +199,10 @@ impl View for Textbox {
         }
 
         self.params.font.fill_text(
-            0.0,
-            measurements.height + measurements.descent,
+            0.,
+            0.,
             &self.params.value,
-            self.params.font_size,
+            &FontStyle::from_size(self.params.font_size).with_vertical_align(VerticalAlign::Top),
             &Paint::color(font_color),
             canvas,
         )?;

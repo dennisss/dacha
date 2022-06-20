@@ -1,4 +1,5 @@
 pub mod button;
+pub mod chart;
 pub mod checkbox;
 mod children;
 mod core;

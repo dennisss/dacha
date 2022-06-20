@@ -6,12 +6,24 @@ use image::Color;
 
 use crate::canvas::*;
 use crate::font::{HorizontalMetricRecord, OpenTypeFont, SimpleGlyph};
+use crate::font::style::*;
 
 #[derive(Debug)]
 pub struct TextMeasurements {
+    /// Distance in pixels from the left to right size of the text's bounding box when rendered.
     pub width: f32,
+
+    ///
     pub height: f32,
+
+    /// NOTE: This is a negative value.
     pub descent: f32,
+}
+
+struct FontSizeMeasurements {
+    scale: f32,
+    height: f32,
+    descent: f32,
 }
 
 /// NOTE: One renderer should only ever be associated with a single canvas.
@@ -32,17 +44,30 @@ impl CanvasFontRenderer {
         &self.font
     }
 
+    /// NOTE: This always renders the text left aligned at the baseline.
     pub fn fill_text(
         &self,
         mut x: f32,
         y: f32,
         text: &str,
-        font_size: f32,
+        font_style: &FontStyle,
         paint: &Paint,
         canvas: &mut dyn Canvas,
     ) -> Result<()> {
-        let scale = font_size / (self.font.head.units_per_em as f32);
+        let sizing = self.measure_font_size(font_style.size);
 
+        let mut x_offset = match font_style.text_align {
+            TextAlign::Left => 0.,
+            TextAlign::Center => -(self.measure_text_width(&sizing, text)? / 2.),
+            TextAlign::Right => -(self.measure_text_width(&sizing, text)?),
+        };
+        let mut y_offset = match font_style.vertical_align {
+            VerticalAlign::Top => (sizing.height + sizing.descent), // ascent
+            VerticalAlign::Baseline => 0.,
+            VerticalAlign::Bottom => sizing.descent,
+            VerticalAlign::Center => (sizing.height / 2.) + sizing.descent
+        };
+        
         for c in text.chars() {
             let char_code = c as u32;
             if char_code > u16::MAX as u32 {
@@ -56,9 +81,9 @@ impl CanvasFontRenderer {
 
             canvas.save();
 
-            canvas.translate(x, y);
+            canvas.translate(x_offset + x, y_offset + y);
 
-            canvas.scale(scale, -1.0 * scale);
+            canvas.scale(sizing.scale, -1.0 * sizing.scale);
 
             // NOTE: We assume that x_min == left_side_bearing so no translation is needed.
             // self.translate(-1.0 * ((x_min - metrics.left_side_bearing) as f32), 0.0);
@@ -69,10 +94,38 @@ impl CanvasFontRenderer {
 
             canvas.restore()?;
 
-            x += (metrics.advance_width as f32) * scale;
+            x += (metrics.advance_width as f32) * sizing.scale;
         }
 
         Ok(())
+    }
+
+    fn measure_font_size(&self, font_size: f32) -> FontSizeMeasurements {
+        let scale = font_size / (self.font.head.units_per_em as f32);
+
+        FontSizeMeasurements {
+            scale,
+            // TODO: Incorporate the line gap?
+            height: ((self.font.hhea.ascender - self.font.hhea.descender) as f32) * scale,
+            descent: (self.font.hhea.descender as f32) * scale,
+        }
+    }
+
+    fn measure_text_width(&self, sizing: &FontSizeMeasurements, text: &str) -> Result<f32> {
+        let mut width = 0.0;
+
+        for c in text.chars() {
+            let char_code = c as u32;
+            if char_code > u16::MAX as u32 {
+                return Err(err_msg("Character overflowed supported range"));
+            }
+
+            let (g, metrics) = self.font.char_glyph(char_code as u16)?;
+
+            width += (metrics.advance_width as f32) * sizing.scale;
+        }
+
+        Ok(width)
     }
 
     fn create_glyph<'a>(
@@ -145,26 +198,13 @@ impl CanvasFontRenderer {
     }
 
     pub fn measure_text(&self, text: &str, font_size: f32) -> Result<TextMeasurements> {
-        let scale = font_size / (self.font.head.units_per_em as f32);
-
-        let mut width = 0.0;
-
-        for c in text.chars() {
-            let char_code = c as u32;
-            if char_code > u16::MAX as u32 {
-                return Err(err_msg("Character overflowed supported range"));
-            }
-
-            let (g, metrics) = self.font.char_glyph(char_code as u16)?;
-
-            width += (metrics.advance_width as f32) * scale;
-        }
+        let sizing = self.measure_font_size(font_size);
+        let width = self.measure_text_width(&sizing, text)?;        
 
         Ok(TextMeasurements {
             width,
-            // TODO: Incorporate the line gap?
-            height: ((self.font.hhea.ascender - self.font.hhea.descender) as f32) * scale,
-            descent: (self.font.hhea.descender as f32) * scale,
+            height: sizing.height,
+            descent: sizing.descent,
         })
     }
 
@@ -173,7 +213,7 @@ impl CanvasFontRenderer {
             return Ok(0);
         }
 
-        let scale = font_size / (self.font.head.units_per_em as f32);
+        let sizing = self.measure_font_size(font_size);
 
         let mut width = 0.0;
 
@@ -185,7 +225,7 @@ impl CanvasFontRenderer {
 
             let (g, metrics) = self.font.char_glyph(char_code as u16)?;
 
-            let next_width = width + ((metrics.advance_width as f32) * scale);
+            let next_width = width + ((metrics.advance_width as f32) * sizing.scale);
             if next_width > x {
                 let distance_before = (width - x).abs();
                 let distance_after = (next_width - x).abs();
@@ -206,7 +246,6 @@ impl CanvasFontRenderer {
 
 /*
 pub trait CanvasFontExt {
-    /// NOTE: This always renders the text left aligned at the baseline.
     fn fill_text(
         &mut self,
         x: f32,

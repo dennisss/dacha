@@ -102,9 +102,13 @@ pub fn stroke_poly(points: &[Vector2f], width: f32) -> (Vec<Vector2f>, Vec<usize
 
     let mut closed = points.len() > 0 && points[0] == points[points.len() - 1];
 
-    path_starts.push(0);
 
-    let mut offset_segments = |iter: PairIterator<Vector2f>, out: &mut Vec<Vector2f>| {
+    /*
+    Take 2 points from both the direction vectors.
+    - Should be trivial to triangulate these.
+    */
+
+    let mut offset_segments = |iter: PairIterator<Vector2f>, side: f32, out: &mut Vec<Vector2f>| {
         let mut start_index = out.len();
 
         let mut first_line = None;
@@ -118,7 +122,7 @@ pub fn stroke_poly(points: &[Vector2f], width: f32) -> (Vec<Vector2f>, Vec<usize
             }
 
             // Normal vector to the line.
-            let n: Vector2f = l.perp().normalized();
+            let n: Vector2f = l.perp().normalized() * side;
 
             let offset = n * (width / 2.0);
 
@@ -158,15 +162,49 @@ pub fn stroke_poly(points: &[Vector2f], width: f32) -> (Vec<Vector2f>, Vec<usize
         }
     };
 
-    offset_segments(points.pair_iter(), &mut out);
+    path_starts.push(0);
+
+
+    // Directly triangulate each line segment's quadrilateral into 2 triangles.
+    // TODO: Use index based faces to avoid duplicating indices here.
+    {
+        let mut side_a = vec![];
+        offset_segments(points.pair_iter(), 1., &mut side_a);
+    
+        let mut side_b = vec![];
+        offset_segments(points.pair_iter(), -1., &mut side_b);
+    
+        for ((a0, a1), (b0, b1)) in side_a.pair_iter().zip(side_b.pair_iter()) {
+    
+            out.push(a0.clone());
+            out.push(a1.clone());
+            out.push(b0.clone());
+            path_starts.push(out.len());
+
+            out.push(b0.clone());
+            out.push(b1.clone());
+            out.push(a1.clone());
+            path_starts.push(out.len());
+        }
+    
+    }
+
+
+    // Old code which computes the shape as a boundary with a hold.
+    /*
+    offset_segments(points.pair_iter(), 1., &mut out);
 
     if closed {
         path_starts.push(out.len());
     }
 
-    offset_segments(points.pair_iter().rev(), &mut out);
+    // Inverting the direction of the iterator will also invert the side.
+    offset_segments(points.pair_iter().rev(), 1., &mut out);
 
     path_starts.push(out.len());
+    */
+
+
 
     (out, path_starts)
 }

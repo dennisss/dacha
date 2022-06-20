@@ -589,7 +589,6 @@ version = "0.1.0"
 dependencies = [
  "asn",
  "async-std",
- "chrono",
  "common",
  "generic-array",
  "macros",
@@ -978,7 +977,6 @@ name = "haystack"
 version = "0.1.0"
 dependencies = [
  "byteorder",
- "chrono",
  "common",
  "crypto",
  "diesel",
@@ -1940,8 +1938,11 @@ dependencies = [
  "common",
  "crypto",
  "datastore",
+ "graphics",
  "http",
+ "image",
  "macros",
+ "math",
  "parsing",
  "peripheral",
  "protobuf",

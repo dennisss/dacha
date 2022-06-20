@@ -4,7 +4,7 @@ use common::errors::*;
 use image::Color;
 
 use crate::canvas::{Canvas, Paint};
-use crate::font::CanvasFontRenderer;
+use crate::font::{CanvasFontRenderer, FontStyle, VerticalAlign};
 use crate::ui::event::*;
 use crate::ui::view::*;
 
@@ -59,16 +59,11 @@ impl View for TextView {
     }
 
     fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
-        let measurements = self
-            .params
-            .font
-            .measure_text(&self.params.text, self.params.font_size)?;
-
         self.params.font.fill_text(
-            0.0,
-            measurements.height + measurements.descent,
+            0.,
+            0.,
             &self.params.text,
-            self.params.font_size,
+            &FontStyle::from_size(self.params.font_size).with_vertical_align(VerticalAlign::Top),
             &Paint::color(self.params.color.clone()),
             canvas,
         )?;
