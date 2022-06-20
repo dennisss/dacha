@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 
+import { Channel } from "pkg/web/lib/rpc";
+
 
 /*
 Bundle using:
@@ -228,20 +230,15 @@ class Figure extends React.Component<{}, FigureState> {
         let end_timestamp = now;
         let start_timestamp = end_timestamp - (60 * 60 * 1000000);
 
-        const resp = await fetch('/api/query', {
-            method: 'POST',
-            cache: 'no-cache',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                start_timestamp,
-                end_timestamp,
-                metric_name: 'random'
-            })
+        let channel = new Channel("http://localhost:8001");
+
+        let res = await channel.call('Metric', 'Query', {
+            start_timestamp,
+            end_timestamp,
+            metric_name: 'random'
         });
 
-        let obj = await resp.json();
+        let obj = res.responses[0];
 
         this._x_axis = { min: start_timestamp / 1000, max: end_timestamp / 1000 };
 

@@ -11,10 +11,16 @@ http = { path = "../http" }
 parsing = { path = "../parsing" }
 sstable = { path = "../sstable" }
 crypto = { path = "../crypto" }
+web = { path = "../web" }
+rpc = { path = "../rpc" }
 datastore = { path = "../datastore" }
 protobuf = { path = "../protobuf" }
-protobuf_json = { path = "../protobuf_json" }
 macros = { path = "../macros" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

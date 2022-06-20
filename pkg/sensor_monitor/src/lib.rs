@@ -1,3 +1,6 @@
+extern crate alloc;
+extern crate core;
+
 #[macro_use]
 extern crate common;
 extern crate crypto;
@@ -5,9 +8,10 @@ extern crate datastore;
 extern crate http;
 extern crate parsing;
 extern crate protobuf;
-extern crate protobuf_json;
 #[macro_use]
 extern crate macros;
+extern crate rpc;
+extern crate web;
 
 mod proto;
 
@@ -17,11 +21,10 @@ use std::{
 };
 
 use common::async_std::task;
+use common::bundle::TaskResultBundle;
 use common::errors::*;
 use crypto::random::RngExt;
-use http::static_file_handler::StaticFileHandler;
 use parsing::{ascii::AsciiString, parse_next};
-use protobuf_json::{MessageJsonParser, MessageJsonSerialize};
 
 use datastore::key_encoding::KeyEncoder;
 use sstable::{db::SnapshotIterator, iterable::Iterable, EmbeddedDB, EmbeddedDBOptions};
@@ -112,7 +115,7 @@ impl MetricStore {
     }
 
     pub async fn last_value(&self, metric_name: &str) -> Result<Option<MetricValue>> {
-        let mut iter = self.iter(metric_name).await;
+        let mut iter = self.iter(metric_name).await?;
         iter.seek(std::u64::MAX).await?;
         iter.next().await
     }
@@ -131,178 +134,86 @@ impl MetricValueIterator {
     }
 
     pub async fn next(&mut self) -> Result<Option<MetricValue>> {
-        let entry = match self.iter.next().await? {
-            Some(v) => v,
-            None => {
+        loop {
+            let entry = match self.iter.next().await? {
+                Some(v) => v,
+                None => {
+                    return Ok(None);
+                }
+            };
+
+            let (current_metric_name, timestamp) = match MetricStore::decode_key(&entry.key)? {
+                Some(v) => v,
+                None => {
+                    return Ok(None);
+                }
+            };
+
+            if current_metric_name != self.metric_name {
                 return Ok(None);
             }
-        };
 
-        let (current_metric_name, timestamp) = match MetricStore::decode_key(&entry.key)? {
-            Some(v) => v,
-            None => {
-                return Ok(None);
+            let value = match &entry.value {
+                Some(v) => v,
+                None => continue,
+            };
+
+            if value.len() != 4 {
+                return Err(err_msg("Value wrong length for f32"));
             }
-        };
 
-        if current_metric_name != self.metric_name {
-            return Ok(None);
+            let float_value = f32::from_le_bytes(*array_ref![&value, 0, 4]);
+
+            return Ok(Some(MetricValue {
+                metric_name: current_metric_name,
+                timestamp,
+                float_value,
+            }));
         }
-
-        if entry.value.len() != 4 {
-            return Err(err_msg("Value wrong length for f32"));
-        }
-
-        let value = f32::from_le_bytes(*array_ref![&entry.value, 0, 4]);
-
-        Ok(Some(MetricValue {
-            metric_name: current_metric_name,
-            timestamp,
-            float_value: value,
-        }))
     }
 }
 
-// TODO: Move to the web lib.
-pub fn json_response<M>(code: http::status_code::StatusCode, obj: &M) -> http::Response
-where
-    M: protobuf::MessageReflection,
-{
-    let body = obj.serialize_json();
 
-    // TODO: Perform response compression.
-
-    http::ResponseBuilder::new()
-        .status(code)
-        .header("Content-Type", "application/json; charset=utf-8")
-        .body(http::BodyFromData(body))
-        .build()
-        .unwrap()
-}
-
-struct RequestHandler {
+#[derive(Clone)]
+struct MetricServiceImpl {
     metric_store: Arc<MetricStore>,
-    static_handler: StaticFileHandler,
-    build_handler: StaticFileHandler,
-    lib_handler: StaticFileHandler,
-}
-
-impl RequestHandler {
-    pub fn new(metric_store: Arc<MetricStore>) -> Self {
-        Self {
-            metric_store,
-            // TODO: Maybe implement caching of some of these?
-            static_handler: StaticFileHandler::new(&project_path!("pkg/sensor_monitor/static")),
-            build_handler: StaticFileHandler::new(&project_path!("build/sensor_monitor")),
-            lib_handler: StaticFileHandler::new(&project_path!("node_modules")),
-        }
-    }
-
-    async fn handle_api_request(&self, mut request: http::Request) -> Result<http::Response> {
-        if request.head.method != http::Method::POST {
-            return Err(err_msg("Wrong method"));
-        }
-
-        if request.head.uri.path.as_str() == "/query" {
-            let mut req_data = vec![];
-            request.body.read_to_end(&mut req_data).await?;
-
-            let query = QueryRequest::parse_json(
-                std::str::from_utf8(&req_data)?,
-                &protobuf_json::ParserOptions::default(),
-            )?;
-
-            // TODO: Validate that the start/end timestamps are non-zero and look sane (not
-            // too far apart)
-
-            let mut values = self
-                .metric_store
-                .query(
-                    query.metric_name(),
-                    query.start_timestamp(),
-                    query.end_timestamp(),
-                )
-                .await?;
-
-            // Change from descending time order to ascending time order.
-            values.reverse();
-
-            let mut response = QueryResponse::default();
-
-            let mut line = QueryResponse_Line::default();
-            line.set_name("Main");
-
-            for value in values {
-                let mut point = QueryResponse_Point::default();
-                point.set_timestamp(value.timestamp);
-                point.set_value(value.float_value);
-                line.add_points(point);
-            }
-
-            response.add_lines(line);
-
-            return Ok(json_response(http::status_code::OK, &response));
-        }
-
-        Err(err_msg("Unknown path"))
-    }
 }
 
 #[async_trait]
-impl http::ServerHandler for RequestHandler {
-    async fn handle_request(&self, mut request: http::Request) -> http::Response {
-        let mut path = request.head.uri.path.as_str();
-        if path == "/" {
-            let contents = common::async_std::fs::read_to_string(&project_path!(
-                "pkg/sensor_monitor/web/index.html"
-            ))
-            .await
-            .unwrap();
+impl MetricService for MetricServiceImpl {
+    async fn Query(
+        &self,
+        request: rpc::ServerRequest<QueryRequest>,
+        response: &mut rpc::ServerResponse<QueryResponse>,
+    ) -> Result<()> {
+        // TODO: Validate that the start/end timestamps are non-zero and look sane (not
+        // too far apart)
 
-            return http::ResponseBuilder::new()
-                .status(http::status_code::OK)
-                .header(http::header::CONTENT_TYPE, "text/html")
-                .body(http::BodyFromData(contents))
-                .build()
-                .unwrap();
+        let mut values = self
+            .metric_store
+            .query(
+                request.metric_name(),
+                request.start_timestamp(),
+                request.end_timestamp(),
+            )
+            .await?;
+
+        // Change from descending time order to ascending time order.
+        values.reverse();
+
+        let mut line = QueryResponse_Line::default();
+        line.set_name("Main");
+
+        for value in values {
+            let mut point = QueryResponse_Point::default();
+            point.set_timestamp(value.timestamp);
+            point.set_value(value.float_value);
+            line.add_points(point);
         }
 
-        // TODO: Check that each of these prefixes is followed with a '/'
-        if let Some(path) = path.strip_prefix("/assets/static") {
-            request.head.uri.path = AsciiString::from(path).unwrap();
-            return self.static_handler.handle_request(request).await;
-        }
+        response.add_lines(line);
 
-        if let Some(path) = path.strip_prefix("/assets/build") {
-            request.head.uri.path = AsciiString::from(path).unwrap();
-            return self.build_handler.handle_request(request).await;
-        }
-
-        if let Some(path) = path.strip_prefix("/assets/lib") {
-            request.head.uri.path = AsciiString::from(path).unwrap();
-            return self.lib_handler.handle_request(request).await;
-        }
-
-        if let Some(path) = path.strip_prefix("/api") {
-            request.head.uri.path = AsciiString::from(path).unwrap();
-
-            let mut res = self.handle_api_request(request).await;
-            return match res {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!("Error handling request: {:?}", e);
-                    http::ResponseBuilder::new()
-                        .status(http::status_code::INTERNAL_SERVER_ERROR)
-                        .build()
-                        .unwrap()
-                }
-            };
-        }
-
-        http::ResponseBuilder::new()
-            .status(http::status_code::NOT_FOUND)
-            .build()
-            .unwrap()
+        Ok(())
     }
 }
 
@@ -348,7 +259,35 @@ pub async fn run() -> Result<()> {
 
     task::spawn(collect_random(store.clone()));
 
-    let handler = Arc::new(RequestHandler::new(store));
-    let server = http::Server::new(handler, http::ServerOptions::default());
-    server.run(8000).await
+    let mut task_bundle = TaskResultBundle::new();
+
+    task_bundle.add("WebServer", {
+        let web_handler = web::WebServerHandler::new(web::WebServerOptions {
+            pages: vec![web::WebPageOptions {
+                title: "Sensor Monitor".into(),
+                path: "/".into(),
+                script_path: "built/pkg/sensor_monitor/web.js".into(),
+                vars: None,
+            }],
+        });
+
+        let web_server = http::Server::new(web_handler, http::ServerOptions::default());
+
+        web_server.run(8000)
+    });
+
+    task_bundle.add("RpcServer", {
+        let mut rpc_server = rpc::Http2Server::new();
+        rpc_server.add_service(
+            MetricServiceImpl {
+                metric_store: store.clone(),
+            }
+            .into_service(),
+        )?;
+        rpc_server.enable_cors();
+        rpc_server.allow_http1();
+        rpc_server.run(8001)
+    });
+
+    task_bundle.join().await
 }

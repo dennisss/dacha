@@ -1946,8 +1946,9 @@ dependencies = [
  "peripheral",
  "protobuf",
  "protobuf_compiler",
- "protobuf_json",
+ "rpc",
  "sstable",
+ "web",
 ]
 
 [[package]]

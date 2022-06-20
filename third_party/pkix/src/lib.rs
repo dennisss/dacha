@@ -3,7 +3,6 @@
 extern crate asn;
 #[macro_use]
 extern crate lazy_static;
-extern crate bytes;
 extern crate common;
 extern crate math;
 

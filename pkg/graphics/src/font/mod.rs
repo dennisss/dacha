@@ -679,7 +679,7 @@ pub struct OpenTypeFont {
 }
 
 impl OpenTypeFont {
-    pub async fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+    pub async fn read<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
         Self::open_impl(path.as_ref()).await
     }
 
@@ -904,7 +904,7 @@ pub async fn open_font() -> Result<()> {
     //    return Ok(());
 
     let font =
-        CanvasFontRenderer::new(OpenTypeFont::open(project_path!("testdata/noto-sans.ttf")).await?);
+        CanvasFontRenderer::new(OpenTypeFont::read(project_path!("testdata/noto-sans.ttf")).await?);
 
     const HEIGHT: usize = 650;
     const WIDTH: usize = 800;

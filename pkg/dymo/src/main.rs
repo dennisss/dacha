@@ -42,7 +42,7 @@ Output: 8
 async fn run() -> Result<()> {
     let mut canvas = RasterCanvas::create(64, 320);
 
-    let font = OpenTypeFont::open(project_path!("testdata/noto-sans.ttf")).await?;
+    let font = OpenTypeFont::read(project_path!("testdata/noto-sans.ttf")).await?;
 
     canvas.clear_rect(
         0.,

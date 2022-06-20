@@ -8,8 +8,7 @@ edition = "2018"
 asn = { path = "../../pkg/asn" }
 common = { path = "../../pkg/common" }
 math = { path = "../../pkg/math" }
-bytes = { git = "https://github.com/tokio-rs/bytes" }
 lazy_static = "1.4.0"
 
 [build-dependencies]
-asn = { path = "../../pkg/asn" }
+asn_compiler = { path = "../../pkg/asn_compiler" }

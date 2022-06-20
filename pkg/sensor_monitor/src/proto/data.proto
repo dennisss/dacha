@@ -28,6 +28,10 @@ message QueryResponse {
     repeated Line lines = 2;
 }
 
+service Metric {
+    rpc Query(QueryRequest) returns (QueryResponse);
+}
+
 // 'temp'
 // 'tvoc'
 // 'humidity'

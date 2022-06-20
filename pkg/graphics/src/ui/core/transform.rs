@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common::errors::*;
 use image::Color;
 use math::matrix::Vector2f;
@@ -20,12 +18,6 @@ pub struct TransformViewParams {
 
 impl ViewParams for TransformViewParams {
     type View = TransformView;
-}
-
-#[derive(Clone)]
-pub struct Border {
-    pub width: f32,
-    pub color: Color,
 }
 
 pub struct TransformView {

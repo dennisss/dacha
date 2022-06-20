@@ -1,5 +1,5 @@
-extern crate asn;
+extern crate asn_compiler;
 
 fn main() {
-    asn::build().unwrap();
+    asn_compiler::build().unwrap();
 }
