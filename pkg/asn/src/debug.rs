@@ -7,11 +7,11 @@ use common::chrono::{DateTime, Utc};
 use common::errors::*;
 use math::big::BigInt;
 use parsing::*;
+use asn_compiler::tag::*;
 
-use super::builtin::*;
-use super::encoding::*;
-use super::tag::*;
+use crate::builtin::*;
 use crate::debug::ParsedElementValue::Unknown;
+use crate::encoding::*;
 
 #[derive(Debug)]
 pub struct ParsedElement {

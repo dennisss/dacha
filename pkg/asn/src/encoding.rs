@@ -1,5 +1,3 @@
-use super::builtin::*;
-use super::tag::*;
 use common::bits::BitVector;
 use common::bytes::Bytes;
 use common::errors::*;
@@ -10,9 +8,12 @@ use parsing::*;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Debug;
+use asn_compiler::tag::*;
+
+use crate::builtin::*;
 
 // Mainly for the compiled code.
-pub use super::tag::{Tag, TagClass};
+pub use asn_compiler::tag::{Tag, TagClass};
 
 // http://www.zytrax.com/tech/survival/ssl.html#x509
 // https://osqa-ask.wireshark.org/questions/62528/server-certificate-packet-format
