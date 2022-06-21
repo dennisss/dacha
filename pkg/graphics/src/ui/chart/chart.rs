@@ -3,8 +3,7 @@ use core::f32::consts::PI;
 
 use common::errors::*;
 use image::Color;
-use math::matrix::vec2f;
-use math::matrix::Vector2f;
+use math::matrix::{Vector2f, vec2, Vector2d};
 
 use crate::canvas::*;
 use crate::font::CanvasFontRenderer;
@@ -56,7 +55,7 @@ pub struct Grid {
 #[derive(Clone)]
 pub struct ChartData {
     /// NOTE: This should always be sorted in order of increasing x coordinate.
-    pub points: Vec<Vector2f>,
+    pub points: Vec<Vector2d>,
     pub x_range: Range,
     pub y_range: Range,
 }
@@ -71,8 +70,8 @@ pub struct Margin {
 
 #[derive(Clone)]
 pub struct Range {
-    pub min: f32,
-    pub max: f32,
+    pub min: f64,
+    pub max: f64,
 }
 
 pub struct Rect {
@@ -82,9 +81,9 @@ pub struct Rect {
     pub height: f32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Tick {
-    pub value: f32,
+    pub value: f64,
     pub label: String,
 }
 
@@ -144,21 +143,22 @@ impl ChartView {
         // this._ctx.clearRect(0, 0, this.state.canvas_width, this.state.canvas_height);
 
         for tick in &self.params.options.grid.x_ticks {
+            // TODO: Perform a similar check for the y ticks.
             if tick.value < self.params.data.x_range.min || tick.value > self.params.data.x_range.max {
-                break;
+                continue;
             }
 
-            let mut x_canvas = self.to_canvas_point(&vec2f(tick.value, f32::NAN)).x();
+            let mut x_canvas = self.to_canvas_point(&vec2(tick.value, f64::NAN)).x();
 
             // Make the lines sharp.
             // TODO: Make this adapt to the configured line width.
             x_canvas = (x_canvas + 0.5).round() - 0.5;
 
             let mut path = PathBuilder::new();
-            path.move_to(vec2f(x_canvas, self.graph_rect.y));
+            path.move_to(vec2(x_canvas, self.graph_rect.y));
 
             let y2 = self.graph_rect.y + self.graph_rect.height;
-            path.line_to(vec2f(x_canvas, y2));
+            path.line_to(vec2(x_canvas, y2));
 
             canvas.stroke_path(
                 &path.build(),
@@ -184,12 +184,12 @@ impl ChartView {
         }
 
         for tick in &self.params.options.grid.y_ticks {
-            let mut y_canvas = self.to_canvas_point(&vec2f(f32::NAN, tick.value)).y();
+            let mut y_canvas = self.to_canvas_point(&vec2(f64::NAN, tick.value)).y();
             y_canvas = (y_canvas + 0.5).round() - 0.5;
 
             let mut path = PathBuilder::new();
-            path.move_to(vec2f(self.graph_rect.x, y_canvas));
-            path.line_to(vec2f(self.graph_rect.x + self.graph_rect.width, y_canvas));
+            path.move_to(vec2(self.graph_rect.x, y_canvas));
+            path.line_to(vec2(self.graph_rect.x + self.graph_rect.width, y_canvas));
 
             canvas.stroke_path(
                 &path.build(),
@@ -227,7 +227,7 @@ impl ChartView {
 
             let mut is_first = true;
 
-            for graph_pt in &self.params.data.points {
+            for graph_pt in &self.params.data.points {                
                 let pt = self.to_canvas_point(graph_pt);
 
                 if is_first {
@@ -261,7 +261,7 @@ impl ChartView {
                 let mut path = PathBuilder::new();
                 path.ellipse(
                     pt,
-                    vec2f(self.params.options.data_point_size, self.params.options.data_point_size),
+                    vec2(self.params.options.data_point_size, self.params.options.data_point_size),
                     0.0,
                     2.0 * PI,
                 );
@@ -309,16 +309,16 @@ impl ChartView {
 
     /// Converts a point from the graph's coordinate system to the screen
     /// canvas's coordinate system.
-    fn to_canvas_point(&self, pt: &Vector2f) -> Vector2f {
-        vec2f(
+    fn to_canvas_point(&self, pt: &Vector2d) -> Vector2f {
+        vec2(
             ((pt.x() - self.params.data.x_range.min) / (self.params.data.x_range.max - self.params.data.x_range.min))
-                * self.graph_rect.width
-                + self.graph_rect.x,
+                * (self.graph_rect.width as f64)
+                + (self.graph_rect.x as f64),
             // TODO: Must invert this.
             ((pt.y() - self.params.data.y_range.min) / (self.params.data.y_range.max - self.params.data.y_range.min))
-                * self.graph_rect.height
-                + self.graph_rect.y,
-        )
+                * (self.graph_rect.height as f64)
+                + (self.graph_rect.y as f64),
+        ).cast()
     }
 }
 
@@ -345,7 +345,7 @@ impl View for ChartView {
     fn handle_event(&mut self, event: &Event) -> Result<()> {
         match event {
             Event::Mouse(e) => {
-                let pos = vec2f(e.relative_x, e.relative_y);
+                let pos = vec2(e.relative_x, e.relative_y);
 
                 match e.kind {
                     MouseEventKind::Move => {

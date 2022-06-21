@@ -68,6 +68,7 @@ pub type Vector2i = VectorStatic<isize, U2>;
 pub type Vector2i64 = VectorStatic<i64, U2>;
 pub type Vector2u = VectorStatic<usize, U2>;
 pub type Vector2f = VectorStatic<f32, U2>;
+pub type Vector2d = VectorStatic<f64, U2>;
 pub type Vector3<T> = VectorStatic<T, U3>;
 pub type Vector3u = VectorStatic<usize, U3>;
 pub type Vector3f = VectorStatic<f32, U3>;

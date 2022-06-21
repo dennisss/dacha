@@ -13,7 +13,8 @@ extern crate macros;
 extern crate rpc;
 extern crate web;
 
-mod proto;
+pub mod proto;
+pub mod viewer;
 
 use std::{
     sync::Arc,
