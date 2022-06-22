@@ -1,13 +1,13 @@
-use std::rc::Rc;
 use core::f32::consts::PI;
+use std::rc::Rc;
 
 use common::errors::*;
 use image::Color;
-use math::matrix::{Vector2f, vec2, Vector2d};
+use math::matrix::{vec2, Vector2d, Vector2f};
 
 use crate::canvas::*;
-use crate::font::CanvasFontRenderer;
-use crate::font::{FontStyle, VerticalAlign, TextAlign};
+use crate::font::{FontStyle, TextAlign, VerticalAlign};
+use crate::ui::chart::options::*;
 use crate::ui::children::Children;
 use crate::ui::element::Element;
 use crate::ui::event::*;
@@ -26,67 +26,6 @@ pub struct ChartViewParams {
     // pub inner: Element,
 }
 
-#[derive(Clone)]
-pub struct ChartOptions {
-    // Space in pixels between the boundary of the canvas and the inner plot.
-    // This space is used for drawing axis labels, etc.
-    pub margin: Margin,
-
-    pub grid: Grid,
-
-    pub data_line_width: f32,    // 1
-    pub data_line_color: Color,  // '#4af'
-    pub data_point_paint: Paint, // '#4af'
-    pub data_point_size: f32,
-
-    pub font_family: Rc<CanvasFontRenderer>,
-    pub font_size: f32,
-}
-
-#[derive(Clone)]
-pub struct Grid {
-    pub line_width: f32,
-    pub line_color: Color,
-    pub label_paint: Paint,
-    pub x_ticks: Vec<Tick>,
-    pub y_ticks: Vec<Tick>
-}
-
-#[derive(Clone)]
-pub struct ChartData {
-    /// NOTE: This should always be sorted in order of increasing x coordinate.
-    pub points: Vec<Vector2d>,
-    pub x_range: Range,
-    pub y_range: Range,
-}
-
-#[derive(Clone)]
-pub struct Margin {
-    pub left: f32,
-    pub bottom: f32,
-    pub right: f32,
-    pub top: f32,
-}
-
-#[derive(Clone)]
-pub struct Range {
-    pub min: f64,
-    pub max: f64,
-}
-
-pub struct Rect {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-}
-
-#[derive(Clone, Debug)]
-pub struct Tick {
-    pub value: f64,
-    pub label: String,
-}
-
 impl ViewParams for ChartViewParams {
     type View = ChartView;
 }
@@ -101,17 +40,23 @@ pub struct ChartView {
     /// coordinate system in which we will plot user points.
     graph_rect: Rect,
 
-    /// If the user's mouse is hovering over the graph, then this will be the mouse position in the canvas coordinate system.
+    /// If the user's mouse is hovering over the graph, then this will be the
+    /// mouse position in the canvas coordinate system.
     mouse_canvas_pos: Option<Vector2f>,
     // children: Children,
+}
+
+struct Rect {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
 }
 
 impl ViewWithParams for ChartView {
     type Params = ChartViewParams;
 
     fn create_with_params(params: &Self::Params) -> Result<Box<dyn View>> {
-
-
         // TODO: This needs to be dynamically recom
         let graph_rect = Rect {
             x: params.options.margin.left,
@@ -144,7 +89,9 @@ impl ChartView {
 
         for tick in &self.params.options.grid.x_ticks {
             // TODO: Perform a similar check for the y ticks.
-            if tick.value < self.params.data.x_range.min || tick.value > self.params.data.x_range.max {
+            if tick.value < self.params.data.x_range.min
+                || tick.value > self.params.data.x_range.max
+            {
                 continue;
             }
 
@@ -177,7 +124,9 @@ impl ChartView {
                 x_canvas,
                 y2 + 4.,
                 label,
-                &FontStyle::from_size(self.params.options.font_size).with_text_align(TextAlign::Center).with_vertical_align(VerticalAlign::Top),
+                &FontStyle::from_size(self.params.options.font_size)
+                    .with_text_align(TextAlign::Center)
+                    .with_vertical_align(VerticalAlign::Top),
                 &self.params.options.grid.label_paint,
                 canvas,
             )?;
@@ -208,7 +157,9 @@ impl ChartView {
                 self.graph_rect.x - 10.,
                 y_canvas,
                 label,
-                &FontStyle::from_size(self.params.options.font_size).with_text_align(TextAlign::Right).with_vertical_align(VerticalAlign::Center),
+                &FontStyle::from_size(self.params.options.font_size)
+                    .with_text_align(TextAlign::Right)
+                    .with_vertical_align(VerticalAlign::Center),
                 &self.params.options.grid.label_paint,
                 canvas,
             )?;
@@ -227,7 +178,7 @@ impl ChartView {
 
             let mut is_first = true;
 
-            for graph_pt in &self.params.data.points {                
+            for graph_pt in &self.params.data.points {
                 let pt = self.to_canvas_point(graph_pt);
 
                 if is_first {
@@ -261,7 +212,10 @@ impl ChartView {
                 let mut path = PathBuilder::new();
                 path.ellipse(
                     pt,
-                    vec2(self.params.options.data_point_size, self.params.options.data_point_size),
+                    vec2(
+                        self.params.options.data_point_size,
+                        self.params.options.data_point_size,
+                    ),
                     0.0,
                     2.0 * PI,
                 );
@@ -311,33 +265,35 @@ impl ChartView {
     /// canvas's coordinate system.
     fn to_canvas_point(&self, pt: &Vector2d) -> Vector2f {
         vec2(
-            ((pt.x() - self.params.data.x_range.min) / (self.params.data.x_range.max - self.params.data.x_range.min))
+            ((pt.x() - self.params.data.x_range.min)
+                / (self.params.data.x_range.max - self.params.data.x_range.min))
                 * (self.graph_rect.width as f64)
                 + (self.graph_rect.x as f64),
             // TODO: Must invert this.
-            ((pt.y() - self.params.data.y_range.min) / (self.params.data.y_range.max - self.params.data.y_range.min))
+            ((pt.y() - self.params.data.y_range.min)
+                / (self.params.data.y_range.max - self.params.data.y_range.min))
                 * (self.graph_rect.height as f64)
                 + (self.graph_rect.y as f64),
-        ).cast()
+        )
+        .cast()
     }
 }
 
 impl View for ChartView {
     fn build(&mut self) -> Result<ViewStatus> {
-        Ok(ViewStatus {
-            cursor: MouseCursor(glfw::StandardCursor::Hand),
-            focused: false,
-        })
+        Ok(ViewStatus::default())
     }
 
-    fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
+    fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
         Ok(RenderBox {
             width: 800.,
             height: 200.,
+            baseline_offset: 0.,
+            next_cursor: None,
         })
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
+    fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()> {
         self.draw_frame(canvas)?;
         Ok(())
     }
@@ -430,40 +386,5 @@ function round_digits(num: number, digits: number): number {
     let scale = Math.pow(10, digits);
     return Math.round(num * scale) / scale;
 }
-
-class Figure extends React.Component<{}, FigureState> {
-    _root: HTMLElement;
-    _canvas: HTMLCanvasElement;
-    _ctx: CanvasRenderingContext2D;
-
-    _options: GraphOptions;
-
-    state = {
-        canvas_height: null,
-        canvas_width: null,
-        graph_rect: null,
-        tooltip: null
-    };
-
-    componentDidMount() {
-        this.setState({
-            canvas_height,
-            canvas_width,
-            graph_rect:
-        }, () => {
-            this._make_request();
-        });
-    }
-
-    render() {
-        // TODO: Don't update the canvas as it will end up having dynamic width/height.
-        return (
-            <div style={{ fontSize: 0, position: 'relative' }} ref={(el) => { this._root = el; }} onMouseMove={(e) => this._on_mouse_move(e)} onMouseOut={() => this._on_mouse_out()}>
-                <canvas width={this.state.canvas_width} height={this.state.canvas_height} style={{ cursor: 'pointer' }} ref={(el) => { this._canvas = el; }}></canvas>
-                {this.state.tooltip ? <Tooltip data={this.state.tooltip} /> : null}
-            </div>
-        );
-    }
-};
 
 */

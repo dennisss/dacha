@@ -4,9 +4,44 @@ use crate::canvas::Canvas;
 use crate::ui::element::{Element, ViewWithParamsElement};
 use crate::ui::event::Event;
 
+/// Constraints propagated from a parent view that limit how large or how much
+/// or a view can be shown.
+pub struct LayoutConstraints {
+    /// Maximum amount of horizontal space measured in pixels which this view
+    /// has to render itself.
+    pub max_width: f32,
+
+    /// Similar to max_width, but this is the maximum vertical space.
+    pub max_height: f32,
+
+    /// If set, render the view starting at this position until the
+    /// max_width/max_height is hit.
+    ///
+    /// - The meaning of the position is defined by the view. So this may only
+    ///   ever be passed a value of Some(0) or render_box.next_cursor from a
+    ///   previous call to layout().
+    /// - If None, the view may render to any size.
+    ///
+    /// TODO: When passed to render(), consider directly passing a range of
+    /// (start, end) cursor here so it doesn't need to be recalculated.
+    pub start_cursor: Option<usize>,
+}
+
 pub struct RenderBox {
     pub width: f32,
     pub height: f32,
+
+    /// Relative to the top of the box, how many pixels down must we go to reach
+    /// the canonical text baseline point of the rendered view.
+    ///
+    /// This is only used when the view is nested in a paragraph and needs to be
+    /// vertically aligned alongside other views.
+    pub baseline_offset: f32,
+
+    /// When this view was laid out with a start_cursor, this specifies the next
+    /// position in this view which didn't fit in the constraints. If None, then
+    /// the entire view would fit within the constraints.
+    pub next_cursor: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -24,6 +59,15 @@ pub struct ViewStatus {
     /// Blur event. Upon receiving this event, the view MUST internally lose
     /// focus.
     pub focused: bool,
+
+    /// Whether or not this view or any child views have changed and need to be
+    /// re-rendered.
+    ///
+    /// If a view sets this to false, render() may not be called on it in the
+    /// current frame. If the layout constraints for a view has changed,
+    /// render() will always be called on it even if it returned 'dirty: false'
+    /// for the frame.
+    pub dirty: bool,
 }
 
 impl Default for ViewStatus {
@@ -31,6 +75,7 @@ impl Default for ViewStatus {
         Self {
             cursor: MouseCursor(glfw::StandardCursor::Arrow),
             focused: false,
+            dirty: true,
         }
     }
 }
@@ -45,9 +90,9 @@ pub trait View: ViewUpdate {
 
     /// Calculates the box which is occupied when drawing this view.
     ///
-    /// This function may be called multiple times before render() with
+    /// This function may be called zero or more times before render() with
     /// different parameters for a single frame so ideally no state should be
-    /// maintained.
+    /// maintained. Usage of this function is dependent on the parent view.
     ///
     /// The returned box should be consistent with what is done when render() is
     /// called with the same arguments.
@@ -56,13 +101,13 @@ pub trait View: ViewUpdate {
     /// - parent_box: The available amount of space in which we could draw this
     ///   view. 'Inlineable' views should tend to drawing in the smallest amount
     ///   of space into which they can fit.
-    fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox>;
+    fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox>;
 
     /// NOTE: This allows self mutation primarily for caching information about
     /// how the view was rendered (e.g. boxes of children for handling events).
     /// If no events occur, then multiple sequential calls to render() should
     /// draw the same image.
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()>;
+    fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()>;
 
     fn handle_event(&mut self, event: &Event) -> Result<()>;
 }

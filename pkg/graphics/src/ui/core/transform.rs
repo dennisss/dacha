@@ -48,11 +48,11 @@ impl View for TransformView {
         self.children[0].build()
     }
 
-    fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
-        self.children[0].layout(parent_box)
+    fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
+        self.children[0].layout(constraints)
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
+    fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()> {
         canvas.save();
 
         if let Some(v) = &self.params.translation {
@@ -63,7 +63,7 @@ impl View for TransformView {
             canvas.scale(v.x(), v.y());
         }
 
-        self.children[0].render(parent_box, canvas)?;
+        self.children[0].render(constraints, canvas)?;
 
         canvas.restore();
         Ok(())

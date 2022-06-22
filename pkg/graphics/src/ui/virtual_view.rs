@@ -76,12 +76,12 @@ impl<V: VirtualView + 'static> View for VirtualViewContainer<V> {
         self.children[0].build()
     }
 
-    fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
-        self.children[0].layout(parent_box)
+    fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
+        self.children[0].layout(constraints)
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
-        self.children[0].render(parent_box, canvas)
+    fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()> {
+        self.children[0].render(constraints, canvas)
     }
 
     fn handle_event(&mut self, event: &Event) -> Result<()> {

@@ -100,21 +100,24 @@ impl View for Textbox {
         Ok(ViewStatus {
             cursor: MouseCursor(glfw::StandardCursor::IBeam),
             focused: self.cursor.is_some(),
+            dirty: true,
         })
     }
 
-    fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
+    fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
         let measurements = self.params.font.measure_text("", self.params.font_size)?;
         let line_height = measurements.height;
 
         // TODO: Must add text ascent and descent to this.
         Ok(RenderBox {
-            width: parent_box.width,
+            width: constraints.max_width,
             height: (line_height + PADDING_SIZE * 2. + BORDER_SIZE * 2.),
+            baseline_offset: PADDING_SIZE + (measurements.height + measurements.descent),
+            next_cursor: None,
         })
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
+    fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()> {
         let background_color = Color::rgb(0xff, 0xff, 0xff);
         let border_color = Color::rgb(0xcc, 0xcc, 0xcc);
         let font_color = Color::rgb(0, 0, 0);
@@ -124,7 +127,7 @@ impl View for Textbox {
             .font
             .measure_text(&self.current_value, self.params.font_size)?;
 
-        let full_width = parent_box.width;
+        let full_width = constraints.max_width;
         let full_height = measurements.height + PADDING_SIZE * 2. + BORDER_SIZE * 2.;
 
         canvas.fill_rectangle(0., 0., full_width, full_height, &background_color)?;

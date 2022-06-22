@@ -58,7 +58,7 @@ struct GridViewLayout {
 }
 
 impl GridView {
-    fn layout_impl(&self, parent_box: &RenderBox) -> Result<GridViewLayout> {
+    fn layout_impl(&self, constraints: &LayoutConstraints) -> Result<GridViewLayout> {
         // TODO: It would be nice if this also supported doing vertical alignment to the
         // baseline.
 
@@ -70,15 +70,15 @@ impl GridView {
         let mut col_widths = vec![0.; self.params.cols.len()];
 
         //
-        let mut remaining_height = parent_box.height;
-        let mut remaining_width = parent_box.width;
+        let mut remaining_height = constraints.max_height;
+        let mut remaining_width = constraints.max_width;
 
         // Step 1: Resolve have 'fixed' size rows/cols.
         for (row_i, row) in self.params.rows.iter().enumerate() {
             if let GridDimensionSize::Absolute(v) = row {
                 row_heights[row_i] = *v;
             } else if let GridDimensionSize::Percentage(v) = row {
-                row_heights[row_i] = parent_box.height * v;
+                row_heights[row_i] = constraints.max_height * v;
             } else {
                 continue;
             }
@@ -89,7 +89,7 @@ impl GridView {
             if let GridDimensionSize::Absolute(v) = col {
                 col_widths[col_i] = *v;
             } else if let GridDimensionSize::Percentage(v) = col {
-                col_widths[col_i] = parent_box.width * v;
+                col_widths[col_i] = constraints.max_width * v;
             } else {
                 continue;
             }
@@ -104,9 +104,10 @@ impl GridView {
                 let mut max_width: f32 = 0.;
                 for row_i in 0..self.params.rows.len() {
                     let i = row_i * self.params.cols.len() + col_i;
-                    let inner_box = self.children[i].layout(&RenderBox {
-                        width: remaining_width,
-                        height: parent_box.height, // TODO: Pick a better value
+                    let inner_box = self.children[i].layout(&LayoutConstraints {
+                        max_width: remaining_width,
+                        max_height: constraints.max_height, // TODO: Pick a better value
+                        start_cursor: None,
                     })?;
 
                     max_width = max_width.max(inner_box.width);
@@ -121,9 +122,10 @@ impl GridView {
                 let mut max_height: f32 = 0.;
                 for col_i in 0..self.params.cols.len() {
                     let i = row_i * self.params.cols.len() + col_i;
-                    let inner_box = self.children[i].layout(&RenderBox {
-                        width: col_widths[col_i],
-                        height: remaining_height,
+                    let inner_box = self.children[i].layout(&LayoutConstraints {
+                        max_width: col_widths[col_i],
+                        max_height: remaining_height,
+                        start_cursor: None,
                     })?;
 
                     max_height = max_height.max(inner_box.height);
@@ -173,7 +175,12 @@ impl GridView {
         let (col_starts, width) = make_cumulative(col_widths);
 
         Ok(GridViewLayout {
-            outer_box: RenderBox { width, height },
+            outer_box: RenderBox {
+                width,
+                height,
+                baseline_offset: 0.,
+                next_cursor: None,
+            },
             row_starts,
             col_starts,
         })
@@ -235,12 +242,12 @@ impl View for GridView {
         Ok(status)
     }
 
-    fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
-        self.layout_impl(parent_box).map(|v| v.outer_box)
+    fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
+        self.layout_impl(constraints).map(|v| v.outer_box)
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
-        let layout = self.layout_impl(parent_box)?;
+    fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()> {
+        let layout = self.layout_impl(constraints)?;
 
         // TODO: Store the actual rendered box of each child so that mouse events can
         // distinguish between clicking on a child element or just near that element.
@@ -263,13 +270,14 @@ impl View for GridView {
             canvas.save();
             canvas.translate(x_min, y_min);
 
-            let inner_box = RenderBox {
-                width: x_max - x_min,
-                height: y_max - y_min,
+            let inner_constraints = LayoutConstraints {
+                max_width: x_max - x_min,
+                max_height: y_max - y_min,
+                start_cursor: None,
             };
 
             // TODO: clip the drawn contents to each grid box.
-            child.render(&inner_box, canvas)?;
+            child.render(&inner_constraints, canvas)?;
 
             canvas.restore();
         }

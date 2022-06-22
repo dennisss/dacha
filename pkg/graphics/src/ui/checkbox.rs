@@ -45,17 +45,20 @@ impl View for CheckboxView {
             cursor: MouseCursor(glfw::StandardCursor::Hand),
             // TODO: Support focus for this.
             focused: false,
+            dirty: true,
         })
     }
 
-    fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
+    fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
         Ok(RenderBox {
             width: 16.,
             height: 16.,
+            baseline_offset: 14.,
+            next_cursor: None,
         })
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
+    fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()> {
         // #2196F3
         let bg_color = Color::rgb(0x21, 0x96, 0xF3);
 

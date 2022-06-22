@@ -41,29 +41,34 @@ pub struct BlockView {
 
 struct BlockViewLayout {
     outer_box: RenderBox,
+    inner_constraints: LayoutConstraints,
     inner_box: RenderBox,
 }
 
 impl BlockView {
-    fn layout_impl(&self, parent_box: &RenderBox) -> Result<BlockViewLayout> {
+    fn layout_impl(&self, constraints: &LayoutConstraints) -> Result<BlockViewLayout> {
         let inner = &self.children[0];
 
         let border_width = self.params.border.as_ref().map(|b| b.width).unwrap_or(0.);
 
-        let max_inner_box = RenderBox {
-            width: parent_box.width - 2. * self.params.padding - 2. * border_width,
-            height: parent_box.height - 2. * self.params.padding - 2. * border_width,
+        let inner_constraints = LayoutConstraints {
+            max_width: constraints.max_width - 2. * self.params.padding - 2. * border_width,
+            max_height: constraints.max_height - 2. * self.params.padding - 2. * border_width,
+            start_cursor: constraints.start_cursor.clone(),
         };
 
-        let inner_box = inner.layout(&max_inner_box)?;
+        let inner_box = inner.layout(&inner_constraints)?;
 
         let outer_box = RenderBox {
             width: inner_box.width + 2.0 * self.params.padding + 2.0 * border_width,
             height: inner_box.height + 2.0 * self.params.padding + 2.0 * border_width,
+            next_cursor: inner_box.next_cursor,
+            baseline_offset: inner_box.baseline_offset + self.params.padding + border_width,
         };
 
         Ok(BlockViewLayout {
             inner_box,
+            inner_constraints,
             outer_box,
         })
     }
@@ -97,12 +102,12 @@ impl View for BlockView {
         Ok(status)
     }
 
-    fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
-        self.layout_impl(parent_box).map(|v| v.outer_box)
+    fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
+        self.layout_impl(constraints).map(|v| v.outer_box)
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
-        let layout = self.layout_impl(parent_box)?;
+    fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()> {
+        let layout = self.layout_impl(constraints)?;
         let inner = &mut self.children[0];
 
         if let Some(color) = &self.params.background_color {
@@ -131,7 +136,7 @@ impl View for BlockView {
         canvas.save();
         canvas.translate(self.params.padding, self.params.padding);
 
-        inner.render(&layout.inner_box, canvas)?;
+        inner.render(&layout.inner_constraints, canvas)?;
 
         canvas.restore();
         Ok(())

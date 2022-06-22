@@ -22,9 +22,10 @@ impl CanvasFrameHandler for ViewFrameHandler {
         window: &mut crate::opengl::window::Window,
         events: &[glfw::WindowEvent],
     ) -> Result<()> {
-        let outer_box = RenderBox {
-            width: window.width() as f32,
-            height: window.height() as f32,
+        let outer_constraints = LayoutConstraints {
+            max_width: window.width() as f32,
+            max_height: window.height() as f32,
+            start_cursor: None,
         };
 
         canvas.clear_rect(
@@ -131,7 +132,7 @@ impl CanvasFrameHandler for ViewFrameHandler {
 
         let status = self.view.build()?;
 
-        self.view.render(&outer_box, canvas)?;
+        self.view.render(&outer_constraints, canvas)?;
 
         // TODO: Cache the cursor instances if nothing has changed since last time.
         window

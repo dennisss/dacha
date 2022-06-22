@@ -41,13 +41,12 @@ impl ViewWithParams for TextView {
 
 impl View for TextView {
     fn build(&mut self) -> Result<ViewStatus> {
-        Ok(ViewStatus {
-            cursor: MouseCursor(glfw::StandardCursor::IBeam),
-            focused: false,
-        })
+        let mut status = ViewStatus::default();
+        status.cursor = MouseCursor(glfw::StandardCursor::IBeam);
+        Ok(status)
     }
 
-    fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
+    fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
         let measurements = self
             .params
             .font
@@ -55,10 +54,12 @@ impl View for TextView {
         Ok(RenderBox {
             width: measurements.width,
             height: measurements.height,
+            baseline_offset: measurements.height + measurements.descent,
+            next_cursor: None,
         })
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
+    fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()> {
         self.params.font.fill_text(
             0.,
             0.,

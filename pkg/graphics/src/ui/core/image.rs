@@ -44,20 +44,19 @@ impl ViewWithParams for ImageView {
 
 impl View for ImageView {
     fn build(&mut self) -> Result<ViewStatus> {
-        Ok(ViewStatus {
-            cursor: MouseCursor(glfw::StandardCursor::Arrow),
-            focused: false,
-        })
+        Ok(ViewStatus::default())
     }
 
-    fn layout(&self, parent_box: &RenderBox) -> Result<RenderBox> {
+    fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
         Ok(RenderBox {
             width: self.params.source.width() as f32,
             height: self.params.source.height() as f32,
+            baseline_offset: 0.,
+            next_cursor: None,
         })
     }
 
-    fn render(&mut self, parent_box: &RenderBox, canvas: &mut dyn Canvas) -> Result<()> {
+    fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()> {
         let obj = match self.object.as_mut() {
             Some(v) => v,
             None => self
