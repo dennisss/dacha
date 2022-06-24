@@ -27,6 +27,7 @@ pub struct LayoutConstraints {
     pub start_cursor: Option<usize>,
 }
 
+#[derive(Clone)]
 pub struct RenderBox {
     pub width: f32,
     pub height: f32,
@@ -107,9 +108,13 @@ pub trait View: ViewUpdate {
     /// how the view was rendered (e.g. boxes of children for handling events).
     /// If no events occur, then multiple sequential calls to render() should
     /// draw the same image.
+    ///
+    /// TODO: Make it more clear the the constraints passed here have the exact
+    /// width/height of the box we should draw into and not just bounds
+    /// (similarly for the cursor).
     fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()>;
 
-    fn handle_event(&mut self, event: &Event) -> Result<()>;
+    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()>;
 }
 
 pub trait ViewUpdate {

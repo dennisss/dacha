@@ -127,7 +127,7 @@ impl CanvasFrameHandler for ViewFrameHandler {
                 }
             };
 
-            self.view.handle_event(&view_event)?;
+            self.view.handle_event(0, &view_event)?;
         }
 
         let status = self.view.build()?;

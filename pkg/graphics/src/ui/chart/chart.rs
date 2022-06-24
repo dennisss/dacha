@@ -298,7 +298,7 @@ impl View for ChartView {
         Ok(())
     }
 
-    fn handle_event(&mut self, event: &Event) -> Result<()> {
+    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
         match event {
             Event::Mouse(e) => {
                 let pos = vec2(e.relative_x, e.relative_y);

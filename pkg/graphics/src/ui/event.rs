@@ -1,5 +1,8 @@
 /// External feedback received by the UI renderer (e.g. keyboard input, or mouse
 /// movement).
+///
+/// NOTE: Stateful events like Enter, Blur will only be triggered once on a view
+/// even if the focus transitions between different spans of the view.
 #[derive(Clone, Debug)]
 pub enum Event {
     Mouse(MouseEvent),

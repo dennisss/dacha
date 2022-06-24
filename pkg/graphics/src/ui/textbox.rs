@@ -215,7 +215,7 @@ impl View for Textbox {
         Ok(())
     }
 
-    fn handle_event(&mut self, event: &Event) -> Result<()> {
+    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
         match event {
             Event::Mouse(e) => {
                 if e.kind == MouseEventKind::ButtonDown(MouseButton::Left) {

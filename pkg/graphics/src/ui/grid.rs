@@ -1,7 +1,7 @@
 use common::errors::*;
 
 use crate::canvas::Canvas;
-use crate::ui::children::Children;
+use crate::ui::container::*;
 use crate::ui::element::Element;
 use crate::ui::event::*;
 use crate::ui::view::*;
@@ -29,19 +29,13 @@ pub enum GridDimensionSize {
 
 pub struct GridView {
     params: GridViewParams,
-    children: Children,
+    container: Container,
     state: GridViewState,
 }
 
 #[derive(Default)]
 struct GridViewState {
     layout: Option<GridViewLayout>,
-
-    /// Index of the last child element which has had the user's mouse cursor in
-    /// it.
-    last_mouse_focus: Option<usize>,
-
-    last_key_focus: Option<usize>,
 }
 
 struct GridViewLayout {
@@ -62,7 +56,7 @@ impl GridView {
         // TODO: It would be nice if this also supported doing vertical alignment to the
         // baseline.
 
-        if self.params.rows.len() * self.params.cols.len() != self.children.len() {
+        if self.params.rows.len() * self.params.cols.len() != self.container.children().len() {
             return Err(err_msg("Incorrect number of children"));
         }
 
@@ -104,7 +98,7 @@ impl GridView {
                 let mut max_width: f32 = 0.;
                 for row_i in 0..self.params.rows.len() {
                     let i = row_i * self.params.cols.len() + col_i;
-                    let inner_box = self.children[i].layout(&LayoutConstraints {
+                    let inner_box = self.container.children()[i].layout(&LayoutConstraints {
                         max_width: remaining_width,
                         max_height: constraints.max_height, // TODO: Pick a better value
                         start_cursor: None,
@@ -122,7 +116,7 @@ impl GridView {
                 let mut max_height: f32 = 0.;
                 for col_i in 0..self.params.cols.len() {
                     let i = row_i * self.params.cols.len() + col_i;
-                    let inner_box = self.children[i].layout(&LayoutConstraints {
+                    let inner_box = self.container.children()[i].layout(&LayoutConstraints {
                         max_width: col_widths[col_i],
                         max_height: remaining_height,
                         start_cursor: None,
@@ -193,7 +187,7 @@ impl ViewWithParams for GridView {
     fn create_with_params(params: &Self::Params) -> Result<Box<dyn View>> {
         Ok(Box::new(Self {
             params: params.clone(),
-            children: Children::new(&params.children)?,
+            container: Container::new(&params.children)?,
             state: GridViewState::default(),
         }))
     }
@@ -202,44 +196,14 @@ impl ViewWithParams for GridView {
         // TODO: Must also potentially change the mouse focus?
 
         self.params = new_params.clone();
-        self.children.update(&new_params.children)?;
+        self.container.update(&new_params.children)?;
         Ok(())
     }
 }
 
 impl View for GridView {
     fn build(&mut self) -> Result<ViewStatus> {
-        let mut status = ViewStatus::default();
-
-        for i in 0..self.children.len() {
-            let status_i = self.children[i].build()?;
-
-            if self.state.last_mouse_focus == Some(i) {
-                status.cursor = status_i.cursor;
-            }
-
-            if status_i.focused {
-                if self.state.last_key_focus != Some(i) && self.state.last_key_focus.is_some() {
-                    let last_i = self.state.last_key_focus.unwrap();
-
-                    self.children[last_i].handle_event(&Event::Blur)?;
-                    if last_i < i {
-                        // TODO: May also need to see if the other fields in this return value have
-                        // changed and would impact the overall status.
-                        let _ = self.children[last_i].build()?;
-                    }
-                }
-
-                self.state.last_key_focus = Some(i);
-                status.focused = true;
-            }
-        }
-
-        if !status.focused {
-            self.state.last_key_focus = None;
-        }
-
-        Ok(status)
+        self.container.build()
     }
 
     fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
@@ -252,7 +216,7 @@ impl View for GridView {
         // TODO: Store the actual rendered box of each child so that mouse events can
         // distinguish between clicking on a child element or just near that element.
 
-        for (child_i, child) in self.children.iter_mut().enumerate() {
+        for (child_i, child) in self.container.children_mut().iter_mut().enumerate() {
             let row_i = child_i / self.params.cols.len();
             let col_i = child_i % self.params.cols.len();
 
@@ -287,7 +251,7 @@ impl View for GridView {
         Ok(())
     }
 
-    fn handle_event(&mut self, event: &Event) -> Result<()> {
+    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
         let layout = match self.state.layout.as_ref() {
             Some(v) => v,
             None => {
@@ -295,98 +259,38 @@ impl View for GridView {
             }
         };
 
-        match event {
-            Event::Mouse(e) => {
-                let child_idx = if e.relative_x < 0.
-                    || e.relative_x > layout.outer_box.width
-                    || e.relative_y < 0.
-                    || e.relative_y > layout.outer_box.height
-                {
-                    None
-                } else {
-                    let col_i = common::algorithms::upper_bound(&layout.col_starts, &e.relative_x)
-                        .unwrap_or(0);
-                    let row_i = common::algorithms::upper_bound(&layout.row_starts, &e.relative_y)
-                        .unwrap_or(0);
+        self.container.handle_event(start_cursor, event, layout)
+    }
+}
 
-                    Some(row_i * self.params.cols.len() + col_i)
-                };
+impl ContainerLayout for GridViewLayout {
+    fn find_closest_span(&self, x: f32, y: f32) -> Option<Span> {
+        if x < 0. || x > self.outer_box.width || y < 0. || y > self.outer_box.height {
+            None
+        } else {
+            let col_i = common::algorithms::upper_bound(&self.col_starts, &x).unwrap_or(0);
+            let row_i = common::algorithms::upper_bound(&self.row_starts, &y).unwrap_or(0);
 
-                // Send exit event if child has changed.
-                // TODO: Also send an enter exit on changes
-                // TODO: Make sure the child still exists!
-                if self.state.last_mouse_focus != child_idx {
-                    // Send exit event
-                    if let Some(old_child) = self.state.last_mouse_focus.clone() {
-                        let mut exit_event = e.clone();
-                        exit_event.kind = MouseEventKind::Exit;
-                        // TODO: Calculate right offset.
-
-                        self.children[old_child].handle_event(&Event::Mouse(exit_event))?;
-                    }
-
-                    // Send enter event
-                    if let Some(new_child) = child_idx.clone() {
-                        let mut enter_event = e.clone();
-                        enter_event.kind = MouseEventKind::Enter;
-
-                        // TODO: Dedup
-                        {
-                            let row_i = new_child / self.params.cols.len();
-                            let col_i = new_child % self.params.cols.len();
-                            enter_event.relative_x -= layout.col_starts[col_i];
-                            enter_event.relative_y -= layout.row_starts[row_i];
-                        }
-
-                        self.children[new_child].handle_event(&Event::Mouse(enter_event))?;
-                    }
-                }
-
-                // Send event itself
-                if let Some(new_child) = child_idx.clone() {
-                    let mut inner_event = e.clone();
-                    if inner_event.kind == MouseEventKind::Enter
-                        || inner_event.kind == MouseEventKind::Exit
-                    {
-                        inner_event.kind = MouseEventKind::Move;
-                    }
-
-                    // TODO: Dedup
-                    {
-                        let row_i = new_child / self.params.cols.len();
-                        let col_i = new_child % self.params.cols.len();
-                        inner_event.relative_x -= layout.col_starts[col_i];
-                        inner_event.relative_y -= layout.row_starts[row_i];
-                    }
-
-                    self.children[new_child].handle_event(&Event::Mouse(inner_event))?;
-                }
-
-                // Clicking outside of a focused element should blur it.
-                if let Some(key_focus_idx) = self.state.last_key_focus.clone() {
-                    if let MouseEventKind::ButtonDown(_) = e.kind {
-                        if Some(key_focus_idx) != child_idx {
-                            self.children[key_focus_idx].handle_event(&Event::Blur)?;
-                            self.state.last_key_focus = None;
-                        }
-                    }
-                }
-
-                self.state.last_mouse_focus = child_idx;
-            }
-            Event::Blur => {
-                if let Some(idx) = self.state.last_key_focus.clone() {
-                    self.children[idx].handle_event(event)?;
-                }
-            }
-            Event::Key(e) => {
-                // TODO: Also pass along focused path.
-                for c in &mut self.children[..] {
-                    c.handle_event(event)?;
-                }
-            }
+            let num_cols = self.col_starts.len();
+            Some(Span {
+                child_index: row_i * num_cols + col_i,
+                start_cursor: 0,
+            })
         }
+    }
 
-        Ok(())
+    fn get_span_rect(&self, span: Span) -> Rect {
+        let num_cols = self.col_starts.len();
+
+        let row_i = span.child_index / num_cols;
+        let col_i = span.child_index % num_cols;
+
+        Rect {
+            x: self.col_starts[col_i],
+            y: self.row_starts[row_i],
+            // TODO: Populate these
+            width: 0.,
+            height: 0.,
+        }
     }
 }

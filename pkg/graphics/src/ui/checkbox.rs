@@ -97,7 +97,7 @@ impl View for CheckboxView {
         Ok(())
     }
 
-    fn handle_event(&mut self, event: &Event) -> Result<()> {
+    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
         if self.click_filter.process(event) {
             if let Some(listener) = &self.params.on_change {
                 listener(!self.params.value);

@@ -69,7 +69,7 @@ impl View for ImageView {
         Ok(())
     }
 
-    fn handle_event(&mut self, event: &Event) -> Result<()> {
+    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
         Ok(())
     }
 }
