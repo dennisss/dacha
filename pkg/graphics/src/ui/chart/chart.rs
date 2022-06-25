@@ -114,11 +114,11 @@ impl ChartView {
             )?;
 
             let label = tick.label.as_str();
-            let dims = self
-                .params
-                .options
-                .font_family
-                .measure_text(label, self.params.options.font_size)?;
+            let dims = self.params.options.font_family.measure_text(
+                label,
+                self.params.options.font_size,
+                None,
+            )?;
 
             self.params.options.font_family.fill_text(
                 x_canvas,
@@ -147,11 +147,11 @@ impl ChartView {
             )?;
 
             let label = tick.label.as_str();
-            let dims = self
-                .params
-                .options
-                .font_family
-                .measure_text(label, self.params.options.font_size)?;
+            let dims = self.params.options.font_family.measure_text(
+                label,
+                self.params.options.font_size,
+                None,
+            )?;
 
             self.params.options.font_family.fill_text(
                 self.graph_rect.x - 10.,

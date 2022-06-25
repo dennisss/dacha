@@ -105,7 +105,10 @@ impl View for Textbox {
     }
 
     fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
-        let measurements = self.params.font.measure_text("", self.params.font_size)?;
+        let measurements = self
+            .params
+            .font
+            .measure_text("", self.params.font_size, None)?;
         let line_height = measurements.height;
 
         // TODO: Must add text ascent and descent to this.
@@ -122,10 +125,10 @@ impl View for Textbox {
         let border_color = Color::rgb(0xcc, 0xcc, 0xcc);
         let font_color = Color::rgb(0, 0, 0);
 
-        let measurements = self
-            .params
-            .font
-            .measure_text(&self.current_value, self.params.font_size)?;
+        let measurements =
+            self.params
+                .font
+                .measure_text(&self.current_value, self.params.font_size, None)?;
 
         let full_width = constraints.max_width;
         let full_height = measurements.height + PADDING_SIZE * 2. + BORDER_SIZE * 2.;
@@ -159,6 +162,7 @@ impl View for Textbox {
                     let measurements = self.params.font.measure_text(
                         self.current_value.split_at(cursor.start).0,
                         self.params.font_size,
+                        None,
                     )?;
 
                     let mut path = PathBuilder::new();
@@ -179,15 +183,17 @@ impl View for Textbox {
 
                 // TODO: Optimize these to compute both measurements in one pass.
 
-                let measurements_start = self
-                    .params
-                    .font
-                    .measure_text(self.current_value.split_at(start).0, self.params.font_size)?;
+                let measurements_start = self.params.font.measure_text(
+                    self.current_value.split_at(start).0,
+                    self.params.font_size,
+                    None,
+                )?;
 
-                let measurements_end = self
-                    .params
-                    .font
-                    .measure_text(self.current_value.split_at(end).0, self.params.font_size)?;
+                let measurements_end = self.params.font.measure_text(
+                    self.current_value.split_at(end).0,
+                    self.params.font_size,
+                    None,
+                )?;
 
                 // TODO: Implement a 40% opacity mixing for this fill
                 // (we may also want to invert the font to be a different color).

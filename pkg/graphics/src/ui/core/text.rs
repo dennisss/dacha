@@ -4,7 +4,7 @@ use common::errors::*;
 use image::Color;
 
 use crate::canvas::{Canvas, Paint};
-use crate::font::{CanvasFontRenderer, FontStyle, VerticalAlign};
+use crate::font::{CanvasFontRenderer, FontStyle, TextMeasurements, VerticalAlign};
 use crate::ui::event::*;
 use crate::ui::view::*;
 
@@ -22,6 +22,53 @@ impl ViewParams for TextViewParams {
 
 pub struct TextView {
     params: TextViewParams,
+}
+
+struct TextLayout {
+    start_index: usize,
+    measurements: TextMeasurements,
+}
+
+impl TextView {
+    fn layout_impl(&self, constraints: &LayoutConstraints) -> Result<TextLayout> {
+        let start_index = constraints.start_cursor.unwrap_or(0);
+
+        let remaining_text = &self.params.text[constraints.start_cursor.unwrap_or(0)..];
+
+        let min_length = {
+            let word_end = remaining_text.find(' ').unwrap_or(0);
+            let first_char = remaining_text
+                .chars()
+                .next()
+                .map(|c| c.len_utf8())
+                .unwrap_or(0);
+
+            word_end.max(first_char)
+        };
+
+        let mut measurements = self.params.font.measure_text(
+            remaining_text,
+            self.params.font_size,
+            if constraints.start_cursor.is_some() {
+                Some(constraints.max_width)
+            } else {
+                None
+            },
+        )?;
+
+        if measurements.length < min_length {
+            measurements = self.params.font.measure_text(
+                &remaining_text[0..min_length],
+                self.params.font_size,
+                None,
+            )?;
+        }
+
+        Ok(TextLayout {
+            start_index,
+            measurements,
+        })
+    }
 }
 
 impl ViewWithParams for TextView {
@@ -47,23 +94,31 @@ impl View for TextView {
     }
 
     fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
-        let measurements = self
-            .params
-            .font
-            .measure_text(&self.params.text, self.params.font_size)?;
+        let layout = self.layout_impl(constraints)?;
+
         Ok(RenderBox {
-            width: measurements.width,
-            height: measurements.height,
-            baseline_offset: measurements.height + measurements.descent,
-            next_cursor: None,
+            width: layout.measurements.width,
+            height: layout.measurements.height,
+            baseline_offset: layout.measurements.height + layout.measurements.descent,
+            next_cursor: if layout.start_index + layout.measurements.length < self.params.text.len()
+            {
+                Some(layout.start_index + layout.measurements.length)
+            } else {
+                None
+            },
         })
     }
 
     fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()> {
+        let layout = self.layout_impl(constraints)?;
+
+        let text = &self.params.text
+            [layout.start_index..(layout.start_index + layout.measurements.length)];
+
         self.params.font.fill_text(
             0.,
             0.,
-            &self.params.text,
+            text,
             &FontStyle::from_size(self.params.font_size).with_vertical_align(VerticalAlign::Top),
             &Paint::color(self.params.color.clone()),
             canvas,

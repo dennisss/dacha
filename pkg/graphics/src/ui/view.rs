@@ -6,6 +6,7 @@ use crate::ui::event::Event;
 
 /// Constraints propagated from a parent view that limit how large or how much
 /// or a view can be shown.
+#[derive(Clone, Debug)]
 pub struct LayoutConstraints {
     /// Maximum amount of horizontal space measured in pixels which this view
     /// has to render itself.

@@ -5,12 +5,13 @@ use common::errors::*;
 use image::Color;
 
 use crate::canvas::*;
-use crate::font::{HorizontalMetricRecord, OpenTypeFont, SimpleGlyph};
 use crate::font::style::*;
+use crate::font::{HorizontalMetricRecord, OpenTypeFont, SimpleGlyph};
 
 #[derive(Debug)]
 pub struct TextMeasurements {
-    /// Distance in pixels from the left to right size of the text's bounding box when rendered.
+    /// Distance in pixels from the left to right size of the text's bounding
+    /// box when rendered.
     pub width: f32,
 
     ///
@@ -18,6 +19,10 @@ pub struct TextMeasurements {
 
     /// NOTE: This is a negative value.
     pub descent: f32,
+
+    /// Number of bytes read from the input str which were used to create this
+    /// measurement.
+    pub length: usize,
 }
 
 struct FontSizeMeasurements {
@@ -65,9 +70,9 @@ impl CanvasFontRenderer {
             VerticalAlign::Top => (sizing.height + sizing.descent), // ascent
             VerticalAlign::Baseline => 0.,
             VerticalAlign::Bottom => sizing.descent,
-            VerticalAlign::Center => (sizing.height / 2.) + sizing.descent
+            VerticalAlign::Center => (sizing.height / 2.) + sizing.descent,
         };
-        
+
         for c in text.chars() {
             let char_code = c as u32;
             if char_code > u16::MAX as u32 {
@@ -112,9 +117,18 @@ impl CanvasFontRenderer {
     }
 
     fn measure_text_width(&self, sizing: &FontSizeMeasurements, text: &str) -> Result<f32> {
+        Ok(self.measure_text_width_with_limit(sizing, text, None)?.0)
+    }
+
+    fn measure_text_width_with_limit(
+        &self,
+        sizing: &FontSizeMeasurements,
+        text: &str,
+        max_width: Option<f32>,
+    ) -> Result<(f32, usize)> {
         let mut width = 0.0;
 
-        for c in text.chars() {
+        for (i, c) in text.char_indices() {
             let char_code = c as u32;
             if char_code > u16::MAX as u32 {
                 return Err(err_msg("Character overflowed supported range"));
@@ -122,10 +136,17 @@ impl CanvasFontRenderer {
 
             let (g, metrics) = self.font.char_glyph(char_code as u16)?;
 
-            width += (metrics.advance_width as f32) * sizing.scale;
+            let increment = (metrics.advance_width as f32) * sizing.scale;
+            if let Some(max_width) = max_width.clone() {
+                if increment + width > max_width {
+                    return Ok((width, i));
+                }
+            }
+
+            width += increment;
         }
 
-        Ok(width)
+        Ok((width, text.len()))
     }
 
     fn create_glyph<'a>(
@@ -197,14 +218,20 @@ impl CanvasFontRenderer {
         Ok(path_builder.build())
     }
 
-    pub fn measure_text(&self, text: &str, font_size: f32) -> Result<TextMeasurements> {
+    pub fn measure_text(
+        &self,
+        text: &str,
+        font_size: f32,
+        max_width: Option<f32>,
+    ) -> Result<TextMeasurements> {
         let sizing = self.measure_font_size(font_size);
-        let width = self.measure_text_width(&sizing, text)?;        
+        let (width, length) = self.measure_text_width_with_limit(&sizing, text, max_width)?;
 
         Ok(TextMeasurements {
             width,
             height: sizing.height,
             descent: sizing.descent,
+            length,
         })
     }
 
