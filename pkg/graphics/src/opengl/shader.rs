@@ -6,6 +6,7 @@ use common::async_std::fs::{read_to_string, File};
 use common::async_std::io::Read;
 use common::errors::*;
 use common::failure::ResultExt;
+use common::hash::SumHasherBuilder;
 use gl::types::{GLchar, GLenum, GLint, GLsizei, GLuint};
 use math::matrix::Matrix4f;
 
@@ -135,8 +136,8 @@ pub struct Shader {
     /// ^ Also need to stop using the shader if it is currently in use.
     pub program: GLuint,
 
-    pub attrs: HashMap<ShaderAttributeId, GLuint>,
-    pub uniforms: HashMap<ShaderUniformId, GLuint>,
+    pub attrs: HashMap<ShaderAttributeId, GLuint, SumHasherBuilder>,
+    pub uniforms: HashMap<ShaderUniformId, GLuint, SumHasherBuilder>,
 }
 
 impl Shader {
@@ -188,8 +189,8 @@ impl Shader {
                 }
             }
 
-            let mut attrs = HashMap::new();
-            let mut uniforms = HashMap::new();
+            let mut attrs = HashMap::with_hasher(SumHasherBuilder::default());
+            let mut uniforms = HashMap::with_hasher(SumHasherBuilder::default());
 
             let mut num_attrs = 0;
             gl::GetProgramiv(program, gl::ACTIVE_ATTRIBUTES, &mut num_attrs);

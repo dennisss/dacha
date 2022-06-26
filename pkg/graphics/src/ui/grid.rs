@@ -63,33 +63,35 @@ impl GridView {
         let mut row_heights = vec![0.; self.params.rows.len()];
         let mut col_widths = vec![0.; self.params.cols.len()];
 
+        let sum_grow_dims = |dims: &[GridDimensionSize]| -> f32 {
+            dims.iter()
+                .map(|d| match d {
+                    GridDimensionSize::Grow(v) => *v,
+                    _ => 0.,
+                })
+                .sum()
+        };
+
+        let row_total_grow = sum_grow_dims(&self.params.rows);
+        let col_total_grow = sum_grow_dims(&self.params.cols);
+
         //
         let mut remaining_height = constraints.max_height;
         let mut remaining_width = constraints.max_width;
 
-        // Step 1: Resolve have 'fixed' size rows/cols.
-        for (row_i, row) in self.params.rows.iter().enumerate() {
-            if let GridDimensionSize::Absolute(v) = row {
-                row_heights[row_i] = *v;
-            } else if let GridDimensionSize::Percentage(v) = row {
-                row_heights[row_i] = constraints.max_height * v;
-            } else {
-                continue;
-            }
-
-            remaining_height -= row_heights[row_i];
-        }
-        for (col_i, col) in self.params.cols.iter().enumerate() {
-            if let GridDimensionSize::Absolute(v) = col {
-                col_widths[col_i] = *v;
-            } else if let GridDimensionSize::Percentage(v) = col {
-                col_widths[col_i] = constraints.max_width * v;
-            } else {
-                continue;
-            }
-
-            remaining_width -= col_widths[col_i];
-        }
+        // Step 1: Resolve all 'fixed' size rows/cols.
+        Self::calculate_fixed_dims(
+            &self.params.rows,
+            constraints.max_height,
+            &mut row_heights,
+            &mut remaining_height,
+        );
+        Self::calculate_fixed_dims(
+            &self.params.cols,
+            constraints.max_width,
+            &mut col_widths,
+            &mut remaining_width,
+        );
 
         // Step 2: Give all the FitContent columns as much space as they want
         // NOTE: Columns sizes are prioritized over row sizes.
@@ -100,7 +102,7 @@ impl GridView {
                     let i = row_i * self.params.cols.len() + col_i;
                     let inner_box = self.container.children()[i].layout(&LayoutConstraints {
                         max_width: remaining_width,
-                        max_height: constraints.max_height, // TODO: Pick a better value
+                        max_height: remaining_height, // TODO: Pick a better value
                         start_cursor: None,
                     })?;
 
@@ -111,6 +113,16 @@ impl GridView {
                 col_widths[col_i] = max_width;
             }
         }
+
+        // Step 3: Give all Grow columns a fair amount of space.
+        for (col_i, col) in self.params.cols.iter().enumerate() {
+            if let GridDimensionSize::Grow(v) = col {
+                col_widths[col_i] = remaining_width * (*v / col_total_grow);
+            }
+        }
+
+        // Step 4: Fit Rows (must be calculated after all column dimensions are
+        // resolved).
         for (row_i, row) in self.params.rows.iter().enumerate() {
             if let GridDimensionSize::FitContent = row {
                 let mut max_height: f32 = 0.;
@@ -131,26 +143,10 @@ impl GridView {
         }
 
         // Step 3: Calculate remaining grow elements.
-        let sum_grow_dims = |dims: &[GridDimensionSize]| -> f32 {
-            dims.iter()
-                .map(|d| match d {
-                    GridDimensionSize::Grow(v) => *v,
-                    _ => 0.,
-                })
-                .sum()
-        };
-
-        let row_total_grow = sum_grow_dims(&self.params.rows);
-        let col_total_grow = sum_grow_dims(&self.params.cols);
 
         for (row_i, row) in self.params.rows.iter().enumerate() {
             if let GridDimensionSize::Grow(v) = row {
                 row_heights[row_i] = remaining_height * (*v / row_total_grow);
-            }
-        }
-        for (col_i, col) in self.params.cols.iter().enumerate() {
-            if let GridDimensionSize::Grow(v) = col {
-                col_widths[col_i] = remaining_width * (*v / col_total_grow);
             }
         }
 
@@ -178,6 +174,25 @@ impl GridView {
             row_starts,
             col_starts,
         })
+    }
+
+    fn calculate_fixed_dims(
+        dims: &[GridDimensionSize],
+        dim_limit: f32,
+        dim_sizes: &mut [f32],
+        remaining_space: &mut f32,
+    ) {
+        for (dim_i, dim) in dims.iter().enumerate() {
+            if let GridDimensionSize::Absolute(v) = dim {
+                dim_sizes[dim_i] = *v;
+            } else if let GridDimensionSize::Percentage(v) = dim {
+                dim_sizes[dim_i] = dim_limit * v;
+            } else {
+                continue;
+            }
+
+            *remaining_space -= dim_sizes[dim_i];
+        }
     }
 }
 

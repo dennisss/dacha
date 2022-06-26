@@ -6,7 +6,8 @@
     try_trait_v2,
     const_slice_from_raw_parts,
     maybe_uninit_uninit_array,
-    maybe_uninit_slice
+    maybe_uninit_slice,
+    const_maybe_uninit_uninit_array
 )]
 #![no_std]
 
@@ -78,6 +79,7 @@ pub mod fixed;
 pub mod fs;
 #[cfg(feature = "std")]
 pub mod future;
+pub mod hash;
 #[cfg(feature = "std")]
 pub mod io;
 pub mod iter;
@@ -85,6 +87,7 @@ pub mod iter;
 pub mod line_builder;
 pub mod list;
 pub mod loops;
+pub mod option;
 #[cfg(feature = "std")]
 pub mod pipe;
 pub mod segmented_buffer;
@@ -317,6 +320,7 @@ macro_rules! enum_def {
     ($(#[$meta:meta])* $name:ident str => $( $case:ident = $val:expr ),*) => {
         $(#[$meta])*
         #[derive(Clone, Copy, Debug)]
+        #[repr(u32)]
 		pub enum $name {
 			$(
 				$case
@@ -347,7 +351,8 @@ macro_rules! enum_def {
 
         impl std::cmp::PartialEq for $name {
             fn eq(&self, other: &Self) -> bool {
-                self.to_value() == other.to_value()
+                // Assumption here is no values have the same string value.
+                (*self as u32) == (*other as u32)
             }
         }
 
@@ -355,7 +360,7 @@ macro_rules! enum_def {
 
         impl std::hash::Hash for $name {
             fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-                self.to_value().hash(state);
+                (*self as u32).hash(state);
             }
         }
     };

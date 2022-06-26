@@ -1,3 +1,12 @@
+/*
+See documentation here:
+- https://man7.org/linux/man-pages/man5/elf.5.html
+
+Constants defined in elf.h
+*/
+
+use std::ffi::CStr;
+
 use common::async_std::fs;
 use common::async_std::path::Path;
 use common::bytes::Bytes;
@@ -6,8 +15,18 @@ use common::errors::*;
 use parsing::binary::*;
 use parsing::*;
 
+pub const SHT_SYMTAB: u32 = 2;
+
+/// Type of the string section.
+pub const SHT_STRTAB: u32 = 3;
+
+pub const STT_FUNC: u8 = 2;
+
+
 pub struct ELF {
     pub file: Vec<u8>,
+
+    pub header: FileHeader,
 
     pub program_headers: Vec<ProgramHeader>,
 
@@ -15,6 +34,7 @@ pub struct ELF {
 }
 
 impl ELF {
+    // TODO: Rename read()
     pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         Self::open_impl(path.as_ref()).await
     }
@@ -55,27 +75,151 @@ impl ELF {
                     return Err(err_msg("Didn't parse entire section header"));
                 }
 
-                if h.typ == 0x03 {
-                    let strings = Bytes::from(
-                        &file[(h.offset as usize)..(h.offset as usize + h.size as usize)],
-                    );
-                    println!("{:?}", strings);
+                if h.typ == SHT_STRTAB {
+                    // TODO: Verify that the first and last byte of the data is 0.
+
+                    // let strings = Bytes::from(
+                    //     &file[(h.offset as usize)..(h.offset as usize + h.size as usize)],
+                    // );
+                    // println!("{:?}", strings);
                 }
 
                 section_headers.push(h);
             }
         }
 
-        println!("{:#x?}", program_headers);
-        println!("{:#x?}", section_headers);
+        // println!("{:#x?}", program_headers);
+        // println!("{:#x?}", section_headers);
 
         Ok(Self {
             file,
+            header,
             program_headers,
             section_headers,
         })
     }
+
+    fn section_data(&self, index: usize) -> &[u8] {
+        let s = &self.section_headers[index];
+        &self.file[(s.offset as usize)..(s.offset as usize + s.size as usize)]
+    }
+
+    pub fn print(&self) -> Result<()> {
+
+        let shstrtab = StringTable { data: self.section_data(self.header.section_names_entry_index as usize) };
+
+        for (i, section) in self.section_headers.iter().enumerate() {
+            let name = shstrtab.get(section.name_offset as usize)?;
+            // println!("{:?}", name);
+
+            if section.typ == SHT_SYMTAB {
+                let symbol_strtab = StringTable { data: self.section_data(section.link as usize) };
+
+                let mut data = self.section_data(i);
+
+                while !data.is_empty() {
+                    let sym = parse_next!(data, |v| Symbol::parse(v, &self.header.ident));
+                    
+                    if sym.typ() != STT_FUNC {
+                        continue;
+                    }
+
+                    let sym_name = symbol_strtab.get(sym.name as usize)?;
+                    // println!("=> {}", sym_name);
+
+                    // if sym.
+
+                    // TODO: Verify that the 'value' is a virtual memory addrsess.
+                    let related_section = &self.section_headers[sym.section_index as usize];
+                    assert!(sym.value >= related_section.addr);
+                    assert!(sym.value + sym.size <= related_section.addr + related_section.size);
+
+                    let file_start_offset = related_section.offset + (sym.value - related_section.addr);
+                    let file_end_offset = file_start_offset + sym.size;
+
+
+                    // 14a87, 14a9f, 26874
+                    let search_offset = 0x14a87;
+                    if search_offset >= file_start_offset && search_offset < file_end_offset {
+                        println!("Found in {}", sym_name);
+                    }
+                }
+
+
+            }
+        }
+
+        Ok(())
+    }
+
 }
+
+#[derive(Clone, Debug)]
+pub struct Symbol {
+    pub name: u32,
+
+    /// In executable and shared object files, this is a virtual address.
+    pub value: u64, // 32-bit if on 32
+    
+    pub size: u64, // Typed
+    pub info: u8,
+    pub other: u8,
+
+    /// Index of the section associated with this symbol.
+    pub section_index: u16
+}
+
+impl Symbol {
+    fn typ(&self) -> u8 {
+        self.info & 0x0f
+    }
+
+    fn bind(&self) -> u8 {
+        self.info >> 4
+    }
+
+    fn parse<'a>(mut input: &'a [u8], ident: &FileIdentifier) -> Result<(Self, &'a [u8])> {
+        let name = parse_next!(input, |v| ident.parse_u32(v));
+
+        match ident.format {
+            Format::I32 => {
+                let value = parse_next!(input, |v| ident.parse_addr(v));
+                let size = parse_next!(input, |v| ident.parse_addr(v));
+                let info = parse_next!(input, be_u8);
+                let other = parse_next!(input, be_u8);
+                let section_index = parse_next!(input, |v| ident.parse_u16(v));
+
+                Ok((Self {
+                    name, value, size, info, other, section_index
+                }, input))
+            }
+            Format::I64 => {
+                let info = parse_next!(input, be_u8);
+                let other = parse_next!(input, be_u8);
+                let section_index = parse_next!(input, |v| ident.parse_u16(v));
+                let value = parse_next!(input, |v| ident.parse_addr(v));
+                let size = parse_next!(input, |v| ident.parse_addr(v));
+
+                Ok((Self {
+                    name, value, size, info, other, section_index
+                }, input))
+            }
+        }
+    }
+
+}
+
+struct StringTable<'a> {
+    data: &'a [u8]
+}
+
+impl<'a> StringTable<'a> {
+    fn get(&self, index: usize) -> Result<&str> {
+        let s = CStr::from_bytes_until_nul(&self.data[index..])?.to_str()?;
+        Ok(s)
+    }
+}
+
 
 /*
 To program it, we will basically go through all of the

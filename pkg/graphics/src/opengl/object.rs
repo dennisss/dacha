@@ -1,5 +1,4 @@
 use alloc::rc::Rc;
-use std::collections::HashMap;
 use std::sync::{Mutex, Weak};
 
 use gl::types::{GLint, GLuint};

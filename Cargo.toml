@@ -76,6 +76,7 @@ members = [
 	"pkg/standing_desk",
 	"pkg/cnc",
 	"pkg/testing",
+	"pkg/sys"
 ]
 
 [profile.dev]

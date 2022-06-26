@@ -34,6 +34,8 @@ mod descriptor_pool;
 #[cfg(feature = "std")]
 pub mod dynamic;
 mod proto;
+#[cfg(feature = "std")]
+pub mod viewer;
 
 // TODO: Remove this 'use' statement.
 #[cfg(feature = "std")]
