@@ -23,6 +23,7 @@ use crate::ui::container::*;
 use crate::ui::element::Element;
 use crate::ui::event::*;
 use crate::ui::view::*;
+use crate::ui::range::*;
 
 #[derive(Clone)]
 pub struct ParagraphViewParams {
@@ -171,6 +172,7 @@ impl ParagraphView {
                 width: constraints.max_width,
                 height: current_y,
                 baseline_offset: 0.,
+                range: CursorRange::zero(),
                 next_cursor: None,
             },
         })
@@ -246,7 +248,7 @@ impl View for ParagraphView {
         Ok(())
     }
 
-    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
+    fn handle_event(&mut self, event: &Event) -> Result<()> {
         let layout = match self.state.layout.as_ref() {
             Some(v) => v,
             None => {
@@ -254,16 +256,60 @@ impl View for ParagraphView {
             }
         };
 
-        self.container.handle_event(start_cursor, event, layout)
+        self.container.handle_event(event, layout)
     }
 }
 
 impl ContainerLayout for ParagraphViewLayout {
     fn find_closest_span(&self, x: f32, y: f32) -> Option<Span> {
-        None
+        if self.lines.len() == 0 {
+            return None;
+        }
+        
+        let line_idx = common::algorithms::upper_bound_by(&self.lines[..], y, |line, y| {
+            line.y <= y
+        }).unwrap_or(0);
+
+        let line = &self.lines[line_idx];
+
+        // NOTE: Each line has at least one span.
+        let span_idx = common::algorithms::upper_bound_by(&line.spans[..], x, |span, y| {
+            span.x <= x
+        }).unwrap_or(0);
+
+        Some(Span {
+            child_index: line.first_child_index + span_idx,
+            range: Some(line.spans[span_idx].render_box.range),
+        })
     }
 
     fn get_span_rect(&self, span: Span) -> Rect {
-        todo!()
+        // NOTE: All spans returned by Self::find_closest_span have a range.
+        let span_range = span.range.unwrap();
+
+        let line_idx = common::algorithms::upper_bound_by(&self.lines[..], (), |line, _| {
+            if line.first_child_index != span.child_index {
+                return line.first_child_index < span.child_index;
+            }
+
+            line.first_child_start <= span_range.start
+        }).unwrap_or(0);
+
+        let line = &self.lines[line_idx];
+
+        // Verify we picked the correct the line.
+        // TODO: Verify that if we ever remove a span during a new render(), any references to that span are cleared up or adjusted.
+        assert!(span.child_index >= line.first_child_index);
+        assert!(span.child_index <= line.last_child_index);
+        assert!(span_range.start == if span.child_index == line.first_child_index { line.first_child_start } else { 0 });
+
+
+        let span = &line.spans[span.child_index - line.first_child_index];
+        Rect {
+            x: span.x,
+            y: line.y,
+            width: span.render_box.width,
+            height: span.render_box.height
+        }
     }
 }

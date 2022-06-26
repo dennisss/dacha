@@ -4,6 +4,7 @@ use crate::ui::children::*;
 use crate::ui::element::*;
 use crate::ui::event::*;
 use crate::ui::view::*;
+use crate::ui::range::*;
 
 /// An object which has knowledge about the positioning of each child view's
 /// render box within a container view.
@@ -28,7 +29,9 @@ pub struct Span {
     /// Index of the View in the parent container view's children list.
     pub child_index: usize,
 
-    pub start_cursor: usize,
+    /// If none, then the entire child was rendered.
+    /// TODO: Switch this back to a 
+    pub range: Option<CursorRange>,
 }
 
 pub struct Rect {
@@ -50,6 +53,8 @@ pub struct Container {
 
 #[derive(Default)]
 struct ContainerState {
+    // TODO: Ensure we never look up the rectangles for these if they may be destroyed by a recent render?
+
     /// Index of the last child element which has had the user's mouse cursor in
     /// it.
     last_mouse_focus: Option<Span>,
@@ -100,7 +105,7 @@ impl Container {
                     let last_span = self.state.last_key_focus.unwrap();
 
                     self.children[last_span.child_index]
-                        .handle_event(last_span.start_cursor, &Event::Blur)?;
+                        .handle_event(&Event::Blur)?;
                     if last_span.child_index < i {
                         // TODO: May also need to see if the other fields in this return value have
                         // changed and would impact the overall status.
@@ -110,7 +115,7 @@ impl Container {
 
                 self.state.last_key_focus = Some(Span {
                     child_index: i,
-                    start_cursor: 0,
+                    range: None,
                 });
                 status.focused = true;
             }
@@ -127,16 +132,16 @@ impl Container {
     /// Standard implementation of View::handle_event() for container views.
     pub fn handle_event<L: ContainerLayout>(
         &mut self,
-        start_cursor: usize,
         event: &Event,
         layout: &L,
     ) -> Result<()> {
-        if start_cursor != 0 {
-            return Err(err_msg("Containers do not have cursors"));
-        }
-
         match event {
             Event::Mouse(e) => {
+                // TODO: Verify this check is applied to all views that hold other children.
+                if e.range.is_some() {
+                    return Err(err_msg("Containers do not have cursors"));
+                }
+
                 let child_span = layout.find_closest_span(e.relative_x, e.relative_y);
 
                 // Send exit event if child has changed.
@@ -151,8 +156,7 @@ impl Container {
                         exit_event.kind = MouseEventKind::Exit;
                         // TODO: Calculate right offset.
 
-                        self.children[old_span.child_index]
-                            .handle_event(old_span.start_cursor, &Event::Mouse(exit_event))?;
+                        self.children[old_span.child_index].handle_event(&Event::Mouse(exit_event))?;
                     }
 
                     // Send enter event
@@ -160,13 +164,14 @@ impl Container {
                         let mut enter_event = e.clone();
                         enter_event.kind = MouseEventKind::Enter;
 
-                        let new_rect = layout.get_span_rect(new_span);
                         // TODO: Dedup this.
+                        let new_rect = layout.get_span_rect(new_span);
                         enter_event.relative_x -= new_rect.x;
                         enter_event.relative_y -= new_rect.y;
+                        enter_event.range = new_span.range;
 
                         self.children[new_span.child_index]
-                            .handle_event(new_span.start_cursor, &Event::Mouse(enter_event))?;
+                            .handle_event(&Event::Mouse(enter_event))?;
                     }
                 }
 
@@ -179,21 +184,21 @@ impl Container {
                         inner_event.kind = MouseEventKind::Move;
                     }
 
-                    let new_rect = layout.get_span_rect(new_span);
                     // TODO: Dedup this.
+                    let new_rect = layout.get_span_rect(new_span);
                     inner_event.relative_x -= new_rect.x;
                     inner_event.relative_y -= new_rect.y;
+                    inner_event.range = new_span.range;
 
                     self.children[new_span.child_index]
-                        .handle_event(new_span.start_cursor, &Event::Mouse(inner_event))?;
+                        .handle_event(&Event::Mouse(inner_event))?;
                 }
 
                 // Clicking outside of a focused element should blur it.
                 if let Some(key_focus_span) = self.state.last_key_focus.clone() {
                     if let MouseEventKind::ButtonDown(_) = e.kind {
                         if Some(key_focus_span.child_index) != child_span.map(|s| s.child_index) {
-                            self.children[key_focus_span.child_index]
-                                .handle_event(key_focus_span.start_cursor, &Event::Blur)?;
+                            self.children[key_focus_span.child_index].handle_event(&Event::Blur)?;
                             self.state.last_key_focus = None;
                         }
                     }
@@ -203,12 +208,12 @@ impl Container {
             }
             Event::Blur => {
                 if let Some(span) = self.state.last_key_focus.clone() {
-                    self.children[span.child_index].handle_event(span.start_cursor, event)?;
+                    self.children[span.child_index].handle_event(event)?;
                 }
             }
             Event::Key(e) => {
                 if let Some(span) = self.state.last_key_focus.clone() {
-                    self.children[span.child_index].handle_event(span.start_cursor, event)?;
+                    self.children[span.child_index].handle_event(event)?;
                 }
             }
         }

@@ -1,3 +1,5 @@
+use crate::ui::range::CursorRange;
+
 /// External feedback received by the UI renderer (e.g. keyboard input, or mouse
 /// movement).
 ///
@@ -15,6 +17,13 @@ pub struct MouseEvent {
     pub kind: MouseEventKind,
     pub relative_x: f32,
     pub relative_y: f32,
+
+    /// When the View receiving this event was rendered as multiple spans, this is the
+    /// range of the RenderBox which intersects this mouse event. The above relative_x/y
+    /// coordinates are relative to that range's box.
+    /// 
+    /// NOTE: Not available for Exit right now.
+    pub range: Option<CursorRange> 
 }
 
 #[derive(Clone, Debug, PartialEq)]

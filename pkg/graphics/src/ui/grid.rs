@@ -5,6 +5,7 @@ use crate::ui::container::*;
 use crate::ui::element::Element;
 use crate::ui::event::*;
 use crate::ui::view::*;
+use crate::ui::range::*;
 
 #[derive(Clone)]
 pub struct GridViewParams {
@@ -169,6 +170,7 @@ impl GridView {
                 width,
                 height,
                 baseline_offset: 0.,
+                range: CursorRange::zero(),
                 next_cursor: None,
             },
             row_starts,
@@ -266,7 +268,7 @@ impl View for GridView {
         Ok(())
     }
 
-    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
+    fn handle_event(&mut self, event: &Event) -> Result<()> {
         let layout = match self.state.layout.as_ref() {
             Some(v) => v,
             None => {
@@ -274,7 +276,7 @@ impl View for GridView {
             }
         };
 
-        self.container.handle_event(start_cursor, event, layout)
+        self.container.handle_event(event, layout)
     }
 }
 
@@ -289,7 +291,7 @@ impl ContainerLayout for GridViewLayout {
             let num_cols = self.col_starts.len();
             Some(Span {
                 child_index: row_i * num_cols + col_i,
-                start_cursor: 0,
+                range: None,
             })
         }
     }

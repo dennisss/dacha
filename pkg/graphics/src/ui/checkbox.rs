@@ -7,6 +7,7 @@ use math::matrix::Vector2f;
 use crate::canvas::*;
 use crate::ui::event::*;
 use crate::ui::view::*;
+use crate::ui::range::*;
 
 #[derive(Clone)]
 pub struct CheckboxParams {
@@ -57,6 +58,7 @@ impl View for CheckboxView {
             width: 16.,
             height: 16.,
             baseline_offset: 14.,
+            range: CursorRange::zero(),
             next_cursor: None,
         })
     }
@@ -102,7 +104,7 @@ impl View for CheckboxView {
         Ok(())
     }
 
-    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
+    fn handle_event(&mut self, event: &Event) -> Result<()> {
         if self.click_filter.process(event) {
             if let Some(listener) = &self.params.on_change {
                 listener(!self.params.value);

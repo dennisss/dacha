@@ -62,6 +62,7 @@ impl BlockView {
         let outer_box = RenderBox {
             width: inner_box.width + 2.0 * self.params.padding + 2.0 * border_width,
             height: inner_box.height + 2.0 * self.params.padding + 2.0 * border_width,
+            range: inner_box.range,
             next_cursor: inner_box.next_cursor,
             baseline_offset: inner_box.baseline_offset + self.params.padding + border_width,
         };
@@ -142,7 +143,7 @@ impl View for BlockView {
         Ok(())
     }
 
-    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
+    fn handle_event(&mut self, event: &Event) -> Result<()> {
         match event {
             Event::Mouse(e) => {
                 let border_width = self.params.border.as_ref().map(|b| b.width).unwrap_or(0.);
@@ -151,11 +152,11 @@ impl View for BlockView {
                 inner_event.relative_x -= border_width + self.params.padding;
                 inner_event.relative_y -= border_width + self.params.padding;
 
-                return self.children[0].handle_event(start_cursor, &Event::Mouse(inner_event));
+                return self.children[0].handle_event(&Event::Mouse(inner_event));
             }
             _ => {}
         }
 
-        self.children[0].handle_event(start_cursor, event)
+        self.children[0].handle_event(event)
     }
 }

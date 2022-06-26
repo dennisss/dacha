@@ -6,6 +6,7 @@ use image::Image;
 use crate::canvas::{Canvas, CanvasObject, Paint};
 use crate::ui::event::*;
 use crate::ui::view::*;
+use crate::ui::range::*;
 
 #[derive(Clone)]
 pub struct ImageViewParams {
@@ -61,6 +62,7 @@ impl View for ImageView {
             width: self.params.source.width() as f32,
             height: self.params.source.height() as f32,
             baseline_offset: 0.,
+            range: CursorRange::zero(),
             next_cursor: None,
         })
     }
@@ -80,7 +82,7 @@ impl View for ImageView {
         Ok(())
     }
 
-    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
+    fn handle_event(&mut self, event: &Event) -> Result<()> {
         Ok(())
     }
 }

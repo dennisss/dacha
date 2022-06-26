@@ -69,7 +69,7 @@ impl View for TransformView {
         Ok(())
     }
 
-    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
-        self.children[0].handle_event(start_cursor, event)
+    fn handle_event(&mut self, event: &Event) -> Result<()> {
+        self.children[0].handle_event(event)
     }
 }

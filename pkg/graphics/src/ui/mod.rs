@@ -13,6 +13,7 @@ pub mod render;
 pub mod textbox;
 pub mod view;
 pub mod virtual_view;
+pub mod range;
 
 pub use self::button::ButtonParams as Button;
 pub use self::checkbox::CheckboxParams as Checkbox;
@@ -26,3 +27,4 @@ pub use self::paragraph::ParagraphViewParams as Paragraph;
 pub use self::render::*;
 pub use self::textbox::TextboxParams as Textbox;
 pub use self::virtual_view::*;
+pub use self::core::empty::EmptyViewParams as Empty;

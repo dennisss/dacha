@@ -3,6 +3,7 @@ use common::errors::*;
 use crate::canvas::Canvas;
 use crate::ui::element::{Element, ViewWithParamsElement};
 use crate::ui::event::Event;
+use crate::ui::range::CursorRange;
 
 /// Constraints propagated from a parent view that limit how large or how much
 /// or a view can be shown.
@@ -39,6 +40,9 @@ pub struct RenderBox {
     /// This is only used when the view is nested in a paragraph and needs to be
     /// vertically aligned alongside other views.
     pub baseline_offset: f32,
+
+    /// 
+    pub range: CursorRange,
 
     /// When this view was laid out with a start_cursor, this specifies the next
     /// position in this view which didn't fit in the constraints. If None, then
@@ -115,7 +119,7 @@ pub trait View: ViewUpdate {
     /// (similarly for the cursor).
     fn render(&mut self, constraints: &LayoutConstraints, canvas: &mut dyn Canvas) -> Result<()>;
 
-    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()>;
+    fn handle_event(&mut self, event: &Event) -> Result<()>;
 }
 
 pub trait ViewUpdate {

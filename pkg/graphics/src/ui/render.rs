@@ -48,12 +48,14 @@ impl CanvasFrameHandler for ViewFrameHandler {
                         },
                         relative_x: x as f32,
                         relative_y: y as f32,
+                        range: None,
                     })
                 }
                 glfw::WindowEvent::CursorPos(x, y) => Event::Mouse(MouseEvent {
                     kind: MouseEventKind::Move,
                     relative_x: *x as f32,
                     relative_y: *y as f32,
+                    range: None,
                 }),
                 glfw::WindowEvent::MouseButton(button, action, modifiers) => {
                     let (x, y) = window.raw().get_cursor_pos();
@@ -72,6 +74,7 @@ impl CanvasFrameHandler for ViewFrameHandler {
                         },
                         relative_x: x as f32,
                         relative_y: y as f32,
+                        range: None,
                     })
                 }
                 glfw::WindowEvent::CharModifiers(c, modifiers) => Event::Key(KeyEvent {
@@ -119,6 +122,7 @@ impl CanvasFrameHandler for ViewFrameHandler {
                         },
                         relative_x: x as f32,
                         relative_y: y as f32,
+                        range: None,
                     })
                 }
                 _ => {
@@ -126,7 +130,7 @@ impl CanvasFrameHandler for ViewFrameHandler {
                 }
             };
 
-            self.view.handle_event(0, &view_event)?;
+            self.view.handle_event(&view_event)?;
         }
 
         let status = self.view.build()?;

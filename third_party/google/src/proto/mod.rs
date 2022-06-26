@@ -70,3 +70,7 @@ pub mod empty {
 pub mod duration {
     include!(concat!(env!("OUT_DIR"), "/src/proto/duration.rs"));
 }
+
+pub mod profile {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/profile.rs"));
+}

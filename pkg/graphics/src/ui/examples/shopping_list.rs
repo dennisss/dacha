@@ -75,6 +75,45 @@ impl VirtualView for ShoppingListView {
 
         let mut els: Vec<ui::Element> = vec![];
 
+        els.push(
+            ui::Block {
+                inner: ui::Checkbox {
+                    value: false,
+                    on_change: None,
+                }
+                .into(),
+                // TODO: Integrate the padding into the checkbox.
+                padding: 8., // 0.6em at 16px font.
+                background_color: None,
+                border: None,
+                cursor: None,
+            }
+            .into(),
+        );
+
+        els.push(
+            ui::Block {
+                inner: ui::Paragraph {
+                    children: vec![ui::Text {
+                        value: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum".into(),
+                        font: self.params.font.clone(),
+                        font_size: 16.,
+                        color: Color::rgb(0, 0, 0),
+                        on_change: None,
+                        selectable: false,
+                        editable: false,
+                    }
+                    .into()],
+                }
+                .into(),
+                padding: 10.,
+                background_color: None,
+                border: None,
+                cursor: None,
+            }
+            .into(),
+        );
+
         for (i, item) in state.items.iter().enumerate() {
             els.push(
                 ui::Block {
@@ -114,17 +153,20 @@ impl VirtualView for ShoppingListView {
             cols: vec![GridDimensionSize::Grow(1.)],
             children: vec![
                 GridViewParams {
-                    rows: vec![GridDimensionSize::FitContent; state.items.len()],
+                    rows: vec![GridDimensionSize::FitContent; state.items.len() + 1],
                     cols: vec![GridDimensionSize::FitContent, GridDimensionSize::Grow(1.)],
                     children: els,
                 }
                 .into(),
                 ui::Button {
                     inner: ui::Text {
-                        text: "Add Item".into(),
+                        value: "Add Item".into(),
                         font: self.params.font.clone(),
                         font_size: 16.,
                         color: Color::rgb(255, 255, 255),
+                        on_change: None,
+                        selectable: false,
+                        editable: false,
                     }
                     .into(),
                     on_click: Some(self.get_add_item()),

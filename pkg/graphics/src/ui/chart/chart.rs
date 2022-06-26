@@ -12,6 +12,7 @@ use crate::ui::children::Children;
 use crate::ui::element::Element;
 use crate::ui::event::*;
 use crate::ui::view::*;
+use crate::ui::range::*;
 
 /*
 TODO: Document our naming convention of using 'Options' for native types and 'Config' for serializable types.
@@ -291,6 +292,7 @@ impl View for ChartView {
             width: 800.,
             height: 200.,
             baseline_offset: 0.,
+            range: CursorRange::zero(),
             next_cursor: None,
         })
     }
@@ -300,7 +302,7 @@ impl View for ChartView {
         Ok(())
     }
 
-    fn handle_event(&mut self, start_cursor: usize, event: &Event) -> Result<()> {
+    fn handle_event(&mut self, event: &Event) -> Result<()> {
         match event {
             Event::Mouse(e) => {
                 let pos = vec2(e.relative_x, e.relative_y);
