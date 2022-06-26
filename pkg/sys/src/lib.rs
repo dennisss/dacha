@@ -45,16 +45,16 @@ pub const SEEK_SET: c_uint = 0;
 type ZERO = ();
 type Addr = *mut u8;
 
-syscall_amd64!(read, 0x00, fd: c_int, buf: *mut u8, count: c_size_t => c_size_t);
-syscall_amd64!(write, 0x01, fd: c_int, buf: *const u8, count: c_size_t => c_size_t);
-syscall_amd64!(open, 0x02, path: *const c_char, flags: c_int, mode: umode_t => c_int);
-syscall_amd64!(close, 0x03, fd: c_int => ZERO);
-syscall_amd64!(lseek, 0x08, fd: c_int, offset: off_t, whence: c_uint => off_t);
-syscall_amd64!(mmap, 0x09, addr: *mut u8, length: c_size_t, prot: c_int, flags: c_int, fd: c_int, offset: off_t => Addr);
+syscall_amd64!(read, bindings::SYS_read, fd: c_int, buf: *mut u8, count: c_size_t => c_size_t);
+syscall_amd64!(write, bindings::SYS_write, fd: c_int, buf: *const u8, count: c_size_t => c_size_t);
+syscall_amd64!(open, bindings::SYS_open, path: *const c_char, flags: c_int, mode: umode_t => c_int);
+syscall_amd64!(close, bindings::SYS_close, fd: c_int => ZERO);
+syscall_amd64!(lseek, bindings::SYS_lseek, fd: c_int, offset: off_t, whence: c_uint => off_t);
+syscall_amd64!(mmap, bindings::SYS_mmap, addr: *mut u8, length: c_size_t, prot: c_int, flags: c_int, fd: c_int, offset: off_t => Addr);
 
-syscall_amd64!(ioctl, 0x10, fd: c_uint, cmd: c_uint, arg: c_ulong => c_int);
+syscall_amd64!(ioctl, bindings::SYS_ioctl, fd: c_uint, cmd: c_uint, arg: c_ulong => c_int);
 
-syscall_amd64!(perf_event_open, 0x12a,
+syscall_amd64!(perf_event_open, bindings::SYS_perf_event_open,
     attr: *const bindings::perf_event_attr, pid: pid_t, cpu: c_int, group_fd: c_int, flags: c_ulong => c_int);
 
 // TODO: Some syscalls like getpid() and getppid() always succeed so we don't need them to return a Result<>.

@@ -1,9 +1,18 @@
+#![feature(cstr_from_bytes_until_nul)]
+
 /*
 See documentation here:
 - https://man7.org/linux/man-pages/man5/elf.5.html
 
 Constants defined in elf.h
 */
+
+#[macro_use]
+extern crate common;
+#[macro_use]
+extern crate parsing;
+
+pub mod demangle;
 
 use std::ffi::CStr;
 
@@ -34,16 +43,13 @@ pub struct ELF {
 }
 
 impl ELF {
-    // TODO: Rename read()
-    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Self::open_impl(path.as_ref()).await
+    pub async fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Self::read_impl(path.as_ref()).await
     }
 
-    async fn open_impl(path: &Path) -> Result<Self> {
+    async fn read_impl(path: &Path) -> Result<Self> {
         let file = fs::read(path).await?;
         let header = FileHeader::parse(&file)?.0;
-
-        println!("{:?}", header);
 
         let mut program_headers = vec![];
         {
@@ -110,7 +116,16 @@ impl ELF {
 
         for (i, section) in self.section_headers.iter().enumerate() {
             let name = shstrtab.get(section.name_offset as usize)?;
-            // println!("{:?}", name);
+            println!("{:?}", name);
+
+            
+            // TODO: Consider other options for generating this:
+            // https://lists.llvm.org/pipermail/llvm-dev/2016-June/100456.html
+            if name == ".note.gnu.build-id" {
+                let mut data = self.section_data(i);
+                println!("{:x?}", data);
+            }
+
 
             if section.typ == SHT_SYMTAB {
                 let symbol_strtab = StringTable { data: self.section_data(section.link as usize) };
@@ -120,7 +135,7 @@ impl ELF {
                 while !data.is_empty() {
                     let sym = parse_next!(data, |v| Symbol::parse(v, &self.header.ident));
                     
-                    if sym.typ() != STT_FUNC {
+                    if sym.typ() == STT_FUNC {
                         continue;
                     }
 
@@ -129,20 +144,22 @@ impl ELF {
 
                     // if sym.
 
-                    // TODO: Verify that the 'value' is a virtual memory addrsess.
-                    let related_section = &self.section_headers[sym.section_index as usize];
-                    assert!(sym.value >= related_section.addr);
-                    assert!(sym.value + sym.size <= related_section.addr + related_section.size);
+                    if sym.typ() == STT_FUNC {
+                        let related_section = &self.section_headers[sym.section_index as usize];
+                        assert!(sym.value >= related_section.addr);
+                        assert!(sym.value + sym.size <= related_section.addr + related_section.size);
+                    }
 
+                    /*
                     let file_start_offset = related_section.offset + (sym.value - related_section.addr);
                     let file_end_offset = file_start_offset + sym.size;
-
 
                     // 14a87, 14a9f, 26874
                     let search_offset = 0x14a87;
                     if search_offset >= file_start_offset && search_offset < file_end_offset {
                         println!("Found in {}", sym_name);
                     }
+                    */
                 }
 
 
@@ -151,8 +168,10 @@ impl ELF {
 
         Ok(())
     }
-
 }
+
+/*
+*/
 
 #[derive(Clone, Debug)]
 pub struct Symbol {
@@ -220,10 +239,6 @@ impl<'a> StringTable<'a> {
     }
 }
 
-
-/*
-To program it, we will basically go through all of the
-*/
 
 enum_def!(Format u8 =>
     I32 = 1,

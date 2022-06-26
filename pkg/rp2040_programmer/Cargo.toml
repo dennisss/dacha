@@ -7,5 +7,6 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 usb = { path = "../usb" }
+elf = { path = "../elf" }
 crypto = { path = "../crypto" }
 parsing = { path = "../parsing" }

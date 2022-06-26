@@ -23,10 +23,10 @@ NOTE that RCX and R10 are misaligned in the calling convention.
 
 
 macro_rules! syscall_amd64 {
-    ($name:ident, $number:literal, $($arg:ident : $t:ty),* => $ret:ident) => {
+    ($name:ident, $number:expr, $($arg:ident : $t:ty),* => $ret:ident) => {
         #[cfg(target_arch = "x86_64")]
         pub unsafe fn $name($( $arg : $t ),*) -> Result<$ret, Errno>  {
-            let val = syscall_amd64_call!($number, $( $arg as u64 ),*);
+            let val = syscall_amd64_call!($number as i64, $( $arg as u64 ),*);
             syscall_amd64_ret!(val, $ret)
         }
     };

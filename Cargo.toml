@@ -77,7 +77,8 @@ members = [
 	"pkg/cnc",
 	"pkg/testing",
 	"pkg/perf",
-	"pkg/sys"
+	"pkg/sys",
+	"pkg/elf"
 ]
 
 [profile.dev]

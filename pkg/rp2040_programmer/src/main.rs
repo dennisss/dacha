@@ -2,8 +2,7 @@
 extern crate common;
 extern crate parsing;
 extern crate usb;
-
-mod elf;
+extern crate elf;
 
 use common::async_std::task;
 use common::errors::*;
@@ -236,25 +235,7 @@ impl Command {
 }
 
 async fn run() -> Result<()> {
-    let elf =
-        elf::ELF::open("/home/dennis/workspace/dacha/target/thumbv7em-none-eabihf/release/nordic")
-            .await?;
-
-    let mut total_size = 0;
-    for program_header in &elf.program_headers {
-        if program_header.typ != 1 {
-            // PT_LOAD
-            continue;
-        }
-
-        total_size += program_header.file_size;
-    }
-
-    println!("Total Size: {}", total_size);
-
-    return Ok(());
-
-    let elf = elf::ELF::open(project_path!("target/thumbv6m-none-eabi/release/rp2040")).await?;
+    let elf = elf::ELF::read(project_path!("target/thumbv6m-none-eabi/release/rp2040")).await?;
 
     let flash_start = 0x10000000;
     let mut flash_end = flash_start;
