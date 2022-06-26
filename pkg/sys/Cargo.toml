@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-
 common = { path = "../common" }
 parsing = { path = "../parsing" }
 regexp_macros = { path = "../regexp_macros" }
@@ -15,3 +14,6 @@ failure = "0.1.8"
 default = ["std"]
 std = ["alloc"]
 alloc = []
+
+[build-dependencies]
+bindgen = "0.56.0"

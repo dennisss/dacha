@@ -9,13 +9,16 @@ mod errno;
 #[macro_use]
 mod syscall_amd64;
 
-// bindgen /usr/include/linux/perf_event.h --with-derive-default --rustified-enum '.*' -o pkg/sys/src/perf_event.rs
-pub mod perf_event;
-
-// bindgen /usr/include/linux/mman.h -o pkg/sys/src/mman.rs
-pub mod mman;
-
 pub mod virtual_memory;
+
+pub mod bindings {
+    #![allow(non_upper_case_globals)]
+    #![allow(non_camel_case_types)]
+    #![allow(non_snake_case)]
+
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
+
 
 pub use errno::*;
 pub use core::ffi::c_size_t;
@@ -52,6 +55,6 @@ syscall_amd64!(mmap, 0x09, addr: *mut u8, length: c_size_t, prot: c_int, flags: 
 syscall_amd64!(ioctl, 0x10, fd: c_uint, cmd: c_uint, arg: c_ulong => c_int);
 
 syscall_amd64!(perf_event_open, 0x12a,
-    attr: *const perf_event::perf_event_attr, pid: pid_t, cpu: c_int, group_fd: c_int, flags: c_ulong => c_int);
+    attr: *const bindings::perf_event_attr, pid: pid_t, cpu: c_int, group_fd: c_int, flags: c_ulong => c_int);
 
 // TODO: Some syscalls like getpid() and getppid() always succeed so we don't need them to return a Result<>.

@@ -9,11 +9,9 @@ extern crate sys;
 extern crate parsing;
 
 use common::errors::*;
-use sys::mman::*;
-use sys::perf_event::*;
+use sys::bindings::*;
 use sys::VirtualMemoryMap;
 use parsing::binary::*;
-
 
 struct ConcatSlicePair<'a> {
     a: &'a [u8],
