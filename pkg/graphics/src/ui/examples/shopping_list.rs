@@ -76,24 +76,17 @@ impl VirtualView for ShoppingListView {
         let mut els: Vec<ui::Element> = vec![];
 
         els.push(
-            ui::Block {
-                inner: ui::Checkbox {
-                    value: false,
-                    on_change: None,
-                }
-                .into(),
-                // TODO: Integrate the padding into the checkbox.
-                padding: 8., // 0.6em at 16px font.
-                background_color: None,
-                border: None,
-                cursor: None,
-            }
+            ui::Block::new(ui::Checkbox {
+                value: false,
+                on_change: None,
+            }.into())
+            // TODO: Integrate the padding into the checkbox.
+            .with_padding(8.) // 0.6em at 16px font.
             .into(),
         );
 
         els.push(
-            ui::Block {
-                inner: ui::Paragraph {
+            ui::Block::new(ui::Paragraph {
                     children: vec![ui::Text {
                         value: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum".into(),
                         font: self.params.font.clone(),
@@ -105,45 +98,30 @@ impl VirtualView for ShoppingListView {
                     }
                     .into()],
                 }
-                .into(),
-                padding: 10.,
-                background_color: None,
-                border: None,
-                cursor: None,
-            }
+                .into())
+                .with_padding(10.)
             .into(),
         );
 
         for (i, item) in state.items.iter().enumerate() {
             els.push(
-                ui::Block {
-                    inner: ui::Checkbox {
+                ui::Block::new(ui::Checkbox {
                         value: false,
                         on_change: None,
                     }
-                    .into(),
-                    // TODO: Integrate the padding into the checkbox.
-                    padding: 8., // 0.6em at 16px font.
-                    background_color: None,
-                    border: None,
-                    cursor: None,
-                }
+                    .into())
+                // TODO: Integrate the padding into the checkbox.
+                .with_padding(8.) // 0.6em at 16px font.
                 .into(),
             );
             els.push(
-                ui::Block {
-                    inner: ui::Textbox {
-                        value: item.name.clone(),
-                        font: self.params.font.clone(),
-                        font_size: 16.,
-                        on_change: Some(self.get_on_name_changed(i)),
-                    }
-                    .into(),
-                    padding: 10.,
-                    background_color: None,
-                    border: None,
-                    cursor: None,
-                }
+                ui::Block::new(ui::Textbox {
+                    value: item.name.clone(),
+                    font: self.params.font.clone(),
+                    font_size: 16.,
+                    on_change: Some(self.get_on_name_changed(i)),
+                }.into())
+                .with_padding(10.)
                 .into(),
             );
         }

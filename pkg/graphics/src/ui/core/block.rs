@@ -22,10 +22,49 @@ pub struct BlockViewParams {
 
     /// If set, this overrides the cursor of any internal child.
     pub cursor: Option<MouseCursor>,
+
+    pub width: BlockDimensionSize,
 }
 
 impl ViewParams for BlockViewParams {
     type View = BlockView;
+}
+
+impl BlockViewParams {
+    pub fn new(inner: Element) -> Self {
+        Self { inner, padding: 0., background_color: None, border: None, cursor: None, width: BlockDimensionSize::FitContent }
+    }
+
+    pub fn with_background_color(mut self, color: Color) -> Self {
+        self.background_color = Some(color);
+        self
+    }
+
+    pub fn with_border(mut self, border: Border) -> Self {
+        self.border = Some(border);
+        self
+    }
+
+    pub fn with_padding(mut self, padding: f32) -> Self {
+        self.padding = padding;
+        self
+    }
+
+    pub fn with_cursor(mut self, cursor: MouseCursor) -> Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
+    pub fn with_width(mut self, width: BlockDimensionSize) -> Self {
+        self.width = width;
+        self
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum BlockDimensionSize {
+    FitContent,
+    FillParent
 }
 
 #[derive(Clone)]
@@ -59,8 +98,17 @@ impl BlockView {
 
         let inner_box = inner.layout(&inner_constraints)?;
 
+        let width = match self.params.width {
+            BlockDimensionSize::FitContent => {
+                inner_box.width + 2.0 * self.params.padding + 2.0 * border_width
+            }
+            BlockDimensionSize::FillParent => {
+                constraints.max_width
+            }
+        };
+
         let outer_box = RenderBox {
-            width: inner_box.width + 2.0 * self.params.padding + 2.0 * border_width,
+            width,
             height: inner_box.height + 2.0 * self.params.padding + 2.0 * border_width,
             range: inner_box.range,
             next_cursor: inner_box.next_cursor,

@@ -67,8 +67,7 @@ impl VirtualView for Textbox {
 
         // TODO: Make sure that the block stretches out the cursor and click box of the inner text.
         // TODO: This must expand to the full width.
-        Ok(BlockViewParams {
-            inner: TextViewParams {
+        Ok(BlockViewParams::new(TextViewParams {
                 value: self.params.value.clone(),
                 font: self.params.font.clone(),
                 font_size: self.params.font_size,
@@ -76,15 +75,14 @@ impl VirtualView for Textbox {
                 color: font_color,
                 editable: true,
                 selectable: true,
-            }.into(),
-            padding: PADDING_SIZE,
-            background_color: Some(background_color),
-            border: Some(Border {
+            }.into())
+            .with_width(BlockDimensionSize::FillParent)
+            .with_padding(PADDING_SIZE)
+            .with_background_color(background_color)
+            .with_border(Border {
                 width: BORDER_SIZE,
                 color: border_color,
-            }),
-            cursor: None,
-        }
+            })
         .into())
     }
 

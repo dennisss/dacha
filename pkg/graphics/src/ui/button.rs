@@ -57,13 +57,10 @@ impl VirtualView for ButtonView {
             }
         };
 
-        Ok(BlockViewParams {
-            inner: self.params.inner.clone(),
-            padding: PADDING_SIZE,
-            background_color: Some(background_color),
-            border: None,
-            cursor: Some(MouseCursor(glfw::StandardCursor::Hand)),
-        }
+        Ok(BlockViewParams::new(self.params.inner.clone())
+            .with_padding(PADDING_SIZE)
+            .with_background_color(background_color)
+            .with_cursor(MouseCursor(glfw::StandardCursor::Hand))
         .into())
     }
 
