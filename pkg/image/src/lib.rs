@@ -69,7 +69,7 @@ impl<T: Zero + Clone> Image<T> {
 
 // TODO: Move to a separate file given this is starting to become complicated.
 // TODO: Implement a custom debugger for this.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Color {
     data: VectorStatic<u8, typenum::U4>,
 }

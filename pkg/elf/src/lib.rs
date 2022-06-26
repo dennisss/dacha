@@ -15,6 +15,7 @@ extern crate parsing;
 pub mod demangle;
 
 use std::ffi::CStr;
+use std::collections::BTreeMap;
 
 use common::async_std::fs;
 use common::async_std::path::Path;
@@ -168,10 +169,67 @@ impl ELF {
 
         Ok(())
     }
+
+    pub fn function_symbols(&self) -> Result<BTreeMap<u64, FunctionSymbol>> {
+        let mut out = BTreeMap::<u64, FunctionSymbol>::new();
+
+        for (i, section) in self.section_headers.iter().enumerate() {
+            if section.typ != SHT_SYMTAB {
+                continue;
+            }
+
+            let symbol_strtab = StringTable { data: self.section_data(section.link as usize) };
+
+            let mut data = self.section_data(i);
+
+            while !data.is_empty() {
+                let sym = parse_next!(data, |v| Symbol::parse(v, &self.header.ident));
+                
+                if sym.typ() != STT_FUNC || sym.size == 0 {
+                    continue;
+                }
+
+                let sym_name = symbol_strtab.get(sym.name as usize)?;
+
+                let related_section = &self.section_headers[sym.section_index as usize];
+                let file_start_offset = related_section.offset + (sym.value - related_section.addr);
+                let file_end_offset = file_start_offset + sym.size;
+
+                // TODO: Have a good way which one is best.
+                // TODO: Instead search for the next smallest and largest symbols to check for overlap.
+                // TODO: Must also comapre the end offset.
+                if let Some(existing_symbol) = out.get(&file_start_offset) {
+                    if existing_symbol.file_end_offset != file_end_offset {
+                        return Err(err_msg("Overlapping functions"));
+                    }
+
+                    // Prefer to keep the non-__ prefixed symbol.
+                    if sym_name.starts_with("__") {
+                        continue;
+                    }
+
+                    // println!("Dup: {} {}", existing_symbol.name, sym_name);
+                }
+
+                out.insert(file_start_offset, FunctionSymbol {
+                    name: crate::demangle::demangle_name(sym_name),
+                    file_start_offset,
+                    file_end_offset
+                });
+            }
+        }
+
+        Ok(out)
+    }
 }
 
-/*
-*/
+#[derive(Clone, Debug)]
+pub struct FunctionSymbol {
+    pub name: String,
+    pub file_start_offset: u64,
+    pub file_end_offset: u64
+}
+
 
 #[derive(Clone, Debug)]
 pub struct Symbol {

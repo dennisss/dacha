@@ -281,7 +281,9 @@ impl ChartView {
 
 impl View for ChartView {
     fn build(&mut self) -> Result<ViewStatus> {
-        Ok(ViewStatus::default())
+        let mut status = ViewStatus::default();
+        status.dirty = true; // TODO: Implement
+        Ok(status)
     }
 
     fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {

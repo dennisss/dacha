@@ -7,6 +7,8 @@ edition = "2018"
 common = { path = "../common" }
 parsing = { path = "../parsing" }
 sys = { path = "../sys" }
+elf = { path = "../elf" }
+google = { path = "../../third_party/google" }
 
 [features]
 default = ["std"]

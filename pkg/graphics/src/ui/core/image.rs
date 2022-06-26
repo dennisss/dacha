@@ -20,6 +20,7 @@ impl ViewParams for ImageViewParams {
 pub struct ImageView {
     params: ImageViewParams,
     object: Option<Box<dyn CanvasObject>>,
+    dirty: bool,
 }
 
 impl ViewWithParams for ImageView {
@@ -29,12 +30,18 @@ impl ViewWithParams for ImageView {
         Ok(Box::new(Self {
             params: params.clone(),
             object: None,
+            dirty: true,
         }))
     }
 
     fn update_with_params(&mut self, new_params: &Self::Params) -> Result<()> {
         if !core::ptr::eq::<Image<u8>>(&*self.params.source, &*new_params.source) {
             self.object = None;
+            self.dirty = true;
+        }
+
+        if self.params.paint != new_params.paint {
+            self.dirty = true;
         }
 
         self.params = new_params.clone();
@@ -44,7 +51,9 @@ impl ViewWithParams for ImageView {
 
 impl View for ImageView {
     fn build(&mut self) -> Result<ViewStatus> {
-        Ok(ViewStatus::default())
+        let mut status = ViewStatus::default();
+        status.dirty = self.dirty;
+        Ok(status)
     }
 
     fn layout(&self, constraints: &LayoutConstraints) -> Result<RenderBox> {
@@ -65,6 +74,8 @@ impl View for ImageView {
         };
 
         obj.draw(&self.params.paint, canvas)?;
+
+        self.dirty = false;
 
         Ok(())
     }

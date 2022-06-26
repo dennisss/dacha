@@ -77,7 +77,7 @@ impl Default for ViewStatus {
         Self {
             cursor: MouseCursor(glfw::StandardCursor::Arrow),
             focused: false,
-            dirty: true,
+            dirty: false,
         }
     }
 }

@@ -34,7 +34,15 @@ struct FontSizeMeasurements {
 /// NOTE: One renderer should only ever be associated with a single canvas.
 pub struct CanvasFontRenderer {
     font: OpenTypeFont,
-    glyph_paths: RefCell<HashMap<u16, (Box<dyn CanvasObject>, HorizontalMetricRecord)>>,
+
+    /// TODO: Eventually delete things from here?
+    glyph_paths: RefCell<HashMap<u16, GlyphPath>>,
+}
+
+struct GlyphPath {
+    metrics: HorizontalMetricRecord,
+    path: Path,
+    path_object: Option<Box<dyn CanvasObject>>,
 }
 
 impl CanvasFontRenderer {
@@ -73,16 +81,21 @@ impl CanvasFontRenderer {
             VerticalAlign::Center => (sizing.height / 2.) + sizing.descent,
         };
 
+        let mut glyph_paths_guard = self.glyph_paths.borrow_mut();
+
         for c in text.chars() {
             let char_code = c as u32;
             if char_code > u16::MAX as u32 {
                 return Err(err_msg("Character overflowed supported range"));
             }
 
-            let mut glyph_paths_guard = self.glyph_paths.borrow_mut();
+            let glyph_path =
+                self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
 
-            let (path_obj, metrics) =
-                self.create_glyph(char_code as u16, &mut glyph_paths_guard, canvas)?;
+            let path_obj = match &mut glyph_path.path_object {
+                Some(v) => v,
+                None => glyph_path.path_object.insert(canvas.create_path_fill(&glyph_path.path)?)
+            };
 
             canvas.save();
 
@@ -91,7 +104,7 @@ impl CanvasFontRenderer {
             canvas.scale(sizing.scale, -1.0 * sizing.scale);
 
             // NOTE: We assume that x_min == left_side_bearing so no translation is needed.
-            // self.translate(-1.0 * ((x_min - metrics.left_side_bearing) as f32), 0.0);
+            // self.translate(-1.0 * ((x_min - glyph_path.metrics.left_side_bearing) as f32), 0.0);
 
             path_obj.draw(paint, canvas)?;
 
@@ -99,7 +112,7 @@ impl CanvasFontRenderer {
 
             canvas.restore()?;
 
-            x += (metrics.advance_width as f32) * sizing.scale;
+            x += (glyph_path.metrics.advance_width as f32) * sizing.scale;
         }
 
         Ok(())
@@ -128,15 +141,18 @@ impl CanvasFontRenderer {
     ) -> Result<(f32, usize)> {
         let mut width = 0.0;
 
+        let mut glyph_paths_guard = self.glyph_paths.borrow_mut();
+
         for (i, c) in text.char_indices() {
             let char_code = c as u32;
             if char_code > u16::MAX as u32 {
                 return Err(err_msg("Character overflowed supported range"));
             }
 
-            let (g, metrics) = self.font.char_glyph(char_code as u16)?;
+            let glyph_path =
+                self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
 
-            let increment = (metrics.advance_width as f32) * sizing.scale;
+            let increment = (glyph_path.metrics.advance_width as f32) * sizing.scale;
             if let Some(max_width) = max_width.clone() {
                 if increment + width > max_width {
                     return Ok((width, i));
@@ -152,22 +168,20 @@ impl CanvasFontRenderer {
     fn create_glyph<'a>(
         &self,
         code: u16,
-        glyph_paths: &'a mut HashMap<u16, (Box<dyn CanvasObject>, HorizontalMetricRecord)>,
-        canvas: &mut Canvas,
-    ) -> Result<(&'a mut dyn CanvasObject, &'a HorizontalMetricRecord)> {
+        glyph_paths: &'a mut HashMap<u16, GlyphPath>,
+    ) -> Result<&'a mut GlyphPath> {
         if !glyph_paths.contains_key(&code) {
             let (g, metrics) = self.font.char_glyph(code)?;
 
             let path = Self::build_glyph_path(&g)?;
-
-            let obj = canvas.create_path_fill(&path)?;
-
-            glyph_paths.insert(code, (obj, metrics.clone()));
+            glyph_paths.insert(code, GlyphPath {
+                path,
+                path_object: None,
+                metrics: metrics.clone()
+            });
         }
 
-        let (path_obj, metrics) = glyph_paths.get_mut(&code).unwrap();
-
-        Ok((path_obj.as_mut(), metrics))
+        Ok(glyph_paths.get_mut(&code).unwrap())
     }
 
     fn build_glyph_path(g: &SimpleGlyph) -> Result<Path> {
@@ -244,15 +258,18 @@ impl CanvasFontRenderer {
 
         let mut width = 0.0;
 
+        let mut glyph_paths_guard = self.glyph_paths.borrow_mut();
+
         for (idx, c) in text.char_indices() {
             let char_code = c as u32;
             if char_code > u16::MAX as u32 {
                 return Err(err_msg("Character overflowed supported range"));
             }
 
-            let (g, metrics) = self.font.char_glyph(char_code as u16)?;
+            let glyph_path =
+                self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
 
-            let next_width = width + ((metrics.advance_width as f32) * sizing.scale);
+            let next_width = width + ((glyph_path.metrics.advance_width as f32) * sizing.scale);
             if next_width > x {
                 let distance_before = (width - x).abs();
                 let distance_after = (next_width - x).abs();

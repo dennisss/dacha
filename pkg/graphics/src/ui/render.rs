@@ -13,6 +13,11 @@ use crate::ui::view::*;
 
 struct ViewFrameHandler {
     view: Box<dyn View>,
+
+    // TODO: Re-use the width/height comparisons/caching done in the OpenGLCanvas::render_loop.
+    window_width: f32,
+    window_height: f32,
+    cursor: glfw::StandardCursor,
 }
 
 impl CanvasFrameHandler for ViewFrameHandler {
@@ -22,22 +27,16 @@ impl CanvasFrameHandler for ViewFrameHandler {
         window: &mut crate::opengl::window::Window,
         events: &[glfw::WindowEvent],
     ) -> Result<()> {
-        let outer_constraints = LayoutConstraints {
-            max_width: window.width() as f32,
-            max_height: window.height() as f32,
-            start_cursor: None,
-        };
-
-        canvas.clear_rect(
-            0.,
-            0.,
-            window.width() as f32,
-            window.height() as f32,
-            &Color::rgb(255, 255, 255),
-        )?;
+        let mut resized = false;
 
         for e in events {
             let view_event = match e {
+                glfw::WindowEvent::Size(width, height) => {
+                    self.window_width = *width as f32;
+                    self.window_height = *height as f32;
+                    resized = true;
+                    continue;
+                }
                 glfw::WindowEvent::CursorEnter(entered) => {
                     let (x, y) = window.raw().get_cursor_pos();
 
@@ -132,12 +131,31 @@ impl CanvasFrameHandler for ViewFrameHandler {
 
         let status = self.view.build()?;
 
-        self.view.render(&outer_constraints, canvas)?;
+        // TODO: Always render if the screen size changed.
+        if status.dirty || resized {
+            canvas.clear_rect(
+                0.,
+                0.,
+                self.window_width,
+                self.window_height,
+                &Color::rgb(255, 255, 255),
+            )?;
 
-        // TODO: Cache the cursor instances if nothing has changed since last time.
-        window
-            .raw()
-            .set_cursor(Some(glfw::Cursor::standard(status.cursor.0)));
+            let outer_constraints = LayoutConstraints {
+                max_width: self.window_width,
+                max_height: self.window_height,
+                start_cursor: None,
+            };
+    
+            self.view.render(&outer_constraints, canvas)?;
+        }
+
+        if status.cursor.0 != self.cursor {
+            window
+                .raw()
+                .set_cursor(Some(glfw::Cursor::standard(status.cursor.0)));
+            self.cursor = status.cursor.0;
+        }
 
         Ok(())
     }
@@ -157,7 +175,14 @@ pub async fn render_element(root_element: Element, height: usize, width: usize) 
 
     let window_options = WindowOptions::new("Canvas", width, height);
 
-    OpenGLCanvas::render_loop(window_options, ViewFrameHandler { view }).await?;
+    OpenGLCanvas::render_loop(window_options, ViewFrameHandler {
+        view,
+        // TODO: Is there any chance that the window_options won't be respected so these initial values would be incorrect?
+        window_width: width as f32,
+        window_height: height as f32,
+        // TODO: Keep in sync with ViewStatus::default()?
+        cursor: glfw::StandardCursor::Arrow,
+    }).await?;
 
     Ok(())
 }

@@ -85,6 +85,8 @@ impl Container {
         for i in 0..self.children.len() {
             let status_i = self.children[i].build()?;
 
+            status.dirty |= status_i.dirty;
+
             // Inherit the cursor of whichever child we are currently hovering over.
             // Note that a child with multiple spans has the same cursor for all spans.
             if self.state.last_mouse_focus.map(|s| s.child_index) == Some(i) {

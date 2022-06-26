@@ -39,6 +39,7 @@ impl ViewParams for TextboxParams {
     type View = Textbox;
 }
 
+/// TODO: Convert this to a VirtualView that re-uses the Text view's logic.
 pub struct Textbox {
     params: TextboxParams,
 
@@ -53,8 +54,12 @@ pub struct Textbox {
     /// is positioned.
     cursor: Option<Cursor>,
 
+    cursor_visible: bool,
+
     /// Last time an event occured which changed the cursor position.
     last_change: Instant,
+
+    dirty: bool,
 }
 
 #[derive(Clone)]
@@ -80,7 +85,9 @@ impl ViewWithParams for Textbox {
             params: params.clone(),
             current_value: params.value.clone(),
             cursor: None,
+            cursor_visible: false,
             last_change: Instant::now(),
+            dirty: true,
         }))
     }
 
@@ -88,6 +95,25 @@ impl ViewWithParams for Textbox {
         if self.current_value != new_params.value {
             self.cursor = None;
             self.current_value = new_params.value.clone();
+
+            // TODO: Only consider changes to font_size, font, etc.
+            self.dirty = true;
+        }
+
+        if self.cursor.is_some() {
+            let cursor_visible = {
+                let t = Instant::now();
+                let cycle = (t.duration_since(self.last_change).as_millis() as usize
+                    / CURSOR_ON_OFF_TIME_MILLIS)
+                    % 2;
+                cycle == 0
+            };
+
+            if self.cursor_visible != cursor_visible {
+                self.dirty = true;
+            }
+
+            self.cursor_visible = cursor_visible;
         }
 
         self.params = new_params.clone();
@@ -100,7 +126,8 @@ impl View for Textbox {
         Ok(ViewStatus {
             cursor: MouseCursor(glfw::StandardCursor::IBeam),
             focused: self.cursor.is_some(),
-            dirty: true,
+            // TODO: Must check if we should enable/disable the cursor.
+            dirty: self.dirty,
         })
     }
 
@@ -150,15 +177,7 @@ impl View for Textbox {
 
         if let Some(cursor) = self.cursor.clone() {
             if cursor.start == cursor.end {
-                let cursor_visible = {
-                    let t = Instant::now();
-                    let cycle = (t.duration_since(self.last_change).as_millis() as usize
-                        / CURSOR_ON_OFF_TIME_MILLIS)
-                        % 2;
-                    cycle == 0
-                };
-
-                if cursor_visible {
+                if self.cursor_visible {
                     let measurements = self.params.font.measure_text(
                         self.current_value.split_at(cursor.start).0,
                         self.params.font_size,
@@ -218,6 +237,8 @@ impl View for Textbox {
 
         canvas.restore();
 
+        self.dirty = false;
+
         Ok(())
     }
 
@@ -246,6 +267,7 @@ impl View for Textbox {
                         end: idx,
                     });
                     self.last_change = Instant::now();
+                    self.dirty = true;
                 }
             }
             Event::Key(e) => {
@@ -269,6 +291,7 @@ impl View for Textbox {
                                 end: idx,
                             });
                             self.set_current_value(new_value);
+                            self.dirty = true;
                         }
                         Key::Backspace => {
                             // TODO: Implement deleting a range with this!
@@ -282,6 +305,7 @@ impl View for Textbox {
                             }
                             new_string.push_str(after);
                             self.set_current_value(new_string);
+                            self.dirty = true;
                         }
                         Key::LeftArrow => {
                             if cursor.end > 0 {
@@ -294,6 +318,7 @@ impl View for Textbox {
                                 self.cursor = Some(cursor);
 
                                 self.last_change = Instant::now();
+                                self.dirty = true;
                             }
                         }
                         Key::RightArrow => {
@@ -306,6 +331,7 @@ impl View for Textbox {
                                 );
                                 self.cursor = Some(cursor);
                                 self.last_change = Instant::now();
+                                self.dirty = true;
                             }
                         }
                         Key::UpArrow => {
@@ -317,6 +343,7 @@ impl View for Textbox {
                             cursor.update(self.current_value.len(), e.shift);
                             self.cursor = Some(cursor);
                             self.last_change = Instant::now();
+                            self.dirty = true;
                         }
                         _ => {}
                     };

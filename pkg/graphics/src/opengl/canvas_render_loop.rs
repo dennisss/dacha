@@ -84,6 +84,7 @@ impl OpenGLCanvas {
             shader,
             empty_texture,
             context: window.context(),
+            dirty: true,
         };
 
         // TODO: Run on a separate thread to avoid blocking the async threads.
@@ -121,6 +122,8 @@ impl OpenGLCanvas {
 
             // TODO: Return this error from the outer function.
 
+            canvas.dirty = false;
+
             window.begin_draw();
 
             frame_buffer
@@ -138,23 +141,25 @@ impl OpenGLCanvas {
                 })
                 .unwrap();
 
-            unsafe { gl::Viewport(0, 0, current_width as i32, current_height as i32) };
+            if canvas.dirty {
+                unsafe { gl::Viewport(0, 0, current_width as i32, current_height as i32) };
 
-            // TODO: Cache this rectangle across draws.
-            let mut rect = Polygon::rectangle(
-                window.context(),
-                vec2f(-1., -1.),
-                2.,
-                2.,
-                canvas.shader.clone(),
-            );
-            rect.set_texture(frame_buffer.texture())
-                .set_vertex_colors(Vector3f::from_slice(&[1., 1., 1.]))
-                .set_vertex_alphas(1.);
-
-            rect.draw(&Camera::default(), &Transform::default());
-
-            window.end_draw();
+                // TODO: Cache this rectangle across draws.
+                let mut rect = Polygon::rectangle(
+                    window.context(),
+                    vec2f(-1., -1.),
+                    2.,
+                    2.,
+                    canvas.shader.clone(),
+                );
+                rect.set_texture(frame_buffer.texture())
+                    .set_vertex_colors(Vector3f::from_slice(&[1., 1., 1.]))
+                    .set_vertex_alphas(1.);
+    
+                rect.draw(&Camera::default(), &Transform::default());
+    
+                window.end_draw();
+            }
 
             !window.raw().should_close()
         });

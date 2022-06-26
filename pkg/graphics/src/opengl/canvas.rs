@@ -56,6 +56,9 @@ pub struct OpenGLCanvas {
     pub(super) empty_texture: Rc<Texture>,
 
     pub(super) context: WindowContext,
+
+    pub(super) dirty: bool,
+
     // tODO
     // Store a reference to the window in which we are drawing.
 }
@@ -278,6 +281,7 @@ impl CanvasObject for OpenGLCanvasPath {
     fn draw(&mut self, paint: &Paint, canvas: &mut dyn Canvas) -> Result<()> {
         // TODO: Verify that the same canvas was passed in.
         let canvas = canvas.as_mut_any().downcast_mut::<OpenGLCanvas>().unwrap();
+        canvas.dirty = true;
 
         // TODO: Have a custom variation of block() with just one dimension type for
         // vectors.
@@ -304,6 +308,7 @@ struct OpenGLCanvasImage {
 impl CanvasObject for OpenGLCanvasImage {
     fn draw(&mut self, paint: &Paint, canvas: &mut dyn Canvas) -> Result<()> {
         let canvas = canvas.as_mut_any().downcast_mut::<OpenGLCanvas>().unwrap();
+        canvas.dirty = true;
 
         let mut rect = Polygon::rectangle(
             canvas.context.clone(),

@@ -1,0 +1,1 @@
+https://github.com/google/pprof/blob/main/proto/profile.proto

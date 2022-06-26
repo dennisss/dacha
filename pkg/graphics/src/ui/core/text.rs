@@ -11,6 +11,7 @@ use crate::ui::view::*;
 #[derive(Clone)]
 pub struct TextViewParams {
     pub text: String,
+    /// TODO: Replace to a dependency handle so that it is easier to compare the entire thing with PartialEq of the TextViewParams.
     pub font: Rc<CanvasFontRenderer>,
     pub font_size: f32,
     pub color: Color,
@@ -22,6 +23,7 @@ impl ViewParams for TextViewParams {
 
 pub struct TextView {
     params: TextViewParams,
+    dirty: bool,
 }
 
 struct TextLayout {
@@ -77,11 +79,19 @@ impl ViewWithParams for TextView {
     fn create_with_params(params: &Self::Params) -> Result<Box<dyn View>> {
         Ok(Box::new(Self {
             params: params.clone(),
+            dirty: true,
         }))
     }
 
     fn update_with_params(&mut self, new_params: &Self::Params) -> Result<()> {
-        self.params = new_params.clone();
+        if self.params.text != new_params.text ||
+           !core::ptr::eq::<CanvasFontRenderer>(&*self.params.font, &*new_params.font) ||
+           self.params.font_size != new_params.font_size ||
+           self.params.color != new_params.color {
+            self.dirty = true;
+            self.params = new_params.clone();
+        }
+
         Ok(())
     }
 }
@@ -90,6 +100,7 @@ impl View for TextView {
     fn build(&mut self) -> Result<ViewStatus> {
         let mut status = ViewStatus::default();
         status.cursor = MouseCursor(glfw::StandardCursor::IBeam);
+        status.dirty = self.dirty;
         Ok(status)
     }
 
@@ -123,6 +134,8 @@ impl View for TextView {
             &Paint::color(self.params.color.clone()),
             canvas,
         )?;
+
+        self.dirty = false;
 
         Ok(())
     }

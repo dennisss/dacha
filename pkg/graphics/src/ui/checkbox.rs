@@ -21,6 +21,7 @@ impl ViewParams for CheckboxParams {
 pub struct CheckboxView {
     params: CheckboxParams,
     click_filter: MouseClickFilter,
+    dirty: bool,
 }
 
 impl ViewWithParams for CheckboxView {
@@ -30,10 +31,12 @@ impl ViewWithParams for CheckboxView {
         Ok(Box::new(Self {
             params: params.clone(),
             click_filter: MouseClickFilter::new(),
+            dirty: true,
         }))
     }
 
     fn update_with_params(&mut self, new_params: &Self::Params) -> Result<()> {
+        self.dirty = self.params.value != new_params.value;
         self.params = new_params.clone();
         Ok(())
     }
@@ -45,7 +48,7 @@ impl View for CheckboxView {
             cursor: MouseCursor(glfw::StandardCursor::Hand),
             // TODO: Support focus for this.
             focused: false,
-            dirty: true,
+            dirty: self.dirty,
         })
     }
 
@@ -93,6 +96,8 @@ impl View for CheckboxView {
                 &border_color,
             )?;
         }
+        
+        self.dirty = false;
 
         Ok(())
     }

@@ -70,9 +70,11 @@ impl<V: VirtualView + 'static> ViewWithParams for VirtualViewContainer<V> {
 
 impl<V: VirtualView + 'static> View for VirtualViewContainer<V> {
     fn build(&mut self) -> Result<ViewStatus> {
+        // TODO: Support dirty check based skipping of this? (although must also consider that internal raw views may have their own animations to draw).
         let el = self.inner.build_element()?;
         self.children.update(&[el])?;
 
+        // NOTE: Brand new views are always dirty so we don't need to directly compare the element trees.
         self.children[0].build()
     }
 
