@@ -621,11 +621,11 @@ impl<'a> WireField<'a> {
         Ok(())
     }
 
-    pub fn parse_enum<E: Enum>(&self) -> common::errors::Result<E> {
+    pub fn parse_enum<E: Enum>(&self) -> WireResult<E> {
         E::parse(self.parse_int32()?)
     }
 
-    pub fn parse_enum_into(&self, out: &mut dyn Enum) -> common::errors::Result<()> {
+    pub fn parse_enum_into(&self, out: &mut dyn Enum) -> WireResult<()> {
         out.assign(self.parse_int32()?)
     }
 
@@ -651,12 +651,12 @@ impl<'a> WireField<'a> {
     }
 
     // TODO: Instead use a dynamic version that parses into an existing struct.
-    pub fn parse_message<M: Message>(&self) -> common::errors::Result<M> {
+    pub fn parse_message<M: Message>(&self) -> WireResult<M> {
         let data = self.value.length_delim()?;
         M::parse(data)
     }
 
-    pub fn parse_message_into<M: Message>(&self, message: &mut M) -> common::errors::Result<()> {
+    pub fn parse_message_into<M: Message>(&self, message: &mut M) -> WireResult<()> {
         let data = self.value.length_delim()?;
         message.parse_merge(data)
     }

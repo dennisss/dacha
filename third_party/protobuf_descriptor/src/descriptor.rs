@@ -7,10 +7,10 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::sync::Arc;
 
-use common::collections::{FixedString};
-use common::fixed::vec::FixedVec;
+use common::collections::FixedString;
 use common::const_default::ConstDefault;
 use common::errors::*;
+use common::fixed::vec::FixedVec;
 use common::list::Appendable;
 #[cfg(feature = "alloc")]
 use protobuf_core::reflection::*;
@@ -45,7 +45,7 @@ impl FileDescriptorSet {
         &self.file
     }
 
-    pub fn file_mut(&mut self) -> &mut [FileDescriptorProto] {
+    pub fn file_mut(&mut self) -> &mut Vec<FileDescriptorProto> {
         &mut self.file
     }
 
@@ -71,13 +71,13 @@ impl protobuf_core::Message for FileDescriptorSet {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -211,7 +211,7 @@ impl FileDescriptorProto {
         &self.dependency
     }
 
-    pub fn dependency_mut(&mut self) -> &mut [String] {
+    pub fn dependency_mut(&mut self) -> &mut Vec<String> {
         &mut self.dependency
     }
 
@@ -230,7 +230,7 @@ impl FileDescriptorProto {
         &self.public_dependency
     }
 
-    pub fn public_dependency_mut(&mut self) -> &mut [i32] {
+    pub fn public_dependency_mut(&mut self) -> &mut Vec<i32> {
         &mut self.public_dependency
     }
 
@@ -249,7 +249,7 @@ impl FileDescriptorProto {
         &self.weak_dependency
     }
 
-    pub fn weak_dependency_mut(&mut self) -> &mut [i32] {
+    pub fn weak_dependency_mut(&mut self) -> &mut Vec<i32> {
         &mut self.weak_dependency
     }
 
@@ -268,7 +268,7 @@ impl FileDescriptorProto {
         &self.message_type
     }
 
-    pub fn message_type_mut(&mut self) -> &mut [DescriptorProto] {
+    pub fn message_type_mut(&mut self) -> &mut Vec<DescriptorProto> {
         &mut self.message_type
     }
 
@@ -287,7 +287,7 @@ impl FileDescriptorProto {
         &self.enum_type
     }
 
-    pub fn enum_type_mut(&mut self) -> &mut [EnumDescriptorProto] {
+    pub fn enum_type_mut(&mut self) -> &mut Vec<EnumDescriptorProto> {
         &mut self.enum_type
     }
 
@@ -306,7 +306,7 @@ impl FileDescriptorProto {
         &self.service
     }
 
-    pub fn service_mut(&mut self) -> &mut [ServiceDescriptorProto] {
+    pub fn service_mut(&mut self) -> &mut Vec<ServiceDescriptorProto> {
         &mut self.service
     }
 
@@ -325,7 +325,7 @@ impl FileDescriptorProto {
         &self.extension
     }
 
-    pub fn extension_mut(&mut self) -> &mut [FieldDescriptorProto] {
+    pub fn extension_mut(&mut self) -> &mut Vec<FieldDescriptorProto> {
         &mut self.extension
     }
 
@@ -412,13 +412,13 @@ impl protobuf_core::Message for FileDescriptorProto {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -698,13 +698,13 @@ impl protobuf_core::Message for DescriptorProto_ExtensionRange {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -846,13 +846,13 @@ impl protobuf_core::Message for DescriptorProto_ReservedRange {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -975,7 +975,7 @@ impl DescriptorProto {
         &self.field
     }
 
-    pub fn field_mut(&mut self) -> &mut [FieldDescriptorProto] {
+    pub fn field_mut(&mut self) -> &mut Vec<FieldDescriptorProto> {
         &mut self.field
     }
 
@@ -994,7 +994,7 @@ impl DescriptorProto {
         &self.extension
     }
 
-    pub fn extension_mut(&mut self) -> &mut [FieldDescriptorProto] {
+    pub fn extension_mut(&mut self) -> &mut Vec<FieldDescriptorProto> {
         &mut self.extension
     }
 
@@ -1013,7 +1013,7 @@ impl DescriptorProto {
         &self.nested_type
     }
 
-    pub fn nested_type_mut(&mut self) -> &mut [DescriptorProto] {
+    pub fn nested_type_mut(&mut self) -> &mut Vec<DescriptorProto> {
         &mut self.nested_type
     }
 
@@ -1032,7 +1032,7 @@ impl DescriptorProto {
         &self.enum_type
     }
 
-    pub fn enum_type_mut(&mut self) -> &mut [EnumDescriptorProto] {
+    pub fn enum_type_mut(&mut self) -> &mut Vec<EnumDescriptorProto> {
         &mut self.enum_type
     }
 
@@ -1051,7 +1051,7 @@ impl DescriptorProto {
         &self.extension_range
     }
 
-    pub fn extension_range_mut(&mut self) -> &mut [DescriptorProto_ExtensionRange] {
+    pub fn extension_range_mut(&mut self) -> &mut Vec<DescriptorProto_ExtensionRange> {
         &mut self.extension_range
     }
 
@@ -1073,7 +1073,7 @@ impl DescriptorProto {
         &self.oneof_decl
     }
 
-    pub fn oneof_decl_mut(&mut self) -> &mut [OneofDescriptorProto] {
+    pub fn oneof_decl_mut(&mut self) -> &mut Vec<OneofDescriptorProto> {
         &mut self.oneof_decl
     }
 
@@ -1114,7 +1114,7 @@ impl DescriptorProto {
         &self.reserved_range
     }
 
-    pub fn reserved_range_mut(&mut self) -> &mut [DescriptorProto_ReservedRange] {
+    pub fn reserved_range_mut(&mut self) -> &mut Vec<DescriptorProto_ReservedRange> {
         &mut self.reserved_range
     }
 
@@ -1136,7 +1136,7 @@ impl DescriptorProto {
         &self.reserved_name
     }
 
-    pub fn reserved_name_mut(&mut self) -> &mut [String] {
+    pub fn reserved_name_mut(&mut self) -> &mut Vec<String> {
         &mut self.reserved_name
     }
 
@@ -1162,13 +1162,13 @@ impl protobuf_core::Message for DescriptorProto {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -1361,7 +1361,7 @@ impl ExtensionRangeOptions {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut [UninterpretedOption] {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
         &mut self.uninterpreted_option
     }
 
@@ -1387,13 +1387,13 @@ impl protobuf_core::Message for ExtensionRangeOptions {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -1480,7 +1480,7 @@ impl common::const_default::ConstDefault for FieldDescriptorProto_Type {
 }
 
 impl protobuf_core::Enum for FieldDescriptorProto_Type {
-    fn parse(v: protobuf_core::EnumValue) -> Result<Self> {
+    fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             1 => FieldDescriptorProto_Type::TYPE_DOUBLE,
             2 => FieldDescriptorProto_Type::TYPE_FLOAT,
@@ -1501,12 +1501,12 @@ impl protobuf_core::Enum for FieldDescriptorProto_Type {
             17 => FieldDescriptorProto_Type::TYPE_SINT32,
             18 => FieldDescriptorProto_Type::TYPE_SINT64,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
 
-    fn parse_name(s: &str) -> Result<Self> {
+    fn parse_name(s: &str) -> WireResult<Self> {
         Ok(match s {
             "TYPE_DOUBLE" => Self::TYPE_DOUBLE,
             "TYPE_FLOAT" => Self::TYPE_FLOAT,
@@ -1527,7 +1527,7 @@ impl protobuf_core::Enum for FieldDescriptorProto_Type {
             "TYPE_SINT32" => Self::TYPE_SINT32,
             "TYPE_SINT64" => Self::TYPE_SINT64,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
@@ -1558,12 +1558,12 @@ impl protobuf_core::Enum for FieldDescriptorProto_Type {
         *self as protobuf_core::EnumValue
     }
 
-    fn assign(&mut self, v: protobuf_core::EnumValue) -> Result<()> {
+    fn assign(&mut self, v: protobuf_core::EnumValue) -> WireResult<()> {
         *self = Self::parse(v)?;
         Ok(())
     }
 
-    fn assign_name(&mut self, s: &str) -> Result<()> {
+    fn assign_name(&mut self, s: &str) -> WireResult<()> {
         *self = Self::parse_name(s)?;
         Ok(())
     }
@@ -1595,24 +1595,24 @@ impl common::const_default::ConstDefault for FieldDescriptorProto_Label {
 }
 
 impl protobuf_core::Enum for FieldDescriptorProto_Label {
-    fn parse(v: protobuf_core::EnumValue) -> Result<Self> {
+    fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             1 => FieldDescriptorProto_Label::LABEL_OPTIONAL,
             2 => FieldDescriptorProto_Label::LABEL_REQUIRED,
             3 => FieldDescriptorProto_Label::LABEL_REPEATED,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
 
-    fn parse_name(s: &str) -> Result<Self> {
+    fn parse_name(s: &str) -> WireResult<Self> {
         Ok(match s {
             "LABEL_OPTIONAL" => Self::LABEL_OPTIONAL,
             "LABEL_REQUIRED" => Self::LABEL_REQUIRED,
             "LABEL_REPEATED" => Self::LABEL_REPEATED,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
@@ -1628,12 +1628,12 @@ impl protobuf_core::Enum for FieldDescriptorProto_Label {
         *self as protobuf_core::EnumValue
     }
 
-    fn assign(&mut self, v: protobuf_core::EnumValue) -> Result<()> {
+    fn assign(&mut self, v: protobuf_core::EnumValue) -> WireResult<()> {
         *self = Self::parse(v)?;
         Ok(())
     }
 
-    fn assign_name(&mut self, s: &str) -> Result<()> {
+    fn assign_name(&mut self, s: &str) -> WireResult<()> {
         *self = Self::parse_name(s)?;
         Ok(())
     }
@@ -1876,13 +1876,13 @@ impl protobuf_core::Message for FieldDescriptorProto {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -2107,13 +2107,13 @@ impl protobuf_core::Message for OneofDescriptorProto {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -2246,13 +2246,13 @@ impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -2365,7 +2365,7 @@ impl EnumDescriptorProto {
         &self.value
     }
 
-    pub fn value_mut(&mut self) -> &mut [EnumValueDescriptorProto] {
+    pub fn value_mut(&mut self) -> &mut Vec<EnumValueDescriptorProto> {
         &mut self.value
     }
 
@@ -2406,7 +2406,7 @@ impl EnumDescriptorProto {
         &self.reserved_range
     }
 
-    pub fn reserved_range_mut(&mut self) -> &mut [EnumDescriptorProto_EnumReservedRange] {
+    pub fn reserved_range_mut(&mut self) -> &mut Vec<EnumDescriptorProto_EnumReservedRange> {
         &mut self.reserved_range
     }
 
@@ -2428,7 +2428,7 @@ impl EnumDescriptorProto {
         &self.reserved_name
     }
 
-    pub fn reserved_name_mut(&mut self) -> &mut [String] {
+    pub fn reserved_name_mut(&mut self) -> &mut Vec<String> {
         &mut self.reserved_name
     }
 
@@ -2454,13 +2454,13 @@ impl protobuf_core::Message for EnumDescriptorProto {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -2655,13 +2655,13 @@ impl protobuf_core::Message for EnumValueDescriptorProto {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -2782,7 +2782,7 @@ impl ServiceDescriptorProto {
         &self.method
     }
 
-    pub fn method_mut(&mut self) -> &mut [MethodDescriptorProto] {
+    pub fn method_mut(&mut self) -> &mut Vec<MethodDescriptorProto> {
         &mut self.method
     }
 
@@ -2830,13 +2830,13 @@ impl protobuf_core::Message for ServiceDescriptorProto {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -3062,13 +3062,13 @@ impl protobuf_core::Message for MethodDescriptorProto {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -3195,24 +3195,24 @@ impl common::const_default::ConstDefault for FileOptions_OptimizeMode {
 }
 
 impl protobuf_core::Enum for FileOptions_OptimizeMode {
-    fn parse(v: protobuf_core::EnumValue) -> Result<Self> {
+    fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             1 => FileOptions_OptimizeMode::SPEED,
             2 => FileOptions_OptimizeMode::CODE_SIZE,
             3 => FileOptions_OptimizeMode::LITE_RUNTIME,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
 
-    fn parse_name(s: &str) -> Result<Self> {
+    fn parse_name(s: &str) -> WireResult<Self> {
         Ok(match s {
             "SPEED" => Self::SPEED,
             "CODE_SIZE" => Self::CODE_SIZE,
             "LITE_RUNTIME" => Self::LITE_RUNTIME,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
@@ -3228,12 +3228,12 @@ impl protobuf_core::Enum for FileOptions_OptimizeMode {
         *self as protobuf_core::EnumValue
     }
 
-    fn assign(&mut self, v: protobuf_core::EnumValue) -> Result<()> {
+    fn assign(&mut self, v: protobuf_core::EnumValue) -> WireResult<()> {
         *self = Self::parse(v)?;
         Ok(())
     }
 
-    fn assign_name(&mut self, s: &str) -> Result<()> {
+    fn assign_name(&mut self, s: &str) -> WireResult<()> {
         *self = Self::parse_name(s)?;
         Ok(())
     }
@@ -3682,7 +3682,7 @@ impl FileOptions {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut [UninterpretedOption] {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
         &mut self.uninterpreted_option
     }
 
@@ -3708,13 +3708,13 @@ impl protobuf_core::Message for FileOptions {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -4094,7 +4094,7 @@ impl MessageOptions {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut [UninterpretedOption] {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
         &mut self.uninterpreted_option
     }
 
@@ -4120,13 +4120,13 @@ impl protobuf_core::Message for MessageOptions {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -4246,24 +4246,24 @@ impl common::const_default::ConstDefault for FieldOptions_CType {
 }
 
 impl protobuf_core::Enum for FieldOptions_CType {
-    fn parse(v: protobuf_core::EnumValue) -> Result<Self> {
+    fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => FieldOptions_CType::STRING,
             1 => FieldOptions_CType::CORD,
             2 => FieldOptions_CType::STRING_PIECE,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
 
-    fn parse_name(s: &str) -> Result<Self> {
+    fn parse_name(s: &str) -> WireResult<Self> {
         Ok(match s {
             "STRING" => Self::STRING,
             "CORD" => Self::CORD,
             "STRING_PIECE" => Self::STRING_PIECE,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
@@ -4279,12 +4279,12 @@ impl protobuf_core::Enum for FieldOptions_CType {
         *self as protobuf_core::EnumValue
     }
 
-    fn assign(&mut self, v: protobuf_core::EnumValue) -> Result<()> {
+    fn assign(&mut self, v: protobuf_core::EnumValue) -> WireResult<()> {
         *self = Self::parse(v)?;
         Ok(())
     }
 
-    fn assign_name(&mut self, s: &str) -> Result<()> {
+    fn assign_name(&mut self, s: &str) -> WireResult<()> {
         *self = Self::parse_name(s)?;
         Ok(())
     }
@@ -4316,24 +4316,24 @@ impl common::const_default::ConstDefault for FieldOptions_JSType {
 }
 
 impl protobuf_core::Enum for FieldOptions_JSType {
-    fn parse(v: protobuf_core::EnumValue) -> Result<Self> {
+    fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => FieldOptions_JSType::JS_NORMAL,
             1 => FieldOptions_JSType::JS_STRING,
             2 => FieldOptions_JSType::JS_NUMBER,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
 
-    fn parse_name(s: &str) -> Result<Self> {
+    fn parse_name(s: &str) -> WireResult<Self> {
         Ok(match s {
             "JS_NORMAL" => Self::JS_NORMAL,
             "JS_STRING" => Self::JS_STRING,
             "JS_NUMBER" => Self::JS_NUMBER,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
@@ -4349,12 +4349,12 @@ impl protobuf_core::Enum for FieldOptions_JSType {
         *self as protobuf_core::EnumValue
     }
 
-    fn assign(&mut self, v: protobuf_core::EnumValue) -> Result<()> {
+    fn assign(&mut self, v: protobuf_core::EnumValue) -> WireResult<()> {
         *self = Self::parse(v)?;
         Ok(())
     }
 
-    fn assign_name(&mut self, s: &str) -> Result<()> {
+    fn assign_name(&mut self, s: &str) -> WireResult<()> {
         *self = Self::parse_name(s)?;
         Ok(())
     }
@@ -4508,7 +4508,7 @@ impl FieldOptions {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut [UninterpretedOption] {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
         &mut self.uninterpreted_option
     }
 
@@ -4534,13 +4534,13 @@ impl protobuf_core::Message for FieldOptions {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -4686,7 +4686,7 @@ impl OneofOptions {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut [UninterpretedOption] {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
         &mut self.uninterpreted_option
     }
 
@@ -4712,13 +4712,13 @@ impl protobuf_core::Message for OneofOptions {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -4834,7 +4834,7 @@ impl EnumOptions {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut [UninterpretedOption] {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
         &mut self.uninterpreted_option
     }
 
@@ -4860,13 +4860,13 @@ impl protobuf_core::Message for EnumOptions {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -4987,7 +4987,7 @@ impl EnumValueOptions {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut [UninterpretedOption] {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
         &mut self.uninterpreted_option
     }
 
@@ -5013,13 +5013,13 @@ impl protobuf_core::Message for EnumValueOptions {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -5129,7 +5129,7 @@ impl ServiceOptions {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut [UninterpretedOption] {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
         &mut self.uninterpreted_option
     }
 
@@ -5155,13 +5155,13 @@ impl protobuf_core::Message for ServiceOptions {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -5246,24 +5246,24 @@ impl common::const_default::ConstDefault for MethodOptions_IdempotencyLevel {
 }
 
 impl protobuf_core::Enum for MethodOptions_IdempotencyLevel {
-    fn parse(v: protobuf_core::EnumValue) -> Result<Self> {
+    fn parse(v: protobuf_core::EnumValue) -> WireResult<Self> {
         Ok(match v {
             0 => MethodOptions_IdempotencyLevel::IDEMPOTENCY_UNKNOWN,
             1 => MethodOptions_IdempotencyLevel::NO_SIDE_EFFECTS,
             2 => MethodOptions_IdempotencyLevel::IDEMPOTENT,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
 
-    fn parse_name(s: &str) -> Result<Self> {
+    fn parse_name(s: &str) -> WireResult<Self> {
         Ok(match s {
             "IDEMPOTENCY_UNKNOWN" => Self::IDEMPOTENCY_UNKNOWN,
             "NO_SIDE_EFFECTS" => Self::NO_SIDE_EFFECTS,
             "IDEMPOTENT" => Self::IDEMPOTENT,
             _ => {
-                return Err(MessageParseError::UnknownEnumVariant.into());
+                return Err(WireError::UnknownEnumVariant);
             }
         })
     }
@@ -5279,12 +5279,12 @@ impl protobuf_core::Enum for MethodOptions_IdempotencyLevel {
         *self as protobuf_core::EnumValue
     }
 
-    fn assign(&mut self, v: protobuf_core::EnumValue) -> Result<()> {
+    fn assign(&mut self, v: protobuf_core::EnumValue) -> WireResult<()> {
         *self = Self::parse(v)?;
         Ok(())
     }
 
-    fn assign_name(&mut self, s: &str) -> Result<()> {
+    fn assign_name(&mut self, s: &str) -> WireResult<()> {
         *self = Self::parse_name(s)?;
         Ok(())
     }
@@ -5365,7 +5365,7 @@ impl MethodOptions {
         &self.uninterpreted_option
     }
 
-    pub fn uninterpreted_option_mut(&mut self) -> &mut [UninterpretedOption] {
+    pub fn uninterpreted_option_mut(&mut self) -> &mut Vec<UninterpretedOption> {
         &mut self.uninterpreted_option
     }
 
@@ -5391,13 +5391,13 @@ impl protobuf_core::Message for MethodOptions {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -5542,13 +5542,13 @@ impl protobuf_core::Message for UninterpretedOption_NamePart {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -5652,7 +5652,7 @@ impl UninterpretedOption {
         &self.name
     }
 
-    pub fn name_mut(&mut self) -> &mut [UninterpretedOption_NamePart] {
+    pub fn name_mut(&mut self) -> &mut Vec<UninterpretedOption_NamePart> {
         &mut self.name
     }
 
@@ -5797,13 +5797,13 @@ impl protobuf_core::Message for UninterpretedOption {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -5957,7 +5957,7 @@ impl SourceCodeInfo_Location {
         &self.path
     }
 
-    pub fn path_mut(&mut self) -> &mut [i32] {
+    pub fn path_mut(&mut self) -> &mut Vec<i32> {
         &mut self.path
     }
 
@@ -5976,7 +5976,7 @@ impl SourceCodeInfo_Location {
         &self.span
     }
 
-    pub fn span_mut(&mut self) -> &mut [i32] {
+    pub fn span_mut(&mut self) -> &mut Vec<i32> {
         &mut self.span
     }
 
@@ -6037,7 +6037,7 @@ impl SourceCodeInfo_Location {
         &self.leading_detached_comments
     }
 
-    pub fn leading_detached_comments_mut(&mut self) -> &mut [String] {
+    pub fn leading_detached_comments_mut(&mut self) -> &mut Vec<String> {
         &mut self.leading_detached_comments
     }
 
@@ -6063,13 +6063,13 @@ impl protobuf_core::Message for SourceCodeInfo_Location {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -6196,7 +6196,7 @@ impl SourceCodeInfo {
         &self.location
     }
 
-    pub fn location_mut(&mut self) -> &mut [SourceCodeInfo_Location] {
+    pub fn location_mut(&mut self) -> &mut Vec<SourceCodeInfo_Location> {
         &mut self.location
     }
 
@@ -6222,13 +6222,13 @@ impl protobuf_core::Message for SourceCodeInfo {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -6312,7 +6312,7 @@ impl GeneratedCodeInfo_Annotation {
         &self.path
     }
 
-    pub fn path_mut(&mut self) -> &mut [i32] {
+    pub fn path_mut(&mut self) -> &mut Vec<i32> {
         &mut self.path
     }
 
@@ -6389,13 +6389,13 @@ impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
@@ -6507,7 +6507,7 @@ impl GeneratedCodeInfo {
         &self.annotation
     }
 
-    pub fn annotation_mut(&mut self) -> &mut [GeneratedCodeInfo_Annotation] {
+    pub fn annotation_mut(&mut self) -> &mut Vec<GeneratedCodeInfo_Annotation> {
         &mut self.annotation
     }
 
@@ -6536,13 +6536,13 @@ impl protobuf_core::Message for GeneratedCodeInfo {
         &FILE_DESCRIPTOR
     }
 
-    fn parse(data: &[u8]) -> Result<Self> {
+    fn parse(data: &[u8]) -> WireResult<Self> {
         let mut msg = Self::default();
         msg.parse_merge(data)?;
         Ok(msg)
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {

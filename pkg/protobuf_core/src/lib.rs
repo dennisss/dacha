@@ -33,12 +33,13 @@ pub mod text;
 pub mod tokenizer;
 mod types;
 pub mod wire;
+pub mod codecs;
 
 #[cfg(feature = "alloc")]
 pub use bytes::BytesField;
 #[cfg(feature = "std")]
 pub use collections::*;
-pub use message::{Enum, Message, MessageParseError, MessagePtr, MessageSerializeError};
+pub use message::{Enum, Message, MessagePtr, MessageSerializeError};
 #[cfg(feature = "std")]
 pub use reflection::{
     FieldDescriptorShort, MessageReflection, SingularFieldReflectionProto2,
@@ -46,6 +47,8 @@ pub use reflection::{
 };
 pub use types::EnumValue;
 pub use types::FieldNumber;
+
+pub use wire::{WireResult, WireError};
 
 pub struct StaticFileDescriptor {
     pub proto: &'static [u8],

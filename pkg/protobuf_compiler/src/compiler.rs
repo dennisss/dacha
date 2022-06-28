@@ -513,7 +513,7 @@ impl Compiler<'_> {
         lines.indented(|lines| {
             // TODO: Just make from_usize an Option<>
             lines.add(format!(
-                "fn parse(v: {}::EnumValue) -> Result<Self> {{",
+                "fn parse(v: {}::EnumValue) -> WireResult<Self> {{",
                 self.options.runtime_package
             ));
             lines.indented(|lines| {
@@ -527,7 +527,7 @@ impl Compiler<'_> {
                     }
                 }
 
-                lines.add("\t_ => { return Err(MessageParseError::UnknownEnumVariant.into()); }");
+                lines.add("\t_ => { return Err(WireError::UnknownEnumVariant); }");
 
                 lines.add("})");
             });
@@ -535,7 +535,7 @@ impl Compiler<'_> {
             lines.nl();
 
             // fn parse_name(&mut self, name: &str) -> Result<()>;
-            lines.add("fn parse_name(s: &str) -> Result<Self> {");
+            lines.add("fn parse_name(s: &str) -> WireResult<Self> {");
             lines.add("\tOk(match s {");
             for i in &e.body {
                 match i {
@@ -545,7 +545,7 @@ impl Compiler<'_> {
                     }
                 }
             }
-            lines.add("_ => { return Err(MessageParseError::UnknownEnumVariant.into()); }");
+            lines.add("_ => { return Err(WireError::UnknownEnumVariant); }");
             lines.add("})");
             lines.add("}");
 
@@ -570,14 +570,14 @@ impl Compiler<'_> {
             lines.nl();
 
             lines.add(format!(
-                "fn assign(&mut self, v: {}::EnumValue) -> Result<()> {{",
+                "fn assign(&mut self, v: {}::EnumValue) -> WireResult<()> {{",
                 self.options.runtime_package
             ));
             lines.add("\t*self = Self::parse(v)?; Ok(())");
             lines.add("}");
             lines.nl();
 
-            lines.add("fn assign_name(&mut self, s: &str) -> Result<()> {");
+            lines.add("fn assign_name(&mut self, s: &str) -> WireResult<()> {");
             lines.add("\t*self = Self::parse_name(s)?; Ok(())");
             lines.add("}");
             lines.nl();
@@ -1507,7 +1507,7 @@ impl Compiler<'_> {
 
         lines.add(
             r#"
-            fn parse(data: &[u8]) -> Result<Self> {
+            fn parse(data: &[u8]) -> WireResult<Self> {
                 let mut msg = Self::default();
                 msg.parse_merge(data)?;
                 Ok(msg)
@@ -1515,7 +1515,7 @@ impl Compiler<'_> {
         "#,
         );
 
-        lines.add("\tfn parse_merge(&mut self, data: &[u8]) -> Result<()> {");
+        lines.add("\tfn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {");
         lines.add("\t\tfor f in WireFieldIter::new(data) {");
         lines.add("\t\t\tlet f = f?;");
         lines.add("\t\t\tmatch f.field_number {");
@@ -1544,6 +1544,7 @@ impl Compiler<'_> {
                 _ => field.typ.as_str(),
             };
 
+            // TODO: Must use repeated variants here.
             let mut p = String::new();
             if self.is_unordered_set(field) {
                 p += &format!("self.{}.insert(f.parse_{}()?);", name, typeclass)

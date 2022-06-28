@@ -11,6 +11,7 @@ use crate::merge::ReflectMergeFrom;
 use crate::types::EnumValue;
 #[cfg(feature = "alloc")]
 use crate::{MessageReflection, StaticFileDescriptor};
+use crate::wire::WireResult;
 
 #[cfg(feature = "alloc")]
 pub trait MessageTraits = Send + Sync + MessageReflection;
@@ -28,11 +29,11 @@ pub trait Message: 'static + MessageTraits {
         Self: Sized;
 
     // NOTE: This will append values to
-    fn parse(data: &[u8]) -> Result<Self>
+    fn parse(data: &[u8]) -> WireResult<Self>
     where
         Self: Sized;
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()>;
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()>;
 
     /// Serializes the protobuf as a vector.
     #[cfg(feature = "alloc")]
@@ -61,19 +62,6 @@ pub trait Message: 'static + MessageTraits {
     }
 
     // fn unknown_fields() -> &[UnknownField];
-}
-
-#[derive(Debug)]
-#[cfg_attr(feature = "std", derive(Fail))]
-#[repr(u32)]
-pub enum MessageParseError {
-    UnknownEnumVariant,
-}
-
-impl core::fmt::Display for MessageParseError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:?}", self)
-    }
 }
 
 #[derive(Debug)]
@@ -139,19 +127,22 @@ impl<T> core::convert::AsMut<T> for MessagePtr<T> {
 pub trait Enum {
     /// Should convert a number to a valid branch of the enum, or else should
     /// error out it the value is not in the enum.
-    fn parse(v: EnumValue) -> Result<Self>
+    ///
+    /// TODO: Check the compatibility behavior of parsing an enum. Should we allow unknown
+    /// values as long as we map it to UNKNONW?
+    fn parse(v: EnumValue) -> WireResult<Self>
     where
         Self: Sized;
 
-    fn parse_name(name: &str) -> Result<Self>
+    fn parse_name(name: &str) -> WireResult<Self>
     where
         Self: Sized;
 
     fn name(&self) -> &str;
     fn value(&self) -> EnumValue;
 
-    fn assign(&mut self, v: EnumValue) -> Result<()>;
+    fn assign(&mut self, v: EnumValue) -> WireResult<()>;
     // TODO: This is inconsistent with the other Message trait.
 
-    fn assign_name(&mut self, name: &str) -> Result<()>;
+    fn assign_name(&mut self, name: &str) -> WireResult<()>;
 }
