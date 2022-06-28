@@ -7,7 +7,8 @@
     const_slice_from_raw_parts,
     maybe_uninit_uninit_array,
     maybe_uninit_slice,
-    const_maybe_uninit_uninit_array
+    const_maybe_uninit_uninit_array,
+    slice_take
 )]
 #![no_std]
 
@@ -107,6 +108,7 @@ pub mod tree;
 pub mod vec;
 #[cfg(feature = "std")]
 pub mod vec_hash_set;
+pub mod concat_slice;
 
 pub use arrayref::{array_mut_ref, array_ref};
 #[cfg(feature = "std")]

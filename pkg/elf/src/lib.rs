@@ -111,6 +111,22 @@ impl ELF {
         &self.file[(s.offset as usize)..(s.offset as usize + s.size as usize)]
     }
 
+    // TODO: Consider other options for generating this:
+    // https://lists.llvm.org/pipermail/llvm-dev/2016-June/100456.html
+    pub fn build_id(&self) -> Result<Option<&[u8]>> {
+        let shstrtab = StringTable { data: self.section_data(self.header.section_names_entry_index as usize) };
+
+        for (i, section) in self.section_headers.iter().enumerate() {
+            let name = shstrtab.get(section.name_offset as usize)?;
+        
+            if name == ".note.gnu.build-id" {
+                return Ok(Some(self.section_data(i)));
+            }
+        }
+
+        Ok(None)
+    }
+
     pub fn print(&self) -> Result<()> {
 
         let shstrtab = StringTable { data: self.section_data(self.header.section_names_entry_index as usize) };
@@ -118,15 +134,6 @@ impl ELF {
         for (i, section) in self.section_headers.iter().enumerate() {
             let name = shstrtab.get(section.name_offset as usize)?;
             println!("{:?}", name);
-
-            
-            // TODO: Consider other options for generating this:
-            // https://lists.llvm.org/pipermail/llvm-dev/2016-June/100456.html
-            if name == ".note.gnu.build-id" {
-                let mut data = self.section_data(i);
-                println!("{:x?}", data);
-            }
-
 
             if section.typ == SHT_SYMTAB {
                 let symbol_strtab = StringTable { data: self.section_data(section.link as usize) };

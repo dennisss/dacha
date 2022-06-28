@@ -23,11 +23,38 @@ NOTE that RCX and R10 are misaligned in the calling convention.
 
 
 macro_rules! syscall_amd64 {
-    ($name:ident, $number:expr, $($arg:ident : $t:ty),* => $ret:ident) => {
+    // The syscall should always return zero on success or a negative error number otherwise.
+    ($name:ident, $number:expr $(, $arg:ident : $t:ty)* => Result<()>) => {
+        #[cfg(target_arch = "x86_64")]
+        pub unsafe fn $name($( $arg : $t ),*) -> Result<(), Errno>  {
+            let val = syscall_amd64_call!($number as i64 $(, $arg as u64 )*);
+            if val != 0 {
+                Err(Errno(val))
+            } else {
+                Ok(())
+            }
+        }
+    };
+
+    // The syscall returns either a positive value or a negative error number.
+    ($name:ident, $number:expr $(, $arg:ident : $t:ty)* => Result<$ret:ty>) => {
         #[cfg(target_arch = "x86_64")]
         pub unsafe fn $name($( $arg : $t ),*) -> Result<$ret, Errno>  {
-            let val = syscall_amd64_call!($number as i64, $( $arg as u64 ),*);
-            syscall_amd64_ret!(val, $ret)
+            let val = syscall_amd64_call!($number as i64 $(, $arg as u64 )*);
+            if val < 0 {
+                Err(Errno(val))
+            } else {
+                Ok(val as $ret)
+            }
+        }
+    };
+
+    // The syscall never fails.
+    ($name:ident, $number:expr $(, $arg:ident : $t:ty)* => Infallible<$ret:ty>) => {
+        #[cfg(target_arch = "x86_64")]
+        pub unsafe fn $name($( $arg : $t ),*) -> $ret  {
+            let val = syscall_amd64_call!($number as i64 $(, $arg as u64 )*);
+            val as $ret
         }
     };
 }

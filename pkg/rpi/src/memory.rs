@@ -1,7 +1,9 @@
 use std::ffi::CStr;
+use std::fs::File;
+use std::os::unix::prelude::{FromRawFd, AsRawFd};
 
 use common::errors::*;
-use libc::c_void;
+use sys::MappedMemory;
 
 const MEM_FILE_PATH: &'static [u8] = b"/dev/mem\0";
 const GPIOMEM_FILE_PATH: &'static [u8] = b"/dev/gpiomem\0";
@@ -13,8 +15,7 @@ pub const PWM0_PERIPHERAL_OFFSET: u32 = 0x0020c000;
 pub const PWM1_PERIPHERAL_OFFSET: u32 = 0x0020c800;
 
 pub struct MemoryBlock {
-    memory: *mut c_void,
-    size: usize,
+    memory: MappedMemory,
 }
 
 impl MemoryBlock {
@@ -32,37 +33,36 @@ impl MemoryBlock {
         Self::open_impl(file, offset, size)
     }
 
-    fn open_impl(file: &'static [u8], offset: u32, size: usize) -> Result<Self> {
-        let path = CStr::from_bytes_with_nul(file).unwrap();
-        let fd = unsafe { libc::open(path.as_ptr(), libc::O_RDWR | libc::O_SYNC) };
-        if fd < 0 {
-            return Err(err_msg("Failed to open memory device."));
-        }
+    fn open_impl(path: &'static [u8], offset: u32, size: usize) -> Result<Self> {
+        // Validate that the path ends in a nullptr.
+        let path = CStr::from_bytes_with_nul(path)?;
+
+        let file = unsafe {File::from_raw_fd(
+            sys::open(path.as_ptr(), sys::bindings::O_RDWR | sys::bindings::O_SYNC, 0)
+            .map_err(|_| err_msg("Failed to open memory device."))?)
+        };
 
         let memory = unsafe {
-            libc::mmap(
+            MappedMemory::create(
                 std::ptr::null_mut(),
                 size,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_SHARED,
-                fd,
-                std::mem::transmute(offset as libc::off_t),
+                sys::bindings::PROT_READ | sys::bindings::PROT_WRITE,
+                sys::bindings::MAP_SHARED,
+                file.as_raw_fd(),
+                std::mem::transmute(offset as sys::off_t),
             )
+            .map_err(|_| err_msg("Failed to mmap memory block."))?
         };
 
         // File no longer needed after the mmap
-        unsafe { libc::close(fd) };
+        drop(file);
 
-        if memory == libc::MAP_FAILED {
-            return Err(err_msg("Failed to mmap memory block."));
-        }
-
-        Ok(Self { memory, size })
+        Ok(Self { memory })
     }
 
     pub fn read_register(&self, offset: usize) -> u32 {
         unsafe {
-            let addr = std::mem::transmute::<_, usize>(self.memory) + offset;
+            let addr = std::mem::transmute::<_, usize>(self.memory.addr()) + offset;
             let ptr = std::mem::transmute::<_, *const u32>(addr);
             std::ptr::read_volatile(ptr)
         }
@@ -71,7 +71,7 @@ impl MemoryBlock {
     // TODO: Require &mut
     pub fn modify_register<F: Fn(u32) -> u32>(&self, offset: usize, f: F) {
         unsafe {
-            let addr = std::mem::transmute::<_, usize>(self.memory) + offset;
+            let addr = std::mem::transmute::<_, usize>(self.memory.addr()) + offset;
             let ptr = std::mem::transmute::<_, *mut u32>(addr);
             let mut value = std::ptr::read_volatile(ptr);
             value = f(value);
@@ -82,7 +82,7 @@ impl MemoryBlock {
     // TODO: Require &mut
     pub fn write_register(&self, offset: usize, value: u32) {
         unsafe {
-            let addr = std::mem::transmute::<_, usize>(self.memory) + offset;
+            let addr = std::mem::transmute::<_, usize>(self.memory.addr()) + offset;
             let ptr = std::mem::transmute::<_, *mut u32>(addr);
             std::ptr::write_volatile(ptr, value);
         }
@@ -108,8 +108,3 @@ impl MemoryBlock {
 unsafe impl Send for MemoryBlock {}
 unsafe impl Sync for MemoryBlock {}
 
-impl Drop for MemoryBlock {
-    fn drop(&mut self) {
-        unsafe { libc::munmap(self.memory, self.size) };
-    }
-}

@@ -21,7 +21,10 @@ pub struct SetupPacket {
     pub wLength: u16,
 }
 
-// This is used as the value of SetupPacket::bmRequestType
+/// Used as SetupPacket::bmRequestType
+pub struct SetupRequestTypeFlags {}
+
+// This is used as the value of SetupPacket::bRequest
 //
 // Table 9-4 of USB2.0 Spec
 pub enum StandardRequestType {

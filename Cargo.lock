@@ -1953,9 +1953,7 @@ name = "rpi"
 version = "0.1.0"
 dependencies = [
  "common",
- "lazy_static",
- "libc",
- "nix 0.21.0",
+ "sys",
 ]
 
 [[package]]
@@ -1966,10 +1964,7 @@ dependencies = [
  "google",
  "http",
  "json",
- "lazy_static",
- "libc",
  "macros",
- "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
  "protobuf_json",

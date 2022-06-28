@@ -2,12 +2,16 @@ use core::arch::global_asm;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_int, c_ushort};
 
+extern crate perf;
+extern crate common;
 
-fn main() {
-    let path = CString::new("test").unwrap();
+use common::errors::*;
 
-    let fd = unsafe { open(path.as_c_str(), O_RDONLY, 0) };
+async fn run() -> Result<()> {
+    perf::profile_self().await
+}
 
-    println!("{}", fd);
+fn main() -> Result<()> {
+    common::async_std::task::block_on(run())
 }
 

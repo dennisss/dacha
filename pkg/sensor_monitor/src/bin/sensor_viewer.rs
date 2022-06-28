@@ -29,7 +29,7 @@ async fn run() -> Result<()> {
     let stub = MetricStub::new(channel);
 
     let font_family = Rc::new(CanvasFontRenderer::new(
-        OpenTypeFont::read(project_path!("testdata/noto-sans.ttf")).await?,
+        OpenTypeFont::read(project_path!("third_party/noto_sans/font_normal.ttf")).await?,
     ));
 
     let root_el = ui::Element::from(MetricViewer {

@@ -894,7 +894,7 @@ pub async fn open_font() -> Result<()> {
     //    return Ok(());
 
     let font =
-        CanvasFontRenderer::new(OpenTypeFont::read(project_path!("testdata/noto-sans.ttf")).await?);
+        CanvasFontRenderer::new(OpenTypeFont::read(project_path!("third_party/noto_sans/font_normal.ttf")).await?);
 
     const HEIGHT: usize = 650;
     const WIDTH: usize = 800;

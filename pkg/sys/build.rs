@@ -9,6 +9,8 @@ fn main() {
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
         .rustified_enum(".*")
+        // We don't care about functions.
+        .blacklist_function(".*")
         .derive_default(true)
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .generate()
