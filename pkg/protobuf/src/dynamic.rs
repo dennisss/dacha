@@ -7,8 +7,9 @@ use common::errors::*;
 use common::list::Appendable;
 use protobuf_compiler::spec::Syntax;
 use protobuf_core::reflection::RepeatedFieldReflection;
-use protobuf_core::wire::{WireField, WireFieldIter};
-use protobuf_core::{EnumValue, FieldNumber};
+use protobuf_core::wire::{WireField, WireError, WireFieldIter};
+use protobuf_core::{EnumValue, WireResult, FieldNumber};
+use protobuf_core::codecs::*;
 use protobuf_descriptor::{FieldDescriptorProto_Label, FieldDescriptorProto_Type};
 
 use crate::descriptor_pool::*;
@@ -29,16 +30,17 @@ impl DynamicMessage {
         }
     }
 
-    fn default_value_for_field(field_desc: &FieldDescriptor) -> Result<DynamicValue> {
+    // TODO: Move this to DynamicValue.
+    fn default_value_for_field(field_desc: &FieldDescriptor) -> WireResult<DynamicValue> {
         use FieldDescriptorProto_Type::*;
         Ok(match field_desc.proto().typ() {
             TYPE_DOUBLE => DynamicValue::Primitive(DynamicPrimitiveValue::Double(0.0)),
             TYPE_FLOAT => DynamicValue::Primitive(DynamicPrimitiveValue::Float(0.0)),
             TYPE_INT64 => DynamicValue::Primitive(DynamicPrimitiveValue::Int64(0)),
-            TYPE_UINT64 => DynamicValue::Primitive(DynamicPrimitiveValue::Uint64(0)),
+            TYPE_UINT64 => DynamicValue::Primitive(DynamicPrimitiveValue::UInt64(0)),
             TYPE_INT32 => DynamicValue::Primitive(DynamicPrimitiveValue::Int32(0)),
-            TYPE_FIXED64 => DynamicValue::Primitive(DynamicPrimitiveValue::Uint64(0)),
-            TYPE_FIXED32 => DynamicValue::Primitive(DynamicPrimitiveValue::Uint32(0)),
+            TYPE_FIXED64 => DynamicValue::Primitive(DynamicPrimitiveValue::UInt64(0)),
+            TYPE_FIXED32 => DynamicValue::Primitive(DynamicPrimitiveValue::UInt32(0)),
             TYPE_BOOL => DynamicValue::Primitive(DynamicPrimitiveValue::Bool(false)),
             TYPE_STRING => DynamicValue::Primitive(DynamicPrimitiveValue::String(String::new())),
             TYPE_GROUP => {
@@ -53,10 +55,10 @@ impl DynamicMessage {
                     let val = DynamicEnum::new(e);
                     DynamicValue::Enum(val)
                 }
-                _ => return Err(err_msg("Unknown type in descriptor")),
+                _ => return Err(WireError::BadDescriptor /* err_msg("Unknown type in descriptor")*/),
             },
             TYPE_BYTES => DynamicValue::Primitive(DynamicPrimitiveValue::Bytes(Vec::new().into())),
-            TYPE_UINT32 => DynamicValue::Primitive(DynamicPrimitiveValue::Uint32(0)),
+            TYPE_UINT32 => DynamicValue::Primitive(DynamicPrimitiveValue::UInt32(0)),
             TYPE_SFIXED32 => DynamicValue::Primitive(DynamicPrimitiveValue::Int32(0)),
             TYPE_SFIXED64 => DynamicValue::Primitive(DynamicPrimitiveValue::Int64(0)),
             TYPE_SINT32 => DynamicValue::Primitive(DynamicPrimitiveValue::Int32(0)),
@@ -85,7 +87,7 @@ impl protobuf_core::Message for DynamicMessage {
         panic!()
     }
 
-    fn parse(data: &[u8]) -> Result<Self>
+    fn parse(data: &[u8]) -> WireResult<Self>
     where
         Self: Sized,
     {
@@ -93,90 +95,21 @@ impl protobuf_core::Message for DynamicMessage {
         panic!()
     }
 
-    fn parse_merge(&mut self, data: &[u8]) -> Result<()> {
+    fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
         for wire_field in WireFieldIter::new(data) {
             let wire_field = wire_field?;
 
             let field_desc = match self.desc.field_by_number(wire_field.field_number) {
                 Some(d) => d,
-                None => return Err(err_msg("Unknown field")),
-            };
-
-            use FieldDescriptorProto_Type::*;
-
-            let value = match field_desc.proto().typ() {
-                TYPE_DOUBLE => DynamicValue::Primitive(DynamicPrimitiveValue::Double(
-                    wire_field.parse_double()?,
-                )),
-                TYPE_FLOAT => {
-                    DynamicValue::Primitive(DynamicPrimitiveValue::Float(wire_field.parse_float()?))
-                }
-                TYPE_INT64 => {
-                    DynamicValue::Primitive(DynamicPrimitiveValue::Int64(wire_field.parse_int64()?))
-                }
-                TYPE_UINT64 => DynamicValue::Primitive(DynamicPrimitiveValue::Uint64(
-                    wire_field.parse_uint64()?,
-                )),
-                TYPE_INT32 => {
-                    DynamicValue::Primitive(DynamicPrimitiveValue::Int32(wire_field.parse_int32()?))
-                }
-                TYPE_FIXED64 => DynamicValue::Primitive(DynamicPrimitiveValue::Uint64(
-                    wire_field.parse_fixed64()?,
-                )),
-                TYPE_FIXED32 => DynamicValue::Primitive(DynamicPrimitiveValue::Uint32(
-                    wire_field.parse_fixed32()?,
-                )),
-                TYPE_BOOL => {
-                    DynamicValue::Primitive(DynamicPrimitiveValue::Bool(wire_field.parse_bool()?))
-                }
-                TYPE_STRING => DynamicValue::Primitive(DynamicPrimitiveValue::String(
-                    wire_field.parse_string()?,
-                )),
-                TYPE_GROUP => {
-                    todo!()
-                }
-                TYPE_MESSAGE | TYPE_ENUM => match field_desc.find_type() {
-                    Some(TypeDescriptor::Message(m)) => {
-                        let mut val = DynamicMessage::new(m);
-                        wire_field.parse_message_into(&mut val)?;
-                        DynamicValue::Message(val)
-                    }
-                    Some(TypeDescriptor::Enum(e)) => {
-                        let mut val = DynamicEnum::new(e);
-                        wire_field.parse_enum_into(&mut val)?;
-                        DynamicValue::Enum(val)
-                    }
-                    _ => {
-                        return Err(format_err!(
-                            "Unknown type while parsing: {:?}",
-                            field_desc.proto()
-                        ))
-                    }
-                },
-                TYPE_BYTES => {
-                    DynamicValue::Primitive(DynamicPrimitiveValue::Bytes(wire_field.parse_bytes()?))
-                }
-                TYPE_UINT32 => DynamicValue::Primitive(DynamicPrimitiveValue::Uint32(
-                    wire_field.parse_uint32()?,
-                )),
-                TYPE_SFIXED32 => DynamicValue::Primitive(DynamicPrimitiveValue::Int32(
-                    wire_field.parse_sfixed32()?,
-                )),
-                TYPE_SFIXED64 => DynamicValue::Primitive(DynamicPrimitiveValue::Int64(
-                    wire_field.parse_sfixed64()?,
-                )),
-                TYPE_SINT32 => DynamicValue::Primitive(DynamicPrimitiveValue::Int32(
-                    wire_field.parse_sint32()?,
-                )),
-                TYPE_SINT64 => DynamicValue::Primitive(DynamicPrimitiveValue::Int64(
-                    wire_field.parse_sint64()?,
-                )),
+                // TODO: Check this behavior.
+                None => continue //return Err(err_msg("Unknown field")),
             };
 
             let is_repeated =
                 field_desc.proto().label() == FieldDescriptorProto_Label::LABEL_REPEATED;
 
             if !is_repeated {
+                let value = DynamicValue::parse_singular_value(&field_desc, &wire_field)?;
                 self.fields
                     .insert(wire_field.field_number, DynamicField::Singular(value));
                 continue;
@@ -192,7 +125,7 @@ impl protobuf_core::Message for DynamicMessage {
                         DynamicField::Repeated(DynamicRepeatedField {
                             default_value,
                             values: vec![],
-                            desc: field_desc,
+                            desc: field_desc.clone(),
                         })
                     });
 
@@ -201,7 +134,7 @@ impl protobuf_core::Message for DynamicMessage {
                 _ => panic!(),
             };
 
-            existing_values.push(value);
+            DynamicValue::parse_repeated_values(&field_desc, &wire_field, existing_values)?;
         }
 
         Ok(())
@@ -221,68 +154,8 @@ impl protobuf_core::Message for DynamicMessage {
             };
 
             for value in values {
-                match value {
-                    DynamicValue::Primitive(v) => {
-                        // TODO: Choose sparse variations if not repeated.
-                        match &v {
-                            DynamicPrimitiveValue::Double(v) => {
-                                WireField::serialize_double(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Float(v) => {
-                                WireField::serialize_float(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Int32(v) => {
-                                WireField::serialize_int32(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Int64(v) => {
-                                WireField::serialize_int64(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Uint32(v) => {
-                                WireField::serialize_uint32(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Uint64(v) => {
-                                WireField::serialize_uint64(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Sint32(v) => {
-                                WireField::serialize_sint32(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Sint64(v) => {
-                                WireField::serialize_sint64(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Fixed32(v) => {
-                                WireField::serialize_fixed32(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Fixed64(v) => {
-                                WireField::serialize_fixed64(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Sfixed32(v) => {
-                                WireField::serialize_sfixed32(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Sfixed64(v) => {
-                                WireField::serialize_sfixed64(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::Bool(v) => {
-                                WireField::serialize_bool(*field_num, *v, &mut out)
-                            }
-                            DynamicPrimitiveValue::String(v) => {
-                                WireField::serialize_string(*field_num, v.as_ref(), &mut out)
-                            }
-                            DynamicPrimitiveValue::Bytes(v) => {
-                                WireField::serialize_bytes(*field_num, v.as_ref(), &mut out)
-                            }
-                        }?
-                    }
-                    DynamicValue::Enum(v) => {
-                        if repeated {
-                            WireField::serialize_enum(*field_num, v, &mut out)?
-                        } else {
-                            WireField::serialize_sparse_enum(*field_num, v, &mut out)?
-                        }
-                    }
-                    DynamicValue::Message(v) => {
-                        WireField::serialize_message(*field_num, v, &mut out)?
-                    }
-                };
+                // TODO: NEed an alternative form for repeated values.
+                value.serialize_to(*field_num, &mut out)?;
             }
         }
 
@@ -417,6 +290,143 @@ impl Reflect for DynamicValue {
     }
 }
 
+macro_rules! define_primitive_values {
+    ($v:ident, $( $name:ident ( $t:ty ) $proto_type:ident => $reflection_variant:ident ( $reflection_value:expr, $reflection_mut:expr, $serialize_value:expr ) ),*) => {
+        impl DynamicValue {
+            fn parse_singular_value(field_desc: &FieldDescriptor, wire_field: &WireField) -> WireResult<DynamicValue> {
+                use FieldDescriptorProto_Type::*;
+        
+                Ok(match field_desc.proto().typ() {
+                    TYPE_GROUP => {
+                        todo!()
+                    }
+                    TYPE_MESSAGE | TYPE_ENUM => match field_desc.find_type() {
+                        Some(TypeDescriptor::Message(m)) => {
+                            let mut val = DynamicMessage::new(m);
+                            MessageCodec::parse_into(wire_field, &mut val)?;
+                            DynamicValue::Message(val)
+                        }
+                        Some(TypeDescriptor::Enum(e)) => {
+                            let mut val = DynamicEnum::new(e);
+                            EnumCodec::parse_into(wire_field, &mut val)?;
+                            DynamicValue::Enum(val)
+                        }
+                        _ => {
+                            return Err(WireError::BadDescriptor);
+                            // return Err(format_err!(
+                            //     "Unknown type while parsing: {:?}",
+                            //     field_desc.proto()
+                            // ))
+                        }
+                    },
+                    $(
+                        $proto_type => DynamicValue::Primitive(DynamicPrimitiveValue::$name(
+                            <concat_idents!($name, Codec)>::parse(wire_field)?
+                        ))
+                    ),*
+                })
+            }
+
+            // TODO: Directly write to the output vector of the caller.
+            fn parse_repeated_values(field_desc: &FieldDescriptor, wire_field: &WireField, values: &mut Vec<DynamicValue>) -> WireResult<()> {
+                use FieldDescriptorProto_Type::*;
+
+                match field_desc.proto().typ() {
+                    TYPE_INT64 => {
+                        for v in wire_field.parse_repeated_int64() {
+                            values.push(DynamicValue::Primitive(DynamicPrimitiveValue::Int64(v?)));
+                        }
+
+                        return Ok(());
+                    }
+                    TYPE_UINT64 => {
+                        for v in wire_field.parse_repeated_uint64() {
+                            values.push(DynamicValue::Primitive(DynamicPrimitiveValue::UInt64(v?)));
+                        }
+
+                        return Ok(());
+                    },
+
+                    // TODO: Add all other supported packable types.
+
+                    // Other types don't support packing.
+                    _ => {}
+                };
+
+                // Fallback to types that can't be packed.
+                values.push(Self::parse_singular_value(field_desc, wire_field)?);
+                Ok(())
+            }
+
+            fn serialize_to<A: Appendable<Item = u8>>(&self, field_num: FieldNumber, out: &mut A) -> Result<()> {
+                match self {
+                    DynamicValue::Primitive(v) => {
+                        // TODO: Choose sparse variations if not repeated.
+                        match v {
+                            $(
+                                DynamicPrimitiveValue::$name($v) => {
+                                    <concat_idents!($name, Codec)>::serialize(field_num, $serialize_value, out)
+                                }
+                            ),*
+                        }?
+                    }
+                    DynamicValue::Enum(v) => {
+                        // if repeated {
+                        EnumCodec::serialize(field_num, v, out)?
+                            // WireField::serialize_enum(*field_num, v, &mut out)?
+                        // } else {
+                        //     WireField::serialize_sparse_enum(field_num, v, &mut out)?
+                        // }
+                    }
+                    DynamicValue::Message(v) => {
+                        MessageCodec::serialize(field_num, v, out)?
+                    }
+                };
+                Ok(())
+            }
+        }
+
+        #[derive(Clone, PartialEq)]
+        pub(crate) enum DynamicPrimitiveValue {
+            $( $name($t) ),*
+        }
+
+        impl Reflect for DynamicPrimitiveValue {
+            fn reflect(&self) -> Reflection {
+                match self {
+                    $( DynamicPrimitiveValue::$name($v) => Reflection::$reflection_variant($reflection_value) ),*
+                }
+            }
+        
+            fn reflect_mut(&mut self) -> ReflectionMut {
+                match self {
+                    $( DynamicPrimitiveValue::$name($v) => ReflectionMut::$reflection_variant($reflection_mut) ),*
+                }
+            }
+        }
+    };
+}
+
+define_primitive_values!(
+    v,
+    Double(f64) TYPE_DOUBLE => F64(v, v, *v),
+    Float(f32) TYPE_FLOAT => F32(v, v, *v),
+    Int32(i32) TYPE_INT32 => I32(v, v, *v),
+    Int64(i64) TYPE_INT64 => I64(v, v, *v),
+    UInt32(u32) TYPE_UINT32 => U32(v, v, *v),
+    UInt64(u64) TYPE_UINT64 => U64(v, v, *v),
+    SInt32(i32) TYPE_SINT32 => I32(v, v, *v),
+    SInt64(i64) TYPE_SINT64 => I64(v, v, *v),
+    Fixed32(u32) TYPE_FIXED32 => U32(v, v, *v),
+    Fixed64(u64) TYPE_FIXED64 => U64(v, v, *v),
+    SFixed32(i32) TYPE_SFIXED32 => I32(v, v, *v),
+    SFixed64(i64) TYPE_SFIXED64 => I64(v, v, *v),
+    Bool(bool) TYPE_BOOL => Bool(v, v, *v),
+    String(String) TYPE_STRING => String(v, v, v.as_ref()),
+    Bytes(BytesField) TYPE_BYTES => Bytes(v.as_ref(), &mut v.0, &*v)
+);
+
+
 #[derive(Clone)]
 struct DynamicRepeatedField {
     values: Vec<DynamicValue>,
@@ -470,7 +480,7 @@ impl PartialEq for DynamicEnum {
 }
 
 impl protobuf_core::Enum for DynamicEnum {
-    fn parse(v: EnumValue) -> Result<Self>
+    fn parse(v: EnumValue) -> WireResult<Self>
     where
         Self: Sized,
     {
@@ -478,7 +488,7 @@ impl protobuf_core::Enum for DynamicEnum {
         todo!()
     }
 
-    fn parse_name(name: &str) -> Result<Self>
+    fn parse_name(name: &str) -> WireResult<Self>
     where
         Self: Sized,
     {
@@ -500,7 +510,7 @@ impl protobuf_core::Enum for DynamicEnum {
         self.value
     }
 
-    fn assign(&mut self, v: EnumValue) -> Result<()> {
+    fn assign(&mut self, v: EnumValue) -> WireResult<()> {
         for val in self.desc.proto().value() {
             if val.number() == v {
                 self.value = v;
@@ -508,10 +518,10 @@ impl protobuf_core::Enum for DynamicEnum {
             }
         }
 
-        Err(err_msg("Unknown enum value"))
+        Err(WireError::UnknownEnumVariant)
     }
 
-    fn assign_name(&mut self, name: &str) -> Result<()> {
+    fn assign_name(&mut self, name: &str) -> WireResult<()> {
         for val in self.desc.proto().value() {
             if val.name() == name {
                 self.value = val.number();
@@ -519,67 +529,7 @@ impl protobuf_core::Enum for DynamicEnum {
             }
         }
 
-        Err(err_msg("Unknown enum value name"))
+        Err(WireError::UnknownEnumVariant)
     }
 }
 
-#[derive(Clone, PartialEq)]
-enum DynamicPrimitiveValue {
-    Double(f64),
-    Float(f32),
-    Int32(i32),
-    Int64(i64),
-    Uint32(u32),
-    Uint64(u64),
-    Sint32(i32),
-    Sint64(i64),
-    Fixed32(u32),
-    Fixed64(u64),
-    Sfixed32(i32),
-    Sfixed64(i64),
-    Bool(bool),
-    String(String),
-    Bytes(BytesField),
-}
-
-impl Reflect for DynamicPrimitiveValue {
-    fn reflect(&self) -> Reflection {
-        match self {
-            DynamicPrimitiveValue::Double(v) => Reflection::F64(v),
-            DynamicPrimitiveValue::Float(v) => Reflection::F32(v),
-            DynamicPrimitiveValue::Int32(v) => Reflection::I32(v),
-            DynamicPrimitiveValue::Int64(v) => Reflection::I64(v),
-            DynamicPrimitiveValue::Uint32(v) => Reflection::U32(v),
-            DynamicPrimitiveValue::Uint64(v) => Reflection::U64(v),
-            DynamicPrimitiveValue::Sint32(v) => Reflection::I32(v),
-            DynamicPrimitiveValue::Sint64(v) => Reflection::I64(v),
-            DynamicPrimitiveValue::Fixed32(v) => Reflection::U32(v),
-            DynamicPrimitiveValue::Fixed64(v) => Reflection::U64(v),
-            DynamicPrimitiveValue::Sfixed32(v) => Reflection::I32(v),
-            DynamicPrimitiveValue::Sfixed64(v) => Reflection::I64(v),
-            DynamicPrimitiveValue::Bool(v) => Reflection::Bool(v),
-            DynamicPrimitiveValue::String(v) => Reflection::String(v),
-            DynamicPrimitiveValue::Bytes(v) => Reflection::Bytes(v.as_ref()),
-        }
-    }
-
-    fn reflect_mut(&mut self) -> ReflectionMut {
-        match self {
-            DynamicPrimitiveValue::Double(v) => ReflectionMut::F64(v),
-            DynamicPrimitiveValue::Float(v) => ReflectionMut::F32(v),
-            DynamicPrimitiveValue::Int32(v) => ReflectionMut::I32(v),
-            DynamicPrimitiveValue::Int64(v) => ReflectionMut::I64(v),
-            DynamicPrimitiveValue::Uint32(v) => ReflectionMut::U32(v),
-            DynamicPrimitiveValue::Uint64(v) => ReflectionMut::U64(v),
-            DynamicPrimitiveValue::Sint32(v) => ReflectionMut::I32(v),
-            DynamicPrimitiveValue::Sint64(v) => ReflectionMut::I64(v),
-            DynamicPrimitiveValue::Fixed32(v) => ReflectionMut::U32(v),
-            DynamicPrimitiveValue::Fixed64(v) => ReflectionMut::U64(v),
-            DynamicPrimitiveValue::Sfixed32(v) => ReflectionMut::I32(v),
-            DynamicPrimitiveValue::Sfixed64(v) => ReflectionMut::I64(v),
-            DynamicPrimitiveValue::Bool(v) => ReflectionMut::Bool(v),
-            DynamicPrimitiveValue::String(v) => ReflectionMut::String(v),
-            DynamicPrimitiveValue::Bytes(v) => ReflectionMut::Bytes(&mut v.0),
-        }
-    }
-}

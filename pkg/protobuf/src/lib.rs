@@ -3,7 +3,8 @@
     decl_macro,
     generators,
     trait_alias,
-    core_intrinsics
+    core_intrinsics,
+    concat_idents
 )]
 #![no_std]
 
@@ -49,6 +50,9 @@ pub use protobuf_core::*;
 #[cfg(test)]
 mod test {
     use super::*;
+
+    use alloc::string::ToString;
+
     use crate::proto::test::*;
 
     #[test]

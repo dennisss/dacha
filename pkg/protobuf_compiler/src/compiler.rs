@@ -246,6 +246,7 @@ impl Compiler<'_> {
         c.outer += "use common::fixed::vec::FixedVec;\n";
         c.outer += "use common::const_default::ConstDefault;\n";
         write!(c.outer, "use {}::*;\n", c.options.runtime_package).unwrap();
+        write!(c.outer, "use {}::codecs::*;\n", c.options.runtime_package).unwrap();
         write!(c.outer, "use {}::wire::*;\n", c.options.runtime_package).unwrap();
         // write!(c.outer, "use {}::service::*;\n", c.options.runtime_package).unwrap();
         write!(
@@ -633,14 +634,14 @@ impl Compiler<'_> {
             FieldType::Float => "f32",
             FieldType::Int32 => "i32",
             FieldType::Int64 => "i64",
-            FieldType::Uint32 => "u32",
-            FieldType::Uint64 => "u64",
-            FieldType::Sint32 => "i32",
-            FieldType::Sint64 => "i64",
+            FieldType::UInt32 => "u32",
+            FieldType::UInt64 => "u64",
+            FieldType::SInt32 => "i32",
+            FieldType::SInt64 => "i64",
             FieldType::Fixed32 => "u32",
             FieldType::Fixed64 => "u64",
-            FieldType::Sfixed32 => "i32",
-            FieldType::Sfixed64 => "i64",
+            FieldType::SFixed32 => "i32",
+            FieldType::SFixed64 => "i64",
             FieldType::Bool => "bool",
             FieldType::String => "String",
             FieldType::Bytes => "BytesField",
@@ -1529,6 +1530,7 @@ impl Compiler<'_> {
 
             let is_message = self.is_message(&field.typ, &inner_path);
 
+            // TODO: Deduplicate this logic.
             let typeclass = match &field.typ {
                 FieldType::Named(n) => {
                     // TODO: Call compile_field_type
@@ -1537,8 +1539,8 @@ impl Compiler<'_> {
                         .expect(&format!("Failed to resolve type type: {}", n));
 
                     match &typ.descriptor {
-                        ResolvedTypeDesc::Enum(_) => "enum",
-                        ResolvedTypeDesc::Message(_) => "message",
+                        ResolvedTypeDesc::Enum(_) => "Enum",
+                        ResolvedTypeDesc::Message(_) => "Message",
                     }
                 }
                 _ => field.typ.as_str(),
@@ -1547,23 +1549,23 @@ impl Compiler<'_> {
             // TODO: Must use repeated variants here.
             let mut p = String::new();
             if self.is_unordered_set(field) {
-                p += &format!("self.{}.insert(f.parse_{}()?);", name, typeclass)
+                p += &format!("self.{}.insert({}Codec::parse(&f)?);", name, typeclass)
             } else if is_repeated {
-                p += &format!("self.{}.push(f.parse_{}()?);", name, typeclass);
+                p += &format!("self.{}.push({}Codec::parse(&f)?);", name, typeclass);
             } else {
                 if use_option {
                     if is_message {
                         // TODO: also need to do this which not using optional but we are in
                         // proto2 required mode?
                         p += &format!(
-                            "self.{} = Some(MessagePtr::new(f.parse_{}()?))",
+                            "self.{} = Some(MessagePtr::new({}Codec::parse(&f)?))",
                             name, typeclass
                         );
                     } else {
-                        p += &format!("self.{} = Some(f.parse_{}()?)", name, typeclass);
+                        p += &format!("self.{} = Some({}Codec::parse(&f)?)", name, typeclass);
                     }
                 } else {
-                    p += &format!("self.{} = f.parse_{}()?", name, typeclass);
+                    p += &format!("self.{} = {}Codec::parse(&f)?", name, typeclass);
                 }
             }
 
@@ -1588,14 +1590,14 @@ impl Compiler<'_> {
                                     .expect(&format!("Failed to resolve type type: {}", n));
 
                                 match &typ.descriptor {
-                                    ResolvedTypeDesc::Enum(_) => "enum",
-                                    ResolvedTypeDesc::Message(_) => "message",
+                                    ResolvedTypeDesc::Enum(_) => "Enum",
+                                    ResolvedTypeDesc::Message(_) => "Message",
                                 }
                             }
                             _ => field.typ.as_str(),
                         };
 
-                        let value = format!("f.parse_{}()?", typeclass);
+                        let value = format!(" {}Codec::parse(&f)", typeclass);
 
                         lines.add(format!(
                             "{field_num} => {{ self.{oneof_fieldname} = {oneof_typename}::{oneof_case}({value}); }},",
@@ -1632,15 +1634,15 @@ impl Compiler<'_> {
             let is_message = self.is_message(&field.typ, &inner_path);
 
             // TODO: Dedup with above
-            let mut typeclass = match &field.typ {
+            let typeclass = match &field.typ {
                 FieldType::Named(n) => {
                     let typ = self
                         .resolve(&n, &inner_path)
                         .expect("Failed to resolve type");
 
                     match &typ.descriptor {
-                        ResolvedTypeDesc::Enum(_) => "enum",
-                        ResolvedTypeDesc::Message(_) => "message",
+                        ResolvedTypeDesc::Enum(_) => "Enum",
+                        ResolvedTypeDesc::Message(_) => "Message",
                     }
                 }
                 _ => field.typ.as_str(),
@@ -1658,10 +1660,19 @@ impl Compiler<'_> {
                 && self.proto.syntax == Syntax::Proto3)
                 && !is_repeated;
 
-            // TODO: Should also check that we aren't using a 'required' label?
-            if !use_option && !is_repeated {
-                typeclass = format!("sparse_{}", typeclass);
-            }
+
+            let serialize_method = {
+                // TODO: Should also check that we aren't using a 'required' label?
+                if !use_option && !is_repeated {
+                    format!("{}Codec::serialize_sparse", typeclass)
+                } else {
+                    format!("{}Codec::serialize", typeclass)
+                }
+            };
+
+            // if !use_option && !is_repeated {
+            //     typeclass = format!("sparse_{}", typeclass);
+            // }
 
             let given_reference = is_repeated || use_option;
 
@@ -1682,8 +1693,8 @@ impl Compiler<'_> {
             };
 
             let serialize_line = format!(
-                "\t\t\tWireField::serialize_{}({}, {}v, out)?;",
-                typeclass, field.num, reference_str
+                "\t\t\t{}({}, {}v, out)?;",
+                serialize_method, field.num, reference_str
             );
 
             if is_repeated {
@@ -1697,7 +1708,7 @@ impl Compiler<'_> {
                     lines.add(format!("\t\tif let Some(v) = self.{}.as_ref() {{", name));
                     if is_message {
                         lines.add(format!(
-                            "\t\tWireField::serialize_message({}, v.as_ref(), out)?;",
+                            "\t\tMessageCodec::serialize({}, v.as_ref(), out)?;",
                             field.num
                         ));
                     } else {
@@ -1707,8 +1718,8 @@ impl Compiler<'_> {
                 } else {
                     // TODO: Should borrow the value when using messages
                     lines.add(format!(
-                        "\t\tWireField::serialize_{}({}, {}self.{}, out)?;",
-                        typeclass, field.num, reference_str, name,
+                        "\t\t{}({}, {}self.{}, out)?;",
+                        serialize_method, field.num, reference_str, name,
                     ));
                 }
 
@@ -1742,8 +1753,8 @@ impl Compiler<'_> {
                                     .expect("Failed to resolve type");
 
                                 match &typ.descriptor {
-                                    ResolvedTypeDesc::Enum(_) => "enum",
-                                    ResolvedTypeDesc::Message(_) => "message",
+                                    ResolvedTypeDesc::Enum(_) => "Enum",
+                                    ResolvedTypeDesc::Message(_) => "Message",
                                 }
                             }
                             _ => field.typ.as_str(),
@@ -1762,7 +1773,7 @@ impl Compiler<'_> {
 
                         lines.add(format!(
                             "\t\t\t{oneof_typename}::{oneof_case}(v) => {{
-                                WireField::serialize_{typeclass}({field_num}, {reference}v, out)?; }}",
+                                {typeclass}Codec::serialize({field_num}, {reference}v, out)?; }}",
                             oneof_typename = oneof_typename,
                             oneof_case = oneof_case,
                             typeclass = typeclass,

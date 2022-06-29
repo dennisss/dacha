@@ -1756,6 +1756,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "protobuf_bench"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "protobuf",
+ "protobuf_compiler",
+]
+
+[[package]]
 name = "protobuf_compiler"
 version = "0.1.0"
 dependencies = [

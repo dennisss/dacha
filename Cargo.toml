@@ -78,7 +78,8 @@ members = [
 	"pkg/testing",
 	"pkg/perf",
 	"pkg/sys",
-	"pkg/elf"
+	"pkg/elf",
+	"pkg/protobuf_bench",
 ]
 
 [profile.dev]

@@ -87,6 +87,7 @@ pub mod iter;
 #[cfg(feature = "std")]
 pub mod line_builder;
 pub mod list;
+#[cfg(feature = "std")]
 pub mod loops;
 pub mod option;
 #[cfg(feature = "std")]

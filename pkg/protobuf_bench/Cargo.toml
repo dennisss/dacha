@@ -1,0 +1,16 @@
+[package]
+name = "protobuf_bench"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+protobuf = { path = "../protobuf" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../protobuf_compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

@@ -12,6 +12,7 @@ use common::const_default::ConstDefault;
 use common::errors::*;
 use common::fixed::vec::FixedVec;
 use common::list::Appendable;
+use protobuf_core::codecs::*;
 #[cfg(feature = "alloc")]
 use protobuf_core::reflection::*;
 use protobuf_core::wire::*;
@@ -82,7 +83,7 @@ impl protobuf_core::Message for FileDescriptorSet {
             let f = f?;
             match f.field_number {
                 1 => {
-                    self.file.push(f.parse_message()?);
+                    self.file.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -91,7 +92,7 @@ impl protobuf_core::Message for FileDescriptorSet {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         for v in self.file.iter() {
-            WireField::serialize_message(1, v, out)?;
+            MessageCodec::serialize(1, v, out)?;
         }
         Ok(())
     }
@@ -422,32 +423,32 @@ impl protobuf_core::Message for FileDescriptorProto {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.name = Some(f.parse_string()?),
-                2 => self.package = Some(f.parse_string()?),
+                1 => self.name = Some(StringCodec::parse(&f)?),
+                2 => self.package = Some(StringCodec::parse(&f)?),
                 3 => {
-                    self.dependency.push(f.parse_string()?);
+                    self.dependency.push(StringCodec::parse(&f)?);
                 }
                 10 => {
-                    self.public_dependency.push(f.parse_int32()?);
+                    self.public_dependency.push(Int32Codec::parse(&f)?);
                 }
                 11 => {
-                    self.weak_dependency.push(f.parse_int32()?);
+                    self.weak_dependency.push(Int32Codec::parse(&f)?);
                 }
                 4 => {
-                    self.message_type.push(f.parse_message()?);
+                    self.message_type.push(MessageCodec::parse(&f)?);
                 }
                 5 => {
-                    self.enum_type.push(f.parse_message()?);
+                    self.enum_type.push(MessageCodec::parse(&f)?);
                 }
                 6 => {
-                    self.service.push(f.parse_message()?);
+                    self.service.push(MessageCodec::parse(&f)?);
                 }
                 7 => {
-                    self.extension.push(f.parse_message()?);
+                    self.extension.push(MessageCodec::parse(&f)?);
                 }
-                8 => self.options = Some(MessagePtr::new(f.parse_message()?)),
-                9 => self.source_code_info = Some(MessagePtr::new(f.parse_message()?)),
-                12 => self.syntax = Some(f.parse_string()?),
+                8 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
+                9 => self.source_code_info = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
+                12 => self.syntax = Some(StringCodec::parse(&f)?),
                 _ => {}
             }
         }
@@ -455,40 +456,40 @@ impl protobuf_core::Message for FileDescriptorProto {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
-            WireField::serialize_string(1, v, out)?;
+            StringCodec::serialize(1, v, out)?;
         }
         if let Some(v) = self.package.as_ref() {
-            WireField::serialize_string(2, v, out)?;
+            StringCodec::serialize(2, v, out)?;
         }
         for v in self.dependency.iter() {
-            WireField::serialize_string(3, v, out)?;
+            StringCodec::serialize(3, v, out)?;
         }
         for v in self.public_dependency.iter() {
-            WireField::serialize_int32(10, *v, out)?;
+            Int32Codec::serialize(10, *v, out)?;
         }
         for v in self.weak_dependency.iter() {
-            WireField::serialize_int32(11, *v, out)?;
+            Int32Codec::serialize(11, *v, out)?;
         }
         for v in self.message_type.iter() {
-            WireField::serialize_message(4, v, out)?;
+            MessageCodec::serialize(4, v, out)?;
         }
         for v in self.enum_type.iter() {
-            WireField::serialize_message(5, v, out)?;
+            MessageCodec::serialize(5, v, out)?;
         }
         for v in self.service.iter() {
-            WireField::serialize_message(6, v, out)?;
+            MessageCodec::serialize(6, v, out)?;
         }
         for v in self.extension.iter() {
-            WireField::serialize_message(7, v, out)?;
+            MessageCodec::serialize(7, v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            WireField::serialize_message(8, v.as_ref(), out)?;
+            MessageCodec::serialize(8, v.as_ref(), out)?;
         }
         if let Some(v) = self.source_code_info.as_ref() {
-            WireField::serialize_message(9, v.as_ref(), out)?;
+            MessageCodec::serialize(9, v.as_ref(), out)?;
         }
         if let Some(v) = self.syntax.as_ref() {
-            WireField::serialize_string(12, v, out)?;
+            StringCodec::serialize(12, v, out)?;
         }
         Ok(())
     }
@@ -708,9 +709,9 @@ impl protobuf_core::Message for DescriptorProto_ExtensionRange {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.start = Some(f.parse_int32()?),
-                2 => self.end = Some(f.parse_int32()?),
-                3 => self.options = Some(MessagePtr::new(f.parse_message()?)),
+                1 => self.start = Some(Int32Codec::parse(&f)?),
+                2 => self.end = Some(Int32Codec::parse(&f)?),
+                3 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 _ => {}
             }
         }
@@ -718,13 +719,13 @@ impl protobuf_core::Message for DescriptorProto_ExtensionRange {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.start.as_ref() {
-            WireField::serialize_int32(1, *v, out)?;
+            Int32Codec::serialize(1, *v, out)?;
         }
         if let Some(v) = self.end.as_ref() {
-            WireField::serialize_int32(2, *v, out)?;
+            Int32Codec::serialize(2, *v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            WireField::serialize_message(3, v.as_ref(), out)?;
+            MessageCodec::serialize(3, v.as_ref(), out)?;
         }
         Ok(())
     }
@@ -856,8 +857,8 @@ impl protobuf_core::Message for DescriptorProto_ReservedRange {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.start = Some(f.parse_int32()?),
-                2 => self.end = Some(f.parse_int32()?),
+                1 => self.start = Some(Int32Codec::parse(&f)?),
+                2 => self.end = Some(Int32Codec::parse(&f)?),
                 _ => {}
             }
         }
@@ -865,10 +866,10 @@ impl protobuf_core::Message for DescriptorProto_ReservedRange {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.start.as_ref() {
-            WireField::serialize_int32(1, *v, out)?;
+            Int32Codec::serialize(1, *v, out)?;
         }
         if let Some(v) = self.end.as_ref() {
-            WireField::serialize_int32(2, *v, out)?;
+            Int32Codec::serialize(2, *v, out)?;
         }
         Ok(())
     }
@@ -1172,31 +1173,31 @@ impl protobuf_core::Message for DescriptorProto {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.name = Some(f.parse_string()?),
+                1 => self.name = Some(StringCodec::parse(&f)?),
                 2 => {
-                    self.field.push(f.parse_message()?);
+                    self.field.push(MessageCodec::parse(&f)?);
                 }
                 6 => {
-                    self.extension.push(f.parse_message()?);
+                    self.extension.push(MessageCodec::parse(&f)?);
                 }
                 3 => {
-                    self.nested_type.push(f.parse_message()?);
+                    self.nested_type.push(MessageCodec::parse(&f)?);
                 }
                 4 => {
-                    self.enum_type.push(f.parse_message()?);
+                    self.enum_type.push(MessageCodec::parse(&f)?);
                 }
                 5 => {
-                    self.extension_range.push(f.parse_message()?);
+                    self.extension_range.push(MessageCodec::parse(&f)?);
                 }
                 8 => {
-                    self.oneof_decl.push(f.parse_message()?);
+                    self.oneof_decl.push(MessageCodec::parse(&f)?);
                 }
-                7 => self.options = Some(MessagePtr::new(f.parse_message()?)),
+                7 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 9 => {
-                    self.reserved_range.push(f.parse_message()?);
+                    self.reserved_range.push(MessageCodec::parse(&f)?);
                 }
                 10 => {
-                    self.reserved_name.push(f.parse_string()?);
+                    self.reserved_name.push(StringCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -1205,34 +1206,34 @@ impl protobuf_core::Message for DescriptorProto {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
-            WireField::serialize_string(1, v, out)?;
+            StringCodec::serialize(1, v, out)?;
         }
         for v in self.field.iter() {
-            WireField::serialize_message(2, v, out)?;
+            MessageCodec::serialize(2, v, out)?;
         }
         for v in self.extension.iter() {
-            WireField::serialize_message(6, v, out)?;
+            MessageCodec::serialize(6, v, out)?;
         }
         for v in self.nested_type.iter() {
-            WireField::serialize_message(3, v, out)?;
+            MessageCodec::serialize(3, v, out)?;
         }
         for v in self.enum_type.iter() {
-            WireField::serialize_message(4, v, out)?;
+            MessageCodec::serialize(4, v, out)?;
         }
         for v in self.extension_range.iter() {
-            WireField::serialize_message(5, v, out)?;
+            MessageCodec::serialize(5, v, out)?;
         }
         for v in self.oneof_decl.iter() {
-            WireField::serialize_message(8, v, out)?;
+            MessageCodec::serialize(8, v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            WireField::serialize_message(7, v.as_ref(), out)?;
+            MessageCodec::serialize(7, v.as_ref(), out)?;
         }
         for v in self.reserved_range.iter() {
-            WireField::serialize_message(9, v, out)?;
+            MessageCodec::serialize(9, v, out)?;
         }
         for v in self.reserved_name.iter() {
-            WireField::serialize_string(10, v, out)?;
+            StringCodec::serialize(10, v, out)?;
         }
         Ok(())
     }
@@ -1398,7 +1399,7 @@ impl protobuf_core::Message for ExtensionRangeOptions {
             let f = f?;
             match f.field_number {
                 999 => {
-                    self.uninterpreted_option.push(f.parse_message()?);
+                    self.uninterpreted_option.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -1407,7 +1408,7 @@ impl protobuf_core::Message for ExtensionRangeOptions {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         for v in self.uninterpreted_option.iter() {
-            WireField::serialize_message(999, v, out)?;
+            MessageCodec::serialize(999, v, out)?;
         }
         Ok(())
     }
@@ -1886,16 +1887,16 @@ impl protobuf_core::Message for FieldDescriptorProto {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.name = Some(f.parse_string()?),
-                3 => self.number = Some(f.parse_int32()?),
-                4 => self.label = Some(f.parse_enum()?),
-                5 => self.typ = Some(f.parse_enum()?),
-                6 => self.type_name = Some(f.parse_string()?),
-                2 => self.extendee = Some(f.parse_string()?),
-                7 => self.default_value = Some(f.parse_string()?),
-                9 => self.oneof_index = Some(f.parse_int32()?),
-                10 => self.json_name = Some(f.parse_string()?),
-                8 => self.options = Some(MessagePtr::new(f.parse_message()?)),
+                1 => self.name = Some(StringCodec::parse(&f)?),
+                3 => self.number = Some(Int32Codec::parse(&f)?),
+                4 => self.label = Some(EnumCodec::parse(&f)?),
+                5 => self.typ = Some(EnumCodec::parse(&f)?),
+                6 => self.type_name = Some(StringCodec::parse(&f)?),
+                2 => self.extendee = Some(StringCodec::parse(&f)?),
+                7 => self.default_value = Some(StringCodec::parse(&f)?),
+                9 => self.oneof_index = Some(Int32Codec::parse(&f)?),
+                10 => self.json_name = Some(StringCodec::parse(&f)?),
+                8 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 _ => {}
             }
         }
@@ -1903,34 +1904,34 @@ impl protobuf_core::Message for FieldDescriptorProto {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
-            WireField::serialize_string(1, v, out)?;
+            StringCodec::serialize(1, v, out)?;
         }
         if let Some(v) = self.number.as_ref() {
-            WireField::serialize_int32(3, *v, out)?;
+            Int32Codec::serialize(3, *v, out)?;
         }
         if let Some(v) = self.label.as_ref() {
-            WireField::serialize_enum(4, v, out)?;
+            EnumCodec::serialize(4, v, out)?;
         }
         if let Some(v) = self.typ.as_ref() {
-            WireField::serialize_enum(5, v, out)?;
+            EnumCodec::serialize(5, v, out)?;
         }
         if let Some(v) = self.type_name.as_ref() {
-            WireField::serialize_string(6, v, out)?;
+            StringCodec::serialize(6, v, out)?;
         }
         if let Some(v) = self.extendee.as_ref() {
-            WireField::serialize_string(2, v, out)?;
+            StringCodec::serialize(2, v, out)?;
         }
         if let Some(v) = self.default_value.as_ref() {
-            WireField::serialize_string(7, v, out)?;
+            StringCodec::serialize(7, v, out)?;
         }
         if let Some(v) = self.oneof_index.as_ref() {
-            WireField::serialize_int32(9, *v, out)?;
+            Int32Codec::serialize(9, *v, out)?;
         }
         if let Some(v) = self.json_name.as_ref() {
-            WireField::serialize_string(10, v, out)?;
+            StringCodec::serialize(10, v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            WireField::serialize_message(8, v.as_ref(), out)?;
+            MessageCodec::serialize(8, v.as_ref(), out)?;
         }
         Ok(())
     }
@@ -2117,8 +2118,8 @@ impl protobuf_core::Message for OneofDescriptorProto {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.name = Some(f.parse_string()?),
-                2 => self.options = Some(MessagePtr::new(f.parse_message()?)),
+                1 => self.name = Some(StringCodec::parse(&f)?),
+                2 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 _ => {}
             }
         }
@@ -2126,10 +2127,10 @@ impl protobuf_core::Message for OneofDescriptorProto {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
-            WireField::serialize_string(1, v, out)?;
+            StringCodec::serialize(1, v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            WireField::serialize_message(2, v.as_ref(), out)?;
+            MessageCodec::serialize(2, v.as_ref(), out)?;
         }
         Ok(())
     }
@@ -2256,8 +2257,8 @@ impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.start = Some(f.parse_int32()?),
-                2 => self.end = Some(f.parse_int32()?),
+                1 => self.start = Some(Int32Codec::parse(&f)?),
+                2 => self.end = Some(Int32Codec::parse(&f)?),
                 _ => {}
             }
         }
@@ -2265,10 +2266,10 @@ impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.start.as_ref() {
-            WireField::serialize_int32(1, *v, out)?;
+            Int32Codec::serialize(1, *v, out)?;
         }
         if let Some(v) = self.end.as_ref() {
-            WireField::serialize_int32(2, *v, out)?;
+            Int32Codec::serialize(2, *v, out)?;
         }
         Ok(())
     }
@@ -2464,16 +2465,16 @@ impl protobuf_core::Message for EnumDescriptorProto {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.name = Some(f.parse_string()?),
+                1 => self.name = Some(StringCodec::parse(&f)?),
                 2 => {
-                    self.value.push(f.parse_message()?);
+                    self.value.push(MessageCodec::parse(&f)?);
                 }
-                3 => self.options = Some(MessagePtr::new(f.parse_message()?)),
+                3 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 4 => {
-                    self.reserved_range.push(f.parse_message()?);
+                    self.reserved_range.push(MessageCodec::parse(&f)?);
                 }
                 5 => {
-                    self.reserved_name.push(f.parse_string()?);
+                    self.reserved_name.push(StringCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -2482,19 +2483,19 @@ impl protobuf_core::Message for EnumDescriptorProto {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
-            WireField::serialize_string(1, v, out)?;
+            StringCodec::serialize(1, v, out)?;
         }
         for v in self.value.iter() {
-            WireField::serialize_message(2, v, out)?;
+            MessageCodec::serialize(2, v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            WireField::serialize_message(3, v.as_ref(), out)?;
+            MessageCodec::serialize(3, v.as_ref(), out)?;
         }
         for v in self.reserved_range.iter() {
-            WireField::serialize_message(4, v, out)?;
+            MessageCodec::serialize(4, v, out)?;
         }
         for v in self.reserved_name.iter() {
-            WireField::serialize_string(5, v, out)?;
+            StringCodec::serialize(5, v, out)?;
         }
         Ok(())
     }
@@ -2665,9 +2666,9 @@ impl protobuf_core::Message for EnumValueDescriptorProto {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.name = Some(f.parse_string()?),
-                2 => self.number = Some(f.parse_int32()?),
-                3 => self.options = Some(MessagePtr::new(f.parse_message()?)),
+                1 => self.name = Some(StringCodec::parse(&f)?),
+                2 => self.number = Some(Int32Codec::parse(&f)?),
+                3 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 _ => {}
             }
         }
@@ -2675,13 +2676,13 @@ impl protobuf_core::Message for EnumValueDescriptorProto {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
-            WireField::serialize_string(1, v, out)?;
+            StringCodec::serialize(1, v, out)?;
         }
         if let Some(v) = self.number.as_ref() {
-            WireField::serialize_int32(2, *v, out)?;
+            Int32Codec::serialize(2, *v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            WireField::serialize_message(3, v.as_ref(), out)?;
+            MessageCodec::serialize(3, v.as_ref(), out)?;
         }
         Ok(())
     }
@@ -2840,11 +2841,11 @@ impl protobuf_core::Message for ServiceDescriptorProto {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.name = Some(f.parse_string()?),
+                1 => self.name = Some(StringCodec::parse(&f)?),
                 2 => {
-                    self.method.push(f.parse_message()?);
+                    self.method.push(MessageCodec::parse(&f)?);
                 }
-                3 => self.options = Some(MessagePtr::new(f.parse_message()?)),
+                3 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
                 _ => {}
             }
         }
@@ -2852,13 +2853,13 @@ impl protobuf_core::Message for ServiceDescriptorProto {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
-            WireField::serialize_string(1, v, out)?;
+            StringCodec::serialize(1, v, out)?;
         }
         for v in self.method.iter() {
-            WireField::serialize_message(2, v, out)?;
+            MessageCodec::serialize(2, v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            WireField::serialize_message(3, v.as_ref(), out)?;
+            MessageCodec::serialize(3, v.as_ref(), out)?;
         }
         Ok(())
     }
@@ -3072,12 +3073,12 @@ impl protobuf_core::Message for MethodDescriptorProto {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.name = Some(f.parse_string()?),
-                2 => self.input_type = Some(f.parse_string()?),
-                3 => self.output_type = Some(f.parse_string()?),
-                4 => self.options = Some(MessagePtr::new(f.parse_message()?)),
-                5 => self.client_streaming = Some(f.parse_bool()?),
-                6 => self.server_streaming = Some(f.parse_bool()?),
+                1 => self.name = Some(StringCodec::parse(&f)?),
+                2 => self.input_type = Some(StringCodec::parse(&f)?),
+                3 => self.output_type = Some(StringCodec::parse(&f)?),
+                4 => self.options = Some(MessagePtr::new(MessageCodec::parse(&f)?)),
+                5 => self.client_streaming = Some(BoolCodec::parse(&f)?),
+                6 => self.server_streaming = Some(BoolCodec::parse(&f)?),
                 _ => {}
             }
         }
@@ -3085,22 +3086,22 @@ impl protobuf_core::Message for MethodDescriptorProto {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
-            WireField::serialize_string(1, v, out)?;
+            StringCodec::serialize(1, v, out)?;
         }
         if let Some(v) = self.input_type.as_ref() {
-            WireField::serialize_string(2, v, out)?;
+            StringCodec::serialize(2, v, out)?;
         }
         if let Some(v) = self.output_type.as_ref() {
-            WireField::serialize_string(3, v, out)?;
+            StringCodec::serialize(3, v, out)?;
         }
         if let Some(v) = self.options.as_ref() {
-            WireField::serialize_message(4, v.as_ref(), out)?;
+            MessageCodec::serialize(4, v.as_ref(), out)?;
         }
         if let Some(v) = self.client_streaming.as_ref() {
-            WireField::serialize_bool(5, *v, out)?;
+            BoolCodec::serialize(5, *v, out)?;
         }
         if let Some(v) = self.server_streaming.as_ref() {
-            WireField::serialize_bool(6, *v, out)?;
+            BoolCodec::serialize(6, *v, out)?;
         }
         Ok(())
     }
@@ -3718,28 +3719,28 @@ impl protobuf_core::Message for FileOptions {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.java_package = Some(f.parse_string()?),
-                8 => self.java_outer_classname = Some(f.parse_string()?),
-                10 => self.java_multiple_files = Some(f.parse_bool()?),
-                20 => self.java_generate_equals_and_hash = Some(f.parse_bool()?),
-                27 => self.java_string_check_utf8 = Some(f.parse_bool()?),
-                9 => self.optimize_for = Some(f.parse_enum()?),
-                11 => self.go_package = Some(f.parse_string()?),
-                16 => self.cc_generic_services = Some(f.parse_bool()?),
-                17 => self.java_generic_services = Some(f.parse_bool()?),
-                18 => self.py_generic_services = Some(f.parse_bool()?),
-                42 => self.php_generic_services = Some(f.parse_bool()?),
-                23 => self.deprecated = Some(f.parse_bool()?),
-                31 => self.cc_enable_arenas = Some(f.parse_bool()?),
-                36 => self.objc_class_prefix = Some(f.parse_string()?),
-                37 => self.csharp_namespace = Some(f.parse_string()?),
-                39 => self.swift_prefix = Some(f.parse_string()?),
-                40 => self.php_class_prefix = Some(f.parse_string()?),
-                41 => self.php_namespace = Some(f.parse_string()?),
-                44 => self.php_metadata_namespace = Some(f.parse_string()?),
-                45 => self.ruby_package = Some(f.parse_string()?),
+                1 => self.java_package = Some(StringCodec::parse(&f)?),
+                8 => self.java_outer_classname = Some(StringCodec::parse(&f)?),
+                10 => self.java_multiple_files = Some(BoolCodec::parse(&f)?),
+                20 => self.java_generate_equals_and_hash = Some(BoolCodec::parse(&f)?),
+                27 => self.java_string_check_utf8 = Some(BoolCodec::parse(&f)?),
+                9 => self.optimize_for = Some(EnumCodec::parse(&f)?),
+                11 => self.go_package = Some(StringCodec::parse(&f)?),
+                16 => self.cc_generic_services = Some(BoolCodec::parse(&f)?),
+                17 => self.java_generic_services = Some(BoolCodec::parse(&f)?),
+                18 => self.py_generic_services = Some(BoolCodec::parse(&f)?),
+                42 => self.php_generic_services = Some(BoolCodec::parse(&f)?),
+                23 => self.deprecated = Some(BoolCodec::parse(&f)?),
+                31 => self.cc_enable_arenas = Some(BoolCodec::parse(&f)?),
+                36 => self.objc_class_prefix = Some(StringCodec::parse(&f)?),
+                37 => self.csharp_namespace = Some(StringCodec::parse(&f)?),
+                39 => self.swift_prefix = Some(StringCodec::parse(&f)?),
+                40 => self.php_class_prefix = Some(StringCodec::parse(&f)?),
+                41 => self.php_namespace = Some(StringCodec::parse(&f)?),
+                44 => self.php_metadata_namespace = Some(StringCodec::parse(&f)?),
+                45 => self.ruby_package = Some(StringCodec::parse(&f)?),
                 999 => {
-                    self.uninterpreted_option.push(f.parse_message()?);
+                    self.uninterpreted_option.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -3748,67 +3749,67 @@ impl protobuf_core::Message for FileOptions {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.java_package.as_ref() {
-            WireField::serialize_string(1, v, out)?;
+            StringCodec::serialize(1, v, out)?;
         }
         if let Some(v) = self.java_outer_classname.as_ref() {
-            WireField::serialize_string(8, v, out)?;
+            StringCodec::serialize(8, v, out)?;
         }
         if let Some(v) = self.java_multiple_files.as_ref() {
-            WireField::serialize_bool(10, *v, out)?;
+            BoolCodec::serialize(10, *v, out)?;
         }
         if let Some(v) = self.java_generate_equals_and_hash.as_ref() {
-            WireField::serialize_bool(20, *v, out)?;
+            BoolCodec::serialize(20, *v, out)?;
         }
         if let Some(v) = self.java_string_check_utf8.as_ref() {
-            WireField::serialize_bool(27, *v, out)?;
+            BoolCodec::serialize(27, *v, out)?;
         }
         if let Some(v) = self.optimize_for.as_ref() {
-            WireField::serialize_enum(9, v, out)?;
+            EnumCodec::serialize(9, v, out)?;
         }
         if let Some(v) = self.go_package.as_ref() {
-            WireField::serialize_string(11, v, out)?;
+            StringCodec::serialize(11, v, out)?;
         }
         if let Some(v) = self.cc_generic_services.as_ref() {
-            WireField::serialize_bool(16, *v, out)?;
+            BoolCodec::serialize(16, *v, out)?;
         }
         if let Some(v) = self.java_generic_services.as_ref() {
-            WireField::serialize_bool(17, *v, out)?;
+            BoolCodec::serialize(17, *v, out)?;
         }
         if let Some(v) = self.py_generic_services.as_ref() {
-            WireField::serialize_bool(18, *v, out)?;
+            BoolCodec::serialize(18, *v, out)?;
         }
         if let Some(v) = self.php_generic_services.as_ref() {
-            WireField::serialize_bool(42, *v, out)?;
+            BoolCodec::serialize(42, *v, out)?;
         }
         if let Some(v) = self.deprecated.as_ref() {
-            WireField::serialize_bool(23, *v, out)?;
+            BoolCodec::serialize(23, *v, out)?;
         }
         if let Some(v) = self.cc_enable_arenas.as_ref() {
-            WireField::serialize_bool(31, *v, out)?;
+            BoolCodec::serialize(31, *v, out)?;
         }
         if let Some(v) = self.objc_class_prefix.as_ref() {
-            WireField::serialize_string(36, v, out)?;
+            StringCodec::serialize(36, v, out)?;
         }
         if let Some(v) = self.csharp_namespace.as_ref() {
-            WireField::serialize_string(37, v, out)?;
+            StringCodec::serialize(37, v, out)?;
         }
         if let Some(v) = self.swift_prefix.as_ref() {
-            WireField::serialize_string(39, v, out)?;
+            StringCodec::serialize(39, v, out)?;
         }
         if let Some(v) = self.php_class_prefix.as_ref() {
-            WireField::serialize_string(40, v, out)?;
+            StringCodec::serialize(40, v, out)?;
         }
         if let Some(v) = self.php_namespace.as_ref() {
-            WireField::serialize_string(41, v, out)?;
+            StringCodec::serialize(41, v, out)?;
         }
         if let Some(v) = self.php_metadata_namespace.as_ref() {
-            WireField::serialize_string(44, v, out)?;
+            StringCodec::serialize(44, v, out)?;
         }
         if let Some(v) = self.ruby_package.as_ref() {
-            WireField::serialize_string(45, v, out)?;
+            StringCodec::serialize(45, v, out)?;
         }
         for v in self.uninterpreted_option.iter() {
-            WireField::serialize_message(999, v, out)?;
+            MessageCodec::serialize(999, v, out)?;
         }
         Ok(())
     }
@@ -4130,12 +4131,12 @@ impl protobuf_core::Message for MessageOptions {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.message_set_wire_format = Some(f.parse_bool()?),
-                2 => self.no_standard_descriptor_accessor = Some(f.parse_bool()?),
-                3 => self.deprecated = Some(f.parse_bool()?),
-                7 => self.map_entry = Some(f.parse_bool()?),
+                1 => self.message_set_wire_format = Some(BoolCodec::parse(&f)?),
+                2 => self.no_standard_descriptor_accessor = Some(BoolCodec::parse(&f)?),
+                3 => self.deprecated = Some(BoolCodec::parse(&f)?),
+                7 => self.map_entry = Some(BoolCodec::parse(&f)?),
                 999 => {
-                    self.uninterpreted_option.push(f.parse_message()?);
+                    self.uninterpreted_option.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -4144,19 +4145,19 @@ impl protobuf_core::Message for MessageOptions {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.message_set_wire_format.as_ref() {
-            WireField::serialize_bool(1, *v, out)?;
+            BoolCodec::serialize(1, *v, out)?;
         }
         if let Some(v) = self.no_standard_descriptor_accessor.as_ref() {
-            WireField::serialize_bool(2, *v, out)?;
+            BoolCodec::serialize(2, *v, out)?;
         }
         if let Some(v) = self.deprecated.as_ref() {
-            WireField::serialize_bool(3, *v, out)?;
+            BoolCodec::serialize(3, *v, out)?;
         }
         if let Some(v) = self.map_entry.as_ref() {
-            WireField::serialize_bool(7, *v, out)?;
+            BoolCodec::serialize(7, *v, out)?;
         }
         for v in self.uninterpreted_option.iter() {
-            WireField::serialize_message(999, v, out)?;
+            MessageCodec::serialize(999, v, out)?;
         }
         Ok(())
     }
@@ -4544,14 +4545,14 @@ impl protobuf_core::Message for FieldOptions {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.ctype = Some(f.parse_enum()?),
-                2 => self.packed = Some(f.parse_bool()?),
-                6 => self.jstype = Some(f.parse_enum()?),
-                5 => self.lazy = Some(f.parse_bool()?),
-                3 => self.deprecated = Some(f.parse_bool()?),
-                10 => self.weak = Some(f.parse_bool()?),
+                1 => self.ctype = Some(EnumCodec::parse(&f)?),
+                2 => self.packed = Some(BoolCodec::parse(&f)?),
+                6 => self.jstype = Some(EnumCodec::parse(&f)?),
+                5 => self.lazy = Some(BoolCodec::parse(&f)?),
+                3 => self.deprecated = Some(BoolCodec::parse(&f)?),
+                10 => self.weak = Some(BoolCodec::parse(&f)?),
                 999 => {
-                    self.uninterpreted_option.push(f.parse_message()?);
+                    self.uninterpreted_option.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -4560,25 +4561,25 @@ impl protobuf_core::Message for FieldOptions {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.ctype.as_ref() {
-            WireField::serialize_enum(1, v, out)?;
+            EnumCodec::serialize(1, v, out)?;
         }
         if let Some(v) = self.packed.as_ref() {
-            WireField::serialize_bool(2, *v, out)?;
+            BoolCodec::serialize(2, *v, out)?;
         }
         if let Some(v) = self.jstype.as_ref() {
-            WireField::serialize_enum(6, v, out)?;
+            EnumCodec::serialize(6, v, out)?;
         }
         if let Some(v) = self.lazy.as_ref() {
-            WireField::serialize_bool(5, *v, out)?;
+            BoolCodec::serialize(5, *v, out)?;
         }
         if let Some(v) = self.deprecated.as_ref() {
-            WireField::serialize_bool(3, *v, out)?;
+            BoolCodec::serialize(3, *v, out)?;
         }
         if let Some(v) = self.weak.as_ref() {
-            WireField::serialize_bool(10, *v, out)?;
+            BoolCodec::serialize(10, *v, out)?;
         }
         for v in self.uninterpreted_option.iter() {
-            WireField::serialize_message(999, v, out)?;
+            MessageCodec::serialize(999, v, out)?;
         }
         Ok(())
     }
@@ -4723,7 +4724,7 @@ impl protobuf_core::Message for OneofOptions {
             let f = f?;
             match f.field_number {
                 999 => {
-                    self.uninterpreted_option.push(f.parse_message()?);
+                    self.uninterpreted_option.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -4732,7 +4733,7 @@ impl protobuf_core::Message for OneofOptions {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         for v in self.uninterpreted_option.iter() {
-            WireField::serialize_message(999, v, out)?;
+            MessageCodec::serialize(999, v, out)?;
         }
         Ok(())
     }
@@ -4870,10 +4871,10 @@ impl protobuf_core::Message for EnumOptions {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                2 => self.allow_alias = Some(f.parse_bool()?),
-                3 => self.deprecated = Some(f.parse_bool()?),
+                2 => self.allow_alias = Some(BoolCodec::parse(&f)?),
+                3 => self.deprecated = Some(BoolCodec::parse(&f)?),
                 999 => {
-                    self.uninterpreted_option.push(f.parse_message()?);
+                    self.uninterpreted_option.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -4882,13 +4883,13 @@ impl protobuf_core::Message for EnumOptions {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.allow_alias.as_ref() {
-            WireField::serialize_bool(2, *v, out)?;
+            BoolCodec::serialize(2, *v, out)?;
         }
         if let Some(v) = self.deprecated.as_ref() {
-            WireField::serialize_bool(3, *v, out)?;
+            BoolCodec::serialize(3, *v, out)?;
         }
         for v in self.uninterpreted_option.iter() {
-            WireField::serialize_message(999, v, out)?;
+            MessageCodec::serialize(999, v, out)?;
         }
         Ok(())
     }
@@ -5023,9 +5024,9 @@ impl protobuf_core::Message for EnumValueOptions {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.deprecated = Some(f.parse_bool()?),
+                1 => self.deprecated = Some(BoolCodec::parse(&f)?),
                 999 => {
-                    self.uninterpreted_option.push(f.parse_message()?);
+                    self.uninterpreted_option.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -5034,10 +5035,10 @@ impl protobuf_core::Message for EnumValueOptions {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.deprecated.as_ref() {
-            WireField::serialize_bool(1, *v, out)?;
+            BoolCodec::serialize(1, *v, out)?;
         }
         for v in self.uninterpreted_option.iter() {
-            WireField::serialize_message(999, v, out)?;
+            MessageCodec::serialize(999, v, out)?;
         }
         Ok(())
     }
@@ -5165,9 +5166,9 @@ impl protobuf_core::Message for ServiceOptions {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                33 => self.deprecated = Some(f.parse_bool()?),
+                33 => self.deprecated = Some(BoolCodec::parse(&f)?),
                 999 => {
-                    self.uninterpreted_option.push(f.parse_message()?);
+                    self.uninterpreted_option.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -5176,10 +5177,10 @@ impl protobuf_core::Message for ServiceOptions {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.deprecated.as_ref() {
-            WireField::serialize_bool(33, *v, out)?;
+            BoolCodec::serialize(33, *v, out)?;
         }
         for v in self.uninterpreted_option.iter() {
-            WireField::serialize_message(999, v, out)?;
+            MessageCodec::serialize(999, v, out)?;
         }
         Ok(())
     }
@@ -5401,10 +5402,10 @@ impl protobuf_core::Message for MethodOptions {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                33 => self.deprecated = Some(f.parse_bool()?),
-                34 => self.idempotency_level = Some(f.parse_enum()?),
+                33 => self.deprecated = Some(BoolCodec::parse(&f)?),
+                34 => self.idempotency_level = Some(EnumCodec::parse(&f)?),
                 999 => {
-                    self.uninterpreted_option.push(f.parse_message()?);
+                    self.uninterpreted_option.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -5413,13 +5414,13 @@ impl protobuf_core::Message for MethodOptions {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.deprecated.as_ref() {
-            WireField::serialize_bool(33, *v, out)?;
+            BoolCodec::serialize(33, *v, out)?;
         }
         if let Some(v) = self.idempotency_level.as_ref() {
-            WireField::serialize_enum(34, v, out)?;
+            EnumCodec::serialize(34, v, out)?;
         }
         for v in self.uninterpreted_option.iter() {
-            WireField::serialize_message(999, v, out)?;
+            MessageCodec::serialize(999, v, out)?;
         }
         Ok(())
     }
@@ -5552,8 +5553,8 @@ impl protobuf_core::Message for UninterpretedOption_NamePart {
         for f in WireFieldIter::new(data) {
             let f = f?;
             match f.field_number {
-                1 => self.name_part = Some(f.parse_string()?),
-                2 => self.is_extension = Some(f.parse_bool()?),
+                1 => self.name_part = Some(StringCodec::parse(&f)?),
+                2 => self.is_extension = Some(BoolCodec::parse(&f)?),
                 _ => {}
             }
         }
@@ -5561,12 +5562,12 @@ impl protobuf_core::Message for UninterpretedOption_NamePart {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name_part.as_ref() {
-            WireField::serialize_string(1, v, out)?;
+            StringCodec::serialize(1, v, out)?;
         } else {
             return Err(MessageSerializeError::RequiredFieldNotSet.into());
         }
         if let Some(v) = self.is_extension.as_ref() {
-            WireField::serialize_bool(2, *v, out)?;
+            BoolCodec::serialize(2, *v, out)?;
         } else {
             return Err(MessageSerializeError::RequiredFieldNotSet.into());
         }
@@ -5808,14 +5809,14 @@ impl protobuf_core::Message for UninterpretedOption {
             let f = f?;
             match f.field_number {
                 2 => {
-                    self.name.push(f.parse_message()?);
+                    self.name.push(MessageCodec::parse(&f)?);
                 }
-                3 => self.identifier_value = Some(f.parse_string()?),
-                4 => self.positive_int_value = Some(f.parse_uint64()?),
-                5 => self.negative_int_value = Some(f.parse_int64()?),
-                6 => self.double_value = Some(f.parse_double()?),
-                7 => self.string_value = Some(f.parse_bytes()?),
-                8 => self.aggregate_value = Some(f.parse_string()?),
+                3 => self.identifier_value = Some(StringCodec::parse(&f)?),
+                4 => self.positive_int_value = Some(UInt64Codec::parse(&f)?),
+                5 => self.negative_int_value = Some(Int64Codec::parse(&f)?),
+                6 => self.double_value = Some(DoubleCodec::parse(&f)?),
+                7 => self.string_value = Some(BytesCodec::parse(&f)?),
+                8 => self.aggregate_value = Some(StringCodec::parse(&f)?),
                 _ => {}
             }
         }
@@ -5823,25 +5824,25 @@ impl protobuf_core::Message for UninterpretedOption {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         for v in self.name.iter() {
-            WireField::serialize_message(2, v, out)?;
+            MessageCodec::serialize(2, v, out)?;
         }
         if let Some(v) = self.identifier_value.as_ref() {
-            WireField::serialize_string(3, v, out)?;
+            StringCodec::serialize(3, v, out)?;
         }
         if let Some(v) = self.positive_int_value.as_ref() {
-            WireField::serialize_uint64(4, *v, out)?;
+            UInt64Codec::serialize(4, *v, out)?;
         }
         if let Some(v) = self.negative_int_value.as_ref() {
-            WireField::serialize_int64(5, *v, out)?;
+            Int64Codec::serialize(5, *v, out)?;
         }
         if let Some(v) = self.double_value.as_ref() {
-            WireField::serialize_double(6, *v, out)?;
+            DoubleCodec::serialize(6, *v, out)?;
         }
         if let Some(v) = self.string_value.as_ref() {
-            WireField::serialize_bytes(7, v, out)?;
+            BytesCodec::serialize(7, v, out)?;
         }
         if let Some(v) = self.aggregate_value.as_ref() {
-            WireField::serialize_string(8, v, out)?;
+            StringCodec::serialize(8, v, out)?;
         }
         Ok(())
     }
@@ -6074,15 +6075,15 @@ impl protobuf_core::Message for SourceCodeInfo_Location {
             let f = f?;
             match f.field_number {
                 1 => {
-                    self.path.push(f.parse_int32()?);
+                    self.path.push(Int32Codec::parse(&f)?);
                 }
                 2 => {
-                    self.span.push(f.parse_int32()?);
+                    self.span.push(Int32Codec::parse(&f)?);
                 }
-                3 => self.leading_comments = Some(f.parse_string()?),
-                4 => self.trailing_comments = Some(f.parse_string()?),
+                3 => self.leading_comments = Some(StringCodec::parse(&f)?),
+                4 => self.trailing_comments = Some(StringCodec::parse(&f)?),
                 6 => {
-                    self.leading_detached_comments.push(f.parse_string()?);
+                    self.leading_detached_comments.push(StringCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -6091,19 +6092,19 @@ impl protobuf_core::Message for SourceCodeInfo_Location {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         for v in self.path.iter() {
-            WireField::serialize_int32(1, *v, out)?;
+            Int32Codec::serialize(1, *v, out)?;
         }
         for v in self.span.iter() {
-            WireField::serialize_int32(2, *v, out)?;
+            Int32Codec::serialize(2, *v, out)?;
         }
         if let Some(v) = self.leading_comments.as_ref() {
-            WireField::serialize_string(3, v, out)?;
+            StringCodec::serialize(3, v, out)?;
         }
         if let Some(v) = self.trailing_comments.as_ref() {
-            WireField::serialize_string(4, v, out)?;
+            StringCodec::serialize(4, v, out)?;
         }
         for v in self.leading_detached_comments.iter() {
-            WireField::serialize_string(6, v, out)?;
+            StringCodec::serialize(6, v, out)?;
         }
         Ok(())
     }
@@ -6233,7 +6234,7 @@ impl protobuf_core::Message for SourceCodeInfo {
             let f = f?;
             match f.field_number {
                 1 => {
-                    self.location.push(f.parse_message()?);
+                    self.location.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -6242,7 +6243,7 @@ impl protobuf_core::Message for SourceCodeInfo {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         for v in self.location.iter() {
-            WireField::serialize_message(1, v, out)?;
+            MessageCodec::serialize(1, v, out)?;
         }
         Ok(())
     }
@@ -6400,11 +6401,11 @@ impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
             let f = f?;
             match f.field_number {
                 1 => {
-                    self.path.push(f.parse_int32()?);
+                    self.path.push(Int32Codec::parse(&f)?);
                 }
-                2 => self.source_file = Some(f.parse_string()?),
-                3 => self.begin = Some(f.parse_int32()?),
-                4 => self.end = Some(f.parse_int32()?),
+                2 => self.source_file = Some(StringCodec::parse(&f)?),
+                3 => self.begin = Some(Int32Codec::parse(&f)?),
+                4 => self.end = Some(Int32Codec::parse(&f)?),
                 _ => {}
             }
         }
@@ -6412,16 +6413,16 @@ impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         for v in self.path.iter() {
-            WireField::serialize_int32(1, *v, out)?;
+            Int32Codec::serialize(1, *v, out)?;
         }
         if let Some(v) = self.source_file.as_ref() {
-            WireField::serialize_string(2, v, out)?;
+            StringCodec::serialize(2, v, out)?;
         }
         if let Some(v) = self.begin.as_ref() {
-            WireField::serialize_int32(3, *v, out)?;
+            Int32Codec::serialize(3, *v, out)?;
         }
         if let Some(v) = self.end.as_ref() {
-            WireField::serialize_int32(4, *v, out)?;
+            Int32Codec::serialize(4, *v, out)?;
         }
         Ok(())
     }
@@ -6547,7 +6548,7 @@ impl protobuf_core::Message for GeneratedCodeInfo {
             let f = f?;
             match f.field_number {
                 1 => {
-                    self.annotation.push(f.parse_message()?);
+                    self.annotation.push(MessageCodec::parse(&f)?);
                 }
                 _ => {}
             }
@@ -6556,7 +6557,7 @@ impl protobuf_core::Message for GeneratedCodeInfo {
     }
     fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
         for v in self.annotation.iter() {
-            WireField::serialize_message(1, v, out)?;
+            MessageCodec::serialize(1, v, out)?;
         }
         Ok(())
     }
