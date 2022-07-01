@@ -108,7 +108,7 @@ fn apply_json_value_to_reflection(r: ReflectionMut, value: &json::Value) -> Resu
             };
 
             for value in arr {
-                apply_json_value_to_reflection(r.add(), value)?;
+                apply_json_value_to_reflection(r.reflect_add(), value)?;
             }
         }
         ReflectionMut::Message(r) => {

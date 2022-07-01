@@ -254,27 +254,6 @@ impl<'a> WireField<'a> {
 
         Ok(())
     }
-
-    // pub fn parse_repeated_int64(&self) -> impl Iterator<Item=WireResult<i64>> + 'a {
-    //     self.value.repeated_varint().map(|v| {
-    //         v.map(|v| v as i64)
-    //     })
-    // }
-
-    // pub fn parse_repeated_float
-
-    pub fn parse_repeated_int64(&self) -> impl Iterator<Item=WireResult<i64>> + 'a {
-        self.value.repeated_varint().map(|v| {
-            v.map(|v| v as i64)
-        })
-    }
-
-    pub fn parse_repeated_uint64(&self) -> impl Iterator<Item=WireResult<u64>> + 'a {
-        self.value.repeated_varint().map(|v| {
-            v.map(|v| v as u64)
-        })
-    }
-
 }
 
 pub struct WireFieldIter<'a> {

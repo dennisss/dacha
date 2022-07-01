@@ -126,7 +126,7 @@ impl<T: protobuf::Message + Default> ServerStreamRequest<T> {
         let message = {
             if let Some(data) = data {
                 let value = match self.request_type.serialization {
-                    RPCMediaSerialization::Proto => T::parse(&data),
+                    RPCMediaSerialization::Proto => T::parse(&data).map_err(|e| Error::from(e)),
                     RPCMediaSerialization::JSON => {
                         let options = protobuf_json::ParserOptions {
                             ignore_unknown_fields: true,

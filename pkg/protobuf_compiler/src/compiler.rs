@@ -209,7 +209,10 @@ fn get_proto_descriptor(path: &Path, proto: &Proto) -> Result<String> {
     let mut p = proto.to_proto();
     p.set_name(path.strip_prefix(common::project_dir())?.to_str().unwrap());
 
-    Ok(rust_bytestring(&p.serialize()?))
+    let data = p.serialize()?;
+    // assert_eq!(p, protobuf_descriptor::FileDescriptorProto::parse(&data)?);
+
+    Ok(rust_bytestring(&data))
 }
 
 #[cfg(not(feature = "descriptors"))]
@@ -1549,9 +1552,17 @@ impl Compiler<'_> {
             // TODO: Must use repeated variants here.
             let mut p = String::new();
             if self.is_unordered_set(field) {
-                p += &format!("self.{}.insert({}Codec::parse(&f)?);", name, typeclass)
+                p += &format!("
+                    for v in {typeclass}Codec::parse_repeated(&f) {{
+                        self.{name}.insert(v?);
+                    }}
+                ", name = name, typeclass = typeclass);
             } else if is_repeated {
-                p += &format!("self.{}.push({}Codec::parse(&f)?);", name, typeclass);
+                p += &format!("
+                    for v in {typeclass}Codec::parse_repeated(&f) {{
+                        self.{name}.push(v?);
+                    }}
+                ", name = name, typeclass = typeclass);
             } else {
                 if use_option {
                     if is_message {
@@ -1597,7 +1608,7 @@ impl Compiler<'_> {
                             _ => field.typ.as_str(),
                         };
 
-                        let value = format!(" {}Codec::parse(&f)", typeclass);
+                        let value = format!("{}Codec::parse(&f)?", typeclass);
 
                         lines.add(format!(
                             "{field_num} => {{ self.{oneof_fieldname} = {oneof_typename}::{oneof_case}({value}); }},",
@@ -1661,6 +1672,7 @@ impl Compiler<'_> {
                 && !is_repeated;
 
 
+            // TODO: We no longer need the special cases for repeated values here.
             let serialize_method = {
                 // TODO: Should also check that we aren't using a 'required' label?
                 if !use_option && !is_repeated {
@@ -1669,10 +1681,6 @@ impl Compiler<'_> {
                     format!("{}Codec::serialize", typeclass)
                 }
             };
-
-            // if !use_option && !is_repeated {
-            //     typeclass = format!("sparse_{}", typeclass);
-            // }
 
             let given_reference = is_repeated || use_option;
 
@@ -1698,9 +1706,18 @@ impl Compiler<'_> {
             );
 
             if is_repeated {
-                lines.add(format!("\t\tfor v in self.{}.iter() {{", name));
-                lines.add(serialize_line);
-                lines.add("\t\t}");
+                if self.is_unordered_set(field) {
+                    // TODO: Support packed serialization of a SetField.
+                    lines.add(format!("
+                    for v in self.{name}.iter() {{
+                        {typeclass}Codec::serialize({field_num}, {ref_str}v, out)?;
+                    }}
+                    ", typeclass = typeclass, name = name, field_num = field.num, ref_str = reference_str));
+
+                } else {
+                    lines.add(format!("{typeclass}Codec::serialize_repeated({field_num}, &self.{name}, out)?;",
+                    typeclass = typeclass, name = name, field_num = field.num));
+                }
             } else {
                 // TODO: For proto3, the requirement is that it is not equal to
                 // the default value (and there would be no optional for

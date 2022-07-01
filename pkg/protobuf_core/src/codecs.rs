@@ -46,6 +46,10 @@ macro_rules! define_varint_codec {
                 Ok(($from_wire)(field.value.varint()?))
             }
 
+            pub fn parse_repeated<'a>(field: &WireField<'a>) -> impl Iterator<Item=WireResult<$t>> + 'a {
+                field.value.repeated_varint().map(|v| v.map($from_wire))
+            }
+
             pub fn serialize<A: Appendable<Item = u8>>(
                 field_number: FieldNumber, value: $t, out: &mut A
             ) -> Result<(), A::Error> {
@@ -64,17 +68,57 @@ macro_rules! define_varint_codec {
                 }
                 Ok(())
             }
+
+            // TODO: Implement an alternative version for an alloc friendly environment.
+            pub fn serialize_repeated<A: Appendable<Item = u8>>(
+                field_number: FieldNumber, values: &[$t], out: &mut A
+            ) -> Result<(), A::Error> {
+                let mut length_counter = ByteCounter::new();
+                for value in values {
+                    Self::serialize(field_number, *value, out)?;
+                }
+        
+                // TODO: Deduplicate this with the logic for serializing LengthDelim fields.
+                Tag {
+                    field_number,
+                    wire_type: WireType::LengthDelim,
+                }
+                .serialize(out)?;
+                serialize_varint(length_counter.total_bytes() as u64, out)?;
+                
+                for value in values {
+                    Self::serialize(field_number, *value, out)?;
+                }
+
+                Ok(())
+            }
         }
 	};
 }
 
 macro_rules! define_word_codec {
-    ( $name:ident, $t:ty, $variant:ident, $variant_parser:ident, $from_wire:expr, $to_wire:expr, $default:expr) => {
+    ( $name:ident, $t:ty,
+        Word32,
+        $from_wire:expr, $to_wire:expr, $default:expr) => {
+        define_word_codec!($name, $t, Word32, word32, repeated_word32, core::mem::size_of::<u32>(), $from_wire, $to_wire, $default);
+    };
+    ( $name:ident, $t:ty,
+        Word64,
+        $from_wire:expr, $to_wire:expr, $default:expr) => {
+        define_word_codec!($name, $t, Word64, word64, repeated_word64, core::mem::size_of::<u64>(), $from_wire, $to_wire, $default);
+    };
+    ( $name:ident, $t:ty,
+      $variant:ident, $variant_parser:ident, $variant_repeated_parser:ident, $variant_size:expr,
+      $from_wire:expr, $to_wire:expr, $default:expr) => {
 		pub struct $name;
 
         impl $name {
             pub fn parse(field: &WireField) -> WireResult<$t> {
                 Ok(($from_wire)(*field.value.$variant_parser()?))
+            }
+
+            pub fn parse_repeated<'a>(field: &WireField<'a>) -> impl Iterator<Item=WireResult<$t>> + 'a {
+                field.value.$variant_repeated_parser().map(|v| v.map(|v| ($from_wire)(*v)))
             }
 
             pub fn serialize<A: Appendable<Item = u8>>(
@@ -96,6 +140,26 @@ macro_rules! define_word_codec {
                 }
                 Ok(())
             }
+
+            pub fn serialize_repeated<A: Appendable<Item = u8>>(
+                field_number: FieldNumber, values: &[$t], out: &mut A
+            ) -> Result<(), A::Error> {
+                let length = $variant_size * values.len();
+        
+                // TODO: Deduplicate this with the logic for serializing LengthDelim fields.
+                Tag {
+                    field_number,
+                    wire_type: WireType::LengthDelim,
+                }
+                .serialize(out)?;
+                serialize_varint(length as u64, out)?;
+                
+                for value in values {
+                    Self::serialize(field_number, *value, out)?;
+                }
+
+                Ok(())
+            }
         }
 	};
 }
@@ -104,7 +168,7 @@ macro_rules! define_word_codec {
 define_word_codec!(
     DoubleCodec,
     f64,
-    Word64, word64,
+    Word64,
     f64::from_le_bytes,
     f64::to_le_bytes,
     0.0
@@ -113,7 +177,7 @@ define_word_codec!(
 define_word_codec!(
     FloatCodec,
     f32,
-    Word32, word32,
+    Word32,
     f32::from_le_bytes,
     f32::to_le_bytes,
     0.0
@@ -159,6 +223,10 @@ impl SInt32Codec {
         decode_zigzag32(field.value.varint()?)
     }
 
+    pub fn parse_repeated<'a>(field: &WireField<'a>) -> impl Iterator<Item=WireResult<i32>> + 'a {
+        field.value.repeated_varint().map(|v| v.and_then(|v| decode_zigzag32(v)))
+    }
+
     pub fn serialize<A: Appendable<Item = u8>>(
         field_number: FieldNumber, value: i32, out: &mut A
     ) -> Result<(), A::Error> {
@@ -177,6 +245,29 @@ impl SInt32Codec {
         }
         Ok(())
     }
+
+    pub fn serialize_repeated<A: Appendable<Item = u8>>(
+        field_number: FieldNumber, values: &[i32], out: &mut A
+    ) -> Result<(), A::Error> {
+        let mut length_counter = ByteCounter::new();
+        for value in values {
+            Self::serialize(field_number, *value, out)?;
+        }
+
+        // TODO: Deduplicate this with the logic for serializing LengthDelim fields.
+        Tag {
+            field_number,
+            wire_type: WireType::LengthDelim,
+        }
+        .serialize(out)?;
+        serialize_varint(length_counter.total_bytes() as u64, out)?;
+        
+        for value in values {
+            Self::serialize(field_number, *value, out)?;
+        }
+
+        Ok(())
+    }
 }
 
 
@@ -193,7 +284,7 @@ define_varint_codec!(
 define_word_codec!(
     Fixed32Codec,
     u32,
-    Word32, word32,
+    Word32,
     u32::from_le_bytes,
     u32::to_le_bytes,
     0
@@ -202,7 +293,7 @@ define_word_codec!(
 define_word_codec!(
     Fixed64Codec,
     u64,
-    Word64, word64,
+    Word64,
     u64::from_le_bytes,
     u64::to_le_bytes,
     0
@@ -211,7 +302,7 @@ define_word_codec!(
 define_word_codec!(
     SFixed32Codec,
     i32,
-    Word32, word32,
+    Word32,
     i32::from_le_bytes,
     i32::to_le_bytes,
     0
@@ -220,7 +311,7 @@ define_word_codec!(
 define_word_codec!(
     SFixed64Codec,
     i64,
-    Word64, word64,
+    Word64,
     i64::from_le_bytes,
     i64::to_le_bytes,
     0
@@ -244,6 +335,11 @@ impl StringCodec {
         Ok(S::from(s))
     }
 
+    pub fn parse_repeated<'a, S: From<&'a str>>(field: &WireField<'a>) -> impl Iterator<Item=WireResult<S>> {
+        // Can't be packed. Fallback to singular element parser.
+        core::iter::once(Self::parse(field))
+    }
+
     pub fn serialize<A: Appendable<Item = u8>>(
         field_number: FieldNumber, value: &str, out: &mut A
     ) -> Result<(), A::Error> {
@@ -262,14 +358,29 @@ impl StringCodec {
         }
         Ok(())
     }
+
+    pub fn serialize_repeated<A: Appendable<Item = u8>, S: AsRef<str>>(
+        field_number: FieldNumber, values: &[S], out: &mut A
+    ) -> Result<(), A::Error> {
+        for value in values {
+            Self::serialize(field_number, value.as_ref(), out)?;
+        }
+
+        Ok(())
+    }
 }
 
 pub struct BytesCodec;
 
 impl BytesCodec {
-    pub fn parse<'a, B>(field: &'a WireField) -> WireResult<B> where B: 'a + From<&'a [u8]> {
+    pub fn parse<'a, B>(field: &WireField<'a>) -> WireResult<B> where B: 'a + From<&'a [u8]> {
         let bytes = field.value.length_delim()?;
         Ok(B::from(bytes))
+    }
+
+    pub fn parse_repeated<'a, B: 'a + From<&'a [u8]>>(field: &WireField<'a>) -> impl Iterator<Item=WireResult<B>> {
+        // Can't be packed. Fallback to singular element parser.
+        core::iter::once(Self::parse(field))
     }
 
     pub fn serialize<A: Appendable<Item = u8>>(
@@ -290,6 +401,16 @@ impl BytesCodec {
         }
         Ok(())
     }
+
+    pub fn serialize_repeated<A: Appendable<Item = u8>, B: AsRef<[u8]>>(
+        field_number: FieldNumber, values: &[B], out: &mut A
+    ) -> Result<(), A::Error> {
+        for value in values {
+            Self::serialize(field_number, value.as_ref(), out)?;
+        }
+
+        Ok(())
+    }
 }
 
 
@@ -303,6 +424,24 @@ impl EnumCodec {
     pub fn parse_into(field: &WireField, out: &mut dyn Enum) -> WireResult<()> {
         out.assign(Int32Codec::parse(field)?)?;
         Ok(())    
+    }
+
+    pub fn parse_repeated<'a, E: 'static + Enum>(field: &WireField<'a>) -> impl Iterator<Item=WireResult<E>> + 'a {
+        Int32Codec::parse_repeated(field).map(|v| {
+            v.and_then(E::parse)
+        })
+    }
+
+    pub fn parse_repeated_into<'a, E: Enum + 'static, I: 'a + FnMut() -> &'a mut E>(
+        field: &WireField, mut enum_iter: I
+    ) -> WireResult<()> {
+        for v in Int32Codec::parse_repeated(field) {
+            let v = v?;
+            let e = enum_iter();
+            e.assign(v)?;
+        }
+
+        Ok(())
     }
 
     pub fn serialize<E: 'static + Enum, A: Appendable<Item = u8>>(
@@ -322,7 +461,28 @@ impl EnumCodec {
         Ok(())
     }
 
+    pub fn serialize_repeated<E: Enum, A: Appendable<Item = u8>>(
+        field_number: FieldNumber, values: &[E], out: &mut A
+    ) -> Result<(), A::Error> {
+        let mut length_counter = ByteCounter::new();
+        for value in values {
+            Int32Codec::serialize(field_number, value.value(), out)?;
+        }
 
+        // TODO: Deduplicate this with the logic for serializing LengthDelim fields.
+        Tag {
+            field_number,
+            wire_type: WireType::LengthDelim,
+        }
+        .serialize(out)?;
+        serialize_varint(length_counter.total_bytes() as u64, out)?;
+        
+        for value in values {
+            Int32Codec::serialize(field_number, value.value(), out)?;
+        }
+
+        Ok(())
+    }
 }
 
 pub struct MessageCodec<M> {
@@ -341,6 +501,11 @@ impl<M: Message> MessageCodec<M> {
         let data = field.value.length_delim()?;
         message.parse_merge(data)?;
         Ok(())
+    }
+
+    pub fn parse_repeated(field: &WireField) -> impl Iterator<Item=WireResult<M>> {
+        // Can't be packed. Fallback to singular element parser.
+        core::iter::once(Self::parse(field))
     }
 
     #[cfg(feature = "alloc")]
@@ -381,5 +546,21 @@ impl<M: Message> MessageCodec<M> {
         value.serialize_to(out)?;
 
         Ok(())
+    }
+
+    pub fn serialize_repeated<A: Appendable<Item = u8>>(
+        field_number: FieldNumber, values: &[M], out: &mut A
+    ) -> Result<()> {
+        for value in values {
+            Self::serialize(field_number, value, out)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn serialize_sparse<A: Appendable<Item = u8>>(
+        field_number: FieldNumber, value: &M, out: &mut A
+    ) -> Result<()> {
+        Self::serialize(field_number, value, out)
     }
 }

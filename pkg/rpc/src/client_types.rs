@@ -258,7 +258,7 @@ impl<Res: protobuf::Message> ClientStreamingResponse<Res> {
         match Res::parse(&data) {
             Ok(v) => Some(v),
             Err(e) => {
-                self.state = Some(ClientStreamingResponseState::Error(e));
+                self.state = Some(ClientStreamingResponseState::Error(e.into()));
                 None
             }
         }

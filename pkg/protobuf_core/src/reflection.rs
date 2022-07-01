@@ -255,26 +255,26 @@ impl<T: Reflect + Default + PartialEq> SingularFieldReflectionProto3 for T {
 }
 
 pub trait RepeatedFieldReflection {
-    fn len(&self) -> usize;
-    fn get(&self, index: usize) -> Option<Reflection>;
-    fn get_mut(&mut self, index: usize) -> Option<ReflectionMut>;
-    fn add(&mut self) -> ReflectionMut;
+    fn reflect_len(&self) -> usize;
+    fn reflect_get(&self, index: usize) -> Option<Reflection>;
+    fn reflect_get_mut(&mut self, index: usize) -> Option<ReflectionMut>;
+    fn reflect_add(&mut self) -> ReflectionMut;
 }
 
 impl<T: Reflect + Default> RepeatedFieldReflection for Vec<T> {
-    fn len(&self) -> usize {
+    fn reflect_len(&self) -> usize {
         Vec::len(self)
     }
-    fn get(&self, index: usize) -> Option<Reflection> {
+    fn reflect_get(&self, index: usize) -> Option<Reflection> {
         // TODO: A repeated field should never contain an element that returns None?
         self.deref().get(index).map(|v: &T| v.reflect())
     }
-    fn get_mut(&mut self, index: usize) -> Option<ReflectionMut> {
+    fn reflect_get_mut(&mut self, index: usize) -> Option<ReflectionMut> {
         self.deref_mut()
             .get_mut(index)
             .map(|v: &mut T| v.reflect_mut())
     }
-    fn add(&mut self) -> ReflectionMut {
+    fn reflect_add(&mut self) -> ReflectionMut {
         Vec::push(self, T::default());
         let idx = self.len() - 1;
         self[idx].reflect_mut()
@@ -282,20 +282,20 @@ impl<T: Reflect + Default> RepeatedFieldReflection for Vec<T> {
 }
 
 impl<T: Reflect + Default, const LEN: usize> RepeatedFieldReflection for FixedVec<T, LEN> {
-    fn len(&self) -> usize {
+    fn reflect_len(&self) -> usize {
         let s: &[T] = self.as_ref();
         s.len()
     }
 
-    fn get(&self, index: usize) -> Option<Reflection> {
+    fn reflect_get(&self, index: usize) -> Option<Reflection> {
         self.deref().get(index).map(|v: &T| v.reflect())
     }
-    fn get_mut(&mut self, index: usize) -> Option<ReflectionMut> {
+    fn reflect_get_mut(&mut self, index: usize) -> Option<ReflectionMut> {
         self.deref_mut()
             .get_mut(index)
             .map(|v: &mut T| v.reflect_mut())
     }
-    fn add(&mut self) -> ReflectionMut {
+    fn reflect_add(&mut self) -> ReflectionMut {
         FixedVec::push(self, T::default());
         let idx = self.len() - 1;
         self[idx].reflect_mut()

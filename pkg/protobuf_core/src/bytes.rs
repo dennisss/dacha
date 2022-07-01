@@ -14,6 +14,12 @@ impl core::convert::From<Vec<u8>> for BytesField {
     }
 }
 
+impl AsRef<[u8]> for BytesField {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
 impl core::convert::From<&[u8]> for BytesField {
     fn from(v: &[u8]) -> Self {
         Self(v.to_vec())

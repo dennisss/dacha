@@ -86,9 +86,9 @@ fn assign_reflection(to: ReflectionMut, from: Reflection) -> Result<()> {
         }
         ReflectionMut::Repeated(to) => {
             if let Reflection::Repeated(from) = from {
-                for i in 0..from.len() {
-                    let v = to.add();
-                    assign_reflection(v, from.get(i).unwrap())?;
+                for i in 0..from.reflect_len() {
+                    let v = to.reflect_add();
+                    assign_reflection(v, from.reflect_get(i).unwrap())?;
                 }
             }
         }

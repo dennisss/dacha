@@ -10,6 +10,3 @@
 [submodule "third_party/libcamera"]
 	path = third_party/libcamera
 	url = https://git.libcamera.org/libcamera/libcamera.git
-[submodule "third_party/pprof"]
-	path = third_party/pprof
-	url = https://github.com/google/pprof.git

@@ -304,10 +304,10 @@ impl TextValue {
             ReflectionMut::Repeated(v) => {
                 if let Self::Array(items) = self {
                     for item in items {
-                        item.apply(v.add())?;
+                        item.apply(v.reflect_add())?;
                     }
                 } else {
-                    self.apply(v.add())?;
+                    self.apply(v.reflect_add())?;
                 }
             }
             ReflectionMut::Set(v) => {
@@ -518,7 +518,7 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
             serialize_str_lit(v, out);
         }
         Reflection::Repeated(v) => {
-            if v.len() == 0 {
+            if v.reflect_len() == 0 {
                 return;
             }
 
@@ -526,12 +526,12 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
 
             let inner_indent = format!("{}    ", indent);
 
-            for i in 0..v.len() {
+            for i in 0..v.reflect_len() {
                 out.push_str(&inner_indent);
-                let r = v.get(i).unwrap();
+                let r = v.reflect_get(i).unwrap();
                 serialize_reflection(r, &inner_indent, out);
 
-                if i != v.len() - 1 {
+                if i != v.reflect_len() - 1 {
                     out.push(',');
                 }
                 out.push('\n');

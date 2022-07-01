@@ -67,9 +67,9 @@ fn reflection_to_json_value(r: Reflection, output: json::ValueStringifier) {
         }
         Reflection::Repeated(v) => {
             let mut arr = output.array();
-            for i in 0..v.len() {
+            for i in 0..v.reflect_len() {
                 let el = arr.element();
-                reflection_to_json_value(v.get(i).unwrap(), el);
+                reflection_to_json_value(v.reflect_get(i).unwrap(), el);
             }
         }
         Reflection::Message(v) => {

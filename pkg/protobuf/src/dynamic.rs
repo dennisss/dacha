@@ -18,6 +18,7 @@ use crate::BytesField;
 
 #[derive(Clone)]
 pub struct DynamicMessage {
+    // TODO: Use a non-secure hash for this.
     fields: HashMap<FieldNumber, DynamicField>,
     desc: MessageDescriptor,
 }
@@ -34,15 +35,15 @@ impl DynamicMessage {
     fn default_value_for_field(field_desc: &FieldDescriptor) -> WireResult<DynamicValue> {
         use FieldDescriptorProto_Type::*;
         Ok(match field_desc.proto().typ() {
-            TYPE_DOUBLE => DynamicValue::Primitive(DynamicPrimitiveValue::Double(0.0)),
-            TYPE_FLOAT => DynamicValue::Primitive(DynamicPrimitiveValue::Float(0.0)),
-            TYPE_INT64 => DynamicValue::Primitive(DynamicPrimitiveValue::Int64(0)),
-            TYPE_UINT64 => DynamicValue::Primitive(DynamicPrimitiveValue::UInt64(0)),
-            TYPE_INT32 => DynamicValue::Primitive(DynamicPrimitiveValue::Int32(0)),
-            TYPE_FIXED64 => DynamicValue::Primitive(DynamicPrimitiveValue::UInt64(0)),
-            TYPE_FIXED32 => DynamicValue::Primitive(DynamicPrimitiveValue::UInt32(0)),
-            TYPE_BOOL => DynamicValue::Primitive(DynamicPrimitiveValue::Bool(false)),
-            TYPE_STRING => DynamicValue::Primitive(DynamicPrimitiveValue::String(String::new())),
+            TYPE_DOUBLE => DynamicValue::Double(0.0),
+            TYPE_FLOAT => DynamicValue::Float(0.0),
+            TYPE_INT64 => DynamicValue::Int64(0),
+            TYPE_UINT64 => DynamicValue::UInt64(0),
+            TYPE_INT32 => DynamicValue::Int32(0),
+            TYPE_FIXED64 => DynamicValue::UInt64(0),
+            TYPE_FIXED32 => DynamicValue::UInt32(0),
+            TYPE_BOOL => DynamicValue::Bool(false),
+            TYPE_STRING => DynamicValue::String(String::new()),
             TYPE_GROUP => {
                 todo!()
             }
@@ -57,12 +58,12 @@ impl DynamicMessage {
                 }
                 _ => return Err(WireError::BadDescriptor /* err_msg("Unknown type in descriptor")*/),
             },
-            TYPE_BYTES => DynamicValue::Primitive(DynamicPrimitiveValue::Bytes(Vec::new().into())),
-            TYPE_UINT32 => DynamicValue::Primitive(DynamicPrimitiveValue::UInt32(0)),
-            TYPE_SFIXED32 => DynamicValue::Primitive(DynamicPrimitiveValue::Int32(0)),
-            TYPE_SFIXED64 => DynamicValue::Primitive(DynamicPrimitiveValue::Int64(0)),
-            TYPE_SINT32 => DynamicValue::Primitive(DynamicPrimitiveValue::Int32(0)),
-            TYPE_SINT64 => DynamicValue::Primitive(DynamicPrimitiveValue::Int64(0)),
+            TYPE_BYTES => DynamicValue::Bytes(Vec::new().into()),
+            TYPE_UINT32 => DynamicValue::UInt32(0),
+            TYPE_SFIXED32 => DynamicValue::Int32(0),
+            TYPE_SFIXED64 => DynamicValue::Int64(0),
+            TYPE_SINT32 => DynamicValue::Int32(0),
+            TYPE_SINT64 => DynamicValue::Int64(0),
         })
     }
 }
@@ -122,19 +123,15 @@ impl protobuf_core::Message for DynamicMessage {
                 self.fields
                     .entry(wire_field.field_number)
                     .or_insert_with(|| {
-                        DynamicField::Repeated(DynamicRepeatedField {
-                            default_value,
-                            values: vec![],
-                            desc: field_desc.clone(),
-                        })
+                        DynamicField::Repeated(DynamicRepeatedValues::new(default_value))
                     });
 
             let existing_values = match existing_field {
-                DynamicField::Repeated(v) => &mut v.values,
+                DynamicField::Repeated(ref mut v) => v,
                 _ => panic!(),
             };
 
-            DynamicValue::parse_repeated_values(&field_desc, &wire_field, existing_values)?;
+            existing_values.parse_merge(&wire_field)?;
         }
 
         Ok(())
@@ -145,17 +142,14 @@ impl protobuf_core::Message for DynamicMessage {
         // TODO: Ignore fields with default values in proto3 (by using the sparse
         // serializers).
 
-        let mut out = vec![];
-
         for (field_num, field) in &self.fields {
-            let (repeated, values) = match field {
-                DynamicField::Singular(v) => (false, std::slice::from_ref(v)),
-                DynamicField::Repeated(v) => (true, &v.values[..]),
-            };
-
-            for value in values {
-                // TODO: NEed an alternative form for repeated values.
-                value.serialize_to(*field_num, &mut out)?;
+            match field {
+                DynamicField::Singular(v) => {
+                    v.serialize_singular_value(*field_num, out)?;
+                }
+                DynamicField::Repeated(v) => {
+                    v.serialize(*field_num, out)?;
+                }
             }
         }
 
@@ -223,11 +217,7 @@ impl protobuf_core::MessageReflection for DynamicMessage {
                 field_desc.proto().label() == FieldDescriptorProto_Label::LABEL_REPEATED;
 
             let default_field = if is_repeated {
-                DynamicField::Repeated(DynamicRepeatedField {
-                    values: vec![],
-                    default_value,
-                    desc: field_desc,
-                })
+                DynamicField::Repeated(DynamicRepeatedValues::new(default_value))
             } else {
                 DynamicField::Singular(default_value)
             };
@@ -246,7 +236,7 @@ impl protobuf_core::MessageReflection for DynamicMessage {
 #[derive(Clone, PartialEq)]
 enum DynamicField {
     Singular(DynamicValue),
-    Repeated(DynamicRepeatedField),
+    Repeated(DynamicRepeatedValues),
 }
 
 impl Reflect for DynamicField {
@@ -265,33 +255,33 @@ impl Reflect for DynamicField {
     }
 }
 
-#[derive(Clone, PartialEq)]
-enum DynamicValue {
-    Primitive(DynamicPrimitiveValue),
-    Enum(DynamicEnum),
-    Message(DynamicMessage),
-}
-
-impl Reflect for DynamicValue {
-    fn reflect(&self) -> Reflection {
-        match self {
-            DynamicValue::Primitive(v) => v.reflect(),
-            DynamicValue::Enum(v) => Reflection::Enum(v),
-            DynamicValue::Message(v) => Reflection::Message(v),
-        }
-    }
-
-    fn reflect_mut(&mut self) -> ReflectionMut {
-        match self {
-            DynamicValue::Primitive(v) => v.reflect_mut(),
-            DynamicValue::Enum(v) => ReflectionMut::Enum(v),
-            DynamicValue::Message(v) => ReflectionMut::Message(v),
-        }
-    }
-}
-
 macro_rules! define_primitive_values {
     ($v:ident, $( $name:ident ( $t:ty ) $proto_type:ident => $reflection_variant:ident ( $reflection_value:expr, $reflection_mut:expr, $serialize_value:expr ) ),*) => {
+        #[derive(Clone, PartialEq)]
+        enum DynamicValue {
+            Enum(DynamicEnum),
+            Message(DynamicMessage),
+            $( $name($t) ),*
+        }
+
+        impl Reflect for DynamicValue {
+            fn reflect(&self) -> Reflection {
+                match self {
+                    DynamicValue::Enum(v) => Reflection::Enum(v),
+                    DynamicValue::Message(v) => Reflection::Message(v),
+                    $( DynamicValue::$name($v) => Reflection::$reflection_variant($reflection_value) ),*
+                }
+            }
+        
+            fn reflect_mut(&mut self) -> ReflectionMut {
+                match self {
+                    DynamicValue::Enum(v) => ReflectionMut::Enum(v),
+                    DynamicValue::Message(v) => ReflectionMut::Message(v),
+                    $( DynamicValue::$name($v) => ReflectionMut::$reflection_variant($reflection_mut) ),*
+                }
+            }
+        }
+
         impl DynamicValue {
             fn parse_singular_value(field_desc: &FieldDescriptor, wire_field: &WireField) -> WireResult<DynamicValue> {
                 use FieldDescriptorProto_Type::*;
@@ -320,63 +310,22 @@ macro_rules! define_primitive_values {
                         }
                     },
                     $(
-                        $proto_type => DynamicValue::Primitive(DynamicPrimitiveValue::$name(
+                        $proto_type => DynamicValue::$name(
                             <concat_idents!($name, Codec)>::parse(wire_field)?
-                        ))
+                        )
                     ),*
                 })
             }
 
-            // TODO: Directly write to the output vector of the caller.
-            fn parse_repeated_values(field_desc: &FieldDescriptor, wire_field: &WireField, values: &mut Vec<DynamicValue>) -> WireResult<()> {
-                use FieldDescriptorProto_Type::*;
-
-                match field_desc.proto().typ() {
-                    TYPE_INT64 => {
-                        for v in wire_field.parse_repeated_int64() {
-                            values.push(DynamicValue::Primitive(DynamicPrimitiveValue::Int64(v?)));
-                        }
-
-                        return Ok(());
-                    }
-                    TYPE_UINT64 => {
-                        for v in wire_field.parse_repeated_uint64() {
-                            values.push(DynamicValue::Primitive(DynamicPrimitiveValue::UInt64(v?)));
-                        }
-
-                        return Ok(());
-                    },
-
-                    // TODO: Add all other supported packable types.
-
-                    // Other types don't support packing.
-                    _ => {}
-                };
-
-                // Fallback to types that can't be packed.
-                values.push(Self::parse_singular_value(field_desc, wire_field)?);
-                Ok(())
-            }
-
-            fn serialize_to<A: Appendable<Item = u8>>(&self, field_num: FieldNumber, out: &mut A) -> Result<()> {
+            fn serialize_singular_value<A: Appendable<Item = u8>>(&self, field_num: FieldNumber, out: &mut A) -> Result<()> {
                 match self {
-                    DynamicValue::Primitive(v) => {
-                        // TODO: Choose sparse variations if not repeated.
-                        match v {
-                            $(
-                                DynamicPrimitiveValue::$name($v) => {
-                                    <concat_idents!($name, Codec)>::serialize(field_num, $serialize_value, out)
-                                }
-                            ),*
-                        }?
+                    $(
+                    DynamicValue::$name($v) => {
+                        <concat_idents!($name, Codec)>::serialize_sparse(field_num, $serialize_value, out)?
                     }
+                    ),*
                     DynamicValue::Enum(v) => {
-                        // if repeated {
-                        EnumCodec::serialize(field_num, v, out)?
-                            // WireField::serialize_enum(*field_num, v, &mut out)?
-                        // } else {
-                        //     WireField::serialize_sparse_enum(field_num, v, &mut out)?
-                        // }
+                        EnumCodec::serialize_sparse(field_num, v, out)?
                     }
                     DynamicValue::Message(v) => {
                         MessageCodec::serialize(field_num, v, out)?
@@ -386,24 +335,165 @@ macro_rules! define_primitive_values {
             }
         }
 
-        #[derive(Clone, PartialEq)]
-        pub(crate) enum DynamicPrimitiveValue {
-            $( $name($t) ),*
+
+        #[derive(Clone)]
+        enum DynamicRepeatedValues {
+            Enum { values: Vec<DynamicEnum>, default_value: DynamicEnum },
+            Message { values: Vec<DynamicMessage>, default_value: DynamicMessage },
+            $( $name { values: Vec<$t>, default_value: $t, } ),*
+        }
+        
+        impl DynamicRepeatedValues {
+            fn new(default_value: DynamicValue) -> Self {
+                match default_value {
+                    DynamicValue::Message(v) => Self::Message { values: vec![], default_value: v },
+                    DynamicValue::Enum(v) => Self::Enum { values: vec![], default_value: v },
+                    $( DynamicValue::$name(v) => Self::$name { values: vec![], default_value: v } ),*
+                }
+            }
+
+            fn parse_merge(&mut self, wire_field: &WireField) -> WireResult<()> {
+                match self {
+                    DynamicRepeatedValues::Message { values, default_value }  => {
+                        // NOTE: Doesn't support packed serialization.
+                        let mut val = default_value.clone();
+                        MessageCodec::parse_into(wire_field, &mut val)?;
+                        values.push(val);
+                    }
+                    DynamicRepeatedValues::Enum { values, default_value } => {
+                        for v in EnumCodec::parse_repeated::<AnonymousEnum>(wire_field) {
+                            let v = v?;
+
+                            let mut val = default_value.clone();
+                            val.value = v.value;
+                            values.push(val);
+                        }
+                    }
+                    $(
+                        DynamicRepeatedValues::$name { values, .. } => {
+                            for v in <concat_idents!($name, Codec)>::parse_repeated(wire_field) {
+                                values.push(v?);
+                            }
+                        }
+                    ),*
+                }
+
+                Ok(())
+            }
+
+            fn serialize<A: Appendable<Item = u8>>(&self, field_num: FieldNumber, out: &mut A) -> Result<()> {
+                match self {
+                    DynamicRepeatedValues::Enum { values, .. } => {
+                        EnumCodec::serialize_repeated(field_num, &values, out)?;
+                    }
+                    DynamicRepeatedValues::Message { values, .. } => {
+                        MessageCodec::serialize_repeated(field_num, &values, out)?;
+                    }
+                    $(
+                    DynamicRepeatedValues::$name { values, .. } => {
+                        // $serialize_value
+                        <concat_idents!($name, Codec)>::serialize_repeated(field_num, &values[..], out)?;
+                    }
+                    ),*
+                };
+                Ok(())
+            }
         }
 
-        impl Reflect for DynamicPrimitiveValue {
-            fn reflect(&self) -> Reflection {
+        impl PartialEq for DynamicRepeatedValues {
+            fn eq(&self, other: &Self) -> bool {
+                // Compare while ignoring the default value.
+
                 match self {
-                    $( DynamicPrimitiveValue::$name($v) => Reflection::$reflection_variant($reflection_value) ),*
-                }
-            }
-        
-            fn reflect_mut(&mut self) -> ReflectionMut {
-                match self {
-                    $( DynamicPrimitiveValue::$name($v) => ReflectionMut::$reflection_variant($reflection_mut) ),*
+                    DynamicRepeatedValues::Enum { values, .. } => {
+                        if let DynamicRepeatedValues::Enum { values: other_values, .. } = other {
+                            values == other_values
+                        } else {
+                            false
+                        }
+                    },
+                    DynamicRepeatedValues::Message { values, .. } => {
+                        if let DynamicRepeatedValues::Message { values: other_values, .. } = other {
+                            values == other_values
+                        } else {
+                            false
+                        }
+                    },
+                    $(
+                        DynamicRepeatedValues::$name { values, .. } => {
+                            if let DynamicRepeatedValues::$name { values: other_values, .. } = other {
+                                values == other_values
+                            } else {
+                                false
+                            }
+                        }
+                    ),*
                 }
             }
         }
+
+        impl RepeatedFieldReflection for DynamicRepeatedValues {
+            fn reflect_len(&self) -> usize {
+                match self {
+                    DynamicRepeatedValues::Enum { values, .. } => values.len(),
+                    DynamicRepeatedValues::Message { values, .. } => values.len(),
+                    $(
+                        DynamicRepeatedValues::$name { values, .. } => values.len()
+                    ),*
+                }
+            }
+
+            fn reflect_get(&self, index: usize) -> Option<Reflection> {
+                match self {
+                    DynamicRepeatedValues::Enum { values, .. } => {
+                        values.get(index).map(|v| Reflection::Enum(v))
+                    },
+                    DynamicRepeatedValues::Message { values, .. } => {
+                        values.get(index).map(|v| Reflection::Message(v))
+                    },
+                    $(
+                        DynamicRepeatedValues::$name { values, .. } => {
+                            values.get(index).map(|$v| Reflection::$reflection_variant($reflection_value))
+                        }
+                    ),*
+                }
+            }
+
+            fn reflect_get_mut(&mut self, index: usize) -> Option<ReflectionMut> {
+                match self {
+                    DynamicRepeatedValues::Enum { values, .. } => {
+                        values.get_mut(index).map(|v| ReflectionMut::Enum(v))
+                    },
+                    DynamicRepeatedValues::Message { values, .. } => {
+                        values.get_mut(index).map(|v| ReflectionMut::Message(v))
+                    },
+                    $(
+                        DynamicRepeatedValues::$name { values, .. } => {
+                            values.get_mut(index).map(|$v| ReflectionMut::$reflection_variant($reflection_mut))
+                        }
+                    ),*
+                }
+            }
+
+            fn reflect_add(&mut self) -> ReflectionMut {
+                match self {
+                    DynamicRepeatedValues::Enum { values, default_value } => {
+                        values.push(default_value.clone());
+                    },
+                    DynamicRepeatedValues::Message { values, default_value } => {
+                        values.push(default_value.clone());
+                    },
+                    $(
+                        DynamicRepeatedValues::$name { values, default_value } => {
+                            values.push(default_value.clone());
+                        }
+                    ),*
+                }
+                
+                self.reflect_get_mut(self.reflect_len() - 1).unwrap()
+            }
+        }
+
     };
 }
 
@@ -425,39 +515,6 @@ define_primitive_values!(
     String(String) TYPE_STRING => String(v, v, v.as_ref()),
     Bytes(BytesField) TYPE_BYTES => Bytes(v.as_ref(), &mut v.0, &*v)
 );
-
-
-#[derive(Clone)]
-struct DynamicRepeatedField {
-    values: Vec<DynamicValue>,
-    default_value: DynamicValue,
-    desc: FieldDescriptor,
-}
-
-impl PartialEq for DynamicRepeatedField {
-    fn eq(&self, other: &Self) -> bool {
-        self.values == other.values
-    }
-}
-
-impl RepeatedFieldReflection for DynamicRepeatedField {
-    fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    fn get(&self, index: usize) -> Option<Reflection> {
-        self.values.get(index).map(|v| v.reflect())
-    }
-
-    fn get_mut(&mut self, index: usize) -> Option<ReflectionMut> {
-        self.values.get_mut(index).map(|v| v.reflect_mut())
-    }
-
-    fn add(&mut self) -> ReflectionMut {
-        self.values.push(self.default_value.clone());
-        self.values.last_mut().unwrap().reflect_mut()
-    }
-}
 
 #[derive(Clone)]
 struct DynamicEnum {
@@ -533,3 +590,39 @@ impl protobuf_core::Enum for DynamicEnum {
     }
 }
 
+
+struct AnonymousEnum {
+    value: EnumValue
+}
+
+impl protobuf_core::Enum for AnonymousEnum {
+    fn parse(v: EnumValue) -> WireResult<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self { value: v })
+    }
+
+    fn parse_name(name: &str) -> WireResult<Self>
+    where
+        Self: Sized,
+    {
+        // Can't implement without a descriptor.
+        todo!()
+    }
+
+    fn name(&self) -> &str {
+        todo!()
+    }
+
+    fn value(&self) -> EnumValue {
+        self.value
+    }
+
+    fn assign(&mut self, v: EnumValue) -> WireResult<()> {
+        self.value = v;
+        Ok(())
+    }
+
+    fn assign_name(&mut self, name: &str) -> WireResult<()> { todo!() }
+}
