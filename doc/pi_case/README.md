@@ -85,3 +85,12 @@ nrf52840
     - RTC: Uses LFCLK
 
 Possibly try MP2307 (up to 95% efficiency?)
+
+
+
+OLED for a Pi
+- To show IP Address mainly
+- Can use https://www.adafruit.com/product/3527
+    - 128 x 32
+    - For 4 lines, that's 8 pixel high 
+
