@@ -6,6 +6,8 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 parsing = { path = "../parsing" }
+protobuf = { path = "../protobuf" }
+compression = { path = "../compression" }
 sys = { path = "../sys" }
 elf = { path = "../elf" }
 google = { path = "../../third_party/google" }

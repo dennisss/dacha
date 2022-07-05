@@ -129,8 +129,17 @@ impl<B: WindowBuffer> MatchingWindow<B> {
         };
 
         for off in offsets {
-            // TODO: If off is too far back, then stop immediately as all later
+            // If off is too far back, then stop immediately as all later
             // ones will only be even further away.
+            //
+            // Note that because we don't truncate trigrams until it is seen again, it is
+            // possible that all occurences are outside of the buffer if we haven't seen it
+            // in a while.
+            //
+            // TODO: This is a good time to truncate the trigram buffer?
+            if *off < self.buffer.start_offset() {
+                break;
+            }
 
             let s = self.buffer.slice_from(*off).append(data);
 

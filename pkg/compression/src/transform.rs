@@ -65,6 +65,12 @@ pub fn transform_to_vec(
 
     // TODO: Verify that the output size is non-zero?
 
+    // We must provide the transform with at least one byte to write to. Otherwise
+    // we can't tell if all pending data has been written.
+    if output.capacity() == 0 {
+        output.reserve_exact(CHUNK_SIZE);
+    }
+
     loop {
         // Always use all data that we already allocated. If the called already knew the
         // length of the output, they could reserve that size to perform a one
@@ -78,7 +84,7 @@ pub fn transform_to_vec(
         output_len += progress.output_written;
         final_done = progress.done;
 
-        if progress.done || input.len() == 0 && progress.output_written < CHUNK_SIZE {
+        if progress.done || (input.len() == 0 && progress.output_written < CHUNK_SIZE) {
             break;
         }
 

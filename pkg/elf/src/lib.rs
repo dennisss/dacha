@@ -14,8 +14,8 @@ extern crate parsing;
 
 pub mod demangle;
 
-use std::ffi::CStr;
 use std::collections::BTreeMap;
+use std::ffi::CStr;
 
 use common::async_std::fs;
 use common::async_std::path::Path;
@@ -32,6 +32,10 @@ pub const SHT_STRTAB: u32 = 3;
 
 pub const STT_FUNC: u8 = 2;
 
+pub const PT_NOTE: u32 = 4;
+pub const SHT_NOTE: u32 = 7;
+pub const ELF_NOTE_GNU: &'static [u8] = b"GNU\0";
+pub const NT_GNU_BUILD_ID: u32 = 3;
 
 pub struct ELF {
     pub file: Vec<u8>,
@@ -83,11 +87,12 @@ impl ELF {
                 }
 
                 if h.typ == SHT_STRTAB {
-                    // TODO: Verify that the first and last byte of the data is 0.
+                    // TODO: Verify that the first and last byte of the data is
+                    // 0.
 
                     // let strings = Bytes::from(
-                    //     &file[(h.offset as usize)..(h.offset as usize + h.size as usize)],
-                    // );
+                    //     &file[(h.offset as usize)..(h.offset as usize +
+                    // h.size as usize)], );
                     // println!("{:?}", strings);
                 }
 
@@ -114,13 +119,45 @@ impl ELF {
     // TODO: Consider other options for generating this:
     // https://lists.llvm.org/pipermail/llvm-dev/2016-June/100456.html
     pub fn build_id(&self) -> Result<Option<&[u8]>> {
-        let shstrtab = StringTable { data: self.section_data(self.header.section_names_entry_index as usize) };
+        let shstrtab = StringTable {
+            data: self.section_data(self.header.section_names_entry_index as usize),
+        };
+
+        // TODO: Finish implementing this.
+        for (i, p) in self.program_headers.iter().enumerate() {
+            if p.typ != PT_NOTE {
+                continue;
+            }
+
+            // let note = Note::parse(TODO, p.align,
+            // &self.header.ident)?;
+        }
+
+        // TODO: Also search through program headers for PT_NOTE types.
 
         for (i, section) in self.section_headers.iter().enumerate() {
-            let name = shstrtab.get(section.name_offset as usize)?;
-        
-            if name == ".note.gnu.build-id" {
-                return Ok(Some(self.section_data(i)));
+            if section.typ != SHT_NOTE {
+                continue;
+            }
+
+            let section_name = shstrtab.get(section.name_offset as usize)?;
+
+            // NOTE: The VDSO library doesn't follow this naming pattern.
+            /*
+            if section_name != ".note.gnu.build-id" {
+                continue;
+            }
+            */
+
+            let notes = Note::parse(self.section_data(i), section.addr_align, &self.header.ident)?;
+
+            // TODO: Validate there isn't more than one build id note.
+            for note in notes {
+                if note.name != ELF_NOTE_GNU || note.typ != NT_GNU_BUILD_ID {
+                    continue;
+                }
+
+                return Ok(Some(note.desc));
             }
         }
 
@@ -128,21 +165,24 @@ impl ELF {
     }
 
     pub fn print(&self) -> Result<()> {
-
-        let shstrtab = StringTable { data: self.section_data(self.header.section_names_entry_index as usize) };
+        let shstrtab = StringTable {
+            data: self.section_data(self.header.section_names_entry_index as usize),
+        };
 
         for (i, section) in self.section_headers.iter().enumerate() {
             let name = shstrtab.get(section.name_offset as usize)?;
             println!("{:?}", name);
 
             if section.typ == SHT_SYMTAB {
-                let symbol_strtab = StringTable { data: self.section_data(section.link as usize) };
+                let symbol_strtab = StringTable {
+                    data: self.section_data(section.link as usize),
+                };
 
                 let mut data = self.section_data(i);
 
                 while !data.is_empty() {
                     let sym = parse_next!(data, |v| Symbol::parse(v, &self.header.ident));
-                    
+
                     if sym.typ() == STT_FUNC {
                         continue;
                     }
@@ -155,7 +195,9 @@ impl ELF {
                     if sym.typ() == STT_FUNC {
                         let related_section = &self.section_headers[sym.section_index as usize];
                         assert!(sym.value >= related_section.addr);
-                        assert!(sym.value + sym.size <= related_section.addr + related_section.size);
+                        assert!(
+                            sym.value + sym.size <= related_section.addr + related_section.size
+                        );
                     }
 
                     /*
@@ -169,8 +211,6 @@ impl ELF {
                     }
                     */
                 }
-
-
             }
         }
 
@@ -185,13 +225,15 @@ impl ELF {
                 continue;
             }
 
-            let symbol_strtab = StringTable { data: self.section_data(section.link as usize) };
+            let symbol_strtab = StringTable {
+                data: self.section_data(section.link as usize),
+            };
 
             let mut data = self.section_data(i);
 
             while !data.is_empty() {
                 let sym = parse_next!(data, |v| Symbol::parse(v, &self.header.ident));
-                
+
                 if sym.typ() != STT_FUNC || sym.size == 0 {
                     continue;
                 }
@@ -203,8 +245,8 @@ impl ELF {
                 let file_end_offset = file_start_offset + sym.size;
 
                 // TODO: Have a good way which one is best.
-                // TODO: Instead search for the next smallest and largest symbols to check for overlap.
-                // TODO: Must also comapre the end offset.
+                // TODO: Instead search for the next smallest and largest symbols to check for
+                // overlap. TODO: Must also comapre the end offset.
                 if let Some(existing_symbol) = out.get(&file_start_offset) {
                     if existing_symbol.file_end_offset != file_end_offset {
                         return Err(err_msg("Overlapping functions"));
@@ -218,11 +260,14 @@ impl ELF {
                     // println!("Dup: {} {}", existing_symbol.name, sym_name);
                 }
 
-                out.insert(file_start_offset, FunctionSymbol {
-                    name: crate::demangle::demangle_name(sym_name),
+                out.insert(
                     file_start_offset,
-                    file_end_offset
-                });
+                    FunctionSymbol {
+                        name: crate::demangle::demangle_name(sym_name),
+                        file_start_offset,
+                        file_end_offset,
+                    },
+                );
             }
         }
 
@@ -234,9 +279,8 @@ impl ELF {
 pub struct FunctionSymbol {
     pub name: String,
     pub file_start_offset: u64,
-    pub file_end_offset: u64
+    pub file_end_offset: u64,
 }
-
 
 #[derive(Clone, Debug)]
 pub struct Symbol {
@@ -244,13 +288,13 @@ pub struct Symbol {
 
     /// In executable and shared object files, this is a virtual address.
     pub value: u64, // 32-bit if on 32
-    
+
     pub size: u64, // Typed
     pub info: u8,
     pub other: u8,
 
     /// Index of the section associated with this symbol.
-    pub section_index: u16
+    pub section_index: u16,
 }
 
 impl Symbol {
@@ -273,9 +317,17 @@ impl Symbol {
                 let other = parse_next!(input, be_u8);
                 let section_index = parse_next!(input, |v| ident.parse_u16(v));
 
-                Ok((Self {
-                    name, value, size, info, other, section_index
-                }, input))
+                Ok((
+                    Self {
+                        name,
+                        value,
+                        size,
+                        info,
+                        other,
+                        section_index,
+                    },
+                    input,
+                ))
             }
             Format::I64 => {
                 let info = parse_next!(input, be_u8);
@@ -284,17 +336,24 @@ impl Symbol {
                 let value = parse_next!(input, |v| ident.parse_addr(v));
                 let size = parse_next!(input, |v| ident.parse_addr(v));
 
-                Ok((Self {
-                    name, value, size, info, other, section_index
-                }, input))
+                Ok((
+                    Self {
+                        name,
+                        value,
+                        size,
+                        info,
+                        other,
+                        section_index,
+                    },
+                    input,
+                ))
             }
         }
     }
-
 }
 
 struct StringTable<'a> {
-    data: &'a [u8]
+    data: &'a [u8],
 }
 
 impl<'a> StringTable<'a> {
@@ -303,7 +362,6 @@ impl<'a> StringTable<'a> {
         Ok(s)
     }
 }
-
 
 enum_def!(Format u8 =>
     I32 = 1,
@@ -520,5 +578,53 @@ impl SectionHeader {
             },
             input,
         ))
+    }
+}
+
+pub struct Note<'a> {
+    name: &'a [u8],
+    typ: u32,
+    desc: &'a [u8],
+}
+
+impl<'a> Note<'a> {
+    fn parse(mut input: &'a [u8], alignment: u64, ident: &FileIdentifier) -> Result<Vec<Self>> {
+        let original_input_length = input.len();
+
+        // Consume enough inputs to advance us to position that is aligned relative to
+        // the start of the note buffer.
+        let consume_padding = move |mut input: &'a [u8]| {
+            let current_position = original_input_length - input.len();
+            let pad_amount =
+                common::block_size_remainder(alignment, current_position as u64) as usize;
+
+            let padding: &[u8] = parse_next!(input, take_exact(pad_amount));
+            for b in padding {
+                if *b != 0 {
+                    return Err(err_msg("Expected only zero padding"));
+                }
+            }
+
+            Ok(((), input))
+        };
+
+        let mut out = vec![];
+
+        while !input.is_empty() {
+            // Parsing the Elf32_Nhdr/Elf64_Nhdr struct.
+            let name_length = parse_next!(input, |v| ident.parse_u32(v));
+            let desc_length = parse_next!(input, |v| ident.parse_u32(v));
+            let typ = parse_next!(input, |v| ident.parse_u32(v));
+
+            let name = parse_next!(input, take_exact(name_length as usize));
+            let _ = parse_next!(input, consume_padding);
+
+            let desc = parse_next!(input, take_exact(desc_length as usize));
+            let _ = parse_next!(input, consume_padding);
+
+            out.push(Self { name, typ, desc });
+        }
+
+        Ok(out)
     }
 }

@@ -462,7 +462,7 @@ fn is_text(data: &[u8]) -> bool {
     true
 }
 
-struct GzipEncoder {
+pub struct GzipEncoder {
     output_buffer: BufferQueue,
 
     deflater: Deflater,

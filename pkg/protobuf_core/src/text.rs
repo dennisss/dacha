@@ -444,7 +444,7 @@ fn serialize_message(message: &dyn MessageReflection, indent: &str, out: &mut St
 
         let value_start_idx = out.len();
 
-        serialize_reflection(refl, indent, out);
+        serialize_reflection(refl, indent, out, true);
 
         // Empty value
         if out.len() == value_start_idx {
@@ -456,69 +456,72 @@ fn serialize_message(message: &dyn MessageReflection, indent: &str, out: &mut St
     }
 }
 
-fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
+fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String, sparse: bool) {
     match refl {
         // TODO: Check these float cases.
         // TODO: Ignore fields with default values?
         Reflection::F32(v) => {
-            if *v == 0.0 {
+            if sparse && *v == 0.0 {
                 return;
             }
             out.push_str(&v.to_string());
         }
         Reflection::F64(v) => {
-            if *v == 0.0 {
+            if sparse && *v == 0.0 {
                 return;
             }
             out.push_str(&v.to_string());
         }
         Reflection::I32(v) => {
-            if *v == 0 {
+            if sparse && *v == 0 {
                 return;
             }
             out.push_str(&v.to_string());
         }
         Reflection::I64(v) => {
-            if *v == 0 {
+            if sparse && *v == 0 {
                 return;
             }
             out.push_str(&v.to_string());
         }
         Reflection::U32(v) => {
-            if *v == 0 {
+            if sparse && *v == 0 {
                 return;
             }
             out.push_str(&v.to_string());
         }
         Reflection::U64(v) => {
-            if *v == 0 {
+            if sparse && *v == 0 {
                 return;
             }
             out.push_str(&v.to_string());
         }
         Reflection::Bool(v) => {
+            if sparse && !v {
+                return;
+            }
+
             if *v {
                 out.push_str("true");
             } else {
-                return;
-                // out.push_str("false");
+                out.push_str("false");
             }
         }
         Reflection::String(v) => {
-            if v.is_empty() {
+            if sparse && v.is_empty() {
                 return;
             }
 
             serialize_str_lit(v.as_bytes(), out);
         }
         Reflection::Bytes(v) => {
-            if v.is_empty() {
+            if sparse && v.is_empty() {
                 return;
             }
             serialize_str_lit(v, out);
         }
         Reflection::Repeated(v) => {
-            if v.reflect_len() == 0 {
+            if sparse && v.reflect_len() == 0 {
                 return;
             }
 
@@ -529,7 +532,7 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
             for i in 0..v.reflect_len() {
                 out.push_str(&inner_indent);
                 let r = v.reflect_get(i).unwrap();
-                serialize_reflection(r, &inner_indent, out);
+                serialize_reflection(r, &inner_indent, out, false);
 
                 if i != v.reflect_len() - 1 {
                     out.push(',');
@@ -540,7 +543,7 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
             out.push_str(&format!("{}]", indent));
         }
         Reflection::Set(s) => {
-            if s.len() == 0 {
+            if sparse && s.len() == 0 {
                 return;
             }
 
@@ -558,7 +561,7 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String) {
                 first = false;
 
                 out.push_str(&inner_indent);
-                serialize_reflection(r, &inner_indent, out);
+                serialize_reflection(r, &inner_indent, out, false);
             }
 
             out.push_str(&format!("\n{}]", indent));
@@ -630,6 +633,9 @@ TODO: Text strings must appear on one line.
 mod test {
     use super::*;
     use crate::proto::test::*;
+
+    // TODO: Add a check to verify that a repeated field containing default values
+    // (e.g. "") serializes correctly.
 
     #[test]
     fn parsing_test() {
