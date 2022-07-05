@@ -67,6 +67,7 @@ pub mod bundle;
 #[cfg(feature = "std")]
 pub mod cancellation;
 pub mod collections;
+pub mod concat_slice;
 #[cfg(feature = "std")]
 pub mod condvar;
 pub mod const_default;
@@ -109,7 +110,6 @@ pub mod tree;
 pub mod vec;
 #[cfg(feature = "std")]
 pub mod vec_hash_set;
-pub mod concat_slice;
 
 pub use arrayref::{array_mut_ref, array_ref};
 #[cfg(feature = "std")]
@@ -524,6 +524,19 @@ macro_rules! map(
             $(
                 m.insert(::std::borrow::ToOwned::to_owned($key),
                          ::std::borrow::ToOwned::to_owned($value));
+            )+
+            m
+        }
+     };
+);
+
+#[macro_export]
+macro_rules! map_raw(
+    { $($key:expr => $value:expr),+ } => {
+        {
+            let mut m = ::std::collections::HashMap::new();
+            $(
+                m.insert($key, $value);
             )+
             m
         }

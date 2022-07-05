@@ -13,3 +13,4 @@ gzip -k -c -9 "$DIR/gutenberg/shakespeare.txt" > "$DIR/derived/shakespeare.txt.9
 gzip -k -c -5 "$DIR/random/random_100" > "$DIR/derived/random_100.5.gz"
 gzip -k -c -5 "$DIR/random/random_463" > "$DIR/derived/random_463.5.gz"
 gzip -k -c -5 "$DIR/random/random_4096" > "$DIR/derived/random_4096.5.gz"
+gzip -k -c -5 "$DIR/random/random_1048576" > "$DIR/derived/random_1048576.5.gz"

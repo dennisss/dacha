@@ -476,6 +476,24 @@ pub struct GzipEncoder {
 }
 
 impl GzipEncoder {
+    /// Creates a new encoder which will write minimal gzip metadata (no
+    /// filename, mtime, etc.).
+    pub fn default_without_metadata() -> Self {
+        let header = Header {
+            compression_method: CompressionMethod::Deflate,
+            is_text: false,
+            mtime: 0,
+            extra_flags: 2, // < Max compression (slowest algorithm)
+            os: GZIP_UNIX_OS,
+            extra_field: None,
+            filename: None,
+            comment: None,
+            header_validated: false,
+        };
+
+        Self::new(header).unwrap()
+    }
+
     pub fn new(header: Header) -> Result<Self> {
         let mut output_buffer = BufferQueue::new();
         header.serialize(&mut output_buffer.buffer);
@@ -594,6 +612,10 @@ mod tests {
                 "testdata/random/random_4096",
                 "testdata/derived/random_4096.5.gz",
             ),
+            (
+                "testdata/random/random_1048576",
+                "testdata/derived/random_1048576.5.gz",
+            ),
         ];
 
         for (uncompressed_path, compressed_path) in test_cases.iter().clone() {
@@ -602,17 +624,44 @@ mod tests {
             let uncompressed = std::fs::read(root_dir.join(uncompressed_path))?;
             let compressed = std::fs::read(root_dir.join(compressed_path))?;
 
-            let mut decoder = GzipDecoder::new();
+            // Decode the golden
+            {
+                let mut decoder = GzipDecoder::new();
 
-            let mut uncompressed_test = vec![];
-            crate::transform::transform_to_vec(
-                &mut decoder,
-                &compressed,
-                true,
-                &mut uncompressed_test,
-            )?;
+                let mut uncompressed_test = vec![];
+                crate::transform::transform_to_vec(
+                    &mut decoder,
+                    &compressed,
+                    true,
+                    &mut uncompressed_test,
+                )?;
 
-            assert_eq!(uncompressed_test, uncompressed);
+                assert_eq!(uncompressed_test, uncompressed);
+            }
+
+            // Encode and decode.
+            {
+                let mut compressed_test = vec![];
+                let mut encoder = GzipEncoder::default_without_metadata();
+                crate::transform::transform_to_vec(
+                    &mut encoder,
+                    &uncompressed,
+                    true,
+                    &mut compressed_test,
+                )?;
+
+                let mut decoder = GzipDecoder::new();
+
+                let mut uncompressed_test = vec![];
+                crate::transform::transform_to_vec(
+                    &mut decoder,
+                    &compressed_test,
+                    true,
+                    &mut uncompressed_test,
+                )?;
+
+                assert_eq!(uncompressed_test, uncompressed);
+            }
         }
 
         // TODO: Need to attempt decompressing while at different byte offsets

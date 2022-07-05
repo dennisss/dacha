@@ -1,7 +1,10 @@
-use common::{errors::*, project_path};
+use std::path::Path;
+
+use common::{errors::*, project_dir, project_path};
 
 use crate::builder::Builder;
 use crate::context::BuildContext;
+use crate::LOCAL_BINARY_PATH;
 
 #[derive(Args)]
 struct Args {
@@ -50,6 +53,22 @@ pub fn run() -> Result<()> {
                     format!("built-config/{}", result.key.config_key),
                     built_link_out,
                 )?;
+
+                let local_bin_dir = project_path!(LOCAL_BINARY_PATH);
+                if !local_bin_dir.exists() {
+                    std::fs::create_dir(&local_bin_dir)?;
+                }
+
+                for (src, path) in &result.output_files {
+                    if Path::new(src).starts_with(LOCAL_BINARY_PATH) {
+                        let output_path = project_dir().join(src);
+                        if let Ok(_) = output_path.symlink_metadata() {
+                            std::fs::remove_file(&output_path)?;
+                        }
+
+                        std::os::unix::fs::symlink(path, output_path)?;
+                    }
+                }
 
                 println!("BuildResult:\n{:#?}", result);
             }

@@ -17,21 +17,9 @@ async fn run() -> Result<()> {
     let mut data = profile.serialize()?;
     fs::write("perf_custom.pb", &data).await?;
 
-    let header = Header {
-        compression_method: CompressionMethod::Deflate,
-        is_text: false,
-        mtime: 0,
-        extra_flags: 2, // < Max compression (slowest algorithm)
-        os: GZIP_UNIX_OS,
-        extra_field: None,
-        filename: None,
-        comment: None,
-        header_validated: false,
-    };
-
     let mut data_gz = vec![];
 
-    let mut encoder = GzipEncoder::new(header)?;
+    let mut encoder = GzipEncoder::default_without_metadata();
     compression::transform::transform_to_vec(&mut encoder, &data, true, &mut data_gz)?;
 
     println!("Write : {}", data_gz.len());

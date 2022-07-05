@@ -357,9 +357,9 @@ dependencies = [
  "compression",
  "crypto",
  "macros",
- "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
+ "sys",
 ]
 
 [[package]]

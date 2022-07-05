@@ -10,7 +10,7 @@ macros = { path = "../macros" }
 protobuf = { path = "../protobuf" }
 compression = { path = "../compression" }
 crypto = { path = "../crypto" }
-nix = "0.21.0"
+sys = { path = "../sys" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

@@ -1,12 +1,12 @@
 use common::errors::*;
-use nix::sys::utsname::*;
+use sys::utsname::*;
 
 use crate::proto::bundle::*;
 
 pub fn current_platform() -> Result<Platform> {
     let mut platform = Platform::default();
 
-    let name = uname();
+    let name = UtsName::read()?;
 
     platform.set_architecture(match name.machine() {
         "x86_64" => Architecture::AMD64,

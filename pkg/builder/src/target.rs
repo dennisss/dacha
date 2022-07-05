@@ -16,6 +16,7 @@ pub enum BuildTargetRaw {
     FileGroup(FileGroup),
     Webpack(Webpack),
     BuildConfig(BuildConfig),
+    LocalBinary(LocalBinary),
 }
 
 impl BuildTarget {
@@ -52,6 +53,12 @@ impl BuildTarget {
             });
         }
 
+        for raw in file.local_binary() {
+            out.push(BuildTarget {
+                raw: BuildTargetRaw::LocalBinary(raw.clone()),
+            });
+        }
+
         out
     }
 
@@ -62,6 +69,7 @@ impl BuildTarget {
             BuildTargetRaw::FileGroup(v) => v.name(),
             BuildTargetRaw::Webpack(v) => v.name(),
             BuildTargetRaw::BuildConfig(v) => v.name(),
+            BuildTargetRaw::LocalBinary(v) => v.name(),
         }
     }
 
@@ -73,6 +81,7 @@ impl BuildTarget {
             BuildTargetRaw::FileGroup(v) => v.deps(),
             BuildTargetRaw::Webpack(v) => v.deps(),
             BuildTargetRaw::BuildConfig(_) => &[],
+            BuildTargetRaw::LocalBinary(_) => &[],
         }
     }
 }

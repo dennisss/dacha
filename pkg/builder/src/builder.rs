@@ -438,6 +438,36 @@ impl Builder {
             BuildTargetRaw::BuildConfig(_) => {
                 // Just used as metadata.
             }
+            BuildTargetRaw::LocalBinary(spec) => {
+                // TODO: Have a utility for telling which profile corresponds to the current
+                // machine.
+                let sub_context = BuildContext::from(
+                    self.lookup_config("//pkg/builder/config:x64", Some(target_dir))
+                        .await?,
+                )?;
+
+                // let mut combined_outputs = HashMap::new();
+
+                for dep in spec.deps() {
+                    let res = self
+                        .build_target_recurse(dep, Some(target_dir), &sub_context)
+                        .await?;
+
+                    for (src, path) in res.output_files {
+                        let bin_name = Path::new(src.as_str())
+                            .file_name()
+                            .and_then(|v| v.to_str())
+                            .ok_or_else(|| {
+                                err_msg("Could not resolve file name for local binary")
+                            })?;
+
+                        // TODO: Validate that two rules never output to the same path.
+                        result
+                            .output_files
+                            .insert(format!("{}/{}", crate::LOCAL_BINARY_PATH, bin_name), path);
+                    }
+                }
+            }
         }
 
         Ok(result)

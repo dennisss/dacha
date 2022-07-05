@@ -18,3 +18,12 @@ bundle {
 	    "//pkg/builder/config:rpi64"
     ]
 }
+
+rust_binary {
+    name: "cluster"
+}
+
+local_binary {
+    name: "cluster_bin"
+    deps: [":cluster"]
+}

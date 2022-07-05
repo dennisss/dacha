@@ -59,10 +59,16 @@ message BuildConfig {
     // This also declares a bundle variant?
 }
 
+message LocalBinary {
+    string name = 1;
+    repeated string deps = 2;
+}
+
 message BuildFile {
     repeated RustBinary rust_binary = 1;
     repeated FileGroup filegroup = 2;
     repeated Bundle bundle = 3;
     repeated Webpack webpack = 4;
     repeated BuildConfig build_config = 5;
+    repeated LocalBinary local_binary = 6;
 }

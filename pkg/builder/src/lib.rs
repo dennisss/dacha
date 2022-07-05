@@ -6,7 +6,6 @@ extern crate common;
 extern crate macros;
 extern crate compression;
 extern crate crypto;
-extern crate nix;
 
 mod builder;
 pub mod cli;
@@ -19,3 +18,5 @@ mod target;
 pub use builder::{BuildResult, BuildResultKey, Builder};
 pub use context::BuildContext;
 pub use platform::current_platform;
+
+pub const LOCAL_BINARY_PATH: &'static str = "bin";

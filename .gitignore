@@ -16,6 +16,7 @@ dist/*
 /built
 /built-config
 /built-rust
+/bin
 
 __MACOSX
 
