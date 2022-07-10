@@ -14,6 +14,7 @@ macros = { path = "../macros" }
 usb = { path = "../usb", default-features = false }
 nordic_proto = { path = "../nordic_proto", default-features = false }
 cnc = { path = "../cnc", default-features = false }
+uf2 = { path = "../uf2", default-features = false }
 math = { path = "../math", default-features = false }
 
 [features]

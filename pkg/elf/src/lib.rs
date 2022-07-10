@@ -169,9 +169,24 @@ impl ELF {
             data: self.section_data(self.header.section_names_entry_index as usize),
         };
 
+        // TODO: Change the address zero padding length based on whether we are dealing
+        // with a 32-bit or 64-bit architecture.
+
+        for p in self.program_headers.iter() {
+            println!(
+                "{:08x} - {:08x}: {:?} {:?}",
+                p.vaddr,
+                p.vaddr + p.mem_size,
+                ProgramHeaderType::from_value(p.typ),
+                p.flags
+            );
+        }
+
+        println!("");
+
         for (i, section) in self.section_headers.iter().enumerate() {
             let name = shstrtab.get(section.name_offset as usize)?;
-            println!("{:?}", name);
+            println!("{:?} @ {:08x}", name, section.addr);
 
             if section.typ == SHT_SYMTAB {
                 let symbol_strtab = StringTable {
@@ -490,11 +505,34 @@ impl FileHeader {
     }
 }
 
+// TODO: Define this with define_c_enum and only store in 32 bits
+// TODO: Switch over all usages to this.
+enum_def_with_unknown!(ProgramHeaderType u32 =>
+    PT_NULL = 0,
+    PT_LOAD = 1,
+    PT_DYNAMIC = 2,
+    PT_INTERP = 3,
+    PT_NOTE = 4,
+    PT_SHLIB = 5,
+    PT_PHDR = 6,
+    PT_TLS = 7
+);
+
+define_bit_flags!(SegmentFlags u32 {
+    // Segment is executable
+    PF_X = 1 << 0,
+
+    // Segment is writable
+    PF_W = 1 << 1,
+
+    // Segment is readable
+    PF_R = 1 << 2
+});
+
 #[derive(Debug)]
 pub struct ProgramHeader {
     pub typ: u32,
-    /// Only present in 64-bit.
-    pub flags: u32,
+    pub flags: SegmentFlags,
     pub offset: u64,
     pub vaddr: u64,
     pub paddr: u64,
@@ -506,9 +544,9 @@ pub struct ProgramHeader {
 impl ProgramHeader {
     fn parse<'a>(mut input: &'a [u8], ident: &FileIdentifier) -> Result<(Self, &'a [u8])> {
         let typ = parse_next!(input, |v| ident.parse_u32(v));
-        let mut flags = 0;
+        let mut flags = SegmentFlags::empty();
         if ident.format == Format::I64 {
-            flags = parse_next!(input, |v| ident.parse_u32(v));
+            flags = SegmentFlags::from_raw(parse_next!(input, |v| ident.parse_u32(v)));
         }
         let offset = parse_next!(input, |v| ident.parse_addr(v));
         let vaddr = parse_next!(input, |v| ident.parse_addr(v));
@@ -516,7 +554,7 @@ impl ProgramHeader {
         let file_size = parse_next!(input, |v| ident.parse_addr(v));
         let mem_size = parse_next!(input, |v| ident.parse_addr(v));
         if ident.format == Format::I32 {
-            flags = parse_next!(input, |v| ident.parse_u32(v));
+            flags = SegmentFlags::from_raw(parse_next!(input, |v| ident.parse_u32(v)));
         }
         let align = parse_next!(input, |v| ident.parse_addr(v));
 

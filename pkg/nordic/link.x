@@ -13,6 +13,9 @@ EXTERN(RESET_VECTOR);
 
 SECTIONS
 {
+    _flash_start = ORIGIN(FLASH);
+    _flash_end = ORIGIN(FLASH) + LENGTH(FLASH);
+
     .vector_table ORIGIN(FLASH) :
     {
         /* First entry: initial Stack Pointer value */
@@ -30,6 +33,11 @@ SECTIONS
     .rodata :
     {
         *(.rodata .rodata.*);
+    } > FLASH
+
+    .note.gnu.build-id :
+    {
+        *(.note.gnu.build-id);
     } > FLASH
 
     .regout0 :

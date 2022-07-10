@@ -46,24 +46,35 @@ use common::struct_bytes::struct_bytes;
 use executor::futures;
 use executor::interrupts::wait_for_irq;
 use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use peripherals::raw::usbd::epdatastatus::EPDATASTATUS_VALUE;
+use peripherals::raw::usbd::epinen::EPINEN_VALUE;
+use peripherals::raw::usbd::epouten::EPOUTEN_VALUE;
+use peripherals::raw::usbd::size::epout::EPOUT_VALUE;
 use peripherals::raw::EventState;
 use peripherals::raw::Interrupt;
 use usb::descriptors::*;
 
 use crate::log;
-use crate::usb::descriptors::*;
+use crate::usb::aligned::Aligned;
 use crate::usb::handler::{USBDeviceHandler, USBError};
 
 // TODO: Implement more errata like:
 // https://infocenter.nordicsemi.com/topic/errata_nRF52840_Rev3/ERR/nRF52840/Rev3/latest/anomaly_840_199.html
 
-const MAX_PACKET_SIZE: usize = 64;
+pub const MAX_PACKET_SIZE: usize = 64;
 
-/// TODO: Rename to not
 pub struct USBDeviceController {
     periph: peripherals::raw::usbd::USBD,
     power: peripherals::raw::power::POWER,
     state: State,
+
+    /// Direction and index of the endpoint which currently has an EasyDMA
+    /// transfer running.
+    ///
+    /// NOTE: There can only be single EasyDMA transfer active on the USBD
+    /// peripheral at a time, so we never have to deal with this tracking more
+    /// than one transfer.
+    pending_transfer: Option<(EndpointDirection, usize)>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -80,16 +91,17 @@ enum State {
 
 #[derive(PartialEq, Clone, Copy)]
 enum Event {
-    PowerDetected = 1,
-    PowerReady = 2,
-    PowerRemoved = 3,
+    PowerDetected = 1 << 0,
+    PowerReady = 1 << 1,
+    PowerRemoved = 1 << 2,
 
-    USBEvent = 4,
-    EP0Setup = 5,
-    USBReset = 6,
-    EndEpIN0 = 7,
-    EndEpOUT0 = 8,
-    EP0DataDone = 9,
+    USBEvent = 1 << 3,
+    EP0Setup = 1 << 4,
+    USBReset = 1 << 5,
+    EndEpIN = 1 << 6,
+    EndEpOUT = 1 << 7,
+    EP0DataDone = 1 << 8,
+    EPData = 1 << 9,
 }
 
 impl USBDeviceController {
@@ -102,13 +114,30 @@ impl USBDeviceController {
 
         // TODO: Clear these interrupts on Drop.
 
+        // TODO: Clear EPDATASTATUS by writting all oens.
+
         periph.intenset.write_with(|v| {
             v.set_usbreset()
                 .set_ep0setup()
                 .set_usbevent()
                 .set_endepin0()
+                .set_endepin1()
+                .set_endepin2()
+                .set_endepin3()
+                .set_endepin4()
+                .set_endepin5()
+                .set_endepin6()
+                .set_endepin7()
                 .set_endepout0()
+                .set_endepout1()
+                .set_endepout2()
+                .set_endepout3()
+                .set_endepout4()
+                .set_endepout5()
+                .set_endepout6()
+                .set_endepout7()
                 .set_ep0datadone()
+                .set_epdata()
         });
 
         power
@@ -119,6 +148,7 @@ impl USBDeviceController {
             periph,
             power,
             state: State::Disconnected,
+            pending_transfer: None,
         }
     }
 
@@ -236,6 +266,104 @@ impl USBDeviceController {
                     } else if let Event::USBReset = event {
                         log!(b"RESET\n");
                         self.configure_endpoints();
+                    } else if let Event::EPData = event {
+                        let status = self.periph.epdatastatus.read();
+
+                        // Clear by writing all 1's
+                        self.periph
+                            .epdatastatus
+                            .write(EPDATASTATUS_VALUE::from_raw(0xffffffff));
+
+                        let mut endpoint_index = None;
+                        let mut input_done = false;
+
+                        // TODO: What if while we are processing this, we get another EPData event
+                        // (need to )
+
+                        // TODO: It is possible that multiple could have data available, so we need
+                        // to handle all of them (including input completions)
+                        if status.epout1().is_started() {
+                            endpoint_index = Some(1);
+                        } else if status.epout2().is_started() {
+                            endpoint_index = Some(2);
+                        } else if status.epout3().is_started() {
+                            endpoint_index = Some(3);
+                        } else if status.epout4().is_started() {
+                            endpoint_index = Some(4);
+                        } else if status.epout5().is_started() {
+                            endpoint_index = Some(5);
+                        } else if status.epout6().is_started() {
+                            endpoint_index = Some(6);
+                        } else if status.epout7().is_started() {
+                            endpoint_index = Some(7);
+                        } else if status.epin1().is_datadone() {
+                            input_done = true;
+                        } else if status.epin2().is_datadone() {
+                            input_done = true;
+                        }
+                        // TODO: Add other ones.
+
+                        if input_done {
+                            log!(b"IDONE\n");
+                        }
+
+                        /*
+
+                        The NRF52 USBD peripheral has its own internal buffer for Bulk/Interrupt transfers.
+
+                        - When we write data using STARTEPIN/ENDEPIN, the next IN packet after the ENDEPIN will receive that data and will be acknowledged.
+                            - We get a notification of when the ACK actually occurs using the EPDATA event
+
+                        - When the host writes things with OUT, and the internal buffer is empty (meaning that SIZE.EPOUT was edited)
+
+                        NOTE: This means that all the DMA transfers are fast and not blocking for a long time.
+
+
+                        */
+
+                        if let Some(endpoint_index) = endpoint_index {
+                            let mut request = USBDeviceNormalRequest {
+                                controller: self,
+                                endpoint_index,
+                            };
+
+                            let mut buf = [0u8; 64];
+                            let nread = match request.read(&mut buf).await {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    log!(b"ERR\n");
+                                    continue;
+                                }
+                            };
+
+                            /*
+                            let original = buf[0];
+                            buf[0] = b'X';
+
+                            log!(b"EPD: ");
+                            log!(crate::log::num_to_slice(nread as u32).as_ref());
+                            log!(b"\n");
+
+                            for i in 0..1000 {
+                                log!(b"...............................................................................\n");
+                            }
+
+                            buf[0] = original;
+                            */
+
+                            // TODO: There is a race condition here:
+                            // - If the host sends an IN token, it must receive data from the last
+                            //   time .write() was called rather than the data we are about to write
+                            //   here.
+
+                            let mut request2 = USBDeviceNormalRequest {
+                                controller: self,
+                                endpoint_index: 1,
+                            };
+                            request2.write(&buf[0..nread]).await;
+
+                            log!(b"DONE!\n");
+                        }
                     }
                 }
             }
@@ -276,6 +404,14 @@ impl USBDeviceController {
                 e => {
                     if e == event {
                         return result;
+                    } else {
+                        // TODO: THere may be events such as EPData which we may
+                        // want to handle later.
+
+                        // TODO:
+                        // log!(b"EX");
+                        // log!(crate::log::num_to_slice(e as u32).as_ref());
+                        // log!(b"\n");
                     }
                 }
             }
@@ -305,14 +441,31 @@ impl USBDeviceController {
         if Self::take_event(&mut self.periph.events_usbreset) {
             return Some(Event::USBReset);
         }
-        if Self::take_event(&mut self.periph.events_endepin[0]) {
-            return Some(Event::EndEpIN0);
-        }
-        if Self::take_event(&mut self.periph.events_endepout[0]) {
-            return Some(Event::EndEpOUT0);
-        }
         if Self::take_event(&mut self.periph.events_ep0datadone) {
             return Some(Event::EP0DataDone);
+        }
+
+        if let Some((dir, index)) = self.pending_transfer.clone() {
+            match dir {
+                EndpointDirection::In => {
+                    if Self::take_event(&mut self.periph.events_endepin[index]) {
+                        self.pending_transfer = None;
+                        return Some(Event::EndEpIN);
+                    }
+                }
+                EndpointDirection::Out => {
+                    if Self::take_event(&mut self.periph.events_endepout[index]) {
+                        self.pending_transfer = None;
+                        return Some(Event::EndEpOUT);
+                    }
+                }
+            }
+        }
+
+        // MUST be checked after the EndEP events are checked as we react to those
+        // events first in the code.
+        if Self::take_event(&mut self.periph.events_epdata) {
+            return Some(Event::EPData);
         }
 
         crate::events::flush_events_clear();
@@ -329,12 +482,31 @@ impl USBDeviceController {
     }
 
     fn configure_endpoints(&mut self) {
-        self.periph
-            .epinen
-            .write_with(|v| v.set_in0_with(|v| v.set_enable()));
-        self.periph
-            .epouten
-            .write_with(|v| v.set_out0_with(|v| v.set_enable()));
+        let mut epinen = EPINEN_VALUE::from_raw(0);
+        let mut epouten = EPOUTEN_VALUE::from_raw(0);
+
+        // Control endpoint.
+        epinen.set_in0_with(|v| v.set_enable());
+        epouten.set_out0_with(|v| v.set_enable());
+
+        epouten.set_out2_with(|v| v.set_enable());
+        epinen.set_in1_with(|v| v.set_enable());
+
+        self.periph.epinen.write(epinen);
+        self.periph.epouten.write(epouten);
+
+        // Write anything to SIZE.EPOUT[i]. This will ensure that the USB controller
+        // knows that it is allowed to send us more EPDATA events.
+        //
+        // We need to do this because of the line in the product specification that says
+        // "A NAK is returned until the software writes any value to register
+        // SIZE.EPOUT[n], indicating that the content of the local buffer can be
+        // overwritten.".
+        //
+        // NOTE: We also do this after every OUT bulk/interrupt transfer is done.
+        for reg in &mut self.periph.size.epout {
+            reg.write(EPOUT_VALUE::from_raw(0));
+        }
     }
 
     fn get_setup_packet(&self) -> SetupPacket {
@@ -384,11 +556,6 @@ impl USBDeviceController {
     */
 }
 
-pub struct Aligned<Data, Alignment> {
-    aligner: [Alignment; 0],
-    data: Data,
-}
-
 pub struct USBDeviceControlRequest<'a> {
     controller: &'a mut USBDeviceController,
     host_remaining: usize,
@@ -423,9 +590,10 @@ impl<'a> USBDeviceControlRequest<'a> {
                 .await?;
 
             // XXX: Critical DMA section
+            self.controller.pending_transfer = Some((EndpointDirection::Out, 0));
             self.controller.periph.tasks_startepout[0].write_trigger();
             self.controller
-                .wait_for_specific_event(Event::EndEpOUT0, true)
+                .wait_for_specific_event(Event::EndEpOUT, true)
                 .await?;
 
             let packet_len = self.controller.periph.epout[0].amount.read() as usize;
@@ -523,6 +691,7 @@ impl<'a> USBDeviceControlResponse<'a> {
                     asm!("nop");
                 }
 
+                self.controller.pending_transfer = Some((EndpointDirection::In, 0));
                 self.controller.periph.tasks_startepin[0].write_trigger();
 
                 // TODO: handle USBReset and PowerRemoved
@@ -531,12 +700,12 @@ impl<'a> USBDeviceControlResponse<'a> {
 
                 // }
 
-                // while self.controller.wait_for_event().await != Event::EndEpIN0 {}
+                // while self.controller.wait_for_event().await != Event::EndEpIN {}
 
                 // TODO: Must not return any errors until we get to the EndEpIN0
 
                 // self.controller
-                //     .wait_for_specific_event(Event::EndEpIN0, true)
+                //     .wait_for_specific_event(Event::EndEpIN, true)
                 //     .await?;
 
                 // We MUST always wait for EndEpIN0 to happen first to ensure that the DMA
@@ -568,7 +737,7 @@ impl<'a> USBDeviceControlResponse<'a> {
                                 }
                             }
                             // TODO: Must not return errors until the DMA is done.
-                            Event::EndEpIN0 => {
+                            Event::EndEpIN => {
                                 dma_done = true;
                                 if !result.is_ok() {
                                     break;
@@ -609,5 +778,115 @@ impl<'a> USBDeviceControlResponse<'a> {
 
     pub fn stale(mut self) {
         self.controller.stale();
+    }
+}
+
+/*
+TODO: THere are some undocumented registers for aborting a transfer:
+- https://github.com/NordicSemiconductor/nrfx/blob/master/drivers/src/nrfx_usbd.c#L774
+*/
+
+pub struct USBDeviceNormalRequest<'a> {
+    controller: &'a mut USBDeviceController,
+    endpoint_index: usize,
+}
+
+impl<'a> USBDeviceNormalRequest<'a> {
+    // TODO: ONly allow calling this once.
+    pub async fn read(&mut self, mut output: &mut [u8]) -> Result<usize, USBError> {
+        // TODO: Re-use a global buffer
+        let mut packet_buffer = Aligned::<_, u32>::new([0u8; MAX_PACKET_SIZE]);
+
+        self.controller.periph.epout[self.endpoint_index]
+            .ptr
+            .write(unsafe { core::mem::transmute(packet_buffer.as_ptr()) });
+        self.controller.periph.epout[self.endpoint_index]
+            .maxcnt
+            .write(packet_buffer.len() as u32);
+
+        self.controller.pending_transfer = Some((EndpointDirection::Out, self.endpoint_index));
+        self.controller.periph.tasks_startepout[self.endpoint_index].write_trigger();
+        self.controller
+            .wait_for_specific_event(Event::EndEpOUT, true)
+            .await?;
+
+        // NOTE: 'epout.amount' seems to always contain 64 (buffer size) while
+        // SIZE.EPOUT seems to have the current value.
+        //
+        // let packet_len = self.controller.periph.epout[self.endpoint_index]
+        //     .amount
+        //     .read() as usize;
+        let packet_len = self.controller.periph.size.epout[self.endpoint_index]
+            .read()
+            .size() as usize;
+
+        // Clear it to allow receiving additional requests.
+        self.controller.periph.size.epout[self.endpoint_index].write_with(|v| v.set_size(0));
+
+        if packet_len > output.len() {
+            // Overflow. Panic!
+        }
+
+        output[0..packet_len].copy_from_slice(&packet_buffer[0..packet_len]);
+        Ok(packet_len)
+    }
+
+    /// Sends
+    pub async fn write(&mut self, data: &[u8]) -> Result<(), USBError> {
+        // TODO: Re-use a global buffer
+        let mut packet_buffer = Aligned::<_, u32>::new([0u8; MAX_PACKET_SIZE]);
+
+        packet_buffer[0..data.len()].copy_from_slice(data);
+
+        self.controller.periph.epin[self.endpoint_index]
+            .ptr
+            .write(unsafe { core::mem::transmute(packet_buffer.as_ptr()) });
+        self.controller.periph.epin[self.endpoint_index]
+            .maxcnt
+            .write(data.len() as u32);
+
+        self.controller.pending_transfer = Some((EndpointDirection::In, self.endpoint_index));
+        self.controller.periph.tasks_startepin[self.endpoint_index].write_trigger();
+
+        self.controller
+            .wait_for_specific_event(Event::EndEpIN, true)
+            .await?;
+
+        /*
+        self.controller
+            .wait_for_specific_event(Event::EPData, false)
+            .await?;
+
+        // TODO: Read the EPDATASTATUS and verify it is actually setting the correct
+        // value.
+
+        // Clear by writing all 1's
+        self.controller
+            .periph
+            .epdatastatus
+            .write(EPDATASTATUS_VALUE::from_raw(0xffffffff));
+        */
+
+        /*
+
+        */
+
+        // TODO: Wait for EPDATA and acknowledge the bit.
+
+        /*
+        (EPIN[1].PTR=0xnnnnnnnn
+        EPIN[1].MAXCNT = <MaxPacketSize
+        STARTEPIN[1]=1
+
+        Invoke STARTEPIN[1]
+
+        Will get events:
+        - STARTED
+        - ENDEPIN[1]
+        - EPDATA
+
+        */
+
+        Ok(())
     }
 }

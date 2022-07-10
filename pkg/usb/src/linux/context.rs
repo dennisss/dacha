@@ -391,14 +391,16 @@ pub struct DeviceEntry {
 
 impl DeviceEntry {
     pub fn device_descriptor(&self) -> Result<DeviceDescriptor> {
-        let mut iter = DescriptorIter::new(&self.raw_descriptors);
-
-        match iter.next() {
+        match self.descriptors().next() {
             Some(Ok(Descriptor::Device(d))) => Ok(d),
             _ => Err(err_msg(
                 "Expected first cached descriptor to be a device descriptor",
             )),
         }
+    }
+
+    pub fn descriptors<'a>(&'a self) -> impl Iterator<Item = Result<Descriptor>> + 'a {
+        DescriptorIter::new(&self.raw_descriptors)
     }
 
     // NOTE: This is mainly exposed for the purpose of mounting into containers.

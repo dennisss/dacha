@@ -8,8 +8,9 @@
 // true) or the official NRF52840 USB Dongle (USING_DEV_KIT = false).
 
 /*
-cargo build --package nordic --target thumbv7em-none-eabihf --release --no-default-features
-openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program target/thumbv7em-none-eabihf/release/nordic_radio_dongle verify" -c reset -c exit
+da build //pkg/nordic:nordic_radio_dongle --config=//pkg/nordic:nrf52840
+
+openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program built/pkg/nordic/nordic_radio_dongle verify" -c reset -c exit
 */
 
 #![feature(

@@ -483,6 +483,12 @@ impl Device {
     }
 
     pub async fn read_string(&self, index: u8, language: Language) -> Result<String> {
+        if index == 0 {
+            return Err(err_msg(
+                "String index 0 is reserved for storing the language list",
+            ));
+        }
+
         let data = self.read_string_raw(index, language.id()).await?;
 
         if (data.len() % 2) != 0 {

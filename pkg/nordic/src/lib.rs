@@ -1,6 +1,5 @@
 #![feature(
     lang_items,
-    asm,
     type_alias_impl_trait,
     inherent_associated_types,
     alloc_error_handler,
@@ -42,6 +41,7 @@ pub mod radio_activity_led;
 pub mod radio_socket;
 pub mod rng;
 pub mod spi;
+pub mod reset;
 pub mod temp;
 pub mod timer;
 pub mod tmc2130;

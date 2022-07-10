@@ -11,6 +11,11 @@ pub struct SetupPacket {
     pub bmRequestType: u8,
     pub bRequest: u8,
     pub wValue: u16,
+
+    /// Request specific parameter value.
+    ///
+    /// - When bmRequestType indicates that the recipient is an
+    ///   interface/endpoint, then this is set to the interface/endpoint number.
     pub wIndex: u16,
 
     /// Maximum number of bytes that will be transfered in the data stage
@@ -75,7 +80,7 @@ impl DescriptorType {
 }
 
 // Table 9-8 of USB2.0 Spec
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(packed)]
 pub struct DeviceDescriptor {
     pub bLength: u8,
@@ -109,25 +114,35 @@ pub struct DeviceQualifierDescriptor {
 }
 
 // Table 9-10 of USB2.0 Spec
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(packed)]
 pub struct ConfigurationDescriptor {
     pub bLength: u8,
     pub bDescriptorType: u8,
     pub wTotalLength: u16,
     pub bNumInterfaces: u8,
+
+    /// Value to use as an argument to the SetConfiguration() request to select
+    /// this configuration
+    ///
+    /// NOTE: The first configuration normally has a value of 1.
     pub bConfigurationValue: u8,
+
+    /// Index of string descriptor describing this configuration
     pub iConfiguration: u8,
     pub bmAttributes: u8,
     pub bMaxPower: u8,
 }
 
 // Table 9-12 of USB2.0 Spec
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(packed)]
 pub struct InterfaceDescriptor {
     pub bLength: u8,
     pub bDescriptorType: u8,
+
+    /// Number of this interface. Zero-based value identifying the index in the
+    /// array of concurrent interfaces supported by this configuration.
     pub bInterfaceNumber: u8,
     pub bAlternateSetting: u8,
     pub bNumEndpoints: u8,
@@ -140,13 +155,14 @@ pub struct InterfaceDescriptor {
 enum_def_with_unknown!(InterfaceClass u8 =>
     Unknown0 = 0,
     Communication = 2,
-    HID = 3
+    HID = 3,
+    ApplicationSpecific = 0xFE
 );
 
 // Interface subclas of 2 is Abstract Control Model for CDC
 
 // Table 9-13 of USB2.0 Spec
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(packed)]
 pub struct EndpointDescriptor {
     pub bLength: u8,
@@ -165,6 +181,12 @@ impl EndpointDescriptor {
     pub fn is_in(&self) -> bool {
         crate::endpoint::is_in_endpoint(self.bEndpointAddress)
     }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum EndpointDirection {
+    In,
+    Out,
 }
 
 enum_def_with_unknown!(TransferType u8 =>

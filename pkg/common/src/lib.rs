@@ -56,8 +56,10 @@ pub mod algorithms;
 pub mod args;
 #[cfg(feature = "std")]
 pub mod async_fn;
+pub mod attribute;
 #[cfg(feature = "std")]
 pub mod base32;
+pub mod bit_flags;
 #[cfg(feature = "std")]
 pub mod bits;
 #[cfg(feature = "std")]
@@ -262,14 +264,37 @@ pub fn block_size_remainder(block_size: u64, end_offset: u64) -> u64 {
     block_size - rem
 }
 
+/*
+Some test cases for this:
+
+"HelloUSBWorld" -> "hello_usb_world"
+
+*/
+
 #[cfg(feature = "alloc")]
 pub fn camel_to_snake_case(name: &str) -> String {
     let mut s = String::new();
-    for c in name.chars() {
+    let mut in_uppercase_chain = false;
+
+    let mut chars = name.chars();
+
+    let mut next_char = chars.next();
+
+    while let Some(c) = next_char {
+        next_char = chars.next();
+
+        let next_is_lower = next_char.map(|c| c.is_ascii_lowercase()).unwrap_or(false);
+
         // TODO: Don't push if this is the first item.
-        if c.is_alphabetic() && c.is_ascii_uppercase() {
+        if c.is_alphabetic()
+            && c.is_ascii_uppercase()
+            && !s.is_empty()
+            && (!in_uppercase_chain || in_uppercase_chain && next_is_lower)
+        {
             s.push('_');
         }
+
+        in_uppercase_chain = c.is_ascii_uppercase();
 
         s.push(c.to_ascii_lowercase());
     }

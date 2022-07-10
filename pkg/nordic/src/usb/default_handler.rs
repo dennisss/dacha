@@ -1,20 +1,29 @@
 use core::future::Future;
 
 use usb::descriptors::{DescriptorType, SetupPacket, StandardRequestType};
+use usb::DescriptorSet;
 
 use crate::log;
-use crate::usb::controller::{USBDeviceControlRequest, USBDeviceControlResponse};
-use crate::usb::descriptors::*;
+use crate::usb::controller::{
+    USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceNormalRequest,
+};
 use crate::usb::handler::{USBDeviceHandler, USBError};
 
 /// Default USB packet handler which implements retrieval of descriptors for a
 /// device with a single static configuration.
-pub struct USBDeviceDefaultHandler {}
+pub struct USBDeviceDefaultHandler<D> {
+    descriptors: D,
+}
 
-impl USBDeviceHandler for USBDeviceDefaultHandler {
+impl<D: DescriptorSet + 'static> USBDeviceHandler for USBDeviceDefaultHandler<D> {
     type HandleControlRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
     type HandleControlResponseFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
+
+    type HandleNormalRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
+
+    type HandleNormalResponseAcknowledgedFuture<'a> =
+        impl Future<Output = Result<(), USBError>> + 'a;
 
     fn handle_control_request<'a>(
         &'a mut self,
@@ -31,11 +40,26 @@ impl USBDeviceHandler for USBDeviceDefaultHandler {
     ) -> Self::HandleControlResponseFuture<'a> {
         self.handle_control_response_impl(setup, res)
     }
+
+    fn handle_normal_request<'a>(
+        &'a mut self,
+        endpoint_index: usize,
+        req: USBDeviceNormalRequest,
+    ) -> Self::HandleNormalRequestFuture<'a> {
+        async move { Ok(()) }
+    }
+
+    fn handle_normal_response_acknowledged<'a>(
+        &'a mut self,
+        endpoint_index: usize,
+    ) -> Self::HandleNormalResponseAcknowledgedFuture<'a> {
+        async move { Ok(()) }
+    }
 }
 
-impl USBDeviceDefaultHandler {
-    pub fn new() -> Self {
-        Self {}
+impl<D: DescriptorSet + 'static> USBDeviceDefaultHandler<D> {
+    pub fn new(descriptors: D) -> Self {
+        Self { descriptors }
     }
 
     async fn handle_control_request_impl<'a>(
@@ -105,12 +129,18 @@ impl USBDeviceDefaultHandler {
                 }
                 // TODO: Assert language code.
 
-                res.write(DESCRIPTORS.device_bytes()).await?;
+                res.write(self.descriptors.device_bytes()).await?;
             } else if desc_type == DescriptorType::CONFIGURATION as u8 {
                 // TODO: Validate that the configuration exists.
                 // If it doesn't return an error.
 
-                let data = DESCRIPTORS.config_bytes();
+                let data = match self.descriptors.config_bytes(desc_index) {
+                    Some(v) => v,
+                    None => {
+                        res.stale();
+                        return Ok(());
+                    }
+                };
 
                 res.write(data).await?;
             } else if desc_type == DescriptorType::ENDPOINT as u8 {
@@ -122,10 +152,12 @@ impl USBDeviceDefaultHandler {
                 // TODO: Probably simpler to just us the USB V1 in the device descriptor?
                 res.stale();
             } else if desc_type == DescriptorType::STRING as u8 {
-                let data = if desc_index == 0 {
-                    STRING_DESC0
-                } else {
-                    STRING_DESC1
+                let data = match self.descriptors.string_bytes(desc_index) {
+                    Some(v) => v,
+                    None => {
+                        res.stale();
+                        return Ok(());
+                    }
                 };
 
                 res.write(data).await?;

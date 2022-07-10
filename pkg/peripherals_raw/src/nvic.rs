@@ -18,6 +18,8 @@ pub const NVIC_ICTR: *mut u32 = 0xE000E004 as *mut u32;
 // System Control Space (SCS)
 pub const NVIC_ICSR: *mut u32 = 0xE000ED04 as *mut u32;
 
+pub const NVIC_VTOR: *mut u32 = 0xE000ED08 as *mut u32;
+
 pub struct NVIC {
     hidden: (),
 

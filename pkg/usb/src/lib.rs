@@ -22,8 +22,12 @@ extern crate libc;
 extern crate nix;
 
 #[cfg(feature = "alloc")]
-mod descriptor_iter;
+pub mod descriptor_builders;
+#[cfg(feature = "alloc")]
+pub mod descriptor_iter; // TOOD: Make private?
+pub mod descriptor_set;
 pub mod descriptors;
+pub mod dfu;
 mod endpoint;
 mod error;
 #[cfg(feature = "alloc")]
@@ -32,9 +36,12 @@ pub mod hid;
 mod language;
 #[cfg(all(feature = "std", target_os = "linux"))]
 mod linux;
+#[cfg(all(feature = "std", target_os = "linux"))]
+mod local_string;
 
 #[cfg(feature = "alloc")]
 pub use descriptor_iter::Descriptor;
+pub use descriptor_set::DescriptorSet;
 pub use error::Error;
 #[cfg(feature = "alloc")]
 pub use language::*;

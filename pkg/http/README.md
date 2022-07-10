@@ -179,6 +179,7 @@ Other things:
 - Want a way to wait for ready explicitly as servers typically aren't ready until they are connected to all dependencies.
 
 
+TODO: Verify that we have a deadline for individual request attempts to a backend (don't want that to last for ever if a server doesn't accept our connection or takes too long to error out).
 
 Next steps:
 - 

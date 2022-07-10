@@ -41,6 +41,7 @@ use executor::mutex::Mutex;
 use nordic_proto::packet::PacketBuffer;
 use nordic_proto::proto::net::NetworkConfig;
 use nordic_proto::usb::ProtocolUSBRequestType;
+use nordic_proto::usb_descriptors::PROTOCOL_USB_DESCRIPTORS;
 use protobuf::Message;
 use usb::descriptors::{DescriptorType, SetupPacket, StandardRequestType};
 
@@ -48,7 +49,7 @@ use crate::log;
 use crate::radio::Radio;
 use crate::radio_socket::RadioSocket;
 use crate::usb::controller::{
-    USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceController,
+    USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceController, USBDeviceNormalRequest,
 };
 use crate::usb::default_handler::USBDeviceDefaultHandler;
 use crate::usb::handler::{USBDeviceHandler, USBError};
@@ -63,6 +64,11 @@ impl USBDeviceHandler for ProtocolUSBHandler {
     type HandleControlRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
     type HandleControlResponseFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
+
+    type HandleNormalRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
+
+    type HandleNormalResponseAcknowledgedFuture<'a> =
+        impl Future<Output = Result<(), USBError>> + 'a;
 
     fn handle_control_request<'a>(
         &'a mut self,
@@ -79,6 +85,21 @@ impl USBDeviceHandler for ProtocolUSBHandler {
     ) -> Self::HandleControlResponseFuture<'a> {
         self.handle_control_response_impl(setup, res)
     }
+
+    fn handle_normal_request<'a>(
+        &'a mut self,
+        endpoint_index: usize,
+        req: USBDeviceNormalRequest,
+    ) -> Self::HandleNormalRequestFuture<'a> {
+        async move { Ok(()) }
+    }
+
+    fn handle_normal_response_acknowledged<'a>(
+        &'a mut self,
+        endpoint_index: usize,
+    ) -> Self::HandleNormalResponseAcknowledgedFuture<'a> {
+        async move { Ok(()) }
+    }
 }
 
 impl ProtocolUSBHandler {
@@ -94,7 +115,9 @@ impl ProtocolUSBHandler {
         setup: SetupPacket,
         mut req: USBDeviceControlRequest<'a>,
     ) -> Result<(), USBError> {
-        if setup.bmRequestType == 0b01000000 {
+        if setup.bmRequestType == 0b01000000
+        /* Host-to-device | Vendor | Device */
+        {
             if setup.bRequest == ProtocolUSBRequestType::Send.to_value() {
                 log!(b"USB TX\n");
 
@@ -143,7 +166,19 @@ impl ProtocolUSBHandler {
             }
         }
 
-        USBDeviceDefaultHandler::new()
+        // On DFU_DETACH resets, reset to the bootloader.
+        if setup.bmRequestType == 0b00100001
+        /* Host-to-device | Class | Interface */
+        {
+            if setup.wIndex
+                == get_attr!(&PROTOCOL_USB_DESCRIPTORS, usb::dfu::DFUInterfaceNumberTag) as u16
+                && setup.bRequest == usb::dfu::DFURequestType::DFU_DETACH as u8
+            {
+                peripherals::raw::reset();
+            }
+        }
+
+        USBDeviceDefaultHandler::new(PROTOCOL_USB_DESCRIPTORS)
             .handle_control_request(setup, req)
             .await
     }
@@ -153,7 +188,9 @@ impl ProtocolUSBHandler {
         setup: SetupPacket,
         mut res: USBDeviceControlResponse<'a>,
     ) -> Result<(), USBError> {
-        if setup.bmRequestType == 0b11000000 {
+        if setup.bmRequestType == 0b11000000
+        /* Device-to-host | Vendor | Device */
+        {
             if setup.bRequest == ProtocolUSBRequestType::Receive.to_value() {
                 // log!(b"USB RX\n");
                 let has_data = self.radio_socket.dequeue_rx(&mut self.packet_buf).await;
@@ -187,7 +224,7 @@ impl ProtocolUSBHandler {
             }
         }
 
-        USBDeviceDefaultHandler::new()
+        USBDeviceDefaultHandler::new(PROTOCOL_USB_DESCRIPTORS)
             .handle_control_response(setup, res)
             .await
     }

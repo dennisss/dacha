@@ -80,6 +80,8 @@ members = [
 	"pkg/sys",
 	"pkg/elf",
 	"pkg/protobuf_bench",
+	"pkg/flasher",
+	"pkg/uf2"
 ]
 
 [profile.dev]

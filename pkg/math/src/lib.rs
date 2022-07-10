@@ -36,6 +36,9 @@ pub mod matrix;
 pub mod number;
 pub mod rational;
 
+// TODO: Verify this uses hardware instructions on ARM.
+use number::Float;
+
 /// Given parameters of an equation of the form 'Ax^2 + Bx + C = 0' finds values
 /// of 'x' that satisfy the equation using the quadratic equation.
 ///

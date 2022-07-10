@@ -4,17 +4,45 @@ use core::iter::Iterator;
 use common::errors::*;
 
 use crate::descriptors::*;
+use crate::dfu::DFU_INTERFACE_SUBCLASS;
 use crate::hid::{HIDDescriptor, HIDDescriptorType};
 
+#[derive(Debug)]
 pub enum Descriptor {
     Device(DeviceDescriptor),
     Configuration(ConfigurationDescriptor),
     Endpoint(EndpointDescriptor),
     Interface(InterfaceDescriptor),
-    // String(StringDescriptor),
     HID(HIDDescriptor),
 
-    Unknown(Vec<u8>),
+    Unknown(UnknownDescriptor<Vec<u8>>),
+}
+
+#[derive(Debug)]
+pub struct UnknownDescriptor<D> {
+    data: D,
+}
+
+impl<D: AsRef<[u8]>> UnknownDescriptor<D> {
+    fn new(data: D) -> Self {
+        Self { data }
+    }
+
+    pub fn decode<T: Copy>(&self) -> Result<T> {
+        let data = self.data.as_ref();
+
+        if data.len() != core::mem::size_of::<T>() {
+            return Err(err_msg("Descriptor is the wrong size"));
+        }
+
+        // TODO: This transmute assumes that we are running on a little-endian system
+        // (same as the wire endian of the USB descriptors).
+        Ok(*unsafe { core::mem::transmute::<_, &T>(data.as_ptr()) })
+    }
+
+    pub fn raw_type(&self) -> u8 {
+        self.data.as_ref()[1]
+    }
 }
 
 /// Iterates over a list of concatenated USB descriptors in binary form.
@@ -52,43 +80,35 @@ impl<'a> DescriptorIter<'a> {
         let raw_desc = &self.data[0..len];
         self.data = &self.data[len..];
 
-        fn decode_fixed_len_desc<T: Copy>(raw_desc: &[u8]) -> Result<T> {
-            if raw_desc.len() != std::mem::size_of::<T>() {
-                return Err(err_msg("Descriptor is the wrong size"));
-            }
-
-            // TODO: This transmute assumes that we are running on a little-endian system
-            // (same as the wire endian of the USB descriptors).
-            Ok(*unsafe { std::mem::transmute::<_, &T>(raw_desc.as_ptr()) })
-        }
-
         let in_hid_interface = self.in_hid_interface;
         // self.in_hid_interface = false;
 
         Ok(Some(match typ {
-            Some(DescriptorType::DEVICE) => Descriptor::Device(decode_fixed_len_desc(raw_desc)?),
+            Some(DescriptorType::DEVICE) => {
+                Descriptor::Device(UnknownDescriptor::new(raw_desc).decode()?)
+            }
             Some(DescriptorType::CONFIGURATION) => {
-                Descriptor::Configuration(decode_fixed_len_desc(raw_desc)?)
+                Descriptor::Configuration(UnknownDescriptor::new(raw_desc).decode()?)
             }
             Some(DescriptorType::ENDPOINT) => {
-                Descriptor::Endpoint(decode_fixed_len_desc(raw_desc)?)
+                Descriptor::Endpoint(UnknownDescriptor::new(raw_desc).decode()?)
             }
             Some(DescriptorType::INTERFACE) => {
-                let iface: InterfaceDescriptor = decode_fixed_len_desc(raw_desc)?;
+                let iface: InterfaceDescriptor = UnknownDescriptor::new(raw_desc).decode()?;
                 self.in_hid_interface = iface.bInterfaceClass == InterfaceClass::HID.to_value();
                 Descriptor::Interface(iface)
             }
             _ => {
                 if in_hid_interface {
                     if raw_type == HIDDescriptorType::HID as u8 {
-                        let hid = decode_fixed_len_desc(raw_desc)?;
+                        let hid = UnknownDescriptor::new(raw_desc).decode()?;
                         return Ok(Some(Descriptor::HID(hid)));
                     }
                 }
 
                 // TODO: Support all the types supported by linux. See:
                 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/usb/ch9.h
-                Descriptor::Unknown(raw_desc.to_vec())
+                Descriptor::Unknown(UnknownDescriptor::new(raw_desc.to_vec()))
             }
         }))
     }

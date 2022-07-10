@@ -809,6 +809,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "flasher"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "elf",
+ "usb",
+]
+
+[[package]]
 name = "fs2"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1460,6 +1469,7 @@ dependencies = [
  "nordic_proto",
  "peripherals",
  "protobuf",
+ "uf2",
  "usb",
 ]
 
@@ -1472,6 +1482,7 @@ dependencies = [
  "macros",
  "protobuf",
  "protobuf_compiler",
+ "usb",
 ]
 
 [[package]]
@@ -2306,6 +2317,14 @@ dependencies = [
  "parsing",
  "protobuf",
  "reflection",
+]
+
+[[package]]
+name = "uf2"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "crypto",
 ]
 
 [[package]]

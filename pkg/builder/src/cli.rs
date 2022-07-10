@@ -2,7 +2,7 @@ use std::path::Path;
 
 use common::{errors::*, project_dir, project_path};
 
-use crate::builder::Builder;
+use crate::builder::{create_or_update_symlink, Builder};
 use crate::context::BuildContext;
 use crate::LOCAL_BINARY_PATH;
 
@@ -44,29 +44,15 @@ pub fn run() -> Result<()> {
                     .build_target_cwd(&build.label, &build_context)
                     .await?;
 
-                let built_link_out = project_path!("built");
-                if let Ok(_) = built_link_out.symlink_metadata() {
-                    std::fs::remove_file(&built_link_out)?;
-                }
-
-                std::os::unix::fs::symlink(
+                create_or_update_symlink(
                     format!("built-config/{}", result.key.config_key),
-                    built_link_out,
+                    project_path!("built"),
                 )?;
 
                 let local_bin_dir = project_path!(LOCAL_BINARY_PATH);
-                if !local_bin_dir.exists() {
-                    std::fs::create_dir(&local_bin_dir)?;
-                }
-
                 for (src, path) in &result.output_files {
                     if Path::new(src).starts_with(LOCAL_BINARY_PATH) {
-                        let output_path = project_dir().join(src);
-                        if let Ok(_) = output_path.symlink_metadata() {
-                            std::fs::remove_file(&output_path)?;
-                        }
-
-                        std::os::unix::fs::symlink(path, output_path)?;
+                        create_or_update_symlink(path, project_dir().join(src))?;
                     }
                 }
 

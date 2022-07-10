@@ -130,7 +130,7 @@ enum_def_with_unknown!(PrimaryLanguage u16 =>
     HID = 0xff
 );
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubLanguage {
     SaudiArabia,
     Iraq,

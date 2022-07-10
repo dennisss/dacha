@@ -3,10 +3,15 @@
     "**/target/**": true,
     "**/built/**": true,
     "**/built-rust/**": true,
-    "**/built-config/**": true
+    "**/built-config/**": true,
+    "**/node_modules/*/**": true
   },
   "editor.scrollBeyondLastLine": false,
   "editor.wordWrap": "on",
   "editor.formatOnSave": true,
   "rust-analyzer.checkOnSave.enable": true,
+  "rust-analyzer.checkOnSave.extraArgs": [
+    "--target-dir",
+    "/tmp/rust-analyzer-check"
+  ]
 }

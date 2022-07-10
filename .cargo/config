@@ -19,6 +19,3 @@ rustflags=[
 
 [target.thumbv6m-none-eabi]
 rustflags="-C link-arg=-Tpkg/rp2040/link.x -C link-arg=--nmagic"
-
-[target.thumbv7em-none-eabihf]
-rustflags="-C link-arg=-Tpkg/nordic/link.x --cfg target_label=\"nrf52840\" --cfg target_label=\"cortex_m\""
