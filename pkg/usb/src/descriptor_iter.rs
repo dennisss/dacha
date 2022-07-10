@@ -32,7 +32,11 @@ impl<D: AsRef<[u8]>> UnknownDescriptor<D> {
         let data = self.data.as_ref();
 
         if data.len() != core::mem::size_of::<T>() {
-            return Err(err_msg("Descriptor is the wrong size"));
+            return Err(format_err!(
+                "Descriptor is the wrong size: {} vs {}",
+                data.len(),
+                core::mem::size_of::<T>()
+            ));
         }
 
         // TODO: This transmute assumes that we are running on a little-endian system

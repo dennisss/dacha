@@ -7,3 +7,4 @@ edition = "2018"
 common = { path = "../common" }
 usb = { path = "../usb" }
 elf = { path = "../elf" }
+uf2 = { path = "../uf2" }

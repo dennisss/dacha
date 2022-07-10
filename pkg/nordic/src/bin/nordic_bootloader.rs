@@ -1,14 +1,23 @@
 /*
-da build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840
+da build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
 
 openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program built/pkg/nordic/nordic_bootloader verify" -c reset -c exit
+
+- `~/apps/gcc-arm-none-eabi-10.3-2021.10/bin/arm-none-eabi-gdb /home/dennis/workspace/dacha/built-rust/bfd75a5982e33698/thumbv7em-none-eabihf/release/nordic_bootloader`
+- `target extended-remote localhost:3333`
+- `monitor reset halt`
 
 Notes:
 - The UF2 will present addresses in strictly increasing order and the data must align to 32 bits
 
+TODOs:
+- Support partially reading requests so that we can stale them.
 
 We will implement USB DFU
 - https://www.usb.org/sites/default/files/DFU_1.1.pdf
+
+
+0b10101
 
 
 What this needs to do:
@@ -32,6 +41,8 @@ TODO:
 - Normally the nRESET pin is not mapped but it is mapped usually the first time the board is programmed or user code runs
 - It would be interesting to replicate this behavior.
 - This also means that we could get another pin if we wanted one.
+
+https://devzone.nordicsemi.com/f/nordic-q-a/50722/nrf52832-can-nreset-be-programmed-to-any-gpio-using-pselreset-0-pselreset-1-registers
 
 */
 
@@ -64,39 +75,45 @@ extern crate uf2;
 
 use core::arch::asm;
 use core::future::Future;
+use core::ptr::read_volatile;
 
+use common::fixed::vec::FixedVec;
+use crypto::checksum::crc::CRC32CHasher;
+use crypto::hasher::Hasher;
+use nordic::bootloader::flash::*;
+use nordic::bootloader::params::*;
 use nordic::config_storage::NetworkConfigStorage;
 use nordic::gpio::*;
 use nordic::log;
 use nordic::reset::*;
 use nordic::timer::Timer;
 use nordic::uarte::UARTE;
+use nordic::usb::aligned::Aligned;
 use nordic::usb::controller::USBDeviceControlRequest;
 use nordic::usb::controller::{
     USBDeviceControlResponse, USBDeviceController, USBDeviceNormalRequest,
 };
 use nordic::usb::default_handler::USBDeviceDefaultHandler;
 use nordic::usb::handler::{USBDeviceHandler, USBError};
+use nordic_proto::proto::bootloader::*;
 use nordic_proto::usb_descriptors::*;
+use peripherals::raw::nvic::NVIC_VTOR;
 use peripherals::raw::nvmc::NVMC;
 use peripherals::raw::power::resetreas::RESETREAS_VALUE;
 use peripherals::raw::register::RegisterRead;
 use peripherals::raw::register::RegisterWrite;
+use protobuf::Message;
 use uf2::*;
 use usb::descriptors::SetupPacket;
 use usb::dfu::*;
 
-const FLASH_START_ADDRESS: u32 = 0x1000000; // TODO
-
-const FLASH_BLOCK_SIZE: u32 = 4096;
-
-extern "C" {
-    static _flash_start: u32;
-    static _flash_end: u32;
-}
-
 pub struct BootloaderUSBHandler {
     nvmc: NVMC,
+
+    timer: Timer,
+
+    /// Current value of the BootloaderParams proto loaded from flash.
+    params: BootloaderParams,
 
     /// Status of the last command performed.
     status_code: DFUStatusCode,
@@ -104,12 +121,18 @@ pub struct BootloaderUSBHandler {
     state: State,
 
     /// NOTE: The size of this must match the wTransferSize in the descriptor
-    buffer: [u8; 512],
+    /// Alignment of this is required because we cast it to a UF2Block.
+    buffer: Aligned<[u8; UF2_BLOCK_SIZE], u32>,
 }
 
 enum State {
     Idle,
     Downloading(DownloadingState),
+
+    /// We've just received a zero length DFU_DNLOAD and we are done writing to
+    /// flash. Upon getting the next DFU_GETSTATUS, we will reset to the
+    /// application.
+    Manifesting,
 }
 
 impl State {
@@ -117,6 +140,7 @@ impl State {
         match self {
             State::Idle => DFUState::dfuIDLE,
             State::Downloading(_) => DFUState::dfuDNLOAD_IDLE,
+            State::Manifesting => DFUState::dfuMANIFEST,
         }
     }
 }
@@ -131,8 +155,11 @@ struct DownloadingState {
     /// DFU number when truncated to 16 bits.
     next_block_number: u32,
 
-    /// Total number of UF2 blocks we expect to see.
-    total_blocks: u32,
+    application_hasher: CRC32CHasher,
+
+    application_size: u32,
+
+    total_written: u32,
 }
 
 // TODO: Have a macro to auto-generate this.
@@ -179,12 +206,14 @@ impl USBDeviceHandler for BootloaderUSBHandler {
 }
 
 impl BootloaderUSBHandler {
-    pub fn new(nvmc: NVMC) -> Self {
+    pub fn new(params: BootloaderParams, nvmc: NVMC, timer: Timer) -> Self {
         Self {
             nvmc,
+            timer,
+            params,
             status_code: DFUStatusCode::OK,
             state: State::Idle,
-            buffer: [0u8; UF2_BLOCK_SIZE],
+            buffer: Aligned::new([0u8; UF2_BLOCK_SIZE]),
         }
     }
 
@@ -201,6 +230,18 @@ impl BootloaderUSBHandler {
                 self.state = State::Idle;
                 req.read(&mut []).await?;
                 return Ok(());
+            } else if setup.bRequest == DFURequestType::DFU_DETACH as u8 {
+                self.status_code = DFUStatusCode::OK;
+                req.read(&mut []).await?;
+
+                // TODO: Debug this with the Manifestation code.
+
+                // Give the application enough time to notice the response.
+                self.timer.wait_ms(10).await;
+
+                nordic::reset::reset_to_application();
+
+                return Ok(());
             } else if setup.bRequest == DFURequestType::DFU_CLRSTATUS as u8 {
                 self.status_code = DFUStatusCode::OK;
                 req.read(&mut []).await?;
@@ -208,33 +249,49 @@ impl BootloaderUSBHandler {
             } else if setup.bRequest == DFURequestType::DFU_DNLOAD as u8 {
                 if let State::Idle = &self.state {
                     self.state = State::Downloading(DownloadingState {
-                        next_flash_offset: FLASH_START_ADDRESS,
+                        next_flash_offset: 0,
                         next_block_number: 0,
-                        total_blocks: 0,
+                        application_hasher: CRC32CHasher::new(),
+                        application_size: 0,
+                        total_written: 0,
                     });
                 }
 
                 let state = match &mut self.state {
                     State::Downloading(s) => s,
                     _ => {
+                        log!(b"DFU_DNLOAD: Wrong state\n");
                         self.status_code = DFUStatusCode::errSTALLEDPKT;
                         req.stale();
                         return Ok(());
                     }
                 };
 
-                let nread = req.read(&mut self.buffer).await?;
+                let nread = req.read(&mut *self.buffer).await?;
                 if nread == 0 {
                     // Enter manifestation mode. We already wrote the flash in previous requests so
                     // just reset.
-                    nordic::reset::reset_to_application();
-                }
 
-                // let block = UF2Block::default()
+                    if state.total_written != 0 {
+                        if state.application_size != 0 {
+                            self.params.set_application_size(state.application_size);
+                            self.params
+                                .set_application_crc32c(state.application_hasher.finish_u32());
+                        }
+
+                        self.params.set_num_flashes(self.params.num_flashes() + 1);
+                        write_bootloader_params(&self.params, &mut self.nvmc);
+                    }
+
+                    self.status_code = DFUStatusCode::OK;
+                    self.state = State::Manifesting;
+                    return Ok(());
+                }
 
                 let block = match UF2Block::cast_from(&self.buffer[0..nread]) {
                     Some(v) => v,
                     None => {
+                        log!(b"DFU_DNLOAD: Bad UF2 block\n");
                         self.status_code = DFUStatusCode::errSTALLEDPKT;
                         return Ok(());
                     }
@@ -244,6 +301,7 @@ impl BootloaderUSBHandler {
                 if state.next_block_number as u16 != dfu_block_num
                     || state.next_block_number != block.block_number
                 {
+                    log!(b"DFU_DNLOAD: Non-monotonic block num\n");
                     self.status_code = DFUStatusCode::errSTALLEDPKT;
                     return Ok(());
                 }
@@ -253,83 +311,106 @@ impl BootloaderUSBHandler {
                     return Ok(());
                 }
 
+                // NOTE: We don't care about the num_blocks value in the UF2.
                 // TODO: Prevent this from overflowing.
                 state.next_block_number += 1;
 
-                // TODO: Validate this hasn't changed?
-                state.total_blocks = block.num_blocks;
-
-                // TODO: Require a special flag to be flipped if we attempt to overwrite the
-                // bootloader itself
-                // TODO: Double check this against INFO.FLASH in the FICR registers.
-                if block.target_addr < unsafe { _flash_start }
-                    || block.target_addr >= unsafe { _flash_end }
-                {
-                    self.status_code = DFUStatusCode::errADDRESS;
-                    return Ok(());
-                }
-
                 // TODO: Validate the block's family_id if it is present.
 
-                // TODO: Require that the first written address is at the start of the
-                // application memory (as defined by the bootloader).
-
+                // Writes must only go forward in flash addresses to ensure that we properly
+                // handle erases.
                 if block.target_addr < state.next_flash_offset {
-                    self.status_code = DFUStatusCode::errSTALLEDPKT;
+                    log!(b"DFU_DNLOAD: Non-monotonic addr\n");
+                    self.status_code = DFUStatusCode::errADDRESS;
                     return Ok(());
                 }
 
                 // We are only allowed to write full words at word offsets.
                 if block.target_addr % 4 != 0 || block.payload_size % 4 != 0 {
+                    log!(b"DFU_DNLOAD: Unaligned write\n");
                     self.status_code = DFUStatusCode::errSTALLEDPKT;
                     return Ok(());
                 }
 
-                if block.target_addr % FLASH_BLOCK_SIZE == 0 {
-                    self.nvmc
-                        .config
-                        .write_with(|v| v.set_wen_with(|v| v.set_een()));
-                    self.nvmc.erasepage.write(block.target_addr);
-                    self.nvmc
-                        .config
-                        .write_with(|v| v.set_wen_with(|v| v.set_ren()));
-                } else if block.target_addr != state.next_flash_offset {
-                    // We are writing somewhere in the middle of a memory block. This means we need
-                    // to make sure the old data is erases. But, becuase we can't partially erase a
-                    // flash page, we can only allow writes if the previous UF2 block was also
-                    // writing to this page.
-                    self.status_code = DFUStatusCode::errSTALLEDPKT;
-                    return Ok(());
-                }
+                let mut in_application_code = false;
 
-                let words = unsafe {
-                    core::slice::from_raw_parts::<u32>(
-                        core::mem::transmute(block.data.as_ptr()),
-                        (block.payload_size / 4) as usize,
-                    )
-                };
+                // Validate that the target address is in a range that is ok to write.
+                // This also needs to update our state to enter the current segment being
+                // written.
+                if block.target_addr >= BOOTLOADER_OFFSET
+                    && block.target_addr < BOOTLOADER_PARAMS_OFFSET
+                {
+                    // Writing to bootloader code
 
-                self.nvmc
-                    .config
-                    .write_with(|v| v.set_wen_with(|v| v.set_wen()));
-                state.next_flash_offset = block.target_addr;
-                for w in words {
-                    while self.nvmc.readynext.read().is_busy() {
-                        continue;
+                    // TODO: Require a special flag to be flipped if we attempt to overwrite the
+                    // bootloader itself
+
+                    // Must always start writing to the vector table of the bootloader.
+                    if state.next_flash_offset == 0 && block.target_addr != 0 {
+                        log!(b"DFU_DNLOAD: Missing bootloader start\n");
+                        self.status_code = DFUStatusCode::errADDRESS;
+                        return Ok(());
                     }
+                } else if block.target_addr >= APPLICATION_CODE_OFFSET
+                    && block.target_addr < flash_size()
+                {
+                    // Writing to application code.
+                    in_application_code = true;
 
-                    unsafe { core::ptr::write_volatile(state.next_flash_offset as *mut u32, *w) };
+                    if state.next_flash_offset < APPLICATION_CODE_OFFSET {
+                        // Must always write the first bytes of the application (doesn't make sense
+                        // to have an application without a vector table).
+                        if block.target_addr != APPLICATION_CODE_OFFSET {
+                            log!(b"DFU_DNLOAD: Missing app start\n");
+                            self.status_code = DFUStatusCode::errADDRESS;
+                            return Ok(());
+                        }
 
-                    state.next_flash_offset += 4;
+                        // Advance forward our flash offset to this segment.
+                        // Don't need to erase any partially completed pages in previous segments.
+                        state.next_flash_offset = APPLICATION_CODE_OFFSET;
+                    }
+                } else {
+                    // Not a supported flash segment.
+                    // Note that we don't support writing to the
+                    // BOOTLOADER_PARAMS segment directly.
+
+                    log!(b"DFU_DNLOAD: Unsupported addr\n");
+                    self.status_code = DFUStatusCode::errADDRESS;
+                    return Ok(());
                 }
-                self.nvmc
-                    .config
-                    .write_with(|v| v.set_wen_with(|v| v.set_ren()));
 
-                // Wait for all writes to complete.
-                while self.nvmc.ready.read().is_busy() {
-                    continue;
+                // TODO: Implement UICR writing, but only if the bootloader is being written.
+
+                // Explicitly write all flash space between our last written offset and the next
+                // one. This has the following purposes:
+                // - Ensures that if block.target_addr is midway through a page, the page is
+                //   erased.
+                // - For application code, ensures that we CRC a contiguous segment of code with
+                //   deterministic zero padding for undefined regions.
+                let mut empty_word = [0u8; 4];
+                while state.next_flash_offset < block.target_addr {
+                    write_to_flash(state.next_flash_offset, &empty_word, &mut self.nvmc);
+                    state.next_flash_offset += empty_word.len() as u32;
+
+                    state.total_written += empty_word.len() as u32;
+                    if in_application_code {
+                        state.application_hasher.update(&empty_word);
+                        state.application_size += empty_word.len() as u32;
+                    }
                 }
+                assert!(state.next_flash_offset == block.target_addr);
+
+                write_to_flash(block.target_addr, block.payload(), &mut self.nvmc);
+                state.next_flash_offset = block.target_addr + block.payload_size;
+
+                state.total_written += block.payload_size;
+                if in_application_code {
+                    state.application_hasher.update(block.payload());
+                    state.application_size += block.payload_size;
+                }
+
+                // log!(b"Done block\n");
 
                 return Ok(());
             }
@@ -357,14 +438,22 @@ impl BootloaderUSBHandler {
                     iString: 0,
                 };
 
-                return res
-                    .write(unsafe {
-                        core::slice::from_raw_parts(
-                            core::mem::transmute(&status),
-                            core::mem::size_of::<DFUStatus>(),
-                        )
-                    })
-                    .await;
+                res.write(unsafe {
+                    core::slice::from_raw_parts(
+                        core::mem::transmute(&status),
+                        core::mem::size_of::<DFUStatus>(),
+                    )
+                })
+                .await;
+
+                if let State::Manifesting = &self.state {
+                    // Give the application enough time to notice the response.
+                    self.timer.wait_ms(10).await;
+
+                    nordic::reset::reset_to_application();
+                }
+
+                return Ok(());
             }
         }
 
@@ -374,8 +463,8 @@ impl BootloaderUSBHandler {
     }
 }
 
-define_thread!(Main, main_thread_fn);
-async fn main_thread_fn() {
+define_thread!(Main, main_thread_fn, params: BootloaderParams);
+async fn main_thread_fn(params: BootloaderParams) {
     let mut peripherals = peripherals::raw::Peripherals::new();
     let mut pins = unsafe { nordic::pins::PeripheralPins::new() };
 
@@ -387,7 +476,23 @@ async fn main_thread_fn() {
         log::setup(serial).await;
     }
 
-    log!(b"Started up!\n");
+    log!(b"Enter Bootloader!\n");
+
+    let mut usb_controller = USBDeviceController::new(peripherals.usbd, peripherals.power);
+    usb_controller
+        .run(BootloaderUSBHandler::new(params, peripherals.nvmc, timer))
+        .await;
+
+    // Never reached
+    loop {}
+}
+
+// NOTE: This code should not depend on any peripherals being initialized as we
+// want to run it as early in the boot process as possible and not initialize
+// any peripherals to a non-initial state which the application may not be able
+// to handle.
+fn maybe_enter_application(params: &BootloaderParams) {
+    let mut peripherals = peripherals::raw::Peripherals::new();
 
     let reset_reason = peripherals.power.resetreas.read();
     let reset_state = ResetState::from_value(peripherals.power.gpregret.read());
@@ -408,9 +513,6 @@ async fn main_thread_fn() {
     // Enter the bootloader if the reset was triggered by the RESET pin.
     should_enter_bootloader |= reset_reason.resetpin().is_detected();
 
-    // if reset_reason.resetpin().is_detected() || reset_reason.sreq().is_detected()
-    // {
-
     match reset_state {
         ResetState::Default => {}
         ResetState::EnterBootloader => {
@@ -422,31 +524,65 @@ async fn main_thread_fn() {
         ResetState::Unknown(_) => {}
     }
 
-    // TODO: Check the integrity of the app code
+    // We can only enter the application if it is valid.
+    if !should_enter_bootloader {
+        if !has_valid_application(params) {
+            return;
+        }
 
-    should_enter_bootloader = true;
+        enter_application();
+    }
+}
 
-    if should_enter_bootloader {
-        let mut usb_controller = USBDeviceController::new(peripherals.usbd, peripherals.power);
-        usb_controller
-            .run(BootloaderUSBHandler::new(peripherals.nvmc))
-            .await;
-
-        // Never reached
-        loop {}
+fn has_valid_application(params: &BootloaderParams) -> bool {
+    if params.application_size() == 0 || params.num_flashes() == 0 {
+        return false;
     }
 
-    // Otherwise, jump to software
-
-    loop {
-        log!(b"Hi!\n");
-
-        timer.wait_ms(1500).await;
+    let mut app_data = unsafe { application_code_data() };
+    if (params.application_size() as usize) > app_data.len() {
+        return false;
     }
+
+    app_data = &app_data[..(params.application_size() as usize)];
+
+    let expected_sum = {
+        let mut hasher = CRC32CHasher::new();
+        hasher.update(app_data);
+        hasher.finish_u32()
+    };
+
+    if expected_sum != params.application_crc32c() {
+        return false;
+    }
+
+    true
+}
+
+fn enter_application() {
+    // See https://developer.arm.com/documentation/ka001423/1-0
+
+    // TODO: Do this as early as possible (ideally in main() before peripherals are
+    // loaded).
+    unsafe {
+        let sp = read_volatile(APPLICATION_CODE_OFFSET as *mut u32);
+        let ep = read_volatile((APPLICATION_CODE_OFFSET + 4) as *mut u32);
+
+        core::ptr::write_volatile(NVIC_VTOR, APPLICATION_CODE_OFFSET);
+        asm!(
+            "mov sp, {sp}",
+            "bx {ep}",
+            sp = in(reg) sp,
+            ep = in(reg) ep,
+        )
+    };
 }
 
 entry!(main);
 fn main() -> () {
+    let params = read_bootloader_params();
+    maybe_enter_application(&params);
+
     // Disable interrupts.
     // TODO: Disable FIQ interrupts?
     unsafe { asm!("cpsid i") }
@@ -454,9 +590,12 @@ fn main() -> () {
     let mut peripherals = peripherals::raw::Peripherals::new();
 
     nordic::clock::init_high_freq_clk(&mut peripherals.clock);
+
+    // TODO: If we are not using an external crystal, this needs to derive from
+    // HFCLK.
     nordic::clock::init_low_freq_clk(&mut peripherals.clock);
 
-    Main::start();
+    Main::start(params);
 
     // TODO: Setup the NRESET pin.
 

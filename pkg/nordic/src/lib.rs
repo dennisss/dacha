@@ -41,6 +41,7 @@ pub mod radio_activity_led;
 pub mod radio_socket;
 pub mod rng;
 pub mod spi;
+pub mod bootloader;
 pub mod reset;
 pub mod temp;
 pub mod timer;

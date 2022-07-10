@@ -174,19 +174,28 @@ impl ELF {
 
         for p in self.program_headers.iter() {
             println!(
-                "{:08x} - {:08x}: {:?} {:?}",
+                "{:08x} [{:08x}] - {:08x}: {:?} {:?}",
                 p.vaddr,
+                p.paddr,
                 p.vaddr + p.mem_size,
                 ProgramHeaderType::from_value(p.typ),
                 p.flags
             );
+            println!("{:?}", p);
         }
 
         println!("");
 
+        println!("Sections:");
+
         for (i, section) in self.section_headers.iter().enumerate() {
             let name = shstrtab.get(section.name_offset as usize)?;
-            println!("{:?} @ {:08x}", name, section.addr);
+            println!(
+                "{:08x} - {:08x} {:?}",
+                section.addr,
+                section.addr + section.size,
+                name
+            );
 
             if section.typ == SHT_SYMTAB {
                 let symbol_strtab = StringTable {

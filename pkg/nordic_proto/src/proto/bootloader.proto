@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+message BootloaderParams {
+    // Number of bytes storing the firmware (or 0 if no firmware has been flashed).
+    uint32 application_size = 1;
+
+    // CRC32 hash of the loaded firmware.
+    uint32 application_crc32c = 2;
+
+    // Number of times an application or new bootloader has been flashed.
+    uint32 num_flashes = 3;
+}

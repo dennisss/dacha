@@ -3,3 +3,7 @@
 pub mod net {
     include!(concat!(env!("OUT_DIR"), "/src/proto/net.rs"));
 }
+
+pub mod bootloader {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/bootloader.rs"));
+}

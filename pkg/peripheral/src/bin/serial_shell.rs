@@ -15,7 +15,7 @@ use nix::{
 };
 
 fn main() -> Result<()> {
-    let mut file = File::open("/dev/ttyUSB1")?;
+    let mut file = File::open("/dev/ttyUSB0")?;
 
     // ioctl(TCGETS, *mut termios)
     let mut termios = tcgetattr(file.as_raw_fd())?;

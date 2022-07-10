@@ -67,6 +67,10 @@ impl Default for UF2Block {
 }
 
 impl UF2Block {
+    pub fn payload(&self) -> &[u8] {
+        &self.data[0..(self.payload_size as usize)]
+    }
+
     #[cfg(target_endian = "little")]
     pub fn cast_from<'a>(data: &'a [u8]) -> Option<&'a Self> {
         if data.len() != size_of::<Self>() {

@@ -1,11 +1,17 @@
 #[macro_use]
 extern crate common;
 extern crate elf;
+extern crate uf2;
 extern crate usb;
 
 use common::errors::*;
+use uf2::*;
 
 /*
+Usage:
+da build //pkg/nordic:nordic_blink --config=//pkg/nordic:nrf52840
+cargo run --bin flasher
+
 Features to add:
 - UF2 input
 - Use builder to find file (or maybe build the target)
@@ -19,75 +25,81 @@ TODO: DFU Bootloaders need to be queryable for the flash range they are editing 
 
 // TODO: Also bring in support for
 
+struct UF2Builder {
+    /// All the data blocks formed so far.
+    data: Vec<u8>,
+    next_block_number: u32,
+}
+
+impl UF2Builder {
+    fn new() -> Self {
+        Self {
+            data: vec![],
+            next_block_number: 0,
+        }
+    }
+
+    fn write(&mut self, mut target_address: u32, data: &[u8]) {
+        assert!(data.len() % 4 == 0 && target_address % 4 == 0);
+
+        for chunk in data.chunks(256) {
+            let mut block = UF2Block::default();
+
+            block.block_number = self.next_block_number;
+            self.next_block_number += 1;
+
+            block.target_addr = target_address;
+            target_address += chunk.len() as u32;
+
+            block.payload_size = chunk.len() as u32;
+            block.data[0..chunk.len()].copy_from_slice(chunk);
+
+            self.data.extend_from_slice(block.as_bytes());
+        }
+    }
+}
+
 async fn run() -> Result<()> {
-    let elf = elf::ELF::read(project_path!(
-        "built-rust/50f2512e741290a0/thumbv7em-none-eabihf/release/nordic_bootloader"
-    ))
-    .await?;
+    let elf = elf::ELF::read(project_path!("built/pkg/nordic/nordic_blink")).await?;
 
-    let flash_start = 0x10000000;
-    let mut flash_end = flash_start;
-    let mut flash_contents = vec![];
+    let mut firmware_builder = UF2Builder::new();
 
-    // let boot2 =
-    //     common::async_std::fs::read(project_path!("third_party/tiny2040-boot2.
-    // bin")).await?; flash_contents.extend_from_slice(&boot2);
-    // flash_end += boot2.len();
+    let mut total_written = 0;
 
     for program_header in &elf.program_headers {
-        if program_header.typ != 1 {
-            // PT_LOAD
+        if program_header.typ != elf::ProgramHeaderType::PT_LOAD.to_value() {
             continue;
         }
-
-        if program_header.vaddr > 1048576 {
-            println!("Skip: {:?}", program_header);
-
-            // for section in elf.section_headers {
-
-            // }
-
-            continue;
-        }
-
-        /*
-        if (program_header.vaddr as usize) < 0x10000000 {
-            continue;
-            // return Err(err_msg("Segment less than flash start"));
-        }
-
-        if (program_header.vaddr as usize) != flash_end {
-            return Err(err_msg("Expected program headers to be contigous"));
-        }
-        */
-
-        println!("{:?}", program_header);
 
         if program_header.mem_size != program_header.file_size {
-            return Err(format_err!(
-                "Expected mem size and file size to be equal: {} vs {}",
-                program_header.mem_size,
-                program_header.file_size
-            ));
+            return Err(err_msg("Expected mem size and file size to be equal"));
         }
 
-        assert_eq!(program_header.vaddr, program_header.paddr);
-
         println!(
-            "Found segment: 0x{:x} of size {}",
-            program_header.vaddr, program_header.file_size
+            "Write {:08x} - {:08x}",
+            program_header.paddr,
+            program_header.paddr + program_header.file_size
         );
 
         let data = &elf.file[(program_header.offset as usize)
             ..(program_header.offset as usize + program_header.file_size as usize)];
 
-        // println!("{:x?}", data);
-
-        flash_contents.extend_from_slice(data);
-        // flash_end += (program_header.mem_size as usize);
+        firmware_builder.write(program_header.paddr as u32, data);
+        total_written += data.len();
     }
 
-    println!("Found bytes: {}", flash_contents.len());
+    println!(
+        "Found bytes: {} {}",
+        total_written,
+        firmware_builder.data.len()
+    );
+
+    let mut host = usb::dfu::DFUHost::create(usb::dfu::DeviceSelector {
+        vendor_id: None,
+        product_id: None,
+    })?;
+
+    host.download(&firmware_builder.data).await?;
 
     Ok(())
 }

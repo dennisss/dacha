@@ -48,6 +48,8 @@ impl DFUHost {
 
         let mut device = self.find_dfu_mode_device().await?.open().await?;
 
+        println!("Found DFU Mode device");
+
         let block_size = device
             .metadata
             .functional_descriptor
@@ -56,6 +58,8 @@ impl DFUHost {
         if block_size < MIN_BLOCK_SIZE {
             return Err(err_msg("Block size too small"));
         }
+
+        println!("Block Size: {}", block_size);
 
         // TODO: Start with an initial GET_STATUS request to get the bwPollTimeout
         // value.
@@ -66,13 +70,19 @@ impl DFUHost {
         device.abort().await?;
 
         for (block_num, block_data) in data.chunks(block_size as usize).enumerate() {
+            println!("Download block #{}", block_num);
+
             device
                 .download_block(block_num as u16 /* will wrap */, block_data)
                 .await?;
         }
 
+        println!("Trigger manifestation");
+
         // Final download. Device will enter manifestation state.
         device.download_block(0, &[]).await?;
+
+        println!("Downloads done!");
 
         if device
             .metadata
@@ -116,6 +126,8 @@ impl DFUHost {
             if device_entry.metadata.protocol == DFUInterfaceProtocol::DFUMode {
                 return Ok(device_entry);
             }
+
+            println!("Found DFU runtime device. Detaching...");
 
             let mut device = device_entry.open().await?;
 
@@ -177,7 +189,13 @@ impl DFUHost {
 
         let mut descs = device_entry.descriptors();
         while let Some(desc) = descs.next() {
-            let desc = desc?;
+            let desc = match desc {
+                Ok(v) => v,
+                Err(_) => {
+                    // TODO: Print which device this is.
+                    return Ok(None);
+                }
+            };
 
             match desc {
                 Descriptor::Configuration(cfg) => {
