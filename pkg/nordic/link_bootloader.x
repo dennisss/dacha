@@ -26,22 +26,44 @@ SECTIONS
 {
     .vector_table ORIGIN(FLASH) :
     {
-        /* First entry: initial Stack Pointer value */
         LONG(ORIGIN(RAM) + LENGTH(RAM));
+        KEEP(*(.entry_vector_table));
+    } > FLASH :text
 
-        /* Second entry: reset vector */
+    .text : ALIGN(4)
+    {
+        *(.entry);
+    } > FLASH :text
+
+    .data ORIGIN(RAM) : ALIGN(4)
+    {
+        _vector_table = .;
+
+        _sdata = .;
+
+        /* Vector table for executing main() */
+        LONG(ORIGIN(RAM) + LENGTH(RAM));
         KEEP(*(.vector_table.reset_vector));
-    } > FLASH :text
 
-    .text :
-    {
         *(.text .text.*);
-    } > FLASH :text
-
-    .rodata :
-    {
         *(.rodata .rodata.*);
-    } > FLASH :text
+        *(.data.*);
+        _edata = ALIGN(4);
+    } > RAM AT > FLASH :data
+
+    _sidata = LOADADDR(.data);
+
+    .bss : ALIGN(4)
+    {
+        _sbss = .;
+        *(.bss.*);
+        _ebss = ALIGN(4);
+    } > RAM :NONE
+
+    .heap : ALIGN(4)
+    {
+        _sheap = .;
+    } > RAM :NONE
 
     .pselreset :
     {
@@ -54,27 +76,6 @@ SECTIONS
     {
         LONG(5) /* Set to 3.3V VDD */
     } > REGOUT0 :regout0
-
-    .bss : ALIGN(4)
-    {
-        _sbss = .;
-        *(.bss.*);
-        _ebss = ALIGN(4);
-    } > RAM :NONE
-
-    .data : ALIGN(4)
-    {
-        _sdata = .;
-        *(.data.*);
-        _edata = ALIGN(4);
-    } > RAM AT > FLASH :data
-
-    _sidata = LOADADDR(.data);
-
-    .heap : ALIGN(4)
-    {
-        _sheap = .;
-    } > RAM :NONE
 
     /DISCARD/ :
     {

@@ -6,8 +6,6 @@ MEMORY
   RAM : ORIGIN = 0x20000000, LENGTH = 256K
 }
 
-0x200
-
 ENTRY(entry);
 
 EXTERN(RESET_VECTOR);
@@ -27,6 +25,8 @@ SECTIONS
 
     .vector_table ORIGIN(FLASH) :
     {
+        _vector_table = .;
+
         /* First entry: initial Stack Pointer value */
         LONG(ORIGIN(RAM) + LENGTH(RAM));
 
@@ -36,6 +36,7 @@ SECTIONS
 
     .text : ALIGN(4)
     {
+        *(.entry);
         *(.text .text.*);
     } > FLASH :text
 
@@ -43,13 +44,6 @@ SECTIONS
     {
         *(.rodata .rodata.*);
     } > FLASH :text
-
-    .bss : ALIGN(4)
-    {
-        _sbss = .;
-        *(.bss.*);
-        _ebss = ALIGN(4);
-    } > RAM :NONE
 
     .data : ALIGN(4)
     {
@@ -59,6 +53,13 @@ SECTIONS
     } > RAM AT > FLASH :data
     
     _sidata = LOADADDR(.data);
+
+    .bss : ALIGN(4)
+    {
+        _sbss = .;
+        *(.bss.*);
+        _ebss = ALIGN(4);
+    } > RAM :NONE
 
     .heap : ALIGN(4)
     {

@@ -20,7 +20,7 @@ static mut INTERRUPT_WAKER_LISTS: [WakerList; NUM_INTERRUPTS] = [WakerList::new(
 
 const PENDSV_EXCEPTION_NUM: usize = 14;
 
-type InterruptHandler = unsafe extern "C" fn() -> ();
+pub type InterruptHandler = unsafe extern "C" fn() -> ();
 
 struct ExternalInterruptEnabledContext<'a> {
     nvic: NVIC,
@@ -116,6 +116,9 @@ extern "C" {
 
 /// NOTE: We subtract 1 from the size of this as the initial stack pointer entry
 /// will be added by the linker script.
+///
+/// TODO: Add alignment constraints to this (for when not inserted at address
+/// 0): https://developer.arm.com/documentation/dui0552/a/cortex-m3-peripherals/system-control-block/vector-table-offset-register
 #[link_section = ".vector_table.reset_vector"]
 #[no_mangle]
 static RESET_VECTOR: [InterruptHandler; EXTERNAL_INTERRUPT_OFFSET - 1 + NUM_EXTERNAL_INTERRUPTS] = [

@@ -9,16 +9,13 @@ openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 ma
 
 Notes:
 - The UF2 will present addresses in strictly increasing order and the data must align to 32 bits
+- The bootloader runs entirely from RAM so must fit in it (with room to spare for the stack).
 
 TODOs:
 - Support partially reading requests so that we can stale them.
 
 We will implement USB DFU
 - https://www.usb.org/sites/default/files/DFU_1.1.pdf
-
-
-0b10101
-
 
 What this needs to do:
 - Check for whether or not the user button is pressed down
@@ -56,12 +53,6 @@ https://devzone.nordicsemi.com/f/nordic-q-a/50722/nrf52832-can-nreset-be-program
 #![no_std]
 #![no_main]
 
-#[cfg(feature = "std")]
-extern crate std;
-
-#[cfg(feature = "alloc")]
-extern crate alloc;
-
 #[macro_use]
 extern crate executor;
 extern crate peripherals;
@@ -80,6 +71,7 @@ use core::ptr::read_volatile;
 use common::fixed::vec::FixedVec;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
+use nordic::bootloader::app::*;
 use nordic::bootloader::flash::*;
 use nordic::bootloader::params::*;
 use nordic::config_storage::NetworkConfigStorage;
@@ -97,11 +89,11 @@ use nordic::usb::default_handler::USBDeviceDefaultHandler;
 use nordic::usb::handler::{USBDeviceHandler, USBError};
 use nordic_proto::proto::bootloader::*;
 use nordic_proto::usb_descriptors::*;
-use peripherals::raw::nvic::NVIC_VTOR;
 use peripherals::raw::nvmc::NVMC;
-use peripherals::raw::power::resetreas::RESETREAS_VALUE;
 use peripherals::raw::register::RegisterRead;
 use peripherals::raw::register::RegisterWrite;
+use peripherals::raw::uicr::UICR;
+use peripherals::raw::uicr::UICR_REGISTERS;
 use protobuf::Message;
 use uf2::*;
 use usb::descriptors::SetupPacket;
@@ -122,6 +114,8 @@ pub struct BootloaderUSBHandler {
 
     /// NOTE: The size of this must match the wTransferSize in the descriptor
     /// Alignment of this is required because we cast it to a UF2Block.
+    ///
+    /// TODO: Move this to global memory to save space.
     buffer: Aligned<[u8; UF2_BLOCK_SIZE], u32>,
 }
 
@@ -234,7 +228,7 @@ impl BootloaderUSBHandler {
                 self.status_code = DFUStatusCode::OK;
                 req.read(&mut []).await?;
 
-                // TODO: Debug this with the Manifestation code.
+                // TODO: Dedup this with the Manifestation code.
 
                 // Give the application enough time to notice the response.
                 self.timer.wait_ms(10).await;
@@ -334,6 +328,13 @@ impl BootloaderUSBHandler {
 
                 let mut in_application_code = false;
 
+                let uicr_start_address =
+                    unsafe { core::mem::transmute::<&UICR_REGISTERS, u32>(&*UICR::new()) };
+                let uicr_end_address =
+                    uicr_start_address + (core::mem::size_of::<UICR_REGISTERS>() as u32);
+
+                // TODO: Also add bounds checks to the end addresses.
+
                 // Validate that the target address is in a range that is ok to write.
                 // This also needs to update our state to enter the current segment being
                 // written.
@@ -357,7 +358,7 @@ impl BootloaderUSBHandler {
                     // Writing to application code.
                     in_application_code = true;
 
-                    if state.next_flash_offset < APPLICATION_CODE_OFFSET {
+                    if state.next_flash_offset <= APPLICATION_CODE_OFFSET {
                         // Must always write the first bytes of the application (doesn't make sense
                         // to have an application without a vector table).
                         if block.target_addr != APPLICATION_CODE_OFFSET {
@@ -370,17 +371,37 @@ impl BootloaderUSBHandler {
                         // Don't need to erase any partially completed pages in previous segments.
                         state.next_flash_offset = APPLICATION_CODE_OFFSET;
                     }
+                } else if block.target_addr >= uicr_start_address
+                    && block.target_addr < uicr_end_address
+                {
+                    // Write to UICR. This has a special way to perform erases and is only written
+                    // to sparsely.
+
+                    // TODO: Maybe support sparse writes by reading back the old values (the tricky
+                    // part is that new values don't appear until a reset occurs so we can't perform
+                    // flashing more than once until a reset occurs).
+
+                    // TODO: Disallow writing to UICR unless the bootloader was
+                    // also written? (to prevent the user firmware from
+                    // accidentally overwriting stuff).
+
+                    if state.next_flash_offset <= uicr_start_address {
+                        erase_uicr_async(&mut self.nvmc);
+                    }
+
+                    write_to_uicr(block.target_addr, block.payload(), &mut self.nvmc);
+                    state.total_written += block.payload_size;
+                    state.next_flash_offset = block.target_addr + block.payload_size;
+
+                    return Ok(());
                 } else {
                     // Not a supported flash segment.
                     // Note that we don't support writing to the
                     // BOOTLOADER_PARAMS segment directly.
-
                     log!(b"DFU_DNLOAD: Unsupported addr\n");
                     self.status_code = DFUStatusCode::errADDRESS;
                     return Ok(());
                 }
-
-                // TODO: Implement UICR writing, but only if the bootloader is being written.
 
                 // Explicitly write all flash space between our last written offset and the next
                 // one. This has the following purposes:
@@ -487,99 +508,13 @@ async fn main_thread_fn(params: BootloaderParams) {
     loop {}
 }
 
-// NOTE: This code should not depend on any peripherals being initialized as we
-// want to run it as early in the boot process as possible and not initialize
-// any peripherals to a non-initial state which the application may not be able
-// to handle.
-fn maybe_enter_application(params: &BootloaderParams) {
-    let mut peripherals = peripherals::raw::Peripherals::new();
-
-    let reset_reason = peripherals.power.resetreas.read();
-    let reset_state = ResetState::from_value(peripherals.power.gpregret.read());
-
-    peripherals
-        .power
-        .gpregret
-        .write(ResetState::Default.to_value());
-
-    // Clear by setting to all 1's
-    peripherals
-        .power
-        .resetreas
-        .write(RESETREAS_VALUE::from_raw(0xffffffff));
-
-    let mut should_enter_bootloader = false;
-
-    // Enter the bootloader if the reset was triggered by the RESET pin.
-    should_enter_bootloader |= reset_reason.resetpin().is_detected();
-
-    match reset_state {
-        ResetState::Default => {}
-        ResetState::EnterBootloader => {
-            should_enter_bootloader = true;
-        }
-        ResetState::EnterApplication => {
-            should_enter_bootloader = false;
-        }
-        ResetState::Unknown(_) => {}
-    }
-
-    // We can only enter the application if it is valid.
-    if !should_enter_bootloader {
-        if !has_valid_application(params) {
-            return;
-        }
-
-        enter_application();
-    }
-}
-
-fn has_valid_application(params: &BootloaderParams) -> bool {
-    if params.application_size() == 0 || params.num_flashes() == 0 {
-        return false;
-    }
-
-    let mut app_data = unsafe { application_code_data() };
-    if (params.application_size() as usize) > app_data.len() {
-        return false;
-    }
-
-    app_data = &app_data[..(params.application_size() as usize)];
-
-    let expected_sum = {
-        let mut hasher = CRC32CHasher::new();
-        hasher.update(app_data);
-        hasher.finish_u32()
-    };
-
-    if expected_sum != params.application_crc32c() {
-        return false;
-    }
-
-    true
-}
-
-fn enter_application() {
-    // See https://developer.arm.com/documentation/ka001423/1-0
-
-    // TODO: Do this as early as possible (ideally in main() before peripherals are
-    // loaded).
-    unsafe {
-        let sp = read_volatile(APPLICATION_CODE_OFFSET as *mut u32);
-        let ep = read_volatile((APPLICATION_CODE_OFFSET + 4) as *mut u32);
-
-        core::ptr::write_volatile(NVIC_VTOR, APPLICATION_CODE_OFFSET);
-        asm!(
-            "mov sp, {sp}",
-            "bx {ep}",
-            sp = in(reg) sp,
-            ep = in(reg) ep,
-        )
-    };
-}
-
 entry!(main);
+
+// This is not inlined into entry() to allow it to be separately stored in RAM.
+#[inline(never)]
+#[no_mangle]
 fn main() -> () {
+    // TODO: Keep all of this flash?
     let params = read_bootloader_params();
     maybe_enter_application(&params);
 
@@ -596,8 +531,6 @@ fn main() -> () {
     nordic::clock::init_low_freq_clk(&mut peripherals.clock);
 
     Main::start(params);
-
-    // TODO: Setup the NRESET pin.
 
     // Enable interrupts.
     unsafe { asm!("cpsie i") };

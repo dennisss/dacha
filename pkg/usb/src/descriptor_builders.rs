@@ -171,8 +171,10 @@ impl DeviceDescriptorSetBuilder {
 
             impl {name} {{
                 fn raw() -> &'static [u8] {{
-                    static DATA: &'static [u8] = &{raw_data:?};
-                    DATA
+                    #[no_mangle]
+                    static {name_upper_snake}_DATA: [u8; {raw_data_length}] = {raw_data:?};
+
+                    &{name_upper_snake}_DATA
                 }}
             }}
 
@@ -198,6 +200,7 @@ impl DeviceDescriptorSetBuilder {
         "#,
             name = name,
             raw_data = data,
+            raw_data_length = data.len(),
             device_start_index = device_start_index,
             device_end_index = device_end_index,
             config_cases = config_cases,

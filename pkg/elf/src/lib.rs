@@ -14,7 +14,7 @@ extern crate parsing;
 
 pub mod demangle;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::CStr;
 
 use common::async_std::fs;
@@ -174,17 +174,44 @@ impl ELF {
 
         for p in self.program_headers.iter() {
             println!(
-                "{:08x} [{:08x}] - {:08x}: {:?} {:?}",
-                p.vaddr,
+                "{:08x} - {:08x} [-> {:08x}]: {:?} {:?}",
                 p.paddr,
-                p.vaddr + p.mem_size,
+                p.paddr + p.mem_size,
+                p.vaddr,
                 ProgramHeaderType::from_value(p.typ),
                 p.flags
             );
-            println!("{:?}", p);
         }
 
         println!("");
+
+        let mut all_symbols = vec![];
+
+        for (i, section) in self.section_headers.iter().enumerate() {
+            if section.typ != SHT_SYMTAB {
+                continue;
+            }
+
+            let symbol_strtab = StringTable {
+                data: self.section_data(section.link as usize),
+            };
+
+            let mut data = self.section_data(i);
+
+            while !data.is_empty() {
+                let sym = parse_next!(data, |v| Symbol::parse(v, &self.header.ident));
+                let sym_name = symbol_strtab.get(sym.name as usize)?;
+
+                all_symbols.push((sym_name.to_string(), sym));
+
+                // TODO: Implement this but only for supporting symbol types.
+                /*
+                let related_section = &self.section_headers[sym.section_index as usize];
+                let file_start_offset = related_section.offset + (sym.value - related_section.addr);
+                let file_end_offset = file_start_offset + sym.size;
+                */
+            }
+        }
 
         println!("Sections:");
 
@@ -197,46 +224,38 @@ impl ELF {
                 name
             );
 
-            if section.typ == SHT_SYMTAB {
-                let symbol_strtab = StringTable {
-                    data: self.section_data(section.link as usize),
-                };
-
-                let mut data = self.section_data(i);
-
-                while !data.is_empty() {
-                    let sym = parse_next!(data, |v| Symbol::parse(v, &self.header.ident));
-
-                    if sym.typ() == STT_FUNC {
-                        continue;
-                    }
-
-                    let sym_name = symbol_strtab.get(sym.name as usize)?;
-                    // println!("=> {}", sym_name);
-
-                    // if sym.
-
-                    if sym.typ() == STT_FUNC {
-                        let related_section = &self.section_headers[sym.section_index as usize];
-                        assert!(sym.value >= related_section.addr);
-                        assert!(
-                            sym.value + sym.size <= related_section.addr + related_section.size
-                        );
-                    }
-
-                    /*
-                    let file_start_offset = related_section.offset + (sym.value - related_section.addr);
-                    let file_end_offset = file_start_offset + sym.size;
-
-                    // 14a87, 14a9f, 26874
-                    let search_offset = 0x14a87;
-                    if search_offset >= file_start_offset && search_offset < file_end_offset {
-                        println!("Found in {}", sym_name);
-                    }
-                    */
+            for (sym_name, sym) in &all_symbols {
+                if sym.section_index as usize != i {
+                    continue;
                 }
+
+                // TODO: Add a flag to toggle doing this.
+                if sym.size == 0 {
+                    continue;
+                }
+
+                println!(
+                    "\t{:?} {} {}",
+                    sym.typ(),
+                    sym.size,
+                    crate::demangle::demangle_name(sym_name)
+                );
+
+                // if sym_name == "main" || sym_name == "entry" || name ==
+                // ".text" {     println!("||||| {:08x}",
+                // sym.value);
+
+                //     let related_section =
+                // &self.section_headers[sym.section_index as usize];
+                //     let file_start_offset =
+                //         related_section.offset + (sym.value -
+                // related_section.addr);
+                //     let file_end_offset = file_start_offset + sym.size;
+                // }
             }
         }
+
+        // TODO: Print any usused strings.
 
         Ok(())
     }
@@ -258,7 +277,7 @@ impl ELF {
             while !data.is_empty() {
                 let sym = parse_next!(data, |v| Symbol::parse(v, &self.header.ident));
 
-                if sym.typ() != STT_FUNC || sym.size == 0 {
+                if sym.typ() != SymbolType::STT_FUNC || sym.size == 0 {
                     continue;
                 }
 
@@ -306,6 +325,7 @@ pub struct FunctionSymbol {
     pub file_end_offset: u64,
 }
 
+/// The Elf32_Sym/Elf64_Sym sstruct in C.
 #[derive(Clone, Debug)]
 pub struct Symbol {
     pub name: u32,
@@ -322,8 +342,8 @@ pub struct Symbol {
 }
 
 impl Symbol {
-    fn typ(&self) -> u8 {
-        self.info & 0x0f
+    fn typ(&self) -> SymbolType {
+        SymbolType::from_value(self.info & 0x0f)
     }
 
     fn bind(&self) -> u8 {
@@ -375,6 +395,22 @@ impl Symbol {
         }
     }
 }
+
+enum_def_with_unknown!(SymbolType u8 =>
+    STT_NOTYPE = 0,
+    STT_OBJECT = 1,
+    STT_FUNC = 2,
+    STT_SECTION = 3,
+    STT_FILE = 4,
+    STT_COMMON = 5,
+    STT_TLS = 6,
+    STT_NUM = 7,
+    STT_LOOS = 10,
+    STT_GNU_IFUNC = 10,
+    STT_HIOS = 12,
+    STT_LOPROC = 13,
+    STT_HIPROC = 15
+);
 
 struct StringTable<'a> {
     data: &'a [u8],
@@ -588,6 +624,8 @@ pub struct SectionHeader {
     name_offset: u32,
     typ: u32,
     flags: u64,
+
+    /// Virtual memory address at which this section is located.
     addr: u64,
     offset: u64,
     size: u64,
