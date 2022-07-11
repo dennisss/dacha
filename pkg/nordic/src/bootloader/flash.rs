@@ -1,6 +1,7 @@
 use peripherals::raw::ficr::FICR;
 use peripherals::raw::nvmc::NVMC;
 use peripherals::raw::register::{RegisterRead, RegisterWrite};
+use peripherals::raw::uicr::{UICR, UICR_REGISTERS};
 
 /// Start offset in flash of the bootloader code.
 /// The bootloader code goes up to the BOOTLOADER_PARAMS.
@@ -42,6 +43,48 @@ pub unsafe fn bootloader_params_data() -> &'static [u8] {
 pub unsafe fn application_code_data() -> &'static [u8] {
     let len = flash_size() - APPLICATION_CODE_OFFSET;
     core::slice::from_raw_parts(APPLICATION_CODE_OFFSET as *mut u8, len as usize)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FlashSegment {
+    BootloaderCode,
+    BootloaderParams,
+    ApplicationCode,
+    UICR,
+}
+
+impl FlashSegment {
+    /// Looks up the segment in which a given memory address is located. The
+    /// address must be between the [start_address, end_address) of a segment to
+    /// be considered inside of it.
+    pub fn from_address(addr: u32) -> Option<Self> {
+        let uicr_start_address =
+            unsafe { core::mem::transmute::<&UICR_REGISTERS, u32>(&*UICR::new()) };
+        let uicr_end_address = uicr_start_address + (core::mem::size_of::<UICR_REGISTERS>() as u32);
+
+        if addr >= BOOTLOADER_OFFSET && addr < BOOTLOADER_PARAMS_OFFSET {
+            Some(Self::BootloaderCode)
+        } else if addr >= BOOTLOADER_PARAMS_OFFSET && addr < APPLICATION_CODE_OFFSET {
+            Some(Self::BootloaderParams)
+        } else if addr >= APPLICATION_CODE_OFFSET && addr < flash_size() {
+            Some(Self::ApplicationCode)
+        } else if addr >= uicr_start_address && addr < uicr_end_address {
+            Some(Self::UICR)
+        } else {
+            None
+        }
+    }
+
+    pub fn start_address(&self) -> u32 {
+        match self {
+            FlashSegment::BootloaderCode => BOOTLOADER_OFFSET,
+            FlashSegment::BootloaderParams => BOOTLOADER_PARAMS_OFFSET,
+            FlashSegment::ApplicationCode => APPLICATION_CODE_OFFSET,
+            FlashSegment::UICR => unsafe {
+                core::mem::transmute::<&UICR_REGISTERS, u32>(&*UICR::new())
+            },
+        }
+    }
 }
 
 /// Writes word aligned bytes to flash. If the write starts mid way into a flash

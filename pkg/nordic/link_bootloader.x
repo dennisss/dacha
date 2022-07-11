@@ -6,8 +6,8 @@ MEMORY
   FLASH_PARAMS : ORIGIN = 28K, LENGTH = 4K
   APP_FLASH : ORIGIN = 0x8000, LENGTH = 1M - 32K
   RAM : ORIGIN = 0x20000000, LENGTH = 256K
-  REGOUT0: ORIGIN = 0x10001304, LENGTH = 4
   PSELRESET: ORIGIN = 0x10001200, LENGTH = 8
+  REGOUT0: ORIGIN = 0x10001304, LENGTH = 4
 }
 
 ENTRY(entry);
@@ -18,8 +18,8 @@ PHDRS
 {
     text PT_LOAD;
     data PT_LOAD;
-    regout0 PT_LOAD;
     pselreset PT_LOAD;
+    regout0 PT_LOAD;
 }
 
 SECTIONS
@@ -33,6 +33,7 @@ SECTIONS
     .text : ALIGN(4)
     {
         *(.entry);
+        . = ALIGN(4);
     } > FLASH :text
 
     .data ORIGIN(RAM) : ALIGN(4)

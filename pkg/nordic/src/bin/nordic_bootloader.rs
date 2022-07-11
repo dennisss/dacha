@@ -142,7 +142,8 @@ impl State {
 #[derive(Clone)]
 struct DownloadingState {
     /// Position immediately after the last flash position to which we have
-    /// written.
+    /// written. This should only monotonically increase and can be used to
+    /// track which pages we have already erased.
     next_flash_offset: u32,
 
     /// Next UF2 block number expected. This is also the next expected wBlockNum
@@ -320,7 +321,10 @@ impl BootloaderUSBHandler {
                 }
 
                 // We are only allowed to write full words at word offsets.
-                if block.target_addr % 4 != 0 || block.payload_size % 4 != 0 {
+                if block.target_addr % 4 != 0
+                    || block.payload_size % 4 != 0
+                    || block.payload_size == 0
+                {
                     log!(b"DFU_DNLOAD: Unaligned write\n");
                     self.status_code = DFUStatusCode::errSTALLEDPKT;
                     return Ok(());
@@ -333,105 +337,101 @@ impl BootloaderUSBHandler {
                 let uicr_end_address =
                     uicr_start_address + (core::mem::size_of::<UICR_REGISTERS>() as u32);
 
-                // TODO: Also add bounds checks to the end addresses.
-
-                // Validate that the target address is in a range that is ok to write.
-                // This also needs to update our state to enter the current segment being
-                // written.
-                if block.target_addr >= BOOTLOADER_OFFSET
-                    && block.target_addr < BOOTLOADER_PARAMS_OFFSET
-                {
-                    // Writing to bootloader code
-
-                    // TODO: Require a special flag to be flipped if we attempt to overwrite the
-                    // bootloader itself
-
-                    // Must always start writing to the vector table of the bootloader.
-                    if state.next_flash_offset == 0 && block.target_addr != 0 {
-                        log!(b"DFU_DNLOAD: Missing bootloader start\n");
+                let segment = match FlashSegment::from_address(block.target_addr) {
+                    Some(v) => v,
+                    None => {
+                        log!(b"DFU_DNLOAD: Unknown flash addr\n");
                         self.status_code = DFUStatusCode::errADDRESS;
                         return Ok(());
                     }
-                } else if block.target_addr >= APPLICATION_CODE_OFFSET
-                    && block.target_addr < flash_size()
-                {
-                    // Writing to application code.
-                    in_application_code = true;
+                };
 
-                    if state.next_flash_offset <= APPLICATION_CODE_OFFSET {
-                        // Must always write the first bytes of the application (doesn't make sense
-                        // to have an application without a vector table).
-                        if block.target_addr != APPLICATION_CODE_OFFSET {
-                            log!(b"DFU_DNLOAD: Missing app start\n");
-                            self.status_code = DFUStatusCode::errADDRESS;
-                            return Ok(());
-                        }
-
-                        // Advance forward our flash offset to this segment.
-                        // Don't need to erase any partially completed pages in previous segments.
-                        state.next_flash_offset = APPLICATION_CODE_OFFSET;
-                    }
-                } else if block.target_addr >= uicr_start_address
-                    && block.target_addr < uicr_end_address
-                {
-                    // Write to UICR. This has a special way to perform erases and is only written
-                    // to sparsely.
-
-                    // TODO: Maybe support sparse writes by reading back the old values (the tricky
-                    // part is that new values don't appear until a reset occurs so we can't perform
-                    // flashing more than once until a reset occurs).
-
-                    // TODO: Disallow writing to UICR unless the bootloader was
-                    // also written? (to prevent the user firmware from
-                    // accidentally overwriting stuff).
-
-                    if state.next_flash_offset <= uicr_start_address {
-                        erase_uicr_async(&mut self.nvmc);
-                    }
-
-                    write_to_uicr(block.target_addr, block.payload(), &mut self.nvmc);
-                    state.total_written += block.payload_size;
-                    state.next_flash_offset = block.target_addr + block.payload_size;
-
-                    return Ok(());
-                } else {
-                    // Not a supported flash segment.
-                    // Note that we don't support writing to the
-                    // BOOTLOADER_PARAMS segment directly.
-                    log!(b"DFU_DNLOAD: Unsupported addr\n");
+                // We only support writing to one type of segment at a time so ensure that all
+                // the memory is in the same segment.
+                let block_end_addr = block.target_addr + block.payload_size;
+                if Some(segment) != FlashSegment::from_address(block_end_addr - 1) {
+                    log!(b"DFU_DNLOAD: Mixing flash segments\n");
                     self.status_code = DFUStatusCode::errADDRESS;
                     return Ok(());
                 }
 
-                // Explicitly write all flash space between our last written offset and the next
-                // one. This has the following purposes:
-                // - Ensures that if block.target_addr is midway through a page, the page is
-                //   erased.
-                // - For application code, ensures that we CRC a contiguous segment of code with
-                //   deterministic zero padding for undefined regions.
-                let mut empty_word = [0u8; 4];
-                while state.next_flash_offset < block.target_addr {
-                    write_to_flash(state.next_flash_offset, &empty_word, &mut self.nvmc);
-                    state.next_flash_offset += empty_word.len() as u32;
+                match segment {
+                    // Normal flash segments.
+                    FlashSegment::BootloaderCode | FlashSegment::ApplicationCode => {
+                        // TODO: Require a special flag to be flipped if we attempt to overwrite the
+                        // bootloader itself
 
-                    state.total_written += empty_word.len() as u32;
-                    if in_application_code {
-                        state.application_hasher.update(&empty_word);
-                        state.application_size += empty_word.len() as u32;
+                        if state.next_flash_offset <= segment.start_address() {
+                            // Must always write the first bytes of the application|bootloader
+                            // (doesn't make sense to have an
+                            // application|bootloader without a vector table).
+                            if block.target_addr != segment.start_address() {
+                                log!(b"DFU_DNLOAD: Must write segment start\n");
+                                self.status_code = DFUStatusCode::errADDRESS;
+                                return Ok(());
+                            }
+
+                            // Advance forward our flash offset to this segment.
+                            // Don't need to erase any partially completed pages in previous
+                            // segments.
+                            state.next_flash_offset = segment.start_address();
+                        }
+
+                        // Explicitly write all flash space between our last written offset and the
+                        // next one. This has the following purposes:
+                        // - Ensures that if block.target_addr is midway through a page, the page is
+                        //   erased.
+                        // - For application code, ensures that we CRC a contiguous segment of code
+                        //   with deterministic zero padding for undefined regions.
+                        let mut empty_word = [0u8; 4];
+                        while state.next_flash_offset < block.target_addr {
+                            write_to_flash(state.next_flash_offset, &empty_word, &mut self.nvmc);
+                            state.next_flash_offset += empty_word.len() as u32;
+
+                            state.total_written += empty_word.len() as u32;
+                            if segment == FlashSegment::ApplicationCode {
+                                state.application_hasher.update(&empty_word);
+                                state.application_size += empty_word.len() as u32;
+                            }
+                        }
+                        assert!(state.next_flash_offset == block.target_addr);
+
+                        write_to_flash(block.target_addr, block.payload(), &mut self.nvmc);
+                        state.next_flash_offset = block.target_addr + block.payload_size;
+
+                        state.total_written += block.payload_size;
+                        if segment == FlashSegment::ApplicationCode {
+                            state.application_hasher.update(block.payload());
+                            state.application_size += block.payload_size;
+                        }
+                    }
+                    FlashSegment::UICR => {
+                        // Write to UICR. This has a special way to perform erases and is only
+                        // written to sparsely.
+
+                        // TODO: Maybe support sparse writes by reading back the old values (the
+                        // tricky part is that new values don't appear until
+                        // a reset occurs so we can't perform flashing more
+                        // than once until a reset occurs).
+
+                        // TODO: Disallow writing to UICR unless the bootloader was
+                        // also written? (to prevent the user firmware from
+                        // accidentally overwriting stuff).
+
+                        if state.next_flash_offset <= segment.start_address() {
+                            erase_uicr_async(&mut self.nvmc);
+                        }
+
+                        write_to_uicr(block.target_addr, block.payload(), &mut self.nvmc);
+                        state.total_written += block.payload_size;
+                        state.next_flash_offset = block.target_addr + block.payload_size;
+                    }
+                    FlashSegment::BootloaderParams => {
+                        log!(b"DFU_DNLOAD: Can not overwrite params\n");
+                        self.status_code = DFUStatusCode::errADDRESS;
+                        return Ok(());
                     }
                 }
-                assert!(state.next_flash_offset == block.target_addr);
-
-                write_to_flash(block.target_addr, block.payload(), &mut self.nvmc);
-                state.next_flash_offset = block.target_addr + block.payload_size;
-
-                state.total_written += block.payload_size;
-                if in_application_code {
-                    state.application_hasher.update(block.payload());
-                    state.application_size += block.payload_size;
-                }
-
-                // log!(b"Done block\n");
 
                 return Ok(());
             }
@@ -498,6 +498,9 @@ async fn main_thread_fn(params: BootloaderParams) {
     }
 
     log!(b"Enter Bootloader!\n");
+    log!(b"Num Flashes: ");
+    log!(crate::log::num_to_slice(params.num_flashes()).as_ref());
+    log!(b"\n");
 
     let mut usb_controller = USBDeviceController::new(peripherals.usbd, peripherals.power);
     usb_controller

@@ -3,6 +3,8 @@
 MEMORY
 {
   FLASH : ORIGIN = 0x8000, LENGTH = 1M - 32K
+
+  /* TODO: This needs to be dynamic depending on the chip model */
   RAM : ORIGIN = 0x20000000, LENGTH = 256K
 }
 
@@ -32,17 +34,21 @@ SECTIONS
 
         /* Second entry: reset vector */
         KEEP(*(.vector_table.reset_vector));
+
+        . = ALIGN(4);
     } > FLASH :text
 
     .text : ALIGN(4)
     {
         *(.entry);
         *(.text .text.*);
+        . = ALIGN(4);
     } > FLASH :text
 
     .rodata : ALIGN(4)
     {
         *(.rodata .rodata.*);
+        . = ALIGN(4);
     } > FLASH :text
 
     .data : ALIGN(4)

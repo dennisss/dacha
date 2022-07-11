@@ -105,7 +105,7 @@ fn generate_bootloader_usb_descriptors() -> Result<String> {
     let mut builder = DescriptorSetBuilder::new();
 
     let manufacturer_string = builder.add_string("da!");
-    let product_string = builder.add_string("radio");
+    let product_string = builder.add_string("bootloader");
 
     let mut builder = builder.with_device(DeviceDescriptor {
         bLength: 0,         // Set by builder
