@@ -1,0 +1,942 @@
+use common::errors::*;
+use parsing::*;
+use parsing::{ParseCursor, ParseError};
+use protobuf_core::tokenizer::{float_lit, ident, int_lit, strLit};
+
+/*
+
+The main tokenization challenge with this is:
+- Its not safe to consume whitespace BEFORE a token because some rules handle indnetation tracking
+- But, we can always consume all inline whitespace after a token.
+- Additionally, after a token, if we are in a parens or square brackets rule, we can additionally consume new lines.
+
+*/
+
+/// TODO: Use a perfect hash table for this?
+///
+/// NOTE: An identifier is not allowed to be any of these words.
+const KEYWORDS: &'static [&'static str] = &[
+    "False", "await", "else", "import", "pass", "None", "break", "except", "in", "raise", "True",
+    "class", "finally", "is", "return", "and", "continue", "for", "lambda", "try", "as", "def",
+    "from", "nonlocal", "while", "assert", "del", "global", "not", "with", "async", "elif", "if",
+    "or", "yield",
+];
+
+// TODO: Always consume any inline white space that is following a non-white
+// space token as this is also allowable (only an issue for space before them.)
+
+fn keyword<'a>(name: &'static str) -> impl Fn(&'a str) -> Result<((), &'a str)> {
+    seq!(c => {
+        let v = c.next(protobuf_core::tokenizer::ident)?;
+        if v != name {
+            return Err(err_msg("Wrong keyword"));
+        }
+
+        Ok(())
+    })
+}
+
+parser!(identifier<&str, String> => seq!(c => {
+    let v = c.next(protobuf_core::tokenizer::ident)?;
+    if KEYWORDS.contains(&v.as_str()) {
+        return Err(err_msg("Unexpected keyword"));
+    }
+
+    Ok(v)
+}));
+
+/// TODO: Mixing tabs and spaces is disallowed in Python
+#[derive(Clone)]
+pub struct InlineWhitespace {
+    pub num_tabs: usize,
+    pub num_spaces: usize,
+}
+
+impl InlineWhitespace {
+    pub fn parse(input: &str) -> Result<(Self, &str)> {
+        let mut num_spaces = 0;
+        let mut num_tabs = 0;
+
+        let mut last_index = input.len();
+        for (i, c) in input.char_indices() {
+            if c == ' ' {
+                num_spaces += 1;
+            } else if c == '\t' {
+                num_tabs += 1;
+            } else {
+                last_index = i;
+                break;
+            }
+        }
+
+        Ok((
+            Self {
+                num_spaces,
+                num_tabs,
+            },
+            input.split_at(last_index).1,
+        ))
+    }
+}
+
+parser!(any_whitespace<&str, ()> => {
+    map(parsing::take_while(|v| {
+        v == ' ' || v == '\t' || v == '\n' || v == '\r'
+    }), |_| ())
+});
+
+#[derive(Clone)]
+struct ParsingContext {
+    /// Amount of indentation prefixing the current suite of statements. A suite
+    /// should only continue parsing lines if lines have an indentation >= this
+    /// amount.
+    indent: InlineWhitespace,
+
+    /// Whether or not we aer currently parsing inside of parenthesis.
+    /// This is mainly used to determine if we are allowed to consume new lines
+    in_parens: bool,
+
+    operator_priority: usize,
+}
+
+impl ParsingContext {
+    fn consume_whitespace<'a>(&self, input: &'a str) -> Result<((), &'a str)> {
+        if self.in_parens {
+            any_whitespace(input)
+        } else {
+            map(InlineWhitespace::parse, |v| ())(input)
+        }
+    }
+}
+
+parser!(newline<&str, ()> => alt!(
+    map(tag("\r\n"), |_| ()),
+    map(tag("\n"), |_| ()),
+    map(tag("\r"), |_| ())
+));
+
+#[derive(Clone, Debug)]
+pub struct File {
+    pub statements: Vec<Statement>,
+}
+
+impl File {
+    // TODO: Also allow any lines with completely whitespace or containing a
+    // comment. ^ This could probably re-use some of the suite code.
+
+    // File = {Statement | newline} eof .
+
+    pub fn parse(mut input: &str) -> Result<Self> {
+        let mut statements = vec![];
+
+        let context = ParsingContext {
+            indent: InlineWhitespace {
+                num_tabs: 0,
+                num_spaces: 0,
+            },
+            in_parens: false,
+            operator_priority: DEFAULT_OP_PRIORITY,
+        };
+
+        while !input.is_empty() {
+            if parse_next!(input, opt(empty_line)).is_some() {
+                continue;
+            }
+
+            statements.extend(parse_next!(input, |v| Statement::parse(v, &context)).into_iter());
+        }
+
+        Ok(Self { statements })
+    }
+}
+
+// Whitespace following by optionally a comment and ending in a \n or EOF.
+// TODO: Replace all usages of newline with this.
+fn empty_line<'a>(mut input: &'a str) -> Result<((), &'a str)> {
+    parse_next!(input, InlineWhitespace::parse);
+
+    if parse_next!(input, opt(tag("#"))).is_some() {
+        parse_next!(input, take_while(|c| c != '\r' && c != '\n'));
+    }
+
+    if !input.is_empty() {
+        parse_next!(input, newline);
+    }
+
+    Ok(((), input))
+}
+
+#[derive(Clone, Debug)]
+pub enum Statement {
+    Def(DefStatement),
+    // If(IfStatement),
+    // For(ForStatement),
+    Return(Option<Expression>),
+    Break,
+    Continue,
+    Pass,
+    // Assign {
+    //     target: Expression,
+    //     op: AssignOp,
+    //     value: Expression,
+    // },
+    Expression(Expression),
+}
+
+impl Statement {
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Vec<Self>, &'a str)> {
+        simple_statement(input, context)
+    }
+
+    // Statement = DefStmt | IfStmt | ForStmt | SimpleStmt .
+    // parser!(parse<&str, Self> => alt!(
+    //     map(DefStatement::parse, |v| Self::Def(v)),
+    //     map(IfStatement::parse, |v| Self::If(v)),
+    //     map(ForStatement::parse, |v| Self::For(v)),
+    //     simple_statement
+    // ));
+}
+
+#[derive(Clone, Debug)]
+pub struct DefStatement {
+    pub name: String,
+    pub params: Vec<Parameter>,
+    pub body: Vec<Statement>,
+}
+
+impl DefStatement {
+    /*
+    // DefStmt = 'def' identifier '(' [Parameters [',']] ')' ':' Suite .
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        parse_next!(input, keyword("def"));
+        parse_next!(input, InlineWhitespace::parse);
+
+        let name = parse_next!(input, identifier);
+        parse_next!(input, InlineWhitespace::parse);
+
+        parse_next!(input, tag("("));
+        // TODO: Consume whitespace after paren (with newlines)
+        let params = {
+            let mut inner_context = context.clone();
+            inner_context.in_parens = true;
+
+            parse_next!(input, Parameter::parse_set, &inner_context)
+        };
+
+        parse_next!(input, tag(")"));
+        parse_next!(input, InlineWhitespace::parse);
+
+        parse_next!(input, tag(":"));
+        parse_next!(input, InlineWhitespace::parse); // TOOD: Check this
+
+        // TODO: Suite
+
+        Ok((
+            Self {
+                name,
+                params,
+                body: todo!(),
+            },
+            input,
+        ))
+    }
+    */
+}
+
+#[derive(Clone, Debug)]
+pub struct Parameter {
+    pub name: String,
+    pub form: ParameterForm,
+}
+
+#[derive(Clone, Debug)]
+pub enum ParameterForm {
+    Required,
+    Optional { default_value: Test },
+    Variadic,
+    KeywordArgs,
+}
+
+impl Parameter {
+    /// Parses zero or more parameters. If the parameters appear if a group of
+    /// parenthesis, then this will also accept a trailing comma.
+    ///
+    /// This parser also consumes any leading or trailing whitespace using
+    /// ParsingContext::consume_whitespace.
+    ///
+    /// Loose Grammar Rule:
+    ///   Parameters = Parameter {',' Parameter}.
+    fn parse_set<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Vec<Self>, &'a str)> {
+        let mut out = vec![];
+
+        parse_next!(input, |v| context.consume_whitespace(v));
+
+        let mut extra_comma = false;
+        while let Ok((param, rest)) = Self::parse(input, context) {
+            input = rest;
+            out.push(param);
+            extra_comma = false;
+
+            parse_next!(input, |v| context.consume_whitespace(v));
+
+            if parse_next!(input, opt(tag(","))).is_some() {
+                extra_comma = true;
+            } else {
+                break;
+            }
+
+            parse_next!(input, |v| context.consume_whitespace(v));
+        }
+
+        if extra_comma && !context.in_parens {
+            return Err(err_msg("Expected additional parameter"));
+        }
+
+        Ok((out, input))
+    }
+
+    /// Grammar rule:
+    ///   Parameter = identifier | identifier '=' Test | '*' identifier | '**'
+    ///   identifier .
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        if parse_next!(input, opt(tag("**"))).is_some() {
+            let name = parse_next!(input, identifier);
+            Ok((
+                Self {
+                    name,
+                    form: ParameterForm::KeywordArgs,
+                },
+                input,
+            ))
+        } else if parse_next!(input, opt(tag("*"))).is_some() {
+            let name = parse_next!(input, identifier);
+            Ok((
+                Self {
+                    name,
+                    form: ParameterForm::Variadic,
+                },
+                input,
+            ))
+        } else {
+            let name = parse_next!(input, identifier);
+
+            if parse_next!(input, opt(tag("="))).is_some() {
+                let default_value = parse_next!(input, Test::parse, context);
+                Ok((
+                    Self {
+                        name,
+                        form: ParameterForm::Optional { default_value },
+                    },
+                    input,
+                ))
+            } else {
+                Ok((
+                    Self {
+                        name,
+                        form: ParameterForm::Required,
+                    },
+                    input,
+                ))
+            }
+        }
+    }
+}
+
+/*
+IfStmt = 'if' Test ':' Suite {'elif' Test ':' Suite} ['else' ':' Suite] .
+
+ForStmt = 'for' LoopVariables 'in' Expression ':' Suite .
+*/
+
+/// Grammar Rule:
+///   Suite = [newline indent {Statement} outdent] | SimpleStmt .
+fn suite<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Vec<Statement>, &'a str)> {
+    let mut out = vec![];
+
+    if parse_next!(input, opt(newline)).is_some() {
+        //
+
+        // TODO: Must skip any empty lines here.
+    } else {
+        //
+    }
+
+    Ok((out, input))
+}
+
+// NOTE: Unless there are inner parens, a simple statement is only composed of a
+// single line and will not have other statements inside of it.
+/*
+SimpleStmt = SmallStmt {';' SmallStmt} [';'] '\n' .
+# NOTE: '\n' optional at EOF
+*/
+fn simple_statement<'a>(
+    mut input: &'a str,
+    context: &ParsingContext,
+) -> Result<(Vec<Statement>, &'a str)> {
+    let mut out = vec![];
+
+    out.push(parse_next!(input, small_statement, context));
+
+    while parse_next!(input, opt(tag(";"))).is_some() {
+        parse_next!(input, |v| context.consume_whitespace(v));
+
+        if let Some(v) = parse_next!(input, opt(|v| small_statement(v, context))) {
+            out.push(v);
+        } else {
+            break;
+        }
+    }
+
+    if !input.is_empty() {
+        parse_next!(input, newline);
+    }
+
+    Ok((out, input))
+}
+
+/*
+SmallStmt = ReturnStmt
+          | BreakStmt | ContinueStmt | PassStmt
+          | AssignStmt
+          | ExprStmt
+          | LoadStmt
+          .
+
+ReturnStmt   = 'return' [Expression] .
+BreakStmt    = 'break' .
+ContinueStmt = 'continue' .
+PassStmt     = 'pass' .
+AssignStmt   = Expression ('=' | '+=' | '-=' | '*=' | '/=' | '//=' | '%=' | '&=' | '|=' | '^=' | '<<=' | '>>=') Expression .
+ExprStmt     = Expression .
+
+LoadStmt = 'load' '(' string {',' [identifier '='] string} [','] ')' .
+
+*/
+fn small_statement<'a>(
+    mut input: &'a str,
+    context: &ParsingContext,
+) -> Result<(Statement, &'a str)> {
+    // TODO: Allow whitespace after these?
+    // TODO: Ensure that the expression after the return is optional
+    alt!(
+        seq!(c => {
+            c.next(tag("return"))?;
+            c.next(InlineWhitespace::parse)?;
+
+            let value = c.next(opt(|v| Expression::parse(v, context)))?;
+            Ok(Statement::Return(value))
+        }),
+        map(keyword("break"), |_| Statement::Break),
+        map(keyword("continue"), |_| Statement::Continue),
+        map(keyword("pass"), |_| Statement::Pass),
+        // TODO: Assign
+        map(
+            |v| Expression::parse(v, context),
+            |e| Statement::Expression(e)
+        ) // TODO: Load
+    )(input)
+}
+
+#[derive(Clone, Debug)]
+pub enum Test {
+    If(Box<IfExpression>),
+    Primary(PrimaryExpression),
+    Unary(Box<UnaryExpression>),
+    Binary(Box<BinaryExpression>),
+}
+
+impl Test {
+    // Test = IfExpr | PrimaryExpr | UnaryExpr | BinaryExpr | LambdaExpr .
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        // Parse LambdaExpr rule.
+        if parse_next!(input, opt(keyword("lambda"))).is_some() {
+            return Err(err_msg("Lambda not supported"));
+        }
+
+        // TODO: 'not True if 0 else False' is equal to '(not True) if 0 else False'
+
+        let mut value = {
+            if let Some(v) = parse_next!(input, opt(|v| UnaryExpression::parse(v, context))) {
+                Self::Unary(Box::new(v))
+            } else if let Some(v) =
+                parse_next!(input, opt(|v| PrimaryExpression::parse(v, context)))
+            {
+                Self::Primary(v)
+            } else {
+                return Err(err_msg("Invalid test"));
+            }
+        };
+
+        while let Ok((op, rest)) = BinaryOp::parse(input, context) {
+            if (op as usize) < context.operator_priority {
+                break;
+            }
+
+            input = rest;
+            parse_next!(input, |v| context.consume_whitespace(v));
+
+            let mut inner_context = context.clone();
+            inner_context.operator_priority = op as usize;
+
+            let right = parse_next!(input, Test::parse, &inner_context);
+
+            value = Self::Binary(Box::new(BinaryExpression {
+                op,
+                left: value,
+                right,
+            }));
+        }
+
+        if IF_OP_PRIORITY >= context.operator_priority {
+            if parse_next!(input, opt(keyword("if"))).is_some() {
+                parse_next!(input, |v| context.consume_whitespace(v));
+
+                // TODO: Adjust the priority in the context.
+                let condition = parse_next!(input, Test::parse, context);
+
+                parse_next!(input, keyword("else"));
+                parse_next!(input, |v| context.consume_whitespace(v));
+
+                let false_value = parse_next!(input, Test::parse, context);
+
+                value = Self::If(Box::new(IfExpression {
+                    condition,
+                    true_value: value,
+                    false_value,
+                }));
+            }
+        }
+
+        Ok((value, input))
+    }
+}
+
+/*
+IfExpr = Test 'if' Test 'else' Test .
+*/
+#[derive(Clone, Debug)]
+pub struct IfExpression {
+    pub condition: Test,
+    pub true_value: Test,
+    pub false_value: Test,
+}
+
+/*
+PrimaryExpr = Operand
+            | PrimaryExpr DotSuffix
+            | PrimaryExpr CallSuffix
+            | PrimaryExpr SliceSuffix
+            .
+
+DotSuffix   = '.' identifier .
+SliceSuffix = '[' [Expression] ':' [Test] [':' [Test]] ']'
+            | '[' Expression ']'
+            .
+CallSuffix  = '(' [Arguments [',']] ')' .
+
+
+*/
+#[derive(Clone, Debug)]
+pub struct PrimaryExpression {
+    pub base: Operand,
+    pub suffixes: Vec<PrimaryExpressionSuffix>,
+}
+
+impl PrimaryExpression {
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        let base = parse_next!(input, Operand::parse, context);
+        let suffixes = parse_next!(input, many(|v| PrimaryExpressionSuffix::parse(v, context)));
+        Ok((Self { base, suffixes }, input))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum PrimaryExpressionSuffix {
+    Dot(String),
+    Call(Vec<Argument>),
+}
+
+impl PrimaryExpressionSuffix {
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        alt!(
+            seq!(c => {
+                c.next(tag("."))?;
+                c.next(|v| context.consume_whitespace(v))?;
+
+                let ident = c.next(identifier)?;
+                c.next(|v| context.consume_whitespace(v))?;
+
+                Ok(Self::Dot(ident))
+            }),
+            seq!(c => {
+                c.next(tag("("))?;
+
+                let mut inner_context = context.clone();
+                inner_context.in_parens = true;
+
+                c.next(|v| inner_context.consume_whitespace(v))?;
+
+                let args = c.next(|v| Argument::parse_many(v, &inner_context))?;
+
+                c.next(tag(")"))?;
+                c.next(|v| context.consume_whitespace(v))?;
+
+                Ok(Self::Call(args))
+            })
+        )(input)
+    }
+}
+
+/*
+Arguments = Argument {',' Argument} .
+Argument  = Test | identifier '=' Test | '*' Test | '**' Test .
+*/
+#[derive(Clone, Debug)]
+
+pub enum Argument {
+    Value(Test),
+    KeyValue(String, Test),
+    Variadic(Test),
+    KeywordArgs(Test),
+}
+
+impl Argument {
+    fn parse_many<'a>(
+        mut input: &'a str,
+        context: &ParsingContext,
+    ) -> Result<(Vec<Self>, &'a str)> {
+        seq!(c => {
+
+            let vals = c.next(delimited(|v| Self::parse(v, context), seq!(c => {
+                c.next(tag(","))?;
+                c.next(|v| context.consume_whitespace(v))?;
+                Ok(())
+            })))?;
+
+            if !vals.is_empty() {
+               c.next(opt(seq!(c => {
+                    c.next(tag(","))?;
+                    c.next(|v| context.consume_whitespace(v))?;
+                    Ok(())
+                })))?;
+            }
+
+            Ok(vals)
+
+
+        })(input)
+    }
+
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        alt!(
+            seq!(c => {
+                c.next(tag("**"))?;
+                c.next(|v| context.consume_whitespace(v))?;
+                let v = c.next(|v| Test::parse(v, context))?;
+                Ok(Self::KeywordArgs(v))
+            }),
+            seq!(c => {
+                c.next(tag("*"))?;
+                c.next(|v| context.consume_whitespace(v))?;
+                let v = c.next(|v| Test::parse(v, context))?;
+                Ok(Self::Variadic(v))
+            }),
+            seq!(c => {
+                let name = c.next(identifier)?;
+                c.next(|v| context.consume_whitespace(v))?;
+
+                c.next(tag("="))?;
+                c.next(|v| context.consume_whitespace(v))?;
+
+                let value = c.next(|v| Test::parse(v, context))?;
+                Ok(Self::KeyValue(name, value))
+            }),
+            seq!(c => {
+                let v = c.next(|v| Test::parse(v, context))?;
+                Ok(Self::Value(v))
+            })
+        )(input)
+    }
+}
+
+/*
+UnaryExpr = '+' Test
+          | '-' Test
+          | '~' Test
+          | 'not' Test
+          .
+*/
+#[derive(Clone, Debug)]
+pub struct UnaryExpression {
+    pub op: UnaryOp,
+    pub value: Test,
+}
+
+#[derive(Clone, Debug)]
+pub enum UnaryOp {
+    Plus,
+    Negation,
+    BitwiseNegation,
+    Not,
+}
+
+impl UnaryExpression {
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        let op = parse_next!(
+            input,
+            alt!(
+                map(tag("+"), |_| UnaryOp::Plus),
+                map(tag("-"), |_| UnaryOp::Negation),
+                map(tag("~"), |_| UnaryOp::BitwiseNegation),
+                map(keyword("not"), |_| UnaryOp::Not)
+            )
+        );
+        parse_next!(input, |v| context.consume_whitespace(v));
+
+        let mut inner_context = context.clone();
+        inner_context.operator_priority = UNARY_OP_PRIORITY;
+
+        let value = parse_next!(input, Test::parse, context);
+
+        Ok((Self { op, value }, input))
+    }
+}
+
+/*
+
+BinaryExpr = Test {Binop Test} .
+
+Binop = 'or'
+      | 'and'
+      | '==' | '!=' | '<' | '>' | '<=' | '>=' | 'in' | 'not' 'in'
+      | '|'
+      | '^'
+      | '&'
+      | '<<' | '>>'
+      | '-' | '+'
+      | '*' | '%' | '/' | '//'
+      .
+*/
+
+#[derive(Clone, Debug)]
+pub struct BinaryExpression {
+    pub left: Test,
+    pub op: BinaryOp,
+    pub right: Test,
+}
+
+/// The numeric value indicates the parsing priority.
+#[derive(Clone, Copy, Debug)]
+pub enum BinaryOp {
+    Or = 1,
+    And = 2,
+    IsEqual = 3,
+    NotEqual = 4,
+    LessThan = 5,
+    GreaterThan = 6,
+    LessEqual = 7,
+    GreaterEqual = 8,
+    In = 9,
+    NotIn = 10,
+    BitOr = 11,
+    Xor = 12,
+    BitAnd = 13,
+    ShiftLeft = 14,
+    ShiftRight = 15,
+    Subtract = 16,
+    Add = 17,
+    Multiply = 18,
+    Modulus = 19,
+    TrueDivide = 20,
+    FloorDivide = 21,
+}
+
+impl BinaryOp {
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        // NOTE: When there are multiple symbols with the same starting characters, they
+        // are sorted by descending length.
+
+        let op = parse_next!(
+            input,
+            alt!(
+                map(keyword("or"), |_| Self::Or),
+                map(keyword("and"), |_| Self::And),
+                map(tag("=="), |_| Self::IsEqual),
+                map(tag("!="), |_| Self::NotEqual),
+                map(tag("<<"), |_| Self::ShiftLeft),
+                map(tag("<="), |_| Self::LessEqual),
+                map(tag("<"), |_| Self::LessThan),
+                map(tag(">>"), |_| Self::ShiftRight),
+                map(tag(">="), |_| Self::GreaterEqual),
+                map(tag(">"), |_| Self::GreaterThan),
+                map(keyword("in"), |_| Self::In),
+                map(
+                    seq!(c => {
+                        c.next(keyword("not"))?;
+                        c.next(keyword("in"))?;
+                        Ok(())
+                    }),
+                    |_| Self::NotIn
+                ),
+                map(tag("|"), |_| Self::BitOr),
+                map(tag("^"), |_| Self::Xor),
+                map(tag("&"), |_| Self::BitAnd),
+                map(tag("-"), |_| Self::Subtract),
+                map(tag("+"), |_| Self::Add),
+                map(tag("*"), |_| Self::Multiply),
+                map(tag("%"), |_| Self::Modulus),
+                map(tag("//"), |_| Self::FloorDivide),
+                map(tag("/"), |_| Self::TrueDivide)
+            )
+        );
+
+        parse_next!(input, |v| context.consume_whitespace(v));
+
+        Ok((op, input))
+    }
+}
+
+/// Priority of matching the 'if' in the statement 'X if Y else Z'.
+const IF_OP_PRIORITY: usize = 0;
+
+const UNARY_OP_PRIORITY: usize = 100;
+
+const DEFAULT_OP_PRIORITY: usize = 0;
+
+/*
+LambdaExpr = 'lambda' [Parameters] ':' Test .
+
+*/
+
+/// NOTE: An expression always contains at least one Test.
+#[derive(Clone, Debug)]
+pub struct Expression {
+    pub tests: Vec<Test>,
+    pub has_trailing_comma: bool,
+}
+
+impl Expression {
+    /// Parses a comma separated list of one or more Tests as an Expression.
+    /// This does not parse any trailing comma.
+    ///
+    /// Grammar rule:
+    ///   Expression = Test {',' Test} .
+    ///   # NOTE: trailing comma permitted only when within [...] or (...).
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        let mut tests = vec![];
+        let mut has_trailing_comma = false;
+
+        tests.push(parse_next!(input, Test::parse, context));
+
+        tests.extend(
+            parse_next!(
+                input,
+                many(seq!(c => {
+                    c.next(tag(","))?;
+                    c.next(|v| context.consume_whitespace(v))?;
+
+                    c.next(|v| Test::parse(v, context))
+                }))
+            )
+            .into_iter(),
+        );
+
+        Ok((
+            Self {
+                tests,
+                has_trailing_comma: false,
+            },
+            input,
+        ))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Operand {
+    Identifier(String),
+    Int(i64),
+    Float(f64),
+    String(String),
+    // TODO: Bytes(Vec<u8>),
+    List(Expression),
+    // TODO: ListComprehension
+    Dict(Vec<(Test, Test)>),
+    // TODO: Dictcomprehension
+    Tuple(Expression),
+}
+
+impl Operand {
+    /*
+    Operand = identifier
+            | int | float | string | bytes
+            | ListExpr | ListComp
+            | DictExpr | DictComp
+            | '(' [Expression [',']] ')'
+            .
+
+    ListExpr = '[' [Expression [',']] ']' .
+    ListComp = '[' Test {CompClause} ']'.
+
+    DictExpr = '{' [Entries [',']] '}' .
+    DictComp = '{' Entry {CompClause} '}' .
+    Entries  = Entry {',' Entry} .
+    Entry    = Test ':' Test .
+
+    CompClause = 'for' LoopVariables 'in' Test | 'if' Test .
+
+    LoopVariables = PrimaryExpr {',' PrimaryExpr} .
+    */
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        let (value, rest) = {
+            if let Ok((ident, rest)) = identifier(input) {
+                (Self::Identifier(ident), rest)
+            } else if let Ok((float, rest)) = float_lit(input) {
+                (Self::Float(float), rest)
+            } else if let Ok((int, rest)) = int_lit(input) {
+                (Self::Int(int as i64), rest)
+            } else if let Ok((int, rest)) = strLit(input) {
+                // TODO: In python '\ff\ff' is interpreted as 2 code points
+                // TODO: But, '\u1020' is one code point
+                // TODO: So strLit should emit a Vec<char>?
+
+                let mut s = String::new();
+                for b in int {
+                    s.push(b as char);
+                }
+
+                // TODO: Support triple quoted strings here and in the protobuf parser
+                (Self::String(s), rest)
+            } else {
+                return Err(err_msg("Unsupported"));
+            }
+        };
+
+        let (_, rest2) = context.consume_whitespace(rest)?;
+        Ok((value, rest2))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn basic_parse() {
+        println!("{:?}", File::parse("# hello").unwrap());
+        println!("{:?}", File::parse("\"hello\"").unwrap());
+
+        println!(
+            "{:#?}",
+            File::parse(
+                "my_func_call(a = 2,
+                b = \"Hello\", c = 124.5
+            )"
+            )
+            .unwrap()
+        );
+
+        // TODO: "a = 2; b = 3" is equal to "a = 2" \n "b = 3"
+    }
+}

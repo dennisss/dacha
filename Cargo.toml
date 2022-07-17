@@ -81,7 +81,8 @@ members = [
 	"pkg/elf",
 	"pkg/protobuf_bench",
 	"pkg/flasher",
-	"pkg/uf2"
+	"pkg/uf2",
+	"pkg/skylark"
 ]
 
 [profile.dev]

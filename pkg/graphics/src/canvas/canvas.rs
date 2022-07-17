@@ -1,22 +1,13 @@
 use core::ops::{Deref, DerefMut};
 use std::any::Any;
 
+use common::any::AsAny;
 use common::errors::*;
 use image::{Color, Image};
 use math::matrix::vec2f;
 
 use crate::canvas::base::CanvasBase;
 use crate::canvas::path::{Path, PathBuilder};
-
-pub trait AsAny {
-    fn as_mut_any(&mut self) -> &mut dyn Any;
-}
-
-impl<T: Any> AsAny for T {
-    fn as_mut_any(&mut self) -> &mut dyn Any {
-        self
-    }
-}
 
 /// Interface for 2D rendering to a rectangular screen area.
 ///

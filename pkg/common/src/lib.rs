@@ -52,6 +52,7 @@ pub extern crate typenum;
 
 #[cfg(feature = "std")]
 pub mod algorithms;
+pub mod any;
 #[cfg(feature = "std")]
 pub mod args;
 #[cfg(feature = "std")]

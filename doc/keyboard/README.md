@@ -198,6 +198,8 @@ All USB power goes through this diode so we need at least a 1A continous current
     - Product Specification https://infocenter.nordicsemi.com/index.jsp?topic=%2Fps_nrf52840%2Fkeyfeatures_html5.html
 - MDBT50-512K (nRF52833)
     - Data Sheet: https://www.raytac.com/download/index.php?index_id=52
+    - Factory Defaults
+        - When powered from VDDH, REG0 LDO will drop it to 3.0V (REGOUT0 = 4) and output to VDD
 - JLCPCB Export Instructions
     - Gerber Files
         - https://support.jlcpcb.com/article/149-how-to-generate-gerber-and-drill-files-in-kicad
