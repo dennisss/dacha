@@ -52,11 +52,11 @@ impl Value for NoneValue {
         false
     }
 
-    fn call_repr(&self, context: &mut ValueCallContext) -> Result<String> {
+    fn call_repr(&self, frame: &mut ValueCallFrame) -> Result<String> {
         Ok("None".to_string())
     }
 
-    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallContext) -> Result<bool> {
+    fn call_eq(&self, other: &dyn Value, frame: &mut ValueCallFrame) -> Result<bool> {
         Ok(other
             .as_any()
             .downcast_ref::<Self>()
@@ -64,7 +64,7 @@ impl Value for NoneValue {
             .unwrap_or(false))
     }
 
-    fn call_hash(&self, hasher: &mut dyn Hasher, context: &mut ValueCallContext) -> Result<()> {
+    fn call_hash(&self, hasher: &mut dyn Hasher, frame: &mut ValueCallFrame) -> Result<()> {
         Ok(())
     }
 }
@@ -86,11 +86,11 @@ impl Value for BoolValue {
         self.value
     }
 
-    fn call_repr(&self, context: &mut ValueCallContext) -> Result<String> {
+    fn call_repr(&self, frame: &mut ValueCallFrame) -> Result<String> {
         Ok(if self.value { "True" } else { "False" }.to_string())
     }
 
-    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallContext) -> Result<bool> {
+    fn call_eq(&self, other: &dyn Value, frame: &mut ValueCallFrame) -> Result<bool> {
         Ok(other
             .as_any()
             .downcast_ref::<Self>()
@@ -98,7 +98,7 @@ impl Value for BoolValue {
             .unwrap_or(false))
     }
 
-    fn call_hash(&self, hasher: &mut dyn Hasher, context: &mut ValueCallContext) -> Result<()> {
+    fn call_hash(&self, hasher: &mut dyn Hasher, frame: &mut ValueCallFrame) -> Result<()> {
         hasher.update(if self.value { &[1] } else { &[0] });
         Ok(())
     }
@@ -121,11 +121,11 @@ impl Value for IntValue {
         self.value != 0
     }
 
-    fn call_repr(&self, context: &mut ValueCallContext) -> Result<String> {
+    fn call_repr(&self, frame: &mut ValueCallFrame) -> Result<String> {
         Ok(self.value.to_string())
     }
 
-    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallContext) -> Result<bool> {
+    fn call_eq(&self, other: &dyn Value, frame: &mut ValueCallFrame) -> Result<bool> {
         Ok(other
             .as_any()
             .downcast_ref::<Self>()
@@ -133,7 +133,7 @@ impl Value for IntValue {
             .unwrap_or(false))
     }
 
-    fn call_hash(&self, hasher: &mut dyn Hasher, context: &mut ValueCallContext) -> Result<()> {
+    fn call_hash(&self, hasher: &mut dyn Hasher, frame: &mut ValueCallFrame) -> Result<()> {
         hasher.update(&self.value.to_le_bytes());
         Ok(())
     }
@@ -156,16 +156,16 @@ impl Value for FloatValue {
         self.value != 0.
     }
 
-    fn call_repr(&self, context: &mut ValueCallContext) -> Result<String> {
+    fn call_repr(&self, frame: &mut ValueCallFrame) -> Result<String> {
         Ok(self.value.to_string())
     }
 
-    fn call_hash(&self, hasher: &mut dyn Hasher, context: &mut ValueCallContext) -> Result<()> {
+    fn call_hash(&self, hasher: &mut dyn Hasher, frame: &mut ValueCallFrame) -> Result<()> {
         hasher.update(&self.value.to_le_bytes());
         Ok(())
     }
 
-    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallContext) -> Result<bool> {
+    fn call_eq(&self, other: &dyn Value, frame: &mut ValueCallFrame) -> Result<bool> {
         Ok(other
             .as_any()
             .downcast_ref::<Self>()
@@ -191,15 +191,15 @@ impl Value for StringValue {
         !self.value.is_empty()
     }
 
-    fn call_repr(&self, context: &mut ValueCallContext) -> Result<String> {
+    fn call_repr(&self, frame: &mut ValueCallFrame) -> Result<String> {
         Ok(format!("\"{}\"", self.value))
     }
 
-    fn call_str(&self, context: &mut ValueCallContext) -> Result<String> {
+    fn call_str(&self, frame: &mut ValueCallFrame) -> Result<String> {
         Ok(self.value.clone())
     }
 
-    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallContext) -> Result<bool> {
+    fn call_eq(&self, other: &dyn Value, frame: &mut ValueCallFrame) -> Result<bool> {
         Ok(other
             .as_any()
             .downcast_ref::<Self>()
@@ -207,7 +207,7 @@ impl Value for StringValue {
             .unwrap_or(false))
     }
 
-    fn call_hash(&self, hasher: &mut dyn Hasher, context: &mut ValueCallContext) -> Result<()> {
+    fn call_hash(&self, hasher: &mut dyn Hasher, frame: &mut ValueCallFrame) -> Result<()> {
         hasher.update(self.value.as_bytes());
         Ok(())
     }

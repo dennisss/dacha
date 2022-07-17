@@ -11,6 +11,8 @@ use crypto::sip::SipHasher;
 
 use crate::object::*;
 
+const MAX_CALL_STACK_SIZE: usize = 100;
+
 /*
 TODO: Double check everything is consistent with:
 https://bazel.build/rules/language#differences_with_python
@@ -29,17 +31,27 @@ pub trait Value: 'static + AsAny {
     /// Evalutes this value as a boolean. Used to implement 'bool(X)'
     fn call_bool(&self) -> bool;
 
-    fn call_repr(&self, context: &mut ValueCallContext) -> Result<String>;
+    fn call_repr(&self, frame: &mut ValueCallFrame) -> Result<String>;
 
     /// Returns the string you'd get be calling str(X) on this value.
-    fn call_str(&self, context: &mut ValueCallContext) -> Result<String>;
+    fn call_str(&self, frame: &mut ValueCallFrame) -> Result<String>;
 
     /// Calls __hash__. Note that only immutable types should implement this.
-    fn call_hash(&self, hasher: &mut dyn Hasher, context: &mut ValueCallContext) -> Result<()>;
+    fn call_hash(&self, hasher: &mut dyn Hasher, frame: &mut ValueCallFrame) -> Result<()>;
 
-    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallContext) -> Result<bool>;
+    fn call_eq(&self, other: &dyn Value, frame: &mut ValueCallFrame) -> Result<bool>;
 
-    // fn call_iter(&self) -> Result<>;
+    fn call_iter(&self, frame: &mut ValueCallFrame) -> Result<ObjectStrong<dyn Value>> {
+        Err(err_msg("Value not iterable"))
+    }
+
+    fn call_next(&self, frame: &mut ValueCallFrame) -> Result<ObjectStrong<dyn Value>> {
+        Err(err_msg("Value is not an iterator"))
+    }
+
+    fn call_len(&self, frame: &mut ValueCallFrame) -> Result<usize> {
+        Err(err_msg("Value has no length"))
+    }
 }
 
 impl Object for dyn Value {
@@ -64,7 +76,7 @@ macro_rules! value_attributes {
         fn freeze_value(&self) {}
     };
     (Mutable) => {
-        fn call_hash(&self, hasher: &mut dyn Hasher, context: &mut ValueCallContext) -> Result<()> {
+        fn call_hash(&self, hasher: &mut dyn Hasher, frame: &mut ValueCallFrame) -> Result<()> {
             Err(err_msg("Can not reliably hash mutable value."))
         }
     };
@@ -72,13 +84,13 @@ macro_rules! value_attributes {
         fn referenced_value_objects(&self, out: &mut Vec<ObjectWeak<dyn Value>>) {}
     };
     (ReprAsStr) => {
-        fn call_str(&self, context: &mut ValueCallContext) -> Result<String> {
-            self.call_repr(context)
+        fn call_str(&self, frame: &mut ValueCallFrame) -> Result<String> {
+            self.call_repr(frame)
         }
     };
 }
 
-/// Context provided when calling a native method on a Value type.
+/// Context/frame provided when calling a native method on a Value type.
 ///
 /// This is used on methods of the Value trait which have a well defined
 /// signature composed of native types.
@@ -86,9 +98,9 @@ macro_rules! value_attributes {
 /// Some notes:
 /// - Calls are not allowed to be recursive (reference the same value twice in
 ///   the call stack).
-/// - A ValueCallContext must outlive the duration of method calls on the
+/// - A ValueCallFrame must outlive the duration of method calls on the
 ///   associated value.
-pub struct ValueCallContext<'a> {
+pub struct ValueCallFrame<'a> {
     instance: Option<&'a dyn Value>,
 
     pool: &'a ObjectPool<dyn Value>,
@@ -96,7 +108,7 @@ pub struct ValueCallContext<'a> {
     parent_pointers: &'a mut ValuePointers,
 }
 
-impl<'a> Drop for ValueCallContext<'a> {
+impl<'a> Drop for ValueCallFrame<'a> {
     fn drop(&mut self) {
         if let Some(inst) = &self.instance {
             self.parent_pointers.remove(*inst);
@@ -104,7 +116,7 @@ impl<'a> Drop for ValueCallContext<'a> {
     }
 }
 
-impl<'a> ValueCallContext<'a> {
+impl<'a> ValueCallFrame<'a> {
     /// Creates a new calling context associated with no value.
     ///
     /// This should only be run once in the runtime when a source code file
@@ -125,19 +137,23 @@ impl<'a> ValueCallContext<'a> {
         &self.pool
     }
 
-    /// Creates a child context associated with a given value.
+    /// Creates a child frame associated with a given value.
     /// - This internally gurantees that there is no recursion (no parent
     ///   context refers to the same value).
     /// - The return value of this can be passed to methods of 'value'. Note
     ///   that methods of 'value' can only expect 'self' to be guranteed to not
     ///   be recursing and nothing is implied about other arguments passed to
     ///   the method.
-    pub fn child_context<'b>(&'b mut self, value: &'b dyn Value) -> Result<ValueCallContext<'b>> {
+    pub fn child<'b>(&'b mut self, value: &'b dyn Value) -> Result<ValueCallFrame<'b>> {
+        if self.parent_pointers.pointers.len() >= MAX_CALL_STACK_SIZE {
+            return Err(err_msg("Exceeded max call stack depth"));
+        }
+
         if !self.parent_pointers.insert(value) {
             return Err(err_msg("Recursion detected"));
         }
 
-        Ok(ValueCallContext {
+        Ok(ValueCallFrame {
             instance: Some(value),
             pool: self.pool,
             parent_pointers: self.parent_pointers,

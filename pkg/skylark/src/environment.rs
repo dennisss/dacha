@@ -26,7 +26,21 @@ impl Universe {
         let pool = ObjectPool::new();
         let scope = Scope::new("", &pool, None)?;
 
-        Ok(Self { pool, scope })
+        let mut inst = Self { pool, scope };
+
+        inst.bind_function("len", |ctx| {
+            let mut args = FunctionArgumentIterator::create(&ctx.args)?;
+            let obj = args.required_positional_arg("s")?;
+            args.finish()?;
+
+            let mut inner_frame = ctx.frame.child(&*obj)?;
+            let len = obj.call_len(&mut inner_frame)?;
+            drop(inner_frame);
+
+            ctx.pool().insert(IntValue::new(len as i64))
+        })?;
+
+        Ok(inst)
     }
 
     /// Allocate a new value in the universe's object pool.
@@ -43,13 +57,24 @@ impl Universe {
         // NOTE: None of these universe methods should ever be called during evaluation
         // so it is ok to start a new call stack.
         let mut parent_pointers = ValuePointers::default();
-        let mut root_call_context = ValueCallContext::root(&self.pool, &mut parent_pointers);
+        let mut root_call_context = ValueCallFrame::root(&self.pool, &mut parent_pointers);
 
-        let mut ctx = root_call_context.child_context(self.scope.bindings())?;
+        let mut ctx = root_call_context.child(self.scope.bindings())?;
 
         self.scope
             .bindings()
             .insert(&key, value.downgrade(), &mut ctx)?;
+        Ok(())
+    }
+
+    pub fn bind_function<
+        F: 'static + Send + Sync + Fn(FunctionCallContext) -> Result<ObjectStrong<dyn Value>>,
+    >(
+        &self,
+        name: &str,
+        f: F,
+    ) -> Result<()> {
+        self.bind(name, FunctionValue::wrap(name, f))?;
         Ok(())
     }
 }
@@ -62,13 +87,12 @@ pub struct Environment {
 // #[derive(Clone, Copy)]
 struct EvaluationContext<'a> {
     scope: Arc<Scope>,
-    // pool: ObjectPool<dyn Value>,
-    caller: ValueCallContext<'a>,
+    frame: ValueCallFrame<'a>,
 }
 
 impl EvaluationContext<'_> {
     fn pool(&self) -> &ObjectPool<dyn Value> {
-        self.caller.pool()
+        self.frame.pool()
     }
 }
 
@@ -92,11 +116,11 @@ impl Environment {
         // Used to track recursion.
         let mut parent_pointers = ValuePointers::default();
 
-        let root_call_context = ValueCallContext::root(&file_pool, &mut parent_pointers);
+        let root_call_context = ValueCallFrame::root(&file_pool, &mut parent_pointers);
 
         let mut context = EvaluationContext {
             scope: file_scope,
-            caller: root_call_context,
+            frame: root_call_context,
         };
 
         let file = File::parse(source)?;
@@ -171,40 +195,41 @@ impl Environment {
                 }
             }
             Test::Primary(e) => {
-                let mut base = match &e.base {
-                    Operand::Identifier(name) => context
-                        .scope
-                        .resolve(name, &mut context.caller)?
-                        .ok_or_else(|| format_err!("No variable named: {}", name))?,
-                    Operand::Int(v) => context.pool().insert(IntValue::new(*v))?,
-                    Operand::Float(v) => context.pool().insert(FloatValue::new(*v))?,
-                    Operand::String(v) => context.pool().insert(StringValue::new(v.clone()))?,
-                    Operand::List(v) => self.evaluate_expression(v, true, context)?,
-                    Operand::Dict(entries) => {
-                        // NOTE: We create the object first to ensure that the inner values aren't
-                        // GC'ed
-                        let dict_object = context.pool().insert(DictValue::default())?;
-                        let dict = dict_object.as_any().downcast_ref::<DictValue>().unwrap();
+                let mut base =
+                    match &e.base {
+                        Operand::Identifier(name) => context
+                            .scope
+                            .resolve(name, &mut context.frame)?
+                            .ok_or_else(|| format_err!("No variable named: {}", name))?,
+                        Operand::Int(v) => context.pool().insert(IntValue::new(*v))?,
+                        Operand::Float(v) => context.pool().insert(FloatValue::new(*v))?,
+                        Operand::String(v) => context.pool().insert(StringValue::new(v.clone()))?,
+                        Operand::List(v) => self.evaluate_expression(v, true, context)?,
+                        Operand::Dict(entries) => {
+                            // NOTE: We create the object first to ensure that the inner values
+                            // aren't GC'ed
+                            let dict_object = context.pool().insert(DictValue::default())?;
+                            let dict = dict_object.as_any().downcast_ref::<DictValue>().unwrap();
 
-                        for (key_test, value_test) in entries {
-                            let key = self.evaluate_test(key_test, context)?;
-                            let value = self.evaluate_test(value_test, context)?;
+                            for (key_test, value_test) in entries {
+                                let key = self.evaluate_test(key_test, context)?;
+                                let value = self.evaluate_test(value_test, context)?;
 
-                            let mut dict_context = context.caller.child_context(dict)?;
+                                let mut dict_context = context.frame.child(dict)?;
 
-                            // Per the https://bazel.build/rules/language#differences_with_python page, literal dicts can't have
-                            if dict
-                                .insert(&key, value.downgrade(), &mut dict_context)?
-                                .is_some()
-                            {
-                                return Err(err_msg("Duplicate key present in dict literal"));
+                                // Per the https://bazel.build/rules/language#differences_with_python page, literal dicts can't have
+                                if dict
+                                    .insert(&key, value.downgrade(), &mut dict_context)?
+                                    .is_some()
+                                {
+                                    return Err(err_msg("Duplicate key present in dict literal"));
+                                }
                             }
-                        }
 
-                        dict_object
-                    }
-                    Operand::Tuple(_) => todo!(),
-                };
+                            dict_object
+                        }
+                        Operand::Tuple(_) => todo!(),
+                    };
 
                 // TODO: Mutate 'base' here
                 for suffix in &e.suffixes {
@@ -268,11 +293,11 @@ impl Environment {
             }
         }
 
-        let mut inner_call_context = context.caller.child_context(func_ptr)?;
+        let mut inner_call_context = context.frame.child(func_ptr)?;
 
         // TODO: Make a child scope just for this file
         let func_context = FunctionCallContext {
-            caller: &mut inner_call_context,
+            frame: &mut inner_call_context,
             scope: context.scope.clone(),
             args: func_args,
         };
@@ -334,7 +359,7 @@ mod tests {
                     buffer.push_str(sep);
                 }
 
-                let mut inner_context = context.caller.child_context(&**obj)?;
+                let mut inner_context = context.frame.child(&**obj)?;
                 buffer.push_str(obj.call_str(&mut inner_context)?.as_str());
             }
 
@@ -363,8 +388,6 @@ mod tests {
                 .ok_or_else(|| err_msg("Expected int for argument 'b'"))?;
             args.finish()?;
 
-            println!("Called: {} + {}", a, b);
-
             Ok(context.pool().insert(IntValue::new(a + b))?)
         }
     }
@@ -384,11 +407,11 @@ mod tests {
 
         let mut env = Environment::new(universe)?;
 
-        env.evaluate_file("my_file", "print(\'I got:\', adder(a=1, b=2))")?;
+        env.evaluate_file("my_file", "print(\'I got:\', adder(a=len([3,4,5]), b=2))")?;
 
         let stdout = stdout.lock().unwrap().clone();
 
-        assert_eq!(stdout, "I got: 3\n");
+        assert_eq!(stdout, "I got: 5\n");
 
         Ok(())
     }

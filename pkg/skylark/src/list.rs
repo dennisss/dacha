@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::sync::MutexGuard;
 
 use common::errors::*;
 use crypto::hasher::Hasher;
@@ -28,6 +29,11 @@ impl ListValue {
             }),
         }
     }
+
+    pub fn iter<'a>(&'a self) -> ListValueExclusiveIterator<'a> {
+        let state = self.state.lock().unwrap();
+        ListValueExclusiveIterator { state, index: 0 }
+    }
 }
 
 impl Value for ListValue {
@@ -48,12 +54,12 @@ impl Value for ListValue {
         !state.elements.is_empty()
     }
 
-    fn call_repr(&self, context: &mut ValueCallContext) -> Result<String> {
+    fn call_repr(&self, context: &mut ValueCallFrame) -> Result<String> {
         let state = self.state.lock().unwrap();
         TupleValue::call_repr_impl("[", &state.elements, "]", context)
     }
 
-    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallContext) -> Result<bool> {
+    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallFrame) -> Result<bool> {
         if core::ptr::eq::<dyn Value>(self, other) {
             return Ok(true);
         }
@@ -65,11 +71,49 @@ impl Value for ListValue {
 
         // The other list must be in the stack to ensure we can safely lock the
         // elements.
-        let mut context = context.child_context(other)?;
+        let mut context = context.child(other)?;
 
         let state = self.state.lock().unwrap();
         let other_state = other.state.lock().unwrap();
 
         TupleValue::call_eq_impl(&state.elements, &other_state.elements, &mut context)
     }
+
+    fn call_iter(&self, frame: &mut ValueCallFrame) -> Result<ObjectStrong<dyn Value>> {
+        // TODO: Increment num_iterators
+
+        Err(err_msg("Value not iterable"))
+    }
+
+    fn call_len(&self, frame: &mut ValueCallFrame) -> Result<usize> {
+        let state = self.state.lock().unwrap();
+        Ok(state.elements.len())
+    }
 }
+
+pub struct ListValueExclusiveIterator<'a> {
+    state: MutexGuard<'a, ListValueState>,
+    index: usize,
+}
+
+impl Iterator for ListValueExclusiveIterator<'_> {
+    type Item = ObjectWeak<dyn Value>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(value) = self.state.elements.get(self.index) {
+            self.index += 1;
+            Some(value.clone())
+        } else {
+            None
+        }
+    }
+}
+
+pub struct ListValueIterator {
+    instance: ObjectWeak<dyn Value>,
+    next_index: usize,
+}
+
+// impl List
+
+impl ListValueIterator {}

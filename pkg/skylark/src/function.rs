@@ -6,7 +6,7 @@ use common::errors::*;
 
 use crate::object::*;
 use crate::scope::Scope;
-use crate::value::{Value, ValueCallContext};
+use crate::value::{Value, ValueCallFrame};
 use crate::value_attributes;
 
 pub struct FunctionValue {
@@ -24,6 +24,15 @@ impl FunctionValue {
             def: FunctionDef::Builtin(Box::new(f)),
         }
     }
+
+    pub fn wrap<
+        F: 'static + Send + Sync + Fn(FunctionCallContext) -> Result<ObjectStrong<dyn Value>>,
+    >(
+        name: &str,
+        f: F,
+    ) -> Self {
+        Self::from_builtin(BuiltinLambdaFunction::wrap(name, f))
+    }
 }
 
 impl Value for FunctionValue {
@@ -39,7 +48,7 @@ impl Value for FunctionValue {
         true
     }
 
-    fn call_repr(&self, context: &mut ValueCallContext) -> Result<String> {
+    fn call_repr(&self, context: &mut ValueCallFrame) -> Result<String> {
         Ok(match &self.def {
             FunctionDef::Builtin(f) => format!("<built-in function {}>", f.name()),
         })
@@ -48,12 +57,12 @@ impl Value for FunctionValue {
     fn call_hash(
         &self,
         hasher: &mut dyn crypto::hasher::Hasher,
-        context: &mut ValueCallContext,
+        context: &mut ValueCallFrame,
     ) -> Result<()> {
         Err(err_msg("Please don't hash functions"))
     }
 
-    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallContext) -> Result<bool> {
+    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallFrame) -> Result<bool> {
         Ok(core::ptr::eq::<dyn Value>(self, other))
     }
 }
@@ -70,7 +79,7 @@ pub trait BuiltinFunction: 'static + Send + Sync {
 
 /// TODO: Pass all of these as &'a pointers.
 pub struct FunctionCallContext<'a, 'b> {
-    pub caller: &'a mut ValueCallContext<'b>,
+    pub frame: &'a mut ValueCallFrame<'b>,
 
     pub scope: Arc<Scope>,
 
@@ -79,7 +88,7 @@ pub struct FunctionCallContext<'a, 'b> {
 
 impl<'a, 'b> FunctionCallContext<'a, 'b> {
     pub fn pool(&self) -> &ObjectPool<dyn Value> {
-        self.caller.pool()
+        self.frame.pool()
     }
 }
 
@@ -229,7 +238,11 @@ impl<'a> FunctionArgumentIterator {
     /// - We expect all arguments to be provided with a keyword corresponding to
     ///   a protobuf field name,
     /// - The fields are proto merged with any existing data in 'message'.
-    pub fn to_proto(mut self, message: &mut dyn protobuf::MessageReflection) -> Result<()> {
+    pub fn to_proto(
+        mut self,
+        message: &mut dyn protobuf::MessageReflection,
+        frame: &mut ValueCallFrame,
+    ) -> Result<()> {
         // TODO: Instead just read all the fields as a kwargs DictValue and pass that
         // completely to value_to_proto.
 
@@ -240,9 +253,35 @@ impl<'a> FunctionArgumentIterator {
             };
 
             let r = message.field_by_number_mut(field.number).unwrap();
-            crate::proto::value_to_proto(&*value, r)?;
+            crate::proto::value_to_proto(&*value, r, frame)?;
         }
 
         self.finish()
+    }
+}
+
+pub struct BuiltinLambdaFunction<F> {
+    name: String,
+    f: F,
+}
+
+impl<F> BuiltinLambdaFunction<F> {
+    pub fn wrap(name: &str, f: F) -> Self {
+        Self {
+            name: name.to_string(),
+            f,
+        }
+    }
+}
+
+impl<F: 'static + Send + Sync + Fn(FunctionCallContext) -> Result<ObjectStrong<dyn Value>>>
+    BuiltinFunction for BuiltinLambdaFunction<F>
+{
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn call(&self, context: FunctionCallContext) -> Result<ObjectStrong<dyn Value>> {
+        (self.f)(context)
     }
 }

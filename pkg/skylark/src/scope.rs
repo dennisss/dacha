@@ -9,7 +9,7 @@ use crate::object::ObjectPool;
 use crate::object::ObjectStrong;
 use crate::primitives::StringValue;
 use crate::value::Value;
-use crate::value::ValueCallContext;
+use crate::value::ValueCallFrame;
 
 /// TODO: Implement a method of blocking recursive scopes.
 /// - Simply speaking every function is a Value bound to some instance and we
@@ -40,10 +40,10 @@ impl Scope {
     pub fn resolve(
         &self,
         name: &str,
-        context: &mut ValueCallContext,
+        context: &mut ValueCallFrame,
     ) -> Result<Option<ObjectStrong<dyn Value>>> {
         {
-            let mut inner_context = context.child_context(self.bindings())?;
+            let mut inner_context = context.child(self.bindings())?;
 
             if let Some(value) = self
                 .bindings()

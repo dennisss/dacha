@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::sync::MutexGuard;
 
 use common::errors::*;
 use crypto::hasher::Hasher;
@@ -52,11 +53,11 @@ impl DictValue {
     pub fn get(
         &self,
         key: &dyn Value,
-        context: &mut ValueCallContext,
+        frame: &mut ValueCallFrame,
     ) -> Result<Option<ObjectStrong<dyn Value>>> {
         let state = self.state.lock().unwrap();
 
-        if let Some(index) = state.entry(key, context)?.index {
+        if let Some(index) = state.entry(key, frame)?.index {
             let obj = state.elements[index].value.upgrade_or_error()?;
             Ok(Some(obj))
         } else {
@@ -69,12 +70,12 @@ impl DictValue {
         &self,
         key: &ObjectStrong<dyn Value>,
         mut value: ObjectWeak<dyn Value>,
-        context: &mut ValueCallContext,
+        frame: &mut ValueCallFrame,
     ) -> Result<Option<ObjectWeak<dyn Value>>> {
         let mut state = self.state.lock().unwrap();
         state.check_can_mutate()?;
 
-        let entry = state.entry(&**key, context)?;
+        let entry = state.entry(&**key, frame)?;
 
         // The key already exists, just replace the value.
         if let Some(index) = entry.index {
@@ -110,7 +111,7 @@ impl DictValue {
         Ok(None)
     }
 
-    pub fn remove(&self, key: &dyn Value, context: &mut ValueCallContext) -> Result<()> {
+    pub fn remove(&self, key: &dyn Value, context: &mut ValueCallFrame) -> Result<()> {
         let mut state = self.state.lock().unwrap();
         state.check_can_mutate()?;
 
@@ -184,6 +185,13 @@ impl DictValue {
 
         Ok(())
     }
+
+    // TODO: Need a robust strategy to make sure this doesn't deadlock.
+    pub fn iter<'a>(&'a self) -> DictValueExlusiveIterator<'a> {
+        let state = self.state.lock().unwrap();
+        let index = state.first_element;
+        DictValueExlusiveIterator { state, index }
+    }
 }
 
 impl Value for DictValue {
@@ -207,12 +215,17 @@ impl Value for DictValue {
         !state.elements.is_empty()
     }
 
-    fn call_repr(&self, context: &mut ValueCallContext) -> Result<String> {
+    fn call_repr(&self, context: &mut ValueCallFrame) -> Result<String> {
         todo!()
     }
 
-    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallContext) -> Result<bool> {
+    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallFrame) -> Result<bool> {
         todo!()
+    }
+
+    fn call_len(&self, frame: &mut ValueCallFrame) -> Result<usize> {
+        let state = self.state.lock().unwrap();
+        Ok(state.elements.len())
     }
 }
 
@@ -229,8 +242,8 @@ impl DictValueState {
         Ok(())
     }
 
-    fn entry(&self, key: &dyn Value, context: &mut ValueCallContext) -> Result<DictValueEntry> {
-        let mut context = context.child_context(key)?;
+    fn entry(&self, key: &dyn Value, context: &mut ValueCallFrame) -> Result<DictValueEntry> {
+        let mut context = context.child(key)?;
 
         let key_hash = {
             let mut hasher = context.new_hasher();
@@ -272,18 +285,24 @@ impl DictValueState {
     }
 }
 
-impl std::hash::Hash for DictValueKey {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash)
-    }
+pub struct DictValueExlusiveIterator<'a> {
+    state: MutexGuard<'a, DictValueState>,
+    index: Option<usize>,
 }
 
-// impl PartialEq for DictValueKey {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.key.upgrade()
+impl<'a> Iterator for DictValueExlusiveIterator<'a> {
+    type Item = (ObjectWeak<dyn Value>, ObjectWeak<dyn Value>);
 
-//     }
-// }
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(index) = self.index {
+            let el = &self.state.elements[index];
+            self.index = el.next_index;
+            Some((el.key.clone(), el.value.clone()))
+        } else {
+            None
+        }
+    }
+}
 
 /// Controls which values are returned by DictIteratorValue::python_next().
 pub enum DictIteratorMode {

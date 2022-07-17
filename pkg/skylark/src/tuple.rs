@@ -17,7 +17,7 @@ impl TupleValue {
     pub(crate) fn call_eq_impl(
         elements: &[ObjectWeak<dyn Value>],
         other_elements: &[ObjectWeak<dyn Value>],
-        context: &mut ValueCallContext,
+        frame: &mut ValueCallFrame,
     ) -> Result<bool> {
         if elements.len() != other_elements.len() {
             return Ok(false);
@@ -25,7 +25,7 @@ impl TupleValue {
 
         for (cur, other) in elements.iter().zip(other_elements.iter()) {
             let value = cur.upgrade_or_error()?;
-            let mut inner_context = context.child_context(&*value)?;
+            let mut inner_context = frame.child(&*value)?;
 
             let other_value = other.upgrade_or_error()?;
 
@@ -41,7 +41,7 @@ impl TupleValue {
         start_bracket: &str,
         elements: &[ObjectWeak<dyn Value>],
         end_bracket: &str,
-        context: &mut ValueCallContext,
+        frame: &mut ValueCallFrame,
     ) -> Result<String> {
         let mut out = String::new();
         out.push_str(start_bracket);
@@ -52,7 +52,7 @@ impl TupleValue {
             }
 
             let value = el.upgrade_or_error()?;
-            let mut inner_context = context.child_context(&*value)?;
+            let mut inner_context = frame.child(&*value)?;
 
             let s = value.call_repr(&mut inner_context)?;
 
@@ -76,21 +76,21 @@ impl Value for TupleValue {
         !self.elements.is_empty()
     }
 
-    fn call_repr(&self, mut context: &mut ValueCallContext) -> Result<String> {
-        Self::call_repr_impl("(", &self.elements, ")", context)
+    fn call_repr(&self, mut frame: &mut ValueCallFrame) -> Result<String> {
+        Self::call_repr_impl("(", &self.elements, ")", frame)
     }
 
-    fn call_hash(&self, hasher: &mut dyn Hasher, context: &mut ValueCallContext) -> Result<()> {
+    fn call_hash(&self, hasher: &mut dyn Hasher, frame: &mut ValueCallFrame) -> Result<()> {
         for el in &self.elements {
             let value = el.upgrade_or_error()?;
-            let mut inner_context = context.child_context(&*value)?;
+            let mut inner_context = frame.child(&*value)?;
             value.call_hash(hasher, &mut inner_context)?;
         }
 
         Ok(())
     }
 
-    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallContext) -> Result<bool> {
+    fn call_eq(&self, other: &dyn Value, frame: &mut ValueCallFrame) -> Result<bool> {
         if core::ptr::eq::<dyn Value>(self, other) {
             return Ok(true);
         }
@@ -100,6 +100,10 @@ impl Value for TupleValue {
             None => return Ok(false),
         };
 
-        Self::call_eq_impl(&self.elements, &other.elements, context)
+        Self::call_eq_impl(&self.elements, &other.elements, frame)
+    }
+
+    fn call_len(&self, frame: &mut ValueCallFrame) -> Result<usize> {
+        Ok(self.elements.len())
     }
 }
