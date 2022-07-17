@@ -1,7 +1,7 @@
 use common::errors::*;
 use parsing::*;
 use parsing::{ParseCursor, ParseError};
-use protobuf_core::tokenizer::{float_lit, ident, int_lit, strLit};
+use protobuf::tokenizer::{float_lit, ident, int_lit, strLit};
 
 /*
 
@@ -27,7 +27,7 @@ const KEYWORDS: &'static [&'static str] = &[
 
 fn keyword<'a>(name: &'static str) -> impl Fn(&'a str) -> Result<((), &'a str)> {
     seq!(c => {
-        let v = c.next(protobuf_core::tokenizer::ident)?;
+        let v = c.next(protobuf::tokenizer::ident)?;
         if v != name {
             return Err(err_msg("Wrong keyword"));
         }
@@ -36,8 +36,10 @@ fn keyword<'a>(name: &'static str) -> impl Fn(&'a str) -> Result<((), &'a str)> 
     })
 }
 
+// fn operator()
+
 parser!(identifier<&str, String> => seq!(c => {
-    let v = c.next(protobuf_core::tokenizer::ident)?;
+    let v = c.next(protobuf::tokenizer::ident)?;
     if KEYWORDS.contains(&v.as_str()) {
         return Err(err_msg("Unexpected keyword"));
     }
@@ -175,11 +177,11 @@ pub enum Statement {
     Break,
     Continue,
     Pass,
-    // Assign {
-    //     target: Expression,
-    //     op: AssignOp,
-    //     value: Expression,
-    // },
+    Assign {
+        target: Expression,
+        op: BinaryOp,
+        value: Expression,
+    },
     Expression(Expression),
 }
 
@@ -431,10 +433,20 @@ fn small_statement<'a>(
         map(keyword("continue"), |_| Statement::Continue),
         map(keyword("pass"), |_| Statement::Pass),
         // TODO: Assign
-        map(
-            |v| Expression::parse(v, context),
-            |e| Statement::Expression(e)
-        ) // TODO: Load
+        seq!(c => {
+            let expr = c.next(|v| Expression::parse(v, context))?;
+
+            if let Some(Operator::Assign(op)) = c.next(opt(|v| Operator::parse(v, context)))? {
+                let e2 = c.next(|v| Expression::parse(v, context))?;
+                Ok(Statement::Assign {
+                    target: expr,
+                    op,
+                    value: e2
+                })
+            } else {
+                Ok(Statement::Expression(expr))
+            }
+        }) // TODO: Load
     )(input)
 }
 
@@ -454,8 +466,6 @@ impl Test {
             return Err(err_msg("Lambda not supported"));
         }
 
-        // TODO: 'not True if 0 else False' is equal to '(not True) if 0 else False'
-
         let mut value = {
             if let Some(v) = parse_next!(input, opt(|v| UnaryExpression::parse(v, context))) {
                 Self::Unary(Box::new(v))
@@ -468,7 +478,7 @@ impl Test {
             }
         };
 
-        while let Ok((op, rest)) = BinaryOp::parse(input, context) {
+        while let Ok((Operator::Binary(op), rest)) = Operator::parse(input, context) {
             if (op as usize) < context.operator_priority {
                 break;
             }
@@ -552,8 +562,21 @@ impl PrimaryExpression {
 }
 
 #[derive(Clone, Debug)]
+pub enum SliceIndex {
+    Single(Expression),
+    Range {
+        /// If none, then start at the beginning of the collection.
+        start: Option<Expression>,
+        interval: Option<Test>,
+        /// If None, go to the end of the collection.
+        end: Option<Test>,
+    },
+}
+
+#[derive(Clone, Debug)]
 pub enum PrimaryExpressionSuffix {
     Dot(String),
+    Slice(SliceIndex),
     Call(Vec<Argument>),
 }
 
@@ -583,6 +606,49 @@ impl PrimaryExpressionSuffix {
                 c.next(|v| context.consume_whitespace(v))?;
 
                 Ok(Self::Call(args))
+            }),
+            seq!(c => {
+                c.next(tag("["))?;
+
+                let mut inner_context = context.clone();
+                inner_context.in_parens = true;
+
+                c.next(|v| inner_context.consume_whitespace(v))?;
+
+                let first = c.next(opt(|v| Expression::parse(v, context)))?;
+
+                let is_span = c.next(opt(tag(":")))?.is_some();
+                c.next(|v| context.consume_whitespace(v))?;
+
+                let second = if is_span {
+                    c.next(opt(|v| Test::parse(v, context)))?
+                } else {
+                    None
+                };
+
+                let is_three_parts = if is_span {
+                    let v = c.next(opt(tag(":")))?.is_some();
+                    c.next(|v| context.consume_whitespace(v))?;
+                    v
+                } else { false };
+
+                let third = if is_three_parts {
+                    c.next(opt(|v| Test::parse(v, context)))?
+                } else {
+                    None
+                };
+
+                c.next(tag("]"))?;
+                c.next(|v| context.consume_whitespace(v))?;
+
+                if !is_span {
+                    let index = first.ok_or_else(|| err_msg("Empty index"))?;
+                    Ok(Self::Slice(SliceIndex::Single(index)))
+                } else if !is_three_parts {
+                    Ok(Self::Slice(SliceIndex::Range { start: first, interval: None, end: second }))
+                } else {
+                    Ok(Self::Slice(SliceIndex::Range { start: first, interval: second, end: third }))
+                }
             })
         )(input)
     }
@@ -683,6 +749,9 @@ pub enum UnaryOp {
 
 impl UnaryExpression {
     fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        // TODO: Implement this in terms of Operator to ensure that the entire operator
+        // is consumed.
+
         let op = parse_next!(
             input,
             alt!(
@@ -700,6 +769,69 @@ impl UnaryExpression {
         let value = parse_next!(input, Test::parse, context);
 
         Ok((Self { op, value }, input))
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Operator {
+    Assign(BinaryOp),
+    Binary(BinaryOp),
+}
+
+impl Operator {
+    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
+        // NOTE: When there are multiple symbols with the same starting characters, they
+        // are sorted by descending length.
+
+        let op = parse_next!(
+            input,
+            alt!(
+                map(tag("=="), |_| Self::Binary(BinaryOp::IsEqual)),
+                map(tag("="), |_| Self::Assign(BinaryOp::IsEqual)),
+                map(tag("!="), |_| Self::Binary(BinaryOp::NotEqual)),
+                map(tag("<<="), |_| Self::Assign(BinaryOp::ShiftLeft)),
+                map(tag("<<"), |_| Self::Binary(BinaryOp::ShiftLeft)),
+                map(tag("<="), |_| Self::Binary(BinaryOp::LessEqual)),
+                map(tag("<"), |_| Self::Binary(BinaryOp::LessThan)),
+                map(tag(">>="), |_| Self::Assign(BinaryOp::ShiftRight)),
+                map(tag(">>"), |_| Self::Binary(BinaryOp::ShiftRight)),
+                map(tag(">="), |_| Self::Binary(BinaryOp::GreaterEqual)),
+                map(tag(">"), |_| Self::Binary(BinaryOp::GreaterThan)),
+                map(keyword("in"), |_| Self::Binary(BinaryOp::In)),
+                map(
+                    seq!(c => {
+                        c.next(keyword("not"))?;
+                        c.next(keyword("in"))?;
+                        Ok(())
+                    }),
+                    |_| Self::Binary(BinaryOp::NotIn)
+                ),
+                map(tag("|="), |_| Self::Assign(BinaryOp::BitOr)),
+                map(tag("|"), |_| Self::Binary(BinaryOp::BitOr)),
+                map(tag("^="), |_| Self::Assign(BinaryOp::Xor)),
+                map(tag("^"), |_| Self::Binary(BinaryOp::Xor)),
+                map(tag("&="), |_| Self::Assign(BinaryOp::BitAnd)),
+                map(tag("&"), |_| Self::Binary(BinaryOp::BitAnd)),
+                map(tag("-="), |_| Self::Assign(BinaryOp::Subtract)),
+                map(tag("-"), |_| Self::Binary(BinaryOp::Subtract)),
+                map(tag("+="), |_| Self::Assign(BinaryOp::Add)),
+                map(tag("+"), |_| Self::Binary(BinaryOp::Add)),
+                map(tag("*="), |_| Self::Assign(BinaryOp::Multiply)),
+                map(tag("*"), |_| Self::Binary(BinaryOp::Multiply)),
+                map(tag("%="), |_| Self::Assign(BinaryOp::Modulus)),
+                map(tag("%"), |_| Self::Binary(BinaryOp::Modulus)),
+                map(tag("//="), |_| Self::Assign(BinaryOp::FloorDivide)),
+                map(tag("//"), |_| Self::Binary(BinaryOp::FloorDivide)),
+                map(tag("/="), |_| Self::Assign(BinaryOp::TrueDivide)),
+                map(tag("/"), |_| Self::Binary(BinaryOp::TrueDivide))
+            )
+        );
+
+        // Must be followed by
+
+        parse_next!(input, |v| context.consume_whitespace(v));
+
+        Ok((op, input))
     }
 }
 
@@ -752,51 +884,6 @@ pub enum BinaryOp {
     FloorDivide = 21,
 }
 
-impl BinaryOp {
-    fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
-        // NOTE: When there are multiple symbols with the same starting characters, they
-        // are sorted by descending length.
-
-        let op = parse_next!(
-            input,
-            alt!(
-                map(keyword("or"), |_| Self::Or),
-                map(keyword("and"), |_| Self::And),
-                map(tag("=="), |_| Self::IsEqual),
-                map(tag("!="), |_| Self::NotEqual),
-                map(tag("<<"), |_| Self::ShiftLeft),
-                map(tag("<="), |_| Self::LessEqual),
-                map(tag("<"), |_| Self::LessThan),
-                map(tag(">>"), |_| Self::ShiftRight),
-                map(tag(">="), |_| Self::GreaterEqual),
-                map(tag(">"), |_| Self::GreaterThan),
-                map(keyword("in"), |_| Self::In),
-                map(
-                    seq!(c => {
-                        c.next(keyword("not"))?;
-                        c.next(keyword("in"))?;
-                        Ok(())
-                    }),
-                    |_| Self::NotIn
-                ),
-                map(tag("|"), |_| Self::BitOr),
-                map(tag("^"), |_| Self::Xor),
-                map(tag("&"), |_| Self::BitAnd),
-                map(tag("-"), |_| Self::Subtract),
-                map(tag("+"), |_| Self::Add),
-                map(tag("*"), |_| Self::Multiply),
-                map(tag("%"), |_| Self::Modulus),
-                map(tag("//"), |_| Self::FloorDivide),
-                map(tag("/"), |_| Self::TrueDivide)
-            )
-        );
-
-        parse_next!(input, |v| context.consume_whitespace(v));
-
-        Ok((op, input))
-    }
-}
-
 /// Priority of matching the 'if' in the statement 'X if Y else Z'.
 const IF_OP_PRIORITY: usize = 0;
 
@@ -809,7 +896,8 @@ LambdaExpr = 'lambda' [Parameters] ':' Test .
 
 */
 
-/// NOTE: An expression always contains at least one Test.
+/// NOTE: An expression may have zero or more tests depending on who is creating
+/// it.
 #[derive(Clone, Debug)]
 pub struct Expression {
     pub tests: Vec<Test>,
@@ -888,29 +976,92 @@ impl Operand {
     LoopVariables = PrimaryExpr {',' PrimaryExpr} .
     */
     fn parse<'a>(mut input: &'a str, context: &ParsingContext) -> Result<(Self, &'a str)> {
-        let (value, rest) = {
-            if let Ok((ident, rest)) = identifier(input) {
-                (Self::Identifier(ident), rest)
-            } else if let Ok((float, rest)) = float_lit(input) {
-                (Self::Float(float), rest)
-            } else if let Ok((int, rest)) = int_lit(input) {
-                (Self::Int(int as i64), rest)
-            } else if let Ok((int, rest)) = strLit(input) {
+        let (value, rest) = alt!(
+            map(identifier, |v| Self::Identifier(v)),
+            map(float_lit, |v| Self::Float(v)),
+            map(int_lit, |v| Self::Int(v as i64)),
+            seq!(c => {
+                let vals = c.next(strLit)?;
+
                 // TODO: In python '\ff\ff' is interpreted as 2 code points
                 // TODO: But, '\u1020' is one code point
                 // TODO: So strLit should emit a Vec<char>?
 
                 let mut s = String::new();
-                for b in int {
+                for b in vals {
                     s.push(b as char);
                 }
 
                 // TODO: Support triple quoted strings here and in the protobuf parser
-                (Self::String(s), rest)
-            } else {
-                return Err(err_msg("Unsupported"));
-            }
-        };
+                Ok(Self::String(s))
+            }),
+            // TODO: Add ListComp here
+            seq!(c => {
+                c.next(tag("["))?;
+
+                let mut inner_context = context.clone();
+                inner_context.in_parens = true;
+                c.next(|v| inner_context.consume_whitespace(v))?;
+
+                let expr = c.next(opt(|v| Expression::parse(v, &inner_context)))?;
+
+                let expr = match expr {
+                    Some(mut v) => {
+                        v.has_trailing_comma = c.next(opt(tag(",")))?.is_some();
+                        c.next(|v| inner_context.consume_whitespace(v))?;
+                        v
+                    }
+                    None => {
+                        Expression { tests: vec![], has_trailing_comma: false }
+                    }
+                };
+
+                c.next(tag("]"))?;
+                c.next(|v| context.consume_whitespace(v))?;
+                Ok(Self::List(expr))
+            }),
+            // TODO: Add DictComp here
+            seq!(c => {
+                c.next(tag("{"))?;
+
+                let mut inner_context = context.clone();
+                inner_context.in_parens = true;
+                c.next(|v| inner_context.consume_whitespace(v))?;
+
+                let mut entries = vec![];
+
+                loop {
+                    let inner_context2 = inner_context.clone();
+                    let entry = c.next(opt(seq!(c => {
+                        let key = c.next(|v| Test::parse(v, &inner_context2))?;
+
+                        c.next(tag(":"))?;
+                        c.next(|v| inner_context2.consume_whitespace(v))?;
+
+                        let value = c.next(|v| Test::parse(v, &inner_context2))?;
+
+                        Ok((key, value))
+                    })))?;
+
+                    if let Some(entry) = entry {
+                        entries.push(entry);
+                    } else {
+                        break;
+                    }
+
+                    if c.next(opt(tag(",")))?.is_some() {
+                        c.next(|v| inner_context.consume_whitespace(v))?;
+                    } else {
+                        break;
+                    }
+                }
+
+                c.next(tag("}"))?;
+                c.next(|v| context.consume_whitespace(v))?;
+
+                Ok(Self::Dict(entries))
+            })
+        )(input)?;
 
         let (_, rest2) = context.consume_whitespace(rest)?;
         Ok((value, rest2))
@@ -936,6 +1087,14 @@ mod tests {
             )
             .unwrap()
         );
+
+        // TODO: 'not True if 0 else False' is '(not True) if 0 else False'
+
+        // TODO: Test "a+=1"
+        // TODO: Test "a=-1"
+        // TODO: Test "a+b=c"
+        // TODO: Test "a=b=2"
+        // TODO: Test "1+-1"
 
         // TODO: "a = 2; b = 3" is equal to "a = 2" \n "b = 3"
     }

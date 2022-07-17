@@ -48,6 +48,7 @@ pub enum ReflectionMut<'a> {
                                           * Option(Option<&'a mut dyn Reflect>) */
 }
 
+#[derive(Clone)]
 pub struct FieldDescriptorShort {
     pub number: FieldNumber,
     pub name: StringPtr,
@@ -62,6 +63,7 @@ impl FieldDescriptorShort {
     }
 }
 
+#[derive(Clone)]
 pub enum StringPtr {
     Static(&'static str),
     Dynamic(String),

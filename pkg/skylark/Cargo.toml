@@ -6,4 +6,5 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 parsing = { path = "../parsing" }
-protobuf_core = { path = "../protobuf_core" }
+protobuf = { path = "../protobuf" }
+crypto = { path = "../crypto" }

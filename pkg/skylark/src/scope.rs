@@ -4,10 +4,16 @@ use std::sync::Mutex;
 
 use common::errors::*;
 
+use crate::dict::DictValue;
 use crate::object::ObjectPool;
 use crate::object::ObjectStrong;
-use crate::value::*;
+use crate::primitives::StringValue;
+use crate::value::Value;
+use crate::value::ValueCallContext;
 
+/// TODO: Implement a method of blocking recursive scopes.
+/// - Simply speaking every function is a Value bound to some instance and we
+///   can't see the same Value in the stack space.
 pub struct Scope {
     source_path: String,
 
@@ -31,13 +37,24 @@ impl Scope {
         }))
     }
 
-    pub fn resolve(&self, name: &str) -> Result<Option<ObjectStrong<dyn Value>>> {
-        if let Some(value) = self.bindings().get(name)? {
-            return Ok(Some(value));
+    pub fn resolve(
+        &self,
+        name: &str,
+        context: &mut ValueCallContext,
+    ) -> Result<Option<ObjectStrong<dyn Value>>> {
+        {
+            let mut inner_context = context.child_context(self.bindings())?;
+
+            if let Some(value) = self
+                .bindings()
+                .get(&StringValue::new(name.to_string()), &mut inner_context)?
+            {
+                return Ok(Some(value));
+            }
         }
 
         if let Some(parent) = &self.parent {
-            return parent.resolve(name);
+            return parent.resolve(name, context);
         }
 
         Ok(None)

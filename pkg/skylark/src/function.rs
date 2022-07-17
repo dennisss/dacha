@@ -6,7 +6,8 @@ use common::errors::*;
 
 use crate::object::*;
 use crate::scope::Scope;
-use crate::value::Value;
+use crate::value::{Value, ValueCallContext};
+use crate::value_attributes;
 
 pub struct FunctionValue {
     /// Value bound to the first argument ('self') of this function.
@@ -26,9 +27,7 @@ impl FunctionValue {
 }
 
 impl Value for FunctionValue {
-    fn test_value(&self) -> bool {
-        true
-    }
+    value_attributes!(Immutable | ReprAsStr);
 
     fn referenced_value_objects(&self, out: &mut Vec<ObjectWeak<dyn Value>>) {
         if let Some(inst) = &self.instance {
@@ -36,13 +35,26 @@ impl Value for FunctionValue {
         }
     }
 
-    /// Immutable
-    fn freeze_value(&self) {}
+    fn call_bool(&self) -> bool {
+        true
+    }
 
-    fn python_str(&self) -> String {
-        match &self.def {
+    fn call_repr(&self, context: &mut ValueCallContext) -> Result<String> {
+        Ok(match &self.def {
             FunctionDef::Builtin(f) => format!("<built-in function {}>", f.name()),
-        }
+        })
+    }
+
+    fn call_hash(
+        &self,
+        hasher: &mut dyn crypto::hasher::Hasher,
+        context: &mut ValueCallContext,
+    ) -> Result<()> {
+        Err(err_msg("Please don't hash functions"))
+    }
+
+    fn call_eq(&self, other: &dyn Value, context: &mut ValueCallContext) -> Result<bool> {
+        Ok(core::ptr::eq::<dyn Value>(self, other))
     }
 }
 
@@ -56,13 +68,19 @@ pub trait BuiltinFunction: 'static + Send + Sync {
     fn call(&self, context: FunctionCallContext) -> Result<ObjectStrong<dyn Value>>;
 }
 
-pub struct FunctionCallContext {
+/// TODO: Pass all of these as &'a pointers.
+pub struct FunctionCallContext<'a, 'b> {
+    pub caller: &'a mut ValueCallContext<'b>,
+
     pub scope: Arc<Scope>,
 
-    /// Pool which should be used for creating objects returned by the function.
-    pub pool: ObjectPool<dyn Value>,
-
     pub args: Vec<FunctionArgument>,
+}
+
+impl<'a, 'b> FunctionCallContext<'a, 'b> {
+    pub fn pool(&self) -> &ObjectPool<dyn Value> {
+        self.caller.pool()
+    }
 }
 
 pub struct FunctionArgument {
@@ -162,10 +180,8 @@ impl<'a> FunctionArgumentIterator {
     /// Get the next keyword argument with the given name and a unknown
     /// position.
     ///
-    /// This will never be used by functions Python defined
-    /// functions as they always fully define the order of arguments, but with
-    /// builtin functions, it is possible to define functions with no ordering
-    /// of arguments.
+    /// Python arguments may have an unknown position if they follow argument.
+    /// e.g. 'def func(*args, a=None, b=None)'
     pub fn next_keyword_arg(&mut self, name: &str) -> Result<Option<ObjectStrong<dyn Value>>> {
         // This function can be called after any positonal argument function.
         if (self.state as usize) < (FunctionArgumentIteratorState::SingleKeywordArgs as usize) {
@@ -206,5 +222,27 @@ impl<'a> FunctionArgumentIterator {
         }
 
         Ok(())
+    }
+
+    /// Interprate all arguments as fields of a protobuf message.
+    ///
+    /// - We expect all arguments to be provided with a keyword corresponding to
+    ///   a protobuf field name,
+    /// - The fields are proto merged with any existing data in 'message'.
+    pub fn to_proto(mut self, message: &mut dyn protobuf::MessageReflection) -> Result<()> {
+        // TODO: Instead just read all the fields as a kwargs DictValue and pass that
+        // completely to value_to_proto.
+
+        for field in message.fields().to_vec() {
+            let value = match self.next_keyword_arg(&field.name)? {
+                Some(v) => v,
+                None => continue,
+            };
+
+            let r = message.field_by_number_mut(field.number).unwrap();
+            crate::proto::value_to_proto(&*value, r)?;
+        }
+
+        self.finish()
     }
 }

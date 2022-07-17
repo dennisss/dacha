@@ -5,10 +5,14 @@ use std::sync::Mutex;
 
 use common::errors::*;
 
+use crate::dict::*;
 use crate::function::*;
+use crate::list::*;
 use crate::object::*;
+use crate::primitives::*;
 use crate::scope::*;
 use crate::syntax::*;
+use crate::tuple::*;
 use crate::value::*;
 
 /// Shared builtins/values available to any file.
@@ -32,8 +36,21 @@ impl Universe {
 
     /// Binds a named variable value in the universe scope. Unless shadowed,
     /// this value will be visible to all files being evaluated.
-    pub fn bind(&self, name: &str, value: ObjectWeak<dyn Value>) -> Result<()> {
-        self.scope.bindings().insert(name, value)
+    pub fn bind<V: Value>(&self, name: &str, value: V) -> Result<()> {
+        let key = self.insert(StringValue::new(name.to_string()))?;
+        let value = self.insert(value)?;
+
+        // NOTE: None of these universe methods should ever be called during evaluation
+        // so it is ok to start a new call stack.
+        let mut parent_pointers = ValuePointers::default();
+        let mut root_call_context = ValueCallContext::root(&self.pool, &mut parent_pointers);
+
+        let mut ctx = root_call_context.child_context(self.scope.bindings())?;
+
+        self.scope
+            .bindings()
+            .insert(&key, value.downgrade(), &mut ctx)?;
+        Ok(())
     }
 }
 
@@ -42,10 +59,17 @@ pub struct Environment {
     universe: Universe,
 }
 
-#[derive(Clone, Copy)]
+// #[derive(Clone, Copy)]
 struct EvaluationContext<'a> {
-    scope: &'a Arc<Scope>,
-    pool: &'a ObjectPool<dyn Value>,
+    scope: Arc<Scope>,
+    // pool: ObjectPool<dyn Value>,
+    caller: ValueCallContext<'a>,
+}
+
+impl EvaluationContext<'_> {
+    fn pool(&self) -> &ObjectPool<dyn Value> {
+        self.caller.pool()
+    }
 }
 
 impl Environment {
@@ -65,9 +89,14 @@ impl Environment {
         let mut file_scope =
             Scope::new(source_path, &file_pool, Some(self.universe.scope.clone()))?;
 
-        let context = EvaluationContext {
-            scope: &file_scope,
-            pool: &file_pool,
+        // Used to track recursion.
+        let mut parent_pointers = ValuePointers::default();
+
+        let root_call_context = ValueCallContext::root(&file_pool, &mut parent_pointers);
+
+        let mut context = EvaluationContext {
+            scope: file_scope,
+            caller: root_call_context,
         };
 
         let file = File::parse(source)?;
@@ -76,10 +105,16 @@ impl Environment {
                 Statement::Def(_) => todo!(),
 
                 Statement::Expression(e) => {
-                    let _ = self.evaluate_expression(&e, false, context)?;
+                    let _ = self.evaluate_expression(&e, false, &mut context)?;
                 }
                 Statement::Continue | Statement::Break | Statement::Pass | Statement::Return(_) => {
                     return Err(err_msg("Unexpected statement"));
+                }
+                Statement::Assign { target, op, value } => {
+                    // TODO: Basically implement the target evaluation by constructing special
+                    // reference values.
+
+                    todo!()
                 }
             }
         }
@@ -92,7 +127,7 @@ impl Environment {
         &self,
         expr: &Expression,
         in_list: bool,
-        context: EvaluationContext,
+        context: &mut EvaluationContext,
     ) -> Result<ObjectStrong<dyn Value>> {
         let mut tests = vec![];
 
@@ -101,7 +136,7 @@ impl Environment {
         }
 
         let value = if in_list {
-            context.pool.insert(ListValue::new(
+            context.pool().insert(ListValue::new(
                 tests.iter().map(|o| o.downgrade()).collect(),
             ))?
         } else {
@@ -110,7 +145,7 @@ impl Environment {
             } else {
                 // TODO: Cache the empty tuple value.
 
-                context.pool.insert(TupleValue::new(
+                context.pool().insert(TupleValue::new(
                     tests.iter().map(|o| o.downgrade()).collect(),
                 ))?
             }
@@ -122,14 +157,14 @@ impl Environment {
     fn evaluate_test(
         &self,
         test: &Test,
-        context: EvaluationContext,
+        context: &mut EvaluationContext,
     ) -> Result<ObjectStrong<dyn Value>> {
         match test {
             Test::If(e) => {
                 // TODO: We may need to garbage collect this.
                 let cond = self.evaluate_test(&e.condition, context)?;
 
-                if cond.test_value() {
+                if cond.call_bool() {
                     self.evaluate_test(&e.true_value, context)
                 } else {
                     self.evaluate_test(&e.false_value, context)
@@ -139,13 +174,35 @@ impl Environment {
                 let mut base = match &e.base {
                     Operand::Identifier(name) => context
                         .scope
-                        .resolve(name)?
+                        .resolve(name, &mut context.caller)?
                         .ok_or_else(|| format_err!("No variable named: {}", name))?,
-                    Operand::Int(v) => context.pool.insert(IntValue::new(*v))?,
-                    Operand::Float(v) => context.pool.insert(FloatValue::new(*v))?,
-                    Operand::String(v) => context.pool.insert(StringValue::new(v.clone()))?,
-                    Operand::List(v) => todo!(),
-                    Operand::Dict(_) => todo!(),
+                    Operand::Int(v) => context.pool().insert(IntValue::new(*v))?,
+                    Operand::Float(v) => context.pool().insert(FloatValue::new(*v))?,
+                    Operand::String(v) => context.pool().insert(StringValue::new(v.clone()))?,
+                    Operand::List(v) => self.evaluate_expression(v, true, context)?,
+                    Operand::Dict(entries) => {
+                        // NOTE: We create the object first to ensure that the inner values aren't
+                        // GC'ed
+                        let dict_object = context.pool().insert(DictValue::default())?;
+                        let dict = dict_object.as_any().downcast_ref::<DictValue>().unwrap();
+
+                        for (key_test, value_test) in entries {
+                            let key = self.evaluate_test(key_test, context)?;
+                            let value = self.evaluate_test(value_test, context)?;
+
+                            let mut dict_context = context.caller.child_context(dict)?;
+
+                            // Per the https://bazel.build/rules/language#differences_with_python page, literal dicts can't have
+                            if dict
+                                .insert(&key, value.downgrade(), &mut dict_context)?
+                                .is_some()
+                            {
+                                return Err(err_msg("Duplicate key present in dict literal"));
+                            }
+                        }
+
+                        dict_object
+                    }
                     Operand::Tuple(_) => todo!(),
                 };
 
@@ -156,6 +213,7 @@ impl Environment {
                         PrimaryExpressionSuffix::Call(raw_args) => {
                             base = self.evaluate_function_call(&*base, &raw_args[..], context)?;
                         }
+                        PrimaryExpressionSuffix::Slice(_) => todo!(),
                     }
                 }
 
@@ -170,7 +228,7 @@ impl Environment {
         &self,
         func_ptr: &dyn Value,
         raw_args: &[Argument],
-        context: EvaluationContext,
+        context: &mut EvaluationContext,
     ) -> Result<ObjectStrong<dyn Value>> {
         let func_value = match func_ptr.as_any().downcast_ref::<FunctionValue>() {
             Some(v) => v,
@@ -210,10 +268,12 @@ impl Environment {
             }
         }
 
+        let mut inner_call_context = context.caller.child_context(func_ptr)?;
+
         // TODO: Make a child scope just for this file
         let func_context = FunctionCallContext {
+            caller: &mut inner_call_context,
             scope: context.scope.clone(),
-            pool: context.pool.clone(),
             args: func_args,
         };
 
@@ -221,7 +281,9 @@ impl Environment {
             FunctionDef::Builtin(f) => {
                 return f.call(func_context);
             }
-        }
+        };
+
+        drop(inner_call_context);
     }
 }
 
@@ -272,12 +334,13 @@ mod tests {
                     buffer.push_str(sep);
                 }
 
-                buffer.push_str(obj.python_str().as_str());
+                let mut inner_context = context.caller.child_context(&**obj)?;
+                buffer.push_str(obj.call_str(&mut inner_context)?.as_str());
             }
 
             buffer.push_str(end);
 
-            Ok(context.pool.insert(NoneValue::new())?)
+            Ok(context.pool().insert(NoneValue::new())?)
         }
     }
 
@@ -302,25 +365,22 @@ mod tests {
 
             println!("Called: {} + {}", a, b);
 
-            Ok(context.pool.insert(IntValue::new(a + b))?)
+            Ok(context.pool().insert(IntValue::new(a + b))?)
         }
     }
 
     #[test]
     fn works() -> Result<()> {
         let mut universe = Universe::new()?;
-        {
-            let func_value = universe.insert(FunctionValue::from_builtin(AdderFunc {}))?;
-            universe.bind("adder", func_value.downgrade())?;
-        }
+        universe.bind("adder", FunctionValue::from_builtin(AdderFunc {}))?;
 
         let mut stdout = Arc::new(Mutex::new(String::new()));
-        {
-            let func_value = universe.insert(FunctionValue::from_builtin(InMemoryPrintFunc {
+        universe.bind(
+            "print",
+            FunctionValue::from_builtin(InMemoryPrintFunc {
                 buffer: stdout.clone(),
-            }))?;
-            universe.bind("print", func_value.downgrade())?;
-        }
+            }),
+        )?;
 
         let mut env = Environment::new(universe)?;
 
@@ -332,4 +392,9 @@ mod tests {
 
         Ok(())
     }
+
+    // TODO: '[a, b] = (1,2)' is ok.
+    // TODO: '[a], [b] = ((3,), (4,))' is ok.
+    // TODO: '{ 'a': 2, 'a': 3 }' is ok
+    // TODO: a.hello = 'world'
 }

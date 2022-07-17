@@ -259,6 +259,9 @@ impl<O: Object + ?Sized> Deref for ObjectStrong<O> {
 
 /// A shared reference to some data.
 /// Cloning a Value will continue referencing the same underlying data.
+///
+/// TODO: When this is dropped we can check if weak_count == 1 && strong_count
+/// == 1 to see if we can just delete this thing (similar for ObjectStrong).
 pub struct ObjectWeak<O: ?Sized + Object> {
     pool: Weak<ObjectPoolShared<O>>,
 
@@ -296,5 +299,10 @@ impl<O: ?Sized + Object> ObjectWeak<O> {
         };
 
         Some(ObjectStrong { pool, object })
+    }
+
+    pub fn upgrade_or_error(&self) -> Result<ObjectStrong<O>> {
+        self.upgrade()
+            .ok_or_else(|| err_msg("Dangling object pointer in pool."))
     }
 }

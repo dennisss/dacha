@@ -4,12 +4,29 @@
 extern crate common;
 #[macro_use]
 extern crate parsing;
-extern crate protobuf_core;
+extern crate crypto;
+extern crate protobuf;
 
-pub mod environment;
-pub mod function;
-pub mod object;
-pub mod scope;
-pub mod syntax;
-pub mod tokenizer;
-pub mod value;
+mod dict;
+mod environment;
+mod function;
+mod list;
+mod object;
+mod primitives;
+mod proto;
+mod scope;
+mod syntax;
+mod tokenizer;
+mod tuple;
+mod value;
+
+pub use dict::*;
+pub use environment::*;
+pub use function::*;
+pub use list::*;
+pub use object::*;
+pub use primitives::*;
+pub use proto::*;
+pub use scope::*;
+pub use tuple::*;
+pub use value::*;
