@@ -49,6 +49,11 @@ struct DictValueEntry {
 }
 
 impl DictValue {
+    pub fn is_empty(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        state.elements.is_empty()
+    }
+
     /// TODO: Rename call_getitem
     pub fn get(
         &self,
@@ -111,7 +116,11 @@ impl DictValue {
         Ok(None)
     }
 
-    pub fn remove(&self, key: &dyn Value, context: &mut ValueCallFrame) -> Result<()> {
+    pub fn remove(
+        &self,
+        key: &dyn Value,
+        context: &mut ValueCallFrame,
+    ) -> Result<Option<ObjectStrong<dyn Value>>> {
         let mut state = self.state.lock().unwrap();
         state.check_can_mutate()?;
 
@@ -119,7 +128,7 @@ impl DictValue {
 
         let index = match entry.index {
             Some(v) => v,
-            None => return Ok(()),
+            None => return Ok(None),
         };
 
         // Step 1: Remove references to the index.
@@ -152,7 +161,7 @@ impl DictValue {
         }
 
         // Step 2: Swap remove it and repair the new element which is at that position.
-        state.elements.swap_remove(index);
+        let removed_value = state.elements.swap_remove(index).value.upgrade_or_error()?;
         if index < state.elements.len() {
             let prev_index = state.elements[index].prev_index.clone();
             let next_index = state.elements[index].next_index.clone();
@@ -183,7 +192,7 @@ impl DictValue {
             assert!(found);
         }
 
-        Ok(())
+        Ok(Some(removed_value))
     }
 
     // TODO: Need a robust strategy to make sure this doesn't deadlock.

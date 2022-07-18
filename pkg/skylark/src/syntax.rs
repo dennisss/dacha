@@ -82,9 +82,16 @@ impl InlineWhitespace {
 }
 
 parser!(any_whitespace<&str, ()> => {
-    map(parsing::take_while(|v| {
-        v == ' ' || v == '\t' || v == '\n' || v == '\r'
-    }), |_| ())
+    seq!(c => {
+        c.next(many(empty_line))?;
+
+        c.next(InlineWhitespace::parse)?;
+
+        Ok(())
+    })
+    // map(parsing::take_while(|v| {
+    //     v == ' ' || v == '\t' || v == '\n' || v == '\r'
+    // }), |_| ())
 });
 
 #[derive(Clone)]
@@ -1095,6 +1102,11 @@ mod tests {
         // TODO: Test "a+b=c"
         // TODO: Test "a=b=2"
         // TODO: Test "1+-1"
+
+        let test = r#"
+def a(): # Inline comment
+    return 2
+        "#;
 
         // TODO: "a = 2; b = 3" is equal to "a = 2" \n "b = 3"
     }

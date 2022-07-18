@@ -29,7 +29,7 @@ impl Universe {
         let mut inst = Self { pool, scope };
 
         inst.bind_function("len", |ctx| {
-            let mut args = FunctionArgumentIterator::create(&ctx.args)?;
+            let mut args = FunctionArgumentIterator::create(&ctx.args, ctx.frame)?;
             let obj = args.required_positional_arg("s")?;
             args.finish()?;
 
@@ -329,7 +329,7 @@ mod tests {
         }
 
         fn call(&self, context: FunctionCallContext) -> Result<ObjectStrong<dyn Value>> {
-            let mut args = FunctionArgumentIterator::create(&context.args)?;
+            let mut args = FunctionArgumentIterator::create(&context.args, context.frame)?;
 
             let objects = args.remaining_positional_args()?;
 
@@ -377,7 +377,7 @@ mod tests {
         }
 
         fn call(&self, context: FunctionCallContext) -> Result<ObjectStrong<dyn Value>> {
-            let mut args = FunctionArgumentIterator::create(&context.args)?;
+            let mut args = FunctionArgumentIterator::create(&context.args, context.frame)?;
             let a = args
                 .required_positional_arg("a")?
                 .downcast_int()
@@ -412,6 +412,73 @@ mod tests {
         let stdout = stdout.lock().unwrap().clone();
 
         assert_eq!(stdout, "I got: 5\n");
+
+        Ok(())
+    }
+
+    #[test]
+    fn proto_conversion() -> Result<()> {
+        use protobuf::proto::test::*;
+
+        let output = Arc::new(Mutex::new(Vec::<ShoppingList>::new()));
+
+        let mut universe = Universe::new()?;
+        let mut output_copy = output.clone();
+        universe.bind_function("shopping_list", move |ctx| {
+            let mut args = FunctionArgumentIterator::create(&ctx.args, ctx.frame)?;
+
+            let mut proto = ShoppingList::default();
+            args.to_proto(&mut proto)?;
+
+            output_copy.lock().unwrap().push(proto);
+
+            ctx.pool().insert(NoneValue::new())
+        });
+
+        let mut env = Environment::new(universe)?;
+
+        env.evaluate_file(
+            "my_file",
+            r#"shopping_list(
+    # Testing comments!
+    name = "groceries",
+    # Here too!
+    id = 12,
+    cost = 15.99,
+    items = [
+        { "name": "granny smith", "fruit_type": "APPLES" },
+        {},
+        { "name": "cherry", "fruit_type": "BERRIES" }
+    ]
+)"#,
+        )?;
+
+        let mut outputs = output.lock().unwrap();
+
+        assert_eq!(outputs.len(), 1);
+
+        assert_eq!(
+            protobuf::text::serialize_text_proto(&outputs[0]),
+            r#"name: "groceries"
+id: 12
+cost: 15.99
+items: [
+    {
+        name: "granny smith"
+        fruit_type: APPLES
+    },
+    {},
+    {
+        name: "cherry"
+        fruit_type: BERRIES
+    }
+]
+"#
+        );
+
+        println!("============================");
+        println!("{}", protobuf::text::serialize_text_proto(&outputs[0]));
+        println!("============================");
 
         Ok(())
     }

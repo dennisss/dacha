@@ -23,7 +23,7 @@ impl core::hash::Hasher for SumHasher {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SumHasherBuilder {}
 
 impl core::hash::BuildHasher for SumHasherBuilder {

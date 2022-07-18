@@ -34,7 +34,7 @@ extern crate protobuf_descriptor;
 mod descriptor_pool;
 #[cfg(feature = "std")]
 pub mod dynamic;
-mod proto;
+pub mod proto;
 #[cfg(feature = "std")]
 pub mod viewer;
 

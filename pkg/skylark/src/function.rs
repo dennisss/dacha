@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use common::errors::*;
 
+use crate::dict::*;
 use crate::object::*;
+use crate::primitives::*;
 use crate::scope::Scope;
 use crate::value::{Value, ValueCallFrame};
 use crate::value_attributes;
@@ -97,12 +99,11 @@ pub struct FunctionArgument {
     pub value: ObjectStrong<dyn Value>,
 }
 
-pub struct FunctionArgumentIterator {
+pub struct FunctionArgumentIterator<'a, 'b> {
+    frame: &'a mut ValueCallFrame<'b>,
     state: FunctionArgumentIteratorState,
     positional_args: VecDeque<ObjectStrong<dyn Value>>,
-
-    // TODO: Expose as an ordered dict if passing back to python.
-    keyword_args: HashMap<String, ObjectStrong<dyn Value>>,
+    keyword_args: ObjectStrong<dyn Value>,
 }
 
 // NOTE: This changes purely based on what the caller of the
@@ -115,16 +116,22 @@ enum FunctionArgumentIteratorState {
     DoneKeywordArgs = 4,
 }
 
-impl<'a> FunctionArgumentIterator {
-    pub fn create(args: &[FunctionArgument]) -> Result<Self> {
+impl<'a, 'b> FunctionArgumentIterator<'a, 'b> {
+    pub fn create(args: &[FunctionArgument], frame: &'a mut ValueCallFrame<'b>) -> Result<Self> {
         let mut last_positional = None;
         let mut positional_args = VecDeque::new();
-        let mut keyword_args = HashMap::new();
+
+        let keyword_args = frame.pool().insert(DictValue::default())?;
+        let keyword_args_dict = keyword_args.as_any().downcast_ref::<DictValue>().unwrap();
 
         for (i, arg) in args.iter().enumerate() {
             if let Some(name) = &arg.name {
-                if keyword_args
-                    .insert(name.clone(), arg.value.clone())
+                let key = frame.pool().insert(StringValue::new(name.clone()))?;
+
+                let mut inner_frame = frame.child(keyword_args_dict)?;
+
+                if keyword_args_dict
+                    .insert(&key, arg.value.downgrade(), &mut inner_frame)?
                     .is_some()
                 {
                     return Err(err_msg("Duplicate keyword argument passed to function"));
@@ -144,10 +151,18 @@ impl<'a> FunctionArgumentIterator {
         }
 
         Ok(Self {
+            frame,
             state: FunctionArgumentIteratorState::SinglePositionalArgs,
             positional_args,
             keyword_args,
         })
+    }
+
+    fn keyword_args(&self) -> &DictValue {
+        self.keyword_args
+            .as_any()
+            .downcast_ref::<DictValue>()
+            .unwrap()
     }
 
     pub fn next_positional_arg(&mut self, name: &str) -> Result<Option<ObjectStrong<dyn Value>>> {
@@ -155,7 +170,16 @@ impl<'a> FunctionArgumentIterator {
             return Err(err_msg("Argument iterator called in bad order"));
         }
 
-        if let Some(value) = self.keyword_args.remove(name) {
+        let mut inner_frame = self.frame.child(&*self.keyword_args)?;
+        let keyword_args = self
+            .keyword_args
+            .as_any()
+            .downcast_ref::<DictValue>()
+            .unwrap();
+
+        if let Some(value) =
+            keyword_args.remove(&StringValue::new(name.to_string()), &mut inner_frame)?
+        {
             if !self.positional_args.is_empty() {
                 return Err(err_msg("If an argument is passed with a keyword, then all arguments after it must also be keyword args"));
             }
@@ -206,7 +230,15 @@ impl<'a> FunctionArgumentIterator {
             return Err(err_msg("Extra unparsed positional arguments"));
         }
 
-        if let Some(value) = self.keyword_args.remove(name) {
+        let key = StringValue::new(name.to_string());
+        let mut inner_frame = self.frame.child(&*self.keyword_args)?;
+        let keyword_args = self
+            .keyword_args
+            .as_any()
+            .downcast_ref::<DictValue>()
+            .unwrap();
+
+        if let Some(value) = keyword_args.remove(&key, &mut inner_frame)? {
             return Ok(Some(value));
         }
 
@@ -221,13 +253,26 @@ impl<'a> FunctionArgumentIterator {
     // TODO: Implement this and return a DictValue wrapped in a ObjectStrong<dyn
     // Value> pub fn remaining_keyword_args(&mut self, )
 
+    /// Captures all remaining keyword args and returns them as a DictValue
+    /// object.
+    pub fn remaining_keyword_args(&mut self) -> Result<ObjectStrong<dyn Value>> {
+        if self.state as usize >= FunctionArgumentIteratorState::DoneKeywordArgs as usize {
+            return Err(err_msg("Argument iterator called in bad order"));
+        }
+        self.state = FunctionArgumentIteratorState::DoneKeywordArgs;
+
+        Ok(self.keyword_args.clone())
+    }
+
     pub fn finish(self) -> Result<()> {
         if !self.positional_args.is_empty() {
             return Err(err_msg("Extra unparsed positional arguments"));
         }
 
-        if !self.keyword_args.is_empty() {
-            return Err(err_msg("Extra unparsed positional arguments"));
+        if !self.keyword_args().is_empty()
+            && self.state != FunctionArgumentIteratorState::DoneKeywordArgs
+        {
+            return Err(err_msg("Extra unparsed keyword arguments"));
         }
 
         Ok(())
@@ -238,23 +283,13 @@ impl<'a> FunctionArgumentIterator {
     /// - We expect all arguments to be provided with a keyword corresponding to
     ///   a protobuf field name,
     /// - The fields are proto merged with any existing data in 'message'.
-    pub fn to_proto(
-        mut self,
-        message: &mut dyn protobuf::MessageReflection,
-        frame: &mut ValueCallFrame,
-    ) -> Result<()> {
+    pub fn to_proto(mut self, output_proto: &mut dyn protobuf::reflection::Reflect) -> Result<()> {
         // TODO: Instead just read all the fields as a kwargs DictValue and pass that
         // completely to value_to_proto.
 
-        for field in message.fields().to_vec() {
-            let value = match self.next_keyword_arg(&field.name)? {
-                Some(v) => v,
-                None => continue,
-            };
+        let kwargs = self.remaining_keyword_args()?;
 
-            let r = message.field_by_number_mut(field.number).unwrap();
-            crate::proto::value_to_proto(&*value, r, frame)?;
-        }
+        crate::proto::value_to_proto(&*kwargs, output_proto.reflect_mut(), self.frame)?;
 
         self.finish()
     }

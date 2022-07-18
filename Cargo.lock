@@ -2079,8 +2079,9 @@ name = "skylark"
 version = "0.1.0"
 dependencies = [
  "common",
+ "crypto",
  "parsing",
- "protobuf_core",
+ "protobuf",
 ]
 
 [[package]]
