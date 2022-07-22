@@ -1,15 +1,16 @@
 use alloc::string::String;
 use alloc::vec::Vec;
+use common::hash::SumHasherBuilder;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
 
 use common::errors::*;
 use common::list::Appendable;
 use protobuf_compiler::spec::Syntax;
-use protobuf_core::reflection::RepeatedFieldReflection;
-use protobuf_core::wire::{WireField, WireError, WireFieldIter};
-use protobuf_core::{EnumValue, WireResult, FieldNumber};
 use protobuf_core::codecs::*;
+use protobuf_core::reflection::RepeatedFieldReflection;
+use protobuf_core::wire::{WireError, WireField, WireFieldIter};
+use protobuf_core::{EnumValue, FieldNumber, WireResult};
 use protobuf_descriptor::{FieldDescriptorProto_Label, FieldDescriptorProto_Type};
 
 use crate::descriptor_pool::*;
@@ -18,15 +19,15 @@ use crate::BytesField;
 
 #[derive(Clone)]
 pub struct DynamicMessage {
-    // TODO: Use a non-secure hash for this.
-    fields: HashMap<FieldNumber, DynamicField>,
+    // NOTE: Field numbers are frequently sequential and pretty easy to hash.
+    fields: HashMap<FieldNumber, DynamicField, SumHasherBuilder>,
     desc: MessageDescriptor,
 }
 
 impl DynamicMessage {
     pub fn new(desc: MessageDescriptor) -> Self {
         Self {
-            fields: HashMap::new(),
+            fields: HashMap::with_hasher(SumHasherBuilder::default()),
             desc,
         }
     }
@@ -56,7 +57,11 @@ impl DynamicMessage {
                     let val = DynamicEnum::new(e);
                     DynamicValue::Enum(val)
                 }
-                _ => return Err(WireError::BadDescriptor /* err_msg("Unknown type in descriptor")*/),
+                _ => {
+                    return Err(
+                        WireError::BadDescriptor, /* err_msg("Unknown type in descriptor") */
+                    );
+                }
             },
             TYPE_BYTES => DynamicValue::Bytes(Vec::new().into()),
             TYPE_UINT32 => DynamicValue::UInt32(0),
@@ -76,24 +81,8 @@ impl PartialEq for DynamicMessage {
 }
 
 impl protobuf_core::Message for DynamicMessage {
-    fn type_url(&self) -> &'static str {
-        todo!()
-    }
-
-    fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor
-    where
-        Self: Sized,
-    {
-        // Note possible to do statically.
-        panic!()
-    }
-
-    fn parse(data: &[u8]) -> WireResult<Self>
-    where
-        Self: Sized,
-    {
-        // It's not possible for us to implement this as we don't have a descriptor.
-        panic!()
+    fn type_url(&self) -> &str {
+        self.desc.type_url()
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -103,7 +92,7 @@ impl protobuf_core::Message for DynamicMessage {
             let field_desc = match self.desc.field_by_number(wire_field.field_number) {
                 Some(d) => d,
                 // TODO: Check this behavior.
-                None => continue //return Err(err_msg("Unknown field")),
+                None => continue, //return Err(err_msg("Unknown field")),
             };
 
             let is_repeated =
@@ -137,7 +126,13 @@ impl protobuf_core::Message for DynamicMessage {
         Ok(())
     }
 
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut out = vec![];
+        self.serialize_to(&mut out)?;
+        Ok(out)
+    }
+
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         // TODO: Go in field number order.
         // TODO: Ignore fields with default values in proto3 (by using the sparse
         // serializers).
@@ -154,6 +149,14 @@ impl protobuf_core::Message for DynamicMessage {
         }
 
         Ok(())
+    }
+
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 }
 
@@ -272,7 +275,7 @@ macro_rules! define_primitive_values {
                     $( DynamicValue::$name($v) => Reflection::$reflection_variant($reflection_value) ),*
                 }
             }
-        
+
             fn reflect_mut(&mut self) -> ReflectionMut {
                 match self {
                     DynamicValue::Enum(v) => ReflectionMut::Enum(v),
@@ -285,7 +288,7 @@ macro_rules! define_primitive_values {
         impl DynamicValue {
             fn parse_singular_value(field_desc: &FieldDescriptor, wire_field: &WireField) -> WireResult<DynamicValue> {
                 use FieldDescriptorProto_Type::*;
-        
+
                 Ok(match field_desc.proto().typ() {
                     TYPE_GROUP => {
                         todo!()
@@ -317,7 +320,7 @@ macro_rules! define_primitive_values {
                 })
             }
 
-            fn serialize_singular_value<A: Appendable<Item = u8>>(&self, field_num: FieldNumber, out: &mut A) -> Result<()> {
+            fn serialize_singular_value<A: Appendable<Item = u8> + ?Sized>(&self, field_num: FieldNumber, out: &mut A) -> Result<()> {
                 match self {
                     $(
                     DynamicValue::$name($v) => {
@@ -342,7 +345,7 @@ macro_rules! define_primitive_values {
             Message { values: Vec<DynamicMessage>, default_value: DynamicMessage },
             $( $name { values: Vec<$t>, default_value: $t, } ),*
         }
-        
+
         impl DynamicRepeatedValues {
             fn new(default_value: DynamicValue) -> Self {
                 match default_value {
@@ -381,7 +384,7 @@ macro_rules! define_primitive_values {
                 Ok(())
             }
 
-            fn serialize<A: Appendable<Item = u8>>(&self, field_num: FieldNumber, out: &mut A) -> Result<()> {
+            fn serialize<A: Appendable<Item = u8> + ?Sized>(&self, field_num: FieldNumber, out: &mut A) -> Result<()> {
                 match self {
                     DynamicRepeatedValues::Enum { values, .. } => {
                         EnumCodec::serialize_repeated(field_num, &values, out)?;
@@ -489,7 +492,7 @@ macro_rules! define_primitive_values {
                         }
                     ),*
                 }
-                
+
                 self.reflect_get_mut(self.reflect_len() - 1).unwrap()
             }
         }
@@ -590,9 +593,8 @@ impl protobuf_core::Enum for DynamicEnum {
     }
 }
 
-
 struct AnonymousEnum {
-    value: EnumValue
+    value: EnumValue,
 }
 
 impl protobuf_core::Enum for AnonymousEnum {
@@ -624,5 +626,7 @@ impl protobuf_core::Enum for AnonymousEnum {
         Ok(())
     }
 
-    fn assign_name(&mut self, name: &str) -> WireResult<()> { todo!() }
+    fn assign_name(&mut self, name: &str) -> WireResult<()> {
+        todo!()
+    }
 }

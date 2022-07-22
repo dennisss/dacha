@@ -12,6 +12,7 @@ use common::list::List;
 
 use crate::message::Enum;
 use crate::types::FieldNumber;
+use crate::Message;
 
 pub enum Reflection<'a> {
     F32(&'a f32),
@@ -81,7 +82,7 @@ impl std::ops::Deref for StringPtr {
 }
 
 /// NOTE: Should be implemented by all Messages.
-pub trait MessageReflection {
+pub trait MessageReflection: Message {
     // A non-mutable version would be required for the regular
 
     // Should also have a fields() which iterates over fields?

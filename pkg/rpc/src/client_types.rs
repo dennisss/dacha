@@ -111,7 +111,7 @@ impl ClientStreamingRequest<()> {
         }
     }
 
-    pub fn into<T: protobuf::Message>(self) -> ClientStreamingRequest<T> {
+    pub fn into<T: protobuf::StaticMessage>(self) -> ClientStreamingRequest<T> {
         ClientStreamingRequest {
             sender: self.sender,
             phantom_t: PhantomData,
@@ -150,7 +150,7 @@ impl<T> ClientStreamingRequest<T> {
     }
 }
 
-impl<T: protobuf::Message> ClientStreamingRequest<T> {
+impl<T: protobuf::StaticMessage> ClientStreamingRequest<T> {
     /// Returns whether or not the message was sent. If not, then the connection
     /// was broken and the client should check the finish() method on the
     /// other end.
@@ -238,7 +238,7 @@ impl<Res> ClientStreamingResponse<Res> {
 }
 
 impl ClientStreamingResponse<()> {
-    pub(crate) fn into<Res: protobuf::Message>(self) -> ClientStreamingResponse<Res> {
+    pub(crate) fn into<Res: protobuf::StaticMessage>(self) -> ClientStreamingResponse<Res> {
         ClientStreamingResponse {
             context: self.context,
             state: self.state,
@@ -248,7 +248,7 @@ impl ClientStreamingResponse<()> {
     }
 }
 
-impl<Res: protobuf::Message> ClientStreamingResponse<Res> {
+impl<Res: protobuf::StaticMessage> ClientStreamingResponse<Res> {
     pub async fn recv(&mut self) -> Option<Res> {
         let data = match self.recv_bytes().await {
             Some(data) => data,
@@ -403,7 +403,7 @@ pub struct ClientStreamingCall<Req, Res> {
     response: ClientStreamingResponse<Res>,
 }
 
-impl<Req: protobuf::Message, Res: protobuf::Message> ClientStreamingCall<Req, Res> {
+impl<Req: protobuf::StaticMessage, Res: protobuf::StaticMessage> ClientStreamingCall<Req, Res> {
     pub fn new(
         request: ClientStreamingRequest<Req>,
         response: ClientStreamingResponse<Res>,

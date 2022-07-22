@@ -33,8 +33,13 @@ pub mod any {
     include!(concat!(env!("OUT_DIR"), "/src/proto/any.rs"));
 
     impl Any {
-        pub fn unpack<T: protobuf::Message + Default>(&self) -> Result<Option<T>> {
-            let mut v = T::default();
+        // pub fn unpack_to<M: protobuf_core::Message>(&self, message: &mut M) ->
+        // Result<()> {
+
+        // }
+
+        pub fn unpack<M: protobuf_core::Message + Default>(&self) -> Result<Option<M>> {
+            let mut v = M::default();
             if self.type_url() != v.type_url() {
                 return Ok(None);
             }
@@ -43,7 +48,7 @@ pub mod any {
             Ok(Some(v))
         }
 
-        pub fn pack_from<M: protobuf::Message>(&mut self, message: &M) -> Result<()> {
+        pub fn pack_from<M: protobuf_core::Message>(&mut self, message: &M) -> Result<()> {
             self.set_type_url(message.type_url());
             self.set_value(message.serialize()?);
             Ok(())

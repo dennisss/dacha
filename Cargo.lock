@@ -1019,8 +1019,8 @@ version = "0.1.0"
 dependencies = [
  "common",
  "macros",
- "protobuf",
  "protobuf_compiler",
+ "protobuf_core",
 ]
 
 [[package]]
@@ -1761,6 +1761,7 @@ name = "protobuf"
 version = "0.1.0"
 dependencies = [
  "common",
+ "google",
  "json",
  "macros",
  "parsing",

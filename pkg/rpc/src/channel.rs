@@ -65,7 +65,7 @@ pub trait Channel: 'static + Send + Sync {
 }
 
 impl dyn Channel {
-    pub async fn call_stream_stream<Req: protobuf::Message, Res: protobuf::Message>(
+    pub async fn call_stream_stream<Req: protobuf::StaticMessage, Res: protobuf::StaticMessage>(
         &self,
         service_name: &str,
         method_name: &str,
@@ -77,7 +77,7 @@ impl dyn Channel {
         (req.into(), res.into())
     }
 
-    pub async fn call_unary_stream<Req: protobuf::Message, Res: protobuf::Message>(
+    pub async fn call_unary_stream<Req: protobuf::StaticMessage, Res: protobuf::StaticMessage>(
         &self,
         service_name: &str,
         method_name: &str,
@@ -95,7 +95,7 @@ impl dyn Channel {
         res
     }
 
-    pub async fn call_unary_unary<Req: protobuf::Message, Res: protobuf::Message>(
+    pub async fn call_unary_unary<Req: protobuf::StaticMessage, Res: protobuf::StaticMessage>(
         &self,
         service_name: &str,
         method_name: &str,
@@ -113,7 +113,7 @@ impl dyn Channel {
         }
     }
 
-    async fn call_unary_unary_impl<Res: protobuf::Message>(
+    async fn call_unary_unary_impl<Res: protobuf::StaticMessage>(
         &self,
         response: &mut ClientStreamingResponse<Res>,
     ) -> Result<Res> {
@@ -128,7 +128,7 @@ impl dyn Channel {
             .ok_or_else(|| crate::Status::unimplemented("Unary RPC returned OK without a body"))?)
     }
 
-    pub async fn call_stream_unary<Req: protobuf::Message, Res: protobuf::Message>(
+    pub async fn call_stream_unary<Req: protobuf::StaticMessage, Res: protobuf::StaticMessage>(
         &self,
         service_name: &str,
         method_name: &str,

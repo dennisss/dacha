@@ -21,8 +21,8 @@ pub enum WireError {
 
     BadDescriptor,
 
-    /// While interprating a well formed wire value as an enum, we couldn't find any known enum
-    /// variant with the given integer value.
+    /// While interprating a well formed wire value as an enum, we couldn't find
+    /// any known enum variant with the given integer value.
     UnknownEnumVariant,
 }
 
@@ -34,7 +34,10 @@ impl core::fmt::Display for WireError {
 
 pub type WireResult<T> = core::result::Result<T, WireError>;
 
-pub fn serialize_varint<A: Appendable<Item = u8>>(mut v: u64, out: &mut A) -> Result<(), A::Error> {
+pub fn serialize_varint<A: Appendable<Item = u8> + ?Sized>(
+    mut v: u64,
+    out: &mut A,
+) -> Result<(), A::Error> {
     loop {
         let mut b = (v & 0x7f) as u8;
         v = v >> 7;
@@ -177,7 +180,10 @@ impl Tag {
     }
 
     // TODO: Ensure field_number is within the usize range
-    pub fn serialize<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<(), A::Error> {
+    pub fn serialize<A: Appendable<Item = u8> + ?Sized>(
+        &self,
+        out: &mut A,
+    ) -> Result<(), A::Error> {
         let v = (self.field_number << 3) | (self.wire_type as u32);
         serialize_varint(v as u64, out)
     }
@@ -225,7 +231,10 @@ impl<'a> WireField<'a> {
 
     /// PREFER to use the codecs over using this function
     /// NOTE: Compiled code shouldn't use this.
-    pub fn serialize<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<(), A::Error> {
+    pub fn serialize<A: Appendable<Item = u8> + ?Sized>(
+        &self,
+        out: &mut A,
+    ) -> Result<(), A::Error> {
         let wire_type = match self.value {
             WireValue::Varint(_) => WireType::Varint,
             WireValue::Word64(_) => WireType::Word64,
@@ -396,59 +405,46 @@ impl<'a> WireValue<'a> {
 
     /// Interprets this value as containing zero or more varints.
     ///
-    /// TODO: To support backwards compatibility of making a field repeated, should we also read singular fields this way and drop all but the first value (using an iterator interface)?
-    pub fn repeated_varint(&self) -> impl Iterator<Item=WireResult<u64>> + 'a {
+    /// TODO: To support backwards compatibility of making a field repeated,
+    /// should we also read singular fields this way and drop all but the first
+    /// value (using an iterator interface)?
+    pub fn repeated_varint(&self) -> impl Iterator<Item = WireResult<u64>> + 'a {
         WireValuePackedIterator {
             parser: parse_varint,
             state: match self {
-                Self::Varint(v) => {
-                    WireValuePackedIteratorState::Singular(*v)
-                }
-                Self::LengthDelim(input) => {
-                    WireValuePackedIteratorState::LengthDelim(input)
-                }
-                _ => {
-                    WireValuePackedIteratorState::Error(WireError::UnexpectedWireType)
-                }
-            }
+                Self::Varint(v) => WireValuePackedIteratorState::Singular(*v),
+                Self::LengthDelim(input) => WireValuePackedIteratorState::LengthDelim(input),
+                _ => WireValuePackedIteratorState::Error(WireError::UnexpectedWireType),
+            },
         }
     }
 
-    pub fn repeated_word32(&self) -> impl Iterator<Item=WireResult<&'a [u8; 4]>> {
+    pub fn repeated_word32(&self) -> impl Iterator<Item = WireResult<&'a [u8; 4]>> {
         WireValuePackedIterator {
             parser: parse_word32,
             state: match self {
-                Self::Word32(v) => {
-                    WireValuePackedIteratorState::Singular(*v)
-                }
-                Self::LengthDelim(input) => {
-                    WireValuePackedIteratorState::LengthDelim(input)
-                }
-                _ => {
-                    WireValuePackedIteratorState::Error(WireError::UnexpectedWireType)
-                }
-            }
+                Self::Word32(v) => WireValuePackedIteratorState::Singular(*v),
+                Self::LengthDelim(input) => WireValuePackedIteratorState::LengthDelim(input),
+                _ => WireValuePackedIteratorState::Error(WireError::UnexpectedWireType),
+            },
         }
     }
 
-    pub fn repeated_word64(&self) -> impl Iterator<Item=WireResult<&'a [u8; 8]>> {
+    pub fn repeated_word64(&self) -> impl Iterator<Item = WireResult<&'a [u8; 8]>> {
         WireValuePackedIterator {
             parser: parse_word64,
             state: match self {
-                Self::Word64(v) => {
-                    WireValuePackedIteratorState::Singular(*v)
-                }
-                Self::LengthDelim(input) => {
-                    WireValuePackedIteratorState::LengthDelim(input)
-                }
-                _ => {
-                    WireValuePackedIteratorState::Error(WireError::UnexpectedWireType)
-                }
-            }
+                Self::Word64(v) => WireValuePackedIteratorState::Singular(*v),
+                Self::LengthDelim(input) => WireValuePackedIteratorState::LengthDelim(input),
+                _ => WireValuePackedIteratorState::Error(WireError::UnexpectedWireType),
+            },
         }
     }
 
-    pub fn serialize<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<(), A::Error> {
+    pub fn serialize<A: Appendable<Item = u8> + ?Sized>(
+        &self,
+        out: &mut A,
+    ) -> Result<(), A::Error> {
         match self {
             WireValue::Varint(n) => serialize_varint(*n, out),
             WireValue::Word64(v) => out.extend_from_slice(&v[..]),
@@ -471,17 +467,18 @@ impl<'a> WireValue<'a> {
 
 struct WireValuePackedIterator<'a, T, F> {
     state: WireValuePackedIteratorState<'a, T>,
-    parser: F
+    parser: F,
 }
 
 enum WireValuePackedIteratorState<'a, T> {
     Singular(T),
     LengthDelim(&'a [u8]),
-    Error(WireError)
-} 
+    Error(WireError),
+}
 
 impl<'a, T: Copy, F> Iterator for WireValuePackedIterator<'a, T, F>
-    where F: Fn(&'a [u8]) -> WireResult<(T, &'a [u8])>
+where
+    F: Fn(&'a [u8]) -> WireResult<(T, &'a [u8])>,
 {
     type Item = WireResult<T>;
 
@@ -490,7 +487,7 @@ impl<'a, T: Copy, F> Iterator for WireValuePackedIterator<'a, T, F>
             WireValuePackedIteratorState::Singular(v) => {
                 let out = *v;
                 self.state = WireValuePackedIteratorState::LengthDelim(&[]);
-                Some(Ok(out)) 
+                Some(Ok(out))
             }
             WireValuePackedIteratorState::LengthDelim(ref mut input) => {
                 if input.is_empty() {
@@ -502,18 +499,13 @@ impl<'a, T: Copy, F> Iterator for WireValuePackedIterator<'a, T, F>
                         *input = rest;
                         Some(Ok(v))
                     }
-                    Err(e) => {
-                        Some(Err(e))
-                    }
+                    Err(e) => Some(Err(e)),
                 }
             }
-            WireValuePackedIteratorState::Error(e) => {
-                Some(Err(*e))
-            }
+            WireValuePackedIteratorState::Error(e) => Some(Err(*e)),
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

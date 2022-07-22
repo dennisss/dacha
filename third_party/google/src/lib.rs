@@ -8,7 +8,7 @@ extern crate std;
 extern crate alloc;
 
 extern crate common;
-extern crate protobuf;
+extern crate protobuf_core;
 #[macro_use]
 extern crate macros;
 

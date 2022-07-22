@@ -13,6 +13,7 @@ use parsing::*;
 
 use crate::reflection::{MessageReflection, Reflection, ReflectionMut};
 use crate::tokenizer::{float_lit, int_lit, serialize_str_lit, strLit};
+use crate::Message;
 
 //
 const SYMBOLS: &'static str = "{}[]<>:,.";
@@ -117,7 +118,7 @@ parser!(full_ident<&str, String> => seq!(c => {
 /// Represents the text format of a
 // TextMessage = TextField*
 #[derive(Debug)]
-pub struct TextMessage {
+struct TextMessage {
     fields: Vec<TextField>,
 }
 
@@ -127,7 +128,11 @@ impl TextMessage {
         map(delimited(TextField::parse, opt(is(symbol, ','))), |fields| Self { fields })
     });
 
-    fn apply(&self, message: &mut dyn MessageReflection) -> Result<()> {
+    fn apply(
+        &self,
+        message: &mut dyn MessageReflection,
+        options: &ParseTextProtoOptions,
+    ) -> Result<()> {
         for field in &self.fields {
             match &field.name {
                 TextFieldName::Regular(name) => {
@@ -135,10 +140,21 @@ impl TextMessage {
                         .field_number_by_name(&name)
                         .ok_or_else(|| format_err!("Unknown field: {}", name))?;
                     let reflect = message.field_by_number_mut(field_num).unwrap();
-                    field.value.apply(reflect)?;
+                    field.value.apply(reflect, options)?;
                 }
-                TextFieldName::Extension(_) => {
-                    return Err(err_msg("Extensions not supported"));
+                TextFieldName::Extension(path) => {
+                    if let Some(handler) = options.extension_handler {
+                        handler.parse_text_extension(
+                            path.as_str(),
+                            TextExtension {
+                                value: &field.value,
+                                options,
+                            },
+                            message,
+                        )?;
+                    } else {
+                        return Err(err_msg("Extensions not supported"));
+                    }
                 }
             };
         }
@@ -241,7 +257,7 @@ impl TextValue {
         })
     ));
 
-    fn apply(&self, field: ReflectionMut) -> Result<()> {
+    fn apply(&self, field: ReflectionMut, options: &ParseTextProtoOptions) -> Result<()> {
         match field {
             // TODO: Whether we do down in precision, we should be cautious
             ReflectionMut::F32(v) => {
@@ -304,10 +320,10 @@ impl TextValue {
             ReflectionMut::Repeated(v) => {
                 if let Self::Array(items) = self {
                     for item in items {
-                        item.apply(v.reflect_add())?;
+                        item.apply(v.reflect_add(), options)?;
                     }
                 } else {
-                    self.apply(v.reflect_add())?;
+                    self.apply(v.reflect_add(), options)?;
                 }
             }
             ReflectionMut::Set(v) => {
@@ -316,18 +332,18 @@ impl TextValue {
                 if let Self::Array(items) = self {
                     for item in items {
                         let mut e = v.entry_mut();
-                        item.apply(e.value())?;
+                        item.apply(e.value(), options)?;
                         e.insert();
                     }
                 } else {
                     let mut e = v.entry_mut();
-                    self.apply(e.value())?;
+                    self.apply(e.value(), options)?;
                     e.insert();
                 }
             }
             ReflectionMut::Message(v) => {
                 if let Self::Message(m) = self {
-                    m.apply(v)?;
+                    m.apply(v, options)?;
                 } else {
                     return Err(err_msg("Can't cast to message."));
                 }
@@ -368,6 +384,11 @@ impl TextValue {
     }
 }
 
+#[derive(Default)]
+pub struct ParseTextProtoOptions<'a> {
+    pub extension_handler: Option<&'a dyn TextMessageExtensionHandler>,
+}
+
 /// Parses a text proto string into its raw components
 ///
 /// NOTE: This function shoulnd't be used directly.
@@ -376,7 +397,7 @@ impl TextValue {
 ///
 /// TODO: Long term this should be ideally a streaming interface for more
 /// efficient parsing.
-pub fn parse_text_syntax(text: &str) -> Result<TextMessage> {
+fn parse_text_syntax(text: &str) -> Result<TextMessage> {
     let (v, _) = complete(seq!(c => {
         let v = c.next(TextMessage::parse)?;
         // Can not end with any other meaningful tokens.
@@ -390,15 +411,23 @@ pub fn parse_text_syntax(text: &str) -> Result<TextMessage> {
     Ok(v)
 }
 
-pub fn parse_text_proto(text: &str, message: &mut dyn MessageReflection) -> Result<()> {
+pub fn parse_text_proto_with_options(
+    text: &str,
+    message: &mut dyn MessageReflection,
+    options: &ParseTextProtoOptions,
+) -> Result<()> {
     let v = parse_text_syntax(text)?;
 
-    v.apply(message)?;
+    v.apply(message, options)?;
 
     // TODO: Unless in a partial mode, we must now validate existence of required
     // fields.
 
     Ok(())
+}
+
+pub fn parse_text_proto(text: &str, message: &mut dyn MessageReflection) -> Result<()> {
+    parse_text_proto_with_options(text, message, &ParseTextProtoOptions::default())
 }
 
 pub trait ParseTextProto {
@@ -591,6 +620,30 @@ fn serialize_reflection(refl: Reflection, indent: &str, out: &mut String, sparse
 }
 
 /*
+Given a MessageReflection and a
+*/
+
+pub struct TextExtension<'a> {
+    value: &'a TextValue,
+    options: &'a ParseTextProtoOptions<'a>,
+}
+
+impl<'a> TextExtension<'a> {
+    pub fn parse_to(&self, value: ReflectionMut) -> Result<()> {
+        self.value.apply(value, self.options)
+    }
+}
+
+pub trait TextMessageExtensionHandler {
+    fn parse_text_extension(
+        &self,
+        extension_path: &str,
+        extension: TextExtension,
+        message: &mut dyn MessageReflection,
+    ) -> Result<()>;
+}
+
+/*
 
 name :? {
 
@@ -628,67 +681,3 @@ TODO: According th this example, commas can be used after fields:
 TODO: Text strings must appear on one line.
 
 */
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::proto::test::*;
-
-    // TODO: Add a check to verify that a repeated field containing default values
-    // (e.g. "") serializes correctly.
-
-    #[test]
-    fn parsing_test() {
-        let mut list = ShoppingList::default();
-        parse_text_proto(
-            r#"
-            # This is a comment
-            name: "Groceries"
-            id: 3
-            cost: 12.50
-            items: [
-                # And here is another
-                {
-                    name: "First"
-                    fruit_type: ORANGES
-                },
-                <
-                    name: "Second",
-                    fruit_type: APPLES
-                >
-            ]
-            store: WALMART
-            items {
-                fruit_type: BERRIES
-                name: 'Third'
-            }
-            "#,
-            &mut list,
-        )
-        .unwrap();
-
-        assert_eq!(list.name(), "Groceries");
-        assert_eq!(list.id(), 3);
-        assert_eq!(list.cost(), 12.5);
-        assert_eq!(list.store(), ShoppingList_Store::WALMART);
-
-        assert_eq!(list.items().len(), 3);
-
-        println!("{:?}", list);
-    }
-
-    #[test]
-    fn serialize_test() {
-        let mut list = ShoppingList::default();
-        assert_eq!(serialize_text_proto(&list), "");
-
-        list.set_id(123);
-        assert_eq!(serialize_text_proto(&list), "id: 123\n");
-
-        list.set_name("Hi there!");
-        assert_eq!(
-            serialize_text_proto(&list),
-            "name: \"Hi there!\"\nid: 123\n"
-        );
-    }
-}

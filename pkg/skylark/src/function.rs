@@ -92,6 +92,10 @@ impl<'a, 'b> FunctionCallContext<'a, 'b> {
     pub fn pool(&self) -> &ObjectPool<dyn Value> {
         self.frame.pool()
     }
+
+    pub fn args_iter<'c>(&'c mut self) -> Result<FunctionArgumentIterator<'c, 'b>> {
+        FunctionArgumentIterator::create(&self.args, self.frame)
+    }
 }
 
 pub struct FunctionArgument {

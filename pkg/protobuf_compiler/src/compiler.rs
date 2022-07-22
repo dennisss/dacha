@@ -51,6 +51,7 @@ use crate::spec::*;
 pub struct CompilerOptions {
     pub runtime_package: String,
     pub rpc_package: String,
+    pub should_format: bool,
 }
 
 impl Default for CompilerOptions {
@@ -58,6 +59,7 @@ impl Default for CompilerOptions {
         Self {
             runtime_package: "::protobuf".into(),
             rpc_package: "::rpc".into(),
+            should_format: false,
         }
     }
 }
@@ -1482,11 +1484,19 @@ impl Compiler<'_> {
         lines.nl();
 
         lines.add(format!(
-            "impl {}::Message for {} {{",
-            self.options.runtime_package, fullname
+            r#"
+            impl {runtime_pkg}::StaticMessage for {name} {{
+                #[cfg(feature = "std")]
+                fn file_descriptor() -> &'static {runtime_pkg}::StaticFileDescriptor {{
+                    &FILE_DESCRIPTOR
+                }}
+        
+            }}
+        "#,
+            name = fullname,
+            runtime_pkg = self.options.runtime_package
         ));
 
-        // "type.googleapis.com/"
         let mut type_url_parts = vec![];
         if !self.proto.package.is_empty() {
             type_url_parts.push(self.proto.package.as_str());
@@ -1494,30 +1504,35 @@ impl Compiler<'_> {
         type_url_parts.extend_from_slice(&inner_path);
 
         lines.add(format!(
-            r#"
-            fn type_url(&self) -> &'static str {{
-                "type.googleapis.com/{type_url}"
-            }}
+            r#"impl {pkg}::Message for {name} {{
+                
+                fn type_url(&self) -> &str {{
+                    "{type_url_prefix}{type_url}"
+                }}
+                
+                #[cfg(feature = "alloc")]
+                fn serialize(&self) -> Result<Vec<u8>> {{
+                    let mut data = Vec::new();
+                    self.serialize_to(&mut data)?;
+                    Ok(data)
+                }}
 
-            #[cfg(feature = "std")]
-            fn file_descriptor() -> &'static {runtime_pkg}::StaticFileDescriptor {{
-                &FILE_DESCRIPTOR
-            }}
-        
-        "#,
+                #[cfg(feature = "alloc")]
+                fn merge_from(&mut self, other: &Self) -> Result<()>
+                where
+                    Self: Sized
+            
+                {{
+                    use {pkg}::ReflectMergeFrom;
+                    self.reflect_merge_from(other)
+                }}
+
+                "#,
+            type_url_prefix = protobuf_core::TYPE_URL_PREFIX,
             type_url = type_url_parts.join("."),
-            runtime_pkg = self.options.runtime_package
+            pkg = self.options.runtime_package,
+            name = fullname
         ));
-
-        lines.add(
-            r#"
-            fn parse(data: &[u8]) -> WireResult<Self> {
-                let mut msg = Self::default();
-                msg.parse_merge(data)?;
-                Ok(msg)
-            } 
-        "#,
-        );
 
         lines.add("\tfn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {");
         lines.add("\t\tfor f in WireFieldIter::new(data) {");
@@ -1552,17 +1567,25 @@ impl Compiler<'_> {
             // TODO: Must use repeated variants here.
             let mut p = String::new();
             if self.is_unordered_set(field) {
-                p += &format!("
+                p += &format!(
+                    "
                     for v in {typeclass}Codec::parse_repeated(&f) {{
                         self.{name}.insert(v?);
                     }}
-                ", name = name, typeclass = typeclass);
+                ",
+                    name = name,
+                    typeclass = typeclass
+                );
             } else if is_repeated {
-                p += &format!("
+                p += &format!(
+                    "
                     for v in {typeclass}Codec::parse_repeated(&f) {{
                         self.{name}.push(v?);
                     }}
-                ", name = name, typeclass = typeclass);
+                ",
+                    name = name,
+                    typeclass = typeclass
+                );
             } else {
                 if use_option {
                     if is_message {
@@ -1633,7 +1656,7 @@ impl Compiler<'_> {
         lines.add("\t}");
 
         lines
-            .add("\tfn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {");
+            .add("\tfn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {");
 
         // TODO: Sort the serialization by the field numbers so that we get nice cross
         // version compatible formats.
@@ -1671,7 +1694,6 @@ impl Compiler<'_> {
                 && self.proto.syntax == Syntax::Proto3)
                 && !is_repeated;
 
-
             // TODO: We no longer need the special cases for repeated values here.
             let serialize_method = {
                 // TODO: Should also check that we aren't using a 'required' label?
@@ -1708,15 +1730,24 @@ impl Compiler<'_> {
             if is_repeated {
                 if self.is_unordered_set(field) {
                     // TODO: Support packed serialization of a SetField.
-                    lines.add(format!("
+                    lines.add(format!(
+                        "
                     for v in self.{name}.iter() {{
                         {typeclass}Codec::serialize({field_num}, {ref_str}v, out)?;
                     }}
-                    ", typeclass = typeclass, name = name, field_num = field.num, ref_str = reference_str));
-
+                    ",
+                        typeclass = typeclass,
+                        name = name,
+                        field_num = field.num,
+                        ref_str = reference_str
+                    ));
                 } else {
-                    lines.add(format!("{typeclass}Codec::serialize_repeated({field_num}, &self.{name}, out)?;",
-                    typeclass = typeclass, name = name, field_num = field.num));
+                    lines.add(format!(
+                        "{typeclass}Codec::serialize_repeated({field_num}, &self.{name}, out)?;",
+                        typeclass = typeclass,
+                        name = name,
+                        field_num = field.num
+                    ));
                 }
             } else {
                 // TODO: For proto3, the requirement is that it is not equal to
@@ -1813,13 +1844,15 @@ impl Compiler<'_> {
         // Implementing merge_from
         // extend_from_slice and assignment
 
-        lines.add("}");
+        lines.add("}"); // End of impl Message
         lines.nl();
 
         lines.add(format!(
-            "#[cfg(feature = \"alloc\")]
-             impl {}::MessageReflection for {} {{",
-            self.options.runtime_package, fullname
+            r#"#[cfg(feature = "alloc")]
+             impl {pkg}::MessageReflection for {name} {{
+                 "#,
+            pkg = self.options.runtime_package,
+            name = fullname,
         ));
 
         lines.indented(|lines| {

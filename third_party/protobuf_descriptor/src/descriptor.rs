@@ -19,7 +19,7 @@ use protobuf_core::wire::*;
 use protobuf_core::*;
 
 pub static FILE_DESCRIPTOR: protobuf_core::StaticFileDescriptor = protobuf_core::StaticFileDescriptor {
-                proto: b"\x0a4third\x5fparty\x2fprotobuf\x5fdescriptor\x2fsrc\x2fdescriptor\x2eproto\x12\x0fgoogle\x2eprotobufR\x00Z\x00\x226\x0a\x11FileDescriptorSet\x12\x21\x0a\x04file\x18\x01\x20\x03\x28\x0b2\x13FileDescriptorProto\x22\xf5\x02\x0a\x13FileDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x0f\x0a\x07package\x18\x02\x20\x01\x28\x09\x12\x12\x0a\x0adependency\x18\x03\x20\x03\x28\x09\x12\x19\x0a\x11public\x5fdependency\x18\x0a\x20\x03\x28\x05\x12\x17\x0a\x0fweak\x5fdependency\x18\x0b\x20\x03\x28\x05\x12\x25\x0a\x0cmessage\x5ftype\x18\x04\x20\x03\x28\x0b2\x0fDescriptorProto\x12\x26\x0a\x09enum\x5ftype\x18\x05\x20\x03\x28\x0b2\x13EnumDescriptorProto\x12\x27\x0a\x07service\x18\x06\x20\x03\x28\x0b2\x16ServiceDescriptorProto\x12\x27\x0a\x09extension\x18\x07\x20\x03\x28\x0b2\x14FieldDescriptorProto\x12\x1c\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0bFileOptions\x12\x28\x0a\x10source\x5fcode\x5finfo\x18\x09\x20\x01\x28\x0b2\x0eSourceCodeInfo\x12\x0e\x0a\x06syntax\x18\x0c\x20\x01\x28\x09\x22\xf0\x03\x0a\x0fDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x23\x0a\x05field\x18\x02\x20\x03\x28\x0b2\x14FieldDescriptorProto\x12\x27\x0a\x09extension\x18\x06\x20\x03\x28\x0b2\x14FieldDescriptorProto\x12\x24\x0a\x0bnested\x5ftype\x18\x03\x20\x03\x28\x0b2\x0fDescriptorProto\x12\x26\x0a\x09enum\x5ftype\x18\x04\x20\x03\x28\x0b2\x13EnumDescriptorProto\x12\x27\x0a\x0fextension\x5frange\x18\x05\x20\x03\x28\x0b2\x0eExtensionRange\x12\x28\x0a\x0aoneof\x5fdecl\x18\x08\x20\x03\x28\x0b2\x14OneofDescriptorProto\x12\x1f\x0a\x07options\x18\x07\x20\x01\x28\x0b2\x0eMessageOptions\x12\x25\x0a\x0ereserved\x5frange\x18\x09\x20\x03\x28\x0b2\x0dReservedRange\x12\x15\x0a\x0dreserved\x5fname\x18\x0a\x20\x03\x28\x09\x1aT\x0a\x0eExtensionRange\x12\x0d\x0a\x05start\x18\x01\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x02\x20\x01\x28\x05\x12\x26\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x15ExtensionRangeOptions\x1a\x2b\x0a\x0dReservedRange\x12\x0d\x0a\x05start\x18\x01\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x02\x20\x01\x28\x05\x22\x5b\x0a\x15ExtensionRangeOptions\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xdf\x04\x0a\x14FieldDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x0e\x0a\x06number\x18\x03\x20\x01\x28\x05\x12\x14\x0a\x05label\x18\x04\x20\x01\x28\x0b2\x05Label\x12\x12\x0a\x04type\x18\x05\x20\x01\x28\x0b2\x04Type\x12\x11\x0a\x09type\x5fname\x18\x06\x20\x01\x28\x09\x12\x10\x0a\x08extendee\x18\x02\x20\x01\x28\x09\x12\x15\x0a\x0ddefault\x5fvalue\x18\x07\x20\x01\x28\x09\x12\x13\x0a\x0boneof\x5findex\x18\x09\x20\x01\x28\x05\x12\x11\x0a\x09json\x5fname\x18\x0a\x20\x01\x28\x09\x12\x1d\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0cFieldOptions\x22\xb6\x02\x0a\x04Type\x12\x0f\x0a\x0bTYPE\x5fDOUBLE\x10\x01\x12\x0e\x0a\x0aTYPE\x5fFLOAT\x10\x02\x12\x0e\x0a\x0aTYPE\x5fINT64\x10\x03\x12\x0f\x0a\x0bTYPE\x5fUINT64\x10\x04\x12\x0e\x0a\x0aTYPE\x5fINT32\x10\x05\x12\x10\x0a\x0cTYPE\x5fFIXED64\x10\x06\x12\x10\x0a\x0cTYPE\x5fFIXED32\x10\x07\x12\x0d\x0a\x09TYPE\x5fBOOL\x10\x08\x12\x0f\x0a\x0bTYPE\x5fSTRING\x10\x09\x12\x0e\x0a\x0aTYPE\x5fGROUP\x10\x0a\x12\x10\x0a\x0cTYPE\x5fMESSAGE\x10\x0b\x12\x0e\x0a\x0aTYPE\x5fBYTES\x10\x0c\x12\x0f\x0a\x0bTYPE\x5fUINT32\x10\x0d\x12\x0d\x0a\x09TYPE\x5fENUM\x10\x0e\x12\x11\x0a\x0dTYPE\x5fSFIXED32\x10\x0f\x12\x11\x0a\x0dTYPE\x5fSFIXED64\x10\x10\x12\x0f\x0a\x0bTYPE\x5fSINT32\x10\x11\x12\x0f\x0a\x0bTYPE\x5fSINT64\x10\x12\x22C\x0a\x05Label\x12\x12\x0a\x0eLABEL\x5fOPTIONAL\x10\x01\x12\x12\x0a\x0eLABEL\x5fREQUIRED\x10\x02\x12\x12\x0a\x0eLABEL\x5fREPEATED\x10\x03\x22C\x0a\x14OneofDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x1d\x0a\x07options\x18\x02\x20\x01\x28\x0b2\x0cOneofOptions\x22\xdd\x01\x0a\x13EnumDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x27\x0a\x05value\x18\x02\x20\x03\x28\x0b2\x18EnumValueDescriptorProto\x12\x1c\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0bEnumOptions\x12\x29\x0a\x0ereserved\x5frange\x18\x04\x20\x03\x28\x0b2\x11EnumReservedRange\x12\x15\x0a\x0dreserved\x5fname\x18\x05\x20\x03\x28\x09\x1a\x2f\x0a\x11EnumReservedRange\x12\x0d\x0a\x05start\x18\x01\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x02\x20\x01\x28\x05\x22\x5b\x0a\x18EnumValueDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x0e\x0a\x06number\x18\x02\x20\x01\x28\x05\x12\x21\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x10EnumValueOptions\x22n\x0a\x16ServiceDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x25\x0a\x06method\x18\x02\x20\x03\x28\x0b2\x15MethodDescriptorProto\x12\x1f\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0eServiceOptions\x22\xa2\x01\x0a\x15MethodDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x12\x0a\x0ainput\x5ftype\x18\x02\x20\x01\x28\x09\x12\x13\x0a\x0boutput\x5ftype\x18\x03\x20\x01\x28\x09\x12\x1e\x0a\x07options\x18\x04\x20\x01\x28\x0b2\x0dMethodOptions\x12\x18\x0a\x10client\x5fstreaming\x18\x05\x20\x01\x28\x08\x12\x18\x0a\x10server\x5fstreaming\x18\x06\x20\x01\x28\x08\x22\xb4\x05\x0a\x0bFileOptions\x12\x14\x0a\x0cjava\x5fpackage\x18\x01\x20\x01\x28\x09\x12\x1c\x0a\x14java\x5fouter\x5fclassname\x18\x08\x20\x01\x28\x09\x12\x1b\x0a\x13java\x5fmultiple\x5ffiles\x18\x0a\x20\x01\x28\x08\x12\x25\x0a\x1djava\x5fgenerate\x5fequals\x5fand\x5fhash\x18\x14\x20\x01\x28\x08\x12\x1e\x0a\x16java\x5fstring\x5fcheck\x5futf8\x18\x1b\x20\x01\x28\x08\x12\x22\x0a\x0coptimize\x5ffor\x18\x09\x20\x01\x28\x0b2\x0cOptimizeMode\x12\x12\x0a\x0ago\x5fpackage\x18\x0b\x20\x01\x28\x09\x12\x1b\x0a\x13cc\x5fgeneric\x5fservices\x18\x10\x20\x01\x28\x08\x12\x1d\x0a\x15java\x5fgeneric\x5fservices\x18\x11\x20\x01\x28\x08\x12\x1b\x0a\x13py\x5fgeneric\x5fservices\x18\x12\x20\x01\x28\x08\x12\x1c\x0a\x14php\x5fgeneric\x5fservices\x18\x2a\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x17\x20\x01\x28\x08\x12\x18\x0a\x10cc\x5fenable\x5farenas\x18\x1f\x20\x01\x28\x08\x12\x19\x0a\x11objc\x5fclass\x5fprefix\x18\x24\x20\x01\x28\x09\x12\x18\x0a\x10csharp\x5fnamespace\x18\x25\x20\x01\x28\x09\x12\x14\x0a\x0cswift\x5fprefix\x18\x27\x20\x01\x28\x09\x12\x18\x0a\x10php\x5fclass\x5fprefix\x18\x28\x20\x01\x28\x09\x12\x15\x0a\x0dphp\x5fnamespace\x18\x29\x20\x01\x28\x09\x12\x1e\x0a\x16php\x5fmetadata\x5fnamespace\x18\x2c\x20\x01\x28\x09\x12\x14\x0a\x0cruby\x5fpackage\x18\x2d\x20\x01\x28\x09\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x22\x3a\x0a\x0cOptimizeMode\x12\x09\x0a\x05SPEED\x10\x01\x12\x0d\x0a\x09CODE\x5fSIZE\x10\x02\x12\x10\x0a\x0cLITE\x5fRUNTIME\x10\x03\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xc5\x01\x0a\x0eMessageOptions\x12\x1f\x0a\x17message\x5fset\x5fwire\x5fformat\x18\x01\x20\x01\x28\x08\x12\x27\x0a\x1fno\x5fstandard\x5fdescriptor\x5faccessor\x18\x02\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x12\x11\x0a\x09map\x5fentry\x18\x07\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xa8\x02\x0a\x0cFieldOptions\x12\x14\x0a\x05ctype\x18\x01\x20\x01\x28\x0b2\x05CType\x12\x0e\x0a\x06packed\x18\x02\x20\x01\x28\x08\x12\x16\x0a\x06jstype\x18\x06\x20\x01\x28\x0b2\x06JSType\x12\x0c\x0a\x04lazy\x18\x05\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x12\x0c\x0a\x04weak\x18\x0a\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x22\x2f\x0a\x05CType\x12\x0a\x0a\x06STRING\x10\x00\x12\x08\x0a\x04CORD\x10\x01\x12\x10\x0a\x0cSTRING\x5fPIECE\x10\x02\x225\x0a\x06JSType\x12\x0d\x0a\x09JS\x5fNORMAL\x10\x00\x12\x0d\x0a\x09JS\x5fSTRING\x10\x01\x12\x0d\x0a\x09JS\x5fNUMBER\x10\x02\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22R\x0a\x0cOneofOptions\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22z\x0a\x0bEnumOptions\x12\x13\x0a\x0ballow\x5falias\x18\x02\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22j\x0a\x10EnumValueOptions\x12\x12\x0a\x0adeprecated\x18\x01\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22h\x0a\x0eServiceOptions\x12\x12\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xe6\x01\x0a\x0dMethodOptions\x12\x12\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x12\x2b\x0a\x11idempotency\x5flevel\x18\x22\x20\x01\x28\x0b2\x10IdempotencyLevel\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x22P\x0a\x10IdempotencyLevel\x12\x17\x0a\x13IDEMPOTENCY\x5fUNKNOWN\x10\x00\x12\x13\x0a\x0fNO\x5fSIDE\x5fEFFECTS\x10\x01\x12\x0e\x0a\x0aIDEMPOTENT\x10\x02\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xf9\x01\x0a\x13UninterpretedOption\x12\x16\x0a\x04name\x18\x02\x20\x03\x28\x0b2\x08NamePart\x12\x18\x0a\x10identifier\x5fvalue\x18\x03\x20\x01\x28\x09\x12\x1a\x0a\x12positive\x5fint\x5fvalue\x18\x04\x20\x01\x28\x04\x12\x1a\x0a\x12negative\x5fint\x5fvalue\x18\x05\x20\x01\x28\x03\x12\x14\x0a\x0cdouble\x5fvalue\x18\x06\x20\x01\x28\x01\x12\x14\x0a\x0cstring\x5fvalue\x18\x07\x20\x01\x28\x0c\x12\x17\x0a\x0faggregate\x5fvalue\x18\x08\x20\x01\x28\x09\x1a3\x0a\x08NamePart\x12\x11\x0a\x09name\x5fpart\x18\x01\x20\x02\x28\x09\x12\x14\x0a\x0cis\x5fextension\x18\x02\x20\x02\x28\x08\x22\xac\x01\x0a\x0eSourceCodeInfo\x12\x1a\x0a\x08location\x18\x01\x20\x03\x28\x0b2\x08Location\x1a\x7e\x0a\x08Location\x12\x0c\x0a\x04path\x18\x01\x20\x03\x28\x05\x12\x0c\x0a\x04span\x18\x02\x20\x03\x28\x05\x12\x18\x0a\x10leading\x5fcomments\x18\x03\x20\x01\x28\x09\x12\x19\x0a\x11trailing\x5fcomments\x18\x04\x20\x01\x28\x09\x12\x21\x0a\x19leading\x5fdetached\x5fcomments\x18\x06\x20\x03\x28\x09\x22\x80\x01\x0a\x11GeneratedCodeInfo\x12\x1e\x0a\x0aannotation\x18\x01\x20\x03\x28\x0b2\x0aAnnotation\x1aK\x0a\x0aAnnotation\x12\x0c\x0a\x04path\x18\x01\x20\x03\x28\x05\x12\x13\x0a\x0bsource\x5ffile\x18\x02\x20\x01\x28\x09\x12\x0d\x0a\x05begin\x18\x03\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x04\x20\x01\x28\x05b\x06proto2",
+                proto: b"\x0a4third\x5fparty\x2fprotobuf\x5fdescriptor\x2fsrc\x2fdescriptor\x2eproto\x12\x0fgoogle\x2eprotobuf\x226\x0a\x11FileDescriptorSet\x12\x21\x0a\x04file\x18\x01\x20\x03\x28\x0b2\x13FileDescriptorProto\x22\xf5\x02\x0a\x13FileDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x0f\x0a\x07package\x18\x02\x20\x01\x28\x09\x12\x12\x0a\x0adependency\x18\x03\x20\x03\x28\x09\x12\x19\x0a\x11public\x5fdependency\x18\x0a\x20\x03\x28\x05\x12\x17\x0a\x0fweak\x5fdependency\x18\x0b\x20\x03\x28\x05\x12\x25\x0a\x0cmessage\x5ftype\x18\x04\x20\x03\x28\x0b2\x0fDescriptorProto\x12\x26\x0a\x09enum\x5ftype\x18\x05\x20\x03\x28\x0b2\x13EnumDescriptorProto\x12\x27\x0a\x07service\x18\x06\x20\x03\x28\x0b2\x16ServiceDescriptorProto\x12\x27\x0a\x09extension\x18\x07\x20\x03\x28\x0b2\x14FieldDescriptorProto\x12\x1c\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0bFileOptions\x12\x28\x0a\x10source\x5fcode\x5finfo\x18\x09\x20\x01\x28\x0b2\x0eSourceCodeInfo\x12\x0e\x0a\x06syntax\x18\x0c\x20\x01\x28\x09\x22\xf0\x03\x0a\x0fDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x23\x0a\x05field\x18\x02\x20\x03\x28\x0b2\x14FieldDescriptorProto\x12\x27\x0a\x09extension\x18\x06\x20\x03\x28\x0b2\x14FieldDescriptorProto\x12\x24\x0a\x0bnested\x5ftype\x18\x03\x20\x03\x28\x0b2\x0fDescriptorProto\x12\x26\x0a\x09enum\x5ftype\x18\x04\x20\x03\x28\x0b2\x13EnumDescriptorProto\x12\x27\x0a\x0fextension\x5frange\x18\x05\x20\x03\x28\x0b2\x0eExtensionRange\x12\x28\x0a\x0aoneof\x5fdecl\x18\x08\x20\x03\x28\x0b2\x14OneofDescriptorProto\x12\x1f\x0a\x07options\x18\x07\x20\x01\x28\x0b2\x0eMessageOptions\x12\x25\x0a\x0ereserved\x5frange\x18\x09\x20\x03\x28\x0b2\x0dReservedRange\x12\x15\x0a\x0dreserved\x5fname\x18\x0a\x20\x03\x28\x09\x1aT\x0a\x0eExtensionRange\x12\x0d\x0a\x05start\x18\x01\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x02\x20\x01\x28\x05\x12\x26\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x15ExtensionRangeOptions\x1a\x2b\x0a\x0dReservedRange\x12\x0d\x0a\x05start\x18\x01\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x02\x20\x01\x28\x05\x22\x5b\x0a\x15ExtensionRangeOptions\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xdf\x04\x0a\x14FieldDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x0e\x0a\x06number\x18\x03\x20\x01\x28\x05\x12\x14\x0a\x05label\x18\x04\x20\x01\x28\x0b2\x05Label\x12\x12\x0a\x04type\x18\x05\x20\x01\x28\x0b2\x04Type\x12\x11\x0a\x09type\x5fname\x18\x06\x20\x01\x28\x09\x12\x10\x0a\x08extendee\x18\x02\x20\x01\x28\x09\x12\x15\x0a\x0ddefault\x5fvalue\x18\x07\x20\x01\x28\x09\x12\x13\x0a\x0boneof\x5findex\x18\x09\x20\x01\x28\x05\x12\x11\x0a\x09json\x5fname\x18\x0a\x20\x01\x28\x09\x12\x1d\x0a\x07options\x18\x08\x20\x01\x28\x0b2\x0cFieldOptions\x22\xb6\x02\x0a\x04Type\x12\x0f\x0a\x0bTYPE\x5fDOUBLE\x10\x01\x12\x0e\x0a\x0aTYPE\x5fFLOAT\x10\x02\x12\x0e\x0a\x0aTYPE\x5fINT64\x10\x03\x12\x0f\x0a\x0bTYPE\x5fUINT64\x10\x04\x12\x0e\x0a\x0aTYPE\x5fINT32\x10\x05\x12\x10\x0a\x0cTYPE\x5fFIXED64\x10\x06\x12\x10\x0a\x0cTYPE\x5fFIXED32\x10\x07\x12\x0d\x0a\x09TYPE\x5fBOOL\x10\x08\x12\x0f\x0a\x0bTYPE\x5fSTRING\x10\x09\x12\x0e\x0a\x0aTYPE\x5fGROUP\x10\x0a\x12\x10\x0a\x0cTYPE\x5fMESSAGE\x10\x0b\x12\x0e\x0a\x0aTYPE\x5fBYTES\x10\x0c\x12\x0f\x0a\x0bTYPE\x5fUINT32\x10\x0d\x12\x0d\x0a\x09TYPE\x5fENUM\x10\x0e\x12\x11\x0a\x0dTYPE\x5fSFIXED32\x10\x0f\x12\x11\x0a\x0dTYPE\x5fSFIXED64\x10\x10\x12\x0f\x0a\x0bTYPE\x5fSINT32\x10\x11\x12\x0f\x0a\x0bTYPE\x5fSINT64\x10\x12\x22C\x0a\x05Label\x12\x12\x0a\x0eLABEL\x5fOPTIONAL\x10\x01\x12\x12\x0a\x0eLABEL\x5fREQUIRED\x10\x02\x12\x12\x0a\x0eLABEL\x5fREPEATED\x10\x03\x22C\x0a\x14OneofDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x1d\x0a\x07options\x18\x02\x20\x01\x28\x0b2\x0cOneofOptions\x22\xdd\x01\x0a\x13EnumDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x27\x0a\x05value\x18\x02\x20\x03\x28\x0b2\x18EnumValueDescriptorProto\x12\x1c\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0bEnumOptions\x12\x29\x0a\x0ereserved\x5frange\x18\x04\x20\x03\x28\x0b2\x11EnumReservedRange\x12\x15\x0a\x0dreserved\x5fname\x18\x05\x20\x03\x28\x09\x1a\x2f\x0a\x11EnumReservedRange\x12\x0d\x0a\x05start\x18\x01\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x02\x20\x01\x28\x05\x22\x5b\x0a\x18EnumValueDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x0e\x0a\x06number\x18\x02\x20\x01\x28\x05\x12\x21\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x10EnumValueOptions\x22n\x0a\x16ServiceDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x25\x0a\x06method\x18\x02\x20\x03\x28\x0b2\x15MethodDescriptorProto\x12\x1f\x0a\x07options\x18\x03\x20\x01\x28\x0b2\x0eServiceOptions\x22\xa2\x01\x0a\x15MethodDescriptorProto\x12\x0c\x0a\x04name\x18\x01\x20\x01\x28\x09\x12\x12\x0a\x0ainput\x5ftype\x18\x02\x20\x01\x28\x09\x12\x13\x0a\x0boutput\x5ftype\x18\x03\x20\x01\x28\x09\x12\x1e\x0a\x07options\x18\x04\x20\x01\x28\x0b2\x0dMethodOptions\x12\x18\x0a\x10client\x5fstreaming\x18\x05\x20\x01\x28\x08\x12\x18\x0a\x10server\x5fstreaming\x18\x06\x20\x01\x28\x08\x22\xb4\x05\x0a\x0bFileOptions\x12\x14\x0a\x0cjava\x5fpackage\x18\x01\x20\x01\x28\x09\x12\x1c\x0a\x14java\x5fouter\x5fclassname\x18\x08\x20\x01\x28\x09\x12\x1b\x0a\x13java\x5fmultiple\x5ffiles\x18\x0a\x20\x01\x28\x08\x12\x25\x0a\x1djava\x5fgenerate\x5fequals\x5fand\x5fhash\x18\x14\x20\x01\x28\x08\x12\x1e\x0a\x16java\x5fstring\x5fcheck\x5futf8\x18\x1b\x20\x01\x28\x08\x12\x22\x0a\x0coptimize\x5ffor\x18\x09\x20\x01\x28\x0b2\x0cOptimizeMode\x12\x12\x0a\x0ago\x5fpackage\x18\x0b\x20\x01\x28\x09\x12\x1b\x0a\x13cc\x5fgeneric\x5fservices\x18\x10\x20\x01\x28\x08\x12\x1d\x0a\x15java\x5fgeneric\x5fservices\x18\x11\x20\x01\x28\x08\x12\x1b\x0a\x13py\x5fgeneric\x5fservices\x18\x12\x20\x01\x28\x08\x12\x1c\x0a\x14php\x5fgeneric\x5fservices\x18\x2a\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x17\x20\x01\x28\x08\x12\x18\x0a\x10cc\x5fenable\x5farenas\x18\x1f\x20\x01\x28\x08\x12\x19\x0a\x11objc\x5fclass\x5fprefix\x18\x24\x20\x01\x28\x09\x12\x18\x0a\x10csharp\x5fnamespace\x18\x25\x20\x01\x28\x09\x12\x14\x0a\x0cswift\x5fprefix\x18\x27\x20\x01\x28\x09\x12\x18\x0a\x10php\x5fclass\x5fprefix\x18\x28\x20\x01\x28\x09\x12\x15\x0a\x0dphp\x5fnamespace\x18\x29\x20\x01\x28\x09\x12\x1e\x0a\x16php\x5fmetadata\x5fnamespace\x18\x2c\x20\x01\x28\x09\x12\x14\x0a\x0cruby\x5fpackage\x18\x2d\x20\x01\x28\x09\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x22\x3a\x0a\x0cOptimizeMode\x12\x09\x0a\x05SPEED\x10\x01\x12\x0d\x0a\x09CODE\x5fSIZE\x10\x02\x12\x10\x0a\x0cLITE\x5fRUNTIME\x10\x03\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xc5\x01\x0a\x0eMessageOptions\x12\x1f\x0a\x17message\x5fset\x5fwire\x5fformat\x18\x01\x20\x01\x28\x08\x12\x27\x0a\x1fno\x5fstandard\x5fdescriptor\x5faccessor\x18\x02\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x12\x11\x0a\x09map\x5fentry\x18\x07\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xa8\x02\x0a\x0cFieldOptions\x12\x14\x0a\x05ctype\x18\x01\x20\x01\x28\x0b2\x05CType\x12\x0e\x0a\x06packed\x18\x02\x20\x01\x28\x08\x12\x16\x0a\x06jstype\x18\x06\x20\x01\x28\x0b2\x06JSType\x12\x0c\x0a\x04lazy\x18\x05\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x12\x0c\x0a\x04weak\x18\x0a\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x22\x2f\x0a\x05CType\x12\x0a\x0a\x06STRING\x10\x00\x12\x08\x0a\x04CORD\x10\x01\x12\x10\x0a\x0cSTRING\x5fPIECE\x10\x02\x225\x0a\x06JSType\x12\x0d\x0a\x09JS\x5fNORMAL\x10\x00\x12\x0d\x0a\x09JS\x5fSTRING\x10\x01\x12\x0d\x0a\x09JS\x5fNUMBER\x10\x02\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22R\x0a\x0cOneofOptions\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22z\x0a\x0bEnumOptions\x12\x13\x0a\x0ballow\x5falias\x18\x02\x20\x01\x28\x08\x12\x12\x0a\x0adeprecated\x18\x03\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22j\x0a\x10EnumValueOptions\x12\x12\x0a\x0adeprecated\x18\x01\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22h\x0a\x0eServiceOptions\x12\x12\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xe6\x01\x0a\x0dMethodOptions\x12\x12\x0a\x0adeprecated\x18\x21\x20\x01\x28\x08\x12\x2b\x0a\x11idempotency\x5flevel\x18\x22\x20\x01\x28\x0b2\x10IdempotencyLevel\x122\x0a\x14uninterpreted\x5foption\x18\xe7\x07\x20\x03\x28\x0b2\x13UninterpretedOption\x22P\x0a\x10IdempotencyLevel\x12\x17\x0a\x13IDEMPOTENCY\x5fUNKNOWN\x10\x00\x12\x13\x0a\x0fNO\x5fSIDE\x5fEFFECTS\x10\x01\x12\x0e\x0a\x0aIDEMPOTENT\x10\x02\x2a\x0e\x08\xe8\x07\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x22\xf9\x01\x0a\x13UninterpretedOption\x12\x16\x0a\x04name\x18\x02\x20\x03\x28\x0b2\x08NamePart\x12\x18\x0a\x10identifier\x5fvalue\x18\x03\x20\x01\x28\x09\x12\x1a\x0a\x12positive\x5fint\x5fvalue\x18\x04\x20\x01\x28\x04\x12\x1a\x0a\x12negative\x5fint\x5fvalue\x18\x05\x20\x01\x28\x03\x12\x14\x0a\x0cdouble\x5fvalue\x18\x06\x20\x01\x28\x01\x12\x14\x0a\x0cstring\x5fvalue\x18\x07\x20\x01\x28\x0c\x12\x17\x0a\x0faggregate\x5fvalue\x18\x08\x20\x01\x28\x09\x1a3\x0a\x08NamePart\x12\x11\x0a\x09name\x5fpart\x18\x01\x20\x02\x28\x09\x12\x14\x0a\x0cis\x5fextension\x18\x02\x20\x02\x28\x08\x22\xac\x01\x0a\x0eSourceCodeInfo\x12\x1a\x0a\x08location\x18\x01\x20\x03\x28\x0b2\x08Location\x1a\x7e\x0a\x08Location\x12\x0c\x0a\x04path\x18\x01\x20\x03\x28\x05\x12\x0c\x0a\x04span\x18\x02\x20\x03\x28\x05\x12\x18\x0a\x10leading\x5fcomments\x18\x03\x20\x01\x28\x09\x12\x19\x0a\x11trailing\x5fcomments\x18\x04\x20\x01\x28\x09\x12\x21\x0a\x19leading\x5fdetached\x5fcomments\x18\x06\x20\x03\x28\x09\x22\x80\x01\x0a\x11GeneratedCodeInfo\x12\x1e\x0a\x0aannotation\x18\x01\x20\x03\x28\x0b2\x0aAnnotation\x1aK\x0a\x0aAnnotation\x12\x0c\x0a\x04path\x18\x01\x20\x03\x28\x05\x12\x13\x0a\x0bsource\x5ffile\x18\x02\x20\x01\x28\x09\x12\x0d\x0a\x05begin\x18\x03\x20\x01\x28\x05\x12\x0b\x0a\x03end\x18\x04\x20\x01\x28\x05b\x06proto2",
                 dependencies: &[]
             };
 #[derive(Clone, Default, PartialEq, ConstDefault)]
@@ -62,20 +62,32 @@ impl FileDescriptorSet {
     }
 }
 
-impl protobuf_core::Message for FileDescriptorSet {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.FileDescriptorSet"
-    }
-
+impl protobuf_core::StaticMessage for FileDescriptorSet {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for FileDescriptorSet {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.FileDescriptorSet"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -92,7 +104,7 @@ impl protobuf_core::Message for FileDescriptorSet {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         MessageCodec::serialize_repeated(1, &self.file, out)?;
         Ok(())
     }
@@ -403,20 +415,32 @@ impl FileDescriptorProto {
     }
 }
 
-impl protobuf_core::Message for FileDescriptorProto {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.FileDescriptorProto"
-    }
-
+impl protobuf_core::StaticMessage for FileDescriptorProto {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for FileDescriptorProto {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.FileDescriptorProto"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -468,7 +492,7 @@ impl protobuf_core::Message for FileDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -689,20 +713,32 @@ impl DescriptorProto_ExtensionRange {
     }
 }
 
-impl protobuf_core::Message for DescriptorProto_ExtensionRange {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.DescriptorProto.ExtensionRange"
-    }
-
+impl protobuf_core::StaticMessage for DescriptorProto_ExtensionRange {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for DescriptorProto_ExtensionRange {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.DescriptorProto.ExtensionRange"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -717,7 +753,7 @@ impl protobuf_core::Message for DescriptorProto_ExtensionRange {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.start.as_ref() {
             Int32Codec::serialize(1, *v, out)?;
         }
@@ -837,20 +873,32 @@ impl DescriptorProto_ReservedRange {
     }
 }
 
-impl protobuf_core::Message for DescriptorProto_ReservedRange {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.DescriptorProto.ReservedRange"
-    }
-
+impl protobuf_core::StaticMessage for DescriptorProto_ReservedRange {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for DescriptorProto_ReservedRange {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.DescriptorProto.ReservedRange"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -864,7 +912,7 @@ impl protobuf_core::Message for DescriptorProto_ReservedRange {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.start.as_ref() {
             Int32Codec::serialize(1, *v, out)?;
         }
@@ -1153,20 +1201,32 @@ impl DescriptorProto {
     }
 }
 
-impl protobuf_core::Message for DescriptorProto {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.DescriptorProto"
-    }
-
+impl protobuf_core::StaticMessage for DescriptorProto {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for DescriptorProto {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.DescriptorProto"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -1220,7 +1280,7 @@ impl protobuf_core::Message for DescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -1378,20 +1438,32 @@ impl ExtensionRangeOptions {
     }
 }
 
-impl protobuf_core::Message for ExtensionRangeOptions {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.ExtensionRangeOptions"
-    }
-
+impl protobuf_core::StaticMessage for ExtensionRangeOptions {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for ExtensionRangeOptions {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.ExtensionRangeOptions"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -1408,7 +1480,7 @@ impl protobuf_core::Message for ExtensionRangeOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
         Ok(())
     }
@@ -1867,20 +1939,32 @@ impl FieldDescriptorProto {
     }
 }
 
-impl protobuf_core::Message for FieldDescriptorProto {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.FieldDescriptorProto"
-    }
-
+impl protobuf_core::StaticMessage for FieldDescriptorProto {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for FieldDescriptorProto {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.FieldDescriptorProto"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -1902,7 +1986,7 @@ impl protobuf_core::Message for FieldDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -2098,20 +2182,32 @@ impl OneofDescriptorProto {
     }
 }
 
-impl protobuf_core::Message for OneofDescriptorProto {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.OneofDescriptorProto"
-    }
-
+impl protobuf_core::StaticMessage for OneofDescriptorProto {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for OneofDescriptorProto {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.OneofDescriptorProto"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -2125,7 +2221,7 @@ impl protobuf_core::Message for OneofDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -2237,20 +2333,32 @@ impl EnumDescriptorProto_EnumReservedRange {
     }
 }
 
-impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.EnumDescriptorProto.EnumReservedRange"
-    }
-
+impl protobuf_core::StaticMessage for EnumDescriptorProto_EnumReservedRange {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.EnumDescriptorProto.EnumReservedRange"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -2264,7 +2372,7 @@ impl protobuf_core::Message for EnumDescriptorProto_EnumReservedRange {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.start.as_ref() {
             Int32Codec::serialize(1, *v, out)?;
         }
@@ -2445,20 +2553,32 @@ impl EnumDescriptorProto {
     }
 }
 
-impl protobuf_core::Message for EnumDescriptorProto {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.EnumDescriptorProto"
-    }
-
+impl protobuf_core::StaticMessage for EnumDescriptorProto {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for EnumDescriptorProto {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.EnumDescriptorProto"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -2487,7 +2607,7 @@ impl protobuf_core::Message for EnumDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -2646,20 +2766,32 @@ impl EnumValueDescriptorProto {
     }
 }
 
-impl protobuf_core::Message for EnumValueDescriptorProto {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.EnumValueDescriptorProto"
-    }
-
+impl protobuf_core::StaticMessage for EnumValueDescriptorProto {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for EnumValueDescriptorProto {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.EnumValueDescriptorProto"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -2674,7 +2806,7 @@ impl protobuf_core::Message for EnumValueDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -2821,20 +2953,32 @@ impl ServiceDescriptorProto {
     }
 }
 
-impl protobuf_core::Message for ServiceDescriptorProto {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.ServiceDescriptorProto"
-    }
-
+impl protobuf_core::StaticMessage for ServiceDescriptorProto {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for ServiceDescriptorProto {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.ServiceDescriptorProto"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -2853,7 +2997,7 @@ impl protobuf_core::Message for ServiceDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -3053,20 +3197,32 @@ impl MethodDescriptorProto {
     }
 }
 
-impl protobuf_core::Message for MethodDescriptorProto {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.MethodDescriptorProto"
-    }
-
+impl protobuf_core::StaticMessage for MethodDescriptorProto {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for MethodDescriptorProto {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.MethodDescriptorProto"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -3084,7 +3240,7 @@ impl protobuf_core::Message for MethodDescriptorProto {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -3699,20 +3855,32 @@ impl FileOptions {
     }
 }
 
-impl protobuf_core::Message for FileOptions {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.FileOptions"
-    }
-
+impl protobuf_core::StaticMessage for FileOptions {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for FileOptions {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.FileOptions"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -3749,7 +3917,7 @@ impl protobuf_core::Message for FileOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.java_package.as_ref() {
             StringCodec::serialize(1, v, out)?;
         }
@@ -4111,20 +4279,32 @@ impl MessageOptions {
     }
 }
 
-impl protobuf_core::Message for MessageOptions {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.MessageOptions"
-    }
-
+impl protobuf_core::StaticMessage for MessageOptions {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for MessageOptions {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.MessageOptions"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -4145,7 +4325,7 @@ impl protobuf_core::Message for MessageOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.message_set_wire_format.as_ref() {
             BoolCodec::serialize(1, *v, out)?;
         }
@@ -4525,20 +4705,32 @@ impl FieldOptions {
     }
 }
 
-impl protobuf_core::Message for FieldOptions {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.FieldOptions"
-    }
-
+impl protobuf_core::StaticMessage for FieldOptions {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for FieldOptions {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.FieldOptions"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -4561,7 +4753,7 @@ impl protobuf_core::Message for FieldOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.ctype.as_ref() {
             EnumCodec::serialize(1, v, out)?;
         }
@@ -4703,20 +4895,32 @@ impl OneofOptions {
     }
 }
 
-impl protobuf_core::Message for OneofOptions {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.OneofOptions"
-    }
-
+impl protobuf_core::StaticMessage for OneofOptions {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for OneofOptions {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.OneofOptions"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -4733,7 +4937,7 @@ impl protobuf_core::Message for OneofOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         MessageCodec::serialize_repeated(999, &self.uninterpreted_option, out)?;
         Ok(())
     }
@@ -4851,20 +5055,32 @@ impl EnumOptions {
     }
 }
 
-impl protobuf_core::Message for EnumOptions {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.EnumOptions"
-    }
-
+impl protobuf_core::StaticMessage for EnumOptions {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for EnumOptions {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.EnumOptions"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -4883,7 +5099,7 @@ impl protobuf_core::Message for EnumOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.allow_alias.as_ref() {
             BoolCodec::serialize(2, *v, out)?;
         }
@@ -5004,20 +5220,32 @@ impl EnumValueOptions {
     }
 }
 
-impl protobuf_core::Message for EnumValueOptions {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.EnumValueOptions"
-    }
-
+impl protobuf_core::StaticMessage for EnumValueOptions {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for EnumValueOptions {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.EnumValueOptions"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -5035,7 +5263,7 @@ impl protobuf_core::Message for EnumValueOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.deprecated.as_ref() {
             BoolCodec::serialize(1, *v, out)?;
         }
@@ -5146,20 +5374,32 @@ impl ServiceOptions {
     }
 }
 
-impl protobuf_core::Message for ServiceOptions {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.ServiceOptions"
-    }
-
+impl protobuf_core::StaticMessage for ServiceOptions {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for ServiceOptions {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.ServiceOptions"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -5177,7 +5417,7 @@ impl protobuf_core::Message for ServiceOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.deprecated.as_ref() {
             BoolCodec::serialize(33, *v, out)?;
         }
@@ -5382,20 +5622,32 @@ impl MethodOptions {
     }
 }
 
-impl protobuf_core::Message for MethodOptions {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.MethodOptions"
-    }
-
+impl protobuf_core::StaticMessage for MethodOptions {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for MethodOptions {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.MethodOptions"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -5414,7 +5666,7 @@ impl protobuf_core::Message for MethodOptions {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.deprecated.as_ref() {
             BoolCodec::serialize(33, *v, out)?;
         }
@@ -5533,20 +5785,32 @@ impl UninterpretedOption_NamePart {
     }
 }
 
-impl protobuf_core::Message for UninterpretedOption_NamePart {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.UninterpretedOption.NamePart"
-    }
-
+impl protobuf_core::StaticMessage for UninterpretedOption_NamePart {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for UninterpretedOption_NamePart {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.UninterpretedOption.NamePart"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -5560,7 +5824,7 @@ impl protobuf_core::Message for UninterpretedOption_NamePart {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         if let Some(v) = self.name_part.as_ref() {
             StringCodec::serialize(1, v, out)?;
         } else {
@@ -5788,20 +6052,32 @@ impl UninterpretedOption {
     }
 }
 
-impl protobuf_core::Message for UninterpretedOption {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.UninterpretedOption"
-    }
-
+impl protobuf_core::StaticMessage for UninterpretedOption {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for UninterpretedOption {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.UninterpretedOption"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -5824,7 +6100,7 @@ impl protobuf_core::Message for UninterpretedOption {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         MessageCodec::serialize_repeated(2, &self.name, out)?;
         if let Some(v) = self.identifier_value.as_ref() {
             StringCodec::serialize(3, v, out)?;
@@ -6054,20 +6330,32 @@ impl SourceCodeInfo_Location {
     }
 }
 
-impl protobuf_core::Message for SourceCodeInfo_Location {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.SourceCodeInfo.Location"
-    }
-
+impl protobuf_core::StaticMessage for SourceCodeInfo_Location {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for SourceCodeInfo_Location {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.SourceCodeInfo.Location"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -6096,7 +6384,7 @@ impl protobuf_core::Message for SourceCodeInfo_Location {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         Int32Codec::serialize_repeated(1, &self.path, out)?;
         Int32Codec::serialize_repeated(2, &self.span, out)?;
         if let Some(v) = self.leading_comments.as_ref() {
@@ -6213,20 +6501,32 @@ impl SourceCodeInfo {
     }
 }
 
-impl protobuf_core::Message for SourceCodeInfo {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.SourceCodeInfo"
-    }
-
+impl protobuf_core::StaticMessage for SourceCodeInfo {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for SourceCodeInfo {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.SourceCodeInfo"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -6243,7 +6543,7 @@ impl protobuf_core::Message for SourceCodeInfo {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         MessageCodec::serialize_repeated(1, &self.location, out)?;
         Ok(())
     }
@@ -6380,20 +6680,32 @@ impl GeneratedCodeInfo_Annotation {
     }
 }
 
-impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.GeneratedCodeInfo.Annotation"
-    }
-
+impl protobuf_core::StaticMessage for GeneratedCodeInfo_Annotation {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.GeneratedCodeInfo.Annotation"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -6413,7 +6725,7 @@ impl protobuf_core::Message for GeneratedCodeInfo_Annotation {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         Int32Codec::serialize_repeated(1, &self.path, out)?;
         if let Some(v) = self.source_file.as_ref() {
             StringCodec::serialize(2, v, out)?;
@@ -6527,20 +6839,32 @@ impl GeneratedCodeInfo {
     }
 }
 
-impl protobuf_core::Message for GeneratedCodeInfo {
-    fn type_url(&self) -> &'static str {
-        "type.googleapis.com/google.protobuf.GeneratedCodeInfo"
-    }
-
+impl protobuf_core::StaticMessage for GeneratedCodeInfo {
     #[cfg(feature = "std")]
     fn file_descriptor() -> &'static protobuf_core::StaticFileDescriptor {
         &FILE_DESCRIPTOR
     }
+}
 
-    fn parse(data: &[u8]) -> WireResult<Self> {
-        let mut msg = Self::default();
-        msg.parse_merge(data)?;
-        Ok(msg)
+impl protobuf_core::Message for GeneratedCodeInfo {
+    fn type_url(&self) -> &str {
+        "type.googleapis.com/google.protobuf.GeneratedCodeInfo"
+    }
+
+    #[cfg(feature = "alloc")]
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        self.serialize_to(&mut data)?;
+        Ok(data)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn merge_from(&mut self, other: &Self) -> Result<()>
+    where
+        Self: Sized,
+    {
+        use protobuf_core::ReflectMergeFrom;
+        self.reflect_merge_from(other)
     }
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()> {
@@ -6557,7 +6881,7 @@ impl protobuf_core::Message for GeneratedCodeInfo {
         }
         Ok(())
     }
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()> {
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()> {
         MessageCodec::serialize_repeated(1, &self.annotation, out)?;
         Ok(())
     }

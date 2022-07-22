@@ -1,14 +1,17 @@
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use protobuf_core::reflection::Reflect;
+use protobuf_core::reflection::ReflectionMut;
 use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Mutex;
 use std::{collections::HashMap, sync::Arc};
 
 use common::errors::*;
+use google::proto::any::Any;
 use protobuf_compiler::spec::Syntax;
-use protobuf_core::{FieldDescriptorShort, FieldNumber, Message};
+use protobuf_core::{FieldDescriptorShort, FieldNumber, Message, StaticMessage};
 use protobuf_descriptor::{
     DescriptorProto, FieldDescriptorProto, FileDescriptorProto, MethodDescriptorProto,
 };
@@ -61,9 +64,13 @@ impl DescriptorPool {
                 format!("{}.{}", proto.package(), m.name())
             };
 
+            let type_url = format!("{}{}", protobuf_core::TYPE_URL_PREFIX, name);
+
             self.insert_unique_symbol(
                 &name,
-                TypeDescriptorInner::Message(Arc::new(MessageDescriptorInner::new(syntax, m))),
+                TypeDescriptorInner::Message(Arc::new(MessageDescriptorInner::new(
+                    type_url, syntax, m,
+                ))),
                 state.deref_mut(),
             )?;
 
@@ -112,9 +119,12 @@ impl DescriptorPool {
     ) -> Result<()> {
         for m in message.nested_type() {
             let name = format!("{}.{}", message_name, m.name());
+            let type_url = format!("{}{}", protobuf_core::TYPE_URL_PREFIX, name);
             self.insert_unique_symbol(
                 &name,
-                TypeDescriptorInner::Message(Arc::new(MessageDescriptorInner::new(syntax, m))),
+                TypeDescriptorInner::Message(Arc::new(MessageDescriptorInner::new(
+                    type_url, syntax, m,
+                ))),
                 state,
             )?;
             self.add_nested_types(syntax, &name, m, state)?;
@@ -196,6 +206,46 @@ impl DescriptorPool {
     }
 }
 
+impl protobuf_core::text::TextMessageExtensionHandler for DescriptorPool {
+    fn parse_text_extension(
+        &self,
+        extension_path: &str,
+        extension: protobuf_core::text::TextExtension,
+        message: &mut dyn protobuf_core::MessageReflection,
+    ) -> Result<()> {
+        if message.type_url() == Any::default().type_url() {
+            if let Some(path) = extension_path.strip_prefix(protobuf_core::TYPE_URL_PREFIX) {
+                let desc = self
+                    .find_relative_type("", path)
+                    .and_then(|d| d.to_message())
+                    .ok_or_else(|| format_err!("Unknown message with type: {}", path))?;
+
+                let mut inner_message = crate::dynamic::DynamicMessage::new(desc);
+                extension.parse_to(inner_message.reflect_mut())?;
+
+                if let Some(ReflectionMut::String(v)) =
+                    message.field_by_number_mut(Any::TYPE_URL_FIELD_NUM)
+                {
+                    *v = inner_message.type_url().to_string();
+                } else {
+                    return Err(err_msg("Failed to find type_url field of Any proto"));
+                }
+
+                if let Some(ReflectionMut::Bytes(v)) =
+                    message.field_by_number_mut(Any::VALUE_FIELD_NUM)
+                {
+                    v.clear();
+                    inner_message.serialize_to(v)?;
+                }
+
+                return Ok(());
+            }
+        }
+
+        Err(err_msg("Dynamic extensions not supported"))
+    }
+}
+
 pub enum TypeDescriptor {
     Message(MessageDescriptor),
     Enum(EnumDescriptor),
@@ -239,6 +289,10 @@ pub struct MessageDescriptor {
 }
 
 impl MessageDescriptor {
+    pub fn type_url(&self) -> &str {
+        &self.inner.type_url
+    }
+
     pub fn syntax(&self) -> Syntax {
         self.inner.syntax
     }
@@ -274,13 +328,14 @@ impl MessageDescriptor {
 }
 
 struct MessageDescriptorInner {
+    type_url: String,
     syntax: Syntax,
     proto: protobuf_descriptor::DescriptorProto,
     fields_short: Vec<FieldDescriptorShort>,
 }
 
 impl MessageDescriptorInner {
-    fn new(syntax: Syntax, proto: &protobuf_descriptor::DescriptorProto) -> Self {
+    fn new(type_url: String, syntax: Syntax, proto: &protobuf_descriptor::DescriptorProto) -> Self {
         let mut fields_short = vec![];
         for field in proto.field() {
             fields_short.push(FieldDescriptorShort::new(
@@ -290,6 +345,7 @@ impl MessageDescriptorInner {
         }
 
         Self {
+            type_url,
             syntax,
             proto: proto.clone(),
             fields_short,

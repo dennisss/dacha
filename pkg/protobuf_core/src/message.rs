@@ -9,20 +9,18 @@ use common::list::Appendable;
 #[cfg(feature = "alloc")]
 use crate::merge::ReflectMergeFrom;
 use crate::types::EnumValue;
+use crate::wire::WireResult;
 #[cfg(feature = "alloc")]
 use crate::{MessageReflection, StaticFileDescriptor};
-use crate::wire::WireResult;
 
 #[cfg(feature = "alloc")]
-pub trait MessageTraits = Send + Sync + MessageReflection;
+pub trait StaticMessageTraits = Message + Default + MessageReflection;
 #[cfg(not(feature = "alloc"))]
-pub trait MessageTraits = Send + Sync;
+pub trait StaticMessageTraits = Message + Default;
 
-// NOTE: Construct an empty proto by calling MessageType::default()
-// Clone + std::fmt::Debug + std::default::Default + MessageReflection
-pub trait Message: 'static + MessageTraits {
-    fn type_url(&self) -> &'static str;
-
+/// Message whose definition is well known to the binary.
+/// Usually these will be declared with code generation.
+pub trait StaticMessage: StaticMessageTraits {
     #[cfg(feature = "alloc")]
     fn file_descriptor() -> &'static StaticFileDescriptor
     where
@@ -31,19 +29,34 @@ pub trait Message: 'static + MessageTraits {
     // NOTE: This will append values to
     fn parse(data: &[u8]) -> WireResult<Self>
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        let mut msg = Self::default();
+        msg.parse_merge(data)?;
+        Ok(msg)
+    }
+}
+
+// NOTE: Construct an empty proto by calling MessageType::default()
+// Clone + std::fmt::Debug + std::default::Default + MessageReflection
+pub trait Message: 'static {
+    fn type_url(&self) -> &str;
 
     fn parse_merge(&mut self, data: &[u8]) -> WireResult<()>;
 
     /// Serializes the protobuf as a vector.
+    /// Usually this will be implemented in terms of serialize_to.
     #[cfg(feature = "alloc")]
-    fn serialize(&self) -> Result<Vec<u8>> {
+    fn serialize(&self) -> Result<Vec<u8>>;
+    /* {
         let mut data = vec![];
         self.serialize_to(&mut data)?;
         Ok(data)
-    }
+    } */
 
-    fn serialize_to<A: Appendable<Item = u8>>(&self, out: &mut A) -> Result<()>;
+    fn serialize_to<A: Appendable<Item = u8> + ?Sized>(&self, out: &mut A) -> Result<()>
+    where
+        Self: Sized;
 
     // TODO: Add serialize_to with Appendable.
 
@@ -56,10 +69,13 @@ pub trait Message: 'static + MessageTraits {
     #[cfg(feature = "alloc")]
     fn merge_from(&mut self, other: &Self) -> Result<()>
     where
-        Self: Sized,
+        Self: Sized;
+    /*
+
     {
         self.reflect_merge_from(other)
     }
+    */
 
     // fn unknown_fields() -> &[UnknownField];
 }
@@ -128,8 +144,8 @@ pub trait Enum {
     /// Should convert a number to a valid branch of the enum, or else should
     /// error out it the value is not in the enum.
     ///
-    /// TODO: Check the compatibility behavior of parsing an enum. Should we allow unknown
-    /// values as long as we map it to UNKNONW?
+    /// TODO: Check the compatibility behavior of parsing an enum. Should we
+    /// allow unknown values as long as we map it to UNKNONW?
     fn parse(v: EnumValue) -> WireResult<Self>
     where
         Self: Sized;

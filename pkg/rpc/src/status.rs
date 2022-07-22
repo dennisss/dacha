@@ -7,7 +7,7 @@ use common::errors::*;
 use http::{Header, Headers};
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
-use protobuf::Message;
+use protobuf::{Message, StaticMessage};
 
 use crate::constants::{GRPC_STATUS, GRPC_STATUS_DETAILS, GRPC_STATUS_MESSAGE};
 
@@ -149,7 +149,7 @@ impl Status {
         Ok(())
     }
 
-    pub fn detail<T: protobuf::Message + Default>(&self) -> Result<Option<T>> {
+    pub fn detail<T: protobuf::StaticMessage + Default>(&self) -> Result<Option<T>> {
         for detail in &self.details {
             if let Some(v) = detail.unpack()? {
                 return Ok(Some(v));
@@ -159,7 +159,7 @@ impl Status {
         Ok(None)
     }
 
-    pub fn with_detail<M: protobuf::Message>(mut self, value: &M) -> Result<Self> {
+    pub fn with_detail<M: protobuf::StaticMessage>(mut self, value: &M) -> Result<Self> {
         let mut any = google::proto::any::Any::default();
         any.pack_from(value)?;
         self.details.push(any);

@@ -9,6 +9,7 @@ common = { path = "../common", default-features = false }
 parsing = { path = "../parsing", optional = true }
 protobuf_core = { path = "../protobuf_core", default-features = false }
 protobuf_descriptor = { path = "../../third_party/protobuf_descriptor", optional = true }
+google = { path = "../../third_party/google", optional = true }
 macros = { path = "../macros" }
 json = { path = "../json", optional = true }
 protobuf_compiler = { path = "../protobuf_compiler", optional = true }
@@ -19,4 +20,4 @@ protobuf_compiler = { path = "../protobuf_compiler" }
 [features]
 default = ["std"]
 alloc = ["common/alloc", "protobuf_core/alloc"]
-std = ["alloc", "common/std", "parsing", "protobuf_core/std", "protobuf_descriptor", "json", "protobuf_compiler"]
+std = ["alloc", "common/std", "parsing", "protobuf_core/std", "protobuf_descriptor", "json", "protobuf_compiler", "google"]

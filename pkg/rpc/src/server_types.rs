@@ -26,12 +26,12 @@ pub struct ServerResponseContext {
     pub metadata: ResponseMetadata,
 }
 
-pub struct ServerRequest<T: protobuf::Message> {
+pub struct ServerRequest<T: protobuf::StaticMessage> {
     pub value: T,
     pub context: ServerRequestContext,
 }
 
-impl<T: protobuf::Message> std::ops::Deref for ServerRequest<T> {
+impl<T: protobuf::StaticMessage> std::ops::Deref for ServerRequest<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -63,7 +63,7 @@ impl ServerStreamRequest<()> {
         }
     }
 
-    pub fn into<T: protobuf::Message>(self) -> ServerStreamRequest<T> {
+    pub fn into<T: protobuf::StaticMessage>(self) -> ServerStreamRequest<T> {
         ServerStreamRequest {
             request_body: self.request_body,
             request_type: self.request_type,
@@ -73,7 +73,9 @@ impl ServerStreamRequest<()> {
     }
 
     /// NOTE: It's only valid to call this before using recv().
-    pub async fn into_unary<T: protobuf::Message + Default>(self) -> Result<ServerRequest<T>> {
+    pub async fn into_unary<T: protobuf::StaticMessage + Default>(
+        self,
+    ) -> Result<ServerRequest<T>> {
         let mut stream = self.into::<T>();
 
         let message = stream
@@ -119,7 +121,7 @@ impl<T> ServerStreamRequest<T> {
     }
 }
 
-impl<T: protobuf::Message + Default> ServerStreamRequest<T> {
+impl<T: protobuf::StaticMessage + Default> ServerStreamRequest<T> {
     pub async fn recv(&mut self) -> Result<Option<T>> {
         let data = self.recv_bytes().await?;
 
@@ -149,26 +151,26 @@ impl<T: protobuf::Message + Default> ServerStreamRequest<T> {
     }
 }
 
-pub struct ServerResponse<'a, T: protobuf::Message> {
+pub struct ServerResponse<'a, T: protobuf::StaticMessage> {
     /// Value to be returned to the client. Only fully returned if the response
     pub value: T,
     pub context: &'a mut ServerResponseContext,
 }
 
-impl<'a, T: protobuf::Message> ServerResponse<'a, T> {
+impl<'a, T: protobuf::StaticMessage> ServerResponse<'a, T> {
     pub fn into_value(self) -> T {
         self.value
     }
 }
 
-impl<'a, T: protobuf::Message> std::ops::Deref for ServerResponse<'a, T> {
+impl<'a, T: protobuf::StaticMessage> std::ops::Deref for ServerResponse<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.value
     }
 }
 
-impl<'a, T: protobuf::Message> std::ops::DerefMut for ServerResponse<'a, T> {
+impl<'a, T: protobuf::StaticMessage> std::ops::DerefMut for ServerResponse<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
     }
@@ -187,7 +189,7 @@ pub struct ServerStreamResponse<'a, T> {
 }
 
 impl<'a> ServerStreamResponse<'a, ()> {
-    pub fn into<T: protobuf::Message>(self) -> ServerStreamResponse<'a, T> {
+    pub fn into<T: protobuf::StaticMessage>(self) -> ServerStreamResponse<'a, T> {
         ServerStreamResponse {
             context: self.context,
             response_type: self.response_type,
@@ -198,7 +200,9 @@ impl<'a> ServerStreamResponse<'a, ()> {
     }
 
     /// NOTE: Later the value must be given back to the stream.
-    pub fn new_unary<'b, T: protobuf::Message + Default>(&'b mut self) -> ServerResponse<'b, T> {
+    pub fn new_unary<'b, T: protobuf::StaticMessage + Default>(
+        &'b mut self,
+    ) -> ServerResponse<'b, T> {
         ServerResponse {
             value: T::default(),
             context: self.context,
@@ -231,7 +235,7 @@ impl<'a, T> ServerStreamResponse<'a, T> {
     }
 }
 
-impl<'a, T: protobuf::Message> ServerStreamResponse<'a, T> {
+impl<'a, T: protobuf::StaticMessage> ServerStreamResponse<'a, T> {
     /// Enqueue a single message to be sent back to the client.
     ///
     /// Once the first message is enqueued, you can no longer append any head
