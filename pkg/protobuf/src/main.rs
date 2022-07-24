@@ -85,8 +85,8 @@ fn main() -> Result<()> {
     return Ok(());
     */
 
-    let v = protobuf::text::parse_text_syntax(SAMPLE_TEXTPROTO)?;
-    println!("{:#?}", v);
+    // let v = protobuf::text::parse_text_syntax(SAMPLE_TEXTPROTO)?;
+    // println!("{:#?}", v);
     return Ok(());
 
     //	let src = std::fs::read_to_string("testdata/message.proto")?;

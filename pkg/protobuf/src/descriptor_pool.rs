@@ -39,7 +39,25 @@ impl DescriptorPool {
         }
     }
 
-    pub fn add_file(&self, data: &[u8]) -> Result<()> {
+    pub async fn add_local_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
+        // TODO: Deduplicate some of this logic with the compiler.
+
+        // TODO: Don't read the file if it is already in the pool.
+
+        let path = path.as_ref();
+
+        let proto_file_src = common::async_std::fs::read_to_string(path).await?;
+        let proto_file = protobuf_compiler::syntax::parse_proto(&proto_file_src)?;
+
+        let mut proto = proto_file.to_proto();
+        proto.set_name(path.strip_prefix(common::project_dir())?.to_str().unwrap());
+
+        // TODO: We must also add any dependencies.
+
+        self.add_file_descriptor(&proto.serialize()?)
+    }
+
+    pub fn add_file_descriptor(&self, data: &[u8]) -> Result<()> {
         let proto = FileDescriptorProto::parse(data)?;
 
         let syntax = match proto.syntax() {
@@ -213,7 +231,7 @@ impl protobuf_core::text::TextMessageExtensionHandler for DescriptorPool {
         extension: protobuf_core::text::TextExtension,
         message: &mut dyn protobuf_core::MessageReflection,
     ) -> Result<()> {
-        if message.type_url() == Any::default().type_url() {
+        if message.type_url() == Message::type_url(&Any::default()) {
             if let Some(path) = extension_path.strip_prefix(protobuf_core::TYPE_URL_PREFIX) {
                 let desc = self
                     .find_relative_type("", path)

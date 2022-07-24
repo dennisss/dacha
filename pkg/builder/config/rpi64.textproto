@@ -1,0 +1,15 @@
+# proto-file: pkg/builder/src/proto/config.proto
+# proto-message: BuildConfig
+
+platform {
+    os: LINUX
+    architecture: AArch64
+}
+
+rule_defaults {
+    [type.googleapis.com/builder.RustBinaryAttrs] {
+        compiler: CROSS
+        profile: "release"
+        target: "aarch64-unknown-linux-gnu"
+    }
+}

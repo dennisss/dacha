@@ -16,7 +16,7 @@ use crate::tokenizer::{float_lit, int_lit, serialize_str_lit, strLit};
 use crate::Message;
 
 //
-const SYMBOLS: &'static str = "{}[]<>:,.";
+const SYMBOLS: &'static str = "{}[]<>:,./";
 
 enum TextToken {
     Whitespace,
@@ -104,7 +104,7 @@ token_atom!(float, Float, f64);
 parser!(full_ident<&str, String> => seq!(c => {
     let mut id = c.next(ident)?;
 
-    while let Ok('.') = c.next(symbol) {
+    while let Ok(_) = c.next(is(symbol, '.')) {
         id.push('.');
 
         let id_more = c.next(ident)?;
@@ -114,6 +114,57 @@ parser!(full_ident<&str, String> => seq!(c => {
 
     Ok(id)
 }));
+
+parser!(extension_name<&str, String> => seq!(c => {
+    let mut id = c.next(full_ident)?;
+
+    while let Ok(_) = c.next(is(symbol, '/')) {
+        id.push('/');
+
+        let id_more = c.next(full_ident)?;
+        id.push_str(id_more.as_str());
+    }
+
+    Ok(id)
+}));
+
+pub struct TextMessageFile {
+    proto_file: Option<String>,
+    proto_message: Option<String>,
+
+    message: TextMessage,
+}
+
+impl TextMessageFile {
+    pub fn parse(mut input: &str) -> Result<Self> {
+        let mut proto_file = None;
+        let mut proto_message = None;
+
+        while let Some(comment) = parse_next!(input, opt(TextToken::comment)) {
+            if let Some(file) = comment.strip_prefix(" proto-file: ") {
+                proto_file = Some(file.to_string());
+            } else if let Some(message) = comment.strip_prefix(" proto-message: ") {
+                proto_message = Some(message.to_string());
+            }
+        }
+
+        let message = parse_text_syntax(input)?;
+
+        Ok(Self {
+            proto_file,
+            proto_message,
+            message,
+        })
+    }
+
+    pub fn merge_to(
+        &self,
+        message: &mut dyn MessageReflection,
+        options: &ParseTextProtoOptions,
+    ) -> Result<()> {
+        self.message.apply(message, options)
+    }
+}
 
 /// Represents the text format of a
 // TextMessage = TextField*
@@ -196,7 +247,7 @@ impl TextFieldName {
     parser!(parse<&str, Self> => alt!(
         seq!(c => {
             c.next(is(symbol, '['))?;
-            let name = c.next(full_ident)?;
+            let name = c.next(extension_name)?;
             c.next(is(symbol, ']'))?;
             Ok(Self::Extension(name))
         }),
@@ -641,6 +692,34 @@ pub trait TextMessageExtensionHandler {
         extension: TextExtension,
         message: &mut dyn MessageReflection,
     ) -> Result<()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_extensions() {
+        let data = r#"
+        platform {
+            os: LINUX
+            architecture: AMD64
+        }
+        
+        rule_defaults {
+            key: "rust_binary"
+            value {
+                [type.googleapis.com/builder.RustBinary] {
+                    compiler: CARGO
+                    profile: "release"
+                    target: "x86_64-unknown-linux-gnu"
+                }
+            }
+        }        
+        "#;
+
+        parse_text_syntax(data).unwrap();
+    }
 }
 
 /*

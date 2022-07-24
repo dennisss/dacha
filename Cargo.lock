@@ -356,9 +356,11 @@ dependencies = [
  "common",
  "compression",
  "crypto",
+ "google",
  "macros",
  "protobuf",
  "protobuf_compiler",
+ "skylark",
  "sys",
 ]
 

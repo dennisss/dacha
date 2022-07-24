@@ -5,3 +5,7 @@ pub mod bundle {
 pub mod config {
     include!(concat!(env!("OUT_DIR"), "/src/proto/config.rs"));
 }
+
+pub mod rule {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/rule.rs"));
+}

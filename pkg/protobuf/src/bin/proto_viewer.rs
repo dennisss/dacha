@@ -22,7 +22,7 @@ struct Args {
 
     proto_file: Option<String>,
 
-    proto_type: Option<String>
+    proto_type: Option<String>,
 }
 
 async fn run() -> Result<()> {
@@ -34,29 +34,29 @@ async fn run() -> Result<()> {
 
     // TODO: Deduplicate some of this logic with the compiler.
     if let Some(path) = args.proto_file {
-        // TODO: Implement a new Path struct which enforces that join never follows directory traversals.
+        // TODO: Implement a new Path struct which enforces that join never follows
+        // directory traversals.
         let path = std::env::current_dir()?.join(&path);
 
-        let proto_file_src = fs::read_to_string(&path).await?;
-        let proto_file = protobuf_compiler::syntax::parse_proto(&proto_file_src)?;
-
-        let mut proto = proto_file.to_proto();
-        proto.set_name(path.strip_prefix(common::project_dir())?.to_str().unwrap());
-
-        descriptor_pool.add_file(&proto.serialize()?)?;
+        descriptor_pool.add_local_file(path)?;
 
         // TODO: Convert to result.
         let type_name = args.proto_type.unwrap();
 
-        let type_desc = descriptor_pool.find_relative_type("", &type_name)
+        let type_desc = descriptor_pool
+            .find_relative_type("", &type_name)
             .ok_or_else(|| format_err!("Unknown type named: {}", type_name))?
-            .to_message().ok_or_else(|| format_err!("Type isn't a message: {}", type_name))?;
-        
+            .to_message()
+            .ok_or_else(|| format_err!("Type isn't a message: {}", type_name))?;
+
         let mut msg = protobuf::DynamicMessage::new(type_desc);
         msg.parse_merge(&data)?;
 
-        println!("Text Format: {}", protobuf::text::serialize_text_proto(&msg));
-        
+        println!(
+            "Text Format: {}",
+            protobuf::text::serialize_text_proto(&msg)
+        );
+
         return Ok(());
     }
 

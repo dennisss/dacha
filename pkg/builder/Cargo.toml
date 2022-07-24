@@ -11,6 +11,8 @@ protobuf = { path = "../protobuf" }
 compression = { path = "../compression" }
 crypto = { path = "../crypto" }
 sys = { path = "../sys" }
+skylark = { path = "../skylark" }
+google = { path = "../../third_party/google" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

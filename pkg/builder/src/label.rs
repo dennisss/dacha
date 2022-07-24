@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use common::errors::*;
 
 /// NOTE: In order to hash or compare this, the user should be sure to make the
@@ -22,7 +24,8 @@ impl Label {
             .split_once(':')
             .ok_or_else(|| err_msg("Expected a : in the target path"))?;
 
-        if dir.starts_with("/") {
+        if dir.starts_with("/") || dir.contains("..") || dir.contains("//") || dir.starts_with("./")
+        {
             return Err(err_msg("Invalid directory in target path"));
         }
 
@@ -30,6 +33,28 @@ impl Label {
             absolute,
             directory: dir.to_string(),
             target_name: name.to_string(),
+        })
+    }
+
+    pub fn join_respecting_absolute(&self, relative_label: &Self) -> Result<Self> {
+        if !self.absolute {
+            return Err(err_msg("Can only join to absolute label"));
+        }
+
+        if relative_label.absolute {
+            return Ok(relative_label.clone());
+        }
+
+        let directory = Path::new(&self.directory)
+            .join(&relative_label.directory)
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        Ok(Self {
+            absolute: true,
+            directory,
+            target_name: relative_label.target_name.clone(),
         })
     }
 }

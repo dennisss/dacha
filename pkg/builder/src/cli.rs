@@ -2,9 +2,10 @@ use std::path::Path;
 
 use common::{errors::*, project_dir, project_path};
 
-use crate::builder::{create_or_update_symlink, Builder};
-use crate::context::BuildContext;
-use crate::LOCAL_BINARY_PATH;
+use crate::builder::Builder;
+use crate::context::BuildConfigTarget;
+use crate::utils::create_or_update_symlink;
+use crate::{LOCAL_BINARY_PATH, NATIVE_CONFIG_LABEL};
 
 #[derive(Args)]
 struct Args {
@@ -33,26 +34,32 @@ pub fn run() -> Result<()> {
             ArgCommand::Build(build) => {
                 // TODO: Support the --config flag.
 
-                let mut builder = Builder::default();
-
-                let build_context = match build.config {
-                    Some(label) => BuildContext::from(builder.lookup_config(&label, None).await?)?,
-                    None => BuildContext::default_for_local_machine().await?,
-                };
+                let mut builder = Builder::default()?;
 
                 let result = builder
-                    .build_target_cwd(&build.label, &build_context)
+                    .build_target_cwd(
+                        &build.label,
+                        build
+                            .config
+                            .as_ref()
+                            .map(|s| s.as_str())
+                            .unwrap_or(NATIVE_CONFIG_LABEL),
+                    )
                     .await?;
 
+                // TODO: Have a replacement for this.
+                /*
                 create_or_update_symlink(
                     format!("built-config/{}", result.key.config_key),
                     project_path!("built"),
-                )?;
+                )
+                .await?;
+                */
 
                 let local_bin_dir = project_path!(LOCAL_BINARY_PATH);
-                for (src, path) in &result.output_files {
+                for (src, file) in &result.output_files {
                     if Path::new(src).starts_with(LOCAL_BINARY_PATH) {
-                        create_or_update_symlink(path, project_dir().join(src))?;
+                        create_or_update_symlink(&file.location, project_dir().join(src)).await?;
                     }
                 }
 

@@ -1,0 +1,15 @@
+# proto-file: pkg/builder/src/proto/config.proto
+# proto-message: BuildConfig
+
+platform {
+    os: LINUX
+    architecture: AMD64
+}
+
+rule_defaults {
+    [type.googleapis.com/builder.RustBinaryAttrs] {
+        compiler: CARGO
+        profile: "release"
+        target: "x86_64-unknown-linux-gnu"
+    }
+}

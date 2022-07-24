@@ -137,7 +137,7 @@ impl ServerClient {
             let res = reflection.call(&req).await?;
 
             for file in res.file_descriptor_response().file_descriptor_proto() {
-                descriptor_pool.add_file(file.as_ref())?;
+                descriptor_pool.add_file_descriptor(file.as_ref())?;
             }
         }
 

@@ -1,4 +1,4 @@
 
-rust_binary {
-    name: "swd_prog"
-}
+rust_binary(
+    name = "swd_prog"
+)

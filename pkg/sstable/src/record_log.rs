@@ -250,6 +250,7 @@ impl RecordReader {
             Err(e) => {
                 // If we didn't have enough bytes to parse the record, return None. Most likely
                 // the file hasn't been flushed by a recent writer yet.
+                // TODO: Make this behavior configurable?
                 if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
                     if io_error.kind() == std::io::ErrorKind::UnexpectedEof {
                         return Ok(None);
@@ -352,6 +353,15 @@ impl RecordReader {
         Ok(())
     }
 }
+
+/*
+Batching RecordWriter writes:
+- Ideally we never want to write less than a full block size.
+- We can accumulate writes before they are flushed for a small timeout.
+- The main challenge is whether or not we are allowed to callback in parallel
+    - By default, no, must linearize and also come before all future batches.
+
+*/
 
 pub struct RecordWriter {
     file: SyncedFile,

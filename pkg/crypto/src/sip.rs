@@ -7,6 +7,9 @@ use core::num::Wrapping;
 use crate::hasher::Hasher;
 
 /// Based on https://www.aumasson.jp/siphash/siphash.pdf.
+///
+/// TODO: Define a HashMap and HashSet which uses this instead of the core/std
+/// implementation.
 #[derive(Clone)]
 pub struct SipHasher {
     num_compression_rounds: usize,

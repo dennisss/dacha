@@ -1,16 +1,16 @@
 
-rust_binary {
-    name: "main"
-    bin: "blinkstick"
-}
+rust_binary(
+    name = "main",
+    bin = "blinkstick"
+)
 
-bundle {
-    name: "bundle"
-    deps: [
+bundle(
+    name = "bundle",
+    deps = [
         ":main"
-    ]
-    configs: [
+    ],
+    configs = [
         # "//pkg/builder/config:rpi",
         "//pkg/builder/config:x64"
     ]
-}
+)

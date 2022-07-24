@@ -883,7 +883,7 @@ async fn start_task_impl(
 async fn build_task_blobs(task_spec: &mut TaskSpec) -> Result<Vec<container::BlobData>> {
     let mut out = vec![];
 
-    let build_context = builder::BuildContext::default_for_local_machine().await?;
+    let build_context = builder::BuildConfigTarget::default_for_local_machine().await?;
     let mut builder_inst = builder::Builder::default();
 
     for volume in task_spec.volumes_mut() {

@@ -3,75 +3,27 @@ syntax = "proto3";
 package builder;
 
 import "pkg/builder/src/proto/bundle.proto";
-
-message RustBinary {
-    string name = 1;
-    repeated string deps = 2;
-
-    string bin = 5;
-    string profile = 3;
-    string target = 4;
-    RustCompiler compiler = 6;
-    bool no_default_features = 7;
-    repeated string cfg = 8;
-    string rustflags = 9;
-}
-
-enum RustCompiler {
-    UNKNOWN = 0;
-    CARGO = 1;
-    CROSS = 2;
-}
-
-message FileGroup {
-    string name = 1;
-    repeated string deps = 2;
-
-    repeated string srcs = 3;
-}
-
-message Bundle {
-    string name = 1;
-
-    repeated string deps = 2;
-
-    repeated string configs = 4;
-
-    reserved 3;
-}
-
-message Webpack {
-    // This create a javascript bundle named '[name].js'
-    string name = 1;
-
-    repeated string deps = 2;
-
-    // Relative path to the entry point js file.
-    string entry = 3;
-}
+import "third_party/google/src/proto/any.proto";
 
 message BuildConfig {
     string name = 1;
 
     Platform platform = 2;
 
-    RustBinary rust_binary = 3;
-    
+    // Default values of attributes for rule attributes.
+    // Any overrides in individual rule calls are proto merged into these defaults.
+    repeated google.protobuf.Any rule_defaults = 3;
+
     // Platform
 
     // This also declares a bundle variant?
 }
 
-message LocalBinary {
-    string name = 1;
-    repeated string deps = 2;
-}
+// message CortexMCPUConfig {
 
-message BuildFile {
-    repeated RustBinary rust_binary = 1;
-    repeated FileGroup filegroup = 2;
-    repeated Bundle bundle = 3;
-    repeated Webpack webpack = 4;
-    repeated BuildConfig build_config = 5;
-    repeated LocalBinary local_binary = 6;
-}
+//     MemoryRange flash = 1;
+
+//     MemoryRange ram = 2;
+
+
+// }

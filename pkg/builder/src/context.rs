@@ -1,23 +1,32 @@
+use std::sync::Arc;
+
 use common::errors::*;
 use crypto::hasher::Hasher;
 use crypto::sip::SipHasher;
 use protobuf::Message;
 
+use crate::label::Label;
 use crate::proto::bundle::*;
 use crate::proto::config::*;
+use crate::proto::rule::*;
 
-pub struct BuildContext {
-    pub config: BuildConfig,
+#[derive(Clone)]
+pub struct BuildConfigTarget {
+    pub label: Label,
+    pub config: Arc<BuildConfig>,
     pub config_key: String,
 }
 
-impl BuildContext {
-    pub async fn default_for_local_machine() -> Result<Self> {
+impl BuildConfigTarget {
+    pub fn default_for_local_machine() -> Result<Self> {
         let mut config = BuildConfig::default();
         config.set_platform(crate::platform::current_platform()?);
 
-        config.rust_binary_mut().set_profile("dev");
-        config.rust_binary_mut().set_compiler(RustCompiler::CARGO);
+        let mut rust_binary = RustBinaryAttrs::default();
+        // rust_binary.set_profile("dev");
+        rust_binary.set_compiler(RustCompiler::CARGO);
+
+        // TODO: Instead reference //pkg/builder/config:X
 
         let target = match (config.platform().architecture(), config.platform().os()) {
             (Architecture::AMD64, Os::LINUX) => "x86_64-unknown-linux-gnu",
@@ -26,12 +35,18 @@ impl BuildContext {
                 return Err(err_msg("Unsupported default rust target"));
             }
         };
-        config.rust_binary_mut().set_target(target);
+        rust_binary.set_target(target);
 
-        Self::from(config)
+        config.add_rule_defaults({
+            let mut any = google::proto::any::Any::default();
+            any.pack_from(&rust_binary)?;
+            any
+        });
+
+        Self::from(Label::parse(crate::NATIVE_CONFIG_LABEL)?, config)
     }
 
-    pub fn from(mut config: BuildConfig) -> Result<Self> {
+    pub fn from(label: Label, mut config: BuildConfig) -> Result<Self> {
         // Make consistent for keying.
         config.set_name("");
 
@@ -42,6 +57,10 @@ impl BuildContext {
             format!("{:016x}", hasher.finish_u64())
         };
 
-        Ok(Self { config, config_key })
+        Ok(Self {
+            label,
+            config: Arc::new(config),
+            config_key,
+        })
     }
 }

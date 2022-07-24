@@ -1,0 +1,15 @@
+# proto-file: pkg/builder/src/proto/config.proto
+# proto-message: BuildConfig
+
+platform {
+    os: LINUX
+    architecture: ARM32v7
+}
+
+rule_defaults {
+    [type.googleapis.com/builder.RustBinaryAttrs] {
+        compiler: CROSS
+        profile: "release"
+        target: "armv7-unknown-linux-gnueabihf"        
+    }
+}

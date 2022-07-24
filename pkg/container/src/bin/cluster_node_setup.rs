@@ -36,7 +36,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-use builder::{BuildContext, Builder};
+use builder::{BuildConfigTarget, Builder};
 use common::async_std::{fs, task};
 use common::{errors::*, project_dir};
 use protobuf::text::{parse_text_proto, ParseTextProto};
@@ -206,7 +206,7 @@ async fn run() -> Result<()> {
     let node_built_result = {
         let mut builder = Builder::default();
         let build_context =
-            BuildContext::from(builder.lookup_config(build_config_target, None).await?)?;
+            BuildConfigTarget::from(builder.lookup_config(build_config_target, None).await?)?;
         let result = builder
             .build_target("//pkg/container:cluster_node", None, &build_context)
             .await?;
