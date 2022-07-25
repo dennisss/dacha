@@ -6,6 +6,14 @@
 - Wireless shutoff switch
     - When toggled, the keyboard will only communicate via a USB data connection.
 
+## V2 Wishlist
+
+- USB Hub
+- Integrate the coulomb counter onto the board
+- Verify TC2030 header is standard
+- Ditch the rocker switch
+- Accelerometer
+
 ## Dimensions
 
 - Outer (Case): 365mm by 130mm

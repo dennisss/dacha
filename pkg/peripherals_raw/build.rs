@@ -12,9 +12,6 @@ use cmsis_svd::compiler::*;
 use common::errors::*;
 
 fn main() -> Result<()> {
-    let input =
-        std::fs::read_to_string(common::project_dir().join("third_party/cmsis_svd/nrf52840.svd"))?;
-
     let mut options = CompilerOptions::default();
 
     options.field_rewrites.push(FieldRewriteRule {
@@ -103,13 +100,20 @@ fn main() -> Result<()> {
     ^ We should support bit vector where a regexp can extract the
     */
 
-    let compiled = Compiler::compile(&input, &options)?;
-
-    /// Compile here
     let output_dir = PathBuf::from(env::var("OUT_DIR")?);
-    let output_path = output_dir.join("nrf52840.rs");
-    std::fs::write(&output_path, compiled);
 
+    for model in ["nrf52840", "nrf52833"] {
+        let input = std::fs::read_to_string(
+            common::project_dir().join(format!("third_party/cmsis_svd/{}.svd", model)),
+        )?;
+
+        let compiled = Compiler::compile(&input, &options)?;
+
+        let output_path = output_dir.join(format!("{}.rs", model));
+        std::fs::write(&output_path, compiled);
+    }
+
+    /*
     {
         let res = std::process::Command::new("rustfmt")
             .arg(output_path.to_str().unwrap())
@@ -120,6 +124,7 @@ fn main() -> Result<()> {
             return Err(err_msg("rustfmt failed"));
         }
     }
+    */
 
     // let output_path2 = project_path!("pkg/peripherals_raw/src/nrf52840.rs");
     // std::fs::write(&output_path2, std::fs::read(&output_path)?)?;

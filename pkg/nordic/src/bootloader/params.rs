@@ -3,7 +3,7 @@ use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
 use nordic_proto::proto::bootloader::*;
 use peripherals::raw::nvmc::NVMC;
-use protobuf::Message;
+use protobuf::{Message, StaticMessage};
 
 use crate::bootloader::flash::*;
 

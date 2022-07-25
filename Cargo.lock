@@ -1281,6 +1281,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "linker"
+version = "0.1.0"
+dependencies = [
+ "common",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

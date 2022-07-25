@@ -47,8 +47,12 @@ impl LineBuilder {
     }
 
     pub fn indent(&mut self) {
+        self.indent_with("\t");
+    }
+
+    pub fn indent_with(&mut self, tab: &str) {
         for s in self.lines.iter_mut() {
-            *s = format!("\t{}", s);
+            *s = format!("{}{}", tab, s);
         }
     }
 

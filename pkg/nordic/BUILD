@@ -24,3 +24,13 @@ proto_data(
     name = "nrf52840_bootloader",
     src = "nrf52840_bootloader.textproto"
 )
+
+proto_data(
+    name = "nrf52833",
+    src = "nrf52833.textproto"
+)
+
+proto_data(
+    name = "nrf52833_bootloader",
+    src = "nrf52833_bootloader.textproto"
+)

@@ -47,17 +47,14 @@ pub fn run() -> Result<()> {
                     )
                     .await?;
 
-                // TODO: Have a replacement for this.
-                /*
                 create_or_update_symlink(
-                    format!("built-config/{}", result.key.config_key),
+                    format!("built-config/{}", result.config_hash),
                     project_path!("built"),
                 )
                 .await?;
-                */
 
                 let local_bin_dir = project_path!(LOCAL_BINARY_PATH);
-                for (src, file) in &result.output_files {
+                for (src, file) in &result.outputs.output_files {
                     if Path::new(src).starts_with(LOCAL_BINARY_PATH) {
                         create_or_update_symlink(&file.location, project_dir().join(src)).await?;
                     }

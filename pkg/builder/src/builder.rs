@@ -22,6 +22,12 @@ use crate::NATIVE_CONFIG_LABEL;
 
 // TODO: We need to be diligent about removing old files if a target is rebuilt.
 
+#[derive(Debug)]
+pub struct BuiltTarget {
+    pub config_hash: String,
+    pub outputs: BuildTargetOutputs,
+}
+
 struct BuildTargetGraph {
     nodes: HashMap<BuildTargetKey, BuildTargetNode>,
 
@@ -81,7 +87,7 @@ impl Builder {
         &mut self,
         label: &str,
         config_label: &str,
-    ) -> Result<BuildTargetOutputs> {
+    ) -> Result<BuiltTarget> {
         let current_dir = PathBuf::from(std::env::current_dir()?);
         if !current_dir.starts_with(&self.workspace_dir) {
             return Err(err_msg("Must run the builder from inside a workspace"));
@@ -96,7 +102,7 @@ impl Builder {
         label: &str,
         config_label: &str,
         current_dir: Option<&Path>,
-    ) -> Result<BuildTargetOutputs> {
+    ) -> Result<BuiltTarget> {
         let label = self.parse_absolute_label(label, current_dir)?;
         let config_label = self.parse_absolute_label(config_label, current_dir)?;
 
@@ -131,7 +137,12 @@ impl Builder {
             }
         };
 
-        Ok(outputs)
+        let config = self.configs.get(&target_key.config_label).unwrap();
+
+        Ok(BuiltTarget {
+            config_hash: config.config_key.clone(),
+            outputs,
+        })
     }
 
     fn parse_absolute_label(&self, label: &str, current_dir: Option<&Path>) -> Result<Label> {

@@ -39,6 +39,7 @@ pub mod wire;
 pub use bytes::BytesField;
 #[cfg(feature = "std")]
 pub use collections::*;
+#[cfg(feature = "alloc")]
 pub use merge::*;
 pub use message::{Enum, Message, MessagePtr, MessageSerializeError, StaticMessage};
 #[cfg(feature = "std")]

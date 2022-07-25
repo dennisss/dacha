@@ -531,7 +531,10 @@ fn main() -> () {
 
     // TODO: If we are not using an external crystal, this needs to derive from
     // HFCLK.
-    nordic::clock::init_low_freq_clk(&mut peripherals.clock);
+    nordic::clock::init_low_freq_clk(
+        nordic::clock::LowFrequencyClockSource::RCOscillator,
+        &mut peripherals.clock,
+    );
 
     Main::start(params);
 

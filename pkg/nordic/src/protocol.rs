@@ -42,7 +42,7 @@ use nordic_proto::packet::PacketBuffer;
 use nordic_proto::proto::net::NetworkConfig;
 use nordic_proto::usb::ProtocolUSBRequestType;
 use nordic_proto::usb_descriptors::PROTOCOL_USB_DESCRIPTORS;
-use protobuf::Message;
+use protobuf::{Message, StaticMessage};
 use usb::descriptors::{DescriptorType, SetupPacket, StandardRequestType};
 
 use crate::log;
