@@ -27,7 +27,7 @@ use std::marker::PhantomData;
 use common::errors::*;
 use datastore::key_encoding::KeyEncoder;
 use datastore::meta::client::{MetastoreClient, MetastoreClientInterface};
-use protobuf::{Enum, Message};
+use protobuf::{Enum, Message, StaticMessage};
 
 use crate::proto::meta::*;
 
@@ -155,7 +155,7 @@ impl<C: MetastoreClientInterface> GetClusterMetaTable for C {
     }
 }
 
-pub trait ClusterMetaTableValue: Message {
+pub trait ClusterMetaTableValue: StaticMessage {
     type Id: ?Sized;
 
     /// Retrieves the row key for the current value.

@@ -14,6 +14,9 @@ pub const BOOTLOADER_PARAMS_OFFSET: u32 = 28 * 1024;
 /// The application code goes until the end of flash space.
 pub const APPLICATION_CODE_OFFSET: u32 = 32 * 1024;
 
+/// Expected value of a word of flash memory after an erase.
+pub const FLASH_ERASED_WORD_VALUE: u32 = 0xFFFFFFFF;
+
 /// Size of a single flash page. This is the smallest granularity which we can
 /// erase.
 ///
@@ -97,8 +100,8 @@ pub fn write_to_flash(mut addr: u32, data: &[u8], nvmc: &mut NVMC) {
 
     let page_size = flash_page_size();
 
-    assert!(addr % (WORD_SIZE as u32) == 0);
-    assert!(data.len() % WORD_SIZE == 0);
+    assert_no_debug!(addr % (WORD_SIZE as u32) == 0);
+    assert_no_debug!(data.len() % WORD_SIZE == 0);
 
     let words = unsafe {
         core::slice::from_raw_parts::<u32>(
@@ -117,14 +120,25 @@ pub fn write_to_flash(mut addr: u32, data: &[u8], nvmc: &mut NVMC) {
             nvmc.erasepage.write(addr);
             nvmc.config.write_with(|v| v.set_wen_with(|v| v.set_ren()));
 
-            while nvmc.readynext.read().is_busy() {
+            // NOTE: READYNEXT seems to sometimes not properly register when writes can
+            // start occuring after an erase.
+            while nvmc.ready.read().is_busy() {
                 continue;
             }
         }
 
+        // Double check that the page erase has completed. As accesses to flash while
+        // flash is being modified will halt the CPU, this should block if we are still
+        // erasing for some reason.
+        assert_no_debug!(
+            unsafe { core::ptr::read_volatile(addr as *mut u32) } == FLASH_ERASED_WORD_VALUE
+        );
+
         nvmc.config.write_with(|v| v.set_wen_with(|v| v.set_wen()));
         unsafe { core::ptr::write_volatile(addr as *mut u32, *w) };
         nvmc.config.write_with(|v| v.set_wen_with(|v| v.set_ren()));
+
+        assert_no_debug!(unsafe { core::ptr::read_volatile(addr as *mut u32) } == *w);
 
         addr += WORD_SIZE as u32;
     }
@@ -152,8 +166,8 @@ pub fn erase_uicr_async(nvmc: &mut NVMC) {
 pub fn write_to_uicr(mut addr: u32, data: &[u8], nvmc: &mut NVMC) {
     const WORD_SIZE: usize = core::mem::size_of::<u32>();
 
-    assert!(addr % (WORD_SIZE as u32) == 0);
-    assert!(data.len() % WORD_SIZE == 0);
+    assert_no_debug!(addr % (WORD_SIZE as u32) == 0);
+    assert_no_debug!(data.len() % WORD_SIZE == 0);
 
     let words = unsafe {
         core::slice::from_raw_parts::<u32>(

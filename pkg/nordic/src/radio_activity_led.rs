@@ -1,7 +1,6 @@
 use executor::channel::Channel;
 
 use crate::gpio::*;
-use crate::log;
 use crate::radio_socket::RadioController;
 use crate::timer::{Timer, TimerInstant};
 

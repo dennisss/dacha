@@ -54,9 +54,9 @@ use peripherals::raw::EventState;
 use peripherals::raw::Interrupt;
 use usb::descriptors::*;
 
-use crate::log;
 use crate::usb::aligned::Aligned;
 use crate::usb::handler::{USBDeviceHandler, USBError};
+use crate::usb::send_buffer::USBDeviceSendBuffer;
 
 // TODO: Implement more errata like:
 // https://infocenter.nordicsemi.com/topic/errata_nRF52840_Rev3/ERR/nRF52840/Rev3/latest/anomaly_840_199.html
@@ -75,6 +75,8 @@ pub struct USBDeviceController {
     /// peripheral at a time, so we never have to deal with this tracking more
     /// than one transfer.
     pending_transfer: Option<(EndpointDirection, usize)>,
+
+    send_buffer: Option<&'static USBDeviceSendBuffer>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -102,6 +104,9 @@ enum Event {
     EndEpOUT = 1 << 7,
     EP0DataDone = 1 << 8,
     EPData = 1 << 9,
+
+    /// Only emitted in USBDeviceController::run() when the
+    SendBufferReadable = 1 << 10,
 }
 
 impl USBDeviceController {
@@ -149,12 +154,35 @@ impl USBDeviceController {
             power,
             state: State::Disconnected,
             pending_transfer: None,
+            send_buffer: None,
         }
+    }
+
+    pub fn set_send_buffer(&mut self, buffer: &'static USBDeviceSendBuffer) {
+        self.send_buffer = Some(buffer);
     }
 
     pub async fn run<H: USBDeviceHandler>(&mut self, mut handler: H) {
         loop {
-            let event = self.wait_for_event().await;
+            // If we are in an active state, we may be able to send packets back to the
+            // host.
+            let send_buffer_future = {
+                futures::optional(self.send_buffer.and_then(|buf| {
+                    if self.state != State::Active {
+                        return None;
+                    }
+
+                    Some(futures::map(buf.wait_until_readable(), |_| {
+                        Event::SendBufferReadable
+                    }))
+                }))
+            };
+
+            let event = race!(self.wait_for_event(), send_buffer_future).await;
+
+            // self.send_buffer.map(|buf| buf.)
+
+            // futures::map(, mapper)
 
             /*
             // In all cases, if we detect USBREMOVED, power off the device.
@@ -252,10 +280,10 @@ impl USBDeviceController {
                                 Ok(()) => {}
                                 Err(e) => {
                                     if e == USBError::Reset {
-                                        log!(b"RESET\n");
+                                        log!("RESET");
                                         self.configure_endpoints();
                                     } else if e == USBError::NewSetupPacket {
-                                        log!(b"RE-SETUP\n");
+                                        log!("RE-SETUP");
                                         continue;
                                     }
                                 }
@@ -264,7 +292,7 @@ impl USBDeviceController {
                             break;
                         }
                     } else if let Event::USBReset = event {
-                        log!(b"RESET\n");
+                        log!("RESET");
                         self.configure_endpoints();
                     } else if let Event::EPData = event {
                         let status = self.periph.epdatastatus.read();
@@ -304,7 +332,7 @@ impl USBDeviceController {
                         // TODO: Add other ones.
 
                         if input_done {
-                            log!(b"IDONE\n");
+                            log!("IDONE");
                         }
 
                         /*
@@ -331,7 +359,7 @@ impl USBDeviceController {
                             let nread = match request.read(&mut buf).await {
                                 Ok(v) => v,
                                 Err(e) => {
-                                    log!(b"ERR\n");
+                                    log!("ERR");
                                     continue;
                                 }
                             };
@@ -340,12 +368,10 @@ impl USBDeviceController {
                             let original = buf[0];
                             buf[0] = b'X';
 
-                            log!(b"EPD: ");
-                            log!(crate::log::num_to_slice(nread as u32).as_ref());
-                            log!(b"\n");
+                            log!("EPD: ", nread as u32);
 
                             for i in 0..1000 {
-                                log!(b"...............................................................................\n");
+                                log!("...............................................................................");
                             }
 
                             buf[0] = original;
@@ -356,13 +382,36 @@ impl USBDeviceController {
                             //   time .write() was called rather than the data we are about to write
                             //   here.
 
-                            let mut request2 = USBDeviceNormalRequest {
+                            let mut request2 = USBDeviceNormalResponse {
                                 controller: self,
                                 endpoint_index: 1,
                             };
                             request2.write(&buf[0..nread]).await;
 
-                            log!(b"DONE!\n");
+                            log!("DONE!");
+                        }
+                    } else if let Event::SendBufferReadable = event {
+                        let send_buffer = self.send_buffer.as_ref().unwrap();
+                        if let Some(data) = send_buffer.try_read().await {
+                            let mut res = USBDeviceNormalResponse {
+                                controller: self,
+                                endpoint_index: 1,
+                            };
+
+                            match res.write(&data).await {
+                                Ok(()) => {}
+                                Err(e) => {
+                                    if e == USBError::Reset {
+                                        log!("RESET");
+                                        self.configure_endpoints();
+                                    } else if e == USBError::NewSetupPacket {
+                                        // TODO: Must re-enqueue this event in a bit map so that we
+                                        // know to process it again.
+                                        log!("TODO RE-SETUP");
+                                        continue;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -409,9 +458,7 @@ impl USBDeviceController {
                         // want to handle later.
 
                         // TODO:
-                        // log!(b"EX");
-                        // log!(crate::log::num_to_slice(e as u32).as_ref());
-                        // log!(b"\n");
+                        // log!("EX", e as u32);
                     }
                 }
             }
@@ -489,6 +536,7 @@ impl USBDeviceController {
         epinen.set_in0_with(|v| v.set_enable());
         epouten.set_out0_with(|v| v.set_enable());
 
+        // TODO: Make this more configurable.
         epouten.set_out2_with(|v| v.set_enable());
         epinen.set_in1_with(|v| v.set_enable());
 
@@ -527,7 +575,7 @@ impl USBDeviceController {
         pkt: SetupPacket,
         handler: &mut H,
     ) -> Result<(), USBError> {
-        // log!(b"==\n");
+        // log!("==");
 
         if pkt.bmRequestType & (1 << 7) != 0 {
             // Device -> Host
@@ -630,7 +678,7 @@ pub struct USBDeviceControlResponse<'a> {
 impl<'a> USBDeviceControlResponse<'a> {
     // TODO: This must support partially writing.
     pub async fn write(&mut self, mut data: &[u8]) -> Result<(), USBError> {
-        // log!(b">\n");
+        // log!(">");
 
         let mut done = false;
 
@@ -744,9 +792,7 @@ impl<'a> USBDeviceControlResponse<'a> {
                                 }
                             }
                             e => {
-                                log!(b"E");
-                                log!(crate::log::num_to_slice(e as u32).as_ref());
-                                log!(b"\n");
+                                log!("E", e as u32);
                             }
                         }
                     }
@@ -768,7 +814,7 @@ impl<'a> USBDeviceControlResponse<'a> {
             asm!("nop");
         }
 
-        // log!(b"<\n");
+        // log!("<");
 
         // Status stage
         self.controller.periph.tasks_ep0status.write_trigger();
@@ -830,7 +876,14 @@ impl<'a> USBDeviceNormalRequest<'a> {
         output[0..packet_len].copy_from_slice(&packet_buffer[0..packet_len]);
         Ok(packet_len)
     }
+}
 
+pub struct USBDeviceNormalResponse<'a> {
+    controller: &'a mut USBDeviceController,
+    endpoint_index: usize,
+}
+
+impl<'a> USBDeviceNormalResponse<'a> {
     /// Sends
     pub async fn write(&mut self, data: &[u8]) -> Result<(), USBError> {
         // TODO: Re-use a global buffer

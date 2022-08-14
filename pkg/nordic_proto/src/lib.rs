@@ -26,7 +26,7 @@ pub mod constants;
 pub mod packet;
 pub mod packet_cipher;
 pub mod proto;
-pub mod usb;
+pub mod request_type;
 
 pub mod usb_descriptors {
     include!(concat!(env!("OUT_DIR"), "/src/usb_descriptors.rs"));

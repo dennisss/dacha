@@ -30,7 +30,6 @@ pub mod descriptors;
 pub mod dfu;
 mod endpoint;
 mod error;
-#[cfg(feature = "alloc")]
 pub mod hid;
 #[cfg(feature = "alloc")]
 mod language;

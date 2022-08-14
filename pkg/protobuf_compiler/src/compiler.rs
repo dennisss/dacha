@@ -465,6 +465,7 @@ impl Compiler<'_> {
             inner_path.join("_")
         };
 
+        // TODO: Implement a better debug function
         lines.add("#[derive(Clone, Copy, PartialEq, Eq, Debug)]");
         lines.add(format!("pub enum {} {{", fullname));
         for i in &e.body {
@@ -833,7 +834,8 @@ impl Compiler<'_> {
 
         let typename = self.oneof_typename(oneof, path);
 
-        lines.add("#[derive(Debug, Clone, PartialEq)]");
+        lines.add("#[derive(Clone, PartialEq)]");
+        lines.add(r#"#[cfg_attr(feature = "alloc", derive(Debug))]"#);
         lines.add(format!("pub enum {} {{", typename));
         lines.add("\tUnknown,");
         for field in &oneof.fields {
@@ -1042,7 +1044,7 @@ impl Compiler<'_> {
                     format!("{}::static_default_value()", typ)
                 } else {
                     // For now it's a const,
-                    format!("{}{}::DEFAULT", modifier, typ)
+                    format!("{}<{}>::DEFAULT", modifier, typ)
                 }
             };
 
@@ -1178,7 +1180,7 @@ impl Compiler<'_> {
                     lines.add_inline(format!(" self.{}.get_or_insert_with(|| MessagePtr::new({}::default())).as_mut() }}", name, typ));
                 } else {
                     lines.add_inline(format!(
-                        " self.{}.get_or_insert_with(|| {}::default()) }}",
+                        " self.{}.get_or_insert_with(|| <{}>::default()) }}",
                         name, typ
                     ));
                 }
@@ -1190,7 +1192,7 @@ impl Compiler<'_> {
 
                     // Step 1: Ensure that the enum has the right case. Else give it a default
                     // value.
-                    lines.add(format!("\t\tif let {}::{}(_) = &self.{} {{ }} else {{ self.{} = {}::{}({}::DEFAULT); }}",
+                    lines.add(format!("\t\tif let {}::{}(_) = &self.{} {{ }} else {{ self.{} = {}::{}(<{}>::DEFAULT); }}",
                               oneof_typename, oneof_case, oneof_fieldname, oneof_fieldname, oneof_typename, oneof_case, typ));
 
                     // Step 2: Return the mutable reference.
@@ -1986,7 +1988,7 @@ impl Compiler<'_> {
                                 );
 
                                 lines.add(format!(
-                                    "\t\t\tself.{} = {}::{}({}::default());",
+                                    "\t\t\tself.{} = {}::{}(<{}>::default());",
                                     name,
                                     self.oneof_typename(oneof, &inner_path),
                                     common::snake_to_camel_case(&field.name),

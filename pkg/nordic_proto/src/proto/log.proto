@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package nordic;
+
+message LogEntry {
+    // Index of this entry in the log.
+    // The first entry produced by a device when it first boots will have index 0 and every
+    // sequential entry will have an index one larger than the previous one. If a user observes
+    // a gap in indexes received from a device, then the user can assume that some log entries
+    // were skipped due to a buffer overrun or error (e.g. log entry being too large to fully
+    // buffer).
+    uint32 index = 1;
+
+    oneof message {
+        string text = 2 [max_length = 100];
+        // FormattedLogMessage formatted_message = 3;
+    }
+}
+
+// message FormattedLogMessage {
+//     uint32 format = 1;
+//     repeated LogValue params = 2 [max_count = 6];
+// }
+
+// message LogValue {
+//     oneof value {
+//         int32 int = 1;
+//         uint32 uint = 2;
+//         int64 long = 3;
+//         uint64 ulong = 4;
+//         uint32 string_id = 5; 
+//     }
+// }

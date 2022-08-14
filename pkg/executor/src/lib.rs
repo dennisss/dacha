@@ -23,9 +23,11 @@ mod cortex_m;
 pub use cortex_m::*;
 
 #[cfg(feature = "std")]
-pub mod mutex {
-    pub use common::async_std::sync::Mutex;
-}
+pub mod linux;
+
+#[cfg(feature = "std")]
+pub use linux::*;
+
 
 #[cfg(test)]
 mod tests {

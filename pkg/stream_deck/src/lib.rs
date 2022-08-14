@@ -185,11 +185,13 @@ impl StreamDeckDevice {
         // [1, 0, 15, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         //               ^
 
-        let nread = self.hid.device().read_interrupt(0x81, &mut buf).await?;
+        let nread = self.hid.poll_report(&mut buf).await?;
 
         if nread < 4 {
             return Err(err_msg("Invalid key state packet"));
         }
+
+        // TODO: Verify that the first byte is the key state report id.
 
         let unknown_number = u16::from_le_bytes(*array_ref![buf, 0, 2]) as usize;
         let num_keys = u16::from_le_bytes(*array_ref![buf, 2, 2]) as usize;

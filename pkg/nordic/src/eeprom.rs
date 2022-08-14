@@ -26,7 +26,6 @@ use common::errors::*;
 use peripherals::eeprom::EEPROM;
 
 use crate::gpio::{GPIOPin, PinDirection, PinLevel};
-use crate::log;
 use crate::twim::{TWIMError, TWIM};
 
 pub struct Microchip24XX256 {

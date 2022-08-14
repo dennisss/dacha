@@ -3,7 +3,6 @@ use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::twim0::TWIM0;
 use peripherals::raw::{Interrupt, InterruptState};
 
-use crate::log;
 use crate::pins::{connect_pin, PeripheralPin};
 
 /// NOTE: Requires a HFCLK.

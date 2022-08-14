@@ -41,7 +41,6 @@ use core::arch::asm;
 
 use nordic::ecb::ECB;
 use nordic::gpio::*;
-use nordic::log;
 use nordic::protocol::ProtocolUSBThread;
 use nordic::radio::Radio;
 use nordic::radio_activity_led::setup_radio_activity_leds;
@@ -62,7 +61,7 @@ async fn main_thread_fn() {
     let mut serial = UARTE::new(peripherals.uarte0, pins.P0_30, pins.P0_31, 115200);
     log::setup(serial).await;
 
-    log!(b"Starting up!\n");
+    log!("Starting up!");
 
     let mut timer = Timer::new(peripherals.rtc0);
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
@@ -90,6 +89,7 @@ async fn main_thread_fn() {
     ProtocolUSBThread::start(
         USBDeviceController::new(peripherals.usbd, peripherals.power),
         &RADIO_SOCKET,
+        timer.clone(),
     );
 }
 

@@ -1,15 +1,29 @@
-use std::collections::{HashMap, HashSet};
+enum_def_with_unknown!(
+/// Valid values for an HID interface's bInterfaceSubClass field.
+HIDInterfaceSubClass u8 =>
+    None = 0,
 
-use common::async_std::task::current;
-use common::errors::*;
+    // This device supports a standard protocol usable by a system's BIOS.
+    Boot = 1
+);
 
-enum_def!(HIDDescriptorType u8 =>
+enum_def_with_unknown!(
+/// Valid values for the HID interface's bInterfaceProtocol when the bInterfaceSubClass == Boot
+HIDInterfaceBootProtocol u8 =>
+    None = 0,
+    Keyboard = 1,
+    Mouse = 2
+);
+
+// Types of descriptors present in an HID interface (based on the
+// bInterfaceClass)
+enum_def_with_unknown!(HIDDescriptorType u8 =>
     HID = 0x21,
     Report = 0x22,
     PhysicalDescriptor = 0x23
 );
 
-enum_def!(HIDRequestType u8 =>
+enum_def_with_unknown!(HIDRequestType u8 =>
     GET_REPORT = 0x01,
     GET_IDLE = 0x02,
     GET_PROTOCOL = 0x03,

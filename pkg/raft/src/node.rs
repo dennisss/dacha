@@ -10,7 +10,7 @@ use common::futures::future::FutureExt;
 use common::futures::{pin_mut, select};
 use crypto::random;
 use crypto::random::RngExt;
-use protobuf::Message;
+use protobuf::{Message, StaticMessage};
 use rpc_util::AddReflection;
 
 use crate::atomic::*;

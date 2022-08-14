@@ -38,16 +38,17 @@ use common::list::Appendable;
 use executor::channel::Channel;
 use executor::futures::*;
 use executor::mutex::Mutex;
+use logging::Logger;
 use nordic_proto::packet::PacketBuffer;
 use nordic_proto::proto::net::NetworkConfig;
-use nordic_proto::usb::ProtocolUSBRequestType;
+use nordic_proto::request_type::ProtocolRequestType;
 use nordic_proto::usb_descriptors::PROTOCOL_USB_DESCRIPTORS;
 use protobuf::{Message, StaticMessage};
 use usb::descriptors::{DescriptorType, SetupPacket, StandardRequestType};
 
-use crate::log;
 use crate::radio::Radio;
 use crate::radio_socket::RadioSocket;
+use crate::timer::Timer;
 use crate::usb::controller::{
     USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceController, USBDeviceNormalRequest,
 };
@@ -56,6 +57,7 @@ use crate::usb::handler::{USBDeviceHandler, USBError};
 
 pub struct ProtocolUSBHandler {
     radio_socket: &'static RadioSocket,
+    timer: Timer,
     packet_buf: PacketBuffer,
 }
 
@@ -103,9 +105,10 @@ impl USBDeviceHandler for ProtocolUSBHandler {
 }
 
 impl ProtocolUSBHandler {
-    pub fn new(radio_socket: &'static RadioSocket) -> Self {
+    pub fn new(radio_socket: &'static RadioSocket, timer: Timer) -> Self {
         Self {
             radio_socket,
+            timer,
             packet_buf: PacketBuffer::new(),
         }
     }
@@ -118,8 +121,8 @@ impl ProtocolUSBHandler {
         if setup.bmRequestType == 0b01000000
         /* Host-to-device | Vendor | Device */
         {
-            if setup.bRequest == ProtocolUSBRequestType::Send.to_value() {
-                log!(b"USB TX\n");
+            if setup.bRequest == ProtocolRequestType::Send.to_value() {
+                log!("USB TX");
 
                 let n = req.read(self.packet_buf.raw_mut()).await?;
                 // TODO: Verify this doesn't crash due to the first byte being invalid causing
@@ -133,12 +136,12 @@ impl ProtocolUSBHandler {
                 let _ = self.radio_socket.enqueue_tx(&mut self.packet_buf).await;
 
                 return Ok(());
-            } else if setup.bRequest == ProtocolUSBRequestType::SetNetworkConfig.to_value() {
+            } else if setup.bRequest == ProtocolRequestType::SetNetworkConfig.to_value() {
                 // TODO: Just re-use the same buffer as used for the packet?
                 let mut raw_proto = [0u8; 256];
                 let n = req.read(&mut raw_proto).await?;
 
-                log!(b"USB SET CFG\n");
+                log!("USB SET CFG");
 
                 // log!(crate::log::num_to_slice(n as u32).as_ref());
                 // for i in 0..n {
@@ -151,7 +154,7 @@ impl ProtocolUSBHandler {
                 let proto = match NetworkConfig::parse(&raw_proto[0..n]) {
                     Ok(v) => v,
                     Err(e) => {
-                        log!(b"PARSE FAIL\n");
+                        log!("PARSE FAIL");
 
                         return Ok(());
                     }
@@ -160,7 +163,7 @@ impl ProtocolUSBHandler {
                 // Ignore errors.
                 let _ = self.radio_socket.set_network_config(proto).await;
 
-                log!(b"=> DONE\n");
+                log!("=> DONE");
 
                 return Ok(());
             }
@@ -174,7 +177,12 @@ impl ProtocolUSBHandler {
                 == get_attr!(&PROTOCOL_USB_DESCRIPTORS, usb::dfu::DFUInterfaceNumberTag) as u16
                 && setup.bRequest == usb::dfu::DFURequestType::DFU_DETACH as u8
             {
-                peripherals::raw::reset();
+                req.read(&mut []).await?;
+
+                // Give the application enough time to notice the response.
+                self.timer.wait_ms(10).await;
+
+                crate::reset::reset_to_bootloader();
             }
         }
 
@@ -191,8 +199,8 @@ impl ProtocolUSBHandler {
         if setup.bmRequestType == 0b11000000
         /* Device-to-host | Vendor | Device */
         {
-            if setup.bRequest == ProtocolUSBRequestType::Receive.to_value() {
-                // log!(b"USB RX\n");
+            if setup.bRequest == ProtocolRequestType::Receive.to_value() {
+                // log!("USB RX");
                 let has_data = self.radio_socket.dequeue_rx(&mut self.packet_buf).await;
                 res.write(if has_data {
                     self.packet_buf.as_bytes()
@@ -201,8 +209,8 @@ impl ProtocolUSBHandler {
                 })
                 .await?;
                 return Ok(());
-            } else if setup.bRequest == ProtocolUSBRequestType::GetNetworkConfig.to_value() {
-                log!(b"USB GETCFG\n");
+            } else if setup.bRequest == ProtocolRequestType::GetNetworkConfig.to_value() {
+                log!("USB GETCFG");
 
                 let mut raw_proto = common::fixed::vec::FixedVec::<u8, 256>::new();
 
@@ -210,7 +218,7 @@ impl ProtocolUSBHandler {
                 if let Some(network_config) = network_config.get() {
                     if let Err(_) = network_config.serialize_to(&mut raw_proto) {
                         // TODO: Make sure this returns an error over USB?
-                        log!(b"USB SER FAIL\n");
+                        log!("USB SER FAIL");
                         res.stale();
                         return Ok(());
                     }
@@ -220,6 +228,26 @@ impl ProtocolUSBHandler {
 
                 res.write(raw_proto.as_ref()).await?;
 
+                return Ok(());
+            } else if setup.bRequest == ProtocolRequestType::ReadLog.to_value() {
+                let mut buffer = [0u8; 256];
+                if (setup.wLength as usize) < buffer.len() {
+                    res.stale();
+                    return Ok(());
+                }
+
+                let mut n = 0;
+
+                while n < buffer.len() {
+                    if let Some(len) = Logger::global().try_read(&mut buffer[(n + 1)..]).await {
+                        buffer[n] = len as u8;
+                        n += len + 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                res.write(&buffer[0..n]).await?;
                 return Ok(());
             }
         }
@@ -234,8 +262,13 @@ define_thread!(
     ProtocolUSBThread,
     protocol_usb_thread_fn,
     usb: USBDeviceController,
-    radio_socket: &'static RadioSocket
+    radio_socket: &'static RadioSocket,
+    timer: Timer
 );
-async fn protocol_usb_thread_fn(mut usb: USBDeviceController, radio_socket: &'static RadioSocket) {
-    usb.run(ProtocolUSBHandler::new(radio_socket)).await;
+async fn protocol_usb_thread_fn(
+    mut usb: USBDeviceController,
+    radio_socket: &'static RadioSocket,
+    timer: Timer,
+) {
+    usb.run(ProtocolUSBHandler::new(radio_socket, timer)).await;
 }

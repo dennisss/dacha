@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common::async_std::path::Path;
 use common::async_std::sync::Mutex;
 use common::errors::*;
-use protobuf::Message;
+use protobuf::{Message, StaticMessage};
 
 use crate::atomic::*;
 use crate::log::log::*;

@@ -49,7 +49,6 @@ use nordic::config_storage::NetworkConfigStorage;
 use nordic::ecb::ECB;
 use nordic::eeprom::Microchip24XX256;
 use nordic::gpio::*;
-use nordic::log;
 use nordic::protocol::ProtocolUSBThread;
 use nordic::radio::Radio;
 use nordic::radio_activity_led::setup_radio_activity_leds;
@@ -192,6 +191,7 @@ async fn main_thread_fn() {
     ProtocolUSBThread::start(
         USBDeviceController::new(peripherals.usbd, peripherals.power),
         &RADIO_SOCKET,
+        timer.clone()
     );
 }
 

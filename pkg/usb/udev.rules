@@ -24,4 +24,4 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0003", MODE="0660"
 # HackRF One
 SUBSYSTEM=="usb", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="6089", SYMLINK+="hackrf-one-%k", MODE="0660", GROUP="plugdev"
 
-SUBSYSTEM=="usb", ATTRS{idVendor}=="8888", ATTRS{idProduct}=="0001", MODE="0660", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="8888", MODE="0660", GROUP="plugdev"

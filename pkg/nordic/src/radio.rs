@@ -2,8 +2,6 @@ use executor::interrupts::wait_for_irq;
 use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use peripherals::raw::Interrupt;
 
-use crate::log;
-
 type RadioAddress = [u8; 4];
 
 /// NOTE: This requires that the HFXO is started already before using.
@@ -109,13 +107,11 @@ impl Radio {
 
             // Retry if the CRC on the last received packet is invalid.
             if !self.periph.crcstatus.read().is_crcok() {
-                log!(b"!\n");
+                log!("!");
                 continue;
             }
 
-            log!(b"RX ");
-            log!(crate::log::num_to_slice(packet[0] as u32).as_ref());
-            log!(b"\n");
+            log!("RX ", (packet[0] as u32));
 
             break;
         }
@@ -178,7 +174,7 @@ impl<'a> Drop for RadioStateGuard<'a> {
 
 impl<'a> RadioStateGuard<'a> {
     fn new(periph: &'a mut peripherals::raw::radio::RADIO) -> Self {
-        assert!(periph.state.read().is_disabled());
+        assert_no_debug!(periph.state.read().is_disabled());
 
         Self { periph }
     }

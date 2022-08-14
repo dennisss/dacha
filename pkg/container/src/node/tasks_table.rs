@@ -4,7 +4,7 @@
 use builder::proto::bundle::BlobSpec;
 use common::errors::*;
 use datastore::key_encoding::KeyEncoder;
-use protobuf::Message;
+use protobuf::{Message, StaticMessage};
 use sstable::db::WriteBatch;
 use sstable::iterable::Iterable;
 use sstable::EmbeddedDB;

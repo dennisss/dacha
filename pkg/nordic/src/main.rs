@@ -41,28 +41,6 @@ General workflow:
 - Every 100 packets, save the counter to EEPROM before sending it.
 - Eventually, every 10 seconds, save to EEPROM the last packet counter received from each remote link
 
-
-Threads for the serial implementation:
-1. The serial reader:
-    - Reads data from
-    - Buffers data until we see the first 32 bytes or 1ms has passed since the first byte in a batch.
-    - Once done, it enqueues a packet to be sent.
-    - For now, no ack is really needed.
-    -
-2. The radio thread waits for new entries in the packet list
-    - Technically for doing receiving, it could just pull an arbitrary number of bytes from the buffer.
-    - To implement ACK
-        - If a response is needed, what's the point of having an ACK in the protocol?
-
-3. The radio thread also sometimes receives packets.
-    - These get pushed into th
-
-Alternative strategy:
-- Poll for
-
-Scenarios for which we want to optimize:
-- Using just
-
 */
 
 use core::arch::asm;

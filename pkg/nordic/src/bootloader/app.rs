@@ -11,12 +11,23 @@ use peripherals::raw::register::{RegisterRead, RegisterWrite};
 use crate::bootloader::flash::*;
 use crate::reset::ResetState;
 
+pub enum EnterBootloaderReason {
+    Unknown = 0,
+    NoApplication = 1,
+    ApplicationOverflow = 2,
+    BadApplicationChecksum = 3,
+    ResetPin = 4,
+    ApplicationRequested = 5
+}
+
 // NOTE: This code should not depend on any peripherals being initialized as we
 // want to run it as early in the boot process as possible and not initialize
 // any peripherals to a non-initial state which the application may not be able
 // to handle.
-pub fn maybe_enter_application(params: &BootloaderParams) {
+pub fn maybe_enter_application(params: &BootloaderParams) -> EnterBootloaderReason {
     let mut peripherals = peripherals::raw::Peripherals::new();
+
+    let mut reason = EnterBootloaderReason::Unknown;
 
     let reset_reason = peripherals.power.resetreas.read();
     let reset_state = ResetState::from_value(peripherals.power.gpregret.read());
@@ -36,11 +47,15 @@ pub fn maybe_enter_application(params: &BootloaderParams) {
 
     // Enter the bootloader if the reset was triggered by the RESET pin.
     should_enter_bootloader |= reset_reason.resetpin().is_detected();
+    if should_enter_bootloader {
+        reason = EnterBootloaderReason::ResetPin;
+    }
 
     match reset_state {
         ResetState::Default => {}
         ResetState::EnterBootloader => {
             should_enter_bootloader = true;
+            reason = EnterBootloaderReason::ApplicationRequested;
         }
         ResetState::EnterApplication => {
             should_enter_bootloader = false;
@@ -50,21 +65,25 @@ pub fn maybe_enter_application(params: &BootloaderParams) {
 
     // We can only enter the application if it is valid.
     if !should_enter_bootloader {
-        if !has_valid_application(params) {
-            return;
+        if !has_valid_application(params, &mut reason) {
+            return reason;
         }
 
         enter_application();
     }
+
+    reason
 }
 
-fn has_valid_application(params: &BootloaderParams) -> bool {
+fn has_valid_application(params: &BootloaderParams, reason: &mut EnterBootloaderReason) -> bool {
     if params.application_size() == 0 || params.num_flashes() == 0 {
+        *reason = EnterBootloaderReason::NoApplication;
         return false;
     }
 
     let mut app_data = unsafe { application_code_data() };
     if (params.application_size() as usize) > app_data.len() {
+        *reason = EnterBootloaderReason::ApplicationOverflow;
         return false;
     }
 
@@ -77,6 +96,7 @@ fn has_valid_application(params: &BootloaderParams) -> bool {
     };
 
     if expected_sum != params.application_crc32c() {
+        *reason = EnterBootloaderReason::BadApplicationChecksum;
         return false;
     }
 

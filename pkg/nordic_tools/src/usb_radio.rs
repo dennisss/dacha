@@ -2,9 +2,10 @@ use std::time::Duration;
 
 use common::errors::*;
 use nordic_proto::packet::PacketBuffer;
+use nordic_proto::proto::log::LogEntry;
 use nordic_proto::proto::net::*;
-use nordic_proto::usb::ProtocolUSBRequestType;
-use protobuf::Message;
+use nordic_proto::request_type::ProtocolRequestType;
+use protobuf::{Message, StaticMessage};
 use usb::descriptors::SetupPacket;
 
 // TODO: Every single USB transfer should have some timeout.
@@ -57,7 +58,7 @@ impl USBRadio {
             .write_control(
                 SetupPacket {
                     bmRequestType: 0b01000000,
-                    bRequest: ProtocolUSBRequestType::SetNetworkConfig.to_value(),
+                    bRequest: ProtocolRequestType::SetNetworkConfig.to_value(),
                     wValue: 0,
                     wIndex: 0,
                     wLength: proto.len() as u16,
@@ -76,7 +77,7 @@ impl USBRadio {
             .read_control(
                 SetupPacket {
                     bmRequestType: 0b11000000,
-                    bRequest: ProtocolUSBRequestType::GetNetworkConfig.to_value(),
+                    bRequest: ProtocolRequestType::GetNetworkConfig.to_value(),
                     wValue: 0,
                     wIndex: 0,
                     wLength: read_buffer.len() as u16,
@@ -98,7 +99,7 @@ impl USBRadio {
             .write_control(
                 SetupPacket {
                     bmRequestType: 0b01000000,
-                    bRequest: ProtocolUSBRequestType::Send.to_value(),
+                    bRequest: ProtocolRequestType::Send.to_value(),
                     wValue: 0,
                     wIndex: 0,
                     wLength: packet.as_bytes().len() as u16,
@@ -121,7 +122,7 @@ impl USBRadio {
                 self.device.read_control(
                     SetupPacket {
                         bmRequestType: 0b11000000,
-                        bRequest: ProtocolUSBRequestType::Receive.to_value(),
+                        bRequest: ProtocolRequestType::Receive.to_value(),
                         wValue: 0,
                         wIndex: 0,
                         wLength: packet_buffer.raw_mut().len() as u16,
@@ -155,5 +156,41 @@ impl USBRadio {
         } else {
             Ok(None)
         }
+    }
+
+    pub async fn read_log_entries(&mut self) -> Result<Vec<LogEntry>> {
+        let mut buffer = [0u8; 256];
+        let n = self
+            .device
+            .read_control(
+                SetupPacket {
+                    bmRequestType: 0b11000000,
+                    bRequest: ProtocolRequestType::ReadLog.to_value(),
+                    wValue: 0,
+                    wIndex: 0,
+                    wLength: buffer.len() as u16,
+                },
+                &mut buffer,
+            )
+            .await?;
+
+        let mut out = vec![];
+
+        let mut i = 0;
+        while i < n {
+            let len = buffer[i] as usize;
+            i += 1;
+
+            if i + len > n {
+                return Err(err_msg("Log entry larger than buffer length"));
+            }
+
+            let data = &buffer[i..(i + len)];
+            i += len;
+
+            out.push(LogEntry::parse(data)?);
+        }
+
+        Ok(out)
     }
 }

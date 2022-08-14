@@ -7,7 +7,7 @@ use common::errors::*;
 use failure::ResultExt;
 use nix::sys::socket::sockopt::{ReuseAddr, ReusePort};
 use nix::sys::socket::{AddressFamily, InetAddr, SockAddr, SockFlag, SockProtocol, SockType};
-use protobuf::Message;
+use protobuf::{Message, StaticMessage};
 
 use crate::proto::routing::Announcement;
 use crate::routing::route_store::*;

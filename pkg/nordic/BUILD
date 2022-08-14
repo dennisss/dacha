@@ -15,6 +15,10 @@ rust_binary(
     name = "nordic_blink"
 )
 
+rust_binary(
+    name = "nordic_keyboard"
+)
+
 proto_data(
     name = "nrf52840",
     src = "nrf52840.textproto"

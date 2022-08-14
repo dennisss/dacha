@@ -81,7 +81,7 @@ impl HIDDevice {
         device.claim_interface(iface)?;
         device.set_alternate_setting(iface, alt_setting)?;
 
-        if hid.bReportDescriptorType != HIDDescriptorType::Report as u8 {
+        if hid.bReportDescriptorType != HIDDescriptorType::Report.to_value() {
             return Err(err_msg(
                 "Expected first HID descriptor to be the Report descriptor",
             ));
@@ -96,9 +96,9 @@ impl HIDDevice {
             let index = 0;
 
             let pkt = SetupPacket {
-                bmRequestType: 0b10000001, // Specific to HID
+                bmRequestType: 0b10000001, // Recipient is the Interface
                 bRequest: StandardRequestType::GET_DESCRIPTOR as u8,
-                wValue: ((HIDDescriptorType::Report as u16) << 8) | (index as u16),
+                wValue: ((HIDDescriptorType::Report.to_value() as u16) << 8) | (index as u16),
                 wIndex: iface as u16,
                 wLength: hid.wReportDescriptorLength,
             };
@@ -256,7 +256,7 @@ impl HIDDevice {
             .device
             .read_control(
                 SetupPacket {
-                    bmRequestType: 0b10100001,
+                    bmRequestType: 0b10100001, // Interface Recipient | Class Type
                     bRequest: HIDRequestType::GET_REPORT.to_value(),
                     wValue: ((report_type.to_value() as u16) << 8) | (report_id as u16),
                     wIndex: self.iface as u16,
@@ -278,5 +278,32 @@ impl HIDDevice {
 
         data.copy_from_slice(&expanded_data[data_offset..]);
         Ok(())
+    }
+
+    pub async fn poll_report(&self, buf: &mut [u8]) -> Result<usize> {
+        self.device.read_interrupt(self.in_endpoint, buf).await
+    }
+
+    /// Sets the duration which the device should wait before sending a
+    /// duplicate report via the interrupt IN endpoint.
+    ///
+    /// - report_id: Id of the report to which this duration should apply or 0
+    ///   if this should apply to all reports.
+    /// - duration: Amount of time the device should wait in units of 4ms
+    ///   increments or 0 if the device should only send a report if it is
+    ///   different than the previous one.
+    pub async fn set_idle(&self, report_id: u8, duration: u8) -> Result<()> {
+        self.device
+            .write_control(
+                SetupPacket {
+                    bmRequestType: 0b00100001, // Interface Recipient | Class Type
+                    bRequest: HIDRequestType::SET_IDLE.to_value(),
+                    wValue: ((duration as u16) << 8) | (report_id as u16),
+                    wIndex: self.iface as u16,
+                    wLength: 0,
+                },
+                &[],
+            )
+            .await
     }
 }

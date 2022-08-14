@@ -1,4 +1,4 @@
-enum_def_with_unknown!(ProtocolUSBRequestType u8 =>
+enum_def_with_unknown!(ProtocolRequestType u8 =>
     // Send a packet.
     // The payload is interprated as a PacketBuffer.
     //
@@ -27,5 +27,15 @@ enum_def_with_unknown!(ProtocolUSBRequestType u8 =>
     // Will return empty data if no valid config is present.
     //
     // [Device -> Host]
-    GetNetworkConfig = 5
+    GetNetworkConfig = 5,
+
+    // Reads the next entries from the device's internal log.
+    //
+    // - The host should allow for a buffer with at least 256 bytes.
+    // - The format of the returned data is a concatenated list of ordered log entries where each
+    //   entry is of the form:
+    //   [length: u8] [data: LogEntry proto]
+    //
+    // [Device -> Host]
+    ReadLog = 6
 );

@@ -119,6 +119,13 @@ pub fn get_chip_config(chip_name: &str, building_bootloader: bool) -> Result<Cor
                     words: vec![18, 18],
                 });
 
+                // TODO: This needs to be board specific.
+                config.registers.push(NonVolatileRegister {
+                    name: "NFCPINS".into(),
+                    address: 0x1000120C,
+                    words: vec![0], // Disabled. Act as GPIO pins.
+                });
+
                 config.registers.push(NonVolatileRegister {
                     name: "REGOUT0".into(),
                     address: 0x10001304,

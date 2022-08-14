@@ -104,7 +104,7 @@ impl<'a> DescriptorIter<'a> {
             }
             _ => {
                 if in_hid_interface {
-                    if raw_type == HIDDescriptorType::HID as u8 {
+                    if raw_type == HIDDescriptorType::HID.to_value() {
                         let hid = UnknownDescriptor::new(raw_desc).decode()?;
                         return Ok(Some(Descriptor::HID(hid)));
                     }

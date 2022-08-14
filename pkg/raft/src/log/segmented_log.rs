@@ -5,7 +5,7 @@ use std::sync::Arc;
 use common::async_std::sync::Mutex;
 use common::errors::*;
 use common::{async_std::path::Path, fs::sync::SyncedDirectory, futures::StreamExt};
-use protobuf::Message;
+use protobuf::{Message, StaticMessage};
 use sstable::record_log::{RecordReader, RecordWriter};
 
 use crate::log::log::*;

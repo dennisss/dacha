@@ -1,0 +1,16 @@
+[package]
+name = "logging"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../common", default-features = false }
+protobuf = { path = "../protobuf", default-features = false }
+nordic_proto = { path = "../nordic_proto", default-features = false }
+executor = { path = "../executor", default-features = false }
+macros = { path = "../macros" }
+
+[features]
+default = ["std", "alloc"]
+alloc = ["common/alloc", "protobuf/alloc", "nordic_proto/alloc", "executor/alloc"]
+std = ["common/std", "protobuf/std", "nordic_proto/std", "executor/std"]

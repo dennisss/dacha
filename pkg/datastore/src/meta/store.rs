@@ -93,7 +93,7 @@ struct Shared {
 }
 
 impl Metastore {
-    fn get_client_id<T: protobuf::Message>(request: &rpc::ServerRequest<T>) -> Result<&str> {
+    fn get_client_id<T: protobuf::StaticMessage>(request: &rpc::ServerRequest<T>) -> Result<&str> {
         match request.context.metadata.get_text(CLIENT_ID_KEY) {
             Ok(Some(v)) => Ok(v),
             _ => Err(rpc::Status::invalid_argument(

@@ -50,7 +50,7 @@ impl ECB {
         }
 
         let failed = self.periph.events_errorecb.read().is_generated();
-        assert!(!failed);
+        assert_no_debug!(!failed);
 
         // TODO: Do we need to do this? If we reset them at the beginning of we
         // disable the interrupt at the end of wait_for_irg, will the

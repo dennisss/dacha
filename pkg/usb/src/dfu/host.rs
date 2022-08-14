@@ -131,6 +131,8 @@ impl DFUHost {
 
             let mut device = device_entry.open().await?;
 
+            println!("Opened!");
+
             device.device.write_control(
                 SetupPacket {
                     bmRequestType: 0b00100001,
@@ -267,7 +269,16 @@ impl DFUHostDeviceEntry {
     async fn open(self) -> Result<DFUHostDevice> {
         let mut device = self.device_entry.open().await?;
 
+        println!("Open!");
+
+        // In the case of a keyboard we need to detach all interfaces?
+        if device.kernel_driver_active(0)? {
+            println!("Removing kernel driver..");
+            device.detach_kernel_driver(0)?;
+        }
+
         device.set_active_configuration(self.metadata.config_value)?;
+
         // TODO: Also set the alternative setting.
         device.claim_interface(self.metadata.interface_num)?;
 

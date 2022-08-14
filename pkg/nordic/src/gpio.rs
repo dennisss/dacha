@@ -31,6 +31,7 @@ use peripherals::raw::p0::dirclr::DIRCLR_WRITE_VALUE;
 use peripherals::raw::p0::dirset::DIRSET_WRITE_VALUE;
 use peripherals::raw::p0::outclr::OUTCLR_WRITE_VALUE;
 use peripherals::raw::p0::outset::OUTSET_WRITE_VALUE;
+use peripherals::raw::p0::pin_cnf::{PULL_FIELD, INPUT_FIELD, DIR_FIELD};
 use peripherals::raw::p0::{P0, P0_REGISTERS};
 use peripherals::raw::p1::P1;
 use peripherals::raw::register::{RegisterRead, RegisterWrite};
@@ -60,28 +61,61 @@ impl GPIO {
 
         GPIOPin {
             port: unsafe { core::mem::transmute(port) },
+            pin_index: p.pin() as usize,
             pin_mask: 1u32 << p.pin(),
+            // handle: p.into(),
         }
     }
 }
 
 pub struct GPIOPin {
     port: &'static mut P0_REGISTERS,
+    pin_index: usize,
     pin_mask: u32,
+    // /// NOTE: This is only used if we want to get the raw pin reference back.
+    // handle: PeripheralPinHandle,
+}
+
+#[derive(Clone, Copy)]
+pub enum Resistor {
+    None,
+    PullDown,
+    PullUp,
 }
 
 impl GPIOPin {
     pub fn set_direction(&mut self, dir: PinDirection) -> &mut Self {
+        let mut pin_cnf = self.port.pin_cnf[self.pin_index].read();
+
         if dir == PinDirection::Output {
-            self.port
-                .dirset
-                .write(DIRSET_WRITE_VALUE::from_raw(self.pin_mask));
+            // self.port
+            //     .dirset
+            //     .write(DIRSET_WRITE_VALUE::from_raw(self.pin_mask));
+
+            pin_cnf.set_dir(DIR_FIELD::Output);
+            pin_cnf.set_input(INPUT_FIELD::Disconnect);
         } else {
-            self.port
-                .dirclr
-                .write(DIRCLR_WRITE_VALUE::from_raw(self.pin_mask));
+            // self.port
+            //     .dirclr
+            //     .write(DIRCLR_WRITE_VALUE::from_raw(self.pin_mask));
+
+            pin_cnf.set_dir(DIR_FIELD::Input);
+            pin_cnf.set_input(INPUT_FIELD::Connect);
         }
 
+        self.port.pin_cnf[self.pin_index].write(pin_cnf);
+
+        self
+    }
+
+    pub fn set_resistor(&mut self, value: Resistor) -> &mut Self {
+        let mut pin_cnf = self.port.pin_cnf[self.pin_index].read();
+        pin_cnf.set_pull(match value {
+            Resistor::None => PULL_FIELD::Disabled,
+            Resistor::PullDown => PULL_FIELD::Pulldown,
+            Resistor::PullUp => PULL_FIELD::Pullup,
+        });
+        self.port.pin_cnf[self.pin_index].write(pin_cnf);
         self
     }
 
@@ -94,6 +128,15 @@ impl GPIOPin {
             self.port
                 .outclr
                 .write(OUTCLR_WRITE_VALUE::from_raw(self.pin_mask));
+        }
+    }
+
+    pub fn read(&mut self) -> PinLevel {
+        let v = self.port.r#in.read().to_raw() & self.pin_mask;
+        if v != 0 {
+            PinLevel::High
+        } else {
+            PinLevel::Low
         }
     }
 }

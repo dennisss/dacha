@@ -14,7 +14,9 @@ use peripherals::raw::Interrupt;
 /// over, we'd need to wait for a clock overflow.
 ///
 /// Assuming we are running at 32KHz, this value is ~0.5ms.
-const MIN_WAIT_TICKS: u32 = 16;
+const MIN_WAIT_TICKS: u32 = 3;
+
+// 3.0601628e-5
 
 pub struct Timer {
     rtc0: RTC0,
@@ -73,14 +75,60 @@ impl Timer {
         self.wait_ticks((millis * 32768) / 1000).await
     }
 
+    pub async fn wait_micros(&mut self, micros: u32) {
+        self.wait_ticks((micros * 32768) / 1000000).await
+    }
+
+    /*
+    Read
+    */
+
     async fn wait_ticks(&mut self, ticks: u32) {
+        // TODO: This is not suitable for high speed operations as it takes ~375.2ns to
+        // readthe current counter.
         let start_ticks = self.rtc0.counter.read();
         let end_ticks = (start_ticks + ticks) % Self::TIMER_LIMIT;
 
         loop {
             let current_ticks = self.rtc0.counter.read();
             let elapsed_ticks = Self::duration(start_ticks, current_ticks);
-            if elapsed_ticks + MIN_WAIT_TICKS >= ticks {
+            if elapsed_ticks + MIN_WAIT_TICKS > ticks {
+                break;
+            }
+
+            let old_compare = self.rtc0.cc[0].read().compare();
+            let old_target_duration = Self::duration(start_ticks, old_compare);
+
+            // Override the compare register if our compare value is earlier that the
+            // current one or the current one has already elapsed.
+            if old_target_duration >= ticks || old_target_duration <= elapsed_ticks {
+                self.rtc0.cc[0].write_with(|v| v.set_compare(end_ticks));
+            }
+
+            // NOTE: We don't initially clear EVENTS_COMPARE0 as another waiter may still
+            // need to be woken up.
+
+            executor::interrupts::wait_for_irq(Interrupt::RTC0).await;
+
+            // Clear event so that the interrupt doesn't happen again.
+            self.rtc0.events_compare[0].write_notgenerated();
+        }
+    }
+
+    pub async fn wait_until(&mut self, time: TimerInstant) {
+        let start_ticks = self.rtc0.counter.read();
+        let ticks = if time.ticks > start_ticks {
+            time.ticks - start_ticks
+        } else {
+            5
+        };
+
+        let end_ticks = time.ticks % Self::TIMER_LIMIT;
+
+        loop {
+            let current_ticks = self.rtc0.counter.read();
+            let elapsed_ticks = Self::duration(start_ticks, current_ticks);
+            if elapsed_ticks + MIN_WAIT_TICKS > ticks {
                 break;
             }
 
@@ -124,5 +172,12 @@ impl TimerInstant {
 
     pub fn zero() -> Self {
         Self { ticks: 0 }
+    }
+
+    pub fn add_seconds(&self, seconds: f32) -> Self {
+        let ticks = (seconds * 32768.0) as u32;
+        Self {
+            ticks: self.ticks + ticks,
+        }
     }
 }

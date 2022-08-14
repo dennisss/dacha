@@ -10,7 +10,7 @@ use common::async_std::io::ReadExt;
 use common::async_std::path::Path;
 use common::async_std::sync::Mutex;
 use common::errors::*;
-use protobuf::Message;
+use protobuf::{Message, StaticMessage};
 use sstable::record_log::{RecordReader, RecordWriter};
 
 use crate::proto::log::*;

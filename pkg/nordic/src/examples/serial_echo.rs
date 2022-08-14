@@ -1,8 +1,9 @@
 use executor::define_thread;
 
-use crate::log::num_to_slice;
 use crate::timer::Timer;
 use crate::uarte::UARTE;
+
+use logging::num_to_slice;
 
 // Thread that reads bytes from a UART RX pin and then writes then back to the
 // TX pin.

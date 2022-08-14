@@ -13,7 +13,6 @@ use nordic_proto::proto::net::NetworkConfig;
 
 use crate::config_storage::NetworkConfigStorage;
 use crate::ecb::*;
-use crate::log;
 use crate::radio::Radio;
 
 /// Size to use for all buffers. This is also the maximum size that we will
@@ -90,7 +89,7 @@ impl RadioSocket {
         let mut state_guard = self.state.lock().await;
         let state = &mut *state_guard;
 
-        assert!(state.network_storage.is_none() && !state.network_valid);
+        assert_no_debug!(state.network_storage.is_none() && !state.network_valid);
 
         // TODO: Re-use the set_network_config code.
         if network_storage.read(&mut state.network).await? {
@@ -100,9 +99,9 @@ impl RadioSocket {
         }
 
         if state.network_valid {
-            log!(b"Read valid config from storage.\n");
+            log!("Read valid config from storage.");
         } else {
-            log!(b"No valid config available in storage.\n");
+            log!("No valid config available in storage.");
         }
 
         state.network_storage = Some(network_storage);
@@ -134,9 +133,9 @@ impl RadioSocket {
 
         let is_valid = Self::is_valid_config(&state.network);
         if is_valid {
-            log!(b"Set valid\n");
+            log!("Set valid");
         } else {
-            log!(b"Set INVALID\n");
+            log!("Set INVALID");
         }
 
         // NOTE: We only consider the network to be valid if it was successfully written
@@ -368,7 +367,7 @@ impl RadioController {
 
             match event {
                 Event::Received => {
-                    log!(b"RADIO RX\n");
+                    log!("RADIO RX");
 
                     // TODO: We need to check for the case that the radio packet gets truncated (the
                     // first length byte indicates a length that is larger than the buffer size).
@@ -390,7 +389,7 @@ impl RadioController {
                     ) {
                         Ok(v) => v,
                         Err(_) => {
-                            log!(b"EFAIL1\n");
+                            log!("EFAIL1");
                             continue;
                         }
                     };
@@ -399,7 +398,7 @@ impl RadioController {
                     // implemented with async.
 
                     if let Err(_) = packet_encryptor.decrypt() {
-                        log!(b"EFAIL2\n");
+                        log!("EFAIL2");
                         continue;
                     }
 
@@ -415,7 +414,7 @@ impl RadioController {
                     drop(socket_state);
                 }
                 Event::TransmitPending => {
-                    log!(b"RADIO TX\n");
+                    log!("RADIO TX");
 
                     // NOTE: The packet will contain the TO_ADDRESS.
                     let got_packet = packet_buf.read_from(&mut socket_state.transmit_buffer);

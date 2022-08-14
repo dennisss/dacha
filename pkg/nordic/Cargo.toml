@@ -16,8 +16,9 @@ nordic_proto = { path = "../nordic_proto", default-features = false }
 cnc = { path = "../cnc", default-features = false }
 uf2 = { path = "../uf2", default-features = false }
 math = { path = "../math", default-features = false }
+logging = { path = "../logging", default-features = false }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc", "nordic_proto/alloc", "executor/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc", "cnc/alloc", "math/alloc"]
-std = ["common/std", "nordic_proto/alloc", "nordic_proto/std", "executor/alloc", "crypto/std", "protobuf/std", "usb/std", "cnc/std", "math/std"]
+alloc = ["common/alloc", "nordic_proto/alloc", "executor/alloc", "crypto/alloc", "protobuf/alloc", "usb/alloc", "cnc/alloc", "math/alloc", "logging/alloc"]
+std = ["common/std", "nordic_proto/alloc", "nordic_proto/std", "executor/std", "crypto/std", "protobuf/std", "usb/std", "cnc/std", "math/std", "logging/std"]

@@ -3,7 +3,6 @@ use core::future::Future;
 use usb::descriptors::{DescriptorType, SetupPacket, StandardRequestType};
 use usb::DescriptorSet;
 
-use crate::log;
 use crate::usb::controller::{
     USBDeviceControlRequest, USBDeviceControlResponse, USBDeviceNormalRequest,
 };

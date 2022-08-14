@@ -22,6 +22,8 @@ extern crate crypto;
 #[macro_use]
 extern crate macros;
 extern crate nordic_proto;
+#[macro_use]
+extern crate logging;
 
 #[cfg(feature = "alloc")]
 pub mod allocator;
@@ -33,7 +35,6 @@ pub mod entry;
 mod events;
 pub mod examples;
 pub mod gpio;
-pub mod log;
 pub mod pins;
 pub mod protocol;
 pub mod radio;

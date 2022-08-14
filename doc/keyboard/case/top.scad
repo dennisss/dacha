@@ -22,6 +22,7 @@ plate_to_pcb_depth = 5.4;
 
 wall_width = 3*0.45;
 outer_wall_width = 0.9;
+outer_horizontal_wall_width = 6;
 
 pcb_depth = 1.6;
 
@@ -35,8 +36,15 @@ oled_outer_width = 38.2;
 oled_display_width = oled_outer_width - 2*5;
 oled_padding = 0.2;
 
-hex_nut_radius = 4.2 / 2;
-hex_nut_height = 2.2;
+// Chosen to make the distance across the flats 4.2mm
+hex_nut_radius = 4.85 / 2;
+hex_nut_height = 1.8;
+
+keyboard_center_x = start_x + (outer_width / 2);
+keyboard_center_y = start_y - (outer_height / 2);
+
+center_x = start_x + (outer_width / 2);
+center_y = start_y - (outer_height / 2);
 
 $fn = 40;
 
@@ -116,11 +124,43 @@ module PlateWall(bottom_z, wall_height) {
   wall_outer_width = outer_width + outer_extra_pad;
   wall_outer_height = outer_height + outer_extra_pad;
   
-  translate([start_x - outer_extra_pad/2, start_y + outer_extra_pad/2, bottom_z])
-  translate([wall_outer_width / 2, -wall_outer_height / 2, wall_height / 2])
+  total_width = wall_outer_width;
+  total_height = wall_outer_height + 2*outer_horizontal_wall_width;
+  
   difference() {
-    cube([wall_outer_width, wall_outer_height, wall_height], center=true);
-    cube([wall_outer_width - 2*outer_wall_width, wall_outer_height - 2*outer_wall_width, 100], center=true);
+    
+    translate([center_x, center_y, bottom_z + wall_height / 2])
+    difference() {
+      cube([
+        total_width, total_height,
+        wall_height
+      ], center=true);
+      
+      cube([
+        wall_outer_width - 2*outer_wall_width,
+        wall_outer_height - 2*outer_wall_width,
+        100
+      ], center=true);
+    }
+    
+    AllCorners()
+    translate([center_x, center_y, 0])
+    translate([
+      (total_width / 2) - 4,
+      (total_height / 2) - 4,
+      0
+    ])
+    difference() {
+      translate([0, 0, -25])
+      cube([
+        50,
+        50,
+        50
+      ]);
+      
+      cylinder(r=4, h=100, center=true);
+    }
+
   }
 }
 
@@ -146,13 +186,27 @@ center_screw_holes = [
   [282.5, 216.9]
 ];
 
+side_screw_top_y = -start_y - (outer_horizontal_wall_width / 2) + (outer_extra_pad / 2);
+side_screw_bottom_y = -start_y + outer_height + (outer_horizontal_wall_width / 2) - (outer_extra_pad / 2);
+side_screw_holes = [
+  [start_x + (outer_width / 2) + 15, side_screw_top_y],
+  [start_x + (outer_width / 2) - 15, side_screw_top_y],
+  [start_x + (outer_width / 2) + 15, side_screw_bottom_y],
+  [start_x + (outer_width / 2) - 15, side_screw_bottom_y],
+  
+  [start_x + (outer_width / 6), side_screw_top_y],
+  [start_x + (5 * outer_width / 6), side_screw_top_y],
+    [start_x + (outer_width / 6), side_screw_bottom_y],
+  [start_x + (5 * outer_width / 6), side_screw_bottom_y],
+];
+
 screw_holes_with_nuts = [
   // Left
   [104.5, 112],
   [104.5, 165],
   [104.9, 218],
   
-    [460.5, 112],
+  [460.5, 112],
   [460.5, 165],
   [460.5, 218],
 ];
@@ -160,30 +214,30 @@ screw_holes_with_nuts = [
 // NOTE: Space bar will have the wire on top while others have it on the bottom side 
 stabilizer_holes = [
   // Left Shift
-  [118.162, 191.3525],
-  [118.162, 206.5925],
-  [142.038, 191.3525],
-  [142.038, 206.5925],
+  [118.162, 191.3525, false],
+  [118.162, 206.5925, false],
+  [142.038, 191.3525, false],
+  [142.038, 206.5925, false],
   // Space Bar
-  [189.6376, 209.1325],
-  [189.6376, 224.3725],
-  [289.6374, 209.1325],
-  [289.6374, 224.3725],
+  [189.6376, 209.1325, true],
+  [189.6376, 224.3725, true],
+  [289.6374, 209.1325, true],
+  [289.6374, 224.3725, true],
   // Right Shift
-  [356.287, 191.3525],
-  [356.287, 206.5925],
-  [380.163, 191.3525],
-  [380.163, 206.5925],
+  [356.287, 191.3525, false],
+  [356.287, 206.5925, false],
+  [380.163, 191.3525, false],
+  [380.163, 206.5925, false],
   // Enter
-  [361.0495, 172.3025],
-  [361.0495, 187.5425],
-  [384.9255, 172.3025],
-  [384.9255, 187.5425],
+  [361.0495, 172.3025, false],
+  [361.0495, 187.5425, false],
+  [384.9255, 172.3025, false],
+  [384.9255, 187.5425, false],
   // Backspace
-  [363.43075, 134.2025],
-  [363.43075, 149.4425],
-  [387.30675, 134.2025],
-  [387.30675, 149.4425],
+  [363.43075, 134.2025, false],
+  [363.43075, 149.4425, false],
+  [387.30675, 134.2025, false],
+  [387.30675, 149.4425, false],
 ];
 
 
@@ -202,25 +256,42 @@ function stab_center(i) = [
   0
 ];
 
-module ScrewHole(cut = 0) {
-  translate([0, 0, plate_to_pcb_depth / 2])
+// plate_to_pcb_depth
+
+module TopScrewStandoff(cut = 0) {
+  y = plate_to_pcb_depth - plate_depth;
+  
+  translate([0, 0, y])
   // 4.7 is 3 0.45mm walls
-  difference() {
-    cylinder(h=plate_to_pcb_depth - cut, d=4.7, center=true);
-    cylinder(h=100, d=2, center=true);
-  }
+  scale([1, 1, -1])
+  cylinder(h=(plate_to_pcb_depth - plate_depth) - cut, d=4.7);
 }
 
+module TopScrewHole(cut = 0, d = 2) {
+  y = plate_to_pcb_depth - plate_depth;
+
+  translate([0, 0, y])
+  // 4.7 is 3 0.45mm walls
+  scale([1, 1, -1])
+  cylinder(h=100, d=d);
+}
 
 
 module ScrewHoleWithNut() {
   difference() {
     translate([0, 0, plate_to_pcb_depth / 2])
-      cube([8, 8, plate_to_pcb_depth], center = true);
+      cube([9, 9.35, plate_to_pcb_depth], center = true);
     cylinder(h=100, d=2.4, center=true);
     
+    /*
     translate([0, 0, (-hex_nut_height / 2) + (plate_to_pcb_depth - plate_depth)])
     cube([hex_nut_radius*2, 50, hex_nut_height], center=true);
+    */
+    
+    rotate(-90)
+    translate([0, 0, 1])
+    linear_extrude(height = hex_nut_height)
+    Hexagon(hex_nut_radius);
     
     /*
     rotate(-90)
@@ -232,6 +303,12 @@ module ScrewHoleWithNut() {
     } 
     */   
   }
+}
+
+module TopHorizontalNutHole() {
+  translate([0, 0, 1])
+  linear_extrude(height = hex_nut_height)
+  Hexagon(hex_nut_radius);
 }
 
 // The base of one stabilizer is 20mm high (the amount of space touching the PCB)
@@ -288,13 +365,25 @@ module TopPlateOnePiece() {
     }
 
     difference() {
-      Plate();
+      union() {
+        Plate();
+        PlateWall(
+          wall_height = plate_to_pcb_depth + pcb_depth,
+          bottom_z = -pcb_depth
+        );
+        
+        for (hole_i = [0:len(screw_holes)-1]) {
+          translate([screw_holes[hole_i][0],-screw_holes[hole_i][1], 0])
+          TopScrewStandoff();
+        }
+      }
+
       for (key_i = [0:len(key_centers)-1]) {
         translate([key_centers[key_i][0], -key_centers[key_i][1], 0])
         KeyHole();
       }
       for (stab_i = [0:2:len(stabilizer_holes)-1]) {
-        translate(stab_center(stab_i)) StabHole();
+        translate(stab_center(stab_i)) StabHole(inverted = stabilizer_holes[stab_i][2]);
       }
       
       // Cut out for the single tactile button
@@ -302,27 +391,30 @@ module TopPlateOnePiece() {
       cylinder(d=5, h=100, center=true);
       
       OLEDCutout();
+      
+      for (hole_i = [0:len(screw_holes)-1]) {
+        translate([screw_holes[hole_i][0],-screw_holes[hole_i][1], 0])
+        TopScrewHole();
+      }
+      for (hole_i = [0:len(side_screw_holes)-1]) {
+        translate([side_screw_holes[hole_i][0],-side_screw_holes[hole_i][1], 0])
+        union() {
+          TopScrewHole(d=2.4);
+          TopHorizontalNutHole();
+        }
+      }
     }
+   
     
-    for (hole_i = [0:len(screw_holes)-1]) {
-      translate([screw_holes[hole_i][0],-screw_holes[hole_i][1], 0])
-      ScrewHole();
-    }
+    // side_screw_holes
     
     for (hole_i = [0:len(screw_holes_with_nuts)-1]) {
       translate([screw_holes_with_nuts[hole_i][0],-screw_holes_with_nuts[hole_i][1], 0])
       ScrewHoleWithNut();
     }
-    
-    PlateWall(
-      wall_height = plate_to_pcb_depth + pcb_depth,
-      bottom_z = -pcb_depth
-    );
+   
   }
 }
-
-keyboard_center_x = start_x + (outer_width / 2);
-keyboard_center_y = start_y - (outer_height / 2);
 
 // 0.4 is the thickness of the plate around the OLED area
 oled_support_height = plate_to_pcb_depth - 0.4 - 2.8;
@@ -352,6 +444,8 @@ module TopPlate() {
       // Slicing it diagonally to make it easier to fuse and make it less
       // noticeable that there is a seam.
       Slicer();
+      
+      PowerCableCutout();
     }
   
     // Screw holes in the very horizontal middle need to only be added to one side of the cut plate.
@@ -362,8 +456,10 @@ module TopPlate() {
         ])
         // These don't quite touch the pcb so that they compress the two sides
           // together a bit.
-        // NOTE: The cut is centered
-        ScrewHole(cut = 0.8);
+        difference() {
+          TopScrewStandoff(cut = 0.4);
+          TopScrewHole();
+        }
       }
     }
   }
@@ -452,10 +548,10 @@ pcb_component_pad = 2;
 
 bottom_plate_depth = 0.8;
 
-battery_height = 7.4;
+battery_height = 6;
 
 lowest_z = -(pcb_depth + pcb_component_pad + battery_height + bottom_plate_depth);
-echo("Total Height: ", lowest_z + plate_to_pcb_depth);
+echo("Screw Height: ", -lowest_z + plate_to_pcb_depth - plate_depth - 2.6);
 
 module BottomPlateMain() {
   translate([
@@ -532,18 +628,26 @@ module PowerCableCutout() {
   width = 21;
   depth = 4.6;
   
-  translate([
-    center_x, start_y, -depth/2 - pcb_depth
-  ])
-  cube([
-    width, 50, depth
-  ], center=true);
+  cable_width = 24;
+  cable_depth = 6;
   
+  union() {
+    translate([
+      center_x, start_y, -depth/2 - pcb_depth
+    ])
+    cube([
+      width, 50, depth
+    ], center=true);
+
+    translate([
+      center_x, start_y + outer_wall_width, -depth/2 - pcb_depth
+    ])
+    translate([0, 50 / 2, 0])
+    cube([
+      cable_width, 50, cable_depth
+    ], center=true);    
+  }
 }
-
-
-center_x = start_x + (outer_width / 2);
-center_y = start_y - (outer_height / 2);
 
 module BottomCornerSupport() {
   pad = 0.1;
@@ -584,15 +688,15 @@ module HorizontalBottomRib(y) {
   translate([
     center_x, start_y - y, lowest_z + (depth / 2)
   ])
-  cube([outer_width - 2*8.1, 3*0.45,
+  cube([outer_width - 2*8.1, 5*0.45,
     depth
   ], center=true);
 }
 
 
 module BatteryCagePart() {
-  height = 61;
-  width = 37;
+  height = 70;
+  width = 50;
   wall_width = 0.45*3;
   
   difference() {
@@ -608,6 +712,15 @@ module BatteryCagePart() {
   }
 }
 
+module BatteryClearance() {
+  height = 70;
+  width = 50;
+  wall_width = 0.45*3;
+  
+  translate([0, 0, 50])
+  cube([width, height, 100], center=true);
+}
+
 module BatteryCage() {
   union() {
     BatteryCagePart();
@@ -619,20 +732,30 @@ module BatteryCage() {
 
 rubber_pad_width = 40;
 rubber_pad_height = 10;
-// rubber_pad_depth = 1;
+// A rubber pad is ~1.7mm thick
+rubber_pad_depth = 1.6;
+rubber_pad_hole_depth = rubber_pad_depth + 1;
 
 module RubberPadRecess() {
-  wall_width = 6*0.45;
-  
   translate([start_x + 35,  start_y - 15])
-  translate([0, 0, 2.2 / 2 + lowest_z])
-  cube([rubber_pad_width + 2*wall_width , rubber_pad_height + 2*wall_width , 2.2], center = true);
+  RubberPadRecessRaw();
+}
+
+module RubberPadRecessRaw() {
+  wall_width = 6*0.45;
+
+  translate([0, 0, rubber_pad_hole_depth / 2 + lowest_z])
+  cube([rubber_pad_width + 2*wall_width , rubber_pad_height + 2*wall_width, rubber_pad_hole_depth], center = true);  
 }
 
 module RubberPadHole() {
   translate([start_x + 35,  start_y - 15])
-  translate([0, 0, 1.2 / 2 + lowest_z])
-  cube([rubber_pad_width, rubber_pad_height, 1.2], center=true);
+  RubberPadHoleRaw();
+}
+
+module RubberPadHoleRaw() {
+  translate([0, 0, lowest_z])
+  cube([rubber_pad_width, rubber_pad_height, 2*rubber_pad_depth], center=true);  
 }
 
 module MirrorAroundCenter(m1, m2) {
@@ -648,6 +771,22 @@ module AllCorners() {
   }
 }
 
+module BottomScrewHole(hole) {
+  union() {
+    translate([hole[0], -hole[1], lowest_z])
+    cylinder(d=2.4, h=100, center=true);
+    
+    // Remove recess for screw head
+    translate([hole[0], -hole[1], lowest_z])
+    cylinder(d=4, h=2 * 2.6, center=true);
+  }
+}
+
+module BottomScrewCover(hole) {
+ translate([hole[0], -hole[1], lowest_z + 2.6])
+ cylinder(d=4, h=0.2);
+} 
+
 
 /*
 NOTE: Everything in the bottom plate is calculated to leave 0.2mm below the bottom of the PCB empty (1 3d-printed layer) to allow for some room for compression.
@@ -655,11 +794,10 @@ NOTE: Everything in the bottom plate is calculated to leave 0.2mm below the bott
 module BottomPlateOnePiece() {
   union() {
   difference() {
-    union() {
-      difference() {
         union() {
           BottomPlateMain();
           PlateWall(bottom_z=lowest_z, wall_height=(-lowest_z - pcb_depth - 0.2));
+            
           PowerSwitchSupport();
           
           AllCorners() BottomCornerSupport();
@@ -671,37 +809,64 @@ module BottomPlateOnePiece() {
           BottomRib(8.1 + (rib_width / 2));
           BottomRib(outer_width - (8.1 + (rib_width / 2)));
           BottomRib(296);
-          SmallBottomRib(240);
+          SmallBottomRib(232);
           
-          SmallBottomRib(outer_width / 6);
-          SmallBottomRib(2.3*outer_width / 6);
+          SmallBottomRib(1.2*outer_width / 6);
+          SmallBottomRib(150);
           
           HorizontalBottomRib(94);
-          HorizontalBottomRib(31.6);
+          HorizontalBottomRib(36);
           
-          translate([(406.5 + 446.8) / 2, -(198.5 + 127) / 2, 0])
+          translate([(406.5 + 446.8) / 2 - 6.2, center_y, 0])
+          rotate([0, 0, 90])
           BatteryCage();
           
           AllCorners() RubberPadRecess();
+          translate([center_x, center_y, 0]) rotate([0, 0, 90]) RubberPadRecessRaw();
+
+          // Standoff for screws
+          for (hole_i = [0:len(screw_holes)-1]) {
+            translate([screw_holes[hole_i][0],-screw_holes[hole_i][1], lowest_z])
+            cylinder(d=6, h=(-lowest_z - pcb_depth - 0.2));
+          } 
+          for (hole_i = [0:len(center_screw_holes)-1]) {
+            translate([center_screw_holes[hole_i][0],-center_screw_holes[hole_i][1], lowest_z])
+            cylinder(d=6, h=(-lowest_z - pcb_depth - 0.2));
+          }
+          
+          // Larger bottom part of standoff to allow wrapping around the screw head.
+          for (hole_i = [0:len(screw_holes)-1]) {
+            translate([screw_holes[hole_i][0],-screw_holes[hole_i][1], lowest_z])
+            cylinder(d=8.5, h=(bottom_plate_depth + 4));
+          }
+          for (hole_i = [0:len(center_screw_holes)-1]) {
+            translate([center_screw_holes[hole_i][0],-center_screw_holes[hole_i][1], lowest_z])
+            cylinder(d=8.5, h=(bottom_plate_depth + 4));
+          }
+          
         }
         
         // Cutout for wires coming out of the top of the battery.
-        translate([(406.5 + 446.8) / 2, -(198.5 + 127) / 2, -pcb_depth - pcb_component_pad])
+        translate([365, -(198.5 + 127) / 2, -pcb_depth - pcb_component_pad])
         rotate([-90, 0, 0])
         cylinder(d=6, h=(40));
         
         // Cutout for 2-pin JST connector connecting the rocker to the battery.
-        translate([335, -130.5, -pcb_depth - 9.4])
-        cube([10, 10, 8]);
-        
+        translate([330, -130.5, -pcb_depth - pcb_component_pad])
+        rotate([0, 90, 0])
+        cylinder(d=6, h=40, center=true);
+
         // Cutout for allowing the battery connector to be plugged into the PCB.
-        translate([234, -126.9, -pcb_depth - 9.4 + 4])
-        cube([20, 8.4, 8], center=true);
+        translate([250, -126.9, -pcb_depth - pcb_component_pad])
+        rotate([0, 90, 0])
+        cylinder(d=7, h=40, center=true);
+
         
         AllCorners() RubberPadHole();
+        translate([center_x, center_y, 0]) rotate([0, 0, 90]) RubberPadHoleRaw();
         
         PowerSwitchToggleHole();
-        Slicer();
+
         PowerCableCutout();
         SideDiffuserCutout();
 
@@ -712,72 +877,47 @@ module BottomPlateOnePiece() {
           translate([screw_holes_with_nuts[hole_i][0],-screw_holes_with_nuts[hole_i][1], 0])
           cylinder(d=2.6, h=100, center=true);
         }
-      }
-   
-      for (hole_i = [0:len(screw_holes)-1]) {
-        translate([screw_holes[hole_i][0],-screw_holes[hole_i][1], lowest_z])
-        cylinder(d=6, h=(-lowest_z - pcb_depth - 0.2));
-      } 
-      for (hole_i = [0:len(center_screw_holes)-1]) {
-        translate([center_screw_holes[hole_i][0],-center_screw_holes[hole_i][1], lowest_z])
-        cylinder(d=6, h=(-lowest_z - pcb_depth - 0.2));
-      }
-      
-      for (hole_i = [0:len(screw_holes)-1]) {
-        translate([screw_holes[hole_i][0],-screw_holes[hole_i][1], lowest_z])
-        cylinder(d=8.5, h=(bottom_plate_depth + 4));
-      } 
-      for (hole_i = [0:len(center_screw_holes)-1]) {
-        translate([center_screw_holes[hole_i][0],-center_screw_holes[hole_i][1], lowest_z])
-        cylinder(d=8.5, h=(bottom_plate_depth + 4));
-      }
-      
-     
-    }
     
     // Remove holes from screws
     for (hole_i = [0:len(screw_holes)-1]) {
-      translate([screw_holes[hole_i][0],-screw_holes[hole_i][1], lowest_z])
-      cylinder(d=2.4, h=100, center=true);
-    } 
-    for (hole_i = [0:len(center_screw_holes)-1]) {
-      translate([center_screw_holes[hole_i][0],-center_screw_holes[hole_i][1], lowest_z])
-      cylinder(d=2.4, h=100, center=true);
+      BottomScrewHole(screw_holes[hole_i]);
     }
-    
-    // Remove recess for screw head
-    for (hole_i = [0:len(screw_holes)-1]) {
-      translate([screw_holes[hole_i][0],-screw_holes[hole_i][1], lowest_z])
-      cylinder(d=4, h=2.6, center=false);
-    } 
     for (hole_i = [0:len(center_screw_holes)-1]) {
-      translate([center_screw_holes[hole_i][0],-center_screw_holes[hole_i][1], lowest_z])
-      cylinder(d=4, h=2.6, center=false);
+      BottomScrewHole(center_screw_holes[hole_i]);
     }
-    
     for (hole_i = [0:len(screw_holes_with_nuts)-1]) {
-      translate([screw_holes_with_nuts[hole_i][0],-screw_holes_with_nuts[hole_i][1], lowest_z])
-      cylinder(d=4, h=2.6, center=false);
+      BottomScrewHole(screw_holes_with_nuts[hole_i]);
+    }
+    for (hole_i = [0:len(side_screw_holes)-1]) {
+      BottomScrewHole(side_screw_holes[hole_i]);
     }
     
+    translate([(406.5 + 446.8) / 2 - 6.2, center_y, lowest_z + bottom_plate_depth])
+    rotate([0, 0, 90])
+    BatteryClearance();
+    
+    Slicer();
+     
+    /*
+    // Cutout circle from the rib for wire routing.
     translate([start_x + 296, start_y - 24, -pcb_depth])
     rotate([0, 90, 0])
     cylinder(d=8, h=10, center=true);
-    
+    */
   }
-  
+
       for (hole_i = [0:len(screw_holes)-1]) {
-        translate([screw_holes[hole_i][0],-screw_holes[hole_i][1], lowest_z + 2.6])
-        cylinder(d=4, h=0.2);
+        BottomScrewCover(screw_holes[hole_i]);
       } 
       for (hole_i = [0:len(center_screw_holes)-1]) {
-        translate([center_screw_holes[hole_i][0],-center_screw_holes[hole_i][1], lowest_z + 2.6])
-        cylinder(d=4, h=0.2);
+        BottomScrewCover(center_screw_holes[hole_i]);
       }
       for (hole_i = [0:len(screw_holes_with_nuts)-1]) {
-        translate([screw_holes_with_nuts[hole_i][0],-screw_holes_with_nuts[hole_i][1], lowest_z + 2.6])
-        cylinder(d=4, h=0.2);
-      }      
+        BottomScrewCover(screw_holes_with_nuts[hole_i]);
+      }
+      for (hole_i = [0:len(side_screw_holes)-1]) {
+        BottomScrewCover(side_screw_holes[hole_i]);
+      }
 }
 }
 
@@ -786,10 +926,10 @@ union() {
   // OLEDHolder();
   // ScrewHoleWithNut();
   
-  // TopPlate();
+  TopPlate();
 
   // color("lightblue") SideDiffuser();
   
-  color("teal") BottomPlateOnePiece();
+  // color("teal") BottomPlateOnePiece();
 }
 

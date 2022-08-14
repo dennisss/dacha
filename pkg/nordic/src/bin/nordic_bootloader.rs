@@ -1,11 +1,32 @@
 /*
+
+cargo run --bin builder -- build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
+
 da build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
 
 openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program built/pkg/nordic/nordic_bootloader verify" -c reset -c exit
 
+
 - `~/apps/gcc-arm-none-eabi-10.3-2021.10/bin/arm-none-eabi-gdb /home/dennis/workspace/dacha/built-rust/bfd75a5982e33698/thumbv7em-none-eabihf/release/nordic_bootloader`
 - `target extended-remote localhost:3333`
 - `monitor reset halt`
+
+
+
+Bootstrapping the keyboard:
+
+    cargo run --bin builder -- build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52833_bootloader
+
+
+    openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program built/pkg/nordic/nordic_bootloader verify" -c reset -c exit
+
+    ~/apps/gcc-arm-none-eabi-10.3-2021.10/bin/arm-none-eabi-gdb
+    target extended-remote /dev/ttyACM0
+    monitor swdp_scan
+    attach 1
+    load built/pkg/nordic/nordic_bootloader
+
+
 
 Notes:
 - The UF2 will present addresses in strictly increasing order and the data must align to 32 bits
@@ -63,6 +84,9 @@ extern crate nordic;
 #[macro_use]
 extern crate macros;
 extern crate uf2;
+#[macro_use]
+extern crate logging;
+extern crate nordic_proto;
 
 use core::arch::asm;
 use core::future::Future;
@@ -71,12 +95,12 @@ use core::ptr::read_volatile;
 use common::fixed::vec::FixedVec;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
+use logging::Logger;
 use nordic::bootloader::app::*;
 use nordic::bootloader::flash::*;
 use nordic::bootloader::params::*;
 use nordic::config_storage::NetworkConfigStorage;
 use nordic::gpio::*;
-use nordic::log;
 use nordic::reset::*;
 use nordic::timer::Timer;
 use nordic::uarte::UARTE;
@@ -88,6 +112,7 @@ use nordic::usb::controller::{
 use nordic::usb::default_handler::USBDeviceDefaultHandler;
 use nordic::usb::handler::{USBDeviceHandler, USBError};
 use nordic_proto::proto::bootloader::*;
+use nordic_proto::request_type::ProtocolRequestType;
 use nordic_proto::usb_descriptors::*;
 use peripherals::raw::nvmc::NVMC;
 use peripherals::raw::register::RegisterRead;
@@ -255,7 +280,7 @@ impl BootloaderUSBHandler {
                 let state = match &mut self.state {
                     State::Downloading(s) => s,
                     _ => {
-                        log!(b"DFU_DNLOAD: Wrong state\n");
+                        log!("DFU_DNLOAD: Wrong state");
                         self.status_code = DFUStatusCode::errSTALLEDPKT;
                         req.stale();
                         return Ok(());
@@ -286,7 +311,7 @@ impl BootloaderUSBHandler {
                 let block = match UF2Block::cast_from(&self.buffer[0..nread]) {
                     Some(v) => v,
                     None => {
-                        log!(b"DFU_DNLOAD: Bad UF2 block\n");
+                        log!("DFU_DNLOAD: Bad UF2 block");
                         self.status_code = DFUStatusCode::errSTALLEDPKT;
                         return Ok(());
                     }
@@ -296,7 +321,7 @@ impl BootloaderUSBHandler {
                 if state.next_block_number as u16 != dfu_block_num
                     || state.next_block_number != block.block_number
                 {
-                    log!(b"DFU_DNLOAD: Non-monotonic block num\n");
+                    log!("DFU_DNLOAD: Non-monotonic block num");
                     self.status_code = DFUStatusCode::errSTALLEDPKT;
                     return Ok(());
                 }
@@ -315,7 +340,7 @@ impl BootloaderUSBHandler {
                 // Writes must only go forward in flash addresses to ensure that we properly
                 // handle erases.
                 if block.target_addr < state.next_flash_offset {
-                    log!(b"DFU_DNLOAD: Non-monotonic addr\n");
+                    log!("DFU_DNLOAD: Non-monotonic addr");
                     self.status_code = DFUStatusCode::errADDRESS;
                     return Ok(());
                 }
@@ -325,7 +350,7 @@ impl BootloaderUSBHandler {
                     || block.payload_size % 4 != 0
                     || block.payload_size == 0
                 {
-                    log!(b"DFU_DNLOAD: Unaligned write\n");
+                    log!("DFU_DNLOAD: Unaligned write");
                     self.status_code = DFUStatusCode::errSTALLEDPKT;
                     return Ok(());
                 }
@@ -340,7 +365,7 @@ impl BootloaderUSBHandler {
                 let segment = match FlashSegment::from_address(block.target_addr) {
                     Some(v) => v,
                     None => {
-                        log!(b"DFU_DNLOAD: Unknown flash addr\n");
+                        log!("DFU_DNLOAD: Unknown flash addr");
                         self.status_code = DFUStatusCode::errADDRESS;
                         return Ok(());
                     }
@@ -350,7 +375,7 @@ impl BootloaderUSBHandler {
                 // the memory is in the same segment.
                 let block_end_addr = block.target_addr + block.payload_size;
                 if Some(segment) != FlashSegment::from_address(block_end_addr - 1) {
-                    log!(b"DFU_DNLOAD: Mixing flash segments\n");
+                    log!("DFU_DNLOAD: Mixing flash segments");
                     self.status_code = DFUStatusCode::errADDRESS;
                     return Ok(());
                 }
@@ -366,7 +391,7 @@ impl BootloaderUSBHandler {
                             // (doesn't make sense to have an
                             // application|bootloader without a vector table).
                             if block.target_addr != segment.start_address() {
-                                log!(b"DFU_DNLOAD: Must write segment start\n");
+                                log!("DFU_DNLOAD: Must write segment start");
                                 self.status_code = DFUStatusCode::errADDRESS;
                                 return Ok(());
                             }
@@ -394,7 +419,7 @@ impl BootloaderUSBHandler {
                                 state.application_size += empty_word.len() as u32;
                             }
                         }
-                        assert!(state.next_flash_offset == block.target_addr);
+                        assert_no_debug!(state.next_flash_offset == block.target_addr);
 
                         write_to_flash(block.target_addr, block.payload(), &mut self.nvmc);
                         state.next_flash_offset = block.target_addr + block.payload_size;
@@ -427,7 +452,7 @@ impl BootloaderUSBHandler {
                         state.next_flash_offset = block.target_addr + block.payload_size;
                     }
                     FlashSegment::BootloaderParams => {
-                        log!(b"DFU_DNLOAD: Can not overwrite params\n");
+                        log!("DFU_DNLOAD: Can not overwrite params");
                         self.status_code = DFUStatusCode::errADDRESS;
                         return Ok(());
                     }
@@ -447,6 +472,32 @@ impl BootloaderUSBHandler {
         setup: SetupPacket,
         mut res: USBDeviceControlResponse<'a>,
     ) -> Result<(), USBError> {
+        if setup.bmRequestType == 0b11000000
+        /* Device-to-host | Vendor | Device */
+        {
+            if setup.bRequest == ProtocolRequestType::ReadLog.to_value() {
+                let mut buffer = [0u8; 256];
+                if (setup.wLength as usize) < buffer.len() {
+                    res.stale();
+                    return Ok(());
+                }
+
+                let mut n = 0;
+
+                while n < buffer.len() {
+                    if let Some(len) = Logger::global().try_read(&mut buffer[(n + 1)..]).await {
+                        buffer[n] = len as u8;
+                        n += len + 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                res.write(&buffer[0..n]).await?;
+                return Ok(());
+            }
+        }
+
         if setup.bmRequestType == 0b10100001
             && setup.wIndex
                 == get_attr!(&BOOTLOADER_USB_DESCRIPTORS, usb::dfu::DFUInterfaceNumberTag) as u16
@@ -484,23 +535,30 @@ impl BootloaderUSBHandler {
     }
 }
 
-define_thread!(Main, main_thread_fn, params: BootloaderParams);
-async fn main_thread_fn(params: BootloaderParams) {
+define_thread!(
+    Main,
+    main_thread_fn,
+    reason: EnterBootloaderReason,
+    params: BootloaderParams
+);
+async fn main_thread_fn(reason: EnterBootloaderReason, params: BootloaderParams) {
     let mut peripherals = peripherals::raw::Peripherals::new();
     let mut pins = unsafe { nordic::pins::PeripheralPins::new() };
 
     let mut timer = Timer::new(peripherals.rtc0);
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
 
+    /*
     {
         let mut serial = UARTE::new(peripherals.uarte0, pins.P0_30, pins.P0_31, 115200);
         log::setup(serial).await;
     }
+    */
 
-    log!(b"Enter Bootloader!\n");
-    log!(b"Num Flashes: ");
-    log!(crate::log::num_to_slice(params.num_flashes()).as_ref());
-    log!(b"\n");
+    log!("Enter Bootloader!");
+    log!("Num Flashes: ", params.num_flashes());
+    log!("CRC: ", params.application_crc32c());
+    log!("Reason: ", reason as u32);
 
     let mut usb_controller = USBDeviceController::new(peripherals.usbd, peripherals.power);
     usb_controller
@@ -519,7 +577,7 @@ entry!(main);
 fn main() -> () {
     // TODO: Keep all of this flash?
     let params = read_bootloader_params();
-    maybe_enter_application(&params);
+    let reason = maybe_enter_application(&params);
 
     // Disable interrupts.
     // TODO: Disable FIQ interrupts?
@@ -536,7 +594,7 @@ fn main() -> () {
         &mut peripherals.clock,
     );
 
-    Main::start(params);
+    Main::start(reason, params);
 
     // Enable interrupts.
     unsafe { asm!("cpsie i") };

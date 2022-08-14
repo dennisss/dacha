@@ -4,6 +4,9 @@
 /// Internally the implementation is similar to a cyclic byte buffer except that
 /// each segment is prefixed by an encoded length integer defining how long the
 /// following segment is.
+///
+/// Currently an 8-bit length prefix is used so all data packets must be <= 255
+/// bytes in length.
 pub struct SegmentedBuffer<Array> {
     start: usize,
     length: usize,
@@ -62,6 +65,16 @@ impl<Array: AsRef<[u8]> + AsMut<[u8]>> SegmentedBuffer<Array> {
         self.length += n;
 
         n
+    }
+
+    /// Checks what the size of the
+    pub fn peek(&self) -> Option<usize> {
+        if self.length == 0 {
+            return None;
+        }
+
+        let len = self.buf.as_ref()[self.start] as usize;
+        Some(len)
     }
 
     /// Removes the first segment from the buffer.

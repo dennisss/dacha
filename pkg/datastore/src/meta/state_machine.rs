@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common::async_std::path::{Path, PathBuf};
 use common::async_std::sync::Mutex;
 use common::errors::*;
-use protobuf::Message;
+use protobuf::{Message, StaticMessage};
 use raft::atomic::BlobFile;
 use sstable::db::{Snapshot, Write, WriteBatch};
 use sstable::iterable::Iterable;
