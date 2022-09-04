@@ -13,6 +13,17 @@
 - Verify TC2030 header is standard
 - Ditch the rocker switch
 - Accelerometer
+- Round the PCB corners so that there is more space to round the 3d printed case
+- Have an even number of PCB holes on the left and right side of center to make it easier to use 2-piece 3d-printed cases.
+- Fix the exact vertical position of the LED hole
+- Move the debug header to the bottom of the board.
+
+(299.16875 + 327.74375) / 2 - (12.8 / 2)- 0.45*3
+
+On the other side, the dongle needs an EEPROM to support deduping packets eventually
+- Suppose we have one side start sending packets with index 'i', but then the other the 
+
+- Using the OLED, support changing the current radio channel being used.
 
 ## Dimensions
 
@@ -22,6 +33,19 @@
     - If 1U is 19.05mm
     - Total Key Width: 18.25U = 347.6625mm
     - Total Key Height: 6.5U = 123.82500mm
+
+- Center stabilizer rectangle requires 11.2mm by 7mm holes
+
+- OLED Dimensions
+    - Outer: 38.2mm by 12.2mm
+    - Center of pins is ~1.5mm from left side of PCB
+    - Center of first pin is ~2.25mm from top of bottom of PCB
+    - Display is inset by 5mm from left or right of PCB
+
+To be on, Gate must be < Source
+- Normally gate is 5V
+    - Source is slightly lower.
+    - When active, 
 
 ## Firmware
 

@@ -883,26 +883,29 @@ async fn start_task_impl(
 async fn build_task_blobs(task_spec: &mut TaskSpec) -> Result<Vec<container::BlobData>> {
     let mut out = vec![];
 
-    let build_context = builder::BuildConfigTarget::default_for_local_machine().await?;
-    let mut builder_inst = builder::Builder::default();
+    let build_context = builder::BuildConfigTarget::default_for_local_machine()?;
+    let mut builder_inst = builder::Builder::default()?;
 
     for volume in task_spec.volumes_mut() {
         if let container::TaskSpec_VolumeSourceCase::BuildTarget(label) = volume.source_case() {
             println!("Building volume target: {}", label);
 
-            let res = builder_inst.build_target_cwd(label, &build_context).await?;
+            let res = builder_inst
+                .build_target_cwd(label, builder::NATIVE_CONFIG_LABEL)
+                .await?;
 
             // TODO: Instead just have the bundle_dir added to ouptut_files
             let (bundle_dir, bundle_spec) = {
-                let (_, path) = res
+                let (_, output_file) = res
+                    .outputs
                     .output_files
                     .into_iter()
                     .find(|(r, _)| r.ends_with("/spec.textproto"))
                     .ok_or_else(|| err_msg("Failed to find bundle descriptor"))?;
 
-                let text = fs::read_to_string(&path).await?;
+                let text = fs::read_to_string(&output_file.location).await?;
                 let spec = BundleSpec::parse_text(&text)?;
-                let dir = path.parent().unwrap().to_path_buf();
+                let dir = output_file.location.parent().unwrap().to_path_buf();
 
                 (dir, spec)
             };

@@ -87,7 +87,10 @@ impl RawBlock {
             CompressionType::None => self.data,
             CompressionType::Snappy => {
                 let mut out = vec![];
-                compression::snappy::snappy_decompress(&self.data, &mut out)?;
+                let remaining = compression::snappy::snappy_decompress(&self.data, &mut out)?;
+                if remaining.len() != 0 {
+                    return Err(err_msg("Failed to decode full block"));
+                }
                 out
             }
             CompressionType::ZLib => {

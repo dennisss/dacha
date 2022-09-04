@@ -15,14 +15,22 @@ pub struct AbsoluteReference {
     pub length: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct RelativeReference {
+    /// Number of bytes before the current position in the input data at which
+    /// this reference occurs.
     pub distance: usize,
+
+    ///
     pub length: usize,
 }
 
 pub struct MatchingWindowOptions {
+    /// Maximum number of references to a single trigram which we will keep
+    /// track of.
     pub max_chain_length: usize,
+
+    /// Maximum length of a matching chunk of bytes which we can return.
     pub max_match_length: usize,
 }
 
@@ -112,6 +120,10 @@ impl<B: WindowBuffer> MatchingWindow<B> {
         }
     }
 
+    /// Given the next slice of unprocessed input data, attempts to match as
+    /// many of the starting bytes of the new input data in the history of past
+    /// inputs.
+    ///
     /// NOTE: Will only ever return matches with >= 3 bytes.
     pub fn find_match(&self, data: &[u8]) -> Option<RelativeReference> {
         if data.len() < 3 {

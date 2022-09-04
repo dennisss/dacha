@@ -42,6 +42,7 @@ fn sized_usize(nbytes: usize) -> impl (Fn(&[u8]) -> Result<(usize, &[u8])>) {
 
 /// Decompresses the 'input' bytes into the 'output' buffer and returns any
 /// remaining input data after the compressed part.
+#[must_use]
 pub fn snappy_decompress<'a>(mut input: &'a [u8], output: &mut Vec<u8>) -> Result<&'a [u8]> {
     let uncompressed_length = parse_next!(input, parse_varint) as usize;
     output.reserve(uncompressed_length);
@@ -74,6 +75,39 @@ pub fn snappy_decompress<'a>(mut input: &'a [u8], output: &mut Vec<u8>) -> Resul
     };
 
     while output.len() < uncompressed_length {
+        let tag = parse_next!(input, Tag::parse);
+
+        match tag {
+            Tag::Literal { size } => {
+                if output.len() + size > uncompressed_length {
+                    return Err(err_msg("Literal exceeds expected uncompressed size"));
+                }
+
+                if input.len() < size {
+                    return Err(err_msg("Literal larger than remaining input"));
+                }
+
+                let (data, rest) = input.split_at(size);
+                output.extend_from_slice(data);
+                input = rest;
+            }
+            Tag::Copy { reference } => {
+                copy(reference.length, reference.distance, output)?;
+            }
+        }
+    }
+
+    Ok(input)
+}
+
+#[derive(Clone, PartialEq, Debug)]
+enum Tag {
+    Literal { size: usize },
+    Copy { reference: RelativeReference },
+}
+
+impl Tag {
+    fn parse(mut input: &[u8]) -> Result<(Self, &[u8])> {
         let tag = parse_next!(input, byte);
 
         let tag_type = tag & TAG_TYPE_MASK;
@@ -87,38 +121,51 @@ pub fn snappy_decompress<'a>(mut input: &'a [u8], output: &mut Vec<u8>) -> Resul
                 tag_upper as usize
             } + 1;
 
-            if output.len() + size > uncompressed_length {
-                return Err(err_msg("Literal exceeds expected uncompressed size"));
-            }
-
-            if input.len() < size {
-                return Err(err_msg("Literal larger than remaining input"));
-            }
-
-            let (data, rest) = input.split_at(size);
-            output.extend_from_slice(data);
-            input = rest;
+            Ok((Self::Literal { size }, input))
         } else if tag_type == TAG_COPY1 {
             let len = (((tag >> TAG_TYPE_NBITS) & 0b111) + 4) as usize;
             // Upper 3 bits of the offset.
             let offset_upper = ((tag >> 5) & 0b111) as usize;
             let offset = (parse_next!(input, byte) as usize) | (offset_upper << 8);
-            copy(len, offset, output)?;
+
+            Ok((
+                Self::Copy {
+                    reference: RelativeReference {
+                        distance: offset,
+                        length: len,
+                    },
+                },
+                input,
+            ))
         } else if tag_type == TAG_COPY2 {
             let len = ((tag >> TAG_TYPE_NBITS) as usize) + 1;
             let offset = parse_next!(input, le_u16) as usize;
-            copy(len, offset, output)?;
+            Ok((
+                Self::Copy {
+                    reference: RelativeReference {
+                        distance: offset,
+                        length: len,
+                    },
+                },
+                input,
+            ))
         } else if tag_type == TAG_COPY4 {
             let len = ((tag >> TAG_TYPE_NBITS) as usize) + 1;
             let offset = parse_next!(input, le_u32) as usize;
-            copy(len, offset, output)?;
+            Ok((
+                Self::Copy {
+                    reference: RelativeReference {
+                        distance: offset,
+                        length: len,
+                    },
+                },
+                input,
+            ))
         } else {
             // This should never happen as we cover all 2-bit values above.
             panic!("Type larger by 2 bits");
         }
     }
-
-    Ok(input)
 }
 
 fn snappy_write_reference(r: &RelativeReference, output: &mut Vec<u8>) {
@@ -141,7 +188,7 @@ fn snappy_write_literal(data: &[u8], output: &mut Vec<u8>) {
     }
 
     let len = (data.len() - 1) as u32;
-    if len <= 60 {
+    if len < 60 {
         output.push(TAG_LITERAL | ((len as u8) << TAG_TYPE_NBITS));
     } else {
         let nbytes = common::ceil_div(32 - len.leading_zeros() as usize, 8);
@@ -247,12 +294,58 @@ mod tests {
         let mut compressed = vec![];
         snappy_compress(&input, &mut compressed);
 
-        println!("{}", compressed.len());
+        let mut uncompressed = vec![];
+        let rest = snappy_decompress(&compressed, &mut uncompressed).unwrap();
+        assert_eq!(rest.len(), 0);
+
+        assert_eq!(&input, &uncompressed);
+    }
+
+    #[test]
+    fn snappy_compress_test3() {
+        let input = std::fs::read(project_path!("testdata/gutenberg/shakespeare.txt")).unwrap();
+
+        let mut compressed = vec![];
+        snappy_compress(&input, &mut compressed);
 
         let mut uncompressed = vec![];
         let rest = snappy_decompress(&compressed, &mut uncompressed).unwrap();
         assert_eq!(rest.len(), 0);
 
         assert_eq!(&input, &uncompressed);
+    }
+
+    #[test]
+    fn snappy_relative_tag() {
+        for length in 1..65 {
+            for distance in 0..100_000 {
+                let mut data = vec![];
+                snappy_write_reference(&RelativeReference { distance, length }, &mut data);
+
+                let (tag, rest) = Tag::parse(&data[..]).unwrap();
+
+                assert_eq!(
+                    tag,
+                    Tag::Copy {
+                        reference: RelativeReference { distance, length }
+                    }
+                );
+                assert_eq!(rest, &[]);
+            }
+        }
+    }
+
+    #[test]
+    fn snappy_literal_tag() {
+        let mut data = vec![0; 100_000];
+
+        for i in 1..data.len() {
+            let mut out = vec![];
+            snappy_write_literal(&data[0..i], &mut out);
+
+            let (tag, rest) = Tag::parse(&out).unwrap();
+            assert_eq!(tag, Tag::Literal { size: i });
+            assert_eq!(rest.len(), i);
+        }
     }
 }

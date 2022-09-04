@@ -47,6 +47,8 @@ pub struct TransformProgress {
 
 /// Helper that consumes all of the input data and transforms it into the output
 /// vector.
+/// 
+/// TODO: Verify that in all the places where this is used, we check the 'done' flag.
 ///
 /// Returns the number of input bytes read. Number of output bytes should be
 /// trivial. But, the question is whether or
