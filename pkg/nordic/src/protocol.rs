@@ -32,6 +32,7 @@ Syncronization
 
 use core::future::Future;
 
+use common::attribute::GetAttributeValue;
 use common::errors::*;
 use common::fixed::vec::FixedVec;
 use common::list::Appendable;
@@ -42,7 +43,6 @@ use logging::Logger;
 use nordic_proto::packet::PacketBuffer;
 use nordic_proto::proto::net::NetworkConfig;
 use nordic_proto::request_type::ProtocolRequestType;
-use nordic_proto::usb_descriptors::PROTOCOL_USB_DESCRIPTORS;
 use protobuf::{Message, StaticMessage};
 use usb::descriptors::{DescriptorType, SetupPacket, StandardRequestType};
 
@@ -55,14 +55,18 @@ use crate::usb::controller::{
 use crate::usb::default_handler::USBDeviceDefaultHandler;
 use crate::usb::handler::{USBDeviceHandler, USBError};
 
-pub struct ProtocolUSBHandler {
+pub trait ProtocolUSBDescriptorSet =
+    usb::DescriptorSet + GetAttributeValue<usb::dfu::DFUInterfaceNumberTag> + Copy + 'static;
+
+pub struct ProtocolUSBHandler<D> {
+    descriptors: D,
     radio_socket: &'static RadioSocket,
     timer: Timer,
     packet_buf: PacketBuffer,
 }
 
 // TODO: Have a macro to auto-generate this.
-impl USBDeviceHandler for ProtocolUSBHandler {
+impl<D: ProtocolUSBDescriptorSet> USBDeviceHandler for ProtocolUSBHandler<D> {
     type HandleControlRequestFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
 
     type HandleControlResponseFuture<'a> = impl Future<Output = Result<(), USBError>> + 'a;
@@ -104,14 +108,18 @@ impl USBDeviceHandler for ProtocolUSBHandler {
     }
 }
 
-impl ProtocolUSBHandler {
-    pub fn new(radio_socket: &'static RadioSocket, timer: Timer) -> Self {
+impl<D: ProtocolUSBDescriptorSet> ProtocolUSBHandler<D> {
+    pub fn new(descriptors: D, radio_socket: &'static RadioSocket, timer: Timer) -> Self {
         Self {
+            descriptors,
             radio_socket,
             timer,
             packet_buf: PacketBuffer::new(),
         }
     }
+
+    // TODO: Add a 'FactoryReset' command which simply clears all in-volatile state
+    // and resets the device.
 
     async fn handle_control_request_impl<'a>(
         &'a mut self,
@@ -143,14 +151,6 @@ impl ProtocolUSBHandler {
 
                 log!("USB SET CFG");
 
-                // log!(crate::log::num_to_slice(n as u32).as_ref());
-                // for i in 0..n {
-                //     log!(crate::log::num_to_slice(raw_proto[i] as u32).as_ref());
-                //     log!(b", ");
-                // }
-
-                // log!(b"\n");
-
                 let proto = match NetworkConfig::parse(&raw_proto[0..n]) {
                     Ok(v) => v,
                     Err(e) => {
@@ -173,8 +173,7 @@ impl ProtocolUSBHandler {
         if setup.bmRequestType == 0b00100001
         /* Host-to-device | Class | Interface */
         {
-            if setup.wIndex
-                == get_attr!(&PROTOCOL_USB_DESCRIPTORS, usb::dfu::DFUInterfaceNumberTag) as u16
+            if setup.wIndex == get_attr!(&self.descriptors, usb::dfu::DFUInterfaceNumberTag) as u16
                 && setup.bRequest == usb::dfu::DFURequestType::DFU_DETACH as u8
             {
                 req.read(&mut []).await?;
@@ -186,7 +185,7 @@ impl ProtocolUSBHandler {
             }
         }
 
-        USBDeviceDefaultHandler::new(PROTOCOL_USB_DESCRIPTORS)
+        USBDeviceDefaultHandler::new(self.descriptors)
             .handle_control_request(setup, req)
             .await
     }
@@ -252,23 +251,18 @@ impl ProtocolUSBHandler {
             }
         }
 
-        USBDeviceDefaultHandler::new(PROTOCOL_USB_DESCRIPTORS)
+        USBDeviceDefaultHandler::new(self.descriptors)
             .handle_control_response(setup, res)
             .await
     }
 }
 
-define_thread!(
-    ProtocolUSBThread,
-    protocol_usb_thread_fn,
-    usb: USBDeviceController,
-    radio_socket: &'static RadioSocket,
-    timer: Timer
-);
-async fn protocol_usb_thread_fn(
+pub async fn protocol_usb_thread_fn<D: ProtocolUSBDescriptorSet>(
+    descriptors: D,
     mut usb: USBDeviceController,
     radio_socket: &'static RadioSocket,
     timer: Timer,
 ) {
-    usb.run(ProtocolUSBHandler::new(radio_socket, timer)).await;
+    usb.run(ProtocolUSBHandler::new(descriptors, radio_socket, timer))
+        .await;
 }

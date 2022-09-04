@@ -42,11 +42,23 @@ pub struct CortexMCPUConfig {
 
     pub registers: Vec<NonVolatileRegister>,
 
-    ///
+    /// Number of bytes at the beginning of flash which are reserved for storing
+    /// bootloader related data.
     pub bootloader_reserved_bytes: u32,
 
+    /// Number of bytes starting at index 0 of flash which can be used for
+    /// storing the bootloader program. The rest up to bootloader_reserved_bytes
+    /// might be used by the bootloader for other purposes such as storing
+    /// parameters.
     pub bootloader_usable_bytes: u32,
 
+    /// Number of bytes to leave unused at the end of flash. This is reserved
+    /// for dynamic application parameters.
+    pub param_reserved_bytes: u32,
+
+    /// If true, the program should be loaded from flash into RAM.
+    /// Generally this is only needed if the program is able to re-program
+    /// itself.
     pub execute_from_ram: bool,
 
     pub building_bootloader: bool,
@@ -56,6 +68,9 @@ pub fn get_chip_config(chip_name: &str, building_bootloader: bool) -> Result<Cor
     const NRF_BOOTLOADER_RESERVED: u32 = 32 * 1024;
     // Final page is reserved for bootloader params.
     const NRF_BOOTLOADER_USABLE: u32 = 28 * 1024;
+
+    // Reserve 4 pages of flash for runtime parameter storage.
+    const NRF_END_RESERVED_BYTES: u32 = 4 * 4096;
 
     match chip_name {
         "nrf52840" => {
@@ -73,6 +88,7 @@ pub fn get_chip_config(chip_name: &str, building_bootloader: bool) -> Result<Cor
                 bootloader_reserved_bytes: NRF_BOOTLOADER_RESERVED,
                 bootloader_usable_bytes: NRF_BOOTLOADER_USABLE,
                 execute_from_ram: building_bootloader,
+                param_reserved_bytes: NRF_END_RESERVED_BYTES,
                 building_bootloader,
             };
 
@@ -108,6 +124,7 @@ pub fn get_chip_config(chip_name: &str, building_bootloader: bool) -> Result<Cor
                 bootloader_reserved_bytes: NRF_BOOTLOADER_RESERVED,
                 bootloader_usable_bytes: NRF_BOOTLOADER_USABLE,
                 execute_from_ram: building_bootloader,
+                param_reserved_bytes: NRF_END_RESERVED_BYTES,
                 building_bootloader,
             };
 
@@ -165,7 +182,9 @@ pub fn generate_linker_script(config: &CortexMCPUConfig) -> Result<String> {
         } else {
             (
                 config.flash.origin + config.bootloader_reserved_bytes,
-                config.flash.length - config.bootloader_reserved_bytes,
+                config.flash.length
+                    - config.bootloader_reserved_bytes
+                    - config.param_reserved_bytes,
             )
         }
     };

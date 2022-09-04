@@ -17,7 +17,7 @@ pub enum EnterBootloaderReason {
     ApplicationOverflow = 2,
     BadApplicationChecksum = 3,
     ResetPin = 4,
-    ApplicationRequested = 5
+    ApplicationRequested = 5,
 }
 
 // NOTE: This code should not depend on any peripherals being initialized as we
@@ -46,6 +46,8 @@ pub fn maybe_enter_application(params: &BootloaderParams) -> EnterBootloaderReas
     let mut should_enter_bootloader = false;
 
     // Enter the bootloader if the reset was triggered by the RESET pin.
+    // NOTE: Because of erata #136, if the reset pin bit is set, all other bits in
+    // RESETREAS must be ignored.
     should_enter_bootloader |= reset_reason.resetpin().is_detected();
     if should_enter_bootloader {
         reason = EnterBootloaderReason::ResetPin;

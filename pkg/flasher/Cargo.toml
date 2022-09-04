@@ -8,3 +8,4 @@ common = { path = "../common" }
 usb = { path = "../usb" }
 elf = { path = "../elf" }
 uf2 = { path = "../uf2" }
+macros = { path = "../macros" }

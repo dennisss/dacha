@@ -3,7 +3,8 @@
     type_alias_impl_trait,
     inherent_associated_types,
     alloc_error_handler,
-    generic_associated_types
+    generic_associated_types,
+    trait_alias
 )]
 #![no_std]
 
@@ -34,6 +35,7 @@ pub mod eeprom;
 pub mod entry;
 mod events;
 pub mod examples;
+// pub mod fast_timer;
 pub mod gpio;
 pub mod pins;
 pub mod protocol;
@@ -42,7 +44,10 @@ pub mod radio_activity_led;
 pub mod radio_socket;
 pub mod rng;
 pub mod spi;
+// pub mod stepper_motor_controller;
 pub mod bootloader;
+pub mod keyboard;
+pub mod params;
 pub mod reset;
 pub mod temp;
 pub mod timer;

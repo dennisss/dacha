@@ -1,3 +1,6 @@
+// NOTE: This is deprecated. The ParamsStorage is now used for storing network
+// data.
+
 use common::const_default::ConstDefault;
 use common::errors::*;
 

@@ -17,13 +17,13 @@ struct Args {
 
     rpc_port: rpc_util::NamedPortArg,
 
-    usb: Option<String>,
+    usb: usb::DeviceSelector,
 }
 
 async fn run() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
     let bridge =
-        nordic_tools::radio_bridge::RadioBridge::create(&args.state_object_name, args.usb).await?;
+        nordic_tools::radio_bridge::RadioBridge::create(&args.state_object_name, &args.usb).await?;
 
     let mut task_bundle = common::bundle::TaskResultBundle::new();
 

@@ -2,6 +2,7 @@ use core::sync::atomic::AtomicUsize;
 
 use common::const_default::ConstDefault;
 use common::errors::*;
+use common::list::Appendable;
 use common::segmented_buffer::SegmentedBuffer;
 use crypto::ccm::CCM;
 use executor::channel::Channel;
@@ -9,10 +10,10 @@ use executor::futures::*;
 use executor::mutex::{Mutex, MutexGuard};
 use nordic_proto::packet::PacketBuffer;
 use nordic_proto::packet_cipher::PacketCipher;
-use nordic_proto::proto::net::NetworkConfig;
+use nordic_proto::proto::net::{LinkState, NetworkConfig, NetworkState};
 
-use crate::config_storage::NetworkConfigStorage;
 use crate::ecb::*;
+use crate::params::{ParamsStorage, NETWORK_CONFIG_ID, NETWORK_STATE_ID};
 use crate::radio::Radio;
 
 /// Size to use for all buffers. This is also the maximum size that we will
@@ -23,7 +24,7 @@ const CCM_LENGTH_SIZE: usize = 2;
 const CCM_NONCE_SIZE: usize = 13; // 15 - CCM_LENGTH_SIZE
 const CCM_TAG_SIZE: usize = 4;
 
-const PACKET_COUNTER_SAVE_INTERVAL: u32 = 100;
+const PACKET_COUNTER_SAVE_INTERVAL: u32 = 1000;
 
 #[derive(Clone, Copy, Debug, Errable)]
 #[repr(u32)]
@@ -46,16 +47,19 @@ pub struct RadioSocket {
 }
 
 struct RadioSocketState {
-    network: NetworkConfig,
+    network_config: NetworkConfig,
 
-    /// Whether or not 'network' contains a valid config for sending/receiving
-    /// packets.
+    network_state: NetworkState,
+
+    /// Whether or not 'network_config' contains a valid config for
+    /// sending/receiving packets.
     network_valid: bool,
 
-    /// Last packet counter sent to the remote device.
-    last_packet_counter: u32,
+    /// Last value of network_state.last_packet_counter() persisted to local
+    /// durable storage.
+    persisted_packet_counter: u32,
 
-    network_storage: Option<NetworkConfigStorage>,
+    params_storage: Option<&'static ParamsStorage>,
 
     transmit_buffer: SegmentedBuffer<[u8; BUFFER_SIZE]>,
 
@@ -68,43 +72,58 @@ impl RadioSocket {
             transmit_pending: Channel::new(),
             receive_pending: Channel::new(),
             state: Mutex::new(RadioSocketState {
-                network: NetworkConfig::DEFAULT,
+                network_config: NetworkConfig::DEFAULT,
+                network_state: NetworkState::DEFAULT,
                 network_valid: false,
-                last_packet_counter: 0,
-                network_storage: None,
+                persisted_packet_counter: 0,
+                params_storage: None,
                 transmit_buffer: SegmentedBuffer::new([0u8; BUFFER_SIZE]),
                 receive_buffer: SegmentedBuffer::new([0u8; BUFFER_SIZE]),
             }),
         }
     }
 
-    /// Configures a storage implementation for reading/writing NetworkConfigs
-    /// durably.
+    /// Configures a storage implementation for reading/writing
+    /// NetworkConfigs/NetworkStates durably.
     ///
     /// This will initialize the socket's config with any value present in the
-    /// given storage and will write any network configs to it in the future.
+    /// given storage and will write any network parameters to it in the future.
     ///
     /// NOTE: This must be done before the socket is used.
-    pub async fn configure_storage(&self, mut network_storage: NetworkConfigStorage) -> Result<()> {
+    pub async fn configure_storage(
+        &self,
+        mut params_storage: &'static ParamsStorage,
+    ) -> Result<()> {
         let mut state_guard = self.state.lock().await;
         let state = &mut *state_guard;
 
-        assert_no_debug!(state.network_storage.is_none() && !state.network_valid);
+        assert_no_debug!(state.params_storage.is_none() && !state.network_valid);
 
         // TODO: Re-use the set_network_config code.
-        if network_storage.read(&mut state.network).await? {
-            // TODO: Check that all fields are set, etc.
-            state.network_valid = Self::is_valid_config(&state.network);
-            state.last_packet_counter = state.network.last_packet_counter();
+
+        let found_config = params_storage
+            .read_into_proto(NETWORK_CONFIG_ID, &mut state.network_config)
+            .await?;
+
+        let found_state = params_storage
+            .read_into_proto(NETWORK_STATE_ID, &mut state.network_state)
+            .await?;
+
+        state.network_valid = found_config && Self::is_valid_config(&state.network_config);
+
+        if state.network_valid && !found_state {
+            state.network_state = NetworkState::DEFAULT;
         }
+
+        state.persisted_packet_counter = state.network_state.last_packet_counter();
+
+        state.params_storage = Some(params_storage);
 
         if state.network_valid {
             log!("Read valid config from storage.");
         } else {
             log!("No valid config available in storage.");
         }
-
-        state.network_storage = Some(network_storage);
 
         Ok(())
     }
@@ -119,19 +138,15 @@ impl RadioSocket {
         let state = &mut *state_guard;
 
         state.network_valid = false;
-        state.last_packet_counter = config.last_packet_counter();
-        state.network = config;
+        state.network_config = config;
 
-        // Must clear these as these weren't generated using the latest config (so
-        // things like packet counters may be stale).
-        state.transmit_buffer.clear();
-        state.receive_buffer.clear();
-
-        if let Some(storage) = &mut state.network_storage {
-            storage.write(&state.network).await?;
+        if let Some(storage) = &mut state.params_storage {
+            storage
+                .write_proto(NETWORK_CONFIG_ID, &state.network_config)
+                .await?;
         }
 
-        let is_valid = Self::is_valid_config(&state.network);
+        let is_valid = Self::is_valid_config(&state.network_config);
         if is_valid {
             log!("Set valid");
         } else {
@@ -142,6 +157,10 @@ impl RadioSocket {
         // to storage.
         state.network_valid = is_valid;
 
+        if is_valid {
+            Self::cleanup_network_state(state);
+        }
+
         drop(state);
 
         // Notify the RadioController that a change has occured in case it is waiting
@@ -151,6 +170,7 @@ impl RadioSocket {
         Ok(())
     }
 
+    // Also must validate the state
     fn is_valid_config(config: &NetworkConfig) -> bool {
         if config.address().len() != nordic_proto::constants::RADIO_ADDRESS_SIZE {
             return false;
@@ -168,6 +188,27 @@ impl RadioSocket {
         true
     }
 
+    fn cleanup_network_state(state: &mut RadioSocketState) {
+        // All links not configured should be removed from the network_state.
+        let mut i = 0;
+        while i < state.network_state.links().len() {
+            let mut found = false;
+            for config_link in state.network_config.links() {
+                if config_link.address() == state.network_state.links()[i].address() {
+                    found = true;
+                    break;
+                }
+            }
+
+            if !found {
+                state.network_state.links_mut().swap_remove(i);
+                continue;
+            }
+
+            i += 1;
+        }
+    }
+
     /// Enqueues data to be transmitted over the radio via a global queue.
     ///
     /// NOTE: This returns as soon as the packet is queued. The packet may need
@@ -176,60 +217,38 @@ impl RadioSocket {
     ///
     /// - packet.address() must be set to the address of the remote device to
     ///   which we should send this packet.
-    /// - packet.counter() should be set to 0 if this device manages its own
-    ///   network storage. Otherwise it must be explicitly set to a non-zero
-    ///   value.
-    /// - After returning packet.counter() will be set by this function to the
-    ///   value of the counter that will be used to send this packet.
+    /// - packet.counter() should be set to 0.
+    /// - After this function returns, packet.counter() will be set to the value
+    ///   of the counter that will be used to send this packet.
     pub async fn enqueue_tx(&self, packet: &mut PacketBuffer) -> Result<()> {
         let mut state_guard = self.state.lock().await;
         let state = &mut *state_guard;
 
-        if !state.network_valid {
+        if !state.network_valid || packet.counter() != 0 {
             return Err(RadioSocketError::SendingInvalidCounter.into());
         }
 
-        if packet.counter() == 0 {
-            // Generate a new counter.
-            // Requires us to do our own persistence of it.
+        let storage = state
+            .params_storage
+            .as_mut()
+            .ok_or_else(|| Error::from(RadioSocketError::SendingInvalidCounter))?;
 
-            let storage = state
-                .network_storage
-                .as_mut()
-                .ok_or_else(|| Error::from(RadioSocketError::SendingInvalidCounter))?;
-
-            // If we have hit the value in the config proto, then we must advance the config
-            // proto and store it in EEPROM. NOTE: This must be atomic to avoid
-            // using un-persisted counters if the write() fails.
-            if state.last_packet_counter >= state.network.last_packet_counter() {
-                // TODO: Implment this without the copy. e.g. instead we could have a
-                // 'pending_persistance' flag or somethimg.
-                let mut next_config = state.network.clone();
-                next_config.set_last_packet_counter(
-                    state.last_packet_counter + PACKET_COUNTER_SAVE_INTERVAL,
-                );
-
-                storage.write(&next_config).await?;
-
-                state.network = next_config;
-            }
-
-            state.last_packet_counter += 1;
-            packet.set_counter(state.last_packet_counter);
-        } else {
-            // We were provided an externally generated counter.
-
-            if state.network_storage.is_some() {
-                return Err(RadioSocketError::SendingInvalidCounter.into());
-            }
-
-            if state.last_packet_counter >= packet.counter() {
-                return Err(RadioSocketError::SendingInvalidCounter.into());
-            }
-
-            state.last_packet_counter = packet.counter();
-            state.network.set_last_packet_counter(packet.counter());
+        // Ensure that we have persisted at least the current packet counter.
+        // NOTE: This must be atomic in case the write fails.
+        // TODO: Validate this works correctly.
+        if state.persisted_packet_counter <= state.network_state.last_packet_counter() {
+            let mut new_state = state.network_state.clone();
+            new_state.set_last_packet_counter(
+                new_state.last_packet_counter() + PACKET_COUNTER_SAVE_INTERVAL,
+            );
+            storage.write_proto(NETWORK_STATE_ID, &new_state).await?;
+            state.persisted_packet_counter = new_state.last_packet_counter();
         }
+
+        // Generate new packet counter incrementally.
+        let packet_counter = state.network_state.last_packet_counter() + 1;
+        state.network_state.set_last_packet_counter(packet_counter);
+        packet.set_counter(packet_counter);
 
         packet.write_to(&mut state.transmit_buffer);
         drop(state);
@@ -290,7 +309,7 @@ impl<'a> RadioNetworkConfigGuard<'a> {
             return None;
         }
 
-        Some(&self.state_guard.network)
+        Some(&self.state_guard.network_config)
     }
 
     // NOTE: This doesn't provide any mutation handlers as mutating the config
@@ -348,7 +367,7 @@ impl RadioController {
 
             // Prepare for receiving packets addressed to us.
             self.radio
-                .set_address(array_ref![socket_state.network.address(), 0, 4]);
+                .set_address(array_ref![socket_state.network_config.address(), 0, 4]);
 
             drop(socket_state);
 
@@ -382,7 +401,7 @@ impl RadioController {
                     let ecb = &mut self.ecb;
                     let packet_encryptor = match PacketCipher::create(
                         &mut packet_buf,
-                        &socket_state.network,
+                        &socket_state.network_config,
                         |key| AES128BlockBuffer::new(key, &mut self.ecb),
                         &from_address,
                         &from_address,
@@ -401,6 +420,36 @@ impl RadioController {
                         log!("EFAIL2");
                         continue;
                     }
+
+                    // Find the link state associated with the remove device.
+                    //
+                    // NOTE: We do this after validating that the packet is from a known sender to
+                    // avoid being able to polute the links vector.
+                    let mut link_state = {
+                        match socket_state
+                            .network_state
+                            .links_mut()
+                            .iter_mut()
+                            .find(|v| v.address() == &from_address)
+                        {
+                            Some(v) => v,
+                            None => {
+                                // Create a new entry.
+                                let mut new_state = LinkState::default();
+                                new_state.address_mut().extend_from_slice(&from_address);
+                                socket_state.network_state.links_mut().push(new_state);
+                                socket_state.network_state.links_mut().last_mut().unwrap()
+                            }
+                        }
+                    };
+
+                    // Block receiving old packets.
+                    if link_state.last_packet_counter() >= packet_buf.counter() {
+                        log!("RX: Old packet");
+                        continue;
+                    }
+
+                    link_state.set_last_packet_counter(packet_buf.counter());
 
                     if let Some(e) = &self.rx_event {
                         e.try_send(()).await;
@@ -423,7 +472,7 @@ impl RadioController {
                         continue;
                     }
 
-                    let from_address = array_ref![socket_state.network.address(), 0, 4];
+                    let from_address = array_ref![socket_state.network_config.address(), 0, 4];
                     let to_address = *packet_buf.remote_address();
 
                     // Use our local address in the packet so that from the receiving device's
@@ -434,7 +483,7 @@ impl RadioController {
 
                     let packet_encryptor = match PacketCipher::create(
                         &mut packet_buf,
-                        &socket_state.network,
+                        &socket_state.network_config,
                         |key| AES128BlockBuffer::new(key, &mut self.ecb),
                         &to_address,
                         from_address,

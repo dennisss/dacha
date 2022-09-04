@@ -4,6 +4,10 @@ rust_binary(
 )
 
 rust_binary(
+    name = "nordic_radio_serial"
+)
+
+rust_binary(
     name = "nordic_bootloader"
 )
 

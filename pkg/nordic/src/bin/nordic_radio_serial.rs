@@ -6,11 +6,18 @@
 // This is compatible with the board at `//doc/uplift_desk/board`:
 // - RX Input: (MT): P0.31
 // - TX Output: (MR): P0.29
-// - EEPROM SDA: P0.02
-// - EEPROM SCL: P1.13
-// - EEPROM WP: P1.10
+// - Deprecated
+//   - EEPROM SDA: P0.02
+//   - EEPROM SCL: P1.13
+//   - EEPROM WP: P1.10
 //
 // We assume pins are pulled up externally as needed.
+
+/*
+cargo run --bin builder -- build //pkg/nordic:nordic_radio_serial --config=//pkg/nordic:nrf52840
+
+cargo run --bin flasher -- built/pkg/nordic/nordic_radio_serial --usb_product_id=1
+*/
 
 #![feature(
     lang_items,
@@ -41,15 +48,15 @@ extern crate macros;
 use core::arch::asm;
 
 use executor::singleton::Singleton;
+use nordic::params::ParamsStorage;
 use nordic::uarte::UARTEWriter;
 use nordic_proto::packet::PacketBuffer;
 use peripherals::storage::BlockStorage;
 
 use nordic::config_storage::NetworkConfigStorage;
 use nordic::ecb::ECB;
-use nordic::eeprom::Microchip24XX256;
 use nordic::gpio::*;
-use nordic::protocol::ProtocolUSBThread;
+use nordic::protocol::protocol_usb_thread_fn;
 use nordic::radio::Radio;
 use nordic::radio_activity_led::setup_radio_activity_leds;
 use nordic::radio_socket::{RadioController, RadioControllerThread, RadioSocket};
@@ -57,9 +64,12 @@ use nordic::timer::Timer;
 use nordic::twim::TWIM;
 use nordic::uarte::UARTE;
 use nordic::usb::controller::USBDeviceController;
+use nordic_proto::usb_descriptors::*;
 
 static RADIO_SOCKET: RadioSocket = RadioSocket::new();
-static BLOCK_STORAGE: Singleton<BlockStorage<Microchip24XX256>> = Singleton::uninit();
+static PARAMS_STORAGE: Singleton<ParamsStorage> = Singleton::uninit();
+
+const USING_DEV_KIT: bool = true;
 
 define_thread!(
     ForwardingThread,
@@ -158,17 +168,16 @@ async fn main_thread_fn() {
     let mut timer = Timer::new(peripherals.rtc0);
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
 
-    // crate::log::setup(serial).await;
     ForwardingThread::start(serial, timer.clone());
 
-    let block_storage = {
-        let mut twim = TWIM::new(peripherals.twim0, pins.P1_13, pins.P0_02, 100_000);
-        let mut eeprom = Microchip24XX256::new(twim, 0b1010000, gpio.pin(pins.P1_10));
-        BLOCK_STORAGE.set(BlockStorage::new(eeprom)).await
+    let params_storage = {
+        PARAMS_STORAGE
+            .set(ParamsStorage::create(peripherals.nvmc).unwrap())
+            .await
     };
 
     RADIO_SOCKET
-        .configure_storage(NetworkConfigStorage::open(block_storage).await.unwrap())
+        .configure_storage(params_storage)
         .await
         .unwrap();
 
@@ -178,22 +187,41 @@ async fn main_thread_fn() {
         ECB::new(peripherals.ecb),
     );
 
+    // On the NRF523840 USB Dongle:
     // P0_06 words as mono
     // P0_08 works as red.
     // P0_12 (doesn't work.)
     // P1_09 (doesn't work.)
-    let tx_pin = gpio.pin(pins.P0_06);
-    let rx_pin = gpio.pin(pins.P0_08);
+    let tx_pin = if USING_DEV_KIT {
+        gpio.pin(pins.P0_13)
+    } else {
+        gpio.pin(pins.P0_06)
+    };
+    let rx_pin = if USING_DEV_KIT {
+        gpio.pin(pins.P0_14)
+    } else {
+        gpio.pin(pins.P0_08)
+    };
     setup_radio_activity_leds(tx_pin, rx_pin, timer.clone(), &mut radio_controller);
 
     RadioControllerThread::start(radio_controller);
 
-    ProtocolUSBThread::start(
+    RadioSerialUSBThread::start(
+        RADIO_SERIAL_USB_DESCRIPTORS,
         USBDeviceController::new(peripherals.usbd, peripherals.power),
         &RADIO_SOCKET,
-        timer.clone()
+        timer.clone(),
     );
 }
+
+define_thread!(
+    RadioSerialUSBThread,
+    protocol_usb_thread_fn,
+    descriptors: RadioSerialUSBDescriptors,
+    usb: USBDeviceController,
+    radio_socket: &'static RadioSocket,
+    timer: Timer
+);
 
 entry!(main);
 fn main() -> () {
@@ -204,7 +232,10 @@ fn main() -> () {
     let mut peripherals = peripherals::raw::Peripherals::new();
 
     nordic::clock::init_high_freq_clk(&mut peripherals.clock);
-    nordic::clock::init_low_freq_clk(&mut peripherals.clock);
+    nordic::clock::init_low_freq_clk(
+        nordic::clock::LowFrequencyClockSource::CrystalOscillator,
+        &mut peripherals.clock,
+    );
 
     Main::start();
 

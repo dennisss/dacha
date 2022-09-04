@@ -52,6 +52,15 @@ impl<T, const LEN: usize> FixedVec<T, LEN> {
         self.pop();
     }
 
+    pub fn swap_remove(&mut self, index: usize) {
+        let other_index = self.length - 1;
+        if index != other_index {
+            self.data.swap(index, other_index);
+        }
+
+        self.pop();
+    }
+
     pub fn clear(&mut self) {
         while self.length > 0 {
             self.pop();

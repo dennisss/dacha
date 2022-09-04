@@ -48,11 +48,22 @@ pub unsafe fn application_code_data() -> &'static [u8] {
     core::slice::from_raw_parts(APPLICATION_CODE_OFFSET as *mut u8, len as usize)
 }
 
+// TODO: Keep in sync with the linker script.
+fn application_params_length() -> u32 {
+    4 * flash_page_size()
+}
+
+pub unsafe fn application_params_data() -> &'static [u8] {
+    let len = application_params_length();
+    core::slice::from_raw_parts((flash_size() - len) as *mut u8, len as usize)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum FlashSegment {
     BootloaderCode,
     BootloaderParams,
     ApplicationCode,
+    ApplicationParams,
     UICR,
 }
 
@@ -65,12 +76,17 @@ impl FlashSegment {
             unsafe { core::mem::transmute::<&UICR_REGISTERS, u32>(&*UICR::new()) };
         let uicr_end_address = uicr_start_address + (core::mem::size_of::<UICR_REGISTERS>() as u32);
 
+        let app_params = unsafe { application_params_data() };
+        let app_params_start_address = unsafe { core::mem::transmute(app_params.as_ptr()) };
+
         if addr >= BOOTLOADER_OFFSET && addr < BOOTLOADER_PARAMS_OFFSET {
             Some(Self::BootloaderCode)
         } else if addr >= BOOTLOADER_PARAMS_OFFSET && addr < APPLICATION_CODE_OFFSET {
             Some(Self::BootloaderParams)
-        } else if addr >= APPLICATION_CODE_OFFSET && addr < flash_size() {
+        } else if addr >= APPLICATION_CODE_OFFSET && addr < app_params_start_address {
             Some(Self::ApplicationCode)
+        } else if addr >= app_params_start_address && addr < flash_size() {
+            Some(Self::ApplicationParams)
         } else if addr >= uicr_start_address && addr < uicr_end_address {
             Some(Self::UICR)
         } else {
@@ -83,6 +99,7 @@ impl FlashSegment {
             FlashSegment::BootloaderCode => BOOTLOADER_OFFSET,
             FlashSegment::BootloaderParams => BOOTLOADER_PARAMS_OFFSET,
             FlashSegment::ApplicationCode => APPLICATION_CODE_OFFSET,
+            FlashSegment::ApplicationParams => flash_size() - application_params_length(),
             FlashSegment::UICR => unsafe {
                 core::mem::transmute::<&UICR_REGISTERS, u32>(&*UICR::new())
             },

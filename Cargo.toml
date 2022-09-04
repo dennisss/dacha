@@ -83,7 +83,8 @@ members = [
 	"pkg/flasher",
 	"pkg/uf2",
 	"pkg/skylark",
-	"pkg/linker"
+	"pkg/linker",
+	"pkg/logging",
 ]
 
 [profile.dev]

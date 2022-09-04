@@ -9,6 +9,7 @@ use crate::descriptors::SetupPacket;
 use crate::dfu::descriptors::*;
 use crate::linux::Context;
 use crate::linux::Device;
+use crate::selector::DeviceSelector;
 use crate::DeviceEntry;
 
 // TODO: Enforce max timeouts on all USB operations.
@@ -16,11 +17,6 @@ use crate::DeviceEntry;
 // Range of block sizes we will accept when uploading or downloading firmware.
 const MIN_BLOCK_SIZE: u16 = 64;
 const MAX_BLOCK_SIZE: u16 = 4096;
-
-pub struct DeviceSelector {
-    pub vendor_id: Option<u16>,
-    pub product_id: Option<u16>,
-}
 
 /// Interface for interacting with a remote device connected to the current host
 /// computer.
@@ -127,6 +123,9 @@ impl DFUHost {
                 return Ok(device_entry);
             }
 
+            // TODO: Remember the device's bus and port path so that we can reference the
+            // same physical port even if the device id changes when entering the
+            // bootloader.
             println!("Found DFU runtime device. Detaching...");
 
             let mut device = device_entry.open().await?;
@@ -167,7 +166,9 @@ impl DFUHost {
         let mut found_device = None;
 
         for device_entry in devices {
-            // TODO: Check the selector.
+            if !self.device_selector.matches(&device_entry)? {
+                continue;
+            }
 
             if let Some(entry) = self.extract_device_dfu_entry(device_entry)? {
                 if found_device.is_some() {

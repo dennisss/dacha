@@ -11,11 +11,6 @@ message NetworkConfig {
     // Remote devices with which we can communicate.
     repeated Link links = 2 [max_count = 8];
 
-    // Last packet counter which the local device has sent to a remote device.
-    //
-    // When saving to the config to durable storage, this will continue at least the value of the last packet sent but will typically be set much larger to avoid saving the config before each packet is sent.
-    uint32 last_packet_counter = 3;
-
     // TODO: Also configure things like radio channel.
 }
 
@@ -23,7 +18,27 @@ message Link {
     bytes address = 1 [max_length = 4];
     bytes key = 2 [max_length = 16];
     bytes iv = 3 [max_length = 5];
+}
+
+message NetworkState {
+    // Last packet counter which the local device has sent to a remote device.
+    //
+    // This is specified for the entire local device and not per peer. This makes it easier to:
+    // - Later implement features like broadcasting
+    // - Ensures that if a device is removed and later re-added, we continue maintaining a monotonic counter.
+    // - Requires less space in flash/ram to store. 
+    //
+    // When saving to the config to durable storage, this will continue at least the value of the last packet sent but will typically be set much larger to avoid saving the config before each packet is sent.
+    uint32 last_packet_counter = 1;
+
+    repeated LinkState links = 2 [max_count = 8];
+}
+
+message LinkState {
+    bytes address = 1 [max_length = 4];
 
     // Last packet counter received from this remote device.
-    uint32 last_packet_counter = 4;
+    //
+    // NOTE: This is lazily persisted to storage.
+    uint32 last_packet_counter = 2;
 }

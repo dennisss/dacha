@@ -816,6 +816,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "elf",
+ "macros",
  "uf2",
  "usb",
 ]
@@ -1307,6 +1308,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "logging"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "executor",
+ "macros",
+ "nordic_proto",
+ "protobuf",
+]
+
+[[package]]
 name = "mach"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1474,6 +1486,7 @@ dependencies = [
  "common",
  "crypto",
  "executor",
+ "logging",
  "macros",
  "math",
  "nordic_proto",
@@ -2423,11 +2436,13 @@ dependencies = [
 name = "usb"
 version = "0.1.0"
 dependencies = [
+ "automata",
  "common",
  "failure",
  "libc",
  "macros",
  "nix 0.21.0",
+ "regexp_macros",
 ]
 
 [[package]]

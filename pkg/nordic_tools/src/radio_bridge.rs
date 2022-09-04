@@ -46,9 +46,8 @@ struct State {
 
     state_data: RadioBridgeStateData,
 
-    /// Packet counter of the last
-    last_packet_counter: u32,
-
+    // /// Packet counter of the last
+    // last_packet_counter: u32,
     /// Packets which are pending being send to a remote device.
     send_queue: Vec<RadioBridgePacket>,
 
@@ -60,8 +59,8 @@ struct State {
 }
 
 impl RadioBridge {
-    pub async fn create(state_object_name: &str, usb: Option<String>) -> Result<Self> {
-        let mut radio = USBRadio::find(usb.as_ref().map(|s| s.as_str())).await?;
+    pub async fn create(state_object_name: &str, usb: &usb::DeviceSelector) -> Result<Self> {
+        let mut radio = USBRadio::find(&usb).await?;
 
         let mut meta_client = ClusterMetaClient::create_from_environment().await?;
 
@@ -102,7 +101,7 @@ impl RadioBridge {
                     state: Mutex::new(State {
                         state_object_name: state_object_name.to_string(),
                         state_data: state_data.clone(),
-                        last_packet_counter: state_data.network().last_packet_counter(),
+                        // last_packet_counter: state_data.network().last_packet_counter(),
                         receivers: HashMap::new(),
                         send_queue: vec![],
                         config_changed: true,
@@ -161,7 +160,7 @@ impl RadioBridgeInner {
                 };
 
                 let mut packet_buffer = PacketBuffer::new();
-                packet_buffer.set_counter(self.next_packet_counter(&mut state).await?);
+                // packet_buffer.set_counter(self.next_packet_counter(&mut state).await?);
                 packet_buffer.remote_address_mut().copy_from_slice(&address);
                 packet_buffer.resize_data(packet.data().len());
                 packet_buffer.data_mut().copy_from_slice(packet.data());
@@ -185,6 +184,9 @@ impl RadioBridgeInner {
             .map(|device| *array_ref![device.address(), 0, 4])
     }
 
+    // TODO: Implement support for shifting all operations including packet counting
+    // and encryption to the host.
+    /*
     async fn next_packet_counter(&self, state: &mut State) -> Result<u32> {
         if state.last_packet_counter >= state.state_data.network().last_packet_counter() {
             let mut next_data = state.state_data.clone();
@@ -202,6 +204,7 @@ impl RadioBridgeInner {
         state.last_packet_counter += 1;
         Ok(state.last_packet_counter)
     }
+    */
 }
 
 #[async_trait]

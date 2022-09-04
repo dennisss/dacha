@@ -20,6 +20,10 @@ macro_rules! define_bit_flags {
                 Self { value }
             }
 
+            pub const fn to_raw(self) -> $t {
+                self.value
+            }
+
             pub const fn contains(&self, other: Self) -> bool {
                 self.value & other.value == other.value
             }

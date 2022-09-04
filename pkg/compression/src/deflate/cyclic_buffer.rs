@@ -102,6 +102,7 @@ impl<'a> SliceBuffer<'a> {
 
 impl<'a> WindowBuffer for SliceBuffer<'a> {
     fn extend_from_slice(&mut self, data: &[u8]) {
+        // assert_eq!(data, &self.data[self.pos..(self.pos + data.len())]);
         unsafe {
             assert_eq!(self.data.as_ptr().add(self.pos), data.as_ptr());
         };

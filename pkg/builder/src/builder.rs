@@ -177,7 +177,7 @@ impl Builder {
         key: BuildTargetKey,
         parent_key: Option<BuildTargetKey>,
         graph: &'a mut BuildTargetGraph,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(self.expand_graph_node_impl(key, parent_key, graph))
     }
 

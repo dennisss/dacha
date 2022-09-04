@@ -6,7 +6,7 @@ use nordic_proto::proto::log::LogEntry;
 use nordic_proto::proto::net::*;
 use nordic_proto::request_type::ProtocolRequestType;
 use protobuf::{Message, StaticMessage};
-use usb::descriptors::SetupPacket;
+use usb::{descriptors::SetupPacket, registry::OUR_VENDOR_ID};
 
 // TODO: Every single USB transfer should have some timeout.
 pub struct USBRadio {
@@ -14,27 +14,21 @@ pub struct USBRadio {
 }
 
 impl USBRadio {
-    pub async fn find(selected_id: Option<&str>) -> Result<Self> {
+    pub async fn find(device_selector: &usb::DeviceSelector) -> Result<Self> {
         let ctx = usb::Context::create()?;
 
         let mut device = {
             let mut found_device = None;
 
             for dev in ctx.enumerate_devices().await? {
-                let desc = dev.device_descriptor()?;
-                if desc.idVendor != 0x8888 || desc.idProduct != 0x0001 {
+                if !device_selector.matches(&dev)? {
                     continue;
                 }
 
-                let id = format!("{}:{}", dev.bus_num(), dev.dev_num());
+                let id = format!("{}.{}", dev.bus_num(), dev.dev_num());
                 println!("Device: {}", id);
 
-                if selected_id.is_none()
-                    || selected_id.unwrap() == id
-                    || selected_id.unwrap() == "any"
-                {
-                    found_device = Some(dev.open().await?);
-                }
+                found_device = Some(dev.open().await?);
             }
 
             found_device.ok_or_else(|| err_msg("No device selected"))?

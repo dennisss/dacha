@@ -185,6 +185,12 @@ impl Compiler {
                             Instruction::Split(b, a)
                         });
                     }
+                    Quantifier::ExactlyN(num) => {
+                        // TODO: Instead implement support for counters in the state.
+                        for _ in 0..*num {
+                            self.compile_node(node)?;
+                        }
+                    }
                     _ => {
                         println!("Unsupported quantifier: {:?}", quantifier);
                     }

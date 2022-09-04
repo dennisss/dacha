@@ -3,13 +3,18 @@ extern crate common;
 extern crate elf;
 extern crate uf2;
 extern crate usb;
+#[macro_use]
+extern crate macros;
 
 use common::errors::*;
 use uf2::*;
 
 /*
 Usage:
-da build //pkg/nordic:nordic_blink --config=//pkg/nordic:nrf52840
+cargo run --bin builder --  build //pkg/nordic:nordic_blink --config=//pkg/nordic:nrf52840
+cargo run --bin flasher built/pkg/nordic/nordic_blink
+
+da build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
 cargo run --bin flasher
 
 Features to add:
@@ -22,6 +27,14 @@ Features to add:
 TODO: DFU Bootloaders need to be queryable for the flash range they are editing so we can cross validate that the binary was built correctly.
 
 */
+
+#[derive(Args)]
+struct Args {
+    #[arg(positional)]
+    path: String,
+
+    usb_selector: usb::DeviceSelector,
+}
 
 // TODO: Also bring in support for
 
@@ -60,7 +73,9 @@ impl UF2Builder {
 }
 
 async fn run() -> Result<()> {
-    let elf = elf::ELF::read(project_path!("built/pkg/nordic/nordic_blink")).await?;
+    let args = common::args::parse_args::<Args>()?;
+
+    let elf = elf::ELF::read(&args.path).await?;
 
     let mut firmware_builder = UF2Builder::new();
 
@@ -85,19 +100,14 @@ async fn run() -> Result<()> {
             ..(program_header.offset as usize + program_header.file_size as usize)];
 
         firmware_builder.write(program_header.paddr as u32, data);
+
         total_written += data.len();
     }
 
-    println!(
-        "Found bytes: {} {}",
-        total_written,
-        firmware_builder.data.len()
-    );
+    println!("Flash Space Used: {}", total_written);
+    println!("Firmware UF2 size: {}", firmware_builder.data.len());
 
-    let mut host = usb::dfu::DFUHost::create(usb::dfu::DeviceSelector {
-        vendor_id: None,
-        product_id: None,
-    })?;
+    let mut host = usb::dfu::DFUHost::create(args.usb_selector)?;
 
     host.download(&firmware_builder.data).await?;
 

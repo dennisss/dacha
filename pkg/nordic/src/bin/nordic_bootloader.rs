@@ -2,6 +2,8 @@
 
 cargo run --bin builder -- build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
 
+cargo run --bin flasher -- built/pkg/nordic/nordic_bootloader --usb_device_id=1
+
 da build //pkg/nordic:nordic_bootloader --config=//pkg/nordic:nrf52840_bootloader
 
 openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program built/pkg/nordic/nordic_bootloader verify" -c reset -c exit
@@ -10,7 +12,7 @@ openocd -f board/nordic_nrf52_dk.cfg -c init -c "reset init" -c halt -c "nrf5 ma
 - `~/apps/gcc-arm-none-eabi-10.3-2021.10/bin/arm-none-eabi-gdb /home/dennis/workspace/dacha/built-rust/bfd75a5982e33698/thumbv7em-none-eabihf/release/nordic_bootloader`
 - `target extended-remote localhost:3333`
 - `monitor reset halt`
-
+- `load built/pkg/nordic/nordic_bootloader`
 
 
 Bootstrapping the keyboard:
@@ -24,8 +26,20 @@ Bootstrapping the keyboard:
     target extended-remote /dev/ttyACM0
     monitor swdp_scan
     attach 1
+    monitor erase_mass
     load built/pkg/nordic/nordic_bootloader
 
+    set *0xAAA = 0xAA
+
+    set {int}0x83040 = 4
+
+APPROTECT : 0x10001000 + 0x208
+
+First write CONFIG (0x4001E000 + 0x504) to 2 to enable erases
+
+ERASEALL: 0x4001E000 + 0x50C : Write 1 to trigger.
+
+Then write CONFIG to 0
 
 
 Notes:
@@ -382,7 +396,9 @@ impl BootloaderUSBHandler {
 
                 match segment {
                     // Normal flash segments.
-                    FlashSegment::BootloaderCode | FlashSegment::ApplicationCode => {
+                    FlashSegment::BootloaderCode
+                    | FlashSegment::ApplicationCode
+                    | FlashSegment::ApplicationParams => {
                         // TODO: Require a special flag to be flipped if we attempt to overwrite the
                         // bootloader itself
 
@@ -547,13 +563,6 @@ async fn main_thread_fn(reason: EnterBootloaderReason, params: BootloaderParams)
 
     let mut timer = Timer::new(peripherals.rtc0);
     let mut gpio = GPIO::new(peripherals.p0, peripherals.p1);
-
-    /*
-    {
-        let mut serial = UARTE::new(peripherals.uarte0, pins.P0_30, pins.P0_31, 115200);
-        log::setup(serial).await;
-    }
-    */
 
     log!("Enter Bootloader!");
     log!("Num Flashes: ", params.num_flashes());

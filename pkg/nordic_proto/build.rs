@@ -9,24 +9,20 @@ use common::line_builder::LineBuilder;
 use usb::descriptor_builders::DescriptorSetBuilder;
 use usb::descriptors::*;
 use usb::hid::*;
-
-pub static STRING_DESC0: &'static [u8] = &[
-    4,                            // bLength
-    DescriptorType::STRING as u8, // bDescriptorType
-    0x09,                         // English
-    0x04,                         // US
-];
-
-pub static STRING_DESC1: &'static [u8] =
-    &[8, DescriptorType::STRING as u8, b'd', 0, b'a', 0, b'!', 0];
+use usb::registry::*;
 
 pub const EMPTY_STRING_INDEX: u8 = 0;
 
-fn generate_protocol_usb_descriptors() -> Result<String> {
+// TODO: Deprecate this one in favor of niche configs per device type.
+fn generate_protocol_usb_descriptors(
+    struct_name: &str,
+    product_name: &str,
+    product_id: u16,
+) -> Result<String> {
     let mut builder = DescriptorSetBuilder::new();
 
     let manufacturer_string = builder.add_string("da!");
-    let product_string = builder.add_string("radio");
+    let product_string = builder.add_string(product_name);
 
     let mut builder = builder.with_device(DeviceDescriptor {
         bLength: 0,         // Set by builder
@@ -36,8 +32,8 @@ fn generate_protocol_usb_descriptors() -> Result<String> {
         bDeviceSubClass: 0,
         bDeviceProtocol: 0,
         bMaxPacketSize0: 64,
-        idVendor: 0x8888,
-        idProduct: 0x0001,
+        idVendor: OUR_VENDOR_ID,
+        idProduct: product_id,
         bcdDevice: 0x0100, // 1.0,
         iManufacturer: manufacturer_string,
         iProduct: product_string,
@@ -57,6 +53,7 @@ fn generate_protocol_usb_descriptors() -> Result<String> {
         bMaxPower: 50,
     });
 
+    /*
     config_builder
         .add_interface(
             "",
@@ -94,12 +91,13 @@ fn generate_protocol_usb_descriptors() -> Result<String> {
                 bInterval: 64, // TODO: Check me.
             },
         );
+    */
 
     config_builder.add_dfu_runtime_interface();
 
     drop(config_builder);
 
-    builder.generate_code("ProtocolUSBDescriptors")
+    builder.generate_code(struct_name)
 }
 
 fn generate_bootloader_usb_descriptors() -> Result<String> {
@@ -116,8 +114,8 @@ fn generate_bootloader_usb_descriptors() -> Result<String> {
         bDeviceSubClass: 0,
         bDeviceProtocol: 0,
         bMaxPacketSize0: 64,
-        idVendor: 0x8888,
-        idProduct: 0x0001,
+        idVendor: OUR_VENDOR_ID,
+        idProduct: OUR_BOOTLOADER_PRODUCT_ID,
         bcdDevice: 0x0100, // 1.0,
         iManufacturer: manufacturer_string,
         iProduct: product_string,
@@ -156,8 +154,8 @@ fn generate_keyboard_usb_descriptors() -> Result<String> {
         bDeviceSubClass: 0,
         bDeviceProtocol: 0,
         bMaxPacketSize0: 64,
-        idVendor: 0x8888,
-        idProduct: 0x0002,
+        idVendor: OUR_VENDOR_ID,
+        idProduct: OUR_KEYBOARD_PRODUCT_ID,
         bcdDevice: 0x0100, // 1.0,
         iManufacturer: manufacturer_string,
         iProduct: product_string,
@@ -235,16 +233,29 @@ fn generate_usb_descriptors() -> Result<()> {
     let output_dir = PathBuf::from(std::env::var("OUT_DIR")?);
 
     let mut lines = LineBuilder::new();
-    lines.add(generate_protocol_usb_descriptors()?);
+    lines.add(generate_protocol_usb_descriptors(
+        "RadioDongleUSBDescriptors",
+        "radio dongle",
+        OUR_RADIO_DONGLE_PRODUCT_ID,
+    )?);
+    lines.add(generate_protocol_usb_descriptors(
+        "RadioSerialUSBDescriptors",
+        "radio serial",
+        OUR_RADIO_SERIAL_PRODUCT_ID,
+    )?);
+    lines.add(generate_protocol_usb_descriptors(
+        "BlinkUSBDescriptors",
+        "blink",
+        OUR_BLINK_PRODUCT_ID,
+    )?);
     lines.add(generate_bootloader_usb_descriptors()?);
     lines.add(generate_keyboard_usb_descriptors()?);
 
     std::fs::write(output_dir.join("src/usb_descriptors.rs"), lines.to_string())?;
 
-    // std::fs::write(
-    //     input_dir.join("src/usb_descriptors.rs"),
-    //     builder.generate_code("ProtocolUSBDescriptors")?,
-    // )?;
+    /*
+    std::fs::write(input_dir.join("src/usb_descriptors.rs"), lines.to_string())?;
+    */
 
     Ok(())
 }

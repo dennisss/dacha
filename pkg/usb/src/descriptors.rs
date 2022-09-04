@@ -6,7 +6,7 @@
 // Figure 8-15 shows a Data Packet (which has a CRC 16)
 
 #[derive(Default)]
-#[repr(packed)]
+#[repr(C)]
 pub struct SetupPacket {
     pub bmRequestType: u8,
     pub bRequest: u8,
@@ -81,7 +81,7 @@ impl DescriptorType {
 
 // Table 9-8 of USB2.0 Spec
 #[derive(Clone, Copy, Debug)]
-#[repr(packed)]
+#[repr(C)]
 pub struct DeviceDescriptor {
     pub bLength: u8,
     pub bDescriptorType: u8,
@@ -100,7 +100,7 @@ pub struct DeviceDescriptor {
 }
 
 // Table 9-9 of USB2.0 Spec
-#[repr(packed)]
+#[repr(C)]
 pub struct DeviceQualifierDescriptor {
     pub bLength: u8,
     pub bDescriptorType: u8,
@@ -206,4 +206,18 @@ pub struct StringDescriptor<'a> {
     bLength: u8,
     bDescriptorType: u8,
     bString: &'a [u8],
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use core::mem::size_of;
+
+    #[test]
+    fn descriptors_size() {
+        assert_eq!(size_of::<SetupPacket>(), 8);
+        assert_eq!(size_of::<DeviceQualifierDescriptor>(), 10);
+        assert_eq!(size_of::<DeviceDescriptor>(), 18);
+    }
 }

@@ -111,6 +111,11 @@ fn main() -> Result<()> {
 
         let output_path = output_dir.join(format!("{}.rs", model));
         std::fs::write(&output_path, compiled);
+
+        // if model == "nrf52840" {
+        //     let output_path2 = project_path!("pkg/peripherals_raw/src/nrf52840.rs");
+        //     std::fs::write(&output_path2, std::fs::read(&output_path)?)?;
+        // }
     }
 
     /*
@@ -126,8 +131,6 @@ fn main() -> Result<()> {
     }
     */
 
-    // let output_path2 = project_path!("pkg/peripherals_raw/src/nrf52840.rs");
-    // std::fs::write(&output_path2, std::fs::read(&output_path)?)?;
 
     Ok(())
 }

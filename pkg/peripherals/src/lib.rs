@@ -23,6 +23,7 @@ pub mod raw {
     pub use peripherals_raw::*;
 }
 
+pub mod blob;
 pub mod eeprom;
 pub mod storage;
 

@@ -80,11 +80,11 @@ enum Command {
 
 #[derive(Args)]
 struct GetConfigCommand {
-    usb: String,
+    usb: usb::DeviceSelector,
 }
 
 async fn run_get_config_command(cmd: GetConfigCommand) -> Result<()> {
-    let mut radio = USBRadio::find(Some(&cmd.usb)).await?;
+    let mut radio = USBRadio::find(&cmd.usb).await?;
     println!("Config: {:?}", radio.get_network_config().await?);
 
     Ok(())
@@ -92,11 +92,11 @@ async fn run_get_config_command(cmd: GetConfigCommand) -> Result<()> {
 
 #[derive(Args)]
 struct SetConfigCommand {
-    usb: String,
+    usb: usb::DeviceSelector,
 }
 
 async fn run_set_config_command(cmd: SetConfigCommand) -> Result<()> {
-    let mut radio = USBRadio::find(Some(&cmd.usb)).await?;
+    let mut radio = USBRadio::find(&cmd.usb).await?;
 
     let num = 1;
     let network_config = {
@@ -154,14 +154,14 @@ async fn create_bridge_stub(addr: &str) -> Result<RadioBridgeStub> {
 #[derive(Args)]
 struct SetupDeviceCommand {
     name: String,
-    usb: Option<String>,
+    usb: usb::DeviceSelector,
     bridge_addr: String,
 }
 
 async fn run_setup_device_command(cmd: SetupDeviceCommand) -> Result<()> {
     let stub = create_bridge_stub(&cmd.bridge_addr).await?;
 
-    let mut radio = USBRadio::find(cmd.usb.as_ref().map(|s| s.as_str())).await?;
+    let mut radio = USBRadio::find(&cmd.usb).await?;
 
     if let Some(config) = radio.get_network_config().await? {
         return Err(format_err!(
@@ -187,12 +187,12 @@ async fn run_setup_device_command(cmd: SetupDeviceCommand) -> Result<()> {
 struct SendCommand {
     // bridge_addr: String,
     // device_name: String,
-    usb: String,
+    usb: usb::DeviceSelector,
     // to_address: String,
 }
 
 async fn run_send_command(cmd: SendCommand) -> Result<()> {
-    let mut radio = USBRadio::find(Some(&cmd.usb)).await?;
+    let mut radio = USBRadio::find(&cmd.usb).await?;
 
     let mut packet = PacketBuffer::new();
     packet.set_counter(0);
@@ -250,7 +250,7 @@ async fn run_pipe_command(cmd: PipeCommand) -> Result<()> {
         Err(err_msg("Receive request stopped early"))
     }
 
-    // let mut radio = USBRadio::find(Some(&cmd.usb)).await?;
+    // let mut radio = USBRadio::find(&cmd.usb).await?;
 
     let stub = create_bridge_stub(&cmd.bridge_addr).await?;
     let request_context = rpc::ClientRequestContext::default();
@@ -329,15 +329,6 @@ async fn run_pipe_command(cmd: PipeCommand) -> Result<()> {
 }
 
 async fn run() -> Result<()> {
-    /*
-       println!(
-           "{:02x?}",
-           nordic_tools::link_util::generate_radio_address().await?
-       );
-
-       return Ok(());
-    */
-
     let args = common::args::parse_args::<Args>()?;
 
     match args.command {
@@ -347,20 +338,6 @@ async fn run() -> Result<()> {
         Command::Send(cmd) => run_send_command(cmd).await,
         Command::Pipe(cmd) => run_pipe_command(cmd).await,
     }
-
-    /*
-    let mut radio = USBRadio::find(Some(&args.usb)).await?;
-
-    // let mut device = ctx.open_device(0x8888, 0x0001).await?;
-
-
-
-    let mut last_counter = 1;
-
-    println!("get_config: {:?}", radio.get_config().await?);
-
-
-    */
 }
 
 fn main() -> Result<()> {
