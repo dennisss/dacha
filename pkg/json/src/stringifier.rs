@@ -190,6 +190,8 @@ impl Stringifier {
     }
 
     fn add_array(&mut self, values: &[Value]) {
+        self.add_array_start();
+
         let mut first = true;
         for value in values {
             self.add_array_before_element(first);

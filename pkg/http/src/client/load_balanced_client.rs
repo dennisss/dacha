@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::net::SocketAddr;
 use std::slice::SliceIndex;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use common::async_std::channel;
 use common::async_std::sync::Mutex;
@@ -47,12 +48,16 @@ struct Shared {
 }
 
 struct State {
-    backends: VecHashSet<ResolvedEndpoint, Backend>,
+    backends: HashMap<usize, Backend>,
+    last_backend_id: usize,
+    failing: bool,
 }
 
 struct Backend {
+    endpoint: ResolvedEndpoint,
     client: DirectClient,
     task: ChildTask,
+    shutting_down: bool,
 }
 
 impl LoadBalancedClient {
@@ -61,7 +66,9 @@ impl LoadBalancedClient {
             shared: Arc::new(Shared {
                 options,
                 state: Condvar::new(State {
-                    backends: VecHashSet::new(),
+                    backends: HashMap::new(),
+                    last_backend_id: 0,
+                    failing: false,
                 }),
             }),
         }
@@ -98,65 +105,111 @@ impl LoadBalancedClient {
                 }
             }
 
-            let backend_endpoints = match self.shared.options.resolver.resolve().await {
-                Ok(v) => v,
+            // TODO: Limit the max frequency of this returning.
+            let resolved_result = self.shared.options.resolver.resolve().await;
+
+            let mut state = self.shared.state.lock().await;
+
+            let backend_endpoints = match resolved_result {
+                Ok(v) => {
+                    state.failing = v.is_empty();
+                    v
+                }
                 Err(e) => {
+                    // Set as failing.
                     eprintln!("Resolver failed: {}", e);
                     resolve_backoff.end_attempt(false);
+                    state.failing = true;
+                    state.notify_all();
                     continue;
                 }
             };
 
-            let backend_endpoints = backend_endpoints.into_iter().collect::<HashSet<_>>();
+            // This is the set of all backends we want to connect to.
+            let mut add_endpoints = backend_endpoints.into_iter().collect::<HashSet<_>>();
 
-            let mut add_endpoints = Vec::new();
-            {
-                let mut state = self.shared.state.lock().await;
-
-                let mut remove_endpoints = Vec::new();
-                for existing_endpoint in state.backends.keys() {
-                    if !backend_endpoints.contains(existing_endpoint) {
-                        remove_endpoints.push(existing_endpoint.clone());
-                    }
+            // TODO: Limit the max size of state.backends at any given point in time.
+            for (id, existing_backend) in state.backends.iter_mut() {
+                if existing_backend.shutting_down {
+                    continue;
                 }
 
-                // TODO: Gracefully shut down all of these.
-                for endpoint in remove_endpoints {
-                    // println!("Remove client: {:?}", endpoint);
-                    state.backends.remove(&endpoint);
-                }
-
-                for new_endpoint in &backend_endpoints {
-                    if !state.backends.contains_key(new_endpoint) {
-                        add_endpoints.push(new_endpoint.clone());
-                    }
+                if add_endpoints.contains(&existing_backend.endpoint) {
+                    // Already exists
+                    add_endpoints.remove(&existing_backend.endpoint);
+                } else {
+                    // TODO: Allow keeping these running until some of the new endpoints become
+                    // healthy.
+                    existing_backend.shutting_down = true;
+                    existing_backend.client.shutdown().await;
                 }
             }
 
-            let mut created_backends = vec![];
             for endpoint in add_endpoints {
-                // println!("Create client: {:?}", endpoint);
-                let client =
-                    DirectClient::new(endpoint.clone(), self.shared.options.backend.clone());
-                let task = ChildTask::spawn(client.clone().run());
+                println!("[http::Client] Start new backend client: {:?}", endpoint);
 
-                created_backends.push((endpoint, Backend { client, task }));
+                let id = state.last_backend_id + 1;
+                state.last_backend_id = id;
+
+                // TODO:Also need to add support in DirectClient for calling it.
+                let client = DirectClient::new(
+                    endpoint.clone(),
+                    self.shared.options.backend.clone(),
+                    self.shared.clone(),
+                );
+                // TODO: Also must use a client_runner to delete the backend eventually.
+                let task = ChildTask::spawn(Self::run_backend_client(
+                    Arc::downgrade(&self.shared),
+                    id,
+                    client.run(),
+                ));
+
+                state.backends.insert(
+                    id,
+                    Backend {
+                        endpoint,
+                        client,
+                        task,
+                        shutting_down: false,
+                    },
+                );
             }
 
-            {
-                let mut state = self.shared.state.lock().await;
-
-                for (endpoint, backend) in created_backends {
-                    state.backends.insert(endpoint, backend);
-                }
-
-                state.notify_all();
-            }
+            state.notify_all();
+            drop(state);
 
             if let Err(_) = resolver_listener.recv().await {
                 return;
             }
         }
+    }
+
+    async fn run_backend_client<F: Future<Output = ()> + Send>(
+        shared: Weak<Shared>,
+        backend_id: usize,
+        f: F,
+    ) {
+        f.await;
+        if let Some(shared) = shared.upgrade() {
+            let mut state = shared.state.lock().await;
+            if let Some(backend) = state.backends.remove(&backend_id) {
+                if !backend.shutting_down {
+                    state.failing = true;
+                    eprintln!("DirectClient fails before shut down");
+                }
+            }
+
+            state.notify_all();
+        }
+    }
+
+    // async fn run_connection(shared: Weak<Shared>)
+}
+
+#[async_trait]
+impl ClientEventListener for Shared {
+    async fn handle_client_state_change(&self) {
+        self.state.lock().await.notify_all();
     }
 }
 
@@ -167,52 +220,69 @@ impl ClientInterface for LoadBalancedClient {
         request: Request,
         request_context: ClientRequestContext,
     ) -> Result<Response> {
+        // TODO: If a backend becomes healthy, we won't want to rush all enqueued
+        // requests to start using it as it may only be able to handle one more request.
+
+        // TODO: Should we be concerned about too many requests queuing up at this
+        // stage?
+
         let client;
         loop {
             let state = self.shared.state.lock().await;
 
-            // TODO: Distinguish between the backends list being empty and the resolver
-            // still pending an initial response or being in an error state.
-            if state.backends.values().is_empty() {
+            // Fail if the resolver failed or the resolver succeeded and no backends were
+            // found.
+            if state.failing && !request_context.wait_for_ready {
+                return Err(crate::v2::ProtocolErrorV2 {
+                    code: crate::v2::ErrorCode::REFUSED_STREAM,
+                    message: "Failed to resolve any remote backends".into(),
+                    local: true,
+                }
+                .into());
+            }
+
+            // Still waiting for at least one pass of the resolver to finish.
+            if state.backends.is_empty() {
                 state.wait(()).await;
                 continue;
             }
 
-            // TODO: Increment the index if we encounter a failing client.
-            let mut rng = crypto::random::clocked_rng();
-
-            if request_context.wait_for_ready {
-                client = rng.choose(state.backends.values()).client.clone();
-            } else {
-                // TODO: We should use the healthy subset for wait_for_ready as well but we need
-                // to ensure that we limit the max enqueued requests per backend.
-                let mut healthy_subset = vec![];
-                for backend in state.backends.values() {
-                    if backend.client.current_state().await != ClientState::Failure {
-                        healthy_subset.push(&backend.client);
-                    }
+            let mut healthy_backends = vec![];
+            for (id, backend) in &state.backends {
+                if !backend.shutting_down
+                    && backend.client.current_state().await != ClientState::Failure
+                {
+                    healthy_backends.push(backend);
                 }
+            }
 
-                if healthy_subset.is_empty() {
+            if healthy_backends.is_empty() {
+                if !request_context.wait_for_ready {
                     return Err(crate::v2::ProtocolErrorV2 {
-                        code: crate::v2::ErrorCode::STREAM_CLOSED,
+                        code: crate::v2::ErrorCode::REFUSED_STREAM,
                         message: "All backends currently failing".into(),
                         local: false,
                     }
                     .into());
                 }
 
-                client = (*rng.choose(&healthy_subset)).clone();
+                continue;
             }
+
+            // TODO: Record which endpoint we are using so that future retries are able to
+            // explicitly retry on a distinct backend.
+            let mut rng = crypto::random::clocked_rng();
+            client = rng.choose(&healthy_backends).client.clone();
 
             break;
         }
 
+        // TODO: Use a 'enqueue_request' interface so that we can
         client.request(request, request_context).await
     }
 
     async fn current_state(&self) -> ClientState {
         // TODO: Implement me
-        ClientState::NotConnected
+        ClientState::Idle
     }
 }

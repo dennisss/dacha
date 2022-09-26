@@ -12,7 +12,7 @@ parser!(pub parse_json<&str, Value> => {
 parser!(parse_value<&str, Value> => alt!(
     parse_object,
     parse_array,
-    map(parse_string, |s| Value::String(s)),
+    map(|v| parse_string(false)(v), |s| Value::String(s)),
     map(parse_number, |v| Value::Number(v)),
     map(tag("true"), |_| Value::Bool(true)),
     map(tag("false"), |_| Value::Bool(false)),
@@ -38,7 +38,7 @@ parser!(parse_object<&str, Value> => seq!(c => {
 
 parser!(parse_member<&str, (String, Value)> => seq!(c => {
     c.next(parse_whitespace)?;
-    let key = c.next(parse_string)?;
+    let key = c.next(|v| parse_string(false)(v))?;
     c.next(parse_whitespace)?;
     c.next(tag(":"))?;
     let value = c.next(parse_element)?;
@@ -65,52 +65,60 @@ parser!(parse_element<&str, Value> => seq!(c => {
     Ok(value)
 }));
 
-parser!(parse_string<&str, String> => seq!(c => {
-    c.next(tag("\""))?;
+pub fn parse_string(allow_single_quote: bool) -> impl Fn(&str) -> Result<(String, &str)> {
+    seq!(c => {
+        let quote = c.next(one_of(if allow_single_quote { "\"'" } else { "\"" }))?;
 
-    let mut s = String::new();
-    while let Some(v) = c.next(opt(parse_character))? {
-        s.push(v);
-    }
+        let mut s = String::new();
+        while let Some(v) = c.next(opt(|v| parse_character(v, quote)))? {
+            s.push(v);
+        }
 
-    c.next(tag("\""))?;
+        c.next(atom(quote))?;
 
-    Ok(s)
-}));
+        Ok(s)
+    })
+}
 
-parser!(parse_character<&str, char> => seq!(c => {
-    let mut v: char = c.next(like(|_| true))?;
-    if (v as u32) < 0x20 || v == '"' {
-        return Err(err_msg("Unallowed character value"));
-    }
+fn parse_character(input: &str, quote: char) -> Result<(char, &str)> {
+    seq!(c => {
+        let mut v: char = c.next(like(|_| true))?;
+        if (v as u32) < 0x20 || v == quote {
+            return Err(err_msg("Unallowed character value"));
+        }
 
-    if v == '\\' {
-        let escape_type: char = c.next(like(|_| true))?;
+        if v == '\\' {
+            let escape_type: char = c.next(like(|_| true))?;
 
-        match escape_type {
-            '"' | '\\' | '/' => { v = escape_type; }
-            'b' => { v = '\x08'; }
-            'f' => { v = '\x0C'; }
-            'n' => { v = '\n'; }
-            'r' => { v = '\r'; }
-            't' => { v = '\t'; }
-            'u' => {
-                let hex = c.next(take_exact(4))?;
-                let n = u16::from_str_radix(hex, 16)?;
-                v = char::from_u32(n as u32).unwrap();
-            }
-            _ => {
-                return Err(err_msg("Unsupported escape type"));
+            match escape_type {
+                '\\' | '/' => { v = escape_type; }
+                'b' => { v = '\x08'; }
+                'f' => { v = '\x0C'; }
+                'n' => { v = '\n'; }
+                'r' => { v = '\r'; }
+                't' => { v = '\t'; }
+                'u' => {
+                    let hex = c.next(take_exact(4))?;
+                    let n = u16::from_str_radix(hex, 16)?;
+                    v = char::from_u32(n as u32).unwrap();
+                }
+                _ => {
+                    if escape_type == quote {
+                        v = quote;
+                    } else {
+                        return Err(err_msg("Unsupported escape type"));
+                    }
+                }
             }
         }
-    }
 
-    Ok(v)
-}));
+        Ok(v)
+    })(input)
+}
 
 regexp!(NUMBER => "^-?(?:[1-9][0-9]+|[0-9])(?:\\.[0-9]+)?(?:[eE][+\\-]?[0-9]+)?");
 
-fn parse_number(input: &str) -> ParseResult<f64, &str> {
+pub fn parse_number(input: &str) -> ParseResult<f64, &str> {
     if let Some(m) = NUMBER.exec(input) {
         let (num_str, rest) = input.split_at(m.last_index());
 

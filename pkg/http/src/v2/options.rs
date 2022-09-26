@@ -34,11 +34,11 @@ pub struct ConnectionOptions {
     /// receive an acknowledment to our
     pub settings_ack_timeout: Duration,
 
-    /// After a server has started a graceful shutdown on a connection, this is
-    /// the maximum amount of time that we will wait for the client to close
-    /// the connection before which the server will abrutly close the
-    /// connection.
-    pub server_graceful_shutdown_timeout: Duration,
+    /// After a client or server has started a graceful shutdown on a
+    /// connection, this is the maximum amount of time that we will wait for
+    /// the other side to close the connection before which the local instance
+    /// will abrutly close the connection.
+    pub graceful_shutdown_timeout: Duration,
 
     // TODO: Limit maximum number of incoming and outgoing pushes
 
@@ -76,7 +76,7 @@ impl std::default::Default for ConnectionOptions {
             max_sending_buffer_size: 64 * 1024, // 64 KB
             max_local_encoder_table_size: 8192,
             settings_ack_timeout: Duration::from_secs(10),
-            server_graceful_shutdown_timeout: Duration::from_secs(5),
+            graceful_shutdown_timeout: Duration::from_secs(5),
             max_outgoing_streams: 100,
             max_enqueued_requests: 100,
         }

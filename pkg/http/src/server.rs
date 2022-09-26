@@ -68,9 +68,7 @@ impl Default for ServerOptions {
             force_http2: false,
             connection_options_v2: connection_options_v2.clone(),
             max_num_connections: 1000,
-            graceful_shutdown_timeout: connection_options_v2
-                .server_graceful_shutdown_timeout
-                .clone(),
+            graceful_shutdown_timeout: connection_options_v2.graceful_shutdown_timeout.clone(),
         }
     }
 }
@@ -260,6 +258,8 @@ impl Server {
         }
 
         // Bind all all interfaces.
+        // TODO: Have an explicit keep-alive period at the TCP level and also eventualyl
+        // close the connection.
         let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
 
         let mut incoming = listener.incoming();
@@ -348,7 +348,29 @@ impl Server {
             // TODO: If we see a ProtocolErrorV1, form an HTTP 1.1 response.
             // (but only if generated locally )
             // A ProtocolErrorV2 should probably also be a
-            Err(e) => println!("Connection thread failed: {}", e),
+            Err(e) => {
+                let mut ignore = false;
+
+                // "Connection reset by peer". This error typically occurs after a client's
+                // persistent connection hits an idle timeout.
+                //
+                // "UnexpectedEof" similarly would happen if the client closes the connection.
+                //
+                // TODO: Increment a counter whenever we have any type of non-graceful closure
+                // like this?
+                if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
+                    if io_error.kind() == std::io::ErrorKind::ConnectionReset
+                        || io_error.kind() == std::io::ErrorKind::UnexpectedEof
+                        || io_error.kind() == std::io::ErrorKind::BrokenPipe
+                    {
+                        ignore = true;
+                    }
+                }
+
+                if !ignore {
+                    println!("[http::Server] Connection thread failed: {:?}", e)
+                }
+            }
         };
 
         // Now that the connection is finished, remove it from the global list.
@@ -386,7 +408,12 @@ impl Server {
         let mut negotatied_http11 = false;
         let mut negotiated_http2 = false;
         if let Some(tls_options) = &shared.options.tls {
-            let app = crypto::tls::Server::connect(read_stream, write_stream, tls_options).await?;
+            // NOTE: If the client is sending invalid TLS packets, this will timeout.
+            let app = common::async_std::future::timeout(
+                Duration::from_secs(2),
+                crypto::tls::Server::connect(read_stream, write_stream, tls_options),
+            )
+            .await??;
             if let Some(proto) = &app.handshake_summary.selected_alpn_protocol {
                 if proto == ALPN_HTTP11.as_bytes() {
                     negotatied_http11 = true;
@@ -418,6 +445,7 @@ impl Server {
         let mut read_stream = PatternReader::new(read_stream, MESSAGE_HEAD_BUFFER_OPTIONS);
 
         loop {
+            // TODO: Have a 10 second idle timeout for this.
             let head = match read_http_message(&mut read_stream).await? {
                 HttpStreamEvent::MessageHead(h) => h,
                 HttpStreamEvent::HeadersTooLarge => {
@@ -572,19 +600,23 @@ impl Server {
                 &request_head.headers,
             )?;
 
-            let (body, mut reader_waiter) = match decode_request_body_v1(&request_head, read_stream)
-            {
-                Ok(pair) => pair,
-                Err(e) => {
-                    println!("{}", e);
-                    write_stream
-                        .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-                        .await?;
-                    return Ok(());
-                }
-            };
+            let (body_sender, body_returner) = channel::unbounded();
 
-            if reader_waiter.is_none() {
+            let (body, body_close_delimited) =
+                match decode_request_body_v1(&request_head, read_stream, Arc::new(body_sender))
+                    .await
+                {
+                    Ok(pair) => pair,
+                    Err(e) => {
+                        println!("{}", e);
+                        write_stream
+                            .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+                            .await?;
+                        return Ok(());
+                    }
+                };
+
+            if body_close_delimited {
                 persist_connection = false;
             }
 
@@ -605,18 +637,19 @@ impl Server {
             }
 
             if has_h2c_upgrade {
-                // TODO:
+                if body_close_delimited {
+                    return Err(err_msg(
+                        "Can't upgrade connection that doesn't have a well framed body",
+                    ));
+                }
 
-                let reader_waiter = match reader_waiter.take() {
-                    Some(w) => w,
-                    None => {
-                        return Err(err_msg(
-                            "Can't upgrade connection that doesn't have a well framed body",
-                        ));
-                    }
-                };
-
-                let reader = DeferredReadable::wrap(reader_waiter.wait());
+                let reader = DeferredReadable::wrap(async move {
+                    let body = body_returner.recv().await??;
+                    body.wait()
+                        .await?
+                        // NOTE: This error should never occur if body_close_delimited was correct.
+                        .ok_or_else(|| err_msg("Unexpected lack of body"))
+                });
 
                 return Self::handle_stream_v2(
                     shared,
@@ -677,14 +710,16 @@ impl Server {
                 write_body(body.as_mut(), write_stream.as_mut()).await?;
             }
 
-            if persist_connection {
-                if let Some(reader_waiter) = reader_waiter {
-                    read_stream = reader_waiter.wait().await?;
-                    continue;
-                }
+            let returned_body = body_returner.recv().await??;
+
+            if !persist_connection {
+                break;
             }
 
-            break;
+            read_stream = match returned_body.wait().await? {
+                Some(v) => v,
+                None => break,
+            };
         }
 
         Ok(())

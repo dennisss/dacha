@@ -80,7 +80,9 @@ impl ConnectionReader {
             let mut connection_state = self.shared.state.lock().await;
             connection_state.upper_received_stream_id = connection_state.last_received_stream_id;
 
-            connection_state.shutting_down = ShuttingDownState::Complete;
+            connection_state
+                .set_shutting_down(ShuttingDownState::Complete)
+                .await;
         }
 
         match result {
@@ -100,6 +102,7 @@ impl ConnectionReader {
                     .await;
             }
             Err(e) => {
+                // TODO: Don't always supress these.
                 let mut is_reader_ended_error = false;
                 if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
                     if io_error.kind() == std::io::ErrorKind::ConnectionAborted
@@ -140,6 +143,8 @@ impl ConnectionReader {
                             })
                             .await;
                     } else {
+                        // TODO: When would this case be triggered.
+
                         // We received a GOAWAY from the remote endpoint so there is no need to
                         // sent a GOAWAY back, but we should consider this a local mistake/error.
                         // NOTE: If we are a server, then whoever reads the error from run() should
@@ -444,6 +449,10 @@ impl ConnectionReader {
                             //
                             // This handles "closed"/"idle" cases. Other states will be checked in
                             // stream.receive_data().
+                            //
+                            // TODO: If we recently sent a RST_STREAM on this id since the last ping
+                            // was acknowledged, don't both sending a RST_STREAM and just ignore the
+                            // packets.
                             println!("SEND STREAM CLOSED");
                             let _ = self
                                 .shared
@@ -486,7 +495,9 @@ impl ConnectionReader {
                         data_flags.end_stream,
                         &mut stream_state,
                     );
-                    if stream_state.error.is_some() {
+                    // TODO: Have a smarter way to determine if the frame was rejected (e.g. based
+                    // on the return value of receive_data).
+                    if stream_state.error.is_some() || stream_state.reader_closed {
                         // Data frame was rejected.
                         // We can allow the other endpoint to send more.
                         if frame_header.length != 0 {
@@ -895,7 +906,9 @@ impl ConnectionReader {
                         // TODO: Check this implementation.
 
                         if !connection_state.shutting_down.is_some() {
-                            connection_state.shutting_down = ShuttingDownState::Remote;
+                            connection_state
+                                .set_shutting_down(ShuttingDownState::GracefulRemote)
+                                .await;
                         }
 
                         // Check with the writer thread if it wants to stop the connection now.
@@ -921,7 +934,9 @@ impl ConnectionReader {
 
                         // Via the CLOSING, we should propagate the error.
 
-                        connection_state.shutting_down = ShuttingDownState::Complete;
+                        connection_state
+                            .set_shutting_down(ShuttingDownState::Complete)
+                            .await;
                         let _ = self
                             .shared
                             .connection_event_sender

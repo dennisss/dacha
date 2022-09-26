@@ -11,6 +11,8 @@ extern crate alloc;
 #[macro_use]
 extern crate macros;
 #[macro_use]
+extern crate regexp_macros;
+#[macro_use]
 extern crate common;
 #[cfg(feature = "alloc")]
 #[macro_use]
@@ -20,6 +22,8 @@ extern crate libc;
 #[cfg(all(feature = "std", target_os = "linux"))]
 #[macro_use]
 extern crate nix;
+#[cfg(feature = "std")]
+extern crate automata;
 
 #[cfg(feature = "alloc")]
 pub mod descriptor_builders;
@@ -37,6 +41,9 @@ mod language;
 mod linux;
 #[cfg(all(feature = "std", target_os = "linux"))]
 mod local_string;
+pub mod registry;
+#[cfg(feature = "std")]
+mod selector;
 
 #[cfg(feature = "alloc")]
 pub use descriptor_iter::Descriptor;
@@ -46,3 +53,5 @@ pub use error::Error;
 pub use language::*;
 #[cfg(all(feature = "std", target_os = "linux"))]
 pub use linux::*;
+#[cfg(feature = "std")]
+pub use selector::*;

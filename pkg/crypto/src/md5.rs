@@ -102,7 +102,7 @@ impl Hasher for MD5Hasher {
         self.inner.update(data, Self::update_chunk);
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn finish(&self) -> Vec<u8> {
         let state = self.inner.finish(Self::update_chunk);
 
@@ -114,7 +114,7 @@ impl Hasher for MD5Hasher {
         hh.to_vec()
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn box_clone(&self) -> Box<dyn Hasher> {
         Box::new(self.clone())
     }

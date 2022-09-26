@@ -20,6 +20,10 @@ pub struct StreamState {
     /// remote endpoint for this stream.
     pub local_window: WindowSize,
 
+    /// If true, the local reader has been dropped so any additional bytes
+    /// received on this stream can be immediately dropped.
+    pub reader_closed: bool,
+
     /// Data which has been received from the remote endpoint as part of DATA
     /// frames but hasn't been read by the stream handler yet.
     ///

@@ -197,12 +197,12 @@ mod tests {
             let input = &[
                 // 21
                 0b11010101, // 56
-                0xFF, 0b01011001,
+                0xFF, 0b00011001,
             ];
 
             let (v1, rest1) = parse_varint(input, 5)?;
             assert_eq!(v1, 21);
-            assert_eq!(rest1, &[0xff, 0b01011001]);
+            assert_eq!(rest1, &[0xff, 0b00011001]);
 
             let (v2, rest2) = parse_varint(rest1, 5)?;
             assert_eq!(v2, 56);
@@ -229,7 +229,8 @@ mod tests {
         test_pair(10, 5, &[0b00001010])?;
         // RFC 7541: Appendix C.1.2
         test_pair(1337, 5, &[0b00011111, 0b10011010, 0b00001010])?;
-        // TODO: Add another!
+        // RFC 7541: Appendix C.1.3
+        test_pair(42, 8, &[0b00101010])?;
 
         Ok(())
     }

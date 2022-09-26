@@ -59,4 +59,20 @@ impl<K: Hash + Eq + Clone, V> VecHashSet<K, V> {
     pub fn values(&self) -> &[V] {
         &self.values
     }
+
+    pub fn get(&self, key: &K) -> Option<&V> {
+        if let Some(idx) = self.indices.get(key) {
+            Some(&self.values[*idx])
+        } else {
+            None
+        }
+    }
+
+    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+        if let Some(idx) = self.indices.get(key) {
+            Some(&mut self.values[*idx])
+        } else {
+            None
+        }
+    }
 }

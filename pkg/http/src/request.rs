@@ -25,7 +25,7 @@ impl std::fmt::Debug for Request {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RequestHead {
     // TODO: Only certain types of URIs are valid in this context
     pub method: Method,

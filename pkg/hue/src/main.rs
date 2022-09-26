@@ -57,36 +57,43 @@ struct GroupState {
     all_off: bool,
 }
 
+
+
 */
 
+#[derive(Args)]
+enum Args {
+    #[arg(name = "create_user")]
+    CreateUser {
+        application_name: String,
+        device_name: String,
+    },
+    #[arg(name = "poll_state")]
+    PollState { username: String },
+}
+
 async fn run() -> Result<()> {
+    let args = common::args::parse_args::<Args>()?;
+
     let client = AnonymousHueClient::create().await?;
 
-    let client = HueClient::create(client, "xxx");
+    match args {
+        Args::CreateUser {
+            application_name,
+            device_name,
+        } => {
+            let user = client.create_user(&application_name, &device_name).await?;
+            println!("Created username: {}", user);
+        }
+        Args::PollState { username } => {
+            let client = HueClient::create(client, &username);
 
-    /*
-    Issues with keeping a persistent HTTP v1 connection:
-    - Without any packets sent, the server will timeout the connection after a few seconds.
-
-    Solutions:
-    - Keep the connection stable:
-        - Can set the socket TCP_KEEPIDLE and SO_KEEPALIVE socket options.
-    - Just retry the requests
-    - Limit the maximum amount of time for which v1 connections are held open.
-
-    */
-
-    loop {
-        println!("{:?}", client.get_groups().await?);
-        println!("{:?}", client.get_groups().await?);
-        common::async_std::task::sleep(Duration::from_secs(10)).await;
+            loop {
+                println!("{:?}", client.get_groups().await?);
+                common::async_std::task::sleep(Duration::from_secs(20)).await;
+            }
+        }
     }
-
-    // client.create_user("hue_client", "cluster").await?;
-
-    // println!("{:#?}", groups_by_id);
-
-    // client.set_group_on("1", false).await?;
 
     Ok(())
 }

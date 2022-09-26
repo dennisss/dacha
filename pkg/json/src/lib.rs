@@ -7,12 +7,14 @@ extern crate parsing;
 extern crate regexp_macros;
 
 mod parser;
+mod path;
 mod stringifier;
 mod value;
 mod value_parser;
 
 use common::errors::*;
 
+pub use path::ValuePath;
 pub use stringifier::*;
 pub use value::Value;
 pub use value_parser::ValueParser;
@@ -80,14 +82,14 @@ mod tests {
     }
 
     #[test]
-    fn stringify_test() {
-        assert_eq!(stringify(&Value::Null), "null");
-        assert_eq!(stringify(&Value::Number(456.1)), "456.1");
+    fn stringify_test() -> Result<()> {
+        assert_eq!(stringify(&Value::Null)?, "null");
+        assert_eq!(stringify(&Value::Number(456.1))?, "456.1");
 
         let obj1 = Value::Object(map!(
-            "hello" => Value::Array(vec![ Value::Number(1.0), Value::Number(2.0), Value::String("3".into()) ])
+            "hello" => &Value::Array(vec![ Value::Number(1.0), Value::Number(2.0), Value::String("3".into()) ])
         ));
-        assert_eq!(stringify(&obj1), r#"{"hello":[1,2,"3"]}"#);
+        assert_eq!(stringify(&obj1)?, r#"{"hello":[1,2,"3"]}"#);
         assert_eq!(
             pretty_stringify(&obj1),
             r#"{
@@ -98,5 +100,32 @@ mod tests {
     ]
 }"#
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn path_test() -> Result<()> {
+        let v = parse(
+            r#"
+        {
+            "hello": [
+                {
+                    "world": true
+                },
+                {
+                    "world": false
+                }
+            ]
+        }
+        "#,
+        )?;
+
+        assert_eq!(v.path("$.hello[0]['world']")?, Some(&Value::Bool(true)));
+        assert_eq!(v.path("$.hello[1]['world']")?, Some(&Value::Bool(false)));
+        assert_eq!(v.path("$.hello[1][\"world\"]")?, Some(&Value::Bool(false)));
+        assert_eq!(v.path("$.hello[1].world")?, Some(&Value::Bool(false)));
+
+        Ok(())
     }
 }

@@ -1,22 +1,17 @@
 #![feature(slice_take)]
 
+use core::arch::asm;
 use core::mem::transmute;
 use std::ffi::{CStr, CString};
-use core::arch::asm;
 
 extern crate sys;
 #[macro_use]
 extern crate parsing;
 
 use common::errors::*;
+use parsing::binary::*;
 use sys::bindings::*;
 use sys::VirtualMemoryMap;
-use parsing::binary::*;
-
-struct ConcatSlicePair<'a> {
-    a: &'a [u8],
-    b: &'a [u8]
-}
 
 fn main() -> Result<()> {
     let path = CString::new("test").unwrap();

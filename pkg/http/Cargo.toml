@@ -14,6 +14,7 @@ automata = { path = "../automata" }
 regexp_macros = { path = "../regexp_macros" }
 async-std = "1.9.0"
 failure = "0.1.8"
+sys = { path = "../sys" }
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing_compiler" }

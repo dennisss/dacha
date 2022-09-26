@@ -12,6 +12,7 @@ extern crate failure;
 extern crate regexp_macros;
 extern crate crypto;
 extern crate net;
+extern crate sys;
 
 mod alpn;
 mod body;
@@ -19,6 +20,7 @@ mod chunked;
 mod chunked_syntax;
 mod client;
 mod common_syntax;
+mod connection_event_listener;
 pub mod cors;
 mod dns;
 pub mod encoding;
@@ -50,11 +52,11 @@ pub mod v2;
 pub use crate::body::{Body, BodyFromData, BodyFromParts, EmptyBody, WithTrailers};
 pub use crate::client::{
     Client, ClientInterface, ClientOptions, ClientRequestContext, ResolvedEndpoint, Resolver,
-    ResolverChangeListener, SystemDNSResolver,
+    ResolverChangeListener, SimpleClient, SimpleClientOptions, SystemDNSResolver,
 };
 pub use crate::header::{Header, Headers};
 pub use crate::method::Method;
 pub use crate::request::{Request, RequestBuilder, RequestHead};
-pub use crate::response::{Response, ResponseBuilder, ResponseHead};
+pub use crate::response::{BufferedResponse, Response, ResponseBuilder, ResponseHead};
 pub use crate::server::{Server, ServerOptions};
 pub use crate::server_handler::*;

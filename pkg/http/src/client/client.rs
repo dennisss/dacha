@@ -30,45 +30,19 @@ use crate::v2;
 // TODO: Need to clearly document which responsibilities are reserved for the
 // client.
 
-/*
-Top level responsibilities:
-- Retry retryable failures
--
-*/
-
-/*
-TODO: Connections should have an accepting_connections()
-
-    We need information on accepting_connections() in
-*/
-
-// TODO: If we recieve an unterminated body, then we should close the
-// connection right afterwards.
-
 pub struct ClientOptions {
-    pub max_num_retries: usize,
-
-    pub retry_backoff: ExponentialBackoffOptions,
-
     pub backend_balancer: LoadBalancedClientOptions,
 }
 
 impl ClientOptions {
     pub fn from_resolver(resolver: Arc<dyn Resolver>) -> Self {
         Self {
-            max_num_retries: 5,
-            retry_backoff: ExponentialBackoffOptions {
-                base_duration: Duration::from_millis(10),
-                jitter_duration: Duration::from_millis(200),
-                max_duration: Duration::from_secs(30),
-                cooldown_duration: Duration::from_secs(60),
-                max_num_attempts: 0,
-            },
             backend_balancer: LoadBalancedClientOptions {
                 resolver,
                 backend: DirectClientOptions {
                     tls: None,
                     force_http2: false,
+                    upgrade_plaintext_http2: false,
                     connection_backoff: ExponentialBackoffOptions {
                         base_duration: Duration::from_millis(100),
                         jitter_duration: Duration::from_millis(200),
@@ -78,6 +52,12 @@ impl ClientOptions {
                     },
                     connect_timeout: Duration::from_millis(500),
                     idle_timeout: Duration::from_secs(2),
+                    /// MUST be <= v2::ConnectionOptions::max_enqueued_requests
+                    max_outstanding_requests: 100,
+                    max_num_connections: 10,
+                    http1_max_requests_per_connection: 1,
+                    remote_shutdown_is_failure: false,
+                    eagerly_connect: true,
                 },
                 resolver_backoff: ExponentialBackoffOptions {
                     base_duration: Duration::from_millis(100),
@@ -169,11 +149,12 @@ struct Shared {
 impl Client {
     /// Creates a new HTTP client connecting to the given host/port.
     ///
+    /// Note that as soon as a client instance is created it may start creating
+    /// a connection to the remote servers.
+    ///
     /// Arguments:
-    /// - authority:
     /// - options: Options for how to start connections
     ///
-    /// NOTE: This will not start a connection.
     /// TODO: Instead just take as input an authority string and whether or not
     /// we want it to be secure?
     pub fn create<E: Into<Error> + Send, O: TryInto<ClientOptions, Error = E>>(
@@ -200,46 +181,11 @@ impl ClientInterface for Client {
         request: Request,
         request_context: ClientRequestContext,
     ) -> Result<Response> {
-        // TODO: Retrying requires that we can reset the HTTP body.
-
         return self
             .shared
             .lb_client
             .request(request, request_context)
             .await;
-
-        /*
-        let mut retry_backoff = ExponentialBackoff::new(self.shared.options.retry_backoff.clone());
-
-        for _ in 0..self.shared.options.max_num_retries {
-            if let Some(wait_time) = retry_backoff.start_attempt() {
-                task::sleep(wait_time).await;
-            }
-
-            match self.shared.lb_client.request(request).await {
-                Ok(v) => {
-                    return Ok(v);
-                }
-                Err(e) => {
-                    let mut retryable = false;
-                    if let Some(e) = e.downcast_ref::<v2::ProtocolErrorV2>() {
-                        if e.is_retryable() {
-                            retryable = true;
-                        }
-                    }
-
-                    if retryable {
-                        retry_backoff.end_attempt(false);
-                        // continue;
-                    }
-
-                    return Err(e);
-                }
-            }
-        }
-
-        Err(err_msg("Exceeded max num request retries"))
-        */
     }
 
     async fn current_state(&self) -> ClientState {

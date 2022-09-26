@@ -7,6 +7,8 @@ use common::async_std::sync::Mutex;
 use common::errors::Result;
 use common::task::ChildTask;
 
+use crate::connection_event_listener::ConnectionEventListener;
+use crate::connection_event_listener::ConnectionShutdownDetails;
 use crate::proto::v2::*;
 use crate::request::Request;
 use crate::response::{Response, ResponseHandler};
@@ -24,6 +26,8 @@ pub struct ConnectionState {
 
     /// Will be taken by the ConnectionWriter once it starts running.
     pub connection_event_receiver: Option<channel::Receiver<ConnectionEvent>>,
+
+    pub event_listener: Option<Box<dyn ConnectionEventListener>>,
 
     // TODO: Need to have solid understanding of the GOAWAY state where we are gracefully shutting
     // down but there was no error. Likewise if we send a GOAWAY, we shoulnd't create new
@@ -91,6 +95,36 @@ pub struct ConnectionState {
     pub streams: HashMap<StreamId, Stream>,
 }
 
+impl ConnectionState {
+    pub async fn set_shutting_down(&mut self, value: ShuttingDownState) {
+        if !self.shutting_down.is_some() {
+            if let Some(listener) = &self.event_listener {
+                listener
+                    .handle_connection_shutdown(match &value {
+                        ShuttingDownState::GracefulRemote => ConnectionShutdownDetails {
+                            graceful: true,
+                            local: false,
+                            http1_rejected_persistence: false,
+                        },
+                        ShuttingDownState::Graceful { .. } => ConnectionShutdownDetails {
+                            graceful: true,
+                            local: true,
+                            http1_rejected_persistence: false,
+                        },
+                        _ => ConnectionShutdownDetails {
+                            graceful: false,
+                            local: false,
+                            http1_rejected_persistence: false,
+                        },
+                    })
+                    .await;
+            }
+        }
+
+        self.shutting_down = value;
+    }
+}
+
 /// Event received by the writer thread of the connection from other processing
 /// threads. Most of these require that the writer take some action in response
 /// to the event.
@@ -132,6 +166,10 @@ pub enum ConnectionEvent {
     /// ConnectionState::upper_received_stream_id appropriately.
     Closing {
         send_goaway: Option<ProtocolErrorV2>,
+
+        // TODO: Verify that whenever send_goaway contains a non-NO_ERROR error, we should also
+        // have an error here so that the runner thread returns the error to the DirectClient which
+        // needs to know that something went wrong.
         close_with: Option<Result<()>>,
     },
 
@@ -191,8 +229,8 @@ pub enum ConnectionEvent {
 pub enum ShuttingDownState {
     No,
 
-    /// We received a remote GOAWAY
-    Remote,
+    /// We received a remote GOAWAY packet with NO_ERROR.
+    GracefulRemote,
 
     Graceful {
         /// Task which eventually triggers a transition to the Abrupt shutdown

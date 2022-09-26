@@ -1,6 +1,6 @@
+use alloc::vec::Vec;
 #[cfg(all(target_arch = "x86_64", target_feature = "aes"))]
 use core::arch::x86_64::*;
-use std::vec::Vec;
 
 use common::errors::*;
 
@@ -27,14 +27,14 @@ const AES128_ROUND_CONSTANTS: [i32; 11] = [1, 2, 4, 8, 16, 32, 64, 128, 27, 54, 
 #[cfg(all(target_arch = "x86_64", target_feature = "aes"))]
 pub fn to_m128i(v: &[u8]) -> __m128i {
     assert_eq!(v.len(), 16);
-    unsafe { _mm_loadu_si128(std::mem::transmute(v.as_ptr())) }
+    unsafe { _mm_loadu_si128(core::mem::transmute(v.as_ptr())) }
 }
 
 #[cfg(all(target_arch = "x86_64", target_feature = "aes"))]
 pub fn from_m128i(v: __m128i, out: &mut [u8]) {
     assert_eq!(out.len(), 16);
     unsafe {
-        _mm_storeu_si128(std::mem::transmute(out.as_mut_ptr()), v);
+        _mm_storeu_si128(core::mem::transmute(out.as_mut_ptr()), v);
     }
 }
 
@@ -59,7 +59,7 @@ impl RoundConstantIter {
     }
 }
 
-impl std::iter::Iterator for RoundConstantIter {
+impl core::iter::Iterator for RoundConstantIter {
     type Item = u8;
     fn next(&mut self) -> Option<Self::Item> {
         let v = if let Some(v) = self.last {
@@ -204,8 +204,8 @@ impl AESBlockCipher {
         // }
         {
             let word_data = unsafe {
-                std::slice::from_raw_parts::<RoundKey>(
-                    std::mem::transmute(words.as_ptr()),
+                core::slice::from_raw_parts::<RoundKey>(
+                    core::mem::transmute(words.as_ptr()),
                     words.len() / 4,
                 )
             };

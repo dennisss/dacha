@@ -50,6 +50,40 @@ impl ConnectionShared {
         !self.is_local_stream_id(id)
     }
 
+    pub async fn close_stream_reader(
+        &self,
+        connection_state: &mut ConnectionState,
+        stream_id: StreamId,
+    ) {
+        let mut stream = match connection_state.streams.get_mut(&stream_id) {
+            Some(s) => s,
+            _ => return,
+        };
+
+        let mut stream_state = stream.state.lock().await;
+        stream_state.reader_closed = true;
+
+        if stream.is_closed(&stream_state) {
+            drop(stream_state);
+            self.finish_stream(connection_state, stream_id, None).await;
+            return;
+        }
+
+        // We aren't able to close the stream yet, but we should clear any remaining
+        // received data and allow the remote side to send more.
+
+        if stream_state.received_buffer.len() > 0 {
+            self.connection_event_sender
+                .send(ConnectionEvent::StreamRead {
+                    stream_id,
+                    count: stream_state.received_buffer.len(),
+                })
+                .await;
+        }
+
+        stream_state.received_buffer.clear();
+    }
+
     /// Performs cleanup on a stream which is gracefully closing with both
     /// endpoints having sent a frame with an END_STREAM flag.
     pub async fn finish_stream(
@@ -90,6 +124,15 @@ impl ConnectionShared {
                 stream_state.error = Some(error);
                 // TODO: Add a stream.read_available_notifier here.
             }
+        }
+
+        // NOTE: If this is true, then reader_closed should also be true.
+        if stream_state.error.is_none() && !stream_state.received_end {
+            stream_state.error = Some(ProtocolErrorV2 {
+                code: ErrorCode::CANCEL,
+                message: "Stream no longer needed.",
+                local: true,
+            });
         }
 
         // Ensure that all events are propagated to the reader/writer threads.
@@ -177,6 +220,12 @@ impl ConnectionShared {
                     .connection_event_sender
                     .try_send(ConnectionEvent::SendRequest);
             }
+
+            if !self.is_server {
+                if let Some(listener) = &connection_state.event_listener {
+                    listener.handle_request_completed().await;
+                }
+            }
         } else {
             connection_state.remote_stream_count -= 1;
         }
@@ -215,6 +264,7 @@ impl ConnectionShared {
                 remote_window: connection_state.remote_settings[SettingId::INITIAL_WINDOW_SIZE]
                     as WindowSize,
 
+                reader_closed: false,
                 received_buffer: vec![],
                 received_trailers: None,
                 received_end: false,

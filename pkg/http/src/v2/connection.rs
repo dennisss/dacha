@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::{convert::TryFrom, sync::Arc};
 
 use common::async_std::channel;
@@ -9,6 +10,7 @@ use common::io::{Readable, Writeable};
 use common::task::ChildTask;
 use common::{chrono::Duration, errors::*};
 
+use crate::connection_event_listener::ConnectionEventListener;
 use crate::proto::v2::*;
 use crate::request::Request;
 use crate::response::{Response, ResponseHead};
@@ -87,6 +89,9 @@ Client API requests:
 
 - The client should be smart enough to identify a lame duck server and discard the connection.
 
+
+TODO: If the client has hit the max number of outstanding requests, that should also count as being in a Failing state.
+    - Also implement this for the nested connections that implement accepting_requests().
 */
 
 /*
@@ -124,6 +129,8 @@ impl Drop for Connection {
         // accept new push requests but we stop the connection once done.
 
         let shared = self.shared.clone();
+
+        // TODO: Optimize this away if the connection as already stopped.
         task::spawn(async move {
             let _ = Self::shutdown_impl(&shared, true).await;
         });
@@ -169,9 +176,14 @@ impl Connection {
                     remote_stream_count: 0,
 
                     streams: HashMap::new(),
+                    event_listener: None,
                 }),
             }),
         }
+    }
+
+    pub async fn set_event_listener(&self, event_listener: Box<dyn ConnectionEventListener>) {
+        self.shared.state.lock().await.event_listener = Some(event_listener);
     }
 
     /// Called on a client which just sent a request over HTTP 1.1 with an
@@ -297,7 +309,11 @@ impl Connection {
     /// shutting down. Clients should read check this value before sending a
     /// request and in the case that it is true, then a connection should be
     /// created.
-    pub async fn can_send_request(&self) -> bool {
+    ///
+    /// NOTE: Due to race conditions, immediately calling request() may still
+    /// error out instantly with a retryable error so the caller must be
+    /// prepared to retry.
+    pub async fn accepting_requests(&self) -> bool {
         let connection_state = self.shared.state.lock().await;
 
         // NOTE: It is not necessary to check upper_sent_stream_id because if that is
@@ -306,7 +322,15 @@ impl Connection {
         !connection_state.shutting_down.is_some()
     }
 
-    pub async fn request(&self, request: Request) -> Result<Response> {
+    pub async fn num_outstanding_streams(&self) -> usize {
+        let connection_state = self.shared.state.lock().await;
+        connection_state.pending_requests.len() + connection_state.streams.len()
+    }
+
+    pub async fn enqueue_request(
+        &self,
+        request: Request,
+    ) -> Result<impl Future<Output = Result<Response>>> {
         if request.head.method == Method::CONNECT {
             // Omit :scheme and :path. Only :authority should be added.
             if request.head.uri.authority.is_none()
@@ -351,11 +375,13 @@ impl Connection {
                 .into());
             }
 
+            // TODO: Ensure this limit isn't hit before the DirectClient marks itself as
+            // full.
             if connection_state.pending_requests.len() >= self.shared.options.max_enqueued_requests
             {
                 return Err(ProtocolErrorV2 {
                     code: ErrorCode::REFUSED_STREAM,
-                    message: "Hit max_enqueued_requests limit on this conneciton",
+                    message: "Hit max_enqueued_requests limit on this connection",
                     local: true,
                 }
                 .into());
@@ -382,7 +408,7 @@ impl Connection {
 
         // TODO: If the receiver fails, does that mean that we can definately retry the
         // request?
-        receiver.recv().await?
+        Ok(async move { receiver.recv().await? })
     }
 
     /// Shuts down the server.
@@ -426,7 +452,7 @@ impl Connection {
                     return;
                 }
             }
-            ShuttingDownState::No | ShuttingDownState::Remote => {
+            ShuttingDownState::No | ShuttingDownState::GracefulRemote => {
                 // We can do either type of shutdown.
             }
         };
@@ -436,19 +462,21 @@ impl Connection {
             // GOAWAY.
 
             if shared.is_server {
-                // We won't make any changes to the upper_received_stream_id so that in-flight
-                // but unreceived client requests can still be processed.
-
-                let timeout_task = ChildTask::spawn(Self::wait_shutdown_timeout(shared.clone()));
-
-                connection_state.shutting_down = ShuttingDownState::Graceful {
-                    timeout_task: Some(timeout_task),
-                };
+                // We won't make any changes to the upper_received_stream_id so
+                // that in-flight but unreceived client requests
+                // can still be processed.
             } else {
                 connection_state.upper_received_stream_id =
                     connection_state.last_received_stream_id;
-                connection_state.shutting_down = ShuttingDownState::Graceful { timeout_task: None };
             }
+
+            let timeout_task = ChildTask::spawn(Self::wait_shutdown_timeout(shared.clone()));
+
+            connection_state
+                .set_shutting_down(ShuttingDownState::Graceful {
+                    timeout_task: Some(timeout_task),
+                })
+                .await;
 
             let _ = shared
                 .connection_event_sender
@@ -466,7 +494,9 @@ impl Connection {
             // sending a Closing/GOAWAY.
 
             connection_state.upper_received_stream_id = connection_state.last_received_stream_id;
-            connection_state.shutting_down = ShuttingDownState::Abrupt;
+            connection_state
+                .set_shutting_down(ShuttingDownState::Abrupt)
+                .await;
 
             let _ = shared
                 .connection_event_sender
@@ -489,14 +519,11 @@ impl Connection {
         shared: Arc<ConnectionShared>,
     ) -> impl std::future::Future<Output = ()> + Send + 'static {
         async move {
-            // TODO: Make this configurable.
-            common::wait_for(std::time::Duration::from_secs(5)).await;
+            common::wait_for(shared.options.graceful_shutdown_timeout.clone()).await;
 
             let _ = Self::shutdown_impl(&shared, false).await;
         }
     }
-
-    // TODO: Need to support initializing with settings already negiotated via HTTP
 
     /// Runs the connection management threads.
     /// This must be called exactly once and continously polled to keep the
@@ -547,26 +574,52 @@ impl Connection {
             .run(writer, initial_state.upgrade_payload)
             .await;
 
+        let _ = reader_task.cancel().await;
+
+        // TODO: If all of our streams aren't closed, we should definately provide some
+        // form of error.
+        /*
+        Error priority is:
+        1. Check for a remote GOAWAY
+        2. Check for IO error
+        3. Check if there are some streams (maybe excluding pushes) which are still active.
+        */
+
+        // TODO: Prioritize returning any error received from the ConnectionReader in a
+        // GOAWAY packet (may still be in the event channel but not yet processed by the
+        // writer).
+
+        let mut connection_state = shared.state.lock().await;
+
+        // Well behaved peers SHOULD send a GOAWAY before closing the connection so
+        // allow ignoring abrupt pipe closures in this case.
+        //
+        // TODO: Should we
+        // also verify that all streams have been processed.
         if let Err(e) = &result {
             if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
-                if io_error.kind() == std::io::ErrorKind::BrokenPipe {
+                let got_remote_goaway = match &connection_state.shutting_down {
+                    ShuttingDownState::GracefulRemote => true,
+                    _ => false,
+                };
+
+                if io_error.kind() == std::io::ErrorKind::BrokenPipe && got_remote_goaway {
                     result = Ok(());
                 }
             }
         }
 
-        if !result.is_ok() {
-            println!("HTTP2 WRITE THREAD FAILED: {:?}", result);
+        if result.is_ok() && !connection_state.streams.is_empty() {
+            result = Err(err_msg("Connection closed while streams are still active"));
         }
-
-        let _ = reader_task.cancel().await;
 
         // Cleanup all outstanding state.
         // TODO: Ideally if we did everything correctly then this shouldn't be needed
         // right?
         {
-            let mut connection_state = shared.state.lock().await;
-            connection_state.shutting_down = ShuttingDownState::Complete;
+            connection_state
+                .set_shutting_down(ShuttingDownState::Complete)
+                .await;
             // TODO: Hopefully this line is not needed?
             connection_state.upper_received_stream_id = connection_state.last_received_stream_id;
 
@@ -715,13 +768,14 @@ mod tests {
         ));
 
         let res = client_conn
-            .request(
+            .enqueue_request(
                 RequestBuilder::new()
                     .method(Method::GET)
                     .uri("http://localhost/hello".parse()?)
                     .build()
                     .unwrap(),
             )
+            .await?
             .await?;
 
         println!("{:?}", res.head);
@@ -736,11 +790,6 @@ mod tests {
 
         let options = ConnectionOptions::default();
 
-        // let server_conn = Connection::new(
-        //     options.clone(), Some(Box::new(CalculatorServerHandler {})));
-        // let server_task = task::spawn(server_conn.run(
-        //     ConnectionInitialState::raw(), Box::new(reader1), Box::new(writer2)));
-
         let client_conn = Connection::new(options, None);
         let client_task = task::spawn(client_conn.run(
             ConnectionInitialState::raw(),
@@ -751,15 +800,22 @@ mod tests {
         drop(reader1);
         drop(writer2);
 
-        let res = client_conn
-            .request(
+        let f = client_conn
+            .enqueue_request(
                 RequestBuilder::new()
                     .method(Method::GET)
                     .uri("http://localhost/hello".parse()?)
                     .build()
                     .unwrap(),
             )
-            .await?;
+            .await;
+
+        let res = match f {
+            Ok(v) => v.await,
+            Err(e) => Err(e),
+        };
+
+        assert!(res.is_err());
 
         Ok(())
     }

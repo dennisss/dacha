@@ -1,4 +1,5 @@
 use common::async_std::channel;
+use common::bytes::Bytes;
 use common::errors::*;
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
@@ -54,9 +55,8 @@ impl ResponseHead {
 
 #[async_trait]
 pub trait ResponseHandler: Send + Sync {
-    // TODO: Document whether or not this should be a 'fast' running function. This
-    // will determine whether or not we need to spawn a new task in the
-    // connection code to run it.
+    // NOTE: This is expected to be a very fast running function. Any blocking in
+    // here will block the connection thread.
     async fn handle_response(&self, response: Result<Response>);
 
     fn is_closed(&self) -> bool;
@@ -160,4 +160,10 @@ impl ResponseBuilder {
             body,
         })
     }
+}
+
+pub struct BufferedResponse {
+    pub head: ResponseHead,
+    pub body: Bytes,
+    pub trailers: Option<Headers>,
 }

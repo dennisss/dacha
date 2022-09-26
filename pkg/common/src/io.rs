@@ -343,11 +343,16 @@ impl<T: 'static + Send, S: crate::futures::sink::Sink<T> + Send + Unpin> Sinkabl
 pub trait Readable: 'static + Send + Unpin {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
 
-    // TODO: Deduplicate for http::Body
-    async fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<()> {
+    async fn read_at_most(&mut self, buf: &mut Vec<u8>, max_additional_bytes: usize) -> Result<()> {
+        let mut original_size = buf.len();
         let mut i = buf.len();
         loop {
-            buf.resize(i + BUF_SIZE, 0);
+            let new_size = core::cmp::min(i + BUF_SIZE, original_size + max_additional_bytes);
+            if new_size == buf.len() {
+                return Err(err_msg("Too many bytes read"));
+            }
+
+            buf.resize(new_size, 0);
 
             let res = self.read(&mut buf[i..]).await;
             match res {
@@ -364,6 +369,10 @@ pub trait Readable: 'static + Send + Unpin {
                 }
             }
         }
+    }
+
+    async fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<()> {
+        self.read_at_most(buf, usize::MAX - buf.len()).await
     }
 
     async fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<()> {

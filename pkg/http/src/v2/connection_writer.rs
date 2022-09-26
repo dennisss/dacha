@@ -381,6 +381,8 @@ impl ConnectionWriter {
                     }
 
                     if should_close {
+                        // TODO: Validate that close_with is present if we didn't get a NO_ERROR.
+
                         // Give the OS some time to fully flush the outgoing GOAWAY packet.
                         // TODO: Make the wait relative to the last write.
                         common::wait_for(std::time::Duration::from_millis(500)).await;
@@ -431,9 +433,11 @@ impl ConnectionWriter {
                     stream_id,
                     stream_state,
                 } => {
-                    // TODO:
-                    // - Reclaim any connection/stream level quota.
-                    // - Mark as reader_closed for future packets.
+                    let mut connection_state_guard = self.shared.state.lock().await;
+                    let mut connection_state = &mut *connection_state_guard;
+                    self.shared
+                        .close_stream_reader(&mut connection_state, stream_id)
+                        .await;
                 }
                 // Write event:
                 // - Happens on either remote flow control updates or
@@ -562,6 +566,7 @@ impl ConnectionWriter {
                     stream_id,
                     internal_error,
                 } => {
+                    // TODO: Find a better way to export this error.
                     eprintln!("Stream Write Failure: {}", internal_error);
 
                     let mut connection_state = self.shared.state.lock().await;
@@ -602,13 +607,15 @@ impl ConnectionWriter {
         // Mark that no more streams should be received by the reader.
         connection_state.upper_received_stream_id = connection_state.last_received_stream_id;
 
-        connection_state.shutting_down = ShuttingDownState::Complete;
+        connection_state
+            .set_shutting_down(ShuttingDownState::Complete)
+            .await;
 
         let _ = shared
             .connection_event_sender
             .try_send(ConnectionEvent::Closing {
-                send_goaway: Some(error),
-                close_with: Some(Ok(())),
+                send_goaway: Some(error.clone()),
+                close_with: Some(Err(error.into())),
             });
 
         drop(connection_state);

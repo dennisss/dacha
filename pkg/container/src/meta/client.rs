@@ -2,6 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use common::errors::*;
 use datastore::meta::client::MetastoreClient;
+use google::proto::any::Any;
 use raft::proto::routing::RouteLabel;
 
 use crate::meta::constants::ZONE_ENV_VAR;
@@ -41,6 +42,19 @@ impl ClusterMetaClient {
 
     pub fn inner(&self) -> &MetastoreClient {
         &self.inner
+    }
+
+    pub async fn get_object_any(&self, name: &str) -> Result<Option<Any>> {
+        let obj = self
+            .inner
+            .cluster_table::<ObjectMetadata>()
+            .get(name)
+            .await?;
+        if let Some(obj) = obj {
+            Ok(Some(obj.value().clone()))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn get_object<M: protobuf::Message + Default>(

@@ -11,6 +11,9 @@ use typenum::{Prod, U32};
 /// Big unsigned integer implementation intended for security critical
 /// use-cases.
 ///
+/// Note that if you expect to multiple N-bit numbers, this must be at least of
+/// size 2*N.
+///
 /// NOTE: Some functions such as Debug/to_string() are naturally not implemented
 /// securely.
 ///
@@ -193,8 +196,7 @@ where
     }
 
     pub fn shr(mut self, n: usize) -> Self {
-        //
-        self
+        todo!()
     }
 
     pub fn bit(&self, i: usize) -> usize {

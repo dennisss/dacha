@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use common::async_std::task;
 use common::errors::*;
 use http::ClientInterface;
+use json::ValuePath;
 use parsing::ascii::AsciiString;
 use reflection::ParseFrom;
 
@@ -77,10 +78,23 @@ impl AnonymousHueClient {
             ));
         }
 
-        // TODO: How can we check for errors in a standard way.
         let response_obj = json::parse(std::str::from_utf8(&response_body)?)?;
 
-        // println!("{:#?}", response_obj);
+        // See https://developers.meethue.com/develop/hue-api/error-messages/
+        // While not formally documented, failures seem to always be returned as an
+        // array of objects regardless of what the normal response type of the request
+        // is.
+        if let Some(els) = response_obj.get_elements() {
+            for el in els {
+                if let Some(err) = el.get_field("error") {
+                    if let Some(s) = err.get_field("description").and_then(|v| v.get_string()) {
+                        return Err(format_err!("Hue request failed: {}", s));
+                    }
+
+                    return Err(err_msg("Hue request failed with unknown error."));
+                }
+            }
+        }
 
         Ok(response_obj)
     }
@@ -100,7 +114,12 @@ impl AnonymousHueClient {
             "devicetype" => &json::Value::String(format!("{}#{}", application_name, device_name))
         }))).await?;
 
-        Ok(String::new())
+        let username = response
+            .path("$[0].success.username")?
+            .and_then(|v| v.get_string())
+            .ok_or_else(|| err_msg("Unexpected output format"))?;
+
+        Ok(username.to_string())
     }
 }
 

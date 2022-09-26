@@ -70,7 +70,9 @@ impl Stream {
             return true;
         }
 
-        self.sending_end_flushed && state.received_end
+        // state.reader_closed is a special case which will cause us to sent a
+        // RST_STREAM with a CANCELLED error in finish_stream.
+        self.sending_end_flushed && (state.received_end || state.reader_closed)
     }
 
     pub fn remote_window(&self, state: &mut StreamState) -> WindowSize {
@@ -267,11 +269,13 @@ impl Stream {
         }
         state.local_window -= (data.len() + extra_flow_controlled_bytes) as WindowSize;
 
-        state.received_buffer.extend_from_slice(&data);
+        if !state.reader_closed {
+            state.received_buffer.extend_from_slice(&data);
 
-        // Notify the IncomingStreamBody if there was a change.
-        if !data.is_empty() || end_stream {
-            let _ = self.read_available_notifier.try_send(());
+            // Notify the IncomingStreamBody if there was a change.
+            if !data.is_empty() || end_stream {
+                let _ = self.read_available_notifier.try_send(());
+            }
         }
 
         Ok(())

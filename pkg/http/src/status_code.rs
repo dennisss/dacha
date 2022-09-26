@@ -170,7 +170,7 @@ pub const USE_PROXY: StatusCode = StatusCode(305);
 /// 307	Temporary Redirect	[RFC7231, Section 6.4.7]
 pub const TEMPORARY_REDIRECT: StatusCode = StatusCode(307);
 /// 308	Permanent Redirect	[RFC7538]
-pub const PERMANENT_REDIRECT: StatusCode = StatusCode(408);
+pub const PERMANENT_REDIRECT: StatusCode = StatusCode(308);
 /// 400	Bad Request	[RFC7231, Section 6.5.1]
 pub const BAD_REQUEST: StatusCode = StatusCode(400);
 /// 401	Unauthorized	[RFC7235, Section 3.1]

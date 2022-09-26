@@ -70,8 +70,6 @@ impl OutgoingStreamBody {
 
     pub async fn run(mut self, body: Box<dyn Body>) {
         if let Err(e) = self.run_internal(body).await {
-            // TODO: Find the best way to make sure that we always log this error.
-            println!("OUTGOING BODY FAILURE: {}", e);
             let _ = self
                 .connection_event_sender
                 .send(ConnectionEvent::StreamWriteFailure {
@@ -285,7 +283,7 @@ impl Readable for IncomingStreamBody {
                 (&mut buf[0..n]).copy_from_slice(&stream_state.received_buffer[0..n]);
                 buf = &mut buf[n..];
 
-                // TODO: Not verify efficient
+                // TODO: Not very efficient
                 stream_state.received_buffer = stream_state.received_buffer.split_off(n);
 
                 // Allow the remote endpoint to send more data now that some has been read.
