@@ -1,4 +1,6 @@
 use crate::big::uint::BigUint;
+use crate::integer::Integer;
+use crate::number::{One, Zero};
 
 /// A set of operations which all result in a 'mod n' result.
 /// TODO: This would ideally implement operations which have intermediate
@@ -54,9 +56,11 @@ impl<'a> Modulo<'a> {
             return a.clone();
         }
 
-        let mut out = BigUint::from(1);
+        let mut out = BigUint::one();
         let mut p = a.clone();
-        for i in 0..b.nbits() {
+        for i in 0..b.value_bits() {
+            // TODO: Use a smart multiplication function that still reads the bytes from 'p'
+            // but only multiplies by it if needed.
             if b.bit(i) == 1 {
                 out = self.mul(&out, &p);
             }
@@ -72,7 +76,7 @@ impl<'a> Modulo<'a> {
     /// instead of signed arithmetic): https://en.wikipedia.org/wiki/Extended_Euclidean_algorithm#Modular_integers
     pub fn inv(&self, a: &BigUint) -> BigUint {
         let mut t = BigUint::zero();
-        let mut new_t = BigUint::from(1);
+        let mut new_t = BigUint::one();
         let mut r = self.n.clone();
         let mut new_r = a.clone();
 

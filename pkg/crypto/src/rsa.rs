@@ -7,6 +7,7 @@ use common::errors::*;
 use common::LeftPad;
 use math::big::BigUint;
 use math::big::Modulo;
+use math::integer::Integer;
 use pkix::{
     PKIX1Algorithms2008, PKIX1Algorithms88, PKIX1Explicit88, PKIX1Implicit88,
     PKIX1_PSS_OAEP_Algorithms, NIST_SHA2, PKCS_1,
@@ -102,12 +103,12 @@ impl RSASSA_PSS {
         data: &[u8],
     ) -> Result<Vec<u8>> {
         // TODO: Implement a more efficient way of getting this size.
-        let k = common::ceil_div(private_key.modulus.nbits(), 8);
+        let k = common::ceil_div(private_key.modulus.value_bits(), 8);
 
         // Step 1
         let encoded_message = emsa_pss_encode(
             data,
-            private_key.modulus.nbits() - 1,
+            private_key.modulus.value_bits() - 1,
             &self.hasher_factory,
             self.salt_length,
         )
@@ -136,7 +137,7 @@ impl RSASSA_PSS {
         data: &[u8],
     ) -> Result<bool> {
         // TODO: Implement a more efficient way of getting this size.
-        let k = common::ceil_div(public_key.modulus.nbits(), 8);
+        let k = common::ceil_div(public_key.modulus.value_bits(), 8);
 
         // Step 1
         if signature.len() != k {
@@ -148,7 +149,7 @@ impl RSASSA_PSS {
         let message = rsavp1(&public_key.modulus, &public_key.public_exponent, &s)?;
 
         // TODO: Verify has at least one bit.
-        let encoded_len = common::ceil_div(public_key.modulus.nbits() - 1, 8);
+        let encoded_len = common::ceil_div(public_key.modulus.value_bits() - 1, 8);
 
         // Step 2.c
         let encoded_message = i2osp(&message, encoded_len);
@@ -157,7 +158,7 @@ impl RSASSA_PSS {
         let result = emsa_pss_verify(
             data,
             &encoded_message,
-            public_key.modulus.nbits() - 1,
+            public_key.modulus.value_bits() - 1,
             &self.hasher_factory,
             self.salt_length,
         )?;
@@ -191,7 +192,7 @@ impl RSASSA_PKCS_v1_5 {
 
     /// Based on RFC 8017: Section 8.2.1
     pub fn create_signature(&self, private_key: &RSAPrivateKey, data: &[u8]) -> Result<Vec<u8>> {
-        let k = common::ceil_div(private_key.modulus.nbits() - 1, 8);
+        let k = common::ceil_div(private_key.modulus.value_bits() - 1, 8);
 
         // Step 1
         let em = emsa_pkcs1_v1_5_encode(
@@ -222,7 +223,7 @@ impl RSASSA_PKCS_v1_5 {
         data: &[u8],
     ) -> Result<bool> {
         // TODO: Implement a more efficient way of getting this size.
-        let k = common::ceil_div(public_key.modulus.nbits() - 1, 8);
+        let k = common::ceil_div(public_key.modulus.value_bits() - 1, 8);
 
         if signature.len() != k {
             return Ok(false);

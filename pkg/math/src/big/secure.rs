@@ -1,49 +1,85 @@
 use alloc::vec::Vec;
+use common::ceil_div;
 use core::cmp::Ord;
 use core::cmp::Ordering;
+use core::marker::PhantomData;
 use core::ops;
 use core::ops::Div;
+use core::ops::Index;
+use core::ops::IndexMut;
 
 use generic_array::{arr::AddLength, ArrayLength, GenericArray};
 use typenum::Quot;
 use typenum::{Prod, U32};
 
+use crate::integer::Integer;
+use crate::matrix::dimension::*;
+use crate::number::{One, Zero};
+
+/*
+All SecureBigUints have a fixed_width() which describes exactly how many bits
+
+bit_width()
+
+
+Ideally have a generalized storage:
+- Can either be:
+    - Static size
+    - Dynamic with max precision
+
+Making a SecureBigUint requires specifying the precision.
+
+
+    To create an element, we need to specify the precision (means we can't use zero() or one())
+
+
+TODO: For from_le_bytes or from_be_bytes to be secure, they must be padded already to the max number of bytes.
+
+*/
+
+/*
+pub trait StorageType<D: Dimension>:
+    Clone + AsRef<[u32]> + AsMut<[u32]> + Index<usize, Output = u32> + IndexMut<usize, Output = u32>
+{
+    /// Allocates a new buffer with at least 'words' number of items.
+    fn alloc(words: usize) -> Self;
+}
+
+impl StorageType<Dynamic> for Vec<u32> {
+    fn alloc(words: usize) -> Self {
+        vec![0; words]
+    }
+}
+*/
+
 /// Big unsigned integer implementation intended for security critical
 /// use-cases.
 ///
-/// Note that if you expect to multiple N-bit numbers, this must be at least of
-/// size 2*N.
-///
-/// NOTE: Some functions such as Debug/to_string() are naturally not implemented
-/// securely.
-///
-/// TODO: Technically, I should use a CeilDiv for the types.
+/// Internally each instance stores a fixed size storage buffer based on the bit
+/// width used to initialize the integer. All numerical operations are constant
+/// time for a given storage buffer size unless otherwise specified.
 #[derive(Clone)]
-pub struct SecureBigUint<Bits: ArrayLength<u32> + Div<U32>>
-where
-    Quot<Bits, U32>: ArrayLength<u32>,
-{
+pub struct SecureBigUint {
     /// In little endian 32bits at a time.
     /// Will be padded with
-    value: GenericArray<u32, Quot<Bits, U32>>,
+    value: Vec<u32>,
 }
 
-impl<Bits: ArrayLength<u32> + Div<U32>> SecureBigUint<Bits>
-where
-    Quot<Bits, U32>: ArrayLength<u32>,
-{
-    pub fn zero() -> Self {
-        Self {
-            value: GenericArray::default(), // vec![0; max_num_bits / 32],
-        }
+impl SecureBigUint {
+    fn from_usize(value: usize, width: usize) -> Self {
+        let mut data = vec![0; ceil_div(width, 32)];
+        data[0] = value as u32;
+
+        Self { value: data }
     }
+}
 
-    // pub fn zero_like(&self) -> Self {
-    //     Self::zero(self.value.len() * 32)
-    // }
+impl Integer for SecureBigUint {
+    fn from_le_bytes(data: &[u8]) -> Self {
+        // Necessary so that to_le_bytes() is lossless.
+        assert!(data.len() % 4 == 0);
 
-    pub fn from_le_bytes(data: &[u8]) -> Self {
-        let mut out = Self::zero();
+        let mut out = Self::from_usize(0, 8 * data.len());
 
         let n = data.len() / 4;
         for i in 0..(data.len() / 4) {
@@ -61,7 +97,7 @@ where
         out
     }
 
-    pub fn to_le_bytes(&self) -> Vec<u8> {
+    fn to_le_bytes(&self) -> Vec<u8> {
         let mut data = vec![];
         data.reserve_exact(self.value.len() * 4);
         for v in &self.value {
@@ -71,39 +107,31 @@ where
         data
     }
 
-    pub fn from(value: u32) -> Self {
-        let mut num = Self::zero();
-        num.value[0] = value;
-        num
+    fn from_be_bytes(data: &[u8]) -> Self {
+        todo!()
     }
 
-    /// Computes 2^self more efficiently than using pow().
-    /// Only supports exponents smaller than u32.
-    /// TODO: Just take as input a u32 directly.
-    pub fn exp2(&self) -> Self {
-        let mut out = Self::zero();
-        out.set_bit(self.value[0] as usize, 1);
-        out
+    fn to_be_bytes(&self) -> Vec<u8> {
+        todo!()
     }
 
-    // pub fn add_to(&self, rhs: &Self, out: &mut Self) {
-    //     assert_eq!(self.value.len(), rhs.value.len());
-    //     assert_eq!(self.value.len(), out.value.len());
+    // TODO: Dedup with add_assign.
+    fn add_to(&self, rhs: &Self, output: &mut Self) {
+        assert_eq!(self.value.len(), rhs.value.len());
 
-    //     for i in 0..self.value.len() {
-    //         out.value[i] = self.value[i] + rhs.value[i];
-    //     }
-    // }
+        let mut carry = 0;
+        let n = self.value.len();
+        for i in 0..n {
+            let v = (self.value[i] as u64) + (rhs.value[i] as u64) + carry;
 
-    // TODO: Having a checked_sub_to may be useful
+            output.value[i] = v as u32;
+            carry = v >> 32;
+        }
 
-    // pub fn add(&self, rhs: &Self) -> Self {
-    //     let mut out = self.clone();
-    //     out.add_assign(rhs);
-    //     out
-    // }
+        assert_eq!(carry, 0);
+    }
 
-    pub fn add_assign(&mut self, rhs: &Self) {
+    fn add_assign(&mut self, rhs: &Self) {
         let mut carry = 0;
         let n = self.value.len();
         for i in 0..n {
@@ -116,43 +144,35 @@ where
         assert_eq!(carry, 0);
     }
 
+    fn sub(&self, rhs: &Self) -> Self {
+        let mut out = self.clone();
+        out.sub_assign(rhs);
+        out
+    }
+
     /// TODO: Improve the constant time behavior of this.
     /// It would be useful to have a conditional form of this that adds like
     /// subtraction by zero.
-    pub fn sub_assign(&mut self, rhs: &Self) {
-        let mut carry = 0;
-        let n = self.value.len();
-        for i in 0..n {
-            // TODO: Try to use overflowing_sub instead (that way we don't need to go to
-            // 64bits)
-            let v = (self.value[i] as i64) - (rhs.value[i] as i64) + carry;
-            if v < 0 {
-                self.value[i] = (v + (u32::max_value() as i64) + 1) as u32;
-                carry = -1;
-            } else {
-                self.value[i] = v as u32;
-                carry = 0;
-            }
-        }
-
-        assert_eq!(carry, 0);
+    fn sub_assign(&mut self, rhs: &Self) {
+        assert!(self.overflowing_sub_assign(rhs));
     }
 
-    pub fn mul(&self, rhs: &Self) -> Self {
-        let mut out = Self::zero();
+    fn mul(&self, rhs: &Self) -> Self {
+        let mut out = Self::from_usize(0, self.bit_width() + rhs.bit_width());
         self.mul_to(rhs, &mut out);
         out
     }
 
     /// O(n^2) multiplication. Assumes that u64*u64 multiplication is always
     /// constant time.
-    pub fn mul_to(&self, rhs: &Self, out: &mut Self) {
+    ///
+    /// 'out' must be twice the size of
+    fn mul_to(&self, rhs: &Self, out: &mut Self) {
         assert_eq!(self.value.len(), rhs.value.len());
-        assert_eq!(self.value.len(), out.value.len());
 
-        let mid_idx = self.value.len() / 2;
+        let mid_idx = out.value.len() / 2;
 
-        // All upper bytes must be zero so that we don't overflow the container.
+        // All upper bytes must be zero so that we don't overflow the output container.
         // Multipling two numbers with 'n' bits will produce a result with '2*n' bits.
         for i in mid_idx..self.value.len() {
             assert_eq!(self.value[i], 0);
@@ -180,30 +200,11 @@ where
         }
     }
 
-    pub fn max_num_bits(&self) -> usize {
-        self.value.len() * 32
-    }
-
-    pub fn shl(&mut self) {
-        let mut carry = 0;
-        for v in self.value.iter_mut() {
-            let (new_v, _) = v.overflowing_shl(1);
-            let new_carry = *v >> 31;
-            *v = new_v | carry;
-            carry = new_carry;
-        }
-        assert_eq!(carry, 0);
-    }
-
-    pub fn shr(mut self, n: usize) -> Self {
-        todo!()
-    }
-
-    pub fn bit(&self, i: usize) -> usize {
+    fn bit(&self, i: usize) -> usize {
         ((self.value[i / 32] >> (i % 32)) & 0b01) as usize
     }
 
-    pub fn set_bit(&mut self, i: usize, v: usize) {
+    fn set_bit(&mut self, i: usize, v: usize) {
         assert!(v == 0 || v == 1);
         let ii = i / 32;
         let shift = i % 32;
@@ -212,22 +213,100 @@ where
         self.value[ii] = (self.value[ii] & mask) | ((v as u32) << shift);
     }
 
-    pub fn quorem(&self, rhs: &Self) -> (Self, Self) {
-        let mut q = Self::zero();
-        let mut r = Self::zero();
-        let zero = Self::zero();
+    // Want to support large 2x sized number mod exact sized number.
 
-        for i in (0..self.max_num_bits()).rev() {
-            r.shl();
+    /*
+    NOTE: quorem explicitly supports performing 'n % m' where 'n' has a larger bit_width than 'm' as this is useful for reducing the number of bits after multiplication.
+    */
+
+    fn quorem(&self, rhs: &Self) -> (Self, Self) {
+        let mut q = Self::from_usize(0, self.bit_width()); // Range is [0, Self]
+        let mut r = Self::from_usize(0, rhs.bit_width()); // Range is [0, rhs).
+
+        // TODO: Instead use a conditional subtrack.
+        // Then we could make this require just one output buffer and no internal
+        // bffering.
+        let zero = Self::from_usize(0, rhs.bit_width());
+
+        // TODO: Implement a bit iterator so set_bit requires less work.
+        for i in (0..self.bit_width()).rev() {
+            let carry = r.shl();
             r.set_bit(0, self.bit(i));
 
-            let subtract = r >= *rhs;
+            // TODO: If the RHS is public knowledge, then we should only need to do this
+            // comparison once we reach the same number of bits as the RHS.
+            // TODO: Make this '||' constant time
+            let subtract = r >= *rhs || carry != 0;
 
-            r.sub_assign(if subtract { rhs } else { &zero });
+            // TODO: Switch this to a wrapping_sub_assign as it will overflow if self is
+            // larger than rhs
+            r.overflowing_sub_assign(if subtract { rhs } else { &zero });
             q.set_bit(i, if subtract { 1 } else { 0 });
         }
 
         (q, r)
+    }
+
+    fn value_bits(&self) -> usize {
+        todo!()
+    }
+
+    fn bit_width(&self) -> usize {
+        self.value.len() * 32
+    }
+}
+
+impl SecureBigUint {
+    /*
+    /// Computes 2^self more efficiently than using pow().
+    /// Only supports exponents smaller than u32.
+    /// TODO: Just take as input a u32 directly.
+    pub fn exp2(&self) -> Self {
+        let mut out = Self::zero();
+        out.set_bit(self.value[0] as usize, 1);
+        out
+    }
+    */
+
+    // TODO: Having a checked_sub_to may be useful
+
+    /// TODO: Improve the constant time behavior of this.
+    /// It would be useful to have a conditional form of this that adds like
+    /// subtraction by zero.
+    fn overflowing_sub_assign(&mut self, rhs: &Self) -> bool {
+        let mut carry = 0;
+        let n = self.value.len();
+        for i in 0..n {
+            // TODO: Try to use overflowing_sub instead (that way we don't need to go to
+            // 64bits)
+            let v = (self.value[i] as i64) - (rhs.value[i] as i64) + carry;
+            if v < 0 {
+                self.value[i] = (v + (u32::max_value() as i64) + 1) as u32;
+                carry = -1;
+            } else {
+                self.value[i] = v as u32;
+                carry = 0;
+            }
+        }
+
+        carry != 0
+    }
+
+    #[must_use]
+    pub fn shl(&mut self) -> u32 {
+        let mut carry = 0;
+        for v in self.value.iter_mut() {
+            let (new_v, _) = v.overflowing_shl(1);
+            let new_carry = *v >> 31;
+            *v = new_v | carry;
+            carry = new_carry;
+        }
+
+        carry
+    }
+
+    pub fn shr(mut self, n: usize) -> Self {
+        todo!()
     }
 
     pub fn and_assign(&mut self, rhs: &Self) {
@@ -244,10 +323,7 @@ R: Always power of 2.
 Must find R' using extended Euclidean algorithm
 */
 
-impl<Bits: ArrayLength<u32> + Div<U32>> Ord for SecureBigUint<Bits>
-where
-    Quot<Bits, U32>: ArrayLength<u32>,
-{
+impl Ord for SecureBigUint {
     fn cmp(&self, other: &Self) -> Ordering {
         assert_eq!(self.value.len(), other.value.len());
 
@@ -282,74 +358,18 @@ where
     }
 }
 
-impl<Bits: ArrayLength<u32> + Div<U32>> PartialEq for SecureBigUint<Bits>
-where
-    Quot<Bits, U32>: ArrayLength<u32>,
-{
+impl PartialEq for SecureBigUint {
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other) == Ordering::Equal
     }
 }
-impl<Bits: ArrayLength<u32> + Div<U32>> Eq for SecureBigUint<Bits> where
-    Quot<Bits, U32>: ArrayLength<u32>
-{
-}
+impl Eq for SecureBigUint {}
 
-impl<Bits: ArrayLength<u32> + Div<U32>> PartialOrd for SecureBigUint<Bits>
-where
-    Quot<Bits, U32>: ArrayLength<u32>,
-{
+impl PartialOrd for SecureBigUint {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
-
-/*
-impl<Bits: ArrayLength<u32> + Div<U32>> ops::AddAssign<&Self> for SecureBigUint<Bits>
-where
-    Quot<Bits, U32>: ArrayLength<u32>,
-{
-    fn add_assign(&mut self, rhs: &Self) {
-        self.add_assign_impl(rhs);
-    }
-}
-
-impl<Bits: ArrayLength<u32> + Div<U32>> ops::AddAssign<&Self> for SecureBigUint<Bits>
-where
-    Quot<Bits, U32>: ArrayLength<u32>,
-{
-*/
-
-/*
-impl_op_ex!(+= |lhs: &mut SecureBigUint, rhs: &SecureBigUint| {
-
-});
-
-impl_op_commutative!(+ |lhs: SecureBigUint, rhs: &SecureBigUint| -> SecureBigUint {
-    let mut out = lhs;
-    out += rhs;
-    out
-});
-
-impl_op!(+ |lhs: &SecureBigUint, rhs: &SecureBigUint| -> SecureBigUint {
-    // TODO: Optimize with a third buffer?
-    lhs.clone() + rhs
-});
-
-impl_op_ex!(-= |lhs: &mut SecureBigUint, rhs: &SecureBigUint| {
-
-});
-
-impl_op_ex!(
-    -|lhs: SecureBigUint, rhs: &SecureBigUint| -> SecureBigUint {
-        let mut out = lhs;
-        out -= rhs;
-        out
-    }
-);
-
-impl_op!(-|lhs: &SecureBigUint, rhs: &SecureBigUint| -> SecureBigUint { lhs.clone() - rhs });
-*/
 
 #[cfg(test)]
 mod tests {
@@ -360,23 +380,21 @@ mod tests {
     fn secure_biguint_test() {
         // TODO: Check multiplication in x*0 and x*1 cases
 
-        type Uint = SecureBigUint<typenum::U64>;
-
-        let seven = Uint::from(7);
-        let one_hundred = Uint::from(100);
+        let seven = SecureBigUint::from_usize(7, 64);
+        let one_hundred = SecureBigUint::from_usize(100, 64);
 
         assert!(one_hundred > seven);
         assert!(seven < one_hundred);
         assert!(one_hundred == one_hundred);
         assert!(seven == seven);
 
-        let mut seven_hundred = Uint::zero();
+        let mut seven_hundred = SecureBigUint::from_usize(0, 64);
         seven.mul_to(&one_hundred, &mut seven_hundred);
 
-        assert!(seven_hundred == Uint::from(700));
+        assert!(seven_hundred == SecureBigUint::from_usize(700, 64));
 
-        let x = Uint::from_le_bytes(&[0xff, 0xff, 0xff, 0xff]);
-        let mut temp = Uint::zero();
+        let x = SecureBigUint::from_le_bytes(&[0xff, 0xff, 0xff, 0xff]);
+        let mut temp = SecureBigUint::from_usize(0, 64);
         x.mul_to(&x, &mut temp);
 
         assert_eq!(
@@ -385,16 +403,19 @@ mod tests {
         );
 
         let (q, r) = temp.quorem(&x);
-        assert!(q == x);
-        assert!(r == Uint::zero());
+
+        // Equal to 'x' extended to 64 bits
+        assert!(q == SecureBigUint::from_le_bytes(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]));
+
+        assert!(r == SecureBigUint::from_usize(0, 32));
 
         let (q, r) = one_hundred.quorem(&seven);
-        assert!(q == Uint::from(14));
-        assert!(r == Uint::from(2));
+        assert!(q == SecureBigUint::from_usize(14, 64));
+        assert!(r == SecureBigUint::from_usize(2, 64));
 
         let (q, r) = seven.quorem(&one_hundred);
-        assert!(q == Uint::from(0));
-        assert!(r == Uint::from(7));
+        assert!(q == SecureBigUint::from_usize(0, 64));
+        assert!(r == SecureBigUint::from_usize(7, 64));
 
         // TODO: Test larger numbers.
     }

@@ -1,4 +1,4 @@
-#![feature(trait_alias, specialization)]
+#![feature(trait_alias, specialization, generic_const_exprs)]
 #![no_std]
 
 #[cfg(feature = "alloc")]
@@ -32,11 +32,13 @@ pub mod combin;
 pub mod gcd;
 #[cfg(feature = "alloc")]
 pub mod geometry;
+pub mod integer;
 pub mod matrix;
 pub mod number;
 pub mod rational;
 
 // TODO: Verify this uses hardware instructions on ARM.
+use integer::Integer;
 use number::Float;
 
 /// Given parameters of an equation of the form 'Ax^2 + Bx + C = 0' finds values

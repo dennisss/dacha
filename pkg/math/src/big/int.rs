@@ -4,6 +4,7 @@ use common::errors::*;
 use common::vec::VecPtr;
 
 use super::BigUint;
+use crate::integer::Integer;
 
 /// Signed arbitrary length integer.
 #[derive(Clone, PartialEq)]
@@ -105,7 +106,7 @@ impl BigInt {
         out
     }
 
-    pub fn nbits(&self) -> usize {
+    pub fn value_bits(&self) -> usize {
         let mut n = 32 * self.value.len();
         if n == 0 {
             return 0;
@@ -144,6 +145,7 @@ impl BigInt {
         Ok(v as isize)
     }
 
+    // TODO: Allow converting to any 'Integer' type.
     pub fn to_uint(&self) -> Result<BigUint> {
         if !self.is_positive() {
             return Err(err_msg("Not positive"));

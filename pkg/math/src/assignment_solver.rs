@@ -22,6 +22,10 @@ impl Zero for Entry {
     fn zero() -> Self {
         Entry::Empty
     }
+
+    fn is_zero(&self) -> bool {
+        *self == Self::zero()
+    }
 }
 
 #[derive(Clone, Copy)]

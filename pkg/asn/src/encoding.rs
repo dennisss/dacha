@@ -1,3 +1,4 @@
+use asn_compiler::tag::*;
 use common::bits::BitVector;
 use common::bytes::Bytes;
 use common::errors::*;
@@ -8,7 +9,6 @@ use parsing::*;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Debug;
-use asn_compiler::tag::*;
 
 use crate::builtin::*;
 
@@ -503,9 +503,9 @@ impl DERReader {
         let n = BigInt::from_be_bytes(&data);
 
         // Always at least one byte.
-        if common::ceil_div(std::cmp::max(n.nbits(), 8), 8) != data.len() {
+        if common::ceil_div(std::cmp::max(n.value_bits(), 8), 8) != data.len() {
             println!("{:?}", data);
-            println!("{:?} {} {}", n, n.nbits(), data.len());
+            println!("{:?} {} {}", n, n.value_bits(), data.len());
             return Err(err_msg("Integer not minimal length"));
         }
 

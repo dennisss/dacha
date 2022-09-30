@@ -9,6 +9,8 @@ use common::errors::*;
 use common::hex;
 use common::LeftPad;
 use math::big::*;
+use math::integer::Integer;
+use math::number::{One, Zero};
 
 use crate::dh::*;
 use crate::hasher::Hasher;
@@ -63,7 +65,7 @@ impl EllipticCurve {
         m: &Modulo,
     ) -> EllipticCurvePoint {
         let mut q = EllipticCurvePoint::zero();
-        for i in (0..d.nbits()).rev() {
+        for i in (0..d.value_bits()).rev() {
             q = self.add_points(&q, &q, m);
             if d.bit(i) == 1 {
                 q = self.add_points(&q, P, m);
@@ -187,7 +189,7 @@ impl EllipticCurveGroup {
     ) -> Result<Option<Vec<u8>>> {
         let d_a = self.decode_scalar(private_key)?;
 
-        let L_z = self.n.nbits();
+        let L_z = self.n.value_bits();
         assert!(L_z <= 8 * digest.len());
 
         let z = BigUint::from_be_bytes(digest) >> BigUint::from((8 * digest.len()) - L_z);
@@ -239,7 +241,7 @@ impl EllipticCurveGroup {
             (parsed.r.to_uint()?, parsed.s.to_uint()?)
         };
 
-        let L_z = self.n.nbits();
+        let L_z = self.n.value_bits();
         // assert_eq!(L_z % 8, 0);
         assert!(L_z <= 8 * digest.len());
         // digest.truncate(L_z / 8);
@@ -278,7 +280,7 @@ impl EllipticCurveGroup {
             return Err(err_msg("Point too small"));
         }
 
-        let nbytes = ceil_div(self.p.nbits(), 8);
+        let nbytes = ceil_div(self.p.value_bits(), 8);
         let x1 = if data[0] == 4 {
             // Uncompressed form
             // TODO: For TLS 1.3, this is the only supported format
@@ -336,7 +338,7 @@ impl EllipticCurveGroup {
 
     // TODO: Output uncompressed, but with padding
     fn encode_point(&self, p: &EllipticCurvePoint) -> Vec<u8> {
-        let nbytes = ceil_div(self.p.nbits(), 8);
+        let nbytes = ceil_div(self.p.value_bits(), 8);
 
         let mut out = vec![];
         out.push(4); // Uncompressed form
@@ -375,6 +377,8 @@ impl EllipticCurveGroup {
     }
 
     pub fn secp192r1() -> Self {
+        // TODO: Convert to parsing these using macros.
+
         Self::from_hex(
             "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFFFFFFFFFFFF",
             "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFFFFFFFFFFFC",

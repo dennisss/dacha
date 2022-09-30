@@ -24,8 +24,8 @@ use crate::number::{Min, One, Zero};
 */
 
 #[derive(Clone)]
-pub struct MatrixBase<T, R: Dimension, C: Dimension, D: StorageType<T, R, C>> {
-    pub(super) data: D,
+pub struct MatrixBase<T, R: Dimension, C: Dimension, S: StorageType<T, R, C>> {
+    pub(super) data: S,
     t: PhantomData<T>,
     r: PhantomData<R>,
     c: PhantomData<C>,

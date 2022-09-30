@@ -2,16 +2,21 @@ use alloc::boxed::Box;
 use std::string::ToString;
 use std::vec::Vec;
 
+use common::errors::*;
+use math::big::BigUint;
+use math::integer::Integer;
+use math::number::Zero;
+
 use crate::aead::*;
 use crate::aes::*;
 use crate::cipher::*;
 use crate::constant_eq;
 use crate::utils::*;
-use common::errors::*;
-use math::big::BigUint;
 
 type Block = [u8; 16];
 const BLOCK_SIZE: usize = 16;
+
+// TODO: THis desperately needs to be more efficient.
 
 /// Operations of the field GF(2^m).
 struct GaloisField2 {
@@ -54,7 +59,7 @@ impl GaloisField2 {
         }
 
         let mut r = BigUint::zero();
-        for i in (0..lhs.nbits()).rev() {
+        for i in (0..lhs.value_bits()).rev() {
             r.shl();
             r.set_bit(0, lhs.bit(i));
             if r >= *rhs {
@@ -69,7 +74,7 @@ impl GaloisField2 {
     pub fn mul(&self, mut a: BigUint, b: &BigUint) -> BigUint {
         // Multiple one bit at a time.
         let mut out = BigUint::zero();
-        for i in 0..b.nbits() {
+        for i in 0..b.value_bits() {
             if b.bit(i) == 1 {
                 out ^= &a;
             }

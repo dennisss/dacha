@@ -173,10 +173,6 @@ impl ChaCha20 {
     }
 }
 
-/// The modulus we use is 130 bits which fits in 5 32-bit numbers.
-/// We need twice that to support multiplication.
-type Poly1305Uint = SecureBigUint<U320>;
-
 /*
 Need the prime
 
@@ -188,6 +184,10 @@ Split
 */
 
 /*
+/// The modulus we use is 130 bits which fits in 5 32-bit numbers.
+/// We need twice that to support multiplication.
+type Poly1305Uint = SecureBigUint<U320>;
+
 /// Using the variable naming from https://en.wikipedia.org/wiki/Montgomery_modular_multiplication.
 struct MontgomeryModulo {
     modulus: Poly1305Uint,

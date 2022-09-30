@@ -30,17 +30,24 @@ impl<T: PartialOrd> Max for T {
 
 pub trait Zero {
     fn zero() -> Self;
+
+    fn is_zero(&self) -> bool;
 }
 
 pub trait One {
     fn one() -> Self;
+
+    fn is_one(&self) -> bool;
 }
 
 pub trait AbsoluteValue {
     fn abs(self) -> Self;
 }
 
-/// Equivalent to using 'self as T'
+/// A type which can be explicitly coerced into another type possibly with
+/// precision loss.
+///
+/// 'self as T' === self.cast()
 pub trait Cast<T> {
     fn cast(self) -> T;
 }
@@ -53,11 +60,19 @@ macro_rules! impl_num_type {
             fn zero() -> Self {
                 0 as $name
             }
+
+            fn is_zero(&self) -> bool {
+                *self == Self::zero()
+            }
         }
 
         impl One for $name {
             fn one() -> Self {
                 1 as $name
+            }
+
+            fn is_one(&self) -> bool {
+                *self == Self::one()
             }
         }
 

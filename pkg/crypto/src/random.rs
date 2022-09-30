@@ -10,6 +10,7 @@ use common::async_std::sync::Mutex;
 use common::bytes::{Buf, Bytes};
 use common::errors::*;
 use math::big::BigUint;
+use math::integer::Integer;
 
 use crate::chacha20::*;
 
@@ -69,7 +70,7 @@ pub async fn secure_random_range(lower: &BigUint, upper: &BigUint) -> Result<Big
     buf.resize(upper.min_bytes(), 0);
 
     let msb_mask: u8 = {
-        let r = upper.nbits() % 8;
+        let r = upper.value_bits() % 8;
         if r == 0 {
             0xff
         } else {
