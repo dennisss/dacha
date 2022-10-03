@@ -138,6 +138,10 @@ impl Integer for BigUint {
         self.trim();
     }
 
+    fn add(&self, rhs: &Self) -> Self {
+        self.clone().add_into(rhs)
+    }
+
     fn add_to(&self, rhs: &Self, output: &mut Self) {
         output.value.truncate(0);
 

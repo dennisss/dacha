@@ -39,9 +39,7 @@ pub trait Integer: Clone + Ord + PartialOrd + Eq + PartialEq {
 
     fn set_bit(&mut self, i: usize, v: usize);
 
-    fn add(&self, rhs: &Self) -> Self {
-        self.clone().add_into(rhs)
-    }
+    fn add(&self, rhs: &Self) -> Self;
 
     fn add_into(mut self, rhs: &Self) -> Self {
         self.add_assign(rhs);

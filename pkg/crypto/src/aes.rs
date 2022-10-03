@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use core::arch::x86_64::*;
 
 use common::errors::*;
+use math::{from_m128i, to_m128i};
 
 use crate::aes_generic::*;
 use crate::cipher::*;
@@ -23,20 +24,6 @@ const AES256_NUM_ROUNDS: usize = 14;
 const AES128_ROUND_CONSTANTS: [i32; 11] = [1, 2, 4, 8, 16, 32, 64, 128, 27, 54, 108];
 
 // TODO: Use CLMUL https://en.wikipedia.org/wiki/CLMUL_instruction_set
-
-#[cfg(all(target_arch = "x86_64", target_feature = "aes"))]
-pub fn to_m128i(v: &[u8]) -> __m128i {
-    assert_eq!(v.len(), 16);
-    unsafe { _mm_loadu_si128(core::mem::transmute(v.as_ptr())) }
-}
-
-#[cfg(all(target_arch = "x86_64", target_feature = "aes"))]
-pub fn from_m128i(v: __m128i, out: &mut [u8]) {
-    assert_eq!(out.len(), 16);
-    unsafe {
-        _mm_storeu_si128(core::mem::transmute(out.as_mut_ptr()), v);
-    }
-}
 
 // https://en.wikipedia.org/wiki/Rijndael_key_schedule#Round_constants
 struct RoundConstantIter {

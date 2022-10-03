@@ -33,13 +33,15 @@ pub mod gcd;
 #[cfg(feature = "alloc")]
 pub mod geometry;
 pub mod integer;
+pub mod intrinsics;
 pub mod matrix;
 pub mod number;
 pub mod rational;
 
 // TODO: Verify this uses hardware instructions on ARM.
-use integer::Integer;
-use number::Float;
+pub use integer::Integer;
+pub use intrinsics::*;
+pub use number::Float;
 
 /// Given parameters of an equation of the form 'Ax^2 + Bx + C = 0' finds values
 /// of 'x' that satisfy the equation using the quadratic equation.

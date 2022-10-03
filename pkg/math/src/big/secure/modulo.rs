@@ -3,15 +3,19 @@ use crate::big::secure::uint::SecureBigUint;
 use crate::integer::Integer;
 use crate::number::{One, Zero};
 
-/// A set of operations which all result in a 'mod n' result.
-/// TODO: This would ideally implement operations which have intermediate
-/// results bounded by the size of the modulus.
+/// Operations over the finite field of integers 'mod n'.
+///
+/// All methods assume that the inputs are of the same or smaller width of the
+/// modulus and that the input values are in the range [0, n). If a number
+/// doesn't fit this criteria, it can be reduced using rem().
+///
+/// - 'n' doesn't need to be prime, but needs to be odd for 'pow' to work.
+/// - The output of all operations is a number in the range [0, n).
+/// - If an output buffer isn't provided, an output buffer of the same size as
+///   the modulus will be chosen.
 pub struct SecureModulo<'a> {
     pub n: &'a SecureBigUint,
 }
-
-// sub_assign(self, rhs: &BigUint)
-// sub_to(&self, rhs: &BigUint, out: &bigUint)
 
 impl<'a> SecureModulo<'a> {
     pub fn new(n: &'a SecureBigUint) -> Self {
@@ -22,10 +26,16 @@ impl<'a> SecureModulo<'a> {
         a % self.n
     }
 
-    // TODO: Perform add with carry here similar to done in BearSSL to avoid having
-    // an extra bit.
+    // Assuming the provided values are already in the space, we can preform much
+    // cheaper addition correction.
+    //
+    // TODO: Perform add with carry here similar to
+    // done in BearSSL to avoid having an extra bit.
     pub fn add(&self, a: &SecureBigUint, b: &SecureBigUint) -> SecureBigUint {
-        (a + b) % self.n
+        // (a + b) % self.n
+        let mut result = a + b;
+        result.reduce_once(&self.n);
+        result
     }
 
     pub fn add_into(&self, mut a: SecureBigUint, b: &SecureBigUint) -> SecureBigUint {
@@ -34,7 +44,10 @@ impl<'a> SecureModulo<'a> {
     }
 
     pub fn sub(&self, a: &SecureBigUint, b: &SecureBigUint) -> SecureBigUint {
-        (((a % self.n) + self.n) - (b % self.n)) % self.n
+        // ((a + self.n) - b) % self.n
+        let mut result = (a + self.n) - b;
+        result.reduce_once(&self.n);
+        result
     }
 
     // TODO: Even more efficient is b is also owned
@@ -52,34 +65,14 @@ impl<'a> SecureModulo<'a> {
 
     /// Computes a^b mod n
     pub fn pow(&self, a: &SecureBigUint, b: &SecureBigUint) -> SecureBigUint {
-        /*
-        Need 2 buffers:
-        - 1 of size N for 'out'
-        - 1 of size 2*N for all multiplications pre-modulus.
-        - 1 for storing 'p'
-        */
-
         let mont = SecureMontgomeryModulo::new(&self.n);
 
         let mut a_mont = a.clone();
         mont.to_montgomery_form(&mut a_mont);
 
-        // 1 in montgomery form.
-        let mut out = SecureBigUint::from_usize(1, self.n.bit_width());
+        let result_mont = mont.pow(&a_mont, b);
 
-        let mut p = a_mont.clone();
-        for i in 0..b.bit_width() {
-            // TODO: Use a smart multiplication function that still reads the bytes from 'p'
-            // but only multiplies by it if needed.
-            if b.bit(i) == 1 {
-                out = mont.mul(&out, &p); // self.mul(&out, &p);
-            }
-
-            p = mont.mul(&p, &p);
-            // p = self.mul(&p, &p);
-        }
-
-        out
+        mont.from_montgomery_form(&result_mont)
     }
 
     /// Computes the modular inverse 'a^-1' such the 'a*(a^-1) = 1 mod n'.
