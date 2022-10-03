@@ -119,6 +119,26 @@ impl<'a> SecureMontgomeryModulo<'a> {
         out
     }
 
+    /// An optimized version of pow() which is secure only if 'b' is a publicly
+    /// known value.
+    pub fn pow_with_public_exponent(&self, a: &SecureBigUint, b: &SecureBigUint) -> SecureBigUint {
+        // 1 in montgomery form.
+        let mut out = SecureBigUint::from_usize(1, self.modulus.bit_width());
+        self.to_montgomery_form(&mut out);
+
+        let mut p = a.clone();
+        for i in 0..b.value_bits() {
+            if b.bit(i) == 1 {
+                out = self.mul(&out, &p);
+            }
+
+            // TODO: Only do this if we
+            p = self.mul(&p, &p);
+        }
+
+        out
+    }
+
     /// Computes 'x*y*R^-1 mod m' using Montgomery reduction
     /// Algorithm 14.36 in the Handbook of Applied Cryptograph.
     fn montgomery_mul(&self, x: &SecureBigUint, y: &SecureBigUint) -> SecureBigUint {

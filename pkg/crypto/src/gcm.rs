@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use math::big::SecureBigUint;
 use std::string::ToString;
 use std::vec::Vec;
 
@@ -13,25 +14,48 @@ use crate::cipher::*;
 use crate::constant_eq;
 use crate::utils::*;
 
-type Block = [u8; 16];
+type Block = [u8; BLOCK_SIZE];
 const BLOCK_SIZE: usize = 16;
 
-// TODO: THis desperately needs to be more efficient.
-
-/// Operations of the field GF(2^m).
+/// Operations on polynomials in the finite field GF(2^m).
 struct GaloisField2 {
+    /// Number of bits in the finite field.
     m: usize,
-    poly: BigUint,
+
+    /// Polynomial used for reduction of values that exceed the size of the
+    /// field. This is stored as the lower 'm' bits of the polynomial
+    /// (coefficients of x^0 to x^{m-1}) with the assumption that the x^m
+    /// coefficient is 1.
+    poly: SecureBigUint,
+
+    poly_wide: SecureBigUint,
 }
 
 impl GaloisField2 {
     /// Creates a new field using the given irreducible polynomial where each
     /// bit corresponds to a power of 2.
     ///
-    /// NOTE: The number 'm' is uniquely for the polynomial as it is
-    /// irreducible.
-    pub fn new(m: usize, poly: BigUint) -> Self {
-        Self { m, poly }
+    /// poly.bit_width() should equal 'm' and should exclude the 2^m
+    /// coefficient.
+    ///
+    /// NOTE: We assume that this polynomial is publicly known.
+    pub fn new(m: usize, poly: SecureBigUint) -> Self {
+        let poly_wide = {
+            let mut p = poly.clone();
+            p.extend(2 * m);
+
+            // Add back the x^m coefficient.
+            p.set_bit(m, 1);
+
+            // Shift bits
+            for i in 0..(m - 2) {
+                p.shl();
+            }
+
+            p
+        };
+
+        Self { m, poly, poly_wide }
     }
 
     /// Creates the GF(2^128) field used by GCM.
@@ -39,8 +63,8 @@ impl GaloisField2 {
     /// Reduces by the polynomial 'x^128 + x^7 + x^2 + x + 1'
     pub fn gcm128() -> Self {
         let p = {
-            let mut n = BigUint::zero();
-            n.set_bit(128, 1);
+            let mut n = SecureBigUint::from_usize(0, 128);
+            // n.set_bit(128, 1);
             n.set_bit(7, 1);
             n.set_bit(2, 1);
             n.set_bit(1, 1);
@@ -51,61 +75,48 @@ impl GaloisField2 {
         Self::new(128, p)
     }
 
-    // NOTE: This is not defined in any specific field.
-    // TODO: Copied from biguint for composite field usage.
-    fn rem(lhs: BigUint, rhs: &BigUint) -> BigUint {
-        if lhs < *rhs {
-            return lhs;
+    /// Reduces a value which is '2*m - 1' bits wide to a value which is 'm'
+    /// bits wide by repeatetly subtracting 'poly' until the value is < 2^m.
+    ///
+    /// TODO: Implement fast reduction for GCM128.
+    fn reduce(&self, v: &SecureBigUint) -> SecureBigUint {
+        let mut poly = self.poly_wide.clone();
+
+        let mut r = v.clone();
+
+        for i in ((self.m)..(2 * self.m - 1)).rev() {
+            /*
+            if r.bit(i) != 0 {
+                r ^= poly; // GF(2^m) subtraction.
+            }
+            */
+            r.xor_assign_if(r.bit(i) != 0, &poly);
+
+            // TODO: This can be made much faster as we know how many bits are in the
+            // polynomial.
+            poly.shr();
         }
 
-        let mut r = BigUint::zero();
-        for i in (0..lhs.value_bits()).rev() {
-            r.shl();
-            r.set_bit(0, lhs.bit(i));
-            if r >= *rhs {
-                r ^= rhs; // GF(2^m) subtraction.
-            }
-        }
+        r.truncate(self.m);
 
         r
     }
 
-    // TODO: Not cryptographically secure.
-    pub fn mul(&self, mut a: BigUint, b: &BigUint) -> BigUint {
-        // Multiple one bit at a time.
-        let mut out = BigUint::zero();
-        for i in 0..b.value_bits() {
-            if b.bit(i) == 1 {
-                out ^= &a;
-            }
-
-            a.shl();
-        }
-
-        // Reduce mod polynomial.
-        Self::rem(out, &self.poly)
-    }
-
-    pub fn reflected_mul(&self, a: BigUint, b: &BigUint) -> BigUint {
-        let mut ar = BigUint::zero();
-        let mut br = BigUint::zero();
-        for i in 0..128 {
-            ar.set_bit(i, a.bit(127 - i));
-            br.set_bit(i, b.bit(127 - i));
-        }
-
-        let outr = self.mul(ar, &br);
-        let mut out = BigUint::zero();
-        for i in 0..128 {
-            out.set_bit(i, outr.bit(127 - i));
-        }
-
-        out
+    /// Multiplies two numbers in this field of size 'm' bits to produce a new
+    /// number of size 'm'.
+    ///
+    /// The intermediate multiplication pre-reduction will reach
+    pub fn mul(&self, mut a: SecureBigUint, b: &SecureBigUint) -> SecureBigUint {
+        let mut out = SecureBigUint::from_usize(0, 2 * self.m - 1);
+        a.carryless_mul_to(b, &mut out);
+        self.reduce(&out)
     }
 }
 
 /// Applies a function over every 16byte block of some data. If the last block
 /// is incomplete, it is padded to the right with zeros.
+///
+/// TODO: Move this to a shared library.
 fn map_blocks<F: FnMut(&Block)>(data: &[u8], mut f: F) {
     let n = data.len() / BLOCK_SIZE;
     let r = data.len() % BLOCK_SIZE;
@@ -126,17 +137,18 @@ fn map_blocks<F: FnMut(&Block)>(data: &[u8], mut f: F) {
     IV: recomended 96bit
 */
 
-struct GaloisCounterMode<C: BlockCipher> {
+pub struct GaloisCounterMode<C: BlockCipher> {
     cipher: C,
 
-    /// Current value of the counter concatenated to the end of the IV.
+    /// Current concatenated 'IV | counter' value. Trated as big-endian and
+    /// incremented by 1 after each block is encrypted.
     counter: Block,
 
     enc_counter_0: Block,
 
     /// E(K, 0^128)
     /// TODO: Move ownership to the GHasher
-    h: BigUint,
+    h: SecureBigUint,
 }
 
 impl<C: BlockCipher> GaloisCounterMode<C> {
@@ -148,7 +160,7 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
             let data = [0u8; 16];
             let mut enc = [0u8; 16];
             cipher.encrypt_block(&data, &mut enc);
-            BigUint::from_be_bytes(&enc)
+            SecureBigUint::from_be_bytes(&enc)
         };
 
         let counter = if iv.len() == 12 {
@@ -177,9 +189,7 @@ impl<C: BlockCipher> GaloisCounterMode<C> {
         *array_mut_ref![data, 12, 4] = i.to_be_bytes();
     }
 
-    fn ghash(h: &BigUint, a: &[u8], c: &[u8]) -> Block {
-        let mut x = BigUint::zero(); // X_0
-
+    fn ghash(h: &SecureBigUint, a: &[u8], c: &[u8]) -> Block {
         let mut hasher = GHasher::new(h.clone());
 
         map_blocks(a, |block| hasher.update(block));
@@ -339,39 +349,49 @@ impl AuthEncAD for AesGCM {
 
 /// Computed the
 pub struct GHasher {
-    x: BigUint,
+    /// Current hash value.
+    ///
+    /// Initialized to zero.
+    /// Updated as:
+    ///     'x_i = (x_{i-1} ^ s) * H'
+    /// where 's' is the next block of data being hashed.
+    x: SecureBigUint,
 
-    /// E(K, 0^128)
-    h: BigUint,
+    /// The hash key. Computed by the user by encrypting a string of 128 zeros.
+    ///
+    /// H = E(K, 0^128)
+    h: SecureBigUint,
 
     field: GaloisField2,
 }
 
 impl GHasher {
-    pub fn new(h: BigUint) -> Self {
+    pub fn new(mut h: SecureBigUint) -> Self {
+        h.reverse_bits();
+
         Self {
-            x: BigUint::zero(),
+            x: SecureBigUint::from_usize(0, 128),
             h,
             field: GaloisField2::gcm128(),
         }
     }
 
     pub fn reset(&mut self) {
-        self.x = BigUint::zero();
+        self.x.assign_zero();
     }
 
-    fn update_with(&self, mut x: BigUint, block: &Block) -> BigUint {
-        let b = BigUint::from_be_bytes(block);
-        x ^= b;
-        self.field.reflected_mul(x, &self.h)
+    fn update_with(&self, x: &SecureBigUint, block: &Block) -> SecureBigUint {
+        let mut b = SecureBigUint::from_be_bytes(block);
+        b.reverse_bits();
+        b ^= x; // GF(2^m) addition.
+
+        self.field.mul(b, &self.h)
     }
 
     /// Should be called first with all blocks of authenticated data and then
     /// with all blocks of ciphertext.
     pub fn update(&mut self, block: &Block) {
-        let mut x = BigUint::zero();
-        std::mem::swap(&mut x, &mut self.x);
-        self.x = self.update_with(x, block);
+        self.x = self.update_with(&self.x, block);
     }
 
     /// Given the length of the authenticated data and the length of the
@@ -381,10 +401,12 @@ impl GHasher {
         *array_mut_ref![last_block, 0, 8] = ((a_len * 8) as u64).to_be_bytes();
         *array_mut_ref![last_block, 8, 8] = ((c_len * 8) as u64).to_be_bytes();
 
-        let mut x = self.x.clone();
-        x = self.update_with(x, &last_block);
+        let mut x = self.update_with(&self.x, &last_block);
+        x.reverse_bits();
 
         let mut out = [0u8; 16];
+
+        // TODO: Perform this without a memory allocation.
         let hash = x.to_be_bytes();
         out[(16 - hash.len())..].copy_from_slice(&hash);
         out
@@ -414,9 +436,12 @@ mod tests {
         // b = 0x48692853686179295b477565726f6e5d
         // GFMUL128 (a, b) = 0x40229a09a5ed12e7e4e10da323506d2
 
-        let a = BigUint::from_be_bytes(&hex::decode("7b5b54657374566563746f725d53475d").unwrap());
-        let b = BigUint::from_be_bytes(&hex::decode("48692853686179295b477565726f6e5d").unwrap());
-        let c = BigUint::from_be_bytes(&hex::decode("040229a09a5ed12e7e4e10da323506d2").unwrap());
+        let a =
+            SecureBigUint::from_be_bytes(&hex::decode("7b5b54657374566563746f725d53475d").unwrap());
+        let b =
+            SecureBigUint::from_be_bytes(&hex::decode("48692853686179295b477565726f6e5d").unwrap());
+        let c =
+            SecureBigUint::from_be_bytes(&hex::decode("040229a09a5ed12e7e4e10da323506d2").unwrap());
 
         let field = GaloisField2::gcm128();
         assert_eq!(field.mul(a, &b).to_string(), c.to_string());
@@ -430,6 +455,8 @@ mod tests {
     // d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255:
     // 42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f5985:
     // :4d5c2af327cd64a62cf35abd2ba6fab4
+
+    // https://www.intel.cn/content/dam/www/public/us/en/documents/white-papers/carry-less-multiplication-instruction-in-gcm-mode-paper.pdf
 
     #[test]
     fn gcm_test() {

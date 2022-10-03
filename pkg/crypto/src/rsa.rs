@@ -5,21 +5,22 @@ use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{Any, DERWriteable};
 use common::errors::*;
 use common::LeftPad;
-use math::big::BigUint;
 use math::big::Modulo;
+use math::big::SecureBigUint;
+use math::big::SecureModulo;
+use math::big::{BigUint, SecureMontgomeryModulo};
 use math::integer::Integer;
 use pkix::{
-    PKIX1Algorithms2008, PKIX1Algorithms88, PKIX1Explicit88, PKIX1Implicit88,
-    PKIX1_PSS_OAEP_Algorithms, NIST_SHA2, PKCS_1,
+    PKIX1Algorithms2008, PKIX1Algorithms88, PKIX1Explicit88, PKIX1Implicit88, NIST_SHA2, PKCS_1,
 };
 
 use crate::hasher::{GetHasherFactory, Hasher, HasherFactory};
-use crate::md5::*;
 use crate::sha1::*;
 use crate::sha224::*;
 use crate::sha256::*;
 use crate::sha384::*;
 use crate::sha512::*;
+use crate::{constant_eq, md5::*};
 
 /*
 https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-4.pdf
@@ -47,37 +48,68 @@ macro_rules! ctor {
     };
 }
 
+// TODO: Ensure all of these use the same bit_width.
 pub struct RSAPublicKey {
-    modulus: BigUint,
-    public_exponent: BigUint,
+    pub modulus: SecureBigUint,
+
+    /// Publicly known exponent used for signature verification. This may have
+    /// any bit_width as its not security critical to obscure this number.
+    pub public_exponent: SecureBigUint,
 }
 
-// TODO: Pass by ref.
 impl std::convert::TryFrom<PKCS_1::RSAPublicKey> for RSAPublicKey {
     type Error = common::errors::Error;
 
     fn try_from(value: PKCS_1::RSAPublicKey) -> Result<Self> {
+        // NOTE: ASN.1 transfers integers with the minimum number of bytes necessary to
+        // represent them as signed integers.
+
         Ok(Self {
-            modulus: value.modulus.to_uint()?,
-            public_exponent: value.publicExponent.to_uint()?,
+            modulus: SecureBigUint::from_le_bytes(&value.modulus.to_uint()?.to_le_bytes()),
+            public_exponent: SecureBigUint::from_le_bytes(
+                &value.publicExponent.to_uint()?.to_le_bytes(),
+            ),
         })
     }
 }
 
+// TODO: Ensure all of these use the same bit_width.
 #[derive(Debug, Clone)]
 pub struct RSAPrivateKey {
-    modulus: BigUint,
-    private_exponent: BigUint,
+    modulus: SecureBigUint,
+
+    /// Will always have the same bit_width as the modulus.
+    private_exponent: SecureBigUint,
 }
 
+impl RSAPrivateKey {
+    pub fn new(modulus: SecureBigUint, mut private_exponent: SecureBigUint) -> Self {
+        // Avoid leaking the exact size of the private exponent as its length can vary.
+        private_exponent.extend(modulus.bit_width());
+
+        Self {
+            modulus,
+            private_exponent,
+        }
+    }
+}
+
+// NOTE: Because ASN.1 doesn't use fixed length storage, we can't gurantee that
+// this try_from is constant time so don't use it interactively (always pre-load
+// keys once at application startup).
 impl std::convert::TryFrom<&PKCS_1::RSAPrivateKey> for RSAPrivateKey {
     type Error = common::errors::Error;
 
     fn try_from(value: &PKCS_1::RSAPrivateKey) -> Result<Self> {
-        Ok(Self {
-            modulus: value.modulus.to_uint()?,
-            private_exponent: value.privateExponent.to_uint()?,
-        })
+        // NOTE: ASN.1 transfers integers with the minimum number of bytes necessary to
+        // represent them as signed integers.
+
+        let modulus = SecureBigUint::from_le_bytes(&value.modulus.to_uint()?.to_le_bytes());
+
+        let private_exponent =
+            SecureBigUint::from_le_bytes(&value.privateExponent.to_uint()?.to_le_bytes());
+
+        Ok(Self::new(modulus, private_exponent))
     }
 }
 
@@ -97,18 +129,20 @@ impl RSASSA_PSS {
     }
 
     /// RFC 8017: Section 8.1.1
+    ///
+    /// Returns a signature which is the same length as the modulus.
     pub async fn create_signature(
         &self,
         private_key: &RSAPrivateKey,
         data: &[u8],
     ) -> Result<Vec<u8>> {
         // TODO: Implement a more efficient way of getting this size.
-        let k = common::ceil_div(private_key.modulus.value_bits(), 8);
+        let k = common::ceil_div(private_key.modulus.bit_width(), 8);
 
         // Step 1
         let encoded_message = emsa_pss_encode(
             data,
-            private_key.modulus.value_bits() - 1,
+            private_key.modulus.bit_width() - 1,
             &self.hasher_factory,
             self.salt_length,
         )
@@ -137,19 +171,19 @@ impl RSASSA_PSS {
         data: &[u8],
     ) -> Result<bool> {
         // TODO: Implement a more efficient way of getting this size.
-        let k = common::ceil_div(public_key.modulus.value_bits(), 8);
+        let k = common::ceil_div(public_key.modulus.bit_width(), 8);
 
         // Step 1
         if signature.len() != k {
             return Ok(false);
         }
 
-        let s = BigUint::from_be_bytes(signature);
+        let s = SecureBigUint::from_be_bytes(signature);
 
         let message = rsavp1(&public_key.modulus, &public_key.public_exponent, &s)?;
 
         // TODO: Verify has at least one bit.
-        let encoded_len = common::ceil_div(public_key.modulus.value_bits() - 1, 8);
+        let encoded_len = common::ceil_div(public_key.modulus.bit_width() - 1, 8);
 
         // Step 2.c
         let encoded_message = i2osp(&message, encoded_len);
@@ -158,7 +192,7 @@ impl RSASSA_PSS {
         let result = emsa_pss_verify(
             data,
             &encoded_message,
-            public_key.modulus.value_bits() - 1,
+            public_key.modulus.bit_width() - 1,
             &self.hasher_factory,
             self.salt_length,
         )?;
@@ -191,8 +225,10 @@ impl RSASSA_PKCS_v1_5 {
     ctor!(sha512_256, ID_SHA512_256, SHA512_256Hasher);
 
     /// Based on RFC 8017: Section 8.2.1
+    ///
+    /// Returns a signature of the same length as the modulus.
     pub fn create_signature(&self, private_key: &RSAPrivateKey, data: &[u8]) -> Result<Vec<u8>> {
-        let k = common::ceil_div(private_key.modulus.value_bits() - 1, 8);
+        let k = common::ceil_div(private_key.modulus.bit_width(), 8);
 
         // Step 1
         let em = emsa_pkcs1_v1_5_encode(
@@ -203,7 +239,7 @@ impl RSASSA_PKCS_v1_5 {
         )?;
 
         // Step 2.a
-        let m = BigUint::from_be_bytes(&em);
+        let m = SecureBigUint::from_be_bytes(&em);
 
         // Step 2.b
         let s = rsasp1(private_key, &m)?;
@@ -223,7 +259,7 @@ impl RSASSA_PKCS_v1_5 {
         data: &[u8],
     ) -> Result<bool> {
         // TODO: Implement a more efficient way of getting this size.
-        let k = common::ceil_div(public_key.modulus.value_bits() - 1, 8);
+        let k = common::ceil_div(public_key.modulus.bit_width(), 8);
 
         if signature.len() != k {
             return Ok(false);
@@ -233,7 +269,7 @@ impl RSASSA_PKCS_v1_5 {
         let n = &public_key.modulus;
 
         // TODO: Be I need to verify that it is not negative
-        let s = BigUint::from_be_bytes(signature);
+        let s = SecureBigUint::from_be_bytes(signature);
 
         // Step 2.b
         let m = rsavp1(n, e, &s)?;
@@ -250,42 +286,64 @@ impl RSASSA_PKCS_v1_5 {
             k,
         )?;
 
-        // TODO: Probably want to use a secure compare here?
-        Ok(em == em2)
+        Ok(constant_eq(&em, &em2))
     }
 }
 
 /// RFC 8017: Section 4.1
-fn i2osp(x: &BigUint, x_len: usize) -> Vec<u8> {
+fn i2osp(x: &SecureBigUint, x_len: usize) -> Vec<u8> {
     x.to_be_bytes().left_pad(x_len, 0)
 }
 
 /// RFC 8017: Section 4.2
-fn os2ip(x: &[u8]) -> BigUint {
-    BigUint::from_be_bytes(x)
+fn os2ip(x: &[u8]) -> SecureBigUint {
+    SecureBigUint::from_be_bytes(x)
 }
 
+/// Signs a message using the RSA private key.
 /// RFC 8017: 5.2.1
-fn rsasp1(private_key: &RSAPrivateKey, message: &BigUint) -> Result<BigUint> {
+///
+/// - 'private_key' has a modulus 'n'
+/// - 'message' is the data to be signed. Must be in the range [0, n).
+///
+/// Returns a signature in the range [0, n).
+fn rsasp1(private_key: &RSAPrivateKey, message: &SecureBigUint) -> Result<SecureBigUint> {
     // TODO: support the form where the modulus and exponent are not available
 
-    if message >= &private_key.private_exponent {
+    if message >= &private_key.modulus {
         return Err(err_msg("message representative out of range"));
     }
 
-    let signature = Modulo::new(&private_key.modulus).pow(message, &private_key.private_exponent);
+    // s = m^d mod n
+    let signature =
+        SecureModulo::new(&private_key.modulus).pow(message, &private_key.private_exponent);
     Ok(signature)
 }
 
 /// RFC 8017: Section 5.2.2
-fn rsavp1(n: &BigUint, e: &BigUint, s: &BigUint) -> Result<BigUint> {
+/// - 'n': public key modulus.
+/// - 'e': public key exponent
+/// - 's': signature
+///
+/// Returns: 'm', the original message passed to rsasp1().
+fn rsavp1(n: &SecureBigUint, e: &SecureBigUint, s: &SecureBigUint) -> Result<SecureBigUint> {
     if s >= n {
         return Err(err_msg("signature representative out of range"));
     }
 
     // m = s^e mod n
-    let message = Modulo::new(n).pow(s, e);
-    Ok(message)
+
+    let modulo = SecureMontgomeryModulo::new(n);
+
+    let mut s = s.clone();
+    modulo.to_montgomery_form(&mut s);
+
+    let message = modulo.pow_with_public_exponent(&s, e);
+
+    Ok(modulo.from_montgomery_form(&message))
+
+    // let message = SecureModulo::new(n).pow(s, e);
+    // Ok(message)
 }
 
 /// RFC 8017: Section 9.1.1
@@ -457,8 +515,7 @@ fn emsa_pss_verify(
         hasher.finish()
     };
 
-    // TODO: Use secure comparison
-    Ok(hash == hash2)
+    Ok(constant_eq(hash, &hash2))
 }
 
 /// RFC 8017: Section 9.2
@@ -567,14 +624,14 @@ mod tests {
                 let public_exponent = block.binary_field("E")?;
                 let private_exponent = block.binary_field("D")?;
 
-                private_key = Some(RSAPrivateKey {
-                    modulus: BigUint::from_be_bytes(&modulus),
-                    private_exponent: BigUint::from_be_bytes(&private_exponent),
-                });
+                private_key = Some(RSAPrivateKey::new(
+                    SecureBigUint::from_be_bytes(&modulus),
+                    SecureBigUint::from_be_bytes(&private_exponent),
+                ));
 
                 public_key = Some(RSAPublicKey {
-                    modulus: BigUint::from_be_bytes(&modulus),
-                    public_exponent: BigUint::from_be_bytes(&public_exponent),
+                    modulus: SecureBigUint::from_be_bytes(&modulus),
+                    public_exponent: SecureBigUint::from_be_bytes(&public_exponent),
                 });
 
                 continue;
@@ -633,14 +690,14 @@ mod tests {
                 let public_exponent = block.binary_field("E")?;
                 let private_exponent = block.binary_field("D")?;
 
-                private_key = Some(RSAPrivateKey {
-                    modulus: BigUint::from_be_bytes(&modulus),
-                    private_exponent: BigUint::from_be_bytes(&private_exponent),
-                });
+                private_key = Some(RSAPrivateKey::new(
+                    SecureBigUint::from_be_bytes(&modulus),
+                    SecureBigUint::from_be_bytes(&private_exponent),
+                ));
 
                 public_key = Some(RSAPublicKey {
-                    modulus: BigUint::from_be_bytes(&modulus),
-                    public_exponent: BigUint::from_be_bytes(&public_exponent),
+                    modulus: SecureBigUint::from_be_bytes(&modulus),
+                    public_exponent: SecureBigUint::from_be_bytes(&public_exponent),
                 });
 
                 continue;

@@ -77,10 +77,9 @@ impl Integer for SecureBigUint {
     /// Creates an integer from little endian bytes representing the number.
     ///
     /// The width of the integer is inferred from data.len().
+    /// The caller is responsible for ensuring that data.len() is a well known
+    /// constant.
     fn from_le_bytes(data: &[u8]) -> Self {
-        // Necessary so that to_le_bytes() is lossless.
-        assert!(data.len() % BASE_BYTES == 0);
-
         let mut out = Self::from_usize(0, BITS_PER_BYTE * data.len());
 
         let n = data.len() / BASE_BYTES;
@@ -98,6 +97,10 @@ impl Integer for SecureBigUint {
         out
     }
 
+    /// Converts the integer to little endian bytes.
+    ///
+    /// NOTE: This may have zero significant padding depending on the internal
+    /// representation.
     fn to_le_bytes(&self) -> Vec<u8> {
         let mut data = vec![];
         data.reserve_exact(self.value.len() * BASE_BYTES);
@@ -109,17 +112,25 @@ impl Integer for SecureBigUint {
     }
 
     fn from_be_bytes(data: &[u8]) -> Self {
-        // Necessary so that to_be_bytes() is lossless.
-        assert!(data.len() % BASE_BYTES == 0);
+        let mut out = Self::from_usize(0, BITS_PER_BYTE * data.len());
 
-        let mut value = vec![];
-        value.reserve_exact(data.len() / BASE_BYTES);
-
-        for chunk in data.chunks(BASE_BYTES).rev() {
-            value.push(BaseType::from_be_bytes(*array_ref![chunk, 0, BASE_BYTES]));
+        let n = data.len() / BASE_BYTES;
+        for i in 0..(data.len() / BASE_BYTES) {
+            out.value[i] = BaseType::from_be_bytes(*array_ref![
+                data,
+                data.len() - (BASE_BYTES * (i + 1)),
+                BASE_BYTES
+            ]);
         }
 
-        Self { value }
+        let rem = data.len() % BASE_BYTES;
+        if rem != 0 {
+            let mut rest = [0u8; BASE_BYTES];
+            rest[(BASE_BYTES - rem)..].copy_from_slice(&data[0..rem]);
+            out.value[n] = BaseType::from_be_bytes(rest);
+        }
+
+        out
     }
 
     fn to_be_bytes(&self) -> Vec<u8> {
@@ -275,7 +286,16 @@ impl Integer for SecureBigUint {
     }
 
     fn value_bits(&self) -> usize {
-        todo!()
+        for i in (0..self.value.len()).rev() {
+            let zeros = self.value[i].leading_zeros() as usize;
+            if zeros == BASE_BITS {
+                continue;
+            }
+
+            return (i * BASE_BITS) + (BASE_BITS - zeros);
+        }
+
+        0
     }
 
     fn bit_width(&self) -> usize {
@@ -525,8 +545,7 @@ impl SecureBigUint {
         use crate::intrinsics::*;
         use core::arch::x86_64::_mm_clmulepi64_si128;
 
-        // TODO: Actually smaller than this by 1?
-        assert!(out.bit_width() >= self.bit_width() + rhs.bit_width());
+        assert!(out.bit_width() >= self.bit_width() + rhs.bit_width() - 1);
 
         out.assign_zero();
 
@@ -551,7 +570,8 @@ impl SecureBigUint {
     // TODO: Finish making this constant time and correct.
     #[cfg(not(all(target_arch = "x86_64", target_feature = "pclmulqdq")))]
     pub fn carryless_mul_to(&self, rhs: &Self, out: &mut Self) {
-        assert!(out.bit_width() >= self.bit_width() + rhs.bit_width());
+        assert!(out.bit_width() >= self.bit_width() + rhs.bit_width() - 1);
+
         out.assign_zero();
         for i in 0..b.value_bits() {
             out.xor_assign_if(b.bit(i) == 1, &a);
