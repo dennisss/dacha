@@ -322,17 +322,14 @@ mod tests {
     // Test vectors from the RFC
     #[test]
     fn works() {
-        let key = common::hex::decode("C0C1C2C3C4C5C6C7C8C9CACBCCCDCECF").unwrap();
-        let nonce = common::hex::decode("00000003020100A0A1A2A3A4A5").unwrap();
-        let mut data =
-            common::hex::decode("000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E")
-                .unwrap();
+        let key = hex!("C0C1C2C3C4C5C6C7C8C9CACBCCCDCECF");
+        let nonce = hex!("00000003020100A0A1A2A3A4A5");
+        let mut data = hex!("000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E");
         let tag_size = 8;
         let length_size = 2;
 
         let expected_ciphertext =
-            common::hex::decode("588C979A61C663D2F066D0C2C0F989806D5F6B61DAC38417E8D12CFDF926E0")
-                .unwrap();
+            hex!("588C979A61C663D2F066D0C2C0F989806D5F6B61DAC38417E8D12CFDF926E0");
 
         let aad = &data[0..8];
         let mut plaintext = data[8..].to_vec();

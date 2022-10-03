@@ -82,22 +82,21 @@ mod tests {
         hmac1.update(b"The quick brown fox jumps over the lazy dog");
         assert_eq!(
             &hmac1.finish()[..],
-            &hex::decode("80070713463e7749b90c2dc24911e275").unwrap()[..]
+            &hex!("80070713463e7749b90c2dc24911e275")[..]
         );
 
         let mut hmac2 = HMAC::new(SHA1Hasher::factory(), b"key");
         hmac2.update(b"The quick brown fox jumps over the lazy dog");
         assert_eq!(
             &hmac2.finish()[..],
-            &hex::decode("de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9").unwrap()[..]
+            &hex!("de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9")[..]
         );
 
         let mut hmac3 = HMAC::new(SHA256Hasher::factory(), b"key");
         hmac3.update(b"The quick brown fox jumps over the lazy dog");
         assert_eq!(
             &hmac3.finish()[..],
-            &hex::decode("f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8")
-                .unwrap()[..]
+            &hex!("f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8")[..]
         );
 
         // TODO: Test partial updates

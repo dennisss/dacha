@@ -85,6 +85,7 @@ members = [
 	"pkg/skylark",
 	"pkg/linker",
 	"pkg/logging",
+	"pkg/radix",
 ]
 
 [profile.dev]

@@ -1,7 +1,7 @@
 extern crate proc_macro;
 extern crate proc_macro2;
+extern crate radix;
 extern crate syn;
-
 #[macro_use]
 extern crate quote;
 
@@ -17,6 +17,7 @@ use syn::Result;
 use syn::{Item, ItemImpl};
 
 mod args;
+mod hex;
 mod param;
 mod race;
 mod reflect;
@@ -143,4 +144,9 @@ pub fn range_param(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn race(input: TokenStream) -> TokenStream {
     race::race(input)
+}
+
+#[proc_macro]
+pub fn hex(input: TokenStream) -> TokenStream {
+    hex::hex(input)
 }

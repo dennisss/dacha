@@ -79,18 +79,17 @@ mod tests {
         let hkdf_sha256 = HKDF::new(SHA256Hasher::factory());
 
         let prk = hkdf_sha256.extract(
-            &hex::decode("000102030405060708090a0b0c").unwrap(),
-            &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
+            &hex!("000102030405060708090a0b0c"),
+            &hex!("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"),
         );
 
-        let okm = hkdf_sha256.expand(&prk, &hex::decode("f0f1f2f3f4f5f6f7f8f9").unwrap(), 42);
+        let okm = hkdf_sha256.expand(&prk, &hex!("f0f1f2f3f4f5f6f7f8f9"), 42);
 
         assert_eq!(
             &prk[..],
-            &hex::decode("077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5")
-                .unwrap()[..]
+            &hex!("077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5")[..]
         );
         assert_eq!(&okm[..],
-				&hex::decode("3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865").unwrap()[..]);
+				&hex!("3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865")[..]);
     }
 }

@@ -68,9 +68,9 @@ mod tests {
         };
 
         assert_eq!(&h("")[..],
-				&hex::decode("38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b").unwrap()[..]);
+				&hex!("38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b")[..]);
         assert_eq!(&h("The quick brown fox jumps over the lazy dog")[..],
-				&hex::decode("ca737f1014a48f4c0b6dd43cb177b0afd9e5169367544c494011e3317dbf9a509cb1e5dc1e85a941bbee3d7f2afbc9b1").unwrap()[..])
+				&hex!("ca737f1014a48f4c0b6dd43cb177b0afd9e5169367544c494011e3317dbf9a509cb1e5dc1e85a941bbee3d7f2afbc9b1")[..])
 
         // TODO: Test partial updates
     }

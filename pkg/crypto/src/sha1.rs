@@ -126,11 +126,11 @@ mod tests {
 
         assert_eq!(
             &h("")[..],
-            &hex::decode("da39a3ee5e6b4b0d3255bfef95601890afd80709").unwrap()[..]
+            &hex!("da39a3ee5e6b4b0d3255bfef95601890afd80709")[..]
         );
         assert_eq!(
             &h("The quick brown fox jumps over the lazy dog")[..],
-            &hex::decode("2fd4e1c67a2d28fced849ee1bb76e7391b93eb12").unwrap()[..]
+            &hex!("2fd4e1c67a2d28fced849ee1bb76e7391b93eb12")[..]
         )
 
         // TODO: Test partial updates

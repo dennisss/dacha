@@ -569,9 +569,9 @@ mod tests {
 
     #[test]
     fn aes128_test() {
-        let key = hex::decode("10a58869d74be5a374cf867cfb473859").unwrap();
-        let plain = hex::decode("00000000000000000000000000000000").unwrap();
-        let cipher = hex::decode("6d251e6944b051e04eaa6fb4dbf78465").unwrap();
+        let key = hex!("10a58869d74be5a374cf867cfb473859");
+        let plain = hex!("00000000000000000000000000000000");
+        let cipher = hex!("6d251e6944b051e04eaa6fb4dbf78465");
 
         let c = AESBlockCipher::create(&key).unwrap();
 
@@ -588,9 +588,9 @@ mod tests {
     #[test]
     fn aes128_2_test() {
         // Taken from AES GCM Test Case 3
-        let key = hex::decode("feffe9928665731c6d6a8f9467308308").unwrap();
-        let plain = hex::decode("cafebabefacedbaddecaf88800000002").unwrap();
-        let cipher = hex::decode("9bb22ce7d9f372c1ee2b28722b25f206").unwrap();
+        let key = hex!("feffe9928665731c6d6a8f9467308308");
+        let plain = hex!("cafebabefacedbaddecaf88800000002");
+        let cipher = hex!("9bb22ce7d9f372c1ee2b28722b25f206");
 
         let c = AESBlockCipher::create(&key).unwrap();
 
@@ -606,10 +606,9 @@ mod tests {
 
     #[test]
     fn aes256_test() {
-        let key = hex::decode("984ca75f4ee8d706f46c2d98c0bf4a45f5b00d791c2dfeb191b5ed8e420fd627")
-            .unwrap();
-        let plain = hex::decode("00000000000000000000000000000000").unwrap();
-        let cipher = hex::decode("4307456a9e67813b452e15fa8fffe398").unwrap();
+        let key = hex!("984ca75f4ee8d706f46c2d98c0bf4a45f5b00d791c2dfeb191b5ed8e420fd627");
+        let plain = hex!("00000000000000000000000000000000");
+        let cipher = hex!("4307456a9e67813b452e15fa8fffe398");
 
         let c = AESBlockCipher::create(&key).unwrap();
 

@@ -133,17 +133,14 @@ mod tests {
             hasher.finish()
         };
 
-        assert_eq!(
-            &h("")[..],
-            &hex::decode("d41d8cd98f00b204e9800998ecf8427e").unwrap()[..]
-        );
+        assert_eq!(&h("")[..], &hex!("d41d8cd98f00b204e9800998ecf8427e")[..]);
         assert_eq!(
             &h("The quick brown fox jumps over the lazy dog")[..],
-            &hex::decode("9e107d9d372bb6826bd81d3542a419d6").unwrap()[..]
+            &hex!("9e107d9d372bb6826bd81d3542a419d6")[..]
         );
         assert_eq!(
             &h("The quick brown fox jumps over the lazy dog.")[..],
-            &hex::decode("e4d909c290d0fb1ca068ffaddf22cbd0").unwrap()[..]
+            &hex!("e4d909c290d0fb1ca068ffaddf22cbd0")[..]
         );
         // TODO: Test partial updates
     }

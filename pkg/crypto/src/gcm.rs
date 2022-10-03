@@ -436,12 +436,9 @@ mod tests {
         // b = 0x48692853686179295b477565726f6e5d
         // GFMUL128 (a, b) = 0x40229a09a5ed12e7e4e10da323506d2
 
-        let a =
-            SecureBigUint::from_be_bytes(&hex::decode("7b5b54657374566563746f725d53475d").unwrap());
-        let b =
-            SecureBigUint::from_be_bytes(&hex::decode("48692853686179295b477565726f6e5d").unwrap());
-        let c =
-            SecureBigUint::from_be_bytes(&hex::decode("040229a09a5ed12e7e4e10da323506d2").unwrap());
+        let a = SecureBigUint::from_be_bytes(&hex!("7b5b54657374566563746f725d53475d"));
+        let b = SecureBigUint::from_be_bytes(&hex!("48692853686179295b477565726f6e5d"));
+        let c = SecureBigUint::from_be_bytes(&hex!("040229a09a5ed12e7e4e10da323506d2"));
 
         let field = GaloisField2::gcm128();
         assert_eq!(field.mul(a, &b).to_string(), c.to_string());
@@ -462,13 +459,12 @@ mod tests {
     fn gcm_test() {
         // Test Case 3 from the original GCM paper
 
-        let k = hex::decode("feffe9928665731c6d6a8f9467308308").unwrap();
-        let p = hex::decode(
-			"d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255").unwrap();
-        let iv = hex::decode("cafebabefacedbaddecaf888").unwrap();
+        let k = hex!("feffe9928665731c6d6a8f9467308308");
+        let p = hex!("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255");
+        let iv = hex!("cafebabefacedbaddecaf888");
 
         // NOTE: Final 4d5c2af327cd64a62cf35abd2ba6fab4 is the tag.
-        let cipher = hex::decode("42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f59854d5c2af327cd64a62cf35abd2ba6fab4").unwrap();
+        let cipher = hex!("42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f59854d5c2af327cd64a62cf35abd2ba6fab4");
 
         let mut out = vec![];
         let mut gcm = GaloisCounterMode::new(&iv, AESBlockCipher::create(&k).unwrap());
@@ -480,12 +476,11 @@ mod tests {
     #[test]
     fn gcm_unaligned_test() {
         // From NIST test vectors.
-        let key = hex::decode("1694029fc6c85dad8709fd4568ebf99c").unwrap();
-        let iv = hex::decode("d2c27040b28a9c31af6dad0a").unwrap();
-        let cipher =
-            hex::decode("e17df7ed1b0c36c6bab1c21dc108644413f80753a66d27cc37d9903abf").unwrap();
+        let key = hex!("1694029fc6c85dad8709fd4568ebf99c");
+        let iv = hex!("d2c27040b28a9c31af6dad0a");
+        let cipher = hex!("e17df7ed1b0c36c6bab1c21dc108644413f80753a66d27cc37d9903abf");
         let add_data = b"";
-        let plain = hex::decode("51756d23ab2b2c4d4609e3133a").unwrap();
+        let plain = hex!("51756d23ab2b2c4d4609e3133a");
 
         let mut out = vec![];
         let aes_gcm = AesGCM::aes128();
