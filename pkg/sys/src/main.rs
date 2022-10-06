@@ -26,6 +26,11 @@ fn main() -> Result<()> {
     println!("read: {}", ret);
     println!("{:?}", std::str::from_utf8(&buf[..]));
 
+    let ret = unsafe { sys::read(fd, buf.as_mut_ptr(), 8) }?;
+    println!("read: {}", ret);
+
+    // TODO: Add a test case to verify that the correct platform specific syscall
+    // numbers are being usd.
+
     Ok(())
 }
-

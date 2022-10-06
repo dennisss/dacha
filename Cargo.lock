@@ -645,6 +645,7 @@ dependencies = [
  "math",
  "openssl",
  "parsing",
+ "perf",
  "pkix",
  "typenum",
 ]
@@ -1653,10 +1654,23 @@ name = "perf"
 version = "0.1.0"
 dependencies = [
  "common",
+ "elf",
+ "google",
+ "parsing",
+ "protobuf",
+ "sys",
+]
+
+[[package]]
+name = "perf_util"
+version = "0.1.0"
+dependencies = [
+ "common",
  "compression",
  "elf",
  "google",
  "parsing",
+ "perf",
  "protobuf",
  "sys",
 ]
@@ -2267,6 +2281,7 @@ name = "testing"
 version = "0.1.0"
 dependencies = [
  "common",
+ "perf",
 ]
 
 [[package]]

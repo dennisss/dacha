@@ -59,7 +59,7 @@ impl CompressionMethod {
                     return Err(err_msg("Window size too large for deflate"));
                 }
 
-                let window_log = info.window_size.log2();
+                let window_log = info.window_size.ilog2();
                 if window_log < WINDOW_LOG_OFFSET as u32 {
                     return Err(err_msg("Window size too small"));
                 }

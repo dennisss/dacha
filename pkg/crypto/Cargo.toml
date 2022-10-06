@@ -12,6 +12,7 @@ macros = { path = "../macros", optional = true }
 asn = { path = "../asn", optional = true }
 math = { path = "../math", optional = true }
 common = { path = "../common", default-features = false }
+perf = { path = "../perf", optional = true }
 parsing = { path = "../parsing", optional = true }
 pkix = { path = "../../third_party/pkix", optional = true }
 generic-array = { version = "0.13.2"}
@@ -24,4 +25,4 @@ openssl = { path = "../../third_party/openssl" }
 [features]
 default = ["std", "alloc"]
 alloc = ["common/alloc"]
-std = ["macros", "asn", "math", "parsing", "pkix", "async-std", "alloc", "common/std"]
+std = ["macros", "asn", "math", "parsing", "pkix", "async-std", "alloc", "common/std", "perf/alloc", "perf/std"]

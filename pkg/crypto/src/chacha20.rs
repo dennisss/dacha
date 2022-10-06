@@ -175,6 +175,8 @@ impl ChaCha20 {
 
 /// Optimized integer for storing at least 130-bit integers while performing
 /// operations modulo the prime '2^130 - 5'.
+///
+/// TODO: Re-merge this code with the SecureBigUint.
 #[derive(Clone, Copy)]
 struct U1305 {
     /// Each contains 26-bits of the integer. In little-endian order.
@@ -695,14 +697,12 @@ mod tests {
 
     #[test]
     fn chacha20_encrypt_test() {
-        let key =
-            common::hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
-                .unwrap();
-        let nonce = common::hex::decode("000000000000004a00000000").unwrap();
+        let key = hex!("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+        let nonce = hex!("000000000000004a00000000");
 
         let plain = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
 
-        let cipher = common::hex::decode("6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0bf91b65c5524733ab8f593dabcd62b3571639d624e65152ab8f530c359f0861d807ca0dbf500d6a6156a38e088a22b65e52bc514d16ccf806818ce91ab77937365af90bbf74a35be6b40b8eedf2785e42874d").unwrap();
+        let cipher = hex!("6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0bf91b65c5524733ab8f593dabcd62b3571639d624e65152ab8f530c359f0861d807ca0dbf500d6a6156a38e088a22b65e52bc514d16ccf806818ce91ab77937365af90bbf74a35be6b40b8eedf2785e42874d");
 
         let mut out = vec![];
         out.resize(plain.len(), 0);
@@ -718,14 +718,10 @@ mod tests {
 
     #[test]
     fn chacha20_poly1305_keygen_test() {
-        let key =
-            common::hex::decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
-                .unwrap();
-        let nonce = common::hex::decode("000000000001020304050607").unwrap();
+        let key = hex!("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+        let nonce = hex!("000000000001020304050607");
 
-        let expected =
-            common::hex::decode("8ad5a08b905f81cc815040274ab29471a833b637e3fd0da508dbb8e2fdd1a646")
-                .unwrap();
+        let expected = hex!("8ad5a08b905f81cc815040274ab29471a833b637e3fd0da508dbb8e2fdd1a646");
 
         let mut chacha = ChaCha20::new(&key, &nonce);
         let otk = chacha.poly1305_keygen();
@@ -794,11 +790,9 @@ mod tests {
 
     #[test]
     fn poly1305_test() {
-        let key =
-            common::hex::decode("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
-                .unwrap();
+        let key = hex!("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b");
         let plain = b"Cryptographic Forum Research Group";
-        let tag = common::hex::decode("a8061dc1305136c6c22b8baf0c0127a9").unwrap();
+        let tag = hex!("a8061dc1305136c6c22b8baf0c0127a9");
 
         let mut poly = Poly1305::new(&key);
         poly.update(&plain[..], false);
@@ -810,16 +804,14 @@ mod tests {
     fn aead_test() {
         let plaintext = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
 
-        let aad = common::hex::decode("50515253c0c1c2c3c4c5c6c7").unwrap();
+        let aad = hex!("50515253c0c1c2c3c4c5c6c7");
 
-        let key =
-            common::hex::decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
-                .unwrap();
+        let key = hex!("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
 
         // 32-bit constant | iv
-        let nonce = common::hex::decode("070000004041424344454647").unwrap();
+        let nonce = hex!("070000004041424344454647");
 
-        let ciphertext = common::hex::decode("d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b61161ae10b594f09e26a7e902ecbd0600691").unwrap();
+        let ciphertext = hex!("d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b61161ae10b594f09e26a7e902ecbd0600691");
 
         let aead = ChaCha20Poly1305::new();
 
@@ -837,50 +829,6 @@ mod tests {
 
     #[test]
     fn poly1305_leak_test() {
-        let key_inputs = typical_boundary_buffers(32);
-
-        // TODO: Switch back to 32
-        // TODO: If the number is too small, we may notice the 'Clone' performance
-        // rather than that of the algorithm.
-        let data_inputs = typical_boundary_buffers(4096);
-
-        println!("Poly1305::new() timing:");
-        TimingLeakTest::new(
-            key_inputs.iter(),
-            |key| {
-                Poly1305::new(key);
-                true
-            },
-            TimingLeakTestOptions {
-                num_iterations: 100000,
-            },
-        )
-        .run();
-
-        println!("Poly1305::update() timing:");
-
-        let mut test_cases: Vec<(Poly1305, &[u8])> = vec![];
-        for key in &key_inputs {
-            for data in &data_inputs {
-                test_cases.push((Poly1305::new(key), data));
-            }
-        }
-
-        TimingLeakTest::new(
-            test_cases.iter(),
-            |(poly, data)| {
-                let mut p = poly.clone();
-                p.update(data, false);
-                p.finish()[0] > 1
-            },
-            TimingLeakTestOptions {
-                num_iterations: 100000,
-            },
-        )
-        .run();
-
-        // TODO: Do performance tests on a flat chunk of data without cloning
-        // the poly instance.
 
         // TODO: Test the finish method.
         /*

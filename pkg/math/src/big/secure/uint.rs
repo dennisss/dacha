@@ -304,6 +304,10 @@ impl Integer for SecureBigUint {
 }
 
 impl SecureBigUint {
+    pub fn byte_width(&self) -> usize {
+        self.value.len() * BASE_BYTES
+    }
+
     /// Multiplies two numbers and adds their result to the out number.
     /// out += self*rhs
     pub(super) fn add_mul_to(&self, rhs: &Self, out: &mut Self) {
@@ -486,7 +490,7 @@ impl SecureBigUint {
     /// from the value.
     ///
     /// Will panic if 'self' was >= 2*modulus
-    pub(super) fn reduce_once(&mut self, modulus: &Self) {
+    pub fn reduce_once(&mut self, modulus: &Self) {
         let mut reduced = Self::from_usize(0, self.bit_width());
         let overflow = self.overflowing_sub_to(modulus, &mut reduced);
         reduced.copy_if(!overflow, self);
@@ -513,6 +517,31 @@ impl SecureBigUint {
             let new_carry = *v & 1;
             *v = new_v | (carry << 31);
             carry = new_carry;
+        }
+    }
+
+    /// Computes 'self >>= n'
+    /// NOTE: We assume that 'n' is a publicly known constant.
+    pub fn shr_n(&mut self, n: usize) {
+        let byte_shift = n / BASE_BITS;
+        let carry_size = n % BASE_BITS;
+        let carry_mask = ((1 as BaseType) << carry_size).wrapping_sub(1);
+
+        for i in 0..self.value.len() {
+            let v = self.value[i];
+            self.value[i] = 0;
+
+            if i < byte_shift {
+                continue;
+            }
+
+            let j = i - byte_shift;
+            self.value[j] = v >> carry_size;
+
+            if carry_size != 0 && j > 0 {
+                let carry = v & carry_mask;
+                self.value[j - 1] |= carry << (BASE_BITS - carry_size);
+            }
         }
     }
 
@@ -648,17 +677,19 @@ impl core::fmt::Display for SecureBigUint {
 
 impl Ord for SecureBigUint {
     fn cmp(&self, other: &Self) -> Ordering {
-        assert_eq!(self.value.len(), other.value.len());
-
         let mut less = 0;
         let mut greater = 0;
 
-        for i in (0..self.value.len()).rev() {
+        let n = core::cmp::max(self.value.len(), other.value.len());
+        for i in (0..n).rev() {
             let mask = !(less | greater);
 
-            if self.value[i] < other.value[i] {
+            let a = self.value.get(i).cloned().unwrap_or(0);
+            let b = other.value.get(i).cloned().unwrap_or(0);
+
+            if a < b {
                 less |= mask & 1;
-            } else if self.value[i] > other.value[i] {
+            } else if a > b {
                 greater |= mask & 1;
             }
         }
@@ -801,5 +832,40 @@ mod tests {
         assert!(r == SecureBigUint::from_usize(7, 64));
 
         // TODO: Test larger numbers.
+    }
+
+    #[test]
+    fn shr_n_test() {
+        {
+            let mut v = SecureBigUint::from_be_bytes(&[0b00010100, 0, 0, 0]);
+            v.shr_n(1);
+            assert_eq!(&v.to_be_bytes(), &[0b00001010, 0, 0, 0]);
+        }
+
+        {
+            let mut v = SecureBigUint::from_be_bytes(&[0b00010100, 0, 0, 0]);
+            v.shr_n(8);
+            assert_eq!(&v.to_be_bytes(), &[0, 0b00010100, 0, 0]);
+        }
+
+        // Testing moving values across bases.
+        {
+            let mut v = SecureBigUint::from_be_bytes(&[0b00010100, 0, 0, 0, 0, 0, 0, 0]);
+            v.shr_n(32);
+            assert_eq!(&v.to_be_bytes(), &[0, 0, 0, 0, 0b00010100, 0, 0, 0]);
+        }
+
+        {
+            let mut v = SecureBigUint::from_be_bytes(&[0b00010100, 0, 0, 0, 0, 0, 0, 0]);
+            v.shr_n(34);
+            assert_eq!(&v.to_be_bytes(), &[0, 0, 0, 0, 0b00000101, 0, 0, 0]);
+        }
+
+        // Carry to second base.
+        {
+            let mut v = SecureBigUint::from_be_bytes(&[0, 0, 0, 1, 0, 0, 0, 0]);
+            v.shr_n(1);
+            assert_eq!(&v.to_be_bytes(), &[0, 0, 0, 0, 0b10000000, 0, 0, 0]);
+        }
     }
 }

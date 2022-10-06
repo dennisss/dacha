@@ -55,3 +55,36 @@ impl<'a, T> Iterator for PairIterator<'a, T> {
         }
     }
 }
+
+struct CartesianProductIterator<'a, 'b, A, B> {
+    a: &'a [A],
+    b: &'b [B],
+    next_index: usize,
+}
+
+impl<'a, 'b, A, B> Iterator for CartesianProductIterator<'a, 'b, A, B> {
+    type Item = (&'a A, &'b B);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next_index >= self.a.len() * self.b.len() {
+            return None;
+        }
+
+        let a_i = self.next_index / self.b.len();
+        let b_i = self.next_index % self.b.len();
+        self.next_index += 1;
+
+        Some((&self.a[a_i], &self.b[b_i]))
+    }
+}
+
+pub fn cartesian_product<'a, 'b, A, B>(
+    a: &'a [A],
+    b: &'b [B],
+) -> impl Iterator<Item = (&'a A, &'b B)> {
+    CartesianProductIterator {
+        a,
+        b,
+        next_index: 0,
+    }
+}

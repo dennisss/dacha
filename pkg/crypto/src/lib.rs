@@ -41,15 +41,14 @@ extern crate typenum;
 ///
 /// Returns whether or not the two slices are byte-wise equal.
 #[no_mangle]
+#[inline(never)]
 pub fn constant_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
 
-    // TODO: Possibly check if they both point to the same location.
-    // TODO: We must ensure that '&' is not optimized into a branching operation.
-
-    let mut same: bool = true;
+    // Will become non-zero if we detect non-matching bytes.
+    let mut diff: usize = 0;
 
     const CMP_SIZE: usize = core::mem::size_of::<usize>();
     let n = a.len() / CMP_SIZE;
@@ -58,20 +57,20 @@ pub fn constant_eq(a: &[u8], b: &[u8]) -> bool {
     let mut i = 0;
     let last = CMP_SIZE * n;
     while i < last {
-        let ai = usize::from_le_bytes(*array_ref![a, i, CMP_SIZE]);
-        let bi = usize::from_le_bytes(*array_ref![b, i, CMP_SIZE]);
+        let ai = usize::from_ne_bytes(*array_ref![a, i, CMP_SIZE]);
+        let bi = usize::from_ne_bytes(*array_ref![b, i, CMP_SIZE]);
         i += CMP_SIZE;
 
-        same = same && (ai == bi);
+        diff |= ai ^ bi;
     }
 
     // Compare remaining bytes.
     while i < a.len() {
-        same = same && (a[i] == b[i]);
+        diff |= (a[i] ^ b[i]) as usize;
         i += 1;
     }
 
-    same
+    diff == 0
 }
 
 #[cfg(test)]
@@ -83,6 +82,24 @@ mod tests {
     use std::println;
     use std::vec;
     use std::vec::Vec;
+
+    #[test]
+    fn constant_eq_test() {
+        assert!(!constant_eq(&[1, 2], &[1, 2, 3]));
+        assert!(!constant_eq(&[1, 2, 3], &[1, 2]));
+        assert!(constant_eq(&[], &[]));
+        assert!(constant_eq(&[0, 0], &[0, 0]));
+        assert!(constant_eq(&[10, 20], &[10, 20]));
+
+        assert!(constant_eq(
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        ));
+        assert!(!constant_eq(
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            &[1, 2, 3, 4, 5, 6, 7, 8, 11, 12]
+        ));
+    }
 
     #[test]
     fn constant_eq_timing_test() {
@@ -145,76 +162,6 @@ mod tests {
                 println!("Worst case cheap compare: {:?}", end.duration_since(start));
             }
         }
-    }
-
-    #[test]
-    fn constant_eq_leak_test() {
-        const SIZE: usize = 10000;
-
-        let zero = vec![0u8; SIZE];
-        let all_set = vec![0xff; SIZE];
-        let every_other_set = {
-            let mut v = vec![0x00; SIZE];
-            for i in (0..SIZE).step_by(2) {
-                v[i] = 1;
-            }
-            v
-        };
-        let first_set = {
-            let mut v = vec![0x00; SIZE];
-            v[0] = 2;
-            v
-        };
-        let first_set2 = {
-            let mut v = vec![0x00; SIZE];
-            v[0] = 10;
-            v
-        };
-
-        let last_set = {
-            let mut v = vec![0x00; SIZE];
-            v[SIZE - 20] = 22;
-
-            v
-        };
-        let last_set2 = {
-            let mut v = vec![0x00; SIZE];
-            v[SIZE - 20] = 60;
-            v
-        };
-
-        // let random1 = crate::random::clocked_rng().generate_bytes()
-
-        let input_data = &[
-            &zero,
-            &all_set,
-            &every_other_set,
-            &first_set,
-            &first_set2,
-            &last_set,
-            &last_set2,
-        ];
-
-        let mut test_cases: Vec<(&[u8], &[u8])> = vec![];
-        for a in input_data {
-            for b in input_data {
-                test_cases.push((a, b));
-            }
-        }
-        for a in input_data {
-            for b in input_data {
-                test_cases.push((a, b));
-            }
-        }
-
-        TimingLeakTest::new(
-            test_cases.iter(),
-            |(a, b)| constant_eq(*a, *b),
-            TimingLeakTestOptions {
-                num_iterations: 10000,
-            },
-        )
-        .run();
     }
 }
 

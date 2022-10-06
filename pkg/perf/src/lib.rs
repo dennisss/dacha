@@ -3,8 +3,10 @@ extern crate sys;
 extern crate parsing;
 extern crate elf;
 
-mod profile;
-mod memory;
 mod busy;
+mod cycles;
+mod memory;
+mod profile;
 
+pub use cycles::CPUCycleTracker;
 pub use profile::profile_self;

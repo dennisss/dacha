@@ -50,7 +50,7 @@ impl ClientOptions {
                         cooldown_duration: Duration::from_secs(60),
                         max_num_attempts: 0,
                     },
-                    connect_timeout: Duration::from_millis(500),
+                    connect_timeout: Duration::from_millis(1000),
                     idle_timeout: Duration::from_secs(2),
                     /// MUST be <= v2::ConnectionOptions::max_enqueued_requests
                     max_outstanding_requests: 100,

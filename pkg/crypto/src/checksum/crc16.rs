@@ -100,9 +100,9 @@ mod tests {
 
         {
             let start_time = std::time::Instant::now();
-            let mut i = 0;
+            let mut i = 0u16;
             for _ in 0..iters {
-                i += crc16(&input_data);
+                i = i.wrapping_add(crc16(&input_data));
             }
             let end_time = std::time::Instant::now();
             println!(
@@ -115,9 +115,9 @@ mod tests {
         {
             let start_time = std::time::Instant::now();
 
-            let mut i = 0;
+            let mut i = 0u16;
             for _ in 0..iters {
-                i += crc16_lut(&input_data);
+                i = i.wrapping_add(crc16_lut(&input_data));
             }
             let end_time = std::time::Instant::now();
             println!(

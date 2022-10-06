@@ -8,8 +8,8 @@ use common::async_std::fs::File;
 use common::async_std::io::prelude::ReadExt;
 use common::async_std::sync::Mutex;
 use common::bytes::{Buf, Bytes};
-use common::errors::*;
-use math::big::BigUint;
+use common::{ceil_div, errors::*};
+use math::big::{BigUint, SecureBigUint};
 use math::integer::Integer;
 
 use crate::chacha20::*;
@@ -59,15 +59,26 @@ pub async fn secure_random_bytes(buf: &mut [u8]) -> Result<()> {
 }
 
 /// Securely generates a random value in the range '[lower, upper)'.
+///
 /// This is implemented to give every integer in the range the same probabiity
 /// of being output.
-pub async fn secure_random_range(lower: &BigUint, upper: &BigUint) -> Result<BigUint> {
-    if upper.min_bytes() == 0 || upper <= lower {
+///
+/// NOTE: Both the 'lower' and 'upper' numbers should be publicly known for this
+/// to be secure.
+///
+/// The output integer will have the same width as the 'upper' integer.
+pub async fn secure_random_range(
+    lower: &SecureBigUint,
+    upper: &SecureBigUint,
+) -> Result<SecureBigUint> {
+    if upper.byte_width() == 0 || upper <= lower {
         return Err(err_msg("Invalid upper/lower range"));
     }
 
     let mut buf = vec![];
-    buf.resize(upper.min_bytes(), 0);
+    buf.resize(upper.byte_width(), 0);
+
+    let mut num_bytes = ceil_div(upper.value_bits(), 8);
 
     let msb_mask: u8 = {
         let r = upper.value_bits() % 8;
@@ -80,10 +91,11 @@ pub async fn secure_random_range(lower: &BigUint, upper: &BigUint) -> Result<Big
 
     // TODO: Refactor out retrying. Instead shift to 0
     loop {
-        secure_random_bytes(&mut buf).await?;
-        *buf.last_mut().unwrap() &= msb_mask;
+        secure_random_bytes(&mut buf[0..num_bytes]).await?;
 
-        let n = BigUint::from_le_bytes(&buf);
+        buf[num_bytes - 1] &= msb_mask;
+
+        let n = SecureBigUint::from_le_bytes(&buf);
 
         // TODO: This *must* be a secure comparison (which it isn't right now).
         if &n >= lower && &n < upper {

@@ -328,16 +328,16 @@ mod tests {
         eb98476e4418713b
         */
         {
-            let key = hex::decode("2321f2d0e092045c").unwrap();
-            let plain = hex::decode("75130b9657220950").unwrap();
-            let cipher = hex::decode("eb98476e4418713b").unwrap();
+            let key = hex!("2321f2d0e092045c");
+            let plain = hex!("75130b9657220950");
+            let cipher = hex!("eb98476e4418713b");
 
             let c = DESBlockCipher::new(&key);
 
             let mut output = vec![0u8; 8];
             c.encrypt_block(&plain, &mut output);
 
-            assert_eq!(&cipher, &output);
+            assert_eq!(&cipher, &output[..]);
         }
 
         for i in 0..openssl::des_ecb::KEY_DATA.len() {

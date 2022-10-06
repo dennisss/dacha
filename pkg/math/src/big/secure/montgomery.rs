@@ -23,7 +23,7 @@ pub struct SecureMontgomeryModulo<'a> {
     /// maximum size of the limbs.
     r_bits: usize,
 
-    /// -moduus^-1 mod base
+    /// -modulus^-1 mod base
     modulus_prime: BaseType,
 }
 
@@ -166,5 +166,24 @@ impl<'a> SecureMontgomeryModulo<'a> {
         a.reduce_once(&self.modulus);
 
         a
+    }
+
+    /// Assuming the modulus is a prime number and 'a' < the modulus, this
+    /// computes the 'a^-1 R^-1 mod m' efficiently.
+    ///
+    /// This uses Fermat's little theorem which says
+    /// That: 'a^(m-1) = 1 mod m'
+    /// So 'a * a^(m-2) = 1 mod p'
+    /// So 'a^(m-2)' is the inverse
+    ///
+    /// TODO: If the prime is public knowledge and has sparse bits, it will be
+    /// much more efficient to use 'pow_with_public_exponent'
+    pub fn inv_prime_mod(&self, a: &SecureBigUint) -> SecureBigUint {
+        // Note that all the primes we are dealing with are >2, so should subtraction
+        // never overflow in practive. TODO: Pre-compute this.
+        let two = SecureBigUint::from_usize(2, BASE_BITS);
+        let exp = self.modulus - &two;
+
+        self.pow(a, &exp)
     }
 }

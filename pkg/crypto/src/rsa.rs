@@ -587,6 +587,8 @@ fn mgf1(mgf_seed: &[u8], mask_len: usize, hasher_factory: &HasherFactory) -> Vec
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use super::*;
 
     use common::errors::*;
@@ -619,6 +621,8 @@ mod tests {
 
                 let modulus = block.binary_field("N")?;
 
+                println!("Modulus: {}", modulus.len() * 8);
+
                 block = iter.next().unwrap()?;
 
                 let public_exponent = block.binary_field("E")?;
@@ -637,7 +641,6 @@ mod tests {
                 continue;
             }
 
-            println!("RUN");
             let hash_str = block.fields["SHAALG"].as_str();
             let message = block.binary_field("MSG")?;
             let signature = block.binary_field("S")?;
@@ -651,10 +654,22 @@ mod tests {
                 _ => panic!("Unknown algorithm {}", hash_str),
             };
 
+            let start_time = Instant::now();
+
             let output = pkcs.create_signature(private_key.as_ref().unwrap(), &message)?;
             assert_eq!(output, signature);
 
+            let time_1 = Instant::now();
+
             assert!(pkcs.verify_signature(public_key.as_ref().unwrap(), &signature, &message)?);
+
+            let mut time_2 = Instant::now();
+
+            println!(
+                "- Sign: {:?}  , Verify: {:?}",
+                time_1 - start_time,
+                time_2 - time_1
+            );
         }
 
         Ok(())

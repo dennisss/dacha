@@ -292,8 +292,6 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
 
         println!("{}", processed);
 
-        // busy_loop();
-
         let now = Instant::now();
         if now >= start_time + duration {
             break;

@@ -931,6 +931,7 @@ impl DirectClientRunner {
     /// Attempts to create a new connection to the client's backend.
     async fn new_connection(shared: Arc<Shared>, connection_id: usize) {
         // TODO: Measure and record how long it takes to establish a connection.
+        let mut start_time = Instant::now();
         let entry = common::async_std::future::timeout(
             shared.options.connect_timeout.clone(),
             Self::new_connection_inner(&shared, connection_id),
@@ -948,6 +949,10 @@ impl DirectClientRunner {
                 None
             }
         };
+
+        let mut end_time = Instant::now();
+
+        println!("[http::Client] Connect took: {:?}", end_time - start_time);
 
         let mut events = shared.received_events.lock().await;
         events.connection_opened.push((connection_id, value));

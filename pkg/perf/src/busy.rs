@@ -1,5 +1,5 @@
 use core::arch::asm;
-
+use std::time::Duration;
 
 pub async fn task1() {
     unsafe {
@@ -7,7 +7,13 @@ pub async fn task1() {
         let mut node = 0;
         sys::getcpu(&mut cpu, &mut node).unwrap();
 
-        println!("T2: Pid: {}, Tid: {}, CPU: {}, Node: {}", sys::getpid(), sys::gettid(), cpu, node);
+        println!(
+            "T2: Pid: {}, Tid: {}, CPU: {}, Node: {}",
+            sys::getpid(),
+            sys::gettid(),
+            cpu,
+            node
+        );
     };
 
     let mut i: u64 = 0;
@@ -22,7 +28,13 @@ pub fn task2() {
         let mut node = 0;
         sys::getcpu(&mut cpu, &mut node).unwrap();
 
-        println!("T3: Pid: {}, Tid: {}, CPU: {}, Node: {}", sys::getpid(), sys::gettid(), cpu, node);
+        println!(
+            "T3: Pid: {}, Tid: {}, CPU: {}, Node: {}",
+            sys::getpid(),
+            sys::gettid(),
+            cpu,
+            node
+        );
     };
 
     let mut i: u64 = 0;
@@ -31,22 +43,23 @@ pub fn task2() {
     }
 }
 
-
+/// Wastes CPU cycles on the current thread until the given 'duration' has
+/// elapsed.
 #[inline(never)]
 #[no_mangle]
-pub fn busy_loop() {
-    busy_loop_inner();
+pub fn busy_loop(duration: Duration) {
+    busy_loop_inner(duration);
 }
 
+/// Implementation of busy_loop(). This is mainly separate to
 #[inline(never)]
 #[no_mangle]
-pub fn busy_loop_inner() {
+fn busy_loop_inner(duration: Duration) {
     let now = std::time::Instant::now();
 
     loop {
-
         let dur = (std::time::Instant::now() - now);
-        if dur >= std::time::Duration::from_secs(1) {
+        if dur >= duration {
             break;
         }
 
@@ -263,9 +276,6 @@ pub fn busy_loop_inner() {
                 asm!("nop");
                 asm!("nop");
             }
-
         }
-
     }
-
 }

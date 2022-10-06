@@ -1,5 +1,5 @@
 [package]
-name = "perf"
+name = "perf_util"
 version = "0.1.0"
 edition = "2018"
 
@@ -7,8 +7,10 @@ edition = "2018"
 common = { path = "../common" }
 parsing = { path = "../parsing" }
 protobuf = { path = "../protobuf" }
+compression = { path = "../compression" }
 sys = { path = "../sys" }
 elf = { path = "../elf" }
+perf = { path = "../perf" }
 google = { path = "../../third_party/google" }
 
 [features]
