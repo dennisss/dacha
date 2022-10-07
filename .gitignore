@@ -25,12 +25,15 @@ __MACOSX
 .ipynb_checkpoints
 
 # KiCad Stuff
-fp-info-cache
+*fp-info-cache*
 _autosave*.kicad_pcb
 *_pcb-bak
 *.sch-bak
 # Netlists are derived purely from the schematic
 *.net
+*-cache.lib
+*-rescue.dcm
+*-rescue.lib
 
 # Exported KiCad/CAM stuff
 *.nc
@@ -49,4 +52,4 @@ _autosave*.kicad_pcb
 **/plot/*.gts
 **/plot/*.gtl
 **/plot/*.gbs
-**/board/plot.zip
+**/plot.zip

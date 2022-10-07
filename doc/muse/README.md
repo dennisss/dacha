@@ -24,6 +24,9 @@ Z-Motor
     - Output is 6-pin FPC to main board.
         - I2C, RESET, and Interrupt pin.
 
+- Display Cable
+    - 0.3mm FFC to 0.5mm FFC cable.
+
 - Board as a SR2KT (Intel Atom CPU)
 - I80AS-Z8350-256DDR
 
