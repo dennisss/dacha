@@ -16,7 +16,5 @@ pub trait DiffieHellmanFn: Send + Sync {
 
     /// Given our secret and some other agent's public value, produces a new
     /// shared secret value known to both parties.
-    ///
-    /// This may
     fn shared_secret(&self, remote_public: &[u8], local_secret: &[u8]) -> Result<Vec<u8>>;
 }

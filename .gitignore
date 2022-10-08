@@ -27,6 +27,7 @@ __MACOSX
 # KiCad Stuff
 *fp-info-cache*
 _autosave*.kicad_pcb
+_autosave*.sch
 *_pcb-bak
 *.sch-bak
 # Netlists are derived purely from the schematic
