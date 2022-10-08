@@ -561,6 +561,15 @@ impl SecureBigUint {
         }
     }
 
+    /// Efficienctly (in O(1) time) computes 'self % 2^32'
+    pub fn mod_word(&self) -> u32 {
+        if self.value.len() == 0 {
+            0
+        } else {
+            self.value[0]
+        }
+    }
+
     // TODO: Need a version of this using pmull in aarch64 (vmull_p64)
 
     /// Interprates this integer and 'rhs' as polynomials over GF(2^n) and

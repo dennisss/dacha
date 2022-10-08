@@ -99,6 +99,62 @@ impl<'a> SecureModulo<'a> {
         t
     }
 
+    /// If the number has an exact square root, returns one of them.
+    pub fn isqrt(&self, a: &SecureBigUint) -> Option<SecureBigUint> {
+        assert!(a < self.n);
+
+        let candidate = {
+            if self.n.mod_word() % 4 == 3 {
+                // Algorithm 3.36 in 'Handbook of Applied Cryptography'
+                // TODO: This requires that 'n' is also prime.
+
+                // TODO: Use the publicly known exponent optimization
+                // = a^((p + 1) / 4)
+
+                let mut exp = self.n + SecureBigUint::from_usize(1, 32);
+                exp.shr_n(2);
+
+                self.pow(a, &exp)
+            } else if self.n.mod_word() % 8 == 5 {
+                // Algorithm 3.36 in 'Handbook of Applied Cryptography'
+
+                let mut x = {
+                    // x = a^((p + 3) / 8)
+                    let mut exp = self.n + SecureBigUint::from_usize(3, 32);
+                    exp.shr_n(3);
+
+                    self.pow(a, &exp)
+                };
+
+                let mut x_valid = &self.mul(&x, &x) == a;
+
+                // Alternative root is '2^((p-1)/4) * x'
+                let x_alt = {
+                    let mut exp = self.n - &SecureBigUint::from_usize(1, 32);
+                    assert_eq!(exp.bit(0), 0);
+                    assert_eq!(exp.bit(1), 0);
+                    exp.shr_n(2);
+
+                    let two_exp = self.pow(&SecureBigUint::from_usize(2, self.n.bit_width()), &exp);
+
+                    self.mul(&two_exp, &x)
+                };
+
+                x_alt.copy_if(!x_valid, &mut x);
+
+                x
+            } else {
+                panic!("Generic isqrt not supported")
+            }
+        };
+
+        if &self.mul(&candidate, &candidate) == a {
+            Some(candidate)
+        } else {
+            None
+        }
+    }
+
     /// Computes '(a / b) mod n'.
     /// Internally performs '(a * b^-1) mod n'
     pub fn div(&self, a: &SecureBigUint, b: &SecureBigUint) -> SecureBigUint {

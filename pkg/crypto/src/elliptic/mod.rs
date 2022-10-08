@@ -1,7 +1,9 @@
+mod edwards;
 mod montgomery;
 mod nist;
 mod normal;
 
+pub use self::edwards::*;
 pub use self::montgomery::*;
 pub use self::nist::*;
 pub use self::normal::*;
@@ -27,12 +29,3 @@ pub use self::normal::*;
 // TODO: Need a custom function for sqr (aka n^2)
 
 // See also https://www.iacr.org/cryptodb/archive/2006/PKC/3351/3351.pdf
-
-/*
-https://www.rfc-editor.org/rfc/rfc8032
-
-'b' bit public keys
-'2*b' bit signatures.
-
-
-*/
