@@ -5,14 +5,14 @@ syntax = "proto3";
 
 package cluster;
 
-import "pkg/container/src/proto/task.proto";
+import "pkg/container/src/proto/worker.proto";
 
 message JobSpec {
     string name = 1;
 
-    TaskSpec task = 2;
+    WorkerSpec worker = 2;
 
-    // How many tasks should be brought up.
+    // How many workers should be brought up.
     uint32 replicas = 3;
 
     JobSchedulingSpec scheduling = 4;

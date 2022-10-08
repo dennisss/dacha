@@ -5,15 +5,15 @@ What we need:
 Metastore schema:
 
 /cluster/job/[job_name]: JobMetadata proto
-/cluster/task/[task_name] : TaskMetadata proto
+/cluster/worker/[worker_name] : WorkerMetadata proto
 /cluster/node/[node_id] : NodeMetadata
     => Also contains list of all currently assigned resources.
     resources_reserved
     resources_limit
     resources_available
 
-/cluster/task_by_node/[node_name]/[task_name]: ""
-    => Means that when we update a task, we must look it up to remove the old assigmnet
+/cluster/worker_by_node/[node_name]/[worker_name]: ""
+    => Means that when we update a worker, we must look it up to remove the old assigmnet
     => Generally can be locally done if it is a proto.
 
 */
@@ -198,7 +198,7 @@ impl ClusterMetaTableValue for JobMetadata {
     }
 }
 
-impl ClusterMetaTableValue for TaskMetadata {
+impl ClusterMetaTableValue for WorkerMetadata {
     type Id = str;
 
     fn primary_key(&self) -> Vec<u8> {
@@ -206,7 +206,7 @@ impl ClusterMetaTableValue for TaskMetadata {
     }
 
     fn primary_table_id() -> ClusterTableId {
-        ClusterTableId::Task
+        ClusterTableId::Worker
     }
 
     fn primary_key_from_id(id: &Self::Id) -> Vec<u8> {
@@ -215,7 +215,7 @@ impl ClusterMetaTableValue for TaskMetadata {
 
     fn secondary_keys(&self) -> Vec<Vec<u8>> {
         vec![(
-            ClusterTableId::TaskByNode,
+            ClusterTableId::WorkerByNode,
             self.assigned_node(),
             self.spec().name(),
         )
@@ -227,50 +227,50 @@ impl ClusterMetaTableValue for TaskMetadata {
     }
 }
 
-impl<'a> ClusterMetaTable<'a, TaskMetadata> {
-    pub async fn list_by_job(&self, job_name: &str) -> Result<Vec<TaskMetadata>> {
+impl<'a> ClusterMetaTable<'a, WorkerMetadata> {
+    pub async fn list_by_job(&self, job_name: &str) -> Result<Vec<WorkerMetadata>> {
         self.get_prefix(&format!("{}.", job_name)).await
     }
 
-    pub async fn list_by_node(&self, node_id: u64) -> Result<Vec<TaskMetadata>> {
-        let prefix = (ClusterTableId::TaskByNode, node_id).to_table_key();
+    pub async fn list_by_node(&self, node_id: u64) -> Result<Vec<WorkerMetadata>> {
+        let prefix = (ClusterTableId::WorkerByNode, node_id).to_table_key();
 
         let entries = self.client.get_prefix(&prefix).await?;
 
-        let mut tasks = vec![];
+        let mut workers = vec![];
         for entry in entries {
             let key_suffix = entry
                 .key()
                 .strip_prefix(&prefix[..])
                 .ok_or_else(|| err_msg("Invalid index key"))?;
 
-            let (task_name_bytes, rest) = KeyEncoder::decode_end_bytes(key_suffix)?;
+            let (worker_name_bytes, rest) = KeyEncoder::decode_end_bytes(key_suffix)?;
             if !rest.is_empty() {
-                return Err(err_msg("Extra bytes after task_name"));
+                return Err(err_msg("Extra bytes after worker_name"));
             }
 
-            let task_name = std::str::from_utf8(task_name_bytes)?;
+            let worker_name = std::str::from_utf8(worker_name_bytes)?;
 
-            tasks.push(
-                self.get(task_name)
+            workers.push(
+                self.get(worker_name)
                     .await?
-                    .ok_or_else(|| format_err!("Missing indexed value: {}", task_name))?,
+                    .ok_or_else(|| format_err!("Missing indexed value: {}", worker_name))?,
             );
         }
 
-        Ok(tasks)
+        Ok(workers)
     }
 }
 
-impl ClusterMetaTableValue for TaskStateMetadata {
+impl ClusterMetaTableValue for WorkerStateMetadata {
     type Id = str;
 
     fn primary_key(&self) -> Vec<u8> {
-        Self::primary_key_from_id(self.task_name())
+        Self::primary_key_from_id(self.worker_name())
     }
 
     fn primary_table_id() -> ClusterTableId {
-        ClusterTableId::TaskState
+        ClusterTableId::WorkerState
     }
 
     fn primary_key_from_id(id: &Self::Id) -> Vec<u8> {

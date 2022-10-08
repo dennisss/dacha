@@ -11,7 +11,7 @@ message NodeConfig {
     // Port used for the main node management service.
     int32 service_port = 2;
 
-    // Base template used to construct task containers.
+    // Base template used to construct worker containers.
     ContainerConfig container_template = 3;
     
     // Maximum amount of time in seconds after a container is terminated with a signal before we
@@ -22,8 +22,8 @@ message NodeConfig {
     // node with the first 16 characters of /etc/machine-id
     bool bootstrap_id_from_machine_id = 5;
 
-    // Range of network ports which may be used by tasks running on this node.
-    // TODO: Have the node runtime validate that we only receive tasks with ports in this range. 
+    // Range of network ports which may be used by workers running on this node.
+    // TODO: Have the node runtime validate that we only receive workers with ports in this range. 
     PortRange allocatable_port_range = 6;
 
     // When running in a managed cluster this field is required.

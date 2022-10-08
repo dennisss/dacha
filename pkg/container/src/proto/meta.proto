@@ -5,7 +5,7 @@ syntax = "proto3";
 
 package cluster;
 
-import "pkg/container/src/proto/task.proto";
+import "pkg/container/src/proto/worker.proto";
 import "pkg/container/src/proto/job.proto";
 import "pkg/container/src/proto/blob.proto";
 import "pkg/container/src/proto/node.proto";
@@ -18,9 +18,9 @@ enum ClusterTableId {
     Zone = 1;
     Node = 2;
     Job = 3;
-    Task = 4;
-    TaskByNode = 5;
-    TaskState = 6;
+    Worker = 4;
+    WorkerByNode = 5;
+    WorkerState = 6;
     Blob = 7;
     Object = 8;
 }
@@ -34,7 +34,7 @@ message ZoneMetadata {
 Restarting a node:
 - Mark it as draining
 - Suppose we drain a node because it is offline
-    - If we re-assign tasks to another node and the old machine comes back online, we must prevent TaskMetadata contention by having each node check the 'assigned_node' field to verify that it is actually still the owner of a task
+    - If we re-assign workers to another node and the old machine comes back online, we must prevent WorkerMetadata contention by having each node check the 'assigned_node' field to verify that it is actually still the owner of a worker
 */
 
 
@@ -53,10 +53,10 @@ message NodeMetadata {
         UNKNOWN = 0;
         
         // This is a brand new node this has just joined the cluster.
-        // In this state, the node won't start/stop any tasks assigned to it.
+        // In this state, the node won't start/stop any workers assigned to it.
         NEW = 1;
 
-        // This is a regular node and will start any tasks newly assigned to it and stop any tasks
+        // This is a regular node and will start any workers newly assigned to it and stop any workers
         // which aren't assigned to it in the metastore.
         ACTIVE = 2;
         
@@ -88,56 +88,56 @@ message NodeMetadata {
 message JobMetadata {
     JobSpec spec = 1;
 
-    // Monotonic counter which is increased each time the TaskSpec is changed.
-    uint64 task_revision = 2;
+    // Monotonic counter which is increased each time the WorkerSpec is changed.
+    uint64 worker_revision = 2;
 }
 
-// Defines the intent for a single instance of a Task which we want to run on some specific node.
-message TaskMetadata {
-    // Spec used to run this task.
+// Defines the intent for a single instance of a Worker which we want to run on some specific node.
+message WorkerMetadata {
+    // Spec used to run this worker.
     // This should be mostly the same as the spec in the JobSpec but also includes a resolved
     // 'name', port numbers, etc.
     //
     // REQUIRED
-    TaskSpec spec = 1;
+    WorkerSpec spec = 1;
 
-    // Id of the node which this task is running on.
+    // Id of the node which this worker is running on.
     //
-    // NOTE: This field is immutable. Moving a task to another node requires creating a new name.
+    // NOTE: This field is immutable. Moving a worker to another node requires creating a new name.
     //
     // REQUIRED
     uint64 assigned_node = 2;
 
-    // If true, this task should be stopped by the node and not started again.
+    // If true, this worker should be stopped by the node and not started again.
     //
-    // Once drain == true, this TaskMetadata proto is guranteed to not change again and will be
-    // deleted once the node markes the task is DONE in the TaskStateMetadata.
+    // Once drain == true, this WorkerMetadata proto is guranteed to not change again and will be
+    // deleted once the node markes the worker is DONE in the WorkerStateMetadata.
     //
     // OPTIONAL
     bool drain = 3;
 
-    // Revision of this task.
-    // When this is equal to the corresponding JobMetadata::task_revision, this task doesn't need
+    // Revision of this worker.
+    // When this is equal to the corresponding JobMetadata::worker_revision, this worker doesn't need
     // to be updated.
     uint64 revision = 4;
 }
 
-// Current high level progress of running a task specified in a corresponding TaskMetadata entry.
+// Current high level progress of running a worker specified in a corresponding WorkerMetadata entry.
 //
-// While the TaskMetadata entries are updated by Manager jobs, this proto is updated by the Nodes.
-// A Node must ONLY update the TaskStateMetadata when a TaskMetadata entry exists. 
+// While the WorkerMetadata entries are updated by Manager jobs, this proto is updated by the Nodes.
+// A Node must ONLY update the WorkerStateMetadata when a WorkerMetadata entry exists. 
 //
-// This is meant to be a TLDR of the current state of the task and very concise. Lower level
+// This is meant to be a TLDR of the current state of the worker and very concise. Lower level
 // details such as the # of restarts, etc. will be stored in local node storage.
 //
 // This has the following main use-cases:
-// 1. Used by the Manager job to know when a task has been fully brought up or turned down in order
-//    to allow more tasks to be added/deleted/updated.
-// 2. Used by RPC clients to know if a task can be reached.
+// 1. Used by the Manager job to know when a worker has been fully brought up or turned down in order
+//    to allow more workers to be added/deleted/updated.
+// 2. Used by RPC clients to know if a worker can be reached.
 //
-// TODO: Connections to the metastore should not depend on observing the readiness of the tasks.
-message TaskStateMetadata {
-    string task_name = 1;
+// TODO: Connections to the metastore should not depend on observing the readiness of the workers.
+message WorkerStateMetadata {
+    string worker_name = 1;
 
     // Current state which the node 
     //
@@ -146,22 +146,22 @@ message TaskStateMetadata {
     enum ReportedState {
         UNKNOWN = 0;
 
-        // The node is currently starting or stopping this task. It can't be reliably queried.
+        // The node is currently starting or stopping this worker. It can't be reliably queried.
         UPDATING = 1;
 
-        // This task is running on the assigned node and has passed readiness checks.
-        // This is the only state in which it is ok for users to send traffic to this task.
+        // This worker is running on the assigned node and has passed readiness checks.
+        // This is the only state in which it is ok for users to send traffic to this worker.
         READY = 2;
 
-        // The task isn't running and won't be re-started unless a new task revision is available.
+        // The worker isn't running and won't be re-started unless a new worker revision is available.
         DONE = 3;
     }
     ReportedState state = 2;
 
-    // The task revision at which the 'state' field is valid.
+    // The worker revision at which the 'state' field is valid.
     //
-    // NOTE: If a client notices that the TaskMetadata includes a new revision, but the TaskStateMetadata shows that the task is READY at an old revision, it should stop ending traffic under the expectation that it will be updated soon.
-    uint64 task_revision = 3;
+    // NOTE: If a client notices that the WorkerMetadata includes a new revision, but the WorkerStateMetadata shows that the worker is READY at an old revision, it should stop ending traffic under the expectation that it will be updated soon.
+    uint64 worker_revision = 3;
 }
 
 message BlobMetadata {

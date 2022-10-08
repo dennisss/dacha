@@ -1,6 +1,6 @@
 name: "system.manager"
 replicas: 1
-task {
+worker {
     persistent: true
 
     args: [

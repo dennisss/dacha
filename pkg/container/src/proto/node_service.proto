@@ -4,30 +4,30 @@ package cluster;
 
 import "pkg/container/src/proto/config.proto";
 import "pkg/container/src/proto/log.proto";
-import "pkg/container/src/proto/task.proto";
+import "pkg/container/src/proto/worker.proto";
 import "pkg/container/src/proto/meta.proto";
-import "pkg/container/src/proto/task_event.proto";
+import "pkg/container/src/proto/worker_event.proto";
 import "third_party/google/src/proto/empty.proto";
 
-message ListTasksRequest {
+message ListWorkersRequest {
     // If present, we will only return data for the container with this id.
     // An empty list will be returned if no such container exists. 
     string container_id = 1;
 }
 
-message ListTasksResponse {
-    repeated TaskProto tasks = 1;
+message ListWorkersResponse {
+    repeated WorkerProto workers = 1;
 }
 
-message TaskProto {
-    TaskSpec spec = 1;
-    TaskStateProto state = 2;
+message WorkerProto {
+    WorkerSpec spec = 1;
+    WorkerStateProto state = 2;
     ContainerMetadata container = 3;
     uint64 revision = 4;
-    StartTaskRequest pending_update = 5;
+    StartWorkerRequest pending_update = 5;
 }
 
-enum TaskStateProto {
+enum WorkerStateProto {
     UNKNOWN = 0;
     PENDING = 1;
     RUNNING = 2;
@@ -37,26 +37,26 @@ enum TaskStateProto {
     DONE = 6;
 }
 
-message StartTaskRequest {
-    TaskSpec spec = 1;
+message StartWorkerRequest {
+    WorkerSpec spec = 1;
     uint64 revision = 2;
 }
 
-message StartTaskResponse {
+message StartWorkerResponse {
 
 }
 
-message RestartTaskRequest {
+message ReStartWorkerRequest {
 
 }
 
-message RestartTaskResponse {
+message RestartWorkerResponse {
 
 }
 
 
 message LogRequest {
-    string task_name = 1;
+    string worker_name = 1;
 
     uint64 attempt_id = 2;
 
@@ -67,7 +67,7 @@ message LogRequest {
 
 message WriteInputRequest {
 
-    string task_name = 1;
+    string worker_name = 1;
 
     bytes data = 2;
 }
@@ -77,11 +77,11 @@ message ReplicateBlobRequest {
 }
 
 message GetEventsRequest {
-    string task_name = 1;
+    string worker_name = 1;
 }
 
 message GetEventsResponse {
-    repeated TaskEvent events = 1;
+    repeated WorkerEvent events = 1;
 }
 
 service ContainerNode {
@@ -90,45 +90,45 @@ service ContainerNode {
     // ^ RPC HTTP servers should minimally reject any request coming to the wrong host name.
     rpc Identity (google.protobuf.Empty) returns (NodeMetadata);
 
-    // Enumerates all tasks present on this node.
-    rpc ListTasks (ListTasksRequest) returns (ListTasksResponse);
+    // Enumerates all workers present on this node.
+    rpc ListWorkers (ListWorkersRequest) returns (ListWorkersResponse);
 
-    /// Starts running a task on this node using the given spec.
+    /// Starts running a worker on this node using the given spec.
     ///
-    /// - If a task with the same name already exists on this node, it will stopped and replaced
+    /// - If a worker with the same name already exists on this node, it will stopped and replaced
     ///   with one using the new spec.
     /// - This will return as soon as the node has durably ingested the request. The actual
-    ///   starting/stopping of the task will occur asynchronously.
+    ///   starting/stopping of the worker will occur asynchronously.
     ///
-    /// TODO: Eventually also need an API to delete a task and know for sure this node will no longer try to start it.
-    rpc StartTask (StartTaskRequest) returns (StartTaskResponse);
+    /// TODO: Eventually also need an API to delete a worker and know for sure this node will no longer try to start it.
+    rpc StartWorker (StartWorkerRequest) returns (StartWorkerResponse);
 
-    // // Triggers the stopping of a task.
+    // // Triggers the stopping of a worker.
     // //
     // // This executes asynchronously.
-    // // - If the task is running, we will try to gracefully stop it
-    // // - If the task is not running, we will stop trying to backoff, etc. and enter a Terminal state.
+    // // - If the worker is running, we will try to gracefully stop it
+    // // - If the worker is not running, we will stop trying to backoff, etc. and enter a Terminal state.
     // // - If 
     // //
-    // rpc StopTask (StopTaskRequest) returns (StopTaskResponse);
+    // rpc StopWorker (StopWorkerRequest) returns (StopWorkerResponse);
 
-    // /// Triggers the stopping of an existing task followed by immediately starting it again.
+    // /// Triggers the stopping of an existing worker followed by immediately starting it again.
     // ///
-    // /// If the task is currently in backoff, the backoff will be reset.  
-    // rpc RestartTask (RestartTaskRequest) returns (RestartTaskResponse);
+    // /// If the worker is currently in backoff, the backoff will be reset.  
+    // rpc RestartWorker (ReStartWorkerRequest) returns (RestartWorkerResponse);
 
-    // // Removes all data associated with a given task from this node.
+    // // Removes all data associated with a given worker from this node.
     // //
     // // This includes:
-    // // - task spec
+    // // - worker spec
     // // - stdout/stderr logs.
     // // - information on past attempts
     // //
-    // // By default all the above data is retained even after a task is stopped to allow it to be
+    // // By default all the above data is retained even after a worker is stopped to allow it to be
     // // backed up to a remote logging service before being deleted.
     // //
-    // // NOTE: The task must first be in a Terminal state before it can be deleted.
-    // rpc DeleteTask (DeleteTaskRequest) returns (DeleteTaskResponse); 
+    // // NOTE: The worker must first be in a Terminal state before it can be deleted.
+    // rpc DeleteWorker (DeleteWorkerRequest) returns (DeleteWorkerResponse); 
 
     rpc WriteInput (stream WriteInputRequest) returns (google.protobuf.Empty);
 
@@ -138,7 +138,7 @@ service ContainerNode {
 
     // rpc ExecProcess (ExecProcess)
 
-    // Streams back log entries for a single task.
+    // Streams back log entries for a single worker.
     // Rename to GetLog
     rpc GetLogs(LogRequest) returns (stream LogEntry);
 

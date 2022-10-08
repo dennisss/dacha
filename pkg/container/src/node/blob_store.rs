@@ -17,7 +17,7 @@ use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
 use sstable::EmbeddedDB;
 
-use crate::node::tasks_table::*;
+use crate::node::workers_table::*;
 use crate::proto::blob::*;
 
 // A blob id is an 'algorithm:lowercase_hex_digest'

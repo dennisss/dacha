@@ -10,12 +10,12 @@ pub mod node_service {
     include!(concat!(env!("OUT_DIR"), "/src/proto/node_service.rs"));
 }
 
-pub mod task {
-    include!(concat!(env!("OUT_DIR"), "/src/proto/task.rs"));
+pub mod worker {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/worker.rs"));
 }
 
-pub mod task_event {
-    include!(concat!(env!("OUT_DIR"), "/src/proto/task_event.rs"));
+pub mod worker_event {
+    include!(concat!(env!("OUT_DIR"), "/src/proto/worker_event.rs"));
 }
 
 pub mod job {

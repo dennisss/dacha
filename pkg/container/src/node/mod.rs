@@ -1,7 +1,7 @@
 mod blob_store;
 pub mod main;
 pub mod shadow;
-mod tasks_table;
+mod workers_table;
 
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -36,17 +36,17 @@ use crate::proto::log::*;
 use crate::proto::meta::*;
 use crate::proto::node::*;
 use crate::proto::node_service::*;
-use crate::proto::task::*;
-use crate::proto::task_event::*;
+use crate::proto::worker::*;
+use crate::proto::worker_event::*;
 use crate::runtime::ContainerRuntime;
 
 /*
 Important invariants to test:
-- Must not set NodeMetadata::last_seen before we update the TaskStateMetadata for all tasks on this node.
-- If a task reaches the DONE state, save that into our local metadata and ensure we continue to update the TaskStateMetadata with that on future restarts (rather than re-starting the task).
+- Must not set NodeMetadata::last_seen before we update the WorkerStateMetadata for all workers on this node.
+- If a worker reaches the DONE state, save that into our local metadata and ensure we continue to update the WorkerStateMetadata with that on future restarts (rather than re-starting the worker).
 
 How to have a client connect to a job:
-- Initially query all the tasks and NodeMetadata
+- Initially query all the workers and NodeMetadata
 - If a connection to a node fails, then double check the NodeMetadata.
 - Otherwise just keep on going.
 - So, we don't really on
@@ -54,63 +54,63 @@ How to have a client connect to a job:
 
 TODO: Verify that sending a kill to the runtime doesn't cause an error if the container just recently died and we didn't process the event notification yet.
 
-Usage of the TaskMetadata in the local node db:
-- When a task is started, we record it as STARTED
+Usage of the WorkerMetadata in the local node db:
+- When a worker is started, we record it as STARTED
     - This has the main purpose of
 
-TODO: Because tasks can reach TaskStateMetadata::STOPPED on old revisions, we can't reliably tell when a new task revision reaches that state the second time.
+TODO: Because workers can reach WorkerStateMetadata::STOPPED on old revisions, we can't reliably tell when a new worker revision reaches that state the second time.
 
 */
 
-struct Task {
-    /// Spec that was used to start this task.
-    spec: TaskSpec,
+struct Worker {
+    /// Spec that was used to start this worker.
+    spec: WorkerSpec,
 
     revision: u64,
 
-    /// Id of the most recent container running this task.
+    /// Id of the most recent container running this worker.
     container_id: Option<String>,
 
-    state: TaskState,
+    state: WorkerState,
 
     start_backoff: ExponentialBackoff,
 
-    /// The task was recently created or updated so we are waiting for the task
-    /// to be started using the latest TaskSpec.
+    /// The worker was recently created or updated so we are waiting for the
+    /// worker to be started using the latest WorkerSpec.
     ///
     /// Will be reset to false once we have entired the Starting|Running state.
-    pending_update: Option<StartTaskRequest>,
+    pending_update: Option<StartWorkerRequest>,
 
     permanent_stop: bool,
 
-    /// Leases for all blobs in use by this task when running.
+    /// Leases for all blobs in use by this worker when running.
     /// This is set when transitioning to the Running state and cleared when
     /// entering the Terminal state.
     blob_leases: Vec<BlobLease>,
 }
 
-enum TaskState {
-    /// The task hasn't yet been scheduled to start running.
+enum WorkerState {
+    /// The worker hasn't yet been scheduled to start running.
     ///
-    /// This may be because the task was only just recently added or it is
+    /// This may be because the worker was only just recently added or it is
     /// missing some resources/dependencies needed to run. By default, if there
     /// are missing resources, we will wait until the resources become available
-    /// and then start running the task.
+    /// and then start running the worker.
     ///
     /// TODO: In this state, enumerate all missing requirements
     Pending {
-        /// Partial set of requirements needed by this task which aren't
+        /// Partial set of requirements needed by this worker which aren't
         /// currently available.
         missing_requirements: ResourceSet,
     },
 
-    /// In this state, we have a running container for this task.
+    /// In this state, we have a running container for this worker.
     Running,
 
-    /// In this state, we already sent a SIGINT to the task and are waiting for
-    /// it to stop on its own.
+    /// In this state, we already sent a SIGINT to the worker and are waiting
+    /// for it to stop on its own.
     ///
-    /// If the task doesn't stop by itself after a timeout, we will transition
+    /// If the worker doesn't stop by itself after a timeout, we will transition
     /// to ForceStopping.
     Stopping {
         timer_id: usize,
@@ -123,7 +123,7 @@ enum TaskState {
     /// container is completely dead.
     ForceStopping,
 
-    /// The task's container is dead and we are waiting a reasonable amount of
+    /// The worker's container is dead and we are waiting a reasonable amount of
     /// time before retrying.
     RestartBackoff {
         timer_id: usize,
@@ -134,22 +134,23 @@ enum TaskState {
     ///
     /// TODO: How do we determine if the
     Done, /*  {
-           *     state: TaskTerminalState
+           *     state: WorkerTerminalState
            * } */
 }
 
-enum TaskDoneState {
-    /// This was a one-off task (with restart_policy set to something other than
-    /// ALWAYS|UNKNOWN) and it completed with a successful exit code (of 0).
+enum WorkerDoneState {
+    /// This was a one-off worker (with restart_policy set to something other
+    /// than ALWAYS|UNKNOWN) and it completed with a successful exit code
+    /// (of 0).
     Successful,
 
-    /// This task was stopped before it completed its intended number of
+    /// This worker was stopped before it completed its intended number of
     /// attempts.
     ///
-    /// - If a task is killed gracefully with a signal like SIGINT but exits
+    /// - If a worker is killed gracefully with a signal like SIGINT but exits
     ///   with a code of 0, this is considered an Abort instead of a Success.
-    /// - If a task had to be force killed because it was not responding, it is
-    ///   considered a failure and will have a Failed terminal state.
+    /// - If a worker had to be force killed because it was not responding, it
+    ///   is considered a failure and will have a Failed terminal state.
     Aborted,
 
     Failed,
@@ -169,29 +170,25 @@ impl ResourceSet {
 
 enum NodeEvent {
     /// Triggered by the internal container runtime whenever the container
-    /// running a task has changed in state.
-    ContainerStateChange {
-        container_id: String,
-    },
+    /// running a worker has changed in state.
+    ContainerStateChange { container_id: String },
 
     /// TODO: Remove this and use a TaskResultBundle instead.
     ContainerRuntimeEnded(Result<()>),
 
     ///
     /// Triggered by the blob fetcher task.
-    BlobAvailable {
-        blob_id: String,
-    },
+    BlobAvailable { blob_id: String },
 
     StopTimeout {
-        task_name: String,
+        worker_name: String,
         timer_id: usize,
     },
 
-    /// We have waited long enough to re-start a task in the RestartBackoff
+    /// We have waited long enough to re-start a worker in the RestartBackoff
     /// state.
     StartBackoffTimeout {
-        task_name: String,
+        worker_name: String,
         timer_id: usize,
     },
 }
@@ -207,7 +204,7 @@ pub struct NodeContext {
     /// All group ids which the node is allowed to impersonate.
     pub sub_gids: Vec<IdRange>,
 
-    /// User id range from which we will pull new user ids to run task
+    /// User id range from which we will pull new user ids to run worker
     /// containers.
     pub container_uids: IdRange,
 
@@ -263,35 +260,36 @@ struct NodeShared {
     /// TODO: Ensure monotonic timestamps even between node restarts.
     last_event_timestamp: Mutex<u64>,
 
-    /// Channel used to communicate that a state change has occured in a task.
-    /// This will trigger a potential update to the TaskStateMetadata.
+    /// Channel used to communicate that a state change has occured in a worker.
+    /// This will trigger a potential update to the WorkerStateMetadata.
     ///
     /// This channel is bounded to 1 message.
     ///
-    /// TODO: Consider sending the name of the changed task so that we don't
+    /// TODO: Consider sending the name of the changed worker so that we don't
     /// need to re-check all of them.
     state_change_channel: (channel::Sender<()>, channel::Receiver<()>),
 }
 
 struct NodeState {
-    tasks: Vec<Task>,
+    workers: Vec<Worker>,
     inner: NodeStateInner,
 }
 
 struct NodeStateInner {
-    container_id_to_task_name: HashMap<String, String>,
+    container_id_to_worker_name: HashMap<String, String>,
 
     next_uid: u32,
     next_gid: u32,
 
-    /// Map of host paths to the number of running tasks referencing them. This
-    /// is used to implement exclusive locks to volumes/devices.
+    /// Map of host paths to the number of running workers referencing them.
+    /// This is used to implement exclusive locks to volumes/devices.
     mounted_paths: HashMap<String, usize>,
 
     /// Tasks used to retrieve blobs from other servers.
     ///
     /// TODO: Need persistent backoff.
-    /// TODO: If all tasks requiring a blob are removed, stop the fetcher task.
+    /// TODO: If all workers requiring a blob are removed, stop the fetcher
+    /// task.
     blob_fetchers: HashMap<String, ChildTask>,
 }
 
@@ -303,7 +301,7 @@ impl Node {
         let db =
             Arc::new(EmbeddedDB::open(Path::new(config.data_dir()).join("db"), db_options).await?);
 
-        let id = match tasks_table::get_saved_node_id(&db).await? {
+        let id = match workers_table::get_saved_node_id(&db).await? {
             Some(id) => id,
             None => {
                 let id = if config.bootstrap_id_from_machine_id() {
@@ -322,7 +320,7 @@ impl Node {
                     return Err(err_msg("Node not initialized with an id"));
                 };
 
-                tasks_table::set_saved_node_id(&db, id).await?;
+                workers_table::set_saved_node_id(&db, id).await?;
 
                 id
             }
@@ -331,7 +329,7 @@ impl Node {
         println!("Node id: {}", common::base32::base32_encode_cl64(id));
 
         let inner = NodeStateInner {
-            container_id_to_task_name: HashMap::new(),
+            container_id_to_worker_name: HashMap::new(),
             // TODO: Preserve these across reboots and attempt to not re-use ids already
             // referenced in the file system.
             next_uid: context.container_uids.start_id,
@@ -346,7 +344,7 @@ impl Node {
             BlobStore::create(Path::new(config.data_dir()).join("blob"), db.clone()).await?;
 
         let last_event_timestamp = {
-            let last_db_time = tasks_table::get_events_timestamp(&db).await?.unwrap_or(0);
+            let last_db_time = workers_table::get_events_timestamp(&db).await?.unwrap_or(0);
             let current_time = NodeInner::current_system_timestamp();
             core::cmp::max(last_db_time, current_time)
         };
@@ -361,7 +359,7 @@ impl Node {
                 blobs,
                 runtime,
                 state: Mutex::new(NodeState {
-                    tasks: vec![],
+                    workers: vec![],
                     inner,
                 }),
                 event_channel: channel::unbounded(),
@@ -373,27 +371,27 @@ impl Node {
             }),
         };
 
-        let all_tasks = tasks_table::list_tasks(&inst.shared.db).await?;
-        for task_meta in all_tasks {
-            if !task_meta.spec().persistent() {
-                // TODO: Also add non-persistent tasks which are in a done state (this is mainly
-                // needed for tasks which have a non-ALWAYS restart policy so we know that we
-                // shouldn't start them again).
+        let all_workers = workers_table::list_workers(&inst.shared.db).await?;
+        for worker_meta in all_workers {
+            if !worker_meta.spec().persistent() {
+                // TODO: Also add non-persistent workers which are in a done state (this is
+                // mainly needed for workers which have a non-ALWAYS restart
+                // policy so we know that we shouldn't start them again).
                 continue;
             }
 
             // TODO: Don't allow the failure of this to block node startup.
             // We don't want the
-            // TODO: Provide more gurantees that any tasks that are persisted will actually
-            // be start-able.
-            let mut req = StartTaskRequest::default();
-            req.set_spec(task_meta.spec().clone());
-            req.set_revision(task_meta.revision());
+            // TODO: Provide more gurantees that any workers that are persisted will
+            // actually be start-able.
+            let mut req = StartWorkerRequest::default();
+            req.set_spec(worker_meta.spec().clone());
+            req.set_revision(worker_meta.revision());
 
-            if let Err(e) = inst.start_task(&req).await {
+            if let Err(e) = inst.start_worker(&req).await {
                 // TOOD: This should probably trigger a real error now that we isolate the start
                 // request.
-                eprintln!("Persistent task failed to start: {}", e);
+                eprintln!("Persistent worker failed to start: {}", e);
             }
         }
 
@@ -520,7 +518,7 @@ impl NodeInner {
         };
 
         // Perform initial update of our node entry.
-        // NOTE: We don't set last_seen yet as we haven't yet written the initial task
+        // NOTE: We don't set last_seen yet as we haven't yet written the initial worker
         // states.
         let mut node_state = run_transaction!(&meta_client, txn, {
             let node_table = txn.cluster_table::<NodeMetadata>();
@@ -561,9 +559,9 @@ impl NodeInner {
 
         // Perform first reconcile round.
         // NOTE: This MUST be done before the first last_seen heartbeat update so that
-        // we don't appear to be healthy while the TaskStateMetadata entries have stale
-        // values.
-        self.reconcile_tasks().await?;
+        // we don't appear to be healthy while the WorkerStateMetadata entries have
+        // stale values.
+        self.reconcile_workers().await?;
 
         let mut task_bundle = common::bundle::TaskResultBundle::new();
         task_bundle.add("run_heartbeat_loop", self.clone().run_heartbeat_loop());
@@ -602,124 +600,125 @@ impl NodeInner {
         let meta_client = self.shared.meta_client.get().await;
 
         loop {
-            self.reconcile_tasks().await?;
+            self.reconcile_workers().await?;
             self.shared.state_change_channel.1.recv().await?;
         }
     }
 
-    async fn read_reported_task_states(&self) -> Result<HashMap<String, TaskStateMetadata>> {
+    async fn read_reported_worker_states(&self) -> Result<HashMap<String, WorkerStateMetadata>> {
         let meta_client = self.shared.meta_client.get().await;
 
-        let intended_tasks = meta_client
-            .cluster_table::<TaskMetadata>()
+        let intended_workers = meta_client
+            .cluster_table::<WorkerMetadata>()
             .list_by_node(self.shared.id)
             .await?;
 
         let mut out = HashMap::new();
 
-        for task in intended_tasks {
+        for worker in intended_workers {
             let reported_state = meta_client
-                .cluster_table::<TaskStateMetadata>()
-                .get(task.spec().name())
+                .cluster_table::<WorkerStateMetadata>()
+                .get(worker.spec().name())
                 .await?
                 .unwrap_or_default();
 
-            out.insert(task.spec().name().to_string(), reported_state);
+            out.insert(worker.spec().name().to_string(), reported_state);
         }
 
         Ok(out)
     }
 
-    /// Diffs the set of tasks on the current node with these specified for this
-    /// node in the metastore (and applies the differences to this node).
+    /// Diffs the set of workers on the current node with these specified for
+    /// this node in the metastore (and applies the differences to this
+    /// node).
     ///
-    /// Additionally this updates the TaskStateMetadata for all tasks.
+    /// Additionally this updates the WorkerStateMetadata for all workers.
     ///
     /// TODO: Run this with it's own backoff loop.
     /// TODO: Make sure that all external requests have deadlines.
-    async fn reconcile_tasks(&self) -> Result<()> {
+    async fn reconcile_workers(&self) -> Result<()> {
         let meta_client = self.shared.meta_client.get().await;
 
-        let intended_tasks = meta_client
-            .cluster_table::<TaskMetadata>()
+        let intended_workers = meta_client
+            .cluster_table::<WorkerMetadata>()
             .list_by_node(self.shared.id)
             .await?;
 
-        // TODO: Cache this across multiple reconcile_tasks() calls.
-        let reported_task_states = self.read_reported_task_states().await?;
+        // TODO: Cache this across multiple reconcile_workers() calls.
+        let reported_worker_states = self.read_reported_worker_states().await?;
 
-        let existing_tasks = self.list_tasks_impl().await?;
+        let existing_workers = self.list_workers_impl().await?;
 
-        let existing_tasks_list = self.list_tasks_impl().await?;
-        let mut existing_tasks = HashMap::new();
-        for task in existing_tasks_list.tasks() {
-            // TODO: Skip permanently stopped tasks.
-            existing_tasks.insert(task.spec().name(), task);
+        let existing_workers_list = self.list_workers_impl().await?;
+        let mut existing_workers = HashMap::new();
+        for worker in existing_workers_list.workers() {
+            // TODO: Skip permanently stopped workers.
+            existing_workers.insert(worker.spec().name(), worker);
         }
 
-        for task in intended_tasks {
+        for worker in intended_workers {
             let (current_revision, current_state) =
-                if let Some(existing_task) = existing_tasks.remove(task.spec().name()) {
+                if let Some(existing_worker) = existing_workers.remove(worker.spec().name()) {
                     (
-                        existing_task.revision(),
-                        match existing_task.state() {
-                            TaskStateProto::UNKNOWN
-                            | TaskStateProto::PENDING
-                            | TaskStateProto::STOPPING
-                            | TaskStateProto::FORCE_STOPPING
-                            | TaskStateProto::RESTART_BACKOFF => {
-                                TaskStateMetadata_ReportedState::UPDATING
+                        existing_worker.revision(),
+                        match existing_worker.state() {
+                            WorkerStateProto::UNKNOWN
+                            | WorkerStateProto::PENDING
+                            | WorkerStateProto::STOPPING
+                            | WorkerStateProto::FORCE_STOPPING
+                            | WorkerStateProto::RESTART_BACKOFF => {
+                                WorkerStateMetadata_ReportedState::UPDATING
                             }
-                            TaskStateProto::RUNNING => TaskStateMetadata_ReportedState::READY,
-                            TaskStateProto::DONE => TaskStateMetadata_ReportedState::DONE,
+                            WorkerStateProto::RUNNING => WorkerStateMetadata_ReportedState::READY,
+                            WorkerStateProto::DONE => WorkerStateMetadata_ReportedState::DONE,
                         },
                     )
                 } else {
-                    (0, TaskStateMetadata_ReportedState::DONE)
+                    (0, WorkerStateMetadata_ReportedState::DONE)
                 };
 
-            // If the current task state is different than the last reported one, update the
-            // metastore.
-            let should_report_state = if let Some(old_state) =
-                reported_task_states.get(task.spec().name())
-            {
-                old_state.task_revision() != current_revision || old_state.state() != current_state
-            } else {
-                true
-            };
+            // If the current worker state is different than the last reported one, update
+            // the metastore.
+            let should_report_state =
+                if let Some(old_state) = reported_worker_states.get(worker.spec().name()) {
+                    old_state.worker_revision() != current_revision
+                        || old_state.state() != current_state
+                } else {
+                    true
+                };
             if should_report_state {
-                let mut state_meta = TaskStateMetadata::default();
-                state_meta.set_task_name(task.spec().name());
+                let mut state_meta = WorkerStateMetadata::default();
+                state_meta.set_worker_name(worker.spec().name());
                 state_meta.set_state(current_state);
-                state_meta.set_task_revision(current_revision);
+                state_meta.set_worker_revision(current_revision);
                 meta_client.cluster_table().put(&state_meta).await?;
             }
 
-            if !task.drain() {
-                // TODO: If the task is already running at an old revision, we may want to
+            if !worker.drain() {
+                // TODO: If the worker is already running at an old revision, we may want to
                 // implement a short delay before we stop the current instance (to allow clients
                 // to backoff).
 
-                let mut req = StartTaskRequest::default();
-                req.set_spec(task.spec().clone());
-                req.set_revision(task.revision());
-                self.start_task(&req).await?;
+                let mut req = StartWorkerRequest::default();
+                req.set_spec(worker.spec().clone());
+                req.set_revision(worker.revision());
+                self.start_worker(&req).await?;
             } else {
-                // TODO: Consider having a delay between a task being marked as
+                // TODO: Consider having a delay between a worker being marked as
                 // drained and it being stopped (so that clients have time to
                 // notice that it is stopping).
 
-                self.stop_task(task.spec().name(), false).await?;
+                self.stop_worker(worker.spec().name(), false).await?;
             }
         }
 
-        // All tasks present locally but not in the metastore should be stopped and
+        // All workers present locally but not in the metastore should be stopped and
         // eventually cleaned up.
-        for (_, task) in existing_tasks {
-            if task.state() == TaskStateProto::DONE {
-                // TODO: Remove the task from our self.shared.state.tasks
+        for (_, worker) in existing_workers {
+            if worker.state() == WorkerStateProto::DONE {
+                // TODO: Remove the worker from our self.shared.state.workers
             } else {
-                self.stop_task(task.spec().name(), false).await?;
+                self.stop_worker(worker.spec().name(), false).await?;
             }
         }
 
@@ -734,21 +733,22 @@ impl NodeInner {
                     let mut state_guard = self.shared.state.lock().await;
                     let state = &mut *state_guard;
 
-                    let task_name = match state.inner.container_id_to_task_name.get(&container_id) {
-                        Some(v) => v.clone(),
-                        None => {
-                            eprintln!(
-                                "Container id is not associated with a task: {}",
-                                container_id
-                            );
-                            continue;
-                        }
-                    };
+                    let worker_name =
+                        match state.inner.container_id_to_worker_name.get(&container_id) {
+                            Some(v) => v.clone(),
+                            None => {
+                                eprintln!(
+                                    "Container id is not associated with a worker: {}",
+                                    container_id
+                                );
+                                continue;
+                            }
+                        };
 
-                    let task = state
-                        .tasks
+                    let worker = state
+                        .workers
                         .iter_mut()
-                        .find(|t| t.spec.name() == task_name)
+                        .find(|t| t.spec.name() == worker_name)
                         .unwrap();
 
                     let container_meta = self
@@ -767,9 +767,9 @@ impl NodeInner {
 
                     self.shared.runtime.remove_container(&container_id).await?;
 
-                    let mut event = TaskEvent::default();
-                    event.set_task_name(task.spec.name());
-                    event.set_task_revision(task.revision);
+                    let mut event = WorkerEvent::default();
+                    event.set_worker_name(worker.spec.name());
+                    event.set_worker_revision(worker.revision);
                     event.set_container_id(&container_id);
                     event
                         .stopped_mut()
@@ -777,17 +777,17 @@ impl NodeInner {
                     self.record_event(event).await?;
 
                     // No longer running, so clear the container id
-                    task.container_id = None;
+                    worker.container_id = None;
 
-                    if task.pending_update.is_some() {
-                        self.transition_task_to_running(&mut state.inner, task)
+                    if worker.pending_update.is_some() {
+                        self.transition_worker_to_running(&mut state.inner, worker)
                             .await?;
                     } else {
-                        self.transition_task_to_backoff(task).await;
+                        self.transition_worker_to_backoff(worker).await;
                     }
                 }
                 NodeEvent::StopTimeout {
-                    task_name,
+                    worker_name,
                     timer_id: event_timer_id,
                 } => {
                     // If the timer id matches the one in the current Stopped state, then we'll send
@@ -795,28 +795,32 @@ impl NodeInner {
 
                     let mut state = self.shared.state.lock().await;
 
-                    let task = match state.tasks.iter_mut().find(|t| t.spec.name() == task_name) {
+                    let worker = match state
+                        .workers
+                        .iter_mut()
+                        .find(|t| t.spec.name() == worker_name)
+                    {
                         Some(t) => t,
                         None => {
                             // Most likely a race condition with the timer event being processed
-                            // after the task was deleted.
+                            // after the worker was deleted.
                             continue;
                         }
                     };
 
                     let mut should_force_stop = false;
-                    if let TaskState::Stopping { timer_id, .. } = &task.state {
+                    if let WorkerState::Stopping { timer_id, .. } = &worker.state {
                         if *timer_id == event_timer_id {
                             should_force_stop = true;
                         }
                     }
 
                     if should_force_stop {
-                        self.transition_task_to_force_stopping(task).await?;
+                        self.transition_worker_to_force_stopping(worker).await?;
                     }
                 }
                 NodeEvent::BlobAvailable { blob_id } => {
-                    // When a blob is available, we want to check all pending tasks to see if that
+                    // When a blob is available, we want to check all pending workers to see if that
                     // allows us to start running it.
 
                     let mut state_guard = self.shared.state.lock().await;
@@ -825,45 +829,49 @@ impl NodeInner {
                     // We no longer need to be fetching the blob.
                     state.inner.blob_fetchers.remove(&blob_id);
 
-                    for task in &mut state.tasks {
-                        if let TaskState::Pending {
+                    for worker in &mut state.workers {
+                        if let WorkerState::Pending {
                             missing_requirements,
-                        } = &mut task.state
+                        } = &mut worker.state
                         {
                             missing_requirements.blobs.remove(&blob_id);
 
                             if missing_requirements.is_empty() {
-                                self.transition_task_to_running(&mut state.inner, task)
+                                self.transition_worker_to_running(&mut state.inner, worker)
                                     .await;
                             }
                         }
                     }
                 }
                 NodeEvent::StartBackoffTimeout {
-                    task_name,
+                    worker_name,
                     timer_id: event_timer_id,
                 } => {
                     let mut state_guard = self.shared.state.lock().await;
                     let state = &mut *state_guard;
 
-                    let task = match state.tasks.iter_mut().find(|t| t.spec.name() == task_name) {
+                    let worker = match state
+                        .workers
+                        .iter_mut()
+                        .find(|t| t.spec.name() == worker_name)
+                    {
                         Some(t) => t,
                         None => {
                             // Most likely a race condition with the timer event being processed
-                            // after the task was deleted.
+                            // after the worker was deleted.
                             continue;
                         }
                     };
 
                     let mut should_start = false;
-                    if let TaskState::RestartBackoff { timer_id, .. } = &task.state {
+                    if let WorkerState::RestartBackoff { timer_id, .. } = &worker.state {
                         if *timer_id == event_timer_id {
                             should_start = true;
                         }
                     }
 
                     if should_start {
-                        self.transition_task_to_running(&mut state.inner, task)
+                        self.transition_worker_to_running(&mut state.inner, worker)
                             .await;
                     }
                 }
@@ -879,77 +887,79 @@ impl NodeInner {
     }
 
     fn persistent_data_dir(&self) -> PathBuf {
-        Path::new(self.shared.config.data_dir()).join("volume/per-task")
+        Path::new(self.shared.config.data_dir()).join("volume/per-worker")
     }
 
-    async fn list_tasks_impl(&self) -> Result<ListTasksResponse> {
+    async fn list_workers_impl(&self) -> Result<ListWorkersResponse> {
         let state = self.shared.state.lock().await;
-        let mut out = ListTasksResponse::default();
-        for task in &state.tasks {
-            let mut proto = TaskProto::default();
-            proto.set_spec(task.spec.clone());
-            proto.set_revision(task.revision);
-            if let Some(pending_update) = &task.pending_update {
+        let mut out = ListWorkersResponse::default();
+        for worker in &state.workers {
+            let mut proto = WorkerProto::default();
+            proto.set_spec(worker.spec.clone());
+            proto.set_revision(worker.revision);
+            if let Some(pending_update) = &worker.pending_update {
                 proto.set_pending_update(pending_update.clone());
             }
-            if let Some(id) = &task.container_id {
+            if let Some(id) = &worker.container_id {
                 if let Some(meta) = self.shared.runtime.get_container(id.as_str()).await {
                     proto.set_container(meta);
                 }
             }
 
-            proto.set_state(match &task.state {
-                TaskState::Pending {
+            proto.set_state(match &worker.state {
+                WorkerState::Pending {
                     missing_requirements,
-                } => TaskStateProto::PENDING,
-                TaskState::Running => TaskStateProto::RUNNING,
-                TaskState::Stopping {
+                } => WorkerStateProto::PENDING,
+                WorkerState::Running => WorkerStateProto::RUNNING,
+                WorkerState::Stopping {
                     timer_id,
                     timeout_task,
-                } => TaskStateProto::STOPPING,
-                TaskState::ForceStopping => TaskStateProto::FORCE_STOPPING,
-                TaskState::RestartBackoff {
+                } => WorkerStateProto::STOPPING,
+                WorkerState::ForceStopping => WorkerStateProto::FORCE_STOPPING,
+                WorkerState::RestartBackoff {
                     timer_id,
                     timeout_task,
-                } => TaskStateProto::RESTART_BACKOFF,
-                TaskState::Done => TaskStateProto::DONE,
+                } => WorkerStateProto::RESTART_BACKOFF,
+                WorkerState::Done => WorkerStateProto::DONE,
             });
 
-            out.add_tasks(proto);
+            out.add_workers(proto);
         }
 
         Ok(out)
     }
 
-    /// Tries to transition the task to the Running state.
+    /// Tries to transition the worker to the Running state.
     /// When this is called, we assume that we are currently not running any
     /// containers and if any backoff was required, it has already been
     /// waited.
     ///
     /// NOTE: If this function returns an Error, it should be considered fatal.
-    /// Most partial task specific failures should be done in
-    /// transition_task_to_running_impl.
-    async fn transition_task_to_running(
+    /// Most partial worker specific failures should be done in
+    /// transition_worker_to_running_impl.
+    async fn transition_worker_to_running(
         &self,
         state_inner: &mut NodeStateInner,
-        task: &mut Task,
+        worker: &mut Worker,
     ) -> Result<()> {
-        if let Some(req) = task.pending_update.take() {
-            task.revision = req.revision();
-            task.spec = req.spec().clone();
+        if let Some(req) = worker.pending_update.take() {
+            worker.revision = req.revision();
+            worker.spec = req.spec().clone();
         }
 
-        if task.container_id.is_some() {
-            return Err(err_msg("Task still has an old container_id while starting"));
+        if worker.container_id.is_some() {
+            return Err(err_msg(
+                "Worker still has an old container_id while starting",
+            ));
         }
 
         if let Err(e) = self
-            .transition_task_to_running_impl(state_inner, task)
+            .transition_worker_to_running_impl(state_inner, worker)
             .await
         {
             // TODO: Can we differentiate between failures caused by the node and failures
-            // caused by the task's specification? (to know which ones should and shouldn't
-            // be retried)
+            // caused by the worker's specification? (to know which ones should and
+            // shouldn't be retried)
 
             let status = {
                 if let Some(e) = e.downcast_ref::<rpc::Status>() {
@@ -959,23 +969,23 @@ impl NodeInner {
                 }
             };
 
-            let mut event = TaskEvent::default();
-            event.set_task_name(task.spec.name());
-            event.set_task_revision(task.revision);
+            let mut event = WorkerEvent::default();
+            event.set_worker_name(worker.spec.name());
+            event.set_worker_revision(worker.revision);
             event.start_failure_mut().set_status(status);
 
             self.record_event(event).await?;
 
-            self.transition_task_to_backoff(task).await;
+            self.transition_worker_to_backoff(worker).await;
         }
 
         Ok(())
     }
 
-    async fn transition_task_to_running_impl(
+    async fn transition_worker_to_running_impl(
         &self,
         state_inner: &mut NodeStateInner,
-        task: &mut Task,
+        worker: &mut Worker,
     ) -> Result<()> {
         let mut container_config = self.shared.config.container_template().clone();
 
@@ -995,7 +1005,7 @@ impl NodeInner {
             .user_mut()
             .set_gid(process_gid);
 
-        for additional_group in task.spec.additional_groups() {
+        for additional_group in worker.spec.additional_groups() {
             let gid = *self
                 .shared
                 .context
@@ -1041,10 +1051,10 @@ impl NodeInner {
 
         // container_config.process_mut().set_terminal(true);
 
-        for arg in task.spec.args() {
+        for arg in worker.spec.args() {
             container_config.process_mut().add_args(arg.clone());
         }
-        for val in task.spec.env() {
+        for val in worker.spec.env() {
             container_config.process_mut().add_env(val.clone());
         }
 
@@ -1054,8 +1064,8 @@ impl NodeInner {
                 .add_env(format!("{}={}", NODE_ID_ENV_VAR, self.shared.id));
             container_config.process_mut().add_env(format!(
                 "{}={}",
-                TASK_NAME_ENV_VAR,
-                task.spec.name()
+                worker_name_ENV_VAR,
+                worker.spec.name()
             ));
             container_config.process_mut().add_env(format!(
                 "{}={}",
@@ -1064,9 +1074,9 @@ impl NodeInner {
             ));
         }
 
-        container_config.process_mut().set_cwd(task.spec.cwd());
+        container_config.process_mut().set_cwd(worker.spec.cwd());
 
-        for port in task.spec.ports() {
+        for port in worker.spec.ports() {
             if port.number() == 0 {
                 return Err(rpc::Status::invalid_argument(format!(
                     "Port not assigned a number: {}",
@@ -1086,12 +1096,12 @@ impl NodeInner {
 
         let mut blob_leases = vec![];
 
-        for volume in task.spec.volumes() {
+        for volume in worker.spec.volumes() {
             let mut mount = ContainerMount::default();
             mount.set_destination(format!("/volumes/{}", volume.name()));
 
             match volume.source_case() {
-                TaskSpec_VolumeSourceCase::Bundle(bundle) => {
+                WorkerSpec_VolumeSourceCase::Bundle(bundle) => {
                     let blob_id = self.select_bundle_blob(bundle)?;
 
                     let blob_lease = match self.shared.blobs.read_lease(blob_id.as_str()).await {
@@ -1109,7 +1119,7 @@ impl NodeInner {
                     mount.add_options("ro".into());
                     blob_leases.push(blob_lease);
                 }
-                TaskSpec_VolumeSourceCase::PersistentName(name) => {
+                WorkerSpec_VolumeSourceCase::PersistentName(name) => {
                     let dir = self.persistent_data_dir().join(name);
                     let dir_str = dir.to_str().unwrap().to_string();
 
@@ -1162,13 +1172,13 @@ impl NodeInner {
                     mount.add_options("bind".into());
                     mount.set_source(dir_str);
                 }
-                TaskSpec_VolumeSourceCase::BuildTarget(_) => {
+                WorkerSpec_VolumeSourceCase::BuildTarget(_) => {
                     return Err(rpc::Status::invalid_argument(
                         "Build target volumes should converted locally first",
                     )
                     .into());
                 }
-                TaskSpec_VolumeSourceCase::Unknown => {
+                WorkerSpec_VolumeSourceCase::Unknown => {
                     return Err(
                         rpc::Status::invalid_argument("No source configured for volume").into(),
                     );
@@ -1178,7 +1188,7 @@ impl NodeInner {
             container_config.add_mounts(mount);
         }
 
-        for device in task.spec.devices() {
+        for device in worker.spec.devices() {
             // TODO: Implement
             // - exclusive locks
             // - min and max quantity of each device
@@ -1248,7 +1258,7 @@ impl NodeInner {
         if !missing_requirements.is_empty() {
             // TODO: Log this as an event.
 
-            task.state = TaskState::Pending {
+            worker.state = WorkerState::Pending {
                 missing_requirements,
             };
             let _ = self.shared.state_change_channel.0.try_send(());
@@ -1261,23 +1271,23 @@ impl NodeInner {
             .start_container(&container_config)
             .await?;
 
-        if let Some(old_container_id) = task.container_id.take() {
+        if let Some(old_container_id) = worker.container_id.take() {
             state_inner
-                .container_id_to_task_name
+                .container_id_to_worker_name
                 .remove(&old_container_id);
         }
         state_inner
-            .container_id_to_task_name
-            .insert(container_id.clone(), task.spec.name().to_string());
+            .container_id_to_worker_name
+            .insert(container_id.clone(), worker.spec.name().to_string());
 
-        task.blob_leases = blob_leases;
-        task.container_id = Some(container_id.clone());
-        task.state = TaskState::Running;
+        worker.blob_leases = blob_leases;
+        worker.container_id = Some(container_id.clone());
+        worker.state = WorkerState::Running;
         let _ = self.shared.state_change_channel.0.try_send(());
 
-        let mut event = TaskEvent::default();
-        event.set_task_name(task.spec.name());
-        event.set_task_revision(task.revision);
+        let mut event = WorkerEvent::default();
+        event.set_worker_name(worker.spec.name());
+        event.set_worker_revision(worker.revision);
         event.set_container_id(&container_id);
         event.started_mut();
         self.record_event(event).await?;
@@ -1313,72 +1323,75 @@ impl NodeInner {
     }
 
     /// Arguments:
-    /// - task:
-    /// - successful: true if the task has been run and exited with a successful
-    ///   status code.
-    async fn transition_task_to_backoff(&self, task: &mut Task /* , successful: bool */) {
-        // let should_retry = match task.spec.restart_policy() {
-        //     TaskSpec_RestartPolicy::UNKNOWN | TaskSpec_RestartPolicy::ALWAYS => true,
-        //     TaskSpec_RestartPolicy::NEVER => false,
-        //     TaskSpec_RestartPolicy::ON_FAILURE => !successful,
+    /// - worker:
+    /// - successful: true if the worker has been run and exited with a
+    ///   successful status code.
+    async fn transition_worker_to_backoff(
+        &self,
+        worker: &mut Worker, /* , successful: bool */
+    ) {
+        // let should_retry = match worker.spec.restart_policy() {
+        //     WorkerSpec_RestartPolicy::UNKNOWN | WorkerSpec_RestartPolicy::ALWAYS =>
+        // true,     WorkerSpec_RestartPolicy::NEVER => false,
+        //     WorkerSpec_RestartPolicy::ON_FAILURE => !successful,
         // };
 
         // if !should_retry {
-        //     self.transition_task_to_terminal(task);
+        //     self.transition_worker_to_terminal(worker);
         //     return;
         // }
 
         // TODO: Check the restart policy to see if we should
 
-        if task.permanent_stop {
-            self.transition_task_to_done(task);
+        if worker.permanent_stop {
+            self.transition_worker_to_done(worker);
             return;
         }
 
         // NOTE: This is intentionally false and not using the 'successful' bool.
-        task.start_backoff.end_attempt(false);
+        worker.start_backoff.end_attempt(false);
 
-        match task.start_backoff.start_attempt() {
+        match worker.start_backoff.start_attempt() {
             ExponentialBackoffResult::Start => {
                 // NOTE: This should never happen as we marked the attempt as failing.
                 // TODO: consider waiting for a minimum amount of time in this case.
-                panic!("No backoff time for container task")
+                panic!("No backoff time for container worker")
             }
             ExponentialBackoffResult::StartAfter(wait_time) => {
                 // TODO: Deduplicate this timer code.
-                // TODO: Instead use the task id of the child task.
+                // TODO: Instead use the worker id of the child worker.
                 let timer_id = self
                     .shared
                     .last_timer_id
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-                let task_name = task.spec.name().to_string();
+                let worker_name = worker.spec.name().to_string();
                 let timeout_sender = self.shared.event_channel.0.clone();
                 let timeout_task = ChildTask::spawn(async move {
                     common::async_std::task::sleep(wait_time).await;
                     let _ = timeout_sender
                         .send(NodeEvent::StartBackoffTimeout {
-                            task_name,
+                            worker_name,
                             timer_id,
                         })
                         .await;
                 });
 
-                task.state = TaskState::RestartBackoff {
+                worker.state = WorkerState::RestartBackoff {
                     timer_id,
                     timeout_task,
                 };
                 let _ = self.shared.state_change_channel.0.try_send(());
             }
             ExponentialBackoffResult::Stop => {
-                self.transition_task_to_done(task);
+                self.transition_worker_to_done(worker);
             }
         }
     }
 
-    fn transition_task_to_done(&self, task: &mut Task) {
-        task.state = TaskState::Done;
-        task.blob_leases.clear();
+    fn transition_worker_to_done(&self, worker: &mut Worker) {
+        worker.state = WorkerState::Done;
+        worker.blob_leases.clear();
         let _ = self.shared.state_change_channel.0.try_send(());
     }
 
@@ -1398,7 +1411,7 @@ impl NodeInner {
                     common::async_std::task::sleep(wait_time).await
                 }
                 ExponentialBackoffResult::Stop => {
-                    // TODO: If all attempts fail, then mark all pending tasks as failed.
+                    // TODO: If all attempts fail, then mark all pending workers as failed.
                     return;
                 }
             }
@@ -1502,12 +1515,12 @@ impl NodeInner {
         Ok(())
     }
 
-    async fn transition_task_to_stopping(&self, task: &mut Task) -> Result<()> {
-        let container_id = task.container_id.as_ref().unwrap();
+    async fn transition_worker_to_stopping(&self, worker: &mut Worker) -> Result<()> {
+        let container_id = worker.container_id.as_ref().unwrap();
 
-        let mut event = TaskEvent::default();
-        event.set_task_name(task.spec.name());
-        event.set_task_revision(task.revision);
+        let mut event = WorkerEvent::default();
+        event.set_worker_name(worker.spec.name());
+        event.set_worker_revision(worker.revision);
         event.set_container_id(container_id);
         event.stopping_mut().set_force(false);
         self.record_event(event).await?;
@@ -1517,13 +1530,13 @@ impl NodeInner {
             .kill_container(container_id, nix::sys::signal::Signal::SIGINT)
             .await?;
 
-        // TODO: Instead use the task id of the child task.
+        // TODO: Instead use the worker id of the child worker.
         let timer_id = self
             .shared
             .last_timer_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-        let task_name = task.spec.name().to_string();
+        let worker_name = worker.spec.name().to_string();
         let timeout_duration =
             Duration::from_secs(self.shared.config.graceful_shutdown_timeout_secs() as u64);
         let timeout_sender = self.shared.event_channel.0.clone();
@@ -1531,13 +1544,13 @@ impl NodeInner {
             common::async_std::task::sleep(timeout_duration).await;
             let _ = timeout_sender
                 .send(NodeEvent::StopTimeout {
-                    task_name,
+                    worker_name,
                     timer_id,
                 })
                 .await;
         });
 
-        task.state = TaskState::Stopping {
+        worker.state = WorkerState::Stopping {
             timer_id,
             timeout_task,
         };
@@ -1546,12 +1559,12 @@ impl NodeInner {
         Ok(())
     }
 
-    async fn transition_task_to_force_stopping(&self, task: &mut Task) -> Result<()> {
-        let container_id = task.container_id.as_ref().unwrap();
+    async fn transition_worker_to_force_stopping(&self, worker: &mut Worker) -> Result<()> {
+        let container_id = worker.container_id.as_ref().unwrap();
 
-        let mut event = TaskEvent::default();
-        event.set_task_name(task.spec.name());
-        event.set_task_revision(task.revision);
+        let mut event = WorkerEvent::default();
+        event.set_worker_name(worker.spec.name());
+        event.set_worker_revision(worker.revision);
         event.set_container_id(container_id);
         event.stopping_mut().set_force(true);
         self.record_event(event).await?;
@@ -1561,29 +1574,29 @@ impl NodeInner {
             .kill_container(container_id, nix::sys::signal::Signal::SIGKILL)
             .await?;
 
-        task.state = TaskState::ForceStopping;
+        worker.state = WorkerState::ForceStopping;
         let _ = self.shared.state_change_channel.0.try_send(());
 
         Ok(())
     }
 
-    pub async fn start_task(&self, request: &StartTaskRequest) -> Result<()> {
+    pub async fn start_worker(&self, request: &StartWorkerRequest) -> Result<()> {
         let mut state_guard = self.shared.state.lock().await;
         let state = &mut *state_guard;
 
-        let existing_task = state
-            .tasks
+        let existing_worker = state
+            .workers
             .iter_mut()
             .find(|t| t.spec.name() == request.spec().name());
 
         // If we were given a revision, we will skip the update if it hasn't changed.
         if request.revision() != 0 {
-            if let Some(task) = &existing_task {
-                if task.revision == request.revision() {
+            if let Some(worker) = &existing_worker {
+                if worker.revision == request.revision() {
                     return Ok(());
                 }
 
-                if let Some(pending_update) = &task.pending_update {
+                if let Some(pending_update) = &worker.pending_update {
                     if pending_update.revision() == request.revision() {
                         return Ok(());
                     }
@@ -1591,26 +1604,26 @@ impl NodeInner {
             }
         }
 
-        // TODO: Consider only storing this once the task successfully starts up.
-        // TODO: Eventually delete non-persistent tasks.
-        // TODO: Once a task has failed, don't restart it on node re-boots.
-        let mut meta = TaskMetadata::default();
+        // TODO: Consider only storing this once the worker successfully starts up.
+        // TODO: Eventually delete non-persistent workers.
+        // TODO: Once a worker has failed, don't restart it on node re-boots.
+        let mut meta = WorkerMetadata::default();
         meta.set_spec(request.spec().clone());
         meta.set_revision(request.revision());
-        tasks_table::put_task(&self.shared.db, &meta).await?;
+        workers_table::put_worker(&self.shared.db, &meta).await?;
 
-        let task = {
-            if let Some(task) = existing_task {
-                task.permanent_stop = false;
-                task.start_backoff.reset();
-                task.pending_update = Some(request.clone());
-                task
+        let worker = {
+            if let Some(worker) = existing_worker {
+                worker.permanent_stop = false;
+                worker.start_backoff.reset();
+                worker.pending_update = Some(request.clone());
+                worker
             } else {
-                state.tasks.push(Task {
+                state.workers.push(Worker {
                     spec: request.spec().clone(),
                     revision: request.revision(),
                     container_id: None,
-                    state: TaskState::Pending {
+                    state: WorkerState::Pending {
                         missing_requirements: ResourceSet::default(),
                     },
                     pending_update: None,
@@ -1624,19 +1637,21 @@ impl NodeInner {
                         max_num_attempts: 8,
                     }),
                 });
-                state.tasks.last_mut().unwrap()
+                state.workers.last_mut().unwrap()
             }
         };
 
-        match &task.state {
-            TaskState::Pending { .. } | TaskState::RestartBackoff { .. } | TaskState::Done => {
-                self.transition_task_to_running(&mut state.inner, task)
+        match &worker.state {
+            WorkerState::Pending { .. }
+            | WorkerState::RestartBackoff { .. }
+            | WorkerState::Done => {
+                self.transition_worker_to_running(&mut state.inner, worker)
                     .await?;
             }
-            TaskState::Running => {
-                self.transition_task_to_stopping(task).await?;
+            WorkerState::Running => {
+                self.transition_worker_to_stopping(worker).await?;
             }
-            TaskState::Stopping { .. } | TaskState::ForceStopping => {
+            WorkerState::Stopping { .. } | WorkerState::ForceStopping => {
                 // We don't need to do anything. Once the container finishes
                 // stopping, the new container will be brought
                 // up.
@@ -1646,26 +1661,26 @@ impl NodeInner {
         Ok(())
     }
 
-    /// TODO: Should we have this compare to the revision of the task?
-    pub async fn stop_task(&self, name: &str, force_stop: bool) -> Result<()> {
+    /// TODO: Should we have this compare to the revision of the worker?
+    pub async fn stop_worker(&self, name: &str, force_stop: bool) -> Result<()> {
         let mut state_guard = self.shared.state.lock().await;
         let state = &mut *state_guard;
 
         // NOTE: We can't return a not found error right now as this is used in the
-        // node_registration code even when we don't know if the task is present.
-        let task = match state.tasks.iter_mut().find(|t| t.spec.name() == name) {
-            Some(task) => task,
+        // node_registration code even when we don't know if the worker is present.
+        let worker = match state.workers.iter_mut().find(|t| t.spec.name() == name) {
+            Some(worker) => worker,
             None => {
                 return Ok(());
             }
         };
 
         // Exit earlier if we are stopped and already stopping.
-        if let TaskState::Done = &task.state {
+        if let WorkerState::Done = &worker.state {
             return Ok(());
-        } else if task.permanent_stop {
-            let is_force_stopping = match &task.state {
-                TaskState::ForceStopping => true,
+        } else if worker.permanent_stop {
+            let is_force_stopping = match &worker.state {
+                WorkerState::ForceStopping => true,
                 _ => false,
             };
 
@@ -1674,31 +1689,33 @@ impl NodeInner {
             }
         }
 
-        // Delete the task from our local db so we don't restart it on node restarts.
-        tasks_table::delete_task(&self.shared.db, task.spec.name()).await?;
+        // Delete the worker from our local db so we don't restart it on node restarts.
+        workers_table::delete_worker(&self.shared.db, worker.spec.name()).await?;
 
-        task.pending_update = None;
-        task.permanent_stop = true;
+        worker.pending_update = None;
+        worker.permanent_stop = true;
 
-        match &task.state {
-            TaskState::Pending { .. } | TaskState::RestartBackoff { .. } | TaskState::Running => {
+        match &worker.state {
+            WorkerState::Pending { .. }
+            | WorkerState::RestartBackoff { .. }
+            | WorkerState::Running => {
                 // Should stop
             }
-            TaskState::Stopping { .. } => {
+            WorkerState::Stopping { .. } => {
                 if !force_stop {
                     return Ok(());
                 }
             }
-            TaskState::ForceStopping | TaskState::Done => {
+            WorkerState::ForceStopping | WorkerState::Done => {
                 // Nothing to do.
                 return Ok(());
             }
         }
 
         if force_stop {
-            self.transition_task_to_force_stopping(task).await?;
+            self.transition_worker_to_force_stopping(worker).await?;
         } else {
-            self.transition_task_to_stopping(task).await?;
+            self.transition_worker_to_stopping(worker).await?;
         }
 
         Ok(())
@@ -1711,7 +1728,7 @@ impl NodeInner {
             .as_micros() as u64
     }
 
-    async fn record_event(&self, mut event: TaskEvent) -> Result<()> {
+    async fn record_event(&self, mut event: WorkerEvent) -> Result<()> {
         // eprintln!("Event: {:?}", event);
 
         let mut time = self.shared.last_event_timestamp.lock().await;
@@ -1719,7 +1736,7 @@ impl NodeInner {
         event.set_timestamp(*time);
         drop(time);
 
-        tasks_table::put_task_event(self.shared.db.as_ref(), &event).await
+        workers_table::put_worker_event(self.shared.db.as_ref(), &event).await
     }
 }
 
@@ -1735,14 +1752,14 @@ impl ContainerNodeService for NodeInner {
         Ok(())
     }
 
-    // rpc ListTasks (ListTasksRequest) returns (ListTasksResponse);
+    // rpc ListWorkers (ListWorkersRequest) returns (ListWorkersResponse);
 
-    async fn ListTasks(
+    async fn ListWorkers(
         &self,
-        request: rpc::ServerRequest<ListTasksRequest>,
-        response: &mut rpc::ServerResponse<ListTasksResponse>,
+        request: rpc::ServerRequest<ListWorkersRequest>,
+        response: &mut rpc::ServerResponse<ListWorkersResponse>,
     ) -> Result<()> {
-        response.value = self.list_tasks_impl().await?;
+        response.value = self.list_workers_impl().await?;
 
         Ok(())
     }
@@ -1764,15 +1781,15 @@ impl ContainerNodeService for NodeInner {
         Ok(())
     }
 
-    async fn StartTask(
+    async fn StartWorker(
         &self,
-        request: rpc::ServerRequest<StartTaskRequest>,
-        response: &mut rpc::ServerResponse<StartTaskResponse>,
+        request: rpc::ServerRequest<StartWorkerRequest>,
+        response: &mut rpc::ServerResponse<StartWorkerResponse>,
     ) -> Result<()> {
-        self.start_task(&request.value).await
+        self.start_worker(&request.value).await
     }
 
-    // TODO: When the Node closes, we should kill all tasks that it has
+    // TODO: When the Node closes, we should kill all workers that it has
 
     async fn GetLogs(
         &self,
@@ -1782,7 +1799,7 @@ impl ContainerNodeService for NodeInner {
         let container_id = {
             if request.attempt_id() != 0 {
                 let attempt_event =
-                    tasks_table::get_task_events(&self.shared.db, request.task_name())
+                    workers_table::get_worker_events(&self.shared.db, request.worker_name())
                         .await?
                         .into_iter()
                         .find(|e| e.timestamp() == request.attempt_id())
@@ -1802,18 +1819,18 @@ impl ContainerNodeService for NodeInner {
                 // Default behavior is to look up the currently running container.
 
                 let state = self.shared.state.lock().await;
-                let task = state
-                    .tasks
+                let worker = state
+                    .workers
                     .iter()
-                    .find(|t| t.spec.name() == request.task_name())
+                    .find(|t| t.spec.name() == request.worker_name())
                     .ok_or_else(|| {
                         Error::from(rpc::Status::not_found(format!(
-                            "No task found with name: {}",
-                            request.task_name()
+                            "No worker found with name: {}",
+                            request.worker_name()
                         )))
                     })?;
 
-                task.container_id.clone().ok_or_else(|| {
+                worker.container_id.clone().ok_or_else(|| {
                     rpc::Status::invalid_argument("Container not currently running")
                 })?
             }
@@ -1870,23 +1887,23 @@ impl ContainerNodeService for NodeInner {
                 None => break,
             };
 
-            // TODO: If we require that all messages be for the same task_name and process
+            // TODO: If we require that all messages be for the same worker_name and process
             // id, then we can cache this value instead of looking it up every
             // time.
             let container_id = {
                 let state = self.shared.state.lock().await;
-                let task = state
-                    .tasks
+                let worker = state
+                    .workers
                     .iter()
-                    .find(|t| t.spec.name() == input.task_name())
+                    .find(|t| t.spec.name() == input.worker_name())
                     .ok_or_else(|| {
                         Error::from(rpc::Status::not_found(format!(
-                            "No task found with name: {}",
-                            input.task_name()
+                            "No worker found with name: {}",
+                            input.worker_name()
                         )))
                     })?;
 
-                task.container_id.clone().unwrap()
+                worker.container_id.clone().unwrap()
             };
 
             self.shared
@@ -1903,7 +1920,8 @@ impl ContainerNodeService for NodeInner {
         request: rpc::ServerRequest<GetEventsRequest>,
         response: &mut rpc::ServerResponse<GetEventsResponse>,
     ) -> Result<()> {
-        let events = tasks_table::get_task_events(&self.shared.db, request.task_name()).await?;
+        let events =
+            workers_table::get_worker_events(&self.shared.db, request.worker_name()).await?;
         for event in events {
             response.value.add_events(event);
         }

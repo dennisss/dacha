@@ -3,7 +3,7 @@ replicas: 1
 scheduling {
     distinct_nodes: true
 }
-task {
+worker {
     persistent: true
 
     args: [

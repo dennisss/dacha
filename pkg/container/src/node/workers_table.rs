@@ -9,53 +9,53 @@ use sstable::db::WriteBatch;
 use sstable::iterable::Iterable;
 use sstable::EmbeddedDB;
 
-use crate::proto::meta::TaskMetadata;
-use crate::proto::task_event::TaskEvent;
+use crate::proto::meta::WorkerMetadata;
+use crate::proto::worker_event::WorkerEvent;
 
-const TASKS_TABLE_ID: u64 = 11;
+const WORKERS_TABLE_ID: u64 = 11;
 const NODE_ID_TABLE_ID: u64 = 12;
 const BLOBS_TABLE_ID: u64 = 13;
 const EVENTS_TABLE_ID: u64 = 14;
 const EVENTS_TIMESTAMP_ID: u64 = 15;
 
-pub async fn list_tasks(db: &EmbeddedDB) -> Result<Vec<TaskMetadata>> {
+pub async fn list_workers(db: &EmbeddedDB) -> Result<Vec<WorkerMetadata>> {
     let mut start_key = vec![];
-    KeyEncoder::encode_varuint(TASKS_TABLE_ID, false, &mut start_key);
+    KeyEncoder::encode_varuint(WORKERS_TABLE_ID, false, &mut start_key);
 
     let mut iter = db.snapshot().await.iter().await?;
     iter.seek(&start_key).await?;
 
-    let mut tasks = vec![];
+    let mut workers = vec![];
 
     while let Some(entry) = iter.next().await? {
         let (table_id, _) = KeyEncoder::decode_varuint(&entry.key, false)?;
-        if table_id != TASKS_TABLE_ID {
+        if table_id != WORKERS_TABLE_ID {
             break;
         }
 
         // TODO: Pull the name out of the key.
         if let Some(value) = entry.value {
-            tasks.push(TaskMetadata::parse(&value)?);
+            workers.push(WorkerMetadata::parse(&value)?);
         }
     }
 
-    Ok(tasks)
+    Ok(workers)
 }
 
-pub async fn delete_task(db: &EmbeddedDB, task_name: &str) -> Result<()> {
+pub async fn delete_worker(db: &EmbeddedDB, worker_name: &str) -> Result<()> {
     let mut key = vec![];
-    KeyEncoder::encode_varuint(TASKS_TABLE_ID, false, &mut key);
-    KeyEncoder::encode_bytes(task_name.as_bytes(), &mut key);
+    KeyEncoder::encode_varuint(WORKERS_TABLE_ID, false, &mut key);
+    KeyEncoder::encode_bytes(worker_name.as_bytes(), &mut key);
 
     db.delete(&key).await
 }
 
-pub async fn put_task(db: &EmbeddedDB, task: &TaskMetadata) -> Result<()> {
+pub async fn put_worker(db: &EmbeddedDB, worker: &WorkerMetadata) -> Result<()> {
     let mut key = vec![];
-    KeyEncoder::encode_varuint(TASKS_TABLE_ID, false, &mut key);
-    KeyEncoder::encode_bytes(task.spec().name().as_bytes(), &mut key);
+    KeyEncoder::encode_varuint(WORKERS_TABLE_ID, false, &mut key);
+    KeyEncoder::encode_bytes(worker.spec().name().as_bytes(), &mut key);
 
-    let value = task.serialize()?;
+    let value = worker.serialize()?;
 
     db.set(&key, &value).await
 }
@@ -145,14 +145,14 @@ pub async fn get_events_timestamp(db: &EmbeddedDB) -> Result<Option<u64>> {
 
 // NOTE: This assumes that the user has already ensured that the timestamp in
 // the event is monotonic.
-pub async fn put_task_event(db: &EmbeddedDB, event: &TaskEvent) -> Result<()> {
+pub async fn put_worker_event(db: &EmbeddedDB, event: &WorkerEvent) -> Result<()> {
     let mut batch = WriteBatch::new();
 
     {
         let mut key = vec![];
         KeyEncoder::encode_varuint(EVENTS_TABLE_ID, false, &mut key);
         // TODO: Don't store these in the value given that they are present in the key.
-        KeyEncoder::encode_bytes(event.task_name().as_bytes(), &mut key);
+        KeyEncoder::encode_bytes(event.worker_name().as_bytes(), &mut key);
         KeyEncoder::encode_varuint(event.timestamp(), true, &mut key);
 
         let value = event.serialize()?;
@@ -172,10 +172,10 @@ pub async fn put_task_event(db: &EmbeddedDB, event: &TaskEvent) -> Result<()> {
     Ok(())
 }
 
-pub async fn get_task_events(db: &EmbeddedDB, task_name: &str) -> Result<Vec<TaskEvent>> {
+pub async fn get_worker_events(db: &EmbeddedDB, worker_name: &str) -> Result<Vec<WorkerEvent>> {
     let mut start_key = vec![];
     KeyEncoder::encode_varuint(EVENTS_TABLE_ID, false, &mut start_key);
-    KeyEncoder::encode_bytes(task_name.as_bytes(), &mut start_key);
+    KeyEncoder::encode_bytes(worker_name.as_bytes(), &mut start_key);
 
     let mut iter = db.snapshot().await.iter().await?;
     iter.seek(&start_key).await?;
@@ -187,7 +187,7 @@ pub async fn get_task_events(db: &EmbeddedDB, task_name: &str) -> Result<Vec<Tas
         }
 
         if let Some(value) = entry.value {
-            out.push(TaskEvent::parse(&value)?);
+            out.push(WorkerEvent::parse(&value)?);
         }
     }
 

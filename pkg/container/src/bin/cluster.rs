@@ -6,7 +6,7 @@ Aside from the 'bootstrap' command, all commands require
 Testing:
     cargo run --bin cluster_node -- --config=pkg/container/config/node.textproto
 
-    cargo run --bin cluster -- start_task --node_addr=127.0.0.1:10400 pkg/rpc_test/config/adder_server.task
+    cargo run --bin cluster -- start_worker --node_addr=127.0.0.1:10400 pkg/rpc_test/config/adder_server.worker
 
 Next steps:
 -
@@ -22,7 +22,7 @@ Testing with a single node cluster:
 
     CLUSTER_ZONE=dev cargo run --bin adder_client -- --target=adder_server.job.local.cluster.internal
 
-    CLUSTER_ZONE=dev cargo run --bin cluster -- log --task_name=adder_server.256326fbfc425883
+    CLUSTER_ZONE=dev cargo run --bin cluster -- log --worker_name=adder_server.256326fbfc425883
 
     <try modifying the adder_server job and rerunning the start_job / adder_client code to verify that we can update to the new revision>
 
@@ -71,12 +71,12 @@ use rpc::ClientRequestContext;
 
 use container::meta::client::ClusterMetaClient;
 use container::{
-    meta::*, AllocateBlobsRequest, AllocateBlobsResponse, BlobMetadata, JobSpec, ListTasksRequest,
-    ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest,
+    meta::*, AllocateBlobsRequest, AllocateBlobsResponse, BlobMetadata, JobSpec,
+    ListWorkersRequest, ManagerIntoService, ManagerStub, NodeMetadata, StartJobRequest,
 };
 use container::{
-    BlobStoreStub, ContainerNodeStub, JobMetadata, NodeMetadata_State, TaskMetadata, TaskSpec,
-    TaskSpec_Port, TaskSpec_Volume, TaskStateMetadata, WriteInputRequest, ZoneMetadata,
+    BlobStoreStub, ContainerNodeStub, JobMetadata, NodeMetadata_State, WorkerMetadata, WorkerSpec,
+    WorkerSpec_Port, WorkerSpec_Volume, WorkerStateMetadata, WriteInputRequest, ZoneMetadata,
 };
 
 #[derive(Args)]
@@ -99,22 +99,22 @@ enum Command {
     #[arg(name = "upgrade")]
     Upgrade(UpgradeCommand),
 
-    /// Enumerate objects (tasks, )
+    /// Enumerate objects (workers, )
     #[arg(name = "list")]
     List(ListCommand),
 
     #[arg(name = "start_job")]
     StartJob(StartJobCommand),
 
-    /// Start a single task directly on a node. This is mainly for cluster
+    /// Start a single worker directly on a node. This is mainly for cluster
     /// bootstrapping.
-    #[arg(name = "start_task")]
-    StartTask(StartTaskCommand),
+    #[arg(name = "start_worker")]
+    StartWorker(StartWorkerCommand),
 
     #[arg(name = "events")]
     Events(EventsCommand),
 
-    /// Retrieve the log (stdout/stderr) outputs of a task.
+    /// Retrieve the log (stdout/stderr) outputs of a worker.
     #[arg(name = "log")]
     Log(LogCommand),
 }
@@ -153,8 +153,8 @@ enum ObjectKind {
     #[arg(name = "jobs")]
     Job,
 
-    #[arg(name = "tasks")]
-    Task,
+    #[arg(name = "workers")]
+    Worker,
 
     #[arg(name = "blobs")]
     Blob,
@@ -170,21 +170,21 @@ pub struct StartJobCommand {
 }
 
 #[derive(Args)]
-struct StartTaskCommand {
+struct StartWorkerCommand {
     #[arg(positional)]
-    task_spec_path: String,
+    worker_spec_path: String,
 
     node_addr: String,
 }
 
 #[derive(Args)]
 struct EventsCommand {
-    task_selector: TaskNodeSelector,
+    worker_selector: WorkerNodeSelector,
 }
 
 #[derive(Args)]
 struct LogCommand {
-    task_selector: TaskNodeSelector,
+    worker_selector: WorkerNodeSelector,
 
     /// Id of the attempt from which to look up logs. If not specified, we will
     /// retrieve the logs of the currently running task attempt.
@@ -196,41 +196,41 @@ struct LogCommand {
 }
 
 #[derive(Args)]
-struct TaskNodeSelector {
-    /// Name of the task from which to
-    task_name: String,
+struct WorkerNodeSelector {
+    /// Name of the worker from which to
+    worker_name: String,
 
     node_addr: Option<String>,
 
     node_id: Option<u64>,
     /* TODO: Provide the attempt_id here as it may influence us to use a differnet node (one
-     * that was previously assigned the task)
-     * - Given the attempt_id as a timestamp, we can search the TaskMetadata in the metastore
+     * that was previously assigned the worker)
+     * - Given the attempt_id as a timestamp, we can search the WorkerMetadata in the metastore
      *   for the version of that record that was active at the time of the attempt (but need to
      *   be careful about checking ACLs for logs in this case) */
 }
 
-impl TaskNodeSelector {
+impl WorkerNodeSelector {
     async fn connect(&self) -> Result<NodeStubs> {
         let node_addr = match &self.node_addr {
             Some(addr) => addr.clone(),
             None => {
-                // Must connect to the metastore, find the task, and then we can
+                // Must connect to the metastore, find the worker, and then we can
 
                 let meta_client = Arc::new(ClusterMetaClient::create_from_environment().await?);
 
-                let task_meta = meta_client
-                    .cluster_table::<TaskMetadata>()
-                    .get(&self.task_name)
+                let worker_meta = meta_client
+                    .cluster_table::<WorkerMetadata>()
+                    .get(&self.worker_name)
                     .await?
-                    .ok_or_else(|| format_err!("No task named: {}", self.task_name))?;
+                    .ok_or_else(|| format_err!("No worker named: {}", self.worker_name))?;
 
                 // TODO: assigned_node may eventually be allowed to be zero.
                 let node_meta = meta_client
                     .cluster_table::<NodeMetadata>()
-                    .get(&task_meta.assigned_node())
+                    .get(&worker_meta.assigned_node())
                     .await?
-                    .ok_or_else(|| err_msg("Failed to find node for task"))?;
+                    .ok_or_else(|| err_msg("Failed to find node for worker"))?;
 
                 node_meta.address().to_string()
             }
@@ -343,11 +343,11 @@ async fn run_bootstrap_inner(
         }
 
         // TODO: Find a better way of ensuring that this is definately the server that
-        // is running in the local task.
+        // is running in the local worker.
         *status.configuration().members().iter().next().unwrap()
     };
 
-    // This is required so that the manager can schedule the metastore task
+    // This is required so that the manager can schedule the metastore worker
     // immediately without retrying.
     println!("Waiting for node to register itself:");
     loop {
@@ -374,7 +374,7 @@ async fn run_bootstrap_inner(
     let manager_channel = Arc::new(rpc::LocalChannel::new(manager));
     let manager_stub = container::ManagerStub::new(manager_channel);
 
-    // TODO: Verify that this actually has created the task
+    // TODO: Verify that this actually has created the worker
     println!("Starting metastore job");
     let mut meta_job_spec = get_metastore_job(node_meta.zone()).await?;
     start_job_impl(
@@ -484,7 +484,7 @@ async fn get_metastore_job(zone: &str) -> Result<JobSpec> {
         &fs::read_to_string(project_path!("pkg/container/config/metastore.job")).await?,
     )?;
 
-    meta_job_spec.task_mut().add_args(format!(
+    meta_job_spec.worker_mut().add_args(format!(
         "--labels={}={}",
         container::meta::constants::ZONE_ENV_VAR,
         zone
@@ -514,14 +514,14 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
         println!("Nodes:");
         println!("{:?}", identity);
 
-        println!("Tasks:");
-        let tasks = node
+        println!("Workers:");
+        let workers = node
             .service
-            .ListTasks(&request_context, &ListTasksRequest::default())
+            .ListWorkers(&request_context, &ListWorkersRequest::default())
             .await
             .result?;
-        for task in tasks.tasks() {
-            println!("{:?}", task);
+        for worker in workers.workers() {
+            println!("{:?}", worker);
         }
 
         println!("Blobs:");
@@ -556,8 +556,8 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
                 println!("{:?}", job);
             }
         }
-        ObjectKind::Task => {
-            let mut node_tasks = HashMap::new();
+        ObjectKind::Worker => {
+            let mut node_workers = HashMap::new();
             {
                 let request_context = rpc::ClientRequestContext::default();
                 let nodes = meta_client.cluster_table::<NodeMetadata>().list().await?;
@@ -565,42 +565,42 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
                     let node_stubs = connect_to_node(node.address()).await?;
                     let res = node_stubs
                         .service
-                        .ListTasks(&request_context, &ListTasksRequest::default())
+                        .ListWorkers(&request_context, &ListWorkersRequest::default())
                         .await
                         .result?;
 
-                    for task in res.tasks() {
-                        node_tasks.insert(task.spec().name().to_string(), task.clone());
+                    for worker in res.workers() {
+                        node_workers.insert(worker.spec().name().to_string(), worker.clone());
                     }
                 }
             }
 
-            println!("Tasks:");
-            let tasks = meta_client.cluster_table::<TaskMetadata>().list().await?;
+            println!("Workers:");
+            let workers = meta_client.cluster_table::<WorkerMetadata>().list().await?;
 
-            let task_states = meta_client
-                .cluster_table::<TaskStateMetadata>()
+            let worker_states = meta_client
+                .cluster_table::<WorkerStateMetadata>()
                 .list()
                 .await?
                 .into_iter()
-                .map(|s| (s.task_name().to_string(), s))
+                .map(|s| (s.worker_name().to_string(), s))
                 .collect::<HashMap<_, _>>();
 
-            for task in tasks {
-                let task_state = task_states
-                    .get(task.spec().name())
+            for worker in workers {
+                let worker_state = worker_states
+                    .get(worker.spec().name())
                     .cloned()
                     .unwrap_or_default();
 
                 let mut node_state = String::new();
-                if let Some(node_task) = node_tasks.get(task.spec().name()) {
-                    node_state = format!("\t({:?})", node_task.state());
+                if let Some(node_worker) = node_workers.get(worker.spec().name()) {
+                    node_state = format!("\t({:?})", node_worker.state());
                 }
 
                 println!(
                     "{}\t{:?}{}",
-                    task.spec().name(),
-                    task_state.state(),
+                    worker.spec().name(),
+                    worker_state.state(),
                     node_state
                 );
             }
@@ -628,36 +628,36 @@ async fn run_list(cmd: ListCommand) -> Result<()> {
     Ok(())
 }
 
-async fn run_start_task(cmd: StartTaskCommand) -> Result<()> {
+async fn run_start_worker(cmd: StartWorkerCommand) -> Result<()> {
     let node = connect_to_node(&cmd.node_addr).await?;
 
     let mut terminal_mode = false;
 
     let request_context = rpc::ClientRequestContext::default();
 
-    let mut task_spec = TaskSpec::default();
+    let mut worker_spec = WorkerSpec::default();
     {
-        let data = fs::read_to_string(&cmd.task_spec_path).await?;
-        protobuf::text::parse_text_proto(&data, &mut task_spec)
-            .with_context(|e| format!("While reading {}: {}", cmd.task_spec_path, e))?;
+        let data = fs::read_to_string(&cmd.worker_spec_path).await?;
+        protobuf::text::parse_text_proto(&data, &mut worker_spec)
+            .with_context(|e| format!("While reading {}: {}", cmd.worker_spec_path, e))?;
     }
 
-    start_task_impl(&node, &mut task_spec, None, &request_context).await?;
+    start_worker_impl(&node, &mut worker_spec, None, &request_context).await?;
 
-    // TODO: Now wait for the task to enter the Running state.
+    // TODO: Now wait for the worker to enter the Running state.
     // ^ this is required to ensure that we don't fetch logs for a past iteration of
-    // the task.
+    // the worker.
 
     // println!("Container Id: {}", start_response.container_id());
 
-    // Currently this is a hack to ensure that any previous iteration of this task
+    // Currently this is a hack to ensure that any previous iteration of this worker
     // is stopped before we try getting the new logs.
     //
-    // Instead we should look up the task
+    // Instead we should look up the worker
     common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
 
     let mut log_request = container::LogRequest::default();
-    log_request.set_task_name(task_spec.name());
+    log_request.set_worker_name(worker_spec.name());
 
     // TODO: Deduplicate with the log command code.
 
@@ -667,7 +667,7 @@ async fn run_start_task(cmd: StartTaskCommand) -> Result<()> {
         let stdin_task = start_terminal_input_task(
             &node.service,
             &request_context,
-            task_spec.name().to_string(),
+            worker_spec.name().to_string(),
         )
         .await?;
     }
@@ -733,7 +733,7 @@ async fn start_job_impl(
     request_context: &rpc::ClientRequestContext,
 ) -> Result<()> {
     let mut job_spec = job_spec.clone();
-    let mut blobs = build_task_blobs(job_spec.task_mut()).await?;
+    let mut blobs = build_worker_blobs(job_spec.worker_mut()).await?;
 
     let blob_allocations = {
         let mut req = AllocateBlobsRequest::default();
@@ -808,11 +808,11 @@ async fn start_job_impl(
     Ok(())
 }
 
-/// Directly starts a task by contacting a node.
-async fn start_task_impl(
+/// Directly starts a worker by contacting a node.
+async fn start_worker_impl(
     node: &NodeStubs,
-    task_spec: &mut TaskSpec,
-    task_revision: Option<u64>,
+    worker_spec: &mut WorkerSpec,
+    worker_revision: Option<u64>,
     request_context: &rpc::ClientRequestContext,
 ) -> Result<()> {
     // Look up all existing blobs on the node so that we can skip uploading them.
@@ -828,7 +828,7 @@ async fn start_task_impl(
         }
     }
 
-    for blob_data in build_task_blobs(task_spec).await? {
+    for blob_data in build_worker_blobs(worker_spec).await? {
         println!("=> Upload Blob: {}", blob_data.spec().id());
         if existing_blobs.contains(blob_data.spec().id()) {
             println!("Already uploaded");
@@ -861,33 +861,33 @@ async fn start_task_impl(
 
     println!("Starting server");
 
-    let mut start_request = container::StartTaskRequest::default();
-    start_request.set_spec(task_spec.clone());
-    if let Some(rev) = task_revision {
+    let mut start_request = container::StartWorkerRequest::default();
+    start_request.set_spec(worker_spec.clone());
+    if let Some(rev) = worker_revision {
         start_request.set_revision(rev);
     }
 
-    // start_request.task_spec_mut().set_name("shell");
-    // start_request.task_spec_mut().add_args("/bin/bash".into());
-    // start_request.task_spec_mut().add_env("TERM=xterm-256color".into());
+    // start_request.worker_spec_mut().set_name("shell");
+    // start_request.worker_spec_mut().add_args("/bin/bash".into());
+    // start_request.worker_spec_mut().add_env("TERM=xterm-256color".into());
 
     let start_response = node
         .service
-        .StartTask(request_context, &start_request)
+        .StartWorker(request_context, &start_request)
         .await
         .result?;
 
     Ok(())
 }
 
-async fn build_task_blobs(task_spec: &mut TaskSpec) -> Result<Vec<container::BlobData>> {
+async fn build_worker_blobs(worker_spec: &mut WorkerSpec) -> Result<Vec<container::BlobData>> {
     let mut out = vec![];
 
     let build_context = builder::BuildConfigTarget::default_for_local_machine()?;
     let mut builder_inst = builder::Builder::default()?;
 
-    for volume in task_spec.volumes_mut() {
-        if let container::TaskSpec_VolumeSourceCase::BuildTarget(label) = volume.source_case() {
+    for volume in worker_spec.volumes_mut() {
+        if let container::WorkerSpec_VolumeSourceCase::BuildTarget(label) = volume.source_case() {
             println!("Building volume target: {}", label);
 
             let res = builder_inst
@@ -930,7 +930,7 @@ async fn build_task_blobs(task_spec: &mut TaskSpec) -> Result<Vec<container::Blo
 async fn start_terminal_input_task(
     stub: &ContainerNodeStub,
     request_context: &ClientRequestContext,
-    task_name: String,
+    worker_name: String,
 ) -> Result<JoinHandle<()>> {
     let mut input_req = stub.WriteInput(&request_context).await;
 
@@ -980,7 +980,7 @@ async fn start_terminal_input_task(
             }
 
             let mut input = WriteInputRequest::default();
-            input.set_task_name(&task_name);
+            input.set_worker_name(&worker_name);
             input.set_data(data[0..n].to_vec());
 
             if !input_req.send(&input).await {
@@ -994,12 +994,12 @@ async fn start_terminal_input_task(
 }
 
 async fn run_log(cmd: LogCommand) -> Result<()> {
-    let node = cmd.task_selector.connect().await?;
+    let node = cmd.worker_selector.connect().await?;
 
     let request_context = rpc::ClientRequestContext::default();
 
     let mut log_request = container::LogRequest::default();
-    log_request.set_task_name(&cmd.task_selector.task_name);
+    log_request.set_worker_name(&cmd.worker_selector.worker_name);
 
     if let Some(num) = cmd.attempt_id {
         log_request.set_attempt_id(num);
@@ -1007,7 +1007,7 @@ async fn run_log(cmd: LogCommand) -> Result<()> {
 
     if cmd.latest_attempt == Some(true) {
         let mut request = container::GetEventsRequest::default();
-        request.set_task_name(&cmd.task_selector.task_name);
+        request.set_worker_name(&cmd.worker_selector.worker_name);
 
         let mut resp = node
             .service
@@ -1038,11 +1038,11 @@ async fn run_log(cmd: LogCommand) -> Result<()> {
 }
 
 async fn run_events(cmd: EventsCommand) -> Result<()> {
-    let node = cmd.task_selector.connect().await?;
+    let node = cmd.worker_selector.connect().await?;
     let request_context = rpc::ClientRequestContext::default();
 
     let mut request = container::GetEventsRequest::default();
-    request.set_task_name(&cmd.task_selector.task_name);
+    request.set_worker_name(&cmd.worker_selector.worker_name);
 
     let mut resp = node
         .service
@@ -1055,7 +1055,7 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
         start_time: SystemTime,
         end_time: Option<SystemTime>,
         exit_status: Option<container::ContainerStatus>,
-        events: Vec<&'a container::TaskEvent>,
+        events: Vec<&'a container::WorkerEvent>,
     }
 
     resp.events_mut()
@@ -1065,27 +1065,27 @@ async fn run_events(cmd: EventsCommand) -> Result<()> {
 
     // TODO: If the final attempt (or any event) doesn't have a Stopped event, it
     // may still not be running if the event failed to be saved. Need to cross
-    // reference with the current state of the task on the node.
+    // reference with the current state of the worker on the node.
     for event in resp.events() {
         let time = std::time::UNIX_EPOCH + Duration::from_micros(event.timestamp());
 
         // TODO: Will eventually need to handle StartFailure
         match event.type_case() {
-            container::TaskEventTypeCase::Started(_) => attempts.push(Attempt {
+            container::WorkerEventTypeCase::Started(_) => attempts.push(Attempt {
                 id: event.timestamp(),
                 start_time: time,
                 end_time: None,
                 exit_status: None,
                 events: vec![],
             }),
-            container::TaskEventTypeCase::StartFailure(v) => attempts.push(Attempt {
+            container::WorkerEventTypeCase::StartFailure(v) => attempts.push(Attempt {
                 id: event.timestamp(),
                 start_time: time,
                 end_time: Some(time.clone()),
                 exit_status: None,
                 events: vec![],
             }),
-            container::TaskEventTypeCase::Stopped(e) => {
+            container::WorkerEventTypeCase::Stopped(e) => {
                 let last_attempt = attempts.last_mut().unwrap();
                 last_attempt.exit_status = Some(e.status().clone());
                 last_attempt.end_time = Some(time);
@@ -1119,7 +1119,7 @@ async fn run() -> Result<()> {
         Command::Bootstrap(cmd) => run_bootstrap(cmd).await,
         Command::Upgrade(cmd) => run_upgrade(cmd).await,
         Command::List(cmd) => run_list(cmd).await,
-        Command::StartTask(cmd) => run_start_task(cmd).await,
+        Command::StartWorker(cmd) => run_start_worker(cmd).await,
         Command::Log(cmd) => run_log(cmd).await,
         Command::StartJob(cmd) => run_start_job(cmd).await,
         Command::Events(cmd) => run_events(cmd).await,

@@ -22,11 +22,11 @@ use crate::service::address::*;
 ///
 /// We accept the following formats of addresses:
 ///                         "[node_id].node.[zone].cluster.internal"
-/// "_[port_name].[task_id].[job_name].task.[zone].cluster.internal"
+/// "_[port_name].[worker_id].[job_name].worker.[zone].cluster.internal"
 /// "_[port_name].          [job_name] .job.[zone].cluster.internal"
 ///
 /// TODO: Consider restricting job_names to only be a 2 dot delimited labels so
-/// that we can specify a job/task address without a port.
+/// that we can specify a job/worker address without a port.
 ///
 /// With the following definitions for the above parameters:
 /// - "[zone]" : Name of the cluster from which to look up objects or a special
@@ -34,15 +34,15 @@ use crate::service::address::*;
 /// - "[node_id]" : Id of the node to access or a special value of "self"
 /// - "_[port_name[": Name of the port which should be requested. This is
 ///   optional and if not present we will use the first port defined for the
-///   job/task.
+///   job/worker.
 ///
 /// TODO: Verify that job_name doesn't start with '_'.
 ///
 /// NOTE: Currently only a zone of "local" or equivalent is supported.
 ///
-/// NOTE: The host names have name segments reversed so to access task 2 of job
-/// "adder.server", the address will be
-/// "_[port].2.server.adder.task.[zone].cluster.internal"
+/// NOTE: The host names have name segments reversed so to access worker 2 of
+/// job "adder.server", the address will be
+/// "_[port].2.server.adder.worker.[zone].cluster.internal"
 ///
 /// TODO: Consider changing this to avoid name labels which consist only of
 /// numbers.
@@ -134,7 +134,7 @@ impl ServiceResolver {
 
     async fn background_thread_impl(shared: Arc<Shared>) -> Result<()> {
         // TODO: Ignore timed out nodes
-        // TODO: Ignore non-healthy tasks.
+        // TODO: Ignore non-healthy workers.
 
         let mut endpoints = vec![];
 
@@ -151,27 +151,30 @@ impl ServiceResolver {
                 });
             }
             ServiceEntity::Job { job_name } => {
-                let tasks = shared
+                let workers = shared
                     .meta_client
-                    .cluster_table::<TaskMetadata>()
+                    .cluster_table::<WorkerMetadata>()
                     .list_by_job(job_name)
                     .await?;
 
-                for task in tasks {
-                    if let Some(endpoint) = Self::get_task_endpoint(&shared, &task).await? {
+                for worker in workers {
+                    if let Some(endpoint) = Self::get_worker_endpoint(&shared, &worker).await? {
                         endpoints.push(endpoint);
                     }
                 }
             }
-            ServiceEntity::Task { job_name, task_id } => {
-                let task = shared
+            ServiceEntity::Worker {
+                job_name,
+                worker_id: worker_id,
+            } => {
+                let worker = shared
                     .meta_client
-                    .cluster_table::<TaskMetadata>()
-                    .get(&format!("{}.{}", job_name, task_id))
+                    .cluster_table::<WorkerMetadata>()
+                    .get(&format!("{}.{}", job_name, worker_id))
                     .await?
-                    .ok_or_else(|| err_msg("Failed to find task"))?;
+                    .ok_or_else(|| err_msg("Failed to find worker"))?;
 
-                if let Some(endpoint) = Self::get_task_endpoint(&shared, &task).await? {
+                if let Some(endpoint) = Self::get_worker_endpoint(&shared, &worker).await? {
                     endpoints.push(endpoint);
                 }
             }
@@ -196,14 +199,14 @@ impl ServiceResolver {
         Ok(())
     }
 
-    async fn get_task_endpoint(
+    async fn get_worker_endpoint(
         shared: &Shared,
-        task: &TaskMetadata,
+        worker: &WorkerMetadata,
     ) -> Result<Option<http::ResolvedEndpoint>> {
-        let node_address = Self::get_node_addr(shared, task.assigned_node()).await?;
+        let node_address = Self::get_node_addr(shared, worker.assigned_node()).await?;
 
         let mut port = None;
-        for port_spec in task.spec().ports() {
+        for port_spec in worker.spec().ports() {
             if let Some(port_name) = &shared.service_address.port {
                 if port_name != port_spec.name() {
                     continue;
@@ -224,7 +227,7 @@ impl ServiceResolver {
         let address = SocketAddr::new(node_address.ip(), port as u16);
 
         let host_name =
-            ServiceName::for_task(&shared.service_address.name.zone, task.spec().name())?
+            ServiceName::for_worker(&shared.service_address.name.zone, worker.spec().name())?
                 .to_string();
 
         Ok(Some(ResolvedEndpoint {

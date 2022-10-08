@@ -4,8 +4,8 @@ package cluster;
 
 import "pkg/builder/src/proto/bundle.proto";
 
-message TaskSpec {
-    // Name of the task. This is assigned by the manager job.
+message WorkerSpec {
+    // Name of the worker. This is assigned by the manager job.
     string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
     string cwd = 10;
@@ -21,11 +21,11 @@ message TaskSpec {
         oneof source {
             
             // The volume will be initialized by creating a new read-writeable directory on the host.
-            // - Whenever a task is started on the same node with the same persistent_name, it will
+            // - Whenever a worker is started on the same node with the same persistent_name, it will
             //   see the previously initialized directory and will also have read-write access to it. 
-            // - Each persistent directory is exclusive to the current task and not shareable across
-            //   multiple tasks.
-            // - Having a persistnet directory will prevent this task from being moved to another
+            // - Each persistent directory is exclusive to the current worker and not shareable across
+            //   multiple workers.
+            // - Having a persistnet directory will prevent this worker from being moved to another
             //   machine in the future.
             string persistent_name = 3;
 
@@ -64,19 +64,19 @@ message TaskSpec {
         string name = 1;
 
         // INTERNAL ONLY
-        // The port number on the node to use. Set by the Cluster Manager when assigning the task
+        // The port number on the node to use. Set by the Cluster Manager when assigning the worker
         // to a node.
         uint32 number = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
     }
     repeated Port ports = 6;
 
     // INTERNAL ONLY
-    // If true, then this task will restart when the node is restarted without the need for
-    // external intervention. By default, this is false, so tasks disappear when a node restarts.
+    // If true, then this worker will restart when the node is restarted without the need for
+    // external intervention. By default, this is false, so workers disappear when a node restarts.
     //
-    // This is set by the Cluster Manager for system tasks that must survive a cluster cold-start
-    // and any tasks which can't be moved to another node (e.g. due to resources local to only one
-    // node). If set by a user, then the task will be rejected.
+    // This is set by the Cluster Manager for system workers that must survive a cluster cold-start
+    // and any workers which can't be moved to another node (e.g. due to resources local to only one
+    // node). If set by a user, then the worker will be rejected.
     bool persistent = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
 
     // List of devices to mount into the container.
@@ -90,7 +90,7 @@ message TaskSpec {
 }
 
 message Probe {
-    // Time in-between attempts to probe the task.
+    // Time in-between attempts to probe the worker.
     uint32 interval_secs = 1;
 
 
@@ -146,8 +146,8 @@ message Device {
     // If not specified, then the default path for the 'source' will be used.
     string destination = 2;
 
-    // If true, no other task will be allowed to mount a device with the same source while it
-    // is mounted on this device. If another task has already mounted the device, then this
-    // task will fail to start.
+    // If true, no other worker will be allowed to mount a device with the same source while it
+    // is mounted on this device. If another worker has already mounted the device, then this
+    // worker will fail to start.
     bool exclusive = 3;
 }

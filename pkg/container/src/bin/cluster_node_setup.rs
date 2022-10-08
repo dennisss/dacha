@@ -204,13 +204,12 @@ async fn run() -> Result<()> {
     println!("Building node runtime with {}", build_config_target);
 
     let node_built_result = {
-        let mut builder = Builder::default();
-        let build_context =
-            BuildConfigTarget::from(builder.lookup_config(build_config_target, None).await?)?;
+        let mut builder = Builder::default()?;
+
         let result = builder
-            .build_target("//pkg/container:cluster_node", None, &build_context)
+            .build_target_cwd("//pkg/container:cluster_node", build_config_target)
             .await?;
-        if result.output_files.len() != 1 {
+        if result.outputs.output_files.len() != 1 {
             return Err(err_msg(
                 "Expected exactly one output file from building :cluster_node",
             ));
@@ -237,8 +236,8 @@ async fn run() -> Result<()> {
     run_ssh(&args.addr, "sudo chmod 700 /opt/dacha/data")?;
 
     // TODO: Also need to
-    for (key, value) in node_built_result.output_files {
-        copy_file(&args.addr, value, key)?;
+    for (key, value) in node_built_result.outputs.output_files {
+        copy_file(&args.addr, value.location, key)?;
     }
 
     let mut node_config = {

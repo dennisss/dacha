@@ -7,7 +7,7 @@ use rpc_util::{AddReflection, NamedPortArg};
 use crate::manager::manager::Manager;
 use crate::meta::client::ClusterMetaClient;
 use crate::proto::manager::*;
-use crate::proto::task::*;
+use crate::proto::worker::*;
 
 #[derive(Args)]
 struct Args {

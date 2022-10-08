@@ -4,7 +4,7 @@ const NAME_SUFFIX: &'static str = ".cluster.internal";
 pub struct ServiceAddress {
     pub name: ServiceName,
 
-    /// NOTE: Only valid for Job and Task entities.
+    /// NOTE: Only valid for Job and Worker entities.
     pub port: Option<String>,
 }
 
@@ -18,7 +18,7 @@ pub struct ServiceName {
 pub enum ServiceEntity {
     Node { id: u64 },
     Job { job_name: String },
-    Task { job_name: String, task_id: String },
+    Worker { job_name: String, worker_id: String },
 }
 
 #[derive(Debug, Fail)]
@@ -82,13 +82,13 @@ impl ServiceAddress {
                 let job_name = name_parts.into_iter().rev().collect::<Vec<_>>().join(".");
                 ServiceEntity::Job { job_name }
             }
-            "task" => {
-                // Must at least have a job name and task index.
+            "worker" => {
+                // Must at least have a job name and worker index.
                 if name_parts.len() < 2 {
                     return Err(ServiceParseError::NameTooShort);
                 }
 
-                let task_id = name_parts[0].to_string();
+                let worker_id = name_parts[0].to_string();
 
                 let job_name = (&name_parts[1..])
                     .iter()
@@ -97,7 +97,10 @@ impl ServiceAddress {
                     .collect::<Vec<_>>()
                     .join(".");
 
-                ServiceEntity::Task { job_name, task_id }
+                ServiceEntity::Worker {
+                    job_name,
+                    worker_id,
+                }
             }
             _ => {
                 return Err(ServiceParseError::UnknownEntity);
@@ -115,15 +118,15 @@ impl ServiceAddress {
 }
 
 impl ServiceName {
-    pub fn for_task(zone: &str, task_name: &str) -> Result<Self, ServiceParseError> {
-        let (job_name, task_id) = task_name
+    pub fn for_worker(zone: &str, worker_name: &str) -> Result<Self, ServiceParseError> {
+        let (job_name, worker_id) = worker_name
             .rsplit_once(".")
             .ok_or(ServiceParseError::NameTooShort)?;
 
         Ok(Self {
             zone: zone.to_string(),
-            entity: ServiceEntity::Task {
-                task_id: task_id.to_string(),
+            entity: ServiceEntity::Worker {
+                worker_id: worker_id.to_string(),
                 job_name: job_name.to_string(),
             },
         })
@@ -153,10 +156,13 @@ impl ServiceName {
                     NAME_SUFFIX
                 )
             }
-            ServiceEntity::Task { job_name, task_id } => {
+            ServiceEntity::Worker {
+                job_name,
+                worker_id,
+            } => {
                 format!(
-                    "{}.{}.task.{}{}",
-                    task_id,
+                    "{}.{}.worker.{}{}",
+                    worker_id,
                     job_name
                         .split('.')
                         .collect::<Vec<_>>()
@@ -207,9 +213,9 @@ mod tests {
     }
 
     #[test]
-    async fn parse_task_address_with_port() -> Result<()> {
+    async fn parse_worker_address_with_port() -> Result<()> {
         let addr = ServiceAddress::parse(
-            "a12345.adder_client.user.task.local.cluster.internal",
+            "a12345.adder_client.user.worker.local.cluster.internal",
             "testing",
         )?;
         assert_eq!(
@@ -218,9 +224,9 @@ mod tests {
                 port: None,
                 name: ServiceName {
                     zone: "testing".into(),
-                    entity: ServiceEntity::Task {
+                    entity: ServiceEntity::Worker {
                         job_name: "user.adder_client".into(),
-                        task_id: "a12345".into()
+                        worker_id: "a12345".into()
                     }
                 }
             }
@@ -228,7 +234,7 @@ mod tests {
 
         assert_eq!(
             addr.name.to_string(),
-            "a12345.adder_client.user.task.testing.cluster.internal"
+            "a12345.adder_client.user.worker.testing.cluster.internal"
         );
 
         Ok(())

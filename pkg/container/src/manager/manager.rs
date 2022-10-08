@@ -18,14 +18,14 @@ use crate::proto::blob::*;
 use crate::proto::job::*;
 use crate::proto::manager::*;
 use crate::proto::meta::*;
-use crate::proto::task::*;
+use crate::proto::worker::*;
 
 /*
 When a manager test starts up, it will
 - Acquire a metastore lock under `/system/manager/lock`
   - If it can't it will sleep for 30 seconds and try again.
 - Enumerate all Job instances in the database.
-  - For each job instance, verify that they there are tasks for each job assigned to nodes.
+  - For each job instance, verify that they there are workers for each job assigned to nodes.
 - Finally, loop through each Node and ensure that it has all required nodes.
   ^ After the initial
 
@@ -35,8 +35,8 @@ When a manager test starts up, it will
 Manager Role:
 - Keep the metadata store alive
 - Ping the nodes and see that they have the
-- Ensure that every job has all its tasks to some node
-    - If a node is dead, we may want to move all of its tasks to another node (assuming they
+- Ensure that every job has all its workers to some node
+    - If a node is dead, we may want to move all of its workers to another node (assuming they
       are moveable).
 - Ensure that every blob has at least N replicas.
 - Delete blobs that are not in use for at least N days.
@@ -53,8 +53,8 @@ Threads:
 //         - NewBlob
 - Node poller
     - Tries to contact all nodes in the cluster.
-    - Verifies they are running the right tasks.
-    - When tasks become ready, the manager will mark them as ready/not-ready in the metadata store.
+    - Verifies they are running the right workers.
+    - When workers become ready, the manager will mark them as ready/not-ready in the metadata store.
         -> Issue is that this is fragile?
     - TODO: Replace with just having the node watch for updates?
 
@@ -68,7 +68,7 @@ regexp!(JOB_NAME_PATTERN => "^((?:[a-z](?:[a-z0-9\\-_]*[a-z0-9])?)\\.?)+$");
 /// The max length of a URL is 255 characters.
 /// It's somewhat difficult to verify that the name won't cause an overflow in
 /// all contexts, so just to be safe, we won't allow jobs with names close to
-/// that limit (minus a buffer for DNS names, task ids, etc.)
+/// that limit (minus a buffer for DNS names, worker ids, etc.)
 const JOB_NAME_MAX_SIZE: usize = 180;
 
 const JOB_NAME_MAX_LABEL_LENGTH: usize = 63;
@@ -139,9 +139,9 @@ impl Manager {
                 .into());
             }
 
-            if !spec.task().name().is_empty() {
+            if !spec.worker().name().is_empty() {
                 return Err(
-                    rpc::Status::invalid_argument("Not allowed to specify a task name").into(),
+                    rpc::Status::invalid_argument("Not allowed to specify a worker name").into(),
                 );
             }
 
@@ -149,7 +149,7 @@ impl Manager {
                 return Err(rpc::Status::invalid_argument("Invalid job name").into());
             }
 
-            for port in spec.task().ports() {
+            for port in spec.worker().ports() {
                 if port.number() != 0 {
                     return Err(rpc::Status::invalid_argument(
                         "Not allowed to specify port numbers",
@@ -159,9 +159,9 @@ impl Manager {
             }
 
             // TODO: Require authentication to create system services.
-            if spec.task().persistent() && !spec.name().starts_with("system.") {
+            if spec.worker().persistent() && !spec.name().starts_with("system.") {
                 return Err(rpc::Status::invalid_argument(
-                    "Not allowed to specify persistent task flag.",
+                    "Not allowed to specify persistent worker flag.",
                 )
                 .into());
             }
@@ -178,21 +178,21 @@ impl Manager {
         // works.
         self.reconcile_job(request.spec().name()).await?;
 
-        // Trigger re-calculation of the tasks.
+        // Trigger re-calculation of the workers.
         // - Look up the job
-        // - Look up all tasks associated with the job (ideally transactionally).
-        // - If we need more tasks, look up all nodes and try to find one .
+        // - Look up all workers associated with the job (ideally transactionally).
+        // - If we need more workers, look up all nodes and try to find one .
         // -
 
         // Thread 1: React to changes in individual jobs. Re-calculate requirements.
         // - If we need to
 
-        // /cluster/task/[task_name]
-        // /cluster/task_by_node/[node_id]
+        // /cluster/worker/[worker_name]
+        // /cluster/worker_by_node/[node_id]
 
         // For each node, we do want to track:
         // - Assigned resources
-        // - Assigned task names.
+        // - Assigned worker names.
 
         Ok(())
     }
@@ -229,8 +229,8 @@ impl Manager {
 
         let mut job_meta = existing_job.unwrap_or_else(|| JobMetadata::default());
 
-        if job_meta.spec().task() != request.spec().task() {
-            job_meta.set_task_revision(txn.read_index().await);
+        if job_meta.spec().worker() != request.spec().worker() {
+            job_meta.set_worker_revision(txn.read_index().await);
         }
 
         job_meta.set_spec(request.spec().clone());
@@ -245,7 +245,7 @@ impl Manager {
 
         let nodes_table = txn.cluster_table::<NodeMetadata>();
         let jobs_table = txn.cluster_table::<JobMetadata>();
-        let tasks_table = txn.cluster_table::<TaskMetadata>();
+        let workers_table = txn.cluster_table::<WorkerMetadata>();
 
         let job = jobs_table
             .get(job_name)
@@ -265,11 +265,11 @@ impl Manager {
             nodes_by_id.insert(node.id(), i);
         }
 
-        let mut existing_tasks = tasks_table.list_by_job(job_name).await?;
+        let mut existing_workers = workers_table.list_by_job(job_name).await?;
 
-        existing_tasks.retain(|task| !task.drain());
+        existing_workers.retain(|worker| !worker.drain());
 
-        // Indexes of all nodes which we will consider for running tasks in this job.
+        // Indexes of all nodes which we will consider for running workers in this job.
         let mut remaining_nodes = vec![];
         for i in 0..nodes.len() {
             remaining_nodes.push(i);
@@ -295,44 +295,45 @@ impl Manager {
 
         let mut update_incomplete = false;
 
-        // Old tasks associated with this job which we ended up not being able to
+        // Old workers associated with this job which we ended up not being able to
         // re-use.
-        let mut old_tasks = vec![];
+        let mut old_workers = vec![];
 
         // TODO: Implement each replica as a separate transaction.
         for i in 0..(job.spec().replicas() as usize) {
-            // Attempt to select an existing task that we want to re-use.
-            let existing_task = {
-                let mut picked_task = None;
-                while let Some(task) = existing_tasks.pop() {
-                    // The existing task must still be in our selected task subset to be re-used.
+            // Attempt to select an existing worker that we want to re-use.
+            let existing_worker = {
+                let mut picked_worker = None;
+                while let Some(worker) = existing_workers.pop() {
+                    // The existing worker must still be in our selected worker subset to be
+                    // re-used.
                     if !remaining_nodes
                         .iter()
-                        .find(|idx| nodes[**idx].id() == task.assigned_node())
+                        .find(|idx| nodes[**idx].id() == worker.assigned_node())
                         .is_some()
                     {
-                        old_tasks.push(task);
+                        old_workers.push(worker);
                         continue;
                     }
 
-                    picked_task = Some(task);
+                    picked_worker = Some(worker);
                     break;
                 }
 
-                picked_task
+                picked_worker
             };
 
             let assigned_node_index = {
-                if let Some(existing_task) = &existing_task {
+                if let Some(existing_worker) = &existing_worker {
                     // TODO: Verify that the existing node is still healthy (and we don't need to
-                    // move the task to another node).
+                    // move the worker to another node).
 
-                    if existing_task.revision() == job.task_revision() {
+                    if existing_worker.revision() == job.worker_revision() {
                         continue;
                     }
 
                     *nodes_by_id
-                        .get(&existing_task.assigned_node())
+                        .get(&existing_worker.assigned_node())
                         .ok_or_else(|| err_msg("Failed to find assigned node"))?
                 } else {
                     // TODO: Don't make this a permanent failure. Instead come back to this job
@@ -356,34 +357,34 @@ impl Manager {
 
             let assigned_node = &mut nodes[assigned_node_index];
 
-            let mut new_task = TaskMetadata::default();
-            new_task.set_assigned_node(assigned_node.id());
+            let mut new_worker = WorkerMetadata::default();
+            new_worker.set_assigned_node(assigned_node.id());
 
-            let new_spec = self.create_allocated_task_spec(
+            let new_spec = self.create_allocated_worker_spec(
                 job.spec().name(),
-                &job.spec().task(),
-                existing_task.as_ref().map(|t| t.spec()),
+                &job.spec().worker(),
+                existing_worker.as_ref().map(|t| t.spec()),
                 assigned_node,
             )?;
-            new_task.set_spec(new_spec);
-            new_task.set_revision(job.task_revision());
+            new_worker.set_spec(new_spec);
+            new_worker.set_revision(job.worker_revision());
 
-            // Update the task
-            // TODO: Skip this if the task hasn't changed at all.
-            tasks_table.put(&new_task).await?;
+            // Update the worker
+            // TODO: Skip this if the worker hasn't changed at all.
+            workers_table.put(&new_worker).await?;
 
             // Update the node
             {
                 let mut dirty = false;
 
                 let mut old_port_nums = HashSet::new();
-                if let Some(existing_task) = &existing_task {
-                    for port in existing_task.spec().ports() {
+                if let Some(existing_worker) = &existing_worker {
+                    for port in existing_worker.spec().ports() {
                         old_port_nums.insert(port.number());
                     }
                 }
 
-                for port in new_task.spec().ports() {
+                for port in new_worker.spec().ports() {
                     if !old_port_nums.remove(&port.number()) {
                         assigned_node.allocated_ports_mut().insert(port.number());
                         dirty = true;
@@ -401,30 +402,31 @@ impl Manager {
             }
         }
 
-        // TODO: We can't delete a task or switch it to another node until we know that
-        // the node to which it was originally assigned has stopped the tasks (otherwise
-        // we might end up re-assigning resources before they are available?)
-        // - There is a similar issue when switch to a new task spec with conflicting
+        // TODO: We can't delete a worker or switch it to another node until we know
+        // that the node to which it was originally assigned has stopped the
+        // workers (otherwise we might end up re-assigning resources before they
+        // are available?)
+        // - There is a similar issue when switch to a new worker spec with conflicting
         //   requirements
         // - This should be solved if the Node is smart enough to handle resources and
-        //   can mark tasks are Pending before they are schedulable
+        //   can mark workers are Pending before they are schedulable
         // - For ports, we do need to ensure that we check host names to ensure that
-        //   users are querying the right task.
+        //   users are querying the right worker.
 
         // Stop all extra instances.
-        existing_tasks.extend(old_tasks.into_iter());
-        for mut existing_task in existing_tasks {
-            // TODO: Eventually once the node has stopped the task, we should delete the
-            // TaskMetadata entry for this.
-            existing_task.set_drain(true);
-            tasks_table.put(&existing_task).await?;
+        existing_workers.extend(old_workers.into_iter());
+        for mut existing_worker in existing_workers {
+            // TODO: Eventually once the node has stopped the worker, we should delete the
+            // WorkerMetadata entry for this.
+            existing_worker.set_drain(true);
+            workers_table.put(&existing_worker).await?;
 
             let node = &mut nodes[*nodes_by_id
-                .get(&existing_task.assigned_node())
+                .get(&existing_worker.assigned_node())
                 .ok_or_else(|| err_msg("Failed to find assigned node"))?];
 
             let mut dirty = false;
-            for port in existing_task.spec().ports() {
+            for port in existing_worker.spec().ports() {
                 node.allocated_ports_mut().remove(&port.number());
                 dirty = true;
             }
@@ -439,38 +441,39 @@ impl Manager {
         Ok(())
     }
 
-    /// Creates a task
+    /// Creates a worker
     ///
     /// TODO: This must mutate the allocated ports set so that we don't end up
     /// obtaining the same port for multiple separate ports.
-    fn create_allocated_task_spec(
+    fn create_allocated_worker_spec(
         &self,
         job_name: &str,
-        job_task_spec: &TaskSpec,
-        old_spec: Option<&TaskSpec>,
+        job_worker_spec: &WorkerSpec,
+        old_spec: Option<&WorkerSpec>,
         node: &NodeMetadata,
-    ) -> Result<TaskSpec> {
-        let mut spec = job_task_spec.clone();
+    ) -> Result<WorkerSpec> {
+        let mut spec = job_worker_spec.clone();
 
-        let task_name = if let Some(spec) = &old_spec {
+        let worker_name = if let Some(spec) = &old_spec {
             spec.name().to_string()
         } else {
-            // NOTE: We assume that this will generate a unique task id which has never been
-            // seen before but we don't currently validate that the task doesn't exist yet.
+            // NOTE: We assume that this will generate a unique worker id which has never
+            // been seen before but we don't currently validate that the worker
+            // doesn't exist yet.
             let mut name = job_name.to_string();
             name.push('.');
-            name.push_str(&crate::manager::new_task_id());
+            name.push_str(&crate::manager::new_worker_id());
             name
         };
 
-        spec.set_name(task_name.as_str());
+        spec.set_name(worker_name.as_str());
 
         // Newly allocated ports. Used to ensure we don't double allocate ports not yet
         // accounted for in the NodeMetadata.
         let mut new_ports = HashSet::new();
 
         for port in spec.ports_mut() {
-            // If updating an existing task, attempt to re-use existing port assignments.
+            // If updating an existing worker, attempt to re-use existing port assignments.
             if let Some(old_spec) = old_spec.clone() {
                 if let Some(old_port) = old_spec.ports().iter().find(|v| v.name() == port.name()) {
                     port.set_number(old_port.number());
@@ -501,19 +504,19 @@ impl Manager {
 
         for volume in spec.volumes_mut() {
             match volume.source_case() {
-                TaskSpec_VolumeSourceCase::Unknown => {}
-                TaskSpec_VolumeSourceCase::Bundle(_) => {}
-                TaskSpec_VolumeSourceCase::PersistentName(name) => {
-                    // Persistent volumes should be specific to individual tasks.
+                WorkerSpec_VolumeSourceCase::Unknown => {}
+                WorkerSpec_VolumeSourceCase::Bundle(_) => {}
+                WorkerSpec_VolumeSourceCase::PersistentName(name) => {
+                    // Persistent volumes should be specific to individual workers.
                     // TODO: Consider moving this local to the node?
                     // (or have a system for making persistent volume claims?)
-                    let mut n = task_name.to_string();
+                    let mut n = worker_name.to_string();
                     n.push('/');
                     n.push_str(name.as_str());
 
                     volume.set_persistent_name(n);
                 }
-                TaskSpec_VolumeSourceCase::BuildTarget(_) => {}
+                WorkerSpec_VolumeSourceCase::BuildTarget(_) => {}
             }
         }
 
