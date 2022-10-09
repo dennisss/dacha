@@ -4,6 +4,7 @@ package cluster;
 
 import "pkg/container/src/proto/config.proto";
 
+// Config parameters used to start up a single Node instance.
 message NodeConfig {
     // Path to a directory into which we will store all container related data.
     string data_dir = 1;

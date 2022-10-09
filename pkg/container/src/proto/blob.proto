@@ -12,7 +12,7 @@ service BlobStore {
     // Adds a new blob to this server.
     //
     // Errors:
-    // - ALREADY_EXISTS: If the 
+    // - ALREADY_EXISTS: If a bloc with the same id is already present on this server.
     rpc Upload (stream BlobData) returns (google.protobuf.Empty);
 
     // Retrieves the contents of an uploaded blob from the server.

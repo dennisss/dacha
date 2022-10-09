@@ -3,20 +3,6 @@
 extern crate alloc;
 extern crate core;
 
-/*
-
-Namespace:
-    - Must have CAP_SYS_ADMIN  | CAP_SYS_CHROOT
-    - CLONE_NEWNS | CLONE_FS |
-    - CLONE_NEWPID | CLONE_NEWUSER
-
-Cgroup
-
-Chroot
-
-NOTE: We must assume that all file descriptors created by Rust are opened with O_CLOEXEC
-*/
-
 #[macro_use]
 extern crate common;
 extern crate crypto;

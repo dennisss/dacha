@@ -1064,7 +1064,7 @@ impl NodeInner {
                 .add_env(format!("{}={}", NODE_ID_ENV_VAR, self.shared.id));
             container_config.process_mut().add_env(format!(
                 "{}={}",
-                worker_name_ENV_VAR,
+                WORKER_NAME_ENV_VAR,
                 worker.spec.name()
             ));
             container_config.process_mut().add_env(format!(

@@ -1,4 +1,4 @@
-// Cluster management CLI
+// Cluster Management CLI
 // TODO: Combine all of the CLI utilities into this one.
 /*
 Aside from the 'bootstrap' command, all commands require
@@ -99,7 +99,7 @@ enum Command {
     #[arg(name = "upgrade")]
     Upgrade(UpgradeCommand),
 
-    /// Enumerate objects (workers, )
+    /// Enumerate objects in the cluster (workers, )
     #[arg(name = "list")]
     List(ListCommand),
 

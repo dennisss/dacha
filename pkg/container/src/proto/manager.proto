@@ -21,12 +21,12 @@ message StartJobResponse {
 }
 
 message AllocateBlobsRequest {
-    // Metadata for the blobs which the client wants to 
+    // Metadata for the blobs which the client wants to upload to the cluster.
     repeated builder.BlobSpec blob_specs = 1;
 }
 
 message AllocateBlobsResponse {
-    // Nodes to which the client 
+    // Nodes to which the client should upload the blobs to.
     //
     // TODO: For each of these, include authorization tokens that can let the node know that the
     // manager allowed the upload.

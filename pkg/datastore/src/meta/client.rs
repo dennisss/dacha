@@ -15,8 +15,12 @@ use crate::proto::client::*;
 use crate::proto::key_value::*;
 use crate::proto::server::*;
 
+/// Maximum number of times metastore transactions should be retried if
 pub const MAX_TRANSACTION_RETRIES: usize = 5;
 
+/// Client library for talking to metastore servers to read/write data.
+///
+/// See the MetastoreClientInterface trait for all available methods.
 pub struct MetastoreClient {
     client_id: String,
 
@@ -175,7 +179,7 @@ impl MetastoreClient {
 
         let mut request = SnapshotRequest::default();
         request.set_latest(true);
-        request.set_optimistic(true);
+        request.set_optimistic(true); // Safe as this will be checked later during commit.
 
         let res = stub
             .Snapshot(&self.default_request_context()?, &request)
@@ -236,6 +240,7 @@ pub trait MetastoreClientInterface: Send + Sync {
     /// Looks up a single value from the metastore.
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
 
+    /// Looks
     async fn get_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<KeyValueEntry>>;
 
     async fn get_prefix(&self, prefix: &[u8]) -> Result<Vec<KeyValueEntry>> {
@@ -289,7 +294,7 @@ enum MetastoreTransactionClass<'a> {
         state: Mutex<MetastoreTransactionState>,
     },
     /// A transaction that was started inside of another transaction. This is
-    /// just
+    /// just a reference to the top level transaction.
     Nested {
         client: &'a MetastoreClient,
         state: &'a Mutex<MetastoreTransactionState>,
@@ -473,6 +478,7 @@ pub struct WatchStream {
 
 //
 
+/// TODO: This needs to detect retryable/cancellation related errors.
 #[macro_export]
 macro_rules! run_transaction {
     ($client:expr, $txn:ident, $f:expr) => {{

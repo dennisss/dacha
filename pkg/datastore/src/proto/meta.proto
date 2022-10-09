@@ -31,7 +31,11 @@ enum TableId {
 
 enum UserDataSubKey {
     UNKNOWN = 0;
+
+    // This key stores the raw data passed by the user for the primary key.
+    //
     // NOTE: This should be always be the lowest value so that all metadata is after it.
     USER_VALUE = 1;
+
     LOCK_INFO = 2;
 }

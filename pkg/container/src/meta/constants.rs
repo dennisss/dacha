@@ -24,4 +24,4 @@ pub const NODE_ID_ENV_VAR: &'static str = "CLUSTER_NODE";
 /// Environment variable containing the name of the currently running Worker.
 ///
 /// This is set by the Node runtime.
-pub const worker_name_ENV_VAR: &'static str = "CLUSTER_WORKER";
+pub const WORKER_NAME_ENV_VAR: &'static str = "CLUSTER_WORKER";

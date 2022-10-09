@@ -42,6 +42,20 @@ struct Args {
     TODO: Write disallow to the groups file?
 */
 
+/*
+
+Namespace:
+    - Must have CAP_SYS_ADMIN  | CAP_SYS_CHROOT
+    - CLONE_NEWNS | CLONE_FS |
+    - CLONE_NEWPID | CLONE_NEWUSER
+
+Cgroup
+
+Chroot
+
+NOTE: We must assume that all file descriptors created by Rust are opened with O_CLOEXEC
+*/
+
 fn create_idmap(
     subids: Vec<SubordinateIdRange>,
     entity_name: &str,

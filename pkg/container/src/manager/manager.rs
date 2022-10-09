@@ -12,7 +12,6 @@ use datastore::meta::client::MetastoreTransaction;
 use protobuf::Message;
 use rpc_util::{AddReflection, NamedPortArg};
 
-use crate::meta::client::ClusterMetaClient;
 use crate::meta::GetClusterMetaTable;
 use crate::proto::blob::*;
 use crate::proto::job::*;
@@ -73,8 +72,11 @@ const JOB_NAME_MAX_SIZE: usize = 180;
 
 const JOB_NAME_MAX_LABEL_LENGTH: usize = 63;
 
+/// Interval at which the manager will re-check the state of all jobs in the
+/// cluster to ensure that all have all workers assigned to healthy nodes.
 const JOB_RECONCILE_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 
+/// NOTE: Cloning a 'Manager' instance will reference the same internal object.
 #[derive(Clone)]
 pub struct Manager {
     meta_client: Arc<dyn MetastoreClientInterface>,
@@ -85,8 +87,9 @@ impl Manager {
         Self { meta_client }
     }
 
+    /// Entrypoint of the background manager thread which periodically ensures
+    /// that the cluster is in a good state.
     pub async fn run(self) -> Result<()> {
-        // Periodically retry reconciling all jobs. Sometimes we
         loop {
             let mut jobs = self
                 .meta_client
@@ -127,6 +130,8 @@ impl Manager {
         true
     }
 
+    /// Implementation of the StartJob RPC handler which creates new jobs in the
+    /// cluster upon request from the user.
     async fn start_job_impl(&self, request: &StartJobRequest) -> Result<()> {
         // Sanity check that the job is probably startable and doesn't contain any
         // invalid internal fields.
@@ -197,6 +202,7 @@ impl Manager {
         Ok(())
     }
 
+    /// In a single metastore transaction, this adds a job to the cluster.
     async fn start_job_transaction(
         &self,
         request: &StartJobRequest,

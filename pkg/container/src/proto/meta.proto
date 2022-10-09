@@ -13,6 +13,8 @@ import "third_party/google/src/proto/timestamp.proto";
 import "pkg/builder/src/proto/bundle.proto";
 import "third_party/google/src/proto/any.proto";
 
+// Ids of different tables stored in the main cluster metastore instance.
+// The numerical values of these dis are used as a key prefix in the key-value store.
 enum ClusterTableId {
     UNKNOWN = 0;
     Zone = 1;

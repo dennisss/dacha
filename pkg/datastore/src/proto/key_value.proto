@@ -15,7 +15,11 @@ service KeyValueStore {
     // Reads one or more key-value entries from storage.
     rpc Read (ReadRequest) returns (stream ReadResponse);
 
-    // Executes one or more write operations (setting or deleting key-value pairs).
+    // Executes one or more write operations atomically (setting or deleting key-value pairs).
+    //
+    // Errors:
+    // - FAILED_PRECONDITION: There was a conflicting write to the same keys as this write so the
+    //   request needs to be retried possibly at a higher read index.
     rpc Execute (ExecuteRequest) returns (ExecuteResponse);
 
     // Monitors a key prefix for changes returning all changes that occured since the server

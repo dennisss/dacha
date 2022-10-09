@@ -1,7 +1,8 @@
-use std::ops::{Deref, DerefMut};
+use core::ops::{Deref, DerefMut};
 
 use common::errors::*;
 use datastore::meta::client::MetastoreClient;
+use datastore::meta::client::MetastoreClientInterface;
 use google::proto::any::Any;
 use raft::proto::routing::RouteLabel;
 
@@ -9,6 +10,7 @@ use crate::meta::constants::ZONE_ENV_VAR;
 use crate::meta::{ClusterMetaTable, GetClusterMetaTable};
 use crate::proto::meta::ObjectMetadata;
 
+///
 pub struct ClusterMetaClient {
     zone: String,
     inner: MetastoreClient,
@@ -91,7 +93,7 @@ impl ClusterMetaClient {
 }
 
 #[async_trait]
-impl datastore::meta::client::MetastoreClientInterface for ClusterMetaClient {
+impl MetastoreClientInterface for ClusterMetaClient {
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         self.inner.get(key).await
     }
