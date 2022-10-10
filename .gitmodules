@@ -10,3 +10,6 @@
 [submodule "third_party/libcamera"]
 	path = third_party/libcamera
 	url = https://git.libcamera.org/libcamera/libcamera.git
+[submodule "third_party/rp2040_stamp_footprints"]
+	path = third_party/rp2040_stamp_footprints
+	url = git@github.com:solderparty/rp2040_stamp_footprints.git
