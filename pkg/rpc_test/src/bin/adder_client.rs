@@ -8,7 +8,6 @@ extern crate rpc_test;
 #[macro_use]
 extern crate macros;
 extern crate container;
-extern crate datastore;
 
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
@@ -16,7 +15,6 @@ use std::sync::Arc;
 use common::async_std::task;
 use common::errors::*;
 use container::meta::client::ClusterMetaClient;
-use datastore::meta::client::MetastoreClient;
 use rpc_test::proto::adder::*;
 
 #[derive(Args)]

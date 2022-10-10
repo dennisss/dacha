@@ -9,6 +9,9 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="20a0", ATTRS{idProduct}=="41e5", MODE="0660"
 # Dymo PnP
 SUBSYSTEM=="usb", ATTRS{idVendor}=="0922", ATTRS{idProduct}=="1001", MODE="0660", GROUP="plugdev"
 
+# Brother PT-P700
+SUBSYSTEM=="usb", ATTRS{idVendor}=="04f9", ATTRS{idProduct}=="2061", MODE="0660", GROUP="plugdev"
+
 # Elgato Stream Deck
 SUBSYSTEM=="usb", ATTRS{idVendor}=="0fd9", ATTRS{idProduct}=="006d", MODE="0660", GROUP="plugdev"
 

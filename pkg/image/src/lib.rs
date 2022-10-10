@@ -19,9 +19,12 @@ use math::geometry::bounding_box::BoundingBox;
 use math::matrix::{Vector2f, VectorStatic};
 use math::number::{Cast, Zero};
 
+mod binary;
 pub mod format;
 pub mod open;
 pub mod resize;
+
+pub use binary::*;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Colorspace {
@@ -176,6 +179,7 @@ impl Image<u8> {
 
     pub fn get(&self, y: usize, x: usize) -> Color {
         let mut color = Color::zero();
+        color[3] = 0xff;
         for i in 0..self.channels() {
             color[i] = self[(y, x, i)];
         }

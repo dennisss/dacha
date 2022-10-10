@@ -37,6 +37,12 @@ macro_rules! define_bit_flags {
             }
         }
 
+        impl ::core::convert::From<$t> for $struct {
+            fn from(value: $t) -> Self {
+                Self { value }
+            }
+        }
+
         impl ::core::ops::BitOr for $struct {
             type Output = Self;
 

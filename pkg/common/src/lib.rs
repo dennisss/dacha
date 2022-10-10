@@ -492,6 +492,61 @@ macro_rules! enum_def_with_unknown {
     };
 }
 
+/// TODO: Deduplicate this everywhere.
+#[macro_export]
+macro_rules! define_transparent_enum {
+    ($struct:ident $t:ty => $($name:ident = $value:expr),*) => {
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        #[repr(transparent)]
+        pub struct $struct {
+            value: $t,
+        }
+
+        impl $struct {
+            $(
+                pub const $name: Self = Self::from_raw($value);
+            )*
+
+            pub const fn from_raw(value: $t) -> Self {
+                Self { value }
+            }
+
+            pub fn to_raw(&self) -> $t {
+                self.value
+            }
+
+            pub fn as_str(&self) -> Option<&'static str> {
+                match self.value {
+                    $(
+                        $value => Some(stringify!($name)),
+                    )*
+                    _ => None
+                }
+            }
+        }
+
+        impl ::core::convert::From<$t> for $struct {
+            fn from(value: $t) -> Self {
+                Self { value }
+            }
+        }
+
+        impl ::core::fmt::Debug for $struct {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                // Write strictly the first element into the supplied output
+                // stream: `f`. Returns `fmt::Result` which indicates whether the
+                // operation succeeded or failed. Note that `write!` uses syntax which
+                // is very similar to `println!`.
+                if let Some(name) = self.as_str() {
+                    write!(f, "{}", name)
+                } else {
+                    write!(f, "0x{:x}", self.value)
+                }
+            }
+        }
+    };
+}
+
 /// Implements Deref and DerefMut for the simple case of which the derefernced
 /// value is a direct field of the struct.
 ///

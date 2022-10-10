@@ -12,7 +12,6 @@ protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 http = { path = "../http" }
 container = { path = "../container" }
-datastore = { path = "../datastore" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

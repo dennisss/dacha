@@ -89,12 +89,13 @@ impl CanvasFontRenderer {
                 return Err(err_msg("Character overflowed supported range"));
             }
 
-            let glyph_path =
-                self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
+            let glyph_path = self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
 
             let path_obj = match &mut glyph_path.path_object {
                 Some(v) => v,
-                None => glyph_path.path_object.insert(canvas.create_path_fill(&glyph_path.path)?)
+                None => glyph_path
+                    .path_object
+                    .insert(canvas.create_path_fill(&glyph_path.path)?),
             };
 
             canvas.save();
@@ -104,7 +105,8 @@ impl CanvasFontRenderer {
             canvas.scale(sizing.scale, -1.0 * sizing.scale);
 
             // NOTE: We assume that x_min == left_side_bearing so no translation is needed.
-            // self.translate(-1.0 * ((x_min - glyph_path.metrics.left_side_bearing) as f32), 0.0);
+            // self.translate(-1.0 * ((x_min - glyph_path.metrics.left_side_bearing) as
+            // f32), 0.0);
 
             path_obj.draw(paint, canvas)?;
 
@@ -149,8 +151,7 @@ impl CanvasFontRenderer {
                 return Err(err_msg("Character overflowed supported range"));
             }
 
-            let glyph_path =
-                self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
+            let glyph_path = self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
 
             let increment = (glyph_path.metrics.advance_width as f32) * sizing.scale;
             if let Some(max_width) = max_width.clone() {
@@ -174,11 +175,14 @@ impl CanvasFontRenderer {
             let (g, metrics) = self.font.char_glyph(code)?;
 
             let path = Self::build_glyph_path(&g)?;
-            glyph_paths.insert(code, GlyphPath {
-                path,
-                path_object: None,
-                metrics: metrics.clone()
-            });
+            glyph_paths.insert(
+                code,
+                GlyphPath {
+                    path,
+                    path_object: None,
+                    metrics: metrics.clone(),
+                },
+            );
         }
 
         Ok(glyph_paths.get_mut(&code).unwrap())
@@ -186,6 +190,14 @@ impl CanvasFontRenderer {
 
     fn build_glyph_path(g: &SimpleGlyph) -> Result<Path> {
         let mut path_builder = PathBuilder::new();
+
+        // We accept the following formats for each contour:
+        // - [Point, Point, Point, ...] <- Consecutive on-curve points defining lines
+        // - [Point, Control, Point, ...] <- Explicit Quadratic bezier curve
+        // - [Point, Control1, Control2, ..] <- Implicit on-curve point (Q) between
+        //   Control1 and Control2 at midpoint(Control1, Control2). This is then
+        //   interpreted as:
+        //   - [Point, Control1, Q, Control2, ...]
 
         for contour in &g.contours {
             // TODO: Check that there are at least two points in the contour. Otherwise it
@@ -208,21 +220,29 @@ impl CanvasFontRenderer {
                 if p_on_curve {
                     path_builder.line_to(p.cast());
                 } else {
-                    let mut curve = vec![p.cast()];
-                    while i < contour.len() && !contour[i].on_curve {
-                        curve.push(contour[i].to_vector().cast());
-                        i += 1;
-                    }
+                    // p is not on the curve so it is the control point of a quadratic bezier.
+                    let control_point = p.cast();
 
-                    // TODO: Check if this is correct.
-                    if i == contour.len() {
-                        curve.push(contour[0].to_vector().cast());
-                    } else {
-                        curve.push(contour[i].to_vector().cast());
-                        i += 1;
-                    }
+                    // Find the next on-curve point that is the end of the quadratic bezier.
+                    let mut end_point = {
+                        if i < contour.len() {
+                            let q = contour[i].to_vector().cast();
+                            let q_on_curve = contour[i].on_curve;
 
-                    path_builder.curve_to(&curve);
+                            if q_on_curve {
+                                i += 1; // Consume explicit end point
+                                q
+                            } else {
+                                // Implicit on-curve point is the midpoint of the two control
+                                // points.
+                                (&control_point + q) / 2.0
+                            }
+                        } else {
+                            contour[0].to_vector().cast()
+                        }
+                    };
+
+                    path_builder.curve_to(&[control_point, end_point]);
                 }
             }
 
@@ -266,8 +286,7 @@ impl CanvasFontRenderer {
                 return Err(err_msg("Character overflowed supported range"));
             }
 
-            let glyph_path =
-                self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
+            let glyph_path = self.create_glyph(char_code as u16, &mut glyph_paths_guard)?;
 
             let next_width = width + ((glyph_path.metrics.advance_width as f32) * sizing.scale);
             if next_width > x {

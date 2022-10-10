@@ -79,23 +79,6 @@ macro_rules! syscall {
     };
 }
 
-macro_rules! syscall_amd64_ret {
-    ($val:expr, ZERO) => {
-        if $val != 0 {
-            Err(Errno(-$val))
-        } else {
-            Ok(())
-        }
-    };
-    ($val:expr, $ret:ident) => {
-        if $val < 0 {
-            Err(Errno(-$val))
-        } else {
-            Ok($val as $ret)
-        }
-    };
-}
-
 macro_rules! syscall_expand {
     ($num:expr) => {
         $crate::syscall::syscall_raw(0, 0, 0, 0, 0, 0, $num)

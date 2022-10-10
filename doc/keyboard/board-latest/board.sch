@@ -8766,4 +8766,6 @@ Wire Wire Line
 	19850 3150 21650 3150
 Wire Wire Line
 	21550 2550 21550 3550
+Text Notes 2750 12650 0    50   ~ 0
+TODO: Add a RESET button.
 $EndSCHEMATC

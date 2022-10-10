@@ -87,6 +87,7 @@ members = [
 	"pkg/linker",
 	"pkg/logging",
 	"pkg/radix",
+	"pkg/ptouch",
 ]
 
 [profile.dev]
