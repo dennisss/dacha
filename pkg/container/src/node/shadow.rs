@@ -11,6 +11,9 @@ pub struct PasswdEntry {
     pub shell: String,
 }
 
+/// Reads all entries in the local linux /etc/passwd file.
+///
+/// Returns all users registered in the system.
 pub fn read_passwd() -> Result<Vec<PasswdEntry>> {
     let mut out = vec![];
     let data = std::fs::read_to_string("/etc/passwd")?;

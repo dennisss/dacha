@@ -11,6 +11,7 @@ use common::async_std::io::prelude::{SeekExt, WriteExt};
 use common::async_std::io::SeekFrom;
 use common::async_std::path::{Path, PathBuf};
 use common::async_std::prelude::StreamExt;
+use common::check_zero_padding;
 use common::errors::*;
 use common::io::Readable;
 
@@ -137,9 +138,9 @@ impl Reader {
         self.file.read_exact(&mut block).await?;
 
         // The end of the archive is marked by two nul records.
-        if Self::check_zero_padding(&block).is_ok() {
+        if check_zero_padding(&block).is_ok() {
             self.file.read_exact(&mut block).await?;
-            Self::check_zero_padding(&block)?;
+            check_zero_padding(&block)?;
 
             // NOTE: We can't check that we hit the end of the file as some implementations
             // may pad up to even larger block sizes.
@@ -166,7 +167,7 @@ impl Reader {
             }
         };
 
-        Self::check_zero_padding(rest)?;
+        check_zero_padding(rest)?;
 
         let entry = FileEntry {
             metadata: FileMetadata {
@@ -199,7 +200,7 @@ impl Reader {
         data.resize(padded_length, 0);
         self.file.read_exact(&mut data).await?;
 
-        Self::check_zero_padding(&data[(file_size as usize)..])?;
+        check_zero_padding(&data[(file_size as usize)..])?;
 
         data.truncate(file_size as usize);
 
@@ -311,7 +312,7 @@ impl Reader {
     /// space character.
     fn parse_numeric_value(data: &[u8]) -> Result<Option<u64>> {
         if data[0] == 0 {
-            Self::check_zero_padding(data)?;
+            check_zero_padding(data)?;
             return Ok(None);
         }
 
@@ -351,16 +352,6 @@ impl Reader {
         }
 
         Ok(out)
-    }
-
-    fn check_zero_padding(data: &[u8]) -> Result<()> {
-        for byte in data.iter() {
-            if *byte != 0 {
-                return Err(err_msg("Non-zero padding seen"));
-            }
-        }
-
-        Ok(())
     }
 
     pub async fn extract_files(&mut self, output_dir: &Path) -> Result<()> {

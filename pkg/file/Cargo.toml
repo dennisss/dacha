@@ -1,0 +1,10 @@
+[package]
+name = "file"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+sys = { path = "../sys" }
+executor = { path = "../executor" }
+macros = { path = "../macros" }

@@ -21,6 +21,7 @@ mod hex;
 mod param;
 mod race;
 mod reflect;
+mod testcase;
 mod utils;
 
 #[derive(Debug)]
@@ -149,4 +150,9 @@ pub fn race(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn hex(input: TokenStream) -> TokenStream {
     hex::hex(input)
+}
+
+#[proc_macro_attribute]
+pub fn testcase(attr: TokenStream, item: TokenStream) -> TokenStream {
+    testcase::testcase(attr, item)
 }

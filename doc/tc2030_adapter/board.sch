@@ -1,0 +1,152 @@
+EESchema Schematic File Version 4
+EELAYER 30 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title ""
+Date ""
+Rev ""
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L Connector_Generic:Conn_02x03_Odd_Even J1
+U 1 1 6359EF4A
+P 2800 2300
+F 0 "J1" H 2850 2617 50  0000 C CNN
+F 1 "Conn_02x03_Odd_Even" H 2850 2526 50  0000 C CNN
+F 2 "Connector_IDC:IDC-Header_2x03_P2.54mm_Vertical" H 2800 2300 50  0001 C CNN
+F 3 "~" H 2800 2300 50  0001 C CNN
+	1    2800 2300
+	1    0    0    -1  
+$EndComp
+Text GLabel 2600 2300 0    50   Input ~ 0
+RESET
+Text GLabel 3100 2200 2    50   Input ~ 0
+SWDIO
+Text GLabel 3100 2300 2    50   Input ~ 0
+SWDCLK
+Text GLabel 3100 2400 2    50   Input ~ 0
+BOOTSEL
+$Comp
+L power:GND #PWR0101
+U 1 1 635A037E
+P 2550 2550
+F 0 "#PWR0101" H 2550 2300 50  0001 C CNN
+F 1 "GND" H 2555 2377 50  0000 C CNN
+F 2 "" H 2550 2550 50  0001 C CNN
+F 3 "" H 2550 2550 50  0001 C CNN
+	1    2550 2550
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	2600 2400 2550 2400
+Wire Wire Line
+	2550 2400 2550 2550
+$Comp
+L Connector_Generic:Conn_02x05_Odd_Even J2
+U 1 1 635A08CF
+P 2800 3450
+F 0 "J2" H 2850 3867 50  0000 C CNN
+F 1 "Conn_02x05_Odd_Even" H 2850 3776 50  0000 C CNN
+F 2 "Connector_PinHeader_1.27mm:PinHeader_2x05_P1.27mm_Vertical_SMD" H 2800 3450 50  0001 C CNN
+F 3 "~" H 2800 3450 50  0001 C CNN
+	1    2800 3450
+	1    0    0    -1  
+$EndComp
+Text GLabel 2600 2200 0    50   Input ~ 0
+VREF
+Text GLabel 2600 3250 0    50   Input ~ 0
+VREF
+Text GLabel 3100 3250 2    50   Input ~ 0
+SWDIO
+$Comp
+L power:GND #PWR0102
+U 1 1 635A3C5F
+P 2250 3350
+F 0 "#PWR0102" H 2250 3100 50  0001 C CNN
+F 1 "GND" V 2255 3222 50  0000 R CNN
+F 2 "" H 2250 3350 50  0001 C CNN
+F 3 "" H 2250 3350 50  0001 C CNN
+	1    2250 3350
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	2250 3350 2500 3350
+Wire Wire Line
+	2600 3450 2500 3450
+Wire Wire Line
+	2500 3450 2500 3350
+Connection ~ 2500 3350
+Wire Wire Line
+	2500 3350 2600 3350
+Text GLabel 3100 3350 2    50   Input ~ 0
+SWDCLK
+Wire Wire Line
+	2600 3650 2500 3650
+Wire Wire Line
+	2500 3650 2500 3450
+Connection ~ 2500 3450
+Text GLabel 3100 3650 2    50   Input ~ 0
+RESET
+$Comp
+L Switch:SW_Push SW1
+U 1 1 635A51CB
+P 4850 2250
+F 0 "SW1" H 4850 2535 50  0000 C CNN
+F 1 "SW_Push" H 4850 2444 50  0000 C CNN
+F 2 "Button_Switch_THT:SW_PUSH_6mm" H 4850 2450 50  0001 C CNN
+F 3 "~" H 4850 2450 50  0001 C CNN
+	1    4850 2250
+	1    0    0    -1  
+$EndComp
+Text GLabel 4550 2250 0    50   Input ~ 0
+RESET
+$Comp
+L power:GND #PWR0103
+U 1 1 635A6C6E
+P 5100 2250
+F 0 "#PWR0103" H 5100 2000 50  0001 C CNN
+F 1 "GND" V 5105 2122 50  0000 R CNN
+F 2 "" H 5100 2250 50  0001 C CNN
+F 3 "" H 5100 2250 50  0001 C CNN
+	1    5100 2250
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	4550 2250 4650 2250
+Wire Wire Line
+	5050 2250 5100 2250
+$Comp
+L Switch:SW_Push SW2
+U 1 1 635A7C3B
+P 4850 2750
+F 0 "SW2" H 4850 3035 50  0000 C CNN
+F 1 "SW_Push" H 4850 2944 50  0000 C CNN
+F 2 "Button_Switch_THT:SW_PUSH_6mm" H 4850 2950 50  0001 C CNN
+F 3 "~" H 4850 2950 50  0001 C CNN
+	1    4850 2750
+	1    0    0    -1  
+$EndComp
+$Comp
+L power:GND #PWR0104
+U 1 1 635A7C46
+P 5100 2750
+F 0 "#PWR0104" H 5100 2500 50  0001 C CNN
+F 1 "GND" V 5105 2622 50  0000 R CNN
+F 2 "" H 5100 2750 50  0001 C CNN
+F 3 "" H 5100 2750 50  0001 C CNN
+	1    5100 2750
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	4550 2750 4650 2750
+Wire Wire Line
+	5050 2750 5100 2750
+Text GLabel 4550 2750 0    50   Input ~ 0
+BOOTSEL
+$EndSCHEMATC

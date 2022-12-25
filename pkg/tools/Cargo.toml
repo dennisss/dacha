@@ -1,0 +1,18 @@
+[package]
+name = "tools"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+macros = { path = "../macros" }
+automata = { path = "../automata" }
+regexp_macros = { path = "../regexp_macros" }
+common = { path = "../common" }
+radix = { path = "../radix" }
+uuid = { path = "../uuid" }
+crypto = { path = "../crypto" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

@@ -1,0 +1,110 @@
+structs {
+    name: "MBR"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "bootstrap_code_area"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                fixed_length: 446
+            }
+        }
+    }
+    field {
+        name: "partition_entries"
+        type {
+            buffer {
+                element_type { named: "PartitionEntry" }
+                fixed_length: 4
+            }
+        }
+    }
+    field {
+        name: "boot_signature"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                fixed_length: 2
+            }
+        }
+    }
+}
+
+structs {
+    name: "PartitionEntry"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "status"
+        type { primitive: U8 }
+    }
+    field {
+        name: "first_absolute_sector"
+        type { named: "CHSAddress" }
+    }
+    field {
+        name: "partition_type"
+        type { named: "PartitionType" }
+    }
+    field {
+        name: "last_absolute_sector"
+        type { named: "CHSAddress" }
+    }
+    field {
+        name: "first_absolute_sector_lba"
+        type { primitive: U32 }
+    }
+    field {
+        name: "num_sectors"
+        type { primitive: U32 }
+    }
+}
+
+structs {
+    name: "CHSAddress"
+    endian: LITTLE_ENDIAN
+    field {
+        name: "head"
+        type { primitive: U8 }
+    }
+    # field {
+    #    name: "cylinder_high"
+    #    comment: "Bits 8 and 9 of the cylinder value"
+    #    bit_width: 2
+    #    type { primitive: U8 }
+    # }
+    field {
+        name: "sector_and_cylinder_high"
+        # bit_width: 6
+        type { primitive: U8 }
+    }
+    field {
+        name: "cylinder"
+        type { primitive: U8 }
+    }
+}
+
+enums {
+    name: "PartitionType"
+    endian: LITTLE_ENDIAN
+    type { primitive: U8 }
+    values {
+        name: "Empty"
+        value: 0
+    }
+    values {
+        name: "FAT16"
+        value: 0x04
+    }
+    values {
+        name: "FAT32_CHS"
+        value: 0x0B
+    }
+    values {
+        name: "FAT32_LBA"
+        value: 0x0C
+    }
+    values {
+        name: "GPTProtectiveMBR"
+        value: 0xEE
+    }
+}

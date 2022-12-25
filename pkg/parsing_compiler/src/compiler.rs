@@ -138,6 +138,8 @@ impl<'c> Compiler<'c> {
         }
 
         let mut lines = LineBuilder::new();
+        lines.add("use ::alloc::vec::Vec;");
+        lines.nl();
         lines.add("use ::common::errors::*;");
         lines.add("use ::parsing::parse_next;");
         lines.nl();
@@ -393,22 +395,33 @@ impl<'c> Compiler<'c> {
                 match buf.size_case() {
                     // TODO: Some types like large primitive slices can be optimized.
                     BufferTypeSizeCase::FixedLength(len) => {
-                        lines.add(format!(
-                            "\tlet mut buf = [{}::default(); {}];",
-                            self.compile_type(buf.element_type())?,
-                            len
-                        ));
-
                         if let TypeTypeCase::Primitive(PrimitiveType::U8) =
                             buf.element_type().type_case()
                         {
+                            lines.add(format!(
+                                "\tlet mut buf = [{}::default(); {}];",
+                                self.compile_type(buf.element_type())?,
+                                len
+                            ));
+
                             // TODO: Ensure that we always take exact a slice (and not Bytes as that
                             // is an expensive copy)!
                             lines.add("\t{ let n = buf.len(); buf.copy_from_slice(parse_next!(input, ::parsing::take_exact(n))); }");
+                            lines.add("\tbuf");
                         } else {
+                            lines.add(format!(
+                                "\tlet mut buf: [core::mem::MaybeUninit<{}>; {}] = core::mem::MaybeUninit::uninit_array();",
+                                self.compile_type(buf.element_type())?,
+                                len
+                            ));
+
                             lines.add("\tfor i in 0..buf.len() {");
-                            lines.add(format!("\t\tbuf[i] = {};", element_parser));
+                            lines.add(format!("\t\tbuf[i].write({});", element_parser));
                             lines.add("\t}");
+
+                            lines.add(
+                                "\tunsafe {  core::mem::MaybeUninit::array_assume_init(buf) }",
+                            );
                         }
                     }
                     BufferTypeSizeCase::LengthFieldName(name) => {
@@ -437,6 +450,8 @@ impl<'c> Compiler<'c> {
                             lines.add(format!("\t\tbuf.push({});", element_parser));
                             lines.add("\t}");
                         }
+
+                        lines.add("\tbuf");
                     }
                     BufferTypeSizeCase::EndTerminated(_) => {
                         let after_count =
@@ -467,13 +482,14 @@ impl<'c> Compiler<'c> {
                                 element_parser
                             ));
                         }
+
+                        lines.add("\tbuf");
                     }
                     BufferTypeSizeCase::Unknown => {
                         panic!();
                     }
                 }
 
-                lines.add("\tbuf");
                 lines.add("}");
                 lines.indent();
                 lines.indent();
@@ -653,7 +669,7 @@ impl<'c> Compiler<'c> {
 
         for field in desc.field() {
             if field_index.insert(&field.name(), field).is_some() {
-                return Err(err_msg("Duplicate field"));
+                return Err(format_err!("Duplicate field named: {}", field.name()));
             }
 
             let used_names = self.referenced_field_names(field.typ());
@@ -782,7 +798,7 @@ impl<'c> Compiler<'c> {
         }
 
         // TODO: Consider using packed memory?
-        lines.add("#[derive(Debug, PartialEq)]");
+        lines.add("#[derive(Debug, PartialEq, Clone)]");
         lines.add(format!("pub struct {} {{", desc.name()));
 
         // Adding struct member delarations.

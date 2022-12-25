@@ -1,0 +1,124 @@
+structs {
+    name: "Header"
+    endian: LITTLE_ENDIAN    
+    field {
+        name: "signature"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                fixed_length: 8
+            }
+        }
+    }
+    field {
+        name: "revision"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                fixed_length: 4
+            }
+        }
+    }
+    field {
+        name: "header_size"
+        type { primitive: U32 }
+    }
+    field {
+        name: "header_checksum"
+        type { primitive: U32 }
+    }
+    field {
+        name: "reserved"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                fixed_length: 4
+            }
+        }
+    }
+    field {
+        name: "current_lba"
+        type { primitive: U64 }
+    }
+    field {
+        name: "backup_lba"
+        type { primitive: U64 }
+    }
+    field {
+        name: "first_usable_lba"
+        type { primitive: U64 }
+    }
+    field {
+        name: "last_usable_lba"
+        type { primitive: U64 }
+    }
+    field {
+        name: "disk_guid"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                fixed_length: 16
+            }
+        }
+    }
+    field {
+        name: "partition_entries_lba"
+        type { primitive: U64 }
+    }
+    field {
+        name: "num_partition_entries"
+        type { primitive: U32 }
+    }
+    field {
+        name: "partition_entry_size"
+        type { primitive: U32 }
+    }
+    field {
+        name: "partition_entries_checksum"
+        type { primitive: U32 }
+    }
+}
+
+structs {
+    name: "PartitionEntry"
+    endian: LITTLE_ENDIAN    
+    field {
+        name: "type_guid"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                fixed_length: 16
+            }
+        }
+    }
+    field {
+        name: "partition_guid"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                fixed_length: 16
+            }
+        }
+    }
+    field {
+        name: "first_lba"
+        type { primitive: U64 }
+    }
+    field {
+        name: "last_lba"
+        type { primitive: U64 }
+    }
+    field {
+        name: "attribute_flags"
+        type { primitive: U64 }
+    }
+    field {
+        name: "partition_name"
+        type {
+            buffer {
+                element_type { primitive: U8 }
+                fixed_length: 72
+            }
+        }
+    }
+}

@@ -13,7 +13,7 @@ use super::linearize::LINEARIZATION_MIN_STEP;
 
 pub trait Points = Clone + AsRef<[Vector2f]> + AsMut<[Vector2f]>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BezierCurve<P = Vec<Vector2f>> {
     pub points: P,
 }

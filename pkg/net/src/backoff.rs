@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use std::time::Duration;
 use std::time::Instant;
 

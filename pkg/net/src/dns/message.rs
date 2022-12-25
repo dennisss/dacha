@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use common::errors::*;
 
 use crate::dns::name::*;
@@ -114,18 +116,22 @@ impl<'a> ResourceRecord<'a> {
                     return Err(err_msg("IpV4 must be 4 bytes"));
                 }
 
-                Ok(ResourceRecordData::Address(IPAddress::V4(
-                    self.trailer.data.to_vec(),
-                )))
+                Ok(ResourceRecordData::Address(IPAddress::V4(*array_ref![
+                    self.trailer.data,
+                    0,
+                    4
+                ])))
             }
             RecordType::AAAA => {
                 if self.trailer.data.len() != 16 {
                     return Err(err_msg("IpV6 must be 16 bytes"));
                 }
 
-                Ok(ResourceRecordData::Address(IPAddress::V6(
-                    self.trailer.data.to_vec(),
-                )))
+                Ok(ResourceRecordData::Address(IPAddress::V6(*array_ref![
+                    self.trailer.data,
+                    0,
+                    16
+                ])))
             }
             // _Service._Proto.Name TTL Class SRV Priority Weight Port Target
             // Defined in https://datatracker.ietf.org/doc/html/rfc2782

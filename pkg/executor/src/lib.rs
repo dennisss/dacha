@@ -1,10 +1,22 @@
-#![feature(const_fn_trait_bound, negative_impls, type_alias_impl_trait, asm)]
+#![feature(
+    const_fn_trait_bound,
+    negative_impls,
+    type_alias_impl_trait,
+    asm,
+    waker_getters,
+    thread_local
+)]
 #![no_std]
 
 #[cfg(feature = "std")]
 extern crate common;
 #[cfg(feature = "std")]
+#[macro_use]
 extern crate std;
+
+#[cfg(feature = "alloc")]
+#[macro_use]
+extern crate alloc;
 
 extern crate peripherals_raw;
 
@@ -27,7 +39,6 @@ pub mod linux;
 
 #[cfg(feature = "std")]
 pub use linux::*;
-
 
 #[cfg(test)]
 mod tests {

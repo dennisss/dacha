@@ -1,6 +1,6 @@
-use std::fs;
-
 use common::errors::*;
+
+use crate::file::blocking_read_to_string;
 
 // TODO: Switch to expecting exactly 2 numbers fo the device_bus and device_num.
 regexp!(LINE => "^([a-f0-9]+)-([a-f0-9]+) +(r|-)(w|-)(x|-)(p|-) +([0-9a-f]+) +([0-9a-f]+):([0-9a-f]+) +([0-9]+) +([^ ]*)$");
@@ -36,7 +36,7 @@ pub struct VirtualMemoryPermissions {
 
 impl VirtualMemoryMap {
     pub fn read_current() -> Result<Self> {
-        let data = fs::read_to_string("/proc/self/maps")?;
+        let data = blocking_read_to_string("/proc/self/maps")?;
 
         let mut areas = vec![];
 
@@ -75,6 +75,25 @@ impl VirtualMemoryMap {
         }
 
         Ok(Self { areas })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_current_map() {
+        let map = VirtualMemoryMap::read_current().unwrap();
+
+        let mut has_heap = false;
+        for area in &map.areas {
+            if area.path == "[heap]" {
+                has_heap = true;
+            }
+        }
+
+        assert!(has_heap);
     }
 }
 

@@ -7,8 +7,9 @@ edition = "2021"
 [dependencies]
 common = { path = "../common", default-features = false }
 peripherals_raw = { path = "../peripherals_raw" }
+sys = { path = "../sys", optional = true }
 
 [features]
 default = ["std", "alloc"]
 alloc = ["common/alloc"]
-std = ["common/std"]
+std = ["common/std", "sys"]

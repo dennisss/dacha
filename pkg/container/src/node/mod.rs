@@ -326,7 +326,7 @@ impl Node {
             }
         };
 
-        println!("Node id: {}", common::base32::base32_encode_cl64(id));
+        println!("Node id: {}", radix::base32_encode_cl64(id));
 
         let inner = NodeStateInner {
             container_id_to_worker_name: HashMap::new(),

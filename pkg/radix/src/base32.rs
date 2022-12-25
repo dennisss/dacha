@@ -1,6 +1,6 @@
 use alloc::string::String;
 
-const U64_NUM_BYTES: usize = crate::ceil_div(64, 5);
+const U64_NUM_BYTES: usize = 13; // crate::ceil_div(64, 5);
 
 /*
 Encodings Supported:

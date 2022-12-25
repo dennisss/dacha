@@ -66,30 +66,30 @@ impl DeviceTransferState {
         // Error code meanings are documented here:
         // https://www.kernel.org/doc/html/latest/driver-api/usb/error-codes.html#error-codes-returned-by-in-urb-status-or-in-iso-frame-desc-n-status-for-iso
         if self.urb.status != 0 {
-            let errno = -1 * self.urb.status;
+            let errno = sys::Errno(-1 * self.urb.status as i64);
 
             // This will occur when we are performing a bulk/interrupt read and we
             // received a packet that would overflow our receiving buffer.
             //
             // NOTE: This will never if the buffer size is a multiple of the maximum
             // packet size for the endpoint.
-            if errno == libc::EOVERFLOW {
+            if errno == sys::Errno::EOVERFLOW {
                 return Err(crate::Error::Overflow.into());
             }
 
-            if errno == libc::ENODEV || errno == libc::ESHUTDOWN {
+            if errno == sys::Errno::ENODEV || errno == sys::Errno::ESHUTDOWN {
                 return Err(crate::Error::DeviceDisconnected.into());
             }
 
-            if errno == libc::EPROTO || errno == libc::EILSEQ {
+            if errno == sys::Errno::EPROTO || errno == sys::Errno::EILSEQ {
                 return Err(crate::Error::TransferFailure.into());
             }
 
-            if errno == libc::EPIPE {
+            if errno == sys::Errno::EPIPE {
                 return Err(crate::Error::TransferStalled.into());
             }
 
-            return Err(nix::Error::from_errno(nix::errno::from_i32(errno)).into());
+            return Err(errno.into());
         }
 
         Ok(())

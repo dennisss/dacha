@@ -1,3 +1,6 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use common::errors::*;
 
 use crate::dns::message::Message;
@@ -14,7 +17,7 @@ impl MessageCell {
     ) -> Result<Self> {
         let value = unsafe {
             let owned_ref = std::mem::transmute::<_, &'static [u8]>(&owned[..]);
-            std::mem::transmute(ctor(&owned_ref)?)
+            core::mem::transmute(ctor(&owned_ref)?)
         };
         Ok(Self { owned, value })
     }

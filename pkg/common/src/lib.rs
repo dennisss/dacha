@@ -50,6 +50,8 @@ pub extern crate chrono;
 pub extern crate generic_array;
 pub extern crate typenum;
 
+pub extern crate nix;
+
 #[cfg(feature = "std")]
 pub mod algorithms;
 pub mod any;
@@ -58,8 +60,6 @@ pub mod args;
 #[cfg(feature = "std")]
 pub mod async_fn;
 pub mod attribute;
-#[cfg(feature = "std")]
-pub mod base32;
 pub mod bit_flags;
 #[cfg(feature = "std")]
 pub mod bits;
@@ -495,7 +495,7 @@ macro_rules! enum_def_with_unknown {
 /// TODO: Deduplicate this everywhere.
 #[macro_export]
 macro_rules! define_transparent_enum {
-    ($struct:ident $t:ty => $($name:ident = $value:expr),*) => {
+    ($struct:ident $t:ty { $($name:ident = $value:expr),* }) => {
         #[derive(Clone, Copy, PartialEq, Eq)]
         #[repr(transparent)]
         pub struct $struct {
@@ -516,9 +516,13 @@ macro_rules! define_transparent_enum {
             }
 
             pub fn as_str(&self) -> Option<&'static str> {
+                $(
+                    const $name: $t = $value;
+                )*
+
                 match self.value {
                     $(
-                        $value => Some(stringify!($name)),
+                        $name => Some(stringify!($name)),
                     )*
                     _ => None
                 }
@@ -623,6 +627,18 @@ macro_rules! map_raw(
         }
      };
 );
+
+/// Verifies
+#[cfg(feature = "alloc")]
+pub fn check_zero_padding(data: &[u8]) -> crate::errors::Result<()> {
+    for byte in data.iter() {
+        if *byte != 0 {
+            return Err(crate::errors::err_msg("Non-zero padding seen"));
+        }
+    }
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

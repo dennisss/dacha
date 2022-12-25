@@ -17,7 +17,7 @@ pub fn hex(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as LitStr).value();
     input.retain(|c| !c.is_whitespace());
 
-    let data = radix::hex_decode(&input);
+    let data = radix::hex_decode(&input).unwrap();
 
     TokenStream::from(quote! {
         [#( #data, )*]

@@ -111,7 +111,7 @@ pub fn fill_polygon(
     let y_values = ((bbox.min.y().floor() as usize)..((bbox.max.y() + 1.0).floor() as usize))
         .map(|y| (y as f32) + 0.5);
 
-    let mut scan_line_iter = ScanLineIterator::create(vertices, path_starts, fill_rule, y_values)?;
+    let mut scan_line_iter = ScanLineIterator::create(vertices, path_starts, fill_rule, y_values);
 
     while let Some((y, x_intercepts)) = scan_line_iter.next() {
         if x_intercepts.is_empty() {

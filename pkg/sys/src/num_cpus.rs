@@ -1,5 +1,6 @@
-
 use common::errors::*;
+
+use crate::file::blocking_read_to_string;
 
 pub fn num_cpus() -> Result<usize> {
     // TODO: Verify that all CPUs are numbered from 0 to N-1
@@ -7,7 +8,7 @@ pub fn num_cpus() -> Result<usize> {
 
     let mut total = 0;
 
-    let data = std::fs::read_to_string("/proc/stat")?;
+    let data = blocking_read_to_string("/proc/stat")?;
     for line in data.lines() {
         if let Some(rest) = line.strip_prefix("cpu") {
             if let Some(c) = rest.chars().next() {
@@ -21,13 +22,14 @@ pub fn num_cpus() -> Result<usize> {
     Ok(total)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn print_num_cpus() {
-        println!("Num CPUs: {}", num_cpus().unwrap());
+        let num = num_cpus().unwrap();
+        assert!(num >= 2 && num < 1000);
+        println!("Num CPUs: {}", num);
     }
 }

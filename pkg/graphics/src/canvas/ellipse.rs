@@ -3,7 +3,7 @@ use math::matrix::{vec2f, Matrix3f, Vector2f};
 use crate::canvas::curve::Curve;
 use crate::transforms::transform2f;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Ellipse {
     pub center: Vector2f,
 

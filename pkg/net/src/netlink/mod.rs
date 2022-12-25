@@ -1,9 +1,10 @@
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use std::collections::HashMap;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::FromRawFd;
 use std::sync::atomic::AtomicUsize;
 
-use common::async_std::net::UdpSocket;
 use common::errors::*;
 use nix::sys::socket::recvmsg;
 use nix::sys::socket::sendmsg;
@@ -360,14 +361,14 @@ pub fn local_ip() -> Result<IPAddress> {
             match addr.family {
                 InterfaceAddrFamily::INET => {
                     found_v4 = true;
-                    found_ip = Some(IPAddress::V4(addr.address));
+                    found_ip = Some(IPAddress::V4(*array_ref![addr.address, 0, 4]));
                 }
                 InterfaceAddrFamily::INET6 => {
                     if found_v4 {
                         continue;
                     }
 
-                    found_ip = Some(IPAddress::V6(addr.address));
+                    found_ip = Some(IPAddress::V6(*array_ref![addr.address, 0, 16]));
                 }
             }
         }
@@ -455,6 +456,8 @@ fn serialize_cstruct<T>(value: &T, out: &mut Vec<u8>) {
 trait StructLength {
     fn struct_length(&self) -> usize;
 }
+
+// TODO: Move these to third_party
 
 #[repr(C)]
 #[derive(Default, Debug)]

@@ -225,7 +225,7 @@ impl ParserFeed for &[u8] {
 
     fn take_while<F: Fn(Self::Item) -> bool>(self, f: F) -> (Self, Self) {
         let mut rest = self;
-        while let Some((v, r)) = self.split_first() {
+        while let Some((v, r)) = rest.split_first() {
             if f(*v) {
                 rest = r;
             } else {

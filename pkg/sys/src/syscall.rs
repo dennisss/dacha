@@ -41,6 +41,9 @@ Arm64 calling convention:
     x0 - x7 : arguments
     x0 - x1 : return value
 
+    Caller responsible for saving
+        x0 to x15
+
     Callee responsible for saving
         x19 to x29
 */
@@ -103,54 +106,59 @@ macro_rules! syscall_expand {
     };
 }
 
-/// NOTE: This is unsafe if it is inlined as we want to ensure that the caller
-/// saves any registers it cares about based on the ABI convention.
-#[cfg(target_arch = "x86_64")]
-#[inline(never)]
-pub unsafe fn syscall_raw(
-    arg1: u64,
-    arg2: u64,
-    arg3: u64,
-    arg4: u64,
-    arg5: u64,
-    arg6: u64,
-    mut num: u64,
-) -> i64 {
-    ::core::arch::asm!(
-        "syscall",
-        in("rdi") arg1,
-        in("rsi") arg2,
-        in("rdx") arg3,
-        in("r10") arg4,
-        in("r8") arg5,
-        in("r9") arg6,
-        inout("rax") num,
-    );
+extern "C" {
+    /// Makes a single linux syscall.
+    ///
+    /// - This is wrapped in a function to ensure that the caller follows ABI
+    ///   register conventions across the invocation boundary (e.g. saving
+    ///   registers)
+    /// - This must be hardcoded in assembly because our thread stack creation
+    ///   code depends on knowing the layout of the stack used by this function
+    ///   (as the first thing that happens after a clone() syscall is this
+    ///   function returning using the new thread's stack).
+    pub fn syscall_raw(
+        arg1: u64, // RDI / X0
+        arg2: u64, // RSI / X1
+        arg3: u64, // RDX / X2
+        arg4: u64, // RCX / X3
+        arg5: u64, // R8 / X4
+        arg6: u64, // R9 / X5
+        num: u64,  // Stack / X6
+    ) -> i64;
 
-    num as i64
+    pub fn sigreturn();
 }
+
+#[cfg(target_arch = "x86_64")]
+core::arch::global_asm!(
+    r#"
+.global syscall_raw
+syscall_raw:
+    push rbp
+    mov rbp, rsp
+    mov rax, [rsp+16]
+    mov r10, rcx
+    syscall
+    pop rbp
+    ret
+
+.global sigreturn
+sigreturn:
+    mov rax, 15
+    syscall
+    "#
+);
 
 #[cfg(target_arch = "aarch64")]
-#[inline(never)]
-pub unsafe fn syscall_raw(
-    mut arg1: u64,
-    arg2: u64,
-    arg3: u64,
-    arg4: u64,
-    arg5: u64,
-    arg6: u64,
-    num: u64,
-) -> i64 {
-    ::core::arch::asm!(
-        "svc #0",
-        inout("x0") arg1,
-        in("x1") arg2,
-        in("x2") arg3,
-        in("x3") arg4,
-        in("x4") arg5,
-        in("x5") arg6,
-        in("x8") num
-    );
-
-    arg1 as i64
-}
+core::arch::global_asm!(
+    r#"
+.global syscall_raw
+syscall_raw:
+    push fp
+    mov fp, sp
+    mov x8, x6 # system call number
+    svc #0
+    pop fp
+    ret
+    "#
+);

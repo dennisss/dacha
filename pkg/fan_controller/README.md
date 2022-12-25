@@ -1,8 +1,125 @@
+# PC Fan Controller
 
-# Board Details
+This is a desktop computer fan controller.
+
+## Requirements
+
+There are the requirements we considered when designing a solution:
+
+- Must fit in the back side of an NCase M1
+    - There is a convenient slot between the side pannel latches where the fan controller can be stored.
+    - This slot is 90mm wide.
+- Flexibility for either 12V or 5V fans
+    - Either all 12V or all 5V. Normally in a computer only 12V fans will be used though.
+    - We will implement this by keeping the logic and fan power
+- Support for 4-pin PWM fans
+    - Need at least 4 PWM outputs for fans on 2x240mm radiators.
+    - Need at least 1 PWM output for a water pump.
+- Support for independent fan PWM output
+    - Technical Specification:
+        - See also https://noctua.at/pub/media/wysiwyg/Noctua_PWM_specifications_white_paper.pdf
+        - Frequency: 25kHz varied from 0-100% duty cycle.
+        - Internally pulled up by fans to 3.3/5V
+- Support for reading tachometer input for failure detection
+    - Must support independently checking each fan.
+    - Must support reading a relatively low frequency as the fan pump
+    - Technical Specification:
+        - Fan exposes an open collector output (we must pull it up to VCC and fan will drive it to GND in pulses).
+        - Fans emit 2 pulses per rotation
+        - For 1500 RPM fans, need to support reading a 50Hz input wave
+            - Should support between 5Hz and 150Hz for robustness/compatibility
+- Power Requirements
+    - Pass through 12V power for up to 6 fans. 
+    - Expect 0.05A (0.6W) per fan
+    - So 0.3A total
+- Support for external control of the computer
+    - Should be able to run logic MCU off of an external interface (e.g. USB).
+    - Support detecting whether or not the computer is on (see if 12V power was applied)
+    - Support for electronically pressing the motherboard Power/Reset buttons.
+    - Support for modifying fan curves or reading out fan controller state over USB.
+- Support SEN-FM18T10
+    - https://koolance.com/coolant-flow-meter-stainless-steel-with-temperature-sensor-sen-fm18t10
+    - 10K thermistor
+    - Flow rate frequency input is 5Hz - 32Hz
+- Support giving feedback to the motherboard as to whether or not the fan controller is working.
+    - e.g. feed the CPU Fan header on the motherboard with a fan tachometer input so that the motherboard believes the fan is spinning.
+
+
+## Hardware Design
+
+### R3
+
+This board has:
+
+- RP2040 for all control logic.
+- 6 4-pin PWM fan/pump inputs
+    - 1 may be switched into a 'Fake CPU Fan'.
+    - Spaced 0.5in apart.
+- 2 10K thermistor inputs
+- 1 water flow meter tachometer input.
+- 1 USB-C control interface
+- 1 4-pin PC power input port for attaching a Molex 12V/5V/GND connection.
+
+#### PWM/Tachometer Output/Input Design
+
+The RP2040 has 8 PWM slices each with 2 channels A/B. There are a few limitations to keep in mind:
+
+- A single PWM slice can run at a single frequency at a time.
+    - So if want to support a 'Fake CPU Fan' running at a lower frequency than other PWMs, it must be on a dedicated slice.
+- The 'B' channel can be used as an input for frequency measurement (for analyzing the fan tachometer input).
+    - But if 'B' is used as an input to the channel, the channel can't be used for anything else.
+    - But, multiple GPIOs are mapped to the A and B channel of each slice so given that we don't need to always measure every single fan's speed, we can multiplex which fans we are measuring (up to 2 different pins' frequencies can be measured with one slice). 
+- The RP2040 has a pull up/down resistance of ~50K so can be used to pull up the tachometer inputs.
+
+So this leads us to the following mapping of slices to functions:
+- Slices 5,6,7 will always run at 25kHz with both A/B channels usable as fan pwm outputs at different duty cycles (up to 6 fans).
+- Slice 4 is dedicated to operate the 'Fake CPU Fan' with the channel operating at either 25kHz for PWM output or a lower frequency for tachometer output.
+- Slices 0,1,2,3 will have up to 2 B channel pins connected each to enable measuring the frequency of up to 4 tachometer frequencies at once.
+
+
+#### Thermistor Inputs
+
+We aim to optimize from the temperature range 25C to 70C
+
+- This results in a resistance range of 10K to 2.3K
+- To be more flexible, we will support down to 20C (12.10K)
+
+To select the second half of the voltage divider, we optimize for the widest voltage range below 3.3V each a 3.3V input.
+
+- With 10K resistor
+    - 1.493 V to 2.683 V = 1.19V range
+- With 20K resistor
+    - 2.056 V to 2.96 V = 0.904 V range
+- With 5.6K resistor
+    - 1.044 V -> 2.339 V = **1.294 V range**
+
+#### Parts
+
+- W25Q128JVSIM
+    - https://www.digikey.com/en/products/detail/winbond-electronics/W25Q128JVSIM/6819721
+    - 8 SOIC
+- 12Mhhz crystal
+    - 18pF
+    - 0.126" L x 0.098" W (3.20mm x 2.50mm)
+    - https://www.digikey.com/en/products/detail/cts-frequency-controls/403I35D12M00000/2636724
+- 27pF 0603 caps
+
+### R4
+
+TODO
+
+- Use a pair of TS3A5017 to be able to support 16 tachometer inputs and thus 16 fans.
+- Further space saving can be be done with 0402 components.
+
+
+
+
+
+## Old 2
+
 
 - Tiny 2040
-- RP2040 Pull up/down resistance is ~50K
+
 
 Requirements:
 - When just 12V is connected, it must work
@@ -41,9 +158,6 @@ Minimum Connection Requirement:
 
 - ESP8266 will 
 
-
-HDMI switch
-- Need to read EDID from the display
 
 
 Wireless boards:
@@ -354,25 +468,9 @@ Blue
 - C23204
 
 
-Thermistor Rank: 25C to 70C
-- 10K to 2.3K
 
-- Really need to go down to 20C (12.10K)
-- 
 
-- With 10K resistor
-    - 2.5V -> 4.065V => dV = 1.56500
-    - 2.262 => 1.80500
-    - 3.165 => 0.9
-- With 20K resistor
-    - 3.333 ->  4.484 => dV = 1.15400
-- With 5K resistor
-    - 1.667 -> 3.425 => dV = 1.75800
-    - 1.462 => 1.96300
-    - 2.315 => 1.11
-- With 2K
-    - 0.833 -> 2.326 => dV = 1.49300
-    - 
+
 
 0.709 -> 2.326
 

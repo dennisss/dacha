@@ -59,7 +59,7 @@ pub(crate) struct ContextState {
 
     /// File descriptor for the eventfd() used to notify the background thread
     /// when a change to the open devices has occured.
-    background_thread_eventfd: libc::c_int,
+    background_thread_eventfd: sys::c_int,
 
     /// The sending end of the set of all channels which are waiting for the
     /// background thread to finish executing at least one cycle.
@@ -80,7 +80,7 @@ impl ContextState {
     // devices so must only be called after all devices are destroyed.
     fn close(&mut self) {
         // TODO: Check return value
-        unsafe { libc::close(self.background_thread_eventfd) };
+        unsafe { sys::close(self.background_thread_eventfd) };
 
         // NOTE: The background thread should terminate itself shortly now that
         // the eventfd is dead.
@@ -90,10 +90,7 @@ impl ContextState {
 impl Context {
     pub fn create() -> Result<Self> {
         let background_thread_eventfd =
-            unsafe { libc::eventfd(0, libc::O_CLOEXEC | libc::O_NONBLOCK) };
-        if background_thread_eventfd == -1 {
-            return Err(err_msg("Failed to create eventfd for background thread"));
-        }
+            unsafe { sys::eventfd2(0, sys::O_CLOEXEC | sys::O_NONBLOCK) }?;
 
         // TODO: Drop the outer Arc and return a regular object.
         let instance = Context {
@@ -130,9 +127,9 @@ impl Context {
             {
                 fds.clear();
 
-                fds.push(libc::pollfd {
+                fds.push(sys::pollfd {
                     fd: context_state.background_thread_eventfd,
-                    events: libc::POLLIN,
+                    events: sys::POLLIN,
                     revents: 0,
                 });
 
@@ -142,22 +139,28 @@ impl Context {
                         continue;
                     }
 
-                    fds.push(libc::pollfd {
+                    fds.push(sys::pollfd {
                         fd: dev.fd,
-                        events: libc::POLLOUT,
+                        events: sys::POLLOUT,
                         revents: 0,
                     });
                 }
             }
 
-            let n = unsafe { libc::poll(&mut fds[0], fds.len() as libc::nfds_t, 1000) };
-            if n == 0 {
-                // Timed out
-                continue;
-            } else if n == -1 {
-                println!("Polling error!!!");
-                return;
-            }
+            let poll_result =
+                unsafe { sys::poll(fds.as_mut_ptr(), fds.len() as sys::c_uint, 1000) };
+
+            let n = match poll_result {
+                Ok(0) => {
+                    // Timeout
+                    continue;
+                }
+                Ok(n) => n,
+                Err(e) => {
+                    eprintln!("Polling error: {:?}", e);
+                    return;
+                }
+            };
 
             for fd in &fds {
                 if fd.revents == 0 {
@@ -167,7 +170,7 @@ impl Context {
                 // This means that
                 // TODO: Also check for hangups
                 if fd.fd == context_state.background_thread_eventfd {
-                    if (fd.revents & libc::POLLNVAL) != 0 {
+                    if (fd.revents & sys::POLLNVAL) != 0 {
                         // Context was closed. No point in continuing to poll.
                         return;
                     }
@@ -175,13 +178,14 @@ impl Context {
                     // Read the fd to clear the value so that it doesn't continue receiving events.
                     let mut event_num: u64 = 0;
                     let n = unsafe {
-                        libc::read(
+                        sys::read(
                             fd.fd,
-                            std::mem::transmute(&mut event_num),
-                            std::mem::size_of::<u64>(),
+                            core::mem::transmute(&mut event_num),
+                            core::mem::size_of::<u64>(),
                         )
                     };
-                    if n != std::mem::size_of::<u64>() as isize {
+
+                    if n != Ok(core::mem::size_of::<u64>()) {
                         println!("Failed to read eventfd!!");
                     }
 
@@ -190,11 +194,11 @@ impl Context {
                     continue;
                 }
 
-                if (fd.revents & libc::POLLNVAL) != 0 {
+                if (fd.revents & sys::POLLNVAL) != 0 {
                     // The fd was closed. Most likely this means that the device was just closed.
                     // Next time we poll() the fd should no longer be in our devices list.
                     continue;
-                } else if (fd.revents & (libc::POLLERR | libc::POLLHUP)) != 0 {
+                } else if (fd.revents & (sys::POLLERR | sys::POLLHUP)) != 0 {
                     // Usually this will happen when the USB device is disconnected externally.
                     // We'll make that the device has an error so that we don't poll it anymore.
                     // We assume that after this point, future syscalls on this file will continue
@@ -207,10 +211,10 @@ impl Context {
                             break;
                         }
                     }
-                } else if (fd.revents & libc::POLLOUT) != 0 {
+                } else if (fd.revents & sys::POLLOUT) != 0 {
                     // TODO: Ensure that the receiver handles any status in the URB.
 
-                    let ptr: *const usbdevfs_urb = std::ptr::null();
+                    let ptr: *const usbdevfs_urb = core::ptr::null();
                     for _ in 0..10 {
                         let res = unsafe { usbdevfs_reapurbndelay(fd.fd, &ptr) };
                         match res {
@@ -233,7 +237,7 @@ impl Context {
 
                         let urb: &usbdevfs_urb = unsafe { &*ptr };
                         let transfer: &DeviceTransferState =
-                            unsafe { std::mem::transmute(urb.usrcontext) };
+                            unsafe { core::mem::transmute(urb.usrcontext) };
 
                         transfer.perform_reap();
 
@@ -327,13 +331,13 @@ impl ContextState {
         // TODO: If this fails, should we remove the device from the list?
         let event_num: u64 = 1;
         let n = unsafe {
-            libc::write(
+            sys::write(
                 self.background_thread_eventfd,
-                std::mem::transmute(&event_num),
-                std::mem::size_of::<u64>(),
+                core::mem::transmute(&event_num),
+                core::mem::size_of::<u64>(),
             )
         };
-        if n != (std::mem::size_of::<u64>() as isize) {
+        if n != Ok(core::mem::size_of::<u64>()) {
             return Err(err_msg("Failed to notify background thread"));
         }
 
@@ -448,10 +452,12 @@ impl DeviceEntry {
 
     pub async fn open(&self) -> Result<Device> {
         let path = CString::new(self.usbdevfs_path.as_os_str().as_bytes())?;
-        let fd = unsafe { libc::open(path.as_ptr(), libc::O_RDWR | libc::O_CLOEXEC) };
-        if fd == -1 {
-            return Err(err_msg("Failed to open USB device"));
-        }
+        let fd = match unsafe { sys::open(path.as_ptr(), sys::O_RDWR | sys::O_CLOEXEC, 0) } {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(format_err!("Failed to open USB device: {:?}", e));
+            }
+        };
 
         let state = Arc::new(DeviceState {
             bus_num: self.busnum,

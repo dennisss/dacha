@@ -1,0 +1,12 @@
+[package]
+name = "uuid_macros"
+version = "0.1.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0.23", features = ["extra-traits", "full"] }
+quote = "1.0.6"
+proc-macro2 = "1.0.13"
+uuid = { path = "../uuid" }

@@ -13,3 +13,9 @@
 [submodule "third_party/rp2040_stamp_footprints"]
 	path = third_party/rp2040_stamp_footprints
 	url = git@github.com:solderparty/rp2040_stamp_footprints.git
+[submodule "third_party/kicad_oled"]
+	path = third_party/kicad_oled
+	url = git@github.com:MichMich/KiCad-SSD1306_OLED-0.91-128x32.git
+[submodule "third_party/flexypin"]
+	path = third_party/flexypin
+	url = git@github.com:solderparty/flexypin.git

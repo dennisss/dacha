@@ -1,0 +1,185 @@
+EESchema Schematic File Version 4
+EELAYER 30 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 1 1
+Title ""
+Date ""
+Rev ""
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L Connector_Generic:Conn_02x10_Odd_Even J2
+U 1 1 636D5411
+P 2950 1400
+F 0 "J2" H 3000 2017 50  0000 C CNN
+F 1 "MOTHERBOARD" H 3000 1926 50  0000 C CNN
+F 2 "Connector_PinSocket_2.00mm:PinSocket_2x10_P2.00mm_Horizontal" H 2950 1400 50  0001 C CNN
+F 3 "~" H 2950 1400 50  0001 C CNN
+	1    2950 1400
+	1    0    0    -1  
+$EndComp
+$Comp
+L Connector_Generic:Conn_02x10_Odd_Even J1
+U 1 1 636D6898
+P 2250 3100
+F 0 "J1" H 2300 3717 50  0000 C CNN
+F 1 "FPANEL_USB3" H 2300 3626 50  0000 C CNN
+F 2 "Connector_PinHeader_2.00mm:PinHeader_2x10_P2.00mm_Horizontal" H 2250 3100 50  0001 C CNN
+F 3 "~" H 2250 3100 50  0001 C CNN
+	1    2250 3100
+	1    0    0    -1  
+$EndComp
+Text GLabel 2750 1000 0    50   Input ~ 0
+ID
+Text GLabel 3250 1000 2    50   Input ~ 0
+USB2_D+
+Text GLabel 3250 1100 2    50   Input ~ 0
+USB2_D-
+Text GLabel 2750 1100 0    50   Input ~ 0
+USB1_D+
+Text GLabel 2750 1200 0    50   Input ~ 0
+USB1_D-
+$Comp
+L power:GND #PWR0101
+U 1 1 636DD910
+P 3750 1200
+F 0 "#PWR0101" H 3750 950 50  0001 C CNN
+F 1 "GND" V 3755 1072 50  0000 R CNN
+F 2 "" H 3750 1200 50  0001 C CNN
+F 3 "" H 3750 1200 50  0001 C CNN
+	1    3750 1200
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	3750 1200 3250 1200
+$Comp
+L power:GND #PWR0102
+U 1 1 635DA8AD
+P 2250 1300
+F 0 "#PWR0102" H 2250 1050 50  0001 C CNN
+F 1 "GND" V 2255 1172 50  0000 R CNN
+F 2 "" H 2250 1300 50  0001 C CNN
+F 3 "" H 2250 1300 50  0001 C CNN
+	1    2250 1300
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	2250 1300 2750 1300
+Text GLabel 2750 1400 0    50   Input ~ 0
+USB1_SSTX+
+Text GLabel 2750 1500 0    50   Input ~ 0
+USB1_SSTX-
+$Comp
+L power:GND #PWR0103
+U 1 1 635DB0DA
+P 2200 1600
+F 0 "#PWR0103" H 2200 1350 50  0001 C CNN
+F 1 "GND" V 2205 1472 50  0000 R CNN
+F 2 "" H 2200 1600 50  0001 C CNN
+F 3 "" H 2200 1600 50  0001 C CNN
+	1    2200 1600
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	2200 1600 2750 1600
+Text GLabel 2750 1700 0    50   Input ~ 0
+USB1_SSRX+
+Text GLabel 2750 1800 0    50   Input ~ 0
+USB1_SSRX-
+Text GLabel 2750 1900 0    50   Input ~ 0
+VBUS
+NoConn ~ 3250 1900
+$Comp
+L power:GND #PWR0104
+U 1 1 635DBC32
+P 3750 1500
+F 0 "#PWR0104" H 3750 1250 50  0001 C CNN
+F 1 "GND" V 3755 1372 50  0000 R CNN
+F 2 "" H 3750 1500 50  0001 C CNN
+F 3 "" H 3750 1500 50  0001 C CNN
+	1    3750 1500
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	3750 1500 3250 1500
+Text GLabel 3250 1800 2    50   Input ~ 0
+VBUS
+Text GLabel 2050 2700 0    50   Input ~ 0
+ID
+Text GLabel 2050 2800 0    50   Input ~ 0
+USB1_D+
+Text GLabel 2050 2900 0    50   Input ~ 0
+USB1_D-
+$Comp
+L power:GND #PWR0105
+U 1 1 635E0A9B
+P 1550 3000
+F 0 "#PWR0105" H 1550 2750 50  0001 C CNN
+F 1 "GND" V 1555 2872 50  0000 R CNN
+F 2 "" H 1550 3000 50  0001 C CNN
+F 3 "" H 1550 3000 50  0001 C CNN
+	1    1550 3000
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	1550 3000 2050 3000
+Text GLabel 2050 3100 0    50   Input ~ 0
+USB1_SSTX+
+Text GLabel 2050 3200 0    50   Input ~ 0
+USB1_SSTX-
+$Comp
+L power:GND #PWR0106
+U 1 1 635E0AA4
+P 1500 3300
+F 0 "#PWR0106" H 1500 3050 50  0001 C CNN
+F 1 "GND" V 1505 3172 50  0000 R CNN
+F 2 "" H 1500 3300 50  0001 C CNN
+F 3 "" H 1500 3300 50  0001 C CNN
+	1    1500 3300
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	1500 3300 2050 3300
+Text GLabel 2050 3400 0    50   Input ~ 0
+USB1_SSRX+
+Text GLabel 2050 3500 0    50   Input ~ 0
+USB1_SSRX-
+Text GLabel 2050 3600 0    50   Input ~ 0
+VBUS
+$Comp
+L Connector_Generic:Conn_01x04 J3
+U 1 1 635E26B1
+P 3500 3150
+F 0 "J3" H 3418 2725 50  0000 C CNN
+F 1 "FPANEL_USB2" H 3418 2816 50  0000 C CNN
+F 2 "Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Horizontal" H 3500 3150 50  0001 C CNN
+F 3 "~" H 3500 3150 50  0001 C CNN
+	1    3500 3150
+	-1   0    0    1   
+$EndComp
+Text GLabel 3700 3050 2    50   Input ~ 0
+USB2_D-
+Text GLabel 3700 3150 2    50   Input ~ 0
+USB2_D+
+$Comp
+L power:GND #PWR0107
+U 1 1 635E4BC3
+P 4150 3250
+F 0 "#PWR0107" H 4150 3000 50  0001 C CNN
+F 1 "GND" V 4155 3122 50  0000 R CNN
+F 2 "" H 4150 3250 50  0001 C CNN
+F 3 "" H 4150 3250 50  0001 C CNN
+	1    4150 3250
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	4150 3250 3700 3250
+Text GLabel 3700 2950 2    50   Input ~ 0
+VBUS
+$EndSCHEMATC

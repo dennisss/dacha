@@ -88,6 +88,11 @@ members = [
 	"pkg/logging",
 	"pkg/radix",
 	"pkg/ptouch",
+	"pkg/storage",
+	"pkg/uuid",
+	"pkg/uuid_macros",
+	"pkg/tools",
+	"pkg/file",
 ]
 
 [profile.dev]

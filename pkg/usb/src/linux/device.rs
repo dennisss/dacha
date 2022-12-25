@@ -89,7 +89,7 @@ pub(crate) struct DeviceState {
     pub(crate) bus_num: usize,
     pub(crate) dev_num: usize,
 
-    pub(crate) fd: libc::c_int,
+    pub(crate) fd: sys::c_int,
     pub(crate) fd_closed: std::sync::Mutex<bool>,
 
     pub(crate) has_error: std::sync::Mutex<bool>,
@@ -107,7 +107,7 @@ impl DeviceState {
         let mut closed = self.fd_closed.lock().unwrap();
         if !*closed {
             // TODO: Check return value.
-            unsafe { libc::close(self.fd) };
+            unsafe { sys::close(self.fd) };
             *closed = true;
         }
     }
@@ -250,14 +250,14 @@ impl Device {
     }
 
     pub fn set_active_configuration(&self, index: u8) -> Result<()> {
-        let mut data = index as libc::c_uint;
+        let mut data = index as sys::c_uint;
         unsafe { usbdevfs_setconfiguration(self.state.fd, &mut data) }?;
         Ok(())
     }
 
     pub fn kernel_driver_active(&self, interface: u8) -> Result<bool> {
         let mut driver = usbdevfs_getdriver {
-            interface: interface as libc::c_uint,
+            interface: interface as sys::c_uint,
             driver: [0; 256],
         };
 
@@ -289,7 +289,7 @@ impl Device {
 
     pub fn detach_kernel_driver(&self, interface: u8) -> Result<()> {
         let mut command = usbdevfs_ioctl {
-            ifno: interface as libc::c_int,
+            ifno: interface as sys::c_int,
             ioctl_code: USBDEVFS_IOC_DISCONNECT,
             data: 0,
         };
@@ -300,21 +300,21 @@ impl Device {
     }
 
     pub fn claim_interface(&mut self, number: u8) -> Result<()> {
-        let data = number as libc::c_uint;
+        let data = number as sys::c_uint;
         unsafe { usbdevfs_claim_interface(self.state.fd, std::mem::transmute(&data)) }?;
         Ok(())
     }
 
     pub fn release_interface(&mut self, number: u8) -> Result<()> {
-        let data = number as libc::c_uint;
+        let data = number as sys::c_uint;
         unsafe { usbdevfs_release_interface(self.state.fd, std::mem::transmute(&data)) }?;
         Ok(())
     }
 
     pub fn set_alternate_setting(&self, interface: u8, setting: u8) -> Result<()> {
         let mut data = usbdevfs_setinterface {
-            interface: interface as libc::c_uint,
-            altsetting: setting as libc::c_uint,
+            interface: interface as sys::c_uint,
+            altsetting: setting as sys::c_uint,
         };
 
         unsafe { usbdevfs_setinterface_fn(self.state.fd, &mut data) }?;
@@ -326,7 +326,7 @@ impl Device {
         &self,
         typ: u8,
         endpoint: u8,
-        flags: libc::c_uint,
+        flags: sys::c_uint,
         buffer: Vec<u8>,
     ) -> Result<DeviceTransfer> {
         let (sender, receiver) = channel::bounded(1);
@@ -349,7 +349,7 @@ impl Device {
                 } else {
                     0
                 },
-                buffer_length: buffer.len() as libc::c_int,
+                buffer_length: buffer.len() as sys::c_int,
                 actual_length: 0,
                 start_frame: 0,
                 stream_id: 0,

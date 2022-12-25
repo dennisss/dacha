@@ -31,53 +31,6 @@ pub struct AddrInfo {
     pub address: IPAddress,
 }
 
-union SockAddr {
-    sockaddr: sys::bindings::sockaddr,
-    sockaddr_in: sys::bindings::sockaddr_in,
-    sockaddr_in6: sys::bindings::sockaddr_in6,
-}
-
-impl From<&IPAddress> for SockAddr {
-    fn from(ip: &IPAddress) -> Self {
-        let mut sockaddr = SockAddr {
-            sockaddr: sys::bindings::sockaddr {
-                sa_family: 0,
-                sa_data: [0i8; 14],
-            },
-        };
-
-        match ip {
-            IPAddress::V4(ip) => {
-                sockaddr.sockaddr.sa_family = sys::bindings::AF_INET as u16;
-
-                let s_addr = unsafe {
-                    core::slice::from_raw_parts_mut(
-                        core::mem::transmute(&mut sockaddr.sockaddr_in.sin_addr.s_addr),
-                        4,
-                    )
-                };
-
-                s_addr.copy_from_slice(ip.as_ref());
-            }
-            IPAddress::V6(ip) => {
-                sockaddr.sockaddr.sa_family = sys::bindings::AF_INET6 as u16;
-
-                let s6_addr = unsafe {
-                    core::slice::from_raw_parts_mut(
-                        core::mem::transmute(&mut sockaddr.sockaddr_in6.sin6_addr),
-                        16,
-                    )
-                };
-
-                s6_addr.copy_from_slice(ip.as_ref());
-            }
-            _ => todo!(),
-        }
-
-        sockaddr
-    }
-}
-
 /// This quickly detects whether or not the local computer's network probably
 /// supports connecting to a given ip. This has the primary goal of detecting
 /// IPv6 support.
@@ -106,24 +59,18 @@ impl From<&IPAddress> for SockAddr {
 ///
 ///     ^ No default route
 pub fn check_ip_routable(ip: &IPAddress) -> Result<bool, Errno> {
-    let sockaddr = SockAddr::from(ip);
+    let sockaddr: sys::SocketAddr = net::ip::SocketAddr::new(ip.clone(), 1000).into();
 
     let file = unsafe {
-        File::from_raw_fd(sys::socket(
-            sockaddr.sockaddr.sa_family as i32,
-            (sys::bindings::__socket_type::SOCK_DGRAM as i32)
-                | (sys::bindings::__socket_type::SOCK_CLOEXEC as i32),
-            0,
-        )?)
-    };
-
-    let r = unsafe {
-        sys::connect(
-            file.as_raw_fd(),
-            core::mem::transmute(&sockaddr),
-            core::mem::size_of::<sys::bindings::sockaddr_in6>() as u32,
+        sys::socket(
+            sockaddr.family(),
+            sys::SocketType::SOCK_DGRAM,
+            sys::SocketFlags::SOCK_CLOEXEC,
+            sys::SocketProtocol::UDP,
         )
-    };
+    }?;
+
+    let r = unsafe { sys::connect(&file, &sockaddr) };
 
     match r {
         Ok(()) => Ok(true),
@@ -181,8 +128,7 @@ pub fn lookup_hostname(name: &str) -> Result<Vec<AddrInfo>> {
                     )
                 };
 
-                let data = addr_in.sin_addr.s_addr.to_ne_bytes().to_vec();
-                IPAddress::V4(data)
+                IPAddress::V4(addr_in.sin_addr.s_addr.to_ne_bytes())
             }
             libc::AF_INET6 => {
                 let addr_in6 = unsafe {
@@ -191,7 +137,7 @@ pub fn lookup_hostname(name: &str) -> Result<Vec<AddrInfo>> {
                     )
                 };
 
-                IPAddress::V6(addr_in6.sin6_addr.s6_addr.to_vec())
+                IPAddress::V6(addr_in6.sin6_addr.s6_addr)
             }
             _ => {
                 return Err(format_err!("Unsupported family in ai_addr"));

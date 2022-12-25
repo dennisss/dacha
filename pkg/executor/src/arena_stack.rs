@@ -1,10 +1,11 @@
-/// In this module, we define the ArenaStack data type.
-///
-/// This is a dynamically sized stack where all elements are stored in a fixed
-/// size arena that may be shared by many other lists. Internally this is
-/// implemented as a doubly linked list. Each element of the list is referenced
-/// by an index into the arena. Each element of the arena should only belong to
-/// up to one list,
+//! In this module, we define the ArenaStack data type.
+//!
+//! This is a dynamically sized stack where all elements are stored in a fixed
+//! size arena that may be shared by many other lists. Internally this is
+//! implemented as a doubly linked list. Each element of the list is referenced
+//! by an index into the arena. Each element of the arena should only belong to
+//! up to one list,
+
 use core::marker::PhantomData;
 
 pub type ArenaIndex = u8;

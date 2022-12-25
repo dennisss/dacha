@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use common::errors::*;
 
 use crate::dns::name::*;

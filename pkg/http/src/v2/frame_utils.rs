@@ -146,16 +146,12 @@ pub fn new_goaway_frame(last_stream_id: StreamId, error: ProtocolErrorV2) -> Vec
 /// Verifies that some block of padding contains only zeros.
 /// Returns a connection error if that is not true.
 pub fn check_padding(padding: &[u8]) -> Result<()> {
-    for byte in padding {
-        if *byte != 0 {
-            return Err(ProtocolErrorV2 {
-                code: ErrorCode::PROTOCOL_ERROR,
-                message: "Received non-zero padding in DATA frame",
-                local: true,
-            }
-            .into());
+    common::check_zero_padding(padding).map_err(|_| {
+        ProtocolErrorV2 {
+            code: ErrorCode::PROTOCOL_ERROR,
+            message: "Received non-zero padding in DATA frame",
+            local: true,
         }
-    }
-
-    Ok(())
+        .into()
+    })
 }

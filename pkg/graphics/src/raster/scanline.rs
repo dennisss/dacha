@@ -34,7 +34,7 @@ impl<YIter: Iterator<Item = f32>> ScanLineIterator<YIter> {
         path_starts: &[usize],
         fill_rule: FillRule,
         y_values: YIter,
-    ) -> Result<Self> {
+    ) -> Self {
         // TODO: Must verify path_starts.
 
         // Extract paths from edges.
@@ -74,13 +74,13 @@ impl<YIter: Iterator<Item = f32>> ScanLineIterator<YIter> {
         // Sort edges in order of ascending y-min coordinate.
         edges.sort_by(|e1, e2| e1.y_min().partial_cmp(&e2.y_min()).unwrap_or(Equal));
 
-        Ok(Self {
+        Self {
             edges,
             next_edge: 0,
             active_edges: vec![],
             fill_rule,
             y_values,
-        })
+        }
     }
 
     pub fn next(&mut self) -> Option<(f32, &[ScanLineIntersection])> {
