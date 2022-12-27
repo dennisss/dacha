@@ -3,13 +3,13 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use common::async_std::channel;
 use common::bytes::Buf;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Readable;
-use common::task::ChildTask;
-use common::CancellationToken;
+use executor::cancellation::CancellationToken;
+use executor::channel;
+use executor::child_task::ChildTask;
 use http::header::*;
 use http::status_code::*;
 use http::Body;

@@ -1,7 +1,7 @@
 use std::convert::TryInto;
-use std::net::SocketAddr;
 
 use common::errors::*;
+use net::ip::SocketAddr;
 
 use crate::dns::*;
 use crate::uri::{Authority, Host};
@@ -71,7 +71,7 @@ impl Resolver for SystemDNSResolver {
                 for a in addrs {
                     if a.socket_type == SocketType::Stream {
                         endpoints.push(ResolvedEndpoint {
-                            address: SocketAddr::new(a.address.try_into()?, self.port),
+                            address: SocketAddr::new(a.address.clone(), self.port),
                             authority: authority.clone(),
                         });
                     }
@@ -79,7 +79,7 @@ impl Resolver for SystemDNSResolver {
             }
             Host::IP(ip) => {
                 endpoints.push(ResolvedEndpoint {
-                    address: SocketAddr::new(ip.clone().try_into()?, self.port),
+                    address: SocketAddr::new(ip.clone(), self.port),
                     authority,
                 });
             }

@@ -12,13 +12,13 @@ Action plan:
 - Pipe to it.
 
 
-CLUSTER_ZONE=svl cargo run --bin nordic_radio_bridge -- --state_object_name=nordic_radio_bridge_config --rpc_port=8000 --usb=any
+CLUSTER_ZONE=svl cargo run --bin nordic_radio_bridge -- --state_object_name=nordic_radio_bridge_config --rpc_port=8000 --usb_device_id=8888:0004
 
 cargo build --package nordic --target thumbv7em-none-eabihf --release --no-default-features
 
-scp -i ~/.ssh/id_cluster target/thumbv7em-none-eabihf/release/nordic_radio_serial pi@10.1.0.90:~/binary
+// scp -i ~/.ssh/id_cluster target/thumbv7em-none-eabihf/release/nordic_radio_serial pi@10.1.0.90:~/binary
 
-openocd -f nrf52_pi.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program /home/pi/binary verify" -c reset -c exit
+// openocd -f nrf52_pi.cfg -c init -c "reset init" -c halt -c "nrf5 mass_erase" -c "program /home/pi/binary verify" -c reset -c exit
 
 cargo run --bin nordic_radio -- setup_device --usb=3:110 --name=uplift_desk --bridge_addr=127.0.0.1:8000
 
@@ -44,7 +44,6 @@ extern crate usb;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::async_std::{channel, task};
 use common::errors::*;
 use nordic_proto::packet::PacketBuffer;
 use nordic_proto::proto::net::*;
@@ -255,7 +254,7 @@ async fn run_pipe_command(cmd: PipeCommand) -> Result<()> {
     let stub = create_bridge_stub(&cmd.bridge_addr).await?;
     let request_context = rpc::ClientRequestContext::default();
 
-    let mut bundle = common::bundle::TaskResultBundle::new();
+    let mut bundle = executor::bundle::TaskResultBundle::new();
 
     bundle.add(
         "Transmitter",
@@ -274,7 +273,7 @@ async fn run_pipe_command(cmd: PipeCommand) -> Result<()> {
     /*
     let (sender, receiver) = channel::bounded(1);
 
-    let reader_task = task::spawn(async move {
+    let reader_task = executor::spawn(async move {
         println!("{:?}", line_reader(sender).await);
     });
 
@@ -323,7 +322,7 @@ async fn run_pipe_command(cmd: PipeCommand) -> Result<()> {
             println!("<");
         }
 
-        task::sleep(Duration::from_millis(1000)).await;
+        executor::sleep(Duration::from_millis(1000)).await;
     }
     */
 }
@@ -341,5 +340,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

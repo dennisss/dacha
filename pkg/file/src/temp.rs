@@ -1,13 +1,14 @@
 // Utilities for creating temporary files.
 
-use std::path::{Path, PathBuf};
 use std::string::ToString;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::errors::*;
+use common::errors::*;
+
+use crate::{LocalPath, LocalPathBuf};
 
 pub struct TempDir {
-    dir: PathBuf,
+    dir: LocalPathBuf,
 }
 
 impl TempDir {
@@ -17,7 +18,7 @@ impl TempDir {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            let path = Path::new("/tmp/dacha").join(time.to_string());
+            let path = LocalPath::new("/tmp/dacha").join(time.to_string());
 
             let _ = std::fs::create_dir("/tmp/dacha");
 
@@ -33,7 +34,7 @@ impl TempDir {
         }
     }
 
-    pub fn path(&self) -> &Path {
+    pub fn path(&self) -> &LocalPath {
         &self.dir
     }
 }

@@ -13,6 +13,9 @@ pub unsafe fn socket(
     )?))
 }
 
+// TODO: Introduce an explicit AF_UNKNOWN to tell which addresses have not been
+// populated.
+// Also use a normal enum to ensure there are no duplicate entries.
 define_transparent_enum!(AddressFamily c_int {
     AF_UNIX = (bindings::AF_UNIX as c_int),
     AF_INET = (bindings::AF_INET as c_int),
@@ -37,23 +40,35 @@ define_transparent_enum!(SocketProtocol c_int {
     UDP = (bindings::IPPROTO_UDP as c_int)
 });
 
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct SocketAddr {
     inner: SocketAddressInner,
 }
 
+#[derive(Clone, Copy)]
 union SocketAddressInner {
     sockaddr: bindings::sockaddr,
     sockaddr_in: bindings::sockaddr_in,
     sockaddr_in6: bindings::sockaddr_in6,
 }
 
+impl Default for SocketAddressInner {
+    fn default() -> Self {
+        SocketAddressInner {
+            sockaddr: bindings::sockaddr::default(),
+        }
+    }
+}
+
 impl SocketAddr {
-    fn empty() -> Self {
+    /// NOTE: DO NOT MAKE THIS PUBLIC (this leaves the SocketAddr with an
+    /// undefined length).
+    ///
+    /// pub(crate) is to allow this to be used in MessageHeaderSocketAddrBuffer.
+    pub(crate) fn empty() -> Self {
         Self {
-            inner: SocketAddressInner {
-                sockaddr: bindings::sockaddr::default(),
-            },
+            inner: SocketAddressInner::default(),
         }
     }
 
@@ -74,6 +89,19 @@ impl SocketAddr {
         inst
     }
 
+    pub fn as_ipv4(&self) -> Option<([u8; 4], u16)> {
+        unsafe {
+            if self.inner.sockaddr.sa_family == AddressFamily::AF_INET.to_raw() as u16 {
+                return Some((
+                    self.inner.sockaddr_in.sin_addr.s_addr.to_ne_bytes(),
+                    self.inner.sockaddr_in.sin_port,
+                ));
+            }
+        }
+
+        None
+    }
+
     pub fn ipv6(addr: &[u8; 16], port: u16) -> Self {
         let mut inst = Self::empty();
         inst.inner.sockaddr_in.sin_family = bindings::AF_INET6 as u16;
@@ -91,56 +119,66 @@ impl SocketAddr {
         inst
     }
 
+    pub fn as_ipv6(&self) -> Option<([u8; 16], u16)> {
+        unsafe {
+            if self.inner.sockaddr.sa_family == AddressFamily::AF_INET6.to_raw() as u16 {
+                return Some((
+                    core::mem::transmute(self.inner.sockaddr_in6.sin6_addr),
+                    self.inner.sockaddr_in6.sin6_port,
+                ));
+            }
+        }
+
+        None
+    }
+
     pub fn family(&self) -> AddressFamily {
         AddressFamily::from_raw(unsafe { self.inner.sockaddr.sa_family as c_int })
     }
 
-    fn len(&self) -> usize {
-        match self.family() {
+    // NOTE: All SocketAddr objects directly exposed to users should have a well
+    // known length, but internal ones just received from the kernel or elsewhere
+    // may not have been validated yet.
+    pub(super) fn len(&self) -> Option<usize> {
+        Some(match self.family() {
             AddressFamily::AF_INET => core::mem::size_of::<bindings::sockaddr_in>(),
             AddressFamily::AF_INET6 => core::mem::size_of::<bindings::sockaddr_in6>(),
-            _ => panic!(),
-        }
+            _ => return None,
+        })
     }
 }
 
+/// A potentially uninitialized SocketAddr along with a counter of how many
+/// bytes in the SocketAddr have been populated.
+///
+/// This is used as a buffer for receiving SocketAddrs from the kernel. Once
+/// this has been populated, it can be unwrapped with to_addr() to get the
+/// SocketAddr.
+///
 /// For use with IORING_OP_ACCEPT
 pub struct SocketAddressAndLength {
-    pub(crate) addr: bindings::sockaddr,
+    pub(crate) addr: SocketAddr,
     pub(crate) len: bindings::socklen_t,
 }
 
 impl SocketAddressAndLength {
-    /// NOTE: DO NOT REUSE the same
     pub fn new() -> Self {
         Self {
-            addr: bindings::sockaddr::default(),
+            addr: SocketAddr::empty(),
             len: 0,
         }
     }
 
     pub fn reset(&mut self) {
-        self.len = core::mem::size_of::<bindings::sockaddr>() as u32;
+        self.len = core::mem::size_of::<SocketAddressInner>() as u32;
     }
 
     pub fn to_addr(&self) -> Option<SocketAddr> {
-        if self.addr.sa_family != (AddressFamily::AF_INET.to_raw() as u16)
-            && self.addr.sa_family != (AddressFamily::AF_INET6.to_raw() as u16)
-        {
+        if self.addr.len() != Some(self.len as usize) {
             return None;
         }
 
-        let addr = SocketAddr {
-            inner: SocketAddressInner {
-                sockaddr: self.addr,
-            },
-        };
-
-        if addr.len() != self.len as usize {
-            return None;
-        }
-
-        Some(addr)
+        Some(self.addr.clone())
     }
 }
 
@@ -148,7 +186,7 @@ pub unsafe fn bind(fd: &OpenFileDescriptor, sockaddr: &SocketAddr) -> Result<(),
     raw::bind(
         **fd,
         core::mem::transmute(sockaddr),
-        sockaddr.len() as bindings::socklen_t,
+        sockaddr.len().unwrap() as bindings::socklen_t,
     )
 }
 
@@ -156,7 +194,7 @@ pub unsafe fn connect(fd: &OpenFileDescriptor, sockaddr: &SocketAddr) -> Result<
     raw::connect(
         **fd,
         core::mem::transmute(sockaddr),
-        sockaddr.len() as bindings::socklen_t,
+        sockaddr.len().unwrap() as bindings::socklen_t,
     )
 }
 

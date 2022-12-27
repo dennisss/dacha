@@ -4,7 +4,6 @@ use std::string::ToString;
 use std::vec::Vec;
 
 use common::errors::*;
-use common::{async_std::fs::File, futures::AsyncReadExt};
 
 use crate::nist::response_syntax::*;
 
@@ -35,12 +34,8 @@ pub struct ResponseFile {
 }
 
 impl ResponseFile {
-    pub async fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
-        let mut data = String::new();
-
-        let mut file = File::open(path.as_ref()).await?;
-        file.read_to_string(&mut data).await?;
-
+    pub async fn open<P: AsRef<file::LocalPath>>(path: P) -> Result<Self> {
+        let data = file::read_to_string(path).await?;
         Ok(Self { data })
     }
 

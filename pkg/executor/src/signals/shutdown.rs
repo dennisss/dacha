@@ -5,11 +5,11 @@ use alloc::boxed::Box;
 use std::sync::Mutex;
 use std::sync::Once;
 
-use async_std::channel;
-
+use crate::cancellation::CancellationToken;
+use crate::channel;
 use crate::future::race;
 use crate::signals::*;
-use crate::CancellationToken;
+use crate::spawn;
 
 static mut SHUTDOWN_STATE: Option<Mutex<ShutdownState>> = None;
 static SHUTDOWN_STATE_INIT: Once = Once::new();
@@ -35,7 +35,7 @@ fn get_shutdown_state() -> &'static Mutex<ShutdownState> {
                 receiver,
             }));
 
-            async_std::task::spawn(signal_waiter());
+            spawn(signal_waiter());
         });
 
         SHUTDOWN_STATE.as_ref().unwrap()

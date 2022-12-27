@@ -33,9 +33,8 @@ alternative solution is to /sys/class/pwm/pwmchip0
 
 */
 
-use common::async_std::fs;
-use common::async_std::path::{Path, PathBuf};
 use common::errors::*;
+use file::{LocalPath, LocalPathBuf};
 
 use crate::gpio::*;
 use crate::memory::{MemoryBlock, PWM0_PERIPHERAL_OFFSET};
@@ -130,7 +129,7 @@ impl DirectPWM {
 }
 
 pub struct SysPWM {
-    channel_dir: PathBuf,
+    channel_dir: LocalPathBuf,
     pin: GPIOPin,
 }
 
@@ -147,7 +146,7 @@ impl SysPWM {
             ));
         }
 
-        if !Path::new(SYS_PWM_DIR).exists().await {
+        if !file::exists(LocalPath::new(SYS_PWM_DIR)).await? {
             return Err(err_msg("PWM sys fs driver not detected."));
         }
 
@@ -155,13 +154,13 @@ impl SysPWM {
         // When already exported this will fail with an Os::ResourceBusy error. Instead
         // of checking the error code, we just verify later that the channel
         // sub-directory exists.
-        let export_path = Path::new(SYS_PWM_DIR).join("export");
-        fs::write(export_path, format!("{}\n", pin_spec.channel))
+        let export_path = LocalPath::new(SYS_PWM_DIR).join("export");
+        file::write(&export_path, format!("{}\n", pin_spec.channel))
             .await
             .ok();
 
-        let channel_dir = Path::new(SYS_PWM_DIR).join(format!("pwm{}", pin_spec.channel));
-        if !channel_dir.exists().await {
+        let channel_dir = LocalPath::new(SYS_PWM_DIR).join(format!("pwm{}", pin_spec.channel));
+        if !file::exists(&channel_dir).await? {
             return Err(format_err!(
                 "Failed to export PWM channel {}",
                 pin_spec.channel
@@ -183,13 +182,13 @@ impl SysPWM {
         let period = ((NANOS_PER_SECOND as f32) / frequency) as usize;
         let duty_cycle = ((period as f32) * duty_cycle) as usize;
 
-        fs::write(self.channel_dir.join("period"), format!("{}\n", period)).await?;
-        fs::write(
+        file::write(self.channel_dir.join("period"), format!("{}\n", period)).await?;
+        file::write(
             self.channel_dir.join("duty_cycle"),
             format!("{}\n", duty_cycle),
         )
         .await?;
-        fs::write(self.channel_dir.join("enable"), "1\n").await?;
+        file::write(self.channel_dir.join("enable"), "1\n").await?;
         Ok(())
     }
 }

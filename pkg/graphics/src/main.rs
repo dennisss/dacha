@@ -3,6 +3,8 @@ extern crate common;
 extern crate graphics;
 extern crate image;
 extern crate math;
+#[macro_use]
+extern crate file;
 
 use std::sync::Arc;
 
@@ -20,7 +22,7 @@ Application:
 */
 
 async fn run() -> Result<()> {
-    let image_data = common::async_std::fs::read(project_path!("testdata/nyhavn.qoi")).await?;
+    let image_data = file::read(project_path!("testdata/nyhavn.qoi")).await?;
     let mut image = QOIDecoder::new().decode(&image_data)?;
 
     image.show().await?;
@@ -35,15 +37,15 @@ fn main() -> Result<()> {
     // let f = graphics::point_picker::run();
     // let f = graphics::opengl::run();
 
-    return common::async_std::task::block_on(f);
+    return executor::run(f)?;
 
-    // common::async_std::task::block_on(graphics::font::open_font())
+    // executor::run(graphics::font::open_font())?
 
     // let task = graphics::font::open_font();
 
     // let task = graphics::raster::run();
 
-    // common::async_std::task::block_on(task)
+    // executor::run(task)?
 
     /*
         Default opengl mode:

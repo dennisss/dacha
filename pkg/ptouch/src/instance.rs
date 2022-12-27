@@ -236,7 +236,7 @@ impl LabelMaker {
                     ));
                 }
             } else {
-                common::async_std::task::sleep(std::time::Duration::from_millis(100)).await;
+                executor::sleep(std::time::Duration::from_millis(100)).await;
             }
         }
 

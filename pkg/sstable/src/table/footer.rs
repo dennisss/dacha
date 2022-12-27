@@ -1,8 +1,9 @@
 use std::io::SeekFrom;
 
-use common::async_std::{fs::File, io::prelude::SeekExt};
 use common::errors::*;
 use common::futures::AsyncReadExt;
+use common::io::Readable;
+use file::LocalFile;
 
 use crate::encoding::check_padding;
 use crate::table::block_handle::BlockHandle;
@@ -46,15 +47,14 @@ pub struct Footer {
 }
 
 impl Footer {
-    pub async fn read_from_file(file: &mut File) -> Result<Self> {
+    pub async fn read_from_file(file: &mut LocalFile) -> Result<Self> {
         let metadata = file.metadata().await?;
         let len = metadata.len();
         if len < (FOOTER_SIZE as u64) {
             return Err(err_msg("File too small"));
         }
 
-        file.seek(SeekFrom::Start(len - (FOOTER_SIZE as u64)))
-            .await?;
+        file.seek(len - (FOOTER_SIZE as u64));
         let mut buf = [0u8; FOOTER_SIZE];
         file.read_exact(&mut buf).await?;
         Footer::parse(&buf)

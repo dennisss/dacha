@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use common::async_std::sync::Mutex;
 use common::errors::*;
+use executor::sync::Mutex;
 
 use crate::log::log::*;
 use crate::log::log_metadata::LogSequence;

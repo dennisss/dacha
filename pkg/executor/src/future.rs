@@ -1,9 +1,8 @@
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
-use std::future::Future;
-
-use std::pin::Pin;
-use std::task::Poll;
+use core::future::Future;
+use core::pin::Pin;
+use core::task::Poll;
 
 pub struct Race<F1, F2> {
     f1: Pin<Box<F1>>,

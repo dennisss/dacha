@@ -1,12 +1,11 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use common::async_std::channel;
-use common::async_std::task;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Readable;
-use common::task::ChildTask;
+use executor::channel;
+use executor::child_task::ChildTask;
 use http::header::CONTENT_TYPE;
 
 use crate::media_type::RPCMediaProtocol;

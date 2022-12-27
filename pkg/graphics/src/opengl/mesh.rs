@@ -2,8 +2,8 @@ use core::ptr::null;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use common::async_std::path::Path;
 use common::errors::*;
+use file::LocalPath;
 use gl::types::{GLint, GLuint};
 use math::matrix::Vector3f;
 
@@ -29,12 +29,8 @@ impl_deref!(Mesh::object as Object);
 // TODO: Do we need to use glUseProgram before using the
 impl Mesh {
     pub async fn read(path: &str, shader: Rc<Shader>) -> Result<Self> {
-        let path = Path::new(path);
-        let ext = path
-            .extension()
-            .map(|s| s.to_str().unwrap())
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let path = LocalPath::new(path);
+        let ext = path.extension().unwrap_or("").to_ascii_lowercase();
 
         match ext {
             //			"stl" => {

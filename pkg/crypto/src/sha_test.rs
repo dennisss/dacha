@@ -14,7 +14,7 @@ use crate::sha384::*;
 use crate::sha512::*;
 
 async fn run_nist_hasher_test(hasher_factory: HasherFactory, paths: &[&'static str]) -> Result<()> {
-    let project_dir = common::project_dir();
+    let project_dir = file::project_dir();
 
     for path in paths.iter().cloned() {
         let file = crate::nist::response::ResponseFile::open(project_dir.join(path)).await?;
@@ -45,7 +45,7 @@ async fn run_nist_hasher_test(hasher_factory: HasherFactory, paths: &[&'static s
     Ok(())
 }
 
-#[async_std::test]
+#[testcase]
 async fn sha1_nist_test() -> Result<()> {
     run_nist_hasher_test(
         SHA1Hasher::factory(),
@@ -57,7 +57,7 @@ async fn sha1_nist_test() -> Result<()> {
     .await
 }
 
-#[async_std::test]
+#[testcase]
 async fn sha224_nist_test() -> Result<()> {
     run_nist_hasher_test(
         SHA224Hasher::factory(),
@@ -69,7 +69,7 @@ async fn sha224_nist_test() -> Result<()> {
     .await
 }
 
-#[async_std::test]
+#[testcase]
 async fn sha256_nist_test() -> Result<()> {
     run_nist_hasher_test(
         SHA256Hasher::factory(),
@@ -81,7 +81,7 @@ async fn sha256_nist_test() -> Result<()> {
     .await
 }
 
-#[async_std::test]
+#[testcase]
 async fn sha384_nist_test() -> Result<()> {
     run_nist_hasher_test(
         SHA384Hasher::factory(),
@@ -93,7 +93,7 @@ async fn sha384_nist_test() -> Result<()> {
     .await
 }
 
-#[async_std::test]
+#[testcase]
 async fn sha512_224_nist_test() -> Result<()> {
     run_nist_hasher_test(
         SHA512_224Hasher::factory(),
@@ -105,7 +105,7 @@ async fn sha512_224_nist_test() -> Result<()> {
     .await
 }
 
-#[async_std::test]
+#[testcase]
 async fn sha512_256_nist_test() -> Result<()> {
     run_nist_hasher_test(
         SHA512_256Hasher::factory(),
@@ -117,7 +117,7 @@ async fn sha512_256_nist_test() -> Result<()> {
     .await
 }
 
-#[async_std::test]
+#[testcase]
 async fn sha512_nist_test() -> Result<()> {
     run_nist_hasher_test(
         SHA512Hasher::factory(),

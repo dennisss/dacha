@@ -17,8 +17,6 @@ extern crate macros;
 
 use common::args::list::CommaSeparated;
 use common::args::parse_args;
-use common::async_std::path::PathBuf;
-use common::async_std::task::block_on;
 use common::errors::*;
 use rpc_util::NamedPortArg;
 

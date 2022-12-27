@@ -1,6 +1,6 @@
 use common::list::Appendable;
 use executor::channel::Channel;
-use executor::mutex::Mutex;
+use executor::sync::Mutex;
 
 use common::fixed::vec::FixedVec;
 

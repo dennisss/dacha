@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use common::async_std::channel;
 use common::bytes::Bytes;
 use common::errors::*;
-use common::task::ChildTask;
+use executor::channel;
+use executor::child_task::ChildTask;
 
 use crate::channel::{Channel, MessageRequestBody};
 use crate::client_types::{ClientRequestContext, ClientStreamingRequest, ClientStreamingResponse};

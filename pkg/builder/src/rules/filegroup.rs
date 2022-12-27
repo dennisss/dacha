@@ -46,7 +46,7 @@ impl BuildTarget for FileGroup {
                 }
             };
 
-            if !source_path.exists().await {
+            if !file::exists(&source_path).await? {
                 return Err(format_err!("Source file does not exist: {}", src));
             }
 

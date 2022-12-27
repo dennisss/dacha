@@ -4,9 +4,9 @@
 extern crate common;
 extern crate http;
 extern crate parsing;
+#[macro_use]
+extern crate file;
 
-use common::async_std::fs;
-use common::async_std::task;
 use common::errors::*;
 use http::header::*;
 use http::status_code::*;
@@ -53,15 +53,19 @@ impl http::ServerHandler for Service {
 
 async fn run_server() -> Result<()> {
     // let handler =
-    // http::static_file_handler::StaticFileHandler::new(common::project_dir());
+    // http::static_file_handler::StaticFileHandler::new(file::project_dir());
     // let handler = http::HttpFn(handle_request);
 
     let handler = Service {};
 
-    let certificate_file = fs::read(project_path!("testdata/certificates/server-ec.crt"))
+    /*
+    secp256 is still very slow :(
+    */
+
+    let certificate_file = file::read(project_path!("testdata/certificates/server.crt"))
         .await?
         .into();
-    let private_key_file = fs::read(project_path!("testdata/certificates/server-ec.key"))
+    let private_key_file = file::read(project_path!("testdata/certificates/server.key"))
         .await?
         .into();
 
@@ -81,5 +85,5 @@ async fn run_server() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run_server())
+    executor::run(run_server())?
 }

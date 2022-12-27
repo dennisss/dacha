@@ -133,7 +133,7 @@ let mut uf2 = vec![];
     }
 }
 
-common::async_std::fs::write(project_path!("rp2040.uf2"), &uf2).await?;
+file::write(project_path!("rp2040.uf2"), &uf2).await?;
 */
 
 #[cfg(test)]

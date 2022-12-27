@@ -1,10 +1,9 @@
 #[macro_use]
 extern crate common;
+extern crate elf;
 extern crate parsing;
 extern crate usb;
-extern crate elf;
 
-use common::async_std::task;
 use common::errors::*;
 use crypto::hasher::Hasher;
 use usb::descriptors::TransferType;
@@ -242,7 +241,7 @@ async fn run() -> Result<()> {
     let mut flash_contents = vec![];
 
     // let boot2 =
-    //     common::async_std::fs::read(project_path!("third_party/tiny2040-boot2.
+    //     file::read(project_path!("third_party/tiny2040-boot2.
     // bin")).await?; flash_contents.extend_from_slice(&boot2);
     // flash_end += boot2.len();
 
@@ -309,7 +308,7 @@ async fn run() -> Result<()> {
         }
     }
 
-    common::async_std::fs::write(project_path!("rp2040.uf2"), &uf2).await?;
+    file::write(project_path!("rp2040.uf2"), &uf2).await?;
     */
 
     let remainder = common::block_size_remainder(4096, flash_end as u64) as usize;
@@ -393,5 +392,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

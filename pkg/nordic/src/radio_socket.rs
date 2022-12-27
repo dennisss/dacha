@@ -7,7 +7,7 @@ use common::segmented_buffer::SegmentedBuffer;
 use crypto::ccm::CCM;
 use executor::channel::Channel;
 use executor::futures::*;
-use executor::mutex::{Mutex, MutexGuard};
+use executor::sync::{Mutex, MutexGuard};
 use nordic_proto::packet::PacketBuffer;
 use nordic_proto::packet_cipher::PacketCipher;
 use nordic_proto::proto::net::{LinkState, NetworkConfig, NetworkState};

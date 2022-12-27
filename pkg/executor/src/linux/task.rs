@@ -61,6 +61,13 @@ pub(super) struct TaskState {
     /// multiple threads at the same time.
     pub scheduled: bool,
 
+    /// If true, this task is running on the main thread and shouldn't be
+    /// scheduled to run on the worker thread pool.
+    ///
+    /// Note that for main thread futures, the 'future' field is always None and
+    /// the actual future is owned by the main thread.
+    pub on_main_thread: bool,
+
     /// Main future for this task. This is taken by the thread running the
     /// task.
     pub future: Option<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,

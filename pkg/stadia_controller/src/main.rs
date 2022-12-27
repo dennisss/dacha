@@ -320,5 +320,5 @@ async fn read_controller() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(read_controller())
+    executor::run(read_controller())?
 }

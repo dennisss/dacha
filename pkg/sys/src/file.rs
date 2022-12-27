@@ -8,11 +8,16 @@ use crate::{c_int, close, open, read, Errno, O_CLOEXEC, O_RDONLY};
 /// Wrapper around a file descriptor which closes the descriptor on drop().
 pub struct OpenFileDescriptor {
     fd: c_int,
+    leak: bool,
 }
 
 impl OpenFileDescriptor {
     pub fn new(fd: c_int) -> Self {
-        Self { fd }
+        Self { fd, leak: false }
+    }
+
+    pub unsafe fn leak(&mut self) {
+        self.leak = true;
     }
 }
 
@@ -26,9 +31,11 @@ impl Deref for OpenFileDescriptor {
 
 impl Drop for OpenFileDescriptor {
     fn drop(&mut self) {
-        unsafe {
-            // TODO: Check result?
-            close(self.fd).unwrap();
+        if !self.leak {
+            unsafe {
+                // TODO: Check result?
+                close(self.fd).unwrap();
+            }
         }
     }
 }

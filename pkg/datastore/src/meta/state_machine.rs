@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common::async_std::path::{Path, PathBuf};
-use common::async_std::sync::Mutex;
 use common::errors::*;
+use executor::sync::Mutex;
+use file::{LocalPath, LocalPathBuf};
 use protobuf::{Message, StaticMessage};
 use raft::atomic::BlobFile;
 use sstable::db::{Snapshot, Write, WriteBatch};
@@ -51,19 +51,19 @@ pub struct EmbeddedDBStateMachine {
     db: EmbeddedDB,
 
     /// Root data directory containing the individual snapshot sub-folders.
-    dir: PathBuf,
+    dir: LocalPathBuf,
     current: Mutex<(Current, BlobFile)>,
 
     watchers: Watchers,
 }
 
 impl EmbeddedDBStateMachine {
-    pub async fn open(dir: &Path) -> Result<Self> {
+    pub async fn open(dir: &LocalPath) -> Result<Self> {
         let mut current = Current::default();
 
         let current_file = {
             let builder = BlobFile::builder(&dir.join("CURRENT")).await?;
-            if builder.exists().await {
+            if builder.exists().await? {
                 // TODO: Verify that this cleans up any past intermediate state.
                 let (file, data) = builder.open().await?;
                 current = Current::parse(&data)?;

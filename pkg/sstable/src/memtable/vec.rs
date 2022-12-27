@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common::async_std::sync::RwLock;
 use common::bytes::Bytes;
 use common::errors::*;
+use executor::sync::RwLock;
 
 use crate::iterable::{Iterable, KeyValueEntry};
 use crate::table::comparator::KeyComparator;
@@ -179,7 +179,7 @@ mod tests {
 
     use super::VecMemTable;
 
-    #[async_std::test]
+    #[testcase]
     async fn vec_memtable_iterate_while_inserting() -> Result<()> {
         let table = VecMemTable::new(Arc::new(BytewiseComparator::new()));
 

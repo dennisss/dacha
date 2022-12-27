@@ -12,6 +12,27 @@ use crate::linux::executor::{Executor, ExecutorShared, FileDescriptor};
 
 use super::waker::retrieve_task_entry;
 
+// Old epoll event loop.
+/*
+let mut events = [EpollEvent::default(); 8];
+
+// TODO: Break once everything is done.
+loop {
+    let nevents = shared.poller.wait(&mut events)?;
+
+    println!("poll {}", nevents);
+
+    let polled_descs = shared.polled_descriptors.lock().unwrap();
+
+    for event in &events[0..nevents] {
+        let task_id = *polled_descs.get(&event.fd()).unwrap();
+
+        shared.pending_queue.lock().unwrap().push_back(task_id);
+        shared.pending_queue_condvar.notify_one();
+    }
+}
+*/
+
 struct ExecutorEpoll {
     poller: Epoll,
 

@@ -1,14 +1,14 @@
 use std::convert::TryInto;
 use std::future::Future;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::async_std::sync::Mutex;
 use common::errors::*;
-use common::task::ChildTask;
 use datastore::meta::client::MetastoreClient;
+use executor::child_task::ChildTask;
+use executor::sync::Mutex;
 use http::ResolvedEndpoint;
+use net::ip::SocketAddr;
 
 use crate::meta::client::ClusterMetaClient;
 use crate::meta::GetClusterMetaTable;
@@ -128,7 +128,7 @@ impl ServiceResolver {
                 eprintln!("ServiceResolver failed: {}", e);
             }
 
-            common::async_std::task::sleep(Duration::from_secs(10)).await;
+            executor::sleep(Duration::from_secs(10)).await;
         }
     }
 
@@ -224,7 +224,7 @@ impl ServiceResolver {
             }
         };
 
-        let address = SocketAddr::new(node_address.ip(), port as u16);
+        let address = SocketAddr::new(node_address.ip().clone(), port as u16);
 
         let host_name =
             ServiceName::for_worker(&shared.service_address.name.zone, worker.spec().name())?
@@ -249,8 +249,8 @@ impl ServiceResolver {
             .ok_or_else(|| err_msg("Missing node"))?;
 
         let authority = node_meta.address().parse::<http::uri::Authority>()?;
-        let ip: std::net::IpAddr = match &authority.host {
-            http::uri::Host::IP(ip) => ip.clone().try_into()?,
+        let ip = match &authority.host {
+            http::uri::Host::IP(ip) => ip.clone(),
             _ => {
                 return Err(err_msg("NodeMetadata doesn't contain an ip address"));
             }

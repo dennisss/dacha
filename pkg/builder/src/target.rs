@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
-use common::async_std::path::PathBuf;
 use common::errors::*;
+use file::LocalPathBuf;
 
 use crate::label::Label;
 
@@ -23,8 +23,8 @@ pub struct BuildTargetDependencies {
 pub struct BuildTargetContext {
     pub key: BuildTargetKey,
     pub config_hash: String,
-    pub workspace_dir: PathBuf,
-    pub package_dir: PathBuf,
+    pub workspace_dir: LocalPathBuf,
+    pub package_dir: LocalPathBuf,
     pub inputs: HashMap<BuildTargetKey, BuildTargetOutputs>,
 }
 
@@ -53,5 +53,5 @@ pub struct BuildTargetOutputs {
 #[derive(Debug, Clone)]
 pub struct BuildOutputFile {
     /// Location of disk where this file is located.
-    pub location: PathBuf,
+    pub location: LocalPathBuf,
 }

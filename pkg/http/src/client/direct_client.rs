@@ -6,15 +6,14 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 use std::time::Instant;
 
-use common::async_std::channel;
-use common::async_std::net::TcpStream;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
 use common::condvar::Condvar;
 use common::errors::*;
 use common::io::{Readable, Writeable};
-use common::task::ChildTask;
+use executor::channel;
+use executor::child_task::ChildTask;
+use executor::sync::Mutex;
 use net::backoff::*;
+use net::tcp::TcpStream;
 use parsing::ascii::AsciiString;
 
 use crate::alpn::*;
@@ -498,7 +497,7 @@ impl DirectClientRunner {
                 }
 
                 drop(state);
-                common::async_std::task::sleep(Duration::from_millis(500)).await;
+                executor::sleep(Duration::from_millis(500)).await;
                 continue;
             }
 
@@ -541,7 +540,7 @@ impl DirectClientRunner {
                 }
                 .min(Duration::from_secs(10));
 
-                common::async_std::future::timeout(wait_time, events.wait(())).await;
+                executor::timeout(wait_time, events.wait(())).await;
             }
         }
 
@@ -932,7 +931,7 @@ impl DirectClientRunner {
     async fn new_connection(shared: Arc<Shared>, connection_id: usize) {
         // TODO: Measure and record how long it takes to establish a connection.
         let mut start_time = Instant::now();
-        let entry = common::async_std::future::timeout(
+        let entry = executor::timeout(
             shared.options.connect_timeout.clone(),
             Self::new_connection_inner(&shared, connection_id),
         )
@@ -968,11 +967,10 @@ impl DirectClientRunner {
         // Ways in which this can fail:
         // - io::ErrorKind::ConnectionRefused: REached the server but it's not serving
         //   on the given port.
-        let raw_stream = TcpStream::connect(shared.endpoint.address).await?;
+        let mut raw_stream = TcpStream::connect(shared.endpoint.address.clone()).await?;
         raw_stream.set_nodelay(true)?;
 
-        let mut reader: Box<dyn Readable + Sync> = Box::new(raw_stream.clone());
-        let mut writer: Box<dyn Writeable> = Box::new(raw_stream);
+        let (mut reader, mut writer) = raw_stream.split();
 
         let mut start_http2 = shared.options.force_http2;
 
@@ -1146,7 +1144,7 @@ impl DirectClientRunner {
 
         // TODO: Normally the response handler will be cheap so run it in the same
         // process?
-        task::spawn(async move {
+        executor::spawn(async move {
             let res = response_future.await;
             response_handler.handle_response(res).await;
         });

@@ -16,8 +16,6 @@ extern crate google;
 extern crate rpc;
 extern crate sstable;
 #[macro_use]
-extern crate async_std;
-#[macro_use]
 extern crate datastore;
 extern crate net;
 extern crate rpc_util;

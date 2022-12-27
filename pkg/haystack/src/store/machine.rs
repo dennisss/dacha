@@ -2,14 +2,13 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use common::async_std::path::{Path, PathBuf};
-use common::async_std::sync::{Mutex, RwLock};
-use common::async_std::task;
 use common::errors::*;
-use common::fs::DirLock;
 use common::futures::future::*;
 use common::FlipSign;
 use crypto::random::{clocked_rng, RngExt};
+use executor::sync::{Mutex, RwLock};
+use file::dir_lock::DirLock;
+use file::{LocalPath, LocalPathBuf};
 
 use super::api::*;
 use super::machine_index::*;
@@ -111,7 +110,7 @@ impl StoreMachine {
 
         let vol_ids = machine.index.read_all()?;
         for id in vol_ids {
-            machine.open_volume(id, false)?;
+            machine.open_volume(id, false).await?;
         }
 
         Ok(machine)
@@ -121,18 +120,18 @@ impl StoreMachine {
         self.index.machine_id
     }
 
-    fn get_volume_path(&self, volume_id: VolumeId) -> PathBuf {
-        Path::new(&self.folder).join(String::from("haystack_") + &volume_id.to_string())
+    fn get_volume_path(&self, volume_id: VolumeId) -> LocalPathBuf {
+        LocalPath::new(&self.folder).join(String::from("haystack_") + &volume_id.to_string())
     }
 
-    fn open_volume(&mut self, volume_id: VolumeId, expect_empty: bool) -> Result<()> {
+    async fn open_volume(&mut self, volume_id: VolumeId, expect_empty: bool) -> Result<()> {
         if self.volumes.contains_key(&volume_id) {
             return Err(err_msg("Trying to open volume multiple times"));
         }
 
         let path = self.get_volume_path(volume_id);
 
-        let vol = if path.exists() {
+        let vol = if file::exists(&path).await? {
             PhysicalVolume::open(self.config.clone(), &path)?
         } else {
             PhysicalVolume::create(
@@ -255,7 +254,7 @@ impl StoreMachine {
                 if cur_should_alloc {
                     let f = StoreMachine::perform_allocation(mac_handle.clone());
 
-                    task::spawn(async move {
+                    executor::spawn(async move {
                         let r = f.await;
                         if let Err(e) = r {
                             println!("{:?}", e);

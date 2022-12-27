@@ -7,18 +7,18 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::Once;
 
-use async_std::channel;
-pub use nix::sys::signal::Signal;
-use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet};
+use common::errors::*;
+pub use common::nix::sys::signal::Signal;
+use common::nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet};
 
-use crate::errors::*;
+use crate::channel;
 
 static mut SIGNALS_STATE: Option<Mutex<SignalsState>> = None;
 static SIGNALS_STATE_INIT: Once = Once::new();
 
 /// Process-wide state of how the different signals are configured.
 struct SignalsState {
-    senders: HashMap<libc::c_int, channel::Sender<()>>,
+    senders: HashMap<sys::c_int, channel::Sender<()>>,
 }
 
 fn get_signals_state() -> &'static Mutex<SignalsState> {
@@ -33,7 +33,7 @@ fn get_signals_state() -> &'static Mutex<SignalsState> {
     }
 }
 
-extern "C" fn signal_handler(signal: libc::c_int) {
+extern "C" fn signal_handler(signal: sys::c_int) {
     let signals_state = get_signals_state().lock().unwrap();
     if let Some(sender) = signals_state.senders.get(&signal) {
         let _ = sender.try_send(());
@@ -52,7 +52,7 @@ impl Drop for SignalReceiver {
         unsafe { sigaction(self.signal, &action) }.unwrap();
 
         let mut signals_state = get_signals_state().lock().unwrap();
-        signals_state.senders.remove(&(self.signal as libc::c_int));
+        signals_state.senders.remove(&(self.signal as sys::c_int));
     }
 }
 
@@ -70,7 +70,7 @@ impl SignalReceiver {
 pub fn register_signal_handler(signal: Signal) -> Result<SignalReceiver> {
     let (sender, receiver) = channel::bounded(1);
 
-    let signal_num = signal as libc::c_int;
+    let signal_num = signal as sys::c_int;
     {
         let mut signals_state = get_signals_state().lock().unwrap();
         if signals_state.senders.contains_key(&signal_num) {

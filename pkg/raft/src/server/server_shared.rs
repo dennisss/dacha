@@ -6,15 +6,14 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
-use common::bundle::TaskResultBundle;
 use common::condvar::*;
 use common::errors::*;
 use common::futures::channel::oneshot;
 use common::futures::FutureExt;
-use common::task::ChildTask;
+use executor::bundle::TaskResultBundle;
+use executor::channel;
+use executor::child_task::ChildTask;
+use executor::sync::Mutex;
 use protobuf::Message;
 
 use crate::atomic::BlobFile;
@@ -623,7 +622,7 @@ impl<R: Send + 'static> ServerShared<R> {
 
         // TODO: Don't hold the state lock while dispatching RPCs.
 
-        task::spawn(self.clone().dispatch_messages(tick.messages));
+        executor::spawn(self.clone().dispatch_messages(tick.messages));
 
         Ok(())
     }
@@ -756,7 +755,7 @@ impl<R: Send + 'static> ServerShared<R> {
 
         // TODO: Even though the future times up, it seems like the requests still end
         // up getting sent.
-        let res = common::async_std::future::timeout(
+        let res = executor::timeout(
             Duration::from_millis(REQUEST_TIMEOUT),
             stub.RequestVote(&request_context, req),
         )
@@ -811,7 +810,7 @@ impl<R: Send + 'static> ServerShared<R> {
 
         let request_context = self.identity.new_outgoing_request_context(to_id)?;
 
-        let res = common::async_std::future::timeout(
+        let res = executor::timeout(
             Duration::from_millis(REQUEST_TIMEOUT),
             stub.AppendEntries(&request_context, &req),
         )

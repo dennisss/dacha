@@ -63,6 +63,7 @@ name = "asn_compiler"
 version = "0.1.0"
 dependencies = [
  "common",
+ "file",
  "parsing",
 ]
 
@@ -308,6 +309,8 @@ dependencies = [
  "automata",
  "common",
  "crypto",
+ "executor",
+ "file",
  "http",
  "parsing",
  "regexp_macros",
@@ -319,6 +322,8 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "common",
+ "executor",
+ "file",
  "math",
  "regexp_macros",
  "usb",
@@ -345,6 +350,8 @@ dependencies = [
  "common",
  "compression",
  "crypto",
+ "executor",
+ "file",
  "google",
  "macros",
  "protobuf",
@@ -500,7 +507,6 @@ dependencies = [
  "bytes 0.5.0",
  "chrono",
  "failure",
- "fs2",
  "futures",
  "futures-util",
  "generic-array",
@@ -518,6 +524,9 @@ dependencies = [
  "byteorder",
  "common",
  "crypto",
+ "executor",
+ "file",
+ "macros",
  "parsing",
  "parsing_compiler",
  "protobuf",
@@ -536,14 +545,15 @@ dependencies = [
 name = "container"
 version = "0.1.0"
 dependencies = [
- "async-std",
  "automata",
  "builder",
  "common",
  "compression",
  "crypto",
  "datastore",
+ "executor",
  "failure",
+ "file",
  "google",
  "http",
  "libc",
@@ -558,6 +568,7 @@ dependencies = [
  "rpc",
  "rpc_util",
  "sstable",
+ "sys",
  "usb",
 ]
 
@@ -662,6 +673,8 @@ name = "datastore"
 version = "0.1.0"
 dependencies = [
  "common",
+ "executor",
+ "file",
  "google",
  "http",
  "macros",
@@ -755,7 +768,6 @@ name = "executor"
 version = "0.1.0"
 dependencies = [
  "common",
- "peripherals_raw",
  "sys",
 ]
 
@@ -806,19 +818,11 @@ version = "0.1.0"
 dependencies = [
  "common",
  "elf",
+ "executor",
+ "file",
  "macros",
  "uf2",
  "usb",
-]
-
-[[package]]
-name = "fs2"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
-dependencies = [
- "libc",
- "winapi 0.3.9",
 ]
 
 [[package]]
@@ -1021,7 +1025,8 @@ name = "graphics"
 version = "0.1.0"
 dependencies = [
  "common",
- "fs2",
+ "executor",
+ "file",
  "gl",
  "glfw",
  "image",
@@ -1053,8 +1058,9 @@ dependencies = [
  "crypto",
  "diesel",
  "dotenv",
+ "executor",
  "failure",
- "fs2",
+ "file",
  "http",
  "macros",
  "mime-sniffer",
@@ -1097,12 +1103,13 @@ dependencies = [
 name = "http"
 version = "0.1.0"
 dependencies = [
- "async-std",
  "automata",
  "common",
  "compression",
  "crypto",
+ "executor",
  "failure",
+ "file",
  "net",
  "parsing",
  "parsing_compiler",
@@ -1142,6 +1149,8 @@ dependencies = [
  "byteorder",
  "common",
  "compression",
+ "executor",
+ "file",
  "generic-array",
  "impl_ops",
  "lazy_static",
@@ -1520,6 +1529,7 @@ dependencies = [
  "common",
  "container",
  "crypto",
+ "executor",
  "google",
  "http",
  "macros",
@@ -1625,6 +1635,7 @@ name = "parsing_compiler"
 version = "0.1.0"
 dependencies = [
  "common",
+ "file",
  "macros",
  "protobuf",
  "protobuf_compiler",
@@ -1657,6 +1668,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "elf",
+ "executor",
  "google",
  "parsing",
  "protobuf",
@@ -1670,6 +1682,8 @@ dependencies = [
  "common",
  "compression",
  "elf",
+ "executor",
+ "file",
  "google",
  "parsing",
  "perf",
@@ -1709,6 +1723,7 @@ dependencies = [
  "automata",
  "cmsis_svd",
  "common",
+ "file",
 ]
 
 [[package]]
@@ -1801,6 +1816,7 @@ name = "protobuf"
 version = "0.1.0"
 dependencies = [
  "common",
+ "file",
  "google",
  "json",
  "macros",
@@ -1824,6 +1840,7 @@ name = "protobuf_compiler"
 version = "0.1.0"
 dependencies = [
  "common",
+ "file",
  "parsing",
  "protobuf_core",
  "protobuf_descriptor",
@@ -1898,15 +1915,16 @@ dependencies = [
 name = "raft"
 version = "0.1.0"
 dependencies = [
- "async-std",
  "common",
  "crypto",
+ "executor",
  "failure",
- "fs2",
+ "file",
  "google",
  "http",
  "libc",
  "macros",
+ "net",
  "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
@@ -1987,6 +2005,7 @@ dependencies = [
  "automata",
  "common",
  "compression",
+ "executor",
  "failure",
  "google",
  "http",
@@ -2004,6 +2023,8 @@ version = "0.1.0"
 dependencies = [
  "common",
  "container",
+ "executor",
+ "file",
  "http",
  "macros",
  "protobuf",
@@ -2030,6 +2051,8 @@ name = "rpi"
 version = "0.1.0"
 dependencies = [
  "common",
+ "executor",
+ "file",
  "sys",
 ]
 
@@ -2100,6 +2123,8 @@ dependencies = [
  "common",
  "crypto",
  "datastore",
+ "executor",
+ "file",
  "graphics",
  "http",
  "image",
@@ -2173,11 +2198,11 @@ dependencies = [
 name = "sstable"
 version = "0.1.0"
 dependencies = [
- "async-std",
  "common",
  "compression",
  "crypto",
- "fs2",
+ "executor",
+ "file",
  "macros",
  "math",
  "parsing",
@@ -2223,6 +2248,8 @@ dependencies = [
  "common",
  "compression",
  "crypto",
+ "executor",
+ "file",
  "macros",
  "math",
  "parsing",
@@ -2240,6 +2267,8 @@ name = "stream_deck"
 version = "0.1.0"
 dependencies = [
  "common",
+ "executor",
+ "file",
  "usb",
 ]
 
@@ -2295,7 +2324,6 @@ dependencies = [
  "elf",
  "failure",
  "parsing",
- "peripherals_raw",
  "regexp_macros",
 ]
 
@@ -2367,6 +2395,7 @@ dependencies = [
  "automata",
  "common",
  "crypto",
+ "executor",
  "macros",
  "radix",
  "regexp_macros",
@@ -2384,6 +2413,7 @@ name = "ubiquiti"
 version = "0.1.0"
 dependencies = [
  "common",
+ "executor",
  "http",
  "json",
  "macros",
@@ -2477,7 +2507,9 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "common",
+ "executor",
  "failure",
+ "file",
  "libc",
  "macros",
  "nix 0.21.0",
@@ -2490,6 +2522,7 @@ name = "usb_device"
 version = "0.1.0"
 dependencies = [
  "common",
+ "executor",
  "usb",
 ]
 
@@ -2631,6 +2664,8 @@ version = "0.1.0"
 dependencies = [
  "automata",
  "common",
+ "executor",
+ "file",
  "http",
  "json",
  "macros",
@@ -2706,6 +2741,7 @@ name = "xml"
 version = "0.1.0"
 dependencies = [
  "common",
+ "file",
  "parsing",
 ]
 

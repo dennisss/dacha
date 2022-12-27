@@ -30,15 +30,16 @@ extern crate container;
 extern crate regexp_macros;
 extern crate automata;
 extern crate builder;
+#[macro_use]
+extern crate file;
 
 use std::fmt::Debug;
 use std::io::Write;
-use std::path::Path;
 use std::process::Command;
 
 use builder::{BuildConfigTarget, Builder};
-use common::async_std::{fs, task};
-use common::{errors::*, project_dir};
+use common::errors::*;
+use file::{project_dir, LocalPath};
 use protobuf::text::{parse_text_proto, ParseTextProto};
 
 use container::NodeConfig;
@@ -101,33 +102,30 @@ fn run_scp(source: &str, destination: &str) -> Result<()> {
     Ok(())
 }
 
-fn copy_file<P: AsRef<Path> + Debug, Q: AsRef<Path> + Debug>(
+fn copy_file<P: AsRef<LocalPath> + Debug, Q: AsRef<LocalPath> + Debug>(
     addr: &str,
     source_path: P,
     target_repo_path: Q,
 ) -> Result<()> {
     let repo_dir = "/opt/dacha/bundle";
-    let target_path = Path::new(repo_dir).join(target_repo_path.as_ref());
+    let target_path = LocalPath::new(repo_dir).join(target_repo_path.as_ref());
 
     println!("{:?} => {:?}", source_path, target_path);
 
     run_ssh(
         addr,
-        &format!(
-            "mkdir -p {}",
-            target_path.parent().unwrap().to_str().unwrap()
-        ),
+        &format!("mkdir -p {}", target_path.parent().unwrap().as_str()),
     )?;
 
     run_scp(
-        source_path.as_ref().to_str().unwrap(),
-        &format!("pi@{}:{}", addr, target_path.to_str().unwrap()),
+        source_path.as_ref().as_str(),
+        &format!("pi@{}:{}", addr, target_path.as_str()),
     )?;
 
     Ok(())
 }
 
-fn copy_repo_file<P: AsRef<Path> + Debug>(addr: &str, relative_path: P) -> Result<()> {
+fn copy_repo_file<P: AsRef<LocalPath> + Debug>(addr: &str, relative_path: P) -> Result<()> {
     let source_path = {
         let p = relative_path.as_ref();
         if p.is_absolute() {
@@ -238,15 +236,15 @@ async fn run() -> Result<()> {
     }
 
     let mut node_config = {
-        let s = fs::read_to_string(project_path!("pkg/container/config/node.textproto")).await?;
+        let s = file::read_to_string(project_path!("pkg/container/config/node.textproto")).await?;
         NodeConfig::parse_text(&s)?
     };
 
     node_config.set_zone(args.zone);
 
-    let temp_dir = common::temp::TempDir::create()?;
+    let temp_dir = file::temp::TempDir::create()?;
     let node_config_path = temp_dir.path().join("node.textproto");
-    fs::write(
+    file::write(
         &node_config_path,
         protobuf::text::serialize_text_proto(&node_config),
     )
@@ -266,10 +264,10 @@ async fn run() -> Result<()> {
 
     println!("Setting up /etc/subgid");
     {
-        let tmpdir = common::temp::TempDir::create()?;
+        let tmpdir = file::temp::TempDir::create()?;
         let groups_path = tmpdir.path().join("group");
 
-        download_file(&args.addr, "/etc/group", groups_path.to_str().unwrap())?;
+        download_file(&args.addr, "/etc/group", groups_path.as_str())?;
 
         let groups = container::node::shadow::read_groups_from_path(groups_path)?;
 
@@ -291,7 +289,7 @@ async fn run() -> Result<()> {
         std::fs::write(&subgid_path, subgid)?;
 
         run_scp(
-            &subgid_path.to_str().unwrap(),
+            &subgid_path.as_str(),
             &format!("pi@{}:/tmp/next_subgid", &args.addr),
         )?;
 
@@ -310,5 +308,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

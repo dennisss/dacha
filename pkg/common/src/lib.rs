@@ -35,8 +35,6 @@ pub extern crate base64;
 #[cfg(feature = "std")]
 pub extern crate bytes;
 #[cfg(feature = "std")]
-extern crate fs2;
-#[cfg(feature = "std")]
 pub extern crate futures;
 #[cfg(feature = "std")]
 pub extern crate hex;
@@ -65,10 +63,6 @@ pub mod bit_flags;
 pub mod bits;
 #[cfg(feature = "std")]
 pub mod borrowed;
-#[cfg(feature = "std")]
-pub mod bundle;
-#[cfg(feature = "std")]
-pub mod cancellation;
 pub mod collections;
 pub mod concat_slice;
 #[cfg(feature = "std")]
@@ -80,10 +74,6 @@ pub mod eventually;
 #[cfg(feature = "std")]
 pub mod factory;
 pub mod fixed;
-#[cfg(feature = "std")]
-pub mod fs;
-#[cfg(feature = "std")]
-pub mod future;
 pub mod hash;
 #[cfg(feature = "std")]
 pub mod io;
@@ -96,17 +86,10 @@ pub mod loops;
 pub mod option;
 #[cfg(feature = "std")]
 pub mod pipe;
+pub mod register;
 pub mod segmented_buffer;
-#[cfg(feature = "std")]
-pub mod shutdown;
-#[cfg(feature = "std")]
-pub mod signals;
 pub mod sort;
 pub mod struct_bytes;
-#[cfg(feature = "std")]
-pub mod task;
-#[cfg(feature = "std")]
-pub mod temp;
 #[cfg(feature = "alloc")]
 pub mod tree;
 #[cfg(feature = "alloc")]
@@ -118,8 +101,6 @@ pub use arrayref::{array_mut_ref, array_ref};
 #[cfg(feature = "std")]
 pub use async_trait::*;
 #[cfg(feature = "std")]
-pub use cancellation::CancellationToken;
-#[cfg(feature = "std")]
 pub use failure::Fail;
 #[cfg(feature = "std")]
 pub use lazy_static::*;
@@ -128,53 +109,6 @@ pub use lazy_static::*;
 use alloc::string::String;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
-
-/// Gets the root directory of this project (the directory that contains the
-/// 'pkg' and '.git' directory).
-#[cfg(feature = "std")]
-pub fn project_dir() -> std::path::PathBuf {
-    let mut dir = std::env::current_dir().unwrap();
-
-    // Special case which running in the 'cross' docker container.
-    if dir.starts_with("/project") {
-        return "/project".into();
-    }
-
-    loop {
-        match dir.file_name() {
-            Some(name) => {
-                if name == "dacha" {
-                    break;
-                }
-
-                dir.pop();
-            }
-            None => {
-                panic!(
-                    "Failed to find project dir in: {:?}",
-                    std::env::current_dir().unwrap()
-                );
-            }
-        }
-    }
-
-    dir
-}
-
-#[cfg(feature = "std")]
-#[macro_export]
-macro_rules! project_path {
-    // TODO: Assert that relpath is relative and not absolute.
-    ($relpath:expr) => {
-        $crate::project_dir().join($relpath)
-    };
-}
-
-#[cfg(feature = "std")]
-pub async fn wait_for(dur: std::time::Duration) {
-    let never = async_std::future::pending::<()>();
-    async_std::future::timeout(dur, never).await.unwrap_or(());
-}
 
 pub trait FlipSign<T> {
     /// Transmutes an signed/unsigned integer into it's opposite unsigned/signed
@@ -456,9 +390,13 @@ macro_rules! enum_def_with_unknown {
 
 		impl $name {
 			pub fn from_value(v: $t) -> Self {
-				match v {
+				$(
+                    const $case: $t = $val;
+                )*
+
+                match v {
 					$(
-						$val => $name::$case,
+						$case => $name::$case,
 					)*
 					_ => {
                         $name::Unknown(v)

@@ -19,6 +19,7 @@ use crate::linux::io_uring::ExecutorOperation;
 ///
 /// NOTE: It is generally not a good idea to directly use this as it doesn't
 /// account for file type specific requirements (like seekability).
+#[derive(Clone)]
 pub struct FileHandle {
     fd: Arc<OpenFileDescriptor>,
 
@@ -87,22 +88,16 @@ impl FileHandle {
 
         Ok(n)
     }
-}
 
-/*
-pub struct LocalFile {
-    fd: c_int,
-}
+    pub fn seek(&mut self, offset: u64) {
+        assert!(self.offset.is_some());
+        self.offset = Some(offset);
+    }
 
-impl LocalFile {
-    pub fn open(path: &str) -> Result<Self> {
-        let path = CString::new(path)?;
-
-        let fd = unsafe { open(path.as_ptr(), O_RDONLY | O_CLOEXEC | O_NONBLOCK, 0) }?;
-        Ok(Self { fd })
+    pub fn current_position(&self) -> u64 {
+        self.offset.unwrap()
     }
 }
- */
 
 /*
 If I have a reference to a field, then that field trivially can't be moved until I drop my reference.

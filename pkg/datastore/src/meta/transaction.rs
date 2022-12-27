@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
 use common::bytes::Bytes;
 use common::errors::*;
+use executor::channel;
+use executor::sync::Mutex;
 use raft::proto::consensus::LogEntryData;
 use raft::ReadIndex;
 use raft::{proto::consensus::LogPosition, proto::ident::Term, LogIndex, PendingExecutionResult};
@@ -72,7 +72,7 @@ struct TransactionLockHolderData {
 impl Drop for TransactionLockHolder {
     fn drop(&mut self) {
         if let Some(data) = self.data.take() {
-            common::async_std::task::spawn(Self::release_impl(data));
+            executor::spawn(Self::release_impl(data));
         }
     }
 }
@@ -172,7 +172,7 @@ impl TransactionManager {
         // Write the final execution logic in a separate thread.
         // For correctness we can't have that logic partially execute as we don't want
         // locks
-        common::async_std::task::spawn(Self::execute_task(
+        executor::spawn(Self::execute_task(
             node,
             lock_holder,
             read_index,

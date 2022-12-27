@@ -19,7 +19,6 @@ extern crate byteorder;
 extern crate chrono;
 extern crate crypto;
 extern crate dotenv;
-extern crate fs2;
 extern crate http;
 extern crate mime_sniffer;
 extern crate protobuf;

@@ -19,6 +19,8 @@ macros = { path = "../macros" }
 graphics = { path = "../graphics" }
 image = { path = "../image" }
 math = { path = "../math" }
+executor = { path = "../executor" }
+file = { path = "../file" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

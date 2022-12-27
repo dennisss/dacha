@@ -9,6 +9,7 @@
 #![no_std]
 
 #[cfg(feature = "std")]
+#[macro_use]
 extern crate common;
 #[cfg(feature = "std")]
 #[macro_use]
@@ -18,13 +19,25 @@ extern crate std;
 #[macro_use]
 extern crate alloc;
 
-extern crate peripherals_raw;
-
 pub mod arena_stack;
+#[cfg(feature = "std")]
+pub mod bundle;
+#[cfg(feature = "std")]
+pub mod cancellation;
+#[cfg(feature = "std")]
+pub mod channel;
+#[cfg(feature = "std")]
+pub mod child_task;
+#[cfg(feature = "std")]
+pub mod future;
 pub mod futures;
 mod raw_waker;
+#[cfg(feature = "std")]
+pub mod signals;
 pub mod singleton;
 pub mod stack_pinned;
+#[cfg(feature = "std")]
+pub mod sync;
 pub mod thread;
 pub mod waker;
 

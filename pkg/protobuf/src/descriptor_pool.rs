@@ -1,8 +1,6 @@
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use protobuf_core::reflection::Reflect;
-use protobuf_core::reflection::ReflectionMut;
 use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Mutex;
@@ -11,6 +9,8 @@ use std::{collections::HashMap, sync::Arc};
 use common::errors::*;
 use google::proto::any::Any;
 use protobuf_compiler::spec::Syntax;
+use protobuf_core::reflection::Reflect;
+use protobuf_core::reflection::ReflectionMut;
 use protobuf_core::{FieldDescriptorShort, FieldNumber, Message, StaticMessage};
 use protobuf_descriptor::{
     DescriptorProto, FieldDescriptorProto, FileDescriptorProto, MethodDescriptorProto,
@@ -39,18 +39,22 @@ impl DescriptorPool {
         }
     }
 
-    pub async fn add_local_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
+    pub async fn add_local_file<P: AsRef<file::LocalPath>>(&self, path: P) -> Result<()> {
         // TODO: Deduplicate some of this logic with the compiler.
 
         // TODO: Don't read the file if it is already in the pool.
 
         let path = path.as_ref();
 
-        let proto_file_src = common::async_std::fs::read_to_string(path).await?;
+        let proto_file_src = file::read_to_string(path).await?;
         let proto_file = protobuf_compiler::syntax::parse_proto(&proto_file_src)?;
 
         let mut proto = proto_file.to_proto();
-        proto.set_name(path.strip_prefix(common::project_dir())?.to_str().unwrap());
+        proto.set_name(
+            path.strip_prefix(file::project_dir())
+                .ok_or_else(|| err_msg("Path is not in the project"))?
+                .as_str(),
+        );
 
         // TODO: We must also add any dependencies.
 

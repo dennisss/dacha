@@ -4,9 +4,8 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
 
-use common::async_std::path::Path;
-use common::async_std::task;
 use common::errors::*;
+use file::LocalPath;
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
 use nix::sys::stat::{umask, Mode};
@@ -229,7 +228,7 @@ fn run_root_process(
     config: &NodeConfig,
     setup_reader: std::fs::File,
 ) -> isize {
-    let result = task::block_on(run(context, config, setup_reader));
+    let result = executor::run(run(context.clone(), config.clone(), setup_reader)).unwrap();
     let code = match result {
         Ok(()) => 0,
         Err(e) => {
@@ -238,12 +237,13 @@ fn run_root_process(
         }
     };
 
-    unsafe { libc::exit(code) };
+    unsafe { sys::exit(code) };
+    todo!()
 }
 
 async fn run(
-    context: &NodeContext,
-    config: &NodeConfig,
+    context: NodeContext,
+    config: NodeConfig,
     mut setup_reader: std::fs::File,
 ) -> Result<()> {
     let mut done_byte = [0u8; 1];
@@ -280,7 +280,7 @@ async fn run(
     // TODO: Create the root directory and set permissions to 600
     // NOTE: This directory should be created with mode 700 where the user running
     // the container node is the owner.
-    if !Path::new(config.data_dir()).exists().await {
+    if !file::exists(LocalPath::new(config.data_dir())).await? {
         return Err(err_msg("Data directory doesn't exist"));
     }
 
@@ -289,9 +289,9 @@ async fn run(
     // a case-by-base basis.
     umask(Mode::from_bits_truncate(0o077));
 
-    let mut task_bundle = common::bundle::TaskResultBundle::new();
+    let mut task_bundle = executor::bundle::TaskResultBundle::new();
 
-    let node = Node::create(context, config).await?;
+    let node = Node::create(&context, &config).await?;
 
     // TODO: Implement shutdown for this.
     task_bundle.add("cluster::Node", node.run());
@@ -299,7 +299,7 @@ async fn run(
     let mut server = rpc::Http2Server::new();
     node.add_services(&mut server)?;
     server.add_reflection()?;
-    server.set_shutdown_token(common::shutdown::new_shutdown_token());
+    server.set_shutdown_token(executor::signals::new_shutdown_token());
 
     task_bundle.add("rpc::Server", server.run(config.service_port() as u16));
 

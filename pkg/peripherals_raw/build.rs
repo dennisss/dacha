@@ -104,7 +104,7 @@ fn main() -> Result<()> {
 
     for model in ["nrf52840", "nrf52833"] {
         let input = std::fs::read_to_string(
-            common::project_dir().join(format!("third_party/cmsis_svd/{}.svd", model)),
+            file::project_dir().join(format!("third_party/cmsis_svd/{}.svd", model)),
         )?;
 
         let compiled = Compiler::compile(&input, &options)?;
@@ -113,7 +113,8 @@ fn main() -> Result<()> {
         std::fs::write(&output_path, compiled);
 
         // if model == "nrf52840" {
-        //     let output_path2 = project_path!("pkg/peripherals_raw/src/nrf52840.rs");
+        //     let output_path2 =
+        // project_path!("pkg/peripherals_raw/src/nrf52840.rs");
         //     std::fs::write(&output_path2, std::fs::read(&output_path)?)?;
         // }
     }
@@ -121,7 +122,7 @@ fn main() -> Result<()> {
     /*
     {
         let res = std::process::Command::new("rustfmt")
-            .arg(output_path.to_str().unwrap())
+            .arg(output_path.as_str())
             .output()?;
         if !res.status.success() {
             std::io::stdout().write_all(&res.stdout).unwrap();
@@ -130,7 +131,6 @@ fn main() -> Result<()> {
         }
     }
     */
-
 
     Ok(())
 }

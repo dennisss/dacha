@@ -4,9 +4,9 @@ use std::f32::MAX_10_EXP;
 use std::sync::Arc;
 
 use common::algorithms::lower_bound_by;
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
 use common::errors::*;
+use executor::channel;
+use executor::sync::Mutex;
 
 use crate::db::paths::FilePaths;
 use crate::db::version_edit::NewFileEntry;

@@ -1,16 +1,10 @@
-#[cfg(feature = "alloc")]
 use alloc::string::String;
-#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use std::borrow::ToOwned;
-use std::os::unix::prelude::{FromRawFd, IntoRawFd};
 
-use async_std::fs::OpenOptions;
-use async_std::path::{Path, PathBuf};
-use fs2::FileExt;
-use futures::stream::StreamExt;
+use common::errors::*;
 
-use crate::errors::*;
+use crate::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 
 // TODO: Better error passthrough?
 
@@ -23,10 +17,10 @@ pub struct DirLock {
     /// File handle for the lock file that we create to hold the lock
     /// NOTE: Even if we don't use this, it must be held allocated to maintain
     /// the lock
-    _file: std::fs::File,
+    _file: LocalFile,
 
     /// Extra reference to the directory path that we represent
-    path: PathBuf,
+    path: LocalPathBuf,
 }
 
 impl DirLock {
@@ -34,8 +28,8 @@ impl DirLock {
     ///
     /// TODO: Support locking based on an application name which we could save
     /// in the lock file
-    pub async fn open(path: &Path) -> Result<DirLock> {
-        if !path.exists().await {
+    pub async fn open(path: &LocalPath) -> Result<DirLock> {
+        if !crate::exists(path).await? {
             return Err(err_msg("Folder does not exist"));
         }
 
@@ -44,31 +38,23 @@ impl DirLock {
         // Before we create a lock file, verify that the directory is empty (partially
         // ensuring that all previous owners of this directory also respected the
         // locking rules)
-        if !lockfile_path.exists().await {
-            let nfiles = path
-                .read_dir()
-                .await
-                .map_err(|_| err_msg("Failed to read the given directory"))?
-                .collect::<Vec<_>>()
-                .await
-                .len();
-
+        if !crate::exists(&lockfile_path).await? {
+            let nfiles = crate::read_dir(path)?.len();
             if nfiles > 0 {
                 return Err(err_msg("Folder is not empty"));
             }
         }
 
-        let mut opts = OpenOptions::new();
-        opts.write(true).create(true).read(true);
-
-        let lockfile = opts
-            .open(lockfile_path)
-            .await
-            .map_err(|_| err_msg("Failed to open the lockfile"))?;
+        let lockfile = LocalFile::open_with_options(
+            lockfile_path,
+            &LocalFileOpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true),
+        )
+        .map_err(|_| err_msg("Failed to open the lockfile"))?;
 
         // Acquire the exclusive lock
-
-        let lockfile = unsafe { std::fs::File::from_raw_fd(lockfile.into_raw_fd()) };
 
         if let Err(_) = lockfile.try_lock_exclusive() {
             return Err(err_msg("Failed to lock the lockfile"));
@@ -80,7 +66,7 @@ impl DirLock {
         })
     }
 
-    pub fn path(&self) -> &Path {
+    pub fn path(&self) -> &LocalPath {
         &self.path
     }
 }

@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
-use common::async_std::sync::Mutex;
 use common::bytes::Bytes;
 use common::errors::*;
+use executor::sync::Mutex;
 
 use crate::aead::AuthEncAD;
 use crate::hkdf::HKDF;

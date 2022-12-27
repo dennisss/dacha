@@ -34,11 +34,11 @@ async fn read_controller() -> Result<()> {
         /*
         blink.set_colors(0, &[ c1, c2 ]).await?;
 
-        common::wait_for(Duration::from_millis(500)).await;
+        executor::sleep(Duration::from_millis(500)).await;
 
         blink.set_colors(0, &[ c2, c1 ]).await?;
 
-        common::wait_for(Duration::from_millis(500)).await;
+        executor::sleep(Duration::from_millis(500)).await;
         */
     }
 
@@ -48,5 +48,5 @@ async fn read_controller() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(read_controller())
+    executor::run(read_controller())?
 }

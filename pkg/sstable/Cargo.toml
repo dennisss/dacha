@@ -13,8 +13,8 @@ reflection = { path = "../reflection" }
 macros = { path = "../macros" }
 protobuf = { path = "../protobuf" }
 parsing = { path = "../parsing" }
-fs2 = "0.4.3"
-async-std = "1.9.0"
+file = { path = "../file" }
+executor = { path = "../executor" }
 
 [features]
 default = ["std"]

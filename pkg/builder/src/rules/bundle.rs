@@ -1,10 +1,8 @@
-use std::path::Path;
-
-use common::async_std::fs;
 use common::errors::*;
 use compression::tar::{AppendFileOptions, FileMetadataMask};
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
+use file::LocalPath;
 
 use crate::label::Label;
 use crate::proto::bundle::*;
@@ -55,7 +53,7 @@ impl BuildTarget for Bundle {
     async fn build(&self, context: &BuildTargetContext) -> Result<BuildTargetOutputs> {
         let mut outputs = BuildTargetOutputs::default();
 
-        let bundle_mount_dir = Path::new("built")
+        let bundle_mount_dir = LocalPath::new("built")
             .join(&context.key.label.directory)
             .join(&context.key.label.target_name);
 
@@ -65,12 +63,12 @@ impl BuildTarget for Bundle {
             .join(&context.config_hash)
             .join(&context.key.label.directory)
             .join(&context.key.label.target_name);
-        if bundle_dir.exists().await {
+        if file::exists(&bundle_dir).await? {
             // TODO: We may need to use the regular remove_file function if it was
             // originally a file.
-            fs::remove_dir_all(&bundle_dir).await?;
+            file::remove_dir_all(&bundle_dir).await?;
         }
-        fs::create_dir_all(&bundle_dir).await?;
+        file::create_dir_all(&bundle_dir).await?;
 
         let mut bundle_spec = BundleSpec::default();
 
@@ -116,7 +114,7 @@ impl BuildTarget for Bundle {
             out.finish().await?;
 
             let blob_spec = {
-                let data = fs::read(&archive_path).await?;
+                let data = file::read(&archive_path).await?;
 
                 let hash = {
                     let mut hasher = SHA256Hasher::default();
@@ -133,14 +131,10 @@ impl BuildTarget for Bundle {
 
             // Move to final location
             let blob_path = bundle_dir.join(blob_spec.id());
-            fs::rename(archive_path, &blob_path).await?;
+            file::rename(archive_path, &blob_path).await?;
 
             outputs.output_files.insert(
-                bundle_mount_dir
-                    .join(blob_spec.id())
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
+                bundle_mount_dir.join(blob_spec.id()).as_str().to_string(),
                 BuildOutputFile {
                     location: blob_path,
                 },
@@ -157,10 +151,10 @@ impl BuildTarget for Bundle {
 
         let data = protobuf::text::serialize_text_proto(&bundle_spec);
 
-        fs::write(&spec_path, data).await?;
+        file::write(&spec_path, data).await?;
 
         outputs.output_files.insert(
-            spec_mount_path.to_str().unwrap().to_string(),
+            spec_mount_path.as_str().to_string(),
             BuildOutputFile {
                 location: spec_path,
             },

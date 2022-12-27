@@ -2,11 +2,11 @@
 
 use std::sync::Arc;
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
 use common::errors::*;
 use common::io::Readable;
 use common::InRange;
+use executor::channel;
+use executor::sync::Mutex;
 use parsing::ascii::AsciiString;
 use parsing::opaque::OpaqueString;
 

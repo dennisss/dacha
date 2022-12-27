@@ -6,7 +6,6 @@ extern crate common;
 #[macro_use]
 extern crate macros;
 
-use common::async_std::task;
 use common::errors::*;
 
 #[derive(Args)]
@@ -25,10 +24,10 @@ async fn run() -> Result<()> {
     let bridge =
         nordic_tools::radio_bridge::RadioBridge::create(&args.state_object_name, &args.usb).await?;
 
-    let mut task_bundle = common::bundle::TaskResultBundle::new();
+    let mut task_bundle = executor::bundle::TaskResultBundle::new();
 
     let mut rpc_server = rpc::Http2Server::new();
-    rpc_server.set_shutdown_token(common::shutdown::new_shutdown_token());
+    rpc_server.set_shutdown_token(executor::signals::new_shutdown_token());
     bridge.add_services(&mut rpc_server)?;
     task_bundle
         .add("rpc::Server", rpc_server.run(args.rpc_port.value()))
@@ -40,5 +39,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

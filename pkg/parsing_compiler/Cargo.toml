@@ -8,6 +8,7 @@ edition = "2018"
 common = { path = "../common" }
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
+file = { path = "../file" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

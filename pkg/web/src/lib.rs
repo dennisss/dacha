@@ -8,6 +8,8 @@ extern crate parsing;
 #[macro_use]
 extern crate macros;
 extern crate json;
+#[macro_use]
+extern crate file;
 
 use std::fmt::Write;
 
@@ -68,7 +70,7 @@ impl WebServerHandler {
     pub fn new(options: WebServerOptions) -> Self {
         Self {
             options,
-            assets_handler: StaticFileHandler::new(common::project_dir()),
+            assets_handler: StaticFileHandler::new(file::project_dir()),
         }
     }
 
@@ -123,8 +125,7 @@ impl WebServerHandler {
 
         let vars = json::stringify(page.vars.as_ref().unwrap_or(&json::Value::Null))?;
 
-        let contents =
-            common::async_std::fs::read_to_string(&project_path!("pkg/web/index.html")).await?;
+        let contents = file::read_to_string(project_path!("pkg/web/index.html")).await?;
 
         let mut new_page = String::new();
 

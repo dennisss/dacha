@@ -6,12 +6,12 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use common::async_std::sync::Mutex;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::futures::future::*;
 use common::futures::prelude::*;
 use common::FlipSign;
+use executor::sync::Mutex;
 use protobuf_json::MessageJsonParser;
 
 use crate::cache::api::*;

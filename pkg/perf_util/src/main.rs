@@ -5,7 +5,6 @@ extern crate protobuf;
 
 use std::time::Duration;
 
-use common::async_std::fs;
 use common::errors::*;
 use compression::gzip::*;
 use protobuf::Message;
@@ -15,7 +14,7 @@ async fn run() -> Result<()> {
     println!("Profile: {:?}", profile);
 
     let mut data = profile.serialize()?;
-    fs::write("perf_custom.pb", &data).await?;
+    file::write("perf_custom.pb", &data).await?;
 
     let mut data_gz = vec![];
 
@@ -24,11 +23,11 @@ async fn run() -> Result<()> {
 
     println!("Write : {}", data_gz.len());
 
-    fs::write("perf_custom.pb.gz", &data_gz).await?;
+    file::write("perf_custom.pb.gz", &data_gz).await?;
 
     Ok(())
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(run())
+    executor::run(run())?
 }

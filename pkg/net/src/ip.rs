@@ -65,14 +65,23 @@ impl std::convert::From<std::net::IpAddr> for IPAddress {
     }
 }
 
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct SocketAddr {
-    pub ip: IPAddress,
-    pub port: u16,
+    ip: IPAddress,
+    port: u16,
 }
 
 impl SocketAddr {
-    pub fn new(ip: IPAddress, port: u16) -> Self {
+    pub const fn new(ip: IPAddress, port: u16) -> Self {
         Self { ip, port }
+    }
+
+    pub fn ip(&self) -> &IPAddress {
+        &self.ip
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
     }
 }
 
@@ -106,6 +115,27 @@ impl Into<sys::SocketAddr> for SocketAddr {
             IPAddress::V6(ip) => sys::SocketAddr::ipv6(&ip, self.port.to_network_order()),
             // IPAddress::VFuture(_) => todo!(),
         }
+    }
+}
+
+impl From<sys::SocketAddr> for SocketAddr {
+    fn from(addr: sys::SocketAddr) -> Self {
+        if let Some((addr, port)) = addr.as_ipv4() {
+            return Self {
+                ip: IPAddress::V4(addr),
+                port,
+            };
+        }
+
+        if let Some((addr, port)) = addr.as_ipv6() {
+            return Self {
+                ip: IPAddress::V6(addr),
+                port,
+            };
+        }
+
+        // TODO: Return an error instead
+        todo!()
     }
 }
 

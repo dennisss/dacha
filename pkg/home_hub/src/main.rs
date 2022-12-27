@@ -17,11 +17,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::async_std::channel;
-use common::async_std::fs;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
 use common::{errors::*, project_path};
+use executor::channel;
+use executor::sync::Mutex;
 use home_hub::proto::config::Config;
 use peripheral::ddc::DDCDevice;
 use rpi::gpio::*;
@@ -117,7 +115,7 @@ impl App {
         inst.light_event.0.send(()).await?;
         inst.ddc_event.0.send(()).await?;
 
-        let mut task_bundle = common::bundle::TaskResultBundle::new();
+        let mut task_bundle = executor::bundle::TaskResultBundle::new();
         task_bundle.add("App::render_thread", inst.clone().render_thread(deck));
         task_bundle.add("App::light_thread", inst.clone().light_thread(hue_client));
         task_bundle.add("App::ddc_thread", inst.clone().ddc_thread(ddc));
@@ -128,26 +126,27 @@ impl App {
     async fn render_thread(self: Arc<Self>, deck: StreamDeckDevice) -> Result<()> {
         const DISPLAY_COMPUTER_BUTTON: usize = 0;
         let computer_active =
-            fs::read(project_path!("pkg/home_hub/icons/computer-active.jpg")).await?;
-        let computer_default = fs::read(project_path!("pkg/home_hub/icons/computer.jpg")).await?;
+            file::read(project_path!("pkg/home_hub/icons/computer-active.jpg")).await?;
+        let computer_default = file::read(project_path!("pkg/home_hub/icons/computer.jpg")).await?;
 
         const DISPLAY_LAPTOP_BUTTON: usize = 1;
-        let laptop_active = fs::read(project_path!("pkg/home_hub/icons/laptop-active.jpg")).await?;
-        let laptop_default = fs::read(project_path!("pkg/home_hub/icons/laptop.jpg")).await?;
+        let laptop_active =
+            file::read(project_path!("pkg/home_hub/icons/laptop-active.jpg")).await?;
+        let laptop_default = file::read(project_path!("pkg/home_hub/icons/laptop.jpg")).await?;
 
         const LIGHT_ENTRY_BUTTON: usize = 5;
         let light_on_entry =
-            fs::read(project_path!("pkg/home_hub/icons/light-on-entry.jpg")).await?;
+            file::read(project_path!("pkg/home_hub/icons/light-on-entry.jpg")).await?;
         let light_off_entry =
-            fs::read(project_path!("pkg/home_hub/icons/light-off-entry.jpg")).await?;
+            file::read(project_path!("pkg/home_hub/icons/light-off-entry.jpg")).await?;
 
         const LIGHT_STUDY_BUTTON: usize = 6;
         let light_on_study =
-            fs::read(project_path!("pkg/home_hub/icons/light-on-study.jpg")).await?;
+            file::read(project_path!("pkg/home_hub/icons/light-on-study.jpg")).await?;
         let light_off_study =
-            fs::read(project_path!("pkg/home_hub/icons/light-off-study.jpg")).await?;
+            file::read(project_path!("pkg/home_hub/icons/light-off-study.jpg")).await?;
 
-        let error_jpg = fs::read(project_path!("pkg/home_hub/icons/error.jpg")).await?;
+        let error_jpg = file::read(project_path!("pkg/home_hub/icons/error.jpg")).await?;
 
         let mut last_key_state = vec![];
 
@@ -160,14 +159,14 @@ impl App {
         }
 
         loop {
-            let event = common::async_std::future::timeout(
+            let event = executor::timeout(
                 Duration::from_secs(10),
-                common::future::race(
-                    common::future::map(self.state_event.1.recv(), |_| FutureEvent::StateChange),
+                executor::future::race(
+                    executor::future::map(self.state_event.1.recv(), |_| FutureEvent::StateChange),
                     // TODO: Need a better way to cancel this if the state change happens first
                     // (such that we don't miss events if they are received
                     // during future cancellation).
-                    common::future::map(Box::pin(deck.poll_key_state()), |e| {
+                    executor::future::map(Box::pin(deck.poll_key_state()), |e| {
                         FutureEvent::KeyState(e)
                     }),
                 ),
@@ -282,11 +281,7 @@ impl App {
     async fn ddc_thread(self: Arc<Self>, mut ddc: DDCDevice) -> Result<()> {
         loop {
             // Wait for either a timeout or DDC event.
-            let _ = common::async_std::future::timeout(
-                Duration::from_secs(10),
-                self.ddc_event.1.recv(),
-            )
-            .await;
+            let _ = executor::timeout(Duration::from_secs(10), self.ddc_event.1.recv()).await;
 
             let pending_input = {
                 let mut state = self.state.lock().await;
@@ -318,7 +313,7 @@ impl App {
                         eprintln!("Failure getting feature (attempt {}): {}", num_attempts, e);
 
                         // TODO: Exponential backoff.
-                        common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
+                        executor::sleep(std::time::Duration::from_secs(1)).await;
                     }
                 }
             }
@@ -335,11 +330,7 @@ impl App {
 
     async fn light_thread(self: Arc<Self>, client: hue::HueClient) -> Result<()> {
         loop {
-            let _ = common::async_std::future::timeout(
-                Duration::from_secs(10),
-                self.light_event.1.recv(),
-            )
-            .await;
+            let _ = executor::timeout(Duration::from_secs(10), self.light_event.1.recv()).await;
 
             let groups;
             // TODO: Improve this as this is dangerous as is:
@@ -401,5 +392,5 @@ impl App {
 }
 
 fn main() -> Result<()> {
-    task::block_on(App::run())
+    executor::run(App::run())?
 }

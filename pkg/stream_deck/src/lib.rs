@@ -161,7 +161,7 @@ impl StreamDeckDevice {
 
             buf[7..(7 + n)].copy_from_slice(&remaining[0..n]);
 
-            common::async_std::future::timeout(
+            executor::timeout(
                 Duration::from_secs(1),
                 self.hid
                     .set_report(KEY_IMAGE_REPORT_ID, usb::hid::ReportType::Output, &buf),

@@ -4,6 +4,7 @@
 
 extern crate pico_core;
 
+use core::arch::asm;
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
@@ -119,7 +120,6 @@ const SIO_FUNC: u32 = 5; // F5
 const SIO_BASE: u32 = 0xd0000000;
 const GPIO_OUT: *mut u32 = (SIO_BASE + 0x10) as *mut u32;
 const GPIO_OE: *mut u32 = (SIO_BASE + 0x20) as *mut u32;
-
 
 /*
 1 Reset

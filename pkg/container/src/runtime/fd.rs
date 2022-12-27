@@ -47,7 +47,7 @@ enum FileReferenceHandle {
 impl Drop for FileReference {
     fn drop(&mut self) {
         if let FileReferenceHandle::Existing(fd) = &self.handle {
-            let _ = unsafe { libc::close(*fd) };
+            let _ = unsafe { sys::close(*fd) };
         }
     }
 }

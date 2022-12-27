@@ -111,7 +111,7 @@ impl USBRadio {
 
         let mut num_bytes = None;
         for attempt in 0..4 {
-            match common::async_std::future::timeout(
+            match executor::timeout(
                 Duration::from_millis(5),
                 self.device.read_control(
                     SetupPacket {

@@ -1,7 +1,11 @@
 use common::{errors::*, io::Readable};
 
 async fn run() -> Result<()> {
-    let mut file = ::file::LocalFile::open("hello_world").await?;
+    println!("{:#?}", file::read_dir(".")?);
+
+    println!("{:?}", file::readlink("built")?);
+
+    let mut file = ::file::LocalFile::open("hello_world")?;
 
     let mut buf = vec![];
     file.read_to_end(&mut buf).await?;

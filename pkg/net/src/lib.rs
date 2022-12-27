@@ -30,6 +30,7 @@ pub mod ip;
 mod ip_syntax;
 pub mod netlink;
 pub mod tcp;
+pub mod udp;
 
 pub use ip_syntax::parse_port;
 pub use netlink::local_ip;

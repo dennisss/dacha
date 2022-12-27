@@ -2,6 +2,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use common::errors::*;
+use file::LocalPath;
 
 use crate::label::Label;
 use crate::proto::config::BuildConfig;
@@ -52,7 +53,7 @@ impl BuildTarget for Webpack {
     async fn build(&self, context: &BuildTargetContext) -> Result<BuildTargetOutputs> {
         // TODO: Verify at most one webpack target is present per build directory.
 
-        let output_mount_path = Path::new("built")
+        let output_mount_path = LocalPath::new("built")
             .join(&context.key.label.directory)
             .join(format!("{}.js", context.key.label.target_name));
 
@@ -65,20 +66,21 @@ impl BuildTarget for Webpack {
 
         let bin = context.workspace_dir.join("node_modules/.bin/webpack");
 
-        let mut child = Command::new(bin)
+        let mut child = Command::new(bin.as_str())
             .arg("--config")
-            .arg(context.workspace_dir.join("pkg/web/webpack.config.js"))
+            .arg(
+                context
+                    .workspace_dir
+                    .join("pkg/web/webpack.config.js")
+                    .as_str(),
+            )
             .arg("--env")
             .arg(&format!(
                 "entry={}",
-                context
-                    .package_dir
-                    .join(self.attrs.entry())
-                    .to_str()
-                    .unwrap()
+                context.package_dir.join(self.attrs.entry()).as_str()
             ))
             .arg("--env")
-            .arg(&format!("output={}", output_path.to_str().unwrap()))
+            .arg(&format!("output={}", output_path.as_str()))
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .spawn()?;
@@ -90,7 +92,7 @@ impl BuildTarget for Webpack {
 
         let mut outputs = BuildTargetOutputs::default();
         outputs.output_files.insert(
-            output_mount_path.to_str().unwrap().to_string(),
+            output_mount_path.as_str().to_string(),
             BuildOutputFile {
                 location: output_path,
             },

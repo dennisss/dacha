@@ -2,13 +2,12 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::{convert::TryFrom, sync::Arc};
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
 use common::chrono::prelude::*;
 use common::io::{Readable, Writeable};
-use common::task::ChildTask;
 use common::{chrono::Duration, errors::*};
+use executor::channel;
+use executor::child_task::ChildTask;
+use executor::sync::Mutex;
 
 use crate::connection_event_listener::ConnectionEventListener;
 use crate::proto::v2::*;
@@ -131,7 +130,7 @@ impl Drop for Connection {
         let shared = self.shared.clone();
 
         // TODO: Optimize this away if the connection as already stopped.
-        task::spawn(async move {
+        executor::spawn(async move {
             let _ = Self::shutdown_impl(&shared, true).await;
         });
     }
@@ -519,7 +518,7 @@ impl Connection {
         shared: Arc<ConnectionShared>,
     ) -> impl std::future::Future<Output = ()> + Send + 'static {
         async move {
-            common::wait_for(shared.options.graceful_shutdown_timeout.clone()).await;
+            executor::sleep(shared.options.graceful_shutdown_timeout.clone()).await;
 
             let _ = Self::shutdown_impl(&shared, false).await;
         }
@@ -566,7 +565,7 @@ impl Connection {
 
         // NOTE: We could use a select! for these, but we'd rather run them in separate
         // tasks so that they can run in separate CPU threads.
-        let reader_task = task::spawn(
+        let reader_task = executor::spawn(
             ConnectionReader::new(shared.clone()).run(reader, initial_state.seen_preface_head),
         );
 
@@ -736,7 +735,7 @@ mod tests {
         }
     }
 
-    #[async_std::test]
+    #[testcase]
     async fn connection_test() -> Result<()> {
         let (writer1, reader1) = pipe();
         let (writer2, reader2) = pipe();
@@ -754,14 +753,14 @@ mod tests {
         };
 
         let server_conn = Connection::new(options.clone(), Some(server_options));
-        let server_task = task::spawn(server_conn.run(
+        let server_task = executor::spawn(server_conn.run(
             ConnectionInitialState::raw(),
             Box::new(reader1),
             Box::new(writer2),
         ));
 
         let client_conn = Connection::new(options, None);
-        let client_task = task::spawn(client_conn.run(
+        let client_task = executor::spawn(client_conn.run(
             ConnectionInitialState::raw(),
             Box::new(reader2),
             Box::new(writer1),
@@ -783,7 +782,7 @@ mod tests {
         Ok(())
     }
 
-    #[async_std::test]
+    #[testcase]
     async fn connect_client_closing() -> Result<()> {
         let (writer1, reader1) = pipe();
         let (writer2, reader2) = pipe();
@@ -791,7 +790,7 @@ mod tests {
         let options = ConnectionOptions::default();
 
         let client_conn = Connection::new(options, None);
-        let client_task = task::spawn(client_conn.run(
+        let client_task = executor::spawn(client_conn.run(
             ConnectionInitialState::raw(),
             Box::new(reader2),
             Box::new(writer1),
@@ -819,4 +818,20 @@ mod tests {
 
         Ok(())
     }
+
+    /*
+    Test cases to write:
+    - Send request with empty body to server and receive returned body.
+    - Send request with empty body and receive empty body.
+    - reader_closed
+
+    - Send a request after a first request.
+    - Send two requests at the same time from a client to the server.
+        - Ensure server correctly muxes them.
+
+    - Test sending and receiving a very large body requiring flow control.
+        - Send 10MB
+
+
+    */
 }

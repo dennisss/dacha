@@ -7,7 +7,6 @@ go run cmd/h2spec/h2spec.go --port 8888 --struct hpack/4.2
 extern crate common;
 extern crate http;
 
-use common::async_std::task;
 use common::errors::*;
 use http::header::*;
 use http::server::Server;
@@ -52,5 +51,5 @@ async fn run_server() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run_server())
+    executor::run(run_server())?
 }

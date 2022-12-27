@@ -11,6 +11,8 @@ common = { path = "../common" }
 parsing = { path = "../parsing" }
 http = { path = "../http" }
 crypto = { path = "../crypto" }
+executor = { path = "../executor" }
+file = { path = "../file" }
 
 [features]
 default = ["std"]

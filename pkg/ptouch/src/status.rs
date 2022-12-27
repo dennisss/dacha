@@ -186,13 +186,13 @@ impl Status {
     }
 }
 
-define_transparent_enum!(ModelCode u8 =>
+define_transparent_enum!(ModelCode u8 {
     PT_H500 = 0x64,
     PT_E500 = 0x65,
     PT_E550W = 0x66,
     PT_P700 = 0x67,
     PT_P750W = 0x68
-);
+});
 
 define_bit_flags!(ErrorInfo1 u8 {
     NO_MEDIA = 1 << 0,
@@ -207,16 +207,16 @@ define_bit_flags!(ErrorInfo2 u8 {
     OVERHEATING = 1 << 5
 });
 
-define_transparent_enum!(MediaType u8 =>
+define_transparent_enum!(MediaType u8 {
     NO_MEDIA = 0,
     LAMINATED_TAPE = 0x01,
     NON_LAMINATED_TAPE = 0x03,
     HEAT_SHRINK_TUBE_2_TO_1 = 0x11,
     HEAT_SHRINK_TUBE_3_TO_1 = 0x17,
     INCOMPATIBLE_TAPE = 0xFF
-);
+});
 
-define_transparent_enum!(StatusType u8 =>
+define_transparent_enum!(StatusType u8 {
     ReplyToStatusRequest = 0x00,
     PrintingComplete = 0x01,
     ErrorOccured = 0x02,
@@ -224,16 +224,16 @@ define_transparent_enum!(StatusType u8 =>
     TurnedOff = 0x04,
     Notification = 0x05,
     PhaseChange = 0x06
-);
+});
 
-define_transparent_enum!(PhaseType u8 =>
+define_transparent_enum!(PhaseType u8 {
     // In this state, the printer may receive additional packets
     EditingStatus = 0x00,
 
     PrintingState = 0x01
-);
+});
 
-define_transparent_enum!(TapeColor u8 =>
+define_transparent_enum!(TapeColor u8 {
     White = 0x01,
     Other = 0x02,
     Clear = 0x03,
@@ -260,9 +260,9 @@ define_transparent_enum!(TapeColor u8 =>
     BlueF = 0x62,
     WhiteHeatShrinkTube = 0x70,
     WhiteFlexID = 0x90
-);
+});
 
-define_transparent_enum!(TextColor u8 =>
+define_transparent_enum!(TextColor u8 {
     White = 0x01,
     Red = 0x04,
     Blue = 0x05,
@@ -273,7 +273,7 @@ define_transparent_enum!(TextColor u8 =>
     Stencil = 0xF1,
     Other = 0x02,
     Incompatible = 0xFF
-);
+});
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,5 @@
-use common::async_std::path::Path;
 use common::errors::*;
+use file::LocalPath;
 
 use crate::label::Label;
 use crate::proto::config::BuildConfig;
@@ -48,9 +48,8 @@ impl BuildTarget for LocalBinary {
 
         for (_, dep) in &context.inputs {
             for (src, file) in &dep.output_files {
-                let bin_name = Path::new(src.as_str())
+                let bin_name = LocalPath::new(src.as_str())
                     .file_name()
-                    .and_then(|v| v.to_str())
                     .ok_or_else(|| err_msg("Could not resolve file name for local binary"))?;
 
                 // TODO: Validate that two rules never output to the same path.

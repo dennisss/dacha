@@ -45,10 +45,9 @@ use std::ops::Add;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::async_std::sync::Mutex;
-use common::async_std::task;
-use common::bundle::TaskResultBundle;
 use common::errors::*;
+use executor::bundle::TaskResultBundle;
+use executor::sync::Mutex;
 use google::proto::empty::Empty;
 use rpc_util::NamedPortArg;
 use rpi::gpio::*;
@@ -133,7 +132,7 @@ impl FanControlServiceImpl {
                 fan_pwm.write(FAN_PWM_FREQUENCY, duty_cycle).await;
             }
 
-            task::sleep(UPDATE_INTERVAL).await;
+            executor::sleep(UPDATE_INTERVAL).await;
         }
     }
 
@@ -174,9 +173,9 @@ impl FanControlServiceImpl {
 
         for i in 0..4 {
             led_pin.write(true);
-            common::async_std::task::sleep(Duration::from_millis(250)).await;
+            executor::sleep(Duration::from_millis(250)).await;
             led_pin.write(false);
-            common::async_std::task::sleep(Duration::from_millis(250)).await;
+            executor::sleep(Duration::from_millis(250)).await;
         }
 
         Ok(())
@@ -295,5 +294,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

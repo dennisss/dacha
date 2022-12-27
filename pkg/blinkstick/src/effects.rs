@@ -39,7 +39,7 @@ impl BlinkStickEffects for BlinkStick {
 
             // Around 30 FPS.
             // TODO: Remove time spent on usb transaction.
-            common::wait_for(Duration::from_millis(40)).await;
+            executor::sleep(Duration::from_millis(40)).await;
         }
 
         Ok(())

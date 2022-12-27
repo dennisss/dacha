@@ -1,4 +1,5 @@
-use common::async_std::path::Path;
+use std::path::Path;
+
 use common::errors::*;
 
 pub struct PasswdEntry {

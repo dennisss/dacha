@@ -42,6 +42,7 @@ pub struct PacketBuffer {
 }
 
 impl PacketBuffer {
+    /// Creates a new empty packet buffer.
     pub fn new() -> Self {
         let mut buf = [0u8; MAX_PACKET_BUFFER_SIZE];
         // Minimum packet length with zero data.
@@ -128,3 +129,18 @@ impl PacketBuffer {
         &mut self.buf[..]
     }
 }
+
+/*
+
+pub struct PacketRef<'a> {
+    buf: &'a mut PacketBuffer
+}
+
+impl<'a> PacketRef<'a> {
+    pub fn init_new(buffer: &'a mut PacketBuffer) -> Self {
+
+
+    }
+
+}
+*/

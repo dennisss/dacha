@@ -1,7 +1,6 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use common::async_std::fs;
 use common::errors::*;
 
 use crate::proto::config::BuildConfig;
@@ -40,7 +39,7 @@ impl BuildTarget for RustBinary {
 
         // NOTE: We assume that the name of the rust package is the same as the name of
         // the directory in which the BUILD file is located.
-        let package_name = context.package_dir.file_name().unwrap().to_str().unwrap();
+        let package_name = context.package_dir.file_name().unwrap();
 
         let bin_name = if self.attrs.name() == "main" {
             package_name
@@ -56,7 +55,7 @@ impl BuildTarget for RustBinary {
             .join(&context.config_hash);
         // NOTE: we must create the directory otherwise 'cross' tends to screw up the
         // permissions and make root the owner of the directory.
-        fs::create_dir_all(&rust_target_dir).await?;
+        file::create_dir_all(&rust_target_dir).await?;
 
         // Add --target-dir when using cross.
 
@@ -73,7 +72,7 @@ impl BuildTarget for RustBinary {
             .arg("--bin")
             .arg(bin_name)
             .arg("--target-dir")
-            .arg(rust_target_dir.to_str().unwrap())
+            .arg(rust_target_dir.as_str())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
 

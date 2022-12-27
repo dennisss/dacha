@@ -1,12 +1,12 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use common::bytes::Bytes;
 use common::errors::*;
 use common::line_builder::*;
+use file::{LocalPathBuf};
 use parsing::*;
 
 use crate::syntax::*;
@@ -114,10 +114,10 @@ struct CompilerInner {
 
 struct CompilerFileEntry {
     /// Path to the ASN file from which this entry originated.
-    source_path: PathBuf,
+    source_path: LocalPathBuf,
 
     /// Where th write this file's generated code once compiled.
-    output_path: PathBuf,
+    output_path: LocalPathBuf,
 
     module: ModuleDefinition,
 
@@ -135,7 +135,7 @@ impl Compiler {
         }
     }
 
-    pub fn add(&self, source_path: PathBuf, output_path: PathBuf) -> Result<()> {
+    pub fn add(&self, source_path: LocalPathBuf, output_path: LocalPathBuf) -> Result<()> {
         // TODO: Integrate extension check into this?
 
         let mut file = std::fs::File::open(&source_path)?;

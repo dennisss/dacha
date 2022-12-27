@@ -5,4 +5,5 @@ edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
+file = { path = "../file" }
 parsing = { path = "../parsing" }

@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
 use common::bytes::Bytes;
 use common::errors::*;
+use executor::channel;
+use executor::sync::Mutex;
 
 use crate::proto::key_value::WatchResponse;
 
@@ -89,7 +88,7 @@ impl Drop for WatcherRegistration {
     fn drop(&mut self) {
         let state = self.state.clone();
         let id = self.id;
-        task::spawn(async move {
+        executor::spawn(async move {
             let mut state = state.lock().await;
             for i in 0..state.prefix_watchers.len() {
                 if state.prefix_watchers[i].id == id {

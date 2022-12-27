@@ -160,15 +160,12 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn works() {
-        common::async_std::task::block_on(async move {
-            log!(0u32);
+    #[testcase]
+    async fn works() {
+        log!(0u32);
 
-            let mut buf = [0u8; 256];
-            let n = Logger::global().try_read(&mut buf).await;
-            assert_eq!(n, Some(2));
-        })
+        let mut buf = [0u8; 256];
+        let n = Logger::global().try_read(&mut buf).await;
+        assert_eq!(n, Some(2));
     }
-
 }

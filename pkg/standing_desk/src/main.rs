@@ -3,7 +3,6 @@ extern crate standing_desk;
 #[macro_use]
 extern crate macros;
 
-use common::async_std::{channel, task};
 use common::errors::*;
 
 #[derive(Args)]
@@ -37,5 +36,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

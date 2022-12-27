@@ -1,9 +1,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time;
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
+use executor::sync::Mutex;
+use executor::{channel, JoinHandle};
 
 /// Helper struct that wraps a start/stoppable thread that blocks for external
 /// events to occur
@@ -11,7 +10,7 @@ pub struct BackgroundThread {
     running: AtomicBool,
 
     // TODO: Switch to using a ChildHandle.
-    handle: Mutex<Option<task::JoinHandle<()>>>,
+    handle: Mutex<Option<JoinHandle<()>>>,
 
     /// Notifies the heartbeat/directory-sync thread whenever one of the
     /// following events occurs: 1. Server is shutting down
@@ -39,7 +38,7 @@ impl BackgroundThread {
     /// NOTE: This is not safe to call more than once
     pub async fn start<Fut: 'static + std::future::Future<Output = ()> + Send>(&self, future: Fut) {
         self.running.store(true, Ordering::SeqCst);
-        self.handle.lock().await.replace(task::spawn(future));
+        self.handle.lock().await.replace(executor::spawn(future));
     }
 
     pub async fn stop(&self) {
@@ -66,8 +65,8 @@ impl BackgroundThread {
         let dur = time::Duration::from_millis(time);
 
         let timeout_sender = self.event_sender.clone();
-        let timeout = task::spawn(async move {
-            task::sleep(dur).await;
+        let timeout = executor::spawn(async move {
+            executor::sleep(dur).await;
             let _ = timeout_sender.try_send(());
         });
 

@@ -113,12 +113,12 @@ async fn run() -> Result<()> {
 
         println!("{:?}", status);
 
-        common::wait_for(std::time::Duration::from_secs(1)).await;
+        executor::sleep(std::time::Duration::from_secs(1)).await;
     }
 
     Ok(())
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(run())
+    executor::run(run())?
 }

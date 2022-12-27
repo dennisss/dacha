@@ -2,13 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
 use common::errors::*;
 use common::list::Appendable;
 use container::meta::client::ClusterMetaClient;
 use crypto::random::SharedRng;
+use executor::channel;
+use executor::sync::Mutex;
 use nordic_proto::constants::{RadioAddress, LINK_IV_SIZE, LINK_KEY_SIZE};
 use nordic_proto::packet::PacketBuffer;
 
@@ -170,8 +169,7 @@ impl RadioBridgeInner {
 
             drop(state);
 
-            let _ =
-                common::async_std::future::timeout(POLLING_INTERVAL, event_receiver.recv()).await;
+            let _ = executor::timeout(POLLING_INTERVAL, event_receiver.recv()).await;
         }
     }
 
@@ -413,7 +411,7 @@ impl<'a> Drop for ReceiverRegistration<'a> {
     fn drop(&mut self) {
         let inst = self.bridge.clone();
         let address = self.address.clone();
-        task::spawn(async move {
+        executor::spawn(async move {
             let mut state = inst.shared.state.lock().await;
             state.receivers.remove(&address);
         });

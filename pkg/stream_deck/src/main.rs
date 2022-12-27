@@ -1,16 +1,16 @@
 #[macro_use]
 extern crate common;
 extern crate stream_deck;
+#[macro_use]
+extern crate file;
 
 use common::errors::*;
-
-type Result<T> = std::result::Result<T, Error>;
 
 // sudo cp pkg/stream_deck/81-elgato-stream-deck.rules /etc/udev/rules.d/
 // sudo udevadm control --reload-rules
 
 async fn read_controller() -> Result<()> {
-    let image = std::fs::read(project_path!("pkg/stream_deck/sample_icon.jpg"))?;
+    let image = file::read(project_path!("pkg/stream_deck/sample_icon.jpg")).await?;
 
     // 0: 0x02
     // 1: 0x07
@@ -41,5 +41,5 @@ async fn read_controller() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(read_controller())
+    executor::run(read_controller())?
 }

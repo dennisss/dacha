@@ -3,13 +3,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
-use peripherals_raw::register::RawRegister;
+use common::register::RawRegister;
 
 use crate::file::OpenFileDescriptor;
 use crate::iov::{IoSlice, IoSliceMut, RWFlags};
 use crate::mapped_memory::MappedMemory;
 use crate::socket::{SocketAddressAndLength, SocketFlags};
-use crate::{bindings, c_int, c_size_t, c_uint, c_void, kernel, Errno};
+use crate::{
+    bindings, c_int, c_size_t, c_uint, c_void, kernel, Errno, MessageHeader, MessageHeaderMut,
+    SocketAddr,
+};
 
 /*
 TODO: MAybe use IORING_SETUP_SINGLE_ISSUER
@@ -153,6 +156,7 @@ impl IoSubmissionUring {
         let mut entry = bindings::io_uring_sqe::default();
 
         let mut timespec = None;
+        let mut sockaddr_data = None;
 
         match op {
             IoUringOp::Invalid => {
@@ -201,6 +205,16 @@ impl IoSubmissionUring {
                 entry.off = unsafe { core::mem::transmute(&sockaddr.len) }; // addr2 field.
                 entry.__bindgen_anon_1.fsync_flags = flags.to_raw() as u32; // accept_flags field.
             }
+            IoUringOp::Connect { fd, sockaddr } => {
+                entry.opcode = kernel::io_uring_op::IORING_OP_CONNECT as u8;
+                entry.fd = fd;
+
+                let s = sockaddr_data.insert(sockaddr);
+
+                // TODO: Check that the kernel copies this during prepare.
+                entry.addr = unsafe { core::mem::transmute(&s) };
+                entry.off = s.len().unwrap() as u64;
+            }
             IoUringOp::Timeout { duration } => {
                 entry.opcode = kernel::io_uring_op::IORING_OP_TIMEOUT as u8;
 
@@ -213,6 +227,17 @@ impl IoSubmissionUring {
 
                 entry.__bindgen_anon_1.fsync_flags = 0; // timeout_flags field. Use a relative timeout.
                 entry.off = 0; // Only count timeouts. Ignore other completions.
+            }
+            IoUringOp::SendMessage { fd, header } => {
+                entry.opcode = kernel::io_uring_op::IORING_OP_SENDMSG as u8;
+                entry.fd = fd;
+                entry.addr = unsafe { core::mem::transmute(header) };
+            }
+            IoUringOp::ReceiveMessage { fd, header } => {
+                entry.opcode = kernel::io_uring_op::IORING_OP_RECVMSG as u8;
+                entry.fd = fd;
+                header.reset();
+                entry.addr = unsafe { core::mem::transmute(header) };
             }
         }
 
@@ -439,18 +464,18 @@ impl CompletionQueue {
 
 // NOTE: If a file is not seekable, the offset should be 0 or -1
 
-pub enum IoUringOp<'a> {
+pub enum IoUringOp<'a, 'b> {
     Noop,
     ReadV {
         fd: c_int,
         offset: u64,
-        buffers: &'a [IoSliceMut<'a>],
+        buffers: &'a [IoSliceMut<'b>],
         flags: RWFlags,
     },
     WriteV {
         fd: c_int,
         offset: u64,
-        buffers: &'a [IoSlice<'a>],
+        buffers: &'a [IoSlice<'b>],
         flags: RWFlags,
     },
 
@@ -458,6 +483,21 @@ pub enum IoUringOp<'a> {
         fd: c_int,
         sockaddr: &'a mut SocketAddressAndLength,
         flags: SocketFlags,
+    },
+
+    Connect {
+        fd: c_int,
+        sockaddr: SocketAddr,
+    },
+
+    SendMessage {
+        fd: c_int,
+        header: &'a MessageHeader<'b>,
+    },
+
+    ReceiveMessage {
+        fd: c_int,
+        header: &'a mut MessageHeaderMut<'b>,
     },
 
     /// Waits until at least the given duration has elapsed on the Linux
@@ -471,17 +511,26 @@ pub enum IoUringOp<'a> {
     Invalid,
 }
 
-impl<'a> IoUringOp<'a> {
-    pub fn try_into_static(&self) -> Option<IoUringOp<'static>> {
+impl<'a, 'b> IoUringOp<'a, 'b> {
+    // TODO: If a file descriptor is closed while an operation is underway, will
+    // that cause issues (e.g. could the number by re-used)?
+    pub fn try_into_static(&self) -> Option<IoUringOp<'static, 'static>> {
         match self {
             IoUringOp::Noop => Some(IoUringOp::Noop),
             IoUringOp::Timeout { duration } => Some(IoUringOp::Timeout {
                 duration: duration.clone(),
             }),
+
             IoUringOp::ReadV { .. } => None,
             IoUringOp::WriteV { .. } => None,
             IoUringOp::Accept { .. } => None,
+            IoUringOp::SendMessage { .. } => None,
+            IoUringOp::ReceiveMessage { .. } => None,
             IoUringOp::Invalid => Some(IoUringOp::Invalid),
+            IoUringOp::Connect { fd, sockaddr } => Some(IoUringOp::Connect {
+                fd: *fd,
+                sockaddr: sockaddr.clone(),
+            }),
         }
     }
 }
@@ -512,6 +561,14 @@ impl IoUringResult {
         self.readv_result()
     }
 
+    pub fn sendmsg_result(&self) -> Result<usize, Errno> {
+        self.readv_result()
+    }
+
+    pub fn recvmsg_result(&self) -> Result<usize, Errno> {
+        self.readv_result()
+    }
+
     pub fn accept_result(&self) -> Result<OpenFileDescriptor, Errno> {
         if self.code < 0 {
             return Err(Errno(-self.code as i64));
@@ -528,6 +585,15 @@ impl IoUringResult {
                 return Ok(());
             }
 
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    pub fn connect_result(&self) -> Result<(), Errno> {
+        if self.code != 0 {
+            let e = Errno(-self.code as i64);
             return Err(e);
         }
 

@@ -127,7 +127,7 @@ impl<'a> Compiler<'a> {
             "
         use core::ops::{{Deref, DerefMut}};
 
-        use crate::register::*;
+        use common::register::::*;
         
         pub struct Peripherals {{
             _hidden: (),

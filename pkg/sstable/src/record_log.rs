@@ -34,14 +34,12 @@
 // maximum log size, we could utilize that size) At the least, we can perform
 // heuristics to preallocate for the current append at the least
 
-use common::async_std::fs::{File, OpenOptions};
-use common::async_std::io::prelude::{ReadExt, SeekExt, WriteExt};
-use common::async_std::io::{Read, Seek, SeekFrom, Write};
-use common::async_std::path::Path;
 use common::errors::*;
-use common::fs::sync::*;
+use common::io::{Readable, Writeable};
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
+use file::sync::{SyncedFile, SyncedPath};
+use file::{LocalFile, LocalFileOpenOptions, LocalPath};
 
 const BLOCK_SIZE: u64 = 32 * 1024;
 
@@ -110,7 +108,7 @@ impl<'a> Record<'a> {
 }
 
 pub struct RecordReader {
-    file: File,
+    file: LocalFile,
 
     // file_size: u64,
     /// Current cursor into the file. This will be the offset at which the block
@@ -144,8 +142,8 @@ pub struct RecordReader {
 }
 
 impl RecordReader {
-    pub async fn open(path: &Path) -> Result<Self> {
-        let file = OpenOptions::new().read(true).open(path).await?;
+    pub async fn open(path: &LocalPath) -> Result<Self> {
+        let file = LocalFile::open(path)?;
 
         let mut block = vec![];
         block.reserve_exact(BLOCK_SIZE as usize);
@@ -187,9 +185,7 @@ impl RecordReader {
             return Ok(());
         }
 
-        self.file
-            .seek(SeekFrom::Start(self.file_offset + (valid_length as u64)))
-            .await?;
+        self.file.seek(self.file_offset + (valid_length as u64));
 
         self.block.resize(BLOCK_SIZE as usize, 0);
 
@@ -371,13 +367,13 @@ impl RecordWriter {
     // TODO: May need to eventually support truncation as there may be data left
     // over from a past run.
 
-    pub async fn open(path: &Path) -> Result<Self> {
-        Self::open_with(SyncedPath::from(path)?).await
+    pub async fn open(path: &LocalPath) -> Result<Self> {
+        Self::open_with(SyncedPath::from(path).await?).await
     }
 
     pub async fn open_with(path: SyncedPath) -> Result<Self> {
         let file = path
-            .open(OpenOptions::new().write(true).create(true))
+            .open(&LocalFileOpenOptions::new().write(true).create(true))
             .await?;
 
         Ok(Self { file })
@@ -409,7 +405,7 @@ impl RecordWriter {
     // TODO: Buffer all writes and have a separate flush() operation (ideally we'd
     // have the flushes on a timeout)
     pub async fn append(&mut self, data: &[u8]) -> Result<()> {
-        let mut extent = self.file.seek(SeekFrom::End(0)).await?;
+        let mut extent = self.file.metadata().await?.len();
 
         // Must start in the next block if we can't fit at least a single
         // zero-length block in this block
@@ -417,7 +413,7 @@ impl RecordWriter {
         if rem < RECORD_HEADER_SIZE {
             extent += rem;
             self.file.set_len(extent).await?; // TODO: explicitly file with zeros instead.
-            self.file.seek(SeekFrom::End(0)).await?;
+            self.file.seek(extent);
         }
 
         let mut header = [0u8; RECORD_HEADER_SIZE as usize];

@@ -41,7 +41,7 @@ pub struct RenderBox {
     /// vertically aligned alongside other views.
     pub baseline_offset: f32,
 
-    /// 
+    ///
     pub range: CursorRange,
 
     /// When this view was laid out with a start_cursor, this specifies the next

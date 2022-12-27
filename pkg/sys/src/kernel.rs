@@ -9,6 +9,8 @@
 
 use std::time::Duration;
 
+use crate::{c_uint, c_ulong, c_ushort};
+
 pub type sigset_t = u64;
 
 // Mirroring 'include/uapi/linux/time_types.h'
@@ -125,4 +127,22 @@ pub struct io_uring_getevents_arg {
 
     /// Pointer to a 'timespec' object.
     pub ts: u64,
+}
+
+// Mirroring 'include/linux/dirent.h'
+
+#[repr(C)]
+struct linux_dirent64 {
+    /// Inode
+    d_ino: u64,
+
+    /// Offset of the next dirent
+    d_off: i64,
+
+    /// Size of the linux_dirent64.
+    d_reclen: u16,
+    d_type: u8,
+
+    // Null terminated name.
+    d_name: [u8],
 }

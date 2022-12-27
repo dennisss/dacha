@@ -13,8 +13,10 @@ libc = { version = "0.2.97", optional = true }
 nix = { version = "0.21.0", optional = true }
 failure = { version = "0.1.8", optional = true }
 sys = { path = "../sys", optional = true }
+executor = { path = "../executor", optional = true }
+file = { path = "../file", optional = true }
 
 [features]
 default = ["std"]
-std = ["alloc", "nix", "libc", "common/std", "automata", "sys"]
+std = ["alloc", "nix", "libc", "common/std", "automata", "sys", "executor", "file"]
 alloc = ["common/alloc", "failure"]

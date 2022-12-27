@@ -12,7 +12,6 @@ extern crate container;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 
-use common::async_std::task;
 use common::errors::*;
 use container::meta::client::ClusterMetaClient;
 use rpc_test::proto::adder::*;
@@ -64,7 +63,7 @@ async fn run_client() -> Result<()> {
 
             println!("{:?}", res);
 
-            common::wait_for(std::time::Duration::from_secs(1)).await;
+            executor::sleep(std::time::Duration::from_secs(1)).await;
         }
 
         return res_stream.finish().await;
@@ -81,6 +80,6 @@ async fn run_client() -> Result<()> {
 }
 
 fn main() {
-    let r = task::block_on(run_client());
+    let r = executor::run(run_client()).unwrap();
     println!("{:?}", r);
 }

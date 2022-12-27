@@ -5,11 +5,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use common::async_std::fs::File;
-use common::async_std::io::ReadExt;
-use common::async_std::path::Path;
-use common::async_std::sync::Mutex;
 use common::errors::*;
+use common::io::Readable;
+use executor::sync::Mutex;
+use file::LocalFile;
+use file::LocalPath;
 use protobuf::{Message, StaticMessage};
 use sstable::record_log::{RecordReader, RecordWriter};
 
@@ -22,7 +22,7 @@ pub struct FileLogReader {
 }
 
 impl FileLogReader {
-    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub async fn open<P: AsRef<LocalPath>>(path: P) -> Result<Self> {
         Ok(Self {
             log: RecordReader::open(path.as_ref()).await?,
         })
@@ -53,13 +53,13 @@ pub struct FileLogWriter {
 }
 
 impl FileLogWriter {
-    pub async fn create(path: &Path) -> Result<Self> {
+    pub async fn create(path: &LocalPath) -> Result<Self> {
         Ok(Self {
             log: Mutex::new(RecordWriter::open(path).await?),
         })
     }
 
-    pub async fn write_stream(&self, file: File, stream: LogStream) -> Result<()> {
+    pub async fn write_stream(&self, file: LocalFile, stream: LogStream) -> Result<()> {
         FileLogStreamWriter {
             log: &self.log,
             stream,
@@ -80,7 +80,7 @@ impl<'a> FileLogStreamWriter<'a> {
     Also want to support waiting for at least N bytes
     */
 
-    async fn write(&self, mut file: File) -> Result<()> {
+    async fn write(&self, mut file: LocalFile) -> Result<()> {
         let mut buffer = vec![0u8; MAX_LINE_SIZE];
         let mut buffer_size = 0;
 
@@ -159,7 +159,7 @@ mod tests {
 
     use super::*;
 
-    #[async_std::test]
+    #[testcase]
     async fn test_read_in() -> Result<()> {
         // /opt/dacha/container/run/e82883425bad091305a70b02bc59d69d/log
 

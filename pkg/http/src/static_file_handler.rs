@@ -1,7 +1,6 @@
-use common::async_std::fs::File;
-use common::async_std::path::{Path, PathBuf};
 use common::errors::*;
 use common::io::Readable;
+use file::{LocalFile, LocalPath, LocalPathBuf};
 
 use crate::body::*;
 use crate::request::Request;
@@ -12,18 +11,18 @@ use crate::status_code;
 /// HTTP request handler which serves static files from the local file system.
 pub struct StaticFileHandler {
     // mount_path: UriPath,
-    base_path: PathBuf, /* Need to be able to detect content types of files (either from
-                         * extensions or binary) Need to be able to know
-                         * if a content type is compressable (or if it is already compressed) */
+    base_path: LocalPathBuf, /* Need to be able to detect content types of files (either from
+                              * extensions or binary) Need to be able to know
+                              * if a content type is compressable (or if it is already compressed) */
 
-                        /* TODO: Need to support Last-Modified and ETag stuff (will be difficult
-                         * if we need to store the entire thing in memory) */
+                             /* TODO: Need to support Last-Modified and ETag stuff (will be difficult
+                              * if we need to store the entire thing in memory) */
 }
 
 impl StaticFileHandler {
-    pub fn new<P: AsRef<Path>>(base_path: P) -> Self {
+    pub fn new<P: AsRef<LocalPath>>(base_path: P) -> Self {
         Self {
-            base_path: base_path.as_ref().into(),
+            base_path: base_path.as_ref().to_owned(),
         }
     }
 }
@@ -61,14 +60,16 @@ impl ServerHandler for StaticFileHandler {
             file_path.push(segment_str);
         }
 
-        let metadata = match file_path.metadata().await {
+        let metadata = match file::metadata(&file_path).await {
             Ok(m) => m,
             Err(e) => {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    return ResponseBuilder::new()
-                        .status(status_code::NOT_FOUND)
-                        .build()
-                        .unwrap();
+                if let Some(err) = e.downcast_ref::<std::io::Error>() {
+                    if err.kind() == std::io::ErrorKind::NotFound {
+                        return ResponseBuilder::new()
+                            .status(status_code::NOT_FOUND)
+                            .build()
+                            .unwrap();
+                    }
                 }
 
                 return ResponseBuilder::new()
@@ -86,7 +87,7 @@ impl ServerHandler for StaticFileHandler {
                 .unwrap();
         }
 
-        let file = match File::open(&file_path).await {
+        let file = match LocalFile::open(&file_path) {
             Ok(f) => f,
             Err(_) => {
                 return ResponseBuilder::new()
@@ -110,7 +111,7 @@ impl ServerHandler for StaticFileHandler {
 }
 
 pub struct StaticFileBody {
-    file: File,
+    file: LocalFile,
     length: usize,
 }
 

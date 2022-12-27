@@ -2,9 +2,10 @@ use std::collections::VecDeque;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
-use common::async_std::sync::Mutex;
 use common::errors::*;
-use common::{async_std::path::Path, fs::sync::SyncedDirectory, futures::StreamExt};
+use executor::sync::Mutex;
+use file::sync::SyncedDirectory;
+use file::LocalPath;
 use protobuf::{Message, StaticMessage};
 use sstable::record_log::{RecordReader, RecordWriter};
 
@@ -112,27 +113,20 @@ struct Segment {
 }
 
 impl SegmentedLog {
-    pub async fn open<P: AsRef<Path>>(dir: P, max_segment_size: u64) -> Result<Self> {
+    pub async fn open<P: AsRef<LocalPath>>(dir: P, max_segment_size: u64) -> Result<Self> {
         let dir_path = dir.as_ref();
 
-        if !dir_path.exists().await {
-            common::async_std::fs::create_dir(dir_path).await?;
+        if !file::exists(dir_path).await? {
+            file::create_dir(dir_path).await?;
         }
 
         // List of files read from disk. Each entry is a tuple of (log_number, PathBuf)
         let mut files = vec![];
         {
-            let mut entries = common::async_std::fs::read_dir(dir_path).await?;
-            while let Some(entry) = entries.next().await {
-                let entry = entry?;
+            for entry in file::read_dir(dir_path)? {
+                let log_number = entry.name().parse::<usize>()?;
 
-                let log_number = entry
-                    .file_name()
-                    .to_str()
-                    .ok_or_else(|| err_msg("File name not a valid string"))?
-                    .parse::<usize>()?;
-
-                files.push((log_number, entry.path()));
+                files.push((log_number, dir_path.join(entry.name())));
             }
 
             files.sort();
@@ -156,7 +150,7 @@ impl SegmentedLog {
                     // but the first record wasn't written out yet.
                     //
                     // TODO: Only delete if this is the last file.
-                    common::async_std::fs::remove_file(log_path).await?;
+                    file::remove_file(log_path).await?;
                     continue;
                 }
             };
@@ -200,7 +194,7 @@ impl SegmentedLog {
             });
         }
 
-        let dir = SyncedDirectory::open(dir_path)?;
+        let dir = SyncedDirectory::open(dir_path).await?;
 
         let writer = {
             if let Some(last_path) = last_log_path {
@@ -322,10 +316,8 @@ impl Log for SegmentedLog {
                 // Delete the discarded log file.
                 // NOTE: We don't care about fsyncing this as there is no problem with having
                 // too many
-                common::async_std::fs::remove_file(
-                    self.dir.path(Self::log_file_name(seg.number))?.read_path(),
-                )
-                .await?;
+                file::remove_file(self.dir.path(Self::log_file_name(seg.number))?.read_path())
+                    .await?;
             } else {
                 break;
             }

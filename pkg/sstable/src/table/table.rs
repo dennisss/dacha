@@ -8,14 +8,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use common::algorithms::SliceLike;
-use common::async_std::fs::File;
-use common::async_std::io::prelude::{ReadExt, SeekExt, WriteExt};
-use common::async_std::io::{Read, Seek, SeekFrom, Write};
-use common::async_std::path::Path;
-use common::async_std::sync::Mutex;
 use common::bytes::Bytes;
 use common::errors::*;
-use common::futures::channel::oneshot;
+use executor::oneshot;
+use executor::sync::Mutex;
+use file::LocalFile;
+use file::LocalPath;
 use parsing::complete;
 use protobuf::wire::{parse_varint, serialize_varint};
 use reflection::*;
@@ -73,17 +71,17 @@ struct SSTableFilter {
 */
 
 impl SSTable {
-    pub async fn open<P: AsRef<Path>>(path: P, options: SSTableOpenOptions) -> Result<Self> {
+    pub async fn open<P: AsRef<LocalPath>>(path: P, options: SSTableOpenOptions) -> Result<Self> {
         Self::open_impl(path.as_ref(), options).await
     }
 
-    async fn open_impl(path: &Path, options: SSTableOpenOptions) -> Result<Self> {
+    async fn open_impl(path: &LocalPath, options: SSTableOpenOptions) -> Result<Self> {
         // TODO: Use the block cache for opening, but don't block on the cache being
         // available (or track if we run out of space for sstable core blocks).
 
         // TODO: Validate that the entire file is accounted for in the block handles.
 
-        let mut file = File::open(path).await?;
+        let mut file = LocalFile::open(path)?;
 
         let footer = Footer::read_from_file(&mut file).await?;
 
@@ -359,7 +357,7 @@ impl DataBlockCache {
         }
     }
 
-    pub async fn cache_file(self, file: File, file_footer: Footer) -> BlockCacheFile {
+    pub async fn cache_file(self, file: LocalFile, file_footer: Footer) -> BlockCacheFile {
         let id = {
             let mut state = self.state.lock().await;
             let id = state.last_table_id + 1;
@@ -379,7 +377,7 @@ impl DataBlockCache {
 pub struct BlockCacheFile {
     id: usize,
     cache: DataBlockCache,
-    file: Mutex<File>,
+    file: Mutex<LocalFile>,
     file_footer: Footer,
 }
 
@@ -431,7 +429,7 @@ impl BlockCacheFile {
             let (tx, rx) = oneshot::channel();
             state.change_listeners.push(tx);
             drop(state);
-            rx.await.ok();
+            rx.recv().await.ok();
         }
     }
 
@@ -490,7 +488,7 @@ impl Drop for DataBlockPtr {
         let inner = self.inner.take().unwrap();
         let outer = self.outer.take().unwrap();
         // NOTE: This must run till completion always
-        common::async_std::task::spawn(async move {
+        executor::spawn(async move {
             let mut outer_guard = outer.lock().await;
             let count = Arc::strong_count(&inner);
             drop(inner);
@@ -638,14 +636,14 @@ impl Iterable<KeyValueEntry> for SSTableIterator {
 #[cfg(test)]
 mod tests {
 
-    use common::temp::TempDir;
     use crypto::random::{self, Rng};
+    use file::temp::TempDir;
 
     use crate::table::{table_builder::*, BytewiseComparator};
 
     use super::*;
 
-    #[async_std::test]
+    #[testcase]
     async fn sstable_build_and_seek() -> Result<()> {
         let dir = TempDir::create()?;
         let table_path = dir.path().join("table");

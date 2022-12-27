@@ -1,14 +1,13 @@
 use alloc::borrow::ToOwned;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use file::{LocalPath, LocalPathBuf};
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 use std::sync::Arc;
 use std::thread;
 
-use common::async_std::fs;
-use common::async_std::path::{Path, PathBuf};
 use common::{errors::*, futures::StreamExt};
 
 use crate::descriptor_iter::{Descriptor, DescriptorIter};
@@ -272,16 +271,10 @@ impl Context {
     pub async fn enumerate_devices(&self) -> Result<Vec<DeviceEntry>> {
         let mut out = vec![];
 
-        let mut entries = common::async_std::fs::read_dir(SYSFS_PATH).await?;
-        while let Some(res) = entries.next().await {
-            let entry = res?;
-
-            let path = entry.path();
-            let file_name = path
-                .file_name()
-                .map(|s| s.to_str().unwrap_or(""))
-                .unwrap_or_default();
-            let file_type = entry.file_type().await?;
+        for entry in file::read_dir(SYSFS_PATH)? {
+            let path = LocalPath::new(SYSFS_PATH).join(entry.name());
+            let file_name = path.file_name().unwrap_or_default();
+            // let file_type = entry.file_type().await?;
 
             // Only a "7-3.4" ones.
             if file_name.starts_with("usb") || file_name.contains(":") {
@@ -294,18 +287,18 @@ impl Context {
         Ok(out)
     }
 
-    async fn enumerate_single_device(&self, sysfs_dir: &Path) -> Result<DeviceEntry> {
-        let busnum = fs::read_to_string(sysfs_dir.join("busnum"))
+    async fn enumerate_single_device(&self, sysfs_dir: &LocalPathBuf) -> Result<DeviceEntry> {
+        let busnum = file::read_to_string(sysfs_dir.join("busnum"))
             .await?
             .trim_end()
             .parse::<usize>()?;
 
-        let devnum = fs::read_to_string(sysfs_dir.join("devnum"))
+        let devnum = file::read_to_string(sysfs_dir.join("devnum"))
             .await?
             .trim_end()
             .parse::<usize>()?;
 
-        let raw_descriptors = fs::read(sysfs_dir.join("descriptors")).await?;
+        let raw_descriptors = file::read(sysfs_dir.join("descriptors")).await?;
 
         Ok(DeviceEntry {
             context_state: self.state.clone(),
@@ -314,7 +307,8 @@ impl Context {
             raw_descriptors,
 
             sysfs_dir: sysfs_dir.to_owned(),
-            usbdevfs_path: Path::new(USBDEVFS_PATH).join(format!("{:03}/{:03}", busnum, devnum)),
+            usbdevfs_path: LocalPath::new(USBDEVFS_PATH)
+                .join(format!("{:03}/{:03}", busnum, devnum)),
         })
     }
 }
@@ -389,8 +383,8 @@ pub struct DeviceEntry {
     busnum: usize,
     devnum: usize,
     raw_descriptors: Vec<u8>,
-    sysfs_dir: PathBuf,
-    usbdevfs_path: PathBuf,
+    sysfs_dir: LocalPathBuf,
+    usbdevfs_path: LocalPathBuf,
 }
 
 impl DeviceEntry {
@@ -408,12 +402,12 @@ impl DeviceEntry {
     }
 
     // NOTE: This is mainly exposed for the purpose of mounting into containers.
-    pub fn sysfs_dir(&self) -> &Path {
+    pub fn sysfs_dir(&self) -> &LocalPath {
         &self.sysfs_dir
     }
 
     // NOTE: This is mainly exposed for the purpose of mounting into containers.
-    pub fn devfs_path(&self) -> &Path {
+    pub fn devfs_path(&self) -> &LocalPath {
         &self.usbdevfs_path
     }
 
@@ -426,14 +420,16 @@ impl DeviceEntry {
     }
 
     async fn get_sysfs_value(&self, key: &str) -> Result<Option<String>> {
-        match fs::read_to_string(self.sysfs_dir.join(key)).await {
+        match file::read_to_string(self.sysfs_dir.join(key)).await {
             Ok(s) => Ok(Some(s.trim_end().to_string())),
             Err(e) => {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    Ok(None)
-                } else {
-                    Err(e.into())
+                if let Some(e) = e.downcast_ref::<std::io::Error>() {
+                    if e.kind() == std::io::ErrorKind::NotFound {
+                        return Ok(None);
+                    }
                 }
+
+                Err(e.into())
             }
         }
     }
@@ -451,7 +447,7 @@ impl DeviceEntry {
     }
 
     pub async fn open(&self) -> Result<Device> {
-        let path = CString::new(self.usbdevfs_path.as_os_str().as_bytes())?;
+        let path = CString::new(self.usbdevfs_path.as_str())?;
         let fd = match unsafe { sys::open(path.as_ptr(), sys::O_RDWR | sys::O_CLOEXEC, 0) } {
             Ok(v) => v,
             Err(e) => {

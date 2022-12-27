@@ -4,11 +4,11 @@ use std::num::Wrapping;
 use std::sync::Arc;
 use std::vec::Vec;
 
-use common::async_std::fs::File;
-use common::async_std::io::prelude::ReadExt;
-use common::async_std::sync::Mutex;
 use common::bytes::{Buf, Bytes};
+use common::io::Readable;
 use common::{ceil_div, errors::*};
+use executor::sync::Mutex;
+use file::LocalFile;
 use math::big::{BigUint, SecureBigUint};
 use math::integer::Integer;
 
@@ -53,7 +53,7 @@ pub fn clocked_rng() -> MersenneTwisterRng {
 pub async fn secure_random_bytes(buf: &mut [u8]) -> Result<()> {
     // See http://man7.org/linux/man-pages/man7/random.7.html
     // TODO: Reuse the file handle across calls.
-    let mut f = File::open("/dev/random").await?;
+    let mut f = LocalFile::open("/dev/random")?;
     f.read_exact(buf).await?;
     Ok(())
 }

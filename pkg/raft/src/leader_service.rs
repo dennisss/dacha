@@ -1,8 +1,8 @@
 use std::ops::DerefMut;
 use std::sync::Arc;
 
-use common::async_std::sync::Mutex;
 use common::errors::*;
+use executor::sync::Mutex;
 
 use crate::consensus::module::NotLeaderError;
 use crate::node::Node;

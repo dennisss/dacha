@@ -9,7 +9,6 @@ common = { path = "../common" }
 http = { path = "../http" }
 crypto = { path = "../crypto" }
 byteorder = "1.3.2"
-fs2 = "0.4.3"
 failure = "0.1.8"
 diesel = { version = "= 1.3.3", features = ["postgres", "chrono"] }
 dotenv = "0.15.0"
@@ -17,6 +16,8 @@ mime-sniffer = "^0.1"
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 protobuf_json = { path = "../protobuf_json" }
+file = { path = "../file" }
+executor = { path = "../executor" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

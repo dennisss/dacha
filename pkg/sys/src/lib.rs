@@ -21,8 +21,12 @@ mod mapped_memory;
 mod num_cpus;
 mod proc;
 // mod signal;
+mod getcwd;
+mod getdents;
 mod kernel;
+mod send;
 mod socket;
+mod stat;
 pub mod thread;
 pub mod utsname;
 mod virtual_memory;
@@ -46,7 +50,11 @@ pub use num_cpus::*;
 pub use proc::*;
 // pub use signal::*;
 pub use file::OpenFileDescriptor;
+pub use getcwd::*;
+pub use getdents::*;
+pub use send::*;
 pub use socket::*;
+pub use stat::*;
 pub use std::os::raw::{c_char, c_int, c_short, c_uint, c_ulong, c_ushort};
 pub use virtual_memory::*;
 pub use wait::*;
@@ -68,7 +76,9 @@ pub type pid_t = c_int;
 
 pub const SEEK_SET: c_uint = 0;
 
-pub use bindings::{pollfd, O_CLOEXEC, O_NONBLOCK, O_RDONLY, O_RDWR};
+pub use bindings::{
+    pollfd, O_APPEND, O_CLOEXEC, O_CREAT, O_EXCL, O_NONBLOCK, O_RDONLY, O_RDWR, O_SYNC, O_TRUNC,
+};
 
 pub use bindings::{
     CLONE_FILES, CLONE_FS, CLONE_IO, CLONE_SETTLS, CLONE_SIGHAND, CLONE_THREAD, CLONE_VM,
@@ -150,9 +160,16 @@ syscall!(exit, bindings::SYS_exit, status: c_int => Infallible<u64>);
 
 syscall!(uname, bindings::SYS_uname, name: *mut bindings::new_utsname => Result<()>);
 
-syscall!(ioctl, bindings::SYS_ioctl, fd: c_uint, cmd: c_uint, arg: c_ulong => Result<c_int>);
+syscall!(fsync, bindings::SYS_fsync, fd: c_int => Result<()>);
+syscall!(fdatasync, bindings::SYS_fdatasync, fd: c_int => Result<()>);
+syscall!(ftruncate, bindings::SYS_ftruncate, fd: c_int, len: u64 => Result<()>);
 
-syscall!(readlink, bindings::SYS_readlink, path: *const u8, buf: *mut u8, bufsiz: c_size_t => Result<c_size_t>);
+syscall!(fchmod, bindings::SYS_fchmod, fd: c_int, mode: bindings::mode_t => Result<()>);
+syscall!(chmod, bindings::SYS_chmod, path: *const u8, mode: bindings::mode_t => Result<()>);
+
+syscall!(rename, bindings::SYS_rename, oldname: *const c_char, newname: *const c_char => Result<()>);
+
+syscall!(ioctl, bindings::SYS_ioctl, fd: c_uint, cmd: c_uint, arg: c_ulong => Result<c_int>);
 
 syscall!(perf_event_open, bindings::SYS_perf_event_open,
     attr: *const bindings::perf_event_attr, pid: pid_t, cpu: c_int, group_fd: c_int, flags: c_ulong => Result<c_int>);

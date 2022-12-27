@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
 use common::errors::*;
-use common::task::ChildTask;
+use executor::channel;
+use executor::child_task::ChildTask;
+use executor::sync::Mutex;
 use nordic_tools::proto::bridge::*;
 
 use crate::packet::*;
@@ -159,7 +159,7 @@ impl Drop for ResponseSubscriber {
         let id = self.id;
         let shared = self.shared.clone();
 
-        common::async_std::task::spawn(async move {
+        executor::spawn(async move {
             shared.state.lock().await.subscribers.remove(&id);
         });
     }

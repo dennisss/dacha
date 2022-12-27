@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use common::async_std::channel;
 use common::bytes::Buf;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Readable;
+use executor::channel;
 use http::header::*;
 use http::headers::content_type::MediaType;
 use http::ClientInterface;

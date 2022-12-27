@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use common::bytes::Bytes;
 use common::errors::*;
 use common::futures::StreamExt;
-use common::temp::TempDir;
+use file::temp::TempDir;
 
 use crate::db::write_batch::WriteBatch;
 use crate::iterable::Iterable;
@@ -112,13 +112,13 @@ impl TestDB {
 
             let expected_value = self.values.get(&entry.key).unwrap();
 
-            if expected_value != &entry.value {
-                iter.next().await?;
-                iter.next().await?;
-                iter.next().await?;
-            }
+            // if expected_value != &entry.value {
+            //     iter.next().await?;
+            //     iter.next().await?;
+            //     iter.next().await?;
+            // }
 
-            assert_eq!(expected_value, &entry.value);
+            assert_eq!(Some(expected_value), entry.value.as_ref());
         }
 
         assert_eq!(num_entries, self.values.len());
@@ -128,10 +128,9 @@ impl TestDB {
 
     async fn dir_contents(&self) -> Result<Vec<String>> {
         let mut out = vec![];
-        let mut entries = common::async_std::fs::read_dir(self.dir.path()).await?;
-        while let Some(entry) = entries.next().await {
-            let entry = entry?;
-            out.push(entry.file_name().to_string_lossy().to_string());
+
+        for entry in file::read_dir(self.dir.path())? {
+            out.push(entry.name().to_string());
         }
 
         Ok(out)
@@ -173,7 +172,7 @@ fn sets_equal(a: &[String], b: &[&str]) -> bool {
     equal
 }
 
-#[async_std::test]
+#[testcase]
 async fn embedded_db_compaction_test() -> Result<()> {
     /*
     TODO: Tests to add:
@@ -312,7 +311,7 @@ async fn embedded_db_compaction_test() -> Result<()> {
     Ok(())
 }
 
-#[async_std::test]
+#[testcase]
 async fn embedded_db_large_range_test() -> Result<()> {
     let dir = TempDir::create()?;
 
@@ -363,7 +362,7 @@ async fn embedded_db_large_range_test() -> Result<()> {
             let entry = iter.next().await?.unwrap();
             assert_eq!(&entry.key, key.as_bytes(), "{:?} != {}", entry.key, key);
             assert_eq!(
-                &entry.value,
+                &entry.value.as_ref().unwrap()[..],
                 if i % 2 == 0 {
                     &b"even"[..]
                 } else {
@@ -396,7 +395,7 @@ async fn embedded_db_large_range_test() -> Result<()> {
                 assert_eq!(key.as_bytes(), &entry.key);
 
                 assert_eq!(
-                    &entry.value,
+                    &entry.value.as_ref().unwrap()[..],
                     if i % 2 == 0 {
                         &b"even"[..]
                     } else {
@@ -439,14 +438,14 @@ async fn read_to_vec(path: &str) -> Result<Vec<Bytes>> {
     Ok(out)
 }
 
-#[async_std::test]
+#[testcase]
 async fn embedded_db_leveldb_compatibility_empty_test() -> Result<()> {
     let entries = read_to_vec("testdata/sstable/leveldb-empty").await?;
     assert!(entries.is_empty());
     Ok(())
 }
 
-#[async_std::test]
+#[testcase]
 async fn embedded_db_leveldb_compatibility_food_test() -> Result<()> {
     let entries = read_to_vec("testdata/sstable/leveldb-food").await?;
 
@@ -466,7 +465,7 @@ async fn embedded_db_leveldb_compatibility_food_test() -> Result<()> {
     Ok(())
 }
 
-#[async_std::test]
+#[testcase]
 async fn embedded_db_leveldb_compatibility_food_mutate_test() -> Result<()> {
     let entries = read_to_vec("testdata/sstable/leveldb-food-mutate").await?;
 
@@ -478,7 +477,7 @@ async fn embedded_db_leveldb_compatibility_food_mutate_test() -> Result<()> {
     Ok(())
 }
 
-#[async_std::test]
+#[testcase]
 async fn embedded_db_leveldb_compatibility_prefixed_test() -> Result<()> {
     let entries = read_to_vec("testdata/sstable/leveldb-prefixed").await?;
 

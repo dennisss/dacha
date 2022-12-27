@@ -16,7 +16,6 @@
 
 use std::f32::consts::PI;
 
-use common::async_std::fs;
 use common::errors::*;
 use image::Color;
 use image::Image;

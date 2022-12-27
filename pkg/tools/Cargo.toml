@@ -11,6 +11,7 @@ common = { path = "../common" }
 radix = { path = "../radix" }
 uuid = { path = "../uuid" }
 crypto = { path = "../crypto" }
+executor = { path = "../executor" }
 
 [features]
 default = ["std"]

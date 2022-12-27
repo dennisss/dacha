@@ -12,6 +12,8 @@ extern crate crypto;
 extern crate math;
 extern crate protobuf;
 extern crate reflection;
+#[macro_use]
+extern crate file;
 
 mod arena;
 pub mod db;

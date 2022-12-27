@@ -2,10 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Arc;
 
-use common::async_std::channel;
-use common::async_std::net::{TcpListener, TcpStream};
-use common::async_std::sync::Mutex;
-use common::async_std::task;
 use common::errors::*;
 use common::futures::future::ok;
 use common::futures::io::Write;
@@ -13,6 +9,10 @@ use common::futures::stream;
 use common::futures::stream::{Stream, StreamExt};
 use common::futures::{Future, FutureExt};
 use common::io::{Readable, Sinkable, StreamExt2, Streamable, StreamableExt, Writeable};
+use executor::channel;
+use executor::sync::Mutex;
+use net::tcp::{TcpListener, TcpStream};
+use net::udp::UdpSocket;
 
 use crate::redis::resp::*;
 
@@ -245,13 +245,11 @@ where
     }
 
     pub async fn run(inst: Arc<Self>, port: u16) -> Result<()> {
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+        let mut listener = TcpListener::bind(format!("127.0.0.1:{}", port).parse()?).await?;
 
-        let mut incoming = listener.incoming();
-
-        while let Some(stream) = incoming.next().await {
-            let mut stream = stream?;
-            task::spawn(Self::handle_connection(inst.clone(), stream));
+        loop {
+            let mut stream = listener.accept().await?;
+            executor::spawn(Self::handle_connection(inst.clone(), stream));
         }
 
         Ok(())
@@ -290,7 +288,7 @@ where
         num
     }
 
-    async fn handle_connection(inst: Arc<Self>, sock: TcpStream) {
+    async fn handle_connection(inst: Arc<Self>, mut sock: TcpStream) {
         sock.set_nodelay(true).expect("Failed to set nodelay");
         //sock.set_recv_buffer_size(128).expect("Failed to set rcv buffer");
 
@@ -315,8 +313,7 @@ where
             client
         };
 
-        let reader: Box<dyn Readable> = Box::new(sock.clone());
-        let writer: Box<dyn Writeable> = Box::new(sock);
+        let (reader, writer) = sock.split();
 
         Self::handle_connection_body(&inst, &client, reader, writer, rx)
             .await

@@ -1,7 +1,7 @@
 use std::{convert::TryFrom, sync::Arc};
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
+use executor::channel;
+use executor::sync::Mutex;
 
 use crate::proto::v2::*;
 use crate::request::Request;

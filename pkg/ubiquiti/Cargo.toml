@@ -12,3 +12,4 @@ macros = { path = "../macros" }
 json = { path = "../json" }
 reflection = { path = "../reflection" }
 parsing = { path = "../parsing" }
+executor = { path = "../executor" }

@@ -1,8 +1,8 @@
-use common::async_std::channel;
-use common::bundle::TaskResultBundle;
 use common::errors::*;
 use common::futures::try_join;
-use common::task::ChildTask;
+use executor::bundle::TaskResultBundle;
+use executor::channel;
+use executor::child_task::ChildTask;
 
 use crate::channel::Channel;
 use crate::server_types::{ServerStreamRequest, ServerStreamResponse};

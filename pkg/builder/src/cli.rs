@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use common::{errors::*, project_dir, project_path};
+use common::errors::*;
+use file::{project_dir, project_path};
 
 use crate::builder::Builder;
 use crate::context::BuildConfigTarget;
@@ -28,7 +29,7 @@ struct BuildCommand {
 }
 
 pub fn run() -> Result<()> {
-    common::async_std::task::block_on(async {
+    executor::run(async {
         let args = common::args::parse_args::<Args>()?;
         match args.command {
             ArgCommand::Build(build) => {
@@ -65,5 +66,5 @@ pub fn run() -> Result<()> {
         }
 
         Ok(())
-    })
+    })?
 }

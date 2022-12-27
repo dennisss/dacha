@@ -18,12 +18,12 @@ mod redis;
 
 use std::sync::Arc;
 
-use common::async_std::path::{Path, PathBuf};
 use common::errors::*;
 use common::errors::*;
-use common::fs::DirLock;
 use common::futures::future::*;
 use common::futures::prelude::*;
+use file::dir_lock::DirLock;
+use file::LocalPathBuf;
 use protobuf::Message;
 use raft::node::*;
 use raft::proto::consensus::LogEntryData;
@@ -191,7 +191,7 @@ impl redis::server::Service for RaftRedisServer {
 #[arg(desc = "Sample consensus reaching node")]
 struct Args {
     #[arg(desc = "An existing directory to store data file for this unique instance")]
-    dir: PathBuf,
+    dir: LocalPathBuf,
 
     // TODO: Also support specifying our rpc listening port
     #[arg(
@@ -223,7 +223,7 @@ async fn main_task() -> Result<()> {
         // "http://127.0.0.1:4002".into(),
     ];
 
-    common::async_std::fs::create_dir_all(&args.dir).await?;
+    file::create_dir_all(&args.dir).await?;
 
     // XXX: Need to store this somewhere more persistent so that we don't lose it
     let lock = DirLock::open(&args.dir).await?;
@@ -234,7 +234,7 @@ async fn main_task() -> Result<()> {
     let state_machine = Arc::new(MemoryKVStateMachine::new());
     let last_applied = LogIndex::from(0);
 
-    let mut tasks = common::bundle::TaskResultBundle::new();
+    let mut tasks = executor::bundle::TaskResultBundle::new();
 
     let mut node = Node::create(NodeOptions {
         dir: lock,
@@ -273,5 +273,5 @@ async fn main_task() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(main_task())
+    executor::run(main_task())?
 }

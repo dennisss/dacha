@@ -6,14 +6,11 @@ use std::os::unix::fs::PermissionsExt;
 /// https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html#tag_20_92_13_06
 use std::usize;
 
-use common::async_std::fs::{File, OpenOptions};
-use common::async_std::io::prelude::{SeekExt, WriteExt};
-use common::async_std::io::SeekFrom;
-use common::async_std::path::{Path, PathBuf};
-use common::async_std::prelude::StreamExt;
 use common::check_zero_padding;
 use common::errors::*;
 use common::io::Readable;
+use common::io::Writeable;
+use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 
 const BLOCK_SIZE: u64 = 512;
 
@@ -103,10 +100,10 @@ pub struct USTarHeaderExtension {
 pub struct AppendFileOptions {
     /// Root directory to use for the new Tar archive. All file names stored in
     /// the archive will be relative to this directory.
-    pub root_dir: PathBuf,
+    pub root_dir: LocalPathBuf,
 
     /// Directory in the archive at which
-    pub output_dir: Option<PathBuf>,
+    pub output_dir: Option<LocalPathBuf>,
 
     pub mask: FileMetadataMask,
 
@@ -117,22 +114,22 @@ pub struct AppendFileOptions {
 pub struct FileMetadataMask {}
 
 pub struct Reader {
-    file: File,
+    file: LocalFile,
 
     /// Offset into the archive file of the next unread file header.
     next_offset: u64,
 }
 
 impl Reader {
-    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub async fn open<P: AsRef<LocalPath>>(path: P) -> Result<Self> {
         Ok(Self {
-            file: File::open(path.as_ref()).await?,
+            file: LocalFile::open(path)?,
             next_offset: 0,
         })
     }
 
     pub async fn read_entry(&mut self) -> Result<Option<FileEntry>> {
-        self.file.seek(SeekFrom::Start(self.next_offset)).await?;
+        self.file.seek(self.next_offset);
 
         let mut block = [0u8; BLOCK_SIZE as usize];
         self.file.read_exact(&mut block).await?;
@@ -186,9 +183,7 @@ impl Reader {
     }
 
     pub async fn read_data(&mut self, entry: &FileEntry) -> Result<Vec<u8>> {
-        self.file
-            .seek(SeekFrom::Start(entry.offset + BLOCK_SIZE))
-            .await?;
+        self.file.seek(entry.offset + BLOCK_SIZE);
 
         let file_size = entry.metadata.header.file_size.unwrap_or(0);
 
@@ -354,20 +349,21 @@ impl Reader {
         Ok(out)
     }
 
-    pub async fn extract_files(&mut self, output_dir: &Path) -> Result<()> {
+    pub async fn extract_files(&mut self, output_dir: &LocalPath) -> Result<()> {
         self.extract_files_with_modes(output_dir, None, None).await
     }
 
+    // TODO: Deduplicate this code.
     async fn create_dir_all(
         &self,
-        output_dir: &Path,
-        mut dir: &Path,
+        output_dir: &LocalPath,
+        mut dir: &LocalPath,
         dir_mode: Option<u32>,
     ) -> Result<()> {
         let mut pending = vec![];
 
         loop {
-            if dir == output_dir || dir.exists().await {
+            if dir == output_dir || file::exists(dir).await? {
                 break;
             }
 
@@ -379,12 +375,12 @@ impl Reader {
         }
 
         while let Some(path) = pending.pop() {
-            common::async_std::fs::create_dir(path).await?;
+            file::create_dir(path).await?;
 
             if let Some(mode) = dir_mode {
-                let mut perms = path.metadata().await?.permissions();
+                let mut perms = file::metadata(path).await?.permissions();
                 perms.set_mode(mode);
-                common::async_std::fs::set_permissions(&path, perms).await?;
+                file::set_permissions(&path, perms).await?;
             }
         }
 
@@ -398,19 +394,19 @@ impl Reader {
     // in the output_dir.
     pub async fn extract_files_with_modes(
         &mut self,
-        output_dir: &Path,
+        output_dir: &LocalPath,
         file_mode: Option<u32>,
         dir_mode: Option<u32>,
     ) -> Result<()> {
         while let Some(entry) = self.read_entry().await? {
             // TODO: Also remove any '..' parts from the path
-            let mut relpath = Path::new(&entry.metadata.header.file_name);
+            let mut relpath = LocalPath::new(&entry.metadata.header.file_name);
 
             if relpath.is_absolute() {
-                relpath = relpath.strip_prefix("/")?;
+                relpath = relpath.strip_prefix("/").unwrap();
             }
 
-            let path = common::async_std::path::PathBuf::from(output_dir.join(relpath));
+            let path = output_dir.join(relpath);
 
             // NOTE: We assume that separate directory entries are present and precede all
             // entries within that directory.
@@ -425,11 +421,11 @@ impl Reader {
             }
 
             if entry.is_regular() {
-                let mut file = OpenOptions::new()
-                    .create_new(true)
-                    .write(true)
-                    .open(&path)
-                    .await?;
+                let mut file = LocalFile::open_with_options(
+                    &path,
+                    &LocalFileOpenOptions::new().create_new(true).write(true),
+                )?;
+
                 let data = self.read_data(&entry).await?;
                 file.write_all(&data).await?;
                 file.flush().await?;
@@ -451,14 +447,14 @@ impl Reader {
                     file.set_permissions(perms).await?;
                 }
             } else if entry.is_directory() {
-                if !path.exists().await {
-                    common::async_std::fs::create_dir(&path).await?;
+                if !file::exists(&path).await? {
+                    file::create_dir(&path).await?;
                 }
 
                 if let Some(mode) = dir_mode {
-                    let mut perms = path.metadata().await?.permissions();
+                    let mut perms = file::metadata(&path).await?.permissions();
                     perms.set_mode(mode);
-                    common::async_std::fs::set_permissions(&path, perms).await?;
+                    file::set_permissions(&path, perms).await?;
                 }
             } else {
                 return Err(err_msg("Unsupported entry"));
@@ -470,20 +466,21 @@ impl Reader {
 }
 
 pub struct Writer {
-    file: File,
+    file: LocalFile,
 }
 
 impl Writer {
     /// TODO: Support appending files to the end of an archive.
     /// (quickest way is to find scan backwards )
-    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub async fn open<P: AsRef<LocalPath>>(path: P) -> Result<Self> {
         Ok(Self {
-            file: OpenOptions::new()
-                .create(true)
-                // .create_new(true)
-                .write(true)
-                .open(path.as_ref())
-                .await?,
+            file: LocalFile::open_with_options(
+                path,
+                &LocalFileOpenOptions::new()
+                    //.create_new(true)
+                    .create(true)
+                    .write(true),
+            )?,
         })
     }
 
@@ -632,8 +629,12 @@ impl Writer {
 
     // TODO: We should also append entries for each directory. that is a parent of
     // the path
-    pub async fn append_file(&mut self, path: &Path, options: &AppendFileOptions) -> Result<()> {
-        let mut pending_paths: Vec<PathBuf> = vec![];
+    pub async fn append_file(
+        &mut self,
+        path: &LocalPath,
+        options: &AppendFileOptions,
+    ) -> Result<()> {
+        let mut pending_paths: Vec<LocalPathBuf> = vec![];
         pending_paths.push(path.to_owned());
 
         // DFS
@@ -647,20 +648,19 @@ impl Writer {
 
     async fn append_single_file(
         &mut self,
-        path: &Path,
+        path: &LocalPath,
         options: &AppendFileOptions,
-        pending_paths: &mut Vec<PathBuf>,
+        pending_paths: &mut Vec<LocalPathBuf>,
     ) -> Result<()> {
-        let path = common::async_std::path::Path::new(path);
         // NOTE: We will not follow symlinks when resolving metadata.
         // TODO: Switch back this.
-        let metadata = path.metadata().await?;
+        let metadata = file::metadata(path).await?;
 
         let (file_type, file_size, mut reader): (FileType, u64, Box<dyn Readable>) = {
             if metadata.is_dir() {
                 (FileType::Directory, 0, Box::new(Cursor::new(&[])))
             } else if metadata.is_file() || metadata.is_symlink() {
-                let file = File::open(path).await?;
+                let file = LocalFile::open(path)?;
                 // If this is a symlink, then the length will be wrong.
                 (FileType::NormalFile, metadata.len(), Box::new(file))
             } else {
@@ -672,10 +672,12 @@ impl Writer {
             .output_dir
             .as_ref()
             .map(|v| v.as_path())
-            .unwrap_or(Path::new("/"))
-            .join(path.strip_prefix(&options.root_dir)?)
-            .to_str()
-            .ok_or_else(|| err_msg("File name is not valid UTF-8"))?
+            .unwrap_or(LocalPath::new("/"))
+            .join(
+                path.strip_prefix(&options.root_dir)
+                    .ok_or_else(|| err_msg("Path does not start with root_dir"))?,
+            )
+            .as_str()
             .trim_end_matches('/')
             .to_string();
         if file_type == FileType::Directory {
@@ -683,13 +685,13 @@ impl Writer {
         }
 
         let mut last_modified_time = None;
-        if let Ok(time) = metadata.modified() {
-            last_modified_time = Some(
-                time.duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-            );
-        }
+        last_modified_time = Some(
+            metadata
+                .modified()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        );
 
         let mut archive_metadata = FileMetadata {
             header: Header {
@@ -721,11 +723,8 @@ impl Writer {
         self.append(&archive_metadata, reader.as_mut()).await?;
 
         if metadata.is_dir() {
-            let mut dir = path.read_dir().await?;
-
-            while let Some(res) = dir.next().await {
-                let entry = res?;
-                pending_paths.push(entry.path().into());
+            for entry in file::read_dir(path)? {
+                pending_paths.push(path.join(entry.name()));
             }
         }
 

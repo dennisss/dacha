@@ -31,16 +31,16 @@ use super::handshake_executor::HandshakeExecutorOptions;
 pub struct Client {
     // hasher
 
-// diffie helman private key
+    // diffie helman private key
 
-// transcript of handshake messages (do i also need alerts?)
+    // transcript of handshake messages (do i also need alerts?)
 
-// pending partially updated
+    // pending partially updated
 
-// cookie (to be validated and passed in the next )
+    // cookie (to be validated and passed in the next )
 
-// /// Messages that have been received but haven't yet been processed.
-// pending_messages: VecDeque<Message>
+    // /// Messages that have been received but haven't yet been processed.
+    // pending_messages: VecDeque<Message>
 }
 
 impl Client {

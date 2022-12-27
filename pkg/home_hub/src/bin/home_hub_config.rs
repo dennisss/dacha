@@ -10,7 +10,6 @@ extern crate home_hub;
 extern crate hue;
 extern crate protobuf;
 
-use common::async_std::task;
 use common::errors::*;
 use home_hub::proto::config::Config;
 
@@ -42,5 +41,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

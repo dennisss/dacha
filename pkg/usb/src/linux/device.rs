@@ -47,8 +47,8 @@ use alloc::vec::Vec;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use common::async_std::channel;
 use common::errors::*;
+use executor::channel;
 
 use crate::descriptor_iter::{Descriptor, DescriptorIter};
 use crate::descriptors::*;

@@ -1,21 +1,23 @@
 extern crate bittorrent;
 extern crate common;
 extern crate crypto;
+#[macro_use]
+extern crate file;
 
 use std::str::FromStr;
 
 use bittorrent::ben::BENValue;
 use bittorrent::*;
-use common::async_std::task;
 use common::errors::*;
 use crypto::hasher::Hasher;
+use http::ClientInterface;
 use parsing::ascii::AsciiString;
 
 async fn run() -> Result<()> {
-    let data = std::fs::read(
-        common::project_dir()
-            .join("pkg/bittorrent/2020-08-20-raspios-buster-armhf-full.zip.torrent"),
-    )?;
+    let data = file::read(project_path!(
+        "pkg/bittorrent/2020-08-20-raspios-buster-armhf-full.zip.torrent"
+    ))
+    .await?;
 
     let info = Metainfo::parse(&data)?;
     // TODO: Verify non-syntanctic parts of the file.
@@ -76,5 +78,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

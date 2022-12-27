@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common::async_std::sync::RwLock;
+use executor::sync::RwLock;
 
 pub struct SkipList {
     first_node: Arc<Node<T>>,

@@ -12,15 +12,16 @@ use std::string::ToString;
 use std::sync::{Arc, RwLock};
 use std::task::{Context, Poll};
 
-use async_std::channel;
-use failure::ResultExt;
+use common::errors::*;
+use common::failure::ResultExt;
 
-use crate::errors::*;
-use crate::task::ChildTask;
+use crate::channel;
+use crate::child_task::ChildTask;
+use crate::{spawn, JoinHandle};
 
 pub struct TaskBundle<'a> {
     active: Arc<RwLock<bool>>,
-    handles: Vec<async_std::task::JoinHandle<()>>,
+    handles: Vec<JoinHandle<()>>,
     scope: PhantomData<&'a ()>,
 }
 
@@ -39,16 +40,16 @@ impl<'a> TaskBundle<'a> {
     {
         let fboxed: Pin<Box<dyn Future<Output = ()> + Send>> = Box::pin(f);
         let fstatic: Pin<Box<dyn Future<Output = ()> + Send + 'static>> =
-            unsafe { std::mem::transmute(fboxed) };
-        self.handles.push(async_std::task::spawn(TaskFuture {
+            unsafe { core::mem::transmute(fboxed) };
+        self.handles.push(spawn(TaskFuture {
             active: self.active.clone(),
             fut: fstatic,
         }));
     }
 
     pub async fn join(mut self) {
-        for handle in &mut self.handles {
-            handle.await;
+        for handle in self.handles.drain(..) {
+            handle.join().await;
         }
     }
 

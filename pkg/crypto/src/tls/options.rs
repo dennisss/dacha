@@ -89,6 +89,8 @@ impl ClientOptions {
                 NamedGroup::secp384r1,
             ],
             supported_signature_algorithms: vec![
+                // TODO: Also add ed2519
+
                 // TLS 1.3: These three are the minimum required set to implement.
                 SignatureScheme::ecdsa_secp256r1_sha256,
                 SignatureScheme::rsa_pss_rsae_sha256,

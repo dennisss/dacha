@@ -2,11 +2,10 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::time::SystemTime;
 
-use common::async_std::path::Path;
-use common::async_std::sync::Mutex;
 use common::bytes::Bytes;
 use common::errors::*;
-use protobuf::Message;
+use executor::sync::Mutex;
+use protobuf::{Message, StaticMessage};
 use raft::atomic::*;
 use raft::proto::ident::LogIndex;
 use raft::proto::key_value::*;

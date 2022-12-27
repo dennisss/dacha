@@ -2,9 +2,9 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::FromRawFd;
 
-use common::async_std::net::UdpSocket;
 use common::errors::*;
 use failure::ResultExt;
+use net::udp::UdpSocket;
 use nix::sys::socket::sockopt::{ReuseAddr, ReusePort};
 use nix::sys::socket::{AddressFamily, InetAddr, SockAddr, SockFlag, SockProtocol, SockType};
 use protobuf::{Message, StaticMessage};
@@ -57,7 +57,7 @@ impl DiscoveryMulticast {
     }
 
     pub async fn run(self) -> Result<()> {
-        common::future::race(self.run_client(), self.run_server()).await
+        executor::future::race(self.run_client(), self.run_server()).await
     }
 
     async fn run_client(&self) -> Result<()> {
@@ -67,7 +67,7 @@ impl DiscoveryMulticast {
                 self.send(&a).await?;
             }
 
-            common::async_std::task::sleep(std::time::Duration::from_secs(2)).await;
+            executor::sleep(std::time::Duration::from_secs(2)).await;
         }
     }
 

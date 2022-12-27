@@ -5,7 +5,6 @@ use std::fmt::Write;
 use std::thread::sleep;
 use std::time::Duration;
 
-use common::async_std::task;
 use common::errors::*;
 use usb::descriptor_iter::DescriptorIter;
 use usb::DescriptorSet;
@@ -52,5 +51,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

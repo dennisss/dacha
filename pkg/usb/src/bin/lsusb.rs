@@ -3,7 +3,6 @@ extern crate usb;
 
 use std::fmt::Write;
 
-use common::async_std::task;
 use common::errors::*;
 
 async fn run() -> Result<()> {
@@ -48,5 +47,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

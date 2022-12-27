@@ -115,7 +115,7 @@ pub async fn run_http_server<
         http::ServerOptions::default(),
     );
 
-    server.set_shutdown_token(common::shutdown::new_shutdown_token());
+    server.set_shutdown_token(executor::signals::new_shutdown_token());
 
     println!("Listening on http://localhost:{}", port);
     server.run(port).await.unwrap();

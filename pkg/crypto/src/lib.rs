@@ -30,6 +30,9 @@ extern crate generic_array;
 #[cfg(feature = "std")]
 extern crate pkix;
 extern crate typenum;
+#[cfg(feature = "std")]
+#[macro_use]
+extern crate file;
 
 // TODO: Implement mlock utility from preventing swapping.
 

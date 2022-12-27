@@ -3,10 +3,10 @@
 
 use std::collections::HashSet;
 use std::fmt::Write;
-use std::path::{Path, PathBuf};
 
 use common::errors::*;
 use common::line_builder::*;
+use file::LocalPath;
 use protobuf_core::tokenizer::serialize_str_lit;
 use protobuf_core::FieldNumber;
 use protobuf_core::Message;
@@ -207,9 +207,13 @@ fn rust_bytestring(v: &[u8]) -> String {
 }
 
 #[cfg(feature = "descriptors")]
-fn get_proto_descriptor(path: &Path, proto: &Proto) -> Result<String> {
+fn get_proto_descriptor(path: &LocalPath, proto: &Proto) -> Result<String> {
     let mut p = proto.to_proto();
-    p.set_name(path.strip_prefix(common::project_dir())?.to_str().unwrap());
+    p.set_name(
+        path.strip_prefix(file::project_dir())
+            .ok_or_else(|| err_msg("Path is not in the project"))?
+            .as_str(),
+    );
 
     let data = p.serialize()?;
     // assert_eq!(p, protobuf_descriptor::FileDescriptorProto::parse(&data)?);
@@ -218,7 +222,7 @@ fn get_proto_descriptor(path: &Path, proto: &Proto) -> Result<String> {
 }
 
 #[cfg(not(feature = "descriptors"))]
-fn get_proto_descriptor(path: &Path, proto: &Proto) -> Result<String> {
+fn get_proto_descriptor(path: &LocalPath, proto: &Proto) -> Result<String> {
     Ok(rust_bytestring(&[]))
 }
 
@@ -230,7 +234,7 @@ struct CompiledOneOf {
 impl Compiler<'_> {
     pub fn compile(
         desc: &Proto,
-        path: &Path,
+        path: &LocalPath,
         current_package: &str,
         options: &CompilerOptions,
     ) -> Result<String> {
@@ -263,11 +267,11 @@ impl Compiler<'_> {
 
         // TODO: Have an in-process cache for reading imported descriptors from disk.
         for import in &desc.imports {
-            let relative_path = std::path::Path::new(&import.path);
+            let relative_path = LocalPath::new(&import.path);
 
             let mut package_path = String::from("::");
 
-            let components = relative_path.components().collect::<Vec<_>>();
+            let components = relative_path.segments().collect::<Vec<_>>();
             if components.len() <= 3 {
                 return Err(format_err!(
                     "Unsupported path format in import: {}",
@@ -278,9 +282,7 @@ impl Compiler<'_> {
             assert!(components.len() > 3);
             for i in 0..(components.len() - 1) {
                 if i == 0 {
-                    if components[0].as_os_str() != "pkg"
-                        && components[0].as_os_str() != "third_party"
-                    {
+                    if components[0].as_str() != "pkg" && components[0].as_str() != "third_party" {
                         return Err(format_err!(
                             "Expected to be the pkg|third_party dir: {:?}",
                             relative_path
@@ -290,7 +292,7 @@ impl Compiler<'_> {
                     continue;
                 }
                 if i == 1 {
-                    if components[i].as_os_str() == current_package {
+                    if components[i].as_str() == current_package {
                         package_path = "crate::".to_string();
                         continue;
                     }
@@ -302,7 +304,7 @@ impl Compiler<'_> {
                     continue;
                 }
 
-                let mut s = components[i].as_os_str().to_str().unwrap();
+                let mut s = components[i].as_str();
                 if s == "type" {
                     s = "r#type";
                 }
@@ -318,7 +320,7 @@ impl Compiler<'_> {
             }
 
             // TODO: Dedup with above.
-            let mut s = relative_path.file_stem().unwrap().to_str().unwrap();
+            let mut s = relative_path.file_stem().unwrap();
             if s == "type" {
                 s = "r#type";
             }
@@ -327,7 +329,7 @@ impl Compiler<'_> {
             // use_statement.push_str(";\n");
             // c.outer += &use_statement;
 
-            let full_path = common::project_dir().join(relative_path);
+            let full_path = file::project_dir().join(relative_path);
             // let
 
             // TODO: Should have a register of parsed files if we are doing it in the same

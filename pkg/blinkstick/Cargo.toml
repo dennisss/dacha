@@ -10,6 +10,8 @@ usb = { path = "../usb" }
 automata = { path = "../automata" }
 regexp_macros = { path = "../regexp_macros" }
 math = { path = "../math" }
+executor = { path = "../executor" }
+file = { path = "../file" }
 
 [features]
 default = ["std"]

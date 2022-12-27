@@ -3,7 +3,6 @@ extern crate common;
 
 use std::collections::HashMap;
 use std::os::unix::prelude::CommandExt;
-use std::path::Path;
 use std::process::{Command, Stdio};
 
 use common::errors::*;
@@ -18,7 +17,7 @@ struct Binary {
 fn main() -> Result<()> {
     let mut args = std::env::args();
 
-    let bin_path = std::env::current_dir().unwrap().join(args.next().unwrap());
+    let bin_path = file::current_dir()?.join(args.next().unwrap());
     let bin_dir = bin_path.parent().unwrap();
 
     let command_name = match args.next() {

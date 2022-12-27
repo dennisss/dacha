@@ -2,11 +2,10 @@ use core::ptr::null;
 use std::collections::HashMap;
 use std::ffi::CStr;
 
-use common::async_std::fs::{read_to_string, File};
-use common::async_std::io::Read;
 use common::errors::*;
 use common::failure::ResultExt;
 use common::hash::SumHasherBuilder;
+use file::read_to_string;
 use gl::types::{GLchar, GLenum, GLint, GLsizei, GLuint};
 use math::matrix::Matrix4f;
 

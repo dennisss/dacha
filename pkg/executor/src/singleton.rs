@@ -1,4 +1,4 @@
-use crate::mutex::Mutex;
+use crate::sync::Mutex;
 
 pub struct Singleton<T> {
     value: Mutex<Option<T>>,

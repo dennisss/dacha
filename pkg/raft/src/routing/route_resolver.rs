@@ -1,11 +1,11 @@
 use std::convert::TryInto;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
-use common::async_std::sync::Mutex;
 use common::errors::*;
-use common::task::ChildTask;
+use executor::child_task::ChildTask;
+use executor::sync::Mutex;
 use http::uri::Authority;
+use net::ip::SocketAddr;
 
 use crate::proto::ident::*;
 use crate::proto::server_metadata::GroupId;
@@ -87,8 +87,8 @@ impl http::Resolver for RouteResolver {
             };
 
             let authority = route.addr().parse::<Authority>()?;
-            let ip: std::net::IpAddr = match &authority.host {
-                http::uri::Host::IP(ip) => ip.clone().try_into()?,
+            let ip = match &authority.host {
+                http::uri::Host::IP(ip) => ip.clone(),
                 _ => {
                     return Err(err_msg("Route doesn't contain an ip address"));
                 }

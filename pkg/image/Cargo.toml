@@ -11,6 +11,8 @@ math = { path = "../math" }
 macros = { path = "../macros" }
 reflection = { path = "../reflection" }
 parsing = { path = "../parsing" }
+executor = { path = "../executor" }
+file = { path = "../file" }
 typenum = "1.10.0"
 impl_ops = "0.1.1"
 generic-array = "0.13.2"

@@ -17,9 +17,9 @@ use sys::{
 use crate::linux::io_uring::*;
 use crate::linux::task::{Task, TaskEntry, TaskState};
 use crate::linux::waker::create_waker;
+use crate::stack_pinned::stack_pinned;
 
 use super::thread_local::{CurrentExecutorContext, CurrentTaskContext};
-use super::yielding::yield_now;
 
 pub type TaskId = u64;
 
@@ -48,32 +48,6 @@ MVP: Call io_uring_enter() after every single entry is added.
 Some challenges:
 - If we are using io_uring_enter to block on submissions of entries,
 
-
-    let mut ring = sys::IoUring::create()?;
-
-    let mut buffer = [0u8; 64];
-    let mut vecs = [sys::IoSliceMut::new(&mut buffer)];
-
-    ring.submit(
-        sys::IoUringOp::ReadV {
-            fd,
-            offset: 0,
-            buffers: &vecs,
-            flags: RWFlags::empty(),
-        },
-        123,
-    )?;
-
-    let mut completion;
-    loop {
-        match ring.retrieve() {
-            Some(v) => {
-                completion = v;
-                break;
-            }
-            None => continue,
-        }
-    }
 */
 
 /// Shared data associated with the executor.
@@ -92,6 +66,8 @@ pub(super) struct ExecutorShared {
     /// framework.
     pub(super) io_uring: ExecutorIoUring,
 
+    main_thread_condvar: Condvar,
+
     /// List of tasks which need to be polled next.
     pending_queue: Mutex<VecDeque<TaskId>>,
 
@@ -109,12 +85,23 @@ impl Executor {
 
             io_uring: ExecutorIoUring::create()?,
 
+            main_thread_condvar: Condvar::new(),
             pending_queue: Mutex::new(VecDeque::new()),
             pending_queue_condvar: Condvar::new(),
         });
 
         let mut thread_pool = vec![];
 
+        // NOTE: The poller must be on a separate thread incase the main thread is
+        // running a future that needs to park itself for cancellation.
+        //
+        // TODO: Do something with the Result returned by this.
+        {
+            let shared = shared.clone();
+            thread_pool.push(spawn(move || Self::polling_thread_fn(shared).unwrap()));
+        }
+
+        // TODO: Base on the number of CPU cores.
         for i in 0..4 {
             let shared = shared.clone();
             thread_pool.push(spawn(move || Self::thread_fn(shared)));
@@ -126,51 +113,108 @@ impl Executor {
         })
     }
 
-    /// Runs the given future on the executor and  
-    pub fn run<F: Future<Output = T> + Send + 'static, T: Send + 'static>(
-        self,
-        future: F,
-    ) -> Result<T> {
+    /// Runs the given future on the executor and blocks until it is complete.
+    ///
+    /// - The given future is
+    pub fn run<F: Future>(self, future: F) -> Result<F::Output> {
         let mut shared = self.shared.clone();
-        let mut output = Arc::new(Mutex::new(None));
 
-        let mut output_clone = output.clone();
+        // Create a new task.
+        // TODO: Dedup this logic.
+        let task_entry = {
+            let task_id = {
+                let mut next_id = shared.next_task_id.lock().unwrap();
+                let id = *next_id;
+                *next_id += 1;
+                id
+            };
 
-        let future = Box::pin(async move {
-            {
-                let value = future.await;
-                shared.running.store(false, Ordering::SeqCst);
-                shared.pending_queue_condvar.notify_all();
+            let entry = Arc::new(TaskEntry {
+                id: task_id,
+                state: Mutex::new(TaskState {
+                    scheduled: true, // Always running on main thread.
+                    on_main_thread: true,
+                    future: None,
+                    dirty: false,
+                    cancelled: false,
+                }),
+                executor_shared: shared.clone(),
+            });
 
-                let mut output = output_clone.lock().unwrap();
-                *output = Some(value);
+            shared.tasks.lock().unwrap().insert(task_id, entry.clone());
+            entry
+        };
+
+        // Poll the main future.
+        let output;
+
+        let executor_context = CurrentExecutorContext::new(&shared);
+        let task_context = CurrentTaskContext::new(&task_entry);
+        {
+            common::futures::pin_mut!(future);
+
+            let waker = create_waker(task_entry.clone());
+            let mut context = Context::from_waker(&waker);
+
+            loop {
+                match future.as_mut().poll(&mut context) {
+                    Poll::Ready(v) => {
+                        output = v;
+                        break;
+                    }
+                    Poll::Pending => {
+                        let mut state = task_entry.state.lock().unwrap();
+                        loop {
+                            if state.dirty {
+                                state.dirty = false;
+                                break;
+                            }
+
+                            state = shared.main_thread_condvar.wait(state).unwrap();
+                        }
+                    }
+                }
             }
 
-            // Force the event loop to wake up and stop as running == false.
-            yield_now().await.unwrap();
-        });
-        Self::spawn(&self.shared, future);
+            // The future should be dropped before we exit the executor context.
+            drop(future);
+        }
 
-        Self::run_shared(self.shared.clone())?;
+        drop(task_context);
+        drop(executor_context);
 
+        // TODO: Need a grace period:
+        // - First wait some time for all the tasks to finish
+        // - Then actively stop polling futures.
+        // - Finally
+
+        Self::shutdown(&shared);
+
+        // TODO: If we stop the io_uring thread, then it is possible that any futures
+        // that still need to be dropped and cancelled will never finish.
         for thread in self.thread_pool {
             // TODO: We may want to cancel threads if they are stuck on some long running
             // blocking computation.
             thread.join().unwrap();
         }
 
-        // TODO: Consider re-using the oneshot channel logic here.
-        let output = output
-            .lock()
-            .unwrap()
-            .take()
-            .ok_or_else(|| err_msg("No output produced by executor"))?;
         Ok(output)
+    }
+
+    fn shutdown(shared: &ExecutorShared) {
+        // TODO: Put inside of the mutex used for the pending queue.
+        shared.running.store(false, Ordering::SeqCst);
+
+        // For all worker threads to notice that running == false.
+        shared.pending_queue_condvar.notify_all();
+
+        // Force the event loop to wake up and stop as running == false.
+        shared.io_uring.wake_poller().unwrap();
     }
 
     /// Runs until all tasks spawned in the executor have finished running.
     /// This is a blocking call and also runs the main polling logic.
-    fn run_shared(shared: Arc<ExecutorShared>) -> Result<()> {
+    fn polling_thread_fn(shared: Arc<ExecutorShared>) -> Result<()> {
         let mut tasks_to_wake = HashSet::new();
 
         // TODO: Also stop if any of the threads paniced.
@@ -190,27 +234,6 @@ impl Executor {
         }
 
         Ok(())
-
-        // Old epoll event loop.
-        /*
-        let mut events = [EpollEvent::default(); 8];
-
-        // TODO: Break once everything is done.
-        loop {
-            let nevents = shared.poller.wait(&mut events)?;
-
-            println!("poll {}", nevents);
-
-            let polled_descs = shared.polled_descriptors.lock().unwrap();
-
-            for event in &events[0..nevents] {
-                let task_id = *polled_descs.get(&event.fd()).unwrap();
-
-                shared.pending_queue.lock().unwrap().push_back(task_id);
-                shared.pending_queue_condvar.notify_one();
-            }
-        }
-        */
     }
 
     pub(super) fn wake_task_entry(task_entry: &TaskEntry, cancel: bool) {
@@ -227,6 +250,10 @@ impl Executor {
         // Also schedule tasks which aren't already running.
         if task_state.scheduled {
             task_state.dirty = true;
+
+            if task_state.on_main_thread {
+                task_entry.executor_shared.main_thread_condvar.notify_all();
+            }
             return;
         }
 
@@ -262,6 +289,7 @@ impl Executor {
             id: task_id,
             state: Mutex::new(TaskState {
                 scheduled: true, // We immediately push it onto the pending_queue.
+                on_main_thread: false,
                 future: Some(future),
                 dirty: false,
                 cancelled: false,
@@ -281,6 +309,7 @@ impl Executor {
         Task { entry }
     }
 
+    /// Entry point for worker threads which poll futures.
     fn thread_fn(shared: Arc<ExecutorShared>) {
         let executor_context = CurrentExecutorContext::new(&shared);
         loop {
@@ -325,6 +354,13 @@ impl Executor {
             let mut context = Context::from_waker(&waker);
 
             let task_context = CurrentTaskContext::new(&task_entry);
+
+            /*
+            TODO: The smartest way to completely cancel a future would be to:
+            - We should know which operations it is waiting for.
+            - Cancel them first.
+            - Then the drop() destructors should be
+            */
 
             while !cancelled {
                 let p = Future::poll(future.as_mut(), &mut context);

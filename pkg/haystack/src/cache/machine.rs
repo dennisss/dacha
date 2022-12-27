@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::async_std::sync::Mutex;
 use common::errors::*;
+use executor::sync::Mutex;
 
 use crate::background_thread::*;
 use crate::cache::memory::*;

@@ -1,6 +1,11 @@
 # HTTP v2
 
 
+TODO: Need to implement a keepalive pinger.
+- Only needed if no other packets received recently.
+- Server sends pings
+    - Send every 2 minutes
+    - Allow 20 seconds for response
 
 ## Shutdown Semantics
 

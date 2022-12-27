@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 use std::time::{Duration, Instant};
 
-use common::async_std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
 use common::errors::*;
 
 use crate::backoff::*;
@@ -10,7 +9,8 @@ use crate::dns::message_builder::*;
 use crate::dns::message_cell::MessageCell;
 use crate::dns::name::Name;
 use crate::dns::proto::*;
-use crate::ip::IPAddress;
+use crate::ip::{IPAddress, SocketAddr};
+use crate::udp::UdpSocket;
 
 // TODO: Implement in-memory caching, retrying of queries, and timeouts.
 // ^ If we didn't get a response within 200ms, retry with a new id.
@@ -25,7 +25,7 @@ use crate::ip::IPAddress;
 const MAX_PACKET_SIZE: usize = 512;
 const DEFAULT_PORT: u16 = 53;
 
-const MULTICAST_ADDR: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 251);
+const MULTICAST_ADDR: IPAddress = IPAddress::V4([224, 0, 0, 251]);
 const MULTICAST_PORT: u16 = 5353;
 
 /// In unicast mode, this is the amount of time we spend waiting for a single
@@ -49,15 +49,15 @@ pub struct Client {
 
     last_id: u16,
     multicast: bool,
-    target: SocketAddrV4,
+    target: SocketAddr,
     return_on_first_response: bool,
 }
 
 impl Client {
     pub async fn create_multicast_insecure() -> Result<Self> {
         Self::create_internal(
-            SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0),
-            SocketAddrV4::new(MULTICAST_ADDR, MULTICAST_PORT),
+            SocketAddr::new(IPAddress::V4([0, 0, 0, 0]), 0),
+            SocketAddr::new(MULTICAST_ADDR, MULTICAST_PORT),
             true,
         )
         .await
@@ -66,16 +66,16 @@ impl Client {
     pub async fn create_insecure() -> Result<Self> {
         // Bind on a random port and connect to Google Public DNS.
         Self::create_internal(
-            SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0),
-            SocketAddrV4::new(Ipv4Addr::new(8, 8, 8, 8), DEFAULT_PORT),
+            SocketAddr::new(IPAddress::V4([0, 0, 0, 0]), 0),
+            SocketAddr::new(IPAddress::V4([8, 8, 8, 8]), DEFAULT_PORT),
             false,
         )
         .await
     }
 
     async fn create_internal(
-        bind_addr: SocketAddrV4,
-        target: SocketAddrV4,
+        bind_addr: SocketAddr,
+        target: SocketAddr,
         multicast: bool,
     ) -> Result<Self> {
         let socket = UdpSocket::bind(bind_addr).await?;
@@ -120,8 +120,7 @@ impl Client {
                 .checked_sub(Instant::now().duration_since(start_time))
                 .unwrap_or(Duration::from_secs(0));
 
-            match common::async_std::future::timeout(remaining_time, self.wait_for_reply(id)).await
-            {
+            match executor::timeout(remaining_time, self.wait_for_reply(id)).await {
                 Ok(Ok(reply)) => {
                     // TODO: Add some indication for which codes are retryable.
                     match reply.get().response_code() {

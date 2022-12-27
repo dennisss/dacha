@@ -4,11 +4,9 @@ use std::pin::Pin;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
-use common::async_std::fs;
-use common::async_std::os::unix::fs::symlink;
-use common::async_std::path::{Path, PathBuf};
+use common::errors::*;
 use common::failure::ResultExt;
-use common::{errors::*, project_dir};
+use file::{LocalPath, LocalPathBuf};
 use protobuf::{Message, StaticMessage};
 
 use crate::context::*;
@@ -51,8 +49,8 @@ struct BuildTargetNode {
 }
 
 pub struct Builder {
-    workspace_dir: PathBuf,
-    output_dir: PathBuf,
+    workspace_dir: LocalPathBuf,
+    output_dir: LocalPathBuf,
 
     built_targets: HashMap<BuildTargetKey, BuildTargetOutputs>,
     rule_registry: BuildRuleRegistry,
@@ -62,11 +60,11 @@ pub struct Builder {
 
 impl Builder {
     pub fn default() -> Result<Self> {
-        let workspace_dir = PathBuf::from(common::project_dir());
+        let workspace_dir = file::project_dir();
         Self::new(&workspace_dir)
     }
 
-    pub fn new(workspace_dir: &Path) -> Result<Self> {
+    pub fn new(workspace_dir: &LocalPath) -> Result<Self> {
         let mut configs = HashMap::new();
         configs.insert(
             Label::parse(NATIVE_CONFIG_LABEL)?,
@@ -74,7 +72,7 @@ impl Builder {
         );
 
         Ok(Self {
-            workspace_dir: workspace_dir.to_path_buf(),
+            workspace_dir: workspace_dir.to_owned(),
             output_dir: workspace_dir.join("built"),
             built_targets: HashMap::new(),
             rule_registry: BuildRuleRegistry::standard_rules()?,
@@ -88,7 +86,7 @@ impl Builder {
         label: &str,
         config_label: &str,
     ) -> Result<BuiltTarget> {
-        let current_dir = PathBuf::from(std::env::current_dir()?);
+        let current_dir = file::current_dir()?;
         if !current_dir.starts_with(&self.workspace_dir) {
             return Err(err_msg("Must run the builder from inside a workspace"));
         }
@@ -101,7 +99,7 @@ impl Builder {
         &mut self,
         label: &str,
         config_label: &str,
-        current_dir: Option<&Path>,
+        current_dir: Option<&LocalPath>,
     ) -> Result<BuiltTarget> {
         let label = self.parse_absolute_label(label, current_dir)?;
         let config_label = self.parse_absolute_label(config_label, current_dir)?;
@@ -145,7 +143,7 @@ impl Builder {
         })
     }
 
-    fn parse_absolute_label(&self, label: &str, current_dir: Option<&Path>) -> Result<Label> {
+    fn parse_absolute_label(&self, label: &str, current_dir: Option<&LocalPath>) -> Result<Label> {
         let mut label = Label::parse(label)?;
 
         if !label.absolute {
@@ -160,8 +158,7 @@ impl Builder {
                 .strip_prefix(&&self.workspace_dir)
                 .unwrap()
                 .join(&label.directory)
-                .to_str()
-                .unwrap()
+                .as_str()
                 .to_string();
             label.absolute = true;
         }
@@ -287,16 +284,16 @@ impl Builder {
             Some(v) => v,
             None => {
                 let build_file_path = package_dir.join("BUILD");
-                if !build_file_path.exists().await {
+                if !file::exists(&build_file_path).await? {
                     return Err(format_err!("Missing build file at: {:?}", build_file_path));
                 }
 
-                let build_file_data = fs::read_to_string(&build_file_path).await?;
+                let build_file_data = file::read_to_string(&build_file_path).await?;
 
                 let package = self
                     .rule_registry
                     .evaluate_build_file(
-                        package_dir.as_os_str().to_str().unwrap(),
+                        package_dir.as_str(),
                         &build_file_data,
                         context.config.clone(),
                     )
@@ -314,7 +311,7 @@ impl Builder {
                 return Err(format_err!(
                     "Failed to find target named: '{}' in dir '{}'",
                     label.target_name.as_str(),
-                    package_dir.to_str().unwrap()
+                    package_dir.as_str()
                 ));
             }
         };
@@ -346,7 +343,7 @@ impl Builder {
             }
 
             let config_data =
-                fs::read(&outputs.output_files.iter().next().unwrap().1.location).await?;
+                file::read(&outputs.output_files.iter().next().unwrap().1.location).await?;
             let config = BuildConfig::parse(&config_data)?;
 
             let config_target = BuildConfigTarget::from(target_key.label.clone(), config)?;

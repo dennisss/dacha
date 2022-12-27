@@ -1,4 +1,4 @@
-use common::bundle::TaskBundle;
+use executor::bundle::TaskBundle;
 use math::array::Array;
 use math::matrix::Vector3u;
 

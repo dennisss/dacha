@@ -704,7 +704,7 @@ mod tests {
         assert_eq!(out.y, y);
     }
 
-    #[async_std::test]
+    #[testcase]
     async fn encoding_point_sizes() -> Result<()> {
         // In RFC 8446 Section 4.2.8.2, the size of the points is well defined.
 
@@ -770,7 +770,7 @@ mod tests {
         Ok(())
     }
 
-    #[async_std::test]
+    #[testcase]
     async fn ecdsa_sign_test() -> Result<()> {
         let group = EllipticCurveGroup::secp256r1();
 

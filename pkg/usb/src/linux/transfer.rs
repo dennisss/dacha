@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
 use std::sync::Arc;
 
-use common::async_std::channel;
 use common::errors::*;
+use executor::channel;
 
 use crate::linux::device::DeviceState;
 use crate::linux::usbdevfs::{usbdevfs_discardurb, usbdevfs_urb};

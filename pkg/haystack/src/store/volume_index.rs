@@ -5,6 +5,7 @@ use std::path::Path;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use common::errors::*;
+use file::LocalPath;
 
 use super::super::types::*;
 use super::needle::*;
@@ -70,7 +71,7 @@ impl NeedleIndexPair {
 impl PhysicalVolumeIndex {
     /// Create a brand new empty index
     pub fn create(
-        path: &Path,
+        path: &LocalPath,
         parent_block: &PhysicalVolumeSuperblock,
     ) -> Result<PhysicalVolumeIndex> {
         // NOTE: The index is redundant to the main file, so it's easiest to just

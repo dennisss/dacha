@@ -345,7 +345,7 @@ mod tests {
     const TEST_BODY2: &'static [u8] =
         b"7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\nhello: world\r\n\r\n";
 
-    #[async_std::test]
+    #[testcase]
     async fn chunked_body_test() -> Result<()> {
         let data = Cursor::new(TEST_BODY);
         let stream = PatternReader::new(Box::new(data), StreamBufferOptions::default());
@@ -361,7 +361,7 @@ mod tests {
         Ok(())
     }
 
-    #[async_std::test]
+    #[testcase]
     async fn chunked_body_with_trailers_test() -> Result<()> {
         let data = Cursor::new(TEST_BODY2);
         let stream = PatternReader::new(Box::new(data), StreamBufferOptions::default());

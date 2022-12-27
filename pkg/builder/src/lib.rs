@@ -7,6 +7,8 @@ extern crate common;
 extern crate macros;
 extern crate compression;
 extern crate crypto;
+#[macro_use]
+extern crate file;
 
 mod builder;
 pub mod cli;

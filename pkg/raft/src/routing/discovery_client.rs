@@ -51,7 +51,7 @@ impl DiscoveryClient {
             .seeds
             .iter()
             .map(async move |addr: &String| {
-                let res = common::async_std::future::timeout(
+                let res = executor::timeout(
                     Duration::from_millis(1000), // < Servers may frequently be offline
                     self.call_single_server(addr, request_ref),
                 )
@@ -108,7 +108,7 @@ impl DiscoveryClient {
             // server was not started with the expectation of functionating
             // always)
 
-            common::wait_for(Duration::from_millis(2000)).await;
+            executor::sleep(Duration::from_millis(2000)).await;
         }
     }
 }

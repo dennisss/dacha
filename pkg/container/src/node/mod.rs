@@ -11,14 +11,14 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use builder::proto::bundle::BundleSpec;
-use common::async_std::channel;
-use common::async_std::path::{Path, PathBuf};
-use common::async_std::sync::Mutex;
 use common::errors::*;
 use common::eventually::Eventually;
-use common::task::ChildTask;
 use crypto::random::RngExt;
 use datastore::meta::client::{MetastoreClient, MetastoreClientInterface, MetastoreTransaction};
+use executor::channel;
+use executor::child_task::ChildTask;
+use executor::sync::Mutex;
+use file::{LocalPath, LocalPathBuf};
 use net::backoff::*;
 use nix::unistd::chown;
 use nix::unistd::Gid;
@@ -298,18 +298,16 @@ impl Node {
         let mut db_options = EmbeddedDBOptions::default();
         db_options.create_if_missing = true;
 
-        let db =
-            Arc::new(EmbeddedDB::open(Path::new(config.data_dir()).join("db"), db_options).await?);
+        let db = Arc::new(
+            EmbeddedDB::open(LocalPath::new(config.data_dir()).join("db"), db_options).await?,
+        );
 
         let id = match workers_table::get_saved_node_id(&db).await? {
             Some(id) => id,
             None => {
                 let id = if config.bootstrap_id_from_machine_id() {
-                    let machine_id = common::hex::decode(
-                        common::async_std::fs::read_to_string("/etc/machine-id")
-                            .await?
-                            .trim(),
-                    )?;
+                    let machine_id =
+                        common::hex::decode(file::read_to_string("/etc/machine-id").await?.trim())?;
 
                     if machine_id.len() < 8 {
                         return Err(err_msg("Expected machine id to have at least 8 bytes"));
@@ -341,7 +339,7 @@ impl Node {
         let usb_context = usb::Context::create()?;
 
         let blobs =
-            BlobStore::create(Path::new(config.data_dir()).join("blob"), db.clone()).await?;
+            BlobStore::create(LocalPath::new(config.data_dir()).join("blob"), db.clone()).await?;
 
         let last_event_timestamp = {
             let last_db_time = workers_table::get_events_timestamp(&db).await?.unwrap_or(0);
@@ -349,7 +347,8 @@ impl Node {
             core::cmp::max(last_db_time, current_time)
         };
 
-        let runtime = ContainerRuntime::create(Path::new(config.data_dir()).join("run")).await?;
+        let runtime =
+            ContainerRuntime::create(LocalPath::new(config.data_dir()).join("run")).await?;
         let inst = NodeInner {
             shared: Arc::new(NodeShared {
                 id,
@@ -417,7 +416,7 @@ impl NodeInner {
     // ^ Also flush any pending data to disk.
 
     async fn run_impl(self) -> Result<()> {
-        let mut task_bundle = common::bundle::TaskResultBundle::new();
+        let mut task_bundle = executor::bundle::TaskResultBundle::new();
 
         // This task runs the internal container runtime.
         task_bundle.add("cluster::ContainerRuntime::run", {
@@ -479,7 +478,7 @@ impl NodeInner {
             match backoff.start_attempt() {
                 ExponentialBackoffResult::Start => {}
                 ExponentialBackoffResult::StartAfter(wait_time) => {
-                    common::async_std::task::sleep(wait_time).await
+                    executor::sleep(wait_time).await.unwrap()
                 }
                 ExponentialBackoffResult::Stop => {
                     return Err(err_msg("Too many retries"));
@@ -543,7 +542,7 @@ impl NodeInner {
         // Wait for the node to not be NEW
         while node_state == NodeMetadata_State::NEW {
             // TODO: Use a watcher.
-            common::async_std::task::sleep(NODE_HEARTBEAT_INTERVAL).await;
+            executor::sleep(NODE_HEARTBEAT_INTERVAL).await;
 
             node_state = {
                 let node_meta = meta_client
@@ -563,7 +562,7 @@ impl NodeInner {
         // stale values.
         self.reconcile_workers().await?;
 
-        let mut task_bundle = common::bundle::TaskResultBundle::new();
+        let mut task_bundle = executor::bundle::TaskResultBundle::new();
         task_bundle.add("run_heartbeat_loop", self.clone().run_heartbeat_loop());
 
         task_bundle.add("run_reconcile_loop", self.clone().run_reconcile_loop());
@@ -591,7 +590,7 @@ impl NodeInner {
             // metastore for changes yet.
             let _ = self.shared.state_change_channel.0.try_send(());
 
-            common::async_std::task::sleep(NODE_HEARTBEAT_INTERVAL).await;
+            executor::sleep(NODE_HEARTBEAT_INTERVAL).await;
         }
     }
 
@@ -886,8 +885,8 @@ impl NodeInner {
         }
     }
 
-    fn persistent_data_dir(&self) -> PathBuf {
-        Path::new(self.shared.config.data_dir()).join("volume/per-worker")
+    fn persistent_data_dir(&self) -> LocalPathBuf {
+        LocalPath::new(self.shared.config.data_dir()).join("volume/per-worker")
     }
 
     async fn list_workers_impl(&self) -> Result<ListWorkersResponse> {
@@ -1114,22 +1113,22 @@ impl NodeInner {
                         }
                     };
 
-                    mount.set_source(blob_lease.extracted_dir().to_str().unwrap());
+                    mount.set_source(blob_lease.extracted_dir().as_str());
                     mount.add_options("bind".into());
                     mount.add_options("ro".into());
                     blob_leases.push(blob_lease);
                 }
                 WorkerSpec_VolumeSourceCase::PersistentName(name) => {
                     let dir = self.persistent_data_dir().join(name);
-                    let dir_str = dir.to_str().unwrap().to_string();
+                    let dir_str = dir.as_str().to_string();
 
                     let volume_gid;
 
-                    if dir.exists().await {
+                    if file::exists(&dir).await? {
                         // TODO: If the volume was partially created but the permissions were not
                         // set, then this may raise an error.
 
-                        let gid = dir.metadata().await?.gid();
+                        let gid = file::metadata(&dir).await?.gid();
 
                         // TODO: Keep a separate record of the gids assigned to each volume and
                         // verify that they haven't changed.
@@ -1156,12 +1155,12 @@ impl NodeInner {
 
                         state_inner.next_gid += 1;
 
-                        common::async_std::fs::create_dir_all(&dir).await?;
+                        file::create_dir_all(&dir).await?;
                         chown(dir_str.as_str(), None, Some(Gid::from_raw(volume_gid)))?;
 
-                        let mut perms = dir.metadata().await?.permissions();
+                        let mut perms = file::metadata(&dir).await?.permissions();
                         perms.set_mode(0o770 | libc::S_ISGID);
-                        common::async_std::fs::set_permissions(&dir, perms).await?;
+                        file::set_permissions(&dir, perms).await?;
                     }
 
                     container_config
@@ -1205,14 +1204,14 @@ impl NodeInner {
                             && desc.idProduct == selector.product() as u16
                         {
                             let mut mount = ContainerMount::default();
-                            mount.set_source(dev.devfs_path().to_str().unwrap());
-                            mount.set_destination(dev.devfs_path().to_str().unwrap());
+                            mount.set_source(dev.devfs_path().as_str());
+                            mount.set_destination(dev.devfs_path().as_str());
                             mount.add_options("bind".into());
                             container_config.add_mounts(mount);
 
                             let mut mount = ContainerMount::default();
-                            mount.set_source(dev.sysfs_dir().to_str().unwrap());
-                            mount.set_destination(dev.sysfs_dir().to_str().unwrap());
+                            mount.set_source(dev.sysfs_dir().as_str());
+                            mount.set_destination(dev.sysfs_dir().as_str());
                             mount.add_options("bind".into());
                             container_config.add_mounts(mount);
 
@@ -1368,7 +1367,7 @@ impl NodeInner {
                 let worker_name = worker.spec.name().to_string();
                 let timeout_sender = self.shared.event_channel.0.clone();
                 let timeout_task = ChildTask::spawn(async move {
-                    common::async_std::task::sleep(wait_time).await;
+                    executor::sleep(wait_time).await.unwrap();
                     let _ = timeout_sender
                         .send(NodeEvent::StartBackoffTimeout {
                             worker_name,
@@ -1408,7 +1407,7 @@ impl NodeInner {
             match backoff.start_attempt() {
                 ExponentialBackoffResult::Start => {}
                 ExponentialBackoffResult::StartAfter(wait_time) => {
-                    common::async_std::task::sleep(wait_time).await
+                    executor::sleep(wait_time).await.unwrap()
                 }
                 ExponentialBackoffResult::Stop => {
                     // TODO: If all attempts fail, then mark all pending workers as failed.
@@ -1541,7 +1540,7 @@ impl NodeInner {
             Duration::from_secs(self.shared.config.graceful_shutdown_timeout_secs() as u64);
         let timeout_sender = self.shared.event_channel.0.clone();
         let timeout_task = ChildTask::spawn(async move {
-            common::async_std::task::sleep(timeout_duration).await;
+            executor::sleep(timeout_duration).await;
             let _ = timeout_sender
                 .send(NodeEvent::StopTimeout {
                     worker_name,
@@ -1867,7 +1866,7 @@ impl ContainerNodeService for NodeInner {
                 }
             } else {
                 // TODO: Replace with receiving a notification.
-                common::async_std::task::sleep(std::time::Duration::from_millis(100)).await;
+                executor::sleep(std::time::Duration::from_millis(100)).await;
             }
         }
 

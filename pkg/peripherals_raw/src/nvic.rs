@@ -11,7 +11,7 @@ Cortex M4 NVIC is documented at:
 use core::mem::transmute;
 use core::ops::{Deref, DerefMut};
 
-use crate::register::RawRegister;
+use common::register::RawRegister;
 
 pub const NVIC_ICTR: *mut u32 = 0xE000E004 as *mut u32;
 

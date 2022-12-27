@@ -4,14 +4,13 @@ use std::net::SocketAddr;
 use std::slice::SliceIndex;
 use std::sync::{Arc, Weak};
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
 use common::condvar::Condvar;
 use common::errors::*;
-use common::task::ChildTask;
 use common::vec_hash_set::VecHashSet;
 use crypto::random::RngExt;
+use executor::channel;
+use executor::child_task::ChildTask;
+use executor::sync::Mutex;
 use net::backoff::*;
 
 use crate::client::client_interface::*;
@@ -97,7 +96,7 @@ impl LoadBalancedClient {
             match resolve_backoff.start_attempt() {
                 ExponentialBackoffResult::Start => {}
                 ExponentialBackoffResult::StartAfter(wait_time) => {
-                    task::sleep(wait_time).await;
+                    executor::sleep(wait_time).await.unwrap();
                 }
                 ExponentialBackoffResult::Stop => {
                     eprintln!("LoadBalancedClient failed too many times.");

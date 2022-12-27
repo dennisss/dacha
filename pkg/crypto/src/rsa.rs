@@ -597,7 +597,7 @@ mod tests {
 
     use crate::hasher::TruncatedHasher;
 
-    #[async_std::test]
+    #[testcase]
     async fn rsa_pkcs_15_nist_test() -> Result<()> {
         let file = crate::nist::response::ResponseFile::open(project_path!(
             "testdata/nist/rsa/fips186_2/SigGen15_186-2.txt"
@@ -676,7 +676,7 @@ mod tests {
     }
 
     // TODO: Deduplicate with the previous test case.
-    #[async_std::test]
+    #[testcase]
     async fn rsa_pss_nist_test() -> Result<()> {
         let file = crate::nist::response::ResponseFile::open(project_path!(
             "testdata/nist/rsa/fips186_2/SigGenPSS_186-2.txt"

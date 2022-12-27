@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn torrent_test() {
         let data = std::fs::read(
-            common::project_dir()
+            file::project_dir()
                 .join("pkg/bittorrent/2020-08-20-raspios-buster-armhf-full.zip.torrent"),
         )
         .unwrap();

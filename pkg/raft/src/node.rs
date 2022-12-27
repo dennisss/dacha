@@ -1,15 +1,15 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
-use common::bundle::TaskResultBundle;
 use common::errors::*;
-use common::fs::DirLock;
 use common::futures::future::FutureExt;
 use common::futures::{pin_mut, select};
 use crypto::random;
 use crypto::random::RngExt;
+use executor::bundle::TaskResultBundle;
+use executor::channel;
+use executor::sync::Mutex;
+use file::dir_lock::DirLock;
 use protobuf::{Message, StaticMessage};
 use rpc_util::AddReflection;
 
@@ -171,7 +171,7 @@ impl<R: 'static + Send> Node<R> {
             BlobFile,
             ServerConfigurationSnapshot,
             BlobFile,
-        ) = if meta_builder.exists().await {
+        ) = if meta_builder.exists().await? {
             // TODO: Must check that the meta exists and is valid.
 
             let (meta_file, meta_data) = meta_builder.open().await?;
@@ -426,7 +426,7 @@ impl ServerInit {
         rpc_server.add_service(Self { sender }.into_service())?;
         rpc_server.add_reflection()?;
 
-        common::future::race(rpc_server.run(port), async move {
+        executor::future::race(rpc_server.run(port), async move {
             receiver.recv().await?;
             Ok(())
         })

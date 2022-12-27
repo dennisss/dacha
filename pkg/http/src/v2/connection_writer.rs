@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use common::io::{Readable, Writeable};
-use common::task::ChildTask;
+use executor::child_task::ChildTask;
 
 use crate::hpack;
 use crate::proto::v2::*;
@@ -385,7 +385,7 @@ impl ConnectionWriter {
 
                         // Give the OS some time to fully flush the outgoing GOAWAY packet.
                         // TODO: Make the wait relative to the last write.
-                        common::wait_for(std::time::Duration::from_millis(500)).await;
+                        executor::sleep(std::time::Duration::from_millis(500)).await;
                         return close_with.unwrap_or(Ok(()));
                     }
                 }
@@ -591,7 +591,7 @@ impl ConnectionWriter {
     /// perform all operations after the timeout under a ConnectionState
     /// lock.
     async fn wait_for_settings_ack(shared: Arc<ConnectionShared>) {
-        common::wait_for(shared.options.settings_ack_timeout.clone()).await;
+        executor::sleep(shared.options.settings_ack_timeout.clone()).await;
 
         let error = ProtocolErrorV2 {
             code: ErrorCode::SETTINGS_TIMEOUT,

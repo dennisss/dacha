@@ -173,5 +173,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(run())
+    executor::run(run())?
 }

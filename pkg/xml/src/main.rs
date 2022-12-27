@@ -5,7 +5,7 @@ use common::errors::*;
 
 fn main() -> Result<()> {
     let input =
-        std::fs::read_to_string(common::project_dir().join("third_party/nordic/nrf52840.svd"))?;
+        std::fs::read_to_string(file::project_dir().join("third_party/nordic/nrf52840.svd"))?;
     let doc = xml::parse(&input)?;
 
     for node in &doc.root_element.content {

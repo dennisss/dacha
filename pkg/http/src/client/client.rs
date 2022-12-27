@@ -4,11 +4,9 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use common::async_std::net::TcpStream;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
 use common::errors::*;
 use common::io::{Readable, Writeable};
+use executor::sync::Mutex;
 use net::backoff::{ExponentialBackoff, ExponentialBackoffOptions};
 use parsing::ascii::AsciiString;
 
@@ -166,7 +164,7 @@ impl Client {
 
     fn create_impl(options: ClientOptions) -> Result<Self> {
         let lb_client = LoadBalancedClient::new(options.backend_balancer.clone());
-        task::spawn(lb_client.clone().run());
+        executor::spawn(lb_client.clone().run());
 
         Ok(Client {
             shared: Arc::new(Shared { options, lb_client }),

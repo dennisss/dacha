@@ -3,15 +3,14 @@ use std::future::Future;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
-use common::async_std::channel;
-use common::async_std::path::{Path, PathBuf};
-use common::async_std::sync::Mutex;
-use common::async_std::task;
-use common::bundle::TaskResultBundle;
 use common::bytes::Bytes;
 use common::errors::*;
-use common::fs::DirLock;
-use common::task::ChildTask;
+use executor::bundle::TaskResultBundle;
+use executor::channel;
+use executor::child_task::ChildTask;
+use executor::sync::Mutex;
+use file::dir_lock::DirLock;
+use file::LocalPathBuf;
 use protobuf::Message;
 use raft::atomic::{BlobFile, BlobFileBuilder};
 use raft::proto::routing::RouteLabel;
@@ -57,7 +56,7 @@ Also, the channel factory doesn't do channel caching.
 pub struct MetastoreConfig {
     /// Path to the directory used to store all of the store's data (at least
     /// this machine's copy).
-    pub dir: PathBuf,
+    pub dir: LocalPathBuf,
 
     // TODO: Validate that exactly one of init_port and bootstrap are provided.
     /// Port used for listening for RPC signals for bootstrapping this server in
@@ -366,8 +365,8 @@ impl KeyValueStoreService for Metastore {
 }
 
 pub async fn run(config: &MetastoreConfig) -> Result<()> {
-    if !config.dir.exists().await {
-        common::async_std::fs::create_dir(&config.dir).await?;
+    if !file::exists(&config.dir).await? {
+        file::create_dir(&config.dir).await?;
     }
 
     let dir = DirLock::open(&config.dir).await?;
@@ -377,7 +376,7 @@ pub async fn run(config: &MetastoreConfig) -> Result<()> {
 
     let mut rpc_server = rpc::Http2Server::new();
 
-    rpc_server.set_shutdown_token(common::shutdown::new_shutdown_token());
+    rpc_server.set_shutdown_token(executor::signals::new_shutdown_token());
 
     let mut node = raft::Node::create(raft::NodeOptions {
         dir,

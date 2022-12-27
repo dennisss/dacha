@@ -304,7 +304,7 @@ pub trait BodyReturnHandler: 'static + Send + Sync {
 }
 
 #[async_trait]
-impl BodyReturnHandler for common::async_std::channel::Sender<Result<ReturnedBody>> {
+impl BodyReturnHandler for executor::channel::Sender<Result<ReturnedBody>> {
     async fn handle_returned_body(&self, body: Result<ReturnedBody>) {
         let _ = self.try_send(body);
     }
@@ -362,7 +362,7 @@ impl Drop for BorrowedBody {
         // TODO: Debup with call_handler.
         if let Some(inner) = self.inner.take() {
             let return_handler = self.return_handler.clone();
-            common::async_std::task::spawn(async move {
+            executor::spawn(async move {
                 return_handler
                     .handle_returned_body(Ok(ReturnedBody {
                         body: Some(inner.body),

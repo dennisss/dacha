@@ -74,7 +74,7 @@ pub(super) async fn propose_entry(
                     .collect::<Vec<_>>();
                 if known_ids.is_empty() {
                     println!("No servers discovered yet");
-                    common::async_std::task::sleep(std::time::Duration::from_secs(2)).await;
+                    executor::sleep(std::time::Duration::from_secs(2)).await;
                     continue;
                 }
 
@@ -97,7 +97,7 @@ pub(super) async fn propose_entry(
             Ok(v) => v,
             Err(e) => {
                 eprintln!("Failed to query server {}", e);
-                common::async_std::task::sleep(std::time::Duration::from_secs(2)).await;
+                executor::sleep(std::time::Duration::from_secs(2)).await;
                 continue;
             }
         };
@@ -108,7 +108,7 @@ pub(super) async fn propose_entry(
                 suspected_leader_id = Some(value.error().not_leader().leader_hint());
             }
 
-            common::async_std::task::sleep(std::time::Duration::from_secs(2)).await;
+            executor::sleep(std::time::Duration::from_secs(2)).await;
             continue;
         }
 

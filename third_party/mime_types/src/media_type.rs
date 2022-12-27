@@ -1,15 +1,13 @@
-
-
 pub struct MediaTypeEntry {
-    pub types: &'static str,
+    pub types: &'static [&'static str],
 
-    pub extensions: &'static [&'static str]
+    pub extensions: &'static [&'static str],
 
-    /// Human readable description of what this type is. 
+    /// Human readable description of what this type is.
     pub description: &'static str,
-    
+
     /// Whether or not a file with this type is likely compressible.
-    /// 
+    ///
     /// TODO: Also any text/ type is probably compressible.
     pub compressible: bool,
 }
@@ -19,438 +17,438 @@ pub const MEDIA_TYPES_LIST: &'static [MediaTypeEntry] = &[
         types: &["audio/aac"],
         extensions: &["aac"],
         description: "AAC audio",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/x-abiword"],
         extensions: &["abw"],
         description: "AbiWord document",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/x-freearc"],
         extensions: &["arc"],
         description: "Archive document (multiple files embedded)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["video/x-msvideo"],
         extensions: &["avi"],
         description: "AVI: Audio Video Interleave",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/vnd.amazon.ebook"],
         extensions: &["azw"],
         description: "Amazon Kindle eBook format",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/octet-stream"],
         extensions: &["bin"],
         description: "Any kind of binary data",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["image/bmp"],
         extensions: &["bmp"],
         description: "Windows OS/2 Bitmap Graphics",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["application/x-bzip"],
         extensions: &["bz"],
         description: "BZip archive",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/x-bzip2"],
         extensions: &["bz2"],
         description: "BZip2 archive",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/x-csh"],
         extensions: &["csh"],
         description: "C-Shell script",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["text/css"],
         extensions: &["css"],
         description: "Cascading Style Sheets (CSS)",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["text/csv"],
         extensions: &["csv"],
         description: "Comma-separated values (CSV)",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["application/msword"],
         extensions: &["doc"],
         description: "Microsoft Word",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
         extensions: &["docx"],
         description: "Microsoft Word (OpenXML)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/vnd.ms-fontobject"],
         extensions: &["eot"],
         description: "MS Embedded OpenType fonts",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/epub+zip"],
         extensions: &["epub"],
         description: "Electronic publication (EPUB)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/gzip"],
         extensions: &["gz"],
         description: "GZip Compressed Archive",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["image/gif"],
         extensions: &["gif"],
         description: "Graphics Interchange Format (GIF)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["text/html"],
         extensions: &["htm", "html"],
         description: "HyperText Markup Language (HTML)",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["image/vnd.microsoft.icon"],
         extensions: &["ico"],
         description: "Icon format",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["text/calendar"],
         extensions: &["ics"],
         description: "iCalendar format",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["application/java-archive"],
         extensions: &["jar"],
         description: "Java Archive (JAR)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["image/jpeg"],
         extensions: &["jpeg", "jpg"],
         description: "JPEG images",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["text/javascript"],
         extensions: &["js"],
         description: "JavaScript",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["application/json"],
         extensions: &["json"],
         description: "JSON format",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["application/ld+json"],
         extensions: &["jsonld"],
         description: "JSON-LD format",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["audio/x-midi"],
         extensions: &["mid", "midi"],
         description: "Musical Instrument Digital Interface (MIDI) audio/midi",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["text/javascript"],
         extensions: &["mjs"],
         description: "JavaScript module",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["audio/mpeg"],
         extensions: &["mp3"],
         description: "MP3 audio",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/x-cdf"],
         extensions: &["cda"],
         description: "CD audio",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["video/mp4"],
         extensions: &["mp4"],
         description: "MP4 audio",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["video/mpeg"],
         extensions: &["mpeg"],
         description: "MPEG Video",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/vnd.apple.installer+xml"],
         extensions: &["mpkg"],
         description: "Apple Installer Package",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/vnd.oasis.opendocument.presentation"],
         extensions: &["odp"],
         description: "OpenDocument presentation document",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/vnd.oasis.opendocument.spreadsheet"],
         extensions: &["ods"],
         description: "OpenDocument spreadsheet document",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/vnd.oasis.opendocument.text"],
         extensions: &["odt"],
         description: "OpenDocument text document",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["audio/ogg"],
         extensions: &["oga"],
         description: "OGG audio",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["video/ogg"],
         extensions: &["ogv"],
         description: "OGG video",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/ogg"],
         extensions: &["ogx"],
         description: "OGG",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["audio/opus"],
         extensions: &["opus"],
         description: "Opus audio",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["font/otf"],
         extensions: &["otf"],
         description: "OpenType font",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["image/png"],
         extensions: &["png"],
         description: "Portable Network Graphics",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/pdf"],
         extensions: &["pdf"],
         description: "Adobe Portable Document Format (PDF)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/x-httpd-php"],
         extensions: &["php"],
         description: "Hypertext Preprocessor (Personal Home Page)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/vnd.ms-powerpoint"],
         extensions: &["ppt"],
         description: "Microsoft PowerPoint",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
         extensions: &["pptx"],
         description: "Microsoft PowerPoint (OpenXML)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/vnd.rar"],
         extensions: &["rar"],
         description: "RAR archive",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/rtf"],
         extensions: &["rtf"],
         description: "Rich Text Format (RTF)",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["application/x-sh"],
         extensions: &["sh"],
         description: "Bourne shell script",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["image/svg+xml"],
         extensions: &["svg"],
         description: "Scalable Vector Graphics (SVG)",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["application/x-shockwave-flash"],
         extensions: &["swf"],
         description: "Small web format (SWF) or Adobe Flash document",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/x-tar"],
         extensions: &["tar"],
         description: "Tape Archive (TAR)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["image/tiff"],
         extensions: &["tif", "tiff"],
         description: "Tagged Image File Format (TIFF)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["video/mp2t"],
         extensions: &["ts"],
         description: "MPEG transport stream",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["font/ttf"],
         extensions: &["ttf"],
         description: "TrueType Font",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["text/plain"],
         extensions: &["txt"],
         description: "Text, (generally ASCII or ISO 8859-n)",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["application/vnd.visio"],
         extensions: &["vsd"],
         description: "Microsoft Visio",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["audio/wav"],
         extensions: &["wav"],
         description: "Waveform Audio Format",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["audio/webm"],
         extensions: &["weba"],
         description: "WEBM audio",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["video/webm"],
         extensions: &["webm"],
         description: "WEBM video",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["image/webp"],
         extensions: &["webp"],
         description: "WEBP image",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["font/woff"],
         extensions: &["woff"],
         description: "Web Open Font Format (WOFF)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["font/woff2"],
         extensions: &["woff2"],
         description: "Web Open Font Format (WOFF)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/xhtml+xml"],
         extensions: &["xhtml"],
         description: "XHTML",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["application/vnd.ms-excel"],
         extensions: &["xls"],
         description: "Microsoft Excel",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
         extensions: &["xlsx"],
         description: "Microsoft Excel (OpenXML)",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/xml", "text/xml"],
         extensions: &["xml"],
         description: "XML",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["application/vnd.mozilla.xul+xml"],
         extensions: &["xul"],
         description: "XUL",
-        compressible: true
+        compressible: true,
     },
     MediaTypeEntry {
         types: &["application/zip"],
         extensions: &["zip"],
         description: "ZIP archive",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["video/3gpp", "audio/3gpp"],
         extensions: &["3gp"],
         description: "3GPP audio/video container",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["video/3gpp2", "audio/3gpp2"],
         extensions: &["3g2"],
         description: "3GPP2 audio/video container",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/x-7z-compressed"],
         extensions: &["7z"],
         description: "7-zip archive",
-        compressible: false
+        compressible: false,
     },
     MediaTypeEntry {
         types: &["application/pem-certificate-chain"],
         extensions: &["pem"],
         description: "PEM encoded certificate chain",
-        compressible: true
-    }
+        compressible: true,
+    },
 ];

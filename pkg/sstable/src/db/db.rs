@@ -4,20 +4,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use common::algorithms::lower_bound_by;
-use common::async_std;
-use common::async_std::channel;
-use common::async_std::channel::TrySendError;
-use common::async_std::fs::{File, OpenOptions};
-use common::async_std::path::{Path, PathBuf};
-use common::async_std::prelude::*;
-use common::async_std::sync::{Mutex, RwLock};
 use common::bytes::Bytes;
 use common::errors::*;
-use common::fs::sync::SyncedPath;
 use common::hex;
-use common::task::ChildTask;
+use common::io::Writeable;
 use crypto::random::SharedRng;
-use fs2::FileExt;
+use executor::channel;
+use executor::child_task::ChildTask;
+use executor::sync::RwLock;
+use file::sync::SyncedPath;
+use file::{LocalFile, LocalFileOpenOptions, LocalPath};
 
 use crate::db::internal_key::*;
 use crate::db::merge_iterator::MergeIterator;
@@ -124,7 +120,7 @@ impl CompactionReceiver {
 /// Single-process key-value store implemented as a Log Structured Merge tree
 /// of in-memory and on-disk tables. Compatible with the LevelDB/RocksDB format.
 pub struct EmbeddedDB {
-    lock_file: std::fs::File,
+    lock_file: LocalFile,
     identity: Option<String>,
     shared: Arc<EmbeddedDBShared>,
 
@@ -179,11 +175,11 @@ struct ImmutableTable {
 
 impl EmbeddedDB {
     /// Opens an existing database or creates a new one.
-    pub async fn open<P: AsRef<Path>>(path: P, options: EmbeddedDBOptions) -> Result<Self> {
+    pub async fn open<P: AsRef<LocalPath>>(path: P, options: EmbeddedDBOptions) -> Result<Self> {
         Self::open_impl(path.as_ref(), options).await
     }
 
-    async fn open_impl(path: &Path, options: EmbeddedDBOptions) -> Result<Self> {
+    async fn open_impl(path: &LocalPath, options: EmbeddedDBOptions) -> Result<Self> {
         // TODO: Cache a file description to the data directory and use openat for
         // faster opens?
 
@@ -191,20 +187,21 @@ impl EmbeddedDB {
 
         if options.create_if_missing {
             // TODO: Only create up to one directory.
-            async_std::fs::create_dir_all(path).await?;
+            file::create_dir_all(path).await?;
         }
 
-        let dir = FilePaths::new(path)?;
+        let dir = FilePaths::new(path).await?;
 
         let lock_file = {
-            let mut opts = std::fs::OpenOptions::new();
-            opts.write(true)
-                .create(options.create_if_missing)
-                .read(true);
+            let file = LocalFile::open_with_options(
+                dir.lock().read_path(),
+                &LocalFileOpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(options.create_if_missing),
+            )
+            .map_err(|_| err_msg("Failed to open the lockfile"))?;
 
-            let file = opts
-                .open(dir.lock().read_path())
-                .map_err(|_| err_msg("Failed to open the lockfile"))?;
             file.try_lock_exclusive()
                 .map_err(|_| err_msg("Failed to lock database"))?;
             file
@@ -225,6 +222,7 @@ impl EmbeddedDB {
         }
     }
 
+    /// TODO: Move to UUID library.
     async fn uuidv4() -> String {
         let mut data = vec![0u8; 16];
         crypto::random::global_rng().generate_bytes(&mut data).await;
@@ -241,7 +239,7 @@ impl EmbeddedDB {
 
     async fn open_new(
         options: Arc<EmbeddedDBOptions>,
-        lock_file: std::fs::File,
+        lock_file: LocalFile,
         dir: FilePaths,
     ) -> Result<Self> {
         // TODO: In this mode, ensure that we truncate any existing files (they may have
@@ -285,7 +283,12 @@ impl EmbeddedDB {
         {
             let mut id_file = dir
                 .identity()
-                .open(OpenOptions::new().create(true).truncate(true).write(true))
+                .open(
+                    LocalFileOpenOptions::new()
+                        .create(true)
+                        .truncate(true)
+                        .write(true),
+                )
                 .await?;
             id_file.write_all(identity.as_bytes()).await?;
             id_file.flush_and_sync().await?;
@@ -328,7 +331,7 @@ impl EmbeddedDB {
 
     async fn open_existing(
         options: Arc<EmbeddedDBOptions>,
-        lock_file: std::fs::File,
+        lock_file: LocalFile,
         dir: FilePaths,
         manifest_path: SyncedPath,
     ) -> Result<Self> {
@@ -401,11 +404,8 @@ impl EmbeddedDB {
 
         // TODO: Exists may ignore errors such as permission errors.
         let identity_path = dir.identity();
-        let identity = if common::async_std::path::Path::new(identity_path.read_path())
-            .exists()
-            .await
-        {
-            let data = async_std::fs::read_to_string(identity_path.read_path()).await?;
+        let identity = if file::exists(identity_path.read_path()).await? {
+            let data = file::read_to_string(identity_path.read_path()).await?;
             Some(data)
         } else {
             None
@@ -548,7 +548,7 @@ impl EmbeddedDB {
                 for file_num in nums_to_delete {
                     println!("Deleting table number {}", file_num);
                     let path = shared.dir.table(file_num);
-                    common::async_std::fs::remove_file(path.read_path()).await?;
+                    file::remove_file(path.read_path()).await?;
                 }
             }
 
@@ -663,7 +663,7 @@ impl EmbeddedDB {
                 manifest.flush().await?;
 
                 if let Some(num) = old_log_number {
-                    common::async_std::fs::remove_file(shared.dir.log(num).read_path()).await?;
+                    file::remove_file(shared.dir.log(num).read_path()).await?;
                 }
 
                 let mut state_guard = shared.state.write().await;

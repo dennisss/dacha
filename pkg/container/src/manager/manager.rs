@@ -102,7 +102,7 @@ impl Manager {
                 }
             }
 
-            common::async_std::task::sleep(JOB_RECONCILE_RETRY_INTERVAL).await;
+            executor::sleep(JOB_RECONCILE_RETRY_INTERVAL).await;
         }
 
         Ok(())

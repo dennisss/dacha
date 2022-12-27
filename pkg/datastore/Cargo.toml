@@ -16,6 +16,8 @@ protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 net = { path = "../net" }
 google = { path = "../../third_party/google" }
+executor = { path = "../executor" }
+file = { path = "../file" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

@@ -375,6 +375,13 @@ pub trait Readable: 'static + Send + Unpin {
         self.read_at_most(buf, usize::MAX - buf.len()).await
     }
 
+    async fn read_to_string(&mut self, out: &mut String) -> Result<()> {
+        let mut buf = vec![];
+        self.read_to_end(&mut buf).await?;
+        out.push_str(&String::from_utf8(buf)?);
+        Ok(())
+    }
+
     async fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<()> {
         while buf.len() > 0 {
             match self.read(buf).await {
@@ -496,35 +503,6 @@ pub trait Writeable: Send + Sync + Unpin + 'static {
 impl<T: 'static + AsRef<[u8]> + Send + Unpin> Readable for std::io::Cursor<T> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         Ok(std::io::Read::read(self, buf)?)
-    }
-}
-
-#[async_trait]
-impl Readable for async_std::net::TcpStream {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let n = async_std::io::prelude::ReadExt::read(self, buf).await?;
-        Ok(n)
-    }
-}
-
-#[async_trait]
-impl Readable for async_std::fs::File {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let n = async_std::io::prelude::ReadExt::read(self, buf).await?;
-        Ok(n)
-    }
-}
-
-#[async_trait]
-impl Writeable for async_std::net::TcpStream {
-    async fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        let n = async_std::io::prelude::WriteExt::write(self, buf).await?;
-        Ok(n)
-    }
-
-    async fn flush(&mut self) -> Result<()> {
-        async_std::io::prelude::WriteExt::flush(self).await?;
-        Ok(())
     }
 }
 

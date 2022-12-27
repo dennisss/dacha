@@ -495,9 +495,9 @@ mod tests {
         assert_eq!(out, cipher);
     }
 
-    #[async_std::test]
+    #[testcase]
     async fn aes_gcm_nist_test() -> Result<()> {
-        let project_dir = common::project_dir();
+        let project_dir = file::project_dir();
 
         let paths = &[
             "testdata/nist/aes_gcm/gcmDecrypt128.rsp",

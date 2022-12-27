@@ -267,12 +267,12 @@ async fn run() -> Result<()> {
             println!("Power Summary -> Present Status: {:?}", voltage);
         }
 
-        common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
+        executor::sleep(std::time::Duration::from_secs(1)).await;
     }
 
     Ok(())
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(run())
+    executor::run(run())?
 }

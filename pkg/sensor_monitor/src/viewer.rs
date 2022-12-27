@@ -5,16 +5,16 @@ use std::time::Duration;
 use common::errors::*;
 use image::Color;
 
-use graphics::font::CanvasFontRenderer;
-use graphics::ui;
-use graphics::ui::grid::{GridDimensionSize, GridViewParams};
-use graphics::ui::virtual_view::*;
-use graphics::ui::chart::*;
+use common::chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
 use crypto::random::clocked_rng;
 use crypto::random::RngExt;
-use math::matrix::vec2;
-use common::chrono::{DateTime, Utc, Local, NaiveDateTime, TimeZone};
 use graphics::canvas::Paint;
+use graphics::font::CanvasFontRenderer;
+use graphics::ui;
+use graphics::ui::chart::*;
+use graphics::ui::grid::{GridDimensionSize, GridViewParams};
+use graphics::ui::virtual_view::*;
+use math::matrix::vec2;
 
 use crate::proto::data::*;
 
@@ -45,7 +45,6 @@ impl VirtualViewParams for MetricViewer {
 }
 
 impl MetricViewerView {
-
     fn get_random_data() -> ChartData {
         let x_range = Range {
             min: 0.,
@@ -57,7 +56,7 @@ impl MetricViewerView {
 
         let mut x = 0.;
         let mut y = 5.;
-    
+
         let mut rng = clocked_rng();
         while x < x_range.max + 10. {
             points.push(vec2(x, y));
@@ -66,7 +65,11 @@ impl MetricViewerView {
             y = (0.9 * y) + (0.1 * 5.);
         }
 
-        ChartData { points, x_range, y_range }
+        ChartData {
+            points,
+            x_range,
+            y_range,
+        }
     }
 
     fn get_options_for_data(params: &MetricViewer, data: &ChartData) -> Result<ChartOptions> {
@@ -76,9 +79,9 @@ impl MetricViewerView {
             30. * 60. * 1000., // 30 minutes
             60. * 60. * 1000., // 1 hour
         ];
-    
+
         let duration = data.x_range.max - data.x_range.min;
-    
+
         let mut interval = candidate_intervals[0];
         for candidate_interval in candidate_intervals {
             if duration / candidate_interval > 5. {
@@ -87,27 +90,37 @@ impl MetricViewerView {
                 break;
             }
         }
-    
+
         let mut x_ticks: Vec<Tick> = vec![];
         {
             // Interprate values as milliseconds since epoch values.
 
             let mut current_tick = (data.x_range.min / interval).floor() * interval;
-    
+
             while current_tick < data.x_range.max {
-                let time = Local.from_utc_datetime(&NaiveDateTime::from_timestamp((current_tick as i64) / 1000, 0));
+                let time = Local.from_utc_datetime(&NaiveDateTime::from_timestamp(
+                    (current_tick as i64) / 1000,
+                    0,
+                ));
 
                 let label = time.format("%H:%M").to_string();
-                x_ticks.push(Tick { value: current_tick, label });
+                x_ticks.push(Tick {
+                    value: current_tick,
+                    label,
+                });
 
                 current_tick += interval;
             }
         }
-    
-        let y_ticks = [0., 2.5, 5., 7.5, 10.].iter().cloned().map(|value| Tick {
-            value,
-            label: value.to_string(),
-        }).collect::<Vec<_>>();
+
+        let y_ticks = [0., 2.5, 5., 7.5, 10.]
+            .iter()
+            .cloned()
+            .map(|value| Tick {
+                value,
+                label: value.to_string(),
+            })
+            .collect::<Vec<_>>();
 
         Ok(ChartOptions {
             margin: Margin {
@@ -132,11 +145,13 @@ impl MetricViewerView {
         })
     }
 
-    async fn background_thread(stub: MetricStub, state: Arc<Mutex<MetricViewerState>>) -> Result<()> {
+    async fn background_thread(
+        stub: MetricStub,
+        state: Arc<Mutex<MetricViewerState>>,
+    ) -> Result<()> {
         let ctx = rpc::ClientRequestContext::default();
 
         loop {
-
             let now = (Utc::now().timestamp_millis() as u64) * 1000;
 
             let mut request = QueryRequest::default();
@@ -149,30 +164,36 @@ impl MetricViewerView {
                 Ok(v) => v,
                 Err(e) => {
                     println!("request failed: {}", e);
-                    common::async_std::task::sleep(Duration::from_secs(2)).await;
+                    executor::sleep(Duration::from_secs(2)).await?;
                     continue;
                 }
             };
 
             let y_range = Range { min: 0., max: 10. };
-            let x_range = Range { min: (request.start_timestamp() / 1000) as f64, max: (request.end_timestamp() / 1000) as f64 };
+            let x_range = Range {
+                min: (request.start_timestamp() / 1000) as f64,
+                max: (request.end_timestamp() / 1000) as f64,
+            };
 
             let mut points = vec![];
 
             for p in obj.lines()[0].points() {
                 let x = (p.timestamp() / 1000) as f64;
-                assert!(p.timestamp() >= request.start_timestamp() && p.timestamp() <= request.end_timestamp());
+                assert!(
+                    p.timestamp() >= request.start_timestamp()
+                        && p.timestamp() <= request.end_timestamp()
+                );
                 points.push(vec2(x, p.value() as f64));
             }
 
             // for i in 0..10 {
-            //     points.push(vec2( x_range.min + ((i as f64) / 10.) * (x_range.max - x_range.min), i as f64));
-            // }
+            //     points.push(vec2( x_range.min + ((i as f64) / 10.) * (x_range.max -
+            // x_range.min), i as f64)); }
 
             let chart_data = ChartData {
                 points,
                 x_range,
-                y_range
+                y_range,
             };
 
             {
@@ -181,8 +202,9 @@ impl MetricViewerView {
                 state.dirty = true;
             }
 
-            // TODO: Run this relative to the time at which we started to do the current refresh.
-            common::async_std::task::sleep(Duration::from_secs(2)).await;
+            // TODO: Run this relative to the time at which we started to do the current
+            // refresh.
+            executor::sleep(Duration::from_secs(2)).await?;
         }
     }
 }
@@ -194,9 +216,12 @@ impl VirtualView for MetricViewerView {
         let chart_data = Self::get_random_data();
         let chart_options = Self::get_options_for_data(params, &chart_data)?;
 
-        let state = Arc::new(Mutex::new(MetricViewerState { chart_data, dirty: false }));
+        let state = Arc::new(Mutex::new(MetricViewerState {
+            chart_data,
+            dirty: false,
+        }));
 
-        common::async_std::task::spawn({
+        executor::spawn({
             let stub = params.metric_stub.clone();
             let state = state.clone();
             async move {
@@ -229,7 +254,7 @@ impl VirtualView for MetricViewerView {
 
         Ok(ui::Element::from(ChartViewParams {
             options: self.chart_options.clone(),
-            data: state.chart_data.clone()
+            data: state.chart_data.clone(),
         }))
     }
 }

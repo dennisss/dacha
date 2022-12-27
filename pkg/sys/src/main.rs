@@ -8,6 +8,7 @@ extern crate sys;
 #[macro_use]
 extern crate parsing;
 
+use common::array_ref;
 use common::errors::*;
 use parsing::binary::*;
 use sys::bindings::*;
@@ -105,8 +106,45 @@ fn test_uring() -> Result<()> {
     Ok(())
 }
 
+fn test_dirent() -> Result<()> {
+    let path = CString::new("/").unwrap();
+    let fd = unsafe { sys::open(path.as_ptr(), sys::O_RDONLY | sys::O_CLOEXEC, 0) }?;
+
+    let mut buf = [0u8; 8192];
+
+    for i in 0..2 {
+        let mut rest = unsafe { sys::getdents64(fd, &mut buf)? };
+
+        while !rest.is_empty() {
+            let d_ino = u64::from_ne_bytes(*array_ref![rest, 0, 8]);
+            let d_off = u64::from_ne_bytes(*array_ref![rest, 8, 8]);
+            let d_reclen = u16::from_ne_bytes(*array_ref![rest, 16, 2]) as usize;
+            let d_type = rest[18];
+
+            println!("off: {}", d_off);
+
+            let name = &rest[19..d_reclen];
+            println!("{:?}", common::bytes::Bytes::from(name));
+
+            rest = &rest[d_reclen..];
+        }
+
+        /*
+        println!("{:?}", dir);
+
+        println!("{}", dir.len());
+
+        println!("{:?}", common::bytes::Bytes::from(&buf[..]));
+        */
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
-    test_uring()?;
+    test_dirent()?;
+
+    // test_uring()?;
 
     return Ok(());
 

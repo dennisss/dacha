@@ -2080,10 +2080,9 @@ impl ConsensusModule {
             make_response(
                 true,
                 // if last_log_index != last_new {
-                    Some(last_log_index)
-                // } else {
-                //     None
-                // },
+                Some(last_log_index), /* } else {
+                                       *     None
+                                       * }, */
             ),
             last_new_seq,
             LogPosition::new(last_new_term, last_new),
@@ -2105,7 +2104,7 @@ mod tests {
 
     use crate::log::memory_log::MemoryLog;
 
-    #[async_std::test]
+    #[testcase]
     async fn single_member_bootstrap_election() {
         let meta = Metadata::default();
 
@@ -2157,7 +2156,7 @@ mod tests {
         println!("{:#?}", tick);
     }
 
-    #[async_std::test]
+    #[testcase]
     async fn two_member_initial_leader_election() {
         let meta = Metadata::default();
 

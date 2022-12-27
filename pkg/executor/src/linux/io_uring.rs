@@ -17,6 +17,8 @@ use crate::linux::waker::retrieve_task_entry;
 /// operations.
 const CANCELATION_BUFFER_FRACTION: f32 = 0.1;
 
+const WAKE_USER_DATA: u64 = u64::MAX;
+
 pub(super) struct ExecutorIoUring {
     submissions: Mutex<ExecutorIoUringSubmissions>,
     completion_ring: Mutex<IoCompletionUring>,
@@ -112,6 +114,10 @@ impl ExecutorIoUring {
         let mut submissions = self.submissions.lock().unwrap();
 
         while let Some(completion) = completion_ring.retrieve() {
+            if completion.user_data == WAKE_USER_DATA {
+                continue;
+            }
+
             let mut op = submissions
                 .operations
                 .get_mut(&completion.user_data)
@@ -130,9 +136,24 @@ impl ExecutorIoUring {
 
         Ok(())
     }
+
+    pub fn wake_poller(&self) -> Result<()> {
+        let mut submissions = self.submissions.lock().unwrap();
+
+        // TODO: Verify that we always have space in the completion queue to get
+        // this entry.
+
+        unsafe {
+            submissions
+                .submission_ring
+                .submit(IoUringOp::Noop, WAKE_USER_DATA)?;
+        }
+
+        Ok(())
+    }
 }
 
-pub struct ExecutorOperation<'a> {
+pub struct ExecutorOperation<'a, 'b> {
     /// TODO: We can remove this if tasks are always dropped within an executor
     /// context.
     executor_shared: Arc<ExecutorShared>,
@@ -146,13 +167,14 @@ pub struct ExecutorOperation<'a> {
     must_cancel: bool,
 
     lifetime: PhantomData<&'a ()>,
+    lifetime2: PhantomData<&'b ()>,
 }
 
 /*
 TODO: We need to check if the task id in the context of an operation hasn't changed (we would need to change who we are waiting for).
 */
 
-impl<'a> Drop for ExecutorOperation<'a> {
+impl<'a, 'b> Drop for ExecutorOperation<'a, 'b> {
     fn drop(&mut self) {
         if self.must_cancel && !self.done {
             // Must submit a cancelation of the operation and then park the thread
@@ -165,23 +187,28 @@ impl<'a> Drop for ExecutorOperation<'a> {
     }
 }
 
-impl<'a> ExecutorOperation<'a> {
+impl<'a, 'b> ExecutorOperation<'a, 'b> {
     /// NOTE: The operation must outlive all data referenced in the operation.
-    pub fn submit(op: IoUringOp<'a>) -> impl Future<Output = Result<ExecutorOperation<'a>>> {
+    pub fn submit(
+        op: IoUringOp<'a, 'b>,
+    ) -> impl Future<Output = Result<ExecutorOperation<'a, 'b>>> {
         ExecutorOperationSubmitFuture { op: Some(op) }
     }
 
-    pub fn wait(self) -> impl Future<Output = Result<IoUringResult>> + 'a {
+    pub fn wait(self) -> impl Future<Output = Result<IoUringResult>> + 'a
+    where
+        'b: 'a,
+    {
         ExecutorOperationWaitFuture { op: self }
     }
 }
 
-struct ExecutorOperationSubmitFuture<'a> {
-    op: Option<IoUringOp<'a>>,
+struct ExecutorOperationSubmitFuture<'a, 'b> {
+    op: Option<IoUringOp<'a, 'b>>,
 }
 
-impl<'a> ExecutorOperationSubmitFuture<'a> {
-    fn poll_with_result(&mut self, context: &mut Context<'_>) -> Result<ExecutorOperation<'a>> {
+impl<'a, 'b> ExecutorOperationSubmitFuture<'a, 'b> {
+    fn poll_with_result(&mut self, context: &mut Context<'_>) -> Result<ExecutorOperation<'a, 'b>> {
         let task_entry = retrieve_task_entry(context)
             .ok_or_else(|| err_msg("Not running inside an executor"))?;
 
@@ -216,12 +243,13 @@ impl<'a> ExecutorOperationSubmitFuture<'a> {
             done: false,
             must_cancel,
             lifetime: PhantomData,
+            lifetime2: PhantomData,
         })
     }
 }
 
-impl<'a> Future for ExecutorOperationSubmitFuture<'a> {
-    type Output = Result<ExecutorOperation<'a>>;
+impl<'a, 'b> Future for ExecutorOperationSubmitFuture<'a, 'b> {
+    type Output = Result<ExecutorOperation<'a, 'b>>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
@@ -230,11 +258,11 @@ impl<'a> Future for ExecutorOperationSubmitFuture<'a> {
     }
 }
 
-struct ExecutorOperationWaitFuture<'a> {
-    op: ExecutorOperation<'a>,
+struct ExecutorOperationWaitFuture<'a, 'b> {
+    op: ExecutorOperation<'a, 'b>,
 }
 
-impl<'a> Future for ExecutorOperationWaitFuture<'a> {
+impl<'a, 'b> Future for ExecutorOperationWaitFuture<'a, 'b> {
     type Output = Result<IoUringResult>;
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {

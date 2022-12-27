@@ -92,7 +92,7 @@ impl SimpleClient {
             match retry_backoff.start_attempt() {
                 ExponentialBackoffResult::Start => {}
                 ExponentialBackoffResult::StartAfter(wait_time) => {
-                    common::async_std::task::sleep(wait_time).await;
+                    executor::sleep(wait_time).await.unwrap();
                 }
                 ExponentialBackoffResult::Stop => break,
             };

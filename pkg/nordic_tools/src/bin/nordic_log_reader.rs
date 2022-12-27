@@ -6,9 +6,8 @@ extern crate macros;
 
 use std::time::Duration;
 
-use common::async_std::task;
-use common::async_std::task::sleep;
 use common::errors::*;
+use executor::sleep;
 use nordic_tools::usb_radio::USBRadio;
 
 #[derive(Args)]
@@ -29,7 +28,7 @@ async fn run() -> Result<()> {
         }
 
         if entries.is_empty() {
-            common::async_std::task::sleep(Duration::from_millis(10)).await;
+            executor::sleep(Duration::from_millis(10)).await;
         }
     }
 
@@ -37,5 +36,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

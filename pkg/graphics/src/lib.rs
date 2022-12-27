@@ -14,6 +14,8 @@ extern crate typenum;
 #[macro_use]
 extern crate macros;
 extern crate reflection;
+#[macro_use]
+extern crate file;
 
 pub mod canvas;
 pub mod font;

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 
-use common::async_std::channel;
+use executor::channel;
 use glfw::{Action, Context, Key};
 use math::matrix::{Vector2i, Vector4f};
 

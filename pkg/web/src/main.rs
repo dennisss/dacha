@@ -4,9 +4,8 @@ extern crate rpc;
 extern crate rpc_test;
 extern crate web;
 
-use common::async_std::task;
-use common::bundle::TaskResultBundle;
 use common::errors::*;
+use executor::bundle::TaskResultBundle;
 use rpc_test::proto::adder::AdderIntoService;
 
 async fn run() -> Result<()> {
@@ -41,5 +40,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

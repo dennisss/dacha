@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate common;
 extern crate sstable;
+#[macro_use]
+extern crate file;
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -8,12 +10,10 @@ use std::num;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use common::async_std::path::{Path, PathBuf};
-use common::async_std::prelude::*;
-use common::async_std::task;
 use common::bytes::Bytes;
 use common::errors::*;
-use common::temp::TempDir;
+use file::temp::TempDir;
+use file::LocalPath;
 use sstable::iterable::Iterable;
 use sstable::table::comparator::BytewiseComparator;
 use sstable::table::table::DataBlockCache;
@@ -71,8 +71,9 @@ async fn test_table() -> Result<()> {
 async fn run() -> Result<()> {
     let mut options = EmbeddedDBOptions::default();
     options.read_only = true;
+    options.disable_wal = true;
 
-    let mut db = EmbeddedDB::open(Path::new("/tmp/dacha/1630808067193796771"), options).await?;
+    let mut db = EmbeddedDB::open(LocalPath::new("metastore_data/snapshot-0001"), options).await?;
 
     let mut iter = db.snapshot().await.iter().await?;
 
@@ -89,5 +90,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

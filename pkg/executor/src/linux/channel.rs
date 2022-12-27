@@ -22,7 +22,7 @@ impl<T> Channel<T> {
     pub async fn try_recv(&self) -> Option<T> {
         match self.receiver.try_recv() {
             Ok(v) => Some(v),
-            _ => None
+            _ => None,
         }
     }
 

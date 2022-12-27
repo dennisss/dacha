@@ -9,6 +9,9 @@ common = { path = "../common" }
 crypto = { path = "../crypto" }
 parsing = { path = "../parsing" }
 protobuf = { path = "../protobuf" }
+file = { path = "../file" }
+executor = { path = "../executor" }
+macros = { path = "../macros" }
 byteorder = "1.3.2"
 
 [build-dependencies]

@@ -102,7 +102,7 @@ mod tests {
         // TODO: Test partial updates
     }
 
-    #[async_std::test]
+    #[testcase]
     async fn hmac_nist_test() -> Result<()> {
         let file =
             crate::nist::response::ResponseFile::open(project_path!("testdata/nist/hmac/HMAC.rsp"))

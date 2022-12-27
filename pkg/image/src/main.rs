@@ -11,7 +11,7 @@ use image::format::jpeg::JPEG;
 use image::format::qoi::{QOIDecoder, QOIEncoder};
 
 fn main() -> Result<()> {
-    let data = fs::read(project_path!("testdata/nyhavn.qoi"))?;
+    let data = file::read(project_path!("testdata/nyhavn.qoi"))?;
 
     let mut image = QOIDecoder::new().decode(&data)?;
 

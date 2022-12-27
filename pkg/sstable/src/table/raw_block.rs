@@ -1,12 +1,10 @@
-use std::io::SeekFrom;
-
-use common::async_std::fs::File;
-use common::async_std::io::prelude::*;
 use common::errors::*;
 use compression::transform::transform_to_vec;
 use compression::zlib::ZlibDecoder;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
+use file::LocalFile;
+use common::io::Readable;
 
 use crate::table::block_handle::BlockHandle;
 use crate::table::footer::*;
@@ -45,9 +43,9 @@ enum_def!(CompressionType u8 =>
 );
 
 impl RawBlock {
-    pub async fn read(file: &mut File, footer: &Footer, handle: &BlockHandle) -> Result<Self> {
+    pub async fn read(file: &mut LocalFile, footer: &Footer, handle: &BlockHandle) -> Result<Self> {
         let mut buf = vec![];
-        file.seek(SeekFrom::Start(handle.offset)).await?;
+        file.seek(handle.offset);
         buf.resize((handle.size as usize) + BLOCK_TRAILER_SIZE, 0);
         file.read_exact(&mut buf).await?;
 

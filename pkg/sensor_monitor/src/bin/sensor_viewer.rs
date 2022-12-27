@@ -1,22 +1,24 @@
 #[macro_use]
 extern crate common;
+extern crate crypto;
 extern crate graphics;
 extern crate image;
-extern crate crypto;
-extern crate sensor_monitor;
-extern crate rpc;
 extern crate math;
+extern crate rpc;
+extern crate sensor_monitor;
+#[macro_use]
+extern crate file;
 
-use std::sync::Arc;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use common::errors::*;
-use image::Color;
-use math::matrix::vec2f;
 use graphics::canvas::Paint;
 use graphics::font::{CanvasFontRenderer, OpenTypeFont};
 use graphics::ui;
 use graphics::ui::chart::*;
+use image::Color;
+use math::matrix::vec2f;
 use sensor_monitor::proto::data::*;
 
 use sensor_monitor::viewer::MetricViewer;
@@ -34,12 +36,12 @@ async fn run() -> Result<()> {
 
     let root_el = ui::Element::from(MetricViewer {
         font_family,
-        metric_stub: stub
+        metric_stub: stub,
     });
 
     ui::render_element(root_el, 800, 1000).await
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(run())
+    executor::run(run())?
 }

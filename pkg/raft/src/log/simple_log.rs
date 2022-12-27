@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common::async_std::path::Path;
-use common::async_std::sync::Mutex;
 use common::errors::*;
+use executor::sync::Mutex;
+use file::LocalPath;
 use protobuf::{Message, StaticMessage};
 
 use crate::atomic::*;
@@ -27,7 +27,7 @@ pub struct SimpleLog {
 }
 
 impl SimpleLog {
-    pub async fn create(path: &Path) -> Result<SimpleLog> {
+    pub async fn create(path: &LocalPath) -> Result<SimpleLog> {
         let b = BlobFile::builder(path).await?;
 
         let log = SimpleLogValue::default();
@@ -40,7 +40,7 @@ impl SimpleLog {
         })
     }
 
-    pub async fn open(path: &Path) -> Result<SimpleLog> {
+    pub async fn open(path: &LocalPath) -> Result<SimpleLog> {
         let b = BlobFile::builder(path).await?;
         let (file, data) = b.open().await?;
 
@@ -65,7 +65,7 @@ impl SimpleLog {
         })
     }
 
-    pub async fn purge(path: &Path) -> Result<()> {
+    pub async fn purge(path: &LocalPath) -> Result<()> {
         let b = BlobFile::builder(path).await?;
         b.purge().await?;
         Ok(())

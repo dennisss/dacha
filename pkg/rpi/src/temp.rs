@@ -5,30 +5,27 @@ Units are 1000 per degree C
 
 */
 
-use common::async_std::fs::File;
-use common::async_std::io::prelude::SeekExt;
-use common::async_std::io::SeekFrom;
 use common::errors::*;
 use common::failure::ResultExt;
 use common::futures::AsyncReadExt;
+use common::io::Readable;
+use file::LocalFile;
 
 pub struct CPUTemperatureReader {
-    file: File,
+    file: LocalFile,
 }
 
 impl CPUTemperatureReader {
     pub async fn create() -> Result<Self> {
-        let file = File::open("/sys/class/thermal/thermal_zone0/temp")
-            .await
-            .with_context(|e| {
-                format!("While opening /sys/class/thermal/thermal_zone0/temp: {}", e)
-            })?;
+        let file = LocalFile::open("/sys/class/thermal/thermal_zone0/temp").with_context(|e| {
+            format!("While opening /sys/class/thermal/thermal_zone0/temp: {}", e)
+        })?;
         Ok(Self { file })
     }
 
     /// Returns the temperature in degrees Celsius
     pub async fn read(&mut self) -> Result<f64> {
-        self.file.seek(SeekFrom::Start(0)).await?;
+        self.file.seek(0);
 
         // NOTE: Will end in a '\n'.
         let mut value = String::new();

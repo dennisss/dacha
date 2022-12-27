@@ -9,7 +9,6 @@ extern crate reflection;
 
 use std::collections::HashMap;
 
-use common::async_std::task;
 use common::errors::*;
 use http::ClientInterface;
 use json::ValuePath;

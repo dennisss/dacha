@@ -3,9 +3,9 @@ use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 
-use common::async_std::channel;
-use common::async_std::sync::{Mutex, MutexGuard};
-use common::futures::channel::oneshot;
+use executor::channel;
+use executor::oneshot;
+use executor::sync::{Mutex, MutexGuard};
 
 /// Creates a futures based event notification channel
 ///
@@ -53,9 +53,7 @@ impl ChangeReceiver {
         }
 
         let dur = until - now;
-        common::async_std::future::timeout(dur, self.wait())
-            .await
-            .ok();
+        executor::timeout(dur, self.wait()).await.ok();
     }
 }
 

@@ -1,10 +1,6 @@
 extern crate byteorder;
 extern crate compression;
 
-use std::fs::File;
-use std::io::{Read, Seek};
-
-use common::async_std::path::{Path, PathBuf};
 use common::bits::*;
 use common::errors::*;
 use compression::deflate::*;
@@ -28,7 +24,7 @@ async fn run() -> Result<()> {
     )
     .await?;
 
-    tar.extract_files(&PathBuf::from(std::env::current_dir()?).join("/tmp/bundle"))
+    tar.extract_files(&file::current_dir()?.join("/tmp/bundle"))
         .await?;
 
     // while let Some(entry) = tar.read_entry().await? {
@@ -55,7 +51,7 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(run())
+    executor::run(run())?
 
     // let mut window = MatchingWindow::new();
     // let chars = b"Blah blah blah blah blah!";

@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-use common::async_std::channel;
 use common::bytes::Bytes;
 use common::errors::*;
+use executor::channel;
 use http::Body;
 use protobuf_json::{MessageJsonParser, MessageJsonSerialize};
 

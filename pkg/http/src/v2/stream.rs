@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
-use common::task::ChildTask;
+use executor::channel;
+use executor::child_task::ChildTask;
+use executor::sync::Mutex;
 
 use crate::hpack;
 use crate::method::Method;

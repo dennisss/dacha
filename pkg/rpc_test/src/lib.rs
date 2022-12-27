@@ -10,26 +10,24 @@ extern crate macros;
 
 pub mod proto;
 
-use common::async_std::fs::{File, OpenOptions};
-use common::async_std::io::prelude::WriteExt;
 use common::errors::*;
+use common::io::Writeable;
+use executor::sync::Mutex;
+use file::{LocalFile, LocalFileOpenOptions};
 use proto::adder::*;
 
 pub struct AdderImpl {
-    log_file: Option<File>,
+    log_file: Option<Mutex<LocalFile>>,
 }
 
 impl AdderImpl {
     pub async fn create(request_log: Option<&str>) -> Result<Self> {
         let log_file = {
             if let Some(path) = request_log {
-                Some(
-                    OpenOptions::new()
-                        .append(true)
-                        .create(true)
-                        .open(&path)
-                        .await?,
-                )
+                Some(Mutex::new(LocalFile::open_with_options(
+                    &path,
+                    LocalFileOpenOptions::new().append(true).create(true),
+                )?))
             } else {
                 None
             }
@@ -61,6 +59,8 @@ impl AdderService for AdderImpl {
             let z = req.x() + req.y();
 
             if let Some(mut file) = self.log_file.as_ref() {
+                let mut file = file.lock().await;
+
                 file.write_all(format!("{} + {} = {}\n", req.x(), req.y(), z).as_bytes())
                     .await?;
                 file.flush().await?;

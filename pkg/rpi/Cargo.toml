@@ -6,3 +6,5 @@ edition = "2018"
 [dependencies]
 common = { path = "../common" }
 sys = { path = "../sys" }
+file = { path = "../file" }
+executor = { path = "../executor" }

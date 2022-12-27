@@ -30,13 +30,14 @@ pub fn testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let test_name = input.sig.ident;
     let test_inner = input.block;
     let is_async = input.sig.asyncness.is_some();
+    let return_type = input.sig.output;
 
     let body = {
         if is_async {
             quote! {
                 ::executor::run(async {
                     #test_inner
-                })
+                }).unwrap()
             }
         } else {
             quote! { #test_inner }
@@ -45,7 +46,7 @@ pub fn testcase(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let func = quote! {
         #[test]
-        fn #test_name() {
+        fn #test_name() #return_type {
             #body
         }
     };

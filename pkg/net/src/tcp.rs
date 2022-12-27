@@ -14,7 +14,7 @@ pub struct TcpListener {
 }
 
 impl TcpListener {
-    pub fn bind(addr: SocketAddr) -> Result<Self> {
+    pub async fn bind(addr: SocketAddr) -> Result<Self> {
         let addr = Into::<sys::SocketAddr>::into(addr);
 
         let fd = unsafe {
@@ -57,15 +57,62 @@ impl TcpListener {
 
         Ok(TcpStream {
             file: FileHandle::new(fd, false),
+            peer: sockaddr
+                .to_addr()
+                .ok_or_else(|| err_msg("Got no valid peer address"))?
+                .into(),
         })
     }
 }
 
 pub struct TcpStream {
     file: FileHandle,
+    peer: SocketAddr,
 }
 
 impl TcpStream {
+    pub async fn connect(addr: SocketAddr) -> Result<Self> {
+        let addr = Into::<sys::SocketAddr>::into(addr);
+
+        let fd = unsafe {
+            sys::socket(
+                addr.family(),
+                sys::SocketType::SOCK_STREAM,
+                sys::SocketFlags::SOCK_CLOEXEC,
+                sys::SocketProtocol::TCP,
+            )?
+        };
+
+        let op = ExecutorOperation::submit(sys::IoUringOp::Connect {
+            fd: *fd,
+            sockaddr: addr.clone(),
+        })
+        .await?;
+
+        let res = op.wait().await?;
+        res.connect_result()?;
+
+        Ok(Self {
+            file: FileHandle::new(fd, false),
+            peer: addr.into(),
+        })
+    }
+
+    pub fn peer_addr(&self) -> &SocketAddr {
+        &self.peer
+    }
+
+    pub fn split(self) -> (Box<dyn Readable + Sync>, Box<dyn Writeable>) {
+        // TODO: Actually use distinct types so that a user can't downcast it later.
+        (
+            Box::new(Self {
+                file: self.file.clone(),
+                peer: self.peer.clone(),
+            }),
+            Box::new(self),
+        )
+    }
+
     pub fn set_nodelay(&mut self, on: bool) -> Result<()> {
         let value = (if on { 1 } else { 0 } as sys::c_int).to_ne_bytes();
 

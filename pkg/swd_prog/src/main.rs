@@ -4,7 +4,6 @@ extern crate rpi;
 use std::thread::sleep;
 use std::time::Duration;
 
-use common::async_std::task;
 use common::errors::*;
 
 use rpi::gpio::*;
@@ -168,6 +167,4 @@ fn run() -> Result<()> {
 
 fn main() -> Result<()> {
     run()
-
-    // task::block_on(run())
 }

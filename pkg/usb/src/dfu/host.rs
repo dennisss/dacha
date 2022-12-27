@@ -114,7 +114,7 @@ impl DFUHost {
                     }
 
                     // Still waiting for restart.
-                    common::async_std::task::sleep(Duration::from_millis(200)).await;
+                    executor::sleep(Duration::from_millis(200)).await;
                     continue;
                 }
             };

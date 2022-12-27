@@ -3,9 +3,6 @@ extern crate protobuf;
 #[macro_use]
 extern crate macros;
 
-use std::path::Path;
-
-use common::async_std::fs;
 use common::errors::*;
 use protobuf::Message;
 
@@ -28,7 +25,7 @@ struct Args {
 async fn run() -> Result<()> {
     let args = common::args::parse_args::<Args>()?;
 
-    let data = fs::read(std::env::current_dir()?.join(&args.path)).await?;
+    let data = file::read(file::current_dir()?.join(&args.path)).await?;
 
     let mut descriptor_pool = protobuf::DescriptorPool::new();
 
@@ -36,9 +33,9 @@ async fn run() -> Result<()> {
     if let Some(path) = args.proto_file {
         // TODO: Implement a new Path struct which enforces that join never follows
         // directory traversals.
-        let path = std::env::current_dir()?.join(&path);
+        let path = file::current_dir()?.join(&path);
 
-        descriptor_pool.add_local_file(path)?;
+        descriptor_pool.add_local_file(path).await?;
 
         // TODO: Convert to result.
         let type_name = args.proto_type.unwrap();
@@ -66,5 +63,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(run())
+    executor::run(run())?
 }

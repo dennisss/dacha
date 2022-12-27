@@ -17,12 +17,13 @@ parsing = { path = "../parsing", optional = true }
 pkix = { path = "../../third_party/pkix", optional = true }
 generic-array = { version = "0.13.2"}
 typenum = { version = "1.11.2" }
-async-std = { version = "1.9.0", optional = true }
+executor = { path = "../executor" }
+file = { path = "../file", optional = true }
 
 [dev-dependencies]
 openssl = { path = "../../third_party/openssl" }
 
 [features]
 default = ["std", "alloc"]
-alloc = ["common/alloc"]
-std = ["macros", "asn", "math", "parsing", "pkix", "async-std", "alloc", "common/std", "perf/alloc", "perf/std"]
+alloc = ["common/alloc", "executor/alloc"]
+std = ["macros", "asn", "math", "parsing", "pkix", "alloc", "common/std", "perf/alloc", "perf/std", "executor/std", "file"]

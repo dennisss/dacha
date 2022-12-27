@@ -1,6 +1,7 @@
 use crate::types::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use common::errors::*;
+use file::LocalPath;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::{Cursor, SeekFrom};
@@ -27,7 +28,7 @@ pub struct StoreMachineIndex {
 }
 
 impl StoreMachineIndex {
-    pub fn open(path: &Path) -> Result<StoreMachineIndex> {
+    pub fn open(path: &LocalPath) -> Result<StoreMachineIndex> {
         let mut opts = OpenOptions::new();
         opts.read(true).write(true);
 
@@ -61,7 +62,7 @@ impl StoreMachineIndex {
 
     // Need to do a whole lot right here
     pub fn create(
-        path: &Path,
+        path: &LocalPath,
         cluster_id: ClusterId,
         machine_id: MachineId,
     ) -> Result<StoreMachineIndex> {

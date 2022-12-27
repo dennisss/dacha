@@ -12,9 +12,10 @@ compression = { path = "../compression" }
 crypto = { path = "../crypto" }
 automata = { path = "../automata" }
 regexp_macros = { path = "../regexp_macros" }
-async-std = "1.9.0"
 failure = "0.1.8"
 sys = { path = "../sys" }
+executor = { path = "../executor" }
+file = { path = "../file" }
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing_compiler" }

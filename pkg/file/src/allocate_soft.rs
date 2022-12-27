@@ -13,11 +13,11 @@ use std::os::unix::io::AsRawFd;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn allocate_soft(file: &File, len: u64) -> Result<()> {
     let ret = unsafe {
-        libc::fallocate(
+        common::libc::fallocate(
             file.as_raw_fd(),
-            libc::FALLOC_FL_KEEP_SIZE,
+            common::libc::FALLOC_FL_KEEP_SIZE,
             0,
-            len as libc::off_t,
+            len as common::libc::off_t,
         )
     };
 
@@ -30,20 +30,22 @@ pub fn allocate_soft(file: &File, len: u64) -> Result<()> {
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub fn allocate_soft(file: &File, len: u64) -> Result<()> {
-    let mut fstore = libc::fstore_t {
-        fst_flags: libc::F_ALLOCATECONTIG,
-        fst_posmode: libc::F_PEOFPOSMODE,
+    let mut fstore = common::libc::fstore_t {
+        fst_flags: common::libc::F_ALLOCATECONTIG,
+        fst_posmode: common::libc::F_PEOFPOSMODE,
         fst_offset: 0,
-        fst_length: len as libc::off_t,
+        fst_length: len as common::libc::off_t,
         fst_bytesalloc: 0,
     };
 
-    let ret = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_PREALLOCATE, &fstore) };
+    let ret =
+        unsafe { common::libc::fcntl(file.as_raw_fd(), common::libc::F_PREALLOCATE, &fstore) };
     if ret == -1 {
         // Unable to allocate contiguous disk space; attempt to allocate
         // non-contiguously.
-        fstore.fst_flags = libc::F_ALLOCATEALL;
-        let ret = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_PREALLOCATE, &fstore) };
+        fstore.fst_flags = common::libc::F_ALLOCATEALL;
+        let ret =
+            unsafe { common::libc::fcntl(file.as_raw_fd(), common::libc::F_PREALLOCATE, &fstore) };
         if ret == -1 {
             return Err(Error::last_os_error());
         }

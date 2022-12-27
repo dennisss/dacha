@@ -72,7 +72,6 @@ impl Clone for HKDF {
 mod tests {
     use super::*;
     use crate::sha256::*;
-    use common::hex;
 
     #[test]
     fn hkdf_test() {

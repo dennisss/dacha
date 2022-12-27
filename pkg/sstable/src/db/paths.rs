@@ -1,11 +1,11 @@
 use std::ops::DerefMut;
 
-use common::async_std::fs::OpenOptions;
-use common::async_std::io::prelude::WriteExt;
-use common::async_std::path::{Path, PathBuf};
+use crate::common::io::Writeable;
 use common::errors::*;
-use common::fs::sync::*;
 use common::futures::AsyncReadExt;
+use common::io::Readable;
+use file::sync::{SyncedDirectory, SyncedPath};
+use file::{LocalFileOpenOptions, LocalPath};
 
 /// Accessor for all file paths contained within a database directory.
 #[derive(Clone)]
@@ -14,9 +14,9 @@ pub struct FilePaths {
 }
 
 impl FilePaths {
-    pub fn new(root_dir: &Path) -> Result<Self> {
+    pub async fn new(root_dir: &LocalPath) -> Result<Self> {
         Ok(Self {
-            root_dir: SyncedDirectory::open(root_dir)?,
+            root_dir: SyncedDirectory::open(root_dir).await?,
         })
     }
     /// Empty file used to guarantee that exactly one process is accessing the
@@ -57,14 +57,11 @@ impl FilePaths {
         let path = self.current();
 
         // TODO: Exists may ignore errors such as permission errors.
-        if !common::async_std::path::Path::new(path.read_path())
-            .exists()
-            .await
-        {
+        if !file::exists(path.read_path()).await? {
             return Ok(None);
         }
 
-        let mut current_file = path.open(&OpenOptions::new().read(true)).await?;
+        let mut current_file = path.open(&LocalFileOpenOptions::new().read(true)).await?;
 
         let mut contents = String::new();
         current_file.read_to_string(&mut contents).await?;
@@ -83,7 +80,7 @@ impl FilePaths {
         // NOTE: We intentionally do not truncate on open.
         let mut current_file = self
             .current()
-            .open(&OpenOptions::new().write(true).create(true))
+            .open(&LocalFileOpenOptions::new().write(true).create(true))
             .await?;
 
         // This should be atomic as the file name should pretty much always fit within

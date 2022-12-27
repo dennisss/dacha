@@ -5,9 +5,9 @@
 
 use std::sync::Arc;
 
-use common::async_std::sync::Mutex;
 use common::bytes::Bytes;
 use common::errors::*;
+use executor::sync::Mutex;
 
 use crate::http_utils::*;
 use crate::proto::service::*;

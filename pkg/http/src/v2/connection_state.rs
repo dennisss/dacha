@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use common::async_std::channel;
-use common::async_std::sync::Mutex;
 use common::errors::Result;
-use common::task::ChildTask;
+use executor::channel;
+use executor::child_task::ChildTask;
+use executor::sync::Mutex;
 
 use crate::connection_event_listener::ConnectionEventListener;
 use crate::connection_event_listener::ConnectionShutdownDetails;

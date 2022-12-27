@@ -1,3 +1,6 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use common::errors::*;
 
 // NOTE: For efficiency, the length check is handled separately.

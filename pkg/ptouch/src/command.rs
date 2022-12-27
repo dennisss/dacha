@@ -160,12 +160,12 @@ impl CommandBuffer {
     }
 }
 
-define_transparent_enum!(CommandMode u8 =>
+define_transparent_enum!(CommandMode u8 {
     ESC_P = 0,
     RASTER_MODE = 1,
     TEMPLATE_MODE = 3,
     UNKNOWN_FF = 0xff
-);
+});
 
 define_bit_flags!(VariousModeSettings u8 {
     AUTO_CUT = 1 << 6,
@@ -187,7 +187,7 @@ define_bit_flags!(ValidFlag u8 {
     PI_RECOVERY = 0x80
 });
 
-define_transparent_enum!(CompressionMode u8 =>
+define_transparent_enum!(CompressionMode u8 {
     NO_COMPRESSION = 0,
     TIFF = 2
-);
+});

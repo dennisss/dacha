@@ -1,15 +1,15 @@
 mod renderer;
-pub mod vm;
 mod style;
+pub mod vm;
 
 use core::f32::consts::PI;
 use std::sync::Arc;
 
-use common::async_std::fs::File;
-use common::async_std::io::ReadExt;
 use common::bytes::Bytes;
 use common::errors::*;
-use common::io::StreamableExt;
+use common::io::{Readable, StreamableExt};
+use file::LocalFile;
+use file::LocalPath;
 use image::{Color, Colorspace, Image};
 use math::matrix::{Matrix3f, Vector2f, Vector2i, Vector3f, Vector3u};
 use parsing::cstruct::parse_cstruct_be;
@@ -681,12 +681,12 @@ pub struct OpenTypeFont {
 }
 
 impl OpenTypeFont {
-    pub async fn read<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+    pub async fn read<P: AsRef<LocalPath>>(path: P) -> Result<Self> {
         Self::open_impl(path.as_ref()).await
     }
 
-    async fn open_impl(path: &std::path::Path) -> Result<Self> {
-        let mut f = File::open(path).await?;
+    async fn open_impl(path: &LocalPath) -> Result<Self> {
+        let mut f = LocalFile::open(path)?;
 
         let mut buf = vec![];
         f.read_to_end(&mut buf).await?;
@@ -893,8 +893,9 @@ pub async fn open_font() -> Result<()> {
     //
     //    return Ok(());
 
-    let font =
-        CanvasFontRenderer::new(OpenTypeFont::read(project_path!("third_party/noto_sans/font_normal.ttf")).await?);
+    let font = CanvasFontRenderer::new(
+        OpenTypeFont::read(project_path!("third_party/noto_sans/font_normal.ttf")).await?,
+    );
 
     const HEIGHT: usize = 650;
     const WIDTH: usize = 800;
@@ -930,7 +931,14 @@ pub async fn open_font() -> Result<()> {
             let black = Color::rgb(0, 0, 0);
             let red = Color::rgb(255, 0, 0);
 
-            font.fill_text(x, y, text, &FontStyle::from_size(font_size), &Paint::color(black.clone()), canvas)?;
+            font.fill_text(
+                x,
+                y,
+                text,
+                &FontStyle::from_size(font_size),
+                &Paint::color(black.clone()),
+                canvas,
+            )?;
 
             {
                 let mut builder = PathBuilder::new();

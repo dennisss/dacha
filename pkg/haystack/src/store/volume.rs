@@ -3,13 +3,12 @@ use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::{Cursor, Read, Seek, Write};
 
-use common::async_std::path::{Path, PathBuf};
 use common::block_size_remainder;
 use common::errors::*;
 use common::fs::allocate_soft::*;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
-use fs2::FileExt;
+use file::LocalPath;
 
 use super::api::CookieBuf;
 use super::needle::*;
@@ -38,7 +37,7 @@ pub struct NeedleWithOffset {
 pub struct PhysicalVolume {
     pub superblock: PhysicalVolumeSuperblock,
     config: ConfigRef,
-    path: PathBuf,
+    path: LocalPathBuf,
     file: File,
 
     // TODO: Make it a set of binary heaps so that we can efficiently look up all types for a
@@ -93,7 +92,7 @@ impl PhysicalVolume {
             allocated_space: config.store().allocation_size(),
         };
 
-        let idx_path = path.to_str().unwrap().to_owned() + ".idx";
+        let idx_path = path.as_str().to_owned() + ".idx";
         let idx = PhysicalVolumeIndex::create(&Path::new(&idx_path), &superblock)?;
 
         let preallocated = file.allocated_size()?;
@@ -123,7 +122,7 @@ impl PhysicalVolume {
     /// Opens a volume given it's file name
     ///
     ///  XXX: Ideally we would have some better way of doing this right?
-    pub fn open(config: ConfigRef, path: &Path) -> Result<PhysicalVolume> {
+    pub async fn open(config: ConfigRef, path: &LocalPath) -> Result<PhysicalVolume> {
         let mut opts = OpenOptions::new();
         opts.read(true).write(true);
 
@@ -135,9 +134,9 @@ impl PhysicalVolume {
             return Err(err_msg("Superblock magic is incorrect"));
         }
 
-        let idx_path_string = path.to_str().unwrap().to_owned() + ".idx";
-        let idx_path = Path::new(&idx_path_string);
-        let idx = if idx_path.exists() {
+        let idx_path_string = path.as_str().to_owned() + ".idx";
+        let idx_path = LocalPath::new(&idx_path_string);
+        let idx = if file::exists(idx_path).await? {
             // TODO: In most cases of failures to read existing indexes, we can just toss it
             // out and regenerate a new one
 
@@ -614,7 +613,7 @@ mod tests {
         // TODO: Also clear the index?
         let p = Path::new("out/teststore");
         if p.exists() {
-            fs::remove_file(&p)?;
+            file::remove_file(&p).await?;
         }
 
         let config = Arc::new(Config::default());

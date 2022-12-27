@@ -1,5 +1,3 @@
-use common::async_std::fs::File;
-use common::async_std::io::prelude::*;
 use common::errors::*;
 
 const TRIANGLE_SIZE: usize = 4 * 4 * 3 + 2;

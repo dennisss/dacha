@@ -15,6 +15,7 @@ rpc = { path = "../rpc" }
 http = { path = "../http" }
 rpc_util = { path = "../rpc_util" }
 google = { path = "../../third_party/google" }
+executor = { path = "../executor" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

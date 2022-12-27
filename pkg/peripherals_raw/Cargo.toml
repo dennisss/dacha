@@ -11,3 +11,4 @@ common = { path = "../common", default-features = false }
 common = { path = "../common" }
 automata = { path = "../automata" }
 cmsis_svd = { path = "../cmsis_svd" }
+file = { path = "../file" }

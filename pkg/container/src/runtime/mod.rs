@@ -9,17 +9,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Once;
 
-use async_std::io::prelude::WriteExt;
-use common::async_std::channel;
-use common::async_std::fs::File;
-use common::async_std::path::{Path, PathBuf};
-use common::async_std::sync::Mutex;
-use common::async_std::{fs, task};
 use common::errors::*;
-use common::signals::*;
-use common::task::ChildTask;
+use common::io::Writeable;
 use crypto::random::SharedRng;
 use crypto::tls::extensions::SignatureSchemeList;
+use executor::channel;
+use executor::child_task::ChildTask;
+use executor::signals::*;
+use executor::sync::Mutex;
+use executor::JoinHandle;
+use file::{LocalFile, LocalPath, LocalPathBuf};
 use libc::CLONE_NEWUSER;
 use nix::fcntl::OFlag;
 use nix::sched::CloneFlags;
@@ -47,15 +46,15 @@ struct Container {
 
     /// Directory where we store the container root and other files such as
     /// logs.
-    directory: PathBuf,
+    directory: LocalPathBuf,
 
     pid: Pid,
 
     /// If this container was
-    stdin: Option<Arc<File>>,
+    stdin: Mutex<Option<LocalFile>>,
 
     // TODO: Make sure this is cleaned up
-    waiter_task: Option<task::JoinHandle<()>>,
+    waiter_task: Option<JoinHandle<()>>,
 
     /// Used to notify the waiter_task when the process associated with this
     /// container has exited.
@@ -64,8 +63,8 @@ struct Container {
 
 struct ContainerWaiter {
     container_id: String,
-    container_dir: PathBuf,
-    output_streams: Vec<(LogStream, File)>,
+    container_dir: LocalPathBuf,
+    output_streams: Vec<(LogStream, LocalFile)>,
     event_receiver: channel::Receiver<ContainerStatus>,
 }
 
@@ -79,7 +78,7 @@ pub struct ContainerRuntime {
     ///   container.
     /// - '{container-id}/log' : Append-only LevelDB log file containing
     ///   LogEntry protos.
-    run_dir: PathBuf,
+    run_dir: LocalPathBuf,
 
     containers: Mutex<Vec<Container>>,
 
@@ -105,7 +104,7 @@ impl ContainerRuntime {
     ///
     /// NOTE: Only one instance of the ContainerRuntime is allowed to exist in
     /// the same process.
-    pub async fn create<P: AsRef<Path>>(run_dir: P) -> Result<Arc<Self>> {
+    pub async fn create<P: AsRef<LocalPath>>(run_dir: P) -> Result<Arc<Self>> {
         if INSTANCE_LOCK.swap(true, Ordering::SeqCst) {
             return Err(err_msg("ContainerRuntime instance already exists"));
         }
@@ -252,7 +251,7 @@ impl ContainerRuntime {
 
         // TODO: Also lock down permissions on this dir.
         let container_dir = self.run_dir.join(&container_id);
-        fs::create_dir_all(&container_dir).await?;
+        file::create_dir_all(&container_dir).await?;
 
         let mut stack = vec![0u8; 1024 * 1024 * 1]; // 1MB
 
@@ -260,7 +259,7 @@ impl ContainerRuntime {
         // into a new PID namespace ('unshare()' requires an extra fork for
         // that)
 
-        let mut stdin = None;
+        let mut stdin = Mutex::new(None);
         let mut output_streams = vec![];
         let mut file_mapping = FileMapping::default();
 
@@ -359,12 +358,12 @@ impl ContainerRuntime {
 
         containers.push(Container {
             metadata: meta,
-            directory: container_dir.clone(),
+            directory: container_dir.to_owned(),
             pid,
             // TODO: Revert to always being a non-Option type so that it can be cancelled easily.
             waiter_task: None,
             event_sender,
-            stdin: None,
+            stdin: Mutex::new(None),
         });
 
         // Arc::new(Mutex::new(stdin_write.open()?.into()))
@@ -383,10 +382,10 @@ impl ContainerRuntime {
         {
             // TODO: Create a helper for copying files.
 
-            let uid_map = async_std::fs::read_to_string("/proc/self/uid_map").await?;
-            let gid_map = async_std::fs::read_to_string("/proc/self/gid_map").await?;
+            let uid_map = file::read_to_string("/proc/self/uid_map").await?;
+            let gid_map = file::read_to_string("/proc/self/gid_map").await?;
 
-            async_std::fs::write(format!("/proc/{}/uid_map", pid), uid_map).await?;
+            file::write(format!("/proc/{}/uid_map", pid), uid_map).await?;
 
             // TODO: Before writing the gid_map, we should write "/proc/[pid]/setgroups".
             // But this requires that we have already called setgroups for the child to
@@ -394,7 +393,7 @@ impl ContainerRuntime {
             // Maybe we can just clone into a new PID namespace and then later create a new
             // user namespace?
 
-            async_std::fs::write(format!("/proc/{}/gid_map", pid), gid_map).await?;
+            file::write(format!("/proc/{}/gid_map", pid), gid_map).await?;
         }
 
         socket_p.notify_user_ns_setup()?;
@@ -410,7 +409,7 @@ impl ContainerRuntime {
 
             output_streams = vec![(LogStream::STDOUT, terminal_file.into())];
 
-            stdin = Some(Arc::new(terminal_file_2.into()));
+            stdin = Mutex::new(Some(terminal_file_2.into()));
         }
 
         // TIOCSWINSZ
@@ -418,7 +417,7 @@ impl ContainerRuntime {
         // TODO: Setup console size (default 80 x 24)
 
         {
-            let waiter_task = task::spawn(self.clone().container_waiter(ContainerWaiter {
+            let waiter_task = executor::spawn(self.clone().container_waiter(ContainerWaiter {
                 container_id: container_id.clone(),
                 container_dir: container_dir.clone(),
                 output_streams,
@@ -478,7 +477,7 @@ impl ContainerRuntime {
                 .unwrap_or(false)
         };
 
-        if !container_dir.exists().await {
+        if !file::exists(&container_dir).await? {
             return Err(rpc::Status::not_found(format!(
                 "No data for container with id: {}",
                 container_id
@@ -501,23 +500,24 @@ impl ContainerRuntime {
             .find(|c| c.metadata.id() == container_id)
             .ok_or_else(|| err_msg("Container not found"))?;
 
-        let file = container
+        let mut file = container
             .stdin
-            .clone()
+            .lock()
+            .await
+            .take()
             .ok_or_else(|| err_msg("Container has no stdin"))?;
 
         drop(containers);
 
         // TODO: Need locking to ensure that we only have one writer of this.
 
-        let mut file_ref = file.as_ref();
-        file_ref.write_all(data).await?;
-        file_ref.flush().await?; // async_std internally buffers writes.
+        file.write_all(data).await?;
+        file.flush().await?; // async_std internally buffers writes.
 
         Ok(())
     }
 
-    async fn write_log(file: File, log_writer: Arc<FileLogWriter>, stream: LogStream) {
+    async fn write_log(file: LocalFile, log_writer: Arc<FileLogWriter>, stream: LogStream) {
         if let Err(e) = log_writer.write_stream(file, stream).await {
             eprintln!("Log writer failed: {:?}", e);
         }

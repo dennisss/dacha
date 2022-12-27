@@ -1,9 +1,7 @@
 use alloc::boxed::Box;
 
-use common::async_std::net::TcpListener;
 use common::bytes::Bytes;
 use common::errors::*;
-use common::futures::StreamExt;
 use common::io::{Readable, Writeable};
 
 use crate::random::secure_random_bytes;
@@ -26,22 +24,6 @@ use crate::x509;
 pub struct Server {}
 
 impl Server {
-    pub async fn run(port: u16, options: &ServerOptions) -> Result<()> {
-        // Bind all all interfaces.
-        let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-
-        let mut incoming = listener.incoming();
-        while let Some(stream) = incoming.next().await {
-            let stream = stream?;
-
-            let mut app =
-                Self::connect(Box::new(stream.clone()), Box::new(stream), options).await?;
-            app.writer.write_all(b"Hello world").await?;
-        }
-
-        Ok(())
-    }
-
     pub async fn connect(
         reader: Box<dyn Readable + Sync>,
         writer: Box<dyn Writeable>,

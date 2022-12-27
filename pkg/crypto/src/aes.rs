@@ -622,9 +622,9 @@ mod tests {
         assert_eq!(&buf, &plain);
     }
 
-    #[async_std::test]
+    #[testcase]
     async fn aes_ecb_nist_test() -> Result<()> {
-        let project_dir = common::project_dir();
+        let project_dir = file::project_dir();
 
         let paths = &[
             "testdata/nist/aes/kat/ECBGFSbox128.rsp",

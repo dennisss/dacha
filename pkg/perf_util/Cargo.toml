@@ -12,6 +12,8 @@ sys = { path = "../sys" }
 elf = { path = "../elf" }
 perf = { path = "../perf" }
 google = { path = "../../third_party/google" }
+file = { path = "../file" }
+executor = { path = "../executor" }
 
 [features]
 default = ["std"]

@@ -22,7 +22,6 @@ extern crate rpc_util;
 use std::sync::Arc;
 
 use common::args::ArgType;
-use common::async_std::task;
 use common::errors::*;
 use rpc_test::proto::adder::AdderIntoService;
 use rpc_test::AdderImpl;
@@ -45,13 +44,13 @@ async fn run_server() -> Result<()> {
     server.add_service(service)?;
     server.add_reflection()?;
     server.add_healthz()?;
-    server.set_shutdown_token(common::shutdown::new_shutdown_token());
+    server.set_shutdown_token(executor::signals::new_shutdown_token());
 
     println!("Starting on port {}", args.port.value());
     server.run(args.port.value()).await
 }
 
 fn main() {
-    let r = task::block_on(run_server());
+    let r = executor::run(run_server()).unwrap();
     println!("{:?}", r);
 }

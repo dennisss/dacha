@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
-use common::async_std::fs::File;
 use common::errors::*;
+use file::LocalFile;
 
 use crate::encoding::u32_slice;
 use crate::table::block_handle::BlockHandle;
@@ -22,7 +22,7 @@ pub struct FilterBlock {
 
 impl FilterBlock {
     pub async fn read(
-        file: &mut File,
+        file: &mut LocalFile,
         footer: &Footer,
         block_handle: &BlockHandle,
     ) -> Result<Self> {

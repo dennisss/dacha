@@ -1,7 +1,6 @@
-use common::async_std::fs;
-use common::async_std::path::{Path, PathBuf};
 use common::errors::*;
 use common::failure::ResultExt;
+use file::LocalPath;
 use protobuf::DescriptorPool;
 use protobuf::{text::*, Message};
 
@@ -37,7 +36,7 @@ impl BuildTarget for ProtoData {
     }
 
     async fn build(&self, context: &BuildTargetContext) -> Result<BuildTargetOutputs> {
-        let mut data = fs::read_to_string(context.package_dir.join(self.attrs.src())).await?;
+        let mut data = file::read_to_string(context.package_dir.join(self.attrs.src())).await?;
 
         let mut file = TextMessageFile::parse(&data)
             .with_context(|e| format_err!("While parsing {}: {}", self.attrs.src(), data))?;
@@ -62,13 +61,12 @@ impl BuildTarget for ProtoData {
         )
         .with_context(|e| format_err!("While merging file {}: {}", self.attrs.src(), e))?;
 
-        let mut output_filename = Path::new(self.attrs.src()).to_owned();
-        assert!(output_filename.set_extension("binaryproto"));
+        let mut output_filename = LocalPath::new(self.attrs.src()).to_owned();
+        output_filename.set_extension("binaryproto"); // TODO: assert wrap here.
 
-        let mut output_key = Path::new(&context.key.label.directory)
+        let mut output_key = LocalPath::new(&context.key.label.directory)
             .join(&output_filename)
-            .to_str()
-            .unwrap()
+            .as_str()
             .to_string();
 
         let mut output_path = context
@@ -77,9 +75,9 @@ impl BuildTarget for ProtoData {
             .join(&context.config_hash)
             .join(&output_key);
 
-        fs::create_dir_all(output_path.parent().unwrap()).await?;
+        file::create_dir_all(output_path.parent().unwrap()).await?;
 
-        fs::write(&output_path, &proto.serialize()?).await?;
+        file::write(&output_path, &proto.serialize()?).await?;
 
         let mut outputs = BuildTargetOutputs::default();
 

@@ -1,14 +1,47 @@
 extern crate common;
 extern crate net;
 
-use common::errors::*;
-use net::dns;
+use std::string::ToString;
+use std::time::Duration;
 
-// Port 53
+use common::errors::*;
+use common::io::{Readable, Writeable};
+use net::dns;
+use net::tcp::{TcpListener, TcpStream};
+
+async fn server() -> Result<()> {
+    let mut listener = TcpListener::bind("0.0.0.0:8000".parse()?).await?;
+
+    // TCP_NODELAY
+
+    // TODO: Add SO_REUSE
+
+    loop {
+        let mut stream = listener.accept().await?;
+        stream.set_nodelay(true)?;
+
+        println!("Got 1");
+
+        let mut request = [0u8; 1024];
+        let n = stream.read(&mut request).await?;
+
+        println!("Did read: {}", n);
+
+        stream
+            .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+            .await?;
+
+        // executor::timeout(Duration::from_secs(1)).await;
+    }
+
+    println!("Done!");
+
+    Ok(())
+}
 
 async fn run() -> Result<()> {
     let ip = net::netlink::local_ip()?;
-    println!("My local ip: {:?}", ip.to_string());
+    // println!("My local ip: {:?}", ip.to_string());
 
     // let ifaces = net::netlink::read_interfaces().await?;
     // println!("{:#?}", ifaces);
@@ -59,5 +92,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    common::async_std::task::block_on(run())
+    executor::run(server())?
 }

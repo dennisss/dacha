@@ -8,3 +8,7 @@ pub async fn yield_now() -> Result<()> {
     let _ = op.wait().await?;
     Ok(())
 }
+
+pub(crate) async fn wake_polling_loop() {
+    ExecutorOperation::submit(IoUringOp::Noop).await.unwrap();
+}

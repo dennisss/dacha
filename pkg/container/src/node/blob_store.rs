@@ -5,16 +5,12 @@ use std::{
 };
 
 use builder::proto::bundle::{BlobFormat, BlobSpec};
-use common::async_std::fs;
-use common::async_std::fs::{File, OpenOptions};
-use common::async_std::path::Path;
-use common::async_std::path::PathBuf;
-use common::async_std::prelude::*;
-use common::async_std::sync::Mutex;
-use common::async_std::task;
 use common::errors::*;
+use common::io::{Readable, Writeable};
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
+use executor::sync::Mutex;
+use file::{LocalFile, LocalFileOpenOptions, LocalPathBuf};
 use sstable::EmbeddedDB;
 
 use crate::node::workers_table::*;
@@ -68,7 +64,7 @@ struct Shared {
     ///
     /// TODO: Consider acquiring a lock to this directory through the FS (or
     /// having some way to see if there are any locks to parent directories).
-    dir: PathBuf,
+    dir: LocalPathBuf,
 
     /// Local database used for storing blob metadata.
     db: Arc<EmbeddedDB>,
@@ -100,7 +96,7 @@ struct BlobEntry {
 impl BlobStore {
     /// NOTE: It is unsafe to create mutliple BlobStore instances with the same
     /// 'db' or 'dir' as they will overwrite each other's data.
-    pub async fn create(dir: PathBuf, db: Arc<EmbeddedDB>) -> Result<Self> {
+    pub async fn create(dir: LocalPathBuf, db: Arc<EmbeddedDB>) -> Result<Self> {
         let blobs = get_blob_specs(db.as_ref())
             .await?
             .into_iter()
@@ -197,18 +193,19 @@ impl BlobStore {
         // If the directory already exists, then likely a previous attempt to upload
         // failed, so we'll just retry.
         let blob_dir = self.shared.dir.join(blob_id);
-        if !blob_dir.exists().await {
-            fs::create_dir_all(&blob_dir).await?;
+        if !file::exists(&blob_dir).await? {
+            file::create_dir_all(&blob_dir).await?;
         }
 
         let mut raw_file_path = lease.raw_path();
 
-        let mut raw_file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&raw_file_path)
-            .await?;
+        let mut raw_file = LocalFile::open_with_options(
+            &raw_file_path,
+            &LocalFileOpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true),
+        )?;
 
         let mut hasher = crypto::sha256::SHA256Hasher::default();
 
@@ -281,7 +278,7 @@ impl BlobStore {
         response.send(first_part).await?;
 
         let raw_file_path = lease.raw_path();
-        let mut raw_file = fs::File::open(raw_file_path).await?;
+        let mut raw_file = LocalFile::open(&raw_file_path)?;
 
         let mut offset = 0;
         while offset < lease.spec().size() {
@@ -336,7 +333,7 @@ impl BlobStore {
 
         // TODO: In case we crash before this finishes, perform cleanup of non-existent
         // blobs on start up.
-        fs::remove_dir_all(self.shared.dir.join(blob_id)).await?;
+        file::remove_dir_all(self.shared.dir.join(blob_id)).await?;
 
         drop(lease);
 
@@ -359,7 +356,7 @@ impl Drop for BlobLease {
     fn drop(&mut self) {
         let shared = self.shared.clone();
         let blob_id = self.spec.id().to_string();
-        task::spawn(async move {
+        executor::spawn(async move {
             let mut state = shared.state.lock().await;
             let entry = state.blobs.get_mut(&blob_id).unwrap();
             entry.ref_count -= 1;
@@ -377,11 +374,11 @@ impl BlobLease {
         &self.spec
     }
 
-    pub fn raw_path(&self) -> PathBuf {
+    pub fn raw_path(&self) -> LocalPathBuf {
         self.shared.dir.join(self.spec.id()).join("raw")
     }
 
-    pub fn extracted_dir(&self) -> PathBuf {
+    pub fn extracted_dir(&self) -> LocalPathBuf {
         self.shared.dir.join(self.spec.id()).join("extracted")
     }
 }
@@ -390,7 +387,7 @@ pub struct BlobWriter {
     /// NOTE: We assume that we acquired an exclusive lock.
     lease: BlobLease,
 
-    raw_file: File,
+    raw_file: LocalFile,
 
     hasher: SHA256Hasher,
 
@@ -436,22 +433,18 @@ impl BlobWriter {
             BlobFormat::TAR_ARCHIVE => {
                 // TODO: Consider deferring extraction untul we actually need to use it.
                 let extracted_dir = self.lease.extracted_dir();
-                if !extracted_dir.exists().await {
-                    common::async_std::fs::create_dir(&extracted_dir).await?;
+                if !file::exists(&extracted_dir).await? {
+                    file::create_dir(&extracted_dir).await?;
 
-                    let mut perms = extracted_dir.metadata().await?.permissions();
+                    let mut perms = file::metadata(&extracted_dir).await?.permissions();
                     perms.set_mode(0o755);
-                    common::async_std::fs::set_permissions(&extracted_dir, perms).await?;
+                    file::set_permissions(&extracted_dir, perms).await?;
                 }
 
                 let mut archive_reader =
                     compression::tar::Reader::open(self.lease.raw_path()).await?;
                 archive_reader
-                    .extract_files_with_modes(
-                        extracted_dir.as_path().into(),
-                        Some(0o644),
-                        Some(0o755),
-                    )
+                    .extract_files_with_modes(&extracted_dir, Some(0o644), Some(0o755))
                     .await?;
             }
         }

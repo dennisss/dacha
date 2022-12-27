@@ -12,6 +12,8 @@ extern crate protobuf;
 extern crate macros;
 extern crate rpc;
 extern crate web;
+#[macro_use]
+extern crate file;
 
 pub mod proto;
 pub mod viewer;
@@ -21,13 +23,11 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use common::async_std::task;
-use common::bundle::TaskResultBundle;
 use common::errors::*;
 use crypto::random::RngExt;
-use parsing::{ascii::AsciiString, parse_next};
-
 use datastore::key_encoding::KeyEncoder;
+use executor::bundle::TaskResultBundle;
+use parsing::{ascii::AsciiString, parse_next};
 use sstable::{db::SnapshotIterator, iterable::Iterable, EmbeddedDB, EmbeddedDBOptions};
 
 use crate::proto::data::*;
@@ -174,7 +174,6 @@ impl MetricValueIterator {
     }
 }
 
-
 #[derive(Clone)]
 struct MetricServiceImpl {
     metric_store: Arc<MetricStore>,
@@ -251,14 +250,14 @@ async fn collect_random_metric_inner(metric_store: Arc<MetricStore>) -> Result<(
 
         println!("Recorded {} @ {}", y, timestamp);
 
-        task::sleep(Duration::from_secs(1)).await;
+        executor::sleep(Duration::from_secs(1)).await;
     }
 }
 
 pub async fn run() -> Result<()> {
     let store = Arc::new(MetricStore::open("/tmp/metricstore").await?);
 
-    task::spawn(collect_random(store.clone()));
+    executor::spawn(collect_random(store.clone()));
 
     let mut task_bundle = TaskResultBundle::new();
 

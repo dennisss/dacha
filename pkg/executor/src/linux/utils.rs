@@ -9,7 +9,7 @@ use crate::oneshot;
 
 use super::thread_local::CurrentExecutorContext;
 
-pub fn run<F: Future<Output = T> + Send + 'static, T: Send + 'static>(future: F) -> Result<T> {
+pub fn run<F: Future>(future: F) -> Result<F::Output> {
     let exec = Executor::create()?;
     exec.run(future)
 }

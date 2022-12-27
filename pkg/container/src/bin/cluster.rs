@@ -35,6 +35,8 @@ Testing with a single node cluster:
 extern crate common;
 #[macro_use]
 extern crate macros;
+#[macro_use]
+extern crate file;
 
 // TODO: Given this is only used for bootstrapping, consider refactoring out
 // this dependency.
@@ -47,19 +49,16 @@ use std::time::{Duration, SystemTime};
 use std::{collections::HashSet, sync::Arc};
 
 use builder::proto::bundle::{BlobFormat, BundleSpec};
-use common::async_std::fs;
-use common::async_std::io::ReadExt;
-use common::async_std::task;
-use common::async_std::task::JoinHandle;
 use common::errors::*;
 use common::failure::ResultExt;
 use common::futures::AsyncWriteExt;
-use common::task::ChildTask;
 use container::manager::Manager;
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
 use crypto::sip::SipHasher;
 use datastore::meta::client::MetastoreClientInterface;
+use executor::child_task::ChildTask;
+use executor::JoinHandle;
 use nix::{
     sys::termios::{tcgetattr, tcsetattr, ControlFlags, InputFlags, LocalFlags, OutputFlags},
     unistd::isatty,
@@ -279,9 +278,10 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
     println!("Zone: {}", node_meta.zone());
 
     // TODO: Much simpler to just have a top-level one
-    let mut task_bundle = common::bundle::TaskResultBundle::new();
+    let mut task_bundle = executor::bundle::TaskResultBundle::new();
 
-    let (metastore_sender, metastore_receiver) = common::async_std::channel::bounded(1);
+    // TODO: Use a one-shot channel?
+    let (metastore_sender, metastore_receiver) = executor::channel::bounded(1);
 
     let zone = node_meta.zone().to_string();
     let metastore_task = ChildTask::spawn(async move {
@@ -303,7 +303,7 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
 
 async fn run_local_metastore(port: u16, zone: String) -> Result<()> {
     // TODO: Implement completely in memory.
-    let local_metastore_dir = common::temp::TempDir::create()?;
+    let local_metastore_dir = file::temp::TempDir::create()?;
 
     // TODO: Debuplicate with the job creation code.
     let mut route_label = raft::proto::routing::RouteLabel::default();
@@ -314,7 +314,7 @@ async fn run_local_metastore(port: u16, zone: String) -> Result<()> {
     ));
 
     datastore::meta::store::run(&datastore::meta::store::MetastoreConfig {
-        dir: local_metastore_dir.path().into(),
+        dir: local_metastore_dir.path().to_owned(),
         init_port: 0,
         bootstrap: true,
         service_port: port,
@@ -359,7 +359,7 @@ async fn run_bootstrap_inner(
             break;
         }
 
-        common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
+        executor::sleep(std::time::Duration::from_secs(1)).await;
     }
     println!("=> Done!");
 
@@ -394,7 +394,7 @@ async fn run_bootstrap_inner(
             break;
         }
 
-        common::async_std::task::sleep(Duration::from_secs(4)).await;
+        executor::sleep(Duration::from_secs(4)).await;
     }
     println!("=> Done");
 
@@ -414,13 +414,13 @@ async fn run_bootstrap_inner(
                 // if let Some(status) = e.downcast_ref::<rpc::Status>() {
                 //     // Requests may fail if trying to contact the currently stopping server.
                 //     if status.code() == rpc::StatusCode::Unavailable {
-                //         common::async_std::task::sleep(Duration::from_secs(4)).await;
+                //         executor::sleep(Duration::from_secs(4)).await;
                 //         continue;
                 //     }
                 // }
 
                 eprintln!("- Failure connecting to metastore: {}", e);
-                common::async_std::task::sleep(Duration::from_secs(4)).await;
+                executor::sleep(Duration::from_secs(4)).await?;
                 continue;
             }
         };
@@ -432,7 +432,7 @@ async fn run_bootstrap_inner(
                 .find(|id| **id == local_server_id)
                 .is_some()
         {
-            common::async_std::task::sleep(Duration::from_secs(4)).await;
+            executor::sleep(Duration::from_secs(4)).await?;
             continue;
         } else {
             break;
@@ -481,7 +481,7 @@ async fn run_upgrade(cmd: UpgradeCommand) -> Result<()> {
 
 async fn get_metastore_job(zone: &str) -> Result<JobSpec> {
     let mut meta_job_spec = JobSpec::parse_text(
-        &fs::read_to_string(project_path!("pkg/container/config/metastore.job")).await?,
+        &file::read_to_string(project_path!("pkg/container/config/metastore.job")).await?,
     )?;
 
     meta_job_spec.worker_mut().add_args(format!(
@@ -495,7 +495,7 @@ async fn get_metastore_job(zone: &str) -> Result<JobSpec> {
 
 async fn get_manager_job() -> Result<JobSpec> {
     JobSpec::parse_text(
-        &fs::read_to_string(project_path!("pkg/container/config/manager.job")).await?,
+        &file::read_to_string(project_path!("pkg/container/config/manager.job")).await?,
     )
 }
 
@@ -637,7 +637,7 @@ async fn run_start_worker(cmd: StartWorkerCommand) -> Result<()> {
 
     let mut worker_spec = WorkerSpec::default();
     {
-        let data = fs::read_to_string(&cmd.worker_spec_path).await?;
+        let data = file::read_to_string(&cmd.worker_spec_path).await?;
         protobuf::text::parse_text_proto(&data, &mut worker_spec)
             .with_context(|e| format!("While reading {}: {}", cmd.worker_spec_path, e))?;
     }
@@ -654,7 +654,7 @@ async fn run_start_worker(cmd: StartWorkerCommand) -> Result<()> {
     // is stopped before we try getting the new logs.
     //
     // Instead we should look up the worker
-    common::async_std::task::sleep(std::time::Duration::from_secs(1)).await;
+    executor::sleep(std::time::Duration::from_secs(1)).await;
 
     let mut log_request = container::LogRequest::default();
     log_request.set_worker_name(worker_spec.name());
@@ -675,7 +675,7 @@ async fn run_start_worker(cmd: StartWorkerCommand) -> Result<()> {
     // TODO: Currently this seems to never unblock once the connection has been
     // closed.
 
-    let mut stdout = common::async_std::io::stdout();
+    let mut stdout = file::Stdout::get();
     while let Some(entry) = log_stream.recv().await {
         // TODO: If we are not in terminal mode, restrict ourselves to only writing out
         // characters that are in the ASCII visible range (so that we can't
@@ -703,7 +703,7 @@ async fn run_start_job(cmd: StartJobCommand) -> Result<()> {
 
     let manager_stub = connect_to_manager(meta_client.clone()).await?;
 
-    let job_spec = JobSpec::parse_text(&fs::read_to_string(cmd.job_spec_path).await?)?;
+    let job_spec = JobSpec::parse_text(&file::read_to_string(cmd.job_spec_path).await?)?;
 
     let request_context = rpc::ClientRequestContext::default();
 
@@ -903,9 +903,9 @@ async fn build_worker_blobs(worker_spec: &mut WorkerSpec) -> Result<Vec<containe
                     .find(|(r, _)| r.ends_with("/spec.textproto"))
                     .ok_or_else(|| err_msg("Failed to find bundle descriptor"))?;
 
-                let text = fs::read_to_string(&output_file.location).await?;
+                let text = file::read_to_string(&output_file.location).await?;
                 let spec = BundleSpec::parse_text(&text)?;
-                let dir = output_file.location.parent().unwrap().to_path_buf();
+                let dir = output_file.location.parent().unwrap().to_owned();
 
                 (dir, spec)
             };
@@ -916,7 +916,7 @@ async fn build_worker_blobs(worker_spec: &mut WorkerSpec) -> Result<Vec<containe
                 let mut blob_data = container::BlobData::default();
                 blob_data.set_spec(variant.blob().clone());
 
-                let data = fs::read(bundle_dir.join(variant.blob().id())).await?;
+                let data = file::read(bundle_dir.join(variant.blob().id())).await?;
                 blob_data.set_data(data);
 
                 out.push(blob_data);
@@ -967,7 +967,7 @@ async fn start_terminal_input_task(
     // TODO: When we create the tty on the server, do we need to explicitly enable
     // all of the above flags.
 
-    Ok(task::spawn(async move {
+    Ok(executor::spawn(async move {
         let mut stdin = common::async_std::io::stdin();
 
         loop {
@@ -1127,5 +1127,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

@@ -7,15 +7,16 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::async_std::channel;
-use common::async_std::net::{TcpListener, TcpStream};
-use common::async_std::sync::Mutex;
-use common::async_std::task;
 use common::errors::*;
 use common::futures::stream::StreamExt;
 use common::io::*;
-use common::CancellationToken;
+use executor::cancellation::CancellationToken;
+use executor::channel;
+use executor::sync::Mutex;
+use executor::JoinHandle;
 use net::ip::IPAddress;
+use net::tcp::TcpListener;
+use net::tcp::TcpStream;
 
 use crate::alpn::*;
 use crate::message::*;
@@ -82,7 +83,7 @@ pub struct Server {
 
     shutdown_token: Option<Box<dyn CancellationToken>>,
 
-    shutdown_timer: Option<task::JoinHandle<()>>,
+    shutdown_timer: Option<JoinHandle<()>>,
 }
 
 struct ServerShared {
@@ -115,7 +116,7 @@ struct ServerConnectionPool {
 
 struct ServerConnection {
     /// Handle to the main task that is serving this connection
-    task_handle: task::JoinHandle<()>,
+    task_handle: JoinHandle<()>,
 
     mode: ServerConnectionMode,
 }
@@ -142,7 +143,7 @@ impl Drop for Server {
             let shared = self.shared.clone();
             // TODO: If all connections die earlier than this timeout, then we should
             // support cleaning up this timeout.
-            task::spawn(Self::run_shutdown_timer(shared));
+            executor::spawn(Self::run_shutdown_timer(shared));
         }
     }
 }
@@ -203,13 +204,13 @@ impl Server {
 
         if graceful && !self.shutdown_timer.is_some() {
             let shared = self.shared.clone();
-            self.shutdown_timer = Some(task::spawn(Self::run_shutdown_timer(shared)));
+            self.shutdown_timer = Some(executor::spawn(Self::run_shutdown_timer(shared)));
         }
     }
 
     /// TODO: Use a weak pointer?
     async fn run_shutdown_timer(shared: Arc<ServerShared>) {
-        common::wait_for(shared.options.graceful_shutdown_timeout).await;
+        executor::sleep(shared.options.graceful_shutdown_timeout).await;
         Self::shutdown_impl(&shared, false).await;
     }
 
@@ -253,37 +254,34 @@ impl Server {
     /// the server is shut down.
     pub async fn run(mut self, port: u16) -> Result<()> {
         enum Event {
-            NextStream(Option<Result<TcpStream>>),
+            NextStream(Result<TcpStream>),
             Shutdown,
         }
 
         // Bind all all interfaces.
         // TODO: Have an explicit keep-alive period at the TCP level and also eventualyl
         // close the connection.
-        let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
+        let mut listener = TcpListener::bind(format!("0.0.0.0:{}", port).parse()?).await?;
 
-        let mut incoming = listener.incoming();
         loop {
-            let next_stream = common::future::map(
-                incoming.next(),
-                |v: Option<std::result::Result<TcpStream, std::io::Error>>| {
-                    Event::NextStream(v.map(|r| r.map_err(|e| Error::from(e))))
-                },
-            );
+            let next_stream =
+                executor::future::map(Box::pin(listener.accept()), |v: Result<TcpStream>| {
+                    Event::NextStream(v)
+                });
 
             let event = {
                 if let Some(shutdown_token) = &self.shutdown_token {
                     let shutdown_event =
-                        common::future::map(shutdown_token.wait(), |_| Event::Shutdown);
+                        executor::future::map(shutdown_token.wait(), |_| Event::Shutdown);
 
-                    common::future::race(next_stream, shutdown_event).await
+                    executor::future::race(next_stream, shutdown_event).await
                 } else {
                     next_stream.await
                 }
             };
 
             match event {
-                Event::NextStream(Some(stream)) => {
+                Event::NextStream(stream) => {
                     let s = stream?;
 
                     let mut connection_pool = self.shared.connection_pool.lock().await;
@@ -294,7 +292,7 @@ impl Server {
                     connection_pool.last_id = connection_id;
 
                     let task_handle =
-                        task::spawn(Self::handle_stream(self.shared.clone(), connection_id, s));
+                        executor::spawn(Self::handle_stream(self.shared.clone(), connection_id, s));
 
                     connection_pool.connections.insert(
                         connection_id,
@@ -303,9 +301,6 @@ impl Server {
                             mode: ServerConnectionMode::Unknown,
                         },
                     );
-                }
-                Event::NextStream(None) => {
-                    return Err(err_msg("Listener ended early"));
                 }
                 Event::Shutdown => {
                     self.shutdown(true).await;
@@ -316,7 +311,6 @@ impl Server {
 
         // TODO: Verify that when we stop accepting connections, any active connections
         // stay active.
-        drop(incoming);
         drop(listener);
 
         // Wait for all connections to die.
@@ -393,23 +387,22 @@ impl Server {
         connection_id: ServerConnectionId,
         stream: TcpStream,
     ) -> Result<()> {
-        let raw_peer_addr = stream.peer_addr()?;
+        let raw_peer_addr = stream.peer_addr();
 
         let mut connection_context = ServerConnectionContext {
             id: connection_id,
-            peer_addr: raw_peer_addr.ip().into(),
+            peer_addr: raw_peer_addr.ip().clone(),
             peer_port: raw_peer_addr.port(),
             tls: None,
         };
 
-        let mut read_stream: Box<dyn Readable + Sync> = Box::new(stream.clone());
-        let mut write_stream: Box<dyn Writeable> = Box::new(stream);
+        let (mut read_stream, mut write_stream) = stream.split();
 
         let mut negotatied_http11 = false;
         let mut negotiated_http2 = false;
         if let Some(tls_options) = &shared.options.tls {
             // NOTE: If the client is sending invalid TLS packets, this will timeout.
-            let app = common::async_std::future::timeout(
+            let app = executor::timeout(
                 Duration::from_secs(2),
                 crypto::tls::Server::connect(read_stream, write_stream, tls_options),
             )

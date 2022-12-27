@@ -9,6 +9,10 @@ extern crate crypto;
 extern crate protobuf;
 #[macro_use]
 extern crate parsing;
+#[macro_use]
+extern crate file;
+#[macro_use]
+extern crate macros;
 
 pub mod buffer_queue;
 pub mod deflate;

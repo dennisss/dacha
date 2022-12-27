@@ -5,8 +5,8 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use common::async_std::fs::File;
 use common::errors::*;
+use file::LocalFile;
 use parsing::*;
 use protobuf::wire::{parse_varint, serialize_varint};
 
@@ -36,7 +36,11 @@ pub struct DataBlock {
 impl DataBlock {
     /// TODO: For the index, we don't need the Arc as we will immediately cast
     /// to a different format.
-    pub async fn read(file: &mut File, footer: &Footer, handle: &BlockHandle) -> Result<Arc<Self>> {
+    pub async fn read(
+        file: &mut LocalFile,
+        footer: &Footer,
+        handle: &BlockHandle,
+    ) -> Result<Arc<Self>> {
         let raw = RawBlock::read(file, footer, handle).await?;
         let data = raw.decompress()?;
         let block = Self::parse(data)?;

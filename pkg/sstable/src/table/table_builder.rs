@@ -1,16 +1,15 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use common::async_std::fs::OpenOptions;
-use common::async_std::io::prelude::WriteExt;
-use common::async_std::path::Path;
 use common::errors::*;
-use common::fs::sync::{SyncedFile, SyncedPath};
+use common::io::Writeable;
 use compression::snappy::snappy_compress;
 use compression::transform::transform_to_vec;
 use compression::zlib::ZlibEncoder;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
+use file::sync::{SyncedFile, SyncedPath};
+use file::{LocalFile, LocalFileOpenOptions, LocalPath};
 
 use crate::table::block_handle::BlockHandle;
 use crate::table::comparator::*;
@@ -117,15 +116,18 @@ pub struct SSTableBuilder {
 }
 
 impl SSTableBuilder {
-    pub async fn open<P: AsRef<Path>>(path: P, options: SSTableBuilderOptions) -> Result<Self> {
-        Self::open_with(SyncedPath::from(path.as_ref())?, options).await
+    pub async fn open<P: AsRef<LocalPath>>(
+        path: P,
+        options: SSTableBuilderOptions,
+    ) -> Result<Self> {
+        Self::open_with(SyncedPath::from(path.as_ref()).await?, options).await
     }
 
     pub async fn open_with(path: SyncedPath, options: SSTableBuilderOptions) -> Result<Self> {
         // NOTE: We will panic if we are overwriting an existing table. This
         // should never
         let file = path
-            .open(OpenOptions::new().write(true).create_new(true))
+            .open(LocalFileOpenOptions::new().write(true).create_new(true))
             .await?;
 
         let filter_block_builder = if let Some(policy) = options.filter_policy.clone() {

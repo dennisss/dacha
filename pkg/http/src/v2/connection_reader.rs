@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use common::io::Readable;
-use common::task::ChildTask;
+use executor::child_task::ChildTask;
 
 use crate::hpack;
 use crate::proto::v2::*;
