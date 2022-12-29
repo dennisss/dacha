@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::thread::Thread;
 
 use common::errors::*;
 
@@ -32,7 +33,8 @@ impl Task {
         Executor::wake_task_entry(&self.entry, false);
     }
 
-    // TODO: Disallow self cancelation.
+    // TODO: Disallow self cancelation (mainly because a JoinHandle would never
+    // POll::ready() in this case).
     pub(super) fn cancel(&self) {
         Executor::wake_task_entry(&self.entry, true);
     }
@@ -50,6 +52,25 @@ pub(super) struct TaskEntry {
     pub executor_shared: Arc<ExecutorShared>,
 }
 
+impl TaskEntry {
+    /// Parks the calling thread until this task is woken up again.
+    pub fn park_on_current_thread(&self) {
+        loop {
+            {
+                let mut state = self.state.lock().unwrap();
+                if state.dirty {
+                    state.dirty = false;
+                    return;
+                }
+
+                state.parked_thread = Some(std::thread::current());
+            }
+
+            std::thread::park();
+        }
+    }
+}
+
 pub(super) struct TaskState {
     /// Whether or not this task is scheduled to run on some thread (or is
     /// currently running on some thread).
@@ -61,12 +82,19 @@ pub(super) struct TaskState {
     /// multiple threads at the same time.
     pub scheduled: bool,
 
-    /// If true, this task is running on the main thread and shouldn't be
-    /// scheduled to run on the worker thread pool.
+    /// Reference to a dedicated thread running just this task.
     ///
-    /// Note that for main thread futures, the 'future' field is always None and
-    /// the actual future is owned by the main thread.
-    pub on_main_thread: bool,
+    /// When set, this thread is assumed to be currently parked and needs to be
+    /// unparked whenever the task needs to be woken up to continue running
+    /// the task.
+    ///
+    /// This field effectively allows a thread to continously keep 'scheduled'
+    /// set to true and use blocking to wait for a future. This mainly has the
+    /// following usecases:
+    /// - Allows the root future to execute in the main application thread.
+    /// - Allows waiting on events in the Drop method of operations in the rare
+    ///   case that some cleanup is required to proceed with a task.
+    pub parked_thread: Option<Thread>,
 
     /// Main future for this task. This is taken by the thread running the
     /// task.

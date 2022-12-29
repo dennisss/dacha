@@ -15,7 +15,7 @@ fn on_stop(mac_handle: &MachineHandle) {}
 pub async fn run(dir: Directory, port: u16, folder: &str) -> Result<()> {
     println!("Store folder: {}", folder);
 
-    let machine = StoreMachine::load(&dir, port, folder)?;
+    let machine = StoreMachine::load(&dir, port, folder).await?;
     println!("Starting Haystore Id #{}", machine.id());
 
     let mac_ctx = MachineContext::from(machine, dir).await;

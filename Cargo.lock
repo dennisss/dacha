@@ -65,6 +65,7 @@ dependencies = [
  "common",
  "file",
  "parsing",
+ "radix",
 ]
 
 [[package]]
@@ -256,6 +257,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
 
 [[package]]
+name = "base_error"
+version = "0.0.0"
+dependencies = [
+ "failure",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.56.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -356,6 +364,7 @@ dependencies = [
  "macros",
  "protobuf",
  "protobuf_compiler",
+ "radix",
  "skylark",
  "sys",
 ]
@@ -504,15 +513,16 @@ dependencies = [
  "async-std",
  "async-trait",
  "base64",
+ "base_error",
  "bytes 0.5.0",
  "chrono",
  "failure",
  "futures",
  "futures-util",
  "generic-array",
- "hex",
  "lazy_static",
  "libc",
+ "macros",
  "nix 0.21.0",
  "typenum",
 ]
@@ -643,6 +653,7 @@ dependencies = [
  "parsing",
  "perf",
  "pkix",
+ "radix",
  "typenum",
 ]
 
@@ -1079,12 +1090,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hex"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
-
-[[package]]
 name = "home_hub"
 version = "0.1.0"
 dependencies = [
@@ -1424,6 +1429,7 @@ dependencies = [
  "crypto",
  "executor",
  "libc",
+ "macros",
  "nix 0.21.0",
  "parsing",
  "parsing_compiler",
@@ -1672,6 +1678,7 @@ dependencies = [
  "google",
  "parsing",
  "protobuf",
+ "radix",
  "sys",
 ]
 
@@ -2207,6 +2214,7 @@ dependencies = [
  "math",
  "parsing",
  "protobuf",
+ "radix",
  "reflection",
 ]
 

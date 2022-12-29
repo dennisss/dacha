@@ -66,8 +66,6 @@ pub(super) struct ExecutorShared {
     /// framework.
     pub(super) io_uring: ExecutorIoUring,
 
-    main_thread_condvar: Condvar,
-
     /// List of tasks which need to be polled next.
     pending_queue: Mutex<VecDeque<TaskId>>,
 
@@ -85,7 +83,6 @@ impl Executor {
 
             io_uring: ExecutorIoUring::create()?,
 
-            main_thread_condvar: Condvar::new(),
             pending_queue: Mutex::new(VecDeque::new()),
             pending_queue_condvar: Condvar::new(),
         });
@@ -133,10 +130,10 @@ impl Executor {
                 id: task_id,
                 state: Mutex::new(TaskState {
                     scheduled: true, // Always running on main thread.
-                    on_main_thread: true,
                     future: None,
                     dirty: false,
                     cancelled: false,
+                    parked_thread: None,
                 }),
                 executor_shared: shared.clone(),
             });
@@ -163,15 +160,7 @@ impl Executor {
                         break;
                     }
                     Poll::Pending => {
-                        let mut state = task_entry.state.lock().unwrap();
-                        loop {
-                            if state.dirty {
-                                state.dirty = false;
-                                break;
-                            }
-
-                            state = shared.main_thread_condvar.wait(state).unwrap();
-                        }
+                        task_entry.park_on_current_thread();
                     }
                 }
             }
@@ -249,11 +238,16 @@ impl Executor {
 
         // Also schedule tasks which aren't already running.
         if task_state.scheduled {
+            if task_state.dirty {
+                return;
+            }
+
             task_state.dirty = true;
 
-            if task_state.on_main_thread {
-                task_entry.executor_shared.main_thread_condvar.notify_all();
+            if let Some(thread) = task_state.parked_thread.take() {
+                thread.unpark();
             }
+
             return;
         }
 
@@ -289,10 +283,10 @@ impl Executor {
             id: task_id,
             state: Mutex::new(TaskState {
                 scheduled: true, // We immediately push it onto the pending_queue.
-                on_main_thread: false,
                 future: Some(future),
                 dirty: false,
                 cancelled: false,
+                parked_thread: None,
             }),
             executor_shared: shared.clone(),
         });

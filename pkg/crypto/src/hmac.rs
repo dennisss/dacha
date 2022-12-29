@@ -74,7 +74,6 @@ mod tests {
     use crate::sha1::SHA1Hasher;
     use crate::sha256::SHA256Hasher;
     use common::errors::*;
-    use common::hex;
 
     #[test]
     fn hmac_test() {
@@ -116,9 +115,9 @@ mod tests {
             let key_length = response.fields["KLEN"].parse::<usize>()?;
             let mac_length = response.fields["TLEN"].parse::<usize>()?;
 
-            let key = hex::decode(response.fields.get("KEY").unwrap())?;
-            let message = hex::decode(response.fields.get("MSG").unwrap())?;
-            let mac = hex::decode(response.fields.get("MAC").unwrap())?;
+            let key = radix::hex_decode(response.fields.get("KEY").unwrap())?;
+            let message = radix::hex_decode(response.fields.get("MSG").unwrap())?;
+            let mac = radix::hex_decode(response.fields.get("MAC").unwrap())?;
 
             let hasher_factory = match hash_length {
                 20 => crate::sha1::SHA1Hasher::factory(),

@@ -17,6 +17,7 @@ use syn::Result;
 use syn::{Item, ItemImpl};
 
 mod args;
+mod error;
 mod hex;
 mod param;
 mod race;
@@ -155,4 +156,9 @@ pub fn hex(input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn testcase(attr: TokenStream, item: TokenStream) -> TokenStream {
     testcase::testcase(attr, item)
+}
+
+#[proc_macro_attribute]
+pub fn error(attr: TokenStream, item: TokenStream) -> TokenStream {
+    error::error(attr, item)
 }

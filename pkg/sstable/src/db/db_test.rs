@@ -447,7 +447,7 @@ async fn embedded_db_leveldb_compatibility_empty_test() -> Result<()> {
 
 #[testcase]
 async fn embedded_db_leveldb_compatibility_food_test() -> Result<()> {
-    let entries = read_to_vec("testdata/sstable/leveldb-food").await?;
+    let entries = read_to_vec("testdata/sstable/leveldb-food").await.unwrap();
 
     let expected: &'static [&'static [u8]] = &[
         b"apples",

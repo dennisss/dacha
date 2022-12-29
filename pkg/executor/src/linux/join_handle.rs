@@ -1,7 +1,8 @@
 use core::future::Future;
 use std::sync::{Arc, Mutex};
 
-use crate::{oneshot, Task};
+use crate::channel::oneshot;
+use crate::Task;
 
 // TODO: If any future is polled, we may need to change any old task id
 // associated with it.

@@ -9,6 +9,7 @@ use crate::file::OpenFileDescriptor;
 use crate::iov::{IoSlice, IoSliceMut, RWFlags};
 use crate::mapped_memory::MappedMemory;
 use crate::socket::{SocketAddressAndLength, SocketFlags};
+use crate::utils::retry_interruptions;
 use crate::{
     bindings, c_int, c_size_t, c_uint, c_void, kernel, Errno, MessageHeader, MessageHeaderMut,
     SocketAddr,
@@ -156,7 +157,6 @@ impl IoSubmissionUring {
         let mut entry = bindings::io_uring_sqe::default();
 
         let mut timespec = None;
-        let mut sockaddr_data = None;
 
         match op {
             IoUringOp::Invalid => {
@@ -209,11 +209,9 @@ impl IoSubmissionUring {
                 entry.opcode = kernel::io_uring_op::IORING_OP_CONNECT as u8;
                 entry.fd = fd;
 
-                let s = sockaddr_data.insert(sockaddr);
-
                 // TODO: Check that the kernel copies this during prepare.
-                entry.addr = unsafe { core::mem::transmute(&s) };
-                entry.off = s.len().unwrap() as u64;
+                entry.addr = unsafe { core::mem::transmute(sockaddr) };
+                entry.off = sockaddr.len().unwrap() as u64;
             }
             IoUringOp::Timeout { duration } => {
                 entry.opcode = kernel::io_uring_op::IORING_OP_TIMEOUT as u8;
@@ -239,6 +237,10 @@ impl IoSubmissionUring {
                 header.reset();
                 entry.addr = unsafe { core::mem::transmute(header) };
             }
+            IoUringOp::Cancel { user_data } => {
+                entry.opcode = kernel::io_uring_op::IORING_OP_ASYNC_CANCEL as u8;
+                entry.addr = user_data;
+            }
         }
 
         entry.user_data = user_data;
@@ -253,7 +255,10 @@ impl IoSubmissionUring {
         For waiting use IORING_ENTER_GETEVENTS?
         */
 
-        unsafe { io_uring_enter(&self.fd, 1, 0, IoUringEnterFlags::empty(), 0, None) }?;
+        // TODO: Retry EINTR
+        retry_interruptions(|| unsafe {
+            io_uring_enter(&self.fd, 1, 0, IoUringEnterFlags::empty(), 0, None)
+        })?;
 
         /*
         // TODO: Check this whenever we use enteR?
@@ -355,7 +360,7 @@ impl IoCompletionUring {
         // TODO: Indicate to the user if a EINTR error occurs (signal interrupted us
         // while waiting).
 
-        let res = unsafe {
+        let res = retry_interruptions(|| unsafe {
             io_uring_enter(
                 &self.fd,
                 0,
@@ -364,7 +369,7 @@ impl IoCompletionUring {
                 0,
                 timeout,
             )
-        };
+        });
 
         if let Err(e) = res {
             // EINTR: Interrupted by a signal
@@ -487,7 +492,7 @@ pub enum IoUringOp<'a, 'b> {
 
     Connect {
         fd: c_int,
-        sockaddr: SocketAddr,
+        sockaddr: &'a SocketAddr,
     },
 
     SendMessage {
@@ -504,6 +509,21 @@ pub enum IoUringOp<'a, 'b> {
     /// CLOCK_MONOTONIC.
     Timeout {
         duration: Duration,
+    },
+
+    /// Cancels a previously submitted operation.
+    ///
+    /// Note that if an operation is cancelled, it will still produce a
+    /// completion result (with error of ECANCEL).
+    ///
+    /// The cancel operation itself will produce one of the following results:
+    /// - Ok(()) : Successfully cancelled
+    /// - Err(ENOENT) : No request was found to cancel
+    /// - Err(EALREADY) : We attempted to cancel the request but may or may not
+    ///   have succeeded.
+    Cancel {
+        /// Data associated with the original request which we want to cancel.
+        user_data: u64,
     },
 
     // FSync,
@@ -527,19 +547,21 @@ impl<'a, 'b> IoUringOp<'a, 'b> {
             IoUringOp::SendMessage { .. } => None,
             IoUringOp::ReceiveMessage { .. } => None,
             IoUringOp::Invalid => Some(IoUringOp::Invalid),
-            IoUringOp::Connect { fd, sockaddr } => Some(IoUringOp::Connect {
-                fd: *fd,
-                sockaddr: sockaddr.clone(),
+            IoUringOp::Cancel { user_data } => Some(IoUringOp::Cancel {
+                user_data: *user_data,
             }),
+            IoUringOp::Connect { .. } => None,
         }
     }
 }
 
+#[derive(Debug)]
 pub struct IoUringCompletion {
     pub user_data: u64,
     pub result: IoUringResult,
 }
 
+#[derive(Debug)]
 pub struct IoUringResult {
     code: i32,
     flags: u32,
@@ -598,6 +620,10 @@ impl IoUringResult {
         }
 
         Ok(())
+    }
+
+    pub fn cancel_result(&self) -> Result<(), Errno> {
+        self.connect_result()
     }
 }
 

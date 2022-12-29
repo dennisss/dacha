@@ -156,7 +156,6 @@ impl<'a, 'b> std::iter::Iterator for DecoderIterator<'a, 'b> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::hex;
 
     #[test]
     fn hpack_decoder_example1() -> Result<()> {

@@ -71,7 +71,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
         profile.add_string_table(area.path.clone());
 
         if let Some(build_id) = memory_map.build_id(&area.path) {
-            let build_id = common::hex::encode(build_id);
+            let build_id = radix::hex_encode(build_id);
             mapping.set_build_id(profile.string_table_len() as i64);
             profile.add_string_table(build_id);
         }
@@ -114,7 +114,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
 
     attr.set_inherit(1);
 
-    // let child_task = common::async_std::task::spawn(task1());
+    // let child_task = executor::spawn(task1());
 
     let mut cpu = 0;
     unsafe {
@@ -297,7 +297,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
             break;
         }
 
-        common::async_std::task::sleep(Duration::from_millis(100)).await;
+        executor::sleep(Duration::from_millis(100)).await;
     }
 
     Ok(profile)

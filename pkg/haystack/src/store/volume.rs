@@ -5,10 +5,9 @@ use std::io::{Cursor, Read, Seek, Write};
 
 use common::block_size_remainder;
 use common::errors::*;
-use common::fs::allocate_soft::*;
 use crypto::checksum::crc::CRC32CHasher;
 use crypto::hasher::Hasher;
-use file::LocalPath;
+use file::{LocalPath, LocalPathBuf};
 
 use super::api::CookieBuf;
 use super::needle::*;
@@ -70,7 +69,7 @@ impl PhysicalVolume {
     /// Will error out if the volume already exists
     pub fn create(
         config: ConfigRef,
-        path: &Path,
+        path: &LocalPath,
         cluster_id: ClusterId,
         machine_id: MachineId,
         volume_id: VolumeId,
@@ -93,7 +92,7 @@ impl PhysicalVolume {
         };
 
         let idx_path = path.as_str().to_owned() + ".idx";
-        let idx = PhysicalVolumeIndex::create(&Path::new(&idx_path), &superblock)?;
+        let idx = PhysicalVolumeIndex::create(&LocalPath::new(&idx_path), &superblock)?;
 
         let preallocated = file.allocated_size()?;
 
@@ -140,7 +139,7 @@ impl PhysicalVolume {
             // TODO: In most cases of failures to read existing indexes, we can just toss it
             // out and regenerate a new one
 
-            let i = PhysicalVolumeIndex::open(&idx_path)?;
+            let i = PhysicalVolumeIndex::open(idx_path)?;
 
             if i.superblock.cluster_id != superblock.cluster_id
                 || i.superblock.machine_id != superblock.machine_id

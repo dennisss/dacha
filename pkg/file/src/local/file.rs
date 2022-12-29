@@ -1,15 +1,16 @@
 use std::os::unix::prelude::AsRawFd;
 
+use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::ffi::CString;
 
 use common::errors::*;
 use common::io::{Readable, Writeable};
-use executor::FileHandle;
-use sys::OpenFileDescriptor;
+use executor::{FileHandle, FromErrno, RemapErrno};
+use sys::{Errno, OpenFileDescriptor};
 
 use crate::local::path::LocalPath;
-use crate::{Metadata, Permissions};
+use crate::{FileError, LocalPathBuf, Metadata, Permissions};
 
 pub struct LocalFileOpenOptions {
     read: bool,
@@ -69,6 +70,7 @@ impl LocalFileOpenOptions {
 
 pub struct LocalFile {
     file: FileHandle,
+    path: LocalPathBuf,
 }
 
 impl LocalFile {
@@ -86,7 +88,7 @@ impl LocalFile {
     fn open_impl(path: &LocalPath, options: &LocalFileOpenOptions) -> Result<Self> {
         // TODO: Use an async open.
 
-        let path = CString::new(path.as_str())?;
+        let cpath = CString::new(path.as_str())?;
 
         let mut flags = sys::O_RDONLY | sys::O_CLOEXEC;
         if options.create || options.create_new {
@@ -105,12 +107,14 @@ impl LocalFile {
             flags |= sys::O_APPEND;
         }
 
-        let fd = sys::OpenFileDescriptor::new(unsafe {
-            sys::open(path.as_ptr(), flags, options.mode as u16)
-        }?);
+        let fd = sys::OpenFileDescriptor::new(
+            unsafe { sys::open(cpath.as_ptr(), flags, options.mode as u16) }
+                .remap_errno::<FileError>()?,
+        );
 
         Ok(Self {
             file: FileHandle::new(fd, true),
+            path: path.to_owned(),
         })
     }
 
@@ -120,29 +124,38 @@ impl LocalFile {
 
     pub async fn metadata(&self) -> Result<Metadata> {
         let mut stat = sys::bindings::stat::default();
-        unsafe { sys::fstat(self.as_raw_fd(), &mut stat) }?;
+        unsafe { sys::fstat(self.as_raw_fd(), &mut stat) }.remap_errno::<FileError>()?;
         Ok(Metadata { inner: stat })
     }
 
+    /// Will return Err(FileError::LockContention) if the file is already
+    /// locked.
     pub fn try_lock_exclusive(&self) -> Result<()> {
-        unsafe { sys::flock(self.as_raw_fd(), sys::LockOperation::LOCK_EX, true)? }
+        if let Err(e) = unsafe { sys::flock(self.as_raw_fd(), sys::LockOperation::LOCK_EX, true) } {
+            if e == Errno::EAGAIN {
+                return Err(FileError::LockContention.into());
+            }
+
+            return Err(FileError::from_errno(e).unwrap_or_else(|| e.into()));
+        }
+
         Ok(())
     }
 
     // TODO: Use an io_uring
     pub async fn sync_all(&self) -> Result<()> {
-        unsafe { sys::fsync(self.as_raw_fd())? }
+        unsafe { sys::fsync(self.as_raw_fd()).remap_errno::<FileError>()? }
         Ok(())
     }
 
     // TODO: Use an io_uring
     pub async fn sync_data(&self) -> Result<()> {
-        unsafe { sys::fdatasync(self.as_raw_fd())? }
+        unsafe { sys::fdatasync(self.as_raw_fd()).remap_errno::<FileError>()? }
         Ok(())
     }
 
     pub async fn set_len(&mut self, new_size: u64) -> Result<()> {
-        unsafe { sys::ftruncate(self.as_raw_fd(), new_size)? }
+        unsafe { sys::ftruncate(self.as_raw_fd(), new_size).remap_errno::<FileError>()? }
         Ok(())
     }
 
@@ -155,7 +168,7 @@ impl LocalFile {
     }
 
     pub async fn set_permissions(&mut self, perms: Permissions) -> Result<()> {
-        unsafe { sys::fchmod(self.as_raw_fd(), perms.mode)? }
+        unsafe { sys::fchmod(self.as_raw_fd(), perms.mode).remap_errno::<FileError>()? }
         Ok(())
     }
 }
@@ -165,6 +178,7 @@ impl std::convert::From<std::fs::File> for LocalFile {
         // TODO: Possibly not seekable?
         LocalFile {
             file: FileHandle::new(OpenFileDescriptor::new(f.as_raw_fd()), true),
+            path: LocalPathBuf::from("/nonexistent"),
         }
     }
 }
@@ -183,6 +197,6 @@ impl Writeable for LocalFile {
     }
 
     async fn flush(&mut self) -> Result<()> {
-        todo!()
+        Ok(())
     }
 }

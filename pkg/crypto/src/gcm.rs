@@ -424,7 +424,6 @@ impl GHasher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::hex;
 
     // TODO: Must test for partial encryption/decryption of plaintext that
     // doesn't fill an exact number of blocks.
@@ -520,18 +519,18 @@ mod tests {
 
                 let fail = response.fields.contains_key("FAIL");
 
-                let key = hex::decode(response.fields.get("KEY").unwrap())?;
-                let iv = hex::decode(response.fields.get("IV").unwrap())?;
+                let key = radix::hex_decode(response.fields.get("KEY").unwrap())?;
+                let iv = radix::hex_decode(response.fields.get("IV").unwrap())?;
                 let plaintext = {
                     if let Some(data) = response.fields.get("PT") {
-                        hex::decode(data)?
+                        radix::hex_decode(data)?
                     } else {
                         vec![]
                     }
                 };
-                let additional_data = hex::decode(response.fields.get("AAD").unwrap())?;
-                let ciphertext = hex::decode(response.fields.get("CT").unwrap())?;
-                let tag = hex::decode(response.fields.get("TAG").unwrap())?;
+                let additional_data = radix::hex_decode(response.fields.get("AAD").unwrap())?;
+                let ciphertext = radix::hex_decode(response.fields.get("CT").unwrap())?;
+                let tag = radix::hex_decode(response.fields.get("TAG").unwrap())?;
 
                 if tag.len() != 16 {
                     continue;

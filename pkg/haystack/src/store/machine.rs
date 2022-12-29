@@ -82,13 +82,13 @@ impl StoreMachine {
         assert!(dir.config.store().preallocate_size() <= dir.config.store().allocation_size());
         assert!(dir.config.store().allocation_size() <= dir.config.store().space());
 
-        let path = Path::new(folder);
+        let path = LocalPath::new(folder);
 
         let lock = DirLock::open(path).await?;
 
         let volumes_path = path.join(String::from("volumes"));
 
-        let idx = if volumes_path.exists() {
+        let idx = if file::exists(&volumes_path).await? {
             StoreMachineIndex::open(&volumes_path)?
         } else {
             let machine = dir.db.create_store_machine("127.0.0.1", port)?;
@@ -160,8 +160,8 @@ impl StoreMachine {
         Ok(())
     }
 
-    pub fn create_volume(&mut self, volume_id: VolumeId) -> Result<()> {
-        self.open_volume(volume_id, true)?;
+    pub async fn create_volume(&mut self, volume_id: VolumeId) -> Result<()> {
+        self.open_volume(volume_id, true).await?;
 
         // We run this after the open_volume succeeds to gurantee that we don't try
         // adding duplicate ids to the index Currently we don't particularly
@@ -448,7 +448,7 @@ impl StoreMachine {
         let dir = mac_handle.dir.lock().await;
 
         // Finally create the volume on ourselves
-        mac.create_volume(vol_id)?;
+        mac.create_volume(vol_id).await?;
 
         // Get all machine ids (including ourselves) involved in the volume
         let mut all_ids = vec![mac.index.machine_id];

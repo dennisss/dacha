@@ -2,12 +2,25 @@ use alloc::boxed::Box;
 
 use common::errors::*;
 use common::io::{Readable, Writeable};
-use executor::{ExecutorOperation, FileHandle};
+use executor::{ExecutorOperation, FileHandle, RemapErrno};
 use sys::OpenFileDescriptor;
 
+use crate::error::NetworkError;
 use crate::ip::SocketAddr;
+use crate::utils::{set_reuse_port, set_tcp_nodelay};
 
 const TCP_CONNECTION_BACKLOG_SIZE: usize = 1024;
+
+/*
+TODO: Implement
+SO_RCVTIMEO
+SO_SNDTIMEO
+
+
+Also
+SO_RCVBUF
+SO_SNDBUF
+*/
 
 pub struct TcpListener {
     fd: OpenFileDescriptor,
@@ -27,13 +40,7 @@ impl TcpListener {
         };
 
         unsafe {
-            let reuse = (1 as sys::c_int).to_ne_bytes();
-            sys::setsockopt(
-                &fd,
-                sys::SocketOptionLevel::SOL_SOCKET,
-                sys::SocketOption::SO_REUSEPORT,
-                &reuse,
-            )?;
+            set_reuse_port(&fd, true)?;
 
             sys::bind(&fd, &addr)?;
             sys::listen(&fd, TCP_CONNECTION_BACKLOG_SIZE)?;
@@ -53,9 +60,10 @@ impl TcpListener {
         .await?;
 
         let res = op.wait().await?;
-        let fd = res.accept_result()?;
+        let fd = res.accept_result().remap_errno::<NetworkError>()?;
 
         Ok(TcpStream {
+            mode: sys::ShutdownHow::ReadWrite,
             file: FileHandle::new(fd, false),
             peer: sockaddr
                 .to_addr()
@@ -68,6 +76,16 @@ impl TcpListener {
 pub struct TcpStream {
     file: FileHandle,
     peer: SocketAddr,
+    mode: sys::ShutdownHow,
+}
+
+impl Drop for TcpStream {
+    fn drop(&mut self) {
+        if self.mode != sys::ShutdownHow::ReadWrite {
+            println!("Shutdown: {:?}", self.mode);
+            self.shutdown(self.mode).unwrap();
+        }
+    }
 }
 
 impl TcpStream {
@@ -85,14 +103,15 @@ impl TcpStream {
 
         let op = ExecutorOperation::submit(sys::IoUringOp::Connect {
             fd: *fd,
-            sockaddr: addr.clone(),
+            sockaddr: &addr,
         })
         .await?;
 
         let res = op.wait().await?;
-        res.connect_result()?;
+        res.connect_result().remap_errno::<NetworkError>()?;
 
         Ok(Self {
+            mode: sys::ShutdownHow::ReadWrite,
             file: FileHandle::new(fd, false),
             peer: addr.into(),
         })
@@ -102,29 +121,28 @@ impl TcpStream {
         &self.peer
     }
 
-    pub fn split(self) -> (Box<dyn Readable + Sync>, Box<dyn Writeable>) {
+    /// Splits the duplex stream into its two halfs. When either halve is
+    /// dropped, we will shutdown that part of the stream.
+    pub fn split(mut self) -> (Box<dyn Readable + Sync>, Box<dyn Writeable>) {
+        let reader = Box::new(Self {
+            mode: sys::ShutdownHow::Read,
+            file: self.file.clone(),
+            peer: self.peer.clone(),
+        });
+
+        self.mode = sys::ShutdownHow::Write;
+
         // TODO: Actually use distinct types so that a user can't downcast it later.
-        (
-            Box::new(Self {
-                file: self.file.clone(),
-                peer: self.peer.clone(),
-            }),
-            Box::new(self),
-        )
+        (reader, Box::new(self))
     }
 
     pub fn set_nodelay(&mut self, on: bool) -> Result<()> {
-        let value = (if on { 1 } else { 0 } as sys::c_int).to_ne_bytes();
+        unsafe { set_tcp_nodelay(&self.file.as_raw_fd(), on) }
+    }
 
-        unsafe {
-            sys::setsockopt(
-                self.file.as_raw_fd(),
-                sys::SocketOptionLevel::IPPROTO_TCP,
-                sys::SocketOption::TCP_NODELAY,
-                &value,
-            )?;
-        }
-
+    // TODO: Make this async.
+    pub fn shutdown(&mut self, how: sys::ShutdownHow) -> Result<()> {
+        unsafe { sys::shutdown(self.file.as_raw_fd(), how)? };
         Ok(())
     }
 }
@@ -143,7 +161,7 @@ impl Writeable for TcpStream {
     }
 
     async fn flush(&mut self) -> Result<()> {
-        todo!()
+        Ok(())
     }
 }
 

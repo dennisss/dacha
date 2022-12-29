@@ -4,7 +4,6 @@
 // For now, this is mainly using the NIST test vectors.
 
 use common::errors::*;
-use common::hex;
 
 use crate::hasher::{GetHasherFactory, HasherFactory};
 use crate::sha1::*;
@@ -23,8 +22,8 @@ async fn run_nist_hasher_test(hasher_factory: HasherFactory, paths: &[&'static s
             let response = response?;
 
             let len = response.fields.get("LEN").unwrap().parse::<usize>()?;
-            let msg = hex::decode(response.fields.get("MSG").unwrap())?;
-            let md = hex::decode(response.fields.get("MD").unwrap())?;
+            let msg = radix::hex_decode(response.fields.get("MSG").unwrap())?;
+            let md = radix::hex_decode(response.fields.get("MD").unwrap())?;
 
             // Only byte wise hashing is currently supported.
             assert!((len % 8) == 0);
@@ -35,7 +34,7 @@ async fn run_nist_hasher_test(hasher_factory: HasherFactory, paths: &[&'static s
             let output = hasher.finish();
 
             if output != md {
-                println!("{}\n{}", hex::encode(&msg), hex::encode(&md));
+                println!("{}\n{}", radix::hex_encode(&msg), radix::hex_encode(&md));
             }
 
             assert_eq!(output, md);

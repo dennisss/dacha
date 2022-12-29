@@ -19,6 +19,58 @@ use crate::errors::*;
 
 const BUF_SIZE: usize = 4096;
 
+/// Errors returned by a full/half duplex byte stream (an object implementing
+/// Readable or Writeable).
+///
+/// Upon receiving one of these errors, the caller effectively will be unable to
+/// continue using the stream.
+#[error]
+pub struct IoError {
+    pub kind: IoErrorKind,
+    pub message: String,
+    pub source: Option<Error>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IoErrorKind {
+    /// While we were reading/writing to the stream, the stream became
+    /// unhealthy.
+    ///
+    /// No guarantees are made regarding whether or not a read/write partially
+    /// succeeded.
+    ///
+    /// e.g.
+    /// - For TCP streams, possibly a remote RST packet was received
+    /// - Packets timed out.
+    Aborted,
+
+    /// A write failed because the opposite side of the underlying data stream
+    /// is no longer reading bytes.
+    RemoteReaderClosed,
+
+    /// While trying to read from a stream expecting a certain number of bytes,
+    /// we hit the end of the stream.
+    UnexpectedEof {
+        /// The number of bytes we actually read.
+        num_read: usize,
+    },
+}
+
+impl IoError {
+    pub fn new<S: Into<String>>(kind: IoErrorKind, message: S) -> Self {
+        Self {
+            message: message.into(),
+            kind,
+            source: None,
+        }
+    }
+
+    pub fn with_source(mut self, source: Error) -> Self {
+        self.source = Some(source);
+        self
+    }
+}
+
 #[async_trait]
 pub trait Streamable: Send {
     type Item: 'static + Send;
@@ -383,24 +435,20 @@ pub trait Readable: 'static + Send + Unpin {
     }
 
     async fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<()> {
+        let mut num_read = 0;
         while buf.len() > 0 {
             match self.read(buf).await {
                 Ok(0) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "Unexpected end of stream",
-                    )
-                    .into());
+                    return Err(IoError::new(IoErrorKind::UnexpectedEof { num_read }, "").into());
                 }
                 Ok(n) => {
+                    num_read += n;
                     buf = &mut buf[n..];
                 }
                 Err(error) => {
-                    if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
-                        if io_error.kind() == std::io::ErrorKind::Interrupted {
-                            continue;
-                        }
-                    }
+                    // if let Some(IoError::Interruped) = error.downcast_ref() {
+                    //     continue;
+                    // }
 
                     return Err(error);
                 }
@@ -484,11 +532,9 @@ pub trait Writeable: Send + Sync + Unpin + 'static {
                     buf = &buf[n..];
                 }
                 Err(error) => {
-                    if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
-                        if io_error.kind() == std::io::ErrorKind::Interrupted {
-                            continue;
-                        }
-                    }
+                    // if let Some(IoError::Interruped) = error.downcast_ref() {
+                    //     continue;
+                    // }
 
                     return Err(error);
                 }

@@ -3,8 +3,9 @@ use core::ffi::CStr;
 use alloc::{string::String, vec::Vec};
 
 use common::errors::*;
+use executor::RemapErrno;
 
-use crate::{LocalFile, LocalPath};
+use crate::{FileError, LocalFile, LocalPath};
 
 pub type FileType = sys::FileType;
 
@@ -27,6 +28,8 @@ impl LocalDirEntry {
 }
 
 /// This will return an error if the path is not a directory.
+///
+/// TODO: Test this with an empty
 pub fn read_dir<P: AsRef<LocalPath>>(path: P) -> Result<Vec<LocalDirEntry>> {
     // TODO: Check if the file is actually a directory?
 
@@ -37,12 +40,13 @@ pub fn read_dir<P: AsRef<LocalPath>>(path: P) -> Result<Vec<LocalDirEntry>> {
     let mut buffer = [0u8; 8192];
 
     loop {
-        let mut rest = unsafe { sys::getdents64(dir.as_raw_fd(), &mut buffer) }?;
+        let mut rest =
+            unsafe { sys::getdents64(dir.as_raw_fd(), &mut buffer) }.remap_errno::<FileError>()?;
         if rest.is_empty() {
-            return Err(err_msg("Got no directory data"));
+            break;
         }
 
-        let mut saw_last = false;
+        // let mut saw_last = false;
         while !rest.is_empty() {
             let (dirent, r) = sys::DirEntry::parse(rest);
             rest = r;
@@ -69,16 +73,6 @@ pub fn read_dir<P: AsRef<LocalPath>>(path: P) -> Result<Vec<LocalDirEntry>> {
                 name,
                 typ: dirent.typ,
             });
-
-            saw_last = dirent.last_entry;
-
-            if saw_last && !rest.is_empty() {
-                return Err(err_msg("Entry data at end"));
-            }
-        }
-
-        if saw_last {
-            break;
         }
     }
 

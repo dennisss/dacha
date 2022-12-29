@@ -1,13 +1,8 @@
-// TODO: Move this to a general location so that it can be used on any executor
-// type.
-
 use alloc::sync::Arc;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use std::sync::Mutex;
-
-use crate::linux::task::Task;
 
 /// Error
 // pub struct ChannelClosed;
@@ -21,7 +16,12 @@ pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
     }));
     let inner2 = inner.clone();
 
-    (Sender { inner: Some(inner) }, Receiver { inner: inner2 })
+    (
+        Sender { inner: Some(inner) },
+        Receiver {
+            inner: Some(inner2),
+        },
+    )
 }
 
 struct Inner<T> {
@@ -58,6 +58,8 @@ impl<T> Sender<T> {
             return Err(value);
         }
 
+        guard.value = Some(value);
+
         if let Some(waker) = guard.receiver_waker.take() {
             waker.wake();
         }
@@ -67,11 +69,20 @@ impl<T> Sender<T> {
 }
 
 pub struct Receiver<T> {
-    inner: Arc<Mutex<Inner<T>>>,
+    inner: Option<Arc<Mutex<Inner<T>>>>,
+}
+
+impl<T> Drop for Receiver<T> {
+    fn drop(&mut self) {
+        if let Some(inner) = self.inner.take() {
+            let mut guard = inner.lock().unwrap();
+            guard.receiver_alive = false;
+        }
+    }
 }
 
 impl<T> Receiver<T> {
-    pub fn recv(mut self) -> impl Future<Output = Result<T, ()>> {
+    pub fn recv(mut self) -> impl Future<Output = Result<T, ()>> + Unpin {
         RecvFuture { receiver: self }
     }
 }
@@ -86,17 +97,73 @@ impl<T> Future for RecvFuture<T> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = unsafe { self.get_unchecked_mut() };
 
-        let mut guard = this.receiver.inner.lock().unwrap();
+        let mut guard = this.receiver.inner.as_ref().unwrap().lock().unwrap();
 
         if let Some(value) = guard.value.take() {
+            drop(guard);
+            this.receiver.inner.take();
             return Poll::Ready(Ok(value));
         }
 
         if !guard.sender_alive {
+            drop(guard);
+            this.receiver.inner.take();
             return Poll::Ready(Err(()));
         }
 
         guard.receiver_waker = Some(cx.waker().clone());
         Poll::Pending
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oneshot_send_before_receive_test() {
+        crate::run(async {
+            let (sender, receiver) = channel::<u32>();
+            assert_eq!(sender.send(12), Ok(()));
+            assert_eq!(receiver.recv().await, Ok(12));
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn oneshot_receive_before_send_test() {
+        crate::run(async {
+            let (sender, receiver) = channel::<u32>();
+
+            let joiner = crate::spawn(async move {
+                crate::sleep(std::time::Duration::from_millis(10)).await;
+                assert_eq!(sender.send(22), Ok(()));
+            });
+
+            assert_eq!(receiver.recv().await, Ok(22));
+
+            joiner.join().await;
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn oneshot_sender_dropped() {
+        crate::run(async {
+            let (sender, receiver) = channel::<u32>();
+            drop(sender);
+            assert_eq!(receiver.recv().await, Err(()));
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn oneshot_reciever_dropped() {
+        crate::run(async {
+            let (sender, receiver) = channel::<u32>();
+            drop(receiver);
+            assert_eq!(sender.send(100), Err(100));
+        })
+        .unwrap();
     }
 }

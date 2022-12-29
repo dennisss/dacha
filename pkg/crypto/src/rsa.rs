@@ -592,7 +592,6 @@ mod tests {
     use super::*;
 
     use common::errors::*;
-    use common::hex;
     use typenum::U20;
 
     use crate::hasher::TruncatedHasher;
@@ -771,8 +770,8 @@ mod tests {
         ];
 
         for (hasher_factory, seed, mask) in tests {
-            let seed = hex::decode(*seed)?;
-            let mask = hex::decode(*mask)?;
+            let seed = radix::hex_decode(*seed)?;
+            let mask = radix::hex_decode(*mask)?;
 
             let output = mgf1(&seed, mask.len(), hasher_factory);
             assert_eq!(output, mask);

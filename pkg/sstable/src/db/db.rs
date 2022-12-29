@@ -6,7 +6,6 @@ use std::sync::Arc;
 use common::algorithms::lower_bound_by;
 use common::bytes::Bytes;
 use common::errors::*;
-use common::hex;
 use common::io::Writeable;
 use crypto::random::SharedRng;
 use executor::channel;
@@ -229,11 +228,11 @@ impl EmbeddedDB {
 
         format!(
             "{}-{}-{}-{}-{}",
-            hex::encode(&data[0..4]),
-            hex::encode(&data[4..6]),
-            hex::encode(&data[6..8]),
-            hex::encode(&data[8..10]),
-            hex::encode(&data[10..])
+            radix::hex_encode(&data[0..4]),
+            radix::hex_encode(&data[4..6]),
+            radix::hex_encode(&data[6..8]),
+            radix::hex_encode(&data[8..10]),
+            radix::hex_encode(&data[10..])
         )
     }
 
@@ -346,6 +345,7 @@ impl EmbeddedDB {
 
         version_set.open_all(&dir).await?;
 
+        // TODO: Don't open in read_only mode?
         let manifest = RecordWriter::open_with(manifest_path).await?;
 
         let mut log_last_sequence = version_set.last_sequence();
@@ -434,6 +434,7 @@ impl EmbeddedDB {
             compaction_waterline: AtomicU64::new(options.initial_compaction_waterline),
         });
 
+        // TODO: Don't need a compaction task if we are read_only.
         let compaction_thread = ChildTask::spawn(Self::compaction_thread(
             shared.clone(),
             manifest,

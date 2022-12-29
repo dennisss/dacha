@@ -499,7 +499,6 @@ impl<C: BlockCipher> CBCModeCipher<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::hex;
 
     #[test]
     fn round_constant_test() {
@@ -652,9 +651,9 @@ mod tests {
                 let encrypt = response.attributes.contains_key("ENCRYPT");
                 let decrypt = response.attributes.contains_key("DECRYPT");
 
-                let key = hex::decode(response.fields.get("KEY").unwrap())?;
-                let plaintext = hex::decode(response.fields.get("PLAINTEXT").unwrap())?;
-                let ciphertext = hex::decode(response.fields.get("CIPHERTEXT").unwrap())?;
+                let key = radix::hex_decode(response.fields.get("KEY").unwrap())?;
+                let plaintext = radix::hex_decode(response.fields.get("PLAINTEXT").unwrap())?;
+                let ciphertext = radix::hex_decode(response.fields.get("CIPHERTEXT").unwrap())?;
 
                 let mut aes = ECBModeCipher::new(AESBlockCipher::create(&key)?);
 
@@ -670,8 +669,8 @@ mod tests {
                         output,
                         ciphertext,
                         "{} vs {}",
-                        hex::encode(&output),
-                        hex::encode(&ciphertext)
+                        radix::hex_encode(&output),
+                        radix::hex_encode(&ciphertext)
                     );
                 } else if decrypt {
                     let mut output = vec![];

@@ -1,12 +1,10 @@
 [package]
 name = "common"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 libc = { version = "0.2.62", optional = true }
-hex = { version = "0.3.2", optional = true }
 base64 = { version = "0.11.0", optional = true }
 async-trait = { version = "0.1.50", optional = true }
 failure = { version = "0.1.8", optional = true }
@@ -20,8 +18,10 @@ async-std = { version = "1.9.0", features = ["attributes"], optional = true }
 chrono = { version = "0.4.19", optional = true }
 arrayref = "0.3.5"
 nix = { version = "0.21.0", optional = true }
+base_error = { path = "../base/error" }
+macros = { path = "../macros" }
 
 [features]
 default = ["std"]
-alloc = []
-std = ["alloc", "libc", "hex", "base64", "async-trait", "failure", "futures", "futures-util", "bytes", "lazy_static", "async-std", "chrono", "nix"]
+alloc = ["base_error/alloc"]
+std = ["alloc", "base_error/std", "libc", "base64", "async-trait", "failure", "futures", "futures-util", "bytes", "lazy_static", "async-std", "chrono", "nix"]

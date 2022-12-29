@@ -37,8 +37,6 @@ pub extern crate bytes;
 #[cfg(feature = "std")]
 pub extern crate futures;
 #[cfg(feature = "std")]
-pub extern crate hex;
-#[cfg(feature = "std")]
 pub extern crate libc;
 #[cfg(feature = "std")]
 #[macro_use]
@@ -49,6 +47,9 @@ pub extern crate generic_array;
 pub extern crate typenum;
 
 pub extern crate nix;
+
+#[macro_use]
+extern crate macros;
 
 #[cfg(feature = "std")]
 pub mod algorithms;
@@ -68,7 +69,6 @@ pub mod concat_slice;
 #[cfg(feature = "std")]
 pub mod condvar;
 pub mod const_default;
-pub mod errors;
 #[cfg(feature = "std")]
 pub mod eventually;
 #[cfg(feature = "std")]
@@ -109,6 +109,10 @@ pub use lazy_static::*;
 use alloc::string::String;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+
+pub mod errors {
+    pub use base_error::*;
+}
 
 pub trait FlipSign<T> {
     /// Transmutes an signed/unsigned integer into it's opposite unsigned/signed

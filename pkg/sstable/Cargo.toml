@@ -15,6 +15,7 @@ protobuf = { path = "../protobuf" }
 parsing = { path = "../parsing" }
 file = { path = "../file" }
 executor = { path = "../executor" }
+radix = { path = "../radix" }
 
 [features]
 default = ["std"]

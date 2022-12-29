@@ -9,8 +9,6 @@ use std::vec::Vec;
 
 use asn::builtin::{Null, ObjectIdentifier, OctetString};
 use asn::encoding::{der_eq, Any, DERReadable, DERReader, DERWriteable};
-use common::async_std::fs::File;
-use common::async_std::io::ReadExt;
 use common::bytes::Bytes;
 use common::chrono::{DateTime, Utc};
 use common::errors::*;
@@ -116,14 +114,10 @@ impl CertificateRegistry {
 
     /// Creates a registry filled with all publicly trusted root certificates.
     pub async fn public_roots() -> Result<Self> {
-        // TODO: Make this async.
-        let mut f = File::open(project_path!(
+        let mut data = file::read(project_path!(
             "third_party/ca-certificates/google/roots.pem"
         ))
         .await?;
-
-        let mut data = vec![];
-        f.read_to_end(&mut data).await?;
 
         let buf = Bytes::from(data);
 
@@ -888,7 +882,7 @@ mod tests {
 
     use std::io::Read;
 
-    #[async_std::test]
+    #[testcase]
     async fn x509_google_cert_test() -> Result<()> {
         let read_file = |path| -> Result<Arc<Certificate>> {
             let mut f = std::fs::File::open(path)?;
@@ -918,7 +912,7 @@ mod tests {
         Ok(())
     }
 
-    #[async_std::test]
+    #[testcase]
     async fn x509_registry() -> Result<()> {
         CertificateRegistry::public_roots().await?;
         Ok(())

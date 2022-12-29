@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use common::bytes::{Buf, Bytes};
 use common::errors::*;
-use common::io::{Readable, Writeable};
+use common::io::{IoError, IoErrorKind, Readable, Writeable};
 
 use crate::tls::alert::*;
 use crate::tls::handshake::Handshake;
@@ -95,11 +95,9 @@ impl Readable for ApplicationDataReader {
                 }
 
                 if alert.description == AlertDescription::close_notify {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::ConnectionAborted,
-                        "TLS close_notify received",
-                    )
-                    .into());
+                    return Err(
+                        IoError::new(IoErrorKind::Aborted, "TLS close_notify received").into(),
+                    );
                 }
                 // TODO: Fatal errors should
 

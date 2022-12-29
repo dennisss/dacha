@@ -337,6 +337,7 @@ impl Compiler<'_> {
             let imported_file = match std::fs::read_to_string(&full_path) {
                 Ok(data) => data,
                 Err(e) => {
+                    // TODO: Multiple errors may mean this
                     if e.kind() == std::io::ErrorKind::NotFound {
                         return Err(format_err!(
                             "Imported proto file not found: {}",

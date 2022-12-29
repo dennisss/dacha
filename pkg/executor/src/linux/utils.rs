@@ -3,9 +3,9 @@ use std::future::Future;
 
 use common::errors::*;
 
+use crate::channel::oneshot;
 use crate::linux::executor::Executor;
 use crate::linux::join_handle::JoinHandle;
-use crate::oneshot;
 
 use super::thread_local::CurrentExecutorContext;
 

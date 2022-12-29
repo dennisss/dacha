@@ -19,6 +19,7 @@ generic-array = { version = "0.13.2"}
 typenum = { version = "1.11.2" }
 executor = { path = "../executor" }
 file = { path = "../file", optional = true }
+radix = { path = "../radix", optional = true }
 
 [dev-dependencies]
 openssl = { path = "../../third_party/openssl" }
@@ -26,4 +27,4 @@ openssl = { path = "../../third_party/openssl" }
 [features]
 default = ["std", "alloc"]
 alloc = ["common/alloc", "executor/alloc"]
-std = ["macros", "asn", "math", "parsing", "pkix", "alloc", "common/std", "perf/alloc", "perf/std", "executor/std", "file"]
+std = ["macros", "asn", "math", "parsing", "pkix", "alloc", "common/std", "perf/alloc", "perf/std", "executor/std", "file", "radix"]

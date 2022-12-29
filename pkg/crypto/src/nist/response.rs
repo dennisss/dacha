@@ -19,7 +19,7 @@ pub struct ResponseBlock {
 
 impl ResponseBlock {
     pub fn binary_field(&self, name: &str) -> Result<Vec<u8>> {
-        Ok(common::hex::decode(
+        Ok(radix::hex_decode(
             &self
                 .fields
                 .get(name)

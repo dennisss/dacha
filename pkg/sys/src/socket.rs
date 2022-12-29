@@ -202,6 +202,7 @@ pub unsafe fn listen(fd: &OpenFileDescriptor, backlog: usize) -> Result<(), Errn
     raw::listen(**fd, backlog as i32)
 }
 
+// TODO: Make this private.
 define_transparent_enum!(SocketOptionLevel c_int {
     SOL_SOCKET = (bindings::SOL_SOCKET as c_int),
     IPPROTO_TCP = (bindings::IPPROTO_TCP as c_int)
@@ -213,6 +214,7 @@ define_transparent_enum!(SocketOption c_int {
     SO_BROADCAST = (bindings::SO_BROADCAST as c_int),
     SO_REUSEADDR = (bindings::SO_REUSEADDR as c_int),
     SO_REUSEPORT = (bindings::SO_REUSEPORT as c_int),
+    IP_ADD_MEMBERSHIP = (bindings::IP_ADD_MEMBERSHIP as c_int),
 
     // Options for IPPROTO_TCP
     TCP_NODELAY = (bindings::TCP_NODELAY as c_int)
@@ -233,16 +235,17 @@ pub unsafe fn setsockopt(
     )
 }
 
-/*
-Other important functions:
-    bind
-    accept
-    connect
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(i32)]
+pub enum ShutdownHow {
+    Read = (bindings::SHUT_RD as c_int),
+    Write = (bindings::SHUT_WR as c_int),
+    ReadWrite = (bindings::SHUT_RDWR as c_int),
+}
 
-    setsockopt (for Nagle optimizations)
-
-
-*/
+pub unsafe fn shutdown(fd: &OpenFileDescriptor, how: ShutdownHow) -> Result<(), Errno> {
+    raw::shutdown(**fd, how as c_int)
+}
 
 mod raw {
     use super::*;
@@ -258,4 +261,6 @@ mod raw {
     syscall!(listen, bindings::SYS_listen, sockfd: c_int, backlog: c_int => Result<()>);
 
     syscall!(setsockopt, bindings::SYS_setsockopt, fd: c_int, level: c_int, optname: c_int, optval: *const u8, optlen: c_int => Result<()>);
+
+    syscall!(shutdown, bindings::SYS_shutdown, fd: c_int, how: c_int => Result<()>);
 }

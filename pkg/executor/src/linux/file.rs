@@ -5,6 +5,7 @@ use std::ffi::CString;
 use std::sync::Arc;
 
 use common::errors::*;
+use common::io::IoError;
 use sys::{
     c_int, close, open, read, EpollEvents, Errno, IoSlice, IoSliceMut, IoUringOp,
     OpenFileDescriptor, RWFlags, O_CLOEXEC, O_NONBLOCK, O_RDONLY,
@@ -12,6 +13,7 @@ use sys::{
 
 use crate::linux::executor::FileDescriptor;
 use crate::linux::io_uring::ExecutorOperation;
+use crate::RemapErrno;
 // use crate::linux::polling::PollingContext;
 
 /// Generic wrapper around a Linux file descriptor for performing common I/O
@@ -60,7 +62,7 @@ impl FileHandle {
         .await?;
 
         let res = op.wait().await?;
-        let n = res.readv_result()?;
+        let n = res.readv_result().remap_errno::<IoError>()?;
 
         *offset += n as u64;
 
@@ -82,7 +84,7 @@ impl FileHandle {
         .await?;
 
         let res = op.wait().await?;
-        let n = res.writev_result()?;
+        let n = res.writev_result().remap_errno::<IoError>()?;
 
         *offset += n as u64;
 

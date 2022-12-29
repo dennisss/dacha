@@ -8,7 +8,7 @@ use common::futures::io::Write;
 use common::futures::stream;
 use common::futures::stream::{Stream, StreamExt};
 use common::futures::{Future, FutureExt};
-use common::io::{Readable, Sinkable, StreamExt2, Streamable, StreamableExt, Writeable};
+use common::io::{IoError, Readable, Sinkable, StreamExt2, Streamable, StreamableExt, Writeable};
 use executor::channel;
 use executor::sync::Mutex;
 use net::tcp::{TcpListener, TcpStream};
@@ -319,12 +319,14 @@ where
             .await
             .map_err(|e| {
                 // Ignoring typical errors
-                if let Some(eio) = e.downcast_ref::<std::io::Error>() {
-                    // This is triggered by a client that disconnects early while we are sending it
-                    // data
-                    if eio.kind() == std::io::ErrorKind::ConnectionReset {
-                        return ();
-                    }
+                if let Some(eio) = e.downcast_ref::<IoError>() {
+                    return ();
+
+                    // // This is triggered by a client that disconnects early
+                    // while we are sending it // data
+                    // if eio.kind() == std::io::ErrorKind::ConnectionReset {
+                    //     return ();
+                    // }
                 }
 
                 eprintln!("Client Error: {:?}", e);

@@ -28,6 +28,7 @@ mod send;
 mod socket;
 mod stat;
 pub mod thread;
+mod utils;
 pub mod utsname;
 mod virtual_memory;
 mod wait;

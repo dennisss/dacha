@@ -1,11 +1,40 @@
 use common::errors::*;
 use executor::ExecutorOperation;
+use executor::RemapErrno;
 use sys::{
     IoSlice, IoSliceMut, IoUringOp, MessageHeader, MessageHeaderMut, MessageHeaderSocketAddrBuffer,
     OpenFileDescriptor,
 };
 
+use crate::error::NetworkError;
+use crate::ip::IPAddress;
 use crate::ip::SocketAddr;
+use crate::utils::set_reuse_addr;
+use crate::utils::set_tcp_nodelay;
+
+pub struct UdpBindOptions {
+    reuse_addr: bool,
+    reuse_port: bool,
+}
+
+impl UdpBindOptions {
+    pub fn new() -> Self {
+        Self {
+            reuse_addr: false,
+            reuse_port: false,
+        }
+    }
+
+    pub fn reuse_addr(&mut self, value: bool) -> &mut Self {
+        self.reuse_addr = value;
+        self
+    }
+
+    pub fn reuse_port(&mut self, value: bool) -> &mut Self {
+        self.reuse_port = value;
+        self
+    }
+}
 
 pub struct UdpSocket {
     fd: OpenFileDescriptor,
@@ -13,23 +42,35 @@ pub struct UdpSocket {
 
 impl UdpSocket {
     pub async fn bind(addr: SocketAddr) -> Result<Self> {
+        Self::bind_with_options(addr, &UdpBindOptions::new()).await
+    }
+
+    pub async fn bind_with_options(addr: SocketAddr, options: &UdpBindOptions) -> Result<Self> {
         let addr = Into::<sys::SocketAddr>::into(addr);
 
-        let fd = unsafe {
-            sys::socket(
+        unsafe {
+            let fd = sys::socket(
                 addr.family(),
                 sys::SocketType::SOCK_DGRAM,
                 sys::SocketFlags::SOCK_CLOEXEC,
                 sys::SocketProtocol::UDP,
-            )?
-        };
+            )?;
 
-        unsafe { sys::bind(&fd, &addr)? };
+            if options.reuse_addr {
+                set_reuse_addr(&fd, options.reuse_addr)?;
+            }
 
-        Ok(Self { fd })
+            if options.reuse_port {
+                set_reuse_addr(&fd, options.reuse_port)?;
+            }
+
+            sys::bind(&fd, &addr).remap_errno::<NetworkError>()?;
+
+            Ok(Self { fd })
+        }
     }
 
-    pub async fn send_to(&mut self, data: &[u8], addr: &SocketAddr) -> Result<usize> {
+    pub async fn send_to(&self, data: &[u8], addr: &SocketAddr) -> Result<usize> {
         let data_slices = [IoSlice::new(data)];
         let sockaddr = Into::<sys::SocketAddr>::into(addr.clone());
 
@@ -41,15 +82,19 @@ impl UdpSocket {
         })
         .await?;
 
-        let n = op.wait().await?.sendmsg_result()?;
+        let n = op
+            .wait()
+            .await?
+            .sendmsg_result()
+            .remap_errno::<NetworkError>()?;
         Ok(n)
     }
 
-    pub async fn recv(&mut self, output: &mut [u8]) -> Result<usize> {
+    pub async fn recv(&self, output: &mut [u8]) -> Result<usize> {
         self.recv_from(output).await.map(|(n, _)| n)
     }
 
-    pub async fn recv_from(&mut self, output: &mut [u8]) -> Result<(usize, SocketAddr)> {
+    pub async fn recv_from(&self, output: &mut [u8]) -> Result<(usize, SocketAddr)> {
         let data_slices = [IoSliceMut::new(output)];
 
         let mut addr_buf = MessageHeaderSocketAddrBuffer::new();
@@ -62,7 +107,10 @@ impl UdpSocket {
                 header: &mut header,
             })
             .await?;
-            op.wait().await?.recvmsg_result()?
+            op.wait()
+                .await?
+                .recvmsg_result()
+                .remap_errno::<NetworkError>()?
         };
 
         let addr = header
@@ -72,19 +120,42 @@ impl UdpSocket {
         Ok((n, addr.into()))
     }
 
-    // TODO: Dedup this.
-    pub fn set_nodelay(&mut self, on: bool) -> Result<()> {
-        let value = (if on { 1 } else { 0 } as sys::c_int).to_ne_bytes();
+    /// NOTE: Both addresses must be IPv4
+    pub fn join_multicast_v4(
+        &mut self,
+        group_addr: IPAddress,
+        interface_addr: IPAddress,
+    ) -> Result<()> {
+        let group_addr = match group_addr {
+            IPAddress::V4(v) => v,
+            _ => return Err(err_msg("Only IPv4 supported for multicast")),
+        };
+
+        let interface_addr = match interface_addr {
+            IPAddress::V4(v) => v,
+            _ => return Err(err_msg("Only IPv4 supported for multicast")),
+        };
+
+        // 'ip_mreq' struct from 'C'
+        // First field is 'imr_multiaddr'
+        // Second field is 'imr_interface'
+        let mut ip_mreq = [0u8; 8];
+        ip_mreq[0..4].copy_from_slice(&group_addr[..]);
+        ip_mreq[4..8].copy_from_slice(&interface_addr[..]);
 
         unsafe {
             sys::setsockopt(
                 &self.fd,
-                sys::SocketOptionLevel::IPPROTO_TCP,
-                sys::SocketOption::TCP_NODELAY,
-                &value,
+                sys::SocketOptionLevel::SOL_SOCKET,
+                sys::SocketOption::IP_ADD_MEMBERSHIP,
+                &ip_mreq,
             )?;
         }
 
         Ok(())
+    }
+
+    pub fn set_nodelay(&mut self, on: bool) -> Result<()> {
+        unsafe { set_tcp_nodelay(&self.fd, on) }
     }
 }

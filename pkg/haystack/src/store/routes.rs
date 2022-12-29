@@ -157,7 +157,7 @@ async fn create_volume(mac_handle: &MachineContext, volume_id: VolumeId) -> Resu
         ));
     }
 
-    mac.create_volume(volume_id)?;
+    mac.create_volume(volume_id).await?;
 
     println!("- Volume {} created on Store {}", volume_id, mac_handle.id);
     mac_handle.thread.notify();

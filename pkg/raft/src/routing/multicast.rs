@@ -1,10 +1,10 @@
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::FromRawFd;
 
 use common::errors::*;
 use failure::ResultExt;
-use net::udp::UdpSocket;
+use net::ip::{IPAddress, SocketAddr};
+use net::udp::{UdpBindOptions, UdpSocket};
 use nix::sys::socket::sockopt::{ReuseAddr, ReusePort};
 use nix::sys::socket::{AddressFamily, InetAddr, SockAddr, SockFlag, SockProtocol, SockType};
 use protobuf::{Message, StaticMessage};
@@ -12,11 +12,11 @@ use protobuf::{Message, StaticMessage};
 use crate::proto::routing::Announcement;
 use crate::routing::route_store::*;
 
-const MULTICAST_ADDR: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 28);
+const MULTICAST_ADDR: IPAddress = IPAddress::V4([224, 0, 0, 28]);
 const MULTICAST_PORT: u16 = 8181;
 const MAX_PACKET_SIZE: usize = 512;
 
-const IFACE_ADDR: Ipv4Addr = Ipv4Addr::new(0, 0, 0, 0);
+const IFACE_ADDR: IPAddress = IPAddress::V4([0, 0, 0, 0]);
 
 pub struct DiscoveryMulticast {
     socket: UdpSocket,
@@ -25,28 +25,13 @@ pub struct DiscoveryMulticast {
 
 impl DiscoveryMulticast {
     pub async fn create(route_store: RouteStore) -> Result<Self> {
-        let socket = unsafe {
-            UdpSocket::from_raw_fd(nix::sys::socket::socket(
-                AddressFamily::Inet,
-                SockType::Datagram,
-                SockFlag::SOCK_CLOEXEC,
-                SockProtocol::Udp,
-            )?)
-        };
-
-        // Must be called before bind() to allow multiple servers to bind to the same
-        // port (mainly relevant if running multiple servers on the same machine).
-        nix::sys::socket::setsockopt(socket.as_raw_fd(), ReusePort, &true)?;
-        nix::sys::socket::setsockopt(socket.as_raw_fd(), ReuseAddr, &true)?;
-
-        nix::sys::socket::bind(
-            socket.as_raw_fd(),
-            &SockAddr::Inet(InetAddr::from_std(&SocketAddr::V4(SocketAddrV4::new(
-                IFACE_ADDR,
-                MULTICAST_PORT,
-            )))),
+        // Must re-use addr and port to allow running multiple servers on the same
+        // machine.
+        let mut socket = UdpSocket::bind_with_options(
+            SocketAddr::new(IFACE_ADDR, MULTICAST_PORT),
+            &UdpBindOptions::new().reuse_addr(true).reuse_port(true),
         )
-        .with_context(|e| format!("Failed to bind to discovery multi-cast port: {}", e))?;
+        .await?;
 
         socket.join_multicast_v4(MULTICAST_ADDR, IFACE_ADDR)?;
 
@@ -79,7 +64,7 @@ impl DiscoveryMulticast {
 
         let n = self
             .socket
-            .send_to(&data, SocketAddrV4::new(MULTICAST_ADDR, MULTICAST_PORT))
+            .send_to(&data, &SocketAddr::new(MULTICAST_ADDR, MULTICAST_PORT))
             .await?;
         if n != data.len() {
             return Err(err_msg("Not all data sent"));

@@ -5,7 +5,6 @@ use std::fmt::Write;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use common::hex;
 use net::ip::IPAddress;
 use parsing::ascii::*;
 use parsing::opaque::OpaqueString;

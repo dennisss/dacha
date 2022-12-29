@@ -307,7 +307,7 @@ impl Node {
             None => {
                 let id = if config.bootstrap_id_from_machine_id() {
                     let machine_id =
-                        common::hex::decode(file::read_to_string("/etc/machine-id").await?.trim())?;
+                        radix::hex_decode(file::read_to_string("/etc/machine-id").await?.trim())?;
 
                     if machine_id.len() < 8 {
                         return Err(err_msg("Expected machine id to have at least 8 bytes"));

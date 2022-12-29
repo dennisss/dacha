@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 
 use executor::channel;
-use executor::oneshot;
+use executor::channel::oneshot;
 use executor::sync::{Mutex, MutexGuard};
 
 /// Creates a futures based event notification channel

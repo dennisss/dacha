@@ -3,6 +3,7 @@ use alloc::{
     string::{String, ToString},
 };
 use core::{borrow::Borrow, fmt::Debug, ops::Deref};
+use std::ffi::OsStr;
 
 use common::errors::*;
 
@@ -47,7 +48,7 @@ impl LocalPathBuf {
             return;
         }
 
-        if !self.inner.ends_with(SEGMENT_DELIMITER) {
+        if !self.inner.is_empty() && !self.inner.ends_with(SEGMENT_DELIMITER) {
             self.inner.push(SEGMENT_DELIMITER);
         }
 
@@ -56,13 +57,6 @@ impl LocalPathBuf {
 
     pub fn pop(&mut self) -> bool {
         if let Some(parent) = self.parent() {
-            // TODO: Check if this is a good behavior
-            // if parent.as_str() == "." {
-            //     self.inner.truncate(0);
-            //     self.inner.push('.');
-            //     return true;
-            // }
-
             self.inner.truncate(parent.as_str().len());
             true
         } else {
@@ -88,13 +82,12 @@ impl LocalPathBuf {
     pub fn as_path(&self) -> &LocalPath {
         self.as_ref()
     }
+}
 
-    /*
-    pub fn normalize(&mut self) {
-        //
-
+impl<S: AsRef<str>> PartialEq<S> for LocalPathBuf {
+    fn eq(&self, other: &S) -> bool {
+        self.as_str() == other.as_ref()
     }
-    */
 }
 
 impl Debug for LocalPathBuf {
@@ -170,24 +163,41 @@ impl LocalPath {
     }
 
     pub fn segments(&self) -> impl Iterator<Item = LocalPathSegment> {
-        LocalPathSegmentIterator {
-            started: false,
-            remaining: self.as_str(),
-        }
+        LocalPathSegmentIterator::new(self.as_str()).map(|(s, _)| s)
+    }
+
+    pub fn rsegments(&self) -> impl Iterator<Item = LocalPathSegment> {
+        LocalPathReverseSegmentersIterator::new(self.as_str()).map(|(s, _)| s)
     }
 
     pub fn normalized(&self) -> LocalPathBuf {
-        let mut out = LocalPathBuf::from(".");
+        let mut out = LocalPathBuf::from("");
+
+        let mut in_current_dir = false;
+        let mut is_absolute = false;
 
         for segment in self.segments() {
             match segment {
-                LocalPathSegment::Root => out.push("/"),
-                LocalPathSegment::CurrentDir => {}
+                LocalPathSegment::Root => {
+                    is_absolute = true;
+                    out.push("/");
+                }
+                LocalPathSegment::CurrentDir => {
+                    in_current_dir = true;
+                }
                 LocalPathSegment::ParentDir => {
                     out.pop();
+
+                    if is_absolute && out.as_str().is_empty() {
+                        out.push("/");
+                    }
                 }
                 LocalPathSegment::File(p) => out.push(p),
             }
+        }
+
+        if in_current_dir && out.as_str().is_empty() {
+            out.push(".");
         }
 
         out
@@ -206,26 +216,25 @@ impl LocalPath {
         self.strip_prefix_impl(other.as_ref())
     }
 
-    // /a/b/c
-    // /a
-
     fn strip_prefix_impl(&self, other: &LocalPath) -> Option<&LocalPath> {
-        let other = other.as_str().trim_end_matches(SEGMENT_DELIMITER);
+        let mut cur_segments = LocalPathSegmentIterator::new(self.as_str());
+        let mut other_segments = other.segments();
 
-        let rest = match self.as_str().strip_prefix(other) {
-            Some(v) => v,
-            None => return None,
-        };
+        let mut final_end_position = 0;
+        for expected_segment in other_segments {
+            let (segment, end_position) = match cur_segments.next() {
+                Some(v) => v,
+                None => return None,
+            };
 
-        if rest.is_empty() {
-            return Some(LocalPath::new(rest));
+            if segment != expected_segment {
+                return None;
+            }
+
+            final_end_position = end_position;
         }
 
-        if let Some(rest) = rest.strip_prefix(SEGMENT_DELIMITER) {
-            return Some(LocalPath::new(rest));
-        }
-
-        None
+        Some(LocalPath::new(self.as_str().split_at(final_end_position).1))
     }
 
     /*
@@ -238,45 +247,16 @@ impl LocalPath {
 
     */
 
-    fn split_last_segment(&self) -> (Option<&str>, LocalPathSegment) {
-        // Only applies if the name is not "////"
-        let mut s = self.as_str().trim_end_matches(SEGMENT_DELIMITER);
-        if s.is_empty() && !self.as_str().is_empty() {
-            s = "/";
-        }
-
-        if s == "/" {
-            return (None, LocalPathSegment::Root);
-        }
-
-        // if s == "." {
-        //     return (None, LocalPathSegment::CurrentDir);
-        // }
-
-        let (parent, last) = match s.rfind(SEGMENT_DELIMITER) {
-            Some(pos) => {
-                let (s, e) = s.split_at(pos + 1);
-                (Some(s), e)
-            }
-            None => (None, s),
-        };
-
-        let segment = {
-            if last.is_empty() || last == "." {
-                LocalPathSegment::CurrentDir
-            } else if last == ".." {
-                LocalPathSegment::ParentDir
-            } else {
-                LocalPathSegment::File(last)
-            }
-        };
-
-        (parent, segment)
-    }
-
     pub fn parent(&self) -> Option<&LocalPath> {
-        let (p, _) = self.split_last_segment();
-        p.map(|p| LocalPath::new(p))
+        LocalPathReverseSegmentersIterator::new(self.as_str())
+            .next()
+            .and_then(|(seg, idx)| {
+                if let LocalPathSegment::Root = seg {
+                    return None;
+                }
+
+                Some(LocalPath::new(self.as_str().split_at(idx).0))
+            })
     }
 
     /// Splits a file name into a stem and an extension
@@ -297,9 +277,9 @@ impl LocalPath {
 
     // TODO: Filename of "hello/" should be "hello"
     pub fn file_name(&self) -> Option<&str> {
-        let (_, last_segment) = self.split_last_segment();
-
-        if let LocalPathSegment::File(name) = last_segment {
+        if let Some((LocalPathSegment::File(name), _)) =
+            LocalPathReverseSegmentersIterator::new(self.as_str()).next()
+        {
             return Some(name);
         } else {
             None
@@ -327,6 +307,12 @@ impl LocalPath {
     }
 }
 
+impl ToString for LocalPath {
+    fn to_string(&self) -> String {
+        self.as_str().to_owned()
+    }
+}
+
 impl<P: AsRef<LocalPath>> PartialEq<P> for LocalPath {
     fn eq(&self, other: &P) -> bool {
         self.as_str() == other.as_ref().as_str()
@@ -338,7 +324,6 @@ impl PartialEq<LocalPath> for LocalPath {
         self.as_str() == other.as_str()
     }
 }
-
 impl Debug for LocalPath {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "\"{}\"", self.as_str())
@@ -356,6 +341,18 @@ impl ToOwned for LocalPath {
 impl AsRef<std::path::Path> for LocalPath {
     fn as_ref(&self) -> &std::path::Path {
         std::path::Path::new(self.as_str())
+    }
+}
+
+impl AsRef<OsStr> for LocalPath {
+    fn as_ref(&self) -> &OsStr {
+        self.as_str().as_ref()
+    }
+}
+
+impl AsRef<OsStr> for LocalPathBuf {
+    fn as_ref(&self) -> &OsStr {
+        self.as_str().as_ref()
     }
 }
 
@@ -396,68 +393,287 @@ impl<'a> LocalPathSegment<'a> {
     }
 }
 
+/// Iterates over a path's segments in forward order.
+/// On each iteration yields the next segment and the end position of that
 struct LocalPathSegmentIterator<'a> {
     remaining: &'a str,
-    started: bool,
+    absolute_position: usize,
+}
+
+impl<'a> LocalPathSegmentIterator<'a> {
+    fn new(remaining: &'a str) -> Self {
+        Self {
+            remaining,
+            absolute_position: 0,
+        }
+    }
 }
 
 impl<'a> Iterator for LocalPathSegmentIterator<'a> {
-    type Item = LocalPathSegment<'a>;
+    /// Next segment and the end position of it in the original string.
+    type Item = (LocalPathSegment<'a>, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if !self.started {
-            self.started = true;
-
-            if let Some(r) = self.remaining.strip_suffix(SEGMENT_DELIMITER) {
-                self.remaining = r;
-                return Some(LocalPathSegment::Root);
-            }
-        }
-
         if self.remaining.is_empty() {
             return None;
+        }
+
+        let starting_len = self.remaining.len();
+
+        if self.absolute_position == 0 {
+            if let Some(r) = self.remaining.strip_prefix(SEGMENT_DELIMITER) {
+                self.remaining = r.trim_start_matches(SEGMENT_DELIMITER);
+                self.absolute_position += starting_len - self.remaining.len();
+                return Some((LocalPathSegment::Root, self.absolute_position));
+            }
         }
 
         let (cur, rest) = self
             .remaining
             .split_once(SEGMENT_DELIMITER)
             .unwrap_or_else(|| (self.remaining, ""));
-        self.remaining = rest;
+        self.remaining = rest.trim_start_matches(SEGMENT_DELIMITER);
+        self.absolute_position += starting_len - self.remaining.len();
 
-        if cur == "." {
-            Some(LocalPathSegment::CurrentDir)
-        } else if cur == ".." {
-            Some(LocalPathSegment::ParentDir)
+        let segment = {
+            if cur == "." {
+                LocalPathSegment::CurrentDir
+            } else if cur == ".." {
+                LocalPathSegment::ParentDir
+            } else {
+                LocalPathSegment::File(cur)
+            }
+        };
+
+        Some((segment, self.absolute_position))
+    }
+}
+
+/// Iterates over a path's segments in reverse order.
+/// On each iteration this yields the next segment and the start position of it
+/// in the original string.
+struct LocalPathReverseSegmentersIterator<'a> {
+    remaining: &'a str,
+}
+
+impl<'a> LocalPathReverseSegmentersIterator<'a> {
+    fn new(remaining: &'a str) -> Self {
+        Self { remaining }
+    }
+}
+
+impl<'a> Iterator for LocalPathReverseSegmentersIterator<'a> {
+    /// Previous segment and the start position of that segment in the original
+    /// string.
+    type Item = (LocalPathSegment<'a>, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining.is_empty() {
+            return None;
+        }
+
+        self.remaining = self.remaining.trim_end_matches(SEGMENT_DELIMITER);
+        if self.remaining.is_empty() {
+            return Some((LocalPathSegment::Root, 0));
+        }
+
+        // Split "parent/child" into ("parent/", "child")
+        // Or "child" into ("", "child")
+        let (begin, tail) = self.remaining.split_at(
+            self.remaining
+                .rfind(SEGMENT_DELIMITER)
+                .map(|i| i + 1)
+                .unwrap_or(0),
+        );
+        self.remaining = begin;
+
+        let pos = self.remaining.len();
+        if tail == "." {
+            Some((LocalPathSegment::CurrentDir, pos))
+        } else if tail == ".." {
+            Some((LocalPathSegment::ParentDir, pos))
         } else {
-            Some(LocalPathSegment::File(cur))
+            Some((LocalPathSegment::File(tail), pos))
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use super::*;
 
     #[test]
-    fn path_functions() {
-        assert_eq!(LocalPath::new("/").join("hello").as_str(), "/hello");
-        assert_eq!(LocalPath::new("/var").join("/opt").as_str(), "/opt");
+    fn path_segments_test() {
+        let test_cases: [(&'static str, &'static [LocalPathSegment<'static>]); _] = [
+            ("", &[]),
+            ("/", &[LocalPathSegment::Root]),
+            ("//", &[LocalPathSegment::Root]),
+            ("///", &[LocalPathSegment::Root]),
+            (
+                "/..",
+                &[LocalPathSegment::Root, LocalPathSegment::ParentDir],
+            ),
+            (
+                "/../",
+                &[LocalPathSegment::Root, LocalPathSegment::ParentDir],
+            ),
+            (
+                "/../hello",
+                &[
+                    LocalPathSegment::Root,
+                    LocalPathSegment::ParentDir,
+                    LocalPathSegment::File("hello"),
+                ],
+            ),
+            (
+                "/..hello",
+                &[LocalPathSegment::Root, LocalPathSegment::File("..hello")],
+            ),
+            (
+                "/.hello",
+                &[LocalPathSegment::Root, LocalPathSegment::File(".hello")],
+            ),
+            (
+                "/./hello",
+                &[
+                    LocalPathSegment::Root,
+                    LocalPathSegment::CurrentDir,
+                    LocalPathSegment::File("hello"),
+                ],
+            ),
+            (".", &[LocalPathSegment::CurrentDir]),
+            (
+                ".//.",
+                &[LocalPathSegment::CurrentDir, LocalPathSegment::CurrentDir],
+            ),
+            (
+                "/hello//world////",
+                &[
+                    LocalPathSegment::Root,
+                    LocalPathSegment::File("hello"),
+                    LocalPathSegment::File("world"),
+                ],
+            ),
+        ];
+
+        for (path, expected_segments) in test_cases {
+            let segments = LocalPath::new(path).segments().collect::<Vec<_>>();
+            assert_eq!(
+                &segments[..],
+                expected_segments,
+                "while testing \"{}\"",
+                path
+            );
+
+            let mut rsegments = LocalPath::new(path).rsegments().collect::<Vec<_>>();
+            rsegments.reverse();
+
+            assert_eq!(
+                &rsegments[..],
+                expected_segments,
+                "while testing \"{}\"",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn path_join_test() {
+        assert_eq!(LocalPath::new("/").join("hello"), "/hello");
+        assert_eq!(LocalPath::new("/var").join("/opt"), "/opt");
         assert_eq!(
-            LocalPath::new("relative/path")
-                .join("to/something")
-                .as_str(),
+            LocalPath::new("relative/path").join("to/something"),
             "relative/path/to/something"
         );
-        assert_eq!(LocalPath::new("/var/").join("run").as_str(), "/var/run");
 
-        assert_eq!(
-            LocalPath::new("/a/b/c")
-                .strip_prefix("/a")
-                .unwrap()
-                .as_str(),
-            "b/c"
-        );
+        assert_eq!(LocalPath::new("/var/").join("run"), "/var/run");
 
+        assert_eq!(LocalPath::new("").join("file"), "file");
+        assert_eq!(LocalPath::new("").join("/var"), "/var");
+
+        assert_eq!(LocalPath::new("file").join("/var"), "/var");
+    }
+
+    #[test]
+    fn path_strip_prefix_test() {
+        let test_cases = [
+            ("/a/b/c", "/a", Some("b/c")),
+            ("/apples/oranges", "/apples", Some("oranges")),
+            ("/apples/oranges", "/apples/", Some("oranges")),
+            ("/apples/oranges", "/apples/oranges", Some("")),
+            ("/apples/oranges", "/apples/oranges/", Some("")),
+            ("/apples/oranges", "/app", None),
+            ("/apples/oranges", "apples", None),
+            ("/apples/oranges", "", Some("/apples/oranges")),
+            ("/apples/oranges", "/", Some("apples/oranges")),
+        ];
+
+        for (original_path, prefix, expected_suffix) in test_cases {
+            assert_eq!(
+                LocalPath::new(original_path)
+                    .strip_prefix(prefix)
+                    .map(|p| p.as_str()),
+                expected_suffix
+            );
+        }
+    }
+
+    #[test]
+    fn path_normalization_test() {
+        let test_cases = [
+            ("/file/", "/file"),
+            ("file/", "file"),
+            ("./file/", "file"),
+            (".", "."),
+            ("/", "/"),
+            ("/.", "/"),
+            ("", ""),
+            ("/../../../", "/"),
+            ("/../hello/../../world", "/world"),
+            (
+                "/../../hello/world/./jello/apples/../file/",
+                "/hello/world/jello/file",
+            ),
+        ];
+
+        for (original_path, normalized_path) in test_cases {
+            assert_eq!(
+                LocalPath::new(original_path).normalized().as_str(),
+                normalized_path,
+                "while testing \"{}\"",
+                original_path
+            );
+        }
+    }
+
+    #[test]
+    fn path_parent_test() {
+        let test_cases = [
+            ("/", None),
+            ("", None),
+            (".", Some("")),
+            ("./file", Some("./")),
+            ("file", Some("")), // TODO: Consider changing this to ".".
+            ("file/second", Some("file/")),
+            ("file//second", Some("file//")),
+            ("file/./second", Some("file/./")),
+            ("/file/./second", Some("/file/./")),
+        ];
+
+        for (original_path, expected_parent) in test_cases {
+            assert_eq!(
+                LocalPath::new(original_path).parent().map(|p| p.as_str()),
+                expected_parent,
+                "while testing \"{}\"",
+                original_path
+            );
+        }
+    }
+
+    #[test]
+    fn path_functions() {
         let mut p = LocalPath::new("/var/run/something.txt").to_owned();
         assert_eq!(p.extension(), Some("txt"));
 
@@ -468,21 +684,5 @@ mod tests {
         assert!(p.pop());
         assert_eq!(p.as_str(), "/var/run/");
         assert_eq!(p.file_name(), Some("run"));
-
-        assert_eq!(
-            LocalPath::new("/../../hello/world/./jello/apples/../file/")
-                .normalized()
-                .as_str(),
-            "/hello/world/jello/file"
-        );
-        assert_eq!(LocalPath::new("/file/").normalized().as_str(), "/file");
-        assert_eq!(LocalPath::new("file/").normalized().as_str(), "file");
-        assert_eq!(LocalPath::new("./file/").normalized().as_str(), "file");
-        assert_eq!(LocalPath::new("").normalized().as_str(), ".");
-        assert_eq!(LocalPath::new("/../../").normalized().as_str(), "/");
-
-        // TODO: This is slightly different than doing .pop() right now.
-        // assert_eq!(LocalPath::new("hello").parent(),
-        // Some(LocalPath::new(".")));
     }
 }

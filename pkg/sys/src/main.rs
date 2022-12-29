@@ -3,6 +3,7 @@
 use core::arch::asm;
 use core::mem::transmute;
 use std::ffi::{CStr, CString};
+use std::time::Duration;
 
 extern crate sys;
 #[macro_use]
@@ -11,9 +12,9 @@ extern crate parsing;
 use common::array_ref;
 use common::errors::*;
 use parsing::binary::*;
-use sys::bindings::*;
 use sys::RWFlags;
 use sys::VirtualMemoryMap;
+use sys::{bindings::*, Errno};
 
 #[thread_local]
 static mut VAL: usize = 0xAABCDDEEFF;
@@ -57,6 +58,39 @@ fn register_int() {
     let old = unsafe { sigaction(Signal::SIGINT, &action) }.unwrap();
 
     println!("{:?}", old);
+}
+
+fn test_uring_cancel() -> Result<()> {
+    let mut ring = sys::IoUring::create()?;
+    let (mut submit_queue, mut completion_queue) = ring.split();
+
+    unsafe {
+        submit_queue.submit(
+            sys::IoUringOp::Timeout {
+                duration: Duration::from_secs(10),
+            },
+            1,
+        )?;
+
+        submit_queue.submit(sys::IoUringOp::Cancel { user_data: 1 }, 2)?;
+    }
+
+    completion_queue.wait(None)?;
+
+    // This will be the timeout result
+    let completion = completion_queue.retrieve().unwrap();
+    println!("{:?}", completion);
+    assert_eq!(completion.user_data, 1);
+    assert_eq!(completion.result.timeout_result(), Err(Errno::ECANCELED));
+
+    completion_queue.wait(None)?;
+
+    let completion = completion_queue.retrieve().unwrap();
+    println!("{:?}", completion);
+    assert_eq!(completion.user_data, 2);
+    assert_eq!(completion.result.timeout_result(), Ok(()));
+
+    Ok(())
 }
 
 fn test_uring() -> Result<()> {
@@ -142,7 +176,9 @@ fn test_dirent() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    test_dirent()?;
+    test_uring_cancel()?;
+
+    // test_dirent()?;
 
     // test_uring()?;
 

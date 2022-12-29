@@ -35,7 +35,7 @@ struct NetlinkSocket {
 
 impl Drop for NetlinkSocket {
     fn drop(&mut self) {
-        let _ = unsafe { libc::close(self.fd) };
+        let _ = unsafe { sys::close(self.fd) };
     }
 }
 
@@ -478,11 +478,11 @@ impl StructLength for nlmsghdr {
 #[repr(C)]
 #[derive(Default, Debug)]
 struct ifinfomsg {
-    ifi_family: libc::c_uchar, /* AF_UNSPEC */
-    ifi_type: libc::c_ushort,  /* Device type */
-    ifi_index: libc::c_int,    /* Interface index */
-    ifi_flags: libc::c_uint,   /* Device flags */
-    ifi_change: libc::c_uint,  /* change mask */
+    ifi_family: sys::c_uchar, /* AF_UNSPEC */
+    ifi_type: sys::c_ushort,  /* Device type */
+    ifi_index: sys::c_int,    /* Interface index */
+    ifi_flags: sys::c_uint,   /* Device flags */
+    ifi_change: sys::c_uint,  /* change mask */
 }
 
 // These are also aligned to 4 bytes (both the start of the data and the end of
@@ -492,8 +492,8 @@ struct ifinfomsg {
 #[repr(C)]
 #[derive(Debug)]
 struct rtattr {
-    rta_len: libc::c_ushort,  /* Length of option */
-    rta_type: libc::c_ushort, /* Type of option */
+    rta_len: sys::c_ushort,  /* Length of option */
+    rta_type: sys::c_ushort, /* Type of option */
 }
 
 impl StructLength for rtattr {
@@ -505,9 +505,9 @@ impl StructLength for rtattr {
 #[repr(C)]
 #[derive(Debug, Default)]
 struct ifaddrmsg {
-    ifa_family: libc::c_uchar,    /* Address type */
-    ifa_prefixlen: libc::c_uchar, /* Prefixlength of address */
-    ifa_flags: libc::c_uchar,     /* Address flags */
-    ifa_scope: libc::c_uchar,     /* Address scope */
-    ifa_index: libc::c_uint,      /* Interface index */
+    ifa_family: sys::c_uchar,    /* Address type */
+    ifa_prefixlen: sys::c_uchar, /* Prefixlength of address */
+    ifa_flags: sys::c_uchar,     /* Address flags */
+    ifa_scope: sys::c_uchar,     /* Address scope */
+    ifa_index: sys::c_uint,      /* Interface index */
 }

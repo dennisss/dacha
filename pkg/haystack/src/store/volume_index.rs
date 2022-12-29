@@ -109,7 +109,7 @@ impl PhysicalVolumeIndex {
 
     /// Open an existing physical volume index
     /// NOTE: read_all must be run before appending entries to this file
-    pub fn open(path: &Path) -> Result<PhysicalVolumeIndex> {
+    pub fn open(path: &LocalPath) -> Result<PhysicalVolumeIndex> {
         let mut opts = OpenOptions::new();
         opts.read(true).write(true);
 

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use common::algorithms::SliceLike;
 use common::bytes::Bytes;
 use common::errors::*;
-use executor::oneshot;
+use executor::channel::oneshot;
 use executor::sync::Mutex;
 use file::LocalFile;
 use file::LocalPath;

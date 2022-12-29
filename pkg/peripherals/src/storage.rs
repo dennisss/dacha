@@ -456,7 +456,7 @@ mod test {
 
     #[test]
     fn single_block() -> Result<()> {
-        common::async_std::task::block_on(single_block_inner())
+        executor::run(single_block_inner())?
     }
 
     async fn single_block_inner() -> Result<()> {

@@ -28,7 +28,7 @@ syscall!(mkdir, bindings::SYS_mkdir, path: *const u8, mode: bindings::mode_t => 
 
 syscall!(stat, bindings::SYS_stat, path: *const u8, statbuf: *mut bindings::stat => Result<()>);
 syscall!(lstat, bindings::SYS_lstat, path: *const u8, statbuf: *mut bindings::stat => Result<()>);
-syscall!(fstat, bindings::SYS_stat, fd: c_int, statbuf: *mut bindings::stat => Result<()>);
+syscall!(fstat, bindings::SYS_fstat, fd: c_int, statbuf: *mut bindings::stat => Result<()>);
 
 mod raw {
     use super::*;

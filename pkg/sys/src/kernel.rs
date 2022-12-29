@@ -113,6 +113,8 @@ pub enum io_uring_op {
     IORING_OP_SENDMSG_ZC,
 }
 
+// TODO: Add IORING_OP_GETDENTS64
+
 #[derive(Clone, Copy, Default, Debug)]
 #[repr(C)]
 pub struct io_uring_getevents_arg {

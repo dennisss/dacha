@@ -9,7 +9,9 @@ parsing = { path = "../parsing" }
 protobuf = { path = "../protobuf" }
 sys = { path = "../sys" }
 elf = { path = "../elf" }
+executor = { path = "../executor" }
 google = { path = "../../third_party/google" }
+radix = { path = "../radix" }
 
 [features]
 default = ["std"]

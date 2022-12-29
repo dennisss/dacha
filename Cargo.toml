@@ -93,6 +93,7 @@ members = [
 	"pkg/uuid_macros",
 	"pkg/tools",
 	"pkg/file",
+	"pkg/base/error",
 ]
 
 [profile.dev]

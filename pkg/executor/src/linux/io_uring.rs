@@ -4,6 +4,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::thread::Thread;
 
 use common::errors::*;
 use sys::{
@@ -12,6 +13,9 @@ use sys::{
 
 use crate::linux::executor::{ExecutorShared, TaskId};
 use crate::linux::waker::retrieve_task_entry;
+
+use super::task::TaskEntry;
+use super::thread_local::CurrentTaskContext;
 
 /// Reserve 10% of the completion queue for storing cancellations of other
 /// operations.
@@ -60,22 +64,10 @@ struct ExecutorIoUringSubmissions {
 struct ExecutorOperationState {
     task_id: TaskId,
 
-    // There are two types of tasks. 1 is a cancellation and 2 is a normal one.
-    /*
-    When a cancel suceeds, we need to tell the thread to unpark
-    => So we mainly need to know the thread id.
+    /// If true, the task that created this operation no longer needs it and it
+    /// can be cleaned up when it completes.
+    detached: bool,
 
-    If an operation completes,
-    - Need to avoid trying to send it to a parked task
-    - So during cancelation, the task must be marked as parked.
-    -
-
-    One challenge:
-    - Seeking on a very slow or broken disk can block threads for a while.
-
-    Other things:
-    - A task should have some amount of thread affinity.
-    */
     /// If this operation was recently completed, this is the result of that.
     result: Option<IoUringResult>,
 }
@@ -129,6 +121,11 @@ impl ExecutorIoUring {
 
             op.result = Some(completion.result);
 
+            if op.detached {
+                submissions.operations.remove(&completion.user_data);
+                continue;
+            }
+
             tasks_to_wake.insert(op.task_id);
         }
 
@@ -137,6 +134,8 @@ impl ExecutorIoUring {
         Ok(())
     }
 
+    /// Triggers any callers to poll_events() to unblock shortly after this is
+    /// called.
     pub fn wake_poller(&self) -> Result<()> {
         let mut submissions = self.submissions.lock().unwrap();
 
@@ -164,10 +163,41 @@ pub struct ExecutorOperation<'a, 'b> {
     /// polled.
     done: bool,
 
-    must_cancel: bool,
+    /// Describes how we should cancel this operation if we no longer need it.
+    cancellation_mode: ExecutorOperationCancelMode,
 
     lifetime: PhantomData<&'a ()>,
     lifetime2: PhantomData<&'b ()>,
+}
+
+#[derive(Clone, Copy)]
+enum ExecutorOperationCancelMode {
+    Nothing,
+
+    /// TODO: Correct this (it is no longer used as we detach cancellations
+    /// right away)
+    ///
+    /// In this mode, we will simply detach the operation so that the executor
+    /// cleans it up once it is reported to be complete.
+    ///
+    /// (used for 'Cancel' operations so that we avoid cancelling cancellations
+    /// which we assume as fast enough that it doesnt' matter).
+    DetachOnly,
+
+    /// Cancel the operation and detach it from the task. The executor will
+    /// clean it up later in the future.
+    ///
+    /// (used for normal operations which don't reference any task data).
+    CancelAndDetach,
+
+    /// Cancel the operation and block the current task/thread until it has been
+    /// completed.
+    ///
+    /// The operation MUST be marked as completed (or failed) by the kernel
+    /// before we are allowed to proceed with running the task
+    ///
+    /// (used for any operation that references data owned by the task).
+    CancelAndWait,
 }
 
 /*
@@ -176,11 +206,20 @@ TODO: We need to check if the task id in the context of an operation hasn't chan
 
 impl<'a, 'b> Drop for ExecutorOperation<'a, 'b> {
     fn drop(&mut self) {
-        if self.must_cancel && !self.done {
-            // Must submit a cancelation of the operation and then park the thread
-            // until it is cancelled.
-            todo!()
+        // TODO: May already be detached in the case of a cancellation.
+        if self.done {
+            return;
         }
+
+        // Must submit a cancelation of the operation and then park the thread
+        // until it is cancelled.
+        match self.cancellation_mode {
+            ExecutorOperationCancelMode::Nothing => Ok(()),
+            ExecutorOperationCancelMode::DetachOnly => self.detach(false, true),
+            ExecutorOperationCancelMode::CancelAndDetach => self.detach(true, false),
+            ExecutorOperationCancelMode::CancelAndWait => self.detach(true, true),
+        }
+        .unwrap();
 
         // TODO: We must mininally mark it as dropped so that the executor can
         // clean it up (or if it is already completed, we need to )
@@ -192,7 +231,10 @@ impl<'a, 'b> ExecutorOperation<'a, 'b> {
     pub fn submit(
         op: IoUringOp<'a, 'b>,
     ) -> impl Future<Output = Result<ExecutorOperation<'a, 'b>>> {
-        ExecutorOperationSubmitFuture { op: Some(op) }
+        ExecutorOperationSubmitFuture {
+            op: Some(op),
+            initially_detached: false,
+        }
     }
 
     pub fn wait(self) -> impl Future<Output = Result<IoUringResult>> + 'a
@@ -201,17 +243,59 @@ impl<'a, 'b> ExecutorOperation<'a, 'b> {
     {
         ExecutorOperationWaitFuture { op: self }
     }
+
+    /// NOTE: This assumes !self.done
+    fn detach(&self, mut cancel: bool, wait: bool) -> Result<()> {
+        let current_task = CurrentTaskContext::current().unwrap();
+
+        loop {
+            {
+                let mut submissions = self.executor_shared.io_uring.submissions.lock().unwrap();
+                let mut entry = submissions.operations.get_mut(&self.id).unwrap();
+                if entry.result.is_some() {
+                    // Already done so we can just remove it.
+                    submissions.operations.remove(&self.id);
+                    return Ok(());
+                }
+
+                if !cancel && !wait {
+                    entry.detached = true;
+                    break;
+                }
+            }
+
+            if cancel {
+                cancel = false; // Only cancel once
+
+                ExecutorOperationSubmitFuture {
+                    op: Some(IoUringOp::Cancel { user_data: self.id }),
+                    initially_detached: true,
+                }
+                .poll_with_task(&current_task)?;
+            }
+
+            if wait {
+                current_task.park_on_current_thread();
+            }
+        }
+
+        Ok(())
+    }
 }
 
 struct ExecutorOperationSubmitFuture<'a, 'b> {
     op: Option<IoUringOp<'a, 'b>>,
+    initially_detached: bool,
 }
 
 impl<'a, 'b> ExecutorOperationSubmitFuture<'a, 'b> {
     fn poll_with_result(&mut self, context: &mut Context<'_>) -> Result<ExecutorOperation<'a, 'b>> {
         let task_entry = retrieve_task_entry(context)
             .ok_or_else(|| err_msg("Not running inside an executor"))?;
+        self.poll_with_task(task_entry)
+    }
 
+    fn poll_with_task(&mut self, task_entry: &TaskEntry) -> Result<ExecutorOperation<'a, 'b>> {
         let shared = task_entry.executor_shared.clone();
         let task_id = task_entry.id;
 
@@ -223,7 +307,19 @@ impl<'a, 'b> ExecutorOperationSubmitFuture<'a, 'b> {
         // The future will only ever get polled once.
         let op = self.op.take().unwrap();
 
-        let must_cancel = op.try_into_static().is_none();
+        let must_wait = op.try_into_static().is_none();
+
+        let is_cancellation = if let IoUringOp::Cancel { .. } = op {
+            true
+        } else {
+            false
+        };
+
+        // NOTE: This also implicitly prohibits users from submitting cancelations as
+        // they can't create detached ops.
+        if is_cancellation && !self.initially_detached {
+            return Err(err_msg("Non-detached cancellations not allowed"));
+        }
 
         unsafe {
             submissions.submission_ring.submit(op, op_id)?;
@@ -233,6 +329,7 @@ impl<'a, 'b> ExecutorOperationSubmitFuture<'a, 'b> {
             op_id,
             ExecutorOperationState {
                 task_id,
+                detached: self.initially_detached,
                 result: None,
             },
         );
@@ -241,7 +338,17 @@ impl<'a, 'b> ExecutorOperationSubmitFuture<'a, 'b> {
             executor_shared: shared.clone(),
             id: op_id,
             done: false,
-            must_cancel,
+            cancellation_mode: {
+                if must_wait {
+                    assert!(!self.initially_detached);
+                    ExecutorOperationCancelMode::CancelAndWait
+                } else if is_cancellation {
+                    ExecutorOperationCancelMode::Nothing
+                } else {
+                    assert!(!self.initially_detached);
+                    ExecutorOperationCancelMode::CancelAndDetach
+                }
+            },
             lifetime: PhantomData,
             lifetime2: PhantomData,
         })
@@ -288,3 +395,29 @@ impl<'a, 'b> Future for ExecutorOperationWaitFuture<'a, 'b> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancellation_test() {
+
+        // crate::run(async )
+    }
+}
+
+/*
+A few different things to test:
+- Cancel a simple future like a timeout
+- Cancel a complex one like a read from a pipe
+
+- If we test inside of this module, we can assert that operations have disappeared from our map.
+
+- Using a join handle to retrieve the result of a task
+- Cancelling said task
+
+- Would be nice to simulate some intersting scenarios
+    - Like timeout an Accept() on a TcpListener
+
+*/
