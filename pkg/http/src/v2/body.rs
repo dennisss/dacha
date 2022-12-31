@@ -135,12 +135,13 @@ impl OutgoingStreamBodyPoller {
                     })
                     .await;
                 if r.is_err() {
-                    // Writer thread hung up. No point in continuing to run.
+                    // The connection writer thread hung up. No point in continuing to run.
                     return Ok(());
                 }
             } else {
                 let r = self.write_available_receiver.recv().await;
                 if r.is_err() {
+                    // Similar to the last case. The connection hung up so no point in continuing.
                     return Ok(());
                 }
             }
@@ -274,6 +275,12 @@ impl Readable for IncomingStreamBody {
         while !buf.is_empty() {
             let mut stream_state = self.stream_state.lock().await;
 
+            // TODO: If we received a complete response, we should still allow reading it
+            // out. (but we should make sure that we correctly update flow control in this
+            // case and we don't clear received_buffer too soon).
+            //
+            // Per HTTP2 spec, a server is allowed to fully write a response and just send a
+            // RST_STREAM instead of reading out the request body.
             if let Some(e) = &stream_state.error {
                 return Err(e.clone().into());
             }

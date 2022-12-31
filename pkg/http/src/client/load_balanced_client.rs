@@ -145,7 +145,7 @@ impl LoadBalancedClient {
             }
 
             for endpoint in add_endpoints {
-                println!("[http::Client] Start new backend client: {:?}", endpoint);
+                println!("[http::Client] Start new backend client: {}", endpoint);
 
                 let id = state.last_backend_id + 1;
                 state.last_backend_id = id;

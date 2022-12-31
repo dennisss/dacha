@@ -53,26 +53,6 @@ impl ResponseHead {
     }
 }
 
-#[async_trait]
-pub trait ResponseHandler: Send + Sync {
-    // NOTE: This is expected to be a very fast running function. Any blocking in
-    // here will block the connection thread.
-    async fn handle_response(&self, response: Result<Response>);
-
-    fn is_closed(&self) -> bool;
-}
-
-#[async_trait]
-impl ResponseHandler for channel::Sender<Result<Response>> {
-    async fn handle_response(&self, response: Result<Response>) {
-        let _ = self.send(response).await;
-    }
-
-    fn is_closed(&self) -> bool {
-        channel::Sender::is_closed(self)
-    }
-}
-
 /// Helper for building a Response object.
 pub struct ResponseBuilder {
     status_code: Option<StatusCode>,

@@ -17,9 +17,7 @@ failure = "0.1.8"
 google = { path = "../../third_party/google" }
 protobuf_json = { path = "../protobuf_json" }
 executor = { path = "../executor" }
-
-[build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+net = { path = "../net" }
 
 [features]
 default = ["std"]

@@ -8,7 +8,9 @@ use crate::hpack;
 use crate::method::Method;
 use crate::proto::v2::*;
 use crate::request::Request;
-use crate::response::{Response, ResponseHandler};
+use crate::response::Response;
+use crate::response_channel::ResponseSender;
+use crate::response_channel::ResponseSenderWithCancellation;
 use crate::v2::body::*;
 use crate::v2::stream_state::*;
 use crate::v2::types::*;
@@ -41,9 +43,12 @@ pub struct Stream {
     /// If not None, then this stream was used to send a request to a remote
     /// server and we are currently waiting for the response headers to
     /// become available.
-    pub incoming_response_handler: Option<(Method, Box<dyn ResponseHandler>, IncomingStreamBody)>,
+    pub incoming_response_handler:
+        Option<(Method, ResponseSenderWithCancellation, IncomingStreamBody)>,
 
-    pub outgoing_response_handler: Option<(Method, OutgoingStreamBody)>,
+    /// If not None, then this stream received a remote request and we are
+    /// waiting for a response to be produced.
+    pub outgoing_response_handler: Option<(Method, OutgoingStreamBodyPoller)>,
 
     /// Whether or not the writer thread has written a packet with end_of_stream
     /// flag yet.
@@ -65,6 +70,12 @@ pub struct Stream {
 }
 
 impl Stream {
+    /// Whether or not we believe that the stream is closed (no longer sending
+    /// or receiving data).
+    ///
+    /// Note that even if we believe that a stream is closed, we may still need
+    /// to send a packet to tell the remote server that we no longer want to
+    /// continue.
     pub fn is_closed(&self, state: &StreamState) -> bool {
         if state.error.is_some() {
             return true;
@@ -72,7 +83,12 @@ impl Stream {
 
         // state.reader_closed is a special case which will cause us to sent a
         // RST_STREAM with a CANCELLED error in finish_stream.
-        self.sending_end_flushed && (state.received_end || state.reader_closed)
+        (self.sending_end_flushed || state.writer_cancelled)
+            && (state.received_end || state.reader_cancelled)
+    }
+
+    pub fn is_normally_closed(&self, state: &StreamState) -> bool {
+        self.sending_end_flushed && state.received_end
     }
 
     pub fn remote_window(&self, state: &mut StreamState) -> WindowSize {
@@ -269,7 +285,7 @@ impl Stream {
         }
         state.local_window -= (data.len() + extra_flow_controlled_bytes) as WindowSize;
 
-        if !state.reader_closed {
+        if !state.reader_cancelled {
             state.received_buffer.extend_from_slice(&data);
 
             // Notify the IncomingStreamBody if there was a change.

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common::errors::*;
-use common::io::{Readable, Writeable};
+use common::io::{IoError, IoErrorKind, Readable, Writeable};
 use executor::child_task::ChildTask;
 
 use crate::hpack;
@@ -23,12 +23,12 @@ use crate::v2::types::*;
         => later that initial task will end and instead become the sending task
 */
 
-pub struct ConnectionWriter {
+pub(super) struct ConnectionWriter {
     shared: Arc<ConnectionShared>,
 }
 
 impl ConnectionWriter {
-    pub fn new(shared: Arc<ConnectionShared>) -> Self {
+    pub(super) fn new(shared: Arc<ConnectionShared>) -> Self {
         Self { shared }
     }
 
@@ -164,16 +164,16 @@ impl ConnectionWriter {
                     }
 
                     // TODO: Take the request with the first non-cancelled response_handle
-                    let (mut request, response_handler) = {
+                    let (mut request, response_sender) = {
                         let mut ret = None;
                         while let Some(req) = connection_state.pending_requests.pop_front() {
                             // As an optimization, we'll skip requests that have their response
                             // handlers cancelled early.
-                            if req.response_handler.is_closed() {
+                            if req.response_sender.is_closed() {
                                 continue;
                             }
 
-                            ret = Some((req.request, req.response_handler));
+                            ret = Some((req.request, req.response_sender));
                             break;
                         }
 
@@ -203,12 +203,22 @@ impl ConnectionWriter {
                     let (mut stream, incoming_body, outgoing_body) =
                         self.shared.new_stream(&connection_state, stream_id);
 
+                    let response_sender = {
+                        let event_sender = self.shared.connection_event_sender.clone();
+                        response_sender.with_cancellation_callback(async move {
+                            let _ = event_sender
+                                .send(ConnectionEvent::CancelRequest { stream_id })
+                                .await;
+                        })
+                    };
+
                     // The type of request will determine if we allow a response
 
                     // Apply client request specific details to the stream's state.
                     let local_end = {
+                        // TODO: If the response_handler is somehow dropped, then we
                         stream.incoming_response_handler =
-                            Some((request.head.method, response_handler, incoming_body));
+                            Some((request.head.method, response_sender, incoming_body));
 
                         // TODO: Deduplicate this logic with the other side.
                         // TODO: Also ensure that the case of zero length bodies is optimized when
@@ -255,6 +265,20 @@ impl ConnectionWriter {
                         max_remote_frame_size,
                     )
                     .await?;
+                }
+                ConnectionEvent::CancelRequest { stream_id } => {
+                    let mut connection_state = self.shared.state.lock().await;
+                    self.shared
+                        .finish_stream(
+                            &mut connection_state,
+                            stream_id,
+                            Some(ProtocolErrorV2 {
+                                code: ErrorCode::CANCEL,
+                                message: "Request cancelled.",
+                                local: true,
+                            }),
+                        )
+                        .await;
                 }
                 ConnectionEvent::SendPushPromise { request, response } => {}
                 ConnectionEvent::SendResponse {
@@ -401,7 +425,7 @@ impl ConnectionWriter {
                     remote_settings_known = true;
                 }
                 ConnectionEvent::ResetStream { stream_id, error } => {
-                    println!("SENDING RST STREAM : {:?}", error);
+                    println!("[http::v2] Sending RST_STREAM : {}", error);
                     writer
                         .write_all(&frame_utils::new_rst_stream_frame(stream_id, error))
                         .await?;
@@ -429,14 +453,11 @@ impl ConnectionWriter {
                             .await?;
                     }
                 }
-                ConnectionEvent::StreamReaderClosed {
-                    stream_id,
-                    stream_state,
-                } => {
+                ConnectionEvent::StreamReaderCancelled { stream_id } => {
                     let mut connection_state_guard = self.shared.state.lock().await;
                     let mut connection_state = &mut *connection_state_guard;
                     self.shared
-                        .close_stream_reader(&mut connection_state, stream_id)
+                        .handle_stream_reader_closed(&mut connection_state, stream_id)
                         .await;
                 }
                 // Write event:
@@ -566,20 +587,32 @@ impl ConnectionWriter {
                     stream_id,
                     internal_error,
                 } => {
+                    if let Some(IoError {
+                        kind: IoErrorKind::Cancelled,
+                        ..
+                    }) = internal_error.downcast_ref()
+                    {
+                        let mut connection_state_guard = self.shared.state.lock().await;
+                        let mut connection_state = &mut *connection_state_guard;
+                        self.shared
+                            .handle_stream_writer_closed(&mut connection_state, stream_id)
+                            .await;
+
+                        continue;
+                    }
+
                     // TODO: Find a better way to export this error.
-                    eprintln!("Stream Write Failure: {}", internal_error);
+                    eprintln!("HTTP2 Stream Write Failure: {}", internal_error);
+
+                    let proto_error = ProtocolErrorV2 {
+                        code: ErrorCode::INTERNAL_ERROR,
+                        message: "Internal error occured while sending data",
+                        local: true,
+                    };
 
                     let mut connection_state = self.shared.state.lock().await;
                     self.shared
-                        .finish_stream(
-                            &mut connection_state,
-                            stream_id,
-                            Some(ProtocolErrorV2 {
-                                code: ErrorCode::INTERNAL_ERROR,
-                                message: "Internal error occured while sending data",
-                                local: true,
-                            }),
-                        )
+                        .finish_stream(&mut connection_state, stream_id, Some(proto_error))
                         .await;
                 }
             }

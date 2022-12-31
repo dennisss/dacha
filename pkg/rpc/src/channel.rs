@@ -5,6 +5,8 @@ use std::sync::Arc;
 use common::bytes::Buf;
 use common::bytes::Bytes;
 use common::errors::*;
+use common::io::IoError;
+use common::io::IoErrorKind;
 use common::io::Readable;
 use executor::channel;
 use http::header::*;
@@ -220,7 +222,7 @@ impl Channel for Http2Channel {
     }
 }
 
-/// http::Body for serializing client requests are separate message frames.
+/// http::Body for serializing client requests as separate message frames.
 ///
 /// TODO: For the case of a unary RPC, this should be optimized to be retryable.
 pub(crate) struct MessageRequestBody {
@@ -275,9 +277,12 @@ impl Readable for MessageRequestBody {
                     return Err(e);
                 }
                 Err(_) => {
-                    // The sender was dropped before the None (end of stream indicator) was sent
-                    // so we'll consider this to be an incomplete stream and inform the other side.
-                    return Err(Status::cancelled("").into());
+                    // The sender was dropped before the None (end of stream indicator) was sent.
+                    return Err(IoError::new(
+                        IoErrorKind::Cancelled,
+                        "RPC request ended before complete body was written.",
+                    )
+                    .into());
                 }
             }
         }

@@ -23,7 +23,8 @@ use crate::connection_event_listener::{ConnectionEventListener, ConnectionShutdo
 use crate::header::*;
 use crate::method::*;
 use crate::request::*;
-use crate::response::{Response, ResponseHandler};
+use crate::response::Response;
+use crate::response_channel::*;
 use crate::uri::*;
 use crate::{v1, v2};
 
@@ -268,7 +269,7 @@ impl State {
 struct ClientLocalRequest {
     request: Request,
     request_context: ClientRequestContext,
-    response_handler: Box<dyn ResponseHandler>,
+    response_sender: ResponseSender,
 }
 
 struct ConnectionEntry {
@@ -374,12 +375,12 @@ impl ClientInterface for DirectClient {
             .into());
         }
 
-        let (response_sender, response_receiver) = channel::bounded(1);
+        let (response_sender, response_receiver) = new_response_channel();
 
         state.unassigned_requests.push_back(ClientLocalRequest {
             request,
             request_context,
-            response_handler: Box::new(response_sender),
+            response_sender,
         });
 
         // Notify the runner thread to take a look (and possibly shut down the queue).
@@ -398,10 +399,7 @@ impl ClientInterface for DirectClient {
 
         drop(state);
 
-        response_receiver
-            .recv()
-            .await
-            .map_err(|_| err_msg("DirectClient hung up without response"))?
+        response_receiver.recv().await
     }
 
     async fn current_state(&self) -> ClientState {
@@ -550,8 +548,8 @@ impl DirectClientRunner {
 
             while let Some(request) = state.unassigned_requests.pop_front() {
                 request
-                    .response_handler
-                    .handle_response(Err(crate::v2::ProtocolErrorV2 {
+                    .response_sender
+                    .send(Err(crate::v2::ProtocolErrorV2 {
                         code: crate::proto::v2::ErrorCode::REFUSED_STREAM,
                         local: true,
                         message: "DirectClient shutting down.".into(),
@@ -789,8 +787,8 @@ impl DirectClientRunner {
                 let entry = state.unassigned_requests.remove(request_i).unwrap();
 
                 entry
-                    .response_handler
-                    .handle_response(Err(crate::v2::ProtocolErrorV2 {
+                    .response_sender
+                    .send(Err(crate::v2::ProtocolErrorV2 {
                         code: crate::proto::v2::ErrorCode::REFUSED_STREAM,
                         local: true,
                         message: "Client not ready.".into(),
@@ -842,7 +840,10 @@ impl DirectClientRunner {
         let connection_id = self.last_connection_id + 1;
         self.last_connection_id = connection_id;
 
-        println!("[http::Client] Starting new connection");
+        println!(
+            "[http::Client] Starting new connection with id {}",
+            connection_id
+        );
 
         self.connecting_tasks.insert(
             connection_id,
@@ -866,7 +867,10 @@ impl DirectClientRunner {
                 continue;
             }
 
-            println!("[http::Client] Shutting down idle connection");
+            println!(
+                "[http::Client] Shutting down idle connection: {}",
+                *connection_id
+            );
 
             conn.shutting_down = true;
             match &conn.instance {
@@ -886,8 +890,11 @@ impl DirectClientRunner {
             return;
         }
 
+        // When we are idle, don't perform eager connecting (otherwise we will get into
+        // an infinite loop of opening a connection, idle closing it, etc.)
         if state.last_active + self.shared.options.idle_timeout < now {
             self.set_next_eventful_time(state.last_active + self.shared.options.idle_timeout);
+            return;
         }
 
         // Check if we have at least one active connection.
@@ -951,7 +958,19 @@ impl DirectClientRunner {
 
         let mut end_time = Instant::now();
 
-        println!("[http::Client] Connect took: {:?}", end_time - start_time);
+        let connection_version = match &value {
+            Some(entry) => match &entry.instance {
+                ConnectionInstance::V1(_) => "V1",
+                ConnectionInstance::V2(_) => "V2",
+            },
+            None => "",
+        };
+
+        println!(
+            "[http::Client] Connect {} took: {:?}",
+            connection_version,
+            end_time - start_time
+        );
 
         let mut events = shared.received_events.lock().await;
         events.connection_opened.push((connection_id, value));
@@ -1130,24 +1149,21 @@ impl DirectClientRunner {
         let mut conn = state.connection_pool.get_mut(&connection_id).unwrap();
 
         let request = request_entry.request;
-        let response_handler = request_entry.response_handler;
+        let response_sender = request_entry.response_sender;
 
         let response_future = match self.start_requesting_inner(&mut conn, request).await {
             Ok(v) => v,
             Err(e) => {
-                response_handler.handle_response(Err(e)).await;
+                response_sender.send(Err(e)).await;
                 return;
             }
         };
 
         conn.num_outstanding_requests += 1;
 
-        // TODO: Normally the response handler will be cheap so run it in the same
-        // process?
-        executor::spawn(async move {
-            let res = response_future.await;
-            response_handler.handle_response(res).await;
-        });
+        // TODO: Eventually directly feed the response_sender to the connection
+        // rather than doing chaining here.
+        response_sender.send_future(response_future);
     }
 
     async fn start_requesting_inner(
@@ -1275,3 +1291,7 @@ impl ConnectionEventListener for ConnectionListener {
 
 // TODO: Add a test case of connecting to an unreachable port to verify that the
 // backoff timings are correct.
+
+// TODO: Verify if we have a long running request for which we got the headers
+// but the body is still being received that we don't shutdown the connection
+// running it.

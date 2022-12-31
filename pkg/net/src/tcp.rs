@@ -91,7 +91,6 @@ pub struct TcpStream {
 impl Drop for TcpStream {
     fn drop(&mut self) {
         if self.mode != sys::ShutdownHow::ReadWrite {
-            println!("Shutdown: {:?}", self.mode);
             self.shutdown(self.mode).unwrap();
         }
     }

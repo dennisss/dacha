@@ -8,6 +8,9 @@ pub type StreamId = u32;
 pub type WindowSize = i32;
 
 // TODO: Distinguish between locally created errors vs remotely created errors.
+
+// TODO: Consider wrapping all PRotocolErrorV2 objects in a IoError before
+// shipping externally.
 #[derive(Debug, Clone, Fail)]
 pub struct ProtocolErrorV2 {
     pub code: ErrorCode,
@@ -34,7 +37,7 @@ impl std::fmt::Display for ProtocolErrorV2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{:?}: [{}] {}",
+            "HTTPv2 {:?} [{}]: {}",
             self.code,
             if self.local { "LOCAL" } else { "REMOTE" },
             self.message

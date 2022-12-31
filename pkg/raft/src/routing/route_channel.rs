@@ -20,11 +20,7 @@ impl RouteChannelFactory {
     /// factory that connects to it.
     pub async fn find_group(route_store: RouteStore) -> Self {
         let group_id = crate::node::Node::<()>::find_peer_group_id(&route_store).await;
-
-        Self {
-            group_id,
-            route_store,
-        }
+        Self::new(group_id, route_store)
     }
 
     pub fn new(group_id: GroupId, route_store: RouteStore) -> Self {
@@ -34,8 +30,8 @@ impl RouteChannelFactory {
         }
     }
 
-    /// Creates a channel which will contact any available cluster node (and may
-    /// load balance different rquests between any of them).
+    /// Creates an RPC channel which will contact any available cluster node
+    /// (and may load balance different requests between any of them).
     pub fn create_any(&self) -> Result<Arc<dyn rpc::Channel>> {
         Ok(Arc::new(rpc::Http2Channel::create(
             http::ClientOptions::from_resolver(Arc::new(RouteResolver::create(

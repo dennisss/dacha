@@ -7,6 +7,9 @@ message AddRequest {
 
     // If true the server will return an error upon getting this request.
     bool return_error = 3;
+
+    // For AddStreaming, if true, we will stop trying to receive extra request messages.
+    bool stop_receiving = 4;
 }
 
 message AddResponse {
@@ -18,4 +21,8 @@ service Adder {
     rpc Add (AddRequest) returns (AddResponse);
 
     rpc AddStreaming (stream AddRequest) returns (stream AddResponse);
+
+    // Never returns a response to users.
+    // Must be cancelled.
+    rpc AddNeverReturn (AddRequest) returns (AddResponse); 
 }

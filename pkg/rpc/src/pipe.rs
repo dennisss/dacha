@@ -53,7 +53,7 @@ async fn pipe_response<'a>(
         if first {
             first = false;
             server_response.context.metadata.head_metadata =
-                client_response.context.metadata.head_metadata.clone();
+                client_response.context().metadata.head_metadata.clone();
         }
 
         server_response.send_bytes(data).await?;
@@ -63,7 +63,7 @@ async fn pipe_response<'a>(
     client_response.finish().await?;
 
     server_response.context.metadata.trailer_metadata =
-        client_response.context.metadata.trailer_metadata.clone();
+        client_response.context().metadata.trailer_metadata.clone();
 
     Ok(())
 }

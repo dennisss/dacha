@@ -17,7 +17,7 @@ pub const CONNECTION_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
 pub const CONNECTION_PREFACE_BODY: &[u8] = b"SM\r\n\r\n";
 
-pub struct ConnectionShared {
+pub(super) struct ConnectionShared {
     pub is_server: bool,
 
     pub state: Mutex<ConnectionState>,
@@ -50,7 +50,8 @@ impl ConnectionShared {
         !self.is_local_stream_id(id)
     }
 
-    pub async fn close_stream_reader(
+    /// Called when the local reader for a stream has been dropped.
+    pub async fn handle_stream_reader_closed(
         &self,
         connection_state: &mut ConnectionState,
         stream_id: StreamId,
@@ -61,7 +62,7 @@ impl ConnectionShared {
         };
 
         let mut stream_state = stream.state.lock().await;
-        stream_state.reader_closed = true;
+        stream_state.reader_cancelled = true;
 
         if stream.is_closed(&stream_state) {
             drop(stream_state);
@@ -72,6 +73,7 @@ impl ConnectionShared {
         // We aren't able to close the stream yet, but we should clear any remaining
         // received data and allow the remote side to send more.
 
+        // TODO: Dedup this with finish_stream.
         if stream_state.received_buffer.len() > 0 {
             self.connection_event_sender
                 .send(ConnectionEvent::StreamRead {
@@ -84,8 +86,38 @@ impl ConnectionShared {
         stream_state.received_buffer.clear();
     }
 
-    /// Performs cleanup on a stream which is gracefully closing with both
-    /// endpoints having sent a frame with an END_STREAM flag.
+    pub async fn handle_stream_writer_closed(
+        &self,
+        connection_state: &mut ConnectionState,
+        stream_id: StreamId,
+    ) {
+        let mut stream = match connection_state.streams.get_mut(&stream_id) {
+            Some(s) => s,
+            _ => return,
+        };
+
+        let mut stream_state = stream.state.lock().await;
+        stream_state.writer_cancelled = true;
+
+        // Clean up any unsent data.
+        // NOTE: We don't update window sizes until data is removed from this buffer so
+        // we don't need to worry about updating that.
+        stream_state.sending_buffer.clear();
+        stream_state.sending_trailers.take();
+
+        if stream.is_closed(&stream_state) {
+            drop(stream_state);
+            self.finish_stream(connection_state, stream_id, None).await;
+            return;
+        }
+    }
+
+    /// Performs cleanup on a stream which is done being used.
+    ///
+    /// This should be called whenever stream.is_closed() transitions to true.
+    ///
+    /// NOTE: This internally locks the stream state so the caller must free any
+    /// references to it.
     pub async fn finish_stream(
         &self,
         connection_state: &mut ConnectionState,
@@ -126,8 +158,9 @@ impl ConnectionShared {
             }
         }
 
-        // NOTE: If this is true, then reader_closed should also be true.
-        if stream_state.error.is_none() && !stream_state.received_end {
+        // TODO: Generalize this. If the stream isn't fully closed, we need to send and
+        // error. NOTE: If this is true, then reader_closed should also be true.
+        if stream_state.error.is_none() && !stream.is_normally_closed(&stream_state) {
             stream_state.error = Some(ProtocolErrorV2 {
                 code: ErrorCode::CANCEL,
                 message: "Stream no longer needed.",
@@ -182,10 +215,10 @@ impl ConnectionShared {
             // (based on the stream id in the latest GOAWAY message).
             //
             // TODO: Ensure that this is never present when the stream has a value.
-            if let Some((request_method, response_handler, body)) =
+            if let Some((request_method, response_semder, body)) =
                 stream.incoming_response_handler.take()
             {
-                response_handler.handle_response(Err(error.into())).await;
+                response_semder.send(Err(error.into())).await;
             }
 
             if let Some(outgoing_body) = stream.outgoing_response_handler.take() {
@@ -240,7 +273,7 @@ impl ConnectionShared {
         &self,
         connection_state: &ConnectionState,
         stream_id: StreamId,
-    ) -> (Stream, IncomingStreamBody, OutgoingStreamBody) {
+    ) -> (Stream, IncomingStreamBody, OutgoingStreamBodyPoller) {
         // NOTE: These channels only act as a boolean flag of whether or not something
         // has changed so we should only need to ever have at most 1 message in
         // each of them.
@@ -264,13 +297,14 @@ impl ConnectionShared {
                 remote_window: connection_state.remote_settings[SettingId::INITIAL_WINDOW_SIZE]
                     as WindowSize,
 
-                reader_closed: false,
+                reader_cancelled: false,
                 received_buffer: vec![],
                 received_trailers: None,
                 received_end: false,
                 received_expected_bytes: None,
                 received_total_bytes: 0,
 
+                writer_cancelled: false,
                 sending_buffer: vec![],
                 sending_trailers: None,
                 sending_end: false,
@@ -285,7 +319,7 @@ impl ConnectionShared {
             read_available_receiver,
         );
 
-        let outgoing_body = OutgoingStreamBody::new(
+        let outgoing_body = OutgoingStreamBodyPoller::new(
             stream_id,
             stream.state.clone(),
             self.connection_event_sender.clone(),

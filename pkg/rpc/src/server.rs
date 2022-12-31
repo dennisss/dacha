@@ -23,6 +23,7 @@ use crate::service::Service;
 use crate::status::*;
 use crate::Channel;
 
+/// RPC server implemented on top of an HTTP2 server.
 pub struct Http2Server {
     handler: Http2RequestHandler,
     shutdown_token: Option<Box<dyn CancellationToken>>,
@@ -72,6 +73,8 @@ impl Http2Server {
         Ok(())
     }
 
+    /// Adds a callback which will be executed when the RPC server is ready to
+    /// accept connections.
     pub fn add_start_callback<F: Fn() + Send + Sync + 'static>(&mut self, callback: F) {
         self.start_callbacks.push(Box::new(callback));
     }
@@ -92,7 +95,8 @@ impl Http2Server {
         self.handler.services.iter().map(|(_, v)| v.as_ref())
     }
 
-    pub fn run(mut self, port: u16) -> impl Future<Output = Result<()>> + 'static {
+    /// TODO: Mabe just return an http::BoundServer
+    pub fn bind(mut self, port: u16) -> impl Future<Output = Result<BoundHttp2Server>> {
         let mut options = http::ServerOptions::default();
         options.force_http2 = !self.allow_http1;
 
@@ -105,10 +109,38 @@ impl Http2Server {
             callback();
         }
 
-        server.run(port)
+        async move {
+            let bound_http_server = server.bind(port).await?;
+            Ok(BoundHttp2Server { bound_http_server })
+        }
+    }
+
+    pub fn run(mut self, port: u16) -> impl Future<Output = Result<()>> + 'static {
+        let fut = self.bind(port);
+
+        async move {
+            let bound_server = fut.await?;
+            bound_server.bound_http_server.run().await
+        }
     }
 }
 
+pub struct BoundHttp2Server {
+    bound_http_server: http::BoundServer,
+}
+
+impl BoundHttp2Server {
+    pub fn local_addr(&self) -> Result<net::ip::SocketAddr> {
+        self.bound_http_server.local_addr()
+    }
+
+    pub async fn run(self) -> Result<()> {
+        self.bound_http_server.run().await
+    }
+}
+
+/// Implementation of the HTTP2 request handler for processing RPC requests.
+///
 /// NOTE: This is mainly pub(crate) to support the LocalChannel implementation.
 /// TODO: Eventually make this private again.
 pub(crate) struct Http2RequestHandler {
@@ -247,6 +279,7 @@ impl Http2RequestHandler {
         request: ServerStreamRequest<()>,
         response_type: RPCMediaType,
     ) -> Result<http::Response> {
+        // TODO: Add a unit test for getting this error!
         let service = self
             .services
             .get(service_name)
@@ -446,7 +479,7 @@ impl Readable for ResponseBody {
                             // TODO: Only forward statuses that were generated locally and not ones
                             // that were returned as part of an internal client RPC call.
 
-                            eprintln!("RPC Error: {:?}", error);
+                            eprintln!("[rpc::Server] RPC Error: {:?}", error);
                             let status = match error.downcast_ref::<Status>() {
                                 Some(s) => s.clone(),
                                 None => Status::internal("Internal error occured"),

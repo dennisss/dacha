@@ -8,6 +8,7 @@ use crate::v2::types::*;
 /// streams.
 ///
 /// TODO: Split into reader and writer states
+#[derive(Debug)]
 pub struct StreamState {
     /// Error state of the stream. If present, then this stream was abruptly
     /// closed.
@@ -22,7 +23,7 @@ pub struct StreamState {
 
     /// If true, the local reader has been dropped so any additional bytes
     /// received on this stream can be immediately dropped.
-    pub reader_closed: bool,
+    pub reader_cancelled: bool,
 
     /// Data which has been received from the remote endpoint as part of DATA
     /// frames but hasn't been read by the stream handler yet.
@@ -52,6 +53,17 @@ pub struct StreamState {
     /// Number of bytes the remote endpoint is willing to accept from the local
     /// endpoint for this stream.
     pub remote_window: WindowSize,
+
+    /// If true, then we received a cancellation error from the stream writer
+    /// before an EOF was written.
+    ///
+    /// When this is set,
+    ///
+    /// NOTE: This should NEVER be set at the same time as 'sending_end' as that
+    /// flag implies we got an Ok(0) from the incoming body on the last call
+    /// which conflicts with this flag which means that the last call got
+    /// Err(Cancelled).
+    pub writer_cancelled: bool,
 
     /// Data waiting to be sent to the remote endpoint.
     /// TODO: Need to be sinegat restrictive about how big this can get (can't

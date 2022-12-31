@@ -1,4 +1,5 @@
 use std::convert::TryInto;
+use std::fmt::Display;
 
 use common::errors::*;
 use net::ip::SocketAddr;
@@ -43,6 +44,19 @@ pub struct ResolvedEndpoint {
     /// NOTE: The port in this field should always equal to the one in
     /// 'address'.
     pub authority: Authority,
+}
+
+impl Display for ResolvedEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} ({})",
+            self.authority
+                .to_string()
+                .unwrap_or_else(|_| "<invalid>".to_string()),
+            self.address.to_string()
+        )
+    }
 }
 
 pub struct SystemDNSResolver {

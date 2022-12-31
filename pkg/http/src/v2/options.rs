@@ -1,3 +1,4 @@
+use std::default::Default;
 use std::time::Duration;
 
 use crate::proto::v2::*;
@@ -59,7 +60,7 @@ pub struct ConnectionOptions {
     pub max_enqueued_requests: usize,
 }
 
-impl std::default::Default for ConnectionOptions {
+impl Default for ConnectionOptions {
     fn default() -> Self {
         // Using the default values, except adding reasonable values for the
         // initially infinite values.

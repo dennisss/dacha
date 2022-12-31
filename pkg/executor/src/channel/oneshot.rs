@@ -49,6 +49,10 @@ impl<T> Drop for Sender<T> {
 }
 
 impl<T> Sender<T> {
+    pub fn is_closed(&self) -> bool {
+        !self.inner.as_ref().unwrap().lock().unwrap().receiver_alive
+    }
+
     /// NOTE: This does not guarantee that the receiver will ever pull the
     /// value.
     pub fn send(mut self, value: T) -> Result<(), T> {

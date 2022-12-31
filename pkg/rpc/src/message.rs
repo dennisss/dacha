@@ -4,7 +4,7 @@ use std::io::Cursor;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use common::io::Readable;
+use common::io::{IoError, IoErrorKind, Readable};
 
 const MESSAGE_HEADER_SIZE: usize = 5;
 
@@ -30,10 +30,13 @@ impl<'a> MessageReader<'a> {
     pub async fn read(&mut self) -> Result<Option<Message>> {
         let mut header = [0u8; MESSAGE_HEADER_SIZE]; // Compressed flag + size.
         if let Err(e) = self.reader.read_exact(&mut header).await {
-            if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
-                if io_error.kind() == std::io::ErrorKind::UnexpectedEof {
-                    return Ok(None);
-                }
+            // If we read nothing, then there are no more messages left in the stream.
+            if let Some(IoError {
+                kind: IoErrorKind::UnexpectedEof { num_read: 0 },
+                ..
+            }) = e.downcast_ref()
+            {
+                return Ok(None);
             }
 
             return Err(e);

@@ -13,6 +13,7 @@ use crate::connection_event_listener::ConnectionEventListener;
 use crate::proto::v2::*;
 use crate::request::Request;
 use crate::response::{Response, ResponseHead};
+use crate::response_channel::{new_response_channel, ResponseReceiver};
 use crate::server_handler::ServerHandler;
 use crate::v2::connection_reader::ConnectionReader;
 use crate::v2::connection_shared::ConnectionShared;
@@ -194,7 +195,7 @@ impl Connection {
     pub async fn receive_upgrade_response(
         &self,
         request_method: Method,
-    ) -> Result<impl std::future::Future<Output = Result<Response>>> {
+    ) -> Result<impl std::future::Future<Output = Result<Response>> + 'static> {
         let mut connection_state = self.shared.state.lock().await;
 
         if self.shared.is_server {
@@ -225,21 +226,26 @@ impl Connection {
             stream.sending_end_flushed = true;
         }
 
-        let (sender, receiver) = channel::bounded::<Result<Response>>(1);
+        let (sender, receiver) = new_response_channel();
 
-        stream.incoming_response_handler = Some((request_method, Box::new(sender), incoming_body));
+        // TODO: Deduplicate this code
+        let event_sender = self.shared.connection_event_sender.clone();
+        let sender = sender.with_cancellation_callback(async move {
+            let _ = event_sender
+                .send(ConnectionEvent::CancelRequest {
+                    stream_id: UPGRADE_STREAM_ID,
+                })
+                .await;
+        });
+
+        stream.incoming_response_handler = Some((request_method, sender, incoming_body));
 
         connection_state.streams.insert(UPGRADE_STREAM_ID, stream);
 
         // TODO: Assuming that we sent the right settings, we can assume that the server
         // now knows our settings and we can start using them.
 
-        Ok(Self::receiver_future(receiver))
-    }
-
-    /// Static lifetime helper for waiting for a receiver's value.
-    async fn receiver_future(receiver: channel::Receiver<Result<Response>>) -> Result<Response> {
-        receiver.recv().await?
+        Ok(receiver.recv())
     }
 
     /// Called on a server which received a request over HTTP 1.1 with an
@@ -358,7 +364,7 @@ impl Connection {
         // TODO: Somewhere add the Content-Length header. (on both client and server as
         // long as not )
 
-        let (sender, receiver) = channel::bounded::<Result<Response>>(1);
+        let (sender, receiver) = new_response_channel();
 
         // TODO: Fail if the connection runner isn't started yet.
 
@@ -392,7 +398,7 @@ impl Connection {
                 .pending_requests
                 .push_front(ConnectionLocalRequest {
                     request,
-                    response_handler: Box::new(sender),
+                    response_sender: sender,
                 });
         }
 
@@ -405,9 +411,7 @@ impl Connection {
                 .try_send(ConnectionEvent::SendRequest);
         }
 
-        // TODO: If the receiver fails, does that mean that we can definately retry the
-        // request?
-        Ok(async move { receiver.recv().await? })
+        Ok(receiver.recv())
     }
 
     /// Shuts down the server.
@@ -596,16 +600,15 @@ impl Connection {
         // TODO: Should we
         // also verify that all streams have been processed.
         if let Err(e) = &result {
+            // TODO: Annoying part of this logic is that we can't run HTTP2 on HTTP2
+            // (because HTTP2 generates ProtocolErrorV2 errors which )
             if let Some(io_error) = e.downcast_ref::<IoError>() {
                 let got_remote_goaway = match &connection_state.shutting_down {
                     ShuttingDownState::GracefulRemote => true,
                     _ => false,
                 };
 
-                if (io_error.kind == IoErrorKind::Aborted
-                    || io_error.kind == IoErrorKind::RemoteReaderClosed)
-                    && got_remote_goaway
-                {
+                if got_remote_goaway {
                     result = Ok(());
                 }
             }
@@ -627,10 +630,10 @@ impl Connection {
 
             // TODO: Should we call finish_stream to perform this cleanup?
             for (stream_id, stream) in connection_state.streams.iter_mut() {
-                if let Some((_, response_handler, _)) = stream.incoming_response_handler.take() {
+                if let Some((_, response_sender, _)) = stream.incoming_response_handler.take() {
                     // TODO: Check if this is a good error to return.
-                    response_handler
-                        .handle_response(Err(ProtocolErrorV2 {
+                    response_sender
+                        .send(Err(ProtocolErrorV2 {
                             code: ErrorCode::STREAM_CLOSED,
                             message: "Connection shutting down.",
                             local: true,
@@ -642,8 +645,8 @@ impl Connection {
             connection_state.streams.clear();
 
             while let Some(req) = connection_state.pending_requests.pop_front() {
-                req.response_handler
-                    .handle_response(Err(ProtocolErrorV2 {
+                req.response_sender
+                    .send(Err(ProtocolErrorV2 {
                         code: ErrorCode::REFUSED_STREAM,
                         message: "Connection shutting down",
                         local: true,

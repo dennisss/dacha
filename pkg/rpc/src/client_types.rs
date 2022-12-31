@@ -240,6 +240,7 @@ impl<Res> ClientStreamingResponse<Res> {
 
     pub fn context(&self) -> &ClientResponseContext {
         &self.context
+    }
 }
 
 impl ClientStreamingResponse<()> {

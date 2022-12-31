@@ -58,12 +58,12 @@ struct ReceivedHeaders {
     typ: ReceivedHeadersType,
 }
 
-pub struct ConnectionReader {
+pub(super) struct ConnectionReader {
     shared: Arc<ConnectionShared>,
 }
 
 impl ConnectionReader {
-    pub fn new(shared: Arc<ConnectionShared>) -> Self {
+    pub(super) fn new(shared: Arc<ConnectionShared>) -> Self {
         Self { shared }
     }
 
@@ -453,7 +453,6 @@ impl ConnectionReader {
                             // TODO: If we recently sent a RST_STREAM on this id since the last ping
                             // was acknowledged, don't both sending a RST_STREAM and just ignore the
                             // packets.
-                            println!("SEND STREAM CLOSED");
                             let _ = self
                                 .shared
                                 .connection_event_sender
@@ -497,7 +496,7 @@ impl ConnectionReader {
                     );
                     // TODO: Have a smarter way to determine if the frame was rejected (e.g. based
                     // on the return value of receive_data).
-                    if stream_state.error.is_some() || stream_state.reader_closed {
+                    if stream_state.error.is_some() || stream_state.reader_cancelled {
                         // Data frame was rejected.
                         // We can allow the other endpoint to send more.
                         if frame_header.length != 0 {
@@ -653,7 +652,7 @@ impl ConnectionReader {
                             frame_header.stream_id,
                             Some(ProtocolErrorV2 {
                                 code: rst_stream_frame.error_code,
-                                message: "Recieved RST_STREAM from remote endpoint",
+                                message: "Received RST_STREAM from remote endpoint",
                                 local: false,
                             }),
                         )
@@ -896,8 +895,8 @@ impl ConnectionReader {
                     // This code is only relevant on the client side.
                     // As soon as we receive a remote GOAWAY, we can cancel all unsent requests.
                     while let Some(req) = connection_state.pending_requests.pop_front() {
-                        req.response_handler
-                            .handle_response(Err(refused_error.clone().into()))
+                        req.response_sender
+                            .send(Err(refused_error.clone().into()))
                             .await;
                     }
 
@@ -1310,7 +1309,7 @@ impl ConnectionReader {
             StreamEntry::Open(stream) => {
                 let mut stream_state = stream.state.lock().await;
 
-                if let Some((request_method, response_handler, incoming_body)) =
+                if let Some((request_method, response_sender, incoming_body)) =
                     stream.incoming_response_handler.take()
                 {
                     if let Some(response) = stream.receive_response(
@@ -1320,12 +1319,11 @@ impl ConnectionReader {
                         incoming_body,
                         &mut stream_state,
                     ) {
-                        response_handler.handle_response(Ok(response)).await;
+                        response_sender.send(Ok(response)).await;
                     } else {
                         // TODO: Use the stream error.
-                        response_handler
-                            .handle_response(Err(err_msg("Failed")))
-                            .await;
+                        // TODO: When will this ever fail?
+                        response_sender.send(Err(err_msg("Failed"))).await;
                     }
                 } else {
                     // Otherwise we just received trailers.

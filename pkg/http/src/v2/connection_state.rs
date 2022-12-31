@@ -11,7 +11,8 @@ use crate::connection_event_listener::ConnectionEventListener;
 use crate::connection_event_listener::ConnectionShutdownDetails;
 use crate::proto::v2::*;
 use crate::request::Request;
-use crate::response::{Response, ResponseHandler};
+use crate::response::Response;
+use crate::response_channel::ResponseSender;
 use crate::v2::settings::*;
 use crate::v2::stream::Stream;
 use crate::v2::stream_state::StreamState;
@@ -133,9 +134,7 @@ pub enum ConnectionEvent {
     /// respond with an ACK.
     ///
     /// Sender: Connection level reader thread
-    Ping {
-        ping_frame: PingFramePayload,
-    },
+    Ping { ping_frame: PingFramePayload },
 
     /// There was an error while processing a stream. We should tell the remote
     /// endpoint that we are closing the stream prematurely.
@@ -177,40 +176,42 @@ pub enum ConnectionEvent {
     /// should now be acknowledged.
     ///
     /// Sender: Connection level reader thread
-    AcknowledgeSettings {
-        header_table_size: Option<u32>,
-    },
+    AcknowledgeSettings { header_table_size: Option<u32> },
 
     /////
-    /// A local task hsa consumed some data from a stream. In response, we
+    /// A local task has consumed some data from a stream. In response, we
     /// should update our flow control and allow the remote endpoint to send
     /// us more data.
-    StreamRead {
-        stream_id: StreamId,
-        count: usize,
-    },
+    StreamRead { stream_id: StreamId, count: usize },
 
     /// Indicates that no more data will ever be read from the given stream.
     /// In response, we can drop any future data received on this stream.
-    StreamReaderClosed {
-        stream_id: StreamId,
-        stream_state: Arc<Mutex<StreamState>>,
-    },
+    StreamReaderCancelled { stream_id: StreamId },
 
-    StreamWrite {
-        stream_id: StreamId,
-    },
+    /// TODO: If we have any StreamWriteFailures enqueued, prioritize them over
+    /// this event.
+    StreamWrite { stream_id: StreamId },
 
     /// Sent when the OutgoingStreamBody fails to generate more data to write
     /// into the stream. In response, we should close the stream.
     StreamWriteFailure {
         stream_id: StreamId,
+
+        /// NOTE: This may have IoErrorKind::Cancelled to indicate that we no
+        /// longer intend on writing but we may still be reading.
         internal_error: common::errors::Error,
     },
 
     /// We are an HTTP client connection and a locally generated request needs
     /// to be sent to the other endpoint.
     SendRequest,
+
+    /// Triggered when the client waiting for a response has stopped waiting.
+    ///
+    /// Can be ignored if stream.incoming_response_handler.is_none(). When it is
+    /// none, the cancellation of a request is determinated based on the
+    /// reader/writer ends of the stream completing.
+    CancelRequest { stream_id: StreamId },
 
     // NOTE: Because the DATA frames should ideally follow the header frames, the writer
     // frame will be the one responsible for starting the reading task for this stream once
@@ -256,5 +257,5 @@ impl ShuttingDownState {
 
 pub struct ConnectionLocalRequest {
     pub request: Request,
-    pub response_handler: Box<dyn ResponseHandler>,
+    pub response_sender: ResponseSender,
 }

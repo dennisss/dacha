@@ -80,6 +80,9 @@ pub(super) struct TaskState {
     ///
     /// This is used to ensure that tasks never attempt to be assigned to
     /// multiple threads at the same time.
+    ///
+    /// NOTE: Cancelled tasks continuously stay scheduled until their TaskEntry
+    /// is completely deallocated.
     pub scheduled: bool,
 
     /// Reference to a dedicated thread running just this task.
@@ -106,6 +109,8 @@ pub(super) struct TaskState {
 
     /// If true, this task is cancelled and should no longer be polled.
     ///
-    /// NOTE: A task is only allowed to be cancelled through its JoinHandle.
+    /// NOTE: A task is only allowed to be cancelled through its JoinHandle
+    /// (this is mainly a necessary requirement to guarantee that .join() always
+    /// returns a result unless the join handle is dropped).
     pub cancelled: bool,
 }

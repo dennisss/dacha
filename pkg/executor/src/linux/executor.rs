@@ -358,7 +358,12 @@ impl Executor {
             - Then the drop() destructors should be
             */
 
-            while !cancelled {
+            loop {
+                if cancelled {
+                    drop(future);
+                    break;
+                }
+
                 let p = Future::poll(future.as_mut(), &mut context);
 
                 match p {
