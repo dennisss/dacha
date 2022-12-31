@@ -7,3 +7,6 @@ pub mod store;
 mod table_key;
 mod transaction;
 mod watchers;
+
+#[cfg(test)]
+mod tests;

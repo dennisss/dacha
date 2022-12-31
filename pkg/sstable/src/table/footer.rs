@@ -1,11 +1,7 @@
-use std::io::SeekFrom;
-
-use common::errors::*;
-use common::futures::AsyncReadExt;
 use common::io::Readable;
+use common::{check_zero_padding, errors::*};
 use file::LocalFile;
 
-use crate::encoding::check_padding;
 use crate::table::block_handle::BlockHandle;
 
 // TODO: There are two different versions:
@@ -77,7 +73,7 @@ impl Footer {
             let (index_handle, data) = BlockHandle::parse(data)?;
 
             let footer_version_start = data.len() - 4;
-            check_padding(&data[0..footer_version_start])?;
+            check_zero_padding(&data[0..footer_version_start])?;
             let footer_version = u32::from_le_bytes(*array_ref![data, footer_version_start, 4]);
 
             if footer_version == 0 {
@@ -98,7 +94,7 @@ impl Footer {
 
             let (metaindex_handle, data) = BlockHandle::parse(data)?;
             let (index_handle, data) = BlockHandle::parse(data)?;
-            check_padding(data)?;
+            check_zero_padding(data)?;
 
             Ok(Self {
                 checksum_type: ChecksumType::CRC32C,

@@ -111,13 +111,6 @@ impl TestDB {
             assert!(seek_keys.insert(entry.key.to_vec()), "Duplicate key seen");
 
             let expected_value = self.values.get(&entry.key).unwrap();
-
-            // if expected_value != &entry.value {
-            //     iter.next().await?;
-            //     iter.next().await?;
-            //     iter.next().await?;
-            // }
-
             assert_eq!(Some(expected_value), entry.value.as_ref());
         }
 

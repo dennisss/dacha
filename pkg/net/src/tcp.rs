@@ -71,6 +71,15 @@ impl TcpListener {
                 .into(),
         })
     }
+
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        let addr = unsafe {
+            sys::getsockname(&self.fd)?
+                .ok_or_else(|| err_msg("local_addr has unsupported address type"))?
+        };
+
+        Ok(SocketAddr::from(addr))
+    }
 }
 
 pub struct TcpStream {

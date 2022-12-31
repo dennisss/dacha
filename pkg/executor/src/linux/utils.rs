@@ -31,3 +31,9 @@ pub fn spawn<F: Future<Output = T> + Send + 'static, T: Send + 'static>(
 
     JoinHandle { task, receiver }
 }
+
+/*
+Key tests:
+- Able to cancel a complex operation like an I/O
+
+*/

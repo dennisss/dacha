@@ -7,6 +7,8 @@ use std::sync::Arc;
 
 use common::bytes::Bytes;
 use common::errors::*;
+use common::io::IoError;
+use common::io::IoErrorKind;
 use executor::sync::Mutex;
 
 use crate::http_utils::*;
@@ -213,10 +215,12 @@ pub async fn write_batch(
         loop {
             // Read the needle header.
             if let Err(e) = body.read_exact(&mut header_buf).await {
-                if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
-                    if io_error.kind() == std::io::ErrorKind::UnexpectedEof {
-                        break;
-                    }
+                if let Some(IoError {
+                    kind: IoErrorKind::UnexpectedEof { num_read: 0 },
+                    ..
+                }) = e.downcast_ref()
+                {
+                    break;
                 }
 
                 // TODO: Convert into a client error?

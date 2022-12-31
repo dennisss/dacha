@@ -364,7 +364,7 @@ impl KeyValueStoreService for Metastore {
     }
 }
 
-pub async fn run(config: &MetastoreConfig) -> Result<()> {
+pub async fn run(config: MetastoreConfig) -> Result<()> {
     if !file::exists(&config.dir).await? {
         file::create_dir(&config.dir).await?;
     }

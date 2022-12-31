@@ -146,7 +146,7 @@ impl UdpSocket {
         unsafe {
             sys::setsockopt(
                 &self.fd,
-                sys::SocketOptionLevel::SOL_SOCKET,
+                sys::SocketOptionLevel::SOL_IP,
                 sys::SocketOption::IP_ADD_MEMBERSHIP,
                 &ip_mreq,
             )?;

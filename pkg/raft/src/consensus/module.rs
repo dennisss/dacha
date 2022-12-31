@@ -96,7 +96,7 @@ pub type Proposal = LogPosition;
 /// the given proposal
 pub type ProposeResult = std::result::Result<Proposal, ProposeError>;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Fail, PartialEq)]
 pub enum ProposeError {
     /// Implies that the entry can not currently be processed and should be
     /// retried once the given proposal has been resolved
@@ -187,7 +187,7 @@ impl ReadIndex {
     }
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Fail, PartialEq)]
 pub struct NotLeaderError {
     /// The latest observed term. Can be used by the recipient to ignore leader
     /// hints from past terms.

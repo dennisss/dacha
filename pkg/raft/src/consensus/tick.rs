@@ -8,8 +8,9 @@ use crate::proto::ident::*;
 ///
 /// The caller of the ConsensusModule is responsible for applying all the listed
 /// side effects as mentioned in each field. Generally there is no need to
-/// complete executing all side effects before running the next ConsensusModule
-/// operation is executed. See each field for more details on ordering requests.
+/// completely executing all side effects before running the next
+/// ConsensusModule operation is executed. See each field for more details on
+/// ordering requests.
 #[derive(Debug)]
 pub struct Tick {
     /// Exact time at which this tick is happening.
@@ -97,7 +98,7 @@ impl Tick {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct NewLogEntry {
     pub sequence: LogSequence,
     pub entry: LogEntry,
@@ -107,7 +108,7 @@ pub struct NewLogEntry {
 ///
 /// NOTE: If the client is asked to send a request with a higher term than all
 /// previous requests, then it can cancel all previously issues requests.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ConsensusMessage {
     pub to: Vec<ServerId>,
     pub body: ConsensusMessageBody,
@@ -115,7 +116,7 @@ pub struct ConsensusMessage {
 
 // TODO: A message should be backed by a buffer such that it can be trivially
 // forwarded and owned some binary representation of itself
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ConsensusMessageBody {
     PreVote(RequestVoteRequest),
     RequestVote(RequestVoteRequest),

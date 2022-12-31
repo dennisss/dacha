@@ -56,5 +56,5 @@ async fn run() -> Result<()> {
 
 fn main() -> Result<()> {
     // let args = parse_args::<Args>()?;
-    block_on(run())
+    executor::run(run())?
 }

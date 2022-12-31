@@ -39,6 +39,12 @@ impl<T: protobuf::StaticMessage> std::ops::Deref for ServerRequest<T> {
     }
 }
 
+impl<T: protobuf::StaticMessage> AsRef<T> for ServerRequest<T> {
+    fn as_ref(&self) -> &T {
+        &self.value
+    }
+}
+
 /// RPC request received by a server consisting of zero or more messages.
 ///
 /// Internally this is implemented by reading from an http::Body.
@@ -176,8 +182,14 @@ impl<'a, T: protobuf::StaticMessage> std::ops::DerefMut for ServerResponse<'a, T
     }
 }
 
+impl<'a, T: protobuf::StaticMessage> AsMut<T> for ServerResponse<'a, T> {
+    fn as_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+}
+
 pub struct ServerStreamResponse<'a, T> {
-    pub context: &'a mut ServerResponseContext,
+    pub(crate) context: &'a mut ServerResponseContext,
 
     pub(crate) response_type: RPCMediaType,
 
@@ -232,6 +244,10 @@ impl<'a, T> ServerStreamResponse<'a, T> {
             .send(ServerStreamResponseEvent::Message(data))
             .await?;
         Ok(())
+    }
+
+    pub fn context(&mut self) -> &mut ServerResponseContext {
+        self.context
     }
 }
 

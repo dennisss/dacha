@@ -137,6 +137,21 @@ enum ServerConnectionV2Input {
     SkipPrefaceHead,
 }
 
+pub struct BoundServer {
+    server: Server,
+    listener: TcpListener,
+}
+
+impl BoundServer {
+    pub async fn run(self) -> Result<()> {
+        Server::run_impl(self).await
+    }
+
+    pub fn local_addr(&self) -> Result<net::ip::SocketAddr> {
+        self.listener.local_addr()
+    }
+}
+
 impl Drop for Server {
     fn drop(&mut self) {
         if !self.shutdown_timer.is_some() {
@@ -250,18 +265,32 @@ impl Server {
     // TODO: Ideally we'd support using some alternative connection (e.g. a
     // TlsServer)
 
-    /// Starts listening on the given port and processes new connections until
-    /// the server is shut down.
-    pub async fn run(mut self, port: u16) -> Result<()> {
-        enum Event {
-            NextStream(Result<TcpStream>),
-            Shutdown,
-        }
-
+    pub async fn bind(mut self, port: u16) -> Result<BoundServer> {
         // Bind all all interfaces.
         // TODO: Have an explicit keep-alive period at the TCP level and also eventualyl
         // close the connection.
         let mut listener = TcpListener::bind(format!("0.0.0.0:{}", port).parse()?).await?;
+
+        Ok(BoundServer {
+            server: self,
+            listener,
+        })
+    }
+
+    /// Starts listening on the given port and processes new connections until
+    /// the server is shut down.
+    pub async fn run(mut self, port: u16) -> Result<()> {
+        Self::run_impl(self.bind(port).await?).await
+    }
+
+    async fn run_impl(bound_server: BoundServer) -> Result<()> {
+        let mut this = bound_server.server;
+        let mut listener = bound_server.listener;
+
+        enum Event {
+            NextStream(Result<TcpStream>),
+            Shutdown,
+        }
 
         loop {
             let next_stream =
@@ -270,7 +299,7 @@ impl Server {
                 });
 
             let event = {
-                if let Some(shutdown_token) = &self.shutdown_token {
+                if let Some(shutdown_token) = &this.shutdown_token {
                     let shutdown_event =
                         executor::future::map(shutdown_token.wait(), |_| Event::Shutdown);
 
@@ -284,7 +313,7 @@ impl Server {
                 Event::NextStream(stream) => {
                     let s = stream?;
 
-                    let mut connection_pool = self.shared.connection_pool.lock().await;
+                    let mut connection_pool = this.shared.connection_pool.lock().await;
 
                     // TODO: Support over usize # of connections by wrapping and checking if the id
                     // is already in the hashmap.
@@ -292,7 +321,7 @@ impl Server {
                     connection_pool.last_id = connection_id;
 
                     let task_handle =
-                        executor::spawn(Self::handle_stream(self.shared.clone(), connection_id, s));
+                        executor::spawn(Self::handle_stream(this.shared.clone(), connection_id, s));
 
                     connection_pool.connections.insert(
                         connection_id,
@@ -303,7 +332,7 @@ impl Server {
                     );
                 }
                 Event::Shutdown => {
-                    self.shutdown(true).await;
+                    this.shutdown(true).await;
                     break;
                 }
             }
@@ -316,13 +345,13 @@ impl Server {
         // Wait for all connections to die.
         loop {
             {
-                let connection_pool = self.shared.connection_pool.lock().await;
+                let connection_pool = this.shared.connection_pool.lock().await;
                 if connection_pool.connections.is_empty() {
                     break;
                 }
             }
 
-            let _ = self.shared.connection_pool_empty_channel.1.recv().await;
+            let _ = this.shared.connection_pool_empty_channel.1.recv().await;
         }
 
         Ok(())
@@ -345,20 +374,18 @@ impl Server {
             Err(e) => {
                 let mut ignore = false;
 
+                // TODO: If we ever add client side errors to this, we will need to ignore it.
+                //
                 // "Connection reset by peer". This error typically occurs after a client's
                 // persistent connection hits an idle timeout.
+                //
                 //
                 // "UnexpectedEof" similarly would happen if the client closes the connection.
                 //
                 // TODO: Increment a counter whenever we have any type of non-graceful closure
                 // like this?
-                if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
-                    if io_error.kind() == std::io::ErrorKind::ConnectionReset
-                        || io_error.kind() == std::io::ErrorKind::UnexpectedEof
-                        || io_error.kind() == std::io::ErrorKind::BrokenPipe
-                    {
-                        ignore = true;
-                    }
+                if let Some(io_error) = e.downcast_ref::<IoError>() {
+                    ignore = true;
                 }
 
                 if !ignore {

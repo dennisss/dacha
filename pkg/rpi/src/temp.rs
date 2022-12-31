@@ -7,7 +7,6 @@ Units are 1000 per degree C
 
 use common::errors::*;
 use common::failure::ResultExt;
-use common::futures::AsyncReadExt;
 use common::io::Readable;
 use file::LocalFile;
 

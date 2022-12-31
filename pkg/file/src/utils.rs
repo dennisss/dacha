@@ -184,9 +184,11 @@ pub async fn remove_dir_all<P: AsRef<LocalPath>>(path: P) -> Result<()> {
     // NOTE: We should use symlink_metadata to avoid deleting things across
     // symlinks.
 
+
     todo!()
 }
 
+/// Moves the file currently located at 'from' to 'to'
 pub async fn rename<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(from: P, to: P2) -> Result<()> {
     let from = CString::new(from.as_ref().as_str())?;
     let to = CString::new(to.as_ref().as_str())?;

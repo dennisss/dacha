@@ -44,6 +44,12 @@ pub enum IoErrorKind {
     /// - Packets timed out.
     Aborted,
 
+    /// The root most operation in a chain of dependent operations is
+    /// terminating so
+    ///
+    /// TODO: Should we merge this with RemoteReaderClosed,
+    Cancelled,
+
     /// A write failed because the opposite side of the underlying data stream
     /// is no longer reading bytes.
     RemoteReaderClosed,

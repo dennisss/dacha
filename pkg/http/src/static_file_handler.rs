@@ -63,13 +63,11 @@ impl ServerHandler for StaticFileHandler {
         let metadata = match file::metadata(&file_path).await {
             Ok(m) => m,
             Err(e) => {
-                if let Some(err) = e.downcast_ref::<std::io::Error>() {
-                    if err.kind() == std::io::ErrorKind::NotFound {
-                        return ResponseBuilder::new()
-                            .status(status_code::NOT_FOUND)
-                            .build()
-                            .unwrap();
-                    }
+                if file::because_file_doesnt_exist(&e) {
+                    return ResponseBuilder::new()
+                        .status(status_code::NOT_FOUND)
+                        .build()
+                        .unwrap();
                 }
 
                 return ResponseBuilder::new()

@@ -1,11 +1,16 @@
 syntax = "proto3";
 
 message AddRequest {
+    // Numbers to sum up.
     int32 x = 1;
     int32 y = 2;
+
+    // If true the server will return an error upon getting this request.
+    bool return_error = 3;
 }
 
 message AddResponse {
+    // z = a + b
     int32 z = 1;
 }
 

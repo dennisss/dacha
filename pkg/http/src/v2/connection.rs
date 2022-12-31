@@ -3,7 +3,7 @@ use std::future::Future;
 use std::{convert::TryFrom, sync::Arc};
 
 use common::chrono::prelude::*;
-use common::io::{Readable, Writeable};
+use common::io::{IoError, IoErrorKind, Readable, Writeable};
 use common::{chrono::Duration, errors::*};
 use executor::channel;
 use executor::child_task::ChildTask;
@@ -596,13 +596,16 @@ impl Connection {
         // TODO: Should we
         // also verify that all streams have been processed.
         if let Err(e) = &result {
-            if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
+            if let Some(io_error) = e.downcast_ref::<IoError>() {
                 let got_remote_goaway = match &connection_state.shutting_down {
                     ShuttingDownState::GracefulRemote => true,
                     _ => false,
                 };
 
-                if io_error.kind() == std::io::ErrorKind::BrokenPipe && got_remote_goaway {
+                if (io_error.kind == IoErrorKind::Aborted
+                    || io_error.kind == IoErrorKind::RemoteReaderClosed)
+                    && got_remote_goaway
+                {
                     result = Ok(());
                 }
             }

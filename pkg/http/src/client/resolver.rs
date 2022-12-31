@@ -13,6 +13,11 @@ use crate::uri::{Authority, Host};
 /// changes.
 pub type ResolverChangeListener = Box<dyn Fn() -> bool + Send + Sync + 'static>;
 
+/// Trakcer for looking up and monitoring changes to the set of endpoints at
+/// which some HTTP service can be reached.
+///
+/// Each instance of a Resolver corresponds to a tracker for one unique/named
+/// entity (e.g. one DNS name like 'google.com' or one cluster job).
 #[async_trait]
 pub trait Resolver: 'static + Send + Sync {
     async fn resolve(&self) -> Result<Vec<ResolvedEndpoint>>;

@@ -153,6 +153,9 @@ impl<T: protobuf::StaticMessage> ClientStreamingRequest<T> {
     /// Returns whether or not the message was sent. If not, then the connection
     /// was broken and the client should check the finish() method on the
     /// other end.
+    ///
+    /// NOTE: A return value of true is no gurantee that the server actually
+    /// processed the message.
     #[must_use]
     pub async fn send(&mut self, message: &T) -> bool {
         let sender = match self.sender.as_ref() {
@@ -178,7 +181,7 @@ impl<T: protobuf::StaticMessage> ClientStreamingRequest<T> {
 /// the Server closes its stream (as there isn't any good usecase for continuing
 /// to send client bytes in this case).
 pub struct ClientStreamingResponse<Res> {
-    pub context: ClientResponseContext,
+    pub(crate) context: ClientResponseContext,
 
     state: Option<ClientStreamingResponseState>,
 
@@ -234,6 +237,9 @@ impl<Res> ClientStreamingResponse<Res> {
     pub fn set_interceptor(&mut self, interceptor: Arc<dyn ClientResponseInterceptor>) {
         self.interceptor = Some(interceptor);
     }
+
+    pub fn context(&self) -> &ClientResponseContext {
+        &self.context
 }
 
 impl ClientStreamingResponse<()> {
@@ -316,6 +322,9 @@ impl<T> ClientStreamingResponse<T> {
     }
 
     async fn recv_head_impl(&mut self, response: ChildTask<Result<http::Response>>) -> Result<()> {
+        // TODO: Standardize the error codes we will us for this.
+        // These should also probably not be 'local' rpc statuses.
+
         let response = response.join().await?;
 
         if response.head.status_code != http::status_code::OK {

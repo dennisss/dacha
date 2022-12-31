@@ -187,7 +187,7 @@ impl LogMetadata {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LogOffset {
     pub position: LogPosition,
     pub sequence: LogSequence,

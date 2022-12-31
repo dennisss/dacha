@@ -179,4 +179,39 @@ mod tests {
 
         Ok(())
     }
+
+    #[testcase]
+    async fn rename_test() -> Result<()> {
+        let temp_dir = TempDir::create()?;
+
+        let first_path = temp_dir.path().join("first");
+        let second_path = temp_dir.path().join("second");
+
+        crate::write(&first_path, "hello").await?;
+        assert!(crate::exists(&first_path).await?);
+        assert!(!crate::exists(&second_path).await?);
+
+        crate::rename(&first_path, &second_path).await?;
+
+        assert!(!crate::exists(&first_path).await?);
+        assert!(crate::exists(&second_path).await?);
+        assert_eq!(crate::read_to_string(&second_path).await?, "hello");
+
+        Ok(())
+    }
+
+    /*
+    #[testcase]
+    async fn link_creation_test() -> Result<()> {
+        let temp_dir = TempDir::create()?;
+
+        // create a link to lorem_ipsum
+
+        // verify symlink_metadata and metadata
+
+        Ok(())
+    }
+    */
+
+    // create_dir_all
 }

@@ -20,6 +20,7 @@ failure = "0.1.8"
 executor = { path = "../executor" }
 file = { path = "../file" }
 net = { path = "../net" }
+radix = { path = "../radix" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

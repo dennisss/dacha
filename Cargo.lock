@@ -684,6 +684,7 @@ name = "datastore"
 version = "0.1.0"
 dependencies = [
  "common",
+ "crypto",
  "executor",
  "file",
  "google",
@@ -693,6 +694,7 @@ dependencies = [
  "parsing",
  "protobuf",
  "protobuf_compiler",
+ "radix",
  "raft",
  "rpc",
  "rpc_util",
@@ -1935,6 +1937,7 @@ dependencies = [
  "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
+ "radix",
  "rpc",
  "rpc_util",
  "sstable",
@@ -2017,9 +2020,9 @@ dependencies = [
  "google",
  "http",
  "macros",
+ "net",
  "parsing",
  "protobuf",
- "protobuf_compiler",
  "protobuf_json",
  "regexp_macros",
 ]

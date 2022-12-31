@@ -332,6 +332,10 @@ impl Executor {
                 entries.get(&task_id).unwrap().clone()
             };
 
+            // NOTE: This is declared before the 'future' so that any drops of the future
+            // always occur with a task context.
+            let task_context = CurrentTaskContext::new(&task_entry);
+
             let (mut future, mut cancelled) = {
                 let mut state = task_entry.state.lock().unwrap();
                 state.dirty = false;
@@ -347,8 +351,6 @@ impl Executor {
             let waker = create_waker(task_entry.clone());
             let mut context = Context::from_waker(&waker);
 
-            let task_context = CurrentTaskContext::new(&task_entry);
-
             /*
             TODO: The smartest way to completely cancel a future would be to:
             - We should know which operations it is waiting for.
@@ -361,11 +363,11 @@ impl Executor {
 
                 match p {
                     Poll::Ready(()) => {
-                        // TODO: We must first drop the future to ensure that any cleanup of ops is
-                        // done. (this requires not having shared.tasks locked in case it wants to
-                        // allocate new tasks).
-
+                        // Ensure that all operations are cleaned up before we remove the task entry
+                        // so that any operation completions don't complain about non-existent
+                        // tasks.
                         drop(future);
+
                         shared.tasks.lock().unwrap().remove(&task_id);
                         break;
                     }
@@ -389,9 +391,6 @@ impl Executor {
                     }
                 }
             }
-
-            // Must life longer than the future is dropped.
-            drop(task_context);
         }
     }
 }

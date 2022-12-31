@@ -41,10 +41,10 @@ async fn server() -> Result<()> {
 
 async fn run() -> Result<()> {
     let ip = net::netlink::local_ip()?;
-    // println!("My local ip: {:?}", ip.to_string());
+    println!("My local ip: {:?}", ip.to_string());
 
-    // let ifaces = net::netlink::read_interfaces().await?;
-    // println!("{:#?}", ifaces);
+    let ifaces = net::netlink::read_interfaces()?;
+    println!("{:#?}", ifaces);
 
     return Ok(());
 
@@ -92,5 +92,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    executor::run(server())?
+    executor::run(run())?
 }

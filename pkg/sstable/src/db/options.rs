@@ -55,7 +55,7 @@ pub struct EmbeddedDBOptions {
     /// of level 1, and every additional level will have size:
     /// 'base*(multiplier^(level - 1))'
     #[default(256*1024*1024)]
-    pub max_bytes_for_level_base: u64, // = 256 * 1048576;
+    pub max_bytes_for_level_base: u64,
 
     /// Default 10 for RocksDB.
     #[default(10)]
@@ -63,11 +63,6 @@ pub struct EmbeddedDBOptions {
 
     /// Options to use for building tables on disk.
     pub table_options: SSTableBuilderOptions,
-    /*	/// If true, open the database in write mode, otherwise, the opened database
-     *	/// will be read-only.
-     *	pub writeable: bool, */
-
-    // TODO: Limit max number of open files.
 
     /* max_log_file_size */
     #[default(1024*1024*1024)]
@@ -83,6 +78,10 @@ pub struct EmbeddedDBOptions {
     #[default(DataBlockCache::new(8 * 1024 * 1024))]
     pub block_cache: DataBlockCache,
 
+    /// FOR TESTING ONLY
+    ///
+    /// If true, we will not perform automatic compaction. Instead compaction
+    /// will only occur on manual calls by the user to wait_for_compactions().
     pub manual_compactions_only: bool,
 
     /// If true, we will not maintain a write ahead log. This means that

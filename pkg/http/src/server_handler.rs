@@ -54,6 +54,8 @@ impl<T: ServerHandler> ServerHandler for Arc<T> {
     }
 }
 
+/// General information about a connection to a server (a single connection may
+/// be re-used by multiple requests).
 #[derive(Clone, Debug)]
 pub struct ServerConnectionContext {
     /// Unique id for this connection.

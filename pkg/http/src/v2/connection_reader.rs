@@ -2,6 +2,8 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 use common::errors::*;
+use common::io::IoError;
+use common::io::IoErrorKind;
 use common::io::Readable;
 use executor::child_task::ChildTask;
 
@@ -104,12 +106,8 @@ impl ConnectionReader {
             Err(e) => {
                 // TODO: Don't always supress these.
                 let mut is_reader_ended_error = false;
-                if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
-                    if io_error.kind() == std::io::ErrorKind::ConnectionAborted
-                        || io_error.kind() == std::io::ErrorKind::UnexpectedEof
-                    {
-                        is_reader_ended_error = true;
-                    }
+                if let Some(io_error) = e.downcast_ref::<IoError>() {
+                    is_reader_ended_error = true;
                 }
 
                 // If the underlying read stream if closed, then we will simply ask the writer
@@ -358,9 +356,11 @@ impl ConnectionReader {
                     num_remaining -= n;
 
                     if n == 0 {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::UnexpectedEof,
-                            format!("Hit end of stream before reading entire frame"),
+                        return Err(IoError::new(
+                            IoErrorKind::UnexpectedEof {
+                                num_read: (frame_header.length as usize) - num_remaining,
+                            },
+                            "Hit end of underlying stream before reading entire frame",
                         )
                         .into());
                     }

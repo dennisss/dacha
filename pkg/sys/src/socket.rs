@@ -205,6 +205,7 @@ pub unsafe fn listen(fd: &OpenFileDescriptor, backlog: usize) -> Result<(), Errn
 // TODO: Make this private.
 define_transparent_enum!(SocketOptionLevel c_int {
     SOL_SOCKET = (bindings::SOL_SOCKET as c_int),
+    SOL_IP = (bindings::SOL_IP as c_int),
     IPPROTO_TCP = (bindings::IPPROTO_TCP as c_int)
 });
 
@@ -247,6 +248,15 @@ pub unsafe fn shutdown(fd: &OpenFileDescriptor, how: ShutdownHow) -> Result<(), 
     raw::shutdown(**fd, how as c_int)
 }
 
+pub unsafe fn getsockname(fd: &OpenFileDescriptor) -> Result<Option<SocketAddr>, Errno> {
+    let mut addr = SocketAddressAndLength::new();
+    addr.reset();
+
+    raw::getsockname(**fd, core::mem::transmute(&mut addr.addr), &mut addr.len)?;
+
+    Ok(addr.to_addr())
+}
+
 mod raw {
     use super::*;
 
@@ -263,4 +273,6 @@ mod raw {
     syscall!(setsockopt, bindings::SYS_setsockopt, fd: c_int, level: c_int, optname: c_int, optval: *const u8, optlen: c_int => Result<()>);
 
     syscall!(shutdown, bindings::SYS_shutdown, fd: c_int, how: c_int => Result<()>);
+
+    syscall!(getsockname, bindings::SYS_getsockname, fd: c_int, addr: *mut bindings::sockaddr, addrlen: *mut bindings::socklen_t => Result<()>);
 }

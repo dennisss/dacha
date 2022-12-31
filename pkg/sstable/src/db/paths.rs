@@ -2,7 +2,6 @@ use std::ops::DerefMut;
 
 use crate::common::io::Writeable;
 use common::errors::*;
-use common::futures::AsyncReadExt;
 use common::io::Readable;
 use file::sync::{SyncedDirectory, SyncedPath};
 use file::{LocalFileOpenOptions, LocalPath};

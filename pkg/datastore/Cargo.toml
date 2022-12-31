@@ -18,6 +18,8 @@ net = { path = "../net" }
 google = { path = "../../third_party/google" }
 executor = { path = "../executor" }
 file = { path = "../file" }
+crypto = { path = "../crypto" }
+radix = { path = "../radix" }
 
 [build-dependencies]
 protobuf_compiler = { path = "../protobuf_compiler" }

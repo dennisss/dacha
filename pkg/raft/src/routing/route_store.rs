@@ -10,6 +10,9 @@ use crate::proto::ident::*;
 use crate::proto::routing::*;
 use crate::proto::server_metadata::GroupId;
 
+/// Amount of time after which we will consider a route to be stale and no
+/// longer useable. (measured at the time at which the original server accounced
+/// it).
 const ROUTE_EXPIRATION_DURATION: Duration = Duration::from_secs(10);
 
 /// Container of all server-to-server routing information known by the local

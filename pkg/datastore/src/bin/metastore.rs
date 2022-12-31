@@ -18,6 +18,7 @@ extern crate macros;
 use common::args::list::CommaSeparated;
 use common::args::parse_args;
 use common::errors::*;
+use file::LocalPathBuf;
 use rpc_util::NamedPortArg;
 
 use datastore::meta::store::{run, MetastoreConfig};
@@ -25,9 +26,13 @@ use raft::proto::routing::RouteLabel;
 
 #[derive(Args)]
 struct Args {
+    /// Port on which the consensus initialization service will be hosted (if
+    /// the server isn't already initialized).
     init_port: NamedPortArg,
+
     port: NamedPortArg,
-    dir: PathBuf,
+
+    dir: LocalPathBuf,
     labels: CommaSeparated<String>,
 }
 
@@ -41,11 +46,11 @@ fn main() -> Result<()> {
         route_labels.push(l);
     }
 
-    block_on(run(&MetastoreConfig {
+    executor::run(run(MetastoreConfig {
         dir: args.dir,
         init_port: args.init_port.value(),
         bootstrap: false,
         service_port: args.port.value(),
         route_labels,
-    }))
+    }))?
 }

@@ -97,12 +97,20 @@ pub struct USTarHeaderExtension {
     pub file_name_prefix: String,
 }
 
+/// TODO: Move this into a general location so that we don't need to
 pub struct AppendFileOptions {
-    /// Root directory to use for the new Tar archive. All file names stored in
-    /// the archive will be relative to this directory.
+    /// Root directory to use for the new Tar archive.
+    ///
+    /// - All files appended to the archive MUST be currently located in this
+    ///   directory in the real filesystem.
+    /// - This path will be 'mounted' to 'output_dir' inside of the archive
+    ///   namespace.
     pub root_dir: LocalPathBuf,
 
-    /// Directory in the archive at which
+    /// Directory in the archive namespace in which all files will be added.
+    ///
+    /// Defaults to "" meaning that the a file entry will have its name set to
+    /// the path of the original file relative to 'root_dir'.
     pub output_dir: Option<LocalPathBuf>,
 
     pub mask: FileMetadataMask,
@@ -398,6 +406,11 @@ impl Reader {
         file_mode: Option<u32>,
         dir_mode: Option<u32>,
     ) -> Result<()> {
+        let mut output_dir = output_dir.to_owned();
+        if !output_dir.is_absolute() {
+            output_dir = file::current_dir()?.join(output_dir);
+        }
+
         while let Some(entry) = self.read_entry().await? {
             // TODO: Also remove any '..' parts from the path
             let mut relpath = LocalPath::new(&entry.metadata.header.file_name);
@@ -406,7 +419,14 @@ impl Reader {
                 relpath = relpath.strip_prefix("/").unwrap();
             }
 
-            let path = output_dir.join(relpath);
+            // Path in the real filesystem at which we will write the extracted file.
+            // NOTE: We normalize and re-validate the prefix in case of '..' in the paths.
+            let path = output_dir.join(&relpath).normalized();
+            if !path.starts_with(&output_dir) {
+                return Err(err_msg(
+                    "Archive attempted to extract to a path outside the output directory",
+                ));
+            }
 
             // NOTE: We assume that separate directory entries are present and precede all
             // entries within that directory.
@@ -417,7 +437,7 @@ impl Reader {
                     .parent()
                     .ok_or_else(|| err_msg("Can't get parent path"))?;
 
-                self.create_dir_all(output_dir, dir, dir_mode).await?;
+                self.create_dir_all(&output_dir, dir, dir_mode).await?;
             }
 
             if entry.is_regular() {
@@ -577,6 +597,8 @@ impl Writer {
         const TRANSFER_BLOCK_SIZE: usize = 8192;
 
         // Now writing the file itself.
+        // TODO: Add a helper for this (it's basically piping from one reader into
+        // another writer)
         let file_size = metadata.header.file_size.unwrap_or(0);
         let mut n = 0;
         while n < file_size {
@@ -627,6 +649,9 @@ impl Writer {
         Ok(())
     }
 
+    /// Appends a file currently on disk to the archive.
+    ///
+    /// If the file is a
     // TODO: We should also append entries for each directory. that is a parent of
     // the path
     pub async fn append_file(
@@ -634,6 +659,8 @@ impl Writer {
         path: &LocalPath,
         options: &AppendFileOptions,
     ) -> Result<()> {
+        // Ideally normalize and make absolute all the paths.
+
         let mut pending_paths: Vec<LocalPathBuf> = vec![];
         pending_paths.push(path.to_owned());
 
@@ -668,18 +695,20 @@ impl Writer {
             }
         };
 
+        // Name/path of the file as it will appear in the tar file.
         let mut file_name = options
             .output_dir
             .as_ref()
             .map(|v| v.as_path())
-            .unwrap_or(LocalPath::new("/"))
+            .unwrap_or(LocalPath::new(""))
             .join(
                 path.strip_prefix(&options.root_dir)
                     .ok_or_else(|| err_msg("Path does not start with root_dir"))?,
             )
-            .as_str()
-            .trim_end_matches('/')
+            .normalized()
             .to_string();
+
+        // Only directories will end up '/'
         if file_type == FileType::Directory {
             file_name.push('/');
         }
@@ -741,6 +770,84 @@ impl Writer {
     pub async fn finish(mut self) -> Result<()> {
         let zero_blocks = [0u8; 2 * BLOCK_SIZE as usize];
         self.file.write_all(&zero_blocks).await?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use file::temp::TempDir;
+
+    use super::*;
+
+    #[testcase]
+    async fn read_existing_archive() -> Result<()> {
+        let mut variations = [
+            project_path!("testdata/tar/archive.tar"),
+            // Doesn't contain directory entries so we must create them implicitly.
+            project_path!("testdata/tar/archive.tar"),
+        ];
+
+        for archive_path in variations {
+            let temp_dir = TempDir::create()?;
+
+            let mut reader = Reader::open(archive_path).await?;
+            reader.extract_files(temp_dir.path()).await?;
+
+            assert_eq!(
+                file::read_to_string(temp_dir.path().join("first_file")).await?,
+                "Hello world\n"
+            );
+            assert_eq!(
+                file::read_to_string(temp_dir.path().join("second_dir/third_file")).await?,
+                "This is data in the directory\n"
+            );
+        }
+
+        Ok(())
+    }
+
+    #[testcase]
+    async fn write_archive() -> Result<()> {
+        let temp_dir = TempDir::create()?;
+
+        let archive_path = temp_dir.path().join("archive.tar");
+
+        {
+            let mut writer = Writer::open(&archive_path).await?;
+
+            writer
+                .append_file(
+                    &project_path!("testdata/tar/data"),
+                    &AppendFileOptions {
+                        root_dir: project_path!("testdata/tar/data"),
+                        output_dir: None,
+                        mask: FileMetadataMask {},
+                        anonymize: false,
+                    },
+                )
+                .await?;
+
+            writer.finish().await?;
+        }
+
+        {
+            let output_dir = temp_dir.path().join("out");
+            // file::create_dir(&output_dir).await?;
+
+            let mut reader = Reader::open(&archive_path).await?;
+            reader.extract_files(&output_dir).await?;
+
+            assert_eq!(
+                file::read_to_string(output_dir.join("first_file")).await?,
+                "Hello world\n"
+            );
+            assert_eq!(
+                file::read_to_string(output_dir.join("second_dir/third_file")).await?,
+                "This is data in the directory\n"
+            );
+        }
+
         Ok(())
     }
 }

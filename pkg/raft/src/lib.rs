@@ -28,6 +28,7 @@ pub mod node;
 pub mod routing;
 pub mod server;
 mod sync;
+pub mod utils;
 
 pub use consensus::module::{NotLeaderError, ReadIndex};
 pub use leader_service::LeaderServiceWrapper;

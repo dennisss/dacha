@@ -5,7 +5,7 @@ use core::str::FromStr;
 
 use common::errors::*;
 
-use crate::endian::ToNetworkOrder;
+use crate::endian::{FromNetworkOrder, ToNetworkOrder};
 
 // TODO: Verify that we aren't able to parse octal ip addresses
 // (basically no component should start with a leading 0)
@@ -91,6 +91,12 @@ impl Debug for SocketAddr {
     }
 }
 
+impl ToString for SocketAddr {
+    fn to_string(&self) -> String {
+        format!("{}:{}", self.ip.to_string(), self.port)
+    }
+}
+
 impl std::str::FromStr for SocketAddr {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
@@ -123,14 +129,14 @@ impl From<sys::SocketAddr> for SocketAddr {
         if let Some((addr, port)) = addr.as_ipv4() {
             return Self {
                 ip: IPAddress::V4(addr),
-                port,
+                port: port.from_network_order(),
             };
         }
 
         if let Some((addr, port)) = addr.as_ipv6() {
             return Self {
                 ip: IPAddress::V6(addr),
-                port,
+                port: port.from_network_order(),
             };
         }
 

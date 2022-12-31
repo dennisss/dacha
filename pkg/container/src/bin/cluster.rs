@@ -51,7 +51,6 @@ use std::{collections::HashSet, sync::Arc};
 use builder::proto::bundle::{BlobFormat, BundleSpec};
 use common::errors::*;
 use common::failure::ResultExt;
-use common::futures::AsyncWriteExt;
 use container::manager::Manager;
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
@@ -313,7 +312,7 @@ async fn run_local_metastore(port: u16, zone: String) -> Result<()> {
         zone
     ));
 
-    datastore::meta::store::run(&datastore::meta::store::MetastoreConfig {
+    datastore::meta::store::run(datastore::meta::store::MetastoreConfig {
         dir: local_metastore_dir.path().to_owned(),
         init_port: 0,
         bootstrap: true,

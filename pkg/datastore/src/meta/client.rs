@@ -49,6 +49,8 @@ impl MetastoreClient {
         // have on the client side.
         let channel_factory = raft::RouteChannelFactory::find_group(route_store.clone()).await;
 
+        // We can talk to any metastore worker as they will all redirect requests to the
+        // leader if needed.
         let channel = channel_factory.create_any()?;
 
         let client_id = {
@@ -98,15 +100,17 @@ impl MetastoreClient {
 
         let mut response = stub.Read(&request_context, &request).await;
         let value = if let Some(res) = response.recv().await {
-            Some(res.entry().value().to_vec())
+            if !res.entry().deleted() {
+                Some(res.entry().value().to_vec())
+            } else {
+                None
+            }
         } else {
             None
         };
 
-        if value.is_some() {
-            if response.recv().await.is_some() {
-                return Err(err_msg("Received multiple values"));
-            }
+        if response.recv().await.is_some() {
+            return Err(err_msg("Received multiple values"));
         }
 
         response.finish().await?;

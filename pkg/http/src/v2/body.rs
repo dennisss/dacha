@@ -20,8 +20,9 @@ use crate::v2::connection_state::ConnectionEvent;
 use crate::v2::stream_state::StreamState;
 use crate::v2::types::*;
 
-/// Wrapper around a Body that is used to read it and feed it to a stream.
-/// This is intended to be run as a separate task.
+/// Continuously polls the http::Body provided by the local process to be send
+/// to the other end. This is run as a separate task which is owned by the
+/// connection.
 ///
 /// TODO: When this is dropped, we must ensure that we always send a RST_STREAM.
 ///
@@ -36,7 +37,7 @@ use crate::v2::types::*;
 ///
 /// TODO: Eventually we may want to consider sharding the connection level limit
 /// to all streams whenever there is a new stream or a priotity change.
-pub struct OutgoingStreamBody {
+pub struct OutgoingStreamBodyPoller {
     /// Id of the stream with which this
     stream_id: StreamId,
 
@@ -53,7 +54,7 @@ pub struct OutgoingStreamBody {
     write_available_receiver: channel::Receiver<()>,
 }
 
-impl OutgoingStreamBody {
+impl OutgoingStreamBodyPoller {
     pub fn new(
         stream_id: StreamId,
         stream_state: Arc<Mutex<StreamState>>,
@@ -232,9 +233,8 @@ impl Drop for IncomingStreamBody {
         // this.
         let _ = self
             .connection_event_sender
-            .try_send(ConnectionEvent::StreamReaderClosed {
+            .try_send(ConnectionEvent::StreamReaderCancelled {
                 stream_id: self.stream_id,
-                stream_state: self.stream_state.clone(),
             });
     }
 }
