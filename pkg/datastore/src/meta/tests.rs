@@ -9,10 +9,11 @@ use super::client::{MetastoreClient, MetastoreClientInterface};
 use crate::proto::key_value::KeyValueEntry;
 
 /// In-process single node metastore instance for testing.
-struct TestMetastore {
+pub struct TestMetastore {
     temp_dir: TempDir,
     task: ChildTask,
     labels: Vec<RouteLabel>,
+    port: u16,
 }
 
 impl TestMetastore {
@@ -37,15 +38,26 @@ impl TestMetastore {
 
         let task = ChildTask::spawn(async move { fut.await.unwrap() });
 
+        // Wait for the metastore to start.
+        // TODO: Replace this with proper blocking until initialization is done.
+        executor::sleep(std::time::Duration::from_millis(1000)).await?;
+
         Ok(Self {
             temp_dir,
             task,
             labels: route_labels,
+            port,
         })
     }
 
     pub async fn create_client(&self) -> Result<MetastoreClient> {
-        MetastoreClient::create(&self.labels).await
+        MetastoreClient::create_direct(net::ip::SocketAddr::new(
+            net::ip::IPAddress::V4([127, 0, 0, 1]),
+            self.port,
+        ))
+        .await
+
+        // MetastoreClient::create(&self.labels).await
     }
 }
 

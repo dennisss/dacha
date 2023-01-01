@@ -170,9 +170,14 @@ impl Stream {
         &self,
         headers: Vec<hpack::HeaderField>,
         end_stream: bool,
-        incoming_body: IncomingStreamBody,
+        mut incoming_body: IncomingStreamBody,
         state: &mut StreamState,
     ) -> StreamResult<Request> {
+        // In this case we got an END_STREMA on the first HEADERS frame.
+        if end_stream {
+            incoming_body.set_might_have_trailers(false);
+        }
+
         // TODO: These may cause the stream to immediately fail.
         let head = crate::v2::headers::process_request_head(headers)?;
         let body = decode_request_body_v2(&head, incoming_body, state)?;
@@ -213,9 +218,14 @@ impl Stream {
         request_method: Method,
         headers: Vec<hpack::HeaderField>,
         end_stream: bool,
-        incoming_body: IncomingStreamBody,
+        mut incoming_body: IncomingStreamBody,
         state: &mut StreamState,
     ) -> StreamResult<Response> {
+        // In this case we got an END_STREMA on the first HEADERS frame.
+        if end_stream {
+            incoming_body.set_might_have_trailers(false);
+        }
+
         let head = crate::v2::headers::process_response_head(headers)?;
         let body =
             crate::v2::body::decode_response_body_v2(request_method, &head, incoming_body, state)?;

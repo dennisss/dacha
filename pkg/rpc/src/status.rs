@@ -56,6 +56,12 @@ impl Status {
         &self.message
     }
 
+    /// Determines if a set of headers containing gRPC status headers (possibly
+    /// malformed ones).
+    pub fn has_headers(headers: &Headers) -> bool {
+        headers.has(GRPC_STATUS)
+    }
+
     pub fn from_headers(headers: &Headers) -> Result<Self> {
         let code_header = headers.find_one(GRPC_STATUS)?;
         let code = std::str::from_utf8(code_header.value.as_bytes())?.parse::<usize>()?;

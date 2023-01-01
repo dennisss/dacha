@@ -4,7 +4,7 @@ use std::sync::Arc;
 use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Readable;
-use executor::channel;
+use executor::channel::spsc;
 use executor::child_task::ChildTask;
 use http::header::CONTENT_TYPE;
 
@@ -98,12 +98,12 @@ pub struct ClientResponse<T> {
 /// TODO: Double check that any failure in the ClientStreamingRequest is
 /// propagated to the ClientStreamingResponse and vice versa.
 pub struct ClientStreamingRequest<T> {
-    sender: Option<channel::Sender<Result<Option<Bytes>>>>,
+    sender: Option<spsc::Sender<Result<Option<Bytes>>>>,
     phantom_t: PhantomData<T>,
 }
 
 impl ClientStreamingRequest<()> {
-    pub(crate) fn new(sender: channel::Sender<Result<Option<Bytes>>>) -> Self {
+    pub(crate) fn new(sender: spsc::Sender<Result<Option<Bytes>>>) -> Self {
         Self {
             sender: Some(sender),
             phantom_t: PhantomData,
@@ -130,7 +130,7 @@ impl ClientStreamingRequest<()> {
 impl<T> ClientStreamingRequest<T> {
     #[must_use]
     pub async fn send_bytes(&mut self, data: Bytes) -> bool {
-        let sender = match self.sender.as_ref() {
+        let sender = match self.sender.as_mut() {
             Some(v) => v,
             None => {
                 return false;
@@ -143,7 +143,7 @@ impl<T> ClientStreamingRequest<T> {
     /// Call after sending all messages to the server to indicate that no more
     /// messages will be sent for the current RPC.
     pub async fn close(&mut self) {
-        if let Some(sender) = &self.sender {
+        if let Some(sender) = &mut self.sender {
             let _ = sender.send(Ok(None)).await;
         }
     }
@@ -158,7 +158,7 @@ impl<T: protobuf::StaticMessage> ClientStreamingRequest<T> {
     /// processed the message.
     #[must_use]
     pub async fn send(&mut self, message: &T) -> bool {
-        let sender = match self.sender.as_ref() {
+        let sender = match self.sender.as_mut() {
             Some(v) => v,
             None => {
                 return false;
@@ -198,9 +198,14 @@ enum ClientStreamingResponseState {
     /// We have gotten initial metadata and are receiving zero or more messages.
     Body(Box<dyn http::Body>),
 
-    /// All messages have been received and we are
+    /// All messages have been received and we need to wait for the trailer to
+    /// be received.
     Trailers(Box<dyn http::Body>),
+
+    /// We will return an error the next time the response is polled.
     Error(Error),
+
+    TrailersOnly(Status),
 }
 
 impl<Res> ClientStreamingResponse<Res> {
@@ -238,6 +243,11 @@ impl<Res> ClientStreamingResponse<Res> {
         self.interceptor = Some(interceptor);
     }
 
+    /// Gets metadata associated with the response.
+    ///
+    /// Note that the returned object will be empty until recv_head() or recv()
+    /// returns at least once (indicating that we het the HTTP response
+    /// headers).
     pub fn context(&self) -> &ClientResponseContext {
         &self.context
     }
@@ -348,6 +358,25 @@ impl<T> ClientStreamingResponse<T> {
                 .await?;
         }
 
+        // Handle trailers only mode.
+        // In this mode, the status is propagated through the main headers and no body
+        // or trailers should be present.
+        //
+        // !response.body.has_trailers() also implies that the END_STREAM bit was set of
+        // the HTTP2 HEADERS frame rather than there being an extra empty DATA frame.
+        // This means it is safe for us to just ignore reading the body.
+        let is_trailers_only = response.body.len() == Some(0) && !response.body.has_trailers();
+        let has_status_headers = Status::has_headers(&response.head.headers);
+        if has_status_headers != is_trailers_only {
+            return Err(err_msg("Response contained malformed Trailer-Only form."));
+        }
+
+        if has_status_headers {
+            let status = Status::from_headers(&response.head.headers)?;
+            self.state = Some(ClientStreamingResponseState::TrailersOnly(status));
+            return Ok(());
+        }
+
         self.state = Some(ClientStreamingResponseState::Body(response.body));
 
         Ok(())
@@ -395,6 +424,14 @@ impl<T> ClientStreamingResponse<T> {
 
                 let status = Status::from_headers(&trailers)?;
 
+                if status.is_ok() {
+                    Ok(())
+                } else {
+                    Err(status.into())
+                }
+            }
+            ClientStreamingResponseState::TrailersOnly(status) => {
+                // TODO: Deduplicate with above.
                 if status.is_ok() {
                     Ok(())
                 } else {

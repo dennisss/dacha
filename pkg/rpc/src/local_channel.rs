@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use executor::channel;
+use executor::channel::spsc;
 use executor::child_task::ChildTask;
 
 use crate::channel::{Channel, MessageRequestBody};
@@ -30,7 +30,7 @@ impl LocalChannel {
         service_name: String,
         method_name: String,
         request_context: ClientRequestContext,
-        request_receiver: channel::Receiver<Result<Option<Bytes>>>,
+        request_receiver: spsc::Receiver<Result<Option<Bytes>>>,
     ) -> Result<http::Response> {
         let server_request_context = ServerRequestContext {
             metadata: request_context.metadata,
@@ -67,7 +67,7 @@ impl Channel for LocalChannel {
         method_name: &str,
         request_context: &ClientRequestContext,
     ) -> (ClientStreamingRequest<()>, ClientStreamingResponse<()>) {
-        let (req_sender, req_receive) = channel::unbounded();
+        let (req_sender, req_receive) = spsc::bounded(2);
 
         let client_req = ClientStreamingRequest::new(req_sender);
         let client_res = ClientStreamingResponse::from_response(Self::request_handler(

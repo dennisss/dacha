@@ -8,6 +8,7 @@ use common::bytes::Bytes;
 use common::errors::*;
 use executor::child_task::ChildTask;
 use executor::sync::{Mutex, MutexGuard};
+use net::ip::SocketAddr;
 use raft::proto::routing::RouteLabel;
 use sstable::table::KeyComparator;
 
@@ -28,13 +29,15 @@ pub struct MetastoreClient {
     channel: Arc<dyn rpc::Channel>,
 
     /// Background thread which maintains
-    background_thread: ChildTask,
+    background_thread: Option<ChildTask>,
 }
 
 impl MetastoreClient {
     /// Creates a new client instance.
     ///
-    /// The store servers will automatically be discovered.
+    /// The store servers will automatically be discovered via multicast. The
+    /// main downside of this is that it may take a few seconds to receive the
+    /// next broadcast in order to connect.
     pub async fn create(labels: &[RouteLabel]) -> Result<Self> {
         let route_store = raft::RouteStore::new(labels);
 
@@ -53,6 +56,25 @@ impl MetastoreClient {
         // leader if needed.
         let channel = channel_factory.create_any()?;
 
+        Self::create_impl(channel, Some(background_thread)).await
+    }
+
+    /// Directly connect to a metastore instance.
+    ///
+    /// This is mainly for use for testing where we only need to communicate
+    /// with a single instance.
+    pub(super) async fn create_direct(addr: SocketAddr) -> Result<Self> {
+        let channel = Arc::new(rpc::Http2Channel::create(http::ClientOptions::from_uri(
+            &format!("http://{}", addr.to_string()).parse()?,
+        )?)?);
+
+        Self::create_impl(channel, None).await
+    }
+
+    async fn create_impl(
+        channel: Arc<dyn rpc::Channel>,
+        background_thread: Option<ChildTask>,
+    ) -> Result<Self> {
         let client_id = {
             let stub = ClientManagementStub::new(channel.clone());
 

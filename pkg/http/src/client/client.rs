@@ -130,9 +130,8 @@ impl TryFrom<&str> for ClientOptions {
 ///
 /// TODO: When the Client is dropped, we know that no more requests will be made
 /// so we should initiate the shutdown of internal connections.
-#[derive(Clone)]
 pub struct Client {
-    shared: Arc<Shared>,
+    shared: Shared,
 }
 
 struct Shared {
@@ -167,7 +166,7 @@ impl Client {
         executor::spawn(lb_client.clone().run());
 
         Ok(Client {
-            shared: Arc::new(Shared { options, lb_client }),
+            shared: Shared { options, lb_client },
         })
     }
 }

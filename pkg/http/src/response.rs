@@ -57,7 +57,7 @@ impl ResponseHead {
 pub struct ResponseBuilder {
     status_code: Option<StatusCode>,
     reason: Option<String>,
-    headers: Vec<Header>,
+    headers: Headers,
     body: Option<Box<dyn Body>>,
 
     // First error that occured in the building process
@@ -69,7 +69,7 @@ impl ResponseBuilder {
         ResponseBuilder {
             status_code: None,
             reason: None,
-            headers: vec![],
+            headers: Headers::new(),
             body: None,
             error: None,
         }
@@ -78,6 +78,11 @@ impl ResponseBuilder {
     pub fn status(mut self, code: StatusCode) -> Self {
         self.status_code = Some(code);
         self
+    }
+
+    /// TODO: Prefer to not use this.
+    pub fn headers(&mut self) -> &mut Headers {
+        &mut self.headers
     }
 
     pub fn header<N: ToHeaderName, V: ToHeaderValue>(mut self, name: N, value: V) -> Self {
@@ -100,7 +105,7 @@ impl ResponseBuilder {
             }
         };
 
-        self.headers.push(Header { name, value });
+        self.headers.raw_headers.push(Header { name, value });
         self
     }
 
@@ -126,7 +131,7 @@ impl ResponseBuilder {
             )
         })?);
 
-        let headers = Headers::from(self.headers);
+        let headers = self.headers;
 
         let body = self.body.unwrap_or_else(|| crate::EmptyBody());
 

@@ -11,7 +11,6 @@ extern crate hue;
 
 use std::time::Duration;
 
-use common::async_std::task;
 use common::errors::*;
 use hue::*;
 
@@ -90,7 +89,7 @@ async fn run() -> Result<()> {
 
             loop {
                 println!("{:?}", client.get_groups().await?);
-                common::async_std::task::sleep(Duration::from_secs(20)).await;
+                executor::sleep(Duration::from_secs(20)).await;
             }
         }
     }
@@ -99,5 +98,5 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    task::block_on(run())
+    executor::run(run())?
 }

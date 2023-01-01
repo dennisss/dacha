@@ -8,7 +8,7 @@ use common::bytes::Bytes;
 use common::errors::*;
 use common::io::Readable;
 use executor::cancellation::CancellationToken;
-use executor::channel;
+use executor::channel::spsc;
 use executor::child_task::ChildTask;
 use http::header::*;
 use http::status_code::*;
@@ -288,8 +288,14 @@ impl Http2RequestHandler {
                 service_name
             )))?;
 
-        let (response_sender, response_receiver) = channel::bounded(2);
+        // NOTE: This must be bounded to provide backpressure while waiting for the
+        // connection to transfer the bytes.
+        //
+        // We must minimally have 3 slots (for a Head, Message, and Trailers)
+        let (response_sender, response_receiver) = spsc::bounded(3);
 
+        // This will call the actual service method and run until the entire contents of
+        // the body are generated.
         let child_task = ChildTask::spawn(Self::service_caller(
             service.clone(),
             method_name.to_string(),
@@ -298,20 +304,11 @@ impl Http2RequestHandler {
             response_type.clone(),
         ));
 
-        let head_metadata = match response_receiver.recv().await? {
-            ServerStreamResponseEvent::Head(metadata) => metadata,
-            _ => {
-                return Err(err_msg(
-                    "Expected a head before other parts of the response",
-                ));
-            }
-        };
-
-        let response_builder = http::ResponseBuilder::new()
+        let mut response_builder = http::ResponseBuilder::new()
             .status(OK)
             .header(CONTENT_TYPE, response_type.to_string());
 
-        let body = Box::new(ResponseBody {
+        let mut body = Box::new(ResponseBody {
             child_task: Some(child_task),
             response_receiver,
             response_type,
@@ -320,8 +317,48 @@ impl Http2RequestHandler {
             trailers: None,
         });
 
+        // TODO: Verify that we can receie this while sending END_STREAM for an
+        // immediate response.
+
+        // Wait until we get at least enough information to generate the response head.
+        match body.response_receiver.recv().await? {
+            ServerStreamResponseEvent::Head(head_metadata) => {
+                head_metadata.append_to_headers(response_builder.headers())?;
+            }
+            ServerStreamResponseEvent::TrailersOnly(result, metadata) => {
+                metadata
+                    .head_metadata
+                    .append_to_headers(response_builder.headers())?;
+                metadata
+                    .trailer_metadata
+                    .append_to_headers(response_builder.headers())?;
+
+                ResponseBody::append_result_to_headers(result, &mut response_builder.headers());
+
+                // Immediately indicate that there will be no more data.
+                body.done_data = true;
+            }
+            _ => {
+                return Err(err_msg(
+                    "Expected a head before other parts of the response",
+                ));
+            }
+        };
+
+        // Immediately apply any already prepared events.
+        // This is mainly to enable proper functionality of corked events.
+        for _ in 0..body.response_receiver.capacity() {
+            if let Some(event) = body.response_receiver.try_recv() {
+                body.process_event(event)?;
+            } else {
+                break;
+            }
+        }
+
+        // TODO: We also need HTTP2 layer support for
+
+        // TODO: If
         let mut response = response_builder.body(body).build()?;
-        head_metadata.append_to_headers(&mut response.head.headers)?;
 
         Ok(response)
     }
@@ -332,7 +369,7 @@ impl Http2RequestHandler {
         service: Arc<dyn Service>,
         method_name: String,
         request: ServerStreamRequest<()>,
-        response_sender: channel::Sender<ServerStreamResponseEvent>,
+        mut response_sender: spsc::Sender<ServerStreamResponseEvent>,
         response_type: RPCMediaType,
     ) {
         let mut response_context = ServerResponseContext::default();
@@ -344,7 +381,7 @@ impl Http2RequestHandler {
             context: &mut response_context,
             response_type,
             head_sent: &mut head_sent,
-            sender: response_sender.clone(),
+            sender: &mut response_sender,
         };
 
         // TODO: If this fails with an error that can be downcast to a status, should we
@@ -356,21 +393,27 @@ impl Http2RequestHandler {
         let response_result = service.call(&method_name, request, response).await;
 
         if !head_sent {
-            // TODO: If we are here, send both the head and trailers at the same time
-            // (useful for web mode).
+            // Trailers-Only case.
+            // If a head wasn't sent, then that implies there was no data either.
             let _ = response_sender
-                .send(ServerStreamResponseEvent::Head(
-                    response_context.metadata.head_metadata,
+                .send(ServerStreamResponseEvent::TrailersOnly(
+                    response_result,
+                    response_context.metadata,
                 ))
                 .await;
+            return;
         }
 
+        // TODO: For unary response, batch this together with the
         let _ = response_sender
             .send(ServerStreamResponseEvent::Trailers(
                 response_result,
                 response_context.metadata.trailer_metadata,
             ))
             .await;
+
+        // NOTE: This is an implicit uncorking of the response_sender here if it
+        // was previously corked.
     }
 
     /// Creates a simple http response from an Error
@@ -381,12 +424,15 @@ impl Http2RequestHandler {
     /// TODO: Consider eventually supporting the passing of metadata to enable
     /// tracing of RPCs.
     fn error_response(error: Error, response_type: RPCMediaType) -> http::Response {
-        let (sender, receiver) = channel::bounded(1);
+        // TODO: THis should dispatch it as a trailer only set of headers..
+
+        let (mut sender, receiver) = spsc::bounded(1);
         sender
             .try_send(ServerStreamResponseEvent::Trailers(
                 Err(error),
                 Metadata::new(),
             ))
+            .map_err(|e| e.error)
             .unwrap();
 
         // NOTE: GRPC servers are supported to always return 200 statuses.
@@ -424,17 +470,88 @@ impl http::ServerHandler for Http2RequestHandler {
 struct ResponseBody {
     child_task: Option<ChildTask>,
 
-    response_receiver: channel::Receiver<ServerStreamResponseEvent>,
+    response_receiver: spsc::Receiver<ServerStreamResponseEvent>,
 
     response_type: RPCMediaType,
 
     /// TODO: Re-use this buffer across multiple messages
     remaining_bytes: Bytes,
 
-    /// If true, then we'll completely read all data.
-    done_data: bool,
-
     trailers: Option<Headers>,
+
+    /// If true, then all body data remaining in the response is in the
+    /// 'remaining_bytes' and 'trailers'.
+    done_data: bool,
+}
+
+impl ResponseBody {
+    fn process_event(&mut self, event: ServerStreamResponseEvent) -> Result<()> {
+        if self.done_data {
+            return Err(err_msg("Should not be getting events after data is done"));
+        }
+
+        match event {
+            ServerStreamResponseEvent::Head(_) => {
+                return Err(err_msg("Unexpected head event"));
+            }
+            ServerStreamResponseEvent::TrailersOnly(_, _) => {
+                return Err(err_msg("Unexpected trailers-only event"));
+            }
+            ServerStreamResponseEvent::Message(data) => {
+                // NOTE: This supports zero length packets are the message serializer will
+                // always prepend a fixed length prefix.
+                self.remaining_bytes = Bytes::from(MessageSerializer::serialize(&data, false));
+            }
+            ServerStreamResponseEvent::Trailers(result, trailer_meta) => {
+                let mut trailers = Headers::new();
+                trailer_meta.append_to_headers(&mut trailers)?;
+
+                Self::append_result_to_headers(result, &mut trailers)?;
+
+                match self.response_type.protocol {
+                    RPCMediaProtocol::Default => {
+                        self.trailers = Some(trailers);
+                    }
+                    RPCMediaProtocol::Web => {
+                        // TODO: Implement body-less responses with the error code in the
+                        // header headers.
+                        let mut data = vec![];
+                        trailers.serialize(&mut data)?;
+
+                        self.remaining_bytes =
+                            Bytes::from(MessageSerializer::serialize(&data, true));
+                    }
+                }
+
+                self.done_data = true;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn append_result_to_headers(result: Result<()>, headers: &mut Headers) -> Result<()> {
+        match result {
+            Ok(()) => {
+                Status::ok().append_to_headers(headers)?;
+            }
+            Err(error) => {
+                // TODO: Have some default error handler to log the raw errors.
+                // TODO: Only forward statuses that were generated locally and not ones
+                // that were returned as part of an internal client RPC call.
+
+                eprintln!("[rpc::Server] RPC Error: {:?}", error);
+                let status = match error.downcast_ref::<Status>() {
+                    Some(s) => s.clone(),
+                    None => Status::internal("Internal error occured"),
+                };
+
+                status.append_to_headers(headers)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -457,68 +574,31 @@ impl Readable for ResponseBody {
             }
 
             let event = self.response_receiver.recv().await?;
-            match event {
-                ServerStreamResponseEvent::Head(_) => {
-                    return Err(err_msg("Unexpected head event"));
-                }
-                ServerStreamResponseEvent::Message(data) => {
-                    // NOTE: This supports zero length packets are the message serializer will
-                    // always prepend a fixed length prefix.
-                    self.remaining_bytes = Bytes::from(MessageSerializer::serialize(&data, false));
-                }
-                ServerStreamResponseEvent::Trailers(result, trailer_meta) => {
-                    let mut trailers = Headers::new();
-                    trailer_meta.append_to_headers(&mut trailers)?;
 
-                    match result {
-                        Ok(()) => {
-                            Status::ok().append_to_headers(&mut trailers)?;
-                        }
-                        Err(error) => {
-                            // TODO: Have some default error handler to log the raw errors.
-                            // TODO: Only forward statuses that were generated locally and not ones
-                            // that were returned as part of an internal client RPC call.
-
-                            eprintln!("[rpc::Server] RPC Error: {:?}", error);
-                            let status = match error.downcast_ref::<Status>() {
-                                Some(s) => s.clone(),
-                                None => Status::internal("Internal error occured"),
-                            };
-
-                            status.append_to_headers(&mut trailers)?;
-                        }
-                    }
-
-                    match self.response_type.protocol {
-                        RPCMediaProtocol::Default => {
-                            self.trailers = Some(trailers);
-                        }
-                        RPCMediaProtocol::Web => {
-                            // TODO: Implement body-less responses with the error code in the
-                            // header headers.
-                            let mut data = vec![];
-                            trailers.serialize(&mut data)?;
-
-                            self.remaining_bytes =
-                                Bytes::from(MessageSerializer::serialize(&data, true));
-                        }
-                    }
-
-                    self.done_data = true;
-                }
-            }
+            self.process_event(event)?;
         }
     }
 }
 
 #[async_trait]
 impl Body for ResponseBody {
+    // We do want to hint:
+    // - For unary responses or immediate error responses, this should be obvious.
     fn len(&self) -> Option<usize> {
+        if self.done_data {
+            return Some(self.remaining_bytes.len());
+        }
+
         None
     }
 
     fn has_trailers(&self) -> bool {
-        true
+        if self.done_data {
+            return self.trailers.is_some();
+        }
+
+        // In web mode, we don't use trailers. Instead trailers are in the main data.
+        self.response_type.protocol == RPCMediaProtocol::Default
     }
 
     async fn trailers(&mut self) -> Result<Option<Headers>> {

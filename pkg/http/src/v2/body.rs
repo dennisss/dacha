@@ -203,6 +203,8 @@ pub struct IncomingStreamBody {
     /// NOTE: Validation that we don't read less or more than this number is
     /// done in the connection code and not in this file.
     expected_length: Option<usize>,
+
+    might_have_trailers: bool,
 }
 
 impl IncomingStreamBody {
@@ -218,11 +220,16 @@ impl IncomingStreamBody {
             connection_event_sender,
             read_available_receiver,
             expected_length: None,
+            might_have_trailers: true,
         }
     }
 
     pub fn set_expected_length(&mut self, len: usize) {
         self.expected_length = Some(len);
+    }
+
+    pub fn set_might_have_trailers(&mut self, value: bool) {
+        self.might_have_trailers = value;
     }
 }
 
@@ -247,7 +254,7 @@ impl Body for IncomingStreamBody {
     }
 
     fn has_trailers(&self) -> bool {
-        true
+        self.might_have_trailers
     }
 
     async fn trailers(&mut self) -> Result<Option<Headers>> {

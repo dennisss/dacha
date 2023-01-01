@@ -10,14 +10,17 @@
 
 #[cfg(feature = "std")]
 #[macro_use]
-extern crate common;
-#[cfg(feature = "std")]
-#[macro_use]
 extern crate std;
 
 #[cfg(feature = "alloc")]
 #[macro_use]
 extern crate alloc;
+
+#[macro_use]
+extern crate macros;
+#[cfg(feature = "std")]
+#[macro_use]
+extern crate common;
 
 pub mod arena_stack;
 #[cfg(feature = "std")]

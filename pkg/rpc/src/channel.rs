@@ -8,7 +8,7 @@ use common::errors::*;
 use common::io::IoError;
 use common::io::IoErrorKind;
 use common::io::Readable;
-use executor::channel;
+use executor::channel::spsc;
 use http::header::*;
 use http::headers::content_type::MediaType;
 use http::ClientInterface;
@@ -145,12 +145,12 @@ impl dyn Channel {
 }
 
 pub struct Http2Channel {
-    client: http::Client,
+    client: Arc<http::Client>,
 }
 
 impl Http2Channel {
     pub fn create(options: http::ClientOptions) -> Result<Self> {
-        let client = http::Client::create(options.set_force_http2(true))?;
+        let client = Arc::new(http::Client::create(options.set_force_http2(true))?);
 
         Ok(Self { client })
     }
@@ -160,7 +160,7 @@ impl Http2Channel {
         service_name: &str,
         method_name: &str,
         request_context: &ClientRequestContext,
-        request_receiver: channel::Receiver<Result<Option<Bytes>>>,
+        request_receiver: spsc::Receiver<Result<Option<Bytes>>>,
     ) -> Result<ClientStreamingResponse<()>> {
         let body = Box::new(MessageRequestBody::new(request_receiver));
 
@@ -205,8 +205,11 @@ impl Channel for Http2Channel {
         method_name: &str,
         request_context: &ClientRequestContext,
     ) -> (ClientStreamingRequest<()>, ClientStreamingResponse<()>) {
+        // NOTE: This must be bounded to ensure there is backpressure while the
+        // connection is sending packets.
+        //
         // TODO: Improve the tuning on this bound.
-        let (request_sender, request_receiver) = channel::bounded(2);
+        let (request_sender, request_receiver) = spsc::bounded(2);
         let request = ClientStreamingRequest::new(request_sender);
 
         let result = self
@@ -226,12 +229,12 @@ impl Channel for Http2Channel {
 ///
 /// TODO: For the case of a unary RPC, this should be optimized to be retryable.
 pub(crate) struct MessageRequestBody {
-    request_receiver: channel::Receiver<Result<Option<Bytes>>>,
+    request_receiver: spsc::Receiver<Result<Option<Bytes>>>,
     remaining_bytes: Bytes,
 }
 
 impl MessageRequestBody {
-    pub fn new(request_receiver: channel::Receiver<Result<Option<Bytes>>>) -> Self {
+    pub fn new(request_receiver: spsc::Receiver<Result<Option<Bytes>>>) -> Self {
         Self {
             request_receiver,
             remaining_bytes: Bytes::new(),

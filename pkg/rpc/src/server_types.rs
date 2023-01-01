@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use common::bytes::Bytes;
 use common::errors::*;
-use executor::channel;
+use executor::channel::spsc;
 use http::Body;
 use protobuf_json::{MessageJsonParser, MessageJsonSerialize};
 
@@ -157,6 +157,8 @@ impl<T: protobuf::StaticMessage + Default> ServerStreamRequest<T> {
     }
 }
 
+/// Message response stream passed to server RPC handlers to use for streaming
+/// responses back to clients.
 pub struct ServerResponse<'a, T: protobuf::StaticMessage> {
     /// Value to be returned to the client. Only fully returned if the response
     pub value: T,
@@ -196,7 +198,7 @@ pub struct ServerStreamResponse<'a, T> {
     /// Whether or not we have sent the head of the request yet.
     pub(crate) head_sent: &'a mut bool,
 
-    pub(crate) sender: channel::Sender<ServerStreamResponseEvent>,
+    pub(crate) sender: &'a mut spsc::Sender<ServerStreamResponseEvent>,
     pub(crate) phantom_t: PhantomData<T>,
 }
 
@@ -211,10 +213,21 @@ impl<'a> ServerStreamResponse<'a, ()> {
         }
     }
 
+    /// This should only be used if you only expect to send one message.
+    ///
+    /// TODO: Enforce the above assumption. If the assumption is broken, corking
+    /// may break things.
+    ///
     /// NOTE: Later the value must be given back to the stream.
     pub fn new_unary<'b, T: protobuf::StaticMessage + Default>(
         &'b mut self,
     ) -> ServerResponse<'b, T> {
+        // Given that we are only sending one message, we will bundle all the messages
+        // up until the trailer into one bundle. This will minimize the number of
+        // packets used in HTTP2 and allows returning a Content-Length for unary
+        // responses.
+        self.sender.cork();
+
         ServerResponse {
             value: T::default(),
             context: self.context,
@@ -223,10 +236,21 @@ impl<'a> ServerStreamResponse<'a, ()> {
 }
 
 impl<'a, T> ServerStreamResponse<'a, T> {
+    /// Requests that head metadata immediately starts getting transferred back
+    /// to the client.
+    ///
+    /// If this is not called we will batch the headers with any response proto
+    /// or status.
+    ///
+    /// NOTE: Servers using this setting may break the retryability of non-unary
+    /// RPCs.
     pub async fn send_head(&mut self) -> Result<()> {
         if !*self.head_sent {
             *self.head_sent = true;
             // TODO: Make this more efficient?
+
+            // TODO: If these errors are from ReceiverDropped, then we could remap them to a
+            // cancellation error.
             self.sender
                 .send(ServerStreamResponseEvent::Head(
                     self.context.metadata.head_metadata.clone(),
@@ -238,8 +262,11 @@ impl<'a, T> ServerStreamResponse<'a, T> {
     }
 
     pub(crate) async fn send_bytes(&mut self, data: Bytes) -> Result<()> {
+        // TODO: Batch these messages.
+
         self.send_head().await?;
 
+        // TODO: Remap these errors like on the other one.
         self.sender
             .send(ServerStreamResponseEvent::Message(data))
             .await?;
@@ -270,4 +297,5 @@ pub(crate) enum ServerStreamResponseEvent {
     Head(Metadata),
     Message(Bytes),
     Trailers(Result<()>, Metadata),
+    TrailersOnly(Result<()>, ResponseMetadata),
 }
