@@ -1,6 +1,6 @@
 [package]
 name = "hue"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2018"
 
 [dependencies]
@@ -11,3 +11,4 @@ net = { path = "../net" }
 parsing = { path = "../parsing" }
 macros = { path = "../macros" }
 reflection = { path = "../reflection" }
+executor = { path = "../executor" }

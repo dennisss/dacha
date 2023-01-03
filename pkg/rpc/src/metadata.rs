@@ -177,7 +177,7 @@ impl Metadata {
 }
 
 ///
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ResponseMetadata {
     pub head_metadata: Metadata,
     pub trailer_metadata: Metadata,

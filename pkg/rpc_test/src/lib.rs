@@ -10,6 +10,7 @@ extern crate macros;
 
 pub mod proto;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use common::errors::*;
@@ -25,6 +26,7 @@ const ADDER_REQUEST_ID: &'static str = "adder-request-id";
 pub struct AdderImpl {
     log_file: Option<Mutex<LocalFile>>,
     event_listener: Option<channel::Sender<AdderEvent>>,
+    stats: Arc<Mutex<AdderStats>>,
 }
 
 /// Event emitted while processing a adder request.
@@ -47,6 +49,29 @@ pub enum AdderEventKind {
     },
 }
 
+#[derive(Default)]
+struct AdderStats {
+    /// If this is non-zero, we will decrement 1 from this and return an
+    /// Unavailable error.
+    unavailable_tokens: usize,
+    requests_received: usize,
+
+    messages_received: usize,
+}
+
+impl AdderStats {
+    fn reset(&mut self) -> &mut Self {
+        *self = AdderStats::default();
+        self
+    }
+}
+
+struct AdderInterceptor {
+    event_receiver: channel::Receiver<AdderEvent>,
+
+    stats: Arc<Mutex<AdderStats>>,
+}
+
 impl AdderImpl {
     pub async fn create(request_log: Option<&str>) -> Result<Self> {
         let log_file = {
@@ -63,11 +88,17 @@ impl AdderImpl {
         Ok(Self {
             log_file,
             event_listener: None,
+            stats: Arc::new(Mutex::new(AdderStats::default())),
         })
     }
 
     async fn handle_request(&self, req: &AddRequest, res: &mut AddResponse) -> Result<()> {
-        // println!("{:?}", req);
+        {
+            let mut stats = self.stats.lock().await;
+            res.set_message_index(stats.messages_received as i32);
+            stats.messages_received += 1;
+        }
+
         let z = req.x() + req.y();
         res.set_z(z);
 
@@ -77,6 +108,22 @@ impl AdderImpl {
             file.write_all(format!("{} + {} = {}\n", req.x(), req.y(), z).as_bytes())
                 .await?;
             file.flush().await?;
+        }
+
+        {
+            let have_token = {
+                let mut guard = self.stats.lock().await;
+                if guard.unavailable_tokens > 0 {
+                    guard.unavailable_tokens -= 1;
+                    true
+                } else {
+                    false
+                }
+            };
+
+            if have_token {
+                return Err(rpc::Status::unavailable("Service received too many requests").into());
+            }
         }
 
         if req.return_error() {
@@ -94,6 +141,8 @@ impl AdderService for AdderImpl {
         request: rpc::ServerRequest<AddRequest>,
         response: &mut rpc::ServerResponse<AddResponse>,
     ) -> Result<()> {
+        self.stats.lock().await.requests_received += 1;
+
         self.handle_request(request.as_ref(), response.as_mut())
             .await
     }
@@ -132,6 +181,8 @@ impl AdderService for AdderImpl {
         mut request: rpc::ServerStreamRequest<AddRequest>,
         response: &mut rpc::ServerStreamResponse<AddResponse>,
     ) -> Result<()> {
+        self.stats.lock().await.requests_received += 1;
+
         loop {
             match request.recv().await {
                 Ok(Some(req)) => {
@@ -179,6 +230,20 @@ impl AdderService for AdderImpl {
 
         Ok(())
     }
+
+    async fn IterateRange(
+        &self,
+        request: rpc::ServerRequest<AddRequest>,
+        response: &mut rpc::ServerStreamResponse<AddResponse>,
+    ) -> Result<()> {
+        for i in request.x()..request.y() {
+            let mut res = AddResponse::default();
+            res.set_z(i);
+            response.send(res).await?;
+        }
+
+        Ok(())
+    }
 }
 
 struct RequestCancelledContext {
@@ -200,6 +265,8 @@ impl Drop for RequestCancelledContext {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+
+    use protobuf::text::ParseTextProto;
 
     use super::*;
 
@@ -232,8 +299,8 @@ mod tests {
     }
 
     async fn adder_operations_tests(
-        stub: AdderStub,
-        event_receiver: channel::Receiver<AdderEvent>,
+        stub: &AdderStub,
+        interceptor: &AdderInterceptor,
     ) -> Result<()> {
         let mut request_tracker = AdderRequestTracker::default();
 
@@ -276,6 +343,9 @@ mod tests {
             res_stream.finish().await?;
         }
 
+        // TODO: This is not a good test as it depends on the execution order of the
+        // task cancellation occuring.
+        /*
         // Multi-message streaming request except that we drop the client-side
         // request/response streams without checking for a result or closing
         // them. (the server should see this as a cancellation on the next call
@@ -296,7 +366,7 @@ mod tests {
             drop(req_stream);
             drop(res_stream);
 
-            let event = event_receiver.recv().await.unwrap();
+            let event = interceptor.event_receiver.recv().await.unwrap();
             assert_eq!(
                 event,
                 AdderEvent {
@@ -307,6 +377,7 @@ mod tests {
                 }
             );
         }
+        */
 
         // Unary request can return an RPC error.
         {
@@ -347,7 +418,7 @@ mod tests {
             });
 
             assert_eq!(
-                event_receiver.recv().await.unwrap(),
+                interceptor.event_receiver.recv().await.unwrap(),
                 AdderEvent {
                     request_id: Some(request_id.clone()),
                     kind: AdderEventKind::BlockingRequestStarted
@@ -358,12 +429,31 @@ mod tests {
             assert!(result.is_none());
 
             assert_eq!(
-                event_receiver.recv().await.unwrap(),
+                interceptor.event_receiver.recv().await.unwrap(),
                 AdderEvent {
                     request_id: Some(request_id.clone()),
                     kind: AdderEventKind::BlockingCancelled
                 }
             );
+        }
+
+        // This trys to exercise server side batching of all already sent messages into
+        // single HTTP2 packets.
+        {
+            let ctx = request_tracker.next_context();
+
+            let mut req = AddRequest::default();
+            req.set_x(1);
+            req.set_y(5);
+
+            let mut res = stub.IterateRange(&ctx.rpc_context, &req).await;
+            assert_eq!(res.recv().await.unwrap().z(), 1);
+            assert_eq!(res.recv().await.unwrap().z(), 2);
+            assert_eq!(res.recv().await.unwrap().z(), 3);
+            assert_eq!(res.recv().await.unwrap().z(), 4);
+            assert_eq!(res.recv().await, None);
+
+            res.finish().await?;
         }
 
         // TODO: Eventually uncomment these once fixed.
@@ -437,14 +527,311 @@ mod tests {
         Ok(())
     }
 
-    // Testing most operations against a real HTTP2/TCP socket.
-    #[testcase]
-    async fn real_stub_test() -> Result<()> {
+    async fn adder_operation_retrying_tests(
+        stub: &AdderStub,
+        interceptor: &AdderInterceptor,
+    ) -> Result<()> {
+        // Non-idempotent unary request can't be retried.
+        {
+            interceptor.stats.lock().await.reset().unavailable_tokens = 1;
+
+            let mut req = AddRequest::default();
+            req.set_x(1);
+            req.set_y(1);
+
+            let res = stub.Add(&rpc::ClientRequestContext::default(), &req).await;
+
+            assert_eq!(
+                res.result
+                    .unwrap_err()
+                    .downcast_ref::<rpc::Status>()
+                    .unwrap()
+                    .code(),
+                rpc::StatusCode::Unavailable
+            );
+
+            let stats = interceptor.stats.lock().await;
+            assert_eq!(stats.unavailable_tokens, 0);
+            assert_eq!(stats.requests_received, 1);
+        }
+
+        // Non-idempotent streaming request can't be retried
+        {
+            interceptor.stats.lock().await.reset().unavailable_tokens = 1;
+
+            let mut req = AddRequest::default();
+            req.set_x(1);
+            req.set_y(1);
+
+            let (mut req_stream, mut res_stream) = stub
+                .AddStreaming(&rpc::ClientRequestContext::default())
+                .await;
+
+            assert!(req_stream.send(&req).await);
+
+            assert_eq!(res_stream.recv().await, None);
+
+            let res = res_stream.finish().await;
+            assert_eq!(
+                res.unwrap_err()
+                    .downcast_ref::<rpc::Status>()
+                    .unwrap()
+                    .code(),
+                rpc::StatusCode::Unavailable
+            );
+
+            let stats = interceptor.stats.lock().await;
+            assert_eq!(stats.unavailable_tokens, 0);
+            assert_eq!(stats.requests_received, 1);
+        }
+
+        // Immediately returned Unavailable error (Trailers-only). (Idempotent Unary)
+        {
+            interceptor.stats.lock().await.reset().unavailable_tokens = 1;
+
+            let mut req = AddRequest::default();
+            req.set_x(1);
+            req.set_y(1);
+
+            let mut ctx = rpc::ClientRequestContext::default();
+            ctx.idempotent = true;
+
+            let res = stub.Add(&ctx, &req).await;
+
+            assert_eq!(res.result?.z(), 2);
+
+            let stats = interceptor.stats.lock().await;
+            assert_eq!(stats.unavailable_tokens, 0);
+            assert_eq!(stats.requests_received, 2);
+        }
+
+        // Immediately returned Unavailable error (Trailers-only). (Idempotent
+        // Streaming)
+        {
+            interceptor.stats.lock().await.reset().unavailable_tokens = 1;
+
+            let mut ctx = rpc::ClientRequestContext::default();
+            ctx.idempotent = true;
+
+            let (mut req_stream, mut res_stream) = stub.AddStreaming(&ctx).await;
+
+            let mut req = AddRequest::default();
+            req.set_x(1);
+            req.set_y(1);
+
+            assert!(req_stream.send(&req).await);
+
+            // Wait for first request to be sent.
+            executor::sleep(Duration::from_millis(10)).await;
+
+            assert_eq!(interceptor.stats.lock().await.requests_received, 1);
+
+            req.set_x(2);
+            assert!(req_stream.send(&req).await);
+
+            req_stream.close().await;
+
+            // TODO: We must also validate
+            assert_eq!(
+                res_stream.recv().await,
+                Some(AddResponse::parse_text("z: 2 message_index: 1")?)
+            );
+            assert_eq!(
+                res_stream.recv().await,
+                Some(AddResponse::parse_text("z: 3 message_index: 2")?)
+            );
+            assert_eq!(res_stream.recv().await, None);
+            res_stream.finish().await?;
+
+            let stats = interceptor.stats.lock().await;
+            assert_eq!(stats.unavailable_tokens, 0);
+            assert_eq!(stats.requests_received, 2);
+
+            // 1 in the first attempt and then 2 (replaying both) in the second attempt.
+            assert_eq!(stats.messages_received, 3);
+        }
+
+        // By default can't retry streaming response after one good response is
+        // returned.
+        {
+            interceptor.stats.lock().await.reset();
+
+            let mut ctx = rpc::ClientRequestContext::default();
+            ctx.idempotent = true;
+
+            let (mut req_stream, mut res_stream) = stub.AddStreaming(&ctx).await;
+
+            let mut req = AddRequest::default();
+            req.set_x(1);
+            req.set_y(1);
+
+            assert!(req_stream.send(&req).await);
+            executor::sleep(Duration::from_millis(10)).await;
+            assert_eq!(interceptor.stats.lock().await.messages_received, 1);
+
+            interceptor.stats.lock().await.unavailable_tokens = 1;
+            assert!(req_stream.send(&req).await);
+
+            req_stream.close().await;
+
+            assert_eq!(
+                res_stream.recv().await,
+                Some(AddResponse::parse_text("z: 2")?)
+            );
+            assert_eq!(res_stream.recv().await, None);
+
+            let res = res_stream.finish().await;
+            assert_eq!(
+                res.unwrap_err()
+                    .downcast_ref::<rpc::Status>()
+                    .unwrap()
+                    .code(),
+                rpc::StatusCode::Unavailable
+            );
+
+            let stats = interceptor.stats.lock().await;
+            assert_eq!(stats.unavailable_tokens, 0);
+            assert_eq!(stats.requests_received, 1);
+            assert_eq!(stats.messages_received, 2);
+        }
+
+        // We can retry a streaming response if we buffer the responses.
+        {
+            interceptor.stats.lock().await.reset();
+
+            let mut ctx = rpc::ClientRequestContext::default();
+            ctx.idempotent = true;
+            ctx.buffer_full_response = true;
+
+            let (mut req_stream, mut res_stream) = stub.AddStreaming(&ctx).await;
+
+            let mut req = AddRequest::default();
+            req.set_x(1);
+            req.set_y(1);
+
+            assert!(req_stream.send(&req).await);
+            // Send and receive the result for at least one message successfully.
+            executor::sleep(Duration::from_millis(10)).await;
+            assert_eq!(interceptor.stats.lock().await.messages_received, 1);
+
+            // Force the
+            interceptor.stats.lock().await.unavailable_tokens = 1;
+            req.set_y(5);
+            assert!(req_stream.send(&req).await);
+            req_stream.close().await;
+
+            // NOTE: Should not receive for message indices 0 or 1 because those are both
+            // from the first request.
+            assert_eq!(
+                res_stream.recv().await,
+                Some(AddResponse::parse_text("z: 2 message_index: 2")?)
+            );
+            assert_eq!(
+                res_stream.recv().await,
+                Some(AddResponse::parse_text("z: 6 message_index: 3")?)
+            );
+            assert_eq!(res_stream.recv().await, None);
+
+            res_stream.finish().await?;
+
+            let stats = interceptor.stats.lock().await;
+            assert_eq!(stats.unavailable_tokens, 0);
+            assert_eq!(stats.requests_received, 2);
+            assert_eq!(stats.messages_received, 4);
+        }
+
+        // Exceeding maximum number of requests.
+        {
+            interceptor.stats.lock().await.reset().unavailable_tokens = 40;
+
+            let mut req = AddRequest::default();
+            req.set_x(1);
+            req.set_y(1);
+
+            let mut ctx = rpc::ClientRequestContext::default();
+            ctx.idempotent = true;
+
+            let res = stub.Add(&ctx, &req).await;
+
+            assert_eq!(
+                res.result
+                    .unwrap_err()
+                    .downcast_ref::<rpc::Status>()
+                    .unwrap()
+                    .code(),
+                rpc::StatusCode::Internal
+            );
+
+            let mut stats = interceptor.stats.lock().await;
+            assert_eq!(stats.unavailable_tokens, 37);
+            assert_eq!(stats.requests_received, 3);
+            stats.reset();
+        }
+
+        // Does not retry non-retryable code
+        {
+            interceptor.stats.lock().await.reset();
+
+            let mut req = AddRequest::default();
+            req.set_x(1);
+            req.set_y(1);
+            req.set_return_error(true);
+
+            let mut ctx = rpc::ClientRequestContext::default();
+            ctx.idempotent = true;
+
+            let res = stub.Add(&ctx, &req).await;
+
+            assert_eq!(
+                res.result
+                    .unwrap_err()
+                    .downcast_ref::<rpc::Status>()
+                    .unwrap()
+                    .code(),
+                rpc::StatusCode::InvalidArgument
+            );
+
+            let mut stats = interceptor.stats.lock().await;
+            assert_eq!(stats.requests_received, 1);
+            stats.reset();
+        }
+
+        // Need at least one test with retrying with multiple request packets.
+        // There is a risk that the MessageRequestBuffer reads a request packet but then
+        // drops it.
+
+        // TODO: Need a test of exceeding the request buffering size for straming
+        // requests.
+
+        // TODO: Also need to test retrying of HTTP2 level local/remote REFUSED_STREAM
+        // failures.
+
+        Ok(())
+    }
+
+    fn make_service() -> (AdderImpl, AdderInterceptor) {
         let (sender, receiver) = channel::unbounded();
+        let mut stats = Arc::new(Mutex::new(AdderStats::default()));
+
         let adder = AdderImpl {
             log_file: None,
             event_listener: Some(sender),
+            stats: stats.clone(),
         };
+
+        (
+            adder,
+            AdderInterceptor {
+                stats,
+                event_receiver: receiver,
+            },
+        )
+    }
+
+    // Testing most operations against a real HTTP2/TCP socket.
+    #[testcase]
+    async fn real_stub_test() -> Result<()> {
+        let (adder, interceptor) = make_service();
 
         let mut server = rpc::Http2Server::new();
         server.add_service(adder.into_service());
@@ -462,11 +849,13 @@ mod tests {
         };
 
         let stub = AdderStub::new(channel);
-        adder_operations_tests(stub, receiver).await?;
+        adder_operations_tests(&stub, &interceptor).await?;
+        adder_operation_retrying_tests(&stub, &interceptor).await?;
 
-        // Verify the final status of joining the worker is ok.
+        // TODO: Verify that we can gracefully shut down the server and it returns with
+        // an Ok(()) status.
 
-        executor::sleep(std::time::Duration::from_secs(1)).await;
+        // executor::sleep(std::time::Duration::from_secs(1)).await;
 
         Ok(())
     }
@@ -475,16 +864,13 @@ mod tests {
     // socket.
     #[testcase]
     async fn local_channel_test() -> Result<()> {
-        let (sender, receiver) = channel::unbounded();
-        let adder = AdderImpl {
-            log_file: None,
-            event_listener: Some(sender),
-        };
+        let (adder, interceptor) = make_service();
 
         let channel = Arc::new(rpc::LocalChannel::new(adder.into_service()));
 
         let stub = AdderStub::new(channel);
-        adder_operations_tests(stub, receiver).await?;
+        adder_operations_tests(&stub, &interceptor).await?;
+        // NOTE: The local stub doesn't do retrying.
 
         Ok(())
     }

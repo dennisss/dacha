@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::io::Cursor;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -14,6 +15,8 @@ use http::header::*;
 use http::status_code::*;
 use http::Body;
 
+use crate::buffer_queue::BufferQueue;
+use crate::buffer_queue::BufferQueueCursor;
 use crate::media_type::RPCMediaProtocol;
 use crate::media_type::RPCMediaType;
 use crate::message::*;
@@ -312,7 +315,8 @@ impl Http2RequestHandler {
             child_task: Some(child_task),
             response_receiver,
             response_type,
-            remaining_bytes: Bytes::new(),
+            buffer: BufferQueue::new(),
+            buffer_cursor: BufferQueueCursor::default(),
             done_data: false,
             trailers: None,
         });
@@ -348,7 +352,7 @@ impl Http2RequestHandler {
         // Immediately apply any already prepared events.
         // This is mainly to enable proper functionality of corked events.
         for _ in 0..body.response_receiver.capacity() {
-            if let Some(event) = body.response_receiver.try_recv() {
+            if let Some(Ok(event)) = body.response_receiver.try_recv() {
                 body.process_event(event)?;
             } else {
                 break;
@@ -391,6 +395,9 @@ impl Http2RequestHandler {
         // TODO: Ensure that similarly internal HTTP2 calls aren't propagated to
         // clients.
         let response_result = service.call(&method_name, request, response).await;
+
+        // TODO: Uncork the channel to ensure that these can go through? (unless already
+        // intentionally corked to batch the trailers).
 
         if !head_sent {
             // Trailers-Only case.
@@ -443,7 +450,8 @@ impl Http2RequestHandler {
                 child_task: None,
                 response_receiver: receiver,
                 response_type,
-                remaining_bytes: Bytes::new(),
+                buffer: BufferQueue::new(),
+                buffer_cursor: BufferQueueCursor::default(),
                 done_data: false,
                 trailers: None,
             }))
@@ -474,13 +482,15 @@ struct ResponseBody {
 
     response_type: RPCMediaType,
 
-    /// TODO: Re-use this buffer across multiple messages
-    remaining_bytes: Bytes,
+    // /// TODO: Re-use this buffer across multiple messages
+    // remaining_bytes: Bytes,
+    buffer: BufferQueue,
+    buffer_cursor: BufferQueueCursor,
 
     trailers: Option<Headers>,
 
     /// If true, then all body data remaining in the response is in the
-    /// 'remaining_bytes' and 'trailers'.
+    /// 'buffer' and 'trailers'.
     done_data: bool,
 }
 
@@ -500,7 +510,10 @@ impl ResponseBody {
             ServerStreamResponseEvent::Message(data) => {
                 // NOTE: This supports zero length packets are the message serializer will
                 // always prepend a fixed length prefix.
-                self.remaining_bytes = Bytes::from(MessageSerializer::serialize(&data, false));
+
+                self.buffer
+                    .push(MessageSerializer::serialize_header(&data, false));
+                self.buffer.push(data);
             }
             ServerStreamResponseEvent::Trailers(result, trailer_meta) => {
                 let mut trailers = Headers::new();
@@ -513,13 +526,14 @@ impl ResponseBody {
                         self.trailers = Some(trailers);
                     }
                     RPCMediaProtocol::Web => {
-                        // TODO: Implement body-less responses with the error code in the
-                        // header headers.
                         let mut data = vec![];
                         trailers.serialize(&mut data)?;
 
-                        self.remaining_bytes =
-                            Bytes::from(MessageSerializer::serialize(&data, true));
+                        // TODO: Given this is a known length, append it to the beginning of the
+                        // 'data' vec.
+                        self.buffer
+                            .push(MessageSerializer::serialize_header(&data, true));
+                        self.buffer.push(data.into());
                     }
                 }
 
@@ -540,7 +554,7 @@ impl ResponseBody {
                 // TODO: Only forward statuses that were generated locally and not ones
                 // that were returned as part of an internal client RPC call.
 
-                eprintln!("[rpc::Server] RPC Error: {:?}", error);
+                eprintln!("[rpc::Server] RPC Error: {}", error);
                 let status = match error.downcast_ref::<Status>() {
                     Some(s) => s.clone(),
                     None => Status::internal("Internal error occured"),
@@ -558,11 +572,9 @@ impl ResponseBody {
 impl Readable for ResponseBody {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         loop {
-            if !self.remaining_bytes.is_empty() {
-                let n = std::cmp::min(self.remaining_bytes.len(), buf.len());
-                buf[0..n].copy_from_slice(&self.remaining_bytes[0..n]);
-
-                self.remaining_bytes.advance(n);
+            let n = self.buffer.read(&mut self.buffer_cursor, buf).unwrap();
+            if n != 0 {
+                self.buffer.advance(&self.buffer_cursor);
 
                 // NOTE: We always stop after at least some amount of data is available to
                 // ensure that readers are unblocked.
@@ -573,6 +585,7 @@ impl Readable for ResponseBody {
                 return Ok(0);
             }
 
+            // TODO: Try to optimistically pull any already available messages from this.
             let event = self.response_receiver.recv().await?;
 
             self.process_event(event)?;
@@ -586,7 +599,7 @@ impl Body for ResponseBody {
     // - For unary responses or immediate error responses, this should be obvious.
     fn len(&self) -> Option<usize> {
         if self.done_data {
-            return Some(self.remaining_bytes.len());
+            return Some(self.buffer.len());
         }
 
         None
@@ -602,7 +615,7 @@ impl Body for ResponseBody {
     }
 
     async fn trailers(&mut self) -> Result<Option<Headers>> {
-        if !(self.done_data && self.remaining_bytes.is_empty()) {
+        if !(self.done_data && self.buffer.is_empty()) {
             return Err(err_msg("Trailers read at the wrong time"));
         }
 

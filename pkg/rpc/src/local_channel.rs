@@ -4,13 +4,16 @@ use common::bytes::Bytes;
 use common::errors::*;
 use executor::channel::spsc;
 use executor::child_task::ChildTask;
+use executor::sync::Mutex;
 
-use crate::channel::{Channel, MessageRequestBody};
+use crate::channel::Channel;
 use crate::client_types::{ClientRequestContext, ClientStreamingRequest, ClientStreamingResponse};
 use crate::media_type::{RPCMediaProtocol, RPCMediaSerialization, RPCMediaType};
+use crate::message_request_body::{MessageRequestBody, MessageRequestBuffer};
 use crate::server::Http2RequestHandler;
 use crate::server_types::{ServerRequestContext, ServerStreamRequest, ServerStreamResponse};
 use crate::service::Service;
+use crate::Http2Channel;
 
 /// rpc::Channel implementation which directly wraps an rpc::Service for making
 /// RPCs to an in-process service.
@@ -31,11 +34,18 @@ impl LocalChannel {
         method_name: String,
         request_context: ClientRequestContext,
         request_receiver: spsc::Receiver<Result<Option<Bytes>>>,
-    ) -> Result<http::Response> {
+        attempt_alive: spsc::Receiver<()>,
+    ) -> http::Response {
         let server_request_context = ServerRequestContext {
             metadata: request_context.metadata,
         };
-        let server_request_body = Box::new(MessageRequestBody::new(request_receiver));
+
+        let server_request_buffer = Arc::new(MessageRequestBuffer::new(0, request_receiver));
+
+        let server_request_body = Box::new(MessageRequestBody::new(
+            server_request_buffer,
+            attempt_alive,
+        ));
         let server_request = ServerStreamRequest::new(
             server_request_body,
             RPCMediaType {
@@ -45,7 +55,7 @@ impl LocalChannel {
             server_request_context,
         );
 
-        Ok(handler
+        handler
             .handle_parsed_request(
                 &service_name,
                 &method_name,
@@ -55,7 +65,7 @@ impl LocalChannel {
                     serialization: RPCMediaSerialization::Proto,
                 },
             )
-            .await)
+            .await
     }
 }
 
@@ -70,13 +80,27 @@ impl Channel for LocalChannel {
         let (req_sender, req_receive) = spsc::bounded(2);
 
         let client_req = ClientStreamingRequest::new(req_sender);
-        let client_res = ClientStreamingResponse::from_response(Self::request_handler(
-            self.handler.clone(),
-            service_name.to_string(),
-            method_name.to_string(),
-            request_context.clone(),
-            req_receive,
-        ));
+
+        let handler = self.handler.clone();
+        let request_context = request_context.clone();
+        let service_name = service_name.to_string();
+        let method_name = method_name.to_string();
+
+        let client_res = ClientStreamingResponse::from_future_response(async move {
+            let (sender, receiver) = spsc::bounded(0);
+
+            let result = Self::request_handler(
+                handler,
+                service_name,
+                method_name,
+                request_context.clone(),
+                req_receive,
+                receiver,
+            )
+            .await;
+
+            Http2Channel::process_existing_response(Ok(result), sender, &request_context).await
+        });
 
         (client_req, client_res)
     }

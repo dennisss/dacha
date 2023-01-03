@@ -277,7 +277,7 @@ async fn run_pipe_command(cmd: PipeCommand) -> Result<()> {
         println!("{:?}", line_reader(sender).await);
     });
 
-    let to_address = common::hex::decode(&cmd.to_address)?;
+    let to_address = radix::hex_decode(&cmd.to_address)?;
 
     loop {
         // TODO: If we get a packet, continue reading up to some number of frames until

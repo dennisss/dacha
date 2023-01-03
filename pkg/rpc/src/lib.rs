@@ -1,3 +1,4 @@
+#[macro_use]
 extern crate alloc;
 extern crate core;
 
@@ -15,24 +16,30 @@ extern crate failure;
 extern crate google;
 extern crate protobuf_json;
 
+mod buffer_queue;
 mod channel;
 mod client_types;
 mod constants;
+mod http2_channel;
 mod local_channel;
 mod media_type;
 mod message;
+mod message_request_body;
 mod metadata;
 mod pipe;
+mod retrying;
 mod server;
 mod server_types;
 mod service;
 mod status;
 
-pub use channel::{Channel, Http2Channel};
+pub use channel::Channel;
 pub use client_types::*;
+pub use http2_channel::{Http2Channel, Http2ChannelOptions};
 pub use local_channel::LocalChannel;
 pub use metadata::Metadata;
 pub use pipe::pipe;
+pub use retrying::RetryingOptions;
 pub use server::Http2Server;
 pub use server_types::*;
 pub use service::Service;

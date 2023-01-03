@@ -42,6 +42,7 @@ impl Status {
     status_ctor!(cancelled, Cancelled);
     status_ctor!(not_found, NotFound);
     status_ctor!(invalid_argument, InvalidArgument);
+    status_ctor!(unavailable, Unavailable);
     status_ctor!(internal, Internal);
     status_ctor!(already_exists, AlreadyExists);
     status_ctor!(failed_precondition, FailedPrecondition);
@@ -113,6 +114,15 @@ impl Status {
 
     pub fn is_ok(&self) -> bool {
         self.code == StatusCode::Ok
+    }
+
+    pub fn into_result(self) -> Result<()> {
+        if self.is_ok() {
+            // TODO: Verify there are no details?
+            return Ok(());
+        } else {
+            return Err(self.into());
+        }
     }
 
     pub fn append_to_headers(&self, headers: &mut Headers) -> Result<()> {

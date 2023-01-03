@@ -187,12 +187,12 @@ impl<T> Receiver<T> {
         RecvFuture { receiver: self }
     }
 
-    pub fn try_recv(&mut self) -> Option<T> {
+    pub fn try_recv(&mut self) -> Option<Result<T, RecvError>> {
         let mut inner = self.inner.lock().unwrap();
         Self::try_recv_impl(&mut inner)
     }
 
-    fn try_recv_impl(inner: &mut Inner<T>) -> Option<T> {
+    fn try_recv_impl(inner: &mut Inner<T>) -> Option<Result<T, RecvError>> {
         inner.receiver_waker = None;
 
         // NOTE: This is set to false when the receiver is dropped, so this will always
@@ -206,10 +206,40 @@ impl<T> Receiver<T> {
                 waker.wake();
             }
 
-            return Some(value);
+            return Some(Ok(value));
+        }
+
+        if !inner.sender_alive {
+            return Some(Err(RecvError::SenderDropped));
         }
 
         None
+    }
+
+    /// Blocks until try_recv() would return a non-None result without actually
+    /// mutating the state of the channel.
+    pub fn wait<'a>(&'a mut self) -> impl Future<Output = ()> + 'a {
+        WaitFuture { receiver: self }
+    }
+
+    fn try_wait_impl(inner: &mut Inner<T>) -> bool {
+        inner.receiver_waker = None;
+
+        // NOTE: This is set to false when the receiver is dropped, so this will always
+        // eventually be false.
+        if inner.corked {
+            return false;
+        }
+
+        if !inner.values.is_empty() {
+            return true;
+        }
+
+        if !inner.sender_alive {
+            return true;
+        }
+
+        false
     }
 }
 
@@ -226,11 +256,28 @@ impl<'a, T> Future for RecvFuture<'a, T> {
         let mut inner = this.receiver.inner.lock().unwrap();
 
         if let Some(value) = Receiver::try_recv_impl(&mut inner) {
-            return Poll::Ready(Ok(value));
+            return Poll::Ready(value);
         }
 
-        if !inner.sender_alive {
-            return Poll::Ready(Err(RecvError::SenderDropped));
+        inner.receiver_waker = Some(cx.waker().clone());
+        Poll::Pending
+    }
+}
+
+struct WaitFuture<'a, T> {
+    receiver: &'a mut Receiver<T>,
+}
+
+impl<'a, T> Future for WaitFuture<'a, T> {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = unsafe { self.get_unchecked_mut() };
+
+        let mut inner = this.receiver.inner.lock().unwrap();
+
+        if Receiver::try_wait_impl(&mut inner) {
+            return Poll::Ready(());
         }
 
         inner.receiver_waker = Some(cx.waker().clone());

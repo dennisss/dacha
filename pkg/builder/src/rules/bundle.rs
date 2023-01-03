@@ -134,7 +134,7 @@ impl BuildTarget for Bundle {
             file::rename(archive_path, &blob_path).await?;
 
             outputs.output_files.insert(
-                bundle_mount_dir.join(blob_spec.id()).as_str().to_string(),
+                bundle_mount_dir.join(blob_spec.id()).to_string(),
                 BuildOutputFile {
                     location: blob_path,
                 },
@@ -154,7 +154,7 @@ impl BuildTarget for Bundle {
         file::write(&spec_path, data).await?;
 
         outputs.output_files.insert(
-            spec_mount_path.as_str().to_string(),
+            spec_mount_path.to_string(),
             BuildOutputFile {
                 location: spec_path,
             },

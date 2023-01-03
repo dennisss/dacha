@@ -92,7 +92,7 @@ impl BuildTarget for Webpack {
 
         let mut outputs = BuildTargetOutputs::default();
         outputs.output_files.insert(
-            output_mount_path.as_str().to_string(),
+            output_mount_path.to_string(),
             BuildOutputFile {
                 location: output_path,
             },

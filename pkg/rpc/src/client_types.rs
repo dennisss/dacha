@@ -1,3 +1,43 @@
+//! Types used for fulfilling client-side RPCs.
+//!
+//! For Client Unary -> Server Unary RPCs:
+//!
+//! - A `ClientResponse` is returned to the caller.
+//! - This object directly contains the one message or status.
+//!
+//! For Client Unary -> Server Streaming RPCs:
+//!
+//! - A `ClientStreamingResponse` is returned to the caller.
+//! - The caller must:
+//!   - Optionally call `ClientStreamingResponse::recv_head()` to read the head
+//!     metadata.
+//!   - Continously call `ClientStreamingResponse::recv()` to get messages until
+//!     None is returned.
+//!   - Call `ClientStreamingResponse::finish()` to get the status of the
+//!     response.
+//!
+//! For Client Streaming -> Server Unary RPCs:
+//!
+//! - A `ClientStreamingCall` is returned to the caller.
+//! - The caller must:
+//!     - Call 'ClientStreamingCall::send()' with new messages until done or it
+//!       returns false.
+//!     - Call `ClientStreamingCall::finish()` to get the server response or
+//!       status.
+//!
+//! For Client Streaming -> Server Streaming RPCs (BIDI):
+//!
+//! - A tuple of `(ClientStreamingRequest, ClientStreamingResponse)` are
+//!   returned to the caller.
+//! - The caller must:
+//!     - Call `ClientStreamingRequest::send()` to send messages
+//!     - Call `ClientStreamingRequest::close()` once all messages have been
+//!       sent.
+//!     - Use `ClientStreamingResponse` similarly to past cases for getting the
+//!       server response.
+//! - Internally all the other cases are implemented on top of these BIDI types.
+
+use std::future::Future;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -6,67 +46,35 @@ use common::errors::*;
 use common::io::Readable;
 use executor::channel::spsc;
 use executor::child_task::ChildTask;
-use http::header::CONTENT_TYPE;
+use executor::sync::Mutex;
 
 use crate::media_type::RPCMediaProtocol;
 use crate::media_type::RPCMediaSerialization;
 use crate::media_type::RPCMediaType;
 use crate::message::*;
+use crate::message_request_body::MessageRequestBuffer;
 use crate::metadata::*;
 use crate::status::*;
-
-/*
-- Unary : Unary
-    - Just return a ClientResponse
-
-- Unary : Streaming
-    - Just return a ClientStreamingResponse
-    - API:
-        - recv()
-        - finish() -> Result<()>
-
-- Streaming : Unary
-    - Just return a ClientStreamingCall<Req, Res>
-    - API:
-        - send()
-        - finish() -> Result<Res>
-
-- Streaming : Streaming
-    - Return a (ClientStreamingRequest, ClientStreamingResponse??)
-
-
-
-ClientStreamingCall
-
-
-
-(ClientStreamingWriter, ClientStreamResponse)
-^ These must be tied together such that when writer fails,
-
-
-ClientUnaryResponse
-
-(ClientStreamingRequest, ClientPendingResponse
-
-(ClientWriter, ClientReader)
-
-
-
-ClientStreaming
-
-
-*/
 
 /// Used by an RPC client to specify how a single RPC should be sent and what
 /// metadata should be sent along with the RPC.
 #[derive(Default, Clone)]
 pub struct ClientRequestContext {
+    /// Arbitrary key-value metadata to send to the server.
     pub metadata: Metadata,
+
     pub idempotent: bool,
     pub wait_for_ready: bool, // TODO: Deadline
+
+    /// If true, we will read and buffer the entire before any part of it is
+    /// returned to the RPC caller.
+    ///
+    /// - This will be internally set to true for unary responses.
+    /// - This is required to support full retrying of RPCs.
+    pub buffer_full_response: bool,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ClientResponseContext {
     /// Metadata received from the server.
     ///
@@ -128,6 +136,12 @@ impl ClientStreamingRequest<()> {
 }
 
 impl<T> ClientStreamingRequest<T> {
+    pub fn cork(&mut self) {
+        if let Some(sender) = &mut self.sender {
+            sender.cork();
+        }
+    }
+
     #[must_use]
     pub async fn send_bytes(&mut self, data: Bytes) -> bool {
         let sender = match self.sender.as_mut() {
@@ -143,8 +157,9 @@ impl<T> ClientStreamingRequest<T> {
     /// Call after sending all messages to the server to indicate that no more
     /// messages will be sent for the current RPC.
     pub async fn close(&mut self) {
-        if let Some(sender) = &mut self.sender {
+        if let Some(mut sender) = self.sender.take() {
             let _ = sender.send(Ok(None)).await;
+            // sender will be implicitly uncorked on drop here.
         }
     }
 }
@@ -175,12 +190,20 @@ impl<T: protobuf::StaticMessage> ClientStreamingRequest<T> {
     }
 }
 
-/// Response returned by an RPC with a unary request and streaming response.
-///
-/// TODO: Check that our HTTP2 implementation will close the entire stream once
-/// the Server closes its stream (as there isn't any good usecase for continuing
-/// to send client bytes in this case).
+#[async_trait]
+pub trait ClientStreamingResponseInterface: 'static + Send {
+    async fn recv_bytes(&mut self) -> Option<Bytes>;
+
+    async fn finish(&mut self) -> Result<()>;
+
+    fn context(&self) -> &ClientResponseContext;
+}
+
+/// Response returned by an RPC with zero or more messages.
 pub struct ClientStreamingResponse<Res> {
+    /// All the metadata we have currently received from the server.
+    ///
+    /// TODO: Eventually make this private.
     pub(crate) context: ClientResponseContext,
 
     state: Option<ClientStreamingResponseState>,
@@ -191,37 +214,27 @@ pub struct ClientStreamingResponse<Res> {
 }
 
 enum ClientStreamingResponseState {
-    /// We are still waiting for an initial response / head metadata from the
-    /// server.
-    Head(ChildTask<Result<http::Response>>),
+    /// The request is currently being sent through the channel and we are
+    /// waiting for it to become available.
+    Sending(ChildTask<Box<dyn ClientStreamingResponseInterface>>),
 
-    /// We have gotten initial metadata and are receiving zero or more messages.
-    Body(Box<dyn http::Body>),
-
-    /// All messages have been received and we need to wait for the trailer to
-    /// be received.
-    Trailers(Box<dyn http::Body>),
+    /// We have received some response from the channel that can now be
+    /// forwarded to the caller.
+    Received(Box<dyn ClientStreamingResponseInterface>),
 
     /// We will return an error the next time the response is polled.
     Error(Error),
-
-    TrailersOnly(Status),
 }
 
 impl<Res> ClientStreamingResponse<Res> {
-    pub(crate) fn from_response<
-        F: 'static + Send + std::future::Future<Output = Result<http::Response>>,
+    pub(crate) fn from_future_response<
+        F: 'static + Send + Future<Output = Box<dyn ClientStreamingResponseInterface>>,
     >(
         response: F,
     ) -> Self {
         Self {
-            context: ClientResponseContext {
-                metadata: ResponseMetadata {
-                    head_metadata: Metadata::default(),
-                    trailer_metadata: Metadata::default(),
-                },
-            },
-            state: Some(ClientStreamingResponseState::Head(ChildTask::spawn(
+            context: ClientResponseContext::default(),
+            state: Some(ClientStreamingResponseState::Sending(ChildTask::spawn(
                 response,
             ))),
             interceptor: None,
@@ -248,6 +261,8 @@ impl<Res> ClientStreamingResponse<Res> {
     /// Note that the returned object will be empty until recv_head() or recv()
     /// returns at least once (indicating that we het the HTTP response
     /// headers).
+    ///
+    /// TODO: This is now wrong.
     pub fn context(&self) -> &ClientResponseContext {
         &self.context
     }
@@ -271,6 +286,7 @@ impl<Res: protobuf::StaticMessage> ClientStreamingResponse<Res> {
             None => return None,
         };
 
+        // NOTE: This parsing won't get retried by channels.
         match Res::parse(&data) {
             Ok(v) => Some(v),
             Err(e) => {
@@ -282,17 +298,44 @@ impl<Res: protobuf::StaticMessage> ClientStreamingResponse<Res> {
 }
 
 impl<T> ClientStreamingResponse<T> {
-    // TODO: Consider adding a method to wait for initial metadata?
-
+    /// Waits until we have received at least the head of the response.
+    ///
+    /// Once this completes, the response should have head metadata (or an
+    /// error).
+    ///
+    /// TODO: How can a client tell that there is an error?
     pub async fn recv_head(&mut self) {
         match self.state.take() {
-            Some(ClientStreamingResponseState::Head(response)) => {
-                if let Err(e) = self.recv_head_impl(response).await {
-                    self.state = Some(ClientStreamingResponseState::Error(e));
-                }
+            Some(ClientStreamingResponseState::Sending(response)) => {
+                self.recv_head_impl(response).await;
             }
             state @ _ => {
                 self.state = state;
+            }
+        }
+    }
+
+    async fn recv_head_impl(
+        &mut self,
+        response: ChildTask<Box<dyn ClientStreamingResponseInterface>>,
+    ) {
+        // TODO: Standardize the error codes we will us for this.
+        // These should also probably not be 'local' rpc statuses.
+        // ^ Yes, Yeah. Let's do this in the HTTP2 channel code.
+
+        let response = response.join().await;
+
+        // TODO: Find a better solution than this.
+        self.context = response.context().clone();
+
+        self.state = Some(ClientStreamingResponseState::Received(response));
+
+        if let Some(interceptor) = &self.interceptor {
+            if let Err(e) = interceptor
+                .on_response_head(&mut self.context.metadata.head_metadata)
+                .await
+            {
+                self.state = Some(ClientStreamingResponseState::Error(e));
             }
         }
     }
@@ -304,27 +347,19 @@ impl<T> ClientStreamingResponse<T> {
     pub async fn recv_bytes(&mut self) -> Option<Bytes> {
         loop {
             return match self.state.take() {
-                Some(ClientStreamingResponseState::Head(response)) => {
-                    if let Err(e) = self.recv_head_impl(response).await {
-                        self.state = Some(ClientStreamingResponseState::Error(e));
-                        None
-                    } else {
-                        // Loop again to wait on the first response from the body.
-                        continue;
-                    }
-                }
-                Some(ClientStreamingResponseState::Body(body)) => {
-                    match self.recv_body(body).await {
-                        Ok(value) => value,
-                        Err(e) => {
-                            self.state = Some(ClientStreamingResponseState::Error(e));
-                            None
-                        }
-                    }
-                }
+                Some(ClientStreamingResponseState::Sending(response)) => {
+                    self.recv_head_impl(response).await;
 
-                Some(state) => {
-                    self.state = Some(state);
+                    // Loop again to wait on the first response from the body.
+                    continue;
+                }
+                Some(ClientStreamingResponseState::Received(mut response)) => {
+                    let data = response.recv_bytes().await;
+                    self.state = Some(ClientStreamingResponseState::Received(response));
+                    data
+                }
+                state @ Some(ClientStreamingResponseState::Error(_)) => {
+                    self.state = state;
                     None
                 }
                 None => None,
@@ -332,112 +367,34 @@ impl<T> ClientStreamingResponse<T> {
         }
     }
 
-    async fn recv_head_impl(&mut self, response: ChildTask<Result<http::Response>>) -> Result<()> {
-        // TODO: Standardize the error codes we will us for this.
-        // These should also probably not be 'local' rpc statuses.
-
-        let response = response.join().await?;
-
-        if response.head.status_code != http::status_code::OK {
-            return Err(crate::Status::unknown("Server responded with non-OK status").into());
-        }
-
-        let response_type = RPCMediaType::parse(&response.head.headers)
-            .ok_or_else(|| err_msg("Response received without valid content type"))?;
-        if response_type.protocol != RPCMediaProtocol::Default
-            || response_type.serialization != RPCMediaSerialization::Proto
-        {
-            return Err(err_msg("Received unsupported media type"));
-        }
-
-        self.context.metadata.head_metadata = Metadata::from_headers(&response.head.headers)?;
-
-        if let Some(interceptor) = &self.interceptor {
-            interceptor
-                .on_response_head(&mut self.context.metadata.head_metadata)
-                .await?;
-        }
-
-        // Handle trailers only mode.
-        // In this mode, the status is propagated through the main headers and no body
-        // or trailers should be present.
-        //
-        // !response.body.has_trailers() also implies that the END_STREAM bit was set of
-        // the HTTP2 HEADERS frame rather than there being an extra empty DATA frame.
-        // This means it is safe for us to just ignore reading the body.
-        let is_trailers_only = response.body.len() == Some(0) && !response.body.has_trailers();
-        let has_status_headers = Status::has_headers(&response.head.headers);
-        if has_status_headers != is_trailers_only {
-            return Err(err_msg("Response contained malformed Trailer-Only form."));
-        }
-
-        if has_status_headers {
-            let status = Status::from_headers(&response.head.headers)?;
-            self.state = Some(ClientStreamingResponseState::TrailersOnly(status));
-            return Ok(());
-        }
-
-        self.state = Some(ClientStreamingResponseState::Body(response.body));
-
-        Ok(())
-    }
-
-    async fn recv_body(&mut self, mut body: Box<dyn http::Body>) -> Result<Option<Bytes>> {
-        let mut reader = MessageReader::new(body.as_mut());
-
-        let message_bytes = reader.read().await?;
-
-        if let Some(message) = message_bytes {
-            if message.is_trailers {
-                return Err(err_msg("Did not expect a trailers message"));
-            }
-
-            // Keep trying to read more messages.
-            self.state = Some(ClientStreamingResponseState::Body(body));
-            Ok(Some(message.data))
-        } else {
-            self.state = Some(ClientStreamingResponseState::Trailers(body));
-            Ok(None)
-        }
-    }
-
     /// Call after the response is fully read to receive the trailer metadata
     /// and RPC status.
+    ///
+    /// NOTE: It is invalid to call this twice. This does not take 'self'
+    /// ownership to allow users to still access the metadata (especially the
+    /// trailer metadata which may) after this returns.
     pub async fn finish(&mut self) -> Result<()> {
         let state = self
             .state
             .take()
-            .ok_or_else(|| err_msg("Response in invalid state"))?;
+            .ok_or_else(|| err_msg("Response in invalid state 2"))?;
 
         match state {
-            ClientStreamingResponseState::Head(_) | ClientStreamingResponseState::Body(_) => {
-                Err(err_msg("Response body hasn't been fully read yet"))
+            ClientStreamingResponseState::Sending(_) => {
+                Err(err_msg("Response hasn't been received yet"))
+            }
+            ClientStreamingResponseState::Received(mut response) => {
+                let result = response.finish().await;
+
+                // TODO: Find a better solution to this. We want to ensure that the context is
+                // still available even after
+                //
+                // TODO: This will not reflect any edits made by request interceptors.
+                self.context = response.context().clone();
+
+                result
             }
             ClientStreamingResponseState::Error(e) => Err(e),
-            ClientStreamingResponseState::Trailers(mut body) => {
-                let trailers = body
-                    .trailers()
-                    .await?
-                    .ok_or_else(|| err_msg("Server responded without trailers"))?;
-
-                self.context.metadata.trailer_metadata = Metadata::from_headers(&trailers)?;
-
-                let status = Status::from_headers(&trailers)?;
-
-                if status.is_ok() {
-                    Ok(())
-                } else {
-                    Err(status.into())
-                }
-            }
-            ClientStreamingResponseState::TrailersOnly(status) => {
-                // TODO: Deduplicate with above.
-                if status.is_ok() {
-                    Ok(())
-                } else {
-                    Err(status.into())
-                }
-            }
         }
     }
 }
@@ -458,7 +415,7 @@ impl<Req: protobuf::StaticMessage, Res: protobuf::StaticMessage> ClientStreaming
     }
 
     pub fn context(&self) -> &ClientResponseContext {
-        &self.response.context
+        &self.response.context()
     }
 
     #[must_use]
@@ -466,7 +423,7 @@ impl<Req: protobuf::StaticMessage, Res: protobuf::StaticMessage> ClientStreaming
         self.request.send(message).await
     }
 
-    pub async fn finish(&mut self) -> Result<Res> {
+    pub async fn finish(mut self) -> Result<Res> {
         self.request.close().await;
 
         let response = self.response.recv().await;

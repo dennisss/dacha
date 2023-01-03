@@ -38,10 +38,6 @@ impl TestMetastore {
 
         let task = ChildTask::spawn(async move { fut.await.unwrap() });
 
-        // Wait for the metastore to start.
-        // TODO: Replace this with proper blocking until initialization is done.
-        executor::sleep(std::time::Duration::from_millis(1000)).await?;
-
         Ok(Self {
             temp_dir,
             task,

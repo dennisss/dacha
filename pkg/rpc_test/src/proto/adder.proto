@@ -15,6 +15,8 @@ message AddRequest {
 message AddResponse {
     // z = a + b
     int32 z = 1;
+
+    int32 message_index = 2;
 }
 
 service Adder {
@@ -25,4 +27,6 @@ service Adder {
     // Never returns a response to users.
     // Must be cancelled.
     rpc AddNeverReturn (AddRequest) returns (AddResponse); 
+
+    rpc IterateRange (AddRequest) returns (stream AddResponse);
 }

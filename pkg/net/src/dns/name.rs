@@ -3,9 +3,24 @@ use alloc::vec::Vec;
 
 use common::errors::*;
 
+// Regular expression for validating a single domain name label (component
+// between each dot).
+//
 // NOTE: For efficiency, the length check is handled separately.
-// TODO: The '_' character is only allows in SRV records?
-regexp!(LABEL => "^[_A-Za-z](?:-?[A-Za-z0-9])*$");
+// - TODO: The '_' character is only allows in SRV records?
+// - A space is technically not allowed but some vendors like to violate this.
+// - Also starting the label with a number is also not allowed by the RFC.
+// - e.g. the following are DNS names seen in the wild:
+//   - "Philips Hue - ABCDEF._hue._tcp.local."
+//   - "_hue._tcp.local."
+//   - "00112233d4f0.local."
+//
+// TODO: Consider splitting this into a
+regexp!(LABEL => "^[_A-Za-z0-9](?:-?[A-Za-z0-9 ])*$");
+
+// Strict label going completely based on the spec.
+// TODO: Allow conditionally using this.
+regexp!(STRICT_LABEL => "^[_A-Za-z](?:-?[A-Za-z0-9])*$");
 
 /// A name is a string composed by dot limited labels
 /// - Each label is at most 63 characters
@@ -94,6 +109,7 @@ impl<'a> TryFrom<&'a str> for Name<'a> {
             }
 
             nbytes += 1 + label.len();
+            // TODO: We can check this earlier.
             if nbytes > 254 {
                 return Err(err_msg("Name is too long"));
             }
@@ -271,7 +287,10 @@ impl<'a> LabelIterator<'a> {
 
         let label = parse_next!(self.next_label, parsing::take_exact(len));
         if !LABEL.test(label) {
-            return Err(format_err!("Invalid label characters: {:?}", label));
+            return Err(format_err!(
+                "Invalid label characters: {:?}",
+                common::bytes::Bytes::from(label)
+            ));
         }
 
         // Guranteed to be UTF-8 by the regexp.

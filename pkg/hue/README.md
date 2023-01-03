@@ -1,14 +1,22 @@
+# Hue Lights API
+
+This is a library for communicating with a Hue Bridge from code. It supports discovering a hub via mDNS, connecting to it, and issueing HTTP API calls.
+
+## References
+
+Official documentation:
+- https://developers.meethue.com/develop/hue-api/lights-api/#get-all-lights
+- https://developers.meethue.com/develop/hue-api-v2/getting-started/
+- Simplest way to find a hue is to go to https://discovery.meethue.com/
+- Recommended local discovery mode is mdns:
+    - https://developers.meethue.com/develop/application-design-guidance/hue-bridge-discovery/
 
 Related past work:
-- Official documentation:
-    - https://developers.meethue.com/develop/hue-api/lights-api/#get-all-lights
-    - https://developers.meethue.com/develop/hue-api-v2/getting-started/
-    - Simplest way to find a hue is to go to https://discovery.meethue.com/
-    - Recommended local discovery mode is mdns:
-        - https://developers.meethue.com/develop/application-design-guidance/hue-bridge-discovery/
 - http://www.burgestrand.se/hue-api/api/discovery/#udp-broadcast
 - https://github.com/tigoe/hue-control
 
+
+## Manually Discovering With mDNS
 
 ```
 $ dig -p 5353 @224.0.0.251 _hue._tcp.local PTR

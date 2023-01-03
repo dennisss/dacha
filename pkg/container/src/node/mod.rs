@@ -1120,7 +1120,7 @@ impl NodeInner {
                 }
                 WorkerSpec_VolumeSourceCase::PersistentName(name) => {
                     let dir = self.persistent_data_dir().join(name);
-                    let dir_str = dir.as_str().to_string();
+                    let dir_str = dir.to_string();
 
                     let volume_gid;
 

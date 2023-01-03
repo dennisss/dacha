@@ -28,6 +28,7 @@ use crate::v2;
 // TODO: Need to clearly document which responsibilities are reserved for the
 // client.
 
+#[derive(Clone)]
 pub struct ClientOptions {
     pub backend_balancer: LoadBalancedClientOptions,
 }

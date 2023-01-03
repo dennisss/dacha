@@ -67,53 +67,19 @@ impl<'a> MessageReader<'a> {
 pub struct MessageSerializer {}
 
 impl MessageSerializer {
-    pub fn serialize(data: &[u8], is_trailers: bool) -> Vec<u8> {
-        // TODO: Optimize this for the uncompressed case.
-
-        let mut full_body = vec![];
-        full_body.resize(MESSAGE_HEADER_SIZE, 0);
+    /// Serializes the header for a message containing 'data'.
+    /// Assuming the data should stay uncompressed, then the message can be
+    /// constructed as [header, data].
+    pub fn serialize_header(data: &[u8], is_trailers: bool) -> Bytes {
+        let mut output = vec![];
+        output.resize(MESSAGE_HEADER_SIZE, 0);
 
         if is_trailers {
-            full_body[0] = 1 << 7;
+            output[0] = 1 << 7;
         }
 
-        *array_mut_ref![&mut full_body, 1, 4] = (data.len() as u32).to_be_bytes();
+        *array_mut_ref![output, 1, 4] = (data.len() as u32).to_be_bytes();
 
-        full_body.extend_from_slice(&data);
-
-        full_body
+        output.into()
     }
 }
-
-/*
-pub struct UnaryMessageBody {
-    len: usize,
-    data: Cursor<Bytes>
-}
-
-impl UnaryMessageBody {
-    pub fn new(data: Bytes) -> Box<dyn Body> {
-        let full_body = MessageSerializer::serialize(&data);
-        http::BodyFromData(full_body)
-    }
-}
-
-#[async_trait]
-impl Body for UnaryMessageBody {
-    fn len(&self) -> Option<usize> { Some(self.len + MESSAGE_HEADER_SIZE) }
-    async fn trailers(&mut self) -> Result<Option<Headers>> { Ok(None) }
-}
-
-#[async_trait]
-impl Readable for UnaryMessageBody {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        self.data.read(buf).await
-    }
-}
-*/
-
-/*
-Challenges of sending non-unary messages:
-- Need an Outgoing body implementation which allows limits us to the HTTP2 buffer size.
-  Would be ideally be a little bit simpler
-*/

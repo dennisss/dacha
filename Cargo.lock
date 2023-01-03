@@ -1127,9 +1127,10 @@ dependencies = [
 
 [[package]]
 name = "hue"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "common",
+ "executor",
  "http",
  "json",
  "macros",

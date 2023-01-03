@@ -115,6 +115,8 @@ pub fn lower_bound_by<T: Copy, S: SliceLike, F: Fn(<S as SliceLike>::Item, T) ->
 
 /// Returns the index of the last element with value <= the given target.
 /// NOTE: This assumes that 'values' is sorted in ascending order.
+///
+/// If None is returned, then all the elements are > the target.
 pub fn upper_bound<T: PartialOrd>(values: &[T], target: &T) -> Option<usize> {
     upper_bound_by(values, target, |a, b| *a <= *b)
 }

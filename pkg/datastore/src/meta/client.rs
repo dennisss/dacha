@@ -79,7 +79,8 @@ impl MetastoreClient {
             let stub = ClientManagementStub::new(channel.clone());
 
             let req = google::proto::empty::Empty::default();
-            let ctx = rpc::ClientRequestContext::default();
+            let mut ctx = rpc::ClientRequestContext::default();
+            ctx.wait_for_ready = true;
             let res = stub.NewClient(&ctx, &req).await;
 
             res.result?.client_id().to_string()
