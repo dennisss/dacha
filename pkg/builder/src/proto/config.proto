@@ -5,6 +5,9 @@ package builder;
 import "pkg/builder/src/proto/bundle.proto";
 import "third_party/google/src/proto/any.proto";
 
+// Unused import to force linkage to rule protos which are used in the Any proto.
+import "pkg/builder/src/proto/rule.proto";
+
 message BuildConfig {
     string name = 1;
 

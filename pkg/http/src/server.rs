@@ -311,7 +311,8 @@ impl Server {
 
             match event {
                 Event::NextStream(stream) => {
-                    let s = stream?;
+                    let mut s = stream?;
+                    s.set_nodelay(true)?;
 
                     let mut connection_pool = this.shared.connection_pool.lock().await;
 

@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package mytester;
+
+message IntValues {
+    int32 a = 1;
+    repeated int32 b = 2;
+}

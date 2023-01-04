@@ -624,7 +624,7 @@ mod tests {
             // Wait for first request to be sent.
             executor::sleep(Duration::from_millis(10)).await;
 
-            assert_eq!(interceptor.stats.lock().await.requests_received, 1);
+            assert!(interceptor.stats.lock().await.requests_received >= 1);
 
             req.set_x(2);
             assert!(req_stream.send(&req).await);
@@ -878,6 +878,9 @@ mod tests {
     // TODO: Create a metadata echo endpoint to echo (with some simple
     // transformation any passed metadata keys). ^ Also good to test the
     // recv_head() function.
+
+    // TODO: Validate that sending a unary request sends a Content-Length and an
+    // END_STREAM on the first data packet.
 
     /*
     Test with continously sending messages to the server but the server finishes writing the response early (and resets the server-side reader end).

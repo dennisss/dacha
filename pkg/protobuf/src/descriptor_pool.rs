@@ -1,3 +1,4 @@
+use alloc::borrow::ToOwned;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -25,7 +26,8 @@ struct DescriptorPoolState {
     /// Map from the fully qualified name of each symbol in this pool to it's
     /// descriptor object.
     types: HashMap<String, TypeDescriptorInner>,
-    added_files: HashSet<String>,
+
+    added_files: HashMap<String, String>,
 }
 
 impl DescriptorPool {
@@ -34,35 +36,69 @@ impl DescriptorPool {
         Self {
             state: Arc::new(Mutex::new(DescriptorPoolState {
                 types: HashMap::new(),
-                added_files: HashSet::new(),
+                added_files: HashMap::new(),
             })),
         }
     }
 
-    pub async fn add_local_file<P: AsRef<file::LocalPath>>(&self, path: P) -> Result<()> {
+    /// Parses a .proto file located in the filesystem and adds it to the pool.
+    ///
+    /// - If the file already exists in the pool, then it won't be re-added.
+    /// - Any imported dependencies will also be added to the pool.
+    ///
+    /// NOTE: It is undefined behavior to add descriptors to the pool which have
+    /// different root directories.
+    pub async fn add_proto_file<P: AsRef<file::LocalPath>, P2: AsRef<file::LocalPath>>(
+        &self,
+        path: P,
+        root_dir: P2,
+    ) -> Result<String> {
         // TODO: Deduplicate some of this logic with the compiler.
 
-        // TODO: Don't read the file if it is already in the pool.
+        let root_dir = root_dir.as_ref().normalized();
 
-        let path = path.as_ref();
+        let mut paths = vec![];
+        paths.push(path.as_ref().normalized());
 
-        let proto_file_src = file::read_to_string(path).await?;
-        let proto_file = protobuf_compiler::syntax::parse_proto(&proto_file_src)?;
+        let mut main_package = None;
 
-        let mut proto = proto_file.to_proto();
-        proto.set_name(
-            path.strip_prefix(file::project_dir())
-                .ok_or_else(|| err_msg("Path is not in the project"))?
-                .as_str(),
-        );
+        while let Some(path) = paths.pop() {
+            let name = path
+                .strip_prefix(&root_dir)
+                .ok_or_else(|| err_msg("Path is not in the root dir"))?
+                .to_string();
 
-        // TODO: We must also add any dependencies.
+            // TODO: Consider using an async lock over the entire add_proto_file operation
+            // to ensure there are no other users concurrently racing to add the same file.
+            if !self.state.lock().unwrap().added_files.contains_key(&name) {
+                let proto_file_src = file::read_to_string(path).await?;
+                let proto_file = protobuf_compiler::syntax::parse_proto(&proto_file_src)?;
 
-        self.add_file_descriptor(&proto.serialize()?)
+                let mut proto = proto_file.to_proto();
+                proto.set_name(name.as_str());
+
+                self.add_file_descriptor(&proto.serialize()?)?;
+
+                for import in &proto_file.imports {
+                    paths.push(root_dir.join(&import.path).normalized());
+                }
+            }
+
+            if main_package.is_none() {
+                let mut state = self.state.lock().unwrap();
+                main_package = Some(state.added_files.get(&name).unwrap().clone());
+            }
+        }
+
+        Ok(main_package.unwrap())
     }
 
+    /// Adds a single binary serialized FileDescriptorProto representing a
+    /// single .proto file to the pool.
     pub fn add_file_descriptor(&self, data: &[u8]) -> Result<()> {
         let proto = FileDescriptorProto::parse(data)?;
+
+        let mut state = self.state.lock().unwrap();
 
         let syntax = match proto.syntax() {
             "proto2" => Syntax::Proto2,
@@ -72,10 +108,12 @@ impl DescriptorPool {
             }
         };
 
-        let mut state = self.state.lock().unwrap();
-
         // Don't re-add files.
-        if !state.added_files.insert(proto.name().to_string()) {
+        if state
+            .added_files
+            .insert(proto.name().to_string(), proto.package().to_string())
+            .is_some()
+        {
             return Ok(());
         }
 

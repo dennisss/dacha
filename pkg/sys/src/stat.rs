@@ -21,7 +21,8 @@ pub unsafe fn flock(fd: c_int, operation: LockOperation, non_blocking: bool) -> 
 }
 
 syscall!(unlink, bindings::SYS_unlink, path: *const u8 => Result<()>);
-syscall!(rmdir, bindings::SYS_unlink, path: *const u8 => Result<()>);
+syscall!(symlink, bindings::SYS_symlink, old: *const u8, new: *const u8 => Result<()>);
+syscall!(rmdir, bindings::SYS_rmdir, path: *const u8 => Result<()>);
 
 // TODO: Use umode_t
 syscall!(mkdir, bindings::SYS_mkdir, path: *const u8, mode: bindings::mode_t => Result<()>);

@@ -35,7 +35,9 @@ async fn run() -> Result<()> {
         // directory traversals.
         let path = file::current_dir()?.join(&path);
 
-        descriptor_pool.add_local_file(path).await?;
+        descriptor_pool
+            .add_proto_file(path, file::project_dir())
+            .await?;
 
         // TODO: Convert to result.
         let type_name = args.proto_type.unwrap();

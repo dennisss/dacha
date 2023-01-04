@@ -1,0 +1,7 @@
+# proto-file: proto/object.proto
+# proto-message: Object
+
+values {
+    a: 1
+    b: [2, 3, 4]
+}

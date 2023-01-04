@@ -1,8 +1,8 @@
 use common::errors::*;
 use common::failure::ResultExt;
 use file::LocalPath;
-use protobuf::DescriptorPool;
 use protobuf::{text::*, Message};
+use protobuf::{DescriptorPool, DynamicMessage};
 
 use crate::proto::config::BuildConfig;
 use crate::proto::rule::*;
@@ -41,17 +41,38 @@ impl BuildTarget for ProtoData {
         let mut file = TextMessageFile::parse(&data)
             .with_context(|e| format_err!("While parsing {}: {}", self.attrs.src(), data))?;
 
+        let proto_message = file
+            .proto_message()
+            .ok_or_else(|| err_msg("Textproto not annotated with a message type"))?;
+        let proto_file = file
+            .proto_file()
+            .ok_or_else(|| err_msg("Textproto not annotated with a message file"))?;
+
         let mut descriptor_pool = DescriptorPool::new();
 
-        // TODO: Stop hard coding this.
-        descriptor_pool
-            .add_local_file(project_path!("pkg/builder/src/proto/config.proto"))
-            .await?;
-        descriptor_pool
-            .add_local_file(project_path!("pkg/builder/src/proto/rule.proto"))
+        // TODO: Verify this file contains the proto (and not one of its imports or
+        // dependencies).
+        let package = descriptor_pool
+            .add_proto_file(
+                context.workspace_dir.join(proto_file),
+                &context.workspace_dir,
+            )
             .await?;
 
-        let mut proto = BuildConfig::default();
+        // TODO: Switch to interpreting these as labels.
+        for dep in self.attrs.deps() {
+            descriptor_pool
+                .add_proto_file(context.workspace_dir.join(dep), &context.workspace_dir)
+                .await?;
+        }
+
+        let message_type = descriptor_pool
+            .find_relative_type(&package, &proto_message)
+            .ok_or_else(|| format_err!("Failed to find type: {}", proto_message))?
+            .to_message()
+            .ok_or_else(|| format_err!("Type is not a message: {}", proto_message))?;
+
+        let mut proto = DynamicMessage::new(message_type);
 
         file.merge_to(
             &mut proto,

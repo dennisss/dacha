@@ -1,5 +1,6 @@
 use core::ffi::CStr;
 
+use alloc::borrow::ToOwned;
 use alloc::{ffi::CString, string::String, vec::Vec};
 
 use common::io::Readable;
@@ -8,8 +9,8 @@ use executor::RemapErrno;
 use sys::Errno;
 
 use crate::{
-    FileError, FileType, LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf, Metadata,
-    Permissions,
+    read_dir, FileError, FileType, LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf,
+    Metadata, Permissions,
 };
 
 pub async fn read<P: AsRef<LocalPath>>(path: P) -> Result<Vec<u8>> {
@@ -54,7 +55,6 @@ pub fn readlink<P: AsRef<LocalPath>>(path: P) -> Result<LocalPathBuf> {
     Ok(LocalPathBuf::from(s))
 }
 
-/// Based on the example: https://doc.rust-lang.org/std/fs/fn.read_dir.html#examples
 pub fn recursively_list_dir(dir: &LocalPath, callback: &mut dyn FnMut(&LocalPath)) -> Result<()> {
     for entry in crate::read_dir(dir)? {
         // TODO: Consider following symlinks.
@@ -84,6 +84,14 @@ pub async fn symlink_metadata(path: &LocalPath) -> Result<Metadata> {
     let mut stat = sys::bindings::stat::default();
     unsafe { sys::lstat(path.as_ptr() as *const u8, &mut stat) }.remap_errno::<FileError>()?;
     Ok(Metadata { inner: stat })
+}
+
+/// Creates a symlink at 'new' which points to 'old'.
+pub async fn symlink<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(old: P, new: P2) -> Result<()> {
+    let old = CString::new(old.as_ref().as_str())?;
+    let new = CString::new(new.as_ref().as_str())?;
+    unsafe { sys::symlink(old.as_ptr() as *const u8, new.as_ptr() as *const u8)? };
+    Ok(())
 }
 
 /// TODO: This only applies to some operations. It might make more sense to have
@@ -121,14 +129,14 @@ pub async fn create_dir(path: &LocalPath) -> Result<()> {
     Ok(())
 }
 
-pub async fn create_dir_all(path: &LocalPath) -> Result<()> {
+pub async fn create_dir_all<P: AsRef<LocalPath>>(path: P) -> Result<()> {
     let mut stack = vec![];
 
     // We need to normalize this to ensure that every parent path is actually the
     // parent directory of the current one.
-    let normalized_path = path.normalized();
+    let normalized_path = path.as_ref().normalized();
 
-    let mut cur = Some(path);
+    let mut cur = Some(normalized_path.as_path());
     while let Some(p) = cur {
         if exists(p).await? {
             break;
@@ -180,12 +188,50 @@ pub async fn remove_file<P: AsRef<LocalPath>>(path: P) -> Result<()> {
     Ok(())
 }
 
+/// Deletes the contents of the directory specified by 'path' and the directory
+/// itself.
+///
+/// - Fails if 'path' is not a directory (e.g. is a symlink to a directory).
+/// - Will not delete any directories behind symlinks (will instead just delete
+///   the symlink to an internal directory).
 pub async fn remove_dir_all<P: AsRef<LocalPath>>(path: P) -> Result<()> {
-    // NOTE: We should use symlink_metadata to avoid deleting things across
-    // symlinks.
+    let path = path.as_ref();
 
+    let meta = symlink_metadata(path).await?;
+    if !meta.is_dir() {
+        return Err(FileError::NotADirectory.into());
+    }
 
-    todo!()
+    // List of which directories we will next process. The boolean indicates whether
+    // or not we have listed the contents of the directory yet.
+    let mut stack = vec![];
+    stack.push((path.to_owned(), false));
+
+    while !stack.is_empty() {
+        let i = stack.len() - 1;
+        let (dir, traversed) = stack[i].clone();
+
+        let mut empty = true;
+        if !traversed {
+            for entry in crate::read_dir(&dir)? {
+                let path = dir.join(entry.name());
+                if entry.typ() == FileType::Directory {
+                    empty = false;
+                    stack.push((path, false));
+                } else {
+                    remove_file(path).await?;
+                }
+            }
+        }
+
+        if empty {
+            assert!(stack.len() == i + 1);
+            remove_dir(dir).await?;
+            stack.pop();
+        }
+    }
+
+    Ok(())
 }
 
 /// Moves the file currently located at 'from' to 'to'
@@ -194,6 +240,53 @@ pub async fn rename<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(from: P, to: P2) 
     let to = CString::new(to.as_ref().as_str())?;
 
     unsafe { sys::rename(from.as_ptr(), to.as_ptr()) }.remap_errno::<FileError>()?;
+
+    Ok(())
+}
+
+/// Copy a file/directory is located at 'from' to 'to' possibly recursively.
+///
+/// 'to' must not already exist.
+pub async fn copy_all<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(from: P, to: P2) -> Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+
+    if crate::exists(to).await? {
+        return Err(FileError::AlreadyExists.into());
+    }
+
+    let mut relative_paths = vec![];
+    relative_paths.push(LocalPath::new("").to_owned());
+
+    while let Some(relative_path) = relative_paths.pop() {
+        let from_path = from.join(&relative_path);
+        let to_path = to.join(&relative_path);
+
+        let meta = crate::symlink_metadata(&from_path).await?;
+        if meta.is_dir() {
+            create_dir(&to_path).await?;
+
+            for entry in read_dir(&from_path)? {
+                relative_paths.push(relative_path.join(entry.name()));
+            }
+        } else if meta.is_file() {
+            copy(&from_path, &to_path).await?;
+        } else {
+            return Err(format_err!("Can't copy {:?}", from_path));
+        }
+    }
+
+    Ok(())
+}
+
+/// Copies a single regular file from 'from' to 'to'. Any existing file at 'to'
+/// will be overwritten.
+pub async fn copy<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>(from: P, to: P2) -> Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+
+    let data = crate::read(from).await?;
+    crate::write(to, &data[..]).await?;
 
     Ok(())
 }

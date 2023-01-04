@@ -7,6 +7,7 @@ use std::fmt::Write;
 use common::errors::*;
 use common::line_builder::*;
 use file::LocalPath;
+use file::LocalPathBuf;
 use protobuf_core::tokenizer::serialize_str_lit;
 use protobuf_core::FieldNumber;
 use protobuf_core::Message;
@@ -49,14 +50,24 @@ use crate::spec::*;
 
 #[derive(Clone)]
 pub struct CompilerOptions {
+    /// Root directory of the project. All proto imports are resolved relative
+    /// to this
+    pub root_dir: LocalPathBuf,
+
     pub runtime_package: String,
+
+    /// Rust package/crate name that contains the RPC implemention (for
+    /// generated service definitions).
     pub rpc_package: String,
+
     pub should_format: bool,
 }
 
 impl Default for CompilerOptions {
     fn default() -> Self {
         Self {
+            // TODO: THis is a dangerous default() as we can't use it outside of a real project.
+            root_dir: file::project_dir(),
             runtime_package: "::protobuf".into(),
             rpc_package: "::rpc".into(),
             should_format: false,
@@ -206,26 +217,6 @@ fn rust_bytestring(v: &[u8]) -> String {
     out
 }
 
-#[cfg(feature = "descriptors")]
-fn get_proto_descriptor(path: &LocalPath, proto: &Proto) -> Result<String> {
-    let mut p = proto.to_proto();
-    p.set_name(
-        path.strip_prefix(file::project_dir())
-            .ok_or_else(|| err_msg("Path is not in the project"))?
-            .as_str(),
-    );
-
-    let data = p.serialize()?;
-    // assert_eq!(p, protobuf_descriptor::FileDescriptorProto::parse(&data)?);
-
-    Ok(rust_bytestring(&data))
-}
-
-#[cfg(not(feature = "descriptors"))]
-fn get_proto_descriptor(path: &LocalPath, proto: &Proto) -> Result<String> {
-    Ok(rust_bytestring(&[]))
-}
-
 struct CompiledOneOf {
     typename: String,
     source: String,
@@ -267,6 +258,7 @@ impl Compiler<'_> {
 
         // TODO: Have an in-process cache for reading imported descriptors from disk.
         for import in &desc.imports {
+            // TODO: Verify this is in the root_dir (after normalization).
             let relative_path = LocalPath::new(&import.path);
 
             let mut package_path = String::from("::");
@@ -329,7 +321,7 @@ impl Compiler<'_> {
             // use_statement.push_str(";\n");
             // c.outer += &use_statement;
 
-            let full_path = file::project_dir().join(relative_path);
+            let full_path = options.root_dir.join(relative_path);
             // let
 
             // TODO: Should have a register of parsed files if we are doing it in the same
@@ -362,7 +354,7 @@ impl Compiler<'_> {
 
         // Add the file descriptor
         {
-            let proto = get_proto_descriptor(path, &c.proto)?;
+            let proto = c.compile_proto_descriptor(path, &c.proto)?;
 
             let mut deps = vec![];
             for import in &c.imported_protos {
@@ -2347,5 +2339,31 @@ impl Compiler<'_> {
             TopLevelDef::Service(s) => self.compile_service(s, path),
             _ => String::new(),
         })
+    }
+
+    /// Generates Rust code which produces a '[u8]' value containing a
+    /// FileDescriptorProto for 'proto'.
+    ///
+    /// Arguments:
+    /// - path: The absolute path from which we read 'proto'.
+    /// - proto: A parsed .proto file.
+    #[cfg(feature = "descriptors")]
+    fn compile_proto_descriptor(&self, path: &LocalPath, proto: &Proto) -> Result<String> {
+        let mut p = proto.to_proto();
+        p.set_name(
+            path.strip_prefix(&self.options.root_dir)
+                .ok_or_else(|| err_msg("Path is not in the project"))?
+                .as_str(),
+        );
+
+        let data = p.serialize()?;
+        // assert_eq!(p, protobuf_descriptor::FileDescriptorProto::parse(&data)?);
+
+        Ok(rust_bytestring(&data))
+    }
+
+    #[cfg(not(feature = "descriptors"))]
+    fn compile_proto_descriptor(&self, path: &LocalPath, proto: &Proto) -> Result<String> {
+        Ok(rust_bytestring(&[]))
     }
 }

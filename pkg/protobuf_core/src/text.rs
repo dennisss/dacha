@@ -157,6 +157,14 @@ impl TextMessageFile {
         })
     }
 
+    pub fn proto_file(&self) -> Option<&str> {
+        self.proto_file.as_ref().map(|v| v.as_ref())
+    }
+
+    pub fn proto_message(&self) -> Option<&str> {
+        self.proto_message.as_ref().map(|v| v.as_ref())
+    }
+
     pub fn merge_to(
         &self,
         message: &mut dyn MessageReflection,

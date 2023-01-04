@@ -414,7 +414,6 @@ impl Builder {
 
         let usages = node.usages.clone();
         for usage in usages {
-            println!("EXPAND PARENT: {:?}", usage);
             self.expand_graph_node(usage, None, graph).await?;
         }
 

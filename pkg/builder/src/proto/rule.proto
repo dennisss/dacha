@@ -65,7 +65,12 @@ message LocalBinaryAttrs {
 
 message ProtoDataAttrs {
     string name = 1;
+
+    // Path to a textproto file containing the protobuf data.
     string src = 2;
+
+    // Proto libraries which are required in order to parse this proto.
+    repeated string deps = 3;
 }
 
 // Runs a command 

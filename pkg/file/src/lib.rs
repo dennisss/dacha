@@ -200,18 +200,133 @@ mod tests {
         Ok(())
     }
 
-    /*
     #[testcase]
     async fn link_creation_test() -> Result<()> {
         let temp_dir = TempDir::create()?;
 
-        // create a link to lorem_ipsum
+        {
+            let link_path = temp_dir.path().join("my_link");
+            crate::symlink(&project_path!("testdata/lorem_ipsum.txt"), &link_path).await?;
 
-        // verify symlink_metadata and metadata
+            let meta = crate::metadata(&link_path).await?;
+            assert!(meta.is_file());
+            assert_eq!(meta.len(), 3703);
+
+            let meta = crate::symlink_metadata(&link_path).await?;
+            assert!(meta.is_symlink());
+        }
+
+        // Testing that relative paths are resolved relative to the link location.
+        {
+            let link2_path = temp_dir.path().join("my_link2");
+            let file_path = temp_dir.path().join("hello_file");
+
+            crate::symlink(LocalPath::new("hello_file"), &link2_path).await?;
+
+            crate::write(&file_path, b"hi there this is data").await?;
+            assert_eq!(
+                crate::read_to_string(&link2_path).await?,
+                "hi there this is data"
+            );
+
+            crate::write(&link2_path, b"new").await?;
+            assert_eq!(crate::read_to_string(&file_path).await?, "new");
+
+            let meta = crate::metadata(&link2_path).await?;
+            assert!(meta.is_file());
+            assert_eq!(meta.len(), 3);
+
+            let meta = crate::symlink_metadata(&link2_path).await?;
+            assert!(meta.is_symlink());
+            assert_eq!(meta.len(), 10); // Length of the path "hello_file"
+        }
 
         Ok(())
     }
-    */
 
-    // create_dir_all
+    #[testcase]
+    async fn create_dir_all_all() -> Result<()> {
+        let temp_dir = TempDir::create()?;
+
+        let dir = temp_dir.path().join("a/b/c");
+        crate::create_dir_all(&dir).await?;
+        crate::create_dir_all(&dir).await?;
+
+        assert!(crate::exists(temp_dir.path().join("a")).await?);
+        assert!(crate::exists(temp_dir.path().join("a/b")).await?);
+        assert!(crate::exists(temp_dir.path().join("a/b/c")).await?);
+
+        crate::write(temp_dir.path().join("a/b/c/d"), b"hello").await?;
+
+        Ok(())
+    }
+
+    #[testcase]
+    async fn remove_dir_all() -> Result<()> {
+        let temp_dir = TempDir::create()?;
+
+        crate::create_dir_all(temp_dir.path().join("a/b/c")).await?;
+        crate::create_dir_all(temp_dir.path().join("a/e")).await?;
+        crate::write(temp_dir.path().join("a/f"), b"data").await;
+
+        crate::create_dir_all(temp_dir.path().join("other")).await?;
+        crate::write(temp_dir.path().join("other/data"), b"yo!").await;
+        crate::create_dir_all(temp_dir.path().join("empty")).await?;
+        crate::write(temp_dir.path().join("file"), b"hi!").await;
+
+        crate::symlink(
+            temp_dir.path().join("other"),
+            temp_dir.path().join("a/b/c/other"),
+        )
+        .await?;
+        crate::symlink(
+            temp_dir.path().join("empty"),
+            temp_dir.path().join("a/b/bats"),
+        )
+        .await?;
+        crate::symlink(temp_dir.path().join("file"), temp_dir.path().join("a/cats")).await?;
+
+        crate::remove_dir_all(&temp_dir.path().join("a"))
+            .await
+            .unwrap();
+
+        assert!(!crate::exists(temp_dir.path().join("a")).await?);
+        assert!(crate::exists(temp_dir.path().join("empty")).await?);
+        assert!(crate::exists(temp_dir.path().join("file")).await?);
+        assert!(crate::exists(temp_dir.path().join("other/data")).await?);
+
+        Ok((()))
+    }
+
+    #[testcase]
+    async fn copy_test() -> Result<()> {
+        let temp_dir = TempDir::create()?;
+
+        let from = temp_dir.path().join("a");
+        let to = temp_dir.path().join("b");
+
+        // TODO: Test for very large files which may require multiple separate writes.
+        crate::write(&from, b"hi").await?;
+        crate::copy(&from, &to).await?;
+        assert_eq!(crate::read_to_string(&to).await?, "hi");
+
+        Ok(())
+    }
+
+    #[testcase]
+    async fn copy_all_test() -> Result<()> {
+        let temp_dir = TempDir::create()?;
+
+        let from = temp_dir.path().join("a");
+        let to = temp_dir.path().join("b");
+
+        crate::create_dir_all(from.join("b")).await?;
+        crate::write(from.join("b/c"), b"hi").await?;
+
+        crate::copy_all(&from, &to).await.unwrap();
+
+        assert_eq!(crate::read_to_string(&to.join("b/c")).await?, "hi");
+
+        Ok(())
+    }
 }

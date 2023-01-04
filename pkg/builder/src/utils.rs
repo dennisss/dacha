@@ -17,7 +17,7 @@ pub async fn create_or_update_symlink<P: AsRef<LocalPath>, P2: AsRef<LocalPath>>
         file::remove_file(&link_path).await?;
     }
 
-    std::os::unix::fs::symlink(original, link_path)?;
+    file::symlink(original, link_path).await?;
 
     Ok(())
 }

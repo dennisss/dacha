@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package mytester;
+
+import "proto/int_value.proto";
+
+message Object {
+    IntValues values = 10;
+}
