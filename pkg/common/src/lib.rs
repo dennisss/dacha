@@ -302,7 +302,7 @@ macro_rules! enum_def {
 					)*
 					_ => {
 						return Err(
-							format_err!("Unknown value for '$name': {}", v));
+							format_err!(stringify!(Unknown value for $name: {}), v));
 					}
 				})
 			}
@@ -348,7 +348,7 @@ macro_rules! enum_def {
 					)*
 					_ => {
 						return Err(
-							format_err!("Unknown value for '$name': {}", v));
+							format_err!(stringify!(Unknown value for $name: {}), v));
 					}
 				})
 			}

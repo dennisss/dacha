@@ -50,6 +50,8 @@ pub enum NewBlobError {
     BeingWritten,
 }
 
+/// Service for reading/writing blobs stored on the local disk and backed by the
+/// OS file system implementation.
 #[derive(Clone)]
 pub struct BlobStore {
     shared: Arc<Shared>,

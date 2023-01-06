@@ -1,11 +1,12 @@
-/// An implementation of CLI flags that is mostly compatible with Abseil.
-///
-/// Usage:
-/// let my_bool = Arg::<bool>::required("enabled");
-/// let my_string = Arg::<string>::optional("path", "/dev/null");
-/// common::args::init(&[&my_bool, &my_string])?;
-///
-/// my_bool.value()
+//! An implementation of CLI flags that is mostly compatible with Abseil.
+//!
+//! Usage:
+//! let my_bool = Arg::<bool>::required("enabled");
+//! let my_string = Arg::<string>::optional("path", "/dev/null");
+//! common::args::init(&[&my_bool, &my_string])?;
+//!
+//! my_bool.value()
+
 pub mod list;
 
 #[cfg(feature = "alloc")]
@@ -25,15 +26,22 @@ use failure::ResultExt;
 
 use crate::errors::*;
 
+/// Collection of uninterprated flags from the command line.
 pub struct RawArgs {
     positional: Vec<String>,
 
     // If a None is stored, then this argument was already taken by a previous call.
     named_args: HashMap<String, RawArgValue>,
 
+    /// List of all arguments passed after receiving a '--' argument.
+    escaped_args: Vec<String>,
+
+    /// Names of all named arguments which we have already tried to take from
+    /// this object.
     requested_args: HashSet<String>,
 }
 
+/// Value of a positional argument in RawArgs.
 pub enum RawArgValue {
     String(String),
     Bool(bool),
@@ -45,9 +53,10 @@ impl RawArgs {
 
         let mut named_args = HashMap::new();
         let mut positional_args = vec![];
+        let mut escaped_args = vec![];
         for arg_str in std::env::args().skip(1) {
             if escaped_mode {
-                positional_args.push(arg_str);
+                escaped_args.push(arg_str);
                 continue;
             }
 
@@ -91,12 +100,13 @@ impl RawArgs {
         Ok(Self {
             named_args,
             positional: positional_args,
+            escaped_args,
             requested_args: HashSet::new(),
         })
     }
 
-    fn is_empty(&self) -> bool {
-        self.positional.is_empty() && self.named_args.is_empty()
+    pub fn is_empty(&self) -> bool {
+        self.positional.is_empty() && self.named_args.is_empty() && self.escaped_args.is_empty()
     }
 
     pub fn next_positional_arg(&mut self) -> Result<String> {
@@ -107,8 +117,9 @@ impl RawArgs {
         }
     }
 
-    pub fn take_remaining_positional_args(&mut self) -> Vec<String> {
-        self.positional.split_off(0)
+    /// TODO: Prevent calling this twice.
+    pub fn take_escaped_args(&mut self) -> Vec<String> {
+        self.escaped_args.split_off(0)
     }
 
     pub fn take_named_arg(&mut self, name: &str) -> Result<Option<RawArgValue>> {

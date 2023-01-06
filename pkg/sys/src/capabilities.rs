@@ -6,12 +6,14 @@
 // Capability syscalls are defined here:
 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/capability.h#L36
 
+use crate::{bindings, c_int, pid_t, Errno};
+
 pub const LINUX_CAPABILITY_VERSION_3: u32 = 0x20080522;
 
 #[repr(C)]
 pub struct cap_user_header {
     pub version: u32,
-    pub pid: libc::c_int,
+    pub pid: pid_t,
 }
 
 #[repr(C)]
@@ -33,6 +35,8 @@ pub const SECBIT_KEEP_CAPS_LOCKED: u32 = 1 << 5;
 pub const SECBIT_NO_CAP_AMBIENT_RAISE: u32 = 1 << 6;
 pub const SECBIT_NO_CAP_AMBIENT_RAISE_LOCKED: u32 = 1 << 7;
 
+/// Secure bits which prevent a process and all its descendants from gaining
+/// capabilities unless executing a program with file capabilities.
 pub const SECBITS_LOCKED_DOWN: u32 = SECBIT_NOROOT
     | SECBIT_NOROOT_LOCKED
     | SECBIT_NO_SETUID_FIXUP
@@ -40,3 +44,20 @@ pub const SECBITS_LOCKED_DOWN: u32 = SECBIT_NOROOT
     | SECBIT_KEEP_CAPS_LOCKED
     | SECBIT_NO_CAP_AMBIENT_RAISE
     | SECBIT_NO_CAP_AMBIENT_RAISE_LOCKED;
+
+/// NOTE: This is always 2 elements in V3 of the capabilities API. On 64-bit
+/// devices, both are used to support 64-bit capability sets.
+pub unsafe fn capset(pid: pid_t, data: &[cap_user_data; 2]) -> Result<(), Errno> {
+    let hdr = cap_user_header {
+        version: LINUX_CAPABILITY_VERSION_3,
+        pid,
+    };
+
+    raw::capset(&hdr, data.as_ptr())
+}
+
+mod raw {
+    use super::*;
+
+    syscall!(capset, bindings::SYS_capset, hdrp: *const cap_user_header, datap: *const cap_user_data => Result<()>);
+}

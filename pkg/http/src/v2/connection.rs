@@ -615,7 +615,11 @@ impl Connection {
         }
 
         if result.is_ok() && !connection_state.streams.is_empty() {
-            result = Err(err_msg("Connection closed while streams are still active"));
+            result = Err(IoError::new(
+                IoErrorKind::Aborted,
+                "HTTP2 Connection closed while streams are still active",
+            )
+            .into());
         }
 
         // Cleanup all outstanding state.

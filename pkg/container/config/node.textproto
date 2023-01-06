@@ -1,7 +1,12 @@
+# proto-file: pkg/container/src/proto/node.proto
+# proto-message: NodeConfig
+
 data_dir: "/opt/dacha/data"
 service_port: 10400
 graceful_shutdown_timeout_secs: 10
 bootstrap_id_from_machine_id: true
+
+# TODO: Reserve these ports in the kernel so that it doesn't try to randomly assign them.
 allocatable_port_range {
     start: 30000
     end: 32767

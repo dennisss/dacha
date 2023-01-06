@@ -1,5 +1,5 @@
-// This file contains utilities for reading/writing from the node local database
-// used by a node to remember what has done in the past.
+//! This file contains utilities for reading/writing from the node local
+//! database used by a node to remember what has done in the past.
 
 use builder::proto::bundle::BlobSpec;
 use common::errors::*;

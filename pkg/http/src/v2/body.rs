@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use common::errors::*;
-use common::io::Readable;
+use common::io::{IoError, IoErrorKind, Readable};
 use common::InRange;
 use executor::channel;
 use executor::sync::Mutex;
@@ -342,10 +342,12 @@ impl Readable for IncomingStreamBody {
             // connection is closed so we will never get all the data.
             // TODO: If this fails, check one last time to see if these is a better error in
             // the state?
-            self.read_available_receiver
-                .recv()
-                .await
-                .map_err(|_| err_msg("Connection closed before receiving all data"))?;
+            self.read_available_receiver.recv().await.map_err(|_| {
+                Error::from(IoError::new(
+                    IoErrorKind::Aborted,
+                    "Connection closed before receiving all data",
+                ))
+            })?;
         }
 
         Ok(nread)

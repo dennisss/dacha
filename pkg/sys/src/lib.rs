@@ -12,19 +12,20 @@ mod macros;
 #[macro_use]
 mod syscall;
 
+mod capabilities;
 mod epoll;
 mod errno;
 mod file;
+mod getcwd;
+mod getdents;
 mod io_uring;
 mod iov;
+mod kernel;
 mod mapped_memory;
 mod num_cpus;
 mod proc;
-// mod signal;
-mod getcwd;
-mod getdents;
-mod kernel;
 mod send;
+mod signal;
 mod socket;
 mod stat;
 pub mod thread;
@@ -41,19 +42,20 @@ pub mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
+pub use capabilities::*;
 pub use core::ffi::{c_size_t, c_ssize_t, c_uchar, c_void};
 pub use epoll::*;
 pub use errno::*;
+pub use file::OpenFileDescriptor;
+pub use getcwd::*;
+pub use getdents::*;
 pub use io_uring::*;
 pub use iov::*;
 pub use mapped_memory::*;
 pub use num_cpus::*;
 pub use proc::*;
-// pub use signal::*;
-pub use file::OpenFileDescriptor;
-pub use getcwd::*;
-pub use getdents::*;
 pub use send::*;
+pub use signal::*;
 pub use socket::*;
 pub use stat::*;
 pub use std::os::raw::{c_char, c_int, c_short, c_uint, c_ulong, c_ushort};
@@ -182,6 +184,8 @@ syscall!(getcpu, bindings::SYS_getcpu, cpu: *mut c_uint, node: *mut c_uint => Re
 syscall!(getpid, bindings::SYS_getpid => Infallible<pid_t>);
 syscall!(getppid, bindings::SYS_getppid => Infallible<pid_t>);
 syscall!(gettid, bindings::SYS_gettid => Infallible<pid_t>);
+
+syscall!(setsid, bindings::SYS_setsid => Result<pid_t>);
 
 // TODO: Switch last argument to a bindings::rusage
 syscall!(wait4, bindings::SYS_wait4, pid: pid_t, wstatus: *mut c_int, options: c_int, ru: *mut c_void => Result<pid_t>);

@@ -390,7 +390,7 @@ impl Server {
                 }
 
                 if !ignore {
-                    println!("[http::Server] Connection thread failed: {:?}", e)
+                    println!("[http::Server] Connection thread failed: {}", e)
                 }
             }
         };

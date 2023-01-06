@@ -4,6 +4,7 @@ package cluster;
 
 import "pkg/builder/src/proto/bundle.proto";
 
+// Complete definition for how a single worker should be started on some cluster node.
 message WorkerSpec {
     // Name of the worker. This is assigned by the manager job.
     string name = 1 [(google.api.field_behavior) = OUTPUT_ONLY];

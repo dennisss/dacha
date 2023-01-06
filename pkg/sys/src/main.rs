@@ -192,17 +192,6 @@ fn main() -> Result<()> {
     //     println!("dl_tls_static_size: {}", _dl_tls_static_size);
     // }
 
-    /*
-    let mask = 0xFFFFFFFFFFFFFFFF;
-    unsafe {
-        sys::sigprocmask(
-            sys::bindings::SIG_UNBLOCK as i32,
-            &mask,
-            core::ptr::null_mut(),
-        )
-    }?;
-     */
-
     // register_int();
 
     /*

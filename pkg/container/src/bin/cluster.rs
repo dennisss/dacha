@@ -51,6 +51,7 @@ use std::{collections::HashSet, sync::Arc};
 use builder::proto::bundle::{BlobFormat, BundleSpec};
 use common::errors::*;
 use common::failure::ResultExt;
+use common::io::{Readable, Writeable};
 use container::manager::Manager;
 use crypto::hasher::Hasher;
 use crypto::sha256::SHA256Hasher;
@@ -967,7 +968,7 @@ async fn start_terminal_input_task(
     // all of the above flags.
 
     Ok(executor::spawn(async move {
-        let mut stdin = common::async_std::io::stdin();
+        let mut stdin = file::Stdin::get();
 
         loop {
             let mut data = [0u8; 512];

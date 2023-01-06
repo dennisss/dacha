@@ -1,4 +1,4 @@
-// This file contains the entrypoint code for the node binary.
+//! This file contains the entrypoint code for the node binary.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -13,8 +13,8 @@ use nix::unistd::Pid;
 use protobuf::text::parse_text_proto;
 use rpc_util::AddReflection;
 
-use crate::node::Node;
-use crate::node::{shadow::*, NodeContext};
+use crate::node::node::{Node, NodeContext};
+use crate::node::shadow::*;
 use crate::proto::node::NodeConfig;
 use crate::proto::node_service::ContainerNodeIntoService;
 use crate::runtime::fd::FileReference;
@@ -31,29 +31,6 @@ struct Args {
     /// be used.
     zone: Option<String>,
 }
-
-/*
-    In the ContainerNodeConfig we should have:
-
-    - username: ""
-    - groupname: ""
-
-    TODO: Write disallow to the groups file?
-*/
-
-/*
-
-Namespace:
-    - Must have CAP_SYS_ADMIN  | CAP_SYS_CHROOT
-    - CLONE_NEWNS | CLONE_FS |
-    - CLONE_NEWPID | CLONE_NEWUSER
-
-Cgroup
-
-Chroot
-
-NOTE: We must assume that all file descriptors created by Rust are opened with O_CLOEXEC
-*/
 
 fn create_idmap(
     subids: Vec<SubordinateIdRange>,
@@ -192,6 +169,8 @@ pub fn main() -> Result<()> {
     setup_sender.write_all(&[MAGIC_STARTUP_BYTE])?;
     drop(setup_sender);
 
+    //
+
     let root_exit = nix::sys::wait::waitpid(root_pid, None)?;
 
     println!("Root exited: {:?}", root_exit);
@@ -252,18 +231,12 @@ async fn run(
         return Err(err_msg("Incorrect startup byte received from parent"));
     }
 
-    nix::unistd::setsid()?;
+    unsafe { sys::setsid()? };
     if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) } != 0 {
         return Err(err_msg("Failed to set PR_SET_PDEATHSIG"));
     }
 
-    if unsafe {
-        libc::prctl(
-            libc::PR_SET_SECUREBITS,
-            crate::capabilities::SECBITS_LOCKED_DOWN,
-        )
-    } != 0
-    {
+    if unsafe { libc::prctl(libc::PR_SET_SECUREBITS, sys::SECBITS_LOCKED_DOWN) } != 0 {
         return Err(err_msg("Failed to set PR_SET_SECUREBITS"));
     }
 

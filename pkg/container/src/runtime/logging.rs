@@ -1,5 +1,5 @@
-// Code for performing logging of the stdout/stderr pipes of the container to
-// durable storage.
+//! Code for performing logging of the stdout/stderr pipes of the container to
+//! durable storage.
 
 use std::sync::Arc;
 use std::time::Duration;

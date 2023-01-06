@@ -1,9 +1,9 @@
-// This file contains the code that runs immediately after the first clone()
-// into a container.
-// - It is the first code to run in the new namespaces.
-// - It is still fully privileged
-// - It is responsible for setting up the environment and eventually calling
-//   execve().
+//! This file contains the code that runs immediately after the first clone()
+//! into a container.
+//! - It is the first code to run in the new namespaces.
+//! - It is still fully privileged
+//! - It is responsible for setting up the environment and eventually calling
+//!   execve().
 
 use std::ffi::CStr;
 use std::ffi::CString;
@@ -22,20 +22,15 @@ use nix::mount::MsFlags;
 use nix::pty::posix_openpt;
 use nix::pty::PtyMaster;
 use nix::sched::CloneFlags;
-use nix::sys::signal::sigprocmask;
-use nix::sys::signal::SigSet;
-use nix::sys::signal::SigmaskHow;
 use nix::sys::stat::makedev;
 use nix::sys::stat::mknod;
 use nix::sys::stat::umask;
 use nix::sys::stat::Mode;
 use nix::sys::stat::SFlag;
-use nix::unistd::chown;
 use nix::unistd::Gid;
 use nix::unistd::Uid;
 use nix::unistd::{dup2, Pid};
 
-use crate::capabilities::*;
 use crate::proto::config::*;
 use crate::runtime::fd::*;
 
@@ -85,8 +80,9 @@ fn run_child_process_inner(
     // container user can read from it.
     umask(Mode::from_bits_truncate(0o002));
 
-    // Prevent parent processes from seeing the new mounts.
-    // But, we will see new mounts created by the parent.
+    // Change the properties of the existing '/' mount such that we:
+    // - Prevent parent processes from seeing the new mounts.
+    // - But, we will see new mounts created by the parent.
     mount::<str, str, str, str>(None, "/", None, MsFlags::MS_SLAVE | MsFlags::MS_REC, None)?;
 
     // Create the directory that we'll use for the new root fs.
@@ -266,10 +262,16 @@ fn exec_child_process(
 
     // Run everything in a separate process group to broadcast signals down.
     // TODO: What if we send a signal to this process before this code runs?
-    nix::unistd::setsid()?;
+    unsafe { sys::setsid()? };
 
     // Ensure that all signals are unblocked.
-    sigprocmask(SigmaskHow::SIG_UNBLOCK, Some(&SigSet::all()), None)?;
+    unsafe {
+        sys::sigprocmask(
+            sys::SigprocmaskHow::SIG_UNBLOCK,
+            Some(&sys::SignalSet::all()),
+            None,
+        )?
+    };
 
     if process.args().len() == 0 {
         return Err(err_msg("Expected at least one arg in args list"));
@@ -303,40 +305,23 @@ fn exec_child_process(
     let _ = nix::unistd::setfsgid(child_gid);
 
     // Drop all capabilities
-
-    let hdr = cap_user_header {
-        version: LINUX_CAPABILITY_VERSION_3,
-        pid: unsafe { libc::getpid() },
-    };
-
-    // NOTE: This is 2 elements because on 64-bit devices, 64-bit capability sets
-    // are supported.
     let data = [
-        cap_user_data {
+        sys::cap_user_data {
             effective: 0,
             permitted: 0,
             inheritable: 0,
         },
-        cap_user_data {
+        sys::cap_user_data {
             effective: 0,
             permitted: 0,
             inheritable: 0,
         },
     ];
 
-    {
-        // NOTE: This will only work if we are using a user namespace (otherwise we
-        // won't have the capabilites needed to change our own capabilities).
-        let r = unsafe { libc::syscall(libc::SYS_capset, &hdr, &data) };
-
-        if r != 0 {
-            let e = nix::Error::last();
-            return Err(format_err!(
-                "Failed to drop capabilities with error: {:?}",
-                e
-            ));
-        }
-    }
+    // NOTE: This will only work if we are using a user namespace (otherwise we
+    // won't have the capabilites needed to change our own capabilities).
+    unsafe { sys::capset(sys::getpid(), &data) }
+        .map_err(|e| format_err!("Failed to drop capabilities with error: {:?}", e))?;
 
     let r = unsafe {
         libc::prctl(
@@ -401,5 +386,6 @@ fn exec_child_process(
 
     nix::unistd::execve(&argv[0], &argv, &env)?;
 
-    unsafe { libc::exit(1) };
+    unsafe { sys::exit(1) };
+    loop {}
 }

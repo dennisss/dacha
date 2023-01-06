@@ -25,7 +25,6 @@ extern crate regexp_macros;
 extern crate automata;
 extern crate radix;
 
-mod capabilities;
 pub mod manager;
 pub mod meta;
 pub mod node;

@@ -1,7 +1,7 @@
-use alloc::string::ToString;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use crate::args::{ArgType, RawArgValue};
+use crate::args::{ArgType, ArgsType, RawArgValue, RawArgs};
 use crate::errors::*;
 
 pub struct CommaSeparated<T> {
@@ -39,5 +39,16 @@ impl<T: ArgType + Sized> ArgType for CommaSeparated<T> {
         };
 
         Self::parse_raw_arg(arg)
+    }
+}
+
+pub struct EscapedArgs {
+    pub args: Vec<String>,
+}
+
+impl ArgsType for EscapedArgs {
+    fn parse_raw_args(raw_args: &mut super::RawArgs) -> Result<Self> {
+        let args = raw_args.take_escaped_args();
+        Ok(Self { args })
     }
 }

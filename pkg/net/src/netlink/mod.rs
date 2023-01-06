@@ -8,7 +8,6 @@ use std::sync::atomic::AtomicUsize;
 use common::errors::*;
 use nix::sys::socket::recvmsg;
 use nix::sys::socket::sendmsg;
-use nix::sys::socket::sockopt::ReusePort;
 use nix::sys::socket::MsgFlags;
 use nix::sys::socket::{
     AddressFamily, InetAddr, NetlinkAddr, SockAddr, SockFlag, SockProtocol, SockType,

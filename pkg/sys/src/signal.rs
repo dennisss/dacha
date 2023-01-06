@@ -1,7 +1,8 @@
 use crate::{bindings, c_int, c_size_t, c_void, Errno};
 
+/*
 // TODO: Make this unsafe.
-pub fn signal(signal: Signal, action: SigAction) -> Result<(), Errno> {
+pub unsafe fn signal(signal: Signal, action: SigAction) -> Result<(), Errno> {
     unsafe {
         sigaction(
             signal.to_raw() as c_int,
@@ -10,6 +11,7 @@ pub fn signal(signal: Signal, action: SigAction) -> Result<(), Errno> {
         )
     }
 }
+*/
 
 define_bindings_enum!(Signal u32 =>
     SIGHUP,
@@ -47,6 +49,7 @@ define_bindings_enum!(Signal u32 =>
     SIGSYS
 );
 
+/*
 /// TODO: Move to the kernel module.
 ///
 /// Should match the sigaction struct in the linux kernel (not the one in libc).
@@ -118,13 +121,58 @@ unsafe fn sigaction(
 
     rt_sigaction(signum, action, old_action, 8)
 }
+*/
 
-unsafe fn sigprocmask(how: c_int, set: *const u64, old_set: *mut u64) -> Result<(), Errno> {
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct SignalSet {
+    /// One bit per signal. Linux supports 64 signals.
+    set: u64,
+}
+
+impl SignalSet {
+    pub fn empty() -> Self {
+        Self { set: 0 }
+    }
+
+    pub fn all() -> Self {
+        Self { set: u64::MAX }
+    }
+
+    pub fn add(self, signal: Signal) -> Self {
+        let set = self.set | (1 << ((signal.to_raw() as u64) - 1));
+        Self { set }
+    }
+}
+
+define_bindings_enum!(SigprocmaskHow c_int =>
+    SIG_BLOCK,
+    SIG_UNBLOCK,
+    SIG_SETMASK
+);
+
+pub unsafe fn sigprocmask(
+    how: SigprocmaskHow,
+    set: Option<&SignalSet>,
+    old_set: Option<&mut SignalSet>,
+) -> Result<(), Errno> {
+    raw::rt_sigprocmask(
+        how.to_raw(),
+        set.map(|v| &v.set as *const u64)
+            .unwrap_or(core::ptr::null()),
+        old_set
+            .map(|v| &mut v.set as *mut u64)
+            .unwrap_or(core::ptr::null_mut()),
+        core::mem::size_of::<SignalSet>(),
+    )
+}
+
+mod raw {
+    use super::*;
+
     syscall!(rt_sigprocmask, bindings::SYS_rt_sigprocmask,
         how: c_int,
         set: *const u64,
         old_set: *mut u64,
         sigsetsize: c_size_t => Result<()>);
-
-    rt_sigprocmask(how, set, old_set, 8)
 }

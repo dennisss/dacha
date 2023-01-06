@@ -16,7 +16,9 @@ const USER_NS_SETUP_BYTE: u8 = 0x41;
 const TERMINAL_FD_BYTE: u8 = 0x55;
 const FINISHED_SETUP_BYTE: u8 = 0x52;
 
-/// Between every
+/// Double ended UNIX socket used to communicate between the container runtime
+/// process and a child container process during the setup process of the
+/// container.
 pub struct SetupSocket {}
 
 impl SetupSocket {
