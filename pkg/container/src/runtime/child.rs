@@ -45,7 +45,7 @@ pub fn run_child_process(
     container_dir: &Path,
     setup_socket: &mut SetupSocketChild,
     file_mapping: &FileMapping,
-) -> isize {
+) -> sys::ExitCode {
     // TODO: Any failures in this should immediately exit the process.
     // Also how do we stop the normal server stuff from running?
 
@@ -62,7 +62,7 @@ pub fn run_child_process(
         }
     };
 
-    unsafe { libc::exit(status) };
+    status
 }
 
 // TODO: Rename the FileMapping to the StdioMapping as we currently only support

@@ -50,6 +50,6 @@ impl Writeable for Stdout {
     }
 
     async fn flush(&mut self) -> Result<()> {
-        todo!()
+        Ok(())
     }
 }

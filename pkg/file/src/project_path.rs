@@ -22,7 +22,7 @@ pub fn project_dir() -> LocalPathBuf {
             None => {
                 panic!(
                     "Failed to find project dir in: {:?}",
-                    std::env::current_dir().unwrap()
+                    crate::current_dir().unwrap()
                 );
             }
         }

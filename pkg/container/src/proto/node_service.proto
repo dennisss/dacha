@@ -19,6 +19,7 @@ message ListWorkersResponse {
     repeated WorkerProto workers = 1;
 }
 
+// Serialized state of a worker currently started on a node.
 message WorkerProto {
     WorkerSpec spec = 1;
     WorkerStateProto state = 2;

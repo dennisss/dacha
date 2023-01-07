@@ -148,3 +148,22 @@ struct linux_dirent64 {
     // Null terminated name.
     d_name: [u8],
 }
+
+// Mirroring 'include/uapi/linux/sched.h'
+
+/// NOTE: This is the kernel's V2 struct of size 88 bytes.
+#[derive(Clone, Copy, Default, Debug)]
+#[repr(C, align(8))]
+pub struct clone_args {
+    pub flags: u64,
+    pub pidfd: u64,
+    pub child_tid: u64,
+    pub parent_tid: u64,
+    pub exit_signal: u64,
+    pub stack: u64,
+    pub stack_size: u64,
+    pub tls: u64,
+    pub set_tid: u64,
+    pub set_tid_size: u64,
+    pub cgroup: u64,
+}

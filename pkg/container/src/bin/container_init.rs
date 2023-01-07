@@ -1,105 +1,73 @@
-/*
-Runs as the process 1 in each container. It's job is just to run a single process until competion
-while reaping any orphaned processes.
-
-*/
+//! Binary meant to run as pid 1 in a container.
+//!
+//! This is similar to https://github.com/Yelp/dumb-init
+//!
+//! It's responsible for starting and waiting on a subprocess while:
+//! - Proxying signals and exit codes.
+//! - Reaping zombie processes.
 
 extern crate common;
-extern crate libc;
 extern crate nix;
+extern crate sys;
+#[macro_use]
+extern crate macros;
 
 use std::ffi::CString;
 
-use common::errors::*;
-use nix::sys::{
-    signal::{signal, SigHandler, Signal},
-    wait::WaitPidFlag,
-};
+use common::{args::list::EscapedArgs, errors::*};
+use container::init::{MainProcess, MainProcessOptions};
 
-extern "C" fn handle_sigchld(signal: libc::c_int) {}
-
-fn run_child(args: &[CString]) -> ! {
-    // NOTE: execv() will reset all of the signal() dispositions, but not any
-    // sigprocmask() calls.
-    if let Err(e) = nix::unistd::execv(&args[1], &args[2..]) {
-        eprintln!("Failed to start child process: {:?}", e);
-    }
-
-    std::process::exit(1);
+#[derive(Args)]
+struct Args {
+    sub_command: EscapedArgs,
 }
 
-fn run() -> Result<i32> {
-    {
-        let handler = SigHandler::Handler(handle_sigchld);
-        unsafe { signal(Signal::SIGCHLD, handler) }?;
+fn run() -> Result<()> {
+    let args = common::args::parse_args::<Args>()?;
 
-        // Ignore termination signals. We assume that they are sent to the entire
-        // process group (including our child process).
-        unsafe { signal(Signal::SIGINT, SigHandler::SigIgn) }?;
-        unsafe { signal(Signal::SIGTERM, SigHandler::SigIgn) }?;
+    // TODO: Check how many file descriptors we have to verify none were leaked
+    // without CLOEXEC.
+
+    let mut sub_command = vec![];
+    for arg in args.sub_command.args {
+        sub_command.push(CString::new(arg)?);
     }
 
-    let mut args = vec![];
-    for s in std::env::args() {
-        args.push(CString::new(s)?);
+    if sub_command.len() < 1 {
+        return Err(err_msg(
+            "Expected at least one argument for the sub command to run",
+        ));
     }
 
-    if args.len() < 2 {
-        return Err(err_msg("Expected at least argument to init program"));
-    }
+    let main_process = MainProcess::start(
+        MainProcessOptions {
+            use_setsid: true,
+            clone_flags: sys::CloneFlags::empty(), // Basically use fork()
+            raise_second_sigint: true,
+        },
+        || {
+            // TODO: Ensure that this forwards all environment variables.
+            if let Err(e) = nix::unistd::execv(&sub_command[0], &sub_command[0..]) {
+                eprintln!("Failed to start child process: {:?}", e);
+            }
 
-    let root_pid = match unsafe { nix::unistd::fork() }? {
-        nix::unistd::ForkResult::Child => {
-            run_child(&args);
-        }
-        nix::unistd::ForkResult::Parent { child } => child,
-    };
+            1 // exit code
+        },
+    )?;
 
-    loop {
-        let e = nix::sys::wait::waitpid(None, Some(WaitPidFlag::WUNTRACED))?;
-        match e {
-            nix::sys::wait::WaitStatus::Exited(pid, code) => {
-                if pid == root_pid {
-                    return Ok(code);
-                }
-            }
-            nix::sys::wait::WaitStatus::Signaled(pid, signal, _) => {
-                if pid == root_pid {
-                    // TODO: In this case, we should kill ourselves with the same signal to emulate
-                    // the death? But will need to disable our signal handlers.
+    main_process.wait()?;
 
-                    eprintln!("Killed by signal {}", signal);
-                    return Ok(2);
-                }
-            }
-            nix::sys::wait::WaitStatus::Stopped(pid, _) => {
-                if pid == root_pid {
-                    eprintln!("Process stopped!");
-                    return Ok(3);
-                }
-
-                nix::sys::signal::kill(pid, Signal::SIGKILL)?;
-            }
-            nix::sys::wait::WaitStatus::Continued(_) => {}
-            nix::sys::wait::WaitStatus::StillAlive => {
-                return Err(err_msg("No progress can be made in init process."))
-            }
-            nix::sys::wait::WaitStatus::PtraceEvent(_, _, _)
-            | nix::sys::wait::WaitStatus::PtraceSyscall(_) => {
-                return Err(format_err!("Unhandled process event {:?}", e));
-            }
-        }
-    }
+    // Should never be reached
+    Ok(())
 }
 
 fn main() {
-    let return_code = match run() {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Init Process Failed: {:?}", e);
-            1
-        }
-    };
+    eprintln!(
+        "Init Process Failed: {}",
+        run()
+            .err()
+            .unwrap_or_else(|| err_msg("Failed to wait for main process of container"))
+    );
 
-    std::process::exit(return_code);
+    sys::exit(1);
 }

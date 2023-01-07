@@ -7,6 +7,7 @@ use crate::FileType;
 See https://man7.org/linux/man-pages/man7/inode.7.html
 */
 
+#[derive(Debug)]
 pub struct Metadata {
     pub(crate) inner: sys::bindings::stat,
 }

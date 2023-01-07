@@ -1,4 +1,4 @@
-use crate::{bindings, c_int, c_size_t, c_void, Errno};
+use crate::{bindings, c_int, c_size_t, c_void, pid_t, Errno};
 
 /*
 // TODO: Make this unsafe.
@@ -13,41 +13,42 @@ pub unsafe fn signal(signal: Signal, action: SigAction) -> Result<(), Errno> {
 }
 */
 
-define_bindings_enum!(Signal u32 =>
-    SIGHUP,
-    SIGINT,
-    SIGQUIT,
-    SIGILL,
-    SIGTRAP,
-    SIGABRT,
-    SIGIOT,
-    SIGBUS,
-    SIGFPE,
-    SIGKILL,
-    SIGUSR1,
-    SIGSEGV,
-    SIGUSR2,
-    SIGPIPE,
-    SIGALRM,
-    SIGTERM,
-    SIGSTKFLT,
-    SIGCHLD,
-    SIGCLD,
-    SIGCONT,
-    SIGSTOP,
-    SIGTSTP,
-    SIGTTIN,
-    SIGTTOU,
-    SIGURG,
-    SIGXCPU,
-    SIGXFSZ,
-    SIGVTALRM,
-    SIGPROF,
-    SIGWINCH,
-    SIGIO,
-    SIGPOLL,
-    SIGSYS
-);
+/// The C bindings seem to have the wrong numbers for some of these (e.g.
+/// SIGCHLD should be 17 and not 20).
+define_transparent_enum!(Signal u32 {
+    SIGHUP = 1,
+    SIGINT = 2,
+    SIGQUIT = 3,
+    SIGILL = 4,
+    SIGTRAP = 5,
+    SIGABRT = 6,
+    SIGIOT = 6,
+    SIGBUS = 7,
+    SIGFPE = 8,
+    SIGKILL = 9,
+    SIGUSR1 = 10,
+    SIGSEGV = 11,
+    SIGUSR2 = 12,
+    SIGPIPE = 13,
+    SIGALRM = 14,
+    SIGTERM = 15,
+    SIGSTKFLT = 16,
+    SIGCHLD = 17,
+    SIGCONT = 18,
+    SIGSTOP = 19,
+    SIGTSTP = 20,
+    SIGTTIN = 21,
+    SIGTTOU = 22,
+    SIGURG = 23,
+    SIGXCPU = 24,
+    SIGXFSZ = 25,
+    SIGVTALRM = 26,
+    SIGPROF = 27,
+    SIGWINCH = 28,
+    SIGIO = 29,
+    SIGPWR = 30,
+    SIGSYS = 31
+});
 
 /*
 /// TODO: Move to the kernel module.
@@ -145,7 +146,7 @@ impl SignalSet {
     }
 }
 
-define_bindings_enum!(SigprocmaskHow c_int =>
+define_bindings_enum!(SigprocmaskHow u32 =>
     SIG_BLOCK,
     SIG_UNBLOCK,
     SIG_SETMASK
@@ -157,7 +158,7 @@ pub unsafe fn sigprocmask(
     old_set: Option<&mut SignalSet>,
 ) -> Result<(), Errno> {
     raw::rt_sigprocmask(
-        how.to_raw(),
+        how.to_raw() as i32,
         set.map(|v| &v.set as *const u64)
             .unwrap_or(core::ptr::null()),
         old_set
@@ -165,6 +166,15 @@ pub unsafe fn sigprocmask(
             .unwrap_or(core::ptr::null_mut()),
         core::mem::size_of::<SignalSet>(),
     )
+}
+
+pub unsafe fn sigsuspend(new_mask: &SignalSet) {
+    // Should pretty much always return EINTR
+    let _ = raw::rt_sigsuspend(&new_mask.set, core::mem::size_of::<SignalSet>());
+}
+
+pub unsafe fn kill(pid: pid_t, signal: Signal) -> Result<(), Errno> {
+    raw::kill(pid, signal.to_raw() as i32)
 }
 
 mod raw {
@@ -175,4 +185,11 @@ mod raw {
         set: *const u64,
         old_set: *mut u64,
         sigsetsize: c_size_t => Result<()>);
+
+    syscall!(rt_sigsuspend, bindings::SYS_rt_sigsuspend,
+        unewset: *const u64,
+        sigsetsize: c_size_t => Result<()>
+    );
+
+    syscall!(kill, bindings::SYS_kill, pid: pid_t, signal: c_int => Result<()>);
 }

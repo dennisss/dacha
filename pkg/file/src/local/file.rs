@@ -1,4 +1,4 @@
-use std::os::unix::prelude::AsRawFd;
+use std::os::unix::prelude::{AsRawFd, IntoRawFd};
 
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
@@ -177,7 +177,7 @@ impl std::convert::From<std::fs::File> for LocalFile {
     fn from(f: std::fs::File) -> Self {
         // TODO: Possibly not seekable?
         LocalFile {
-            file: FileHandle::new(OpenFileDescriptor::new(f.as_raw_fd()), true),
+            file: FileHandle::new(OpenFileDescriptor::new(f.into_raw_fd()), true),
             path: LocalPathBuf::from("/nonexistent"),
         }
     }

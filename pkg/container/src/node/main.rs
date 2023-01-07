@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 
 use common::errors::*;
-use file::LocalPath;
+use file::{project_path, LocalPath};
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
 use nix::sys::stat::{umask, Mode};
@@ -13,6 +13,7 @@ use nix::unistd::Pid;
 use protobuf::text::parse_text_proto;
 use rpc_util::AddReflection;
 
+use crate::init::{MainProcess, MainProcessOptions};
 use crate::node::node::{Node, NodeContext};
 use crate::node::shadow::*;
 use crate::proto::node::NodeConfig;
@@ -98,6 +99,15 @@ pub fn main() -> Result<()> {
         config.set_zone(zone);
     }
 
+    if config.init_process_args().is_empty() {
+        let init_process = project_path!("target/release/container_init");
+        if !std::path::Path::new(init_process.as_path()).exists() {
+            return Err(err_msg("Missing init process binary"));
+        }
+
+        config.add_init_process_args(init_process.to_string());
+    }
+
     let uid = nix::unistd::getresuid()?;
     let gid = nix::unistd::getresgid()?;
     if uid.real.as_raw() == 0 || gid.real.as_raw() == 0 {
@@ -133,8 +143,8 @@ pub fn main() -> Result<()> {
 
     let container_uids = find_container_ids_range(&uidmap)?;
     let container_gids = find_container_ids_range(&gidmap)?;
-    println!("Container UID range: {:?}", container_uids);
-    println!("Container GID range: {:?}", container_uids);
+    println!("Container UID range: {}", container_uids);
+    println!("Container GID range: {}", container_uids);
 
     let local_address = http::uri::Authority {
         user: None,
@@ -159,55 +169,64 @@ pub fn main() -> Result<()> {
         local_address,
     };
 
-    let (root_pid, mut setup_sender) = spawn_root_process(&node_context, &config)?;
+    let (root_process, mut setup_sender) = spawn_root_process(&node_context, &config)?;
 
-    println!("Root Pid: {}", root_pid.as_raw());
+    println!("Root Pid: {}", root_process.pid());
 
-    newuidmap(root_pid.as_raw(), &uidmap)?;
-    newgidmap(root_pid.as_raw(), &gidmap)?;
+    newuidmap(root_process.pid(), &uidmap)?;
+    newgidmap(root_process.pid(), &gidmap)?;
 
     setup_sender.write_all(&[MAGIC_STARTUP_BYTE])?;
     drop(setup_sender);
 
-    //
-
-    let root_exit = nix::sys::wait::waitpid(root_pid, None)?;
-
-    println!("Root exited: {:?}", root_exit);
+    root_process.wait()?;
 
     Ok(())
 }
 
-fn spawn_root_process(context: &NodeContext, config: &NodeConfig) -> Result<(Pid, std::fs::File)> {
+fn spawn_root_process(
+    context: &NodeContext,
+    config: &NodeConfig,
+) -> Result<(MainProcess, std::fs::File)> {
     let (setup_reader_ref, setup_writer_ref) = FileReference::pipe()?;
 
-    let mut stack = [0u8; 6 * 1024 * 1024];
     let mut setup_reader_ref = Some(setup_reader_ref);
+    let mut setup_writer_ref = Some(setup_writer_ref);
 
     // TODO: Verify that CLONE_NEWNS still allows us to inherit new mounts from the
     // parent namespace.
-    let pid = nix::sched::clone(
-        Box::new(|| {
+    let init_process = MainProcess::start(
+        MainProcessOptions {
+            use_setsid: true,
+            clone_flags: sys::CloneFlags::CLONE_NEWUSER
+                | sys::CloneFlags::CLONE_NEWPID
+                | sys::CloneFlags::CLONE_NEWNS
+                | sys::CloneFlags::CLONE_NEWCGROUP,
+            raise_second_sigint: true,
+        },
+        || {
+            // Close the writer in the child
+            setup_writer_ref.take();
+
             run_root_process(
                 context,
                 config,
                 setup_reader_ref.take().unwrap().open().unwrap(),
             )
-        }),
-        &mut stack,
-        CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWPID | CloneFlags::CLONE_NEWNS,
-        Some(libc::SIGCHLD),
+        },
     )?;
 
-    Ok((pid, setup_writer_ref.open()?))
+    // NOTE: The reader will be dropped in the parent on drop().
+
+    Ok((init_process, setup_writer_ref.unwrap().open()?))
 }
 
 fn run_root_process(
     context: &NodeContext,
     config: &NodeConfig,
     setup_reader: std::fs::File,
-) -> isize {
-    let result = executor::run(run(context.clone(), config.clone(), setup_reader)).unwrap();
+) -> sys::ExitCode {
+    let result = executor::run(run(context, config, setup_reader)).unwrap();
     let code = match result {
         Ok(()) => 0,
         Err(e) => {
@@ -216,13 +235,12 @@ fn run_root_process(
         }
     };
 
-    unsafe { sys::exit(code) };
-    todo!()
+    code
 }
 
 async fn run(
-    context: NodeContext,
-    config: NodeConfig,
+    context: &NodeContext,
+    config: &NodeConfig,
     mut setup_reader: std::fs::File,
 ) -> Result<()> {
     let mut done_byte = [0u8; 1];
@@ -231,7 +249,6 @@ async fn run(
         return Err(err_msg("Incorrect startup byte received from parent"));
     }
 
-    unsafe { sys::setsid()? };
     if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) } != 0 {
         return Err(err_msg("Failed to set PR_SET_PDEATHSIG"));
     }
@@ -249,6 +266,16 @@ async fn run(
         MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
         Option::<&str>::None,
     )?;
+
+    // Remount our cgroup v2 namespace entirely as we cloned with CLONE_NEWCGROUP.
+    nix::mount::mount(
+        Some("cgroup2"),
+        config.cgroup_dir(),
+        Some("cgroup2"),
+        MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
+        Option::<&str>::None,
+    )
+    .map_err(|e| format_err!("While mounting cgroup fs: {}", e))?;
 
     // TODO: Create the root directory and set permissions to 600
     // NOTE: This directory should be created with mode 700 where the user running

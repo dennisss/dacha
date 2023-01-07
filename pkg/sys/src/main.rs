@@ -55,7 +55,7 @@ fn register_int() {
         SaFlags::empty(),
         SigSet::empty(),
     );
-    let old = unsafe { sigaction(Signal::SIGINT, &action) }.unwrap();
+    let old = unsafe { sigaction(Signal::SIGCHLD, &action) }.unwrap();
 
     println!("{:?}", old);
 }
@@ -175,8 +175,111 @@ fn test_dirent() -> Result<()> {
     Ok(())
 }
 
+fn test_waitpid() -> Result<()> {
+    unsafe {
+        // TODO: Test that fork() triggers us to get a SIGCHLD signal.
+
+        // register_int();
+
+        // Should fail as we have no child processed yet.
+        assert_eq!(
+            sys::waitpid(-1, sys::WaitOptions::WNOHANG),
+            Err(sys::Errno::ECHILD)
+        );
+
+        let child_pid = match sys::fork()? {
+            Some(pid) => pid,
+            None => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                sys::exit(120);
+                loop {}
+            }
+        };
+
+        assert_eq!(
+            sys::waitpid(child_pid, sys::WaitOptions::WNOHANG)?,
+            sys::WaitStatus::NoStatus
+        );
+
+        assert_eq!(
+            sys::waitpid(child_pid, sys::WaitOptions::empty())?,
+            sys::WaitStatus::Exited {
+                pid: child_pid,
+                status: 120
+            }
+        );
+
+        // Test a process we must signal.
+
+        let child_pid = match sys::fork()? {
+            Some(pid) => pid,
+            None => loop {
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+            },
+        };
+
+        assert_eq!(
+            sys::waitpid(child_pid, sys::WaitOptions::WNOHANG)?,
+            sys::WaitStatus::NoStatus
+        );
+
+        sys::kill(child_pid, sys::Signal::SIGSTOP)?;
+
+        assert_eq!(
+            sys::waitpid(child_pid, sys::WaitOptions::WUNTRACED)?,
+            sys::WaitStatus::Stopped {
+                pid: child_pid,
+                signal: sys::Signal::SIGSTOP
+            }
+        );
+
+        sys::kill(child_pid, sys::Signal::SIGKILL)?;
+
+        assert_eq!(
+            sys::waitpid(child_pid, sys::WaitOptions::empty())?,
+            sys::WaitStatus::Signaled {
+                pid: child_pid,
+                signal: sys::Signal::SIGKILL,
+                core_dumped: false
+            }
+        );
+
+        // Test dies by signal.
+
+        let child_pid = match sys::fork()? {
+            Some(pid) => pid,
+            None => loop {
+                sys::exit(130);
+            },
+        };
+
+        println!("{:?}", sys::waitpid(child_pid, sys::WaitOptions::empty())?);
+
+        // TODO: Test WCONTINUED
+    }
+
+    Ok(())
+}
+
+fn test_clone_args() -> Result<()> {
+    register_int();
+
+    let pid = sys::CloneArgs::new().sigchld().spawn_process(|| {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        0
+    })?;
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1))
+    }
+}
+
 fn main() -> Result<()> {
-    test_uring_cancel()?;
+    // test_clone_args()?;
+
+    test_waitpid()?;
+
+    // test_uring_cancel()?;
 
     // test_dirent()?;
 

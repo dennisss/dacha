@@ -9,6 +9,9 @@ message NodeConfig {
     // Path to a directory into which we will store all container related data.
     string data_dir = 1;
 
+    // Path in which we can mount the main node process's cgroup V2 filesystem.
+    string cgroup_dir = 11;
+
     // Port used for the main node management service.
     int32 service_port = 2;
 
@@ -29,6 +32,8 @@ message NodeConfig {
 
     // When running in a managed cluster this field is required.
     string zone = 7;
+
+    repeated string init_process_args = 10;
 }
 
 // Represents all port numbers in the range [start, end).

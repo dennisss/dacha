@@ -46,10 +46,10 @@ use std::alloc::{alloc_zeroed, dealloc, Layout};
 
 use common::errors::*;
 
-use crate::pid_t;
 use crate::thread::entry::*;
 use crate::thread::tls::TLSSegment;
 use crate::wait::WaitStatus;
+use crate::{pid_t, WaitOptions};
 use crate::{CLONE_FILES, CLONE_FS, CLONE_IO, CLONE_SETTLS, CLONE_SIGHAND, CLONE_THREAD, CLONE_VM};
 
 /// Creator of new process threads.
@@ -150,7 +150,7 @@ impl ThreadFactory {
             //
             // TODO: If this fails, deallocate all the memory right
             // away.
-            let result = crate::clone(
+            let result = crate::old::clone(
                 CLONE_FILES
                     | CLONE_FS
                     | CLONE_IO
@@ -175,9 +175,7 @@ pub struct ChildThread {
 
 impl ChildThread {
     pub fn wait_blocking(self) -> Result<WaitStatus> {
-        let mut wstatus = 0;
         // NOTE: We assume the return value is equal to self.pid.
-        unsafe { crate::wait4(self.pid, &mut wstatus, 0, core::ptr::null_mut()) }?;
-        Ok(WaitStatus::from_value(wstatus))
+        Ok(unsafe { crate::waitpid(self.pid, WaitOptions::empty())? })
     }
 }

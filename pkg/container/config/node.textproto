@@ -2,6 +2,7 @@
 # proto-message: NodeConfig
 
 data_dir: "/opt/dacha/data"
+cgroup_dir: "/opt/dacha/cgroup"
 service_port: 10400
 graceful_shutdown_timeout_secs: 10
 bootstrap_id_from_machine_id: true

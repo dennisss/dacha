@@ -237,7 +237,7 @@ pub fn read_interfaces() -> Result<Vec<Interface>> {
     serialize_cstruct(&ifinfomsg::default(), &mut link_request);
     sock.send_to_kernel(&mut link_request)?;
 
-    // println!("My PID is {}", unsafe { libc::getpid() });
+    // println!("My PID is {}", unsafe { sys::getpid() });
     // println!("Header length: {}", std::mem::size_of::<nlmsghdr>());
     // println!("Info size: {}", std::mem::size_of::<ifinfomsg>());
     // println!("Attr size: {}", std::mem::size_of::<rtattr>());

@@ -13,8 +13,10 @@ mod macros;
 mod syscall;
 
 mod capabilities;
+mod clone;
 mod epoll;
 mod errno;
+mod exit;
 mod file;
 mod getcwd;
 mod getdents;
@@ -43,9 +45,11 @@ pub mod bindings {
 }
 
 pub use capabilities::*;
+pub use clone::*;
 pub use core::ffi::{c_size_t, c_ssize_t, c_uchar, c_void};
 pub use epoll::*;
 pub use errno::*;
+pub use exit::*;
 pub use file::OpenFileDescriptor;
 pub use getcwd::*;
 pub use getdents::*;
@@ -113,53 +117,10 @@ syscall!(open, bindings::SYS_open, path: *const c_char, flags: c_uint, mode: umo
 syscall!(close, bindings::SYS_close, fd: c_int => Result<()>);
 syscall!(lseek, bindings::SYS_lseek, fd: c_int, offset: off_t, whence: c_uint => Result<off_t>);
 
-#[cfg(target_arch = "x86_64")]
-pub unsafe fn clone(
-    flags: c_uint,
-    stack: *mut c_void,
-    parent_tid: *mut c_int,
-    child_tid: *mut c_int,
-    tls: c_ulong,
-) -> Result<pid_t, Errno> {
-    syscall!(
-        clone_raw,
-        bindings::SYS_clone,
-        flags: c_uint, // c_ulong,
-        stack: *mut c_void,
-        parent_tid: *mut c_int,
-        child_tid: *mut c_int,
-        tls: c_ulong
-        => Result<pid_t>
-    );
-
-    clone_raw(flags, stack, parent_tid, child_tid, tls)
+pub unsafe fn fork() -> Result<Option<pid_t>, Errno> {
+    let pid = CloneArgs::new().sigchld().run()?;
+    Ok(if pid != 0 { Some(pid) } else { None })
 }
-
-// See the 'clone' man page for this.
-#[cfg(target_arch = "aarch64")]
-pub unsafe fn clone(
-    flags: c_uint,
-    stack: *mut c_void,
-    parent_tid: *mut c_int,
-    child_tid: *mut c_int,
-    tls: c_ulong,
-) -> Result<pid_t, Errno> {
-    syscall!(
-        clone_raw,
-        bindings::SYS_clone,
-        flags: c_uint, // c_ulong,
-        stack: *mut c_void,
-        parent_tid: *mut c_int,
-        tls: c_ulong,
-        child_tid: *mut c_int
-        => Result<pid_t>
-    );
-
-    clone_raw(flags, stack, parent_tid, tls, child_tid)
-}
-
-// TODO: Never returns
-syscall!(exit, bindings::SYS_exit, status: c_int => Infallible<u64>);
 
 syscall!(uname, bindings::SYS_uname, name: *mut bindings::new_utsname => Result<()>);
 
@@ -185,10 +146,8 @@ syscall!(getpid, bindings::SYS_getpid => Infallible<pid_t>);
 syscall!(getppid, bindings::SYS_getppid => Infallible<pid_t>);
 syscall!(gettid, bindings::SYS_gettid => Infallible<pid_t>);
 
+syscall!(getsid, bindings::SYS_getsid => Result<pid_t>);
 syscall!(setsid, bindings::SYS_setsid => Result<pid_t>);
-
-// TODO: Switch last argument to a bindings::rusage
-syscall!(wait4, bindings::SYS_wait4, pid: pid_t, wstatus: *mut c_int, options: c_int, ru: *mut c_void => Result<pid_t>);
 
 syscall!(eventfd, bindings::SYS_eventfd, count: c_uint => Result<c_int>);
 syscall!(eventfd2, bindings::SYS_eventfd2, count: c_uint, flags: c_uint => Result<c_int>);

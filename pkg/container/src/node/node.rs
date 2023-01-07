@@ -219,8 +219,11 @@ impl Node {
             core::cmp::max(last_db_time, current_time)
         };
 
-        let runtime =
-            ContainerRuntime::create(LocalPath::new(config.data_dir()).join("run")).await?;
+        let runtime = ContainerRuntime::create(
+            LocalPath::new(config.data_dir()).join("run"),
+            config.cgroup_dir(),
+        )
+        .await?;
         let inst = NodeInner {
             shared: Arc::new(NodeShared {
                 id,
@@ -922,6 +925,19 @@ impl NodeInner {
 
         // container_config.process_mut().set_terminal(true);
 
+        if !self.shared.config.init_process_args().is_empty() {
+            // Mount the init process binary into the container
+            let mut mount = ContainerMount::default();
+            mount.set_destination("/init");
+            mount.set_source(&self.shared.config.init_process_args()[0]);
+            mount.add_options("bind".into());
+            mount.add_options("ro".into());
+            container_config.add_mounts(mount);
+
+            container_config.process_mut().add_args("/init".into());
+            container_config.process_mut().add_args("--".into());
+        }
+
         for arg in worker.spec.args() {
             container_config.process_mut().add_args(arg.clone());
         }
@@ -1398,7 +1414,7 @@ impl NodeInner {
 
         self.shared
             .runtime
-            .kill_container(container_id, nix::sys::signal::Signal::SIGINT)
+            .kill_container(container_id, sys::Signal::SIGINT)
             .await?;
 
         // TODO: Instead use the worker id of the child worker.
@@ -1442,7 +1458,7 @@ impl NodeInner {
 
         self.shared
             .runtime
-            .kill_container(container_id, nix::sys::signal::Signal::SIGKILL)
+            .kill_container(container_id, sys::Signal::SIGKILL)
             .await?;
 
         worker.state = WorkerState::ForceStopping;
@@ -1452,6 +1468,11 @@ impl NodeInner {
     }
 
     pub async fn start_worker(&self, request: &StartWorkerRequest) -> Result<()> {
+        // Do some validation
+        if request.spec().name().is_empty() {
+            return Err(rpc::Status::invalid_argument("Invalid worker name").into());
+        }
+
         let mut state_guard = self.shared.state.lock().await;
         let state = &mut *state_guard;
 

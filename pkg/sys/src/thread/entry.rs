@@ -46,5 +46,5 @@ unsafe extern "C" fn thread_entry_fn(thread_func: *mut ThreadFunction) {
     // TODO: dealloc the stack memory (assuming we can call exit() without any stack
     // pushes).
 
-    crate::exit(status);
+    crate::exit(status as u8);
 }

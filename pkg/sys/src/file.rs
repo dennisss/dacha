@@ -33,7 +33,7 @@ impl Drop for OpenFileDescriptor {
     fn drop(&mut self) {
         if !self.leak {
             unsafe {
-                // TODO: Check result?
+                // If this fails, then there are incorrect file life times.
                 close(self.fd).unwrap();
             }
         }

@@ -17,3 +17,5 @@
 #include <linux/tcp.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <sys/ioctl.h>

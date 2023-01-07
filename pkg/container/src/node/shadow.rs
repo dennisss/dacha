@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::path::Path;
 
 use common::errors::*;
@@ -87,6 +88,12 @@ impl IdRange {
     }
 }
 
+impl Display for IdRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}, {})", self.start_id, self.start_id + self.count)
+    }
+}
+
 pub struct SubordinateIdRange {
     pub name: String,
     pub ids: IdRange,
@@ -129,6 +136,12 @@ pub fn read_subgids() -> Result<Vec<SubordinateIdRange>> {
 pub struct IdMapping {
     pub id: u32,
     pub new_ids: IdRange,
+}
+
+impl Display for IdMapping {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} -> {}", self.id, self.new_ids)
+    }
 }
 
 pub fn newuidmap(pid: i32, mappings: &[IdMapping]) -> Result<()> {
