@@ -34,7 +34,10 @@ use nix::unistd::{dup2, Pid};
 use crate::proto::config::*;
 use crate::runtime::fd::*;
 
-use super::setup_socket::SetupSocketChild;
+use super::constants::FINISHED_SETUP_BYTE;
+use super::constants::TERMINAL_FD_BYTE;
+use super::constants::USER_NS_SETUP_BYTE;
+use crate::setup_socket::SetupSocketChild;
 
 // NOTE: You should only pass references as arguments to this and no async_std
 // objects can be used in this. e.g. If a async_std::fs::File object is blocked
@@ -65,6 +68,8 @@ pub fn run_child_process(
     status
 }
 
+// TODO: Ensure no propagation of outer environment variables to here.
+
 // TODO: Rename the FileMapping to the StdioMapping as we currently only support
 // using it for that purpose.
 fn run_child_process_inner(
@@ -74,10 +79,12 @@ fn run_child_process_inner(
     file_mapping: &FileMapping,
 ) -> Result<()> {
     // Block until the parent is done with setting up our environment.
-    setup_socket.wait_user_ns_setup()?;
+    setup_socket.wait(USER_NS_SETUP_BYTE)?;
 
     // The root directory of the container will be world readable so that the
     // container user can read from it.
+    //
+    // TODO: Just change the group of the root to the container user
     umask(Mode::from_bits_truncate(0o002));
 
     // Change the properties of the existing '/' mount such that we:
@@ -86,6 +93,7 @@ fn run_child_process_inner(
     mount::<str, str, str, str>(None, "/", None, MsFlags::MS_SLAVE | MsFlags::MS_REC, None)?;
 
     // Create the directory that we'll use for the new root fs.
+    // The owner will be the root container runtime process user.
     // TODO: Be very explicit about what permission flags should be set on this.
     let root_dir = container_dir.join("root");
     std::fs::create_dir(&root_dir)?;
@@ -240,6 +248,7 @@ fn run_child_process_inner(
         nix::unistd::chdir("/")?;
     }
 
+    // TODO: Move this comment somewhere else
     // Based on https://man7.org/linux/man-pages/man4/pts.4.html,
     // "major number 5 and minor number 2, usually with mode 0666 and ownership
     // root:root"
@@ -360,8 +369,9 @@ fn exec_child_process(
         }
 
         // Send the primary end to the parent process.
-        setup_socket
-            .send_terminal_fd(unsafe { std::fs::File::from_raw_fd(term_primary.into_raw_fd()) })?;
+        setup_socket.send_fd(TERMINAL_FD_BYTE, unsafe {
+            std::fs::File::from_raw_fd(term_primary.into_raw_fd())
+        })?;
 
         // Explicitly closing to make it clear that this file doesn't
         // drop(term_primary);
@@ -378,7 +388,7 @@ fn exec_child_process(
         }
     }
 
-    setup_socket.wait_finished()?;
+    setup_socket.wait(FINISHED_SETUP_BYTE)?;
 
     if !process.cwd().is_empty() {
         std::env::set_current_dir(process.cwd())?;

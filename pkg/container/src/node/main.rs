@@ -19,8 +19,13 @@ use crate::node::shadow::*;
 use crate::proto::node::NodeConfig;
 use crate::proto::node_service::ContainerNodeIntoService;
 use crate::runtime::fd::FileReference;
+use crate::setup_socket::{SetupSocket, SetupSocketChild, SetupSocketParent};
 
-const MAGIC_STARTUP_BYTE: u8 = 0x88;
+const START_CHILD_BYTE: u8 = 0x88;
+
+const CGROUP_NAMESPACE_SETUP_BYTE: u8 = 0x89;
+
+const FINISHED_BYTE: u8 = 0x90;
 
 #[derive(Args)]
 struct Args {
@@ -169,15 +174,46 @@ pub fn main() -> Result<()> {
         local_address,
     };
 
-    let (root_process, mut setup_sender) = spawn_root_process(&node_context, &config)?;
+    let (root_process, mut setup_parent) = spawn_root_process(&node_context, &config)?;
 
     println!("Root Pid: {}", root_process.pid());
 
     newuidmap(root_process.pid(), &uidmap)?;
     newgidmap(root_process.pid(), &gidmap)?;
 
-    setup_sender.write_all(&[MAGIC_STARTUP_BYTE])?;
-    drop(setup_sender);
+    // Move the root process into its own cgroup.
+    newcgroup(root_process.pid(), config.cgroup_dir())
+        .map_err(|e| format_err!("While trying to create node's cgroup: {}", e))?;
+
+    setup_parent.notify(START_CHILD_BYTE)?;
+    setup_parent.wait(CGROUP_NAMESPACE_SETUP_BYTE)?;
+
+    {
+        // Create a sub-group to hold the root process (because cgroups only allows
+        // processes in leaf trees).
+        let self_group = LocalPath::new(config.cgroup_dir()).join("cluster_node");
+        std::fs::create_dir(&self_group).unwrap();
+
+        // Move the root process into the sub-group.
+        std::fs::write(
+            self_group.join("cgroup.procs"),
+            root_process.pid().to_string(),
+        )
+        .unwrap();
+
+        // Delegate all controllers to the subtree.
+        // NOTE: This must be run in the a process not in the cgroup when we are adding
+        // 'cpuset'.
+        std::fs::write(
+            LocalPath::new(config.cgroup_dir()).join("cgroup.subtree_control"),
+            "+cpuset +cpu +io +memory +pids",
+        )
+        .unwrap();
+    }
+
+    setup_parent.notify(FINISHED_BYTE)?;
+
+    drop(setup_parent);
 
     root_process.wait()?;
 
@@ -187,11 +223,13 @@ pub fn main() -> Result<()> {
 fn spawn_root_process(
     context: &NodeContext,
     config: &NodeConfig,
-) -> Result<(MainProcess, std::fs::File)> {
-    let (setup_reader_ref, setup_writer_ref) = FileReference::pipe()?;
+) -> Result<(MainProcess, SetupSocketParent)> {
+    let (setup_parent, setup_child) = SetupSocket::create()?;
 
-    let mut setup_reader_ref = Some(setup_reader_ref);
-    let mut setup_writer_ref = Some(setup_writer_ref);
+    let mut setup_parent = Some(setup_parent);
+    let mut setup_child = Some(setup_child);
+
+    // TODO: Differentiate the parent and child process names
 
     // TODO: Verify that CLONE_NEWNS still allows us to inherit new mounts from the
     // parent namespace.
@@ -200,33 +238,28 @@ fn spawn_root_process(
             use_setsid: true,
             clone_flags: sys::CloneFlags::CLONE_NEWUSER
                 | sys::CloneFlags::CLONE_NEWPID
-                | sys::CloneFlags::CLONE_NEWNS
-                | sys::CloneFlags::CLONE_NEWCGROUP,
+                | sys::CloneFlags::CLONE_NEWNS,
             raise_second_sigint: true,
         },
         || {
             // Close the writer in the child
-            setup_writer_ref.take();
+            setup_parent.take();
 
-            run_root_process(
-                context,
-                config,
-                setup_reader_ref.take().unwrap().open().unwrap(),
-            )
+            run_root_process(context, config, setup_child.take().unwrap())
         },
     )?;
 
     // NOTE: The reader will be dropped in the parent on drop().
 
-    Ok((init_process, setup_writer_ref.unwrap().open()?))
+    Ok((init_process, setup_parent.unwrap()))
 }
 
 fn run_root_process(
     context: &NodeContext,
     config: &NodeConfig,
-    setup_reader: std::fs::File,
+    setup_child: SetupSocketChild,
 ) -> sys::ExitCode {
-    let result = executor::run(run(context, config, setup_reader)).unwrap();
+    let result = executor::run(run(context, config, setup_child)).unwrap();
     let code = match result {
         Ok(()) => 0,
         Err(e) => {
@@ -241,13 +274,13 @@ fn run_root_process(
 async fn run(
     context: &NodeContext,
     config: &NodeConfig,
-    mut setup_reader: std::fs::File,
+    mut setup_child: SetupSocketChild,
 ) -> Result<()> {
-    let mut done_byte = [0u8; 1];
-    setup_reader.read_exact(&mut done_byte)?;
-    if &done_byte != &[MAGIC_STARTUP_BYTE] {
-        return Err(err_msg("Incorrect startup byte received from parent"));
-    }
+    setup_child.wait(START_CHILD_BYTE)?;
+    unsafe { sys::unshare(sys::CloneFlags::CLONE_NEWCGROUP).unwrap() };
+    setup_child.notify(CGROUP_NAMESPACE_SETUP_BYTE)?;
+
+    setup_child.wait(FINISHED_BYTE)?;
 
     if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) } != 0 {
         return Err(err_msg("Failed to set PR_SET_PDEATHSIG"));
@@ -266,16 +299,6 @@ async fn run(
         MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
         Option::<&str>::None,
     )?;
-
-    // Remount our cgroup v2 namespace entirely as we cloned with CLONE_NEWCGROUP.
-    nix::mount::mount(
-        Some("cgroup2"),
-        config.cgroup_dir(),
-        Some("cgroup2"),
-        MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
-        Option::<&str>::None,
-    )
-    .map_err(|e| format_err!("While mounting cgroup fs: {}", e))?;
 
     // TODO: Create the root directory and set permissions to 600
     // NOTE: This directory should be created with mode 700 where the user running
@@ -301,11 +324,29 @@ async fn run(
     server.add_reflection()?;
     server.set_shutdown_token(executor::signals::new_shutdown_token());
 
+    // TODO: Some of these tasks should be marked as non-blocking so should just be
+    // cancelled but not necessary blocked till completion.
     task_bundle.add("rpc::Server", server.run(config.service_port() as u16));
 
     // TODO: Join the task.
 
     task_bundle.join().await?;
+
+    Ok(())
+}
+
+fn newcgroup(pid: sys::pid_t, dir: &str) -> Result<()> {
+    // TODO: Make this a private binary as we don't want a human to directly call
+    // it.
+    let binary = project_path!("bin/newcgroup").to_string();
+
+    let mut child = std::process::Command::new(&binary)
+        .args(&[&pid.to_string(), dir])
+        .spawn()?;
+    let status = child.wait()?;
+    if !status.success() {
+        return Err(format_err!("newcgroup exited with failure: {}", status));
+    }
 
     Ok(())
 }

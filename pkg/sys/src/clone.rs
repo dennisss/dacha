@@ -82,10 +82,17 @@ define_bit_flags!(CloneFlags u64 {
     CLONE_INTO_CGROUP = 0x200000000
 });
 
+/// TODO: Further restrict the CloneFlags?
+pub unsafe fn unshare(flags: CloneFlags) -> Result<(), Errno> {
+    raw::unshare(flags.to_raw())
+}
+
 mod raw {
     use super::*;
 
     syscall!(clone3, bindings::SYS_clone3, uargs: *const kernel::clone_args, size: c_size_t => Result<pid_t>);
+
+    syscall!(unshare, bindings::SYS_unshare, flags: u64 => Result<()>);
 }
 
 // Old non-extensible clone functions

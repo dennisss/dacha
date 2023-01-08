@@ -19,6 +19,25 @@ use rpc_test::proto::adder::*;
 #[derive(Args)]
 struct Args {
     target: String,
+    command: Command,
+}
+
+#[derive(Args)]
+enum Command {
+    #[arg(name = "add")]
+    Add {
+        #[arg(positional)]
+        x: i32,
+
+        #[arg(positional)]
+        y: i32,
+    },
+
+    #[arg(name = "busy_loop")]
+    BusyLoop {
+        #[arg(positional)]
+        cpu_usage: f32,
+    },
 }
 
 async fn run_client() -> Result<()> {
@@ -41,6 +60,31 @@ async fn run_client() -> Result<()> {
     };
 
     let stub = AdderStub::new(channel);
+
+    match args.command {
+        Command::Add { x, y } => {
+            let mut req = AddRequest::default();
+            req.set_x(x);
+            req.set_y(y);
+
+            let res = stub
+                .Add(&rpc::ClientRequestContext::default(), &req)
+                .await
+                .result?;
+
+            println!("{}", res.z());
+        }
+        Command::BusyLoop { cpu_usage } => {
+            let mut req = BusyLoopRequest::default();
+            req.set_cpu_usage(cpu_usage);
+
+            stub.BusyLoop(&rpc::ClientRequestContext::default(), &req)
+                .await
+                .result?;
+        }
+    }
+
+    return Ok(());
 
     let mut req = AddRequest::default();
     req.set_x(10);

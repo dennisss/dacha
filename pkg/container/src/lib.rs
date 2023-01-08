@@ -32,6 +32,7 @@ pub mod node;
 mod proto;
 mod runtime;
 pub mod service;
+mod setup_socket;
 
 pub use manager::main::main as manager_main;
 pub use node::main::main as node_main;

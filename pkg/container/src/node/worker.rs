@@ -27,6 +27,8 @@ pub(super) struct Worker {
     /// Will be reset to false once we have entired the Starting|Running state.
     pub pending_update: Option<StartWorkerRequest>,
 
+    /// If true, this container won't be restarted regardless of its restart
+    /// policy.
     pub permanent_stop: bool,
 
     /// Leases for all blobs in use by this worker when running.

@@ -3,29 +3,29 @@ use std::os::unix::prelude::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Once;
+use std::time::Duration;
 
 use common::errors::*;
 use common::io::Writeable;
 use crypto::random::SharedRng;
+use executor::bundle::TaskResultBundle;
 use executor::channel;
 use executor::child_task::ChildTask;
 use executor::signals::*;
 use executor::sync::Mutex;
 use executor::JoinHandle;
 use file::{LocalFile, LocalPath, LocalPathBuf};
-use libc::CLONE_NEWUSER;
-use nix::fcntl::OFlag;
-use nix::sched::CloneFlags;
-use nix::sys::socket::{MsgFlags, SockFlag};
-use nix::sys::wait::WaitPidFlag;
-use nix::unistd::Pid;
+use sys::{WaitOptions, WaitStatus};
 
 use crate::proto::config::*;
 use crate::proto::log::*;
 use crate::runtime::child::*;
 use crate::runtime::fd::*;
 use crate::runtime::logging::*;
-use crate::runtime::setup_socket::SetupSocket;
+use crate::setup_socket::SetupSocket;
+
+use super::cgroup::Cgroup;
+use super::constants::{FINISHED_SETUP_BYTE, TERMINAL_FD_BYTE, USER_NS_SETUP_BYTE};
 
 // Let's move this stuff into separate submodules
 
@@ -50,6 +50,15 @@ pub struct ContainerRuntime {
     ///   LogEntry protos.
     run_dir: LocalPathBuf,
 
+    /// Cgroup V2 file system root directory.
+    ///
+    /// We assume that the current user is the owner of this directory (e.g.
+    /// systemd has granted us our own cgroup).
+    ///
+    /// We will create a directories named '{container-id}' under this directory
+    /// for each container.
+    cgroup_dir: LocalPathBuf,
+
     /// State associated with all started containers.
     /// Entries are only removed from this set when the user calls
     /// remove_container().
@@ -69,7 +78,10 @@ struct Container {
     /// logs.
     directory: LocalPathBuf,
 
-    pid: Pid,
+    /// TODO: Clean this the backing directory for this eventually.
+    cgroup: Cgroup,
+
+    pid: sys::pid_t,
 
     /// If this container was
     stdin: Mutex<Option<LocalFile>>,
@@ -82,9 +94,21 @@ struct Container {
     event_sender: channel::Sender<ContainerStatus>,
 }
 
+impl Container {
+    fn metadata(&self) -> ContainerMetadata {
+        let mut meta = self.metadata.clone();
+        meta.resource_usage_mut()
+            .set_cpu_fraction(self.cgroup.cpu_usage());
+        meta.resource_usage_mut()
+            .set_memory_bytes(self.cgroup.memory_usage());
+        meta
+    }
+}
+
 struct ContainerWaiter {
     container_id: String,
     container_dir: LocalPathBuf,
+    // TODO: a LocalFile is unappropriate with a this as it is not seekable.
     output_streams: Vec<(LogStream, LocalFile)>,
     event_receiver: channel::Receiver<ContainerStatus>,
 }
@@ -104,13 +128,14 @@ impl ContainerRuntime {
     ///
     /// NOTE: Only one instance of the ContainerRuntime is allowed to exist in
     /// the same process.
-    pub async fn create<P: AsRef<LocalPath>>(run_dir: P) -> Result<Arc<Self>> {
+    pub async fn create<P: AsRef<LocalPath>>(run_dir: P, cgroup_dir: &str) -> Result<Arc<Self>> {
         if INSTANCE_LOCK.swap(true, Ordering::SeqCst) {
             return Err(err_msg("ContainerRuntime instance already exists"));
         }
 
         Ok(Arc::new(Self {
             run_dir: run_dir.as_ref().to_owned(),
+            cgroup_dir: LocalPathBuf::from(cgroup_dir),
             containers: Mutex::new(vec![]),
             event_listeners: Mutex::new(vec![]),
         }))
@@ -119,18 +144,34 @@ impl ContainerRuntime {
     /// Runs the processing loop of the runtime. This must be continously polled
     /// while the ContainerRuntime is in use.
     pub async fn run(self: Arc<Self>) -> Result<()> {
+        let mut bundle = TaskResultBundle::new();
+        bundle.add(
+            "cluster::ContainerRuntime::run_waitpid",
+            Self::run_waitpid(self.clone()),
+        );
+        bundle.add(
+            "cluster::ContainerRuntime::run_cgroup_monitor",
+            Self::run_cgroup_monitor(self.clone()),
+        );
+
+        bundle.join().await
+    }
+
+    async fn run_waitpid(self: Arc<Self>) -> Result<()> {
         let mut sigchld_receiver = register_signal_handler(Signal::SIGCHLD)?;
 
         loop {
             sigchld_receiver.recv().await;
 
             loop {
-                let e = match nix::sys::wait::waitpid(
-                    None,
-                    Some(WaitPidFlag::WUNTRACED | WaitPidFlag::WNOHANG),
-                ) {
+                let e = match unsafe {
+                    sys::waitpid(
+                        -1, // TODO: Chance this to None
+                        WaitOptions::WUNTRACED | WaitOptions::WNOHANG,
+                    )
+                } {
                     Ok(e) => e,
-                    Err(nix::Error::Sys(nix::errno::Errno::ECHILD)) => {
+                    Err(sys::Errno::ECHILD) => {
                         // This means that we don't have any more children.
                         // Break so that we wait for the next SIGCHLD signal to reap more.
                         break;
@@ -143,7 +184,10 @@ impl ContainerRuntime {
                 let containers = self.containers.lock().await;
 
                 match e {
-                    nix::sys::wait::WaitStatus::Exited(pid, exit_code) => {
+                    WaitStatus::Exited {
+                        pid,
+                        status: exit_code,
+                    } => {
                         let container = containers.iter().find(|c| c.pid == pid).unwrap();
 
                         let mut status = ContainerStatus::default();
@@ -151,26 +195,49 @@ impl ContainerRuntime {
 
                         let _ = container.event_sender.try_send(status);
                     }
-                    nix::sys::wait::WaitStatus::Signaled(pid, signal, _) => {
+                    WaitStatus::Signaled {
+                        pid,
+                        signal,
+                        core_dumped,
+                    } => {
                         let container = containers.iter().find(|c| c.pid == pid).unwrap();
 
                         let mut status = ContainerStatus::default();
-                        status.set_killed_signal(signal.as_str());
+                        status.set_killed_signal(signal.as_str().unwrap_or("UNKNOWN"));
 
                         let _ = container.event_sender.try_send(status);
                     }
-                    nix::sys::wait::WaitStatus::PtraceEvent(pid, _, _)
-                    | nix::sys::wait::WaitStatus::PtraceSyscall(pid)
-                    | nix::sys::wait::WaitStatus::Stopped(pid, _) => {
-                        nix::sys::signal::kill(pid, Signal::SIGKILL)?;
+                    // TODO: Kill these as well?
+                    WaitStatus::Unknown { .. } => {}
+                    // nix::sys::wait::WaitStatus::PtraceEvent(pid, _, _)
+                    // | nix::sys::wait::WaitStatus::PtraceSyscall(pid)
+                    WaitStatus::Stopped { pid, signal } => {
+                        unsafe { sys::kill(pid, sys::Signal::SIGKILL)? };
                     }
-                    nix::sys::wait::WaitStatus::Continued(_) => {}
-                    nix::sys::wait::WaitStatus::StillAlive => {
+                    WaitStatus::Continued { .. } => {}
+                    WaitStatus::NoStatus => {
                         break;
                     }
                 }
             }
         }
+    }
+
+    /// Task for periodically monitoring cgroup resource usage.
+    async fn run_cgroup_monitor(self: Arc<Self>) -> Result<()> {
+        loop {
+            {
+                let mut containers = self.containers.lock().await;
+
+                for container in &mut containers[..] {
+                    container.cgroup.collect_measurement().await?;
+                }
+            }
+
+            executor::sleep(Duration::from_secs(1)).await?;
+        }
+
+        Ok(())
     }
 
     /// Registers and returns an event listener which will be notified when
@@ -192,7 +259,7 @@ impl ContainerRuntime {
         containers
             .iter()
             .find(|c| c.metadata.id() == container_id)
-            .map(|c| c.metadata.clone())
+            .map(|c| c.metadata())
     }
 
     pub async fn list_containers(&self) -> Vec<ContainerMetadata> {
@@ -201,7 +268,7 @@ impl ContainerRuntime {
         let mut output = vec![];
         output.reserve_exact(containers.len());
         for container in containers.iter() {
-            output.push(container.metadata.clone());
+            output.push(container.metadata());
         }
 
         output
@@ -261,9 +328,13 @@ impl ContainerRuntime {
         let container_dir = self.run_dir.join(&container_id);
         file::create_dir_all(&container_dir).await?;
 
-        // TODO: Don't pass this given that we are using CLONE_VM so shouldn't need a
-        // new stack.
-        let mut stack = vec![0u8; 1024 * 1024 * 1]; // 1MB
+        let cgroup_dir = self.cgroup_dir.join(&container_id);
+        file::create_dir(&cgroup_dir).await?;
+
+        let mut cgroup = Cgroup::new(cgroup_dir.clone());
+        cgroup.set_max_pids(100_000).await?;
+
+        // TODO: Also add rlimit/ulimits for stuff like max number of fds.
 
         // NOTE: We use 'clone()' instead of 'fork()' to immediately put the sub-process
         // into a new PID namespace ('unshare()' requires an extra fork for
@@ -293,6 +364,10 @@ impl ContainerRuntime {
                 (LogStream::STDERR, stderr_read.open()?.into()),
             ];
         }
+
+        // TODO: Move this logic into the Cgroup struct (it's useful for implementing
+        // openat). TODO: Just open with O_PATH.
+        let cgroup_file = file::LocalFile::open(&cgroup_dir)?;
 
         /*
         let parent_pid = parent_container.pid.as_raw();
@@ -338,22 +413,25 @@ impl ContainerRuntime {
         // that by default the init process won't be killed by SIGINT|SIGTERM so
         // if we ask to immediately kill a container after it is started, the
         // container init process may not notice until
-        let pid = nix::sched::clone(
-            Box::new(|| {
+        let pid = sys::CloneArgs::new()
+            .flags(
+                sys::CloneFlags::CLONE_NEWUSER
+                    | sys::CloneFlags::CLONE_NEWPID
+                    | sys::CloneFlags::CLONE_NEWNS
+                    | sys::CloneFlags::CLONE_NEWIPC
+                    | sys::CloneFlags::CLONE_INTO_CGROUP
+                    | sys::CloneFlags::CLONE_NEWCGROUP,
+            )
+            .sigchld()
+            .cgroup(unsafe { cgroup_file.as_raw_fd() })
+            .spawn_process(|| {
                 run_child_process(
                     &container_config,
                     container_dir.as_ref(),
                     &mut socket_c,
                     &file_mapping,
                 )
-            }),
-            &mut stack,
-            CloneFlags::CLONE_NEWUSER
-                | CloneFlags::CLONE_NEWPID
-                | CloneFlags::CLONE_NEWNS
-                | CloneFlags::CLONE_NEWIPC,
-            Some(libc::SIGCHLD),
-        )?;
+            })?;
 
         let (event_sender, event_receiver) = channel::bounded(1);
 
@@ -364,6 +442,7 @@ impl ContainerRuntime {
         containers.push(Container {
             metadata: meta,
             directory: container_dir.to_owned(),
+            cgroup,
             pid,
             // TODO: Revert to always being a non-Option type so that it can be cancelled easily.
             waiter_task: None,
@@ -382,7 +461,7 @@ impl ContainerRuntime {
         // TODO: If anything below this point fails, should we kill the container?
 
         // For now just copy the uid/gid maps of the parent.
-        // NOTE: Because this contains the user that runs the main container_node
+        // NOTE: Because this contains the user that runs the main cluster_node
         // process, we should never give the user CAP_SETUID in this namespace.
         //
         // TODO: Before writing the gid_map, we should write "/proc/[pid]/setgroups".
@@ -393,7 +472,7 @@ impl ContainerRuntime {
         file::copy("/proc/self/uid_map", format!("/proc/{}/uid_map", pid)).await?;
         file::copy("/proc/self/gid_map", format!("/proc/{}/gid_map", pid)).await?;
 
-        socket_p.notify_user_ns_setup()?;
+        socket_p.notify(USER_NS_SETUP_BYTE)?;
 
         // Receive the TTY
 
@@ -401,7 +480,7 @@ impl ContainerRuntime {
         // just one logging instance though
 
         if container_config.process().terminal() {
-            let terminal_file = socket_p.recv_terminal_fd()?;
+            let terminal_file = socket_p.recv_fd(TERMINAL_FD_BYTE)?;
             let terminal_file_2 = terminal_file.try_clone()?;
 
             output_streams = vec![(LogStream::STDOUT, terminal_file.into())];
@@ -435,14 +514,14 @@ impl ContainerRuntime {
             container.waiter_task = Some(waiter_task);
         }
 
-        socket_p.notify_finished()?;
+        socket_p.notify(FINISHED_SETUP_BYTE)?;
 
         Ok(container_id)
     }
 
     // TODO: Verify that this doesn't fail if the container has already been stopped
     // as this may be a race condition.
-    pub async fn kill_container(&self, container_id: &str, signal: Signal) -> Result<()> {
+    pub async fn kill_container(&self, container_id: &str, signal: sys::Signal) -> Result<()> {
         let containers = self.containers.lock().await;
         let container = match containers.iter().find(|c| c.metadata.id() == container_id) {
             Some(c) => c,
@@ -455,7 +534,7 @@ impl ContainerRuntime {
         // If it is still being created, we may need to take special action to kill it.
 
         // TODO: Should I ignore ESRCH?
-        nix::sys::signal::kill(container.pid, signal)?;
+        unsafe { sys::kill(container.pid, signal)? };
         Ok(())
     }
 

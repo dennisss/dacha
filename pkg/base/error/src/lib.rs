@@ -21,3 +21,8 @@ pub use error_failure::*;
 pub mod error_new;
 #[cfg(not(feature = "std"))]
 pub use error_new::*;
+
+#[cfg(feature = "std")]
+mod helpers;
+#[cfg(feature = "std")]
+pub use helpers::*;

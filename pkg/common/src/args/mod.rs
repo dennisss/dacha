@@ -240,6 +240,8 @@ impl_arg_type_from_str!(u64);
 impl_arg_type_from_str!(i64);
 impl_arg_type_from_str!(usize);
 impl_arg_type_from_str!(isize);
+impl_arg_type_from_str!(f32);
+impl_arg_type_from_str!(f64);
 
 pub fn parse_args<Args: ArgsType + Sized>() -> Result<Args> {
     let mut raw_args = RawArgs::create_from_env()?;

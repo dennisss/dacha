@@ -14,6 +14,7 @@ mod syscall;
 
 mod capabilities;
 mod clone;
+mod credentials;
 mod epoll;
 mod errno;
 mod exit;
@@ -47,6 +48,7 @@ pub mod bindings {
 pub use capabilities::*;
 pub use clone::*;
 pub use core::ffi::{c_size_t, c_ssize_t, c_uchar, c_void};
+pub use credentials::*;
 pub use epoll::*;
 pub use errno::*;
 pub use exit::*;

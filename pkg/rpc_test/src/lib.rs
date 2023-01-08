@@ -10,13 +10,14 @@ extern crate macros;
 
 pub mod proto;
 
+use core::arch::asm;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::errors::*;
 use common::io::Writeable;
-use executor::channel;
 use executor::sync::Mutex;
+use executor::{channel, child_task::ChildTask};
 use file::{LocalFile, LocalFileOpenOptions};
 use http::v2::ProtocolErrorV2;
 use proto::adder::*;
@@ -27,6 +28,7 @@ pub struct AdderImpl {
     log_file: Option<Mutex<LocalFile>>,
     event_listener: Option<channel::Sender<AdderEvent>>,
     stats: Arc<Mutex<AdderStats>>,
+    busy_loop: Mutex<Option<ChildTask>>,
 }
 
 /// Event emitted while processing a adder request.
@@ -89,6 +91,7 @@ impl AdderImpl {
             log_file,
             event_listener: None,
             stats: Arc::new(Mutex::new(AdderStats::default())),
+            busy_loop: Mutex::new(None),
         })
     }
 
@@ -132,6 +135,43 @@ impl AdderImpl {
 
         Ok(())
     }
+
+    async fn handle_busy_loop(&self, request: &BusyLoopRequest) -> Result<()> {
+        let cpu_usage = request.cpu_usage();
+
+        *self.busy_loop.lock().await = Some(ChildTask::spawn(async move {
+            loop {
+                let time = Instant::now();
+                let usage_end = time + Duration::from_millis((100.0 * cpu_usage) as u64);
+                let cycle_end = time + Duration::from_millis(100);
+
+                loop {
+                    let time = Instant::now();
+                    if time >= usage_end {
+                        break;
+                    }
+
+                    // TODO: Use the perf busy loop.
+                    unsafe {
+                        asm!("nop");
+                        asm!("nop");
+                        asm!("nop");
+                        asm!("nop");
+                        asm!("nop");
+                        asm!("nop");
+                        asm!("nop");
+                        asm!("nop");
+                        asm!("nop");
+                        asm!("nop");
+                    }
+                }
+
+                executor::sleep(cycle_end - usage_end).await;
+            }
+        }));
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -145,6 +185,14 @@ impl AdderService for AdderImpl {
 
         self.handle_request(request.as_ref(), response.as_mut())
             .await
+    }
+
+    async fn BusyLoop(
+        &self,
+        request: rpc::ServerRequest<BusyLoopRequest>,
+        response: &mut rpc::ServerResponse<BusyLoopResponse>,
+    ) -> Result<()> {
+        self.handle_busy_loop(&request).await
     }
 
     async fn AddNeverReturn(

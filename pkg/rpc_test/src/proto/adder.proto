@@ -19,6 +19,12 @@ message AddResponse {
     int32 message_index = 2;
 }
 
+message BusyLoopRequest {
+    float cpu_usage = 1;
+}
+
+message BusyLoopResponse {}
+
 service Adder {
     rpc Add (AddRequest) returns (AddResponse);
 
@@ -29,4 +35,7 @@ service Adder {
     rpc AddNeverReturn (AddRequest) returns (AddResponse); 
 
     rpc IterateRange (AddRequest) returns (stream AddResponse);
+
+    rpc BusyLoop (BusyLoopRequest) returns (BusyLoopResponse);
 }
+

@@ -59,10 +59,18 @@ message ContainerMount {
 
 message ContainerMetadata {
     string id = 1;
+
     ContainerState state = 2;
 
     // Present when the state is Stopped to indicate why the container stopped.
     ContainerStatus status = 3;
+
+    ContainerResourceUsage resource_usage = 4;
+}
+
+message ContainerResourceUsage {
+    float cpu_fraction = 1;
+    uint64 memory_bytes = 2;
 }
 
 enum ContainerState {
