@@ -12,6 +12,11 @@ use crate::EmbeddedDBOptions;
 
 use super::merge_iterator::MergeIterator;
 
+/// A read-only point in time view of an EmbeddedDB.
+///
+/// This enables consistent reading over the database while encountering new
+/// writes. Note that while this object is alive, it will prevent garbage
+/// collection or compaction of the underlying table data.
 pub struct Snapshot {
     pub(crate) options: Arc<EmbeddedDBOptions>,
 
@@ -40,6 +45,7 @@ impl Snapshot {
             ));
         }
 
+        // TODO: Need checking against the compaction waterline.
         if let Some(first_sequence) = &options.first_sequence {
             if *first_sequence > self.last_sequence {
                 return Err(err_msg("first_sequence > last_sequence"));
@@ -105,6 +111,7 @@ impl Snapshot {
     pub async fn entry(&self, user_key: &[u8]) -> Result<Option<SnapshotKeyValueEntry>> {
         /*
         TODO: If any bloom/hash filters available.
+        ^ Basically going
 
         TODO: Unique optimizations that we can perform with this:
         - Never attempt to read from disk if the key if in the memtable.
@@ -133,10 +140,15 @@ pub struct SnapshotIteratorOptions {
     /// By default, only all the latest version of each key is returned.
     pub return_all_versions: bool,
 
+    /// If set, do not return any values which have a sequence number >
+    /// last_sequence.
+    ///
     /// Defaults to the last sequence in the database at the point at which the
     /// snapshot was created.
     pub last_sequence: Option<u64>,
 
+    /// If set, do not return any values which have a sequence number <
+    /// first_sequence.
     pub first_sequence: Option<u64>,
 }
 

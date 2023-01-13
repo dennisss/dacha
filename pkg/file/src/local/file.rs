@@ -17,8 +17,11 @@ pub struct LocalFileOpenOptions {
     write: bool,
     create: bool,
     create_new: bool,
+    create_synced: bool,
     truncate: bool,
     append: bool,
+
+    direct: bool,
 
     /// Used when creating new files. Some bits may get masked out by 'umask'.
     mode: u32,
@@ -31,14 +34,21 @@ impl LocalFileOpenOptions {
             write: false,
             create: false,
             create_new: false,
+            create_synced: false,
             truncate: false,
             append: false,
+            direct: false,
             mode: 0o666,
         }
     }
 
     pub fn read(&mut self, value: bool) -> &mut Self {
         self.read = value;
+        self
+    }
+
+    pub fn direct(&mut self, value: bool) -> &mut Self {
+        self.direct = value;
         self
     }
 
@@ -54,6 +64,12 @@ impl LocalFileOpenOptions {
 
     pub fn create_new(&mut self, value: bool) -> &mut Self {
         self.create_new = value;
+        self
+    }
+
+    /// If set to true, the creation of the file will be synced to disk.
+    pub fn create_synced(&mut self, value: bool) -> &mut Self {
+        self.create_synced = value;
         self
     }
 
@@ -88,7 +104,21 @@ impl LocalFile {
     fn open_impl(path: &LocalPath, options: &LocalFileOpenOptions) -> Result<Self> {
         // TODO: Use an async open.
 
-        let cpath = CString::new(path.as_str())?;
+        // TODO: When implementing openat,
+
+        if path.as_str().is_empty() {
+            return Err(FileError::NotFound.into());
+        }
+
+        // Make absolute so that it's easier to find the directory.
+        let path = {
+            if path.is_absolute() {
+                path.to_owned()
+            } else {
+                crate::current_dir()?.join(path)
+            }
+            .normalized()
+        };
 
         let mut flags = sys::O_RDONLY | sys::O_CLOEXEC;
         if options.create || options.create_new {
@@ -106,11 +136,54 @@ impl LocalFile {
         if options.append {
             flags |= sys::O_APPEND;
         }
+        if options.direct {
+            flags |= sys::O_DIRECT;
+        }
 
-        let fd = sys::OpenFileDescriptor::new(
-            unsafe { sys::open(cpath.as_ptr(), flags, options.mode as u16) }
-                .remap_errno::<FileError>()?,
-        );
+        // TODO: We should also use this approach with mkdirat when creating files.
+        let fd = {
+            if let Some(dir_path) = path.parent() && options.create_synced {
+                let dir_cpath = CString::new(dir_path.as_str())?;
+
+                let dir_fd = sys::OpenFileDescriptor::new(
+                    unsafe { sys::open(dir_cpath.as_ptr(), sys::O_DIRECTORY, 0) }
+                        .remap_errno::<FileError>()?,
+                );
+
+                // TODO: Make these to InvalidPath errors.
+                let file_cpath = CString::new(path.file_name().unwrap())?;
+
+                let fd = unsafe {
+                    sys::openat(
+                        dir_fd.as_raw_fd(),
+                        file_cpath.as_ptr(),
+                        flags,
+                        options.mode as u16,
+                    )
+                }
+                .remap_errno::<FileError>()?;
+
+                // Here we assume that if the sync fails, the file system will revert back to
+                // the previous state before the file was created. So if this fails, we won't
+                // expose a potentially adandoned file to the caller and they will need to retry
+                // against the FS to get the file again (readers should not see it on failures
+                // if our assumptions are correct).
+                //
+                // TODO: For this to be correct, we will also need to fsync while using mkdirat.
+                if options.create_synced {
+                    unsafe { sys::fsync(dir_fd.as_raw_fd()) }?;
+                }
+
+                fd
+            } else {
+                // This should only happen for opening "/"
+                let cpath = CString::new(path.as_str())?;
+                unsafe { sys::open(cpath.as_ptr(), flags, options.mode as u16) }
+                    .remap_errno::<FileError>()?
+            }
+        };
+
+        let fd = sys::OpenFileDescriptor::new(fd);
 
         Ok(Self {
             file: FileHandle::new(fd, true),

@@ -25,6 +25,10 @@ const MAX_MEMTABLE_LEVEL: usize = 2;
 
 pub type FileReleasedCallback = Arc<dyn Fn(u64) + Send + Sync + 'static>;
 
+/// A set of versions.
+///
+/// More specifically we maintain:
+/// - The value of the current version is
 pub struct VersionSet {
     options: Arc<EmbeddedDBOptions>,
 
@@ -52,6 +56,7 @@ pub struct VersionSet {
 }
 
 impl VersionSet {
+    /// Creates a new completely empty set containing new files.
     pub fn new(release_callback: FileReleasedCallback, options: Arc<EmbeddedDBOptions>) -> Self {
         Self {
             options,
@@ -86,6 +91,10 @@ impl VersionSet {
         self.last_sequence
     }
 
+    /// Writes a complete snapshot of this object to the given log file.
+    ///
+    /// - 'writer' should refer to an empty log file.
+    /// - This can later be restored using 'recover_existing'
     pub async fn write_to_new(&self, writer: &mut RecordWriter) -> Result<()> {
         let mut edit = VersionEdit::default();
         edit.next_file_number = Some(self.next_file_number);
@@ -281,6 +290,7 @@ impl VersionSet {
         let options = SSTableOpenOptions {
             comparator: self.options.table_options.comparator.clone(),
             block_cache: self.options.block_cache.clone(),
+            filter_registry: self.options.filter_registry.clone(),
         };
 
         // TODO: Parallelize me.
@@ -289,8 +299,7 @@ impl VersionSet {
                 let mut table = entry.table.lock().await;
                 if table.is_none() {
                     *table = Some(Arc::new(
-                        SSTable::open(dir.table(entry.entry.number).read_path(), options.clone())
-                            .await?,
+                        SSTable::open(dir.table(entry.entry.number), options.clone()).await?,
                     ));
                 }
             }
@@ -470,6 +479,7 @@ pub struct CompactionSpec<'a> {
     pub found_overlap: bool,
 }
 
+/// A single immutable point in time view of all the tables written to disk.
 #[derive(Clone)]
 pub struct Version {
     /// All tables stored on disk.
@@ -482,10 +492,11 @@ pub struct Version {
 
 #[derive(Clone)]
 pub struct Level {
-    /// Total size in bytes of all tables in this level
+    /// Total size in bytes of all tables in this level.
     pub total_size: u64,
 
-    /// Maximum number of bytes allowed to be in this level until we
+    /// Maximum number of bytes allowed to be in this level. If we exceed this,
+    /// we will soon try to compact some tables into the next level.
     pub max_size: u64,
 
     pub target_file_size: u64,

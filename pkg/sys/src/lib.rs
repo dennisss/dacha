@@ -89,6 +89,10 @@ pub use bindings::{
     pollfd, O_APPEND, O_CLOEXEC, O_CREAT, O_EXCL, O_NONBLOCK, O_RDONLY, O_RDWR, O_SYNC, O_TRUNC,
 };
 
+pub const O_DIRECT: u32 = 0o00040000;
+
+pub const O_DIRECTORY: u32 = 0o00200000;
+
 pub use bindings::{
     CLONE_FILES, CLONE_FS, CLONE_IO, CLONE_SETTLS, CLONE_SIGHAND, CLONE_THREAD, CLONE_VM,
 };
@@ -116,6 +120,7 @@ https://chromium.googlesource.com/chromiumos/docs/+/HEAD/constants/syscalls.md
 syscall!(read, bindings::SYS_read, fd: c_int, buf: *mut u8, count: c_size_t => Result<c_size_t>);
 syscall!(write, bindings::SYS_write, fd: c_int, buf: *const u8, count: c_size_t => Result<c_size_t>);
 syscall!(open, bindings::SYS_open, path: *const c_char, flags: c_uint, mode: umode_t => Result<c_int>);
+syscall!(openat, bindings::SYS_openat, fd: c_int, filename: *const c_char, flags: c_uint, mode: umode_t => Result<c_int>);
 syscall!(close, bindings::SYS_close, fd: c_int => Result<()>);
 syscall!(lseek, bindings::SYS_lseek, fd: c_int, offset: off_t, whence: c_uint => Result<off_t>);
 
@@ -154,6 +159,7 @@ syscall!(setsid, bindings::SYS_setsid => Result<pid_t>);
 syscall!(eventfd, bindings::SYS_eventfd, count: c_uint => Result<c_int>);
 syscall!(eventfd2, bindings::SYS_eventfd2, count: c_uint, flags: c_uint => Result<c_int>);
 
+// TODO: Retry EINTR
 syscall!(poll, bindings::SYS_poll, ufds: *mut bindings::pollfd, nfds: c_uint, timeout: c_int => Result<c_uint>);
 
 syscall!(

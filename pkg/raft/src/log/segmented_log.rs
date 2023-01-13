@@ -4,8 +4,7 @@ use std::sync::Arc;
 
 use common::errors::*;
 use executor::sync::Mutex;
-use file::sync::SyncedDirectory;
-use file::LocalPath;
+use file::{LocalPath, LocalPathBuf};
 use protobuf::{Message, StaticMessage};
 use sstable::record_log::{RecordReader, RecordWriter};
 
@@ -83,7 +82,7 @@ use crate::proto::log::SegmentedLogRecord;
 /// TODO: If we inline commit indexes into the log, then that could be used to
 /// finalize part of the log early.
 pub struct SegmentedLog {
-    dir: SyncedDirectory,
+    dir: LocalPathBuf,
 
     max_segment_size: u64,
 
@@ -138,7 +137,7 @@ impl SegmentedLog {
 
         let mut last_sequence = LogSequence::zero();
 
-        let mut last_log_path = None;
+        let mut last_log_reader = None;
 
         for (log_number, log_path) in &files {
             let mut reader = RecordReader::open(log_path).await?;
@@ -187,25 +186,24 @@ impl SegmentedLog {
                 }
             }
 
-            last_log_path = Some(log_path.as_path());
+            last_log_reader = Some(reader);
             segments.push_back(Segment {
                 number: *log_number,
                 last_position,
             });
         }
 
-        let dir = SyncedDirectory::open(dir_path).await?;
+        let dir = dir_path.to_owned();
 
         let writer = {
-            if let Some(last_path) = last_log_path {
-                // TODO: Use the SyncedDirectory object.
-                RecordWriter::open(last_path).await?
+            if let Some(last_reader) = last_log_reader {
+                last_reader.into_writer(true).await?.unwrap()
             } else {
                 let number = 1;
                 let last_position = LogPosition::zero();
 
                 let mut writer =
-                    RecordWriter::open_with(dir.path(Self::log_file_name(number))?).await?;
+                    RecordWriter::create_new(dir.join(Self::log_file_name(number))).await?;
                 let mut header = SegmentedLogRecord::default();
                 header.set_prev(last_position.clone());
                 writer.append(&header.serialize()?).await?;
@@ -271,7 +269,7 @@ impl Log for SegmentedLog {
         let segment = state.segments.back_mut().unwrap();
         segment.last_position = entry.pos().clone();
 
-        if state.writer.current_size().await? >= self.max_segment_size {
+        if state.writer.current_size() >= self.max_segment_size {
             // TODO: Update the flushed sequence here.
             state.writer.flush().await?;
 
@@ -281,7 +279,7 @@ impl Log for SegmentedLog {
 
             // TODO: Deduplicate with the other code for initializing a file.
             let mut writer =
-                RecordWriter::open_with(self.dir.path(Self::log_file_name(number))?).await?;
+                RecordWriter::create_new(self.dir.join(Self::log_file_name(number))).await?;
             let mut header = SegmentedLogRecord::default();
             header.set_prev(last_position.clone());
             writer.append(&header.serialize()?).await?;
@@ -316,8 +314,7 @@ impl Log for SegmentedLog {
                 // Delete the discarded log file.
                 // NOTE: We don't care about fsyncing this as there is no problem with having
                 // too many
-                file::remove_file(self.dir.path(Self::log_file_name(seg.number))?.read_path())
-                    .await?;
+                file::remove_file(self.dir.join(Self::log_file_name(seg.number))).await?;
             } else {
                 break;
             }

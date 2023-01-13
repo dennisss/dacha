@@ -9,6 +9,7 @@ use crate::table::data_block::{DataBlockEntry, DataBlockRef};
 /// A data block may have zero keys in which case it will simply be serialized
 /// with no data but a single restart at offset 0.
 pub struct DataBlockBuilder {
+    use_delta_encoding: bool,
     restart_interval: usize,
     buffer: Vec<u8>,
     restart_offsets: Vec<u32>,
@@ -17,8 +18,9 @@ pub struct DataBlockBuilder {
 }
 
 impl DataBlockBuilder {
-    pub fn new(restart_interval: usize) -> Self {
+    pub fn new(use_delta_encoding: bool, restart_interval: usize) -> Self {
         Self {
+            use_delta_encoding,
             restart_interval,
             buffer: vec![],
             restart_offsets: vec![0],
@@ -31,13 +33,14 @@ impl DataBlockBuilder {
         self.buffer.len() == 0
     }
 
+    /// Expected size of the block if we were to serialize it right now.
     pub fn current_size(&self) -> usize {
-        self.buffer.len()
+        self.buffer.len() + 4 * (self.restart_offsets.len() + 1)
     }
 
     /// Expected size of the current block after adding the given row.
     pub fn projected_size(&self, key: &[u8], value: &[u8]) -> usize {
-        self.buffer.len() + key.len() + value.len() + 4 * self.restart_offsets.len()
+        self.current_size() + key.len() + value.len()
     }
 
     pub fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
@@ -50,10 +53,10 @@ impl DataBlockBuilder {
 
         let mut shared_bytes = 0;
 
-        // Check if we should restart prefix compression.
         if self.entries_since_restart >= self.restart_interval {
             self.restart_offsets.push(self.buffer.len() as u32);
-        } else {
+            self.entries_since_restart = 0;
+        } else if self.use_delta_encoding {
             while shared_bytes < std::cmp::min(self.last_key.len(), key.len()) {
                 if self.last_key[shared_bytes] != key[shared_bytes] {
                     break;
@@ -136,13 +139,15 @@ impl DataBlockBuilder {
 /// This also doesn't have as many buffer re-use optimizations as BlockBuilder
 /// does.
 pub struct UnsortedDataBlockBuilder {
+    use_delta_encoding: bool,
     restart_interval: usize,
     data: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
 impl UnsortedDataBlockBuilder {
-    pub fn new(restart_interval: usize) -> Self {
+    pub fn new(use_delta_encoding: bool, restart_interval: usize) -> Self {
         Self {
+            use_delta_encoding,
             restart_interval,
             data: vec![],
         }
@@ -157,7 +162,7 @@ impl UnsortedDataBlockBuilder {
     }
 
     pub fn finish(&mut self) -> Result<Vec<u8>> {
-        let mut builder = DataBlockBuilder::new(self.restart_interval);
+        let mut builder = DataBlockBuilder::new(self.use_delta_encoding, self.restart_interval);
 
         // TODO: Use an appropriate comparator here.
         self.data.sort_unstable();

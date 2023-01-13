@@ -14,8 +14,12 @@ pub struct LevelIterator {
     options: Arc<EmbeddedDBOptions>,
 
     // ^ All the above is in the snapshot.
+    /// Index of the level which we are iterating over.
     level_index: usize,
+
+    /// Index of the next table in the level
     next_table_index: usize,
+
     current_table_iterator: Option<SSTableIterator>,
 }
 

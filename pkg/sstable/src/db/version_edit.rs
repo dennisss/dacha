@@ -5,7 +5,7 @@ use common::errors::*;
 use protobuf::wire::{parse_varint, serialize_varint};
 
 use crate::encoding::*;
-use crate::record_log::{RecordReader, RecordWriter};
+use crate::record_log::{RecordReadError, RecordReader, RecordWriter};
 use crate::table::comparator::KeyComparator;
 
 // See https://github.com/facebook/rocksdb/blob/5f025ea8325a2ff5239ea28365073bf0b723514d/db/version_edit.cc#L29 for the complete list of tags
@@ -91,16 +91,12 @@ pub struct VersionEdit {
     pub next_file_number: Option<u64>,
 }
 
-// TODO: Disallow file number re-use as it's likely to be error prone.
-
 impl VersionEdit {
-    // If a manifest gets too large, make a new one?
-
     /// Reads exactly one atomic VersionEdit from the given manifest file (or
     /// returns None if we reached the end of the file).
     pub async fn read(log: &mut RecordReader) -> Result<Option<Self>> {
         let record = match log.read().await? {
-            Some(r) => r,
+            Some(v) => v,
             None => {
                 return Ok(None);
             }

@@ -28,4 +28,15 @@ impl FilterPolicyRegistry {
     pub fn get(&self, name: &str) -> Option<Arc<dyn FilterPolicy>> {
         self.policies.get(name).map(|v| v.clone())
     }
+
+    /// Creates a new filter registry derived from the current one where each
+    /// policy is transformed by the given function.
+    pub fn wrap(&self, wrapper: fn(Arc<dyn FilterPolicy>) -> Arc<dyn FilterPolicy>) -> Self {
+        let mut policies = self.policies.clone();
+        for (_, policy) in policies.iter_mut() {
+            *policy = wrapper(policy.clone());
+        }
+
+        Self { policies }
+    }
 }

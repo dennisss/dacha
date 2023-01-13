@@ -4,6 +4,7 @@ use sys::Errno;
 
 /// Errors that occur during file operations.
 #[error]
+#[derive(PartialEq)]
 pub enum FileError {
     /// While trying to find a file, the location in which we are searching is
     /// valid but we could not find the file.

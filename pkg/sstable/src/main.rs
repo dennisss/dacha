@@ -16,6 +16,7 @@ use file::temp::TempDir;
 use file::LocalPath;
 use sstable::iterable::Iterable;
 use sstable::table::comparator::BytewiseComparator;
+use sstable::table::filter_policy::FilterPolicyRegistry;
 use sstable::table::table::DataBlockCache;
 use sstable::table::CompressionType;
 use sstable::{EmbeddedDB, EmbeddedDBOptions};
@@ -52,6 +53,7 @@ async fn test_table() -> Result<()> {
     let mut options = sstable::table::table::SSTableOpenOptions {
         comparator: Arc::new(BytewiseComparator::new()),
         block_cache: cache,
+        filter_registry: Arc::new(FilterPolicyRegistry::default()),
     };
 
     let table =

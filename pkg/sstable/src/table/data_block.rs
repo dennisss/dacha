@@ -1,6 +1,6 @@
-// This file contains the implementation of a 'Block' which is a container of
-// many prefix-compressed entries representing key-value pairs. It should not
-// be confused with meta blocks which may have a different format.
+//! This file contains the implementation of a 'DataBlock' which is a container
+//! of many prefix-compressed entries representing key-value pairs. It should
+//! not be confused with meta blocks which may have a different format.
 
 use std::cmp::Ordering;
 use std::sync::Arc;

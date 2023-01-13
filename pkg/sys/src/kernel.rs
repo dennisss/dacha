@@ -113,6 +113,9 @@ pub enum io_uring_op {
     IORING_OP_SENDMSG_ZC,
 }
 
+// Submit queue entry fsync flags.
+pub const IORING_FSYNC_DATASYNC: u32 = 1;
+
 // TODO: Add IORING_OP_GETDENTS64
 
 #[derive(Clone, Copy, Default, Debug)]

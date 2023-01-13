@@ -188,6 +188,15 @@ pub async fn remove_file<P: AsRef<LocalPath>>(path: P) -> Result<()> {
     Ok(())
 }
 
+/// NOTE: Only relevant for local files (not all blob based ones).
+pub fn chown<P: AsRef<LocalPath>>(path: P, uid: sys::Uid, gid: sys::Gid) -> Result<()> {
+    let path = path.as_ref();
+    let path = CString::new(path.as_str())?;
+
+    unsafe { sys::chown(path.as_ptr() as *const u8, uid, gid).remap_errno::<FileError>()? };
+    Ok(())
+}
+
 /// Deletes the contents of the directory specified by 'path' and the directory
 /// itself.
 ///
@@ -195,6 +204,10 @@ pub async fn remove_file<P: AsRef<LocalPath>>(path: P) -> Result<()> {
 /// - Will not delete any directories behind symlinks (will instead just delete
 ///   the symlink to an internal directory).
 pub async fn remove_dir_all<P: AsRef<LocalPath>>(path: P) -> Result<()> {
+    remove_dir_all_with_options(path.as_ref(), false).await
+}
+
+pub async fn remove_dir_all_with_options(path: &LocalPath, only_remove_dirs: bool) -> Result<()> {
     let path = path.as_ref();
 
     let meta = symlink_metadata(path).await?;
@@ -219,6 +232,10 @@ pub async fn remove_dir_all<P: AsRef<LocalPath>>(path: P) -> Result<()> {
                     empty = false;
                     stack.push((path, false));
                 } else {
+                    if only_remove_dirs {
+                        continue;
+                    }
+
                     remove_file(path).await?;
                 }
             }

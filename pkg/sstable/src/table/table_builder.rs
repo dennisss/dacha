@@ -22,17 +22,38 @@ use crate::table::table::METAINDEX_PROPERTIES_KEY;
 
 #[derive(Clone, Defaultable)]
 pub struct SSTableBuilderOptions {
+    /// Target size for uncompressed key-value data blocks.
+    ///
+    /// Compression is applied to individual blocks and data is loaded using
+    /// entire blocks at a time.
     #[default(4096)]
     pub block_size: usize,
+
+    /// Within a single key-value data block, this is the key interval at which
+    /// we will place complete uncompressed keys.
+    ///
+    /// - Uncompressed keys are used as 'restart' points for binary searching to
+    ///   the closest key during seeks. Other keys may be prefix compressed.
+    /// - A value of 1 here would mean to disable all prefix compression.
     #[default(16)]
     pub block_restart_interval: usize,
 
-    /// If adding another entry to a block exceeds the block_size, if this
-    /// percentage of the block is remaining, then start a new block.
-    #[default(10)]
-    pub block_size_deviation: usize,
+    /// Whether or not to try compressing each non-restart key as a delta
+    /// relative to the previous key.
+    #[default(true)]
+    pub use_delta_encoding: bool,
 
-    //	pub use_delta_encoding: bool,
+    /// Defines the minimum emptiness fraction of each block.
+    ///
+    /// - We will always add entries to a block if adding the entry would keep
+    ///   us below the block_size.
+    /// - But, we will also add entries if a data block while the block is
+    ///   smaller than '(block_size * (1 - block_size_deviation))'.
+    ///
+    /// So this bounds the minimum size of blocks.
+    #[default(0.1)]
+    pub block_size_deviation: f32,
+
     #[default(2)]
     pub format_version: u32,
 
@@ -81,11 +102,6 @@ pub struct SSTableBuilderOptions {
     - block_restart_interval: 16
     - compression: snappy
 
-    // For keys
-    use_delta_encoding: true
-
-
-    block_size_deviation: 10
 */
 struct PendingDataBlock {
     last_key: Vec<u8>,
@@ -97,7 +113,7 @@ struct PendingDataBlock {
 // I also need to do the same for the bloom filter.
 
 pub struct SSTableBuilder {
-    file: SyncedFile,
+    file: LocalFile,
     file_len: u64,
     options: SSTableBuilderOptions,
 
@@ -120,15 +136,19 @@ impl SSTableBuilder {
         path: P,
         options: SSTableBuilderOptions,
     ) -> Result<Self> {
-        Self::open_with(SyncedPath::from(path.as_ref()).await?, options).await
+        Self::open_impl(path.as_ref(), options).await
     }
 
-    pub async fn open_with(path: SyncedPath, options: SSTableBuilderOptions) -> Result<Self> {
+    async fn open_impl(path: &LocalPath, options: SSTableBuilderOptions) -> Result<Self> {
         // NOTE: We will panic if we are overwriting an existing table. This
         // should never
-        let file = path
-            .open(LocalFileOpenOptions::new().write(true).create_new(true))
-            .await?;
+        let file = LocalFile::open_with_options(
+            path,
+            LocalFileOpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .create_synced(true),
+        )?;
 
         let filter_block_builder = if let Some(policy) = options.filter_policy.clone() {
             Some(FilterBlockBuilder::new(policy, options.filter_log_base))
@@ -136,17 +156,18 @@ impl SSTableBuilder {
             None
         };
 
-        let data_block_builder = DataBlockBuilder::new(options.block_restart_interval);
+        let data_block_builder =
+            DataBlockBuilder::new(options.use_delta_encoding, options.block_restart_interval);
 
         Ok(Self {
             file,
             file_len: 0,
             options,
             compressed_buffer: vec![],
-            index_block_builder: DataBlockBuilder::new(1),
+            index_block_builder: DataBlockBuilder::new(false, 1),
             filter_block_builder,
             data_block_builder,
-            properties_block_builder: UnsortedDataBlockBuilder::new(1),
+            properties_block_builder: UnsortedDataBlockBuilder::new(false, 1),
             pending_data_block: None,
         })
     }
@@ -241,13 +262,11 @@ impl SSTableBuilder {
     }
 
     pub async fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
-        let min_cutoff = (self.options.block_size * self.options.block_size_deviation) / 100;
+        let min_block_size =
+            ((self.options.block_size as f32) * (1. - self.options.block_size_deviation)) as usize;
 
-        // If we expect to overflow the block size, flush the flush the previous
-        // block.
-        // TODO: Check the edge cases of min_cutoff inequality.
         if (self.data_block_builder.projected_size(&key, &value) > self.options.block_size)
-            && (self.data_block_builder.current_size() > min_cutoff)
+            && (self.data_block_builder.current_size() > min_block_size)
         {
             self.flush().await?;
         }
@@ -297,7 +316,7 @@ impl SSTableBuilder {
         }
 
         // TODO: Make the interval configurable
-        let mut metaindex_builder = UnsortedDataBlockBuilder::new(1);
+        let mut metaindex_builder = UnsortedDataBlockBuilder::new(false, 1);
 
         if let Some(filter_builder) = self.filter_block_builder.take() {
             let mut buffer = filter_builder.finish();
@@ -343,8 +362,8 @@ impl SSTableBuilder {
         .serialize(&mut footer);
         self.file.write_all(&footer).await?;
 
-        // TODO: Need to fully fsync, etc. the file.
-        self.file.flush_and_sync().await?;
+        self.file.flush().await?;
+        self.file.sync_data().await?;
 
         Ok(SSTableBuiltMetadata {
             file_size: self.file.metadata().await?.len(),

@@ -6,6 +6,7 @@ use common::futures::StreamExt;
 use file::temp::TempDir;
 
 use crate::db::write_batch::WriteBatch;
+use crate::db::Snapshot;
 use crate::iterable::Iterable;
 use crate::table::CompressionType;
 use crate::{EmbeddedDB, EmbeddedDBOptions};
@@ -25,6 +26,9 @@ impl TestDB {
         options.error_if_exists = true;
         // Disable compression to make it easier to predict compactions.
         options.table_options.compression = CompressionType::None;
+        // Don't prefix compress to make the file sizes predictable for testing.
+        options.table_options.block_restart_interval = 4;
+        options.table_options.use_delta_encoding = false;
 
         options.manual_compactions_only = true;
 
@@ -37,7 +41,7 @@ impl TestDB {
         options.target_file_size_base = 12 * 1024; // 12KB
         options.target_file_size_multiplier = 1;
 
-        // Level 1 max will be 20 KB (~4 files)
+        // Level 1 max will be 20 KB (~2 files)
         // Level 2 max will be 40 KB (~4 files)
         // Level 3 max will be 80 KB (~8 files)
         options.max_bytes_for_level_base = 20 * 1024; // 20KB
@@ -67,8 +71,23 @@ impl TestDB {
         })
     }
 
+    /// Writes 150 key-value pairs to the database.
+    ///
+    /// - Each key is 8 bytes long and is a number '[0,150) * key_multipler +
+    ///   key_offset
+    /// - Each value is 56 bytes and is equal to [write_id, key] so specifically
+    ///   unique write_ids can be used to differentiate different versions of
+    ///   keys.
+    /// - So each key-value will be 64 bytes + 8 for InternalKey overhead = 72
+    ///   bytes.
+    ///
+    /// So each call to this:
+    /// - Adds 10.5KiB to the memtable
+    /// - Later will be 11.1KiB to SSTables (due to 4 byte restart interval
+    ///   overhead per key).
+    ///  
     async fn write(&mut self, write_id: u32, key_multiplier: u32, key_offset: u32) -> Result<()> {
-        for i in 0..160 {
+        for i in 0..150 {
             let key_i = i * key_multiplier + key_offset;
 
             let key = format!("{:08}", key_i);
@@ -87,36 +106,13 @@ impl TestDB {
         Ok(())
     }
 
-    async fn verify_with_point_lookups(&self) -> Result<()> {
-        for (key, value) in &self.values {
-            let db_value = self
-                .db
-                .get(key.as_ref())
-                .await?
-                .ok_or_else(|| format_err!("DB missing key: {:?}", key))?;
-            assert_eq!(value, &db_value);
-        }
-
-        Ok(())
-    }
-
-    async fn verify_with_scan(&self) -> Result<()> {
+    async fn snapshot(&self) -> TestValuesSnapshot {
         let snapshot = self.db.snapshot().await;
-        let mut iter = snapshot.iter().await?;
 
-        let mut num_entries = 0;
-        let mut seek_keys = HashSet::new();
-        while let Some(entry) = iter.next().await? {
-            num_entries += 1;
-            assert!(seek_keys.insert(entry.key.to_vec()), "Duplicate key seen");
-
-            let expected_value = self.values.get(&entry.key).unwrap();
-            assert_eq!(Some(expected_value), entry.value.as_ref());
+        TestValuesSnapshot {
+            snapshot,
+            expected_values: self.values.clone(),
         }
-
-        assert_eq!(num_entries, self.values.len());
-
-        Ok(())
     }
 
     async fn dir_contents(&self) -> Result<Vec<String>> {
@@ -127,6 +123,50 @@ impl TestDB {
         }
 
         Ok(out)
+    }
+}
+
+pub struct TestValuesSnapshot {
+    snapshot: Snapshot,
+    expected_values: HashMap<Bytes, Bytes>,
+}
+
+impl TestValuesSnapshot {
+    async fn verify_all(&self) -> Result<()> {
+        self.verify_with_point_lookups().await?;
+        self.verify_with_scan().await?;
+        Ok(())
+    }
+
+    async fn verify_with_point_lookups(&self) -> Result<()> {
+        for (key, value) in &self.expected_values {
+            let db_value = self
+                .snapshot
+                .get(key.as_ref())
+                .await?
+                .ok_or_else(|| format_err!("DB missing key: {:?}", key))?;
+            assert_eq!(value, &db_value);
+        }
+
+        Ok(())
+    }
+
+    async fn verify_with_scan(&self) -> Result<()> {
+        let mut iter = self.snapshot.iter().await?;
+
+        let mut num_entries = 0;
+        let mut seek_keys = HashSet::new();
+        while let Some(entry) = iter.next().await? {
+            num_entries += 1;
+            assert!(seek_keys.insert(entry.key.to_vec()), "Duplicate key seen");
+
+            let expected_value = self.expected_values.get(&entry.key).unwrap();
+            assert_eq!(Some(expected_value), entry.value.as_ref());
+        }
+
+        assert_eq!(num_entries, self.expected_values.len());
+
+        Ok(())
     }
 }
 
@@ -165,13 +205,21 @@ fn sets_equal(a: &[String], b: &[&str]) -> bool {
     equal
 }
 
+/*
+TODO: Tests to add:
+- SSTable level creation and traversal tests.
+- DB: Read a consistent snapshot while writing new keys.
+    ^ Yes, this would be a good test.
+    ^ For example, reading some values which are going to be moved to various compacted files.
+
+
+*/
+
 #[testcase]
 async fn embedded_db_compaction_test() -> Result<()> {
     /*
-    TODO: Tests to add:
-    - SSTable level creation and traversal tests.
-    - DB: Read a consistent snapshot while writing new keys.
-
+    At each point here, we can test snapshots and verify files aren't deleted.
+    - Even through unlink keeps files around that are still open, we may not always preserve all file descriptors if we have a lot of files.
     */
 
     let mut db = TestDB::open().await?;
@@ -187,16 +235,11 @@ async fn embedded_db_compaction_test() -> Result<()> {
         ]
     ));
 
-    /*
-        64 bytes per key-value.
-        - 160 kv pairs per file
-    */
-
-    // [0, 160) * 10,000
-    // => Create one table into level 2
+    // Insert key Range: [0, 150) * 10,000
+    // => Will write the memtable to one new table in level 2
     db.write(1, 10000, 0).await?;
 
-    db.verify_with_point_lookups().await?;
+    db.snapshot().await.verify_with_point_lookups().await?;
 
     db.db.wait_for_compaction().await?;
 
@@ -217,8 +260,10 @@ async fn embedded_db_compaction_test() -> Result<()> {
 
     // TODO: Check exactly which files are present in the directory at each stage.
 
-    // [0, 160] * 20,000
-    // => Create one table into level 1
+    let snapshot1 = db.snapshot().await;
+
+    // Insert key range [0, 150) * 20,000
+    // => Will write the memtable to one new table in level 1
     db.write(2, 20000, 0).await?;
 
     db.db.wait_for_compaction().await?;
@@ -237,18 +282,26 @@ async fn embedded_db_compaction_test() -> Result<()> {
         ]
     ));
 
+    // Verify
+    snapshot1.verify_with_point_lookups().await?;
+    snapshot1.verify_with_scan().await?;
+    drop(snapshot1);
+
+    db.snapshot().await.verify_with_point_lookups().await?;
+
     println!("=====");
 
-    // [0, 160] * 5,000
-    // => Create one table into level 0
+    // Insert key range [0, 150) * 5,000
+    // => Will write the memtable to one new table in level 0
     db.write(3, 5000, 0).await?;
 
-    db.verify_with_point_lookups().await?;
+    db.snapshot().await.verify_with_point_lookups().await?;
 
     db.db.wait_for_compaction().await?;
 
-    // Creating new tables 9 and 10 with new log at 8, but then immediately
-    // compating [9, 10, 7] into [11, 12].
+    // Creating new tables 9 and new log 8.
+    // At this point we have 1 tables in level 0, 1, 2, so there is no overlaps yet
+    // for doing compaction.
     assert!(sets_equal(
         &db.dir_contents().await?,
         &[
@@ -257,25 +310,27 @@ async fn embedded_db_compaction_test() -> Result<()> {
             "MANIFEST-000002",
             "IDENTITY",
             "000005.ldb",
-            // "000007.ldb",
+            "000007.ldb",
             "000008.log",
-            // "000009.ldb",
-            // "000010.ldb",
-            "000011.ldb",
-            "000012.ldb",
+            "000009.ldb",
         ]
     ));
 
-    // [0, 160] * 5,000 + 60*10,000
-    // => Create one table into level 0
-    // => Will trigger compaction with level 1
-    // => Level 1 should now contain ~3 files.
+    let snapshot1 = db.snapshot().await;
+
+    // Insert key range [0, 150] * 5,000 + 60*10,000
+    // => Will write the memtable to one new table in level 0
+    // => Because we now have 2 files in level 0, we will compact into level 1.
     db.write(4, 5000, 60 * 10000).await?;
 
+    let snapshot2 = db.snapshot().await;
+
     db.db.wait_for_compaction().await?;
 
-    db.verify_with_scan().await?;
+    db.snapshot().await.verify_all().await?;
 
+    // Because both snapshot1 and snapshot2 are active, compactions occured but no
+    // old files were removed (just the ephemeral memtable file).
     assert!(sets_equal(
         &db.dir_contents().await?,
         &[
@@ -284,18 +339,70 @@ async fn embedded_db_compaction_test() -> Result<()> {
             "MANIFEST-000002",
             "IDENTITY",
             "000005.ldb",
-            "000011.ldb",
-            "000012.ldb",
-            // New memtable flush
-            "000013.log",
-            "000014.ldb",
+            "000007.ldb", // Deleted
+            "000009.ldb", // Deleted
+            "000010.log",
+            // "000011.ldb", // Initial flush of memtable to level 0
+            "000012.ldb", // Part 1/3 of compaction output
+            "000013.ldb", // Part 2/3 of compaction output
+            "000014.ldb", // Part 3/3 of compaction output
         ]
     ));
+
+    snapshot1.verify_all().await?;
+    snapshot2.verify_all().await?;
+
+    drop(snapshot1);
+
+    db.db.wait_for_compaction().await?;
+
+    // No change yet because one of the snapshots is still alive.
+    assert!(sets_equal(
+        &db.dir_contents().await?,
+        &[
+            "CURRENT",
+            "LOCK",
+            "MANIFEST-000002",
+            "IDENTITY",
+            "000005.ldb",
+            "000007.ldb", // Deleted
+            "000009.ldb", // Deleted
+            "000010.log",
+            // "000011.ldb", // Initial flush of memtable to level 0
+            "000012.ldb", // Part 1/3 of compaction output
+            "000013.ldb", // Part 2/3 of compaction output
+            "000014.ldb", // Part 3/3 of compaction output
+        ]
+    ));
+
+    drop(snapshot2);
+
+    db.db.wait_for_compaction().await?;
+
+    // Now the old files held by snapshot1 can be deleted
+    assert!(sets_equal(
+        &db.dir_contents().await?,
+        &[
+            "CURRENT",
+            "LOCK",
+            "MANIFEST-000002",
+            "IDENTITY",
+            "000005.ldb",
+            // "000007.ldb", // Deleted
+            // "000009.ldb", // Deleted
+            "000010.log",
+            // "000011.ldb", // Initial flush of memtable to level 0
+            "000012.ldb", // Part 1/3 of compaction output
+            "000013.ldb", // Part 2/3 of compaction output
+            "000014.ldb", // Part 3/3 of compaction output
+        ]
+    ));
+
+    db.snapshot().await.verify_all().await?;
 
     db = db.reopen().await?;
 
-    db.verify_with_point_lookups().await?;
-    db.verify_with_scan().await?;
+    db.snapshot().await.verify_all().await?;
 
     // Another possible idea is to randomly stop the program and verify that
     // the set of written keys is still consistent and that the db is
@@ -513,7 +620,13 @@ async fn embedded_db_leveldb_compatibility_prefixed_test() -> Result<()> {
     Ok(())
 }
 
+// TODO: Test that if we swap memtables and start using a new log, we can
+// recover both memtables before level 0 table for the immutable log is written
+// to disk (also after it is written to disk, we should ensure we don't have
+// both the log and the sstable in our version set at the same time)
+
 // TODO: Test that we can insert into the database while traversing a snapshot.
 
 // TODO: Test that we won't delete a SSTable while there exists a snapshot that
 // references it.
+// ^ yes

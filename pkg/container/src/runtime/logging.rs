@@ -53,9 +53,10 @@ pub struct FileLogWriter {
 }
 
 impl FileLogWriter {
+    /// Creates a new writer which will write to the file located at 'path'.
     pub async fn create(path: &LocalPath) -> Result<Self> {
         Ok(Self {
-            log: Mutex::new(RecordWriter::open(path).await?),
+            log: Mutex::new(RecordWriter::create_new(path).await?),
         })
     }
 

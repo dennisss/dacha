@@ -1,4 +1,4 @@
-#![feature(generic_arg_infer)]
+#![feature(generic_arg_infer, let_chains)]
 #![no_std]
 
 #[macro_use]
@@ -326,6 +326,20 @@ mod tests {
         crate::copy_all(&from, &to).await.unwrap();
 
         assert_eq!(crate::read_to_string(&to.join("b/c")).await?, "hi");
+
+        Ok(())
+    }
+
+    #[testcase]
+    async fn opening_at_an_empty_path_fails() -> Result<()> {
+        let res = LocalFile::open("");
+        assert_eq!(
+            res.err().unwrap().downcast_ref::<FileError>(),
+            Some(&FileError::NotFound)
+        );
+
+        // std::fs::File also should fail.
+        std::fs::File::open("").unwrap_err();
 
         Ok(())
     }

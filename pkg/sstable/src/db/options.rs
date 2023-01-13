@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use crate::db::internal_key::*;
+use crate::table::filter_policy::FilterPolicyRegistry;
 use crate::table::table::DataBlockCache;
 use crate::table::table_builder::SSTableBuilderOptions;
 
@@ -64,13 +67,20 @@ pub struct EmbeddedDBOptions {
     /// Options to use for building tables on disk.
     pub table_options: SSTableBuilderOptions,
 
-    /* max_log_file_size */
+    /// Filter registry to use when looking up the filters used by existing
+    /// (already written to disk) tables.
+    pub filter_registry: Arc<FilterPolicyRegistry>,
+
+    /// Maximum size of the current manifest log file. After this is exceeded,
+    /// we will switch to using a new log file.
     #[default(1024*1024*1024)]
     pub max_manifest_file_size: u64,
 
+    /// TODO: Implement.
     #[default(4*1024*1024)]
     pub manifest_preallocation_size: u64,
 
+    /// TODO: Implement.
     #[default(2)]
     pub max_background_jobs: usize,
 
@@ -106,6 +116,10 @@ impl EmbeddedDBOptions {
             .table_options
             .filter_policy
             .map(|policy| InternalKeyFilterPolicy::wrap(policy));
+        self.filter_registry = Arc::new(
+            self.filter_registry
+                .wrap(|policy| InternalKeyFilterPolicy::wrap(policy)),
+        );
         self
     }
 }

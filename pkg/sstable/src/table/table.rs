@@ -35,7 +35,8 @@ pub const METAINDEX_PROPERTIES_KEY: &'static str = "rocksdb.properties";
 #[derive(Clone)]
 pub struct SSTableOpenOptions {
     pub comparator: Arc<dyn KeyComparator>,
-    pub block_cache: DataBlockCache, // pub filter_factory: Arc<dyn FilterPolicy>,
+    pub block_cache: DataBlockCache,
+    pub filter_registry: Arc<FilterPolicyRegistry>,
 }
 
 // TODO: When an SSTable is dropped, we can clear all of the blocks from the
@@ -117,9 +118,8 @@ impl SSTable {
                     return Err(err_msg("More than one filter in table"));
                 }
 
-                let filter_registry = FilterPolicyRegistry::default();
-
-                let policy = filter_registry
+                let policy = options
+                    .filter_registry
                     .get(filter_name)
                     .ok_or_else(|| format_err!("Unknown filter with name: {}", filter_name))?;
 
@@ -675,6 +675,7 @@ mod tests {
         let open_options = SSTableOpenOptions {
             comparator: Arc::new(BytewiseComparator::new()),
             block_cache,
+            filter_registry: Arc::new(FilterPolicyRegistry::default()),
         };
 
         let table = SSTable::open(&table_path, open_options).await?;

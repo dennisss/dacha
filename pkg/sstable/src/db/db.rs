@@ -12,7 +12,7 @@ use executor::channel;
 use executor::child_task::ChildTask;
 use executor::sync::RwLock;
 use file::sync::SyncedPath;
-use file::{LocalFile, LocalFileOpenOptions, LocalPath};
+use file::{LocalFile, LocalFileOpenOptions, LocalPath, LocalPathBuf};
 
 use crate::db::internal_key::*;
 use crate::db::merge_iterator::MergeIterator;
@@ -47,12 +47,6 @@ NOTE: Also check when restoring the log if the memtable can be immediately flush
     - https://github.com/google/leveldb/blob/13e3c4efc66b8d7317c7648766a930b5d7e48aa7/db/version_set.cc#L472
 */
 
-/*
-    Flushing a table to disk:
-    - Make the mutable_table immutable (and simulataneously swap to a new log file).
-    - Create a new SSTable on disk
-    - Write a new version of the MANIFEST pointing to an empty log file
-*/
 // TODO: Before deleting all un-used files, be sure to use absolute paths.
 
 // TODO: Should implement read/write options like: https://github.com/google/leveldb/blob/9bd23c767601a2420478eec158927882b879bada/include/leveldb/options.h#L146
@@ -65,6 +59,9 @@ Challenges: Can't delete an old file until it is deleted.
 /*
 Abstracting away the log and internla key:
 - Will still use a manifest for tracking files (but log numbers will always be zero)
+
+TODO: All SSTables and logs should be set up with O_TRUNC given we may need to re-use old file numbers if the last DB closed abruptly.
+- Also unit test this
 */
 
 struct CompactionReceiver {
@@ -73,10 +70,15 @@ struct CompactionReceiver {
 }
 
 struct CompactionState {
-    // Table file numbers which we know are ok to delete as they are no longer
-    // referenced in the latest version.
+    /// Table file numbers which we know are ok to delete as they are no longer
+    /// referenced in the latest version.
     pending_release_files: HashSet<u64>,
 
+    /// Table file numbers which can be safely deleted.
+    ///
+    /// - Values are added once all in-memory references are dropped (and the
+    ///   number if present in pending_release_files)
+    /// - Values are removed and acted upon by the compaction thread.
     released_files: HashSet<u64>,
 }
 
@@ -107,6 +109,8 @@ impl CompactionReceiver {
         compaction_notifier: channel::Sender<()>,
     ) -> FileReleasedCallback {
         Arc::new(move |file_number: u64| {
+            // NOTE: This is a syncronous computation so that on drop, the compaction thread
+            // doesn't need to be woken up twice for removing a table.
             let mut state = state.lock().unwrap();
             if state.pending_release_files.remove(&file_number) {
                 state.released_files.insert(file_number);
@@ -119,13 +123,17 @@ impl CompactionReceiver {
 /// Single-process key-value store implemented as a Log Structured Merge tree
 /// of in-memory and on-disk tables. Compatible with the LevelDB/RocksDB format.
 pub struct EmbeddedDB {
+    /// Open handle to the LOCK file on which we have a lock acquired while it
+    /// is open.
     lock_file: LocalFile,
+
     identity: Option<String>,
     shared: Arc<EmbeddedDBShared>,
 
-    compaction_thread: ChildTask,
+    compaction_thread: Option<ChildTask>,
 
-    /// Notified the background compaction thread that
+    /// Used to notify the compaction thread that something interesting happened
+    /// that may require compaction.
     compaction_notifier: channel::Sender<()>,
 }
 
@@ -146,7 +154,7 @@ struct EmbeddedDBState {
     /// Current log being used to write new changes before they are compacted
     /// into a table.
     ///
-    /// Will be None only if EmbeddedDBOptions.disable_wal was set.
+    /// Will be None only if EmbeddedDBOptions.disable_wal or read_only was set.
     log: Option<RecordWriter>,
 
     /// Last sequence written to the log but not yet flushed to a table.
@@ -178,6 +186,9 @@ impl EmbeddedDB {
         Self::open_impl(path.as_ref(), options).await
     }
 
+    // TODO: Use some form of filesystem modifiers to enforce constraints on
+    // syncronization and read-only ness.
+
     async fn open_impl(path: &LocalPath, options: EmbeddedDBOptions) -> Result<Self> {
         // TODO: Cache a file description to the data directory and use openat for
         // faster opens?
@@ -193,14 +204,16 @@ impl EmbeddedDB {
 
         let lock_file = {
             let file = LocalFile::open_with_options(
-                dir.lock().read_path(),
+                dir.lock(),
                 &LocalFileOpenOptions::new()
                     .read(true)
                     .write(true)
-                    .create(options.create_if_missing),
+                    .create(options.create_if_missing)
+                    .create_synced(options.create_if_missing),
             )
             .map_err(|_| err_msg("Failed to open the lockfile"))?;
 
+            // TODO: Use a shared lock in read-only mode.
             file.try_lock_exclusive()
                 .map_err(|_| err_msg("Failed to lock database"))?;
             file
@@ -244,6 +257,10 @@ impl EmbeddedDB {
         // TODO: In this mode, ensure that we truncate any existing files (they may have
         // been partially opened only).
 
+        if options.read_only {
+            return Err(err_msg("Can't create a new DB in read_only mode."));
+        }
+
         let (compaction_receiver, compaction_notifier, release_callback) =
             CompactionReceiver::new();
 
@@ -258,7 +275,7 @@ impl EmbeddedDB {
 
         let manifest_path = dir.manifest(manifest_num);
 
-        let mut manifest = RecordWriter::open_with(manifest_path).await?;
+        let mut manifest = RecordWriter::create_new(manifest_path).await?;
 
         let log = {
             if options.disable_wal {
@@ -271,7 +288,7 @@ impl EmbeddedDB {
                 edit.log_number = Some(num);
                 version_set.apply_new_edit(edit, vec![]);
 
-                Some(RecordWriter::open_with(dir.log(num)).await?)
+                Some(RecordWriter::create_new(dir.log(num)).await?)
             }
         };
 
@@ -280,17 +297,17 @@ impl EmbeddedDB {
 
         let identity = Self::uuidv4().await;
         {
-            let mut id_file = dir
-                .identity()
-                .open(
-                    LocalFileOpenOptions::new()
-                        .create(true)
-                        .truncate(true)
-                        .write(true),
-                )
-                .await?;
+            let mut id_file = LocalFile::open_with_options(
+                dir.identity(),
+                LocalFileOpenOptions::new()
+                    .create(true)
+                    .create_synced(true)
+                    .truncate(true)
+                    .write(true),
+            )?;
             id_file.write_all(identity.as_bytes()).await?;
-            id_file.flush_and_sync().await?;
+            id_file.flush().await?;
+            id_file.sync_data().await?;
         }
 
         dir.set_current_manifest(manifest_num).await?;
@@ -321,32 +338,32 @@ impl EmbeddedDB {
 
         Ok(Self {
             compaction_notifier,
-            compaction_thread,
+            compaction_thread: Some(compaction_thread),
             lock_file,
             identity: Some(identity),
             shared,
         })
     }
 
+    /// TODO: Identify if we have any unused files in the directory. If so, we
+    /// probably want to perform deletions (assuming we were able to open the
+    /// database successfully).
     async fn open_existing(
         options: Arc<EmbeddedDBOptions>,
         lock_file: LocalFile,
         dir: FilePaths,
-        manifest_path: SyncedPath,
+        manifest_path: LocalPathBuf,
     ) -> Result<Self> {
         let (compaction_receiver, compaction_notifier, release_callback) =
             CompactionReceiver::new();
 
-        let version_set = {
-            let mut manifest_file = RecordReader::open(manifest_path.read_path()).await?;
-            VersionSet::recover_existing(&mut manifest_file, release_callback, options.clone())
-                .await?
-        };
+        let mut manifest_reader = RecordReader::open(manifest_path).await?;
+
+        let version_set =
+            VersionSet::recover_existing(&mut manifest_reader, release_callback, options.clone())
+                .await?;
 
         version_set.open_all(&dir).await?;
-
-        // TODO: Don't open in read_only mode?
-        let manifest = RecordWriter::open_with(manifest_path).await?;
 
         let mut log_last_sequence = version_set.last_sequence();
 
@@ -363,7 +380,7 @@ impl EmbeddedDB {
                 ));
             }
 
-            let mut log = RecordReader::open(dir.log(num).read_path()).await?;
+            let mut log = RecordReader::open(dir.log(num)).await?;
             let mut table = MemTable::new(options.table_options.comparator.clone());
             WriteBatchIterator::read_table(&mut log, &mut table, &mut log_last_sequence).await?;
             immutable_table = Some(ImmutableTable {
@@ -389,9 +406,9 @@ impl EmbeddedDB {
                     .ok_or_else(|| err_msg("Existing db has no log"))?,
             );
 
-            mutable_table = {
-                let mut log_reader = RecordReader::open(log_path.read_path()).await?;
+            let mut log_reader = RecordReader::open(log_path).await?;
 
+            mutable_table = {
                 let mut table = MemTable::new(options.table_options.comparator.clone());
                 WriteBatchIterator::read_table(&mut log_reader, &mut table, &mut log_last_sequence)
                     .await?;
@@ -399,13 +416,13 @@ impl EmbeddedDB {
                 Arc::new(table)
             };
 
-            log = Some(RecordWriter::open_with(log_path).await?);
+            log = Some(log_reader.into_writer(true).await?.unwrap());
         }
 
         // TODO: Exists may ignore errors such as permission errors.
         let identity_path = dir.identity();
-        let identity = if file::exists(identity_path.read_path()).await? {
-            let data = file::read_to_string(identity_path.read_path()).await?;
+        let identity = if file::exists(&identity_path).await? {
+            let data = file::read_to_string(identity_path).await?;
             Some(data)
         } else {
             None
@@ -434,12 +451,19 @@ impl EmbeddedDB {
             compaction_waterline: AtomicU64::new(options.initial_compaction_waterline),
         });
 
-        // TODO: Don't need a compaction task if we are read_only.
-        let compaction_thread = ChildTask::spawn(Self::compaction_thread(
-            shared.clone(),
-            manifest,
-            compaction_receiver,
-        ));
+        let compaction_thread = {
+            if shared.options.read_only {
+                None
+            } else {
+                let manifest = manifest_reader.into_writer(true).await?.unwrap();
+
+                Some(ChildTask::spawn(Self::compaction_thread(
+                    shared.clone(),
+                    manifest,
+                    compaction_receiver,
+                )))
+            }
+        };
 
         Ok(Self {
             lock_file,
@@ -463,7 +487,9 @@ impl EmbeddedDB {
 
         let _ = self.compaction_notifier.try_send(());
 
-        self.compaction_thread.join().await;
+        if let Some(thread) = self.compaction_thread {
+            thread.join().await;
+        }
 
         Ok(())
     }
@@ -504,15 +530,16 @@ impl EmbeddedDB {
         Ok(())
     }
 
+    /// Background task which periodically:
+    /// - Moves the memtable into an immutable state and writes it to disk at
+    ///   level 0.
+    /// - When individual levels exceed their predefined size limits, merges
+    ///   tables and moves them down a level.
     async fn compaction_thread(
         shared: Arc<EmbeddedDBShared>,
         manifest: RecordWriter,
         receiver: CompactionReceiver,
     ) {
-        if shared.options.read_only {
-            return;
-        }
-
         if let Err(e) = Self::compaction_thread_inner(shared, manifest, receiver).await {
             eprintln!("EmbeddedDB compaction error: {}", e);
             // TODO: Trigger server shutdown and halt all writes to the
@@ -520,6 +547,9 @@ impl EmbeddedDB {
         }
     }
 
+    /// TODO: File removals generally don't need to be synced to disk (although
+    /// we should sync them before we discard manifest entries referencing
+    /// them).
     async fn compaction_thread_inner(
         shared: Arc<EmbeddedDBShared>,
         mut manifest: RecordWriter,
@@ -530,6 +560,7 @@ impl EmbeddedDB {
         let mut made_progress = true;
 
         loop {
+            // Wait for something interesting interesting to happen.
             if made_progress {
                 // Whenever we make any progress in the previous iteration, we
                 // will try a second time.
@@ -548,8 +579,7 @@ impl EmbeddedDB {
 
                 for file_num in nums_to_delete {
                     println!("Deleting table number {}", file_num);
-                    let path = shared.dir.table(file_num);
-                    file::remove_file(path.read_path()).await?;
+                    file::remove_file(shared.dir.table(file_num)).await?;
                 }
             }
 
@@ -561,6 +591,10 @@ impl EmbeddedDB {
 
             made_progress = true;
 
+            // Check if we've hit the size limit for the mutable memtable.
+            //
+            // If so, we'll make it immutable and start a new log for the
+            //
             // TODO: How do we gurantee that no one is still writing to the table?
             // TODO: Pre-allocate the entire memtable with contiguous memory so that it is
             // likely to cache hit.
@@ -581,7 +615,7 @@ impl EmbeddedDB {
                 drop(state);
 
                 let new_log = match version_edit.log_number {
-                    Some(num) => Some(RecordWriter::open_with(shared.dir.log(num)).await?),
+                    Some(num) => Some(RecordWriter::create_new(shared.dir.log(num)).await?),
                     None => None,
                 };
 
@@ -609,6 +643,8 @@ impl EmbeddedDB {
                 continue;
             }
 
+            // If we currently have an immutable memtable table, we should prioritize
+            // writing it to an SSTable so that we can delete the log.
             if let Some(memtable) = &state.immutable_table {
                 let memtable = memtable.clone();
 
@@ -664,7 +700,7 @@ impl EmbeddedDB {
                 manifest.flush().await?;
 
                 if let Some(num) = old_log_number {
-                    file::remove_file(shared.dir.log(num).read_path()).await?;
+                    file::remove_file(shared.dir.log(num)).await?;
                 }
 
                 let mut state_guard = shared.state.write().await;
@@ -765,6 +801,8 @@ impl EmbeddedDB {
                 manifest.append(&out).await?;
                 manifest.flush().await?;
 
+                // NOTE: This must happen before we apply the edit the VersionSet so that
+                // references aren't dropped before we mark them as releaseable.
                 {
                     let mut compaction_state = receiver.state.lock().unwrap();
                     for file in &version_edit.deleted_files {
@@ -775,12 +813,54 @@ impl EmbeddedDB {
                 // TODO: Re-lock and apply all of the version edits
                 let mut state_guard = shared.state.write().await;
 
+                // NOTE: Becuase this may drop some table entries from the current version, this
+                // may trigger some files to get released once they are dropped.
                 state_guard
                     .version_set
                     .apply_new_edit(version_edit, new_tables);
 
-                // TODO: May be able to delete some table files if all
-                // references are done.
+                continue;
+            }
+
+            // If we have exceeded the manifest size limit, switch to using a new file so
+            // that we can discard the old one.
+            //
+            // TODO: Validate that a large version set snapshot never triggers this to
+            // overflow on every cycle.
+            if manifest.current_size() >= shared.options.max_manifest_file_size {
+                drop(state);
+
+                let mut state_guard = shared.state.write().await;
+
+                let new_manifest_num = state_guard.version_set.next_file_number();
+                {
+                    let mut edit = VersionEdit::default();
+                    edit.next_file_number = Some(new_manifest_num + 1);
+                    state_guard.version_set.apply_new_edit(edit, vec![]);
+                }
+
+                drop(state_guard);
+                let state = shared.state.read().await;
+
+                let new_manifest_path = shared.dir.manifest(new_manifest_num);
+
+                let mut new_manifest = RecordWriter::create_new(new_manifest_path).await?;
+
+                state.version_set.write_to_new(&mut new_manifest).await?;
+
+                drop(state);
+
+                new_manifest.flush().await?;
+
+                shared.dir.set_current_manifest(new_manifest_num).await?;
+
+                let old_manifest_path = manifest.path().to_owned();
+
+                // Swap to new manifest
+                drop(manifest);
+                manifest = new_manifest;
+
+                file::remove_file(&old_manifest_path).await?;
 
                 continue;
             }
@@ -800,18 +880,6 @@ impl EmbeddedDB {
 
         /*
         Things to do:
-        - Check if mutable table is over its limit (and there is no immutable memtable).
-            - Make it immutable and switch to a new log file.
-
-        - Check if there is a prev_log_number/immutable_memtable
-            - If so, flush to disk.
-
-        - Check level 0 against max num files
-            - If over the limit, merge into next level.
-
-        - Go through each level.
-            - If a level is over its limit, pick a random table in the level and merge into the next lower level
-            - Try to pick enough contiguous tables to merge in order to build the
 
         Other things to consider:
         - doing Concurrent compactions
@@ -825,7 +893,7 @@ impl EmbeddedDB {
         */
     }
 
-    /// Writes an iterator to one or more contigious tables in a single level.
+    /// Writes an iterator to one or more contiguous tables in a single level.
     ///
     /// Arguments:
     /// - remove_deleted: If true, keys that were deleted will be removed from
@@ -877,7 +945,7 @@ impl EmbeddedDB {
                     let number = version_edit.next_file_number.unwrap();
                     version_edit.next_file_number = Some(number + 1);
 
-                    let builder = SSTableBuilder::open_with(
+                    let builder = SSTableBuilder::open(
                         shared.dir.table(number),
                         shared.options.table_options.clone(),
                     )
@@ -936,10 +1004,11 @@ impl EmbeddedDB {
         for entry in &version_edit.new_files {
             new_tables.push(
                 SSTable::open(
-                    shared.dir.table(entry.number).read_path(),
+                    shared.dir.table(entry.number),
                     SSTableOpenOptions {
                         comparator: shared.options.table_options.comparator.clone(),
                         block_cache: shared.options.block_cache.clone(),
+                        filter_registry: shared.options.filter_registry.clone(),
                     },
                 )
                 .await?,
