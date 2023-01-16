@@ -11,7 +11,7 @@ sys = { path = "../sys" }
 elf = { path = "../elf" }
 executor = { path = "../executor" }
 google = { path = "../../third_party/google" }
-radix = { path = "../radix" }
+base_radix = { path = "../base/radix" }
 
 [features]
 default = ["std"]

@@ -1,7 +1,6 @@
 [package]
 name = "rpc"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
@@ -15,7 +14,7 @@ protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
 failure = "0.1.8"
 google = { path = "../../third_party/google" }
-protobuf_json = { path = "../protobuf_json" }
+protobuf_json = { path = "../protobuf/json" }
 executor = { path = "../executor" }
 net = { path = "../net" }
 

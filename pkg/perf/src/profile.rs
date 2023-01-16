@@ -71,7 +71,7 @@ pub async fn profile_self(duration: Duration) -> Result<Profile> {
         profile.add_string_table(area.path.clone());
 
         if let Some(build_id) = memory_map.build_id(&area.path) {
-            let build_id = radix::hex_encode(build_id);
+            let build_id = base_radix::hex_encode(build_id);
             mapping.set_build_id(profile.string_table_len() as i64);
             profile.add_string_table(build_id);
         }

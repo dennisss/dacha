@@ -10,7 +10,7 @@ macros = { path = "../../pkg/macros" }
 rpc = { path = "../../pkg/rpc" }
 
 [build-dependencies]
-protobuf_compiler = { path = "../../pkg/protobuf_compiler" }
+protobuf_compiler = { path = "../../pkg/protobuf/compiler" }
 
 [features]
 default = ["std"]

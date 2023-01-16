@@ -214,7 +214,7 @@ fn parse_h16(input: &[u8]) -> ParseResult<Vec<u8>, &[u8]> {
     padded[(4 - i)..].copy_from_slice(&input[0..i]);
 
     let mut decoded =
-        radix::hex_decode(unsafe { core::str::from_utf8_unchecked(&padded) }).unwrap();
+        base_radix::hex_decode(unsafe { core::str::from_utf8_unchecked(&padded) }).unwrap();
     if decoded.len() == 1 {
         decoded.insert(0, 0);
     }

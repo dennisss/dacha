@@ -322,7 +322,7 @@ impl ContainerRuntime {
             .generate_bytes(&mut container_id)
             .await;
 
-        let container_id = radix::hex_encode(&container_id);
+        let container_id = base_radix::hex_encode(&container_id);
 
         // TODO: Also lock down permissions on this dir.
         let container_dir = self.run_dir.join(&container_id);

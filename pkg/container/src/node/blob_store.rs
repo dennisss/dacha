@@ -423,7 +423,7 @@ impl BlobWriter {
         // NOTE: We expect hex capitalization to also match in case our file system is
         // case sensitive.
         // TODO: Deduplicate the logic for hashing blobs.
-        let hash = format!("sha256:{}", radix::hex_encode(&self.hasher.finish()));
+        let hash = format!("sha256:{}", base_radix::hex_encode(&self.hasher.finish()));
         if hash != self.lease.spec().id() {
             return Err(rpc::Status::invalid_argument("Blob id did not match blob data").into());
         }

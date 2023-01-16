@@ -11,7 +11,7 @@ usb = { path = "../usb", default-features = false }
 macros = { path = "../macros" }
 
 [build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../protobuf/compiler" }
 usb = { path = "../usb" }
 common = { path = "../common" }
 

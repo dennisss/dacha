@@ -519,18 +519,18 @@ mod tests {
 
                 let fail = response.fields.contains_key("FAIL");
 
-                let key = radix::hex_decode(response.fields.get("KEY").unwrap())?;
-                let iv = radix::hex_decode(response.fields.get("IV").unwrap())?;
+                let key = base_radix::hex_decode(response.fields.get("KEY").unwrap())?;
+                let iv = base_radix::hex_decode(response.fields.get("IV").unwrap())?;
                 let plaintext = {
                     if let Some(data) = response.fields.get("PT") {
-                        radix::hex_decode(data)?
+                        base_radix::hex_decode(data)?
                     } else {
                         vec![]
                     }
                 };
-                let additional_data = radix::hex_decode(response.fields.get("AAD").unwrap())?;
-                let ciphertext = radix::hex_decode(response.fields.get("CT").unwrap())?;
-                let tag = radix::hex_decode(response.fields.get("TAG").unwrap())?;
+                let additional_data = base_radix::hex_decode(response.fields.get("AAD").unwrap())?;
+                let ciphertext = base_radix::hex_decode(response.fields.get("CT").unwrap())?;
+                let tag = base_radix::hex_decode(response.fields.get("TAG").unwrap())?;
 
                 if tag.len() != 16 {
                     continue;

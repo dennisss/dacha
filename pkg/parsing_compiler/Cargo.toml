@@ -1,7 +1,6 @@
 [package]
 name = "parsing_compiler"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
@@ -11,7 +10,7 @@ macros = { path = "../macros" }
 file = { path = "../file" }
 
 [build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../protobuf/compiler" }
 
 [features]
 default = ["std"]

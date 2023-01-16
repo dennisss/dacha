@@ -105,10 +105,9 @@ async fn get_range_of_keys() -> Result<()> {
 
     assert_eq!(
         &veges[..],
-        &[
-            KeyValueEntry::parse_text(r#"key: "/vegetable/carrot" deleted: true "#)?,
-            KeyValueEntry::parse_text(r#"key: "/vegetable/lettuce" value: "x" "#)?,
-        ]
+        &[KeyValueEntry::parse_text(
+            r#"key: "/vegetable/lettuce" value: "x" "#
+        )?,]
     );
 
     Ok(())

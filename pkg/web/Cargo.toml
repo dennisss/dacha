@@ -1,7 +1,6 @@
 [package]
 name = "web"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
@@ -12,7 +11,7 @@ automata = { path = "../automata" }
 parsing = { path = "../parsing" }
 regexp_macros = { path = "../regexp_macros" }
 protobuf = { path = "../protobuf" }
-protobuf_json = { path = "../protobuf_json" }
+protobuf_json = { path = "../protobuf/json" }
 macros = { path = "../macros" }
 rpc_test = { path = "../rpc_test" }
 json = { path = "../json" }
@@ -20,4 +19,4 @@ file = { path = "../file" }
 executor = { path = "../executor" }
 
 [build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../protobuf/compiler" }

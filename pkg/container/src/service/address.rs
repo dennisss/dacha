@@ -75,7 +75,7 @@ impl ServiceAddress {
                     return Err(ServiceParseError::InvalidNodeId);
                 }
 
-                let id = radix::base32_decode_cl64(name_parts[0])
+                let id = base_radix::base32_decode_cl64(name_parts[0])
                     .ok_or(ServiceParseError::InvalidNodeId)?;
                 ServiceEntity::Node { id }
             }
@@ -138,7 +138,7 @@ impl ServiceName {
             ServiceEntity::Node { id } => {
                 format!(
                     "{}.node.{}{}",
-                    radix::base32_encode_cl64(*id),
+                    base_radix::base32_encode_cl64(*id),
                     self.zone,
                     NAME_SUFFIX
                 )

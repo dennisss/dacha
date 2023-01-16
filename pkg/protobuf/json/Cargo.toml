@@ -1,0 +1,18 @@
+[package]
+name = "protobuf_json"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../../common" }
+protobuf = { path = ".." }
+macros = { path = "../../macros" }
+json = { path = "../../json" }
+
+[build-dependencies]
+protobuf_compiler = { path = "../compiler" }
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []

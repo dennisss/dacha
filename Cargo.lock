@@ -62,10 +62,10 @@ dependencies = [
 name = "asn_compiler"
 version = "0.1.0"
 dependencies = [
+ "base_radix",
  "common",
  "file",
  "parsing",
- "radix",
 ]
 
 [[package]]
@@ -264,6 +264,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "base_radix"
+version = "0.1.0"
+dependencies = [
+ "failure",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.56.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -355,6 +362,7 @@ dependencies = [
 name = "builder"
 version = "0.1.0"
 dependencies = [
+ "base_radix",
  "common",
  "compression",
  "crypto",
@@ -364,7 +372,6 @@ dependencies = [
  "macros",
  "protobuf",
  "protobuf_compiler",
- "radix",
  "skylark",
  "sys",
 ]
@@ -556,6 +563,7 @@ name = "container"
 version = "0.1.0"
 dependencies = [
  "automata",
+ "base_radix",
  "builder",
  "common",
  "compression",
@@ -572,7 +580,6 @@ dependencies = [
  "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
- "radix",
  "raft",
  "regexp_macros",
  "rpc",
@@ -643,6 +650,7 @@ name = "crypto"
 version = "0.1.0"
 dependencies = [
  "asn",
+ "base_radix",
  "common",
  "executor",
  "file",
@@ -653,7 +661,6 @@ dependencies = [
  "parsing",
  "perf",
  "pkix",
- "radix",
  "typenum",
 ]
 
@@ -683,6 +690,7 @@ checksum = "ef8ae57c4978a2acd8b869ce6b9ca1dfe817bff704c220209fdef2c0b75a01b9"
 name = "datastore"
 version = "0.1.0"
 dependencies = [
+ "base_radix",
  "common",
  "crypto",
  "executor",
@@ -694,7 +702,6 @@ dependencies = [
  "parsing",
  "protobuf",
  "protobuf_compiler",
- "radix",
  "raft",
  "rpc",
  "rpc_util",
@@ -1334,9 +1341,9 @@ dependencies = [
 name = "macros"
 version = "0.1.0"
 dependencies = [
+ "base_radix",
  "proc-macro2 1.0.47",
  "quote 1.0.6",
- "radix",
  "syn 1.0.105",
 ]
 
@@ -1429,6 +1436,7 @@ name = "net"
 version = "0.1.0"
 dependencies = [
  "automata",
+ "base_radix",
  "common",
  "crypto",
  "executor",
@@ -1437,7 +1445,6 @@ dependencies = [
  "nix 0.21.0",
  "parsing",
  "parsing_compiler",
- "radix",
  "regexp_macros",
  "sys",
 ]
@@ -1676,13 +1683,13 @@ checksum = "31010dd2e1ac33d5b46a5b413495239882813e0369f8ed8a5e266f173602f831"
 name = "perf"
 version = "0.1.0"
 dependencies = [
+ "base_radix",
  "common",
  "elf",
  "executor",
  "google",
  "parsing",
  "protobuf",
- "radix",
  "sys",
 ]
 
@@ -1918,16 +1925,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "radix"
-version = "0.1.0"
-dependencies = [
- "failure",
-]
-
-[[package]]
 name = "raft"
 version = "0.1.0"
 dependencies = [
+ "base_radix",
  "common",
  "crypto",
  "executor",
@@ -1941,7 +1942,6 @@ dependencies = [
  "nix 0.21.0",
  "protobuf",
  "protobuf_compiler",
- "radix",
  "rpc",
  "rpc_util",
  "sstable",
@@ -2212,6 +2212,7 @@ dependencies = [
 name = "sstable"
 version = "0.1.0"
 dependencies = [
+ "base_radix",
  "common",
  "compression",
  "crypto",
@@ -2221,7 +2222,6 @@ dependencies = [
  "math",
  "parsing",
  "protobuf",
- "radix",
  "reflection",
 ]
 
@@ -2408,11 +2408,11 @@ name = "tools"
 version = "0.1.0"
 dependencies = [
  "automata",
+ "base_radix",
  "common",
  "crypto",
  "executor",
  "macros",
- "radix",
  "regexp_macros",
  "uuid",
 ]
@@ -2546,9 +2546,9 @@ name = "uuid"
 version = "0.1.0"
 dependencies = [
  "automata",
+ "base_radix",
  "common",
  "macros",
- "radix",
  "regexp_macros",
 ]
 

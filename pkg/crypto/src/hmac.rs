@@ -115,9 +115,9 @@ mod tests {
             let key_length = response.fields["KLEN"].parse::<usize>()?;
             let mac_length = response.fields["TLEN"].parse::<usize>()?;
 
-            let key = radix::hex_decode(response.fields.get("KEY").unwrap())?;
-            let message = radix::hex_decode(response.fields.get("MSG").unwrap())?;
-            let mac = radix::hex_decode(response.fields.get("MAC").unwrap())?;
+            let key = base_radix::hex_decode(response.fields.get("KEY").unwrap())?;
+            let message = base_radix::hex_decode(response.fields.get("MSG").unwrap())?;
+            let mac = base_radix::hex_decode(response.fields.get("MAC").unwrap())?;
 
             let hasher_factory = match hash_length {
                 20 => crate::sha1::SHA1Hasher::factory(),

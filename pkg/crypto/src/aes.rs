@@ -651,9 +651,10 @@ mod tests {
                 let encrypt = response.attributes.contains_key("ENCRYPT");
                 let decrypt = response.attributes.contains_key("DECRYPT");
 
-                let key = radix::hex_decode(response.fields.get("KEY").unwrap())?;
-                let plaintext = radix::hex_decode(response.fields.get("PLAINTEXT").unwrap())?;
-                let ciphertext = radix::hex_decode(response.fields.get("CIPHERTEXT").unwrap())?;
+                let key = base_radix::hex_decode(response.fields.get("KEY").unwrap())?;
+                let plaintext = base_radix::hex_decode(response.fields.get("PLAINTEXT").unwrap())?;
+                let ciphertext =
+                    base_radix::hex_decode(response.fields.get("CIPHERTEXT").unwrap())?;
 
                 let mut aes = ECBModeCipher::new(AESBlockCipher::create(&key)?);
 
@@ -669,8 +670,8 @@ mod tests {
                         output,
                         ciphertext,
                         "{} vs {}",
-                        radix::hex_encode(&output),
-                        radix::hex_encode(&ciphertext)
+                        base_radix::hex_encode(&output),
+                        base_radix::hex_encode(&ciphertext)
                     );
                 } else if decrypt {
                     let mut output = vec![];

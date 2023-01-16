@@ -770,8 +770,8 @@ mod tests {
         ];
 
         for (hasher_factory, seed, mask) in tests {
-            let seed = radix::hex_decode(*seed)?;
-            let mask = radix::hex_decode(*mask)?;
+            let seed = base_radix::hex_decode(*seed)?;
+            let mask = base_radix::hex_decode(*mask)?;
 
             let output = mgf1(&seed, mask.len(), hasher_factory);
             assert_eq!(output, mask);

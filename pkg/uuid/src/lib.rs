@@ -3,7 +3,7 @@
 extern crate automata;
 #[macro_use]
 extern crate common;
-extern crate radix;
+extern crate base_radix;
 #[macro_use]
 extern crate regexp_macros;
 
@@ -38,7 +38,7 @@ impl UUID {
             return Err(err_msg("Invalid UUID format"));
         }
 
-        let mut data = radix::hex_decode(&value.replace("-", ""))?;
+        let mut data = base_radix::hex_decode(&value.replace("-", ""))?;
 
         Ok(Self {
             data: *array_ref![data, 0, 16],
@@ -48,11 +48,11 @@ impl UUID {
     pub fn to_string(&self) -> String {
         format!(
             "{}-{}-{}-{}-{}",
-            radix::hex_encode(&self.data[0..4]),
-            radix::hex_encode(&self.data[4..6]),
-            radix::hex_encode(&self.data[6..8]),
-            radix::hex_encode(&self.data[8..10]),
-            radix::hex_encode(&self.data[10..])
+            base_radix::hex_encode(&self.data[0..4]),
+            base_radix::hex_encode(&self.data[4..6]),
+            base_radix::hex_encode(&self.data[6..8]),
+            base_radix::hex_encode(&self.data[8..10]),
+            base_radix::hex_encode(&self.data[10..])
         )
     }
 }

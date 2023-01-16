@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-common = { path = "../common" }
-protobuf = { path = "../protobuf" }
+common = { path = "../../common" }
+protobuf = { path = ".." }
 
 [build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../compiler" }
 
 [features]
 default = ["std"]

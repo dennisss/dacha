@@ -8,7 +8,7 @@ macros = { path = "../macros" }
 automata = { path = "../automata" }
 regexp_macros = { path = "../regexp_macros" }
 common = { path = "../common" }
-radix = { path = "../radix" }
+base_radix = { path = "../base/radix" }
 uuid = { path = "../uuid" }
 crypto = { path = "../crypto" }
 executor = { path = "../executor" }

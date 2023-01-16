@@ -7,7 +7,6 @@ members = [
 [package]
 name = "haystack_node"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 license = "MIT"
 build = "build.rs"
 exclude = ["artifacts.json", "index.node"]

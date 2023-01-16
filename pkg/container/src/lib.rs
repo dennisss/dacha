@@ -23,7 +23,7 @@ extern crate usb;
 #[macro_use]
 extern crate regexp_macros;
 extern crate automata;
-extern crate radix;
+extern crate base_radix;
 
 pub mod init;
 pub mod manager;

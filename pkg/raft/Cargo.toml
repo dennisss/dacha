@@ -1,7 +1,6 @@
 [package]
 name = "raft"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
@@ -20,10 +19,10 @@ failure = "0.1.8"
 executor = { path = "../executor" }
 file = { path = "../file" }
 net = { path = "../net" }
-radix = { path = "../radix" }
+base_radix = { path = "../base/radix" }
 
 [build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../protobuf/compiler" }
 
 [features]
 default = ["std"]

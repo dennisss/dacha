@@ -12,10 +12,6 @@
 		"type": "git",
 		"url": "git+git@github.com:dennisss/repo.git"
 	},
-	"author": {
-		"name": "Dennis Shtatnov",
-		"url": "https://github.com/dennisss"
-	},
 	"devDependencies": {
 		"@types/css-tree": "^1.0.0",
 		"@types/jsdom": "^12.2.1",

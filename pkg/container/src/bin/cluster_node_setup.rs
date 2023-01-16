@@ -159,10 +159,13 @@ async fn run() -> Result<()> {
 
     let machine_id = {
         let hex = run_ssh(&args.addr, "cat /etc/machine-id")?;
-        let data = radix::hex_decode(hex.trim())?;
+        let data = base_radix::hex_decode(hex.trim())?;
         u64::from_be_bytes(*array_ref![data, 0, 8])
     };
-    let hostname = format!("cluster-node-{}", radix::base32_encode_cl64(machine_id));
+    let hostname = format!(
+        "cluster-node-{}",
+        base_radix::base32_encode_cl64(machine_id)
+    );
 
     let build_config_target = {
         let lscpu_output = run_ssh(&args.addr, "lscpu")?;

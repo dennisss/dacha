@@ -13,14 +13,14 @@ macros = { path = "../macros" }
 protobuf = { path = "../protobuf" }
 parsing = { path = "../parsing" }
 uuid = { path = "../uuid" }
-uuid_macros = { path = "../uuid_macros" }
+uuid_macros = { path = "../uuid/macros" }
 sstable = { path = "../sstable" }
 file = { path = "../file" }
 executor = { path = "../executor" }
 
 [build-dependencies]
 parsing_compiler = { path = "../parsing_compiler" }
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../protobuf/compiler" }
 
 [features]
 default = ["std"]

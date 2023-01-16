@@ -119,7 +119,7 @@ impl BuildTarget for Bundle {
                 let hash = {
                     let mut hasher = SHA256Hasher::default();
                     let hash = hasher.finish_with(&data);
-                    format!("sha256:{}", radix::hex_encode(&hash))
+                    format!("sha256:{}", base_radix::hex_encode(&hash))
                 };
 
                 let mut spec = BlobSpec::default();

@@ -1,7 +1,6 @@
 [package]
 name = "crypto"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [lib]
@@ -19,7 +18,7 @@ generic-array = { version = "0.13.2"}
 typenum = { version = "1.11.2" }
 executor = { path = "../executor" }
 file = { path = "../file", optional = true }
-radix = { path = "../radix", optional = true }
+base_radix = { path = "../base/radix", optional = true }
 
 [dev-dependencies]
 openssl = { path = "../../third_party/openssl" }
@@ -27,4 +26,4 @@ openssl = { path = "../../third_party/openssl" }
 [features]
 default = ["std", "alloc"]
 alloc = ["common/alloc", "executor/alloc"]
-std = ["macros", "asn", "math", "parsing", "pkix", "alloc", "common/std", "perf/alloc", "perf/std", "executor/std", "file", "radix"]
+std = ["macros", "asn", "math", "parsing", "pkix", "alloc", "common/std", "perf/alloc", "perf/std", "executor/std", "file", "base_radix"]

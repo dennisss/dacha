@@ -241,11 +241,11 @@ impl EmbeddedDB {
 
         format!(
             "{}-{}-{}-{}-{}",
-            radix::hex_encode(&data[0..4]),
-            radix::hex_encode(&data[4..6]),
-            radix::hex_encode(&data[6..8]),
-            radix::hex_encode(&data[8..10]),
-            radix::hex_encode(&data[10..])
+            base_radix::hex_encode(&data[0..4]),
+            base_radix::hex_encode(&data[4..6]),
+            base_radix::hex_encode(&data[6..8]),
+            base_radix::hex_encode(&data[8..10]),
+            base_radix::hex_encode(&data[10..])
         )
     }
 

@@ -1,7 +1,6 @@
 [package]
 name = "datastore"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
@@ -19,10 +18,10 @@ google = { path = "../../third_party/google" }
 executor = { path = "../executor" }
 file = { path = "../file" }
 crypto = { path = "../crypto" }
-radix = { path = "../radix" }
+base_radix = { path = "../base/radix" }
 
 [build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../protobuf/compiler" }
 
 [features]
 default = ["std"]

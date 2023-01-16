@@ -1,7 +1,6 @@
 [package]
 name = "reflection"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 
 [dependencies]
 common = { path = "../common" }

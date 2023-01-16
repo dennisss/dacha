@@ -9,5 +9,5 @@ pub async fn new_worker_id(rng: &dyn SharedRng) -> String {
     use crypto::random::SharedRngExt;
 
     let id = rng.uniform::<u64>().await;
-    radix::base32_encode_cl64(id)
+    base_radix::base32_encode_cl64(id)
 }

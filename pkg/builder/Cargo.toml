@@ -1,7 +1,6 @@
 [package]
 name = "builder"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
@@ -15,10 +14,10 @@ skylark = { path = "../skylark" }
 google = { path = "../../third_party/google" }
 file = { path = "../file" }
 executor = { path = "../executor" }
-radix = { path = "../radix" }
+base_radix = { path = "../base/radix" }
 
 [build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../protobuf/compiler" }
 
 [features]
 default = ["std"]

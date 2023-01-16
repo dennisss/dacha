@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [dependencies]
 common = { path = "../../pkg/common", default-features = false }
-protobuf_core = { path = "../../pkg/protobuf_core", default-features = false }
+protobuf_core = { path = "../../pkg/protobuf/core", default-features = false }
 macros = { path = "../../pkg/macros" }
 
 [features]

@@ -1,7 +1,6 @@
 [package]
 name = "haystack"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
@@ -15,12 +14,12 @@ dotenv = "0.15.0"
 mime-sniffer = "^0.1"
 protobuf = { path = "../protobuf" }
 macros = { path = "../macros" }
-protobuf_json = { path = "../protobuf_json" }
+protobuf_json = { path = "../protobuf/json" }
 file = { path = "../file" }
 executor = { path = "../executor" }
 
 [build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../protobuf/compiler" }
 
 [features]
 default = ["std"]

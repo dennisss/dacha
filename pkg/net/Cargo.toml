@@ -1,7 +1,6 @@
 [package]
 name = "net"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2021"
 
 [dependencies]
@@ -13,7 +12,7 @@ crypto = { path = "../crypto" }
 sys = { path = "../sys" }
 executor = { path = "../executor" }
 macros = { path = "../macros" }
-radix = { path = "../radix" }
+base_radix = { path = "../base/radix" }
 libc = "0.2"
 nix = "0.21.0"
 

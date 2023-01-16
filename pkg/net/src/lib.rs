@@ -16,11 +16,11 @@ extern crate parsing;
 extern crate automata;
 #[macro_use]
 extern crate regexp_macros;
+extern crate base_radix;
 extern crate crypto;
 extern crate executor;
 extern crate libc;
 extern crate nix;
-extern crate radix;
 extern crate sys;
 #[macro_use]
 extern crate macros;

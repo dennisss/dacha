@@ -13,7 +13,7 @@ math = { path = "../math", default-features = false }
 common = { path = "../common", default-features = false }
 
 [build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../protobuf/compiler" }
 
 [features]
 default = ["std", "alloc"]

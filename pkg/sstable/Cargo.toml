@@ -1,7 +1,6 @@
 [package]
 name = "sstable"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
@@ -15,7 +14,7 @@ protobuf = { path = "../protobuf" }
 parsing = { path = "../parsing" }
 file = { path = "../file" }
 executor = { path = "../executor" }
-radix = { path = "../radix" }
+base_radix = { path = "../base/radix" }
 
 [features]
 default = ["std"]

@@ -22,8 +22,8 @@ async fn run_nist_hasher_test(hasher_factory: HasherFactory, paths: &[&'static s
             let response = response?;
 
             let len = response.fields.get("LEN").unwrap().parse::<usize>()?;
-            let msg = radix::hex_decode(response.fields.get("MSG").unwrap())?;
-            let md = radix::hex_decode(response.fields.get("MD").unwrap())?;
+            let msg = base_radix::hex_decode(response.fields.get("MSG").unwrap())?;
+            let md = base_radix::hex_decode(response.fields.get("MD").unwrap())?;
 
             // Only byte wise hashing is currently supported.
             assert!((len % 8) == 0);
@@ -34,7 +34,11 @@ async fn run_nist_hasher_test(hasher_factory: HasherFactory, paths: &[&'static s
             let output = hasher.finish();
 
             if output != md {
-                println!("{}\n{}", radix::hex_encode(&msg), radix::hex_encode(&md));
+                println!(
+                    "{}\n{}",
+                    base_radix::hex_encode(&msg),
+                    base_radix::hex_encode(&md)
+                );
             }
 
             assert_eq!(output, md);

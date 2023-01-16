@@ -1,6 +1,6 @@
+extern crate base_radix;
 extern crate proc_macro;
 extern crate proc_macro2;
-extern crate radix;
 extern crate syn;
 #[macro_use]
 extern crate quote;

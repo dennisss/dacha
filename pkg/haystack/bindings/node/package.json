@@ -3,7 +3,6 @@
 	"version": "0.1.0",
 	"description": "",
 	"main": "lib/index.js",
-	"author": "Dennis Shtatnov <densht@gmail.com>",
 	"license": "MIT",
 	"dependencies": {
 		"neon-cli": "^0.2.0"

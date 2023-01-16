@@ -7,4 +7,4 @@ edition = "2018"
 common = { path = "../common" }
 file = { path = "../file" }
 parsing = { path = "../parsing" }
-radix = { path = "../radix" }
+base_radix = { path = "../base/radix" }

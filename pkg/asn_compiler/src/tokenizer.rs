@@ -228,7 +228,7 @@ impl Token {
         c.next(tag("'H"))?;
         // TODO: This doesn't support strings with an un-even number of hex
         // characters
-        let buf = radix::hex_decode(&out)?;
+        let buf = base_radix::hex_decode(&out)?;
         Ok(buf.into())
     }));
 

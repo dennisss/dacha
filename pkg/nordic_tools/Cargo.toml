@@ -18,7 +18,7 @@ google = { path = "../../third_party/google" }
 executor = { path = "../executor" }
 
 [build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../protobuf/compiler" }
 
 [features]
 default = ["std", "alloc"]

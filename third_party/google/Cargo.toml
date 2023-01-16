@@ -4,11 +4,11 @@ version = "0.1.0"
 
 [dependencies]
 common = { path = "../../pkg/common" }
-protobuf_core = { path = "../../pkg/protobuf_core" }
+protobuf_core = { path = "../../pkg/protobuf/core" }
 macros = { path = "../../pkg/macros" }
 
 [build-dependencies]
-protobuf_compiler = { path = "../../pkg/protobuf_compiler" }
+protobuf_compiler = { path = "../../pkg/protobuf/compiler" }
 
 [features]
 default = ["std"]

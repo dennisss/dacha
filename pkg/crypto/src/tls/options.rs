@@ -41,6 +41,7 @@ pub struct ClientOptions {
     /// Supported algorithms to use when verifying certificates.
     pub supported_signature_algorithms: Vec<SignatureScheme>,
 
+    /// Settings for how to authenticate the certificate provided by the server.
     pub certificate_request: CertificateRequestOptions,
 
     /// If present, the client will support authenticating using a certificate

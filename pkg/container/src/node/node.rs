@@ -60,7 +60,7 @@ pub struct NodeContext {
     /// Address at which the node can be reached by other nodes.
     /// This should contain the port on which the Node service will be started.
     ///
-    /// e.g. '10.1.0.123:10400'
+    /// e.g. 'http://10.1.0.123:10400'
     pub local_address: String,
 }
 
@@ -178,8 +178,9 @@ impl Node {
             Some(id) => id,
             None => {
                 let id = if config.bootstrap_id_from_machine_id() {
-                    let machine_id =
-                        radix::hex_decode(file::read_to_string("/etc/machine-id").await?.trim())?;
+                    let machine_id = base_radix::hex_decode(
+                        file::read_to_string("/etc/machine-id").await?.trim(),
+                    )?;
 
                     if machine_id.len() < 8 {
                         return Err(err_msg("Expected machine id to have at least 8 bytes"));
@@ -196,7 +197,7 @@ impl Node {
             }
         };
 
-        println!("Node id: {}", radix::base32_encode_cl64(id));
+        println!("Node id: {}", base_radix::base32_encode_cl64(id));
 
         let inner = NodeStateInner {
             container_id_to_worker_name: HashMap::new(),

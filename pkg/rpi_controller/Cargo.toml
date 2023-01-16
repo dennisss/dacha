@@ -1,13 +1,12 @@
 [package]
 name = "rpi_controller"
 version = "0.1.0"
-authors = ["Dennis Shtatnov <densht@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 common = { path = "../common" }
 protobuf = { path = "../protobuf" }
-protobuf_json = { path = "../protobuf_json" }
+protobuf_json = { path = "../protobuf/json" }
 macros = { path = "../macros" }
 rpi = { path = "../rpi" }
 rpc = { path = "../rpc" }
@@ -18,7 +17,7 @@ json = { path = "../json" }
 google = { path = "../../third_party/google" }
 
 [build-dependencies]
-protobuf_compiler = { path = "../protobuf_compiler" }
+protobuf_compiler = { path = "../protobuf/compiler" }
 
 [features]
 default = ["std"]

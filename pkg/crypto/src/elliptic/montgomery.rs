@@ -303,7 +303,7 @@ mod tests {
 
         let u_out = MontgomeryCurveGroup::x25519().mul(&scalar, &u_in);
         assert_eq!(
-            radix::hex_encode(&u_out.to_le_bytes()),
+            base_radix::hex_encode(&u_out.to_le_bytes()),
             "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"
         );
 

@@ -285,7 +285,7 @@ async fn run_bootstrap(cmd: BootstrapCommand) -> Result<()> {
 
     println!(
         "Bootstrapping cluster with node {}",
-        radix::base32_encode_cl64(node_id)
+        base_radix::base32_encode_cl64(node_id)
     );
     println!("Zone: {}", node_meta.zone());
 
@@ -773,7 +773,7 @@ async fn start_job_impl(
                 container::ServiceResolver::create(
                     &format!(
                         "{}.node.local.cluster.internal",
-                        radix::base32_encode_cl64(assignment.node_id())
+                        base_radix::base32_encode_cl64(assignment.node_id())
                     ),
                     meta_client.clone(),
                 )
